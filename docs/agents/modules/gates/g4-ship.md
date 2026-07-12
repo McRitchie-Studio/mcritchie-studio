@@ -35,22 +35,44 @@ The gate window spans the whole irreversible half of the ship:
 
 ## G4 self-gating (the 90/10 policy)
 
-The full suite runs **once per release batch, at G3**. The ship test gate
-SKIPS a repo iff BOTH hold (`Release::ShipSequence.ship_gate_skip?`,
-unit-tested):
+The full suite runs **once per release batch, at G3**. The ship test gate SKIPS
+a repo **only against G3's own recorded verdict** —
+`release.metadata["qa_gates"][repo] = {"sha", "cmd", "ok"}`, which `prepare`
+writes ONLY after that repo's pre-QA suite comes back GREEN. It skips iff
+(`Release::ShipSequence.ship_gate_skip?`, unit-tested):
 
-- the ship `test_cmd` is EXACTLY the `qa_test_cmd` G3 ran, **and**
-- the frozen ship SHA is EXACTLY the SHA G3 certified this run
-  (`release.metadata["qa_shas"]`).
+- a G3 record exists for the repo and is **green** (`"ok" => true`), **and**
+- its `"cmd"` is EXACTLY the `test_cmd` the ship gate would run, **and**
+- its `"sha"` is EXACTLY the frozen ship SHA.
+
+Everything else **fails open — the gate RUNS**: no record, a red record, a
+different command, a drifted/straggler SHA, blank inputs.
+
+> **Why not the registry + `qa_shas`?** That was the old rule, and it was a
+> silent **disarm**. `qa_shas` is stamped by the QA *deploy loop*, so it records
+> what was DEPLOYED, never what was CERTIFIED; and the registry is re-read at
+> ship, so it can differ from what `prepare` read. The documented gate-skip
+> recipe (blank `qa_test_cmd` so G3 skips → restore the file before ship, because
+> ship's preflight refuses a dirty primary) therefore made G4 skip a suite that
+> **nothing ever ran**, while printing "already green". A skipped G3 must never
+> certify a SHA. **Do not use that recipe** — it no longer works, by design.
 
 The skip is recorded as a **visible `ship_test_gate` SOP** on the gate run
-("skipped — `<cmd>` already green @ `<sha>` at G3"), never a silent omission.
-A straggler, re-pin, or any SHA drift re-triggers the gate; blank commands or
-SHAs never skip (fail open: run the gate). A repo with **no registry
-`test_cmd` self-gates** at its own deploy and is skipped with its own step
-note. In practice: the hub (same full suite registered at G3 and G4) skips on
-an unchanged SHA; satellites (integration subset at G3, full suite at their
-own deploy) always run their full pre-prod check.
+("skipped — `<cmd>` certified green @ `<sha>` at G3"), never a silent omission.
+A repo with **no registry `test_cmd` self-gates** at its own deploy and is
+skipped with its own step note. In practice: the hub (same full suite registered
+at G3 and G4) skips on an unchanged, G3-certified SHA; satellites (integration
+subset at G3, full suite at their own deploy) always run their full pre-prod
+check.
+
+## Where the suite runs
+
+In the repo's **isolated gate workspace** (`Release::GateWorkspace`) — a private
+detached worktree pinned at the frozen ship SHA, with its own test DB — **never**
+on the shared primary checkout. The primary-checkout lock now wraps only the
+local `main` fast-forward the deploy pushes from. See
+[`g3-candidate.md`](g3-candidate.md) for why: a suite that lazily autoloads over
+minutes against a tree other sessions can `git checkout` is not a check.
 
 ## Who runs it
 

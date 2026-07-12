@@ -103,12 +103,45 @@ bin/release prepare --yes
 - **CLI read:** `bin/gate show release <release-slug>` (add `--json` for raw
   attempts).
 
+## Where the pre-QA suite runs (and why it is trustworthy)
+
+In the repo's **isolated gate workspace** (`Release::GateWorkspace`): a private
+detached git worktree at `<repo>/.worktrees/_gate`, pinned at the origin/release
+SHA under test, with its **own test database** (`<repo>_gate_test`). The primary
+checkout is **never** flipped to `release` — it stays on a clean `main`.
+
+This is what makes a red gate *mean* something. The gate used to run its
+multi-minute suite on the SHARED primary, and the test env autoloads **lazily**
+(`config.eager_load = ENV["CI"].present?` — false locally, true on CI). So any
+concurrent `git checkout` in the primary — another agent session, a hand-run
+command; the primary-checkout `flock` is advisory and binds only other
+`bin/release` invocations — tore the code snapshot **mid-suite**: test files
+already loaded from `release`, models autoloaded minutes later from `main`. The
+gate then false-failed on genuinely green code (rel-20260711-7f2913: three false
+alarms in one release; a reviewer nearly ejected a good PR). The shared test DB
+was the same bug in a second dimension. A private tree and a private DB close
+both. (Bootsnap was the prime suspect and is **innocent** — verified by
+experiment; its cache keys on mtime+size and `git checkout` bumps mtime.)
+
+The gate's spawn env (`Release::GateEnv`) also **unsets**
+`CLAUDE_CODE_SESSION_ID` / `CODEX_THREAD_ID`, so the suite's subprocess-spawning
+tests see the same no-session environment CI does, and pins the mise ruby.
+
+## Certification (what G4 reads)
+
+On GREEN, the gate stamps **what it actually certified** onto the release:
+`metadata["qa_gates"][repo] = {"sha", "cmd", "ok" => true}`. That record is the
+**only** grounds on which [G4 Ship](g4-ship.md) may skip its own suite. A gate
+that skipped, was misconfigured, or went red leaves **no record**, so G4 fails
+open and runs the suite itself — a skipped G3 can never certify a SHA.
+
 ## Related
 
 - [`../../agents/steffon/sops/qa-release.md`](../../agents/steffon/sops/qa-release.md)
   — the owning SOP; run that end-to-end, this doc explains the gate it
   produces.
-- [`g4-ship.md`](g4-ship.md) — the next gate; its frozen-SHA test gate
-  self-gates against the SHA + command this gate certified.
+- [`g4-ship.md`](g4-ship.md) — the next gate; its frozen-SHA test gate skips only
+  against the verdict this gate RECORDED (never the registry, never the deployed
+  SHA).
 - [`../task-board-api.md`](../task-board-api.md) — the `/api/v1/gates` write
   surface (the conductor writes through the model funnel server-side).

@@ -93,6 +93,49 @@ class ReleaseCliTest < Minitest::Test
     end
   end
 
+  # A throwaway stand-in for a sibling repo CHECKOUT, for the stubs whose `sh` is
+  # fully faked (their assertions never depend on the repo's identity on disk).
+  # It replaces the old `def repo_path(_repo) = Dir.pwd`: a gate now MATERIALIZES
+  # its isolated workspace under <repo>/.worktrees/_gate (a real `mkdir_p` before
+  # the stubbed `git worktree add`), and Dir.pwd is the RUNNING checkout — a
+  # stubbed gate would litter the live repo with an empty `.worktrees/`. Memoized
+  # + removed after the run, like lock_dir.
+  def self.stub_repo
+    @stub_repo ||= begin
+      dir = Dir.mktmpdir("release-cli-repo")
+      Minitest.after_run do
+        FileUtils.remove_entry(dir)
+      rescue StandardError
+        nil
+      end
+      dir
+    end
+  end
+
+  # The SHA a stubbed `git rev-parse origin/release` answers with. The gate now
+  # RESOLVES the SHA under test and pins its isolated workspace at it, so a stub
+  # that answers rev-parse with "" aborts the gate ("no SHA to pin the isolated
+  # gate checkout at") long before the suite.
+  GATE_SHA = "f00dcafe11111111111111111111111111111111"
+
+  # The gate's git/DB PLUMBING, canned — prepended to every stub whose test rides
+  # a real pre_qa_gate/test_gate but is not asserting on the plumbing itself:
+  #   * `git rev-parse origin/release` → the SHA under test (see GATE_SHA),
+  #   * the workspace pin (`git worktree add|prune` / `reset` / `clean`) → ok,
+  #   * `bin/rails db:test:prepare` (the gate DB, exactly what CI runs) → ok.
+  # It returns nil for everything else, so each stub's own `sh` keeps full control
+  # of the commands it asserts on (`g = gate_git(a); return g if g` first, then
+  # the test's own branches).
+  GATE_GIT_STUB = <<~RUBY
+    GATE_SHA = #{GATE_SHA.inspect}
+    def gate_git(a)
+      return [GATE_SHA, true] if a[0] == "git" && a.include?("rev-parse")
+      return ["", true] if a[0] == "git" && %w[fetch worktree reset clean].include?(a[3].to_s)
+      return ["", true] if a[0] == "bin/rails" && a[1] == "db:test:prepare"
+      nil
+    end
+  RUBY
+
   def run_ruby(script)
     env = NEUTRALIZED_ENV.merge("MCR_PRIMARY_LOCK_DIR" => self.class.lock_dir)
     last = nil
@@ -166,6 +209,14 @@ class ReleaseCliTest < Minitest::Test
   # constants (read from ARGV at load time) reflect the given flags.
   def eval_with_argv(argv, expr)
     run_ruby(%(ARGV.replace(#{argv.inspect}); load #{BIN.inspect}; print(#{expr})))
+  end
+
+  # The ISOLATED GATE WORKSPACE for a repo — <repo>/.worktrees/_gate — resolved
+  # through bin/release's OWN seam (Release::GateWorkspace.path + repo_path,
+  # each unit-tested on its own), so an assertion never re-implements the
+  # sibling-path climb it is checking.
+  def gate_workspace_path(repo)
+    eval_helper(%(Release::GateWorkspace.path(repo_path(#{repo.inspect}))))
   end
 
   # Run a bin/release subcommand in a clean subprocess with the given argv (which
@@ -404,8 +455,7 @@ class ReleaseCliTest < Minitest::Test
 
   # A full self-healing sweep: one fresh candidate (gh merge needed), one already
   # merged (crash-recovery skip), one with no PR (left behind, warning only).
-  SWEEP_FLOW_STUB = <<~'RUBY'
-    def repo_path(_repo) = Dir.pwd
+  SWEEP_FLOW_STUB = GATE_GIT_STUB + %(def repo_path(_repo) = #{stub_repo.inspect}\n) + <<~'RUBY'
     def conductor(ruby, read_only: false)
       if ruby.include?("sweep_candidates")
         { "tasks" => [
@@ -429,6 +479,8 @@ class ReleaseCliTest < Minitest::Test
       end
     end
     def sh(*a, **_k)
+      g = gate_git(a)
+      return g if g
       return ["release", true] if a.include?("baseRefName")
       if a[0] == "gh" && a.include?("merge")
         $stdout.puts("GH-MERGE " + a.find { |x| x.to_s.start_with?("https") }.to_s)
@@ -536,9 +588,14 @@ class ReleaseCliTest < Minitest::Test
     out = run_cli(["--dry-run"], call: "prepare", setup: setup)
 
     # The banner names what the step actually runs — each app's registered
-    # qa_test_cmd (the old "integration + e2e-smoke" overstated this gate).
-    assert_includes out, "pre-QA gate: each app's registered qa_test_cmd on origin/release (before any QA deploy)"
-    assert_includes out, "[dry-run] pre-QA gate mcritchie-studio: (cd mcritchie-studio) bin/rails test:integration @ origin/release"
+    # qa_test_cmd (the old "integration + e2e-smoke" overstated this gate) — and
+    # WHERE it runs it: the isolated gate workspace, never the shared primary.
+    assert_includes out, "pre-QA gate: each app's registered qa_test_cmd on origin/release " \
+                         "(isolated gate workspace, before any QA deploy)"
+    # The preview names the WORKSPACE the suite would run in (…/.worktrees/_gate),
+    # not the primary checkout — the plan matches what a real run executes.
+    assert_includes out, "[dry-run] pre-QA gate mcritchie-studio: " \
+                         "(cd #{gate_workspace_path('mcritchie-studio')}) bin/rails test:integration @ origin/release"
     assert_includes out, "turf-monster: no qa_test_cmd registered", "an unregistered app self-gates (skip)"
   end
 
@@ -552,16 +609,19 @@ class ReleaseCliTest < Minitest::Test
     assert_operator gate_at, :<, deploy_at, "the gate runs BEFORE the QA deploy (members still reviewed)"
   end
 
-  def test_pre_qa_gate_red_aborts_with_eject_guidance_and_restores_main
-    # Per-test lock dir — NEVER the real one: a live G3 gate HOLDS the real
-    # mcritchie-studio lock while its suite runs this very file, so a test
-    # flocking it would deadlock the gate against itself (activity-1307).
+  def test_pre_qa_gate_red_aborts_with_eject_guidance
+    # Per-test lock dir — NEVER the real one: a live conductor's lock file is not
+    # this test's to flock (activity-1307). The gate no longer TAKES the lock at
+    # all (its suite runs in the isolated workspace), but repo_path/lock resolution
+    # still reads the env, so keep every child pointed at a throwaway dir.
     Dir.mktmpdir do |dir|
-      setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) + <<~'RUBY'
-        def repo_path(_repo) = Dir.pwd
+      setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
+              %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
         def qa_gate_cmd(_repo) = "bin/failing-suite"
         def sh(*a, **_k)
           $stdout.puts("GIT " + a.join(" ")) if a[0] == "git"
+          g = gate_git(a)
+          return g if g
           return ["", false] if a[0] == "bin/failing-suite" # the tier suite is RED
           ["", true]
         end
@@ -576,7 +636,155 @@ class ReleaseCliTest < Minitest::Test
       assert_includes out, "Bundler::GemNotFound",
                       "the abort distinguishes a boot-time GemNotFound (env) from a real regression"
       refute_includes out, "PASSED"
-      assert_includes out, "checkout main", "the sibling checkout is restored to main (ensure)"
+      # The old gate checked `release` out ON THE PRIMARY and restored `main` in an
+      # ensure; both are GONE. Even on the red path the primary's HEAD is never
+      # touched — there is nothing to restore, so nothing can be left flipped when
+      # the gate aborts (a killed gate used to strand the shared checkout on
+      # `release`).
+      git_ops = out.lines.select { |l| l.start_with?("GIT ") }
+      refute(git_ops.any? { |l| l.include?(" checkout ") },
+             "the gate must never checkout ANYTHING on the primary: #{git_ops.inspect}")
+    end
+  end
+
+  # --- gate isolation: the suite runs in a PRIVATE worktree, not the primary ---
+  #
+  # ROOT CAUSE (rel-20260711-7f2913): the gate ran its multi-minute suite on the
+  # SHARED primary after a transient `git checkout release`. The test env autoloads
+  # LAZILY (config.eager_load = ENV["CI"].present? → false locally), so ANY
+  # concurrent `git checkout` in that primary — another agent session, a hand-run
+  # command; the flock is ADVISORY and binds only other bin/release invocations —
+  # tore the code snapshot mid-run and the gate FALSE-FAILED green code (a reviewer
+  # nearly ejected a good PR on it). The fix is structural: pin a private detached
+  # worktree at the SHA under test, with its own test DB, that no other process
+  # knows exists. These tests pin the two halves of that contract — where the suite
+  # runs, and that the primary is never flipped.
+
+  # [unit] The gate resolves origin/release's SHA, pins the isolated workspace at
+  # it, and runs the suite THERE (chdir = <repo>/.worktrees/_gate) — never a
+  # `git checkout` of `release` (or anything else) on the primary.
+  def test_pre_qa_gate_runs_the_suite_in_the_isolated_workspace_never_on_the_primary
+    Dir.mktmpdir do |dir|
+      setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
+              %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
+        def qa_gate_cmd(_repo) = "bin/suite"
+        def sh(*a, **k)
+          $stdout.puts("GIT #{a[3]} #{a[4]}") if a[0] == "git"
+          $stdout.puts("SUITE-CHDIR #{k[:chdir]}") if a[0] == "bin/suite"
+          g = gate_git(a)
+          return g if g
+          ["", true]
+        end
+      RUBY
+      out = run_cli(["--yes"], setup: setup, call: %{pre_qa_gate([{ "repo" => "sibling" }]); puts("PASSED")})
+
+      workspace = File.join(dir, ".worktrees", "_gate")
+      assert_includes out, "SUITE-CHDIR #{workspace}",
+                      "the suite must run IN the isolated gate workspace, not the primary: #{out}"
+      assert_includes out, "GIT rev-parse origin/release", "the gate resolves the SHA under test…"
+      assert_includes out, "GIT worktree add", "…and pins a detached worktree at it"
+      assert_includes out, GATE_SHA[0, 7], "the workspace is pinned at the resolved SHA"
+      git_ops = out.lines.select { |l| l.start_with?("GIT ") }
+      refute(git_ops.any? { |l| l.include?("checkout") },
+             "NO `git checkout release` (or `checkout main` restore) on the primary — that transient " \
+             "flip is exactly what tore the lazily-autoloaded suite: #{git_ops.inspect}")
+      assert_includes out, "PASSED"
+    end
+  end
+
+  # [unit] The gate suite is spawned under the GATE ENV OVERLAY (Release::GateEnv):
+  # the agent-session ids are UNSET (nil ⇒ unset in the child, so every grandchild
+  # the suite spawns is session-less exactly like CI) and TEST_DATABASE_URL points
+  # at the gate's PRIVATE test DB (never the primary's shared <app>_test, which a
+  # concurrent suite can pollute mid-run).
+  def test_pre_qa_gate_spawns_the_suite_under_the_gate_env_overlay
+    Dir.mktmpdir do |dir|
+      setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
+              %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
+        def qa_gate_cmd(_repo) = "bin/suite"
+        def sh(*a, **k)
+          $stdout.puts("SUITE-ENV #{k[:env].inspect}") if a[0] == "bin/suite"
+          g = gate_git(a)
+          return g if g
+          ["", true]
+        end
+      RUBY
+      out = run_cli(["--yes"], setup: setup, call: %{pre_qa_gate([{ "repo" => "sibling" }]); puts("PASSED")})
+
+      env_line = out.lines.find { |l| l.start_with?("SUITE-ENV") }
+      assert env_line, "the suite must be spawned with an env overlay: #{out}"
+      assert_includes env_line, %("CLAUDE_CODE_SESSION_ID"=>nil),
+                      "the agent-session id is UNSET for the gate's whole process tree (CI names no session)"
+      assert_includes env_line, %("CODEX_THREAD_ID"=>nil), "…the Codex twin too"
+      assert_includes env_line, %("TEST_DATABASE_URL"=>"postgres:///sibling_gate_test"),
+                      "the suite boots against the gate's PRIVATE test DB, never the primary's shared one"
+      assert_includes out, "PASSED"
+    end
+  end
+
+  # --- G3 certification: the ONLY evidence G4 accepts for skipping its gate ------
+  #
+  # A GREEN gate stamps release.metadata["qa_gates"][repo] = {sha, cmd, ok: true}.
+  # A red / skipped / misconfigured gate leaves NOTHING — which makes G4 FAIL OPEN
+  # (it re-runs the suite on the frozen SHA). See the ship-gate skip matrix below
+  # for why that asymmetry is load-bearing.
+
+  # [unit] A green gate records what it CERTIFIED: this repo, this SHA, this cmd.
+  def test_pre_qa_gate_records_the_g3_certification_on_a_green_suite
+    Dir.mktmpdir do |dir|
+      setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
+              %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
+        def qa_gate_cmd(_repo) = "bin/suite"
+        def conductor(ruby, read_only: false)
+          $stdout.puts("CERT-CALL " + ruby.gsub("\n", " "))
+          {}
+        end
+        def sh(*a, **_k)
+          g = gate_git(a)
+          return g if g
+          ["", true]
+        end
+      RUBY
+      out = run_cli(["--yes"], setup: setup,
+                    call: %{pre_qa_gate([{ "repo" => "sibling" }], "rel-cert"); puts("PASSED")})
+
+      cert = out.lines.find { |l| l.start_with?("CERT-CALL") }
+      assert cert, "a GREEN gate must record its certification: #{out}"
+      assert_includes cert, "Release::Conductor.record_qa_gate", "the stamp rides the tested conductor primitive"
+      assert_includes cert, %(slug: "rel-cert")
+      assert_includes cert, %(repo: "sibling")
+      assert_includes cert, %(sha: "#{GATE_SHA}"), "it certifies the SHA the suite actually ran on"
+      assert_includes cert, %(cmd: "bin/suite"), "…and the command it actually ran"
+      assert_includes cert, "ok: true"
+      assert_includes out, "PASSED"
+    end
+  end
+
+  # [unit] A RED gate records NOTHING — no half-certification, no "we ran it" stamp.
+  # (The abort is the loud half; the SILENCE is what keeps G4 armed.)
+  def test_pre_qa_gate_records_no_certification_when_the_suite_is_red
+    Dir.mktmpdir do |dir|
+      setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
+              %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
+        def qa_gate_cmd(_repo) = "bin/suite"
+        def conductor(ruby, read_only: false)
+          $stdout.puts("CERT-CALL " + ruby.gsub("\n", " "))
+          {}
+        end
+        def sh(*a, **_k)
+          g = gate_git(a)
+          return g if g
+          return ["", false] if a[0] == "bin/suite" # RED
+          ["", true]
+        end
+      RUBY
+      out = run_cli(["--yes"], setup: setup,
+                    call: %{begin; pre_qa_gate([{ "repo" => "sibling" }], "rel-cert"); puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+      assert_includes out, "ABORTED", "a red gate still aborts the prepare"
+      refute_includes out, "CERT-CALL",
+                      "a RED gate must certify NOTHING — a stamp here would let G4 self-skip on a failed suite"
+      refute_includes out, "PASSED"
     end
   end
 
@@ -593,43 +801,54 @@ class ReleaseCliTest < Minitest::Test
   # suite (the repo's bin/bundle binstub), and a still-broken bundle must abort
   # as an ENV/toolchain diagnosis — never the eject path.
 
-  # A minimal repo fixture with a Gemfile (the guard self-gates without one)
-  # and a bin/bundle binstub (suite_bundle_cmd's probe) — the git/suite/bundle
-  # commands themselves are stubbed via sh.
+  # A minimal repo fixture with a Gemfile (the guard self-gates without one) and a
+  # bin/bundle binstub (suite_bundle_argv's probe) — planted in the ISOLATED GATE
+  # WORKSPACE (<repo>/.worktrees/_gate), because THAT is the tree the guard now
+  # reads: the suite boots there, so its gem home is the one that must be
+  # satisfied. Returns [primary, workspace]; the git/bundle/suite commands
+  # themselves are stubbed via sh.
   def build_binstub_fixture(dir)
-    fix = File.join(dir, "repo")
-    FileUtils.mkdir_p(File.join(fix, "bin"))
-    File.write(File.join(fix, "Gemfile"), "source \"https://rubygems.org\"\n")
-    File.write(File.join(fix, "bin", "bundle"), "#!/usr/bin/env ruby\n")
-    fix
+    primary   = File.join(dir, "repo")
+    workspace = File.join(primary, ".worktrees", "_gate")
+    FileUtils.mkdir_p(File.join(workspace, "bin"))
+    File.write(File.join(workspace, "Gemfile"), "source \"https://rubygems.org\"\n")
+    File.write(File.join(workspace, "bin", "bundle"), "#!/usr/bin/env ruby\n")
+    [primary, workspace]
   end
 
-  # [unit] The gate bundle-checks via the repo's bin/bundle binstub — the same
-  # env-resolved ruby that boots the suite — AFTER the release checkout (so it
-  # reads the RELEASE tree's Gemfile.lock) and BEFORE the suite burns minutes.
+  # [unit] The gate bundle-checks via the workspace's bin/bundle binstub — the
+  # same env-resolved ruby that boots the suite — AFTER the workspace is pinned at
+  # the SHA under test (so it reads the RELEASE tree's Gemfile.lock) and BEFORE
+  # the suite burns minutes. (The pin replaced the old primary `git checkout
+  # release`; the ordering guarantee it anchors is unchanged.)
   def test_pre_qa_gate_bundle_checks_under_the_suite_ruby_before_the_suite
     Dir.mktmpdir do |dir|
-      fix = build_binstub_fixture(dir)
+      primary, = build_binstub_fixture(dir)
       setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
-              %(def repo_path(_repo) = #{fix.inspect}\n) + <<~'RUBY'
+              %(def repo_path(_repo) = #{primary.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
         def qa_gate_cmd(_repo) = "bin/rails test"
         def sh(*a, **_k)
           $stdout.puts("GIT-OP #{a[3]}") if a[0] == "git"
           $stdout.puts("BUNDLE #{a[1]}") if a[0] == "bin/bundle"
-          $stdout.puts("SUITE") if a[0] == "bin/rails"
+          $stdout.puts("DB-PREPARE") if a[0] == "bin/rails" && a[1] == "db:test:prepare"
+          $stdout.puts("SUITE") if a[0] == "bin/rails" && a[1] == "test"
+          g = gate_git(a)
+          return g if g
           ["", true]
         end
       RUBY
       out = run_cli(["--yes"], setup: setup, call: %{pre_qa_gate([{ "repo" => "sibling" }]); puts("PASSED")})
 
       lines = out.lines.map(&:strip)
-      co    = lines.index("GIT-OP checkout") # first checkout = release
+      pin   = lines.index("GIT-OP worktree") # the workspace is pinned at the SHA under test
       check = lines.index("BUNDLE check")
+      db    = lines.index("DB-PREPARE")
       suite = lines.index("SUITE")
       assert check, "the gate must bundle-check via bin/bundle (the suite ruby): #{out}"
-      assert co && suite, "the release checkout and the suite must both run: #{out}"
-      assert_operator co, :<, check, "the bundle check reads the RELEASE tree (after checkout)"
-      assert_operator check, :<, suite, "…and runs BEFORE the suite boots"
+      assert pin && db && suite, "the workspace pin, the test DB, and the suite must all run: #{out}"
+      assert_operator pin, :<, check, "the bundle check reads the pinned WORKSPACE tree (after the pin)"
+      assert_operator check, :<, db, "…before the gate DB is prepared"
+      assert_operator db, :<, suite, "…and both complete BEFORE the suite boots"
       refute_includes lines, "BUNDLE install", "a satisfied bundle must not install"
       assert_includes out, "PASSED"
     end
@@ -640,13 +859,15 @@ class ReleaseCliTest < Minitest::Test
   # gate ride on.
   def test_pre_qa_gate_installs_the_bundle_when_the_check_fails
     Dir.mktmpdir do |dir|
-      fix = build_binstub_fixture(dir)
+      primary, = build_binstub_fixture(dir)
       setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
-              %(def repo_path(_repo) = #{fix.inspect}\n) + <<~'RUBY'
+              %(def repo_path(_repo) = #{primary.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
         def qa_gate_cmd(_repo) = "bin/rails test"
         def sh(*a, **_k)
           $stdout.puts("BUNDLE #{a[1]}") if a[0] == "bin/bundle"
-          $stdout.puts("SUITE") if a[0] == "bin/rails"
+          $stdout.puts("SUITE") if a[0] == "bin/rails" && a[1] == "test"
+          g = gate_git(a)
+          return g if g
           return ["", false] if a[0] == "bin/bundle" && a[1] == "check"
           ["", true]
         end
@@ -670,13 +891,15 @@ class ReleaseCliTest < Minitest::Test
   # guidance burned two gate runs on rel-20260708-32701b.
   def test_pre_qa_gate_aborts_as_env_when_the_suite_bundle_cannot_be_fixed
     Dir.mktmpdir do |dir|
-      fix = build_binstub_fixture(dir)
+      primary, workspace = build_binstub_fixture(dir)
       setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
-              %(def repo_path(_repo) = #{fix.inspect}\n) + <<~'RUBY'
+              %(def repo_path(_repo) = #{primary.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
         def qa_gate_cmd(_repo) = "bin/rails test"
         def sh(*a, **_k)
           $stdout.puts("GIT-OP #{a[3]}") if a[0] == "git"
-          $stdout.puts("SUITE") if a[0] == "bin/rails"
+          $stdout.puts("SUITE") if a[0] == "bin/rails" && a[1] == "test"
+          g = gate_git(a)
+          return g if g
           return ["/opt/mise/rubies/3.3.11/bin/ruby", true] if a[0] == "ruby"
           return ["", false] if a[0] == "bin/bundle" # check AND install both fail
           ["", true]
@@ -689,24 +912,27 @@ class ReleaseCliTest < Minitest::Test
       assert_includes out, "NOT a release regression", "the abort frames the failure as env, not regression"
       assert_includes out, "/opt/mise/rubies/3.3.11/bin/ruby", "…naming the SUITE ruby"
       assert_includes out, "divergent gem homes", "…and the brew-vs-mise divergence"
+      assert_includes out, "cd #{workspace}", "…and the fix runs in the WORKSPACE (the tree whose bundle is broken)"
       refute_includes out, "bin/release eject", "an env abort must NEVER route to the eject path"
       refute_includes out, "git revert", "…nor the merge-revert guidance"
       refute_includes out, "PASSED"
       lines = out.lines.map(&:strip)
       refute_includes lines, "SUITE", "the suite must not burn minutes on a broken bundle"
-      assert_operator lines.count("GIT-OP checkout"), :>=, 2,
-                      "the sibling checkout is restored to main (ensure) even on the env abort"
+      # There is no `checkout main` restore to assert any more: the primary is never
+      # flipped, so an env abort (like every other abort) leaves it exactly as it was.
+      git_ops = lines.select { |l| l.start_with?("GIT-OP ") }
+      refute_includes git_ops, "GIT-OP checkout", "the gate must not touch the primary's HEAD, even on the env abort"
     end
   end
 
-  # [unit] suite_bundle_argv prefers the repo's bin/bundle binstub (same
+  # [unit] suite_bundle_argv prefers a repo's bin/bundle binstub (same
   # env-resolved ruby as bin/rails) and falls back to `ruby -S bundle` — NEVER
-  # bare `bundle` — when a repo carries no binstub, so the fallback still runs
-  # under the mise-pinned ruby (carl + shannon's PR #480 request-changes).
+  # bare `bundle` — when it carries no binstub, so the fallback still runs under
+  # the mise-pinned ruby (carl + shannon's PR #480 request-changes).
   def test_suite_bundle_argv_prefers_the_binstub_and_falls_back_to_ruby_dash_s
     Dir.mktmpdir do |dir|
-      fix = build_binstub_fixture(dir)
-      out = eval_helper(%([suite_bundle_argv(#{fix.inspect}), suite_bundle_argv(#{dir.inspect})].inspect))
+      _primary, workspace = build_binstub_fixture(dir)
+      out = eval_helper(%([suite_bundle_argv(#{workspace.inspect}), suite_bundle_argv(#{dir.inspect})].inspect))
       assert_equal %([["bin/bundle"], ["ruby", "-S", "bundle"]]), out
     end
   end
@@ -719,16 +945,19 @@ class ReleaseCliTest < Minitest::Test
   # conductor ruby — the exact divergence the guard exists to close).
   def test_pre_qa_gate_bundle_checks_a_registered_app_without_a_binstub_under_the_suite_ruby
     Dir.mktmpdir do |dir|
-      fix = File.join(dir, "repo") # a Gemfile but deliberately NO bin/bundle
-      FileUtils.mkdir_p(fix)
-      File.write(File.join(fix, "Gemfile"), "source \"https://rubygems.org\"\n")
+      primary   = File.join(dir, "repo")
+      workspace = File.join(primary, ".worktrees", "_gate") # a Gemfile but deliberately NO bin/bundle
+      FileUtils.mkdir_p(workspace)
+      File.write(File.join(workspace, "Gemfile"), "source \"https://rubygems.org\"\n")
       setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
-              %(def repo_path(_repo) = #{fix.inspect}\n) + <<~'RUBY'
+              %(def repo_path(_repo) = #{primary.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
         def qa_gate_cmd(_repo) = "bin/rails test"
-        def sh(*a, **_k)
-          $stdout.puts("BUNDLE-ARGV #{a[0..3].inspect}") if a[0] == "ruby" && a[1] == "-S"
+        def sh(*a, **k)
+          $stdout.puts("BUNDLE-ARGV #{a[0..3].inspect} #{k[:chdir]}") if a[0] == "ruby" && a[1] == "-S"
           $stdout.puts("BARE-BUNDLE") if a[0] == "bundle"
-          $stdout.puts("SUITE") if a[0] == "bin/rails"
+          $stdout.puts("SUITE") if a[0] == "bin/rails" && a[1] == "test"
+          g = gate_git(a)
+          return g if g
           ["", true]
         end
       RUBY
@@ -738,12 +967,14 @@ class ReleaseCliTest < Minitest::Test
       assert argv_line, "a no-binstub registered app must STILL bundle-check under the suite ruby: #{out}"
       assert_includes argv_line, %(["ruby", "-S", "bundle", "check"]),
                       "the check runs `ruby -S bundle` (suite ruby), closing the coverage gap"
+      assert_includes argv_line, workspace,
+                      "…from the WORKSPACE dir, so the mise shim resolves the same directory-pinned ruby the suite boots"
       refute_includes out, "BARE-BUNDLE", "it must NEVER fall back to bare `bundle` (shell-ruby PATH lookup)"
       assert_includes out, "PASSED"
     end
   end
 
-  # [unit] A repo with NO Gemfile has nothing bundler-managed to verify — the
+  # [unit] A workspace with NO Gemfile has nothing bundler-managed to verify — the
   # guard self-gates (this also keeps the real-git fixtures in this file, which
   # carry no Gemfile, out of the guard's way).
   def test_pre_qa_gate_skips_the_bundle_guard_without_a_gemfile
@@ -751,10 +982,12 @@ class ReleaseCliTest < Minitest::Test
       fix = File.join(dir, "repo")
       FileUtils.mkdir_p(fix)
       setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
-              %(def repo_path(_repo) = #{fix.inspect}\n) + <<~'RUBY'
+              %(def repo_path(_repo) = #{fix.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
         def qa_gate_cmd(_repo) = "bin/rails test"
         def sh(*a, **_k)
           $stdout.puts("BUNDLE #{a[1]}") if a[0].end_with?("bundle")
+          g = gate_git(a)
+          return g if g
           ["", true]
         end
       RUBY
@@ -804,14 +1037,18 @@ class ReleaseCliTest < Minitest::Test
   end
 
   def test_pre_qa_gate_passes_a_quoted_spaced_arg_as_one_argv_element
-    # Per-test lock dir — see the red-abort test: flocking the REAL lock here
-    # deadlocks a live G3 gate against its own suite (activity-1307).
+    # Per-test lock dir + a throwaway repo dir — the gate mkdir_p's its workspace
+    # under repo_path, so a test must never point that at a live checkout.
     Dir.mktmpdir do |dir|
-      setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) + <<~'RUBY'
-        def repo_path(_repo) = Dir.pwd
+      setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
+              %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
         def qa_gate_cmd(_repo) = %q{bin/rails test "test/integration/a b_test.rb"}
         def sh(*a, **_k)
-          $stdout.puts("GATE-ARGV #{a.length} #{a.inspect}") if a[0] == "bin/rails"
+          # a[1] guards the gate's OWN `bin/rails db:test:prepare` out of the way —
+          # only the registered suite command is the subject here.
+          $stdout.puts("GATE-ARGV #{a.length} #{a.inspect}") if a[0] == "bin/rails" && a[1] == "test"
+          g = gate_git(a)
+          return g if g
           ["", true]
         end
       RUBY
@@ -826,21 +1063,27 @@ class ReleaseCliTest < Minitest::Test
   end
 
   def test_ship_test_gate_passes_a_quoted_spaced_arg_as_one_argv_element
-    setup = <<~'RUBY'
-      def repo_path(_repo) = Dir.pwd
-      def app_meta_for(_repo) = { "test_cmd" => %q{bin/rails test "test/models/a b_test.rb"} }
-      def sh(*a, **_k)
-        $stdout.puts("SHIP-ARGV #{a.length} #{a.inspect}") if a[0] == "bin/rails"
-        ["", true]
-      end
-    RUBY
-    out = run_cli(["--yes"], setup: setup, call: %{test_gate("mcritchie-studio"); puts("PASSED")})
+    Dir.mktmpdir do |dir|
+      setup = %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
+        def app_meta_for(_repo) = { "test_cmd" => %q{bin/rails test "test/models/a b_test.rb"} }
+        def sh(*a, **_k)
+          $stdout.puts("SHIP-ARGV #{a.length} #{a.inspect}") if a[0] == "bin/rails" && a[1] == "test"
+          g = gate_git(a)
+          return g if g
+          ["", true]
+        end
+      RUBY
+      # frozen_sha: is REQUIRED now — the ship gate pins its isolated workspace at
+      # the exact SHA that ships (there is no "current checkout" to lean on).
+      out = run_cli(["--yes"], setup: setup,
+                    call: %{test_gate("mcritchie-studio", frozen_sha: #{GATE_SHA.inspect}); puts("PASSED")})
 
-    argv_line = out.lines.find { |l| l.start_with?("SHIP-ARGV") }
-    assert argv_line, "the ship gate must exec the registered command"
-    assert argv_line.start_with?("SHIP-ARGV 3"), "3 argv elements — the spaced arg does not split: #{argv_line}"
-    assert_includes argv_line, %("test/models/a b_test.rb"), "the quoted spaced arg survives as ONE element"
-    assert_includes out, "PASSED"
+      argv_line = out.lines.find { |l| l.start_with?("SHIP-ARGV") }
+      assert argv_line, "the ship gate must exec the registered command"
+      assert argv_line.start_with?("SHIP-ARGV 3"), "3 argv elements — the spaced arg does not split: #{argv_line}"
+      assert_includes argv_line, %("test/models/a b_test.rb"), "the quoted spaced arg survives as ONE element"
+      assert_includes out, "PASSED"
+    end
   end
 
   def test_pre_qa_gate_dry_run_still_aborts_on_a_malformed_command
@@ -856,55 +1099,60 @@ class ReleaseCliTest < Minitest::Test
   end
 
   # [integration] The gate across its REAL I/O boundary: an actual git sibling
-  # (bare origin + main/release branches), the REAL `sh`, and a REAL subprocess
-  # parsed via Shellwords — proving checkout → ff → run → restore end-to-end
-  # with a quoted spaced arg arriving intact.
-  def test_pre_qa_gate_integration_runs_a_real_command_against_a_real_release_checkout
+  # (bare origin + main/release branches), the REAL `sh`, a REAL `git worktree
+  # add --detach`, and a REAL subprocess parsed via Shellwords — proving
+  # resolve-SHA → pin the isolated workspace → prepare its DB → run the suite
+  # THERE end-to-end, with a quoted spaced arg arriving intact and the PRIMARY
+  # checkout never leaving `main`.
+  def test_pre_qa_gate_integration_runs_a_real_suite_in_the_isolated_workspace
     Dir.mktmpdir do |dir|
-      origin = File.join(dir, "origin.git")
-      clone  = File.join(dir, "repo")
-      git = lambda do |*a|
-        ok = system("git", "-C", clone, "-c", "user.email=t@t.t", "-c", "user.name=t", *a,
-                    out: File::NULL, err: File::NULL)
-        flunk("git #{a.join(' ')} failed") unless ok
-      end
-      system("git", "init", "--bare", "-q", origin, out: File::NULL, err: File::NULL) || flunk("git init --bare failed")
-      system("git", "clone", "-q", origin, clone, out: File::NULL, err: File::NULL) || flunk("git clone failed")
-      git.call("symbolic-ref", "HEAD", "refs/heads/main")
-      File.write(File.join(clone, "README"), "gate fixture")
-      git.call("add", ".")
-      git.call("commit", "-q", "-m", "init")
-      git.call("branch", "release")
-      git.call("push", "-q", "origin", "main", "release")
+      clone     = build_sibling_fixture(dir)
+      workspace = File.join(clone, ".worktrees", "_gate")
+      release_sha, = Open3.capture2("git", "-C", clone, "rev-parse", "release")
 
       # Per-test lock dir for concurrent-suite hygiene (activity-1307) — the
       # "sibling" lock can't deadlock the hub gate, but two suite runs of this
       # file must not contend on a shared real lock file either.
       setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
               %(def repo_path(_repo) = #{clone.inspect}\n) +
-              %(def qa_gate_cmd(_repo) = %q{ruby -e "puts [:GATE_OK, ARGV].inspect" -- "a b"})
+              %(def qa_gate_cmd(_repo) = %q{ruby -e "puts [:GATE_OK, Dir.pwd, ARGV].inspect" -- "a b"})
       out = run_cli(["--yes"], setup: setup, call: %{pre_qa_gate([{ "repo" => "sibling" }]); puts("PASSED")})
 
-      assert_includes out, %([:GATE_OK, ["a b"]]), "the real subprocess receives the quoted arg as ONE element"
+      assert_includes out, %(:GATE_OK), "the real subprocess ran"
+      assert_includes out, %(["a b"]), "…receiving the quoted arg as ONE element"
+      assert_includes out, %(.worktrees/_gate"), "…with its cwd IN the isolated workspace, not the primary"
       assert_includes out, "PASSED", "a green gate lets prepare continue"
+
       head, = Open3.capture2("git", "-C", clone, "rev-parse", "--abbrev-ref", "HEAD")
-      assert_equal "main", head.strip, "the sibling checkout is restored to main (ensure)"
+      assert_equal "main", head.strip, "the PRIMARY checkout never leaves main (nothing to restore)"
+      pinned, = Open3.capture2("git", "-C", workspace, "rev-parse", "HEAD")
+      assert_equal release_sha.strip, pinned.strip, "the workspace is pinned at the SHA under test (origin/release)"
+      branch, = Open3.capture2("git", "-C", workspace, "rev-parse", "--abbrev-ref", "HEAD")
+      assert_equal "HEAD", branch.strip, "…detached, so it can never contend with the primary for a branch"
     end
   end
 
-  # --- primary-checkout lock: gate suite vs. concurrent artifact dance --------
+  # --- primary-checkout lock: who still holds it, and who no longer does -------
   #
-  # REGRESSION (rel-20260708-496cd8): the pre-QA gate runs its full suite in the
-  # PRIMARY checkout on a `release` checkout (~6-min critical section). A
-  # concurrent `bin/release archive`/`retro` artifact dance
-  # (commit_artifact_to_release) checkout-flipped that same primary main↔release
-  # five times mid-suite — lazily loaded routes/views then resolved against
-  # PRE-merge code → 7 false failures → a false-negative G3. Every primary-HEAD
-  # flip site must hold the per-repo flock (with_primary_checkout).
+  # REGRESSION (rel-20260708-496cd8, then rel-20260711-7f2913): the gates used to
+  # run their multi-minute suite ON the primary after a transient `git checkout
+  # release`, so a concurrent `bin/release archive`/`retro` artifact dance
+  # (commit_artifact_to_release) — or any process the ADVISORY flock does not bind
+  # (another agent session, a hand-run git) — could flip that primary main↔release
+  # mid-suite. With the test env autoloading LAZILY, the running suite then
+  # resolved code from the WRONG tree → false failures → a false-negative gate.
+  #
+  # Widening the flock could not fix it (it binds only other bin/release runs), so
+  # the suite MOVED: it now runs in the isolated gate workspace, and the gate takes
+  # NO primary lock at all. What remains locked is only the primary-HEAD FLIP
+  # SITES — ship's local ff (ff_main_local) and the artifact dance — which still
+  # must hold the per-repo flock (with_primary_checkout) so they can't interleave
+  # with each other.
 
   # A real git sibling fixture — bare origin + a clone with main/release
-  # branches — so the lock tests exercise the REAL `sh` and REAL flock
-  # contention across process boundaries. Returns the clone path.
+  # branches — so the lock/gate tests exercise the REAL `sh`, a REAL `git worktree
+  # add`, and REAL flock contention across process boundaries. Returns the clone
+  # path.
   def build_sibling_fixture(dir)
     origin = File.join(dir, "origin.git")
     clone  = File.join(dir, "repo")
@@ -924,6 +1172,13 @@ class ReleaseCliTest < Minitest::Test
     git.call("config", "user.name", "t")
     git.call("config", "commit.gpgsign", "false")
     File.write(File.join(clone, "README"), "lock fixture")
+    # A COMMITTED bin/rails, so it lands in the gate's detached workspace too: a
+    # real gate runs `bin/rails db:test:prepare` there (exactly what CI runs) before
+    # the suite, and aborts as an ENV issue if it fails. The fixture is not a Rails
+    # app, so answer green.
+    FileUtils.mkdir_p(File.join(clone, "bin"))
+    File.write(File.join(clone, "bin", "rails"), "#!/usr/bin/env sh\nexit 0\n")
+    File.chmod(0o755, File.join(clone, "bin", "rails"))
     git.call("add", ".")
     git.call("commit", "-q", "-m", "init")
     git.call("branch", "release")
@@ -952,11 +1207,16 @@ class ReleaseCliTest < Minitest::Test
     assert_equal "true", out
   end
 
-  # [unit] The gate must hold the repo's primary-checkout lock for its ENTIRE
-  # checkout→suite→restore critical section. The registered "suite" here is a
-  # probe that tries to take that same lock from a separate process — exactly
-  # what a concurrent artifact dance does — and must find it HELD.
-  def test_pre_qa_gate_holds_the_primary_checkout_lock_while_the_suite_runs
+  # [unit] The REPLACEMENT guarantee for the old "the gate holds the primary lock
+  # for its whole checkout→suite→restore section". The gate no longer HAS such a
+  # section: it runs the suite in its own worktree and never flips the primary, so
+  # it takes NO primary-checkout lock — the probe (standing in for a concurrent
+  # artifact dance / another bin/release) finds the lock FREE and the primary
+  # sitting on `main` the whole time. That is strictly SAFER than the old
+  # hold-it-for-six-minutes shape, which could not exclude the processes that
+  # actually did the flipping (the flock is advisory) while it stalled the ones it
+  # could.
+  def test_pre_qa_gate_leaves_the_primary_free_while_the_suite_runs
     Dir.mktmpdir do |dir|
       clone = build_sibling_fixture(dir)
       probe = File.join(dir, "probe.rb")
@@ -964,21 +1224,20 @@ class ReleaseCliTest < Minitest::Test
         path = File.join(ENV.fetch("MCR_PRIMARY_LOCK_DIR"), "mcr-primary-checkout-sibling.lock")
         free = File.open(path, File::RDWR | File::CREAT, 0o644) { |f| f.flock(File::LOCK_EX | File::LOCK_NB) }
         puts(free ? "SUITE-SEES-LOCK-FREE" : "SUITE-SEES-LOCK-HELD")
+        puts("SUITE-HEAD " + `git -C #{ENV.fetch('GATE_PRIMARY')} rev-parse --abbrev-ref HEAD`.strip)
       PROBE
 
       setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
+              %(ENV["GATE_PRIMARY"] = #{clone.inspect}\n) +
               %(def repo_path(_repo) = #{clone.inspect}\n) +
               %(def qa_gate_cmd(_repo) = %q{ruby #{probe}})
       out = run_cli(["--yes"], setup: setup, call: %{pre_qa_gate([{ "repo" => "sibling" }]); puts("PASSED")})
 
-      assert_includes out, "SUITE-SEES-LOCK-HELD",
-                      "a concurrent process must see the primary-checkout lock HELD while the gate suite runs"
+      assert_includes out, "SUITE-SEES-LOCK-FREE",
+                      "the gate suite must NOT hold the primary hostage — it doesn't touch the primary at all"
+      assert_includes out, "SUITE-HEAD main",
+                      "…and the primary sits on `main` WHILE the suite runs (the old gate had it on `release`)"
       assert_includes out, "PASSED", "a green gate lets prepare continue"
-      head, = Open3.capture2("git", "-C", clone, "rev-parse", "--abbrev-ref", "HEAD")
-      assert_equal "main", head.strip, "the sibling checkout is restored to main (ensure)"
-      File.open(File.join(dir, "mcr-primary-checkout-sibling.lock"), File::RDWR | File::CREAT, 0o644) do |f|
-        assert f.flock(File::LOCK_EX | File::LOCK_NB), "the gate must RELEASE the lock after restoring main"
-      end
     end
   end
 
@@ -1071,18 +1330,18 @@ class ReleaseCliTest < Minitest::Test
     assert_includes out, "PASSED"
   end
 
-  # --- ship gate lock window: ff + suite under ONE lock ------------------------
+  # --- ship gate lock window: the lock wraps the FF, the suite runs isolated ----
   #
-  # REGRESSION (Avi review of PR #470): avi_ship_gate ran ff_main_local (which
-  # acquires AND RELEASES the per-repo primary-checkout flock) and THEN
-  # test_gate's full suite with the lock FREE — the same checkout-poisoning race
-  # class as rel-20260708-496cd8, at G4/ship instead of G3/prepare. A concurrent
-  # archive/retro artifact dance could flip the primary main↔release mid-suite →
-  # false-red abort right before ship authority. The window must hold ONE lock
-  # across ff + suite — and because with_primary_checkout is NOT re-entrant (a
-  # second FD on the same lockfile blocks even in-process, per the light-review
-  # caution), ff_main_local's own acquisition is SKIPPED via lock: false rather
-  # than nested.
+  # HISTORY (Avi review of PR #470, then rel-20260711-7f2913): the lock window was
+  # widened to span ff + suite, because avi_ship_gate ran the suite ON the primary
+  # with the lock FREE and a concurrent artifact dance could flip main↔release
+  # mid-suite. Widening was the WRONG cure: the flock is advisory (it never bound
+  # the agent sessions doing most of the flipping) and it held the shared checkout
+  # hostage for the whole suite. The suite MOVED to the isolated gate workspace
+  # instead, so the window shrank back to what genuinely needs exclusion — the
+  # local ff, a fast pointer move. ff_main_local's own acquisition is still SKIPPED
+  # (lock: false) inside it: with_primary_checkout is NOT re-entrant (a second FD
+  # on the same lockfile blocks even in-process), so nesting would self-deadlock.
 
   # [unit] With the caller already holding the lock, ff_main_local(lock: false)
   # must flip WITHOUT re-acquiring — the non-re-entrant flock would self-deadlock.
@@ -1110,47 +1369,54 @@ class ReleaseCliTest < Minitest::Test
     assert_includes out, "PASSED"
   end
 
-  # [unit] avi_ship_gate holds ONE lock window per repo spanning the ff AND the
-  # suite — exactly one acquisition (no nesting), suite strictly inside.
-  def test_avi_ship_gate_holds_one_lock_window_across_ff_and_suite
-    setup = <<~'RUBY'
-      def repo_path(_repo) = Dir.pwd
-      def app_meta_for(_repo) = { "test_cmd" => "bin/ship-suite" }
-      def with_primary_checkout(repo, wait: true)
-        $stdout.puts("LOCK-ACQUIRED #{repo}")
-        result = yield
-        $stdout.puts("LOCK-RELEASED #{repo}")
-        result
-      end
-      def sh(*a, **_k)
-        $stdout.puts("GIT-OP #{a[3]}") if a[0] == "git"
-        $stdout.puts("SUITE") if a[0] == "bin/ship-suite"
-        ["", true]
-      end
-    RUBY
-    out = run_cli(["--yes"], setup: setup,
-                  call: %{avi_ship_gate([{ "repo" => "x" }], { "x" => "abc1234" }, {}); puts("PASSED")})
+  # [unit] avi_ship_gate takes EXACTLY ONE lock window per repo (no nesting — that
+  # self-deadlocks the non-re-entrant flock), it wraps the ff, and the suite runs
+  # OUTSIDE it: the suite has no business holding the primary, because it doesn't
+  # run there any more.
+  def test_avi_ship_gate_locks_only_the_ff_and_runs_the_suite_outside_it
+    Dir.mktmpdir do |dir|
+      setup = %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
+        def app_meta_for(_repo) = { "test_cmd" => "bin/ship-suite" }
+        def with_primary_checkout(repo, wait: true)
+          $stdout.puts("LOCK-ACQUIRED #{repo}")
+          result = yield
+          $stdout.puts("LOCK-RELEASED #{repo}")
+          result
+        end
+        def sh(*a, **_k)
+          $stdout.puts("GIT-OP #{a[3]}") if a[0] == "git"
+          $stdout.puts("SUITE") if a[0] == "bin/ship-suite"
+          g = gate_git(a)
+          return g if g
+          ["", true]
+        end
+      RUBY
+      out = run_cli(["--yes"], setup: setup,
+                    call: %{avi_ship_gate([{ "repo" => "x" }], { "x" => #{GATE_SHA.inspect} }, {}); puts("PASSED")})
 
-    lines    = out.lines.map(&:strip)
-    acquired = lines.each_index.select { |i| lines[i] == "LOCK-ACQUIRED x" }
-    released = lines.index("LOCK-RELEASED x")
-    suite    = lines.index("SUITE")
-    flips    = lines.each_index.select { |i| lines[i].match?(/\AGIT-OP (checkout|pull|merge)\z/) }
-    assert_equal 1, acquired.length,
-                 "EXACTLY one lock window — nesting self-deadlocks the non-re-entrant flock: #{out}"
-    assert released && suite, "the suite and the release must both appear: #{out}"
-    assert flips.all? { |i| i > acquired.first && i < released },
-           "the ff flips inside the window (acquired=#{acquired.first} released=#{released} flips=#{flips})"
-    assert_operator suite, :>, acquired.first, "the suite runs INSIDE the lock window"
-    assert_operator suite, :<, released, "…and the lock is released only AFTER the suite"
-    assert_includes out, "PASSED"
+      lines    = out.lines.map(&:strip)
+      acquired = lines.each_index.select { |i| lines[i] == "LOCK-ACQUIRED x" }
+      released = lines.index("LOCK-RELEASED x")
+      suite    = lines.index("SUITE")
+      flips    = lines.each_index.select { |i| lines[i].match?(/\AGIT-OP (checkout|pull|merge)\z/) }
+      assert_equal 1, acquired.length,
+                   "EXACTLY one lock window — nesting self-deadlocks the non-re-entrant flock: #{out}"
+      assert released && suite, "the ff window and the suite must both appear: #{out}"
+      refute_empty flips, "the ff must actually flip the primary to the frozen SHA"
+      assert flips.all? { |i| i > acquired.first && i < released },
+             "the ff flips inside the window (acquired=#{acquired.first} released=#{released} flips=#{flips})"
+      assert_operator suite, :>, released,
+                      "the suite runs AFTER the lock is released — it is isolated, so it holds nothing"
+      assert_includes out, "PASSED"
+    end
   end
 
-  # [unit] Cross-process proof on a REAL flock: while the ship gate's suite
-  # runs, a concurrent process (the artifact dance) must find the repo's
-  # primary-checkout lock HELD — and the gate must release it afterwards.
-  # This completing at all also proves the window does not self-deadlock.
-  def test_avi_ship_gate_holds_the_primary_checkout_lock_while_the_suite_runs
+  # [unit] Cross-process proof on a REAL flock. The ship gate's suite must find the
+  # primary-checkout lock FREE (it runs in the isolated workspace and needs no
+  # exclusion) — the mirror of the pre-QA gate proof. A HELD lock here would mean
+  # the suite is back on the primary, holding the shared checkout for its whole run
+  # while STILL not excluding the sessions that flip it.
+  def test_avi_ship_gate_leaves_the_primary_free_while_the_suite_runs
     Dir.mktmpdir do |dir|
       clone = build_sibling_fixture(dir)
       sha, = Open3.capture2("git", "-C", clone, "rev-parse", "main")
@@ -1160,6 +1426,7 @@ class ReleaseCliTest < Minitest::Test
         path = File.join(ENV.fetch("MCR_PRIMARY_LOCK_DIR"), "mcr-primary-checkout-sibling.lock")
         free = File.open(path, File::RDWR | File::CREAT, 0o644) { |f| f.flock(File::LOCK_EX | File::LOCK_NB) }
         puts(free ? "SUITE-SEES-LOCK-FREE" : "SUITE-SEES-LOCK-HELD")
+        puts("SUITE-CWD " + Dir.pwd)
       PROBE
 
       setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
@@ -1168,11 +1435,72 @@ class ReleaseCliTest < Minitest::Test
       out = run_cli(["--yes"], setup: setup,
                     call: %{avi_ship_gate([{ "repo" => "sibling" }], { "sibling" => #{sha.inspect} }, {}); puts("PASSED")})
 
-      assert_includes out, "SUITE-SEES-LOCK-HELD",
-                      "a concurrent process must see the lock HELD while the ship gate suite runs"
+      assert_includes out, "SUITE-SEES-LOCK-FREE",
+                      "the ship gate's suite must not hold the primary-checkout lock — it doesn't run there"
+      assert_includes out, ".worktrees/_gate", "…because it runs in the isolated workspace (SUITE-CWD)"
       assert_includes out, "PASSED", "a green ship gate rides on"
       File.open(File.join(dir, "mcr-primary-checkout-sibling.lock"), File::RDWR | File::CREAT, 0o644) do |f|
-        assert f.flock(File::LOCK_EX | File::LOCK_NB), "the gate must RELEASE the lock after the suite"
+        assert f.flock(File::LOCK_EX | File::LOCK_NB), "the ff must RELEASE the lock when it's done"
+      end
+    end
+  end
+
+  # --- G4 self-gating: the ship gate skips ONLY on G3's OWN recorded verdict -----
+  #
+  # REGRESSION (the DISARM bug this change closes): the old skip predicate compared
+  # the REGISTRY (test_cmd == qa_test_cmd) and the frozen SHA against
+  # release.metadata["qa_shas"] — but qa_shas is stamped by the QA DEPLOY LOOP, not
+  # by the gate. So a G3 that never ran (no qa_test_cmd registered), or that was
+  # misconfigured, still produced a matching pair — and G4 SILENTLY SKIPPED the last
+  # suite before an irreversible prod deploy. The ONLY evidence that may disarm G4
+  # is now G3's own recorded verdict: release.metadata["qa_gates"][repo] =
+  # {sha, cmd, ok: true}. Anything else FAILS OPEN (the suite runs).
+  #
+  # The pure predicate is unit-tested in Release::ShipSequence.ship_gate_skip?; this
+  # is the WIRING — that test_gate consults it with the RIGHT record and honours
+  # both verdicts.
+
+  # The G4 skip matrix, driven through the real test_gate. Each case names the
+  # qa_gates record present on the release when the ship gate runs.
+  SHIP_GATE_SKIP_CASES = {
+    "a matching green record" =>
+      [{ "sha" => GATE_SHA, "cmd" => "bin/suite", "ok" => true }, :skip],
+    "no record at all (G3 never ran / was skipped)" =>
+      [nil, :run],
+    "a record for a DIFFERENT sha (a straggler / re-pinned RC)" =>
+      [{ "sha" => "0" * 40, "cmd" => "bin/suite", "ok" => true }, :run],
+    "a record for a DIFFERENT command (G3 certified a narrower tier)" =>
+      [{ "sha" => GATE_SHA, "cmd" => "bin/rails test test/integration", "ok" => true }, :run],
+    "a RED record (the gate ran and failed)" =>
+      [{ "sha" => GATE_SHA, "cmd" => "bin/suite", "ok" => false }, :run]
+  }.freeze
+
+  # [unit] test_gate SKIPS only against a matching GREEN G3 record, and RUNS the
+  # suite in every other case — absent, red, different SHA, different command.
+  def test_ship_test_gate_skips_only_against_a_matching_green_g3_record
+    Dir.mktmpdir do |dir|
+      SHIP_GATE_SKIP_CASES.each do |label, (record, expected)|
+        setup = %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
+          def app_meta_for(_repo) = { "test_cmd" => "bin/suite" }
+          def sh(*a, **_k)
+            $stdout.puts("SUITE-RAN") if a[0] == "bin/suite"
+            g = gate_git(a)
+            return g if g
+            ["", true]
+          end
+        RUBY
+        out = run_cli(["--yes"], setup: setup,
+                      call: %{test_gate("x", frozen_sha: #{GATE_SHA.inspect}, qa_gate: #{record.inspect}); puts("PASSED")})
+
+        if expected == :skip
+          refute_includes out, "SUITE-RAN", "#{label}: the suite must be SKIPPED (G3 already certified it)"
+          assert_includes out, "already CERTIFIED green", "#{label}: the skip is a VISIBLE SOP, never silent"
+        else
+          assert_includes out, "SUITE-RAN",
+                          "#{label}: G4 must FAIL OPEN and run the suite — a skip here disarms the last gate " \
+                          "before an irreversible prod deploy"
+        end
+        assert_includes out, "PASSED", "#{label}: the gate itself is green either way"
       end
     end
   end
@@ -1797,13 +2125,13 @@ class ReleaseCliTest < Minitest::Test
   # conductor snippet. The conductor stub flags any snippet whose REAL
   # conductor_payload would put a raw paren / Rails.root.join on the heroku command
   # line (the old bug); reaching "Assembled" proves every snippet rode shell-safe.
-  PAREN_POST_DEPLOY_PREP_STUB = <<~'RUBY'
-    # CI has no sibling repo checkouts, so the real repo_path → Dir.exist? guard in
-    # `prepare` (bin/release: "app repo not found at #{path}") would abort before the
-    # post-deploy/assemble step this test proves. Resolve the repo to an always-present
-    # dir (Dir.pwd) — the git/qa-server I/O against it is already fully stubbed by `sh`,
-    # so the repo's identity on disk is irrelevant to what this test asserts.
-    def repo_path(_repo) = Dir.pwd
+  # CI has no sibling repo checkouts, so the real repo_path → Dir.exist? guard in
+  # `prepare` (bin/release: "app repo not found at #{path}") would abort before the
+  # post-deploy/assemble step this test proves. Resolve the repo to a throwaway dir
+  # (stub_repo — NOT Dir.pwd: the gate mkdir_p's a .worktrees/ under whatever
+  # repo_path returns) — the git/qa-server I/O against it is fully stubbed by `sh`,
+  # so the repo's identity on disk is irrelevant to what this test asserts.
+  PAREN_POST_DEPLOY_PREP_STUB = GATE_GIT_STUB + %(def repo_path(_repo) = #{stub_repo.inspect}\n) + <<~'RUBY'
     def conductor(ruby, read_only: false)
       payload = conductor_payload(ruby)               # the REAL shell-safe encoder
       $stdout.puts("UNSAFE-PAYLOAD") if payload.include?("Rails.root.join") || payload.include?("(%q(")
@@ -1824,6 +2152,8 @@ class ReleaseCliTest < Minitest::Test
       end
     end
     def sh(*a, **_k)
+      g = gate_git(a)
+      return g if g
       a.join(" ").include?("curl") ? ["200", true] : ["", true]
     end
   RUBY

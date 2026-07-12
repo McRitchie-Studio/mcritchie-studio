@@ -495,6 +495,29 @@ class Release
       release
     end
 
+    # Persist WHAT THE G3 PRE-QA GATE ACTUALLY CERTIFIED, per repo:
+    #   metadata["qa_gates"][repo] = { "sha" =>, "cmd" =>, "ok" => true }
+    #
+    # This is the ONLY evidence G4's ship gate accepts for skipping its own suite
+    # (Release::ShipSequence.ship_gate_skip?). It is deliberately NOT derivable
+    # from anything else on the release: `qa_shas` records what was DEPLOYED to
+    # QA, and the registry records what WOULD be run — neither proves a suite ran.
+    # Written by bin/release's pre_qa_gate ONLY after the suite returns green, so
+    # a gate that was skipped, misconfigured, or red leaves NO record and G4 fails
+    # open (runs the suite). See ship_gate_skip? for the disarm bug this closes.
+    #
+    # Keyed by repo and MERGED, like record_qa_shas: a re-run of `prepare` (the
+    # sweep is self-healing) re-certifies and overwrites its own repo's record,
+    # while leaving the other repos' verdicts from this run intact.
+    def record_qa_gate(release:, repo:, sha:, cmd:, ok:)
+      meta = release.metadata.deep_dup
+      gates = meta["qa_gates"].is_a?(Hash) ? meta["qa_gates"] : {}
+      gates[repo.to_s] = { "sha" => sha.to_s, "cmd" => cmd.to_s, "ok" => ok ? true : false }
+      meta["qa_gates"] = gates
+      release.update!(metadata: meta)
+      release
+    end
+
     # The canonical role owner of each Deploy-lane stage — the actor stamped on the
     # OPEN intent when the CLI doesn't pass one. Mirrors StageAgentsHelper::STAGE_OWNER
     # (the view-layer backfill for actor-less completed transitions): Steffon

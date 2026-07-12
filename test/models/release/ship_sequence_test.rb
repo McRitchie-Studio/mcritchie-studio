@@ -286,37 +286,77 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
   end
 
   # --- ship_gate_skip?: G4 self-gating against the G3 batch certification ----
+  #
+  # G4 may skip its suite ONLY against G3's OWN recorded verdict
+  # (release.metadata["qa_gates"][repo]), never against the registry or the
+  # deployed SHA. See ship_gate_skip? for the disarm bug that rule closes.
 
-  test "[unit] ship_gate_skip? skips only when the same command already ran on the same SHA" do
-    assert S.ship_gate_skip?(test_cmd: "bin/rails test", qa_test_cmd: "bin/rails test",
-                             frozen_sha: "abc123", qa_sha: "abc123"),
-           "same command + same SHA = G3 already certified this exact gate"
+  # The shape pre_qa_gate records after a GREEN suite.
+  def certified(sha: "abc123", cmd: "bin/rails test", ok: true)
+    { "sha" => sha, "cmd" => cmd, "ok" => ok }
+  end
+
+  test "[unit] ship_gate_skip? skips when G3 certified this exact command on this exact SHA" do
+    assert S.ship_gate_skip?(test_cmd: "bin/rails test", frozen_sha: "abc123",
+                             qa_gate: certified),
+           "G3 recorded a green run of the same command on the same SHA — re-running proves nothing"
+  end
+
+  # --- the SAFETY REGRESSION: a G3 that never ran must not certify anything ---
+  #
+  # THIS IS THE BUG. The old predicate compared the REGISTRY (test_cmd ==
+  # qa_test_cmd) against the DEPLOYED sha (qa_shas) — and `qa_shas` is stamped by
+  # the QA deploy loop, not by the gate. So the documented gate-skip recipe
+  # (comment out qa_test_cmd so G3 skips → restore the file before ship, because
+  # ship's preflight refuses a dirty primary) left the registry reading equal
+  # again at ship, the deployed SHA matching, and G4 SKIPPING a suite that NOTHING
+  # ever ran. Skipping G3 silently disarmed the production gate.
+  #
+  # Under the new contract there is no record, so G4 fails open and runs.
+  test "[unit] ship_gate_skip? does NOT skip when G3 never recorded a verdict (the disarm bug)" do
+    assert_not S.ship_gate_skip?(test_cmd: "bin/rails test", frozen_sha: "abc123", qa_gate: nil),
+               "no G3 record = no certification: skipping here would disarm the production gate"
+    assert_not S.ship_gate_skip?(test_cmd: "bin/rails test", frozen_sha: "abc123", qa_gate: {}),
+               "an empty record certifies nothing — the gate must run"
+  end
+
+  test "[unit] ship_gate_skip? does NOT skip on a RED recorded G3 verdict" do
+    assert_not S.ship_gate_skip?(test_cmd: "bin/rails test", frozen_sha: "abc123",
+                                 qa_gate: certified(ok: false)),
+               "G3 went red — that is the opposite of a certification"
   end
 
   test "[unit] ship_gate_skip? re-triggers on SHA drift (straggler / re-pin)" do
-    assert_not S.ship_gate_skip?(test_cmd: "bin/rails test", qa_test_cmd: "bin/rails test",
-                                 frozen_sha: "abc123", qa_sha: "def456"),
-               "a drifted frozen SHA was never certified — the gate must run"
-    assert_not S.ship_gate_skip?(test_cmd: "bin/rails test", qa_test_cmd: "bin/rails test",
-                                 frozen_sha: "abc123", qa_sha: nil),
-               "no qa_sha recorded (un-prepared repo) — the gate must run"
+    assert_not S.ship_gate_skip?(test_cmd: "bin/rails test", frozen_sha: "abc123",
+                                 qa_gate: certified(sha: "def456")),
+               "G3 certified a DIFFERENT commit — the frozen ship SHA is uncertified"
   end
 
   test "[unit] ship_gate_skip? re-triggers when G3 ran a narrower command" do
     # A satellite whose G3 ran only the integration subset still gets its full
     # suite at ship — a subset run certifies nothing about the full test_cmd.
-    assert_not S.ship_gate_skip?(test_cmd: "bin/rails test",
-                                 qa_test_cmd: "bin/rails test test/integration",
-                                 frozen_sha: "abc123", qa_sha: "abc123")
-    assert_not S.ship_gate_skip?(test_cmd: "bin/rails test", qa_test_cmd: "",
-                                 frozen_sha: "abc123", qa_sha: "abc123"),
-               "no qa_test_cmd registered — G3 never ran anything for this repo"
+    assert_not S.ship_gate_skip?(test_cmd: "bin/rails test", frozen_sha: "abc123",
+                                 qa_gate: certified(cmd: "bin/rails test test/integration"))
   end
 
   test "[unit] ship_gate_skip? never skips on blank inputs (fail open: run the gate)" do
-    assert_not S.ship_gate_skip?(test_cmd: "", qa_test_cmd: "", frozen_sha: "abc", qa_sha: "abc")
-    assert_not S.ship_gate_skip?(test_cmd: "bin/rails test", qa_test_cmd: "bin/rails test",
-                                 frozen_sha: "", qa_sha: "")
-    assert_not S.ship_gate_skip?(test_cmd: nil, qa_test_cmd: nil, frozen_sha: nil, qa_sha: nil)
+    assert_not S.ship_gate_skip?(test_cmd: "", frozen_sha: "abc", qa_gate: certified(sha: "abc", cmd: ""))
+    assert_not S.ship_gate_skip?(test_cmd: "bin/rails test", frozen_sha: "", qa_gate: certified(sha: ""))
+    assert_not S.ship_gate_skip?(test_cmd: nil, frozen_sha: nil, qa_gate: nil)
+  end
+
+  # --- qa_gate: pluck a repo's recorded G3 verdict --------------------------
+
+  test "[unit] qa_gate reads a repo's recorded G3 verdict, string or symbol keyed" do
+    gates = { "mcritchie-studio" => certified }
+    assert_equal certified, S.qa_gate(gates, "mcritchie-studio")
+    assert_equal certified, S.qa_gate(gates.symbolize_keys, :"mcritchie-studio")
+  end
+
+  test "[unit] qa_gate returns nil for a repo G3 never certified" do
+    assert_nil S.qa_gate({ "mcritchie-studio" => certified }, "turf-monster")
+    assert_nil S.qa_gate(nil, "mcritchie-studio")
+    assert_nil S.qa_gate({ "mcritchie-studio" => "green" }, "mcritchie-studio"),
+               "a non-Hash record is not a verdict"
   end
 end
