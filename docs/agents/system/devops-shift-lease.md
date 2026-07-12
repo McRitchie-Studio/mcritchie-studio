@@ -60,13 +60,32 @@ heuristic does **not** work:
 
 The correct discriminator is **external**: the worktree's task carries a live
 build-claim lease (`ClaimLease.live?`) while a builder is on it, and is
-terminal/unclaimed once shipped — the **same lease** A uses. `cleanup_candidates` now
-excludes a git-eligible worktree whose bound task is live-claimed (`task_live_claimed?`,
-reading the task's `devops` claim via the same board seam as the PR autofill,
-`task_record_for_pr`). **Fail-open:** an unbound task, an unreachable board, or a lapsed
-claim all yield reclaimable, so cleanup never wedges; only a confirmed live claim
-protects. The claim check runs only for the few git-eligible candidates. Task
-`reclaim-guard-live-claim`.
+terminal/unclaimed once shipped — the **same lease** A uses. Task
+`reclaim-guard-live-claim` enforces it on **every** path that can destroy a desk, not
+just candidate selection:
+
+- **One predicate.** `reclaimable?` = git-eligible **AND** not live-claimed, consumed by
+  `cleanup_candidates`, the registry snapshot, and the summary count alike. The registry
+  is the conductor's front door (`bin/qa-intake` builds its Cleanup Candidates section
+  straight off `cleanup_candidate` and prints a `remove … --yes` for each), so a
+  disagreement there means everyone believes a desk is protected while the front door
+  still recommends tearing it down. A `held_by_live_claim` field says so explicitly.
+- **Re-verified under the lock.** `--reclaim --yes` re-reads the claim immediately before
+  each irreversible teardown. The candidate list is computed once, but teardowns run
+  serially inside the lock, so a builder who sits down and claims a task **mid-sweep**
+  would otherwise be destroyed on minutes-stale evidence.
+- **Loud, not silent.** A withheld desk is named with its reason and the builder's
+  heartbeat age (`ClaimLease.heartbeat_age`). "No clean merged or base-equivalent
+  candidates" would be a *lie* about a desk that is clean and base-equivalent and simply
+  occupied.
+- **Fail-open, but never quietly.** An unbound task, an unreachable board (the read is
+  time-bounded), or a lapsed claim all leave the desk reclaimable — only a *confirmed*
+  live claim withholds it. But a **bound** task whose board record reads back empty
+  **warns**, because a guard that silently disables itself on a destructive path is worse
+  than no guard.
+- **`remove … --yes` stays the explicit operator override** — it warns on a live claim but
+  does not block (you may be evicting a desk whose session died mid-lease). Only the
+  *automatic* paths refuse.
 
 The **merge** half is a no-op by construction: `bin/release` merges only
 `reviewed`/`assembled` tasks, whose build claims have already lapsed (the status line

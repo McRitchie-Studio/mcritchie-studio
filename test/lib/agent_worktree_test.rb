@@ -10,6 +10,7 @@
 # Also picked up by the normal `bin/rails test` sweep.
 require "minitest/autorun"
 require "open3"
+require "time" # Time#iso8601 — the claim-lease expiry format the reclaim guard reads
 
 class AgentWorktreeTest < Minitest::Test
   BIN = File.expand_path("../../bin/agent-worktree", __dir__)
@@ -142,6 +143,48 @@ class AgentWorktreeTest < Minitest::Test
       print task_live_claimed?({})
     RUBY
     assert_equal "false", out, "an unbound task / unreachable board is not a live claim"
+  end
+
+  # The HOLD REASON is what the destructive paths print instead of a silent skip — it must
+  # name the hold and carry the builder's heartbeat age so the operator can check it.
+  def test_claim_hold_reason_names_the_live_builder_and_its_heartbeat_age
+    expires = (Time.now + 110).utc.iso8601
+    out = run_in_script(<<~RUBY)
+      def task_record_for_pr(_r)
+        { "metadata" => { "devops" => { "claimed_session" => "s", "claim_expires_at" => #{expires.inspect} } } }
+      end
+      print claim_hold({ env: { "TASK_RECORD_SLUG" => "busy-task" } })
+    RUBY
+    assert_match(/held by a live builder claim \(busy-task\)/, out)
+    assert_match(/builder heartbeat \d+s ago/, out, "the age makes the hold verifiable, not a bare refusal")
+  end
+
+  def test_claim_hold_is_nil_when_free
+    out = run_in_script(<<~RUBY)
+      def task_record_for_pr(_r); { "metadata" => { "devops" => {} } }; end
+      print claim_hold({ env: {} }).inspect
+    RUBY
+    assert_equal "nil", out, "an unheld desk yields no reason (and is reclaimable)"
+  end
+
+  # The ONE predicate every destructive path and the registry share, so the conductor's
+  # front door can never nominate a desk the sweep would refuse.
+  def test_reclaimable_requires_git_eligible_AND_unheld
+    # git-eligible + unheld → reclaimable
+    assert_equal "true", reclaimable_for(held: false, dirty: false)
+    # git-eligible but HELD → not reclaimable
+    assert_equal "false", reclaimable_for(held: true, dirty: false)
+    # dirty → not reclaimable regardless of the claim
+    assert_equal "false", reclaimable_for(held: false, dirty: true)
+  end
+
+  def reclaimable_for(held:, dirty:)
+    devops = held ? %({ "claimed_session" => "s", "claim_expires_at" => #{(Time.now + 110).utc.iso8601.inspect} }) : "{}"
+    run_in_script(<<~RUBY)
+      def task_record_for_pr(_r); { "metadata" => { "devops" => #{devops} } }; end
+      record = { dirty: #{dirty}, merged: true, equivalent_to_main: true, env: {} }
+      print reclaimable?(record)
+    RUBY
   end
 
   # --- integration: the REAL mcritchie config carries the reservation through
