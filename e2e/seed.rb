@@ -71,13 +71,22 @@ SkillAssignment.create!(agent_slug: "mack", skill_slug: "web-scraping")
 Task.create!(title: "Review agent protocol", description: "Audit inter-agent messaging patterns.", stage: "designed", priority: 0, agent_slug: "alex")
 Task.create!(title: "Scrape odds data", description: "Pull latest odds from sportsbooks.", stage: "building", priority: 1, agent_slug: "mack", queued_at: 1.day.ago, started_at: 2.hours.ago)
 Task.create!(title: "Deploy v2 release", description: "Deploy latest version to production.", stage: "submitted", priority: 2, agent_slug: "alex", queued_at: 3.days.ago, started_at: 2.days.ago)
+# A block is no longer a STAGE — it is an attribute of a `building` task (blocked_at
+# + blocked_from + blocked_by + block_kind), per the blocked-as-building collapse.
+# Seeding stage: "blocked" now fails validation and takes the whole e2e run down with
+# it, which no CI lane catches because there is no Playwright job.
 Task.create!(
   title: "Sidebar back-navigation production repro",
   slug: "task-ea8541e4b5b6",
   description: "Fixture for the production sidebar back-navigation regression.",
-  stage: "blocked",
+  stage: "building",
   priority: 1,
-  agent_slug: "alex"
+  agent_slug: "alex",
+  started_at: 1.day.ago,
+  blocked_at: 6.hours.ago,
+  blocked_from: "submitted",
+  blocked_by: "avi",
+  block_kind: "rework"
 )
 
 # Session-resume fixture: a task claimed by a Claude session — drives the …<last4>

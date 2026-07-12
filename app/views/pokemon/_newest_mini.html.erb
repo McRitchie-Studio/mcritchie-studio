@@ -1,0 +1,35 @@
+<%# One "newest" mini-display inside a Pokémon card: label, sprite (with a
+    north-east corner sparkle when the sighting is shiny), name, obtained/caught
+    time, and the linked task. The sighting's own shiny flag drives the art. %>
+<div data-test="<%= data_test %>">
+  <p class="label-upper mb-2"><%= label %></p>
+  <% if sighting %>
+    <div class="flex items-center gap-3 min-w-0">
+      <div class="relative w-16 h-16 rounded-lg border border-subtle bg-surface flex items-center justify-center shrink-0">
+        <%# The sparkle below is decorative (aria-hidden), so "shiny" has to ride the
+            alt text — otherwise it is the one signal assistive tech cannot reach. %>
+        <img src="<%= sighting.pokemon.display_avatar(shiny: sighting.shiny) %>"
+             alt="<%= sighting.shiny ? "Shiny #{sighting.pokemon.name}" : sighting.pokemon.name %>"
+             class="max-w-14 max-h-14 object-contain"
+             loading="lazy"
+             onerror="this.onerror=null; this.src='<%= sighting.pokemon.display_sprite(shiny: sighting.shiny) %>'">
+        <% if sighting.shiny %>
+          <span class="absolute -top-1.5 -right-1.5 text-base leading-none" aria-hidden="true" data-test="shiny-sparkle">✨</span>
+        <% end %>
+      </div>
+
+      <div class="min-w-0">
+        <div class="font-semibold text-heading truncate"><%= sighting.pokemon.name %></div>
+        <div class="text-xs text-muted">
+          <time datetime="<%= sighting.first_seen_at.iso8601 %>"><%= l(sighting.first_seen_at, format: :short) %></time>
+        </div>
+        <% if sighting.task %>
+          <%= link_to sighting.task.title, task_path(sighting.task.slug),
+                class: "text-xs text-primary hover:underline truncate block" %>
+        <% end %>
+      </div>
+    </div>
+  <% else %>
+    <div class="flex items-center h-16 text-secondary text-sm" data-test="<%= "#{data_test}-empty" %>"><%= empty_text %></div>
+  <% end %>
+</div>

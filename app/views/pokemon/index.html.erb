@@ -4,43 +4,32 @@
   <div class="flex items-end justify-between gap-4 flex-wrap">
     <div>
       <p class="label-upper">Pokédex</p>
-      <h1 class="text-2xl md:text-3xl font-bold text-heading">Spawned Pokémon</h1>
+      <div class="flex items-center gap-3">
+        <h1 class="text-2xl md:text-3xl font-bold text-heading">Pokémon</h1>
+        <span class="text-sm font-semibold text-muted bg-surface border border-subtle rounded-full px-2.5 py-0.5 tabular-nums"
+              aria-label="<%= number_with_delimiter(@pokedex.total_pokemon) %> Pokémon in the Pokédex"
+              data-test="pokedex-total"><%= number_with_delimiter(@pokedex.total_pokemon) %></span>
+      </div>
     </div>
     <%= link_to "← Dashboard", dashboard_path, class: "text-muted hover:text-heading transition text-sm" %>
   </div>
 
-  <div class="grid gap-4 xl:grid-cols-3">
-    <article class="card p-5" data-test="pokemon-stats-card">
-      <h2 class="text-lg font-semibold text-heading mb-5">Stats</h2>
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div class="rounded-lg border border-subtle bg-surface p-4">
-          <p class="text-xs text-muted">Total Pokémon</p>
-          <p class="mt-2 text-3xl font-bold text-heading tabular-nums"><%= number_with_delimiter(@pokedex.total_pokemon) %></p>
-        </div>
-        <div class="rounded-lg border border-subtle bg-surface p-4">
-          <p class="text-xs text-muted">Summoned Pokémon</p>
-          <p class="mt-2 text-3xl font-bold text-heading tabular-nums"><%= number_with_delimiter(@pokedex.summoned_pokemon) %></p>
-        </div>
-        <div class="rounded-lg border border-subtle bg-surface p-4">
-          <p class="text-xs text-muted">Shiny Pokémon</p>
-          <p class="mt-2 text-3xl font-bold text-heading tabular-nums"><%= number_with_delimiter(@pokedex.shiny_pokemon) %></p>
-        </div>
-      </div>
-    </article>
+  <div class="grid gap-4 xl:grid-cols-2">
+    <%= render "pokemon_card",
+          key: "pokemon",
+          title: "Pokémon",
+          seen: @pokedex.seen_pokemon,
+          caught: @pokedex.caught_pokemon,
+          newest_seen: @newest_unique,
+          newest_caught: @newest_caught %>
 
-    <%= render "spawn_card",
-          title: "Newest Pokémon",
-          sighting: @newest_unique,
-          data_test: "latest-pokemon-card",
-          empty_test: "latest-pokemon-empty",
-          empty_text: "No spawned Pokémon yet." %>
-
-    <%= render "spawn_card",
-          title: "Newest Shiny",
-          sighting: @newest_unique_shiny,
-          data_test: "latest-shiny-card",
-          empty_test: "latest-shiny-empty",
-          empty_text: "No shiny Pokémon yet." %>
+    <%= render "pokemon_card",
+          key: "shiny",
+          title: "Shiny Pokémon",
+          seen: @pokedex.seen_pokemon(shiny: true),
+          caught: @pokedex.caught_pokemon(shiny: true),
+          newest_seen: @newest_unique_shiny,
+          newest_caught: @newest_caught_shiny %>
   </div>
 
   <div class="card overflow-x-auto" data-test="recent-pokemon-actions">
