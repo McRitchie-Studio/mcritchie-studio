@@ -593,9 +593,26 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     payload = JSON.parse(File.read(registry))
     worktree = payload.fetch("worktrees").find { |entry| entry["task"] == @task }
     refute worktree.fetch("cleanup_candidate"), "the conductor must not be told to remove a held desk"
-    assert worktree.fetch("held_by_live_claim"), "…and it must be told WHY"
+    assert worktree.fetch("withheld_by_live_claim"), "…and it must be told WHY"
     assert_equal 0, payload.dig("summary", "cleanup_candidates"), "the summary agrees with the field"
-    assert_equal 1, payload.dig("summary", "held_by_live_claim")
+    assert_equal 1, payload.dig("summary", "withheld_by_live_claim")
+  end
+
+  # THE UNBOUND DESK is the original incident's own desk: TASK_RECORD_SLUG is written by
+  # bind-task, never by `new`, so a builder inside the new -> bind-task -> move building
+  # window has no task and therefore no claim we can read. We cannot protect what we cannot
+  # identify, so it fails open — but it must say so, because this is the likeliest desk to
+  # lose. (The fixture worktree is unbound, which is why the guard's board read never fires
+  # for it.)
+  test "[integration] an UNBOUND desk announces that no build claim could be checked" do
+    mark_worktree_merged_to_origin_main
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio", env: {})
+
+    assert status.success?, err
+    assert_match(/has no bound task, so no build claim can be checked/, err,
+                 "the desk we actually lost must not fail open in silence")
+    assert_includes out, "cleanup candidates:", "…but it still fails open"
   end
 
   # Fail-open must be LOUD on a destructive path: a board outage makes the task record read
@@ -608,7 +625,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
                                       env: { "AGENT_WORKTREE_TASK_JSON" => "{}" })
 
     assert status.success?, err
-    assert_match(/task board-is-down is bound but its board record read back EMPTY/, err,
+    assert_match(/bound to task board-is-down, but its board record came back empty/, err,
                  "a guard that silently disables itself on a destructive path must be loud")
     assert_includes out, "cleanup candidates:", "still fail-open: cleanup proceeds"
   end

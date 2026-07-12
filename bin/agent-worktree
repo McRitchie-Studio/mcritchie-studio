@@ -43,9 +43,16 @@ HUB_DIR = File.join(PROJECTS_DIR, "mcritchie-studio")
 STACK_ENV = ".env.agent-stack"
 CONTEXT_FILE = ".agent-context.json"
 TASK_BASE_URL = ENV.fetch("AGENT_TASK_BASE_URL", "https://mcritchie.studio/tasks")
-# Bound the board read behind the build-claim guard (claim_hold): a hung/slow board must
-# never stall a cleanup sweep. A timeout reads as a failed record → fail-open (+ a warn).
-TASK_READ_TIMEOUT = Integer(ENV.fetch("AGENT_WORKTREE_TASK_TIMEOUT", "10"))
+# Bound the board read behind the build-claim guard (claim_hold): a hung or black-holed
+# board must never stall a cleanup sweep. A timeout reads as a failed record, so the guard
+# fails open (and warns). A malformed override falls back to the default rather than
+# raising at load — a bad env var must not kill read-only subcommands like `list`.
+TASK_READ_TIMEOUT =
+  begin
+    Integer(ENV.fetch("AGENT_WORKTREE_TASK_TIMEOUT", "10"))
+  rescue ArgumentError, TypeError
+    10
+  end
 SHINY_EMOJI = "✨"
 AGENT_CONTEXT_EXPORTS = %w[
   AGENT_CONTEXT_APP
@@ -178,23 +185,75 @@ end
 def capture_status(*cmd, chdir: nil, env: {}, timeout: nil)
   options = {}
   options[:chdir] = chdir if chdir
-  out, err, status =
-    if timeout
-      # A bounded read: a hung/slow board must never stall a cleanup sweep. The caller
-      # treats a timeout exactly like any other failed read (fail-open).
-      Timeout.timeout(timeout) { Open3.capture3(env, *cmd, **options) }
-    else
-      Open3.capture3(env, *cmd, **options)
-    end
+  return capture_bounded(cmd, options, env, timeout) if timeout
+
+  out, err, status = Open3.capture3(env, *cmd, **options)
   [status.success?, out, err]
-rescue Timeout::Error
-  [false, "", "timed out after #{timeout}s"]
 rescue SystemCallError => e
   # A missing chdir target makes spawn raise Errno::ENOENT before the command
   # ever runs (e.g. a PRUNABLE git worktree git still lists but whose directory
   # was deleted on disk). Read-only callers — doctor and snapshot --write —
   # must degrade to a failed command, never crash the whole run.
   [false, "", e.message]
+end
+
+# A REAL bound on a child command — it KILLS the child when the deadline passes.
+#
+# Timeout.timeout around Open3.capture3 does NOT bound anything, and the failure is
+# silent: capture3's ensure joins the wait thread, which blocks until the child exits, so
+# the Timeout::Error is swallowed into that join. Verified on this repo's Ruby 3.3.11 — a
+# 2s guard around `sleep 6` returned after 6.01s and sprayed "stream closed in another
+# thread (IOError)". A hung board would therefore have stalled a whole sweep while the
+# code claimed to be bounded. The only way to bound a child is to signal it.
+#
+# The child runs in its OWN process group (pgroup: true) so the signal reaches anything it
+# spawned (bin/task shells out to Ruby, which opens the socket that actually hangs).
+# Timing out reads exactly like any other failed command → the guard fails open.
+def capture_bounded(cmd, options, env, timeout)
+  Open3.popen3(env, *cmd, **options.merge(pgroup: true)) do |stdin, stdout, stderr, wait_thr|
+    stdin.close
+    # Drain both pipes on threads: a child that fills a pipe buffer would otherwise block
+    # forever on write while we sit in wait_thr.join, deadlocking the "bound".
+    out_reader = drain(stdout)
+    err_reader = drain(stderr)
+
+    if wait_thr.join(timeout).nil?
+      terminate_group(wait_thr.pid)
+      wait_thr.join(2)
+      [out_reader, err_reader].each { |thread| thread.join(1) || thread.kill }
+      next [false, "", "timed out after #{timeout}s"]
+    end
+
+    ok = wait_thr.value.success?
+    [ok, reap(out_reader), reap(err_reader)]
+  end
+rescue SystemCallError => e
+  [false, "", e.message]
+end
+
+def drain(io)
+  Thread.new do
+    io.read.to_s
+  rescue IOError
+    ""
+  end
+end
+
+def reap(thread)
+  return thread.value.to_s if thread.join(5)
+
+  thread.kill
+  ""
+end
+
+# TERM the child's whole process group, then KILL what lingers. ESRCH/EPERM just mean it
+# is already gone (or was never ours) — either way there is nothing left to bound.
+def terminate_group(pid)
+  Process.kill("TERM", -pid)
+  sleep 0.2
+  Process.kill("KILL", -pid)
+rescue Errno::ESRCH, Errno::EPERM
+  nil
 end
 
 # Side-channel log helpers for automatic capacity/flush events. They write to
@@ -1788,18 +1847,14 @@ def doctor_issues(app = nil)
     if !record[:equivalent_to_main] && !%w[0 ?].include?(record[:behind].to_s)
       issues << [label, "branch is #{record[:behind]} commit(s) behind #{base}; rebase before QA handoff"]
     end
-    if cleanup_ready?(record)
-      # Doctor must not call a HELD desk a "cleanup candidate" either — that is the same
-      # misleading nomination the registry used to make, just in advisory prose.
-      hold = claim_hold(record)
-      message =
-        if hold
-          "clean and landed on #{base}, but #{hold} — NOT a cleanup candidate"
-        elsif record[:merged]
-          "branch is merged to #{base} and clean; cleanup candidate"
-        else
-          "branch final diff matches #{base}; likely squash-merged cleanup candidate"
-        end
+    # Doctor must not call a held desk a "cleanup candidate" either — that is the same
+    # misleading nomination the registry used to make, just in advisory prose. Same
+    # predicate; quiet (a read-only report should not warn).
+    candidate, hold_reason = reclaim_verdict(record)
+    if hold_reason
+      issues << [label, "clean and landed on #{base}, but #{hold_reason}; not a cleanup candidate"]
+    elsif candidate
+      message = record[:merged] ? "branch is merged to #{base} and clean; cleanup candidate" : "branch final diff matches #{base}; likely squash-merged cleanup candidate"
       issues << [label, message]
     end
     issues << [label, "port #{record[:port]} listens but /up is #{record[:code]}"] if !record[:port_pid].empty? && record[:code] != "200"
@@ -1863,13 +1918,16 @@ def stack_record_snapshot(record, issues_by_label)
   label = "#{app.fetch("slug")}/#{record.fetch(:task)}"
   port = record.fetch(:port)
   has_port = !port.to_s.empty? && port != "?"
-  # The registry is the CONTRACT the conductor reads: bin/qa-intake builds its "Cleanup
-  # Candidates" section straight off `cleanup_candidate` and prints a `remove … --yes`
-  # command for each. So it MUST agree with the sweep — a desk held by a live builder is
-  # not a candidate, and `held_by_live_claim` says so explicitly (the && short-circuits,
-  # so only git-eligible worktrees cost a board read).
-  git_ready = cleanup_ready?(record)
-  held_by_live_claim = git_ready && task_live_claimed?(record)
+  # The registry is the contract the conductor reads: bin/qa-intake builds its "Cleanup
+  # Candidates" section straight off `cleanup_candidate` and prints a `remove … --yes` for
+  # each, so it must agree with the sweep. Same predicate, one board read (memoized).
+  #
+  # `withheld_by_live_claim` is named for what it means: this desk was withheld FROM RECLAIM
+  # by a live claim. A dirty worktree is already excluded by dirtiness, so it reports false
+  # here even if a builder is on it — the field answers "why is this not a candidate", not
+  # "is somebody working here".
+  candidate, hold_reason = reclaim_verdict(record)
+  withheld_by_live_claim = !hold_reason.nil?
 
   {
     "label" => label,
@@ -1906,8 +1964,8 @@ def stack_record_snapshot(record, issues_by_label)
     "behind_origin_main" => record.fetch(:behind),
     "pidfile_state" => record.fetch(:pidfile_state),
     "sidekiq_pidfile_state" => record.fetch(:sidekiq_pidfile_state),
-    "cleanup_candidate" => git_ready && !held_by_live_claim,
-    "held_by_live_claim" => held_by_live_claim,
+    "cleanup_candidate" => candidate,
+    "withheld_by_live_claim" => withheld_by_live_claim,
     "compare_url" => github_compare_url(record),
     "issues" => issues_by_label[label]
   }
@@ -1962,7 +2020,7 @@ def snapshot_payload(app = nil)
       "worktrees" => records.size,
       "issues" => issues_by_label.values.sum(&:size),
       "cleanup_candidates" => worktrees.count { |worktree| worktree["cleanup_candidate"] },
-      "held_by_live_claim" => worktrees.count { |worktree| worktree["held_by_live_claim"] },
+      "withheld_by_live_claim" => worktrees.count { |worktree| worktree["withheld_by_live_claim"] },
       "dirty_worktrees" => records.count { |record| record.fetch(:dirty) },
       "running_or_port_busy" => records.count { |record| !record.fetch(:port_pid).empty? },
       "behind_origin_main" => records.count { |record| !cleanup_ready?(record) && !%w[0 ?].include?(record.fetch(:behind).to_s) }
@@ -1996,10 +2054,12 @@ def cleanup_partition(app = nil)
   free = []
   withheld = []
   stack_records(app).each do |record|
-    next unless cleanup_ready?(record)
-
-    reason = claim_hold(record)
-    reason ? withheld << [record, reason] : free << record
+    ok, reason = reclaim_verdict(record, announce: true)
+    if ok
+      free << record
+    elsif reason
+      withheld << [record, reason]
+    end
   end
   [free, withheld]
 end
@@ -2217,19 +2277,28 @@ def run_reclaim(app = nil, yes: false)
       # listing and teardown is skipped, not destroyed.
       fresh = stack_record(record[:app], dir)
 
-      # RE-VERIFY THE CLAIM HERE — the last line of defense before an irreversible
-      # teardown. The candidate list (and its board reads) was computed ONCE above, but
-      # the teardowns below run SERIALLY inside the lock (stack stop + Redis flush +
-      # worktree remove + branch delete), so by the time we reach a later candidate the
-      # claim evidence can be minutes stale. A builder who sat down and claimed a task
-      # mid-sweep must not have their clean HEAD==base desk destroyed — and git state
-      # alone (cleanup_ready?) provably cannot tell that desk from merged work.
-      if (reason = claim_hold(fresh))
+      # Re-verify the claim here — the last line of defense before an irreversible
+      # teardown. The candidate list (and its board reads) was computed ONCE above, but the
+      # teardowns below run SERIALLY inside the lock (stack stop + Redis flush + worktree
+      # remove + branch delete), so by the time we reach a later candidate the claim
+      # evidence can be minutes stale. A builder who sat down and claimed a task mid-sweep
+      # must not have their clean HEAD==base desk destroyed — and git state alone
+      # (cleanup_ready?) provably cannot tell that desk from merged work. `fresh: true`
+      # bypasses the per-slug memo: a cached answer here would reintroduce the very
+      # staleness this read exists to close.
+      #
+      # ACCEPTED RESIDUAL (do not re-litigate): a TOCTOU window remains between this check
+      # and teardown_worktree below — a builder could claim in that gap. Closing it needs a
+      # lease on the WORKTREE itself, not the task. We accept it: the window is
+      # milliseconds (not the minutes the stale candidate list allowed), and the blast
+      # radius is a fresh desk, whose branch is by definition already on the base.
+      ok, reason = reclaim_verdict(fresh, fresh: true, announce: true)
+      if reason
         puts "skipping #{worktree_label(fresh)}: #{reason}"
         next
       end
 
-      unless cleanup_ready?(fresh) && !fresh[:dirty]
+      unless ok
         puts "skipping #{worktree_label(fresh)}: no longer a safe candidate"
         next
       end
@@ -2300,13 +2369,13 @@ def run_remove(app, task, yes: false, force: false)
 
   puts "✓ #{record[:branch]} PR ##{merged_pr} merged — overriding content-not-on-#{record[:base_branch]} guard (--force)" if force_clears
 
-  # `remove` is the EXPLICIT operator path — a named worktree plus `--yes`. A live builder
-  # claim therefore WARNS rather than blocks: the operator may be deliberately evicting a
-  # desk whose session died mid-lease. The AUTOMATIC paths (cleanup / reclaim / the
-  # registry the conductor reads) refuse it outright, so nothing recommends this removal.
-  if (reason = claim_hold(record))
-    warn "⚠  #{worktree_label(record)}: #{reason}"
-    warn "   `remove` is explicit, so this is NOT a block — but a builder appears to be ON this desk."
+  # `remove` is the explicit operator path — a named worktree plus `--yes` — so a live
+  # builder claim warns rather than blocks: you may be deliberately evicting a desk whose
+  # session died mid-lease. The automatic paths (cleanup, reclaim, and the registry the
+  # conductor reads) refuse it outright, so nothing ever recommends this removal.
+  if (reason = claim_hold(record, fresh: true, announce: true))
+    warn "warning: #{worktree_label(record)}: #{reason}"
+    warn "         a builder appears to be on this desk. `remove` is explicit, so this is not a block."
   end
 
   unless yes
@@ -2343,13 +2412,28 @@ def task_bound?(values)
   task_record_slug(values) && task_url(values)
 end
 
-def task_record_for_pr(record)
+# The task's board record, or {} when there is none / it cannot be read.
+#
+# MEMOIZED per task slug for the life of one command: a sweep otherwise spends several
+# serial `bin/task show --json` subprocesses per candidate (doctor + the registry snapshot
+# + selection all ask), each a round trip to prod. `fresh: true` BYPASSES the cache — the
+# under-lock re-verify passes it, because that read exists precisely to catch a claim taken
+# AFTER selection, and a cached answer there would silently reintroduce the very bug it
+# guards against.
+def task_record_for_pr(record, fresh: false)
   override = ENV["AGENT_WORKTREE_TASK_JSON"].to_s.strip
-  return JSON.parse(override) unless override.empty?
+  return safe_json(override) unless override.empty?
 
-  slug = task_record_slug(record[:env])
+  slug = task_record_slug(record[:env] || {})
   return {} unless slug
 
+  @task_record_cache ||= {}
+  return @task_record_cache[slug] if !fresh && @task_record_cache.key?(slug)
+
+  @task_record_cache[slug] = fetch_task_record(record, slug)
+end
+
+def fetch_task_record(record, slug)
   task_bin = File.join(record[:dir], "bin", "task")
   task_bin = File.join(HUB_DIR, "bin", "task") unless File.exist?(task_bin)
   return {} unless File.exist?(task_bin)
@@ -2359,7 +2443,15 @@ def task_record_for_pr(record)
                                                               timeout: TASK_READ_TIMEOUT)
   return {} unless ok
 
-  JSON.parse(out)
+  safe_json(out)
+end
+
+# Parse to a Hash, or {} — a malformed board response (or a malformed
+# AGENT_WORKTREE_TASK_JSON) must degrade to "unreadable", never raise into a rescue that
+# would quietly disable the guard.
+def safe_json(text)
+  parsed = JSON.parse(text.to_s)
+  parsed.is_a?(Hash) ? parsed : {}
 rescue JSON::ParserError
   {}
 end
@@ -2370,60 +2462,83 @@ def task_devops_for_pr(task_record)
   devops.is_a?(Hash) ? devops : {}
 end
 
-# The reason this worktree is WITHHELD from destruction, or nil when it is free to
-# release. The ONE claim-side decision — every destructive path (cleanup, reclaim, the
-# under-lock re-verify, the registry, remove) asks this, so they can never disagree.
+# The reason this worktree is withheld from destruction, or nil when it is free to release.
 #
-# A desk is held when its bound task carries a LIVE build-claim lease: a builder is on
-# it, its status line renewing the claim under the ClaimLease TTL. That claim is the
-# ONLY signal that separates a builder who just sat down from finished work — a fresh
-# worktree and a fast-forward-merged one are git-identical (clean, HEAD == base,
-# 0-ahead), so `cleanup_ready?` alone cannot tell them apart.
+# A desk is held when its bound task carries a live build-claim lease: a builder is on it,
+# their status line renewing the claim under the ClaimLease TTL. That claim is the only
+# signal that separates a builder who just sat down from finished work — a fresh worktree
+# and a fast-forward-merged one are git-identical (clean, HEAD == base, 0-ahead), so
+# cleanup_ready? alone cannot tell them apart.
 #
-# FAIL-OPEN: an unbound task, an unreachable board, or a LAPSED claim all yield nil
-# (reclaimable), so a board hiccup never wedges cleanup — only a CONFIRMED live claim
-# protects. But fail-open on a path that DESTROYS a desk must not be silent: when a task
-# IS bound and its board record reads back empty (task_record_for_pr swallows a failed
-# read to {} without raising, so the rescue below never fires), we WARN loudly rather
-# than let the guard quietly disable itself. Best-effort/never raises.
-def claim_hold(record)
+# Fail-open: an unbound task, an unreadable board, or a lapsed claim all yield nil
+# (reclaimable), so a board hiccup never wedges cleanup — only a confirmed live claim
+# withholds a desk. But fail-open on a path that destroys a desk must not be silent, so
+# every branch that gives up on checking says so when `announce` is set (the destructive
+# and cleanup-intent paths set it; the registry/doctor reads stay quiet).
+def claim_hold(record, fresh: false, announce: false)
   # nil-safe: a record without :env must not raise into the rescue below — that would
-  # silently DISABLE the guard on a destructive path, which is the exact failure mode
-  # the loud fail-open warning exists to prevent.
+  # silently disable the guard on a destructive path, the exact failure the warnings exist
+  # to prevent.
   slug = task_record_slug(record[:env] || {})
-  devops = task_devops_for_pr(task_record_for_pr(record))
+  devops = task_devops_for_pr(task_record_for_pr(record, fresh: fresh))
 
-  if slug && devops.empty?
-    warn "⚠  #{worktree_label(record)}: task #{slug} is bound but its board record read back EMPTY — " \
-         "could NOT verify the build claim; proceeding anyway (fail-open)"
-    return nil
+  # If we HAVE a record, judge it: a live claim withholds the desk, full stop.
+  claim = ClaimLease.from_devops(devops)
+  if ClaimLease.live?(claim)
+    age = ClaimLease.heartbeat_age(claim)
+    return "held by a live builder claim (#{slug || record[:task]}) — builder heartbeat #{age}s ago " \
+           "(lease TTL #{ClaimLease::DEFAULT_TTL_SECONDS}s)"
   end
 
-  claim = ClaimLease.from_devops(devops)
-  return nil unless ClaimLease.live?(claim)
+  # No live claim. Now separate "checked it, the desk is free" from "could not check" —
+  # the second is a fail-open, and a fail-open on a path that destroys a desk must speak up.
+  if devops.empty? && announce
+    if slug.nil?
+      # The unbound desk, and it is the original incident's own: TASK_RECORD_SLUG is written
+      # by bind-task, never by `new`, so a builder inside the new -> bind-task -> move
+      # building window has no task and no claim to read. We cannot protect what we cannot
+      # identify — but this is the likeliest desk to lose, so it does not go quietly.
+      warn "note: #{worktree_label(record)} has no bound task, so no build claim can be checked; " \
+           "treating it as free"
+    else
+      warn "warning: #{worktree_label(record)} is bound to task #{slug}, but its board record came back " \
+           "empty, so the build claim could not be checked. Treating it as free."
+    end
+  end
 
-  age = ClaimLease.heartbeat_age(claim)
-  "held by a live builder claim (#{slug || record[:task]}) — builder heartbeat #{age}s ago " \
-    "(lease TTL #{ClaimLease::DEFAULT_TTL_SECONDS}s)"
-rescue StandardError
+  nil
+rescue StandardError => e
+  # A guard that disables itself in silence is worse than no guard: say why.
+  warn "warning: #{record[:task]}: could not check the build claim (#{e.class}); treating it as free" if announce
   nil
 end
 
-def task_live_claimed?(record)
-  !claim_hold(record).nil?
+def task_live_claimed?(record, fresh: false, announce: false)
+  !claim_hold(record, fresh: fresh, announce: announce).nil?
 end
 
-# The SINGLE reclaim predicate: git-eligible AND not held by a live builder. Consumed by
-# cleanup_candidates, the under-lock re-verify, and the registry snapshot alike, so the
-# board's front door (qa-intake reads `cleanup_candidate`) can never nominate a desk the
-# sweep would refuse. The && short-circuits, so the board read happens ONLY for the few
-# git-eligible worktrees — never for every worktree.
-def reclaimable?(record)
-  cleanup_ready?(record) && !task_live_claimed?(record)
+# THE one reclaim decision, in one place: may this worktree be destroyed, and if it is
+# being withheld, why. Returns [reclaimable?, hold_reason]:
+#
+#   [true,  nil]      free — git-eligible and unheld
+#   [false, "held …"] withheld — git-eligible, but a builder is live-claiming it
+#   [false, nil]      not git-eligible (dirty / not landed on base) — never a candidate
+#
+# cleanup_candidates, the under-lock re-verify, doctor AND the registry snapshot all route
+# through here, so the conductor's front door (bin/qa-intake reads `cleanup_candidate`)
+# cannot nominate a desk the sweep would refuse. Costs at most one board read, only for a
+# git-eligible worktree, and memoized per slug across the command.
+def reclaim_verdict(record, fresh: false, announce: false)
+  return [false, nil] unless cleanup_ready?(record)
+
+  reason = claim_hold(record, fresh: fresh, announce: announce)
+  [reason.nil?, reason]
 end
 
 def worktree_label(record)
-  "#{record[:app].fetch("slug")}/#{record[:task]}"
+  app = record[:app]
+  slug = app.is_a?(Hash) ? app["slug"] : nil
+  [slug, record[:task]].compact.join("/")
 end
 
 def list_from_task_devops(devops, key)

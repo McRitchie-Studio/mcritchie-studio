@@ -116,10 +116,12 @@ class AgentWorktreeTest < Minitest::Test
   # board read (task_record_for_pr) stubbed. A LIVE claim protects the desk; a lapsed,
   # missing, or unreadable claim fails open (reclaimable).
 
+  # A BOUND desk (it has a task slug) — an UNBOUND one short-circuits to "free" before the
+  # claim is even consulted, which is its own case below.
   def live_claimed(devops_ruby)
     run_in_script(<<~RUBY)
-      def task_record_for_pr(_r); { "metadata" => { "devops" => #{devops_ruby} } }; end
-      print task_live_claimed?({})
+      def task_record_for_pr(_r, fresh: false); { "metadata" => { "devops" => #{devops_ruby} } }; end
+      print task_live_claimed?({ env: { "TASK_RECORD_SLUG" => "t" }, task: "t" })
     RUBY
   end
 
@@ -139,7 +141,7 @@ class AgentWorktreeTest < Minitest::Test
     assert_equal "false", live_claimed("{}"), "no claim → reclaimable"
     # a board read that returns nothing usable fails open too
     out = run_in_script(<<~RUBY)
-      def task_record_for_pr(_r); {}; end
+      def task_record_for_pr(_r, fresh: false); {}; end
       print task_live_claimed?({})
     RUBY
     assert_equal "false", out, "an unbound task / unreachable board is not a live claim"
@@ -150,10 +152,10 @@ class AgentWorktreeTest < Minitest::Test
   def test_claim_hold_reason_names_the_live_builder_and_its_heartbeat_age
     expires = (Time.now + 110).utc.iso8601
     out = run_in_script(<<~RUBY)
-      def task_record_for_pr(_r)
+      def task_record_for_pr(_r, fresh: false)
         { "metadata" => { "devops" => { "claimed_session" => "s", "claim_expires_at" => #{expires.inspect} } } }
       end
-      print claim_hold({ env: { "TASK_RECORD_SLUG" => "busy-task" } })
+      print claim_hold({ env: { "TASK_RECORD_SLUG" => "busy-task" }, task: "busy-task" })
     RUBY
     assert_match(/held by a live builder claim \(busy-task\)/, out)
     assert_match(/builder heartbeat \d+s ago/, out, "the age makes the hold verifiable, not a bare refusal")
@@ -161,30 +163,50 @@ class AgentWorktreeTest < Minitest::Test
 
   def test_claim_hold_is_nil_when_free
     out = run_in_script(<<~RUBY)
-      def task_record_for_pr(_r); { "metadata" => { "devops" => {} } }; end
+      def task_record_for_pr(_r, fresh: false); { "metadata" => { "devops" => {} } }; end
       print claim_hold({ env: {} }).inspect
     RUBY
     assert_equal "nil", out, "an unheld desk yields no reason (and is reclaimable)"
   end
 
-  # The ONE predicate every destructive path and the registry share, so the conductor's
-  # front door can never nominate a desk the sweep would refuse.
-  def test_reclaimable_requires_git_eligible_AND_unheld
-    # git-eligible + unheld → reclaimable
-    assert_equal "true", reclaimable_for(held: false, dirty: false)
-    # git-eligible but HELD → not reclaimable
-    assert_equal "false", reclaimable_for(held: true, dirty: false)
-    # dirty → not reclaimable regardless of the claim
-    assert_equal "false", reclaimable_for(held: false, dirty: true)
+  # The ONE decision every destructive path, doctor AND the registry route through, so the
+  # conductor's front door can never nominate a desk the sweep would refuse. Returns
+  # [reclaimable?, hold_reason] — a bare boolean helper would not serve the callers (they
+  # all need the reason), which is how the previous cut ended up with a shared predicate
+  # that nothing actually called.
+  def test_reclaim_verdict_is_the_one_decision
+    # git-eligible + unheld → free, no reason
+    assert_equal "[true, nil]", verdict_for(held: false, dirty: false)
+    # git-eligible but HELD → withheld, WITH a reason to print
+    assert_match(/\A\[false, "held by a live builder claim/, verdict_for(held: true, dirty: false))
+    # not git-eligible → never a candidate, and NOT "withheld" (nothing to narrate)
+    assert_equal "[false, nil]", verdict_for(held: false, dirty: true)
   end
 
-  def reclaimable_for(held:, dirty:)
+  def verdict_for(held:, dirty:)
     devops = held ? %({ "claimed_session" => "s", "claim_expires_at" => #{(Time.now + 110).utc.iso8601.inspect} }) : "{}"
     run_in_script(<<~RUBY)
-      def task_record_for_pr(_r); { "metadata" => { "devops" => #{devops} } }; end
-      record = { dirty: #{dirty}, merged: true, equivalent_to_main: true, env: {} }
-      print reclaimable?(record)
+      def task_record_for_pr(_r, fresh: false); { "metadata" => { "devops" => #{devops} } }; end
+      record = { dirty: #{dirty}, merged: true, equivalent_to_main: true,
+                 env: { "TASK_RECORD_SLUG" => "t" }, task: "t" }
+      print reclaim_verdict(record).inspect
     RUBY
+  end
+
+  # --- the board read must be REALLY bounded ---------------------------------
+  # Timeout.timeout around Open3.capture3 bounds NOTHING: capture3's ensure joins the wait
+  # thread, which blocks until the child exits, swallowing the Timeout::Error (a 2s guard
+  # around `sleep 6` returned after 6.01s on Ruby 3.3.11). A hung board would have stalled a
+  # whole sweep while the code claimed to be bounded. The bound must KILL the child.
+  def test_capture_status_timeout_actually_kills_the_child
+    out = run_in_script(<<~RUBY)
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      ok, _out, err = capture_status("sleep", "6", timeout: 1)
+      elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+      print [ok, err.include?("timed out"), elapsed < 3].inspect
+    RUBY
+    assert_equal "[false, true, true]", out,
+                 "a 1s bound around `sleep 6` must return in ~1s as a failed read, not after 6s"
   end
 
   # --- integration: the REAL mcritchie config carries the reservation through

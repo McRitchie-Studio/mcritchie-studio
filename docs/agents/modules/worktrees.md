@@ -177,13 +177,22 @@ bin/agent-worktree scale status
   `cleanup_ready?` provably cannot tell a desk someone just sat down at from
   finished work. The signal that can is the task's **live build-claim lease**
   (`ClaimLease`, renewed by the builder's status line under a 120s TTL). Every
-  destructive path and the registry share ONE predicate (`reclaimable?` =
-  git-eligible AND no live claim), so the conductor's front door can never
-  nominate a desk the sweep would refuse. It is **fail-open**: an unbound task, an
-  unreachable board (bounded read), or a **lapsed** claim all leave the worktree
-  reclaimable — only a *confirmed* live claim withholds it — and a bound task whose
-  board record reads back empty **warns loudly** rather than silently disabling the
-  guard. A withheld desk is named with its reason and the builder's heartbeat age.
+  destructive path, `doctor`, and the registry route through ONE decision
+  (`reclaim_verdict` → `[reclaimable?, hold_reason]`), so the conductor's front door
+  can never nominate a desk the sweep would refuse. The board read is genuinely
+  bounded (10s, `AGENT_WORKTREE_TASK_TIMEOUT`) because it kills the child — so a
+  hung or black-holed board cannot stall a sweep. It is **fail-open**: a lapsed
+  claim, an unreadable board, an unbound task, or an unexpected error all leave the
+  worktree reclaimable — only a *confirmed* live claim withholds it — and **every one
+  of those branches warns**, because a guard that silently disables itself is worse
+  than no guard. A withheld desk is named with its reason and the builder's
+  heartbeat age.
+  - **The unbound desk is the gap to know about.** `TASK_RECORD_SLUG` is written by
+    `bind-task`, never by `new`, so a builder inside the `new → bind-task → move
+    building` window has no task and therefore no claim to check. That is the exact
+    desk the original incident destroyed. It cannot be protected (we cannot check a
+    claim we cannot identify), so it fails open — but it now says so. Bind the task
+    immediately after `new` to close the window.
 - `cleanup --reclaim` is the **scale-down-on-close normal flow**: a merged
   worktree self-releases its Redis slot the same way a stack scales down when it
   closes. The dry run (no `--yes`) lists only the worktrees that are SAFE to
