@@ -108,6 +108,21 @@ class Release
     def qa_green!(release, usage_by_slug: {}, qa_url: nil)
       usage_by_slug ||= {}
       Release.transaction do
+        # Revive `tested_at`: reaching qa_green! IS the QA-green verdict (the
+        # g3_candidate gate closes green immediately after). Stamped at the top of
+        # the transaction so it precedes the assembled/qa_deployed stamps written
+        # INSIDE this same block.
+        #
+        # This is NOT a wall-clock guarantee, and nothing here should claim one:
+        # assembling_started_at was already stamped back at MERGE time (sweep!),
+        # and qa_deploy_started_at before the QA deploy — so both precede tested_at
+        # chronologically even though Release::STAGES lists them after it. The
+        # stamps are a LOGICAL stage order, deliberately out of chronological
+        # order, which is why `current_stage` is MONOTONIC over them.
+        #
+        # stamp_stage! is the model's single stamp seam: it validates the stage
+        # name and is first-write-wins, so a re-run of a green sweep never moves it.
+        release.stamp_stage!("tested")
         # Flip PRODUCER-FIRST (gems before consumers, honoring dependencies) so
         # the assembled column's positions land in the same order the conductor
         # publishes/deploys in — each stage flip stamps the member's board rank.

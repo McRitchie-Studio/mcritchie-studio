@@ -30,10 +30,14 @@ class Release < ApplicationRecord
   # deploy_qa completed) can never wind the tracker backwards.
   STAGES = [
     ["testing",        :testing_started_at],
-    # tested_at is VESTIGIAL: the conductor no longer posts review_tests
-    # completed (the G3 Candidate gate_runs own prepare's test verdicts), so
-    # nothing stamps it anymore. Kept for historical rows + API replay
-    # (EVENT_STAGE_STAMPS still maps it); drop in a later cleanup.
+    # tested_at is LIVE again: Release::Conductor.qa_green! stamps it (via
+    # stamp_stage!) — QA-green IS the tested verdict. Its position here is the
+    # LOGICAL stage order, NOT a chronology: assembling_started_at is stamped back
+    # at MERGE time (Conductor.sweep!) and qa_deploy_started_at before the QA
+    # deploy, so BOTH land before tested_at in wall-clock. That is by design — it
+    # is precisely why `current_stage` is MONOTONIC over these stamps. Do NOT drop
+    # this column: the `release_timeline` inspection view SELECTs it and projects
+    # THIS order (see docs/agents/modules/devops-task-board.md).
     ["tested",         :tested_at],
     ["assembling",     :assembling_started_at],
     ["assembled",      :assembled_at],

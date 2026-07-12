@@ -174,6 +174,32 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_equal "assembled", rel.reload.state
   end
 
+  test "[unit] qa_green! revives tested_at — stamped once, first-write-wins" do
+    t = reviewed_task
+    rel = Release::Conductor.sweep!(t)
+    assert_nil rel.reload.tested_at, "tested_at is blank until QA green"
+
+    Release::Conductor.qa_green!(rel)
+    rel.reload
+    stamped = rel.tested_at
+    refute_nil stamped, "qa_green! stamps the release's QA-tested moment"
+
+    refute_nil rel.assembled_at, "qa_green! assembles the RC"
+
+    # DELIBERATELY no wall-clock ordering assertion. The release stamps are a
+    # LOGICAL stage order, not a chronology: assembling_started_at is stamped back
+    # at MERGE time (sweep!) and qa_deploy_started_at before the QA deploy, so both
+    # precede tested_at in wall-clock even though Release::STAGES lists them after
+    # it. Asserting `tested_at <= assembled_at` would pin the ONE pair that happens
+    # to hold (both are written inside this transaction) and imply a chronology the
+    # system does not guarantee. The real contract — release_timeline projects
+    # Release::STAGES order — is asserted in test/db/timeline_views_test.rb.
+
+    # First-write-wins like the other release stage stamps: a re-run never moves it.
+    Release::Conductor.qa_green!(rel.reload)
+    assert_equal stamped, rel.reload.tested_at, "tested_at is first-write-wins"
+  end
+
   test "[unit] a QA failure flips nothing — members stay reviewed for the next self-healing run" do
     t = reviewed_task
     rel = Release::Conductor.sweep!(t)
