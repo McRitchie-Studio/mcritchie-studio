@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_11_160000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_12_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -118,6 +118,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_11_160000) do
 
   create_table "agent_activities", force: :cascade do |t|
     t.string "agent"
+    t.integer "cache_creation_tokens"
     t.integer "cache_read_tokens"
     t.string "category", null: false
     t.datetime "closed_at"
@@ -141,6 +142,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_11_160000) do
     t.string "transcript_path"
     t.string "turn_uuid"
     t.datetime "updated_at", null: false
+    t.index ["model", "opened_at"], name: "index_agent_activities_on_model_and_opened_at"
     t.index ["opened_at"], name: "index_agent_activities_on_opened_at"
     t.index ["parent_span_id"], name: "index_agent_activities_on_parent_span_id"
     t.index ["session_id", "closed_at"], name: "index_agent_activities_on_session_id_and_closed_at"
@@ -671,6 +673,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_11_160000) do
     t.index ["s3_key"], name: "index_image_caches_on_s3_key", unique: true
   end
 
+  create_table "model_rate_overrides", force: :cascade do |t|
+    t.decimal "cache_creation_rate", precision: 12, scale: 4
+    t.decimal "cache_read_rate", precision: 12, scale: 4
+    t.datetime "created_at", null: false
+    t.decimal "input_rate", precision: 12, scale: 4, null: false
+    t.string "model", null: false
+    t.decimal "output_rate", precision: 12, scale: 4, null: false
+    t.datetime "updated_at", null: false
+    t.index ["model"], name: "index_model_rate_overrides_on_model", unique: true
+  end
+
   create_table "news", force: :cascade do |t|
     t.datetime "archived_at"
     t.string "article_image_url"
@@ -1139,6 +1152,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_11_160000) do
 
   create_table "task_events", force: :cascade do |t|
     t.string "actor"
+    t.integer "cache_creation_tokens"
+    t.integer "cache_read_tokens"
     t.decimal "cost", precision: 10, scale: 4
     t.datetime "created_at", null: false
     t.string "from_stage"
