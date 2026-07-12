@@ -109,14 +109,17 @@ class PokemonPokedex
 
   # Build the featured CATCH Sighting: the most recent shipped-task mascot, resolved
   # to its Pokémon + task. first_seen_at carries the ship (catch) time.
+  #
+  # The seeded-Pokémon guard runs BEFORE picking the newest, not after: a ship whose
+  # mascot snapshot is a persona (not a seeded Pokémon) must be skipped over, not
+  # allowed to win the max and blank the card out to "None caught yet" while real
+  # catches sit behind it.
   def newest_catch_sighting(appearances)
-    chosen = appearances.max_by(&:at)
+    chosen = appearances.select { |appearance| pokemon_by_slug.key?(appearance.slug) }.max_by(&:at)
     return nil unless chosen
 
-    pokemon = pokemon_by_slug[chosen.slug]
-    return nil unless pokemon
-
-    Sighting.new(pokemon: pokemon, first_seen_at: chosen.at, task: sighting_task(chosen), shiny: chosen.shiny)
+    Sighting.new(pokemon: pokemon_by_slug[chosen.slug], first_seen_at: chosen.at,
+                 task: sighting_task(chosen), shiny: chosen.shiny)
   end
 
   # slug => the EARLIEST Appearance of that species. shiny:true keeps only shiny
@@ -163,14 +166,40 @@ class PokemonPokedex
     end
   end
 
-  # A caught slug plus its pre-evolutions: the family in walk order (base first),
-  # sliced up to and including the caught slug. Normally the whole line (the shipped
-  # mascot is the final form), but the slice stays correct if a mascot ships mid-line.
+  # A caught slug plus its PRE-EVOLUTIONS: the ancestor path base -> slug.
+  #
+  # This must walk the actual evolution links, NOT slice PokemonEvolutionTree.for —
+  # that returns the family FLATTENED across every branch, so a slice would sweep in
+  # SIBLINGS. Eevee branches five ways, so catching Umbreon must yield
+  # {eevee, umbreon}, never the other four Eeveelutions. We build each member's
+  # parent (the form whose `evolution` list names it) and walk backward from the
+  # caught slug to the base, which is exactly the pre-evolution chain.
   def lineage_up_to(slug)
     (@lineage ||= {})[slug] ||= begin
       family = PokemonEvolutionTree.for(slug)
-      idx = family.index(slug)
-      idx ? family[0..idx] : [slug]
+      if family.include?(slug)
+        parent_of = parents_in_family(family)
+        path = [slug]
+        cursor = slug
+        # Guard the walk by family size so malformed data can never loop forever.
+        while (parent = parent_of[cursor]) && path.size <= family.size
+          path.unshift(parent)
+          cursor = parent
+        end
+        path
+      else
+        [slug]
+      end
+    end
+  end
+
+  # child slug => the slug it evolves FROM, for one family. Only links inside the
+  # family count, so a stray evolution entry can't drag in an unrelated line.
+  def parents_in_family(family)
+    Pokemon.where(slug: family).each_with_object({}) do |member, map|
+      Array(member.evolution).each do |child|
+        map[child] = member.slug if family.include?(child)
+      end
     end
   end
 

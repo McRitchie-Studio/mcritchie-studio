@@ -44,6 +44,7 @@ class PokemonControllerTest < ActionDispatch::IntegrationTest
     end
 
     assert_select "[data-test=shiny-card]" do
+      assert_select "h2", "Shiny Pokémon"
       assert_select "[data-test=shiny-seen]", "1"
       assert_select "[data-test=shiny-caught]", "0" # no shiny ship yet
       assert_select "[data-test=shiny-sparkle]"
@@ -84,6 +85,11 @@ class PokemonControllerTest < ActionDispatch::IntegrationTest
     get pokedex_path
 
     assert_response :success
+    # With no shiny data there are no sparkles, so the TITLES must still tell the two
+    # cards apart — the sparkles alone are not a durable distinction.
+    assert_select "[data-test=pokemon-card] h2", "Pokémon"
+    assert_select "[data-test=shiny-card] h2", "Shiny Pokémon"
+    assert_select "[data-test=shiny-sparkle]", false, "no shiny data means no sparkles to lean on"
     assert_select "[data-test=pokemon-newest-seen-empty]", "None seen yet."
     assert_select "[data-test=pokemon-newest-caught-empty]", "None caught yet."
     assert_select "[data-test=shiny-newest-seen-empty]", "None seen yet."

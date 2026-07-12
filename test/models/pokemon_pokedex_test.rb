@@ -197,4 +197,49 @@ class PokemonPokedexTest < ActiveSupport::TestCase
     assert pokedex.newest_caught_shiny.shiny
     assert_equal gengar, pokedex.newest_caught.pokemon, "newest overall catch is the later plain ship"
   end
+
+  # The linear-line tests above pass even with a naive "slice the flattened family"
+  # lineage. A BRANCHING line is what catches that bug: Eevee splits five ways, so a
+  # branch tip must catch its ancestors and NONE of its siblings.
+  test "[unit] catching a branch tip catches its ancestors, never its siblings" do
+    Pokemon.create!(dex: 133, name: "Eevee", slug: "eevee", generation: 1, base: "eevee",
+                    evolution: %w[vaporeon jolteon flareon espeon umbreon])
+    Pokemon.create!(dex: 134, name: "Vaporeon", slug: "vaporeon", generation: 1, base: "eevee", evolution: [])
+    Pokemon.create!(dex: 135, name: "Jolteon", slug: "jolteon", generation: 1, base: "eevee", evolution: [])
+    Pokemon.create!(dex: 136, name: "Flareon", slug: "flareon", generation: 1, base: "eevee", evolution: [])
+    Pokemon.create!(dex: 196, name: "Espeon", slug: "espeon", generation: 2, base: "eevee", evolution: [])
+    umbreon = Pokemon.create!(dex: 197, name: "Umbreon", slug: "umbreon", generation: 2, base: "eevee", evolution: [])
+
+    task = Task.create!(title: "Ship The Umbreon Branch",
+                        metadata: { "devops" => { "mascot" => umbreon.slug } })
+    TaskEvent.create!(task_slug: task.slug, from_stage: "assembled", to_stage: "shipped",
+                      occurred_at: 5.minutes.ago, metadata: { "mascot" => { "slug" => umbreon.slug } })
+
+    pokedex = PokemonPokedex.new
+
+    assert_equal %w[eevee umbreon], pokedex.send(:caught_slugs).to_a.sort,
+                 "a branch tip catches only its ancestor line — never its sibling Eeveelutions"
+    assert_equal 2, pokedex.caught_pokemon
+    assert_equal umbreon, pokedex.newest_caught.pokemon
+  end
+
+  test "[unit] a newer ship with a non-Pokemon mascot never blanks the caught card" do
+    pikachu = Pokemon.create!(dex: 25, name: "Pikachu", slug: "pikachu", generation: 1,
+                              base: "pikachu", evolution: [])
+    real = Task.create!(title: "Ship A Real Pokemon",
+                        metadata: { "devops" => { "mascot" => pikachu.slug } })
+    TaskEvent.create!(task_slug: real.slug, from_stage: "assembled", to_stage: "shipped",
+                      occurred_at: 30.minutes.ago, metadata: { "mascot" => { "slug" => pikachu.slug } })
+    # A LATER ship carrying a persona mascot must be SKIPPED, not win the max and
+    # blank the card to "None caught yet" while a real catch sits behind it.
+    persona = Task.create!(title: "Ship With Persona Mascot",
+                           metadata: { "devops" => { "mascot" => "avi" } })
+    TaskEvent.create!(task_slug: persona.slug, from_stage: "assembled", to_stage: "shipped",
+                      occurred_at: 1.minute.ago, metadata: { "mascot" => { "slug" => "avi" } })
+
+    pokedex = PokemonPokedex.new
+
+    assert_equal pikachu, pokedex.newest_caught.pokemon
+    assert_equal 1, pokedex.caught_pokemon
+  end
 end
