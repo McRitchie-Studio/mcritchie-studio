@@ -36,23 +36,38 @@
 # target; absent, `Release::Repos.qa_app` defaults the key to the repo slug.
 #
 # Optional per-app `test_cmd` is the conductor's pre-prod gate (G4 Ship):
-# `bin/release ship` runs it (cwd = the repo, at its QA-frozen SHA) right before
-# the irreversible prod deploy and scoped-aborts on red. DOUBLE-TEST CAVEAT:
-# only set it where the repo's own deploy does NOT already run the suite. The
-# hub deploys via git_push_heroku (no test step), so it carries
-# `test_cmd: bin/rails test`. The `repo_script` satellites SELF-GATE — their
-# bin/deploy runs their own tests — so they leave `test_cmd` UNSET to avoid
-# running the whole suite twice per ship. G4 ALSO self-gates against G3: when
-# the frozen ship SHA is exactly the SHA the pre-QA gate certified this run
-# with the SAME command, the ship gate records a skip SOP instead of re-running
+# `bin/release ship` runs it (cwd = the repo's ISOLATED GATE WORKSPACE, at its
+# QA-frozen SHA) right before the irreversible prod deploy and scoped-aborts on
+# red. DOUBLE-TEST CAVEAT: only set it where the repo's own deploy does NOT
+# already run the suite. The hub deploys via git_push_heroku (no test step), so
+# it carries `test_cmd: bin/rails test`. The `repo_script` satellites SELF-GATE —
+# their bin/deploy runs their own tests — so they leave `test_cmd` UNSET to avoid
+# running the whole suite twice per ship. G4 ALSO self-gates against G3, but ONLY
+# against the verdict G3 RECORDED (metadata["qa_gates"][repo] = {sha, cmd, ok},
+# written only on a green pre-QA suite): same command + same frozen SHA + green
+# => the ship gate records a skip SOP instead of re-running. No record, a red
+# record, a different command, or a drifted SHA all FAIL OPEN and run the gate
 # (bin/release test_gate / Release::ShipSequence.ship_gate_skip?).
 #
+# DO NOT blank `qa_test_cmd` to bypass a red G3. That was a documented recipe and
+# it is now a closed foot-gun: it used to make G4 skip a suite NOTHING had run
+# (the old skip rule compared registry strings against the DEPLOYED sha), which
+# silently disarmed the last gate before production.
+#
 # Optional per-app `qa_test_cmd` is Steffon's PRE-QA gate (G3 Candidate):
-# `bin/release prepare` runs it (cwd = the repo, brought onto origin/release)
-# BEFORE any QA deploy — the tier prepare owns (Release::STEP_TEST_TIERS). A red
-# gate aborts prepare with eject guidance while every swept member is still
-# `reviewed` (nothing flipped, nothing deployed). UNSET = the repo self-gates at
-# ship/its own deploy and the gate skips it.
+# `bin/release prepare` runs it BEFORE any QA deploy — the tier prepare owns
+# (Release::STEP_TEST_TIERS). A red gate aborts prepare with eject guidance while
+# every swept member is still `reviewed` (nothing flipped, nothing deployed).
+# UNSET = the repo self-gates at ship/its own deploy and the gate skips it.
+#
+# WHERE it runs: the repo's ISOLATED GATE WORKSPACE (Release::GateWorkspace) — a
+# private detached worktree pinned at the origin/release SHA, under a dedicated
+# gate lock, with a test DB the gate PROVES is private before it runs (it boots
+# the app and reads back the resolved connection, and REFUSES a shared DB) — NOT
+# the shared primary checkout, which stays on a clean `main`. A suite that lazily
+# autoloads over minutes cannot be trusted against a tree a concurrent session can
+# `git checkout` out from under it; that is what made the gate false-fail on green
+# code. See docs/agents/modules/gates/g3-candidate.md.
 #
 # WHAT to register as qa_test_cmd:
 #   * satellites — the integration SUBSET (`bin/rails test test/integration`):

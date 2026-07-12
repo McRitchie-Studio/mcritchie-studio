@@ -88,22 +88,51 @@ class Release
     # The 90/10 policy runs the full suite ONCE per release batch: the hub
     # registers its FULL suite as `qa_test_cmd`, so the G3 pre-QA gate certifies
     # the batch on origin/release BEFORE anything deploys. Re-running the ship
-    # test gate then proves nothing new — SKIP it iff BOTH hold:
-    #   * the ship `test_cmd` is EXACTLY the `qa_test_cmd` G3 ran (a satellite
-    #     whose G3 ran only the integration subset still gets its full suite
-    #     at ship), and
-    #   * the FROZEN ship SHA is EXACTLY the SHA G3 certified this run
-    #     (release.metadata["qa_shas"]) — a straggler, re-pin, or any drift
-    #     re-triggers the gate.
-    # Blank commands/SHAs never skip (fail open: run the gate). The caller
-    # (bin/release test_gate) records the skip as a visible gate SOP, never a
-    # silent omission.
-    def ship_gate_skip?(test_cmd:, qa_test_cmd:, frozen_sha:, qa_sha:)
-      cmd    = test_cmd.to_s.strip
-      qa_cmd = qa_test_cmd.to_s.strip
-      sha    = frozen_sha.to_s.strip
-      qa     = qa_sha.to_s.strip
-      !cmd.empty? && cmd == qa_cmd && !sha.empty? && sha == qa
+    # test gate then proves nothing new — so G4 may skip it. But it may ONLY skip
+    # on PROOF that G3 actually ran and passed.
+    #
+    # SAFETY BUG this closes (found 2026-07-12): the old predicate inferred that
+    # proof from the REGISTRY plus `qa_shas` — `test_cmd == qa_test_cmd &&
+    # frozen_sha == qa_sha`. Neither term proves a suite ever RAN:
+    #   * `qa_shas` is stamped by the QA DEPLOY LOOP (bin/release.rb), not by the
+    #     gate. It records what was DEPLOYED, never what was CERTIFIED.
+    #   * the registry is read fresh at ship, so it can differ from what prepare
+    #     read minutes earlier.
+    # Together they let G3 skip and G4 STILL self-skip — silently disarming the
+    # production gate. The documented gate-skip recipe walked exactly into this:
+    # comment out `qa_test_cmd` so prepare's gate skips, then RESTORE the file
+    # before ship (ship's preflight refuses a dirty primary) — and now the
+    # registry reads equal again, the deployed SHA matches, and G4 skips a suite
+    # NOTHING ever ran. A skipped G3 must never certify a SHA.
+    #
+    # THE FIX: skip only against the gate's OWN recorded verdict —
+    # release.metadata["qa_gates"][repo] = {"sha", "cmd", "ok"}, written by
+    # pre_qa_gate ONLY after the suite comes back green (Conductor.record_qa_gate).
+    # Skip iff that record exists, is green, and matches BOTH the command the ship
+    # gate would run AND the frozen ship SHA. Anything else — no record, a red
+    # record, a different command, a drifted/straggler SHA — FAILS OPEN and runs
+    # the gate. The caller (bin/release test_gate) records the skip as a visible
+    # gate SOP, never a silent omission.
+    def ship_gate_skip?(test_cmd:, frozen_sha:, qa_gate:)
+      cmd = test_cmd.to_s.strip
+      sha = frozen_sha.to_s.strip
+      return false if cmd.empty? || sha.empty?
+
+      record = qa_gate.is_a?(Hash) ? qa_gate : {}
+      return false unless record["ok"] == true || record[:ok] == true
+
+      certified_cmd = (record["cmd"] || record[:cmd]).to_s.strip
+      certified_sha = (record["sha"] || record[:sha]).to_s.strip
+      certified_cmd == cmd && certified_sha == sha
+    end
+
+    # The G3 gate record for a repo out of release.metadata["qa_gates"] (the twin
+    # of frozen_sha for qa_shas). nil when the gate never recorded a verdict for
+    # this repo — which ship_gate_skip? reads as "not certified" and runs the gate.
+    def qa_gate(qa_gates, repo)
+      gates = qa_gates.is_a?(Hash) ? qa_gates : {}
+      record = gates[repo] || gates[repo.to_s] || gates[repo.to_sym]
+      record.is_a?(Hash) ? record : nil
     end
 
     # --- ship preflight: every app checkout on a clean `main` before any ff ----

@@ -134,11 +134,27 @@ recovery.
 
 The frozen-SHA test gate is each app's registry `test_cmd` — the **full local
 suite** (`Release::STEP_TEST_TIERS`: `ship → full-suite`; it is not a browser
-e2e run — browser-level verification is the post-deploy smoke seal). It
-**self-gates against G3**: when the frozen ship SHA is exactly the SHA the
-pre-QA gate certified this run with the same command, the gate records a
-visible skip SOP instead of re-running (the full suite runs once per release
-batch); a straggler, re-pin, or any SHA drift re-triggers it.
+e2e run — browser-level verification is the post-deploy smoke seal). It runs in
+the repo's **isolated gate workspace** (a private detached worktree at
+`<repo>/.worktrees/_gate`, under its own lock, with a proven-private test DB) —
+NOT on the primary, which the ship only touches for the local `main` ff.
+
+It **self-gates against G3**, but ONLY on G3's RECORDED verdict
+(`metadata["qa_gates"][repo]`, written only after a GREEN pre-QA suite): same
+command + same frozen SHA + green ⇒ it records a visible skip SOP instead of
+re-running, so the full suite runs once per release batch.
+
+⏱ **Everything else FAILS OPEN — the gate RUNS.** No G3 record (a G3 that was
+skipped or never ran), a red record, a different command, or a drifted/straggler
+SHA all re-trigger the full suite. **Budget for it:** a ship after a skipped or
+red G3 now takes a full-suite run where it used to skip instantly. That is
+deliberate — an uncertified SHA must not reach production unchecked. Details:
+[`../../../modules/gates/g4-ship.md`](../../../modules/gates/g4-ship.md).
+
+If a ship gate is a genuine false negative, the supported override is
+`bin/release ship --skip-test-gate --reason "…"` — it confirms, and records a
+**red** gate SOP. **Never** blank the registry's `test_cmd`/`qa_test_cmd` to get
+past a gate: that silently disarmed this gate while printing "already green".
 
 `ship` records its verdicts as the **G4 Ship gate**
 ([`../../../modules/gates/g4-ship.md`](../../../modules/gates/g4-ship.md)):

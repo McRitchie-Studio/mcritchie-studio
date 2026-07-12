@@ -103,12 +103,97 @@ bin/release prepare --yes
 - **CLI read:** `bin/gate show release <release-slug>` (add `--json` for raw
   attempts).
 
+## Where the pre-QA suite runs (and why it is trustworthy)
+
+In the repo's **isolated gate workspace** (`Release::GateWorkspace`): a private
+detached git worktree at `<repo>/.worktrees/_gate`, pinned at the origin/release
+SHA under test, with its **own test database** (`<repo>_gate_test` for a postgres
+app; for a SQLite app such as rolio, the test file already lives inside the
+worktree). The primary checkout is **never** flipped to `release` — it stays on a
+clean `main`.
+
+Two things make that isolation real rather than aspirational, and both exist
+because the first cut of this gate got them wrong:
+
+* **The gate holds its OWN lock** (`mcr-gate-workspace-<repo>.lock`, *not* the
+  primary-checkout lock, which stays free). The workspace is private to the
+  **conductor**, not to a *process*: its path and DB are FIXED, so a second
+  `bin/release` — and two QA-release sessions have raced here before — would
+  `reset --hard` the tree and `db:test:prepare`-**purge** the DB under the first
+  one's live suite. That is the same two root causes relocated one directory over.
+  The lock is held across pin → prepare → suite; a second conductor **queues**.
+* **The private DB is ASSERTED, not assumed.** Before running anything, the gate
+  boots the app in the workspace and reads back the database it *actually*
+  connected to (`assert_private_gate_db!`), and **refuses to run** unless it is
+  the gate's own DB (or a file inside the worktree). This is not ceremony: the
+  overlay is delivered by env vars, and `TEST_DATABASE_URL` is a **hand-rolled
+  seam** that only works where an app's `config/database.yml` renders
+  `url: <%= ENV["TEST_DATABASE_URL"] %>`. The hub does; **turf-monster does not**
+  — so that var alone was silently inert there, and the gate would have run, and
+  PURGED, the *shared* `turf_monster_test`. The gate now also sets `DATABASE_URL`
+  (a Rails builtin every app honours) — and then checks, because a guarantee that
+  depends on every future app's config being right is a convention, not an
+  invariant. A shared DB is a hard abort, never a silent stomp.
+
+This is what makes a red gate *mean* something. The gate used to run its
+multi-minute suite on the SHARED primary, and the test env autoloads **lazily**
+(`config.eager_load = ENV["CI"].present?` — false locally, true on CI). So any
+concurrent `git checkout` in the primary — another agent session, a hand-run
+command; the primary-checkout `flock` is advisory and binds only other
+`bin/release` invocations — tore the code snapshot **mid-suite**: test files
+already loaded from `release`, models autoloaded minutes later from `main`. The
+gate then false-failed on genuinely green code (rel-20260711-7f2913: three false
+alarms in one release; a reviewer nearly ejected a good PR). The shared test DB
+was the same bug in a second dimension. A private tree and a private DB close
+both. (Bootsnap was the prime suspect and is **innocent** — verified by
+experiment; its cache keys on mtime+size and `git checkout` bumps mtime.)
+
+The gate's spawn env (`Release::GateEnv`) also **unsets**
+`CLAUDE_CODE_SESSION_ID` / `CODEX_THREAD_ID`, so the suite's subprocess-spawning
+tests see the same no-session environment CI does, and pins the mise ruby.
+
+## A red gate — what to do (and what NOT to do)
+
+**Start from: the gate is right.** It runs in a private tree at the exact SHA,
+against a private DB it PROVED is private, from a session-less env, under the same
+ruby as CI. A red gate is a regression until you have evidence otherwise. The
+whole reason this gate was rebuilt is that a conductor mis-diagnosed a red gate as
+an env problem, and a reviewer nearly ejected a good PR over the false alarm that
+followed.
+
+1. **Read the abort.** The env-class failures name themselves — the bundle guard,
+   the DB-privacy assertion, and the workspace builder all abort with *"This is an
+   ENV issue, NOT a release regression — nothing to eject or revert."* If you see
+   that, fix the environment; do not eject a task.
+2. **Otherwise, eject the offender** (`bin/release eject <task> --feedback "…"`),
+   revert its merge commit on `release`, and re-run `bin/release prepare` — the
+   sweep self-heals and the rest of the RC rides on.
+3. **If you still believe the instrument is wrong**, reproduce it *in the gate
+   workspace itself* — it is a normal checkout:
+   `cd <repo>/.worktrees/_gate && bin/rails test …`. If the gate is genuinely
+   broken, **fix the gate and say so loudly.** An unreliable gate is worse than no
+   gate.
+4. **Never blank `qa_test_cmd`/`test_cmd` to get past it.** That old recipe
+   silently disarmed the G4 production gate (it made G4 "self-gate" on a suite
+   nothing had run). It no longer works, by design. The supported override is
+   ship-side, explicit, and loud: `bin/release ship --skip-test-gate --reason "…"`,
+   which confirms, and records a **red** `ship_test_gate` gate SOP on the release.
+
+## Certification (what G4 reads)
+
+On GREEN, the gate stamps **what it actually certified** onto the release:
+`metadata["qa_gates"][repo] = {"sha", "cmd", "ok" => true}`. That record is the
+**only** grounds on which [G4 Ship](g4-ship.md) may skip its own suite. A gate
+that skipped, was misconfigured, or went red leaves **no record**, so G4 fails
+open and runs the suite itself — a skipped G3 can never certify a SHA.
+
 ## Related
 
 - [`../../agents/steffon/sops/qa-release.md`](../../agents/steffon/sops/qa-release.md)
   — the owning SOP; run that end-to-end, this doc explains the gate it
   produces.
-- [`g4-ship.md`](g4-ship.md) — the next gate; its frozen-SHA test gate
-  self-gates against the SHA + command this gate certified.
+- [`g4-ship.md`](g4-ship.md) — the next gate; its frozen-SHA test gate skips only
+  against the verdict this gate RECORDED (never the registry, never the deployed
+  SHA).
 - [`../task-board-api.md`](../task-board-api.md) — the `/api/v1/gates` write
   surface (the conductor writes through the model funnel server-side).

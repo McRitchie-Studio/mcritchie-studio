@@ -154,6 +154,8 @@ require_relative "../app/models/release/prod_smoke"
 # spawn) runs with mise's ruby bin dir leading PATH, so `env ruby` == CI's ruby.
 # Rails-free → unit + integration tested.
 require_relative "../app/models/release/gate_ruby"
+require_relative "../app/models/release/gate_env"
+require_relative "../app/models/release/gate_workspace"
 # Deploy-side usage capture: read the conductor's LOCAL session transcript and
 # diff it against the per-(session, slug) baseline (shared verbatim with bin/task
 # + bin/reviewer-select) so reviewed→assembled / assembled→shipped flips carry
@@ -268,6 +270,11 @@ DRY = Release::Cli.take_flag(ARGV, "--dry-run")
 Release::Cli.take_flag(ARGV, "--prod")
 PROD = !Release::Cli.take_flag(ARGV, "--local")
 ASSUME_YES = Release::Cli.take_flag(ARGV, "--yes")
+# The FIRST-CLASS override for a ship test gate the operator believes is a false
+# negative. It replaces the old registry-blanking trick, which silently DISARMED
+# the gate; this one demands `--reason`, confirms, and records a RED gate SOP. See
+# test_gate.
+SKIP_TEST_GATE = Release::Cli.take_flag(ARGV, "--skip-test-gate")
 
 def abort!(msg) = abort("✗ #{msg}")
 def say(msg) = puts(msg)
@@ -294,8 +301,11 @@ end
 
 # Run a shell command. In dry-run, print it and skip. `chdir:` runs it in
 # another directory (used for gem-repo builds/tags). `env:` is an optional
-# environment overlay merged into the child (the gate ruby pin passes it so the
-# spawned suite/bundle/probe resolve `env ruby` to mise — see gate_ruby_env); a
+# environment overlay merged into the child — the gates pass it so the spawned
+# suite/bundle/probe resolve `env ruby` to mise, see NO agent session, and boot
+# against the gate's private test DB (see gate_env / Release::GateEnv). A nil
+# VALUE in that overlay UNSETS the key in the child (Process.spawn semantics) —
+# that is how the session scrub reaches every grandchild the suite spawns. A
 # blank/nil overlay leaves the argv exactly as-is. Returns [stdout, ok?].
 def sh(*cmd, capture: false, chdir: nil, env: nil)
   printable = "#{chdir ? "(cd #{chdir}) " : ''}#{cmd.join(' ')}"
@@ -1256,6 +1266,46 @@ def primary_checkout_lock_path(repo)
   File.join(dir, "mcr-primary-checkout-#{repo}.lock")
 end
 
+# --- the gate-workspace lock -------------------------------------------------
+# The gate workspace is PRIVATE to the conductor, not to a PROCESS: its path
+# (<repo>/.worktrees/_gate) and its DB (<repo>_gate_test) are FIXED. So while no
+# agent session or hand-run command can touch it, ANOTHER `bin/release` can — and
+# two concurrent conductors are a documented occurrence here (two QA-release
+# sessions have raced). Unlocked, conductor B's `reset --hard` would move the tree
+# and its `db:test:prepare` would PURGE the DB under conductor A's live,
+# lazily-autoloading suite: the exact two root causes this gate exists to close,
+# relocated one directory over (plus the parallel-full-suite SIGSEGV class).
+#
+# So the gate takes its OWN lock, held across pin → prepare → suite. It is
+# deliberately NOT the primary-checkout lock: the primary must stay FREE (feature
+# sessions use it, and monopolising it for the length of a suite was half of what
+# made the old gate hostile). Never nested inside the primary lock, so the two
+# can't deadlock.
+#
+# NOTE on MCR_PRIMARY_LOCK_DIR: despite its name it overrides the lock DIRECTORY,
+# not the primary lock alone — every bin/release lock lives there, and the tests
+# isolate BOTH locks by pointing it at a tmpdir. Do not "fix" the naming by giving
+# the gate lock its own dir: a split would silently un-isolate one of them.
+def gate_workspace_lock_path(repo)
+  dir = ENV["MCR_PRIMARY_LOCK_DIR"].to_s
+  dir = File.join(projects_root, ".agents", "locks") if dir.empty?
+  FileUtils.mkdir_p(dir)
+  File.join(dir, "mcr-gate-workspace-#{repo}.lock")
+end
+
+# Run the block holding `repo`'s GATE-WORKSPACE lock. Always waits: a queued gate
+# is correct (the other conductor's suite is certifying the same tree), where
+# proceeding concurrently is guaranteed corruption.
+def with_gate_workspace(repo)
+  File.open(gate_workspace_lock_path(repo), File::RDWR | File::CREAT, 0o644) do |f|
+    unless f.flock(File::LOCK_EX | File::LOCK_NB)
+      say("  waiting on the #{repo} gate-workspace lock (another bin/release is running its gate suite)…")
+      f.flock(File::LOCK_EX)
+    end
+    yield
+  end
+end
+
 # Run the block holding `repo`'s primary-checkout lock.
 #   wait: true  — queue behind the current holder (flips are seconds; the one
 #                 long holder is the gate suite, and callers that MUST proceed
@@ -1290,20 +1340,34 @@ end
 #
 # Memoized so the note prints once per run, not once per repo. The empty-Hash
 # overlay ({}) is a valid memo — an mise-less host still short-circuits after one note.
-def gate_ruby_env
-  return @gate_ruby_env if defined?(@gate_ruby_env)
+def gate_ruby_bin_dir
+  return @gate_ruby_bin_dir if defined?(@gate_ruby_bin_dir)
 
-  bin_dir = Release::GateRuby.resolve_ruby_bin_dir
-  @gate_ruby_env = Release::GateRuby.env(ruby_bin_dir: bin_dir.to_s)
-  if bin_dir
-    say("  gate ruby: mise #{Release::GateRuby::RUBY_PIN} (#{bin_dir}) leads PATH — matches CI")
+  @gate_ruby_bin_dir = Release::GateRuby.resolve_ruby_bin_dir
+  if @gate_ruby_bin_dir
+    say("  gate ruby: mise #{Release::GateRuby::RUBY_PIN} (#{@gate_ruby_bin_dir}) leads PATH — matches CI")
   else
     say("  ⚠ gate ruby: mise #{Release::GateRuby::RUBY_PIN} not installed (#{Release::GateRuby.install_dir}) — " \
         "the gate suite runs under the shell ruby (#{RbConfig.ruby}). On a host whose `ruby` isn't mise this can " \
         "diverge from CI (deploy-tooling meta-tests hit a brew/mise gem-home split). Install it: " \
         "mise install ruby@#{Release::GateRuby::RUBY_PIN}")
   end
-  @gate_ruby_env
+  @gate_ruby_bin_dir
+end
+
+# The FULL gate overlay for a repo: the mise ruby pin + the agent-session scrub +
+# the gate's private TEST_DATABASE_URL (Release::GateEnv). Every gate subprocess —
+# the suite, its bundle check/install, the db:test:prepare, and every grandchild
+# they spawn — runs under this, so `local == CI` on all three axes. Memoized per
+# repo (the ruby note prints once per run, from gate_ruby_bin_dir).
+def gate_env(repo)
+  @gate_env ||= {}
+  @gate_env[repo] ||= Release::GateEnv.env(
+    ruby_bin_dir: gate_ruby_bin_dir.to_s,
+    # nil for a SQLite app (rolio): its test DB is a file INSIDE the workspace,
+    # already private — and handing it a postgres URL would be a live trap.
+    test_database_url: gate_database_url(repo)
+  )
 end
 
 # --- suite-toolchain guard: bundle check/install under the SUITE ruby --------
@@ -1337,20 +1401,22 @@ def suite_bundle_argv(path)
   File.exist?(File.join(path, "bin", "bundle")) ? ["bin/bundle"] : ["ruby", "-S", "bundle"]
 end
 
-# The ruby the suite will boot with — probed under the SAME gate-ruby env pin the
-# suite runs through (mise's pinned 3.3.11 when available; see gate_ruby_env), so
+# The ruby the suite will boot with — probed under the SAME gate env overlay the
+# suite runs through (mise's pinned 3.3.11 when available; see gate_env), so
 # the diagnosis below names the ruby the suite ACTUALLY boots, not the conductor
 # shell's. Degrades to "unknown" (never aborts) on a failed probe: this string
 # only enriches the mismatch diagnosis below.
-def suite_ruby(path)
-  out, ok = sh("ruby", "-e", "print RbConfig.ruby", chdir: path, capture: true, env: gate_ruby_env)
+def suite_ruby(repo, path)
+  out, ok = sh("ruby", "-e", "print RbConfig.ruby", chdir: path, capture: true, env: gate_env(repo))
   ok && !out.strip.empty? ? out.strip : "unknown (ruby probe failed)"
 end
 
-# Verify the RELEASE tree's bundle under the suite ruby BEFORE burning a
+# Verify the GATE WORKSPACE's bundle under the suite ruby BEFORE burning a
 # multi-minute suite run: check → self-heal with install → abort as ENV.
-# Runs INSIDE the gate's primary-checkout lock, after the release ff, so it
-# reads the exact Gemfile.lock the suite will load.
+# Runs in the isolated gate workspace, INSIDE the gate-workspace lock (another
+# bin/release CAN reach that tree — see with_gate_workspace),
+# AFTER it is pinned at the SHA under test, so it reads the exact Gemfile.lock the
+# suite will load.
 def ensure_suite_bundle!(repo, path)
   # No Gemfile in the release tree → nothing bundler-managed to verify
   # (self-gating, like an app with no qa_test_cmd).
@@ -1360,18 +1426,18 @@ def ensure_suite_bundle!(repo, path)
   # ruby the suite now boots (mise's pin) — otherwise a brew-satisfied /
   # mise-missing gem (the exact rel-20260708-32701b failure) would slip past the
   # check and only blow up mid-suite as a raw GemNotFound. argv is unchanged; the
-  # pin rides as the env overlay (gate_ruby_env), so bin/bundle's shebang resolves
+  # pin rides as the env overlay (gate_env), so bin/bundle's shebang resolves
   # to mise.
   bundle = suite_bundle_argv(path)
   label  = bundle.join(" ")
-  _, ok = sh(*bundle, "check", chdir: path, capture: true, env: gate_ruby_env)
+  _, ok = sh(*bundle, "check", chdir: path, capture: true, env: gate_env(repo))
   return if ok
 
   say("  #{repo}: bundle unsatisfied under the suite ruby — #{label} install")
-  _, ok = sh(*bundle, "install", chdir: path, env: gate_ruby_env)
+  _, ok = sh(*bundle, "install", chdir: path, env: gate_env(repo))
   return if ok
 
-  boot_ruby = suite_ruby(path)
+  boot_ruby = suite_ruby(repo, path)
   here_ruby = RbConfig.ruby
   divergence =
     if boot_ruby == here_ruby
@@ -1386,23 +1452,208 @@ def ensure_suite_bundle!(repo, path)
          "then re-run `bin/release prepare`.")
 end
 
+# --- the isolated gate workspace --------------------------------------------
+# Materialize the PRIVATE checkout a gate suite runs in, pinned (detached) at
+# `sha`, and return its path. See Release::GateWorkspace for the full why; the
+# short version: the gate used to run its multi-minute, LAZILY-AUTOLOADING suite
+# on the SHARED primary, so any concurrent `git checkout` (another agent session,
+# a hand-run command — the flock only binds other bin/release invocations) tore
+# the code snapshot mid-run and the gate false-failed on green code. A worktree
+# nobody else knows about cannot be flipped underneath the suite.
+#
+# The workspace PERSISTS between runs (reset --hard onto the new SHA) so the
+# bundle and the test DB stay warm; it is rebuilt from scratch when it's missing
+# or its git metadata went stale (e.g. someone removed it by hand).
+def gate_workspace!(repo, sha)
+  primary = repo_path(repo)
+  path    = Release::GateWorkspace.path(primary)
+  sha     = sha.to_s.strip
+  abort!("gate #{repo}: no SHA to pin the isolated gate checkout at") if sha.empty?
+
+  if File.exist?(File.join(path, ".git"))
+    # Reuse: hard-reset the worktree onto the SHA under test. `reset --hard` (not
+    # `checkout`) so a half-written tree from a killed run can't refuse the move;
+    # detached HEAD means we never contend with the primary or an agent worktree
+    # for a branch name.
+    _, ok = sh("git", "-C", path, "reset", "--hard", sha, capture: true)
+    unless ok
+      say("  #{repo}: the gate workspace is stale — rebuilding it")
+      sh("git", "-C", primary, "worktree", "remove", "--force", path, capture: true)
+      sh("git", "-C", primary, "worktree", "prune", capture: true)
+    end
+  end
+
+  unless File.exist?(File.join(path, ".git"))
+    FileUtils.mkdir_p(File.dirname(path))
+    # ALWAYS prune first: a workspace dir deleted by hand stays REGISTERED in
+    # .git/worktrees, and `worktree add` then refuses the path as already in use.
+    # Pruning drops those orphan registrations; it never touches a live worktree.
+    sh("git", "-C", primary, "worktree", "prune", capture: true)
+    _, ok = sh("git", "-C", primary, "worktree", "add", "--detach", path, sha, capture: true)
+    unless ok
+      abort!("gate #{repo}: could not create the isolated gate checkout at #{path} " \
+             "(`git worktree add --detach #{short(sha)}`). This is an ENV issue, NOT a release " \
+             "regression — nothing to eject or revert.")
+    end
+  end
+
+  # Drop untracked leftovers from the previous SHA — a since-deleted test file
+  # would otherwise still be collected by the runner and fail on a missing
+  # constant. NO `-x`, so GITIGNORED paths are kept untouched by definition: the
+  # warm caches this workspace exists to preserve (tmp/ bootsnap, node_modules,
+  # app/assets/builds) and the .env below are all gitignored, so they survive
+  # without needing `-e` excludes (which would be pure no-ops here).
+  sh("git", "-C", path, "clean", "-fd", capture: true)
+
+  # The suite reads dotenv's `.env`, which is GITIGNORED — so a virgin worktree
+  # has none and the suite would boot with a different env than the primary's
+  # (and than CI's, which supplies its own). bin/agent-worktree copies it into
+  # every worktree it creates for exactly this reason; the gate workspace is no
+  # different. MIRRORED (copy, else delete) rather than merely copied: if the
+  # primary drops its .env, a stale copy here would otherwise outlive it forever
+  # and the gate would keep certifying against an env nothing else has.
+  env_source = File.join(primary, ".env")
+  env_target = File.join(path, ".env")
+  if File.exist?(env_source)
+    FileUtils.cp(env_source, env_target)
+  elsif File.exist?(env_target)
+    FileUtils.rm_f(env_target)
+  end
+
+  # …but NEVER a worktree-style `.env.test.local`. dotenv auto-loads it for
+  # RAILS_ENV=test and it sets TEST_DATABASE_URL — which the hub's database.yml
+  # renders into an explicit `url:`, BEATING the gate's own DATABASE_URL overlay.
+  # A stray one here would silently point the gate's suite (and its PURGING
+  # db:test:prepare) at some worktree's database. The privacy assertion would
+  # catch it and abort, but the gate should not depend on that: remove it.
+  FileUtils.rm_f(File.join(path, ".env.test.local"))
+
+  path
+end
+
+# Bring the gate workspace to a runnable state: the right gems, and a test DB
+# that is the GATE'S OWN (never the primary's shared `<app>_test`, which a
+# concurrent suite can pollute mid-run — the third false-negative mechanism).
+# `db:test:prepare` is exactly what CI runs before its suite
+# (.github/workflows/ci.yml), so the gate's setup and CI's stay one command.
+def prepare_gate_workspace!(repo, path)
+  ensure_suite_bundle!(repo, path)
+
+  # PROVE the DB is private BEFORE db:test:prepare — that task PURGES and reloads
+  # the schema, so running it against a database we merely ASSUME is ours would
+  # destroy a concurrent suite's data. Assert first, destroy second.
+  assert_private_gate_db!(repo, path)
+
+  _, ok = sh("bin/rails", "db:test:prepare", chdir: path, capture: true, env: gate_env(repo))
+  return if ok
+
+  abort!("gate #{repo}: `bin/rails db:test:prepare` failed in the isolated gate workspace (#{path}, " \
+         "#{gate_database_url(repo) || 'file-backed test DB inside the workspace'}). This is an ENV/DB " \
+         "issue, NOT a release regression — nothing to eject or revert. Check Postgres is up, then re-run.")
+end
+
+# Boot the app in the gate workspace and read back the database it ACTUALLY
+# connects to in the test env — then REFUSE to run unless that DB is private to
+# this gate (Release::GateWorkspace.private_db?).
+#
+# WHY, and why asserting the DB NAME STRING would not do: the "private test DB" is
+# delivered by an ENV overlay, and an env var only lands if the app's
+# config/database.yml actually reads it. `TEST_DATABASE_URL` is a HAND-ROLLED seam
+# — the hub renders `url: <%= ENV["TEST_DATABASE_URL"] %>`; turf-monster does NOT
+# (bare `database: turf_monster_test`). So for turf the overlay was silently
+# INERT: the gate would have run — and `db:test:prepare` would have PURGED — the
+# SHARED primary test DB. `DATABASE_URL` (a Rails builtin) now covers every app,
+# but a guarantee that rests on every future app's config being right is a
+# CONVENTION, not an invariant. This makes it an invariant: ask the booted app,
+# and treat a shared DB as a hard abort — never a silent stomp.
+def assert_private_gate_db!(repo, path)
+  probe = 'print "GATEDB=#{ActiveRecord::Base.connection_db_config.database}"'
+  out, ok = sh("bin/rails", "runner", probe, chdir: path, capture: true, env: gate_env(repo))
+  # capture: true merges stderr (bundler/rubygems warnings), so pluck the token
+  # instead of trusting the whole stream.
+  resolved = out.to_s[/GATEDB=(.*)$/, 1].to_s.strip
+
+  if !ok || resolved.empty?
+    abort!("gate #{repo}: could not resolve the test database in the gate workspace (#{path}) — " \
+           "`bin/rails runner` failed to boot. This is an ENV issue, NOT a release regression — " \
+           "nothing to eject or revert.")
+  end
+
+  if Release::GateWorkspace.private_db?(resolved: resolved, repo: repo, workspace: path)
+    say("  #{repo}: gate test DB #{resolved} (private to this gate)")
+    return
+  end
+
+  abort!("gate #{repo}: the suite would run against `#{resolved}` — a SHARED test database, NOT the " \
+         "gate's own (#{Release::GateWorkspace.test_database_name(repo)}). REFUSING: the next step " \
+         "(`db:test:prepare`) PURGES it, which would destroy a concurrent suite's data, and a shared " \
+         "DB re-opens the cross-talk this gate exists to close. CAUSE: #{repo}'s config/database.yml " \
+         "is not honouring the gate's DATABASE_URL/TEST_DATABASE_URL overlay for the test env. This " \
+         "is an ENV/config issue, NOT a release regression — nothing to eject or revert.")
+end
+
+# The gate DB URL for this repo, or nil when its test DB is already file-backed
+# INSIDE the workspace (SQLite — private by construction, and a postgres URL would
+# be a live trap). Memoized: it reads the app's config/database.yml.
+def gate_database_url(repo)
+  @gate_database_url ||= {}
+  return @gate_database_url[repo] if @gate_database_url.key?(repo)
+
+  @gate_database_url[repo] = Release::GateWorkspace.database_url_for(repo, repo_path(repo))
+end
+
 # PRE-QA GATE (prepare step 4): run each app's registered `qa_test_cmd` against
 # origin/release BEFORE anything deploys to QA, so a regression riding the
 # release branch is caught while the members are still `reviewed` (nothing
-# flipped, nothing deployed). The sibling checkout is brought onto `release` at
-# origin/release for the run and ALWAYS restored to `main` (ensure) — ship's
-# clean-main preflight depends on it. A red gate aborts the WHOLE prepare with
-# eject guidance: block the offender OUT of the RC (`bin/release eject`), revert
-# its merge commit on `release`, then re-run — the sweep self-heals and the REST
-# of the RC rides on. Apps with no qa_test_cmd are skipped (self-gating).
-# The whole checkout→suite→restore section holds the repo's primary-checkout
-# lock (with_primary_checkout) so no concurrent invocation flips HEAD mid-suite.
-def pre_qa_gate(app_groups)
+# flipped, nothing deployed). A red gate aborts the WHOLE prepare with eject
+# guidance: block the offender OUT of the RC (`bin/release eject`), revert its
+# merge commit on `release`, then re-run — the sweep self-heals and the REST of
+# the RC rides on. Apps with no qa_test_cmd are skipped (self-gating).
+#
+# The suite runs in the repo's ISOLATED GATE WORKSPACE (Release::GateWorkspace) —
+# a private detached worktree pinned at the origin/release SHA, with its own test
+# DB — NOT on the shared primary. The primary is never checked out to `release`
+# at all now, which is what makes the verdict trustworthy: the test env autoloads
+# LAZILY (config.eager_load is false outside CI), so a concurrent `git checkout`
+# in the shared primary used to tear the code snapshot mid-suite and false-fail
+# green code. The old flock could not prevent that — it only bound other
+# bin/release invocations. It also means the primary stays on a clean `main`, so
+# the gate no longer fights concurrent feature sessions for it.
+#
+# On GREEN the gate RECORDS what it certified (repo → sha + cmd) on the release:
+# that record is the ONLY thing G4's ship gate will accept as grounds for
+# skipping its own suite (Release::ShipSequence.ship_gate_skip?). A gate that
+# skipped, was misconfigured, or went red leaves NO record, so G4 fails open and
+# runs the suite itself.
+# Stamp what the G3 pre-QA gate actually CERTIFIED for a repo: the SHA it ran on
+# and the command it ran. G4's ship gate skips its own suite ONLY against this
+# record (Release::ShipSequence.ship_gate_skip?) — never against the registry or
+# the deployed SHA, neither of which proves a suite ever ran.
+#
+# Best-effort like the other record steps: a board hiccup must not fail a GREEN
+# gate. But a missing record makes G4 FAIL OPEN (it re-runs the suite), so the
+# worst case of a lost stamp is a redundant run, never an unguarded ship.
+def record_qa_gate(rel_slug, repo, sha, cmd)
+  return if rel_slug.to_s.empty? || DRY
+
+  conductor(
+    "r = Release.find_by(slug: #{rel_slug.to_s.inspect}); " \
+    "Release::Conductor.record_qa_gate(release: r, repo: #{repo.to_s.inspect}, " \
+    "sha: #{sha.to_s.inspect}, cmd: #{cmd.to_s.inspect}, ok: true) if r; " \
+    "puts({ qa_gate: #{repo.to_s.inspect} }.to_json)"
+  )
+rescue SystemExit, StandardError => e
+  say("  ⚠ G3 certification not recorded for #{repo} (#{e.message}) — the ship gate will re-run the " \
+      "suite on the frozen SHA rather than skip it (fail-open)")
+end
+
+def pre_qa_gate(app_groups, rel_slug = nil)
   say("")
   # The banner names what THIS step actually runs — each app's registered
   # qa_test_cmd. (The old "integration + e2e-smoke" overstated it: the e2e-smoke
   # half of prepare's tier is the deploy loop's own /up boot wait, not this gate.)
-  step("pre-QA gate: each app's registered qa_test_cmd on origin/#{RELEASE_BRANCH} (before any QA deploy)")
+  step("pre-QA gate: each app's registered qa_test_cmd on origin/#{RELEASE_BRANCH} " \
+       "(isolated gate workspace, before any QA deploy)")
   app_groups.each do |group|
     repo = group["repo"]
     cmd  = qa_gate_cmd(repo)
@@ -1411,35 +1662,39 @@ def pre_qa_gate(app_groups)
       next
     end
     # Parse BEFORE the dry-run return and the git dance — a malformed registry
-    # value should abort a preview too, and never churn the sibling checkout.
+    # value should abort a preview too, and never churn a checkout.
     argv = test_cmd_argv(cmd)
     if DRY
-      say("  [dry-run] pre-QA gate #{repo}: (cd #{repo}) #{cmd} @ origin/#{RELEASE_BRANCH}")
+      say("  [dry-run] pre-QA gate #{repo}: (cd #{Release::GateWorkspace.path(repo_path(repo))}) #{cmd} " \
+          "@ origin/#{RELEASE_BRANCH}")
       next
     end
 
     path = repo_path(repo)
     abort!("app repo not found at #{path} — clone it as a sibling at the projects root") unless Dir.exist?(path)
     sh("git", "-C", path, "fetch", "origin", "--quiet")
+    out, ok = sh("git", "-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}", capture: true)
+    abort!("could not resolve origin/#{RELEASE_BRANCH} in #{repo} for the pre-QA gate — fetch, then re-run") unless ok
+    sha = out.strip
+
+    # The suite runs in the isolated workspace, pinned at the SHA under test.
+    # The GATE-WORKSPACE lock (never the primary's — the primary stays free) is
+    # held across pin → prepare → suite: the workspace is private to the CONDUCTOR,
+    # not to a process, so a second bin/release would otherwise reset --hard this
+    # tree and purge this DB mid-suite. See with_gate_workspace.
     ok = false
-    # HOLD the primary-checkout lock for the WHOLE checkout→suite→restore
-    # critical section: the suite lazy-loads code off disk for minutes, so a
-    # concurrent HEAD flip (the artifact dance) mid-run poisons it with
-    # wrong-branch files → false failures → a false-negative G3.
-    with_primary_checkout(repo) do
-      _, co = sh("git", "-C", path, "checkout", RELEASE_BRANCH, capture: true)
-      abort!("could not checkout #{RELEASE_BRANCH} in #{repo} for the pre-QA gate (dirty tree?) — clean it, then re-run") unless co
-      _, ff = sh("git", "-C", path, "merge", "--ff-only", "origin/#{RELEASE_BRANCH}", capture: true)
-      abort!("could not ff #{repo} #{RELEASE_BRANCH} to origin/#{RELEASE_BRANCH} (local divergence) — resolve, then re-run") unless ff
-      # Bundle-verify the release tree under the SAME ruby the suite boots —
-      # BEFORE the multi-minute suite run (see the suite-toolchain guard above).
-      ensure_suite_bundle!(repo, path)
-      step("pre-QA gate #{repo}: #{cmd}")
-      _, ok = run_test_scope("pre_qa_gate", *argv, chdir: path, repo: repo, env: gate_ruby_env)
-    ensure
-      sh("git", "-C", path, "checkout", "main", capture: true)
+    with_gate_workspace(repo) do
+      workspace = gate_workspace!(repo, sha)
+      prepare_gate_workspace!(repo, workspace)
+      step("pre-QA gate #{repo}: #{cmd}  [#{short(sha)} · isolated workspace]")
+      _, ok = run_test_scope("pre_qa_gate", *argv, chdir: workspace, repo: repo, env: gate_env(repo))
     end
-    next if ok
+
+    if ok
+      # Certify: the ONLY evidence G4 accepts for skipping its own gate.
+      record_qa_gate(rel_slug, repo, sha, cmd)
+      next
+    end
 
     abort!("pre-QA gate failed for #{repo} (#{cmd}) — a regression is riding origin/#{RELEASE_BRANCH}. " \
            "Identify the offending task, eject it (`bin/release eject <task> --feedback \"…\"`), revert its " \
@@ -1618,7 +1873,7 @@ def prepare
   #    failed by the SystemExit wrapper below when anything in the window aborts.
   record_gate_open(rel_slug, "g3_candidate", actor: "steffon")
   g3_gate = :open
-  pre_qa_gate(app_groups)
+  pre_qa_gate(app_groups, rel_slug)
 
   # 5b. Record the Steffon assembled QA intent for every member so /deployments shows
   #     him QA-ing the RC live the moment the deploy half starts — the Deploy mirror
@@ -2140,35 +2395,76 @@ end
 # frozen SHA before the irreversible deploy; scoped-abort on red. repo_script
 # apps SELF-GATE (their own deploy runs tests) → no test_cmd → skipped.
 #
-# G4 SELF-GATING (the 90/10 policy): when the frozen ship SHA is EXACTLY the
-# SHA the G3 pre-QA gate certified this run (release.metadata["qa_shas"]) AND
-# the registered qa_test_cmd is the SAME command, re-running it here proves
-# nothing new — the full suite runs ONCE per release batch, at G3. The skip is
-# recorded as a visible SOP on the g4_ship gate run, never a silent omission.
-# A straggler / re-pinned / drifted SHA re-triggers the gate (the pure decision
-# lives in Release::ShipSequence.ship_gate_skip?, unit-tested).
-def test_gate(repo, frozen_sha: nil, qa_sha: nil)
+# G4 SELF-GATING (the 90/10 policy): the full suite runs ONCE per release batch,
+# at G3 — so this gate may skip, but ONLY on PROOF that G3 actually ran and
+# passed. That proof is G3's OWN RECORDED VERDICT,
+# release.metadata["qa_gates"][repo] = {sha, cmd, ok}, which pre_qa_gate writes
+# only after a green suite. Same command + same frozen SHA + green => skip.
+#
+# It deliberately does NOT infer the proof from the registry + release.metadata
+# ["qa_shas"] (the old rule): qa_shas is stamped by the QA DEPLOY LOOP, so it
+# records what was DEPLOYED, never what was CERTIFIED — which let a SKIPPED G3
+# still satisfy the skip and silently disarm this gate. No record, a red record,
+# a different command, or a drifted/straggler SHA all FAIL OPEN and run the gate.
+# The skip is recorded as a visible SOP on the g4_ship gate run, never a silent
+# omission. (The pure decision lives in Release::ShipSequence.ship_gate_skip?,
+# unit-tested.)
+def test_gate(repo, frozen_sha: nil, qa_gate: nil)
   cmd = app_meta_for(repo)["test_cmd"].to_s
   if cmd.empty?
     step("test gate: #{repo} self-gates (no conductor test_cmd; its deploy runs tests) — skip")
     return
   end
 
-  if Release::ShipSequence.ship_gate_skip?(test_cmd: cmd, qa_test_cmd: qa_gate_cmd(repo),
-                                           frozen_sha: frozen_sha, qa_sha: qa_sha)
-    step("test gate: #{repo} self-gates — `#{cmd}` already green on frozen #{short(frozen_sha)} " \
-         "at the G3 pre-QA gate this run; skip (a drifted SHA re-triggers)")
-    gate_sop("ship_test_gate", "skipped — #{cmd} already green @ #{short(frozen_sha)} at G3 (pre-QA gate, same SHA + command)", true)
+  if Release::ShipSequence.ship_gate_skip?(test_cmd: cmd, frozen_sha: frozen_sha, qa_gate: qa_gate)
+    step("test gate: #{repo} self-gates — `#{cmd}` already CERTIFIED green on frozen #{short(frozen_sha)} " \
+         "by the G3 pre-QA gate this run; skip (a drifted SHA, or a G3 that never ran, re-triggers)")
+    gate_sop("ship_test_gate", "skipped — #{cmd} certified green @ #{short(frozen_sha)} at G3 (recorded pre-QA verdict)", true)
+    return
+  end
+
+  # THE OPERATOR ESCAPE HATCH — explicit, confirmed, and LOUD.
+  #
+  # The old way to ship past a gate you believed was a false negative was to blank
+  # the registry's test_cmd/qa_test_cmd. That is now closed (it SILENTLY DISARMED
+  # this gate — see ship_gate_skip?), and closing it without a replacement would
+  # WEDGE the operator: a G4 false negative with no clean override, and a config
+  # edit is not one (ship's preflight refuses a dirty primary). So the override is
+  # first-class: it demands a reason, it asks before it skips, and it records a RED
+  # gate SOP — a skipped gate is now visible in the release record forever, where
+  # the old trick left one that read "already green".
+  if SKIP_TEST_GATE
+    reason = opt_value("--reason").to_s.strip
+    abort!("--skip-test-gate requires --reason \"…\" (it is recorded on the release as a red gate)") if reason.empty?
+    unless confirm("⚠ SKIP the #{repo} ship test gate (`#{cmd}`) on frozen #{short(frozen_sha)}? " \
+                   "The suite will NOT run before the irreversible prod deploy. Reason: #{reason}")
+      abort!("ship aborted — test gate not skipped")
+    end
+    step("⚠ test gate: SKIPPED BY OPERATOR for #{repo} (--skip-test-gate) — #{reason}")
+    gate_sop("ship_test_gate",
+             "⚠ SKIPPED BY OPERATOR (--skip-test-gate): #{reason} — `#{cmd}` did NOT run on #{short(frozen_sha)}",
+             false)
     return
   end
 
   # Parse before the dry-run return so a malformed registry value aborts a
   # preview too (see test_cmd_argv).
   argv = test_cmd_argv(cmd)
-  step("test gate: (cd #{repo}) #{cmd}  [frozen SHA · before prod]")
+  step("test gate: (cd #{repo}) #{cmd}  [frozen SHA · isolated workspace · before prod]")
   return if DRY
 
-  _, ok = run_test_scope("ship_test_gate", *argv, chdir: repo_path(repo), repo: repo, label: cmd, env: gate_ruby_env)
+  # Same isolation as G3: the suite runs in the private gate worktree pinned at
+  # the FROZEN ship SHA, never on the shared primary — so nothing can flip the
+  # tree (or share the test DB) under the last gate before an irreversible deploy.
+  # Under the GATE-WORKSPACE lock, so a concurrent conductor can't reset --hard
+  # the tree or purge the DB mid-suite (the workspace is private to the conductor,
+  # not to a process). NOT the primary lock — the primary stays free.
+  ok = false
+  with_gate_workspace(repo) do
+    workspace = gate_workspace!(repo, frozen_sha)
+    prepare_gate_workspace!(repo, workspace)
+    _, ok = run_test_scope("ship_test_gate", *argv, chdir: workspace, repo: repo, label: cmd, env: gate_env(repo))
+  end
   abort!("test_cmd failed for #{repo} (#{cmd}) — aborting before the irreversible prod deploy; fix + re-run") unless ok
 end
 
@@ -2387,25 +2683,31 @@ end
 # repo whose frozen SHA the G3 gate already certified with the same command
 # self-gates too (see test_gate), recording the skip as a gate SOP.
 #
-# The ff AND the suite share ONE primary-checkout lock window per repo — the
-# G4 twin of the pre-QA gate's critical section. Releasing between them (the
-# pre-#480 shape) left the suite running lock-free, so a concurrent
-# archive/retro artifact dance could flip the primary main↔release mid-suite →
-# wrong-branch lazy loads → a false-red abort right before ship authority.
-# ff_main_local's own acquisition is SKIPPED (lock: false): the flock is NOT
-# re-entrant, so nesting it inside this window would self-deadlock.
-def avi_ship_gate(app_groups, ship_sha, qa_shas)
+# The primary-checkout lock now wraps ONLY the local ff (a fast pointer move the
+# deploy pushes from). The SUITE no longer runs on the primary at all — it runs
+# in the isolated gate workspace at the frozen SHA (see test_gate /
+# Release::GateWorkspace), so it can't be poisoned by a concurrent HEAD flip and
+# doesn't need to hold the primary hostage for the minutes it takes. That was the
+# flaw in the old shape: the flock is ADVISORY, so widening it around the suite
+# still couldn't stop a concurrent agent session (which takes no lock) from
+# flipping the tree mid-run — it only blocked other bin/release invocations while
+# making the contention worse. ff_main_local's own acquisition is SKIPPED
+# (lock: false) inside the window: the flock is NOT re-entrant.
+def avi_ship_gate(app_groups, ship_sha, qa_gates)
   say("")
-  step("Avi ship gate: full suite (registry test_cmd) on the FROZEN ship SHA (before ship authority)")
+  step("Avi ship gate: full suite (registry test_cmd) on the FROZEN ship SHA " \
+       "(isolated workspace, before ship authority)")
   app_groups.each do |group|
     repo = group["repo"]
-    window = lambda do
-      ff_main_local(repo, ship_sha[repo], lock: false) # local only — run the suite on the frozen tree
-      test_gate(repo, frozen_sha: ship_sha[repo], qa_sha: Release::ShipSequence.frozen_sha(qa_shas, repo))
+    # DRY previews plan-only (the callee prints + returns early) — never touch
+    # the real lock file.
+    if DRY
+      ff_main_local(repo, ship_sha[repo])
+    else
+      with_primary_checkout(repo) { ff_main_local(repo, ship_sha[repo], lock: false) }
     end
-    # DRY previews plan-only (both callees print + return early) — never touch
-    # the real lock file, and never queue a preview behind a live gate's suite.
-    DRY ? window.call : with_primary_checkout(repo) { window.call }
+    test_gate(repo, frozen_sha: ship_sha[repo],
+                    qa_gate: Release::ShipSequence.qa_gate(qa_gates, repo))
   end
 end
 
@@ -2624,7 +2926,8 @@ def ship
     "abort('no active release to ship') unless r && (r.active? || unfinished.positive?); " \
     "puts({slug: r.slug, state: r.state, branch: r.branch, " \
     "resuming_member_ship: (!r.active? && unfinished.positive?), unfinished_members: unfinished, " \
-    "repos: Release::Conductor.repo_plan(r), qa_shas: (r.metadata['qa_shas'] || {})}.to_json)",
+    "repos: Release::Conductor.repo_plan(r), qa_shas: (r.metadata['qa_shas'] || {}), " \
+    "qa_gates: (r.metadata['qa_gates'] || {})}.to_json)",
     read_only: true
   )
   abort!("no active release to ship") if result["slug"].to_s.empty?
@@ -2632,6 +2935,9 @@ def ship
   state    = result["state"]
   repos    = result["repos"] || []
   qa_shas  = result["qa_shas"] || {}
+  # What the G3 pre-QA gate CERTIFIED this run (repo => {sha, cmd, ok}) — the only
+  # grounds on which G4 may skip its own suite. See Release::ShipSequence.
+  qa_gates = result["qa_gates"] || {}
   resuming_member_ship = !!result["resuming_member_ship"]
   # Don't ship a candidate that hasn't been assembled + QA'd (the model would
   # otherwise allow assembling→shipped, bypassing the QA gate). The only
@@ -2675,7 +2981,7 @@ def ship
   record_release_event(rel_slug, "ship_gate", "started", actor: by)
   record_gate_open(rel_slug, "g4_ship", actor: by)
   g4_gate = :open
-  avi_ship_gate(app_groups, ship_sha, qa_shas)
+  avi_ship_gate(app_groups, ship_sha, qa_gates)
   record_release_event(rel_slug, "ship_gate", "completed", actor: by)
 
   # 2b. The ship-authority gate — explicit, AFTER Avi's test confirmation and
