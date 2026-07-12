@@ -180,8 +180,18 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_nil rel.reload.tested_at, "tested_at is blank until QA green"
 
     Release::Conductor.qa_green!(rel)
-    stamped = rel.reload.tested_at
+    rel.reload
+    stamped = rel.tested_at
     refute_nil stamped, "qa_green! stamps the release's QA-tested moment"
+
+    # ORDER, not just presence — presence-only is exactly what let the inversion
+    # ship green. `tested` precedes `assembling`/`assembled`/`qa_deployed` in
+    # Release::STAGES, and release_timeline SELECTs tested_at to the LEFT of them,
+    # so a tested_at stamped after assemble! renders the lifecycle BACKWARDS.
+    refute_nil rel.assembled_at, "qa_green! assembles the RC"
+    assert rel.tested_at <= rel.assembled_at,
+           "tested_at (#{rel.tested_at.inspect}) must precede assembled_at (#{rel.assembled_at.inspect}) — " \
+           "release_timeline reads left-to-right"
 
     # First-write-wins like the other release stage stamps: a re-run never moves it.
     Release::Conductor.qa_green!(rel.reload)

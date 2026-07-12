@@ -257,22 +257,33 @@ progress order** (the physical column order is alphabetical — a past rebuild �
 and Postgres can't reorder in place), so `psql` / a DB browser reads a task or
 release lifecycle left-to-right instead of hunting alphabetized columns:
 
-- **`task_timeline`** — per task: `slug, title, stage, blocked_at, blocked_by →
-  created_at, updated_at → queued_at, sizes_revealed_at, started_at →
-  g1_testing_started_at, g1_testing_finished_at, g1_failed_at → submitted_at,
-  reviewed_at, assembled_at, completed_at, archived_at → gates_cached_at,
-  testing_phases_cached_at`.
+- **`task_timeline`** — per task: `slug, title, stage, blocked_at, blocked_from,
+  blocked_by, block_kind → created_at, updated_at → queued_at,
+  sizes_revealed_at, started_at → g1_testing_started_at, g1_testing_finished_at,
+  g1_failed_at → submitted_at, reviewed_at, assembled_at, completed_at,
+  archived_at → gates_cached_at, testing_phases_cached_at`. (It carries the FULL
+  block attribute set — when, from where, who, why — since `blocked` is an
+  attribute of a `building` task, not a stage.)
 - **`release_timeline`** — per release: `slug, state → created_at, updated_at →
   testing_started_at, tested_at → assembling_started_at, assembled_at →
   qa_deploy_started_at, qa_deployed_at → confirming_started_at, confirmed_at →
   prod_deploy_started_at, shipped_at → abandoned_at, release_notes_sent_at,
-  duration_metrics_cached_at`.
+  duration_metrics_cached_at`. (`tested_at` is stamped by
+  `Release::Conductor.qa_green!` at the TOP of its transaction, so it lands
+  BEFORE assembling/assembled/qa_deployed and reads forward.)
 
 Created by a plain `execute "CREATE VIEW …"` migration. **Caveat:** with the
 `:ruby` schema format a raw `CREATE VIEW` does NOT dump to `schema.rb`, so a fresh
 `db:schema:load` (test/CI databases) will NOT have them — they are
 operator-inspection-only; don't back a model or suite assertion on their
 existence in every environment.
+
+**Operator footgun:** `schema.rb` also carries `assume_migrated_upto_version`, so a
+database REBUILT from the schema (e.g. `heroku pg:reset` + `db:schema:load`) marks
+the view migration as ALREADY APPLIED — a later `db:migrate` then SKIPS it and that
+database silently has no views, permanently. After any schema-load rebuild,
+recreate them explicitly (re-run the migration's `up`, or execute the two
+`CREATE VIEW` statements directly).
 
 ## Task Metadata Contract
 

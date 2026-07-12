@@ -108,6 +108,19 @@ class Release
     def qa_green!(release, usage_by_slug: {}, qa_url: nil)
       usage_by_slug ||= {}
       Release.transaction do
+        # Revive `tested_at` — FIRST, before the flips. Reaching qa_green! IS the
+        # QA-green verdict (the g3_candidate gate closes green right after), and
+        # QA-green is the PRECONDITION for assembling, so the top of this
+        # transaction is the earliest honest moment. Stamping it AFTER assemble!
+        # would land tested_at later than assembled_at (set_state_timestamp) and
+        # the qa_deployed event — reading BACKWARDS against the STAGES progress
+        # order (testing → tested → assembling → assembled → qa_deploying →
+        # qa_deployed) and inverting the release_timeline view, which SELECTs
+        # tested_at to the LEFT of assembling/assembled. DEPLOYMENT_STAGES already
+        # carries a scar for exactly this inversion. stamp_stage! is the model's
+        # single stamp seam: it validates the stage name and is first-write-wins,
+        # so a re-run of a green sweep never moves it.
+        release.stamp_stage!("tested")
         # Flip PRODUCER-FIRST (gems before consumers, honoring dependencies) so
         # the assembled column's positions land in the same order the conductor
         # publishes/deploys in — each stage flip stamps the member's board rank.
@@ -116,12 +129,6 @@ class Release
           Current.with_task_event_usage(usage_by_slug[task.slug]) { task.assemble! }
         end
         assemble!(release)
-        # Revive `tested_at`: reaching qa_green! IS the QA-green verdict (the
-        # g3_candidate gate closes green right after this call), so stamp the
-        # release's "QA tested" moment — the `tested` node of the release timeline.
-        # First-write-wins like the other release stage stamps (a re-run of a
-        # green sweep never moves it).
-        release.update!(tested_at: Time.current) unless release.tested_at
         # Stamp Live-on-QA (deploy_qa:completed → `qa_deployed`) HERE — atomic
         # with the member flip — so the /deployments tracker only reaches "Live
         # on QA" green once the members are ACTUALLY `assembled`. bin/release used

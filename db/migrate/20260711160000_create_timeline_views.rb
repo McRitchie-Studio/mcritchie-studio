@@ -11,7 +11,7 @@ class CreateTimelineViews < ActiveRecord::Migration[8.1]
     execute(<<~SQL)
       CREATE VIEW task_timeline AS
       SELECT
-        slug, title, stage, blocked_at, blocked_by,
+        slug, title, stage, blocked_at, blocked_from, blocked_by, block_kind,
         created_at, updated_at,
         queued_at, sizes_revealed_at, started_at,
         g1_testing_started_at, g1_testing_finished_at, g1_failed_at,
