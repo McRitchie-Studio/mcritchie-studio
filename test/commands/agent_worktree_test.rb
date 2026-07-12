@@ -534,8 +534,9 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     refute_includes out, "reclaim candidates:"
   end
 
-  # THE DESTRUCTIVE TIER. Nothing else in this file exercises `--reclaim --yes`, which is
-  # why a regression on the teardown path could hide from the suite.
+  # THE DESTRUCTIVE TIER — the REFUSAL half. Its positive counterpart (the desk that IS torn
+  # down) is above; both halves are needed, because this guard fails in two directions:
+  # fail-open destroys a live desk, fail-closed silently wedges the sweep.
   test "[integration] reclaim --yes REFUSES to tear down a live-claimed desk" do
     mark_worktree_merged_to_origin_main
     bind_task_slug("desk-task")

@@ -2492,9 +2492,22 @@ def fetch_task_record(record, slug)
 end
 
 # The board answered "no such task" — distinct from a board that could not answer at all.
+#
+# BOTH halves are required, and the `&&` is load-bearing. bin/task renders every non-2xx as
+# "<METHOD> <path> -> <code>: <body>", so matching the status alone would accept ANY 404:
+# a Heroku ROUTER 404 (the board app renamed, deleted, or a misconfigured host) or a Rails
+# ROUTE 404 (the API path moved, or a stale local board missing the route). Those are FAILED
+# READS, not a successful "there is no such task" — and because they are board-WIDE, an `||`
+# here would make EVERY bound desk read free at once and silently disarm the guard on the
+# destroy path, tearing down live builder desks. That is the original incident through a new
+# door, and it inverts this file's own doctrine (nil = failed read → withhold; {} = read
+# fine, no claim → free).
+#
+# Only the API's genuine NOT_FOUND body means the task does not exist
+# (app/controllers/api/v1/tasks_controller.rb renders exactly "task not found").
 def task_not_found?(stderr)
   text = stderr.to_s
-  text.match?(/->\s*404\b/) || text.match?(/task not found/i)
+  text.match?(/->\s*404\b/) && text.match?(/task not found/i)
 end
 
 # A Hash on a good parse, nil when the payload is unusable — a malformed board response is

@@ -236,17 +236,49 @@ class AgentWorktreeTest < Minitest::Test
                  "unclaimed is still reclaimable, or the sweep is silently wedged"
   end
 
-  # A 404 is a SUCCESSFUL read ("no such task, hence no claim"), not an outage — otherwise a
-  # desk bound to a deleted/renamed slug is withheld forever on the destroy path.
-  def test_a_404_is_free_not_unreadable_even_when_strict
-    out = run_in_script(<<~RUBY)
-      def capture_status(*_cmd, **_kw); [false, "", "error: GET /api/v1/tasks/gone -> 404: task not found"]; end
+  # --- 404 classification: only the API's OWN "task not found" means the task is gone ------
+  #
+  # bin/task renders every non-2xx as "<METHOD> <path> -> <code>: <body>", so matching the
+  # STATUS alone accepts any 404 — including a Heroku ROUTER 404 (board renamed/deleted) or a
+  # Rails ROUTE 404 (path moved, or a stale local board). Those are FAILED READS, and because
+  # they are board-WIDE an over-broad match makes EVERY bound desk read free at once, silently
+  # disarming the guard on the destroy path. Hence the checks below assert BOTH directions —
+  # a test that only proves the happy 404 passes on the broken form too, which is exactly how
+  # the `||` slipped through.
+  def strict_hold_for(stderr)
+    run_in_script(<<~RUBY)
+      def capture_status(*_cmd, **_kw); [false, "", #{stderr.inspect}]; end
       def command_env(*_a); {}; end
       record = { env: { "TASK_RECORD_SLUG" => "gone" }, task: "gone",
                  dir: Dir.pwd, app: { "slug" => "mcritchie-studio" } }
       print claim_hold(record, strict: true).inspect
     RUBY
-    assert_equal "nil", out, "the board ANSWERED (no such task) — that is free, not unverifiable"
+  end
+
+  # POSITIVE: the board ANSWERED "there is no such task" → free, even on the destroy path.
+  def test_a_real_task_404_is_free_even_when_strict
+    assert_equal "nil", strict_hold_for("error: GET /api/v1/tasks/gone -> 404: task not found"),
+                 "a deleted/renamed slug must not be withheld forever — the board answered"
+  end
+
+  # NEGATIVE CONTROLS — the tests that actually prove the fix. A 404 whose body is NOT the
+  # API's "task not found" is a board we could NOT read, and must WITHHOLD on the destroy
+  # path. Without these, the over-broad `||` form still passes.
+  def test_a_router_404_withholds_and_does_not_read_as_free
+    hold = strict_hold_for("error: GET /api/v1/tasks/gone -> 404: <!DOCTYPE html><html><body>Not Found</body></html>")
+    assert_match(/could not be read/, hold,
+                 "a Heroku router 404 is a board-wide FAILED read — treating it as free would " \
+                 "disarm the guard for EVERY bound desk at once")
+  end
+
+  def test_a_route_404_withholds_and_does_not_read_as_free
+    hold = strict_hold_for("error: GET /api/v1/tasks/gone -> 404: Not found")
+    assert_match(/could not be read/, hold, "a route-level 404 (moved path / stale board) is a failed read")
+  end
+
+  def test_a_500_still_withholds
+    hold = strict_hold_for("error: GET /api/v1/tasks/gone -> 500: internal server error")
+    assert_match(/could not be read/, hold, "the outage that motivated this guard is still withheld")
   end
 
   # --- the board read must be REALLY bounded ---------------------------------
