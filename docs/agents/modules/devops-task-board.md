@@ -252,38 +252,64 @@ post-deploy check has passed.
 
 ## Timeline Inspection Views
 
-Two read-only Postgres views project the pipeline timestamps in **logical
-progress order** (the physical column order is alphabetical — a past rebuild —
-and Postgres can't reorder in place), so `psql` / a DB browser reads a task or
-release lifecycle left-to-right instead of hunting alphabetized columns:
+Two read-only Postgres views project the task + release lifecycle in **logical
+stage order** — the order the pipeline PROGRESSES through — so `psql` / a DB
+browser reads a lifecycle left-to-right instead of hunting alphabetized columns.
+(The physical column order is alphabetical, a past rebuild, and Postgres can't
+reorder in place; hence a view.)
 
-- **`task_timeline`** — per task: `slug, title, stage, blocked_at, blocked_from,
-  blocked_by, block_kind → created_at, updated_at → queued_at,
+**Logical, NOT chronological.** `release_timeline` mirrors `Release::STAGES` — the
+same canonical order the /deployments tracker uses. Release stamps deliberately
+land OUT of wall-clock order: `assembling_started_at` is stamped back at MERGE time
+(`Conductor.sweep!`) and `qa_deploy_started_at` before the QA deploy, so both land
+BEFORE `qa_green!` stamps `tested_at`. That is by design — it is precisely why
+`Release#current_stage` is documented MONOTONIC over these stamps. Do **not** "fix"
+the views by re-ordering them to chronology: logical progress order is the product.
+
+- **`task_timeline`** — a **status header** (`slug, title, stage` + the block set
+  `blocked_at, blocked_from, blocked_by, block_kind` — when / from where / who /
+  why), then the lifecycle chain: `created_at, updated_at → queued_at,
   sizes_revealed_at, started_at → g1_testing_started_at, g1_testing_finished_at,
   g1_failed_at → submitted_at, reviewed_at, assembled_at, completed_at,
-  archived_at → gates_cached_at, testing_phases_cached_at`. (It carries the FULL
-  block attribute set — when, from where, who, why — since `blocked` is an
-  attribute of a `building` task, not a stage.)
-- **`release_timeline`** — per release: `slug, state → created_at, updated_at →
+  archived_at`, then the cache stamps `gates_cached_at, testing_phases_cached_at`.
+  The block set is a HEADER, **not** the first link of the chain:
+  `Task#clear_block_on_forward_move` NULLs all four the moment a task leaves
+  `building`, so they carry values only while it is CURRENTLY blocked.
+- **`release_timeline`** — `slug, state → created_at, updated_at →
   testing_started_at, tested_at → assembling_started_at, assembled_at →
   qa_deploy_started_at, qa_deployed_at → confirming_started_at, confirmed_at →
   prod_deploy_started_at, shipped_at → abandoned_at, release_notes_sent_at,
-  duration_metrics_cached_at`. (`tested_at` is stamped by
-  `Release::Conductor.qa_green!` at the TOP of its transaction, so it lands
-  BEFORE assembling/assembled/qa_deployed and reads forward.)
+  duration_metrics_cached_at`.
 
-Created by a plain `execute "CREATE VIEW …"` migration. **Caveat:** with the
-`:ruby` schema format a raw `CREATE VIEW` does NOT dump to `schema.rb`, so a fresh
-`db:schema:load` (test/CI databases) will NOT have them — they are
-operator-inspection-only; don't back a model or suite assertion on their
-existence in every environment.
+**Always NULL today** (kept so the declared lifecycle stays complete — deliberate,
+not oversight): `releases.testing_started_at` (no producer; tracker node 1 greens
+off `assembling`), `tasks.queued_at`, `tasks.sizes_revealed_at`. `tasks.failed_at`
+is deliberately OMITTED (dead column, not part of the flow).
 
-**Operator footgun:** `schema.rb` also carries `assume_migrated_upto_version`, so a
-database REBUILT from the schema (e.g. `heroku pg:reset` + `db:schema:load`) marks
-the view migration as ALREADY APPLIED — a later `db:migrate` then SKIPS it and that
-database silently has no views, permanently. After any schema-load rebuild,
-recreate them explicitly (re-run the migration's `up`, or execute the two
-`CREATE VIEW` statements directly).
+Created by a plain `execute "CREATE VIEW …"` migration — DROP+CREATE, so `up` is
+re-runnable; never `CREATE OR REPLACE` (Postgres cannot reorder an existing view's
+columns, and order is the whole point). **Caveat:** with the `:ruby` schema format a
+raw `CREATE VIEW` does NOT dump to `schema.rb`, so a fresh `db:schema:load` (test/CI
+databases) will NOT have them — they are operator-inspection-only; don't back a
+model or suite assertion on their existence in every environment.
+
+### Operator footguns
+
+1. **A schema-load rebuild loses them permanently.** `schema.rb` carries
+   `assume_migrated_upto_version`, so a database REBUILT from the schema (e.g.
+   `heroku pg:reset` + `db:schema:load`) marks the view migration ALREADY APPLIED —
+   a later `db:migrate` SKIPS it and that database has no views, forever. After any
+   schema-load rebuild, re-run the migration's `up` (it is idempotent) or execute
+   the two `CREATE VIEW` statements directly.
+
+2. **The views PIN every column they select — and the failure is CI-INVISIBLE.** A
+   plain Postgres view hard-depends on each of the 39 columns it SELECTs (22 task +
+   17 release). A future `DROP COLUMN` / `RENAME COLUMN` on any of them will ERROR
+   unless the view is dropped first — and because the views do NOT exist in the
+   test/CI database (the caveat above), such a migration **passes CI and fails on
+   the production deploy**. Rule: if you drop or rename any column these views
+   select, `DROP VIEW release_timeline, task_timeline` first and recreate them in
+   the same migration.
 
 ## Task Metadata Contract
 

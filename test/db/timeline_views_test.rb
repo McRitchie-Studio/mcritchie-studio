@@ -47,11 +47,12 @@ class TimelineViewsTest < ActiveSupport::TestCase
     assert_equal TASK_TIMELINE_COLUMNS, columns
   end
 
-  test "[integration] task_timeline carries the FULL block attribute set" do
+  test "[integration] task_timeline carries the full block STATUS HEADER" do
     columns = ActiveRecord::Base.connection.columns("task_timeline").map(&:name)
-    # `blocked` is an attribute of a building task (blocked_at/_from/_by/kind) —
-    # a timeline that showed only who+when would say nothing about why or from
-    # where it stalled.
+    # The block set is a status HEADER (sits with slug/title/stage), not a link in
+    # the progress chain: Task#clear_block_on_forward_move NULLs all four the moment
+    # a task leaves `building`, so they carry values only while it is CURRENTLY
+    # blocked. Showing only who+when would say nothing about why or from where.
     assert_equal %w[blocked_at blocked_from blocked_by block_kind],
                  columns & %w[blocked_at blocked_from blocked_by block_kind]
   end
@@ -59,6 +60,20 @@ class TimelineViewsTest < ActiveSupport::TestCase
   test "[integration] release_timeline projects the release lifecycle columns in order" do
     columns = ActiveRecord::Base.connection.columns("release_timeline").map(&:name)
     assert_equal RELEASE_TIMELINE_COLUMNS, columns
+  end
+
+  test "[integration] release_timeline projects the stage stamps in Release::STAGES order" do
+    columns = ActiveRecord::Base.connection.columns("release_timeline").map(&:name)
+    stage_columns = Release::STAGES.map { |(_stage, column)| column.to_s }
+
+    # THE contract this view exists to hold: it projects the canonical LOGICAL
+    # stage order (Release::STAGES — the same order the /deployments tracker uses),
+    # NOT wall-clock. Release stamps deliberately land out of chronological order
+    # (assembling_started_at is stamped back at MERGE time, before tested_at), which
+    # is exactly why Release#current_stage is MONOTONIC over them. Asserting a
+    # chronology here would encode an invariant the system does not hold.
+    assert_equal (stage_columns & columns), (columns & stage_columns),
+                 "release_timeline must project the stage stamps in Release::STAGES order"
   end
 
   test "[integration] the views select live rows from their base tables" do

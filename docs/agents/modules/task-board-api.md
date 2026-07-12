@@ -12,11 +12,13 @@ It is written against the live code (`config/routes.rb`,
 this file in the same pass.
 
 > ⚠️ **Mostly current, with legacy examples below.** The live task model is the
-> two-workflow 8-stage one (`designed → building → submitted → reviewed →
-> assembled → shipped`, plus `blocked`/`archived`). The endpoints table and
-> task-transition sections are current; any older examples that mention named
-> legacy transition routes should be treated as historical and replaced with
-> either `PATCH stage` or the event APIs documented here.
+> two-workflow **7-stage** one (`designed → building → submitted → reviewed →
+> assembled → shipped`, plus `archived`). **`blocked` is no longer a stage** — it's
+> an ATTRIBUTE of a `building` task (`blocked_at`/`blocked_from`/`blocked_by`/
+> `block_kind`); see **Stages** below. The endpoints table and task-transition
+> sections are current; any older examples that mention named legacy transition
+> routes should be treated as historical and replaced with either `PATCH stage` or
+> the event APIs documented here.
 
 > **Preferred path: use `bin/task`.** Don't hand-roll the HTTP calls below
 > unless you're debugging. `bin/task create|update|move|list|show` handles auth,

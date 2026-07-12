@@ -31,11 +31,13 @@ class Release < ApplicationRecord
   STAGES = [
     ["testing",        :testing_started_at],
     # tested_at is LIVE again: Release::Conductor.qa_green! stamps it (via
-    # stamp_stage!) at the TOP of its transaction — QA-green IS the tested
-    # verdict, and stamping it there keeps it BEFORE assembling/assembled/
-    # qa_deployed instead of inverting them. Do NOT drop this column: the
-    # `release_timeline` inspection view SELECTs it (see
-    # docs/agents/modules/devops-task-board.md).
+    # stamp_stage!) — QA-green IS the tested verdict. Its position here is the
+    # LOGICAL stage order, NOT a chronology: assembling_started_at is stamped back
+    # at MERGE time (Conductor.sweep!) and qa_deploy_started_at before the QA
+    # deploy, so BOTH land before tested_at in wall-clock. That is by design — it
+    # is precisely why `current_stage` is MONOTONIC over these stamps. Do NOT drop
+    # this column: the `release_timeline` inspection view SELECTs it and projects
+    # THIS order (see docs/agents/modules/devops-task-board.md).
     ["tested",         :tested_at],
     ["assembling",     :assembling_started_at],
     ["assembled",      :assembled_at],

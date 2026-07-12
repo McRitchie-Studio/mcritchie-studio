@@ -184,14 +184,16 @@ class Release::ConductorTest < ActiveSupport::TestCase
     stamped = rel.tested_at
     refute_nil stamped, "qa_green! stamps the release's QA-tested moment"
 
-    # ORDER, not just presence — presence-only is exactly what let the inversion
-    # ship green. `tested` precedes `assembling`/`assembled`/`qa_deployed` in
-    # Release::STAGES, and release_timeline SELECTs tested_at to the LEFT of them,
-    # so a tested_at stamped after assemble! renders the lifecycle BACKWARDS.
     refute_nil rel.assembled_at, "qa_green! assembles the RC"
-    assert rel.tested_at <= rel.assembled_at,
-           "tested_at (#{rel.tested_at.inspect}) must precede assembled_at (#{rel.assembled_at.inspect}) — " \
-           "release_timeline reads left-to-right"
+
+    # DELIBERATELY no wall-clock ordering assertion. The release stamps are a
+    # LOGICAL stage order, not a chronology: assembling_started_at is stamped back
+    # at MERGE time (sweep!) and qa_deploy_started_at before the QA deploy, so both
+    # precede tested_at in wall-clock even though Release::STAGES lists them after
+    # it. Asserting `tested_at <= assembled_at` would pin the ONE pair that happens
+    # to hold (both are written inside this transaction) and imply a chronology the
+    # system does not guarantee. The real contract — release_timeline projects
+    # Release::STAGES order — is asserted in test/db/timeline_views_test.rb.
 
     # First-write-wins like the other release stage stamps: a re-run never moves it.
     Release::Conductor.qa_green!(rel.reload)
