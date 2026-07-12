@@ -73,6 +73,56 @@ class CaptureCostDerivationTest < ActiveSupport::TestCase
     assert_equal 0, event.cache_creation_tokens
   end
 
+  test "[unit] a RECONCILED fan-out activity re-prices under an override" do
+    ModelRateOverride.create!(model: MODEL, input_rate: 10.0, output_rate: 25.0)
+    AgentActivity.open_activity!(session_id: "s-fanout", category: "Delegate", reason_slug: "fan out")
+    activity = AgentActivity.close_activity!(session_id: "s-fanout", outcome_slug: "done")
+
+    # The shape AgentFanoutUsage#patch_for POSTs to /agent_activities/reconcile. Without
+    # cache_creation_tokens the server correctly REFUSES to derive, and every reconciled
+    # subagent activity would stay pinned to LIST price forever — fan-out is first-class
+    # here, so that is a large share of all activities.
+    AgentActivity.apply_reconciled_usage!(
+      session_id: "s-fanout",
+      usages: [{ "activity_id" => activity.id, "model" => MODEL,
+                 "tokens_in" => 1_000_000, "tokens_out" => 0,
+                 "cache_creation_tokens" => 0, "cache_read_tokens" => 0,
+                 "cost" => "5.0" }] # the reconciler's LIST-priced number
+    )
+
+    assert_equal BigDecimal("10.0"), activity.reload.cost
+    assert_equal 0, activity.cache_creation_tokens
+  end
+
+  test "[unit] the fan-out reconciler SENDS the cache_creation bucket" do
+    agg = { models: { MODEL => 1 }, input: 100, output: 20, cache_creation: 40, cache_read: 3_000 }
+    patch = AgentFanoutUsage.new(session_id: "s1").send(:patch_for, 7, agg)
+
+    # The server cannot re-derive (and therefore cannot honor an override) without this.
+    assert_equal 40, patch["cache_creation_tokens"]
+    assert_equal 140, patch["tokens_in"], "tokens_in stays FOLDED (input + cache_creation)"
+    assert_equal 3_000, patch["cache_read_tokens"]
+  end
+
+  test "[unit] the pricing roster bills cache WRITES at the write tier, not 1x input" do
+    AgentActivity.open_activity!(session_id: "s-roster", category: "Edit", reason_slug: "write code")
+    AgentActivity.close_activity!(
+      session_id: "s-roster", outcome_slug: "done", model: MODEL,
+      tokens_in: 140_000,          # FOLDED: 100k input + 40k cache writes
+      cache_creation_tokens: 40_000,
+      tokens_out: 0, cache_read_tokens: 0
+    )
+
+    row = ModelPricing.for_model(MODEL)
+
+    # input 100k @ $5/MTok = $0.50, cache writes 40k @ 2x = $10/MTok = $0.40 → $0.90.
+    # Pricing the FOLDED 140k as pure input at 1x would give $0.70 — the roster
+    # under-reporting the very rates it exists to tune.
+    assert_equal BigDecimal("0.9"), row.in_cost
+    assert_equal 100_000, row.input_tokens
+    assert_equal 40_000, row.cache_creation_tokens
+  end
+
   test "[unit] a task event keeps the CLI cost when the cache buckets are absent" do
     ModelRateOverride.create!(model: MODEL, input_rate: 10.0, output_rate: 25.0)
     task = Task.create!(title: "Keep Cli Cost Fallback")

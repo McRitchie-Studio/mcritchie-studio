@@ -472,6 +472,7 @@ class AgentActivity < ApplicationRecord
     return {} unless values[:model].present? ||
                      values[:tokens_in].to_i.positive? ||
                      values[:tokens_out].to_i.positive? ||
+                     values[:cache_creation_tokens].to_i.positive? ||
                      values[:cache_read_tokens].to_i.positive? ||
                      values[:cost].to_f.positive?
 

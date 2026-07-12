@@ -13,13 +13,22 @@
 <% output_max = [200, @output_rate.ceil].max %>
 
 <div class="max-w-5xl mx-auto px-4 py-8 space-y-6"
+     <%# Mirrors UsagePricing.price EXACTLY: the stored tokens_in is FOLDED
+         (input + cache_creation), so the raw input bucket is priced at the input rate
+         and the cache WRITES inside it at the write tier (2x input, unless the model
+         carries an absolute write rate) — never at 1x. If this drifts from the server
+         math, the panel lies about money. %>
      x-data="{
-       tokensIn: <%= @row.tokens_in %>,
+       inputTokens: <%= @row.input_tokens %>,
+       cacheCreation: <%= @row.cache_creation_tokens %>,
        tokensOut: <%= @row.tokens_out %>,
        inRate: <%= @input_rate %>,
        outRate: <%= @output_rate %>,
+       absWriteRate: <%= @absolute_write_rate || 'null' %>,
+       writeMult: <%= UsagePricing::CACHE_WRITE_MULTIPLIER.to_f %>,
        per: 1000000,
-       get inCost() { return (this.tokensIn * this.inRate) / this.per },
+       get writeRate() { return this.absWriteRate === null ? this.inRate * this.writeMult : this.absWriteRate },
+       get inCost() { return (this.inputTokens * this.inRate + this.cacheCreation * this.writeRate) / this.per },
        get outCost() { return (this.tokensOut * this.outRate) / this.per },
        get totalCost() { return this.inCost + this.outCost },
        money(n) { return n === 0 ? '—' : '$' + (n < 1 ? n.toFixed(4) : n.toFixed(2)) }
@@ -54,7 +63,7 @@
             <span class="tabular-nums text-heading font-semibold">$<span x-text="inRate.toFixed(4)"></span></span>
           </div>
           <input type="range" id="input-rate" name="model_rate_override[input_rate]"
-                 min="0" max="<%= input_max %>" step="0.05"
+                 min="0" max="<%= input_max %>" step="0.0001"
                  aria-label="Input rate in dollars per million tokens"
                  x-model.number="inRate" class="w-full accent-primary" data-testid="input-rate-slider">
         </div>
@@ -64,7 +73,7 @@
             <span class="tabular-nums text-heading font-semibold">$<span x-text="outRate.toFixed(4)"></span></span>
           </div>
           <input type="range" id="output-rate" name="model_rate_override[output_rate]"
-                 min="0" max="<%= output_max %>" step="0.05"
+                 min="0" max="<%= output_max %>" step="0.0001"
                  aria-label="Output rate in dollars per million tokens"
                  x-model.number="outRate" class="w-full accent-primary" data-testid="output-rate-slider">
         </div>

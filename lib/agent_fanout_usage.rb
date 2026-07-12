@@ -59,7 +59,10 @@ class AgentFanoutUsage
   # keys accepted, opened_at/closed_at as Time or ISO8601 string. Returns an array
   # of patch hashes (string keys) ready to POST, one per activity that received any
   # spend:
-  #   { "activity_id", "model", "tokens_in", "tokens_out", "cache_read_tokens", "cost" }
+  #   { "activity_id", "model", "tokens_in", "tokens_out", "cache_creation_tokens",
+  #     "cache_read_tokens", "cost" }
+  # cache_creation_tokens is what lets the SERVER re-derive cost at an overridden rate;
+  # "cost" is the LIST-price fallback for a model with no known rate.
   def self.reconcile(session_id:, activities:, transcript_root: nil, provider: "claude")
     new(session_id: session_id, transcript_root: transcript_root, provider: provider)
       .reconcile(activities)
@@ -156,6 +159,14 @@ class AgentFanoutUsage
   # into the fresh count (matching AgentSessionUsage.Result#tokens_in); cache_read is
   # priced but never counted. Cost is the shared UsagePricing SoT for the dominant
   # model. Zero-spend aggregates never reach here (only activities that got turns).
+  #
+  # cache_creation_tokens rides along UN-FOLDED so the SERVER can split tokens_in back
+  # out and re-derive this cost at an operator's overridden rate (UsagePricing
+  # .cost_from_capture). Without it the server correctly REFUSES to derive — it cannot
+  # tell input from cache-write, and pricing the folded count as pure input would bill
+  # cache writes at 1x instead of 2x — so every reconciled fan-out activity would stay
+  # pinned to LIST price forever. Fan-out is first-class here, so that is a large share
+  # of all activities.
   def patch_for(activity_id, agg)
     model = agg[:models].max_by { |_m, weight| weight }&.first
     buckets = {
@@ -163,12 +174,13 @@ class AgentFanoutUsage
       "cache_creation" => agg[:cache_creation], "cache_read" => agg[:cache_read]
     }
     {
-      "activity_id"       => activity_id,
-      "model"             => model,
-      "tokens_in"         => agg[:input] + agg[:cache_creation],
-      "tokens_out"        => agg[:output],
-      "cache_read_tokens" => agg[:cache_read],
-      "cost"              => AgentSessionUsage.price(buckets, model)
+      "activity_id"           => activity_id,
+      "model"                 => model,
+      "tokens_in"             => agg[:input] + agg[:cache_creation],
+      "tokens_out"            => agg[:output],
+      "cache_creation_tokens" => agg[:cache_creation],
+      "cache_read_tokens"     => agg[:cache_read],
+      "cost"                  => AgentSessionUsage.price(buckets, model)
     }
   end
 

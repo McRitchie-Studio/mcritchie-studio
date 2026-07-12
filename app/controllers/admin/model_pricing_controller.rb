@@ -23,6 +23,10 @@ module Admin
       # current (roster/env) rate.
       @input_rate  = (@override.input_rate  || @row.input_rate).to_f
       @output_rate = (@override.output_rate || @row.output_rate).to_f
+      # The model's ABSOLUTE cache-write rate, when it has one (gpt-5.5-style). nil means
+      # the write tier derives from the input rate, so the live calculator must re-derive
+      # it as the input slider moves — exactly as UsagePricing.price does server-side.
+      @absolute_write_rate = (UsagePricing.rate_for(@model) || {})[:cache_creation]
       load_activity_feed
     end
 

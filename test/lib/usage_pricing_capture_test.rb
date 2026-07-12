@@ -80,6 +80,37 @@ class UsagePricingCaptureTest < ActiveSupport::TestCase
     assert_equal BigDecimal("9.0"), UsagePricing.price({ "input" => 1_000_000 }, MODEL)
   end
 
+  test "[unit] an override must NOT wipe a model's absolute cache rate" do
+    # gpt-5.5 ships an explicit ABSOLUTE cache_read (0.5/MTok), not a multiple of input.
+    assert_equal BigDecimal("0.5"), UsagePricing.price({ "cache_read" => 1_000_000 }, "gpt-5.5")
+
+    # The operator tunes only input/output — the form permits nothing else.
+    ModelRateOverride.create!(model: "gpt-5.5", input_rate: 10.0, output_rate: 30.0)
+
+    # A SHALLOW merge would replace gpt-5.5's whole entry, dropping cache_read: 0.5 and
+    # re-deriving it as input * 0.10 = 1.0 — a silent 2x on ~96-98% of all tokens.
+    assert_equal BigDecimal("0.5"), UsagePricing.price({ "cache_read" => 1_000_000 }, "gpt-5.5"),
+                 "an input/output override must not discard the model's absolute cache rate"
+    # ...while the override it DID set still applies.
+    assert_equal BigDecimal("10.0"), UsagePricing.price({ "input" => 1_000_000 }, "gpt-5.5")
+  end
+
+  test "[unit] an override's OWN cache rate still wins when it sets one" do
+    ModelRateOverride.create!(model: "gpt-5.5", input_rate: 10.0, output_rate: 30.0,
+                              cache_read_rate: 2.0)
+
+    assert_equal BigDecimal("2.0"), UsagePricing.price({ "cache_read" => 1_000_000 }, "gpt-5.5")
+  end
+
+  test "[unit] cache tiers still derive from an OVERRIDDEN input rate when absolute rates are absent" do
+    # claude-opus-4-8 has no explicit cache keys — the multiplier path must still track
+    # the override (this is the behaviour the per-model merge must not regress).
+    ModelRateOverride.create!(model: MODEL, input_rate: 10.0, output_rate: 25.0)
+
+    # cache_read = input * 0.10 = 1.0
+    assert_equal BigDecimal("1.0"), UsagePricing.price({ "cache_read" => 1_000_000 }, MODEL)
+  end
+
   test "[unit] the rate table is read ONCE per request, not once per price() call" do
     ModelRateOverride.create!(model: MODEL, input_rate: 7.0, output_rate: 25.0)
     Current.model_rate_overrides = nil # fresh request

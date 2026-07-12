@@ -121,13 +121,24 @@ module UsagePricing
     key.empty? ? nil : key
   end
 
-  # RATES merged with an optional ATOMIC_ACTION_MODEL_RATES env override, then
-  # with the persisted DB overrides (operator-tuned, highest precedence). The Hash
-  # merge is trivial, but db_rates is a TABLE READ and price() sits on the hot
-  # capture path (a cost is derived for every action/activity, and once per model
-  # across the pricing roster) — so db_rates is memoized per REQUEST, not here.
+  # RATES merged with an optional ATOMIC_ACTION_MODEL_RATES env override, then with the
+  # persisted DB overrides (operator-tuned, highest precedence).
+  #
+  # The merge is PER-MODEL, not per-entry. Hash#merge is shallow, so a plain merge would
+  # let an override that sets only input/output REPLACE a model's whole rate entry —
+  # silently discarding an explicit ABSOLUTE cache rate. gpt-5.5 ships exactly that
+  # (cache_read: 0.5): saving an input override would drop it, and price() would fall
+  # back to input * CACHE_READ_MULTIPLIER — 2x drift on cache_read, which is ~96-98% of
+  # all tokens (see AgentSessionUsage::Result#tokens_in), i.e. most of the bill. An
+  # override's OWN cache_read/cache_creation still wins when set; the static absolute
+  # rate survives when it is not.
+  #
+  # db_rates is a TABLE READ and price() sits on the hot capture path (a cost is derived
+  # for every action/activity, and once per model across the pricing roster) — so it is
+  # memoized per REQUEST inside db_rates, not here.
   def self.rates
-    RATES.merge(env_rates).merge(db_rates)
+    per_model = ->(_model, static, override) { static.merge(override) }
+    RATES.merge(env_rates, &per_model).merge(db_rates, &per_model)
   end
 
   # Persisted per-model overrides from the model_rate_overrides table (the admin
@@ -152,12 +163,18 @@ module UsagePricing
   # the memo self-invalidating, so a freshly-saved rate is never read stale.
   def self.db_rates
     return {} unless defined?(ActiveRecord::Base)
-    return {} unless ModelRateOverride.table_exists?
-    return ModelRateOverride.rates_hash unless request_memo?
+    # The memo check comes FIRST: table_exists? checks out a DB connection, and price()
+    # is on the hot capture path — a memo hit must cost nothing.
+    unless request_memo?
+      return {} unless ModelRateOverride.table_exists?
+
+      return ModelRateOverride.rates_hash
+    end
 
     generation = ModelRateOverride.rate_generation
     cached = Current.model_rate_overrides
     return cached.last if cached.is_a?(Array) && cached.first == generation
+    return {} unless ModelRateOverride.table_exists?
 
     ModelRateOverride.rates_hash.tap do |rates|
       Current.model_rate_overrides = [generation, rates]
@@ -171,13 +188,19 @@ module UsagePricing
     defined?(Current) && Current.respond_to?(:model_rate_overrides)
   end
 
-  # The one rescue in this module that cannot reach ErrorLog (plain Ruby — Rails is
-  # not guaranteed loaded). Swallowing a real DB failure would price everything at
-  # LIST rate with ZERO visibility, so at least log it when Rails IS loaded.
+  # Swallowing a real DB failure here would price EVERYTHING at LIST rate with zero
+  # visibility — the operator's override would appear to do nothing, with no breadcrumb.
+  # This module is plain Ruby (bin/task and bin/atomic-event require_relative it, with no
+  # Rails), so both sinks are guarded: log a warning when Rails is loaded, and capture an
+  # ErrorLog when the app's model is there — honoring the every-rescue-logs discipline
+  # wherever it is reachable. Best-effort: a failure to LOG must never break a capture.
   def self.warn_db_rates_failure(error)
-    return unless defined?(Rails) && Rails.respond_to?(:logger) && Rails.logger
-
-    Rails.logger.warn("[usage-pricing] db_rates failed — pricing at LIST rate: #{error.class}: #{error.message}")
+    if defined?(Rails) && Rails.respond_to?(:logger) && Rails.logger
+      Rails.logger.warn("[usage-pricing] db_rates failed — pricing at LIST rate: #{error.class}: #{error.message}")
+    end
+    ErrorLog.capture!(error) if defined?(ErrorLog)
+  rescue StandardError
+    nil
   end
 
   # Parse ATOMIC_ACTION_MODEL_RATES — JSON {"model-id": {"input"|"in": n,
