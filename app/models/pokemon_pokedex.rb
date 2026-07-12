@@ -12,6 +12,12 @@
 # (its final form) AND that form's pre-evolutions — never its siblings. The mascot
 # is read from the shipped event's snapshot, falling back to the task's own
 # devops.mascot for the older rows that carry no snapshot (see #all_catch_appearances).
+#
+# THE INVARIANT: Seen >= Caught, always. A catch is itself an encounter, so every
+# caught species is folded back into the sightings (see #first_sightings). Dex idiom
+# is that caught is a SUBSET of seen — you cannot catch what you never encountered —
+# and these two numbers sit side by side on a public card, so the guarantee has to be
+# structural, not incidental.
 class PokemonPokedex
   RecentAction = Struct.new(:action, :pokemon, keyword_init: true)
 
@@ -118,16 +124,38 @@ class PokemonPokedex
   # appearances (a species' first shiny moment). Only seeded Pokémon count, so a
   # persona/agent mascot on a TaskEvent is dropped. Memoized per shiny flag — the
   # seen count and the newest-unique card both read it.
+  #
+  # CATCHES COUNT AS SIGHTINGS. A catch IS an encounter, so every slug the lineage
+  # walk sweeps into Caught is also credited here. That makes Seen >= Caught
+  # STRUCTURALLY rather than by luck: in dex idiom you cannot catch what you have
+  # never encountered, and without this a card could render "Seen 1 · Caught 3" —
+  # a pre-evolution caught through its final form but never itself spawned.
   def first_sightings(shiny: false)
     (@first_sightings ||= {})[shiny] ||= begin
       earliest = {}
-      (spawn_appearances(shiny: shiny) + evolution_appearances(shiny: shiny)).each do |appearance|
+      all = spawn_appearances(shiny: shiny) +
+            evolution_appearances(shiny: shiny) +
+            catch_sightings(shiny: shiny)
+      all.each do |appearance|
         next unless pokemon_by_slug.key?(appearance.slug)
 
         current = earliest[appearance.slug]
         earliest[appearance.slug] = appearance if current.nil? || appearance.at < current.at
       end
       earliest
+    end
+  end
+
+  # Each catch, exploded across the whole line it caught: the shipped form AND its
+  # pre-evolutions, each sighted at the ship time. This is what keeps every caught
+  # species inside Seen. It also gives "Newest Seen" a sensible entry for a species
+  # that was caught through its final form but never spawned on its own.
+  def catch_sightings(shiny: false)
+    (@catch_sightings ||= {})[shiny] ||= catch_appearances(shiny: shiny).flat_map do |catch_at|
+      lineage_up_to(catch_at.slug).map do |slug|
+        Appearance.new(slug: slug, at: catch_at.at, shiny: catch_at.shiny,
+                       session_id: nil, task_slug: catch_at.task_slug)
+      end
     end
   end
 
@@ -148,7 +176,9 @@ class PokemonPokedex
   # number would be derived from only the minority of ships that carry a snapshot.
   #
   # Rows the task_events:backfill task synthesized carry neither a snapshot nor, in
-  # some cases, a task mascot; those are genuinely unrecoverable and drop out.
+  # some cases, a task mascot; those are genuinely unrecoverable. They drop out
+  # rather than 500 a public page, but the count is LOGGED — a silent drop would make
+  # any future drift in the Caught number undiagnosable.
   def all_catch_appearances
     @all_catch_appearances ||= begin
       rows = TaskEvent.transitions.where(to_stage: "shipped").pluck(
@@ -159,26 +189,44 @@ class PokemonPokedex
       )
       unsnapshotted = rows.filter_map { |slug, _at, _shiny, task_slug| task_slug if slug.blank? }
       fallback = task_mascots(unsnapshotted)
+      dropped = 0
 
-      rows.filter_map do |slug, at, shiny_flag, task_slug|
+      appearances = rows.filter_map do |slug, at, shiny_flag, task_slug|
         if slug.present?
-          Appearance.new(slug: slug, at: at, shiny: shiny_flag == "true", session_id: nil, task_slug: task_slug)
+          Appearance.new(slug: slug, at: at, shiny: Task.shiny_value?(shiny_flag),
+                         session_id: nil, task_slug: task_slug)
         elsif (mascot = fallback[task_slug])
-          Appearance.new(slug: mascot.first, at: at, shiny: mascot.last, session_id: nil, task_slug: task_slug)
+          Appearance.new(slug: mascot.first, at: at, shiny: mascot.last,
+                         session_id: nil, task_slug: task_slug)
+        else
+          dropped += 1
+          nil
         end
       end
+
+      if dropped.positive?
+        Rails.logger.info(
+          "[pokedex] Caught excludes #{dropped} shipped event(s): no mascot snapshot and no recoverable task mascot"
+        )
+      end
+      appearances
     end
   end
 
   # task_slug => [mascot slug, shiny] for the shipped rows carrying no snapshot.
   # One query for the whole fallback set, so it never becomes a per-row lookup.
+  #
+  # devops.mascot_shiny is the LEAST controlled shiny representation we read (event
+  # snapshots are written as a literal boolean; this one has held true, "true", and
+  # "1"), so it must go through the canonical Task.shiny_value? — a raw == "true"
+  # would silently undercount shiny Caught.
   def task_mascots(task_slugs)
     return {} if task_slugs.empty?
 
     Task.where(slug: task_slugs.uniq)
         .pluck(:slug, Arel.sql("metadata->'devops'->>'mascot'"), Arel.sql("metadata->'devops'->>'mascot_shiny'"))
         .each_with_object({}) do |(task_slug, mascot, shiny_flag), map|
-          map[task_slug] = [mascot, shiny_flag == "true"] if mascot.present?
+          map[task_slug] = [mascot, Task.shiny_value?(shiny_flag)] if mascot.present?
         end
   end
 
@@ -244,7 +292,8 @@ class PokemonPokedex
     slug_sql  = Arel.sql("metadata->'mascot'->>'slug'")
     shiny_sql = Arel.sql("metadata->'mascot'->>'shiny'")
     scope.pluck(slug_sql, :occurred_at, shiny_sql, :task_slug).map do |slug, at, shiny_flag, task_slug|
-      Appearance.new(slug: slug, at: at, shiny: shiny_flag == "true", session_id: nil, task_slug: task_slug)
+      Appearance.new(slug: slug, at: at, shiny: Task.shiny_value?(shiny_flag),
+                     session_id: nil, task_slug: task_slug)
     end
   end
 

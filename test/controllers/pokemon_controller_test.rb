@@ -93,6 +93,7 @@ class PokemonControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test=pokemon-newest-seen-empty]", "None seen yet."
     assert_select "[data-test=pokemon-newest-caught-empty]", "None caught yet."
     assert_select "[data-test=shiny-newest-seen-empty]", "None seen yet."
+    assert_select "[data-test=shiny-newest-caught-empty]", "None caught yet."
     assert_select "[data-test=recent-pokemon-empty]", "No Pokémon actions yet."
   end
 end

@@ -194,6 +194,65 @@ class PokemonPokedexTest < ActiveSupport::TestCase
     assert_equal blastoise, pokedex.newest_caught_shiny.pokemon
     assert pokedex.newest_caught_shiny.shiny
     assert_equal gengar, pokedex.newest_caught.pokemon, "newest overall catch is the later plain ship"
+
+    # Assert Seen and Caught TOGETHER. This fixture has no spawns at all, so before
+    # catches counted as sightings the shiny card rendered the impossible
+    # "Seen 1 · Caught 3". A catch is an encounter: the whole caught line is seen.
+    assert_equal 6, pokedex.seen_pokemon
+    assert_equal 3, pokedex.seen_pokemon(shiny: true)
+    assert_operator pokedex.seen_pokemon, :>=, pokedex.caught_pokemon
+    assert_operator pokedex.seen_pokemon(shiny: true), :>=, pokedex.caught_pokemon(shiny: true)
+  end
+
+  # The dex invariant, pinned on its own: you cannot catch what you never encountered.
+  # Caught expands through the lineage walk while Seen credits only real sightings, so
+  # without folding catches into sightings these two public numbers can contradict.
+  test "[unit] Seen is never less than Caught, even with no spawns at all" do
+    Pokemon.create!(dex: 152, name: "Chikorita", slug: "chikorita", generation: 2,
+                    base: "chikorita", evolution: ["bayleef"])
+    Pokemon.create!(dex: 153, name: "Bayleef", slug: "bayleef", generation: 2,
+                    base: "chikorita", evolution: ["meganium"])
+    meganium = Pokemon.create!(dex: 154, name: "Meganium", slug: "meganium", generation: 2,
+                               base: "chikorita", evolution: [])
+
+    # One shiny ship of a stage-3 form. No SessionMascot rows anywhere.
+    ship = Task.create!(title: "Ship Shiny Meganium",
+                        metadata: { "devops" => { "mascot" => meganium.slug, "mascot_shiny" => true } })
+    TaskEvent.create!(task_slug: ship.slug, from_stage: "assembled", to_stage: "shipped",
+                      occurred_at: 5.minutes.ago,
+                      metadata: { "mascot" => { "slug" => meganium.slug, "shiny" => true } })
+
+    pokedex = PokemonPokedex.new
+
+    assert_equal 3, pokedex.caught_pokemon
+    assert_equal 3, pokedex.seen_pokemon, "the caught line is encountered, not just caught"
+    assert_equal 3, pokedex.caught_pokemon(shiny: true)
+    assert_equal 3, pokedex.seen_pokemon(shiny: true)
+    # A caught-but-never-spawned species still has a sensible newest-seen entry.
+    assert_equal meganium, pokedex.newest_unique.pokemon
+  end
+
+  # devops.mascot_shiny is the least controlled shiny representation — it has held
+  # true, "true", and "1". A raw == "true" silently undercounts shiny Caught on the
+  # fallback path, which is the DOMINANT path for older ships.
+  test "[unit] the task-mascot fallback honors every shiny representation" do
+    %w[pikachu raichu].each_with_index do |slug, i|
+      Pokemon.create!(dex: 25 + i, name: slug.capitalize, slug: slug, generation: 1,
+                      base: slug, evolution: [])
+    end
+
+    ["1", "true", true].each_with_index do |shiny_repr, i|
+      task = Task.create!(title: "Ship Shiny Repr #{i}",
+                          metadata: { "devops" => { "mascot" => "pikachu", "mascot_shiny" => shiny_repr } })
+      # No snapshot on the event: forces the devops.mascot_shiny fallback.
+      TaskEvent.create!(task_slug: task.slug, from_stage: "assembled", to_stage: "shipped",
+                        occurred_at: (i + 1).minutes.ago, metadata: {})
+
+      assert_equal 1, PokemonPokedex.new.caught_pokemon(shiny: true),
+                   "mascot_shiny #{shiny_repr.inspect} must count as shiny"
+      Task.where(slug: task.slug).destroy_all
+      TaskEvent.where(task_slug: task.slug).destroy_all
+    end
   end
 
   # The linear-line tests above pass even with a naive "slice the flattened family"
