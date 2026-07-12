@@ -2090,10 +2090,6 @@ def cleanup_partition(app = nil, strict: false)
   [free, withheld]
 end
 
-def cleanup_candidates(app = nil)
-  cleanup_partition(app).first
-end
-
 # Narrate every desk the guard held back, with the real reason (the builder's heartbeat
 # age makes it exact). The file's convention is to explain a skip, and this is the only
 # thing standing between a live desk and an irreversible teardown.
@@ -2479,12 +2475,26 @@ def fetch_task_record(record, slug)
   task_bin = File.join(HUB_DIR, "bin", "task") unless File.exist?(task_bin)
   return nil unless File.exist?(task_bin) # cannot read the board at all
 
-  ok, out, = capture_status(task_bin, "show", slug, "--json", chdir: record[:dir],
-                                                              env: command_env(record[:app], record[:env]),
-                                                              timeout: TASK_READ_TIMEOUT)
-  return nil unless ok # non-zero exit, or the bounded read timed out
+  ok, out, err = capture_status(task_bin, "show", slug, "--json", chdir: record[:dir],
+                                                                  env: command_env(record[:app], record[:env]),
+                                                                  timeout: TASK_READ_TIMEOUT)
+  return parse_task_record(out) if ok
 
-  parse_task_record(out)
+  # A 404 is a SUCCESSFUL read with a definite answer — "there is no such task", therefore
+  # no claim. By the same nil-vs-{} doctrine, that belongs in the FREE bucket, not the
+  # unreadable one: a desk bound to a deleted or renamed slug would otherwise be withheld
+  # FOREVER on the destroy path, and the "re-run once the board is reachable" message would
+  # be a lie — the board answered. (`bin/task show` exits 1 on a 404 but 0 for an ARCHIVED
+  # task, so the happy path is untouched.)
+  return {} if task_not_found?(err)
+
+  nil # a real failure: 500, timeout, auth, connection refused — we could not read it
+end
+
+# The board answered "no such task" — distinct from a board that could not answer at all.
+def task_not_found?(stderr)
+  text = stderr.to_s
+  text.match?(/->\s*404\b/) || text.match?(/task not found/i)
 end
 
 # A Hash on a good parse, nil when the payload is unusable — a malformed board response is
@@ -2588,7 +2598,7 @@ end
 #   [false, "held …"] withheld — git-eligible, but a builder is live-claiming it
 #   [false, nil]      not git-eligible (dirty / not landed on base) — never a candidate
 #
-# cleanup_candidates, the under-lock re-verify, doctor AND the registry snapshot all route
+# cleanup_partition, the under-lock re-verify, doctor AND the registry snapshot all route
 # through here, so the conductor's front door (bin/qa-intake reads `cleanup_candidate`)
 # cannot nominate a desk the sweep would refuse. Costs at most one board read, only for a
 # git-eligible worktree, and memoized per slug across the command.

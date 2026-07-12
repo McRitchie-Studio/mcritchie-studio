@@ -620,6 +620,29 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     assert_includes out, "cleanup candidates:", "…but it still fails open"
   end
 
+  # THE POSITIVE CONTROL — the one cell the asymmetry matrix never covered.
+  #
+  # This guard's failure mode is BIMODAL: fail-open destroys a live desk (the original
+  # incident), and fail-CLOSED silently wedges the entire reclaim sweep. Every other
+  # `--reclaim --yes` test in this file asserts a REFUSAL, so if the guard withheld EVERY
+  # desk the whole suite would stay green while reclaim was quietly dead — and teardown is
+  # now gated by four clauses, any one of which could regress that way. This asserts the
+  # sweep still DESTROYS: a readable desk whose claim has lapsed is torn down for real.
+  test "[integration] reclaim --yes STILL tears down a readable, unclaimed desk (positive control)" do
+    mark_worktree_merged_to_origin_main
+    bind_task_slug("desk-task")
+    assert Dir.exist?(@worktree_dir), "precondition: the desk is on disk"
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio", "--reclaim", "--yes",
+                                      env: removal_env("AGENT_WORKTREE_TASK_JSON" => lapsed_claim_json))
+
+    assert status.success?, "#{out}\n#{err}"
+    assert_includes out, "reclaimed mcritchie-studio/terminal-context",
+                    "a guard that withholds everything is a wedge, not a fix"
+    refute Dir.exist?(@worktree_dir), "the desk is actually torn down — the sweep still works"
+    refute_includes out, "withheld"
+  end
+
   # THE DESTROY-PATH ASYMMETRY — the blocker from round 3.
   #
   # A BOUND task whose board record cannot be read (board 500, timeout, auth failure) is the

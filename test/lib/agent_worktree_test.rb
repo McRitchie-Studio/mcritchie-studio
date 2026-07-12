@@ -125,19 +125,19 @@ class AgentWorktreeTest < Minitest::Test
     RUBY
   end
 
-  def test_task_live_claimed_true_for_a_non_expired_claim
+  def test_claim_hold_withholds_for_a_non_expired_claim
     assert_equal "true",
                  live_claimed(%({ "claimed_session" => "s", "claim_expires_at" => "2099-01-01T00:00:00Z" })),
                  "a builder actively renewing its claim protects the desk"
   end
 
-  def test_task_live_claimed_false_for_a_lapsed_claim
+  def test_claim_hold_frees_a_lapsed_claim
     assert_equal "false",
                  live_claimed(%({ "claimed_session" => "s", "claim_expires_at" => "2000-01-01T00:00:00Z" })),
                  "a crashed/closed builder's lease has lapsed → reclaimable"
   end
 
-  def test_task_live_claimed_false_for_an_unclaimed_or_unreadable_task
+  def test_claim_hold_frees_an_unclaimed_or_unbound_task
     assert_equal "false", live_claimed("{}"), "no claim → reclaimable"
     # an UNBOUND desk fails open (we cannot look up a claim we cannot identify)
     out = run_in_script(<<~RUBY)
@@ -215,14 +215,38 @@ class AgentWorktreeTest < Minitest::Test
     assert_equal "[false, nil]", verdict_for(held: false, dirty: true)
   end
 
-  def verdict_for(held:, dirty:)
+  def verdict_for(held:, dirty:, strict: false)
     devops = held ? %({ "claimed_session" => "s", "claim_expires_at" => #{(Time.now + 110).utc.iso8601.inspect} }) : "{}"
     run_in_script(<<~RUBY)
       def task_record_for_pr(_r, fresh: false); { "metadata" => { "devops" => #{devops} } }; end
       record = { dirty: #{dirty}, merged: true, equivalent_to_main: true,
                  env: { "TASK_RECORD_SLUG" => "t" }, task: "t" }
-      print reclaim_verdict(record).inspect
+      print reclaim_verdict(record, strict: #{strict}).inspect
     RUBY
+  end
+
+  # THE POSITIVE CONTROL for the strict flag. This guard's failure mode is BIMODAL: fail-open
+  # destroys a live desk (the original incident), fail-CLOSED silently wedges the whole sweep.
+  # Every other strict test here asserts a REFUSAL, so if strict withheld EVERY desk the suite
+  # would stay green while reclaim was dead. This is the free x strict cell — the one the
+  # asymmetry matrix never covered.
+  def test_strict_still_frees_a_readable_unclaimed_desk
+    assert_equal "[true, nil]", verdict_for(held: false, dirty: false, strict: true),
+                 "strict must withhold only what it CANNOT verify — a desk it read and found " \
+                 "unclaimed is still reclaimable, or the sweep is silently wedged"
+  end
+
+  # A 404 is a SUCCESSFUL read ("no such task, hence no claim"), not an outage — otherwise a
+  # desk bound to a deleted/renamed slug is withheld forever on the destroy path.
+  def test_a_404_is_free_not_unreadable_even_when_strict
+    out = run_in_script(<<~RUBY)
+      def capture_status(*_cmd, **_kw); [false, "", "error: GET /api/v1/tasks/gone -> 404: task not found"]; end
+      def command_env(*_a); {}; end
+      record = { env: { "TASK_RECORD_SLUG" => "gone" }, task: "gone",
+                 dir: Dir.pwd, app: { "slug" => "mcritchie-studio" } }
+      print claim_hold(record, strict: true).inspect
+    RUBY
+    assert_equal "nil", out, "the board ANSWERED (no such task) — that is free, not unverifiable"
   end
 
   # --- the board read must be REALLY bounded ---------------------------------

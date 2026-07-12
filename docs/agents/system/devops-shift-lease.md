@@ -65,7 +65,7 @@ terminal/unclaimed once shipped — the **same lease** A uses. Task
 just candidate selection:
 
 - **One predicate, one place.** `reclaim_verdict(record) → [reclaimable?, hold_reason]` is
-  the single decision, routed through by `cleanup_candidates`, the under-lock re-verify,
+  the single decision, routed through by `cleanup_partition`, the under-lock re-verify,
   `doctor`, **and** the registry snapshot. The registry is the conductor's front door
   (`bin/qa-intake` builds its Cleanup Candidates section straight off `cleanup_candidate`
   and prints a `remove … --yes` for each), so a disagreement there means everyone believes
