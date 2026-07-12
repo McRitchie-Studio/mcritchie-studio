@@ -111,17 +111,17 @@ class AgentWorktreeTest < Minitest::Test
     assert_equal "false", out
   end
 
-  # --- reclaim guard: task_live_claimed? (devops-shift-lease follow-up) -------
-  # The pure liveness decision (ClaimLease) over the task's devops claim, with the
-  # board read (task_record_for_pr) stubbed. A LIVE claim protects the desk; a lapsed,
-  # missing, or unreadable claim fails open (reclaimable).
+  # --- reclaim guard: claim_hold (devops-shift-lease follow-up) ---------------
+  # The claim decision (ClaimLease) over the task's devops record, with the board read
+  # (task_record_for_pr) stubbed. A LIVE claim withholds the desk; a lapsed or unbound one
+  # fails open. On a DESTROY path (strict:) a BOUND-but-unreadable record withholds too.
 
   # A BOUND desk (it has a task slug) — an UNBOUND one short-circuits to "free" before the
   # claim is even consulted, which is its own case below.
   def live_claimed(devops_ruby)
     run_in_script(<<~RUBY)
       def task_record_for_pr(_r, fresh: false); { "metadata" => { "devops" => #{devops_ruby} } }; end
-      print task_live_claimed?({ env: { "TASK_RECORD_SLUG" => "t" }, task: "t" })
+      print !claim_hold({ env: { "TASK_RECORD_SLUG" => "t" }, task: "t" }).nil?
     RUBY
   end
 
@@ -139,12 +139,44 @@ class AgentWorktreeTest < Minitest::Test
 
   def test_task_live_claimed_false_for_an_unclaimed_or_unreadable_task
     assert_equal "false", live_claimed("{}"), "no claim → reclaimable"
-    # a board read that returns nothing usable fails open too
+    # an UNBOUND desk fails open (we cannot look up a claim we cannot identify)
     out = run_in_script(<<~RUBY)
       def task_record_for_pr(_r, fresh: false); {}; end
-      print task_live_claimed?({})
+      print !claim_hold({}).nil?
     RUBY
-    assert_equal "false", out, "an unbound task / unreachable board is not a live claim"
+    assert_equal "false", out, "an unbound desk is not a live claim"
+  end
+
+  # THE DESTROY-PATH ASYMMETRY. The three fail-open cases are not alike:
+  #   unbound  — we cannot identify the desk. Forced. Fails open on every path.
+  #   lapsed   — we checked; the builder is gone. Correct. Fails open on every path.
+  #   bound + UNREADABLE — we know the desk COULD be claimed and failed to find out.
+  # The board 500s under Postgres pressure during heavy parallel devops, which is exactly
+  # when a reclaim sweep runs — outage and mass-reclaim are correlated. Withholding during
+  # an outage is a deferral; failing open is an irreversible teardown. So on a destroy path
+  # (strict:) the unreadable case WITHHOLDS; the advisory lanes still fail open.
+  def test_bound_but_unreadable_withholds_on_the_destroy_path_only
+    unreadable = <<~RUBY
+      def task_record_for_pr(_r, fresh: false); nil; end
+      record = { env: { "TASK_RECORD_SLUG" => "t" }, task: "t" }
+    RUBY
+
+    lenient = run_in_script("#{unreadable}\nprint claim_hold(record).inspect")
+    assert_equal "nil", lenient, "the advisory lanes (doctor/registry/dry-run) still fail open"
+
+    strict = run_in_script("#{unreadable}\nprint claim_hold(record, strict: true)")
+    assert_match(/could not be read/, strict, "a destroy path must not tear down a desk it could not verify")
+    assert_match(/withholding rather than destroying/, strict)
+  end
+
+  # An UNBOUND desk still fails open even on the destroy path — there is no claim to look
+  # up, so withholding it would wedge every ad-hoc worktree forever.
+  def test_unbound_still_fails_open_even_when_strict
+    out = run_in_script(<<~RUBY)
+      def task_record_for_pr(_r, fresh: false); nil; end
+      print claim_hold({ task: "t" }, strict: true).inspect
+    RUBY
+    assert_equal "nil", out
   end
 
   # The HOLD REASON is what the destructive paths print instead of a silent skip — it must

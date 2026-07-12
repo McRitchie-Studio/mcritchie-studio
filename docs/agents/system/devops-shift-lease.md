@@ -83,13 +83,24 @@ just candidate selection:
   heartbeat age (`ClaimLease.heartbeat_age`). "No clean merged or base-equivalent
   candidates" would be a *lie* about a desk that is clean and base-equivalent and simply
   occupied.
-- **Fail-open, but never quietly.** A lapsed claim, an unreadable board, an unbound task, or
-  an unexpected error all leave the desk reclaimable — only a *confirmed* live claim
-  withholds it. Every one of those branches **says so** on the cleanup and destructive
-  paths, because a guard that silently disables itself is worse than no guard. The unbound
-  case matters most: `TASK_RECORD_SLUG` is written by `bind-task`, never by `new`, so a
-  builder inside the `new → bind-task → move building` window has no claim to check — that
-  is the original incident's own desk, and it now announces itself.
+- **Fail-open, except where it would destroy something.** The "no live claim found" cases are
+  not alike, so the destroy path splits them:
+  - *lapsed* — we checked, the builder is gone → reclaimable everywhere.
+  - *unbound* — we cannot identify the desk, so there is nothing to look up → a forced
+    fail-open everywhere (it warns). `TASK_RECORD_SLUG` is written by `bind-task`, never by
+    `new`, so a builder inside the `new → bind-task → move building` window has no claim to
+    check. That is the original incident's own desk; bind immediately after `new`.
+  - *bound, but the board could not be read* — we know the desk **could** be claimed and
+    failed to find out. On the **destroy path** (reclaim selection + the under-lock
+    re-verify) this **withholds**. The board 500s under Postgres pressure during heavy
+    parallel devops — exactly when many worktrees exist and the sweep runs — so outage and
+    mass-reclaim are **correlated**, and failing open here reopens the original incident
+    precisely when everyone believes it is covered. Withholding during an outage is a
+    deferral; failing open is an irreversible teardown. The advisory lanes (cleanup dry-run,
+    doctor, the registry) still fail open — they destroy nothing.
+  Every branch that gives up on checking **says so**: a guard that silently disables itself
+  is worse than no guard. (`nil` vs `{}` from the board read carries this: `{}` is a task we
+  read that carries no claim; `nil` is a board we could not read.)
 - **The board read is genuinely bounded** (10s, `AGENT_WORKTREE_TASK_TIMEOUT`), because it
   **kills** the child. `Timeout.timeout` around `Open3.capture3` bounds *nothing* —
   `capture3`'s ensure joins the wait thread, which blocks until the child exits, so the

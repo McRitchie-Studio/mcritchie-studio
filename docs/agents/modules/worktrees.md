@@ -181,12 +181,28 @@ bin/agent-worktree scale status
   (`reclaim_verdict` → `[reclaimable?, hold_reason]`), so the conductor's front door
   can never nominate a desk the sweep would refuse. The board read is genuinely
   bounded (10s, `AGENT_WORKTREE_TASK_TIMEOUT`) because it kills the child — so a
-  hung or black-holed board cannot stall a sweep. It is **fail-open**: a lapsed
-  claim, an unreadable board, an unbound task, or an unexpected error all leave the
-  worktree reclaimable — only a *confirmed* live claim withholds it — and **every one
-  of those branches warns**, because a guard that silently disables itself is worse
-  than no guard. A withheld desk is named with its reason and the builder's
-  heartbeat age.
+  hung or black-holed board cannot stall a sweep. A withheld desk is named with its
+  reason and the builder's heartbeat age, and **every branch that gives up on
+  checking says so**, because a guard that silently disables itself is worse than no
+  guard.
+  - **Fail-open, except where it would destroy something.** The three "we did not
+    find a live claim" cases are *not* alike, and the destroy path treats them
+    differently:
+    - **lapsed** — we checked; the builder is gone. Reclaimable everywhere. ✔
+    - **unbound** — we cannot *identify* the desk, so there is no claim to look up.
+      A forced fail-open everywhere (withholding every unidentifiable desk would
+      wedge cleanup). It warns.
+    - **bound, but the board could not be read** (500 / timeout / auth) — we know the
+      desk *could* be claimed and simply failed to find out. On the **destroy path**
+      (`--reclaim` selection and the under-lock re-verify) this **withholds** the
+      desk. The board 500s under Postgres pressure during heavy parallel devops —
+      exactly when many worktrees exist and the sweep gets run — so outage and
+      mass-reclaim are **correlated, not independent**, and failing open here reopens
+      the original incident precisely when everyone believes it is covered. The costs
+      are asymmetric: withholding during an outage is a **deferral** (re-run when the
+      board is back); failing open is an **irreversible teardown**. The advisory lanes
+      (`cleanup` dry-run, `doctor`, the registry) still fail open — they destroy
+      nothing, and an outage must not make them lie about what is reclaimable.
   - **The unbound desk is the gap to know about.** `TASK_RECORD_SLUG` is written by
     `bind-task`, never by `new`, so a builder inside the `new → bind-task → move
     building` window has no task and therefore no claim to check. That is the exact

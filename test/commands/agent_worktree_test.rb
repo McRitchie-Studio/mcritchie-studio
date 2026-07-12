@@ -507,6 +507,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
 
   test "[integration] cleanup withholds a live-claimed worktree and says WHY" do
     mark_worktree_merged_to_origin_main
+    bind_task_slug("desk-task")
 
     out, err, status = agent_worktree("cleanup", "mcritchie-studio",
                                       env: { "AGENT_WORKTREE_TASK_JSON" => live_claim_json })
@@ -522,6 +523,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
 
   test "[integration] reclaim dry-run withholds a live-claimed worktree" do
     mark_worktree_merged_to_origin_main
+    bind_task_slug("desk-task")
 
     out, err, status = agent_worktree("cleanup", "mcritchie-studio", "--reclaim",
                                       env: removal_env("AGENT_WORKTREE_TASK_JSON" => live_claim_json))
@@ -536,6 +538,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
   # why a regression on the teardown path could hide from the suite.
   test "[integration] reclaim --yes REFUSES to tear down a live-claimed desk" do
     mark_worktree_merged_to_origin_main
+    bind_task_slug("desk-task")
     assert Dir.exist?(@worktree_dir), "precondition: the desk is on disk"
 
     out, err, status = agent_worktree("cleanup", "mcritchie-studio", "--reclaim", "--yes",
@@ -567,6 +570,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
 
   test "[integration] a LAPSED claim does not protect — the merged worktree stays a candidate" do
     mark_worktree_merged_to_origin_main
+    bind_task_slug("desk-task")
 
     out, err, status = agent_worktree("cleanup", "mcritchie-studio",
                                       env: { "AGENT_WORKTREE_TASK_JSON" => lapsed_claim_json })
@@ -583,6 +587,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
   # still recommends tearing it down.
   test "[integration] the registry does not nominate a live-claimed desk" do
     mark_worktree_merged_to_origin_main
+    bind_task_slug("desk-task")
     registry = File.join(@projects_dir, "registry.json")
 
     _out, err, status = agent_worktree("snapshot", "mcritchie-studio", "--write",
@@ -615,17 +620,44 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     assert_includes out, "cleanup candidates:", "…but it still fails open"
   end
 
-  # Fail-open must be LOUD on a destructive path: a board outage makes the task record read
-  # back empty WITHOUT raising, so the guard silently disables itself unless we warn.
-  test "[integration] a BOUND task whose board record reads back empty warns before proceeding" do
+  # THE DESTROY-PATH ASYMMETRY — the blocker from round 3.
+  #
+  # A BOUND task whose board record cannot be read (board 500, timeout, auth failure) is the
+  # one case where we KNOW the desk could be claimed and simply failed to find out — unlike
+  # unbound (cannot identify it) or lapsed (checked; the builder is gone). The board 500s
+  # under Postgres connection pressure during heavy parallel devops, which is exactly when
+  # many worktrees exist and the reclaim sweep gets run: outage and mass-reclaim are
+  # CORRELATED, so failing open here re-opens the original incident precisely when everyone
+  # believes it is covered. Withholding during an outage is a deferral; failing open is an
+  # irreversible teardown.
+  test "[integration] reclaim --yes WITHHOLDS a bound desk whose board record cannot be read" do
+    mark_worktree_merged_to_origin_main
+    bind_task_slug("board-is-down")
+    assert Dir.exist?(@worktree_dir), "precondition: the desk is on disk"
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio", "--reclaim", "--yes",
+                                      env: removal_env("AGENT_WORKTREE_TASK_JSON" => "null"))
+
+    assert status.success?, "#{out}\n#{err}"
+    assert Dir.exist?(@worktree_dir),
+           "an unverifiable desk must survive the destroy path — an outage is a reason to defer, " \
+           "not a licence to tear down a desk we could not check"
+    assert_includes out, "withheld mcritchie-studio/terminal-context"
+    assert_match(/board record could not be read/, out)
+    refute_includes out, "reclaimed mcritchie-studio/terminal-context"
+  end
+
+  # …but the ADVISORY lanes still fail open: they destroy nothing, and a board outage must
+  # not make `cleanup`/doctor/the registry lie about what is reclaimable.
+  test "[integration] a BOUND task whose board record cannot be read warns before proceeding" do
     mark_worktree_merged_to_origin_main
     bind_task_slug("board-is-down")
 
     out, err, status = agent_worktree("cleanup", "mcritchie-studio",
-                                      env: { "AGENT_WORKTREE_TASK_JSON" => "{}" })
+                                      env: { "AGENT_WORKTREE_TASK_JSON" => "null" })
 
     assert status.success?, err
-    assert_match(/bound to task board-is-down, but its board record came back empty/, err,
+    assert_match(/bound to task board-is-down, but its board record could not be read/, err,
                  "a guard that silently disables itself on a destructive path must be loud")
     assert_includes out, "cleanup candidates:", "still fail-open: cleanup proceeds"
   end
