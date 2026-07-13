@@ -52,28 +52,42 @@ bin/release prepare --yes
 bin/release ship --yes
 ```
 
-**Summon posture per atom (interactive tree visibility).** When you drive
-`full-cycle` interactively (a terminal is attached), summon each atom with the
-posture its own SOP prescribes, so the crew shows up as a live Claude Code
-sub-agent tree:
+**Posture per atom — delegate the READS, direct-drive the MUTATIONS.** Any op that
+MUTATES shared state across many minutes is DIRECT-DRIVEN by this orchestrating
+session, never handed to an ephemeral subagent: a subagent that detaches (crash,
+timeout, killed terminal) leaves the mutation HALF-APPLIED with no attached
+terminal to notice or finish it. Subagents stay first-class for **read** fan-out,
+where a detach costs a retry. The line is **mutating vs reading**, not *parallel vs
+serial*.
 
-1. **Review** — summon an **Avi** subagent via the Agent tool
-   (`subagent_type: avi`) that SUPERVISES the `pr-review` procedure. Avi never
-   reviews the code himself; he spawns the PRIMARY and LIGHT reviewers in
-   parallel as sibling children, so the two experts NEST under the Avi node as a
-   deeper branch.
-2. **QA release** — summon a **Steffon** subagent (`subagent_type: steffon`)
-   that executes `bin/release prepare --yes`.
-3. **Ship** — DIRECT-DRIVE `bin/release ship --yes` from THIS orchestrating
+1. **Review** — READ fan-out, so DELEGATE. Summon an **Avi** subagent via the
+   Agent tool (`subagent_type: avi`) that SUPERVISES the `pr-review` procedure.
+   Avi never reviews the code himself; he spawns the PRIMARY and LIGHT reviewers
+   in parallel as sibling children, so the two experts NEST under the Avi node as
+   a deeper branch. Review mutates nothing but a task stage — a detached reviewer
+   costs a retry.
+2. **QA release** — MUTATION, so DIRECT-DRIVE `bin/release prepare --yes` from
+   THIS session. Do NOT wrap it in a Steffon subagent. (Not theoretical: on
+   2026-07-11 it WAS delegated, the subagent detached mid-sweep, and it stranded a
+   partial release candidate — merged onto `release`, but never gated, deployed, or
+   assembled. It sat there unnoticed.)
+
+   **Recovery — diagnose before you re-run.** If the sweep was **INTERRUPTED** (no
+   verdict — it detached, crashed, timed out): **re-run `bin/release prepare
+   --yes`**; it is self-healing, and only a live terminal can run it. If it
+   **ABORTED** (a verdict — red pre-QA gate, failed QA boot): **fix or eject the
+   offender FIRST**, because a bare re-run re-deploys the same member code and goes
+   red again. The full abort table is in
+   [`../../steffon/sops/qa-release.md`](../../steffon/sops/qa-release.md).
+3. **Ship** — MUTATION, so DIRECT-DRIVE `bin/release ship --yes` from THIS
    session. Do NOT wrap the ship in a subagent: it is the one irreversible gate,
    and a wrapper agent that dies mid-ship would orphan the `release → main` state
    with no terminal to recover it.
 
-- **Caveat.** `bin/release` is a script, so a summoned subagent is a thin driver
-  around it — the tree node is real, but the script's subprocess internals live
-  inside that agent. The tree is ephemeral (it dies with the session) and the
-  autonomous heartbeat has no terminal, so it renders no tree. The durable,
-  full-visibility surface is the Activities timeline, not the sub-agent tree.
+- **Visibility is not a reason to delegate.** The sub-agent tree is ephemeral (it
+  dies with the session) and the autonomous heartbeat has no terminal, so it
+  renders no tree at all. The durable, full-visibility surface is the Activities
+  timeline — narrate each atom there.
 
 Keep the same guards each atom owns:
 

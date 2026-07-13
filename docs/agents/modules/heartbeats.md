@@ -39,6 +39,17 @@ Each soul's action-level procedure lives with that soul:
 | **Steffon** (`steffon`) | `Steffon Heartbeat` | `archive-shipped`, `qa-release` | shipped work to archive / `reviewed` work + `assembled` stragglers to sweep | prior cycle `archived` (or no-op); then the RC swept, **live on QA, members `assembled` on QA-green** |
 | **Alex** (`alex`) | `Alex Heartbeat` | `grade-events`, `share-insights`, `full-cycle` | activities to grade / confirmed insights to share / a full pipeline to run | 10 graded + banked; confirmed insights shared out; or the whole release `shipped` |
 
+> **Direct-drive the mutating acts.** `qa-release`, `production-deploy`, and
+> `archive-shipped` MUTATE shared state across many minutes, so the heartbeat
+> session runs them ITSELF — never via an ephemeral Agent-tool subagent, which can
+> detach and leave the mutation half-applied with no terminal to finish it (this is
+> how a partial release candidate once sat unnoticed). Subagents stay first-class
+> for **read** fan-out: `pr-review` still supervises its PRIMARY + LIGHT reviewers
+> as subagents, because a detached review costs only a retry. The line is *mutating
+> vs reading*, not *parallel vs serial*. Recovery for an interrupted mutation is to
+> RE-RUN it — the conductor's commands are self-healing. Details:
+> [`parallel-agent-devops.md`](parallel-agent-devops.md).
+
 > **Sticky attribution — the FIRST action of a `<Soul> Heartbeat`.** Run
 > `bin/agent-activity heartbeat <soul>` (e.g. `bin/agent-activity heartbeat avi`) so
 > EVERY activity self-attributes to that soul — stacked over the stable base session

@@ -14,6 +14,45 @@ they do not merge to `main`. Work graduates through a PR review lane where Avi
 protects integration, Steffon adds QA/deploy scrutiny when needed, and the
 release conductor handles production effects.
 
+## Fan out the READS; direct-drive the MUTATIONS
+
+Fan-out is first-class here — parallel subagents are the default for devops, not
+an exception. This is that doctrine's one boundary condition, and it is not a
+retreat from parallelism:
+
+> **Any op that MUTATES shared state across many minutes is DIRECT-DRIVEN by the
+> conductor session, never delegated to an ephemeral subagent.** That means
+> `qa-release`, `production-deploy`, and `archive-shipped`. Subagents stay
+> first-class for **read** fan-out — PR reviews, audits, searches, exploration —
+> where a detach costs a retry, not a half-applied mutation.
+
+The line is **mutating vs reading**, not *parallel vs serial*. A subagent is
+ephemeral: it can crash, time out, or die with its terminal. When a *reader*
+detaches you lose a report and re-run it. When a long *writer* detaches, it leaves
+shared state half-applied with no attached terminal to notice or finish it — and
+nobody owns the wreckage.
+
+This is not hypothetical. On **2026-07-11** `qa-release` was run as a Steffon
+subagent (its SOP said to, for sub-agent-tree visibility). The subagent detached
+mid-sweep and left a **partial release candidate**: one PR merged onto `release`,
+but nothing gated, deployed, or assembled. Nobody noticed, and nobody was sure
+whether re-running was safe, so it sat there. `production-deploy` had already been
+direct-drive for exactly this reason — the lesson simply had not been generalized.
+
+Two corollaries worth knowing before you need them:
+
+- **The conductor's mutating commands are self-healing — for an INTERRUPTION.**
+  `bin/release prepare`, `ship`, and `archive` are idempotent and resume: they skip
+  work already stamped (`merged: release` / `merged: main`), and stage stamps are
+  first-write-wins. So when a run is cut short with no verdict, **a re-run is the
+  recovery path**, not a risk. But an **ABORT** is the opposite case: the command
+  reached a verdict and refused (a red gate, a failed QA boot), and a re-run would
+  re-test the same code and fail the same way. Fix or eject the cause first. Each
+  act's SOP carries its own abort table.
+- **Sub-agent-tree visibility is never a reason to delegate a mutation.** The tree
+  is ephemeral and the autonomous heartbeat renders none at all. The durable
+  surface is the Activities timeline — narrate the act there.
+
 ## Two-Workflow DevOps Cycle
 
 1. **Build: `designed → building → submitted`** — Feature agent owns this

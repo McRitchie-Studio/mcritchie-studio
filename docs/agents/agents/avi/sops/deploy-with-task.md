@@ -71,6 +71,28 @@ Use the production board by default. Do not add `--local`.
    `bin/task move <task> reviewed`. Any block ends the expedite — fix,
    resubmit, re-run this SOP.
 
+**Direct-drive steps 3 and 4 — do NOT delegate them to a subagent.** Both
+`bin/release prepare` and `bin/release ship` MUTATE shared state (merges onto
+`release`, QA and production deploys, task-stage flips) across many minutes. Run
+them in THIS session, with a terminal attached.
+
+- **The rule.** Any op that MUTATES shared state across many minutes —
+  `qa-release`, `production-deploy`, `archive-shipped`, and both steps below — is
+  DIRECT-DRIVEN by the conductor session, never handed to an ephemeral subagent
+  that can detach and leave the mutation half-applied with no terminal to notice or
+  finish it. (On 2026-07-11 a delegated sweep did exactly that and stranded a
+  partial release candidate: merged onto `release`, but never gated, deployed, or
+  assembled.) Step 2 above delegates the REVIEW on purpose — review is a **read**
+  act, where a detach costs a retry. The line is **mutating vs reading**, not
+  *parallel vs serial*.
+- **Recovery: both commands are SELF-HEALING — if one is interrupted, RE-RUN it.**
+  `prepare` skips PRs already stamped `merged: release/main` and flips members only
+  on QA-green; `ship` skips repos already stamped `merged: "main"` for re-ff,
+  published gems skip, and the fast-forwards no-op. An interrupted run is finished
+  by re-running it, not by hand-merging. (A gate ABORT is the opposite case: it
+  reached a verdict and refused — do not force past it; record the blocker and hand
+  it off.)
+
 3. **Sweep it onto release and QA it.**
 
    ```bash

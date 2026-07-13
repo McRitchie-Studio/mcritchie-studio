@@ -31,6 +31,19 @@ If there is nothing to archive, report "nothing to archive" and stop.
 
 ## Procedure
 
+**Direct-drive this act — do NOT delegate it to a subagent.** Archiving mutates
+shared state (it archives tasks and releases, and reclaims worktrees, branches,
+and Redis slots) over many minutes. Run it in the conductor session itself.
+
+- **The rule.** Any op that MUTATES shared state across many minutes —
+  `archive-shipped`, `qa-release`, `production-deploy` — is direct-driven by the
+  conductor session, never handed to an ephemeral subagent that can detach and
+  leave the mutation half-applied. Subagents stay first-class for **read** fan-out
+  (reviews, audits, searches), where a detach costs a retry. The line is
+  **mutating vs reading**, not *parallel vs serial*.
+- **Recovery.** `bin/release archive` is idempotent — a re-run archives nothing
+  twice. If a run is interrupted, re-run it.
+
 Preview first:
 
 ```bash

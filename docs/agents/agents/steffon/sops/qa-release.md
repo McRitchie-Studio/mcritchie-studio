@@ -66,20 +66,28 @@ and stop.
 
 ## Procedure
 
-**Summon this act as a Steffon subagent (interactive tree visibility).** When a
-session drives a devops cycle interactively (a terminal is attached), summon this
-act as its OWNING SOUL instead of running the sweep bare in a background shell:
-launch a **Steffon** subagent via the Agent tool (`subagent_type: steffon`) and
-have that subagent execute `bin/release prepare --yes` (the full procedure
-below). It renders as a live node in the Claude Code sub-agent tree under the
-orchestrator.
+**Direct-drive this act — do NOT delegate it to a subagent.** Run
+`bin/release prepare --yes` in the conductor session itself. Do NOT wrap it in an
+Agent-tool subagent (`subagent_type: steffon`) for sub-agent-tree visibility.
 
-- **Caveat.** `bin/release` is a script, so the Steffon subagent is a thin driver
-  around it: the tree node is real, but the sweep's subprocess internals (the
-  merges, the pre-QA gate, the QA deploy) run INSIDE that agent and are not their
-  own tree nodes. The tree is also ephemeral (it dies with the session) and the
-  autonomous heartbeat runs with no terminal, so it renders no tree. The durable,
-  full-visibility surface is the Activities timeline — narrate the act there.
+- **The rule.** Any op that MUTATES shared state across many minutes —
+  `qa-release`, `production-deploy`, `archive-shipped` — is DIRECT-DRIVEN by the
+  conductor session, never handed to an ephemeral subagent. Subagents stay
+  first-class for **read** fan-out (reviews, audits, searches, exploration), where
+  a detach costs a retry rather than a half-applied mutation. Parallel fan-out is
+  still the default for devops; the line is **mutating vs reading**, not *parallel
+  vs serial*.
+- **Why — learned the hard way (2026-07-11).** This SOP once told you to summon
+  the sweep as a Steffon subagent. That subagent DETACHED mid-sweep and left a
+  **partial release candidate**: one PR merged onto `release`, but nothing gated,
+  deployed, or assembled, and no attached terminal to notice or finish it. The
+  candidate just sat there. `production-deploy` was already direct-drive for
+  exactly this reason; the lesson generalizes to every long mutation.
+- **Visibility is not a reason to delegate.** The durable, full-visibility surface
+  is the Activities timeline — narrate the act there
+  (`bin/agent-activity start/next/end`). The sub-agent tree is ephemeral (it dies
+  with the session) and the autonomous heartbeat has no terminal, so it renders no
+  tree at all.
 
 Normalize any PR the sweep should carry: `gh pr ready <n>` un-drafts it and
 `gh pr edit <n> --base release` retargets a mis-based PR (a no-op when the base
@@ -167,6 +175,91 @@ bin/release eject <task> --feedback "<specific failing evidence>"
 ```
 
 Then re-run `bin/release prepare --yes` so the rest of the candidate can ride.
+
+## Recovery — an INTERRUPTION and an ABORT need OPPOSITE responses
+
+**Diagnose which one you have BEFORE you re-run.** `prepare` is self-healing, but
+self-healing means it RESUMES work that was cut short — it does not fix work that
+FAILED. A re-run skips the merges it already did and re-tests/re-deploys **the same
+member code**, so re-running a red candidate goes red again, the same way, forever.
+
+- **INTERRUPTION** — no verdict: a detached agent, a killed terminal, a timeout, a
+  crash. Work is half-applied. **Re-run it.**
+- **ABORT** — `prepare` reached a verdict and refused: a red pre-QA gate, a failed
+  QA boot, a failed merge. **Fix the cause first, THEN re-run.**
+
+The last run tells you which: an abort PRINTS its reason and its fix. If the sweep
+simply vanished with no verdict, it was interrupted.
+
+### INTERRUPTION — re-run `bin/release prepare --yes`. That is the whole fix.
+
+Do not hand-merge, do not hand-flip stages, and above all do not leave a
+half-finished candidate sitting because you are unsure whether a re-run would
+double-merge. It will not:
+
+- **Already-merged PRs are skipped.** The sweep skips any task already stamped
+  `merged: release` or `merged: main` — the merge step is crash-recovery-aware, so
+  a PR that landed before the interruption is never re-merged.
+- **An interrupted run leaves members `reviewed`** (the flip lands only on
+  QA-green), which is exactly the state the next run detects and finishes.
+- **A re-run resumes the candidate**; it does not open a second one.
+- **Stage stamps are first-write-wins**, so re-posted timeline boundaries are safe
+  no-ops (see the backfill note above).
+
+### ABORT — fix the cause, THEN re-run
+
+An abort leaves members `reviewed` (+ `merged: release`) and the release NOT
+assembled — the same board state an interruption leaves, which is exactly why you
+must not reflexively re-run. Each abort names its own case and its own fix:
+
+| Abort | Fix FIRST | Then |
+|---|---|---|
+| **Pre-QA gate red — a member REGRESSION** | `bin/release eject <task> --feedback "<failing evidence>"`, then revert its merge commit on `release` (the abort prints the guidance) — as the eject step above says | re-run `prepare`; the rest of the RC rides |
+| **Pre-QA gate red — ENV/toolchain** (unsatisfied bundle, Postgres down, Ruby divergence) | **Nothing to eject or revert.** Fix the environment exactly as the abort names it | re-run `prepare` |
+| **QA deploy / boot FAILED** | Fix the boot failure (the summary prints the `bin/qa-server deploy …` retry); eject the member if it is the cause | re-run `prepare` **once QA boots** |
+| **`gh` merge failed** (task left `reviewed`) | Resolve the conflict, or `bin/task block` the task | re-run `prepare` |
+
+`prepare` never force-ships a red candidate. The only ways past a real regression
+are to eject it or to fix it forward — never to re-run harder.
+
+### Detecting an UNFINISHED release candidate
+
+An unfinished RC is a candidate whose members are **merged but never assembled** —
+the sweep merged the PR (step 3) but never reached the `assembled` flip (step 6).
+Nothing is corrupt, but nothing is finished, and it is invisible unless you look:
+
+```bash
+bin/release status                      # current release + state
+bin/task list --stage reviewed          # any of these merged onto release is an unfinished member
+bin/task show <task> --json | jq '{stage, merged, release_slug}'
+```
+
+The smoking gun is a task stamped **`merged: "release"` while its stage is still
+`reviewed`**. Compare the healthy readings:
+
+| `stage` | `merged` | Meaning |
+|---|---|---|
+| `reviewed` | `null` | Waiting to be swept — normal. |
+| `reviewed` | `"release"` | **UNFINISHED — merged, never assembled. Diagnose before re-running.** |
+| `assembled` | `"release"` | Healthy member, QA-green. |
+
+On the /deployments tracker the same state reads as an **Assembling / Deploying QA
+node stuck yellow** with Live on QA never greening.
+
+⚠️ **This board state does NOT tell you WHY, and the two causes need opposite
+responses.** An INTERRUPTED sweep and an ABORTED (red) sweep leave the *identical*
+`reviewed` + `merged: "release"` reading. Do not re-run on the strength of this
+table alone — establish which one it is:
+
+- **The release's latest G3 Candidate attempt** (the /deployments **G3 Candidate**
+  column) — closed `failed` means the sweep reached a verdict and refused: an
+  **ABORT**. Still open with no verdict means it died mid-flight: an
+  **INTERRUPTION**.
+- **The last run's output**, if you still have it — an abort printed its reason and
+  its fix; an interruption printed nothing.
+
+Then take the matching recovery above: interruption → re-run; abort → fix the
+cause, then re-run.
 
 ## Exit Seam
 
