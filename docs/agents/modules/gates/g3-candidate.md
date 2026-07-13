@@ -20,12 +20,29 @@ run inside it rides the close:
   `qa_test_cmd` (`config/release_repos.yml`) runs against `origin/release`
   BEFORE any QA deploy. This is the tier prepare owns
   (`Release::STEP_TEST_TIERS`: `prepare → integration + e2e-smoke`):
-  - the **hub** registers its FULL suite (`bin/rails test`) — the batch
-    certification that lets [G4 Ship](g4-ship.md) self-gate an unchanged SHA;
+  - the **hub** registers CI's FULL suite, verbatim (`bin/rails db:test:prepare
+    test test:system` — the base tier AND the **system** tier) — the batch
+    certification that lets [G4 Ship](g4-ship.md) self-gate an unchanged SHA.
+    It runs what CI runs by construction: `repos_test.rb` parses
+    `.github/workflows/ci.yml` and asserts the two commands match, so the gate
+    cannot drift out from under CI. (It once did: the gate ran `bin/rails test`,
+    which SKIPS `test/system`, so a system-test regression reached QA ungated.)
+    **Keep `db:test:prepare` FIRST** — `test` is a real rails command, so
+    `bin/rails test test:system` parses `test:system` as a *path* and dies with
+    `LoadError`; the leading non-command routes the line through rake, where the
+    two tiers are separate tasks;
   - **satellites** register the integration subset
     (`bin/rails test test/integration`) — their full suite runs at ship / their
     own deploy;
   - an app with **no `qa_test_cmd` self-gates** and is skipped here.
+
+  The system tier needs no setup step in the gate's virgin worktree: `rails
+  test`/`rails test:system` each run rake `test:prepare`, which tailwindcss-rails
+  enhances with `tailwindcss:build`, so the gitignored
+  `app/assets/builds/tailwind.css` is built on demand; and Selenium Manager
+  fetches a chromedriver matched to the installed Chrome. A host with **no
+  Chrome** fails at driver resolution — that is an **ENV error, NOT a release
+  regression**: nothing to eject or revert.
 - **QA boot smokes** (`qa_up_smoke` SOPs) — after each QA deploy, poll
   `<qa_url>/up` until 200 (the e2e-smoke half of prepare's tier; the booted
   QA deploy IS the smoke).
