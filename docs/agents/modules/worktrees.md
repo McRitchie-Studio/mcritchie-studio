@@ -170,22 +170,80 @@ bin/agent-worktree scale status
   database state, and the exact `bin/agent-worktree remove … --yes` command. Use
   that dry run as the approval packet before deleting anything.
 - `cleanup --write` appends candidates to [`../maintenance/delete-later.md`](../maintenance/delete-later.md). It does not remove files, worktrees, branches, databases, Redis keys, or processes.
+- **The live-claim guard (why git state alone is not enough).** A worktree is a
+  candidate only when it is git-eligible **AND not held by a live builder**. A
+  brand-new worktree off `release` and one whose work was **fast-forward merged**
+  are **git-identical** — both clean, both `HEAD == base`, both 0-ahead — so
+  `cleanup_ready?` provably cannot tell a desk someone just sat down at from
+  finished work. The signal that can is the task's **live build-claim lease**
+  (`ClaimLease`, renewed by the builder's status line under a 120s TTL). Every
+  destructive path, `doctor`, and the registry route through ONE decision
+  (`reclaim_verdict` → `[reclaimable?, hold_reason]`), so the conductor's front door
+  can never nominate a desk the sweep would refuse. The board read is genuinely
+  bounded (10s, `AGENT_WORKTREE_TASK_TIMEOUT`) because it kills the child — so a
+  hung or black-holed board cannot stall a sweep. A withheld desk is named with its
+  reason and the builder's heartbeat age, and **every branch that gives up on
+  checking says so**, because a guard that silently disables itself is worse than no
+  guard.
+  - **Fail-open, except where it would destroy something.** The three "we did not
+    find a live claim" cases are *not* alike, and the destroy path treats them
+    differently:
+    - **lapsed** — we checked; the builder is gone. Reclaimable everywhere. ✔
+    - **unbound** — we cannot *identify* the desk, so there is no claim to look up.
+      A forced fail-open everywhere (withholding every unidentifiable desk would
+      wedge cleanup). It warns.
+    - **bound, but the board could not be read** (500 / timeout / auth) — we know the
+      desk *could* be claimed and simply failed to find out. It is **withheld
+      everywhere**. The board 500s under Postgres pressure during heavy parallel
+      devops — exactly when many worktrees exist and the sweep gets run — so outage
+      and mass-reclaim are **correlated, not independent**, and failing open reopens
+      the original incident precisely when everyone believes it is covered. The costs
+      are asymmetric: withholding during an outage is a **deferral** (re-run when the
+      board is back); nominating a desk you could not verify leads to an
+      **irreversible teardown**.
+  - **There is no "advisory" lane.** Every caller answers one question — *is this desk
+    a cleanup candidate?* — and that answer is consumed to **destroy**: the registry
+    feeds `bin/qa-intake`, which prints a `remove … --yes` per candidate; the `cleanup`
+    dry-run prints the same command; `cleanup --write` files the desk in the
+    delete-later ledger; `doctor` labels it a candidate. An earlier cut split these
+    into "destroy" and "advisory" lanes and let the advisory ones fail open — so during
+    exactly the outage this guard exists to survive, the sweep withheld a live
+    builder's desk while the conductor's front door recommended tearing it down. During
+    an outage the truthful answer is *"I cannot tell"*, and **withholding is that
+    answer**; nominating is the lie. The one exception is `remove … --yes` — the
+    explicit operator override, which warns and proceeds.
+  - **The unbound desk is the gap to know about.** `TASK_RECORD_SLUG` is written by
+    `bind-task`, never by `new`, so a builder inside the `new → bind-task → move
+    building` window has no task and therefore no claim to check. That is the exact
+    desk the original incident destroyed. It cannot be protected (we cannot check a
+    claim we cannot identify), so it fails open — but it now says so. Bind the task
+    immediately after `new` to close the window.
 - `cleanup --reclaim` is the **scale-down-on-close normal flow**: a merged
   worktree self-releases its Redis slot the same way a stack scales down when it
   closes. The dry run (no `--yes`) lists only the worktrees that are SAFE to
-  auto-remove — clean **and** either contained in the base ref or
-  base-equivalent (the same `cleanup_ready?` criteria as `cleanup`) — and prints
-  the same safety evidence and removal command as `cleanup`. It never lists a
-  dirty or unmerged worktree, and the candidate set is sourced from
-  `.worktrees/*` only, so the primary checkout is never a candidate.
+  auto-remove — clean, either contained in the base ref or base-equivalent, **and
+  not held by a live build-claim** (`reclaimable?`) — and prints the same safety
+  evidence and removal command as `cleanup`. It never lists a dirty, unmerged, or
+  live-claimed worktree, and the candidate set is sourced from `.worktrees/*` only,
+  so the primary checkout is never a candidate.
 - `cleanup --reclaim --yes` runs the **same full teardown as `remove`** for each
   safe candidate (stop the stack, flush the stack's Redis DB, update the cleanup
   ledger, remove the Git worktree, delete the stale local branch), re-verifying
-  each candidate under the worktree lock so one that turned dirty/unmerged in the
-  interim is skipped. After the batch it shrinks the Redis band toward the floor
-  (`maybe_scale_in`) and refreshes the registry once. Output names each reclaimed
-  worktree, the freed Redis DB, and the resulting band size. Safe to re-run; with
-  no candidates it prints a clear no-op message and changes nothing.
+  each candidate under the worktree lock — **including a fresh re-read of the build
+  claim**. That re-read matters: the candidate list is computed once, but teardowns
+  run serially inside the lock, so a builder who sits down and claims a task
+  mid-sweep would otherwise have their clean `HEAD == base` desk destroyed on
+  minutes-stale evidence. A worktree that turned dirty/unmerged **or newly claimed**
+  in the interim is skipped, with the reason printed. After the batch it shrinks the
+  Redis band toward the floor (`maybe_scale_in`) and refreshes the registry once.
+  Output names each reclaimed worktree, the freed Redis DB, and the resulting band
+  size. Safe to re-run; with no candidates it prints a clear no-op message (naming
+  any desks withheld for a live claim) and changes nothing.
+- **`remove … --yes` is the explicit operator override and is deliberately NOT
+  blocked by the claim** — you may be evicting a desk whose session died mid-lease.
+  It **warns loudly** when a live claim is present, but proceeds. The automatic paths
+  (`cleanup`, `--reclaim`, and the registry the conductor reads) refuse a held desk
+  outright, so nothing ever *recommends* that removal.
 - `remove <app> <task-slug> --yes` is the approved deletion path after Mr.
   McRitchie or the conductor authorizes cleanup. It refuses dirty or
   non-equivalent worktrees, stops the stack, flushes the stack's Redis DB (so a

@@ -451,6 +451,273 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     assert_includes ledger, "bin/agent-worktree remove mcritchie-studio terminal-context --yes"
   end
 
+  # --- reclaim guard: a live-claimed builder desk is never destroyed ----------
+  # A fresh worktree and a fast-forward-merged one are git-identical (clean, HEAD == base,
+  # 0-ahead), so ONLY the task's live build-claim (ClaimLease) separates a desk a builder
+  # just sat down at from finished work. The claim is read through the same board seam as
+  # the PR autofill; AGENT_WORKTREE_TASK_JSON stands in for the board's task record.
+  # The lease TTL is 120s (ClaimLease::DEFAULT_TTL_SECONDS).
+  CLAIM_TTL = 120
+
+  def claim_json(expires_at, session:)
+    JSON.generate("metadata" => { "devops" => {
+                    "claimed_session" => session, "claim_expires_at" => expires_at.utc.iso8601
+                  } })
+  end
+
+  # A lease renewed ~10s ago — a builder whose status line is alive.
+  def live_claim_json
+    claim_json(Time.now + (CLAIM_TTL - 10), session: "sess-live")
+  end
+
+  # A lease that lapsed an hour ago — a closed/crashed builder.
+  def lapsed_claim_json
+    claim_json(Time.now - 3600, session: "sess-dead")
+  end
+
+  # Bind a task slug into the fixture worktree's stack env so the guard's board read gets
+  # past its "no bound task" early return and actually resolves a record.
+  def bind_task_slug(slug)
+    env_path = File.join(@worktree_dir, ".env.agent-stack")
+    File.write(env_path, "#{File.read(env_path)}\nTASK_RECORD_SLUG=#{slug}\n")
+  end
+
+  # A fake `bin/task` that reports the task UNCLAIMED on the first `show` and LIVE-claimed
+  # on every later one — the builder-sits-down-mid-sweep race. Planted in the HUB (the
+  # documented fallback), never inside the worktree, which would dirty it and disqualify
+  # it from cleanup for the wrong reason.
+  def plant_task_bin_claiming_on_second_read(slug)
+    bind_task_slug(slug)
+    counter = File.join(@projects_dir, "task-show-count")
+    bin = File.join(@hub_dir, "bin", "task")
+    FileUtils.mkdir_p(File.dirname(bin))
+    expires = (Time.now + (CLAIM_TTL - 10)).utc.iso8601
+    File.write(bin, <<~SH)
+      #!/bin/sh
+      n=$(cat #{counter.shellescape} 2>/dev/null || echo 0)
+      echo $((n + 1)) > #{counter.shellescape}
+      if [ "$n" -eq 0 ]; then
+        echo '{"metadata":{"devops":{}}}'
+      else
+        echo '{"metadata":{"devops":{"claimed_session":"sess-midsweep","claim_expires_at":"#{expires}"}}}'
+      fi
+    SH
+    FileUtils.chmod(0o755, bin)
+  end
+
+  test "[integration] cleanup withholds a live-claimed worktree and says WHY" do
+    mark_worktree_merged_to_origin_main
+    bind_task_slug("desk-task")
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio",
+                                      env: { "AGENT_WORKTREE_TASK_JSON" => live_claim_json })
+
+    assert status.success?, err
+    assert_includes out, "withheld mcritchie-studio/terminal-context: held by a live builder claim"
+    assert_match(/builder heartbeat \d+s ago/, out, "the heartbeat age makes the hold checkable")
+    # The old copy ("no clean merged or base-equivalent candidates") was a LIE here: the
+    # desk IS clean and IS base-equivalent — it is simply occupied.
+    assert_includes out, "no free candidates — 1 desk withheld (see the reasons above)"
+    refute_includes out, "cleanup candidates:"
+  end
+
+  test "[integration] reclaim dry-run withholds a live-claimed worktree" do
+    mark_worktree_merged_to_origin_main
+    bind_task_slug("desk-task")
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio", "--reclaim",
+                                      env: removal_env("AGENT_WORKTREE_TASK_JSON" => live_claim_json))
+
+    assert status.success?, "#{out}\n#{err}"
+    assert_includes out, "withheld mcritchie-studio/terminal-context: held by a live builder claim"
+    assert_includes out, "no free candidates — 1 desk withheld (see the reasons above)"
+    refute_includes out, "reclaim candidates:"
+  end
+
+  # THE DESTRUCTIVE TIER — the REFUSAL half. Its positive counterpart (the desk that IS torn
+  # down) is above; both halves are needed, because this guard fails in two directions:
+  # fail-open destroys a live desk, fail-closed silently wedges the sweep.
+  test "[integration] reclaim --yes REFUSES to tear down a live-claimed desk" do
+    mark_worktree_merged_to_origin_main
+    bind_task_slug("desk-task")
+    assert Dir.exist?(@worktree_dir), "precondition: the desk is on disk"
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio", "--reclaim", "--yes",
+                                      env: removal_env("AGENT_WORKTREE_TASK_JSON" => live_claim_json))
+
+    assert status.success?, "#{out}\n#{err}"
+    assert Dir.exist?(@worktree_dir), "the desk MUST still be on disk — the teardown is irreversible"
+    assert_includes out, "withheld mcritchie-studio/terminal-context"
+    refute_includes out, "reclaimed mcritchie-studio/terminal-context"
+  end
+
+  # THE UNDER-LOCK RE-VERIFY, in isolation. The candidate passes SELECTION (unclaimed on
+  # the first board read), then a builder sits down and claims it mid-sweep. Teardowns run
+  # serially inside the lock, so the candidate list's claim evidence is stale by the time
+  # we reach the desk — the loop must re-read the claim and skip.
+  test "[integration] reclaim --yes re-verifies the claim UNDER THE LOCK (builder claims mid-sweep)" do
+    mark_worktree_merged_to_origin_main
+    plant_task_bin_claiming_on_second_read("mid-sweep-task")
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio", "--reclaim", "--yes",
+                                      env: removal_env)
+
+    assert status.success?, "#{out}\n#{err}"
+    assert Dir.exist?(@worktree_dir),
+           "a builder who claimed the task AFTER selection must not have their desk destroyed"
+    assert_includes out, "skipping mcritchie-studio/terminal-context: held by a live builder claim"
+    refute_includes out, "reclaimed mcritchie-studio/terminal-context"
+  end
+
+  test "[integration] a LAPSED claim does not protect — the merged worktree stays a candidate" do
+    mark_worktree_merged_to_origin_main
+    bind_task_slug("desk-task")
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio",
+                                      env: { "AGENT_WORKTREE_TASK_JSON" => lapsed_claim_json })
+
+    assert status.success?, err
+    assert_includes out, "cleanup candidates:",
+                    "fail-open: a lapsed lease (a closed/crashed builder) is not live"
+    refute_includes out, "withheld"
+  end
+
+  # THE REGISTRY is the conductor's front door: bin/qa-intake builds its Cleanup Candidates
+  # section straight off `cleanup_candidate` and prints a `remove … --yes` for each. It must
+  # agree with the sweep, or everyone believes the desk is protected while the front door
+  # still recommends tearing it down.
+  test "[integration] the registry does not nominate a live-claimed desk" do
+    mark_worktree_merged_to_origin_main
+    bind_task_slug("desk-task")
+    registry = File.join(@projects_dir, "registry.json")
+
+    _out, err, status = agent_worktree("snapshot", "mcritchie-studio", "--write",
+                                       env: { "AGENT_WORKTREE_REGISTRY" => registry,
+                                              "AGENT_WORKTREE_TASK_JSON" => live_claim_json })
+
+    assert status.success?, err
+    payload = JSON.parse(File.read(registry))
+    worktree = payload.fetch("worktrees").find { |entry| entry["task"] == @task }
+    refute worktree.fetch("cleanup_candidate"), "the conductor must not be told to remove a held desk"
+    assert_match(/live builder claim/, worktree.fetch("withheld_reason"), "…and it must be told WHY")
+    assert_equal 0, payload.dig("summary", "cleanup_candidates"), "the summary agrees with the field"
+    assert_equal 1, payload.dig("summary", "withheld")
+  end
+
+  # THE UNBOUND DESK is the original incident's own desk: TASK_RECORD_SLUG is written by
+  # bind-task, never by `new`, so a builder inside the new -> bind-task -> move building
+  # window has no task and therefore no claim we can read. We cannot protect what we cannot
+  # identify, so it fails open — but it must say so, because this is the likeliest desk to
+  # lose. (The fixture worktree is unbound, which is why the guard's board read never fires
+  # for it.)
+  test "[integration] an UNBOUND desk announces that no build claim could be checked" do
+    mark_worktree_merged_to_origin_main
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio", env: {})
+
+    assert status.success?, err
+    assert_match(/has no bound task, so no build claim can be checked/, err,
+                 "the desk we actually lost must not fail open in silence")
+    assert_includes out, "cleanup candidates:", "…but it still fails open"
+  end
+
+  # THE POSITIVE CONTROL — the one cell the asymmetry matrix never covered.
+  #
+  # This guard's failure mode is BIMODAL: fail-open destroys a live desk (the original
+  # incident), and fail-CLOSED silently wedges the entire reclaim sweep. Every other
+  # `--reclaim --yes` test in this file asserts a REFUSAL, so if the guard withheld EVERY
+  # desk the whole suite would stay green while reclaim was quietly dead — and teardown is
+  # now gated by four clauses, any one of which could regress that way. This asserts the
+  # sweep still DESTROYS: a readable desk whose claim has lapsed is torn down for real.
+  test "[integration] reclaim --yes STILL tears down a readable, unclaimed desk (positive control)" do
+    mark_worktree_merged_to_origin_main
+    bind_task_slug("desk-task")
+    assert Dir.exist?(@worktree_dir), "precondition: the desk is on disk"
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio", "--reclaim", "--yes",
+                                      env: removal_env("AGENT_WORKTREE_TASK_JSON" => lapsed_claim_json))
+
+    assert status.success?, "#{out}\n#{err}"
+    assert_includes out, "reclaimed mcritchie-studio/terminal-context",
+                    "a guard that withholds everything is a wedge, not a fix"
+    refute Dir.exist?(@worktree_dir), "the desk is actually torn down — the sweep still works"
+    refute_includes out, "withheld"
+  end
+
+  # THE DESTROY-PATH ASYMMETRY — the blocker from round 3.
+  #
+  # A BOUND task whose board record cannot be read (board 500, timeout, auth failure) is the
+  # one case where we KNOW the desk could be claimed and simply failed to find out — unlike
+  # unbound (cannot identify it) or lapsed (checked; the builder is gone). The board 500s
+  # under Postgres connection pressure during heavy parallel devops, which is exactly when
+  # many worktrees exist and the reclaim sweep gets run: outage and mass-reclaim are
+  # CORRELATED, so failing open here re-opens the original incident precisely when everyone
+  # believes it is covered. Withholding during an outage is a deferral; failing open is an
+  # irreversible teardown.
+  test "[integration] reclaim --yes WITHHOLDS a bound desk whose board record cannot be read" do
+    mark_worktree_merged_to_origin_main
+    bind_task_slug("board-is-down")
+    assert Dir.exist?(@worktree_dir), "precondition: the desk is on disk"
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio", "--reclaim", "--yes",
+                                      env: removal_env("AGENT_WORKTREE_TASK_JSON" => "null"))
+
+    assert status.success?, "#{out}\n#{err}"
+    assert Dir.exist?(@worktree_dir),
+           "an unverifiable desk must survive the destroy path — an outage is a reason to defer, " \
+           "not a licence to tear down a desk we could not check"
+    assert_includes out, "withheld mcritchie-studio/terminal-context"
+    assert_match(/board record could not be read/, out)
+    refute_includes out, "reclaimed mcritchie-studio/terminal-context"
+  end
+
+  # THE CLEANUP LANE withholds it too — there is no "advisory" lane. `cleanup` prints a
+  # `remove … --yes` per candidate and `--write` files it in the delete-later ledger, so it
+  # NOMINATES for destruction just as surely as the sweep does.
+  test "[integration] cleanup WITHHOLDS a bound desk whose board record cannot be read" do
+    mark_worktree_merged_to_origin_main
+    bind_task_slug("board-is-down")
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio",
+                                      env: { "AGENT_WORKTREE_TASK_JSON" => "null" })
+
+    assert status.success?, err
+    assert_match(/bound to task board-is-down, but its board record could not be read/, err,
+                 "a guard that gives up on checking must be loud about it")
+    assert_includes out, "withheld mcritchie-studio/terminal-context"
+    refute_includes out, "cleanup candidates:", "an unverifiable desk is never nominated"
+
+    # BLOCKER 2: the summary must not name a reason the per-desk line contradicts. It used to
+    # hardcode "withheld for a live builder claim" — telling the operator a builder was sitting
+    # at a desk whose record simply could not be read.
+    assert_includes out, "withheld (see the reasons above)"
+    refute_includes out, "withheld for a live builder claim"
+  end
+
+  # BLOCKER 1: the REGISTRY is a destroy path by proxy — bin/qa-intake builds its Cleanup
+  # Candidates list off `cleanup_candidate` and prints a `remove … --yes` for each. If it
+  # failed open during an outage, the sweep would withhold a live builder's desk while the
+  # conductor's front door recommended destroying it. It must agree with the sweep.
+  test "[integration] the registry does not nominate an UNVERIFIABLE desk during a board outage" do
+    mark_worktree_merged_to_origin_main
+    bind_task_slug("board-is-down")
+    registry = File.join(@projects_dir, "registry.json")
+
+    _out, err, status = agent_worktree("snapshot", "mcritchie-studio", "--write",
+                                       env: { "AGENT_WORKTREE_REGISTRY" => registry,
+                                              "AGENT_WORKTREE_TASK_JSON" => "null" })
+
+    assert status.success?, err
+    payload = JSON.parse(File.read(registry))
+    worktree = payload.fetch("worktrees").find { |entry| entry["task"] == @task }
+    refute worktree.fetch("cleanup_candidate"),
+           "during an outage qa-intake must NOT be told to remove a desk the sweep would withhold"
+    assert_match(/could not be read/, worktree.fetch("withheld_reason"),
+                 "and the reason must say it is unverifiable, not that a builder is on it")
+    assert_equal 0, payload.dig("summary", "cleanup_candidates")
+    assert_match(/could not be read/, err, "the registry lane announces too — it does not give up in silence")
+  end
+
   # --- remove --force (merge-verified) --------------------------------------
 
   # [unit] The pure decision force_clears_content_blocker? loaded as a library in

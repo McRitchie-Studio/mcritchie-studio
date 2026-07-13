@@ -10,6 +10,7 @@
 # Also picked up by the normal `bin/rails test` sweep.
 require "minitest/autorun"
 require "open3"
+require "time" # Time#iso8601 — the claim-lease expiry format the reclaim guard reads
 require_relative "../support/session_env"
 
 class AgentWorktreeTest < Minitest::Test
@@ -111,6 +112,214 @@ class AgentWorktreeTest < Minitest::Test
       print own_stack_on_port?(3020, "/x")
     RUBY
     assert_equal "false", out
+  end
+
+  # --- reclaim guard: claim_hold (devops-shift-lease follow-up) ---------------
+  # The claim decision (ClaimLease) over the task's devops record, with the board read
+  # (task_record_for_pr) stubbed. A LIVE claim withholds the desk; a lapsed or unbound one
+  # fails open. A BOUND-but-unreadable record is WITHHELD on every lane — there is no
+  # "advisory" lane, because every caller's answer is consumed to destroy.
+
+  # A BOUND desk (it has a task slug) — an UNBOUND one short-circuits to "free" before the
+  # claim is even consulted, which is its own case below.
+  def live_claimed(devops_ruby)
+    run_in_script(<<~RUBY)
+      def task_record_for_pr(_r, fresh: false); { "metadata" => { "devops" => #{devops_ruby} } }; end
+      print !claim_hold({ env: { "TASK_RECORD_SLUG" => "t" }, task: "t" }).nil?
+    RUBY
+  end
+
+  def test_claim_hold_withholds_for_a_non_expired_claim
+    assert_equal "true",
+                 live_claimed(%({ "claimed_session" => "s", "claim_expires_at" => "2099-01-01T00:00:00Z" })),
+                 "a builder actively renewing its claim protects the desk"
+  end
+
+  def test_claim_hold_frees_a_lapsed_claim
+    assert_equal "false",
+                 live_claimed(%({ "claimed_session" => "s", "claim_expires_at" => "2000-01-01T00:00:00Z" })),
+                 "a crashed/closed builder's lease has lapsed → reclaimable"
+  end
+
+  def test_claim_hold_frees_an_unclaimed_or_unbound_task
+    assert_equal "false", live_claimed("{}"), "no claim → reclaimable"
+    # an UNBOUND desk fails open (we cannot look up a claim we cannot identify)
+    out = run_in_script(<<~RUBY)
+      def task_record_for_pr(_r, fresh: false); {}; end
+      print !claim_hold({}).nil?
+    RUBY
+    assert_equal "false", out, "an unbound desk is not a live claim"
+  end
+
+  # THE ASYMMETRY. Three "no live claim found" cases, and they are NOT alike:
+  #   unbound  — we cannot identify the desk. Forced fail-open (withholding every
+  #              unidentifiable desk would wedge cleanup entirely).
+  #   lapsed   — we checked; the builder is gone. Free.
+  #   bound + UNREADABLE — we know the desk COULD be claimed and failed to find out.
+  # There is no "advisory" lane: every caller answers "is this a cleanup candidate?", and that
+  # answer is consumed to destroy (the registry feeds qa-intake, which prints `remove --yes`).
+  # So an unverifiable desk is withheld EVERYWHERE. During an outage the truthful answer is
+  # "I cannot tell" — withholding IS that answer; nominating is the lie.
+  def test_bound_but_unreadable_is_withheld_everywhere
+    hold = run_in_script(<<~RUBY)
+      def task_record_for_pr(_r, fresh: false); nil; end
+      print claim_hold({ env: { "TASK_RECORD_SLUG" => "t" }, task: "t" })
+    RUBY
+    assert_match(/could not be read/, hold, "a desk we could not verify must never be nominated")
+    assert_match(/withholding rather than nominating/, hold)
+  end
+
+  # An UNBOUND desk still fails open — there is no claim to look up, so withholding it would
+  # wedge every ad-hoc worktree forever.
+  def test_unbound_still_fails_open
+    out = run_in_script(<<~RUBY)
+      def task_record_for_pr(_r, fresh: false); nil; end
+      print claim_hold({ task: "t" }).inspect
+    RUBY
+    assert_equal "nil", out
+  end
+
+  # The HOLD REASON is what the destructive paths print instead of a silent skip — it must
+  # name the hold and carry the builder's heartbeat age so the operator can check it.
+  def test_claim_hold_reason_names_the_live_builder_and_its_heartbeat_age
+    expires = (Time.now + 110).utc.iso8601
+    out = run_in_script(<<~RUBY)
+      def task_record_for_pr(_r, fresh: false)
+        { "metadata" => { "devops" => { "claimed_session" => "s", "claim_expires_at" => #{expires.inspect} } } }
+      end
+      print claim_hold({ env: { "TASK_RECORD_SLUG" => "busy-task" }, task: "busy-task" })
+    RUBY
+    assert_match(/held by a live builder claim \(busy-task\)/, out)
+    assert_match(/builder heartbeat \d+s ago/, out, "the age makes the hold verifiable, not a bare refusal")
+  end
+
+  def test_claim_hold_is_nil_when_free
+    out = run_in_script(<<~RUBY)
+      def task_record_for_pr(_r, fresh: false); { "metadata" => { "devops" => {} } }; end
+      print claim_hold({ env: {} }).inspect
+    RUBY
+    assert_equal "nil", out, "an unheld desk yields no reason (and is reclaimable)"
+  end
+
+  # The ONE decision every destructive path, doctor AND the registry route through, so the
+  # conductor's front door can never nominate a desk the sweep would refuse. Returns
+  # [reclaimable?, hold_reason] — a bare boolean helper would not serve the callers (they
+  # all need the reason), which is how the previous cut ended up with a shared predicate
+  # that nothing actually called.
+  def test_reclaim_verdict_is_the_one_decision
+    # git-eligible + unheld → free, no reason
+    assert_equal "[true, nil]", verdict_for(held: false, dirty: false)
+    # git-eligible but HELD → withheld, WITH a reason to print
+    assert_match(/\A\[false, "held by a live builder claim/, verdict_for(held: true, dirty: false))
+    # not git-eligible → never a candidate, and NOT "withheld" (nothing to narrate)
+    assert_equal "[false, nil]", verdict_for(held: false, dirty: true)
+  end
+
+  def verdict_for(held:, dirty:)
+    devops = held ? %({ "claimed_session" => "s", "claim_expires_at" => #{(Time.now + 110).utc.iso8601.inspect} }) : "{}"
+    run_in_script(<<~RUBY)
+      def task_record_for_pr(_r, fresh: false); { "metadata" => { "devops" => #{devops} } }; end
+      record = { dirty: #{dirty}, merged: true, equivalent_to_main: true,
+                 env: { "TASK_RECORD_SLUG" => "t" }, task: "t" }
+      print reclaim_verdict(record).inspect
+    RUBY
+  end
+
+  # THE POSITIVE CONTROL. This guard's failure mode is BIMODAL: fail-open
+  # destroys a live desk (the original incident), fail-CLOSED silently wedges the whole sweep.
+  # Every other guard test here asserts a REFUSAL, so if the guard withheld EVERY desk the
+  # suite would stay green while reclaim was silently dead. This is the FREE cell — the one
+  # the asymmetry matrix never covered.
+  def test_the_guard_still_frees_a_readable_unclaimed_desk
+    assert_equal "[true, nil]", verdict_for(held: false, dirty: false),
+                 "the guard must withhold only what it CANNOT verify — a desk it read and found " \
+                 "unclaimed is still reclaimable, or the sweep is silently wedged"
+  end
+
+  # --- the held-desk PROSE must not invert under a substring test -------------------------
+  #
+  # The doctor/registry issue text for a held desk used to read "…; not a cleanup candidate".
+  # bin/qa-intake joins the issue list into ONE STRING and tests `include?("cleanup
+  # candidate")`, so the negation matched and the conductor's front door recommended
+  # `remove … --yes` for a desk with a LIVE builder at it — the exact incident this guard
+  # exists to prevent, re-entered through the one path that deliberately does not block.
+  #
+  # qa-intake now reads the structured verdict instead (pinned in qa_intake_command_test),
+  # but the phrase stays OUT of the negative branch regardless. Prose that inverts its
+  # meaning under a substring match is a landmine for the next consumer, and the answer this
+  # message carries is consumed to DESTROY. Belt and braces: fix the reader, disarm the text.
+  def test_the_held_desk_message_never_contains_the_phrase_cleanup_candidate
+    source = File.read(BIN)
+    held_line = source.lines.find { |line| line.include?("clean and landed on") }
+
+    refute_nil held_line, "the held-desk doctor message vanished — did it get renamed?"
+    refute_includes held_line, "cleanup candidate",
+                    "the HELD-desk message must not contain the phrase 'cleanup candidate' in any " \
+                    "form, negated or not: consumers substring-match this prose and a negation " \
+                    "reads as an affirmation, which nominates an occupied desk for teardown"
+    assert_includes held_line, "withheld from reclaim",
+                    "the held-desk message must still say plainly that the desk is off-limits"
+  end
+
+  # --- 404 classification: only the API's OWN "task not found" means the task is gone ------
+  #
+  # bin/task renders every non-2xx as "<METHOD> <path> -> <code>: <body>", so matching the
+  # STATUS alone accepts any 404 — including a Heroku ROUTER 404 (board renamed/deleted) or a
+  # Rails ROUTE 404 (path moved, or a stale local board). Those are FAILED READS, and because
+  # they are board-WIDE an over-broad match makes EVERY bound desk read free at once, silently
+  # disarming the guard on the destroy path. Hence the checks below assert BOTH directions —
+  # a test that only proves the happy 404 passes on the broken form too, which is exactly how
+  # the `||` slipped through.
+  def hold_for(stderr)
+    run_in_script(<<~RUBY)
+      def capture_status(*_cmd, **_kw); [false, "", #{stderr.inspect}]; end
+      def command_env(*_a); {}; end
+      record = { env: { "TASK_RECORD_SLUG" => "gone" }, task: "gone",
+                 dir: Dir.pwd, app: { "slug" => "mcritchie-studio" } }
+      print claim_hold(record).inspect
+    RUBY
+  end
+
+  # POSITIVE: the board ANSWERED "there is no such task" → free, even on the destroy path.
+  def test_a_real_task_404_is_free
+    assert_equal "nil", hold_for("error: GET /api/v1/tasks/gone -> 404: task not found"),
+                 "a deleted/renamed slug must not be withheld forever — the board answered"
+  end
+
+  # NEGATIVE CONTROLS — the tests that actually prove the fix. A 404 whose body is NOT the
+  # API's "task not found" is a board we could NOT read, and must WITHHOLD on the destroy
+  # path. Without these, the over-broad `||` form still passes.
+  def test_a_router_404_withholds_and_does_not_read_as_free
+    hold = hold_for("error: GET /api/v1/tasks/gone -> 404: <!DOCTYPE html><html><body>Not Found</body></html>")
+    assert_match(/could not be read/, hold,
+                 "a Heroku router 404 is a board-wide FAILED read — treating it as free would " \
+                 "disarm the guard for EVERY bound desk at once")
+  end
+
+  def test_a_route_404_withholds_and_does_not_read_as_free
+    hold = hold_for("error: GET /api/v1/tasks/gone -> 404: Not found")
+    assert_match(/could not be read/, hold, "a route-level 404 (moved path / stale board) is a failed read")
+  end
+
+  def test_a_500_still_withholds
+    hold = hold_for("error: GET /api/v1/tasks/gone -> 500: internal server error")
+    assert_match(/could not be read/, hold, "the outage that motivated this guard is still withheld")
+  end
+
+  # --- the board read must be REALLY bounded ---------------------------------
+  # Timeout.timeout around Open3.capture3 bounds NOTHING: capture3's ensure joins the wait
+  # thread, which blocks until the child exits, swallowing the Timeout::Error (a 2s guard
+  # around `sleep 6` returned after 6.01s on Ruby 3.3.11). A hung board would have stalled a
+  # whole sweep while the code claimed to be bounded. The bound must KILL the child.
+  def test_capture_status_timeout_actually_kills_the_child
+    out = run_in_script(<<~RUBY)
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      ok, _out, err = capture_status("sleep", "6", timeout: 1)
+      elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+      print [ok, err.include?("timed out"), elapsed < 3].inspect
+    RUBY
+    assert_equal "[false, true, true]", out,
+                 "a 1s bound around `sleep 6` must return in ~1s as a failed read, not after 6s"
   end
 
   # --- integration: the REAL mcritchie config carries the reservation through
