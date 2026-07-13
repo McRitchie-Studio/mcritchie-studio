@@ -55,6 +55,56 @@ class Release
       end
     end
 
+    # --- resuming a PARTIAL ship: the re-pin must be idempotent BY IDENTITY -----
+    #
+    # THE WEDGE this closes (reproduced on real git, 2026-07-12 — jasper, PR #517):
+    # auto-re-pin mints a NEW commit on top of the frozen SHA and advances the ship
+    # SHA to it — but `qa_shas` (the release record) still holds the ORIGINAL frozen
+    # SHA, and nothing ever rewrites it. So a ship that publishes the gems, pushes
+    # the re-pin, and THEN dies (a failed deploy, a dropped connection) leaves:
+    #   origin/release = repin₁   ·   qa_shas = frozen   ·   gems already published
+    # The retry re-derives its ship SHA from `qa_shas`, resets the workspace to
+    # `frozen`, finds the frozen tree's Gemfile still branch-ref'd, decides a re-pin
+    # is needed — and then sees origin/release ≠ frozen and treats ITS OWN re-pin as
+    # un-QA'd drift: "re-run `bin/release prepare` to re-QA". After the gems have
+    # published. The ship cannot be resumed. And underneath that guard sits a second
+    # failure: the retry would mint repin₂ — a DIFFERENT commit object with the same
+    # tree — whose push is non-fast-forward against repin₁, so it fails there too
+    # (verified by neutralizing the guard). The ship's own banner promises "re-pins
+    # are idempotent". They were not.
+    #
+    # THE FIX: make the re-pin idempotent BY IDENTITY. Before treating a moved
+    # origin/release as drift, ask whether it IS the re-pin this run would have
+    # written — and if so, REUSE it (ship that commit) instead of minting a rival.
+    #
+    # It qualifies ONLY on all three, and FAILS CLOSED on anything else — this
+    # decides what reaches PRODUCTION, and "close enough" is not a standard:
+    #   * ANCESTRY — the frozen SHA is an ancestor of the head, so the head is
+    #     frozen PLUS something, never a divergent line of development.
+    #   * SHAPE — that something touches ONLY Gemfile/Gemfile.lock. This is the
+    #     original guard's real intent, preserved exactly: no code may ride to prod
+    #     un-QA'd under cover of a re-pin.
+    #   * IDENTITY — the head's Gemfile is BYTE-IDENTICAL to what this run would
+    #     write (the frozen Gemfile with the published pins applied). Not merely
+    #     "no branch refs remain" — that weaker test would wave through a Gemfile
+    #     someone pinned to the WRONG version, and prod would build it.
+    # A commit that satisfies all three is, by construction, the commit this run was
+    # about to create. Shipping it is not a guess; it is the same act, completed.
+    REPIN_FILES = %w[Gemfile Gemfile.lock].freeze
+
+    def resumable_repin?(ancestor:, changed_files:, head_gemfile:, expected_gemfile:)
+      return false unless ancestor
+
+      files = Array(changed_files).map(&:to_s).map(&:strip).reject(&:empty?)
+      return false if files.empty?          # nothing changed — not a re-pin at all
+      return false if (files - REPIN_FILES).any? # code rode along — NOT a mechanical re-pin
+
+      expected = expected_gemfile.to_s
+      return false if expected.empty?
+
+      head_gemfile.to_s == expected
+    end
+
     # Should we publish `version`? No when it is already LIVE on RubyGems (an
     # idempotent skip — the gem made it in a prior run). `remote_versions` is the
     # RubyGems versions listing from /api/v1/versions/<gem>.json: an array of

@@ -4134,6 +4134,122 @@ class ReleaseCliTest < Minitest::Test
     end
   end
 
+  # --- partial-ship RETRY: the re-pin is idempotent BY IDENTITY ---------------
+  #
+  # REGRESSION (jasper, PR #517 — reproduced on real git before it was fixed).
+  # Auto-re-pin mints a NEW commit on top of the frozen SHA and advances the ship
+  # SHA to it, but `qa_shas` still holds the ORIGINAL frozen SHA and nothing rewrites
+  # it. A ship that published the gems, pushed the re-pin, and THEN died left
+  # origin/release = repin₁ with qa_shas = frozen — so the RETRY reset to frozen, saw
+  # the branch-ref'd Gemfile, decided a re-pin was needed, and then read its OWN
+  # re-pin commit as un-QA'd drift:
+  #
+  #   ✗ origin/release (912a444) drifted past the QA-frozen SHA (a3c1c92)
+  #     — re-run `bin/release prepare` to re-QA before re-pinning
+  #
+  # AFTER the gems had published. The ship could not be resumed. Underneath that
+  # guard sat a second failure: the retry would mint repin₂ — a distinct commit
+  # object with an identical tree — whose push is non-fast-forward against repin₁.
+  # Both are cured by never minting a rival: recognize the re-pin already on the
+  # branch and SHIP IT.
+
+  # A consumer mid-partial-ship: `release` already carries repin₁, `qa_shas` still
+  # says frozen. Returns [clone, frozen, repin1].
+  def build_partial_ship_fixture(dir)
+    clone, frozen = build_repin_fixture(dir)
+    run_git(clone, "checkout", "-q", "--detach", frozen)
+    File.write(File.join(clone, "Gemfile"), %(source "https://rubygems.org"\ngem "studio-engine", "~> 0.9"\n))
+    File.write(File.join(clone, "Gemfile.lock"), "GEM\n  studio-engine (0.9.0)\n")
+    run_git(clone, "add", "-A")
+    run_git(clone, "commit", "-q", "-m", "repin studio-engine ~> 0.9")
+    repin1 = git_out(clone, "rev-parse", "HEAD")
+    run_git(clone, "push", "-q", "origin", "HEAD:refs/heads/release")
+    run_git(clone, "checkout", "-q", "main")
+    [clone, frozen, repin1]
+  end
+
+  REPIN_LOCK_STUB = <<~'RUBY'
+    def bundle_lock(path, gem)
+      File.write(File.join(path, "Gemfile.lock"), "GEM\n  #{gem} (0.9.0)\n")
+    end
+  RUBY
+
+  # [integration] THE fix: the retry REUSES the re-pin already on origin/release,
+  # mints no rival commit, and ships it. Before the fix this aborted.
+  def test_a_partial_ship_retry_reuses_the_repin_already_on_release
+    Dir.mktmpdir do |dir|
+      clone, frozen, repin1 = build_partial_ship_fixture(dir)
+      origin = File.join(dir, "origin.git")
+
+      setup = %(def repo_path(_repo) = #{clone.inspect}\n) + REPIN_LOCK_STUB
+      out = run_cli(["--yes"], setup: setup,
+                    call: %{@ship_live = []; sha = { "sibling" => #{frozen.inspect} }; } +
+                          %{repin_consumers([{ "repo" => "sibling" }], { "studio-engine" => "0.9.0" }, sha); } +
+                          %{puts("SHIPPING " + sha["sibling"])})
+
+      assert_includes out, "ALREADY on origin/release", "the retry must RECOGNIZE its own prior re-pin: #{out}"
+      assert_includes out, "SHIPPING #{repin1}",
+                       "…and ship THAT commit — the act is already done, not to be done twice"
+      assert_equal repin1, git_out(origin, "rev-parse", "release"),
+                   "no rival commit may be pushed — a second re-pin is a non-fast-forward that can never land"
+    end
+  end
+
+  # [integration] FAILS CLOSED on genuine drift: a real CODE commit landed on
+  # release after the freeze. That is exactly what the guard exists for — it must
+  # still abort, and must not mistake a code commit for a mechanical re-pin.
+  def test_a_retry_still_aborts_when_real_code_drifted_onto_release
+    Dir.mktmpdir do |dir|
+      clone, frozen, = build_partial_ship_fixture(dir)
+      # …and someone merged real code on top of the re-pin, post-freeze.
+      run_git(clone, "checkout", "-q", "--detach", git_out(clone, "rev-parse", "origin/release"))
+      File.write(File.join(clone, "app.rb"), "un-QA'd feature")
+      run_git(clone, "add", "-A")
+      run_git(clone, "commit", "-q", "-m", "a feature that never went through QA")
+      run_git(clone, "push", "-q", "origin", "HEAD:refs/heads/release")
+      drifted = git_out(clone, "rev-parse", "HEAD")
+      run_git(clone, "checkout", "-q", "main")
+
+      setup = %(def repo_path(_repo) = #{clone.inspect}\n) + REPIN_LOCK_STUB
+      out = run_cli(["--yes"], setup: setup,
+                    call: %{@ship_live = []; sha = { "sibling" => #{frozen.inspect} }; } +
+                          %{begin; repin_consumers([{ "repo" => "sibling" }], { "studio-engine" => "0.9.0" }, sha); } +
+                          %{puts("SHIPPED " + sha["sibling"]); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+      assert_includes out, "ABORTED", "un-QA'd code on release must still abort the ship: #{out}"
+      assert_includes out, "un-QA'd", "…and say why"
+      refute_includes out, "REUSING", "a code commit is NOT a mechanical re-pin"
+      assert_equal drifted, git_out(File.join(dir, "origin.git"), "rev-parse", "release"),
+                   "the ship must not have pushed anything"
+    end
+  end
+
+  # [integration] The IDENTITY check, not a "looks pinned" check. A Gemfile-only
+  # commit on release that pins the WRONG version has no branch ref left — so a
+  # weaker "nothing left to re-pin?" test would wave it through and prod would build
+  # 0.7. Byte-identity to what THIS run would write is the only safe standard.
+  def test_a_retry_aborts_when_release_pins_a_version_this_ship_did_not_publish
+    Dir.mktmpdir do |dir|
+      clone, frozen = build_repin_fixture(dir)
+      run_git(clone, "checkout", "-q", "--detach", frozen)
+      File.write(File.join(clone, "Gemfile"), %(source "https://rubygems.org"\ngem "studio-engine", "~> 0.7"\n))
+      run_git(clone, "add", "-A")
+      run_git(clone, "commit", "-q", "-m", "pinned — but to a version this ship never published")
+      run_git(clone, "push", "-q", "origin", "HEAD:refs/heads/release")
+      run_git(clone, "checkout", "-q", "main")
+
+      setup = %(def repo_path(_repo) = #{clone.inspect}\n) + REPIN_LOCK_STUB
+      out = run_cli(["--yes"], setup: setup,
+                    call: %{@ship_live = []; sha = { "sibling" => #{frozen.inspect} }; } +
+                          %{begin; repin_consumers([{ "repo" => "sibling" }], { "studio-engine" => "0.9.0" }, sha); } +
+                          %{puts("SHIPPED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+      assert_includes out, "ABORTED",
+                      "a Gemfile pinned to a version this ship never published must NOT be reused: #{out}"
+      refute_includes out, "REUSING", "'no branch ref left' is not the same as 'this is my re-pin'"
+    end
+  end
+
   # --- ship preflight: the dirty-primary ABORT CLASS is gone ------------------
   # It used to refuse any app primary that was dirty or off `main`, because the ship
   # ff'd + deployed from that tree. It aborted a REAL production ship (after the gems

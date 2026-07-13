@@ -121,6 +121,38 @@ a rescue (commit the stranded work to a labeled `rescue/<repo>-<timestamp>`
 branch — never `git stash`, never discard: it may be a live session's work) and
 deploys anyway.
 
+### Resuming a PARTIAL ship (the re-pin is idempotent by identity)
+
+A ship aborts on the first failure, and the re-run resumes: published gems skip,
+ref pushes no-op, and **the auto-re-pin is idempotent**. That last one is not free,
+and it used to be a **wedge**:
+
+Auto-re-pin mints a NEW commit on top of the frozen SHA and advances the ship SHA
+to it — but `qa_shas` still holds the **original** frozen SHA and nothing ever
+rewrites it. So a ship that published the gems, pushed the re-pin, and *then* died
+left `origin/release = repin₁` while `qa_shas = frozen`. The retry re-derived its
+SHA from `qa_shas`, saw the frozen tree's Gemfile still branch-ref'd, decided a
+re-pin was needed — and then read **its own re-pin commit** as un-QA'd drift:
+`origin/release drifted past the QA-frozen SHA — re-run bin/release prepare`. After
+the gems had published. (Underneath that guard sat a second failure: the retry would
+mint `repin₂`, a distinct commit with an identical tree, whose push is
+non-fast-forward against `repin₁`.)
+
+The ship now asks whether a moved `origin/release` **is the re-pin this run would
+have written**, and reuses it instead of minting a rival. It qualifies on all three
+or not at all (`Release::ShipSequence.resumable_repin?`):
+
+1. **Ancestry** — the frozen SHA is an ancestor of the head.
+2. **Shape** — the diff touches **only** `Gemfile` / `Gemfile.lock`. This preserves
+   the original guard's whole intent: no code reaches production un-QA'd under cover
+   of a re-pin.
+3. **Identity** — the head's Gemfile is **byte-identical** to what this run would
+   write. Not merely "no branch refs left" — that weaker test would wave through a
+   Gemfile someone pinned to the *wrong* version, and prod would build it.
+
+Anything else **fails closed** and aborts as drift. Refusing a resumable ship costs
+a conversation; completing an unresumable one costs production.
+
 **The one residual primary dependency: gem builds.** A gem is built from its own
 primary checkout, and `gem build` packages the files on disk — so a **modified
 tracked file** in a gem repo would be *published* to RubyGems, where a version can

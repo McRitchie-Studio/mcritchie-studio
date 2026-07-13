@@ -516,4 +516,59 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
     assert_nil S.qa_gate({ "mcritchie-studio" => "green" }, "mcritchie-studio"),
                "a non-Hash record is not a verdict"
   end
+  # --- resumable_repin?: idempotency BY IDENTITY (the partial-ship retry) -----
+  #
+  # A ship that published the gems, pushed the re-pin, then died leaves
+  # origin/release = repin1 while qa_shas still says frozen. The retry must
+  # RECOGNIZE that commit as its own and ship it — minting a rival (same tree, new
+  # commit object) is a non-fast-forward that can never land, and the old code
+  # instead read its own re-pin as un-QA'd drift and wedged the ship AFTER the gems
+  # published. It qualifies on all three or not at all.
+
+  FROZEN_GEMFILE   = %(source "https://rubygems.org"\ngem "studio-engine", github: "a/b", branch: "x"\n)
+  EXPECTED_GEMFILE = %(source "https://rubygems.org"\ngem "studio-engine", "~> 0.9"\n)
+
+  test "resumable_repin? accepts the re-pin this run would have written" do
+    assert S.resumable_repin?(ancestor: true, changed_files: ["Gemfile", "Gemfile.lock"],
+                              head_gemfile: EXPECTED_GEMFILE, expected_gemfile: EXPECTED_GEMFILE)
+  end
+
+  test "resumable_repin? REFUSES a head that is not a descendant of the frozen SHA" do
+    assert_not S.resumable_repin?(ancestor: false, changed_files: ["Gemfile"],
+                                  head_gemfile: EXPECTED_GEMFILE, expected_gemfile: EXPECTED_GEMFILE),
+               "a divergent line of development is not a re-pin"
+  end
+
+  test "resumable_repin? REFUSES when code rode along with the Gemfile" do
+    assert_not S.resumable_repin?(ancestor: true, changed_files: ["Gemfile", "Gemfile.lock", "app/models/x.rb"],
+                                  head_gemfile: EXPECTED_GEMFILE, expected_gemfile: EXPECTED_GEMFILE),
+               "this is the original guard's whole point: no code reaches prod un-QA'd under cover of a re-pin"
+  end
+
+  test "resumable_repin? REFUSES a Gemfile pinned to a version this ship did not publish" do
+    wrong = %(source "https://rubygems.org"\ngem "studio-engine", "~> 0.7"\n)
+    assert_not S.resumable_repin?(ancestor: true, changed_files: ["Gemfile"],
+                                  head_gemfile: wrong, expected_gemfile: EXPECTED_GEMFILE),
+               "'no branch ref left' is NOT 'this is my re-pin' — a weaker test ships the wrong gem to prod"
+  end
+
+  test "resumable_repin? REFUSES a still-branch-ref'd Gemfile" do
+    assert_not S.resumable_repin?(ancestor: true, changed_files: ["Gemfile"],
+                                  head_gemfile: FROZEN_GEMFILE, expected_gemfile: EXPECTED_GEMFILE)
+  end
+
+  test "resumable_repin? REFUSES an empty diff — nothing was re-pinned at all" do
+    assert_not S.resumable_repin?(ancestor: true, changed_files: [],
+                                  head_gemfile: EXPECTED_GEMFILE, expected_gemfile: EXPECTED_GEMFILE)
+  end
+
+  test "resumable_repin? REFUSES a blank expected Gemfile rather than matching on nothing" do
+    assert_not S.resumable_repin?(ancestor: true, changed_files: ["Gemfile"],
+                                  head_gemfile: "", expected_gemfile: "")
+  end
+
+  test "resumable_repin? tolerates the newlines of `git diff --name-only` output" do
+    assert S.resumable_repin?(ancestor: true, changed_files: ["Gemfile\n", "Gemfile.lock\n"],
+                              head_gemfile: EXPECTED_GEMFILE, expected_gemfile: EXPECTED_GEMFILE)
+  end
 end

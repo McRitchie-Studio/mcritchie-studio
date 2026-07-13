@@ -2960,6 +2960,36 @@ def ship_gem(repo, version, frozen, member_slugs = [])
   record_merged_main(member_slugs)
 end
 
+# Is origin/release's head THIS RUN'S OWN re-pin of `frozen`, already pushed by a
+# ship that died partway (so the retry must REUSE it, not mint a rival)? The I/O seam
+# for Release::ShipSequence.resumable_repin? — it gathers the three facts and the
+# pure model decides. All three reads run in the SHIP WORKSPACE, which shares the
+# primary's object store, so the just-fetched origin/release commit resolves there.
+#
+# Any read that fails answers FALSE — never "probably fine". The caller then aborts
+# as un-QA'd drift, which is the correct fail-closed direction: refusing a resumable
+# ship costs a conversation, completing an unresumable one costs production.
+def resumable_repin?(repo, workspace, frozen:, head:, expected_gemfile:)
+  # 1. ANCESTRY — head is frozen PLUS something, not a divergent line.
+  _, ancestor = sh("git", "-C", workspace, "merge-base", "--is-ancestor", frozen, head, capture: true)
+  return false unless ancestor
+
+  # 2. SHAPE — that something touches ONLY Gemfile/Gemfile.lock (no code rides out).
+  diff, diff_ok = git_capture("-C", workspace, "diff", "--name-only", frozen, head)
+  return false unless diff_ok
+
+  # 3. IDENTITY — its Gemfile is byte-identical to what this run would write.
+  gemfile, gemfile_ok = git_capture("-C", workspace, "show", "#{head}:Gemfile")
+  return false unless gemfile_ok
+
+  Release::ShipSequence.resumable_repin?(
+    ancestor: true,
+    changed_files: diff.to_s.lines,
+    head_gemfile: gemfile,
+    expected_gemfile: expected_gemfile
+  )
+end
+
 # Auto-re-pin (D1): after ALL gems are live, before any app deploys, re-pin each
 # consumer's branch-ref'd gem line to the published `~> x.y` so prod builds
 # against the release, not a branch. Idempotent (already-pinned → no-op). One
@@ -3027,12 +3057,19 @@ def repin_consumers(app_groups, published_gems, ship_sha)
       ws_gemfile = File.join(workspace, "Gemfile")
       next unless File.exist?(ws_gemfile)
 
+      frozen  = ship_sha[repo]
       text    = File.read(ws_gemfile)
       pending = Release::ShipSequence.gems_to_repin(gem_names, text)
       if pending.empty?
         say("  #{repo}: Gemfile at the frozen SHA is already pinned for #{gem_names.join(', ')} — no re-pin")
         next
       end
+
+      # EXACTLY what this run would write — computed up front, because it is both the
+      # content we are about to commit AND the identity a prior partial ship's re-pin
+      # must match to be reusable (see below).
+      expected = text.dup
+      pending.each { |gem| expected = Release::GemfileRepin.rewrite(expected, gem, published_gems[gem]) }
 
       # The re-pin must build on the QA-frozen SHA. Fetch first so the origin check
       # reads the TRUE remote (not a stale local origin/release ref), then require
@@ -3043,13 +3080,33 @@ def repin_consumers(app_groups, published_gems, ship_sha)
 
       head, ok = git_capture("-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}")
       abort!("could not read origin/#{RELEASE_BRANCH} in #{repo} for re-pin") unless ok
-      if head.strip != ship_sha[repo]
-        abort!("#{repo} origin/#{RELEASE_BRANCH} (#{short(head.strip)}) drifted past the QA-frozen SHA " \
-               "(#{short(ship_sha[repo])}) — re-run `bin/release prepare` to re-QA before re-pinning")
+      head = head.strip
+
+      if head != frozen
+        # origin/release MOVED. Before calling that un-QA'd drift, ask the only
+        # question that matters: IS IT THIS RUN'S OWN RE-PIN, already pushed by a
+        # ship that published the gems and then died? (Release::ShipSequence —
+        # ancestry + Gemfile/Gemfile.lock-only + a BYTE-IDENTICAL Gemfile.) If it is,
+        # the act is already done: ship THAT commit rather than mint a rival with the
+        # same tree, which is what wedged the retry — its push is non-fast-forward
+        # against the re-pin already on the branch, and the ship could never complete.
+        if resumable_repin?(repo, workspace, frozen: frozen, head: head, expected_gemfile: expected)
+          say("  #{repo}: the re-pin for #{short(frozen)} is ALREADY on origin/#{RELEASE_BRANCH} " \
+              "(#{short(head)}) — a prior partial ship pushed it. REUSING that commit (minting a second " \
+              "one would be a non-fast-forward and could never land).")
+          @ship_live << "re-pin already live on origin/#{RELEASE_BRANCH} in #{repo} (#{short(head)})"
+          ship_sha[repo] = head
+          next
+        end
+
+        abort!("#{repo} origin/#{RELEASE_BRANCH} (#{short(head)}) drifted past the QA-frozen SHA " \
+               "(#{short(frozen)}), and the drift is NOT this run's own re-pin (it changes more than " \
+               "Gemfile/Gemfile.lock, or its Gemfile is not what this ship would write) — so code would " \
+               "reach production un-QA'd. Re-run `bin/release prepare` to re-QA before re-pinning.")
       end
 
-      pending.each { |gem| text = Release::GemfileRepin.rewrite(text, gem, published_gems[gem]) }
-      File.write(ws_gemfile, text)
+      File.write(ws_gemfile, expected)
+      text = expected
       pending.each { |gem| bundle_lock(workspace, gem) }
 
       pins = pending.map { |gem| "#{gem} #{Release::GemfileRepin.pessimistic_constraint(published_gems[gem])}" }
