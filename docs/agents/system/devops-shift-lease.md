@@ -91,13 +91,20 @@ just candidate selection:
     `new`, so a builder inside the `new → bind-task → move building` window has no claim to
     check. That is the original incident's own desk; bind immediately after `new`.
   - *bound, but the board could not be read* — we know the desk **could** be claimed and
-    failed to find out. On the **destroy path** (reclaim selection + the under-lock
-    re-verify) this **withholds**. The board 500s under Postgres pressure during heavy
-    parallel devops — exactly when many worktrees exist and the sweep runs — so outage and
-    mass-reclaim are **correlated**, and failing open here reopens the original incident
-    precisely when everyone believes it is covered. Withholding during an outage is a
-    deferral; failing open is an irreversible teardown. The advisory lanes (cleanup dry-run,
-    doctor, the registry) still fail open — they destroy nothing.
+    failed to find out. **Withheld everywhere.** The board 500s under Postgres pressure
+    during heavy parallel devops — exactly when many worktrees exist and the sweep runs — so
+    outage and mass-reclaim are **correlated**, and failing open reopens the original
+    incident precisely when everyone believes it is covered. Withholding during an outage is
+    a deferral; nominating a desk you could not verify leads to an irreversible teardown.
+
+  **There is no "advisory" lane.** Every caller answers *"is this desk a cleanup
+  candidate?"*, and that answer is consumed to destroy: the registry feeds `bin/qa-intake`,
+  which prints a `remove … --yes` per candidate; the cleanup dry-run prints the same command;
+  `--write` files it in the delete-later ledger; doctor labels it a candidate. An earlier cut
+  split these into "destroy" and "advisory" and let the advisory ones fail open — so during
+  the very outage this guard exists to survive, the sweep withheld a live builder's desk
+  while the front door recommended tearing it down. Only `remove … --yes`, the explicit
+  operator override, still proceeds (with a warning).
   Every branch that gives up on checking **says so**: a guard that silently disables itself
   is worse than no guard. (`nil` vs `{}` from the board read carries this: `{}` is a task we
   read that carries no claim; `nil` is a board we could not read.)

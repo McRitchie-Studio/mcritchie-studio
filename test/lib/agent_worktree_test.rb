@@ -147,34 +147,30 @@ class AgentWorktreeTest < Minitest::Test
     assert_equal "false", out, "an unbound desk is not a live claim"
   end
 
-  # THE DESTROY-PATH ASYMMETRY. The three fail-open cases are not alike:
-  #   unbound  — we cannot identify the desk. Forced. Fails open on every path.
-  #   lapsed   — we checked; the builder is gone. Correct. Fails open on every path.
+  # THE ASYMMETRY. Three "no live claim found" cases, and they are NOT alike:
+  #   unbound  — we cannot identify the desk. Forced fail-open (withholding every
+  #              unidentifiable desk would wedge cleanup entirely).
+  #   lapsed   — we checked; the builder is gone. Free.
   #   bound + UNREADABLE — we know the desk COULD be claimed and failed to find out.
-  # The board 500s under Postgres pressure during heavy parallel devops, which is exactly
-  # when a reclaim sweep runs — outage and mass-reclaim are correlated. Withholding during
-  # an outage is a deferral; failing open is an irreversible teardown. So on a destroy path
-  # (strict:) the unreadable case WITHHOLDS; the advisory lanes still fail open.
-  def test_bound_but_unreadable_withholds_on_the_destroy_path_only
-    unreadable = <<~RUBY
+  # There is no "advisory" lane: every caller answers "is this a cleanup candidate?", and that
+  # answer is consumed to destroy (the registry feeds qa-intake, which prints `remove --yes`).
+  # So an unverifiable desk is withheld EVERYWHERE. During an outage the truthful answer is
+  # "I cannot tell" — withholding IS that answer; nominating is the lie.
+  def test_bound_but_unreadable_is_withheld_everywhere
+    hold = run_in_script(<<~RUBY)
       def task_record_for_pr(_r, fresh: false); nil; end
-      record = { env: { "TASK_RECORD_SLUG" => "t" }, task: "t" }
+      print claim_hold({ env: { "TASK_RECORD_SLUG" => "t" }, task: "t" })
     RUBY
-
-    lenient = run_in_script("#{unreadable}\nprint claim_hold(record).inspect")
-    assert_equal "nil", lenient, "the advisory lanes (doctor/registry/dry-run) still fail open"
-
-    strict = run_in_script("#{unreadable}\nprint claim_hold(record, strict: true)")
-    assert_match(/could not be read/, strict, "a destroy path must not tear down a desk it could not verify")
-    assert_match(/withholding rather than destroying/, strict)
+    assert_match(/could not be read/, hold, "a desk we could not verify must never be nominated")
+    assert_match(/withholding rather than nominating/, hold)
   end
 
-  # An UNBOUND desk still fails open even on the destroy path — there is no claim to look
-  # up, so withholding it would wedge every ad-hoc worktree forever.
-  def test_unbound_still_fails_open_even_when_strict
+  # An UNBOUND desk still fails open — there is no claim to look up, so withholding it would
+  # wedge every ad-hoc worktree forever.
+  def test_unbound_still_fails_open
     out = run_in_script(<<~RUBY)
       def task_record_for_pr(_r, fresh: false); nil; end
-      print claim_hold({ task: "t" }, strict: true).inspect
+      print claim_hold({ task: "t" }).inspect
     RUBY
     assert_equal "nil", out
   end
@@ -215,13 +211,13 @@ class AgentWorktreeTest < Minitest::Test
     assert_equal "[false, nil]", verdict_for(held: false, dirty: true)
   end
 
-  def verdict_for(held:, dirty:, strict: false)
+  def verdict_for(held:, dirty:)
     devops = held ? %({ "claimed_session" => "s", "claim_expires_at" => #{(Time.now + 110).utc.iso8601.inspect} }) : "{}"
     run_in_script(<<~RUBY)
       def task_record_for_pr(_r, fresh: false); { "metadata" => { "devops" => #{devops} } }; end
       record = { dirty: #{dirty}, merged: true, equivalent_to_main: true,
                  env: { "TASK_RECORD_SLUG" => "t" }, task: "t" }
-      print reclaim_verdict(record, strict: #{strict}).inspect
+      print reclaim_verdict(record).inspect
     RUBY
   end
 
@@ -230,9 +226,9 @@ class AgentWorktreeTest < Minitest::Test
   # Every other strict test here asserts a REFUSAL, so if strict withheld EVERY desk the suite
   # would stay green while reclaim was dead. This is the free x strict cell — the one the
   # asymmetry matrix never covered.
-  def test_strict_still_frees_a_readable_unclaimed_desk
-    assert_equal "[true, nil]", verdict_for(held: false, dirty: false, strict: true),
-                 "strict must withhold only what it CANNOT verify — a desk it read and found " \
+  def test_the_guard_still_frees_a_readable_unclaimed_desk
+    assert_equal "[true, nil]", verdict_for(held: false, dirty: false),
+                 "the guard must withhold only what it CANNOT verify — a desk it read and found " \
                  "unclaimed is still reclaimable, or the sweep is silently wedged"
   end
 
@@ -251,7 +247,7 @@ class AgentWorktreeTest < Minitest::Test
       def command_env(*_a); {}; end
       record = { env: { "TASK_RECORD_SLUG" => "gone" }, task: "gone",
                  dir: Dir.pwd, app: { "slug" => "mcritchie-studio" } }
-      print claim_hold(record, strict: true).inspect
+      print claim_hold(record).inspect
     RUBY
   end
 

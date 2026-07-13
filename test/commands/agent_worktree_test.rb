@@ -517,7 +517,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     assert_match(/builder heartbeat \d+s ago/, out, "the heartbeat age makes the hold checkable")
     # The old copy ("no clean merged or base-equivalent candidates") was a LIE here: the
     # desk IS clean and IS base-equivalent — it is simply occupied.
-    assert_includes out, "no free candidates — 1 withheld for a live builder claim"
+    assert_includes out, "no free candidates — 1 desk withheld (see the reasons above)"
     refute_includes out, "cleanup candidates:"
   end
 
@@ -530,7 +530,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
 
     assert status.success?, "#{out}\n#{err}"
     assert_includes out, "withheld mcritchie-studio/terminal-context: held by a live builder claim"
-    assert_includes out, "no free candidates — 1 withheld for a live builder claim"
+    assert_includes out, "no free candidates — 1 desk withheld (see the reasons above)"
     refute_includes out, "reclaim candidates:"
   end
 
@@ -599,9 +599,9 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     payload = JSON.parse(File.read(registry))
     worktree = payload.fetch("worktrees").find { |entry| entry["task"] == @task }
     refute worktree.fetch("cleanup_candidate"), "the conductor must not be told to remove a held desk"
-    assert worktree.fetch("withheld_by_live_claim"), "…and it must be told WHY"
+    assert_match(/live builder claim/, worktree.fetch("withheld_reason"), "…and it must be told WHY")
     assert_equal 0, payload.dig("summary", "cleanup_candidates"), "the summary agrees with the field"
-    assert_equal 1, payload.dig("summary", "withheld_by_live_claim")
+    assert_equal 1, payload.dig("summary", "withheld")
   end
 
   # THE UNBOUND DESK is the original incident's own desk: TASK_RECORD_SLUG is written by
@@ -671,9 +671,10 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     refute_includes out, "reclaimed mcritchie-studio/terminal-context"
   end
 
-  # …but the ADVISORY lanes still fail open: they destroy nothing, and a board outage must
-  # not make `cleanup`/doctor/the registry lie about what is reclaimable.
-  test "[integration] a BOUND task whose board record cannot be read warns before proceeding" do
+  # THE CLEANUP LANE withholds it too — there is no "advisory" lane. `cleanup` prints a
+  # `remove … --yes` per candidate and `--write` files it in the delete-later ledger, so it
+  # NOMINATES for destruction just as surely as the sweep does.
+  test "[integration] cleanup WITHHOLDS a bound desk whose board record cannot be read" do
     mark_worktree_merged_to_origin_main
     bind_task_slug("board-is-down")
 
@@ -682,8 +683,39 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
 
     assert status.success?, err
     assert_match(/bound to task board-is-down, but its board record could not be read/, err,
-                 "a guard that silently disables itself on a destructive path must be loud")
-    assert_includes out, "cleanup candidates:", "still fail-open: cleanup proceeds"
+                 "a guard that gives up on checking must be loud about it")
+    assert_includes out, "withheld mcritchie-studio/terminal-context"
+    refute_includes out, "cleanup candidates:", "an unverifiable desk is never nominated"
+
+    # BLOCKER 2: the summary must not name a reason the per-desk line contradicts. It used to
+    # hardcode "withheld for a live builder claim" — telling the operator a builder was sitting
+    # at a desk whose record simply could not be read.
+    assert_includes out, "withheld (see the reasons above)"
+    refute_includes out, "withheld for a live builder claim"
+  end
+
+  # BLOCKER 1: the REGISTRY is a destroy path by proxy — bin/qa-intake builds its Cleanup
+  # Candidates list off `cleanup_candidate` and prints a `remove … --yes` for each. If it
+  # failed open during an outage, the sweep would withhold a live builder's desk while the
+  # conductor's front door recommended destroying it. It must agree with the sweep.
+  test "[integration] the registry does not nominate an UNVERIFIABLE desk during a board outage" do
+    mark_worktree_merged_to_origin_main
+    bind_task_slug("board-is-down")
+    registry = File.join(@projects_dir, "registry.json")
+
+    _out, err, status = agent_worktree("snapshot", "mcritchie-studio", "--write",
+                                       env: { "AGENT_WORKTREE_REGISTRY" => registry,
+                                              "AGENT_WORKTREE_TASK_JSON" => "null" })
+
+    assert status.success?, err
+    payload = JSON.parse(File.read(registry))
+    worktree = payload.fetch("worktrees").find { |entry| entry["task"] == @task }
+    refute worktree.fetch("cleanup_candidate"),
+           "during an outage qa-intake must NOT be told to remove a desk the sweep would withhold"
+    assert_match(/could not be read/, worktree.fetch("withheld_reason"),
+                 "and the reason must say it is unverifiable, not that a builder is on it")
+    assert_equal 0, payload.dig("summary", "cleanup_candidates")
+    assert_match(/could not be read/, err, "the registry lane announces too — it does not give up in silence")
   end
 
   # --- remove --force (merge-verified) --------------------------------------

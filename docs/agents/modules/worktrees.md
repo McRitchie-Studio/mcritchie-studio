@@ -193,16 +193,25 @@ bin/agent-worktree scale status
       A forced fail-open everywhere (withholding every unidentifiable desk would
       wedge cleanup). It warns.
     - **bound, but the board could not be read** (500 / timeout / auth) — we know the
-      desk *could* be claimed and simply failed to find out. On the **destroy path**
-      (`--reclaim` selection and the under-lock re-verify) this **withholds** the
-      desk. The board 500s under Postgres pressure during heavy parallel devops —
-      exactly when many worktrees exist and the sweep gets run — so outage and
-      mass-reclaim are **correlated, not independent**, and failing open here reopens
+      desk *could* be claimed and simply failed to find out. It is **withheld
+      everywhere**. The board 500s under Postgres pressure during heavy parallel
+      devops — exactly when many worktrees exist and the sweep gets run — so outage
+      and mass-reclaim are **correlated, not independent**, and failing open reopens
       the original incident precisely when everyone believes it is covered. The costs
       are asymmetric: withholding during an outage is a **deferral** (re-run when the
-      board is back); failing open is an **irreversible teardown**. The advisory lanes
-      (`cleanup` dry-run, `doctor`, the registry) still fail open — they destroy
-      nothing, and an outage must not make them lie about what is reclaimable.
+      board is back); nominating a desk you could not verify leads to an
+      **irreversible teardown**.
+  - **There is no "advisory" lane.** Every caller answers one question — *is this desk
+    a cleanup candidate?* — and that answer is consumed to **destroy**: the registry
+    feeds `bin/qa-intake`, which prints a `remove … --yes` per candidate; the `cleanup`
+    dry-run prints the same command; `cleanup --write` files the desk in the
+    delete-later ledger; `doctor` labels it a candidate. An earlier cut split these
+    into "destroy" and "advisory" lanes and let the advisory ones fail open — so during
+    exactly the outage this guard exists to survive, the sweep withheld a live
+    builder's desk while the conductor's front door recommended tearing it down. During
+    an outage the truthful answer is *"I cannot tell"*, and **withholding is that
+    answer**; nominating is the lie. The one exception is `remove … --yes` — the
+    explicit operator override, which warns and proceeds.
   - **The unbound desk is the gap to know about.** `TASK_RECORD_SLUG` is written by
     `bind-task`, never by `new`, so a builder inside the `new → bind-task → move
     building` window has no task and therefore no claim to check. That is the exact

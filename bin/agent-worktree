@@ -28,7 +28,6 @@ require "open3"
 require "shellwords"
 require "socket"
 require "time"
-require "timeout"
 require "yaml"
 
 # The IO-free restore-primary safety decision (refuse-on-dirty/unpushed, else ff
@@ -1944,16 +1943,20 @@ def stack_record_snapshot(record, issues_by_label)
   label = "#{app.fetch("slug")}/#{record.fetch(:task)}"
   port = record.fetch(:port)
   has_port = !port.to_s.empty? && port != "?"
-  # The registry is the contract the conductor reads: bin/qa-intake builds its "Cleanup
-  # Candidates" section straight off `cleanup_candidate` and prints a `remove … --yes` for
-  # each, so it must agree with the sweep. Same predicate, one board read (memoized).
+  # The registry is the CONTRACT the conductor reads, and it is a DESTROY path by proxy:
+  # bin/qa-intake builds its "Cleanup Candidates" section straight off `cleanup_candidate`
+  # and prints a `remove … --yes` line for each. So it must agree with the sweep — during a
+  # board outage the sweep withholds a live builder's desk, and if this lane failed open the
+  # front door would recommend tearing that very desk down, with no warning. It announces,
+  # exactly like the sweep.
   #
-  # `withheld_by_live_claim` is named for what it means: this desk was withheld FROM RECLAIM
-  # by a live claim. A dirty worktree is already excluded by dirtiness, so it reports false
-  # here even if a builder is on it — the field answers "why is this not a candidate", not
-  # "is somebody working here".
-  candidate, hold_reason = reclaim_verdict(record)
-  withheld_by_live_claim = !hold_reason.nil?
+  # `withheld_reason` carries the reason itself, not a boolean: a desk is withheld for a live
+  # claim OR because we could not verify it (unreadable board), and a name that says only
+  # "live claim" would misstate the outage case — the mistake this field is here to prevent.
+  # nil when the desk is free. (A dirty worktree is already excluded by dirtiness, so it
+  # carries no reason: the field answers "why is this not a candidate", not "is somebody
+  # working here".)
+  candidate, withheld_reason = reclaim_verdict(record, announce: true)
 
   {
     "label" => label,
@@ -1991,7 +1994,7 @@ def stack_record_snapshot(record, issues_by_label)
     "pidfile_state" => record.fetch(:pidfile_state),
     "sidekiq_pidfile_state" => record.fetch(:sidekiq_pidfile_state),
     "cleanup_candidate" => candidate,
-    "withheld_by_live_claim" => withheld_by_live_claim,
+    "withheld_reason" => withheld_reason,
     "compare_url" => github_compare_url(record),
     "issues" => issues_by_label[label]
   }
@@ -2046,7 +2049,7 @@ def snapshot_payload(app = nil)
       "worktrees" => records.size,
       "issues" => issues_by_label.values.sum(&:size),
       "cleanup_candidates" => worktrees.count { |worktree| worktree["cleanup_candidate"] },
-      "withheld_by_live_claim" => worktrees.count { |worktree| worktree["withheld_by_live_claim"] },
+      "withheld" => worktrees.count { |worktree| worktree["withheld_reason"] },
       "dirty_worktrees" => records.count { |record| record.fetch(:dirty) },
       "running_or_port_busy" => records.count { |record| !record.fetch(:port_pid).empty? },
       "behind_origin_main" => records.count { |record| !cleanup_ready?(record) && !%w[0 ?].include?(record.fetch(:behind).to_s) }
@@ -2076,11 +2079,11 @@ end
 # read per git-eligible worktree is spent once AND the caller can NARRATE why a desk was
 # held back — a silent skip on a destructive path is how "no candidates" ends up lying
 # about a worktree that is clean, base-equivalent, and simply occupied.
-def cleanup_partition(app = nil, strict: false)
+def cleanup_partition(app = nil)
   free = []
   withheld = []
   stack_records(app).each do |record|
-    ok, reason = reclaim_verdict(record, announce: true, strict: strict)
+    ok, reason = reclaim_verdict(record, announce: true)
     if ok
       free << record
     elsif reason
@@ -2097,12 +2100,16 @@ def report_withheld(withheld)
   withheld.each { |record, reason| puts "withheld #{worktree_label(record)}: #{reason}" }
 end
 
-# The truthful empty-set message. "no clean merged or base-equivalent candidates" is a
-# LIE when a desk was withheld — it IS clean and base-equivalent; it is occupied.
+# The truthful empty-set message. Two ways to lie here, and this helper exists to avoid both:
+# "no clean merged or base-equivalent candidates" is false when a desk WAS clean and
+# base-equivalent and simply withheld; and naming the REASON in the summary is false whenever
+# the desks were withheld for different reasons (a live claim vs a board we could not read).
+# The per-desk lines above already carry each reason exactly — the summary just counts.
 def no_candidates_message(kind, withheld)
   return "#{kind}: no clean merged or base-equivalent worktree candidates" if withheld.empty?
 
-  "#{kind}: no free candidates — #{withheld.size} withheld for a live builder claim (above)"
+  desks = withheld.size == 1 ? "desk" : "desks"
+  "#{kind}: no free candidates — #{withheld.size} #{desks} withheld (see the reasons above)"
 end
 
 def ledger_path
@@ -2274,10 +2281,7 @@ def run_reclaim(app = nil, yes: false)
     sh("git", "-C", config.fetch("repo"), "fetch", "origin", "--quiet", allow_fail: true)
   end
 
-  # strict: this is the DESTROY path. A bound task whose board record cannot be read
-  # withholds the desk here rather than failing open — an outage is a reason to defer, not
-  # a licence to tear down a desk we could not verify.
-  candidates, withheld = cleanup_partition(app, strict: true)
+  candidates, withheld = cleanup_partition(app)
   report_withheld(withheld)
   if candidates.empty?
     puts no_candidates_message("reclaim", withheld)
@@ -2317,7 +2321,7 @@ def run_reclaim(app = nil, yes: false)
       # lease on the WORKTREE itself, not the task. We accept it: the window is
       # milliseconds (not the minutes the stale candidate list allowed), and the blast
       # radius is a fresh desk, whose branch is by definition already on the base.
-      ok, reason = reclaim_verdict(fresh, fresh: true, announce: true, strict: true)
+      ok, reason = reclaim_verdict(fresh, fresh: true, announce: true)
       if reason
         puts "skipping #{worktree_label(fresh)}: #{reason}"
         next
@@ -2437,14 +2441,6 @@ def task_bound?(values)
   task_record_slug(values) && task_url(values)
 end
 
-# The task's board record, or {} when there is none / it cannot be read.
-#
-# MEMOIZED per task slug for the life of one command: a sweep otherwise spends several
-# serial `bin/task show --json` subprocesses per candidate (doctor + the registry snapshot
-# + selection all ask), each a round trip to prod. `fresh: true` BYPASSES the cache — the
-# under-lock re-verify passes it, because that read exists precisely to catch a claim taken
-# AFTER selection, and a cached answer there would silently reintroduce the very bug it
-# guards against.
 # The task's board record as a Hash, or NIL when the read itself FAILED.
 #
 # nil vs {} is the load-bearing distinction: {} is a task we READ successfully that simply
@@ -2538,7 +2534,7 @@ end
 # withholds a desk. But fail-open on a path that destroys a desk must not be silent, so
 # every branch that gives up on checking says so when `announce` is set (the destructive
 # and cleanup-intent paths set it; the registry/doctor reads stay quiet).
-def claim_hold(record, fresh: false, announce: false, strict: false)
+def claim_hold(record, fresh: false, announce: false)
   # nil-safe: a record without :env must not raise into the rescue below — that would
   # silently disable the guard on a destructive path, the exact failure the warnings exist
   # to prevent.
@@ -2571,17 +2567,13 @@ def claim_hold(record, fresh: false, announce: false, strict: false)
   # board is back); failing open is an IRREVERSIBLE teardown. Validate before irreversible
   # side effects.
   if task_record.nil?
-    if strict
-      return "bound to task #{slug}, but the board record could not be read, so the build claim " \
-             "could not be checked; withholding rather than destroying a desk we cannot verify " \
-             "(re-run once the board is reachable)"
-    end
-
     if announce
       warn "warning: #{worktree_label(record)} is bound to task #{slug}, but its board record could " \
-           "not be read, so the build claim could not be checked. Treating it as free."
+           "not be read, so the build claim could not be checked. Withholding it."
     end
-    return nil
+    return "bound to task #{slug}, but the board record could not be read, so the build claim " \
+           "could not be checked; withholding rather than nominating a desk we cannot verify " \
+           "(re-run once the board is reachable)"
   end
 
   # We READ the record. An empty devops here means "checked, and this task carries no
@@ -2597,11 +2589,8 @@ rescue StandardError => e
   # quiet (doctor/registry) lane an unexpected error would otherwise nominate a held desk
   # with no trace, which is the one contract this guard exists to protect.
   warn "warning: #{worktree_label(record)}: could not check the build claim (#{e.class}: #{e.message})"
-  # On a destroy path an unchecked claim withholds, for the same reason as above.
-  return "the build claim could not be checked (#{e.class}); withholding rather than destroying " \
-         "a desk we cannot verify" if strict
-
-  nil
+  "the build claim could not be checked (#{e.class}); withholding rather than nominating a desk " \
+    "we cannot verify"
 end
 
 # THE one reclaim decision, in one place: may this worktree be destroyed, and if it is
@@ -2615,15 +2604,21 @@ end
 # through here, so the conductor's front door (bin/qa-intake reads `cleanup_candidate`)
 # cannot nominate a desk the sweep would refuse. Costs at most one board read, only for a
 # git-eligible worktree, and memoized per slug across the command.
-# `strict` marks a DESTROY path (reclaim selection + the under-lock re-verify). There, a
-# bound task whose board record cannot be read WITHHOLDS the desk instead of failing open —
-# see claim_hold for why that one case differs from unbound and lapsed. The advisory lanes
-# (doctor, the registry, the cleanup dry-run) stay non-strict: they destroy nothing, and a
-# board outage must not make them lie about what is reclaimable.
-def reclaim_verdict(record, fresh: false, announce: false, strict: false)
+# There is no "advisory" lane. EVERY caller here answers one question — "is this desk a
+# cleanup candidate?" — and that answer is consumed to DESTROY: the registry feeds
+# bin/qa-intake, which prints a `remove … --yes` per candidate; the cleanup dry-run prints the
+# same removal command; `cleanup --write` files the desk in the delete-later ledger; doctor
+# labels it a candidate. An earlier cut split these into "destroy" and "advisory" and let the
+# advisory ones fail open on an unreadable board — so during exactly the outage this guard
+# exists to survive, the sweep withheld a live builder's desk while the conductor's front door
+# recommended tearing it down. During an outage the truthful answer is "I cannot tell", and
+# WITHHOLDING is that answer; nominating is the lie. So an unverifiable desk is withheld
+# everywhere, and only `remove … --yes` (the explicit operator override) still proceeds — with
+# a warning.
+def reclaim_verdict(record, fresh: false, announce: false)
   return [false, nil] unless cleanup_ready?(record)
 
-  reason = claim_hold(record, fresh: fresh, announce: announce, strict: strict)
+  reason = claim_hold(record, fresh: fresh, announce: announce)
   [reason.nil?, reason]
 end
 
