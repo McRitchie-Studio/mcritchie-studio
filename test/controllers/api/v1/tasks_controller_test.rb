@@ -46,6 +46,35 @@ module Api
         assert @task.requires_release_conductor?
       end
 
+      # --- Cert evidence is a MACHINE-OWNED namespace (regression: an agent that
+      # recorded its tier-tagged test plan AFTER certifying wiped the
+      # fingerprint-bound cert lines, and bin/dor-check then reported
+      # "full-suite: MISSING" on code it had just certified). The API is the path
+      # bin/task PATCHes, so the guard must hold here, not only in the CLI. ---
+
+      test "[integration] api checks_run update preserves cert evidence" do
+        full = "[full-suite@1512171634558ef1234567890abcdef123456789] bin/rails test (782 runs, 0 failures)"
+        rubocop = "[rubocop@1512171634558ef1234567890abcdef123456789] bin/rubocop (clean)"
+        task = Task.create!(
+          title: "Api Cert Evidence Guard",
+          stage: "building",
+          metadata: { "devops" => { "kind" => "bug", "checks_run" => [full, rubocop] } }
+        )
+
+        # The exact payload `bin/task update <slug> --checks "[unit] ..."` sends
+        # once the CLI's read-merge is out of the picture: author lines only.
+        patch api_v1_task_path(task.slug),
+              params: { devops: { kind: "bug", checks_run: ["[unit] bin/rails test test/models"] } },
+              headers: @headers,
+              as: :json
+
+        assert_response :success
+        task.reload
+        assert_includes task.devops_checks_run, full, "the API dropped the full-suite cert evidence"
+        assert_includes task.devops_checks_run, rubocop, "the API dropped the rubocop cert evidence"
+        assert_includes task.devops_checks_run, "[unit] bin/rails test test/models"
+      end
+
       # --- Operator approval lane (regression: a builder PATCHed
       # approval_status=approved right after submitting — self-approving its own
       # demo). Approving belongs to the admin-gated board UI; API bearer writes

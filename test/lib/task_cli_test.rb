@@ -1274,6 +1274,58 @@ class TaskCliTest < Minitest::Test
     assert_equal "http://localhost:3001/demo", devops["local_url"]
   end
 
+  # --- cert evidence is machine-owned (regression) ---
+  # `--checks` REPLACES the author's checks_run lines. It must NOT be able to
+  # replace the fingerprint-bound cert lines bin/fast-check / bin/full-suite-check
+  # stamp: recording a test plan after certifying used to wipe the cert, and
+  # bin/dor-check then called freshly certified code "full-suite: MISSING". The
+  # CLI already GETs the task before the PATCH, so it carries the evidence forward
+  # itself — the board enforces the same rule for every other writer.
+  FULL_EVIDENCE = "[full-suite@1512171634558ef1234567890abcdef123456789] bin/rails test (782 runs, 0 failures)"
+  RUBOCOP_EVIDENCE = "[rubocop@1512171634558ef1234567890abcdef123456789] bin/rubocop (clean)"
+
+  def test_update_checks_preserves_machine_written_cert_evidence
+    requests, = run_task(
+      ["update", "demo-task", "--checks", "[unit] bin/rails test test/models", "--checks",
+       "[integration] bin/rails test test/controllers"],
+      stub_devops: { "kind" => "bug", "checks_run" => [FULL_EVIDENCE, RUBOCOP_EVIDENCE] }
+    )
+    patch = requests.find { |r| r[:method] == "PATCH" }
+    refute_nil patch
+    checks = JSON.parse(patch[:body]).dig("devops", "checks_run")
+    assert_includes checks, FULL_EVIDENCE, "--checks wiped the full-suite cert evidence"
+    assert_includes checks, RUBOCOP_EVIDENCE, "--checks wiped the rubocop cert evidence"
+    assert_includes checks, "[unit] bin/rails test test/models"
+    assert_includes checks, "[integration] bin/rails test test/controllers"
+  end
+
+  # The author's OWN lines are still replaced wholesale — --checks stays a
+  # replace, just scoped to the namespace the author owns.
+  def test_update_checks_still_replaces_author_lines
+    requests, = run_task(
+      ["update", "demo-task", "--checks", "[unit] fresh plan"],
+      stub_devops: { "kind" => "bug", "checks_run" => ["[unit] stale plan", FULL_EVIDENCE] }
+    )
+    patch = requests.find { |r| r[:method] == "PATCH" }
+    refute_nil patch
+    assert_equal ["[unit] fresh plan", FULL_EVIDENCE], JSON.parse(patch[:body]).dig("devops", "checks_run")
+  end
+
+  # A cert writer supersedes the lanes it SUPPLIES (that is how bin/fast-check and
+  # bin/full-suite-check re-stamp their own lane) — the rest is carried over.
+  def test_update_checks_supersedes_a_lane_it_supplies
+    stale_full = "[full-suite@0000000000000000000000000000000000000000] bin/rails test (781 runs, 0 failures)"
+    requests, = run_task(
+      ["update", "demo-task", "--checks", "[unit] plan", "--checks", FULL_EVIDENCE],
+      stub_devops: { "kind" => "bug", "checks_run" => ["[unit] plan", stale_full, RUBOCOP_EVIDENCE] }
+    )
+    patch = requests.find { |r| r[:method] == "PATCH" }
+    refute_nil patch
+    checks = JSON.parse(patch[:body]).dig("devops", "checks_run")
+    assert_equal ["[unit] plan", FULL_EVIDENCE, RUBOCOP_EVIDENCE], checks
+    refute_includes checks, stale_full, "a re-cert must replace its own stale lane"
+  end
+
   def test_update_normalizes_dashed_approval_status
     requests, = run_task(["update", "demo-task", "--approval-status", "changes-requested"])
     patch = requests.find { |r| r[:method] == "PATCH" }

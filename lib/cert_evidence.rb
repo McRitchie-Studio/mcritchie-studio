@@ -1,0 +1,134 @@
+# frozen_string_literal: true
+
+# CertEvidence — the MACHINE-OWNED namespace inside a task's devops.checks_run.
+#
+# checks_run holds two kinds of line, written by two different hands:
+#
+#   [unit] bin/rails test test/models/task_test.rb      ← AUTHOR-owned (tier tags,
+#   [integration] bin/rails test test/controllers          bypass records, prose)
+#   [full-suite-bypass] CI outage, ran locally
+#
+#   [full-suite@<fp>] bin/rails test (782 runs, 0 failures)   ← MACHINE-owned
+#   [rubocop@<fp>]    bin/rubocop (clean)                        CERT EVIDENCE
+#   [fast-cert@<fp>]  mapped+spine tests + scoped rubocop        (bin/fast-check,
+#                                                                bin/full-suite-check)
+#
+# The `@<fingerprint>` is what separates the two namespaces: a tier tag is a bare
+# `[lane]`, evidence is `[lane@<git tree hash>]`. bin/dor-check reads ONLY the
+# evidence lines to decide whether the code is certified (see
+# bin/lib/full_suite_gate.rb for the fingerprint + grading half).
+#
+# WHY THIS MODULE EXISTS (bug, 2026-07-12 — hit twice in one session, ~8 minutes
+# burned each time): `bin/task update <slug> --checks "…"` REPLACED the whole
+# checks_run array. An agent that recorded its tier-tagged test plan AFTER
+# certifying silently DESTROYED its own cert evidence, and bin/dor-check then
+# reported "full-suite: MISSING (never certified for this exact code)" on code
+# that WAS just certified — a FALSE NEGATIVE in the G1 cert gate, whose only
+# visible remedy was to burn another suite run (or, worse, to hand-write an
+# evidence line and forge the cert). The check-writers already protected the
+# author's lines ("tier tags preserved"); the author's --checks wiped the
+# machine's. This module makes that asymmetry symmetric.
+#
+# THE WRITE RULE (#preserve) — one sentence: a writer may only supersede an
+# evidence LANE it SUPPLIES evidence for. So:
+#   * an author `--checks` update (tier tags only, no `[lane@fp]` lines) can
+#     never drop a cert — every lane is carried over;
+#   * a cert writer that just ran a lane green stamps that lane and replaces its
+#     own prior line (no stale accumulation), leaving the other lanes intact.
+# Destroying a cert therefore REQUIRES writing a fingerprint-bound line for that
+# lane by hand — i.e. deliberately forging a certification, not fat-fingering an
+# ordinary `--checks` update. Ordering ("record --checks BEFORE you certify") is
+# no longer load-bearing: both orders are safe.
+#
+# Enforced at BOTH ends, so no caller inherits the old behavior:
+#   * bin/task     — build_devops carries evidence forward into the PATCH body
+#                    (protects agents immediately, even against an older board).
+#   * Task#preserve_cert_evidence — the board funnel every writer passes through
+#                    (bin/task, the board UI form, a raw API PATCH, the console).
+#
+# NOT protected, deliberately: `[full-suite-bypass] <why>` is an AUTHOR record —
+# a human's conscious, loud skip. Force-preserving it would make a bypass
+# impossible to withdraw, so it stays author-owned and removable.
+module CertEvidence
+  TEST_LANE = "full-suite"
+  RUBOCOP_LANE = "rubocop"
+  FAST_LANE = "fast-cert"
+  # The FULL-cert lanes (what "certified" means: full suite + full rubocop, both
+  # fresh). The fast lane is separate — it only satisfies the gate paired with a
+  # green GitHub CI, which is bin/dor-check's call.
+  LANES = [TEST_LANE, RUBOCOP_LANE].freeze
+  # Every fingerprint-bound lane — the whole machine-owned namespace.
+  EVIDENCE_LANES = (LANES + [FAST_LANE]).freeze
+
+  module_function
+
+  # The checks_run line a passing lane records, embedding the fingerprint.
+  def evidence_line(lane, fingerprint, detail)
+    "[#{lane}@#{fingerprint}] #{detail}"
+  end
+
+  # Pattern for a recorded evidence line of the given lanes, at the start of a
+  # checks_run line. The `@` is required — a bare "[unit]" tier tag or a
+  # "[full-suite-bypass]" record never matches.
+  def evidence_re(lanes)
+    /\A\s*\[\s*(?:#{Array(lanes).map { |l| Regexp.escape(l) }.join("|")})\s*@/i
+  end
+
+  EVIDENCE_RE = evidence_re(EVIDENCE_LANES)
+
+  # The fingerprint embedded in a "[lane@<fp>] …" line, or nil.
+  def extract_fingerprint(line, lane)
+    m = line.to_s.match(/\A\s*\[\s*#{Regexp.escape(lane)}\s*@\s*([0-9a-f]{7,64})\s*[\]:]/i)
+    m && m[1].downcase
+  end
+
+  # The evidence lane a line belongs to ("full-suite" / "rubocop" / "fast-cert"),
+  # or nil when the line is author-owned (a tier tag, a bypass, prose).
+  #
+  # Keyed on the `[lane@` PREFIX — the same predicate EVIDENCE_RE uses — not on a
+  # well-formed fingerprint. Membership of the machine-owned namespace is about
+  # the SHAPE of the line; whether the embedded fingerprint is a real tree hash
+  # that grades :fresh is bin/dor-check's question (#extract_fingerprint, which
+  # stays strict). Splitting the two predicates would let a malformed evidence
+  # line be neither superseded nor recognized, and it would leave the writers'
+  # merge disagreeing with the board's preserve.
+  def lane_of(line)
+    EVIDENCE_LANES.find { |lane| line.to_s.match?(evidence_re([lane])) }
+  end
+
+  # The lanes a list of lines carries evidence for.
+  def lanes_addressed(lines)
+    Array(lines).filter_map { |line| lane_of(line) }.uniq
+  end
+
+  # THE WRITE RULE. `incoming` is the list the caller wants stored; `prior` is
+  # what's stored now. Every evidence line whose lane the caller did NOT address
+  # is carried over (appended, after the caller's lines — evidence reads last,
+  # the order the cert writers already stamp). Author lines in `prior` are NOT
+  # carried: --checks stays a REPLACE, scoped to the namespace the author owns.
+  def preserve(prior:, incoming:)
+    incoming = Array(incoming).map(&:to_s)
+    addressed = lanes_addressed(incoming)
+    carried = Array(prior).map(&:to_s).select do |line|
+      lane = lane_of(line)
+      lane && !addressed.include?(lane)
+    end
+    incoming + carried
+  end
+
+  # Merge fresh evidence into an existing checks_run — the cert writers' side of
+  # the same rule. Replaces prior evidence for the lanes being stamped (so
+  # re-runs supersede rather than accumulate) and preserves tier tags, bypass
+  # records, and every other lane's evidence. `lanes` defaults to exactly the
+  # lanes `fresh_lines` carries, which is what keeps this identical to #preserve:
+  # you supersede what you supply, nothing else. (bin/fast-check passes
+  # [FAST_LANE] explicitly; the effect is the same.)
+  def merge_evidence(existing, fresh_lines, lanes: nil)
+    lanes ||= lanes_addressed(fresh_lines)
+    existing = Array(existing).map(&:to_s)
+    return existing + Array(fresh_lines) if lanes.empty?
+
+    re = evidence_re(lanes)
+    existing.reject { |line| line.match?(re) } + Array(fresh_lines)
+  end
+end

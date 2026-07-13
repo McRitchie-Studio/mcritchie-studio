@@ -566,6 +566,15 @@ keys survive (`Task::DEVOPS_KEYS`):
    it. (A `PATCH` that omits `devops` leaves `metadata` untouched — use that to
    move only the stage.) **`bin/task update` does this read-merge-write for you**,
    so partial updates are safe through the CLI.
+   **One exception, by design: cert evidence in `checks_run` is machine-owned.**
+   The fingerprint-bound lines the cert tools stamp (`[full-suite@<fp>]`,
+   `[rubocop@<fp>]`, `[fast-cert@<fp>]` — what `bin/dor-check` grades) survive a
+   `checks_run` you send without them: the board carries forward every evidence
+   lane your payload does not itself supply (`Task#preserve_cert_evidence`,
+   `lib/cert_evidence.rb`). Your own tier tags are still replaced wholesale, so
+   send every `[unit] …` / `[integration] …` line you want kept. Supplying a
+   `[<lane>@<fingerprint>]` line by hand is not a legitimate write — it forges a
+   certification; run `bin/fast-check` / `bin/full-suite-check` instead.
 2. **List delimiting differs by input type.** `normalize_devops_list` treats
    **array** input (the JSON API / `bin/task`) as already-delimited and splits it
    **only on newlines** — so commas inside an `acceptance`/`test_plan` sentence
