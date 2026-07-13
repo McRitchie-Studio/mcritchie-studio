@@ -2,8 +2,21 @@ name: CI
 
 on:
   pull_request:
+  # `release` is here for the same reason `main` is: it is a SHIPPABLE TIP, and every
+  # shippable tip earns its own clean-env verdict.
+  #
+  # `pull_request` only ever certifies a PR's own head. The sweep (`bin/release
+  # prepare`) then MERGES several approved PRs into `release`, producing a NEW
+  # merge-commit SHA — a combination of changes that, individually green, no CI run
+  # has ever executed together. That merge commit is the exact artifact QA deploys and
+  # `bin/release ship` fast-forwards into `main`. Without this trigger it is the one
+  # commit in the pipeline CI never runs: the local G3 gate is its ONLY verdict, and a
+  # local gate has no clean-env cross-check.
+  #
+  # Every job runs on a release push — no lane is skipped for cost. A partial verdict on
+  # the release candidate is exactly the gap this closes.
   push:
-    branches: [ main ]
+    branches: [ main, release ]
 
 jobs:
   scan_ruby:
