@@ -4,11 +4,13 @@
 # bin/task — deterministic CLI for the McRitchie Studio agent task board.
 #
 # Wraps /api/v1 so agents never hand-roll auth, JSON, or stage transitions.
-# Two footguns it removes for you:
+# Three footguns it removes for you:
 #   * `update` does read-merge-write on metadata.devops, so a partial update
 #     NEVER wipes existing devops fields (the raw API replaces them wholesale).
 #   * list flags are repeatable and sent as arrays, so commas inside individual
 #     values are preserved by the task-board API.
+#   * unknown flags are REJECTED (exit 1) with a nearest-flag suggestion —
+#     a typo'd flag can never silently drop data (`--pr` means `--pr-url`).
 #
 # Auth: AGENT_API_SECRET from ENV, else 1Password (op://agents/Agent API
 # Secret/AGENT_API_SECRET), else the repo .env. Base URL via TASK_API_BASE
@@ -81,6 +83,10 @@
 #       marks handoff notes as explicitly addressing open QA feedback; it
 #       requires a --handoff note (on other note types it would silently
 #       no-op, so the CLI dies instead of dropping the flag). )
+#   bin/task <cmd> --help | -h                        # print this usage from any position
+#
+# Unknown flags are rejected (exit 1) with a nearest-flag suggestion; a dashed
+# token is never parsed as a slug.
 
 require "net/http"
 require "json"
@@ -247,6 +253,12 @@ NOTE_FLAGS = {
 # is validated against SIZES before the request goes out.
 SIZES = %w[small medium large xl].freeze
 SIZE_FLAGS = { "--pm-size" => "pm_size", "--po-size" => "po_size", "--dev-size" => "dev_size" }.freeze
+# Top-level Task columns parse_flags accepts alongside the devops flags.
+TOP_FLAGS = %w[--slug --title --description --agent --priority --stage].freeze
+# Everything parse_flags (list/create/update) understands — the dictionary an
+# unknown flag is rejected against (and suggestion-matched, --pr → --pr-url).
+PARSE_FLAG_NAMES = (SCALAR_FLAGS.keys + LIST_FLAGS.keys + SIZE_FLAGS.keys + TOP_FLAGS).freeze
+HELP_FLAGS = %w[--help -h].freeze
 # Two-workflow status model. Stages move via PATCH stage (no named-transition
 # endpoints) so the CLI, the board drag-drop, and the API share one path.
 STAGES = %w[designed building submitted reviewed assembled shipped archived].freeze
@@ -278,6 +290,60 @@ end
 def die!(msg)
   warn!("error: #{msg}")
   exit 1
+end
+
+def print_usage!
+  warn!(File.read(__FILE__)[/# Usage:.*?(?=\nrequire)/m].to_s.gsub(/^# ?/, ""))
+end
+
+# --help/-h print usage and exit 0 from ANY position — never parsed as a slug
+# (`update --help` once issued GET /api/v1/tasks/--help → 404, actively
+# misleading the one agent already confused about the flags).
+def help!
+  print_usage!
+  exit 0
+end
+
+# Nearest-valid-flag suggestions for an unknown flag: exact-prefix candidates
+# first ("--pr" → --pr-url / --priority / --prod-url — the shorthand typo), then
+# DidYouMean spelling candidates ("--pr-ulr" → --pr-url). [] when nothing is close.
+def flag_suggestions(unknown, valid)
+  prefix = valid.select { |flag| flag.start_with?(unknown) }.sort
+  return prefix unless prefix.empty?
+
+  require "did_you_mean"
+  DidYouMean::SpellChecker.new(dictionary: valid).correct(unknown)
+rescue LoadError, NameError
+  [] # suggestions are a courtesy; the rejection stands without them
+end
+
+# Reject an unrecognized flag LOUDLY — exit nonzero, name the flag, suggest the
+# nearest valid one. The old parse loop dropped an unknown flag (and its value)
+# into ignored positionals and exited 0: `update <slug> --pr <url>` printed the
+# task as if the PR were recorded while the board still said `pr: -`, and the
+# next gate (bin/dor-check NO_PR) failed naming nothing about the real cause.
+# A CLI must never report an operation that did not happen.
+def unknown_flag!(flag, valid: [], context: nil)
+  help! if HELP_FLAGS.include?(flag)
+  suggestions = flag_suggestions(flag, valid)
+  hint =
+    if suggestions.any?
+      " — did you mean #{suggestions.join(", ")}?"
+    elsif valid.any?
+      " (valid flags: #{valid.join(", ")})"
+    else
+      ""
+    end
+  die!("unknown flag #{flag.inspect}#{context ? " for #{context}" : ""}#{hint}")
+end
+
+# A dashed token is never a slug (or any other positional): --help/-h print
+# usage, anything else dies naming the misplaced flag instead of riding into a
+# 404ing GET /api/v1/tasks/<flag>.
+def positional!(arg, usage)
+  help! if HELP_FLAGS.include?(arg)
+  die!("expected a positional argument, got flag #{arg.inspect} (#{usage})") if arg.to_s.start_with?("-")
+  arg
 end
 
 def validate_stage!(stage)
@@ -329,8 +395,9 @@ def api(method, path, body = nil, opts = {})
   parsed
 end
 
-# Parse repeatable + scalar flags out of argv. Returns [positionals, flags-hash].
-def parse_flags(argv)
+# Parse repeatable + scalar flags out of argv. Returns [positionals, scalars,
+# lists, top]. An unrecognized flag is REJECTED (unknown_flag!), never skipped.
+def parse_flags(argv, context: nil)
   positionals = []
   scalars = {}
   lists = Hash.new { |h, k| h[k] = [] }
@@ -349,9 +416,13 @@ def parse_flags(argv)
       value = argv[i + 1] || die!("#{arg} needs a value")
       validate_size!(arg, value)
       top[SIZE_FLAGS[arg]] = value; i += 2
-    elsif %w[--slug --title --description --agent --priority --stage].include?(arg)
+    elsif TOP_FLAGS.include?(arg)
       top[arg.delete_prefix("--")] = argv[i + 1] || die!("#{arg} needs a value"); i += 2
     else
+      # A dashed token here is an unrecognized flag. The old whitelist-and-skip
+      # loop dropped it (and its value) into these ignored positionals and
+      # exited 0 — data silently lost. Reject it loudly instead.
+      unknown_flag!(arg, valid: PARSE_FLAG_NAMES, context: context) if arg.start_with?("-")
       positionals << arg; i += 1
     end
   end
@@ -693,7 +764,7 @@ end
 cmd = ARGV.shift || "help"
 case cmd
 when "list"
-  _pos, _sc, _ls, top = parse_flags(ARGV)
+  _pos, _sc, _ls, top = parse_flags(ARGV, context: "list")
   q = []
   q << "stage=#{top["stage"]}" if top["stage"]
   q << "agent_slug=#{top["agent"]}" if top["agent"]
@@ -702,7 +773,10 @@ when "list"
   tasks.each { |t| puts "#{t["slug"]}  [#{t["stage"]}]  #{t["title"]}" }
   puts "(#{tasks.size} task(s))"
 when "show"
-  slug = ARGV.shift || die!("usage: bin/task show <slug> [--json | --verbose|-v]")
+  usage = "usage: bin/task show <slug> [--json | --verbose|-v]"
+  slug = positional!(ARGV.shift || die!(usage), usage)
+  show_flags = %w[--json --verbose -v]
+  ARGV.each { |arg| unknown_flag!(arg, valid: show_flags, context: "show") unless show_flags.include?(arg) }
   data = api(:get, "/api/v1/tasks/#{slug}")["data"]
   if ARGV.include?("--json")
     # The full fetched record, machine-readable — no curl + auth-token dance.
@@ -716,8 +790,9 @@ when "field"
   # Machine-readable single devops field — e.g. `bin/task field <slug> mascot`.
   # Prints just the value (no decoration) so scripts can capture it; silent +
   # exit 0 when unset, so callers can treat it as optional.
-  slug = ARGV.shift || die!("usage: bin/task field <slug> <devops-key>")
-  key  = ARGV.shift || die!("usage: bin/task field <slug> <devops-key>")
+  usage = "usage: bin/task field <slug> <devops-key>"
+  slug = positional!(ARGV.shift || die!(usage), usage)
+  key  = positional!(ARGV.shift || die!(usage), usage)
   value = (api(:get, "/api/v1/tasks/#{slug}")["data"] || {}).dig("metadata", "devops", key)
   print value unless value.nil? || value.is_a?(Enumerable)
 when "stale"
@@ -725,6 +800,7 @@ when "stale"
   # out-of-band). One `git fetch` then a local ancestry check. With a slug, check
   # that one task; with none, scan every open task and list the stale ones.
   slug = ARGV.shift
+  slug = positional!(slug, "usage: bin/task stale [<slug>]") if slug
   git("fetch", "-q", "origin")
   if slug
     render_stale(stale_check(api(:get, "/api/v1/tasks/#{slug}")["data"]))
@@ -743,7 +819,7 @@ when "create"
   # build-claim) onto each fresh `designed` task. Stripped before parse_flags so
   # it never lands in positionals or the request body.
   no_claim = !ARGV.delete("--no-claim").nil?
-  _pos, scalars, lists, top = parse_flags(ARGV)
+  _pos, scalars, lists, top = parse_flags(ARGV, context: "create")
   die!("create needs --title") unless top["title"]
   devops = stamp_session(build_devops({}, scalars, lists))
   body = top_body(top)
@@ -759,8 +835,9 @@ when "create"
   write_feature_marker(task) unless no_claim
   print_task(task)
 when "update"
-  slug = ARGV.shift || die!("usage: bin/task update <slug> [flags]")
-  _pos, scalars, lists, top = parse_flags(ARGV)
+  usage = "usage: bin/task update <slug> [flags]"
+  slug = positional!(ARGV.shift || die!(usage), usage)
+  _pos, scalars, lists, top = parse_flags(ARGV, context: "update")
   current = api(:get, "/api/v1/tasks/#{slug}")["data"]
   body = top_body(top)
   if scalars.any? || lists.any?
@@ -770,8 +847,9 @@ when "update"
   die!("nothing to update") if body.empty?
   print_task(api(:patch, "/api/v1/tasks/#{slug}", body)["data"])
 when "move"
-  slug = ARGV.shift || die!("usage: bin/task move <slug> <stage>")
-  stage = ARGV.shift || die!("usage: bin/task move <slug> <stage>")
+  usage = "usage: bin/task move <slug> <stage>"
+  slug = positional!(ARGV.shift || die!(usage), usage)
+  stage = positional!(ARGV.shift || die!(usage), usage)
   validate_stage!(stage)
   # Best-effort per-transition usage the agent reports for the work it just did
   # in the stage it's leaving — the optional layer on top of the deterministic
@@ -797,7 +875,7 @@ when "move"
     when "--actor"      then event["actor"]      = ARGV.shift || die!("--actor needs a value")
     when "--dev-size"   then dev_size = ARGV.shift || die!("--dev-size needs a value"); validate_size!("--dev-size", dev_size)
     when "--steal"      then steal = true # override the build-claim gate (take a live foreign claim)
-    else die!("unknown flag #{flag.inspect} for move (usage flags: --model, --tokens-in, --tokens-out, --cost, --actor, --dev-size, --steal)")
+    else unknown_flag!(flag, valid: %w[--model --tokens-in --tokens-out --cost --actor --dev-size --steal], context: "move")
     end
   end
   # No explicit usage flags → auto-capture the per-transition delta (model +
@@ -838,7 +916,8 @@ when "intent"
   # steffon) and Avi ship (--to shipped --actor avi) intents; the review pair
   # (--to reviewed) is normally recorded by `bin/reviewer-select` (which records
   # by default).
-  slug = ARGV.shift || die!("usage: bin/task intent <slug> --to <stage> [--actor SLUG] [--reviewer slug:weight ...]")
+  usage = "usage: bin/task intent <slug> --to <stage> [--actor SLUG] [--reviewer slug:weight ...]"
+  slug = positional!(ARGV.shift || die!(usage), usage)
   to_stage = nil
   actor = nil
   reviewers = []
@@ -850,7 +929,7 @@ when "intent"
       raw = ARGV.shift || die!("--reviewer needs slug[:weight]")
       s, w = raw.split(":", 2)
       reviewers << { "slug" => s, "weight" => w }
-    else die!("unknown flag #{flag.inspect} for intent (usage flags: --to, --actor, --reviewer)")
+    else unknown_flag!(flag, valid: %w[--to --actor --reviewer], context: "intent")
     end
   end
   die!("usage: bin/task intent <slug> --to <stage> [--actor SLUG] [--reviewer slug:weight ...]") if to_stage.to_s.empty?
@@ -874,8 +953,9 @@ when "checkpoint"
   # `checkpoint <slug> cert --status started` then `--status completed`. POSTs to the
   # same events/<name>/{start,complete} endpoints the API checkpoint path uses;
   # source defaults to "system" so it skips the usage gate (a marker, not agent work).
-  slug = ARGV.shift || die!("usage: bin/task checkpoint <slug> <name> --status started|completed [--source S] [--message M]")
-  name = ARGV.shift || die!("checkpoint needs a <name>: bin/task checkpoint <slug> <name> --status started|completed")
+  usage = "usage: bin/task checkpoint <slug> <name> --status started|completed [--source S] [--message M]"
+  slug = positional!(ARGV.shift || die!(usage), usage)
+  name = positional!(ARGV.shift || die!("checkpoint needs a <name>: bin/task checkpoint <slug> <name> --status started|completed"), usage)
   status = nil
   source = "system"
   message = nil
@@ -884,7 +964,7 @@ when "checkpoint"
     when "--status"  then status = ARGV.shift || die!("--status needs started or completed")
     when "--source"  then source = ARGV.shift || die!("--source needs a value")
     when "--message" then message = ARGV.shift || die!("--message needs a value")
-    else die!("unknown flag #{flag.inspect} for checkpoint (usage flags: --status, --source, --message)")
+    else unknown_flag!(flag, valid: %w[--status --source --message], context: "checkpoint")
     end
   end
   status = status.to_s
@@ -900,7 +980,8 @@ when "heartbeat"
   # unclaimed/expired one); NEVER steals a live foreign claim. Fully best-effort:
   # no session, no slug, or any API error → silent no-op (a heartbeat must never
   # disrupt the status line). Prints nothing on success.
-  slug = ARGV.shift || die!("usage: bin/task heartbeat <slug>")
+  usage = "usage: bin/task heartbeat <slug>"
+  slug = positional!(ARGV.shift || die!(usage), usage)
   begin
     session = session_identity.first
     unless session.nil?
@@ -935,20 +1016,22 @@ when "session-mascot"
   #   bin/task session-mascot --persona none --print
   # Best-effort: no session, no marker path, or any API / transport failure →
   # silent no-op unless --print was requested.
-  begin
-    print_marker = false
-    persona = nil
-    until ARGV.empty?
-      case (arg = ARGV.shift)
-      when "--print"
-        print_marker = true
-      when "--persona"
-        persona = ARGV.shift || die!("--persona needs a value")
-      else
-        die!("unknown flag #{arg.inspect} for session-mascot (use --persona SLUG|none and/or --print)")
-      end
+  # Parse BEFORE the best-effort rescue below: a bad flag must exit nonzero, not
+  # be swallowed — die!'s SystemExit was rescued, so `--bogus` printed the error
+  # yet exited 0 (the same silent-no-op disease as the old parse_flags loop).
+  print_marker = false
+  persona = nil
+  until ARGV.empty?
+    case (arg = ARGV.shift)
+    when "--print"
+      print_marker = true
+    when "--persona"
+      persona = ARGV.shift || die!("--persona needs a value")
+    else
+      unknown_flag!(arg, valid: %w[--persona --print], context: "session-mascot")
     end
-
+  end
+  begin
     sid = session_identity.first.to_s.strip
     path = feature_marker_path
     unless ENV["TASK_SKIP_MARKER"] == "1" || sid.empty? || path.nil?
@@ -993,7 +1076,8 @@ when "session-mascot"
     nil # best-effort: never disrupt session start
   end
 when "block"
-  slug = ARGV.shift || die!("usage: bin/task block <slug> [--kind environment|rework|dependency] [--feedback \"...\"] [--agent A]")
+  usage = "usage: bin/task block <slug> [--kind environment|rework|dependency] [--feedback \"...\"] [--agent A]"
+  slug = positional!(ARGV.shift || die!(usage), usage)
   kind = feedback = agent = nil
   i = 0
   while i < ARGV.length
@@ -1001,7 +1085,7 @@ when "block"
     when "--kind"     then kind = ARGV[i + 1] || die!("--kind needs a value"); i += 2
     when "--feedback" then feedback = ARGV[i + 1] || die!("--feedback needs a value"); i += 2
     when "--agent"    then agent = ARGV[i + 1] || die!("--agent needs a value"); i += 2
-    else die!("unknown flag #{ARGV[i].inspect} for block (one of: --kind, --feedback, --agent)")
+    else unknown_flag!(ARGV[i], valid: %w[--kind --feedback --agent], context: "block")
     end
   end
   die!("--kind must be one of: #{BLOCK_KINDS.join(", ")}") if kind && !BLOCK_KINDS.include?(kind)
@@ -1027,7 +1111,8 @@ when "block"
   write_feature_marker(task)
   print_task(task)
 when "note"
-  slug = ARGV.shift || die!("usage: bin/task note <slug> --handoff|--qa-feedback|--clarification|--comment \"...\" [--agent A] [--resolves-feedback]")
+  usage = "usage: bin/task note <slug> --handoff|--qa-feedback|--clarification|--comment \"...\" [--agent A] [--resolves-feedback]"
+  slug = positional!(ARGV.shift || die!(usage), usage)
   notes = []
   agent = nil
   resolves_feedback = false
@@ -1045,7 +1130,7 @@ when "note"
       resolves_feedback = true
       i += 1
     else
-      die!("unknown flag #{arg.inspect} for note (one of: #{NOTE_FLAGS.keys.join(", ")} [--agent A] [--resolves-feedback])")
+      unknown_flag!(arg, valid: NOTE_FLAGS.keys + %w[--agent --resolves-feedback], context: "note")
     end
   end
   die!("note needs one of: #{NOTE_FLAGS.keys.join(", ")}") if notes.empty?
@@ -1061,6 +1146,6 @@ when "note"
     puts "noted [#{activity_type}] on #{slug} -> #{activity["slug"] || "(created)"}"
   end
 else
-  warn!(File.read(__FILE__)[/# Usage:.*?(?=\nrequire)/m].to_s.gsub(/^# ?/, ""))
-  exit(cmd == "help" ? 0 : 1)
+  print_usage!
+  exit(cmd == "help" || HELP_FLAGS.include?(cmd) ? 0 : 1)
 end
