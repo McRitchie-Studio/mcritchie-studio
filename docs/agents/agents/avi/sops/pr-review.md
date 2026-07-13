@@ -122,7 +122,10 @@ Use `--fast` for bounded waves under the five-agent cap. The script picks newest
 submitted tasks first, **checks the PR's live GitHub CI before anything else**
 (builders submit without waiting for CI, so this pre-spawn check is the
 authoritative CI verdict: **red** → the task is blocked back with the failing
-checks named, no reviewers spawned; **pending or no checks yet** → the task
+checks named, no reviewers spawned; **conflicted** (`mergeStateStatus DIRTY`) →
+blocked back too, with rebase/merge-release named as the fix — a conflicted PR
+gets **no CI at all** (GitHub can't compute the merge commit), so deferring
+would strand it in `submitted`; **pending or no checks yet** → the task
 defers to a later wave; **green** → proceed), records `bin/reviewer-select`
 intent, spawns the selected PRIMARY + LIGHT reviewers **in parallel**,
 re-queries the board before each final decision, writes the task handoff, and
@@ -132,8 +135,9 @@ supervisor doing the selecting, not a reviewer being summoned).
 
 The wave IS the task's **G2 Review gate**
 ([`../../../modules/gates/g2-review.md`](../../../modules/gates/g2-review.md)):
-`bin/pr-review` checks the PR's live CI pre-spawn (a red bounce records as a
-failed `dor_review` gate-zero attempt with a `ci` SOP — no reviewer ran, but the
+`bin/pr-review` checks the PR's live CI pre-spawn (a red or conflicted bounce
+records as a failed `dor_review` gate-zero attempt with a `ci` SOP — no
+reviewer ran, but the
 round-trip shows on the gates card), opens the two lanes (`g2a_primary` +
 `g2b_light`) as the pair launches, the primary's gate-zero (`bin/dor-check
 <task> --gate-role review`, strict: red AND pending both block there) opens+closes

@@ -709,6 +709,45 @@ class PrReviewCommandTest < Minitest::Test
     assert_equal [["move", "green-pr", "reviewed", "--actor", "avi"]], moves
   end
 
+  # [integration] Conflicted PR (mergeStateStatus DIRTY): blocked BACK, never
+  # deferred. A conflicted PR gets NO GitHub CI at all (GitHub cannot compute the
+  # merge commit), so pre-fix it folded into :none → "defer until CI reports" →
+  # deferred every wave, forever, with the board showing a healthy submitted task
+  # (PR #509, 2026-07-12). The supervisor must treat it like red — an actionable
+  # bounce naming the fix — not like pending/none (CI genuinely still coming).
+  def test_conflicted_pr_is_blocked_back_not_deferred
+    stuck = task("stuck-pr", created_at: "2026-06-29T12:00:00Z")
+    write_snapshots(snapshot([stuck]))
+
+    out, err, status = run_heartbeat("--run", "--limit", "1", env: { "PR_REVIEW_CI_STATUS" => "conflicted" })
+
+    assert status.success?, err
+    assert_includes out, "blocked=1"
+    assert_match(/ci=CONFLICTED/i, out)
+
+    # No reviewer tokens burned — like the red bounce.
+    assert_empty json_lines(@reviewer_log), "a conflicted PR must not reach reviewer-select"
+    assert_empty json_lines(@codex_log), "a conflicted PR must not spawn reviewers"
+
+    # Blocked back (actionable), NOT deferred (invisible): the feedback names the fix.
+    block_call = json_lines(@task_log).find { |args| args.first == "block" }
+    assert block_call, "expected a task block, not a defer"
+    assert_equal "stuck-pr", block_call[1]
+    assert_includes block_call, "rework"
+    feedback = block_call[block_call.index("--feedback") + 1]
+    assert_match(/conflict/i, feedback)
+    assert_match(/rebase|merge release/i, feedback, "the feedback names the fix")
+    assert_match(/no.*CI|CI never fires/i, feedback, "the feedback explains WHY deferring would strand it")
+
+    # The bounce records as a failed dor_review (gate-zero) attempt, distinct
+    # from the ci-red outcome.
+    gate_calls = json_lines(@gate_log)
+    close = gate_calls.find { |args| args.first == "close" && args.include?("dor_review") }
+    assert close, "expected a failed dor_review close for the conflict bounce"
+    assert_includes close, "--failed"
+    assert_includes close, "outcome=ci-conflicted"
+  end
+
   # [unit] An UNVERIFIED CI read (gh/network error) proceeds to spawn — the gate
   # never trades a flaky CI lane for a flaky review loop; the primary's strict
   # gate-zero still holds the authoritative verdict downstream.

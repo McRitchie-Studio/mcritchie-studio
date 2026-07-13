@@ -50,9 +50,52 @@ class CiStatusTest < Minitest::Test
   def test_a_bare_token_short_circuits_the_gh_call
     # the DOR_CHECK_CI_STATUS injection seam — used by the dor-check CLI tests. Includes
     # closed/merged: a non-open PR is its own verdict, never green (carl's review catch).
-    %i[green red pending none unverified no_pr closed merged].each do |state|
+    # Includes conflicted: a merge-conflicted PR (mergeStateStatus DIRTY) gets NO CI at
+    # all, and must be its own verdict — never folded into :none (the PR-#509 stall).
+    %i[green red pending none unverified no_pr closed merged conflicted].each do |state|
       assert_equal state, CiStatus.evaluate("https://github.com/x/pull/1", state.to_s)[:state]
     end
+  end
+
+  # --- the `gh pr view` payload → early verdict (view_verdict) -----------------
+  # A PR with merge conflicts against its base reports mergeStateStatus DIRTY, and
+  # GitHub CANNOT compute the merge commit — so the pull_request workflow never
+  # fires. That PR has NO CI, not a pending one: reading only the checks folds it
+  # into :none ("defer until CI reports") and the PR stalls in submitted forever
+  # (PR #509, 2026-07-12). view_verdict reads state + mergeStateStatus in one gh
+  # call and surfaces :conflicted as its own state.
+
+  def view(state, merge_state)
+    JSON.generate("state" => state, "mergeStateStatus" => merge_state)
+  end
+
+  def test_view_verdict_conflicted_when_the_open_pr_is_dirty
+    v = CiStatus.view_verdict(view("OPEN", "DIRTY"))
+    assert_equal :conflicted, v[:state]
+    assert_equal "DIRTY", v[:merge_state]
+  end
+
+  def test_view_verdict_proceeds_to_the_checks_read_when_mergeable
+    # nil = "no early verdict — go read the checks". BEHIND/UNSTABLE/BLOCKED are
+    # CI/branch-protection colour, not conflicts; UNKNOWN is GitHub still
+    # computing mergeability — never invented as a conflict.
+    %w[CLEAN BEHIND UNSTABLE BLOCKED HAS_HOOKS UNKNOWN DRAFT].each do |merge_state|
+      assert_nil CiStatus.view_verdict(view("OPEN", merge_state)),
+                 "OPEN + #{merge_state} must fall through to `gh pr checks`"
+    end
+  end
+
+  def test_view_verdict_closed_and_merged_outrank_dirty
+    # A closed/merged PR is its own verdict even when it also reads DIRTY —
+    # "rebase and resubmit" is the wrong instruction for a dead review target.
+    assert_equal :closed, CiStatus.view_verdict(view("CLOSED", "DIRTY"))[:state]
+    assert_equal :merged, CiStatus.view_verdict(view("MERGED", "UNKNOWN"))[:state]
+  end
+
+  def test_view_verdict_unverified_on_a_gh_error_body
+    v = CiStatus.view_verdict("gh: Not Found (HTTP 404)")
+    assert_equal :unverified, v[:state]
+    assert_includes v[:reason], "Not Found"
   end
 
   def test_no_pr_when_url_blank_and_nothing_injected

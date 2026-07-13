@@ -1530,6 +1530,48 @@ class DorCheckTest < Minitest::Test
     assert_match(/not ready to advance/, out)
   end
 
+  # --- conflicted PR (mergeStateStatus DIRTY): a HARD, actionable blocker --------
+  # The PR-#509 stall (2026-07-12): a merge-conflicted PR gets NO GitHub CI at all —
+  # GitHub cannot compute the merge commit, so the pull_request workflow never
+  # fires. Pre-fix the gate read that as :none → a soft "CI UNVERIFIED" suggestion,
+  # and the PR sat in submitted forever looking healthy. DIRTY must block in BOTH
+  # roles, with the fix named (rebase/merge release), and stay distinct from
+  # pending/none — which mean "CI still coming" and genuinely defer.
+
+  def test_merge_gate_blocks_a_conflicted_pr
+    out, code = ci_check("conflicted")
+    assert_equal 1, code, out
+    assert_match(/CONFLICTED/i, out)
+    assert_match(/rebase|merge release/i, out, "the blocker names the fix")
+    assert_match(/not ready to advance/, out)
+  end
+
+  def test_review_gate_zero_blocks_a_conflicted_pr
+    out, code = ci_check("conflicted", CI_PR, "--gate-role", "review")
+    assert_equal 1, code, out
+    assert_match(/CONFLICTED/i, out)
+    assert_match(/not ready to advance/, out)
+  end
+
+  def test_conflicted_is_distinct_from_no_checks_yet
+    # :none stays a non-blocking note (CI genuinely still coming); :conflicted is
+    # the hard blocker. The distinction IS the bug fix — folding them together is
+    # what made the stall invisible.
+    out, code = ci_check("none")
+    assert_equal 0, code, out
+    assert_match(/UNVERIFIED/, out)
+    refute_match(/CONFLICTED/i, out)
+  end
+
+  def test_ci_conflicted_surfaces_in_the_json_verdict
+    out, code = ci_check("conflicted", CI_PR, "--json")
+    assert_equal 1, code, out
+    j = JSON.parse(out)
+    refute j["ready"]
+    assert_equal "conflicted", j.dig("ci", "state")
+    assert(j["errors"].any? { |e| e.match?(/CONFLICTED/i) }, out)
+  end
+
   def test_missing_pr_is_silent_and_stays_ready
     # No PR yet + no injection → :no_pr via the real (gh-free) path. dor-check runs
     # before the PR exists on the normal path, so the CI gate has nothing to verify:

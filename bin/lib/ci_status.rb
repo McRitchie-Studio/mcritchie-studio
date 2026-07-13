@@ -11,6 +11,12 @@ require "shellwords"
 # (pass/fail/pending/skipping/cancel) into one state:
 #   :red            — a check failed/cancelled          → BLOCK the gate
 #   :pending        — a check running, none failed yet   → BLOCK (not green YET)
+#   :conflicted     — mergeStateStatus DIRTY: the PR has merge conflicts against its
+#                     base, so GitHub CANNOT compute the merge commit and the
+#                     pull_request workflow NEVER fires — the PR has NO CI, not a
+#                     pending one → BLOCK, with "rebase/merge release" as the fix.
+#                     Folding this into :none is the PR-#509 stall (2026-07-12): the
+#                     review wave deferred it forever while the board looked healthy.
 #   :closed/:merged — the PR is not OPEN                  → BLOCK (its green checks are
 #                     HISTORICAL, not a live review target — a stale/abandoned pr_url)
 #   :green          — every check passed/skipped         → pass
@@ -28,7 +34,7 @@ require "shellwords"
 # release tip belongs to no PR). Both fold into the states above. See the
 # SHA-addressed section below.
 module CiStatus
-  TOKENS = %w[green red pending none unverified no_pr closed merged].freeze
+  TOKENS = %w[green red pending none unverified no_pr closed merged conflicted].freeze
 
   def self.evaluate(pr_url, injected = nil)
     pr = pr_url.to_s.strip
@@ -38,17 +44,41 @@ module CiStatus
     if raw.empty?
       return { state: :no_pr } if pr.empty?
 
-      # Verify the PR is OPEN before trusting its checks: `gh pr checks` returns the
-      # HEAD commit's checks even for a CLOSED/MERGED PR, so a stale/abandoned pr_url
-      # with green historical checks would otherwise pass as a live green (carl's
-      # review catch). A non-open PR is its own verdict — never :green.
-      pr_state = `gh pr view #{Shellwords.escape(pr)} --json state --jq .state 2>&1`.to_s.strip
-      return { state: :unverified, reason: pr_state.lines.first.to_s.strip[0, 140] } unless %w[OPEN CLOSED MERGED].include?(pr_state)
-      return { state: pr_state.downcase.to_sym } unless pr_state == "OPEN"
+      # Verify the PR is OPEN and MERGEABLE before trusting its checks:
+      #   * `gh pr checks` returns the HEAD commit's checks even for a CLOSED/MERGED
+      #     PR, so a stale/abandoned pr_url with green historical checks would
+      #     otherwise pass as a live green (carl's review catch);
+      #   * a merge-CONFLICTED PR (mergeStateStatus DIRTY) gets NO checks at all —
+      #     GitHub cannot compute the merge commit, so reading only the checks folds
+      #     it into :none and the PR stalls forever (PR #509). One gh call reads both.
+      view = `gh pr view #{Shellwords.escape(pr)} --json state,mergeStateStatus 2>&1`.to_s.strip
+      verdict = view_verdict(view)
+      return verdict if verdict
 
       raw = `gh pr checks #{Shellwords.escape(pr)} --json name,state,bucket 2>&1`.to_s.strip
     end
     parse(raw)
+  end
+
+  # PURE. The `gh pr view --json state,mergeStateStatus` payload → an EARLY verdict
+  # (:closed / :merged / :conflicted / :unverified), or nil when the PR is OPEN and
+  # mergeable — "no verdict here, go read the checks". Closed/merged outrank DIRTY:
+  # "rebase and resubmit" is the wrong instruction for a dead review target. Only
+  # DIRTY means conflicts — BEHIND/UNSTABLE/BLOCKED are CI/branch-protection colour
+  # the checks read already covers, and UNKNOWN is GitHub still computing
+  # mergeability (never invented as a conflict).
+  def self.view_verdict(raw)
+    data = begin
+      JSON.parse(raw)
+    rescue StandardError
+      nil
+    end
+    state = data.is_a?(Hash) ? data["state"].to_s : ""
+    return { state: :unverified, reason: raw.to_s.lines.first.to_s.strip[0, 140] } unless %w[OPEN CLOSED MERGED].include?(state)
+    return { state: state.downcase.to_sym } unless state == "OPEN"
+    return { state: :conflicted, merge_state: "DIRTY" } if data["mergeStateStatus"].to_s.upcase == "DIRTY"
+
+    nil
   end
 
   # gh's --json array → verdict. A non-array (an error message like "no checks
