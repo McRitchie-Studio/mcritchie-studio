@@ -971,6 +971,130 @@ class ReleaseCliTest < Minitest::Test
     end
   end
 
+  # --- G3's AUDITOR: the gate cross-checked against GitHub CI on the SAME SHA ----
+  #
+  # The local gate is the ONLY verdict on the release tip; nothing independent
+  # checked it. Now every gated SHA is ALSO queried against GitHub CI
+  # (CiStatus.for_sha → gh api …/commits/<sha>/check-runs), BOTH verdicts land on
+  # the release, and a CONTRADICTION alarms. CI audits — it never blocks (a push CI
+  # is asynchronous; blocking would make a local gate poll GitHub for minutes).
+  #
+  # RELEASE_CI_STATUS injects the verdict (a bare token, or a raw check-runs
+  # payload), so these never touch the network — the DOR_CHECK_CI_STATUS seam,
+  # reused. An injected verdict also skips the `git remote get-url` lookup.
+
+  # A gate whose suite goes GREEN, with CI's verdict injected. `rel-cli` is passed
+  # as the release slug so record_qa_gate actually fires (it no-ops on a blank slug).
+  def ci_gate_stub(dir, ci_status)
+    %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
+      %(ENV["RELEASE_CI_STATUS"] = #{ci_status.inspect}\n) +
+      %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
+        def qa_gate_cmd(_repo) = "bin/suite"
+        def conductor(ruby, read_only: false) = $stdout.puts("CONDUCTOR " + ruby)
+        def sh(*a, **k)
+          g = gate_git(a, k)
+          return g if g
+          return ["", false] if a[0] == "bin/failing-suite" # opt-in RED gate
+          ["", true]
+        end
+      RUBY
+  end
+
+  # [integration] The happy audit: gate GREEN, CI GREEN for the same SHA. Both
+  # verdicts are stated, and BOTH are recorded on the release — agreement is data
+  # too (it is what would justify ever promoting the auditor to a blocker).
+  def test_pre_qa_gate_records_cis_verdict_beside_its_own_when_they_agree
+    Dir.mktmpdir do |dir|
+      out = run_cli(["--yes"], setup: ci_gate_stub(dir, "green"),
+                    call: %{pre_qa_gate([{ "repo" => "sibling" }], "rel-cli"); puts("PASSED")})
+
+      assert_includes out, "CI cross-check — GitHub CI AGREES (GREEN @ #{GATE_SHA[0, 7]})"
+      record = out.lines.find { |l| l.start_with?("CONDUCTOR") }
+      assert record, "the gate must still record what it certified: #{out}"
+      assert_includes record, "record_qa_gate", "…through the same conductor write as before"
+      assert_match(/ci:\s*\{/, record, "…now carrying the AUDITOR's verdict for the same SHA")
+      assert_match(/"state"\s*=>\s*"green"/, record)
+      assert_includes out, "PASSED"
+    end
+  end
+
+  # [integration] THE ALARM, direction 1: the gate says GREEN, GitHub says RED for
+  # that exact SHA. CI runs a lane no local cert does (the browser test:system
+  # suite), so this is probably real — but it does NOT block: QA still deploys, the
+  # disagreement is screamed, and it is recorded on the release for the ship call.
+  def test_pre_qa_gate_alarms_but_does_not_block_when_it_is_green_and_ci_is_red
+    Dir.mktmpdir do |dir|
+      # A RAW check-runs payload (not a token) — the mapping shim end-to-end:
+      # status+conclusion → bucket → verdict, no network.
+      payload = '{"total_count":2,"check_runs":[' \
+                '{"name":"test","status":"completed","conclusion":"success"},' \
+                '{"name":"test:system","status":"completed","conclusion":"failure"}]}'
+      out = run_cli(["--yes"], setup: ci_gate_stub(dir, payload),
+                    call: %{pre_qa_gate([{ "repo" => "sibling" }], "rel-cli"); puts("PASSED")})
+
+      assert_includes out, "ALARM — the G3 gate and GitHub CI DISAGREE"
+      assert_includes out, "local pre-QA gate: GREEN   ·   GitHub CI: RED (test:system)",
+                      "the alarm NAMES the failing check, not just the fact of a disagreement"
+      # THE ALARM MUST NOT CLAIM A BACKSTOP IT DOES NOT HAVE. It says what actually
+      # happens at ship (G4 stops self-gating on this certification) AND what that
+      # re-run does NOT prove: it re-runs the LOCAL suite — the one that already
+      # passed — while the failing lane is one only CI can see. An alarm that
+      # promises someone else will catch it is an alarm the operator learns to
+      # dismiss.
+      assert_includes out, "certification is now DISTRUSTED"
+      assert_includes out, "NOT A BACKSTOP FOR THIS"
+      assert_includes out, "NOTHING downstream will catch it for you"
+      assert_includes out, "eject BEFORE the ship"
+      assert_includes out, "PASSED",
+                       "CI is the AUDITOR, not the verdict — a red audit never blocks prepare (a push CI is " \
+                       "asynchronous; blocking would hand a LOCAL gate a hard GitHub dependency)"
+      record = out.lines.find { |l| l.start_with?("CONDUCTOR") }
+      assert_match(/"state"\s*=>\s*"red"/, record, "the disagreement is RECORDED, not just printed")
+      assert_match(/"test:system"/, record)
+    end
+  end
+
+  # [integration] THE ALARM, direction 2 — the valuable one. The gate says RED,
+  # GitHub says GREEN: the GATE is the suspect, not the code (rel-20260711-7f2913,
+  # where a false-negative gate nearly got a good PR ejected). The gate still
+  # aborts — it IS the verdict — but the abort redirects the conductor away from
+  # ejecting a task the gate may be lying about.
+  def test_pre_qa_gate_red_beside_a_green_ci_tells_the_conductor_to_suspect_the_gate
+    Dir.mktmpdir do |dir|
+      setup = ci_gate_stub(dir, "green") + %(\ndef qa_gate_cmd(_repo) = "bin/failing-suite")
+      out = run_cli(["--yes"], setup: setup,
+                    call: %{begin; pre_qa_gate([{ "repo" => "sibling" }], "rel-cli"); puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+      assert_includes out, "ALARM — the G3 gate and GitHub CI DISAGREE"
+      assert_includes out, "suspect the GATE, not the code"
+      assert_includes out, "ABORTED", "the LOCAL gate is still the verdict — a green audit does not wave a red gate through"
+      assert_includes out, "SUSPECT THE GATE FIRST", "…but the abort no longer sends the conductor straight to eject"
+      assert_includes out, "bin/release eject", "the eject path is still there for a REAL regression"
+      refute_includes out, "CONDUCTOR", "a RED gate certifies nothing — no record, so G4 fails open and re-runs"
+      refute_includes out, "PASSED"
+    end
+  end
+
+  # [integration] NO CI DATA IS NOT A FAILURE — the state of the world TODAY.
+  # ci.yml triggers on pull_request + push:main, so a release-tip SHA has NO
+  # check-runs at all until task run-ci-on-release-branch lands. That answer
+  # (:none), a still-running push CI (:pending), and a gh/network error
+  # (:unverified) are all SILENCE: informational, never an alarm, never a block.
+  def test_pre_qa_gate_treats_a_missing_ci_run_as_no_data_not_a_disagreement
+    %w[none pending unverified].each do |state|
+      Dir.mktmpdir do |dir|
+        out = run_cli(["--yes"], setup: ci_gate_stub(dir, state),
+                      call: %{pre_qa_gate([{ "repo" => "sibling" }], "rel-cli"); puts("PASSED")})
+
+        assert_includes out, "no GitHub verdict for #{GATE_SHA[0, 7]}",
+                        "#{state} is GitHub having nothing to say about this SHA"
+        assert_includes out, "informational only, the local gate stands"
+        refute_includes out, "ALARM", "silence is not a contradiction (#{state})"
+        assert_includes out, "PASSED", "…and it can never fail a green gate (#{state})"
+      end
+    end
+  end
+
   # [unit] The url the overlay carries is read from the APP's OWN config/database.yml
   # (not a registry column that can drift): a postgres app gets the gate's private DB;
   # a SQLite app gets NOTHING.
@@ -2050,7 +2174,23 @@ class ReleaseCliTest < Minitest::Test
     "a record for a DIFFERENT command (G3 certified a narrower tier)" =>
       [{ "sha" => GATE_SHA, "cmd" => "bin/rails test test/integration", "ok" => true }, :run],
     "a RED record (the gate ran and failed)" =>
-      [{ "sha" => GATE_SHA, "cmd" => "bin/suite", "ok" => false }, :run]
+      [{ "sha" => GATE_SHA, "cmd" => "bin/suite", "ok" => false }, :run],
+    # The AUDITOR arms this gate (fail-open only). A green G3 whose CI cross-check
+    # went RED for the SAME SHA is a certification GitHub CONTRADICTS: without this
+    # the skip fired (frozen SHA == certified SHA) and G3's alarm was the ONLY thing
+    # between a CI-red commit and prod — while the alarm claimed G4 would re-gate it.
+    "a green record whose AUDITOR (GitHub CI) called that SHA red" =>
+      [{ "sha" => GATE_SHA, "cmd" => "bin/suite", "ok" => true,
+         "ci" => { "state" => "red", "checks" => ["test:system"] } }, :run],
+    # …and NO-DATA never arms it: silence is not a red, or every ship would pay for
+    # a verdict nobody gave.
+    "a green record whose auditor had NO DATA (no CI run for the SHA)" =>
+      [{ "sha" => GATE_SHA, "cmd" => "bin/suite", "ok" => true, "ci" => { "state" => "none" } }, :skip],
+    "a green record whose auditor was still PENDING" =>
+      [{ "sha" => GATE_SHA, "cmd" => "bin/suite", "ok" => true, "ci" => { "state" => "pending" } }, :skip],
+    "a green record whose auditor AGREED (CI green)" =>
+      [{ "sha" => GATE_SHA, "cmd" => "bin/suite", "ok" => true,
+         "ci" => { "state" => "green", "count" => 4 } }, :skip]
   }.freeze
 
   # [unit] test_gate SKIPS only against a matching GREEN G3 record, and RUNS the
@@ -2080,6 +2220,35 @@ class ReleaseCliTest < Minitest::Test
         end
         assert_includes out, "PASSED", "#{label}: the gate itself is green either way"
       end
+    end
+  end
+
+  # [integration] A gate that silently re-runs teaches the operator nothing. When
+  # the auditor is what cost the certification its skip, the ship SAYS so — and it
+  # is honest about what the re-run does NOT prove (it re-runs the LOCAL suite,
+  # which is the very suite that already passed; only CI can see CI's lane).
+  def test_ship_test_gate_names_the_red_auditor_as_the_reason_it_is_re_running
+    Dir.mktmpdir do |dir|
+      setup = %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
+        def app_meta_for(_repo) = { "test_cmd" => "bin/suite" }
+        def sh(*a, **k)
+          $stdout.puts("SUITE-RAN") if a[0] == "bin/suite"
+          g = gate_git(a, k)
+          return g if g
+          ["", true]
+        end
+      RUBY
+      record = { "sha" => GATE_SHA, "cmd" => "bin/suite", "ok" => true,
+                 "ci" => { "state" => "red", "checks" => ["test:system"] } }
+      out = run_cli(["--yes"], setup: setup,
+                    call: %{test_gate("x", frozen_sha: #{GATE_SHA.inspect}, qa_gate: #{record.inspect}); puts("PASSED")})
+
+      assert_includes out, "GitHub CI called that SHA RED", "the ship NAMES why it distrusts the certification"
+      assert_includes out, "fail-open"
+      assert_includes out, "runs a lane no local gate does",
+                      "…and does NOT let the operator read the re-run as a backstop for CI's lane"
+      assert_includes out, "SUITE-RAN"
+      assert_includes out, "PASSED", "fail-OPEN, never fail-closed: the auditor re-runs the gate, it never blocks"
     end
   end
 

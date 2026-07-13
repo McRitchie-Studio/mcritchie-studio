@@ -113,6 +113,21 @@ class Release
     # record, a different command, a drifted/straggler SHA — FAILS OPEN and runs
     # the gate. The caller (bin/release test_gate) records the skip as a visible
     # gate SOP, never a silent omission.
+    #
+    # AND: a G3 whose AUDITOR went red (`record["ci"]["state"] == "red"` — GitHub
+    # CI called that same SHA broken while the local gate called it green) also
+    # FAILS OPEN. This is what makes G4 a real backstop for the cross-check's
+    # dangerous direction instead of a claimed one: on a green G3 the frozen ship
+    # SHA is the certified SHA, so WITHOUT this clause the skip fires and the G3
+    # alarm is the ONLY thing between a CI-red commit and production. A gate
+    # system that claims a backstop it does not have makes its own alarm
+    # dismissible.
+    #
+    # FAIL-OPEN ONLY, NEVER FAIL-CLOSED. The auditor may cause MORE checking; it
+    # may never block a ship on its own. Only the literal state "red" arms this —
+    # "none"/"pending"/"unverified" (GitHub had nothing to say: today ci.yml
+    # doesn't even build `release`) and an absent "ci" key are SILENCE, and
+    # silence changes nothing. The cost of a false red is one redundant suite run.
     def ship_gate_skip?(test_cmd:, frozen_sha:, qa_gate:)
       cmd = test_cmd.to_s.strip
       sha = frozen_sha.to_s.strip
@@ -120,10 +135,22 @@ class Release
 
       record = qa_gate.is_a?(Hash) ? qa_gate : {}
       return false unless record["ok"] == true || record[:ok] == true
+      return false if auditor_red?(record)
 
       certified_cmd = (record["cmd"] || record[:cmd]).to_s.strip
       certified_sha = (record["sha"] || record[:sha]).to_s.strip
       certified_cmd == cmd && certified_sha == sha
+    end
+
+    # Did GitHub CI call the SHA G3 certified BROKEN? Only a literal "red" counts
+    # (see ship_gate_skip?): every other state — and no auditor at all — is no
+    # data, and no data must never arm or block the ship gate.
+    def auditor_red?(qa_gate)
+      record = qa_gate.is_a?(Hash) ? qa_gate : {}
+      ci = record["ci"] || record[:ci]
+      return false unless ci.is_a?(Hash)
+
+      (ci["state"] || ci[:state]).to_s == "red"
     end
 
     # The G3 gate record for a repo out of release.metadata["qa_gates"] (the twin

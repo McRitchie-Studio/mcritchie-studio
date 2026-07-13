@@ -141,15 +141,36 @@ NOT on the primary, which the ship only touches for the local `main` ff.
 
 It **self-gates against G3**, but ONLY on G3's RECORDED verdict
 (`metadata["qa_gates"][repo]`, written only after a GREEN pre-QA suite): same
-command + same frozen SHA + green ⇒ it records a visible skip SOP instead of
-re-running, so the full suite runs once per release batch.
+command + same frozen SHA + green **+ an auditor that did not go red** ⇒ it
+records a visible skip SOP instead of re-running, so the full suite runs once per
+release batch.
 
 ⏱ **Everything else FAILS OPEN — the gate RUNS.** No G3 record (a G3 that was
-skipped or never ran), a red record, a different command, or a drifted/straggler
-SHA all re-trigger the full suite. **Budget for it:** a ship after a skipped or
-red G3 now takes a full-suite run where it used to skip instantly. That is
-deliberate — an uncertified SHA must not reach production unchecked. Details:
+skipped or never ran), a red record, a different command, a drifted/straggler
+SHA, **or a RED auditor** (GitHub CI called that same SHA broken while G3 called
+it green) all re-trigger the full suite. **Budget for it:** a ship after a
+skipped, red, or CI-contradicted G3 now takes a full-suite run where it used to
+skip instantly. That is deliberate — an uncertified SHA must not reach production
+unchecked. Details:
 [`../../../modules/gates/g4-ship.md`](../../../modules/gates/g4-ship.md).
+
+⚠ **If the ship prints `G3 certified <sha> GREEN but GitHub CI called that SHA
+RED`, STOP AND READ IT.** G3's local suite passed on that commit and GitHub CI
+failed on the *same* commit. The gate is already re-running the suite for you
+(the certification is distrusted) — but **do not read that re-run as a
+backstop**: it re-runs the **local** `test_cmd`, the very suite that already
+passed, while the failing lane is one only CI can see (the browser `test:system`
+suite). **Nothing downstream will catch this for you.** You are the last gate
+before production:
+
+- Open the named check on GitHub and read the failure.
+- If it is real — **do not ship.** Fix forward, or `bin/release eject <task>
+  --feedback "<the failing check>"` and have Steffon re-run `bin/release
+  prepare`.
+- If you ship past it anyway, that is a **deliberate, unguarded call** — say so
+  out loud in the handoff.
+- **"no GitHub verdict for `<sha>`" is NOT this alarm.** That is the normal line
+  today (CI does not build `release` yet) and means nothing is wrong.
 
 If a ship gate is a genuine false negative, the supported override is
 `bin/release ship --skip-test-gate --reason "…"` — it confirms, and records a

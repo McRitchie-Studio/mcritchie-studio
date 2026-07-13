@@ -326,6 +326,63 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
                "G3 went red — that is the opposite of a certification"
   end
 
+  # --- the AUDITOR arms G4, in the FAIL-OPEN direction only --------------------
+  #
+  # THE HOLE THIS CLOSES: on a green G3 the frozen ship SHA *is* the certified SHA,
+  # so ship_gate_skip? matched and G4 SKIPPED its suite — meaning in the gate-GREEN
+  # + CI-RED direction (the dangerous one the cross-check exists for) the G3 alarm
+  # was the ONLY thing between that commit and production, while the alarm text
+  # told the operator G4 would re-gate it. A gate system that claims a backstop it
+  # does not have makes its own alarm dismissible. Now a red auditor DISTRUSTS the
+  # certification and the suite genuinely re-runs on the frozen SHA.
+  #
+  # FAIL-OPEN ONLY: the auditor may cause MORE checking, NEVER a block. Only the
+  # literal "red" arms it; every no-data state changes nothing.
+  test "[unit] ship_gate_skip? does NOT skip when the AUDITOR called the certified SHA red" do
+    audited = certified.merge("ci" => { "state" => "red", "checks" => ["test:system"] })
+
+    assert_not S.ship_gate_skip?(test_cmd: "bin/rails test", frozen_sha: "abc123", qa_gate: audited),
+               "G3 said green, GitHub CI said RED for that SAME SHA — the batch certification is exactly " \
+               "what must not be trusted, so G4 fails open and re-runs the suite"
+    assert S.auditor_red?(audited)
+  end
+
+  test "[unit] NO-DATA from the auditor never arms G4 — silence is not a red" do
+    # none/pending/unverified = GitHub had nothing to say (today ci.yml doesn't even
+    # build `release`). If any of these re-triggered the gate, the cross-check would
+    # tax every ship with a redundant suite for a verdict nobody gave.
+    %w[none pending unverified].each do |state|
+      audited = certified.merge("ci" => { "state" => state })
+
+      assert S.ship_gate_skip?(test_cmd: "bin/rails test", frozen_sha: "abc123", qa_gate: audited),
+             "a #{state} auditor is NO DATA — it must not change the skip decision"
+      assert_not S.auditor_red?(audited)
+    end
+
+    green = certified.merge("ci" => { "state" => "green", "count" => 4 })
+    assert S.ship_gate_skip?(test_cmd: "bin/rails test", frozen_sha: "abc123", qa_gate: green),
+           "both verdicts agree green — nothing to re-check"
+  end
+
+  test "[unit] auditor_red? is false for a record with no auditor at all (pre-cross-check releases)" do
+    # Every release recorded before the cross-check landed has a ci-less gate record.
+    # It must keep self-gating exactly as before — a missing auditor is not a red one.
+    assert_not S.auditor_red?(certified)
+    assert_not S.auditor_red?(certified.merge("ci" => nil))
+    assert_not S.auditor_red?(nil)
+    assert S.ship_gate_skip?(test_cmd: "bin/rails test", frozen_sha: "abc123", qa_gate: certified)
+  end
+
+  # NOTE — the other half of the fail-open contract ("a red auditor can never BLOCK
+  # a ship, it only makes the gate RUN") is not assertable here: ship_gate_skip? is
+  # a pure run/skip decision and has no way to express an abort. It is proven where
+  # it actually lives — test/lib/release_cli_test.rb's
+  # test_ship_test_gate_names_the_red_auditor_as_the_reason_it_is_re_running, which
+  # drives the REAL test_gate with a red-auditor record and asserts the suite RAN
+  # and the gate still PASSED. (A unit test named for that property here would only
+  # re-assert `skip? == false` under a grander name — a test whose name claims more
+  # than it checks is its own small lying gate.)
+
   test "[unit] ship_gate_skip? re-triggers on SHA drift (straggler / re-pin)" do
     assert_not S.ship_gate_skip?(test_cmd: "bin/rails test", frozen_sha: "abc123",
                                  qa_gate: certified(sha: "def456")),
