@@ -817,6 +817,45 @@ rescue StandardError
   nil
 end
 
+# --- Persistence verification: never report success on a write that didn't land
+# A best-effort AUTHORITATIVE read of a task's current stage, used to VERIFY a
+# just-issued stage move actually persisted. Deliberately NOT api(): a non-2xx or
+# transport failure here returns nil (we could not verify) instead of die!-ing. A
+# failed VERIFICATION read is not proof the write failed, and the standing
+# invariant that a transient board read never aborts a move whose PATCH already
+# landed (see board_mascot) holds. Returns the persisted stage String, or nil
+# when the board could not be read back.
+def read_back_stage(slug)
+  res = TaskBoard.request(:get, "/api/v1/tasks/#{slug}", base_url: BASE_URL, token: token)
+  return nil unless res.code.to_i.between?(200, 299)
+
+  data = TaskBoard.parse_body(res)["data"]
+  data.is_a?(Hash) ? data["stage"].to_s : nil
+rescue StandardError
+  nil
+end
+
+# CONFIRM a stage move actually landed before reporting success. The board can
+# answer a stage PATCH with 200 while the transition never persisted — a
+# server-side save that fails silently returns the assigned-but-UNSAVED in-memory
+# record, so the response echoes the requested stage and bin/task prints
+# "[submitted]" and exits 0 while a fresh read still shows "building". A task
+# stranded that way is invisible to reviewers and skipped by the qa-release
+# sweep, and its handoff LIES (it once made a supervisor misread the failed write
+# as a rival session re-claiming the task). So after the PATCH, read the task
+# back and compare: on a DEFINITE mismatch, exit NONZERO and say so loudly (never
+# the success line). A read we could not complete (nil) degrades to the prior
+# behavior rather than abort — an unverifiable read is not proof of a failed write.
+def verify_move_persisted!(slug, expected_stage)
+  persisted = read_back_stage(slug)
+  return if persisted.nil? || persisted == expected_stage
+
+  warn!("✗ move NOT persisted: #{slug} → #{expected_stage} reported success, but a fresh read of the board still shows [#{persisted}].")
+  warn!("  The stage-transition write did not land — the task has NOT moved. Do not hand it off as #{expected_stage}.")
+  warn!("  Re-run: bin/task move #{slug} #{expected_stage}   (if it recurs the board write is failing server-side — check ErrorLog).")
+  exit 1
+end
+
 cmd = ARGV.shift || "help"
 case cmd
 when "list"
@@ -959,6 +998,11 @@ when "move"
     body["devops"] = merged
   end
   task = api(:patch, "/api/v1/tasks/#{slug}", body)["data"]
+  # The board answered 2xx — but a 2xx is not persistence. Read the task back and
+  # confirm the stage actually moved before printing the success line, so a
+  # silently-non-persisting write exits nonzero + loud instead of stranding the
+  # task while the handoff claims it advanced.
+  verify_move_persisted!(slug, stage)
   write_feature_marker(task)
   print_task(task)
 when "intent"

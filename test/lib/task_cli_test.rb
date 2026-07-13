@@ -43,7 +43,7 @@ class TaskCliTest < Minitest::Test
   # a nil value deletes that var from the child (used to clear the session vars so
   # the test never depends on a real ambient session).
   def run_task(args, env: {}, stub_devops: { "kind" => "feature" }, stub_stage: "building", chdir: nil, fail_get: nil,
-               fail_get_body: nil,
+               fail_get_body: nil, stub_persist: true, fail_patch: nil,
                stub_session_mascot: { "mascot" => "snorlax", "mascot_color" => "#A8A77A", "mascot_emoji" => "🔶",
                                       "app" => "mcritchie-studio", "app_color" => "#B57EDC" },
                stub_agent: { "name" => "Jasper", "status_color" => "#22D3EE", "emoji" => "🧪" })
@@ -51,6 +51,14 @@ class TaskCliTest < Minitest::Test
     # move-to-building gate (and the heartbeat) read a real claim state.
     @stub_devops = stub_devops
     @stub_stage = stub_stage
+    # The board's PERSISTED stage, which a GET reads back. A stage-move PATCH
+    # advances it — UNLESS stub_persist is false, which models the false-success
+    # bug: the PATCH 200s and echoes the requested stage (the assigned-but-unsaved
+    # in-memory record) but the persisted stage never changes, so a read-back
+    # still shows the old one. fail_patch forces the PATCH itself to a non-2xx.
+    @persisted_stage = stub_stage
+    @stub_persist = stub_persist
+    @fail_patch = fail_patch
     # The POST /api/v1/sessions/:id/mascot response (the eager session-mascot draw).
     @stub_session_mascot = stub_session_mascot
     @stub_agent = stub_agent
@@ -113,7 +121,7 @@ class TaskCliTest < Minitest::Test
       body = len ? client.read(len.to_i) : ""
       requests << { method: method, path: path, body: body }
 
-      status, payload = response_for(method, path)
+      status, payload = response_for(method, path, body)
       client.write("HTTP/1.1 #{status}\r\nContent-Type: application/json\r\n" \
                    "Content-Length: #{payload.bytesize}\r\nConnection: close\r\n\r\n#{payload}")
       client.close
@@ -125,7 +133,7 @@ class TaskCliTest < Minitest::Test
   # Returns [status_line, json_body]. Defaults to 200; @fail_get forces the board
   # read (GET /api/v1/tasks/<slug>) to a non-2xx so the board-mascot fallback is
   # exercised under a transient failure — without breaking auth or the PATCH/POST.
-  def response_for(method, path)
+  def response_for(method, path, body = nil)
     return ["200 OK", JSON.generate("token" => "stub-token")] if path == "/api/v1/auth"
 
     if method == "POST" && path =~ %r{\A/api/v1/sessions/.+/mascot\z}
@@ -140,13 +148,46 @@ class TaskCliTest < Minitest::Test
       return ["#{@fail_get} Service Unavailable", @fail_get_body || JSON.generate("error" => "stubbed board read failure")]
     end
 
+    if @fail_patch && method == "PATCH" && path.start_with?("/api/v1/tasks/")
+      return ["#{@fail_patch} Service Unavailable", JSON.generate("error" => "stubbed board write failure")]
+    end
+
+    # A stage-move PATCH (PATCH /api/v1/tasks/<slug> carrying "stage"). The server
+    # returns the ASSIGNED record, so the response echoes the requested stage —
+    # TRUE whether the save persisted or not. In the default persisting mode a
+    # later GET reads that stage back; with stub_persist:false the persisted stage
+    # does NOT advance (the false-success bug: 200 + echoed stage, but the board
+    # still reads the old stage), so the read-back verification must catch it.
+    if method == "PATCH" && path =~ %r{\A/api/v1/tasks/[^/]+\z}
+      requested = move_stage_of(body)
+      if requested
+        @persisted_stage = requested if @stub_persist
+        return ["200 OK", task_response(requested)]
+      end
+    end
+
     # The GET in the move read-merge returns an existing task carrying prior
     # devops (configurable per-test via stub_devops), so the test can prove the
-    # session stamp / claim is MERGED, not a wipe, and seed an existing claim.
-    ["200 OK", JSON.generate("data" => {
-      "slug" => "demo-task", "stage" => @stub_stage,
+    # session stamp / claim is MERGED, not a wipe, and seed an existing claim. Its
+    # stage is the board's PERSISTED stage, which the move read-back verifies.
+    ["200 OK", task_response(@persisted_stage)]
+  end
+
+  # The stage a PATCH body requests, or nil when the body carries none (a devops-
+  # only PATCH — update / heartbeat / block — never advances the persisted stage).
+  def move_stage_of(body)
+    return nil if body.to_s.empty?
+
+    JSON.parse(body)["stage"]
+  rescue JSON::ParserError
+    nil
+  end
+
+  def task_response(stage)
+    JSON.generate("data" => {
+      "slug" => "demo-task", "stage" => stage,
       "metadata" => { "devops" => @stub_devops }
-    })]
+    })
   end
 
   def devops_of(request)
@@ -269,6 +310,61 @@ class TaskCliTest < Minitest::Test
     patch = requests.find { |r| r[:method] == "PATCH" }
     event = JSON.parse(patch[:body]).fetch("event")
     refute event.key?("actor"), "a plain shell / CI run (no session) stamps no actor"
+  end
+
+  # --- a move must never report success on a stage that did not persist --------
+  # THE BUG: `bin/task move <slug> submitted` PRINTED "[submitted]" and exited 0
+  # while a fresh read still showed "building" — the stage PATCH 200'd (echoing
+  # the assigned-but-unsaved in-memory record) but never persisted. The stranded
+  # task is invisible to reviewers and skipped by the qa-release sweep, and it
+  # once made a supervisor misread the failed write as a rival session re-claiming
+  # the task. The move now reads the task back and confirms the persisted stage
+  # matches the requested one before reporting success. stub_persist:false models
+  # the board that 200s the PATCH but does NOT advance the persisted stage.
+  def test_move_that_does_not_persist_exits_nonzero_not_false_success
+    requests, out, err, status = run_task(
+      ["move", "demo-task", "submitted"],
+      env: { "CLAUDE_CODE_SESSION_ID" => SESSION },
+      stub_stage: "building",
+      stub_persist: false
+    )
+    refute status.success?, "a move whose write did not persist must exit nonzero, not report success"
+    assert(requests.any? { |r| r[:method] == "PATCH" && r[:path] == "/api/v1/tasks/demo-task" },
+           "the move PATCH is still issued")
+    assert(requests.any? { |r| r[:method] == "GET" && r[:path] == "/api/v1/tasks/demo-task" },
+           "the move reads the task back to VERIFY the transition actually persisted")
+    assert_match(/not persist/i, err, "the failure is loud and names the non-persistence")
+    assert_match(/building/, err, "and names the stage the board actually still shows")
+    refute_match(/\[submitted\]/, out, "it must NOT print the success line for a stage it never reached")
+  end
+
+  # The verification must not turn a genuine, persisted move into a false failure:
+  # once the read-back CONFIRMS the requested stage, the move still reports success.
+  def test_move_that_persists_still_reports_success
+    requests, out, _err, status = run_task(
+      ["move", "demo-task", "submitted"],
+      env: { "CLAUDE_CODE_SESSION_ID" => SESSION },
+      stub_stage: "building" # stub_persist defaults true → the PATCH advances the board
+    )
+    assert status.success?, "a persisted move still exits 0"
+    assert_match(/\[submitted\]/, out, "and prints the confirmed stage")
+    assert(requests.any? { |r| r[:method] == "GET" && r[:path] == "/api/v1/tasks/demo-task" },
+           "even the happy path reads back to confirm persistence before reporting success")
+  end
+
+  # Acceptance #2: a failed board WRITE (a non-2xx stage PATCH) exits nonzero and
+  # loud — it must never read as a successful move. api() already dies on a
+  # non-2xx; pin it for the mutation path so the "reports success on work it did
+  # not do" family can never regress on the write leg either.
+  def test_move_with_a_failed_write_exits_nonzero_and_loud
+    _requests, out, err, status = run_task(
+      ["move", "demo-task", "submitted"],
+      env: { "CLAUDE_CODE_SESSION_ID" => SESSION },
+      fail_patch: 503
+    )
+    refute status.success?, "a non-2xx stage PATCH must exit nonzero, never report success"
+    assert_match(%r{PATCH /api/v1/tasks/demo-task -> 503}, err, "the failure names the write and its status")
+    refute_match(/\[submitted\]/, out, "no success line for a write that failed")
   end
 
   def test_block_agent_flag_stamps_the_block_transition_actor
