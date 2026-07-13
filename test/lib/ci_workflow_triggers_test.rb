@@ -15,15 +15,29 @@
 #   ruby -Itest test/lib/ci_workflow_triggers_test.rb
 # Also picked up by the normal `bin/rails test` sweep.
 #
-# THREE ways the release tip loses its verdict while `branches: [main, release]` still
-# reads correct in the file — all three are asserted, because a guard is only worth the
+# FIVE ways the release tip loses its verdict while `branches: [main, release]` still
+# reads correct in the file — all five are asserted, because a guard is only worth the
 # regressions it actually catches:
 #   1. the branch is dropped from the push trigger (the obvious one);
 #   2. a job opts out via a job-level `if:` on the github event context — `github.ref`,
 #      `github.event_name == 'pull_request'`, or `github.base_ref`. The job reports a
 #      GREEN required check having run zero tests on the RC tip;
-#   3. a `paths`/`paths-ignore` filter on the push trigger suppresses the workflow RUN
-#      outright, so a docs-only release merge commit gets no CI at all.
+#   3. the same `if:` moves onto the load-bearing STEP — the worse spelling, because the
+#      job's other steps still succeed, so the job (and the required check) stays green
+#      over zero tests. Job-level detection alone misses it (hole found in the second
+#      review pass of PR #512);
+#   4. a `paths`/`paths-ignore` filter on the push trigger suppresses the workflow RUN
+#      outright, so a docs-only release merge commit gets no CI at all;
+#   5. a `concurrency:` group lets a rapid second release push cancel or supersede the
+#      first SHA's run — `cancelled` reads as RED to a SHA-addressed auditor: a false
+#      alarm on a healthy candidate. Back-to-back release pushes are normal (sweep
+#      merge, then re-pin).
+#
+# NOTE the DOUBLE RUN the trigger creates, so nobody "fixes" it into hole #5: a release
+# SHA gets its run from `push: release`, then `bin/release ship` fast-forwards main to
+# the byte-identical SHA and fires a SECOND full run (including the ~5min test +
+# test:system lane). Benign — the SHA-addressed auditor folds a pending duplicate as
+# no-data, never a block — and expected.
 #
 # Two tiers (backend shape):
 #   [unit]        the trigger-extraction and skip-detection logic, over fixture YAML —
@@ -76,9 +90,25 @@ class CiWorkflowTriggersTest < Minitest::Test
   # — the release merge commit simply gets no CI at all.
   PATH_FILTER_KEYS = %w[paths paths-ignore].freeze
 
+  # Everywhere a `concurrency:` block could sit: the workflow root and each job. ANY
+  # group is a hazard here, not just `cancel-in-progress: true` — a group without it
+  # still supersedes the QUEUED run when the next push lands, marking the first SHA
+  # `cancelled`, and `cancelled` reads as RED to a SHA-addressed auditor.
+  def concurrency_holders(yaml_text)
+    doc = YAML.safe_load(yaml_text)
+    holders = doc.key?("concurrency") ? ["workflow"] : []
+    holders + doc.fetch("jobs", {}).select { |_name, job| job.is_a?(Hash) && job.key?("concurrency") }.keys
+  end
+
   def jobs_skipping_release_push(yaml_text)
     YAML.safe_load(yaml_text).fetch("jobs", {}).select do |_name, job|
-      job.is_a?(Hash) && job["if"].to_s.match?(SKIP_CONTEXT_KEYS)
+      next false unless job.is_a?(Hash)
+
+      # Job-level `if:` AND every step-level `if:`. A skip on the load-bearing step is
+      # the WORSE spelling: the other steps succeed, so the job — and the required
+      # check — still reports green (hole #4, caught in the second review pass).
+      conditions = [job["if"]] + Array(job["steps"]).grep(Hash).map { |step| step["if"] }
+      conditions.any? { |condition| condition.to_s.match?(SKIP_CONTEXT_KEYS) }
     end.keys
   end
 
@@ -152,6 +182,49 @@ class CiWorkflowTriggersTest < Minitest::Test
     assert_equal ["test"], jobs_skipping_release_push(yaml)
   end
 
+  def test_unit_detects_a_step_that_skips_itself_on_the_event_name
+    # THE HOLE IN THE SECOND CUT OF THIS GUARD (caught in review of PR #512, second
+    # pass). Same skip as the job-level spelling, moved one level down: the job carries
+    # no `if:` at all, its load-bearing step does. The step is skipped, every OTHER step
+    # (checkout, setup) succeeds, and the job — and with it the required check — reports
+    # GREEN having run zero tests on the release tip. A matcher that reads only
+    # `job["if"]` waves it straight through.
+    yaml = <<~YML
+      on:
+        push:
+          branches: [ main, release ]
+      jobs:
+        test:
+          runs-on: ubuntu-latest
+          steps:
+            - uses: actions/checkout@v7
+            - name: Run tests
+              if: github.event_name == 'pull_request'
+              run: bin/rails test
+    YML
+    assert_equal ["test"], jobs_skipping_release_push(yaml)
+  end
+
+  def test_unit_a_step_condition_unrelated_to_the_event_context_is_not_a_skip
+    # ci.yml itself carries `if: failure()` on the screenshot-upload step — idiomatic,
+    # and it cannot exclude a release push. Walking steps must not flag it.
+    yaml = <<~YML
+      on:
+        push:
+          branches: [ main, release ]
+      jobs:
+        test:
+          runs-on: ubuntu-latest
+          steps:
+            - name: Run tests
+              run: bin/rails test
+            - name: Keep screenshots
+              if: failure()
+              run: echo saved
+    YML
+    assert_empty jobs_skipping_release_push(yaml)
+  end
+
   def test_unit_a_job_condition_unrelated_to_the_event_context_is_not_a_skip
     # The matcher must not flag every `if:`. A condition that does not consult the event
     # context (e.g. gating on a previous job's output) cannot exclude a release push.
@@ -165,6 +238,26 @@ class CiWorkflowTriggersTest < Minitest::Test
           runs-on: ubuntu-latest
     YML
     assert_empty jobs_skipping_release_push(yaml)
+  end
+
+  def test_unit_detects_a_concurrency_block_at_workflow_and_job_level
+    yaml = <<~YML
+      on:
+        push:
+          branches: [ main, release ]
+      concurrency:
+        group: ci-${{ github.ref }}
+        cancel-in-progress: true
+      jobs:
+        test:
+          runs-on: ubuntu-latest
+          concurrency: deploy-lock
+    YML
+    assert_equal %w[workflow test], concurrency_holders(yaml)
+  end
+
+  def test_unit_a_workflow_without_concurrency_has_no_holders
+    assert_empty concurrency_holders("on:\n  push:\n    branches: [ main ]\njobs:\n  test:\n    runs-on: ubuntu-latest\n")
   end
 
   def test_unit_a_paths_filter_on_the_push_trigger_is_visible
@@ -204,11 +297,26 @@ class CiWorkflowTriggersTest < Minitest::Test
 
     assert_empty skipped,
                  "job(s) #{skipped.inspect} carry a github event-context condition " \
-                 "(#{SKIP_CONTEXT_KEYS.source}). The release candidate earns a FULL " \
-                 "verdict — no lane may be skipped on a release push for cost, whether " \
-                 "spelled as a ref comparison or an event_name check. If such a " \
-                 "condition is genuinely needed, prove the job still RUNS on a push to " \
-                 "refs/heads/release and update this test deliberately."
+                 "(#{SKIP_CONTEXT_KEYS.source}) on the job or on one of its steps. The " \
+                 "release candidate earns a FULL verdict — no lane may be skipped on a " \
+                 "release push for cost, whether spelled as a ref comparison, an " \
+                 "event_name check, or a base_ref check, at the JOB or at the STEP " \
+                 "level (a skipped step is the worse spelling: the job still reports " \
+                 "green). If such a condition is genuinely needed, prove the tests " \
+                 "still RUN on a push to refs/heads/release and update this test " \
+                 "deliberately."
+  end
+
+  def test_integration_no_concurrency_block_can_cancel_a_release_run
+    holders = concurrency_holders(File.read(CI_YML))
+
+    assert_empty holders,
+                 "#{holders.inspect} carry a `concurrency:` block. Back-to-back release " \
+                 "pushes are NORMAL (sweep merge, then re-pin): a concurrency group lets " \
+                 "the second push cancel or supersede the first SHA's run, and a " \
+                 "`cancelled` conclusion reads as RED to a SHA-addressed CI auditor — a " \
+                 "false alarm on a healthy release candidate. Every release SHA keeps " \
+                 "its own run to completion."
   end
 
   def test_integration_no_path_filter_strands_the_release_tip
