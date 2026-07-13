@@ -475,6 +475,16 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     claim_json(Time.now - 3600, session: "sess-dead")
   end
 
+  # A lease whose expiry is PRESENT but unparseable — the corrupt state. live? cannot rule it
+  # lapsed (we could not check), so the desk is WITHHELD, but the honest hold reason is "claim
+  # expiry unverifiable", never "held by a live builder" (we never confirmed one). claim_json
+  # can't build this — it iso8601-formats a Time — so it is spelled out here.
+  def corrupt_claim_json
+    JSON.generate("metadata" => { "devops" => {
+                    "claimed_session" => "sess-corrupt", "claim_expires_at" => "not-a-timestamp"
+                  } })
+  end
+
   # Bind a task slug into the fixture worktree's stack env so the guard's board read gets
   # past its "no bound task" early return and actually resolves a record.
   def bind_task_slug(slug)
@@ -540,6 +550,26 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     # desk IS clean and IS base-equivalent — it is simply occupied.
     assert_includes out, "no free candidates — 1 desk withheld (see the reasons above)"
     refute_includes out, "cleanup candidates:"
+  end
+
+  # THE CORRUPT FOURTH STATE. A claim whose expiry is present but unparseable is unverifiable:
+  # withheld (an outage-grade "I cannot tell", not a free desk), but the reason must be HONEST.
+  # Before the corrupt_expiry? branch this printed "held by a live builder claim … heartbeat  s
+  # ago" — a builder that was never confirmed, plus a nil-age interpolation. This asserts the
+  # honest "claim expiry unverifiable" copy propagates through report_withheld.
+  test "[integration] cleanup withholds a corrupt-claim worktree as expiry-unverifiable, not a live builder" do
+    mark_worktree_merged_to_origin_main
+    bind_task_slug("desk-task")
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio",
+                                      env: { "AGENT_WORKTREE_TASK_JSON" => corrupt_claim_json })
+
+    assert status.success?, err
+    assert_includes out, "withheld mcritchie-studio/terminal-context: claim expiry unverifiable"
+    refute_includes out, "held by a live builder claim",
+                    "a corrupt lease is NOT a confirmed builder — the hold must not misattribute one"
+    refute_match(/heartbeat\s+s ago/, out, "the garbled nil-age interpolation must be gone")
+    assert_includes out, "no free candidates — 1 desk withheld (see the reasons above)"
   end
 
   test "[integration] reclaim dry-run withholds a live-claimed worktree" do
@@ -622,6 +652,29 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     refute worktree.fetch("cleanup_candidate"), "the conductor must not be told to remove a held desk"
     assert_match(/live builder claim/, worktree.fetch("withheld_reason"), "…and it must be told WHY")
     assert_equal 0, payload.dig("summary", "cleanup_candidates"), "the summary agrees with the field"
+    assert_equal 1, payload.dig("summary", "withheld")
+  end
+
+  # The registry's `withheld_reason` is the field bin/qa-intake reads to bucket occupied desks
+  # (withheld_reason_for). For a corrupt claim it must carry the honest "claim expiry
+  # unverifiable" reason, NOT a misattributed live-builder line — so the conductor's front door
+  # tells the operator to inspect the task, not that a phantom builder is sitting there.
+  test "[integration] the registry names a corrupt claim as expiry-unverifiable, not a live builder" do
+    mark_worktree_merged_to_origin_main
+    bind_task_slug("desk-task")
+    registry = File.join(@projects_dir, "registry.json")
+
+    _out, err, status = agent_worktree("snapshot", "mcritchie-studio", "--write",
+                                       env: { "AGENT_WORKTREE_REGISTRY" => registry,
+                                              "AGENT_WORKTREE_TASK_JSON" => corrupt_claim_json })
+
+    assert status.success?, err
+    payload = JSON.parse(File.read(registry))
+    worktree = payload.fetch("worktrees").find { |entry| entry["task"] == @task }
+    refute worktree.fetch("cleanup_candidate"), "an unverifiable desk must not be nominated for teardown"
+    reason = worktree.fetch("withheld_reason")
+    assert_match(/expiry unverifiable/, reason, "the field the conductor reads must state the honest reason")
+    refute_match(/live builder/, reason, "…and must not misattribute a builder we never confirmed")
     assert_equal 1, payload.dig("summary", "withheld")
   end
 
