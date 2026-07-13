@@ -505,6 +505,27 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     FileUtils.chmod(0o755, bin)
   end
 
+  # A fake `bin/task` that reports the task readable with a LAPSED claim on EVERY read —
+  # the record every finished desk actually carries (claimed while building; the lease
+  # lapses when the builder closes). Same hub plant as the mid-sweep helper above, plus a
+  # read counter so the test can PROVE the real fetch path ran: a positive control that can
+  # pass without exercising its path is no control at all. Returns the counter path.
+  def plant_task_bin_with_lapsed_claim(slug)
+    bind_task_slug(slug)
+    counter = File.join(@projects_dir, "task-show-count")
+    bin = File.join(@hub_dir, "bin", "task")
+    FileUtils.mkdir_p(File.dirname(bin))
+    expires = (Time.now - 3600).utc.iso8601
+    File.write(bin, <<~SH)
+      #!/bin/sh
+      n=$(cat #{counter.shellescape} 2>/dev/null || echo 0)
+      echo $((n + 1)) > #{counter.shellescape}
+      echo '{"metadata":{"devops":{"claimed_session":"sess-dead","claim_expires_at":"#{expires}"}}}'
+    SH
+    FileUtils.chmod(0o755, bin)
+    counter
+  end
+
   test "[integration] cleanup withholds a live-claimed worktree and says WHY" do
     mark_worktree_merged_to_origin_main
     bind_task_slug("desk-task")
@@ -642,6 +663,40 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
                     "a guard that withholds everything is a wedge, not a fix"
     refute Dir.exist?(@worktree_dir), "the desk is actually torn down — the sweep still works"
     refute_includes out, "withheld"
+  end
+
+  # THE SAME CONTROL, THROUGH THE REAL FETCH PATH.
+  #
+  # The control above rides AGENT_WORKTREE_TASK_JSON, which short-circuits
+  # task_record_for_pr BEFORE fetch_task_record ever runs — it certifies the sweep's
+  # free × strict cell while leaving the real board read uncovered. The mid-sweep test
+  # DOES drive the real path, but every record it feeds through it is either {}-devops
+  # (selection) or LIVE-claimed (under the lock), and it ends in a REFUSAL. So the one
+  # record shape a finished desk actually carries — readable, with a LAPSED claim — never
+  # rides the real seam to a completed teardown, and a wedge in fetch_task_record's
+  # success path that misclassifies exactly that record as unreadable passed the whole
+  # suite green while wedging every real sweep shut (verified: the wedge went undetected
+  # by all 95 runs until this test, which it turns red). This is that teardown, end to
+  # end through a planted bin/task — no JSON override — with the read counter proving the
+  # real fetch actually ran.
+  test "[integration] reclaim --yes tears down a lapsed-claim desk through the REAL fetch path (positive control)" do
+    mark_worktree_merged_to_origin_main
+    counter = plant_task_bin_with_lapsed_claim("fetch-path-task")
+    assert Dir.exist?(@worktree_dir), "precondition: the desk is on disk"
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio", "--reclaim", "--yes",
+                                      env: removal_env)
+
+    assert status.success?, "#{out}\n#{err}"
+    assert_operator File.read(counter).to_i, :>=, 1,
+                    "the planted bin/task was never consulted — the sweep bypassed the real " \
+                    "fetch path, so this control proved nothing"
+    assert_includes out, "reclaimed mcritchie-studio/terminal-context",
+                    "a readable, lapsed-claim desk read through the REAL board seam must still " \
+                    "be torn down — withholding it wedges the sweep for every finished desk"
+    refute Dir.exist?(@worktree_dir), "the desk is torn down for real, through the real fetch path"
+    refute_includes out, "withheld"
+    refute_includes out, "skipping"
   end
 
   # THE DESTROY-PATH ASYMMETRY — the blocker from round 3.
