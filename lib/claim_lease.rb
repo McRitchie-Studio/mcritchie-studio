@@ -34,21 +34,35 @@ module ClaimLease
 
   # Disposition of a stored claim relative to the mover asking to build it:
   #   :unclaimed     — no one holds it
-  #   :expired       — a claim exists but its lease lapsed (or carries no/garbled
-  #                    expiry) → silently reclaimable (a dead session stops
-  #                    renewing, so a dead-session lease surfaces here)
+  #   :expired       — a claim exists but its lease lapsed, or carries NO expiry
+  #                    at all → silently reclaimable (a dead session stops
+  #                    renewing, so a dead-session lease surfaces here; the
+  #                    renewer always writes an expiry, so a blank one is a
+  #                    never-renewed relic, not a live builder)
+  #   :corrupt       — a claim exists but its expiry is PRESENT and UNPARSEABLE →
+  #                    unverifiable. "We could not check" is not "the builder is
+  #                    gone": destructive consumers (the reclaim guard) must
+  #                    WITHHOLD (see live?), while the build-claim gate keeps its
+  #                    fail-open posture — it branches only on :held_by_other, and
+  #                    a re-claim WRITES a fresh lease (renewed), healing the
+  #                    corruption; destroying a desk heals nothing.
   #   :same_instance — held by THIS live instance (session AND nonce match) → re-move is fine
   #   :held_by_other — held by a DIFFERENT, still-live instance → the gate warns/refuses
+  #
+  # Like :expired, :corrupt is a lease-level disposition and outranks identity:
+  # even the holder reads its own garbled lease as :corrupt (its next claim/
+  # heartbeat rewrites a parseable one).
   #
   # claim: a hash (devops slice) with the CLAIM_KEYS (any may be nil/absent).
   def self.evaluate(claim, session:, nonce:, now: Time.now)
     claim ||= {}
     stored_session = claim["claimed_session"].to_s
     return :unclaimed if stored_session.empty?
+    return :corrupt if corrupt_expiry?(claim)
 
     expires = parse_time(claim["claim_expires_at"])
-    # Fail OPEN on the lease: a missing or unparseable expiry is treated as lapsed
-    # so a bad timestamp frees the task rather than locking it forever.
+    # Fail OPEN on a missing expiry: a blank lease is treated as lapsed so a
+    # never-renewed claim frees the task rather than locking it forever.
     return :expired if expires.nil? || expires <= now
 
     if stored_session == session.to_s && claim["claim_nonce"].to_s == nonce.to_s
@@ -58,14 +72,34 @@ module ClaimLease
     end
   end
 
-  # True when a non-expired claim is held by anyone — the liveness check the move
-  # gate and the resume control both ask ("session looks active in another terminal").
+  # True when a claim is held by anyone and cannot be ruled lapsed — a confirmed
+  # non-expired lease OR a corrupt (unverifiable) one. This is the liveness check
+  # the resume control asks ("session looks active in another terminal") and the
+  # question the reclaim guard's WITHHOLD decision rides on, so it must err
+  # toward "possibly live": a garbled expiry means we could not check, and a desk
+  # we cannot verify must never read as free on a destroy path. A BLANK expiry
+  # stays false — the renewer always writes one, so blank means never-renewed,
+  # not unreadable.
   def self.live?(claim, now: Time.now)
     claim ||= {}
     return false if claim["claimed_session"].to_s.empty?
+    return true if corrupt_expiry?(claim)
 
     expires = parse_time(claim["claim_expires_at"])
     !expires.nil? && expires > now
+  end
+
+  # True when a held claim carries an expiry that is PRESENT but unparseable —
+  # the unverifiable state. Distinct from absent/blank (:expired territory,
+  # fail-open) and from a session-less hash (no claim at all). Exposed so
+  # consumers that need the distinction (e.g. an honest "expiry unverifiable"
+  # hold reason, vs. live?'s merged possibly-live answer) can ask directly.
+  def self.corrupt_expiry?(claim)
+    claim ||= {}
+    return false if claim["claimed_session"].to_s.empty?
+
+    text = claim["claim_expires_at"].to_s.strip
+    !text.empty? && parse_time(text).nil?
   end
 
   # Seconds since the holder's last heartbeat, derived from the lease expiry and
