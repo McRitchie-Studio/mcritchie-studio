@@ -67,11 +67,60 @@ class ClaimLeaseTest < Minitest::Test
     assert_equal :expired, decision
   end
 
-  def test_lease_with_no_or_garbled_expiry_fails_open_to_reclaimable
-    # A dead session stops renewing → its lease lapses; a claim that somehow
-    # carries no/garbled expiry must free the task, never lock it forever.
+  def test_lease_with_no_expiry_fails_open_to_reclaimable
+    # A dead session stops renewing → its lease lapses; a claim that carries NO
+    # expiry at all (never renewed / pre-lease era) must free the task, never
+    # lock it forever. Note the contrast with a GARBLED expiry, which is
+    # :corrupt — see the corrupt-expiry section below.
     assert_equal :expired, ClaimLease.evaluate(claim(expires: nil), session: OTHER_SESSION, nonce: "z", now: NOW)
-    assert_equal :expired, ClaimLease.evaluate(claim(expires: "not-a-time"), session: OTHER_SESSION, nonce: "z", now: NOW)
+    assert_equal :expired, ClaimLease.evaluate(claim(expires: ""), session: OTHER_SESSION, nonce: "z", now: NOW)
+  end
+
+  # --- Corrupt expiry: unverifiable is NOT lapsed --------------------------------
+  # A claim whose expiry is PRESENT but unparseable is "we could not check", not
+  # "the builder is gone". The reclaim guard (bin/agent-worktree claim_hold)
+  # decides destruction off live?, so a corrupt lease must read as possibly
+  # live — withheld — never as free. bin/task's build gate keeps its fail-open
+  # posture because it branches only on :held_by_other (and claiming WRITES a
+  # fresh lease, healing the corruption; destroying a desk heals nothing).
+
+  def test_corrupt_expiry_evaluates_as_corrupt_not_expired
+    decision = ClaimLease.evaluate(claim(expires: "not-a-time"), session: OTHER_SESSION, nonce: "z", now: NOW)
+    assert_equal :corrupt, decision, "a garbled lease is unverifiable, not lapsed"
+  end
+
+  def test_corrupt_expiry_is_corrupt_even_for_the_holding_instance
+    # The lease disposition outranks identity (mirroring :expired): the gate
+    # still passes (:corrupt != :held_by_other) and the re-claim writes a fresh
+    # parseable lease, so the holder heals its own corrupted record.
+    decision = ClaimLease.evaluate(claim(nonce: "inst-A", expires: "not-a-time"), session: SESSION, nonce: "inst-A", now: NOW)
+    assert_equal :corrupt, decision
+  end
+
+  def test_corrupt_expiry_reads_as_possibly_live
+    assert ClaimLease.live?(claim(expires: "not-a-time"), now: NOW),
+           "an unverifiable lease must read as possibly live — the reclaim guard withholds on live?"
+    refute ClaimLease.live?(claim(expires: nil), now: NOW), "a BLANK expiry stays fail-open (lapsed)"
+  end
+
+  def test_corrupt_expiry_without_a_session_is_still_unclaimed
+    orphan = { "claim_expires_at" => "not-a-time" }
+    assert_equal :unclaimed, ClaimLease.evaluate(orphan, session: SESSION, nonce: "z", now: NOW)
+    refute ClaimLease.live?(orphan, now: NOW), "no holder → nothing to protect"
+    refute ClaimLease.corrupt_expiry?(orphan)
+  end
+
+  def test_corrupt_expiry_predicate
+    assert ClaimLease.corrupt_expiry?(claim(expires: "not-a-time"))
+    refute ClaimLease.corrupt_expiry?(claim(expires: NOW + 30)), "a parseable lease is not corrupt"
+    refute ClaimLease.corrupt_expiry?(claim(expires: nil)), "a blank expiry is absent, not corrupt"
+    refute ClaimLease.corrupt_expiry?({}), "no claim at all"
+    refute ClaimLease.corrupt_expiry?(nil)
+  end
+
+  def test_corrupt_expiry_has_no_heartbeat_age
+    assert_nil ClaimLease.heartbeat_age(claim(expires: "not-a-time"), now: NOW),
+               "an unparseable lease yields no age — consumers must tolerate nil"
   end
 
   def test_lease_exactly_at_now_is_expired

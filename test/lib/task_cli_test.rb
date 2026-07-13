@@ -683,6 +683,27 @@ class TaskCliTest < Minitest::Test
     assert_equal "inst-B", devops["claim_nonce"]
   end
 
+  # A CORRUPT (unparseable) lease keeps the gate's fail-open posture: the move
+  # claims freely — no --steal, no refusal — and writing the fresh lease heals
+  # the garbled record. Deliberately opposite to the reclaim guard
+  # (bin/agent-worktree), which WITHHOLDS on :corrupt: claiming writes state,
+  # reclaiming destroys it. Pinned here so a future "corrupt must block
+  # everywhere" refactor trips this test instead of silently changing bin/task.
+  def test_move_to_building_reclaims_a_corrupt_expiry_lease
+    corrupt = claim_devops(session: OTHER_SESSION, nonce: "inst-A")
+    corrupt["claim_expires_at"] = "not-a-time"
+    requests, _out, _err, status = run_task(
+      ["move", "demo-task", "building"],
+      env: { "CLAUDE_CODE_SESSION_ID" => SESSION, "TASK_CLAIM_NONCE" => "inst-B" },
+      stub_devops: corrupt
+    )
+    assert status.success?, "a corrupt lease stays fail-open at the BUILD gate (heal by re-claiming)"
+    devops = patch_devops(requests)
+    assert_equal SESSION, devops["claimed_session"]
+    assert_equal "inst-B", devops["claim_nonce"]
+    refute_nil Time.parse(devops["claim_expires_at"]), "the re-claim writes a fresh PARSEABLE lease"
+  end
+
   # AC #3: an unclaimed task is claimed on the move with the mover's identity.
   def test_move_to_building_claims_an_unclaimed_task
     requests, _out, _err, status = run_task(

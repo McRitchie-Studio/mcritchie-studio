@@ -209,8 +209,15 @@ def claim_nonce
 end
 
 # Refuse a move-to-building when the task is already claimed by a DIFFERENT,
-# still-live instance — unless --steal. Unclaimed / expired / same-instance claim
-# freely. Loud (not a hard block): it prints WHO holds it + how to override.
+# still-live instance — unless --steal. Unclaimed / expired / corrupt /
+# same-instance claim freely. Loud (not a hard block): it prints WHO holds it +
+# how to override.
+#
+# :corrupt (an unparseable lease) stays DELIBERATELY fail-open here, unlike the
+# reclaim guard (bin/agent-worktree), which withholds on it: claiming a task
+# WRITES a fresh parseable lease via ClaimLease.renewed — a reversible act that
+# heals the corrupted record — whereas reclaiming destroys a desk, which heals
+# nothing. Same disposition, opposite stakes.
 def enforce_claim_gate!(slug, devops, mover_session, steal:)
   claim = ClaimLease.from_devops(devops)
   decision = ClaimLease.evaluate(claim, session: mover_session, nonce: claim_nonce)
