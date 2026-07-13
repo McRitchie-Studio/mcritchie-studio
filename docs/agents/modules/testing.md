@@ -77,12 +77,28 @@ from a live agent session.
 *presence* (`ENV.key?`, a shell's `${VAR+set}`) sees a session that isn't there.
 `SessionEnv.neutralized` normalizes a blank session override to unset for you.
 
-**Two neutralizers, one rule.** `SessionEnv` (`test/support/session_env.rb`)
-covers tests — including an agent running `bin/rails test` by hand in a worktree.
-`Release::GateEnv` (`app/models/release/gate_env.rb`) covers the release gate's
-own spawn env. They are deliberately not shared code (one must load in a bare
-`minitest/autorun` file with no Rails), but they **must agree** on the key list
-and the nil-means-unset semantics. Change one, change the other.
+**Two neutralizers, held in lockstep by a test — not by trust.** `SessionEnv`
+(`test/support/session_env.rb`) covers tests, including an agent running
+`bin/rails test` by hand in a worktree. `Release::GateEnv`
+(`app/models/release/gate_env.rb`) covers the release gate's own spawn env. They
+are deliberately not shared code — `SessionEnv` must load in a bare
+`minitest/autorun` file with no Rails — and the dependency runs **one way only**:
+a test may require `Release::GateEnv` (it is pure and Rails-free by construction,
+exactly as `bin/release.rb` requires it), but production code never reaches into
+`test/`.
+
+That leaves one real hazard, **drift between the two key lists**, and it is closed
+mechanically rather than by prose: `SessionEnvTest`
+(`test/lib/session_env_test.rb`) requires `Release::GateEnv`, asserts the two
+`SESSION_KEYS` lists are **equal**, and asserts every production key is genuinely
+absent from a spawned child. Add a key to **either** list alone and the suite goes
+red — so add it to both. Each side's nil-means-unset semantics is covered by its
+own test (`SessionEnvTest`, `Release::GateEnvTest`).
+
+**Pin a drift guard against the live constant, never a literal copy of the list.**
+A literal only pins the side it is written on, so the *other* side can grow a key
+while every check stays green — which is exactly the leak these helpers exist to
+prevent.
 
 ## Test Suite Catalog
 

@@ -5,6 +5,14 @@ require "open3"
 require "rbconfig"
 require_relative "../support/session_env"
 
+# The PRODUCTION counterpart, loaded for real so the drift guard below compares
+# against the LIVE list instead of a copy of it. Release::GateEnv is PURE and
+# Rails-free by construction (see its header) — bin/release.rb requires it exactly
+# this way. Under the full Rails suite Zeitwerk has already autoloaded it, and
+# require_relative'ing an autoloadable path a second time is the trap the Rails
+# guide warns about, so only load it when running this file bare.
+require_relative "../../app/models/release/gate_env" unless defined?(Release::GateEnv)
+
 # The neutralizer's own contract. Standalone (bare minitest/autorun) BY DESIGN —
 # it is the same load path the test/lib/*.rb spawner tests use, so this file
 # failing to load is itself the regression signal.
@@ -19,15 +27,40 @@ class SessionEnvTest < Minitest::Test
     out
   end
 
-  def test_neutralized_unsets_both_session_keys
-    assert_equal({ "CLAUDE_CODE_SESSION_ID" => nil, "CODEX_THREAD_ID" => nil }, SessionEnv.neutralized)
+  # DERIVED from SESSION_KEYS, not a literal copy of it. A hard-coded hash here
+  # would go red on the CORRECT lockstep edit (a key added to both lists) — and a
+  # guard that punishes the right fix just teaches the next agent to delete it.
+  def test_neutralized_unsets_every_session_key
+    assert_equal SessionEnv::SESSION_KEYS.to_h { |key| [key, nil] }, SessionEnv.neutralized
   end
 
+  # THE DRIFT GUARD. Assert against the LIVE production constant, never a literal
+  # copy of it: a literal only pins the SessionEnv side, so a key added to
+  # Release::GateEnv::SESSION_KEYS ALONE would keep this green while the new var
+  # leaked into every spawner test — restoring the exact bug class the neutralizer
+  # exists to kill. Comparing the two live lists fails on drift from EITHER side.
   def test_keys_match_the_production_gate_env_list
-    # Release::GateEnv::SESSION_KEYS is the production counterpart. It is not
-    # requirable here (Rails-side), so pin the list by VALUE and let this fail
-    # loudly if either side grows a key alone.
-    assert_equal %w[CLAUDE_CODE_SESSION_ID CODEX_THREAD_ID], SessionEnv::SESSION_KEYS
+    assert_equal Release::GateEnv::SESSION_KEYS, SessionEnv::SESSION_KEYS,
+                 "SessionEnv and Release::GateEnv session keys have DRIFTED — " \
+                 "they must stay in lockstep; add the key to both."
+  end
+
+  # The same contract asserted as BEHAVIOR, end-to-end through a real spawn: every
+  # key production scrubs must actually be absent from the child. List equality
+  # above could be satisfied by two agreeing-but-broken lists; this proves the
+  # scrub covers the production contract in the only place that matters — the
+  # child's ENV.
+  def test_every_production_session_key_is_absent_from_the_child
+    keys = Release::GateEnv::SESSION_KEYS
+    live = keys.to_h { |key| [key, "live-#{key.downcase}"] }
+    probe = "print #{keys.inspect}.map { |k| ENV[k].inspect }.join(',')"
+
+    with_env(live) do
+      out, status = Open3.capture2(SessionEnv.neutralized, RbConfig.ruby, "-e", probe)
+      assert status.success?, "probe failed"
+      assert_equal Array.new(keys.size, "nil").join(","), out,
+                   "a production session key leaked into the spawned child"
+    end
   end
 
   def test_overrides_merge_on_top_without_dropping_the_scrub
@@ -47,7 +80,9 @@ class SessionEnvTest < Minitest::Test
 
   def test_a_blank_session_override_normalizes_to_unset
     # "" means "no session" — but an exported "" is a lie to any presence check.
-    %w[CLAUDE_CODE_SESSION_ID CODEX_THREAD_ID].each do |key|
+    # Iterate SESSION_KEYS so a newly added key is COVERED here automatically; a
+    # literal list would silently leave it untested.
+    SessionEnv::SESSION_KEYS.each do |key|
       ["", "   ", nil].each do |blank|
         assert_nil SessionEnv.neutralized(key => blank)[key], "#{key}=#{blank.inspect} must UNSET"
       end
