@@ -125,7 +125,7 @@ bin/session-kickoff pokemon  # return to the Pokémon
 | McRitchie Studio | implicit active hub | 3000 | 3000-3099 | Bootstrap/docs anchor |
 | Turf Monster | active satellite | 3100 | 3100-3199 | Managed by `bin/ecosystem-build` |
 | Tax Studio | planned satellite | 3200 | 3200-3299 | Keep reserved unless the app is deliberately dropped |
-| 📇 Rolio | release-managed standalone with reserved satellite range | 3300 | 3300-3399 | QA/prod in release registries; satellite range protected until promoted |
+| 📇 Rolio | release-managed standalone with reserved satellite range | 3300 | 3300-3399 | Dormant since the 2026-07-03 audit; QA/prod in release registries; satellite range protected until promoted |
 | Chain Ops | planned satellite | 3400 | 3400-3499 | Solana environment control plane; v1 localnet utility |
 
 Do not reuse `3200-3499`. Rolio is already in `config/satellites.yml` with
@@ -133,6 +133,15 @@ Do not reuse `3200-3499`. Rolio is already in `config/satellites.yml` with
 managed rebuild or hub navigation. Rolio is also release-managed for Heroku
 deploys through `config/release_repos.yml` and `config/qa_environments.yml`;
 that release metadata does not make it an active Studio Engine satellite.
+Rolio has been **dormant** since the 2026-07-03 audit: its 44 board tasks are
+archived, dependabot config is removed, and its Heroku dynos (`rolio-prod`,
+`rolio-qa`) remain up pending the operator-reserved scale-down — Mr. McRitchie
+runs `heroku ps:scale web=0` on both apps himself. Nothing needs draining or
+backup first: neither app has Heroku add-ons or API keys in config vars, and
+the SQLite demo data reseeds on boot. To wake rolio up: scale web dynos back
+to 1, restore `.github/dependabot.yml` (revert rolio commit `a79e818`; the
+file content is blob `f0527e6`), and delete `test/dormancy_test.rb` (revert
+`d10b9ec`), which guards the config's absence.
 
 ## Lifecycle Status
 
