@@ -373,17 +373,15 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
     assert S.ship_gate_skip?(test_cmd: "bin/rails test", frozen_sha: "abc123", qa_gate: certified)
   end
 
-  test "[unit] a red auditor still cannot BLOCK a ship — it only re-runs the gate" do
-    # The contract is fail-OPEN, never fail-CLOSED. ship_gate_skip? is the ONLY
-    # thing the auditor touches, and a `false` there means "run the suite", not
-    # "abort the ship". The suite's own verdict remains the only thing that can
-    # stop a ship — an auditor can never veto one on its own.
-    audited = certified.merge("ci" => { "state" => "red", "checks" => ["test:system"] })
-
-    assert_not S.ship_gate_skip?(test_cmd: "bin/rails test", frozen_sha: "abc123", qa_gate: audited),
-               "the ONLY effect is that the gate runs — bin/release's test_gate then ships or aborts on the " \
-               "SUITE's verdict, never on the auditor's"
-  end
+  # NOTE — the other half of the fail-open contract ("a red auditor can never BLOCK
+  # a ship, it only makes the gate RUN") is not assertable here: ship_gate_skip? is
+  # a pure run/skip decision and has no way to express an abort. It is proven where
+  # it actually lives — test/lib/release_cli_test.rb's
+  # test_ship_test_gate_names_the_red_auditor_as_the_reason_it_is_re_running, which
+  # drives the REAL test_gate with a red-auditor record and asserts the suite RAN
+  # and the gate still PASSED. (A unit test named for that property here would only
+  # re-assert `skip? == false` under a grander name — a test whose name claims more
+  # than it checks is its own small lying gate.)
 
   test "[unit] ship_gate_skip? re-triggers on SHA drift (straggler / re-pin)" do
     assert_not S.ship_gate_skip?(test_cmd: "bin/rails test", frozen_sha: "abc123",

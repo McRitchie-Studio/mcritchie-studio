@@ -2573,16 +2573,22 @@ def test_gate(repo, frozen_sha: nil, qa_gate: nil)
   # Say WHY the batch certification is being ignored — a gate that silently
   # re-runs teaches the operator nothing, and this is the one signal that says
   # "G3 and CI disagreed about this exact commit".
+  #
+  # Name the SHA G3 ACTUALLY CERTIFIED (record["sha"]), not the frozen ship SHA:
+  # when the RC was re-pinned the two differ, and "G3 certified <frozen_sha>" would
+  # be a second false claim printed by the very code that exists to kill one.
   if Release::ShipSequence.auditor_red?(qa_gate)
-    say("  ⚠ #{repo}: G3 certified #{short(frozen_sha)} GREEN but GitHub CI called that SHA RED — the batch " \
-        "certification is NOT trusted. Re-running `#{cmd}` on the frozen SHA (fail-open).")
-    say("    (CI runs a lane no local gate does — the browser test:system suite. If this passes and CI still " \
-        "says red, THAT is what to investigate before shipping.)")
+    audited_sha = (qa_gate["sha"] || qa_gate[:sha]).to_s
+    say("  ⚠ #{repo}: G3 certified #{short(audited_sha)} GREEN but GitHub CI called that SHA RED — the batch " \
+        "certification is NOT trusted. Re-running `#{cmd}` on frozen #{short(frozen_sha)} (fail-open).")
+    say("    (CI runs a lane no local gate does — the browser test:system suite. This re-run CANNOT see that " \
+        "lane, so it is NOT a backstop for it: read the failing check before you ship.)")
   end
 
   if Release::ShipSequence.ship_gate_skip?(test_cmd: cmd, frozen_sha: frozen_sha, qa_gate: qa_gate)
     step("test gate: #{repo} self-gates — `#{cmd}` already CERTIFIED green on frozen #{short(frozen_sha)} " \
-         "by the G3 pre-QA gate this run; skip (a drifted SHA, or a G3 that never ran, re-triggers)")
+         "by the G3 pre-QA gate this run; skip (a drifted SHA, a G3 that never ran, or a RED CI auditor " \
+         "re-triggers)")
     gate_sop("ship_test_gate", "skipped — #{cmd} certified green @ #{short(frozen_sha)} at G3 (recorded pre-QA verdict)", true)
     return
   end

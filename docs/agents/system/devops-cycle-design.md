@@ -387,8 +387,11 @@ Clarifications:
   repo's highest LOCAL tier, never a browser run). Each tier runs once, at the
   step that owns it — no step re-runs a lower tier the previous step already
   proved green, and G4 **self-gates** (skips, with a visible skip SOP) when G3
-  certified the exact frozen SHA with the same command this run
-  (`Release::ShipSequence.ship_gate_skip?`). Encoded as
+  certified the exact frozen SHA with the same command this run **and its CI
+  auditor did not go red** — a G3 green that GitHub CI CONTRADICTS for that same
+  SHA fails open and re-runs the suite, like a missing/red/drifted record
+  (`Release::ShipSequence.ship_gate_skip?`; fail-open only — an auditor can cause
+  more checking, never block a ship, and no-data never arms it). Encoded as
   `Release::STEP_TEST_TIERS` (ownership is disjoint by construction — a tier maps
   to exactly one step); ship runs Avi's frozen-SHA gate **before**
   ship authorization (`bin/release ship` → `avi_ship_gate`, then `confirm`, unless

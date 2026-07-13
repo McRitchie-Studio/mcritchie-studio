@@ -95,9 +95,10 @@ autoloads over minutes against a tree other sessions can `git checkout` is not a
 check.
 
 **Operator note — ship can now take LONGER than it used to.** G4 fails open: after
-a G3 that was skipped, red, or never recorded, the ship gate **runs the full
-suite** on the frozen SHA where it previously self-skipped. That is the point (an
-uncertified SHA must not reach production unchecked), but budget for it.
+a G3 that was skipped, red, never recorded, **or contradicted by its CI auditor**,
+the ship gate **runs the full suite** on the frozen SHA where it previously
+self-skipped. That is the point (an uncertified SHA must not reach production
+unchecked), but budget for it.
 
 ## Overriding a ship gate you believe is a false negative
 
