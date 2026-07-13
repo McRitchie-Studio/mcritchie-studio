@@ -41,7 +41,11 @@
 #   FULL_SUITE_SKIP_TEST_DB_RESET set to 1 only for non-Rails harness tests
 #   FULL_SUITE_TEST_CMD     override the test lane command   (default: bin/rails test)
 #   FULL_SUITE_RUBOCOP_CMD  override the rubocop lane command (default: bin/rubocop)
-#   FULL_SUITE_ROOT         repo dir to run + fingerprint in  (default: this repo)
+#   FULL_SUITE_ROOT         repo dir to run + fingerprint in (default: the cwd's
+#                           git toplevel, else this repo); an explicit value
+#                           bypasses the task-root guard (a deliberate root)
+#   FULL_SUITE_TASK_BIN     board CLI (default: bin/task; tests stub it)
+#   FULL_SUITE_GATE_BIN     gate CLI  (default: bin/gate; tests stub it)
 #   FULL_SUITE_AGENT_ACTIVITY  override the narration CLI path (default: bin/agent-activity);
 #                              tests point it at a stub that logs the emit argv
 #
@@ -54,13 +58,14 @@ require_relative "lib/full_suite_gate"
 require_relative "lib/repo_root"
 require_relative "lib/session_identity"
 require_relative "lib/cert_emission"
+require_relative "lib/cert_root_guard"
 
 # ROOT = the gate script's OWN repo (the hub). CONFIG (lib/) is required relative
 # to __dir__, and the board is reached via TASK_BIN — both stay anchored here. The
 # CODE we run + fingerprint, though, roots at the agent's worktree (below).
 ROOT = File.expand_path("..", __dir__)
-TASK_BIN = File.expand_path("task", __dir__)
-GATE_BIN = File.expand_path("gate", __dir__)
+TASK_BIN = ENV.fetch("FULL_SUITE_TASK_BIN", File.expand_path("task", __dir__))
+GATE_BIN = ENV.fetch("FULL_SUITE_GATE_BIN", File.expand_path("gate", __dir__))
 
 # The narration CLI — the SAME emit seam bin/release.rb's run_test_scope
 # self-reports through (its agent_action shells this exact `action` verb). We fire
@@ -149,6 +154,18 @@ if options[:install_hook]
 elsif options[:uninstall_hook]
   uninstall_pre_push_hook(root)
   exit 0
+end
+
+# --- task-root guard -----------------------------------------------------------
+# The evidence stamps `root`'s fingerprint against the TASK — so when a slug is
+# given and the root was resolved IMPLICITLY (cwd, no FULL_SUITE_ROOT), the root
+# must BE the task's tree (its branch, or its .worktrees/<worktree_slug> dir).
+# Run from the wrong checkout — the hub primary on main, say — this used to
+# green-certify a tree the task never touched (fail-GREEN, live 2026-07-12).
+# Refuse BEFORE any lane runs or gate/checkpoint write. bin/lib/cert_root_guard.rb.
+if slug && ENV["FULL_SUITE_ROOT"].to_s.strip.empty?
+  wrong_root = CertRootGuard.refusal(task_bin: TASK_BIN, slug: slug, root: root)
+  abort "full-suite-check: #{wrong_root}" if wrong_root
 end
 
 test_cmd = ENV.fetch("FULL_SUITE_TEST_CMD", "bin/rails test")

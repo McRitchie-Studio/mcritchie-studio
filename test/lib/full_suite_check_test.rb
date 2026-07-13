@@ -8,6 +8,7 @@
 # Also picked up by the normal `bin/rails test` sweep.
 
 require "minitest/autorun"
+require "json"
 require "tmpdir"
 require "fileutils"
 require "rbconfig"
@@ -357,6 +358,76 @@ class FullSuiteCheckTest < Minitest::Test
       assert_equal "fail", by_slug["full_suite_rubocop"], "the red lane self-reports a fail verdict"
       assert_equal %w[full_suite_db_reset full_suite_test full_suite_rubocop],
                    emits.map { |e| e["event-slug"] }, "lanes self-report in run order"
+    end
+  end
+
+  # --- [integration] task-root guard: the cert must root at the TASK's tree ------
+  # Regression for the 2026-07-12 fail-GREEN: run from the hub primary (on main),
+  # the cert rooted at the cwd's git toplevel and green-certified MAIN's tree for
+  # an unrelated task. With a task slug and an IMPLICIT root (cwd, no
+  # FULL_SUITE_ROOT), the cert must verify the root IS the task's tree — its
+  # checked-out branch is the task's branch, or it is the task's
+  # .worktrees/<worktree_slug> dir — and REFUSE otherwise (bin/lib/cert_root_guard.rb).
+
+  GUARD_JSON = JSON.generate(
+    "metadata" => { "devops" => {
+      "branch" => "feat/task-x", "worktree_slug" => "task-x", "checks_run" => []
+    } }
+  )
+
+  # A stub board/gate CLI: appends "<MARKER>\t<argv…>" to STUB_LOG; `show` prints
+  # TASK_SHOW_JSON (serving both the guard's read and the read-merge-write), exits 0.
+  def write_cli_stub(dir, name, marker)
+    stub = File.join(dir, name)
+    File.write(stub, <<~RUBY)
+      #!#{RbConfig.ruby}
+      File.open(ENV.fetch("STUB_LOG"), "a") { |f| f.puts(["#{marker}", *ARGV].join("\\t")) }
+      puts ENV["TASK_SHOW_JSON"] if ARGV.first == "show" && ENV["TASK_SHOW_JSON"]
+    RUBY
+    FileUtils.chmod("+x", stub)
+    stub
+  end
+
+  # Run the cert with an IMPLICIT root — cwd = `dir`, no FULL_SUITE_ROOT — and the
+  # board/gate CLIs stubbed via the FULL_SUITE_*_BIN seams. stderr merges into
+  # stdout so the refusal message is assertable. Returns [out, exitcode, log_lines].
+  def run_check_implicit_root(dir, args)
+    log = File.join(dir, "stub.log")
+    env = SessionEnv.neutralized(
+      "FULL_SUITE_TEST_DB_RESET_CMD" => "true",
+      "FULL_SUITE_TEST_CMD" => "true",
+      "FULL_SUITE_RUBOCOP_CMD" => "true",
+      "FULL_SUITE_TASK_BIN" => write_cli_stub(dir, "task-stub", "TASK"),
+      "FULL_SUITE_GATE_BIN" => write_cli_stub(dir, "gate-stub", "GATE"),
+      "TASK_SHOW_JSON" => GUARD_JSON,
+      "STUB_LOG" => log
+    )
+    out = IO.popen(env, "#{BIN} #{args} 2>&1", chdir: dir, &:read)
+    code = $?.exitstatus
+    lines = File.exist?(log) ? File.readlines(log, chomp: true).map { |l| l.split("\t") } : []
+    [out, code, lines]
+  end
+
+  def test_wrong_root_cert_is_refused_before_any_lane_runs
+    with_repo do |dir|
+      # cwd = a tree on its default branch (main/master) — NOT task-x's tree.
+      out, code, lines = run_check_implicit_root(dir, "task-x")
+      assert_equal 1, code, "a wrong-root cert must refuse, not green-certify: #{out}"
+      assert_match(/not task-x's tree/, out, "the refusal names the task")
+      assert_match(%r{feat/task-x}, out, "the refusal names the expected branch")
+      refute_match(/\[full-suite@/, out, "no evidence for a tree the task never touched")
+      refute(lines.any? { |l| l[0] == "GATE" }, "no G1 attempt opens for a refused run: #{lines.inspect}")
+      refute(lines.any? { |l| l[0] == "TASK" && l[1] == "update" }, "nothing recorded for a refused run")
+    end
+  end
+
+  def test_task_branch_checkout_certifies_without_a_root_override
+    with_repo do |dir|
+      assert system("git", "-C", dir, "checkout", "-qb", "feat/task-x", out: File::NULL, err: File::NULL)
+      out, code, lines = run_check_implicit_root(dir, "task-x")
+      assert_equal 0, code, "the task's own tree certifies from cwd with no override: #{out}"
+      assert_match(/\[full-suite@/, out)
+      assert(lines.any? { |l| l[0] == "TASK" && l[1] == "update" }, "evidence recorded: #{lines.inspect}")
     end
   end
 end

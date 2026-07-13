@@ -114,7 +114,12 @@ class FastCheckTest < Minitest::Test
   # Run bin/fast-check against `dir` with every seam stubbed. Returns
   # [stdout, exitcode, log_lines] where log_lines is the parsed stub log
   # ([[marker, argv...], ...] in call order).
-  def run_check(dir, args: ["--print"], fail_token: "", extra_env: {})
+  #
+  # implicit_root: true drops the FAST_CHECK_ROOT override and runs the script
+  # WITH `dir` as its cwd instead — the root resolves from the cwd git toplevel,
+  # exercising the task-root guard (which an explicit override bypasses). stderr
+  # is merged into stdout there so the refusal message is assertable.
+  def run_check(dir, args: ["--print"], fail_token: "", extra_env: {}, implicit_root: false)
     log = File.join(dir, "stub.log")
     lane = write_stub(dir, "lane-stub", "LANE")
     gate = write_stub(dir, "gate-stub", "GATE")
@@ -133,7 +138,14 @@ class FastCheckTest < Minitest::Test
       "STUB_LOG" => log,
       "FAIL_TOKEN" => fail_token
     }.merge(extra_env))
-    out = IO.popen(env, "#{BIN.shellescape} #{args.map(&:shellescape).join(' ')} 2>/dev/null", &:read)
+    cmd = "#{BIN.shellescape} #{args.map(&:shellescape).join(' ')}"
+    out =
+      if implicit_root
+        env.delete("FAST_CHECK_ROOT")
+        IO.popen(env, "#{cmd} 2>&1", chdir: dir, &:read)
+      else
+        IO.popen(env, "#{cmd} 2>/dev/null", &:read)
+      end
     code = $?.exitstatus
     lines = File.exist?(log) ? File.readlines(log, chomp: true).map { |l| l.split("\t") } : []
     [out, code, lines]
@@ -403,6 +415,46 @@ class FastCheckTest < Minitest::Test
       assert_equal 1, code, out
       refute(lines.any? { |l| l[0] == "TASK" && l[1] == "update" },
              "a blind --checks write would wipe tier tags — abort instead")
+    end
+  end
+
+  # --- [integration] task-root guard: the cert must root at the TASK's tree ---------
+  # Regression for the 2026-07-12 fail-GREEN: run from the hub primary (on main),
+  # the cert rooted at the cwd's git toplevel and green-certified MAIN's tree for
+  # an unrelated task. With a task slug and an IMPLICIT root (cwd, no
+  # FAST_CHECK_ROOT), the cert must verify the root IS the task's tree —
+  # its checked-out branch is the task's branch, or it is the task's
+  # .worktrees/<worktree_slug> dir — and REFUSE otherwise (bin/lib/cert_root_guard.rb).
+
+  GUARD_JSON = JSON.generate(
+    "metadata" => { "devops" => {
+      "branch" => "feat/task-x", "worktree_slug" => "task-x", "checks_run" => []
+    } }
+  )
+
+  def test_wrong_root_cert_is_refused_before_any_lane_runs
+    with_repo do |dir, _|
+      # cwd = a tree on its default branch (main/master) — NOT task-x's tree.
+      out, code, lines = run_check(dir, args: ["task-x"], implicit_root: true,
+                                   extra_env: { "TASK_SHOW_JSON" => GUARD_JSON })
+      assert_equal 1, code, "a wrong-root cert must refuse, not green-certify: #{out}"
+      assert_match(/not task-x's tree/, out, "the refusal names the task")
+      assert_match(%r{feat/task-x}, out, "the refusal names the expected branch")
+      refute_match(/\[fast-cert@/, out, "no evidence for a tree the task never touched")
+      assert_empty lane_calls(lines, "TEST"), "refusal fires BEFORE any lane runs"
+      refute(lines.any? { |l| l[0] == "GATE" }, "no G1 attempt opens for a refused run: #{lines.inspect}")
+      refute(lines.any? { |l| l[0] == "TASK" && l[1] == "update" }, "nothing recorded for a refused run")
+    end
+  end
+
+  def test_task_branch_checkout_certifies_without_a_root_override
+    with_repo do |dir, _|
+      assert system("git", "-C", dir, "checkout", "-qb", "feat/task-x", out: File::NULL, err: File::NULL)
+      out, code, lines = run_check(dir, args: ["task-x"], implicit_root: true,
+                                   extra_env: { "TASK_SHOW_JSON" => GUARD_JSON })
+      assert_equal 0, code, "the task's own tree certifies from cwd with no override: #{out}"
+      assert_match(/\[fast-cert@/, out)
+      assert(lines.any? { |l| l[0] == "TASK" && l[1] == "update" }, "evidence recorded: #{lines.inspect}")
     end
   end
 end

@@ -28,7 +28,11 @@
 #   rubocop: the changed files rubocop can lint (never the whole repo).
 #
 # Lanes run from the repo root (the agent's worktree via RepoRoot, so a satellite
-# task certifies the satellite):
+# task certifies the satellite). When a task slug is given and the root resolved
+# implicitly from the cwd, the task-root guard (bin/lib/cert_root_guard.rb) first
+# verifies that root IS the task's tree — its branch or its .worktrees dir — and
+# REFUSES otherwise, so a run from the wrong checkout can't green-certify an
+# unrelated tree. An explicit FAST_CHECK_ROOT bypasses the guard (deliberate root):
 #   test-prepare    : bin/rails db:test:prepare test:prepare  (abort on red — no
 #                     polluted cert). BOTH tasks, in one boot: the test DB, and Rails'
 #                     test:prepare hook, which is what builds the gitignored
@@ -92,6 +96,7 @@ require_relative "lib/full_suite_gate"
 require_relative "lib/repo_root"
 require_relative "lib/fast_cert"
 require_relative "lib/cert_emission"
+require_relative "lib/cert_root_guard"
 
 # ROOT = this script's OWN repo (the hub): CONFIG (the spine) and the board CLIs
 # anchor here. The CODE we run + fingerprint roots at the agent's worktree.
@@ -136,6 +141,18 @@ if options[:list]
   spine.each { |t| puts "spine   #{t}" }
   lintable.each { |f| puts "lint    #{f}" }
   exit 0
+end
+
+# --- task-root guard -----------------------------------------------------------
+# The evidence stamps `root`'s fingerprint against the TASK — so when a slug is
+# given and the root was resolved IMPLICITLY (cwd, no FAST_CHECK_ROOT), the root
+# must BE the task's tree (its branch, or its .worktrees/<worktree_slug> dir).
+# Run from the wrong checkout — the hub primary on main, say — this used to
+# green-certify a tree the task never touched (fail-GREEN, live 2026-07-12).
+# Refuse BEFORE any lane runs or gate/checkpoint write. bin/lib/cert_root_guard.rb.
+if slug && ENV["FAST_CHECK_ROOT"].to_s.strip.empty?
+  wrong_root = CertRootGuard.refusal(task_bin: TASK_BIN, slug: slug, root: root)
+  abort "fast-check: #{wrong_root}" if wrong_root
 end
 
 # --- lane plumbing (mirrors bin/full-suite-check) ------------------------------
