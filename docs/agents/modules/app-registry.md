@@ -135,7 +135,13 @@ deploys through `config/release_repos.yml` and `config/qa_environments.yml`;
 that release metadata does not make it an active Studio Engine satellite.
 Rolio has been **dormant** since the 2026-07-03 audit: its 44 board tasks are
 archived, dependabot config is removed, and its Heroku dynos (`rolio-prod`,
-`rolio-qa`) remain up pending Mr. McRitchie's own shutdown.
+`rolio-qa`) remain up pending the operator-reserved scale-down — Mr. McRitchie
+runs `heroku ps:scale web=0` on both apps himself. Nothing needs draining or
+backup first: neither app has Heroku add-ons or API keys in config vars, and
+the SQLite demo data reseeds on boot. To wake rolio up: scale web dynos back
+to 1, restore `.github/dependabot.yml` (revert rolio commit `a79e818`; the
+file content is blob `f0527e6`), and delete `test/dormancy_test.rb` (revert
+`d10b9ec`), which guards the config's absence.
 
 ## Lifecycle Status
 
