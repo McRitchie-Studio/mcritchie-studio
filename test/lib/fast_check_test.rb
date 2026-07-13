@@ -46,11 +46,16 @@ class FastCheckTest < Minitest::Test
     refute_includes merged, "[fast-cert@oldfp] stale fast cert"
   end
 
-  def test_default_merge_replaces_fast_cert_evidence_too
-    # bin/full-suite-check's default merge: a fresh FULL cert supersedes any prior
-    # fast cert (EVIDENCE_LANES is the default replace set).
+  def test_default_merge_supersedes_only_the_lanes_supplied
+    # The write rule (lib/cert_evidence.rb): a writer supersedes exactly the lanes
+    # it SUPPLIES evidence for. bin/full-suite-check stamps full-suite + rubocop,
+    # so those lanes are replaced and a prior fast-cert line is carried over — it
+    # used to be deleted, but the board now preserves any lane a write does not
+    # address (that is what stops `--checks` from wiping a cert), so deleting it
+    # here would only make the CLI disagree with what the board stores. The lingering
+    # line is inert: `ok` is graded off LANES (full-suite + rubocop) alone.
     merged = FullSuiteGate.merge_evidence(["[fast-cert@oldfp] x"], ["[full-suite@newfp] y"])
-    refute_includes merged, "[fast-cert@oldfp] x"
+    assert_includes merged, "[fast-cert@oldfp] x"
     assert_includes merged, "[full-suite@newfp] y"
   end
 

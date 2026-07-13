@@ -283,11 +283,13 @@ if options[:print] || slug.nil?
   exit 0
 end
 
-# Record the green evidence on the task. `bin/task update --checks` REPLACES the
-# whole checks_run list, so we first read the existing lines and MERGE — keeping
-# the agent's tier tags / bypass records and dropping only PRIOR full-suite/rubocop
-# evidence (so re-runs replace stale lines, never accumulate). If the current list
-# can't be read, ABORT rather than risk wiping checks_run.
+# Record the green evidence on the task. `--checks` replaces the AUTHOR's lines
+# (tier tags, bypass records), so we read the existing list and MERGE — keeping
+# those and dropping only PRIOR full-suite/rubocop evidence (a re-run supersedes
+# its own lanes rather than accumulating stale ones). The board would carry the
+# author's cert evidence forward either way (Task#preserve_cert_evidence), but not
+# the tier tags — they are ours to preserve. If the list can't be read, ABORT
+# rather than write a checks_run that drops them.
 existing = CertEmission.fetch_checks(TASK_BIN, slug)
 if existing.nil?
   warn "full-suite-check: ran green but couldn't read #{slug.inspect}'s checks_run to merge evidence (bin/task " \

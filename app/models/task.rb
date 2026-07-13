@@ -256,6 +256,11 @@ class Task < ApplicationRecord
   before_save :confirm_operator_approval_after_build_exit, if: -> { will_save_change_to_stage? }
   before_save :stamp_operator_approval_request
   before_save :stamp_operator_approval_approved
+  # The cert evidence in devops.checks_run is MACHINE-owned and survives an
+  # author's checks update. Every writer of checks_run — bin/task's PATCH, the
+  # board UI form, a raw API call, the console — lands here, so the guard is on
+  # the model rather than in any one caller. See #preserve_cert_evidence.
+  before_save :preserve_cert_evidence
   # One TaskEvent per save that lands a stage: the genesis on create (the default
   # "designed" stage isn't a dirty change, so this is guard-free) and one per real
   # transition on update.
@@ -1481,6 +1486,40 @@ class Task < ApplicationRecord
     merged = metadata.deep_dup
     approval = (merged["devops"] ||= {})
     approval["approval_approved_at"] ||= Time.current.iso8601
+    self.metadata = merged
+  end
+
+  # devops.checks_run carries TWO namespaces. The AUTHOR owns the tier tags
+  # ("[unit] bin/rails test ..."), and a checks update REPLACES those — that is the
+  # documented contract. The CERT WRITERS (bin/fast-check, bin/full-suite-check)
+  # own the fingerprint-bound evidence ("[full-suite@<tree-hash>] ..."), which
+  # bin/dor-check reads to decide whether this exact code is certified. A write
+  # may supersede an evidence LANE only by SUPPLYING evidence for it; every lane
+  # the incoming list does not address is carried forward.
+  #
+  # Regression (2026-07-12, hit twice in one session): `bin/task update --checks`
+  # replaced the whole array, so an agent recording its tier-tagged test plan
+  # AFTER certifying silently destroyed its own cert — and dor-check reported
+  # "full-suite: MISSING (never certified for this exact code)" on code it had just
+  # certified green. A gate that lies teaches agents to route around it, and the
+  # fastest way "around" was to hand-write an evidence line, i.e. forge the cert.
+  # This makes the destruction impossible instead of documenting an ordering
+  # workaround. The write rule lives in lib/cert_evidence.rb (shared with the CLI).
+  def preserve_cert_evidence
+    return unless will_save_change_to_metadata?
+
+    prior = Array((metadata_was || {}).dig("devops", "checks_run"))
+    return if prior.empty?
+    # An explicit devops teardown (the whole hash removed) is left alone — this
+    # guard defends the evidence namespace, not the existence of devops.
+    return unless metadata["devops"].is_a?(Hash)
+
+    incoming = Array(metadata.dig("devops", "checks_run"))
+    preserved = CertEvidence.preserve(prior: prior, incoming: incoming)
+    return if preserved == incoming
+
+    merged = metadata.deep_dup
+    merged["devops"]["checks_run"] = preserved
     self.metadata = merged
   end
 

@@ -40,7 +40,11 @@
 #   ( --po-size/--dev-size/--pm-size set the size trio: small|medium|large|xl.
 #     Avi seeds --po-size at creation (the default sizer, not a hard gate);
 #     actual_size is auto-derived from measured usage at ship. )
-#   ( --checks records devops.checks_run; tag each line by tier, e.g. "[unit] ..." )
+#   ( --checks records devops.checks_run; tag each line by tier, e.g. "[unit] ...".
+#     It REPLACES your tier tags (pass every one you want kept) but can NOT drop the
+#     cert evidence bin/fast-check / bin/full-suite-check stamp — "[full-suite@<fp>]"
+#     lines are machine-owned and carried forward. Record checks before or after you
+#     certify; both orders are safe. See lib/cert_evidence.rb. )
 #   ( --post-deploy-cmd: the release pipeline runs it on the deployed app after
 #     boot — QA on `bin/release prepare`, prod on `ship`. Must be idempotent. )
 #   bin/task update <slug> [same flags as create]   # merges into existing devops
@@ -86,6 +90,7 @@ require "shellwords"
 require_relative "../lib/agent_session_usage"
 require_relative "../lib/task_usage_baseline"
 require_relative "../lib/claim_lease"
+require_relative "../lib/cert_evidence"
 require_relative "../lib/stale_check"
 require_relative "../lib/feature_marker"
 require_relative "lib/task_board"
@@ -354,9 +359,24 @@ def parse_flags(argv)
 end
 
 def build_devops(base, scalars, lists)
-  devops = (base || {}).dup
+  base = (base || {})
+  devops = base.dup
   scalars.each { |k, v| devops[k] = v }
   lists.each { |k, v| devops[k] = v unless v.empty? }
+  # checks_run is TWO namespaces in one list. The author owns the tier tags
+  # ("[unit] ...") and --checks REPLACES those, as documented. The cert writers
+  # (bin/fast-check, bin/full-suite-check) own the fingerprint-bound evidence
+  # ("[full-suite@<fp>] ..."), and --checks must NOT be able to replace THAT: an
+  # agent recording its test plan after certifying used to wipe its own cert, and
+  # bin/dor-check then called freshly certified code "full-suite: MISSING" (a
+  # false negative in the G1 gate whose only visible remedy was another suite
+  # run). Carry every evidence lane the caller did not itself supply. The board
+  # enforces the same rule (Task#preserve_cert_evidence) for every other writer;
+  # doing it here too means an agent is protected the moment it pulls this branch,
+  # and the PATCH body says what the caller actually meant. See lib/cert_evidence.rb.
+  if devops.key?("checks_run")
+    devops["checks_run"] = CertEvidence.preserve(prior: base["checks_run"], incoming: devops["checks_run"])
+  end
   devops
 end
 

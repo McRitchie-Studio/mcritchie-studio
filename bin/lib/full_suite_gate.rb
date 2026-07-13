@@ -41,20 +41,28 @@
 # defended against (honor system — "Trust over guardrails"); the point is to make
 # the honest path one command and to CATCH the easy mistake (touched-files subset
 # + a stale tag), which a content fingerprint does deterministically.
+#
+# The evidence LINE FORMAT and the write rule that keeps an author's `--checks`
+# update from wiping a cert live in lib/cert_evidence.rb — shared, because the
+# board (app/models/task.rb) enforces the same rule server-side and Rails can
+# autoload lib/ but not bin/lib/. This module owns the parts that need git and a
+# working tree: the fingerprint, the freshness grading, the bypass record.
 require "tmpdir"
+require_relative "../../lib/cert_evidence"
 
 module FullSuiteGate
-  TEST_LANE = "full-suite"
-  RUBOCOP_LANE = "rubocop"
-  FAST_LANE = "fast-cert"
+  TEST_LANE = CertEvidence::TEST_LANE
+  RUBOCOP_LANE = CertEvidence::RUBOCOP_LANE
+  FAST_LANE = CertEvidence::FAST_LANE
   BYPASS_TAG = "full-suite-bypass"
   # The FULL-cert lanes — what evaluate's `ok` means (full suite + full rubocop
   # both fresh). The fast lane is deliberately NOT part of `ok`: fast-cert
   # evidence only satisfies the merge gate when dor-check ALSO sees a green
   # GitHub CI, and that pairing is dor-check's call, not this module's.
-  LANES = [TEST_LANE, RUBOCOP_LANE].freeze
+  LANES = CertEvidence::LANES
   # Every fingerprint-bound evidence lane (for merge/replace + grading).
-  EVIDENCE_LANES = (LANES + [FAST_LANE]).freeze
+  EVIDENCE_LANES = CertEvidence::EVIDENCE_LANES
+  EVIDENCE_RE = CertEvidence::EVIDENCE_RE
 
   module_function
 
@@ -98,31 +106,34 @@ module FullSuiteGate
     tree.empty? ? nil : tree
   end
 
+  # --- the evidence-namespace contract (lib/cert_evidence.rb) ---------------
+  # Delegated, not re-implemented: the board enforces the same rule on every
+  # write, so the format has exactly one definition.
+
   # The checks_run line a passing lane records, embedding the fingerprint.
   def evidence_line(lane, fingerprint, detail)
-    "[#{lane}@#{fingerprint}] #{detail}"
+    CertEvidence.evidence_line(lane, fingerprint, detail)
   end
 
   # Pattern for a recorded evidence line of the given lanes (e.g.
   # "[full-suite@..]" / "[rubocop@..]" / "[fast-cert@..]"), at the start of a
   # checks_run line.
   def evidence_re(lanes)
-    /\A\s*\[\s*(?:#{lanes.map { |l| Regexp.escape(l) }.join("|")})\s*@/i
+    CertEvidence.evidence_re(lanes)
   end
 
-  EVIDENCE_RE = evidence_re(EVIDENCE_LANES)
-
-  # Merge fresh evidence lines into an existing checks_run, REPLACING any prior
-  # evidence for `lanes` (so re-runs don't accumulate stale lines) while
-  # PRESERVING tier tags ("[unit] ..."), bypass records, and everything else. The
-  # writers need this because `bin/task update --checks` REPLACES the whole list —
-  # a naive write would wipe the agent's tier tags. Defaults to replacing EVERY
-  # evidence lane (bin/full-suite-check: a fresh full cert supersedes any prior
-  # fast cert too); bin/fast-check passes lanes: [FAST_LANE] so it never drops
-  # still-valid full-suite/rubocop evidence.
-  def merge_evidence(existing, fresh_lines, lanes: EVIDENCE_LANES)
-    re = evidence_re(lanes)
-    Array(existing).reject { |line| line.to_s.match?(re) } + Array(fresh_lines)
+  # Merge fresh evidence lines into an existing checks_run, REPLACING prior
+  # evidence for the lanes being stamped (so re-runs supersede rather than
+  # accumulate) while PRESERVING tier tags ("[unit] ..."), bypass records, and
+  # every OTHER lane's evidence. Defaults to exactly the lanes `fresh_lines`
+  # carries — you supersede what you supply, which is the same rule the board
+  # applies to every writer (CertEvidence.preserve). A full cert therefore leaves
+  # a prior fast-cert line in place rather than deleting it: it is inert once the
+  # full lanes are fresh (evaluate's `ok` reads LANES only), and letting a writer
+  # delete a lane it did not run is precisely the destruction this gate now
+  # refuses to allow.
+  def merge_evidence(existing, fresh_lines, lanes: nil)
+    CertEvidence.merge_evidence(existing, fresh_lines, lanes: lanes)
   end
 
   # Freshness of one lane against `fingerprint`: :fresh (a tag matches the current
@@ -142,8 +153,7 @@ module FullSuiteGate
   # @<fp> is what distinguishes this from a plain "[lane]" tier tag, so it never
   # collides with tier_satisfied?.
   def extract_fingerprint(line, lane)
-    m = line.to_s.match(/\A\s*\[\s*#{Regexp.escape(lane)}\s*@\s*([0-9a-f]{7,64})\s*[\]:]/i)
-    m && m[1].downcase
+    CertEvidence.extract_fingerprint(line, lane)
   end
 
   # A recorded, sanctioned bypass: "[full-suite-bypass] <reason>" with a non-empty
