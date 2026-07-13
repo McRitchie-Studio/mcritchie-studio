@@ -308,8 +308,20 @@ def pr_changed_files
   pr = @pr_url.to_s.strip
   return nil if pr.empty?
 
+  # The REST files endpoint, NOT `gh pr view --json files` — that surface exposes
+  # only {additions, changeType, deletions, path}, so a RENAME appears as its
+  # destination alone and a code→doc rename would read as prose (the bug Shannon
+  # caught). REST carries `status` + `previous_filename`, so we can classify BOTH
+  # sides. A renamed entry with no previous_filename shouldn't happen per the API
+  # contract — if it ever does, the sentinel below has no prose extension, so it
+  # classifies as behavioral and the diff GATES. Fail closed by construction.
+  owner, repo, number = pr.match(%r{github\.com/([^/]+)/([^/]+)/pull/(\d+)})&.captures
+  return nil unless owner
+
   raw = IO.popen(
-    ["gh", "pr", "view", pr, "--json", "files", "--jq", ".files[].path"], err: File::NULL, &:read
+    ["gh", "api", "--paginate", "repos/#{owner}/#{repo}/pulls/#{number}/files", "--jq",
+     '.[] | .filename, (if .status == "renamed" then (.previous_filename // "unknown-rename-source") else empty end)'],
+    err: File::NULL, &:read
   )
   return nil unless $?.success?
 
@@ -333,20 +345,26 @@ def compute_git_changed_files
   base = diff_base(root)
   files = []
 
+  # --name-status -M (NOT --name-only): a rename must surface BOTH paths, or a
+  # `bin/deploy.sh → docs/deploy-notes.md` rename reads as one prose file and
+  # takes an exemption while deleting an executable. See CodeDiff.paths_from_name_status.
   worktree_ok = true
   [
-    %w[diff --cached --name-only],
-    %w[diff --name-only],
-    %w[ls-files --others --exclude-standard]
+    %w[diff --cached --name-status -M],
+    %w[diff --name-status -M]
   ].each do |args|
     out = IO.popen(["git", "-C", root, *args], err: File::NULL, &:read)
-    $?.success? ? files.concat(out.to_s.split("\n")) : (worktree_ok = false)
+    $?.success? ? files.concat(CodeDiff.paths_from_name_status(out)) : (worktree_ok = false)
   end
+
+  # Untracked files have no status line — they are always plain adds.
+  untracked = IO.popen(["git", "-C", root, "ls-files", "--others", "--exclude-standard"], err: File::NULL, &:read)
+  $?.success? ? files.concat(untracked.to_s.split("\n")) : (worktree_ok = false)
 
   # Committed view: catches a post-commit run (change already in HEAD). The base
   # may be unfetched on a release-cut branch — best-effort, never fatal.
-  committed = IO.popen(["git", "-C", root, "diff", "--name-only", "#{base}...HEAD"], err: File::NULL, &:read)
-  files.concat(committed.to_s.split("\n")) if $?.success?
+  committed = IO.popen(["git", "-C", root, "diff", "--name-status", "-M", "#{base}...HEAD"], err: File::NULL, &:read)
+  files.concat(CodeDiff.paths_from_name_status(committed)) if $?.success?
 
   return nil unless worktree_ok
 

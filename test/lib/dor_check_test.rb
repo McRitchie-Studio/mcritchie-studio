@@ -537,6 +537,81 @@ class DorCheckTest < Minitest::Test
     assert_equal 0, code, out
   end
 
+  # --- renames: a path list shows ONE side of a two-sided change ---------------
+  # `git diff --name-only` collapses `R100 bin/deploy.sh docs/deploy-notes.md` to
+  # the DESTINATION, and `gh pr view --json files` exposes only {..., path}. So a
+  # commit renaming an EXECUTABLE into a .md read as "1 file, none behavioral" and
+  # took a full exemption — while DELETING a script from bin/. The behavior change
+  # is the removal, and it is invisible in the new path. Both sides now classify.
+
+  # A repo with a staged rename old -> new (real git, no injection).
+  def with_renamed_file(from, to)
+    Dir.mktmpdir do |dir|
+      git = ->(args) { assert(system("git -C #{dir} #{args} >/dev/null 2>&1"), "git #{args}") }
+      FileUtils.mkdir_p(File.dirname(File.join(dir, from)))
+      File.write(File.join(dir, from), "contents\n")
+      git.call("init -q")
+      git.call("config user.email tester@example.com")
+      git.call("config user.name tester")
+      git.call("add -A")
+      git.call("commit -q -m base")
+      FileUtils.mkdir_p(File.dirname(File.join(dir, to)))
+      git.call("mv #{from} #{to}")
+      yield dir
+    end
+  end
+
+  def test_code_to_doc_rename_is_refused
+    # THE repro: renaming a script into prose must NOT buy an exemption.
+    with_renamed_file("bin/deploy.sh", "docs/deploy-notes.md") do |dir|
+      out, code = check_against(dir, "kind" => "chore")
+      assert_equal 1, code, out
+      assert_match(/ships a code diff/, out)
+      assert_match(%r{bin/deploy\.sh}, out) # the OLD path is what proves it
+    end
+  end
+
+  def test_doc_to_code_rename_is_refused
+    # The other direction always gated (its new path is behavioral) — lock it in.
+    with_renamed_file("docs/x.md", "bin/x.sh") do |dir|
+      out, code = check_against(dir, "kind" => "chore")
+      assert_equal 1, code, out
+      assert_match(/ships a code diff/, out)
+    end
+  end
+
+  def test_prose_to_prose_rename_still_skips
+    # Don't over-correct: a genuine docs reshuffle is still doc-only.
+    with_renamed_file("docs/old-sop.md", "docs/new-sop.md") do |dir|
+      out, code = check_against(dir, "kind" => "chore")
+      assert_equal 0, code, out
+      assert_match(/doc-only/, out)
+    end
+  end
+
+  def test_pr_source_classifies_both_sides_of_a_rename
+    # The :pr path resolves via the REST files endpoint, which carries
+    # previous_filename — so BOTH sides arrive in the list, from a clean checkout.
+    with_git_repo do |dir|
+      out, code = with_env(
+        "DOR_CHECK_DIFF_ROOT" => dir, "DOR_CHECK_DIFF_BASE" => "HEAD", "DOR_CHECK_CHANGED_FILES" => nil,
+        "DOR_CHECK_PR_FILES" => "docs/deploy-notes.md\nbin/deploy.sh"
+      ) { check("kind" => "chore", "pr_url" => "https://github.com/o/r/pull/1") }
+      assert_equal 1, code, out
+      assert_match(%r{bin/deploy\.sh}, out)
+    end
+  end
+
+  # [unit] the parser itself — both sides out of --name-status -M.
+  def test_name_status_parser_emits_both_sides_of_a_rename
+    require_relative "../../bin/lib/code_diff"
+    paths = CodeDiff.paths_from_name_status(
+      "R100\tbin/deploy.sh\tdocs/deploy-notes.md\nM\tapp/models/task.rb\nD\tlib/gone.rb\n"
+    )
+    assert_equal ["bin/deploy.sh", "docs/deploy-notes.md", "app/models/task.rb", "lib/gone.rb"], paths
+    assert_equal ["bin/deploy.sh", "app/models/task.rb", "lib/gone.rb"], CodeDiff.code_files(paths)
+  end
+
   def test_doc_only_skip_names_the_observed_diff
     # A skip must be LOUD and evidence-shaped: it says WHAT it looked at, not just
     # "n/a (kind: chore)". A silent skip is what let the bug hide for two PRs.

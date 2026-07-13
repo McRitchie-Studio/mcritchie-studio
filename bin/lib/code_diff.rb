@@ -95,4 +95,32 @@ module CodeDiff
   def self.code_files(files)
     Array(files).map { |f| f.to_s.strip }.reject(&:empty?).select { |f| behavioral?(f) }
   end
+
+  # BOTH SIDES OF A RENAME. A rename has two paths, and every path-list view of a
+  # diff shows you only ONE — the destination. `git diff --name-only` collapses
+  # `R100 bin/deploy.sh docs/deploy-notes.md` to `docs/deploy-notes.md`, and
+  # GitHub's `gh pr view --json files` exposes only {additions, changeType,
+  # deletions, path}. So a commit that renames an EXECUTABLE into a .md presents
+  # as one prose file and takes a full exemption — while having DELETED a script
+  # from bin/. The behavior change is the REMOVAL, and it is invisible in the new
+  # path. (The reverse, docs/x.md → bin/x.sh, always gated: its new path is
+  # behavioral.) This is the same bug's third face — first the `kind` LABEL, then
+  # the `docs/` DIRECTORY, now the NEW PATH: each a declaration ABOUT the change
+  # standing in for evidence OF it. A rename is precisely where the path lies,
+  # because half the content isn't in it.
+  #
+  # So: parse `--name-status -M` and emit BOTH paths for a rename (R) or copy (C).
+  # Either side behavioral → the diff gates. `docs/a.md → docs/b.md` still skips.
+  # An unparseable line yields nothing to classify, so callers fall back to their
+  # indeterminate (fail-closed) path rather than inventing a clean diff.
+  def self.paths_from_name_status(raw)
+    raw.to_s.split("\n").flat_map do |line|
+      fields = line.split("\t").map(&:strip).reject(&:empty?)
+      next [] if fields.size < 2
+
+      status = fields[0]
+      # R100 old new / C75 old new — take BOTH. Everything else (M/A/D/T) is one path.
+      status.start_with?("R", "C") && fields.size >= 3 ? [fields[1], fields[2]] : [fields[1]]
+    end
+  end
 end
