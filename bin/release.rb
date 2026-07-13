@@ -3296,6 +3296,17 @@ def deploy_app(group, frozen)
     with_ship_workspace(repo) do
       workspace = ship_workspace!(repo, frozen)
       prepare_ship_workspace!(repo, workspace)
+      # Refresh the index's stat cache before handing the tree to the repo's deploy
+      # script. Our OWN prep dirties the stat cache without changing content: the
+      # `reset --hard` writes files + index in the same clock-second (racy git), and
+      # `db:test:prepare`/`bundle` bump tracked files' mtimes (a byte-identical
+      # Gemfile.lock rewrite; a rails-boot touch). A deploy script that gates on
+      # `git diff-index --quiet HEAD` (turf's bin/deploy) then misreads the stat-stale
+      # tree as "uncommitted changes" and refuses a legitimate ship. `update-index
+      # --refresh` re-hashes ONLY the stat-dirty entries and clears those whose content
+      # is unchanged — a genuine content diff stays dirty (and is reported), so this
+      # corrects the false positive without hiding real dirt. Never reset/checkout here.
+      sh("git", "-C", workspace, "update-index", "-q", "--refresh", capture: true)
       # ship_deploy_env, NOT gate_env: a production deploy script gets its private
       # test DB and nothing else — no RAILS_ENV=test, no ruby pin. See ship_deploy_env.
       _, ok = sh(command, *args, chdir: workspace, env: ship_deploy_env(repo))
