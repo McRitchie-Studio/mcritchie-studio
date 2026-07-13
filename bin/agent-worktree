@@ -188,19 +188,25 @@ def capture(*cmd, chdir: nil, env: {})
   out
 end
 
+# Returns [ok, stdout, stderr, exitstatus]. The 4th element is the child's exit
+# code — an Integer, or NIL when there is no code to report (spawn failure,
+# timeout, killed by a signal). fetch_task_record classifies bin/task's not-found
+# exit-code contract on it, and nil can never equal a contract code, so an
+# unclassifiable exit always reads as a FAILED command. Callers that only
+# destructure three names simply ignore it.
 def capture_status(*cmd, chdir: nil, env: {}, timeout: nil)
   options = {}
   options[:chdir] = chdir if chdir
   return capture_bounded(cmd, options, env, timeout) if timeout
 
   out, err, status = Open3.capture3(env, *cmd, **options)
-  [status.success?, out, err]
+  [status.success?, out, err, status.exitstatus]
 rescue SystemCallError => e
   # A missing chdir target makes spawn raise Errno::ENOENT before the command
   # ever runs (e.g. a PRUNABLE git worktree git still lists but whose directory
   # was deleted on disk). Read-only callers — doctor and snapshot --write —
   # must degrade to a failed command, never crash the whole run.
-  [false, "", e.message]
+  [false, "", e.message, nil]
 end
 
 # A REAL bound on a child command — it KILLS the child when the deadline passes.
@@ -231,14 +237,16 @@ def capture_bounded(cmd, options, env, timeout)
       terminate_group(wait_thr.pid)
       wait_thr.join(2)
       [out_reader, err_reader].each { |thread| thread.join(1) || thread.kill }
-      next [false, "", "timed out after #{timeout}s"]
+      # No exit code on a timeout — the child was killed, it did not ANSWER. nil
+      # keeps a timed-out board read in the failed bucket (see capture_status).
+      next [false, "", "timed out after #{timeout}s", nil]
     end
 
-    ok = wait_thr.value.success?
-    [ok, reap(out_reader), reap(err_reader)]
+    status = wait_thr.value
+    [status.success?, reap(out_reader), reap(err_reader), status.exitstatus]
   end
 rescue SystemCallError => e
-  [false, "", e.message]
+  [false, "", e.message, nil]
 end
 
 def drain(io)
@@ -2508,28 +2516,43 @@ def task_record_for_pr(record, fresh: false)
   @task_record_cache[slug] = fetch_task_record(record, slug)
 end
 
+# bin/task's EXIT_TASK_NOT_FOUND — its exit-code CONTRACT for "the board positively
+# answered: there is no such task". bin/task classifies at the source (HTTP 404 + the
+# tasks API's own body) and exits this code ONLY for that answer; every failed read —
+# transport, 5xx, router/route 404s, rejected flags — exits 1. Keep in lockstep with
+# the constant in bin/task.
+TASK_NOT_FOUND_EXIT = 4
+
 def fetch_task_record(record, slug)
   task_bin = File.join(record[:dir], "bin", "task")
   task_bin = File.join(HUB_DIR, "bin", "task") unless File.exist?(task_bin)
   return nil unless File.exist?(task_bin) # cannot read the board at all
 
-  ok, out, err = capture_status(task_bin, "show", slug, "--json", chdir: record[:dir],
-                                                                  env: command_env(record[:app], record[:env]),
-                                                                  timeout: TASK_READ_TIMEOUT)
+  ok, out, err, code = capture_status(task_bin, "show", slug, "--json", chdir: record[:dir],
+                                                                        env: command_env(record[:app], record[:env]),
+                                                                        timeout: TASK_READ_TIMEOUT)
   return parse_task_record(out) if ok
 
-  # A 404 is a SUCCESSFUL read with a definite answer — "there is no such task", therefore
-  # no claim. By the same nil-vs-{} doctrine, that belongs in the FREE bucket, not the
-  # unreadable one: a desk bound to a deleted or renamed slug would otherwise be withheld
+  # A genuine 404 is a SUCCESSFUL read with a definite answer — "there is no such task",
+  # therefore no claim. By the same nil-vs-{} doctrine, that belongs in the FREE bucket, not
+  # the unreadable one: a desk bound to a deleted or renamed slug would otherwise be withheld
   # FOREVER on the destroy path, and the "re-run once the board is reachable" message would
-  # be a lie — the board answered. (`bin/task show` exits 1 on a 404 but 0 for an ARCHIVED
-  # task, so the happy path is untouched.)
-  return {} if task_not_found?(err)
+  # be a lie — the board answered. (`bin/task show` exits nonzero on a 404 but 0 for an
+  # ARCHIVED task, so the happy path is untouched.)
+  #
+  # The EXIT CODE is the primary classifier: bin/task verifies the 404 + the API's own body
+  # where the response is still structured, so its rendering can change freely without this
+  # guard reclassifying an outage as "free". The stderr match below is only the FALLBACK for
+  # an OLDER bin/task (exits 1 for every failure) — e.g. a worktree pinned to an older branch.
+  return {} if code == TASK_NOT_FOUND_EXIT || task_not_found?(err)
 
   nil # a real failure: 500, timeout, auth, connection refused — we could not read it
 end
 
-# The board answered "no such task" — distinct from a board that could not answer at all.
+# FALLBACK lane (older bin/task only): the board answered "no such task", read from the
+# stderr rendering. A bin/task that speaks the exit-code contract never needs this — it
+# exits TASK_NOT_FOUND_EXIT above — but an older one exits 1 for every failure, and this
+# match is what keeps its genuine 404s classifying.
 #
 # BOTH halves are required, and the `&&` is load-bearing. bin/task renders every non-2xx as
 # "<METHOD> <path> -> <code>: <body>", so matching the status alone would accept ANY 404:

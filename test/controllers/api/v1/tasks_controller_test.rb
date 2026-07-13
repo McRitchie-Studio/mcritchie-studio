@@ -304,6 +304,12 @@ module Api
 
       # --- Fix (A): a missing slug returns a clean 404, not a 500 ---------------
 
+      # The exact body is a CONTRACT, not cosmetics: bin/task's not-found
+      # classifier (task_not_found_response? -> EXIT_TASK_NOT_FOUND) and the
+      # older-CLI stderr fallback in bin/agent-worktree both key on this exact
+      # "task not found" message. Rewording it downgrades a genuine not-found to
+      # a failed read (fail-safe, but it wedges reclaim for deleted slugs) —
+      # change all three together or not at all.
       test "show returns 404 with a JSON error for an unknown slug" do
         get api_v1_task_path("does-not-exist-slug"), headers: @headers, as: :json
 
