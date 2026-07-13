@@ -1,8 +1,10 @@
 class Release
   # Pure decision for committing a generated doc — a `bin/release retro` doc or the
   # `delete-later.md` ledger that `archive` updates — onto the `release` branch,
-  # instead of leaving it as uncommitted working-tree dirt that the ship preflight
-  # forces the conductor to stash (and never pop) every release.
+  # instead of leaving it to pile up as uncommitted working-tree dirt in the primary.
+  # (It no longer BLOCKS a ship — the deploy runs from its own workspace and only
+  # advises on a dirty primary — but an uncommitted generated doc that never ships
+  # is still drift.)
   #
   # IO-free like Release::ShipSequence / Release::GemfileRepin: it takes a
   # `git status --porcelain` listing in and returns arrays/booleans out; bin/release
@@ -31,7 +33,7 @@ class Release
 
     # True when the doc is the ONLY thing dirty in the working tree — the
     # precondition for committing it to `release`. Anything else dirty → false →
-    # leave the doc uncommitted (the preflight stashes it; no regression).
+    # leave the doc uncommitted (non-fatal: it blocks nothing, it just doesn't ship).
     def safe_to_commit?(porcelain, doc_rel)
       other_dirty_paths(porcelain, doc_rel).empty?
     end

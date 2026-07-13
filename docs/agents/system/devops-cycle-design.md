@@ -778,14 +778,27 @@ Run **`bin/release ship [--by NAME] --prod`**. Without `--yes` it confirms
 before deploying; under the **`full-cycle`** launcher (or another
 explicit production rollout prompt), use
 `bin/release ship --by conductor --yes`. `--yes` skips only the confirm prompt.
-**Preflight FIRST (before any fast-forward):** ship asserts every **app checkout**
-is on a **clean `main`** and aborts loudly — naming the offending branch / dirty
-files — if any isn't. ship ff's each repo's `main` up to the QA-frozen SHA, so a
-checkout a review agent left on a leftover `pr-NNN` branch or with an uncommitted
-stale `schema.rb` would otherwise break the ff *mid-ship* (after gems published +
-the ship authorization — the worst time). The preflight catches it up front,
-before anything irreversible. Pure decision:
-`Release::ShipSequence.preflight_offenders` / `.preflight_message`. **Live ship
+**The ship deploys from its OWN checkout — a dirty primary does NOT block it.**
+`bin/release ship` never reads an app primary's working tree: it advances `main`
+with a **ref push** (`git push origin <frozen>:refs/heads/main` — no checkout, no
+index, still fast-forward-checked, so a diverged `main` fails closed), and the two
+steps that genuinely need a tree — the gem re-pin commit, and a `repo_script`
+satellite's own `bin/deploy` — run in the **ship workspace**
+(`Release::GateWorkspace`, role `ship`): `<repo>/.worktrees/_ship`, detached at the
+QA-frozen SHA, with its own lock and its own test DB.
+It used to ff the primary's `main` and refuse a dirty/off-main checkout — and that
+refusal **aborted a production ship after the gems had already published**, over a
+concurrent feature session's staged work. **Preflight FIRST (before anything
+irreversible):** it pins each app's ship workspace at the frozen SHA (so a broken
+worktree aborts while the release is still fully recoverable), **aborts** on the one
+primary-state hazard that survives — a **gem** repo with modified **tracked** files,
+because `gem build` packages what is on disk and the edits would be *published*
+irreversibly — and merely **advises** on a dirty app primary. Every dirty-primary
+surface prints the SAME rescue: commit the stranded work to a labeled
+`rescue/<repo>-<timestamp>` branch. **Never stash, never discard** — it may be a live
+session's work. Pure decisions: `Release::ShipSequence.preflight_offenders` /
+`.advisory_message` / `.gem_build_offenders` / `.gem_build_message` /
+`.rescue_commands`. **Live ship
 crew:** right after ship authorization (so a declined gated ship never shows it),
 ship **auto-records the Avi → `shipped` intent** for every member
 (`Release::Conductor.record_deploy_intents!(r, to_stage: "shipped", actor:
@@ -851,7 +864,7 @@ the Deploy loop now closes at `archived`. **The ledger commits itself:** after t
 reclaim appends to `delete-later.md`, archive commits that update to `release`
 (best-effort, only when the ledger is the *sole* uncommitted change — pure guard
 `Release::ArtifactCommit`), so it ships next round instead of piling up as
-ship-preflight stash dirt the conductor has to park.
+uncommitted dirt the conductor has to park.
 
 **`Release retro`**  *(post-ship "review & learn" — completely NON-BLOCKING)*
 Run **`bin/release retro [release-slug] [--worked "…"] [--friction "…"] [--followup
@@ -865,7 +878,7 @@ friction / follow-ups — `--worked`/`--friction`/`--followup` supply them from 
 `docs/agents/audits/retro-<slug>.md`, then **commits that doc to `release`**
 (best-effort, non-fatal, only when the doc is the *sole* uncommitted change —
 `Release::ArtifactCommit`) so the generated retro ships next round rather than
-becoming ship-preflight stash dirt. `--file-tasks` opens each follow-up via
+piling up as uncommitted dirt. `--file-tasks` opens each follow-up via
 `bin/task create`. The gather + render rule is the pure, unit-tested
 `Release::Retro` (`.gather` / `.render` / `.write_doc`); the CLI reaches it through
 the same read-only `conductor` runner and writes the returned markdown to the local

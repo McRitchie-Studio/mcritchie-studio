@@ -1237,13 +1237,15 @@ rescue ArgumentError => e
 end
 
 # --- primary-checkout lock ---------------------------------------------------
-# Serializes the highest-risk primary-HEAD flip sites against each other:
-# the pre-QA gate's release checkout + suite run (below), the artifact-commit
-# dance (commit_artifact_to_release), ship's local ff (ff_main_local), and the
-# ship gate's ff+suite window (avi_ship_gate — ONE lock spanning both; the
-# helper is NOT re-entrant, so the inner ff runs lock: false).
-# NOT yet lock-guarded (groomed as follow-up scope, per the round-2 review):
-# the merge-forward guard, checkout_detached / checkout_branch, repin_consumers.
+# Serializes what STILL flips the primary's HEAD. As of 2026-07-12 that is ONE
+# caller: the artifact-commit dance (commit_artifact_to_release), which checks out
+# `release` to commit a generated doc and returns to `main`.
+#
+# The gate suites moved to the gate workspace, and the SHIP moved to its own
+# workspace + ref pushes (push_frozen_main / repin_consumers / deploy_app) — so
+# neither takes this lock any more, and neither can be blocked by it. The one
+# remaining ship-side read of a primary is the GEM artifact build
+# (checkout_detached), which is guarded by the ship preflight instead.
 #
 # ROOT CAUSE it guards against (rel-20260708-496cd8): the pre-QA gate ran its
 # full suite in the primary hub checkout on `release` (~6-min critical section)
@@ -1252,8 +1254,8 @@ end
 # then resolved against PRE-merge code → 7 false failures → a false-negative G3.
 #
 # flock, not a mkdir lock: the OS releases it when the holder dies, so a killed
-# gate can never wedge the next conductor run. Per-repo (keyed by repo name) so
-# a hub gate never blocks a satellite's artifact commit.
+# holder can never wedge the next conductor run. Per-repo (keyed by repo name) so
+# a hub run never blocks a satellite's artifact commit.
 #
 # The lock dir is FIXED at <projects_root>/.agents/locks (the dir that already
 # anchors cross-checkout state like the worktree registry) — NOT Dir.tmpdir:
@@ -1270,44 +1272,65 @@ def primary_checkout_lock_path(repo)
   File.join(dir, "mcr-primary-checkout-#{repo}.lock")
 end
 
-# --- the gate-workspace lock -------------------------------------------------
-# The gate workspace is PRIVATE to the conductor, not to a PROCESS: its path
-# (<repo>/.worktrees/_gate) and its DB (<repo>_gate_test) are FIXED. So while no
-# agent session or hand-run command can touch it, ANOTHER `bin/release` can — and
-# two concurrent conductors are a documented occurrence here (two QA-release
-# sessions have raced). Unlocked, conductor B's `reset --hard` would move the tree
-# and its `db:test:prepare` would PURGE the DB under conductor A's live,
-# lazily-autoloading suite: the exact two root causes this gate exists to close,
-# relocated one directory over (plus the parallel-full-suite SIGSEGV class).
+# --- the workspace locks (gate + ship) ---------------------------------------
+# A workspace is PRIVATE to the conductor, not to a PROCESS: its path
+# (<repo>/.worktrees/_gate, <repo>/.worktrees/_ship) and its DB
+# (<repo>_gate_test, <repo>_ship_test) are FIXED. So while no agent session or
+# hand-run command can touch it, ANOTHER `bin/release` can — and two concurrent
+# conductors are a documented occurrence here (two QA-release sessions have
+# raced). Unlocked, conductor B's `reset --hard` would move the tree and its
+# `db:test:prepare` would PURGE the DB under conductor A's live, lazily-autoloading
+# suite: the exact two root causes the gate workspace exists to close, relocated
+# one directory over (plus the parallel-full-suite SIGSEGV class).
 #
-# So the gate takes its OWN lock, held across pin → prepare → suite. It is
-# deliberately NOT the primary-checkout lock: the primary must stay FREE (feature
+# So each workspace takes its OWN lock, PER ROLE (gate / ship) and per repo, held
+# across pin → prepare → use. Per role because the DEPLOY must never queue behind a
+# concurrent conductor's G3 suite — or worse, reset the tree under it.
+#
+# PRECISELY (the ship is not wholly free of the gate lock, and the claim should not
+# be overstated — jasper, PR #517): the ship's own TEST GATE (test_gate) runs its
+# suite in the GATE workspace under the GATE lock, so it CAN queue behind a
+# concurrent conductor's G3 suite. That is correct and deliberate — it is the same
+# suite on the same tree, and it is pre-authority, so a wait costs nothing
+# irreversible. What must never queue is everything AFTER ship authority — the
+# re-pin, the deploys — and none of it touches the gate lock.
+#
+# Deliberately NOT the primary-checkout lock: the primary must stay FREE (feature
 # sessions use it, and monopolising it for the length of a suite was half of what
 # made the old gate hostile). Never nested inside the primary lock, so the two
 # can't deadlock.
 #
 # NOTE on MCR_PRIMARY_LOCK_DIR: despite its name it overrides the lock DIRECTORY,
 # not the primary lock alone — every bin/release lock lives there, and the tests
-# isolate BOTH locks by pointing it at a tmpdir. Do not "fix" the naming by giving
-# the gate lock its own dir: a split would silently un-isolate one of them.
-def gate_workspace_lock_path(repo)
+# isolate ALL of them by pointing it at a tmpdir. Do not "fix" the naming by giving
+# a lock its own dir: a split would silently un-isolate one of them.
+def gate_workspace_lock_path(repo, role: "gate")
   dir = ENV["MCR_PRIMARY_LOCK_DIR"].to_s
   dir = File.join(projects_root, ".agents", "locks") if dir.empty?
   FileUtils.mkdir_p(dir)
-  File.join(dir, "mcr-gate-workspace-#{repo}.lock")
+  File.join(dir, "mcr-#{Release::GateWorkspace.role!(role)}-workspace-#{repo}.lock")
 end
 
-# Run the block holding `repo`'s GATE-WORKSPACE lock. Always waits: a queued gate
-# is correct (the other conductor's suite is certifying the same tree), where
-# proceeding concurrently is guaranteed corruption.
-def with_gate_workspace(repo)
-  File.open(gate_workspace_lock_path(repo), File::RDWR | File::CREAT, 0o644) do |f|
+# Run the block holding `repo`'s WORKSPACE lock for `role`. Always waits: a queued
+# run is correct (the other conductor is using the same tree), where proceeding
+# concurrently is guaranteed corruption.
+def with_gate_workspace(repo, role: "gate")
+  File.open(gate_workspace_lock_path(repo, role: role), File::RDWR | File::CREAT, 0o644) do |f|
     unless f.flock(File::LOCK_EX | File::LOCK_NB)
-      say("  waiting on the #{repo} gate-workspace lock (another bin/release is running its gate suite)…")
+      holder = role == "ship" ? "another bin/release is deploying from that checkout" \
+                              : "another bin/release is running its gate suite"
+      say("  waiting on the #{repo} #{role}-workspace lock (#{holder})…")
       f.flock(File::LOCK_EX)
     end
     yield
   end
+end
+
+# The SHIP workspace's lock — the deploy's own checkout. Same flock discipline,
+# a DIFFERENT file from the gate's, so a prod deploy never queues behind (or races)
+# a concurrent conductor's G3 gate suite.
+def with_ship_workspace(repo, &block)
+  with_gate_workspace(repo, role: "ship", &block)
 end
 
 # Run the block holding `repo`'s primary-checkout lock.
@@ -1364,13 +1387,13 @@ end
 # the suite, its bundle check/install, the db:test:prepare, and every grandchild
 # they spawn — runs under this, so `local == CI` on all three axes. Memoized per
 # repo (the ruby note prints once per run, from gate_ruby_bin_dir).
-def gate_env(repo)
+def gate_env(repo, role: "gate")
   @gate_env ||= {}
-  @gate_env[repo] ||= Release::GateEnv.env(
+  @gate_env[[repo, role]] ||= Release::GateEnv.env(
     ruby_bin_dir: gate_ruby_bin_dir.to_s,
     # nil for a SQLite app (rolio): its test DB is a file INSIDE the workspace,
     # already private — and handing it a postgres URL would be a live trap.
-    test_database_url: gate_database_url(repo)
+    test_database_url: gate_database_url(repo, role: role)
   )
 end
 
@@ -1421,7 +1444,7 @@ end
 # bin/release CAN reach that tree — see with_gate_workspace),
 # AFTER it is pinned at the SHA under test, so it reads the exact Gemfile.lock the
 # suite will load.
-def ensure_suite_bundle!(repo, path)
+def ensure_suite_bundle!(repo, path, role: "gate")
   # No Gemfile in the release tree → nothing bundler-managed to verify
   # (self-gating, like an app with no qa_test_cmd).
   return unless File.exist?(File.join(path, "Gemfile"))
@@ -1434,11 +1457,11 @@ def ensure_suite_bundle!(repo, path)
   # to mise.
   bundle = suite_bundle_argv(path)
   label  = bundle.join(" ")
-  _, ok = sh(*bundle, "check", chdir: path, capture: true, env: gate_env(repo))
+  _, ok = sh(*bundle, "check", chdir: path, capture: true, env: gate_env(repo, role: role))
   return if ok
 
   say("  #{repo}: bundle unsatisfied under the suite ruby — #{label} install")
-  _, ok = sh(*bundle, "install", chdir: path, env: gate_env(repo))
+  _, ok = sh(*bundle, "install", chdir: path, env: gate_env(repo, role: role))
   return if ok
 
   boot_ruby = suite_ruby(repo, path)
@@ -1450,10 +1473,10 @@ def ensure_suite_bundle!(repo, path)
       " Toolchain mismatch: the suite boots #{boot_ruby} but this conductor runs #{here_ruby} — " \
       "divergent gem homes (brew-vs-mise), so a shell-side `bundle check` can lie about the suite's env."
     end
-  abort!("pre-QA gate #{repo}: the bundle is unsatisfied under the SUITE ruby (#{boot_ruby}) and " \
+  abort!("#{role} workspace #{repo}: the bundle is unsatisfied under the SUITE ruby (#{boot_ruby}) and " \
          "`#{label} install` failed.#{divergence} This is an ENV/toolchain issue, NOT a release " \
          "regression — nothing to eject or revert. Fix the bundle (cd #{path} && #{label} install), " \
-         "then re-run `bin/release prepare`.")
+         "then re-run.")
 end
 
 # --- the isolated gate workspace --------------------------------------------
@@ -1468,11 +1491,11 @@ end
 # The workspace PERSISTS between runs (reset --hard onto the new SHA) so the
 # bundle and the test DB stay warm; it is rebuilt from scratch when it's missing
 # or its git metadata went stale (e.g. someone removed it by hand).
-def gate_workspace!(repo, sha)
+def gate_workspace!(repo, sha, role: "gate")
   primary = repo_path(repo)
-  path    = Release::GateWorkspace.path(primary)
+  path    = Release::GateWorkspace.path(primary, role: role)
   sha     = sha.to_s.strip
-  abort!("gate #{repo}: no SHA to pin the isolated gate checkout at") if sha.empty?
+  abort!("#{role} #{repo}: no SHA to pin the isolated #{role} checkout at") if sha.empty?
 
   if File.exist?(File.join(path, ".git"))
     # Reuse: hard-reset the worktree onto the SHA under test. `reset --hard` (not
@@ -1481,7 +1504,7 @@ def gate_workspace!(repo, sha)
     # for a branch name.
     _, ok = sh("git", "-C", path, "reset", "--hard", sha, capture: true)
     unless ok
-      say("  #{repo}: the gate workspace is stale — rebuilding it")
+      say("  #{repo}: the #{role} workspace is stale — rebuilding it")
       sh("git", "-C", primary, "worktree", "remove", "--force", path, capture: true)
       sh("git", "-C", primary, "worktree", "prune", capture: true)
     end
@@ -1495,7 +1518,7 @@ def gate_workspace!(repo, sha)
     sh("git", "-C", primary, "worktree", "prune", capture: true)
     _, ok = sh("git", "-C", primary, "worktree", "add", "--detach", path, sha, capture: true)
     unless ok
-      abort!("gate #{repo}: could not create the isolated gate checkout at #{path} " \
+      abort!("#{role} #{repo}: could not create the isolated #{role} checkout at #{path} " \
              "(`git worktree add --detach #{short(sha)}`). This is an ENV issue, NOT a release " \
              "regression — nothing to eject or revert.")
     end
@@ -1557,16 +1580,17 @@ end
 # The alternative (rewrite each satellite's registry command to be argless) leaves the
 # gate silently assuming a shape, which is a trap for the next person to register a
 # lane — and is precisely how this bug got in. Preparing an argless lane's env too is
-# idempotent; one code path beats a shape-aware one.
-def prepare_gate_workspace!(repo, path)
-  ensure_suite_bundle!(repo, path)
+# idempotent; one code path beats a shape-aware one. (The ship role reuses this same
+# prep — same reasoning, its own workspace.)
+def prepare_gate_workspace!(repo, path, role: "gate")
+  ensure_suite_bundle!(repo, path, role: role)
 
   # PROVE the DB is private BEFORE db:test:prepare — that task PURGES and reloads
   # the schema, so running it against a database we merely ASSUME is ours would
   # destroy a concurrent suite's data. Assert first, destroy second.
-  assert_private_gate_db!(repo, path)
+  assert_private_gate_db!(repo, path, role: role)
 
-  out, ok = sh("bin/rails", "db:test:prepare", "test:prepare", chdir: path, capture: true, env: gate_env(repo))
+  out, ok = sh("bin/rails", "db:test:prepare", "test:prepare", chdir: path, capture: true, env: gate_env(repo, role: role))
   return if ok
 
   # An env-class abort — NEVER a red suite. A workspace that cannot build its assets
@@ -1577,8 +1601,8 @@ def prepare_gate_workspace!(repo, path)
   # stylesheet IN the release's own diff (a bad `@apply`, an unknown utility, a
   # malformed `@theme`). So this reports a LIKELIHOOD, not a verdict — and prints the
   # captured output, which is the only thing that actually tells the two apart.
-  abort!("gate #{repo}: `bin/rails db:test:prepare test:prepare` failed in the isolated gate workspace " \
-         "(#{path}, #{gate_database_url(repo) || 'file-backed test DB inside the workspace'}). The gate " \
+  abort!("#{role} #{repo}: `bin/rails db:test:prepare test:prepare` failed in the isolated #{role} workspace " \
+         "(#{path}, #{gate_database_url(repo, role: role) || 'file-backed test DB inside the workspace'}). The #{role} " \
          "never reached the suite, so this is NOT a release regression — nothing to eject or revert.\n" \
          "This is USUALLY an ENV gap (Postgres down; a missing asset toolchain) — BUT `test:prepare` " \
          "builds the app's stylesheet, so a BROKEN STYLESHEET in the release's own diff (a bad `@apply`, " \
@@ -1612,40 +1636,41 @@ end
 # but a guarantee that rests on every future app's config being right is a
 # CONVENTION, not an invariant. This makes it an invariant: ask the booted app,
 # and treat a shared DB as a hard abort — never a silent stomp.
-def assert_private_gate_db!(repo, path)
+def assert_private_gate_db!(repo, path, role: "gate")
   probe = 'print "GATEDB=#{ActiveRecord::Base.connection_db_config.database}"'
-  out, ok = sh("bin/rails", "runner", probe, chdir: path, capture: true, env: gate_env(repo))
+  out, ok = sh("bin/rails", "runner", probe, chdir: path, capture: true, env: gate_env(repo, role: role))
   # capture: true merges stderr (bundler/rubygems warnings), so pluck the token
   # instead of trusting the whole stream.
   resolved = out.to_s[/GATEDB=(.*)$/, 1].to_s.strip
 
   if !ok || resolved.empty?
-    abort!("gate #{repo}: could not resolve the test database in the gate workspace (#{path}) — " \
+    abort!("#{role} #{repo}: could not resolve the test database in the #{role} workspace (#{path}) — " \
            "`bin/rails runner` failed to boot. This is an ENV issue, NOT a release regression — " \
            "nothing to eject or revert.")
   end
 
-  if Release::GateWorkspace.private_db?(resolved: resolved, repo: repo, workspace: path)
-    say("  #{repo}: gate test DB #{resolved} (private to this gate)")
+  if Release::GateWorkspace.private_db?(resolved: resolved, repo: repo, workspace: path, role: role)
+    say("  #{repo}: #{role} test DB #{resolved} (private to this #{role})")
     return
   end
 
-  abort!("gate #{repo}: the suite would run against `#{resolved}` — a SHARED test database, NOT the " \
-         "gate's own (#{Release::GateWorkspace.test_database_name(repo)}). REFUSING: the next step " \
+  abort!("#{role} #{repo}: the suite would run against `#{resolved}` — a SHARED test database, NOT this " \
+         "#{role}'s own (#{Release::GateWorkspace.test_database_name(repo, role: role)}). REFUSING: the next step " \
          "(`db:test:prepare`) PURGES it, which would destroy a concurrent suite's data, and a shared " \
-         "DB re-opens the cross-talk this gate exists to close. CAUSE: #{repo}'s config/database.yml " \
-         "is not honouring the gate's DATABASE_URL/TEST_DATABASE_URL overlay for the test env. This " \
-         "is an ENV/config issue, NOT a release regression — nothing to eject or revert.")
+         "DB re-opens the cross-talk the isolated workspace exists to close. CAUSE: #{repo}'s " \
+         "config/database.yml is not honouring the workspace's DATABASE_URL/TEST_DATABASE_URL overlay for " \
+         "the test env. This is an ENV/config issue, NOT a release regression — nothing to eject or revert.")
 end
 
 # The gate DB URL for this repo, or nil when its test DB is already file-backed
 # INSIDE the workspace (SQLite — private by construction, and a postgres URL would
 # be a live trap). Memoized: it reads the app's config/database.yml.
-def gate_database_url(repo)
+def gate_database_url(repo, role: "gate")
   @gate_database_url ||= {}
-  return @gate_database_url[repo] if @gate_database_url.key?(repo)
+  key = [repo, role]
+  return @gate_database_url[key] if @gate_database_url.key?(key)
 
-  @gate_database_url[repo] = Release::GateWorkspace.database_url_for(repo, repo_path(repo))
+  @gate_database_url[key] = Release::GateWorkspace.database_url_for(repo, repo_path(repo), role: role)
 end
 
 # --- system-tier browser guard ----------------------------------------------
@@ -2568,42 +2593,137 @@ def checkout_detached(repo, sha)
   abort!("could not checkout #{short(sha)} in #{repo} to build the gem — fetch it or re-run prepare") unless ok
 end
 
-# Fast-forward a repo's main up to a SHA, LOCALLY (no push). Split from the push
-# so an app's test gate can run on a frozen main and a red gate leaves origin
-# untouched. Aborts on a failed checkout or a non-fast-forward.
+# Advance a repo's `main` to the QA-FROZEN SHA — the release → main collapse that
+# `main` deploys from. A pure REF PUSH:
 #
-# lock: — by default the flip queues behind any in-flight gate/artifact dance on
-# this repo (see with_primary_checkout). Pass lock: false ONLY when the caller
-# ALREADY HOLDS the repo's lock (avi_ship_gate's ff+suite window): the flock is
-# NOT re-entrant — a second FD on the same lockfile blocks even in-process — so
-# a nested acquisition would self-deadlock, not stack.
-def ff_main_local(repo, sha, lock: true)
+#   git -C <repo> push origin <frozen>:refs/heads/main
+#
+# WHAT THIS REPLACED, and why (2026-07-12). It used to be `ff_main_local` +
+# `push_origin_main`: check out `main` in the SHARED PRIMARY, `pull`, `merge
+# --ff-only <frozen>`, then push the local branch. That made the deploy depend on
+# the primary's WORKING TREE — so ship's preflight had to refuse a dirty primary,
+# and a concurrent feature session's staged work ABORTED a production ship after
+# the gems had published. But advancing a remote branch never needed a working
+# tree at all: a ref push reads the shared OBJECT STORE and nothing else. It does
+# not move HEAD, does not touch the index, and runs happily while a feature agent
+# has half a feature staged one directory over.
+#
+# It keeps every safety property of the old ff:
+#   * FAILS CLOSED on divergence — git rejects a non-fast-forward ref update
+#     without --force (verified), exactly as `merge --ff-only` did. We NEVER pass
+#     --force here; a rejected push must abort the ship, not rewrite prod's history.
+#   * SHIPS THE FROZEN SHA — the pushed ref is the SHA itself, not "whatever the
+#     local main happened to be after an ff", so there is no window in which a
+#     stale/raced local branch could be pushed instead.
+#   * IDEMPOTENT — a re-run of a completed ship pushes an already-current ref
+#     ("Everything up-to-date"), the same no-op the ff was.
+# The local `main` in the primary is deliberately left alone; `restore_primaries`
+# fast-forwards it afterwards, best-effort, and nothing in the ship reads it.
+def push_frozen_main(repo, sha)
+  sha = sha.to_s.strip
+  step("push #{repo} origin main → frozen #{short(sha)} (ref push — no checkout, no working tree)")
+  return if DRY
+
+  abort!("no frozen SHA to push for #{repo} — re-run `bin/release prepare`") if sha.empty?
+
   path = repo_path(repo)
-  abort!("repo not found at #{path} — clone it as a sibling at the projects root") unless DRY || Dir.exist?(path)
-  if DRY
-    step("ff #{repo} main → frozen #{short(sha)}")
-    return
-  end
+  abort!("repo not found at #{path} — clone it as a sibling at the projects root") unless Dir.exist?(path)
 
-  sh("git", "-C", path, "fetch", "origin", "--quiet")
-  flip = lambda do
-    _, co = sh("git", "-C", path, "checkout", "main", capture: true)
-    abort!("could not checkout main in #{repo} (dirty tree / wrong branch?) — clean it, then re-run `bin/release ship`") unless co
-    sh("git", "-C", path, "pull", "origin", "main", "--quiet")
-    _, ff = sh("git", "-C", path, "merge", "--ff-only", sha, capture: true)
-    abort!("#{repo} main can't fast-forward to #{short(sha)} (it diverged) — rebase/re-prepare, then re-run") unless ff
-  end
-  return flip.call unless lock
+  _, ok = sh("git", "-C", path, "push", "origin", "#{sha}:refs/heads/main")
+  return if ok
 
-  # A HEAD flip — queue behind any in-flight gate/artifact dance on this repo
-  # (see with_primary_checkout) so the ff never interleaves with a running suite.
-  with_primary_checkout(repo) { flip.call }
+  abort!("could not fast-forward #{repo} origin/main to #{short(sha)} — git REFUSED the ref update, which " \
+         "means origin/main has diverged from the frozen SHA (someone pushed to main). NOT forcing. " \
+         "Reconcile main, re-run `bin/release prepare` to re-freeze, then re-run `bin/release ship`.")
 end
 
-def push_origin_main(repo)
-  step("push origin main (#{repo})")
-  _, ok = sh("git", "-C", repo_path(repo), "push", "origin", "main")
-  abort!("could not push origin main in #{repo} (diverged remote?) — resolve, then re-run `bin/release ship`") unless ok || DRY
+# Put a GEM repo's primary checkout back on `main` after the artifact build left it
+# DETACHED at the frozen SHA (checkout_detached). Gems are the one place the ship
+# still builds from the primary — `gem build` packages what is on disk — so it is
+# the one place that has to tidy up after itself.
+#
+# BEST-EFFORT (warn, never abort): by the time this runs the gem is PUBLISHED and
+# origin/main is pushed. A checkout that can't be restored is a cosmetic
+# inconvenience in the operator's sibling; aborting the train over it would strand
+# a half-shipped release for no safety gain.
+def restore_gem_primary(repo)
+  return if DRY
+
+  path = repo_path(repo)
+  _, co = sh("git", "-C", path, "checkout", "main", capture: true)
+  unless co
+    say("  ⚠ #{repo}: left on a detached HEAD (couldn't check out main) — `git -C #{path} checkout main` when free")
+    return
+  end
+  _, ff = sh("git", "-C", path, "merge", "--ff-only", "origin/main", capture: true)
+  say("  ⚠ #{repo}: main not fast-forwarded to origin/main — `git -C #{path} pull` when free") unless ff
+end
+
+# The SHIP WORKSPACE: the private, detached checkout the deploy works in, pinned at
+# the QA-frozen SHA. Same primitive as the gate's (Release::GateWorkspace), a
+# different role — so it is a different directory (.worktrees/_ship), a different
+# test DB (<app>_ship_test) and a different lock, and a prod deploy can never queue
+# behind, or reset the tree under, a concurrent conductor's G3 gate suite.
+#
+# Only two things in the ship genuinely need a working tree, and both use this one:
+#   * the auto-re-pin commit (repin_consumers — `bundle lock` writes Gemfile.lock),
+#   * a `repo_script` app's deploy (deploy_app — turf's bin/deploy runs its own
+#     suite, reads config/*.idl.json, and pushes from the checkout it runs in).
+# Everything else the ship does to git is a ref push (push_frozen_main), which
+# needs no tree at all.
+def ship_workspace!(repo, sha)
+  gate_workspace!(repo, sha, role: "ship")
+end
+
+# Bring a ship workspace to a runnable state for a repo whose own deploy script
+# runs a SUITE there (the repo_script satellites — turf's bin/deploy runs `bin/rails
+# test` before it pushes). Same preparation as a gate's: the bundle under the suite
+# ruby, and a test DB PROVEN private to this workspace before `db:test:prepare`
+# purges it. Without it, turf's pre-prod suite would run against the SHARED
+# `turf_monster_test` — the cross-talk that false-fails green code, here at the
+# worst possible moment (mid-ship, after the gems published).
+#
+# These are the CONDUCTOR'S OWN commands (bundle check, the DB probe,
+# db:test:prepare), so they correctly run under the full gate overlay — RAILS_ENV
+# =test and all. The DEPLOY SCRIPT does not (see ship_deploy_env).
+def prepare_ship_workspace!(repo, path)
+  prepare_gate_workspace!(repo, path, role: "ship")
+end
+
+# The env for a repo's OWN deploy script — deliberately NOT the gate overlay.
+#
+# It hands over exactly ONE var: DATABASE_URL, pointing at the workspace's private
+# test DB, so the suite the script runs pre-prod (turf's `bin/rails test`) can't be
+# poisoned by — or poison — a concurrent suite on the shared `turf_monster_test`.
+# VERIFIED before shipping this: turf's FULL suite (1404 runs) is green in a fresh
+# detached workspace under exactly this invocation, with no built assets and no
+# node_modules.
+#
+# It must NOT be gate_env(), even though that would be the obvious reuse.
+# Release::GateEnv sets RAILS_ENV=test (right for a gate, which runs nothing but
+# test commands) — and this is a PRODUCTION DEPLOY SCRIPT. Handing it RAILS_ENV
+# =test changes a contract it never agreed to: turf's bin/deploy happens to run
+# only `bin/rails test`, but the next repo_script app (tax-studio, chain-ops) could
+# precompile assets or run a rails task in its deploy, and doing that under
+# RAILS_ENV=test would build the WRONG artifact and ship it. The ruby pin is out
+# for the same reason: the script's toolchain is the script's business. The change
+# this task makes to a satellite deploy is its CWD — a clean, pinned tree instead
+# of a shared primary — and nothing else.
+#
+# KNOWN CONSTRAINT, for whoever registers the NEXT repo_script app: DATABASE_URL is
+# a Rails BUILTIN and is not test-scoped — Rails merges it into the resolved config
+# of WHATEVER env is current. It lands on the test DB here only because the one
+# rails command turf's bin/deploy runs is `bin/rails test`. A deploy script that
+# also ran a DEVELOPMENT-env rails command would silently connect it to
+# <app>_ship_test. Harmless today (it is a scratch test DB, and nothing in a deploy
+# script has business reading a local dev DB), but a repo_script deploy must not
+# assume its dev database. Registry contract: config/release_repos.yml.
+#
+# {} for an app whose test DB is file-backed inside the workspace (SQLite) — it is
+# private already, and `sh` drops an empty overlay.
+def ship_deploy_env(repo)
+  url = gate_database_url(repo, role: "ship")
+  url.to_s.empty? ? {} : { "DATABASE_URL" => url }
 end
 
 # Stamp `merged: "main"` on a repo's member tasks right after that repo's
@@ -2687,7 +2807,8 @@ def test_gate(repo, frozen_sha: nil, qa_gate: nil)
   # the registry's test_cmd/qa_test_cmd. That is now closed (it SILENTLY DISARMED
   # this gate — see ship_gate_skip?), and closing it without a replacement would
   # WEDGE the operator: a G4 false negative with no clean override, and a config
-  # edit is not one (ship's preflight refuses a dirty primary). So the override is
+  # edit is not one (it is un-reviewed drift in the registry the gate reads). So the
+  # override is
   # first-class: it demands a reason, it asks before it skips, and it records a RED
   # gate SOP — a skipped gate is now visible in the release record forever, where
   # the old trick left one that read "already green".
@@ -2747,19 +2868,15 @@ def bundle_lock(path, gem, attempts: 3)
   abort!("bundle lock --update #{gem} failed in #{path} after #{attempts} tries — re-run `bin/release ship` once RubyGems has propagated")
 end
 
-def checkout_branch(repo, branch)
-  _, ok = sh("git", "-C", repo_path(repo), "checkout", branch, capture: true)
-  abort!("could not checkout #{branch} in #{repo} for re-pin") unless ok
-end
-
 # Best-effort: commit a generated doc (a `retro` doc or the `delete-later.md`
-# ledger `archive` updates) onto `release` so it stops landing as ship-preflight
-# dirt that the conductor has to stash every release. NON-FATAL — any problem
-# leaves the doc uncommitted (today's behavior; the preflight stashes it) and never
-# aborts retro/archive. The IO seam around the pure Release::ArtifactCommit:
+# ledger `archive` updates) onto `release` so it stops piling up as uncommitted dirt
+# in the primary. NON-FATAL — any problem leaves the doc uncommitted (which no
+# longer blocks anything: the ship deploys from its own workspace and only ADVISES
+# on a dirty primary) and never aborts retro/archive. The IO seam around the pure
+# Release::ArtifactCommit:
 #   - commit ONLY when the doc is the SOLE uncommitted change (never sweep up dirt),
 #   - build on origin/release's tip (ff-only) so the push fast-forwards and the NEXT
-#     ship ff's main up to it — no main/release divergence,
+#     ship's `main` ref push carries it — no main/release divergence,
 #   - ALWAYS restore the checkout to `main` (ensure), even on failure,
 #   - SKIP (doc stays uncommitted) when another invocation holds the primary
 #     checkout — never flip HEAD under a running pre-QA gate suite
@@ -2779,10 +2896,10 @@ def commit_artifact_to_release(repo, abs_path, message)
   sh("git", "-C", path, "fetch", "origin", RELEASE_BRANCH, "--quiet", capture: true)
 
   # BEST-EFFORT lock (wait: false): if another invocation holds the primary
-  # checkout — the pre-QA gate's ~6-min suite run, or a ship's ff — SKIP rather
-  # than stall archive/retro behind it, and NEVER flip HEAD under a running
-  # suite (the rel-20260708-496cd8 false-negative G3). The doc simply stays
-  # uncommitted — today's non-fatal fallback (the ship preflight stashes it).
+  # checkout, SKIP rather than stall archive/retro behind it, and NEVER flip HEAD
+  # under a running suite (the rel-20260708-496cd8 false-negative G3). The doc
+  # simply stays uncommitted — a non-fatal fallback that costs nothing now: a dirty
+  # primary no longer blocks a ship, it only earns an advisory.
   done = false
   res = with_primary_checkout(repo, wait: false) do
     _, co = sh("git", "-C", path, "checkout", RELEASE_BRANCH, capture: true)
@@ -2818,7 +2935,7 @@ def ship_gem(repo, version, frozen, member_slugs = [])
 
   if DRY
     step("gem #{repo} #{version}: publish to RubyGems from #{short(frozen)} " \
-         "(skip if already live) → tag v#{version} → ff #{repo} main → #{short(frozen)}")
+         "(skip if already live) → tag v#{version} → push #{repo} origin main → #{short(frozen)}")
     return
   end
 
@@ -2834,9 +2951,43 @@ def ship_gem(repo, version, frozen, member_slugs = [])
     publish_gem(repo, version)      # reused: release-check → build → push → tag
   end
   @ship_live << "gem #{repo} #{version} live on RubyGems"
-  ff_main_local(repo, frozen)
-  push_origin_main(repo)
+  push_frozen_main(repo, frozen)
+  # The artifact build left the primary DETACHED at the frozen SHA (checkout_detached
+  # — gems are the one repo class still built from their primary). Put it back on
+  # main, best-effort: the gem is already published, so a checkout that won't restore
+  # must never abort the train.
+  restore_gem_primary(repo)
   record_merged_main(member_slugs)
+end
+
+# Is origin/release's head THIS RUN'S OWN re-pin of `frozen`, already pushed by a
+# ship that died partway (so the retry must REUSE it, not mint a rival)? The I/O seam
+# for Release::ShipSequence.resumable_repin? — it gathers the three facts and the
+# pure model decides. All three reads run in the SHIP WORKSPACE, which shares the
+# primary's object store, so the just-fetched origin/release commit resolves there.
+#
+# Any read that fails answers FALSE — never "probably fine". The caller then aborts
+# as un-QA'd drift, which is the correct fail-closed direction: refusing a resumable
+# ship costs a conversation, completing an unresumable one costs production.
+def resumable_repin?(repo, workspace, frozen:, head:, expected_gemfile:)
+  # 1. ANCESTRY — head is frozen PLUS something, not a divergent line.
+  _, ancestor = sh("git", "-C", workspace, "merge-base", "--is-ancestor", frozen, head, capture: true)
+  return false unless ancestor
+
+  # 2. SHAPE — that something touches ONLY Gemfile/Gemfile.lock (no code rides out).
+  diff, diff_ok = git_capture("-C", workspace, "diff", "--name-only", frozen, head)
+  return false unless diff_ok
+
+  # 3. IDENTITY — its Gemfile is byte-identical to what this run would write.
+  gemfile, gemfile_ok = git_capture("-C", workspace, "show", "#{head}:Gemfile")
+  return false unless gemfile_ok
+
+  Release::ShipSequence.resumable_repin?(
+    ancestor: true,
+    changed_files: diff.to_s.lines,
+    head_gemfile: gemfile,
+    expected_gemfile: expected_gemfile
+  )
 end
 
 # Auto-re-pin (D1): after ALL gems are live, before any app deploys, re-pin each
@@ -2844,6 +2995,15 @@ end
 # against the release, not a branch. Idempotent (already-pinned → no-op). One
 # pass per consumer; the re-pin commit ships on TOP of the frozen SHA (so only
 # frozen + the mechanical re-pin reach prod — guarded against un-QA'd drift).
+#
+# It builds that commit in the SHIP WORKSPACE, not the primary. It used to
+# `git checkout release` in the shared primary, write the Gemfile there, commit and
+# push — a checkout flip plus a commit in a tree a feature session may be using,
+# which is why the ship had to refuse a dirty primary in the first place. The
+# workspace is already pinned (detached) at the frozen SHA — exactly the base this
+# commit must sit on — so the commit is built there and pushed by ref
+# (`HEAD:refs/heads/release`, fast-forward-checked). The primary is never touched
+# and never even read.
 def repin_consumers(app_groups, published_gems, ship_sha)
   return if published_gems.empty?
 
@@ -2854,61 +3014,116 @@ def repin_consumers(app_groups, published_gems, ship_sha)
     path = repo_path(repo)
 
     if DRY
-      step("  #{repo}: re-pin any branch-ref'd published gem in Gemfile → bundle lock --update → " \
-           "commit + push origin #{RELEASE_BRANCH} (idempotent; no-op if already pinned)")
+      step("  #{repo}: re-pin any branch-ref'd published gem in Gemfile (ship workspace @ frozen) → " \
+           "bundle lock --update → commit + push origin #{RELEASE_BRANCH} (idempotent; no-op if already pinned)")
       next
     end
 
-    gemfile = File.join(path, "Gemfile")
-    next unless File.exist?(gemfile)
+    with_ship_workspace(repo) do
+      workspace = ship_workspace!(repo, ship_sha[repo])
 
-    text    = File.read(gemfile)
-    pending = Release::ShipSequence.gems_to_repin(gem_names, text)
-    if pending.empty?
-      say("  #{repo}: Gemfile already pinned for #{gem_names.join(', ')} — no re-pin")
-      next
+      # The workspace HEAD must BE the frozen SHA. It is by construction (it was
+      # just reset --hard onto it), so this asserts the pin actually took rather
+      # than trusting it: EVERY decision and edit below reads this tree, commits on
+      # this HEAD, and pushes it to `release`, so a wrong HEAD here would ship
+      # un-QA'd code. (The old check was the same invariant on the primary's local
+      # `release` branch, where an un-pushed local commit could sit.)
+      local_head, local_ok = git_capture("-C", workspace, "rev-parse", "HEAD")
+      abort!("could not read the ship workspace HEAD in #{repo} for re-pin") unless local_ok
+      if local_head.strip != ship_sha[repo]
+        abort!("#{repo} ship workspace HEAD (#{short(local_head.strip)}) is not the QA-frozen SHA " \
+               "(#{short(ship_sha[repo])}) — REFUSING to build the re-pin on the wrong base")
+      end
+
+      # DECIDE FROM THE FROZEN TREE — never from the primary.
+      #
+      # This read used to come from the PRIMARY's Gemfile, and it was safe only
+      # because of two things this change removed: the ship ff'd the primary's `main`
+      # to the frozen SHA, and the preflight refused a dirty/off-main primary. With
+      # the invariant gone, a primary read is a silent, prod-affecting lie in BOTH
+      # directions (carl, PR #517):
+      #   * The primary's `main` is now one release behind BY DEFINITION (nothing
+      #     ff's it). If the FROZEN tree branch-refs a gem while the primary's stale
+      #     main still carries the previous `~> x.y` pin, the decision comes back
+      #     EMPTY, prints a reassuring "already pinned", and the app DEPLOYS A FROZEN
+      #     SHA WHOSE GEMFILE STILL POINTS AT A GIT BRANCH — prod building the gem
+      #     from a branch instead of the published version, which is the exact hazard
+      #     auto-re-pin exists to prevent. It FAILS GREEN.
+      #   * The mirror: a dirty/feature-branch primary that branch-refs a gem the
+      #     frozen tree already pinned would make the rewrite a no-op, stage nothing,
+      #     and abort at the commit — AFTER THE GEMS PUBLISHED.
+      # The tree the re-pin is built ON is the only tree entitled to decide whether
+      # it is needed.
+      ws_gemfile = File.join(workspace, "Gemfile")
+      next unless File.exist?(ws_gemfile)
+
+      frozen  = ship_sha[repo]
+      text    = File.read(ws_gemfile)
+      pending = Release::ShipSequence.gems_to_repin(gem_names, text)
+      if pending.empty?
+        say("  #{repo}: Gemfile at the frozen SHA is already pinned for #{gem_names.join(', ')} — no re-pin")
+        next
+      end
+
+      # EXACTLY what this run would write — computed up front, because it is both the
+      # content we are about to commit AND the identity a prior partial ship's re-pin
+      # must match to be reusable (see below).
+      expected = text.dup
+      pending.each { |gem| expected = Release::GemfileRepin.rewrite(expected, gem, published_gems[gem]) }
+
+      # The re-pin must build on the QA-frozen SHA. Fetch first so the origin check
+      # reads the TRUE remote (not a stale local origin/release ref), then require
+      # origin/release == frozen so a post-prepare merge to origin can't sneak out
+      # un-QA'd under cover of the re-pin. (A ref read + a fetch — no working tree.)
+      _, fetched = sh("git", "-C", path, "fetch", "origin", "--quiet")
+      abort!("could not fetch origin in #{repo} for re-pin — check the remote, then re-run `bin/release ship`") unless fetched
+
+      head, ok = git_capture("-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}")
+      abort!("could not read origin/#{RELEASE_BRANCH} in #{repo} for re-pin") unless ok
+      head = head.strip
+
+      if head != frozen
+        # origin/release MOVED. Before calling that un-QA'd drift, ask the only
+        # question that matters: IS IT THIS RUN'S OWN RE-PIN, already pushed by a
+        # ship that published the gems and then died? (Release::ShipSequence —
+        # ancestry + Gemfile/Gemfile.lock-only + a BYTE-IDENTICAL Gemfile.) If it is,
+        # the act is already done: ship THAT commit rather than mint a rival with the
+        # same tree, which is what wedged the retry — its push is non-fast-forward
+        # against the re-pin already on the branch, and the ship could never complete.
+        if resumable_repin?(repo, workspace, frozen: frozen, head: head, expected_gemfile: expected)
+          say("  #{repo}: the re-pin for #{short(frozen)} is ALREADY on origin/#{RELEASE_BRANCH} " \
+              "(#{short(head)}) — a prior partial ship pushed it. REUSING that commit (minting a second " \
+              "one would be a non-fast-forward and could never land).")
+          @ship_live << "re-pin already live on origin/#{RELEASE_BRANCH} in #{repo} (#{short(head)})"
+          ship_sha[repo] = head
+          next
+        end
+
+        abort!("#{repo} origin/#{RELEASE_BRANCH} (#{short(head)}) drifted past the QA-frozen SHA " \
+               "(#{short(frozen)}), and the drift is NOT this run's own re-pin (it changes more than " \
+               "Gemfile/Gemfile.lock, or its Gemfile is not what this ship would write) — so code would " \
+               "reach production un-QA'd. Re-run `bin/release prepare` to re-QA before re-pinning.")
+      end
+
+      File.write(ws_gemfile, expected)
+      text = expected
+      pending.each { |gem| bundle_lock(workspace, gem) }
+
+      pins = pending.map { |gem| "#{gem} #{Release::GemfileRepin.pessimistic_constraint(published_gems[gem])}" }
+      sh("git", "-C", workspace, "add", "Gemfile", "Gemfile.lock")
+      _, committed = sh("git", "-C", workspace, "commit", "-m", "repin #{pins.join(', ')}", capture: true)
+      abort!("could not commit the re-pin in #{repo}'s ship workspace") unless committed
+
+      # Push the detached commit onto `release` BY REF. Fast-forward-checked (no
+      # --force), so a release branch that moved under us fails closed here — before
+      # any app deploys.
+      _, pushed = sh("git", "-C", workspace, "push", "origin", "HEAD:refs/heads/#{RELEASE_BRANCH}", capture: true)
+      abort!("could not push the re-pin to origin/#{RELEASE_BRANCH} in #{repo} (did #{RELEASE_BRANCH} move?)") unless pushed
+
+      new_head, = git_capture("-C", workspace, "rev-parse", "HEAD")
+      ship_sha[repo] = new_head.strip # ship the re-pin commit (frozen + re-pin)
+      @ship_live << "re-pinned #{pins.join(', ')} in #{repo}"
     end
-
-    # The re-pin must build on the QA-frozen SHA. Fetch first so the origin check
-    # reads the TRUE remote (not a stale local origin/release ref), then require
-    # origin/release == frozen so a post-prepare merge to origin can't sneak out
-    # un-QA'd under cover of the re-pin.
-    _, fetched = sh("git", "-C", path, "fetch", "origin", "--quiet")
-    abort!("could not fetch origin in #{repo} for re-pin — check the remote, then re-run `bin/release ship`") unless fetched
-
-    head, ok = git_capture("-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}")
-    abort!("could not read origin/#{RELEASE_BRANCH} in #{repo} for re-pin") unless ok
-    if head.strip != ship_sha[repo]
-      abort!("#{repo} origin/#{RELEASE_BRANCH} (#{short(head.strip)}) drifted past the QA-frozen SHA " \
-             "(#{short(ship_sha[repo])}) — re-run `bin/release prepare` to re-QA before re-pinning")
-    end
-
-    checkout_branch(repo, RELEASE_BRANCH)
-
-    # The LOCAL release HEAD must ALSO equal the frozen SHA — origin matching isn't
-    # enough. An un-pushed local commit on a dirty sibling would otherwise ride out
-    # on the re-pin's ff-push, un-QA'd. (origin/release == frozen already passed, so
-    # a mismatch here means a local-only commit.)
-    local_head, local_ok = git_capture("-C", path, "rev-parse", "HEAD")
-    abort!("could not read local #{RELEASE_BRANCH} HEAD in #{repo} for re-pin") unless local_ok
-    if local_head.strip != ship_sha[repo]
-      abort!("#{repo} local #{RELEASE_BRANCH} (#{short(local_head.strip)}) drifted from the QA'd SHA " \
-             "(#{short(ship_sha[repo])}) — re-run `bin/release prepare`")
-    end
-    pending.each { |gem| text = Release::GemfileRepin.rewrite(text, gem, published_gems[gem]) }
-    File.write(gemfile, text)
-    pending.each { |gem| bundle_lock(path, gem) }
-
-    pins = pending.map { |gem| "#{gem} #{Release::GemfileRepin.pessimistic_constraint(published_gems[gem])}" }
-    sh("git", "-C", path, "add", "Gemfile", "Gemfile.lock")
-    _, committed = sh("git", "-C", path, "commit", "-m", "repin #{pins.join(', ')}", capture: true)
-    abort!("could not commit the re-pin in #{repo}") unless committed
-    _, pushed = sh("git", "-C", path, "push", "origin", RELEASE_BRANCH, capture: true)
-    abort!("could not push the re-pin to origin/#{RELEASE_BRANCH} in #{repo}") unless pushed
-
-    new_head, = git_capture("-C", path, "rev-parse", "HEAD")
-    ship_sha[repo] = new_head.strip # ship the re-pin commit (frozen + re-pin)
-    @ship_live << "re-pinned #{pins.join(', ')} in #{repo}"
   end
 end
 
@@ -2927,10 +3142,21 @@ def whats_live(repos, qa_shas)
       live    = !Release::ShipSequence.publish_needed?(version, rubygems_versions(repo))
       say("    gem #{repo} #{version}: #{live ? 'LIVE on RubyGems — will skip' : 'not published — will publish'}")
     else
+      # The LAST-KNOWN origin/main — the ref the ship actually advances
+      # (push_frozen_main). Reading the LOCAL `main` here would report on a branch
+      # nothing in the deploy depends on any more (the ship stopped ff'ing it).
+      #
+      # Deliberately NOT fetched. Nothing else in the ship path fetches now (the old
+      # ff_main_local did), so this ref can be stale — but this is an INFORMATIONAL
+      # pre-flight report, and a fetch here would put network I/O into a line that
+      # decides nothing. If it is stale the report merely says "will ff" for a repo
+      # already at the frozen SHA; the push itself is a harmless no-op. The
+      # AUTHORITATIVE check is push_frozen_main, which is fast-forward-checked
+      # server-side and fails closed on a genuinely diverged main.
       frozen        = qa_shas[repo].to_s
-      main_sha, ok  = git_capture("-C", repo_path(repo), "rev-parse", "main")
+      main_sha, ok  = git_capture("-C", repo_path(repo), "rev-parse", "origin/main")
       at            = ok && !frozen.empty? && main_sha.strip == frozen
-      say("    app #{repo}: main #{at ? "already at #{short(frozen)}" : "will ff → #{short(frozen)}"}")
+      say("    app #{repo}: origin/main (last known) #{at ? "already at #{short(frozen)}" : "will ff → #{short(frozen)}"}")
     end
   end
 end
@@ -2938,45 +3164,68 @@ end
 # Avi's ship gate: run each app's full local suite (registry `test_cmd` — the
 # full-suite tier, Release::STEP_TEST_TIERS["ship"]) on the FROZEN ship SHA —
 # the exact code that ships — BEFORE the ship-authority gate, so approval can
-# never authorize untested code (§1.2 "fixes shipped ≠ tested"). ff main →
-# frozen LOCALLY (no push) so the suite runs on the frozen tree; a red gate
-# scoped-aborts before the confirm, leaving origin untouched. Satellites
-# self-gate (their own deploy runs their suite) → no `test_cmd` → skipped; a
-# repo whose frozen SHA the G3 gate already certified with the same command
-# self-gates too (see test_gate), recording the skip as a gate SOP.
+# never authorize untested code (§1.2 "fixes shipped ≠ tested"). A red gate
+# scoped-aborts before the confirm. Satellites self-gate (their own deploy runs
+# their suite) → no `test_cmd` → skipped; a repo whose frozen SHA the G3 gate
+# already certified with the same command self-gates too (see test_gate),
+# recording the skip as a gate SOP.
 #
-# The primary-checkout lock now wraps ONLY the local ff (a fast pointer move the
-# deploy pushes from). The SUITE no longer runs on the primary at all — it runs
-# in the isolated gate workspace at the frozen SHA (see test_gate /
-# Release::GateWorkspace), so it can't be poisoned by a concurrent HEAD flip and
-# doesn't need to hold the primary hostage for the minutes it takes. That was the
-# flaw in the old shape: the flock is ADVISORY, so widening it around the suite
-# still couldn't stop a concurrent agent session (which takes no lock) from
-# flipping the tree mid-run — it only blocked other bin/release invocations while
-# making the contention worse. ff_main_local's own acquisition is SKIPPED
-# (lock: false) inside the window: the flock is NOT re-entrant.
+# IT MUTATES NOTHING. It used to fast-forward each app's `main` in the primary
+# first, so the suite could run on the frozen tree — but the suite MOVED to the
+# isolated gate workspace (pinned at the frozen SHA, its own test DB), which is a
+# strictly better tree to certify, so the ff became vestigial: it took the
+# primary-checkout lock, flipped a shared checkout, and no longer fed anything.
+# Dropping it means NOTHING in the ship — not a ref, not a checkout, not a lock —
+# is touched before ship authority. A red gate or a declined confirm now leaves
+# the entire machine exactly as it found it.
 def avi_ship_gate(app_groups, ship_sha, qa_gates)
   say("")
   step("Avi ship gate: full suite (registry test_cmd) on the FROZEN ship SHA " \
-       "(isolated workspace, before ship authority)")
+       "(isolated workspace, before ship authority — nothing is mutated yet)")
   app_groups.each do |group|
     repo = group["repo"]
-    # DRY previews plan-only (the callee prints + returns early) — never touch
-    # the real lock file.
-    if DRY
-      ff_main_local(repo, ship_sha[repo])
-    else
-      with_primary_checkout(repo) { ff_main_local(repo, ship_sha[repo], lock: false) }
-    end
     test_gate(repo, frozen_sha: ship_sha[repo],
                     qa_gate: Release::ShipSequence.qa_gate(qa_gates, repo))
   end
 end
 
-# Deploy one app to prod via its registry adapter. Common prelude: local ff main
-# → frozen (the test gate already ran in avi_ship_gate, before ship authority),
-# then push origin main. Then the strategy-specific mechanic + smoke policy.
+# Deploy one app to prod via its registry adapter. Common prelude: advance
+# origin/main to the frozen SHA (a ref push — the test gate already ran in
+# avi_ship_gate, before ship authority). Then the strategy-specific mechanic +
+# smoke policy.
+#
+# NOTHING HERE READS THE PRIMARY'S WORKING TREE. That is the whole point of this
+# region (2026-07-12): ask what the deploy actually NEEDS, and the answer splits
+# cleanly in two.
+#
+#   * git_push_heroku (hub, rolio) needs NO WORKING TREE. "Deploy" is: hand a
+#     commit to a git remote. So it is a ref push straight out of the shared object
+#     store — `git push <remote> <frozen>:refs/heads/<branch>` — which is also
+#     STRICTER than what it replaced: the old `git push heroku main` shipped
+#     whatever the local `main` branch pointed at (correct only because an ff had
+#     just moved it, in a checkout any concurrent session could disturb); this
+#     ships the frozen SHA BY VALUE. Non-fast-forward is still refused by git (no
+#     --force, ever), so a diverged remote fails closed exactly as before.
+#
+#   * repo_script (turf-monster) DOES need a working tree — its bin/deploy runs
+#     the repo's own suite, hashes config/*.idl.json for the IDL pin, and pushes
+#     from the checkout it runs in. It gets the SHIP WORKSPACE: a private detached
+#     worktree pinned at the frozen SHA, prepared like a gate (bundle + a test DB
+#     proven private), under the ship-workspace lock.
+#
+#     VERIFIED, not assumed (this is the assumption class that caused the bug being
+#     fixed here): turf's bin/deploy computes `BRANCH=$(git rev-parse --abbrev-ref
+#     HEAD)`, which in a DETACHED worktree is the literal "HEAD", and then pushes
+#     `PUSH_SPEC="$BRANCH:main"` → `git push heroku-mainnet HEAD:main` — i.e. it
+#     pushes the frozen commit to the Heroku app's main. Its `git remote get-url`
+#     resolves because a linked worktree SHARES the repo config (no
+#     extensions.worktreeConfig anywhere here), its `git diff-index --quiet HEAD`
+#     clean-tree preflight passes (a freshly reset workspace is clean — where a
+#     shared primary might not be), and the IDL files it hashes are TRACKED, so
+#     they are present in the workspace. The one cosmetic difference is a "Not on
+#     main (current: HEAD)" warn, which does not affect its exit status.
 def deploy_app(group, frozen)
+  @ship_live ||= [] # ship() seeds this; never let a nil deref be the way a deploy fails
   repo    = group["repo"]
   path    = repo_path(repo)
   adapter = group["prod_deploy"] || {}
@@ -2990,8 +3239,7 @@ def deploy_app(group, frozen)
   say("")
   step("app #{repo} → prod via #{adapter['strategy']} @ frozen #{short(frozen)}")
 
-  ff_main_local(repo, frozen) # local only — a no-op ff (avi_ship_gate already ff'd to frozen)
-  push_origin_main(repo)
+  push_frozen_main(repo, frozen)
   # The ff landed on origin — stamp this repo's members merged:"main" (matrix:
   # assembled+main = prod-in-flight; an interrupted re-run reads it as "ff done").
   record_merged_main(Array(group["members"]).map { |m| m["slug"] })
@@ -3000,12 +3248,12 @@ def deploy_app(group, frozen)
   when :git_push_heroku
     remote = adapter["remote"] || HEROKU_REMOTE
     branch = adapter["branch"] || "main"
-    step("deploy: git -C #{repo} push #{remote} #{branch}")
+    step("deploy: git -C #{repo} push #{remote} #{short(frozen)}:refs/heads/#{branch} (ref push — no checkout)")
     deploy_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-    _, ok = sh("git", "-C", path, "push", remote, branch, capture: false)
+    _, ok = DRY ? [nil, true] : sh("git", "-C", path, "push", remote, "#{frozen}:refs/heads/#{branch}", capture: false)
     # The G4 gate's per-app deploy SOP — recorded BEFORE the abort so a failed
     # push still shows on the gate run the SystemExit wrapper closes.
-    gate_sop("deploy:#{repo}", "git push #{remote} #{branch}", ok || DRY,
+    gate_sop("deploy:#{repo}", "git push #{remote} #{short(frozen)}:refs/heads/#{branch}", ok || DRY,
              ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - deploy_started) * 1000).round)
     abort!("Heroku deploy failed for #{repo}") unless ok || DRY
 
@@ -3027,50 +3275,111 @@ def deploy_app(group, frozen)
     command = adapter["command"].to_s
     args    = Array(adapter["args"])
     abort!("repo_script adapter for #{repo} has no `command`") if command.empty? && !DRY
-    step("deploy: (cd #{repo}) #{command} #{args.join(' ')} — repo owns its smoke + rollback")
+    step("deploy: (cd #{repo} ship workspace @ frozen #{short(frozen)}) #{command} #{args.join(' ')} " \
+         "— repo owns its smoke + rollback")
+    if DRY
+      gate_sop("deploy:#{repo}", "#{command} #{args.join(' ')}".strip, true, 0)
+      @ship_live << "app #{repo} deployed to production"
+      return
+    end
+
     deploy_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-    _, ok = sh(command, *args, chdir: path)
+    ok = false
+    # Under the SHIP-workspace lock (never the gate's, never the primary's): the
+    # path is fixed, so a concurrent conductor could otherwise reset the tree — or
+    # purge its DB — under a live production deploy.
+    with_ship_workspace(repo) do
+      workspace = ship_workspace!(repo, frozen)
+      prepare_ship_workspace!(repo, workspace)
+      # ship_deploy_env, NOT gate_env: a production deploy script gets its private
+      # test DB and nothing else — no RAILS_ENV=test, no ruby pin. See ship_deploy_env.
+      _, ok = sh(command, *args, chdir: workspace, env: ship_deploy_env(repo))
+    end
     # The G4 gate's per-app deploy SOP (see the git_push_heroku twin above).
-    gate_sop("deploy:#{repo}", "#{command} #{args.join(' ')}".strip, ok || DRY,
+    gate_sop("deploy:#{repo}", "#{command} #{args.join(' ')}".strip, ok,
              ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - deploy_started) * 1000).round)
-    abort!("#{repo} deploy script failed (#{command}) — its own rollback applies; fix + re-run `bin/release ship`") unless ok || DRY
+    abort!("#{repo} deploy script failed (#{command}) — its own rollback applies; fix + re-run `bin/release ship`") unless ok
   end
   @ship_live << "app #{repo} deployed to production"
 end
 
-# --- ship preflight: every app checkout on a clean `main` before any ff -----
-# ship ff's each app repo's `main` up to the QA-frozen SHA (avi_ship_gate +
-# deploy_app), which assumes the checkout is ON `main` with a CLEAN tree. Twice
-# this session a review agent left a checkout on a leftover `pr-NNN` branch / a
-# stale uncommitted schema.rb, and the ff broke MID-ship (after gems published +
-# ship authority — the worst time). This preflight catches that BEFORE any ff,
-# aborting loudly with the offending branch / dirty files. The PURE decision
-# (offenders + message) lives in Release::ShipSequence; this owns only the git
-# reads. A dry-run prints the plan and runs NO git (so a preview never aborts on a
-# legitimately-dirty dev sibling).
+# --- ship preflight: prove the ship can build its own trees -----------------
+# WHAT THIS USED TO BE, and why it changed (2026-07-12). ship ff'd each app repo's
+# `main` in the SHARED PRIMARY and ran the satellites' bin/deploy there, so the
+# preflight REFUSED any app primary that was dirty or off `main`. That refusal
+# ABORTED a production ship — after the gems had already published — because a
+# concurrent feature session had staged work in the primary. The work could not be
+# discarded (it was a live session's), so recovery meant a delicate
+# stash-to-a-labeled-branch rescue at the worst possible moment.
+#
+# The deploy no longer reads those trees (push_frozen_main is a ref push;
+# repo_script runs in the ship workspace), so an app primary's state is simply not
+# input any more, and refusing on it would be theatre. What this step does now:
+#
+#   1. MATERIALIZE each app's ship workspace at the frozen SHA — the tree the
+#      deploy will actually use — BEFORE anything is published or pushed. If a
+#      worktree can't be created or pinned, the ship aborts HERE, where nothing is
+#      live yet, instead of mid-train.
+#   2. GATE the gem repos: a gem artifact is built from its primary and `gem build`
+#      packages what is ON DISK, so a modified TRACKED file there would be
+#      PUBLISHED. That is the one primary-state hazard left, and it is genuinely
+#      unrecoverable (RubyGems forbids re-pushing a version) — so it aborts, and
+#      the abort PRINTS THE RESCUE (commit the stranded work to a labeled branch;
+#      never stash, never discard).
+#   3. ADVISE on any dirty/off-main app primary — a note plus the same rescue,
+#      never a blocker.
+# The PURE decisions (offenders, advisory, rescue) live in Release::ShipSequence;
+# this owns only the git reads. A dry-run prints the plan and runs NO git (so a
+# preview never aborts on a legitimately-dirty dev sibling).
 
 # The current branch + dirty-file list for a checkout (live git reads). Split out
-# as the I/O seam ship_preflight calls per app repo (stubbed in tests).
+# as the I/O seam ship_preflight calls per repo (stubbed in tests).
+#
+# `tracked_dirty` is the subset that would be PACKAGED by `gem build` — porcelain
+# lines that are NOT "??" (untracked). Untracked files are invisible to the
+# gemspec's `git ls-files`, so they are not a publish hazard and must not gate a
+# ship; a modified tracked file is both.
 def repo_git_state(repo, path)
   branch, = git_capture("-C", path, "rev-parse", "--abbrev-ref", "HEAD")
   status, = git_capture("-C", path, "status", "--porcelain")
-  files = status.to_s.lines.map { |l| l[3..].to_s.strip }.reject(&:empty?)
-  { "repo" => repo, "branch" => branch.to_s.strip, "dirty" => files.any?, "dirty_files" => files }
+  lines   = status.to_s.lines.map(&:chomp).reject { |l| l.strip.empty? }
+  files   = lines.map { |l| l[3..].to_s.strip }.reject(&:empty?)
+  tracked = lines.reject { |l| l.start_with?("??") }.map { |l| l[3..].to_s.strip }.reject(&:empty?)
+  { "repo" => repo, "branch" => branch.to_s.strip, "dirty" => files.any?,
+    "dirty_files" => files, "tracked_dirty" => tracked }
 end
 
-def ship_preflight(app_groups)
+def ship_preflight(app_groups, gem_groups = [], ship_sha = {})
   say("")
-  step("ship preflight: each app checkout must be on a clean `main` before any ff")
+  step("ship preflight: pin each app's ship workspace at its frozen SHA; check the gem builds")
   if DRY
-    app_groups.each { |g| say("  [dry-run] check #{g['repo']} (#{repo_path(g['repo'])}) is on a clean main") }
+    gem_groups.each { |g| say("  [dry-run] check #{g['repo']} (#{repo_path(g['repo'])}) has no modified tracked files (it is BUILT from its primary)") }
+    app_groups.each { |g| say("  [dry-run] pin #{g['repo']} ship workspace (#{Release::GateWorkspace.path(repo_path(g['repo']), role: 'ship')}) at the frozen SHA") }
     return
   end
 
-  states = app_groups.map { |g| repo_git_state(g["repo"], repo_path(g["repo"])) }
-  offenders = Release::ShipSequence.preflight_offenders(states)
-  abort!(Release::ShipSequence.preflight_message(offenders)) if offenders.any?
+  # 1. The GEM gate — the one primary-state hazard that survives, because a gem is
+  #    built from its primary checkout. Aborts BEFORE anything is published.
+  gem_states = gem_groups.map { |g| repo_git_state(g["repo"], repo_path(g["repo"])) }
+  gem_dirt   = Release::ShipSequence.gem_build_offenders(gem_states)
+  abort!(Release::ShipSequence.gem_build_message(gem_dirt, root: projects_root)) if gem_dirt.any?
 
-  say("  ✓ #{states.size} app checkout(s) on a clean `main`")
+  # 2. Prove every app's ship workspace materializes at the frozen SHA NOW — an
+  #    env failure (no disk, a wedged worktree registration) aborts here, where the
+  #    release is still fully recoverable, rather than after the gems went out.
+  app_groups.each do |group|
+    repo = group["repo"]
+    with_ship_workspace(repo) { ship_workspace!(repo, ship_sha[repo]) }
+  end
+  say("  ✓ #{app_groups.size} app ship workspace(s) pinned at the frozen SHA — the deploy runs from these, " \
+      "not from the primaries")
+
+  # 3. The app primaries: a NOTE, never a blocker. The ship does not read them.
+  app_states = app_groups.map { |g| repo_git_state(g["repo"], repo_path(g["repo"])) }
+  advisory   = Release::ShipSequence.advisory_message(
+    Release::ShipSequence.preflight_offenders(app_states), root: projects_root
+  )
+  say(advisory) if advisory
 end
 
 # --- step 5c: production smoke SEAL -----------------------------------------
@@ -3213,16 +3522,19 @@ def ship
   app_groups = Release::ShipSequence.ordered_app_groups(repos.select { |g| g["kind"] == "app" }) # hub first
   say("  shipping #{rel_slug} (#{state}): #{gem_groups.size} gem(s) → hub → #{[app_groups.size - 1, 0].max} satellite(s)")
   say("  resuming final member flips: #{result['unfinished_members']} unfinished") if resuming_member_ship
-  say("  partial-ship: abort on first failure; re-run resumes (gems skip, ff no-ops, re-pins idempotent)")
-
-  # PREFLIGHT — BEFORE any ff (avi_ship_gate is the first): assert every app
-  # checkout is on a clean `main`. A leftover review branch / dirty schema.rb
-  # would otherwise break the ff mid-ship; abort loudly here instead.
-  ship_preflight(app_groups)
+  say("  partial-ship: abort on first failure; re-run resumes (gems skip, ref pushes no-op, re-pins idempotent)")
 
   # The QA-frozen SHA to ship per repo (advanced by a re-pin commit in step 4).
+  # Resolved BEFORE the preflight, which pins each app's ship workspace at it.
   ship_sha = {}
   repos.each { |g| ship_sha[g["repo"]] = frozen_sha_for(g["repo"], qa_shas) }
+
+  # PREFLIGHT — before ANYTHING is published, pushed, or deployed: materialize the
+  # ship workspaces at the frozen SHA (so an env failure aborts while the release is
+  # still fully recoverable) and refuse a gem repo whose primary would publish
+  # uncommitted tracked changes. A dirty APP primary is now only a note — the deploy
+  # does not read it.
+  ship_preflight(app_groups, gem_groups, ship_sha)
 
   # 2. "What's already live" pre-flight, then Avi's ship gate, then explicit
   #    ship authority — turf included (its bin/deploy keeps its own smoke + rollback).
@@ -3322,7 +3634,11 @@ def ship
   #    before the task cards walk across the board. Address the release by slug:
   #    Release.current becomes nil as soon as the release is marked shipped.
   deployed_sha = ship_sha[APP].to_s
-  deployed_sha = git_capture("-C", repo_path(APP), "rev-parse", "HEAD").first.strip if deployed_sha.empty? && !DRY
+  # Fallback: read the ref the ship ACTUALLY advanced (origin/main), never the
+  # primary checkout's HEAD. The ship no longer moves the primary's local branch, so
+  # its HEAD may sit on a feature branch or a stale main — recording that as the
+  # deployed SHA would put a commit on the release card that never went to prod.
+  deployed_sha = git_capture("-C", repo_path(APP), "rev-parse", "origin/main").first.strip if deployed_sha.empty? && !DRY
   # Best-effort per-member usage for the assembled→shipped flips, captured from
   # the conductor's LOCAL transcript (the flips run on prod, transcript-less).
   ship_usage = move_usage_map(repos.flat_map { |g| Array(g["members"]).map { |m| m["slug"] } }.compact.uniq)
@@ -3339,20 +3655,23 @@ def ship
   say("🚀 Shipped #{rel_slug} → production#{DRY ? ' (DRY RUN — nothing executed)' : " (#{short(deployed_sha)})"}.")
   say("  release notes: #{shipped['notes_delivered'] ? 'posted' : 'not delivered (webhook unset?)'}") unless DRY
 
-  # 7. Restore each app's PRIMARY checkout to a clean `main` — the COMPLEMENT of
-  #    ship_preflight's offender DETECTION. A review/QA cycle can leave a primary
-  #    on a leftover branch, so the NEXT session would integrate from the wrong
-  #    floor (retro-rel-20260623 line 54). Best-effort + non-fatal: the ship has
-  #    already succeeded; a primary carrying uncommitted/unpushed work is REFUSED
-  #    and left for the operator.
+  # 7. Restore each app's PRIMARY checkout to a clean `main`, now fast-forwarded to
+  #    what shipped — the COMPLEMENT of ship_preflight's ADVISORY. The ship itself
+  #    never touches these trees any more, so this is pure courtesy for the next
+  #    session (a review/QA cycle can leave a primary on a leftover branch, and the
+  #    next session would otherwise integrate from the wrong floor —
+  #    retro-rel-20260623 line 54). Best-effort + non-fatal: the ship has already
+  #    succeeded, and a primary carrying uncommitted/unpushed work is REFUSED and
+  #    left exactly as its owner left it.
   restore_primaries(app_groups)
 
-  # 7b. Sync the installed agent docs from the freshly shipped `main` — the OWNED
+  # 7b. Sync the installed agent docs from the tree that just shipped — the OWNED
   #     pipeline run of bin/install-agent-docs (task name-install-agent-docs-owner).
-  #     It must be POST-SHIP, not post-merge: the installer reads the LOCAL hub
-  #     checkout's docs, and only after the ff `release → main` + restore_primaries
-  #     does the primary's `main` contain exactly what shipped (a qa-release-time
-  #     prepare run would install main's STALE docs and leave the drift in place).
+  #     It must be POST-SHIP, not post-merge: the installer syncs from its own root,
+  #     and only the hub's SHIP WORKSPACE (pinned at the shipped SHA) is guaranteed
+  #     to hold exactly what shipped — the primary may be a release behind, or busy
+  #     with a live session's work (a qa-release-time prepare run would install
+  #     main's STALE docs and leave the drift in place). See sync_agent_docs.
   sync_agent_docs
   close_role_span("shipped #{rel_slug} → prod")
 rescue SystemExit => e
@@ -3408,19 +3727,25 @@ end
 # AGENTS.md/CLAUDE.md) drifted until someone happens to run the installer by hand
 # (previously the only owned run was Alex's share-insights act).
 #
-# ALWAYS the PRIMARY hub checkout's installer (repo_path, .worktrees-aware): the
-# installer syncs from its own $ROOT, and post-ship the primary sits on the
-# freshly shipped `main` — a worktree-run `bin/release` must not install its
-# worktree's unshipped docs. Runs unconditionally (idempotent file copies — a
-# ship with no docs changes is a cheap no-op that also heals prior drift), and is
+# It installs from the hub's SHIP WORKSPACE — the tree pinned at the exact SHA that
+# just shipped — falling back to the primary if there is no workspace (a ship that
+# resolved no hub member). The installer syncs from its own $ROOT, so the tree it
+# runs in IS the docs it installs, and the workspace is the only tree GUARANTEED to
+# hold what shipped: the ship no longer fast-forwards the primary's local `main`
+# (restore_primaries does, best-effort, and it correctly REFUSES a primary carrying
+# a live session's work) — so reading the primary could install docs from a `main`
+# that is one release behind. Runs unconditionally (idempotent file copies — a ship
+# with no docs changes is a cheap no-op that also heals prior drift), and is
 # NON-FATAL by construction (rescue-and-warn, like the merged:main stamps): a
 # docs sync must never abort or fail an already-completed ship. Under --dry-run,
 # `sh` prints the command and skips. Steffon owns this step; the warn line hands
 # the by-hand fix to whoever is watching the ship.
 def sync_agent_docs
   say("")
-  step("sync installed agent docs: bin/install-agent-docs from the shipped hub main")
-  installer = File.join(repo_path("mcritchie-studio"), "bin", "install-agent-docs")
+  step("sync installed agent docs: bin/install-agent-docs from the shipped hub tree")
+  root = Release::GateWorkspace.path(repo_path("mcritchie-studio"), role: "ship")
+  root = repo_path("mcritchie-studio") unless File.exist?(File.join(root, "bin", "install-agent-docs"))
+  installer = File.join(root, "bin", "install-agent-docs")
   out, ok = sh(installer, capture: true)
   print(out)
   say("  ⚠ agent-docs install failed — run `#{installer}` by hand (the ship already succeeded)") unless ok

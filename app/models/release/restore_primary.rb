@@ -69,20 +69,43 @@ class Release
       (plan["action"] || plan[:action]).to_s == "refuse"
     end
 
-    # The loud, actionable abort text for a "refuse" plan — names the app, WHY
-    # (the reasons), and the first offending files/commits, then the one-line fix.
-    # Pure string building so it's unit-tested alongside the decision (mirrors
-    # ShipSequence.preflight_message).
-    def refusal_message(app, plan)
+    # The loud, actionable refusal text for a "refuse" plan — names the app, WHY
+    # (the reasons), and the first offending files/commits, then the REMEDIATION.
+    # Pure string building so it's unit-tested alongside the decision.
+    #
+    # The remediation is `ShipSequence.rescue_commands` — the SAME rescue the ship
+    # preflight's advisory and the gem-build abort print, and for the same reason.
+    # This text used to end "commit/push or stash/discard the changes", and it is
+    # NOT dead code: it fires on the live ship path (bin/release's
+    # restore_primaries → bin/agent-worktree restore-primary → here), for exactly
+    # the case the ship workspace exists for — a primary holding a live session's
+    # work. So one ship run would print "Nothing here is discarded, and nothing is
+    # stashed" AND, twenty lines later, tell the operator to stash or discard it.
+    # An operator does what the tool tells them; the doctrine has to hold at EVERY
+    # surface or it holds at none.
+    #
+    # The refusal itself is unchanged — it still refuses, and still discards
+    # nothing. Only the advice is.
+    def refusal_message(app, plan, at: Time.now, root: "<projects>")
       reasons  = Array(plan["reasons"] || plan[:reasons])
       files    = Array(plan["dirty_files"] || plan[:dirty_files])
       unpushed = Array(plan["unpushed"] || plan[:unpushed])
+      branch   = (plan["branch"] || plan[:branch]).to_s
+      branch   = CANONICAL_BRANCH if branch.empty?
 
       lines = ["refusing to restore #{app} primary checkout — it has local work a restore would discard:"]
       lines << "  reason: #{reasons.join('; ')}" if reasons.any?
       lines << "  uncommitted: #{sample(files)}" if files.any?
       lines << "  unpushed:    #{sample(unpushed)}" if unpushed.any?
-      lines << "  Resolve by hand in the primary checkout (commit/push or stash/discard the changes), then re-run."
+      lines << "  Nothing is stashed and nothing is discarded — it may be a live session's work:"
+      if files.any?
+        Release::ShipSequence.rescue_commands({ "repo" => app, "dirty" => true }, at: at, root: root)
+                             .each { |cmd| lines << "    #{cmd}" }
+      end
+      if unpushed.any?
+        lines << "    git -C #{root}/#{app} push origin #{branch}   # the commits are already safe; this publishes them"
+      end
+      lines << "  Then re-run."
       lines.join("\n")
     end
 

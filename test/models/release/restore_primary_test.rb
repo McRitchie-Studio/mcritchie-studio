@@ -80,15 +80,46 @@ class Release::RestorePrimaryTest < ActiveSupport::TestCase
     assert_equal "main", plan["branch"]
   end
 
-  # --- refusal_message: loud + actionable ----------------------------------
+  # --- refusal_message: loud + actionable, and it NEVER says "stash" ---------
+  #
+  # This message fires on the LIVE ship path (bin/release restore_primaries →
+  # bin/agent-worktree restore-primary → here), for exactly the case the ship
+  # workspace exists for: a primary holding a live session's work. It used to end
+  # "commit/push or stash/discard the changes" — so a single ship run printed the
+  # preflight's "Nothing here is discarded, and nothing is stashed" AND, twenty
+  # lines later, told the operator to stash or discard it. An operator does what the
+  # tool tells them: the doctrine has to hold at EVERY surface or it holds at none.
 
-  test "refusal_message names the app, reasons, files, and the fix" do
+  AT = Time.utc(2026, 7, 12, 21, 30, 0)
+
+  test "refusal_message names the app, reasons, files, and the ONE rescue" do
     plan = R.decision("branch" => "pr-3", "dirty_files" => %w[a.rb b.rb], "unpushed" => ["e1 wip"])
-    msg = R.refusal_message("mcritchie-studio", plan)
+    msg = R.refusal_message("mcritchie-studio", plan, at: AT, root: "/p")
     assert_match(/refusing to restore mcritchie-studio/, msg)
     assert_match(/uncommitted: a\.rb, b\.rb/, msg)
     assert_match(/unpushed:.*e1 wip/, msg)
-    assert_match(/Resolve by hand/, msg)
+    # The SAME rescue every dirty-primary surface prints (ShipSequence.rescue_commands).
+    assert_match(%r{git -C /p/mcritchie-studio switch -c rescue/mcritchie-studio-20260712-213000}, msg)
+    assert_match(/commit -m 'rescue: stranded primary work'/, msg)
+    assert_match(%r{git -C /p/mcritchie-studio push origin pr-3}, msg,
+                 "unpushed commits are already safe — offer to publish them, never to drop them")
+  end
+
+  test "refusal_message NEVER tells the operator to stash or discard the work" do
+    plan = R.decision("branch" => "main", "dirty_files" => ["app/x.rb"], "unpushed" => [])
+    msg = R.refusal_message("turf-monster", plan, at: AT)
+    assert_no_match(/git stash/, msg)
+    assert_no_match(/stash\/discard|discard the changes/, msg,
+                    "the one action the doctrine forbids, at the surface that fires on a live ship")
+    assert_match(/Nothing is stashed and nothing is discarded/, msg)
+  end
+
+  test "refusal_message hands over PASTE-READY paths, not a placeholder" do
+    plan = R.decision("branch" => "main", "dirty_files" => ["app/x.rb"], "unpushed" => [])
+    msg = R.refusal_message("turf-monster", plan, at: AT, root: "/Users/alex/projects")
+    assert_match(%r{git -C /Users/alex/projects/turf-monster switch -c}, msg,
+                 "an operator must not hand-substitute a path at the worst possible moment")
+    assert_no_match(/<projects>/, msg)
   end
 
   test "refusal_message truncates a long file list with a (+N more) tail" do
