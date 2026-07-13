@@ -4029,6 +4029,111 @@ class ReleaseCliTest < Minitest::Test
     end
   end
 
+  # --- repin_consumers: the FROZEN TREE decides, never the primary -------------
+  #
+  # REGRESSION (carl, PR #517). The re-pin decision (`gems_to_repin`) used to read
+  # the PRIMARY's Gemfile. That was safe only because of two invariants THIS BRANCH
+  # REMOVED: ship ff'd the primary's `main` to the frozen SHA, and the preflight
+  # refused a dirty/off-main primary. Without them the primary's `main` is one
+  # release behind BY DEFINITION, and a primary read fails GREEN in the worst
+  # direction: the frozen tree branch-refs a gem, the stale primary still shows the
+  # old `~> x.y` pin, so the ship prints "already pinned" and DEPLOYS A FROZEN SHA
+  # WHOSE GEMFILE POINTS AT A GIT BRANCH — prod building the gem from a branch
+  # instead of the published version. The tree the re-pin is built ON is the only
+  # tree entitled to decide whether it is needed.
+
+  # A real-git consumer: `main` carries an OLD PINNED Gemfile; `release` (the frozen
+  # tip) carries a BRANCH-REF'd one that must be re-pinned before prod.
+  def build_repin_fixture(dir)
+    clone = build_sibling_fixture(dir)
+    File.write(File.join(clone, "Gemfile"), %(source "https://rubygems.org"\ngem "studio-engine", "~> 0.8"\n))
+    File.write(File.join(clone, "Gemfile.lock"), "GEM\n  studio-engine (0.8.0)\n")
+    run_git(clone, "add", "-A")
+    run_git(clone, "commit", "-q", "-m", "main: previous release's pin")
+    run_git(clone, "push", "-q", "origin", "main")
+    run_git(clone, "checkout", "-q", "release")
+    run_git(clone, "merge", "-q", "--ff-only", "main")
+    File.write(File.join(clone, "Gemfile"),
+               %(source "https://rubygems.org"\ngem "studio-engine", github: "amcritchie/studio-engine", branch: "feat/x"\n))
+    run_git(clone, "add", "-A")
+    run_git(clone, "commit", "-q", "-m", "release: branch-ref the gem under test")
+    run_git(clone, "push", "-q", "origin", "release")
+    frozen = git_out(clone, "rev-parse", "HEAD")
+    run_git(clone, "checkout", "-q", "main") # the primary sits on a STALE main, as it now always does
+    [clone, frozen]
+  end
+
+  # [integration] THE regression: the primary's stale `main` says "already pinned",
+  # the frozen tree says "branch-ref'd". The ship must believe the FROZEN TREE and
+  # re-pin — never print "already pinned" and ship a branch-ref'd Gemfile to prod.
+  def test_repin_decides_from_the_frozen_tree_not_the_stale_primary
+    Dir.mktmpdir do |dir|
+      clone, frozen = build_repin_fixture(dir)
+      # Prove the trap is armed: read the PRIMARY and you conclude "nothing to do".
+      assert_match(/~> 0\.8/, File.read(File.join(clone, "Gemfile")),
+                   "the primary's main must look ALREADY PINNED — that is the lie the old code believed")
+
+      setup = %(def repo_path(_repo) = #{clone.inspect}\n) + <<~'RUBY'
+        def bundle_lock(path, gem)
+          File.write(File.join(path, "Gemfile.lock"), "GEM\n  #{gem} (0.9.0)\n")
+        end
+      RUBY
+      out = run_cli(["--yes"], setup: setup,
+                    call: %{@ship_live = []; sha = { "sibling" => #{frozen.inspect} }; } +
+                          %{repin_consumers([{ "repo" => "sibling" }], { "studio-engine" => "0.9.0" }, sha); } +
+                          %{puts("SHIPPING " + sha["sibling"])})
+
+      refute_includes out, "already pinned",
+                      "the stale primary must NOT be allowed to say 'nothing to do': #{out}"
+      shipped = out[/SHIPPING (\h{40})/, 1]
+      refute_nil shipped, "the re-pin must advance the ship SHA: #{out}"
+      refute_equal frozen, shipped, "the ship SHA must move to the re-pin commit"
+
+      # What actually ships: the re-pin commit, on top of frozen, with a REAL pin.
+      gemfile = git_out(clone, "show", "#{shipped}:Gemfile")
+      assert_match(/studio-engine.*~> 0\.9/, gemfile,
+                   "prod must build the PUBLISHED gem — not a git branch")
+      refute_match(/branch:/, gemfile, "no branch ref may reach production")
+      assert_equal frozen, git_out(clone, "rev-parse", "#{shipped}^"),
+                   "the re-pin must sit directly on the QA-frozen SHA — nothing else rides out with it"
+      assert_equal shipped, git_out(File.join(dir, "origin.git"), "rev-parse", "release"),
+                   "…and be pushed to origin/release"
+    end
+  end
+
+  # [integration] The mirror: a DIRTY primary on a feature branch, whose Gemfile
+  # branch-refs a gem the frozen tree already pinned. The old primary read would
+  # decide "re-pin needed", find nothing to rewrite in the frozen tree, stage
+  # nothing, and abort at the commit — AFTER THE GEMS PUBLISHED. The frozen tree
+  # says "already pinned", so the ship correctly does nothing.
+  def test_a_dirty_primary_cannot_force_a_repin_the_frozen_tree_does_not_need
+    Dir.mktmpdir do |dir|
+      clone = build_sibling_fixture(dir)
+      File.write(File.join(clone, "Gemfile"), %(source "https://rubygems.org"\ngem "studio-engine", "~> 0.9"\n))
+      run_git(clone, "add", "-A")
+      run_git(clone, "commit", "-q", "-m", "release: already pinned")
+      run_git(clone, "push", "-q", "origin", "main")
+      frozen = git_out(clone, "rev-parse", "HEAD")
+
+      # A live session's floor: off main, and its Gemfile branch-refs the gem.
+      run_git(clone, "checkout", "-q", "-b", "feat/live-session")
+      File.write(File.join(clone, "Gemfile"),
+                 %(source "https://rubygems.org"\ngem "studio-engine", github: "amcritchie/studio-engine", branch: "wip"\n))
+
+      setup = %(def repo_path(_repo) = #{clone.inspect})
+      out = run_cli(["--yes"], setup: setup,
+                    call: %{@ship_live = []; sha = { "sibling" => #{frozen.inspect} }; } +
+                          %{begin; repin_consumers([{ "repo" => "sibling" }], { "studio-engine" => "0.9.0" }, sha); } +
+                          %{puts("PASSED " + sha["sibling"]); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+      assert_includes out, "PASSED", "a dirty primary must not abort the re-pin AFTER the gems published: #{out}"
+      assert_includes out, "already pinned", "the FROZEN tree is already pinned — there is nothing to do"
+      assert_includes out, "PASSED #{frozen}", "the ship SHA must not move"
+      assert_equal "feat/live-session", git_out(clone, "rev-parse", "--abbrev-ref", "HEAD"),
+                   "the primary is never checked out"
+    end
+  end
+
   # --- ship preflight: the dirty-primary ABORT CLASS is gone ------------------
   # It used to refuse any app primary that was dirty or off `main`, because the ship
   # ff'd + deployed from that tree. It aborted a REAL production ship (after the gems

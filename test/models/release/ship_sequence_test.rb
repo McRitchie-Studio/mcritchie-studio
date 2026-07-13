@@ -371,6 +371,13 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
     assert_match(/switch main/, cmds[2])
   end
 
+  test "rescue_commands takes an injectable root so the paths are paste-ready" do
+    cmds = S.rescue_commands({ "repo" => "turf-monster", "dirty" => true }, at: AT, root: "/Users/alex/projects")
+    assert_match(%r{git -C /Users/alex/projects/turf-monster switch -c rescue/}, cmds[0])
+    assert(cmds.none? { |c| c.include?("<projects>") },
+           "an operator must not hand-substitute a path at the worst possible moment")
+  end
+
   test "rescue_commands for a CLEAN off-main checkout is just a checkout" do
     cmds = S.rescue_commands({ "repo" => "turf-monster", "dirty" => false }, at: AT)
     assert_equal 1, cmds.length

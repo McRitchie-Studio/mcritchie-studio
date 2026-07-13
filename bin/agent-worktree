@@ -33,6 +33,10 @@ require "yaml"
 # The IO-free restore-primary safety decision (refuse-on-dirty/unpushed, else ff
 # to main). Pure Ruby with no Rails deps — the same `require_relative` shape
 # bin/release uses to pull in Release::ShipSequence (its detect-side complement).
+# ShipSequence comes along because the refusal prints the ONE rescue
+# (ShipSequence.rescue_commands) every dirty-primary surface prints — see
+# RestorePrimary.refusal_message.
+require_relative "../app/models/release/ship_sequence"
 require_relative "../app/models/release/restore_primary"
 require_relative "lib/projects_root"
 
@@ -2378,7 +2382,7 @@ def run_restore_primary(app, dry: false)
   plan = Release::RestorePrimary.decision(restore_primary_state(repo))
 
   if Release::RestorePrimary.refuse?(plan)
-    warn(Release::RestorePrimary.refusal_message(label, plan))
+    warn(Release::RestorePrimary.refusal_message(label, plan, root: PROJECTS_DIR))
     return false
   end
 

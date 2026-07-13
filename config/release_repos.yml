@@ -31,6 +31,23 @@
 #                 repo owns its own deploy logic; the conductor just invokes it).
 #       command — the repo-relative deploy script (e.g. bin/deploy).
 #       args    — argv passed to the script (e.g. ["--yes"] to skip prompts).
+#     CONTRACT (read before registering a new one). The script runs with cwd = the
+#     repo's SHIP WORKSPACE (<repo>/.worktrees/_ship): a private worktree with a
+#     DETACHED HEAD at the QA-frozen SHA, a clean tree, and the repo's shared git
+#     config/remotes. So:
+#       * `git rev-parse --abbrev-ref HEAD` is the literal "HEAD", not "main" — a
+#         script that pushes must use a refspec that works detached (turf's
+#         `PUSH_SPEC="$BRANCH:main"` becomes `HEAD:main`, which pushes the frozen
+#         commit — exactly right).
+#       * GITIGNORED artifacts are NOT there on a fresh workspace (no node_modules,
+#         no app/assets/builds, no .env beyond the one the conductor mirrors in).
+#         Verify the script's own test/build steps survive that.
+#       * The ONLY env the conductor adds is DATABASE_URL, pointing at the
+#         workspace's private test DB (<app>_ship_test) so the script's pre-prod
+#         suite can't collide with a concurrent one. It is NOT test-scoped (a Rails
+#         builtin): a deploy script must not run a development-env rails command and
+#         expect its dev database. RAILS_ENV is deliberately NOT set — precompiling
+#         assets under RAILS_ENV=test would build the wrong artifact and ship it.
 #
 # Optional per-app `qa_deploy: { app: <qa-server-key> }` overrides the qa-server
 # target; absent, `Release::Repos.qa_app` defaults the key to the repo slug.

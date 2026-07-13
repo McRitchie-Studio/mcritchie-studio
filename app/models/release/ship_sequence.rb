@@ -256,13 +256,13 @@ class Release
     # off-main primary is now just a note, plus the rescue for the operator who
     # WANTS it clean. Says what the ship is doing so nobody reads the note as a
     # failure. nil when every primary is already clean (print nothing).
-    def advisory_message(offenders, at: Time.now)
+    def advisory_message(offenders, at: Time.now, root: "<projects>")
       list = Array(offenders)
       return nil if list.empty?
 
       lines = list.flat_map do |o|
         ["  - #{o['repo']}: #{offender_reasons(o).join('; ')}"] +
-          rescue_commands(o, at: at).map { |c| "      #{c}" }
+          rescue_commands(o, at: at, root: root).map { |c| "      #{c}" }
       end
       "  ⚠ app primary checkout(s) NOT on a clean `main` — the ship does NOT read them " \
         "(it deploys from its own workspace at the frozen SHA), so this is a NOTE, not a blocker:\n" \
@@ -297,13 +297,13 @@ class Release
     # The loud, ACTIONABLE abort for gem_build_offenders. It leads with the stakes
     # (this would publish your uncommitted code) and hands over the exact rescue —
     # never "stash or discard", which is how a live session's work gets destroyed.
-    def gem_build_message(offenders, at: Time.now)
+    def gem_build_message(offenders, at: Time.now, root: "<projects>")
       lines = Array(offenders).flat_map do |o|
         files  = Array(o["dirty_files"])
         sample = files.first(5).join(", ")
         more   = files.size > 5 ? " (+#{files.size - 5} more)" : ""
         ["  - #{o['repo']}: modified tracked file(s)#{sample.empty? ? '' : ": #{sample}#{more}"}"] +
-          rescue_commands(o, at: at).map { |c| "      #{c}" }
+          rescue_commands(o, at: at, root: root).map { |c| "      #{c}" }
       end
       "ship aborted BEFORE publishing anything — a gem repo's primary has uncommitted changes to TRACKED " \
         "files, and `gem build` packages what is on disk, so those edits would be PUBLISHED to RubyGems " \
@@ -316,18 +316,29 @@ class Release
     # The rescue: park a primary's stranded work on a LABELED BRANCH and hand the
     # checkout back clean. Commit, never stash and never discard — the work may
     # belong to a live agent session, and a stash is easy to lose (and its message
-    # is only a push-time label). Pure: `at:` is injectable so the branch name is
-    # deterministic under test.
-    def rescue_commands(offender, at: Time.now)
+    # is only a push-time label).
+    #
+    # THE ONE RESCUE. Every surface that shows an operator a dirty primary prints
+    # THIS (the ship preflight's advisory, the gem-build abort, and
+    # RestorePrimary's post-ship refusal) — because a tool that says "never stash"
+    # in one breath and "stash/discard the changes" in the next is worse than one
+    # that says nothing, and an operator does what the tool tells them.
+    #
+    # Pure: `at:` and `root:` are injectable — `at:` so the branch name is
+    # deterministic under test, `root:` so the caller can hand over PASTE-READY
+    # paths instead of a `<projects>` placeholder the operator must substitute by
+    # hand at the worst possible moment.
+    def rescue_commands(offender, at: Time.now, root: "<projects>")
       repo   = (offender["repo"] || offender[:repo]).to_s
+      path   = "#{root}/#{repo}"
       branch = "rescue/#{repo}-#{at.strftime('%Y%m%d-%H%M%S')}"
       dirty  = offender["dirty"] || offender[:dirty]
-      return ["git -C <projects>/#{repo} checkout main   # (clean tree — just leave the review branch)"] unless dirty
+      return ["git -C #{path} checkout main   # (clean tree — just leave the review branch)"] unless dirty
 
       [
-        "git -C <projects>/#{repo} switch -c #{branch}   # carries the work over, discards nothing",
-        "git -C <projects>/#{repo} add -A && git -C <projects>/#{repo} commit -m 'rescue: stranded primary work'",
-        "git -C <projects>/#{repo} switch main   # primary is clean again; the work lives on #{branch}"
+        "git -C #{path} switch -c #{branch}   # carries the work over, discards nothing",
+        "git -C #{path} add -A && git -C #{path} commit -m 'rescue: stranded primary work'",
+        "git -C #{path} switch main   # primary is clean again; the work lives on #{branch}"
       ]
     end
 
