@@ -8,16 +8,14 @@ require "rake"
 # a CI runner — starts with NO built tailwind.css, and every view-rendering test
 # would error with `The asset "tailwind.css" is not present in the asset pipeline`.
 #
-# What saves an ARGLESS `bin/rails test` (CI, bin/full-suite-check, and the HUB's gate
-# workspace, whose registered command is rake-routed through an argless `rails test`) is
-# that Rails runs `test:prepare` first, and tailwindcss-rails enhances that task with
-# `tailwindcss:build`. The SATELLITE gate workspaces get no such rescue: their
-# `qa_test_cmd` is the path-arg `bin/rails test test/integration`, so turf-monster's G3
-# gate still takes this false red — a follow-up on `bin/release.rb`'s
-# `prepare_gate_workspace!`. Runs that pass EXPLICIT TEST PATHS do not get it for free —
+# What saves an ARGLESS `bin/rails test` (CI, bin/full-suite-check) is that Rails runs
+# `test:prepare` first, and tailwindcss-rails enhances that task with
+# `tailwindcss:build`. Runs that pass EXPLICIT TEST PATHS do not get it for free —
 # Rails::Command::TestCommand skips the prepare task whenever an argument looks like a
-# path — so bin/fast-check's lanes and `bin/agent-worktree test <file>` invoke
-# `test:prepare` THEMSELVES (see bin/fast-check, bin/agent-worktree#prepare_test_env).
+# path — so every path-arg caller invokes `test:prepare` ITSELF: bin/fast-check's
+# lanes, `bin/agent-worktree test <file>` (see bin/agent-worktree#prepare_test_env),
+# and the release gate workspaces (`bin/release.rb`'s `prepare_gate_workspace!` runs
+# `db:test:prepare test:prepare` since gate-workspace-skips-test-prepare, PR #522).
 #
 # This test pins the seam that makes that work. If a future gem bump or a swap of the
 # CSS/JS bundler drops the enhancement, those callers would silently stop building the

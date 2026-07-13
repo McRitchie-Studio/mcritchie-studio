@@ -267,9 +267,9 @@ class FastCheckTest < Minitest::Test
   # FILE PATHS, and Rails SKIPS its own test:prepare whenever an argument looks like a
   # path -- Rails::Command::TestCommand runs it only `if self.args.none?(
   # EXACT_TEST_ARGUMENT_PATTERN)`. So the bundler hook that an ARGLESS `bin/rails test`
-  # fires for free (CI, bin/full-suite-check, the HUB's gate workspace -- all green; the
-  # SATELLITE gate workspaces run a path-arg qa_test_cmd and are NOT free, tracked as a
-  # follow-up on bin/release.rb) never fires here, and on a virgin worktree every
+  # fires for free (CI, bin/full-suite-check -- all green; the release gate workspaces
+  # prep their own env since gate-workspace-skips-test-prepare, PR #522) never fires
+  # here, and on a virgin worktree every
   # view-rendering test errored with
   # `The asset "tailwind.css" is not present in the asset pipeline`: ~77 red on a
   # ci.yml-only or docs-only diff. A G1 cert that reports an ENV GAP as a test

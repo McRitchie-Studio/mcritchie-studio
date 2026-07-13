@@ -105,7 +105,7 @@ checkout starts with no built CSS. Put those two facts together:
 | GitHub CI | `bin/rails db:test:prepare test test:system` (rake `test` shells an **argless** `rails test`) | yes | green |
 | `bin/full-suite-check` | `bin/rails test` (argless) | yes | green |
 | Release gate workspace — **hub** | `bin/rails db:test:prepare test test:system` (the hub's registry `test_cmd`/`qa_test_cmd` — rake-routed, and rake's `test` shells an **argless** `rails test`) | yes | green |
-| Release gate workspace — **satellites** | `bin/rails test test/integration` (`qa_test_cmd`, `config/release_repos.yml`) | **no** | **EXPOSED** |
+| Release gate workspace — **satellites** | `bin/rails test test/integration` (`qa_test_cmd`, `config/release_repos.yml`) | **no** | green — the gate preps the env itself (PR #522) |
 | **`bin/fast-check`** | `bin/rails test <mapped/spine paths>` | **no** | **was red** |
 | A hand-run single file | `bin/rails test test/x_test.rb` | **no** | **was red** |
 
@@ -117,20 +117,20 @@ prepare the test env themselves — `bin/fast-check`'s `test-prepare` lane, and
 by `test <file>`) — so their failure is designed out rather than documented
 around.
 
-**The release gate workspace is NOT fixed yet.** `prepare_gate_workspace!`
-(`bin/release.rb`) runs only `bin/rails db:test:prepare`, and both satellites
-register a **path-arg** `qa_test_cmd` (`bin/rails test test/integration`), so
-their `.worktrees/_gate` — created virgin by `git worktree add --detach` — skips
-the hook and never builds the CSS. **turf-monster is live-exposed**: it carries
-`tailwindcss-rails`, gitignores `app/assets/builds/*`, and renders
-`stylesheet_link_tag "tailwind"` through studio-engine's head partial, so the
-next gate workspace it creates takes this same false red — in the **G3 Candidate**
-gate, a wider blast radius than the G1 lane. (Rolio shares the path-arg shape but
-has no bundled CSS today — `stylesheet_link_tag "application"`, no
-`tailwindcss-rails` — so it is latent, not live.) A follow-up task fixes
-`prepare_gate_workspace!` to run `db:test:prepare test:prepare`; it is deliberately
-not touched here (other PRs are open on that file). Until it lands, a satellite
-gate red on a missing asset is this bug, not a regression.
+**The release gate workspace was fixed the same way** (task
+`gate-workspace-skips-test-prepare`, PR #522, shipped): `prepare_gate_workspace!`
+(`bin/release.rb`) now runs `bin/rails db:test:prepare test:prepare` before both
+the G3 and G4 lanes, so a `.worktrees/_gate` — created virgin by
+`git worktree add --detach` — has its bundled assets built whatever shape the
+registered command takes, the satellites' path-arg `qa_test_cmd` included.
+(turf-monster was the live exposure: `tailwindcss-rails`, gitignored
+`app/assets/builds/*`, `stylesheet_link_tag "tailwind"` via studio-engine's head
+partial — its G3 gate took exactly this false red before #522.) With the prep in
+place, a gate red on a missing asset is no longer this bug: `test:prepare`
+builds the stylesheet up front, so treat such a red as a real signal — most
+plausibly a broken stylesheet in the release's own diff (a bad `@apply`, an
+unknown utility, a malformed `@theme`) — and read the gate's captured output to
+tell an env gap from a diff regression.
 
 Two rules follow:
 
