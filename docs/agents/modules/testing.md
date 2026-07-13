@@ -44,10 +44,11 @@ If a lane fails, record the classification in task `qa_feedback`:
 - missing seed or test data
 - dependency ordering issue
 
-## A Test That Spawns A Subprocess Must Null The Agent Session
+## A Test Whose Child Resolves The Session Must Null It
 
-**The rule.** Any test that shells out — `Open3`, `IO.popen`, `Process.spawn`,
-backticks, `system` — must build the child's env through the shared neutralizer:
+**The rule.** A test that spawns a child able to resolve `SessionIdentity` —
+any `bin/` command, or anything else that reads the session env — must build
+the child's env through the shared neutralizer:
 
 ```ruby
 require_relative "../support/session_env"   # standalone minitest files
@@ -58,6 +59,13 @@ out = IO.popen(env, cmd, &:read)
 Open3.capture2(SessionEnv.neutralized, *cmd)            # bare overlay
 SessionEnv.neutralized("CLAUDE_CODE_SESSION_ID" => sid) # opt IN to a fake session
 ```
+
+Session-blind spawns are exempt: `git` reads no session var, so the tests that
+shell out to it (`fast_cert_test`, `repo_root_test`) rightly skip the
+neutralizer. Backticks and `%x` take no env hash at all — use them only for
+session-blind children, and switch to a spawner that can pass an env before the
+child grows session-aware. When unsure, neutralize. The one spawn that must stay
+bare is one that deliberately asserts session inheritance (`Release::GateEnvTest`).
 
 **Why.** An interactive Claude session exports `CLAUDE_CODE_SESSION_ID` (Codex:
 `CODEX_THREAD_ID`); **CI and a plain shell export neither.** A spawned `bin/task`,
