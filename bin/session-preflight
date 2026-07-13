@@ -23,6 +23,7 @@ require "pathname"
 require "time"
 require "uri"
 require "yaml"
+require_relative "lib/code_diff"
 require_relative "lib/task_board"
 
 DEFAULT_ROOT = File.expand_path("..", __dir__)
@@ -37,18 +38,13 @@ CHECK_STATES = {
   "SKIPPED" => "skipped"
 }.freeze
 BAD_MERGE_STATES = %w[DIRTY BEHIND BLOCKED].freeze
-# Kinds that carry no shippable code surface, so the shape/required-metadata
-# gate does not apply — mirrored from bin/dor-check (the canonical source; keep
-# the two gates in lock-step so a task that passes one never surprise-fails the
-# other). UNLESS the branch actually ships code under CODE_PATH_PREFIXES:
-# "there is no size exemption" (CLAUDE.md/AGENTS.md), so an exempt kind with a
-# real code diff is gated exactly like a feature, matching dor-check.
-EXEMPT_KINDS = %w[chore cleanup docs].freeze
-# Prefixes that mean a change ships real, testable code. A change confined to
-# anything else (docs/, *.md, READMEs) is doc-only and keeps the exemption.
-# Same deliberate gaps as dor-check: root-level files (Gemfile, Rakefile) and
-# test/-only changes are NOT counted as a code diff.
-CODE_PATH_PREFIXES = %w[app/ lib/ bin/ config/ db/].freeze
+# Kinds that MAY skip the shape/required-metadata gate — and the classifier that
+# decides whether this diff has EARNED that skip. Both come from bin/lib/code_diff.rb,
+# the single source of truth dor-check gates on. They used to be COPIES of
+# dor-check's constants ("keep the two gates in lock-step") and they drifted into
+# the same blind spot: an allowlist of code prefixes that never saw
+# .github/workflows/*, Gemfile, or test/. A shared require can't drift.
+EXEMPT_KINDS = CodeDiff::EXEMPT_KINDS
 STALE_PATTERNS = [
   ["legacy queued stage query", /stage=queued/],
   ["legacy task transition endpoint", %r{tasks/:slug/(?:start|complete|fail_task)}],
@@ -458,7 +454,9 @@ def print_human(report)
 
   shape = report["shape"]
   if shape["exempt"]
-    puts "Shape gate: n/a — non-code task (kind: #{shape["kind"]}); skipped, matching bin/dor-check"
+    puts "Shape gate: n/a — no behavioral files in the diff yet (kind: #{shape["kind"]}); skipped, " \
+         "matching bin/dor-check. Ship code — including .github/, Gemfile, config, or tests — and the " \
+         "shape/tier gate applies like any feature."
   else
     puts "Required tiers: #{shape["shape"] || "none"} => #{shape["dor_tiers"].join(", ")}"
     unless shape["required_metadata"].empty?
@@ -595,11 +593,13 @@ stale_hits = stale_scan(options[:root], scan_files).first(40)
 errors << "stale terminology found in #{stale_hits.size} location(s)" unless stale_hits.empty?
 
 shape = shape_report(options[:root], task, warnings)
-# Non-code kinds (EXEMPT_KINDS) skip the shape/required-metadata gate, exactly
-# as bin/dor-check does — unless the branch ships code under CODE_PATH_PREFIXES,
-# in which case the exemption is lost and the full gate applies.
+# An EXEMPT kind (EXEMPT_KINDS) skips the shape/required-metadata gate only when
+# the OBSERVED diff ships no behavior — exactly as bin/dor-check gates it, via the
+# same CodeDiff classifier. The label alone never earns the skip. (Preflight runs
+# BEFORE the code exists, so an empty diff is expected here and stays exempt; the
+# merge gate is the one that fails closed on an unobservable diff.)
 kind = devops["kind"].to_s.strip.downcase
-code_files = changed.select { |file| CODE_PATH_PREFIXES.any? { |prefix| file.start_with?(prefix) } }
+code_files = CodeDiff.code_files(changed)
 shape["kind"] = kind.empty? ? nil : kind
 shape["exempt"] = EXEMPT_KINDS.include?(kind) && code_files.empty?
 if shape["exempt"]

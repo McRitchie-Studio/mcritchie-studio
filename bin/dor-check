@@ -92,9 +92,11 @@ require "json"
 require "uri"
 require "yaml"
 require "optparse"
+require "shellwords"
 require_relative "lib/full_suite_gate"
 require_relative "lib/repo_root"
 require_relative "lib/ci_status"
+require_relative "lib/code_diff"
 require_relative "lib/task_board"
 
 # ROOT = the gate script's OWN repo (the hub). CONFIG (feature_shapes.yml) and the
@@ -102,18 +104,13 @@ require_relative "lib/task_board"
 # The code DIFF + fingerprint, though, root at the agent's worktree (diff_root).
 ROOT = File.expand_path("..", __dir__)
 CONFIG_PATH = File.join(ROOT, "config", "feature_shapes.yml")
-# Kinds that carry no shippable code surface, so the shape/test-tier gate does
-# not apply. They PASS with a "DoR n/a" note instead of failing on missing shape
-# — UNLESS the branch actually ships code (see CODE_PATH_PREFIXES). "There is no
-# size exemption" (CLAUDE.md/AGENTS.md): a chore with a code diff gets gated too.
-EXEMPT_KINDS = %w[chore cleanup docs].freeze
-# Prefixes that mean a change ships real, testable code. A change confined to
-# anything else (docs/, *.md, READMEs) is doc-only and keeps the exemption.
-# Deliberate gaps: root-level files (Gemfile/Gemfile.lock, Rakefile, config.ru)
-# and test/-only changes are NOT counted as a code diff — a dependency bump is
-# the canonical chore the exemption serves, and adding tests isn't shipping
-# behavior. Revisit if a Gemfile-only chore ever needs the gate.
-CODE_PATH_PREFIXES = %w[app/ lib/ bin/ config/ db/].freeze
+# Kinds that MAY skip the shape/test-tier gate — chore/cleanup/docs. The label
+# alone NEVER earns the skip: the exemption must be EARNED by an observed
+# doc-only diff (CodeDiff.code_files empty). "There is no size exemption"
+# (CLAUDE.md/AGENTS.md) — and there is no LABEL exemption either. See
+# bin/lib/code_diff.rb for why the classifier is a denylist, and for the PR #512
+# escape (a kind:chore that shipped .github/workflows/ci.yml) that motivated it.
+EXEMPT_KINDS = CodeDiff::EXEMPT_KINDS
 # Path prefixes whose changes ship DATA, not just schema/behavior: a new seed or
 # a data-migration (a backfill) needs a one-off rake AFTER the deploy — Heroku's
 # release phase auto-runs `db:migrate`, but NOT `db:seed` or a backfill task. The
@@ -248,16 +245,89 @@ def diff_root
   RepoRoot.code_root(ENV["DOR_CHECK_DIFF_ROOT"], ROOT)
 end
 
+# The diff under gate, resolved ONCE as [files, source]. Sources, in priority:
+#
+#   :injected — DOR_CHECK_CHANGED_FILES (the deterministic test seam).
+#   :pr       — the PR's OWN file list, via `gh pr view --json files`. At the merge
+#               boundary the artifact under gate is the PULL REQUEST, not whatever
+#               tree the caller happens to be standing in — and the caller is often
+#               standing somewhere blind: the reviewer's gate-zero
+#               (`--gate-role review`) runs from a PRIMARY checkout where the task
+#               branch isn't checked out at all, so a local-only detector sees an
+#               EMPTY diff and (pre-fix) called that "no code". Reading the PR makes
+#               the verdict correct from anywhere.
+#   :git      — the local working tree + committed view (union of staged, unstaged,
+#               untracked, and base...HEAD). This is the BUILDER's view: it fires
+#               pre-commit and pre-PR, before a PR exists to read.
+#   :indeterminate — nothing could be read. NEVER an exemption (see below).
+#
+# FAIL-CLOSED. "We couldn't see a code diff" is not "there is no code diff." The
+# old resolver returned [] on an unreadable repo AND on a blind checkout, and []
+# bought a full exemption — the gate defaulted to OFF whenever it couldn't see.
+# Now the exemption demands positive proof (a non-empty, observed, all-prose
+# diff); anything else enforces the tiers.
+def branch_diff
+  @branch_diff ||= resolve_branch_diff
+end
+
 def changed_files
+  branch_diff.first
+end
+
+def diff_source
+  branch_diff.last
+end
+
+def resolve_branch_diff
   if ENV.key?("DOR_CHECK_CHANGED_FILES")
-    return ENV["DOR_CHECK_CHANGED_FILES"].to_s.split(/[\n,]/).map(&:strip).reject(&:empty?)
+    return [ENV["DOR_CHECK_CHANGED_FILES"].to_s.split(/[\n,]/).map(&:strip).reject(&:empty?), :injected]
   end
 
+  pr = pr_changed_files
+  return [pr, :pr] if pr.is_a?(Array) && pr.any?
+
+  git = git_changed_files
+  return [git, :git] if git.is_a?(Array) && git.any?
+
+  # Nothing observed anywhere. A genuinely clean tree and a blind/unreadable
+  # checkout are INDISTINGUISHABLE from here, so both fail closed.
+  [[], :indeterminate]
+end
+
+# The PR's changed files (merge gate's source of truth). DOR_CHECK_PR_FILES is the
+# test seam (a file list, or the token "unverified" to simulate gh being down),
+# mirroring DOR_CHECK_CI_STATUS. Any failure → nil, and the caller falls back to
+# the local git view rather than failing closed on a diff it CAN still read.
+def pr_changed_files
+  injected = ENV["DOR_CHECK_PR_FILES"]
+  if injected
+    return nil if injected.strip == "unverified"
+
+    return injected.split(/[\n,]/).map(&:strip).reject(&:empty?)
+  end
+
+  pr = @pr_url.to_s.strip
+  return nil if pr.empty?
+
+  raw = IO.popen(
+    ["gh", "pr", "view", pr, "--json", "files", "--jq", ".files[].path"], err: File::NULL, &:read
+  )
+  return nil unless $?.success?
+
+  files = raw.to_s.split("\n").map(&:strip).reject(&:empty?)
+  files.empty? ? nil : files
+rescue SystemCallError
+  nil
+end
+
+# The local view: uncommitted (staged/unstaged/untracked — base-independent, so it
+# fires on the pre-commit SOP order) UNION the committed view against the
+# release-aware base. Returns nil when git can't read the tree at all (no repo).
+def git_changed_files
   root = diff_root
   base = diff_base(root)
   files = []
 
-  # Working-tree views: base-independent, so they catch the pre-commit SOP case.
   worktree_ok = true
   [
     %w[diff --cached --name-only],
@@ -273,16 +343,11 @@ def changed_files
   committed = IO.popen(["git", "-C", root, "diff", "--name-only", "#{base}...HEAD"], err: File::NULL, &:read)
   files.concat(committed.to_s.split("\n")) if $?.success?
 
-  files = files.map(&:strip).reject(&:empty?).uniq
-  return files unless files.empty?
+  return nil unless worktree_ok
 
-  # Nothing detected. Only warn+default-to-exempt when git itself couldn't read
-  # the working tree (no repo) — a genuinely clean tree is just an empty diff.
-  warn!("dor-check: couldn't read the git working tree at #{root}; code-diff chore gate skipped this run (defaulting to exempt)") unless worktree_ok
-  []
+  files.map(&:strip).reject(&:empty?).uniq
 rescue SystemCallError
-  warn!("dor-check: git unavailable; code-diff chore gate skipped this run (defaulting to exempt)")
-  []
+  nil
 end
 
 # The committed-diff base for `root`. DOR_CHECK_DIFF_BASE is authoritative when
@@ -340,7 +405,7 @@ end
 
 # The subset of changed files that ship testable code (under CODE_PATH_PREFIXES).
 def code_changed_files
-  changed_files.select { |f| CODE_PATH_PREFIXES.any? { |prefix| f.start_with?(prefix) } }
+  CodeDiff.code_files(changed_files)
 end
 
 # The subset of changed files that ship a seed or a data-migration (under
@@ -506,16 +571,75 @@ devops = task.dig("metadata", "devops") || {}
 shape = devops["shape"].to_s.strip
 shape_def = shapes[shape]
 kind = devops["kind"].to_s.strip.downcase
+# Feeds the :pr diff source (resolve_branch_diff). Set BEFORE the first
+# changed_files call below, which memoizes the resolution.
+@pr_url = devops["pr_url"]
 
-# Non-code kinds (chore/cleanup/docs) normally carry no shape and no test tiers
-# to gate — PASS them with a "DoR n/a" note. BUT if the branch actually ships
-# code, there is no size exemption: fall through to the full shape/test-tier gate
-# (gated_code_files drives a clearer "why am I being gated?" message below).
+# An EXEMPT kind (chore/cleanup/docs) may skip the shape/test-tier gate — but it
+# has to EARN the skip with an observed doc-only diff. Three outcomes:
+#
+#   code in the diff   → gate it exactly like a feature (no size, and no LABEL,
+#                        exemption). gated_code_files names the offenders below.
+#   doc-only diff      → skip, LOUDLY: say what was observed and where it came
+#                        from, so a wrong skip is visible in the transcript
+#                        instead of hiding behind a bare "n/a (kind: chore)".
+#   nothing observed   → FAIL CLOSED at the merge gate. An empty view is not
+#                        evidence of a doc-only PR; it is the absence of evidence
+#                        (a blind checkout, an unreadable repo, a bad diff root).
+#                        The BUILD gate stays lenient: at design time no code
+#                        exists yet, that empty diff is the expected state, and
+#                        the build gate enforces no tiers anyway — so leniency
+#                        there cannot disarm the test gate. The merge gate can.
 gated_code_files = []
 if EXEMPT_KINDS.include?(kind)
   gated_code_files = code_changed_files
-  if gated_code_files.empty?
-    note = "non-code task (kind: #{kind}); DoR n/a"
+  observed = changed_files
+  # An EMPTY observation is never positive proof of a doc-only PR, whatever its
+  # source claims — "we saw nothing" and "there is nothing" are different facts.
+  # At the merge gate they fail closed alike; at the build gate an empty diff IS
+  # the expected state (no code written yet), so it stays exempt.
+  indeterminate = observed.empty? && gate != "build"
+
+  if gated_code_files.any?
+    # fall through to the full shape/test-tier gate below.
+  elsif indeterminate
+    errors_preamble = "kind: #{kind} could not be proven doc-only — no diff could be observed " \
+                      "(no PR files readable, and the git tree at #{diff_root} is clean or unreadable), " \
+                      "so the shape/test-tier gate is ENFORCED rather than skipped (fail-closed). Re-run " \
+                      "this from the task's worktree, or set devops.pr_url, so the gate can see the diff " \
+                      "it is meant to judge"
+    if options[:json]
+      puts JSON.pretty_generate(
+        task: task["slug"] || slug,
+        shape: shape.empty? ? nil : shape,
+        kind: kind,
+        gate: gate,
+        ready: false,
+        exempt: false,
+        diff_source: "indeterminate",
+        code_files: [],
+        note: errors_preamble,
+        errors: [errors_preamble],
+        suggestions: [],
+        missing_metadata: [],
+        missing_tiers: []
+      )
+    else
+      title = task["title"] || task["slug"] || slug || "(task)"
+      puts "✗ #{gate_label} NOT met for #{title.inspect}"
+      puts "  · #{errors_preamble}"
+    end
+    exit 1
+  else
+    source_label = { injected: "injected diff", pr: "PR files", git: "git working tree" }
+      .fetch(diff_source, diff_source.to_s)
+    sample = observed.first(3).join(", ") + (observed.size > 3 ? ", …" : "")
+    note = if observed.empty?
+      "no code written yet (kind: #{kind}); DoR n/a"
+    else
+      "doc-only diff (kind: #{kind}): #{observed.size} file(s), none behavioral — #{sample} " \
+        "[source: #{source_label}]; DoR n/a"
+    end
     if options[:json]
       puts JSON.pretty_generate(
         task: task["slug"] || slug,
@@ -524,6 +648,9 @@ if EXEMPT_KINDS.include?(kind)
         gate: gate,
         ready: true,
         exempt: true,
+        diff_source: diff_source.to_s,
+        code_files: [],
+        changed_files: observed,
         note: note,
         errors: [],
         suggestions: [],
@@ -533,7 +660,7 @@ if EXEMPT_KINDS.include?(kind)
     else
       title = task["title"] || task["slug"] || slug || "(task)"
       puts "✓ #{gate_label} n/a for #{title.inspect} — #{note}"
-      puts "  → ready to advance #{boundary} (shape/test-tier gate skipped for #{kind} tasks)"
+      puts "  → ready to advance #{boundary} (shape/test-tier gate skipped: the OBSERVED diff ships no behavior)"
     end
     exit 0
   end

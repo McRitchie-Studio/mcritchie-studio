@@ -126,9 +126,34 @@ class SessionPreflightTest < Minitest::Test
     assert_equal "docs", report.dig("shape", "kind")
   end
 
+  # [unit] The preflight shares bin/lib/code_diff.rb with dor-check, so the
+  # behavioral files the old ALLOWLIST couldn't see (.github/, Gemfile, test/…)
+  # lose the exemption HERE too — preflight is where the builder learns it, hours
+  # before the merge gate says no. It used to preview "Shape gate: n/a" for a
+  # chore shipping a CI workflow, teaching the same wrong lesson as PR #512.
+  def test_chore_shipping_a_ci_workflow_loses_the_exemption
+    task = write_task(devops: { "kind" => "chore", "branch" => "feat/session-preflight" })
+    write_file(".github/workflows/ci.yml", "name: CI\non: [push]\n")
+
+    out, _err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
+    refute status.success?
+
+    report = JSON.parse(out)
+    assert_equal false, report.dig("shape", "exempt")
+    assert report.fetch("errors").any? { |error| error.include?("devops.shape is missing") }, report.fetch("errors").inspect
+  end
+
+  def test_chore_shipping_a_gemfile_bump_loses_the_exemption
+    task = write_task(devops: { "kind" => "chore", "branch" => "feat/session-preflight" })
+    write_file("Gemfile.lock", "GEM\n  specs:\n    rails (8.0.1)\n")
+
+    _out, _err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
+    refute status.success?
+  end
+
   def test_docs_kind_shipping_code_loses_the_exemption
     task = write_task(devops: { "kind" => "docs", "branch" => "feat/session-preflight" })
-    write_file("lib/shipped_code.rb", "# real code under CODE_PATH_PREFIXES\n")
+    write_file("lib/shipped_code.rb", "# real behavioral code, not prose\n")
 
     out, _err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
     refute status.success?

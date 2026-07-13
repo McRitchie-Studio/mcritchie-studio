@@ -223,7 +223,7 @@ class DorCheckTest < Minitest::Test
         out, code = check("kind" => "chore")
         assert_equal 0, code, out
         assert_match(/DoR n\/a/, out)
-        assert_match(/non-code task \(kind: chore\)/, out)
+        assert_match(/doc-only diff \(kind: chore\)/, out)
         refute_match(%r{app/models/release_thing\.rb}, out)
       end
     end
@@ -365,21 +365,24 @@ class DorCheckTest < Minitest::Test
     assert_equal 0, code, out
   end
 
+  # The exemption is EARNED by a doc-only diff, never by the kind label alone —
+  # so these "exempt without a shape" cases must SHOW a doc-only diff. (They used
+  # to pass an EMPTY diff, which now fails closed: see the fail-closed section.)
   def test_chore_kind_is_exempt_without_a_shape
-    out, code = with_changed_files("") { check("kind" => "chore") }
+    out, code = with_changed_files("docs/agents/note.md") { check("kind" => "chore") }
     assert_equal 0, code, out
     assert_match(/DoR n\/a/, out)
-    assert_match(/non-code task \(kind: chore\)/, out)
+    assert_match(/kind: chore/, out)
   end
 
   def test_cleanup_kind_is_exempt_without_a_shape
-    out, code = with_changed_files("") { check("kind" => "cleanup") }
+    out, code = with_changed_files("docs/agents/note.md") { check("kind" => "cleanup") }
     assert_equal 0, code, out
     assert_match(/DoR n\/a/, out)
   end
 
   def test_chore_exemption_in_json_verdict
-    out, code = with_changed_files("") { check({ "kind" => "chore" }, "--json") }
+    out, code = with_changed_files("docs/agents/note.md") { check({ "kind" => "chore" }, "--json") }
     assert_equal 0, code, out
     verdict = JSON.parse(out)
     assert verdict["ready"]
@@ -442,6 +445,126 @@ class DorCheckTest < Minitest::Test
     assert_match(/shape is not set/, out)
   end
 
+  # --- [unit] the exemption is DENYLIST-shaped: prove doc-only, or get gated ---
+  # The bug (task chore-kind-skips-dor-tiers): the code-diff detector was an
+  # ALLOWLIST (app/ lib/ bin/ config/ db/), so any behavioral file OUTSIDE those
+  # five prefixes read as "not code" and the chore kept its exemption. PR #512
+  # (`kind: chore`) shipped .github/workflows/ci.yml — real CI behavior, plus real
+  # tests — and DoR printed "n/a → ready to advance". The fix inverts the polarity:
+  # a file is non-behavioral ONLY if it is provably prose (docs/, *.md, LICENSE…).
+  # Everything else gates. These tests FAIL on the allowlist.
+
+  def test_chore_shipping_a_ci_workflow_is_refused
+    # THE regression: PR #512's exact diff.
+    out, code = with_changed_files(".github/workflows/ci.yml\ntest/lib/ci_workflow_triggers_test.rb") do
+      check("kind" => "chore")
+    end
+    assert_equal 1, code, out
+    assert_match(/ships a code diff/, out)
+    assert_match(%r{\.github/workflows/ci\.yml}, out)
+    assert_match(/set devops\.shape/, out)
+  end
+
+  def test_chore_shipping_a_gemfile_bump_is_refused
+    # A dependency bump is the canonical "chore" — and it changes behavior (the
+    # resolved gem graph). It carries tiers like anything else.
+    out, code = with_changed_files("Gemfile\nGemfile.lock") { check("kind" => "chore") }
+    assert_equal 1, code, out
+    assert_match(/ships a code diff/, out)
+    assert_match(/Gemfile/, out)
+  end
+
+  def test_chore_shipping_root_and_dotfile_config_is_refused
+    # Root-level + dotfile config that the allowlist never saw: all behavior.
+    ["Rakefile", "package.json", ".rubocop.yml", "Procfile", "app.json"].each do |file|
+      out, code = with_changed_files(file) { check("kind" => "chore") }
+      assert_equal 1, code, "#{file} should be gated, got:\n#{out}"
+      assert_match(/ships a code diff/, out)
+    end
+  end
+
+  def test_chore_shipping_only_tests_is_refused
+    # test/ is executable behavior, and the tier line the author records is TRUE —
+    # they just wrote the tests. Cheap to satisfy, honest to declare.
+    out, code = with_changed_files("test/lib/ci_workflow_triggers_test.rb") { check("kind" => "chore") }
+    assert_equal 1, code, out
+    assert_match(/ships a code diff/, out)
+  end
+
+  def test_docs_only_sop_chore_stays_exempt
+    # PR #513's exact diff — the legitimate skip. It must still pass cleanly.
+    files = %w[
+      docs/agents/agents/alex/sops/full-cycle.md
+      docs/agents/agents/avi/sops/pr-review.md
+      docs/agents/agents/steffon/sops/qa-release.md
+      docs/agents/modules/heartbeats.md
+    ].join("\n")
+    out, code = with_changed_files(files) { check("kind" => "chore") }
+    assert_equal 0, code, out
+    assert_match(/DoR n\/a/, out)
+  end
+
+  def test_doc_only_skip_names_the_observed_diff
+    # A skip must be LOUD and evidence-shaped: it says WHAT it looked at, not just
+    # "n/a (kind: chore)". A silent skip is what let the bug hide for two PRs.
+    out, code = with_changed_files("docs/agents/foo.md\nREADME.md") { check("kind" => "chore") }
+    assert_equal 0, code, out
+    assert_match(/doc-only/, out)
+    assert_match(/2 file/, out)
+    assert_match(%r{docs/agents/foo\.md}, out)
+    refute_match(/^✓ DoR-to-Merge n\/a.*non-code task \(kind: chore\)$/, out)
+  end
+
+  def test_mostly_docs_plus_one_behavioral_file_is_refused
+    # The dangerous shape: a diff that LOOKS like a docs chore with one code line
+    # smuggled in. Every file must be non-behavioral, not most of them.
+    out, code = with_changed_files(
+      "docs/a.md\ndocs/b.md\ndocs/c.md\nREADME.md\n.github/workflows/ci.yml"
+    ) { check("kind" => "chore") }
+    assert_equal 1, code, out
+    assert_match(/ships a code diff/, out)
+    assert_match(%r{\.github/workflows/ci\.yml}, out)
+  end
+
+  # --- [unit] fail-closed: an undetermined diff never buys an exemption --------
+  # "We couldn't see a code diff" is NOT "there is no code diff". The old detector
+  # defaulted to EXEMPT on an empty/unreadable view, so running the gate from a
+  # checkout that couldn't see the branch silently disarmed it.
+
+  def test_empty_diff_at_the_merge_gate_fails_closed
+    out, code = with_changed_files("") { check("kind" => "chore") }
+    assert_equal 1, code, out
+    assert_match(/could not be proven doc-only|no diff/i, out)
+  end
+
+  def test_empty_diff_at_the_merge_gate_fails_closed_in_json
+    out, code = with_changed_files("") { check({ "kind" => "chore" }, "--json") }
+    assert_equal 1, code, out
+    verdict = JSON.parse(out)
+    refute verdict["ready"]
+    refute verdict["exempt"]
+    assert_equal "indeterminate", verdict["diff_source"]
+  end
+
+  def test_build_gate_still_exempts_a_chore_with_no_code_yet
+    # The legitimate empty diff: at DESIGN time no code exists. The build gate
+    # enforces no tiers anyway, so leniency there cannot disarm the test gate.
+    out, code = with_changed_files("") { check({ "kind" => "chore" }, "--gate build") }
+    assert_equal 0, code, out
+    assert_match(/DoR n\/a/, out)
+  end
+
+  def test_exempt_json_verdict_reports_its_diff_evidence
+    out, code = with_changed_files("docs/x.md") { check({ "kind" => "chore" }, "--json") }
+    assert_equal 0, code, out
+    verdict = JSON.parse(out)
+    assert verdict["ready"]
+    assert verdict["exempt"]
+    assert_equal "chore", verdict["kind"]
+    assert_equal "injected", verdict["diff_source"]
+    assert_equal [], verdict["code_files"]
+  end
+
   # --- [unit] real git working-tree detection --------------------------------
   # The injection tests above prove the GATE logic; these prove the DETECTION
   # itself sees uncommitted code (the bug: it used to read only base...HEAD, so a
@@ -475,31 +598,114 @@ class DorCheckTest < Minitest::Test
   end
 
   def test_doc_only_working_tree_yields_empty_code_set
-    # docs/ + *.md across all three states — no CODE_PATH_PREFIXES → stays exempt.
+    # docs/ + *.md across all three states — nothing behavioral → stays exempt.
     with_git_repo(staged: ["README.md"], unstaged: ["docs/guide.md"], untracked: ["NOTES.md"]) do |dir|
       out, code = check_against(dir, "kind" => "chore")
       assert_equal 0, code, out
       assert_match(/DoR n\/a/, out)
-      assert_match(/non-code task \(kind: chore\)/, out)
+      assert_match(/doc-only/, out)
     end
   end
 
-  def test_clean_working_tree_keeps_chore_exempt
+  # --- [integration] real git: the behavioral files the ALLOWLIST couldn't see --
+
+  def test_real_git_workflow_file_gates_a_chore
+    # PR #512 end-to-end through the REAL git detector (no injection).
+    with_git_repo(staged: [".github/workflows/ci.yml"], untracked: ["test/lib/ci_workflow_triggers_test.rb"]) do |dir|
+      out, code = check_against(dir, "kind" => "chore")
+      assert_equal 1, code, out
+      assert_match(/ships a code diff/, out)
+      assert_match(%r{\.github/workflows/ci\.yml}, out)
+    end
+  end
+
+  def test_real_git_gemfile_bump_gates_a_chore
+    with_git_repo(unstaged: ["Gemfile.lock"]) do |dir|
+      out, code = check_against(dir, "kind" => "chore")
+      assert_equal 1, code, out
+      assert_match(/ships a code diff/, out)
+    end
+  end
+
+  # --- [integration] fail-closed on an undetermined diff ----------------------
+
+  def test_clean_working_tree_chore_fails_closed_at_the_merge_gate
+    # The silent-disarm vector: run the gate from a checkout that cannot SEE the
+    # branch (a clean primary) and the old detector reported "no code diff" →
+    # exempt. An empty view proves nothing about what the PR ships.
     with_git_repo do |dir| # nothing changed
       out, code = check_against(dir, "kind" => "chore")
-      assert_equal 0, code, out
-      assert_match(/DoR n\/a/, out)
+      assert_equal 1, code, out
+      assert_match(/could not be proven doc-only/i, out)
+    end
+  end
+
+  def test_unreadable_git_root_fails_closed
+    # git can't read a non-repo dir → indeterminate → enforce, never default-exempt.
+    Dir.mktmpdir do |dir|
+      out, code = with_env(
+        "DOR_CHECK_DIFF_ROOT" => dir, "DOR_CHECK_DIFF_BASE" => "HEAD",
+        "DOR_CHECK_CHANGED_FILES" => nil, "DOR_CHECK_PR_FILES" => nil
+      ) { check("kind" => "chore") }
+      assert_equal 1, code, out
+      assert_match(/could not be proven doc-only/i, out)
     end
   end
 
   def test_changed_files_injection_overrides_real_git
-    # A real code file is present, but DOR_CHECK_CHANGED_FILES="" must win → exempt.
+    # A real code file is present, but the injected DOC-only list must win → exempt.
     with_git_repo(untracked: ["app/models/widget.rb"]) do |dir|
-      with_env("DOR_CHECK_DIFF_ROOT" => dir, "DOR_CHECK_DIFF_BASE" => "HEAD", "DOR_CHECK_CHANGED_FILES" => "") do
+      with_env("DOR_CHECK_DIFF_ROOT" => dir, "DOR_CHECK_DIFF_BASE" => "HEAD",
+               "DOR_CHECK_CHANGED_FILES" => "docs/guide.md") do
         out, code = check("kind" => "chore")
         assert_equal 0, code, out
         assert_match(/DoR n\/a/, out)
       end
+    end
+  end
+
+  # --- [integration] the PR's files are the merge gate's source of truth -------
+  # At the merge boundary the artifact under gate is the PR, not whatever tree the
+  # reviewer happens to be standing in. Reviewers run the gate-zero dor-check from
+  # a PRIMARY checkout (the task branch isn't checked out there), so a local-only
+  # detector sees an empty diff. Reading the PR's files makes the gate correct from
+  # anywhere — and keeps the honest docs-only chore passing.
+
+  def test_pr_files_gate_a_code_chore_from_a_clean_checkout
+    with_git_repo do |dir| # clean tree: the local view sees NOTHING
+      out, code = with_env(
+        "DOR_CHECK_DIFF_ROOT" => dir, "DOR_CHECK_DIFF_BASE" => "HEAD", "DOR_CHECK_CHANGED_FILES" => nil,
+        "DOR_CHECK_PR_FILES" => ".github/workflows/ci.yml\ntest/lib/ci_workflow_triggers_test.rb"
+      ) { check("kind" => "chore", "pr_url" => "https://github.com/o/r/pull/512") }
+      assert_equal 1, code, out
+      assert_match(/ships a code diff/, out)
+      assert_match(%r{\.github/workflows/ci\.yml}, out)
+    end
+  end
+
+  def test_pr_files_keep_a_docs_only_chore_exempt_from_a_clean_checkout
+    with_git_repo do |dir|
+      out, code = with_env(
+        "DOR_CHECK_DIFF_ROOT" => dir, "DOR_CHECK_DIFF_BASE" => "HEAD", "DOR_CHECK_CHANGED_FILES" => nil,
+        "DOR_CHECK_PR_FILES" => "docs/agents/modules/heartbeats.md\ndocs/agents/agents/avi/sops/pr-review.md"
+      ) { check("kind" => "chore", "pr_url" => "https://github.com/o/r/pull/513") }
+      assert_equal 0, code, out
+      assert_match(/DoR n\/a/, out)
+      assert_match(/doc-only/, out)
+    end
+  end
+
+  def test_unverifiable_pr_files_fall_back_to_the_local_diff
+    # gh unavailable → fall back to the local working tree rather than fail closed
+    # on a diff we CAN read. (An unreadable local tree then fails closed above.)
+    with_git_repo(untracked: ["app/models/widget.rb"]) do |dir|
+      out, code = with_env(
+        "DOR_CHECK_DIFF_ROOT" => dir, "DOR_CHECK_DIFF_BASE" => "HEAD", "DOR_CHECK_CHANGED_FILES" => nil,
+        "DOR_CHECK_PR_FILES" => "unverified"
+      ) { check("kind" => "chore", "pr_url" => "https://github.com/o/r/pull/1") }
+      assert_equal 1, code, out
+      assert_match(/ships a code diff/, out)
+      assert_match(%r{app/models/widget\.rb}, out)
     end
   end
 
@@ -878,9 +1084,10 @@ class DorCheckTest < Minitest::Test
   end
 
   def test_full_suite_gate_not_required_for_exempt_no_code_chore
-    # An exempt no-code chore short-circuits before the suite gate — a docs chore
-    # is never asked to certify the full suite.
-    out, code = with_changed_files("") { check_suite({ "kind" => "chore" }, "missing") }
+    # An exempt DOC-ONLY chore short-circuits before the suite gate — a docs chore
+    # is never asked to certify the full suite. (It must SHOW the doc-only diff:
+    # an empty diff no longer earns the exemption — it fails closed.)
+    out, code = with_changed_files("docs/agents/note.md") { check_suite({ "kind" => "chore" }, "missing") }
     assert_equal 0, code, out
     assert_match(/DoR n\/a/, out)
   end
