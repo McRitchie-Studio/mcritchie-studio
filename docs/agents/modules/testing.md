@@ -213,6 +213,16 @@ kill a stage transition), and a violation raised as a `StandardError` would be
 swallowed by exactly those rescues — a guard that degrades to a silent no-op is
 not a guard.
 
+**In-process writers need the pin too — not only spawned children.** Rule 1
+checks the **ENV pin** at the write seam, even for a write aimed at an explicit
+tmpdir `dir:` — by the time a path reaches `TaskUsageBaseline#write`, a CLI's
+env-fallback dir looks exactly like a test's explicit one, so the pin is the only
+tell the guard has. A test that calls the baseline **in the test process** (e.g.
+`task_usage_baseline_test.rb`) must set `ENV["TASK_USAGE_DIR"]` to a tmpdir in
+`setup` and restore it in `teardown`, or its first write aborts the whole
+combined `bin/rails test` run — green alone, red in any process where a sibling
+file armed the sandbox.
+
 **Finding what already leaked.** `bin/task usage-audit` is a read-only sweep of
 the store for rows keyed by a slug only a test stub serves (`demo-task`,
 `cli-board-sample`). It reports and exits 2; it never purges — a baseline is
