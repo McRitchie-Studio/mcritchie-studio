@@ -51,6 +51,13 @@ hash; committing after the cert makes it stale — and the fast route's
 provisional credit needs the PR open, so the verdict runs last, with **no CI
 wait** before `submitted`).
 
+The worktree rooting is **enforced**: given a task slug, both cert runners
+verify the cwd's checkout IS the task's tree (its branch, or its
+`.worktrees/<worktree_slug>` dir) and **refuse** otherwise — a run from the
+wrong checkout (e.g. the hub primary on `main`) exits 1 naming the worktree to
+`cd` into instead of green-certifying an unrelated tree
+(`bin/lib/cert_root_guard.rb`).
+
 1. **Certify — fast route (default):**
 
    ```bash
