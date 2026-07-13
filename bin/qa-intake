@@ -185,8 +185,32 @@ def worktree_ready_for_avi?(worktree, ignore_staleness: false)
     blockers.empty?
 end
 
+# The structured verdict written by bin/agent-worktree's reclaim guard
+# (stack_record_snapshot): the reason a git-eligible desk was withheld from reclaim —
+# a live builder claim, or a bound task whose board record could not be read — or nil
+# when the desk is free. Only a non-blank String counts: a registry written by
+# pre-guard code has no key at all, so this returns nil and every occupied-desk path
+# no-ops, meaning the merge order between the guard and this consumer cannot break
+# intake. The verdict is read from this field, never inferred from issue prose — a
+# substring match on the doctor text once inverted a negation on this very path.
+def withheld_reason_for(worktree)
+  reason = worktree["withheld_reason"]
+  return nil unless reason.is_a?(String)
+
+  stripped = reason.strip
+  stripped.empty? ? nil : stripped
+end
+
+def worktree_occupied?(worktree)
+  !withheld_reason_for(worktree).nil?
+end
+
 def worktree_needs_attention?(worktree)
   return false if truthy?(worktree["cleanup_candidate"])
+  # Occupied desks get their own bucket. The generic attention action ("inspect
+  # listed issues and assign back to the owning agent") invites the conductor to act
+  # on a desk whose only correct action is to leave it alone.
+  return false if worktree_occupied?(worktree)
 
   truthy?(worktree["dirty"]) ||
     !zeroish?(worktree["behind_origin_main"]) ||
@@ -331,6 +355,15 @@ def cleanup_action(worktree)
   "remove after approval with `bin/agent-worktree remove #{worktree.fetch("app")} #{worktree.fetch("task")} --yes`; the command ledgers, stops, removes, deletes the local branch, and refreshes the registry"
 end
 
+# The occupied desk's one correct treatment, whichever withhold case applies: leave it
+# alone. The registry's reason is quoted verbatim rather than paraphrased — "a builder
+# is on this desk" is true for a live claim but would misstate the unreadable-board
+# withhold, the naming trap the guard's field shape (a reason string, not a
+# `withheld_by_live_claim` boolean) exists to avoid.
+def occupied_action(worktree)
+  "occupied — #{withheld_reason_for(worktree)}; leave this desk alone"
+end
+
 def build_intake(registry, prs, apps, worktrees, warnings)
   by_app_branch = worktrees.each_with_object({}) do |worktree, index|
     index[[worktree.fetch("app"), worktree.fetch("branch")]] = worktree
@@ -372,6 +405,15 @@ def build_intake(registry, prs, apps, worktrees, warnings)
   end.sort_by { |worktree| [worktree.fetch("app"), worktree.fetch("task")] }
     .map { |worktree| worktree.merge("action" => local_action(worktree)) }
 
+  # Withheld desks (a live builder claim, or a claim the board could not verify) are
+  # labeled occupied and split out of attention — worktree_needs_attention? excludes
+  # them — so the conductor reads "leave this desk alone", never the generic "inspect
+  # listed issues and assign back to the owning agent". Registries written by
+  # pre-guard code carry no withheld_reason, so this bucket is simply empty there.
+  occupied = worktrees.select { |worktree| worktree_occupied?(worktree) }
+                      .sort_by { |worktree| [worktree.fetch("app"), worktree.fetch("task")] }
+                      .map { |worktree| worktree.merge("status" => "occupied", "action" => occupied_action(worktree)) }
+
   attention = worktrees.select { |worktree| worktree_needs_attention?(worktree) }
                        .sort_by { |worktree| [worktree.fetch("app"), worktree.fetch("task")] }
                        .map { |worktree| worktree.merge("action" => attention_action(worktree)) }
@@ -389,12 +431,14 @@ def build_intake(registry, prs, apps, worktrees, warnings)
       "open_prs" => pr_queue.size,
       "local_branches_without_pr" => local_without_pr.size,
       "attention_items" => attention.size,
+      "occupied_desks" => occupied.size,
       "cleanup_candidates" => cleanup.size,
       "registry" => registry["summary"]
     },
     "prs" => pr_queue,
     "local_branches_without_pr" => local_without_pr,
     "attention" => attention,
+    "occupied" => occupied,
     "cleanup_candidates" => cleanup,
     "warnings" => warnings
   }
@@ -453,6 +497,21 @@ def print_attention(worktrees)
     puts "  path: #{worktree.fetch("worktree")}"
     puts "  issues: #{Array(worktree["issues"]).join("; ")}"
     puts "  action: #{worktree.fetch("action") { attention_action(worktree) }}"
+  end
+end
+
+# Printed only when a desk is occupied: a registry written by pre-guard code (no
+# withheld_reason field) must produce the pre-feature output shape, and an empty
+# section would be noise in the common all-free case.
+def print_occupied(worktrees)
+  return if worktrees.empty?
+
+  print_section("Occupied Desks")
+  worktrees.each do |worktree|
+    puts "[occupied] #{worktree.fetch("label")} #{worktree.fetch("branch")}"
+    puts "  path: #{worktree.fetch("worktree")}"
+    puts "  reason: #{withheld_reason_for(worktree)}"
+    puts "  action: #{worktree.fetch("action") { occupied_action(worktree) }}"
   end
 end
 
@@ -520,6 +579,7 @@ def run!
   print_pr_queue(intake.fetch("prs"))
   print_local_without_pr(intake.fetch("local_branches_without_pr"))
   print_attention(intake.fetch("attention"))
+  print_occupied(intake.fetch("occupied"))
   print_cleanup(intake.fetch("cleanup_candidates"))
 
   return unless intake.fetch("warnings").any?
