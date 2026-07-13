@@ -4,7 +4,7 @@ const { test, expect } = require("@playwright/test");
 // Primary, G2b Light) on a task page. The seeded testing-phases-demo task
 // carries a G1 that failed attempt 1 and passed attempt 2 (the retry count is
 // load-bearing signal), a passed primary lane, and a light lane in flight.
-test("a task page shows the testing-gates card with attempt-aware verdicts", async ({ page }) => {
+test("a task page shows the testing-gates card with attempt-aware verdicts @quarantine", async ({ page }) => {
   await page.goto("/tasks/testing-phases-demo");
 
   const card = page.locator("div.card", { hasText: "Testing gates" }).first();

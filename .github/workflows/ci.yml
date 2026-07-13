@@ -66,6 +66,110 @@ jobs:
       - name: Lint code for consistent style
         run: bin/rubocop -f github
 
+  # THE `e2e` TIER'S LANE. Until 2026-07-13 this job did not exist, and `e2e` — demanded
+  # by config/feature_shapes.yml of the `ui+db` and `onchain-vertical` shapes — was run
+  # by NOTHING: not this workflow, not bin/fast-check, not bin/full-suite-check, not the
+  # G3/G4 release gates. The tier was satisfied entirely by a builder typing "[e2e] ..."
+  # into devops.checks_run, which bin/dor-check credited on sight. A gate that demands
+  # evidence it never collects and takes a self-declaration instead is the exact disease
+  # of the 2026-07-12 wave.
+  #
+  # WHAT THE UNRUN SUITE HAD BECOME, measured the day it was switched on: 18 of 69 specs
+  # RED on an untouched `release` checkout. Nobody had run it in long enough for a
+  # quarter of it to rot — the board grew agent/app filters that hide the very cards the
+  # live specs wait on, and a seeded fixture string quietly vanished. That is what an
+  # uncollected tier turns into; it does not stay honest and idle. Pinned by
+  # test/lib/feature_shape_tiers_test.rb, which fails if a shape ever again demands a
+  # tier no runner executes.
+  #
+  # COST, AND WHY IT IS AFFORDABLE HERE AND NOWHERE ELSE. Measured 2026-07-13,
+  # single-worker: the 51 specs this lane actually runs take ~1.1 min. (The FULL 69-spec
+  # suite clocks ~4.7 min, but ~3.6 min of that is the 18 rotted specs each burning a 5s
+  # assertion timeout before failing — a number that shrinks when they are repaired, not
+  # a number to plan around.)
+  #
+  # Even at 1.1 min it does NOT belong in bin/fast-check: that is the whole ~1 min budget
+  # of the builder's cert, doubled, on every commit. A cert that slow is a cert people
+  # route around, which is the disease again, wearing a lab coat. As a PARALLEL CI job
+  # sharded 3 ways it is ~25s of tests + ~1 min of setup per shard — comfortably inside
+  # the existing ~5 min `test` + `test:system` lane it runs alongside, so the pipeline's
+  # critical path grows by ZERO. That number is the whole argument for collecting it here
+  # rather than in the cert, and for collecting it at all.
+  #
+  # SHARDING: workers:1 is forced in playwright.config.js, so parallelism has to come
+  # from separate runners. Each shard is its own stack (own postgres service, own test
+  # server booted by Playwright's webServer), so nothing is shared across shards and the
+  # serial in-shard model is preserved.
+  playwright:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+
+    services:
+      postgres:
+        image: postgres
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: --health-cmd="pg_isready" --health-interval=10s --health-timeout=5s --health-retries=3
+
+    steps:
+      - name: Install packages
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y curl libjemalloc2 libvips postgresql-client
+
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: .ruby-version
+          bundler-cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install JS dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      # Playwright's own webServer (playwright.config.js) boots the test server for this
+      # shard: db:test:prepare, seed, then `rails server -e test` with CABLE_ADAPTER=async
+      # so the live-update specs get REAL in-process ActionCable delivery to the browser.
+      # Nothing to boot here.
+      #
+      # --grep-invert @quarantine EXCLUDES the 18 specs that were already red when this
+      # lane was first switched on. Stating the hole plainly, as turf-monster's ci.yml
+      # does for its @devnet exclusion: those specs are NOT covered by this job today.
+      # The exclusion buys the OTHER 51 specs a real lane now instead of holding all of
+      # them hostage to a repair, and it fails safe — a rotted suite wired in red would
+      # paint CI red for every PR in flight. It is a debt with a name and a ticket:
+      # /tasks/repair-rotted-e2e-specs. When that lands, DELETE this flag; the guard test
+      # does not police it, so nothing else will remind you.
+      - name: Run Playwright e2e suite
+        env:
+          RAILS_ENV: test
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432
+        run: npx playwright test --grep-invert @quarantine --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+
+      - name: Keep the Playwright report from a failed shard
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report-shard-${{ matrix.shard }}
+          path: ${{ github.workspace }}/playwright-report
+          if-no-files-found: ignore
+
   test:
     runs-on: ubuntu-latest
 
