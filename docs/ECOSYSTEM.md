@@ -8,7 +8,7 @@ Single orientation surface for the McRitchie stack. Fresh contributors, fresh ag
 |------|------|-------|------|
 | [`mcritchie-studio`](https://github.com/amcritchie/mcritchie-studio) | Flagship hub. Task/News/Content pipelines, NFL data, auth-capable Studio app, and ecosystem recovery scripts. | Rails 8.1 / Postgres | 3000 |
 | [`turf-monster`](https://github.com/amcritchie/turf-monster) | Sports pick'em (World Cup 2026). Solana onchain via turf-vault. | Rails 8.1 / Postgres / Redis / Sidekiq | 3100 |
-| [`rolio`](https://github.com/amcritchie/rolio) | Relationship operating workspace. Release-managed standalone app with hosted QA/prod Heroku lanes. | Rails 8 / SQLite demo runtime | 3300 |
+| [`rolio`](https://github.com/amcritchie/rolio) | Relationship operating workspace. Release-managed standalone app with hosted QA/prod Heroku lanes. **Dormant** since the 2026-07-03 audit. | Rails 8 / SQLite demo runtime | 3300 |
 | [`chain-ops`](https://github.com/amcritchie/chain-ops) | Planned Solana environment control plane. Starts with localnet validator support. | Rails 8.1 / Postgres | 3400 |
 | [`studio-engine`](https://github.com/amcritchie/studio-engine) | Shared Rails engine: passwordless auth, error logging, theme, modals, ImageCache. | Ruby gem | — |
 | [`solana-studio`](https://github.com/amcritchie/solana-studio) | Ruby Solana client: RPC, ed25519, borsh, tx builder. | Ruby gem | — |
@@ -52,7 +52,9 @@ The Rails apps consume `studio-engine` and `solana-studio` from RubyGems. Local 
 - **rolio** — Release-managed standalone app. Uses the studio task board,
   PR-review discipline, QA Heroku app (`rolio-qa`), and prod Heroku app
   (`rolio-prod`), but owns its runtime and does not consume `studio-engine`.
-  Read: `README.md` and `docs/RUNBOOK.md`.
+  **Dormant** since the 2026-07-03 audit: board tasks archived, dependabot
+  config removed, and the Heroku dynos stay up pending Mr. McRitchie's own
+  shutdown. Read: `README.md` and `docs/RUNBOOK.md`.
 - **chain-ops** — Planned satellite control plane for Solana environments. V1 manages a local `solana-test-validator` and prints the localnet env contract Turf Monster needs for local on-chain work. Read: `README.md`.
 - **studio-engine** — Engine. Provides `Studio::ErrorHandling` concern, ErrorLog model, passwordless auth primitives, theme system (7 role colors → CSS vars), modals, ImageCache, and reusable components. Consumed by mcritchie-studio + turf-monster + future apps. Read: `README.md` and `docs/`.
 - **solana-studio** — Gem. Primitives only: `Solana::Client` (JSON-RPC), `Solana::Borsh`, `Solana::Transaction` (Anchor discriminators + PDA derivation), `Solana::SplToken`, `Solana::Keypair`. Pure Ruby, ed25519 the only external dep. Consumed by turf-monster (which extends `Solana::Keypair` locally for encryption). Read: `README.md` + `RUNBOOK.md`.
