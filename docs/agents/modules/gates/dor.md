@@ -32,9 +32,11 @@ self-closes its own `g1_cert` window, and CI stays a **handoff, not a gate**
   fast-cert or full-suite line, fingerprint-bound to the git TREE hash (see
   [g1-cert.md](g1-cert.md) for the three routes).
 - The task's **required metadata** is populated.
-- The PR's **live GitHub CI** is not failing (a red or closed/merged PR is
-  refused). CI is checked here but **never its own gate** — it records as a `ci`
-  SOP on the DoR attempt.
+- The PR's **live GitHub CI** is not failing (a red, closed/merged, or
+  merge-conflicted PR is refused — `mergeStateStatus DIRTY` means GitHub can't
+  compute the merge commit, so that PR's CI **never fires**; the fix is
+  rebase/merge release). CI is checked here but **never its own gate** — it
+  records as a `ci` SOP on the DoR attempt.
 
 ## The exemption is earned by the DIFF, never by the `kind`
 
@@ -121,13 +123,17 @@ The CI **wait** belongs to the review handoff, not the builder's wall-clock
   suggestion**, never a block. A fresh fast cert is credited **provisionally**
   while the open PR's CI is pending or not yet reported (the `ci` SOP records
   `pending`, the `full-suite-evidence` SOP records `fast-cert@<fp12>+ci-pending`).
-  A **red** CI (or a closed/merged `pr_url`) still refuses, and a fast cert with
+  A **red** CI (or a closed/merged `pr_url`, or a merge-conflicted PR) still
+  refuses, and a fast cert with
   **no PR at all** is refused — the provisional credit is anchored to an open PR
   whose CI will run.
 - **Review side (`dor_review`, the authoritative verdict):** the `pr-review`
   supervisor checks the PR's live CI **before spawning reviewers** — red bounces
   the task back naming the failing checks (recorded as a failed `dor_review`
-  attempt with a `ci` SOP), pending defers the wave — and the primary's gate-zero
+  attempt with a `ci` SOP), a **conflicted** PR bounces back the same way
+  (`outcome=ci-conflicted`, rebase/merge release named — its CI is never
+  coming, so a defer would strand it), pending defers the wave — and the
+  primary's gate-zero
   (`--gate-role review`) keeps the strict semantics: **red AND pending both
   block**, and fast evidence needs the settled green.
 

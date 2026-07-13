@@ -22,6 +22,10 @@
 #   red      → block the task back (bin/task block --kind rework) with the failing
 #              checks named — no reviewer tokens burned; the bounce records as a
 #              failed dor_review (gate-zero) attempt with a ci SOP.
+#   conflicted → block the task back too (rebase/merge release named as the fix):
+#              a merge-conflicted PR (mergeStateStatus DIRTY) gets NO CI at all —
+#              GitHub cannot compute the merge commit — so deferring "until CI
+#              reports" would strand it in submitted forever (the PR-#509 stall).
 #   pending  → defer the task to a later wave (the existing defer machinery);
 #   :none    → same defer (an open PR whose checks haven't reported yet);
 #   green    → proceed to spawn the pair.
@@ -541,15 +545,22 @@ def start_review(task, review_number)
 
   # CI gate-zero — the supervisor's opening act (ci-gate-review-handoff): the
   # builder submitted without waiting for CI, so check the PR's LIVE CI before
-  # burning any reviewer tokens. Red → bounce back; pending/none → defer the wave;
-  # green → spawn. Unverified/no_pr/closed/merged proceed — the primary's strict
-  # gate-zero (dor-check --gate-role review) is the authoritative verdict.
+  # burning any reviewer tokens. Red/conflicted → bounce back (actionable);
+  # pending/none → defer the wave (CI genuinely still coming); green → spawn.
+  # Unverified/no_pr/closed/merged proceed — the primary's strict gate-zero
+  # (dor-check --gate-role review) is the authoritative verdict.
   ci = supervisor_ci_check(task)
   base = { task: task, slug: slug, reviewers: [], reviewer_slugs: [], launches: [] }
   case ci[:state]
   when :red
     puts "  ci=RED (#{Array(ci[:failing]).join(", ")}) — blocking back without spawning reviewers"
     return base.merge(ci_red: ci)
+  when :conflicted
+    # NOT a defer: a conflicted PR has no CI coming (GitHub can't compute the
+    # merge commit), so "wait for CI" waits forever (the PR-#509 stall). Bounce
+    # it back with the fix named, exactly like red — the builder must act.
+    puts "  ci=CONFLICTED (mergeStateStatus DIRTY) — blocking back without spawning reviewers"
+    return base.merge(ci_conflicted: ci)
   when :pending
     puts "  ci=PENDING (#{Array(ci[:pending]).join(", ")}) — deferring until CI settles"
     return base.merge(ci_wait: ci)
@@ -658,6 +669,24 @@ def finish_review(review, events, handled, deferred_until)
     ok = task_write(["block", slug, "--kind", "rework", "--feedback", feedback, "--agent", "avi"])
     events << { slug: slug, status: ok ? :blocked : :tool_failure, category: "ci-red",
                 reason: "GitHub CI red: #{failing}", reviewers: [] }
+    handled[slug] = true
+    return ok
+  end
+  if review[:ci_conflicted]
+    # The conflict bounce is review's gate-zero verdict this round too — a failed
+    # dor_review attempt with a ci SOP, outcome ci-conflicted (distinct from
+    # ci-red so the retrospective can tell "broken tests" from "stale branch").
+    gate_write("open", "task", slug, "dor_review", "--actor", "avi")
+    gate_write("close", "task", slug, "dor_review", "--failed", "--actor", "avi",
+               "--sop-json", JSON.generate({ "sop" => "ci", "result" => "fail" }),
+               "--meta", "outcome=ci-conflicted")
+    feedback = "pr-review CI gate: the PR is merge-CONFLICTED against its base (mergeStateStatus DIRTY) — GitHub " \
+               "cannot compute the merge commit, so CI never fires for this PR (it has NO checks coming, not " \
+               "pending ones) and deferring would strand it in submitted. Rebase or merge release into the branch " \
+               "(git fetch origin && git merge origin/release), resolve the conflicts, push, and resubmit."
+    ok = task_write(["block", slug, "--kind", "rework", "--feedback", feedback, "--agent", "avi"])
+    events << { slug: slug, status: ok ? :blocked : :tool_failure, category: "ci-conflicted",
+                reason: "PR merge-conflicted against base (mergeStateStatus DIRTY)", reviewers: [] }
     handled[slug] = true
     return ok
   end
@@ -793,6 +822,7 @@ def print_retrospective(started_at, events, idle_cycles)
   suggestions << "improve PR/task/worktree readiness before submission" if counts["request-changes"].to_i.positive?
   suggestions << "separate CI-waiting cards from review-ready intake" if counts["wait-for-ci"].to_i.positive?
   suggestions << "red-CI submits reached review — check builders see dor-check's submit-side CI suggestion" if counts["ci-red"].to_i.positive?
+  suggestions << "conflicted PRs reached review — builders should rebase on release before submit (dor-check now flags DIRTY)" if counts["ci-conflicted"].to_i.positive?
   suggestions << "add clearer high-risk escalation rules" if counts["conductor-review"].to_i.positive?
   suggestions << "no systemic refactor surfaced in this heartbeat" if suggestions.empty?
   suggestions.each { |suggestion| puts "  - #{suggestion}" }

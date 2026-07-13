@@ -16,8 +16,10 @@ The gate flow order: [G1 Cert](g1-cert.md) → [DoR](dor.md) → **G2 Review**
 - **The live GitHub CI** — G2 owns the **authoritative CI verdict**
   (`ci-gate-review-handoff`: builders submit without waiting for CI). The
   supervisor checks the PR's CI **before spawning the pair**: red bounces the
-  task back naming the failing checks (no reviewer tokens burned), pending
-  defers to a later wave, green proceeds.
+  task back naming the failing checks (no reviewer tokens burned), a
+  merge-conflicted PR (`mergeStateStatus DIRTY`) bounces back too with
+  "rebase/merge release" named (its CI is never coming — GitHub can't compute
+  the merge commit), pending defers to a later wave, green proceeds.
 - **G2a Primary** — the deep review: diff vs. acceptance, the shape's DoR
   tiers + suite evidence + CI (the **gate-zero** re-run of dor-check, which
   keeps the strict red/pending-both-block semantics and records on the separate
@@ -58,6 +60,11 @@ What the supervisor records, per reviewed task:
      named, and the bounce recorded as a **failed `dor_review` (gate-zero)
      attempt** with a `ci` SOP (`--meta outcome=ci-red`, actor `avi`) — not a
      G2 review lane, since no reviewer ran. No reviewer tokens burned.
+   - **conflicted** (`mergeStateStatus DIRTY`) → the same block-back shape
+     (`--meta outcome=ci-conflicted`), with rebase/merge-release named as the
+     fix. A conflicted PR gets **no CI at all** — GitHub cannot compute the
+     merge commit — so deferring "until CI reports" would strand it in
+     `submitted` forever (the PR-#509 stall, 2026-07-12).
    - **pending / no checks yet** → the task defers to a later wave (the
      defer machinery); no lane opens.
    - **green** → proceed. (An unverified gh read, or a missing/closed PR,

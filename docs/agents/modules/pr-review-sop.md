@@ -75,8 +75,14 @@ itself**. Avi:
 1. Checks the PR's **live GitHub CI first** (builders submit without waiting
    for CI, so this pre-spawn check is the authoritative verdict): **red** →
    `bin/task block <task> --kind rework` naming the failing checks — stop, no
-   reviewer spawns; **pending / no checks yet** → defer this task to a later
-   pass; **green** → continue.
+   reviewer spawns; **conflicted** (`gh pr view <pr> --json mergeStateStatus`
+   reports `DIRTY`) → `bin/task block <task> --kind rework` with
+   rebase/merge-release guidance (`outcome=ci-conflicted`) — stop, no reviewer
+   spawns; a conflicted PR gets **no CI at all** (GitHub cannot compute the
+   merge commit, so the workflow never fires), and it presents exactly like
+   "no checks yet" — deferring it would strand the task in `submitted` forever
+   (the PR-#509/#521 stall); **pending / no checks yet** → defer this task to
+   a later pass; **green** → continue.
 2. Confirms **product-acceptance** — does the open PR (base `release`) meet the
    task's acceptance criteria?
 3. Determines the **primary + light** pair by change surface (the table above),

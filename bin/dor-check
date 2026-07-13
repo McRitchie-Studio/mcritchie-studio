@@ -40,7 +40,9 @@
 # default) treats a still-running CI as a LOUD suggestion — and credits a fresh
 # fast cert PROVISIONALLY while CI is pending (or not yet reported) on an OPEN PR
 # — so the builder certs, opens the PR, and moves submitted immediately. RED CI
-# (and a closed/merged pr_url) still blocks both roles. The AUTHORITATIVE CI
+# (and a closed/merged pr_url, and a merge-CONFLICTED PR — mergeStateStatus
+# DIRTY, whose CI never fires because GitHub can't compute the merge commit)
+# still blocks both roles. The AUTHORITATIVE CI
 # verdict is the review side: bin/pr-review's supervisor checks the live CI
 # before spawning reviewers, and the primary's gate-zero (--gate-role review)
 # keeps the strict semantics (red AND pending both block; fast evidence needs
@@ -503,7 +505,9 @@ end
 # PAIRING (fast evidence only counts alongside a green GitHub CI — or, submit-side,
 # a pending one on an OPEN PR), and the message must say that instead of
 # pretending the evidence is bad. `review_role` picks the guidance: the review
-# gate-zero says "defer until CI settles"; the builder says "open the PR".
+# gate-zero says "defer until CI settles"; the builder says "open the PR" — and a
+# CONFLICTED PR overrides both (its CI is never coming; "open the PR"/"defer"
+# would each be wrong advice — the fix is rebase/merge release).
 def suite_evidence_error(eval, slug, ci, review_role)
   unless eval[:verifiable]
     return "FULL-suite gate unverifiable — couldn't fingerprint the working tree (no git repo / git identity?). " \
@@ -514,7 +518,10 @@ def suite_evidence_error(eval, slug, ci, review_role)
   if lanes[FullSuiteGate::FAST_LANE] == :fresh
     state = ci && ci[:state] ? ci[:state].to_s.upcase : "UNKNOWN"
     guidance =
-      if review_role
+      if ci && ci[:state] == :conflicted
+        "This PR is merge-CONFLICTED (mergeStateStatus DIRTY), so its CI will NEVER fire — rebase or merge " \
+          "release into the branch, resolve the conflicts, and push; the refreshed PR then runs CI"
+      elsif review_role
         "The review gate-zero needs the SETTLED green — defer until CI finishes (red bounces the task back)"
       else
         "Submit-side, a fresh fast cert is credited PROVISIONALLY once an OPEN PR exists with CI pending — " \
@@ -807,6 +814,14 @@ if gate != "build"
     errors << "GitHub CI is RED for the PR (#{Array(ci[:failing]).join(", ")}) — a red PR handed to review is the " \
       "#1 blocker class (the local cert doesn't run the browser test:system lane CI does). Fix, push, and re-run " \
       "dor-check once CI is green."
+  when :conflicted
+    # HARD blocker in BOTH roles, distinct from :pending/:none ("CI still coming",
+    # genuinely deferrable): a conflicted PR's CI is never coming, so anything
+    # softer strands the task in submitted forever (the PR-#509 stall).
+    errors << "the PR is merge-CONFLICTED against its base (mergeStateStatus DIRTY) — GitHub cannot compute the " \
+      "merge commit, so the pull_request workflow NEVER fires: this PR has NO CI coming, not a pending one, and " \
+      "review's gate-zero would defer it forever while the board looks healthy. Rebase or merge release into the " \
+      "branch (git fetch origin && git merge origin/release), resolve the conflicts, push, and re-run dor-check."
   when :pending
     if review_role
       errors << "GitHub CI is still RUNNING for the PR (#{Array(ci[:pending]).join(", ")}) — not green YET. The " \
@@ -958,7 +973,7 @@ if !options[:json] && options[:file].nil? && gate != "build" && !slug.to_s.empty
       case ci[:state]
       when :green then "pass"
       when :pending then review_role ? "fail" : "pending"
-      when :red, :closed, :merged then "fail"
+      when :red, :conflicted, :closed, :merged then "fail"
       else "unverified"
       end
     gate_sops << { "sop" => "ci", "result" => ci_result }
@@ -1012,6 +1027,10 @@ if ready
     puts "  GitHub CI green#{ci[:count] ? " (#{ci[:count]} checks)" : ""}"
   elsif ci && ci[:state] == :pending
     puts "  ⚠ GitHub CI still RUNNING — handoff is provisional; see the suggestion below"
+  elsif ci && ci[:state] == :conflicted
+    # Defensive: :conflicted always lands in `errors` above, so a ready verdict
+    # shouldn't reach here — but if a future reordering ever lets it, say it loudly.
+    puts "  ⚠ PR merge-CONFLICTED (mergeStateStatus DIRTY) — CI never fires; rebase/merge release"
   elsif ci && %i[none unverified].include?(ci[:state])
     puts "  ⚠ GitHub CI UNVERIFIED (#{ci[:state]}) — see the suggestion below"
   end
