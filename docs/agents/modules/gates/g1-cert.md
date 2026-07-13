@@ -88,11 +88,28 @@ wait** before `submitted`).
    `full-suite` (`bin/rails test`, the ENTIRE suite), `rubocop` (`bin/rubocop`,
    the whole repo). Green lanes stamp `[full-suite@<fp>]` + `[rubocop@<fp>]`.
 
-3. **Record the tier tags as you built** (both cert tools preserve them):
+3. **Record the tier tags as you built** — in either order, before or after you
+   certify:
 
    ```bash
    bin/task update <task-slug> --checks "[unit] ..." --checks "[integration] ..."
    ```
+
+   `checks_run` holds two namespaces, and each side preserves the other's:
+
+   - **You own the tier tags** (`[unit] …`, `[integration] …`, a
+     `[full-suite-bypass] <why>` record). `--checks` REPLACES those — pass every
+     tag you want kept. The cert tools never touch them.
+   - **The cert tools own the evidence** (`[full-suite@<fp>]`, `[rubocop@<fp>]`,
+     `[fast-cert@<fp>]`). `--checks` **cannot** drop those: any lane your update
+     does not itself supply is carried forward, by the CLI and by the board
+     (`lib/cert_evidence.rb`). Recording your test plan after certifying used to
+     wipe the cert and make `bin/dor-check` report `full-suite: MISSING` on
+     freshly certified code — it no longer can.
+
+   A lane is superseded only by a line FOR that lane, which is what a re-cert
+   writes. Never hand-write a `[<lane>@<fingerprint>]` line: that forges a
+   certification, and the fingerprint exists to make the cert mean something.
 
 4. **Verdict — the DoR gate** (its own gate; closes `dor`, not `g1_cert`):
 

@@ -151,7 +151,8 @@ class AgentActivity < ApplicationRecord
                           prior_outcome_slug: nil,
                           prior_key_method: nil, prior_key_method_lang: nil,
                           prior_model: nil, prior_tokens_in: nil, prior_tokens_out: nil,
-                          prior_cache_read_tokens: nil, prior_cost: nil,
+                          prior_cache_creation_tokens: nil, prior_cache_read_tokens: nil,
+                          prior_cost: nil,
                           turn_uuid: nil, parent_span_id: nil, transcript_path: nil,
                           opened_at: Time.current)
     activity = new(
@@ -182,6 +183,7 @@ class AgentActivity < ApplicationRecord
       close_attrs.merge!(HasKeyMethod.normalize_pair(prior_key_method, prior_key_method_lang)) if prior_key_method.present?
       close_attrs.merge!(usage_attrs(model: prior_model, tokens_in: prior_tokens_in,
                                      tokens_out: prior_tokens_out,
+                                     cache_creation_tokens: prior_cache_creation_tokens,
                                      cache_read_tokens: prior_cache_read_tokens,
                                      cost: prior_cost))
       # Per-agent, per-transcript lanes: auto-close only THIS agent's open activity in
@@ -229,7 +231,8 @@ class AgentActivity < ApplicationRecord
                           prior_outcome_slug: nil, prior_key_method: nil,
                           prior_key_method_lang: nil, prior_model: nil,
                           prior_tokens_in: nil, prior_tokens_out: nil,
-                          prior_cache_read_tokens: nil, prior_cost: nil,
+                          prior_cache_creation_tokens: nil, prior_cache_read_tokens: nil,
+                          prior_cost: nil,
                           opened_at: Time.current)
     return nil if session_id.blank? || turn_uuid.blank?
 
@@ -259,6 +262,7 @@ class AgentActivity < ApplicationRecord
       prior_model:             prior_model,
       prior_tokens_in:         prior_tokens_in,
       prior_tokens_out:        prior_tokens_out,
+      prior_cache_creation_tokens: prior_cache_creation_tokens,
       prior_cache_read_tokens: prior_cache_read_tokens,
       prior_cost:              prior_cost
     )
@@ -323,7 +327,7 @@ class AgentActivity < ApplicationRecord
   def self.close_activity!(session_id:, agent: nil, outcome_slug: nil,
                            key_method: nil, key_method_lang: nil,
                            model: nil, tokens_in: nil, tokens_out: nil,
-                           cache_read_tokens: nil, cost: nil,
+                           cache_creation_tokens: nil, cache_read_tokens: nil, cost: nil,
                            closed_at: Time.current)
     activity = for_session(session_id).where(agent: normalize_agent_value(agent)).open.order(:seq).last
     return nil unless activity
@@ -336,6 +340,7 @@ class AgentActivity < ApplicationRecord
       attrs[:key_method_lang] = key_method_lang
     end
     attrs.merge!(usage_attrs(model: model, tokens_in: tokens_in, tokens_out: tokens_out,
+                             cache_creation_tokens: cache_creation_tokens,
                              cache_read_tokens: cache_read_tokens, cost: cost))
     activity.update!(attrs)
     activity
@@ -369,8 +374,11 @@ class AgentActivity < ApplicationRecord
   end
 
   # Stamp the fan-out reconciler's per-activity usage. `usages` is an array of
-  # { activity_id/id, model, tokens_in, tokens_out, cache_read_tokens, cost } (string
-  # OR symbol keys). Each row is applied ONLY to an activity in THIS session (the
+  # { activity_id/id, model, tokens_in, tokens_out, cache_creation_tokens,
+  # cache_read_tokens, cost } (string OR symbol keys); usage_attrs re-derives cost
+  # server-side when the cache_creation bucket is present, so a reconciled row honors
+  # an operator rate override exactly like a live close does. Each row is applied
+  # ONLY to an activity in THIS session (the
   # session_id scope is the guard — a token can never patch another session's rows),
   # reusing usage_attrs so a blank/zero usage is dropped rather than clobbering a
   # real value with nils. Per-row update! fires the after_update_commit broadcaster,
@@ -386,6 +394,7 @@ class AgentActivity < ApplicationRecord
         model:             u["model"] || u[:model],
         tokens_in:         u["tokens_in"] || u[:tokens_in],
         tokens_out:        u["tokens_out"] || u[:tokens_out],
+        cache_creation_tokens: u["cache_creation_tokens"] || u[:cache_creation_tokens],
         cache_read_tokens: u["cache_read_tokens"] || u[:cache_read_tokens],
         cost:              u["cost"] || u[:cost]
       )
@@ -443,19 +452,38 @@ class AgentActivity < ApplicationRecord
     SOULS.include?(slug) ? slug : nil
   end
 
-  def self.usage_attrs(model: nil, tokens_in: nil, tokens_out: nil, cache_read_tokens: nil, cost: nil)
+  # The single funnel for an activity's usage columns — and the place cost is
+  # DERIVED. The capture CLI mints its cost in a plain-Ruby process with no
+  # ActiveRecord, so it can never see an operator's rate override (UsagePricing
+  # .db_rates returns {} there); re-deriving here is what makes a saved rate
+  # actually apply to the dominant cost path. The client's cost is kept only as a
+  # FALLBACK — for an unpriced model, or an older CLI that doesn't yet send the
+  # un-folded cache_creation bucket we need to split tokens_in faithfully.
+  def self.usage_attrs(model: nil, tokens_in: nil, tokens_out: nil,
+                       cache_creation_tokens: nil, cache_read_tokens: nil, cost: nil)
     values = {
       model: model.to_s.strip.presence,
       tokens_in: integer_or_nil(tokens_in),
       tokens_out: integer_or_nil(tokens_out),
+      cache_creation_tokens: integer_or_nil(cache_creation_tokens),
       cache_read_tokens: integer_or_nil(cache_read_tokens),
       cost: decimal_or_nil(cost)
     }.compact
     return {} unless values[:model].present? ||
                      values[:tokens_in].to_i.positive? ||
                      values[:tokens_out].to_i.positive? ||
+                     values[:cache_creation_tokens].to_i.positive? ||
                      values[:cache_read_tokens].to_i.positive? ||
                      values[:cost].to_f.positive?
+
+    derived = UsagePricing.cost_from_capture(
+      model: values[:model],
+      tokens_in: values[:tokens_in],
+      tokens_out: values[:tokens_out],
+      cache_creation_tokens: values[:cache_creation_tokens],
+      cache_read_tokens: values[:cache_read_tokens]
+    )
+    values[:cost] = derived if derived
 
     values
   end

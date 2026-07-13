@@ -18,6 +18,7 @@ require "tmpdir"
 require "fileutils"
 require "rbconfig"
 require "shellwords"
+require_relative "../support/session_env"
 require_relative "../../bin/lib/full_suite_gate"
 
 class FastCheckTest < Minitest::Test
@@ -45,11 +46,16 @@ class FastCheckTest < Minitest::Test
     refute_includes merged, "[fast-cert@oldfp] stale fast cert"
   end
 
-  def test_default_merge_replaces_fast_cert_evidence_too
-    # bin/full-suite-check's default merge: a fresh FULL cert supersedes any prior
-    # fast cert (EVIDENCE_LANES is the default replace set).
+  def test_default_merge_supersedes_only_the_lanes_supplied
+    # The write rule (lib/cert_evidence.rb): a writer supersedes exactly the lanes
+    # it SUPPLIES evidence for. bin/full-suite-check stamps full-suite + rubocop,
+    # so those lanes are replaced and a prior fast-cert line is carried over — it
+    # used to be deleted, but the board now preserves any lane a write does not
+    # address (that is what stops `--checks` from wiping a cert), so deleting it
+    # here would only make the CLI disagree with what the board stores. The lingering
+    # line is inert: `ok` is graded off LANES (full-suite + rubocop) alone.
     merged = FullSuiteGate.merge_evidence(["[fast-cert@oldfp] x"], ["[full-suite@newfp] y"])
-    refute_includes merged, "[fast-cert@oldfp] x"
+    assert_includes merged, "[fast-cert@oldfp] x"
     assert_includes merged, "[full-suite@newfp] y"
   end
 
@@ -113,7 +119,9 @@ class FastCheckTest < Minitest::Test
     lane = write_stub(dir, "lane-stub", "LANE")
     gate = write_stub(dir, "gate-stub", "GATE")
     task = write_stub(dir, "task-stub", "TASK")
-    env = {
+    # SessionEnv.neutralized: the child must name NO agent session — bin/fast-check
+    # shells to bin/task and the gate. See test/support/session_env.rb.
+    env = SessionEnv.neutralized({
       "FAST_CHECK_ROOT" => dir,
       "FAST_CHECK_DIFF_BASE" => "HEAD",
       "FAST_CHECK_SPINE" => File.join(dir, "spine.yml"),
@@ -124,7 +132,7 @@ class FastCheckTest < Minitest::Test
       "FAST_CHECK_TASK_BIN" => task,
       "STUB_LOG" => log,
       "FAIL_TOKEN" => fail_token
-    }.merge(extra_env)
+    }.merge(extra_env))
     out = IO.popen(env, "#{BIN.shellescape} #{args.map(&:shellescape).join(' ')} 2>/dev/null", &:read)
     code = $?.exitstatus
     lines = File.exist?(log) ? File.readlines(log, chomp: true).map { |l| l.split("\t") } : []
@@ -236,7 +244,8 @@ class FastCheckTest < Minitest::Test
     with_repo do |dir, _|
       out, = run_check(dir)
       runner_fp = out[/@([0-9a-f]{7,64})\]/, 1]
-      dor_fp = IO.popen({ "DOR_CHECK_DIFF_ROOT" => dir }, "#{DOR} --suite-fingerprint 2>/dev/null", &:read).strip
+      dor_fp = IO.popen(SessionEnv.neutralized("DOR_CHECK_DIFF_ROOT" => dir),
+                        "#{DOR} --suite-fingerprint 2>/dev/null", &:read).strip
       assert_equal dor_fp, runner_fp
     end
   end

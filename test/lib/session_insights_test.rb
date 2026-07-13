@@ -20,6 +20,7 @@ require "rbconfig"
 require "tmpdir"
 require "fileutils"
 require "time"
+require_relative "../support/session_env"
 
 load File.expand_path("../../bin/session-insights", __dir__)
 
@@ -107,13 +108,12 @@ class SessionInsightsTest < Minitest::Test
     port = server.addr[1]
     thread = Thread.new { serve(server, insights) }
 
-    env = {
+    # SessionEnv.neutralized: the child must name NO agent session (test/support/session_env.rb).
+    env = SessionEnv.neutralized(
       "AGENT_API_SECRET" => "test-secret",
       "CLAUDE_PROJECTS_DIR" => proj,
-      "ATOMIC_CAPTURE_URL" => "http://127.0.0.1:#{port}",
-      "CLAUDE_CODE_SESSION_ID" => nil,
-      "CODEX_THREAD_ID" => nil
-    }
+      "ATOMIC_CAPTURE_URL" => "http://127.0.0.1:#{port}"
+    )
     Open3.capture3(env, RbConfig.ruby, BIN)
   ensure
     server&.close

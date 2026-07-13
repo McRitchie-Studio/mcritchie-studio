@@ -18,6 +18,14 @@ class Current < ActiveSupport::CurrentAttributes
   attribute :user
   attribute :task_event_source, :task_event_actor, :task_event_model
   attribute :task_event_tokens_in, :task_event_tokens_out, :task_event_cost
+  # The un-folded cache buckets the capture CLI now sends alongside tokens_in, so
+  # Task#write_stage_event can re-derive the event's cost SERVER-side (honoring an
+  # operator rate override the no-ActiveRecord CLI could never see).
+  attribute :task_event_cache_creation_tokens, :task_event_cache_read_tokens
+  # Request-scoped memo of the model_rate_overrides table (UsagePricing.db_rates).
+  # price() is on the hot capture path; without this it re-SELECTs on every call.
+  # ModelRateOverride expires it on write, so a freshly-saved rate is never stale.
+  attribute :model_rate_overrides
   # Optional override for the two reviewers recorded on a submitted→reviewed
   # event (the avatars payload). When unset, Task#stage_event_metadata selects
   # the pair via ReviewerSelector — so the avatars populate no matter who drove
@@ -55,6 +63,10 @@ class Current < ActiveSupport::CurrentAttributes
     self.task_event_tokens_in  = (usage[:tokens_in] || usage["tokens_in"]).presence&.to_i
     self.task_event_tokens_out = (usage[:tokens_out] || usage["tokens_out"]).presence&.to_i
     self.task_event_cost       = (usage[:cost] || usage["cost"]).presence&.to_d
+    self.task_event_cache_creation_tokens =
+      (usage[:cache_creation_tokens] || usage["cache_creation_tokens"]).presence&.to_i
+    self.task_event_cache_read_tokens =
+      (usage[:cache_read_tokens] || usage["cache_read_tokens"]).presence&.to_i
     yield
   ensure
     if usage
@@ -62,6 +74,8 @@ class Current < ActiveSupport::CurrentAttributes
       self.task_event_tokens_in = nil
       self.task_event_tokens_out = nil
       self.task_event_cost = nil
+      self.task_event_cache_creation_tokens = nil
+      self.task_event_cache_read_tokens = nil
     end
   end
 end

@@ -19,6 +19,7 @@ require "open3"
 require "rbconfig"
 require "tmpdir"
 require "fileutils"
+require_relative "../support/session_env"
 
 class ConductorTest < Minitest::Test
   BIN = File.expand_path("../../bin/conductor", __dir__)
@@ -30,13 +31,15 @@ class ConductorTest < Minitest::Test
     FileUtils.mkdir_p(@fix)
     write_board
     write_fakes
-    @env = {
+    # SessionEnv.neutralized: the child must name NO agent session — bin/conductor
+    # shells to session-reading bins. See test/support/session_env.rb.
+    @env = SessionEnv.neutralized(
       "TASK_BIN" => File.join(@dir, "task"),
       "RELEASE_BIN" => File.join(@dir, "release"),
       "REVIEWER_SELECT_BIN" => File.join(@dir, "reviewer-select"),
       "CURL_BIN" => File.join(@dir, "curl"),
       "RELEASE_CALL_LOG" => @log
-    }
+    )
   end
 
   def teardown

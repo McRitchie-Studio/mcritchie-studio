@@ -6,6 +6,7 @@ require "json"
 require "open3"
 require "rbconfig"
 require "tmpdir"
+require_relative "../support/session_env"
 
 class PrReviewCommandTest < Minitest::Test
   BIN = File.expand_path("../../bin/pr-review", __dir__)
@@ -169,7 +170,7 @@ class PrReviewCommandTest < Minitest::Test
   end
 
   def run_heartbeat(*args, env: {})
-    full_env = {
+    full_env = SessionEnv.neutralized({
       "DEVOPS_CYCLE_BIN" => File.join(@dir, "devops-cycle"),
       "REVIEWER_SELECT_BIN" => File.join(@dir, "reviewer-select"),
       "TASK_BIN" => File.join(@dir, "task"),
@@ -189,7 +190,7 @@ class PrReviewCommandTest < Minitest::Test
       # existing review-flow tests stay focused on THEIR subject; a CI-gate test
       # overrides with its own token / per-slug map.
       "PR_REVIEW_CI_STATUS" => "green"
-    }.merge(env)
+    }.merge(env))
 
     Open3.capture3(
       full_env,

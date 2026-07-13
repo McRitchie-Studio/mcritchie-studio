@@ -3,6 +3,7 @@ require "json"
 require "open3"
 require "rbconfig"
 require "tmpdir"
+require_relative "../support/session_env"
 
 # bin/pr-status runs `gh pr view` and prints a one-line health summary, with a
 # loud hint when the PR is CONFLICTING (the case GitHub silently skips CI on).
@@ -15,7 +16,7 @@ class PrStatusTest < Minitest::Test
       stub = File.join(dir, "gh")
       File.write(stub, "#!/bin/bash\ncat <<'JSON'\n#{json}\nJSON\n")
       File.chmod(0o755, stub)
-      out, _err, status = Open3.capture3({ "GH_BIN" => stub }, RbConfig.ruby, BIN, *args)
+      out, _err, status = Open3.capture3(SessionEnv.neutralized("GH_BIN" => stub), RbConfig.ruby, BIN, *args)
       [out, status]
     end
   end

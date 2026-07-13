@@ -44,6 +44,46 @@ If a lane fails, record the classification in task `qa_feedback`:
 - missing seed or test data
 - dependency ordering issue
 
+## A Test That Spawns A Subprocess Must Null The Agent Session
+
+**The rule.** Any test that shells out — `Open3`, `IO.popen`, `Process.spawn`,
+backticks, `system` — must build the child's env through the shared neutralizer:
+
+```ruby
+require_relative "../support/session_env"   # standalone minitest files
+                                            # (test_helper requires it for Rails-side tests)
+
+env = SessionEnv.neutralized("FOO" => "bar")            # FOO set, session UNSET
+out = IO.popen(env, cmd, &:read)
+Open3.capture2(SessionEnv.neutralized, *cmd)            # bare overlay
+SessionEnv.neutralized("CLAUDE_CODE_SESSION_ID" => sid) # opt IN to a fake session
+```
+
+**Why.** An interactive Claude session exports `CLAUDE_CODE_SESSION_ID` (Codex:
+`CODEX_THREAD_ID`); **CI and a plain shell export neither.** A spawned `bin/task`,
+`bin/fast-check`, `bin/dor-check`, `bin/pr-review` or `bin/agent-activity`
+inherits the var, so `SessionIdentity` (`bin/lib/session_identity.rb`) resolves
+the **operator's live session** where CI resolves none. Actor/persona defaulting
+takes the wrong branch and best-effort narration shells out to the real board
+mid-test — so the test **false-fails for the agent running it by hand, while
+staying green on CI.** That asymmetry is what hides the coupling: this bug class
+was independently rediscovered at least three times, and once red-flagged
+genuinely-green code at a release gate. Green on CI is not proof; run the suite
+from a live agent session.
+
+**`nil` means UNSET — never `""`.** A nil value removes the key in the child
+(`Process.spawn` semantics). A literal empty string is still **exported**:
+`SessionIdentity` happens to treat a blank id as absent, but any reader keying on
+*presence* (`ENV.key?`, a shell's `${VAR+set}`) sees a session that isn't there.
+`SessionEnv.neutralized` normalizes a blank session override to unset for you.
+
+**Two neutralizers, one rule.** `SessionEnv` (`test/support/session_env.rb`)
+covers tests — including an agent running `bin/rails test` by hand in a worktree.
+`Release::GateEnv` (`app/models/release/gate_env.rb`) covers the release gate's
+own spawn env. They are deliberately not shared code (one must load in a bare
+`minitest/autorun` file with no Rails), but they **must agree** on the key list
+and the nil-means-unset semantics. Change one, change the other.
+
 ## Test Suite Catalog
 
 `bin/devops-tests` reads `config/devops_test_suites.yml`. Each suite should

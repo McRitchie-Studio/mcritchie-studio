@@ -1602,6 +1602,50 @@ def gate_database_url(repo)
   @gate_database_url[repo] = Release::GateWorkspace.database_url_for(repo, repo_path(repo))
 end
 
+# --- system-tier browser guard ----------------------------------------------
+# The hub's gate command carries the SYSTEM tier (`test:system` — see
+# config/release_repos.yml), and system tests drive a real headless Chrome. On a
+# host with no Chrome, Selenium fails INSIDE the suite: the runner exits non-zero
+# with a driver error, which the gate would otherwise read as a RED SUITE and hand
+# the operator eject/revert guidance — ejecting a perfectly good PR for a missing
+# browser. That misattribution is the exact class of failure the isolated gate was
+# rebuilt to end, so the browser is asserted UP FRONT and, when absent, fails in
+# the ENV class with the same wording as the bundle/DB guards.
+#
+# Only asserted when the registered command actually runs the tier, so the
+# integration-subset satellites never need a browser on the gate host.
+CHROME_BINARIES = %w[google-chrome google-chrome-stable chromium chromium-browser chrome].freeze
+MACOS_CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+
+def system_tier?(cmd) = cmd.to_s.include?("test:system")
+
+# Pure PATH scan (no subprocess): does an executable by this name exist?
+def executable_on_path?(name)
+  ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).any? do |dir|
+    next false if dir.empty?
+
+    File.executable?(File.join(dir, name))
+  end
+end
+
+# Chrome itself — NOT chromedriver. There is deliberately no driver on PATH: like
+# ci.yml, we let Selenium Manager fetch the chromedriver MATCHED to the installed
+# Chrome (a stale/mismatched driver on PATH is preferred by Selenium Manager and
+# then fails on a major-version skew).
+def chrome_available? = File.executable?(MACOS_CHROME) || CHROME_BINARIES.any? { |b| executable_on_path?(b) }
+
+def assert_system_test_browser!(repo, cmd)
+  return unless system_tier?(cmd)
+  return if chrome_available?
+
+  abort!("gate #{repo}: the registered gate command runs the SYSTEM tier (`#{cmd}`) but this host has " \
+         "NO Chrome — headless Chrome is required to drive test/system, and without it Selenium fails " \
+         "inside the suite and looks exactly like a red suite. This is an ENV issue, NOT a release " \
+         "regression — nothing to eject or revert. Install Chrome (macOS: `brew install --cask " \
+         "google-chrome`; Linux: install google-chrome/chromium), then re-run. Do NOT install a " \
+         "chromedriver — Selenium Manager fetches the one matching your Chrome.")
+end
+
 # PRE-QA GATE (prepare step 4): run each app's registered `qa_test_cmd` against
 # origin/release BEFORE anything deploys to QA, so a regression riding the
 # release branch is caught while the members are still `reviewed` (nothing
@@ -1686,6 +1730,8 @@ def pre_qa_gate(app_groups, rel_slug = nil)
     with_gate_workspace(repo) do
       workspace = gate_workspace!(repo, sha)
       prepare_gate_workspace!(repo, workspace)
+      # A missing browser must abort as ENV, never as a red suite (see the guard).
+      assert_system_test_browser!(repo, cmd)
       step("pre-QA gate #{repo}: #{cmd}  [#{short(sha)} · isolated workspace]")
       _, ok = run_test_scope("pre_qa_gate", *argv, chdir: workspace, repo: repo, env: gate_env(repo))
     end
@@ -2463,6 +2509,10 @@ def test_gate(repo, frozen_sha: nil, qa_gate: nil)
   with_gate_workspace(repo) do
     workspace = gate_workspace!(repo, frozen_sha)
     prepare_gate_workspace!(repo, workspace)
+    # A missing browser must abort as ENV, never as a red suite (see the guard) —
+    # doubly so here, where a "red gate" reads as a regression at the LAST gate
+    # before an irreversible prod deploy.
+    assert_system_test_browser!(repo, cmd)
     _, ok = run_test_scope("ship_test_gate", *argv, chdir: workspace, repo: repo, label: cmd, env: gate_env(repo))
   end
   abort!("test_cmd failed for #{repo} (#{cmd}) — aborting before the irreversible prod deploy; fix + re-run") unless ok

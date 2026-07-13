@@ -20,6 +20,7 @@ require "minitest/autorun"
 require "json"
 require "tmpdir"
 require "fileutils"
+require_relative "../support/session_env"
 
 load File.expand_path("../../bin/lib/full_suite_gate.rb", __dir__)
 
@@ -123,7 +124,7 @@ class DorCheckReviewFingerprintTest < Minitest::Test
       }
       out = nil
       with_env(env) do
-        out = IO.popen("#{BIN} --file #{path} --json #{args.join(' ')} 2>/dev/null", &:read)
+        out = IO.popen(SessionEnv.neutralized, "#{BIN} --file #{path} --json #{args.join(' ')} 2>/dev/null", &:read)
       end
       [JSON.parse(out), $?.exitstatus]
     end
@@ -211,7 +212,7 @@ class DorCheckReviewFingerprintTest < Minitest::Test
       # positional arg — pass "x" so it resolves feat/x, the fixture branch.
       out = nil
       with_env(env) do
-        out = IO.popen("#{BIN} x --suite-fingerprint --gate-role review 2>/dev/null", &:read).strip
+        out = IO.popen(SessionEnv.neutralized, "#{BIN} x --suite-fingerprint --gate-role review 2>/dev/null", &:read).strip
       end
       assert_equal branch_tree, out
       refute_equal FullSuiteGate.fingerprint(dir), out

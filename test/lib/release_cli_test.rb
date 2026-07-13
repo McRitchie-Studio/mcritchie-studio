@@ -24,6 +24,7 @@ require "json"
 require "base64"
 require "fileutils" # lock_dir cleanup (Minitest.after_run remove_entry)
 require "English"   # $CHILD_STATUS — the gate-lock queue test reaps its own child
+require_relative "../support/session_env"
 
 class ReleaseCliTest < Minitest::Test
   WRAPPER = File.expand_path("../../bin/release", __dir__)
@@ -63,14 +64,14 @@ class ReleaseCliTest < Minitest::Test
   #     stderr, so the swallowed-failure mode can never again recur silently.
   #     (rubygems "already initialized" warnings land on the child's stderr but are
   #     ignored on success — stderr is only surfaced when flunking.)
-  # Null the ambient agent-session vars for every release subprocess. A live
+  # Every release subprocess runs session-less, via the SHARED neutralizer
+  # (test/support/session_env.rb — the same one every spawner test uses). A live
   # Claude/Codex session exports CLAUDE_CODE_SESSION_ID / CODEX_THREAD_ID, which the
   # subprocess would otherwise inherit — making bin/release's best-effort deploy-lane
   # narration (agent_activity) resolve a real session and shell out to bin/atomic-event
   # mid-test. Neutralizing them keeps narration inert unless a test opts in (the
   # deploy-span tests stub agent_activity directly). Tests that need a session set it
   # inline via ENV[...] (see the with_conductor_session tests).
-  NEUTRALIZED_ENV = { "CLAUDE_CODE_SESSION_ID" => nil, "CODEX_THREAD_ID" => nil }.freeze
 
   # ISOLATE the primary-checkout lock dir for EVERY release subprocess. The
   # real <projects_root>/.agents/locks dir belongs to the live conductor: a G3
@@ -169,7 +170,7 @@ class ReleaseCliTest < Minitest::Test
   end
 
   def run_ruby(script)
-    env = NEUTRALIZED_ENV.merge("MCR_PRIMARY_LOCK_DIR" => self.class.lock_dir)
+    env = SessionEnv.neutralized("MCR_PRIMARY_LOCK_DIR" => self.class.lock_dir)
     last = nil
     SUBPROCESS_ATTEMPTS.times do
       out, err, status = Open3.capture3(env, "ruby", "-e", script)
@@ -230,6 +231,54 @@ class ReleaseCliTest < Minitest::Test
       assert_includes err, "requires Ruby 3.3.11"
       assert_includes err, "install mise"
     end
+  end
+
+  # --- system-tier browser guard (the hub's gate runs test:system) ------------
+
+  def test_system_tier_is_detected_from_the_registered_gate_command
+    # The hub's registered command carries the system tier; the satellites'
+    # integration subset does not — so only the hub's gate host needs a browser.
+    assert_equal "true", eval_helper(%(system_tier?("bin/rails db:test:prepare test test:system")))
+    assert_equal "false", eval_helper(%(system_tier?("bin/rails test test/integration")))
+    assert_equal "false", eval_helper(%(system_tier?("bin/rails test")))
+  end
+
+  def test_missing_chrome_aborts_in_the_ENV_class_not_as_a_red_suite
+    # THE MISATTRIBUTION GUARD. Without Chrome, Selenium fails INSIDE the suite and
+    # the gate would read a red suite -> eject/revert guidance -> a good PR ejected
+    # for a missing browser. It must abort in the ENV class instead, with the same
+    # "nothing to eject or revert" wording as the bundle/DB guards.
+    out = guard_verdict("mcritchie-studio", "bin/rails db:test:prepare test test:system")
+
+    assert out.start_with?("ABORTED"), "a system-tier gate on a browserless host must ABORT, not run the suite"
+    assert_includes out, "NOT a release regression"
+    assert_includes out, "nothing to eject or revert"
+    assert_includes out, "NO Chrome"
+  end
+
+  def test_the_browser_guard_leaves_the_integration_subset_alone
+    # Satellites gate on `bin/rails test test/integration` — no browser required,
+    # so a browserless host must NOT be blocked from running their gate.
+    out = guard_verdict("turf-monster", "bin/rails test test/integration")
+
+    assert_equal "NO_ABORT", out, "the browser guard must only bind commands that run test:system"
+  end
+
+  # Run the browser guard with chrome_available? FORCED false, so the verdict is
+  # deterministic on any host (this suite also runs on CI's Linux runner). abort!
+  # -> Kernel#abort raises SystemExit carrying the message, so the guard's abort is
+  # catchable and its wording assertable without a nonzero exit.
+  def guard_verdict(repo, cmd)
+    run_ruby(<<~RUBY)
+      load #{BIN.inspect}
+      def chrome_available? = false
+      begin
+        assert_system_test_browser!(#{repo.inspect}, #{cmd.inspect})
+        print "NO_ABORT"
+      rescue SystemExit => e
+        print "ABORTED|" + e.message.to_s
+      end
+    RUBY
   end
 
   # Evaluate a bin/release helper in a clean subprocess (see run_ruby).
@@ -1215,18 +1264,24 @@ class ReleaseCliTest < Minitest::Test
 
   # --- qa_test_cmd registry values + test_cmd_argv (Shellwords) parsing --------
 
+  # The hub's registered gate command (G3 qa_test_cmd == G4 test_cmd) — ci.yml's
+  # test command verbatim, INCLUDING the system tier. Named once so the CLI
+  # assertions below don't each re-pin a literal that can drift; the registry
+  # itself is held to ci.yml by Release::ReposTest's drift guard.
+  HUB_GATE_CMD = "bin/rails db:test:prepare test test:system"
+
   def test_qa_gate_cmd_reads_the_registered_g3_tier_from_the_real_registry
     # ONE subprocess reads all five apps through the REAL config/release_repos.yml
-    # — the exact seam pre_qa_gate reads at run time. The HUB registers its FULL
-    # suite (the G3 batch certification — ship's test_gate self-gates an
-    # unchanged SHA); satellites keep the integration subset.
+    # — the exact seam pre_qa_gate reads at run time. The HUB registers CI's FULL
+    # suite, base AND system tiers (the G3 batch certification — ship's test_gate
+    # self-gates an unchanged SHA); satellites keep the integration subset.
     out = eval_helper(%(%w[mcritchie-studio turf-monster rolio tax-studio chain-ops].map { |r| qa_gate_cmd(r) }.inspect))
 
-    expected = ["bin/rails test",
+    expected = [HUB_GATE_CMD,
                 "bin/rails test test/integration", "bin/rails test test/integration",
                 "", ""]
     assert_equal expected.inspect, out,
-                 "hub certifies the full suite at G3; satellites gate on integration; planned apps self-gate"
+                 "hub certifies CI's full suite at G3; satellites gate on integration; planned apps self-gate"
   end
 
   def test_test_cmd_argv_matches_plain_split_for_flag_style_commands
@@ -1564,7 +1619,7 @@ class ReleaseCliTest < Minitest::Test
       # (stdout to a file is block-buffered) — the queue is only observable live.
       script = %(ARGV.replace(["--yes"]); $stdout.sync = true; load #{BIN.inspect}; #{setup}; ) +
                %(pre_qa_gate([{ "repo" => "sibling" }]); puts("PASSED"))
-      env = NEUTRALIZED_ENV.merge("MCR_PRIMARY_LOCK_DIR" => dir)
+      env = SessionEnv.neutralized("MCR_PRIMARY_LOCK_DIR" => dir)
 
       lock = File.open(File.join(dir, "mcr-gate-workspace-sibling.lock"), File::RDWR | File::CREAT, 0o644)
       assert lock.flock(File::LOCK_EX | File::LOCK_NB), "test setup: conductor A takes the gate-workspace lock"
@@ -2154,7 +2209,7 @@ class ReleaseCliTest < Minitest::Test
     out = run_cli(["--dry-run"], call: "ship", setup: SHIP_STUB)
 
     # hub carries a conductor test_cmd; satellites self-gate (skip it).
-    assert_includes out, "bin/rails test", "the hub runs its conductor test_cmd before prod"
+    assert_includes out, HUB_GATE_CMD, "the hub runs its conductor test_cmd before prod"
     assert_includes out, "self-gates", "a repo_script satellite skips the conductor test_cmd"
   end
 
@@ -2183,7 +2238,7 @@ class ReleaseCliTest < Minitest::Test
     out = run_cli(["--dry-run"], call: "ship", setup: SHIP_STUB)
 
     gate_at   = out.index("Avi ship gate")
-    e2e_at    = out.index("bin/rails test")            # the hub's highest-tier run on the frozen SHA
+    e2e_at    = out.index(HUB_GATE_CMD)                # the hub's highest-tier run on the frozen SHA
     ship_at   = out.index("confirming production deploy") # the ship-authority step (unique marker)
     deploy_at = out.index("push heroku main")
 
@@ -3183,7 +3238,7 @@ class ReleaseCliTest < Minitest::Test
   end
 
   def test_agent_activity_is_a_noop_without_a_conductor_session
-    # NEUTRALIZED_ENV nulls the session vars → conductor_session_id is nil → no-op;
+    # SessionEnv nulls the session vars → conductor_session_id is nil → no-op;
     # telemetry must never shell out (or fail) when there's no session to attribute.
     out = run_cli(["--yes"], setup: "",
                   call: %(print(agent_activity("start", "--category", "Remote", "--reason", "x").inspect)))

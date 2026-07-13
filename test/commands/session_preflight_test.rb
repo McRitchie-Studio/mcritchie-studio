@@ -11,6 +11,7 @@ require "open3"
 require "rbconfig"
 require "socket"
 require "tmpdir"
+require_relative "../support/session_env"
 
 class SessionPreflightTest < Minitest::Test
   ROOT = File.expand_path("../..", __dir__)
@@ -220,7 +221,7 @@ class SessionPreflightTest < Minitest::Test
 
   def run_preflight(*args, env: {})
     Open3.capture3(
-      env,
+      SessionEnv.neutralized(env),
       RbConfig.ruby, SCRIPT, "--root", @repo, *args,
       chdir: @repo
     )
@@ -387,7 +388,7 @@ class SessionPreflightTest < Minitest::Test
   end
 
   def git(*args)
-    out, err, status = Open3.capture3("git", *args, chdir: @repo)
+    out, err, status = Open3.capture3(SessionEnv.neutralized, "git", *args, chdir: @repo)
     assert status.success?, "git #{args.join(" ")} failed\n#{out}\n#{err}"
     out
   end

@@ -1,0 +1,55 @@
+<% content_for(:title, "Model Pricing — Admin") %>
+
+<div class="max-w-7xl mx-auto px-4 py-8 space-y-6">
+  <header>
+    <h1 class="text-heading text-2xl font-bold mb-1">Model Pricing</h1>
+    <p class="text-muted text-sm">
+      Per-model rates in USD per 1M tokens, with a summary of the last session to use each model.
+      Click a model to tune its rates.
+    </p>
+  </header>
+
+  <section class="card overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="text-left text-muted border-b border-subtle">
+          <th class="py-2 px-3">Model</th>
+          <th class="py-2 px-3 text-right">Input $/1M</th>
+          <th class="py-2 px-3 text-right">Output $/1M</th>
+          <th class="py-2 px-3 border-l border-subtle">Last session</th>
+          <th class="py-2 px-3 text-right">In tok</th>
+          <th class="py-2 px-3 text-right">In cost</th>
+          <th class="py-2 px-3 text-right">Out tok</th>
+          <th class="py-2 px-3 text-right">Out cost</th>
+          <%# NOT the session's true total — this column is in+out only and prices no
+              cache tier (see ModelPricing). On a page about money, say so. %>
+          <th class="py-2 px-3 text-right">In + Out cost</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% @rows.each do |row| %>
+          <tr class="border-b border-subtle/60 hover:bg-surface-alt">
+            <td class="py-2 px-3">
+              <%= link_to admin_model_pricing_model_path(row.model), class: "font-medium text-primary hover:underline" do %>
+                <%= heartbeat_model_short(row.model) %>
+              <% end %>
+              <% if row.overridden %>
+                <span class="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary align-middle">override</span>
+              <% end %>
+            </td>
+            <td class="py-2 px-3 text-right tabular-nums"><%= number_to_currency(row.input_rate, precision: 2) %></td>
+            <td class="py-2 px-3 text-right tabular-nums"><%= number_to_currency(row.output_rate, precision: 2) %></td>
+            <td class="py-2 px-3 text-muted border-l border-subtle">
+              <%= row.session_id ? content_tag(:code, truncate(row.session_id, length: 16), class: "text-xs") : "—" %>
+            </td>
+            <td class="py-2 px-3 text-right tabular-nums text-secondary"><%= heartbeat_tokens_compact(row.tokens_in) %></td>
+            <td class="py-2 px-3 text-right tabular-nums"><%= heartbeat_cost(row.in_cost) %></td>
+            <td class="py-2 px-3 text-right tabular-nums text-secondary"><%= heartbeat_tokens_compact(row.tokens_out) %></td>
+            <td class="py-2 px-3 text-right tabular-nums"><%= heartbeat_cost(row.out_cost) %></td>
+            <td class="py-2 px-3 text-right tabular-nums font-semibold text-heading"><%= heartbeat_cost(row.total_cost) %></td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  </section>
+</div>

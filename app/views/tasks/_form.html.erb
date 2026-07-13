@@ -133,6 +133,9 @@
           <label class="block text-sm text-secondary mb-2 font-medium">Checks Run</label>
           <%= text_area_tag "task[devops][checks_run]", task.devops_checks_run.join("\n"), rows: 5,
                 class: "input-field", placeholder: "Actual checks run during handoff" %>
+          <p class="text-xs text-muted mt-1">Tier tags are yours to edit. Cert evidence lines
+            (<code>[full-suite@…]</code>, <code>[rubocop@…]</code>, <code>[fast-cert@…]</code>) are written by
+            the cert tools and are preserved on save — only a re-cert replaces them.</p>
         </div>
       </div>
     </div>

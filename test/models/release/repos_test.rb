@@ -126,7 +126,7 @@ class Release::ReposTest < ActiveSupport::TestCase
   # --- test_cmd: the conductor's pre-prod gate ---
 
   test "test_cmd returns the hub's pre-prod gate command" do
-    assert_equal "bin/rails test", Release::Repos.test_cmd("mcritchie-studio")
+    assert_equal "bin/rails db:test:prepare test test:system", Release::Repos.test_cmd("mcritchie-studio")
   end
 
   test "test_cmd returns Rolio's pre-prod gate command" do
@@ -153,8 +153,9 @@ class Release::ReposTest < ActiveSupport::TestCase
     # gates on its FULL suite — the G3 batch certification (90/10): ship's
     # test_gate then self-gates when the frozen SHA matches this certified run,
     # so the full suite still runs once per release batch.
-    assert_equal "bin/rails test", Release::Repos.qa_test_cmd("mcritchie-studio"),
-                 "the hub certifies its full suite at G3"
+    assert_equal "bin/rails db:test:prepare test test:system",
+                 Release::Repos.qa_test_cmd("mcritchie-studio"),
+                 "the hub certifies its full suite — base AND system tiers — at G3"
     %w[turf-monster rolio].each do |repo|
       assert_equal "bin/rails test test/integration", Release::Repos.qa_test_cmd(repo),
                    "#{repo} must gate QA on its integration tier"
@@ -181,4 +182,51 @@ class Release::ReposTest < ActiveSupport::TestCase
     assert_nil Release::Repos.qa_test_cmd("studio-engine")
     assert_nil Release::Repos.qa_test_cmd("not-a-real-repo")
   end
+
+  # --- the hub's gate must cover what CI covers (the G3 system-test gap) ---
+
+  test "the hub's G3 gate runs CI's test command verbatim" do
+    # THE DRIFT GUARD, and the reason this file now parses ci.yml instead of
+    # re-pinning a literal. `bin/rails test` SKIPS test/system — so while the gate
+    # ran that and CI ran `db:test:prepare test test:system`, the gate's "full
+    # suite" was NOT CI's full suite and a system-test regression rode the release
+    # branch into QA ungated. A hard-coded string could drift out from under CI
+    # again in silence; asserting against ci.yml itself means changing either side
+    # alone fails HERE, at the seam, with the tiers named.
+    assert_equal ci_test_command, Release::Repos.qa_test_cmd("mcritchie-studio"),
+                 "the hub's G3 gate must run CI's full suite (base + system tiers), verbatim"
+  end
+
+  test "the hub's ship gate matches its pre-QA gate so G4 can self-gate" do
+    # Release::ShipSequence.ship_gate_skip? compares the command STRINGS verbatim
+    # against what G3 recorded. If test_cmd drifts from qa_test_cmd, G4 can never
+    # credit G3's certified run and the full suite runs a second time every ship.
+    assert_equal Release::Repos.qa_test_cmd("mcritchie-studio"),
+                 Release::Repos.test_cmd("mcritchie-studio"),
+                 "G4's test_cmd and G3's qa_test_cmd must be the same string"
+  end
+
+  test "the hub's gate keeps db:test:prepare FIRST so rake runs both tiers" do
+    # SHAPE TRAP — do not "simplify" this command. `test` is a real rails COMMAND,
+    # so `bin/rails test test:system` parses `test:system` as a PATH and dies with
+    # `LoadError: cannot load such file -- <root>/test:system`. Both tiers run only
+    # because a leading NON-command (db:test:prepare) routes the line through RAKE,
+    # where `test` and `test:system` are two separate tasks.
+    argv = Shellwords.split(Release::Repos.qa_test_cmd("mcritchie-studio"))
+    assert_equal %w[bin/rails db:test:prepare test test:system], argv
+    assert_equal "db:test:prepare", argv[1],
+                 "a rails-COMMAND first arg would parse the later tiers as file paths"
+  end
+
+  private
+    # The single command ci.yml's `test` job runs — the suite CI certifies on every
+    # PR. Located by content (`bin/rails`), not by step name, so renaming the step
+    # doesn't silently blind the drift guard above.
+    def ci_test_command
+      ci    = YAML.safe_load_file(Rails.root.join(".github/workflows/ci.yml"), aliases: true)
+      steps = ci.dig("jobs", "test", "steps") || []
+      run   = steps.filter_map { |s| s["run"] }.find { |c| c.include?("bin/rails") }
+      assert run.present?, "ci.yml's `test` job no longer has a bin/rails step — the drift guard is blind"
+      run.strip
+    end
 end

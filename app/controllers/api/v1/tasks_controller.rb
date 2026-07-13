@@ -162,6 +162,11 @@ module Api
         Current.task_event_tokens_in  = event[:tokens_in].presence&.to_i
         Current.task_event_tokens_out = event[:tokens_out].presence&.to_i
         Current.task_event_cost       = event[:cost].presence&.to_d
+        # The un-folded cache buckets bin/task now sends. Task#task_event_usage re-derives
+        # the event's cost from these SERVER-side, so an operator's rate override applies;
+        # the caller's `cost` above is only the fallback when they're absent.
+        Current.task_event_cache_creation_tokens = event[:cache_creation_tokens].presence&.to_i
+        Current.task_event_cache_read_tokens     = event[:cache_read_tokens].presence&.to_i
       end
 
       # The bearer API is definitionally the AGENT lane: its writes are "api"

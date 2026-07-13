@@ -1,0 +1,77 @@
+# frozen_string_literal: true
+
+# SessionEnv — the ONE neutralizer for the ambient agent-session vars a test's
+# SUBPROCESS would otherwise inherit.
+#
+# WHY (rediscovered at least three times; it poisoned a release gate):
+# an interactive Claude session exports CLAUDE_CODE_SESSION_ID (Codex:
+# CODEX_THREAD_ID); CI and a plain shell export NEITHER. Any test that spawns a
+# bin/ command (bin/task, bin/fast-check, bin/dor-check, bin/pr-review,
+# bin/agent-activity, …) via Open3 / IO.popen / Process.spawn hands the var
+# straight down, so SessionIdentity (bin/lib/session_identity.rb) resolves the
+# OPERATOR'S LIVE SESSION where CI resolves none. Actor/persona defaulting then
+# takes the wrong branch, best-effort narration shells out to the real board
+# mid-test, and the assertion false-fails — but ONLY for the agent running the
+# suite by hand. CI stays green, which is exactly what hides the coupling and
+# lets it be rediscovered instead of fixed.
+#
+# So: a test that spawns a subprocess MUST build its child env through here.
+#
+#   env = SessionEnv.neutralized("FOO" => "bar")          # FOO set, session UNSET
+#   out = IO.popen(env, cmd, &:read)
+#   Open3.capture2(SessionEnv.neutralized, *cmd)          # bare overlay
+#   SessionEnv.neutralized("CLAUDE_CODE_SESSION_ID" => s) # opt IN to a fake session
+#
+# nil means UNSET, and that is the whole point. A nil value REMOVES the key in
+# the child (Process.spawn semantics). Setting "" instead would still EXPORT the
+# var: SessionIdentity happens to treat a blank id as absent, but any reader
+# keying on PRESENCE (ENV.key?, a shell's `${VAR+set}`) sees a session that
+# isn't there. Neutralized means gone, not empty.
+#
+# Standalone by construction. The test/lib/*.rb and test/commands/*.rb files are
+# bare `minitest/autorun` — they do NOT require test_helper — so this file must
+# load with no Rails and no test_helper. Both worlds reach it the same way:
+#
+#   require_relative "../support/session_env"   # standalone minitest files
+#   (test_helper requires it too, for the Rails-side tests)
+#
+# PRODUCTION COUNTERPART: Release::GateEnv (app/models/release/gate_env.rb) does
+# the same scrub for the release gate's own spawn env — same SESSION_KEYS, same
+# nil-means-unset rule. That covers `bin/release`'s gate runs; it does nothing
+# for an agent running `bin/rails test` by hand in a worktree, which is what this
+# helper covers. The two are deliberately NOT shared code (one is Rails-side, one
+# must load in a bare minitest file) — but they MUST agree. Change one key list,
+# change the other.
+module SessionEnv
+  # The agent-session identity vars, exactly as Release::GateEnv::SESSION_KEYS
+  # names them. Keep the two lists in lockstep.
+  SESSION_KEYS = %w[CLAUDE_CODE_SESSION_ID CODEX_THREAD_ID].freeze
+
+  # The bare overlay: every session var UNSET. Frozen — build variants with
+  # `neutralized(...)`, never by mutating this.
+  NEUTRALIZED = SESSION_KEYS.each_with_object({}) { |key, env| env[key] = nil }.freeze
+
+  module_function
+
+  # The child env hash for a spawned subprocess: every session var UNSET, with
+  # `overrides` merged ON TOP.
+  #
+  # A test may deliberately opt a session back IN by passing one — that's a
+  # merge, not a clobber, so the fake-session tests keep working. A BLANK session
+  # override ("" / nil / "  ") normalizes to UNSET, because a blank session id
+  # means "no session" and an exported empty string is a lie about that. Non-
+  # session keys pass through untouched, blank or not.
+  def neutralized(overrides = {})
+    env = NEUTRALIZED.dup
+    overrides.each do |key, value|
+      key = key.to_s
+      env[key] = SESSION_KEYS.include?(key) ? presence(value) : value
+    end
+    env
+  end
+
+  # The value unless it is blank; nil (⇒ UNSET) when it is.
+  def presence(value)
+    value.to_s.strip.empty? ? nil : value
+  end
+end

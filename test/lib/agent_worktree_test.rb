@@ -11,6 +11,7 @@
 require "minitest/autorun"
 require "open3"
 require "time" # Time#iso8601 — the claim-lease expiry format the reclaim guard reads
+require_relative "../support/session_env"
 
 class AgentWorktreeTest < Minitest::Test
   BIN = File.expand_path("../../bin/agent-worktree", __dir__)
@@ -45,7 +46,9 @@ class AgentWorktreeTest < Minitest::Test
     script = "load #{BIN.inspect}\n#{body}"
     last = nil
     SUBPROCESS_ATTEMPTS.times do
-      out, err, status = Open3.capture3("ruby", "-e", script)
+      # SessionEnv.neutralized: the child loads bin/agent-worktree, which resolves
+      # session identity — it must name NO session (test/support/session_env.rb).
+      out, err, status = Open3.capture3(SessionEnv.neutralized, "ruby", "-e", script)
       return out.strip if status.success? && !out.strip.empty?
 
       last = { out: out, err: err, status: status }

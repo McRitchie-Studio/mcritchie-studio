@@ -256,6 +256,11 @@ class Task < ApplicationRecord
   before_save :confirm_operator_approval_after_build_exit, if: -> { will_save_change_to_stage? }
   before_save :stamp_operator_approval_request
   before_save :stamp_operator_approval_approved
+  # The cert evidence in devops.checks_run is MACHINE-owned and survives an
+  # author's checks update. Every writer of checks_run — bin/task's PATCH, the
+  # board UI form, a raw API call, the console — lands here, so the guard is on
+  # the model rather than in any one caller. See #preserve_cert_evidence.
+  before_save :preserve_cert_evidence
   # One TaskEvent per save that lands a stage: the genesis on create (the default
   # "designed" stage isn't a dirty change, so this is guard-free) and one per real
   # transition on update.
@@ -688,10 +693,7 @@ class Task < ApplicationRecord
       seconds_in_from: nil,
       source: (source.presence || Current.task_event_source).presence,
       actor: actor.to_s.strip.presence || Current.task_event_actor.presence,
-      model: Current.task_event_model.presence,
-      tokens_in: Current.task_event_tokens_in,
-      tokens_out: Current.task_event_tokens_out,
-      cost: Current.task_event_cost,
+      **task_event_usage_attrs,
       metadata: metadata.to_h.merge("status" => status.to_s)
     )
   end
@@ -1204,6 +1206,35 @@ class Task < ApplicationRecord
     log.save!
   end
 
+  # The usage columns for a TaskEvent, with cost DERIVED server-side. bin/task mints its
+  # cost in a plain-Ruby process with no ActiveRecord, so it can never see an operator's
+  # rate override (UsagePricing.db_rates returns {} there) — re-deriving here is what
+  # carries a saved rate into task-event cost, and therefore into actual_size on the
+  # sizing dashboard. The CLI's cost stays the FALLBACK: kept for an unpriced model, or
+  # an older CLI that doesn't send the un-folded cache_creation bucket needed to split
+  # the folded tokens_in faithfully.
+  def task_event_usage_attrs
+    model      = Current.task_event_model.presence
+    tokens_in  = Current.task_event_tokens_in
+    tokens_out = Current.task_event_tokens_out
+    cache_creation_tokens = Current.task_event_cache_creation_tokens
+    cache_read_tokens     = Current.task_event_cache_read_tokens
+
+    derived = UsagePricing.cost_from_capture(
+      model: model, tokens_in: tokens_in, tokens_out: tokens_out,
+      cache_creation_tokens: cache_creation_tokens, cache_read_tokens: cache_read_tokens
+    )
+
+    {
+      model: model,
+      tokens_in: tokens_in,
+      tokens_out: tokens_out,
+      cache_creation_tokens: cache_creation_tokens,
+      cache_read_tokens: cache_read_tokens,
+      cost: derived || Current.task_event_cost
+    }
+  end
+
   def write_stage_event(from:)
     occurred = Time.current
     # Measure the stage duration between TRANSITIONS only — an intent row recorded
@@ -1217,10 +1248,7 @@ class Task < ApplicationRecord
       seconds_in_from: previous && (occurred - previous.occurred_at).round,
       source: Current.task_event_source,
       actor: Current.task_event_actor.presence,
-      model: Current.task_event_model.presence,
-      tokens_in: Current.task_event_tokens_in,
-      tokens_out: Current.task_event_tokens_out,
-      cost: Current.task_event_cost,
+      **task_event_usage_attrs,
       # Merge the review-bypass marker (set only by Conductor.sweep!(override:true)
       # for `bin/release merge --override`) onto THIS transition, so the review-gate
       # skip is recorded on the same spine the move writes — not as a second, orphan
@@ -1458,6 +1486,40 @@ class Task < ApplicationRecord
     merged = metadata.deep_dup
     approval = (merged["devops"] ||= {})
     approval["approval_approved_at"] ||= Time.current.iso8601
+    self.metadata = merged
+  end
+
+  # devops.checks_run carries TWO namespaces. The AUTHOR owns the tier tags
+  # ("[unit] bin/rails test ..."), and a checks update REPLACES those — that is the
+  # documented contract. The CERT WRITERS (bin/fast-check, bin/full-suite-check)
+  # own the fingerprint-bound evidence ("[full-suite@<tree-hash>] ..."), which
+  # bin/dor-check reads to decide whether this exact code is certified. A write
+  # may supersede an evidence LANE only by SUPPLYING evidence for it; every lane
+  # the incoming list does not address is carried forward.
+  #
+  # Regression (2026-07-12, hit twice in one session): `bin/task update --checks`
+  # replaced the whole array, so an agent recording its tier-tagged test plan
+  # AFTER certifying silently destroyed its own cert — and dor-check reported
+  # "full-suite: MISSING (never certified for this exact code)" on code it had just
+  # certified green. A gate that lies teaches agents to route around it, and the
+  # fastest way "around" was to hand-write an evidence line, i.e. forge the cert.
+  # This makes the destruction impossible instead of documenting an ordering
+  # workaround. The write rule lives in lib/cert_evidence.rb (shared with the CLI).
+  def preserve_cert_evidence
+    return unless will_save_change_to_metadata?
+
+    prior = Array((metadata_was || {}).dig("devops", "checks_run"))
+    return if prior.empty?
+    # An explicit devops teardown (the whole hash removed) is left alone — this
+    # guard defends the evidence namespace, not the existence of devops.
+    return unless metadata["devops"].is_a?(Hash)
+
+    incoming = Array(metadata.dig("devops", "checks_run"))
+    preserved = CertEvidence.preserve(prior: prior, incoming: incoming)
+    return if preserved == incoming
+
+    merged = metadata.deep_dup
+    merged["devops"]["checks_run"] = preserved
     self.metadata = merged
   end
 

@@ -45,7 +45,22 @@ class AgentSessionUsage
       delta["output"].to_i
     end
 
+    # The un-folded cache buckets, sent on the wire ALONGSIDE the folded tokens_in so
+    # the SERVER can re-derive this cost itself (input = tokens_in - cache_creation)
+    # and apply an operator rate override — which this process, having no
+    # ActiveRecord, can never see. tokens_in stays folded: every downstream
+    # aggregate (sizing, heartbeat) is built on that long-standing shape.
+    def cache_creation_tokens
+      delta["cache_creation"].to_i
+    end
+
+    def cache_read_tokens
+      delta["cache_read"].to_i
+    end
+
     # Dollar cost of the delta, or nil for an unknown model (tokens still record).
+    # Priced at LIST rate — the server re-derives on ingest when the cache buckets
+    # above are present, so this is the fallback for an unpriced model.
     def cost
       AgentSessionUsage.price(delta, model)
     end

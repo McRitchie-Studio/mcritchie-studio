@@ -6,6 +6,7 @@ require "open3"
 require "tmpdir"
 require "fileutils"
 require "rbconfig"
+require_relative "../support/session_env"
 
 class CodexUpdateTest < Minitest::Test
   ROOT = File.expand_path("../..", __dir__)
@@ -48,7 +49,7 @@ class CodexUpdateTest < Minitest::Test
   end
 
   def run_cmd(*args, env: {})
-    Open3.capture3(default_env.merge(env), RbConfig.ruby, "--disable=gems", SCRIPT, *args)
+    Open3.capture3(SessionEnv.neutralized(default_env.merge(env)), RbConfig.ruby, "--disable=gems", SCRIPT, *args)
   end
 
   def make_runtime(version, name, support:)

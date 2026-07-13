@@ -13,10 +13,18 @@ require "json"
 require "open3"
 require "tmpdir"
 require "fileutils"
+require_relative "../support/session_env"
 
 class StatuslineTest < Minitest::Test
   BIN = File.expand_path("../../bin/statusline", __dir__)
   SESSION = "2aa216f6-7565-4bf4-bd01-70793c8ba617" # last 4 = a617
+
+  # The env var that names a session for `provider`. Pair it with
+  # SessionEnv.neutralized and the OTHER provider's var is unset for free — these
+  # tests assert per-provider resolution, so exactly one may ever be set.
+  def session_key(provider)
+    provider == :codex ? "CODEX_THREAD_ID" : "CLAUDE_CODE_SESSION_ID"
+  end
 
   # Run statusline pointed at a temp worktree context (cwd via the stdin JSON, the
   # real Claude Code shape) so render() runs from a known context file. The
@@ -31,11 +39,9 @@ class StatuslineTest < Minitest::Test
         "task_url" => "https://mcritchie.studio/tasks/session-resume-on-tasks",
         "stage" => "building"
       }.merge(extra)))
-      env = if provider == :codex
-              { "CODEX_THREAD_ID" => session, "CLAUDE_CODE_SESSION_ID" => nil }
-            else
-              { "CLAUDE_CODE_SESSION_ID" => session, "CODEX_THREAD_ID" => nil }
-            end
+      # Exactly ONE session var set — SessionEnv unsets the other for us, so the
+      # provider under test is the only one bin/statusline can resolve.
+      env = SessionEnv.neutralized(session_key(provider) => session)
       stdin = JSON.generate("workspace" => { "current_dir" => dir })
       out, = Open3.capture2(env, "/bin/bash", BIN, stdin_data: stdin, err: File::NULL)
       out
@@ -52,11 +58,7 @@ class StatuslineTest < Minitest::Test
         "mascot_color" => "#EE8130",
         "mascot_emoji" => "🔥"
       }.merge(extra)))
-      env = if provider == :codex
-              { "CODEX_THREAD_ID" => session, "CLAUDE_CODE_SESSION_ID" => nil, "CLAUDE_PROJECTS_DIR" => projects }
-            else
-              { "CLAUDE_CODE_SESSION_ID" => session, "CODEX_THREAD_ID" => nil, "CLAUDE_PROJECTS_DIR" => projects }
-            end
+      env = SessionEnv.neutralized(session_key(provider) => session, "CLAUDE_PROJECTS_DIR" => projects)
       stdin = JSON.generate("workspace" => { "current_dir" => projects })
       out, = Open3.capture2(env, "/bin/bash", BIN, stdin_data: stdin, err: File::NULL)
       out
@@ -187,13 +189,12 @@ class StatuslineTest < Minitest::Test
       File.write(stub, "#!/bin/bash\necho \"$@\" >> #{calls.inspect}\n")
       File.chmod(0o755, stub)
 
-      env = {
+      env = SessionEnv.neutralized(
         "CLAUDE_CODE_SESSION_ID" => session,
-        "CODEX_THREAD_ID" => nil,
         "TASK_BIN" => stub,
         "STATUSLINE_HEARTBEAT_FG" => "1",
         "CLAUDE_PROJECTS_DIR" => File.join(dir, "projects")
-      }
+      )
       stdin = JSON.generate("workspace" => { "current_dir" => dir })
       runs.times { Open3.capture2(env, "/bin/bash", BIN, stdin_data: stdin, err: File::NULL) }
 
@@ -254,12 +255,14 @@ class StatuslineTest < Minitest::Test
       File.write(stub, "#!/bin/bash\necho \"$@\" >> #{calls.inspect}\n")
       File.chmod(0o755, stub)
 
-      env = {
+      # This one previously forgot CODEX_THREAD_ID => nil, so a Codex agent running
+      # the suite leaked its thread into the child. SessionEnv unsets it by default.
+      env = SessionEnv.neutralized(
         "CLAUDE_CODE_SESSION_ID" => session,
         "TASK_BIN" => stub,
         "STATUSLINE_HEARTBEAT_FG" => "1",
         "CLAUDE_PROJECTS_DIR" => projects
-      }
+      )
       stdin = JSON.generate("workspace" => { "current_dir" => cwd })
       Open3.capture2(env, "/bin/bash", BIN, stdin_data: stdin, err: File::NULL)
       File.exist?(calls) ? File.read(calls).lines.map(&:strip) : []

@@ -154,7 +154,7 @@ class QaIntakeCommandTest < ActiveSupport::TestCase
     fake_bin = write_fake_gh(branch: "feat/fix-qa-intake-merge-signal", merge_state: "CLEAN")
 
     out, err, status = Open3.capture3(
-      { "PROJECTS_DIR" => @projects_dir, "PATH" => "#{fake_bin}:#{ENV.fetch("PATH", "")}" },
+      SessionEnv.neutralized("PROJECTS_DIR" => @projects_dir, "PATH" => "#{fake_bin}:#{ENV.fetch("PATH", "")}"),
       RbConfig.ruby, @script, "--registry", registry, "--apps", "mcritchie-studio", "--json",
       chdir: @projects_dir
     )
@@ -176,7 +176,7 @@ class QaIntakeCommandTest < ActiveSupport::TestCase
     fake_bin = write_fake_gh(branch: "feat/rolio-demo", merge_state: "CLEAN")
 
     out, err, status = Open3.capture3(
-      { "PROJECTS_DIR" => @projects_dir, "PATH" => "#{fake_bin}:#{ENV.fetch("PATH", "")}" },
+      SessionEnv.neutralized("PROJECTS_DIR" => @projects_dir, "PATH" => "#{fake_bin}:#{ENV.fetch("PATH", "")}"),
       RbConfig.ruby, @script, "--registry", registry, "--apps", "rolio", "--json",
       chdir: @projects_dir
     )
@@ -261,7 +261,7 @@ class QaIntakeCommandTest < ActiveSupport::TestCase
   end
 
   def git(dir, *args)
-    out, err, status = Open3.capture3("git", *args, chdir: dir)
+    out, err, status = Open3.capture3(SessionEnv.neutralized, "git", *args, chdir: dir)
     assert status.success?, "git #{args.join(" ")} failed\n#{out}\n#{err}"
   end
 
@@ -325,7 +325,7 @@ class QaIntakeCommandTest < ActiveSupport::TestCase
       #{body}
     RUBY
     out, err, status = Open3.capture3(
-      { "PROJECTS_DIR" => @projects_dir, "PATH" => ENV.fetch("PATH", "") },
+      SessionEnv.neutralized("PROJECTS_DIR" => @projects_dir, "PATH" => ENV.fetch("PATH", "")),
       RbConfig.ruby, "-e", snippet
     )
     assert status.success?, "#{out}\n#{err}"

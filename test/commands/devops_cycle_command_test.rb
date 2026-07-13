@@ -366,6 +366,7 @@ class DevopsCycleCommandTest < ActiveSupport::TestCase
 
   def devops_cycle(*args)
     Open3.capture3(
+      SessionEnv.neutralized,
       RbConfig.ruby,
       @script,
       "--offline-fixture",

@@ -34,6 +34,7 @@ module Api
           prior_model:           open_params[:prior_model],
           prior_tokens_in:       open_params[:prior_tokens_in],
           prior_tokens_out:      open_params[:prior_tokens_out],
+          prior_cache_creation_tokens: open_params[:prior_cache_creation_tokens],
           prior_cache_read_tokens: open_params[:prior_cache_read_tokens],
           prior_cost:            open_params[:prior_cost]
         )
@@ -56,6 +57,7 @@ module Api
           model:           close_params[:model],
           tokens_in:       close_params[:tokens_in],
           tokens_out:      close_params[:tokens_out],
+          cache_creation_tokens: close_params[:cache_creation_tokens],
           cache_read_tokens: close_params[:cache_read_tokens],
           cost:            close_params[:cost]
         )
@@ -113,7 +115,7 @@ module Api
       #
       # Stamp the fan-out reconciler's computed per-activity usage. Body:
       #   { session_id, usages: [ { activity_id, model, tokens_in, tokens_out,
-      #                             cache_read_tokens, cost }, … ] }
+      #                             cache_creation_tokens, cache_read_tokens, cost }, … ] }
       # Each usage is applied to its activity ONLY within this session (a token can
       # never patch another session's rows). Returns the count stamped; a 204 no-op
       # when nothing matched (telemetry must not surface as a failure).
@@ -134,7 +136,9 @@ module Api
       end
 
       def reconcile_params
-        params.permit(:session_id, usages: %i[activity_id model tokens_in tokens_out cache_read_tokens cost])
+        params.permit(:session_id,
+                      usages: %i[activity_id model tokens_in tokens_out
+                                 cache_creation_tokens cache_read_tokens cost])
       end
 
       def turn_open_params
@@ -171,8 +175,9 @@ module Api
           :prior_model,           # optional measured model for the auto-closed prior activity
           :prior_tokens_in,       # optional fresh input tokens for the auto-closed prior activity
           :prior_tokens_out,      # optional output tokens for the auto-closed prior activity
+          :prior_cache_creation_tokens, # un-folded cache WRITES — lets the server re-derive cost
           :prior_cache_read_tokens, # optional cache-read tokens for cost only
-          :prior_cost             # optional computed cost for the auto-closed prior activity
+          :prior_cost             # LIST-price fallback; server re-derives when the buckets are sent
         )
       end
 
@@ -186,8 +191,9 @@ module Api
           :model,           # optional measured model for this activity
           :tokens_in,       # optional fresh input tokens for this activity
           :tokens_out,      # optional output tokens for this activity
+          :cache_creation_tokens, # un-folded cache WRITES — lets the server re-derive cost
           :cache_read_tokens, # optional cache-read tokens for cost only
-          :cost             # optional computed cost for this activity
+          :cost             # LIST-price fallback; server re-derives when the buckets are sent
         )
       end
 

@@ -13,6 +13,7 @@ require "fileutils"
 require "rbconfig"
 require "shellwords"
 require_relative "../../bin/lib/full_suite_gate"
+require_relative "../support/session_env"
 
 class FullSuiteCheckTest < Minitest::Test
   BIN = File.expand_path("../../bin/full-suite-check", __dir__)
@@ -71,13 +72,15 @@ class FullSuiteCheckTest < Minitest::Test
 
   # Run the runner in --print mode (no task board) with both lanes stubbed.
   # Returns [stdout, exitcode]. test:/rubocop: are shell commands ("true"/"false").
+  # SessionEnv.neutralized: bin/full-suite-check resolves SessionIdentity, so an
+  # un-neutralized child would read the LIVE agent session (test/support/session_env.rb).
   def run_check(dir, test_cmd:, rubocop_cmd:, reset_cmd: "true")
-    env = {
+    env = SessionEnv.neutralized(
       "FULL_SUITE_ROOT" => dir,
       "FULL_SUITE_TEST_DB_RESET_CMD" => reset_cmd,
       "FULL_SUITE_TEST_CMD" => test_cmd,
       "FULL_SUITE_RUBOCOP_CMD" => rubocop_cmd
-    }
+    )
     out = IO.popen(env, "#{BIN} --print 2>/dev/null", &:read)
     [out, $?.exitstatus]
   end
@@ -154,7 +157,7 @@ class FullSuiteCheckTest < Minitest::Test
     with_repo do |dir|
       out, = run_check(dir, test_cmd: "true", rubocop_cmd: "true")
       runner_fp = out[/@([0-9a-f]{7,64})\]/, 1]
-      dor_fp = IO.popen({ "DOR_CHECK_DIFF_ROOT" => dir }, "#{DOR} --suite-fingerprint 2>/dev/null", &:read).strip
+      dor_fp = IO.popen(SessionEnv.neutralized("DOR_CHECK_DIFF_ROOT" => dir), "#{DOR} --suite-fingerprint 2>/dev/null", &:read).strip
       assert_equal dor_fp, runner_fp
     end
   end
@@ -222,18 +225,18 @@ class FullSuiteCheckTest < Minitest::Test
 
   def test_install_hook_writes_an_executable_opt_in_pre_push_hook
     with_repo do |dir|
-      out = IO.popen({ "FULL_SUITE_ROOT" => dir }, "#{BIN} --install-hook 2>&1", &:read)
+      out = IO.popen(SessionEnv.neutralized("FULL_SUITE_ROOT" => dir), "#{BIN} --install-hook 2>&1", &:read)
       assert_equal 0, $?.exitstatus, out
       hook = File.join(dir, ".git", "hooks", "pre-push")
       assert File.exist?(hook), "pre-push hook should be installed: #{out}"
       assert File.executable?(hook), "pre-push hook should be executable"
       assert_includes File.read(hook), "exec bin/full-suite-check --print"
       # Idempotent: re-running succeeds and leaves a single managed hook.
-      out2 = IO.popen({ "FULL_SUITE_ROOT" => dir }, "#{BIN} --install-hook 2>&1", &:read)
+      out2 = IO.popen(SessionEnv.neutralized("FULL_SUITE_ROOT" => dir), "#{BIN} --install-hook 2>&1", &:read)
       assert_equal 0, $?.exitstatus, out2
       assert_equal 1, File.read(hook).scan("exec bin/full-suite-check --print").size
       # Uninstall removes the managed hook.
-      IO.popen({ "FULL_SUITE_ROOT" => dir }, "#{BIN} --uninstall-hook 2>&1", &:read)
+      IO.popen(SessionEnv.neutralized("FULL_SUITE_ROOT" => dir), "#{BIN} --uninstall-hook 2>&1", &:read)
       refute File.exist?(hook), "uninstall should remove the managed hook"
     end
   end
@@ -244,7 +247,7 @@ class FullSuiteCheckTest < Minitest::Test
       FileUtils.mkdir_p(hooks)
       foreign = File.join(hooks, "pre-push")
       File.write(foreign, "#!/bin/sh\necho not-ours\n")
-      out = IO.popen({ "FULL_SUITE_ROOT" => dir }, "#{BIN} --install-hook 2>&1", &:read)
+      out = IO.popen(SessionEnv.neutralized("FULL_SUITE_ROOT" => dir), "#{BIN} --install-hook 2>&1", &:read)
       assert_equal 1, $?.exitstatus, "should refuse to clobber a foreign hook: #{out}"
       assert_equal "#!/bin/sh\necho not-ours\n", File.read(foreign), "a foreign hook must be left untouched"
     end
@@ -257,9 +260,9 @@ class FullSuiteCheckTest < Minitest::Test
   # the session env so a shelled run never emits into THIS live session — it emits
   # into the fake session we set, or (when blank) not at all.
 
-  # The session env keys the emit's session gate reads. Neutralize BOTH so the test
-  # never inherits the live session; the caller sets CLAUDE_CODE_SESSION_ID.
-  SESSION_KEYS = %w[CLAUDE_CODE_SESSION_ID CODEX_THREAD_ID].freeze
+  # The session env is neutralized by SessionEnv (test/support/session_env.rb) so a
+  # shelled run never inherits THIS live session; the caller opts a fake one in via
+  # `session:` (blank ⇒ genuinely UNSET, not an exported "").
 
   # A stub agent-activity: appends its tab-joined argv to STUB_LOG, exits 0.
   def write_activity_stub(dir)
@@ -277,15 +280,16 @@ class FullSuiteCheckTest < Minitest::Test
   # emits is an Array<Hash> of parsed emit flags (empty when nothing emitted).
   def run_check_with_telemetry(dir, agent_activity:, session:, test_cmd: "true", rubocop_cmd: "true", reset_cmd: "true")
     log = File.join(dir, "emit.log")
-    env = {
+    env = SessionEnv.neutralized(
       "FULL_SUITE_ROOT" => dir,
       "FULL_SUITE_TEST_DB_RESET_CMD" => reset_cmd,
       "FULL_SUITE_TEST_CMD" => test_cmd,
       "FULL_SUITE_RUBOCOP_CMD" => rubocop_cmd,
       "FULL_SUITE_AGENT_ACTIVITY" => agent_activity,
-      "STUB_LOG" => log
-    }
-    SESSION_KEYS.each { |k| env[k] = (k == "CLAUDE_CODE_SESSION_ID" ? session : "") }
+      "STUB_LOG" => log,
+      # The fake session this run emits into — blank ⇒ UNSET (no session at all).
+      "CLAUDE_CODE_SESSION_ID" => session
+    )
     out = IO.popen(env, "#{BIN} --print 2>/dev/null", &:read)
     code = $?.exitstatus
     emits = File.exist?(log) ? File.readlines(log, chomp: true).map { |line| parse_emit(line) } : []
