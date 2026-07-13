@@ -78,21 +78,27 @@
 # rendered views with NO stylesheet and the gate went RED on GREEN code (2026-07-12).
 # Do not "fix" that class of failure by reshaping a command here — the gate owns it.
 #
-# WHAT to register as qa_test_cmd:
-#   * satellites — the integration SUBSET (`bin/rails test test/integration`):
-#     review owns the base tier, and their ship test_cmd / own deploy owns the
-#     full pre-prod run (registering the same full suite twice would re-run it
-#     every ship, since their SHAs routinely drift via re-pins).
-#   * the HUB — CI's FULL suite, VERBATIM (`bin/rails db:test:prepare test
-#     test:system`): the 90/10 policy certifies the whole release batch ONCE at
-#     G3, and ship's test_gate self-gates when the frozen SHA matches that
-#     certified run, so the suite still runs once per batch; a drifted/straggler
-#     SHA re-triggers it at ship.
+# WHAT to register as qa_test_cmd — the question is NOT "hub or satellite", it is
+# "does this repo's DEPLOY run the suite?":
+#   * a repo whose OWN DEPLOY runs the full suite (turf-monster: bin/deploy) — the
+#     integration SUBSET (`bin/rails test test/integration`): review owns the base
+#     tier, and their ship test_cmd / own deploy owns the full pre-prod run
+#     (registering the same full suite twice would re-run it every ship, since
+#     their SHAs routinely drift via re-pins).
+#   * a repo deployed by git_push_heroku (the HUB and ROLIO) — NO test step runs at
+#     deploy, so the registered command IS the last gate before prod and must be
+#     CI's FULL suite, VERBATIM (`bin/rails db:test:prepare test test:system`), at
+#     BOTH gates. The 90/10 policy certifies the whole release batch ONCE at G3, and
+#     ship's test_gate self-gates when the frozen SHA matches that certified run, so
+#     the suite still runs once per batch; a drifted/straggler SHA re-triggers it at
+#     ship. Registering the SUBSET for one of these leaves prod ungated for every
+#     tier the subset skips — exactly how rolio's system tier went uncovered.
 #
-# THE HUB GATE INCLUDES THE SYSTEM TIER, and the exact SHAPE is load-bearing.
+# THESE GATES INCLUDE THE SYSTEM TIER, and the exact SHAPE is load-bearing.
 # `bin/rails test` alone SKIPS test/system — so a system-test regression used to
 # ride the release branch straight into QA ungated, which is the hole this closes.
-# The gate must run what CI runs, so it registers ci.yml's command verbatim:
+# The gate must run what CI runs, so each registers ITS OWN ci.yml command verbatim
+# (repos_test.rb parses both ci.yml files and asserts the match):
 #
 #   * DO NOT "simplify" it to `bin/rails test test:system`. That shape is BROKEN:
 #     `test` is a real rails COMMAND, so `test:system` is parsed as a PATH and the
@@ -104,15 +110,23 @@
 #     also harmless to re-run: the gate already ran it in prepare_gate_workspace!,
 #     against a test DB it PROVED private first, so the re-purge (~2s) hits only
 #     the gate's own DB.
-#   * Assets and the browser are SELF-HEALING in the gate's virgin worktree — no
-#     setup step needed. `rails test`/`rails test:system` each call run_prepare_task
-#     -> rake `test:prepare`, which tailwindcss-rails enhances with `tailwindcss:build`,
-#     so the gitignored app/assets/builds/tailwind.css is BUILT on demand (a bare
-#     `db:test:prepare` does NOT build it — the gem hooks test:prepare, not db:).
-#     Chrome is driven headless by Selenium Manager, which fetches a chromedriver
+#   * Assets need NO setup step in the gate's virgin worktree — but the reason is
+#     PER-APP, so do not carry one app's mechanism over to the other:
+#       - the HUB self-heals: `rails test`/`rails test:system` each call
+#         run_prepare_task -> rake `test:prepare`, which tailwindcss-rails enhances
+#         with `tailwindcss:build`, so the gitignored app/assets/builds/tailwind.css
+#         is BUILT on demand (a bare `db:test:prepare` does NOT build it — the gem
+#         hooks test:prepare, not db:).
+#       - ROLIO needs no build at all: it is sprockets + importmap and leaves
+#         `config.assets.compile` at its default TRUE in test (it is set false only
+#         in production.rb), so `stylesheet_link_tag "application"` COMPILES AT
+#         REQUEST TIME from the tracked sources in app/assets/stylesheets/. There is
+#         no tailwindcss-rails hook here to rely on, and none is needed.
+#   * The BROWSER is driven headless by Selenium Manager, which fetches a chromedriver
 #     matched to the installed Chrome (same reason ci.yml installs NO chromedriver).
 #     A host with no Chrome fails at driver resolution — an ENV error, not a release
-#     regression; do not eject a task for it.
+#     regression; assert_system_test_browser! turns that into an up-front ENV abort
+#     so nobody ejects a task for it.
 #
 # NOT to be confused with the PLAYWRIGHT e2e tier, which still does NOT belong
 # here: Rails system tests boot their OWN Puma in-process (Capybara), so they run
@@ -181,19 +195,56 @@ apps:
   rolio:
     # Release-managed standalone app: Rails/SQLite demo runtime, no Studio Engine.
     #
-    # KNOWN GAP — the same one just closed for the hub, NOT yet closed here.
-    # rolio HAS system tests (test/system/) and its own ci.yml runs them
-    # (`bin/rails db:test:prepare test test:system`), but `test_cmd` below runs
-    # `bin/rails test`, which SKIPS test/system. rolio deploys via git_push_heroku
-    # (no test step), so test_cmd IS its last gate before prod — and that gate does
-    # not cover the system tier. Deliberately NOT widened in the same pass: rolio's
-    # system suite has never been driven in an isolated gate workspace (assets +
-    # browser + its SQLite file-backed test DB), and widening a gate without first
-    # proving it green there is how a gate starts false-failing green code and
-    # ejecting good PRs. Widen it once its gate has been DRIVEN and measured, the
-    # way the hub's was.
-    test_cmd: bin/rails test
-    qa_test_cmd: bin/rails test test/integration
+    # ROLIO GATES LIKE THE HUB, NOT LIKE TURF-MONSTER — read this before narrowing
+    # it back to the "satellite" integration subset. The subset is only safe for a
+    # repo whose DEPLOY runs the suite (turf-monster's bin/deploy does). Rolio
+    # deploys via git_push_heroku, which has NO test step — so test_cmd below is
+    # LITERALLY THE LAST GATE before rolio production. It therefore registers CI's
+    # FULL suite, verbatim, at BOTH gates, exactly as the hub does.
+    #
+    # It once did not, and that was a live hole: rolio HAS system tests
+    # (test/system/) and its ci.yml runs them, but these commands were `bin/rails
+    # test` (G4) and `bin/rails test test/integration` (G3) — BOTH of which SKIP
+    # test/system. A system-test regression could reach rolio prod completely
+    # ungated. repos_test.rb now parses rolio's OWN .github/workflows/ci.yml (at
+    # origin/release, not the working tree) and asserts this command matches it, so
+    # the two cannot drift apart again.
+    #
+    # ⚠ PREREQUISITE — this gate is only safe once rolio carries a system-suite
+    # WAIT BUDGET sized for THIS host (rolio task `size-rolio-system-wait-budget`,
+    # amcritchie/rolio#23). Rolio's suite ran on Capybara's 2s default, which is
+    # calibrated for an IDLE CI runner; the gate host is a SHARED dev Mac where the
+    # browser stack was measured ~18x slower under concurrent-agent load (4.6s idle
+    # -> 85s loaded). At 2s the FIRST drive of this gate came back RED ON GREEN CODE
+    # (CI green on the same SHA), which pre_qa_gate reports as "a regression is
+    # riding origin/release — eject it, revert its merge commit". Widen this gate
+    # only WITH or AFTER that budget fix; the two must land together.
+    #
+    # DRIVEN, not assumed (the gate was run in rolio's isolated workspace before
+    # this was widened — a gate that has never been driven is how you start
+    # false-failing green code and ejecting good PRs):
+    #   * SQLite passes the private-DB invariant. database_url_for returns nil for
+    #     it (no postgres overlay — that would be a live trap); the test DB is
+    #     `storage/test.sqlite3`, a FILE INSIDE the gate worktree, which
+    #     GateWorkspace.private_db? qualifies via its file_backed? branch.
+    #   * No asset build step is needed, and the MECHANISM is not the hub's: rolio
+    #     is sprockets + importmap and leaves `config.assets.compile` at its default
+    #     TRUE in test (it is set false only in production.rb), so
+    #     `stylesheet_link_tag "application"` COMPILES AT REQUEST TIME from the
+    #     tracked sources in app/assets/stylesheets/. Nothing is precompiled into
+    #     public/assets (only landing.css + store.js are tracked there — there is NO
+    #     public/assets/app.css, the .gitignore merely un-ignores that NAME), and
+    #     there is no tailwindcss-rails `test:prepare` hook here to depend on.
+    #   * Chrome: test/application_system_test_case.rb is `driven_by :selenium,
+    #     using: :headless_chrome`, so assert_system_test_browser! binds this
+    #     command too — a browserless host aborts as an ENV error, NOT as a red
+    #     suite handing out eject/revert guidance.
+    #
+    # Keep db:test:prepare FIRST (the rake-path trap — see the hub's entry), and
+    # keep test_cmd and qa_test_cmd the SAME STRING or ship_gate_skip? can never
+    # credit G3's certified run and the suite runs twice every ship.
+    test_cmd: bin/rails db:test:prepare test test:system
+    qa_test_cmd: bin/rails db:test:prepare test test:system
     prod_deploy:
       strategy: git_push_heroku
       remote: https://git.heroku.com/rolio-prod.git
