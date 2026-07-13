@@ -217,8 +217,9 @@ apps:
     # browser stack was measured ~18x slower under concurrent-agent load (4.6s idle
     # -> 85s loaded). At 2s the FIRST drive of this gate came back RED ON GREEN CODE
     # (CI green on the same SHA), which pre_qa_gate reports as "a regression is
-    # riding origin/release — eject it, revert its merge commit". Widen this gate
-    # only WITH or AFTER that budget fix; the two must land together.
+    # riding origin/release — eject it, revert its merge commit". The budget fix is
+    # a SEQUENCED prerequisite: the sweep lands rolio#23 into rolio's release
+    # FIRST, so this widened gate never drives a 2s-budget suite.
     #
     # DRIVEN, not assumed (the gate was run in rolio's isolated workspace before
     # this was widened — a gate that has never been driven is how you start
