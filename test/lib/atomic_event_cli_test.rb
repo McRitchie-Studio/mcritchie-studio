@@ -21,6 +21,7 @@ require "rbconfig"
 require "tmpdir"
 require "fileutils"
 require "time"
+require_relative "../support/session_env"
 
 load File.expand_path("../../bin/atomic-event", __dir__)
 
@@ -797,14 +798,15 @@ class AgentActivityCliTest < Minitest::Test
     File.write(File.join(dir, ".agent-context.json"), JSON.generate(attrs))
   end
 
+  # SessionEnv.neutralized: the child must name NO agent session unless a case opts
+  # one in (it merges on top) — bin/atomic-event resolves session identity.
+  # See test/support/session_env.rb.
   def base_env(projects_dir)
-    {
+    SessionEnv.neutralized(
       "AGENT_API_SECRET" => "test-secret",
       "CLAUDE_PROJECTS_DIR" => projects_dir,
-      "HOME" => projects_dir,
-      "CLAUDE_CODE_SESSION_ID" => nil,
-      "CODEX_THREAD_ID" => nil
-    }
+      "HOME" => projects_dir
+    )
   end
 
   # Shell out to the real CLI against a one-shot stub server; returns the recorded

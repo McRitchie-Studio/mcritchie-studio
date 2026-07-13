@@ -5,6 +5,7 @@ require "json"
 require "open3"
 require "tmpdir"
 require "fileutils"
+require_relative "../support/session_env"
 
 class AgentMarkerTest < Minitest::Test
   ROOT = File.expand_path("../..", __dir__)
@@ -32,14 +33,14 @@ class AgentMarkerTest < Minitest::Test
     default_env = {
       "CLAUDE_PROJECTS_DIR" => @tmp,
       "SESSION_KICKOFF" => @kickoff,
-      # Neutralize ambient agent-session vars so the test fully controls the
-      # marker subprocess env. A live Claude Code session exports
-      # CLAUDE_CODE_SESSION_ID, which Open3.capture3 would otherwise leak through
-      # its env-merge and let bin/agent-marker prefer over our CODEX_THREAD_ID.
-      "CLAUDE_CODE_SESSION_ID" => nil,
+      # Deliberate: bin/agent-marker must see a Codex thread and NO Claude session.
+      # SessionEnv unsets the ambient session vars (which a live Claude Code session
+      # would otherwise leak into the child and have the marker prefer over this
+      # thread); the override below opts the fake thread back in. See
+      # test/support/session_env.rb.
       "CODEX_THREAD_ID" => "thread-123"
     }
-    Open3.capture3(default_env.merge(env), SCRIPT, *args, chdir: chdir)
+    Open3.capture3(SessionEnv.neutralized(default_env.merge(env)), SCRIPT, *args, chdir: chdir)
   end
 
   def calls

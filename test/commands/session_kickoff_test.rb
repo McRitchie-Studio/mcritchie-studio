@@ -4,6 +4,7 @@ require "minitest/autorun"
 require "open3"
 require "tmpdir"
 require "fileutils"
+require_relative "../support/session_env"
 
 class SessionKickoffTest < Minitest::Test
   ROOT = File.expand_path("../..", __dir__)
@@ -27,8 +28,12 @@ class SessionKickoffTest < Minitest::Test
   end
 
   def run_kickoff(*args, env: {})
+    # Deliberate: kickoff resolves its session from CODEX_THREAD_ID. SessionEnv
+    # (test/support/session_env.rb) unsets the ambient session vars, so this
+    # override — and whatever a test passes in `env` — is the only session the
+    # child sees.
     Open3.capture3(
-      { "TASK_BIN" => @task, "CODEX_THREAD_ID" => "session-123", "CLAUDE_CODE_SESSION_ID" => nil }.merge(env),
+      SessionEnv.neutralized({ "TASK_BIN" => @task, "CODEX_THREAD_ID" => "session-123" }.merge(env)),
       SCRIPT,
       *args
     )

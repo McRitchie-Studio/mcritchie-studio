@@ -15,6 +15,7 @@ require "tmpdir"
 require "socket"
 require "open3"
 require "rbconfig"
+require_relative "../support/session_env"
 
 class ReviewerSelectCliTest < Minitest::Test
   BIN = File.expand_path("../../bin/reviewer-select", __dir__)
@@ -22,13 +23,16 @@ class ReviewerSelectCliTest < Minitest::Test
   # Runs reviewer-select against an in-memory devops payload, returns [out, code].
   # stderr is discarded: under `bin/rails test` the subprocess inherits bundler's
   # env and emits rubygems warnings that would otherwise corrupt the stdout parse.
+  # SessionEnv.neutralized: the child must name NO agent session (see
+  # test/support/session_env.rb) — bin/reviewer-select branches on SessionIdentity.
   def select(devops, *args)
     Dir.mktmpdir do |dir|
       path = File.join(dir, "task.json")
       File.write(path, JSON.generate(
         "slug" => "cli-sample", "metadata" => { "devops" => devops }
       ))
-      out = IO.popen("RAILS_ENV=test #{BIN} --file #{path} #{args.join(" ")} 2>/dev/null", &:read)
+      env = SessionEnv.neutralized("RAILS_ENV" => "test")
+      out = IO.popen(env, "#{BIN} --file #{path} #{args.join(" ")} 2>/dev/null", &:read)
       [out, $?.exitstatus]
     end
   end
@@ -171,11 +175,15 @@ class ReviewerSelectCliTest < Minitest::Test
     requests = []
     thread = Thread.new { serve(server, requests, devops) }
 
-    env = {
+    # The board path SEEDS a per-session usage baseline (bin/reviewer-select's
+    # seed_review_usage_baseline). Un-neutralized, a run from a live agent session
+    # would seed it against the OPERATOR'S real session — writing into the real
+    # .agents/task-usage. SessionEnv.neutralized keeps the child session-less.
+    env = SessionEnv.neutralized(
       "TASK_API_BASE" => "http://127.0.0.1:#{port}",
       "AGENT_API_SECRET" => "test-secret",
       "RAILS_ENV" => "test"
-    }
+    )
     out, _err, status = Open3.capture3(env, RbConfig.ruby, BIN, BOARD_SLUG, *args)
     [requests, out, status]
   ensure

@@ -596,12 +596,12 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
   # `bin/rails test` load `fixtures :all` into the seeded dev DB and FK-fail.
   test "[integration] test env resolves to TEST_DATABASE_URL over a dev DATABASE_URL" do
     out, err, status = Open3.capture3(
-      {
+      SessionEnv.neutralized(
         "RAILS_ENV" => "test",
         "DATABASE_URL" => "postgresql://localhost/mcritchie_studio_development_db_resolution_probe",
         "TEST_DATABASE_URL" => "postgresql://localhost/mcritchie_studio_test_db_resolution_probe",
         "PATH" => ENV.fetch("PATH", "")
-      },
+      ),
       RbConfig.ruby, Rails.root.join("bin/rails").to_s, "runner",
       'print ActiveRecord::Base.configurations.configs_for(env_name: "test").map(&:database).join(",")',
       chdir: Rails.root.to_s
@@ -698,12 +698,12 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     pg_env = pg_conn_env(template_uri)
     begin
       out, err, status = Open3.capture3(
-        {
+        SessionEnv.neutralized(
           "RAILS_ENV" => "test",
           "DATABASE_URL" => db_url_with_name(template_uri, dev_name),
           "TEST_DATABASE_URL" => db_url_with_name(template_uri, test_name),
           "PATH" => ENV.fetch("PATH", "")
-        },
+        ),
         RbConfig.ruby, Rails.root.join("bin/rails").to_s, "db:test:prepare",
         chdir: Rails.root.to_s
       )
@@ -744,7 +744,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
   # Subprocess env for bare psql/dropdb, derived from the template URI so the
   # cleanup connects with the same credentials (a PATH-only env -> fe_sendauth on CI).
   def pg_conn_env(template_uri)
-    env = { "PATH" => ENV.fetch("PATH", "") }
+    env = SessionEnv.neutralized("PATH" => ENV.fetch("PATH", ""))
     env["PGHOST"] = template_uri.host if template_uri.host.present?
     env["PGPORT"] = template_uri.port.to_s if template_uri.port
     env["PGUSER"] = template_uri.user if template_uri.user.present?
@@ -758,7 +758,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
   # force_decision/orphan_decision below.
   def script_eval(snippet)
     out, err, status = Open3.capture3(
-      { "PROJECTS_DIR" => @projects_dir, "PATH" => ENV.fetch("PATH", "") },
+      SessionEnv.neutralized("PROJECTS_DIR" => @projects_dir, "PATH" => ENV.fetch("PATH", "")),
       RbConfig.ruby, "-e", "load #{@script.inspect}\n#{snippet}"
     )
     assert status.success?, "#{out}\n#{err}"
@@ -775,7 +775,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
       puts force_clears_content_blocker?({ dirty: #{dirty} }, force: #{force}, merged: #{merged})
     RUBY
     out, err, status = Open3.capture3(
-      { "PROJECTS_DIR" => @projects_dir, "PATH" => ENV.fetch("PATH", "") },
+      SessionEnv.neutralized("PROJECTS_DIR" => @projects_dir, "PATH" => ENV.fetch("PATH", "")),
       RbConfig.ruby, "-e", snippet
     )
     assert status.success?, "#{out}\n#{err}"
@@ -792,7 +792,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
       puts JSON.generate(orphan_worktree_dirs(#{primary.inspect}, #{managed.inspect}, #{git_dirs.inspect}))
     RUBY
     out, err, status = Open3.capture3(
-      { "PROJECTS_DIR" => @projects_dir, "PATH" => ENV.fetch("PATH", "") },
+      SessionEnv.neutralized("PROJECTS_DIR" => @projects_dir, "PATH" => ENV.fetch("PATH", "")),
       RbConfig.ruby, "-e", snippet
     )
     assert status.success?, "#{out}\n#{err}"
@@ -807,7 +807,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
       puts orphan_label({ "slug" => #{slug.inspect} }, #{dir.inspect})
     RUBY
     out, err, status = Open3.capture3(
-      { "PROJECTS_DIR" => @projects_dir, "PATH" => ENV.fetch("PATH", "") },
+      SessionEnv.neutralized("PROJECTS_DIR" => @projects_dir, "PATH" => ENV.fetch("PATH", "")),
       RbConfig.ruby, "-e", snippet
     )
     assert status.success?, "#{out}\n#{err}"
@@ -937,12 +937,12 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
   end
 
   def head_branch(dir)
-    out, = Open3.capture3("git", "rev-parse", "--abbrev-ref", "HEAD", chdir: dir)
+    out, = Open3.capture3(SessionEnv.neutralized, "git", "rev-parse", "--abbrev-ref", "HEAD", chdir: dir)
     out.strip
   end
 
   def rev(dir, ref)
-    out, = Open3.capture3("git", "rev-parse", ref, chdir: dir)
+    out, = Open3.capture3(SessionEnv.neutralized, "git", "rev-parse", ref, chdir: dir)
     out.strip
   end
 
@@ -957,7 +957,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     File.write(File.join(build, "origin.txt"), "origin\n")
     git!(build, "add", "origin.txt")
     git!(build, "commit", "-m", "Origin-only commit")
-    sha, _err, status = Open3.capture3("git", "rev-parse", "HEAD", chdir: build)
+    sha, _err, status = Open3.capture3(SessionEnv.neutralized, "git", "rev-parse", "HEAD", chdir: build)
     assert status.success?, "could not resolve origin-build HEAD"
     git!(@hub_dir, "update-ref", "refs/remotes/origin/main", sha.strip)
     git!(@hub_dir, "worktree", "remove", build, "--force")
@@ -1021,7 +1021,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
   end
 
   def git!(dir, *args)
-    out, err, status = Open3.capture3("git", *args, chdir: dir)
+    out, err, status = Open3.capture3(SessionEnv.neutralized, "git", *args, chdir: dir)
     assert status.success?, "git #{args.join(" ")} failed\n#{out}\n#{err}"
   end
 
@@ -1036,7 +1036,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     File.write(File.join(build_dir, "release.txt"), "release\n")
     git!(build_dir, "add", "release.txt")
     git!(build_dir, "commit", "-m", "Release-only commit")
-    sha, _err, status = Open3.capture3("git", "rev-parse", "HEAD", chdir: build_dir)
+    sha, _err, status = Open3.capture3(SessionEnv.neutralized, "git", "rev-parse", "HEAD", chdir: build_dir)
     assert status.success?, "could not resolve release-build HEAD"
     git!(@hub_dir, "update-ref", "refs/remotes/origin/release", sha.strip)
     git!(@hub_dir, "worktree", "remove", build_dir, "--force")
@@ -1048,13 +1048,15 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     registry.fetch("worktrees").find { |item| item.fetch("task") == @task }
   end
 
+  # Child env for a spawned bin/ command: the sandbox pins, with the ambient
+  # agent-session vars unset (see test/support/session_env.rb).
   def command_env(extra = {})
-    {
+    SessionEnv.neutralized({
       "PROJECTS_DIR" => @projects_dir,
       "AGENT_REDIS_CAPACITY_FILE" => File.join(@projects_dir, ".agents", "redis-capacity.json"),
       "AGENT_WORKTREE_LOCK" => File.join(@projects_dir, ".agents", "agent-worktree.lock"),
       "PATH" => ENV.fetch("PATH", "")
-    }.merge(extra)
+    }.merge(extra))
   end
 
   def agent_worktree(*args, chdir: Rails.root.to_s, env: {})

@@ -24,6 +24,7 @@ require "json"
 require "base64"
 require "fileutils" # lock_dir cleanup (Minitest.after_run remove_entry)
 require "English"   # $CHILD_STATUS — the gate-lock queue test reaps its own child
+require_relative "../support/session_env"
 
 class ReleaseCliTest < Minitest::Test
   WRAPPER = File.expand_path("../../bin/release", __dir__)
@@ -63,14 +64,14 @@ class ReleaseCliTest < Minitest::Test
   #     stderr, so the swallowed-failure mode can never again recur silently.
   #     (rubygems "already initialized" warnings land on the child's stderr but are
   #     ignored on success — stderr is only surfaced when flunking.)
-  # Null the ambient agent-session vars for every release subprocess. A live
+  # Every release subprocess runs session-less, via the SHARED neutralizer
+  # (test/support/session_env.rb — the same one every spawner test uses). A live
   # Claude/Codex session exports CLAUDE_CODE_SESSION_ID / CODEX_THREAD_ID, which the
   # subprocess would otherwise inherit — making bin/release's best-effort deploy-lane
   # narration (agent_activity) resolve a real session and shell out to bin/atomic-event
   # mid-test. Neutralizing them keeps narration inert unless a test opts in (the
   # deploy-span tests stub agent_activity directly). Tests that need a session set it
   # inline via ENV[...] (see the with_conductor_session tests).
-  NEUTRALIZED_ENV = { "CLAUDE_CODE_SESSION_ID" => nil, "CODEX_THREAD_ID" => nil }.freeze
 
   # ISOLATE the primary-checkout lock dir for EVERY release subprocess. The
   # real <projects_root>/.agents/locks dir belongs to the live conductor: a G3
@@ -169,7 +170,7 @@ class ReleaseCliTest < Minitest::Test
   end
 
   def run_ruby(script)
-    env = NEUTRALIZED_ENV.merge("MCR_PRIMARY_LOCK_DIR" => self.class.lock_dir)
+    env = SessionEnv.neutralized("MCR_PRIMARY_LOCK_DIR" => self.class.lock_dir)
     last = nil
     SUBPROCESS_ATTEMPTS.times do
       out, err, status = Open3.capture3(env, "ruby", "-e", script)
@@ -1564,7 +1565,7 @@ class ReleaseCliTest < Minitest::Test
       # (stdout to a file is block-buffered) — the queue is only observable live.
       script = %(ARGV.replace(["--yes"]); $stdout.sync = true; load #{BIN.inspect}; #{setup}; ) +
                %(pre_qa_gate([{ "repo" => "sibling" }]); puts("PASSED"))
-      env = NEUTRALIZED_ENV.merge("MCR_PRIMARY_LOCK_DIR" => dir)
+      env = SessionEnv.neutralized("MCR_PRIMARY_LOCK_DIR" => dir)
 
       lock = File.open(File.join(dir, "mcr-gate-workspace-sibling.lock"), File::RDWR | File::CREAT, 0o644)
       assert lock.flock(File::LOCK_EX | File::LOCK_NB), "test setup: conductor A takes the gate-workspace lock"
@@ -3183,7 +3184,7 @@ class ReleaseCliTest < Minitest::Test
   end
 
   def test_agent_activity_is_a_noop_without_a_conductor_session
-    # NEUTRALIZED_ENV nulls the session vars → conductor_session_id is nil → no-op;
+    # SessionEnv nulls the session vars → conductor_session_id is nil → no-op;
     # telemetry must never shell out (or fail) when there's no session to attribute.
     out = run_cli(["--yes"], setup: "",
                   call: %(print(agent_activity("start", "--category", "Remote", "--reason", "x").inspect)))

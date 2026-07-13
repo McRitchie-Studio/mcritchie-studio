@@ -19,6 +19,7 @@ require "tmpdir"
 require "fileutils"
 require "json"
 require "rbconfig"
+require_relative "../support/session_env"
 
 class InstallAgentSkillsTest < Minitest::Test
   ROOT     = File.expand_path("../..", __dir__)
@@ -50,10 +51,11 @@ class InstallAgentSkillsTest < Minitest::Test
     FileUtils.rm_rf(@sandbox) if @sandbox
   end
 
-  # Run bin/install-agent-docs with HOME + PROJECTS_DIR pinned into the sandbox.
+  # Run bin/install-agent-docs with HOME + PROJECTS_DIR pinned into the sandbox
+  # (and the ambient agent-session vars unset — see test/support/session_env.rb).
   def run_installer(mode, env = {})
     Open3.capture3(
-      default_env.merge(env),
+      SessionEnv.neutralized(default_env.merge(env)),
       SCRIPT, mode
     )
   end
@@ -70,7 +72,7 @@ class InstallAgentSkillsTest < Minitest::Test
 
   def run_runtime(*args, env: {})
     Open3.capture3(
-      default_env.merge(env),
+      SessionEnv.neutralized(default_env.merge(env)),
       RUNTIME, *args
     )
   end
@@ -115,7 +117,7 @@ class InstallAgentSkillsTest < Minitest::Test
   end
 
   def jq_available?
-    system("command -v jq >/dev/null 2>&1")
+    system(SessionEnv.neutralized, "command -v jq >/dev/null 2>&1")
   end
 
   def with_fake_runtime_ruby
@@ -145,7 +147,7 @@ class InstallAgentSkillsTest < Minitest::Test
   end
 
   def capture_login_shell(command, env)
-    shell_env = default_env.merge(env)
+    shell_env = SessionEnv.neutralized(default_env.merge(env))
     Open3.capture3(shell_env, shell_env.fetch("AGENT_RUNTIME_ZSH"), "-lc", command)
   end
 
@@ -202,7 +204,7 @@ class InstallAgentSkillsTest < Minitest::Test
   # fresh clone — the OPSD feed-forward would silently never fire. The git index
   # mode (not the local fs mode) is the durable, machine-independent contract.
   def test_unit_session_insights_bin_is_tracked_executable
-    mode, _err, status = Open3.capture3("git", "-C", ROOT, "ls-files", "-s", "bin/session-insights")
+    mode, _err, status = Open3.capture3(SessionEnv.neutralized, "git", "-C", ROOT, "ls-files", "-s", "bin/session-insights")
     assert status.success?, "git ls-files failed for bin/session-insights"
     refute_empty mode, "bin/session-insights must be tracked in git"
     assert_match(/\A100755\s/, mode,
