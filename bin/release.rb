@@ -1531,11 +1531,29 @@ def gate_workspace!(repo, sha)
   path
 end
 
-# Bring the gate workspace to a runnable state: the right gems, and a test DB
-# that is the GATE'S OWN (never the primary's shared `<app>_test`, which a
-# concurrent suite can pollute mid-run — the third false-negative mechanism).
-# `db:test:prepare` is exactly what CI runs before its suite
+# Bring the gate workspace to a runnable state: the right gems, a test DB that is
+# the GATE'S OWN (never the primary's shared `<app>_test`, which a concurrent suite
+# can pollute mid-run — the third false-negative mechanism), and a PREPARED TEST ENV
+# (`test:prepare` — the hook that builds gitignored assets). Both rake tasks in ONE
+# boot: `db:test:prepare` is exactly what CI runs before its suite
 # (.github/workflows/ci.yml), so the gate's setup and CI's stay one command.
+#
+# WHY `test:prepare` MUST BE THE GATE'S JOB and not Rails' (regression, 2026-07-12):
+# Rails runs `test:prepare` itself — the hook `tailwindcss-rails` enhances to build
+# the gitignored app/assets/builds/tailwind.css — ONLY when no argument looks like a
+# PATH (railties test_command.rb: `run_prepare_task if args.none?(EXACT_TEST_ARGUMENT_PATTERN)`).
+# `db:test:prepare` does NOT build it. The satellites register a PATH-ARG gate command
+# (`bin/rails test test/integration`), and this workspace is made by `git worktree add
+# --detach` — which does NOT copy gitignored files, so it is VIRGIN. Result: the asset
+# was never built, every view-rendering test died with `The asset "tailwind.css" is not
+# present in the asset pipeline`, and the gate went RED on GREEN code while handing out
+# EJECT/REVERT guidance. (Driven on turf-monster: 86 runs, 43 errors, all that one.)
+#
+# So the GATE prepares the env, for ANY registered command shape — argless or path-arg.
+# The alternative (rewrite each satellite's registry command to be argless) leaves the
+# gate silently assuming a shape, which is a trap for the next person to register a
+# lane — and is precisely how this bug got in. Preparing an argless lane's env too is
+# idempotent; one code path beats a shape-aware one.
 def prepare_gate_workspace!(repo, path)
   ensure_suite_bundle!(repo, path)
 
@@ -1544,12 +1562,36 @@ def prepare_gate_workspace!(repo, path)
   # destroy a concurrent suite's data. Assert first, destroy second.
   assert_private_gate_db!(repo, path)
 
-  _, ok = sh("bin/rails", "db:test:prepare", chdir: path, capture: true, env: gate_env(repo))
+  out, ok = sh("bin/rails", "db:test:prepare", "test:prepare", chdir: path, capture: true, env: gate_env(repo))
   return if ok
 
-  abort!("gate #{repo}: `bin/rails db:test:prepare` failed in the isolated gate workspace (#{path}, " \
-         "#{gate_database_url(repo) || 'file-backed test DB inside the workspace'}). This is an ENV/DB " \
-         "issue, NOT a release regression — nothing to eject or revert. Check Postgres is up, then re-run.")
+  # An env-class abort — NEVER a red suite. A workspace that cannot build its assets
+  # would fail every view-rendering test, and routing that into the "a regression is
+  # riding origin/release" path is how a good PR (#498) nearly got ejected.
+  #
+  # But be honest in BOTH directions: `tailwindcss:build` also fails on a broken
+  # stylesheet IN the release's own diff (a bad `@apply`, an unknown utility, a
+  # malformed `@theme`). So this reports a LIKELIHOOD, not a verdict — and prints the
+  # captured output, which is the only thing that actually tells the two apart.
+  abort!("gate #{repo}: `bin/rails db:test:prepare test:prepare` failed in the isolated gate workspace " \
+         "(#{path}, #{gate_database_url(repo) || 'file-backed test DB inside the workspace'}). The gate " \
+         "never reached the suite, so this is NOT a release regression — nothing to eject or revert.\n" \
+         "This is USUALLY an ENV gap (Postgres down; a missing asset toolchain) — BUT `test:prepare` " \
+         "builds the app's stylesheet, so a BROKEN STYLESHEET in the release's own diff (a bad `@apply`, " \
+         "an unknown utility, a malformed `@theme`) fails here too. Read the output below to tell which: " \
+         "an env gap needs a fix on this host, a broken stylesheet needs a fix on `#{RELEASE_BRANCH}`.\n" \
+         "#{indent_output(out)}")
+end
+
+# The tail of a failed command's captured output, indented so it reads as evidence
+# under an abort rather than as more prose. Capped: the abort should show the operator
+# the error, not replay an entire rake log at them.
+def indent_output(out, lines: 25)
+  text = out.to_s.strip
+  return "  (no output captured)" if text.empty?
+
+  kept = text.lines.last(lines).map { |l| "  #{l.rstrip}" }.join("\n")
+  text.lines.size > lines ? "  … (#{text.lines.size - lines} earlier lines omitted)\n#{kept}" : kept
 end
 
 # Boot the app in the gate workspace and read back the database it ACTUALLY

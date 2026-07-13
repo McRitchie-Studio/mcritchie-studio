@@ -69,6 +69,15 @@
 # `git checkout` out from under it; that is what made the gate false-fail on green
 # code. See docs/agents/modules/gates/g3-candidate.md.
 #
+# ANY COMMAND SHAPE IS SAFE HERE. The gate PREPARES the test env in its workspace
+# (`bin/rails db:test:prepare test:prepare`, one boot) before running your command,
+# so a PATH-ARG lane works. It must: Rails runs `test:prepare` — the hook that BUILDS
+# gitignored assets like app/assets/builds/tailwind.css — only when NO argument looks
+# like a path, and the workspace is a `--detach` worktree, which does NOT copy
+# gitignored files. Before the gate prepared the env, the satellites' path-arg lanes
+# rendered views with NO stylesheet and the gate went RED on GREEN code (2026-07-12).
+# Do not "fix" that class of failure by reshaping a command here — the gate owns it.
+#
 # WHAT to register as qa_test_cmd:
 #   * satellites — the integration SUBSET (`bin/rails test test/integration`):
 #     review owns the base tier, and their ship test_cmd / own deploy owns the

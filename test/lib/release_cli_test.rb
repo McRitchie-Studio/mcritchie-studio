@@ -1262,6 +1262,137 @@ class ReleaseCliTest < Minitest::Test
     end
   end
 
+  # --- the gate workspace PREPARES the test env (assets), not just the DB -------
+  #
+  # REGRESSION (2026-07-12, found reviewing PR #515): Rails runs `test:prepare` —
+  # the hook `tailwindcss-rails` enhances to BUILD the gitignored
+  # app/assets/builds/tailwind.css — only when NO argument looks like a PATH
+  # (railties test_command.rb: `run_prepare_task if args.none?(EXACT_TEST_ARGUMENT_PATTERN)`).
+  # `db:test:prepare` does NOT build it.
+  #
+  # The satellites register a PATH-ARG gate command (`bin/rails test test/integration`),
+  # and the gate workspace is made by `git worktree add --detach`, which does NOT copy
+  # gitignored files — so it is VIRGIN: no tailwind.css. The gate ran only
+  # `db:test:prepare` → the asset was never built → every view-rendering test died with
+  # `ActionView::Template::Error: The asset "tailwind.css" is not present in the asset
+  # pipeline` → the gate went RED on GREEN code and handed out EJECT/REVERT guidance.
+  # Driven on turf-monster before the fix: 86 runs, 43 errors, all that one error.
+  #
+  # The fix is in the GATE, not in each registry command: prepare the test env for ANY
+  # registered command shape — argless or path-arg — so the next person to register a
+  # lane cannot re-open this. A gate that only works for certain command shapes is a
+  # trap.
+
+  # [unit] The gate prepares the test env in ONE boot — `bin/rails db:test:prepare
+  # test:prepare` — for a PATH-ARG lane (the satellites' registered shape, the one that
+  # makes Rails skip its own run_prepare_task). Both tasks in ONE `bin/rails` invocation,
+  # both BEFORE the suite: test:prepare is what builds the gitignored stylesheet the
+  # virgin workspace lacks.
+  def test_gate_workspace_prepares_the_test_env_for_a_path_arg_lane
+    Dir.mktmpdir do |dir|
+      primary, = build_binstub_fixture(dir)
+      setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
+              %(def repo_path(_repo) = #{primary.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
+        # The satellites' registered gate command: a PATH ARG — so Rails itself will
+        # NOT run test:prepare. The gate must do it.
+        def qa_gate_cmd(_repo) = "bin/rails test test/integration"
+        def sh(*a, **k)
+          $stdout.puts("PREPARE #{a[1..].join(' ')}") if a[0] == "bin/rails" && a[1] == "db:test:prepare"
+          $stdout.puts("SUITE") if a[0] == "bin/rails" && a[1] == "test"
+          g = gate_git(a, k)
+          return g if g
+          ["", true]
+        end
+      RUBY
+      out = run_cli(["--yes"], setup: setup, call: %{pre_qa_gate([{ "repo" => "sibling" }]); puts("PASSED")})
+
+      lines = out.lines.map(&:strip)
+      prep  = lines.index { |l| l.start_with?("PREPARE") }
+      suite = lines.index("SUITE")
+      assert prep, "the gate must prepare the test env: #{out}"
+      assert_equal "PREPARE db:test:prepare test:prepare", lines[prep],
+                   "the gate must run `test:prepare` — the hook that BUILDS the gitignored stylesheet — " \
+                   "in the SAME boot as db:test:prepare (one boot, not two), because a PATH-ARG lane " \
+                   "makes Rails skip its own run_prepare_task and the workspace is virgin"
+      assert_operator prep, :<, suite, "…and the assets must exist BEFORE the suite renders a view"
+      assert_includes out, "PASSED"
+    end
+  end
+
+  # [unit] Same for an ARGLESS lane (the hub's shape). The hub self-builds — Rails runs
+  # run_prepare_task itself — but the gate preparing it too is IDEMPOTENT and keeps ONE
+  # code path for every registered shape. Asserted so nobody "optimizes" the gate back
+  # into being shape-aware, which is the trap this bug came from.
+  def test_gate_workspace_prepares_the_test_env_for_an_argless_lane_too
+    Dir.mktmpdir do |dir|
+      primary, = build_binstub_fixture(dir)
+      setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
+              %(def repo_path(_repo) = #{primary.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
+        def qa_gate_cmd(_repo) = "bin/rails test"
+        def sh(*a, **k)
+          $stdout.puts("PREPARE #{a[1..].join(' ')}") if a[0] == "bin/rails" && a[1] == "db:test:prepare"
+          g = gate_git(a, k)
+          return g if g
+          ["", true]
+        end
+      RUBY
+      out = run_cli(["--yes"], setup: setup, call: %{pre_qa_gate([{ "repo" => "sibling" }]); puts("PASSED")})
+
+      assert_includes out, "PREPARE db:test:prepare test:prepare",
+                      "the gate prepares the test env for EVERY shape — one path, no shape-awareness"
+      assert_includes out, "PASSED"
+    end
+  end
+
+  # [unit] A FAILED test-env prepare aborts in the ENV class — never as a red suite, and
+  # never down the eject/revert path. This is the whole point: an unbuildable stylesheet
+  # in a virgin workspace is not "a regression riding origin/release", and telling the
+  # conductor to eject a task over it is how a good PR (#498) nearly got ejected.
+  #
+  # But the abort must be honest in BOTH directions (the calibration Carl forced onto
+  # #515): `tailwindcss:build` ALSO fails on a broken stylesheet IN the release's own
+  # diff — a bad @apply, an unknown utility, a malformed @theme. So the message must not
+  # overclaim "this is definitely env" either. Say usually-env, but name the real other
+  # cause. Do not ship a third lying gate.
+  def test_a_failed_test_env_prepare_aborts_as_env_not_as_a_regression
+    Dir.mktmpdir do |dir|
+      primary, = build_binstub_fixture(dir)
+      setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
+              %(def repo_path(_repo) = #{primary.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
+        def qa_gate_cmd(_repo) = "bin/rails test test/integration"
+        def sh(*a, **k)
+          $stdout.puts("SUITE") if a[0] == "bin/rails" && a[1] == "test"
+          # The test-env prepare FAILS (an unbuildable stylesheet), the DB half is fine.
+          return ["Error: Unknown utility `bg-nope`", false] if a[0] == "bin/rails" && a[1] == "db:test:prepare"
+          g = gate_git(a, k)
+          return g if g
+          ["", true]
+        end
+      RUBY
+      out = run_cli(["--yes"], setup: setup,
+                    call: %{begin; pre_qa_gate([{ "repo" => "sibling" }]); puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+      assert_includes out, "ABORTED", "a broken test-env prepare must stop the gate"
+      refute_includes out, "PASSED"
+      refute_includes out, "SUITE",
+                      "the suite must NOT run — it would render views with no stylesheet and go RED on " \
+                      "green code, which is the false-red this whole guard exists to close"
+
+      assert_includes out, "NOT a release regression",
+                      "the abort must land in the ENV class, matching pre_qa_gate's existing convention"
+      assert_includes out, "nothing to eject or revert",
+                      "…and must NEVER hand out the eject/revert guidance: that is how a good PR gets ejected"
+      refute_includes out, "a regression is riding",
+                       "…so the red-suite abort message must not fire for an env/asset failure"
+
+      # Honest in the OTHER direction too — do not overclaim "env".
+      assert_match(/usually/i, out,
+                   "the diagnosis is a LIKELIHOOD, not a certainty — tailwindcss:build fails on a broken " \
+                   "stylesheet in the release's own diff too")
+      assert_match(/stylesheet/i, out, "…and the message must NAME that other cause, not hide it")
+    end
+  end
+
   # --- qa_test_cmd registry values + test_cmd_argv (Shellwords) parsing --------
 
   # The hub's registered gate command (G3 qa_test_cmd == G4 test_cmd) — ci.yml's

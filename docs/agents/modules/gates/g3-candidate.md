@@ -129,8 +129,21 @@ app; for a SQLite app such as rolio, the test file already lives inside the
 worktree). The primary checkout is **never** flipped to `release` — it stays on a
 clean `main`.
 
-Two things make that isolation real rather than aspirational, and both exist
-because the first cut of this gate got them wrong:
+Because that worktree is created `--detach`, it does **not** carry gitignored
+files — it is **virgin**. So the gate **prepares the test env** in it before
+running your command: `bin/rails db:test:prepare test:prepare`, in one boot. The
+`test:prepare` half is load-bearing and is why **any registered command shape is
+safe** — Rails runs that hook (the one `tailwindcss-rails` enhances to build the
+gitignored `app/assets/builds/tailwind.css`) *only* when no argument looks like a
+**path**. The satellites register a path-arg lane (`bin/rails test
+test/integration`), so Rails skipped it, so the stylesheet was never built, so
+every view-rendering test died with `The asset "tailwind.css" is not present in
+the asset pipeline` — **the gate went red on green code and handed out
+eject/revert guidance** (2026-07-12; the same false-red class that nearly ejected
+PR #498). A failed prepare now aborts as **env**, never as a red suite.
+
+Two further things make that isolation real rather than aspirational, and both
+exist because the first cut of this gate got them wrong:
 
 * **The gate holds its OWN lock** (`mcr-gate-workspace-<repo>.lock`, *not* the
   primary-checkout lock, which stays free). The workspace is private to the
