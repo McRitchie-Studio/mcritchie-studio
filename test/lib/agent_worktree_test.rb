@@ -114,7 +114,8 @@ class AgentWorktreeTest < Minitest::Test
   # --- reclaim guard: claim_hold (devops-shift-lease follow-up) ---------------
   # The claim decision (ClaimLease) over the task's devops record, with the board read
   # (task_record_for_pr) stubbed. A LIVE claim withholds the desk; a lapsed or unbound one
-  # fails open. On a DESTROY path (strict:) a BOUND-but-unreadable record withholds too.
+  # fails open. A BOUND-but-unreadable record is WITHHELD on every lane — there is no
+  # "advisory" lane, because every caller's answer is consumed to destroy.
 
   # A BOUND desk (it has a task slug) — an UNBOUND one short-circuits to "free" before the
   # claim is even consulted, which is its own case below.
@@ -221,11 +222,11 @@ class AgentWorktreeTest < Minitest::Test
     RUBY
   end
 
-  # THE POSITIVE CONTROL for the strict flag. This guard's failure mode is BIMODAL: fail-open
+  # THE POSITIVE CONTROL. This guard's failure mode is BIMODAL: fail-open
   # destroys a live desk (the original incident), fail-CLOSED silently wedges the whole sweep.
-  # Every other strict test here asserts a REFUSAL, so if strict withheld EVERY desk the suite
-  # would stay green while reclaim was dead. This is the free x strict cell — the one the
-  # asymmetry matrix never covered.
+  # Every other guard test here asserts a REFUSAL, so if the guard withheld EVERY desk the
+  # suite would stay green while reclaim was silently dead. This is the FREE cell — the one
+  # the asymmetry matrix never covered.
   def test_the_guard_still_frees_a_readable_unclaimed_desk
     assert_equal "[true, nil]", verdict_for(held: false, dirty: false),
                  "the guard must withhold only what it CANNOT verify — a desk it read and found " \
@@ -241,7 +242,7 @@ class AgentWorktreeTest < Minitest::Test
   # disarming the guard on the destroy path. Hence the checks below assert BOTH directions —
   # a test that only proves the happy 404 passes on the broken form too, which is exactly how
   # the `||` slipped through.
-  def strict_hold_for(stderr)
+  def hold_for(stderr)
     run_in_script(<<~RUBY)
       def capture_status(*_cmd, **_kw); [false, "", #{stderr.inspect}]; end
       def command_env(*_a); {}; end
@@ -252,8 +253,8 @@ class AgentWorktreeTest < Minitest::Test
   end
 
   # POSITIVE: the board ANSWERED "there is no such task" → free, even on the destroy path.
-  def test_a_real_task_404_is_free_even_when_strict
-    assert_equal "nil", strict_hold_for("error: GET /api/v1/tasks/gone -> 404: task not found"),
+  def test_a_real_task_404_is_free
+    assert_equal "nil", hold_for("error: GET /api/v1/tasks/gone -> 404: task not found"),
                  "a deleted/renamed slug must not be withheld forever — the board answered"
   end
 
@@ -261,19 +262,19 @@ class AgentWorktreeTest < Minitest::Test
   # API's "task not found" is a board we could NOT read, and must WITHHOLD on the destroy
   # path. Without these, the over-broad `||` form still passes.
   def test_a_router_404_withholds_and_does_not_read_as_free
-    hold = strict_hold_for("error: GET /api/v1/tasks/gone -> 404: <!DOCTYPE html><html><body>Not Found</body></html>")
+    hold = hold_for("error: GET /api/v1/tasks/gone -> 404: <!DOCTYPE html><html><body>Not Found</body></html>")
     assert_match(/could not be read/, hold,
                  "a Heroku router 404 is a board-wide FAILED read — treating it as free would " \
                  "disarm the guard for EVERY bound desk at once")
   end
 
   def test_a_route_404_withholds_and_does_not_read_as_free
-    hold = strict_hold_for("error: GET /api/v1/tasks/gone -> 404: Not found")
+    hold = hold_for("error: GET /api/v1/tasks/gone -> 404: Not found")
     assert_match(/could not be read/, hold, "a route-level 404 (moved path / stale board) is a failed read")
   end
 
   def test_a_500_still_withholds
-    hold = strict_hold_for("error: GET /api/v1/tasks/gone -> 500: internal server error")
+    hold = hold_for("error: GET /api/v1/tasks/gone -> 500: internal server error")
     assert_match(/could not be read/, hold, "the outage that motivated this guard is still withheld")
   end
 
