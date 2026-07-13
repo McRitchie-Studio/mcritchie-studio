@@ -35,6 +35,14 @@
 # primary + light review pairs for stacked queues, then resolves each reviewed
 # PR with the same final board re-query and handoff rules. Both modes stop after
 # --limit completed reviews and print a deterministic retrospective.
+#
+# --run vs --dry-run: a dry-run is a PREVIEW that stops at the reviewer pair it
+# would summon (preview_review). It spawns no reviewer, writes no task/gate, and —
+# critically — never enters the verdict-resolution path, because the scout reports
+# sitting on the task are the verdicts of EARLIER review rounds; gating on them
+# made a preview print a real-looking "completed_reviews=1 blocked=1" retrospective
+# quoting prior reviewers (dry-run-launches-real-reviewers). Previews report as
+# `previewed` and never as completed/approved/blocked.
 
 require "fileutils"
 require "json"
@@ -93,10 +101,13 @@ OptionParser.new do |opts|
     resolution semantics.
 
     Default is dry-run. Pass --run to launch reviewers and write task updates.
+    A dry-run stops at the reviewer pair it WOULD summon: it launches no reviewer,
+    writes no task or gate, and resolves no verdict (the scout reports on the board
+    belong to earlier review rounds). It reports what it saw as `previewed`.
   TEXT
 
   opts.on("--run", "Execute reviewer launches and task writes") { OPTIONS[:run] = true }
-  opts.on("--dry-run", "Preview without launching reviewers or writing tasks") { OPTIONS[:run] = false }
+  opts.on("--dry-run", "Preview the reviewer pair only: no launch, no task write, no verdict") { OPTIONS[:run] = false }
   opts.on("--slow", "Review one submitted PR at a time (default)") { OPTIONS[:mode] = "slow" }
   opts.on("--fast", "Review submitted PRs in bounded parallel waves") { OPTIONS[:mode] = "fast" }
   opts.on("--mode MODE", "Review mode: slow or fast (default: slow)") { |mode| OPTIONS[:mode] = mode }
@@ -584,6 +595,32 @@ rescue StandardError => e
   { task: task, slug: task["slug"], reviewers: [], reviewer_slugs: [], launches: [], error: e.message }
 end
 
+# The dry-run's TERMINAL act: say what the run WOULD do to this task, then stop.
+# Everything in finish_review past this point is the RESOLUTION path — it waits on
+# reviewer processes, then reads the task's scout reports and gates a verdict from
+# them. In a dry-run no reviewer ran, so those reports belong to EARLIER review
+# rounds; resolving from them printed a full "completed_reviews=1 approved=0
+# blocked=1" retrospective, echoing prior reviewers' verdicts, for a run that
+# reviewed nothing. A preview must be legible AS a preview.
+def preview_review(review, events, handled)
+  slug = review.fetch(:slug)
+  reviewer_slugs = review.fetch(:reviewer_slugs)
+
+  reason =
+    if (ci = review[:ci_red])
+      "would block back — CI is RED (#{Array(ci[:failing]).join(", ")}); no reviewer would be summoned"
+    elsif (ci = review[:ci_wait])
+      wait = ci[:state] == :none ? "no CI checks reported yet" : "CI still running"
+      "would defer — #{wait}; no reviewer would be summoned"
+    else
+      "would summon #{reviewer_slugs.join(" + ")}; no reviewer launched, no verdict collected"
+    end
+
+  puts "  dry-run: preview only — #{reason}"
+  events << { slug: slug, status: :previewed, category: "dry-run-preview", reason: reason, reviewers: reviewer_slugs }
+  handled[slug] = true
+end
+
 def finish_review(review, events, handled, deferred_until)
   slug = review.fetch(:slug)
   reviewer_slugs = review.fetch(:reviewer_slugs)
@@ -593,6 +630,15 @@ def finish_review(review, events, handled, deferred_until)
     handled[slug] = true
     puts "  error: #{review[:error]}"
     return false
+  end
+
+  # DRY-RUN STOPS HERE — at the reviewer pair it WOULD summon (see preview_review).
+  # It returns true so the preview consumes one --limit slot and a bounded dry-run
+  # terminates; the retrospective counts it as `previewed`, never as a completed,
+  # approved, or blocked review. --run behavior below is unchanged.
+  unless OPTIONS.fetch(:run)
+    preview_review(review, events, handled)
+    return true
   end
 
   # CI gate-zero resolutions (no reviewers were spawned for these).
@@ -695,13 +741,23 @@ def print_retrospective(started_at, events, idle_cycles)
   blocked = events.select { |event| event[:status] == :blocked }
   deferred = events.select { |event| event[:status] == :deferred }
   failed = events.select { |event| event[:status] == :tool_failure }
+  # A dry-run reviews nothing, so it completes/approves/blocks nothing — its work
+  # lands here instead of inflating the review counters.
+  previewed = events.select { |event| event[:status] == :previewed }
 
   puts
   puts "pr-review Retrospective"
   puts "---------------------------"
   puts "started=#{started_at.utc.iso8601}"
   puts "finished=#{now_iso}"
-  puts "completed_reviews=#{completed} approved=#{approved.size} blocked=#{blocked.size} deferred=#{deferred.size} tool_failures=#{failed.size} idle_cycles=#{idle_cycles}"
+  puts "completed_reviews=#{completed} approved=#{approved.size} blocked=#{blocked.size} " \
+       "deferred=#{deferred.size} tool_failures=#{failed.size} previewed=#{previewed.size} idle_cycles=#{idle_cycles}"
+
+  unless previewed.empty?
+    puts
+    puts "Previewed (dry-run — nothing launched, nothing written)"
+    previewed.each { |event| puts "  - #{event[:slug]}: #{event[:reason]}" }
+  end
 
   puts
   puts "Reviewed"

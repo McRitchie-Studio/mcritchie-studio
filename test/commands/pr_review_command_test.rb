@@ -457,6 +457,78 @@ class PrReviewCommandTest < Minitest::Test
     assert_includes reviewer_call, "--no-record"
   end
 
+  # --- dry-run is a PREVIEW, not a review round --------------------------------
+  # (regression: dry-run-launches-real-reviewers)
+  #
+  # `--help` promises a dry-run "previews without launching reviewers or writing
+  # tasks". The launch and write halves were honored, but the run did NOT stop
+  # there: it fell through into the verdict-resolution path, read the task's
+  # scout reports — which are the verdicts of PRIOR review rounds still on the
+  # board — and printed them as THIS run's result, retrospective and all
+  # ("completed_reviews=1 approved=0 blocked=1" + the stale reviewer summaries).
+  # A preview was indistinguishable from a real review, so the operator read it
+  # as "my dry-run just burned two reviewer agents".
+
+  # [unit] The dry-run never launches a reviewer AGENT — no launcher process, no
+  # reviewer log. The log file only exists as the spawn's stdout redirect, so an
+  # empty log set is structural proof that nothing was spawned (not merely that
+  # the fake codex recorded nothing).
+  def test_dry_run_launches_zero_reviewer_agents
+    ready = task("no-spawn", created_at: "2026-06-29T12:00:00Z",
+                             reports: [report("carl", "merge-ready"), report("shannon", "merge-ready")])
+    write_snapshots(snapshot([ready]))
+
+    out, err, status = run_heartbeat("--once")
+
+    assert status.success?, err
+    assert_empty json_lines(@codex_log), "dry-run must not invoke the reviewer launcher"
+    assert_empty Dir[File.join(@output, "**", "*.log")],
+                 "a spawned reviewer would leave its stdout log behind; dry-run must spawn none"
+    assert_empty json_lines(@task_log), "dry-run must not write the board"
+    assert_empty json_lines(@gate_log), "dry-run must not write gate markers"
+
+    # The preview is the whole point — it still names the pair it WOULD summon.
+    assert_includes out, "dry-run: would summon primary review: carl"
+    assert_includes out, "dry-run: would summon light review: shannon"
+  end
+
+  # [unit] The dry-run STOPS at the pair it would summon. It must not resolve a
+  # verdict from scout reports left by earlier review rounds, must not count a
+  # completed/blocked review, and must not echo those stale summaries as if two
+  # reviewers had just reported.
+  def test_dry_run_stops_at_the_preview_and_never_replays_stale_verdicts
+    stale = task(
+      "stale-verdict-pr",
+      created_at: "2026-06-29T12:00:00Z",
+      reports: [
+        report("carl", "request-changes", "STALE VERDICT from a previous review round"),
+        report("shannon", "merge-ready", "STALE APPROVAL from a previous review round")
+      ]
+    )
+    write_snapshots(snapshot([stale]))
+
+    out, err, status = run_heartbeat("--once")
+
+    assert status.success?, err
+    assert_empty json_lines(@codex_log), "no reviewer runs, so no verdict belongs to this run"
+
+    # The preview survives.
+    assert_includes out, "dry-run: would summon primary review: carl"
+    assert_includes out, "dry-run: would summon light review: shannon"
+    assert_includes out, "preview only", "the dry-run says plainly that it stopped at the preview"
+
+    # No verdict is resolved from the board's prior-round reports.
+    refute_includes out, "STALE VERDICT from a previous review round",
+                    "dry-run must not replay a prior round's scout report as this run's verdict"
+    refute_includes out, "STALE APPROVAL from a previous review round"
+    refute_match(/^\s*decision=/, out, "dry-run must not print a resolved review decision")
+
+    # The retrospective counts a PREVIEW, never a completed/blocked review.
+    assert_match(/previewed=1/, out, "the retrospective reports what the dry-run actually did")
+    assert_match(/completed_reviews=0 approved=0 blocked=0/, out,
+                 "a dry-run completes, approves and blocks nothing")
+  end
+
   # [unit] The supervisor selects the primary+light pair, spawns BOTH role
   # reviewers in parallel, and NEVER performs a review itself. Each reviewer is
   # pointed at its own role SOP (pr-review-primary.md / pr-review-light.md), and
