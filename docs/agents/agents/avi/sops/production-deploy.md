@@ -77,9 +77,15 @@ subagent (`subagent_type: avi`) for sub-agent-tree visibility.
   leaves a partial `release → main` state that nobody owns. The same failure hit
   `qa-release` on 2026-07-11 while it was still delegated: the Steffon subagent
   detached mid-sweep and left a partial release candidate — merged onto `release`,
-  but never gated, deployed, or assembled — and it sat there unnoticed. Ship
-  recovery is `bin/release ship --yes` itself (it is idempotent and resumes; see
-  partial-ship recovery below), but only if a terminal is still attached to run it.
+  but never gated, deployed, or assembled — and it sat there unnoticed.
+- **Recovery from an INTERRUPTED ship: re-run `bin/release ship --yes`.** It is
+  idempotent and resumes. A partial ship aborts on the first failure and runs the
+  record step LAST, so it leaves the release `assembled` — the recoverable state a
+  re-run picks up. On that re-run, repos already stamped `merged: "main"` are
+  skipped for re-ff (the git-location crash-recovery signal), published gems skip,
+  the fast-forwards are git no-ops, and Gemfile re-pins are idempotent. **But only
+  a live terminal can re-run it** — which is exactly why this act is never handed
+  to an agent that can vanish.
 - **Visibility is not a reason to delegate.** The durable record is the Activities
   timeline and the release's stage timeline, not the ephemeral sub-agent tree.
 
@@ -197,8 +203,14 @@ Steffon owns the step and its mechanism) so the installed agent docs
 match what shipped. If it warns, run the installer from the hub primary by
 hand.
 
-If the ship gate aborts, do not force past it. Record the blocker and hand it
-off.
+**An ABORT and an INTERRUPTION need OPPOSITE responses — do not confuse them.**
+
+- **The ship gate ABORTED** — a red suite, a failed preflight, a failed deploy or
+  smoke. The run reached a verdict and refused. **Do not force past it.** Record
+  the blocker and hand it off.
+- **The ship was INTERRUPTED** — crash, timeout, killed terminal. There is no
+  verdict, just half-applied work. **Re-run `bin/release ship --yes`**; it resumes
+  idempotently, per "Recovery from an INTERRUPTED ship" above.
 
 ## Exit Seam
 

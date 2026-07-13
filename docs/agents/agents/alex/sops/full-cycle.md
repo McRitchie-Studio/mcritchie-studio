@@ -67,11 +67,13 @@ serial*.
    a deeper branch. Review mutates nothing but a task stage — a detached reviewer
    costs a retry.
 2. **QA release** — MUTATION, so DIRECT-DRIVE `bin/release prepare --yes` from
-   THIS session. Do NOT wrap it in a Steffon subagent. (This is not theoretical:
-   on 2026-07-11 it WAS delegated, the subagent detached mid-sweep, and it left a
-   partial release candidate — merged onto `release`, but never gated, deployed,
-   or assembled. It sat there unnoticed. Recovery is simply to re-run `prepare`,
-   which is self-healing — but only a live terminal can do that.)
+   THIS session. Do NOT wrap it in a Steffon subagent. (Not theoretical: on
+   2026-07-11 it WAS delegated, the subagent detached mid-sweep, and it stranded a
+   partial release candidate — merged onto `release`, but never gated, deployed, or
+   assembled. It sat there unnoticed.)
+
+   **Recovery: re-run `bin/release prepare --yes`.** It is self-healing — but only
+   a live terminal can run it.
 3. **Ship** — MUTATION, so DIRECT-DRIVE `bin/release ship --yes` from THIS
    session. Do NOT wrap the ship in a subagent: it is the one irreversible gate,
    and a wrapper agent that dies mid-ship would orphan the `release → main` state
