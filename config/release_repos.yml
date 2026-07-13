@@ -74,13 +74,42 @@
 #     review owns the base tier, and their ship test_cmd / own deploy owns the
 #     full pre-prod run (registering the same full suite twice would re-run it
 #     every ship, since their SHAs routinely drift via re-pins).
-#   * the HUB — its FULL suite (`bin/rails test`): the 90/10 policy certifies
-#     the whole release batch ONCE at G3, and ship's test_gate self-gates when
-#     the frozen SHA matches that certified run, so the suite still runs once
-#     per batch; a drifted/straggler SHA re-triggers it at ship.
-# The e2e-smoke half of prepare's tier is prepare's own built-in post-deploy
-# `/up` boot wait against QA — no browser suite belongs here (a Playwright run
-# needs a booted server; the QA deploy IS that smoke).
+#   * the HUB — CI's FULL suite, VERBATIM (`bin/rails db:test:prepare test
+#     test:system`): the 90/10 policy certifies the whole release batch ONCE at
+#     G3, and ship's test_gate self-gates when the frozen SHA matches that
+#     certified run, so the suite still runs once per batch; a drifted/straggler
+#     SHA re-triggers it at ship.
+#
+# THE HUB GATE INCLUDES THE SYSTEM TIER, and the exact SHAPE is load-bearing.
+# `bin/rails test` alone SKIPS test/system — so a system-test regression used to
+# ride the release branch straight into QA ungated, which is the hole this closes.
+# The gate must run what CI runs, so it registers ci.yml's command verbatim:
+#
+#   * DO NOT "simplify" it to `bin/rails test test:system`. That shape is BROKEN:
+#     `test` is a real rails COMMAND, so `test:system` is parsed as a PATH and the
+#     run dies with `LoadError: cannot load such file -- <root>/test:system`. It
+#     works in ci.yml only because the FIRST arg (`db:test:prepare`) is NOT a rails
+#     command, which routes the whole line through RAKE — where `test` and
+#     `test:system` are two separate rake tasks. Keep db:test:prepare first.
+#   * The leading `db:test:prepare` is therefore what selects the rake path. It is
+#     also harmless to re-run: the gate already ran it in prepare_gate_workspace!,
+#     against a test DB it PROVED private first, so the re-purge (~2s) hits only
+#     the gate's own DB.
+#   * Assets and the browser are SELF-HEALING in the gate's virgin worktree — no
+#     setup step needed. `rails test`/`rails test:system` each call run_prepare_task
+#     -> rake `test:prepare`, which tailwindcss-rails enhances with `tailwindcss:build`,
+#     so the gitignored app/assets/builds/tailwind.css is BUILT on demand (a bare
+#     `db:test:prepare` does NOT build it — the gem hooks test:prepare, not db:).
+#     Chrome is driven headless by Selenium Manager, which fetches a chromedriver
+#     matched to the installed Chrome (same reason ci.yml installs NO chromedriver).
+#     A host with no Chrome fails at driver resolution — an ENV error, not a release
+#     regression; do not eject a task for it.
+#
+# NOT to be confused with the PLAYWRIGHT e2e tier, which still does NOT belong
+# here: Rails system tests boot their OWN Puma in-process (Capybara), so they run
+# fine in the gate workspace, whereas a Playwright run needs an already-booted
+# SERVER. The e2e-smoke half of prepare's tier remains prepare's own built-in
+# post-deploy `/up` boot wait against QA — the QA deploy IS that smoke.
 #
 # PARSING: both test_cmd and qa_test_cmd are Shellwords-parsed into an argv
 # (bin/release's test_cmd_argv — no shell interpolation), so quoted/spaced args
@@ -118,10 +147,15 @@ apps:
   mcritchie-studio:
     # Hub: git_push_heroku has no test step, so gate prod on the suite here.
     # (Ship's gate SELF-GATES when the frozen SHA is exactly what the G3 pre-QA
-    # gate below already certified this run — full suite runs once per batch.)
-    test_cmd: bin/rails test
-    # Pre-QA gate (G3): the hub certifies its FULL suite on the release batch.
-    qa_test_cmd: bin/rails test
+    # gate below already certified this run — full suite runs once per batch.
+    # test_cmd and qa_test_cmd must stay the SAME STRING or that skip misses and
+    # the suite runs twice: ship_gate_skip? compares the commands verbatim.)
+    test_cmd: bin/rails db:test:prepare test test:system
+    # Pre-QA gate (G3): the hub certifies CI's FULL suite — the base tier AND the
+    # SYSTEM tier — on the release batch. This string is ci.yml's `test` job
+    # command VERBATIM, and repos_test.rb parses ci.yml and asserts they match,
+    # so the gate cannot silently drift out from under CI again.
+    qa_test_cmd: bin/rails db:test:prepare test test:system
     prod_deploy:
       strategy: git_push_heroku
       remote: heroku
@@ -137,6 +171,18 @@ apps:
       args: ["--yes"]
   rolio:
     # Release-managed standalone app: Rails/SQLite demo runtime, no Studio Engine.
+    #
+    # KNOWN GAP — the same one just closed for the hub, NOT yet closed here.
+    # rolio HAS system tests (test/system/) and its own ci.yml runs them
+    # (`bin/rails db:test:prepare test test:system`), but `test_cmd` below runs
+    # `bin/rails test`, which SKIPS test/system. rolio deploys via git_push_heroku
+    # (no test step), so test_cmd IS its last gate before prod — and that gate does
+    # not cover the system tier. Deliberately NOT widened in the same pass: rolio's
+    # system suite has never been driven in an isolated gate workspace (assets +
+    # browser + its SQLite file-backed test DB), and widening a gate without first
+    # proving it green there is how a gate starts false-failing green code and
+    # ejecting good PRs. Widen it once its gate has been DRIVEN and measured, the
+    # way the hub's was.
     test_cmd: bin/rails test
     qa_test_cmd: bin/rails test test/integration
     prod_deploy:

@@ -232,6 +232,54 @@ class ReleaseCliTest < Minitest::Test
     end
   end
 
+  # --- system-tier browser guard (the hub's gate runs test:system) ------------
+
+  def test_system_tier_is_detected_from_the_registered_gate_command
+    # The hub's registered command carries the system tier; the satellites'
+    # integration subset does not — so only the hub's gate host needs a browser.
+    assert_equal "true", eval_helper(%(system_tier?("bin/rails db:test:prepare test test:system")))
+    assert_equal "false", eval_helper(%(system_tier?("bin/rails test test/integration")))
+    assert_equal "false", eval_helper(%(system_tier?("bin/rails test")))
+  end
+
+  def test_missing_chrome_aborts_in_the_ENV_class_not_as_a_red_suite
+    # THE MISATTRIBUTION GUARD. Without Chrome, Selenium fails INSIDE the suite and
+    # the gate would read a red suite -> eject/revert guidance -> a good PR ejected
+    # for a missing browser. It must abort in the ENV class instead, with the same
+    # "nothing to eject or revert" wording as the bundle/DB guards.
+    out = guard_verdict("mcritchie-studio", "bin/rails db:test:prepare test test:system")
+
+    assert out.start_with?("ABORTED"), "a system-tier gate on a browserless host must ABORT, not run the suite"
+    assert_includes out, "NOT a release regression"
+    assert_includes out, "nothing to eject or revert"
+    assert_includes out, "NO Chrome"
+  end
+
+  def test_the_browser_guard_leaves_the_integration_subset_alone
+    # Satellites gate on `bin/rails test test/integration` — no browser required,
+    # so a browserless host must NOT be blocked from running their gate.
+    out = guard_verdict("turf-monster", "bin/rails test test/integration")
+
+    assert_equal "NO_ABORT", out, "the browser guard must only bind commands that run test:system"
+  end
+
+  # Run the browser guard with chrome_available? FORCED false, so the verdict is
+  # deterministic on any host (this suite also runs on CI's Linux runner). abort!
+  # -> Kernel#abort raises SystemExit carrying the message, so the guard's abort is
+  # catchable and its wording assertable without a nonzero exit.
+  def guard_verdict(repo, cmd)
+    run_ruby(<<~RUBY)
+      load #{BIN.inspect}
+      def chrome_available? = false
+      begin
+        assert_system_test_browser!(#{repo.inspect}, #{cmd.inspect})
+        print "NO_ABORT"
+      rescue SystemExit => e
+        print "ABORTED|" + e.message.to_s
+      end
+    RUBY
+  end
+
   # Evaluate a bin/release helper in a clean subprocess (see run_ruby).
   def eval_helper(expr)
     run_ruby(%(load #{BIN.inspect}; print(#{expr})))
