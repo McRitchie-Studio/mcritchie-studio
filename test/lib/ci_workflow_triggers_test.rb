@@ -15,8 +15,24 @@
 #   ruby -Itest test/lib/ci_workflow_triggers_test.rb
 # Also picked up by the normal `bin/rails test` sweep.
 #
-# FIVE ways the release tip loses its verdict while `branches: [main, release]` still
-# reads correct in the file — all five are asserted, because a guard is only worth the
+# HOW TO EXTEND THIS FILE — read before adding a vector.
+#
+# This guard was blocked THREE times in review, and every hole had the same shape: the
+# guard enumerated the ways the suite might NOT run, and each reviewer found a spelling
+# one level of nesting away from where the last one looked (`github.ref` → missed
+# `event_name`; job-level → missed step-level). A blacklist only ever catches the
+# vectors its author already imagined. It is a scoreboard, not a guard.
+#
+# So the PRIMARY guard here is POSITIVE and lives in
+# `test_integration_the_suite_runs_UNCONDITIONALLY_on_a_release_push`: some step must
+# actually invoke the suite (TEST_COMMAND), and the lane that does must carry NO `if:`
+# at all. That closes the whole CLASS — `env.SKIP_TESTS`, `inputs.fast`, a matrix flag,
+# and every spelling not yet invented fail it, without anyone having to predict them.
+# The enumerated list below is DEFENSE IN DEPTH behind it. When you add a vector, ask
+# first whether the positive invariant already covers it; prefer strengthening that.
+#
+# SEVEN ways the release tip loses its verdict while `branches: [main, release]` still
+# reads correct in the file — all seven asserted, because a guard is only worth the
 # regressions it actually catches:
 #   1. the branch is dropped from the push trigger (the obvious one);
 #   2. a job opts out via a job-level `if:` on the github event context — `github.ref`,
@@ -31,7 +47,27 @@
 #   5. a `concurrency:` group lets a rapid second release push cancel or supersede the
 #      first SHA's run — `cancelled` reads as RED to a SHA-addressed auditor: a false
 #      alarm on a healthy candidate. Back-to-back release pushes are normal (sweep
-#      merge, then re-pin).
+#      merge, then re-pin);
+#   6. `continue-on-error: true` on the suite's job or step — the INVERSE trick: the lane
+#      RUNS, the tests FAIL, and it reports GREEN anyway. Zero-tests-green and
+#      failing-tests-green are the same lie told to the RC tip;
+#   7. the suite COMMAND itself is gutted — `run: echo "skipping"`, the `test` job
+#      deleted or renamed, the command narrowed to a single file. No `if:`, no filter, no
+#      `continue-on-error`: there is NOTHING for a blacklist to match, which is precisely
+#      why the positive invariant has to be the primary guard. (6 and 7 were both
+#      mutation-confirmed FALSE-GREEN against the blacklist alone.)
+#
+# CONSIDERED AND DELIBERATELY NOT ASSERTED — do not add these without a reason:
+#   · a `matrix:` whose `exclude` empties the job → zero job instances, so the check is
+#     MISSING, not green. Missing is a no-verdict, which fails SAFE: required checks
+#     block and the auditor sees no data. Only false GREEN is silent.
+#   · a `needs:` on a job that never runs → the dependent is skipped transitively, but
+#     the ROOT skip is already caught by vectors 2/3. Asserting the transitive case adds
+#     nothing the root doesn't.
+#   · `if:` on the `on:` block itself → GitHub Actions has no such construct. N/A.
+#   · branch-protection / required-check configuration → real, and a genuine way to
+#     accept a green-with-no-runs tip, but it lives in GitHub settings, not in this repo.
+#     Out of this file's contract; worth its own audit.
 #
 # NOTE the DOUBLE RUN the trigger creates, so nobody "fixes" it into hole #5: a release
 # SHA gets its run from `push: release`, then `bin/release ship` fast-forwards main to
@@ -110,6 +146,46 @@ class CiWorkflowTriggersTest < Minitest::Test
       conditions = [job["if"]] + Array(job["steps"]).grep(Hash).map { |step| step["if"] }
       conditions.any? { |condition| condition.to_s.match?(SKIP_CONTEXT_KEYS) }
     end.keys
+  end
+
+  # ---- the POSITIVE invariant's machinery --------------------------------------------
+
+  # THE COMMAND THAT CONSTITUTES A VERDICT. If no lane runs this on a release push, the
+  # RC tip's green check is backed by zero tests — and #514's SHA-addressed auditor
+  # would read that empty-but-green run as a CLEAN verdict and certify it.
+  TEST_COMMAND = %r{bin/rails\b[^\n]*\btest\b}
+
+  def jobs_of(yaml_text)
+    YAML.safe_load(yaml_text).fetch("jobs", {}).select { |_n, j| j.is_a?(Hash) }
+  end
+
+  def lane_label(job_name, step = nil)
+    return "job `#{job_name}`" unless step
+
+    "job `#{job_name}` → step `#{step["name"] || step["uses"] || "run"}`"
+  end
+
+  # Every [job_name, job, step] whose `run:` actually invokes the suite. Vector 7 (the
+  # gutted command) is invisible to every blacklist in this file and lands only here.
+  def suite_command_lanes(yaml_text)
+    jobs_of(yaml_text).flat_map do |name, job|
+      Array(job["steps"]).grep(Hash)
+                         .select { |step| step["run"].to_s.match?(TEST_COMMAND) }
+                         .map { |step| [name, job, step] }
+    end
+  end
+
+  # Vector 6. `continue-on-error: true` on a job or step: it RUNS, it FAILS, it reports
+  # GREEN. Checked at both levels for the same reason the `if:` walk is.
+  def continue_on_error_lanes(yaml_text)
+    jobs_of(yaml_text).flat_map do |name, job|
+      lanes = []
+      lanes << lane_label(name) if job["continue-on-error"] == true
+      Array(job["steps"]).grep(Hash).each do |step|
+        lanes << lane_label(name, step) if step["continue-on-error"] == true
+      end
+      lanes
+    end
   end
 
   # --- [unit] trigger extraction -------------------------------------------------
@@ -274,7 +350,113 @@ class CiWorkflowTriggersTest < Minitest::Test
     assert_equal ["paths-ignore"], push_trigger(yaml).keys & PATH_FILTER_KEYS
   end
 
+  def test_unit_detects_continue_on_error_on_a_job_or_a_step
+    # VECTOR 6, mutation-confirmed false-green against the blacklist alone: the suite
+    # runs, the tests fail, the lane reports success. Nothing is skipped, so every `if:`
+    # walk in this file sees a clean workflow.
+    yaml = <<~YML
+      on:
+        push:
+          branches: [ main, release ]
+      jobs:
+        test:
+          runs-on: ubuntu-latest
+          steps:
+            - name: Run tests
+              continue-on-error: true
+              run: bin/rails db:test:prepare test test:system
+        lint:
+          continue-on-error: true
+          runs-on: ubuntu-latest
+    YML
+    assert_equal ["job `test` → step `Run tests`", "job `lint`"], continue_on_error_lanes(yaml)
+  end
+
+  def test_unit_a_gutted_suite_command_leaves_no_test_lane
+    # VECTOR 7, and the reason the positive invariant exists. No `if:`, no path filter, no
+    # `continue-on-error`, no concurrency group — every blacklist in this file passes this
+    # workflow clean, and it runs ZERO tests on the release tip. Deleting the `test` job,
+    # renaming it, or narrowing the command to one file all land in exactly this hole.
+    yaml = <<~YML
+      on:
+        push:
+          branches: [ main, release ]
+      jobs:
+        test:
+          runs-on: ubuntu-latest
+          steps:
+            - name: Run tests
+              run: echo "suite skipped to save minutes"
+    YML
+    assert_empty jobs_skipping_release_push(yaml), "the blacklist sees nothing wrong here"
+    assert_empty continue_on_error_lanes(yaml), "and neither does the continue-on-error walk"
+    assert_empty suite_command_lanes(yaml), "but NO lane runs the suite — only this catches it"
+  end
+
+  def test_unit_recognizes_the_real_suite_command_as_a_test_lane
+    # The other half of vector 7: TEST_COMMAND must actually MATCH the live command, or
+    # the positive guard asserts a lane that never existed and passes vacuously — the
+    # same failure mode as the `on:`-boolean trap at the top of this file.
+    yaml = <<~YML
+      on:
+        push:
+          branches: [ main, release ]
+      jobs:
+        test:
+          runs-on: ubuntu-latest
+          steps:
+            - name: Run tests
+              run: bin/rails db:test:prepare test test:system
+    YML
+    lanes = suite_command_lanes(yaml)
+
+    assert_equal 1, lanes.size
+    assert_equal "test", lanes.first[0]
+  end
+
   # --- [integration] the real committed workflow ----------------------------------
+
+  # ==== THE PRIMARY GUARD =============================================================
+  # Positive, not a blacklist. Every other integration assertion in this file enumerates
+  # a way the suite might NOT run; this one asserts that it DOES. On the lane that IS the
+  # verdict, ANY condition fails — not merely the three `github.*` spellings a reviewer
+  # happened to show me. That is the difference between a guard and a scoreboard.
+  def test_integration_the_suite_runs_UNCONDITIONALLY_on_a_release_push
+    lanes = suite_command_lanes(File.read(CI_YML))
+
+    refute_empty lanes,
+                 "NO step in ci.yml runs a command matching #{TEST_COMMAND.source}. A " \
+                 "release push would produce GREEN checks having executed zero tests — " \
+                 "and #514's SHA-addressed auditor would read that empty-but-green run " \
+                 "as a clean verdict and certify an RC that CI never tested. A false RED " \
+                 "wastes a day; a false GREEN ships. If the suite legitimately moved or " \
+                 "the command changed, re-point TEST_COMMAND at it — do not delete this."
+
+    lanes.each do |job_name, job, step|
+      assert_nil job["if"],
+                 "#{lane_label(job_name)} runs the suite but carries `if: #{job["if"]}`. " \
+                 "The lane that IS the verdict must be UNCONDITIONAL on a release push. " \
+                 "Any condition — event context, env var, workflow input, matrix flag — " \
+                 "can silently exclude the RC tip. Prove it still runs on a push to " \
+                 "refs/heads/release, then update this test deliberately."
+      assert_nil step["if"],
+                 "#{lane_label(job_name, step)} runs the suite but carries " \
+                 "`if: #{step["if"]}`. A skipped STEP leaves the JOB REPORTING SUCCESS — " \
+                 "a green required check over zero tests, invisible in the check " \
+                 "conclusion and indistinguishable from a real pass to any auditor " \
+                 "reading it by SHA. This is the worst failure mode in the file."
+    end
+  end
+
+  def test_integration_no_lane_reports_green_over_failing_tests
+    lanes = continue_on_error_lanes(File.read(CI_YML))
+
+    assert_empty lanes,
+                 "#{lanes.inspect} set `continue-on-error: true` — the lane RUNS, the " \
+                 "tests FAIL, and it reports GREEN anyway. Zero-tests-green and " \
+                 "failing-tests-green are the same lie told to the release candidate."
+  end
+  # ====================================================================================
 
   def test_integration_ci_runs_on_pushes_to_both_shippable_tips
     branches = push_branches(File.read(CI_YML))
