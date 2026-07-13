@@ -17,6 +17,7 @@ require "rbconfig"
 require "tmpdir"
 require "fileutils"
 require "time"
+require_relative "../support/session_env"
 
 class TaskCliTest < Minitest::Test
   BIN = File.expand_path("../../bin/task", __dir__)
@@ -46,16 +47,18 @@ class TaskCliTest < Minitest::Test
     requests = []
     thread = Thread.new { serve(server, requests) }
 
-    base_env = {
+    # SessionEnv.neutralized: bin/task resolves SessionIdentity for actor/persona
+    # defaulting, so the child must name NO session unless a case opts one in via
+    # `env:` (which merges on top). See test/support/session_env.rb — without this
+    # the CLI reads the LIVE agent session and this file goes red from an agent run.
+    base_env = SessionEnv.neutralized({
       "TASK_API_BASE" => "http://127.0.0.1:#{port}",
       "AGENT_API_SECRET" => "test-secret",
       "TASK_SKIP_MARKER" => "1",
       # A fixed instance nonce so the CLI never shells out to `ps` in a test; the
       # gate cases override it to play a second / different live instance.
-      "TASK_CLAIM_NONCE" => "inst-default",
-      "CLAUDE_CODE_SESSION_ID" => nil,
-      "CODEX_THREAD_ID" => nil
-    }.merge(env)
+      "TASK_CLAIM_NONCE" => "inst-default"
+    }.merge(env))
 
     spawn_opts = chdir ? { chdir: chdir } : {}
     out, err, status = Open3.capture3(base_env, RbConfig.ruby, BIN, *args, **spawn_opts)

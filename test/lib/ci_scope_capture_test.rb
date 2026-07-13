@@ -19,13 +19,14 @@ require "tmpdir"
 require "fileutils"
 require "rbconfig"
 require "json"
+require_relative "../support/session_env"
 
 class CiScopeCaptureTest < Minitest::Test
   BIN = File.expand_path("../../bin/ci-scope-capture", __dir__)
 
-  # The session env keys the emit's session gate reads. NEUTRALIZE both so a shelled
-  # run never inherits THIS live session; the caller sets the session explicitly.
-  SESSION_KEYS = %w[CLAUDE_CODE_SESSION_ID CODEX_THREAD_ID].freeze
+  # The session env is neutralized by SessionEnv (test/support/session_env.rb) so a
+  # shelled run never inherits THIS live session; the caller opts a fake one in via
+  # `session:` (blank ⇒ genuinely UNSET, not an exported "").
 
   # A stub agent-activity: appends its tab-joined argv to STUB_LOG, exits 0.
   def write_activity_stub(dir)
@@ -47,13 +48,14 @@ class CiScopeCaptureTest < Minitest::Test
     # and a shared log would accumulate and re-read the first call's lines.
     @log_seq = (@log_seq || 0) + 1
     log = File.join(dir, "emit-#{@log_seq}.log")
-    env = {
+    env = SessionEnv.neutralized(
       "CI_SCOPE_CHECKS_JSON" => checks_json,
       "CI_SCOPE_HEAD_SHA" => head_sha,
       "CI_SCOPE_AGENT_ACTIVITY" => agent_activity,
-      "STUB_LOG" => log
-    }
-    SESSION_KEYS.each { |k| env[k] = (k == "CLAUDE_CODE_SESSION_ID" ? session : "") }
+      "STUB_LOG" => log,
+      # The fake session this run emits into — blank ⇒ UNSET (no session at all).
+      "CLAUDE_CODE_SESSION_ID" => session
+    )
     out = IO.popen(env, "#{BIN} #{pr} 2>/dev/null", &:read)
     code = $?.exitstatus
     emits = File.exist?(log) ? File.readlines(log, chomp: true).map { |line| parse_emit(line) } : []

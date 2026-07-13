@@ -22,6 +22,7 @@ require "rbconfig"
 require "tmpdir"
 require "fileutils"
 require "time"
+require_relative "../support/session_env"
 
 # Load the bin script in-process for the unit tier. The script's main is guarded
 # by `$PROGRAM_NAME == __FILE__`, so loading it only defines AtomicCaptureHook.
@@ -939,14 +940,15 @@ class AtomicCaptureHookTest < Minitest::Test
     path
   end
 
+  # SessionEnv.neutralized: the child must name NO agent session unless a case opts
+  # one in (it merges on top) — bin/atomic-capture-hook resolves session identity.
+  # See test/support/session_env.rb.
   def base_env(projects_dir)
-    {
+    SessionEnv.neutralized(
       "AGENT_API_SECRET" => "test-secret",
       "ATOMIC_CAPTURE_FOREGROUND" => "1", # run inline so the stub observes the POST
-      "CLAUDE_PROJECTS_DIR" => projects_dir,
-      "CLAUDE_CODE_SESSION_ID" => nil,
-      "CODEX_THREAD_ID" => nil
-    }
+      "CLAUDE_PROJECTS_DIR" => projects_dir
+    )
   end
 
   # Shell out to the real hook against a one-shot stub HTTP server; returns the

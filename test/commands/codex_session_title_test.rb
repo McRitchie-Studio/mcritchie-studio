@@ -5,6 +5,7 @@ require "json"
 require "open3"
 require "tmpdir"
 require "fileutils"
+require_relative "../support/session_env"
 
 class CodexSessionTitleTest < Minitest::Test
   ROOT = File.expand_path("../..", __dir__)
@@ -35,23 +36,28 @@ class CodexSessionTitleTest < Minitest::Test
   end
 
   def sqlite(sql)
-    system("sqlite3", @db, sql, exception: true)
+    system(SessionEnv.neutralized, "sqlite3", @db, sql, exception: true)
   end
 
   def title_for(id)
-    IO.popen(["sqlite3", @db, "SELECT title FROM threads WHERE id = '#{id}';"], &:read).strip
+    IO.popen(SessionEnv.neutralized, ["sqlite3", @db, "SELECT title FROM threads WHERE id = '#{id}';"], &:read).strip
   end
 
   def run_script(env = {}, stdin_data = "")
     Open3.capture3(
-      {
-        "CODEX_THREAD_ID" => "thread-123",
-        "CODEX_HOME" => @tmp,
-        "CODEX_STATE_DB" => @db,
-        "SESSION_KICKOFF" => @kickoff,
-        "CLAUDE_PROJECTS_DIR" => @tmp,
-        "CODEX_SESSION_TITLE_RETRY_DELAYS" => "none"
-      }.merge(env),
+      SessionEnv.neutralized(
+        {
+          # Deliberate: the script resolves the Codex thread from CODEX_THREAD_ID.
+          # SessionEnv unsets the ambient session vars, so this override (and any a
+          # test passes in `env`) is the ONLY session the child sees.
+          "CODEX_THREAD_ID" => "thread-123",
+          "CODEX_HOME" => @tmp,
+          "CODEX_STATE_DB" => @db,
+          "SESSION_KICKOFF" => @kickoff,
+          "CLAUDE_PROJECTS_DIR" => @tmp,
+          "CODEX_SESSION_TITLE_RETRY_DELAYS" => "none"
+        }.merge(env)
+      ),
       SCRIPT,
       chdir: @tmp,
       stdin_data: stdin_data

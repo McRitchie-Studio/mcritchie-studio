@@ -9,6 +9,7 @@ require "minitest/autorun"
 require "json"
 require "tmpdir"
 require "fileutils"
+require_relative "../support/session_env"
 
 class DorCheckTest < Minitest::Test
   BIN = File.expand_path("../../bin/dor-check", __dir__)
@@ -26,7 +27,7 @@ class DorCheckTest < Minitest::Test
       # initialized constant" warnings to STDERR — merging them (2>&1) would
       # corrupt the JSON parse. Discarding stderr keeps the verdict clean.
       with_default_suite_evidence do
-        out = IO.popen("#{BIN} --file #{path} #{args.join(' ')} 2>/dev/null", &:read)
+        out = IO.popen(SessionEnv.neutralized, "#{BIN} --file #{path} #{args.join(' ')} 2>/dev/null", &:read)
         [out, $?.exitstatus]
       end
     end
@@ -126,7 +127,8 @@ class DorCheckTest < Minitest::Test
   # override — the cwd-default path (the satellite fix). Contrast suite_fingerprint(dir),
   # which pins the root via the explicit override.
   def fingerprint_running_in(dir)
-    IO.popen({ "DOR_CHECK_DIFF_ROOT" => nil, "DOR_CHECK_SUITE_EVIDENCE" => nil, "DOR_CHECK_CHANGED_FILES" => nil },
+    IO.popen(SessionEnv.neutralized("DOR_CHECK_DIFF_ROOT" => nil, "DOR_CHECK_SUITE_EVIDENCE" => nil,
+                                    "DOR_CHECK_CHANGED_FILES" => nil),
              [BIN, "--suite-fingerprint"], { chdir: dir, err: File::NULL }, &:read).to_s.strip
   end
 
@@ -202,7 +204,7 @@ class DorCheckTest < Minitest::Test
   def resolved_base(dir, env = {})
     base = nil
     with_env({ "DOR_CHECK_DIFF_ROOT" => dir, "DOR_CHECK_DIFF_BASE" => nil, "DOR_CHECK_CHANGED_FILES" => nil }.merge(env)) do
-      base = IO.popen("#{BIN} --diff-base 2>/dev/null", &:read).strip
+      base = IO.popen(SessionEnv.neutralized, "#{BIN} --diff-base 2>/dev/null", &:read).strip
     end
     base
   end
@@ -930,7 +932,7 @@ class DorCheckTest < Minitest::Test
   def suite_fingerprint(dir)
     fp = nil
     with_env("DOR_CHECK_DIFF_ROOT" => dir, "DOR_CHECK_SUITE_EVIDENCE" => nil, "DOR_CHECK_CHANGED_FILES" => nil) do
-      fp = IO.popen("#{BIN} --suite-fingerprint 2>/dev/null", &:read).strip
+      fp = IO.popen(SessionEnv.neutralized, "#{BIN} --suite-fingerprint 2>/dev/null", &:read).strip
     end
     fp
   end

@@ -6,6 +6,15 @@ require "rails/test_help"
 # make it loadable suite-wide for tests that stub a seam (e.g. the LLM adapter).
 require "minitest/mock"
 
+# SessionEnv — the child-env neutralizer for any test that SPAWNS a subprocess.
+# A live agent session exports CLAUDE_CODE_SESSION_ID / CODEX_THREAD_ID and the
+# child would inherit it, resolving the OPERATOR'S session where CI resolves none
+# (see test/support/session_env.rb, and docs/agents/modules/testing.md). Required
+# here for the Rails-side tests; the standalone test/lib and test/commands files
+# are bare minitest/autorun and `require_relative "../support/session_env"`
+# themselves — so this require is NOT the whole fix, and must not become it.
+require_relative "support/session_env"
+
 OmniAuth.config.test_mode = true
 
 # How many test workers to fork. Parallel workers fork-clone the test DB
