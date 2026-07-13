@@ -43,9 +43,16 @@ label alone buys nothing. The skip is earned only by an **observed doc-only
 diff**, and the discriminator is a denylist (`bin/lib/code_diff.rb`), not an
 allowlist:
 
-- **Non-behavioral** — and the ONLY thing that skips: `docs/**`, `*.md`/`*.txt`,
-  `LICENSE`, `CODEOWNERS`, `.gitignore`. Every file in the diff must qualify; one
-  behavioral file in an otherwise-docs diff gates the whole task.
+- **Classify by file TYPE, never by directory.** There is no "`docs/` is safe"
+  rule: a directory allowlist is prose-by-*assertion*, the same
+  declaration-over-evidence bug one granularity down. `docs/agents/setup.sh` is
+  mode 100755 and `rolio` ships `docs/build/workflow.js` — both **gate**.
+- **Non-behavioral** — and the ONLY thing that skips: prose (`*.md`,
+  `*.markdown`, `*.rdoc`), inert media (`*.png`, `*.svg`, `*.pdf`, …), and
+  prose-by-convention basenames (`LICENSE`, `README.txt`, `CODEOWNERS`,
+  `.gitignore`). Note `.txt` is **not** blanket prose — `public/robots.txt` is
+  production-served. Every file in the diff must qualify; one behavioral file in
+  an otherwise-docs diff gates the whole task.
 - **Behavioral** — everything else, gated like a feature. That expressly includes
   `.github/workflows/*` (CI *is* behavior), `config/*.yml`, `Gemfile`/`.lock` (a
   dependency bump changes the resolved graph), `bin/*`, migrations, and `test/**`.

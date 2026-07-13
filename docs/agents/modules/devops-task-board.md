@@ -45,8 +45,13 @@ against `origin/release`, PR merge/check state, same-file overlap with open or
 recent PRs, installed docs/skills drift, stale terminology, and the required
 test tiers from `config/feature_shapes.yml`. Non-code kinds (`chore`,
 `cleanup`, `docs`) skip the shape/required-metadata gate exactly as
-`bin/dor-check` does — unless the branch ships code under
-`app/ lib/ bin/ config/ db/`, which forfeits the exemption.
+`bin/dor-check` does — but the `kind` label alone never earns that skip. The
+exemption is earned by the **observed diff**: a file is non-behavioral only if it
+is provably prose (`*.md`) or inert media, judged by **file type, never by
+directory** — so `docs/agents/setup.sh` gates like any other script, while
+`docs/agents/sop.md` skips. Anything else — `.github/workflows/*`, `Gemfile`,
+`config/*.yml`, `bin/*`, migrations, `test/**` — forfeits the exemption. See
+[gates/dor.md](gates/dor.md).
 
 Feature agents should first identify the feature and accumulate acceptance
 criteria until the agent and Mr. McRitchie are aligned on the goal. The task is

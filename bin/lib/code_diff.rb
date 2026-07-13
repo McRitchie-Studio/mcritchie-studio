@@ -17,9 +17,15 @@
 #
 # An allowlist of "what counts as code" is unbounded and is maintained by
 # whoever last got burned. So the polarity is inverted here: a file is
-# non-behavioral ONLY if it is provably prose or inert metadata — everything
-# else is behavior. A new file type (a Dockerfile, a .tool-versions, a workflow)
-# is gated the day it lands, without anyone remembering to add it to a list.
+# non-behavioral ONLY if it is provably prose or inert media — everything else
+# is behavior. A new file type (a Dockerfile, a .tool-versions, a workflow) is
+# gated the day it lands, without anyone remembering to add it to a list.
+#
+# And the skip set is keyed on the file's TYPE, never on its DIRECTORY. The first
+# cut of this fix carried a `docs/` prefix rule, which is prose-by-ASSERTION —
+# the same declaration-over-evidence bug, one granularity down. It would have
+# exempted docs/agents/setup.sh (mode 100755) and rolio's docs/build/workflow.js.
+# Where a file was FILED is a declaration; what it IS is evidence.
 # This is the audit's thesis applied one gate earlier: a check you satisfy by
 # DECLARING a `kind` rather than by EVIDENCE is not a check.
 # See docs/agents/audits/release-gate-and-devops-process-review-2026-07-12.md.
@@ -41,22 +47,42 @@ module CodeDiff
   # OBSERVED to be doc-only. The label alone buys nothing.
   EXEMPT_KINDS = %w[chore cleanup docs].freeze
 
-  # Prose trees. Anything under here is documentation, including its images.
-  DOC_PREFIXES = %w[docs/].freeze
+  # A file is classified by WHAT IT IS (its type), never by WHERE IT LIVES.
+  #
+  # There is deliberately no DOC_PREFIXES / "docs/ is prose" rule. A directory
+  # allowlist is prose-BY-ASSERTION — the same declaration-over-evidence error
+  # this whole gate exists to remove, just one granularity down. It is not
+  # hypothetical: `docs/agents/setup.sh` is mode 100755 (the fresh-machine bundle
+  # + DB bootstrap), `docs/agents/patches/*.patch` are applied to the Codex
+  # runtime, and rolio ships `docs/build/workflow.js`. A `docs/`-prefix rule hands
+  # every one of them a full exemption — re-opening THIS bug one directory over.
+  # Classify by type, not by where someone filed it.
 
-  # Prose file types, anywhere in the tree (README.md, CHANGELOG.md, a SOP under
-  # docs/, .github/ISSUE_TEMPLATE/bug.md, AGENTS.md, CLAUDE.md).
-  DOC_EXTENSIONS = %w[.md .markdown .mdx .rdoc .txt].freeze
+  # Prose file types, anywhere in the tree (README.md, a SOP under docs/,
+  # .github/ISSUE_TEMPLATE/bug.md, AGENTS.md, CLAUDE.md).
+  DOC_EXTENSIONS = %w[.md .markdown .mdx .rdoc].freeze
 
-  # Inert metadata that cannot execute and cannot change runtime behavior.
-  DOC_BASENAMES = %w[LICENSE LICENSE.txt COPYING NOTICE AUTHORS CODEOWNERS .gitignore .gitattributes].freeze
+  # Inert media: renders, never executes. Keeps a screenshot/diagram/icon swap
+  # (docs/img/flow.png) from demanding a test tier.
+  INERT_MEDIA_EXTENSIONS = %w[.png .jpg .jpeg .gif .svg .webp .ico .pdf].freeze
+
+  # Prose and inert metadata identified by BASENAME. Note `.txt` is NOT a blanket
+  # prose extension: public/robots.txt is production-served behavior and
+  # test/fixtures/files/*.txt is test input. Only the prose-by-convention names
+  # below skip.
+  DOC_BASENAMES = %w[
+    LICENSE LICENSE.txt LICENSE.md COPYING NOTICE NOTICE.txt AUTHORS AUTHORS.txt
+    CODEOWNERS README.txt CHANGELOG.txt .gitignore .gitattributes
+  ].freeze
 
   # True when this path cannot change behavior — the ONLY thing that earns a skip.
   def self.non_behavioral?(path)
     file = path.to_s.strip.delete_prefix("./")
     return false if file.empty?
-    return true if DOC_PREFIXES.any? { |prefix| file.start_with?(prefix) }
-    return true if DOC_EXTENSIONS.include?(File.extname(file).downcase)
+
+    extension = File.extname(file).downcase
+    return true if DOC_EXTENSIONS.include?(extension)
+    return true if INERT_MEDIA_EXTENSIONS.include?(extension)
 
     DOC_BASENAMES.include?(File.basename(file))
   end

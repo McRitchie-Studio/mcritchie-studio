@@ -504,6 +504,39 @@ class DorCheckTest < Minitest::Test
     assert_match(/DoR n\/a/, out)
   end
 
+  # Classify by TYPE, never by DIRECTORY. A `docs/` prefix rule is prose-by-
+  # assertion — it would exempt these REAL files, which are executable today:
+  #   docs/agents/setup.sh          (mode 100755; fresh-machine bundle + DB bootstrap)
+  #   docs/agents/patches/*.patch   (applied to the Codex runtime)
+  #   rolio docs/build/workflow.js
+  # Where a file was FILED is a declaration; what it IS is evidence.
+  def test_docs_rooted_script_is_refused
+    ["docs/agents/setup.sh", "docs/agents/patches/codex-session-start.patch", "docs/build/workflow.js"].each do |file|
+      out, code = with_changed_files(file) { check("kind" => "chore") }
+      assert_equal 1, code, "#{file} lives under docs/ but is EXECUTABLE — it must gate. Got:\n#{out}"
+      assert_match(/ships a code diff/, out)
+    end
+  end
+
+  def test_docs_rooted_prose_and_media_still_skip
+    # The legitimate docs skip survives the type-only rule: prose + inert media.
+    out, code = with_changed_files("docs/agents/sop.md\ndocs/img/flow.png") { check("kind" => "chore") }
+    assert_equal 0, code, out
+    assert_match(/doc-only/, out)
+  end
+
+  def test_txt_is_not_blanket_prose
+    # `.txt` tree-wide would exempt production-served and test-input files.
+    ["public/robots.txt", "test/fixtures/files/notes.txt"].each do |file|
+      out, code = with_changed_files(file) { check("kind" => "chore") }
+      assert_equal 1, code, "#{file} is not prose-by-convention. Got:\n#{out}"
+      assert_match(/ships a code diff/, out)
+    end
+    # …while the prose-by-convention basenames still skip.
+    out, code = with_changed_files("LICENSE.txt\nREADME.txt") { check("kind" => "chore") }
+    assert_equal 0, code, out
+  end
+
   def test_doc_only_skip_names_the_observed_diff
     # A skip must be LOUD and evidence-shaped: it says WHAT it looked at, not just
     # "n/a (kind: chore)". A silent skip is what let the bug hide for two PRs.

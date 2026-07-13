@@ -92,7 +92,6 @@ require "json"
 require "uri"
 require "yaml"
 require "optparse"
-require "shellwords"
 require_relative "lib/full_suite_gate"
 require_relative "lib/repo_root"
 require_relative "lib/ci_status"
@@ -238,9 +237,9 @@ end
 # Diff dir defaults to the agent's worktree (cwd's git toplevel) so a SATELLITE
 # task diffs the satellite, not the hub this script lives in; DOR_CHECK_DIFF_ROOT
 # overrides (deterministic tests against a temp repo). If git can't read the
-# working tree at all (no repo), we default to exempt WITH a warning — we only ever
-# ADD enforcement on a positively-known code diff, never on a guess, so a weird git
-# state can't false-block an otherwise-exempt chore.
+# working tree at all (no repo), the diff is INDETERMINATE and the merge gate
+# ENFORCES the tiers (resolve_branch_diff) — it never defaults to exempt. A gate
+# that cannot see must not wave things through.
 def diff_root
   RepoRoot.code_root(ENV["DOR_CHECK_DIFF_ROOT"], ROOT)
 end
@@ -324,6 +323,12 @@ end
 # fires on the pre-commit SOP order) UNION the committed view against the
 # release-aware base. Returns nil when git can't read the tree at all (no repo).
 def git_changed_files
+  return @git_changed_files if defined?(@git_changed_files)
+
+  @git_changed_files = compute_git_changed_files
+end
+
+def compute_git_changed_files
   root = diff_root
   base = diff_base(root)
   files = []
@@ -403,7 +408,8 @@ def review_fingerprint(root, branch)
     FullSuiteGate.fingerprint_of_ref(root, branch)
 end
 
-# The subset of changed files that ship testable code (under CODE_PATH_PREFIXES).
+# The subset of changed files that ships BEHAVIOR (CodeDiff's type-only rule:
+# everything that isn't provably prose or inert media). Empty == doc-only.
 def code_changed_files
   CodeDiff.code_files(changed_files)
 end
@@ -426,8 +432,21 @@ end
 # call (fits the gate's no-network ethos). git/path sources (the local-dev bridge)
 # don't match the `name, "version"` shape, so they're never flagged. Returns
 # [{name, constraint, locked}].
+
+# The gem guard READS Gemfile/Gemfile.lock CONTENT from diff_root, so its trigger
+# must come from that SAME tree — not from the PR's file list. When the diff was
+# resolved from the PR (:pr) the caller may be standing anywhere (a reviewer's
+# gate-zero runs from a primary checkout whose Gemfile/lock are release's own
+# self-consistent pair): "the PR touched Gemfile" + "the primary's Gemfile" is a
+# comparison of two unrelated trees — it can never fire truthfully, and could fire
+# on the REVIEWER's dirty Gemfile. The builder's submit run is unaffected: their
+# worktree IS the branch's tree, so the local view sees the Gemfile.
+def local_diff_files
+  @local_diff_files ||= diff_source == :injected ? changed_files : (git_changed_files || [])
+end
+
 def gem_constraint_violations
-  return [] unless changed_files.include?("Gemfile")
+  return [] unless local_diff_files.include?("Gemfile")
 
   root = diff_root
   gemfile = File.join(root, "Gemfile")
