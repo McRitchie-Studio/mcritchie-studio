@@ -39,12 +39,22 @@
 # the same scrub for the release gate's own spawn env — same SESSION_KEYS, same
 # nil-means-unset rule. That covers `bin/release`'s gate runs; it does nothing
 # for an agent running `bin/rails test` by hand in a worktree, which is what this
-# helper covers. The two are deliberately NOT shared code (one is Rails-side, one
-# must load in a bare minitest file) — but they MUST agree. Change one key list,
-# change the other.
+# helper covers.
+#
+# The two are deliberately NOT shared code: THIS file must load in a bare
+# minitest/autorun file with no Rails, so it cannot be the one to reach across.
+# The dependency runs ONE WAY — a TEST may require Release::GateEnv (it is PURE and
+# Rails-free by construction, exactly as bin/release.rb requires it), but production
+# code never reaches into test/. Hence two lists, which MUST agree.
+#
+# They are kept in lockstep MECHANICALLY, not on trust: SessionEnvTest
+# (test/lib/session_env_test.rb) requires Release::GateEnv and asserts the two lists
+# are EQUAL, so growing either one alone fails the suite.
 module SessionEnv
-  # The agent-session identity vars, exactly as Release::GateEnv::SESSION_KEYS
-  # names them. Keep the two lists in lockstep.
+  # The agent-session identity vars, exactly as Release::GateEnv::SESSION_KEYS names
+  # them. Add a key HERE and you must add it THERE — SessionEnvTest compares the two
+  # live lists and goes red otherwise. Everything below DERIVES from this list, so
+  # adding a key needs no other edit in this file.
   SESSION_KEYS = %w[CLAUDE_CODE_SESSION_ID CODEX_THREAD_ID].freeze
 
   # The bare overlay: every session var UNSET. Frozen — build variants with

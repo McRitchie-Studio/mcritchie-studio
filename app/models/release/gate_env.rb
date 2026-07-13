@@ -36,6 +36,19 @@ class Release
 
     # The agent-session identity vars. Every one is scrubbed for a gate run: CI
     # names no session, so neither may the gate.
+    #
+    # ⚠️ LOCKSTEP — ADDING A KEY HERE IS NOT ENOUGH. The test-side counterpart is
+    # SessionEnv (test/support/session_env.rb), which does the same scrub for the
+    # subprocess-spawning TESTS. The two are deliberately not shared code (SessionEnv
+    # must load in a bare `minitest/autorun` file with no Rails), and the dependency
+    # runs ONE way — a test may require THIS file, but this file must never reach
+    # into test/. So a key added here ALONE would be scrubbed for the gate and leak
+    # into every spawner test.
+    #
+    # That drift is caught mechanically, not on trust: SessionEnvTest
+    # (test/lib/session_env_test.rb) requires this constant and asserts the two lists
+    # are EQUAL, so growing either one alone fails the suite. Add the key to both
+    # lists and it goes green — no other test pins the list by literal.
     SESSION_KEYS = %w[CLAUDE_CODE_SESSION_ID CODEX_THREAD_ID].freeze
 
     # PURE. The env overlay a gate subprocess spawns under.

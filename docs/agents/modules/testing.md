@@ -44,10 +44,11 @@ If a lane fails, record the classification in task `qa_feedback`:
 - missing seed or test data
 - dependency ordering issue
 
-## A Test That Spawns A Subprocess Must Null The Agent Session
+## A Test Whose Child Resolves The Session Must Null It
 
-**The rule.** Any test that shells out — `Open3`, `IO.popen`, `Process.spawn`,
-backticks, `system` — must build the child's env through the shared neutralizer:
+**The rule.** A test that spawns a child able to resolve `SessionIdentity` —
+any `bin/` command, or anything else that reads the session env — must build
+the child's env through the shared neutralizer:
 
 ```ruby
 require_relative "../support/session_env"   # standalone minitest files
@@ -58,6 +59,13 @@ out = IO.popen(env, cmd, &:read)
 Open3.capture2(SessionEnv.neutralized, *cmd)            # bare overlay
 SessionEnv.neutralized("CLAUDE_CODE_SESSION_ID" => sid) # opt IN to a fake session
 ```
+
+Session-blind spawns are exempt: `git` reads no session var, so the tests that
+shell out to it (`fast_cert_test`, `repo_root_test`) rightly skip the
+neutralizer. Backticks and `%x` take no env hash at all — use them only for
+session-blind children, and switch to a spawner that can pass an env before the
+child grows session-aware. When unsure, neutralize. The one spawn that must stay
+bare is one that deliberately asserts session inheritance (`Release::GateEnvTest`).
 
 **Why.** An interactive Claude session exports `CLAUDE_CODE_SESSION_ID` (Codex:
 `CODEX_THREAD_ID`); **CI and a plain shell export neither.** A spawned `bin/task`,
@@ -77,12 +85,28 @@ from a live agent session.
 *presence* (`ENV.key?`, a shell's `${VAR+set}`) sees a session that isn't there.
 `SessionEnv.neutralized` normalizes a blank session override to unset for you.
 
-**Two neutralizers, one rule.** `SessionEnv` (`test/support/session_env.rb`)
-covers tests — including an agent running `bin/rails test` by hand in a worktree.
-`Release::GateEnv` (`app/models/release/gate_env.rb`) covers the release gate's
-own spawn env. They are deliberately not shared code (one must load in a bare
-`minitest/autorun` file with no Rails), but they **must agree** on the key list
-and the nil-means-unset semantics. Change one, change the other.
+**Two neutralizers, held in lockstep by a test — not by trust.** `SessionEnv`
+(`test/support/session_env.rb`) covers tests, including an agent running
+`bin/rails test` by hand in a worktree. `Release::GateEnv`
+(`app/models/release/gate_env.rb`) covers the release gate's own spawn env. They
+are deliberately not shared code — `SessionEnv` must load in a bare
+`minitest/autorun` file with no Rails — and the dependency runs **one way only**:
+a test may require `Release::GateEnv` (it is pure and Rails-free by construction,
+exactly as `bin/release.rb` requires it), but production code never reaches into
+`test/`.
+
+That leaves one real hazard, **drift between the two key lists**, and it is closed
+mechanically rather than by prose: `SessionEnvTest`
+(`test/lib/session_env_test.rb`) requires `Release::GateEnv`, asserts the two
+`SESSION_KEYS` lists are **equal**, and asserts every production key is genuinely
+absent from a spawned child. Add a key to **either** list alone and the suite goes
+red — so add it to both. Each side's nil-means-unset semantics is covered by its
+own test (`SessionEnvTest`, `Release::GateEnvTest`).
+
+**Pin a drift guard against the live constant, never a literal copy of the list.**
+A literal only pins the side it is written on, so the *other* side can grow a key
+while every check stays green — which is exactly the leak these helpers exist to
+prevent.
 
 ## Running Tests By Path Skips The Asset Build
 
