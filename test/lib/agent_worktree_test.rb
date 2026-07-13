@@ -233,6 +233,31 @@ class AgentWorktreeTest < Minitest::Test
                  "unclaimed is still reclaimable, or the sweep is silently wedged"
   end
 
+  # --- the held-desk PROSE must not invert under a substring test -------------------------
+  #
+  # The doctor/registry issue text for a held desk used to read "…; not a cleanup candidate".
+  # bin/qa-intake joins the issue list into ONE STRING and tests `include?("cleanup
+  # candidate")`, so the negation matched and the conductor's front door recommended
+  # `remove … --yes` for a desk with a LIVE builder at it — the exact incident this guard
+  # exists to prevent, re-entered through the one path that deliberately does not block.
+  #
+  # qa-intake now reads the structured verdict instead (pinned in qa_intake_command_test),
+  # but the phrase stays OUT of the negative branch regardless. Prose that inverts its
+  # meaning under a substring match is a landmine for the next consumer, and the answer this
+  # message carries is consumed to DESTROY. Belt and braces: fix the reader, disarm the text.
+  def test_the_held_desk_message_never_contains_the_phrase_cleanup_candidate
+    source = File.read(BIN)
+    held_line = source.lines.find { |line| line.include?("clean and landed on") }
+
+    refute_nil held_line, "the held-desk doctor message vanished — did it get renamed?"
+    refute_includes held_line, "cleanup candidate",
+                    "the HELD-desk message must not contain the phrase 'cleanup candidate' in any " \
+                    "form, negated or not: consumers substring-match this prose and a negation " \
+                    "reads as an affirmation, which nominates an occupied desk for teardown"
+    assert_includes held_line, "withheld from reclaim",
+                    "the held-desk message must still say plainly that the desk is off-limits"
+  end
+
   # --- 404 classification: only the API's OWN "task not found" means the task is gone ------
   #
   # bin/task renders every non-2xx as "<METHOD> <path> -> <code>: <body>", so matching the

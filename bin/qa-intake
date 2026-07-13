@@ -310,7 +310,15 @@ end
 def attention_action(worktree)
   base = base_ref_for(worktree)
   issues = Array(worktree["issues"]).join("; ")
-  return "run cleanup workflow after approval; branch is already contained in `#{base}`" if issues.include?("cleanup candidate")
+  # Never infer a DESTRUCTION recommendation from prose. `issues` is a joined string, so
+  # `include?` is a substring test: a desk whose issue reads "...; not a cleanup candidate"
+  # matched "cleanup candidate" and this printed `remove --yes` for a desk with a live
+  # builder at it — the very incident the reclaim guard exists to prevent, re-entered
+  # through the conductor's front door. The registry already carries the structured verdict
+  # (`cleanup_candidate` / `withheld_reason`); that is the only thing allowed to decide here.
+  withheld = worktree["withheld_reason"]
+  return "leave this desk alone — #{withheld}" if withheld.is_a?(String) && !withheld.strip.empty?
+  return "run cleanup workflow after approval; branch is already contained in `#{base}`" if truthy?(worktree["cleanup_candidate"])
   return "remove stale pidfiles or restart the stack with `bin/agent-worktree up #{worktree.fetch("app")} #{worktree.fetch("task")}`" if issues.include?("stale")
   return "rebase this worktree on `#{base}` before QA handoff" if issues.match?(BEHIND_BASE_ISSUE)
   return "commit or intentionally clear uncommitted changes" if issues.include?("dirty worktree")

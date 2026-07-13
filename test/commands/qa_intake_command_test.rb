@@ -83,6 +83,69 @@ class QaIntakeCommandTest < ActiveSupport::TestCase
     assert_equal "avi-ready", classify(clean_pr, worktree)
   end
 
+  # --- the occupied desk: never recommend destroying it --------------------
+  #
+  # qa-intake is the conductor's FRONT DOOR for destruction: it prints a
+  # `remove … --yes` per desk it calls a cleanup candidate, and `remove --yes` is the
+  # one path the reclaim guard deliberately does not block (it is the operator's
+  # override). So a wrong recommendation here destroys a live builder's desk even
+  # though every automatic path correctly withholds it.
+  #
+  # It used to decide by substring-matching the issue PROSE:
+  #   issues = Array(worktree["issues"]).join("; ")
+  #   ... if issues.include?("cleanup candidate")
+  # A held desk's issue reads "…; not a cleanup candidate" — which CONTAINS
+  # "cleanup candidate". The negation read as an affirmation. These tests pin the
+  # structured verdict (`cleanup_candidate` / `withheld_reason`) as the only input.
+
+  test "[unit] a withheld desk is never nominated for cleanup, even if its prose says 'cleanup candidate'" do
+    # The exact string the old code tripped on. If attention_action ever goes back to
+    # substring-matching prose, this goes red.
+    action = attention_action_for(held_worktree(
+      "issues" => ["clean and landed on origin/release, but held by a live builder claim " \
+                   "(reclaim-guard-live-claim) — builder heartbeat 8s ago; not a cleanup candidate"]
+    ))
+
+    refute_includes action, "run cleanup workflow",
+      "qa-intake recommended cleanup for a desk with a LIVE builder on it — the substring " \
+      "match on 'cleanup candidate' inverted the negation. This is the reclaim incident, " \
+      "re-entered through the conductor's front door."
+    refute_includes action, "remove"
+  end
+
+  test "[unit] a withheld desk's action names the reason and says to leave it alone" do
+    action = attention_action_for(held_worktree)
+
+    assert_includes action, "leave this desk alone"
+    assert_includes action, "live builder claim",
+      "the operator must be told WHY the desk is off-limits, not merely that it is"
+  end
+
+  test "[unit] a desk withheld for an UNREADABLE board is also not nominated" do
+    # The other withhold cause. A boolean named for the live-claim case would misreport
+    # this one; the reason string carries it.
+    action = attention_action_for(held_worktree(
+      "withheld_reason" => "bound to task foo, but the board record could not be read",
+      "issues" => ["clean and landed on origin/release, but the board record could not be read"]
+    ))
+
+    refute_includes action, "run cleanup workflow"
+    assert_includes action, "board record could not be read"
+  end
+
+  # Positive control: the guard must not pass by simply never nominating anything.
+  test "[unit] a genuinely free merged desk is still nominated for cleanup" do
+    action = attention_action_for(held_worktree(
+      "cleanup_candidate" => true,
+      "withheld_reason" => nil,
+      "issues" => ["branch is merged to origin/release and clean; cleanup candidate"]
+    ))
+
+    assert_includes action, "run cleanup workflow",
+      "a free, merged desk must still be offered for cleanup — otherwise this guard " \
+      "is just a disabled feature wearing a safety label"
+  end
+
   # --- end-to-end through bin/qa-intake --json -----------------------------
 
   test "[integration] qa-intake queues a clean behind-base PR as avi-ready" do
@@ -216,6 +279,27 @@ class QaIntakeCommandTest < ActiveSupport::TestCase
       "health" => "down",
       "issues" => [BEHIND_ISSUE]
     }
+  end
+
+  # A desk that is clean and landed on base — so cleanup_ready? says yes — but is HELD:
+  # a builder is sitting at it with a live claim. Structurally identical to a reclaimable
+  # desk; only the claim tells them apart.
+  def held_worktree(overrides = {})
+    {
+      "label" => "mcritchie-studio/reclaim-guard-live-claim",
+      "app" => "mcritchie-studio", "task" => "reclaim-guard-live-claim",
+      "branch" => "feat/reclaim-guard-live-claim", "base_ref" => "origin/release",
+      "dirty" => false, "merged_to_origin_main" => true,
+      "cleanup_candidate" => false,
+      "withheld_reason" => "held by a live builder claim (reclaim-guard-live-claim) — " \
+                           "builder heartbeat 8s ago (lease TTL 120s)",
+      "ahead_origin_main" => "0", "behind_origin_main" => "0",
+      "issues" => []
+    }.merge(overrides)
+  end
+
+  def attention_action_for(worktree)
+    eval_intake("puts attention_action(worktree)", clean_pr, worktree).strip
   end
 
   def classify(pr, worktree)

@@ -69,10 +69,18 @@ just candidate selection:
   `doctor`, **and** the registry snapshot. The registry is the conductor's front door
   (`bin/qa-intake` builds its Cleanup Candidates section straight off `cleanup_candidate`
   and prints a `remove … --yes` for each), so a disagreement there means everyone believes
-  a desk is protected while the front door still recommends tearing it down. A
-  `withheld_by_live_claim` field says so explicitly. (An earlier cut had a `reclaimable?`
-  helper that *nothing called* while the three sites re-implemented the conjunction inline
-  — the invariant has to be carried by a function the paths actually use.)
+  a desk is protected while the front door still recommends tearing it down. The registry
+  carries the verdict as a `withheld_reason` **string** — not a `withheld_by_live_claim`
+  boolean, which would misname the board-outage case as a live builder. (An earlier cut had
+  a `reclaimable?` helper that *nothing called* while the three sites re-implemented the
+  conjunction inline — the invariant has to be carried by a function the paths actually use.)
+- **Consumers read the verdict, never the prose.** `bin/qa-intake` decides its cleanup
+  recommendation from `cleanup_candidate`/`withheld_reason`, not by substring-matching the
+  issue text. It used to join the issue list and test `include?("cleanup candidate")` — so a
+  desk whose issue read *"…; **not** a cleanup candidate"* matched, and the conductor's front
+  door recommended `remove --yes` on a desk with a live builder at it. A negation that
+  inverts under a substring test is a landmine wherever the answer is consumed to destroy;
+  the held-desk text now says "withheld from reclaim" and never contains the phrase at all.
 - **Re-verified under the lock.** `--reclaim --yes` re-reads the claim immediately before
   each irreversible teardown, bypassing the per-slug memo. The candidate list is computed
   once, but teardowns run serially inside the lock, so a builder who sits down and claims a

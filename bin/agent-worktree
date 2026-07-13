@@ -1875,9 +1875,17 @@ def doctor_issues(app = nil)
     # Doctor must not call a held desk a "cleanup candidate" either — that is the same
     # misleading nomination the registry used to make, just in advisory prose. Same
     # predicate; quiet (a read-only report should not warn).
+    #
+    # The held text must not contain the phrase "cleanup candidate" AT ALL, even negated.
+    # Consumers substring-match this prose (bin/qa-intake joins the issue list and tests
+    # `include?`), so "not a cleanup candidate" READ AS a cleanup candidate and the
+    # conductor's front door recommended tearing down a desk with a live builder at it.
+    # qa-intake now reads the structured verdict instead, but the phrase stays out of the
+    # negative branch regardless: a message that inverts its meaning under a substring test
+    # is a landmine for the next consumer, and this one destroys desks.
     candidate, hold_reason = reclaim_verdict(record)
     if hold_reason
-      issues << [label, "clean and landed on #{base}, but #{hold_reason}; not a cleanup candidate"]
+      issues << [label, "clean and landed on #{base}, but #{hold_reason}; withheld from reclaim"]
     elsif candidate
       message = record[:merged] ? "branch is merged to #{base} and clean; cleanup candidate" : "branch final diff matches #{base}; likely squash-merged cleanup candidate"
       issues << [label, message]
@@ -2529,11 +2537,17 @@ end
 # and a fast-forward-merged one are git-identical (clean, HEAD == base, 0-ahead), so
 # cleanup_ready? alone cannot tell them apart.
 #
-# Fail-open: an unbound task, an unreadable board, or a lapsed claim all yield nil
-# (reclaimable), so a board hiccup never wedges cleanup — only a confirmed live claim
-# withholds a desk. But fail-open on a path that destroys a desk must not be silent, so
-# every branch that gives up on checking says so when `announce` is set (the destructive
-# and cleanup-intent paths set it; the registry/doctor reads stay quiet).
+# Withholds (returns a reason) in TWO cases, not one:
+#   - a confirmed LIVE claim — a builder is at the desk; and
+#   - a bound task whose board record could NOT be read — we know the desk could be
+#     claimed and failed to find out, so we cannot verify it is free. Board outages and
+#     mass-reclaim are correlated (the board 500s under the same parallel-devops load that
+#     spawns many worktrees), so failing open here reopens the incident precisely when
+#     everyone believes it is covered.
+# Fail-open (nil ⇒ reclaimable) survives only where it is FORCED or CORRECT: an unbound
+# task (no slug, nothing to look up) and a lapsed claim (we checked; the builder is gone).
+# Every branch that gives up on checking says so when `announce` is set — a guard that
+# silently disables itself is worse than no guard.
 def claim_hold(record, fresh: false, announce: false)
   # nil-safe: a record without :env must not raise into the rescue below — that would
   # silently disable the guard on a destructive path, the exact failure the warnings exist
