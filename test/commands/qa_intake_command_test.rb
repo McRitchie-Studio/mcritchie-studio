@@ -126,6 +126,138 @@ class QaIntakeCommandTest < ActiveSupport::TestCase
     assert_equal "missing-local-branch", pr.fetch("status")
   end
 
+  # --- the occupied desk: its own label, not the generic attention bucket --
+  #
+  # The reclaim guard (task reclaim-guard-live-claim) writes a structured verdict
+  # into the worktree registry: `withheld_reason` is the reason a git-eligible desk
+  # was withheld from reclaim (a live builder claim, or a board record that could
+  # not be read), nil when the desk is free. Before this feature, qa-intake never
+  # consumed it, so a withheld desk fell through to the generic attention bucket
+  # ("inspect listed issues and assign back to the owning agent") — strictly safe,
+  # but unlabeled. These tests pin the label: an occupied desk is classified
+  # `occupied`, leaves the attention bucket, and its action says to leave it alone,
+  # quoting the registry's reason verbatim (the reason string — not a paraphrase —
+  # is what distinguishes a live builder from an unreadable board).
+
+  test "[unit] a withheld desk is labeled occupied and leaves the attention bucket" do
+    intake = intake_for([occupied_worktree])
+
+    occupied = intake.fetch("occupied")
+    assert_equal 1, occupied.size, "the withheld desk must land in the occupied bucket"
+    assert_equal "occupied", occupied.first.fetch("status")
+    assert_empty intake.fetch("attention"),
+      "an occupied desk must leave the generic attention bucket — 'inspect listed " \
+      "issues and assign back to the owning agent' invites action on a desk whose " \
+      "only correct action is to leave it alone"
+    assert_empty intake.fetch("cleanup_candidates")
+    assert_equal 1, intake.dig("summary", "occupied_desks")
+  end
+
+  test "[unit] the occupied action says leave this desk alone and quotes the reason" do
+    intake = intake_for([occupied_worktree])
+    action = intake.fetch("occupied").first.fetch("action")
+
+    assert action.start_with?("occupied — "), "the label must lead the action, got: #{action}"
+    assert_includes action, "leave this desk alone"
+    assert_includes action, "held by a live builder claim (occupied-desk-demo)",
+      "the registry's reason must be quoted verbatim so the operator sees WHY " \
+      "(live claim with heartbeat age vs. unreadable board)"
+  end
+
+  # ABSENT-FIELD DEGRADATION (explicit, load-bearing): a registry written by
+  # pre-guard bin/agent-worktree has no `withheld_reason` key at all. Intake must
+  # behave exactly as it did before this feature — the desk stays in the generic
+  # attention bucket and the occupied bucket is empty — so the merge order between
+  # the guard PR and this consumer cannot break intake.
+  test "[unit] a registry without withheld_reason degrades to today's generic attention" do
+    legacy = occupied_worktree.tap { |worktree| worktree.delete("withheld_reason") }
+    intake = intake_for([legacy])
+
+    assert_empty intake.fetch("occupied"),
+      "no field means no occupied verdict — pre-guard registries must be a no-op"
+    assert_equal 0, intake.dig("summary", "occupied_desks")
+    attention = intake.fetch("attention")
+    assert_equal 1, attention.size, "the desk must fall back to the attention bucket, as before"
+    assert_equal "inspect listed issues and assign back to the owning agent",
+      attention.first.fetch("action"),
+      "the pre-feature generic action must be preserved for pre-guard registries"
+  end
+
+  test "[unit] a blank or non-string withheld_reason does not mark a desk occupied" do
+    ["", "   ", true, 7].each do |value|
+      intake = intake_for([occupied_worktree.merge("withheld_reason" => value)])
+
+      assert_empty intake.fetch("occupied"),
+        "withheld_reason=#{value.inspect} is not a reason; the desk must degrade to " \
+        "attention, never gain a label from a malformed field"
+      assert_equal 1, intake.fetch("attention").size
+    end
+  end
+
+  test "[integration] qa-intake --json splits occupied desks from attention" do
+    registry = write_registry_with_occupied_desk
+
+    out, err, status = Open3.capture3(
+      SessionEnv.neutralized("PROJECTS_DIR" => @projects_dir),
+      RbConfig.ruby, @script, "--registry", registry, "--apps", "mcritchie-studio", "--no-gh", "--json",
+      chdir: @projects_dir
+    )
+
+    assert status.success?, "#{out}\n#{err}"
+    intake = JSON.parse(out)
+
+    occupied = intake.fetch("occupied")
+    assert_equal ["mcritchie-studio/occupied-desk-demo"], occupied.map { |worktree| worktree.fetch("label") }
+    assert_equal "occupied", occupied.first.fetch("status")
+    assert_includes occupied.first.fetch("action"), "leave this desk alone"
+
+    attention_labels = intake.fetch("attention").map { |worktree| worktree.fetch("label") }
+    refute_includes attention_labels, "mcritchie-studio/occupied-desk-demo",
+      "the occupied desk must not double-report in attention"
+    assert_includes attention_labels, "mcritchie-studio/dirty-desk-demo",
+      "other attention desks must be untouched by the occupied split"
+
+    assert_empty intake.fetch("cleanup_candidates")
+    assert_equal 1, intake.dig("summary", "occupied_desks")
+  end
+
+  test "[integration] qa-intake text output prints the Occupied Desks section" do
+    registry = write_registry_with_occupied_desk
+
+    out, err, status = Open3.capture3(
+      SessionEnv.neutralized("PROJECTS_DIR" => @projects_dir),
+      RbConfig.ruby, @script, "--registry", registry, "--apps", "mcritchie-studio", "--no-gh",
+      chdir: @projects_dir
+    )
+
+    assert status.success?, "#{out}\n#{err}"
+    assert_includes out, "Occupied Desks"
+    assert_includes out, "[occupied] mcritchie-studio/occupied-desk-demo"
+    assert_includes out, "held by a live builder claim (occupied-desk-demo)"
+
+    attention_section = out[/Worktree Attention.*?(?=\nCleanup Candidates|\nOccupied Desks|\z)/m].to_s
+    refute_includes attention_section, "occupied-desk-demo",
+      "the occupied desk must leave the Worktree Attention section"
+  end
+
+  test "[integration] pre-guard registry yields no Occupied Desks section" do
+    registry = write_registry_with_occupied_desk(withheld_reason: :omit)
+
+    out, err, status = Open3.capture3(
+      SessionEnv.neutralized("PROJECTS_DIR" => @projects_dir),
+      RbConfig.ruby, @script, "--registry", registry, "--apps", "mcritchie-studio", "--no-gh",
+      chdir: @projects_dir
+    )
+
+    assert status.success?, "#{out}\n#{err}"
+    refute_includes out, "Occupied Desks",
+      "a registry written by pre-guard code must produce the pre-feature output shape"
+    attention_section = out[/Worktree Attention.*?(?=\nCleanup Candidates|\z)/m].to_s
+    assert_includes attention_section, "occupied-desk-demo",
+      "without the field, the desk must fall back to Worktree Attention exactly as before"
+    assert_includes attention_section, "inspect listed issues and assign back to the owning agent"
+  end
+
   private
 
   def build_repo(slug = "mcritchie-studio")
@@ -246,5 +378,76 @@ class QaIntakeCommandTest < ActiveSupport::TestCase
     )
     assert status.success?, "#{out}\n#{err}"
     out
+  end
+
+  # A desk withheld from reclaim, as the reclaim guard's registry writes it: clean,
+  # landed on base (git-eligible), NOT a cleanup candidate, and carrying the
+  # structured `withheld_reason` verdict. The `issues` prose mirrors what
+  # bin/agent-worktree's doctor emits for a held desk; qa-intake must decide from the
+  # field, never that prose.
+  def occupied_worktree(overrides = {})
+    {
+      "label" => "mcritchie-studio/occupied-desk-demo",
+      "app" => "mcritchie-studio", "task" => "occupied-desk-demo",
+      "worktree" => File.join(@projects_dir, "wt-occupied"), "health" => "running",
+      "branch" => "feat/occupied-desk-demo", "head" => "abc1234", "base_ref" => "origin/release",
+      "dirty" => false, "merged_to_origin_main" => true, "cleanup_candidate" => false,
+      "withheld_reason" => "held by a live builder claim (occupied-desk-demo) — " \
+                           "builder heartbeat 8s ago (lease TTL 120s)",
+      "ahead_origin_main" => "0", "behind_origin_main" => "0",
+      "issues" => ["clean and landed on origin/release, but held by a live builder claim " \
+                   "(occupied-desk-demo) — builder heartbeat 8s ago (lease TTL 120s); withheld from reclaim"]
+    }.merge(overrides)
+  end
+
+  def dirty_worktree_fixture
+    {
+      "label" => "mcritchie-studio/dirty-desk-demo",
+      "app" => "mcritchie-studio", "task" => "dirty-desk-demo",
+      "worktree" => File.join(@projects_dir, "wt-dirty"), "health" => "down",
+      "branch" => "feat/dirty-desk-demo", "head" => "def5678", "base_ref" => "origin/release",
+      "dirty" => true, "merged_to_origin_main" => false, "cleanup_candidate" => false,
+      "ahead_origin_main" => "1", "behind_origin_main" => "0",
+      "issues" => ["dirty worktree"]
+    }
+  end
+
+  # Registry fixture holding one occupied desk and one ordinary attention desk.
+  # `withheld_reason: :omit` drops the field entirely — the exact shape a pre-guard
+  # bin/agent-worktree writes — for the absent-field degradation tests.
+  def write_registry_with_occupied_desk(withheld_reason: :keep)
+    occupied = occupied_worktree
+    occupied.delete("withheld_reason") if withheld_reason == :omit
+
+    path = File.join(@projects_dir, ".agents", "occupied-registry.json")
+    FileUtils.mkdir_p(File.dirname(path))
+    File.write(path, "#{JSON.pretty_generate(
+      "generated_at" => "2026-07-13T00:00:00Z",
+      "apps" => [{
+        "slug" => "mcritchie-studio", "display_name" => "McRitchie Studio",
+        "repo" => File.join(@projects_dir, "mcritchie-studio"), "primary_port" => 3000,
+        "range_start" => 3000, "range_end" => 3099, "status" => "active"
+      }],
+      "summary" => {},
+      "worktrees" => [occupied, dirty_worktree_fixture]
+    )}\n")
+    path
+  end
+
+  # Run build_intake against fixture worktrees in a hermetic subprocess (same `load`
+  # pattern as eval_intake) and parse the intake JSON it produces.
+  def intake_for(worktrees)
+    snippet = <<~RUBY
+      require "json"
+      load #{@script.inspect}
+      worktrees = JSON.parse(#{JSON.generate(worktrees).inspect})
+      puts JSON.generate(build_intake({}, [], [], worktrees, []))
+    RUBY
+    out, err, status = Open3.capture3(
+      SessionEnv.neutralized("PROJECTS_DIR" => @projects_dir, "PATH" => ENV.fetch("PATH", "")),
+      RbConfig.ruby, "-e", snippet
+    )
+    assert status.success?, "#{out}\n#{err}"
+    JSON.parse(out)
   end
 end
