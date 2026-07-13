@@ -72,8 +72,13 @@ serial*.
    partial release candidate — merged onto `release`, but never gated, deployed, or
    assembled. It sat there unnoticed.)
 
-   **Recovery: re-run `bin/release prepare --yes`.** It is self-healing — but only
-   a live terminal can run it.
+   **Recovery — diagnose before you re-run.** If the sweep was **INTERRUPTED** (no
+   verdict — it detached, crashed, timed out): **re-run `bin/release prepare
+   --yes`**; it is self-healing, and only a live terminal can run it. If it
+   **ABORTED** (a verdict — red pre-QA gate, failed QA boot): **fix or eject the
+   offender FIRST**, because a bare re-run re-deploys the same member code and goes
+   red again. The full abort table is in
+   [`../../steffon/sops/qa-release.md`](../../steffon/sops/qa-release.md).
 3. **Ship** — MUTATION, so DIRECT-DRIVE `bin/release ship --yes` from THIS
    session. Do NOT wrap the ship in a subagent: it is the one irreversible gate,
    and a wrapper agent that dies mid-ship would orphan the `release → main` state

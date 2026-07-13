@@ -41,10 +41,14 @@ direct-drive for exactly this reason — the lesson simply had not been generali
 
 Two corollaries worth knowing before you need them:
 
-- **The conductor's mutating commands are self-healing.** `bin/release prepare`,
-  `ship`, and `archive` are idempotent and resume: they skip work already stamped
-  (`merged: release` / `merged: main`), and stage stamps are first-write-wins. **A
-  re-run is the recovery path**, not a risk.
+- **The conductor's mutating commands are self-healing — for an INTERRUPTION.**
+  `bin/release prepare`, `ship`, and `archive` are idempotent and resume: they skip
+  work already stamped (`merged: release` / `merged: main`), and stage stamps are
+  first-write-wins. So when a run is cut short with no verdict, **a re-run is the
+  recovery path**, not a risk. But an **ABORT** is the opposite case: the command
+  reached a verdict and refused (a red gate, a failed QA boot), and a re-run would
+  re-test the same code and fail the same way. Fix or eject the cause first. Each
+  act's SOP carries its own abort table.
 - **Sub-agent-tree visibility is never a reason to delegate a mutation.** The tree
   is ephemeral and the autonomous heartbeat renders none at all. The durable
   surface is the Activities timeline — narrate the act there.
