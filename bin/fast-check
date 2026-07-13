@@ -29,7 +29,20 @@
 #
 # Lanes run from the repo root (the agent's worktree via RepoRoot, so a satellite
 # task certifies the satellite):
-#   test-db-prepare : bin/rails db:test:prepare   (abort on red — no polluted cert)
+#   test-prepare    : bin/rails db:test:prepare test:prepare  (abort on red — no
+#                     polluted cert). BOTH tasks, in one boot: the test DB, and Rails'
+#                     test:prepare hook, which is what builds the gitignored
+#                     app/assets/builds/tailwind.css. The lanes below pass explicit test
+#                     PATHS, and Rails skips its own test:prepare whenever an argument
+#                     looks like a path — so on a virgin worktree nothing would ever
+#                     build the CSS and every view-rendering test would error with `The
+#                     asset "tailwind.css" is not present in the asset pipeline`. (An
+#                     ARGLESS `bin/rails test` — CI, bin/full-suite-check — fires the hook
+#                     for free, which is why THIS lane was the first to break. The release
+#                     gate workspaces were the other path-arg victim; fixed by
+#                     gate-workspace-skips-test-prepare (PR #522): prepare_gate_workspace!
+#                     now runs db:test:prepare test:prepare itself, whatever shape the
+#                     registered command takes. See docs/agents/modules/testing.md.)
 #   mapped-tests    : bin/rails test <mapped files>      (skipped when none map)
 #   spine           : bin/rails test <spine entries>
 #   rubocop-changed : bin/rubocop <changed lintable files> (skipped when none)
@@ -61,8 +74,9 @@
 #   FAST_CHECK_ROOT                repo dir to run + fingerprint in (default: the
 #                                  cwd's git toplevel, else this repo)
 #   FAST_CHECK_SPINE               spine config path (default: config/fast_cert_spine.yml)
-#   FAST_CHECK_TEST_DB_RESET_CMD   override the test-db lane (default: bin/rails db:test:prepare)
-#   FAST_CHECK_SKIP_TEST_DB_RESET  set to 1 only for non-Rails harness tests
+#   FAST_CHECK_TEST_PREPARE_CMD    override the test-prepare lane — test DB + bundled
+#                                  assets (default: bin/rails db:test:prepare test:prepare)
+#   FAST_CHECK_SKIP_TEST_PREPARE   set to 1 only for non-Rails harness tests
 #   FAST_CHECK_TEST_CMD            test runner prefix (default: bin/rails test)
 #   FAST_CHECK_RUBOCOP_CMD         rubocop prefix (default: bin/rubocop)
 #   FAST_CHECK_TASK_BIN            board CLI (default: bin/task; tests stub it)
@@ -128,8 +142,22 @@ end
 
 test_cmd = ENV.fetch("FAST_CHECK_TEST_CMD", "bin/rails test")
 rubocop_cmd = ENV.fetch("FAST_CHECK_RUBOCOP_CMD", "bin/rubocop")
-test_db_reset_cmd = ENV.fetch("FAST_CHECK_TEST_DB_RESET_CMD", "bin/rails db:test:prepare")
-skip_test_db_reset = ENV.fetch("FAST_CHECK_SKIP_TEST_DB_RESET", "") == "1"
+# The prepare lane is db:test:prepare AND test:prepare, in one boot. test:prepare is
+# Rails' standard pre-test hook, which tailwindcss-rails enhances with tailwindcss:build
+# (cssbundling/jsbundling enhance it the same way) — it is what BUILDS the gitignored
+# app/assets/builds/tailwind.css. An ARGLESS `bin/rails test` runs that hook itself, which
+# is why CI and bin/full-suite-check are green on a virgin tree (the release gate
+# workspaces prep their own env the same way since gate-workspace-skips-test-prepare,
+# PR #522; see docs/agents/modules/testing.md) — but THIS cert's lanes pass explicit test paths, and
+# Rails::Command::TestCommand
+# runs the hook only `if self.args.none?(EXACT_TEST_ARGUMENT_PATTERN)`, so a path argument
+# SKIPS it. db:test:prepare alone does not build the CSS either (tailwindcss enhances it
+# only as a fallback, when test:prepare is undefined — it never is). Without this, every
+# view-rendering test in a fresh worktree errored `The asset "tailwind.css" is not present
+# in the asset pipeline`: a RED G1 cert on a docs-only or ci.yml-only diff. A cert that
+# reports an ENV GAP as a test regression is lying — so the cert closes the gap itself.
+test_prepare_cmd = ENV.fetch("FAST_CHECK_TEST_PREPARE_CMD", "bin/rails db:test:prepare test:prepare")
+skip_test_prepare = ENV.fetch("FAST_CHECK_SKIP_TEST_PREPARE", "") == "1"
 
 # Best-effort G1 gate-run markers + cert checkpoint + checks_run read: shared
 # with bin/full-suite-check (CertEmission), parameterized on this script's
@@ -167,10 +195,14 @@ gate_slug = options[:print] ? nil : slug
 emit_cert_checkpoint(slug, "started") unless options[:print]
 emit_gate(gate_slug, "open", "task", gate_slug.to_s, "g1_cert") if gate_slug
 
-unless skip_test_db_reset
-  reset_ok = run_lane("test-db-prepare", test_db_reset_cmd, root, env: { "RAILS_ENV" => "test" }, gate_slug: gate_slug)
-  unless reset_ok
-    warn "fast-check: test database prepare failed; not certifying against a broken test DB."
+unless skip_test_prepare
+  prepare_ok = run_lane("test-prepare", test_prepare_cmd, root, env: { "RAILS_ENV" => "test" },
+                        gate_slug: gate_slug)
+  unless prepare_ok
+    warn "fast-check: test-env prepare failed — see the output above. USUALLY an ENV gap (the test " \
+         "DB, or the bundled-asset build), NOT a regression in your diff; but a broken stylesheet " \
+         "IN your diff (a bad @apply, an unknown utility, a malformed @theme) fails this lane too. " \
+         "Nothing certified; fix it and re-run."
     emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
     exit 1
   end

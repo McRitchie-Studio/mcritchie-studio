@@ -125,7 +125,7 @@ class FastCheckTest < Minitest::Test
       "FAST_CHECK_ROOT" => dir,
       "FAST_CHECK_DIFF_BASE" => "HEAD",
       "FAST_CHECK_SPINE" => File.join(dir, "spine.yml"),
-      "FAST_CHECK_TEST_DB_RESET_CMD" => "true",
+      "FAST_CHECK_TEST_PREPARE_CMD" => "true",
       "FAST_CHECK_TEST_CMD" => "#{lane.shellescape} TEST",
       "FAST_CHECK_RUBOCOP_CMD" => "#{lane.shellescape} RUBOCOP",
       "FAST_CHECK_GATE_BIN" => gate,
@@ -219,12 +219,84 @@ class FastCheckTest < Minitest::Test
     end
   end
 
-  def test_db_prepare_failure_aborts_before_any_lane
+  def test_test_prepare_failure_aborts_before_any_lane
     with_repo do |dir, _|
-      out, code, lines = run_check(dir, extra_env: { "FAST_CHECK_TEST_DB_RESET_CMD" => "false" })
+      out, code, lines = run_check(dir, extra_env: { "FAST_CHECK_TEST_PREPARE_CMD" => "false" })
       assert_equal 1, code, out
-      assert_empty lane_calls(lines, "TEST"), "no lane runs against a broken test DB"
+      assert_empty lane_calls(lines, "TEST"), "no lane runs against an unprepared test env"
       refute_match(/\[fast-cert@/, out)
+    end
+  end
+
+  # --- [unit] the virgin-tree bundled-asset regression -------------------------------
+  #
+  # A fake `bin/rails` that models the two Rails behaviours this cert depends on:
+  #
+  #   1. `test:prepare` is the hook a CSS/JS bundler enhances to BUILD its artifact
+  #      (tailwindcss-rails: `Rake::Task["test:prepare"].enhance(["tailwindcss:build"])`).
+  #      NOTHING else builds it -- `db:test:prepare` does not (tailwindcss enhances it
+  #      only as a FALLBACK, when test:prepare is undefined).
+  #   2. Propshaft raises "The asset ... is not present in the asset pipeline" when a
+  #      view's stylesheet_link_tag target was never built.
+  #
+  # The fake fails its `test` lane ONLY on the missing artifact -- never on the paths --
+  # so the test reproduces the exact production symptom (a virgin worktree, where the
+  # gitignored app/assets/builds/ holds nothing but .keep) and nothing else.
+  def write_fake_rails(dir)
+    rails = File.join(dir, "bin", "rails")
+    FileUtils.mkdir_p(File.dirname(rails))
+    File.write(rails, <<~RUBY)
+      #!#{RbConfig.ruby}
+      require "fileutils"
+      built = File.join(Dir.pwd, "app/assets/builds/tailwind.css")
+      File.open(ENV.fetch("STUB_LOG"), "a") { |f| f.puts(["RAILS", *ARGV].join("\\t")) }
+      if ARGV.include?("test:prepare")
+        FileUtils.mkdir_p(File.dirname(built))
+        File.write(built, "/* built by the test:prepare hook */")
+      end
+      if ARGV.first == "test" && !File.exist?(built)
+        warn 'The asset "tailwind.css" is not present in the asset pipeline.'
+        exit 1
+      end
+      exit 0
+    RUBY
+    FileUtils.chmod("+x", rails)
+  end
+
+  # Regression (build-assets-on-worktree-bringup): fast-check's test lanes pass EXPLICIT
+  # FILE PATHS, and Rails SKIPS its own test:prepare whenever an argument looks like a
+  # path -- Rails::Command::TestCommand runs it only `if self.args.none?(
+  # EXACT_TEST_ARGUMENT_PATTERN)`. So the bundler hook that an ARGLESS `bin/rails test`
+  # fires for free (CI, bin/full-suite-check -- all green; the release gate workspaces
+  # prep their own env since gate-workspace-skips-test-prepare, PR #522) never fires
+  # here, and on a virgin worktree every
+  # view-rendering test errored with
+  # `The asset "tailwind.css" is not present in the asset pipeline`: ~77 red on a
+  # ci.yml-only or docs-only diff. A G1 cert that reports an ENV GAP as a test
+  # regression is lying, so the cert must run test:prepare ITSELF.
+  #
+  # Note this deliberately does NOT stub FAST_CHECK_TEST_PREPARE_CMD / FAST_CHECK_TEST_CMD
+  # (a nil value UNSETS the var for the child): the DEFAULT lane commands are the thing
+  # under test — the bug lived in the default.
+  def test_prepare_lane_builds_bundled_assets_before_the_path_arg_test_lanes
+    with_repo do |dir, _|
+      write_fake_rails(dir)
+      out, code, lines = run_check(dir, extra_env: {
+                                     "FAST_CHECK_TEST_PREPARE_CMD" => nil, # use the real default
+                                     "FAST_CHECK_TEST_CMD" => nil,         # use the real default
+                                     "FAST_CHECK_RUBOCOP_CMD" => "true"
+                                   })
+      rails = lines.select { |l| l[0] == "RAILS" }.map { |l| l[1..] }
+
+      assert_equal ["db:test:prepare", "test:prepare"], rails[0],
+                   "the prepare lane must run Rails' test:prepare hook (which builds the bundled " \
+                   "CSS) as well as the test DB prepare — the path-arg test lanes below will not"
+      assert_path_exists File.join(dir, "app/assets/builds/tailwind.css"),
+                         "prepare must leave the bundled asset on disk for the lanes that follow"
+      assert_equal ["test", "test/models/widget_test.rb"], rails[1], "mapped lane still runs by path"
+      assert_equal ["test", "test/models/spine_core_test.rb"], rails[2], "spine lane still runs by path"
+      assert_equal 0, code, "a virgin tree must certify GREEN, not red on a missing asset:\n#{out}"
+      assert_match(/\A\[fast-cert@/, out)
     end
   end
 
@@ -284,7 +356,7 @@ class FastCheckTest < Minitest::Test
                    "open + one sop per lane + a self-close on green (cert owns g1_cert now, " \
                    "not dor-check): #{gate.inspect}"
       sop_names = gate.select { |l| l[1] == "sop" }.map { |l| l[l.index("--sop") + 1] }
-      assert_equal %w[test-db-prepare mapped-tests spine rubocop-changed], sop_names
+      assert_equal %w[test-prepare mapped-tests spine rubocop-changed], sop_names
       close = gate.find { |l| l[1] == "close" }
       assert_includes close, "--success", "the green cert closes g1_cert success itself"
       assert(gate.all? { |l| l[2] == "task" && l[3] == "task-x" && l[4] == "g1_cert" })

@@ -869,24 +869,52 @@ def write_test_env_local(dir, values)
   ENVFILE
 end
 
-# Set up the worktree TEST database via db:test:prepare. Must be db:test:prepare
-# (NOT db:schema:load): it leaves the base test DB in a state where minitest's
-# parallel workers can clone their per-worker DBs. A schema:load'd test DB
-# DEADLOCKS the first parallel `bin/rails test` at worker-DB setup, and is what
-# surfaced the transient `before_setup` fixture errors on a fresh worktree.
-# Also (re)writes .env.test.local so a plain `bin/rails test` resolves to this DB.
-def prepare_test_db(dir, app, values)
-  return unless test_database_url(values)
-
-  write_test_env_local(dir, values)
-  sh("bin/rails", "db:test:prepare", chdir: dir, env: test_command_env(app, values), allow_fail: true)
+# Prepare the worktree's TEST environment: the isolated test DB *and* the bundled
+# assets, in ONE rails boot.
+#
+# db:test:prepare — must be db:test:prepare (NOT db:schema:load): it leaves the base
+# test DB in a state where minitest's parallel workers can clone their per-worker DBs.
+# A schema:load'd test DB DEADLOCKS the first parallel `bin/rails test` at worker-DB
+# setup, and is what surfaced the transient `before_setup` fixture errors on a fresh
+# worktree. Also (re)writes .env.test.local so a plain `bin/rails test` resolves here.
+#
+# test:prepare — Rails' standard pre-test hook, which tailwindcss-rails enhances with
+# `tailwindcss:build` (cssbundling/jsbundling enhance it the same way). It is what
+# BUILDS app/assets/builds/tailwind.css, and that directory is GITIGNORED — a virgin
+# worktree has nothing but .keep in it. db:test:prepare does NOT build it (tailwindcss
+# falls back to enhancing db:test:prepare only when test:prepare is undefined, which it
+# never is in a Rails app), and neither does a test run that passes explicit paths:
+# Rails::Command::TestCommand runs the prepare task only `if self.args.none?(
+# EXACT_TEST_ARGUMENT_PATTERN)`, so `bin/rails test test/models/x_test.rb` SKIPS it while
+# an argless `bin/rails test` (CI, bin/full-suite-check) gets it for free. (The release
+# gate workspaces prep their own env the same way as this method — `db:test:prepare
+# test:prepare` in prepare_gate_workspace! since PR #522.)
+# Without this, `bin/agent-worktree test <app> <task> <file>` and every
+# bin/fast-check lane went red on a fresh worktree with `The asset "tailwind.css" is not
+# present in the asset pipeline` — a false-red G1 cert on a diff that never touched a view.
+# Named "prepare the test ENV", not "the test DB", because it is now both.
+#
+# The asset build is deliberately NOT gated on the test DB: a worktree with no
+# derivable test DB still renders views, and gating the CSS build behind a DATABASE
+# concern is exactly how this bug would creep back in. No test DB → we skip only
+# db:test:prepare, and still build.
+def prepare_test_env(dir, app, values)
+  tasks = []
+  if test_database_url(values)
+    write_test_env_local(dir, values)
+    tasks << "db:test:prepare"
+  end
+  tasks << "test:prepare"
+  sh("bin/rails", *tasks, chdir: dir, env: test_command_env(app, values), allow_fail: true)
 end
 
 def prepare_rails(dir, app, values)
   env = command_env(app, values)
   sh("bin/rails", "db:prepare", chdir: dir, env: env)
-  prepare_test_db(dir, app, values)
-  sh("bin/rails", "tailwindcss:build", chdir: dir, env: env, allow_fail: true)
+  # No separate tailwindcss:build here: prepare_test_env's test:prepare already builds
+  # app/assets/builds/tailwind.css, unconditionally, and the compiled CSS is the same
+  # file whatever RAILS_ENV compiled it — a second dev-env build would be pure duplicate work.
+  prepare_test_env(dir, app, values)
 end
 
 # Run the worktree's test suite reliably: correct ruby PATH, RAILS_ENV=test, the
@@ -904,7 +932,9 @@ end
 # really the stack's APP_PORT / LOCAL_EMAIL_CAPTURE leaking in.
 def run_worktree_tests(dir, app, values, args)
   clear_orphan_test_procs(dir)
-  prepare_test_db(dir, app, values)
+  # Prepares the DB *and* the bundled assets: passing a test file in `args` makes Rails
+  # skip its own test:prepare, so this is the only thing that builds the CSS for that run.
+  prepare_test_env(dir, app, values)
   env = test_command_env(app, values).merge("PARALLEL_WORKERS" => "1")
   sh("bin/rails", "test", *args, chdir: dir, env: env)
 end
@@ -3069,13 +3099,18 @@ if $PROGRAM_NAME == __FILE__
     puts "worktree ready: #{dir}"
     puts "stack env:      #{path}"
     puts "context:        #{context_path(dir)}"
-    # Provision the isolated TEST DB + write .env.test.local now, so a fresh
-    # worktree runs `bin/rails test` out of the box (no manual db:create /
-    # unsetting DATABASE_URL). allow_fail keeps `new` resilient if Postgres/Rails
-    # are unavailable — `up`/`test` re-run prepare_test_db idempotently.
-    if test_database_url(values)
-      puts "test db:        #{db_name_from_url(test_database_url(values))} (provisioning)"
-      prepare_test_db(dir, app, values)
+    # Provision the isolated TEST DB, write .env.test.local, and BUILD the bundled
+    # assets now, so a fresh worktree runs `bin/rails test` — and bin/fast-check, whose
+    # lanes pass explicit test paths — out of the box (no manual db:create / unsetting
+    # DATABASE_URL / tailwindcss:build). app/assets/builds/ is gitignored, so a virgin
+    # worktree has no CSS until something builds it; see prepare_test_env. allow_fail
+    # keeps `new` resilient if Postgres/Rails are unavailable — `up`/`test` re-run
+    # prepare_test_env idempotently.
+    puts "test db:        #{db_name_from_url(test_database_url(values))} (provisioning)" if test_database_url(values)
+    puts "assets:         app/assets/builds/tailwind.css (building)"
+    unless prepare_test_env(dir, app, values)
+      warn "agent-worktree: best-effort test-env prepare failed (Postgres/Rails down?) — " \
+           "`up`/`test` will retry; run `bin/rails db:test:prepare test:prepare` in the worktree to see why."
     end
     puts
     print_plan(app, task, values, dir)
