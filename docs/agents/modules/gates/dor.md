@@ -36,6 +36,46 @@ self-closes its own `g1_cert` window, and CI stays a **handoff, not a gate**
   refused). CI is checked here but **never its own gate** — it records as a `ci`
   SOP on the DoR attempt.
 
+## The exemption is earned by the DIFF, never by the `kind`
+
+`kind: chore | cleanup | docs` **may** skip the shape/test-tier gate — but the
+label alone buys nothing. The skip is earned only by an **observed doc-only
+diff**, and the discriminator is a denylist (`bin/lib/code_diff.rb`), not an
+allowlist:
+
+- **Classify by file TYPE, never by directory.** There is no "`docs/` is safe"
+  rule: a directory allowlist is prose-by-*assertion*, the same
+  declaration-over-evidence bug one granularity down. `docs/agents/setup.sh` is
+  mode 100755 and `rolio` ships `docs/build/workflow.js` — both **gate**.
+- **Non-behavioral** — and the ONLY thing that skips: prose (`*.md`,
+  `*.markdown`, `*.rdoc`), inert media (`*.png`, `*.svg`, `*.pdf`, …), and
+  prose-by-convention basenames (`LICENSE`, `README.txt`, `CODEOWNERS`,
+  `.gitignore`). Note `.txt` is **not** blanket prose — `public/robots.txt` is
+  production-served. Every file in the diff must qualify; one behavioral file in
+  an otherwise-docs diff gates the whole task.
+- **Behavioral** — everything else, gated like a feature. That expressly includes
+  `.github/workflows/*` (CI *is* behavior), `config/*.yml`, `Gemfile`/`.lock` (a
+  dependency bump changes the resolved graph), `bin/*`, migrations, and `test/**`.
+- **Fail-closed** — if the gate cannot OBSERVE a diff (unreadable repo, or a
+  checkout that can't see the branch), it **enforces** the tiers rather than
+  skipping. "We saw no code" is not "there is no code." At the merge gate the
+  diff is read from the **PR's own file list** (`gh pr view --json files`) so the
+  verdict is correct even from a reviewer's primary checkout, falling back to the
+  local working tree for pre-PR builder runs. Only the **build** gate stays
+  lenient on an empty diff (at design time no code exists yet, and it enforces no
+  tiers anyway).
+- **The skip is loud** — it names what it observed and where it came from
+  (`doc-only diff (kind: chore): 7 file(s), none behavioral — … [source: PR
+  files]`), so a wrong skip is visible in the transcript instead of hiding behind
+  a bare `n/a`.
+
+Why: a check you satisfy by DECLARING a `kind` rather than by EVIDENCE is not a
+check — the same failure shape as the G4 registry-string inference (see
+[the 2026-07-12 gate review](../../audits/release-gate-and-devops-process-review-2026-07-12.md)).
+`kind` is a forecast made at task-creation time, **before the diff exists**;
+nobody has to be malicious for it to be wrong. It was: PR #512 (`kind: chore`)
+shipped `.github/workflows/ci.yml` and DoR printed "n/a → ready to advance".
+
 ## Who runs it
 
 - **The feature (builder) agent**, from the task worktree, at submit —
