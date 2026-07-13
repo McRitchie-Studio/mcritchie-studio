@@ -38,8 +38,19 @@ const config = {
 
 if (!externalBaseURL) {
   config.webServer = {
+    // tailwindcss:build is LOAD-BEARING, and its absence is invisible until every page
+    // 500s. app/assets/builds/ is GITIGNORED — a fresh checkout (a new worktree, or any
+    // CI runner) has nothing in it but .keep — and `db:test:prepare` does NOT build it.
+    // Only `test:prepare`, the hook tailwindcss-rails enhances, does; the argless
+    // `bin/rails test` gets that for free, which is exactly why this suite's own boot
+    // path never did. Without this, the server boots FINE and then every single request
+    // dies in the view layer with `The asset "tailwind.css" is not present in the asset
+    // pipeline`, and all 69 specs fail on assertions that have nothing to do with CSS.
+    // Cost is ~0.4s. This is the first thing that bit the CI lane on the day it was
+    // wired (PR #543): green on a laptop that had run test:prepare by hand, red on
+    // every clean runner.
     command:
-      `bin/rails db:test:prepare && bin/rails runner e2e/seed.rb && bin/rails server -p ${port} -e test`,
+      `bin/rails db:test:prepare && bin/rails tailwindcss:build && bin/rails runner e2e/seed.rb && bin/rails server -p ${port} -e test`,
     url: `http://127.0.0.1:${port}/up`,
     reuseExistingServer: !process.env.CI,
     timeout: 30_000,
