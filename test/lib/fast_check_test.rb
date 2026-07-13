@@ -457,4 +457,180 @@ class FastCheckTest < Minitest::Test
       assert(lines.any? { |l| l[0] == "TASK" && l[1] == "update" }, "evidence recorded: #{lines.inspect}")
     end
   end
+
+  # --- [integration] the TIMEOUT-ORPHAN regression ------------------------------------
+  #
+  # Live bug, 2026-07-13. bin/fast-check outran the harness's 120s Bash timeout (a
+  # diff that maps to ~120 test files runs 7+ minutes). The timeout killed the cert
+  # PARENT — and the `bin/rails test` grandchild SURVIVED it, reparented to launchd
+  # (PPID 1), still holding an open PG connection to the worktree's test DB:
+  #
+  #   41578  1  41538  R  ruby bin/rails test test/models/task_test.rb ...
+  #   pid 41763 | idle in transaction | bin/rails
+  #
+  # Every retry then died in the test-prepare lane with
+  #
+  #   PG::ObjectInUse: database "..._test_..." is being accessed by other users
+  #   DETAIL: There is 1 other session using the database.
+  #   Tasks: TOP => db:test:load_schema => db:test:purge
+  #
+  # which fast-check reported as "USUALLY an ENV gap ... NOT a regression in your
+  # diff" — never NAMING the orphan. So the agent retried blindly: three cert
+  # attempts, 35 minutes, zero board progress, while its ClaimLease heartbeat kept
+  # the task looking healthy on the board.
+  #
+  # Root cause: `system(env, cmd, chdir: root)` runs the lane in the cert's OWN
+  # process group and installs no signal handler, so a signal aimed at the cert
+  # never reaches the suite. The cert must (a) put each lane in its own process
+  # GROUP and reap that group when it dies, and (b) detect an orphan it could not
+  # prevent and say its name.
+
+  # A lane stub that records its pid and then hangs — stands in for `bin/rails test`
+  # holding the test DB. Returns the path; the pid lands in <dir>/lane.pid.
+  def write_hanging_lane(dir)
+    lane = File.join(dir, "hanging-lane")
+    File.write(lane, <<~RUBY)
+      #!#{RbConfig.ruby}
+      File.write(File.join(#{dir.inspect}, "lane.pid"), Process.pid.to_s)
+      sleep 120
+    RUBY
+    FileUtils.chmod("+x", lane)
+    lane
+  end
+
+  def alive?(pid)
+    Process.kill(0, pid)
+    true
+  rescue Errno::ESRCH, Errno::EPERM
+    false
+  end
+
+  # Has a process WE spawned actually exited? `kill(0)` cannot answer this for our own
+  # children: a killed child lingers as a ZOMBIE whose pid still answers signal 0 until
+  # its parent reaps it. (A real orphan is reparented to launchd, which reaps it at once
+  # — the zombie is an artefact of the test owning the process.) So we wait on it.
+  def exited?(pid, timeout: 10)
+    deadline = Time.now + timeout
+    loop do
+      return true if Process.waitpid(pid, Process::WNOHANG)
+      return false if Time.now > deadline
+
+      sleep 0.1
+    end
+  rescue Errno::ECHILD
+    true # already reaped
+  end
+
+  def wait_until(timeout: 10)
+    deadline = Time.now + timeout
+    sleep 0.1 until yield || Time.now > deadline
+    yield
+  end
+
+  # THE regression: kill the cert the way a harness timeout does, and the suite it
+  # spawned must not outlive it. Before the fix the lane survived as an orphan
+  # holding the test DB; after it, the cert reaps its whole process group.
+  def test_a_killed_cert_does_not_orphan_the_suite_it_spawned
+    with_repo do |dir, _|
+      lane = write_hanging_lane(dir)
+      env = SessionEnv.neutralized(
+        "FAST_CHECK_ROOT" => dir,
+        "FAST_CHECK_DIFF_BASE" => "HEAD",
+        "FAST_CHECK_SPINE" => File.join(dir, "spine.yml"),
+        "FAST_CHECK_TEST_PREPARE_CMD" => "true",
+        "FAST_CHECK_TEST_CMD" => lane.shellescape,
+        "FAST_CHECK_RUBOCOP_CMD" => "true",
+        "FAST_CHECK_SKIP_ORPHAN_GUARD" => "1" # the guard is tested separately below
+      )
+      cert = Process.spawn(env, BIN, "--print", chdir: dir, out: File::NULL, err: File::NULL)
+      pid_file = File.join(dir, "lane.pid")
+      assert wait_until { File.exist?(pid_file) }, "the lane never started"
+      lane_pid = File.read(pid_file).to_i
+      assert alive?(lane_pid), "the lane should be running before we kill the cert"
+
+      # The harness timeout: signal the cert PROCESS, not the group.
+      Process.kill("TERM", cert)
+      Process.waitpid(cert)
+
+      reaped = wait_until(timeout: 10) { !alive?(lane_pid) }
+      assert reaped,
+             "ORPHAN: the suite (pid #{lane_pid}) outlived the cert that spawned it. It keeps the " \
+             "worktree test DB open, and every retry dies on PG::ObjectInUse blaming 'an ENV gap'."
+    ensure
+      Process.kill("KILL", lane_pid) if lane_pid && alive?(lane_pid)
+    end
+  end
+
+  # --- [integration] the guard: an orphan we could NOT prevent must be NAMED ----------
+  #
+  # A SIGKILLed cert runs no handler, so prevention alone can never be complete. The
+  # next cert therefore reads the runlock the previous one left: a dead cert pid whose
+  # process GROUP is still alive is provably our own abandoned suite — reap it and say
+  # so. Anything else is refused, never silently blocked.
+
+  def write_lock(dir, cert_pid:, pgid:)
+    lock = File.join(dir, "tmp", "cert-run.json")
+    FileUtils.mkdir_p(File.dirname(lock))
+    File.write(lock, JSON.generate("cert_pid" => cert_pid, "pgid" => pgid, "lane" => "spine",
+                                   "db" => "studio_test_x", "started_at" => "2026-07-13T05:00:00Z"))
+    lock
+  end
+
+  def test_a_leftover_orphan_group_is_named_and_reaped_before_the_lanes_run
+    with_repo do |dir, _|
+      # An orphan: a live process group whose cert parent is long dead.
+      orphan = Process.spawn("sleep 120", pgroup: true)
+      orphan_pgid = Process.getpgid(orphan)
+      write_lock(dir, cert_pid: 999_999, pgid: orphan_pgid) # 999999 = a pid that is not running
+
+      # implicit_root: runs from `dir` with stderr merged, so the guard's message is assertable.
+      out, code, lines = run_check(dir, implicit_root: true)
+
+      assert_equal 0, code, "reaping our own orphan is self-healing — the cert proceeds: #{out}"
+      assert_match(/#{orphan_pgid}/, out, "the cert must NAME the orphan it reaped, not swallow it")
+      assert_match(/NOT a regression in your diff/, out, "an ENV-class condition must say so")
+      assert exited?(orphan),
+             "the orphan (pgid #{orphan_pgid}) must be REAPED — it is what holds the test DB"
+      refute_empty lane_calls(lines, "TEST"), "after reaping, the cert runs normally"
+    ensure
+      begin
+        if orphan
+          Process.kill("KILL", orphan)
+          Process.waitpid(orphan)
+        end
+      rescue Errno::ESRCH, Errno::ECHILD
+        nil # already reaped by the guard — which is the point of the test
+      end
+    end
+  end
+
+  def test_a_live_concurrent_cert_is_refused_and_never_killed
+    with_repo do |dir, _|
+      # NOT an orphan: another cert is genuinely running in this tree. Killing it
+      # would be hostile, and running beside it is the known two-suites-on-one-test-DB
+      # hazard (it SIGSEGVs Ruby). Refuse — and leave it alone.
+      sibling = Process.spawn("sleep 120", pgroup: true)
+      write_lock(dir, cert_pid: sibling, pgid: Process.getpgid(sibling))
+
+      out, code, lines = run_check(dir, implicit_root: true)
+
+      assert_equal 1, code, "a concurrent cert in the same tree must be refused: #{out}"
+      assert_match(/#{sibling}/, out, "the refusal names the running cert")
+      assert_empty lane_calls(lines, "TEST"), "refusal fires BEFORE any lane runs"
+      assert alive?(sibling), "a LIVE cert must never be killed by the guard"
+      refute_match(/\[fast-cert@/, out, "nothing is certified against a contended test DB")
+    ensure
+      Process.kill("KILL", sibling) if sibling && alive?(sibling)
+    end
+  end
+
+  def test_a_stale_lock_from_a_fully_dead_cert_never_blocks_a_cert
+    with_repo do |dir, _|
+      # Nothing survived — the lock is a corpse. It must not refuse a healthy cert.
+      write_lock(dir, cert_pid: 999_998, pgid: 999_999)
+      out, code, = run_check(dir)
+      assert_equal 0, code, "a stale lock must be cleared, not treated as a live claim: #{out}"
+      assert_match(/\[fast-cert@/, out)
+    end
+  end
 end
