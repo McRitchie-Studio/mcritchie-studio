@@ -430,4 +430,45 @@ class FullSuiteCheckTest < Minitest::Test
       assert(lines.any? { |l| l[0] == "TASK" && l[1] == "update" }, "evidence recorded: #{lines.inspect}")
     end
   end
+
+  # --- [integration] the orphan guard is wired into THIS cert too ---------------------
+  #
+  # This lane is the more exposed of the two: a multi-minute full suite (it will outrun
+  # any agent-harness timeout) whose reset lane LEADS with `db:test:purge` — a DROP
+  # DATABASE that Postgres refuses outright while an orphan holds a connection
+  # (PG::ObjectInUse). The policy and its decision table are tested in
+  # test/lib/cert_orphan_guard_test.rb and exercised end-to-end in
+  # test/lib/fast_check_test.rb; here we prove the WIRING: this cert consults the guard
+  # before any lane, and a refusal stops it dead.
+
+  def test_a_live_concurrent_cert_is_refused_before_any_lane_runs
+    with_repo do |dir|
+      # A runlock whose cert process is still ALIVE: a real concurrent cert in this
+      # tree. Running beside it puts two suites on one worktree test DB — they corrupt
+      # each other's fixtures and SIGSEGV Ruby. Refuse; never kill a live sibling.
+      assert system("git", "-C", dir, "checkout", "-qb", "feat/task-x", out: File::NULL, err: File::NULL)
+      sibling = Process.spawn("sleep 60", pgroup: true)
+      lock = File.join(dir, "tmp", "cert-run.json")
+      FileUtils.mkdir_p(File.dirname(lock))
+      File.write(lock, JSON.generate("cert_pid" => sibling, "pgid" => Process.getpgid(sibling),
+                                     "lane" => "full-suite", "started_at" => "2026-07-13T05:00:00Z"))
+
+      out, code, lines = run_check_implicit_root(dir, "task-x")
+
+      assert_equal 1, code, "a concurrent cert in the same tree must be refused: #{out}"
+      assert_match(/#{sibling}/, out, "the refusal names the running cert")
+      assert_match(/NOT a regression in your diff/, out, "an ENV-class refusal must say so")
+      refute_match(/\[full-suite@/, out, "nothing is certified against a contended test DB")
+      refute(lines.any? { |l| l[0] == "GATE" }, "refusal fires BEFORE the G1 attempt opens: #{lines.inspect}")
+    ensure
+      begin
+        if sibling
+          Process.kill("KILL", sibling)
+          Process.waitpid(sibling)
+        end
+      rescue Errno::ESRCH, Errno::ECHILD
+        nil
+      end
+    end
+  end
 end

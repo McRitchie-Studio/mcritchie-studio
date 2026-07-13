@@ -277,9 +277,61 @@ npm test
 > overrides), so a plain `bin/rails test` is reliable locally while CI keeps the
 > parallel speedup. `bin/agent-worktree test <app> <slug>` also runs single-process
 > **and clears orphaned `rails test` procs first** — a killed/hung run leaves
-> workers holding the test DB and deadlocks the next run (otherwise
-> `pkill -f "rails test"`, never the dev server). Don't pipe a run through `| tail`
-> (it buffers to EOF, so a hang looks identical to "working") — write to a logfile.
+> workers holding the test DB and deadlocks the next run. Don't pipe a run through
+> `| tail` (it buffers to EOF, so a hang looks identical to "working") — write to a
+> logfile. **Never `pkill -f "rails test"`**: with several agents building at once
+> that reaps a SIBLING worktree's cert mid-run. Kill by pid, or let the cert's own
+> orphan guard do it (below) — it is scoped to one worktree.
+
+### The cert's orphan guard (the timeout-orphan)
+
+A cert can outlive its harness. `bin/fast-check` on a diff that maps to ~120 test
+files runs 7+ minutes — well past an agent harness's 120s Bash timeout. When that
+timeout killed the cert **parent**, the `bin/rails test` **grandchild survived it**,
+reparented to launchd (`PPID 1`), still holding an open connection to the worktree's
+test DB:
+
+```
+PID   PPID  PGID  STAT COMMAND
+41578    1  41538  R   ruby bin/rails test test/models/task_test.rb ...
+pg_stat_activity: pid 41763 | idle in transaction | bin/rails
+```
+
+Every retry then died in the test-prepare lane — `db:test:purge` cannot DROP a
+database another session holds:
+
+```
+PG::ObjectInUse: ERROR: database "..._test_..." is being accessed by other users
+DETAIL: There is 1 other session using the database.
+Tasks: TOP => db:test:load_schema => db:test:purge
+```
+
+…and the cert reported that as *"USUALLY an ENV gap … NOT a regression in your
+diff"*, never **naming** the orphan. So the agent retried into the same wall: three
+attempts, 35 minutes, zero board progress (live, 2026-07-13) — while its ClaimLease
+heartbeat kept the task looking healthy on the board. Both cert lanes now defend
+against this (`bin/lib/cert_process.rb`, `bin/lib/cert_orphan_guard.rb`):
+
+- **Prevent** — each lane runs in its **own process group**, and the cert reaps that
+  GROUP on any signal it can catch (TERM/INT/HUP) or on an exception. The suite can
+  no longer outlive the cert that spawned it.
+- **Detect** — a SIGKILL runs no handler, so prevention can never be complete. Each
+  lane writes a runlock (`tmp/cert-run.json`) naming its process group; the **next**
+  cert reads it and, before any lane runs:
+  - cert pid **alive** → a real concurrent cert in this tree → **refuse** (never kill
+    a live sibling; two suites on one worktree test DB corrupt each other's fixtures
+    and SIGSEGV Ruby),
+  - cert pid **dead**, group alive → provably our own orphan → **reap it, loudly**,
+  - any **other** session holding the test DB (a pre-fix orphan, a stray manual run,
+    a `bin/release` gate suite) → **refuse and name it**, with the
+    `pg_terminate_backend` command that clears it.
+
+Every one of those messages says **"NOT a regression in your diff"**, because that is
+what an ENV-class failure is. A cert that refuses and names the orphan is a good cert;
+a cert that blames "an ENV gap" and lets you retry into a wall is the bug.
+
+Skip the guard only in harness tests: `FAST_CHECK_SKIP_ORPHAN_GUARD=1` /
+`FULL_SUITE_SKIP_ORPHAN_GUARD=1`.
 
 ## Turf Monster
 
