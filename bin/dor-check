@@ -505,7 +505,9 @@ end
 # PAIRING (fast evidence only counts alongside a green GitHub CI — or, submit-side,
 # a pending one on an OPEN PR), and the message must say that instead of
 # pretending the evidence is bad. `review_role` picks the guidance: the review
-# gate-zero says "defer until CI settles"; the builder says "open the PR".
+# gate-zero says "defer until CI settles"; the builder says "open the PR" — and a
+# CONFLICTED PR overrides both (its CI is never coming; "open the PR"/"defer"
+# would each be wrong advice — the fix is rebase/merge release).
 def suite_evidence_error(eval, slug, ci, review_role)
   unless eval[:verifiable]
     return "FULL-suite gate unverifiable — couldn't fingerprint the working tree (no git repo / git identity?). " \
@@ -516,7 +518,10 @@ def suite_evidence_error(eval, slug, ci, review_role)
   if lanes[FullSuiteGate::FAST_LANE] == :fresh
     state = ci && ci[:state] ? ci[:state].to_s.upcase : "UNKNOWN"
     guidance =
-      if review_role
+      if ci && ci[:state] == :conflicted
+        "This PR is merge-CONFLICTED (mergeStateStatus DIRTY), so its CI will NEVER fire — rebase or merge " \
+          "release into the branch, resolve the conflicts, and push; the refreshed PR then runs CI"
+      elsif review_role
         "The review gate-zero needs the SETTLED green — defer until CI finishes (red bounces the task back)"
       else
         "Submit-side, a fresh fast cert is credited PROVISIONALLY once an OPEN PR exists with CI pending — " \
@@ -1022,6 +1027,10 @@ if ready
     puts "  GitHub CI green#{ci[:count] ? " (#{ci[:count]} checks)" : ""}"
   elsif ci && ci[:state] == :pending
     puts "  ⚠ GitHub CI still RUNNING — handoff is provisional; see the suggestion below"
+  elsif ci && ci[:state] == :conflicted
+    # Defensive: :conflicted always lands in `errors` above, so a ready verdict
+    # shouldn't reach here — but if a future reordering ever lets it, say it loudly.
+    puts "  ⚠ PR merge-CONFLICTED (mergeStateStatus DIRTY) — CI never fires; rebase/merge release"
   elsif ci && %i[none unverified].include?(ci[:state])
     puts "  ⚠ GitHub CI UNVERIFIED (#{ci[:state]}) — see the suggestion below"
   end
