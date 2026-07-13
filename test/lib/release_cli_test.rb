@@ -1263,18 +1263,24 @@ class ReleaseCliTest < Minitest::Test
 
   # --- qa_test_cmd registry values + test_cmd_argv (Shellwords) parsing --------
 
+  # The hub's registered gate command (G3 qa_test_cmd == G4 test_cmd) — ci.yml's
+  # test command verbatim, INCLUDING the system tier. Named once so the CLI
+  # assertions below don't each re-pin a literal that can drift; the registry
+  # itself is held to ci.yml by Release::ReposTest's drift guard.
+  HUB_GATE_CMD = "bin/rails db:test:prepare test test:system"
+
   def test_qa_gate_cmd_reads_the_registered_g3_tier_from_the_real_registry
     # ONE subprocess reads all five apps through the REAL config/release_repos.yml
-    # — the exact seam pre_qa_gate reads at run time. The HUB registers its FULL
-    # suite (the G3 batch certification — ship's test_gate self-gates an
-    # unchanged SHA); satellites keep the integration subset.
+    # — the exact seam pre_qa_gate reads at run time. The HUB registers CI's FULL
+    # suite, base AND system tiers (the G3 batch certification — ship's test_gate
+    # self-gates an unchanged SHA); satellites keep the integration subset.
     out = eval_helper(%(%w[mcritchie-studio turf-monster rolio tax-studio chain-ops].map { |r| qa_gate_cmd(r) }.inspect))
 
-    expected = ["bin/rails test",
+    expected = [HUB_GATE_CMD,
                 "bin/rails test test/integration", "bin/rails test test/integration",
                 "", ""]
     assert_equal expected.inspect, out,
-                 "hub certifies the full suite at G3; satellites gate on integration; planned apps self-gate"
+                 "hub certifies CI's full suite at G3; satellites gate on integration; planned apps self-gate"
   end
 
   def test_test_cmd_argv_matches_plain_split_for_flag_style_commands
@@ -2202,7 +2208,7 @@ class ReleaseCliTest < Minitest::Test
     out = run_cli(["--dry-run"], call: "ship", setup: SHIP_STUB)
 
     # hub carries a conductor test_cmd; satellites self-gate (skip it).
-    assert_includes out, "bin/rails test", "the hub runs its conductor test_cmd before prod"
+    assert_includes out, HUB_GATE_CMD, "the hub runs its conductor test_cmd before prod"
     assert_includes out, "self-gates", "a repo_script satellite skips the conductor test_cmd"
   end
 
@@ -2231,7 +2237,7 @@ class ReleaseCliTest < Minitest::Test
     out = run_cli(["--dry-run"], call: "ship", setup: SHIP_STUB)
 
     gate_at   = out.index("Avi ship gate")
-    e2e_at    = out.index("bin/rails test")            # the hub's highest-tier run on the frozen SHA
+    e2e_at    = out.index(HUB_GATE_CMD)                # the hub's highest-tier run on the frozen SHA
     ship_at   = out.index("confirming production deploy") # the ship-authority step (unique marker)
     deploy_at = out.index("push heroku main")
 
