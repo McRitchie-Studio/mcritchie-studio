@@ -511,7 +511,18 @@ class Release
     end
 
     # Persist WHAT THE G3 PRE-QA GATE ACTUALLY CERTIFIED, per repo:
-    #   metadata["qa_gates"][repo] = { "sha" =>, "cmd" =>, "ok" => true }
+    #   metadata["qa_gates"][repo] = { "sha" =>, "cmd" =>, "ok" => true,
+    #                                  "ci" => { "state" =>, "checks" => [...] } }
+    #
+    # The "ci" half is the AUDITOR's verdict on the SAME SHA — what GitHub CI made
+    # of the commit the local gate just certified (bin/release's ci_cross_check;
+    # CiStatus.for_sha). It is recorded so a DISAGREEMENT is auditable after the
+    # run instead of scrolling past in a terminal, and so agreement data accrues
+    # release over release. It is INERT for the gate logic below: ship_gate_skip?
+    # reads "ok"/"cmd"/"sha" and nothing else, so the auditor can never arm or
+    # disarm G4 — it can only tell you the gate deserves a second look. Absent
+    # (nil) when the auditor was not consulted; a state of "none"/"unverified"
+    # means GitHub had nothing to say, which is NOT a red.
     #
     # This is the ONLY evidence G4's ship gate accepts for skipping its own suite
     # (Release::ShipSequence.ship_gate_skip?). It is deliberately NOT derivable
@@ -524,10 +535,12 @@ class Release
     # Keyed by repo and MERGED, like record_qa_shas: a re-run of `prepare` (the
     # sweep is self-healing) re-certifies and overwrites its own repo's record,
     # while leaving the other repos' verdicts from this run intact.
-    def record_qa_gate(release:, repo:, sha:, cmd:, ok:)
+    def record_qa_gate(release:, repo:, sha:, cmd:, ok:, ci: nil)
       meta = release.metadata.deep_dup
       gates = meta["qa_gates"].is_a?(Hash) ? meta["qa_gates"] : {}
-      gates[repo.to_s] = { "sha" => sha.to_s, "cmd" => cmd.to_s, "ok" => ok ? true : false }
+      record = { "sha" => sha.to_s, "cmd" => cmd.to_s, "ok" => ok ? true : false }
+      record["ci"] = ci.to_h.transform_keys(&:to_s) if ci.is_a?(Hash) && ci.any?
+      gates[repo.to_s] = record
       meta["qa_gates"] = gates
       release.update!(metadata: meta)
       release

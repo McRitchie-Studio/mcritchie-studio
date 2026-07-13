@@ -992,6 +992,45 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_equal "turfsha", shas["turf-monster"], "a brand-new repo key is still added"
   end
 
+  # --- record_qa_gate: the G3 verdict + its auditor ---
+
+  test "record_qa_gate persists what the gate certified AND the CI verdict for the same SHA" do
+    rel = Release::Conductor.prepare!(task_slugs: [reviewed_task.slug])
+    Release::Conductor.record_qa_gate(release: rel, repo: "mcritchie-studio", sha: "abc1234", cmd: "bin/rails test",
+                                      ok: true, ci: { "state" => "green", "count" => 3 })
+
+    gate = rel.reload.metadata["qa_gates"]["mcritchie-studio"]
+    assert_equal({ "sha" => "abc1234", "cmd" => "bin/rails test", "ok" => true,
+                   "ci" => { "state" => "green", "count" => 3 } }, gate)
+  end
+
+  test "record_qa_gate records a DISAGREEMENT — a green gate beside a red CI, both on the record" do
+    # The alarm that scrolled past in the conductor's terminal is not evidence; the
+    # pair on the release is. A CI red never un-certifies the gate (ok stays true —
+    # CI audits, it does not veto), it just makes the contradiction auditable.
+    rel = Release::Conductor.prepare!(task_slugs: [reviewed_task.slug])
+    Release::Conductor.record_qa_gate(release: rel, repo: "turf-monster", sha: "def5678", cmd: "bin/rails test",
+                                      ok: true, ci: { state: :red, checks: ["test:system"] })
+
+    gate = rel.reload.metadata["qa_gates"]["turf-monster"]
+    assert gate["ok"], "the LOCAL gate stays the verdict — a red auditor does not flip it"
+    assert_equal "red", gate.dig("ci", "state").to_s
+    assert_equal ["test:system"], gate.dig("ci", "checks")
+    assert Release::ShipSequence.ship_gate_skip?(test_cmd: "bin/rails test", frozen_sha: "def5678", qa_gate: gate),
+           "the ci half is INERT for G4 — ship_gate_skip? reads ok/cmd/sha and nothing else, so an auditor's " \
+           "red can never arm or disarm the ship gate"
+  end
+
+  test "record_qa_gate omits the ci key when the auditor was not consulted" do
+    rel = Release::Conductor.prepare!(task_slugs: [reviewed_task.slug])
+    Release::Conductor.record_qa_gate(release: rel, repo: "mcritchie-studio", sha: "abc1234", cmd: "bin/rails test",
+                                      ok: true)
+
+    gate = rel.reload.metadata["qa_gates"]["mcritchie-studio"]
+    refute gate.key?("ci"), "no CI verdict recorded is not the same as a CI verdict of nothing"
+    assert gate["ok"]
+  end
+
   # --- post_release_notes (reuses ReleaseNotes::Formatter + DiscordClient) ---
 
   def shipped_release

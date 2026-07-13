@@ -163,6 +163,10 @@ require_relative "../app/models/release/gate_workspace"
 require_relative "../lib/agent_session_usage"
 require_relative "../lib/task_usage_baseline"
 require_relative "lib/session_identity"
+# G3's AUDITOR: the same GitHub-CI verdict bin/dor-check reads for a PR, asked
+# about the COMMIT the pre-QA gate just certified (CiStatus.for_sha). The local
+# gate stays the verdict; CI only gets to DISAGREE — loudly. See ci_cross_check.
+require_relative "lib/ci_status"
 
 APP = "mcritchie-studio"
 HEROKU_REMOTE = "heroku"
@@ -1625,21 +1629,136 @@ end
 # skipping its own suite (Release::ShipSequence.ship_gate_skip?). A gate that
 # skipped, was misconfigured, or went red leaves NO record, so G4 fails open and
 # runs the suite itself.
+#
+# Either way the gate is CROSS-CHECKED against GitHub CI for the SAME SHA
+# (ci_cross_check): both verdicts are printed, both are recorded, and a
+# CONTRADICTION alarms. CI audits; it never blocks. See the auditor block below.
+# --- G3's AUDITOR: GitHub CI's verdict on the SAME SHA the gate certified -----
+#
+# The local gate is the ONLY verdict on the release tip, and until now NOTHING
+# independent checked it. So for every SHA it gates, ALSO ask GitHub what CI made
+# of that exact commit (CiStatus.for_sha → `gh api …/commits/<sha>/check-runs`),
+# record BOTH verdicts on the release, and make a DISAGREEMENT impossible to miss.
+#
+# CI is the AUDITOR, never the verdict — it does NOT block:
+#   * The shape is deliberate. CI on a push is ASYNCHRONOUS: to BLOCK on it the
+#     gate would have to poll for minutes, and a LOCAL operation would acquire a
+#     hard GitHub dependency (a gh outage would stall every release).
+#   * "No CI data" is the NORMAL answer, not a fault — :none (no run for this SHA:
+#     ci.yml triggers on pull_request + push:main, so `release` builds NOTHING
+#     until task run-ci-on-release-branch lands), :pending (the push-triggered run
+#     has not settled — prepare gates seconds after the merge), :unverified (no gh,
+#     no network, a 404). None of those is a disagreement; they are SILENCE, and
+#     silence never blocks.
+#   * There is ZERO agreement data yet. A blocking rule with no data is a rule that
+#     only ever fires wrong. The alarm BUILDS that data set (the verdict pair lands
+#     on release.metadata["qa_gates"][repo]) — audit first, escalate on evidence.
+#
+# The two disagreements are not symmetric, and the loud one is the SECOND:
+#   * gate GREEN + CI RED — CI saw something the gate structurally cannot: the
+#     browser `test:system` lane no local cert runs (the #1 blocker class). QA
+#     still deploys; the alarm says investigate before ship (G4 re-gates the
+#     frozen SHA anyway, so nothing reaches prod on this alone).
+#   * gate RED + CI GREEN — the GATE is the suspect, not the code. That is
+#     rel-20260711-7f2913 verbatim: the gate false-failed genuinely-green code and
+#     a reviewer nearly EJECTED a good PR over it. The gate still aborts (it IS the
+#     verdict), but the abort now tells the conductor to reproduce before ejecting.
+
+# The CI states that mean "GitHub has nothing to say about this SHA". Never an
+# alarm, never a block — a missing verdict is not a contradicting one.
+CI_NO_DATA = %i[none pending unverified no_pr closed merged].freeze
+
+# "owner/repo" for a repo's origin remote (the gh api path), or "" when the remote
+# isn't GitHub — which CiStatus reads as no data, never as a red.
+def repo_name_with_owner(repo)
+  out, ok = sh("git", "-C", repo_path(repo), "remote", "get-url", "origin", capture: true)
+  ok ? CiStatus.name_with_owner(out) : ""
+end
+
+# GitHub CI's verdict for ONE commit. RELEASE_CI_STATUS injects it (a bare token or
+# a raw check-runs payload), so the meta-tests never touch the network — and an
+# injected verdict skips the remote lookup entirely. Best-effort by construction:
+# an auditor that RAISES must never fail a gate that passed.
+def ci_verdict(repo, sha)
+  injected = ENV["RELEASE_CI_STATUS"].to_s
+  nwo = injected.empty? ? repo_name_with_owner(repo) : ""
+  CiStatus.for_sha(nwo, sha, injected)
+rescue StandardError => e
+  { state: :unverified, reason: e.message.to_s[0, 140] }
+end
+
+# The verdict pair, persisted: what CI said about the SHA the gate certified.
+def ci_gate_record(ci)
+  record = { "state" => ci[:state].to_s }
+  checks = (Array(ci[:failing]) + Array(ci[:pending])).map(&:to_s)
+  record["checks"] = checks if checks.any?
+  record["count"] = ci[:count].to_i if ci[:count]
+  record["reason"] = ci[:reason].to_s if ci[:reason]
+  record
+end
+
+# Print the cross-check and return TRUE when the two verdicts CONTRADICT each
+# other (green-vs-red, either direction). Never aborts — the caller decides, and
+# on a green gate the answer is: deploy, but say it loudly.
+def ci_cross_check(repo, sha, local_ok, ci)
+  state = ci[:state]
+  named = (Array(ci[:failing]) + Array(ci[:pending])).join(", ")
+
+  if CI_NO_DATA.include?(state)
+    detail = ci[:reason].to_s.empty? ? state.to_s : "#{state}: #{ci[:reason]}"
+    say("  #{repo}: CI cross-check — no GitHub verdict for #{short(sha)} (#{detail}); informational only, " \
+        "the local gate stands")
+    return false
+  end
+  if local_ok ? state == :green : state == :red
+    say("  #{repo}: CI cross-check — GitHub CI AGREES (#{state.to_s.upcase} @ #{short(sha)})")
+    return false
+  end
+
+  bar = "═" * 76
+  say("")
+  say("  #{bar}")
+  say("  ⚠  ALARM — the G3 gate and GitHub CI DISAGREE about #{repo} @ #{short(sha)}")
+  say("  #{bar}")
+  if local_ok
+    say("  local pre-QA gate: GREEN   ·   GitHub CI: RED (#{named})")
+    say("  The gate passed a SHA GitHub says is BROKEN. CI runs a lane no local cert does")
+    say("  (the browser `test:system` suite) — so this is probably REAL. QA still deploys")
+    say("  (CI is the auditor, not the verdict), but DO NOT ship on it: reproduce the")
+    say("  failing check, and expect G4's frozen-SHA gate to catch it if it is real.")
+  else
+    say("  local pre-QA gate: RED   ·   GitHub CI: GREEN (#{ci[:count]} checks)")
+    say("  The gate FAILED a SHA GitHub says is GREEN — suspect the GATE, not the code.")
+    say("  This is rel-20260711-7f2913's signature (a false-negative gate nearly got a")
+    say("  good PR ejected). REPRODUCE the failure in the gate workspace BEFORE ejecting")
+    say("  anyone: a gate-host/env divergence is not a regression riding the release.")
+  end
+  say("  #{bar}")
+  say("")
+  true
+end
+
 # Stamp what the G3 pre-QA gate actually CERTIFIED for a repo: the SHA it ran on
 # and the command it ran. G4's ship gate skips its own suite ONLY against this
 # record (Release::ShipSequence.ship_gate_skip?) — never against the registry or
 # the deployed SHA, neither of which proves a suite ever ran.
 #
+# It also carries the AUDITOR's verdict for the same SHA (`ci: {state, checks}`),
+# so the pair is auditable after the run — a disagreement that only ever scrolled
+# past in a terminal is not evidence. The ci half is INERT for G4: ship_gate_skip?
+# reads `ok`/`cmd`/`sha` and nothing else, so an alarm can never disarm a gate.
+#
 # Best-effort like the other record steps: a board hiccup must not fail a GREEN
 # gate. But a missing record makes G4 FAIL OPEN (it re-runs the suite), so the
 # worst case of a lost stamp is a redundant run, never an unguarded ship.
-def record_qa_gate(rel_slug, repo, sha, cmd)
+def record_qa_gate(rel_slug, repo, sha, cmd, ci = nil)
   return if rel_slug.to_s.empty? || DRY
 
+  ci_arg = ci ? ", ci: #{ci_gate_record(ci).inspect}" : ""
   conductor(
     "r = Release.find_by(slug: #{rel_slug.to_s.inspect}); " \
     "Release::Conductor.record_qa_gate(release: r, repo: #{repo.to_s.inspect}, " \
-    "sha: #{sha.to_s.inspect}, cmd: #{cmd.to_s.inspect}, ok: true) if r; " \
+    "sha: #{sha.to_s.inspect}, cmd: #{cmd.to_s.inspect}, ok: true#{ci_arg}) if r; " \
     "puts({ qa_gate: #{repo.to_s.inspect} }.to_json)"
   )
 rescue SystemExit, StandardError => e
@@ -1690,13 +1809,24 @@ def pre_qa_gate(app_groups, rel_slug = nil)
       _, ok = run_test_scope("pre_qa_gate", *argv, chdir: workspace, repo: repo, env: gate_env(repo))
     end
 
+    # THE AUDITOR: ask GitHub what CI made of the SAME SHA, print the cross-check,
+    # and alarm on a contradiction. Never blocks (see the CI_NO_DATA block above) —
+    # it only makes a disagreement loud, and on a RED gate it redirects the
+    # conductor away from ejecting a task the gate may be lying about.
+    ci = ci_verdict(repo, sha)
+    disagrees = ci_cross_check(repo, sha, ok, ci)
+
     if ok
-      # Certify: the ONLY evidence G4 accepts for skipping its own gate.
-      record_qa_gate(rel_slug, repo, sha, cmd)
+      # Certify: the ONLY evidence G4 accepts for skipping its own gate. Carries
+      # the auditor's verdict for the same SHA alongside it.
+      record_qa_gate(rel_slug, repo, sha, cmd, ci)
       next
     end
 
-    abort!("pre-QA gate failed for #{repo} (#{cmd}) — a regression is riding origin/#{RELEASE_BRANCH}. " \
+    suspect_gate = disagrees ? " ⚠ BUT GitHub CI says this SHA is GREEN — SUSPECT THE GATE FIRST: reproduce the " \
+                               "failure in the gate workspace before ejecting anyone (a gate-host/env divergence " \
+                               "is not a regression)." : ""
+    abort!("pre-QA gate failed for #{repo} (#{cmd}) — a regression is riding origin/#{RELEASE_BRANCH}.#{suspect_gate} " \
            "Identify the offending task, eject it (`bin/release eject <task> --feedback \"…\"`), revert its " \
            "merge commit on `#{RELEASE_BRANCH}` (git revert -m 1 <merge-sha>; push), then re-run " \
            "`bin/release prepare` — the sweep self-heals and the REST of the RC rides on. " \

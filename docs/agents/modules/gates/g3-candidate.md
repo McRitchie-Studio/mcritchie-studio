@@ -32,6 +32,10 @@ run inside it rides the close:
 - **Post-deploy hooks** (`qa_post_deploy` SOPs) — each member's declared
   `devops.post_deploy_cmd` runs against its QA app; a non-zero exit aborts
   prepare.
+- **The CI cross-check** — for every SHA the pre-QA suite gates, GitHub CI's
+  verdict on that same commit is fetched, printed, and recorded beside the
+  local one. It **audits**; it never blocks. See
+  [The CI cross-check](#the-ci-cross-check-cis-verdict-on-the-same-sha) below.
 - **The QA-green flip** — `Release::Conductor.qa_green!` flips swept members
   `reviewed → assembled` and the RC `assembling → assembled`. The gate closes
   `success` only beside that flip.
@@ -152,6 +156,49 @@ The gate's spawn env (`Release::GateEnv`) also **unsets**
 `CLAUDE_CODE_SESSION_ID` / `CODEX_THREAD_ID`, so the suite's subprocess-spawning
 tests see the same no-session environment CI does, and pins the mise ruby.
 
+## The CI cross-check (CI's verdict on the same SHA)
+
+The local gate is trustworthy — but it was also the **only** verdict on the
+release tip, and nothing independent checked it. So for every SHA it gates, the
+conductor also asks GitHub what CI made of **that exact commit**
+(`CiStatus.for_sha` → `gh api repos/{owner}/{repo}/commits/{sha}/check-runs`),
+prints both verdicts, records both on the release, and **alarms on a
+contradiction**.
+
+**CI is the auditor, never the verdict — it does not block.** A push-triggered CI
+run is asynchronous: to block on it, a *local* gate would have to poll GitHub for
+minutes and would acquire a hard GitHub dependency (a `gh` outage would stall
+every release). The local gate stays the verdict; CI only gets to disagree.
+
+**No CI data is not a failure.** These are silence, not contradiction —
+informational, never an alarm, never a block:
+
+| State | Means |
+|-------|-------|
+| `none` | No check-run for this SHA. **This is today's normal answer:** `ci.yml` triggers on `pull_request` + `push: main`, so `release` builds nothing until task `run-ci-on-release-branch` lands. |
+| `pending` | The push-triggered run has not settled — prepare gates seconds after the merge. |
+| `unverified` | No `gh`, no network, a 404, a non-GitHub remote. |
+
+**The two real disagreements are not symmetric:**
+
+- **Gate GREEN + CI RED** → CI saw something the gate structurally *cannot*: the
+  browser `test:system` lane no local certification runs (the #1 blocker class).
+  Probably real. QA still deploys — but do **not** ship on it; reproduce the
+  failing check. [G4 Ship](g4-ship.md) re-gates the frozen SHA anyway, so nothing
+  reaches production on this alone.
+- **Gate RED + CI GREEN** → **suspect the gate, not the code.** This is
+  `rel-20260711-7f2913`'s signature: a false-negative gate nearly got a good PR
+  ejected. The gate still aborts (it *is* the verdict), but the abort tells you to
+  reproduce in the gate workspace **before ejecting anyone**.
+
+The verdict pair is recorded (see [Certification](#certification-what-g4-reads))
+so a disagreement is auditable after the run instead of scrolling past in a
+terminal — and so agreement data accrues release over release. Promoting the
+auditor to a blocker is a decision to revisit on that evidence, not before it.
+
+`RELEASE_CI_STATUS` injects a canned verdict (a bare token, or a raw check-runs
+payload) — the test seam; it also short-circuits the network.
+
 ## A red gate — what to do (and what NOT to do)
 
 **Start from: the gate is right.** It runs in a private tree at the exact SHA,
@@ -172,7 +219,9 @@ followed.
    workspace itself* — it is a normal checkout:
    `cd <repo>/.worktrees/_gate && bin/rails test …`. If the gate is genuinely
    broken, **fix the gate and say so loudly.** An unreliable gate is worse than no
-   gate.
+   gate. (**The cross-check does this for you:** if GitHub CI says that SHA is
+   GREEN, the abort itself raises the alarm — *suspect the gate first*. Reproduce
+   before ejecting anyone.)
 4. **Never blank `qa_test_cmd`/`test_cmd` to get past it.** That old recipe
    silently disarmed the G4 production gate (it made G4 "self-gate" on a suite
    nothing had run). It no longer works, by design. The supported override is
@@ -182,10 +231,16 @@ followed.
 ## Certification (what G4 reads)
 
 On GREEN, the gate stamps **what it actually certified** onto the release:
-`metadata["qa_gates"][repo] = {"sha", "cmd", "ok" => true}`. That record is the
-**only** grounds on which [G4 Ship](g4-ship.md) may skip its own suite. A gate
-that skipped, was misconfigured, or went red leaves **no record**, so G4 fails
-open and runs the suite itself — a skipped G3 can never certify a SHA.
+`metadata["qa_gates"][repo] = {"sha", "cmd", "ok" => true, "ci" => {"state",
+"checks"}}`. That record is the **only** grounds on which [G4 Ship](g4-ship.md)
+may skip its own suite. A gate that skipped, was misconfigured, or went red leaves
+**no record**, so G4 fails open and runs the suite itself — a skipped G3 can never
+certify a SHA.
+
+The `"ci"` half is the auditor's verdict on that same SHA (above). It is **inert**
+for G4: `Release::ShipSequence.ship_gate_skip?` reads `ok`/`cmd`/`sha` and nothing
+else, so a CI disagreement can neither arm nor disarm the production gate — it can
+only tell a human the gate deserves a second look.
 
 ## Related
 
