@@ -61,19 +61,27 @@ If `release == main`, no release is active, the active release is still
 
 ## Procedure
 
-**Direct-drive this act — do NOT wrap it in a subagent.** Unlike `pr-review` and
-`qa-release` (which an interactive session summons as their owning-soul Agent-tool
-subagents for tree visibility), the production ship is DIRECT-DRIVEN by the
-orchestrating session itself. Run `bin/release ship --yes` in your own session;
-do NOT delegate it to a wrapper subagent.
+**Direct-drive this act — do NOT wrap it in a subagent.** Run `bin/release ship
+--yes` in the orchestrating session itself. Do NOT delegate it to a wrapper
+subagent (`subagent_type: avi`) for sub-agent-tree visibility.
 
-- **Rationale.** This is the one IRREVERSIBLE gate. A wrapper subagent that dies
-  mid-ship (crash, timeout, killed terminal) would orphan the ship with no
-  attached terminal to recover it, leaving a partial `release → main` state that
-  nobody owns. Keeping the ship in the orchestrator's own hands means the gate is
-  never held by an ephemeral agent that can vanish. Tree visibility is not worth
-  orphaning the irreversible act — the durable record is the Activities timeline
-  and the release's stage timeline, not the sub-agent tree.
+- **The rule this follows.** Any op that MUTATES shared state across many minutes
+  — `production-deploy`, `qa-release`, `archive-shipped` — is DIRECT-DRIVEN by the
+  conductor session, never handed to an ephemeral subagent. A subagent that dies
+  mid-op (crash, timeout, killed terminal) leaves the mutation HALF-APPLIED, with
+  no attached terminal to notice or finish it. Subagents stay first-class for
+  **read** fan-out — `pr-review` still supervises its PRIMARY + LIGHT reviewers as
+  subagents, because a detached *review* costs a retry, not a broken release. The
+  line is **mutating vs reading**, not *parallel vs serial*.
+- **Why the ship especially.** This is the one IRREVERSIBLE gate. An orphaned ship
+  leaves a partial `release → main` state that nobody owns. The same failure hit
+  `qa-release` on 2026-07-11 while it was still delegated: the Steffon subagent
+  detached mid-sweep and left a partial release candidate — merged onto `release`,
+  but never gated, deployed, or assembled — and it sat there unnoticed. Ship
+  recovery is `bin/release ship --yes` itself (it is idempotent and resumes; see
+  partial-ship recovery below), but only if a terminal is still attached to run it.
+- **Visibility is not a reason to delegate.** The durable record is the Activities
+  timeline and the release's stage timeline, not the ephemeral sub-agent tree.
 
 **Gate before activating Avi.** Do not post `confirming/start` just because
 `Release.current` exists. The Avi handoff exists only when the next release is

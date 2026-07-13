@@ -66,20 +66,28 @@ and stop.
 
 ## Procedure
 
-**Summon this act as a Steffon subagent (interactive tree visibility).** When a
-session drives a devops cycle interactively (a terminal is attached), summon this
-act as its OWNING SOUL instead of running the sweep bare in a background shell:
-launch a **Steffon** subagent via the Agent tool (`subagent_type: steffon`) and
-have that subagent execute `bin/release prepare --yes` (the full procedure
-below). It renders as a live node in the Claude Code sub-agent tree under the
-orchestrator.
+**Direct-drive this act — do NOT delegate it to a subagent.** Run
+`bin/release prepare --yes` in the conductor session itself. Do NOT wrap it in an
+Agent-tool subagent (`subagent_type: steffon`) for sub-agent-tree visibility.
 
-- **Caveat.** `bin/release` is a script, so the Steffon subagent is a thin driver
-  around it: the tree node is real, but the sweep's subprocess internals (the
-  merges, the pre-QA gate, the QA deploy) run INSIDE that agent and are not their
-  own tree nodes. The tree is also ephemeral (it dies with the session) and the
-  autonomous heartbeat runs with no terminal, so it renders no tree. The durable,
-  full-visibility surface is the Activities timeline — narrate the act there.
+- **The rule.** Any op that MUTATES shared state across many minutes —
+  `qa-release`, `production-deploy`, `archive-shipped` — is DIRECT-DRIVEN by the
+  conductor session, never handed to an ephemeral subagent. Subagents stay
+  first-class for **read** fan-out (reviews, audits, searches, exploration), where
+  a detach costs a retry rather than a half-applied mutation. Parallel fan-out is
+  still the default for devops; the line is **mutating vs reading**, not *parallel
+  vs serial*.
+- **Why — learned the hard way (2026-07-11).** This SOP once told you to summon
+  the sweep as a Steffon subagent. That subagent DETACHED mid-sweep and left a
+  **partial release candidate**: one PR merged onto `release`, but nothing gated,
+  deployed, or assembled, and no attached terminal to notice or finish it. The
+  candidate just sat there. `production-deploy` was already direct-drive for
+  exactly this reason; the lesson generalizes to every long mutation.
+- **Visibility is not a reason to delegate.** The durable, full-visibility surface
+  is the Activities timeline — narrate the act there
+  (`bin/agent-activity start/next/end`). The sub-agent tree is ephemeral (it dies
+  with the session) and the autonomous heartbeat has no terminal, so it renders no
+  tree at all.
 
 Normalize any PR the sweep should carry: `gh pr ready <n>` un-drafts it and
 `gh pr edit <n> --base release` retargets a mis-based PR (a no-op when the base
@@ -149,6 +157,50 @@ bin/release eject <task> --feedback "<specific failing evidence>"
 ```
 
 Then re-run `bin/release prepare --yes` so the rest of the candidate can ride.
+
+## Recovery — `prepare` is SELF-HEALING, and re-running it is SAFE
+
+**If a sweep is interrupted — a detached agent, a killed terminal, a timeout, a
+crash, a red QA — the recovery is to RE-RUN `bin/release prepare --yes`.** That is
+the whole fix. Do not hand-merge, do not hand-flip stages, and above all do not
+leave a half-finished candidate sitting because you are unsure whether a re-run
+would double-merge. It will not:
+
+- **Already-merged PRs are skipped.** The sweep skips any task already stamped
+  `merged: release` or `merged: main` — the merge step is crash-recovery-aware, so
+  a PR that landed before the interruption is never re-merged.
+- **Members flip only on QA-green.** An interrupted or red run leaves them
+  `reviewed`, which is exactly the state the next run detects and finishes.
+- **A re-run resumes the candidate**; it does not open a second one.
+- **Stage stamps are first-write-wins**, so re-posted timeline boundaries are safe
+  no-ops (see the backfill note above).
+
+### Detecting a PARTIAL release candidate
+
+A partial RC is a candidate whose members are **merged but never assembled** — the
+sweep merged the PR (step 3) and then died before the pre-QA gate, the QA deploy,
+or the `assembled` flip (step 6). Nothing is corrupt, but nothing is finished, and
+it is invisible unless you look for it:
+
+```bash
+bin/release status                      # current release + state
+bin/task list --stage reviewed          # any of these merged onto release is a partial member
+bin/task show <task> --json | jq '{stage, merged, release_slug}'
+```
+
+The smoking gun is a task stamped **`merged: "release"` while its stage is still
+`reviewed`**. Compare the healthy readings:
+
+| `stage` | `merged` | Meaning |
+|---|---|---|
+| `reviewed` | `null` | Waiting to be swept — normal. |
+| `reviewed` | `"release"` | **PARTIAL RC — merged, never assembled. Re-run `prepare`.** |
+| `assembled` | `"release"` | Healthy member, QA-green. |
+
+On the /deployments tracker the same state reads as an **Assembling / Deploying QA
+node stuck yellow** with Live on QA never greening.
+
+Found one? Re-run `bin/release prepare --yes`.
 
 ## Exit Seam
 

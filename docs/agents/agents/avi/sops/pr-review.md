@@ -80,6 +80,15 @@ wall of background shells. **Avi supervises; he does not review** — the two
 experts under him are the reviewers. Feature builds already delegate through the
 Agent tool this way; this extends the same pattern to the review lane.
 
+- **Why delegation is right HERE (and wrong for the sweep and the ship).** Review
+  is a **read** act: it inspects diffs and lands one task-stage verdict, so a
+  subagent that detaches costs a retry, nothing more. The acts that MUTATE shared
+  state across many minutes — `qa-release`, `production-deploy`, `archive-shipped`
+  — are the opposite, and each is DIRECT-DRIVEN by the conductor session (a
+  detached writer strands a half-applied merge/deploy that nobody owns). The line
+  is **mutating vs reading**, not *parallel vs serial*:
+  [`../../../modules/parallel-agent-devops.md`](../../../modules/parallel-agent-devops.md).
+
 **Emit two intent-labeled delegate actions — one per reviewer (enforced).** Avi
 (the supervisor) spawns the pair with **two** Agent-tool calls, in a **single
 message so they run in parallel**, and the Agent-tool `description` on each call
