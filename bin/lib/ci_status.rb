@@ -22,19 +22,96 @@ require "shellwords"
 #   :green          — every check passed/skipped         → pass
 #   :none           — the PR reports no checks yet        → note (non-blocking)
 #   :no_pr          — no pr_url yet                       → silent (gate re-runs after push)
+#   :unreadable     — the TOKEN cannot read CI (401/403)  → note, but NAMES the cause
+#                     and the repo. See the blindness section below.
 #   :unverified     — gh/network error                    → note (never a hard block;
 #                     don't trade a flaky CI lane for a flaky gate)
 #
+# A BLIND GATE MUST SAY WHY IT IS BLIND (task dor-check-misses-rolio-ci, 2026-07-13).
+# :unreadable and :unverified are BOTH "no verdict", and neither hard-blocks — but
+# they are not the same fact, and collapsing them was a real bug:
+#   * :none / :unverified say "CI has nothing to tell you YET" → the fix is to WAIT.
+#   * :unreadable says "CI has plenty to tell you and this TOKEN may not hear it" →
+#     waiting is futile; the fix is a CREDENTIAL, and no amount of re-running helps.
+# Told the first story, a rolio builder pushes, re-runs dor-check, reads "push the
+# branch and open the PR" for a PR that is already open and already GREEN, and
+# learns to ignore the gate. That is how a gate stops being read at all — and an
+# ignored gate is exactly how a genuinely RED CI ships. Honesty, not leniency:
+# :unreadable is NOT easier to pass than :unverified. It unlocks nothing (notably
+# not the fast-cert credit); it only tells the truth about why it cannot see.
+#
 # `injected` is dor-check's DOR_CHECK_CI_STATUS seam: a bare token
-# (green/red/pending/none/unverified/no_pr) OR the raw `gh pr checks --json` array —
-# so the tests never shell out to gh (mirrors DOR_CHECK_SUITE_EVIDENCE).
+# (green/red/pending/none/unreadable/unverified/no_pr) OR the raw `gh pr checks
+# --json` array — so the tests never shell out to gh (mirrors
+# DOR_CHECK_SUITE_EVIDENCE).
 #
 # TWO SUBJECTS, ONE VOCABULARY. `evaluate` asks about a PR (the merge gate's
 # subject); `for_sha` asks about a COMMIT (the G3 release-gate's subject — the
 # release tip belongs to no PR). Both fold into the states above. See the
 # SHA-addressed section below.
 module CiStatus
-  TOKENS = %w[green red pending none unverified no_pr closed merged conflicted].freeze
+  TOKENS = %w[green red pending none unverified unreadable no_pr closed merged conflicted].freeze
+
+  # An AUTH/PERMISSION denial — the token is understood and REFUSED, as opposed to a
+  # 404 (ambiguous: a force-pushed SHA answers 404 too) or a transport error. Matched
+  # against the RAW gh output, because `gh api` prints the JSON error body on stdout
+  # and its own "gh: … (HTTP 403)" line on stderr: we capture 2>&1, so the two arrive
+  # CONCATENATED and JSON.parse rejects the result — a parsed-`message`-only check
+  # would miss the very case that motivated this state.
+  #
+  # Deliberately NARROW. A state that cried "fix your token" at every missing SHA
+  # would be its own species of lie, so 404/timeouts/`gh: command not found` keep
+  # their old :unverified meaning.
+  # Each alternative, and what it catches:
+  #   "resource not accessible by …" — a fine-grained PAT or GitHub App refused the
+  #                                    scope (the rolio case, REST and GraphQL alike)
+  #   "bad credentials"              — a revoked, expired, or malformed token
+  #   "requires authentication"      — no token presented at all
+  #   "must have admin rights"       — the branch-protection read, specifically
+  #   "HTTP 401" / "HTTP 403"        — gh's own stderr line
+  #   "status": "401" / "403"        — the REST error envelope on stdout
+  PERMISSION_DENIED = Regexp.union(
+    /resource not accessible by/i,
+    /bad credentials/i,
+    /requires authentication/i,
+    /must have admin rights/i,
+    /\bHTTP (?:401|403)\b/,
+    /"status"\s*:\s*"?(?:401|403)"?/
+  ).freeze
+
+  # Does this raw gh body say "your token was refused"?
+  def self.permission_denied?(raw)
+    PERMISSION_DENIED.match?(raw.to_s)
+  end
+
+  # The :unreadable verdict, carrying the cause. `reason` is the first line of the
+  # denial, trimmed — enough for the gate to print WHAT was refused, while the gate
+  # itself supplies WHICH repo and WHICH scope to grant.
+  def self.unreadable(raw)
+    { state: :unreadable, reason: raw.to_s.lines.first.to_s.strip[0, 140] }
+  end
+
+  # PURE. "owner/repo" out of a PR URL (https://github.com/amcritchie/rolio/pull/23),
+  # so a gate can NAME the repo whose CI it could not read. name_with_owner is
+  # anchored at the end of the string and matches a REMOTE, not a PR URL.
+  def self.repo_from_pr_url(pr_url)
+    match = pr_url.to_s.strip.match(%r{github\.com[:/]+([^/\s]+)/([^/\s]+)/pull/\d+}i)
+    match ? "#{match[1]}/#{match[2]}" : ""
+  end
+
+  # THE ONE REMEDY STRING, so dor-check, pr-review, and the release auditor all tell
+  # the operator the same thing. A gate that cannot see must name (a) that it is a
+  # CREDENTIAL fault, (b) the repo, (c) the exact grant, and (d) the verify command —
+  # otherwise the reader's only move is to re-run it, which can never help.
+  def self.unreadable_remedy(repo = nil)
+    where = repo.to_s.strip.empty? ? "this repo" : repo.to_s.strip
+    "This is a CREDENTIAL fault, NOT a missing CI — re-running will never clear it. The GitHub token cannot " \
+      "read check runs on #{where}. Fix: grant the token `Checks: Read` on #{where} (fine-grained PAT → " \
+      "Repository permissions → Checks → Read-only; the repo must also be in the token's selected " \
+      "repositories). Verify: gh pr checks <pr> --repo #{where}. Until then the FAST-cert route cannot be " \
+      "credited on this repo (a fast cert needs a GREEN CI it can actually read) — certify in full instead: " \
+      "bin/full-suite-check <task>."
+  end
 
   def self.evaluate(pr_url, injected = nil)
     pr = pr_url.to_s.strip
@@ -74,7 +151,13 @@ module CiStatus
       nil
     end
     state = data.is_a?(Hash) ? data["state"].to_s : ""
-    return { state: :unverified, reason: raw.to_s.lines.first.to_s.strip[0, 140] } unless %w[OPEN CLOSED MERGED].include?(state)
+    unless %w[OPEN CLOSED MERGED].include?(state)
+      # `gh pr view` is the FIRST gh call evaluate makes, so on a repo the token
+      # cannot read we fail HERE — and must already name the cause.
+      return unreadable(raw) if permission_denied?(raw)
+
+      return { state: :unverified, reason: raw.to_s.lines.first.to_s.strip[0, 140] }
+    end
     return { state: state.downcase.to_sym } unless state == "OPEN"
     return { state: :conflicted, merge_state: "DIRTY" } if data["mergeStateStatus"].to_s.upcase == "DIRTY"
 
@@ -91,6 +174,11 @@ module CiStatus
       nil
     end
     unless data.is_a?(Array)
+      # ORDER MATTERS: the permission check runs BEFORE the "no checks" match. The
+      # denial body is the rolio case verbatim (a GraphQL statusCheckRollup refusal),
+      # and reading it as :none would tell the builder to wait for a CI that is
+      # already green.
+      return unreadable(raw) if permission_denied?(raw)
       return { state: :none } if raw.to_s =~ /no checks|no commit statuses/i
 
       return { state: :unverified, reason: raw.to_s.lines.first.to_s.strip[0, 140] }
@@ -193,6 +281,11 @@ module CiStatus
     runs = data.is_a?(Hash) ? data["check_runs"] : data
     unless runs.is_a?(Array)
       reason = data.is_a?(Hash) ? data["message"].to_s : raw.to_s.lines.first.to_s.strip
+      # A 401/403 is a REFUSED token, not an absent record — say so. Checked against
+      # the raw body (gh's stdout JSON + stderr line arrive concatenated under 2>&1),
+      # then reported with the clean `message` when there was one to parse.
+      return { state: :unreadable, reason: reason.strip[0, 140] } if permission_denied?(raw)
+
       return { state: :unverified, reason: reason.strip[0, 140] }
     end
 

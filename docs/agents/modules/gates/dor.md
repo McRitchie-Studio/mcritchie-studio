@@ -151,7 +151,15 @@ attempt n+1.
   attaching its evidence as SOPs: `dor-check`, `tiers` (the shape's tier list),
   `full-suite-evidence` (`certified@<fp12>`, `fast-cert@<fp12>+ci-green`, or the
   provisional `fast-cert@<fp12>+ci-pending`), and `ci` (pass / fail / **pending**
-  / unverified).
+  / unverified / **unreadable**).
+  - **`unreadable`** = the GitHub token was REFUSED (401/403) reading CI — as
+    opposed to `unverified` (no `gh`, no network, a 404). It is **no more
+    lenient** than `unverified`: it unlocks nothing, and notably does **not**
+    credit a fast cert (a fast cert needs a CI green the gate can actually
+    *read*). It is only more **honest** — it names the credential fault, the
+    repo, the exact grant to add, and the verify command, instead of sending the
+    builder back to re-run a gate that can never clear. See
+    `gates/g3-candidate.md`.
 - The reviewer's gate-zero **opens then closes `dor_review`** with the same
   evidence shape, under the strict CI semantics.
 - The supervisor's **pre-spawn CI-red bounce** opens then closes `dor_review`

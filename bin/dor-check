@@ -521,6 +521,14 @@ def suite_evidence_error(eval, slug, ci, review_role)
       if ci && ci[:state] == :conflicted
         "This PR is merge-CONFLICTED (mergeStateStatus DIRTY), so its CI will NEVER fire — rebase or merge " \
           "release into the branch, resolve the conflicts, and push; the refreshed PR then runs CI"
+      elsif ci && ci[:state] == :unreadable
+        # The rolio bug, verbatim: the OLD text below told a builder whose PR was
+        # ALREADY open and ALREADY green to "push the branch and open the PR". They
+        # do, nothing changes, and they learn the gate is noise. The fast route is
+        # genuinely unavailable here — but the reason is a TOKEN, and the reader must
+        # be sent at the token, not at a re-run that cannot possibly help.
+        # (@pr_url, not the `devops` local — a top-level def cannot see top-level locals.)
+        CiStatus.unreadable_remedy(CiStatus.repo_from_pr_url(@pr_url))
       elsif review_role
         "The review gate-zero needs the SETTLED green — defer until CI finishes (red bounces the task back)"
       else
@@ -921,6 +929,12 @@ case ci && ci[:state]
 when :none
   suggestions << "CI gate: the PR reports no GitHub checks yet — CI is UNVERIFIED. Confirm the workflow triggered " \
     "before handing off."
+when :unreadable
+  # NOT the same fact as :unverified, and the difference is the whole point: the CI
+  # may well be GREEN — this token simply may not read it. Saying "check `gh pr
+  # checks` manually" here would send the reader to the command that just failed.
+  suggestions << "CI gate: the token was REFUSED when reading GitHub CI (#{ci[:reason]}) — status UNREADABLE, " \
+    "which is NOT the same as no-CI. #{CiStatus.unreadable_remedy(CiStatus.repo_from_pr_url(devops["pr_url"]))}"
 when :unverified
   suggestions << "CI gate: couldn't read GitHub CI (#{ci[:reason]}) — status UNVERIFIED. Check `gh pr checks` " \
     "manually before the handoff."

@@ -1656,6 +1656,63 @@ class DorCheckTest < Minitest::Test
     assert_match(/gate-zero/, out, "the provisional credit names the authoritative verdict's home")
   end
 
+  # --- CI :unreadable — the gate names its own blindness ----------------------
+  #
+  # task dor-check-misses-rolio-ci (2026-07-13): a fine-grained PAT with no
+  # `Checks: Read` on the PRIVATE rolio repo made `gh pr checks` 403, dor-check
+  # folded that into a bare UNVERIFIED, and every rolio task was quietly denied the
+  # fast-cert route — with a message telling the builder to "push the branch and open
+  # the PR" for a PR that was already open and already GREEN. The gate must instead
+  # say: this is a CREDENTIAL fault, on THIS repo, fixed by THIS grant.
+
+  ROLIO_PR = BACKEND_CONTRACT.merge("pr_url" => "https://github.com/amcritchie/rolio/pull/23").freeze
+
+  def test_unreadable_ci_is_reported_as_a_credential_fault_naming_the_repo
+    out, = ci_check("unreadable", ROLIO_PR)
+    assert_match(/UNREADABLE/, out, "the state is named, not collapsed into UNVERIFIED")
+    assert_match(/CREDENTIAL fault/, out, "the CAUSE is named")
+    assert_match(%r{amcritchie/rolio}, out, "the REPO is named")
+    assert_match(/Checks: Read/, out, "the exact GRANT is named")
+    assert_match(/gh pr checks <pr> --repo/, out, "the VERIFY command is named")
+  end
+
+  def test_unreadable_ci_does_NOT_unlock_the_fast_cert_route
+    # HONESTY, NOT LENIENCY. This is the whole discipline of the change: naming the
+    # blindness must not become an EXCUSE for it. A fast cert is only credited
+    # alongside a CI green we can actually READ — an unreadable CI is not a green,
+    # so it blocks exactly as hard as it did before this change. If this test ever
+    # goes green with exit 0, the gate has been made easier to pass.
+    out, code = fast_check_ci("fast_fresh", "unreadable", ROLIO_PR)
+    assert_equal 1, code, "an unreadable CI must NOT credit a fast cert:\n#{out}"
+    assert_match(/fast-cert evidence is FRESH/, out)
+    refute_match(/PROVISIONALLY/, out, "no provisional credit on a CI we cannot read")
+  end
+
+  def test_unreadable_ci_refuses_the_fast_cert_WITHOUT_the_re_run_lie
+    # The regression on the guidance TEXT. The old message sent the builder to
+    # "push the branch and open the PR, then re-run dor-check" — futile advice that
+    # is exactly how a gate teaches people to ignore it. It must now point at the
+    # token, and must NOT tell them to open a PR that already exists.
+    out, = fast_check_ci("fast_fresh", "unreadable", ROLIO_PR)
+    refute_match(/push the branch and open the PR/, out, "the futile re-run advice must be gone")
+    assert_match(/re-running will never clear it/i, out, "the gate says re-running cannot help")
+    assert_match(/bin\/full-suite-check/, out, "and names the route that DOES work today")
+  end
+
+  def test_unreadable_ci_still_blocks_at_the_review_gate_zero
+    out, code = fast_check_ci("fast_fresh", "unreadable", ROLIO_PR, "--gate-role", "review")
+    assert_equal 1, code, out
+  end
+
+  def test_a_readable_but_unrun_ci_is_still_plain_none_not_unreadable
+    # Guard the boundary from the other side: the honest "no run yet" keeps its old
+    # meaning and its old PROVISIONAL credit. :unreadable must not swallow :none.
+    out, code = fast_check_ci("fast_fresh", "none", CI_PR)
+    assert_equal 0, code, out
+    assert_match(/PROVISIONALLY/, out)
+    refute_match(/CREDENTIAL fault/, out)
+  end
+
   def test_review_gate_zero_refuses_a_fast_cert_until_ci_is_green
     # The strict pairing survives on the review side: fresh fast evidence +
     # pending CI is NOT credited at gate-zero — red/pending both block there.
