@@ -3063,8 +3063,25 @@ class ReleaseCliTest < Minitest::Test
     assert_includes out, "install-agent-docs", "the dry run prints the installer command"
   end
 
-  def test_sync_agent_docs_runs_the_primary_checkouts_installer
+  # sync_agent_docs installs from the hub's SHIP WORKSPACE (the tree pinned at the
+  # SHA that just shipped), falling back to the primary only when no such workspace
+  # exists — see the method's comment. The branch is chosen by whether
+  # `<ship-workspace>/bin/install-agent-docs` exists, and GateWorkspace.path is an
+  # ABSOLUTE path, so a raw run's outcome depends on the HOST filesystem: CI (no
+  # _ship) always hit the primary; a gate box that had materialized _ship hit the
+  # ship-workspace branch. The old single test asserted the primary path + refuted
+  # ".worktrees", so it FAILED on any host with a _ship workspace (env-divergence,
+  # not a regression). These two stub GateWorkspace.path to fix the branch on every
+  # host and assert the DESIGN: ship-workspace preferred, primary fallback.
+
+  def test_sync_agent_docs_installs_from_the_shipped_ship_workspace
     setup = <<~RUBY
+      require "tmpdir"; require "fileutils"
+      WS = Dir.mktmpdir
+      FileUtils.mkdir_p(File.join(WS, "bin"))
+      File.write(File.join(WS, "bin", "install-agent-docs"), "")
+      Release::GateWorkspace.define_singleton_method(:path) { |*_| WS }
+      $stdout.puts("WS " + WS)
       def sh(*a, **_k)
         $stdout.puts("SH-ARGV " + a.inspect)
         ["installed-docs-output", true]
@@ -3072,11 +3089,28 @@ class ReleaseCliTest < Minitest::Test
     RUBY
     out = run_cli(["--yes"], setup: setup, call: "sync_agent_docs")
 
-    assert_includes out, "mcritchie-studio/bin/install-agent-docs",
-                     "the sync shells the hub checkout's own installer"
-    refute_includes out[/SH-ARGV.*/].to_s, ".worktrees",
-                     "always the PRIMARY checkout's installer — never a worktree's unshipped docs"
+    ws   = out[/^WS (.+)$/, 1]
+    argv = out[/SH-ARGV (.*)/, 1].to_s
+    assert ws, "sanity: the stub reported its ship-workspace path"
+    assert_includes argv, File.join(ws, "bin", "install-agent-docs"),
+                    "the sync shells the SHIP WORKSPACE's installer (the just-shipped tree), preferring it over the primary"
     assert_includes out, "installed-docs-output", "the installer's output is surfaced to the operator"
+  end
+
+  def test_sync_agent_docs_falls_back_to_the_primary_without_a_ship_workspace
+    setup = <<~RUBY
+      Release::GateWorkspace.define_singleton_method(:path) { |*_| "/no/such/ship/_ship" }
+      def sh(*a, **_k)
+        $stdout.puts("SH-ARGV " + a.inspect)
+        ["installed-docs-output", true]
+      end
+    RUBY
+    out = run_cli(["--yes"], setup: setup, call: "sync_agent_docs")
+
+    argv = out[/SH-ARGV (.*)/, 1].to_s
+    assert_includes argv, "bin/install-agent-docs", "the fallback still shells the hub's installer"
+    refute_includes argv, "/no/such/ship/_ship", "a MISSING ship workspace must not be used — fall back to the primary"
+    assert_includes out, "installed-docs-output", "the installer's output is surfaced"
   end
 
   def test_sync_agent_docs_failure_never_aborts_the_ship
