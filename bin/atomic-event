@@ -797,11 +797,17 @@ class AgentActivityCli
     return {} unless result&.usage?
 
     delta = result.delta || {}
+    # tokens_in stays FOLDED (input + cache_creation) — the long-standing capture
+    # shape every downstream aggregate is built on. The un-folded cache_creation
+    # bucket rides alongside it so the SERVER can split it back out and re-derive
+    # cost at an operator's overridden rate; this process has no ActiveRecord and
+    # so prices at LIST rate only (`cost` below is the fallback for that path).
     tokens_in = delta["input"].to_i + delta["cache_creation"].to_i
     {
       "model" => result.model,
       "tokens_in" => tokens_in,
       "tokens_out" => delta["output"].to_i,
+      "cache_creation_tokens" => delta["cache_creation"].to_i,
       "cache_read_tokens" => delta["cache_read"].to_i,
       "cost" => result.cost
     }.reject { |_, v| v.nil? || v.to_s.empty? }

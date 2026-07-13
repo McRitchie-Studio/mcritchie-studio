@@ -688,10 +688,7 @@ class Task < ApplicationRecord
       seconds_in_from: nil,
       source: (source.presence || Current.task_event_source).presence,
       actor: actor.to_s.strip.presence || Current.task_event_actor.presence,
-      model: Current.task_event_model.presence,
-      tokens_in: Current.task_event_tokens_in,
-      tokens_out: Current.task_event_tokens_out,
-      cost: Current.task_event_cost,
+      **task_event_usage_attrs,
       metadata: metadata.to_h.merge("status" => status.to_s)
     )
   end
@@ -1204,6 +1201,35 @@ class Task < ApplicationRecord
     log.save!
   end
 
+  # The usage columns for a TaskEvent, with cost DERIVED server-side. bin/task mints its
+  # cost in a plain-Ruby process with no ActiveRecord, so it can never see an operator's
+  # rate override (UsagePricing.db_rates returns {} there) — re-deriving here is what
+  # carries a saved rate into task-event cost, and therefore into actual_size on the
+  # sizing dashboard. The CLI's cost stays the FALLBACK: kept for an unpriced model, or
+  # an older CLI that doesn't send the un-folded cache_creation bucket needed to split
+  # the folded tokens_in faithfully.
+  def task_event_usage_attrs
+    model      = Current.task_event_model.presence
+    tokens_in  = Current.task_event_tokens_in
+    tokens_out = Current.task_event_tokens_out
+    cache_creation_tokens = Current.task_event_cache_creation_tokens
+    cache_read_tokens     = Current.task_event_cache_read_tokens
+
+    derived = UsagePricing.cost_from_capture(
+      model: model, tokens_in: tokens_in, tokens_out: tokens_out,
+      cache_creation_tokens: cache_creation_tokens, cache_read_tokens: cache_read_tokens
+    )
+
+    {
+      model: model,
+      tokens_in: tokens_in,
+      tokens_out: tokens_out,
+      cache_creation_tokens: cache_creation_tokens,
+      cache_read_tokens: cache_read_tokens,
+      cost: derived || Current.task_event_cost
+    }
+  end
+
   def write_stage_event(from:)
     occurred = Time.current
     # Measure the stage duration between TRANSITIONS only — an intent row recorded
@@ -1217,10 +1243,7 @@ class Task < ApplicationRecord
       seconds_in_from: previous && (occurred - previous.occurred_at).round,
       source: Current.task_event_source,
       actor: Current.task_event_actor.presence,
-      model: Current.task_event_model.presence,
-      tokens_in: Current.task_event_tokens_in,
-      tokens_out: Current.task_event_tokens_out,
-      cost: Current.task_event_cost,
+      **task_event_usage_attrs,
       # Merge the review-bypass marker (set only by Conductor.sweep!(override:true)
       # for `bin/release merge --override`) onto THIS transition, so the review-gate
       # skip is recorded on the same spine the move writes — not as a second, orphan

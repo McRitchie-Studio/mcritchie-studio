@@ -658,6 +658,11 @@ def autofill_move_usage(event, slug)
 
   event["tokens_in"]  = capture.tokens_in
   event["tokens_out"] = capture.tokens_out
+  # The un-folded cache buckets ride alongside the folded tokens_in so the SERVER can
+  # re-derive this event's cost at an operator's overridden rate — this process has no
+  # ActiveRecord and prices at LIST rate only, so `cost` below is just the fallback.
+  event["cache_creation_tokens"] = capture.cache_creation_tokens
+  event["cache_read_tokens"]     = capture.cache_read_tokens
   event["cost"]       = format("%.4f", capture.cost) if capture.cost
 rescue StandardError
   # A capture failure must degrade to spine-only, never abort the move (and its

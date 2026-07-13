@@ -1,0 +1,136 @@
+<% content_for(:title, "#{heartbeat_model_short(@row.model)} pricing — Admin") %>
+
+<%# The activity feed's own style + script layers, so the session activity below renders
+    through the REAL agents/_activity_row partial (scoped under #alex-heartbeat) rather
+    than a bespoke table that would drift from /agents/activities. %>
+<%= render "heartbeat/styles" %>
+<%= render "agents/activities_styles" %>
+<%= render "agents/activities_scripts" %>
+
+<%# The sliders' max must never sit BELOW a rate already saved, or re-saving would
+    silently CLAMP an existing higher override down. Floor them at the current value. %>
+<% input_max  = [100, @input_rate.ceil].max %>
+<% output_max = [200, @output_rate.ceil].max %>
+
+<div class="max-w-5xl mx-auto px-4 py-8 space-y-6"
+     <%# Mirrors UsagePricing.price EXACTLY: the stored tokens_in is FOLDED
+         (input + cache_creation), so the raw input bucket is priced at the input rate
+         and the cache WRITES inside it at the write tier (2x input, unless the model
+         carries an absolute write rate) — never at 1x. If this drifts from the server
+         math, the panel lies about money. %>
+     x-data="{
+       inputTokens: <%= @row.input_tokens %>,
+       cacheCreation: <%= @row.cache_creation_tokens %>,
+       tokensOut: <%= @row.tokens_out %>,
+       inRate: <%= @input_rate %>,
+       outRate: <%= @output_rate %>,
+       absWriteRate: <%= @absolute_write_rate || 'null' %>,
+       writeMult: <%= UsagePricing::CACHE_WRITE_MULTIPLIER.to_f %>,
+       per: 1000000,
+       get writeRate() { return this.absWriteRate === null ? this.inRate * this.writeMult : this.absWriteRate },
+       get inCost() { return (this.inputTokens * this.inRate + this.cacheCreation * this.writeRate) / this.per },
+       get outCost() { return (this.tokensOut * this.outRate) / this.per },
+       get totalCost() { return this.inCost + this.outCost },
+       money(n) { return n === 0 ? '—' : '$' + (n < 1 ? n.toFixed(4) : n.toFixed(2)) }
+     }">
+  <header class="flex items-start justify-between gap-4">
+    <div>
+      <h1 class="text-heading text-2xl font-bold mb-1"><%= heartbeat_model_short(@row.model) %></h1>
+      <p class="text-muted text-sm"><code class="text-xs"><%= @row.model %></code> · rates in USD per 1M tokens</p>
+    </div>
+    <%= link_to "← All models", admin_model_pricing_path, class: "text-sm text-primary hover:underline whitespace-nowrap" %>
+  </header>
+
+  <%# ── Rate sliders ─────────────────────────────────────────────────────── %>
+  <section class="card p-5">
+    <h2 class="text-heading font-semibold mb-4">Adjust rates</h2>
+
+    <% if @override&.errors&.any? %>
+      <div class="mb-4 rounded-lg border border-red-500/40 bg-red-500/10 p-3" data-test="rate-errors">
+        <ul class="text-sm text-red-400 list-disc list-inside">
+          <% @override.errors.full_messages.each do |message| %>
+            <li><%= message %></li>
+          <% end %>
+        </ul>
+      </div>
+    <% end %>
+
+    <%= form_with url: admin_model_pricing_model_path(@row.model), method: :patch, data: { turbo: false } do %>
+      <div class="space-y-6">
+        <div>
+          <div class="flex justify-between items-baseline text-sm mb-1">
+            <label for="input-rate" class="text-secondary font-medium">Input rate ($/1M tokens)</label>
+            <span class="tabular-nums text-heading font-semibold">$<span x-text="inRate.toFixed(4)"></span></span>
+          </div>
+          <input type="range" id="input-rate" name="model_rate_override[input_rate]"
+                 min="0" max="<%= input_max %>" step="0.0001"
+                 aria-label="Input rate in dollars per million tokens"
+                 x-model.number="inRate" class="w-full accent-primary" data-testid="input-rate-slider">
+        </div>
+        <div>
+          <div class="flex justify-between items-baseline text-sm mb-1">
+            <label for="output-rate" class="text-secondary font-medium">Output rate ($/1M tokens)</label>
+            <span class="tabular-nums text-heading font-semibold">$<span x-text="outRate.toFixed(4)"></span></span>
+          </div>
+          <input type="range" id="output-rate" name="model_rate_override[output_rate]"
+                 min="0" max="<%= output_max %>" step="0.0001"
+                 aria-label="Output rate in dollars per million tokens"
+                 x-model.number="outRate" class="w-full accent-primary" data-testid="output-rate-slider">
+        </div>
+      </div>
+      <div class="mt-6 flex items-center gap-3">
+        <button type="submit" class="btn-primary px-4 py-2 text-sm">Save rates</button>
+        <span class="text-xs text-muted">Applied to future cost calculations. Historical costs stay as-billed.</span>
+      </div>
+    <% end %>
+  </section>
+
+  <%# ── Last-session cost (a what-if calculator: recomputes live, persists nothing) ──
+      In + Out only — it deliberately does NOT price the cache tiers, so it is labelled
+      as such rather than posing as the session's true total. %>
+  <section class="card p-5">
+    <h2 class="text-heading font-semibold mb-1">Last session cost</h2>
+    <p class="text-muted text-xs mb-4">
+      <% if @row.session_id %>
+        Session <code class="text-xs"><%= @row.session_id %></code> — the most recent to use this model.
+      <% else %>
+        No session has used this model yet — the calculator uses zero tokens.
+      <% end %>
+    </p>
+    <div class="grid grid-cols-2 sm:grid-cols-5 gap-4 text-sm">
+      <div>
+        <div class="text-muted text-xs mb-0.5">In tokens</div>
+        <div class="text-heading font-semibold tabular-nums"><%= number_with_delimiter(@row.tokens_in) %></div>
+      </div>
+      <div>
+        <div class="text-muted text-xs mb-0.5">In cost</div>
+        <div class="text-heading font-semibold tabular-nums" data-testid="in-cost" x-text="money(inCost)"></div>
+      </div>
+      <div>
+        <div class="text-muted text-xs mb-0.5">Out tokens</div>
+        <div class="text-heading font-semibold tabular-nums"><%= number_with_delimiter(@row.tokens_out) %></div>
+      </div>
+      <div>
+        <div class="text-muted text-xs mb-0.5">Out cost</div>
+        <div class="text-heading font-semibold tabular-nums" data-testid="out-cost" x-text="money(outCost)"></div>
+      </div>
+      <div>
+        <div class="text-muted text-xs mb-0.5">In + Out cost</div>
+        <div class="text-primary font-bold tabular-nums" data-testid="total-cost" x-text="money(totalCost)"></div>
+      </div>
+    </div>
+  </section>
+
+  <%# ── Session activity — the REAL feed table, reused (agents/_activity_row) ─────── %>
+  <section id="alex-heartbeat" class="aa-page card p-5">
+    <h2 class="text-heading font-semibold mb-3">Session activity</h2>
+    <% if @activity_rows.any? %>
+      <%= render "agents/activities_table", activity_rows: @activity_rows,
+            pokemon_by_slug: @pokemon_by_slug, agents_by_slug: @agents_by_slug,
+            activity_grades: @activity_grades, action_grades: @action_grades,
+            shared_turn_ids: @shared_turn_ids, stage_transitions: @stage_transitions %>
+    <% else %>
+      <p class="text-muted text-sm">No activities recorded for this model yet.</p>
+    <% end %>
+  </section>
+</div>
