@@ -140,6 +140,26 @@
           class: "text-heading font-semibold text-sm" %>
   </a>
 
+  <%# The claim chip — two facts, never conflated. The pulsing dot means only that a
+      TERMINAL IS PAINTING (bin/statusline renews the lease every ~5s); it survives a
+      wedged agent, so on its own it lies about progress. Beside it we state what the
+      task has actually PRODUCED — its last durable artifact and how long ago — and let
+      the reader judge. No STALLED verdict: measured over 243 real work windows, a
+      "no durable write in 15m" rule flags 79% of HEALTHY desks (see ClaimLease).
+      Only computed for a live-claimed building card (a handful at a time), so the
+      two evidence lookups never become a board-wide N+1. %>
+  <% if task.stage == "building" && task.claim_live? %>
+    <% progress_seconds = task.progress_seconds_ago %>
+    <% progress_quiet = task.claim_progress_quiet? %>
+    <div class="flex items-center gap-1.5 mb-1.5 text-[10px] <%= progress_quiet ? "text-amber-300/90" : "text-muted" %>"
+         data-test="task-card-claim-progress"
+         data-progress-quiet="<%= progress_quiet %>"
+         title="<%= claim_progress_title(task, progress_seconds) %>">
+      <span class="w-1.5 h-1.5 rounded-full bg-mint-400 animate-pulse shrink-0"></span>
+      <span class="truncate"><%= claim_progress_summary(task, progress_seconds) %></span>
+    </div>
+  <% end %>
+
   <%# Stage crew (agent-events summary) sits directly under the title — build-lane
       stages wear the task's mascot; deploy-lane shows who reviewed/assembled/
       shipped. Renders nothing when there are no events. %>

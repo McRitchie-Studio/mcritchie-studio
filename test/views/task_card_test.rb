@@ -457,4 +457,74 @@ class TaskCardTest < ActionView::TestCase
     assert_includes card["style"], "--task-card-glow-border-color: color-mix(in srgb, var(--task-card-glow-color) 42%, transparent)"
     assert_select "[data-test='cleared-feedback']", count: 0
   end
+
+  # --- The claim chip: liveness and progress, stated separately --------------
+
+  # Creating a Task writes its genesis TaskEvent — itself durable progress, stamped
+  # NOW. Backdate the spine so each test's own evidence is the latest artifact,
+  # the way a real mid-build task looks hours after it was opened.
+  def claimed_building_task(title:, now: Time.current)
+    task = Task.create!(title: title, stage: "building")
+    task.update!(metadata: { "devops" => ClaimLease.renewed(session: "sess-1", nonce: "inst-A", now: now) })
+    TaskEvent.where(task_slug: task.slug).update_all(occurred_at: now - 6.hours)
+    task.reload
+  end
+
+  def render_card(task)
+    render partial: "tasks/task_card", locals: { task: task, agents: @agents, crew_board: :build }
+  end
+
+  test "[component] a live-claimed building card states its last durable progress, not just liveness" do
+    now = Time.current
+    task = claimed_building_task(title: "Progressing build card chip", now: now)
+    GateRun.create!(subject_type: "task", subject_slug: task.slug, key: "g1_cert", attempt: 1,
+                    started_at: now - 4.minutes, created_at: now - 4.minutes, updated_at: now - 4.minutes)
+
+    render_card(task)
+
+    chip = css_select("[data-test='task-card-claim-progress']").first
+    assert chip, "a live-claimed building card must show the progress fact"
+    assert_match(/progress 4m ago \(g1_cert running\)/, chip.text)
+    assert_equal "false", chip["data-progress-quiet"]
+  end
+
+  # The regression: a lease that keeps heartbeating while nothing lands is HELD but
+  # quiet. The card says so in words — it does not reclaim, and the desk stays held.
+  test "[component] a live claim with no durable write in hours renders the quiet chip" do
+    now = Time.current
+    task = claimed_building_task(title: "Quiet build card chip", now: now)
+    TaskEvent.create!(task_slug: task.slug, kind: TaskEvent::CHECKPOINT, occurred_at: now - 5.hours,
+                      from_stage: "building", to_stage: "building", metadata: { "status" => "started" })
+
+    render_card(task)
+
+    chip = css_select("[data-test='task-card-claim-progress']").first
+    assert_equal "true", chip["data-progress-quiet"]
+    assert_match(/progress 5\.0h ago \(cert started\)/, chip.text)
+    assert_includes chip["class"], "text-amber-300/90"
+  end
+
+  # A healthy long build (a 90-minute cert is real — prod p99 is 94m) must never
+  # wear the quiet chip. Its open gate is the evidence that work is in flight.
+  test "[component] a long-running cert keeps its desk and wears no quiet chip" do
+    now = Time.current
+    task = claimed_building_task(title: "Long cert card chip", now: now)
+    GateRun.create!(subject_type: "task", subject_slug: task.slug, key: "g1_cert", attempt: 1,
+                    started_at: now - 90.minutes, created_at: now - 90.minutes, updated_at: now - 90.minutes)
+
+    render_card(task)
+
+    chip = css_select("[data-test='task-card-claim-progress']").first
+    assert_equal "false", chip["data-progress-quiet"], "a healthy long build must not be flagged"
+    assert_no_match(/amber/, chip["class"])
+  end
+
+  # An unclaimed desk has no liveness fact to qualify, so there is nothing to say.
+  test "[component] a building card with no live claim shows no progress chip" do
+    task = Task.create!(title: "Unclaimed build card chip", stage: "building")
+
+    render_card(task.reload)
+
+    assert_select "[data-test='task-card-claim-progress']", count: 0
+  end
 end

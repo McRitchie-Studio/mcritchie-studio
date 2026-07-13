@@ -114,6 +114,66 @@ module ClaimLease
     age.negative? ? 0 : age.round
   end
 
+  # --- Progress, which is NOT liveness -------------------------------------
+  #
+  # The lease above attests exactly one thing: A TERMINAL IS RENDERING. It is
+  # renewed by bin/statusline's ~5s status-line paint, so it survives a wedged
+  # agent — on 2026-07-13 a session sat 28 minutes making no durable write while
+  # its lease stayed green, and the board read that green as "progressing".
+  # It never meant that. Liveness and progress are two different facts, and the
+  # cure is to REPORT BOTH, not to swap one for the other.
+  #
+  # `progress_age` is the second fact: seconds since this task last produced a
+  # DURABLE artifact (a TaskEvent — stage move / intent / cert checkpoint — or a
+  # GateRun open/lane/close). The caller supplies it; this module stays pure.
+  #
+  # WHY THERE IS NO "STALLED" VERDICT HERE, and why you should not add one.
+  # Measured against 14 days of real building sessions (243 live work windows,
+  # prod board, 2026-07-13):
+  #
+  #   max board-write silence inside a HEALTHY window: p50 26m · p90 66m · p99 125m
+  #   g1_cert durations:                               p50 2.1m · p90 13m · p99 94m
+  #
+  # A "no durable write in 15m ⇒ STALLED" rule — the obvious design — would have
+  # flagged 79% of healthy desks (193/243), and STILL would not have caught the
+  # 2026-07-13 wedge, whose failing certs wrote no gate rows at all and whose
+  # 28-minute silence is shorter than the healthy median. Silence is simply not
+  # evidence of a wedge: agents legitimately think, run 90-minute certs, and wait
+  # on the operator. A chip that cries wolf on four of five healthy desks is the
+  # same lying gate with its polarity flipped — a frequent lying-RED instead of a
+  # rare lying-GREEN — and it would train every reader to ignore it.
+  #
+  # So we surface the AGE as a fact and let the reader judge. The only verdict we
+  # draw is `quiet?`, at a deliberately conservative threshold (default 2h, past
+  # the measured p99 of both healthy silence AND cert duration), suppressed while
+  # a gate is demonstrably in flight, and defaulting to HEALTHY whenever the
+  # progress fact is unknown. It is informational: nothing here reclaims a desk,
+  # blocks a move, or deletes anything.
+  PROGRESS_QUIET_SECONDS = 7200
+
+  # Seconds since the task's last durable artifact. nil (unknown) when the caller
+  # cannot determine one — an unknown progress fact must never read as trouble.
+  def self.progress_age(last_progress_at, now: Time.now)
+    at = last_progress_at.is_a?(Time) ? last_progress_at : parse_time(last_progress_at)
+    return nil if at.nil?
+
+    age = now - at
+    age.negative? ? 0 : age.round
+  end
+
+  # True only when a LIVE lease has gone quiet: the desk is held, we KNOW the
+  # progress fact, it is older than `quiet_after`, and no gate is in flight.
+  # Every uncertainty resolves to false (healthy) by construction.
+  def self.quiet?(claim, last_progress_at:, in_flight: false, now: Time.now, quiet_after: PROGRESS_QUIET_SECONDS)
+    return false unless live?(claim, now: now)
+    return false if in_flight
+
+    age = progress_age(last_progress_at, now: now)
+    return false if age.nil?
+
+    age > quiet_after
+  end
+
   # The claim hash a fresh renewal writes — the holder's identity plus a lease
   # that expires `ttl` from now. Merge this into the devops payload.
   def self.renewed(session:, nonce:, now: Time.now, ttl: DEFAULT_TTL_SECONDS)

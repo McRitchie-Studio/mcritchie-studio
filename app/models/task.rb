@@ -546,6 +546,54 @@ class Task < ApplicationRecord
     ClaimLease.heartbeat_age(devops, now: now)
   end
 
+  # --- The progress fact (see the long note in ClaimLease) -------------------
+  # `claim_live?` above says only "a terminal is rendering". These say what the
+  # task has actually PRODUCED, read from the durable evidence we already write:
+  # TaskEvents (stage moves, intents, cert checkpoints) and GateRuns (a gate
+  # opening, recording a lane, or closing). No new heartbeat, no new write path —
+  # a wedged agent cannot fake these, because they only exist when work landed.
+  #
+  # nil means UNKNOWN (a task that has produced nothing yet), and unknown always
+  # reads as healthy: never invent trouble from an absence of evidence.
+  PROGRESS_IN_FLIGHT_BUDGET = 6.hours # past the longest cert ever measured (321m)
+
+  def last_progress_event
+    @last_progress_event ||= progress_evidence.max_by(&:first)
+  end
+
+  def last_progress_at
+    last_progress_event&.first
+  end
+
+  # What the last durable artifact WAS ("cert started", "moved to building") —
+  # the difference between "no progress in 40m" and a reader who can act on it.
+  def last_progress_label
+    last_progress_event&.last
+  end
+
+  def progress_seconds_ago(now: Time.current)
+    ClaimLease.progress_age(last_progress_at, now: now)
+  end
+
+  # A gate is demonstrably running right now (opened, never closed, and recently
+  # enough to be plausible). Open gate rows latch forever when a run crashes, so
+  # this is BOUNDED — an ancient open gate is not evidence of anything.
+  def gate_in_flight?(now: Time.current)
+    gate_runs.where(finished_at: nil)
+             .where(started_at: (now - PROGRESS_IN_FLIGHT_BUDGET)..now)
+             .exists?
+  end
+
+  # Held by a live session, yet nothing durable has landed in a long time.
+  # Informational only — it reclaims nothing and blocks nothing.
+  def claim_progress_quiet?(now: Time.current)
+    ClaimLease.quiet?(devops,
+                      last_progress_at: last_progress_at,
+                      in_flight: gate_in_flight?(now: now),
+                      now: now)
+  end
+
+
   def devops_repositories
     devops_list("repositories")
   end
@@ -1083,6 +1131,34 @@ class Task < ApplicationRecord
   end
 
   private
+
+  # [[time, label], ...] — the durable artifacts this task has produced. Only the
+  # LATEST of each spine matters, so this is two indexed lookups, not a scan.
+  def progress_evidence
+    evidence = []
+
+    event = task_events.order(:occurred_at).last
+    evidence << [event.occurred_at, progress_event_label(event)] if event&.occurred_at
+
+    gate = gate_runs.order(:updated_at).last
+    evidence << [gate.updated_at, progress_gate_label(gate)] if gate&.updated_at
+
+    evidence
+  end
+
+  def progress_event_label(event)
+    case event.kind
+    when TaskEvent::CHECKPOINT then "cert #{event.metadata['status'].presence || 'checkpoint'}"
+    when TaskEvent::INTENT     then "intent recorded"
+    else "moved to #{stage}"
+    end
+  end
+
+  def progress_gate_label(gate)
+    return "#{gate.key} running" if gate.finished_at.nil?
+
+    "#{gate.key} #{gate.success ? 'passed' : 'failed'}"
+  end
 
   # Refresh the testing-phase projection after a stage transition — the only edit
   # ON THIS ROW that moves a v2 task-owned phase window (build/ci/review bounds).

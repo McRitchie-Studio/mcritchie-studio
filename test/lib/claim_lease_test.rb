@@ -181,4 +181,70 @@ class ClaimLeaseTest < Minitest::Test
     assert_equal({ "claimed_session" => SESSION, "claim_nonce" => "n", "claim_expires_at" => "t" },
                  ClaimLease.from_devops(devops))
   end
+
+  # --- Progress, which is NOT liveness ---------------------------------------
+
+  def live_claim
+    ClaimLease.renewed(session: SESSION, nonce: "inst-A", now: NOW)
+  end
+
+  def test_progress_age_measures_from_the_last_durable_artifact
+    assert_equal 1800, ClaimLease.progress_age(NOW - 1800, now: NOW)
+    assert_equal 1800, ClaimLease.progress_age((NOW - 1800).iso8601, now: NOW)
+  end
+
+  def test_progress_age_is_unknown_without_an_artifact_and_never_negative
+    assert_nil ClaimLease.progress_age(nil, now: NOW)
+    assert_nil ClaimLease.progress_age("", now: NOW)
+    assert_nil ClaimLease.progress_age("not-a-time", now: NOW)
+    assert_equal 0, ClaimLease.progress_age(NOW + 30, now: NOW)
+  end
+
+  # The regression this feature exists for: a lease that keeps heartbeating while
+  # the agent produces nothing is LIVE but QUIET — the board may no longer read
+  # that green dot as progress.
+  def test_a_live_lease_with_no_durable_write_reads_quiet
+    assert ClaimLease.quiet?(live_claim, last_progress_at: NOW - 9000, now: NOW)
+  end
+
+  # ...and the other half of the same regression: a lease whose task IS landing
+  # durable writes (a cert checkpoint, a gate lane) is never quiet.
+  def test_a_lease_making_durable_writes_is_not_quiet
+    refute ClaimLease.quiet?(live_claim, last_progress_at: NOW - 60, now: NOW)
+  end
+
+  # THE 8-MINUTE-CERT CASE — the trap this design must not fall into. A healthy
+  # `bin/fast-check` across ~120 mapped test files makes zero board writes for
+  # minutes on end (measured on prod: cert p90 13m, p99 94m). Silence is not a
+  # wedge, so the threshold sits past the measured p99 of BOTH healthy silence
+  # and cert duration, and an in-flight gate suppresses the call outright.
+  def test_a_long_running_cert_is_never_quiet
+    # 90 minutes of silence — a real p99 cert — with its gate still open.
+    refute ClaimLease.quiet?(live_claim, last_progress_at: NOW - (90 * 60), in_flight: true, now: NOW)
+    # Even with no gate in flight, 90m sits under the conservative 2h threshold.
+    refute ClaimLease.quiet?(live_claim, last_progress_at: NOW - (90 * 60), now: NOW)
+  end
+
+  def test_an_in_flight_gate_always_suppresses_quiet
+    refute ClaimLease.quiet?(live_claim, last_progress_at: NOW - 100_000, in_flight: true, now: NOW)
+  end
+
+  # Fail safe: an unknown progress fact is NOT trouble. A false "stalled" chip on
+  # a healthy desk is the frequent lying-RED this design refuses to trade for.
+  def test_unknown_progress_reads_healthy_never_quiet
+    refute ClaimLease.quiet?(live_claim, last_progress_at: nil, now: NOW)
+    refute ClaimLease.quiet?(live_claim, last_progress_at: "garbled", now: NOW)
+  end
+
+  # Quiet is a statement about a HELD desk. Nothing to say about an empty one.
+  def test_an_unclaimed_or_expired_lease_is_never_quiet
+    refute ClaimLease.quiet?({}, last_progress_at: NOW - 100_000, now: NOW)
+    expired = ClaimLease.renewed(session: SESSION, nonce: "inst-A", now: NOW - 9000)
+    refute ClaimLease.quiet?(expired, last_progress_at: NOW - 100_000, now: NOW)
+  end
+
+  def test_quiet_threshold_is_tunable_but_defaults_past_the_measured_p99
+    assert_equal 7200, ClaimLease::PROGRESS_QUIET_SECONDS
+    assert ClaimLease.quiet?(live_claim, last_progress_at: NOW - 1200, quiet_after: 600, now: NOW)
+  end
 end

@@ -15,6 +15,61 @@ module Api
         }
       end
 
+      # [integration] The show projection carries the PROGRESS fact beside the claim.
+      # bin/task's claim gate reads these to tell a second agent what the holder has
+      # actually produced ("last durable progress 2.5h ago · g1_cert failed") instead
+      # of inferring health from a heartbeat that survives a wedge.
+      test "show projects the progress fact alongside the live claim" do
+        now = Time.current
+        task = tasks(:in_progress_task)
+        task.update!(metadata: { "devops" => ClaimLease.renewed(session: "sess-1", nonce: "inst-A", now: now) })
+        TaskEvent.where(task_slug: task.slug).delete_all
+        TaskEvent.create!(task_slug: task.slug, kind: TaskEvent::CHECKPOINT, occurred_at: now - 3.minutes,
+                          from_stage: "building", to_stage: "building", metadata: { "status" => "started" })
+
+        get api_v1_task_path(task.slug), headers: @headers
+
+        assert_response :success
+        body = response.parsed_body["data"]
+        assert_in_delta 180, body["progress_seconds_ago"], 5
+        assert_equal "cert started", body["last_progress_label"]
+        assert_equal false, body["progress_quiet"]
+        assert body["last_progress_at"].present?
+      end
+
+      # A live claim that has landed nothing in hours reads quiet — and the lease is
+      # untouched by it. The task is still HELD; nothing was reclaimed.
+      test "show reports a quiet claim without touching the lease" do
+        now = Time.current
+        task = tasks(:in_progress_task)
+        task.update!(metadata: { "devops" => ClaimLease.renewed(session: "sess-1", nonce: "inst-A", now: now) })
+        TaskEvent.where(task_slug: task.slug).delete_all
+        TaskEvent.create!(task_slug: task.slug, kind: TaskEvent::CHECKPOINT, occurred_at: now - 5.hours,
+                          from_stage: "building", to_stage: "building", metadata: { "status" => "started" })
+        lease_before = task.devops.slice(*ClaimLease::CLAIM_KEYS)
+
+        get api_v1_task_path(task.slug), headers: @headers
+
+        assert_equal true, response.parsed_body["data"]["progress_quiet"]
+        assert_equal lease_before, task.reload.devops.slice(*ClaimLease::CLAIM_KEYS),
+                     "reading the progress fact must never mutate the claim"
+        assert task.claim_live?, "a quiet desk is still an occupied desk"
+      end
+
+      # Fail safe: a task with no durable artifact reads UNKNOWN, never quiet.
+      test "show reports unknown progress for a task that has produced nothing" do
+        task = tasks(:in_progress_task)
+        task.update!(metadata: { "devops" => ClaimLease.renewed(session: "sess-1", nonce: "inst-A") })
+        TaskEvent.where(task_slug: task.slug).delete_all
+
+        get api_v1_task_path(task.slug), headers: @headers
+
+        body = response.parsed_body["data"]
+        assert_nil body["progress_seconds_ago"]
+        assert_nil body["last_progress_at"]
+        assert_equal false, body["progress_quiet"], "absence of evidence must never read as trouble"
+      end
+
       test "update stores devops metadata" do
         patch api_v1_task_path(@task.slug),
               params: {

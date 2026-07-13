@@ -39,10 +39,21 @@
           <span class="text-xs" x-text="copied ? '✓' : '⧉'" :class="copied ? 'text-mint-300' : 'text-muted'"></span>
         </button>
         <span x-ref="resumeCmd" class="hidden"><%= @task.resume_command %></span>
+        <%# The live dot attests that a TERMINAL IS PAINTING, nothing more — it is
+            renewed by bin/statusline's ~5s render and so survives a wedged agent.
+            State the progress fact next to it rather than letting "live" be read as
+            "progressing" (the 2026-07-13 lie). Informational: no verdict, no reclaim. %>
         <% if @task.claim_live? %>
           <span class="inline-flex items-center gap-1 text-xs text-mint-300"
+                data-test="task-claim-live"
                 title="Build claim is live — a session looks active in another terminal (last heartbeat ~<%= @task.claim_heartbeat_seconds_ago %>s ago). Resume anyway?">
             <span class="w-1.5 h-1.5 rounded-full bg-mint-400 animate-pulse"></span>live
+          </span>
+          <span class="inline-flex items-center gap-1 text-xs <%= @task.claim_progress_quiet? ? "text-amber-300/90" : "text-muted" %>"
+                data-test="task-claim-progress"
+                data-progress-quiet="<%= @task.claim_progress_quiet? %>"
+                title="<%= claim_progress_title(@task) %>">
+            <%= claim_progress_summary(@task).delete_prefix("live · ") %>
           </span>
         <% end %>
       </div>
