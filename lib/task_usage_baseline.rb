@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "agent_session_usage"
+require_relative "task_usage_sandbox"
 require "json"
 require "fileutils"
 
@@ -59,10 +60,19 @@ class TaskUsageBaseline
   end
 
   # Persist +totals+ as the baseline for +slug+, merging into any existing state.
+  #
+  # THE choke point for every write to the usage/cost store — bin/task,
+  # bin/release and bin/reviewer-select all land here — so the sandbox guard sits
+  # here too, not only at each CLI's dir resolution. A future caller that resolves
+  # its own dir is then sandboxed BY CONSTRUCTION rather than by remembering to
+  # ask. A violation aborts (SystemExit), which is precisely why it survives the
+  # `rescue StandardError` below: this rescue is what makes the store best-effort,
+  # and a swallowed guard is not a guard. See lib/task_usage_sandbox.rb.
   def write(slug, totals)
     return if blank?
 
     path = state_path
+    TaskUsageSandbox.enforce!(path, store: "task-usage")
     FileUtils.mkdir_p(File.dirname(path))
     data = File.exist?(path) ? (JSON.parse(File.read(path)) rescue {}) : {}
     data[slug.to_s] = totals

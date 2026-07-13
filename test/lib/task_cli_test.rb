@@ -21,8 +21,22 @@ require_relative "../support/session_env"
 
 class TaskCliTest < Minitest::Test
   BIN = File.expand_path("../../bin/task", __dir__)
+  # A REAL past session id — which is exactly why the sandbox exists: its 30MB
+  # transcript still sits in the operator's ~/.claude, so an unpinned child globs
+  # it and captures 1.9B real tokens under a stub slug. Pinned HOME makes the id
+  # inert; the sandbox makes an unpinned run impossible.
   SESSION = "2aa216f6-7565-4bf4-bd01-70793c8ba617"
   OTHER_SESSION = "9f9f9f9f-0000-1111-2222-333344445555"
+
+  # One sandbox root per TEST (not per run_task call): a case may invoke the CLI
+  # twice and expect the second run to read the baseline the first one wrote.
+  def sandbox_root
+    @sandbox_root ||= Dir.mktmpdir("task-cli-sandbox")
+  end
+
+  def teardown
+    FileUtils.remove_entry(@sandbox_root) if @sandbox_root && File.directory?(@sandbox_root)
+  end
 
   # Run bin/task against a one-shot stub server; returns [recorded_requests, out].
   # `env` overrides merge onto a clean base (auth secret + base url + skip marker);
@@ -51,6 +65,15 @@ class TaskCliTest < Minitest::Test
     # defaulting, so the child must name NO session unless a case opts one in via
     # `env:` (which merges on top). See test/support/session_env.rb — without this
     # the CLI reads the LIVE agent session and this file goes red from an agent run.
+    #
+    # TaskUsageSandboxEnv.child_env: PIN THE WRITE ROOTS. bin/task resolves two
+    # stores by fallback — the usage/cost baselines (TASK_USAGE_DIR) and the session
+    # marker (CLAUDE_PROJECTS_DIR) — and this file used to pin neither, so a case
+    # that opted a session in wrote a fixture row straight into the operator's real
+    # cost store (see the sandbox section below for the damage). HOME is pinned with
+    # them because it is the READ half: SESSION is a real past session id, and an
+    # unpinned HOME let the child glob the operator's actual 30MB transcript.
+    # A case may still override any of the three (with_session_transcript does).
     base_env = SessionEnv.neutralized({
       "TASK_API_BASE" => "http://127.0.0.1:#{port}",
       "AGENT_API_SECRET" => "test-secret",
@@ -58,7 +81,7 @@ class TaskCliTest < Minitest::Test
       # A fixed instance nonce so the CLI never shells out to `ps` in a test; the
       # gate cases override it to play a second / different live instance.
       "TASK_CLAIM_NONCE" => "inst-default"
-    }.merge(env))
+    }.merge(TaskUsageSandboxEnv.child_env(sandbox_root)).merge(env))
 
     spawn_opts = chdir ? { chdir: chdir } : {}
     out, err, status = Open3.capture3(base_env, RbConfig.ruby, BIN, *args, **spawn_opts)
@@ -371,6 +394,60 @@ class TaskCliTest < Minitest::Test
     assert_match(/unknown stage "in_progress"/, err)
     assert_match(/legacy stage; use "building"/, err)
   end
+
+  # --- The sandbox: a test child may NEVER write the operator's real store ----
+  #
+  # THE BUG THIS FILE *WAS*. bin/task resolves two write roots by FALLBACK:
+  #
+  #   usage/cost store   TASK_USAGE_DIR     else <projects>/.agents/task-usage
+  #   session marker     CLAUDE_PROJECTS_DIR else <projects>/.agents/sessions
+  #
+  # and this file pinned NEITHER. Worse, SESSION above is a REAL past session id
+  # whose 30MB transcript still sits in the operator's ~/.claude — HOME was not
+  # pinned either — so a plain `bin/task create` under this suite globbed that
+  # transcript and wrote its ~1.9-BILLION-token cumulative totals into the
+  # operator's LIVE cost store, keyed by the stub's slug ("demo-task"). That
+  # fixture row then poisons every consumer of measured $cost: Task#actual_size
+  # (which buckets on it) and the reviewer-select baselines.
+  #
+  # The fix is two-layered, and this is the layer that must never rot:
+  #   1. CONFIGURED — base_env now pins all three (TASK_USAGE_DIR,
+  #      CLAUDE_PROJECTS_DIR, HOME) into a per-test tmpdir.
+  #   2. ASSERTED — TASK_USAGE_SANDBOX (set process-wide by test/support/
+  #      task_usage_sandbox.rb, so every child inherits it) makes the CLI FAIL
+  #      CLOSED: with the sandbox on, an unpinned write root ABORTS the command
+  #      instead of falling back to the real one. Configuration alone is not a
+  #      guarantee — the next test to forget a pin would silently pollute again.
+  #
+  # This case proves layer 2 end-to-end. It hands the child a STAND-IN projects
+  # root (never the real one) and deletes the usage pin: today's code happily
+  # writes a baseline there, which in production IS the operator's store.
+  def test_sandboxed_run_refuses_to_fall_back_to_the_projects_root_usage_store
+    Dir.mktmpdir do |projects|
+      _requests, _out, err, status = run_task(
+        ["create", "--title", "Session demo task", "--kind", "feature"],
+        env: {
+          "CLAUDE_CODE_SESSION_ID" => SESSION,
+          "CLAUDE_PROJECTS_DIR" => projects, # a stand-in for the real projects root
+          "TASK_USAGE_DIR" => nil            # nil DELETES the pin → the fallback fires
+        },
+        stub_stage: "designed"
+      )
+
+      refute_equal 0, status.exitstatus,
+                   "an unpinned usage store must ABORT a sandboxed run, never fall back to <projects>/.agents"
+      assert_match(/TASK_USAGE_DIR/, err, "the abort must name the var that pins the store")
+      assert_empty Dir.glob(File.join(projects, ".agents", "task-usage", "*")),
+                   "a sandboxed run must not write a baseline into the projects-root store"
+    end
+  end
+
+  # The PATH half of the rule — "no write may land inside the real
+  # <projects>/.agents, whatever env var pointed there" — is unit-tested in
+  # test/lib/task_usage_sandbox_test.rb against an INJECTED stand-in state dir.
+  # It is deliberately not exercised from here: to prove it end-to-end the child
+  # would have to attempt a write into the operator's real store, and a red run
+  # (or a broken fix) would then do exactly the damage this task exists to stop.
 
   # --- Auto-captured move usage (from the session transcript) ----------------
 

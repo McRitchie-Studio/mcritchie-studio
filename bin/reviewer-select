@@ -64,6 +64,7 @@ require "json"
 require "uri"
 require "optparse"
 require_relative "../lib/task_usage_baseline"
+require_relative "../lib/task_usage_sandbox"
 require_relative "lib/task_board"
 require_relative "lib/session_identity"
 
@@ -82,6 +83,10 @@ def seed_review_usage_baseline(slug)
 
   projects = (d = ENV["CLAUDE_PROJECTS_DIR"].to_s.strip).empty? ? File.expand_path("../..", __dir__) : File.expand_path(d)
   dir = (u = ENV["TASK_USAGE_DIR"].to_s.strip).empty? ? File.join(projects, ".agents", "task-usage") : u
+  # Same live-store fallback bin/task carries, so it takes the same fail-closed
+  # sandbox guard: under TASK_USAGE_SANDBOX an unpinned run aborts rather than
+  # seeding a baseline into the operator's real cost store.
+  dir = TaskUsageSandbox.enforce!(dir, store: "task-usage")
   TaskUsageBaseline.new(session: session, provider: provider, dir: dir).seed(slug)
 rescue StandardError
   nil

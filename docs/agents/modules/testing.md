@@ -167,6 +167,60 @@ Two rules follow:
   `bin/rails db:test:prepare test:prepare`, one boot. `test/lib/tasks/test_prepare_asset_hook_test.rb`
   pins the hook that makes this work.
 
+## A Test May Never Write The Operator's Real `.agents` State
+
+The `bin/` stack keeps two stores **outside** the repo, under the real projects
+root, and both are resolved by **fallback**:
+
+| store | pinned by | falls back to |
+|-------|-----------|---------------|
+| usage/cost baselines | `TASK_USAGE_DIR` | `<projects>/.agents/task-usage` |
+| session marker | `CLAUDE_PROJECTS_DIR` | `<projects>/.agents/sessions` |
+
+A test that spawns `bin/task`, `bin/release` or `bin/reviewer-select` and pins
+neither hands its child the **operator's live store**. This is not theoretical:
+`task_cli_test.rb` pinned neither, its `SESSION` constant is a **real past
+session id** whose 30MB transcript still sits in `~/.claude` (HOME was unpinned
+too), and so `bin/task create` under the suite globbed that transcript and wrote
+its ~1.9-billion-token totals into the real cost store under the stub slug
+`demo-task`. Measured `$cost` derives `actual_size` and seeds the reviewer-select
+baselines, so a fixture row skews the sizing intelligence.
+
+**The rule, in two halves — you need both.**
+
+- **Configured.** Pin all three (`TASK_USAGE_DIR`, `CLAUDE_PROJECTS_DIR`, `HOME`)
+  into a tmpdir. `TaskUsageSandboxEnv.child_env(tmpdir)` builds them:
+
+  ```ruby
+  env = SessionEnv.neutralized(TaskUsageSandboxEnv.child_env(root).merge("FOO" => "1"))
+  ```
+
+  `HOME` is not optional — it is the **read** half. An unpinned HOME lets a child
+  glob whatever real transcript matches its fixture session id.
+
+- **Asserted.** Requiring `test/support/session_env.rb` arms `TASK_USAGE_SANDBOX`
+  for the whole test **process**, and Ruby hands a process's env to every child it
+  spawns — so *every* test child inherits it, including one written years from now
+  by someone who never read this page. With the sandbox on, `TaskUsageSandbox`
+  (`lib/task_usage_sandbox.rb`) makes the CLI **fail closed**: an unpinned store
+  **aborts** the command instead of falling back, and any resolved path inside the
+  real `<projects>/.agents` is refused whatever pointed it there. A pin you have
+  to *remember* is the bug; the guard is the half that cannot rot.
+
+A violation exits via `abort` (SystemExit) **on purpose**. Every caller of this
+state is best-effort (`rescue StandardError => nil`, so a usage hiccup can never
+kill a stage transition), and a violation raised as a `StandardError` would be
+swallowed by exactly those rescues — a guard that degrades to a silent no-op is
+not a guard.
+
+**Finding what already leaked.** `bin/task usage-audit` is a read-only sweep of
+the store for rows keyed by a slug only a test stub serves (`demo-task`,
+`cli-board-sample`). It reports and exits 2; it never purges — a baseline is
+indistinguishable at the file level from real operator state, so removing one is
+the operator's call. Note the signal is the **slug, not the size**: a stored row
+is the session's *cumulative* totals, so a long real session banks a
+billion-token baseline legitimately and magnitude proves nothing.
+
 ## Test Suite Catalog
 
 `bin/devops-tests` reads `config/devops_test_suites.yml`. Each suite should

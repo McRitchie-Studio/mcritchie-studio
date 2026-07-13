@@ -83,6 +83,12 @@
 #       marks handoff notes as explicitly addressing open QA feedback; it
 #       requires a --handoff note (on other note types it would silently
 #       no-op, so the CLI dies instead of dropping the flag). )
+#   bin/task usage-audit [--dir PATH]
+#     ( READ-ONLY sweep of the usage/cost baseline store (<projects>/.agents/task-usage)
+#       for rows a TEST run left behind — a stub slug, or a cache-read total no single
+#       task could burn. Those rows price into measured $cost, which derives
+#       actual_size and the reviewer-select baselines. Reports only — purging is the
+#       operator's call. Exit 2 when suspects are found. )
 #   bin/task <cmd> --help | -h                        # print this usage from any position
 #
 # Unknown flags are rejected (exit 1) with a nearest-flag suggestion; a dashed
@@ -95,6 +101,8 @@ require "fileutils"
 require "shellwords"
 require_relative "../lib/agent_session_usage"
 require_relative "../lib/task_usage_baseline"
+require_relative "../lib/task_usage_sandbox"
+require_relative "../lib/task_usage_audit"
 require_relative "../lib/claim_lease"
 require_relative "../lib/cert_evidence"
 require_relative "../lib/stale_check"
@@ -581,6 +589,12 @@ def write_feature_marker(task)
   slug = task["slug"].to_s
   return if slug.empty?
 
+  # Committed to a write from here — so guard it before we even READ the existing
+  # marker (below) out of what might be the operator's real state dir. Under
+  # TASK_USAGE_SANDBOX an unpinned CLAUDE_PROJECTS_DIR aborts instead of falling
+  # back to <projects>/.agents/sessions. See lib/task_usage_sandbox.rb.
+  path = TaskUsageSandbox.enforce!(path, store: "session-marker")
+
   dv = task.dig("metadata", "devops") || {}
   mascot, mascot_color, mascot_emoji, mascot_shiny = marker_mascot_attrs(task, path)
   marker = {
@@ -704,9 +718,16 @@ end
 # path). The storage + delta math is shared with bin/release + bin/reviewer-select
 # via lib/task_usage_baseline.rb so every move/intent path computes deltas the
 # same way.
+#
+# The fallback below is a LIVE-STORE write, so it is sandbox-guarded: under
+# TASK_USAGE_SANDBOX (every test process) an unset TASK_USAGE_DIR ABORTS rather
+# than falling back here. That fallback, unpinned by test/lib/task_cli_test.rb,
+# is exactly how a test child once wrote a 1.9-billion-token fixture row into the
+# operator's real cost store. See lib/task_usage_sandbox.rb.
 def usage_dir
   dir = ENV["TASK_USAGE_DIR"].to_s.strip
-  dir.empty? ? File.join(PROJECTS_DIR, ".agents", "task-usage") : dir
+  dir = File.join(PROJECTS_DIR, ".agents", "task-usage") if dir.empty?
+  TaskUsageSandbox.enforce!(dir, store: "task-usage")
 end
 
 # The baseline store for THIS session, or nil when there's no session (a plain
@@ -1035,6 +1056,8 @@ when "session-mascot"
     sid = session_identity.first.to_s.strip
     path = feature_marker_path
     unless ENV["TASK_SKIP_MARKER"] == "1" || sid.empty? || path.nil?
+      # The marker store's second write seam — guarded like write_feature_marker's.
+      path = TaskUsageSandbox.enforce!(path, store: "session-marker")
       body = {}
       body["parent_session_id"] = parent_session_identity if parent_session_identity
       data = api(:post, "/api/v1/sessions/#{sid}/mascot", body.empty? ? nil : body)["data"]
@@ -1145,6 +1168,27 @@ when "note"
     activity = api(:post, "/api/v1/activities", body)["data"] || {}
     puts "noted [#{activity_type}] on #{slug} -> #{activity["slug"] || "(created)"}"
   end
+when "usage-audit"
+  # READ-ONLY. Surfaces baseline rows in the usage/cost store that a test run left
+  # behind — a stub slug ("demo-task"), or a cache-read total no single task could
+  # plausibly burn. Those rows are not inert: measured $cost derives actual_size
+  # (Task::ACTUAL_SIZE_COST_THRESHOLDS) and seeds the reviewer-select baselines, so
+  # a fixture row silently skews the sizing intelligence.
+  #
+  # It reports and exits. It does NOT purge: a baseline is indistinguishable at the
+  # file level from real operator state, and the deletion is not reversible — that
+  # call is the operator's. Exit 2 when suspects are found, so a check can gate on it.
+  dir = nil
+  until ARGV.empty?
+    case (arg = ARGV.shift)
+    when "--dir" then dir = ARGV.shift || die!("--dir needs a value")
+    else unknown_flag!(arg, valid: %w[--dir], context: "usage-audit")
+    end
+  end
+  dir ||= File.join(PROJECTS_DIR, ".agents", "task-usage")
+  text, suspects = TaskUsageAudit.report(dir)
+  print(text)
+  exit(suspects.zero? ? 0 : 2)
 else
   print_usage!
   exit(cmd == "help" || HELP_FLAGS.include?(cmd) ? 0 : 1)
