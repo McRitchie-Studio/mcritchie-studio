@@ -59,8 +59,15 @@ wait** before `submitted`).
 
    Lanes, in order (each recorded on the gate as one executed-SOP entry):
 
-   - `test-db-prepare` — `bin/rails db:test:prepare` (abort on red — never
-     certify against a broken test DB)
+   - `test-prepare` — `bin/rails db:test:prepare test:prepare` (abort on red —
+     never certify against an unprepared test env; a red here is an ENV issue,
+     NOT a regression in your diff). Both tasks, one boot: the test DB, and
+     Rails' `test:prepare` hook, which is what BUILDS the gitignored
+     `app/assets/builds/tailwind.css`. The lanes below pass explicit test
+     paths, and Rails skips its own `test:prepare` whenever an argument looks
+     like a path — so without this lane a fresh worktree red-flags every
+     view-rendering test with `The asset "tailwind.css" is not present in the
+     asset pipeline`. See `docs/agents/modules/testing.md`.
    - `mapped-tests` — `bin/rails test <files the branch diff maps to>` (path
      convention with a class-name grep fallback; skipped when nothing maps)
    - `spine` — `bin/rails test <config/fast_cert_spine.yml entries>` (the

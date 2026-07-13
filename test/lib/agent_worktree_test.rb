@@ -247,4 +247,29 @@ class AgentWorktreeTest < Minitest::Test
     RUBY
     assert_equal '[true, "update finish-stamps-pr-url --pr-url https://github.com/x/y/pull/9"]', out
   end
+
+  # Regression (build-assets-on-worktree-bringup): `new` provisions the isolated test DB
+  # so a fresh worktree "runs bin/rails test out of the box" — but app/assets/builds/ is
+  # GITIGNORED, so a virgin worktree carries no built CSS, and `db:test:prepare` does not
+  # build it (tailwindcss-rails enhances `test:prepare`, falling back to db:test:prepare
+  # only when test:prepare is undefined — it never is in a Rails app). Any run that passes
+  # explicit test paths — `bin/agent-worktree test <app> <task> test/models/x_test.rb`, and
+  # every bin/fast-check lane — makes Rails SKIP test:prepare (Rails::Command::TestCommand
+  # only runs it `if self.args.none?(EXACT_TEST_ARGUMENT_PATTERN)`), so nothing ever built
+  # the asset and every view-rendering test errored with `The asset "tailwind.css" is not
+  # present in the asset pipeline`. Preparing the test env means the DB *and* the bundler
+  # hook, in one boot.
+  def test_prepare_test_env_runs_the_bundler_hook_alongside_the_db_prepare
+    out = run_in_script(<<~RUBY)
+      CALLS = []
+      def sh(*cmd, chdir: nil, env: {}, allow_fail: false); CALLS << cmd; true; end
+      def test_database_url(_values); "postgres://localhost/studio_test_wt"; end
+      def write_test_env_local(*_args); nil; end
+      prepare_test_env("/tmp/wt", { "slug" => "mcritchie-studio" }, {})
+      print CALLS.inspect
+    RUBY
+    assert_equal '[["bin/rails", "db:test:prepare", "test:prepare"]]', out,
+                 "bringup must prepare the test env in ONE boot: the isolated test DB AND Rails' " \
+                 "test:prepare hook, which is what builds the gitignored bundled CSS"
+  end
 end

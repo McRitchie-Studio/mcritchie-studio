@@ -84,6 +84,44 @@ own spawn env. They are deliberately not shared code (one must load in a bare
 `minitest/autorun` file with no Rails), but they **must agree** on the key list
 and the nil-means-unset semantics. Change one, change the other.
 
+## Running Tests By Path Skips The Asset Build
+
+`bin/rails test test/models/widget_test.rb` does **not** behave like a bare
+`bin/rails test`. Rails runs its `test:prepare` task only when **no argument
+looks like a path** — `Rails::Command::TestCommand` guards it with
+`run_prepare_task if self.args.none?(EXACT_TEST_ARGUMENT_PATTERN)`, and that
+pattern matches file paths and `-n`/`--name` filters. `test:prepare` is the
+standard hook a CSS/JS bundler enhances (`tailwindcss-rails` does
+`Rake::Task["test:prepare"].enhance(["tailwindcss:build"])`), and it is the only
+thing that builds `app/assets/builds/tailwind.css`. **`db:test:prepare` does not
+build it** — tailwindcss enhances that task only as a fallback, for apps where
+`test:prepare` is undefined, which it never is in a Rails app.
+
+`app/assets/builds/` is **gitignored** (only `.keep` is tracked), so every virgin
+checkout starts with no built CSS. Put those two facts together:
+
+| Runner | Invocation | `test:prepare` runs? | Virgin tree |
+|---|---|---|---|
+| GitHub CI | `bin/rails db:test:prepare test test:system` (rake `test` shells an **argless** `rails test`) | yes | green |
+| `bin/full-suite-check` | `bin/rails test` (argless) | yes | green |
+| Release gate workspace | `bin/rails test` (argless) | yes | green |
+| **`bin/fast-check`** | `bin/rails test <mapped/spine paths>` | **no** | **was red** |
+| A hand-run single file | `bin/rails test test/x_test.rb` | **no** | **was red** |
+
+The red is `The asset "tailwind.css" is not present in the asset pipeline` on
+every view-rendering test — dozens of errors on a diff that never touched a
+view, which reads as a phantom regression. Both path-arg runners now prepare the
+test env themselves (`bin/fast-check`'s `test-prepare` lane and
+`bin/agent-worktree`'s `prepare_test_env`, which `new` runs at bringup), so the
+failure is designed out rather than documented around. Two rules follow:
+
+- **A cert lane that hits an ENV gap must say so, not fail as a test.** A gate
+  that red-flags green code teaches agents to distrust and route around it.
+- **If you add a lane that runs tests by path** (anywhere: a new bin script, a
+  gate workspace, a CI job that shards by file), prepare the test env first —
+  `bin/rails db:test:prepare test:prepare`, one boot. `test/lib/tasks/test_prepare_asset_hook_test.rb`
+  pins the hook that makes this work.
+
 ## Test Suite Catalog
 
 `bin/devops-tests` reads `config/devops_test_suites.yml`. Each suite should
