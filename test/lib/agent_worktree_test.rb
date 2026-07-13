@@ -272,4 +272,21 @@ class AgentWorktreeTest < Minitest::Test
                  "bringup must prepare the test env in ONE boot: the isolated test DB AND Rails' " \
                  "test:prepare hook, which is what builds the gitignored bundled CSS"
   end
+
+  # The asset build must NOT be gated on a DATABASE concern. A worktree with no derivable
+  # test DB still renders views, and hanging the CSS build off `return unless
+  # test_database_url` is precisely how the missing-asset bug creeps back in: no test DB →
+  # skip db:test:prepare ONLY, and still build.
+  def test_prepare_test_env_builds_assets_even_with_no_test_database
+    out = run_in_script(<<~RUBY)
+      CALLS = []
+      def sh(*cmd, chdir: nil, env: {}, allow_fail: false); CALLS << cmd; true; end
+      def test_database_url(_values); nil; end
+      def write_test_env_local(*_args); raise "must not write .env.test.local without a test DB"; end
+      prepare_test_env("/tmp/wt", { "slug" => "mcritchie-studio" }, {})
+      print CALLS.inspect
+    RUBY
+    assert_equal '[["bin/rails", "test:prepare"]]', out,
+                 "no test DB skips db:test:prepare ONLY — the bundled-asset build still runs"
+  end
 end

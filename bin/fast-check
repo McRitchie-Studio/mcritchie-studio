@@ -194,9 +194,10 @@ unless skip_test_prepare
   prepare_ok = run_lane("test-prepare", test_prepare_cmd, root, env: { "RAILS_ENV" => "test" },
                         gate_slug: gate_slug)
   unless prepare_ok
-    warn "fast-check: test-env prepare failed (test DB and/or the bundled-asset build) — this is " \
-         "an ENV issue, NOT a regression in your diff. Nothing certified; fix the environment " \
-         "and re-run."
+    warn "fast-check: test-env prepare failed — see the output above. USUALLY an ENV gap (the test " \
+         "DB, or the bundled-asset build), NOT a regression in your diff; but a broken stylesheet " \
+         "IN your diff (a bad @apply, an unknown utility, a malformed @theme) fails this lane too. " \
+         "Nothing certified; fix it and re-run."
     emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
     exit 1
   end

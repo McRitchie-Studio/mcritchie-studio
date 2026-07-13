@@ -60,8 +60,10 @@ wait** before `submitted`).
    Lanes, in order (each recorded on the gate as one executed-SOP entry):
 
    - `test-prepare` — `bin/rails db:test:prepare test:prepare` (abort on red —
-     never certify against an unprepared test env; a red here is an ENV issue,
-     NOT a regression in your diff). Both tasks, one boot: the test DB, and
+     never certify against an unprepared test env; a red here is USUALLY an ENV
+     gap rather than a regression in your diff, but a broken stylesheet in the
+     diff fails the asset build here too — read the output). Both tasks, one
+     boot: the test DB, and
      Rails' `test:prepare` hook, which is what BUILDS the gitignored
      `app/assets/builds/tailwind.css`. The lanes below pass explicit test
      paths, and Rails skips its own `test:prepare` whenever an argument looks
