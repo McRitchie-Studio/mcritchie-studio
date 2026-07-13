@@ -14,6 +14,8 @@ require "fileutils"
 require "rbconfig"
 require "shellwords"
 require_relative "../../bin/lib/full_suite_gate"
+require_relative "../../bin/lib/ci_test_command"
+require_relative "../../bin/lib/system_test_browser"
 require_relative "../support/session_env"
 
 class FullSuiteCheckTest < Minitest::Test
@@ -219,6 +221,130 @@ class FullSuiteCheckTest < Minitest::Test
       out, code = run_check(dir, test_cmd: "true", rubocop_cmd: "true")
       assert_equal 1, code, out
       refute_match(/\[full-suite@/, out) # nothing certified without a fingerprint
+    end
+  end
+
+  # --- [integration] the test lane must run CI's FULL suite (base + SYSTEM) -----
+  # THE BUG THIS CLOSES. The lane ran `bin/rails test`, which SKIPS test/system,
+  # while CI runs `bin/rails db:test:prepare test test:system`. So the cert whose
+  # whole selling point is CI-INDEPENDENCE tested strictly LESS than CI: a builder
+  # could take this route, go green, and ship with ZERO system coverage. (It is not
+  # theoretical — for rolio, whose CI bin/dor-check cannot even read, this is the
+  # ONLY cert path.) The lane now runs what the repo's OWN ci.yml runs, verbatim.
+
+  # A temp git repo carrying a ci.yml, whose `bin/rails` is a STUB that logs the
+  # argv it was handed — so what the lane ACTUALLY invokes is observable without a
+  # multi-minute Rails run. Yields [dir, rails_log].
+  def with_ci_repo(ci_cmd: "bin/rails db:test:prepare test test:system")
+    with_repo do |dir|
+      if ci_cmd
+        FileUtils.mkdir_p(File.join(dir, ".github", "workflows"))
+        File.write(File.join(dir, ".github", "workflows", "ci.yml"), <<~YAML)
+          jobs:
+            test:
+              steps:
+                - name: Run tests
+                  run: #{ci_cmd}
+        YAML
+      end
+      log = File.join(dir, "rails.log")
+      FileUtils.mkdir_p(File.join(dir, "bin"))
+      rails = File.join(dir, "bin", "rails")
+      File.write(rails, "#!/bin/sh\nprintf '%s\\n' \"$*\" >> #{log.shellescape}\n")
+      FileUtils.chmod("+x", rails)
+      yield dir, log
+    end
+  end
+
+  # Run the cert with ONLY the test lane left at its default (reset + rubocop are
+  # stubbed green), so the log records exactly what the test lane chose to run.
+  # FULL_SUITE_TEST_CMD is explicitly UNSET (nil) so an exported override in the
+  # parent shell cannot mask the default. The browser seam is forced PRESENT so the
+  # verdict is identical on a Mac and on CI's Linux runner.
+  def run_default_test_lane(dir, extra_env = {})
+    env = SessionEnv.neutralized({
+      "FULL_SUITE_ROOT" => dir,
+      "FULL_SUITE_TEST_CMD" => nil,
+      "FULL_SUITE_TEST_DB_RESET_CMD" => "true",
+      "FULL_SUITE_RUBOCOP_CMD" => "true",
+      SystemTestBrowser::ENV_OVERRIDE => "1"
+    }.merge(extra_env))
+    out = IO.popen(env, "#{BIN} --print 2>&1", &:read)
+    [out, $?.exitstatus]
+  end
+
+  def test_test_lane_runs_the_repos_own_ci_command_verbatim
+    with_ci_repo do |dir, log|
+      out, code = run_default_test_lane(dir)
+
+      assert_equal 0, code, out
+      assert_equal ["db:test:prepare test test:system"], File.readlines(log, chomp: true),
+                   "the cert's test lane must invoke CI's command VERBATIM (base + system tiers)"
+      assert_match(/\[full-suite@/, out)
+    end
+  end
+
+  def test_test_lane_runs_the_system_tier_even_with_no_ci_workflow
+    # No ci.yml to read → the fallback default. It must still carry the system tier;
+    # a fallback that quietly drops it would reopen the hole for any repo whose CI
+    # config the resolver can't parse.
+    with_ci_repo(ci_cmd: nil) do |dir, log|
+      out, code = run_default_test_lane(dir)
+
+      assert_equal 0, code, out
+      assert_equal [CiTestCommand::DEFAULT.sub("bin/rails ", "")], File.readlines(log, chomp: true)
+      assert_includes CiTestCommand::DEFAULT, "test:system"
+    end
+  end
+
+  def test_a_repo_whose_ci_runs_a_narrower_command_is_taken_at_its_word
+    # The rule is "run what CI runs" — not "always add test:system". A repo whose CI
+    # genuinely runs a narrower command gets that command, so the cert never invents
+    # coverage CI itself doesn't have (and never invents a lane that can't run).
+    with_ci_repo(ci_cmd: "bin/rails db:test:prepare test") do |dir, log|
+      out, code = run_default_test_lane(dir)
+
+      assert_equal 0, code, out
+      assert_equal ["db:test:prepare test"], File.readlines(log, chomp: true)
+    end
+  end
+
+  def test_the_env_seam_still_overrides_the_resolved_command
+    with_ci_repo do |dir, log|
+      out, code = run_default_test_lane(dir, "FULL_SUITE_TEST_CMD" => "true")
+
+      assert_equal 0, code, out
+      refute File.exist?(log), "an explicit FULL_SUITE_TEST_CMD must win over the resolved CI command"
+    end
+  end
+
+  # --- [unit] the system tier needs a browser: a missing one is ENV, not RED -----
+
+  def test_a_browserless_host_aborts_as_ENV_before_any_lane_runs
+    # THE MISATTRIBUTION GUARD (the cert-side twin of bin/release.rb's). Without
+    # Chrome, Selenium fails INSIDE the suite — which reads as a RED SUITE and sends
+    # the builder hunting a phantom bug in their own diff. It must abort UP FRONT,
+    # in the ENV class, having run nothing.
+    with_ci_repo do |dir, log|
+      out, code = run_default_test_lane(dir, SystemTestBrowser::ENV_OVERRIDE => "0")
+
+      assert_equal 1, code, out
+      assert_includes out, "NO Chrome"
+      assert_includes out, "NOT a regression in your diff"
+      assert_includes out, "brew install --cask google-chrome"
+      refute File.exist?(log), "no lane may run on a browserless host — the abort is up front"
+      refute_match(/\[full-suite@/, out, "a browserless host must certify NOTHING")
+    end
+  end
+
+  def test_the_browser_guard_leaves_a_non_system_command_alone
+    # A repo/override whose command doesn't run test:system needs no browser — a
+    # browserless host must still be able to certify it.
+    with_ci_repo(ci_cmd: "bin/rails test test/integration") do |dir, log|
+      out, code = run_default_test_lane(dir, SystemTestBrowser::ENV_OVERRIDE => "0")
+
+      assert_equal 0, code, out
+      assert_equal ["test test/integration"], File.readlines(log, chomp: true)
     end
   end
 

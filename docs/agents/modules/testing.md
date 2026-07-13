@@ -127,7 +127,7 @@ checkout starts with no built CSS. Put those two facts together:
 | Runner | Invocation | `test:prepare` runs? | Virgin tree |
 |---|---|---|---|
 | GitHub CI | `bin/rails db:test:prepare test test:system` (rake `test` shells an **argless** `rails test`) | yes | green |
-| `bin/full-suite-check` | `bin/rails test` (argless) | yes | green |
+| `bin/full-suite-check` | the repo's **own ci.yml command**, verbatim — today `bin/rails db:test:prepare test test:system` (rake-routed; `bin/lib/ci_test_command.rb`) | yes | green |
 | Release gate workspace — **hub** | `bin/rails db:test:prepare test test:system` (the hub's registry `test_cmd`/`qa_test_cmd` — rake-routed, and rake's `test` shells an **argless** `rails test`) | yes | green |
 | Release gate workspace — **satellites** | `bin/rails test test/integration` (`qa_test_cmd`, `config/release_repos.yml`) | **no** | green — the gate preps the env itself (PR #522) |
 | **`bin/fast-check`** | `bin/rails test <mapped/spine paths>` | **no** | **was red** |

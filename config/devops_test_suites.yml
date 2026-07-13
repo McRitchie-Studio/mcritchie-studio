@@ -283,7 +283,7 @@ full_suite_scopes:
     blocks: blocking
     mutates: true
   full_suite_test:
-    description: The ENTIRE Rails suite on the exact code being shipped (bin/rails test, no file args) — the full-suite half of the cert
+    description: What CI runs, VERBATIM, on the exact code being shipped (the repo's own ci.yml command — today bin/rails db:test:prepare test test:system, base + SYSTEM tiers) — the full-suite half of the cert
     phase: build
     tier: full
     host: local

@@ -12,8 +12,20 @@
 # you're shipping.
 #
 # It runs two lanes, from the repo root:
-#   full-suite : bin/rails test      (NO file args = the entire suite)
+#   full-suite : the repo's OWN CI test command, VERBATIM — read from its
+#                .github/workflows/ci.yml (bin/lib/ci_test_command.rb); today, for
+#                every Rails repo here, `bin/rails db:test:prepare test test:system`
 #   rubocop    : bin/rubocop         (NO path args = the whole repo)
+#
+# The full-suite lane RUNS WHAT CI RUNS, and that is the point. It used to run
+# `bin/rails test`, which SKIPS test/system — so the CI-INDEPENDENT cert (the
+# route you take precisely BECAUSE you're not waiting on CI's verdict, and the
+# ONLY route available for a repo whose CI bin/dor-check can't read) tested
+# strictly LESS than CI: green cert, ZERO system coverage. Reading the command
+# from ci.yml instead of hard-coding one means the two cannot drift apart again.
+# Do NOT "simplify" the command's shape — `bin/rails test test:system` is BROKEN
+# (`test` is a real rails command, so `test:system` parses as a PATH and dies with
+# LoadError). See bin/lib/ci_test_command.rb; the shape is pinned by a test.
 # For each lane that passes it stamps a checks_run line tagged with the current
 # code fingerprint, e.g. "[full-suite@<tree-hash>] ...". A lane that FAILS is not
 # recorded (no green evidence), and the command exits non-zero.
@@ -39,7 +51,10 @@
 #   FULL_SUITE_TEST_DB_RESET_CMD  override the test DB reset command
 #                                (default: bin/rails db:test:purge db:test:prepare)
 #   FULL_SUITE_SKIP_TEST_DB_RESET set to 1 only for non-Rails harness tests
-#   FULL_SUITE_TEST_CMD     override the test lane command   (default: bin/rails test)
+#   FULL_SUITE_TEST_CMD     override the test lane command   (default: the repo's own
+#                           ci.yml test command; bin/lib/ci_test_command.rb)
+#   MCR_SYSTEM_TEST_BROWSER force the headless-Chrome probe (1 present / 0 absent);
+#                           tests only — see bin/lib/system_test_browser.rb
 #   FULL_SUITE_RUBOCOP_CMD  override the rubocop lane command (default: bin/rubocop)
 #   FULL_SUITE_ROOT         repo dir to run + fingerprint in (default: the cwd's
 #                           git toplevel, else this repo); an explicit value
@@ -59,6 +74,8 @@ require_relative "lib/repo_root"
 require_relative "lib/session_identity"
 require_relative "lib/cert_emission"
 require_relative "lib/cert_root_guard"
+require_relative "lib/ci_test_command"
+require_relative "lib/system_test_browser"
 
 # ROOT = the gate script's OWN repo (the hub). CONFIG (lib/) is required relative
 # to __dir__, and the board is reached via TASK_BIN — both stay anchored here. The
@@ -168,10 +185,32 @@ if slug && ENV["FULL_SUITE_ROOT"].to_s.strip.empty?
   abort "full-suite-check: #{wrong_root}" if wrong_root
 end
 
-test_cmd = ENV.fetch("FULL_SUITE_TEST_CMD", "bin/rails test")
+# The test lane runs WHAT CI RUNS for the repo being certified — read from its own
+# .github/workflows/ci.yml, verbatim (bin/lib/ci_test_command.rb). Hard-coding
+# `bin/rails test` here is what let this "CI-independent" cert skip test/system
+# entirely; resolving from ci.yml means the two can't drift apart again.
+test_cmd = ENV.fetch("FULL_SUITE_TEST_CMD") { CiTestCommand.resolve(root) }
 rubocop_cmd = ENV.fetch("FULL_SUITE_RUBOCOP_CMD", "bin/rubocop")
 test_db_reset_cmd = ENV.fetch("FULL_SUITE_TEST_DB_RESET_CMD", "bin/rails db:test:purge db:test:prepare")
 skip_test_db_reset = ENV.fetch("FULL_SUITE_SKIP_TEST_DB_RESET", "") == "1"
+
+# --- system-tier browser guard -------------------------------------------------
+# The test lane now carries the SYSTEM tier, and system tests drive a real headless
+# Chrome. On a host with no Chrome, Selenium fails INSIDE the suite — a driver error
+# that reads as a RED SUITE and sends the builder hunting a bug that isn't in their
+# diff. Assert the browser UP FRONT (before any lane runs, before the g1_cert
+# attempt opens) and fail in the ENV class instead. The release gate's twin of this
+# guard lives in bin/release.rb; they share bin/lib/system_test_browser.rb.
+#
+# Note the calibration: this guard is ONLY about a missing browser. A failing ASSET
+# build is NOT env — a broken stylesheet in your own diff can legitimately fail the
+# suite, and must stay red.
+if SystemTestBrowser.system_tier?(test_cmd) && !SystemTestBrowser.available?
+  abort "full-suite-check: the test lane runs the SYSTEM tier (`#{test_cmd}`) but this host has NO Chrome — " \
+        "headless Chrome is required to drive test/system, and without it Selenium fails inside the suite and " \
+        "looks exactly like a red suite. This is an ENV problem on this host, NOT a regression in your diff — " \
+        "nothing certified, nothing to hunt. #{SystemTestBrowser::INSTALL_HINT}"
+end
 
 # The live agent session id (Claude or Codex), or "" when none — the telemetry
 # session gate. Blank means "no session to attribute to": skip the emit entirely,

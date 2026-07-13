@@ -22,11 +22,14 @@
 # SEPARATE from these tier tags, the merge gate also requires FULL-suite + FULL-
 # rubocop evidence, recorded as fingerprint-bound checks_run lines the tier-tag
 # parser deliberately ignores (the `@<fingerprint>` is the tell):
-#   [full-suite@<git-tree-hash>] bin/rails test green
+#   [full-suite@<git-tree-hash>] bin/rails db:test:prepare test test:system green
 #   [rubocop@<git-tree-hash>]    bin/rubocop clean
 # `bin/full-suite-check <task>` runs both lanes IN FULL and stamps them; bin/dor-
 # check re-grades them against the current code fingerprint so a touched-files
-# subset or a since-edited tree is refused. See bin/lib/full_suite_gate.rb.
+# subset or a since-edited tree is refused. See bin/lib/full_suite_gate.rb. The
+# full-suite lane runs WHAT CI RUNS, verbatim (read from the repo's own ci.yml —
+# bin/lib/ci_test_command.rb), so the CI-independent cert can never test LESS than
+# CI; it used to run `bin/rails test`, which SKIPS the system tier.
 #
 # This file is the single source of "how much testing is enough" per change
 # shape. Tune it here; bin/dor-check and the heartbeat agent pick it up with no
