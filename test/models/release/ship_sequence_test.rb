@@ -161,15 +161,17 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
     assert_equal "ddd", S.frozen_sha({ "studio-engine": "ddd" }, "studio-engine")
   end
 
-  # --- preflight_offenders: every app checkout must be on a clean `main` ----
+  # --- preflight_offenders: which primaries are not on a clean `main` -------
   #
-  # The pure decision behind bin/release's ship_preflight: ship ff's each app
-  # repo's main → frozen SHA, so a checkout left on a pr-NNN branch or with a
-  # dirty tree (stale schema.rb) breaks the ff mid-ship. The preflight catches
-  # that BEFORE any ff; this is its decision half (the git I/O lives in the CLI).
+  # The pure detector behind bin/release's ship_preflight. It is NO LONGER a gate
+  # for apps: the ship deploys from its own workspace and advances main by ref push,
+  # so an app primary's state is not input (advisory_message says exactly that). It
+  # still identifies the offenders the advisory names — and, for a gem repo, feeds
+  # the one abort that survives (gem_build_offenders).
 
-  def state(repo, branch: "main", dirty_files: [])
-    { "repo" => repo, "branch" => branch, "dirty_files" => dirty_files }
+  def state(repo, branch: "main", dirty_files: [], tracked_dirty: nil)
+    { "repo" => repo, "branch" => branch, "dirty_files" => dirty_files,
+      "tracked_dirty" => tracked_dirty.nil? ? dirty_files : tracked_dirty }
   end
 
   test "preflight_offenders is empty when every app checkout is on a clean main" do
@@ -265,24 +267,115 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
     assert_not o["on_main"], "off-main is still an offender regardless of the artifact allowlist"
   end
 
-  # --- preflight_message: the loud, actionable abort text -------------------
+  # --- advisory_message: a dirty app primary is a NOTE, never a blocker -----
+  #
+  # The behavior change this task exists for. A dirty primary used to ABORT the
+  # ship — which killed a real production deploy mid-train over a concurrent
+  # session's staged work. The deploy no longer reads those trees, so the preflight
+  # says so, prints the rescue, and ships.
 
-  test "preflight_message names each offender, why, and the fix" do
-    offenders = S.preflight_offenders([
-      state("mcritchie-studio", branch: "pr-161"),
-      state("turf-monster", dirty_files: %w[db/schema.rb app/x.rb])
-    ])
-    msg = S.preflight_message(offenders)
-    assert_match(/ship preflight failed/, msg)
-    assert_match(/mcritchie-studio: on 'pr-161', not 'main'/, msg)
-    assert_match(/turf-monster:.*dirty tree: db\/schema\.rb/, msg)
-    assert_match(/re-run `bin\/release ship`/, msg)
+  AT = Time.utc(2026, 7, 12, 21, 30, 0) # deterministic rescue branch names
+
+  test "advisory_message is nil when every app primary is on a clean main" do
+    assert_nil S.advisory_message(S.preflight_offenders([state("mcritchie-studio")])),
+               "nothing to say — print nothing"
   end
 
-  test "preflight_message truncates a long dirty file list" do
+  test "advisory_message says plainly that it is NOT a blocker and the tree is unread" do
+    msg = S.advisory_message(S.preflight_offenders([state("turf-monster", dirty_files: ["app/x.rb"])]), at: AT)
+    assert_match(/NOTE, not a blocker/, msg)
+    assert_match(/does NOT read them/, msg, "it must say the ship ignores the primary")
+    assert_match(/own workspace at the frozen SHA/, msg, "…and where it deploys from instead")
+    assert_match(/turf-monster: .*dirty tree: app\/x\.rb/, msg)
+  end
+
+  test "advisory_message hands over the labeled-branch rescue, never a stash or a discard" do
+    msg = S.advisory_message(S.preflight_offenders([state("turf-monster", dirty_files: ["app/x.rb"])]), at: AT)
+    assert_match(%r{switch -c rescue/turf-monster-20260712-213000}, msg, "the rescue parks work on a labeled branch")
+    assert_match(/commit -m 'rescue: stranded primary work'/, msg)
+    assert_match(/switch main/, msg, "…and hands the primary back clean")
+    assert_no_match(/git stash/, msg, "a stash is how a live session's work gets lost — never suggest one")
+    assert_match(/Nothing here is discarded, and nothing is stashed/, msg, "it must promise the work survives")
+  end
+
+  test "the ship's OWN workspace is never counted as the operator's dirt" do
+    # `git status` reports an untracked dir with a trailing slash. Every app repo
+    # gitignores .worktrees/, but if a newly-onboarded one forgets, the ship's own
+    # .worktrees/_ship would be named as stranded work — and the printed rescue
+    # would COMMIT THE WORKSPACE INTO GIT. Caught on a real-git end-to-end run.
+    assert S.generated_artifact?(".worktrees/"), "the untracked workspace dir is tooling output, not work"
+    assert S.generated_artifact?(".worktrees/_ship/config/database.yml"), "…and anything under it"
+    assert_empty S.preflight_offenders([state("turf-monster", dirty_files: [".worktrees/"])]),
+                 "a ship must not report its own workspace as a dirty primary"
+    assert_empty S.gem_build_offenders([state("studio-engine", tracked_dirty: [".worktrees/"])]),
+                 "…nor let it gate a gem build"
+    assert_not S.generated_artifact?("app/worktrees/x.rb"), "a lookalike path is still real dirt"
+  end
+
+  # --- gem_build_offenders: the ONE primary hazard that survives -------------
+  #
+  # A gem is BUILT from its primary checkout, and `gem build` packages what is on
+  # disk — so a modified TRACKED file there would be PUBLISHED to RubyGems, where a
+  # version can never be re-pushed. That is worth an abort. Untracked files are
+  # invisible to the gemspec's `git ls-files`, so they are not, and gating on them
+  # would just re-invent the abort class we removed.
+
+  test "gem_build_offenders flags a gem primary with modified TRACKED files" do
+    o = S.gem_build_offenders([state("studio-engine", tracked_dirty: ["lib/studio/version.rb"])]).first
+    assert_equal "studio-engine", o["repo"]
+    assert_equal ["lib/studio/version.rb"], o["dirty_files"]
+  end
+
+  test "gem_build_offenders ignores untracked files — gem build cannot package them" do
+    states = [state("studio-engine", dirty_files: ["scratch.rb"], tracked_dirty: [])]
+    assert_empty S.gem_build_offenders(states),
+                 "an untracked scratch file is not in `git ls-files`, so it never reaches the .gem"
+  end
+
+  test "gem_build_offenders ignores the generated-artifact allowlist" do
+    states = [state("solana-studio", tracked_dirty: ["docs/agents/maintenance/delete-later.md"])]
+    assert_empty S.gem_build_offenders(states), "the worktree ledger is not real dirt"
+  end
+
+  test "gem_build_offenders does not care which branch a gem primary is on" do
+    states = [state("studio-engine", branch: "pr-9", tracked_dirty: [])]
+    assert_empty S.gem_build_offenders(states),
+                 "the build detaches to the frozen SHA anyway — only ON-DISK dirt can corrupt the artifact"
+  end
+
+  test "gem_build_message leads with the stakes and hands over the rescue" do
+    msg = S.gem_build_message(S.gem_build_offenders([state("studio-engine", tracked_dirty: ["lib/a.rb"])]), at: AT)
+    assert_match(/BEFORE publishing anything/, msg, "the operator must know nothing is live yet")
+    assert_match(/would be PUBLISHED/, msg)
+    assert_match(/never be re-pushed/, msg, "…and that it is irreversible")
+    assert_match(%r{switch -c rescue/studio-engine-20260712-213000}, msg)
+    assert_match(/re-run `bin\/release ship`/, msg)
+    assert_no_match(/git stash/, msg, "never offer a stash — the work may be a live session's")
+    assert_match(/nothing is stashed and nothing is discarded/, msg)
+  end
+
+  test "gem_build_message truncates a long dirty file list" do
     files = (1..9).map { |i| "f#{i}.rb" }
-    msg = S.preflight_message(S.preflight_offenders([state("x", dirty_files: files)]))
+    msg = S.gem_build_message(S.gem_build_offenders([state("x", tracked_dirty: files)]), at: AT)
     assert_match(/\(\+4 more\)/, msg, "only the first 5 files are listed, then a +N more")
+  end
+
+  # --- rescue_commands: commit to a labeled branch; never stash, never discard --
+
+  test "rescue_commands parks dirty work on a timestamped branch and returns to main" do
+    cmds = S.rescue_commands({ "repo" => "turf-monster", "dirty" => true }, at: AT)
+    assert_equal 3, cmds.length
+    assert_match(%r{switch -c rescue/turf-monster-20260712-213000}, cmds[0])
+    assert_match(/add -A/, cmds[1])
+    assert_match(/commit -m 'rescue: stranded primary work'/, cmds[1])
+    assert_match(/switch main/, cmds[2])
+  end
+
+  test "rescue_commands for a CLEAN off-main checkout is just a checkout" do
+    cmds = S.rescue_commands({ "repo" => "turf-monster", "dirty" => false }, at: AT)
+    assert_equal 1, cmds.length
+    assert_match(/checkout main/, cmds[0])
+    assert_no_match(/rescue\//, cmds[0], "nothing to rescue — there is no uncommitted work")
   end
 
   # --- ship_gate_skip?: G4 self-gating against the G3 batch certification ----

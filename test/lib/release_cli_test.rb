@@ -1724,6 +1724,21 @@ class ReleaseCliTest < Minitest::Test
     clone
   end
 
+  # Run a git command in a fixture repo, flunking on failure (the fixtures are
+  # built by this file, so a git failure here is a broken test, not a finding).
+  def run_git(repo, *args)
+    ok = system("git", "-C", repo, "-c", "user.email=t@t.t", "-c", "user.name=t", *args,
+                out: File::NULL, err: File::NULL)
+    flunk("git #{args.join(' ')} failed in #{repo}") unless ok
+  end
+
+  # A stripped git READ out of a fixture repo (`rev-parse`, `status --porcelain`, …).
+  def git_out(repo, *args)
+    out, status = Open3.capture2e("git", "-C", repo, *args)
+    flunk("git #{args.join(' ')} failed in #{repo}: #{out}") unless status.success?
+    out.strip
+  end
+
   # [unit] REGRESSION (activity-1307): every subprocess this file spawns must
   # resolve the primary-checkout lock INSIDE the per-run isolated dir — never
   # the real conductor dir. A live G3 gate holds the real hub lock while its
@@ -1999,94 +2014,94 @@ class ReleaseCliTest < Minitest::Test
     end
   end
 
-  # [unit] Ship's local ff (checkout main → pull → ff to frozen) is the third
-  # primary-HEAD flip site — its git dance must run INSIDE with_primary_checkout
-  # so it can never interleave with a running gate suite or artifact dance.
-  def test_ff_main_local_flips_inside_the_primary_checkout_lock
-    setup = <<~'RUBY'
-      def repo_path(_repo) = Dir.pwd
-      def with_primary_checkout(repo, wait: true)
-        $stdout.puts("LOCK-ACQUIRED #{repo}")
-        result = yield
-        $stdout.puts("LOCK-RELEASED #{repo}")
-        result
-      end
-      def sh(*a, **_k)
-        # Print the git SUBCOMMAND only (a = git -C <path> <subcommand> …) — the
-        # repo path itself may contain "checkout" (this worktree's does).
-        $stdout.puts("GIT-OP #{a[3]}") if a[0] == "git"
-        ["", true]
-      end
-    RUBY
-    out = run_cli(["--yes"], setup: setup, call: %{ff_main_local("mcritchie-studio", "abc1234"); puts("PASSED")})
-
-    lines    = out.lines.map(&:strip)
-    acquired = lines.index("LOCK-ACQUIRED mcritchie-studio")
-    released = lines.index("LOCK-RELEASED mcritchie-studio")
-    assert acquired, "ff_main_local must take the primary-checkout lock: #{out}"
-    assert released, "…and release it: #{out}"
-    flips = lines.each_index.select { |i| lines[i].match?(/\AGIT-OP (checkout|pull|merge)\z/) }
-    refute_empty flips, "the ff must actually flip the checkout"
-    assert flips.all? { |i| i > acquired && i < released },
-           "every checkout/pull/ff must happen INSIDE the lock (acquired=#{acquired} released=#{released} flips=#{flips})"
-    assert_includes out, "PASSED"
-  end
-
-  # --- ship gate lock window: the lock wraps the FF, the suite runs isolated ----
+  # --- the ship's own checkout: main advances by REF PUSH, not by ff -----------
   #
-  # HISTORY (Avi review of PR #470, then rel-20260711-7f2913): the lock window was
-  # widened to span ff + suite, because avi_ship_gate ran the suite ON the primary
-  # with the lock FREE and a concurrent artifact dance could flip main↔release
-  # mid-suite. Widening was the WRONG cure: the flock is advisory (it never bound
-  # the agent sessions doing most of the flipping) and it held the shared checkout
-  # hostage for the whole suite. The suite MOVED to the isolated gate workspace
-  # instead, so the window shrank back to what genuinely needs exclusion — the
-  # local ff, a fast pointer move. ff_main_local's own acquisition is still SKIPPED
-  # (lock: false) inside it: with_primary_checkout is NOT re-entrant (a second FD
-  # on the same lockfile blocks even in-process), so nesting would self-deadlock.
+  # HISTORY (2026-07-12). ship used to advance `main` by flipping the SHARED PRIMARY
+  # (checkout main → pull → merge --ff-only → push), so it had to REFUSE a dirty
+  # primary — and that refusal aborted a real production ship, after the gems had
+  # published, because a concurrent feature session had staged work there. Advancing
+  # a remote branch never needed a working tree: `git push origin
+  # <frozen>:refs/heads/main` reads the shared object store, moves no HEAD, touches
+  # no index, and is still fast-forward-checked by git. These are the proofs, on a
+  # REAL git fixture, that the deploy is now indifferent to the primary's state.
 
-  # [unit] With the caller already holding the lock, ff_main_local(lock: false)
-  # must flip WITHOUT re-acquiring — the non-re-entrant flock would self-deadlock.
-  def test_ff_main_local_skips_the_lock_when_the_caller_already_holds_it
-    setup = <<~'RUBY'
-      def repo_path(_repo) = Dir.pwd
-      def with_primary_checkout(repo, wait: true)
-        $stdout.puts("LOCK-ACQUIRED #{repo}")
-        result = yield
-        $stdout.puts("LOCK-RELEASED #{repo}")
-        result
-      end
-      def sh(*a, **_k)
-        $stdout.puts("GIT-OP #{a[3]}") if a[0] == "git"
-        ["", true]
-      end
-    RUBY
-    out = run_cli(["--yes"], setup: setup,
-                  call: %{ff_main_local("mcritchie-studio", "abc1234", lock: false); puts("PASSED")})
+  # [integration] The core acceptance: origin/main reaches the frozen SHA while the
+  # primary is DIRTY and sitting on a feature branch — and comes out of it dirty, on
+  # that same branch, with the stranded work untouched. Nothing is stashed, nothing
+  # is discarded, nothing is checked out.
+  def test_push_frozen_main_advances_origin_from_a_dirty_off_main_primary
+    Dir.mktmpdir do |dir|
+      clone  = build_sibling_fixture(dir)
+      origin = File.join(dir, "origin.git")
+      frozen = git_out(clone, "rev-parse", "release")
 
-    lines = out.lines.map(&:strip)
-    refute_includes lines, "LOCK-ACQUIRED mcritchie-studio",
-                    "lock: false must NOT acquire (the caller holds the non-re-entrant flock)"
-    assert(lines.any? { |l| l.match?(/\AGIT-OP (checkout|pull|merge)\z/) }, "the ff must still flip: #{out}")
-    assert_includes out, "PASSED"
+      # A live feature session's floor: a branch, a staged file, an untracked file.
+      run_git(clone, "checkout", "-q", "-b", "feat/live-session")
+      File.write(File.join(clone, "app.rb"), "half a feature")
+      run_git(clone, "add", "app.rb")
+      File.write(File.join(clone, "notes.txt"), "scratch")
+
+      setup = %(def repo_path(_repo) = #{clone.inspect})
+      out = run_cli(["--yes"], setup: setup,
+                    call: %{push_frozen_main("sibling", #{frozen.inspect}); puts("PASSED")})
+
+      assert_includes out, "PASSED", "a dirty primary must NOT abort the ship: #{out}"
+      assert_equal frozen, git_out(origin, "rev-parse", "main"),
+                   "origin/main must reach the frozen SHA — that is what prod deploys"
+      assert_equal "feat/live-session", git_out(clone, "rev-parse", "--abbrev-ref", "HEAD"),
+                   "the primary must still be on the session's branch — the ship never checked it out"
+      status = git_out(clone, "status", "--porcelain")
+      assert_includes status, "app.rb",   "the session's staged work must survive untouched"
+      assert_includes status, "notes.txt", "…and its untracked file too"
+    end
   end
 
-  # [unit] avi_ship_gate takes EXACTLY ONE lock window per repo (no nesting — that
-  # self-deadlocks the non-re-entrant flock), it wraps the ff, and the suite runs
-  # OUTSIDE it: the suite has no business holding the primary, because it doesn't
-  # run there any more.
-  def test_avi_ship_gate_locks_only_the_ff_and_runs_the_suite_outside_it
+  # [integration] FAILS CLOSED. If origin/main has diverged from the frozen SHA, git
+  # refuses the non-fast-forward ref update and the ship ABORTS — it must never
+  # --force a rewind onto production.
+  def test_push_frozen_main_aborts_on_a_diverged_origin_main_and_never_forces
+    Dir.mktmpdir do |dir|
+      clone  = build_sibling_fixture(dir)
+      origin = File.join(dir, "origin.git")
+      base   = git_out(clone, "rev-parse", "main")
+
+      # origin/main moves somewhere our frozen SHA cannot fast-forward to.
+      run_git(clone, "checkout", "-q", "-b", "rogue", base)
+      File.write(File.join(clone, "rogue.txt"), "pushed straight to main")
+      run_git(clone, "add", "rogue.txt")
+      run_git(clone, "commit", "-q", "-m", "rogue")
+      run_git(clone, "push", "-q", "origin", "rogue:main")
+      diverged = git_out(origin, "rev-parse", "main")
+      frozen   = git_out(clone, "rev-parse", "release")
+
+      setup = %(def repo_path(_repo) = #{clone.inspect})
+      out = run_cli(["--yes"], setup: setup,
+                    call: %{begin; push_frozen_main("sibling", #{frozen.inspect}); puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+      assert_includes out, "ABORTED", "a diverged origin/main must abort, not force: #{out}"
+      assert_includes out, "NOT forcing", "the abort must say it refused to force"
+      assert_equal diverged, git_out(origin, "rev-parse", "main"),
+                   "production's main must be left EXACTLY as it was — never rewound"
+    end
+  end
+
+  # [unit] The ship gate now mutates NOTHING. It used to fast-forward each app's
+  # `main` in the primary (under the primary lock) before running the suite — but
+  # the suite moved to the isolated gate workspace at the frozen SHA, so that ff fed
+  # nothing and only flipped a shared checkout. With it gone, a red gate or a
+  # declined ship-authority confirm leaves the machine exactly as it found it.
+  def test_avi_ship_gate_mutates_nothing_before_ship_authority
     Dir.mktmpdir do |dir|
       setup = %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
         def app_meta_for(_repo) = { "test_cmd" => "bin/ship-suite" }
         def with_primary_checkout(repo, wait: true)
-          $stdout.puts("LOCK-ACQUIRED #{repo}")
-          result = yield
-          $stdout.puts("LOCK-RELEASED #{repo}")
-          result
+          $stdout.puts("PRIMARY-LOCK-TAKEN #{repo}")
+          yield
         end
         def sh(*a, **k)
-          $stdout.puts("GIT-OP #{a[3]}") if a[0] == "git"
+          # Writes to the PRIMARY are what must not happen. The gate workspace's own
+          # git (worktree/reset/clean, keyed on a[3]) is answered by gate_git below.
+          $stdout.puts("PRIMARY-WRITE #{a[3]}") if a[0] == "git" && %w[checkout pull merge push].include?(a[3].to_s)
           $stdout.puts("SUITE") if a[0] == "bin/ship-suite"
           g = gate_git(a, k)
           return g if g
@@ -2096,19 +2111,11 @@ class ReleaseCliTest < Minitest::Test
       out = run_cli(["--yes"], setup: setup,
                     call: %{avi_ship_gate([{ "repo" => "x" }], { "x" => #{GATE_SHA.inspect} }, {}); puts("PASSED")})
 
-      lines    = out.lines.map(&:strip)
-      acquired = lines.each_index.select { |i| lines[i] == "LOCK-ACQUIRED x" }
-      released = lines.index("LOCK-RELEASED x")
-      suite    = lines.index("SUITE")
-      flips    = lines.each_index.select { |i| lines[i].match?(/\AGIT-OP (checkout|pull|merge)\z/) }
-      assert_equal 1, acquired.length,
-                   "EXACTLY one lock window — nesting self-deadlocks the non-re-entrant flock: #{out}"
-      assert released && suite, "the ff window and the suite must both appear: #{out}"
-      refute_empty flips, "the ff must actually flip the primary to the frozen SHA"
-      assert flips.all? { |i| i > acquired.first && i < released },
-             "the ff flips inside the window (acquired=#{acquired.first} released=#{released} flips=#{flips})"
-      assert_operator suite, :>, released,
-                      "the suite runs AFTER the lock is released — it is isolated, so it holds nothing"
+      assert_includes out, "SUITE", "the gate must still RUN the suite on the frozen SHA: #{out}"
+      refute_includes out, "PRIMARY-LOCK-TAKEN",
+                      "the gate has nothing to serialize against the primary any more — it must not take its lock"
+      refute_includes out, "PRIMARY-WRITE",
+                      "no checkout/pull/merge/push before ship authority — a declined confirm must change nothing"
       assert_includes out, "PASSED"
     end
   end
@@ -2497,8 +2504,9 @@ class ReleaseCliTest < Minitest::Test
   def test_ship_dry_run_dispatches_per_repo_prod_adapters
     out = run_cli(["--dry-run"], call: "ship", setup: SHIP_STUB)
 
-    # hub: git_push_heroku + smoke its smoke_url
-    assert_includes out, "push heroku main"
+    # hub: git_push_heroku is now a REF PUSH of the frozen SHA (no checkout, no
+    # local branch) — the dry-run must show what actually runs.
+    assert_includes out, "push heroku bbbbbbb:refs/heads/main"
     assert_includes out, "https://mcritchie.studio/up"
     # satellite: repo_script runs the repo's own deploy; the repo owns smoke/rollback
     assert_includes out, "bin/deploy --yes"
@@ -2524,7 +2532,7 @@ class ReleaseCliTest < Minitest::Test
     out = run_cli(["--dry-run"], call: "ship", setup: SHIP_STUB)
 
     gem_at = out.index("gem studio-engine") # gem publish
-    hub_at = out.index("push heroku main")  # hub DEPLOY (the test gate now runs up front, in avi_ship_gate)
+    hub_at = out.index("push heroku bbbbbbb:refs/heads/main")  # hub DEPLOY (the test gate runs up front, in avi_ship_gate)
     sat_at = out.index("bin/deploy --yes")  # satellite's deploy
 
     assert gem_at && hub_at && sat_at, "all three phases must appear"
@@ -2540,7 +2548,7 @@ class ReleaseCliTest < Minitest::Test
     gate_at   = out.index("Avi ship gate")
     e2e_at    = out.index(HUB_GATE_CMD)                # the hub's highest-tier run on the frozen SHA
     ship_at   = out.index("confirming production deploy") # the ship-authority step (unique marker)
-    deploy_at = out.index("push heroku main")
+    deploy_at = out.index("push heroku bbbbbbb:refs/heads/main")
 
     assert gate_at && e2e_at && ship_at && deploy_at, "gate, e2e, ship authority, and a deploy must all appear"
     assert_operator gate_at, :<, ship_at, "the Avi gate precedes ship authority"
@@ -2550,7 +2558,7 @@ class ReleaseCliTest < Minitest::Test
 
   def test_ship_avi_gate_runs_the_suite_on_the_frozen_sha
     out = run_cli(["--dry-run"], call: "ship", setup: SHIP_STUB)
-    # The gate ff's main → the frozen hub SHA, then runs the suite on that tree.
+    # The gate runs the suite in the isolated workspace pinned at the frozen hub SHA.
     assert_includes out, "Avi ship gate"
     assert_includes out, "FROZEN ship SHA"
     assert_includes out, "bbbbbbb", "the gate runs on the hub's QA-frozen SHA"
@@ -2676,9 +2684,14 @@ class ReleaseCliTest < Minitest::Test
     def rubygems_versions(_gem) = [{ "number" => "0.10.0" }] # 0.10.0 LIVE, 0.11.0 not yet
     # I/O seams stubbed — the test needs NO sibling gem checkout on disk.
     def checkout_detached(_repo, _sha); end
+    def repo_git_state(repo, _path)
+      { "repo" => repo, "branch" => "main", "dirty" => false, "dirty_files" => [], "tracked_dirty" => [] }
+    end
+    def with_ship_workspace(repo) = yield
+    def ship_workspace!(repo, _sha) = "/tmp/_ship/\#{repo}"
     def publish_gem(repo, version) = $stdout.puts("PUBLISH-CALLED " + repo + " " + version)
-    def ff_main_local(_repo, _sha); end
-    def push_origin_main(_repo); end
+    def push_frozen_main(_repo, _sha); end
+    def restore_gem_primary(_repo); end
     def sh(*a, **_k) = raise("no real shell I/O expected in this test: " + a.inspect)
   RUBY
 
@@ -3896,57 +3909,251 @@ class ReleaseCliTest < Minitest::Test
     refute_includes out, "RRE qa_smoke completed", "a boot failure never records a completed stamp"
   end
 
-  # --- ship preflight: every app checkout on a clean `main` before any ff ----
-  # ship ff's each app repo's main → frozen SHA; a checkout left on a pr-NNN
-  # branch (review agent) or with a stale schema.rb breaks the ff mid-ship. The
-  # preflight catches it BEFORE any ff. Drive ship_preflight directly with
-  # repo_git_state stubbed (DRY=false via --yes) so no real sibling git runs.
-  APP_GROUPS = %q([{ "repo" => "mcritchie-studio" }, { "repo" => "turf-monster" }])
+  # --- deploy_app: what the deploy actually needs ------------------------------
 
-  def test_ship_preflight_aborts_when_a_checkout_is_off_main
-    setup = <<~RUBY
+  # [integration] git_push_heroku (hub, rolio) needs NO working tree: "deploy" is
+  # handing a commit to a git remote. It ref-pushes the FROZEN SHA BY VALUE, which
+  # is stricter than the old `git push heroku main` (that shipped whatever the local
+  # branch pointed at, in a checkout any session could disturb). Proven on real git:
+  # the "heroku" remote's main lands on the frozen SHA while the primary sits dirty
+  # on a feature branch.
+  def test_deploy_app_git_push_heroku_ref_pushes_the_frozen_sha_from_a_dirty_primary
+    Dir.mktmpdir do |dir|
+      clone  = build_sibling_fixture(dir)
+      heroku = File.join(dir, "heroku.git")
+      system("git", "init", "--bare", "-q", heroku, out: File::NULL, err: File::NULL) || flunk("bare init failed")
+      run_git(clone, "remote", "add", "heroku", heroku)
+      frozen = git_out(clone, "rev-parse", "release")
+
+      run_git(clone, "checkout", "-q", "-b", "feat/live-session")
+      File.write(File.join(clone, "app.rb"), "half a feature")
+
+      group = %({ "repo" => "sibling", "members" => [],
+                  "prod_deploy" => { "strategy" => "git_push_heroku", "remote" => "heroku", "branch" => "main" } })
+      setup = %(def repo_path(_repo) = #{clone.inspect}\ndef record_merged_main(_s); end\n)
+      out = run_cli(["--yes"], setup: setup,
+                    call: %{deploy_app(#{group}, #{frozen.inspect}); puts("PASSED")})
+
+      assert_includes out, "PASSED", "the deploy must not care that the primary is dirty: #{out}"
+      assert_equal frozen, git_out(heroku, "rev-parse", "main"),
+                   "the Heroku remote's main must be the FROZEN SHA — that is what boots in prod"
+      assert_equal frozen, git_out(File.join(dir, "origin.git"), "rev-parse", "main"),
+                   "…and origin/main must have been advanced to it too"
+      assert_equal "feat/live-session", git_out(clone, "rev-parse", "--abbrev-ref", "HEAD"),
+                   "the primary is never checked out"
+      assert_includes git_out(clone, "status", "--porcelain"), "app.rb", "…and its dirt survives"
+    end
+  end
+
+  # [integration] repo_script (turf-monster) is the one adapter that DOES need a
+  # working tree — its bin/deploy runs the repo's suite, hashes the IDL, and pushes
+  # from the checkout it runs in. It gets the SHIP WORKSPACE, detached at the frozen
+  # SHA. This test stands in for turf's bin/deploy and asserts the three things that
+  # script actually depends on, rather than assuming them:
+  #   * cwd is the ship workspace (NOT the primary, NOT the gate workspace),
+  #   * `git rev-parse HEAD` there is the FROZEN SHA,
+  #   * `git rev-parse --abbrev-ref HEAD` is the literal "HEAD" (detached) — which is
+  #     what makes turf's own `PUSH_SPEC="$BRANCH:main"` resolve to `HEAD:main` and
+  #     push exactly the frozen commit,
+  #   * the tree is CLEAN, so its `git diff-index --quiet HEAD` preflight passes even
+  #     while the primary is filthy.
+  def test_deploy_app_repo_script_runs_in_the_ship_workspace_at_the_frozen_sha
+    Dir.mktmpdir do |dir|
+      clone  = build_sibling_fixture(dir)
+      frozen = git_out(clone, "rev-parse", "release")
+      probe  = File.join(dir, "probe.sh")
+      File.write(probe, <<~SH)
+        #!/usr/bin/env sh
+        echo "DEPLOY-CWD $(pwd)"
+        echo "DEPLOY-HEAD $(git rev-parse HEAD)"
+        echo "DEPLOY-BRANCH $(git rev-parse --abbrev-ref HEAD)"
+        git diff-index --quiet HEAD -- && echo "DEPLOY-TREE-CLEAN" || echo "DEPLOY-TREE-DIRTY"
+      SH
+      File.chmod(0o755, probe)
+
+      # The primary is a live session's floor: off main, dirty.
+      run_git(clone, "checkout", "-q", "-b", "feat/live-session")
+      File.write(File.join(clone, "app.rb"), "half a feature")
+
+      group = %({ "repo" => "sibling", "members" => [],
+                  "prod_deploy" => { "strategy" => "repo_script", "command" => #{probe.inspect}, "args" => ["--yes"] } })
+      setup = %(def repo_path(_repo) = #{clone.inspect}\ndef record_merged_main(_s); end\n)
+      out = run_cli(["--yes"], setup: setup,
+                    call: %{deploy_app(#{group}, #{frozen.inspect}); puts("PASSED")})
+
+      assert_includes out, "PASSED", "the satellite deploy must survive a dirty primary: #{out}"
+      assert_includes out, ".worktrees/_ship",
+                      "the repo's deploy script must run in the SHIP workspace, not the primary or the gate's"
+      assert_includes out, "DEPLOY-HEAD #{frozen}",
+                      "…pinned at the QA-frozen SHA — the exact commit that ships"
+      assert_includes out, "DEPLOY-BRANCH HEAD",
+                      "…detached, which is what makes turf's PUSH_SPEC resolve to `HEAD:main` (the frozen commit)"
+      assert_includes out, "DEPLOY-TREE-CLEAN",
+                      "…and clean, so the repo's own clean-tree preflight passes while the primary is dirty"
+      assert_equal "feat/live-session", git_out(clone, "rev-parse", "--abbrev-ref", "HEAD"),
+                   "the primary is never checked out by the satellite deploy"
+    end
+  end
+
+  # [unit] The env contract for a repo's OWN deploy script. It gets the workspace's
+  # private test DB (so the suite it runs pre-prod can't be poisoned by a concurrent
+  # one) and NOTHING else. Emphatically NOT the gate overlay: that sets
+  # RAILS_ENV=test, which is right for a gate and WRONG for a production deploy
+  # script — the next repo_script app could precompile assets in its deploy, and
+  # doing that in the test env would build the wrong artifact and ship it.
+  def test_ship_deploy_env_gives_the_script_a_private_db_and_never_rails_env_test
+    Dir.mktmpdir do |dir|
+      plant_database_yml(dir)
+      setup = %(def repo_path(_repo) = #{dir.inspect})
+      out = run_cli(["--yes"], setup: setup, call: %{print(ship_deploy_env("turf-monster").inspect)})
+
+      env = eval(out) # rubocop:disable Security/Eval — the CLI printed its own Hash
+      assert_equal "postgres:///turf_monster_ship_test", env["DATABASE_URL"],
+                   "the script's suite must run on the ship workspace's PRIVATE DB"
+      assert_nil env["RAILS_ENV"],
+                 "a PRODUCTION deploy script must never inherit RAILS_ENV=test"
+      assert_equal %w[DATABASE_URL], env.keys,
+                   "exactly one var — the script's toolchain (PATH/ruby) is the script's business"
+    end
+  end
+
+  # [unit] A SQLite app's test DB is a file INSIDE the workspace — already private.
+  # Handing it a postgres URL would be a live trap, so the overlay is empty.
+  def test_ship_deploy_env_is_empty_for_a_file_backed_test_db
+    Dir.mktmpdir do |dir|
+      plant_database_yml(dir, adapter: "sqlite3")
+      setup = %(def repo_path(_repo) = #{dir.inspect})
+      out = run_cli(["--yes"], setup: setup, call: %{print(ship_deploy_env("rolio").inspect)})
+
+      assert_equal "{}", out, "a SQLite app needs no DB overlay — its test DB is already inside the workspace"
+    end
+  end
+
+  # --- ship preflight: the dirty-primary ABORT CLASS is gone ------------------
+  # It used to refuse any app primary that was dirty or off `main`, because the ship
+  # ff'd + deployed from that tree. It aborted a REAL production ship (after the gems
+  # published) over a concurrent session's staged work. The deploy now runs from its
+  # own workspace, so an app primary is no longer input: the preflight PINS the ship
+  # workspaces, GATES only the gem builds (which really are built from a primary),
+  # and merely ADVISES on a dirty app primary. Drive ship_preflight directly with
+  # the git seams stubbed (DRY=false via --yes) so no real sibling git runs.
+  APP_GROUPS = %q([{ "repo" => "mcritchie-studio" }, { "repo" => "turf-monster" }])
+  GEM_GROUPS = %q([{ "repo" => "studio-engine" }])
+  SHIP_SHAS  = %q({ "mcritchie-studio" => "abc1234", "turf-monster" => "def5678", "studio-engine" => "aaa1111" })
+
+  # The workspace pin is the preflight's own I/O; these tests are about the VERDICT,
+  # so stub it out (its real behavior is proven on a live git fixture elsewhere).
+  NO_WORKSPACE = <<~RUBY
+    def with_ship_workspace(repo) = yield
+    def ship_workspace!(repo, sha) = "/tmp/_ship/\#{repo}"
+  RUBY
+
+  # [integration] THE acceptance: a dirty, off-main app primary — a live feature
+  # session's floor — must NOT abort the ship. It gets a note and the deploy rides on.
+  def test_ship_preflight_does_not_abort_on_a_dirty_off_main_app_primary
+    setup = NO_WORKSPACE + <<~RUBY
       def repo_git_state(repo, _path)
         if repo == "turf-monster"
-          { "repo" => repo, "branch" => "pr-161", "dirty" => false, "dirty_files" => [] }
+          { "repo" => repo, "branch" => "feat/live-session", "dirty" => true,
+            "dirty_files" => ["app/models/pick.rb"], "tracked_dirty" => ["app/models/pick.rb"] }
         else
-          { "repo" => repo, "branch" => "main", "dirty" => false, "dirty_files" => [] }
+          { "repo" => repo, "branch" => "main", "dirty" => false, "dirty_files" => [], "tracked_dirty" => [] }
         end
       end
     RUBY
     out = run_cli(["--yes"], setup: setup,
-                  call: "begin; ship_preflight(#{APP_GROUPS}); puts('PASSED'); rescue SystemExit => e; puts('ABORTED: ' + e.message); end")
+                  call: "begin; ship_preflight(#{APP_GROUPS}, [], #{SHIP_SHAS}); puts('PASSED'); rescue SystemExit => e; puts('ABORTED: ' + e.message); end")
 
-    assert_includes out, "ABORTED", "an off-main checkout aborts ship at the preflight"
-    assert_includes out, "turf-monster", "the abort names the offending repo"
-    assert_includes out, "pr-161", "the abort names the offending branch"
-    refute_includes out, "PASSED", "ship must not proceed past a failed preflight"
-  end
-
-  def test_ship_preflight_aborts_on_a_dirty_main_tree
-    setup = <<~RUBY
-      def repo_git_state(repo, _path)
-        files = repo == "mcritchie-studio" ? ["db/schema.rb"] : []
-        { "repo" => repo, "branch" => "main", "dirty" => files.any?, "dirty_files" => files }
-      end
-    RUBY
-    out = run_cli(["--yes"], setup: setup,
-                  call: "begin; ship_preflight(#{APP_GROUPS}); rescue SystemExit => e; puts('ABORTED: ' + e.message); end")
-
-    assert_includes out, "ABORTED"
-    assert_includes out, "db/schema.rb", "the abort names the dirty file"
-  end
-
-  def test_ship_preflight_passes_when_all_checkouts_are_on_clean_main
-    setup = <<~RUBY
-      def repo_git_state(repo, _path)
-        { "repo" => repo, "branch" => "main", "dirty" => false, "dirty_files" => [] }
-      end
-    RUBY
-    out = run_cli(["--yes"], setup: setup,
-                  call: "begin; ship_preflight(#{APP_GROUPS}); puts('PASSED'); rescue SystemExit; puts('ABORTED'); end")
-
-    assert_includes out, "PASSED", "a clean-main batch passes the preflight"
+    assert_includes out, "PASSED", "a dirty app primary must never abort a production ship: #{out}"
     refute_includes out, "ABORTED"
+    assert_includes out, "NOTE, not a blocker", "…it says so plainly"
+    assert_includes out, "turf-monster", "the note names the repo"
+    assert_includes out, "rescue/turf-monster-", "…and prints the labeled-branch rescue"
+    assert_includes out, "Nothing here is discarded, and nothing is stashed",
+                    "it must PROMISE the session's work survives — never offer a stash or a discard"
+  end
+
+  # [integration] The ONE primary-state hazard that survives: a gem is BUILT from its
+  # primary (gem build packages what is on disk), so a modified TRACKED file there
+  # would be PUBLISHED — irreversibly. That aborts, BEFORE anything is published, and
+  # the abort hands over the rescue.
+  def test_ship_preflight_aborts_on_a_gem_primary_with_modified_tracked_files
+    setup = NO_WORKSPACE + <<~RUBY
+      def repo_git_state(repo, _path)
+        return { "repo" => repo, "branch" => "main", "dirty" => true,
+                 "dirty_files" => ["lib/studio/version.rb"], "tracked_dirty" => ["lib/studio/version.rb"] } if repo == "studio-engine"
+        { "repo" => repo, "branch" => "main", "dirty" => false, "dirty_files" => [], "tracked_dirty" => [] }
+      end
+    RUBY
+    out = run_cli(["--yes"], setup: setup,
+                  call: "begin; ship_preflight(#{APP_GROUPS}, #{GEM_GROUPS}, #{SHIP_SHAS}); puts('PASSED'); rescue SystemExit => e; puts('ABORTED: ' + e.message); end")
+
+    assert_includes out, "ABORTED", "uncommitted tracked code in a gem repo would be PUBLISHED — fail closed"
+    refute_includes out, "PASSED"
+    assert_includes out, "studio-engine",         "the abort names the gem"
+    assert_includes out, "lib/studio/version.rb", "…and the file that would ship"
+    assert_includes out, "BEFORE publishing",     "…and that nothing has been published yet"
+    assert_includes out, "rescue/studio-engine-", "…and hands over the labeled-branch rescue"
+    assert_includes out, "nothing is stashed and nothing is discarded",
+                    "never tell an operator to stash or discard a live session's work"
+  end
+
+  # [integration] UNTRACKED files in a gem primary are NOT a publish hazard — the
+  # gemspec's file list is `git ls-files`, so they cannot be packaged. They must not
+  # gate a ship (that would just re-invent the abort class we removed).
+  def test_ship_preflight_ignores_untracked_files_in_a_gem_primary
+    setup = NO_WORKSPACE + <<~RUBY
+      def repo_git_state(repo, _path)
+        return { "repo" => repo, "branch" => "main", "dirty" => true,
+                 "dirty_files" => ["scratch.rb"], "tracked_dirty" => [] } if repo == "studio-engine"
+        { "repo" => repo, "branch" => "main", "dirty" => false, "dirty_files" => [], "tracked_dirty" => [] }
+      end
+    RUBY
+    out = run_cli(["--yes"], setup: setup,
+                  call: "begin; ship_preflight(#{APP_GROUPS}, #{GEM_GROUPS}, #{SHIP_SHAS}); puts('PASSED'); rescue SystemExit => e; puts('ABORTED: ' + e.message); end")
+
+    assert_includes out, "PASSED", "an untracked scratch file in a gem repo is not packaged — it must not gate the ship"
+    refute_includes out, "ABORTED"
+  end
+
+  # [integration] A generated artifact (a retro doc / the worktree ledger) routinely
+  # sits uncommitted and must not gate a gem build either — the same narrow allowlist.
+  def test_ship_preflight_ignores_generated_artifacts_in_a_gem_primary
+    setup = NO_WORKSPACE + <<~RUBY
+      def repo_git_state(repo, _path)
+        files = ["docs/agents/maintenance/delete-later.md"]
+        return { "repo" => repo, "branch" => "main", "dirty" => true,
+                 "dirty_files" => files, "tracked_dirty" => files } if repo == "studio-engine"
+        { "repo" => repo, "branch" => "main", "dirty" => false, "dirty_files" => [], "tracked_dirty" => [] }
+      end
+    RUBY
+    out = run_cli(["--yes"], setup: setup,
+                  call: "begin; ship_preflight(#{APP_GROUPS}, #{GEM_GROUPS}, #{SHIP_SHAS}); puts('PASSED'); rescue SystemExit; puts('ABORTED'); end")
+
+    assert_includes out, "PASSED", "a generated artifact is not real dirt"
+    refute_includes out, "ABORTED"
+  end
+
+  # [integration] The preflight PINS each app's ship workspace at the frozen SHA
+  # before anything is published — so a broken worktree aborts while the release is
+  # still fully recoverable, never mid-train.
+  def test_ship_preflight_pins_the_ship_workspaces_at_the_frozen_sha
+    setup = <<~RUBY
+      def repo_git_state(repo, _path)
+        { "repo" => repo, "branch" => "main", "dirty" => false, "dirty_files" => [], "tracked_dirty" => [] }
+      end
+      def with_ship_workspace(repo) = yield
+      def ship_workspace!(repo, sha)
+        $stdout.puts("PIN \#{repo} @ \#{sha}")
+        "/tmp/_ship/\#{repo}"
+      end
+    RUBY
+    out = run_cli(["--yes"], setup: setup,
+                  call: "ship_preflight(#{APP_GROUPS}, [], #{SHIP_SHAS}); puts('PASSED')")
+
+    assert_includes out, "PIN mcritchie-studio @ abc1234", "the hub's ship workspace is pinned at its frozen SHA"
+    assert_includes out, "PIN turf-monster @ def5678",     "…and the satellite's at its own"
+    assert_includes out, "PASSED"
   end
 
   def test_ship_dry_run_previews_the_preflight_without_touching_git
@@ -3956,41 +4163,25 @@ class ReleaseCliTest < Minitest::Test
     setup = SHIP_STUB + %(\ndef repo_git_state(*); raise "git consulted in dry-run preflight"; end)
     out = run_cli(["--dry-run"], call: "ship", setup: setup)
     assert_includes out, "ship preflight", "ship previews the preflight in dry-run"
+    assert_includes out, "ship workspace", "…and previews the workspace pin the real run does"
   end
 
-  # --- ship preflight: generated artifacts are NOT counted as dirt -----------
-  # A retro-*.md (bin/release retro) and the delete-later.md ledger (agent-worktree)
-  # routinely sit uncommitted in the deploy checkout and blocked EVERY ship's ff.
-  # The preflight now ignores those (allowlist) while STILL gating on real dirt.
-
-  def test_ship_preflight_passes_when_only_generated_artifacts_are_dirty
-    setup = <<~RUBY
+  # [integration] Real code dirt beside a generated artifact: in a GEM primary it
+  # still gates (it would be published); in an APP primary it is only advised on.
+  def test_ship_preflight_gem_gate_separates_real_dirt_from_a_generated_artifact
+    setup = NO_WORKSPACE + <<~RUBY
       def repo_git_state(repo, _path)
-        files = repo == "mcritchie-studio" ?
-          ["docs/agents/audits/retro-rel-20260624-b2f18e.md", "docs/agents/maintenance/delete-later.md"] : []
-        { "repo" => repo, "branch" => "main", "dirty" => files.any?, "dirty_files" => files }
+        files = ["docs/agents/audits/retro-rel-1.md", "lib/studio/engine.rb"]
+        return { "repo" => repo, "branch" => "main", "dirty" => true,
+                 "dirty_files" => files, "tracked_dirty" => files } if repo == "studio-engine"
+        { "repo" => repo, "branch" => "main", "dirty" => false, "dirty_files" => [], "tracked_dirty" => [] }
       end
     RUBY
     out = run_cli(["--yes"], setup: setup,
-                  call: "begin; ship_preflight(#{APP_GROUPS}); puts('PASSED'); rescue SystemExit; puts('ABORTED'); end")
+                  call: "begin; ship_preflight(#{APP_GROUPS}, #{GEM_GROUPS}, #{SHIP_SHAS}); rescue SystemExit => e; puts('ABORTED: ' + e.message); end")
 
-    assert_includes out, "PASSED", "a retro doc + the worktree ledger are generated artifacts, not real dirt"
-    refute_includes out, "ABORTED"
-  end
-
-  def test_ship_preflight_still_aborts_on_real_dirt_beside_a_generated_artifact
-    setup = <<~RUBY
-      def repo_git_state(repo, _path)
-        files = repo == "mcritchie-studio" ?
-          ["docs/agents/audits/retro-rel-1.md", "db/schema.rb"] : []
-        { "repo" => repo, "branch" => "main", "dirty" => files.any?, "dirty_files" => files }
-      end
-    RUBY
-    out = run_cli(["--yes"], setup: setup,
-                  call: "begin; ship_preflight(#{APP_GROUPS}); rescue SystemExit => e; puts('ABORTED: ' + e.message); end")
-
-    assert_includes out, "ABORTED", "real code dirt still gates the ship"
-    assert_includes out, "db/schema.rb", "the abort names the real dirty file"
+    assert_includes out, "ABORTED", "real code dirt in a gem repo would be published — it still gates"
+    assert_includes out, "lib/studio/engine.rb", "the abort names the real dirty file"
     refute_includes out, "retro-rel-1.md", "the generated artifact is not named as dirt"
   end
 
@@ -4253,7 +4444,7 @@ class ReleaseCliTest < Minitest::Test
                      "the cosmetic ship-slot intent write WARNS on a transient prod-board failure"
     assert_includes out, "deploy continues",
                      "the warning states the production deploy is not aborted"
-    assert_includes out, "push heroku main",
+    assert_includes out, "push heroku bbbbbbb:refs/heads/main",
                      "ship PROCEEDS to the production deploy — the failed cosmetic intent's SystemExit did NOT abort it"
   end
 

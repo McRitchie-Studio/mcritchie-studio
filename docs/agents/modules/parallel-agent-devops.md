@@ -548,11 +548,16 @@ Rules:
   (smallest-footprint first), and which PRs will likely need a post-merge rebase.
   It never blocks — use it to choose merge order and pre-empt the "siblings all
   touched `task.rb`" conflict that otherwise surfaces on `release` after review.
-- **Ship preflight.** `bin/release ship` asserts every **app checkout is on a
-  clean `main`** before any fast-forward and aborts loudly (naming the offending
-  branch / dirty files) if not — a review agent that left a checkout on a `pr-NNN`
-  branch or with a stale `schema.rb` would otherwise break the ff mid-ship. Keep
-  primary checkouts on a clean `main` before running `ship`.
+- **Ship preflight.** A **dirty app primary no longer blocks a ship** (it used to,
+  and that refusal once aborted a production deploy *after the gems had
+  published*, over a concurrent session's staged work). `bin/release ship` deploys
+  from its own private checkout — `<repo>/.worktrees/_ship`, detached at the
+  QA-frozen SHA — and advances `main` with a ref push, so it never reads a
+  primary's working tree. The preflight prints a NOTE plus a rescue (commit the
+  stranded work to a labeled `rescue/<repo>-<timestamp>` branch — **never** stash
+  it, **never** discard it: it may be a live session's work) and ships. The one
+  thing that still ABORTS is a **gem** repo with modified **tracked** files: `gem
+  build` packages what is on disk, so those edits would be published irreversibly.
 
 ## QA Deployment
 

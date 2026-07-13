@@ -169,4 +169,54 @@ class Release::GateWorkspaceTest < ActiveSupport::TestCase
         database: #{database}
     YML
   end
+  # --- the SHIP role: the deploy's own checkout ------------------------------
+  #
+  # Same primitive, second role. The ship needs a tree for exactly two things (the
+  # re-pin commit and a repo_script satellite's own bin/deploy) and it must not
+  # borrow the gate's: a concurrent conductor's G3 suite may be live in that one, and
+  # sharing the tree or the DB would put a production deploy and a gate suite in each
+  # other's way — the very coupling the isolated workspace exists to remove.
+
+  test "[unit] the ship role is a DIFFERENT worktree from the gate's" do
+    assert_equal "/Users/x/projects/turf-monster/.worktrees/_ship",
+                 W.path("/Users/x/projects/turf-monster", role: "ship")
+    assert_not_equal W.path("/Users/x/projects/turf-monster", role: "gate"),
+                     W.path("/Users/x/projects/turf-monster", role: "ship")
+  end
+
+  test "[unit] the ship role has its OWN test DB — never the gate's, never the primary's" do
+    assert_equal "turf_monster_ship_test", W.test_database_name("turf-monster", role: "ship")
+    assert_equal "postgres:///turf_monster_ship_test", W.test_database_url("turf-monster", role: "ship")
+    assert_not_equal W.test_database_name("turf-monster", role: "gate"),
+                     W.test_database_name("turf-monster", role: "ship")
+  end
+
+  test "[unit] a ship suite REFUSES the gate's DB — a concurrent gate may be mid-run in it" do
+    # turf's bin/deploy runs `bin/rails test` inside the ship workspace, and
+    # db:test:prepare PURGES. Qualifying on the gate's DB would let a prod deploy
+    # destroy a live G3 suite's data (and vice versa).
+    assert_not W.private_db?(resolved: "turf_monster_gate_test", repo: "turf-monster",
+                             workspace: "/w", role: "ship")
+    assert W.private_db?(resolved: "turf_monster_ship_test", repo: "turf-monster",
+                         workspace: "/w", role: "ship")
+  end
+
+  test "[unit] neither role EVER qualifies the shared primary test DB" do
+    %w[gate ship].each do |role|
+      assert_not W.private_db?(resolved: "turf_monster_test", repo: "turf-monster",
+                               workspace: "/w", role: role),
+                 "#{role}: the shared primary test DB is never private"
+    end
+  end
+
+  test "[unit] an unknown role raises instead of minting an unlocked third workspace" do
+    # A typo'd role would otherwise silently get its own dir + DB that no lock covers.
+    assert_raises(ArgumentError) { W.path("/repo", role: "shipp") }
+    assert_raises(ArgumentError) { W.test_database_name("turf-monster", role: "") }
+  end
+
+  test "[unit] the default role stays `gate` — every existing caller is unchanged" do
+    assert_equal "/repo/.worktrees/_gate", W.path("/repo")
+    assert_equal "turf_monster_gate_test", W.test_database_name("turf-monster")
+  end
 end

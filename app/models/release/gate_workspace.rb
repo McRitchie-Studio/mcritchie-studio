@@ -1,7 +1,18 @@
 require "yaml"
 
 class Release
-  # The PRIVATE checkout a local test gate (G3 pre-QA / G4 ship) runs its suite in.
+  # The PRIVATE checkout a release step works in, instead of the SHARED primary.
+  #
+  # TWO ROLES, one primitive (`role:` selects the directory + the test DB):
+  #   * "gate" — <repo>/.worktrees/_gate, DB <app>_gate_test. The tree a local
+  #     test gate (G3 pre-QA / G4 ship) runs its SUITE in.
+  #   * "ship" — <repo>/.worktrees/_ship, DB <app>_ship_test. The tree
+  #     `bin/release ship` DEPLOYS from: the re-pin commit, and any `repo_script`
+  #     app whose own bin/deploy needs a real working tree (it runs that repo's
+  #     suite). Pinned at the QA-FROZEN SHA, so the deploy builds from exactly the
+  #     commit QA certified — and from a tree no other process can touch.
+  # Separate directories and separate LOCKS: a ship must never queue behind a
+  # concurrent conductor's G3 suite, nor reset the tree under it.
   #
   # ROOT CAUSE it closes (verified 2026-07-12, from the rel-20260711-7f2913
   # false-negatives): the gates ran a MULTI-MINUTE suite on the SHARED PRIMARY
@@ -29,11 +40,25 @@ class Release
   # checkout the new one, and the app loads the NEW code. Clearing it would have
   # been a placebo that left the real cause live. Do not "fix" it here.)
   #
-  # THE FIX: give the gate a working tree nobody else touches. A detached-HEAD git
+  # THE FIX: give the step a working tree nobody else touches. A detached-HEAD git
   # worktree pinned at the exact SHA under test, plus its OWN test database. No
   # agent session, hand-run command, or other tool knows the tree exists, so it
-  # cannot be flipped; and the primary NEVER leaves `main` — which also retires the
-  # "a concurrent session's dirty primary aborted the ship" class of abort.
+  # cannot be flipped; and the primary NEVER leaves `main`.
+  #
+  # THE SHIP ROLE closes the SECOND half of the same story (2026-07-12). The gate
+  # moved off the primary but `bin/release ship` did not: it fast-forwarded the
+  # primary's `main`, re-pinned Gemfiles there, and ran the satellites' bin/deploy
+  # there — so its preflight REFUSED a dirty primary, and a concurrent feature
+  # session with staged work ABORTED a production ship after the gems had already
+  # published. Discarding that work was never an option (it is a live session's),
+  # so the recovery was a delicate stash-to-a-labeled-branch rescue at the worst
+  # possible moment. Now the ship owns a checkout too, and what the deploy needs a
+  # WORKING TREE for shrank to almost nothing: advancing `main` and pushing to
+  # Heroku are pure REF PUSHES against the shared object store
+  # (`git push <remote> <frozen-sha>:refs/heads/main` — fast-forward-checked, so
+  # it still fails closed), which read no working tree at all and cannot be
+  # perturbed by a dirty primary. Only the re-pin commit and the repo_script
+  # satellites genuinely need a tree; they get this one.
   #
   # TWO CAVEATS, both of which bit the first cut of this model — read them before
   # you trust the isolation:
@@ -68,31 +93,50 @@ class Release
     # clean (a dirty primary aborts the ship preflight).
     #
     # It is NOT an agent worktree and must never be mistaken for one:
-    # bin/agent-worktree enumerates `.worktrees/*/<stack env file>`, and the gate
-    # workspace carries no stack env (no port, no Redis DB, no server) — so it is
+    # bin/agent-worktree enumerates `.worktrees/*/<stack env file>`, and these
+    # workspaces carry no stack env (no port, no Redis DB, no server) — so they are
     # invisible to `list` / `doctor` / `cleanup` by construction. The leading
-    # underscore keeps it clear of task-slug names too.
+    # underscore keeps them clear of task-slug names too.
     DIRNAME = "_gate".freeze
 
-    # PURE. The gate checkout for a repo, given that repo's PRIMARY path.
-    def path(repo_path)
-      File.join(repo_path.to_s, ".worktrees", DIRNAME)
+    # The roles this primitive serves — see the class doc. A typo'd role would
+    # otherwise silently mint a THIRD workspace (its own dir, its own DB) that
+    # nothing locks, so the lookup fails loudly instead.
+    ROLES = %w[gate ship].freeze
+
+    def role!(role)
+      name = role.to_s
+      return name if ROLES.include?(name)
+
+      raise ArgumentError, "unknown workspace role: #{role.inspect} (known: #{ROLES.join(', ')})"
     end
 
-    # PURE. The gate's PRIVATE test database — never the primary's
+    # PURE. The workspace DIRECTORY name for a role: `_gate` / `_ship`.
+    def dirname(role = "gate")
+      "_#{role!(role)}"
+    end
+
+    # PURE. The workspace checkout for a repo, given that repo's PRIMARY path.
+    def path(repo_path, role: "gate")
+      File.join(repo_path.to_s, ".worktrees", dirname(role))
+    end
+
+    # PURE. The workspace's PRIVATE test database — never the primary's
     # `<app>_test`, so a concurrent suite (agent worktree, hand-run `bin/rails
-    # test`) can neither pollute the gate's DB nor be polluted by it. Seed/order
+    # test`) can neither pollute it nor be polluted by it. Seed/order
     # -dependent cross-talk between two suites on one DB was the third mechanism
     # behind the false-negatives (failure counts varied 0 → 8 → 16 across seeds
-    # on the SAME SHA).
-    def test_database_name(repo)
-      "#{repo.to_s.tr('-', '_')}_gate_test"
+    # on the SAME SHA). Per ROLE, so the ship's repo_script deploy (turf's
+    # bin/deploy runs its own suite) can never purge the DB a concurrent gate is
+    # mid-suite against: <app>_gate_test vs <app>_ship_test.
+    def test_database_name(repo, role: "gate")
+      "#{repo.to_s.tr('-', '_')}_#{role!(role)}_test"
     end
 
-    # PURE. The DB URL the gate suite boots against. A local-socket URL (no
-    # host/user) mirrors config/database.yml's default connection.
-    def test_database_url(repo)
-      "postgres:///#{test_database_name(repo)}"
+    # PURE. The DB URL a suite in this workspace boots against. A local-socket URL
+    # (no host/user) mirrors config/database.yml's default connection.
+    def test_database_url(repo, role: "gate")
+      "postgres:///#{test_database_name(repo, role: role)}"
     end
 
     # IO. The app's TEST adapter, read from its OWN config/database.yml (ERB
@@ -114,37 +158,39 @@ class Release
       nil
     end
 
-    # IO. The gate DB URL to overlay for THIS app, or nil when it needs none.
+    # IO. The workspace DB URL to overlay for THIS app, or nil when it needs none.
     #
     # nil for a FILE-BACKED test DB (SQLite — rolio's `storage/test.sqlite3`):
-    # that file lives INSIDE the gate worktree, so it is already private by
+    # that file lives INSIDE the worktree, so it is already private by
     # construction, and handing a SQLite app a `postgres:///…` URL would be a live
     # trap the moment it took effect. Postgres apps (hub, turf-monster) get the
-    # private gate DB.
-    def database_url_for(repo, repo_path)
+    # private DB.
+    def database_url_for(repo, repo_path, role: "gate")
       name = adapter(repo_path).to_s
       return nil if name.empty? || name.start_with?("sqlite")
 
-      test_database_url(repo)
+      test_database_url(repo, role: role)
     end
 
     # PURE. Is `resolved` — the database the app ACTUALLY connected to, read back
-    # from a booted Rails — private to this gate run? Two ways to qualify:
-    #   * it IS the gate's own DB (postgres), or
-    #   * it is a FILE inside the gate workspace (SQLite), which no other process
+    # from a booted Rails — private to this run? Two ways to qualify:
+    #   * it IS this workspace's own DB (postgres), or
+    #   * it is a FILE inside the workspace (SQLite), which no other process
     #     can reach because no other process knows the workspace exists.
     # Anything else — most importantly a bare `<app>_test`, the SHARED primary
     # test DB — is NOT private, and the caller aborts rather than run (and
     # `db:test:prepare`-PURGE) a suite against a database someone else is using.
+    # The role matters: the ship's deploy must not qualify on the GATE's DB either
+    # (a concurrent conductor may be mid-suite against it).
     #
     # This is what turns the private-DB claim from a convention into a checked
     # invariant: `TEST_DATABASE_URL` is a hand-rolled seam that turf-monster's
     # database.yml silently ignores, so asserting the DB NAME STRING (as the first
     # cut of this model did) proved nothing about what the app actually connects to.
-    def private_db?(resolved:, repo:, workspace:)
+    def private_db?(resolved:, repo:, workspace:, role: "gate")
       db = resolved.to_s.strip
       return false if db.empty?
-      return true if db == test_database_name(repo)
+      return true if db == test_database_name(repo, role: role)
       return false unless file_backed?(db)
 
       root = File.absolute_path(workspace.to_s)

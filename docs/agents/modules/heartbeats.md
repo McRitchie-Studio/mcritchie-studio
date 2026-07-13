@@ -228,8 +228,9 @@ Ship the assembled, QA-green release to production.
 > ⚠️ **Ship authority.** This crosses the production gate. Run it only when the
 > operator launched it (the `Avi Heartbeat` / `production-deploy` chip / phrase) or
 > otherwise granted ship authority in-session. The `--yes` answers only the human
-> confirm; it never skips the clean-main preflight, frozen-SHA tests, gem publish,
-> deploy smoke, or partial-ship recovery.
+> confirm; it never skips the preflight, frozen-SHA tests, gem publish, deploy
+> smoke, or partial-ship recovery. (A dirty primary does NOT block it: the deploy
+> runs from its own `.worktrees/_ship` checkout at the frozen SHA.)
 
 ### Act 2 — `pr-review`
 

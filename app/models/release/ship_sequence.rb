@@ -101,9 +101,9 @@ class Release
     # Together they let G3 skip and G4 STILL self-skip — silently disarming the
     # production gate. The documented gate-skip recipe walked exactly into this:
     # comment out `qa_test_cmd` so prepare's gate skips, then RESTORE the file
-    # before ship (ship's preflight refuses a dirty primary) — and now the
-    # registry reads equal again, the deployed SHA matches, and G4 skips a suite
-    # NOTHING ever ran. A skipped G3 must never certify a SHA.
+    # before ship (ship's preflight REFUSED a dirty primary back then) — and now
+    # the registry reads equal again, the deployed SHA matches, and G4 skips a
+    # suite NOTHING ever ran. A skipped G3 must never certify a SHA.
     #
     # THE FIX: skip only against the gate's OWN recorded verdict —
     # release.metadata["qa_gates"][repo] = {"sha", "cmd", "ok"}, written by
@@ -162,24 +162,32 @@ class Release
       record.is_a?(Hash) ? record : nil
     end
 
-    # --- ship preflight: every app checkout on a clean `main` before any ff ----
+    # --- ship preflight -------------------------------------------------------
     #
-    # `bin/release ship` fast-forwards each app repo's `main` up to the QA-frozen
-    # SHA, then runs the suite on that tree (avi_ship_gate) — both assume the
-    # checkout is ON `main` with a CLEAN tree. A review agent that left a checkout
-    # on a `pr-NNN` branch, or a stale uncommitted `schema.rb`, breaks the ff
-    # mid-ship (after gems publish / ship authority — the worst time). This is
-    # the PURE decision half of the preflight: the I/O (git rev-parse / status)
-    # lives in bin/release's ship_preflight, which hands the gathered states here.
+    # HISTORY — why this is no longer a GATE for apps (2026-07-12). ship used to
+    # fast-forward each app repo's `main` in the SHARED PRIMARY and run the
+    # satellites' bin/deploy there, so it REFUSED a primary that was dirty or off
+    # `main`. That refusal aborted a real production ship AFTER the gems had
+    # published, because a concurrent feature session had staged work in the
+    # primary — work nobody may discard. The deploy now runs from its own
+    # workspace (Release::GateWorkspace, role "ship") and advances `main` with a
+    # ref push that reads no working tree at all, so an app primary's state is
+    # simply NOT INPUT to the ship any more. What was an abort is now an ADVISORY
+    # (advisory_message): the ship says it isn't reading the tree, prints the
+    # rescue, and deploys.
     #
-    # `states` is an array of string-keyed hashes, one per app repo:
+    # This detector is the PURE half of that advisory: the I/O (git rev-parse /
+    # status) lives in bin/release's ship_preflight, which hands the gathered
+    # states here.
+    #
+    # `states` is an array of string-keyed hashes, one per repo:
     #   { "repo" => ..., "branch" => <current branch>,
-    #     "dirty" => <bool>, "dirty_files" => [paths] }
+    #     "dirty" => <bool>, "dirty_files" => [paths], "tracked_dirty" => [paths] }
     # `dirty` is optional — if absent it's inferred from a non-empty dirty_files.
     # Returns the OFFENDERS (repos not on `main` OR with a dirty tree), each as:
     #   { "repo" =>, "branch" =>, "on_main" => <bool>, "dirty" => <bool>,
     #     "dirty_files" => [paths] }
-    # An empty result means every checkout is on a clean `main` — safe to ff.
+    # An empty result means every checkout is on a clean `main`.
     def preflight_offenders(states)
       Array(states).filter_map do |s|
         branch    = (s["branch"] || s[:branch]).to_s
@@ -214,46 +222,128 @@ class Release
     #   * docs/agents/audits/retro-rel-*.md     — written by `bin/release retro`
     #   * docs/agents/maintenance/delete-later.md — the `bin/agent-worktree` ledger
     # A NARROW allowlist of globs, NOT a blanket docs/ ignore: any other dirty
-    # file — including other docs — still gates the ship.
+    # file — including other docs — still gates a gem build.
     GENERATED_ARTIFACT_GLOBS = [
       "docs/agents/audits/retro-rel-*.md",
       "docs/agents/maintenance/delete-later.md"
     ].freeze
 
+    # The worktree parent — the gate + ship workspaces, and the agent worktrees,
+    # all live under it. Every app repo gitignores it, but that is a CONVENTION
+    # (a newly-onboarded repo can miss the .gitignore line), and if it is ever
+    # missed the ship's own `.worktrees/_ship` would show up in `git status` as
+    # the operator's "stranded work" — the advisory would name it, and the rescue
+    # command would COMMIT THE WORKSPACE INTO GIT. It is tooling output by
+    # definition, never anyone's work, so it can never count as dirt.
+    WORKSPACE_DIR = ".worktrees".freeze
+
     # Whether a repo-root-relative `path` (as `git status --porcelain` emits it)
     # is a known generated artifact. Pure string match (File.fnmatch touches no
     # filesystem); FNM_PATHNAME keeps `*` from spanning `/`, so the glob can't
-    # over-ignore a nested path. A blank path is never an artifact.
+    # over-ignore a nested path. A blank path is never an artifact. `git status`
+    # reports an untracked DIRECTORY with a trailing slash (`.worktrees/`), so the
+    # path is normalized before matching.
     def generated_artifact?(path)
-      p = path.to_s.strip
+      p = path.to_s.strip.chomp("/")
       return false if p.empty?
+      return true if p == WORKSPACE_DIR || p.start_with?("#{WORKSPACE_DIR}/")
 
       GENERATED_ARTIFACT_GLOBS.any? { |glob| File.fnmatch?(glob, p, File::FNM_PATHNAME) }
     end
 
-    # The loud, actionable abort text for a non-empty preflight_offenders list —
-    # names each offending repo with WHY (off-main branch and/or the first dirty
-    # files) and the one-line fix. Pure string building so it's unit-tested
-    # alongside the decision.
-    def preflight_message(offenders)
-      lines = Array(offenders).map do |o|
-        reasons = []
-        reasons << "on '#{o['branch']}', not 'main'" unless o["on_main"]
-        if o["dirty"]
-          files = Array(o["dirty_files"])
-          sample = files.first(5).join(", ")
-          more = files.size > 5 ? " (+#{files.size - 5} more)" : ""
-          reasons << "dirty tree#{sample.empty? ? '' : ": #{sample}#{more}"}"
-        end
-        "  - #{o['repo']}: #{reasons.join('; ')}"
+    # The app-primary ADVISORY (never an abort). The ship does not read these
+    # trees — it deploys from its own workspace at the frozen SHA — so a dirty or
+    # off-main primary is now just a note, plus the rescue for the operator who
+    # WANTS it clean. Says what the ship is doing so nobody reads the note as a
+    # failure. nil when every primary is already clean (print nothing).
+    def advisory_message(offenders, at: Time.now)
+      list = Array(offenders)
+      return nil if list.empty?
+
+      lines = list.flat_map do |o|
+        ["  - #{o['repo']}: #{offender_reasons(o).join('; ')}"] +
+          rescue_commands(o, at: at).map { |c| "      #{c}" }
       end
-      "ship preflight failed — app checkout(s) not on a clean `main` before the fast-forward:\n" \
+      "  ⚠ app primary checkout(s) NOT on a clean `main` — the ship does NOT read them " \
+        "(it deploys from its own workspace at the frozen SHA), so this is a NOTE, not a blocker:\n" \
         "#{lines.join("\n")}\n" \
-        "  Fix each (git -C <repo> checkout main && git pull; commit/stash/discard local changes), " \
-        "then re-run `bin/release ship`."
+        "    Nothing here is discarded, and nothing is stashed. The commands above park the work on a " \
+        "labeled branch if you want the primary clean; a live session's work is safe either way."
+    end
+
+    # The ONE primary dependency the ship still has: a GEM artifact is BUILT from
+    # the gem repo's primary checkout (`git checkout <frozen>` there, then `gem
+    # build`), and `gem build` packages the files it finds ON DISK. So a MODIFIED
+    # TRACKED file in a gem primary would be PUBLISHED — a wrong-code release,
+    # irreversible (RubyGems forbids re-pushing a version). That is worth an abort;
+    # nothing else about a primary is.
+    #
+    # Narrow ON PURPOSE — tracked modifications only:
+    #   * untracked files are NOT packaged (the gemspec's file list is `git
+    #     ls-files`), so they are not a correctness hazard and must not gate a ship;
+    #   * the branch does not matter (the build detaches to the frozen SHA anyway).
+    # An empty result means no gem would package local dirt — safe to build.
+    def gem_build_offenders(states)
+      Array(states).filter_map do |s|
+        files = Array(s["tracked_dirty"] || s[:tracked_dirty]).map(&:to_s).reject(&:empty?)
+        files = files.reject { |f| generated_artifact?(f) }
+        next if files.empty?
+
+        { "repo" => (s["repo"] || s[:repo]).to_s, "branch" => (s["branch"] || s[:branch]).to_s,
+          "on_main" => true, "dirty" => true, "dirty_files" => files }
+      end
+    end
+
+    # The loud, ACTIONABLE abort for gem_build_offenders. It leads with the stakes
+    # (this would publish your uncommitted code) and hands over the exact rescue —
+    # never "stash or discard", which is how a live session's work gets destroyed.
+    def gem_build_message(offenders, at: Time.now)
+      lines = Array(offenders).flat_map do |o|
+        files  = Array(o["dirty_files"])
+        sample = files.first(5).join(", ")
+        more   = files.size > 5 ? " (+#{files.size - 5} more)" : ""
+        ["  - #{o['repo']}: modified tracked file(s)#{sample.empty? ? '' : ": #{sample}#{more}"}"] +
+          rescue_commands(o, at: at).map { |c| "      #{c}" }
+      end
+      "ship aborted BEFORE publishing anything — a gem repo's primary has uncommitted changes to TRACKED " \
+        "files, and `gem build` packages what is on disk, so those edits would be PUBLISHED to RubyGems " \
+        "(a version can never be re-pushed):\n" \
+        "#{lines.join("\n")}\n" \
+        "  The commands above COMMIT that work to a labeled branch — nothing is stashed and nothing is " \
+        "discarded (it may be a live session's). Then re-run `bin/release ship`."
+    end
+
+    # The rescue: park a primary's stranded work on a LABELED BRANCH and hand the
+    # checkout back clean. Commit, never stash and never discard — the work may
+    # belong to a live agent session, and a stash is easy to lose (and its message
+    # is only a push-time label). Pure: `at:` is injectable so the branch name is
+    # deterministic under test.
+    def rescue_commands(offender, at: Time.now)
+      repo   = (offender["repo"] || offender[:repo]).to_s
+      branch = "rescue/#{repo}-#{at.strftime('%Y%m%d-%H%M%S')}"
+      dirty  = offender["dirty"] || offender[:dirty]
+      return ["git -C <projects>/#{repo} checkout main   # (clean tree — just leave the review branch)"] unless dirty
+
+      [
+        "git -C <projects>/#{repo} switch -c #{branch}   # carries the work over, discards nothing",
+        "git -C <projects>/#{repo} add -A && git -C <projects>/#{repo} commit -m 'rescue: stranded primary work'",
+        "git -C <projects>/#{repo} switch main   # primary is clean again; the work lives on #{branch}"
+      ]
     end
 
     # --- internals -----------------------------------------------------------
+
+    def offender_reasons(offender)
+      reasons = []
+      reasons << "on '#{offender['branch']}', not 'main'" unless offender["on_main"]
+      if offender["dirty"]
+        files  = Array(offender["dirty_files"])
+        sample = files.first(5).join(", ")
+        more   = files.size > 5 ? " (+#{files.size - 5} more)" : ""
+        reasons << "dirty tree#{sample.empty? ? '' : ": #{sample}#{more}"}"
+      end
+      reasons
+    end
 
     def group_repo(group)
       (group[:repo] || group["repo"]).to_s

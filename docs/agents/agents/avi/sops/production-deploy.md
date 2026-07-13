@@ -128,16 +128,32 @@ bin/release ship --yes
 ```
 
 Ship from the primary checkout, not a feature worktree. `--yes` only answers the
-non-interactive confirmation. It does not skip clean-main preflight, frozen-SHA
-tests, gem publish ordering, deploy smoke, release notes, or partial-ship
-recovery.
+non-interactive confirmation. It does not skip the preflight, frozen-SHA tests,
+gem publish ordering, deploy smoke, release notes, or partial-ship recovery.
+
+**A dirty app primary does NOT block the ship.** The deploy runs from its own
+checkout — a private detached worktree at `<repo>/.worktrees/_ship`, pinned at the
+QA-frozen SHA — and advances `main` with a ref push
+(`git push origin <frozen>:refs/heads/main`), which reads no working tree at all.
+So a concurrent feature session's staged work in a primary is simply not the
+ship's business: the preflight prints a note and deploys. (It used to REFUSE, and
+that refusal once aborted a ship *after the gems had published*.) If you want a
+primary clean, the preflight prints the exact rescue — commit the stranded work to
+a labeled `rescue/<repo>-<timestamp>` branch. **Never stash it and never discard
+it**: it may be a live session's work.
+
+**One thing still gates on a primary: a gem repo with modified TRACKED files.**
+`gem build` packages what is on disk, so those edits would be *published* — and a
+RubyGems version can never be re-pushed. That aborts, before anything is
+published, and prints the same labeled-branch rescue. Run it, then re-run ship.
 
 The frozen-SHA test gate is each app's registry `test_cmd` — the **full local
 suite** (`Release::STEP_TEST_TIERS`: `ship → full-suite`; it is not a browser
 e2e run — browser-level verification is the post-deploy smoke seal). It runs in
 the repo's **isolated gate workspace** (a private detached worktree at
 `<repo>/.worktrees/_gate`, under its own lock, with a proven-private test DB) —
-NOT on the primary, which the ship only touches for the local `main` ff.
+NOT on the primary. Nothing at all is mutated before ship authority: a red gate or
+a declined confirm leaves every checkout exactly as it found it.
 
 It **self-gates against G3**, but ONLY on G3's RECORDED verdict
 (`metadata["qa_gates"][repo]`, written only after a GREEN pre-QA suite): same

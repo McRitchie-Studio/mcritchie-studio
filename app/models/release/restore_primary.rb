@@ -72,7 +72,7 @@ class Release
     # The loud, actionable abort text for a "refuse" plan — names the app, WHY
     # (the reasons), and the first offending files/commits, then the one-line fix.
     # Pure string building so it's unit-tested alongside the decision (mirrors
-    # ShipSequence.preflight_message).
+    # ShipSequence.gem_build_message).
     def refusal_message(app, plan)
       reasons  = Array(plan["reasons"] || plan[:reasons])
       files    = Array(plan["dirty_files"] || plan[:dirty_files])
