@@ -1384,4 +1384,125 @@ class TaskCliTest < Minitest::Test
     refute status.success?
     assert_match(/--dev-size must be one of: small, medium, large, xl/, err)
   end
+
+  # --- Unknown flags must be REJECTED, never silently dropped -----------------
+  # The old parse_flags whitelist-and-skip loop dropped an unrecognized flag (and
+  # its value) into ignored positionals and exited 0 — `update <slug> --pr <url>`
+  # printed the task as if the PR were recorded while the board still said
+  # `pr: -`, and bin/dor-check then failed NO_PR naming nothing about the real
+  # cause. A CLI must never report an operation that did not happen.
+
+  # The headline regression: --pr (the real flag is --pr-url) alongside a valid
+  # flag used to exit 0 and PATCH without the PR — data silently dropped.
+  def test_update_with_unknown_flag_dies_and_suggests_the_real_one
+    requests, _out, err, status = run_task(
+      ["update", "demo-task", "--pr", "https://github.com/x/y/pull/1", "--kind", "bug"]
+    )
+    refute status.success?, "an unknown flag must exit nonzero, not report success"
+    assert_empty requests, "the rejection must fire BEFORE auth or any PATCH — no partial write"
+    assert_match(/unknown flag "--pr"/, err, "the error names the offending flag")
+    assert_match(/--pr-url/, err, "and suggests the nearest valid flag")
+  end
+
+  # The second failure mode: the unknown flag's VALUE also fell through to the
+  # ignored positionals — both tokens vanished. Prove the value can never ride
+  # into the request body as a stray positional or scalar.
+  def test_create_with_unknown_flag_dies_instead_of_dropping_its_value
+    requests, _out, err, status = run_task(
+      ["create", "--title", "Some new task", "--pr", "https://github.com/x/y/pull/1"]
+    )
+    refute status.success?
+    assert_empty requests, "no POST fires — the task is not created with the flag+value dropped"
+    assert_match(/unknown flag "--pr"/, err)
+  end
+
+  def test_list_with_unknown_flag_dies_naming_it
+    requests, _out, err, status = run_task(["list", "--stag", "building"])
+    refute status.success?
+    assert_empty requests
+    assert_match(/unknown flag "--stag"/, err)
+    assert_match(/--stage/, err, "a close typo earns a suggestion")
+  end
+
+  # A misspelling (not a prefix) still earns the nearest-flag suggestion.
+  def test_update_with_misspelled_flag_suggests_the_nearest_one
+    _requests, _out, err, status = run_task(
+      ["update", "demo-task", "--pr-ulr", "https://github.com/x/y/pull/1"]
+    )
+    refute status.success?
+    assert_match(/unknown flag "--pr-ulr"/, err)
+    assert_match(/--pr-url/, err)
+  end
+
+  # Strict subcommand loops (move/intent/...) already died on unknown flags; they
+  # must keep doing so AND now honor --help (below) — pin the move contract.
+  def test_move_with_unknown_flag_still_dies_naming_the_valid_set
+    requests, _out, err, status = run_task(["move", "demo-task", "building", "--sizes", "small"])
+    refute status.success?
+    assert_empty requests
+    assert_match(/unknown flag "--sizes"/, err)
+    assert_match(/--dev-size/, err, "the valid flags (or a suggestion) are named")
+  end
+
+  # session-mascot's best-effort rescue used to swallow the die! — an unknown
+  # flag printed the error yet exited 0. Parsing now fails before best-effort.
+  def test_session_mascot_with_unknown_flag_exits_nonzero
+    _requests, _out, err, status = run_task(
+      ["session-mascot", "--bogus"],
+      env: { "CLAUDE_CODE_SESSION_ID" => SESSION }
+    )
+    refute status.success?, "a parse error must not be swallowed by the best-effort rescue"
+    assert_match(/unknown flag "--bogus"/, err)
+  end
+
+  # --- --help / -h print usage from any position; a flag is never a slug ------
+  # `bin/task update --help` used to parse "--help" as the SLUG and 404 against
+  # GET /api/v1/tasks/--help — actively misleading the one agent already confused
+  # about the flags.
+
+  def test_update_help_prints_usage_instead_of_a_slug_404
+    requests, _out, err, status = run_task(["update", "--help"])
+    assert status.success?, "--help exits 0"
+    assert_empty requests, "no GET /api/v1/tasks/--help — help is never a slug"
+    assert_match(/Usage:/, err)
+  end
+
+  def test_top_level_help_flag_prints_usage_and_exits_zero
+    requests, _out, err, status = run_task(["--help"])
+    assert status.success?
+    assert_empty requests
+    assert_match(/Usage:/, err)
+  end
+
+  def test_move_help_in_slug_position_prints_usage
+    requests, _out, err, status = run_task(["move", "--help"])
+    assert status.success?
+    assert_empty requests
+    assert_match(/Usage:/, err)
+  end
+
+  def test_move_help_in_flag_position_prints_usage
+    requests, _out, err, status = run_task(["move", "demo-task", "building", "--help"])
+    assert status.success?
+    assert_empty requests, "help must print before any PATCH"
+    assert_match(/Usage:/, err)
+  end
+
+  # Any other dashed token where a slug belongs dies loudly instead of becoming
+  # a 404ing GET /api/v1/tasks/<flag>.
+  def test_show_rejects_a_flag_in_slug_position
+    requests, _out, err, status = run_task(["show", "--json"])
+    refute status.success?
+    assert_empty requests, "no GET /api/v1/tasks/--json"
+    assert_match(/"--json"/, err, "the error names the misplaced flag")
+  end
+
+  # show's trailing flags are a closed set — a typo'd one must not silently
+  # downgrade the output to the terse view.
+  def test_show_with_unknown_trailing_flag_dies
+    _requests, _out, err, status = run_task(["show", "demo-task", "--jsn"])
+    refute status.success?
+    assert_match(/unknown flag "--jsn"/, err)
+    assert_match(/--json/, err)
+  end
 end
