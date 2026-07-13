@@ -37,16 +37,34 @@ The gate window spans the whole irreversible half of the ship:
 
 The full suite runs **once per release batch, at G3**. The ship test gate SKIPS
 a repo **only against G3's own recorded verdict** —
-`release.metadata["qa_gates"][repo] = {"sha", "cmd", "ok"}`, which `prepare`
+`release.metadata["qa_gates"][repo] = {"sha", "cmd", "ok", "ci"}`, which `prepare`
 writes ONLY after that repo's pre-QA suite comes back GREEN. It skips iff
 (`Release::ShipSequence.ship_gate_skip?`, unit-tested):
 
 - a G3 record exists for the repo and is **green** (`"ok" => true`), **and**
 - its `"cmd"` is EXACTLY the `test_cmd` the ship gate would run, **and**
-- its `"sha"` is EXACTLY the frozen ship SHA.
+- its `"sha"` is EXACTLY the frozen ship SHA, **and**
+- its **auditor did not go red** — `"ci" => {"state" => "red"}` means GitHub CI
+  called that SAME SHA broken while G3 called it green, so the certification is
+  precisely what must not be trusted (see
+  [G3's CI cross-check](g3-candidate.md#the-ci-cross-check-cis-verdict-on-the-same-sha)).
 
 Everything else **fails open — the gate RUNS**: no record, a red record, a
-different command, a drifted/straggler SHA, blank inputs.
+different command, a drifted/straggler SHA, a red auditor, blank inputs.
+
+Two properties of the auditor clause, because a gate is only as good as its
+failure mode:
+
+- **Fail-open only, never fail-closed.** A red auditor makes the gate *run*; it
+  can never block a ship on its own. Only the suite's verdict stops a ship.
+- **No data never arms it.** `none` / `pending` / `unverified` (and a record with
+  no `"ci"` key — every release from before the cross-check landed) leave the
+  skip decision exactly as it was.
+
+When a red auditor is what triggered the run, the ship **says so** — and it is
+honest that the re-run is *not* a backstop for CI's verdict: it re-runs the
+**local** `test_cmd`, the same suite that already passed, while the failing lane
+is one only CI can see.
 
 > **Why not the registry + `qa_shas`?** That was the old rule, and it was a
 > silent **disarm**. `qa_shas` is stamped by the QA *deploy loop*, so it records

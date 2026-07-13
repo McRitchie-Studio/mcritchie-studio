@@ -1656,9 +1656,15 @@ end
 #
 # The two disagreements are not symmetric, and the loud one is the SECOND:
 #   * gate GREEN + CI RED — CI saw something the gate structurally cannot: the
-#     browser `test:system` lane no local cert runs (the #1 blocker class). QA
-#     still deploys; the alarm says investigate before ship (G4 re-gates the
-#     frozen SHA anyway, so nothing reaches prod on this alone).
+#     browser `test:system` lane no local gate runs (the #1 blocker class). QA
+#     still deploys, AND the SHA's G3 certification is DISTRUSTED at ship: G4
+#     fails open and re-runs its suite on the frozen SHA rather than self-gating
+#     on a certification CI contradicts (ShipSequence.ship_gate_skip?). Be exact
+#     about what that re-run is NOT, though: it runs the LOCAL suite — the very
+#     one that already passed — while the failing lane is one only CI can see. So
+#     there is NO automated backstop for this direction, and the alarm must not
+#     pretend otherwise. The alarm IS the control: read the failing check and fix
+#     or eject BEFORE the ship.
 #   * gate RED + CI GREEN — the GATE is the suspect, not the code. That is
 #     rel-20260711-7f2913 verbatim: the gate false-failed genuinely-green code and
 #     a reviewer nearly EJECTED a good PR over it. The gate still aborts (it IS the
@@ -1722,10 +1728,16 @@ def ci_cross_check(repo, sha, local_ok, ci)
   say("  #{bar}")
   if local_ok
     say("  local pre-QA gate: GREEN   ·   GitHub CI: RED (#{named})")
-    say("  The gate passed a SHA GitHub says is BROKEN. CI runs a lane no local cert does")
-    say("  (the browser `test:system` suite) — so this is probably REAL. QA still deploys")
-    say("  (CI is the auditor, not the verdict), but DO NOT ship on it: reproduce the")
-    say("  failing check, and expect G4's frozen-SHA gate to catch it if it is real.")
+    say("  The gate passed a SHA GitHub says is BROKEN. CI runs a lane no local gate does")
+    say("  (the browser `test:system` suite) — so this is probably REAL. QA still deploys:")
+    say("  CI is the auditor, not the verdict.")
+    say("  WHAT THIS CHANGES AT SHIP: this SHA's G3 certification is now DISTRUSTED —")
+    say("  G4 will RE-RUN `test_cmd` on the frozen SHA instead of self-gating on it")
+    say("  (ShipSequence.ship_gate_skip? fails open on a red auditor).")
+    say("  THAT RE-RUN IS NOT A BACKSTOP FOR THIS: it runs the LOCAL suite, which is")
+    say("  exactly the suite that already passed. The failing lane is one only CI can")
+    say("  see. NOTHING downstream will catch it for you — READ #{named} and fix or")
+    say("  eject BEFORE the ship. Shipping past this is a deliberate, unguarded call.")
   else
     say("  local pre-QA gate: RED   ·   GitHub CI: GREEN (#{ci[:count]} checks)")
     say("  The gate FAILED a SHA GitHub says is GREEN — suspect the GATE, not the code.")
@@ -1743,10 +1755,15 @@ end
 # record (Release::ShipSequence.ship_gate_skip?) — never against the registry or
 # the deployed SHA, neither of which proves a suite ever ran.
 #
-# It also carries the AUDITOR's verdict for the same SHA (`ci: {state, checks}`),
-# so the pair is auditable after the run — a disagreement that only ever scrolled
-# past in a terminal is not evidence. The ci half is INERT for G4: ship_gate_skip?
-# reads `ok`/`cmd`/`sha` and nothing else, so an alarm can never disarm a gate.
+# It also carries the AUDITOR's verdict for the same SHA (`ci: {state, checks}`,
+# plus `count`/`reason` when GitHub gave them), so the pair is auditable after the
+# run — a disagreement that only ever scrolled past in a terminal is not evidence.
+#
+# That ci half is ARMED, in the SAFE direction only: a "red" auditor makes G4 FAIL
+# OPEN and re-run its suite on the frozen SHA instead of self-gating on this
+# certification (Release::ShipSequence.ship_gate_skip?). It can cause MORE
+# checking; it can never block a ship, and no-data (none/pending/unverified) never
+# changes anything.
 #
 # Best-effort like the other record steps: a board hiccup must not fail a GREEN
 # gate. But a missing record makes G4 FAIL OPEN (it re-runs the suite), so the
@@ -2539,11 +2556,28 @@ end
 # The skip is recorded as a visible SOP on the g4_ship gate run, never a silent
 # omission. (The pure decision lives in Release::ShipSequence.ship_gate_skip?,
 # unit-tested.)
+#
+# A G3 whose AUDITOR went RED also fails open — G3 called the SHA green, GitHub CI
+# called the SAME SHA broken, so the batch certification is exactly what must not
+# be trusted. Without this the skip would fire (the frozen SHA *is* the certified
+# SHA) and G3's alarm would be the ONLY thing between a CI-red commit and prod.
+# FAIL-OPEN ONLY: a red auditor causes MORE checking, never a block, and no-data
+# (none/pending/unverified) changes nothing.
 def test_gate(repo, frozen_sha: nil, qa_gate: nil)
   cmd = app_meta_for(repo)["test_cmd"].to_s
   if cmd.empty?
     step("test gate: #{repo} self-gates (no conductor test_cmd; its deploy runs tests) — skip")
     return
+  end
+
+  # Say WHY the batch certification is being ignored — a gate that silently
+  # re-runs teaches the operator nothing, and this is the one signal that says
+  # "G3 and CI disagreed about this exact commit".
+  if Release::ShipSequence.auditor_red?(qa_gate)
+    say("  ⚠ #{repo}: G3 certified #{short(frozen_sha)} GREEN but GitHub CI called that SHA RED — the batch " \
+        "certification is NOT trusted. Re-running `#{cmd}` on the frozen SHA (fail-open).")
+    say("    (CI runs a lane no local gate does — the browser test:system suite. If this passes and CI still " \
+        "says red, THAT is what to investigate before shipping.)")
   end
 
   if Release::ShipSequence.ship_gate_skip?(test_cmd: cmd, frozen_sha: frozen_sha, qa_gate: qa_gate)

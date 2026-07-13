@@ -137,8 +137,15 @@ module CiStatus
       return { state: :unverified, reason: "no GitHub owner/repo resolved" } if repo.empty?
       return { state: :unverified, reason: "no SHA to query" } if commit.empty?
 
-      path = "repos/#{repo}/commits/#{commit}/check-runs"
-      raw = `gh api #{Shellwords.escape(path)} --paginate 2>&1`.to_s.strip
+      # NO --paginate. This endpoint returns an OBJECT ({total_count, check_runs}),
+      # and past page 1 gh emits CONCATENATED JSON documents, which JSON.parse
+      # rejects → :unverified. The auditor would go SILENTLY BLIND on exactly the
+      # biggest suites (>30 runs) — the opposite of its job. One page of 100 covers
+      # every suite in this ecosystem, and parse_check_runs cross-checks the count
+      # it read against `total_count`, so a truncated read reports itself instead
+      # of folding a partial list into a false green.
+      path = "repos/#{repo}/commits/#{commit}/check-runs?per_page=100"
+      raw = `gh api #{Shellwords.escape(path)} 2>&1`.to_s.strip
     end
     parse_check_runs(raw)
   end
@@ -159,7 +166,20 @@ module CiStatus
       return { state: :unverified, reason: reason.strip[0, 140] }
     end
 
-    fold(runs.map { |run| { "name" => run["name"].to_s, "state" => check_run_state(run), "bucket" => check_run_bucket(run) } })
+    verdict = fold(runs.map do |run|
+      { "name" => run["name"].to_s, "state" => check_run_state(run), "bucket" => check_run_bucket(run) }
+    end)
+
+    # A PARTIAL read can only be trusted when it found a FAILURE (a fail outranks
+    # everything, so more runs cannot un-fail it). Any other fold over a truncated
+    # list could be hiding a red on the page we never read — so report that we
+    # could not see the whole record rather than manufacture a green.
+    total = data.is_a?(Hash) && data["total_count"] ? data["total_count"].to_i : runs.size
+    if runs.size < total && verdict[:state] != :red
+      return { state: :unverified, reason: "read only #{runs.size} of #{total} check-runs" }
+    end
+
+    verdict
   end
 
   # PURE. status + conclusion → gh's bucket vocabulary. Not-yet-`completed` (and

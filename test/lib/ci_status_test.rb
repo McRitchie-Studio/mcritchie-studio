@@ -143,6 +143,31 @@ class CiStatusTest < Minitest::Test
     assert_includes v[:reason], "command not found"
   end
 
+  def test_check_runs_reports_a_TRUNCATED_read_rather_than_folding_a_false_green
+    # The query asks for one page of 100 (no --paginate: gh emits concatenated JSON
+    # documents past page 1 on an OBJECT endpoint, which JSON.parse rejects — the
+    # auditor would go silently blind on the BIGGEST suites). So a suite larger than
+    # the page must SAY it could not see the whole record: a green fold over a
+    # partial list could be hiding a red on the page we never read.
+    partial = JSON.generate("total_count" => 120,
+                            "check_runs" => [{ "name" => "test", "status" => "completed", "conclusion" => "success" }])
+    v = CiStatus.parse_check_runs(partial)
+    assert_equal :unverified, v[:state], "a partial read is NO DATA, not a green"
+    assert_includes v[:reason], "read only 1 of 120"
+  end
+
+  def test_check_runs_a_truncated_read_that_ALREADY_found_a_failure_is_still_red
+    # A failure outranks everything, so more runs cannot un-fail it — this partial
+    # fold IS trustworthy, and downgrading it to :unverified would throw away a
+    # true red.
+    partial = JSON.generate("total_count" => 120,
+                            "check_runs" => [{ "name" => "test:system", "status" => "completed",
+                                               "conclusion" => "failure" }])
+    v = CiStatus.parse_check_runs(partial)
+    assert_equal :red, v[:state]
+    assert_equal ["test:system"], v[:failing]
+  end
+
   def test_check_runs_accepts_a_bare_array_of_runs_too
     v = CiStatus.parse_check_runs('[{"name":"test","status":"completed","conclusion":"failure"}]')
     assert_equal :red, v[:state]

@@ -1004,10 +1004,12 @@ class Release::ConductorTest < ActiveSupport::TestCase
                    "ci" => { "state" => "green", "count" => 3 } }, gate)
   end
 
-  test "record_qa_gate records a DISAGREEMENT — a green gate beside a red CI, both on the record" do
+  test "record_qa_gate records a DISAGREEMENT — a green gate beside a red CI, and G4 stops self-gating on it" do
     # The alarm that scrolled past in the conductor's terminal is not evidence; the
-    # pair on the release is. A CI red never un-certifies the gate (ok stays true —
-    # CI audits, it does not veto), it just makes the contradiction auditable.
+    # pair on the release is. A red auditor never un-certifies the LOCAL gate (`ok`
+    # stays true — CI audits, it does not veto) and it never blocks a ship. What it
+    # DOES do is cost the certification its 90/10 privilege: G4 no longer skips its
+    # suite on a SHA GitHub CI called broken. Fail-OPEN — more checking, never less.
     rel = Release::Conductor.prepare!(task_slugs: [reviewed_task.slug])
     Release::Conductor.record_qa_gate(release: rel, repo: "turf-monster", sha: "def5678", cmd: "bin/rails test",
                                       ok: true, ci: { state: :red, checks: ["test:system"] })
@@ -1016,9 +1018,23 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert gate["ok"], "the LOCAL gate stays the verdict — a red auditor does not flip it"
     assert_equal "red", gate.dig("ci", "state").to_s
     assert_equal ["test:system"], gate.dig("ci", "checks")
-    assert Release::ShipSequence.ship_gate_skip?(test_cmd: "bin/rails test", frozen_sha: "def5678", qa_gate: gate),
-           "the ci half is INERT for G4 — ship_gate_skip? reads ok/cmd/sha and nothing else, so an auditor's " \
-           "red can never arm or disarm the ship gate"
+    assert_not Release::ShipSequence.ship_gate_skip?(test_cmd: "bin/rails test", frozen_sha: "def5678",
+                                                    qa_gate: gate),
+               "the record ARMS G4 in the safe direction: a certification CI contradicts must not let the " \
+               "ship gate skip its own suite (that skip is what made G3's alarm the ONLY thing between a " \
+               "CI-red SHA and production)"
+  end
+
+  test "record_qa_gate: an AGREEING (green) auditor leaves G4's self-gating intact" do
+    # The fail-open must be armed by a red and NOTHING else — otherwise the
+    # cross-check would tax every ship with a redundant suite run.
+    rel = Release::Conductor.prepare!(task_slugs: [reviewed_task.slug])
+    Release::Conductor.record_qa_gate(release: rel, repo: "mcritchie-studio", sha: "abc1234", cmd: "bin/rails test",
+                                      ok: true, ci: { "state" => "green", "count" => 4 })
+
+    gate = rel.reload.metadata["qa_gates"]["mcritchie-studio"]
+    assert Release::ShipSequence.ship_gate_skip?(test_cmd: "bin/rails test", frozen_sha: "abc1234", qa_gate: gate),
+           "both verdicts agree — the 90/10 batch certification still holds"
   end
 
   test "record_qa_gate omits the ci key when the auditor was not consulted" do

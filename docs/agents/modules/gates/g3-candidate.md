@@ -182,10 +182,16 @@ informational, never an alarm, never a block:
 **The two real disagreements are not symmetric:**
 
 - **Gate GREEN + CI RED** → CI saw something the gate structurally *cannot*: the
-  browser `test:system` lane no local certification runs (the #1 blocker class).
-  Probably real. QA still deploys — but do **not** ship on it; reproduce the
-  failing check. [G4 Ship](g4-ship.md) re-gates the frozen SHA anyway, so nothing
-  reaches production on this alone.
+  browser `test:system` lane no local gate runs (the #1 blocker class). Probably
+  real. QA still deploys (CI audits, it does not veto), **and this SHA's G3
+  certification is distrusted at ship**: [G4 Ship](g4-ship.md) fails open and
+  **re-runs** its suite on the frozen SHA instead of self-gating on a
+  certification CI contradicts.
+  **Do not read that re-run as a backstop.** It runs the *local* `test_cmd` — the
+  very suite that already passed — while the failing lane is one only CI can see.
+  **Nothing downstream will catch this for you.** The alarm is the control: read
+  the failing check and fix or eject **before** the ship. Shipping past it is a
+  deliberate, unguarded call.
 - **Gate RED + CI GREEN** → **suspect the gate, not the code.** This is
   `rel-20260711-7f2913`'s signature: a false-negative gate nearly got a good PR
   ejected. The gate still aborts (it *is* the verdict), but the abort tells you to
@@ -232,15 +238,29 @@ followed.
 
 On GREEN, the gate stamps **what it actually certified** onto the release:
 `metadata["qa_gates"][repo] = {"sha", "cmd", "ok" => true, "ci" => {"state",
-"checks"}}`. That record is the **only** grounds on which [G4 Ship](g4-ship.md)
-may skip its own suite. A gate that skipped, was misconfigured, or went red leaves
-**no record**, so G4 fails open and runs the suite itself — a skipped G3 can never
-certify a SHA.
+"checks", "count", "reason"}}` (the `ci` sub-keys beyond `state` appear only when
+GitHub gave them). That record is the **only** grounds on which
+[G4 Ship](g4-ship.md) may skip its own suite. A gate that skipped, was
+misconfigured, or went red leaves **no record**, so G4 fails open and runs the
+suite itself — a skipped G3 can never certify a SHA.
 
-The `"ci"` half is the auditor's verdict on that same SHA (above). It is **inert**
-for G4: `Release::ShipSequence.ship_gate_skip?` reads `ok`/`cmd`/`sha` and nothing
-else, so a CI disagreement can neither arm nor disarm the production gate — it can
-only tell a human the gate deserves a second look.
+The `"ci"` half is the auditor's verdict on that same SHA (above), and it is
+**armed — in the fail-open direction only**:
+
+- `"state" => "red"` → `Release::ShipSequence.ship_gate_skip?` returns **false**:
+  G4 stops self-gating on this certification and **re-runs** the suite on the
+  frozen SHA. Without this, a green G3 would still hand G4 a matching
+  `ok`/`cmd`/`sha` and the ship gate would skip — so the G3 alarm would have been
+  the *only* thing between a CI-red commit and production, while the alarm text
+  claimed a backstop that did not exist. A gate system that claims a backstop it
+  does not have makes its own alarm dismissible.
+- **Every other state — and no `ci` key at all — changes nothing.**
+  `none`/`pending`/`unverified` are no data, and no data must never arm the gate
+  (or every ship would pay for a verdict nobody gave). Releases recorded before
+  the cross-check landed carry no `ci` key and self-gate exactly as before.
+- **Fail-open only, never fail-closed.** A red auditor can cause *more* checking;
+  it can never block a ship by itself. The suite's own verdict remains the only
+  thing that stops one. Cost of a false red: one redundant suite run.
 
 ## Related
 
