@@ -162,6 +162,7 @@ require_relative "../app/models/release/gate_workspace"
 # the model/token/cost the agent actually burned. Plain Ruby (no Rails).
 require_relative "../lib/agent_session_usage"
 require_relative "../lib/task_usage_baseline"
+require_relative "../lib/task_usage_sandbox"
 require_relative "lib/session_identity"
 # G3's AUDITOR: the same GitHub-CI verdict bin/dor-check reads for a PR, asked
 # about the COMMIT the pre-QA gate just certified (CiStatus.for_sha). The local
@@ -678,7 +679,11 @@ end
 # bin/task (honors TASK_USAGE_DIR; else <projects>/.agents/task-usage).
 def release_usage_dir
   dir = ENV["TASK_USAGE_DIR"].to_s.strip
-  dir.empty? ? File.join(projects_root, ".agents", "task-usage") : dir
+  dir = File.join(projects_root, ".agents", "task-usage") if dir.empty?
+  # Same live-store fallback bin/task carries, so it takes the same fail-closed
+  # sandbox guard (lib/task_usage_sandbox.rb): under TASK_USAGE_SANDBOX an
+  # unpinned run aborts rather than writing the operator's real cost store.
+  TaskUsageSandbox.enforce!(dir, store: "task-usage")
 end
 
 # The captured per-transition usage for one task slug, or {} when there's no

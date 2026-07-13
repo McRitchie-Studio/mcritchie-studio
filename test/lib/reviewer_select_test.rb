@@ -15,10 +15,20 @@ require "tmpdir"
 require "socket"
 require "open3"
 require "rbconfig"
+require "fileutils"
 require_relative "../support/session_env"
 
 class ReviewerSelectCliTest < Minitest::Test
   BIN = File.expand_path("../../bin/reviewer-select", __dir__)
+
+  # One sandboxed write root per test — see run_board below for what it prevents.
+  def sandbox_root
+    @sandbox_root ||= Dir.mktmpdir("reviewer-select-sandbox")
+  end
+
+  def teardown
+    FileUtils.remove_entry(@sandbox_root) if @sandbox_root && File.directory?(@sandbox_root)
+  end
 
   # Runs reviewer-select against an in-memory devops payload, returns [out, code].
   # stderr is discarded: under `bin/rails test` the subprocess inherits bundler's
@@ -179,10 +189,21 @@ class ReviewerSelectCliTest < Minitest::Test
     # seed_review_usage_baseline). Un-neutralized, a run from a live agent session
     # would seed it against the OPERATOR'S real session — writing into the real
     # .agents/task-usage. SessionEnv.neutralized keeps the child session-less.
+    #
+    # That is necessary but NOT sufficient, and the real store carries the proof:
+    # 58 baseline rows keyed by BOARD_SLUG ("cli-board-sample") sit in 58 of the
+    # operator's live session files — written by this very test before the
+    # neutralizer landed (`bin/task usage-audit` lists them). A guarantee that
+    # holds only while nobody opts a session back in is a guarantee waiting to
+    # lapse. So the write root is PINNED too, and TASK_USAGE_SANDBOX (armed
+    # process-wide by test/support/task_usage_sandbox.rb) makes an unpinned child
+    # ABORT rather than fall back to the real store. Belt and braces, on purpose.
     env = SessionEnv.neutralized(
-      "TASK_API_BASE" => "http://127.0.0.1:#{port}",
-      "AGENT_API_SECRET" => "test-secret",
-      "RAILS_ENV" => "test"
+      {
+        "TASK_API_BASE" => "http://127.0.0.1:#{port}",
+        "AGENT_API_SECRET" => "test-secret",
+        "RAILS_ENV" => "test"
+      }.merge(TaskUsageSandboxEnv.child_env(sandbox_root))
     )
     out, _err, status = Open3.capture3(env, RbConfig.ruby, BIN, BOARD_SLUG, *args)
     [requests, out, status]

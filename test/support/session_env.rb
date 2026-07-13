@@ -35,6 +35,15 @@
 #   require_relative "../support/session_env"   # standalone minitest files
 #   (test_helper requires it too, for the Rails-side tests)
 #
+# SIBLING GUARANTEE: requiring this file also arms the task-usage sandbox
+# (test/support/task_usage_sandbox.rb), which turns TASK_USAGE_SANDBOX on for the
+# test process so every child inherits it and is REFUSED — loudly — if it tries to
+# write the operator's real .agents state (its usage/cost baselines or its session
+# markers). Same reasoning as the session neutralizer above, one store further in:
+# a test child that reaches the operator's real state is a bug whether it READS an
+# ambient session id or WRITES a fixture row into their live cost store. It rides
+# here because this is the ONE file every subprocess-spawning test already loads.
+#
 # PRODUCTION COUNTERPART: Release::GateEnv (app/models/release/gate_env.rb) does
 # the same scrub for the release gate's own spawn env — same SESSION_KEYS, same
 # nil-means-unset rule. That covers `bin/release`'s gate runs; it does nothing
@@ -50,6 +59,8 @@
 # They are kept in lockstep MECHANICALLY, not on trust: SessionEnvTest
 # (test/lib/session_env_test.rb) requires Release::GateEnv and asserts the two lists
 # are EQUAL, so growing either one alone fails the suite.
+require_relative "task_usage_sandbox"
+
 module SessionEnv
   # The agent-session identity vars, exactly as Release::GateEnv::SESSION_KEYS names
   # them. Add a key HERE and you must add it THERE — SessionEnvTest compares the two

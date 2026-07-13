@@ -10,11 +10,36 @@ require "minitest/autorun"
 require "json"
 require "tmpdir"
 require "fileutils"
+require_relative "../support/session_env"
 require_relative "../../lib/task_usage_baseline"
 
 class TaskUsageBaselineTest < Minitest::Test
   SESSION = "aaaa1111-bbbb-2222-cccc-333344445555"
   SLUG = "demo-task"
+
+  # ARM + PIN — this file writes the store IN-PROCESS, so it needs its own pin.
+  #
+  # Requiring session_env above arms TASK_USAGE_SANDBOX for this process (the
+  # sibling guarantee), and rule 1 of TaskUsageSandbox demands the TASK_USAGE_DIR
+  # pin be SET at the write seam — even though every write in this file targets an
+  # explicit tmpdir `dir:`. The guard cannot loosen that: by the time a path
+  # reaches TaskUsageBaseline#write, a CLI's env-fallback dir looks exactly like a
+  # test's explicit one, so the ENV pin is the only tell it has. Unpinned, the
+  # first `seed` here ABORTS the whole combined `bin/rails test` process — this
+  # file was green alone (nothing armed the sandbox) and took the mapped-tests
+  # lane down when any sibling file loaded session_env. Requiring the support
+  # here makes the standalone run the regression: drop this pin and
+  # `ruby -Itest test/lib/task_usage_baseline_test.rb` aborts on its own.
+  def setup
+    @pinned_usage_dir = Dir.mktmpdir
+    @prior_usage_dir = ENV["TASK_USAGE_DIR"]
+    ENV["TASK_USAGE_DIR"] = @pinned_usage_dir
+  end
+
+  def teardown
+    ENV["TASK_USAGE_DIR"] = @prior_usage_dir
+    FileUtils.remove_entry(@pinned_usage_dir) if @pinned_usage_dir && File.directory?(@pinned_usage_dir)
+  end
 
   def assistant_line(input:, output:, cc:, cr:)
     JSON.generate("type" => "assistant", "message" => {
@@ -143,6 +168,26 @@ class TaskUsageBaselineTest < Minitest::Test
         b = baseline(dir: state, root: root) # no transcript written
         refute b.seed(SLUG)
         assert_nil b.capture_delta(SLUG)
+      end
+    end
+  end
+
+  # REGRESSION — the armed-sandbox write seam (see the setup comment). A pinned
+  # process may write an explicit tmpdir store under the armed sandbox, and the
+  # row lands in the EXPLICIT dir, not the pin. Pre-fix this could not even run:
+  # the first seed aborted the process, green alone and red in any combined run.
+  def test_write_under_the_armed_sandbox_lands_in_the_explicit_dir
+    skip "sandbox deliberately disarmed (TASK_USAGE_SANDBOX=0)" unless TaskUsageSandbox.active?
+
+    Dir.mktmpdir do |root|
+      Dir.mktmpdir do |state|
+        write_transcript(root, [assistant_line(input: 1, output: 2, cc: 0, cr: 3)])
+        b = baseline(dir: state, root: root)
+
+        assert b.seed(SLUG), "a pinned, explicit-dir write is allowed under the armed sandbox"
+        assert File.exist?(File.join(state, "#{SESSION}.json")), "the row lands in the explicit dir"
+        refute File.exist?(File.join(@pinned_usage_dir, "#{SESSION}.json")),
+               "the ENV pin satisfies rule 1; it does not redirect an explicit dir"
       end
     end
   end
