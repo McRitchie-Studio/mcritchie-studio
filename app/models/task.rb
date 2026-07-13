@@ -1132,15 +1132,16 @@ class Task < ApplicationRecord
 
   private
 
-  # [[time, label], ...] — the durable artifacts this task has produced. Only the
-  # LATEST of each spine matters, so this is two indexed lookups, not a scan.
+  # [[time, label], ...] — the durable artifacts this task has produced. Reads the
+  # LOADED association when there is one (the board preloads :task_events, so the
+  # card's chip costs it no extra query) and falls back to a query otherwise.
   def progress_evidence
     evidence = []
 
-    event = task_events.order(:occurred_at).last
+    event = task_events.max_by(&:occurred_at)
     evidence << [event.occurred_at, progress_event_label(event)] if event&.occurred_at
 
-    gate = gate_runs.order(:updated_at).last
+    gate = gate_runs.max_by(&:updated_at)
     evidence << [gate.updated_at, progress_gate_label(gate)] if gate&.updated_at
 
     evidence
