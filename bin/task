@@ -93,6 +93,15 @@
 #
 # Unknown flags are rejected (exit 1) with a nearest-flag suggestion; a dashed
 # token is never parsed as a slug.
+#
+# Exit codes are a CONTRACT (bin/agent-worktree's reclaim guard classifies on
+# them — a destroy path):
+#   0  success
+#   4  EXIT_TASK_NOT_FOUND — the board POSITIVELY answered "there is no such
+#      task" (HTTP 404 + the API's own "task not found" body). Never fired on a
+#      failed read: a Heroku router 404, a route-level 404, a 5xx, or a rejected
+#      flag all stay on 1, because the guard FREES a worktree on this code.
+#   1  everything else — transport/API failures, usage errors, rejected flags.
 
 require "net/http"
 require "json"
@@ -302,9 +311,14 @@ def warn!(msg)
   $stderr.puts(msg)
 end
 
-def die!(msg)
+# The board POSITIVELY answered "there is no such task" — see the exit-code
+# contract in the header. Mirrored by bin/agent-worktree's TASK_NOT_FOUND_EXIT
+# (its fetch_task_record frees a desk on this code); keep the two in lockstep.
+EXIT_TASK_NOT_FOUND = 4
+
+def die!(msg, code: 1)
   warn!("error: #{msg}")
-  exit 1
+  exit code
 end
 
 def print_usage!
@@ -405,9 +419,23 @@ def api(method, path, body = nil, opts = {})
   res = TaskBoard.request(method, path, base_url: BASE_URL, token: (auth ? token : nil), body: body)
   parsed = TaskBoard.parse_body(res)
   unless res.code.to_i.between?(200, 299)
-    die!("#{method.upcase} #{path} -> #{res.code}: #{parsed["error"] || res.body}")
+    die!("#{method.upcase} #{path} -> #{res.code}: #{parsed["error"] || res.body}",
+         code: task_not_found_response?(res, parsed) ? EXIT_TASK_NOT_FOUND : 1)
   end
   parsed
+end
+
+# Classify the board's answer HERE, where the response is still structured (status
+# + parsed JSON body), instead of leaving callers to pattern-match the die! stderr
+# rendering. The 404 status alone is NOT enough: a Heroku router 404 (board app
+# renamed/deleted) or a route-level 404 (moved path, stale board) is a FAILED
+# read, not an answer — only the tasks API's own body counts
+# (app/controllers/api/v1/tasks_controller.rb#set_task renders exactly
+# "task not found", pinned by its controller test). A false positive here frees a
+# live builder's worktree for teardown during an outage, so match the exact
+# message, not the family (the generic "Not found" backstop stays exit 1).
+def task_not_found_response?(res, parsed)
+  res.code.to_i == 404 && parsed.is_a?(Hash) && parsed["error"].to_s.strip.casecmp?("task not found")
 end
 
 # Parse repeatable + scalar flags out of argv. Returns [positionals, scalars,

@@ -306,6 +306,76 @@ class AgentWorktreeTest < Minitest::Test
     assert_match(/could not be read/, hold, "the outage that motivated this guard is still withheld")
   end
 
+  # --- exit-code classification: the guard reads bin/task's EXIT CODE first ----
+  #
+  # bin/task exits EXIT_TASK_NOT_FOUND (4) ONLY when the board positively answered
+  # "there is no such task" — it verifies the HTTP 404 + the API's own body at the
+  # source, where the response is still structured. fetch_task_record classifies on
+  # that code, demoting the stringly stderr match above to a FALLBACK for an older
+  # bin/task (which exits 1 for every failure). These cases run a REAL fake bin/task
+  # executable through capture_status, so the whole seam — spawn, timeout plumbing,
+  # exit status, classification — is exercised, not stubbed.
+  def hold_for_fake_task_cli(script)
+    run_in_script(<<~RUBY)
+      def command_env(*_a); {}; end
+      require "tmpdir"
+      require "fileutils"
+      Dir.mktmpdir do |dir|
+        FileUtils.mkdir_p(File.join(dir, "bin"))
+        fake = File.join(dir, "bin", "task")
+        File.write(fake, #{script.inspect})
+        File.chmod(0o755, fake)
+        record = { env: { "TASK_RECORD_SLUG" => "gone" }, task: "gone",
+                   dir: dir, app: { "slug" => "mcritchie-studio" } }
+        print claim_hold(record).inspect
+      end
+    RUBY
+  end
+
+  # POSITIVE: a new-style bin/task answers not-found by EXIT CODE alone. The stderr
+  # deliberately does NOT contain "task not found", so only the code can free it —
+  # this is the test that fails if the classification still rides the message.
+  def test_exit_code_4_frees_the_desk_without_the_stderr_phrase
+    script = "#!/bin/sh\necho 'error: GET /api/v1/tasks/gone -> 404: NOT_FOUND' >&2\nexit 4\n"
+    assert_equal "nil", hold_for_fake_task_cli(script),
+                 "exit 4 is the board's positive 'no such task' answer — the desk is free even when " \
+                 "the stderr rendering changes (the stringly match is only a fallback now)"
+  end
+
+  # NEGATIVE: a new-style bin/task exiting 1 is a FAILED read (transport, 5xx,
+  # router/route 404) — the outage must still withhold on the destroy path.
+  def test_exit_code_1_transport_failure_still_withholds
+    script = "#!/bin/sh\necho 'error: GET /api/v1/tasks/gone -> 500: internal server error' >&2\nexit 1\n"
+    assert_match(/could not be read/, hold_for_fake_task_cli(script),
+                 "exit 1 without the not-found stderr is an unreadable board — never the free bucket")
+  end
+
+  # FALLBACK: an old-style bin/task (exits 1 for EVERY failure, renders
+  # "-> 404: task not found") must still classify as free — a worktree pinned to an
+  # older branch keeps a working guard.
+  def test_old_style_exit_1_with_the_stderr_phrase_still_frees
+    script = "#!/bin/sh\necho 'error: GET /api/v1/tasks/gone -> 404: task not found' >&2\nexit 1\n"
+    assert_equal "nil", hold_for_fake_task_cli(script),
+                 "the stderr fallback for an older bin/task must keep freeing a genuinely deleted slug"
+  end
+
+  # The plumbing under the classification: capture_status must report the child's
+  # exit code as its 4th element on BOTH lanes (plain and bounded), nil when the
+  # child never ran or was killed — nil can never equal the not-found code, so an
+  # unclassifiable exit always lands in the withheld bucket.
+  def test_capture_status_reports_the_child_exit_code_on_both_lanes
+    out = run_in_script(<<~RUBY)
+      plain = capture_status("sh", "-c", "exit 7")
+      bounded = capture_status("sh", "-c", "exit 7", timeout: 5)
+      ok, _out, _err, code = capture_status("true")
+      _t_ok, _t_out, _t_err, t_code = capture_status("sleep", "3", timeout: 1)
+      print [plain[0], plain[3], bounded[0], bounded[3], ok, code, t_code].inspect
+    RUBY
+    assert_equal "[false, 7, false, 7, true, 0, nil]", out,
+                 "exit codes must survive both capture lanes; a timeout has NO exit code (nil), " \
+                 "which classifies as a failed read, never as not-found"
+  end
+
   # --- the board read must be REALLY bounded ---------------------------------
   # Timeout.timeout around Open3.capture3 bounds NOTHING: capture3's ensure joins the wait
   # thread, which blocks until the child exits, swallowing the Timeout::Error (a 2s guard

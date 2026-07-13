@@ -43,6 +43,7 @@ class TaskCliTest < Minitest::Test
   # a nil value deletes that var from the child (used to clear the session vars so
   # the test never depends on a real ambient session).
   def run_task(args, env: {}, stub_devops: { "kind" => "feature" }, stub_stage: "building", chdir: nil, fail_get: nil,
+               fail_get_body: nil,
                stub_session_mascot: { "mascot" => "snorlax", "mascot_color" => "#A8A77A", "mascot_emoji" => "🔶",
                                       "app" => "mcritchie-studio", "app_color" => "#B57EDC" },
                stub_agent: { "name" => "Jasper", "status_color" => "#22D3EE", "emoji" => "🧪" })
@@ -55,7 +56,10 @@ class TaskCliTest < Minitest::Test
     @stub_agent = stub_agent
     # When set, GET /api/v1/tasks/<slug> returns this non-2xx status — used to
     # force the board-mascot fallback read to fail (a transient 429 / 5xx).
+    # fail_get_body overrides the failure body, so the exit-code tests can serve
+    # the API's exact "task not found" shape vs a router/route-style 404 page.
     @fail_get = fail_get
+    @fail_get_body = fail_get_body
     server = TCPServer.new("127.0.0.1", 0)
     port = server.addr[1]
     requests = []
@@ -133,7 +137,7 @@ class TaskCliTest < Minitest::Test
     end
 
     if @fail_get && method == "GET" && path.start_with?("/api/v1/tasks/")
-      return ["#{@fail_get} Service Unavailable", JSON.generate("error" => "stubbed board read failure")]
+      return ["#{@fail_get} Service Unavailable", @fail_get_body || JSON.generate("error" => "stubbed board read failure")]
     end
 
     # The GET in the move read-merge returns an existing task carrying prior
@@ -1602,5 +1606,69 @@ class TaskCliTest < Minitest::Test
     refute status.success?
     assert_match(/unknown flag "--jsn"/, err)
     assert_match(/--json/, err)
+  end
+
+  # --- exit codes are a CONTRACT: 4 = the board ANSWERED "no such task" --------
+  #
+  # bin/agent-worktree's reclaim guard frees a desk when the board positively
+  # answers "there is no such task" and WITHHOLDS it when the read failed — and it
+  # classifies on bin/task's exit code (EXIT_TASK_NOT_FOUND = 4). These pins are
+  # load-bearing on a destroy path: 4 must fire ONLY on the API's own not-found
+  # answer (HTTP 404 + its exact "task not found" body), and every FAILED read —
+  # 5xx, a Heroku router 404, a route-level 404 — must stay on 1, or an outage
+  # reclassifies as "task gone → free to tear the desk down".
+
+  TASK_NOT_FOUND_BODY = JSON.generate("error" => "task not found", "error_code" => "NOT_FOUND")
+
+  def test_show_exits_4_when_the_board_answers_task_not_found
+    _requests, _out, err, status = run_task(["show", "gone-task"], fail_get: 404, fail_get_body: TASK_NOT_FOUND_BODY)
+    assert_equal 4, status.exitstatus, "the API's own 404 body is a definite answer -> EXIT_TASK_NOT_FOUND"
+    # Older bin/agent-worktree classifies by pattern-matching this exact stderr
+    # rendering ("-> 404" + "task not found"); the new exit code must not change it.
+    assert_match(/-> 404: task not found/, err, "the stderr rendering old classifiers fall back on must survive")
+  end
+
+  # The contract lives in api(), not in a `show` special case — any slug-reading
+  # command answers the same way (agent tooling shells out to more than `show`).
+  def test_field_exits_4_when_the_board_answers_task_not_found
+    _requests, _out, _err, status = run_task(["field", "gone-task", "mascot"], fail_get: 404,
+                                                                               fail_get_body: TASK_NOT_FOUND_BODY)
+    assert_equal 4, status.exitstatus, "the not-found exit code is shared by every API-reading command"
+  end
+
+  def test_show_exits_1_on_a_router_style_404
+    _requests, _out, _err, status = run_task(
+      ["show", "gone-task"],
+      fail_get: 404, fail_get_body: "<!DOCTYPE html><html><body>There's nothing here, yet.</body></html>"
+    )
+    assert_equal 1, status.exitstatus,
+                 "a 404 WITHOUT the API's body (Heroku router: app renamed/deleted) is a FAILED read, not an answer"
+  end
+
+  def test_show_exits_1_on_a_route_level_404
+    _requests, _out, _err, status = run_task(
+      ["show", "gone-task"],
+      fail_get: 404, fail_get_body: JSON.generate("error" => "Not found", "error_code" => "NOT_FOUND")
+    )
+    assert_equal 1, status.exitstatus,
+                 "the generic 'Not found' backstop is not the tasks API's own answer — a moved path or a " \
+                 "stale board must read as a failed read, exactly as the stderr classifier treats it"
+  end
+
+  def test_show_exits_1_on_a_transport_failure
+    _requests, _out, _err, status = run_task(["show", "gone-task"], fail_get: 500)
+    assert_equal 1, status.exitstatus, "a 500 (outage) must never share the not-found code"
+  end
+
+  def test_show_exits_0_on_success
+    _requests, _out, _err, status = run_task(["show", "demo-task"])
+    assert_equal 0, status.exitstatus
+  end
+
+  def test_unknown_flag_rejection_never_reads_as_task_not_found
+    _requests, _out, _err, status = run_task(["show", "demo-task", "--bogus"])
+    assert_equal 1, status.exitstatus,
+                 "flag rejection stays exit 1 — distinct from success (0) and from not-found (4): a parse " \
+                 "rejection from a version-skewed caller must never read as 'task gone'"
   end
 end
