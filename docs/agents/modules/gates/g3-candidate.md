@@ -20,6 +20,8 @@ run inside it rides the close:
   `qa_test_cmd` (`config/release_repos.yml`) runs against `origin/release`
   BEFORE any QA deploy. This is the tier prepare owns
   (`Release::STEP_TEST_TIERS`: `prepare → integration + e2e-smoke`):
+  The split is **not** "hub vs satellite" — it is **"does this repo's DEPLOY run
+  the suite?"**:
   - the **hub** registers CI's FULL suite, verbatim (`bin/rails db:test:prepare
     test test:system` — the base tier AND the **system** tier) — the batch
     certification that lets [G4 Ship](g4-ship.md) self-gate an unchanged SHA.
@@ -31,18 +33,45 @@ run inside it rides the close:
     `bin/rails test test:system` parses `test:system` as a *path* and dies with
     `LoadError`; the leading non-command routes the line through rake, where the
     two tiers are separate tasks;
-  - **satellites** register the integration subset
-    (`bin/rails test test/integration`) — their full suite runs at ship / their
-    own deploy;
+  - **rolio** registers CI's FULL suite too, verbatim, and for the same reason:
+    it deploys via `git_push_heroku`, which runs **no tests**, so its registered
+    command is the **last gate before rolio production**. It once registered
+    `bin/rails test` (G4) and the integration subset (G3), **both of which skip
+    `test/system`** — so rolio's system tier could regress into prod ungated.
+    `repos_test.rb` parses **rolio's own** `.github/workflows/ci.yml` (read from
+    `origin/release`, not the working tree) and asserts the command matches it;
+  - **turf-monster** registers the integration subset (`bin/rails test
+    test/integration`) — its `bin/deploy` runs the full suite pre-prod, so G3
+    would only double-test. (It has no `test/system/` at all, so there is no
+    system tier to cover — pinned by a test, so growing one re-opens the question);
   - an app with **no `qa_test_cmd` self-gates** and is skipped here.
 
-  The system tier needs no setup step in the gate's virgin worktree: `rails
-  test`/`rails test:system` each run rake `test:prepare`, which tailwindcss-rails
-  enhances with `tailwindcss:build`, so the gitignored
-  `app/assets/builds/tailwind.css` is built on demand; and Selenium Manager
-  fetches a chromedriver matched to the installed Chrome. A host with **no
-  Chrome** fails at driver resolution — that is an **ENV error, NOT a release
-  regression**: nothing to eject or revert.
+  The system tier needs no setup step in the gate's virgin worktree, though the
+  reason is **per-app** — do not carry one app's mechanism to the other. The
+  **hub** self-heals: `rails test`/`rails test:system` each run rake
+  `test:prepare`, which tailwindcss-rails enhances with `tailwindcss:build`, so
+  the gitignored `app/assets/builds/tailwind.css` is built on demand. **Rolio**
+  needs no build at all: it is sprockets + importmap and leaves
+  `config.assets.compile` at its default `true` in test, so its stylesheets
+  compile at request time from tracked sources. In both, Selenium Manager fetches
+  a chromedriver matched to the installed Chrome; a host with **no Chrome** fails
+  at driver resolution — an **ENV error, NOT a release regression**: nothing to
+  eject or revert (`assert_system_test_browser!` aborts up front so it can't be
+  mistaken for one).
+
+  **⚠ A gate is only as trustworthy as the suite it runs — and the suite must be
+  sized for THIS host.** Rolio's system tier was driven in its isolated gate
+  workspace *before* being registered, and it came back **red on green code**: its
+  Capybara wait budget was the 2s gem default, calibrated for an idle CI runner,
+  while this gate runs on a **shared dev Mac** where the browser stack measured
+  **~18x slower** under concurrent-agent load (4.6s idle → 85s loaded). Rolio's
+  gate is therefore safe only behind the wait-budget fix that sizes its suite
+  for the slow host: rolio task `size-rolio-system-wait-budget`
+  (amcritchie/rolio#23) is a **sequenced prerequisite** — the sweep lands it
+  into rolio's `release` **first**, so this widened gate never drives a
+  2s-budget suite. Widening a gate onto a suite you have not driven **here** is how
+  a gate starts false-failing green code — and a red release gate hands out
+  **eject/revert guidance**, bouncing a good PR out of the RC.
 - **QA boot smokes** (`qa_up_smoke` SOPs) — after each QA deploy, poll
   `<qa_url>/up` until 200 (the e2e-smoke half of prepare's tier; the booted
   QA deploy IS the smoke).

@@ -1,5 +1,6 @@
 require "test_helper"
 require "shellwords"
+require "open3"
 
 class Release::ReposTest < ActiveSupport::TestCase
   test "classifies registered gems as :gem" do
@@ -130,7 +131,11 @@ class Release::ReposTest < ActiveSupport::TestCase
   end
 
   test "test_cmd returns Rolio's pre-prod gate command" do
-    assert_equal "bin/rails test", Release::Repos.test_cmd("rolio")
+    # CI's full suite, verbatim — base AND system tiers. Rolio deploys via
+    # git_push_heroku (no test step), so this command IS the last gate before
+    # rolio production; `bin/rails test` (what it used to be) SKIPS test/system,
+    # which left rolio's system tier able to regress straight into prod ungated.
+    assert_equal "bin/rails db:test:prepare test test:system", Release::Repos.test_cmd("rolio")
   end
 
   test "test_cmd is nil for a self-gating repo_script satellite" do
@@ -147,20 +152,118 @@ class Release::ReposTest < ActiveSupport::TestCase
 
   # --- qa_test_cmd: Steffon's pre-QA gate (G3 Candidate) ---
 
-  test "qa_test_cmd registers the G3 tier per app: hub full suite, satellites integration subset" do
-    # The prepare-owned tier. SATELLITES gate on the integration SUBSET (review
-    # owns base; their ship test_cmd / own deploy owns the full run). The HUB
-    # gates on its FULL suite — the G3 batch certification (90/10): ship's
-    # test_gate then self-gates when the frozen SHA matches this certified run,
-    # so the full suite still runs once per release batch.
+  test "qa_test_cmd registers the G3 tier per app: full CI suite unless the repo's own deploy tests" do
+    # The prepare-owned tier. The split is NOT "hub vs satellite" — it is "does
+    # this repo's DEPLOY run the suite?":
+    #   * turf-monster's bin/deploy runs the full suite pre-prod, so G3 gates on
+    #     the integration SUBSET (review owns base) and ship doesn't double-test.
+    #   * the HUB and ROLIO both deploy via git_push_heroku, which has NO test
+    #     step — so their registered command is the LAST gate before prod and must
+    #     be CI's FULL suite (base AND system tiers). It is also the G3 batch
+    #     certification (90/10): ship's test_gate self-gates when the frozen SHA
+    #     matches this certified run, so the suite runs once per release batch.
     assert_equal "bin/rails db:test:prepare test test:system",
                  Release::Repos.qa_test_cmd("mcritchie-studio"),
                  "the hub certifies its full suite — base AND system tiers — at G3"
-    %w[turf-monster rolio].each do |repo|
-      assert_equal "bin/rails test test/integration", Release::Repos.qa_test_cmd(repo),
-                   "#{repo} must gate QA on its integration tier"
+    assert_equal "bin/rails db:test:prepare test test:system", Release::Repos.qa_test_cmd("rolio"),
+                 "rolio is git_push_heroku — its gate must certify CI's full suite, base AND system tiers"
+    assert_equal "bin/rails test test/integration", Release::Repos.qa_test_cmd("turf-monster"),
+                 "turf-monster self-gates the full suite in bin/deploy, so G3 gates on its integration tier"
+  end
+
+  # --- rolio's gate must cover what rolio's CI covers (the system-test gap) ---
+
+  test "rolio's gate carries the SYSTEM tier" do
+    # THE BUG THIS CLOSES. rolio HAS system tests (test/system/) and its ci.yml
+    # runs them, but both registered commands were `bin/rails test` (G4) and
+    # `bin/rails test test/integration` (G3) — BOTH of which SKIP test/system. With
+    # git_push_heroku carrying no test step, a system-test regression could reach
+    # rolio production completely ungated.
+    %w[qa_test_cmd test_cmd].each do |field|
+      cmd = Release::Repos.public_send(field, "rolio")
+      assert_includes cmd, "test:system",
+                      "rolio's #{field} must run the system tier — its deploy has no test step, so this " \
+                      "command is the last gate before prod"
     end
   end
+
+  test "rolio's ship gate matches its pre-QA gate so G4 can self-gate" do
+    # Release::ShipSequence.ship_gate_skip? compares the command STRINGS verbatim
+    # against what G3 recorded. If test_cmd drifts from qa_test_cmd, G4 can never
+    # credit G3's certified run and the full suite runs a second time every ship.
+    assert_equal Release::Repos.qa_test_cmd("rolio"), Release::Repos.test_cmd("rolio"),
+                 "rolio's G4 test_cmd and G3 qa_test_cmd must be the same string"
+  end
+
+  test "rolio's gate keeps db:test:prepare FIRST so rake runs both tiers" do
+    # SHAPE TRAP — do not "simplify" this command. `test` is a real rails COMMAND,
+    # so `bin/rails test test:system` parses `test:system` as a PATH and dies with
+    # `LoadError: cannot load such file -- <root>/test:system`. Both tiers run only
+    # because a leading NON-command (db:test:prepare) routes the line through RAKE,
+    # where `test` and `test:system` are two separate tasks.
+    argv = Shellwords.split(Release::Repos.qa_test_cmd("rolio"))
+    assert_equal %w[bin/rails db:test:prepare test test:system], argv
+    assert_equal "db:test:prepare", argv[1],
+                 "a rails-COMMAND first arg would parse the later tiers as file paths"
+  end
+
+  test "rolio's gate runs rolio's CI test command verbatim" do
+    # THE DRIFT GUARD. Asserting against rolio's OWN ci.yml (not a literal) means
+    # changing either side alone fails HERE, at the seam. rolio's ci.yml lives in
+    # the SIBLING checkout, so this binds locally and in the gate workspace (where
+    # G3/G4 actually run) and skips on the hub's GitHub runner, which checks out
+    # only this repo. The shape assertions above bind everywhere.
+    ci = sibling_ci_test_command("rolio")
+    skip "rolio checkout not present (hub CI runner) — shape guards above still bind" if ci.nil?
+
+    assert_equal ci, Release::Repos.qa_test_cmd("rolio"),
+                 "rolio's G3 gate must run rolio CI's full suite (base + system tiers), verbatim"
+  end
+
+  test "turf-monster has no system tests, so its integration subset is the right gate" do
+    # Verified, not assumed: turf-monster's test/system holds only a .keep, so
+    # there is no system tier to cover and bin/deploy's full suite is sufficient.
+    root = projects_root
+    skip "turf-monster checkout not present (hub CI runner)" if root.nil?
+
+    system_tests = Dir[root.join("turf-monster", "test", "system", "**", "*_test.rb")]
+    assert_empty system_tests,
+                 "turf-monster grew system tests — its gate (bin/deploy's suite) must now cover them, the " \
+                 "same gap this file closes for rolio"
+  end
+
+  private
+    # The projects root holding the sibling checkouts. Resolved by ASCENDING from
+    # Rails.root until a directory containing the sibling repos appears, so it works
+    # from a primary checkout, an agent worktree, AND the gate workspace
+    # (.worktrees/_gate), which sit at different depths. nil when absent (hub CI).
+    def projects_root
+      Rails.root.ascend.find { |dir| dir.join("rolio", ".git").exist? }
+    end
+
+    # The single command a sibling repo's ci.yml `test` job runs. Located by content
+    # (`bin/rails`), not by step name, so renaming the step cannot silently blind the
+    # drift guard. nil when the sibling isn't checked out.
+    #
+    # Read from `origin/release`, NOT the sibling's WORKING TREE. The working tree is
+    # whatever branch that checkout happens to sit on — so an agent editing rolio's
+    # ci.yml on a feature branch would turn THE HUB's gate red for a change that is
+    # nowhere near the release. The registry gates the code that SHIPS, so it is held
+    # against the branch that ships.
+    def sibling_ci_test_command(repo)
+      root = projects_root
+      return nil if root.nil?
+
+      path = root.join(repo)
+      raw, ok = Open3.capture2("git", "-C", path.to_s, "show", "origin/release:.github/workflows/ci.yml")
+      return nil unless ok.success?
+
+      ci    = YAML.safe_load(raw, aliases: true)
+      steps = ci.dig("jobs", "test", "steps") || []
+      run   = steps.filter_map { |s| s["run"] }.find { |c| c.include?("bin/rails") }
+      assert run.present?, "#{repo}'s ci.yml `test` job no longer has a bin/rails step — the guard is blind"
+      run.strip
+    end
 
   test "qa_test_cmd stays flag-style so the argv parse is unambiguous" do
     # Shellwords and String#split agree on these values (no quotes) — pins the

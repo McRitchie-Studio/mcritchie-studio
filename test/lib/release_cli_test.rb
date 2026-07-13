@@ -1527,16 +1527,24 @@ class ReleaseCliTest < Minitest::Test
 
   def test_qa_gate_cmd_reads_the_registered_g3_tier_from_the_real_registry
     # ONE subprocess reads all five apps through the REAL config/release_repos.yml
-    # — the exact seam pre_qa_gate reads at run time. The HUB registers CI's FULL
-    # suite, base AND system tiers (the G3 batch certification — ship's test_gate
-    # self-gates an unchanged SHA); satellites keep the integration subset.
+    # — the exact seam pre_qa_gate reads at run time. The tier a repo registers
+    # turns on whether its DEPLOY runs the suite, not on hub-vs-satellite:
+    #   * the HUB and ROLIO both deploy via git_push_heroku (NO test step), so each
+    #     registers CI's full suite VERBATIM — base AND system tiers. It is the same
+    #     STRING for both (HUB_GATE_CMD), which is why rolio reuses the constant:
+    #     both ci.yml `test` jobs run `bin/rails db:test:prepare test test:system`.
+    #     For rolio this is its LAST gate before prod, and `bin/rails test` alone
+    #     SKIPS its test/system — the gap this pins shut.
+    #   * turf-monster keeps the integration subset — bin/deploy runs its full
+    #     suite pre-prod, and it has no test/system at all.
     out = eval_helper(%(%w[mcritchie-studio turf-monster rolio tax-studio chain-ops].map { |r| qa_gate_cmd(r) }.inspect))
 
     expected = [HUB_GATE_CMD,
-                "bin/rails test test/integration", "bin/rails test test/integration",
+                "bin/rails test test/integration", HUB_GATE_CMD,
                 "", ""]
     assert_equal expected.inspect, out,
-                 "hub certifies CI's full suite at G3; satellites gate on integration; planned apps self-gate"
+                 "hub + rolio certify CI's full suite at G3 (no test step in their deploy); turf-monster " \
+                 "gates on integration; planned apps self-gate"
   end
 
   def test_test_cmd_argv_matches_plain_split_for_flag_style_commands
