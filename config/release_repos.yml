@@ -40,7 +40,11 @@
 # QA-frozen SHA) right before the irreversible prod deploy and scoped-aborts on
 # red. DOUBLE-TEST CAVEAT: only set it where the repo's own deploy does NOT
 # already run the suite. The hub deploys via git_push_heroku (no test step), so
-# it carries `test_cmd: bin/rails test`. The `repo_script` satellites SELF-GATE —
+# it carries `test_cmd: bin/rails db:test:prepare test test:system` (the exact SHAPE is
+# load-bearing, not just the tier: an ARGLESS/rake-routed line runs Rails' `test:prepare`
+# hook — which BUILDS the gitignored app/assets/builds/tailwind.css — while a PATH-ARG
+# line like `bin/rails test test/integration` SKIPS it. See
+# docs/agents/modules/testing.md). The `repo_script` satellites SELF-GATE —
 # their bin/deploy runs their own tests — so they leave `test_cmd` UNSET to avoid
 # running the whole suite twice per ship. G4 ALSO self-gates against G3, but ONLY
 # against the verdict G3 RECORDED (metadata["qa_gates"][repo] = {sha, cmd, ok},

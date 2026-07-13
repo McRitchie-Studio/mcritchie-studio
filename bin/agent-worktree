@@ -784,8 +784,9 @@ end
 # never is in a Rails app), and neither does a test run that passes explicit paths:
 # Rails::Command::TestCommand runs the prepare task only `if self.args.none?(
 # EXACT_TEST_ARGUMENT_PATTERN)`, so `bin/rails test test/models/x_test.rb` SKIPS it while
-# an argless `bin/rails test` (CI, bin/full-suite-check, the release gate workspace) gets
-# it for free. Without this, `bin/agent-worktree test <app> <task> <file>` and every
+# an argless `bin/rails test` (CI, bin/full-suite-check, the HUB's gate workspace — NOT the
+# satellites', whose qa_test_cmd is path-arg) gets it for free.
+# Without this, `bin/agent-worktree test <app> <task> <file>` and every
 # bin/fast-check lane went red on a fresh worktree with `The asset "tailwind.css" is not
 # present in the asset pipeline` — a false-red G1 cert on a diff that never touched a view.
 # Named "prepare the test ENV", not "the test DB", because it is now both.

@@ -104,7 +104,7 @@ checkout starts with no built CSS. Put those two facts together:
 |---|---|---|---|
 | GitHub CI | `bin/rails db:test:prepare test test:system` (rake `test` shells an **argless** `rails test`) | yes | green |
 | `bin/full-suite-check` | `bin/rails test` (argless) | yes | green |
-| Release gate workspace — **hub** | `bin/rails test` (argless: the hub's registry `test_cmd`/`qa_test_cmd`) | yes | green |
+| Release gate workspace — **hub** | `bin/rails db:test:prepare test test:system` (the hub's registry `test_cmd`/`qa_test_cmd` — rake-routed, and rake's `test` shells an **argless** `rails test`) | yes | green |
 | Release gate workspace — **satellites** | `bin/rails test test/integration` (`qa_test_cmd`, `config/release_repos.yml`) | **no** | **EXPOSED** |
 | **`bin/fast-check`** | `bin/rails test <mapped/spine paths>` | **no** | **was red** |
 | A hand-run single file | `bin/rails test test/x_test.rb` | **no** | **was red** |
