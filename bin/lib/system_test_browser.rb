@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "ci_test_command"
+
 # SystemTestBrowser — the shared headless-Chrome probe behind every system-tier
 # guard.
 #
@@ -40,8 +42,15 @@ module SystemTestBrowser
                  "Manager fetches the one matching your Chrome."
 
   # Does this command run the SYSTEM tier (and therefore need a browser)?
+  #
+  # ONE definition, and it lives with the command PARSER (bin/lib/ci_test_command.rb)
+  # — "what tier does this command run?" is a property of the command, and a second
+  # copy here is exactly the drift these guards exist to prevent. It is structural,
+  # not a substring probe: `bin/rails test test/system` runs the tier too, and a
+  # `include?("test:system")` scan misses it — costing the caller the browser guard
+  # and handing it the confusing red suite the guard exists to explain.
   def self.system_tier?(cmd)
-    cmd.to_s.include?("test:system")
+    CiTestCommand.system_tier?(cmd)
   end
 
   def self.available?(env = ENV)

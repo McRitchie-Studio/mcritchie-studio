@@ -52,8 +52,12 @@
 #                                (default: bin/rails db:test:purge db:test:prepare)
 #   FULL_SUITE_SKIP_TEST_DB_RESET set to 1 only for non-Rails harness tests
 #   FULL_SUITE_TEST_CMD     override the test lane command   (default: the repo's own
-#                           ci.yml test command; bin/lib/ci_test_command.rb)
+#                           ci.yml test command; bin/lib/ci_test_command.rb). Also
+#                           overrides the REFUSAL — an explicit command is the
+#                           operator saying "run THIS", so nothing is resolved.
 #   MCR_SYSTEM_TEST_BROWSER force the headless-Chrome probe (1 present / 0 absent);
+#                           tests only — see bin/lib/system_test_browser.rb
+#   MCR_SYSTEM_TEST_MACOS_CHROME  override the probe's macOS Chrome.app path;
 #                           tests only — see bin/lib/system_test_browser.rb
 #   FULL_SUITE_RUBOCOP_CMD  override the rubocop lane command (default: bin/rubocop)
 #   FULL_SUITE_ROOT         repo dir to run + fingerprint in (default: the cwd's

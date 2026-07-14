@@ -229,12 +229,12 @@ module CiTestCommand
 
   # Does this command run the SYSTEM tier (and therefore need a browser)?
   #
-  # Structural, like the rest: the `test:system` TASK, or a path into test/system —
-  # `bin/rails test test/system` runs the tier too, and a substring probe for
-  # "test:system" misses it, which costs the caller its browser guard.
+  # THE one definition — bin/lib/system_test_browser.rb (the browser guard shared by
+  # the cert and the release gate) delegates here rather than keep a second copy.
   #
-  # (bin/lib/system_test_browser.rb carries a substring twin of this predicate for
-  # the release gate; the two agree on every command either repo's CI actually runs.)
+  # Structural, like the rest: the `test:system` TASK, or a path into test/system.
+  # `bin/rails test test/system` runs the tier too, and a substring probe for
+  # "test:system" misses it — costing the caller its browser guard.
   def self.system_tier?(cmd)
     invocations(cmd).any? do |tokens|
       args = rails_args(tokens)
