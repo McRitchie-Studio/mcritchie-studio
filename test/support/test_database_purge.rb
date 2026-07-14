@@ -31,14 +31,38 @@
 #
 # The table list is derived from the live schema on every run, so a new table is
 # covered the day it is created — there is no list here to forget to update.
+#
+# THE GUARD (why this file FAILS CLOSED before it truncates anything):
+# This code empties every table of whatever database the connection holds. That is
+# safe only while that database is the test database — and NOTHING in the test
+# harness guarantees it. `test_helper.rb`'s `ENV["RAILS_ENV"] ||= "test"` does not
+# override an ALREADY-EXPORTED RAILS_ENV, and `rails/test_help` aborts only on
+# production ("Make double-sure the RAILS_ENV is not set to production"), so
+# `RAILS_ENV=development bin/rails test` boots the suite straight onto the shared
+# development database. An unguarded purge would then truncate all 73 tables of
+# mcritchie_studio_development — the DB every worktree's plain `bin/rails` hits.
+#
+# So: ask the booted app what database it is ACTUALLY connected to, and refuse
+# unless it proves out as this app's test database. Same doctrine as the release
+# gate's assert_private_gate_db! (bin/release.rb) — "a guarantee that rests on
+# every future app's config being right is a CONVENTION, not an invariant... ask
+# the booted app, and treat a shared DB as a hard abort — never a silent stomp."
 module TestDatabasePurge
   # Rails' own bookkeeping. Truncating these would defeat the schema-version check
   # and force a pointless reload on every run.
   IGNORED_TABLES = %w[schema_migrations ar_internal_metadata].freeze
 
+  # Raised INSTEAD of truncating. Never rescue this to "get the suite running":
+  # it means the suite was about to empty a database that is not the test database.
+  class UnsafeDatabase < StandardError; end
+
   class << self
     # Empty every application table. Returns the tables it truncated.
+    # Refuses (raises UnsafeDatabase) unless the connection provably holds this
+    # app's test database — see assert_test_database!.
     def purge!(connection = ActiveRecord::Base.connection)
+      assert_test_database!(connection)
+
       tables = purgeable_tables(connection)
       return tables if tables.empty?
 
@@ -47,6 +71,97 @@ module TestDatabasePurge
       # (truncating table-by-table would trip FK constraints).
       connection.truncate_tables(*tables)
       tables
+    end
+
+    # Fail closed on BOTH of the independent things that can be wrong: the ENV the
+    # process is running as, and the DATABASE the connection actually holds.
+    def assert_test_database!(connection = ActiveRecord::Base.connection)
+      unless Rails.env.test?
+        refuse!("RAILS_ENV is #{Rails.env.inspect}, not \"test\"",
+                "Nothing here may truncate a non-test database. If you meant to run the suite, " \
+                "unset RAILS_ENV (test_helper's `ENV[\"RAILS_ENV\"] ||= \"test\"` cannot override an exported one).")
+      end
+
+      resolved = connected_database(connection)
+      refuse!("the connection does not report a database name") if resolved.blank?
+
+      # ANCHOR: the `database:` literal in config/database.yml's test env. This is
+      # the one expectation an ENV var CANNOT MOVE — and that is the whole point.
+      #
+      # Why the obvious check (resolved == configs_for(env_name: "test").database)
+      # is a PLACEBO here, measured on this app: Rails merges DATABASE_URL into the
+      # config FOR THE CURRENT ENV (DatabaseConfigurations#merge_db_environment_variables),
+      # and under the suite the current env IS test. So `RAILS_ENV=test
+      # DATABASE_URL=postgresql://localhost/mcritchie_studio_development` rewrites the
+      # TEST config to the development DB: connection and expectation BOTH read
+      # "mcritchie_studio_development", the equality passes, and the purge stomps the
+      # shared dev DB. Comparing a value against a config the same ENV var just
+      # rewrote is comparing a moved value to itself. The YAML literal does not move.
+      declared = declared_test_database
+      if declared.blank?
+        refuse!("config/database.yml declares no `database:` for the test env",
+                "Without that literal there is no env-independent name to check the connection against, " \
+                "and this purge will not guess. Declare `test.database:` in config/database.yml.")
+      end
+
+      unless derived_from?(resolved, declared)
+        refuse!("`#{resolved}` is not this app's test database (config/database.yml declares `#{declared}`)",
+                "REFUSING to truncate it. A purge here would destroy every row in that database. " \
+                "Cause: RAILS_ENV/DATABASE_URL/TEST_DATABASE_URL is pointing the test env at a foreign database.")
+      end
+
+      # Second, independent lock: the live connection must also match the test
+      # config the app RESOLVED. Catches a connection that drifted from that config
+      # (a stray establish_connection, a `connects_to` shard, a recycled pool) —
+      # cases the YAML anchor alone would wave through.
+      configured = configured_test_database
+      unless configured.present? && derived_from?(resolved, configured)
+        refuse!("the connection holds `#{resolved}` but the test env resolves to #{configured.inspect}",
+                "The connection drifted from the configured test database. REFUSING to truncate.")
+      end
+
+      resolved
+    end
+
+    # The database the connection ACTUALLY holds. Read from the connection PASSED IN
+    # — not from ActiveRecord::Base — because purge! accepts a connection, and
+    # guarding a different connection than the one being truncated is a fail-open.
+    def connected_database(connection = ActiveRecord::Base.connection)
+      connection.pool.db_config.database
+    rescue NoMethodError
+      nil
+    end
+
+    # The env-INDEPENDENT anchor: the `database:` literal under `test:` in
+    # config/database.yml. No ENV var rewrites it (unlike the resolved config).
+    def declared_test_database
+      Rails.application.config.database_configuration.dig("test", "database")
+    end
+
+    # The test database the app RESOLVED for this boot (YAML + TEST_DATABASE_URL /
+    # DATABASE_URL overlays). Nil when the test env is missing entirely — the caller
+    # must treat that as a refusal, never as a pass.
+    def configured_test_database
+      ActiveRecord::Base.configurations.configs_for(env_name: "test", name: "primary")&.database
+    end
+
+    # Is `name` the base test database, or one of its LEGITIMATE derivatives?
+    #   "<base>-0"      Rails parallel-test clones (parallelize forks a DB per worker)
+    #   "<base>_<slug>" per-worktree / release-gate isolated test DBs (TEST_DATABASE_URL)
+    # The separator is REQUIRED, so a look-alike like "mcritchie_studio_testing_dev"
+    # does not sneak through on a bare prefix match.
+    def derived_from?(name, base)
+      return false if name.blank? || base.blank?
+
+      name == base || name.start_with?("#{base}-") || name.start_with?("#{base}_")
+    end
+
+    def refuse!(reason, remedy = nil)
+      raise UnsafeDatabase, [
+        "REFUSING TO PURGE: #{reason}.",
+        remedy,
+        "(test/support/test_database_purge.rb empties EVERY table; it runs only against the test database.)"
+      ].compact.join(" ")
     end
 
     def purgeable_tables(connection = ActiveRecord::Base.connection)
