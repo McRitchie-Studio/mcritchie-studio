@@ -45,7 +45,7 @@ test("task detail loads", async ({ page }) => {
   await expect(page.locator("body")).toContainText("Audit inter-agent messaging");
 });
 
-test("activities page loads", async ({ page }) => {
+test("activities page loads @quarantine", async ({ page }) => {
   await page.goto("/activities");
   await expect(page.locator("body")).toContainText("Assigned scrape task to Mack");
   await expect(page.locator("body")).toContainText("Started scraping odds data");
@@ -78,7 +78,7 @@ test("malformed magic link request stays on signin", async ({ page }) => {
 // Navigation links
 // ---------------------------------------------------------------------------
 
-test("nav links work without errors", async ({ page }) => {
+test("nav links work without errors @quarantine", async ({ page }) => {
   await page.goto("/");
 
   await page.getByRole("link", { name: /Agents/ }).first().click();

@@ -23,11 +23,74 @@ checks to `checks_run` as each stage completes.
 | Lane | Target | Mutates data | Blocks merge | Gate | When to run |
 |---|---|---:|---:|---|---|
 | PR review gate | Local repo or CI | Usually no | Yes | G1 Cert (builder cert + dor verdict) · G2 Review (the review wave) | Every PR with code changes; includes lint, security scans, Rails tests, and focused browser checks for touched UI |
+| E2E (Playwright) | CI, sharded 3× (own server + PG per shard) | Test DB only | **Yes** | G2 Review (the authoritative CI verdict) | Every PR and every push to `main`/`release` — the `playwright` job in `ci.yml`. Collects the **`e2e` tier** (shapes `ui+db`, `onchain-vertical`) |
+| E2E executed-set | CI, reads each shard's JSON receipt | No | **Yes** | G2 Review | The `e2e_executed_set` job, after the shards. Asserts the lane **ran the 51 specs it claims to** — the one thing the `playwright` job cannot verify about itself |
 | Local proof | Worktree URL | Local DB only | Usually yes | G1 Cert (builder evidence) | UI, auth, task, contest, navigation, email capture, Redis, or worker changes |
 | QA acceptance | Stable QA URL | QA/devnet only when named | No; blocks production promotion | G3 Candidate | After every QA deploy; runs task acceptance criteria against the merged result |
 | Production smoke | Production URL | No by default | N/A | G4 Ship (the seal — non-blocking) | After approved production deploy; verifies health and key read-only routes |
-| Nightly/deep | Dedicated local/QA/devnet target | Often yes | No | — | Full Playwright suite, devnet/on-chain, browser matrix, longer seeded workflows |
+| Nightly/deep | Dedicated local/QA/devnet target | Often yes | No | — | devnet/on-chain and longer seeded workflows. **No browser matrix exists** — Playwright is Chromium-only in every repo — and the ecosystem's only scheduled workflow (turf-monster's `devnet-nightly.yml`) is disabled and has never run. Treat this row as a *target shape*, not as coverage you have |
 | Quarantine | Any | Varies | No until fixed | — | Known flaky or unrelated checks that still matter but should produce follow-up tasks instead of blocking unrelated PRs |
+
+**The Playwright suite BLOCKS MERGE as of 2026-07-13 (PR #543).** It is a PR-gate
+lane, not a nightly one: a red spec makes CI red and the PR does not merge. Before
+that date NO lane ran it while `config/feature_shapes.yml` demanded the `e2e` tier of
+every `ui+db` change — the tier was "collected" by a builder typing `[e2e] …` into
+`checks_run` and `bin/dor-check` crediting the tag. It went unrun long enough for
+**18 of its specs to rot** (18 of the 69 committed at the time); those carry `@quarantine`, CI excludes them with
+`--grep-invert @quarantine`, and their count is ratcheted (ceiling 18, may only fall)
+by `test/lib/e2e_quarantine_ratchet_test.rb`. Do not read the green `playwright`
+check as "the whole e2e suite passes" until that ceiling reaches 0
+(`/tasks/repair-rotted-e2e-specs`).
+
+**"May only fall" is enforced, and note WHERE the baseline comes from** — the ratchet
+compares the ceiling against its value on **`origin/release`**, not against the copy in
+your branch. The first version compared it to the contract file the author was editing,
+which is a **pin, not a ratchet**: review tagged a 19th spec, bumped the contract 18 → 19,
+and *every guard in the repo went green — including the runtime receipt*, because 50 == 50
+is just as green as 51 == 51. The hole grew with the whole build green. A guard whose
+reference value moves with the thing it restrains restrains nothing; the fix, as everywhere
+else in this lane, was to read a number the author's own diff cannot reach. (The `test` job
+therefore checks out with `fetch-depth: 0`, and the ratchet fails **closed** — red, saying
+why — if it cannot resolve the baseline.)
+
+**What stops a spec from quietly leaving the lane.** Two guards, and only one of them
+generalizes. Both read the same contract, `config/e2e_lane.yml` — **70 committed − 18
+quarantined == 52 executed** — so they can never certify two different suites.
+
+1. **The receipt (`bin/e2e-executed-set-check`, the `e2e_executed_set` CI job).** Each
+   shard emits a JSON report; this job reads them and asserts what the lane **actually
+   ran**: 52 executed, 0 skipped, every shard's report present. This is the durable
+   guard. A spec that leaves the lane by *any* route lands on one line of arithmetic,
+   whatever syntax arranged it — a runtime skip, a widened `--grep-invert`, an
+   `--only-changed`, a narrowed `testDir`, a deleted file, a dropped shard, or next
+   year's flag nobody here has heard of.
+2. **The static scan (`test/lib/e2e_quarantine_ratchet_test.rb`).** Reads the committed
+   source and pins the **declared** set. It is the *fast* guard — it fails in
+   milliseconds, before anyone burns six minutes of CI on a suite already provably
+   wrong — and it is **not sufficient on its own**. Selection verbs (`only`/`skip`/
+   `fixme`/`fail`) are refused on **any receiver**, and the e2e command's flags are
+   **default-deny** — only `--shard`, `--grep-invert` and `--reporter` are allowed, because
+   only those three cannot *shrink the selected set*. (`--reporter` is **not** "inert",
+   which is what this line used to call it: it **emits the receipt** guard 1 is judged on.
+   Drop `json` from it and the lane still runs all 52 specs while the only evidence that it
+   did evaporates — so it is separately pinned.) `--grep-invert` is value-pinned to exactly
+   `@quarantine`.
+
+**Why the receipt exists at all** — three rounds of review beat the static scan, each
+time with a spelling the previous round had not imagined: `test.only` (collapses the
+lane to one spec while the other shards select ZERO tests and **exit 0 in silence** —
+sharding suppresses Playwright's own "no tests found" guard), then `test.skip`/`.fixme`,
+then `testInfo.skip()` on a receiver the regex never watched, then a widened
+`--grep-invert '@quarantine|board'` (51 specs → 43) that nothing pinned. The lesson is
+structural, and it is worth carrying to any gate you build: **a guard that reads the
+source can only refuse the spellings someone thought to refuse.** A
+`const { skip } = testInfo` has no `.skip(` token in the spec at all and no regex will
+ever see it — it is GREEN on the static scan today, deliberately, and RED on the receipt.
+Assert what the system *did*, not what its source *looks like*.
+
+`playwright.config.js` also sets `forbidOnly` under CI as a cheap hard stop at the lane
+itself. So there are two honest moves for a red spec and no third: **fix it**, or
+`@quarantine` it — which the ratchet makes you account for — and **block on it**.
 
 The Gate column names the branded testing gate whose attempt records that
 lane's verdicts — attempt-aware GateRun rows with per-SOP results, rendered on
@@ -131,15 +194,25 @@ checkout starts with no built CSS. Put those two facts together:
 | Release gate workspace — **hub** | `bin/rails db:test:prepare test test:system` (the hub's registry `test_cmd`/`qa_test_cmd` — rake-routed, and rake's `test` shells an **argless** `rails test`) | yes | green |
 | Release gate workspace — **satellites** | `bin/rails test test/integration` (`qa_test_cmd`, `config/release_repos.yml`) | **no** | green — the gate preps the env itself (PR #522) |
 | **`bin/fast-check`** | `bin/rails test <mapped/spine paths>` | **no** | **was red** |
+| **Playwright `webServer`** — the `e2e` lane | `bin/rails db:test:prepare && … && bin/rails server -e test` (`playwright.config.js`) | **no** | **was red** — green since PR #543 added an explicit `bin/rails tailwindcss:build` to the chain |
 | A hand-run single file | `bin/rails test test/x_test.rb` | **no** | **was red** |
 
 The red is `The asset "tailwind.css" is not present in the asset pipeline` on
 every view-rendering test — dozens of errors on a diff that never touched a
-view, which reads as a phantom regression. The two runners this repo owns now
-prepare the test env themselves — `bin/fast-check`'s `test-prepare` lane, and
+view, which reads as a phantom regression. The three runners this repo owns now
+prepare the test env themselves — `bin/fast-check`'s `test-prepare` lane,
 `bin/agent-worktree`'s `prepare_test_env` (run by `new` at bringup, by `up`, and
-by `test <file>`) — so their failure is designed out rather than documented
-around.
+by `test <file>`), and the Playwright `webServer` chain in `playwright.config.js`
+— so their failure is designed out rather than documented around.
+
+The Playwright lane was the newest to learn this, and it learned it in public:
+the `e2e` job was green on a laptop that had run `test:prepare` by hand and red
+on every clean CI runner, with all 69 specs failing assertions that had nothing
+to do with CSS. `db:test:prepare` alone does **not** build the bundle; only
+`test:prepare` (the hook `tailwindcss-rails` enhances) does, and Playwright's
+`webServer` boots the server directly rather than through the argless `bin/rails
+test` that would have gotten it for free. Hence the explicit `bin/rails
+tailwindcss:build` in the chain — ~0.4s, and load-bearing.
 
 **The release gate workspace was fixed the same way** (task
 `gate-workspace-skips-test-prepare`, PR #522, shipped): `prepare_gate_workspace!`
@@ -196,9 +269,21 @@ boots the suite straight onto the shared development database. `TestDatabasePurg
 therefore refuses (raises `UnsafeDatabase`) unless **both** hold: `Rails.env.test?`,
 **and** the database read back from the live connection is the `database:` literal
 `config/database.yml` declares for `test`, or a legitimate derivative (`…-0` clones,
-`…_<worktree>` isolated DBs). Same doctrine as the release gate's
-`assert_private_gate_db!` — *ask the booted app, and treat a foreign DB as a hard
-abort, never a silent stomp.*
+`…_<worktree>` isolated DBs, and the release workspaces' `<app>_gate_test` /
+`<app>_ship_test`). Same doctrine as the release gate's `assert_private_gate_db!` —
+*ask the booted app, and treat a foreign DB as a hard abort, never a silent stomp.*
+
+**Widening that admission list is the hazard — keep it an EXACT set.** The release
+workspaces infix their role *before* `_test` (`mcritchie_studio_gate_test`), so they do
+not start with the base (`mcritchie_studio_test`) and the guard's first cut REFUSED the
+release gate's own database — bricking every release the day it landed (2026-07-14). The
+fix admits those two names **by equality, derived from the base**, and nothing else:
+relax it into a prefix or substring rule and `mcritchie_studio_development` is admitted
+too, which is the exact database this guard exists to spare. `test/lib/test_database_purge_test.rb`
+pins both directions — the workspace DBs are admitted (against the names
+`Release::GateWorkspace` actually mints, so a new role goes red there instead of in a
+release), and foreign look-alikes (`…_gate_testing`, `…_deploy_test`, `other_app_gate_test`)
+are still refused.
 
 **Anchor the expectation in something the ENV var cannot move.** The obvious check —
 "connected DB == `configs_for(env_name: "test").database`" — is a **placebo**, and it

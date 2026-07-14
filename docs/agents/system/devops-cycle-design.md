@@ -998,8 +998,11 @@ general strategy, across all five repos. Three pieces: tier definitions (the
 
 Tiers are the **what**; the existing **test lanes** are the **when/where**.
 Mapping: Unit+Component+Integration → `pr_review_gate`/`local_proof` (block
-merge); E2E happy-path → `local_proof`, full E2E → `nightly_deep`; Manual →
-`qa_acceptance`; post-deploy → `production_smoke`.
+merge); **E2E → the sharded `playwright` job in `ci.yml`, which BLOCKS MERGE**
+(G2 Review) — as of 2026-07-13 (PR #543); before that no lane ran it at all and
+this line routed it to `nightly_deep`, which is why the `e2e` tier went uncollected
+while `feature_shapes.yml` demanded it. Manual → `qa_acceptance`; post-deploy →
+`production_smoke`.
 
 ### 3.2 Shape → test contract (the adaptation)
 
@@ -1008,12 +1011,31 @@ tiers that must be green by the time the task is `submitted` for review:
 
 | Shape | Example | Required tiers (DoR contract) |
 |---|---|---|
-| **ui-only** | "make the button blue" | Component (rendered partial / Alpine) + Manual at QA. Unit only if it adds logic. |
-| **ui+db** | new form that persists | Unit (model/validation) + Component (request+view) + Integration (request→DB) + E2E happy path |
-| **backend** | new job/service | Unit (service/PORO) + Integration (job + mocked I/O) |
-| **library** | studio-engine change | Unit in engine + **consumer-CI** (component/integration in *both* apps) |
-| **onchain** | new turf-vault instruction | Anchor unit + Anchor integration (lifecycle) + Ruby decoder unit + devnet E2E (nightly) |
-| **onchain-vertical** | new workflow w/ wallet + DB + UI + program | all tiers + devnet E2E; almost always its own `release` |
+| **ui-only** | "make the button blue" | `component` — rendered partial / Alpine, plus manual review at QA (add `unit` if it grows real logic) |
+| **ui+db** | new form that persists | `unit` `component` `integration` `e2e` — model/validation, request+view, request→DB, happy path |
+| **backend** | new job/service | `unit` `integration` — service/PORO, job + mocked I/O |
+| **library** | studio-engine change | `unit` `integration` — in the engine, plus consumer-CI in *both* apps |
+| **onchain** | new turf-vault instruction | `unit` `integration` — Anchor unit, Anchor lifecycle, Ruby decoder unit |
+| **onchain-vertical** | new workflow w/ wallet + DB + UI + program | `unit` `component` `integration` `e2e` — almost always its own `release` |
+
+**The backticked tier names are load-bearing, not formatting.** They are the
+canonical `dor_tiers` from `config/feature_shapes.yml`, and
+`test/lib/feature_shape_tiers_test.rb` asserts this table and that file name the
+**same tiers for every shape** — set equality, both directions. Prose after the
+`—` is free text and is not scanned.
+
+That guard exists because this table lied for months, in the way that costs the
+most. It demanded `devnet E2E (nightly)` of the two shapes that move real
+money — routing a **required** tier to `devnet-nightly.yml`, a workflow gated on
+`vars.DEVNET_NIGHTLY_ENABLED` that has completed `skipped` on every scheduled run
+and **has never once executed**. A required tier with no lane behind it is the
+same self-declaration disease this whole section exists to cure, and it survived
+here, in the canonical spec, precisely because prose and config were two
+independent copies of one truth. Now they are one truth with a test on it: adding
+a tier here that no runner runs is a RED test, not a documentation opinion.
+
+Devnet verification of on-chain work is real and still expected — as an
+**operator/QA stop**, not as a DoR tier a builder can satisfy by typing.
 
 The matrix is the single source of "how much testing is enough" — it removes
 the per-task judgment call that currently lets thin PRs through.
