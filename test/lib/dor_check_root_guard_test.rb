@@ -285,6 +285,47 @@ class DorCheckRootGuardTest < Minitest::Test
     end
   end
 
+  # Remedy 2 is the OTHER lane where the fingerprint comes from an override — so it
+  # is the other lane where the announcement could name a root it never hashed. Same
+  # invariant as the review lane (test/lib/dor_check_review_fingerprint_test.rb):
+  # recompute the root the gate NAMES and you get the hash the gate PRINTS.
+  #
+  # A genuinely STALE cert here, so the reporting path actually renders. Pre-fix this
+  # printed "(root: <primary>)" beside a hash taken from feat/task-x^{tree} — and the
+  # primary's working tree hashes to a THIRD number, so an agent who followed the
+  # message to that root and recomputed found neither hash and had no way to proceed.
+  def test_integration_remedy_2_names_the_branch_tree_it_hashed_not_the_primary
+    with_projects(worktree: false) do |projects, primary, _none|
+      git!(primary, "checkout", "-q", "-b", "feat/#{SLUG}")
+      write(primary, "app/services/widget.rb", "class Widget; end\n")
+      git!(primary, "add", "-A")
+      git!(primary, "commit", "-qm", "feat")
+      branch_tree = IO.popen(["git", "-C", primary, "rev-parse", "feat/#{SLUG}^{tree}"], &:read).strip
+      git!(primary, "checkout", "-q", "release")
+      primary_tree = FullSuiteGate.fingerprint(primary) # the third number
+      refute_equal branch_tree, primary_tree
+
+      verdict, code, = dor_check(task_json("f" * 40), primary, projects) # cert for neither tree
+
+      assert_equal 1, code, "a cert matching NO tree is stale — the branch tree is graded, not excused"
+      fs = verdict["full_suite"]
+      assert_equal "branch-tree", fs["fingerprint_source"]
+      assert_equal branch_tree, fs["fingerprint"]
+      assert_equal "feat/#{SLUG}^{tree}", fs["fingerprint_root"],
+                   "no origin in this fixture, so the LOCAL branch is what resolved — and what must be named"
+      assert_equal primary, fs["fingerprint_repo"], "the repo the ref resolves in"
+
+      # THE INVARIANT, by recomputation: the named root reproduces the printed hash.
+      recomputed = IO.popen(["git", "-C", fs["fingerprint_repo"], "rev-parse", fs["fingerprint_root"]], &:read).strip
+      assert_equal fs["fingerprint"], recomputed,
+                   "the root the gate names must be the root it hashed — no third number"
+
+      blame = verdict["errors"].join(" ")
+      assert_includes blame, "feat/#{SLUG}^{tree}", "name the ref that produced the hash"
+      refute_includes blame, primary_tree[0, 12], "the primary's tree hash graded nothing and must not appear"
+    end
+  end
+
   # ── [integration] remedy 3: nothing here can grade it → refuse, TRUTHFULLY ──
 
   def test_integration_refuses_when_no_tree_here_can_grade_the_cert
@@ -328,8 +369,18 @@ class DorCheckRootGuardTest < Minitest::Test
       blame = verdict["errors"].join(" ")
 
       assert_match(/certified for @#{cert_fp[0, 12]}/, blame, "name what the evidence was certified FOR")
-      assert_match(/HEAD is now @#{current_fp[0, 12]}/, blame, "name what the code IS now")
-      assert_includes blame, tree, "and name the root both were read from"
+      assert_match(/@#{current_fp[0, 12]}/, blame, "name what the code IS now")
+      assert_includes blame, tree, "and name the root the current hash was read from"
+
+      # This lane hashed a WORKING TREE, so it must say so — and must NOT call it
+      # HEAD. The fingerprint includes uncommitted edits (that is WHY it moved here),
+      # so an agent who verifies "@#{current_fp[0, 12]}" with `git rev-parse
+      # HEAD^{tree}` gets a different hash and concludes the gate is broken.
+      assert_equal "working-tree", verdict.dig("full_suite", "fingerprint_source")
+      assert_equal tree, verdict.dig("full_suite", "fingerprint_root")
+      assert_equal current_fp, FullSuiteGate.fingerprint(verdict.dig("full_suite", "fingerprint_root")),
+                   "the named root must recompute to the printed hash"
+      refute_includes blame, "HEAD is now", "the working-tree fingerprint is not HEAD's tree"
     end
   end
 
