@@ -109,7 +109,7 @@ jobs:
       # The eviction step below removes any chromedriver preinstalled on the runner
       # image that would otherwise shadow Selenium Manager's matched pick.
       - name: Install Chrome (Chrome for Testing), no bundled chromedriver
-        uses: browser-actions/setup-chrome@v1
+        uses: browser-actions/setup-chrome@v2
         with:
           chrome-version: stable
           install-chromedriver: false
