@@ -235,17 +235,17 @@ class FullSuiteCheckTest < Minitest::Test
   # A temp git repo carrying a ci.yml, whose `bin/rails` is a STUB that logs the
   # argv it was handed — so what the lane ACTUALLY invokes is observable without a
   # multi-minute Rails run. Yields [dir, rails_log].
-  def with_ci_repo(ci_cmd: "bin/rails db:test:prepare test test:system")
+  #
+  # `ci_steps:` writes a MULTI-STEP `test` job (each string one `run:`), which is
+  # what it takes to exercise the step-SELECTION bug: with only one step there is
+  # nothing to select wrong.
+  def with_ci_repo(ci_cmd: "bin/rails db:test:prepare test test:system", ci_steps: nil)
+    steps = ci_steps || (ci_cmd && [ci_cmd])
     with_repo do |dir|
-      if ci_cmd
+      if steps
         FileUtils.mkdir_p(File.join(dir, ".github", "workflows"))
-        File.write(File.join(dir, ".github", "workflows", "ci.yml"), <<~YAML)
-          jobs:
-            test:
-              steps:
-                - name: Run tests
-                  run: #{ci_cmd}
-        YAML
+        runs = steps.map { |step| "      - name: Step\n        run: #{step}\n" }.join
+        File.write(File.join(dir, ".github", "workflows", "ci.yml"), "jobs:\n  test:\n    steps:\n#{runs}")
       end
       log = File.join(dir, "rails.log")
       FileUtils.mkdir_p(File.join(dir, "bin"))
@@ -281,6 +281,39 @@ class FullSuiteCheckTest < Minitest::Test
       assert_equal ["db:test:prepare test test:system"], File.readlines(log, chomp: true),
                    "the cert's test lane must invoke CI's command VERBATIM (base + system tiers)"
       assert_match(/\[full-suite@/, out)
+    end
+  end
+
+  # --- [integration] a SETUP step must never be mistaken for the test lane -------
+  # THE REGRESSION, end to end. Selecting CI's command by "first step that mentions
+  # bin/rails" made any SETUP step the full-suite lane: a `bin/rails db:test:prepare`
+  # step parked ahead of the real one got RUN, exited 0, and stamped
+  # `[full-suite@<fp>] … green` having executed ZERO tests — a cert that lies, and
+  # no consumer parses the command text afterwards to catch it. The lane is now
+  # selected by what a step DOES (bin/lib/ci_test_command.rb `runs_tests?`).
+
+  def test_a_setup_step_parked_ahead_of_the_tests_cannot_hijack_the_lane
+    with_ci_repo(ci_steps: ["bin/rails db:test:prepare", "bin/rails db:test:prepare test test:system"]) do |dir, log|
+      out, code = run_default_test_lane(dir)
+
+      assert_equal 0, code, out
+      assert_equal ["db:test:prepare test test:system"], File.readlines(log, chomp: true),
+                   "the lane ran the SETUP step and certified green having run NO tests"
+      assert_match(/\[full-suite@/, out)
+    end
+  end
+
+  def test_a_test_job_that_runs_no_tests_is_refused_not_certified
+    # No step in the job runs tests. That is not "green" — there is nothing to be
+    # green ABOUT. Refuse loudly, run nothing, certify nothing.
+    setup_only = ["bin/rails db:test:prepare", "bin/rails assets:precompile", "bin/rails tailwindcss:build"]
+    with_ci_repo(ci_steps: setup_only) do |dir, log|
+      out, code = run_default_test_lane(dir)
+
+      assert_equal 1, code, out
+      assert_match(/NONE of them runs tests/, out)
+      refute_match(/\[full-suite@/, out, "a job with no test step must certify NOTHING")
+      refute_path_exists log, "the cert must not RUN a setup step it refused to accept as the test lane"
     end
   end
 

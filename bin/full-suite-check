@@ -189,7 +189,20 @@ end
 # .github/workflows/ci.yml, verbatim (bin/lib/ci_test_command.rb). Hard-coding
 # `bin/rails test` here is what let this "CI-independent" cert skip test/system
 # entirely; resolving from ci.yml means the two can't drift apart again.
-test_cmd = ENV.fetch("FULL_SUITE_TEST_CMD") { CiTestCommand.resolve(root) }
+#
+# The resolver selects CI's step by what it DOES (does it run tests?), never by a
+# `bin/rails` mention — a setup step parked ahead of the real one would otherwise
+# BE the "full-suite lane": it runs, exits 0, and stamps green having run ZERO
+# tests. And when it can read CI's `test` job but finds no test command in it, it
+# REFUSES here, loudly, rather than certify something that isn't CI's suite. An
+# explicit FULL_SUITE_TEST_CMD is the operator saying "run THIS" — it overrides
+# both the resolution and the refusal.
+test_cmd = ENV.fetch("FULL_SUITE_TEST_CMD") do
+  ci_refusal = CiTestCommand.refusal(root)
+  abort "full-suite-check: #{ci_refusal}" if ci_refusal
+
+  CiTestCommand.resolve(root)
+end
 rubocop_cmd = ENV.fetch("FULL_SUITE_RUBOCOP_CMD", "bin/rubocop")
 test_db_reset_cmd = ENV.fetch("FULL_SUITE_TEST_DB_RESET_CMD", "bin/rails db:test:purge db:test:prepare")
 skip_test_db_reset = ENV.fetch("FULL_SUITE_SKIP_TEST_DB_RESET", "") == "1"

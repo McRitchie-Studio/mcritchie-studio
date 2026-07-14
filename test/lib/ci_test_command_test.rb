@@ -49,7 +49,7 @@ class CiTestCommandTest < Minitest::Test
     with_ci(nil) { |dir| assert_nil CiTestCommand.for_root(dir) }
   end
 
-  def test_returns_nil_when_the_test_job_has_no_bin_rails_step
+  def test_returns_nil_when_the_test_job_has_no_rails_test_step
     yaml = <<~YAML
       jobs:
         test:
@@ -72,6 +72,140 @@ class CiTestCommandTest < Minitest::Test
                 bin/rails test
     YAML
     with_ci(yaml) { |dir| assert_nil CiTestCommand.for_root(dir) }
+  end
+
+  # --- SELECT ON THE PROPERTY, NOT THE SPELLING --------------------------------
+  # THE BUG THIS FILE WAS BOUNCED FOR. Selecting CI's command by "the first step
+  # that mentions bin/rails and is one line" makes every SETUP step a candidate:
+  # a `bin/rails db:test:prepare` step parked AHEAD of the real one becomes the
+  # "full-suite lane", runs, exits 0, and stamps green having run ZERO tests. The
+  # resolver now selects on what a step DOES — `runs_tests?`.
+  #
+  # These are the adversarial shapes: a setup task ahead of the tests, the tests
+  # not first, and the two real-world hijackers from turf-monster's playwright job
+  # (`tailwindcss:build`, and a `&&` chain whose `-e test` is an ENV VALUE, not a
+  # task). Each must select the REAL test step.
+
+  def test_a_setup_step_ahead_of_the_tests_does_not_hijack_the_selection
+    yaml = <<~YAML
+      jobs:
+        test:
+          steps:
+            - name: Prepare the test database
+              run: bin/rails db:test:prepare
+            - name: Run tests
+              run: bin/rails db:test:prepare test test:system
+    YAML
+    with_ci(yaml) do |dir|
+      assert_equal "bin/rails db:test:prepare test test:system", CiTestCommand.for_root(dir),
+                   "a SETUP step was selected as the test lane — it runs, exits 0, and certifies NOTHING"
+    end
+  end
+
+  def test_setup_shapes_that_must_never_be_selected_as_the_test_lane
+    ["bin/rails assets:precompile",
+     "bin/rails tailwindcss:build",
+     "bin/rails db:prepare",
+     "bin/rails db:test:prepare",
+     "bin/rails db:test:prepare && bin/rails runner -e test e2e/seed.rb"].each do |setup|
+      yaml = <<~YAML
+        jobs:
+          test:
+            steps:
+              - run: #{setup}
+              - run: bin/rails db:test:prepare test test:system
+      YAML
+      with_ci(yaml) do |dir|
+        assert_equal "bin/rails db:test:prepare test test:system", CiTestCommand.for_root(dir),
+                     "#{setup.inspect} runs no tests and must never be selected as the test lane"
+      end
+    end
+  end
+
+  def test_runs_tests_asserts_the_property_structurally
+    # POSITIVE — the invocation is handed the test task, a test: subtask, or a path
+    # into test/. Note the shapes nobody writes in ci.yml today but might tomorrow.
+    assert CiTestCommand.runs_tests?("bin/rails test")
+    assert CiTestCommand.runs_tests?("bin/rails db:test:prepare test test:system")
+    assert CiTestCommand.runs_tests?("bin/rails test:system")
+    assert CiTestCommand.runs_tests?("bin/rails test test/integration")
+    assert CiTestCommand.runs_tests?("RAILS_ENV=test bin/rails db:test:prepare test test:system")
+    assert CiTestCommand.runs_tests?("bundle exec rails test test:system")
+    assert CiTestCommand.runs_tests?("bin/rake test")
+    assert CiTestCommand.runs_tests?("bin/rails db:test:prepare && bin/rails test")
+
+    # NEGATIVE — setup tasks fail by SHAPE (a `db:`/`assets:`/`tailwindcss:` task is
+    # not the test task), so no setup task invented tomorrow sneaks through.
+    refute CiTestCommand.runs_tests?("bin/rails db:test:prepare")
+    refute CiTestCommand.runs_tests?("bin/rails db:prepare")
+    refute CiTestCommand.runs_tests?("bin/rails assets:precompile")
+    refute CiTestCommand.runs_tests?("bin/rails tailwindcss:build")
+    refute CiTestCommand.runs_tests?("bin/rails test:prepare"), "test:prepare is the PREP HOOK — it runs no tests"
+    refute CiTestCommand.runs_tests?("sudo apt-get update && sudo apt-get install -y curl")
+    refute CiTestCommand.runs_tests?("npm test")
+    refute CiTestCommand.runs_tests?("")
+
+    # THE `-e test` TRAP (turf-monster's playwright seed step, verbatim): that bare
+    # `test` is the VALUE of -e — the RAILS_ENV — not a task. A token scan reads it
+    # as a test run; scanning only the leading NON-FLAG args does not.
+    refute CiTestCommand.runs_tests?("bin/rails db:test:prepare && bin/rails runner -e test e2e/seed.rb")
+  end
+
+  # --- refusal: a cert that can't find CI's tests must SAY so -------------------
+  # Fail CLOSED. `runs_tests?` is a whitelist, so an unrecognized test spelling reads
+  # as "no test step" — and that must be LOUD, never a silent pass, or the parser's
+  # blindness becomes a green cert.
+
+  def test_a_test_job_whose_steps_run_no_tests_is_a_refusal
+    yaml = <<~YAML
+      jobs:
+        test:
+          steps:
+            - run: bin/rails db:test:prepare
+            - run: bin/rails assets:precompile
+    YAML
+    with_ci(yaml) do |dir|
+      refusal = CiTestCommand.refusal(dir)
+
+      refute_nil refusal, "a test job that runs NO tests must refuse, not silently certify something else"
+      assert_match(/NONE of them runs tests/, refusal)
+      assert_match(/db:test:prepare/, refusal, "the refusal must NAME what it saw, so it is actionable")
+    end
+  end
+
+  def test_a_multiline_test_script_is_a_refusal_not_a_silent_fallback
+    # CI DOES run tests here — as a script the cert lane cannot invoke verbatim.
+    # Falling back to DEFAULT would silently run something that is NOT CI's suite
+    # while claiming CI-independence, so say it out loud instead.
+    yaml = <<~YAML
+      jobs:
+        test:
+          steps:
+            - run: |
+                bin/rails db:test:prepare
+                bin/rails test test:system
+    YAML
+    with_ci(yaml) do |dir|
+      assert_match(/MULTI-LINE/, CiTestCommand.refusal(dir).to_s)
+    end
+  end
+
+  def test_no_ci_workflow_is_not_a_refusal
+    # The one benign case: nothing to read, so DEFAULT (a full-suite SUPERSET) is
+    # honest. It runs MORE than CI, never less — that can't produce a lying cert.
+    with_ci(nil) { |dir| assert_nil CiTestCommand.refusal(dir) }
+    with_ci("jobs: [this is not: a map\n") { |dir| assert_nil CiTestCommand.refusal(dir) }
+  end
+
+  def test_a_readable_test_command_is_not_a_refusal
+    yaml = <<~YAML
+      jobs:
+        test:
+          steps:
+            - run: bin/rails db:test:prepare
+            - run: bin/rails db:test:prepare test test:system
+    YAML
+    with_ci(yaml) { |dir| assert_nil CiTestCommand.refusal(dir) }
   end
 
   def test_malformed_yaml_falls_back_instead_of_raising
@@ -124,8 +258,12 @@ class CiTestCommandTest < Minitest::Test
 
   def test_system_tier_detects_which_commands_run_test_system
     assert CiTestCommand.system_tier?("bin/rails db:test:prepare test test:system")
+    assert CiTestCommand.system_tier?("bin/rails test test/system"),
+           "the PATH form runs the tier too — miss it and the caller loses its browser guard"
     refute CiTestCommand.system_tier?("bin/rails test")
     refute CiTestCommand.system_tier?("bin/rails test test/integration")
+    refute CiTestCommand.system_tier?("bin/rails db:test:prepare"),
+           "a setup step needs no browser — it runs no tests at all"
   end
 
   # --- the drift guard ---------------------------------------------------------
