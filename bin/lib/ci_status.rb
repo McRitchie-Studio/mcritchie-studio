@@ -62,33 +62,47 @@ module CiStatus
   # Deliberately NARROW. A state that cried "fix your token" at every missing SHA
   # would be its own species of lie, so 404/timeouts/`gh: command not found` keep
   # their old :unverified meaning.
-  # Each alternative, and what it catches:
-  #   "resource not accessible by …" — a fine-grained PAT or GitHub App refused the
-  #                                    scope (the rolio case, REST and GraphQL alike)
-  #   "bad credentials"              — a revoked, expired, or malformed token
-  #   "requires authentication"      — no token presented at all
-  #   "must have admin rights"       — the branch-protection read, specifically
-  #   "HTTP 401" / "HTTP 403"        — gh's own stderr line
-  #   "status": "401" / "403"        — the REST error envelope on stdout
-  PERMISSION_DENIED = Regexp.union(
-    /resource not accessible by/i,
-    /bad credentials/i,
-    /requires authentication/i,
-    /must have admin rights/i,
-    /\bHTTP (?:401|403)\b/,
-    /"status"\s*:\s*"?(?:401|403)"?/
-  ).freeze
+  #
+  # ORDER IS LOAD-BEARING — first match wins, and the patterns OVERLAP. GitHub
+  # answers a rate limit with an HTTP 403, so :rate_limit MUST precede :forbidden;
+  # reverse them and "API rate limit exceeded (HTTP 403)" prescribes a scope grant
+  # for a token whose scopes are fine. Each cause and what it catches:
+  #   :rate_limit     — "rate limit" / "abuse detection"; a 403 that is NOT a denial
+  #   :credentials    — "bad credentials", an expired/revoked token, HTTP 401
+  #   :authentication — "requires authentication"; no token presented at all
+  #   :permissions    — "resource not accessible by …" (a fine-grained PAT or GitHub
+  #                     App refused the scope — the rolio case, REST and GraphQL
+  #                     alike) / "must have admin rights" (the branch-protection read)
+  #   :forbidden      — a bare HTTP 403 with no stated cause. AMBIGUOUS ON PURPOSE:
+  #                     the remedy REFUSES to guess a scope here (see unreadable_remedy).
+  UNREADABLE_CAUSES = [
+    [:rate_limit, /(?:api|secondary)?\s*rate limit|abuse detection/i],
+    [:credentials, /bad credentials|token[^\n]*(?:expired|revoked)|\bHTTP 401\b|"status"\s*:\s*"?401"?/i],
+    [:authentication, /requires authentication|authentication required/i],
+    [:permissions, /resource not accessible by|must have admin rights/i],
+    [:forbidden, /\bHTTP 403\b|"status"\s*:\s*"?403"?|\bforbidden\b/i]
+  ].freeze
+
+  def self.unreadable_cause(raw)
+    text = raw.to_s
+    UNREADABLE_CAUSES.each do |cause, pattern|
+      return cause if pattern.match?(text)
+    end
+    nil
+  end
 
   # Does this raw gh body say "your token was refused"?
   def self.permission_denied?(raw)
-    PERMISSION_DENIED.match?(raw.to_s)
+    !unreadable_cause(raw).nil?
   end
 
   # The :unreadable verdict, carrying the cause. `reason` is the first line of the
   # denial, trimmed — enough for the gate to print WHAT was refused, while the gate
   # itself supplies WHICH repo and WHICH scope to grant.
   def self.unreadable(raw)
-    { state: :unreadable, reason: raw.to_s.lines.first.to_s.strip[0, 140] }
+    data = JSON.parse(raw) rescue nil
+    reason = data.is_a?(Hash) ? data["message"].to_s : raw.to_s.lines.first.to_s.strip
+    { state: :unreadable, cause: unreadable_cause(raw), reason: reason[0, 140] }
   end
 
   # PURE. "owner/repo" out of a PR URL (https://github.com/amcritchie/rolio/pull/23),
@@ -103,14 +117,41 @@ module CiStatus
   # the operator the same thing. A gate that cannot see must name (a) that it is a
   # CREDENTIAL fault, (b) the repo, (c) the exact grant, and (d) the verify command —
   # otherwise the reader's only move is to re-run it, which can never help.
-  def self.unreadable_remedy(repo = nil)
+  def self.unreadable_remedy(repo = nil, cause: nil)
     where = repo.to_s.strip.empty? ? "this repo" : repo.to_s.strip
-    "This is a CREDENTIAL fault, NOT a missing CI — re-running will never clear it. The GitHub token cannot " \
-      "read check runs on #{where}. Fix: grant the token `Checks: Read` on #{where} (fine-grained PAT → " \
-      "Repository permissions → Checks → Read-only; the repo must also be in the token's selected " \
-      "repositories). Verify: gh pr checks <pr> --repo #{where}. Until then the FAST-cert route cannot be " \
-      "credited on this repo (a fast cert needs a GREEN CI it can actually read) — certify in full instead: " \
-      "bin/full-suite-check <task>."
+    fix = case cause&.to_sym
+          when :permissions
+            "The GitHub token cannot read check runs on #{where}. Fix: grant the token `Checks: Read` on " \
+              "#{where} (fine-grained PAT → Repository permissions → Checks → Read-only; the repo must also " \
+              "be in the token's selected repositories). Verify: gh pr checks <pr> --repo #{where}."
+          when :credentials
+            "GitHub rejected the active credential for #{where}. Fix: run `gh auth status --hostname " \
+              "github.com`, then refresh or replace the expired/revoked credential and retry the exact check read."
+          when :authentication
+            "No accepted GitHub credential reached #{where}. Fix: run `gh auth status --hostname github.com`, " \
+              "authenticate the CLI, then retry the exact check read."
+          when :rate_limit
+            "GitHub refused the read because its API rate limit was exhausted. Fix: inspect `gh api rate_limit`, " \
+              "wait for the named reset or use an authorized credential with remaining quota, then retry."
+          else
+            "GitHub returned a forbidden response for #{where} without identifying a missing permission. Do not " \
+              "guess a scope: run `gh auth status --hostname github.com`, reproduce the exact check read, and use " \
+              "GitHub's response to choose the credential or permission fix."
+          end
+    "This is a CREDENTIAL fault or API limit, NOT a missing CI — re-running will never clear it. #{fix} " \
+      "Until the check read works, the FAST-cert route cannot be credited on this repo (a fast cert needs a " \
+      "GREEN CI it can actually read) — certify in full instead: bin/full-suite-check <task>."
+  end
+
+  def self.gate_evidence(verdict, repo: nil)
+    return {} unless verdict && verdict[:state] == :unreadable
+
+    {
+      "state" => "unreadable",
+      "cause" => verdict[:cause].to_s,
+      "reason" => verdict[:reason].to_s,
+      "repo" => repo.to_s
+    }
   end
 
   def self.evaluate(pr_url, injected = nil)
@@ -284,7 +325,7 @@ module CiStatus
       # A 401/403 is a REFUSED token, not an absent record — say so. Checked against
       # the raw body (gh's stdout JSON + stderr line arrive concatenated under 2>&1),
       # then reported with the clean `message` when there was one to parse.
-      return { state: :unreadable, reason: reason.strip[0, 140] } if permission_denied?(raw)
+      return unreadable(raw).merge(reason: reason.strip[0, 140]) if permission_denied?(raw)
 
       return { state: :unverified, reason: reason.strip[0, 140] }
     end

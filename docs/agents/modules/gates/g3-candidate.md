@@ -237,12 +237,14 @@ informational, never an alarm, never a block:
 | `none` | No check-run for this SHA. **This is today's normal answer:** `ci.yml` triggers on `pull_request` + `push: main`, so `release` builds nothing until task `run-ci-on-release-branch` lands. |
 | `pending` | The push-triggered run has not settled — prepare gates seconds after the merge. |
 | `unverified` | No `gh`, no network, a 404, a non-GitHub remote. |
-| `unreadable` | **The token was REFUSED** (401/403) — CI may well be green; *this credential* cannot read it. No data, like the rows above, so it never blocks or alarms — but it is **not** benign, and the cross-check says so in its own voice: the auditor is *switched off* for that repo, so its gate is **unaudited, not confirmed**. Prints the repo and the exact grant to add. |
+| `unreadable` | **The API refused the read** (401/403) — CI may well be green; this client cannot read it. No data, like the rows above, so it never blocks or alarms — but it is **not** benign, and the cross-check says so in its own voice: the auditor is *switched off* for that repo, so its gate is **unaudited, not confirmed**. Prints the repo, classified cause, and cause-specific remedy. |
 
 **`unreadable` is not `unverified`, and the difference is the point.** The rows
 above mean *the world has nothing to say yet* — the fix is to wait. `unreadable`
 means *the world has plenty to say and this token may not hear it* — waiting is
-futile and the fix is a **credential**. Collapsing the two was a real bug (task
+futile and the fix is credentials, permissions, or API-limit recovery. A plain
+403 does not prove a missing scope, so the gate does not prescribe one unless
+GitHub identifies a permission denial. Collapsing the two was a real bug (task
 `dor-check-misses-rolio-ci`, 2026-07-13): a fine-grained PAT with no `Checks:
 Read` on the private `rolio` repo made every rolio CI read a bare `UNVERIFIED`,
 so `bin/dor-check` denied the fast-cert route to every rolio task **and told the

@@ -1843,7 +1843,7 @@ def ci_cross_check(repo, sha, local_ok, ci)
     say("  #{repo}: CI cross-check DISABLED — the token was REFUSED reading CI for #{short(sha)} " \
         "(#{ci[:reason]}). The G3 auditor is BLIND on #{repo} until this is fixed: it cannot contradict a bad " \
         "local gate here, so the gate is unaudited, not confirmed.")
-    say("  #{repo}: #{CiStatus.unreadable_remedy(repo_name_with_owner(repo))}")
+    say("  #{repo}: #{CiStatus.unreadable_remedy(repo_name_with_owner(repo), cause: ci[:cause])}")
     return false
   end
   if CI_NO_DATA.include?(state)

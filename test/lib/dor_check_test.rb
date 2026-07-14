@@ -1666,9 +1666,10 @@ class DorCheckTest < Minitest::Test
   # say: this is a CREDENTIAL fault, on THIS repo, fixed by THIS grant.
 
   ROLIO_PR = BACKEND_CONTRACT.merge("pr_url" => "https://github.com/amcritchie/rolio/pull/23").freeze
+  ROLIO_CHECKS_403 = "GraphQL: Resource not accessible by personal access token".freeze
 
   def test_unreadable_ci_is_reported_as_a_credential_fault_naming_the_repo
-    out, = ci_check("unreadable", ROLIO_PR)
+    out, = ci_check(ROLIO_CHECKS_403, ROLIO_PR)
     assert_match(/UNREADABLE/, out, "the state is named, not collapsed into UNVERIFIED")
     assert_match(/CREDENTIAL fault/, out, "the CAUSE is named")
     assert_match(%r{amcritchie/rolio}, out, "the REPO is named")
@@ -1682,7 +1683,7 @@ class DorCheckTest < Minitest::Test
     # alongside a CI green we can actually READ — an unreadable CI is not a green,
     # so it blocks exactly as hard as it did before this change. If this test ever
     # goes green with exit 0, the gate has been made easier to pass.
-    out, code = fast_check_ci("fast_fresh", "unreadable", ROLIO_PR)
+    out, code = fast_check_ci("fast_fresh", ROLIO_CHECKS_403, ROLIO_PR)
     assert_equal 1, code, "an unreadable CI must NOT credit a fast cert:\n#{out}"
     assert_match(/fast-cert evidence is FRESH/, out)
     refute_match(/PROVISIONALLY/, out, "no provisional credit on a CI we cannot read")
@@ -1693,15 +1694,27 @@ class DorCheckTest < Minitest::Test
     # "push the branch and open the PR, then re-run dor-check" — futile advice that
     # is exactly how a gate teaches people to ignore it. It must now point at the
     # token, and must NOT tell them to open a PR that already exists.
-    out, = fast_check_ci("fast_fresh", "unreadable", ROLIO_PR)
+    out, = fast_check_ci("fast_fresh", ROLIO_CHECKS_403, ROLIO_PR)
     refute_match(/push the branch and open the PR/, out, "the futile re-run advice must be gone")
     assert_match(/re-running will never clear it/i, out, "the gate says re-running cannot help")
     assert_match(/bin\/full-suite-check/, out, "and names the route that DOES work today")
   end
 
   def test_unreadable_ci_still_blocks_at_the_review_gate_zero
-    out, code = fast_check_ci("fast_fresh", "unreadable", ROLIO_PR, "--gate-role", "review")
+    out, code = fast_check_ci("fast_fresh", ROLIO_CHECKS_403, ROLIO_PR, "--gate-role", "review")
     assert_equal 1, code, out
+  end
+
+  def test_unreadable_ci_does_not_prescribe_checks_scope_for_bad_credentials
+    out, = ci_check("gh: Bad credentials (HTTP 401)", ROLIO_PR)
+    assert_match(/gh auth status/, out)
+    refute_match(/Checks: Read/, out)
+  end
+
+  def test_unreadable_ci_does_not_prescribe_checks_scope_for_rate_limits
+    out, = ci_check("gh: API rate limit exceeded (HTTP 403)", ROLIO_PR)
+    assert_match(/gh api rate_limit/, out)
+    refute_match(/Checks: Read/, out)
   end
 
   def test_a_readable_but_unrun_ci_is_still_plain_none_not_unreadable

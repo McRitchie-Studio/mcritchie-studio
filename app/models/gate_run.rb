@@ -19,8 +19,8 @@
 #
 # Each row is one attempt: started_at → finished_at, success (nil while in
 # flight), and a `sops` jsonb list of the test SOPs executed inside the window
-# ([{sop, cmd, tier, result, duration_ms, at}]). Unlike the releases'
-# first-write-wins stage stamps, RETRIES ARE FIRST-CLASS: a failed attempt
+# ([{sop, cmd, tier, result, duration_ms, state, cause, reason, repo, at}]).
+# Unlike the releases' first-write-wins stage stamps, RETRIES ARE FIRST-CLASS: a failed attempt
 # closes and the re-run opens attempt n+1 — repeated cert/QA failures become
 # visible signal instead of collapsing into one window.
 #
@@ -48,7 +48,7 @@ class GateRun < ApplicationRecord
 
   # The keys a sops entry keeps (normalize_sop slices to these); `at` is stamped
   # server-side so entries are orderable even when the producer sends none.
-  SOP_KEYS = %w[sop cmd tier result duration_ms at].freeze
+  SOP_KEYS = %w[sop cmd tier result duration_ms state cause reason repo at].freeze
 
   validates :subject_type, inclusion: { in: SUBJECT_TYPES }
   validates :subject_slug, presence: true

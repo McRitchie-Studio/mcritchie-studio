@@ -156,10 +156,12 @@ attempt n+1.
     opposed to `unverified` (no `gh`, no network, a 404). It is **no more
     lenient** than `unverified`: it unlocks nothing, and notably does **not**
     credit a fast cert (a fast cert needs a CI green the gate can actually
-    *read*). It is only more **honest** — it names the credential fault, the
-    repo, the exact grant to add, and the verify command, instead of sending the
-    builder back to re-run a gate that can never clear. See
-    `gates/g3-candidate.md`.
+    *read*). It is only more **honest** — it names the repo and classifies the
+    denial as permissions, rejected credentials, missing authentication, rate
+    limiting, or ambiguous forbidden access. The remedy matches that cause; it
+    prescribes `Checks: Read` only for an actual permission denial. The CI SOP
+    durably records `state`, `cause`, `reason`, and `repo` instead of
+    collapsing the attempt to generic `unverified`. See `gates/g3-candidate.md`.
 - The reviewer's gate-zero **opens then closes `dor_review`** with the same
   evidence shape, under the strict CI semantics.
 - The supervisor's **pre-spawn CI-red bounce** opens then closes `dor_review`

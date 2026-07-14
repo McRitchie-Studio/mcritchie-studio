@@ -95,6 +95,19 @@ class GateRunTest < ActiveSupport::TestCase
     assert_not entry.key?("sneaky")
   end
 
+  test "normalize_sop preserves unreadable CI evidence" do
+    run = GateRun.append_sop!(subject_type: "task", subject_slug: @task.slug, key: "dor_review",
+                              sop: { "sop" => "ci", "result" => "unverified", "state" => "unreadable",
+                                     "cause" => "permissions", "reason" => "access denied",
+                                     "repo" => "amcritchie/rolio" })
+
+    entry = run.sops.first
+    assert_equal "unreadable", entry["state"]
+    assert_equal "permissions", entry["cause"]
+    assert_equal "access denied", entry["reason"]
+    assert_equal "amcritchie/rolio", entry["repo"]
+  end
+
   test "[unit] GATES include the two DoR gates in flow order between g1_cert and g2a" do
     assert_equal %w[g1_cert dor dor_review g2a_primary g2b_light g3_candidate g4_ship], GateRun::KEYS
     assert_equal %w[g1_cert dor dor_review g2a_primary g2b_light], GateRun::TASK_KEYS

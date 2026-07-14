@@ -309,10 +309,48 @@ class CiStatusTest < Minitest::Test
   def test_check_runs_a_clean_json_403_or_401_is_unreadable
     v = CiStatus.parse_check_runs('{"message":"Resource not accessible by integration","status":"403"}')
     assert_equal :unreadable, v[:state]
+    assert_equal :permissions, v[:cause]
 
     v = CiStatus.parse_check_runs('{"message":"Bad credentials","status":"401"}')
     assert_equal :unreadable, v[:state]
     assert_equal "Bad credentials", v[:reason]
+    assert_equal :credentials, v[:cause]
+  end
+
+  def test_unreadable_remedy_matches_the_actual_denial_cause
+    repo = "amcritchie/rolio"
+
+    permissions = CiStatus.parse("GraphQL: Resource not accessible by personal access token")
+    assert_equal :permissions, permissions[:cause]
+    assert_includes CiStatus.unreadable_remedy(repo, cause: permissions[:cause]), "Checks: Read"
+
+    credentials = CiStatus.parse("gh: Bad credentials (HTTP 401)")
+    assert_equal :credentials, credentials[:cause]
+    credential_remedy = CiStatus.unreadable_remedy(repo, cause: credentials[:cause])
+    assert_includes credential_remedy, "gh auth status"
+    refute_includes credential_remedy, "Checks: Read"
+
+    rate_limit = CiStatus.parse("gh: API rate limit exceeded (HTTP 403)")
+    assert_equal :rate_limit, rate_limit[:cause]
+    rate_remedy = CiStatus.unreadable_remedy(repo, cause: rate_limit[:cause])
+    assert_includes rate_remedy, "gh api rate_limit"
+    refute_includes rate_remedy, "Checks: Read"
+
+    forbidden = CiStatus.parse("gh: Forbidden (HTTP 403)")
+    assert_equal :forbidden, forbidden[:cause]
+    forbidden_remedy = CiStatus.unreadable_remedy(repo, cause: forbidden[:cause])
+    assert_includes forbidden_remedy, "gh auth status"
+    refute_includes forbidden_remedy, "Checks: Read"
+  end
+
+  def test_gate_evidence_preserves_unreadable_state_cause_reason_and_repo
+    verdict = CiStatus.parse("GraphQL: Resource not accessible by personal access token")
+    evidence = CiStatus.gate_evidence(verdict, repo: "amcritchie/rolio")
+
+    assert_equal "unreadable", evidence["state"]
+    assert_equal "permissions", evidence["cause"]
+    assert_equal "amcritchie/rolio", evidence["repo"]
+    assert_includes evidence["reason"], "not accessible"
   end
 
   def test_a_404_stays_unverified_and_is_NOT_promoted_to_unreadable

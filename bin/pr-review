@@ -574,7 +574,8 @@ def start_review(task, review_number)
     # cause). Proceed to review, and say plainly that CI went UNCHECKED — the reviewer
     # is now the only thing standing between a red CI and a merge.
     puts "  ci=UNREADABLE (#{ci[:reason]}) — the token was refused; NOT deferring (CI has reported; we cannot read it)"
-    puts "  #{CiStatus.unreadable_remedy(CiStatus.repo_from_pr_url(task.dig("devops", "pr_url")))}"
+    puts "  #{CiStatus.unreadable_remedy(CiStatus.repo_from_pr_url(task.dig("devops", "pr_url")),
+                                        cause: ci[:cause])}"
     puts "  proceeding to review WITHOUT a CI verdict — review this PR as if CI were unchecked, because it is"
   when :green
     puts "  ci=green#{ci[:count] ? " (#{ci[:count]} checks)" : ""}"

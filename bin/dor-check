@@ -528,7 +528,7 @@ def suite_evidence_error(eval, slug, ci, review_role)
         # genuinely unavailable here — but the reason is a TOKEN, and the reader must
         # be sent at the token, not at a re-run that cannot possibly help.
         # (@pr_url, not the `devops` local — a top-level def cannot see top-level locals.)
-        CiStatus.unreadable_remedy(CiStatus.repo_from_pr_url(@pr_url))
+        CiStatus.unreadable_remedy(CiStatus.repo_from_pr_url(@pr_url), cause: ci[:cause])
       elsif review_role
         "The review gate-zero needs the SETTLED green — defer until CI finishes (red bounces the task back)"
       else
@@ -934,7 +934,8 @@ when :unreadable
   # may well be GREEN — this token simply may not read it. Saying "check `gh pr
   # checks` manually" here would send the reader to the command that just failed.
   suggestions << "CI gate: the token was REFUSED when reading GitHub CI (#{ci[:reason]}) — status UNREADABLE, " \
-    "which is NOT the same as no-CI. #{CiStatus.unreadable_remedy(CiStatus.repo_from_pr_url(devops["pr_url"]))}"
+    "which is NOT the same as no-CI. " \
+      "#{CiStatus.unreadable_remedy(CiStatus.repo_from_pr_url(devops["pr_url"]), cause: ci[:cause])}"
 when :unverified
   suggestions << "CI gate: couldn't read GitHub CI (#{ci[:reason]}) — status UNVERIFIED. Check `gh pr checks` " \
     "manually before the handoff."
@@ -990,7 +991,8 @@ if !options[:json] && options[:file].nil? && gate != "build" && !slug.to_s.empty
       when :red, :conflicted, :closed, :merged then "fail"
       else "unverified"
       end
-    gate_sops << { "sop" => "ci", "result" => ci_result }
+    repo = CiStatus.repo_from_pr_url(devops["pr_url"])
+    gate_sops << { "sop" => "ci", "result" => ci_result }.merge(CiStatus.gate_evidence(ci, repo: repo))
   end
   emit_gate_verdict(slug, ready, options[:gate_role], gate_sops)
 end
@@ -1007,7 +1009,8 @@ if options[:json]
     suggestions: suggestions,
     missing_metadata: missing_meta,
     missing_tiers: missing_tiers,
-    ci: ci && { state: ci[:state], failing: ci[:failing], pending: ci[:pending], count: ci[:count] }.compact,
+    ci: ci && { state: ci[:state], cause: ci[:cause], reason: ci[:reason], failing: ci[:failing],
+                pending: ci[:pending], count: ci[:count] }.compact,
     full_suite: suite_eval && {
       ok: suite_eval[:ok],
       route: suite_route,
@@ -1045,7 +1048,7 @@ if ready
     # Defensive: :conflicted always lands in `errors` above, so a ready verdict
     # shouldn't reach here — but if a future reordering ever lets it, say it loudly.
     puts "  ⚠ PR merge-CONFLICTED (mergeStateStatus DIRTY) — CI never fires; rebase/merge release"
-  elsif ci && %i[none unverified].include?(ci[:state])
+  elsif ci && %i[none unverified unreadable].include?(ci[:state])
     puts "  ⚠ GitHub CI UNVERIFIED (#{ci[:state]}) — see the suggestion below"
   end
   puts "  → ready to advance #{boundary}"
