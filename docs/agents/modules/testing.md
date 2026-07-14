@@ -283,7 +283,11 @@ npm test
 > that reaps a SIBLING worktree's cert mid-run. Kill by pid, or let the cert's own
 > orphan guard do it (below) — it is scoped to one worktree.
 
-### The cert's orphan guard (the timeout-orphan)
+### The orphan guard (the timeout-orphan)
+
+Shared by **both** the cert lanes (`bin/fast-check`, `bin/full-suite-check`) and
+**`bin/release`'s G3/G4 gate suites** — one module, not two copies. See "The release
+gate reuses it" below for what the gate adds.
 
 A cert can outlive its harness. `bin/fast-check` on a diff that maps to ~120 test
 files runs 7+ minutes — well past an agent harness's 120s Bash timeout. When that
@@ -330,8 +334,8 @@ against this (`bin/lib/cert_process.rb`, `bin/lib/cert_orphan_guard.rb`):
     the number → **never kill it**; the lock is a corpse, so discard it and carry on,
   - something alive whose ownership we **cannot prove** (a lock predating this guard) →
     **refuse and name it**, and let a human decide,
-  - any **other** session holding the test DB (a pre-fix orphan, a stray manual run,
-    a `bin/release` gate suite) → **refuse and name it**, with the
+  - any **other** session holding the test DB (an orphan from before this guard, a
+    stray manual `bin/rails test`) → **refuse and name it**, with the
     `pg_terminate_backend` command that clears it.
 
 **A pgid is a recyclable integer — liveness is never identity.** The first cut of this
@@ -350,6 +354,39 @@ Every one of those messages says **"NOT a regression in your diff"**, because th
 what an ENV-class failure is. A cert that refuses and names the orphan is a good cert;
 a cert that blames "an ENV gap" and lets you retry into a wall is the bug; a cert that
 kills a process it cannot name is worse than either.
+
+#### The release gate reuses it
+
+`bin/release.rb#sh` had the identical defect — a bare `system(*argv, opts)`, so a G3/G4
+gate suite ran in the **conductor's** process group with no handler. Kill or time out
+the conductor mid-suite and the suite was orphaned, still holding the gate's test DB.
+It now runs through the same `CertProcess` / `CertOrphanGuard` seam (a reaper is the
+last code that should exist twice — a bug in it kills the wrong process). Two things
+are different on the ship path:
+
+- **The blast radius is bigger.** A cert's test DB is per-worktree; the gate's is
+  **fixed per repo+role** (`<repo>_gate_test`). One stranded gate suite therefore blocks
+  **every later gate for that repo** — `db:test:prepare` cannot purge a DB somebody else
+  holds — and on G4 that lands immediately before an irreversible prod deploy. The guard
+  runs **before** `db:test:prepare`, which is the command that actually dies.
+- **The runlock lives outside the workspace it guards** —
+  `.agents/locks/mcr-<role>-runlock-<repo>/` (honouring `MCR_PRIMARY_LOCK_DIR`), not
+  `<workspace>/tmp/`. A gate workspace is `git worktree remove --force`d and rebuilt
+  whenever its tree is stale, and a tree half-written by a conductor killed mid-suite is
+  *exactly* when that happens — so an in-workspace runlock would be destroyed on the one
+  path where an orphan is most likely.
+
+Only the two gate suites opt in (`sh(..., guard:)`). Every other `sh` call on the ship
+path — `git`, `gh`, `gem push`, `heroku` — keeps its original spawn: `pgroup: true` moves
+a child out of the terminal's foreground group, so an interactive prompt (a `gem push`
+OTP) would take SIGTTIN and **stop**. A blanket change there would hang a deploy.
+
+A gate's refusals speak the release convention — **"an ENV issue, NOT a release
+regression — nothing to eject or revert"** — not the cert's "not a regression in your
+diff". That sentence is load-bearing: an abort on this path that reads as a red suite
+gets a **good task ejected from the release**, which is the disease the isolated gate
+exists to cure. The voice is a parameter (`CertOrphanGuard::GATE`), so no caller can
+forget it.
 
 Skip the guard only in harness tests: `FAST_CHECK_SKIP_ORPHAN_GUARD=1` /
 `FULL_SUITE_SKIP_ORPHAN_GUARD=1`.
