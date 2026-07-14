@@ -67,7 +67,11 @@ class AgentApi
   # (each anchored one level up from bin/).
   REPO_ROOT = File.expand_path("../..", __dir__)
 
-  attr_reader :open_timeout, :read_timeout
+  # +env+ is exposed because it is what RESOLVED projects_dir — and the marker
+  # sandbox (bin/lib/session_markers.rb) must evaluate its "was the store pinned?"
+  # rule against that SAME env, not the process ENV. A test that injects an env
+  # here is correctly pinned even though the process ENV is not.
+  attr_reader :open_timeout, :read_timeout, :env
 
   def initialize(open_timeout:, read_timeout:, env: ENV)
     @env = env

@@ -30,6 +30,15 @@ class StatuslineTest < Minitest::Test
   # real Claude Code shape) so render() runs from a known context file. The
   # context carries ALL fields a real worktree context has (sparse ones trip
   # bash's IFS-whitespace tab collapsing). `session` nil deletes the env var.
+  #
+  # PINNED (this used to be the leak). The context below says stage "building", so
+  # every render here also fires heartbeat_claim — and this helper pinned NEITHER
+  # CLAUDE_PROJECTS_DIR nor HOME, so `${CLAUDE_PROJECTS_DIR:-$HOME/projects}`
+  # resolved to the OPERATOR'S REAL store: each suite run re-wrote a 0-byte
+  # `<session>.heartbeat` into ~/projects/.agents/sessions and shelled the REAL
+  # bin/task heartbeat at the production board, detached. Now the roots are pinned
+  # at a tmpdir (TaskUsageSandboxEnv.child_env) and TASK_BIN is a no-op stub, so
+  # these render assertions can never reach the operator's state or the board.
   def render_in(session:, extra: {}, provider: :claude)
     Dir.mktmpdir do |dir|
       File.write(File.join(dir, ".agent-context.json"), JSON.generate({
@@ -41,7 +50,12 @@ class StatuslineTest < Minitest::Test
       }.merge(extra)))
       # Exactly ONE session var set — SessionEnv unsets the other for us, so the
       # provider under test is the only one bin/statusline can resolve.
-      env = SessionEnv.neutralized(session_key(provider) => session)
+      env = SessionEnv.neutralized(
+        TaskUsageSandboxEnv.child_env(dir).merge(
+          session_key(provider) => session,
+          "TASK_BIN" => "/usr/bin/true"
+        )
+      )
       stdin = JSON.generate("workspace" => { "current_dir" => dir })
       out, = Open3.capture2(env, "/bin/bash", BIN, stdin_data: stdin, err: File::NULL)
       out
@@ -326,5 +340,84 @@ class StatuslineTest < Minitest::Test
   def test_no_osc_tab_title_without_a_mascot
     out = render_in(session: SESSION, extra: { "app" => "mcritchie-studio" })
     refute_includes out, "\e]0;", "no mascot → no tab-title override (don't fight the terminal)"
+  end
+
+  # --- [integration] the narration-marker sandbox (bash half) ------------------
+  #
+  # THE ESCAPE THIS PINS, exactly as it happened. bin/statusline resolves its
+  # marker root as `${CLAUDE_PROJECTS_DIR:-$HOME/projects}`. A test process arms
+  # TASK_USAGE_SANDBOX (test/support/task_usage_sandbox.rb, inherited by every
+  # child) but pinned NEITHER var here — so the fallback landed in the OPERATOR'S
+  # REAL ~/projects/.agents/sessions, where a 0-byte `<session>.heartbeat` was
+  # re-written on every suite run, and the REAL `bin/task heartbeat` fired at the
+  # production board behind it. Cross-session marker pollution mis-attributes
+  # activities to the wrong task — the narration timeline the learning loop reads.
+  #
+  # The vector is reproduced SAFELY: HOME is pinned at a tmpdir, so an unguarded
+  # statusline writes THERE (provably — the guarded one writes nowhere) instead of
+  # in the operator's store. Assert on the fallback root, never on the real one.
+  def unpinned_sandboxed_run(stage: "building")
+    Dir.mktmpdir do |dir|
+      home = File.join(dir, "home")
+      FileUtils.mkdir_p(home)
+      File.write(File.join(dir, ".agent-context.json"), JSON.generate(
+        "app" => "mcritchie-studio", "worktree_slug" => "guard-narration-marker-writes",
+        "task_record_slug" => "guard-narration-marker-writes",
+        "task_url" => "https://mcritchie.studio/tasks/guard-narration-marker-writes", "stage" => stage
+      ))
+      calls = File.join(dir, "calls.log")
+      stub = File.join(dir, "task")
+      File.write(stub, "#!/bin/bash\necho \"$@\" >> #{calls.inspect}\n")
+      File.chmod(0o755, stub)
+
+      # The leak's exact shape: sandbox ARMED, CLAUDE_PROJECTS_DIR UNSET (nil ⇒ the
+      # child does not export it at all), HOME redirected so the fallback is visible.
+      env = SessionEnv.neutralized(
+        "CLAUDE_CODE_SESSION_ID" => SESSION,
+        "CLAUDE_PROJECTS_DIR" => nil,
+        "TASK_USAGE_SANDBOX" => "1",
+        "HOME" => home,
+        "TASK_BIN" => stub,
+        "STATUSLINE_HEARTBEAT_FG" => "1"
+      )
+      stdin = JSON.generate("workspace" => { "current_dir" => dir })
+      out, = Open3.capture2(env, "/bin/bash", BIN, stdin_data: stdin, err: File::NULL)
+
+      { out: out,
+        markers: Dir.glob(File.join(home, "projects", ".agents", "sessions", "*")),
+        calls: File.exist?(calls) ? File.read(calls).lines.map(&:strip) : [] }
+    end
+  end
+
+  def test_integration_a_sandboxed_unpinned_statusline_writes_no_marker
+    run = unpinned_sandboxed_run
+    assert_empty run[:markers],
+                 "a sandboxed run that cannot prove its marker destination must write NOTHING — " \
+                 "not fall back to <projects>/.agents/sessions"
+  end
+
+  # The other half of the same escape: the marker is only a THROTTLE for a real
+  # board call. Refusing the write must refuse the lease renewal with it, or the
+  # suite still heartbeats the production board on a live task slug.
+  def test_integration_a_sandboxed_unpinned_statusline_does_not_renew_the_claim
+    assert_empty unpinned_sandboxed_run[:calls],
+                 "no provable marker destination → no board heartbeat either"
+  end
+
+  # NON-FATAL, the load-bearing counterweight: narration must never block an
+  # agent's real work. The guard fails the WRITE, not the CALLER — the status line
+  # still renders in full.
+  def test_integration_the_marker_guard_never_kills_the_status_line
+    out = unpinned_sandboxed_run[:out]
+    assert_includes out, "mcritchie-studio", "the status line still renders when the marker write is refused"
+    assert_includes out, "…#{SESSION[-4..]}", "and still resolves the session — only the WRITE is refused"
+  end
+
+  # And the happy path it must NOT break: a sandboxed run that IS pinned writes its
+  # marker and renews normally. A guard that fails closed on the happy path is
+  # worse than the bug — the six heartbeat_calls tests above ride on this.
+  def test_integration_a_sandboxed_but_pinned_statusline_still_heartbeats
+    assert_equal ["heartbeat session-claim-lease-gate"], heartbeat_calls(stage: "building"),
+                 "pinned at a tmpdir, the destination is provable — narration works normally under test"
   end
 end

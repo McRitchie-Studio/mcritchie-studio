@@ -875,4 +875,54 @@ class AgentActivityCliTest < Minitest::Test
   def stub_response(code, body_hash)
     Struct.new(:code, :body).new(code, JSON.generate(body_hash))
   end
+
+  # --- [integration] the narration-marker sandbox (spawned-child vector) --------
+  #
+  # bin/atomic-event writes four markers into <projects>/.agents/sessions —
+  # .acting-agent, .open-activity, .open-span, .activity-usage.json — and resolved
+  # each by the CLAUDE_PROJECTS_DIR-else-real-projects-root FALLBACK. The tests in
+  # this file pin the root, but that pinning is a CONVENTION: nothing failed
+  # closed when a spawned child forgot. This is the assertion that it now does.
+  #
+  # `heartbeat` is the probe because it is LOCAL-only (no HTTP) — it writes
+  # .acting-agent straight to disk, so the guard is the only thing between the
+  # child and the operator's store. The unpinned case ABORTS before any IO, so
+  # this never writes the real store even when it goes red.
+  def spawn_unpinned(*argv)
+    env = SessionEnv.neutralized(
+      "CLAUDE_CODE_SESSION_ID" => SESSION,
+      "CLAUDE_PROJECTS_DIR" => nil,   # THE BUG: unset ⇒ falls back to the real ~/projects
+      "TASK_USAGE_SANDBOX" => "1"     # a test child always inherits this
+    )
+    Open3.capture3(env, RbConfig.ruby, BIN, *argv)
+  end
+
+  def test_integration_an_unpinned_marker_write_aborts_instead_of_reaching_the_real_store
+    _out, err, status = spawn_unpinned("heartbeat", "carl")
+
+    refute_predicate status, :success?, "a spawned child that cannot prove its marker destination must ABORT"
+    assert_match(/sandbox/i, err, "the abort must say WHY")
+    assert_includes err, "CLAUDE_PROJECTS_DIR", "and must name the var to pin"
+    refute_path_exists File.join(TaskUsageSandbox.real_state_dir, "sessions", "#{SESSION}.acting-agent"),
+                       "the operator's real marker store must be untouched"
+  end
+
+  # The happy path the guard must NOT break: pinned at a tmpdir, the same write
+  # lands normally. Narration keeps working under test — a guard that fails closed
+  # on the happy path is worse than the leak it closes.
+  def test_integration_a_pinned_marker_write_still_lands
+    Dir.mktmpdir do |proj|
+      env = SessionEnv.neutralized(
+        "CLAUDE_CODE_SESSION_ID" => SESSION,
+        "CLAUDE_PROJECTS_DIR" => proj,
+        "HOME" => proj,
+        "TASK_USAGE_SANDBOX" => "1"
+      )
+      _out, _err, status = Open3.capture3(env, RbConfig.ruby, BIN, "heartbeat", "carl")
+
+      assert_predicate status, :success?, "a PINNED sandboxed write must succeed"
+      marker = File.join(proj, ".agents", "sessions", "#{SESSION}.acting-agent")
+      assert_equal "carl\n", File.read(marker), "the sticky acting-agent still writes normally"
+    end
+  end
 end
