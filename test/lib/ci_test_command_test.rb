@@ -1178,6 +1178,25 @@ class CiTestCommandTest < Minitest::Test
     end
   end
 
+  # THE SENSITIVE HALF, PINNED. `runs_ruby_suite?` must see a REAL rails tier no matter
+  # how many flags precede it — the same flag-is-not-a-boundary rule, on the net probe.
+  # A flag before the tier used to end the task scan, so the suite went unseen and the
+  # step counted as neither suite nor opaque.
+  def test_the_suite_probe_sees_a_tier_past_any_number_of_flags
+    ["bin/rails db:test:prepare --trace test",             # one flag before the tier
+     "bin/rails --trace db:test:prepare test test:system", # flag before AND between
+     "docker compose run --rm web bin/rails test:system",  # a wrapper, a flag, then the tier
+     "sudo -u ci timeout 30m bin/rails db:test:prepare test test:system"].each do |cmd|
+      assert CiTestCommand.runs_ruby_suite?(cmd),
+             "`#{cmd}` runs the Ruby suite — a flag before the tier must not hide it"
+    end
+
+    # …and the `-e test` trap still holds PAST a flag: the scan stops at `runner`, so it
+    # never reaches the `test` that is merely the RAILS_ENV value of `-e`.
+    refute CiTestCommand.runs_ruby_suite?("bin/rails runner --trace -e test e2e/seed.rb"),
+           "`runner` ends the task list — the `test` after it is the -e value, not a tier"
+  end
+
   # Drop each vector one extra leading flag deeper — if the rule stopped at a flag,
   # exactly this shift would reopen the hole.
   def for_each_placement(base)
