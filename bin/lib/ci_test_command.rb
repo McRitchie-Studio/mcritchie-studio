@@ -49,6 +49,17 @@ require "yaml"
 # silent green.) "No ci.yml at all" is the one benign case and keeps falling back
 # to DEFAULT: a full-suite superset is honest, it just isn't CI's own line.
 #
+# THIS LANE RUNS ONE COMMAND — so it can only stand in for a CI suite that IS one
+# command. Two shapes are a suite the lane could run only PART of, and both REFUSE:
+#   * CI's test step is a MULTI-LINE `run: |` script — that is a script, not a
+#     command; the lane will not run a mangled first line and call it CI's suite.
+#   * CI's `test` job runs tests in MORE THAN ONE STEP — e.g. a `bin/rails test`
+#     step plus a `bin/rails db:test:prepare test:system` step, an utterly ordinary
+#     CI refactor. Taking the FIRST and dropping the rest certifies green with the
+#     system tier NEVER RUN: the same lie this module exists to kill, respelled.
+# The multi-step case is the one that used to fail OPEN (a `.find`). It fails
+# closed now, like its twin — because "partially CI's suite" is not CI's suite.
+#
 # THE COMMAND SHAPE IS LOAD-BEARING — do not "simplify" it.
 #   * `bin/rails test test:system` is BROKEN. `test` is a real rails COMMAND, so
 #     `test:system` parses as a PATH and the run dies with
@@ -176,24 +187,53 @@ module CiTestCommand
     nil # an unreadable/odd ci.yml must fall back, never raise inside a cert
   end
 
-  # The command the repo's ci.yml `test` job uses to RUN TESTS, or nil when there
-  # is none the cert lane can run verbatim.
+  # EVERY step in CI's `test` job that RUNS TESTS — the selection SET, not the first
+  # hit, and NOT pre-filtered to the ones this lane happens to be able to run. nil =
+  # no job to read; [] = a test job we recognize no tests in; ONE entry = the only
+  # shape this lane can stand in for; MORE THAN ONE = CI runs its suite across
+  # several commands, and a one-command lane can only ever run PART of it.
   #
-  # Located by what it DOES (`runs_tests?`), not by step name and not by the first
-  # mention of `bin/rails` — so neither renaming the step nor parking a setup step
-  # ahead of it can blind or hijack the resolver.
+  # Each step is judged by what it DOES (`runs_tests?`), not by step name and not by
+  # a `bin/rails` mention — so neither renaming a step nor parking a setup step ahead
+  # of the real one can blind or hijack the resolver.
   #
-  # A multi-line `run: |` block is deliberately NOT selectable: that is a SCRIPT,
-  # and the cert lane runs ONE command string — running a mangled first line and
-  # calling it CI's suite is the very failure this module exists to prevent. When
-  # CI's ONLY test step is a script, `refusal` says so out loud.
-  def self.for_root(root)
+  # Multi-line steps are counted HERE and rejected in `for_root`, deliberately: a
+  # script is a test step this lane cannot run, and pretending it isn't one would
+  # let a single-line step next to it resolve while the script is silently dropped —
+  # the drop being the whole bug. Count the suite first; judge runnability second.
+  def self.test_steps(root)
     steps = run_steps(root)
     return nil unless steps.is_a?(Array)
 
-    steps.map(&:strip)
-         .select { |run| single_line?(run) }
-         .find { |run| runs_tests?(run) }
+    steps.map(&:strip).select { |run| runs_tests?(run) }
+  end
+
+  # The ONE command the repo's ci.yml `test` job uses to RUN TESTS, or nil when there
+  # is none the cert lane can run VERBATIM.
+  #
+  # The invariant is positive and singular: CI runs its tests in EXACTLY ONE step,
+  # and that step is ONE line. Anything else is nil — which `refusal` turns into a
+  # loud abort. nil therefore covers "found none", "found a script", and "found
+  # SEVERAL", and the several case is a refusal, not a pick.
+  #
+  # That last one is why this method exists in this shape. It used to `.find` the
+  # first test step and silently drop the rest, so an utterly ordinary CI refactor —
+  #
+  #     - name: Run tests
+  #       run: bin/rails test
+  #     - name: Run system tests
+  #       run: bin/rails db:test:prepare test:system
+  #
+  # — resolved to `bin/rails test` and certified GREEN with ZERO system coverage: the
+  # exact lie this module exists to kill, in a different spelling. It is the same
+  # failure as the multi-line script (a suite the lane can only run PART of), and it
+  # failed OPEN where the script case already failed closed. Both refuse now.
+  def self.for_root(root)
+    steps = test_steps(root)
+    return nil unless steps.is_a?(Array) && steps.length == 1
+    return nil unless single_line?(steps.first)
+
+    steps.first
   end
 
   # What the cert lane should run for this repo: CI's command, else the default.
@@ -214,17 +254,32 @@ module CiTestCommand
     return nil if for_root(root)
 
     path = File.join(root.to_s, WORKFLOW)
+    tests = test_steps(root)
 
-    if steps.any? { |run| runs_tests?(run) }
+    if tests.length > 1
+      "#{path}'s `test` job runs its tests in #{tests.length} STEPS (#{tests.map { |run| label(run) }.inspect}) " \
+        "and this cert lane runs ONE command — it will not run one of them and call it CI's suite. Certifying " \
+        "on `#{label(tests.first)}` alone is exactly how a green cert lands with a whole tier NEVER RUN. Set " \
+        "FULL_SUITE_TEST_CMD to the single command that runs CI's suite for this repo, or collapse the CI " \
+        "steps into one."
+    elsif tests.any?
       "#{path}'s `test` job runs its tests from a MULTI-LINE `run:` script, and this cert lane runs ONE " \
         "command — it will not run a mangled first line and call it CI's suite. Set FULL_SUITE_TEST_CMD to " \
         "the single command that runs CI's suite for this repo, or collapse the CI step to one line."
     else
       "#{path}'s `test` job has #{steps.length} `run` step(s) and NONE of them runs tests " \
-        "(#{steps.map { |run| run.strip.lines.first.to_s.strip }.inspect}). This cert stands in for CI, so it " \
+        "(#{steps.map { |run| label(run) }.inspect}). This cert stands in for CI, so it " \
         "will not certify a command that runs no tests — that is how a green cert comes to mean nothing. Add " \
         "the test step to CI, or set FULL_SUITE_TEST_CMD to the command that runs this repo's suite."
     end
+  end
+
+  # A step's one-line name for an operator-facing message: multi-line scripts are
+  # shown by their first line with an ellipsis, so a refusal stays readable and the
+  # operator can still tell WHICH step it means.
+  def self.label(run)
+    first = run.to_s.strip.lines.first.to_s.strip
+    single_line?(run) ? first : "#{first} …"
   end
 
   # Does this command run the SYSTEM tier (and therefore need a browser)?

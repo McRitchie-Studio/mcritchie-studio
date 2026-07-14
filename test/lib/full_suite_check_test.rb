@@ -317,6 +317,29 @@ class FullSuiteCheckTest < Minitest::Test
     end
   end
 
+  # --- [integration] CI's suite split ACROSS STEPS is refused, not half-run -------
+  # THE SECOND REGRESSION, end to end. The resolver used to `.find` the FIRST step
+  # that runs tests and silently drop the rest — so the most ordinary CI refactor
+  # there is (give the system tier its own step, so the log reads nicely) made the
+  # lane run `bin/rails test` and stamp `[full-suite@<fp>] … green` with test/system
+  # NEVER RUN. Green cert, zero system coverage: the exact bug this task exists to
+  # kill, respelled. A one-command lane cannot stand in for a suite CI runs in two
+  # commands, so it REFUSES — like the multi-line script already did.
+
+  def test_ci_that_runs_its_tests_in_two_steps_is_refused_not_half_certified
+    split = ["bin/rails test", "bin/rails db:test:prepare test:system"]
+    with_ci_repo(ci_steps: split) do |dir, log|
+      out, code = run_default_test_lane(dir)
+
+      assert_equal 1, code, out
+      assert_match(/2 STEPS/, out, "the refusal must name how many test steps CI has")
+      assert_match(/test:system/, out, "and NAME the step the lane would have dropped")
+      refute_match(/\[full-suite@/, out, "a half-run suite must certify NOTHING")
+      refute_path_exists log,
+                         "the lane RAN CI's first test step — that is the green cert with no system tier, back again"
+    end
+  end
+
   def test_test_lane_runs_the_system_tier_even_with_no_ci_workflow
     # No ci.yml to read → the fallback default. It must still carry the system tier;
     # a fallback that quietly drops it would reopen the hole for any repo whose CI

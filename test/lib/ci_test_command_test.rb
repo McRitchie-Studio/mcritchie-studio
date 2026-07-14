@@ -190,12 +190,203 @@ class CiTestCommandTest < Minitest::Test
     end
   end
 
+  # --- CI RUNS ITS TESTS IN MORE THAN ONE STEP ---------------------------------
+  # THE SECOND BOUNCE. The multi-LINE script above already refused, for the reason
+  # that "a suite this ONE-command lane can only run PART of is not a suite it can
+  # certify". The multi-STEP spelling of that same failure fails OPEN: the resolver
+  # `.find`-ed the FIRST test step and silently dropped the rest.
+  #
+  # The trigger is not exotic. It is the most ordinary CI refactor there is — split
+  # the system tier into its own step so the log reads nicely:
+  #
+  #     - name: Run tests          run: bin/rails test
+  #     - name: Run system tests   run: bin/rails db:test:prepare test:system
+  #
+  # The lane then certified on `bin/rails test`: GREEN, with test/system NEVER RUN.
+  # That is precisely the bug this whole task exists to kill, respelled. Only the hub
+  # is pinned by test_the_fallback_default_matches_the_hubs_own_ci_command; turf-monster
+  # and rolio have no such guard, and full-suite-check is rolio's ONLY cert route.
+  #
+  # The invariant is now positive and singular: CI runs its tests in EXACTLY ONE
+  # step, and that step is ONE line. Everything else refuses.
+
+  def test_tests_split_across_two_steps_is_a_refusal_not_a_silent_first_pick
+    yaml = <<~YAML
+      jobs:
+        test:
+          steps:
+            - name: Run tests
+              run: bin/rails test
+            - name: Run system tests
+              run: bin/rails db:test:prepare test:system
+    YAML
+    with_ci(yaml) do |dir|
+      refusal = CiTestCommand.refusal(dir)
+
+      assert_nil CiTestCommand.for_root(dir),
+                 "picked ONE of CI's two test steps — a green cert with the system tier NEVER RUN"
+      refute_nil refusal, "CI's suite is split across steps and this lane runs ONE command — it must REFUSE"
+      assert_match(/2 STEPS/, refusal, "the refusal must say HOW MANY steps it saw")
+      assert_match(/bin\/rails test/, refusal, "the refusal must NAME the steps, so it is actionable")
+      assert_match(/test:system/, refusal, "the refusal must name the step that would have been DROPPED")
+      assert_match(/FULL_SUITE_TEST_CMD/, refusal, "the refusal must hand over the way out")
+    end
+  end
+
+  def test_the_dropped_step_is_exactly_the_system_tier_the_cert_would_have_missed
+    # The consequence, spelled out: had the resolver picked the first step, the cert
+    # would have run a command with NO system tier — the original bug, restored.
+    yaml = <<~YAML
+      jobs:
+        test:
+          steps:
+            - run: bin/rails test
+            - run: bin/rails db:test:prepare test:system
+    YAML
+    with_ci(yaml) do |dir|
+      refute CiTestCommand.system_tier?("bin/rails test"),
+             "sanity: the step the OLD resolver picked carries no system tier"
+      assert_nil CiTestCommand.for_root(dir), "so it must not be selectable at all"
+    end
+  end
+
+  def test_three_test_steps_refuse_and_the_message_counts_them
+    # Sharding the suite into tiers — unit, integration, system — is a normal thing
+    # for a CI to do. It is still N commands, and this lane runs one.
+    yaml = <<~YAML
+      jobs:
+        test:
+          steps:
+            - name: Unit
+              run: bin/rails test test/models
+            - name: Integration
+              run: bin/rails test test/integration
+            - name: System
+              run: bin/rails db:test:prepare test:system
+    YAML
+    with_ci(yaml) do |dir|
+      assert_nil CiTestCommand.for_root(dir)
+      assert_match(/3 STEPS/, CiTestCommand.refusal(dir).to_s)
+    end
+  end
+
+  def test_a_single_line_test_step_beside_a_multiline_test_script_refuses
+    # The mixed shape, and the reason `test_steps` counts SCRIPTS too. Filter the
+    # scripts out before counting and this resolves to the single-line step while
+    # CI's other test step is silently dropped — the same drop, one layer down.
+    yaml = <<~YAML
+      jobs:
+        test:
+          steps:
+            - name: Run tests
+              run: bin/rails db:test:prepare test test:system
+            - name: Extra tests
+              run: |
+                export FOO=1
+                bin/rails test:system
+    YAML
+    with_ci(yaml) do |dir|
+      assert_nil CiTestCommand.for_root(dir),
+                 "resolved to the runnable step and dropped CI's other test step"
+      assert_match(/2 STEPS/, CiTestCommand.refusal(dir).to_s)
+    end
+  end
+
+  def test_a_test_step_FOLLOWED_by_a_setup_step_still_resolves
+    # The near-miss that must NOT refuse: only ONE step runs tests. A setup step
+    # AFTER the tests is still a setup step — the count is what matters, not the
+    # position, and over-refusing would break every repo with a trailing step.
+    yaml = <<~YAML
+      jobs:
+        test:
+          steps:
+            - name: Run tests
+              run: bin/rails db:test:prepare test test:system
+            - name: Precompile
+              run: bin/rails assets:precompile
+            - name: Upload coverage
+              run: bin/rails coverage:report
+    YAML
+    with_ci(yaml) do |dir|
+      assert_equal "bin/rails db:test:prepare test test:system", CiTestCommand.for_root(dir)
+      assert_nil CiTestCommand.refusal(dir), "one test step + trailing setup is CI's suite, verbatim"
+    end
+  end
+
+  def test_a_matrix_test_job_with_one_test_step_still_resolves
+    # A `strategy: matrix` job is still ONE list of steps. The matrix must not be
+    # mistaken for a split suite — CI runs this one command, per matrix leg.
+    yaml = <<~YAML
+      jobs:
+        test:
+          strategy:
+            matrix:
+              ruby: ["3.3", "3.4"]
+          steps:
+            - name: Setup
+              run: bundle install
+            - name: Run tests
+              run: bin/rails db:test:prepare test test:system
+    YAML
+    with_ci(yaml) do |dir|
+      assert_equal "bin/rails db:test:prepare test test:system", CiTestCommand.for_root(dir)
+      assert_nil CiTestCommand.refusal(dir)
+    end
+  end
+
+  def test_a_matrix_test_job_that_shards_tests_across_steps_refuses
+    yaml = <<~YAML
+      jobs:
+        test:
+          strategy:
+            matrix:
+              shard: [1, 2]
+          steps:
+            - name: Run tests
+              run: bin/rails test
+            - name: Run system tests
+              run: bin/rails db:test:prepare test:system
+    YAML
+    with_ci(yaml) do |dir|
+      assert_nil CiTestCommand.for_root(dir)
+      assert_match(/2 STEPS/, CiTestCommand.refusal(dir).to_s)
+    end
+  end
+
+  def test_several_test_invocations_CHAINED_INSIDE_one_step_still_resolve
+    # The boundary of the rule. `&&`-chaining the tiers inside ONE step is ONE
+    # command string — the lane CAN run it verbatim, so it must not refuse. The
+    # refusal is about steps the lane would DROP, not about how many tiers run.
+    yaml = <<~YAML
+      jobs:
+        test:
+          steps:
+            - name: Run tests
+              run: bin/rails db:test:prepare && bin/rails test && bin/rails test:system
+    YAML
+    with_ci(yaml) do |dir|
+      assert_equal "bin/rails db:test:prepare && bin/rails test && bin/rails test:system",
+                   CiTestCommand.for_root(dir)
+      assert_nil CiTestCommand.refusal(dir)
+      assert CiTestCommand.system_tier?(CiTestCommand.resolve(dir)), "and the browser guard still sees the tier"
+    end
+  end
+
   def test_no_ci_workflow_is_not_a_refusal
     # The one benign case: nothing to read, so DEFAULT (a full-suite SUPERSET) is
     # honest. It runs MORE than CI, never less — that can't produce a lying cert.
     with_ci(nil) { |dir| assert_nil CiTestCommand.refusal(dir) }
     with_ci("jobs: [this is not: a map\n") { |dir| assert_nil CiTestCommand.refusal(dir) }
   end
+
+  # NOTE on the OTHER repos. turf-monster's and rolio's ci.yml cannot be asserted
+  # from the hub's suite — they are not checked out in CI, and a test that skips
+  # when its subject is absent asserts nothing. The hub's own ci.yml IS pinned
+  # (test_the_hub_resolves_to_its_own_ci_command, and the DEFAULT drift guard
+  # below), and both now also guard the multi-STEP case for free: split the hub's
+  # CI into two test steps and `for_root` returns nil, so those tests go red. For
+  # turf-monster and rolio the REFUSAL is the guard — it fires at cert time, in
+  # their own root, which is the only place the truth is readable.
 
   def test_a_readable_test_command_is_not_a_refusal
     yaml = <<~YAML
