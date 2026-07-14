@@ -24,8 +24,9 @@ module Api
         task = tasks(:in_progress_task)
         task.update!(metadata: { "devops" => ClaimLease.renewed(session: "sess-1", nonce: "inst-A", now: now) })
         TaskEvent.where(task_slug: task.slug).delete_all
+        # to_stage IS the checkpoint's name (record_checkpoint_event writes it there).
         TaskEvent.create!(task_slug: task.slug, kind: TaskEvent::CHECKPOINT, occurred_at: now - 3.minutes,
-                          from_stage: "building", to_stage: "building", metadata: { "status" => "started" })
+                          from_stage: "building", to_stage: "cert", metadata: { "status" => "started" })
 
         get api_v1_task_path(task.slug), headers: @headers
 
@@ -37,6 +38,23 @@ module Api
         assert body["last_progress_at"].present?
       end
 
+      # The projection the claim gate reads must name a NON-cert checkpoint correctly:
+      # this is the string a second agent sees before deciding to take the desk.
+      test "show names a review check-in by its own lane, not as a cert" do
+        now = Time.current
+        task = tasks(:in_progress_task)
+        task.update!(metadata: { "devops" => ClaimLease.renewed(session: "sess-1", nonce: "inst-A", now: now) })
+        TaskEvent.where(task_slug: task.slug).delete_all
+        TaskEvent.create!(task_slug: task.slug, kind: TaskEvent::CHECKPOINT, occurred_at: now - 3.minutes,
+                          from_stage: "building", to_stage: "review_primary_complete",
+                          metadata: { "status" => "passed" })
+
+        get api_v1_task_path(task.slug), headers: @headers
+
+        assert_response :success
+        assert_equal "review_primary_complete passed", response.parsed_body["data"]["last_progress_label"]
+      end
+
       # A live claim that has landed nothing in hours reads quiet — and the lease is
       # untouched by it. The task is still HELD; nothing was reclaimed.
       test "show reports a quiet claim without touching the lease" do
@@ -44,8 +62,9 @@ module Api
         task = tasks(:in_progress_task)
         task.update!(metadata: { "devops" => ClaimLease.renewed(session: "sess-1", nonce: "inst-A", now: now) })
         TaskEvent.where(task_slug: task.slug).delete_all
-        TaskEvent.create!(task_slug: task.slug, kind: TaskEvent::CHECKPOINT, occurred_at: now - 5.hours,
-                          from_stage: "building", to_stage: "building", metadata: { "status" => "started" })
+        silence = ClaimLease::PROGRESS_QUIET_SECONDS + 30.minutes
+        TaskEvent.create!(task_slug: task.slug, kind: TaskEvent::CHECKPOINT, occurred_at: now - silence,
+                          from_stage: "building", to_stage: "cert", metadata: { "status" => "started" })
         lease_before = task.devops.slice(*ClaimLease::CLAIM_KEYS)
 
         get api_v1_task_path(task.slug), headers: @headers

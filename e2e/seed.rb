@@ -301,10 +301,13 @@ quiet_claim_task = Task.create!(
   stage: "building", priority: 1, agent_slug: "carl",
   metadata: { "devops" => e2e_claim }
 )
-# Its only durable artifact is 5 hours old: past the conservative quiet threshold.
-TaskEvent.where(task_slug: quiet_claim_task.slug).update_all(occurred_at: 6.hours.ago)
+# Its only durable artifact sits past the derived quiet threshold — stated relative
+# to the threshold so the fixture keeps demonstrating quiet if the corpus is
+# re-measured. to_stage carries the checkpoint's NAME, exactly as the app writes it.
+quiet_silence = ClaimLease::PROGRESS_QUIET_SECONDS + 30.minutes
+TaskEvent.where(task_slug: quiet_claim_task.slug).update_all(occurred_at: (quiet_silence + 1.hour).ago)
 TaskEvent.create!(task_slug: quiet_claim_task.slug, kind: TaskEvent::CHECKPOINT,
-                  from_stage: "building", to_stage: "building", occurred_at: 5.hours.ago,
+                  from_stage: "building", to_stage: "cert", occurred_at: quiet_silence.ago,
                   metadata: { "status" => "started" })
 
 working_claim_task = Task.create!(

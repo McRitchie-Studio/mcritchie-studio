@@ -14,6 +14,12 @@
 require "test_helper"
 
 class TaskProgressTest < ActiveSupport::TestCase
+  # Silences are stated RELATIVE TO THE THRESHOLD, never as literals: the threshold
+  # is derived from the measured corpus (ClaimLease::MEASURED_SILENCE_SECONDS) and
+  # moves when the corpus is re-measured. A fixture pinning "5.hours" would quietly
+  # stop testing quiet the day the threshold passed it.
+  QUIET_SILENCE = ClaimLease::PROGRESS_QUIET_SECONDS + 30.minutes
+
   setup do
     @now = Time.current
     @task = tasks(:in_progress_task) # stage: building
@@ -21,9 +27,17 @@ class TaskProgressTest < ActiveSupport::TestCase
     TaskEvent.where(task_slug: @task.slug).delete_all
   end
 
-  def task_event!(kind:, at:, metadata: {})
+  # A checkpoint's NAME rides in `to_stage` — record_checkpoint_event writes
+  # `to_stage: name`. Fixtures must write it the way the app does, or they test a
+  # row shape no code produces (which is how a hardcoded "cert" label survived a
+  # whole suite of checkpoint fixtures).
+  def task_event!(kind:, at:, to_stage: "building", metadata: {})
     TaskEvent.create!(task_slug: @task.slug, kind: kind, occurred_at: at,
-                      from_stage: "building", to_stage: "building", metadata: metadata)
+                      from_stage: "building", to_stage: to_stage, metadata: metadata)
+  end
+
+  def checkpoint!(name:, status:, at:)
+    task_event!(kind: TaskEvent::CHECKPOINT, at: at, to_stage: name, metadata: { "status" => status })
   end
 
   # `updated_at` is the evidence timestamp: the moment this gate row last WROTE
@@ -36,7 +50,7 @@ class TaskProgressTest < ActiveSupport::TestCase
   end
 
   test "last_progress_at reads the most recent durable artifact" do
-    task_event!(kind: TaskEvent::CHECKPOINT, at: @now - 20.minutes, metadata: { "status" => "started" })
+    checkpoint!(name: "cert", status: "started", at: @now - 20.minutes)
     gate!(started_at: @now - 5.minutes)
 
     assert_in_delta (@now - 5.minutes).to_i, @task.last_progress_at.to_i, 2
@@ -45,9 +59,29 @@ class TaskProgressTest < ActiveSupport::TestCase
   end
 
   test "a cert checkpoint is durable progress and names itself" do
-    task_event!(kind: TaskEvent::CHECKPOINT, at: @now - 3.minutes, metadata: { "status" => "started" })
+    checkpoint!(name: "cert", status: "started", at: @now - 3.minutes)
 
     assert_equal "cert started", @task.last_progress_label
+  end
+
+  # THE VECTOR THE SUITE WAS MISSING. Every checkpoint fixture in this suite was a
+  # cert, so a label hardcoded to "cert" passed everything — and a review check-in
+  # rendered as "cert passed" to the second agent deciding whether to take the desk.
+  # Checkpoints are not cert-only: record_review_check_in routes through the same
+  # spine, and `bin/task checkpoint <slug> <name>` takes an arbitrary name. The label
+  # must report the checkpoint the task ACTUALLY produced.
+  test "a review check-in names its own lane and is never called a cert" do
+    checkpoint!(name: "review_primary_complete", status: "passed", at: @now - 4.minutes)
+
+    assert_equal "review_primary_complete passed", @task.last_progress_label
+    assert_no_match(/cert/, @task.last_progress_label,
+                    "a review check-in is not a cert; the board may not name an artifact it never saw")
+  end
+
+  test "an arbitrary named checkpoint carries its own name through" do
+    checkpoint!(name: "qa_smoke", status: "failed", at: @now - 4.minutes)
+
+    assert_equal "qa_smoke failed", @task.last_progress_label
   end
 
   test "a closed gate reports its verdict as the artifact" do
@@ -56,28 +90,49 @@ class TaskProgressTest < ActiveSupport::TestCase
     assert_equal "g1_cert failed", @task.last_progress_label
   end
 
+  # A transition names the stage the EVENT moved to, read from the event's own
+  # column — not the task's current stage, which is a different fact the moment a
+  # later move lands.
+  test "a transition names the stage its own event moved to" do
+    task_event!(kind: TaskEvent::TRANSITION, at: @now - 6.minutes, to_stage: "designed")
+
+    assert_equal "moved to designed", @task.last_progress_label
+    assert_equal "building", @task.stage, "precondition: the task's CURRENT stage differs"
+  end
+
   # --- The 2026-07-13 regression, both halves -------------------------------
 
   test "a live lease that has made no durable write reads quiet" do
-    task_event!(kind: TaskEvent::CHECKPOINT, at: @now - 5.hours, metadata: { "status" => "completed" })
+    checkpoint!(name: "cert", status: "completed", at: @now - QUIET_SILENCE)
 
     assert @task.claim_live?(now: @now), "precondition: the lease is live (terminal painting)"
     assert @task.claim_progress_quiet?(now: @now), "a held desk producing nothing must read quiet"
   end
 
   test "a live lease making cert-checkpoint writes does not read quiet" do
-    task_event!(kind: TaskEvent::CHECKPOINT, at: @now - 2.minutes, metadata: { "status" => "started" })
+    checkpoint!(name: "cert", status: "started", at: @now - 2.minutes)
 
     assert @task.claim_live?(now: @now)
     refute @task.claim_progress_quiet?(now: @now)
+  end
+
+  # The threshold clears the measured healthy corpus, at the model layer too: a desk
+  # silent for the quietest 1 percent of HEALTHY work still wears no chip.
+  test "a healthy p99 silence is not quiet" do
+    healthy_p99 = ClaimLease::MEASURED_SILENCE_SECONDS.fetch(:healthy_p99)
+    checkpoint!(name: "cert", status: "started", at: @now - healthy_p99)
+
+    assert @task.claim_live?(now: @now)
+    refute @task.claim_progress_quiet?(now: @now),
+           "the quietest 1 percent of HEALTHY windows must never render as trouble"
   end
 
   # THE TRAP: a legitimate long cert makes zero board writes for many minutes
   # (prod: p90 13m, p99 94m). An in-flight gate proves work is running, so a long
   # silent build keeps its desk and wears no chip.
   test "a long-running cert with an open gate is never quiet" do
-    task_event!(kind: TaskEvent::CHECKPOINT, at: @now - 5.hours, metadata: { "status" => "started" })
-    gate!(started_at: @now - 5.hours) # opened, never closed: still running
+    checkpoint!(name: "cert", status: "started", at: @now - QUIET_SILENCE)
+    gate!(started_at: @now - QUIET_SILENCE) # opened, never closed: still running
 
     assert @task.gate_in_flight?(now: @now)
     refute @task.claim_progress_quiet?(now: @now), "a healthy long build must never be flagged"
@@ -101,7 +156,7 @@ class TaskProgressTest < ActiveSupport::TestCase
 
   test "quiet is only ever said about a live claim" do
     @task.update!(metadata: { "devops" => ClaimLease.renewed(session: "sess-1", nonce: "inst-A", now: @now - 3.hours) })
-    task_event!(kind: TaskEvent::CHECKPOINT, at: @now - 5.hours, metadata: { "status" => "started" })
+    checkpoint!(name: "cert", status: "started", at: @now - QUIET_SILENCE)
 
     refute @task.claim_live?(now: @now), "precondition: the lease has lapsed"
     refute @task.claim_progress_quiet?(now: @now)
@@ -111,7 +166,7 @@ class TaskProgressTest < ActiveSupport::TestCase
   # lease is untouched, so the claim gate and the reclaim guard behave exactly as
   # they did before — a quiet desk is still a HELD desk.
   test "a quiet task keeps its lease and still reads as held by its live instance" do
-    task_event!(kind: TaskEvent::CHECKPOINT, at: @now - 5.hours, metadata: { "status" => "started" })
+    checkpoint!(name: "cert", status: "started", at: @now - QUIET_SILENCE)
     before = @task.devops.slice(*ClaimLease::CLAIM_KEYS)
 
     assert @task.claim_progress_quiet?(now: @now)

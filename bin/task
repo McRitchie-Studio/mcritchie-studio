@@ -263,15 +263,9 @@ def progress_line(task)
   label = task["last_progress_label"].to_s
   detail = label.empty? ? "" : " (#{label})"
   quiet = task["progress_quiet"] ? "  ← held, but nothing has landed in a long time" : ""
-  "last durable progress ~#{humanize_seconds(seconds)} ago#{detail}#{quiet}"
-end
-
-def humanize_seconds(seconds)
-  seconds = seconds.to_i
-  return "#{seconds}s" if seconds < 60
-  return "#{(seconds / 60.0).round}m" if seconds < 3600
-
-  "#{(seconds / 3600.0).round(1)}h"
+  # ClaimLease owns the formatter (required above): the gate and the board card
+  # state the same fact, so they render it through the same code.
+  "last durable progress ~#{ClaimLease.humanize_age(seconds)} ago#{detail}#{quiet}"
 end
 
 SCALAR_FLAGS = {

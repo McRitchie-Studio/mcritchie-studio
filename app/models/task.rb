@@ -578,10 +578,14 @@ class Task < ApplicationRecord
   # A gate is demonstrably running right now (opened, never closed, and recently
   # enough to be plausible). Open gate rows latch forever when a run crashes, so
   # this is BOUNDED — an ancient open gate is not evidence of anything.
+  #
+  # Filtered in Ruby over the SAME association progress_evidence reads, so the board
+  # (which preloads :gate_runs) answers this from loaded rows instead of issuing a
+  # fresh EXISTS on every call — and the card asks two or three times per live desk.
   def gate_in_flight?(now: Time.current)
-    gate_runs.where(finished_at: nil)
-             .where(started_at: (now - PROGRESS_IN_FLIGHT_BUDGET)..now)
-             .exists?
+    window = (now - PROGRESS_IN_FLIGHT_BUDGET)..now
+
+    gate_runs.any? { |gate| gate.finished_at.nil? && gate.started_at.present? && window.cover?(gate.started_at) }
   end
 
   # Held by a live session, yet nothing durable has landed in a long time.
@@ -1133,8 +1137,10 @@ class Task < ApplicationRecord
   private
 
   # [[time, label], ...] — the durable artifacts this task has produced. Reads the
-  # LOADED association when there is one (the board preloads :task_events, so the
-  # card's chip costs it no extra query) and falls back to a query otherwise.
+  # LOADED associations when there are any: the board preloads BOTH :task_events and
+  # :gate_runs, so a card's chip costs it no extra query. Off the board (a single
+  # task, the API) each association loads once and is then cached on the record, so
+  # the repeated asks the chip makes still cost nothing further.
   def progress_evidence
     evidence = []
 
@@ -1149,10 +1155,27 @@ class Task < ApplicationRecord
 
   def progress_event_label(event)
     case event.kind
-    when TaskEvent::CHECKPOINT then "cert #{event.metadata['status'].presence || 'checkpoint'}"
+    when TaskEvent::CHECKPOINT then checkpoint_label(event)
     when TaskEvent::INTENT     then "intent recorded"
-    else "moved to #{stage}"
+    # The event's OWN destination, not the task's current stage. The row carries the
+    # fact one column away; reading the task instead reports where the task is NOW,
+    # which is a different (and, once a later move lands, wrong) claim.
+    else "moved to #{event.to_stage.presence || stage}"
     end
+  end
+
+  # A checkpoint's NAME is its `to_stage` (record_checkpoint_event writes
+  # `to_stage: name`), and checkpoints are NOT cert-only: review check-ins route
+  # through the same spine (`review_primary_complete`), and `bin/task checkpoint
+  # <slug> <name>` takes an arbitrary name. This label used to hardcode "cert", so a
+  # review check-in rendered as "cert passed" — the board naming an artifact it had
+  # never seen, and naming it in the one string the claim gate shows a second agent
+  # deciding whether to take the desk. Read the name off the event.
+  def checkpoint_label(event)
+    name = event.to_stage.to_s.strip.presence || "checkpoint"
+    status = event.metadata.to_h["status"].presence
+
+    status ? "#{name} #{status}" : name
   end
 
   def progress_gate_label(gate)

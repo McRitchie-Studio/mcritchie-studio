@@ -644,8 +644,14 @@ polarity flipped, and it trains every reader to ignore it.
 What ships instead is honest and quiet about its limits:
 
 - the **age** is always shown for a live claim — a fact, not a verdict;
-- a conservative `quiet` note (default 2h, past the measured p99 of both healthy
-  silence and cert duration, suppressed while a gate is in flight, and **healthy
-  whenever the fact is unknown**);
+- a conservative `quiet` note, **derived from the measurements above rather than
+  chosen**: `ClaimLease::PROGRESS_QUIET_SECONDS` = the worst measured healthy
+  window (the 125m p99) × 1.5 = **3h07m**. It carries a margin because at n=243
+  that p99 rests on two or three tail observations — a point estimate the corpus
+  cannot pin down — and a threshold parked ON it would flag healthy desks whenever
+  the tail breathed. It is suppressed while a gate is in flight, and reads
+  **healthy whenever the fact is unknown**. Re-measure the corpus and the
+  threshold moves with it; the guard test asserts the property (no measured
+  healthy window may ever render quiet), never the literal;
 - **nothing is destructive.** Quiet reclaims no desk, blocks no move, and never
   touches the lease. A quiet desk is still a HELD desk.

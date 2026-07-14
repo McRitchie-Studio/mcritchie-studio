@@ -145,13 +145,17 @@
       wedged agent, so on its own it lies about progress. Beside it we state what the
       task has actually PRODUCED — its last durable artifact and how long ago — and let
       the reader judge. No STALLED verdict: measured over 243 real work windows, a
-      "no durable write in 15m" rule flags 79% of HEALTHY desks (see ClaimLease).
-      Only computed for a live-claimed building card (a handful at a time), so the
-      two evidence lookups never become a board-wide N+1. %>
+      "no durable write in 15m" rule flags four of every five HEALTHY desks (see
+      ClaimLease). Both evidence associations are preloaded by load_board, so the chip
+      reads them from loaded rows and adds no query per card.
+
+      The quiet tone is the house amber pair (text-amber-700 dark:text-amber-300), not a
+      dark-only class: the ALARM state is the one that most needs to be legible, and
+      amber-300 on a near-white light-theme surface is the one place it would wash out. %>
   <% if task.stage == "building" && task.claim_live? %>
     <% progress_seconds = task.progress_seconds_ago %>
     <% progress_quiet = task.claim_progress_quiet? %>
-    <div class="flex items-center gap-1.5 mb-1.5 text-[10px] <%= progress_quiet ? "text-amber-300/90" : "text-muted" %>"
+    <div class="flex items-center gap-1.5 mb-1.5 text-[10px] <%= progress_quiet ? "text-amber-700 dark:text-amber-300" : "text-muted" %>"
          data-test="task-card-claim-progress"
          data-progress-quiet="<%= progress_quiet %>"
          title="<%= claim_progress_title(task, progress_seconds) %>">

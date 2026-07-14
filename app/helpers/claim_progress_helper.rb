@@ -42,11 +42,10 @@ module ClaimProgressHelper
     lines.join(" ")
   end
 
+  # One formatter, in ClaimLease, shared with the claim gate bin/task prints. The
+  # card and the gate state the SAME fact; they must not be able to word it
+  # differently.
   def claim_progress_age(seconds)
-    seconds = seconds.to_i
-    return "#{seconds}s" if seconds < 60
-    return "#{(seconds / 60.0).round}m" if seconds < 3600
-
-    "#{(seconds / 3600.0).round(1)}h"
+    ClaimLease.humanize_age(seconds)
   end
 end

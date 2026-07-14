@@ -463,10 +463,10 @@ class TaskCardTest < ActionView::TestCase
   # Creating a Task writes its genesis TaskEvent — itself durable progress, stamped
   # NOW. Backdate the spine so each test's own evidence is the latest artifact,
   # the way a real mid-build task looks hours after it was opened.
-  def claimed_building_task(title:, now: Time.current)
+  def claimed_building_task(title:, now: Time.current, genesis_age: 6.hours)
     task = Task.create!(title: title, stage: "building")
     task.update!(metadata: { "devops" => ClaimLease.renewed(session: "sess-1", nonce: "inst-A", now: now) })
-    TaskEvent.where(task_slug: task.slug).update_all(occurred_at: now - 6.hours)
+    TaskEvent.where(task_slug: task.slug).update_all(occurred_at: now - genesis_age)
     task.reload
   end
 
@@ -490,18 +490,57 @@ class TaskCardTest < ActionView::TestCase
 
   # The regression: a lease that keeps heartbeating while nothing lands is HELD but
   # quiet. The card says so in words — it does not reclaim, and the desk stays held.
+  # The silence is derived from the threshold (not a pinned "5 hours"), so this keeps
+  # testing quiet when the corpus is re-measured and the threshold moves.
   test "[component] a live claim with no durable write in hours renders the quiet chip" do
     now = Time.current
-    task = claimed_building_task(title: "Quiet build card chip", now: now)
-    TaskEvent.create!(task_slug: task.slug, kind: TaskEvent::CHECKPOINT, occurred_at: now - 5.hours,
-                      from_stage: "building", to_stage: "building", metadata: { "status" => "started" })
+    silence = ClaimLease::PROGRESS_QUIET_SECONDS + 30.minutes
+    task = claimed_building_task(title: "Quiet build card chip", now: now, genesis_age: silence + 1.hour)
+    TaskEvent.create!(task_slug: task.slug, kind: TaskEvent::CHECKPOINT, occurred_at: now - silence,
+                      from_stage: "building", to_stage: "cert", metadata: { "status" => "started" })
 
     render_card(task)
 
     chip = css_select("[data-test='task-card-claim-progress']").first
     assert_equal "true", chip["data-progress-quiet"]
-    assert_match(/progress 5\.0h ago \(cert started\)/, chip.text)
-    assert_includes chip["class"], "text-amber-300/90"
+    assert_match(/progress #{Regexp.escape(ClaimLease.humanize_age(silence))} ago \(cert started\)/, chip.text)
+  end
+
+  # THEME PARITY. The quiet chip is the ALARM state — the one that most needs to be
+  # seen — and it shipped dark-only (bare text-amber-300/90), which on the light
+  # theme's near-white surface washes out to nothing. Every other tone on this card
+  # is a light/dark PAIR (see the blocked tone above); so is this one now.
+  test "[component] the quiet chip is legible in both themes" do
+    now = Time.current
+    silence = ClaimLease::PROGRESS_QUIET_SECONDS + 30.minutes
+    task = claimed_building_task(title: "Quiet chip theme parity", now: now, genesis_age: silence + 1.hour)
+    TaskEvent.create!(task_slug: task.slug, kind: TaskEvent::CHECKPOINT, occurred_at: now - silence,
+                      from_stage: "building", to_stage: "cert", metadata: { "status" => "started" })
+
+    render_card(task)
+
+    chip = css_select("[data-test='task-card-claim-progress']").first
+    assert_equal "true", chip["data-progress-quiet"], "precondition: this is the quiet (alarm) state"
+    assert_includes chip["class"], "text-amber-700", "the alarm tone must be legible on the LIGHT theme"
+    assert_includes chip["class"], "dark:text-amber-300", "and carry its own tone on the DARK theme"
+    assert_not_includes chip["class"], "text-amber-300/90",
+                        "the dark-only tone is illegible on a light surface — pair it or lose it"
+  end
+
+  # The chip names the artifact the task ACTUALLY produced. A review check-in is not
+  # a cert, and the card is what a second agent reads before taking the desk.
+  test "[component] the chip names a non-cert checkpoint by its own lane" do
+    now = Time.current
+    task = claimed_building_task(title: "Review checkpoint chip", now: now)
+    TaskEvent.create!(task_slug: task.slug, kind: TaskEvent::CHECKPOINT, occurred_at: now - 4.minutes,
+                      from_stage: "building", to_stage: "review_primary_complete",
+                      metadata: { "status" => "passed" })
+
+    render_card(task)
+
+    chip = css_select("[data-test='task-card-claim-progress']").first
+    assert_match(/review_primary_complete passed/, chip.text)
+    assert_no_match(/cert/, chip.text, "the board may not call a review check-in a cert")
   end
 
   # A healthy long build (a 90-minute cert is real — prod p99 is 94m) must never

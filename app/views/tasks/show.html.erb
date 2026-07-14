@@ -49,7 +49,9 @@
                 title="Build claim is live — a session looks active in another terminal (last heartbeat ~<%= @task.claim_heartbeat_seconds_ago %>s ago). Resume anyway?">
             <span class="w-1.5 h-1.5 rounded-full bg-mint-400 animate-pulse"></span>live
           </span>
-          <span class="inline-flex items-center gap-1 text-xs <%= @task.claim_progress_quiet? ? "text-amber-300/90" : "text-muted" %>"
+          <%# Quiet wears the house amber pair so the alarm state stays legible on the
+              light theme too; healthy uses the theme-aware muted token. %>
+          <span class="inline-flex items-center gap-1 text-xs <%= @task.claim_progress_quiet? ? "text-amber-700 dark:text-amber-300" : "text-muted" %>"
                 data-test="task-claim-progress"
                 data-progress-quiet="<%= @task.claim_progress_quiet? %>"
                 title="<%= claim_progress_title(@task) %>">

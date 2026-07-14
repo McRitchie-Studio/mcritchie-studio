@@ -9,11 +9,15 @@ const { test, expect } = require("@playwright/test");
 // reader (or a conductor deciding whether to steal a desk) judges on evidence.
 //
 // Read-only against two seeded fixtures, both holding a LIVE claim:
-//   e2e-quiet-claim-demo   — no durable artifact in 5h  => quiet (amber)
-//   e2e-working-claim-demo — cert gate open right now    => working (muted)
+//   e2e-quiet-claim-demo   — last artifact past the quiet threshold => quiet (amber)
+//   e2e-working-claim-demo — cert gate open right now               => working (muted)
 //
 // Nothing here reclaims anything: both desks are still HELD. The chip is
 // informational, and a healthy long build must never wear the quiet styling.
+//
+// The AGE is asserted as a shape (hours), never as a pinned "5.0h": the seed states
+// its silence relative to a threshold DERIVED from the measured corpus, so pinning
+// the rendered number here would re-break the moment the corpus is re-measured.
 test("the board states a claim's progress, not just its liveness", async ({ page }) => {
   const res = await page.goto("/tasks");
   expect(res.ok()).toBe(true);
@@ -25,9 +29,12 @@ test("the board states a claim's progress, not just its liveness", async ({ page
   const quietChip = quietCard.locator("[data-test='task-card-claim-progress']");
   await expect(quietChip).toBeVisible();
   await expect(quietChip).toHaveAttribute("data-progress-quiet", "true");
-  await expect(quietChip).toContainText("progress 5.0h ago");
+  await expect(quietChip).toContainText(/progress \d+(\.\d+)?h ago/);
   await expect(quietChip).toContainText("cert started");
-  await expect(quietChip).toHaveClass(/text-amber-300/);
+  // The alarm tone is a light/dark PAIR — amber-700 carries the light theme, where a
+  // bare amber-300 washed out on the near-white surface.
+  await expect(quietChip).toHaveClass(/text-amber-700/);
+  await expect(quietChip).toHaveClass(/dark:text-amber-300/);
 
   // The desk is still held — a quiet chip is a report, never a reclaim.
   await expect(quietCard).toBeVisible();
@@ -39,5 +46,5 @@ test("the board states a claim's progress, not just its liveness", async ({ page
   const workingChip = workingCard.locator("[data-test='task-card-claim-progress']");
   await expect(workingChip).toHaveAttribute("data-progress-quiet", "false");
   await expect(workingChip).toContainText("g1_cert running");
-  await expect(workingChip).not.toHaveClass(/text-amber-300/);
+  await expect(workingChip).not.toHaveClass(/amber/);
 });

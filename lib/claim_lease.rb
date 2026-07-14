@@ -128,12 +128,25 @@ module ClaimLease
   # GateRun open/lane/close). The caller supplies it; this module stays pure.
   #
   # WHY THERE IS NO "STALLED" VERDICT HERE, and why you should not add one.
-  # Measured against 14 days of real building sessions (243 live work windows,
-  # prod board, 2026-07-13):
   #
-  #   max board-write silence inside a HEALTHY window: p50 26m · p90 66m · p99 125m
-  #   g1_cert durations:                               p50 2.1m · p90 13m · p99 94m
-  #
+  # THE EVIDENCE, as data rather than prose. 243 live `building` windows on the
+  # prod board over the 14 days to 2026-07-13: for each, the longest stretch of
+  # board silence inside a window that ended in healthy work, plus every g1_cert
+  # duration in the same corpus. These are the numbers the threshold below answers
+  # to, so they live in a constant the guard test can READ. The previous cut of
+  # this file kept them in a comment and set a threshold five minutes BELOW the
+  # p99 it claimed to clear — a gate contradicting its own evidence, in the very
+  # PR about gates that assert what they cannot support. A number in prose cannot
+  # be checked. A number in a constant can, and test/lib/claim_lease_test.rb does.
+  MEASURED_SILENCE_SECONDS = {
+    healthy_p50: 1_560, # 26m   — median board-write silence inside a HEALTHY window
+    healthy_p90: 3_960, # 66m
+    healthy_p99: 7_500, # 125m  — the binding number: the quietest 1% of healthy work
+    cert_p50: 126,      # 2.1m  — g1_cert wall-clock, which writes nothing while it runs
+    cert_p90: 780,      # 13m
+    cert_p99: 5_640     # 94m
+  }.freeze
+
   # A "no durable write in 15m ⇒ STALLED" rule — the obvious design — would have
   # flagged 79% of healthy desks (193/243), and STILL would not have caught the
   # 2026-07-13 wedge, whose failing certs wrote no gate rows at all and whose
@@ -144,12 +157,26 @@ module ClaimLease
   # rare lying-GREEN — and it would train every reader to ignore it.
   #
   # So we surface the AGE as a fact and let the reader judge. The only verdict we
-  # draw is `quiet?`, at a deliberately conservative threshold (default 2h, past
-  # the measured p99 of both healthy silence AND cert duration), suppressed while
-  # a gate is demonstrably in flight, and defaulting to HEALTHY whenever the
-  # progress fact is unknown. It is informational: nothing here reclaims a desk,
-  # blocks a move, or deletes anything.
-  PROGRESS_QUIET_SECONDS = 7200
+  # draw is `quiet?`, suppressed while a gate is demonstrably in flight and
+  # defaulting to HEALTHY whenever the progress fact is unknown. It is
+  # informational: nothing here reclaims a desk, blocks a move, or deletes
+  # anything.
+  #
+  # THE THRESHOLD IS DERIVED, NOT CHOSEN. It must clear every measured healthy
+  # window, and clear the worst of them with room to spare, because THE DATA DOES
+  # NOT SUPPORT A CONFIDENT p99: at n=243 the empirical p99 rests on the two or
+  # three largest observations in the tail, so 125m is a point estimate with wide
+  # error bars — the true p99 could sit materially higher and this corpus could
+  # not tell. Parking the threshold ON that estimate would flag healthy desks
+  # every time the tail breathed. So we clear the worst measured window by half
+  # again (x1.5), an ordinary engineering margin on a noisy tail estimate, and one
+  # this feature can afford: quiet is informational, so the cost of being LATE is
+  # a chip that appears an hour after it might have, while the cost of being EARLY
+  # is the chip crying wolf on healthy work — the one failure this task exists to
+  # prevent. Re-measure the corpus and the threshold moves with it; that is the
+  # point of deriving it. 3h07m, deliberately not a round number.
+  QUIET_SAFETY_FACTOR = 1.5
+  PROGRESS_QUIET_SECONDS = (MEASURED_SILENCE_SECONDS.values.max * QUIET_SAFETY_FACTOR).ceil # 11_250s
 
   # Seconds since the task's last durable artifact. nil (unknown) when the caller
   # cannot determine one — an unknown progress fact must never read as trouble.
@@ -159,6 +186,20 @@ module ClaimLease
 
     age = now - at
     age.negative? ? 0 : age.round
+  end
+
+  # "28m" / "3.1h" — ONE rendering of the progress age, for every surface that
+  # states it: the board card, the task page, and the claim gate bin/task prints to
+  # a second agent. It lived twice (helper + CLI, copied verbatim) and two
+  # renderings of one fact are a drift waiting to happen — the board saying "2h"
+  # while the gate says "120m" is a small version of exactly the confusion this
+  # module exists to end.
+  def self.humanize_age(seconds)
+    seconds = seconds.to_i
+    return "#{seconds}s" if seconds < 60
+    return "#{(seconds / 60.0).round}m" if seconds < 3600
+
+    "#{(seconds / 3600.0).round(1)}h"
   end
 
   # True only when a LIVE lease has gone quiet: the desk is held, we KNOW the

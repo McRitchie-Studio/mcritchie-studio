@@ -202,9 +202,12 @@ class ClaimLeaseTest < Minitest::Test
 
   # The regression this feature exists for: a lease that keeps heartbeating while
   # the agent produces nothing is LIVE but QUIET — the board may no longer read
-  # that green dot as progress.
+  # that green dot as progress. Silence stated RELATIVE TO THE THRESHOLD, not as a
+  # literal: this asserts "past the bar", whatever the bar is derived to be.
   def test_a_live_lease_with_no_durable_write_reads_quiet
-    assert ClaimLease.quiet?(live_claim, last_progress_at: NOW - 9000, now: NOW)
+    silence = ClaimLease::PROGRESS_QUIET_SECONDS + 600
+
+    assert ClaimLease.quiet?(live_claim, last_progress_at: NOW - silence, now: NOW)
   end
 
   # ...and the other half of the same regression: a lease whose task IS landing
@@ -215,14 +218,14 @@ class ClaimLeaseTest < Minitest::Test
 
   # THE 8-MINUTE-CERT CASE — the trap this design must not fall into. A healthy
   # `bin/fast-check` across ~120 mapped test files makes zero board writes for
-  # minutes on end (measured on prod: cert p90 13m, p99 94m). Silence is not a
-  # wedge, so the threshold sits past the measured p99 of BOTH healthy silence
-  # and cert duration, and an in-flight gate suppresses the call outright.
+  # minutes on end. Silence is not a wedge: an in-flight gate suppresses the call
+  # outright, AND the threshold clears the measured cert p99 on its own, so a cert
+  # whose gate row never landed still keeps its desk.
   def test_a_long_running_cert_is_never_quiet
-    # 90 minutes of silence — a real p99 cert — with its gate still open.
-    refute ClaimLease.quiet?(live_claim, last_progress_at: NOW - (90 * 60), in_flight: true, now: NOW)
-    # Even with no gate in flight, 90m sits under the conservative 2h threshold.
-    refute ClaimLease.quiet?(live_claim, last_progress_at: NOW - (90 * 60), now: NOW)
+    cert_p99 = ClaimLease::MEASURED_SILENCE_SECONDS.fetch(:cert_p99)
+
+    refute ClaimLease.quiet?(live_claim, last_progress_at: NOW - cert_p99, in_flight: true, now: NOW)
+    refute ClaimLease.quiet?(live_claim, last_progress_at: NOW - cert_p99, now: NOW)
   end
 
   def test_an_in_flight_gate_always_suppresses_quiet
@@ -243,8 +246,60 @@ class ClaimLeaseTest < Minitest::Test
     refute ClaimLease.quiet?(expired, last_progress_at: NOW - 100_000, now: NOW)
   end
 
-  def test_quiet_threshold_is_tunable_but_defaults_past_the_measured_p99
-    assert_equal 7200, ClaimLease::PROGRESS_QUIET_SECONDS
+  # --- The threshold, asserted as a PROPERTY -------------------------------
+  #
+  # The previous cut of this file pinned the LITERAL — `assert_equal 7200,
+  # PROGRESS_QUIET_SECONDS` — and so it certified, green, a threshold sitting five
+  # minutes BELOW the p99 its own comment claimed to clear. A test that pins the
+  # spelling cannot see a constant drift under its evidence; only a test that
+  # asserts the INVARIANT can. The invariant: no measured HEALTHY window may ever
+  # render quiet. Drift the constant beneath the corpus and these go red, whatever
+  # number it drifts to.
+  def test_no_measured_healthy_window_ever_reads_quiet
+    ClaimLease::MEASURED_SILENCE_SECONDS.each do |percentile, silence|
+      refute ClaimLease.quiet?(live_claim, last_progress_at: NOW - silence, now: NOW),
+             "#{percentile} (#{silence}s) is MEASURED HEALTHY work, but the quiet threshold " \
+             "(#{ClaimLease::PROGRESS_QUIET_SECONDS}s) flags it — the chip would cry wolf on " \
+             "healthy desks, the exact failure this feature exists to prevent"
+    end
+  end
+
+  # The same invariant stated against the constant itself, so a REVIEWER reading the
+  # threshold sees the rule it must obey: clear the worst measured window, and clear
+  # it by the stated margin (the p99 at n=243 rests on ~2 tail observations, so the
+  # threshold may not sit ON the estimate).
+  def test_the_threshold_clears_the_worst_measured_window_by_its_stated_margin
+    worst = ClaimLease::MEASURED_SILENCE_SECONDS.values.max
+
+    assert_operator ClaimLease::PROGRESS_QUIET_SECONDS, :>, worst,
+                    "the threshold must exceed the measured healthy-silence p99 it claims to clear"
+    assert_operator ClaimLease::PROGRESS_QUIET_SECONDS, :>=, worst * ClaimLease::QUIET_SAFETY_FACTOR,
+                    "the threshold must honour the safety factor its own comment derives it from"
+  end
+
+  # ...and the threshold must still BITE, or "clear the p99" is satisfied by making
+  # it enormous and the chip never fires at all. The bound is stated against the
+  # evidence too: a desk silent for THREE TIMES the worst healthy window ever
+  # measured has left the healthy distribution behind, and must be flagged.
+  def test_a_silence_far_past_every_measured_window_reads_quiet
+    beyond = ClaimLease::MEASURED_SILENCE_SECONDS.values.max * 3
+
+    assert ClaimLease.quiet?(live_claim, last_progress_at: NOW - beyond, now: NOW),
+           "a threshold that cannot flag 3x the worst measured healthy window is inert"
+  end
+
+  def test_the_quiet_threshold_is_tunable_per_call
     assert ClaimLease.quiet?(live_claim, last_progress_at: NOW - 1200, quiet_after: 600, now: NOW)
+  end
+
+  # One formatter for the age, shared by the board card and the claim gate bin/task
+  # prints — two renderings of one fact could word it differently. Asserted against
+  # fixed inputs, NOT against PROGRESS_QUIET_SECONDS: the formatter's contract has
+  # nothing to do with the threshold, and coupling it there would make a re-derived
+  # threshold break a test about string formatting.
+  def test_humanize_age_renders_seconds_minutes_and_hours
+    assert_equal "42s", ClaimLease.humanize_age(42)
+    assert_equal "28m", ClaimLease.humanize_age(28 * 60)
+    assert_equal "2.1h", ClaimLease.humanize_age(7_500)
   end
 end
