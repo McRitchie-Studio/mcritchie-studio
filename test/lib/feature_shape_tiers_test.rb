@@ -69,6 +69,11 @@ class FeatureShapeTiersTest < Minitest::Test
   FAST_CHECK = File.join(ROOT, "bin/fast-check")
   FULL_SUITE_CHECK = File.join(ROOT, "bin/full-suite-check")
 
+  # The CANONICAL SPEC — the doc an agent actually reads to size its testing. It carries its
+  # own copy of the shape→tiers matrix, and a second copy of a truth is a second place for it
+  # to rot. See test_integration_the_canonical_spec_matches_the_shipped_config.
+  DESIGN_DOC = File.join(ROOT, "docs/agents/system/devops-cycle-design.md")
+
   # A tier → the command that CONSTITUTES running it. This is the load-bearing table:
   # get a pattern wrong and the guard passes vacuously, asserting a lane that never
   # existed (the failure mode ci_workflow_triggers_test.rb pins for its TEST_COMMAND).
@@ -306,6 +311,78 @@ class FeatureShapeTiersTest < Minitest::Test
                  "strictest-looking tier in the system the emptiest, on the changes that move real " \
                  "money. On-chain verification is an operator/QA-stop act, like `manual` — not a " \
                  "pre-submit tier a builder self-certifies. Build the lane BEFORE re-adding it."
+  end
+
+  # ==== THE SAME LIE, IN THE OTHER COPY ===============================================
+  # This file resolved tiers against config/feature_shapes.yml and declared victory. But the
+  # doc an agent actually READS to size its testing — devops-cycle-design.md §3.2, in a table
+  # whose column is headed literally "Required tiers (DoR contract)" — carried its OWN copy of
+  # the matrix, and that copy still demanded `devnet E2E (nightly)` of `onchain` and
+  # `onchain-vertical` AFTER this PR deleted `e2e_onchain` from the config. A required tier
+  # with no lane behind it, sitting in the canonical spec, on the two shapes that move real
+  # money. The guard above could not see it: IT READS CONFIG, AND THE LIE HAD MOVED TO PROSE.
+  #
+  # THE STRUCTURAL FIX is not "also grep the doc for devnet" — that is another blacklist of
+  # another spelling, and it would miss the next one. It is to stop keeping TWO INDEPENDENT
+  # COPIES of one truth. The doc's tier names are backticked; this asserts the two copies are
+  # the SAME SET, both directions, for every shape. The doc may not demand a tier the config
+  # does not (the bug), and it may not quietly drop one the config does (the inverse bug).
+  DOC_TIER_ROW = /^\|\s*\*\*(?<shape>[a-z+-]+)\*\*\s*\|[^|]*\|(?<tiers>[^|]*)\|/
+
+  def doc_dor_tiers(markdown)
+    markdown.lines.filter_map do |line|
+      match = line.match(DOC_TIER_ROW)
+      next unless match
+
+      # Only the canonical list, which sits BEFORE the em-dash. Prose after it is free text
+      # (and legitimately contains backticks — `release` is a branch, not a tier).
+      # `[a-z0-9_]` — the digit is load-bearing. `[a-z_]+` cannot match `e2e`, so the scanner
+      # silently dropped the one tier this whole PR is about and the guard passed vacuously on
+      # a doc that agreed. A guard that cannot see the thing it guards is worse than none.
+      canonical = match[:tiers].split("—").first.to_s
+      [match[:shape], canonical.scan(/`([a-z0-9_]+)`/).flatten.sort]
+    end.to_h
+  end
+
+  def config_dor_tiers(yaml_text)
+    YAML.safe_load(yaml_text).fetch("shapes").transform_values { |shape| Array(shape["dor_tiers"]).sort }
+  end
+
+  def test_integration_the_canonical_spec_matches_the_shipped_config
+    doc = doc_dor_tiers(File.read(DESIGN_DOC))
+    config = config_dor_tiers(File.read(FEATURE_SHAPES))
+
+    refute_empty doc,
+                 "found NO shape rows in #{File.basename(DESIGN_DOC)} §3.2. Either the table " \
+                 "moved or its format changed — and a guard that silently matches nothing is " \
+                 "worse than no guard. Re-point DOC_TIER_ROW; do not delete this."
+
+    assert_equal config, doc,
+                 "the shape→tiers matrix in docs/agents/system/devops-cycle-design.md §3.2 " \
+                 "DISAGREES with config/feature_shapes.yml.\n" \
+                 "  config: #{config.inspect}\n" \
+                 "  doc:    #{doc.inspect}\n" \
+                 "These are two copies of ONE truth and the doc is the one agents read to " \
+                 "decide how much to test. When they drifted last time, the doc kept demanding " \
+                 "a devnet E2E tier that NOTHING RUNS — on the onchain shapes, the ones that " \
+                 "move real money. Fix the copy that is wrong. If you are changing what a " \
+                 "shape requires, change BOTH in the same commit."
+  end
+  # ====================================================================================
+
+  # Every tier the canonical spec demands must be a tier some lane RUNS — the same positive
+  # invariant as the config guard, applied to the prose. Belt for the assertion above: even if
+  # someone edits BOTH copies in lockstep to re-add an uncollected tier, this still fires.
+  def test_integration_the_canonical_spec_demands_no_unrunnable_tier
+    demanded = doc_dor_tiers(File.read(DESIGN_DOC)).values.flatten.uniq
+
+    demanded.each do |tier|
+      assert TIER_COMMANDS.key?(tier),
+             "devops-cycle-design.md §3.2 demands the `#{tier}` tier, which NO RUNNER RUNS " \
+             "(it is not in TIER_COMMANDS). That is the exact bug this PR exists to kill — a " \
+             "gate demanding evidence nobody collects — and re-introducing it in the canonical " \
+             "spec is how it comes back. WIRE THE LANE, or STOP ASKING FOR THE TIER."
+    end
   end
 
   def test_integration_the_e2e_lane_runs_the_studio_playwright_suite

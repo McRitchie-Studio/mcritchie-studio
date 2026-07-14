@@ -1,0 +1,60 @@
+# THE E2E LANE'S CONTRACT — what the green `playwright` check actually covers.
+#
+# ONE file, read by BOTH halves of the guard, so there is exactly ONE number to bump:
+#
+#   · bin/e2e-executed-set-check              THE RUNTIME GATE. Reads Playwright's OWN
+#                                             report after the lane runs and asserts the
+#                                             set it EXECUTED matches this contract.
+#   · test/lib/e2e_quarantine_ratchet_test.rb THE STATIC GUARD. Reads the committed specs
+#                                             and asserts they DECLARE this contract.
+#
+# THE PROPERTY, AND WHY IT IS ASSERTED AT RUNTIME.
+# Static counting answers "how many specs are DECLARED and not quarantined". It cannot
+# answer "how many specs RAN" — those are different questions, and the gap between them is
+# where every escape hatch lives. A runtime skip is invisible to a source reader BY
+# CONSTRUCTION:
+#
+#     test("landing page loads", async ({ page }, testInfo) => {
+#       testInfo.skip();          // MEASURED: exit 0, "1 skipped", every static guard green
+#
+# and so is a widened exclusion in the CI command, and so is `--only-changed`, and so is a
+# spec whose file never got collected. Each one is a different SPELLING of the same event:
+# a spec left the executed set. Enumerating spellings is how this guard was defeated three
+# times. So the gate stopped reading the SOURCE and started reading the RECEIPT — the report
+# the runner itself emits — where all of them show up as the same arithmetic failure.
+#
+#     executed == total_specs - quarantined
+#
+# TO CHANGE THESE NUMBERS you must edit this file, which is a visible, reviewable diff line
+# with a comment attached. That is the point: the hole cannot grow silently. It can only
+# grow ON PURPOSE, in front of a reviewer.
+---
+# Every `test(...)` committed under e2e/. Verified against Playwright's own model, not prose:
+#   npx playwright test --list   ->  69 tests in 27 files
+total_specs: 69
+
+# Of those, the ones already RED on an untouched `release` checkout the day this lane was
+# switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
+# with a name and a ticket: /tasks/repair-rotted-e2e-specs.
+#
+# THIS NUMBER MAY ONLY FALL. Repair a spec: drop its tag, lower `quarantined`, raise
+# `executed`, same commit. Tagging one MORE spec to green a PR is the exact self-declaration
+# disease this whole lane exists to cure.
+quarantined: 18
+
+# total_specs - quarantined. What the lane MUST execute — asserted against the runner's own
+# report, so no source-level spelling on any axis can move it without moving this line.
+#   npx playwright test --list --grep-invert @quarantine  ->  51 tests in 25 files
+executed: 51
+
+# The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
+# title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to
+# this EXACT value — exactly one `--grep-invert`, and nothing else in it. Widening the filter
+# to `@quarantine|board` silently drops 8 more specs; that was a live hole until this line.
+quarantine_tag: "@quarantine"
+
+# The shard matrix in .github/workflows/ci.yml. The shards UNION to the whole suite, so this
+# is not a narrowing — but a shard that goes EMPTY exits 0 SILENTLY (sharding suppresses
+# Playwright's own "No tests found" guard), so the floor `executed >= shards` is load-bearing
+# and the runtime gate refuses a run that is missing any shard's report.
+shards: 3

@@ -1,11 +1,22 @@
 # frozen_string_literal: true
 
-# THE EXECUTED SET of the Playwright `e2e` lane — PINNED, arithmetically.
+# THE DECLARED SET of the Playwright `e2e` lane — the STATIC half of a two-part guard.
 #
-#     69 specs committed  −  18 quarantined  ==  51 the lane runs
+#     69 specs committed  −  18 quarantined  ==  51 the lane should run
 #
-# That identity is this file. Every assertion below exists to make it TRUE, and to make any
-# way of breaking it RED.
+# READ THIS FIRST, BECAUSE THE FILE'S NAME OVERSELLS IT. This file reads the SOURCE. It can
+# tell you how many specs are DECLARED and not quarantined. It CANNOT tell you how many specs
+# RAN — those are different questions, and every escape hatch that has beaten this PR lived in
+# the gap between them. What closes that gap is the RECEIPT:
+#
+#     bin/e2e-executed-set-check  — reads Playwright's OWN JSON report after the lane runs and
+#                                   asserts the set it ACTUALLY EXECUTED == config/e2e_lane.yml
+#
+# Both halves read the same contract (config/e2e_lane.yml), so they can never certify two
+# different suites. This half is the FAST one: it fails in the unit lane in milliseconds,
+# before anyone burns six minutes of CI on a suite that is already provably wrong. The other
+# half is the DURABLE one: it is the only one that generalizes to the spellings nobody has
+# imagined yet. Keep both; do not mistake this one for sufficient.
 #
 # WHY THE SET AND NOT THE COMMAND. The first version of this guard (and of its sibling,
 # test/lib/ci_workflow_triggers_test.rb) bound the ci.yml COMMAND: it proved the `playwright`
@@ -55,23 +66,27 @@
 #   [integration] the REAL committed e2e/ suite, ci.yml, and playwright.config.js.
 
 require "minitest/autorun"
+require "yaml"
 
 class E2eQuarantineRatchetTest < Minitest::Test
   ROOT = File.expand_path("../..", __dir__)
   E2E_DIR = File.join(ROOT, "e2e")
   CONFIG_PATH = File.join(ROOT, "playwright.config.js")
   CI_PATH = File.join(ROOT, ".github", "workflows", "ci.yml")
+  CONTRACT_PATH = File.join(ROOT, "config", "e2e_lane.yml")
 
-  # ==== THE EXECUTED SET ==============================================================
-  # Verified against playwright's OWN view of the suite, not taken from prose:
+  # ==== THE CONTRACT ==================================================================
+  # The numbers live in config/e2e_lane.yml — ONE file, so there is ONE line to bump and the
+  # runtime gate (bin/e2e-executed-set-check) and this static guard can never drift apart and
+  # certify two different suites. Verified against playwright's OWN view, not taken from prose:
   #   npx playwright test --list                           -> 69 tests in 27 files
   #   npx playwright test --list --grep-invert @quarantine -> 51 tests in 25 files
-  # Keep these three in lockstep with that command. They are a PIN, not a bound: the lane
-  # runs exactly LANE_SPECS specs, and if it ever runs a different number, something has
-  # silently changed what the green `playwright` check covers.
-  TOTAL_SPECS = 69   # every `test(...)` committed under e2e/
-  CEILING     = 18   # of those, the rotted ones carrying ` @quarantine` in the title
-  LANE_SPECS  = 51   # TOTAL_SPECS - CEILING == what CI actually executes
+  CONTRACT       = YAML.safe_load_file(CONTRACT_PATH).freeze
+  TOTAL_SPECS    = CONTRACT.fetch("total_specs")   # every `test(...)` committed under e2e/
+  CEILING        = CONTRACT.fetch("quarantined")   # of those, the rotted ones carrying the tag
+  LANE_SPECS     = CONTRACT.fetch("executed")      # TOTAL_SPECS - CEILING == what CI executes
+  SHARDS         = CONTRACT.fetch("shards")
+  QUARANTINE_TAG = CONTRACT.fetch("quarantine_tag")
   # ====================================================================================
 
   # A SPEC is a BARE `test(` / `it(` call with a title. No modifier. That is the only form
@@ -81,22 +96,49 @@ class E2eQuarantineRatchetTest < Minitest::Test
   # A GROUP is `test.describe(` / `describe(` with a title. It runs specs; it is not one.
   GROUP_DECLARATION = /^\s*(?:test\.describe|describe)\s*\(\s*(?<q>["'`])(?<title>.*?)\k<q>/
 
-  # ANY dotted call on test/it/describe, titled or not. `test.skip()` with NO arguments,
-  # sitting inside a spec body, is a runtime skip — it suppresses that spec and reports it
-  # as skipped, exit 0. A title-based scanner never sees it. This one does.
+  # ==== TWO AXES OF DEFAULT-DENY ======================================================
+  # A guard is only as good as its DEFAULT, and this file has now been beaten twice by a
+  # default that was "allow" on an axis nobody was watching.
+  #
+  # AXIS 1 — THE MODIFIER. Any dotted call on test/it/describe. Default-deny against an
+  # ALLOWLIST of provably inert modifiers, so a modifier Playwright ships next year lands on
+  # the deny side. (This axis holds: review invented `test.slow.only(...)`, a chain nobody
+  # enumerated, and the greedy dotted capture refuses it — `slow.only` is not inert `slow`.)
   MODIFIER_CALL = /\b(?<callee>test|it|describe)\.(?<modifier>\w+(?:\.\w+)*)\s*\(/
 
-  # DEFAULT-DENY. These modifiers provably cannot change WHICH specs run: they group, hook,
-  # configure options, or stretch a timeout. Everything else — `only`, `skip`, `fixme`,
-  # `fail`, and whatever Playwright ships next — is refused by name. A guard's default must
-  # be to refuse the thing it has not been taught about, or it is just an enumeration of the
-  # cheats we happened to imagine, which is the exact failure this file exists to correct.
   INERT_MODIFIERS = %w[
     describe
     describe.configure
     beforeEach afterEach beforeAll afterAll
     use step setTimeout slow info
   ].freeze
+
+  # AXIS 2 — THE RECEIVER. Axis 1 anchors its receiver to `test|it|describe`, which made the
+  # RECEIVER an enumeration — the exact shape this file spent two rounds eliminating one axis
+  # over. Playwright's documented TestInfo API produces the IDENTICAL runtime skip from a
+  # different receiver, and it walked straight past the guard above:
+  #
+  #     test("landing page loads", async ({ page }, testInfo) => {
+  #       testInfo.skip();     // MEASURED on this repo: exit 0, "1 skipped", every guard GREEN
+  #
+  # So the verbs are refused on ANY receiver: `testInfo.skip()`, `test.info().skip()`, an
+  # aliased `const t = test; t.skip()`. The receiver is no longer a list to keep up to date.
+  #
+  # THIS AXIS CANNOT BE CLOSED AT THE SOURCE, AND THAT IS THE POINT. A destructured
+  # `const { skip } = testInfo; skip()`, or a helper in another file that calls `ti.skip()`
+  # for you, has no `.skip(` in the spec at all — no regex on this text can see it. That is
+  # not a hole to be plugged with a cleverer regex; it is PROOF that a source-level guard is
+  # the wrong instrument for this question. It is closed at RUNTIME, where a skipped spec is
+  # a skipped spec whatever the syntax: bin/e2e-executed-set-check reads Playwright's own
+  # report and refuses a lane with any skip in it. This axis is mutation-proved in BOTH
+  # directions — the destructured vector is GREEN here and RED there, deliberately.
+  # The receiver class must include `(` and `)`, or `test.info().skip()` matches with the
+  # receiver read as a bare `)` — it still FIRES (the verb is what is being denied), but it
+  # names the offender uselessly, and a guard whose failure message is gibberish is a guard
+  # somebody deletes. Caught by test_unit_refuses_a_runtime_skip_through_test_info.
+  SELECTION_VERBS = %w[only skip fixme fail].freeze
+  SELECTION_CALL = /(?<receiver>[\w$()\].]+)\s*\.\s*(?<verb>#{Regexp.union(SELECTION_VERBS)})\s*\(/
+  # ====================================================================================
 
   # Comments are not code. `// do not use test.skip here` must not turn the suite red, or the
   # first false alarm gets this guard weakened — and a weakened guard is worse than none.
@@ -116,12 +158,18 @@ class E2eQuarantineRatchetTest < Minitest::Test
     spec_titles(source).select { |title| title.include?("@quarantine") }
   end
 
-  # Every dotted form in the source that is NOT on the inert allowlist, reported as written
-  # (`test.only`, `test.describe.skip`, …) so a failure names the offender.
+  # BOTH axes, unioned, reported as written (`test.only`, `test.describe.skip`,
+  # `testInfo.skip`, `test.info().skip`, …) so a failure names the offender exactly.
   def selection_modifiers(source)
-    strip_comments(source).scan(MODIFIER_CALL).filter_map do |callee, modifier|
+    clean = strip_comments(source)
+
+    by_modifier = clean.scan(MODIFIER_CALL).filter_map do |callee, modifier|
       "#{callee}.#{modifier}" unless INERT_MODIFIERS.include?(modifier)
     end
+
+    by_receiver = clean.scan(SELECTION_CALL).map { |receiver, verb| "#{receiver}.#{verb}" }
+
+    (by_modifier + by_receiver).uniq
   end
 
   def spec_files
@@ -148,9 +196,19 @@ class E2eQuarantineRatchetTest < Minitest::Test
     end
   end
 
-  def shard_total
-    File.read(CI_PATH)[/^\s*shard:\s*\[(?<list>[^\]]*)\]/, :list].split(",").size
+  # The shard matrix, read from ci.yml in EITHER YAML sequence style. The first version of
+  # this reached straight into a flow-sequence regex and called `.split` on the result — so
+  # rewriting the matrix as a BLOCK sequence (`shard:\n  - 1\n  - 2`), which is the same YAML,
+  # raised NoMethodError on nil instead of asserting. It failed safe, but it failed as an
+  # ERROR, and an error is a worse gate than an assertion: it reads as "the test is broken",
+  # which is the kind of red people rerun rather than investigate. Parse the YAML.
+  def shard_matrix
+    doc = YAML.safe_load_file(CI_PATH, aliases: true, permitted_classes: [Date])
+    shards = doc.dig("jobs", "playwright", "strategy", "matrix", "shard")
+    Array(shards)
   end
+
+  def shard_total = shard_matrix.size
 
   # --- [unit] the scanners -------------------------------------------------------------
 
@@ -233,6 +291,73 @@ class E2eQuarantineRatchetTest < Minitest::Test
     assert_equal ["test.mothballed"],
                  selection_modifiers('test.mothballed("healthy spec", async () => {});')
   end
+
+  # ---- AXIS 2: THE RECEIVER ----------------------------------------------------------
+  # The vector that beat round 3. Playwright's DOCUMENTED TestInfo API, identical runtime
+  # effect, different receiver — so a guard anchored to `test|it|describe` never saw it.
+  def test_unit_refuses_a_runtime_skip_on_the_testinfo_receiver
+    source = <<~JS
+      test("landing page loads", async ({ page }, testInfo) => {
+        testInfo.skip();
+        await page.goto("/");
+      });
+    JS
+    assert_equal ["testInfo.skip"], selection_modifiers(source)
+  end
+
+  # A NEW VECTOR, invented here: `test.info()` returns the TestInfo without ever destructuring
+  # the fixture argument, so the receiver is a CALL EXPRESSION rather than an identifier. Any
+  # "fix" for the blocker above that just widened the callee list to `test|it|describe|testInfo`
+  # would wave this straight through — which is precisely how the last three rounds went.
+  def test_unit_refuses_a_runtime_skip_through_test_info
+    source = <<~JS
+      test("landing page loads", async ({ page }) => {
+        test.info().skip();
+        await page.goto("/");
+      });
+    JS
+    assert_includes selection_modifiers(source), "test.info().skip"
+  end
+
+  # A NEW VECTOR: alias the receiver. `const t = test` defeats ANY enumeration of receiver
+  # names, however long the list gets — which is the argument for denying the VERB on any
+  # receiver rather than policing the receiver.
+  def test_unit_refuses_a_selection_verb_on_an_aliased_receiver
+    assert_equal ["t.skip"], selection_modifiers('const t = test; t.skip("rotted spec", () => {});')
+  end
+
+  # ==== THE HONEST LIMIT OF EVERY SOURCE-LEVEL GUARD ==================================
+  # This test asserts that this file CANNOT catch something. That is not a defect to be
+  # patched with a cleverer regex — it is the whole reason the runtime gate exists, pinned
+  # here so nobody deletes bin/e2e-executed-set-check believing the static scan covers it.
+  #
+  # Destructure the method off TestInfo and there is no `.skip(` in the spec at all. Put it in
+  # a helper module and the spec file is clean as a whistle. No regex over this text can see
+  # either one. The lane still loses the spec, silently, exit 0.
+  #
+  # RED at runtime, GREEN here — and that asymmetry is mutation-proved in both directions.
+  def test_unit_a_destructured_skip_is_INVISIBLE_to_this_file_and_that_is_why_the_receipt_exists
+    source = <<~JS
+      test("landing page loads", async ({ page }, testInfo) => {
+        const { skip } = testInfo;
+        skip();
+        await page.goto("/");
+      });
+    JS
+
+    assert_empty selection_modifiers(source),
+                 "if this ever starts catching the destructured form, GOOD — but do not " \
+                 "conclude the source scan is sufficient. A helper in another file " \
+                 "(`maybeSkip(testInfo)`) has no skip token in the spec at all, and never " \
+                 "will. The executed set is decided at RUNTIME and can only be checked there."
+
+    # And here is the thing that DOES catch it: the receipt. Same spec, as Playwright reports
+    # it — one test, status `skipped`. bin/e2e-executed-set-check refuses this outright.
+    skipped_in_report = { "title" => "landing page loads", "status" => "skipped" }
+    refute_equal "expected", skipped_in_report["status"],
+                 "the runtime gate keys on exactly this: a spec that did not reach a verdict"
+  end
+  # ====================================================================================
 
   def test_unit_permits_the_inert_forms
     source = <<~JS
@@ -363,7 +488,7 @@ class E2eQuarantineRatchetTest < Minitest::Test
   # being collected. The executed-set arithmetic only means something if the config still
   # points at the whole directory.
   def test_integration_playwright_config_does_not_narrow_the_test_set
-    config = File.read(CONFIG_PATH)
+    config = strip_comments(File.read(CONFIG_PATH))
 
     assert_match(%r{testDir:\s*"\./e2e"}, config,
                  "playwright.config.js no longer collects the whole ./e2e directory. " \
@@ -371,13 +496,39 @@ class E2eQuarantineRatchetTest < Minitest::Test
                  "count, so the ratchet above would stay green over a suite that no longer " \
                  "runs.")
 
+    # NOT line-anchored. The first version of this used /^\s*#{key}:/, which only sees a key
+    # at the start of a line — so an INLINE `grep:` tucked into the projects array
+    # (`{ name: "chromium", grep: /@smoke/ }`) slipped straight past it, on one line, and
+    # deselected the suite with every guard green. Same class of bug as everything else this
+    # file has been bounced for: the guard watched one SPELLING of the thing, not the thing.
+    # Comments are stripped first — this file's own prose names every one of these keys.
     %w[testIgnore testMatch grep grepInvert].each do |key|
-      refute_match(/^\s*#{key}:/, config,
-                   "playwright.config.js sets `#{key}`, which silently deselects specs the " \
-                   "executed-set assertion still counts as running. The ONE sanctioned " \
-                   "exclusion is `--grep-invert @quarantine` in ci.yml, and the ceiling above " \
-                   "bounds it. Do not open a second, unbounded one here.")
+      refute_match(/\b#{key}\s*:/, config,
+                   "playwright.config.js sets `#{key}` (anywhere — top level, or inline " \
+                   "inside a project), which silently deselects specs the executed-set " \
+                   "assertion still counts as running. The ONE sanctioned exclusion is " \
+                   "`--grep-invert @quarantine` in ci.yml, pinned to that exact value by " \
+                   "test/lib/ci_workflow_triggers_test.rb and bounded by the ceiling above. " \
+                   "Do not open a second, unbounded one here.")
     end
+  end
+
+  # THE CONTRACT IS THE ONE NUMBER. Both halves of this guard — the static scan here and the
+  # runtime gate in bin/e2e-executed-set-check — read config/e2e_lane.yml. If its arithmetic
+  # is internally inconsistent, the two halves certify two different suites and the whole
+  # structure is theatre.
+  def test_integration_the_contract_arithmetic_is_internally_consistent
+    assert_equal LANE_SPECS, TOTAL_SPECS - CEILING,
+                 "config/e2e_lane.yml does not add up: total_specs(#{TOTAL_SPECS}) − " \
+                 "quarantined(#{CEILING}) != executed(#{LANE_SPECS}). The executed set is " \
+                 "DEFINED as everything committed that is not quarantined. If that is no " \
+                 "longer true, the lane has grown a second way to drop a spec and neither " \
+                 "half of this guard is bounding it."
+
+    assert_operator CEILING, :>=, 0, "config/e2e_lane.yml: quarantined cannot be negative"
+    assert_operator LANE_SPECS, :>, 0,
+                    "config/e2e_lane.yml pins the executed set at #{LANE_SPECS}. A lane that " \
+                    "runs zero specs is the failure this whole PR exists to make impossible."
   end
 
   # NO SHARD MAY BE EMPTY. This is the mechanism that hid `.only` in the first place: an
@@ -387,6 +538,19 @@ class E2eQuarantineRatchetTest < Minitest::Test
   # goes empty, exits 0, and this lane starts lying again.
   def test_integration_the_lane_cannot_produce_an_empty_shard
     shards = shard_total
+
+    # A NEW VECTOR, invented this round: DROP A SHARD FROM THE MATRIX. Change `shard: [1, 2, 3]`
+    # to `[1, 2]` while the command still says `--shard=N/3` and shard 3's ~17 specs are never
+    # run by anybody — every remaining job GREEN, the ci.yml command byte-identical, the spec
+    # count in the source unchanged, the @quarantine ceiling unchanged. Nothing in the repo
+    # said a word about it before this line. (The receipt catches it too, and catches it
+    # harder: bin/e2e-executed-set-check demands one report per shard AND sums them to 51.)
+    assert_equal SHARDS, shards,
+                 "ci.yml runs the e2e lane across #{shards} shard(s); config/e2e_lane.yml " \
+                 "pins the matrix at #{SHARDS}. Dropping a shard from the matrix while the " \
+                 "command still divides by the old total leaves that shard's specs UNRUN and " \
+                 "every remaining job GREEN. If you are deliberately resharding, say so in " \
+                 "config/e2e_lane.yml in the same commit."
 
     assert_operator LANE_SPECS, :>=, shards,
                     "the lane runs #{LANE_SPECS} specs across #{shards} shards. A shard with " \
