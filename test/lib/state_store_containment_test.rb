@@ -103,7 +103,11 @@ require "set"
 require "open3"
 require "securerandom"
 require "tmpdir"
+require "fileutils"
+require "digest"
+require "json"
 require_relative "../../lib/task_usage_sandbox"
+require_relative "../support/session_env"
 
 class StateStoreContainmentTest < Minitest::Test
   ROOT = File.expand_path("../..", __dir__)
@@ -493,28 +497,78 @@ class StateStoreContainmentTest < Minitest::Test
   # unpinned, then look at the filesystem. A bash write, a shell-out, a subprocess: none
   # of them can hide from the store not changing.
   #
-  # SAFE BY CONSTRUCTION. The child is given a session id minted FRESH for this
-  # assertion, so it can never collide with a live session's markers — and the assertion
-  # is a RECURSIVE glob of the real store for that id, not a check of one predicted
-  # path, so a leak is caught wherever it lands rather than only where I guessed.
-
-  def test_integration_bash_statusline_writes_nothing_to_the_real_store_when_unpinned
+  # SAFE, AND NON-VACUOUS — and getting BOTH took two tries, which is the lesson.
+  #
+  # bin/statusline resolves its marker root as `${CLAUDE_PROJECTS_DIR:-$HOME/projects}`.
+  # So "unpinned" does NOT mean it writes to the operator's real store from here: with
+  # HOME pinned at a tmpdir, an unguarded statusline writes into <tmp>/projects/.agents.
+  # That is what CONTAINS the blast — and it is also what made the first draft of this
+  # test WORTHLESS. It pinned HOME (safe) and then asserted on the REAL store (which the
+  # child could not reach anyway), so it passed with the guard DELETED. A test that
+  # cannot fail is not evidence — this file says so about other people's tests, and it
+  # was true of this one.
+  #
+  # So the observation is made where the write would actually LAND: the stand-in root is
+  # SEEDED with decoy markers and FINGERPRINTED (sha256 per file) before and after. Not
+  # "the path I predicted is absent" — statusline_test already asserts that, and it can
+  # only ever check the path someone thought of. This asserts NOTHING CHANGED: a write to
+  # an unforeseen name, a delete of a marker that was there (which an empty dir could not
+  # have shown), a shell-out, a spawned child. None of them can hide from the bytes.
+  def test_integration_bash_statusline_cannot_touch_the_marker_store_when_unpinned
     id = "containment-#{SecureRandom.uuid}"
-    payload = %({"session_id":"#{id}","workspace":{"current_dir":"#{ROOT}"}})
 
-    Dir.mktmpdir do |home|
-      env = ENV.to_h.merge("TASK_USAGE_SANDBOX" => "1", "HOME" => home)
-      env.delete("CLAUDE_PROJECTS_DIR") # UNPINNED — the leak this family exists to close
+    Dir.mktmpdir do |dir|
+      home = File.join(dir, "home")
+      root = File.join(home, "projects", ".agents") # where an UNPINNED statusline falls back to
+      FileUtils.mkdir_p(File.join(root, "sessions"))
+
+      # Decoys, so a DELETE is observable too. An empty dir can only ever show a write.
+      File.write(File.join(root, "sessions", "#{id}.heartbeat"), "decoy")
+      File.write(File.join(root, "sessions", "#{id}.devops-shift"), "qa-release")
+      File.write(File.join(root, "sessions", "someone-else.json"), "decoy")
+
+      # A FICTIONAL slug: if a pin is ever missed again, the stray `bin/task heartbeat`
+      # this would fire lands on a task that does not exist rather than a live one.
+      File.write(File.join(dir, ".agent-context.json"), JSON.generate(
+                                                          "app" => "mcritchie-studio",
+                                                          "worktree_slug" => "fixture-worktree-slug",
+                                                          "task_record_slug" => "fixture-task-slug",
+                                                          "stage" => "building"
+                                                        ))
+
+      before = fingerprint(root)
+
+      env = SessionEnv.neutralized(
+        "CLAUDE_CODE_SESSION_ID" => id, # the child runs as THIS id, never the operator's
+        "TASK_USAGE_SANDBOX" => "1",    # armed
+        "CLAUDE_PROJECTS_DIR" => nil,   # UNPINNED — the exact leak this family exists to close
+        "HOME" => home,
+        "STATUSLINE_HEARTBEAT_FG" => "1", # inline, so the assertion cannot race a detached write
+        "TASK_BIN" => "/usr/bin/true",    # never reach the real board, whatever happens
+        "SHIFT_BIN" => "/usr/bin/true"
+      )
+      payload = %({"session_id":"#{id}","workspace":{"current_dir":"#{dir}"}})
       out, _err, _status = Open3.capture3(env, File.join(ROOT, "bin", "statusline"), stdin_data: payload)
 
       refute_empty out.strip, "the status line must still RENDER when it refuses to write — a refusal that " \
                               "also breaks the agent's prompt would just get the guard reverted"
+
+      assert_equal before, fingerprint(root),
+                   "bin/statusline MUTATED the marker store while sandboxed and unpinned. This is the lane " \
+                   "that catches what no Ruby source scan can — bash, shell-outs, subprocesses — and it is " \
+                   "watching the bytes, not a list of paths anyone predicted."
     end
 
-    leaked = Dir.glob(File.join(TaskUsageSandbox.real_state_dir, "**", "*#{id}*"), File::FNM_DOTMATCH)
-    assert_empty leaked,
-                 "bin/statusline wrote into the operator's REAL state store while sandboxed and unpinned. " \
-                 "This is the lane that catches what no Ruby scan can: bash, shell-outs, subprocesses."
+    # Belt and braces: the operator's REAL store never gained anything named for this run.
+    assert_empty Dir.glob(File.join(TaskUsageSandbox.real_state_dir, "**", "*#{id}*"), File::FNM_DOTMATCH),
+                 "the child reached the operator's real state dir"
+  end
+
+  # Every file under +root+, by content. The receipt LAYER 3 compares.
+  def fingerprint(root)
+    Dir.glob(File.join(root, "**", "*"), File::FNM_DOTMATCH)
+       .select { |f| File.file?(f) }
+       .to_h { |f| [f.delete_prefix("#{root}/"), Digest::SHA256.hexdigest(File.read(f))] }
   end
 
   # ── the checker itself must be able to FAIL ────────────────────────────────────
