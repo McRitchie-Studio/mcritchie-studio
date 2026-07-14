@@ -316,19 +316,37 @@ against this (`bin/lib/cert_process.rb`, `bin/lib/cert_orphan_guard.rb`):
   GROUP on any signal it can catch (TERM/INT/HUP) or on an exception. The suite can
   no longer outlive the cert that spawned it.
 - **Detect** — a SIGKILL runs no handler, so prevention can never be complete. Each
-  lane writes a runlock (`tmp/cert-run.json`) naming its process group; the **next**
-  cert reads it and, before any lane runs:
-  - cert pid **alive** → a real concurrent cert in this tree → **refuse** (never kill
-    a live sibling; two suites on one worktree test DB corrupt each other's fixtures
-    and SIGSEGV Ruby),
-  - cert pid **dead**, group alive → provably our own orphan → **reap it, loudly**,
+  lane writes a runlock (`tmp/cert-run.json`) naming its process group **and the OS's
+  start time for it**; the **next** cert reads it and, before any lane runs:
+  - cert pid **alive and provably ours** → a real concurrent cert in this tree →
+    **refuse** (never kill a live sibling; two suites on one worktree test DB corrupt
+    each other's fixtures and SIGSEGV Ruby),
+  - cert pid dead, group leader **alive and provably ours** → our own orphan →
+    **reap the group, loudly**,
+  - something alive under that pgid that is **provably NOT ours** → the OS recycled
+    the number → **never kill it**; the lock is a corpse, so discard it and carry on,
+  - something alive whose ownership we **cannot prove** (a lock predating this guard) →
+    **refuse and name it**, and let a human decide,
   - any **other** session holding the test DB (a pre-fix orphan, a stray manual run,
     a `bin/release` gate suite) → **refuse and name it**, with the
     `pg_terminate_backend` command that clears it.
 
+**A pgid is a recyclable integer — liveness is never identity.** The first cut of this
+guard reaped on the predicate *"some process with this pgid is alive"*, and the runlock
+is repo-relative (it outlives reboots), so a nine-day-old lock whose pgid the OS had
+since handed to an unrelated process made the guard **kill an innocent bystander** and
+report "ORPHAN REAPED" (caught in review, 2026-07-14). Identity is therefore the OS's
+own start-time record (`ps -o lstart=`) for the pid — recorded at spawn, re-read and
+matched exactly before any signal. The rule is: **kill only what you can prove is
+yours; if you cannot prove it, refuse and say so.** A reaper that guesses is worse than
+no reaper — it turns a stalled cert into a corrupted machine. (And a signal is never
+aimed at pgid 0, 1, or the cert's own group: `kill(sig, -1)` means *every process you
+own*, not "group 1".)
+
 Every one of those messages says **"NOT a regression in your diff"**, because that is
 what an ENV-class failure is. A cert that refuses and names the orphan is a good cert;
-a cert that blames "an ENV gap" and lets you retry into a wall is the bug.
+a cert that blames "an ENV gap" and lets you retry into a wall is the bug; a cert that
+kills a process it cannot name is worse than either.
 
 Skip the guard only in harness tests: `FAST_CHECK_SKIP_ORPHAN_GUARD=1` /
 `FULL_SUITE_SKIP_ORPHAN_GUARD=1`.

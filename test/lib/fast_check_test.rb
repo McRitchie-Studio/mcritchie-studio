@@ -564,14 +564,32 @@ class FastCheckTest < Minitest::Test
   # --- [integration] the guard: an orphan we could NOT prevent must be NAMED ----------
   #
   # A SIGKILLed cert runs no handler, so prevention alone can never be complete. The
-  # next cert therefore reads the runlock the previous one left: a dead cert pid whose
-  # process GROUP is still alive is provably our own abandoned suite — reap it and say
-  # so. Anything else is refused, never silently blocked.
+  # next cert therefore reads the runlock the previous one left. A dead cert pid whose
+  # process group is still alive is NOT, by itself, proof of an abandoned suite: a pgid
+  # is a recyclable integer and this lock is repo-relative (it outlives reboots), so the
+  # number may since have been handed to a stranger. The lock therefore records the OS's
+  # start time for the group leader, and the guard reaps only what that identity proves
+  # is ours. Anything else is refused or discarded — never killed, never silently
+  # blocked.
 
-  def write_lock(dir, cert_pid:, pgid:)
+  # The OS's own start-time record, read independently of the code under test — a
+  # fixture that builds itself with the implementation it is checking proves nothing.
+  def os_start_time(pid)
+    out = `ps -p #{pid.to_i} -o lstart=`.strip.squeeze(" ")
+    out.empty? ? nil : out
+  end
+
+  # The runlock as CertProcess writes it: WHO, and — the whole point — WHEN.
+  # `pgid_started_at:` overrides the identity, to forge the two locks that matter:
+  # a recycled pgid (a start time that is not this process's) and a legacy lock
+  # (`nil` — written before the guard recorded identity at all).
+  def write_lock(dir, cert_pid:, pgid:, pgid_started_at: :real, cert_started_at: :real)
+    started = pgid_started_at == :real ? os_start_time(pgid) : pgid_started_at
+    cert_started = cert_started_at == :real ? os_start_time(cert_pid) : cert_started_at
     lock = File.join(dir, "tmp", "cert-run.json")
     FileUtils.mkdir_p(File.dirname(lock))
-    File.write(lock, JSON.generate("cert_pid" => cert_pid, "pgid" => pgid, "lane" => "spine",
+    File.write(lock, JSON.generate("cert_pid" => cert_pid, "cert_started_at" => cert_started,
+                                   "pgid" => pgid, "pgid_started_at" => started, "lane" => "spine",
                                    "db" => "studio_test_x", "started_at" => "2026-07-13T05:00:00Z"))
     lock
   end
@@ -631,6 +649,71 @@ class FastCheckTest < Minitest::Test
       out, code, = run_check(dir)
       assert_equal 0, code, "a stale lock must be cleared, not treated as a live claim: #{out}"
       assert_match(/\[fast-cert@/, out)
+    end
+  end
+
+  def test_a_runlock_whose_pgid_was_RECYCLED_never_kills_the_bystander
+    with_repo do |dir, _|
+      # THE BLOCKING BUG, end to end through the real bin/fast-check. The lock is days
+      # old, its cert is long dead, and the OS has since handed its pgid to an unrelated
+      # process. Grading that "alive, therefore mine" made the cert TERM/KILL an innocent
+      # bystander and print "ORPHAN REAPED" (caught in review, 2026-07-14).
+      #
+      # The recorded start time is the tell: it names an instant before this process
+      # existed, so the group is provably NOT ours.
+      bystander = Process.spawn("sleep 120", pgroup: true)
+      bygid = Process.getpgid(bystander)
+      write_lock(dir, cert_pid: 999_999, pgid: bygid, pgid_started_at: "Mon Jul  6 18:40:11 2026")
+
+      out, code, lines = run_check(dir, implicit_root: true)
+
+      # NOT `alive?`: a child we killed lingers as a zombie whose pid still answers
+      # signal 0, so kill(0) would report a murdered bystander as alive and pass this
+      # test on a regression. `exited?` waitpid()s — it cannot be fooled.
+      refute exited?(bystander, timeout: 2),
+             "THE BLOCKING BUG: fast-check KILLED an innocent process (pid #{bystander}) whose only " \
+             "crime was being handed the recycled pgid #{bygid}"
+      assert_equal 0, code, "and a stranger's process must not wedge the cert either: #{out}"
+      assert_match(/NOT killing it/i, out, "the cert must say out loud that it refused to kill")
+      refute_empty lane_calls(lines, "TEST"), "it discards the stale lock and runs normally"
+    ensure
+      begin
+        if bystander
+          Process.kill("KILL", bystander)
+          Process.waitpid(bystander)
+        end
+      rescue Errno::ESRCH, Errno::ECHILD
+        nil # already gone — which would mean the regression this test exists to catch
+      end
+    end
+  end
+
+  def test_a_legacy_runlock_with_no_identity_refuses_rather_than_killing_on_a_guess
+    with_repo do |dir, _|
+      # A lock written before the guard recorded identity (this is what is on disk in
+      # every worktree today). Something is alive under that pgid. It might be our
+      # stranded suite; it might be the operator's editor. We cannot tell — and a reaper
+      # that guesses is worse than no reaper, so a human decides.
+      unknown = Process.spawn("sleep 120", pgroup: true)
+      ungid = Process.getpgid(unknown)
+      write_lock(dir, cert_pid: 999_999, pgid: ungid, pgid_started_at: nil)
+
+      out, code, lines = run_check(dir, implicit_root: true)
+
+      refute exited?(unknown, timeout: 2), "never kill what you cannot prove is yours"
+      assert_equal 1, code, "an unprovable claim on the test DB is refused, not walked into: #{out}"
+      assert_match(/#{ungid}/, out, "the refusal NAMES what it found")
+      assert_match(/rm .*cert-run\.json/, out, "and hands over the way to clear a lock that is not yours")
+      assert_empty lane_calls(lines, "TEST"), "refusal fires BEFORE any lane runs"
+    ensure
+      begin
+        if unknown
+          Process.kill("KILL", unknown)
+          Process.waitpid(unknown)
+        end
+      rescue Errno::ESRCH, Errno::ECHILD
+        nil # already gone — which would mean the regression this test exists to catch
+      end
     end
   end
 end

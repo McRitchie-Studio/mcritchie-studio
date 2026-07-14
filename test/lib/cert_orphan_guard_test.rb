@@ -14,9 +14,34 @@
 # NAMES the orphan, so the agent retries blindly. Three attempts, 35 minutes, zero
 # board progress.
 #
-# The decision table below is PURE: it takes a lock record + a liveness probe and
-# returns what the cert should DO. Nothing here reads the clock, the process table,
-# or the DB — so the policy is testable without spawning anything.
+# ------------------------------------------------------------------------------
+# AND THE BUG THIS FILE ITSELF SHIPPED (review, 2026-07-14)
+# ------------------------------------------------------------------------------
+# The first cut of the guard graded a lock :orphan on the predicate "some process
+# with this pgid is alive", and the test that covered it REASONED ITS WAY PAST the
+# hole. It is worth quoting, because it is a whole genre of bad test:
+#
+#   def test_orphan_verdict_never_depends_on_the_dead_parent_being_reused
+#     # A pgid that is alive while the cert pid is dead is an orphan even if some
+#     # unrelated process later recycles the parent's pid number — we key the reap
+#     # on the GROUP, and the group is what holds the DB.
+#
+# It thought about pid reuse. It then dismissed it, because we key on the GROUP —
+# never noticing that A GROUP ID IS ITSELF A RECYCLABLE INTEGER. The runlock is
+# repo-relative and outlives reboots, so a nine-day-old lock whose pgid the OS has
+# since handed to somebody else is not a hypothetical: the reviewer reproduced it
+# live, and the guard TERM/KILLed an unrelated bystander and printed "ORPHAN REAPED".
+#
+# So the tests below assert the POSITIVE invariant — "the group we kill is the one
+# this lock created, proven by the OS's own start-time record" — rather than
+# blacklisting the ways a group might not be ours. Liveness is not identity, and no
+# amount of liveness ever becomes identity.
+#
+# `decide` is PURE: lock + a SNAPSHOT of the process table in, verdict out. So every
+# vector here — a recycled pgid, a previous boot, the reaper's own group — is
+# expressible as a table, with nothing spawned. The vectors that need REAL processes
+# (does it actually refuse to kill the bystander? does it still actually reap a real
+# orphan?) live in test/lib/cert_orphan_guard_reaper_test.rb.
 #
 # Run directly:  ruby -Itest test/lib/cert_orphan_guard_test.rb
 
@@ -24,10 +49,26 @@ require "minitest/autorun"
 require_relative "../../bin/lib/cert_orphan_guard"
 
 class CertOrphanGuardTest < Minitest::Test
-  # `alive` is the injected liveness probe: a Set of pids/pgids considered alive.
-  def decide(lock, alive: [])
-    live = ->(id) { alive.include?(id) }
-    CertOrphanGuard.decide(lock: lock, alive: live)
+  OURS  = "Mon Jul 13 05:00:00 2026"   # when the lock says our suite started
+  OTHER = "Wed Jul  9 22:14:03 2026"   # when the process alive under that number ACTUALLY started
+
+  # One row of `ps -Ao pid=,pgid=,state=,lstart=,command=`.
+  def process(pid:, pgid: nil, state: "S", started_at: OURS, command: "ruby bin/rails test")
+    { pid: pid, pgid: pgid || pid, state: state, started_at: started_at, command: command }
+  end
+
+  # decide() is pure: hand it a lock and a process table, get a verdict.
+  def decide(lock, table: [], self_pid: 100, self_pgid: 100)
+    CertOrphanGuard.decide(lock: lock, table: table, self_pid: self_pid, self_pgid: self_pgid)
+  end
+
+  # A lock as CertProcess writes it: it records WHO, and — crucially — WHEN.
+  def lock(cert_pid: 4242, pgid: 4300, cert_started_at: OURS, pgid_started_at: OURS, **extra)
+    {
+      "cert_pid" => cert_pid, "cert_started_at" => cert_started_at,
+      "pgid" => pgid, "pgid_started_at" => pgid_started_at,
+      "lane" => "spine", "db" => "studio_test_x", "started_at" => "2026-07-13T05:00:00Z"
+    }.merge(extra)
   end
 
   # --- [unit] no lock at all ---------------------------------------------------
@@ -37,49 +78,193 @@ class CertOrphanGuardTest < Minitest::Test
     assert_equal :none, verdict, "no prior cert ran here — nothing to reap or refuse"
   end
 
+  # --- [unit] THE REGRESSION: a recycled pgid must NEVER be reaped --------------
+
+  def test_a_recycled_pgid_is_never_graded_an_orphan
+    # THE BUG, as the reviewer reproduced it. The lock is nine days old. Its cert is
+    # long dead. The OS has since handed pgid 4300 to an unrelated process — a Chrome
+    # helper, a language server, the operator's editor. It is ALIVE, so the old
+    # predicate ("some process with this pgid is alive") graded it :orphan and killed
+    # it.
+    #
+    # The start time is the tell, and the lock recorded it all along: our suite
+    # started Mon Jul 13, this process started Wed Jul 9. Different process. Not ours.
+    bystander = process(pid: 4300, started_at: OTHER, command: "/Applications/Chrome Helper")
+    verdict, detail = decide(lock(cert_pid: 999_999), table: [bystander])
+
+    refute_equal :orphan, verdict, "NEVER kill on liveness alone — a pgid is a recyclable integer"
+    assert_equal :recycled, verdict, "proven NOT ours: the live process started at a different time"
+    assert_equal 4300, detail[:pgid]
+  end
+
+  def test_the_recycled_verdict_clears_the_lock_rather_than_wedging_the_tree
+    # Proven-not-ours is proof the suite is DEAD, so the lock is a corpse. Clear it and
+    # let the cert run. Refusing here would wedge every cert in the worktree behind a
+    # stranger's process — a safe kill is not enough, it must also not deadlock us.
+    verdict, = decide(lock(cert_pid: 999_999), table: [process(pid: 4300, started_at: OTHER)])
+    assert_equal :recycled, verdict
+  end
+
+  def test_a_recycled_CERT_pid_does_not_read_as_a_concurrent_cert
+    # The same recyclable-integer bug, one field over, and nobody had looked at it:
+    # cert_pid is graded on liveness too. A stale lock whose cert_pid the OS recycled
+    # would grade :concurrent FOREVER — "another cert is already running" — wedging
+    # every cert in the worktree behind a stranger that will never exit.
+    #
+    # Identity settles it: the live pid 4242 did not start when our cert did.
+    stranger = process(pid: 4242, started_at: OTHER, command: "node /usr/lib/language-server")
+    verdict, = decide(lock(pgid: 0), table: [stranger])
+
+    refute_equal :concurrent, verdict, "a recycled cert_pid is not a concurrent cert"
+    assert_equal :stale, verdict, "our cert is dead and no group survived — clear the lock and run"
+  end
+
   # --- [unit] a LIVE cert in this tree: refuse, never kill ---------------------
 
-  def test_live_cert_parent_means_a_concurrent_cert_and_we_refuse
-    # The cert process itself is still alive → a REAL concurrent cert is running in
-    # this worktree (a second terminal, a sibling agent). Killing it would be
-    # hostile, and running alongside it is the known "two suites on one worktree
-    # test DB" hazard (it also SIGSEGVs Ruby). Refuse, loudly.
-    lock = { "cert_pid" => 4242, "pgid" => 4242, "lane" => "spine", "started_at" => "2026-07-13T05:00:00Z" }
-    verdict, detail = decide(lock, alive: [4242])
+  def test_a_live_cert_with_matching_identity_is_concurrent_and_we_refuse
+    # The cert process is still alive AND is provably the one that wrote the lock → a
+    # REAL concurrent cert (a second terminal, a sibling agent). Killing it would be
+    # hostile, and running alongside it is the known "two suites on one worktree test
+    # DB" hazard (it also SIGSEGVs Ruby). Refuse, loudly.
+    verdict, detail = decide(lock, table: [process(pid: 4242, command: "ruby bin/fast-check")])
 
     assert_equal :concurrent, verdict
     assert_equal 4242, detail[:cert_pid]
   end
 
-  # --- [unit] a DEAD cert whose suite lives on: THE ORPHAN ---------------------
+  # --- [unit] a DEAD cert whose suite lives on: THE ORPHAN, STILL REAPED --------
 
-  def test_dead_cert_parent_with_a_live_process_group_is_an_orphan
-    # This is the bug. The cert parent is gone (the harness timeout killed it) but
-    # its process GROUP still has members — the `bin/rails test` grandchild holding
-    # the test DB. We can PROVE this is our own abandoned cert, so we may reap it.
-    lock = { "cert_pid" => 4242, "pgid" => 4300, "lane" => "spine", "started_at" => "2026-07-13T05:00:00Z" }
-    verdict, detail = decide(lock, alive: [4300])
+  def test_a_dead_cert_with_a_provably_ours_process_group_is_still_an_orphan
+    # The fix must not over-correct into a reaper that never reaps. This is the
+    # original bug and it must still be caught: the cert parent is gone (the harness
+    # timeout killed it), its group leader `bin/rails test` survived with PPID 1 and is
+    # holding the test DB, and its start time MATCHES what we recorded when we spawned
+    # it. Provably ours. Reap it.
+    verdict, detail = decide(lock(cert_pid: 999_999), table: [process(pid: 4300, started_at: OURS)])
 
     assert_equal :orphan, verdict
-    assert_equal 4300, detail[:pgid], "the orphan is identified by its PROCESS GROUP, not one pid"
+    assert_equal 4300, detail[:pgid]
+    assert_equal OURS, detail[:pgid_started_at], "we reap on the identity we recorded, not on a bare number"
   end
 
-  def test_orphan_verdict_never_depends_on_the_dead_parent_being_reused
-    # A pgid that is alive while the cert pid is dead is an orphan even if some
-    # unrelated process later recycles the parent's pid number — we key the reap on
-    # the GROUP, and the group is what holds the DB.
-    lock = { "cert_pid" => 999_999, "pgid" => 4300 }
-    verdict, = decide(lock, alive: [4300])
-    assert_equal :orphan, verdict
+  def test_start_time_matching_tolerates_the_ps_day_padding
+    # `ps` space-pads the day-of-month ("Jul  9" vs "Jul 9"). A false MISMATCH here
+    # would only ever make us refuse to kill — safe, but it would silently stop reaping
+    # every orphan spawned on a single-digit day, which is a fine way to ship a reaper
+    # that quietly does nothing for a third of every month.
+    padded = process(pid: 4300, started_at: "Wed Jul  9 22:14:03 2026")
+    verdict, = decide(lock(cert_pid: 999_999, pgid_started_at: "Wed Jul 9 22:14:03 2026"),
+                      table: [padded])
+
+    assert_equal :orphan, verdict, "same instant, different whitespace — the same process"
+  end
+
+  # --- [unit] identity we cannot establish: REFUSE, never guess ----------------
+
+  def test_a_legacy_lock_with_no_recorded_identity_refuses_rather_than_killing
+    # A lock written by the PREVIOUS version of this guard records a pgid and no start
+    # time. Something is alive under that number. It might be our stranded suite; it
+    # might be the operator's editor. We cannot tell — so we do not get to kill it.
+    # Refuse, name what is alive, and let a human decide.
+    verdict, detail = decide(lock(cert_pid: 999_999, cert_started_at: nil, pgid_started_at: nil),
+                             table: [process(pid: 4300)])
+
+    assert_equal :unverifiable, verdict
+    assert_equal :group, detail[:subject]
+  end
+
+  def test_a_group_whose_leader_died_but_whose_members_live_is_unverifiable
+    # The leader is gone, so there is no pid whose start time we can match against the
+    # lock — the members are just processes that share a number with something we once
+    # owned. Unprovable is unprovable: refuse and name them. (The test-DB backstop is
+    # what catches this one in practice, and it names the holder without killing it.)
+    worker = process(pid: 4311, pgid: 4300, command: "ruby bin/rails test (worker 2)")
+    verdict, detail = decide(lock(cert_pid: 999_999), table: [worker])
+
+    assert_equal :unverifiable, verdict
+    refute_empty detail[:members]
+  end
+
+  def test_a_live_cert_pid_with_no_recorded_identity_refuses_rather_than_racing_it
+    # Legacy lock, cert pid alive. It may be a real concurrent cert. Two suites on one
+    # test DB is the hazard that SIGSEGVs Ruby, so the safe move is to refuse — never
+    # to assume the pid was recycled and barge in.
+    verdict, detail = decide(lock(cert_started_at: nil, pgid_started_at: nil),
+                             table: [process(pid: 4242, command: "ruby bin/fast-check")])
+
+    assert_equal :unverifiable, verdict
+    assert_equal :cert, detail[:subject]
+  end
+
+  # --- [unit] the catastrophic groups: 1, 0, and our own -----------------------
+
+  def test_a_lock_naming_process_group_1_is_never_reaped
+    # `kill(sig, -1)` is not "process group 1". POSIX defines it as EVERY process the
+    # caller may signal — the whole user session. The old reaper guarded the kill with
+    # `pgid.positive?`, which admits 1, so a single truncated lock file stood between a
+    # wedged cert and `kill -TERM -1`. Verified live: kill(0, -1) reports the group
+    # EXISTS, so a real signal would have been delivered.
+    verdict, detail = decide(lock(cert_pid: 999_999, pgid: 1, pgid_started_at: nil),
+                             table: [process(pid: 1, command: "/sbin/launchd")])
+
+    refute_equal :orphan, verdict, "we must never aim a signal at -1"
+    assert_equal :unverifiable, verdict
+    assert_equal :unsafe_pgid, detail[:subject]
+  end
+
+  def test_a_lock_naming_the_reapers_own_process_group_is_never_reaped
+    # Suicide vector: a lock that names the group the CERT ITSELF is running in. The
+    # old predicate would find it alive (of course it is — we are it), grade it
+    # :orphan, and SIGKILL the whole group: the cert, its shell, the terminal.
+    verdict, detail = decide(lock(cert_pid: 999_999, pgid: 100, pgid_started_at: nil),
+                             table: [process(pid: 100, command: "ruby bin/fast-check")],
+                             self_pid: 100, self_pgid: 100)
+
+    refute_equal :orphan, verdict, "a cert must never reap the group it is running in"
+    assert_equal :unsafe_pgid, detail[:subject]
+  end
+
+  def test_signalable_refuses_group_zero_one_and_our_own
+    # The last line of defence lives next to the trigger, not only in the decision.
+    refute CertOrphanGuard.signalable?(0, self_pid: 100, self_pgid: 100), "kill(sig, 0) hits our own group"
+    refute CertOrphanGuard.signalable?(1, self_pid: 100, self_pgid: 100), "kill(sig, -1) hits EVERYTHING"
+    refute CertOrphanGuard.signalable?(100, self_pid: 100, self_pgid: 100), "that is us"
+    assert CertOrphanGuard.signalable?(4300, self_pid: 100, self_pgid: 100)
+  end
+
+  # --- [unit] a previous boot --------------------------------------------------
+
+  def test_a_lock_from_a_previous_boot_cannot_match_and_is_never_reaped
+    # The runlock is repo-relative: it survives reboots, which is what makes a recycled
+    # pgid an EXPECTED condition rather than an exotic one. After a reboot every pid is
+    # being handed out again from the start — and pgid 4300 is now something else.
+    #
+    # Start-time identity handles this for free, and provably: every process on this
+    # side of the reboot started AFTER the reboot, so none of them can match a start
+    # time we recorded before it.
+    post_boot = process(pid: 4300, started_at: "Tue Jul 14 09:02:41 2026", command: "/usr/libexec/secd")
+    verdict, = decide(lock(cert_pid: 999_999, pgid_started_at: "Mon Jul  6 18:40:11 2026"),
+                      table: [post_boot])
+
+    assert_equal :recycled, verdict, "nothing from before the reboot can still be running"
   end
 
   # --- [unit] a lock left by a cert that fully died: just stale ----------------
 
   def test_dead_cert_and_dead_group_is_a_stale_lock
-    # Nothing survived: the lock is a relic (e.g. the whole group was reaped, or the
-    # machine rebooted). Clear it and carry on — never refuse a cert over a corpse.
-    lock = { "cert_pid" => 4242, "pgid" => 4300 }
-    verdict, = decide(lock, alive: [])
+    # Nothing survived: the lock is a relic (the whole group was reaped, or the machine
+    # rebooted into an empty pid space). Clear it and carry on — never refuse a cert
+    # over a corpse.
+    verdict, = decide(lock(cert_pid: 999_999), table: [])
+    assert_equal :stale, verdict
+  end
+
+  def test_a_zombie_is_a_corpse_not_an_orphan
+    # A zombie answers signal 0 (its pid exists until someone reaps it) but holds no DB
+    # connection and cannot be killed — it is already dead. Grading one :orphan makes
+    # the reaper spin its full grace period on a corpse and then report a reap that
+    # never happened.
+    verdict, = decide(lock(cert_pid: 999_999), table: [process(pid: 4300, state: "Z")])
     assert_equal :stale, verdict
   end
 
@@ -87,15 +272,15 @@ class CertOrphanGuardTest < Minitest::Test
     # Fail SAFE, not clever: the cert is dead, but with no group recorded there is
     # nothing we can prove is ours — so we must not kill anything on a guess. The
     # DB-backend probe is the backstop for exactly this case.
-    lock = { "cert_pid" => 4242 }
-    verdict, = decide(lock, alive: [4300]) # 4300 is alive, but the lock never named it
+    verdict, = decide(lock(cert_pid: 999_999, pgid: 0), table: [process(pid: 4300)])
     assert_equal :stale, verdict
   end
 
-  # --- [unit] the loud messages must NAME the orphan --------------------------
+  # --- [unit] the loud messages must NAME what they found ----------------------
 
   def test_orphan_message_names_the_db_the_pid_and_disclaims_the_diff
-    msg = CertOrphanGuard.orphan_message(pgid: 4300, lane: "spine", db: "studio_test_x", started_at: "2026-07-13T05:00:00Z")
+    msg = CertOrphanGuard.orphan_message(pgid: 4300, lane: "spine", db: "studio_test_x",
+                                         started_at: "2026-07-13T05:00:00Z")
 
     assert_match(/4300/, msg, "the message must NAME the orphaned process group")
     assert_match(/studio_test_x/, msg, "the message must NAME the database it is holding")
@@ -103,8 +288,36 @@ class CertOrphanGuardTest < Minitest::Test
                  "an ENV-class failure must say so — this wave's convention")
   end
 
+  def test_recycled_message_says_out_loud_that_it_did_NOT_kill_the_stranger
+    # The operator must be able to see that the guard looked at a live process, proved
+    # it was not ours, and LEFT IT ALONE. Silence here is how the old bug hid.
+    msg = CertOrphanGuard.recycled_message(
+      pgid: 4300, recorded_start: OURS,
+      found: { pid: 4300, started_at: OTHER, command: "/Applications/Chrome Helper" }
+    )
+
+    assert_match(/NOT killing it/i, msg)
+    assert_match(/Chrome Helper/, msg, "name the bystander we refused to kill")
+    assert_match(/recycl/i, msg, "say WHY: the OS recycled the number")
+  end
+
+  def test_unverifiable_message_refuses_hands_over_the_commands_and_never_guesses
+    msg = CertOrphanGuard.unverifiable_message(
+      pgid: 4300, subject: :group, db: "studio_test_x", root: "/tmp/wt",
+      members: [{ pid: 4311, started_at: OURS, command: "ruby bin/rails test" }]
+    )
+
+    assert_match(/REFUSING/, msg)
+    assert_match(/4311/, msg, "name what is actually alive")
+    assert_match(%r{rm /tmp/wt/tmp/cert-run\.json}, msg, "hand over the exact way to clear a stale lock")
+    assert_match(/kill -TERM -4300/, msg, "and the exact way to reap it, if a HUMAN judges it stranded")
+    assert_match(/NOT a regression in your diff/, msg)
+  end
+
   def test_foreign_backend_message_hands_over_the_exact_kill_command
-    msg = CertOrphanGuard.foreign_backend_message(db: "studio_test_x", backends: [{ pid: 46_382, application_name: "bin/rails" }])
+    msg = CertOrphanGuard.foreign_backend_message(
+      db: "studio_test_x", backends: [{ pid: 46_382, application_name: "bin/rails" }]
+    )
 
     assert_match(/46382/, msg, "name the PG backend pid")
     assert_match(/studio_test_x/, msg)
@@ -118,5 +331,21 @@ class CertOrphanGuardTest < Minitest::Test
     assert_match(/4242/, msg)
     refute_match(/kill -9 -4242/, msg, "we never hand out a group-kill for a LIVE cert")
     assert_match(/still running|in progress|wait/i, msg)
+  end
+
+  # --- [unit] the ps parser: identity is only as good as the field we read ------
+
+  def test_ps_lines_parse_into_identity
+    row = CertOrphanGuard.parse_ps_line("41578  41538 S    Mon Jul 13 05:00:00 2026 ruby bin/rails test test/x.rb")
+
+    assert_equal 41_578, row[:pid]
+    assert_equal 41_538, row[:pgid]
+    assert_equal "Mon Jul 13 05:00:00 2026", row[:started_at]
+    assert_equal "ruby bin/rails test test/x.rb", row[:command]
+  end
+
+  def test_an_unparseable_ps_line_yields_no_identity_and_therefore_no_kill
+    assert_nil CertOrphanGuard.parse_ps_line("garbage")
+    assert_nil CertOrphanGuard.parse_ps_line("")
   end
 end
