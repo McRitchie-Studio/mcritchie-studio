@@ -20,14 +20,16 @@
 
 ## Playwright E2E Tests
 
-- `npm test` — runs all Playwright tests (14 smoke tests)
+- `npm test` — runs all Playwright tests (**69 specs** across 27 spec files)
 - `npm run test:headed` — runs with visible browser
 - `npm run test:ui` — opens Playwright UI mode
+- **CI runs this suite and it BLOCKS MERGE** (the `playwright` job in `.github/workflows/ci.yml`, sharded 3×, on every PR and every push to `main`/`release`). It collects the `e2e` tier that `config/feature_shapes.yml` demands of the `ui+db` and `onchain-vertical` shapes.
+- **`@quarantine`**: 18 of the 69 specs were already rotted when the lane was switched on (2026-07-13) and are excluded in CI via `--grep-invert @quarantine`. So CI runs **51**. That hole is ratcheted by `test/lib/e2e_quarantine_ratchet_test.rb` — the count may fall, never rise — and repair is ticketed at `/tasks/repair-rotted-e2e-specs`. Never add a tag to green a PR; the ratchet goes red.
 - **Config**: `playwright.config.js` — Chromium only, defaults to port 3000, accepts `E2E_PORT=<port>`, auto-starts test Rails server with local email capture enabled
 - **Seed**: `e2e/seed.rb` — 1 admin user (`alex@test.com`), 2 agents, 2 skills, 3 tasks, 2 activities. Idempotent via delete_all.
 - **Cleanup**: Playwright seeds into `RAILS_ENV=test`; before running the Rails suite after e2e work, reset with `RAILS_ENV=test bin/rails db:test:purge db:test:prepare`. `bin/full-suite-check` runs that reset automatically before certifying `bin/rails test`.
 - **Helper**: `e2e/helpers.js` — `loginWithMagicLink(page, email)` requests a link, reads `/_studio/local_emails.json`, confirms, and consumes it.
-- **Spec file**: `e2e/smoke.spec.js` — page loads, passwordless auth, nav links, theme toggle
+- **Spec files**: 27 under `e2e/` — `smoke.spec.js` (page loads, passwordless auth, nav links, theme toggle) plus the board, task-card, timeline, agent-activity, heartbeat, deployments/live-update, mascot, pricing, release, and testing-gates suites.
 
 ## Test invocation gotchas
 

@@ -17,6 +17,12 @@
 // /tasks/repair-rotted-e2e-specs; when it lands, drop the tags AND the --grep-invert
 // flag. Never tag a spec @quarantine to get a PR green — that is the disease this whole
 // lane exists to cure. Fix it, or block on it.
+//
+// And that last paragraph is a NORM, which is exactly what this lane's own thesis says is
+// never enough — so it is backed by a GATE. test/lib/e2e_quarantine_ratchet_test.rb
+// ratchets the count: ceiling 18, may only ever fall. Tag one more spec and that test goes
+// red. Repair a spec and it makes you lower the ceiling in the same commit, so the hole
+// cannot quietly grow back. Bounded, not merely deplored.
 const { defineConfig } = require("@playwright/test");
 const port = process.env.E2E_PORT || "3000";
 const externalBaseURL = process.env.QA_BASE_URL || process.env.PW_BASE_URL || process.env.BASE_URL;

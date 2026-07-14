@@ -193,6 +193,44 @@ class FeatureShapeTiersTest < Minitest::Test
     assert_empty lanes_running("e2e", ["bin/rails db:test:prepare test test:system"])
   end
 
+  def test_unit_every_known_tier_has_a_command_pattern
+    # THE TABLE'S TOTALITY, and — until this PR — a test that DID NOT EXIST. The header
+    # above cited it by name as the thing "keeping the table total" while the only match in
+    # the repo was the citation itself. A guard file whose entire thesis is "a declaration
+    # is not evidence" cannot afford to declare a test it does not have; that is the bug,
+    # committed in the guard's own prose. Written now rather than deleted, because the
+    # invariant it claimed is a real one and worth holding.
+    #
+    # The claim: every tier this repo KNOWS ABOUT is classified — it has a command pattern
+    # (a lane can run it) XOR it is declared structurally unrunnable (no lane ever can). A
+    # tier in NEITHER set is the dangerous middle: `lanes_running` returns [] for it, which
+    # the primary guard reports as "no runner executes it" — true, but it buries the real
+    # story (nobody ever TOLD the table about this tier) under a message about wiring a
+    # lane. Force the classification at the table, where it is one line to fix.
+    known = (required_tiers(File.read(FEATURE_SHAPES)) + UNRUNNABLE_TIERS + TIER_COMMANDS.keys).uniq
+
+    refute_empty known, "no tiers known at all — this guard would be vacuous"
+
+    known.each do |tier|
+      has_pattern = TIER_COMMANDS.key?(tier)
+      declared_unrunnable = UNRUNNABLE_TIERS.include?(tier)
+
+      assert has_pattern ^ declared_unrunnable,
+             "tier #{tier.inspect} is #{if has_pattern && declared_unrunnable
+                                          "BOTH in TIER_COMMANDS and in UNRUNNABLE_TIERS — " \
+                                          "pick one: either a lane can run it or none ever can"
+                                        else
+                                          "in NEITHER TIER_COMMANDS nor UNRUNNABLE_TIERS. A " \
+                                          "shape demands it and this table has never heard of " \
+                                          "it, so no corpus can satisfy it and the tier is " \
+                                          "collected by a builder typing the tag. Classify it: " \
+                                          "add the command that CONSTITUTES running it to " \
+                                          "TIER_COMMANDS, or declare (with the reason) why no " \
+                                          "lane can, in UNRUNNABLE_TIERS"
+                                        end}"
+    end
+  end
+
   def test_unit_a_tier_with_no_command_pattern_is_run_by_nothing
     # e2e_onchain, structurally: there is no command that constitutes running it on a
     # runner, so no corpus can satisfy it. A shape that demands it can never be honest.

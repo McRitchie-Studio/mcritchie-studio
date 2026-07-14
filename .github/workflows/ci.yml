@@ -154,8 +154,17 @@ jobs:
       # The exclusion buys the OTHER 51 specs a real lane now instead of holding all of
       # them hostage to a repair, and it fails safe — a rotted suite wired in red would
       # paint CI red for every PR in flight. It is a debt with a name and a ticket:
-      # /tasks/repair-rotted-e2e-specs. When that lands, DELETE this flag; the guard test
-      # does not police it, so nothing else will remind you.
+      # /tasks/repair-rotted-e2e-specs. When that lands, DELETE this flag.
+      #
+      # The hole is BOUNDED, not merely deplored: test/lib/e2e_quarantine_ratchet_test.rb
+      # ratchets the @quarantine count (ceiling 18, may only fall). Tagging one more spec
+      # to green a PR turns that test red. The norm in playwright.config.js asks you not
+      # to; the ratchet is what makes it a gate.
+      #
+      # The scope of this command is also guarded: test/lib/ci_workflow_triggers_test.rb
+      # asserts this lane runs the WHOLE suite unconditionally — no job/step `if:`, no
+      # positional spec path, no positive --grep. Narrowing it is a test failure, not a
+      # code review question.
       - name: Run Playwright e2e suite
         env:
           RAILS_ENV: test

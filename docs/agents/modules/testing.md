@@ -23,10 +23,23 @@ checks to `checks_run` as each stage completes.
 | Lane | Target | Mutates data | Blocks merge | Gate | When to run |
 |---|---|---:|---:|---|---|
 | PR review gate | Local repo or CI | Usually no | Yes | G1 Cert (builder cert + dor verdict) · G2 Review (the review wave) | Every PR with code changes; includes lint, security scans, Rails tests, and focused browser checks for touched UI |
+| E2E (Playwright) | CI, sharded 3× (own server + PG per shard) | Test DB only | **Yes** | G2 Review (the authoritative CI verdict) | Every PR and every push to `main`/`release` — the `playwright` job in `ci.yml`. Collects the **`e2e` tier** (shapes `ui+db`, `onchain-vertical`) |
 | Local proof | Worktree URL | Local DB only | Usually yes | G1 Cert (builder evidence) | UI, auth, task, contest, navigation, email capture, Redis, or worker changes |
 | QA acceptance | Stable QA URL | QA/devnet only when named | No; blocks production promotion | G3 Candidate | After every QA deploy; runs task acceptance criteria against the merged result |
 | Production smoke | Production URL | No by default | N/A | G4 Ship (the seal — non-blocking) | After approved production deploy; verifies health and key read-only routes |
-| Nightly/deep | Dedicated local/QA/devnet target | Often yes | No | — | Full Playwright suite, devnet/on-chain, browser matrix, longer seeded workflows |
+| Nightly/deep | Dedicated local/QA/devnet target | Often yes | No | — | devnet/on-chain, browser matrix, longer seeded workflows |
+
+**The Playwright suite BLOCKS MERGE as of 2026-07-13 (PR #543).** It is a PR-gate
+lane, not a nightly one: a red spec makes CI red and the PR does not merge. Before
+that date NO lane ran it while `config/feature_shapes.yml` demanded the `e2e` tier of
+every `ui+db` change — the tier was "collected" by a builder typing `[e2e] …` into
+`checks_run` and `bin/dor-check` crediting the tag. It went unrun long enough for
+**18 of its 69 specs to rot**; those carry `@quarantine`, CI excludes them with
+`--grep-invert @quarantine`, and their count is ratcheted (ceiling 18, may only fall)
+by `test/lib/e2e_quarantine_ratchet_test.rb`. Do not read the green `playwright`
+check as "the whole e2e suite passes" until that ceiling reaches 0
+(`/tasks/repair-rotted-e2e-specs`). Never tag a spec `@quarantine` to green a PR —
+the ratchet will turn red, by design.
 | Quarantine | Any | Varies | No until fixed | — | Known flaky or unrelated checks that still matter but should produce follow-up tasks instead of blocking unrelated PRs |
 
 The Gate column names the branded testing gate whose attempt records that
@@ -131,15 +144,25 @@ checkout starts with no built CSS. Put those two facts together:
 | Release gate workspace — **hub** | `bin/rails db:test:prepare test test:system` (the hub's registry `test_cmd`/`qa_test_cmd` — rake-routed, and rake's `test` shells an **argless** `rails test`) | yes | green |
 | Release gate workspace — **satellites** | `bin/rails test test/integration` (`qa_test_cmd`, `config/release_repos.yml`) | **no** | green — the gate preps the env itself (PR #522) |
 | **`bin/fast-check`** | `bin/rails test <mapped/spine paths>` | **no** | **was red** |
+| **Playwright `webServer`** — the `e2e` lane | `bin/rails db:test:prepare && … && bin/rails server -e test` (`playwright.config.js`) | **no** | **was red** — green since PR #543 added an explicit `bin/rails tailwindcss:build` to the chain |
 | A hand-run single file | `bin/rails test test/x_test.rb` | **no** | **was red** |
 
 The red is `The asset "tailwind.css" is not present in the asset pipeline` on
 every view-rendering test — dozens of errors on a diff that never touched a
-view, which reads as a phantom regression. The two runners this repo owns now
-prepare the test env themselves — `bin/fast-check`'s `test-prepare` lane, and
+view, which reads as a phantom regression. The three runners this repo owns now
+prepare the test env themselves — `bin/fast-check`'s `test-prepare` lane,
 `bin/agent-worktree`'s `prepare_test_env` (run by `new` at bringup, by `up`, and
-by `test <file>`) — so their failure is designed out rather than documented
-around.
+by `test <file>`), and the Playwright `webServer` chain in `playwright.config.js`
+— so their failure is designed out rather than documented around.
+
+The Playwright lane was the newest to learn this, and it learned it in public:
+the `e2e` job was green on a laptop that had run `test:prepare` by hand and red
+on every clean CI runner, with all 69 specs failing assertions that had nothing
+to do with CSS. `db:test:prepare` alone does **not** build the bundle; only
+`test:prepare` (the hook `tailwindcss-rails` enhances) does, and Playwright's
+`webServer` boots the server directly rather than through the argless `bin/rails
+test` that would have gotten it for free. Hence the explicit `bin/rails
+tailwindcss:build` in the chain — ~0.4s, and load-bearing.
 
 **The release gate workspace was fixed the same way** (task
 `gate-workspace-skips-test-prepare`, PR #522, shipped): `prepare_gate_workspace!`
