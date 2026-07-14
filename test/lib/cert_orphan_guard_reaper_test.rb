@@ -78,6 +78,16 @@ class CertOrphanGuardReaperTest < Minitest::Test
     !alive?(pid)
   end
 
+  # Make the reap FAIL. Hand-rolled rather than minitest/mock, because this file must
+  # also run standalone (`ruby -Itest ...`), where minitest/mock is not on the path.
+  def with_a_reap_that_fails
+    original = CertOrphanGuard.method(:reap_group)
+    CertOrphanGuard.define_singleton_method(:reap_group) { |*_args, **_kwargs| false }
+    yield
+  ensure
+    CertOrphanGuard.define_singleton_method(:reap_group, original)
+  end
+
   # --- [integration] THE BUG: the guard must not murder a bystander -------------
 
   def test_it_refuses_to_kill_a_process_that_merely_INHERITED_the_pgid
@@ -188,6 +198,35 @@ class CertOrphanGuardReaperTest < Minitest::Test
     members.each do |pid|
       assert wait_until_dead(pid), "every member of the group dies — a survivor keeps holding the test DB"
     end
+  end
+
+  # --- [integration] never report a kill we did not perform ----------------------
+
+  def test_a_FAILED_reap_refuses_instead_of_claiming_ORPHAN_REAPED
+    # The old code discarded reap_group's return value and printed "ORPHAN REAPED ...
+    # Continuing with a clean test DB" even when the reap had failed — then failed
+    # closed anyway on the DB backstop, leaving the operator a contradictory
+    # ORPHAN REAPED + REFUSING pair. A cert that reports a kill it did not perform is
+    # asserting rather than evidencing, which is the disease this whole wave is about.
+    #
+    # The orphan is real and provably ours; the reap fails (the process is unkillable —
+    # stuck in an uninterruptible syscall, say).
+    orphan, pgid, started_at = spawn_group
+
+    CertOrphanGuard.write_lock(@root, cert_pid: 999_999, pgid: pgid,
+                               pgid_started_at: started_at, lane: "spine", db: "studio_test_x")
+
+    verdict, message = with_a_reap_that_fails do
+      CertOrphanGuard.preflight(root: @root, env: NO_DB_ENV)
+    end
+
+    assert_equal :refuse, verdict, "an orphan still holding the test DB must not be waved through"
+    refute_match(/ORPHAN REAPED/, message, "NEVER claim a kill that did not happen")
+    assert_match(/could NOT reap/i, message, "say what actually happened")
+    assert_match(/#{pgid}/, message, "and NAME the process that is still holding the DB")
+    assert_path_exists CertOrphanGuard.lock_path(@root),
+                       "the lock is kept on purpose — it is the only record naming the process"
+    assert alive?(orphan)
   end
 
   # --- [integration] a live cert is refused, never killed ------------------------

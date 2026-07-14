@@ -408,14 +408,22 @@ module CertOrphanGuard
     end
   end
 
+  # Signal a process GROUP. Note what we do NOT do on failure: fall back to killing the
+  # bare pid.
+  #
+  # ESRCH here means "there is no process group with this id". When we have a LIVE pid
+  # under that number and yet no group, that is not a puzzle to route around — it is the
+  # strongest evidence available that our group is gone and the number has been handed
+  # to somebody else. The old code escalated to `kill(signal, pgid)` at exactly the
+  # point it should have refused, turning the best available proof of innocence into a
+  # death sentence. Any member that genuinely survives is killed by `escalate`, by
+  # identity, one pid at a time.
   def self.signal_group(pgid, signal, self_pid: Process.pid, self_pgid: Process.getpgrp)
     return unless signalable?(pgid, self_pid: self_pid, self_pgid: self_pgid)
 
     Process.kill(signal, -pgid)
   rescue Errno::ESRCH, Errno::EPERM
-    # Not a group leader (or not ours) — fall back to the bare pid, which we have
-    # already proven by start time is the process we spawned.
-    signal_pid(pgid, signal)
+    nil # the group is gone (or was never ours). Escalation is by identity, not by guess.
   end
 
   def self.signal_pid(pid, signal)
@@ -538,6 +546,20 @@ module CertOrphanGuard
       "#{db ? " (test DB: #{db})" : ''}"
   end
 
+  # We proved the orphan was ours, went to reap it, and it did not die (or its identity
+  # changed under us between the proof and the trigger, and we refused to fire). Either
+  # way the suite is still holding the test DB. Say exactly that — never print a kill we
+  # did not perform.
+  def self.reap_failed_message(pgid:, lane: nil, db: nil)
+    "REFUSING — this worktree's runlock names an orphaned suite (process group #{pgid}" \
+      "#{lane ? ", lane: #{lane}" : ''}) that we could NOT reap. It is still running, and while it holds " \
+      "#{db ? "the test DB #{db}" : 'the test DB'} every cert here dies in test-prepare on PG::ObjectInUse. " \
+      "The runlock is left in place on purpose: it names the process.\n" \
+      "  Inspect: ps -eo pid,ppid,pgid,lstart,command | grep #{pgid}\n" \
+      "  Clear:   kill -KILL -#{pgid}\n" \
+      "Then re-run the cert. This is an ENV condition — NOT a regression in your diff."
+  end
+
   def self.foreign_backend_message(db:, backends:)
     named = backends.map { |b| "pid #{b[:pid]} (#{b[:application_name]})" }.join(", ")
     pids = backends.map { |b| b[:pid] }.join(", ")
@@ -572,7 +594,17 @@ module CertOrphanGuard
                                             found: detail[:found], members: detail[:members].to_a,
                                             db: db, root: root)]
     when :orphan
+      # Gate the notice on what actually HAPPENED, not on what we set out to do. The
+      # old code discarded this boolean and printed "ORPHAN REAPED ... Continuing with a
+      # clean test DB" even when the reap had failed — then failed closed anyway on the
+      # DB backstop, handing the operator a contradictory ORPHAN REAPED + REFUSING pair
+      # and no idea which to believe. A cert that reports a kill it did not perform is
+      # back to asserting rather than evidencing.
       reaped = reap_group(detail[:pgid], started_at: detail[:pgid_started_at], ps: ps)
+      unless reaped
+        return [:refuse, reap_failed_message(pgid: detail[:pgid], lane: detail[:lane], db: db)]
+      end
+
       clear_lock(root)
       notices << orphan_message(pgid: detail[:pgid], lane: detail[:lane], db: db,
                                 started_at: detail[:started_at])
