@@ -84,6 +84,64 @@ path is being touched anyway.
 
 ---
 
+## Parked — give the e2e lane its own database
+
+Filed and archived 2026-07-14 during the founding `clean-up` run (task
+`e2e-lane-owns-its-db`). **Nothing in the repo references it** — checked before
+archiving, per the SOP's archive rubric.
+
+**What.** The **producer-side** half of the e2e/minitest database collision. Give
+Playwright's `webServer` its own database — a distinct `TEST_DATABASE_URL` in
+`playwright.config.js` (e.g. `mcritchie_studio_e2e`) — and **boot-check it** by
+reading back `connection_db_config.database` rather than trusting the env var.
+
+**Why parked.** PR #548 already closed the **consumer** side, which was the live
+hazard: `test_helper` purges every table at boot, so the minitest database is
+hermetic *no matter who polluted it* — and the purge now **fails closed**, refusing
+any database it cannot prove is the test database. The remaining benefit is
+defence-in-depth plus the ability to run both lanes **concurrently**, which nothing
+does today.
+
+**Worth knowing if you pick it up:** the **reverse** hazard already exists and
+pre-dates all of this — minitest truncates `tasks`, `users`, `agents` and
+`activities` (they have fixtures), so it would wipe a *running* e2e server's data.
+Running both lanes against one database was always fatal; isolation is what fixes
+that direction.
+
+**Resurrect when:** anyone wants to run e2e and minitest concurrently.
+
+---
+
+## Parked — commit the silence corpus probe
+
+Filed and archived 2026-07-14 (task `commit-silence-corpus-probe`). Flagged
+**independently by both reviewers** at review of PR #544, non-blocking; #544 was
+approved. Nothing in the repo references it.
+
+**The gap.** `PROGRESS_QUIET_SECONDS` is derived from `MEASURED_SILENCE_SECONDS` —
+six numbers describing a 243-window corpus of how long healthy agent sessions go
+quiet. Those six numbers are **hand-transcribed from an uncommitted one-off
+production probe.** No query, rake task, SQL, or dataset in the repo regenerates
+them.
+
+**Why that itches.** The constant's own comment says *"re-measure the corpus and the
+threshold moves with it"* — **but there is nothing committed to re-measure with.**
+It is a number claiming to be derived from evidence that does not live in the
+repository. That is the same shape as everything else this cleanup dug out: a
+declaration with no mechanism behind it.
+
+**Why parked, not built.** No live exposure. The threshold is deliberately
+conservative (a 1.5× safety factor over the worst measured window, precisely because
+the corpus does not support a confident p99 at n=243), so being wrong costs a chip
+appearing late — not a false alarm. The numbers ARE written down, with their
+provenance stated.
+
+**Resurrect when:** anyone wants to move the threshold, or the quiet chip starts
+firing on healthy work. Then the first question will be "where did 7500 come from?"
+— and the answer must not be "a probe someone ran once."
+
+---
+
 ## Parked — devnet on-chain CI
 
 Parked by Mr. McRitchie on 2026-07-14. **These two remain live board tasks** by his

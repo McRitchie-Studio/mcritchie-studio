@@ -3,6 +3,7 @@
 require "test_helper"
 require "open3"
 require "tmpdir"
+require "digest"
 
 # INTEGRATION tier for the SOP registry, across the boundary that actually
 # matters: GENERATION.
@@ -22,6 +23,8 @@ require "tmpdir"
 # projects root and the real skills directories are never touched.
 class SopRegistryInstallTest < ActiveSupport::TestCase
   test "install-agent-docs generates AGENTS.md and CLAUDE.md that can resolve clean-up" do
+    real_root_digest = digest_of(REAL_ROOT_DOCS)
+
     Dir.mktmpdir("sop-install") do |sandbox|
       projects = File.join(sandbox, "projects")
       home     = File.join(sandbox, "home")
@@ -60,7 +63,32 @@ class SopRegistryInstallTest < ActiveSupport::TestCase
                    "the generated CLAUDE.md never names `clean-up`")
 
       # The real projects root must be untouched by this test.
-      refute_equal File.expand_path("/Users/alex/projects"), File.expand_path(projects)
+      #
+      # The obvious spelling — `refute_equal "/Users/alex/projects", projects` — is
+      # TAUTOLOGICAL: `projects` is an mktmpdir path, so it can never equal the real
+      # root, and the assertion passes even if the installer wrote to the real root
+      # anyway. A guard that cannot fail is not a guard. Compare the real files'
+      # CONTENT across the run instead: that is the property we actually want.
+      assert_equal real_root_digest, digest_of(REAL_ROOT_DOCS),
+                   "install-agent-docs MODIFIED the real projects root while sandboxed to a tmpdir — " \
+                   "HOME/PROJECTS_DIR did not contain it"
+    end
+  end
+
+  REAL_ROOT_DOCS = [
+    File.expand_path("~/projects/AGENTS.md"),
+    File.expand_path("~/projects/CLAUDE.md"),
+    File.expand_path("~/.claude/skills")
+  ].freeze
+
+  # Content fingerprint of the real installed docs + skills tree. Missing paths hash
+  # as "absent" — so a test that CREATES one is caught too, not just one that edits.
+  def digest_of(paths)
+    paths.map do |path|
+      if File.file?(path) then Digest::SHA256.file(path).hexdigest
+      elsif File.directory?(path) then Dir.glob("#{path}/**/*").sort.map { |f| "#{f}:#{File.file?(f) ? Digest::SHA256.file(f).hexdigest : "d"}" }.join
+      else "absent"
+      end
     end
   end
 end

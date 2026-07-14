@@ -30,7 +30,13 @@ class SopRegistryDocsTest < ActiveSupport::TestCase
   # Rows look like:  | `clean-up` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/clean-up.md` |
   # The invocation may carry a trailing note — `pr-review-primary` (role SOP),
   # `qa-deploy` (legacy alias) — so capture the backticked name, not the whole cell.
-  ROW = /^\|\s*`([a-z0-9-]+)`[^|]*\|\s*([^|]+?)\s*\|\s*`mcritchie-studio\/(\S+?)`\s*\|/
+  #
+  # The name charset MUST admit spaces and capitals. The HEARTBEAT rows are spelled
+  # `Avi Heartbeat` / `Steffon Heartbeat` / `Alex Heartbeat`, so a `[a-z0-9-]+` class
+  # silently declines to match them — which left every HEARTBEAT.md path completely
+  # UNPINNED, in the one class of doc a soul launches from. A regex that quietly
+  # matches nothing is the same failure as a gate that quietly passes everything.
+  ROW = /^\|\s*`([A-Za-z0-9][A-Za-z0-9 -]*)`[^|]*\|\s*([^|]+?)\s*\|\s*`mcritchie-studio\/(\S+?)`\s*\|/
 
   def registry_rows
     INDEX.read.lines.filter_map do |line|
@@ -75,13 +81,28 @@ class SopRegistryDocsTest < ActiveSupport::TestCase
     top_paths = text[0...reference_heading].lines.filter_map { |l| ROW.match(l)&.[](3) }
     ref_paths = text[reference_heading..].lines.filter_map { |l| ROW.match(l)&.[](3) }
 
-    # Heartbeat launchers live only in the top table; compare on SOP files, which
-    # both tables carry.
-    sops = ->(paths) { paths.select { |p| p.include?("/sops/") }.to_set }
+    # BOTH tables carry the heartbeat rows AND the SOP rows — an earlier version of
+    # this comment claimed heartbeats lived only in the top table, and its regex could
+    # not match them anyway, so the claim was never tested. Compare the FULL path sets.
+    assert_equal top_paths.to_set, ref_paths.to_set,
+                 "The two SOP registry tables in docs/agents/index.md disagree. Both must list every SOP " \
+                 "and every heartbeat — an agent may read either one."
+  end
 
-    assert_equal sops.call(top_paths), sops.call(ref_paths),
-                 "The two SOP registry tables in docs/agents/index.md disagree. Both must list every SOP — " \
-                 "an agent may read either one."
+  # The one class of doc a soul LAUNCHES from. Pinned explicitly, because they are the
+  # rows the old `[a-z0-9-]+` name class silently declined to match (`Avi Heartbeat` —
+  # space, capitals), leaving every HEARTBEAT.md path completely unverified.
+  test "every heartbeat launcher in the registry exists on disk" do
+    heartbeats = registry_rows.select { |r| r[:path].end_with?("HEARTBEAT.md") }
+
+    assert_operator heartbeats.length, :>=, 3,
+                    "expected the Avi/Steffon/Alex heartbeat rows in the registry; the ROW regex may have " \
+                    "stopped matching them again (they carry a SPACE and CAPITALS)"
+
+    heartbeats.each do |row|
+      assert_path_exists Rails.root.join(row[:path]),
+                         "registry names heartbeat #{row[:invocation]} -> #{row[:path]}, which does not exist"
+    end
   end
 
   # The Claude adapter names invocations in prose ("such as `pr-review`, …"). It is
@@ -90,8 +111,31 @@ class SopRegistryDocsTest < ActiveSupport::TestCase
   # it may abbreviate, but it may never invent.
   test "every invocation the Claude adapter names is a real registered invocation" do
     invocations = registry_rows.map { |r| r[:invocation] }.to_set
-    prose = CLAUDE.read[/resolve that phrase/i.match(CLAUDE.read) ? 0..CLAUDE.read.index("resolve that phrase") : 0..0]
-    named = prose.to_s.scan(/`([a-z0-9-]+)`/).flatten.select { |n| n.include?("-") }
+    body = CLAUDE.read
+
+    # The scan is SCOPED to the SOP-invocation sentence on purpose. A whole-file scan
+    # for backticked hyphenated tokens over-reaches: the adapter legitimately names the
+    # feature SHAPES (`ui-only`, `onchain-vertical`) and other hyphenated terms that are
+    # not SOPs, so it would fail on correct docs — a guard that cries wolf gets deleted.
+    #
+    # But the FIRST cut of this test scoped it and stopped there, which fails OPEN: a
+    # bogus SOP name injected AFTER the anchor kept the test GREEN, and any reword that
+    # moved the list — or renamed the anchor — turned the whole assertion into a silent
+    # NO-OP with nothing to tell you. So the anchor itself is now ASSERTED, and so is a
+    # non-empty result. A check that can be switched off by editing prose is not a check.
+    anchor = body.index("resolve that phrase")
+    refute_nil anchor,
+               "docs/agents/claude.md no longer contains the 'resolve that phrase' SOP-invocation anchor. " \
+               "This test scopes its scan to that sentence — without the anchor it would silently check " \
+               "NOTHING. Restore the anchor, or rewrite this test to scan whatever replaced it."
+
+    named = body[0..anchor].scan(/`([a-z0-9][a-z0-9-]*-[a-z0-9-]*)`/).flatten.uniq
+
+    # A subset assertion over an EMPTY set passes trivially — the exact way this family
+    # of test fails open. Prove the scan is looking at something before trusting it.
+    assert_operator named.length, :>=, 3,
+                    "the Claude adapter's SOP sentence names no invocations at all — either it was " \
+                    "reworded past recognition, or this scan has quietly stopped seeing them"
 
     unknown = named.reject { |n| invocations.include?(n) }
 

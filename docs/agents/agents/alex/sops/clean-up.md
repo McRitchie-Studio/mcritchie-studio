@@ -95,6 +95,27 @@ Cross-reference every open task against that list. A task with a **green,
 mergeable PR is not work — it is an un-pressed button.** Expect far more of these
 than you think.
 
+> ### ⛔ "Green and mergeable" is a REVIEW candidate, not a SHIP candidate
+> The line above is the most dangerous sentence in this SOP, because it tempts you
+> to conflate *green* with *good* and wave the queue through. **Do not.** Every PR
+> still gets its full review — that is not ceremony, it is the only thing standing
+> where the gates cannot see.
+>
+> In the founding run, reviewers **blocked back 6 of 11** green, mergeable, CI-passing
+> PRs. Among what they caught:
+> - a cert lane that **ran zero tests** and stamped itself green
+> - an orphan reaper that **killed an innocent process** (recycled pgid)
+> - a guard that refused to fire `kill -TERM -1` in code — **and then printed it as
+>   copy-paste remediation**
+> - a test-only purge that, under `RAILS_ENV=development`, **truncates the shared
+>   development database** — 70k+ rows
+>
+> Every one of those had a green suite and a green CI. As that last reviewer wrote:
+> **"the green gates cannot see this defect."**
+>
+> The goal is an empty board, **not a fast one.** A cleanup that ships six broken
+> PRs has not cleaned anything — it has moved the mess into production.
+
 Capture the infra baseline now, because one number gates a later phase:
 
 ```bash
@@ -136,6 +157,26 @@ below). Each returns exactly one disposition:
 - **It is self-marking in the code.** Debt already tagged in the repo
   (`@quarantine`, a named `TODO`, a skipped suite) needs no board row to stay
   visible. The code is the reminder.
+
+  > ### ⛔ GREP FOR REFERENCES BEFORE YOU ARCHIVE — this rubric has a trap in it
+  > "Self-marking in the code" holds only when the code marks the **debt**. It does
+  > NOT hold when the code marks the **ticket**.
+  >
+  > In the founding run I archived `repair-rotted-e2e-specs` on exactly this rubric —
+  > 18 rotted specs, already tagged `@quarantine`, visible forever. But **eight places
+  > in code and docs cited `/tasks/repair-rotted-e2e-specs` BY NAME** as the live
+  > ticket driving the quarantine ceiling from 18 down to 0 — `ci.yml`,
+  > `feature_shapes.yml`, `playwright.config.js`, two test files, three docs.
+  > Archiving it turned 18 into a **permanent ceiling resting on a dead link.** A
+  > reviewer caught it; I had shipped a broken promise.
+  >
+  > **Always, before archiving:**
+  > ```bash
+  > grep -rn "<task-slug>" --include='*' . | grep -v '^./\.git'
+  > ```
+  > **An archived task that live code cites as live is a lie the code tells.** If
+  > anything references it, either keep the task alive (park it) or repoint every
+  > reference — never just archive and walk away.
 - **It is persistent and will recur.** If the bug resurfaces on its own, you get
   another, better-informed chance at it. Archive; let it come back.
 - **The premise moved** and it no longer makes sense.
@@ -178,6 +219,19 @@ A task that sat in `building` with an open PR has almost certainly gone stale:
 > bin/fast-check <task> && bin/dor-check <task>
 > ```
 > **A `STALE` you cannot explain is a `cd` bug until proven otherwise.**
+>
+> Want to confirm it? Run `bin/dor-check` from the primary against SEVERAL different
+> tasks. Pre-fix it printed the **identical fingerprint for every one of them** — it
+> was hashing its own tree and never looked at the task's code at all.
+
+> ### ⛔ A cert can die SILENTLY under concurrent load
+> Run heavy suites in parallel and a `bin/fast-check` can simply vanish: **0-byte
+> output, no process, nothing recorded on the board.** A cert that died looks
+> *identical* to a cert still running — so an agent sits waiting on a corpse.
+>
+> **If a cert produced no output, it did not pass. Re-run it; never assume.** This is
+> the sharpest argument for the ≤5 concurrency cap: the failure is not merely a
+> crash, it is an *invisible* crash.
 
 ### 3b. Inspect every worktree before you trust its PR
 
@@ -223,6 +277,51 @@ Summon an **Avi supervisor subagent** who selects and spawns a PRIMARY + LIGHT
 reviewer pair per task, in parallel, as his own children. Avi supervises; he does
 not review. See [`../../avi/sops/pr-review.md`](../../avi/sops/pr-review.md).
 
+> ### ⛔ THE SIGNATURE RISK OF A CLEANUP: bugs that live BETWEEN the PRs
+> A cleanup ships a dozen PRs at once. Each is reviewed alone, each is correct alone —
+> **and the bug is in the interaction.** No single reviewer is looking there, and no
+> gate can see it. **That is the supervisor's job, and nobody else's.**
+>
+> The founding run's sharpest catch was exactly this. One PR made the cert **refuse a
+> dirty tree** (reading `git status --porcelain`, which sees untracked files). Another
+> PR's crash-detection **runlock lived at `tmp/cert-run.json`** — and two repos do not
+> gitignore `tmp/`. Composed: a killed cert leaves its runlock (**by design** — the
+> lock surviving IS the detection mechanism), the next cert sees `?? tmp/`, aborts as
+> DIRTY, and **the orphan preflight never runs.** The exact 35-minute deadlock the
+> second PR existed to fix — restored, permanent, and triggered by the guard's own
+> artifact.
+>
+> **The detail that makes this a rule, not an anecdote: the hunks were DISJOINT.** Git
+> auto-merged them cleanly. There was no conflict to force a human to look. The
+> supervisor **overrode two merge-ready verdicts** to catch it.
+>
+> So, before the sweep:
+> - **List every file touched by more than one PR in the batch** and read those regions
+>   together, as one change.
+> - Ask of each pair: *does A's artifact become B's input?* Locks, temp files,
+>   fingerprints, env vars, and anything one PR **deliberately leaves on disk** are the
+>   places to look.
+> - **A merge-order rule is a CONVENTION, not an invariant.** If correctness depends on
+>   two hunks landing in a particular order, that is not a fix — fix it structurally so
+>   the order cannot matter.
+
+> ### ⛔ NEVER review a task that is being reworked — the review will race the fix
+> A blocked task goes back to `building` and an agent starts fixing it. If a review
+> wave is still running, a reviewer can read the **old head** and block a bug that is
+> already fixed — producing a send-back that describes code no longer on the branch.
+>
+> This happened in the founding run: a task was blocked for a defect its own HEAD had
+> already closed, verified green, and pushed. The rework was correct; the review was
+> reading history. It cost a full round-trip and looked, on the board, exactly like a
+> real failure.
+>
+> **Sequence the waves. Do not overlap review with rework on the same task.** When a
+> stale block does slip through, do not silently re-move the task — clear it on the
+> record so the next reader is not misled:
+> ```bash
+> bin/task note <task> --resolves-feedback --handoff "STALE BLOCK — the review raced the rework. <what was already fixed, and in which commit>"
+> ```
+
 Then **direct-drive** the sweep and the ship yourself:
 
 ```bash
@@ -241,6 +340,39 @@ bin/devops-shift release avi
 > A subagent running the sweep has detached mid-flight and left a **half-applied
 > release candidate that nobody owned.** Run those yourself, in the foreground.
 > The line is **mutating vs reading**, not parallel vs serial.
+
+---
+
+### 3d. When you delegate, hand over HYPOTHESES — never findings
+
+You will be triaging a dozen tasks you did not build, relaying diagnoses you did not
+verify. **Label them as what they are.** A conductor who launders someone else's
+hypothesis into a fact sends an agent to fix a phantom — or worse, to install a fix
+that does not work.
+
+Both happened in the founding run:
+
+- I relayed "27 test failures, they're yours, fix them" as a finding. It was a
+  hypothesis, and it was **wrong** — CI was green on the combined code. An agent was
+  most of the way into hunting a ghost before the original reporter re-checked his own
+  claim and retracted it, unprompted.
+- A reviewer prescribed a precise fix for a database guard: *read back the connected DB
+  and compare it to `configs_for(env_name: "test").database`.* I passed it on as the
+  fix. The builder **measured it instead of trusting it — and it was a PLACEBO.** Rails
+  merges `DATABASE_URL` into the config for the *current* env, and under the suite the
+  current env IS `test`. So the expectation **moves with the attack**: it compares a
+  moved value against itself, passes, and truncates the shared database anyway. He
+  mutation-proved it by installing the prescribed anchor and watching the test go RED.
+
+So:
+
+- **Say "hypothesis" when it is one**, name who claimed it and on what evidence, and
+  tell the agent to **verify before fixing**. An agent who pushes back and refuses to
+  fix a phantom is doing the job right.
+- **A reviewer's prescribed fix is itself a hypothesis.** Reviewers are excellent and
+  still wrong sometimes. The builder is the one holding the measurement.
+- **Retract loudly and immediately.** A stale instruction left standing costs more than
+  the embarrassment of correcting it.
 
 ---
 
@@ -263,6 +395,24 @@ bin/agent-worktree cleanup --reclaim --yes   # full teardown + Redis band shrink
 - **`_gate` and `_ship` are infrastructure, not desks** — fixed-path workspaces for
   the cert and the ship. They ARE safe to reclaim: `bin/release.rb` re-creates them
   on demand with `git worktree add --detach`. Just never reclaim them **mid-ship**.
+
+> ### ⛔ The reclaim gate refuses a desk whose commits live nowhere else — LISTEN to it
+> `bin/agent-worktree remove` will refuse with *"branch content is not represented on
+> origin/release"*. That is not a nuisance; it is the gate catching **a detached-HEAD
+> worktree whose commits are reachable from nothing but that directory.** Delete it
+> and the work is garbage-collected.
+>
+> This run found one: no branch, no task, no PR, and 940 lines of commits. Do the
+> work — establish whether it is genuinely superseded (**point at the code that
+> supersedes it**), then make the commits safe before you remove:
+> ```bash
+> SHA=$(git -C .worktrees/<name> rev-parse HEAD)
+> git tag archive/<name> "$SHA" && git push origin refs/tags/archive/<name>
+> git worktree remove --force .worktrees/<name> && git worktree prune
+> ```
+> The gate cannot see a tag, so it will keep refusing — but the tag satisfies its
+> actual concern, and now nothing is lost. **Record why you overrode it in the
+> ledger.** Never force past this gate without doing that work first.
 
 ### Orphaned PRs — a PR with no task is a hanging chad
 ```bash
