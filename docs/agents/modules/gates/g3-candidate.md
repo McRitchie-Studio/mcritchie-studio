@@ -175,8 +175,8 @@ the asset pipeline` — **the gate went red on green code and handed out
 eject/revert guidance** (2026-07-12; the same false-red class that nearly ejected
 PR #498). A failed prepare now aborts as **env**, never as a red suite.
 
-Two further things make that isolation real rather than aspirational, and both
-exist because the first cut of this gate got them wrong:
+Three further things make that isolation real rather than aspirational, and all
+exist because an earlier cut of this gate got them wrong:
 
 * **The gate holds its OWN lock** (`mcr-gate-workspace-<repo>.lock`, *not* the
   primary-checkout lock, which stays free). The workspace is private to the
@@ -185,6 +185,20 @@ exist because the first cut of this gate got them wrong:
   `reset --hard` the tree and `db:test:prepare`-**purge** the DB under the first
   one's live suite. That is the same two root causes relocated one directory over.
   The lock is held across pin → prepare → suite; a second conductor **queues**.
+* **The suite cannot outlive the conductor** (the hole the lock *cannot* cover: an
+  flock is released when its holder dies, but the suite that holder spawned is
+  **not**). The gate suite used to run through a bare `system`, in the conductor's
+  own process group with no handler — so killing or timing out the conductor
+  mid-suite left the suite running, reparented to launchd, still holding
+  `<repo>_gate_test`. The next gate then took the freed lock cleanly and walked
+  straight into `PG::ObjectInUse` (`db:test:prepare` cannot purge a DB another
+  session holds), aborting without ever **naming** what held it. The suite now runs
+  in its **own process group**, reaped with the conductor; and because a SIGKILL runs
+  no handler, it also writes a **runlock** (in `.agents/locks/`, which outlives the
+  workspace) so the *next* gate reaps — or **names** — whatever was stranded, before
+  it purges anything. It kills only a process group it can **prove** is its own: a
+  pgid is a recyclable integer, and a reaper that guesses is worse than no reaper.
+  See `docs/agents/modules/testing.md` → "The orphan guard".
 * **The private DB is ASSERTED, not assumed.** Before running anything, the gate
   boots the app in the workspace and reads back the database it *actually*
   connected to (`assert_private_gate_db!`), and **refuses to run** unless it is
