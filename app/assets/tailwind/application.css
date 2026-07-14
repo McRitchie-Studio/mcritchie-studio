@@ -505,6 +505,34 @@
   }
 }
 
+@layer components {
+  /* The Pokédex collection grid's three artwork states. Each species has ONE image on
+     S3, so the state is a filter over that image — a cell never fetches a second asset
+     to change how it reads.
+
+     PRESENCE IS THE LADDER: caught (full color) reads stronger than seen (colorless
+     but fully detailed), which reads stronger than unseen (a faint flat silhouette).
+     Seen therefore stays near-opaque — dimming it far enough to "look uncaught" made
+     it FAINTER than the silhouettes and stood the hierarchy on its head.
+
+     The silhouette must invert in the dark theme: brightness(0) crushes the artwork to
+     black, which on a dark card is not a mystery, it is nothing at all. */
+  .dex-art-seen {
+    filter: grayscale(1);
+    opacity: 0.8;
+  }
+
+  .dex-art-unseen {
+    filter: brightness(0);
+    opacity: 0.25;
+  }
+
+  .dark .dex-art-unseen {
+    filter: brightness(0) invert(1);
+    opacity: 0.18;
+  }
+}
+
 @utility theme-transition {
   /* Theme transition (applied during toggle) */
   & * {

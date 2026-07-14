@@ -10,5 +10,6 @@ class PokemonController < ApplicationController
     @newest_unique_shiny = @pokedex.newest_unique_shiny
     @newest_caught_shiny = @pokedex.newest_caught_shiny
     @recent_actions = @pokedex.recent_actions
+    @dex_entries = @pokedex.dex_entries
   end
 end
