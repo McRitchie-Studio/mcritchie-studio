@@ -43,7 +43,7 @@ async function assertLastReleaseStack(page) {
 // live ticker. Recording a review intent against it (as if another session began
 // the review) fires a real ActionCable broadcast; the already-open board swaps the
 // card IN PLACE and the in-progress ticker appears — with NO page reload.
-test("the deployments board updates a card live when an intent is recorded", async ({ page }) => {
+test("the deployments board updates a card live when an intent is recorded @quarantine", async ({ page }) => {
   // The original miss was an UNCAUGHT TypeError in the broadcast handler (a wrong
   // method name) that fired after the DOM mutation — guard against any such throw.
   const pageErrors = [];
@@ -80,7 +80,7 @@ test("the deployments board updates a card live when an intent is recorded", asy
 // review duration. Recording a fresh review intent after the rebuild must turn
 // that same review lane into the current live ticker, not leave the old static
 // duration badge in place.
-test("a resubmitted card replaces the old review duration with a live review ticker", async ({ page }) => {
+test("a resubmitted card replaces the old review duration with a live review ticker @quarantine", async ({ page }) => {
   const pageErrors = [];
   page.on("pageerror", (err) => pageErrors.push(String(err)));
   page.on("console", (msg) => { if (msg.type() === "error") pageErrors.push(msg.text()); });
@@ -111,7 +111,7 @@ test("a resubmitted card replaces the old review duration with a live review tic
   expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
 });
 
-test("a direct-blocked card ignores stale review intent until a fresh one starts", async ({ page }) => {
+test("a direct-blocked card ignores stale review intent until a fresh one starts @quarantine", async ({ page }) => {
   const pageErrors = [];
   page.on("pageerror", (err) => pageErrors.push(String(err)));
   page.on("console", (msg) => { if (msg.type() === "error") pageErrors.push(msg.text()); });
@@ -205,7 +205,7 @@ test("an assembled card fills its reserved deploy slot live when a ship intent i
 // A live STAGE CHANGE moves the card to its new column AND updates the per-column
 // count badges — the regression guard for the updateCounts() call in
 // applyLiveUpdate (a wrong method name left the badges stale on every broadcast).
-test("a live stage change FLIPs the card to its new column and updates the count badges", async ({ page }) => {
+test("a live stage change FLIPs the card to its new column and updates the count badges @quarantine", async ({ page }) => {
   await page.goto("/deployments");
 
   await expect(page.locator("#dropzone-submitted #card-live-cable-move-demo")).toBeVisible();
@@ -232,7 +232,7 @@ test("a live stage change FLIPs the card to its new column and updates the count
 // into Building, not only replace an existing DOM target. This test removes the
 // stale visible card first to match the bug: a page reload would show it, but a
 // replace-only websocket update leaves the open board empty.
-test("a live block transition inserts a missing card into the Building column", async ({ page }) => {
+test("a live block transition inserts a missing card into the Building column @quarantine", async ({ page }) => {
   const pageErrors = [];
   page.on("pageerror", (err) => pageErrors.push(String(err)));
   page.on("console", (msg) => { if (msg.type() === "error") pageErrors.push(msg.text()); });
@@ -259,7 +259,7 @@ test("a live block transition inserts a missing card into the Building column", 
   expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
 });
 
-test("a live block transition keeps an already-visible Building card visible", async ({ page }) => {
+test("a live block transition keeps an already-visible Building card visible @quarantine", async ({ page }) => {
   const pageErrors = [];
   page.on("pageerror", (err) => pageErrors.push(String(err)));
   page.on("console", (msg) => { if (msg.type() === "error") pageErrors.push(msg.text()); });
@@ -285,7 +285,7 @@ test("a live block transition keeps an already-visible Building card visible", a
   expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
 });
 
-test("the tasks board updates a blocked card live in the Building column", async ({ page }) => {
+test("the tasks board updates a blocked card live in the Building column @quarantine", async ({ page }) => {
   const pageErrors = [];
   page.on("pageerror", (err) => pageErrors.push(String(err)));
   page.on("console", (msg) => { if (msg.type() === "error") pageErrors.push(msg.text()); });

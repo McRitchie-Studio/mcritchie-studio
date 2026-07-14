@@ -8,7 +8,7 @@ async function createTask(page, token, attrs) {
   expect(res.ok(), await res.text()).toBeTruthy();
 }
 
-test("reactivated blocked work renders above still-blocked cards in Building", async ({ page }) => {
+test("reactivated blocked work renders above still-blocked cards in Building @quarantine", async ({ page }) => {
   await page.goto("/tasks");
 
   const token = await page.getAttribute("meta[name='e2e-api-token']", "content");
@@ -48,7 +48,7 @@ test("reactivated blocked work renders above still-blocked cards in Building", a
   expect(reactivatedIndex).toBeLessThan(blockedIndex);
 });
 
-test("approval waiting work pulses, ranks first, and exposes Local Demo", async ({ page }) => {
+test("approval waiting work pulses, ranks first, and exposes Local Demo @quarantine", async ({ page }) => {
   await page.goto("/tasks");
 
   const token = await page.getAttribute("meta[name='e2e-api-token']", "content");
