@@ -24,6 +24,7 @@ checks to `checks_run` as each stage completes.
 |---|---|---:|---:|---|---|
 | PR review gate | Local repo or CI | Usually no | Yes | G1 Cert (builder cert + dor verdict) · G2 Review (the review wave) | Every PR with code changes; includes lint, security scans, Rails tests, and focused browser checks for touched UI |
 | E2E (Playwright) | CI, sharded 3× (own server + PG per shard) | Test DB only | **Yes** | G2 Review (the authoritative CI verdict) | Every PR and every push to `main`/`release` — the `playwright` job in `ci.yml`. Collects the **`e2e` tier** (shapes `ui+db`, `onchain-vertical`) |
+| E2E executed-set | CI, reads each shard's JSON receipt | No | **Yes** | G2 Review | The `e2e_executed_set` job, after the shards. Asserts the lane **ran the 51 specs it claims to** — the one thing the `playwright` job cannot verify about itself |
 | Local proof | Worktree URL | Local DB only | Usually yes | G1 Cert (builder evidence) | UI, auth, task, contest, navigation, email capture, Redis, or worker changes |
 | QA acceptance | Stable QA URL | QA/devnet only when named | No; blocks production promotion | G3 Candidate | After every QA deploy; runs task acceptance criteria against the merged result |
 | Production smoke | Production URL | No by default | N/A | G4 Ship (the seal — non-blocking) | After approved production deploy; verifies health and key read-only routes |
@@ -41,16 +42,38 @@ by `test/lib/e2e_quarantine_ratchet_test.rb`. Do not read the green `playwright`
 check as "the whole e2e suite passes" until that ceiling reaches 0
 (`/tasks/repair-rotted-e2e-specs`).
 
-**What stops a spec from quietly leaving the lane.** `test/lib/e2e_quarantine_ratchet_test.rb`
-pins the **executed set**, not the ci.yml command: **69 specs committed − 18
-quarantined == the 51 CI runs.** It is arithmetic, so it does not care how you drop a
-spec. `@quarantine`, `test.only` (which collapses the lane to a single spec while the
-other two shards select ZERO tests and **exit 0 in silence** — sharding suppresses
-playwright's own "no tests found" guard), `test.skip`, `test.fixme`, a `testDir` or
-`testIgnore` edit, a deleted spec file, an empty shard: all red. Spec declarations are
-**default-deny** — a bare `test(…)` is the only accepted form, and any modifier not on
-the inert allowlist is refused by name, including ones Playwright has not shipped yet.
-`playwright.config.js` also sets `forbidOnly` under CI as a hard stop at the lane
+**What stops a spec from quietly leaving the lane.** Two guards, and only one of them
+generalizes. Both read the same contract, `config/e2e_lane.yml` — **69 committed − 18
+quarantined == 51 executed** — so they can never certify two different suites.
+
+1. **The receipt (`bin/e2e-executed-set-check`, the `e2e_executed_set` CI job).** Each
+   shard emits a JSON report; this job reads them and asserts what the lane **actually
+   ran**: 51 executed, 0 skipped, every shard's report present. This is the durable
+   guard. A spec that leaves the lane by *any* route lands on one line of arithmetic,
+   whatever syntax arranged it — a runtime skip, a widened `--grep-invert`, an
+   `--only-changed`, a narrowed `testDir`, a deleted file, a dropped shard, or next
+   year's flag nobody here has heard of.
+2. **The static scan (`test/lib/e2e_quarantine_ratchet_test.rb`).** Reads the committed
+   source and pins the **declared** set. It is the *fast* guard — it fails in
+   milliseconds, before anyone burns six minutes of CI on a suite already provably
+   wrong — and it is **not sufficient on its own**. Selection verbs (`only`/`skip`/
+   `fixme`/`fail`) are refused on **any receiver**, and the e2e command's flags are
+   **default-deny** (only `--shard`, `--grep-invert`, `--reporter` are inert), with
+   `--grep-invert` value-pinned to exactly `@quarantine`.
+
+**Why the receipt exists at all** — three rounds of review beat the static scan, each
+time with a spelling the previous round had not imagined: `test.only` (collapses the
+lane to one spec while the other shards select ZERO tests and **exit 0 in silence** —
+sharding suppresses Playwright's own "no tests found" guard), then `test.skip`/`.fixme`,
+then `testInfo.skip()` on a receiver the regex never watched, then a widened
+`--grep-invert '@quarantine|board'` (51 specs → 43) that nothing pinned. The lesson is
+structural, and it is worth carrying to any gate you build: **a guard that reads the
+source can only refuse the spellings someone thought to refuse.** A
+`const { skip } = testInfo` has no `.skip(` token in the spec at all and no regex will
+ever see it — it is GREEN on the static scan today, deliberately, and RED on the receipt.
+Assert what the system *did*, not what its source *looks like*.
+
+`playwright.config.js` also sets `forbidOnly` under CI as a cheap hard stop at the lane
 itself. So there are two honest moves for a red spec and no third: **fix it**, or
 `@quarantine` it — which the ratchet makes you account for — and **block on it**.
 
