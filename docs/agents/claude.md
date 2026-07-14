@@ -10,7 +10,7 @@ McRitchie SOPs live in `/Users/alex/projects/AGENTS.md`'s **SOP Invocation
 Standard** and the repo docs it points to. SOPs are first-class registered
 commands with finite names and stable files. If Mr. McRitchie's prompt names an
 SOP or heartbeat act such as `pr-review`, `qa-release`, `production-deploy`,
-`archive-shipped`, `deploy-with-task`, or `full-cycle`, resolve that phrase
+`archive-shipped`, `deploy-with-task`, `clean-up`, or `full-cycle`, resolve that phrase
 through the SOP registry, read the mapped SOP, then execute it. For example, `pr-review` means read
 `mcritchie-studio/docs/agents/agents/avi/sops/pr-review.md` first and run that
 review-only SOP; do not start with `bin/pr-review --help`, `bin/qa-intake`,
