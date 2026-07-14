@@ -25,6 +25,11 @@ require "tmpdir"
 require "fileutils"
 require "time"
 
+# Arms TASK_USAGE_SANDBOX for THIS process (and every child it spawns), so the
+# token-cache guard below is actually live. Without it these tests passed only when a
+# sibling file that DOES require it happened to run first in the same process — green
+# in the suite, red alone, and proving nothing either way.
+require_relative "../support/session_env"
 require File.expand_path("../../bin/lib/agent_api", __dir__)
 
 class AgentApiTest < Minitest::Test

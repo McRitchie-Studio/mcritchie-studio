@@ -878,6 +878,15 @@ class AgentActivityCliTest < Minitest::Test
     Struct.new(:code, :body).new(code, JSON.generate(body_hash))
   end
 
+  # PUBLIC AGAIN — and this is not cosmetic. Everything below sat under the `private`
+  # at the top of this helper section, and Minitest only collects PUBLIC `test_*`
+  # methods. So the two sandbox integration tests below NEVER RAN: the suite reported
+  # 53 green and silently skipped them, while the PR's checks_run cited them as the
+  # proof that an unpinned spawn aborts. A test that cannot fail proves nothing, and a
+  # count that does not notice its absence is how it goes unseen. The `private` above
+  # still covers the helpers it was written for.
+  public
+
   # --- [integration] the narration-marker sandbox (spawned-child vector) --------
   #
   # bin/atomic-event writes four markers into <projects>/.agents/sessions —

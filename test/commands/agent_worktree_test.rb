@@ -1423,6 +1423,12 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     registry.fetch("worktrees").find { |item| item.fetch("task") == @task }
   end
 
+  # PUBLIC — these sit in the helper region, below the class's `private`, and Minitest
+  # only collects PUBLIC test methods. Without this they are DEFINED and never RUN, and
+  # a `-n /registry/` filter still reports green because it matches OTHER tests whose
+  # names contain "registry". That is a test that cannot fail, reported as proof.
+  public
+
   # ── [integration] this script writes THREE stores in the operator's real .agents ──
   #
   # The registry, the DB-allocation flock, and the elastic Redis band all resolve by

@@ -1001,6 +1001,15 @@ class AtomicCaptureHookTest < Minitest::Test
     ["404 Not Found", JSON.generate("error" => "unexpected #{method} #{path}")]
   end
 
+  # PUBLIC — everything below sat under the `private` above, and Minitest only collects
+  # PUBLIC test methods, so these EIGHT tests were defined and never run. The file
+  # reported 53 green while silently skipping them (found by the dead-test sweep in
+  # PR #549, which caught the same shape in atomic_event_cli_test and
+  # agent_worktree_test). They cover the capture hook's summary/key_method derivation
+  # and its SECRET REDACTION — a redaction test that never runs is worse than none,
+  # because the suite reports it as covered.
+  public
+
   # ── [unit] bash summary + key_method derivation ──────────────────────────
 
   def test_unit_bash_events_derive_summary_and_key_method
