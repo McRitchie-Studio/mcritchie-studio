@@ -29,6 +29,13 @@ module CertProcess
   #
   # root/lane/db: when a root is given the runlock is written for the lifetime of
   # the lane, so a SIGKILLed cert leaves behind a record of the group it stranded.
+  #
+  # We record the OS's start time for BOTH pids the lock names — this cert, and the
+  # group leader we just spawned. A pgid is a recyclable integer, so a later cert
+  # reading this lock cannot tell "our stranded suite" from "a stranger who inherited
+  # the number" unless we leave it something that identifies the process rather than
+  # merely addresses it. The start time is that identity, and CertOrphanGuard refuses
+  # to kill anything it cannot match against it.
   def self.run(env, cmd, chdir:, root: nil, lane: nil, db: nil)
     pid = Process.spawn(env, cmd, chdir: chdir, pgroup: true)
     pgid = begin
@@ -36,17 +43,24 @@ module CertProcess
     rescue Errno::ESRCH
       pid # it already exited; its own pid is the best group id we have
     end
+    started_at = CertOrphanGuard.process_started_at(pid)
 
-    CertOrphanGuard.write_lock(root, cert_pid: Process.pid, pgid: pgid, lane: lane, db: db) if root
+    if root
+      CertOrphanGuard.write_lock(root, cert_pid: Process.pid, pgid: pgid,
+                                 cert_started_at: CertOrphanGuard.process_started_at(Process.pid),
+                                 pgid_started_at: started_at, lane: lane, db: db)
+    end
 
-    with_traps(pgid, root) do
+    with_traps(pgid, started_at, root) do
       _, status = Process.waitpid2(pid)
       status.success?
     end
   ensure
     # Any abnormal exit (exception, `abort`, a trap that re-raises): never leave the
-    # group behind. Harmless when the lane exited normally — the group is gone.
-    CertOrphanGuard.reap_group(pgid) if pgid && CertOrphanGuard.any_alive?(pgid)
+    # group behind. `reap_group` re-proves ownership before it signals, so this is a
+    # no-op when the lane already exited (the group is gone) and refuses outright if
+    # the number has been handed to somebody else in the meantime.
+    CertOrphanGuard.reap_group(pgid, started_at: started_at) if pgid
     CertOrphanGuard.clear_lock(root) if root
   end
 
@@ -54,10 +68,10 @@ module CertProcess
   # previous ones. The handler does its own cleanup and exit!s: an `exit` inside a
   # trap would unwind through ensure blocks while signals are still in flight, and
   # we want the reap to be the last thing that happens, deterministically.
-  def self.with_traps(pgid, root)
+  def self.with_traps(pgid, started_at, root)
     previous = SIGNALS.to_h do |sig|
       [sig, Signal.trap(sig) do
-        CertOrphanGuard.reap_group(pgid)
+        CertOrphanGuard.reap_group(pgid, started_at: started_at)
         CertOrphanGuard.clear_lock(root) if root
         warn "cert: signal SIG#{sig} — reaped the suite's process group #{pgid} (no orphan left behind)."
         exit!(128 + Signal.list.fetch(sig, 15))
