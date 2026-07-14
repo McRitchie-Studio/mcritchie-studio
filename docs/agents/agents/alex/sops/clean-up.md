@@ -305,6 +305,24 @@ not review. See [`../../avi/sops/pr-review.md`](../../avi/sops/pr-review.md).
 >   two hunks landing in a particular order, that is not a fix — fix it structurally so
 >   the order cannot matter.
 
+> ### ⛔ ONE review supervisor at a time. Never overlap two waves.
+> A cleanup needs SEVERAL review waves, and the tempting optimisation — start wave N+1
+> while wave N is still draining — is a correctness bug, not a speed-up.
+>
+> In the founding run I did exactly that. **Two Avi supervisors wrote verdicts into the
+> same queue concurrently**, and one produced a send-back describing code the other's
+> rework had already fixed. It cost a full round-trip and, on the board, was
+> indistinguishable from a real failure.
+>
+> **Do not rely on the `avi` shift lease to save you.** It is supposed to prevent this
+> — but in that run `bin/devops-shift status` reported **no shift held at all** while
+> two supervisors were live. The lease has a short TTL and depends on a renewal that a
+> long-running subagent does not reliably perform. **Treat it as advisory, and
+> sequence the waves yourself.**
+>
+> Wait for the wave to REPORT before starting the next one. If a wave is slow, that is
+> the cost of a correct verdict.
+
 > ### ⛔ NEVER review a task that is being reworked — the review will race the fix
 > A blocked task goes back to `building` and an agent starts fixing it. If a review
 > wave is still running, a reviewer can read the **old head** and block a bug that is
