@@ -1377,6 +1377,26 @@ def gate_runlock_root(repo, role: "gate")
   dir = File.join(File.dirname(gate_workspace_lock_path(repo, role: role)),
                   "mcr-#{Release::GateWorkspace.role!(role)}-runlock-#{repo}")
   FileUtils.mkdir_p(dir)
+
+  # ASSERT the separation; never assume it. CertOrphanGuard.lock_path resolves the
+  # runlock through `git rev-parse --absolute-git-dir`, so when a root sits INSIDE a git
+  # repo the lock lands in that repo's git dir — the SAME file for every root under it.
+  # Point MCR_PRIMARY_LOCK_DIR at a path inside a repo and all four gate runlocks
+  # (hub/turf × gate/ship) would silently collapse onto one, and one repo's gate would
+  # then read another's lock and reason about a process group that was never its own.
+  # A guard that kills on a lock belonging to somebody else is the whole failure this
+  # file exists to prevent, so the invariant is CHECKED, at the one place the path is
+  # built, rather than left to the default lock dir happening to sit outside a repo.
+  lock = CertOrphanGuard.lock_path(dir)
+  unless lock.start_with?(dir)
+    abort!("#{role} #{repo}: the gate runlock would be written to #{lock}, OUTSIDE its own " \
+           "directory (#{dir}) — the lock dir is inside a git repo, so every repo's and role's " \
+           "runlock collapses onto one file and the orphan guard would reason about another " \
+           "gate's process group. Point MCR_PRIMARY_LOCK_DIR at a directory that is NOT inside " \
+           "a git repository. This is an ENV issue, NOT a release regression — nothing to eject " \
+           "or revert.")
+  end
+
   dir
 end
 

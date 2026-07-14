@@ -253,13 +253,46 @@ class ReleaseGateOrphanTest < Minitest::Test
   # never read each other's lock and reason about a process group that was never theirs.
   # A shared lock here would make the guard confidently wrong, which is the failure mode
   # that matters.
-  def test_each_repo_and_role_gets_its_own_runlock
-    hub_gate = release_eval(%(gate_runlock_root("mcritchie-studio")))
-    turf_gate = release_eval(%(gate_runlock_root("turf-monster")))
-    hub_ship = release_eval(%(gate_runlock_root("mcritchie-studio", role: "ship")))
+  # Asserted on the LOCK FILE, not on the directory — because those are not the same claim.
+  # CertOrphanGuard.lock_path resolves through `git rev-parse --absolute-git-dir`, so four
+  # distinct roots INSIDE a git repo all resolve to ONE lock in that repo's git dir. Testing
+  # that the roots differ would pass while the locks silently collapsed.
+  def test_each_repo_and_role_gets_its_own_runlock_FILE
+    locks = [
+      %(gate_runlock_root("mcritchie-studio")),
+      %(gate_runlock_root("turf-monster")),
+      %(gate_runlock_root("mcritchie-studio", role: "ship")),
+      %(gate_runlock_root("turf-monster", role: "ship"))
+    ].map { |expr| CertOrphanGuard.lock_path(release_eval(expr)) }
 
-    assert_equal 3, [hub_gate, turf_gate, hub_ship].uniq.size,
-                 "a shared runlock lets one repo's gate reason about another's process group"
+    assert_equal 4, locks.uniq.size,
+                 "a shared runlock file lets one repo's gate reason about another's process group " \
+                 "— and reap it"
+  end
+
+  # The collapse, driven rather than argued: point the lock dir INSIDE a git repo and the
+  # gate must refuse to build a runlock root at all, instead of quietly writing every repo's
+  # lock to one file in that repo's git dir.
+  def test_a_lock_dir_inside_a_git_repo_is_refused_not_silently_collapsed
+    repo_lock_dir = File.join(@root, "inside-a-repo")
+    FileUtils.mkdir_p(repo_lock_dir)
+    system("git", "-C", repo_lock_dir, "init", "--quiet", out: File::NULL, err: File::NULL)
+
+    script = <<~RUBY
+      $PROGRAM_NAME = "release-eval"
+      require #{RELEASE.dump}
+      begin
+        puts "ROOT:" + gate_runlock_root("mcritchie-studio")
+      rescue SystemExit
+        puts "ABORTED"
+      end
+    RUBY
+    out = IO.popen(SessionEnv.neutralized("MCR_PRIMARY_LOCK_DIR" => repo_lock_dir),
+                   [RUBY, "-e", script], err: %i[child out], &:read).to_s
+
+    assert_includes out, "ABORTED",
+                    "a lock dir inside a git repo collapses every gate's runlock onto one file — refuse it"
+    assert_includes out, "nothing to eject or revert", "and refuse in the ENV class, never as a red suite"
   end
 
   # The guard is handed what it needs to NAME an orphan — the lane and the database — so

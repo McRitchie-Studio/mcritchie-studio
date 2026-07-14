@@ -695,9 +695,12 @@ module CertOrphanGuard
   # rather than quietly moving on: this is the exact condition that used to kill an
   # innocent process, and an operator seeing it should know the guard looked, proved
   # the process was not ours, and left it alone.
-  def self.recycled_message(pgid:, found: nil, recorded_start: nil)
+  # A NOTICE, not a refusal — the run continues — so it carries no env_line. It still takes
+  # the voice: every message the guard can emit must be able to speak as whichever caller is
+  # actually speaking, and a builder that cannot is one a gate would emit in the cert's words.
+  def self.recycled_message(pgid:, found: nil, recorded_start: nil, voice: CERT)
     live = found ? " It is now #{found[:command].to_s[0, 60].inspect} (pid #{found[:pid]}, started #{found[:started_at]})." : ""
-    "STALE RUNLOCK — this worktree's runlock names process group #{pgid}, but that group is NOT ours. " \
+    "STALE RUNLOCK — this #{voice.actor}'s runlock names process group #{pgid}, but that group is NOT ours. " \
       "The lock recorded it as starting #{recorded_start.inspect}, and the process alive under that number " \
       "today started at a different time — the OS recycled the number after our suite died.#{live} " \
       "NOT killing it: a pgid is a recyclable integer, and this guard only ever kills what it can prove it " \
@@ -880,7 +883,7 @@ module CertOrphanGuard
     when :recycled
       clear_lock(root)
       notices << recycled_message(pgid: detail[:pgid], found: detail[:found],
-                                  recorded_start: detail[:pgid_started_at])
+                                  recorded_start: detail[:pgid_started_at], voice: voice)
     when :malformed
       # It names nobody, so there is nobody to verify and nobody we may kill. Discard it
       # LOUDLY and fall through to the DB backstop, which refuses on EVIDENCE if a real
