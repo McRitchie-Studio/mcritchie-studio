@@ -15,6 +15,19 @@ require "minitest/mock"
 # themselves — so this require is NOT the whole fix, and must not become it.
 require_relative "support/session_env"
 
+# TestDatabasePurge — start from an EMPTY database, then let fixtures load.
+#
+# Rails truncates only the tables it has fixtures for (~28 of this schema's ~73),
+# so rows any OTHER process committed to the test DB survive into our tests. The
+# e2e lane does exactly that: playwright.config.js's webServer runs e2e/seed.rb
+# against this same database under RAILS_ENV=test, and its un-fixtured rows
+# (pokemons, releases, task_events, …) then break unrelated minitest tests. Purge
+# first and the whole class of pollution — e2e seed, stray `rails runner`, a
+# killed test that committed — cannot reach a test. See test/support/test_database_purge.rb
+# and the standing invariant in test/integration/test_database_hermeticity_test.rb.
+require_relative "support/test_database_purge"
+TestDatabasePurge.purge!
+
 OmniAuth.config.test_mode = true
 
 # How many test workers to fork. Parallel workers fork-clone the test DB
@@ -36,6 +49,12 @@ module ActiveSupport
   class TestCase
     # Single-process locally (reliable), parallel in CI (fast) — see TestParallelism.
     parallelize(workers: TestParallelism.worker_count)
+
+    # CI forks a worker per processor, each onto its OWN cloned database — which the
+    # load-time purge above (base DB, parent process) never touches. Purge inside each
+    # worker too, so the "starts empty" guarantee holds in every process that runs a
+    # test, not just the single-process local path. No-op when workers <= 1.
+    parallelize_setup { TestDatabasePurge.purge! }
 
     # Setup all fixtures in test/fixtures/*.yml for all tests in alphabetical order.
     fixtures :all

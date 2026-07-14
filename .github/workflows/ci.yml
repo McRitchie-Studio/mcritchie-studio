@@ -83,10 +83,11 @@ jobs:
   # tier no runner executes.
   #
   # COST, AND WHY IT IS AFFORDABLE HERE AND NOWHERE ELSE. Measured 2026-07-13,
-  # single-worker: the 51 specs this lane actually runs take ~1.1 min. (The FULL 69-spec
-  # suite clocks ~4.7 min, but ~3.6 min of that is the 18 rotted specs each burning a 5s
-  # assertion timeout before failing — a number that shrinks when they are repaired, not
-  # a number to plan around.)
+  # single-worker: the specs this lane actually runs take ~1.1 min (timed at the 51 the lane
+  # ran that day; it runs 52 now — release added a healthy pokedex spec while this PR was in
+  # review). The FULL suite clocks ~4.7 min, but ~3.6 min of that is the 18 rotted specs each
+  # burning a 5s assertion timeout before failing — a number that shrinks when they are
+  # repaired, not a number to plan around.
   #
   # Even at 1.1 min it does NOT belong in bin/fast-check: that is the whole ~1 min budget
   # of the builder's cert, doubled, on every commit. A cert that slow is a cert people
@@ -151,7 +152,7 @@ jobs:
       # --grep-invert @quarantine EXCLUDES the 18 specs that were already red when this
       # lane was first switched on. Stating the hole plainly, as turf-monster's ci.yml
       # does for its @devnet exclusion: those specs are NOT covered by this job today.
-      # The exclusion buys the OTHER 51 specs a real lane now instead of holding all of
+      # The exclusion buys the OTHER 52 specs a real lane now instead of holding all of
       # them hostage to a repair, and it fails safe — a rotted suite wired in red would
       # paint CI red for every PR in flight. It is a debt with a name and a ticket:
       # /tasks/repair-rotted-e2e-specs. When that lands, DELETE this flag.
@@ -175,7 +176,7 @@ jobs:
       #      exactly `@quarantine`. Widening it to `@quarantine|board` — 51 specs down to
       #      43, every guard formerly green — is now a test failure.
       #   2. THE DECLARED SET. test/lib/e2e_quarantine_ratchet_test.rb reads the committed
-      #      specs: 69 − 18 == 51, and every selection modifier is refused on ANY receiver.
+      #      specs: 70 − 18 == 52, and every selection modifier is refused on ANY receiver.
       #   3. THE EXECUTED SET — the receipt, below. Guards 1 and 2 read the SOURCE, and a
       #      source-level guard can only refuse the spellings someone thought to refuse.
       #      Three rounds of review proved that by finding a fourth, every time: `.only`
@@ -183,7 +184,7 @@ jobs:
       #      `.skip`/`.fixme`, then `testInfo.skip()` on a receiver the regex never watched,
       #      then a widened `--grep-invert` on a flag nothing pinned. So the lane now emits
       #      a JSON receipt per shard and `e2e_executed_set` asserts what it ACTUALLY RAN —
-      #      51 executed, 0 skipped, every shard's report present. A spec that leaves the
+      #      52 executed, 0 skipped, every shard's report present. A spec that leaves the
       #      lane by ANY route, on ANY axis, lands on the same line of arithmetic.
       - name: Run Playwright e2e suite
         env:

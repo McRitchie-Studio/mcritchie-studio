@@ -1,0 +1,66 @@
+<%# One cell of the collection grid. data-state is the single source of the cell's
+    look — it drives the artwork filter, the caught mark, and whether the cell is
+    interactive at all — so the three states stay decodable from the DOM. %>
+<% pokemon = entry.pokemon %>
+<article class="relative card p-2 flex flex-col items-center text-center"
+         data-test="dex-cell"
+         data-state="<%= entry.state %>"
+         data-slug="<%= pokemon.slug %>">
+  <%# The caught mark. Full-color artwork alone is a weak signal on a species whose
+      art is muted to begin with (Onix, Golbat), so a catch also gets a literal mark. %>
+  <% if entry.caught? %>
+    <span class="absolute top-1.5 right-1.5 text-primary" title="Caught" data-test="dex-caught-mark">
+      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M12 2a10 10 0 00-9.95 9h5.32a4.75 4.75 0 019.26 0h5.32A10 10 0 0012 2Zm-9.95 11A10 10 0 0012 22a10 10 0 009.95-9h-5.32a4.75 4.75 0 01-9.26 0H2.05Z" />
+        <circle cx="12" cy="12" r="2.6" />
+      </svg>
+    </span>
+  <% end %>
+
+  <%# The line ahead of this form, as small circles — but only the forms you have
+      actually MET. A silhouetted circle is a 20px flat blob: it says nothing, it
+      cannot be recognized, and at 251 cells it is hundreds of gray dots. Dropping it
+      keeps the no-spoiler rule (an unmet next form is still never revealed here) and
+      leaves the circles carrying real information. The fixed height keeps cells with
+      no circles aligned with the rest. %>
+  <div class="flex items-center justify-center gap-1 mb-1 h-5" data-test="dex-evolutions">
+    <% entry.evolutions.select(&:revealed?).each do |evolution| %>
+      <img src="<%= evolution.pokemon.display_sprite %>"
+           alt="<%= evolution.pokemon.name %>" title="<%= evolution.pokemon.name %>"
+           width="20" height="20" loading="lazy" data-test="dex-evolution-circle"
+           class="w-5 h-5 rounded-full border border-subtle bg-surface-alt object-contain <%= dex_art_class(evolution) %>"
+           onerror="this.style.visibility='hidden'">
+    <% end %>
+  </div>
+
+  <% if entry.revealed? %>
+    <%# Click flips the artwork to its shiny mirror — two imgs so each keeps its own
+        onerror fallback chain, and the hidden one is never fetched (lazy + x-show). %>
+    <button type="button" x-data="{ shiny: false }" @click="shiny = !shiny" :aria-pressed="shiny"
+            title="<%= pokemon.name %> — click for shiny"
+            class="aspect-square w-full flex items-center justify-center cursor-pointer"
+            data-test="dex-shiny-toggle">
+      <img x-show="!shiny" src="<%= pokemon.display_avatar %>" alt="<%= pokemon.name %>"
+           loading="lazy" class="max-h-20 w-auto object-contain <%= dex_art_class(entry) %>"
+           onerror="this.onerror=null; this.src='<%= pokemon.avatar_fallback_url.presence || pokemon.sprite_url %>'">
+      <img x-show="shiny" x-cloak src="<%= pokemon.display_avatar(shiny: true) %>" alt="<%= pokemon.name %> (shiny)"
+           loading="lazy" class="max-h-20 w-auto object-contain <%= dex_art_class(entry) %>"
+           onerror="this.onerror=null; this.src='<%= pokemon.shiny_avatar_fallback_url.presence || pokemon.sprite_url %>'">
+    </button>
+  <% else %>
+    <%# An unseen species is inert: flipping a silhouette would just redraw the same
+        silhouette, so it gets no button and no shiny image to fetch. %>
+    <div class="aspect-square w-full flex items-center justify-center">
+      <img src="<%= pokemon.display_avatar %>" alt="<%= pokemon.name %> (not yet seen)"
+           loading="lazy" class="max-h-20 w-auto object-contain <%= dex_art_class(entry) %>"
+           onerror="this.onerror=null; this.src='<%= pokemon.avatar_fallback_url.presence || pokemon.sprite_url %>'">
+    </div>
+  <% end %>
+
+  <div class="mt-1 text-xs text-muted tabular-nums">
+    #<%= format("%03d", pokemon.dex) %><%= " ✨" if entry.shiny_seen %>
+  </div>
+  <div class="text-sm font-medium <%= entry.unseen? ? "text-muted" : "text-heading" %> truncate max-w-full">
+    <%= pokemon.name %>
+  </div>
+</article>

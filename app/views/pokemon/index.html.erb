@@ -32,6 +32,11 @@
           newest_caught: @newest_caught_shiny %>
   </div>
 
+  <%= render "dex_grid",
+        entries: @dex_entries,
+        seen_count: @pokedex.seen_pokemon,
+        caught_count: @pokedex.caught_pokemon %>
+
   <div class="card overflow-x-auto" data-test="recent-pokemon-actions">
     <table class="w-full text-sm">
       <thead class="text-secondary border-b border-subtle">

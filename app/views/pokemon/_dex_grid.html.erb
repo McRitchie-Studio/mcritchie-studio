@@ -1,0 +1,37 @@
+<%# THE COLLECTION GRID — every seeded species, dex order, each drawn in its
+    collection state: caught in full color, seen dimmed, unseen a silhouette. It is
+    the same Seen/Caught numbers the cards above report, laid out as the dex being
+    filled in rather than two totals.
+
+    Every cell reads off PokemonPokedex#dex_entries, which projects the memos the
+    cards already built — so all 251 cells cost ZERO extra queries. %>
+<section class="card p-5" data-test="dex-grid">
+  <div class="flex items-center justify-between gap-4 flex-wrap mb-5">
+    <h2 class="text-lg font-semibold text-heading">Collection</h2>
+
+    <%# The legend. The artwork treatments carry the meaning, so they need a key — and
+        each count is the number of CELLS wearing that treatment, which is why the
+        middle chip is "Seen only" and not "Seen": the card above counts every species
+        encountered (124), of which the caught ones are a subset drawn in their own
+        state, so only the REMAINDER wears the seen treatment. The three add up to the
+        dex; labelling that remainder "Seen" would put two different numbers under the
+        same word on one page. %>
+    <div class="flex items-center gap-4 text-xs text-muted" data-test="dex-legend">
+      <% [["Caught", caught_count, "bg-primary"],
+          ["Seen only", seen_count - caught_count, "bg-secondary opacity-50"],
+          ["Not seen", entries.size - seen_count, "bg-inset border border-subtle"]].each do |label, count, swatch| %>
+        <span class="inline-flex items-center gap-1.5">
+          <span class="w-2.5 h-2.5 rounded-full <%= swatch %>"></span>
+          <%= label %>
+          <span class="text-secondary font-semibold tabular-nums"><%= number_with_delimiter(count) %></span>
+        </span>
+      <% end %>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-3">
+    <% entries.each do |entry| %>
+      <%= render "dex_cell", entry: entry %>
+    <% end %>
+  </div>
+</section>

@@ -2594,8 +2594,13 @@ end
 # and a fast-forward-merged one are git-identical (clean, HEAD == base, 0-ahead), so
 # cleanup_ready? alone cannot tell them apart.
 #
-# Withholds (returns a reason) in TWO cases, not one:
-#   - a confirmed LIVE claim — a builder is at the desk; and
+# Withholds (returns a reason) in THREE cases, not one:
+#   - a confirmed LIVE claim — a builder is at the desk;
+#   - a CORRUPT claim — the lease is present but its expiry is unparseable, so liveness
+#     cannot be verified. "We could not check" is not "a builder is here": it withholds
+#     (an unverifiable desk must never read free on a destroy path), but names the hold
+#     honestly as "expiry unverifiable", never as a live builder — corrupt_expiry? branches
+#     it out before the live-builder message (which would also interpolate a nil age); and
 #   - a bound task whose board record could NOT be read — we know the desk could be
 #     claimed and failed to find out, so we cannot verify it is free. Board outages and
 #     mass-reclaim are correlated (the board 500s under the same parallel-devops load that
@@ -2651,6 +2656,19 @@ def claim_hold(record, fresh: false, announce: false)
   # claim" — free, not an outage.
   claim = ClaimLease.from_devops(task_devops_for_pr(task_record))
   return nil unless ClaimLease.live?(claim)
+
+  # CORRUPT: the claim's lease timestamp is PRESENT but unparseable, so liveness cannot be
+  # verified. live? folds this into "possibly live" (rightly withholding, since an
+  # unverifiable desk must never read free on a destroy path) — but the honest reason is NOT
+  # "a builder is here": we never confirmed one, we only failed to check. Emitting the
+  # live-builder line here both misattributes the hold AND interpolates a nil heartbeat_age
+  # ("heartbeat  s ago"), because heartbeat_age has no parseable lease to derive from.
+  # ClaimLease.corrupt_expiry? exists precisely to split this out.
+  if ClaimLease.corrupt_expiry?(claim)
+    return "claim expiry unverifiable (#{slug}) — the build claim's lease timestamp is present " \
+           "but unparseable, so the builder's liveness cannot be checked; withholding rather " \
+           "than nominating a desk we cannot verify — inspect task #{slug}"
+  end
 
   age = ClaimLease.heartbeat_age(claim)
   "held by a live builder claim (#{slug}) — builder heartbeat #{age}s ago " \

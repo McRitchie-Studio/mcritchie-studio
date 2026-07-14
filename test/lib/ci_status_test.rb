@@ -261,4 +261,126 @@ class CiStatusTest < Minitest::Test
     assert_equal "", CiStatus.name_with_owner("/srv/mirrors/mcritchie-studio.git")
     assert_equal "", CiStatus.name_with_owner("")
   end
+
+  # --- :unreadable — a gate that cannot SEE must say WHY it cannot see ---------
+  #
+  # THE BUG (task dor-check-misses-rolio-ci, verified 2026-07-13): a PERMISSION
+  # denial and a genuinely-un-run CI both collapsed into "no verdict". A blind gate
+  # that cannot name its blindness gets ignored, then routed around — and that is
+  # how a genuinely RED CI eventually slips through. So an auth/permission failure
+  # is its OWN state, carrying its own cause.
+  #
+  # :unreadable is NOT more lenient than :unverified — it blocks exactly the same
+  # routes (notably it does NOT unlock the fast-cert credit). It is more HONEST.
+
+  # The VERBATIM body from `gh pr checks 23 --repo amcritchie/rolio` (2026-07-13):
+  # rolio is a PRIVATE repo and the fine-grained PAT lacks Checks: Read on it, so
+  # the statusCheckRollup nodes come back denied.
+  ROLIO_GRAPHQL_403 = "GraphQL: Resource not accessible by personal access token " \
+                      "(node.statusCheckRollup.nodes.0.commit.statusCheckRollup.contexts.nodes.0), " \
+                      "Resource not accessible by personal access token " \
+                      "(node.statusCheckRollup.nodes.0.commit.statusCheckRollup.contexts.nodes.1)"
+
+  def test_parse_a_permission_denial_is_unreadable_never_none
+    # THE REGRESSION. Folding this into :none would be the worst outcome: :none is
+    # "the workflow hasn't reported yet", which tells the builder to WAIT for a CI
+    # that is already green, and tells pr-review's supervisor to DEFER the wave
+    # forever. It must never be :none.
+    v = CiStatus.parse(ROLIO_GRAPHQL_403)
+    refute_equal :none, v[:state], "a permission denial is not an absent CI"
+    assert_equal :unreadable, v[:state]
+    assert_includes v[:reason], "not accessible", "the cause must be NAMED, not swallowed"
+  end
+
+  def test_check_runs_a_403_is_unreadable_never_a_bare_unverified
+    # The VERBATIM body from `gh api repos/amcritchie/<repo>/branches/main/protection`
+    # and the check-runs endpoint on a repo the token cannot read: gh prints the JSON
+    # error on stdout AND its own line on stderr, and we capture 2>&1 — so the raw
+    # text is CONCATENATED and JSON.parse rejects it. Detection must read the RAW
+    # body, not just a cleanly-parsed `message`.
+    raw = '{"message":"Resource not accessible by personal access token",' \
+          '"documentation_url":"https://docs.github.com/rest","status":"403"}' \
+          "gh: Resource not accessible by personal access token (HTTP 403)"
+    v = CiStatus.parse_check_runs(raw)
+    assert_equal :unreadable, v[:state]
+    assert_includes v[:reason], "not accessible"
+  end
+
+  def test_check_runs_a_clean_json_403_or_401_is_unreadable
+    v = CiStatus.parse_check_runs('{"message":"Resource not accessible by integration","status":"403"}')
+    assert_equal :unreadable, v[:state]
+    assert_equal :permissions, v[:cause]
+
+    v = CiStatus.parse_check_runs('{"message":"Bad credentials","status":"401"}')
+    assert_equal :unreadable, v[:state]
+    assert_equal "Bad credentials", v[:reason]
+    assert_equal :credentials, v[:cause]
+  end
+
+  def test_unreadable_remedy_matches_the_actual_denial_cause
+    repo = "amcritchie/rolio"
+
+    permissions = CiStatus.parse("GraphQL: Resource not accessible by personal access token")
+    assert_equal :permissions, permissions[:cause]
+    assert_includes CiStatus.unreadable_remedy(repo, cause: permissions[:cause]), "Checks: Read"
+
+    credentials = CiStatus.parse("gh: Bad credentials (HTTP 401)")
+    assert_equal :credentials, credentials[:cause]
+    credential_remedy = CiStatus.unreadable_remedy(repo, cause: credentials[:cause])
+    assert_includes credential_remedy, "gh auth status"
+    refute_includes credential_remedy, "Checks: Read"
+
+    rate_limit = CiStatus.parse("gh: API rate limit exceeded (HTTP 403)")
+    assert_equal :rate_limit, rate_limit[:cause]
+    rate_remedy = CiStatus.unreadable_remedy(repo, cause: rate_limit[:cause])
+    assert_includes rate_remedy, "gh api rate_limit"
+    refute_includes rate_remedy, "Checks: Read"
+
+    forbidden = CiStatus.parse("gh: Forbidden (HTTP 403)")
+    assert_equal :forbidden, forbidden[:cause]
+    forbidden_remedy = CiStatus.unreadable_remedy(repo, cause: forbidden[:cause])
+    assert_includes forbidden_remedy, "gh auth status"
+    refute_includes forbidden_remedy, "Checks: Read"
+  end
+
+  def test_gate_evidence_preserves_unreadable_state_cause_reason_and_repo
+    verdict = CiStatus.parse("GraphQL: Resource not accessible by personal access token")
+    evidence = CiStatus.gate_evidence(verdict, repo: "amcritchie/rolio")
+
+    assert_equal "unreadable", evidence["state"]
+    assert_equal "permissions", evidence["cause"]
+    assert_equal "amcritchie/rolio", evidence["repo"]
+    assert_includes evidence["reason"], "not accessible"
+  end
+
+  def test_a_404_stays_unverified_and_is_NOT_promoted_to_unreadable
+    # 404 is genuinely AMBIGUOUS (a SHA that was force-pushed away answers 404 too),
+    # so it keeps its old meaning. Only an explicit auth/permission denial — 401/403,
+    # "not accessible", "bad credentials" — is :unreadable. Narrow on purpose: a
+    # state that cries "fix your token" at every missing SHA would be its own lie.
+    assert_equal :unverified, CiStatus.parse_check_runs('{"message":"Not Found","status":"404"}')[:state]
+    assert_equal :unverified, CiStatus.parse("gh: command not found")[:state]
+  end
+
+  def test_no_checks_reported_is_STILL_none
+    # Guard the other direction: the honest "no run yet" must not get swept into
+    # :unreadable. :none keeps meaning exactly what it meant.
+    assert_equal :none, CiStatus.parse("no checks reported on the 'feat/x' branch")[:state]
+    assert_equal :none, CiStatus.parse_check_runs('{"total_count":0,"check_runs":[]}')[:state]
+  end
+
+  def test_unreadable_is_an_injectable_token
+    # the DOR_CHECK_CI_STATUS / RELEASE_CI_STATUS seam — so every CLI test can drive
+    # the unreadable path without a network or a broken token.
+    assert_includes CiStatus::TOKENS, "unreadable"
+    assert_equal :unreadable, CiStatus.evaluate("https://github.com/x/pull/1", "unreadable")[:state]
+    assert_equal :unreadable, CiStatus.for_sha("owner/repo", "abc123", "unreadable")[:state]
+  end
+
+  def test_view_verdict_a_permission_denial_is_unreadable
+    # `gh pr view` is the FIRST gh call evaluate makes — on a repo the token cannot
+    # read, it fails there and must already name the cause rather than degrade.
+    v = CiStatus.view_verdict("gh: Resource not accessible by personal access token (HTTP 403)")
+    assert_equal :unreadable, v[:state]
+  end
 end

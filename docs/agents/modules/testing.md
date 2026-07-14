@@ -36,7 +36,7 @@ lane, not a nightly one: a red spec makes CI red and the PR does not merge. Befo
 that date NO lane ran it while `config/feature_shapes.yml` demanded the `e2e` tier of
 every `ui+db` change — the tier was "collected" by a builder typing `[e2e] …` into
 `checks_run` and `bin/dor-check` crediting the tag. It went unrun long enough for
-**18 of its 69 specs to rot**; those carry `@quarantine`, CI excludes them with
+**18 of its specs to rot** (18 of the 69 committed at the time); those carry `@quarantine`, CI excludes them with
 `--grep-invert @quarantine`, and their count is ratcheted (ceiling 18, may only fall)
 by `test/lib/e2e_quarantine_ratchet_test.rb`. Do not read the green `playwright`
 check as "the whole e2e suite passes" until that ceiling reaches 0
@@ -54,12 +54,12 @@ therefore checks out with `fetch-depth: 0`, and the ratchet fails **closed** —
 why — if it cannot resolve the baseline.)
 
 **What stops a spec from quietly leaving the lane.** Two guards, and only one of them
-generalizes. Both read the same contract, `config/e2e_lane.yml` — **69 committed − 18
-quarantined == 51 executed** — so they can never certify two different suites.
+generalizes. Both read the same contract, `config/e2e_lane.yml` — **70 committed − 18
+quarantined == 52 executed** — so they can never certify two different suites.
 
 1. **The receipt (`bin/e2e-executed-set-check`, the `e2e_executed_set` CI job).** Each
    shard emits a JSON report; this job reads them and asserts what the lane **actually
-   ran**: 51 executed, 0 skipped, every shard's report present. This is the durable
+   ran**: 52 executed, 0 skipped, every shard's report present. This is the durable
    guard. A spec that leaves the lane by *any* route lands on one line of arithmetic,
    whatever syntax arranged it — a runtime skip, a widened `--grep-invert`, an
    `--only-changed`, a narrowed `testDir`, a deleted file, a dropped shard, or next
@@ -72,7 +72,7 @@ quarantined == 51 executed** — so they can never certify two different suites.
    **default-deny** — only `--shard`, `--grep-invert` and `--reporter` are allowed, because
    only those three cannot *shrink the selected set*. (`--reporter` is **not** "inert",
    which is what this line used to call it: it **emits the receipt** guard 1 is judged on.
-   Drop `json` from it and the lane still runs all 51 specs while the only evidence that it
+   Drop `json` from it and the lane still runs all 52 specs while the only evidence that it
    did evaporates — so it is separately pinned.) `--grep-invert` is value-pinned to exactly
    `@quarantine`.
 
@@ -239,6 +239,50 @@ Two rules follow:
   gate workspace, a CI job that shards by file), prepare the test env first —
   `bin/rails db:test:prepare test:prepare`, one boot. `test/lib/tasks/test_prepare_asset_hook_test.rb`
   pins the hook that makes this work.
+
+## The Minitest DB Starts EMPTY — And The E2E Lane Must Not Share It
+
+**The minitest database is hermetic by construction.** `test/test_helper.rb` runs
+`TestDatabasePurge.purge!` at load (and again inside each parallel worker),
+truncating **every** application table before fixtures load. Rails only truncates
+the ~28 tables it has fixtures for; the other ~45 kept whatever any other process
+committed. The e2e lane committed exactly that — `playwright.config.js`'s
+`webServer` runs `e2e/seed.rb` against the SAME test DB under `RAILS_ENV=test` —
+and its un-fixtured rows (pokemons, releases, task_events, …) broke minitest tests
+that never went near e2e. A builder then hunts a phantom regression in their own
+diff. **You no longer hand-reset the test DB after e2e work.**
+
+**The reverse hazard is now WIDER, and it is not yet closed.** `playwright.config.js`
+still seeds and serves against the same test DB, and `reuseExistingServer: !CI`
+keeps a local e2e server alive between runs. A minitest boot used to truncate the
+28 fixtured tables out from under a live e2e server; it now truncates all ~73. So:
+
+> **Do not run the minitest suite and the e2e lane concurrently against the same
+> database.** Until e2e owns its own DB (the producer-side fix — deferred), the two
+> lanes share one, and whichever boots second empties the first one's world.
+
+**The purge FAILS CLOSED — copy this shape.** A routine that empties every table
+must *prove* its target before it fires, because the harness does not guarantee it:
+`ENV["RAILS_ENV"] ||= "test"` does **not** override an already-exported `RAILS_ENV`,
+and `rails/test_help` aborts only on production — so `RAILS_ENV=development bin/rails test`
+boots the suite straight onto the shared development database. `TestDatabasePurge`
+therefore refuses (raises `UnsafeDatabase`) unless **both** hold: `Rails.env.test?`,
+**and** the database read back from the live connection is the `database:` literal
+`config/database.yml` declares for `test`, or a legitimate derivative (`…-0` clones,
+`…_<worktree>` isolated DBs). Same doctrine as the release gate's
+`assert_private_gate_db!` — *ask the booted app, and treat a foreign DB as a hard
+abort, never a silent stomp.*
+
+**Anchor the expectation in something the ENV var cannot move.** The obvious check —
+"connected DB == `configs_for(env_name: "test").database`" — is a **placebo**, and it
+was measured as one on this app: Rails merges `DATABASE_URL` into the config *for the
+current env*, and under the suite that env **is** `test`. So `RAILS_ENV=test
+DATABASE_URL=…/mcritchie_studio_development` rewrites the **test** config to the dev DB;
+connection and expectation both read `mcritchie_studio_development`, the equality
+passes, and the purge stomps the shared dev DB. Comparing a value against a config the
+same ENV var just rewrote is comparing a moved value **to itself**. The `database.yml`
+literal does not move — anchor there. (`test/lib/test_database_purge_test.rb` pins this:
+swap the anchor back to `configs_for` and the "placebo case" goes red.)
 
 ## A Test May Never Write The Operator's Real `.agents` State
 

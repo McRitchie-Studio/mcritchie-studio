@@ -2,7 +2,7 @@
 
 # THE DECLARED SET of the Playwright `e2e` lane — the STATIC half of a two-part guard.
 #
-#     69 specs committed  −  18 quarantined  ==  51 the lane should run
+#     70 specs committed  −  18 quarantined  ==  52 the lane should run
 #
 # READ THIS FIRST, BECAUSE THE FILE'S NAME OVERSELLS IT. This file reads the SOURCE. It can
 # tell you how many specs are DECLARED and not quarantined. It CANNOT tell you how many specs
@@ -47,7 +47,7 @@
 # THE @quarantine HOLE, which this file also bounds. CI runs the lane with
 # `--grep-invert @quarantine` (.github/workflows/ci.yml), excluding the 18 specs that were
 # already RED on an untouched `release` checkout the day the lane was switched on. That
-# exclusion buys the healthy 51 a real lane TODAY instead of holding them hostage to a
+# exclusion buys the healthy 52 a real lane TODAY instead of holding them hostage to a
 # repair — but it is a hole, and until this file existed it was UNBOUNDED.
 #
 # The count may fall; it may never rise — and "may never rise" is ENFORCED, not asserted in a
@@ -88,8 +88,8 @@ class E2eQuarantineRatchetTest < Minitest::Test
   # The numbers live in config/e2e_lane.yml — ONE file, so there is ONE line to bump and the
   # runtime gate (bin/e2e-executed-set-check) and this static guard can never drift apart and
   # certify two different suites. Verified against playwright's OWN view, not taken from prose:
-  #   npx playwright test --list                           -> 69 tests in 27 files
-  #   npx playwright test --list --grep-invert @quarantine -> 51 tests in 25 files
+  #   npx playwright test --list                           -> 70 tests in 27 files
+  #   npx playwright test --list --grep-invert @quarantine -> 52 tests in 25 files
   CONTRACT       = YAML.safe_load_file(CONTRACT_PATH).freeze
   TOTAL_SPECS    = CONTRACT.fetch("total_specs")   # every `test(...)` committed under e2e/
   CEILING        = CONTRACT.fetch("quarantined")   # of those, the rotted ones carrying the tag

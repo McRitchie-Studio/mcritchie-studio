@@ -10,7 +10,7 @@
 # Playwright itself, in the JSON report it emits from the run that just happened.
 #
 # WHY THIS EXISTS, AND WHY THE STATIC GUARD WAS NOT ENOUGH.
-# test/lib/e2e_quarantine_ratchet_test.rb reads the committed source and asserts 69 specs −
+# test/lib/e2e_quarantine_ratchet_test.rb reads the committed source and asserts 70 specs −
 # 18 quarantined == 51. That is a true and useful statement about what the suite DECLARES.
 # It is not a statement about what RAN, and review of #543 killed three successive versions
 # of this guard on exactly that gap. Every kill was the same event wearing a new spelling:
