@@ -30,12 +30,29 @@ class SopRegistryInstallTest < ActiveSupport::TestCase
       home     = File.join(sandbox, "home")
       FileUtils.mkdir_p([projects, home])
 
+      # EVERY destination the installer can write to must land inside the sandbox.
+      #
+      # The first cut pinned HOME and PROJECTS_DIR and stopped there — which left
+      # CODEX_REQUIREMENTS_PATH defaulting to **/etc/codex/requirements.toml**, wholly
+      # outside the sandbox, and the runtime root unpinned. It guarded the escape
+      # hatches I happened to remember. That is precisely the failure this test exists
+      # to catch, committed by the test itself.
+      #
+      # So the rule is inverted: enumerate the installer's write destinations from the
+      # SCRIPT (grep its `*_PATH` / `*_ROOT` / `*_DIR` defaults), pin every one, and
+      # then ASSERT below that nothing outside the sandbox changed — so the next
+      # destination somebody adds is caught by a red test, not by a reviewer.
       env = {
         "PROJECTS_DIR" => projects,
         "HOME" => home,
+        "CODEX_REQUIREMENTS_PATH" => File.join(sandbox, "etc-codex", "requirements.toml"),
+        "AGENT_DOCS_RUNTIME_ROOT" => File.join(sandbox, "runtime"),
+        "AGENT_RUNTIME_ZPROFILE" => File.join(home, ".zprofile"),
         # Never let a test inherit the live session's identity or board.
         "AGENT_SESSION_ID" => nil,
-        "ATOMIC_CAPTURE_URL" => nil
+        "ATOMIC_CAPTURE_URL" => nil,
+        "AGENT_ACTIVITY_BOARD_URL" => "http://localhost:0",
+        "AGENT_INSIGHTS_BOARD_URL" => "http://localhost:0"
       }
 
       out, status = Open3.capture2e(env, Rails.root.join("bin/install-agent-docs").to_s, "install",
@@ -75,11 +92,40 @@ class SopRegistryInstallTest < ActiveSupport::TestCase
     end
   end
 
+  # Every path OUTSIDE the sandbox that bin/install-agent-docs can write to. Keep this
+  # list honest: it is the blast radius of a mis-sandboxed run of this very test.
   REAL_ROOT_DOCS = [
     File.expand_path("~/projects/AGENTS.md"),
     File.expand_path("~/projects/CLAUDE.md"),
-    File.expand_path("~/.claude/skills")
+    File.expand_path("~/.claude/skills"),
+    File.expand_path("~/.codex/skills"),
+    File.expand_path("~/.zprofile"),
+    "/etc/codex/requirements.toml"
   ].freeze
+
+  # THE DURABLE HALF. The list above is a blacklist, and a blacklist always misses one —
+  # this test's own first cut missed /etc/codex. So ALSO assert the POSITIVE invariant:
+  # every write destination the SCRIPT names must be overridable, and this test must pin
+  # every one of them. Add a new `FOO_PATH="${FOO_PATH:-/somewhere/real}"` to the
+  # installer without pinning it here and THIS goes red — before it can escape.
+  test "every overridable write destination in install-agent-docs is pinned by this test" do
+    script = Rails.root.join("bin/install-agent-docs").read
+
+    # `NAME="${NAME:-<default>}"` — the script's own escape-hatch idiom. Absolute
+    # defaults are the ones that can escape a sandbox; relative ones resolve under $ROOT.
+    escapes = script.scan(/^(\w+)="\$\{\1:-(\/[^}"]+)\}"/).to_h
+
+    pinned = %w[PROJECTS_DIR HOME CODEX_REQUIREMENTS_PATH AGENT_DOCS_RUNTIME_ROOT
+                AGENT_RUNTIME_ZPROFILE AGENT_ACTIVITY_BOARD_URL AGENT_INSIGHTS_BOARD_URL]
+
+    unpinned = escapes.keys - pinned
+
+    assert_empty unpinned,
+                 "bin/install-agent-docs can write to an ABSOLUTE path via #{unpinned.inspect}, and this " \
+                 "test does not pin it — so running the installer under test would escape the sandbox and " \
+                 "touch the real machine (defaults: #{escapes.slice(*unpinned).values.inspect}). Pin it in " \
+                 "the `env` hash AND add it to REAL_ROOT_DOCS."
+  end
 
   # Content fingerprint of the real installed docs + skills tree. Missing paths hash
   # as "absent" — so a test that CREATES one is caught too, not just one that edits.
