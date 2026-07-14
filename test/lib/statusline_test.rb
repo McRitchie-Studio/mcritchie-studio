@@ -39,13 +39,20 @@ class StatuslineTest < Minitest::Test
   # bin/task heartbeat at the production board, detached. Now the roots are pinned
   # at a tmpdir (TaskUsageSandboxEnv.child_env) and TASK_BIN is a no-op stub, so
   # these render assertions can never reach the operator's state or the board.
+  #
+  # AND THE SLUG IS FICTIONAL. It used to name a REAL production task
+  # ("session-resume-on-tasks"), so for the ~3 weeks the leak was live every unpinned
+  # render fired `bin/task heartbeat` at that real task on the real board. A fixture
+  # that names a live record turns any escape into a targeted write. The pins above
+  # are what CONTAIN the blast; a fictional slug is what makes the blast harmless if a
+  # pin is ever missed again. Keep it fictional — belt and braces, deliberately.
   def render_in(session:, extra: {}, provider: :claude)
     Dir.mktmpdir do |dir|
       File.write(File.join(dir, ".agent-context.json"), JSON.generate({
         "app" => "mcritchie-studio",
-        "worktree_slug" => "session-resume-v1",
-        "task_record_slug" => "session-resume-on-tasks",
-        "task_url" => "https://mcritchie.studio/tasks/session-resume-on-tasks",
+        "worktree_slug" => "fixture-worktree-slug",
+        "task_record_slug" => "fixture-task-slug",
+        "task_url" => "https://mcritchie.studio/tasks/fixture-task-slug",
         "stage" => "building"
       }.merge(extra)))
       # Exactly ONE session var set — SessionEnv unsets the other for us, so the
@@ -356,7 +363,7 @@ class StatuslineTest < Minitest::Test
   # The vector is reproduced SAFELY: HOME is pinned at a tmpdir, so an unguarded
   # statusline writes THERE (provably — the guarded one writes nowhere) instead of
   # in the operator's store. Assert on the fallback root, never on the real one.
-  def unpinned_sandboxed_run(stage: "building")
+  def unpinned_sandboxed_run(stage: "building", armed: "1")
     Dir.mktmpdir do |dir|
       home = File.join(dir, "home")
       FileUtils.mkdir_p(home)
@@ -375,17 +382,43 @@ class StatuslineTest < Minitest::Test
       env = SessionEnv.neutralized(
         "CLAUDE_CODE_SESSION_ID" => SESSION,
         "CLAUDE_PROJECTS_DIR" => nil,
-        "TASK_USAGE_SANDBOX" => "1",
+        "TASK_USAGE_SANDBOX" => armed,
         "HOME" => home,
         "TASK_BIN" => stub,
         "STATUSLINE_HEARTBEAT_FG" => "1"
       )
       stdin = JSON.generate("workspace" => { "current_dir" => dir })
-      out, = Open3.capture2(env, "/bin/bash", BIN, stdin_data: stdin, err: File::NULL)
+      out, err, = Open3.capture3(env, "/bin/bash", BIN, stdin_data: stdin)
 
-      { out: out,
+      { out: out, err: err,
         markers: Dir.glob(File.join(home, "projects", ".agents", "sessions", "*")),
         calls: File.exist?(calls) ? File.read(calls).lines.map(&:strip) : [] }
+    end
+  end
+
+  # A refusal must be AUDIBLE. The Ruby half aborts loudly; a silent bash `return 0`
+  # is indistinguishable from "nothing happened" — so if TASK_USAGE_SANDBOX ever leaked
+  # into the operator's interactive shell, every render would quietly stop renewing both
+  # the build claim and the shift lease, with nothing to tell them why.
+  def test_integration_a_sandboxed_unpinned_statusline_says_why_it_refused
+    run = unpinned_sandboxed_run
+
+    assert_match(/TASK_USAGE_SANDBOX/, run[:err], "the refusal must name the var that armed it")
+    assert_match(/CLAUDE_PROJECTS_DIR/, run[:err], "and the var that would have pinned it")
+    refute_empty run[:out], "and the status line must STILL RENDER — we fail the write, not the caller"
+  end
+
+  # Parity with the Ruby half, which compares against FALSEY after value.downcase. A
+  # bash `case` is case-sensitive, so a hand-listed spelling set diverged: "False" read
+  # as ARMED in bash and DISARMED in Ruby. Both directions were safe; two halves of one
+  # guard disagreeing about whether they are on is not.
+  def test_integration_the_bash_falsey_list_matches_rubys_case_insensitively
+    %w[False OFF No 0].each do |off|
+      run = unpinned_sandboxed_run(armed: off)
+
+      refute_empty run[:markers],
+                   "#{off.inspect} must read as DISARMED in bash exactly as it does in Ruby — " \
+                   "with the guard off, an unpinned render writes its marker as it always did"
     end
   end
 

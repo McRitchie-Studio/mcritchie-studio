@@ -61,11 +61,25 @@ s_in() { printf '%s' "$input" | "$JQ" -r "$1 // empty" 2>/dev/null; }
 # renewals they throttle. The status line still RENDERS in full. We fail the
 # write, never the caller — the same contract the Ruby half keeps.
 marker_write_refused() {
-  case "${TASK_USAGE_SANDBOX:-}" in
-    ""|0|false|no|off|FALSE|NO|OFF) return 1 ;;   # real session → guard is a strict no-op
+  # Case-INSENSITIVE, matching the Ruby half exactly (TaskUsageSandbox::FALSEY is
+  # compared against value.downcase). A bash `case` is case-sensitive, so listing
+  # spellings by hand diverged: "False"/"Off" read as ARMED here and DISARMED there.
+  # Both directions were safe, but a guard whose two halves disagree about whether
+  # they are on is a guard nobody can reason about. Lowercase once, compare once.
+  local armed
+  armed=$(printf '%s' "${TASK_USAGE_SANDBOX:-}" | tr '[:upper:]' '[:lower:]')
+  case "$armed" in
+    ""|0|false|no|off) return 1 ;;                # real session → guard is a strict no-op
   esac
   [ -n "${CLAUDE_PROJECTS_DIR:-}" ] && return 1   # sandboxed but PINNED → destination is provable
-  return 0                                        # sandboxed + unpinned → refuse the write
+
+  # Sandboxed + unpinned → refuse. Say so ON STDERR: the Ruby half aborts loudly, and
+  # a silent bash refusal is indistinguishable from "nothing happened". If
+  # TASK_USAGE_SANDBOX ever leaked into an interactive shell, every render would stop
+  # renewing BOTH the build claim and the shift lease with no way to tell why. The
+  # status line itself still renders — we fail the WRITE, not the caller.
+  printf 'statusline: TASK_USAGE_SANDBOX is on and CLAUDE_PROJECTS_DIR is unset — refusing to write the narration marker into the real store.\n' >&2
+  return 0
 }
 
 cwd=$(s_in '.workspace.current_dir'); [ -z "$cwd" ] && cwd=$(s_in '.cwd'); [ -z "$cwd" ] && cwd="$PWD"

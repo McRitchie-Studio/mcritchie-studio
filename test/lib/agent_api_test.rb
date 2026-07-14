@@ -116,6 +116,74 @@ class AgentApiTest < Minitest::Test
     end
   end
 
+  # ── [unit] the token cache is state in the operator's real .agents ────────────
+  #
+  # Same family as the cost store (PR #525) and the narration markers (PR #549):
+  # <projects>/.agents/atomic-capture/token.json is resolved by the SAME
+  # CLAUDE_PROJECTS_DIR-else-real-root fallback, and it was unguarded. It is not an
+  # exotic path either — the narration leak fired an authenticated GET at the
+  # PRODUCTION board on every unpinned suite run, and a 401 on that GET drives
+  # invalidate_token! straight into this delete.
+  #
+  # SEVERITY, stated honestly: token.json is a RE-MINTABLE CACHE, not a credential.
+  # `token` re-mints from the 1Password/env secret on the next call, so a stray delete
+  # is a self-healing eviction — a wasted `op read`, not credential destruction. It is
+  # guarded because an unguarded write into the real store is the bug, not because it
+  # is an emergency.
+  #
+  # The guard aborts BEFORE any IO, so this proves the refusal without attempting it.
+  def test_unit_an_unpinned_token_cache_mutation_aborts_instead_of_touching_the_real_store
+    real = File.join(TaskUsageSandbox.real_state_dir, "atomic-capture", "token.json")
+    existed = File.exist?(real)
+
+    # NOT `client` — that helper pins CLAUDE_PROJECTS_DIR for us, which is the whole
+    # point of it. Unpinned, projects_dir falls back to the operator's REAL root.
+    c = unpinned_client("AGENT_API_SECRET" => "s3cret")
+
+    err = assert_token_abort { c.invalidate_token! }
+    assert_match(/sandbox/i, err, "the abort must say WHY")
+    assert_includes err, "CLAUDE_PROJECTS_DIR", "and must name the var to pin"
+
+    err = assert_token_abort { c.send(:write_cached_token, "tok", nil) }
+    assert_match(/sandbox/i, err, "the WRITE seam is guarded too, not only the delete")
+
+    assert_equal existed, File.exist?(real), "the operator's real token cache must be untouched"
+  end
+
+  # An injected env cannot DISARM the guard by omitting the arming var — arming is a
+  # property of the PROCESS. Otherwise `AgentApi.new(env: {})` reads as unsandboxed
+  # and writes the real store: the exact hole the guard exists to close.
+  def test_unit_an_injected_env_cannot_disarm_the_token_guard
+    assert_token_abort { unpinned_client.invalidate_token! }
+  end
+
+  # A client whose env pins NOTHING — the fallback that reaches the real store.
+  def unpinned_client(env = {})
+    AgentApi.new(env: env, open_timeout: 1, read_timeout: 1)
+  end
+
+  # And the happy path the guard must not break: pinned, the cache still round-trips.
+  def test_unit_a_pinned_token_cache_still_writes_and_invalidates
+    Dir.mktmpdir do |proj|
+      c = client("CLAUDE_PROJECTS_DIR" => proj, "AGENT_API_SECRET" => "s3cret")
+      c.send(:write_cached_token, "tok", (Time.now + 3600).utc.iso8601)
+      assert_path_exists c.send(:token_cache_path), "a pinned write must land"
+
+      c.invalidate_token!
+      refute_path_exists c.send(:token_cache_path), "a pinned invalidation must still evict"
+    end
+  end
+
+  def assert_token_abort(&block)
+    original = $stderr
+    $stderr = StringIO.new
+    ex = assert_raises(SystemExit, "an unguarded token-cache mutation must ABORT, not degrade to a skip", &block)
+    refute_predicate ex.status, :zero?
+    "#{ex.message}\n#{$stderr.string}"
+  ensure
+    $stderr = original
+  end
+
   # ── [unit] secret order: ENV first ───────────────────────────────────────────
 
   def test_unit_agent_secret_prefers_the_env_verbatim

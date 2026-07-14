@@ -98,16 +98,29 @@ class SessionMarkersTest < Minitest::Test
   end
 
   # ── [unit] marker_path — ONE builder, so reads and writes cannot disagree ────
+  #
+  # `send`, because the builder is PRIVATE. An unguarded path builder sitting beside
+  # a guarded write API is an attractive nuisance — bin/atomic-event reached for it
+  # and raw-File.deleted the operator's live store with it (PR #549 review). Only
+  # this module may name a marker now; the exported mutations (write/delete) enforce.
+  # A test reaching in is a deliberate, greppable act, not an accident.
+
+  def test_unit_marker_path_is_private_so_no_caller_can_hand_roll_a_raw_write
+    refute_includes SessionMarkers.singleton_methods, :marker_path,
+                    "marker_path must not be publicly callable — the footgun a caller cannot pick up " \
+                    "beats the test that scolds them for picking it up"
+    assert_raises(NoMethodError) { SessionMarkers.marker_path(SESSION, "/tmp/p", ".json") }
+  end
 
   def test_unit_marker_path_is_pure_and_lives_under_the_sessions_dir
     assert_equal "/tmp/p/.agents/sessions/#{SESSION}.open-activity",
-                 SessionMarkers.marker_path(SESSION, "/tmp/p", ".open-activity")
+                 SessionMarkers.send(:marker_path, SESSION, "/tmp/p", ".open-activity")
   end
 
   # The session id is interpolated straight INTO a path. A traversing id must not
   # be able to steer a WRITE out of the sessions dir (the read side pins this too).
   def test_unit_a_traversing_session_id_cannot_escape_the_sessions_dir
-    path = SessionMarkers.marker_path("../../../../etc/passwd", "/tmp/p", ".json")
+    path = SessionMarkers.send(:marker_path, "../../../../etc/passwd", "/tmp/p", ".json")
     assert_equal "/tmp/p/.agents/sessions", File.dirname(path), "a traversing id stays in the sessions dir"
     refute_includes path, "/etc/", "path separators are stripped from the id, never traversed"
   end
@@ -162,7 +175,7 @@ class SessionMarkersTest < Minitest::Test
 
   def test_unit_a_real_agent_session_is_untouched_by_the_guard
     SUFFIXES.each do |suffix|
-      assert_equal SessionMarkers.marker_path(SESSION, REAL, suffix),
+      assert_equal SessionMarkers.send(:marker_path, SESSION, REAL, suffix),
                    SessionMarkers.write_path(SESSION, REAL, suffix, env: OFF),
                    "an unsandboxed agent's #{suffix} write must be a strict no-op for the guard"
     end

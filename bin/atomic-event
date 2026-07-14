@@ -595,10 +595,6 @@ class AgentActivityCli
   # (which `bin/task` owns) so we never read-modify-write / clobber it.
   ACTING_AGENT = ".acting-agent"
 
-  def acting_agent_path(session_id)
-    SessionMarkers.marker_path(session_id, projects_dir, ACTING_AGENT)
-  end
-
   def read_acting_agent(session_id)
     value = SessionMarkers.read(session_id, projects_dir, ACTING_AGENT).to_s.strip
     present?(value) ? value : nil
@@ -622,14 +618,6 @@ class AgentActivityCli
   # crossing the taxonomy rename.
   OPEN_ACTIVITY = ".open-activity"
   LEGACY_OPEN_SPAN = ".open-span"
-
-  def open_activity_path(session_id)
-    SessionMarkers.marker_path(session_id, projects_dir, OPEN_ACTIVITY)
-  end
-
-  def legacy_open_span_path(session_id)
-    SessionMarkers.marker_path(session_id, projects_dir, LEGACY_OPEN_SPAN)
-  end
 
   def record_open_activity(session_id, res)
     return unless res && res.code.to_i.between?(200, 299)
@@ -667,10 +655,6 @@ class AgentActivityCli
   # owning session transcript from the baseline captured at activity open and
   # stamps that measured delta directly on AgentActivity.
   ACTIVITY_USAGE = ".activity-usage.json"
-
-  def activity_usage_path(session_id)
-    SessionMarkers.marker_path(session_id, projects_dir, ACTIVITY_USAGE)
-  end
 
   def read_activity_usage_baselines(session_id)
     raw = SessionMarkers.read(session_id, projects_dir, ACTIVITY_USAGE)
@@ -715,10 +699,7 @@ class AgentActivityCli
   end
 
   def clear_activity_usage_baselines(session_id)
-    path = activity_usage_path(session_id)
-    File.delete(path) if File.file?(path)
-  rescue StandardError
-    nil
+    SessionMarkers.delete(session_id, projects_dir, ACTIVITY_USAGE, env: @api.env)
   end
 
   # ── Lane-aware open-activity + baseline entry shape ────────────────────────

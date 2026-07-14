@@ -230,10 +230,6 @@ class DevopsShiftCli
   # it shares their one choke point rather than re-deriving the path here.
   DEVOPS_SHIFT = ".devops-shift"
 
-  def marker_path(sid)
-    SessionMarkers.marker_path(sid, @api.projects_dir, DEVOPS_SHIFT)
-  end
-
   def write_marker(sid, lane)
     SessionMarkers.write(sid, @api.projects_dir, DEVOPS_SHIFT, "#{lane}\n", env: @api.env)
   end

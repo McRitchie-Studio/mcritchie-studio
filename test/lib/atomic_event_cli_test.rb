@@ -66,8 +66,10 @@ class AgentActivityCliTest < Minitest::Test
   def test_unit_open_activity_marker_round_trip_and_clear
     Dir.mktmpdir do |proj|
       c = cli("CLAUDE_PROJECTS_DIR" => proj)
-      path = c.send(:open_activity_path, SESSION)
-      legacy = c.send(:legacy_open_span_path, SESSION)
+      # The CLI no longer holds a raw marker path at all (that was the footgun), so a
+      # test that wants one reaches into SessionMarkers' private builder explicitly.
+      path = SessionMarkers.send(:marker_path, SESSION, proj, ".open-activity")
+      legacy = SessionMarkers.send(:marker_path, SESSION, proj, ".open-span")
 
       c.send(:write_open_activity, SESSION, 777)
       assert_equal "777", File.read(path).strip
@@ -895,6 +897,55 @@ class AgentActivityCliTest < Minitest::Test
       "TASK_USAGE_SANDBOX" => "1"     # a test child always inherits this
     )
     Open3.capture3(env, RbConfig.ruby, BIN, *argv)
+  end
+
+  # ── [unit] the CLOSE path — the one no guarded-API test could see ─────────────
+  #
+  # THE BUG THIS FILE SHIPPED. Every violation shape above drives the guarded API, so
+  # every one of them was blind to a caller that never ENTERS it — and
+  # clear_activity_usage_baselines was exactly that: it took SessionMarkers' pure path
+  # BUILDER and raw-File.deleted the result. Unguarded, and on the COMMON path — it
+  # fires on effectively every `end`/`next` (whenever the closing activity was the last
+  # one open), so a sandboxed-but-unpinned child DELETED
+  # <real projects>/.agents/sessions/<sid>.activity-usage.json where every guarded
+  # sibling aborts. The WRITE path was covered; the CLOSE path was not. It is now.
+  #
+  # Safe against the real store: the guard aborts BEFORE any IO, so this asserts the
+  # refusal without ever attempting the delete it forbids.
+  def test_unit_an_unpinned_activity_usage_clear_aborts_instead_of_deleting_the_real_store
+    real = File.join(TaskUsageSandbox.real_state_dir, "sessions", "#{SESSION}.activity-usage.json")
+    existed = File.exist?(real)
+
+    # No CLAUDE_PROJECTS_DIR ⇒ projects_dir falls back to the operator's REAL root.
+    c = AgentActivityCli.new(env: { "CLAUDE_CODE_SESSION_ID" => SESSION })
+
+    err = capture_abort { c.send(:clear_activity_usage_baselines, SESSION) }
+    assert_match(/sandbox/i, err, "the abort must say WHY")
+    assert_includes err, "CLAUDE_PROJECTS_DIR", "and must name the var to pin"
+    assert_equal existed, File.exist?(real), "the operator's real baseline file must be untouched"
+  end
+
+  # And the happy path the guard must not break: pinned, the clear still clears.
+  def test_unit_a_pinned_activity_usage_clear_still_removes_the_baseline
+    Dir.mktmpdir do |proj|
+      c = cli("CLAUDE_PROJECTS_DIR" => proj)
+      path = SessionMarkers.send(:marker_path, SESSION, proj, ".activity-usage.json")
+      FileUtils.mkdir_p(File.dirname(path))
+      File.write(path, JSON.generate("77" => { "totals" => {} }))
+
+      c.send(:clear_activity_usage_baselines, SESSION)
+      refute_path_exists path, "a pinned clear must still delete the baseline — narration keeps working"
+    end
+  end
+
+  def capture_abort(&block)
+    original = $stderr
+    $stderr = StringIO.new
+    ex = assert_raises(SystemExit, "an unguarded marker mutation must ABORT, not degrade to a silent skip", &block)
+    refute_predicate ex.status, :zero?, "the abort must exit non-zero"
+    "#{ex.message}\n#{$stderr.string}"
+  ensure
+    $stderr = original
   end
 
   def test_integration_an_unpinned_marker_write_aborts_instead_of_reaching_the_real_store

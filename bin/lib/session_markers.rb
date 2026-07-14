@@ -34,18 +34,41 @@ require_relative "../../lib/task_usage_sandbox"
 #
 # So: the narration writers resolve through ONE builder (+marker_path+), and every
 # write and delete they make goes through the +TaskUsageSandbox+ choke point
-# (+write_path+). The next caller cannot hand-roll another copy without coming
-# through here.
+# (+write_path+).
 #
-# WHO ELSE TOUCHES THIS STORE, precisely — do not let this list rot:
+# THE INVARIANT, stated positively — this is what is actually enforced:
+#
+#   EVERY filesystem MUTATION of this store passes TaskUsageSandbox.enforce!
+#   with store: "session-marker".
+#
+# Note what that does NOT say: it does not say "goes through SessionMarkers".
+# bin/task legitimately hand-rolls its own path and calls enforce! itself, and it
+# is fail-closed for doing so. The choke point is the GUARD, not this file.
+#
+# Two mechanisms hold the invariant, because the first one alone is a convention:
+#   1. STRUCTURAL — +marker_path+ is private (see below), so no caller outside this
+#      module can get an unguarded marker path from us at all. bin/atomic-event and
+#      bin/devops-shift now hold ZERO raw marker paths; there is nothing to misuse.
+#   2. STATIC — test/lib/session_marker_containment_test.rb re-derives the mutation
+#      set from the SOURCE on every run and fails on any marker path (ours OR a
+#      hand-rolled File.join) that reaches a filesystem sink without passing
+#      enforce!. It is default-DENY: an unrecognized sink is a violation, so a
+#      seventh writer invented years from now — with a spelling nobody here
+#      imagined — fails the suite instead of quietly leaking. The rule is enforced
+#      against the tree, not against this comment.
+#
+# WHO ELSE TOUCHES THIS STORE, precisely — do not let this list rot (the
+# containment test above will catch you if you do):
 #   bin/task           WRITES <id>.json. Resolves its own path (PROJECTS_DIR is a
 #                      load-time constant off ENV) but guards it at the SAME
-#                      TaskUsageSandbox seam, so it is fail-closed already.
+#                      TaskUsageSandbox seam (bin/task:631, :1139), so it is
+#                      fail-closed already.
 #   bin/statusline     WRITES the .heartbeat/.shift-heartbeat throttles. Bash, so
 #                      it cannot call this module; it enforces rule 1 inline and
 #                      leans on the Ruby CLIs it shells for rule 2 (see its header).
-#   bin/agent-marker,  READ-only. Unguarded on purpose: a read cannot pollute.
-#   bin/atomic-capture-hook
+#   bin/agent-marker,  READ-only. Unguarded on purpose: a read cannot pollute — so
+#   bin/atomic-capture-hook  agent-marker resolving its own read path by hand is
+#                      allowed, and the containment test permits read-only sinks.
 #
 # FAIL-CLOSED vs. NARRATION-IS-NON-FATAL — the tension, and its resolution.
 # Narration must NEVER block an agent's real work, so every marker write in
@@ -83,10 +106,24 @@ module SessionMarkers
   # — so reads (which cannot pollute) and writes (which can) agree on the path by
   # construction, rather than by two hand-rolled copies agreeing by luck.
   # +suffix+ carries its own dot (".json", ".open-activity", …).
+  #
+  # PRIVATE, and that is the point. An UNGUARDED path builder sitting next to a
+  # guarded write API is an attractive nuisance: a caller reaches for the path,
+  # does its own File.write/File.delete, and silently rejoins the population this
+  # module exists to empty. That is not hypothetical — it is exactly how
+  # bin/atomic-event#clear_activity_usage_baselines came to raw-File.delete the
+  # operator's live .activity-usage.json on the common close path (PR #549 review),
+  # while its guarded sibling clear_acting_agent did the same job correctly. So the
+  # builder is reachable only from INSIDE this module, and the only exported way to
+  # name a marker for MUTATION is write/delete — both of which enforce.
+  #
+  # A test that needs to assert on a path may `send(:marker_path, …)`: a deliberate,
+  # greppable reach into the internals, not an accident a writer can fall into.
   def marker_path(session_id, projects_dir, suffix)
     safe = session_id.to_s.gsub(/[^A-Za-z0-9._-]/, "")
     File.join(projects_dir.to_s, ".agents", "sessions", "#{safe}#{suffix}")
   end
+  private_class_method :marker_path
 
   # THE CHOKE POINT — resolve a marker path for MUTATION. A sandboxed process
   # that cannot prove its destination lies outside the operator's real store
@@ -105,28 +142,11 @@ module SessionMarkers
                               store: STORE, env: guard_env(env), state_dir: state_dir)
   end
 
-  # The env the guard is evaluated against — deliberately assembled from TWO
-  # sources, because its two rules answer to different scopes:
-  #
-  #   THE PIN (CLAUDE_PROJECTS_DIR) comes from the CALLER'S env, because that is
-  #     what resolved projects_dir. bin/atomic-event and bin/devops-shift take an
-  #     injectable env (AgentApi#env); a test that constructs one with a tmpdir
-  #     pin IS correctly pinned, and reading the process ENV instead would abort
-  #     it — a guard that fails closed on the happy path, which is worse than the
-  #     leak it closes.
-  #   THE ARMING (TASK_USAGE_SANDBOX) comes from the PROCESS ENV whenever the
-  #     caller's env is silent about it. Arming is a property of the process — a
-  #     test arms it for itself and every child it spawns — so an injected env
-  #     that simply omits it must NOT be able to disarm the guard. Otherwise
-  #     `AgentActivityCli.new(env: {})` would resolve the REAL projects root with
-  #     the sandbox reading as OFF, and write the operator's store: the very hole
-  #     this exists to close. An env that names it explicitly still wins.
-  def guard_env(env)
-    env = env.to_h
-    return env if env.key?(TaskUsageSandbox::ENV_KEY)
-
-    env.merge(TaskUsageSandbox::ENV_KEY => ENV[TaskUsageSandbox::ENV_KEY]).compact
-  end
+  # The env the guard is evaluated against: the PIN from the caller's injected env,
+  # the ARMING from the process ENV — so `AgentActivityCli.new(env: {})` cannot
+  # disarm the guard by omission. It lives on TaskUsageSandbox now because the token
+  # cache (bin/lib/agent_api.rb) needs the identical split; see its rationale there.
+  def guard_env(env) = TaskUsageSandbox.guard_env(env)
 
   # Write a marker, creating the sessions dir. Returns the path, or nil when the
   # IO failed — the callers' best-effort contract. A sandbox violation is NOT an
