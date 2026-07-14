@@ -66,6 +66,7 @@ class FullSuiteCheckTest < Minitest::Test
       FileUtils.mkdir_p(dir)
       git = ->(args) { assert(system("git -C #{dir} #{args} >/dev/null 2>&1"), "git #{args}") }
       File.write(File.join(dir, "app.rb"), "base\n")
+      write_repo_shape(dir, subpath)
       git.call("init -q")
       git.call("config user.email tester@example.com")
       git.call("config user.name tester")
@@ -73,6 +74,29 @@ class FullSuiteCheckTest < Minitest::Test
       git.call("commit -q -m init")
       yield dir
     end
+  end
+
+  # Make the fixture REPO-SHAPED, because the desk guard no longer reads a file — it BOOTS
+  # THE APP and reads back the database it actually connects to (bin/lib/desk_guard.rb).
+  # A desk fixture needs the REPO's config/database.yml (one level up from
+  # <repo>/.worktrees/<slug> — the SHARED name, ERB-stripped so no env var can rewrite what
+  # the resolution is compared against) and a `bin/rails` to boot. The shim answers with
+  # DESK_DB_STUB, defaulting to the SHARED name: the hazard this gate exists to refuse.
+  def write_repo_shape(dir, subpath)
+    repo_root = subpath ? File.expand_path("../..", dir) : dir
+    FileUtils.mkdir_p(File.join(repo_root, "config"))
+    File.write(File.join(repo_root, "config", "database.yml"), <<~YAML)
+      default: &default
+        adapter: postgresql
+      test:
+        <<: *default
+        database: studio_test
+    YAML
+
+    FileUtils.mkdir_p(File.join(dir, "bin"))
+    shim = File.join(dir, "bin", "rails")
+    File.write(shim, "#!/bin/sh\necho \"DESKDB=${DESK_DB_STUB:-studio_test}\"\n")
+    File.chmod(0o755, shim)
   end
 
   # Run the runner in --print mode (no task board) with both lanes stubbed.
@@ -424,11 +448,30 @@ class FullSuiteCheckTest < Minitest::Test
   # order the gate workspaces assert in. bin/lib/desk_guard.rb.
   def test_a_desk_with_no_isolated_test_db_is_refused_before_the_purge
     with_repo(subpath: ".worktrees/half-built") do |dir|
+      # The fixture's bin/rails shim answers with the SHARED name: bringup never gave this
+      # desk a database of its own, so the purge would land on everyone else's.
       out, code, lines = run_check_implicit_root(dir, "")
 
       assert_equal 1, code, "a desk with no isolated test DB must refuse, not purge: #{out}"
       assert_match(/no isolated test DB/, out)
       assert_match(/SHARED base test database/, out)
+      refute(lines.any? { |l| l[0] == "GATE" }, "the refusal fires BEFORE any gate attempt opens")
+    end
+  end
+
+  # THE BLOCKER-A VECTOR, on the gate whose FIRST LANE IS `db:test:purge`. A desk that PINS
+  # an isolated DB the app IGNORES (turf-monster, no `url:` key in its test block) resolves
+  # to the SHARED database — and the presence-checking guard waved it through, straight into
+  # a purge of the database every other desk and the release gate were mid-suite against.
+  def test_a_desk_whose_pin_is_ignored_by_the_app_is_refused_before_the_purge
+    with_repo(subpath: ".worktrees/inert-pin") do |dir|
+      File.write(File.join(dir, ".env.test.local"),
+                 "TEST_DATABASE_URL=postgresql://localhost/studio_test_inert_pin\n")
+      out, code, lines = run_check_implicit_root(dir, "")
+
+      assert_equal 1, code, "a pin the app ignores is not isolation — REFUSE before the purge: #{out}"
+      assert_match(/SHARED test database/, out)
+      assert_match(/IGNORES it/, out)
       refute(lines.any? { |l| l[0] == "GATE" }, "the refusal fires BEFORE any gate attempt opens")
     end
   end

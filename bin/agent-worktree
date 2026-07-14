@@ -40,6 +40,11 @@ require_relative "../app/models/release/ship_sequence"
 require_relative "../app/models/release/restore_primary"
 require_relative "../lib/claim_lease"
 require_relative "lib/projects_root"
+# The desk's isolation doctrine — SHARED with the two cert runners, on purpose. Bringup
+# ASSERTS the same property the cert runners REFUSE on, resolved by the same booted-app
+# probe against the same externally-computed shared name. Build-time undo and use-time
+# assert are one invariant, so they must not be two implementations that can disagree.
+require_relative "lib/desk_guard"
 
 PROJECTS_DIR = File.expand_path(ENV.fetch("PROJECTS_DIR") { ProjectsRoot.default_projects_dir })
 HUB_DIR = File.join(PROJECTS_DIR, "mcritchie-studio")
@@ -814,26 +819,51 @@ def worktree_db_name(app_slug, task)
   "#{prefix}#{bounded_db_slug(task.tr("-", "_"), MAX_PG_IDENTIFIER - prefix.length)}"
 end
 
+# The desk's DEV database URL — or nil for a FILE-BACKED (SQLite) app.
+#
+# rolio is `adapter: sqlite3` with no `pg` gem: its databases are FILES under the
+# worktree's own storage/, so a desk gets its isolation BY CONSTRUCTION and needs no URL
+# at all. Handing it `postgresql://localhost/rolio_development_<slug>` was not merely
+# useless, it was a LIVE TRAP — `bin/rails db:prepare` died on `Gem::LoadError: pg is not
+# part of the bundle`, and the derived `rolio_test_<slug>` was a Postgres database that
+# could never exist, so the isolation assertion failed for every rolio desk and the atomic
+# rollback then removed the worktree, the branch, and the stack env. `new rolio <task>`
+# created NOTHING, EVER.
+#
+# Same rule, same source of truth as Release::GateWorkspace.database_url_for (which returns
+# nil for SQLite for exactly this reason): the adapter is read from the app's OWN
+# config/database.yml, never from a registry column a new app can drift out of sync with.
+def desk_database_url(app, db_name)
+  adapter = Release::GateWorkspace.adapter(app.fetch("repo")).to_s
+  return nil if adapter.empty? || adapter.start_with?("sqlite")
+
+  "postgresql://localhost/#{db_name}"
+end
+
 def stack_values(app, task, requested_port = nil)
   port = requested_port || allocate_port(app)
   redis_db = allocate_redis_db
   db_name = worktree_db_name(app.fetch("slug"), task)
   session_key = "#{app.fetch("session_key")}_#{task.tr("-", "_")}"
+  database_url = desk_database_url(app, db_name)
 
-  {
+  values = {
     "AGENT_WORKTREE" => "1",
     "APP_SLUG" => app.fetch("slug"),
     "TASK_SLUG" => task,
     "APP_PORT" => port.to_s,
     "PORT" => port.to_s,
     "REDIS_URL" => "redis://localhost:6379/#{redis_db}",
-    "DATABASE_URL" => "postgresql://localhost/#{db_name}",
     "TASK_RECORD_SLUG" => ENV.fetch("TASK_RECORD_SLUG", ""),
     "TASK_URL" => ENV.fetch("TASK_URL", ""),
     app.fetch("session_env") => session_key,
     "TM_PORT" => port.to_s,
     "TM_REDIS_DB" => redis_db.to_s
-  }.merge(local_email_values)
+  }
+  # Absent, not blank, for a file-backed app: an empty DATABASE_URL is a value Rails would
+  # still try to parse, and every reader here already treats "no key" as "file-backed".
+  values["DATABASE_URL"] = database_url if database_url
+  values.merge(local_email_values)
 end
 
 def local_email_values
@@ -878,7 +908,10 @@ def print_plan(app, task, values, dir = worktree_dir(app, task))
   puts "url:      http://localhost:#{values.fetch("APP_PORT")}"
   puts "email:    http://localhost:#{values.fetch("APP_PORT")}/_studio/local_emails"
   puts "branch:   feat/#{task} (or the type you pass to new) off origin/#{base_branch_for(app.fetch("repo"))}"
-  puts "db:       #{values.fetch("DATABASE_URL").sub("postgresql://localhost/", "")}"
+  # No DATABASE_URL = a file-backed (SQLite) app: its databases are files under the
+  # worktree's storage/, private by construction. `.fetch` here used to raise for rolio.
+  database_url = values["DATABASE_URL"].to_s
+  puts "db:       #{database_url.empty? ? "storage/*.sqlite3 (files inside the worktree)" : database_url.sub("postgresql://localhost/", "")}"
   puts "redis:    db #{redis_db}"
   puts "session:  #{app.fetch("session_env")}=#{values.fetch(app.fetch("session_env"))}"
   puts
@@ -1013,43 +1046,148 @@ end
 #
 # The asset build is deliberately NOT gated on the test DB: a worktree with no
 # derivable test DB still renders views, and gating the CSS build behind a DATABASE
-# concern is exactly how this bug would creep back in. No test DB → we skip only
+# concern is exactly how this bug would creep back in. No usable test DB → we skip only
 # db:test:prepare, and still build.
+#
+# db:test:prepare is gated on PROVEN PRIVACY, not on "is there a DATABASE_URL". It CREATES
+# the database it resolves to — and on Postgres it will happily (re)load a schema into the
+# SHARED one. Assert first, destroy second: the same order the release gate workspaces use.
+# The old gate asked whether the stack had a DATABASE_URL to derive a test URL from, which
+# was wrong in BOTH directions once adapters entered the picture: it skipped the prepare for
+# a SQLite app (whose test DB is a file inside the desk — always safe, and skipping it meant
+# storage/test.sqlite3 was never created, so `new rolio` could not complete), and it would
+# have run the prepare for a Postgres app whose config ignores the pin and resolves SHARED.
 def prepare_test_env(dir, app, values)
+  write_test_env_local(dir, values) # no-op for a file-backed app: nothing to pin
   tasks = []
-  if test_database_url(values)
-    write_test_env_local(dir, values)
-    tasks << "db:test:prepare"
-  end
+  tasks << "db:test:prepare" if desk_test_db_private?(dir, app)
   tasks << "test:prepare"
   sh("bin/rails", *tasks, chdir: dir, env: test_command_env(app, values), allow_fail: true)
 end
 
-# The desk's ONE non-negotiable property: it owns its test database.
-#
-# config/database.yml renders `url: <%= ENV["TEST_DATABASE_URL"] %>` and falls back
-# to the SHARED base `<app>_test` when that is blank — the same database the primary
-# checkout and the release gate workspaces use. So a desk with no isolated test DB
-# does not fail; it QUIETLY JOINS the shared one, and its `bin/rails test` pollutes,
-# and is polluted by, every concurrent suite (PG::ObjectInUse on purge, phantom
-# order-dependent failures). Nothing about the directory announces it.
-#
-# prepare_test_env is best-effort (allow_fail) — it must be, since a stack can be
-# rebuilt when Postgres is down. That is exactly why the OUTCOME is verified here
-# instead of its exit code being trusted: assert the property, then keep the desk.
-# Anything short of a real, reachable, isolated test DB and the desk does not exist.
-def isolated_test_db_failure(dir, values)
-  test_url = test_database_url(values)
-  return "the stack env has no DATABASE_URL to derive a test database from" if test_url.nil?
+# Would a plain `bin/rails test` in this desk land on a database of its OWN? Boots the app
+# and asks, via the same DeskGuard the cert runners refuse on. False when it cannot prove it.
+def desk_test_db_private?(dir, app)
+  resolved, _output, booted = DeskGuard.resolve(dir, env: desk_probe_env(app))
+  return false unless booted && !resolved.empty?
 
-  declared = parse_env(test_env_local_path(dir))["TEST_DATABASE_URL"].to_s.strip
-  return "#{test_env_local_path(dir)} was not written (no TEST_DATABASE_URL to pin the test env)" if declared.empty?
+  shared = Release::GateWorkspace.declared_test_database(app.fetch("repo")).to_s
+  DeskGuard.private_db?(resolved: resolved, desk: dir, shared: shared)
+end
 
-  db = db_name_from_url(test_url)
-  case database_exists?(db)
+# The env a PLAIN `bin/rails test` in the desk boots under — the command worktrees.md
+# tells agents to run, and the one both cert runners run. Deliberately WITHOUT the stack's
+# DATABASE_URL: that override would force the right answer through Rails' DATABASE_URL
+# merge and MASK a config/database.yml that ignores TEST_DATABASE_URL, which is precisely
+# the bug that made every turf desk report an isolation it did not have. Assert the desk an
+# agent will actually use, not a tidier one we hand ourselves.
+def desk_probe_env(app)
+  {
+    "PATH" => [app["ruby_path"], ENV["PATH"]].compact.join(":"),
+    # nil UNSETS the var in the child. BOTH database vars are scrubbed, because either one
+    # inherited from the shell that ran `new` would answer the question for us:
+    #
+    #   * DATABASE_URL would force the right answer through Rails' DATABASE_URL merge and
+    #     MASK a config/database.yml that ignores TEST_DATABASE_URL — the turf bug.
+    #   * TEST_DATABASE_URL is worse, and it is not hypothetical: run `new` from inside
+    #     ANOTHER desk's Rails process (this repo's own test suite does) and dotenv has
+    #     already exported that desk's pin. dotenv does not overwrite an existing ENV var,
+    #     so the inherited pin WINS over the new desk's .env.test.local — and the new desk
+    #     would resolve to a database that is private, all right, but private to somebody
+    #     ELSE. It is not the shared DB, so a naive check calls it isolated.
+    #
+    # Scrubbed, the probe answers the only question that matters: booted from a CLEAN
+    # shell, does THIS desk land on a database of its own?
+    "DATABASE_URL" => nil,
+    "TEST_DATABASE_URL" => nil
+  }
+end
+
+# The desk's ONE non-negotiable property: it owns its test database. RESOLVED, not trusted.
+#
+# The first cut of this asked whether .env.test.local CONTAINED a TEST_DATABASE_URL. That is
+# a DECLARATION, and it is not the property. `TEST_DATABASE_URL` is a hand-rolled seam that
+# only lands if the app's config/database.yml reads it — the hub does; turf-monster did not
+# (bare `database: turf_monster_test`), so its pin was INERT and its desks resolved to the
+# SHARED `turf_monster_test` while declaring an isolated-looking URL. And the check was
+# POSTGRES-SHAPED, so rolio (SQLite, correctly isolated by a file inside the desk) could
+# never satisfy it and `new rolio` rolled back every time.
+#
+# So: BOOT THE APP in the desk and read back the database it ACTUALLY connects to, then
+# prove it is not the repo's shared one — adapter-agnostic, via the same DeskGuard the cert
+# runners refuse on. Then prove the database is really THERE: a Postgres name must exist in
+# Postgres; a SQLite file must exist on disk.
+#
+# prepare_test_env is best-effort (allow_fail) — it must be, since a stack can be rebuilt
+# while Postgres is down. That is exactly why the OUTCOME is verified here instead of its
+# exit code being trusted: assert the property, then keep the desk. Anything short of a
+# real, reachable, PROVABLY private test DB and the desk does not exist.
+# -> nil when the desk owns its test database, else { reason:, remedy: }.
+#
+# The REMEDY is carried with the reason on purpose. The single message this used to print
+# ("Usually Postgres: pg_isready / brew services start postgresql@17 / re-run; bringup is
+# idempotent") was FALSE, UNACTIONABLE and an INFINITE LOOP for rolio — SQLite, no `pg` gem,
+# a perfectly healthy Postgres — and it is equally wrong for a repo whose config/database.yml
+# ignores the pin: no amount of restarting Postgres fixes a YAML file. A safety message must
+# never send an operator to restart a healthy service.
+def isolated_test_db_failure(dir, app, _values)
+  slug = File.basename(dir)
+  rerun = "  bin/agent-worktree new #{app.fetch("slug")} #{slug}   # re-run; bringup is idempotent"
+  repo = app.fetch("repo")
+
+  resolved, output, booted = DeskGuard.resolve(dir, env: desk_probe_env(app))
+  unless booted && !resolved.empty?
+    return {
+      reason: "`bin/rails runner` could not boot in the desk, so its test database could not be resolved",
+      remedy: "The boot output below is the only thing that says why (a broken bundle, a missing " \
+              "gem, Postgres down, a boot-time error in the tree):\n\n#{DeskGuard.indent(output)}\n\n#{rerun}"
+    }
+  end
+
+  shared = Release::GateWorkspace.declared_test_database(repo).to_s.strip
+  if shared.empty?
+    return {
+      reason: "#{repo}/config/database.yml declares no test database, so isolation cannot be proven",
+      remedy: "Refusing rather than assuming. Fix the repo's config/database.yml, then:\n#{rerun}"
+    }
+  end
+
+  unless DeskGuard.private_db?(resolved: resolved, desk: dir, shared: shared)
+    return {
+      reason: "a plain `bin/rails test` in this desk resolves to `#{resolved}` — the SHARED test " \
+              "database, not a database of its own",
+      # NOT a Postgres-is-down problem, and re-running bringup would faithfully rewrite the
+      # same inert pin. The repo's config is the fix.
+      remedy: "The desk's TEST_DATABASE_URL pin is INERT: #{app.fetch("slug")}'s config/database.yml " \
+              "never reads it in its `test:` block. Fix the REPO — #{repo}/config/database.yml, " \
+              "`test:` block:\n\n    url: <%= ENV[\"TEST_DATABASE_URL\"] %>\n\n" \
+              "If the repo already carries that line, this tree predates it — rebase onto " \
+              "origin/release. Then:\n#{rerun}"
+    }
+  end
+
+  if Release::GateWorkspace.file_backed?(resolved)
+    path = File.absolute_path(resolved, dir)
+    return nil if File.exist?(path)
+
+    return {
+      reason: "the test database file #{path} was not created (db:test:prepare did not create it)",
+      remedy: "#{app.fetch("slug")} is SQLite: its test DB is a FILE inside the worktree, so this is " \
+              "NOT a Postgres problem — do not restart Postgres. Read the `bin/rails db:test:prepare " \
+              "test:prepare` output above; it is the only thing that says why. Then:\n#{rerun}"
+    }
+  end
+
+  postgres = "Usually Postgres:\n  pg_isready                              # is it up?\n" \
+             "  brew services start postgresql@17       # start it\n#{rerun}"
+  case database_exists?(resolved)
   when true then nil
-  when false then "the test database #{db} does not exist (db:test:prepare did not create it)"
-  else "Postgres is unreachable (pg_isready), so the test database #{db} could not be verified"
+  when false
+    { reason: "the test database #{resolved} does not exist (db:test:prepare did not create it)",
+      remedy: postgres }
+  else
+    { reason: "Postgres is unreachable (pg_isready), so the test database #{resolved} could not be verified",
+      remedy: postgres }
   end
 end
 
@@ -1066,13 +1204,20 @@ end
 #   2. ALLOCATE FIRST — the port + Redis DB are claimed BEFORE the git worktree is
 #      cut, so the failure we know about can't get past step 0.
 #   3. UNDO STACK — anything that lands registers its inverse; ANY non-local exit
-#      (an `abort` inside `sh`, a raise, a Ctrl-C) unwinds it in reverse.
+#      (an `abort` inside `sh`, a raise, a Ctrl-C, a SIGTERM) unwinds it in reverse.
 # Then the desk is ASSERTED complete (isolated_test_db_failure) before it is kept.
 #
 # Resumable, and it never over-deletes: only what THIS run created is registered
 # for rollback, so re-running `new` over an existing (or half-built) desk repairs
 # the missing pieces and a failure leaves the pre-existing parts alone.
 def provision_desk!(app, task, type)
+  # SIGINT (Ctrl-C) already raises Interrupt, which the rescue below unwinds — but SIGTERM
+  # and SIGHUP do NOT: their default disposition kills the process outright (rc=143), the
+  # rescue never runs, and the half-built desk survives. And SIGTERM is the COMMON agent
+  # path, not Ctrl-C: an agent runs `new` under a Bash-tool timeout and the harness TERMs
+  # the process group. Raising turns it into the same unwind every other failure takes.
+  %w[TERM HUP].each { |sig| Signal.trap(sig) { raise Interrupt, "SIG#{sig}" } }
+
   preflight_capacity!(app, task)
 
   dir = worktree_dir(app, task)
@@ -1112,13 +1257,17 @@ def provision_desk!(app, task, type)
     # lanes pass explicit test paths — out of the box (no manual db:create / unsetting
     # DATABASE_URL / tailwindcss:build). app/assets/builds/ is gitignored, so a virgin
     # worktree has no CSS until something builds it; see prepare_test_env.
+    #
+    # A FILE-BACKED (SQLite) app has no test DB to create and NEEDS NO INVERSE: its
+    # storage/test.sqlite3 lives INSIDE the worktree, so the worktree's own rollback takes
+    # it with them. test_database_url is nil there, so test_db is "" and both steps skip.
     test_db = db_name_from_url(test_database_url(values))
     unless test_db.empty? || database_exists?(test_db)
       # Registered BEFORE the create, so a create that half-lands is still dropped.
       # Skipped when the DB already exists: that one is not ours to destroy.
       rollback.register("test database #{test_db}") { drop_database!(test_db) }
     end
-    puts "test db:        #{test_db} (provisioning)" unless test_db.empty?
+    puts "test db:        #{test_db.empty? ? "storage/test.sqlite3 (inside the worktree)" : test_db} (provisioning)"
     puts "assets:         app/assets/builds/tailwind.css (building)"
     prepared = prepare_test_env(dir, app, values)
 
@@ -1130,10 +1279,16 @@ def provision_desk!(app, task, type)
     #     The desk would look isolated and pass the outcome check.
     # A desk is complete or it does not exist. Re-running `new` is cheap; a silent
     # half-desk costs a day of chasing a phantom regression.
-    failure = isolated_test_db_failure(dir, values)
-    failure ||= "`bin/rails db:test:prepare test:prepare` failed (its output is above)" unless prepared
+    failure = isolated_test_db_failure(dir, app, values)
+    unless failure || prepared
+      failure = {
+        reason: "`bin/rails db:test:prepare test:prepare` failed (its output is above)",
+        remedy: "Read that output: it is the only thing that says why.\n" \
+                "  bin/agent-worktree new #{app.fetch("slug")} #{task}   # re-run; bringup is idempotent"
+      }
+    end
     abort <<~MSG.strip if failure
-      bringup could not give this desk its own test database — #{failure}.
+      bringup could not give this desk its own test database — #{failure.fetch(:reason)}.
 
       A desk with no isolated test DB does not fail loudly; it falls back to the SHARED
       base test database (the one the primary checkout and the release gate workspaces
@@ -1141,10 +1296,9 @@ def provision_desk!(app, task, type)
       else is running. That is the exact hazard the desk exists to prevent, so nothing
       is kept: this bringup rolls back and leaves no worktree behind.
 
-      This is an ENV problem on this machine, not a problem with the task. Usually Postgres:
-        pg_isready                              # is it up?
-        brew services start postgresql@17       # start it
-        bin/agent-worktree new #{app.fetch("slug")} #{task}   # re-run; bringup is idempotent
+      This is an ENV/config problem on this machine, not a problem with the task.
+
+      #{failure.fetch(:remedy)}
     MSG
 
     rollback.commit!

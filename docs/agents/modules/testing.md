@@ -167,17 +167,45 @@ Two rules follow:
   `bin/rails db:test:prepare test:prepare`, one boot. `test/lib/tasks/test_prepare_asset_hook_test.rb`
   pins the hook that makes this work.
 
-### A desk with no isolated test DB may not run a test lane
+### A desk that does not own its test DB may not run a CERT lane
 
-`bin/fast-check` / `bin/full-suite-check` **refuse** in a worktree that has no
-`.env.test.local` (and no `TEST_DATABASE_URL` in the env) — `bin/lib/desk_guard.rb`.
-Without it, `config/database.yml` falls back to the shared base `<app>_test`, so the
-run would certify against the database the primary checkout and the release gate
-workspaces use, and `full-suite-check`'s `db:test:purge` lane would destroy it
-mid-suite. If you see that refusal it is an **env issue with the desk, not a
-regression in your diff**: re-provision with `bin/agent-worktree new <app> <slug>`
-(bringup is atomic and idempotent — it repairs the missing pieces). See
-[worktrees.md](worktrees.md).
+`bin/fast-check` / `bin/full-suite-check` **refuse** in a desk whose test database is
+the repo's **shared** one — `bin/lib/desk_guard.rb`. The cert would otherwise run
+against the database the primary checkout and the release gate workspaces use, and
+`full-suite-check`'s first lane (`db:test:purge`) would **destroy** it mid-suite.
+
+**It PROVES the property, it does not trust a declaration.** The guard boots the app in
+the desk at `RAILS_ENV=test` and reads back the database it *actually* connects to
+(`connection_db_config`), then compares it to the repo's shared test database — computed
+externally from `config/database.yml` with the **ERB stripped**, so no env var can rewrite
+the thing being compared against. Adapter-agnostic:
+
+| adapter | isolated when… |
+|---------|----------------|
+| `postgresql` | the resolved database **name** is not the shared `<app>_test` |
+| `sqlite3` | the resolved database **file** resolves **inside the desk** (rolio — private by construction, and it needs no `TEST_DATABASE_URL` at all) |
+
+It **fails closed**: if it cannot prove isolation either way — the app will not boot,
+`config/database.yml` is unreadable — it refuses and says so.
+
+**Why not just check for `TEST_DATABASE_URL`?** Because that is a *declaration*, and it
+only lands if the app's `config/database.yml` actually reads it. It is a hand-rolled seam:
+the hub renders `url: <%= ENV["TEST_DATABASE_URL"] %>`; turf-monster did **not** until
+2026-07-14, so every turf desk declared an isolated-looking URL, resolved to the **shared**
+`turf_monster_test`, and the first cut of this guard said ALLOW — while the next lane
+purged it, with two turf desks live. A guard that reports an isolation it has not proven
+launders a live hazard into a claimed-closed one: **worse than no guard**. Any app added to
+the managed set needs that `url:` line in its `test:` block, or its desks are refused.
+
+**Scope, stated exactly:** enforcement lives in the two **cert runners** and in
+`bin/agent-worktree`'s bringup assertion. A plain `bin/rails test` in a desk is **not**
+guarded — it is safe because bringup now proves the desk's isolation before keeping it, not
+because something stops it at the door.
+
+If you see the refusal it is an **env/config issue, not a regression in your diff**. It
+names which of the two it is: re-provision (`bin/agent-worktree new <app> <slug>`) when
+bringup did not complete, or fix the repo's `config/database.yml` when the pin is inert.
+See [worktrees.md](worktrees.md).
 
 ## A Test May Never Write The Operator's Real `.agents` State
 

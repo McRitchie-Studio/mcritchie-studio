@@ -1,35 +1,71 @@
 # frozen_string_literal: true
 
-# DeskGuard — refuse a test lane in a worktree DESK that has no isolated test DB.
+require "open3"
+require_relative "../../app/models/release/gate_workspace"
+
+# DeskGuard — refuse a CERT lane in a worktree DESK whose test database is not its own.
 #
-# A desk (an agent worktree at <repo>/.worktrees/<slug>) gets its OWN test database,
-# pinned by TEST_DATABASE_URL in .env.test.local, which bin/agent-worktree writes at
-# bringup. config/database.yml renders `url: <%= ENV["TEST_DATABASE_URL"] %>` and falls
-# back to the SHARED base `<app>_test` when it is blank — so a desk whose bringup did
-# not complete does not fail loudly. It QUIETLY JOINS the database the primary checkout
-# and the release gate workspaces run on: cross-suite pollution, PG::ObjectInUse on
-# purge, order-dependent phantom failures. Nothing about the directory announces it.
+# A desk (an agent worktree at <repo>/.worktrees/<slug>) is supposed to get its OWN test
+# database at bringup. When it does not, RAILS_ENV=test does not fail — it QUIETLY JOINS
+# the SHARED `<app>_test` that the primary checkout, CI, and the release gate workspaces
+# use. Cross-suite pollution, PG::ObjectInUse on purge, order-dependent phantom failures
+# — and a cert lane's FIRST act is `db:test:purge`, so the desk does not merely read that
+# database, it DESTROYS it, mid-suite, under every concurrent run. Nothing about the
+# directory announces any of this.
 #
-# bin/agent-worktree's bringup is now atomic and cannot leave such a desk behind. This
-# is the second lock on the same door, and it is worth more than the first: desks
-# half-built by the OLD tool are still on disk, .env.test.local can be deleted by hand,
-# and a rollback that misses a case must still never yield a silently-shared suite. So
-# the property is ASSERTED at USE time rather than trusted to have been set up right —
-# the same "assert first, destroy second" the gate workspaces use before they purge.
+# ═══ WHY THIS ASKS THE BOOTED APP, AND WHY THE FIRST CUT WAS WORSE THAN NOTHING ═══
 #
-# The invariant is POSITIVE — "this tree has a test DB of its own" — not a blacklist of
-# the ways bringup can break, so a break nobody imagined still refuses. It is satisfied by
-# a TEST_DATABASE_URL from EITHER .env.test.local or the process env, so a caller that
-# exports one (Release::GateEnv does) passes without being named.
+# The first cut allowed on the PRESENCE OF A STRING: a non-empty TEST_DATABASE_URL in
+# .env.test.local or the env, and the desk walked. That is a DECLARATION, and a
+# declaration is not the property. `TEST_DATABASE_URL` is a HAND-ROLLED seam — it lands
+# only if the app's config/database.yml actually reads it:
+#
+#   * mcritchie-studio renders `url: <%= ENV["TEST_DATABASE_URL"] %>` — it lands.
+#   * turf-monster (before this) did NOT — bare `database: turf_monster_test`. The pin was
+#     INERT. Every turf desk declared an isolated-LOOKING URL, resolved to the SHARED
+#     `turf_monster_test`, and this guard said ALLOW — while the next lane purged it, with
+#     two turf desks live. A guard that REPORTS an isolation it has not PROVEN launders a
+#     live hazard into a claimed-closed one: worse than no guard at all.
+#   * rolio is SQLite and has no TEST_DATABASE_URL BY DESIGN — its test DB is a FILE inside
+#     the desk, private by construction. Demanding the string there refuses a perfectly
+#     isolated tree.
+#
+# One root cause, wrong in BOTH directions on BOTH satellites: the model was
+# POSTGRES-SHAPED and DECLARATION-TRUSTING. So the verdict is RESOLVED, not trusted — boot
+# the app in the desk, under the env the LANE will boot with, and read back the database it
+# ACTUALLY connects to (`connection_db_config`; it does not open a connection). This is the
+# doctrine bin/release.rb's assert_private_gate_db! already used for the gate workspaces.
+# The desks now share its primitive (Release::GateWorkspace) rather than keep a second,
+# drifting copy.
+#
+# ═══ THE INVARIANT ═══
+#
+# POSITIVE and adapter-agnostic: THIS DESK'S TEST DATABASE IS NOT THE REPO'S SHARED ONE.
+#
+#   * file-backed (SQLite): the database is a PATH — private iff it resolves INSIDE the
+#     desk, where no other process can reach it. Proven by CONTAINMENT, never by a name.
+#   * identifier (Postgres): private iff it is not the repo's shared `test.database`.
+#
+# The shared name is computed EXTERNALLY — Release::GateWorkspace.declared_test_database
+# reads config/database.yml with the ERB STRIPPED, so no env var can rewrite the thing we
+# compare against. Comparing a resolved database against a config the caller's own env has
+# already rewritten is a placebo: it proves `x == x`.
+#
+# FAIL CLOSED. Refuse when it is provably shared; allow when it is provably not; and when
+# it can prove NEITHER — the app would not boot, config/database.yml is unreadable — REFUSE
+# AND SAY SO. An unprovable isolation claim is the exact failure this guard exists to end.
+#
+# RESIDUAL, stated rather than hidden: for Postgres this proves "not the SHARED database",
+# not "not ANY other desk's database". Two desks whose slugs truncate to the same bounded
+# identifier (bin/agent-worktree's bounded_db_slug, under the 63-byte PG limit) would
+# collide, and this guard would allow both. That is a NAMING bug in bringup, not a hole in
+# the comparison — but it is not closed here, so it is written down here.
 #
 # It guards AGENT DESKS only. `.worktrees/` also holds the release gate/ship workspaces
 # (`_gate`, `_ship`), whose leading underscore is a namespace Release::GateWorkspace
 # reserves precisely so they are "NOT an agent worktree and must never be mistaken for
 # one". They are not exempt from the rule so much as covered by their own, stricter one:
-# assert_private_gate_db! proves their DB is private BEFORE db:test:purge destroys it. And
-# a SQLite app's workspace (rolio) has NO TEST_DATABASE_URL by design — its test DB is a
-# file inside the workspace, already private — so demanding one there would refuse a
-# perfectly isolated tree.
+# assert_private_gate_db! proves their DB is private BEFORE db:test:purge destroys it.
 module DeskGuard
   module_function
 
@@ -38,36 +74,42 @@ module DeskGuard
   # Release::GateWorkspace::DIRNAME — `_gate` / `_ship`, and any future sibling.
   RESERVED_PREFIX = "_"
 
+  # Read back the database the app ACTUALLY connects to in the test env. Reading
+  # `connection_db_config` does NOT open a connection, so the probe is safe against a desk
+  # whose database does not exist yet — and it never touches the database it is protecting.
+  PROBE = 'print "DESKDB=#{ActiveRecord::Base.connection_db_config.database}\n"'
+
   # nil when `root` may run a test lane; otherwise the refusal message.
-  # A non-desk root (the primary checkout, CI, a bare clone) is never refused — the
-  # shared `<app>_test` DB is the CORRECT database there.
-  def refusal(root, env: ENV)
+  #
+  # A non-desk root (the primary checkout, CI, a bare clone) is never refused — the shared
+  # `<app>_test` IS the correct database there — and is never even booted, so the probe's
+  # cost lands only where the hazard does.
+  #
+  # `env:` is the env the LANE will run under (bin/fast-check and bin/full-suite-check both
+  # `system(cmd, chdir: root)`, so the lane inherits the ambient ENV) — the probe therefore
+  # boots what the lane boots, including a DATABASE_URL the caller happens to export. Prove
+  # the run you are about to do, not a tidier one. `resolver:` is the seam the unit tests
+  # drive instead of a real Rails boot.
+  def refusal(root, env: ENV, resolver: nil)
     return nil unless desk?(root)
-    return nil if present?(env["TEST_DATABASE_URL"])
-    return nil if present?(declared_test_database_url(root))
 
-    <<~MSG.strip
-      this worktree has no isolated test DB — its bringup did not complete.
+    desk = File.expand_path(root.to_s)
+    repo = repo_root(desk)
+    shared = Release::GateWorkspace.declared_test_database(repo).to_s.strip
+    resolved, output, booted = (resolver || method(:resolve)).call(desk, env: env)
+    resolved = resolved.to_s.strip
 
-        desk:    #{File.expand_path(root.to_s)}
-        missing: #{TEST_ENV_LOCAL} (TEST_DATABASE_URL=…), and none is exported in the env
+    return unresolved_refusal(desk, output) if !booted || resolved.empty?
+    return unreadable_config_refusal(desk, repo, resolved) if shared.empty?
+    return nil if private_db?(resolved: resolved, desk: desk, shared: shared)
 
-      Without it, RAILS_ENV=test silently falls back to the SHARED base test database —
-      the one the primary checkout and the release gate workspaces use — so this run would
-      pollute, and be polluted by, every concurrent suite. Refusing: a cert against a shared
-      database certifies nothing.
-
-      This is an ENV issue with the DESK, not a regression in your diff. Re-provision it
-      (bringup is idempotent and repairs the missing pieces):
-
-        bin/agent-worktree new <app> #{File.basename(File.expand_path(root.to_s))}
-    MSG
+    shared_refusal(desk, repo, resolved, shared, env: env)
   end
 
-  # A tree is an agent desk when it sits directly under a repo's .worktrees/ and is not
-  # one of the reserved `_`-prefixed release workspaces. Checked on the PATH, not on the
-  # stack env: a half-built desk is missing exactly those files, so keying the check on
-  # them would let the broken case walk straight through.
+  # A tree is an agent desk when it sits directly under a repo's .worktrees/ and is not one
+  # of the reserved `_`-prefixed release workspaces. Checked on the PATH, not on the stack
+  # env: a half-built desk is missing exactly those files, so keying the check on them would
+  # let the broken case walk straight through.
   def desk?(root)
     path = File.expand_path(root.to_s)
     return false unless File.basename(File.dirname(path)) == WORKTREES_DIR
@@ -75,8 +117,56 @@ module DeskGuard
     !File.basename(path).start_with?(RESERVED_PREFIX)
   end
 
-  # TEST_DATABASE_URL as declared by the desk's .env.test.local, or nil.
-  def declared_test_database_url(root)
+  # The primary checkout a desk hangs off: <repo>/.worktrees/<slug> -> <repo>.
+  def repo_root(desk)
+    File.dirname(File.dirname(File.expand_path(desk.to_s)))
+  end
+
+  # IO. Boot the app in `root` at RAILS_ENV=test and read back the database it connects to.
+  # -> [resolved, combined_output, booted?]
+  def resolve(root, env: ENV)
+    probe_env = env.to_h.transform_values { |v| v.nil? ? nil : v.to_s }.merge("RAILS_ENV" => "test")
+    # capture2e merges stderr (bundler/rubygems chatter), so pluck the token rather than
+    # trust the whole stream — the same reason assert_private_gate_db! plucks GATEDB=.
+    out, status = Open3.capture2e(probe_env, "bin/rails", "runner", PROBE, chdir: root.to_s)
+    [out[/DESKDB=(.*)$/, 1].to_s.strip, out, status.success?]
+  rescue StandardError => e
+    ["", "#{e.class}: #{e.message}", false]
+  end
+
+  # PURE. Is `resolved` — the database the app ACTUALLY connected to — private to THIS desk?
+  # Two ways to qualify, and they are the two adapter shapes:
+  #   * a FILE inside the desk (SQLite): unreachable by any other process, private by
+  #     construction. Containment, not naming — an absolute path at the PRIMARY's
+  #     storage/test.sqlite3 is shared, and fails here, as it must.
+  #   * an identifier that is NOT the repo's shared `<app>_test` (Postgres).
+  # Anything else — most importantly the bare shared name — is NOT private.
+  def private_db?(resolved:, desk:, shared:)
+    db = resolved.to_s.strip
+    return false if db.empty?
+
+    if Release::GateWorkspace.file_backed?(db)
+      root = File.absolute_path(desk.to_s)
+      return File.absolute_path(db, root).start_with?(root + File::SEPARATOR)
+    end
+
+    name = shared.to_s.strip
+    # Nothing trustworthy to compare against: we cannot prove isolation, so we don't claim it.
+    return false if name.empty?
+
+    db != name
+  end
+
+  # TEST_DATABASE_URL as the desk DECLARES it — the env first, then .env.test.local.
+  #
+  # DIAGNOSIS ONLY. It never decides the verdict — that is the whole lesson of this file. It
+  # picks WHICH refusal to print, because "you pinned an isolated DB and your app ignored
+  # it" and "you pinned nothing, bringup died half-way" are different problems with
+  # different fixes, and handing an operator the wrong one costs an afternoon.
+  def declared_test_database_url(root, env: {})
+    from_env = env.to_h["TEST_DATABASE_URL"].to_s.strip
+    return from_env unless from_env.empty?
+
     path = File.join(File.expand_path(root.to_s), TEST_ENV_LOCAL)
     return nil unless File.exist?(path)
 
@@ -87,6 +177,100 @@ module DeskGuard
     nil
   rescue SystemCallError
     nil
+  end
+
+  # --- refusals ------------------------------------------------------------------------
+
+  # Could not resolve at all. Honest about BOTH causes: a boot-breaking diff lands here too,
+  # so it must not be pinned on the env alone.
+  def unresolved_refusal(desk, output)
+    <<~MSG.strip
+      could not resolve this desk's test database — `bin/rails runner` did not boot.
+
+        desk: #{desk}
+
+      Refusing: this guard exists to PROVE the desk owns the database the next lane is about
+      to PURGE, and it could not prove it. It does not guess. Two things land here — a broken
+      ENV (bundle, Postgres, a missing gem) or a boot-time error in your own diff — and the
+      output below is what tells them apart. Either way, the cert could not have run.
+
+      #{indent(output)}
+    MSG
+  end
+
+  # Resolved fine, but there is nothing trustworthy to compare it against.
+  def unreadable_config_refusal(desk, repo, resolved)
+    <<~MSG.strip
+      could not read the SHARED test database name from #{repo}/config/database.yml, so this
+      desk's isolation cannot be proven.
+
+        desk:     #{desk}
+        resolved: #{resolved}
+
+      Refusing rather than assuming: an unprovable isolation claim is exactly the failure this
+      guard exists to end. This is an ENV/config issue, NOT a regression in your diff.
+    MSG
+  end
+
+  # Proven shared. Two very different causes, two very different fixes.
+  def shared_refusal(desk, repo, resolved, shared, env: {})
+    declared = declared_test_database_url(desk, env: env).to_s.strip
+    app = File.basename(repo)
+    slug = File.basename(desk)
+
+    detail =
+      if declared.empty?
+        <<~MSG
+            missing:  #{TEST_ENV_LOCAL} (TEST_DATABASE_URL=…), and none is exported in the env
+
+          This desk has no isolated test DB — its bringup did not complete. RAILS_ENV=test falls
+          back to the SHARED base test database, so every `bin/rails test` here pollutes, and is
+          polluted by, every concurrent suite — and this cert's next lane (`db:test:purge`) would
+          DESTROY it. A cert against a shared database certifies nothing.
+
+          This is an ENV issue with the DESK, not a regression in your diff. Re-provision it
+          (bringup is idempotent and repairs the missing pieces):
+
+            bin/agent-worktree new #{app} #{slug}
+        MSG
+      else
+        <<~MSG
+            declared: TEST_DATABASE_URL=#{declared}
+
+          The desk DECLARES an isolated test DB and the app IGNORES it: #{app}'s
+          config/database.yml never reads TEST_DATABASE_URL in its `test:` block, so the pin is
+          INERT and the suite silently joins the SHARED database. This cert's next lane
+          (`db:test:purge`) would DESTROY it, mid-suite, under every concurrent run.
+
+          Fix the REPO, not the desk — in #{app}/config/database.yml, `test:` block:
+
+            url: <%= ENV["TEST_DATABASE_URL"] %>
+
+          If the repo already carries that line, this desk predates it — rebase onto
+          origin/release and the pin takes effect.
+
+          This is an ENV/config issue, NOT a regression in your diff.
+        MSG
+      end
+
+    <<~MSG.strip
+      this desk's test lane would run against the SHARED test database.
+
+        desk:     #{desk}
+        resolved: #{resolved}   <- what the BOOTED app connects to at RAILS_ENV=test
+        shared:   #{shared}   <- config/database.yml's test database: the primary checkout's, CI's
+      #{detail}
+    MSG
+  end
+
+  # The tail of the probe's output, indented so it reads as evidence under a refusal rather
+  # than as more prose. Mirrors bin/release.rb's indent_output.
+  def indent(output, lines: 20)
+    text = output.to_s.strip
+    return "  (no output captured)" if text.empty?
+
+    kept = text.lines.last(lines).map { |l| "  #{l.rstrip}" }.join("\n")
+    text.lines.size > lines ? "  … (#{text.lines.size - lines} earlier lines omitted)\n#{kept}" : kept
   end
 
   def present?(value)

@@ -92,6 +92,39 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     assert_nothing_left_behind("stray-db-desk")
   end
 
+  # BLOCKER A, end to end. The desk's TEST_DATABASE_URL is INERT because the repo's
+  # config/database.yml never reads it — turf-monster, exactly (bare `database:
+  # turf_monster_test`, no `url:` key). Bringup used to "verify" isolation by checking that
+  # .env.test.local CONTAINED a pin, so it kept the desk and reported it isolated, while a
+  # plain `bin/rails test` in it ran — and `db:test:purge` DESTROYED — the SHARED base test
+  # database. Resolution, not declaration: boot the app, ask what it actually connects to.
+  test "new rolls back a desk whose config ignores the test DB pin" do
+    setup_provisioning!(honours_pin: false)
+
+    _out, err, status = agent_worktree("new", "mcritchie-studio", "inert-pin-desk", env: provision_env)
+
+    refute status.success?, "a pin the app ignores is not isolation — the desk must not be kept"
+    assert_nothing_left_behind("inert-pin-desk")
+    assert_includes err, "SHARED test database"
+    assert_includes err, "INERT"
+    # The remedy must name the REPO'S CONFIG. Re-running bringup would faithfully rewrite
+    # the same inert pin, and restarting a perfectly healthy Postgres fixes nothing.
+    assert_includes err, 'url: <%= ENV["TEST_DATABASE_URL"] %>'
+    refute_includes err, "brew services", "a config problem must not send the operator to restart Postgres"
+  end
+
+  # Nothing is prepared against a database we have not proven is ours. `db:test:prepare`
+  # CREATES the DB it resolves to (and its purge sibling DESTROYS it) — so on an unproven
+  # desk it must not run at all. Assert first, destroy second.
+  test "new never runs db:test:prepare against a database it cannot prove is the desk's" do
+    setup_provisioning!(honours_pin: false)
+
+    _out, _err, status = agent_worktree("new", "mcritchie-studio", "inert-pin-desk", env: provision_env)
+
+    refute status.success?
+    assert_empty databases, "bringup must not prepare ANY database when isolation is unproven"
+  end
+
   test "new rolls back when Postgres cannot verify the test DB" do
     setup_provisioning!
     # bin/rails exits 0 but Postgres is unreachable, so the isolated DB cannot be VERIFIED.
@@ -1668,6 +1701,36 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     FileUtils.mkdir_p(bin)
     write_shim(bin, "rails", <<~RUBY)
       exit 1 if ENV["FAKE_RAILS_FAIL"] == "1"
+
+      # `bin/rails runner` — the DESK GUARD's probe. Bringup no longer trusts that the
+      # TEST_DATABASE_URL it just wrote is honoured (turf-monster's database.yml ignored
+      # it, so every turf desk silently shared the base test DB): it BOOTS the app and
+      # reads back the database the app would actually connect to. This shim answers the
+      # way a real Rails does — dotenv loads .env.test.local, and config/database.yml's
+      # `test.url` reads TEST_DATABASE_URL, falling back to `database:` when it is blank.
+      # It resolves CONFIG only, so it answers even with Postgres down (FAKE_PG_DOWN) and
+      # even before the database exists, exactly like connection_db_config.
+      if ARGV.include?("runner")
+        # The pin only LANDS if this app's config/database.yml actually reads it. That is
+        # the whole bug: turf-monster's test block never did, so its desks pinned an
+        # isolated URL and connected to the SHARED database anyway. The shim models the
+        # config, not the wish.
+        yml = File.exist?("config/database.yml") ? File.read("config/database.yml") : ""
+        pin = ""
+        if yml.include?("TEST_DATABASE_URL")
+          pin = ENV["TEST_DATABASE_URL"].to_s.strip
+          if pin.empty? && File.exist?(".env.test.local")
+            File.readlines(".env.test.local").each do |line|
+              key, _, value = line.strip.partition("=")
+              pin = value.strip if key.strip == "TEST_DATABASE_URL"
+            end
+          end
+        end
+        db = pin.empty? ? "mcritchie_studio_test" : pin.split("/").last.to_s
+        print "DESKDB=" + db + "\\n"
+        exit 0
+      end
+
       if ARGV.include?("db:test:prepare") && ENV["FAKE_PG_DOWN"] != "1"
         # No database gets created on a Postgres that is down — the shim stays honest.
         db = ENV["DATABASE_URL"].to_s.split("/").last.to_s
@@ -1676,7 +1739,10 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
       exit 1 if ENV["FAKE_RAILS_FAIL_AFTER_CREATE"] == "1"
       exit 0
     RUBY
-    git!(@hub_dir, "add", "bin/rails")
+
+    write_database_yml!(honours_pin: @honours_pin)
+
+    git!(@hub_dir, "add", "bin/rails", "config/database.yml")
     git!(@hub_dir, "commit", "-m", "Add rails entrypoint")
     git!(@hub_dir, "update-ref", "refs/remotes/origin/main", "HEAD")
   end
@@ -1693,9 +1759,29 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
 
   # Commit bin/rails BEFORE publishing the origin: `new` fetches origin and cuts the desk
   # from origin/main, so a commit that only exists locally is a commit the desk never sees.
-  def setup_provisioning!
+  # `honours_pin: false` makes the fixture repo TURF-SHAPED: a `test:` block with no
+  # `url: <%= ENV["TEST_DATABASE_URL"] %>` key, so the pin bringup writes is INERT and the
+  # app connects to the SHARED database regardless. It must be set BEFORE the desk is cut —
+  # the desk gets the COMMITTED config/database.yml, and that is the file Rails reads in it.
+  def setup_provisioning!(honours_pin: true)
+    @honours_pin = honours_pin
     install_fake_rails!
     use_local_origin!
+  end
+
+  # The repo's OWN config/database.yml: where the SHARED test database name is read from
+  # (ERB-stripped, so no env var can rewrite the value a resolution is compared against).
+  # Without it the guard can prove nothing and — correctly — refuses every desk.
+  def write_database_yml!(honours_pin: true)
+    FileUtils.mkdir_p(File.join(@hub_dir, "config"))
+    pin_line = honours_pin ? %(  url: <%= ENV["TEST_DATABASE_URL"] %>\n) : ""
+    File.write(File.join(@hub_dir, "config", "database.yml"), <<~YAML + pin_line)
+      default: &default
+        adapter: postgresql
+      test:
+        <<: *default
+        database: mcritchie_studio_test
+    YAML
   end
 
   def provision_env(extra = {})
@@ -1706,7 +1792,16 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
       "FAKE_DROPDB_LOG" => fake_dropdb_log,
       "FAKE_REDIS_DATABASES" => "64",
       # Hard network guard: anything reaching for github fails fast instead of hanging.
-      "GIT_SSH_COMMAND" => "/usr/bin/false"
+      "GIT_SSH_COMMAND" => "/usr/bin/false",
+      # nil UNSETS. THIS SUITE RUNS INSIDE A DESK, and dotenv has already exported that
+      # desk's DATABASE_URL/TEST_DATABASE_URL into this process — which the fixture's child
+      # would inherit, so bringup's isolation probe would resolve THE RUNNING DESK'S
+      # database instead of the fixture's. Every vector below would then assert against the
+      # wrong DB. (bin/agent-worktree scrubs both vars for its own probe for the same
+      # reason; this scrubs them for the whole fixture, so nothing else can inherit them
+      # either.) Same discipline as SessionEnv.neutralized.
+      "DATABASE_URL" => nil,
+      "TEST_DATABASE_URL" => nil
     }.merge(extra)
   end
 

@@ -86,6 +86,7 @@ class FastCheckTest < Minitest::Test
       write.call("test/models/widget_test.rb", "widget test\n")
       write.call("test/models/spine_core_test.rb", "spine test\n")
       write.call("spine.yml", "spine:\n  - test/models/spine_core_test.rb\n")
+      write_repo_shape(dir, subpath)
       git.call("init -q")
       git.call("config user.email tester@example.com")
       git.call("config user.name tester")
@@ -95,6 +96,32 @@ class FastCheckTest < Minitest::Test
       write.call("app/models/widget.rb", "class Widget; end\n")
       yield dir, write
     end
+  end
+
+  # Make the fixture REPO-SHAPED, because the desk guard no longer reads a file — it BOOTS
+  # THE APP and reads back the database it actually connects to (bin/lib/desk_guard.rb).
+  # A desk fixture therefore needs the two things a real desk has:
+  #
+  #   * the REPO's config/database.yml — one level up from <repo>/.worktrees/<slug> — which
+  #     is where the SHARED test database name is read from (ERB-stripped, so no env var can
+  #     rewrite the value the resolution is compared against); and
+  #   * a `bin/rails` to boot. The shim answers with DESK_DB_STUB, so each test STATES what
+  #     the booted app would resolve to, and defaults to the SHARED name — the hazard.
+  def write_repo_shape(dir, subpath)
+    repo_root = subpath ? File.expand_path("../..", dir) : dir
+    FileUtils.mkdir_p(File.join(repo_root, "config"))
+    File.write(File.join(repo_root, "config", "database.yml"), <<~YAML)
+      default: &default
+        adapter: postgresql
+      test:
+        <<: *default
+        database: studio_test
+    YAML
+
+    FileUtils.mkdir_p(File.join(dir, "bin"))
+    shim = File.join(dir, "bin", "rails")
+    File.write(shim, "#!/bin/sh\necho \"DESKDB=${DESK_DB_STUB:-studio_test}\"\n")
+    File.chmod(0o755, shim)
   end
 
   # A stub CLI: appends "<MARKER>\t<argv...>" to STUB_LOG_<MARKER>; exits 1 when
@@ -436,16 +463,20 @@ class FastCheckTest < Minitest::Test
     } }
   )
 
-  # --- [integration] desk guard: a desk with no isolated test DB may not certify -----
-  # Right root, but a HALF-BUILT one. config/database.yml falls back to the SHARED base
-  # <app>_test whenever TEST_DATABASE_URL is blank, so a desk whose bringup did not finish
-  # certifies against the database the primary checkout and the release gate workspaces are
-  # using — silently. bin/agent-worktree's bringup is atomic now and cannot leave such a
-  # desk behind; this is the second lock, because desks half-built by the OLD tool are
-  # still on disk and .env.test.local can be deleted by hand. bin/lib/desk_guard.rb.
+  # --- [integration] desk guard: a desk that does not own its test DB may not certify ---
+  # Right root, but is it a WHOLE desk? A desk whose test env resolves to the SHARED base
+  # <app>_test certifies against the database the primary checkout and the release gate
+  # workspaces are using — silently. bin/agent-worktree's bringup is atomic now and cannot
+  # leave such a desk behind; this is the second lock, because desks half-built by the OLD
+  # tool are still on disk and .env.test.local can be deleted by hand. bin/lib/desk_guard.rb.
+  #
+  # These drive the guard END TO END, through the shelled runner and a real `bin/rails`
+  # boot (the fixture's shim — see write_repo_shape): DESK_DB_STUB is what the booted app
+  # answers, and the verdict must follow THAT, never a declared string.
 
   def test_a_desk_with_no_isolated_test_db_is_refused_before_any_lane_runs
     with_repo(subpath: ".worktrees/half-built") do |dir, _|
+      # The shim defaults to the SHARED name: bringup never gave this desk a DB of its own.
       out, code, lines = run_check(dir, implicit_root: true,
                                    extra_env: { "TEST_DATABASE_URL" => nil })
 
@@ -458,16 +489,50 @@ class FastCheckTest < Minitest::Test
     end
   end
 
-  def test_a_desk_pinned_to_its_own_test_db_certifies_normally
-    # The control: same desk layout, isolated DB present. The guard must not refuse a
-    # properly-provisioned worktree — that is where every cert legitimately runs.
+  # THE BLOCKER-A VECTOR, end to end. The desk PINS an isolated test DB and the app IGNORES
+  # the pin (turf-monster, whose database.yml had no `url:` key) — so it resolves to the
+  # SHARED database anyway. The presence-checking guard certified this. It must refuse, and
+  # it must say the pin is inert rather than send the operator back to bringup, which would
+  # faithfully rewrite the very same inert pin.
+  def test_a_desk_whose_pin_is_ignored_by_the_app_is_refused
+    with_repo(subpath: ".worktrees/inert-pin") do |dir, write|
+      write.call(".env.test.local", "TEST_DATABASE_URL=postgresql://localhost/studio_test_inert_pin\n")
+      out, code, lines = run_check(dir, implicit_root: true,
+                                   extra_env: { "TEST_DATABASE_URL" => nil }) # shim still answers SHARED
+
+      assert_equal 1, code, "a pin the app ignores is not isolation: #{out}"
+      assert_match(/SHARED test database/, out)
+      assert_match(/IGNORES it/, out, "the refusal must name the app's config, not the desk")
+      assert_empty lane_calls(lines, "TEST"), "the refusal fires BEFORE any lane runs"
+    end
+  end
+
+  def test_a_desk_that_resolves_to_its_own_test_db_certifies_normally
+    # The control: same desk layout, and the booted app really does land on its own DB. The
+    # guard must not refuse a properly-provisioned worktree — that is where every cert
+    # legitimately runs.
     with_repo(subpath: ".worktrees/whole-desk") do |dir, write|
       write.call(".env.test.local", "TEST_DATABASE_URL=postgresql://localhost/studio_test_whole_desk\n")
       out, code, lines = run_check(dir, implicit_root: true,
-                                   extra_env: { "TEST_DATABASE_URL" => nil })
+                                   extra_env: { "TEST_DATABASE_URL" => nil,
+                                                "DESK_DB_STUB" => "studio_test_whole_desk" })
 
       assert_equal 0, code, out
       refute_empty lane_calls(lines, "TEST"), "the lanes must run in a whole desk"
+    end
+  end
+
+  # A SQLite desk (rolio) has NO TEST_DATABASE_URL by design — its test DB is a FILE inside
+  # the desk, private by construction. Demanding the pin refused a perfectly isolated tree,
+  # which is how `new rolio <task>` came to create nothing at all.
+  def test_a_sqlite_desk_certifies_with_no_pin_at_all
+    with_repo(subpath: ".worktrees/rolio-desk") do |dir, _|
+      out, code, lines = run_check(dir, implicit_root: true,
+                                   extra_env: { "TEST_DATABASE_URL" => nil,
+                                                "DESK_DB_STUB" => "storage/test.sqlite3" })
+
+      assert_equal 0, code, "a SQLite desk's test DB is a file inside it — allow: #{out}"
+      refute_empty lane_calls(lines, "TEST")
     end
   end
 
