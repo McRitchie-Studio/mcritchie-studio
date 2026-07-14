@@ -47,6 +47,8 @@
 
 require "minitest/autorun"
 require "tmpdir"
+require "fileutils"
+require "shellwords"
 require_relative "../../bin/lib/cert_orphan_guard"
 
 class CertOrphanGuardTest < Minitest::Test
@@ -694,5 +696,112 @@ class CertOrphanGuardTest < Minitest::Test
                                                   backends: [{ pid: 46_382, application_name: "bin/rails" }])
 
     assert_match(/psql #{DB} -c/, msg, "best effort beats no command at all")
+  end
+
+  # --- [unit] the post-reap SETTLE grace ------------------------------------------
+  #
+  # THE PATH THAT HAD NO TEST. `grep -rn 'settle_backends\|settle:' test/` found NOTHING
+  # before this block — which is precisely how the bug below survived three review rounds
+  # and a green CI.
+  #
+  # The bug (shipped by the tri-state rework, review round 6): `preflight` initialised
+  # `reaped = false`, the tri-state conversion renamed the reap's assignment target to
+  # `outcome`, and nobody reassigned `reaped`. So `settle: reaped` was ALWAYS false, the
+  # grace loop was unreachable, and after a SUCCESSFUL, proven-ours reap the backstop
+  # probed pg_stat_activity instantly, saw the just-killed suite's backend still closing,
+  # and REFUSED — handing the operator a pg_terminate_backend aimed at the corpse of the
+  # suite it had reaped one millisecond earlier. Rubocop cannot see it (the variable IS
+  # read) and CI cannot see it (it self-heals on the next retry, so nothing goes red).
+  # A cert naming its own corpse as a stranger, in the file whose whole thesis is
+  # "evidence, not assertion".
+  #
+  # A backend does not close the instant its process dies, so the grace is REQUIRED for
+  # correctness; but it must never become a blanket delay that lets a REAL foreign
+  # session through. Both halves are asserted here.
+
+  # A psql stand-in that models the linger: it reports a backend for the first
+  # `linger_calls` probes and none after, and records how many times it was dialled —
+  # so a test can prove the grace RE-PROBED rather than merely returning a lucky value.
+  def psql_stub(dir, linger_calls:)
+    counter = File.join(dir, "psql-calls")
+    script  = File.join(dir, "psql-stub")
+    File.write(script, <<~SH)
+      #!/bin/sh
+      n=$(cat #{counter.shellescape} 2>/dev/null || echo 0)
+      n=$((n + 1))
+      echo "$n" > #{counter.shellescape}
+      [ "$n" -le #{linger_calls} ] && echo "77777|bin/rails"
+      exit 0
+    SH
+    FileUtils.chmod(0o755, script)
+    [script, counter]
+  end
+
+  def psql_calls(counter)
+    File.exist?(counter) ? File.read(counter).strip.to_i : 0
+  end
+
+  def test_settle_off_takes_the_first_answer_and_never_waits
+    # The default for every verdict that did NOT just reap our own suite. Anything alive
+    # on our test DB then is somebody ELSE's, and a stranger gets NO grace period — it
+    # gets named, now.
+    Dir.mktmpdir do |dir|
+      psql, counter = psql_stub(dir, linger_calls: 1)
+
+      backends = CertOrphanGuard.settle_backends("postgres://x@localhost/#{DB}", psql: psql, settle: false)
+
+      assert_equal [77_777], backends.map { |b| b[:pid] }, "the stranger is reported on the FIRST probe"
+      assert_equal 1, psql_calls(counter), "settle: false must not re-probe — no waiting on a foreign session"
+    end
+  end
+
+  def test_settle_re_probes_until_our_own_reaped_backend_closes
+    # THE REGRESSION. With the grace live, the closing backend of the suite we just
+    # reaped drains and the cert proceeds. Under the shipped bug this returned the
+    # backend from probe #1 and the cert refused on its own corpse.
+    Dir.mktmpdir do |dir|
+      psql, counter = psql_stub(dir, linger_calls: 1)
+
+      backends = CertOrphanGuard.settle_backends("postgres://x@localhost/#{DB}", psql: psql,
+                                                 settle: true, grace: 2.0)
+
+      assert_empty backends, "our own reaped suite's backend closes — it must not be reported as a stranger"
+      assert_operator psql_calls(counter), :>, 1, "the grace must RE-PROBE; one probe means the loop never ran"
+    end
+  end
+
+  def test_the_grace_still_reports_a_backend_that_never_closes
+    # The other half, and the reason the grace is BOUNDED. A settle window must not become
+    # a way to wave through a genuine foreign session (a sibling cert, a stray `bin/rails
+    # test`, a psql someone left open) just because we happened to reap something first.
+    # It waits, it re-probes, and then it names what is STILL there.
+    Dir.mktmpdir do |dir|
+      psql, counter = psql_stub(dir, linger_calls: 99)
+
+      started  = Time.now
+      backends = CertOrphanGuard.settle_backends("postgres://x@localhost/#{DB}", psql: psql,
+                                                 settle: true, grace: 0.6)
+      elapsed = Time.now - started
+
+      assert_equal [77_777], backends.map { |b| b[:pid] }, "a session that never closes is STILL reported"
+      assert_operator psql_calls(counter), :>, 1, "it re-probed before giving its verdict"
+      assert_operator elapsed, :<, 5, "and the wait is BOUNDED by the grace — a cert may not hang here"
+    end
+  end
+
+  def test_a_clean_db_never_sleeps_even_with_settle_on
+    # The fast path: nothing to settle, so nothing to wait for. A 2s tax on every clean
+    # cert would be paid forever by every agent in the fleet.
+    Dir.mktmpdir do |dir|
+      psql, counter = psql_stub(dir, linger_calls: 0)
+
+      started  = Time.now
+      backends = CertOrphanGuard.settle_backends("postgres://x@localhost/#{DB}", psql: psql, settle: true)
+      elapsed = Time.now - started
+
+      assert_empty backends
+      assert_equal 1, psql_calls(counter), "one probe answered it; do not go round the loop"
+      assert_operator elapsed, :<, 1, "a clean DB must not pay the grace"
+    end
   end
 end

@@ -919,6 +919,11 @@ module CertOrphanGuard
     verdict, detail = decide(lock: read_lock(root), table: process_table(ps: ps))
     url = test_db_url(root, env: env)
     db = db_name(url) || detail[:db]
+    # Did a group we PROVED was ours just leave the process table? Only that earns the
+    # settle grace below. Assigned from the reap's outcome — never left at its initial
+    # value (the bug this line replaces: the tri-state conversion renamed the reap's
+    # target to `outcome` and left `reaped` a dead `false`, so the grace was unreachable
+    # and every successful reap refused itself on its own lingering backend).
     reaped = false
 
     case verdict
@@ -945,6 +950,14 @@ module CertOrphanGuard
                                              root: root, reason: outcome,
                                              started_at: detail[:pgid_started_at], ps: ps)]
       end
+
+      # A group `decide` graded ORPHAN was proven ours, and it is now GONE — by our
+      # signal (:reaped) or by its own exit a moment before it (:absent). Either way the
+      # corpse is ours, and the backends it held may still be closing. Both earn the
+      # grace: the failure mode is identical on both paths — probe pg_stat_activity in
+      # that window and the backstop reports OUR OWN suite back to us as a stranger.
+      # `:refused`/`:survived` never reach here (reap_cleared? gates the return above).
+      reaped = reap_cleared?(outcome)
 
       clear_lock(root)
       notices << if outcome == :absent

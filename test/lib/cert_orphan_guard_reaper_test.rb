@@ -25,6 +25,7 @@
 require "minitest/autorun"
 require "tmpdir"
 require "fileutils"
+require "shellwords"
 require_relative "../../bin/lib/cert_orphan_guard"
 
 class CertOrphanGuardReaperTest < Minitest::Test
@@ -287,5 +288,87 @@ class CertOrphanGuardReaperTest < Minitest::Test
     Process.kill("KILL", pid)
     assert wait_until_dead(pid)
     assert_nil CertOrphanGuard.process_started_at(999_999), "a pid that names nothing has no identity"
+  end
+
+  # --- [integration] the post-reap SETTLE grace, through the real preflight -----------
+  #
+  # A PG backend does not close the instant its process is killed, so between the reap and
+  # the DB backstop there is a window in which the suite we JUST PROVED was ours and JUST
+  # KILLED is still sitting in pg_stat_activity. Probe inside that window with no grace and
+  # the cert refuses, naming its own corpse as a foreign session and handing the operator a
+  # pg_terminate_backend aimed at it — while DISCARDING the ORPHAN REAPED notice (notices
+  # are dropped on :refuse). That is what shipped: `reaped` was initialised false and never
+  # reassigned after the tri-state rework, so `settle:` was always false and the grace was
+  # dead code. Neither rubocop nor CI could see it. These tests can.
+  #
+  # A REAL process group, a REAL reap, a stubbed psql modelling the linger.
+
+  # psql that reports a backend for the first `linger_calls` probes and none after, and
+  # counts its own invocations — so we can prove the grace RE-PROBED.
+  def psql_stub(linger_calls:)
+    counter = File.join(@root, "psql-calls")
+    script  = File.join(@root, "psql-stub")
+    File.write(script, <<~SH)
+      #!/bin/sh
+      n=$(cat #{counter.shellescape} 2>/dev/null || echo 0)
+      n=$((n + 1))
+      echo "$n" > #{counter.shellescape}
+      [ "$n" -le #{linger_calls} ] && echo "77777|bin/rails"
+      exit 0
+    SH
+    FileUtils.chmod(0o755, script)
+    { "CERT_GUARD_PSQL" => script,
+      "TEST_DATABASE_URL" => "postgres://alex@localhost:5432/studio_test_wt" }
+  end
+
+  def psql_calls
+    counter = File.join(@root, "psql-calls")
+    File.exist?(counter) ? File.read(counter).strip.to_i : 0
+  end
+
+  def test_a_reaped_suites_lingering_backend_is_waited_out_not_named_as_a_stranger
+    # THE REGRESSION, end to end. Genuine orphan, provably ours, reaped — and its backend
+    # still closing when the backstop first looks.
+    orphan, pgid, started_at = spawn_group
+    CertOrphanGuard.write_lock(@root, cert_pid: 999_999, pgid: pgid, pgid_started_at: started_at,
+                               lane: "spine", db: "studio_test_wt")
+
+    verdict, notices = CertOrphanGuard.preflight(root: @root, env: psql_stub(linger_calls: 1))
+
+    assert_equal :ok, verdict,
+                 "THE BUG: the cert reaped its own orphan and then REFUSED on that orphan's " \
+                 "closing backend — reporting the suite it had just killed as a foreign session"
+    assert wait_until_dead(orphan), "the orphan really was reaped — this is not a vacuous pass"
+    assert_match(/ORPHAN REAPED/, notices.join(" "), "and the reap notice SURVIVES (it is dropped on :refuse)")
+    assert_operator psql_calls, :>, 1, "the grace must RE-PROBE; a single probe means the loop never ran"
+  end
+
+  def test_an_orphan_that_dies_before_our_signal_gets_the_same_grace
+    # :absent — the group `decide` graded ORPHAN exited on its own between the snapshot and
+    # the trigger. We killed nothing, but the corpse is just as much OURS, and its backend
+    # lingers exactly the same way. Gating the grace on :reaped ALONE leaves this identical
+    # defect live on the sibling path, so the predicate is reap_cleared? (:reaped OR :absent).
+    _orphan, pgid, started_at = spawn_group
+    CertOrphanGuard.write_lock(@root, cert_pid: 999_999, pgid: pgid, pgid_started_at: started_at)
+
+    verdict, notices = with_a_reap_that_fails(:absent) do
+      CertOrphanGuard.preflight(root: @root, env: psql_stub(linger_calls: 1))
+    end
+
+    assert_equal :ok, verdict, "our own vanished suite's closing backend must not refuse the cert either"
+    assert_operator psql_calls, :>, 1, "the :absent path re-probes too"
+    refute_match(/ORPHAN REAPED/, notices.join(" "), "and it still claims NO kill it did not make")
+  end
+
+  def test_a_run_that_reaped_NOTHING_gives_a_foreign_backend_no_grace_at_all
+    # The other half — the mutation that "fixes" the bug by passing settle: true always.
+    # A stranger on our test DB (a sibling cert, a stray `bin/rails test`) is refused on
+    # the FIRST probe: we never reaped anything, so nothing here is our corpse, and nobody
+    # gets a waiting period. A blanket grace would tax every cert AND soften the backstop.
+    verdict, message = CertOrphanGuard.preflight(root: @root, env: psql_stub(linger_calls: 99))
+
+    assert_equal :refuse, verdict, "a foreign session holding the test DB still refuses the cert"
+    assert_match(/77777/, message.to_s, "and it NAMES the session")
+    assert_equal 1, psql_calls, "no reap happened, so no grace is owed — refuse on the first probe"
   end
 end
