@@ -138,6 +138,19 @@ def feature_marker_path
   File.join(PROJECTS_DIR, ".agents", "sessions", "#{sid.gsub(/[^A-Za-z0-9._-]/, "")}.json")
 end
 
+# READ-ONLY audit of the cost store. A METHOD, not four inline lines in the dispatch
+# `case` below, because test/lib/state_store_containment_test.rb forbids top-level
+# script code from reaching a raw <projects>/.agents path at all: every store path must
+# live in a named method, where the containment scan can see it and where it must be
+# either laundered or declared (this one is declared — TaskUsageAudit.report only reads).
+# An inline store path in a 1,200-line `case` is exactly where the next unguarded write
+# goes unnoticed, which is the bug that PR #549's review found in bin/atomic-event.
+def usage_audit!(dir)
+  text, suspects = TaskUsageAudit.report(dir || File.join(PROJECTS_DIR, ".agents", "task-usage"))
+  print(text)
+  exit(suspects.zero? ? 0 : 2)
+end
+
 # The agent session working this task — stamped on create + on the move to
 # `building` (the claim moment) so the board + status line can show which
 # terminal owns a task and offer a click-to-copy resume command. Claude exposes
@@ -1264,10 +1277,7 @@ when "usage-audit"
     else unknown_flag!(arg, valid: %w[--dir], context: "usage-audit")
     end
   end
-  dir ||= File.join(PROJECTS_DIR, ".agents", "task-usage")
-  text, suspects = TaskUsageAudit.report(dir)
-  print(text)
-  exit(suspects.zero? ? 0 : 2)
+  usage_audit!(dir)
 else
   print_usage!
   exit(cmd == "help" || HELP_FLAGS.include?(cmd) ? 0 : 1)
