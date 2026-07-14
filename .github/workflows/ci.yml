@@ -167,7 +167,9 @@ jobs:
       # THREE GUARDS, AND THE THIRD IS THE ONLY ONE THAT GENERALIZES.
       #   1. THE COMMAND. test/lib/ci_workflow_triggers_test.rb asserts this lane runs the
       #      WHOLE suite unconditionally — no job/step `if:`, and its flags are DEFAULT-DENY
-      #      (only --shard, --grep-invert and --reporter are inert; everything else, incl.
+      #      (only --shard, --grep-invert and --reporter cannot SHRINK THE SET — and note
+      #      --reporter is NOT "inert": it EMITS the receipt in guard 3, and is separately
+      #      pinned to keep emitting it; everything else, incl.
       #      flags Playwright ships next year, is refused BY NAME). The one sanctioned
       #      exclusion is value-pinned: exactly one --grep-invert, and its value must be
       #      exactly `@quarantine`. Widening it to `@quarantine|board` — 51 specs down to

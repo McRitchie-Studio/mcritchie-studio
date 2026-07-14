@@ -69,8 +69,12 @@ quarantined == 51 executed** — so they can never certify two different suites.
    milliseconds, before anyone burns six minutes of CI on a suite already provably
    wrong — and it is **not sufficient on its own**. Selection verbs (`only`/`skip`/
    `fixme`/`fail`) are refused on **any receiver**, and the e2e command's flags are
-   **default-deny** (only `--shard`, `--grep-invert`, `--reporter` are inert), with
-   `--grep-invert` value-pinned to exactly `@quarantine`.
+   **default-deny** — only `--shard`, `--grep-invert` and `--reporter` are allowed, because
+   only those three cannot *shrink the selected set*. (`--reporter` is **not** "inert",
+   which is what this line used to call it: it **emits the receipt** guard 1 is judged on.
+   Drop `json` from it and the lane still runs all 51 specs while the only evidence that it
+   did evaporates — so it is separately pinned.) `--grep-invert` is value-pinned to exactly
+   `@quarantine`.
 
 **Why the receipt exists at all** — three rounds of review beat the static scan, each
 time with a spelling the previous round had not imagined: `test.only` (collapses the
