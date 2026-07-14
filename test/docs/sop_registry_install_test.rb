@@ -129,36 +129,54 @@ class SopRegistryInstallTest < ActiveSupport::TestCase
   test "every overridable write destination in install-agent-docs is pinned by this test" do
     script = Rails.root.join("bin/install-agent-docs").read
 
-    # LHS and the env-var name are captured SEPARATELY — they are routinely different.
-    # We key on the ENV VAR (group 2): that is the name a caller must set to redirect it.
-    hatches = script.scan(/^\s*(\w+)="\$\{(\w+):-([^}"]*)\}"/)
+    # ⛔ DO NOT CLASSIFY THE DEFAULT. That is the trap, and this test fell into it TWICE.
+    #
+    # Cut 1 keyed on `NAME="${NAME:-…}"` with a BACKREFERENCE — blind to the installer's
+    # majority idiom, where the shell variable and the env variable have DIFFERENT names.
+    # Cut 2 then filtered to defaults that "look absolute" (`start_with?("/", "$HOME")`).
+    # Two reviewers defeated THAT independently, without inventing anything, using two
+    # idioms the script ALREADY uses:
+    #
+    #   COMPUTED   PROJECTS_DIR="${PROJECTS_DIR:-$(default_projects_dir)}"    -> ~/projects
+    #              RUNTIME_ROOT="${AGENT_DOCS_RUNTIME_ROOT:-$(runtime_root)}" -> the studio repo
+    #   NESTED     ACTIVITY_BOARD_URL="${AGENT_ACTIVITY_BOARD_URL:-${AGENT_INSIGHTS_BOARD_URL:-…}}"
+    #
+    # Both resolve absolute at RUNTIME. Both were invisible. Each cut replaced one
+    # blacklist with another, and the next spelling walked through.
+    #
+    # THE PROPERTY, finally: **what the default LOOKS LIKE IS IRRELEVANT.** Any `${VAR:-…}`
+    # is a knob a caller can turn, and a knob you have not pinned is a knob that can point
+    # at the real machine. So pin EVERY knob. There is no classification left to get wrong.
+    # `${1:-install}` is a POSITIONAL PARAMETER, not an environment variable — it cannot be
+    # set through an env hash at all, so it is not a knob and cannot escape anything. That is
+    # a fact about the shell language, not a judgement about how the default "looks", which is
+    # the distinction that matters: we are excluding a NON-VARIABLE, not classifying a value.
+    hatches = script.scan(/\$\{(\w+):-/).flatten.uniq.reject { |name| name.match?(/\A\d+\z/) }
 
-    # Only ABSOLUTE defaults can escape a sandbox. `$HOME/...` counts: HOME is pinned here,
-    # but an unpinned var that expands under a REAL home would not be — so treat it as
-    # in-scope and require it to be named.
-    escaping = hatches.select { |_lhs, _var, default| default.start_with?("/", "$HOME", "~") }
-                      .to_h { |_lhs, var, default| [var, default] }
-
-    pinned = %w[PROJECTS_DIR HOME CODEX_REQUIREMENTS_PATH AGENT_DOCS_RUNTIME_ROOT
+    # PATH is read (`for dir in ${PATH:-}`), never written. It is pinned anyway rather than
+    # special-cased: pinning costs nothing, and every exception carved into this list is a
+    # place the next spelling can hide.
+    pinned = %w[PROJECTS_DIR HOME PATH CODEX_REQUIREMENTS_PATH AGENT_DOCS_RUNTIME_ROOT
                 AGENT_RUNTIME_RUBY_PATH_PREFIX AGENT_RUNTIME_ZPROFILE
                 AGENT_ACTIVITY_BOARD_URL AGENT_INSIGHTS_BOARD_URL]
 
-    # THE FLOOR. Without this, a reworded installer yields an empty set and the subset
-    # check below passes trivially — green, and asserting nothing. This is the exact
-    # failure the previous version of this very test shipped with.
-    assert_operator escaping.length, :>=, 3,
-                    "the escape-hatch scan matched #{escaping.length} absolute default(s) in " \
-                    "bin/install-agent-docs — it has at least 3. The scan has stopped seeing the " \
-                    "script's idiom, so this test is now asserting NOTHING. Fix the scan, do not " \
-                    "lower this floor."
+    # THE FLOOR. A subset assertion over an EMPTY set passes trivially — the exact way this
+    # family of test fails open (see the same rule in sop_registry_docs_test.rb). If the scan
+    # stops seeing the script's idiom, go RED rather than quietly assert nothing.
+    assert_operator hatches.length, :>=, 5,
+                    "the escape-hatch scan matched only #{hatches.length} `${VAR:-…}` override(s) in " \
+                    "bin/install-agent-docs — it has at least 5. The scan has stopped seeing the script's " \
+                    "idiom, so this test is now asserting NOTHING. Fix the scan; do not lower this floor."
 
-    unpinned = escaping.keys - pinned
+    unpinned = hatches - pinned
 
     assert_empty unpinned,
-                 "bin/install-agent-docs can be pointed at an ABSOLUTE path via #{unpinned.inspect}, and " \
-                 "this test does not pin it — so running the installer under test would escape the sandbox " \
-                 "and touch the real machine (defaults: #{escaping.slice(*unpinned).values.inspect}). Pin " \
-                 "it in the `env` hash AND add its destination to REAL_ROOT_DOCS."
+                 "bin/install-agent-docs reads #{unpinned.inspect}, and this test does not pin " \
+                 "#{unpinned.length == 1 ? "it" : "them"} — so running the installer under test could escape " \
+                 "the sandbox and write to the real machine. Do NOT reason about whether the default 'looks " \
+                 "absolute': computed (`$(…)`) and nested (`${…:-${…}}`) defaults resolve absolute at runtime " \
+                 "and defeated two earlier versions of this very check. Pin it in the `env` hash, and add its " \
+                 "destination to REAL_ROOT_DOCS."
   end
 
   # Guards the guard: every name in `pinned` must be one the scan can actually EMIT.
