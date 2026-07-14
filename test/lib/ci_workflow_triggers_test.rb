@@ -25,11 +25,29 @@
 #
 # So the PRIMARY guard here is POSITIVE and lives in
 # `test_integration_the_suite_runs_UNCONDITIONALLY_on_a_release_push`: some step must
-# actually invoke the suite (TEST_COMMAND), and the lane that does must carry NO `if:`
-# at all. That closes the whole CLASS — `env.SKIP_TESTS`, `inputs.fast`, a matrix flag,
-# and every spelling not yet invented fail it, without anyone having to predict them.
-# The enumerated list below is DEFENSE IN DEPTH behind it. When you add a vector, ask
-# first whether the positive invariant already covers it; prefer strengthening that.
+# actually invoke each verdict command (VERDICT_COMMANDS), and every lane that does must
+# carry NO `if:` at all. That closes the whole CLASS — `env.SKIP_TESTS`, `inputs.fast`,
+# `vars.E2E_ENABLED`, a matrix flag, and every spelling not yet invented fail it, without
+# anyone having to predict them. The enumerated list below is DEFENSE IN DEPTH behind it.
+# When you add a vector, ask first whether the positive invariant already covers it;
+# prefer strengthening that.
+#
+# ENROLL EVERY VERDICT LANE — the lesson of PR #543, learned the hard way TWICE.
+#
+# This file guards the lanes in VERDICT_COMMANDS: the rails suite (TEST_COMMAND) and the
+# sharded Playwright `e2e` lane (E2E_COMMAND). When the Playwright lane was first wired as
+# a PR gate it was enrolled in NEITHER — TEST_COMMAND matches `bin/rails … test` and `npx
+# playwright test` does not, so the file's whole apparatus silently skipped straight past
+# the newest gating lane in CI. Mutation-confirmed: a job-level `if: vars.E2E_ENABLED ==
+# 'true'` ran ZERO specs with every guard in the repo green. The PR that abolished the
+# decorative `e2e_onchain` tier had, in the same breath, shipped a decorative guard for
+# `e2e` — the disease wearing a lab coat, one file over.
+#
+# The rule that falls out: A LANE WHOSE GREEN CHECK IS READ AS "TESTED" MUST BE ENROLLED
+# HERE ON THE DAY IT IS WIRED. Proving a command STRING appears in a `run:` step — which
+# feature_shape_tiers_test.rb does, and which is a genuinely different claim — is NOT
+# proving the JOB RUNS. Add the lane's command to VERDICT_COMMANDS and it inherits the
+# unconditional-execution assertion for free.
 #
 # SEVEN ways the release tip loses its verdict while `branches: [main, release]` still
 # reads correct in the file — all seven asserted, because a guard is only worth the
@@ -87,6 +105,10 @@ require "yaml"
 
 class CiWorkflowTriggersTest < Minitest::Test
   CI_YML = File.expand_path("../../.github/workflows/ci.yml", __dir__)
+
+  # The e2e lane's contract — the ONE place the sanctioned exclusion's value is written down,
+  # shared with test/lib/e2e_quarantine_ratchet_test.rb and bin/e2e-executed-set-check.
+  E2E_CONTRACT = File.expand_path("../../config/e2e_lane.yml", __dir__)
 
   # THE TRAP this helper exists for: in YAML 1.1 — which Ruby's Psych implements —
   # the bare key `on` is a BOOLEAN, so a workflow's `on:` block parses under the key
@@ -274,6 +296,54 @@ class CiWorkflowTriggersTest < Minitest::Test
   # NOT read TESTOPTS, so an experiment run that way comes back clean and the hole hides.
   NARROWING_ENV_KEYS = %w[TEST TESTOPTS DEFAULT_TEST DEFAULT_TEST_EXCLUDE].freeze
 
+  # THE SECOND VERDICT COMMAND — the `e2e` tier's lane (the sharded `playwright` job).
+  #
+  # WHY IT IS HERE, AND WHY ITS ABSENCE WAS A HOLE. When the Playwright suite was first
+  # wired as a PR-gating lane (PR #543), it was enrolled in NO execution-integrity guard
+  # in this file: TEST_COMMAND matches `bin/rails … test`, and `npx playwright test` does
+  # not, so the new lane never entered `suite_command_lanes` and NOTHING asserted it runs
+  # unconditionally. Mutation-confirmed FALSE-GREEN: a job-level `if: vars.E2E_ENABLED ==
+  # 'true'` made the lane execute zero specs while every guard in this file — and in
+  # feature_shape_tiers_test.rb — stayed green. That is the IDENTICAL spelling this same
+  # PR indicts in turf-monster's devnet-nightly.yml (see config/feature_shapes.yml) as
+  # the reason `e2e_onchain` was a lie: a repo-variable gate, `skipped` on every run.
+  #
+  # The lesson generalized: a lane that CONSTITUTES a verdict must be enrolled here on
+  # the day it is wired, or the next lane repeats the bug one file over. Proving a
+  # command STRING exists in a `run:` step (which feature_shape_tiers_test.rb does) is
+  # not proving the JOB RUNS.
+  E2E_COMMAND = /\bplaywright\s+test\b/
+
+  # The EXECUTED-SET gate: reads the shards' own JSON receipts and asserts the lane ran the 51
+  # specs config/e2e_lane.yml says it must. It is a verdict lane in its own right — arguably
+  # THE verdict lane, since it is the only thing in the repo that can tell you the green
+  # `playwright` check was not green over a suite somebody quietly shrank.
+  EXECUTED_SET_COMMAND = %r{bin/e2e-executed-set-check\b}
+
+  # Every lane whose green check a reviewer or a SHA-addressed auditor reads as "tested".
+  # Each one earns the SAME unconditional-execution assertion. Add a lane to CI that
+  # gates a merge, add it HERE.
+  VERDICT_COMMANDS = {
+    "the rails suite" => TEST_COMMAND,
+    "the playwright e2e suite" => E2E_COMMAND,
+    "the e2e executed-set gate" => EXECUTED_SET_COMMAND
+  }.freeze
+
+  # ==== THE ONE CONDITION A VERDICT LANE MAY CARRY ====================================
+  # `if:` on a verdict lane is normally fatal: a skipped JOB or STEP leaves the check
+  # REPORTING SUCCESS, which is a green required check over zero tests. So this file asserts
+  # `if:` is absent — with exactly one exception, and the exception is the opposite of the
+  # disease.
+  #
+  # `always()` cannot EXCLUDE a lane; it FORCES one to run. The executed-set gate `needs:` the
+  # playwright job, and a `needs:` dependency whose upstream FAILED is SKIPPED by default —
+  # so without `if: always()` the one gate that would say "the lane ran 43 of 51 specs" goes
+  # quiet in precisely the runs where a shard died. The condition is load-bearing, and it is
+  # the only condition permitted. Every other expression — event context, env var, repo
+  # variable, workflow input, matrix flag — can silently exclude the lane, and is refused.
+  UNCONDITIONAL_IF = ["always()"].freeze
+  # ====================================================================================
+
   def jobs_of(yaml_text)
     YAML.safe_load(yaml_text).fetch("jobs", {}).select { |_n, j| j.is_a?(Hash) }
   end
@@ -284,18 +354,147 @@ class CiWorkflowTriggersTest < Minitest::Test
     "job `#{job_name}` → step `#{step["name"] || step["uses"] || "run"}`"
   end
 
-  # Every [job_name, job, step] whose `run:` invokes `command`. Vector 7 (the gutted
-  # command) is invisible to every blacklist in this file and lands only here.
-  def command_lanes(yaml_text, command)
+  # Every [job_name, job, step] whose `run:` actually invokes the given verdict command.
+  # Vector 7 (the gutted command) is invisible to every blacklist in this file and lands
+  # only here. (Both the rails-suite lane and the e2e lane resolve through this.)
+  def command_lanes(yaml_text, pattern)
     jobs_of(yaml_text).flat_map do |name, job|
       Array(job["steps"]).grep(Hash)
-                         .select { |step| step["run"].to_s.match?(command) }
+                         .select { |step| step["run"].to_s.match?(pattern) }
                          .map { |step| [name, job, step] }
     end
   end
 
   def suite_command_lanes(yaml_text)
     command_lanes(yaml_text, TEST_COMMAND)
+  end
+
+  def e2e_command_lanes(yaml_text)
+    command_lanes(yaml_text, E2E_COMMAND)
+  end
+
+  # ---- the e2e lane's SCOPE invariant (vector 7, e2e edition) -------------------------
+
+  # A GitHub Actions expression can contain SPACES — `${{ matrix.shard }}`. Splitting the
+  # raw command on whitespace shatters it into bare words (`matrix.shard`, `}}/${{`) that
+  # look exactly like positional spec paths. Collapse each whole expression to one opaque
+  # token BEFORE tokenizing, or the scope guard fires a FALSE RED on the healthy lane —
+  # and a guard that cries wolf on the real command gets deleted, which is worse than not
+  # having written it.
+  GHA_EXPRESSION = /\$\{\{.*?\}\}/m
+
+  # Playwright flags that CONSUME the next token as their value. `--grep-invert
+  # @quarantine` is the live case: `@quarantine` is a VALUE, not a spec path. A walker
+  # that does not know this flags the healthy lane. (Flags in `--flag=value` form are
+  # self-contained and need no lookahead.)
+  VALUE_FLAGS = %w[
+    --grep --grep-invert --project --shard --reporter --workers --config
+    --timeout --retries --output --repeat-each --max-failures
+  ].freeze
+
+  SHELL_OPERATORS = %w[&& || ; |].freeze
+
+  # ==== DEFAULT-DENY, ON THE FLAG AXIS ================================================
+  # These are the ONLY flags the e2e command may carry. Everything else is refused BY NAME —
+  # including flags Playwright ships next year and flags nobody in this repo has heard of.
+  #
+  # WHY AN ALLOWLIST AND NOT A BLACKLIST OF NARROWING FLAGS. The first version of this walker
+  # blacklisted exactly two things: a positional path and a positive `--grep`. Review of #543
+  # then widened the SANCTIONED flag instead — `--grep-invert '@quarantine|board'`, one edit,
+  # 51 specs down to 43, every guard in the repo still green. And the blacklist would have
+  # waved through `--only-changed` (Playwright ships this: on a PR touching no spec files it
+  # executes ZERO tests), `--last-failed`, and `--max-failures=1`. Each is a different SPELLING
+  # of "run less than the suite", and enumerating spellings is how this PR got bounced three
+  # times. So: allowlist the three flags that provably cannot shrink the set, deny the rest.
+  #
+  #   --shard        the shards UNION to the whole suite; that is the point of the matrix.
+  #   --grep-invert  the ONE sanctioned exclusion — and it is VALUE-PINNED below, because a
+  #                  flag that is allowed to exist but not allowed to say anything is exactly
+  #                  the door frame this PR left unbolted while it was ratcheting the lock.
+  #   --reporter     chooses the OUTPUT FORMAT. It cannot change which specs run.
+  #
+  # THE NAME OF THIS CONSTANT USED TO BE `INERT_E2E_FLAGS`, AND THAT WAS ITSELF AN OVER-CLAIM —
+  # the exact failure mode this PR exists to kill, sitting in the guard that hunts it.
+  # `--reporter` is NOT inert. It cannot narrow the lane, but it EMITS THE JSON RECEIPT the
+  # executed-set gate is judged on: drop `json` from it and the lane still runs all 51 specs
+  # while the only evidence that it did evaporates. So the property these three share is the
+  # narrow, true one — they cannot SHRINK THE SELECTED SET — and that is what the name says
+  # now. `--reporter`'s second, load-bearing job is pinned separately, by
+  # test_integration_the_e2e_lane_emits_the_receipt_it_is_judged_on.
+  NON_NARROWING_E2E_FLAGS = %w[--shard --grep-invert --reporter].freeze
+  # ====================================================================================
+
+  # Every argument that NARROWS which specs the e2e lane runs.
+  #
+  # THE INVARIANT IS POSITIVE: the lane runs the SUITE — the whole of playwright.config.js's
+  # testDir, sharded — not a selection from it. This is vector 7 (the gutted command) in its
+  # e2e spelling, and it is mutation-confirmed FALSE-GREEN against every other guard in the
+  # repo: narrowing the command to `npx playwright test e2e/smoke.spec.js` keeps this file
+  # AND feature_shape_tiers_test.rb green while the lane runs ONE spec. There is no `if:`,
+  # no path filter, no `continue-on-error` — nothing for a blacklist to match. Same hole as
+  # `run: echo "skipping"`, one tier over.
+  #
+  # Playwright narrows in exactly two ways, and both are caught here regardless of spelling:
+  #   · a POSITIONAL argument — a spec file or directory (`playwright test e2e/smoke.spec.js`);
+  #   · a POSITIVE `--grep` — an inclusion filter (`--grep @smoke`).
+  #
+  # NOT narrowings, and deliberately allowed (see NON_NARROWING_E2E_FLAGS — everything else is
+  # denied by name, so this is an allowlist, not a list of the cheats we happened to imagine):
+  #   · `--shard=i/n` — the shards UNION to the whole suite; that is the point of the matrix.
+  #   · `--reporter` — chooses the output format, not the test set (but it DOES emit the
+  #     receipt: separately pinned, see NON_NARROWING_E2E_FLAGS).
+  #   · `--grep-invert @quarantine` — the ONE sanctioned narrowing: a named, ticketed
+  #     EXCLUSION (/tasks/repair-rotted-e2e-specs), pinned to that EXACT VALUE below.
+  #
+  #     THIS COMMENT USED TO SAY the exclusion's "size is RATCHETED by
+  #     e2e_quarantine_ratchet_test.rb so the hole can only ever shrink." THAT WAS FALSE AS
+  #     WRITTEN, and review found it by mutation. The ratchet bounds how many specs may carry
+  #     the TAG. NOTHING bounded the FILTER THAT CONSUMES THE TAG — so
+  #     `--grep-invert '@quarantine|board'` dropped the lane from 51 specs to 43 in a single
+  #     edit with every guard still green. A ratchet on the lock, and the door frame left
+  #     unbolted. The exclusion is bounded now on BOTH sides: the tag count by the ratchet,
+  #     and the filter EXPRESSION by test_integration_the_sanctioned_exclusion_is_pinned_to_its_exact_value.
+  def e2e_narrowing_args(command)
+    tokens = command.gsub(GHA_EXPRESSION, "EXPR").split
+    start = tokens.each_cons(2).find_index { |a, b| a.end_with?("playwright") && b == "test" }
+    return [] unless start
+
+    args = tokens[(start + 2)..] || []
+    stop = args.find_index { |token| SHELL_OPERATORS.include?(token) }
+    args = args[0...stop] if stop
+
+    narrowing = []
+    skip_next = false
+
+    args.each do |token|
+      if skip_next
+        skip_next = false
+      elsif token.start_with?("-")
+        flag, inline_value = token.split("=", 2)
+        skip_next = VALUE_FLAGS.include?(flag) && inline_value.nil?
+        narrowing << token unless NON_NARROWING_E2E_FLAGS.include?(flag)
+      else
+        narrowing << token
+      end
+    end
+
+    narrowing
+  end
+
+  # Every `--grep-invert` in the command, with its value — inline (`--grep-invert=X`) or
+  # spaced (`--grep-invert X`). Used to pin the ONE sanctioned exclusion to its EXACT value.
+  def grep_invert_values(command)
+    tokens = command.gsub(GHA_EXPRESSION, "EXPR").split
+    values = []
+
+    tokens.each_with_index do |token, index|
+      flag, inline_value = token.split("=", 2)
+      next unless flag == "--grep-invert"
+
+      values << (inline_value || tokens[index + 1]).to_s.gsub(/\A['"]|['"]\z/, "")
+    end
+
+    values
   end
 
   # ==== THE POSITIVE INVARIANT — the thing that ENDS the arms race ======================
@@ -1077,6 +1276,101 @@ class CiWorkflowTriggersTest < Minitest::Test
     assert_equal "test", lanes.first[0]
   end
 
+  # --- [unit] the e2e lane: unconditional execution + scope ---------------------------
+
+  def test_unit_recognizes_the_real_playwright_command_as_an_e2e_lane
+    # Same vacuity check as TEST_COMMAND's above: if E2E_COMMAND does not MATCH the live
+    # command, the positive guard asserts a lane that never existed and passes over an
+    # empty set — a guard that guards nothing, which is the bug this whole PR is about.
+    yaml = <<~YML
+      on:
+        push:
+          branches: [ main, release ]
+      jobs:
+        playwright:
+          runs-on: ubuntu-latest
+          steps:
+            - name: Run Playwright e2e suite
+              run: npx playwright test --grep-invert @quarantine --shard=1/3
+    YML
+    lanes = e2e_command_lanes(yaml)
+
+    assert_equal 1, lanes.size
+    assert_equal "playwright", lanes.first[0]
+  end
+
+  def test_unit_detects_an_e2e_job_gated_on_a_repo_variable
+    # THE MUTATION THAT PROVED THE HOLE (review of PR #543). `vars.E2E_ENABLED` matches no
+    # spelling in SKIP_CONTEXT_KEYS — it is not `github.*` at all — so the blacklist waves
+    # it straight through, and the lane runs ZERO specs behind a green check. Only the
+    # POSITIVE invariant (the lane that is the verdict carries NO `if:` whatsoever) catches
+    # it. This is turf-monster's devnet-nightly.yml exactly, the workflow this PR indicts.
+    yaml = <<~YML
+      on:
+        push:
+          branches: [ main, release ]
+      jobs:
+        playwright:
+          if: vars.E2E_ENABLED == 'true'
+          runs-on: ubuntu-latest
+          steps:
+            - name: Run Playwright e2e suite
+              run: npx playwright test --shard=1/3
+    YML
+    assert_empty jobs_skipping_release_push(yaml),
+                 "the github.* blacklist sees NOTHING wrong with a repo-variable gate"
+
+    lanes = e2e_command_lanes(yaml)
+
+    refute_empty lanes
+    refute_nil lanes.first[1]["if"],
+               "the positive invariant is the only thing standing between this lane and a " \
+               "green check over zero specs"
+  end
+
+  def test_unit_the_real_e2e_command_narrows_nothing
+    # The FALSE-RED half. `--shard=${{ matrix.shard }}/${{ strategy.job-total }}` contains
+    # SPACES: tokenized naively it shatters into bare words that read as spec paths, and the
+    # scope guard would fire on the healthy committed lane. A guard that cries wolf on the
+    # real command gets deleted — so pin the expression-collapsing here.
+    command = "npx playwright test --grep-invert @quarantine " \
+              "--shard=${{ matrix.shard }}/${{ strategy.job-total }}"
+
+    assert_empty e2e_narrowing_args(command)
+  end
+
+  def test_unit_a_grep_invert_value_is_not_a_spec_path
+    # `@quarantine` is the VALUE of the preceding flag, not a positional. A walker that
+    # does not consume flag values flags the sanctioned exclusion as a narrowing.
+    assert_empty e2e_narrowing_args("npx playwright test --grep-invert @quarantine")
+  end
+
+  def test_unit_detects_the_e2e_command_gutted_to_a_single_spec_file
+    # MUTATION C, and the e2e spelling of vector 7. No `if:`, no filter, no
+    # continue-on-error — every blacklist in this file passes it clean, and the lane runs
+    # ONE spec while reporting the `e2e` tier green.
+    assert_equal ["e2e/smoke.spec.js"],
+                 e2e_narrowing_args("npx playwright test e2e/smoke.spec.js --shard=1/3")
+  end
+
+  def test_unit_detects_a_positive_grep_narrowing_the_e2e_lane
+    # The subtler gutting: no spec path, but an inclusion filter that runs a handful of
+    # specs. `--grep-invert` (exclusion) is sanctioned; `--grep` (selection) is not.
+    assert_equal ["--grep"], e2e_narrowing_args("npx playwright test --grep @smoke")
+  end
+
+  def test_unit_a_sharded_suite_is_not_a_narrowing
+    # Shards UNION to the whole suite — that is the entire point of the 3-way matrix. A
+    # scope guard that called this a narrowing would forbid the design it is protecting.
+    assert_empty e2e_narrowing_args("npx playwright test --shard=1/3")
+  end
+
+  def test_unit_shell_plumbing_after_the_suite_is_not_a_narrowing
+    # `npx playwright test && echo done` — the trailing tokens belong to another command,
+    # not to playwright's argv. Another false-red source; pinned.
+    assert_empty e2e_narrowing_args("npx playwright test --shard=1/3 && echo done")
+  end
+
   # --- [integration] the real committed workflow ----------------------------------
 
   # ==== THE PRIMARY GUARD =============================================================
@@ -1085,32 +1379,183 @@ class CiWorkflowTriggersTest < Minitest::Test
   # verdict, ANY condition fails — not merely the three `github.*` spellings a reviewer
   # happened to show me. That is the difference between a guard and a scoreboard.
   def test_integration_the_suite_runs_UNCONDITIONALLY_on_a_release_push
-    lanes = suite_command_lanes(File.read(CI_YML))
+    yaml_text = File.read(CI_YML)
 
-    refute_empty lanes,
-                 "NO step in ci.yml runs a command matching #{TEST_COMMAND.source}. A " \
-                 "release push would produce GREEN checks having executed zero tests — " \
-                 "and #514's SHA-addressed auditor would read that empty-but-green run " \
-                 "as a clean verdict and certify an RC that CI never tested. A false RED " \
-                 "wastes a day; a false GREEN ships. If the suite legitimately moved or " \
-                 "the command changed, re-point TEST_COMMAND at it — do not delete this."
+    VERDICT_COMMANDS.each do |description, pattern|
+      lanes = command_lanes(yaml_text, pattern)
 
-    lanes.each do |job_name, job, step|
-      assert_nil job["if"],
-                 "#{lane_label(job_name)} runs the suite but carries `if: #{job["if"]}`. " \
-                 "The lane that IS the verdict must be UNCONDITIONAL on a release push. " \
-                 "Any condition — event context, env var, workflow input, matrix flag — " \
-                 "can silently exclude the RC tip. Prove it still runs on a push to " \
-                 "refs/heads/release, then update this test deliberately."
-      assert_nil step["if"],
-                 "#{lane_label(job_name, step)} runs the suite but carries " \
-                 "`if: #{step["if"]}`. A skipped STEP leaves the JOB REPORTING SUCCESS — " \
-                 "a green required check over zero tests, invisible in the check " \
-                 "conclusion and indistinguishable from a real pass to any auditor " \
-                 "reading it by SHA. This is the worst failure mode in the file."
+      refute_empty lanes,
+                   "NO step in ci.yml runs #{description} (matching #{pattern.source}). A " \
+                   "release push would produce GREEN checks having executed zero tests — " \
+                   "and #514's SHA-addressed auditor would read that empty-but-green run " \
+                   "as a clean verdict and certify an RC that CI never tested. A false RED " \
+                   "wastes a day; a false GREEN ships. If the lane legitimately moved or " \
+                   "the command changed, re-point its pattern in VERDICT_COMMANDS — do not " \
+                   "delete this."
+
+      lanes.each do |job_name, job, step|
+        # DEFAULT-DENY, with ONE justified exception: `always()` FORCES execution, it cannot
+        # exclude the lane. Everything else can, and is refused. See UNCONDITIONAL_IF.
+        job_if = job["if"]
+        assert(job_if.nil? || UNCONDITIONAL_IF.include?(job_if.to_s.strip),
+               "#{lane_label(job_name)} runs #{description} but carries " \
+               "`if: #{job_if}`. The lane that IS the verdict must be UNCONDITIONAL " \
+               "on a release push. Any condition — event context, ENV VAR, REPO " \
+               "VARIABLE, workflow input, matrix flag — can silently exclude the RC " \
+               "tip. This is not hypothetical: turf-monster's devnet-nightly.yml is " \
+               "gated `if: vars.DEVNET_NIGHTLY_ENABLED == 'true'`, has completed " \
+               "`skipped` on every scheduled run, and has NEVER ONCE EXECUTED — which " \
+               "is precisely why the `e2e_onchain` tier it was supposed to collect was " \
+               "deleted as a lie. The ONLY permitted condition is #{UNCONDITIONAL_IF.inspect}, " \
+               "which forces the lane to run rather than excluding it (the executed-set gate " \
+               "`needs:` playwright, and a needs-dependency of a FAILED job is SKIPPED — and a " \
+               "skipped gate is a silent one, in exactly the run where it matters most). " \
+               "Prove the lane still runs on a push to refs/heads/release, then update this " \
+               "test deliberately.")
+        assert_nil step["if"],
+                   "#{lane_label(job_name, step)} runs #{description} but carries " \
+                   "`if: #{step["if"]}`. A skipped STEP leaves the JOB REPORTING SUCCESS — " \
+                   "a green required check over zero tests, invisible in the check " \
+                   "conclusion and indistinguishable from a real pass to any auditor " \
+                   "reading it by SHA. This is the worst failure mode in the file."
+      end
     end
   end
 
+  # The e2e half of vector 7. The guard above proves the playwright lane RUNS; this proves
+  # it runs the SUITE. Gutting the command to a single spec file trips no `if:` walk, no
+  # path filter, no continue-on-error check — and it was mutation-confirmed to keep BOTH
+  # this file and feature_shape_tiers_test.rb green while the lane executed one spec.
+  def test_integration_the_e2e_lane_runs_the_WHOLE_suite_not_a_selection
+    lanes = e2e_command_lanes(File.read(CI_YML))
+
+    refute_empty lanes, "no ci.yml step runs the playwright suite — see the primary guard"
+
+    lanes.each do |job_name, _job, step|
+      narrowing = e2e_narrowing_args(step["run"].to_s)
+
+      assert_empty narrowing,
+                   "#{lane_label(job_name, step)} narrows the e2e suite with " \
+                   "#{narrowing.inspect}. The lane must run the WHOLE suite (sharded — the " \
+                   "shards union to all of it), not a selection from it. A positional spec " \
+                   "path or a positive `--grep` means the green `playwright` check covers " \
+                   "whatever the command happened to name, while the tier it certifies " \
+                   "(`e2e`, demanded by ui+db and onchain-vertical) claims the suite ran. " \
+                   "The ONE sanctioned narrowing is `--grep-invert @quarantine`, a named " \
+                   "and ticketed exclusion whose size is ratcheted by " \
+                   "test/lib/e2e_quarantine_ratchet_test.rb."
+    end
+  end
+
+  # ==== THE SANCTIONED EXCLUSION IS BOUNDED ON BOTH SIDES =============================
+  # BLOCKER B, and it was the worse of the two: the ratchet bounded the TAG while nothing at
+  # all bounded the FILTER that consumes it. `--grep-invert` was allowed to exist AND allowed
+  # to say anything, so widening it to `'@quarantine|board'` took the lane from 51 specs to 43
+  # in ONE EDIT with every guard in the repo green. The hole this PR exists to close, reopened
+  # one line over, in a file the PR already touches.
+  #
+  # Pin the EXPRESSION, exactly, and pin it to the contract so there is one place to change it.
+  # (The arithmetic in bin/e2e-executed-set-check catches a widened filter too, and catches it
+  # in a way no spelling can dodge — 43 != 51. This is the fast, specific, local diagnosis; the
+  # receipt is the durable one. Belt and braces, and the braces are load-bearing.)
+  def test_integration_the_sanctioned_exclusion_is_pinned_to_its_exact_value
+    contract = YAML.safe_load_file(E2E_CONTRACT)
+    tag = contract.fetch("quarantine_tag")
+    lanes = e2e_command_lanes(File.read(CI_YML))
+
+    refute_empty lanes, "no ci.yml step runs the playwright suite — see the primary guard"
+
+    lanes.each do |job_name, _job, step|
+      values = grep_invert_values(step["run"].to_s)
+
+      assert_equal 1, values.size,
+                   "#{lane_label(job_name, step)} carries #{values.size} `--grep-invert` " \
+                   "flag(s): #{values.inspect}. Exactly one is sanctioned. A second one is a " \
+                   "second unbounded exclusion channel, which is the exact class of hole this " \
+                   "lane was built to close."
+
+      assert_equal tag, values.first,
+                   "#{lane_label(job_name, step)} excludes #{values.first.inspect} from the " \
+                   "e2e lane. The ONE sanctioned exclusion is #{tag.inspect} — the rotted " \
+                   "specs, named and ticketed at /tasks/repair-rotted-e2e-specs.\n" \
+                   "WIDENING THIS FILTER SILENTLY DELETES SPECS FROM THE ONLY LANE THAT RUNS " \
+                   "THEM: `--grep-invert '@quarantine|board'` takes the lane from 51 specs to " \
+                   "43 and every other guard stays green. If you are excluding more, you are " \
+                   "shrinking what the green `playwright` check means — do that deliberately, " \
+                   "in config/e2e_lane.yml, where the numbers have to add up and a reviewer " \
+                   "sees the diff."
+    end
+  end
+  # ====================================================================================
+
+  # ==== THE RATCHET'S BASELINE MUST BE FETCHABLE ======================================
+  # test/lib/e2e_quarantine_ratchet_test.rb ratchets the @quarantine ceiling against
+  # `origin/release` — the only copy of that number a PR's own diff cannot move. But
+  # actions/checkout fetches ONLY the head SHA by default (depth 1), and then `origin/release`
+  # does not resolve.
+  #
+  # The ratchet fails CLOSED in that case (RED, with the reason), so the failure mode is loud
+  # rather than silent — but "loud" is worth exactly nothing if the next person makes CI green
+  # by deleting the ratchet instead of restoring the fetch. So the fetch is PINNED here: the
+  # `test` job — the job that runs the ratchet — must check out with `fetch-depth: 0`.
+  #
+  # This is the same lesson as the receipt, in miniature: an invariant that depends on a
+  # condition must ASSERT that condition, or it is just hoping.
+  def test_integration_the_test_job_can_see_the_ratchets_baseline
+    jobs = jobs_of(File.read(CI_YML))
+    job = jobs["test"]
+
+    refute_nil job, "no `test` job in ci.yml — that is the job that runs the ratchet"
+
+    checkouts = Array(job["steps"]).select { |s| s.is_a?(Hash) && s["uses"].to_s.start_with?("actions/checkout") }
+    refute_empty checkouts, "the `test` job does not check out the repo"
+
+    depths = checkouts.map { |s| (s["with"] || {})["fetch-depth"] }
+
+    assert_includes depths, 0,
+                    "the `test` job checks out with fetch-depth #{depths.inspect}, so " \
+                    "`origin/release` DOES NOT RESOLVE in that checkout — and " \
+                    "test/lib/e2e_quarantine_ratchet_test.rb reads the @quarantine ceiling's " \
+                    "baseline from exactly that ref.\n" \
+                    "Without it the ratchet cannot see the one value this branch's diff cannot " \
+                    "move, and a ratchet without a baseline is a PIN — which is what it was, " \
+                    "and how the quarantine hole once grew by a spec with every guard in the " \
+                    "repo green. Restore `fetch-depth: 0` on the `test` job's checkout."
+  end
+  # ====================================================================================
+
+  # ==== THE RECEIPT MUST ACTUALLY BE EMITTED ==========================================
+  # `--reporter` is on the non-narrowing allowlist because it cannot change WHICH specs run.
+  # True — and for three rounds this file called it "inert", which was a LIE OF EXACTLY THE
+  # KIND THIS PR IS ABOUT: --reporter is the flag that EMITS THE RECEIPT the executed-set gate
+  # is judged on. It cannot narrow the lane, but it can silence the only evidence we have that
+  # the lane was not narrowed.
+  #
+  # The gate does fail closed if the receipt vanishes (no artifact -> zero reports -> RED), so
+  # this is not a hole. It is a diagnosis: pinned here, a dropped `json` reporter says "you
+  # broke the receipt" instead of "e2e_executed_set found no reports", which is the difference
+  # between a five-second fix and an afternoon.
+  def test_integration_the_e2e_lane_emits_the_receipt_it_is_judged_on
+    lanes = e2e_command_lanes(File.read(CI_YML))
+
+    refute_empty lanes, "no ci.yml step runs the playwright suite — see the primary guard"
+
+    lanes.each do |job_name, _job, step|
+      run = step["run"].to_s
+
+      assert_match(/--reporter[= ]\S*\bjson\b/, run,
+                   "#{lane_label(job_name, step)} runs playwright WITHOUT a `json` reporter. " \
+                   "That is the receipt bin/e2e-executed-set-check reads to prove the lane " \
+                   "executed the specs it claims to — no JSON, no evidence, and the executed-set " \
+                   "gate is left auditing nothing.")
+
+      assert_match(/PLAYWRIGHT_JSON_OUTPUT_NAME/, YAML.dump(step["env"] || {}),
+                   "#{lane_label(job_name, step)} does not set PLAYWRIGHT_JSON_OUTPUT_NAME, so " \
+                   "the json reporter writes to STDOUT and no receipt file is produced for the " \
+                   "upload step to collect.")
+    end
+  end
+  # ====================================================================================
   def test_integration_the_suite_run_script_is_EXACTLY_the_pinned_command
     foreign = suite_lanes_with_a_foreign_script(File.read(CI_YML))
 
