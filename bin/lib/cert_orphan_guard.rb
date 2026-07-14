@@ -88,6 +88,34 @@ require "fileutils"
 module CertOrphanGuard
   LOCK_REL = File.join("tmp", "cert-run.json")
 
+  # --- who is speaking ---------------------------------------------------------------
+  #
+  # One mechanism, two callers, and the CLOSING LINE of a refusal is load-bearing in
+  # both — it tells the reader where the fault is NOT:
+  #
+  #   a cert refusing → "NOT a regression in your diff"  (don't go re-read your code)
+  #   a GATE refusing → "NOT a release regression — nothing to eject or revert"
+  #
+  # The gate's line is the one with teeth. An abort on the G3/G4 path that does not say
+  # it reads as a RED SUITE, and a red suite gets a task EJECTED from the release — so a
+  # leftover process would evict good code. That is the precise failure the isolated-gate
+  # program exists to end, and it must not be reintroduced by the reaper meant to help.
+  #
+  # So the voice is a PARAMETER, not a string baked into each message. It defaults to
+  # the cert's (every existing caller keeps its exact wording) and bin/release passes
+  # GATE explicitly.
+  Voice = Struct.new(:actor, :env_line, keyword_init: true)
+
+  CERT = Voice.new(
+    actor: "cert",
+    env_line: "This is an ENV condition — NOT a regression in your diff."
+  ).freeze
+
+  GATE = Voice.new(
+    actor: "gate",
+    env_line: "This is an ENV issue, NOT a release regression — nothing to eject or revert."
+  ).freeze
+
   # The lowest pgid we will ever aim a signal at.
   #
   # `kill(sig, -1)` does not mean "process group 1". POSIX defines it as EVERY
@@ -481,22 +509,22 @@ module CertOrphanGuard
   # ENV gap" and lets you retry into the same wall is the bug. And a cert that KILLS a
   # process it cannot name is worse than either.
 
-  def self.orphan_message(pgid:, lane: nil, db: nil, started_at: nil)
-    "ORPHAN REAPED — a previous cert's test process was still running and holding the test DB. " \
-      "It is an orphan: the cert that spawned it is gone (its harness timed out and killed the parent), " \
+  def self.orphan_message(pgid:, lane: nil, db: nil, started_at: nil, voice: CERT)
+    "ORPHAN REAPED — a previous #{voice.actor}'s test process was still running and holding the test DB. " \
+      "It is an orphan: the #{voice.actor} that spawned it is gone (its harness timed out and killed the parent), " \
       "but its process group #{pgid} survived#{lane ? " (lane: #{lane})" : ''}" \
       "#{started_at ? ", started #{started_at}" : ''}#{db ? ", holding #{db}" : ''}. " \
-      "Verified it is OURS (the group leader's start time matches the one this worktree's runlock " \
+      "Verified it is OURS (the group leader's start time matches the one this runlock " \
       "recorded when it spawned it) and reaped process group #{pgid}. " \
-      "This is an ENV condition — NOT a regression in your diff. Continuing with a clean test DB."
+      "#{voice.env_line} Continuing with a clean test DB."
   end
 
-  def self.concurrent_message(cert_pid:, lane: nil, db: nil)
-    "REFUSING — another cert is already running in this worktree (pid #{cert_pid}" \
-      "#{lane ? ", lane: #{lane}" : ''}). Two suites against one worktree test DB" \
-      "#{db ? " (#{db})" : ''} corrupt each other's fixtures and SIGSEGV Ruby, so this cert will not " \
+  def self.concurrent_message(cert_pid:, lane: nil, db: nil, voice: CERT)
+    "REFUSING — another #{voice.actor} is already running here (pid #{cert_pid}" \
+      "#{lane ? ", lane: #{lane}" : ''}). Two suites against one test DB" \
+      "#{db ? " (#{db})" : ''} corrupt each other's fixtures and SIGSEGV Ruby, so this #{voice.actor} will not " \
       "start beside it. Wait for it to finish and re-run — or, if you know it is dead, kill pid " \
-      "#{cert_pid} and re-run. This is an ENV condition — NOT a regression in your diff."
+      "#{cert_pid} and re-run. #{voice.env_line}"
   end
 
   # The lock is stale AND its pgid now belongs to somebody else. We say so out loud
@@ -515,40 +543,40 @@ module CertOrphanGuard
   # We could not prove ownership either way. This is the one case where we hand the
   # decision to a human: we will not kill on a guess, and we will not walk blindly into
   # PG::ObjectInUse either.
-  def self.unverifiable_message(pgid:, subject: :group, found: nil, members: [], db: nil, root: nil)
+  def self.unverifiable_message(pgid:, subject: :group, found: nil, members: [], db: nil, root: nil, voice: CERT)
     live = ([found].compact + members).uniq { |p| p[:pid] }
     named = live.map { |p| "pid #{p[:pid]} (#{p[:command].to_s[0, 50]}, started #{p[:started_at]})" }.join(", ")
     lock = root ? File.join(root.to_s, LOCK_REL) : LOCK_REL
     subject_line =
       case subject
-      when :cert then "the cert process named in the runlock (pid #{found ? found[:pid] : '?'}) is alive"
-      when :unsafe_pgid then "the runlock names process group #{pgid}, which is not a group any cert may signal"
+      when :cert then "the #{voice.actor} process named in the runlock (pid #{found ? found[:pid] : '?'}) is alive"
+      when :unsafe_pgid then "the runlock names process group #{pgid}, which is not a group any #{voice.actor} may signal"
       else "process group #{pgid} from the runlock has live members"
       end
 
     "REFUSING — #{subject_line}, but this runlock does not carry the identity needed to prove those " \
       "processes are ours. (Locks written before this guard recorded process start times cannot be verified.) " \
       "A pgid is a recyclable integer: killing it on liveness alone is how a reaper murders an innocent " \
-      "bystander, so this cert will NOT kill anything it cannot name as its own. A human decides.\n" \
+      "bystander, so this #{voice.actor} will NOT kill anything it cannot name as its own. A human decides.\n" \
       "  Alive now: #{named.empty? ? '(nothing nameable)' : named}\n" \
       "  Inspect:   ps -eo pid,ppid,pgid,lstart,command | grep -E 'rails test|#{pgid}'   # an orphan has PPID 1\n" \
       "  If it IS a stranded suite:  kill -TERM -#{pgid}\n" \
       "  If it is NOT yours at all:  rm #{lock.to_s.shellescape}   # discard the stale runlock\n" \
-      "Then re-run the cert. This is an ENV condition — NOT a regression in your diff." \
+      "Then re-run the #{voice.actor}. #{voice.env_line}" \
       "#{db ? " (test DB: #{db})" : ''}"
   end
 
-  def self.foreign_backend_message(db:, backends:)
+  def self.foreign_backend_message(db:, backends:, voice: CERT)
     named = backends.map { |b| "pid #{b[:pid]} (#{b[:application_name]})" }.join(", ")
     pids = backends.map { |b| b[:pid] }.join(", ")
     "REFUSING — the test DB #{db} is held by #{backends.size} other session(s): #{named}. " \
-      "A cert cannot prepare a database another process is holding (db:test:purge → PG::ObjectInUse), " \
+      "A #{voice.actor} cannot prepare a database another process is holding (db:test:purge → PG::ObjectInUse), " \
       "and running beside it corrupts both suites. This is almost certainly an ORPHANED test process " \
-      "from a cert that outran its timeout. It is an ENV condition — NOT a regression in your diff.\n" \
+      "from a #{voice.actor} that outran its timeout. #{voice.env_line}\n" \
       "  Inspect: ps -eo pid,ppid,pgid,command | grep 'rails test'   # the orphan has PPID 1\n" \
       "  Clear:   psql #{db.to_s.shellescape} -c 'SELECT pg_terminate_backend(pid) FROM pg_stat_activity " \
       "WHERE pid IN (#{pids})'\n" \
-      "Then re-run the cert."
+      "Then re-run the #{voice.actor}."
   end
 
   # --- the preflight both cert lanes run BEFORE any lane -----------------------------
@@ -556,7 +584,7 @@ module CertOrphanGuard
   # Returns [:ok, notices] or [:refuse, message]. The caller aborts on :refuse and
   # prints the notices otherwise — so bin/fast-check and bin/full-suite-check keep
   # their own voice while sharing one policy.
-  def self.preflight(root:, env: ENV)
+  def self.preflight(root:, env: ENV, voice: CERT)
     notices = []
     ps = ps_bin(env)
     verdict, detail = decide(lock: read_lock(root), table: process_table(ps: ps))
@@ -566,16 +594,16 @@ module CertOrphanGuard
 
     case verdict
     when :concurrent
-      return [:refuse, concurrent_message(cert_pid: detail[:cert_pid], lane: detail[:lane], db: db)]
+      return [:refuse, concurrent_message(cert_pid: detail[:cert_pid], lane: detail[:lane], db: db, voice: voice)]
     when :unverifiable
       return [:refuse, unverifiable_message(pgid: detail[:pgid], subject: detail[:subject],
                                             found: detail[:found], members: detail[:members].to_a,
-                                            db: db, root: root)]
+                                            db: db, root: root, voice: voice)]
     when :orphan
       reaped = reap_group(detail[:pgid], started_at: detail[:pgid_started_at], ps: ps)
       clear_lock(root)
       notices << orphan_message(pgid: detail[:pgid], lane: detail[:lane], db: db,
-                                started_at: detail[:started_at])
+                                started_at: detail[:started_at], voice: voice)
     when :recycled
       clear_lock(root)
       notices << recycled_message(pgid: detail[:pgid], found: detail[:found],
@@ -592,7 +620,7 @@ module CertOrphanGuard
     # After a reap, give the backends we just orphaned a moment to close: a suite we
     # PROVED was ours and killed must not then be reported back to us as a stranger.
     backends = settle_backends(url, psql: env.fetch("CERT_GUARD_PSQL", "psql"), settle: reaped)
-    return [:refuse, foreign_backend_message(db: db, backends: backends)] if backends.any?
+    return [:refuse, foreign_backend_message(db: db, backends: backends, voice: voice)] if backends.any?
 
     [:ok, notices]
   end

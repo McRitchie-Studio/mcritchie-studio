@@ -156,6 +156,13 @@ require_relative "../app/models/release/prod_smoke"
 require_relative "../app/models/release/gate_ruby"
 require_relative "../app/models/release/gate_env"
 require_relative "../app/models/release/gate_workspace"
+# The ORPHAN GUARD — shared VERBATIM with the cert lanes (bin/fast-check,
+# bin/full-suite-check), not re-derived here. A reaper decides which process to kill,
+# so it is the last code in the ecosystem that should exist in two copies: the cert's
+# version was already found killing an innocent bystander once, and a second copy is a
+# second chance to make that mistake independently. One module, one fix, one audit.
+require_relative "lib/cert_process"
+require_relative "lib/cert_orphan_guard"
 # Deploy-side usage capture: read the conductor's LOCAL session transcript and
 # diff it against the per-(session, slug) baseline (shared verbatim with bin/task
 # + bin/reviewer-select) so reviewed→assembled / assembled→shipped flips carry
@@ -312,7 +319,25 @@ end
 # VALUE in that overlay UNSETS the key in the child (Process.spawn semantics) —
 # that is how the session scrub reaches every grandchild the suite spawns. A
 # blank/nil overlay leaves the argv exactly as-is. Returns [stdout, ok?].
-def sh(*cmd, capture: false, chdir: nil, env: nil)
+# `guard:` — OPT-IN process-group isolation, for the long-running children only.
+#
+# THE BUG IT CLOSES: a bare `system` runs the child in the CONDUCTOR'S OWN process
+# group with no handler, so a signal aimed at bin/release never reaches it. Kill or
+# time out the conductor mid-suite and the suite is ORPHANED — reparented to launchd,
+# still holding `<repo>_gate_test`. That DB is FIXED per repo+role, so the NEXT gate's
+# db:test:prepare cannot purge it (PG::ObjectInUse, "being accessed by other users"),
+# aborts, and — before this — never NAMED the process holding it. On G3 that costs a
+# release; on G4 it lands immediately before an irreversible prod deploy. (Reproduced
+# live: TERM the conductor, the suite survives with PPID 1 and the DROP is refused.)
+#
+# OPT-IN, NOT BLANKET, and that is deliberate — this is the ship path.
+# `pgroup: true` moves the child OUT of the terminal's foreground process group, so a
+# child that reads the TTY (an interactive `gem push` OTP prompt, a `gh auth` prompt)
+# would take SIGTTIN and STOP. So only the two GATE SUITES — long-running, non-
+# interactive, DB-holding, the only children an orphan of which can wedge a later run —
+# opt in. Every other sh() call (git, gh, curl, heroku, gem) keeps the exact spawn it
+# had. A blanket change here would be the kind of "improvement" that hangs a deploy.
+def sh(*cmd, capture: false, chdir: nil, env: nil, guard: nil)
   printable = "#{chdir ? "(cd #{chdir}) " : ''}#{cmd.join(' ')}"
   if DRY
     puts "  [dry-run] #{printable}"
@@ -325,6 +350,13 @@ def sh(*cmd, capture: false, chdir: nil, env: nil)
   if capture
     out, status = Open3.capture2e(*argv, opts)
     [out, status.success?]
+  elsif guard
+    # Own process group + reap the GROUP on TERM/INT/HUP/exception, and a runlock
+    # naming the group so the SIGKILL case (no handler can run) is at least
+    # DETECTABLE by the next gate. Shared verbatim with the cert lanes.
+    ok = CertProcess.run(env || {}, *cmd, chdir: chdir || Dir.pwd,
+                         root: guard[:root], lane: guard[:lane], db: guard[:db])
+    ["", ok]
   else
     ok = system(*argv, opts)
     ["", ok]
@@ -515,18 +547,20 @@ end
 # scope key, result_slug=pass|fail, duration_ms=the wall-clock. These ride the same
 # best-effort self-report path; a bare START stays untagged so the pipeline's
 # `kind:"test_scope" AND result_slug present` filter never surfaces it.
-def run_test_scope(key, *cmd, capture: false, chdir: nil, repo: nil, label: nil, env: nil, &block)
+def run_test_scope(key, *cmd, capture: false, chdir: nil, repo: nil, label: nil, env: nil, guard: nil, &block)
   meta  = scope_meta(key)
   where = repo.to_s.empty? ? meta["host"].to_s : repo.to_s
   printable = (label || cmd.join(" ")).to_s
   scope_action("test scope #{key} START · #{where} · #{printable}")
   started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
   begin
-    # Pass `env:` to sh ONLY when the caller set an overlay (the gate ruby pin) —
-    # non-gate scopes call sh with the exact original keywords, so a strict sh
-    # stub (or any caller that predates env:) is untouched.
+    # Pass `env:`/`guard:` to sh ONLY when the caller set them (the gate ruby pin; the
+    # gate suite's process-group isolation) — non-gate scopes call sh with the exact
+    # original keywords, so a strict sh stub (or any caller that predates them) is
+    # untouched.
     kw = { capture: capture, chdir: chdir }
     kw[:env] = env if env && !env.empty?
+    kw[:guard] = guard if guard
     out, ok = block ? block.call : sh(*cmd, **kw)
   rescue StandardError => e
     elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
@@ -1316,6 +1350,76 @@ def gate_workspace_lock_path(repo, role: "gate")
   File.join(dir, "mcr-#{Release::GateWorkspace.role!(role)}-workspace-#{repo}.lock")
 end
 
+# --- the gate's orphan guard -------------------------------------------------
+# The flock above serializes two LIVE conductors. It cannot help with a DEAD one:
+# an flock is released when its holder dies, but the suite that conductor spawned
+# is NOT — so a killed conductor drops the lock and leaves its suite running on the
+# gate's test DB. The next conductor takes the lock cleanly and walks straight into
+# PG::ObjectInUse. The lock and the guard cover different halves; both are load-bearing.
+
+# WHERE THE RUNLOCK LIVES — outside the workspace it guards, and this is the whole
+# design, not a detail.
+#
+# CertProcess writes its runlock under the root it is handed (`<root>/tmp/cert-run.json`).
+# For a cert that root is the agent worktree, which persists across runs. A GATE
+# workspace does NOT: gate_workspace! `git worktree remove --force`s and rebuilds it
+# whenever `git reset --hard` fails — and a tree half-written by a conductor killed
+# mid-suite is EXACTLY when that happens. A runlock kept inside the workspace would
+# therefore be deleted by the next run, on the one path where an orphan is most likely:
+# the detect half would be silently dead precisely when it was needed. (It would also
+# quietly depend on `tmp/` staying gitignored, since gate_workspace! runs `git clean -fd`.)
+#
+# So the runlock gets a durable home beside the workspace flock — same directory, so
+# MCR_PRIMARY_LOCK_DIR isolates BOTH in a test — keyed by repo AND role, so two repos'
+# gates (or a repo's gate and ship roles) can never read each other's lock and reason
+# about a process group that was never theirs.
+def gate_runlock_root(repo, role: "gate")
+  dir = File.join(File.dirname(gate_workspace_lock_path(repo, role: role)),
+                  "mcr-#{Release::GateWorkspace.role!(role)}-runlock-#{repo}")
+  FileUtils.mkdir_p(dir)
+  dir
+end
+
+# What a gate suite hands CertProcess: where to write the runlock, and what to NAME
+# in it — so an orphan the next gate finds is reported as a lane and a database, not
+# a bare number the operator has to go identify by hand.
+def gate_suite_guard(repo, cmd, role: "gate")
+  { root: gate_runlock_root(repo, role: role),
+    lane: "#{role}:#{repo} #{cmd}",
+    db: gate_database_url(repo, role: role) }
+end
+
+# Reap or NAME whatever a killed conductor stranded on this workspace's test DB —
+# BEFORE db:test:prepare tries to purge it.
+#
+# The guard kills ONLY a process group whose recorded start time still matches the one
+# the runlock wrote when it spawned it. That is IDENTITY, not liveness: a pgid is a
+# recyclable integer, and a reaper that kills on "something is alive under this number"
+# eventually kills a stranger (it already did once, in the cert lanes — caught in
+# review, in a live reproduction). Anything it cannot PROVE is ours it refuses and
+# names, loudly, for a human.
+#
+# Every refusal here MUST carry the release convention — "an ENV issue, NOT a release
+# regression — nothing to eject or revert" — which is why the guard is handed the GATE
+# voice. An abort on this path that reads as a red suite gets a GOOD task ejected from
+# the release, and doing that over a leftover process would be the very disease the
+# isolated gate was built to cure.
+def gate_orphan_guard!(repo, path, role: "gate")
+  verdict, payload = CertOrphanGuard.preflight(
+    root: gate_runlock_root(repo, role: role),
+    env: gate_env(repo, role: role),
+    voice: CertOrphanGuard::GATE
+  )
+
+  if verdict == :refuse
+    abort!("#{role} #{repo}: the isolated #{role} workspace's test DB " \
+           "(#{gate_database_url(repo, role: role) || path}) is not clear, so the #{role} never " \
+           "reached the suite.\n#{payload}")
+  end
+
+  Array(payload).each { |notice| say("  #{notice}") }
+end
+
 # Run the block holding `repo`'s WORKSPACE lock for `role`. Always waits: a queued
 # run is correct (the other conductor is using the same tree), where proceeding
 # concurrently is guaranteed corruption.
@@ -1589,6 +1693,12 @@ end
 # prep — same reasoning, its own workspace.)
 def prepare_gate_workspace!(repo, path, role: "gate")
   ensure_suite_bundle!(repo, path, role: role)
+
+  # REAP OR NAME an orphaned suite from a killed conductor BEFORE db:test:prepare
+  # tries to purge the DB it is holding. Order is load-bearing: db:test:prepare is
+  # the exact command that dies with PG::ObjectInUse, so the guard has to run ahead
+  # of it — after this, a leftover process is either gone or NAMED, never a mystery.
+  gate_orphan_guard!(repo, path, role: role)
 
   # PROVE the DB is private BEFORE db:test:prepare — that task PURGES and reloads
   # the schema, so running it against a database we merely ASSUME is ours would
@@ -1941,7 +2051,10 @@ def pre_qa_gate(app_groups, rel_slug = nil)
       # A missing browser must abort as ENV, never as a red suite (see the guard).
       assert_system_test_browser!(repo, cmd)
       step("pre-QA gate #{repo}: #{cmd}  [#{short(sha)} · isolated workspace]")
-      _, ok = run_test_scope("pre_qa_gate", *argv, chdir: workspace, repo: repo, env: gate_env(repo))
+      # guard: → own process group, reaped with the conductor. Without it a killed
+      # conductor strands this suite on <repo>_gate_test and wedges the NEXT gate.
+      _, ok = run_test_scope("pre_qa_gate", *argv, chdir: workspace, repo: repo, env: gate_env(repo),
+                             guard: gate_suite_guard(repo, cmd))
     end
 
     # THE AUDITOR: ask GitHub what CI made of the SAME SHA, print the cross-check,
@@ -2851,7 +2964,11 @@ def test_gate(repo, frozen_sha: nil, qa_gate: nil)
     # doubly so here, where a "red gate" reads as a regression at the LAST gate
     # before an irreversible prod deploy.
     assert_system_test_browser!(repo, cmd)
-    _, ok = run_test_scope("ship_test_gate", *argv, chdir: workspace, repo: repo, label: cmd, env: gate_env(repo))
+    # guard: → own process group, reaped with the conductor. This is the LAST gate
+    # before an irreversible prod deploy: an orphan stranded here wedges the next
+    # ship attempt on a DB nobody can name.
+    _, ok = run_test_scope("ship_test_gate", *argv, chdir: workspace, repo: repo, label: cmd,
+                           env: gate_env(repo), guard: gate_suite_guard(repo, cmd))
   end
   abort!("test_cmd failed for #{repo} (#{cmd}) — aborting before the irreversible prod deploy; fix + re-run") unless ok
 end

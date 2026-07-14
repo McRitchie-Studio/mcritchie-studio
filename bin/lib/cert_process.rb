@@ -22,10 +22,23 @@ require_relative "cert_orphan_guard"
 #
 # The GROUP is the unit that matters: the suite forks (a `sh -c` wrapper, Rails'
 # own children), and killing only the leader strands the rest on the DB.
+#
+# NOT ONLY THE CERT. bin/release's G3/G4 gate suites had the identical defect —
+# `system(*argv, opts)` in bin/release.rb#sh — on the SHIP path, where the test DB is
+# FIXED per repo (`<repo>_gate_test`) rather than per worktree, so one stranded suite
+# blocks EVERY later gate for that repo instead of just its own. It reuses this module
+# rather than growing a second copy: the reaper is the last thing in the ecosystem that
+# should exist twice, because a bug in it kills the wrong process.
 module CertProcess
   SIGNALS = %w[TERM INT HUP].freeze
 
   # Run `cmd` in its own process group; return true when it exits 0.
+  #
+  # `cmd` is splatted straight into Process.spawn, so BOTH shapes work and each keeps
+  # its usual meaning: one String is the shell form (what the cert lanes pass — their
+  # registered commands carry `&&`), while an argv ARRAY is the exec form, with no
+  # shell to re-interpret it (what bin/release passes — a registry `test_cmd` already
+  # parsed to argv by test_cmd_argv, which must not be re-shelled).
   #
   # root/lane/db: when a root is given the runlock is written for the lifetime of
   # the lane, so a SIGKILLed cert leaves behind a record of the group it stranded.
@@ -36,8 +49,8 @@ module CertProcess
   # the number" unless we leave it something that identifies the process rather than
   # merely addresses it. The start time is that identity, and CertOrphanGuard refuses
   # to kill anything it cannot match against it.
-  def self.run(env, cmd, chdir:, root: nil, lane: nil, db: nil)
-    pid = Process.spawn(env, cmd, chdir: chdir, pgroup: true)
+  def self.run(env, *cmd, chdir:, root: nil, lane: nil, db: nil)
+    pid = Process.spawn(env, *cmd, chdir: chdir, pgroup: true)
     pgid = begin
       Process.getpgid(pid)
     rescue Errno::ESRCH
