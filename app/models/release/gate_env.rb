@@ -82,10 +82,12 @@ class Release
         # BOTH seams, because they are not equivalent:
         #   * TEST_DATABASE_URL is a HAND-ROLLED seam — it only works in an app
         #     whose config/database.yml test block actually renders
-        #     `url: <%= ENV["TEST_DATABASE_URL"] %>`. The hub does; turf-monster
-        #     does NOT (it has a bare `database: turf_monster_test`), so for turf
-        #     this var alone is INERT and the gate would have run — and
-        #     db:test:prepare would have PURGED — the SHARED test DB.
+        #     `url: <%= ENV["TEST_DATABASE_URL"] %>`. The hub always did; turf-monster
+        #     did NOT until 2026-07-14 (bare `database: turf_monster_test`), so for
+        #     turf this var alone was INERT and the gate would have run — and
+        #     db:test:prepare would have PURGED — the SHARED test DB. (Turf now
+        #     renders it: the AGENT DESKS have no DATABASE_URL fallback to hide
+        #     behind, so an inert pin there was purging the shared test DB for real.)
         #   * DATABASE_URL is a Rails BUILTIN: Rails merges it into the current
         #     env's resolved config for EVERY app, with no per-app wiring. That is
         #     what actually makes the private-DB guarantee hold ecosystem-wide,

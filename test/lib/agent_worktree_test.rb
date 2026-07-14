@@ -64,6 +64,16 @@ class AgentWorktreeTest < Minitest::Test
     MSG
   end
 
+  # Same seam, for the checks whose subject is what the script REPORTS rather than what
+  # it returns: the log helpers (log_ok/log_act/log_fail) write to stderr so the plan /
+  # snapshot stdout other tooling parses stays clean.
+  def run_in_script_stderr(body)
+    script = "load #{BIN.inspect}\n#{body}"
+    _out, err, status = Open3.capture3(SessionEnv.neutralized, "ruby", "-e", script)
+    assert status.success?, "script raised: #{err}"
+    err
+  end
+
   # --- allocate_port: reserved_ports are skipped, not just live listeners ------
 
   def test_allocate_port_skips_reserved_ports
@@ -418,6 +428,77 @@ class AgentWorktreeTest < Minitest::Test
   # --- integration: the REAL mcritchie config carries the reservation through
   #     the merge, and allocate_port honours it end-to-end ----------------------
 
+  # --- the desk's DB URL is ADAPTER-AWARE ---------------------------------------
+  #
+  # BLOCKER B (live, 2026-07-14): stack_values handed EVERY app a hardcoded
+  # `postgresql://localhost/<app>_development_<slug>`. rolio is `adapter: sqlite3` with
+  # no `pg` gem, so its desk got a DATABASE_URL it could not use (`bin/rails db:prepare`
+  # died on `Gem::LoadError: pg is not part of the bundle`) and a derived
+  # `rolio_test_<slug>` Postgres database that could NEVER exist — so the isolation
+  # assertion failed for every rolio desk and the atomic rollback then removed the
+  # worktree, the branch, and the stack env. `new rolio <task>` created NOTHING, EVER.
+  #
+  # A SQLite app needs no URL at all: its databases are FILES under the worktree's own
+  # storage/, private by construction.
+
+  def test_a_sqlite_app_gets_no_database_url_at_all
+    out = run_in_script(<<~RUBY)
+      require "tmpdir"
+      Dir.mktmpdir do |repo|
+        FileUtils.mkdir_p(File.join(repo, "config"))
+        File.write(File.join(repo, "config", "database.yml"), <<~YAML)
+          default: &default
+            adapter: sqlite3
+          test:
+            <<: *default
+            database: storage/test.sqlite3
+        YAML
+        print desk_database_url({ "repo" => repo }, "rolio_development_x").inspect
+      end
+    RUBY
+
+    assert_equal "nil", out, "a SQLite app must NOT be handed a postgres URL — it was a live trap"
+  end
+
+  def test_a_postgres_app_still_gets_its_desk_database_url
+    out = run_in_script(<<~RUBY)
+      require "tmpdir"
+      Dir.mktmpdir do |repo|
+        FileUtils.mkdir_p(File.join(repo, "config"))
+        File.write(File.join(repo, "config", "database.yml"), <<~YAML)
+          default: &default
+            adapter: postgresql
+          test:
+            <<: *default
+            database: turf_monster_test
+        YAML
+        print desk_database_url({ "repo" => repo }, "turf_monster_development_x")
+      end
+    RUBY
+
+    assert_equal "postgresql://localhost/turf_monster_development_x", out
+  end
+
+  def test_an_unreadable_database_yml_yields_no_url_rather_than_a_guess
+    out = run_in_script(<<~RUBY)
+      require "tmpdir"
+      Dir.mktmpdir { |repo| print desk_database_url({ "repo" => repo }, "ghost_development_x").inspect }
+    RUBY
+
+    assert_equal "nil", out
+  end
+
+  # The derived TEST url follows: no DATABASE_URL => nothing to derive => nothing to pin,
+  # and .env.test.local is never written (a SQLite desk needs no pin — and turf proved that
+  # writing one an app ignores is WORSE than writing none).
+  def test_no_database_url_means_no_test_url_to_pin
+    out = run_in_script(<<~RUBY)
+      print test_database_url({ "REDIS_URL" => "redis://localhost:6379/9" }).inspect
+    RUBY
+
+    assert_equal "nil", out
+  end
+
   def test_mcritchie_config_reserves_3020_through_the_real_merge
     # This is the only test that resolves the REAL mcritchie-studio config via
     # app_for, which validates the repo dir exists (`abort "repo missing"`). When
@@ -565,7 +646,7 @@ class AgentWorktreeTest < Minitest::Test
     out = run_in_script(<<~RUBY)
       CALLS = []
       def sh(*cmd, chdir: nil, env: {}, allow_fail: false); CALLS << cmd; true; end
-      def test_database_url(_values); "postgres://localhost/studio_test_wt"; end
+      def desk_test_db_private?(_dir, _app); true; end
       def write_test_env_local(*_args); nil; end
       prepare_test_env("/tmp/wt", { "slug" => "mcritchie-studio" }, {})
       print CALLS.inspect
@@ -575,20 +656,299 @@ class AgentWorktreeTest < Minitest::Test
                  "test:prepare hook, which is what builds the gitignored bundled CSS"
   end
 
-  # The asset build must NOT be gated on a DATABASE concern. A worktree with no derivable
-  # test DB still renders views, and hanging the CSS build off `return unless
-  # test_database_url` is precisely how the missing-asset bug creeps back in: no test DB →
-  # skip db:test:prepare ONLY, and still build.
-  def test_prepare_test_env_builds_assets_even_with_no_test_database
+  # db:test:prepare is gated on PROVEN PRIVACY, not on "is there a DATABASE_URL".
+  #
+  # It CREATES the database it resolves to — and on Postgres it will happily load a schema
+  # into the SHARED one. Assert first, destroy second. The old gate (`if
+  # test_database_url(values)`) was wrong in BOTH directions once adapters entered: it
+  # SKIPPED the prepare for a SQLite app — whose test DB is a file inside the desk, always
+  # safe, and which therefore never got created, so `new rolio` could not complete — and it
+  # would have RUN the prepare for a Postgres app whose config ignores the pin and resolves
+  # to the shared DB.
+  def test_prepare_test_env_prepares_the_db_for_a_sqlite_desk_with_no_pin_to_write
     out = run_in_script(<<~RUBY)
       CALLS = []
       def sh(*cmd, chdir: nil, env: {}, allow_fail: false); CALLS << cmd; true; end
+      def desk_test_db_private?(_dir, _app); true; end   # a SQLite desk: private by construction
+      def test_database_url(_values); nil; end            # ...and nothing to pin
+      prepare_test_env("/tmp/wt", { "slug" => "rolio" }, {})
+      print CALLS.inspect
+    RUBY
+    assert_equal '[["bin/rails", "db:test:prepare", "test:prepare"]]', out,
+                 "a SQLite desk has no TEST_DATABASE_URL to write and STILL needs db:test:prepare — " \
+                 "it is what creates storage/test.sqlite3. Gating it on the pin is why `new rolio` " \
+                 "could never complete."
+  end
+
+  # The asset build must NOT be gated on a DATABASE concern. A worktree whose isolation
+  # cannot be proven still renders views, and hanging the CSS build off the DB check is
+  # precisely how the missing-asset bug creeps back in: skip db:test:prepare ONLY, and still
+  # build. (The desk is then rejected by the isolation assertion and rolled back — but it is
+  # rejected for the DB, never for a phantom missing-asset failure.)
+  def test_prepare_test_env_skips_only_the_db_prepare_when_privacy_is_unproven
+    out = run_in_script(<<~RUBY)
+      CALLS = []
+      def sh(*cmd, chdir: nil, env: {}, allow_fail: false); CALLS << cmd; true; end
+      def desk_test_db_private?(_dir, _app); false; end
       def test_database_url(_values); nil; end
-      def write_test_env_local(*_args); raise "must not write .env.test.local without a test DB"; end
       prepare_test_env("/tmp/wt", { "slug" => "mcritchie-studio" }, {})
       print CALLS.inspect
     RUBY
     assert_equal '[["bin/rails", "test:prepare"]]', out,
-                 "no test DB skips db:test:prepare ONLY — the bundled-asset build still runs"
+                 "an unproven test DB skips db:test:prepare ONLY — never let bringup prepare (or " \
+                 "purge) a SHARED database — and the bundled-asset build still runs"
+  end
+
+  # --- atomic bringup: the undo stack -----------------------------------------
+  # `new` used to abort on a full Redis band AFTER cutting the git worktree, leaving a
+  # desk with no stack env and NO ISOLATED TEST DB — which silently shares the base test
+  # DB. Bringup is atomic now: whatever landed is unwound. The end-to-end proof (a forced
+  # failure at each provisioning step leaves nothing on disk) is in
+  # test/commands/agent_worktree_test.rb; these pin the mechanism.
+
+  def test_rollback_unwinds_in_reverse_order
+    # Reverse order is the whole contract: the worktree dir must go AFTER the things
+    # inside it, the Redis band must shrink AFTER the reservation that grew it is gone.
+    out = run_in_script(<<~RUBY)
+      done = []
+      rollback = DeskRollback.new
+      rollback.register("worktree") { done << "worktree" }
+      rollback.register("stack env") { done << "stack env" }
+      rollback.register("test db") { done << "test db" }
+      rollback.unwind!
+      print done.join(" -> ")
+    RUBY
+    assert_equal "test db -> stack env -> worktree", out
+  end
+
+  def test_rollback_runs_every_remaining_step_even_when_one_fails
+    # A rollback that dies halfway leaves exactly the debris it exists to remove — so a
+    # failing undo is REPORTED and the remaining steps still run.
+    out = run_in_script(<<~RUBY)
+      done = []
+      rollback = DeskRollback.new
+      rollback.register("worktree") { done << "worktree" }
+      rollback.register("test db") { raise "dropdb: connection refused" }
+      rollback.unwind!
+      print done.join(",")
+    RUBY
+    assert_equal "worktree", out, "the failing test-db drop must not strand the worktree on disk"
+  end
+
+  def test_rollback_reports_a_failed_step_so_it_is_never_silent
+    err = run_in_script_stderr(<<~RUBY)
+      rollback = DeskRollback.new
+      rollback.register("test database studio_test_x") { raise "dropdb: connection refused" }
+      rollback.unwind!
+    RUBY
+    assert_includes err, "ROLLBACK STEP FAILED"
+    assert_includes err, "test database studio_test_x", "the leak must be named so it can be removed by hand"
+  end
+
+  def test_commit_disarms_the_rollback
+    out = run_in_script(<<~RUBY)
+      done = []
+      rollback = DeskRollback.new
+      rollback.register("worktree") { done << "worktree" }
+      rollback.commit!
+      rollback.unwind!
+      print "undone=" + done.size.to_s + " empty=" + rollback.empty?.to_s
+    RUBY
+    assert_equal "undone=0 empty=true", out, "a desk that completed must never be unwound"
+  end
+
+  # --- atomic bringup: the capacity preflight ---------------------------------
+
+  def test_redis_slots_free_measures_against_physical_room_not_the_current_band
+    # The band GROWS restart-free up to the physical room, so `current - used` understates
+    # availability. Room = databases(24) - floor(9) = 15 slots; 10 are taken => 5 free.
+    out = run_in_script(<<~RUBY)
+      def load_current_capacity; 10; end
+      def redis_physical_count; 24; end
+      def allocated_band_dbs; (9..18).to_a; end
+      print redis_slots_free
+    RUBY
+    assert_equal "5", out
+  end
+
+  def test_redis_slots_free_is_zero_at_the_physical_ceiling
+    # The live 2026-07-13 condition: the band is as big as Redis physically allows and
+    # every slot is taken. This is what makes bringup refuse BEFORE it creates anything.
+    out = run_in_script(<<~RUBY)
+      def load_current_capacity; 55; end
+      def redis_physical_count; 64; end
+      def allocated_band_dbs; (9..63).to_a; end
+      print redis_slots_free
+    RUBY
+    assert_equal "0", out
+  end
+
+  def test_redis_slots_free_never_reports_slots_that_do_not_physically_exist
+    # A band inflated past the physical ceiling (floor 20 on a stock databases=16 Redis)
+    # must not promise 20 slots: only DBs 9-15 exist, and 7 of them are usable.
+    out = run_in_script(<<~RUBY)
+      def load_current_capacity; 20; end
+      def redis_physical_count; 16; end
+      def allocated_band_dbs; []; end
+      print redis_slots_free
+    RUBY
+    assert_equal "7", out
+  end
+
+  def test_band_full_message_names_the_reclaim_remedy
+    out = run_in_script(<<~RUBY)
+      def redis_db_min; 9; end
+      print band_full_message(64)
+    RUBY
+    assert_includes out, "Nothing was created"
+    assert_includes out, "cleanup --reclaim --yes", "the cheapest remedy must be named, not just the Redis restart"
+    assert_includes out, "scale --provision"
+  end
+
+  def test_preflight_refuses_when_the_band_is_full
+    out = run_in_script(<<~RUBY)
+      def parse_env(_path); {}; end
+      def redis_slots_free; 0; end
+      def with_worktree_lock; yield; end
+      begin
+        preflight_capacity!({ "slug" => "mcritchie-studio", "repo" => "/tmp/repo" }, "doomed")
+      rescue SystemExit
+        print "refused"
+      end
+    RUBY
+    assert_equal "refused", out
+  end
+
+  def test_preflight_lets_an_already_provisioned_desk_through
+    # A desk that already holds a stack env holds its slot: re-running `new` on it is a
+    # RESUME, not an allocation. Refusing it would make a full band un-repairable.
+    out = run_in_script(<<~RUBY)
+      def parse_env(_path); { "APP_PORT" => "3010", "REDIS_URL" => "redis://localhost:6379/20" }; end
+      def redis_slots_free; 0; end
+      def with_worktree_lock; raise "must not take the lock: nothing is being allocated"; end
+      preflight_capacity!({ "slug" => "mcritchie-studio", "repo" => "/tmp/repo" }, "existing")
+      print "allowed"
+    RUBY
+    assert_equal "allowed", out
+  end
+
+  # --- atomic bringup: the isolation assertion --------------------------------
+  # prepare_test_env is best-effort by design (a stack must be rebuildable with Postgres
+  # down), so its exit code is not the property. The PROPERTY is: this desk owns a real,
+  # reachable test database. Verify it; do not trust the command said so.
+  #
+  # And verify it by RESOLUTION, not by DECLARATION. The first cut asked whether
+  # .env.test.local CONTAINED a TEST_DATABASE_URL — a string whose presence proves nothing,
+  # because it only takes effect if the app's config/database.yml reads it. turf-monster's
+  # did not, so every turf desk "passed" this assertion while resolving to the SHARED
+  # turf_monster_test. These vectors therefore state what the BOOTED APP resolves to (the
+  # DeskGuard.resolve seam) and assert the verdict that follows.
+  #
+  # `app` here is the app hash; APP is a repo with a postgres database.yml on disk.
+
+  def with_pg_repo
+    Dir.mktmpdir do |repo|
+      FileUtils.mkdir_p(File.join(repo, "config"))
+      File.write(File.join(repo, "config", "database.yml"), <<~YAML)
+        default: &default
+          adapter: postgresql
+        test:
+          <<: *default
+          database: studio_test
+      YAML
+      yield repo
+    end
+  end
+
+  def isolation_verdict(resolved:, exists: true, booted: true, desk: "/tmp/repo/.worktrees/desk")
+    with_pg_repo do |repo|
+      run_in_script(<<~RUBY)
+        require "tmpdir"
+        module DeskGuard
+          def self.resolve(_root, env: {}); [#{resolved.inspect}, "boot output", #{booted}]; end
+        end
+        def database_exists?(_db); #{exists.inspect}; end
+        failure = isolated_test_db_failure(#{desk.inspect}, { "slug" => "mcritchie-studio", "repo" => #{repo.inspect} }, {})
+        print failure.nil? ? "nil" : failure.fetch(:reason) + " || " + failure.fetch(:remedy)
+      RUBY
+    end
+  end
+
+  def test_isolation_assertion_passes_only_for_a_real_reachable_test_db
+    assert_equal "nil", isolation_verdict(resolved: "studio_test_desk", exists: true)
+  end
+
+  def test_isolation_assertion_catches_a_test_db_that_was_never_created
+    out = isolation_verdict(resolved: "studio_test_desk", exists: false)
+
+    assert_includes out, "does not exist"
+    assert_includes out, "pg_isready", "a Postgres app's remedy names Postgres"
+  end
+
+  def test_isolation_assertion_catches_an_unreachable_postgres
+    # database_exists? returns nil when pg_isready fails. "Unknown" is NOT "fine": an
+    # unverifiable desk is exactly the one that silently shares the base test DB.
+    assert_includes isolation_verdict(resolved: "studio_test_desk", exists: nil), "Postgres is unreachable"
+  end
+
+  # THE BLOCKER-A VECTOR. The desk resolves to the SHARED database — however loudly its
+  # .env.test.local declares otherwise. The old assertion passed this; it must fail, and its
+  # remedy must point at the REPO'S CONFIG, because re-running bringup would faithfully
+  # rewrite the very same inert pin (an infinite loop).
+  def test_isolation_assertion_catches_a_desk_that_resolves_to_the_shared_db
+    out = isolation_verdict(resolved: "studio_test")
+
+    assert_includes out, "SHARED test database"
+    assert_includes out, "INERT"
+    assert_includes out, 'url: <%= ENV["TEST_DATABASE_URL"] %>'
+    refute_includes out, "pg_isready", "a config problem must NOT send the operator to restart Postgres"
+  end
+
+  # THE BLOCKER-B VECTOR. A SQLite desk's test DB is a FILE inside the desk. It has no
+  # TEST_DATABASE_URL and needs none — the assertion must pass on the FILE existing, and its
+  # failure must never mention Postgres.
+  def test_isolation_assertion_accepts_a_sqlite_desk_whose_db_file_exists
+    Dir.mktmpdir do |repo|
+      FileUtils.mkdir_p(File.join(repo, "config"))
+      File.write(File.join(repo, "config", "database.yml"), <<~YAML)
+        default: &default
+          adapter: sqlite3
+        test:
+          <<: *default
+          database: storage/test.sqlite3
+      YAML
+      desk = File.join(repo, ".worktrees", "desk")
+      FileUtils.mkdir_p(File.join(desk, "storage"))
+
+      # The MISSING case first: the file this asserts on is created below, and it is a real
+      # file on a real disk that outlives the subprocess.
+      missing = run_in_script(<<~RUBY)
+        module DeskGuard
+          def self.resolve(_root, env: {}); ["storage/test.sqlite3", "", true]; end
+        end
+        def database_exists?(_db); raise "a SQLite desk must never be probed with psql"; end
+        failure = isolated_test_db_failure(#{desk.inspect}, { "slug" => "rolio", "repo" => #{repo.inspect} }, {})
+        print failure.fetch(:reason) + " || " + failure.fetch(:remedy)
+      RUBY
+      assert_includes missing, "was not created"
+      refute_includes missing, "brew services", "never tell a SQLite operator to restart Postgres"
+
+      present = run_in_script(<<~RUBY)
+        module DeskGuard
+          def self.resolve(_root, env: {}); ["storage/test.sqlite3", "", true]; end
+        end
+        def database_exists?(_db); raise "a SQLite desk must never be probed with psql"; end
+        FileUtils.touch(#{File.join(desk, "storage", "test.sqlite3").inspect})
+        print isolated_test_db_failure(#{desk.inspect}, { "slug" => "rolio", "repo" => #{repo.inspect} }, {}).inspect
+      RUBY
+      assert_equal "nil", present, "a SQLite desk with its test DB file in place is isolated — allow it"
+    end
+  end
+
+  def test_isolation_assertion_fails_closed_when_the_app_will_not_boot
+    out = isolation_verdict(resolved: "", booted: false)
+
+    assert_includes out, "could not boot"
+    assert_includes out, "boot output", "the captured output is the evidence"
   end
 end

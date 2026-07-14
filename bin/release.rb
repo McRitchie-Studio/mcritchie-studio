@@ -1634,13 +1634,16 @@ end
 # WHY, and why asserting the DB NAME STRING would not do: the "private test DB" is
 # delivered by an ENV overlay, and an env var only lands if the app's
 # config/database.yml actually reads it. `TEST_DATABASE_URL` is a HAND-ROLLED seam
-# — the hub renders `url: <%= ENV["TEST_DATABASE_URL"] %>`; turf-monster does NOT
-# (bare `database: turf_monster_test`). So for turf the overlay was silently
-# INERT: the gate would have run — and `db:test:prepare` would have PURGED — the
-# SHARED primary test DB. `DATABASE_URL` (a Rails builtin) now covers every app,
-# but a guarantee that rests on every future app's config being right is a
-# CONVENTION, not an invariant. This makes it an invariant: ask the booted app,
-# and treat a shared DB as a hard abort — never a silent stomp.
+# — the hub renders `url: <%= ENV["TEST_DATABASE_URL"] %>`, and turf-monster did NOT
+# until 2026-07-14 (bare `database: turf_monster_test`). So for turf the overlay was
+# silently INERT: the gate would have run — and `db:test:prepare` would have PURGED —
+# the SHARED primary test DB. `DATABASE_URL` (a Rails builtin) covers every app, and
+# turf now renders the `url:` line too — but a guarantee that rests on every future
+# app's config being right is a CONVENTION, not an invariant. This makes it an
+# invariant: ask the booted app, and treat a shared DB as a hard abort — never a
+# silent stomp. The AGENT DESKS now assert the same property the same way
+# (bin/lib/desk_guard.rb), after the presence-checking version of that guard let every
+# turf desk purge the shared test DB while reporting it as isolated.
 def assert_private_gate_db!(repo, path, role: "gate")
   probe = 'print "GATEDB=#{ActiveRecord::Base.connection_db_config.database}"'
   out, ok = sh("bin/rails", "runner", probe, chdir: path, capture: true, env: gate_env(repo, role: role))
