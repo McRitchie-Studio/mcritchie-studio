@@ -158,6 +158,10 @@ module TestDatabasePurge
     #   "<base>_<slug>"     per-worktree isolated test DBs (TEST_DATABASE_URL)
     #   "<app>_gate_test"   bin/release.rb's isolated GATE workspace  ┐ role INFIXED
     #   "<app>_ship_test"   bin/release.rb's isolated SHIP workspace  ┘ before `_test`
+    #   "<app>_gate_test-0" parallel-test clone of a workspace DB — the release gate
+    #                       runs its OWN suite parallelized, so the gate workspace DB
+    #                       forks to "<app>_gate_test-0" per worker, exactly as the base
+    #                       forks to "<base>-0". Admitted on the SAME "-" boundary.
     #
     # The separator is REQUIRED on the prefix rules, so a look-alike like
     # "mcritchie_studio_testing_dev" does not sneak through on a bare prefix match.
@@ -176,7 +180,7 @@ module TestDatabasePurge
       name == base ||
         name.start_with?("#{base}-") ||
         name.start_with?("#{base}_") ||
-        workspace_databases(base).include?(name)
+        workspace_databases(base).any? { |wdb| name == wdb || name.start_with?("#{wdb}-") }
     end
 
     # The release workspaces' FIXED test-DB names, derived from the base test DB:
