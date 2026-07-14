@@ -288,6 +288,38 @@ class StateStoreContainmentTest < Minitest::Test
     producers
   end
 
+  # Which methods are PRIVATE — the fact LAYER 2a turns on.
+  #
+  # This started as `src.split(/^\s*private$/)` — "everything after the first bare
+  # `private`". It was WRONG, and it took a mutation to show it: bin/lib/agent_api.rb has
+  # a `private` at :38 inside the nested `module Presence`, so the naive split read the
+  # whole rest of the file as private. Hoisting token_cache_path to PUBLIC — the exact
+  # break 2a exists to catch — still passed. A guard that cannot fail is not a guard.
+  #
+  # So visibility is tracked PER SCOPE: a bare `private` binds only defs at its own
+  # indentation, and a `class`/`module`/`end` discards the visibility of every scope
+  # deeper than itself (which is what retires the `module Presence` private at its `end`).
+  # Erring here has a direction: reading a PUBLIC method as private would MISS a real
+  # export, so the scope reset is the safety-critical half.
+  def private_method_names(src)
+    names = src.scan(/private_class_method\s+:(\w+)|private\s+:(\w+)/).flatten.compact.to_set
+    visibility = {}
+
+    src.lines.each do |line|
+      case line
+      when /^(\s*)(?:module|class|end)\b/
+        visibility.delete_if { |indent, _| indent > Regexp.last_match(1).length }
+      when /^(\s*)(private|protected)\s*$/
+        visibility[Regexp.last_match(1).length] = :private
+      when /^(\s*)public\s*$/
+        visibility[Regexp.last_match(1).length] = :public
+      when /^(\s*)def\s+(?:self\.)?([A-Za-z_][\w?!]*)/
+        names << Regexp.last_match(2) if visibility[Regexp.last_match(1).length] == :private
+      end
+    end
+    names
+  end
+
   # A violation: a method that REACHES a raw store path without laundering it, and is
   # not on the file's justified read-only list. Note what is absent — any notion of what
   # the method DOES with the path. Holding it is the violation.
@@ -441,12 +473,10 @@ class StateStoreContainmentTest < Minitest::Test
       src = strip_comments(File.read(file))
       next [] unless src =~ PATH_RE
 
-      methods = methods_in(src)
-      producers = raw_producers(src, methods)
-      private_names = src.scan(/private_class_method\s+:(\w+)|private\s+:(\w+)/).flatten.compact.to_set
-      after_private = src.split(/^\s*private\s*$/, 2)[1].to_s
-      producers.reject { |p| private_names.include?(p) || after_private =~ /^\s*def\s+(?:self\.)?#{Regexp.escape(p)}\b/ }
-               .map { |p| "#{file.delete_prefix("#{ROOT}/")}##{p}" }
+      private_names = private_method_names(src)
+      raw_producers(src, methods_in(src))
+        .reject { |p| private_names.include?(p) }
+        .map { |p| "#{file.delete_prefix("#{ROOT}/")}##{p}" }
     end
 
     assert_empty exported,
@@ -612,16 +642,47 @@ class StateStoreContainmentTest < Minitest::Test
     # here against the two real builders so the two tests cannot drift apart.
     %w[bin/lib/agent_api.rb bin/lib/session_markers.rb].each do |lib|
       src = strip_comments(File.read(File.join(ROOT, lib)))
-      producers = raw_producers(src, methods_in(src))
-      after_private = src.split(/^\s*private\s*$/, 2)[1].to_s
-      names = src.scan(/private_class_method\s+:(\w+)/).flatten.to_set
+      private_names = private_method_names(src)
 
-      producers.each do |p|
-        assert names.include?(p) || after_private =~ /^\s*def\s+(?:self\.)?#{Regexp.escape(p)}\b/,
-               "#{lib}##{p} returns a raw store path and is PUBLIC — a caller can borrow it and never name " \
-               "the store, which no source scan can see"
+      raw_producers(src, methods_in(src)).each do |p|
+        assert_includes private_names, p,
+                        "#{lib}##{p} returns a raw store path and is PUBLIC — a caller can borrow it and " \
+                        "never name the store, which no source scan can see"
       end
     end
+  end
+
+  # The visibility analyser LAYER 2a stands on, asserted against the shape that broke its
+  # first draft. bin/lib/agent_api.rb really does carry a `private` inside a nested module
+  # (module Presence, :38) ABOVE a public method — so "everything after the first bare
+  # private" read the whole file as private, and hoisting token_cache_path to public still
+  # passed. The mutation that proves 2a can fail is the only reason that was ever found.
+  def test_unit_visibility_analyser_is_not_fooled_by_a_private_in_a_nested_scope
+    src = <<~RUBY
+      class Api
+        module Presence
+          private
+
+          def helper; end
+        end
+
+        def exported_path
+          File.join(dir, ".agents", "x")
+        end
+
+        private
+
+        def hidden_path
+          File.join(dir, ".agents", "y")
+        end
+      end
+    RUBY
+
+    names = private_method_names(src)
+    assert_includes names, "hidden_path", "a bare `private` at the method's own indent makes it private"
+    refute_includes names, "exported_path",
+                    "the nested module's `private` must NOT leak out past its `end` — reading a PUBLIC " \
+                    "method as private is how LAYER 2a silently stops catching an exported raw path"
   end
 
   def test_unit_scanner_passes_the_guarded_sibling_and_the_declared_read
