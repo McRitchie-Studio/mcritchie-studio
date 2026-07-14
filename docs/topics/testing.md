@@ -15,7 +15,7 @@
 
 ## Rails Tests
 
-- `bin/rails test` — 596 runs, 1642 assertions, 4 skips
+- `bin/rails test` — 3,879 runs, 20,782 assertions, 4 skips (measured 2026-07-14; the "596 runs, 1642 assertions" this line used to claim was years stale)
 - Test fixtures for users, agents, tasks, news, contents, skills, teams, people, contracts, athletes (in `test/fixtures/`)
 - User fixtures may keep `password_digest` because `has_secure_password` still exists as a dormant fallback; app authentication is passwordless.
 - `log_in_as(user)` helper for integration tests mints and consumes a magic-link token.
@@ -29,8 +29,9 @@
 - `npm run test:headed` — runs with visible browser
 - `npm run test:ui` — opens Playwright UI mode
 - **Config**: `playwright.config.js` — Chromium only, defaults to port 3000, accepts `E2E_PORT=<port>`, auto-starts test Rails server with local email capture enabled
-- **Seed**: `e2e/seed.rb` — 1 admin user (`alex@test.com`), 2 agents, 2 skills, 3 tasks, 2 activities. Idempotent via delete_all.
-- **Cleanup**: Playwright seeds into `RAILS_ENV=test`; before running the Rails suite after e2e work, reset with `RAILS_ENV=test bin/rails db:test:purge db:test:prepare`. `bin/full-suite-check` runs that reset automatically before certifying CI's command (`bin/rails db:test:prepare test test:system`).
+- **Seed**: `e2e/seed.rb` — an admin user (`alex@test.com`) plus **22 models across ~20 tables**: agents, skills + assignments, tasks + task_events, activities, agent_activities, agent_actions, action_grades, pokemons, session_mascots, releases, gate_runs, coaches, teams, people, usages, error_logs. Idempotent via `delete_all`. **Eight of those tables have NO fixture** (`action_grades`, `agent_actions`, `agent_activities`, `gate_runs`, `pokemons`, `releases`, `session_mascots`, `task_events`) — do not trust this list to stay current, ask the code: `TestDatabasePurge.unfixtured_tables` names all 45 un-fixtured tables of the 73 in the schema. (The old entry here read "1 admin user, 2 agents, 2 skills, 3 tasks, 2 activities" — that undercount is precisely what let the pollution bug hide.)
+- **Cleanup**: none needed — **the minitest database is hermetic by construction.** `test/test_helper.rb` runs `TestDatabasePurge.purge!` at load (and again in each parallel worker), truncating every application table before fixtures load, so rows any other process committed — the e2e seed, a stray `bin/rails runner`, a killed test — cannot reach a test. The old hand-reset ritual (`RAILS_ENV=test bin/rails db:test:purge db:test:prepare` after e2e work) is designed out; you no longer run it. `bin/full-suite-check` still performs that reset before certifying (belt-and-suspenders), but it is no longer the thing that saves you.
+- **The purge FAILS CLOSED.** It empties every table, so it refuses to run unless it can *prove* the connection holds this app's test database: `RAILS_ENV` must be `test`, and the connected DB (read back from the live connection) must be the `database:` literal `config/database.yml` declares for `test` — or a legitimate derivative (`…-0` parallel clones, `…_<worktree>` isolated DBs). It raises `TestDatabasePurge::UnsafeDatabase` rather than truncate anything it cannot vouch for. Never rescue that error to "get the suite running": it means the suite was about to empty a database that is not the test database.
 - **Helper**: `e2e/helpers.js` — `loginWithMagicLink(page, email)` requests a link, reads `/_studio/local_emails.json`, confirms, and consumes it.
 - **Spec file**: `e2e/smoke.spec.js` — page loads, passwordless auth, nav links, theme toggle
 

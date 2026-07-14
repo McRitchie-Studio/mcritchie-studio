@@ -58,6 +58,17 @@ wrong checkout (e.g. the hub primary on `main`) exits 1 naming the worktree to
 `cd` into instead of green-certifying an unrelated tree
 (`bin/lib/cert_root_guard.rb`).
 
+The **committed tree** is enforced the same way: given a task slug, both cert
+runners **refuse a dirty working tree**, naming the uncommitted files and
+telling you to commit first (`bin/lib/cert_tree_guard.rb`). The fingerprint is a
+tree hash of the WORKING tree, so certifying with edits still uncommitted stamps
+GREEN evidence over code the PR never receives — on 2026-07-14 a worktree's 146
+lines of finished, tested work were certified and then never reached PR #537.
+"Certify after the final commit" is now a rule, not a memory. (A stat-stale
+index — a file rewritten with identical content, so only its mtime moved — is
+NOT dirt: the guard refreshes the index before reading it, so it cannot
+false-refuse a tree nobody edited.)
+
 1. **Certify — fast route (default):**
 
    ```bash

@@ -78,6 +78,7 @@ require_relative "lib/repo_root"
 require_relative "lib/session_identity"
 require_relative "lib/cert_emission"
 require_relative "lib/cert_root_guard"
+require_relative "lib/cert_tree_guard"
 require_relative "lib/ci_test_command"
 require_relative "lib/system_test_browser"
 
@@ -189,17 +190,33 @@ if slug && ENV["FULL_SUITE_ROOT"].to_s.strip.empty?
   abort "full-suite-check: #{wrong_root}" if wrong_root
 end
 
+# --- dirty-tree guard ----------------------------------------------------------
+# Same family as the root guard above, same fail-GREEN shape: the root guard stops
+# a cert of the wrong TREE, this one stops a cert of an UNCOMMITTED tree. The
+# fingerprint hashes the WORKING tree (git add -A + write-tree), so certifying with
+# edits still uncommitted stamps GREEN evidence over code the PR never receives —
+# live on 2026-07-14, when a worktree's 146 lines of certified work never reached
+# PR #537. Certify AFTER the final commit; this makes that a rule, not a memory.
+# Same gating as the root guard: only with a slug (no slug → --print/the opt-in
+# pre-push hook, which records nothing) and only on an IMPLICIT root (an explicit
+# FULL_SUITE_ROOT is the deliberate CI/test seam). The index is refreshed before it
+# is read, so a stat-stale tree cannot false-refuse. bin/lib/cert_tree_guard.rb.
+if slug && ENV["FULL_SUITE_ROOT"].to_s.strip.empty?
+  dirty = CertTreeGuard.refusal(command: "bin/full-suite-check", root: root)
+  abort "full-suite-check: #{dirty}" if dirty
+end
+
 # The test lane runs WHAT CI RUNS for the repo being certified — read from its own
 # .github/workflows/ci.yml, verbatim (bin/lib/ci_test_command.rb). Hard-coding
 # `bin/rails test` here is what let this "CI-independent" cert skip test/system
 # entirely; resolving from ci.yml means the two can't drift apart again.
 #
-# The resolver selects CI's step by what it DOES (does it run tests?), never by a
-# `bin/rails` mention — a setup step parked ahead of the real one would otherwise
-# BE the "full-suite lane": it runs, exits 0, and stamps green having run ZERO
-# tests. And when it can read CI's `test` job but finds no test command in it, it
-# REFUSES here, loudly, rather than certify something that isn't CI's suite. An
-# explicit FULL_SUITE_TEST_CMD is the operator saying "run THIS" — it overrides
+# The resolver judges CI by what it RUNS, never by a `bin/rails` mention — and it
+# REFUSES, loudly, whatever it cannot SEE or cannot RUN: a suite split across steps,
+# jobs or workflow files; a suite behind a wrapper it cannot invoke verbatim; a job
+# with no readable steps; a command whose text does not say what it runs. A cert that
+# cannot find CI's whole suite must say so, not quietly certify something narrower.
+# An explicit FULL_SUITE_TEST_CMD is the operator saying "run THIS" — it overrides
 # both the resolution and the refusal.
 test_cmd = ENV.fetch("FULL_SUITE_TEST_CMD") do
   ci_refusal = CiTestCommand.refusal(root)

@@ -338,6 +338,90 @@ class PokemonPokedexTest < ActiveSupport::TestCase
     assert_nil pokedex.newest_caught
   end
 
+  # THE GRID. Its three states are the two card numbers, per species — so they must be
+  # derived from the same sets, and the caught-before-seen order is load-bearing: a
+  # catch IS a sighting, so every caught species is also in seen_slugs and would
+  # render as merely "seen" if :seen were tested first.
+  test "[unit] dex entries carry each species' collection state, in dex order" do
+    Pokemon.create!(dex: 4, name: "Charmander", slug: "charmander", generation: 1,
+                    base: "charmander", evolution: ["charmeleon"])
+    Pokemon.create!(dex: 5, name: "Charmeleon", slug: "charmeleon", generation: 1,
+                    base: "charmander", evolution: ["charizard"])
+    charizard = Pokemon.create!(dex: 6, name: "Charizard", slug: "charizard", generation: 1,
+                                base: "charmander", evolution: [])
+    pikachu = Pokemon.create!(dex: 25, name: "Pikachu", slug: "pikachu", generation: 1)
+    Pokemon.create!(dex: 143, name: "Snorlax", slug: "snorlax", generation: 1) # never touched
+
+    # Pikachu was only ever SPAWNED — seen, not caught.
+    SessionMascot.create!(session_id: "s-pika", mascot_slug: pikachu.slug)
+    # A shipped task CATCHES the Charizard line: final form + both pre-evolutions.
+    ship = Task.create!(title: "Ship Charizard Line",
+                        metadata: { "devops" => { "mascot" => charizard.slug } })
+    TaskEvent.create!(task_slug: ship.slug, from_stage: "assembled", to_stage: "shipped",
+                      occurred_at: 5.minutes.ago, metadata: { "mascot" => { "slug" => charizard.slug } })
+
+    entries = PokemonPokedex.new.dex_entries
+
+    assert_equal [4, 5, 6, 25, 143], entries.map { |entry| entry.pokemon.dex }, "dex order"
+    assert_equal({ "charmander" => :caught, "charmeleon" => :caught, "charizard" => :caught,
+                   "pikachu" => :seen, "snorlax" => :unseen },
+                 entries.to_h { |entry| [entry.pokemon.slug, entry.state] })
+
+    # The caught line is SEEN too (the dex invariant) — it must still read as caught.
+    caught = entries.find { |entry| entry.pokemon.slug == "charizard" }
+    assert caught.caught?
+    assert caught.revealed?
+    assert_not caught.unseen?
+
+    unseen = entries.find { |entry| entry.pokemon.slug == "snorlax" }
+    assert unseen.unseen?
+    assert_not unseen.revealed?, "an unseen species is inert — no shiny flip"
+  end
+
+  test "[unit] every entry state is one the grid can draw, and each species appears once" do
+    3.times { |i| Pokemon.create!(dex: i + 1, name: "Mon#{i}", slug: "mon-#{i}", generation: 1) }
+    SessionMascot.create!(session_id: "s", mascot_slug: "mon-1")
+
+    entries = PokemonPokedex.new.dex_entries
+
+    assert_equal Pokemon.count, entries.size, "one cell per seeded species"
+    assert_equal entries.map { |entry| entry.pokemon.slug }.uniq.size, entries.size, "no species twice"
+    assert_equal [], entries.map(&:state) - %i[caught seen unseen], "no state the grid cannot draw"
+  end
+
+  # The evolution circles are resolved off the in-memory dex, never Pokemon#evolutions
+  # (which queries per cell — 251 of them on a public page). They carry ENTRIES, not
+  # bare Pokémon, so each circle can be drawn in its own state.
+  test "[unit] dex entries link the line ahead as entries, in their own states" do
+    Pokemon.create!(dex: 133, name: "Eevee", slug: "eevee", generation: 1, base: "eevee",
+                    evolution: %w[vaporeon jolteon])
+    Pokemon.create!(dex: 134, name: "Vaporeon", slug: "vaporeon", generation: 1, base: "eevee", evolution: [])
+    Pokemon.create!(dex: 135, name: "Jolteon", slug: "jolteon", generation: 1, base: "eevee", evolution: [])
+
+    # Vaporeon is seen; Jolteon has never been met.
+    SessionMascot.create!(session_id: "s-vap", mascot_slug: "vaporeon")
+
+    entries = PokemonPokedex.new.dex_entries.index_by { |entry| entry.pokemon.slug }
+
+    assert_equal %w[vaporeon jolteon], entries["eevee"].evolutions.map { |evo| evo.pokemon.slug }
+    assert_equal %i[seen unseen], entries["eevee"].evolutions.map(&:state),
+                 "each circle carries its OWN state — a caught cell never spoils an unmet next form"
+    assert_empty entries["vaporeon"].evolutions, "a final form has no line ahead"
+  end
+
+  test "[unit] a species sighted shiny is flagged shiny_seen" do
+    Pokemon.create!(dex: 25, name: "Pikachu", slug: "pikachu", generation: 1)
+    Pokemon.create!(dex: 133, name: "Eevee", slug: "eevee", generation: 1)
+
+    SessionMascot.create!(session_id: "s-shiny", mascot_slug: "pikachu", shiny: true)
+    SessionMascot.create!(session_id: "s-plain", mascot_slug: "eevee", shiny: false)
+
+    entries = PokemonPokedex.new.dex_entries.index_by { |entry| entry.pokemon.slug }
+
+    assert entries["pikachu"].shiny_seen
+    assert_not entries["eevee"].shiny_seen
+  end
+
   test "[unit] a newer ship with a non-Pokemon mascot never blanks the caught card" do
     pikachu = Pokemon.create!(dex: 25, name: "Pikachu", slug: "pikachu", generation: 1,
                               base: "pikachu", evolution: [])

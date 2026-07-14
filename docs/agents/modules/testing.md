@@ -167,6 +167,50 @@ Two rules follow:
   `bin/rails db:test:prepare test:prepare`, one boot. `test/lib/tasks/test_prepare_asset_hook_test.rb`
   pins the hook that makes this work.
 
+## The Minitest DB Starts EMPTY — And The E2E Lane Must Not Share It
+
+**The minitest database is hermetic by construction.** `test/test_helper.rb` runs
+`TestDatabasePurge.purge!` at load (and again inside each parallel worker),
+truncating **every** application table before fixtures load. Rails only truncates
+the ~28 tables it has fixtures for; the other ~45 kept whatever any other process
+committed. The e2e lane committed exactly that — `playwright.config.js`'s
+`webServer` runs `e2e/seed.rb` against the SAME test DB under `RAILS_ENV=test` —
+and its un-fixtured rows (pokemons, releases, task_events, …) broke minitest tests
+that never went near e2e. A builder then hunts a phantom regression in their own
+diff. **You no longer hand-reset the test DB after e2e work.**
+
+**The reverse hazard is now WIDER, and it is not yet closed.** `playwright.config.js`
+still seeds and serves against the same test DB, and `reuseExistingServer: !CI`
+keeps a local e2e server alive between runs. A minitest boot used to truncate the
+28 fixtured tables out from under a live e2e server; it now truncates all ~73. So:
+
+> **Do not run the minitest suite and the e2e lane concurrently against the same
+> database.** Until e2e owns its own DB (the producer-side fix — deferred), the two
+> lanes share one, and whichever boots second empties the first one's world.
+
+**The purge FAILS CLOSED — copy this shape.** A routine that empties every table
+must *prove* its target before it fires, because the harness does not guarantee it:
+`ENV["RAILS_ENV"] ||= "test"` does **not** override an already-exported `RAILS_ENV`,
+and `rails/test_help` aborts only on production — so `RAILS_ENV=development bin/rails test`
+boots the suite straight onto the shared development database. `TestDatabasePurge`
+therefore refuses (raises `UnsafeDatabase`) unless **both** hold: `Rails.env.test?`,
+**and** the database read back from the live connection is the `database:` literal
+`config/database.yml` declares for `test`, or a legitimate derivative (`…-0` clones,
+`…_<worktree>` isolated DBs). Same doctrine as the release gate's
+`assert_private_gate_db!` — *ask the booted app, and treat a foreign DB as a hard
+abort, never a silent stomp.*
+
+**Anchor the expectation in something the ENV var cannot move.** The obvious check —
+"connected DB == `configs_for(env_name: "test").database`" — is a **placebo**, and it
+was measured as one on this app: Rails merges `DATABASE_URL` into the config *for the
+current env*, and under the suite that env **is** `test`. So `RAILS_ENV=test
+DATABASE_URL=…/mcritchie_studio_development` rewrites the **test** config to the dev DB;
+connection and expectation both read `mcritchie_studio_development`, the equality
+passes, and the purge stomps the shared dev DB. Comparing a value against a config the
+same ENV var just rewrote is comparing a moved value **to itself**. The `database.yml`
+literal does not move — anchor there. (`test/lib/test_database_purge_test.rb` pins this:
+swap the anchor back to `configs_for` and the "placebo case" goes red.)
+
 ## A Test May Never Write The Operator's Real `.agents` State
 
 The `bin/` stack keeps two stores **outside** the repo, under the real projects
