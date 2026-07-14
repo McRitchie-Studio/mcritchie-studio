@@ -87,6 +87,11 @@ class FastCheckTest < Minitest::Test
       write.call("test/models/spine_core_test.rb", "spine test\n")
       write.call("spine.yml", "spine:\n  - test/models/spine_core_test.rb\n")
       write_repo_shape(dir, subpath)
+      # The harness writes its stub CLIs and their log INTO the repo dir, so without
+      # this they read as untracked dirt to the dirty-tree guard (cert_tree_guard.rb)
+      # — test tooling, not uncommitted work. Ignoring them keeps the fixture's dirt
+      # HONEST: the only uncommitted file is the branch diff itself (widget.rb below).
+      write.call(".gitignore", "stub.log\n*-stub\n")
       git.call("init -q")
       git.call("config user.email tester@example.com")
       git.call("config user.name tester")
@@ -554,11 +559,91 @@ class FastCheckTest < Minitest::Test
   def test_task_branch_checkout_certifies_without_a_root_override
     with_repo do |dir, _|
       assert system("git", "-C", dir, "checkout", "-qb", "feat/task-x", out: File::NULL, err: File::NULL)
+      # COMMIT the branch diff first — the dirty-tree guard below now enforces what
+      # was previously only a house rule, so the cert is the LAST build step. Diffing
+      # from HEAD~1 keeps widget.rb in the mapped lane now that it is committed.
+      commit_all(dir)
       out, code, lines = run_check(dir, args: ["task-x"], implicit_root: true,
-                                   extra_env: { "TASK_SHOW_JSON" => GUARD_JSON })
+                                   extra_env: { "TASK_SHOW_JSON" => GUARD_JSON,
+                                                "FAST_CHECK_DIFF_BASE" => "HEAD~1" })
       assert_equal 0, code, "the task's own tree certifies from cwd with no override: #{out}"
       assert_match(/\[fast-cert@/, out)
       assert(lines.any? { |l| l[0] == "TASK" && l[1] == "update" }, "evidence recorded: #{lines.inspect}")
+      assert_includes lane_calls(lines, "TEST").flatten, "test/models/widget_test.rb",
+                      "the mapped lane still selects off the diff once it is committed"
     end
+  end
+
+  # --- [integration] dirty-tree guard: certify only a fully-committed HEAD ----------
+  # The cert fingerprint is a git TREE hash of the WORKING tree, so a cert taken with
+  # edits uncommitted stamps GREEN evidence for code the PR never receives — live on
+  # 2026-07-14, when a worktree's 146 lines of finished, tested work were certified
+  # and then never reached PR #537. The refusal must land BEFORE any lane runs or any
+  # gate/checkpoint/evidence write, exactly like the root guard above
+  # (bin/lib/cert_tree_guard.rb).
+
+  def test_dirty_tree_cert_is_refused_before_any_lane_runs
+    with_repo do |dir, _|
+      assert system("git", "-C", dir, "checkout", "-qb", "feat/task-x", out: File::NULL, err: File::NULL)
+      # The RIGHT tree (task-x's branch) — but widget.rb is still uncommitted.
+      out, code, lines = run_check(dir, args: ["task-x"], implicit_root: true,
+                                   extra_env: { "TASK_SHOW_JSON" => GUARD_JSON })
+
+      assert_equal 1, code, "an uncommitted tree must refuse, not green-certify: #{out}"
+      assert_match(/DIRTY/, out)
+      assert_match(%r{app/models/widget\.rb}, out, "the refusal NAMES the uncommitted file")
+      assert_match(/commit/i, out, "the refusal states the fix")
+      refute_match(/\[fast-cert@/, out, "no evidence for a tree that is not on the PR")
+      assert_empty lane_calls(lines, "TEST"), "refusal fires BEFORE any lane runs"
+      refute(lines.any? { |l| l[0] == "GATE" }, "no G1 attempt opens for a refused run: #{lines.inspect}")
+      refute(lines.any? { |l| l[0] == "TASK" && l[1] == "update" }, "nothing recorded for a refused run")
+    end
+  end
+
+  def test_stale_mtime_tree_still_certifies
+    # THE FALSE POSITIVE the guard must not become. A tracked file rewritten with
+    # IDENTICAL content has a fresh mtime, leaving git's stat cache stale — which the
+    # cheap dirty reads (git diff-index) call MODIFIED. On the CERT path a false
+    # refusal blocks every handoff, so the guard refreshes the index before reading
+    # it. Unit-level proof, including the index-refresh mechanism itself, lives in
+    # test/lib/cert_tree_guard_test.rb.
+    with_repo do |dir, _|
+      assert system("git", "-C", dir, "checkout", "-qb", "feat/task-x", out: File::NULL, err: File::NULL)
+      commit_all(dir)
+
+      tracked = File.join(dir, "app/models/widget.rb")
+      body = File.read(tracked)
+      File.write(tracked, body)                                       # byte-identical rewrite
+      FileUtils.touch(tracked, mtime: Time.now + (10 * 365 * 24 * 3600))
+      refute system("git", "-C", dir, "diff-index", "--quiet", "HEAD", out: File::NULL, err: File::NULL),
+             "fixture check: the index must actually BE stat-stale, else this proves nothing"
+
+      out, code, lines = run_check(dir, args: ["task-x"], implicit_root: true,
+                                   extra_env: { "TASK_SHOW_JSON" => GUARD_JSON,
+                                                "FAST_CHECK_DIFF_BASE" => "HEAD~1" })
+
+      assert_equal 0, code, "a stat-stale index is a CLEAN tree — it must still certify: #{out}"
+      refute_match(/DIRTY/, out, "a file nobody edited must never be reported as uncommitted work")
+      assert_match(/\[fast-cert@/, out)
+      assert(lines.any? { |l| l[0] == "TASK" && l[1] == "update" }, "evidence recorded: #{lines.inspect}")
+    end
+  end
+
+  def test_explicit_root_override_bypasses_the_dirty_tree_guard
+    # Same contract as the root guard: an EXPLICIT FAST_CHECK_ROOT is the deliberate
+    # CI/test seam, so it bypasses. (run_check's default path sets it — that is why
+    # every other test in this file certifies against the fixture's uncommitted diff.)
+    with_repo do |dir, _|
+      out, code, = run_check(dir, args: ["task-x"], extra_env: { "TASK_SHOW_JSON" => GUARD_JSON })
+      assert_equal 0, code, "an explicitly-declared root still certifies: #{out}"
+      refute_match(/DIRTY/, out)
+    end
+  end
+
+  # Commit everything in `dir` — the fixture's uncommitted branch diff — so the cert
+  # runs against a fully-committed HEAD, which the dirty-tree guard now requires.
+  def commit_all(dir)
+    assert system("git", "-C", dir, "add", "-A", out: File::NULL, err: File::NULL)
+    assert system("git", "-C", dir, "commit", "-qm", "widget", out: File::NULL, err: File::NULL)
   end
 end

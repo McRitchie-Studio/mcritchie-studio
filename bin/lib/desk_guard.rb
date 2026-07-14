@@ -61,11 +61,27 @@ require_relative "../../app/models/release/gate_workspace"
 # collide, and this guard would allow both. That is a NAMING bug in bringup, not a hole in
 # the comparison — but it is not closed here, so it is written down here.
 #
-# It guards AGENT DESKS only. `.worktrees/` also holds the release gate/ship workspaces
-# (`_gate`, `_ship`), whose leading underscore is a namespace Release::GateWorkspace
-# reserves precisely so they are "NOT an agent worktree and must never be mistaken for
-# one". They are not exempt from the rule so much as covered by their own, stricter one:
-# assert_private_gate_db! proves their DB is private BEFORE db:test:purge destroys it.
+# RESIDUAL 2, same shape, also stated rather than hidden: `refusal` defaults to `env: ENV`,
+# so a TEST_DATABASE_URL INHERITED from another desk's shell resolves to a database that is
+# private — but private to SOMEBODY ELSE — and is admitted, because it is not the shared one.
+# full-suite-check's `db:test:purge` would then destroy that OTHER desk's database. Bringup
+# scrubs both DB vars for exactly this reason (desk_probe_env); the cert lanes deliberately
+# do not, because they must prove THE RUN THEY ARE ABOUT TO DO, inherited env and all. Not
+# closed here.
+#
+# ═══ WHERE IT APPLIES ═══
+#
+# It guards AGENT DESKS IN RAILS REPOS only, and the two exclusions are different in kind:
+#
+#   * `.worktrees/` also holds the release gate/ship workspaces (`_gate`, `_ship`), whose
+#     leading underscore is a namespace Release::GateWorkspace reserves precisely so they are
+#     "NOT an agent worktree and must never be mistaken for one". They are not exempt from
+#     the rule so much as covered by their own, stricter one: assert_private_gate_db! proves
+#     their DB is private BEFORE db:test:purge destroys it.
+#   * a desk in a repo that is NOT A RAILS APP (studio-engine, solana-studio, turf-vault) has
+#     no test database, so this guard has no job there and ADMITS WITHOUT BOOTING. That is
+#     INAPPLICABILITY, not a soft pass — and it is emphatically not "the boot failed, so
+#     allow". See rails_repo?, which is where that line is drawn and defended.
 module DeskGuard
   module_function
 
@@ -73,6 +89,10 @@ module DeskGuard
   TEST_ENV_LOCAL = ".env.test.local"
   # Release::GateWorkspace::DIRNAME — `_gate` / `_ship`, and any future sibling.
   RESERVED_PREFIX = "_"
+  # The two things a Rails app must have for this guard to have a job: something to BOOT,
+  # and a declared test database to boot INTO. A repo with neither has no test DB at all.
+  RAILS_ENTRYPOINT = File.join("bin", "rails")
+  DATABASE_CONFIG = File.join("config", "database.yml")
 
   # Read back the database the app ACTUALLY connects to in the test env. Reading
   # `connection_db_config` does NOT open a connection, so the probe is safe against a desk
@@ -95,6 +115,12 @@ module DeskGuard
 
     desk = File.expand_path(root.to_s)
     repo = repo_root(desk)
+    # INAPPLICABLE — not a Rails repo, so there is no test database for a cert lane to
+    # purge and nothing this guard can prove. ADMIT, and do not pay for a boot that would
+    # only fail. This is NOT "boot failed, so allow" — see rails_repo? for why that
+    # distinction is the whole ballgame.
+    return nil unless rails_repo?(repo)
+
     shared = Release::GateWorkspace.declared_test_database(repo).to_s.strip
     resolved, output, booted = (resolver || method(:resolve)).call(desk, env: env)
     resolved = resolved.to_s.strip
@@ -120,6 +146,49 @@ module DeskGuard
   # The primary checkout a desk hangs off: <repo>/.worktrees/<slug> -> <repo>.
   def repo_root(desk)
     File.dirname(File.dirname(File.expand_path(desk.to_s)))
+  end
+
+  # Does this REPO have a Rails test database at all — i.e. does this guard have a JOB here?
+  #
+  # ═══ INAPPLICABLE IS NOT "UNPROVEN". COLLAPSING THEM BRICKS ONE HALF OR THE OTHER ═══
+  #
+  # This guard can fail in two directions and each one bricks a different half of the
+  # ecosystem. They must stay apart:
+  #
+  #   INAPPLICABLE -> ADMIT, without booting.
+  #     The repo is not a Rails app at all — studio-engine, solana-studio, turf-vault carry
+  #     no bin/rails and no config/database.yml. There is no shared `<app>_test`, no
+  #     `db:test:purge` lane, NOTHING TO PROTECT and nothing this guard could prove. (Even
+  #     studio-engine's dummy app is `database: ":memory:"` — private to the process by
+  #     construction.) Refusing here is not caution, it is a BRICK: the first cut asked only
+  #     "is this path under .worktrees/?", booted anyway, hit Errno::ENOENT on the missing
+  #     bin/rails, and fail-closed straight into refusing the cert lane for every gem and
+  #     Anchor desk — the `library` shape could not pass G1 AT ALL. A guard that refuses a
+  #     desk it has no business judging is not safe; it is broken.
+  #
+  #   UNPROVEN -> REFUSE.
+  #     The repo IS a Rails app, so the hazard is real and live, and we could not resolve
+  #     the desk's database — the app would not boot, config/database.yml is unreadable.
+  #     This is the guard's entire purpose and it does not soften by one inch.
+  #
+  # THE LINE IS DRAWN ON FILES IN THE REPO, NEVER ON A BOOT OUTCOME. "The app failed to
+  # boot" must never be allowed to mean "there was no app": that is the exact fail-open hole
+  # this task exists to close, and it would hand a free pass to every turf desk (whose boot
+  # DOES work, and resolves to the SHARED turf_monster_test) the moment its boot broke for
+  # any unrelated reason.
+  #
+  # Read on the REPO, not on the desk — the repo is the seam OUTSIDE the desk's control, the
+  # same reason declared_test_database is computed there. A desk cannot delete its way out of
+  # being guarded.
+  #
+  # EITHER file, not both: any trace of a Rails app and we prove-or-refuse. Only a repo with
+  # NEITHER is inapplicable. Today the three managed Rails apps carry both files and the three
+  # non-Rails repos carry neither, so nothing sits in between — and if something ever does (a
+  # malformed app, a half-deleted config), it takes the STRICT path. That is the safe way to
+  # be wrong.
+  def rails_repo?(repo)
+    root = File.expand_path(repo.to_s)
+    File.exist?(File.join(root, RAILS_ENTRYPOINT)) || File.exist?(File.join(root, DATABASE_CONFIG))
   end
 
   # IO. Boot the app in `root` at RAILS_ENV=test and read back the database it connects to.
@@ -271,9 +340,5 @@ module DeskGuard
 
     kept = text.lines.last(lines).map { |l| "  #{l.rstrip}" }.join("\n")
     text.lines.size > lines ? "  … (#{text.lines.size - lines} earlier lines omitted)\n#{kept}" : kept
-  end
-
-  def present?(value)
-    !value.to_s.strip.empty?
   end
 end

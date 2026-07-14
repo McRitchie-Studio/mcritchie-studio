@@ -66,9 +66,24 @@ against a shared DB certifies nothing, and `full-suite-check`'s first lane
 says which of two things it is — bringup did not complete (re-provision:
 `bin/agent-worktree new <app> <slug>`), or the repo's `config/database.yml` does
 not honour the desk's `TEST_DATABASE_URL` pin (fix the repo, or rebase). It also
-refuses when it cannot prove isolation **either way** (the app will not boot).
+refuses a **Rails** desk when it cannot prove isolation **either way** (the app
+will not boot). A repo that is **not a Rails app** — a gem or Anchor desk
+(`studio-engine`, `solana-studio`, `turf-vault`) with no `bin/rails` and no
+`config/database.yml` — has no test DB to protect, so the guard does not apply
+and **admits without booting**; it never refuses one for lacking an app to boot.
 **None of these is a regression in your diff** — do not go hunting one, and do
 not record the refusal as a failed cert attempt.
+
+The **committed tree** is enforced the same way: given a task slug, both cert
+runners **refuse a dirty working tree**, naming the uncommitted files and
+telling you to commit first (`bin/lib/cert_tree_guard.rb`). The fingerprint is a
+tree hash of the WORKING tree, so certifying with edits still uncommitted stamps
+GREEN evidence over code the PR never receives — on 2026-07-14 a worktree's 146
+lines of finished, tested work were certified and then never reached PR #537.
+"Certify after the final commit" is now a rule, not a memory. (A stat-stale
+index — a file rewritten with identical content, so only its mtime moved — is
+NOT dirt: the guard refreshes the index before reading it, so it cannot
+false-refuse a tree nobody edited.)
 
 1. **Certify — fast route (default):**
 

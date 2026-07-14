@@ -64,6 +64,17 @@ class DeskGuardTest < Minitest::Test
       database: storage/test.sqlite3
   YAML
 
+  # A RAILS repo whose config/database.yml EXISTS but declares no test database name — the
+  # file is there (so the repo IS a Rails app, and the guard applies), yet there is nothing
+  # trustworthy to compare a resolution against. Distinct from a NON-Rails repo, which has no
+  # database.yml at all and the guard does not apply to.
+  PG_NO_TEST_NAME = <<~YAML
+    default: &default
+      adapter: postgresql
+    test:
+      <<: *default
+  YAML
+
   # A repo laid out the way bin/agent-worktree lays one out: <repo>/.worktrees/<slug>.
   def with_desk(slug: "some-task", database_yml: PG_HONOURING, test_env_local: nil)
     Dir.mktmpdir do |root|
@@ -218,10 +229,13 @@ class DeskGuardTest < Minitest::Test
     end
   end
 
-  def test_refuses_when_the_shared_name_cannot_be_read
-    # No config/database.yml => nothing trustworthy to compare against. Refuse rather than
-    # assume: an unprovable isolation claim is the failure this guard exists to end.
-    with_desk(database_yml: nil) do |desk|
+  def test_refuses_a_rails_desk_whose_shared_name_cannot_be_read
+    # The repo IS a Rails app (config/database.yml is present, so the guard applies) but the
+    # file declares no test database, so there is nothing trustworthy to compare the
+    # resolution against. Refuse rather than assume: an unprovable isolation claim is the
+    # failure this guard exists to end. Contrast test_admits_a_non_rails_desk_without_booting,
+    # where the file is ABSENT and the guard does not apply at all.
+    with_desk(database_yml: PG_NO_TEST_NAME) do |desk|
       refusal = DeskGuard.refusal(desk, env: {}, resolver: resolver("studio_test_some_task"))
 
       refute_nil refusal
@@ -267,6 +281,85 @@ class DeskGuardTest < Minitest::Test
     with_desk do |desk|
       assert DeskGuard.desk?(desk), "a dir under .worktrees/ is a desk even with no stack env"
       refute File.exist?(File.join(desk, ".env.agent-stack")), "premise: the half-built desk has no stack env"
+    end
+  end
+
+  # ═══ INAPPLICABLE vs UNPROVEN ═════════════════════════════════════════════════════════
+  #
+  # The guard can now fail two ways and each bricks a DIFFERENT half of the ecosystem:
+  # over-firing on a gem/Anchor desk (no test DB exists — nothing to guard) versus
+  # failing OPEN on a Rails desk whose boot broke (a test DB exists — we must not wave it
+  # through). The line is drawn on FILES IN THE REPO, never on the boot outcome — and these
+  # tests hold that line from both sides.
+
+  def test_admits_a_non_rails_desk_without_booting
+    # studio-engine / solana-studio / turf-vault: no bin/rails, no config/database.yml, so no
+    # shared <app>_test and no db:test:purge hazard. The FIRST cut booted anyway, hit ENOENT
+    # on the missing bin/rails, fail-closed, and REFUSED the cert lane for every gem and
+    # Anchor desk — the `library` shape could not pass G1 at all. Inapplicable must ADMIT, and
+    # must not even pay for a boot. (Regression guard for the over-fire blocker.)
+    with_desk(database_yml: nil) do |desk, repo|
+      refute File.exist?(File.join(repo, "bin", "rails")), "premise: no bin/rails"
+      refute File.exist?(File.join(repo, "config", "database.yml")), "premise: no database.yml"
+      spy = []
+      assert_nil DeskGuard.refusal(desk, env: {}, resolver: resolver("studio_test", spy: spy)),
+                 "a repo with no Rails test DB has nothing to guard: ADMIT"
+      assert_empty spy, "an inapplicable repo must not be booted"
+    end
+  end
+
+  def test_a_rails_desk_whose_boot_fails_is_still_refused_not_read_as_no_app
+    # THE fail-open hole this task exists to close, tested head-on against the ADMIT above:
+    # the repo IS Rails (config/database.yml present) and the boot happens to die. This MUST
+    # refuse, precisely BECAUSE a test DB exists. "Boot failed" must never collapse into
+    # "there was no app" — that would hand a free pass to every turf desk the instant an
+    # unrelated boot error struck. Mutation: gate applicability on the boot outcome -> red.
+    with_desk do |desk|
+      refute_nil DeskGuard.refusal(desk, env: {},
+                                         resolver: resolver("", booted: false, output: "boom")),
+                 "a Rails desk that cannot prove isolation must REFUSE, boot failure and all"
+    end
+  end
+
+  def test_bin_rails_alone_makes_a_repo_rails_so_an_unreadable_config_still_refuses
+    # Applicability keys on EITHER marker. A repo carrying bin/rails but no readable
+    # database.yml is a Rails app whose isolation cannot be proven -> REFUSE, not ADMIT. This
+    # pins the `||` in rails_repo?: mutate it to `&&` and this repo becomes "inapplicable" and
+    # walks. A half-configured Rails app takes the STRICT path.
+    with_desk(database_yml: nil) do |desk, repo|
+      FileUtils.mkdir_p(File.join(repo, "bin"))
+      File.write(File.join(repo, "bin", "rails"), "#!/bin/sh\n")
+
+      refusal = DeskGuard.refusal(desk, env: {}, resolver: resolver("studio_test_some_task"))
+      refute_nil refusal, "bin/rails present => a Rails app => an unprovable config REFUSES"
+      assert_includes refusal, "cannot be proven"
+    end
+  end
+
+  def test_rails_repo_predicate_keys_on_either_marker
+    Dir.mktmpdir do |root|
+      both = File.join(root, "both")
+      rails_only = File.join(root, "rails_only")
+      yml_only = File.join(root, "yml_only")
+      neither = File.join(root, "neither")
+      [both, rails_only, yml_only, neither].each { |d| FileUtils.mkdir_p(d) }
+      add_rails = lambda do |d|
+        FileUtils.mkdir_p(File.join(d, "bin"))
+        File.write(File.join(d, "bin", "rails"), "#!/bin/sh\n")
+      end
+      add_yml = lambda do |d|
+        FileUtils.mkdir_p(File.join(d, "config"))
+        File.write(File.join(d, "config", "database.yml"), "test:\n  database: x\n")
+      end
+      add_rails.call(both)
+      add_yml.call(both)
+      add_rails.call(rails_only)
+      add_yml.call(yml_only)
+
+      assert DeskGuard.rails_repo?(both), "both markers => a Rails app"
+      assert DeskGuard.rails_repo?(rails_only), "bin/rails alone => a Rails app"
+      assert DeskGuard.rails_repo?(yml_only), "config/database.yml alone => a Rails app"
+      refute DeskGuard.rails_repo?(neither), "neither marker => NOT a Rails app (inapplicable)"
     end
   end
 

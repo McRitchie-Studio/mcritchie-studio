@@ -67,6 +67,11 @@ class FullSuiteCheckTest < Minitest::Test
       git = ->(args) { assert(system("git -C #{dir} #{args} >/dev/null 2>&1"), "git #{args}") }
       File.write(File.join(dir, "app.rb"), "base\n")
       write_repo_shape(dir, subpath)
+      # The harness writes its stub CLIs and their log INTO the repo dir, so without
+      # this they read as untracked dirt to the dirty-tree guard (cert_tree_guard.rb)
+      # — test tooling, not uncommitted work. Committed with the baseline, so the
+      # fixture yields a genuinely CLEAN tree.
+      File.write(File.join(dir, ".gitignore"), "stub.log\n*-stub\n")
       git.call("init -q")
       git.call("config user.email tester@example.com")
       git.call("config user.name tester")
@@ -494,6 +499,71 @@ class FullSuiteCheckTest < Minitest::Test
       assert system("git", "-C", dir, "checkout", "-qb", "feat/task-x", out: File::NULL, err: File::NULL)
       out, code, lines = run_check_implicit_root(dir, "task-x")
       assert_equal 0, code, "the task's own tree certifies from cwd with no override: #{out}"
+      assert_match(/\[full-suite@/, out)
+      assert(lines.any? { |l| l[0] == "TASK" && l[1] == "update" }, "evidence recorded: #{lines.inspect}")
+    end
+  end
+
+  # --- [integration] dirty-tree guard: certify only a fully-committed HEAD ----------
+  # The cert fingerprint is a git TREE hash of the WORKING tree, so a cert taken with
+  # edits uncommitted stamps GREEN evidence for code the PR never receives — live on
+  # 2026-07-14, when a worktree's 146 lines of finished, tested work were certified
+  # and then never reached PR #537. The refusal must land BEFORE any lane runs or any
+  # gate/checkpoint/evidence write, exactly like the root guard above
+  # (bin/lib/cert_tree_guard.rb).
+
+  def test_dirty_tree_cert_is_refused_before_any_lane_runs
+    with_repo do |dir|
+      assert system("git", "-C", dir, "checkout", "-qb", "feat/task-x", out: File::NULL, err: File::NULL)
+      # The RIGHT tree (task-x's branch) — but with an edit still uncommitted.
+      File.write(File.join(dir, "app.rb"), "uncommitted work the PR will never see\n")
+
+      out, code, lines = run_check_implicit_root(dir, "task-x")
+
+      assert_equal 1, code, "an uncommitted tree must refuse, not green-certify: #{out}"
+      assert_match(/DIRTY/, out)
+      assert_match(/app\.rb/, out, "the refusal NAMES the uncommitted file")
+      assert_match(/commit/i, out, "the refusal states the fix")
+      refute_match(/\[full-suite@/, out, "no evidence for a tree that is not on the PR")
+      refute(lines.any? { |l| l[0] == "GATE" }, "no G1 attempt opens for a refused run: #{lines.inspect}")
+      refute(lines.any? { |l| l[0] == "TASK" && l[1] == "update" }, "nothing recorded for a refused run")
+    end
+  end
+
+  def test_untracked_file_refuses_the_cert
+    # The fingerprint stages untracked-not-ignored files too (git add -A), so a brand
+    # new, never-added file is exactly as invisible to the PR as an unstaged edit —
+    # and it is what "146 lines of finished work" actually looked like.
+    with_repo do |dir|
+      assert system("git", "-C", dir, "checkout", "-qb", "feat/task-x", out: File::NULL, err: File::NULL)
+      File.write(File.join(dir, "brand_new.rb"), "class BrandNew; end\n")
+
+      out, code, = run_check_implicit_root(dir, "task-x")
+      assert_equal 1, code, "an untracked file is uncommitted work: #{out}"
+      assert_match(/brand_new\.rb/, out)
+    end
+  end
+
+  def test_stale_mtime_tree_still_certifies
+    # THE FALSE POSITIVE the guard must not become. A tracked file rewritten with
+    # IDENTICAL content has a fresh mtime, leaving git's stat cache stale — which the
+    # cheap dirty reads (git diff-index) call MODIFIED. On the CERT path a false
+    # refusal blocks every handoff, so the guard refreshes the index before reading
+    # it. Unit-level proof, including the index-refresh mechanism itself, lives in
+    # test/lib/cert_tree_guard_test.rb.
+    with_repo do |dir|
+      assert system("git", "-C", dir, "checkout", "-qb", "feat/task-x", out: File::NULL, err: File::NULL)
+      tracked = File.join(dir, "app.rb")
+      body = File.read(tracked)
+      File.write(tracked, body)                                       # byte-identical rewrite
+      FileUtils.touch(tracked, mtime: Time.now + (10 * 365 * 24 * 3600))
+      refute system("git", "-C", dir, "diff-index", "--quiet", "HEAD", out: File::NULL, err: File::NULL),
+             "fixture check: the index must actually BE stat-stale, else this proves nothing"
+
+      out, code, lines = run_check_implicit_root(dir, "task-x")
+
+      assert_equal 0, code, "a stat-stale index is a CLEAN tree — it must still certify: #{out}"
+      refute_match(/DIRTY/, out, "a file nobody edited must never be reported as uncommitted work")
       assert_match(/\[full-suite@/, out)
       assert(lines.any? { |l| l[0] == "TASK" && l[1] == "update" }, "evidence recorded: #{lines.inspect}")
     end
