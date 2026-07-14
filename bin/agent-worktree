@@ -2138,7 +2138,10 @@ def run_snapshot(app = nil, write: false)
   File.write(path, "#{json}\n")
   puts "wrote #{payload.fetch("worktrees").size} worktree record(s) to #{path}"
 rescue Errno::EACCES, Errno::EPERM => e
-  abort "could not write worktree registry to #{snapshot_path}: #{e.message}\nSet AGENT_WORKTREE_REGISTRY=/tmp/worktree-registry.json for a scratch write, or rerun with filesystem approval for the projects registry."
+  # Report the LAUNDERED path, not a second raw `snapshot_path`: the containment scan
+  # subtracts only the expression enforce! was handed, so re-naming the producer here
+  # is a raw hold it (correctly) flags. `path` is bound before the write that can EACCES.
+  abort "could not write worktree registry to #{path}: #{e.message}\nSet AGENT_WORKTREE_REGISTRY=/tmp/worktree-registry.json for a scratch write, or rerun with filesystem approval for the projects registry."
 end
 
 # The git-eligible worktrees split into [free, withheld], where withheld is

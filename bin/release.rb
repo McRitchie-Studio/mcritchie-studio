@@ -678,12 +678,16 @@ end
 # `bin/task intent`, then advance the baseline. Resolves the same baseline dir as
 # bin/task (honors TASK_USAGE_DIR; else <projects>/.agents/task-usage).
 def release_usage_dir
-  dir = ENV["TASK_USAGE_DIR"].to_s.strip
-  dir = File.join(projects_root, ".agents", "task-usage") if dir.empty?
+  pinned = ENV["TASK_USAGE_DIR"].to_s.strip
   # Same live-store fallback bin/task carries, so it takes the same fail-closed
   # sandbox guard (lib/task_usage_sandbox.rb): under TASK_USAGE_SANDBOX an
-  # unpinned run aborts rather than writing the operator's real cost store.
-  TaskUsageSandbox.enforce!(dir, store: "task-usage")
+  # unpinned run aborts rather than writing the operator's real cost store. The raw
+  # fallback is the guard's ARGUMENT, not a local handed to it afterwards — see
+  # bin/task#usage_dir and test/lib/state_store_containment_test.rb.
+  TaskUsageSandbox.enforce!(
+    pinned.empty? ? File.join(projects_root, ".agents", "task-usage") : pinned,
+    store: "task-usage"
+  )
 end
 
 # The captured per-transition usage for one task slug, or {} when there's no

@@ -61,11 +61,13 @@
 #     names the store is refused whatever it meant to do with it, because this layer
 #     never looks at IO.
 #
-#   LAYER 2 (what those files may DO with it).  Inside an allowed constructor, EVERY
-#     method that reaches a raw store path must launder it through
-#     TaskUsageSandbox.enforce! — unless it is named in UNGUARDED_PATH_METHODS, which is a
-#     closed, justified list (a read cannot pollute). No IO analysis: holding the raw
-#     path is the violation.
+#   LAYER 2 (what those files may DO with it).  Inside an allowed constructor, EVERY raw
+#     store path must be laundered through TaskUsageSandbox.enforce! — and the rule is
+#     PER PATH, not per method. The scan SUBTRACTS each enforce! argument (the expression
+#     the guard was handed) and re-asks the same path question of the residue, so a method
+#     that launders one path does NOT get to hold a second one unguarded beside it. The
+#     only exemptions are methods named in UNGUARDED_PATH_METHODS, a closed, justified list
+#     (a read cannot pollute). No IO analysis: holding an UNLAUNDERED path is the violation.
 #
 #   LAYER 2a (the path may not ESCAPE).  A required lemma, not a nicety. Layer 1 only
 #     works if a file that has not named .agents cannot GET a raw path some other way.
@@ -213,6 +215,11 @@ class StateStoreContainmentTest < Minitest::Test
   # the (private) builder even though 2a makes such a reach impossible to obtain.
   PATH_RE = /(?<!\w)\.agents(?!\w)|SessionMarkers\.marker_path\(|send\(:marker_path/
 
+  # Only the TOP-LEVEL residual scan still uses this — an inert top-level enforce! line is
+  # not a violation. The PER-METHOD launder is handled by SUBTRACTION now (scan_source /
+  # launder_stripped), not by a presence test: matching this regex somewhere in a body no
+  # longer excuses the body, because that is a declaration, not evidence THIS path was
+  # laundered.
   LAUNDER_RE = /TaskUsageSandbox\.enforce!/
 
   # ── the scanner ────────────────────────────────────────────────────────────────
@@ -245,6 +252,70 @@ class StateStoreContainmentTest < Minitest::Test
     src.lines.map { |l| l.strip.start_with?("#") ? "\n" : l }.join
   end
 
+  # THE SOURCE EVERY LAYER SCANS: comments gone, and — the heart of the per-path rule —
+  # every LAUNDERED path expression BLANKED OUT. A launder excuses the expression the
+  # guard was HANDED and nothing else, so once enforce!'s argument is removed, what
+  # remains is exactly the paths the guard never saw. The old scan asked a METHOD-scoped
+  # question — "does the string TaskUsageSandbox.enforce! appear ANYWHERE in this body?"
+  # — and one launder, on any store, free-passed every other raw path beside it (and,
+  # via raw_producers, every caller downstream). That is a DECLARATION that some path was
+  # laundered, not EVIDENCE that THIS one was. Subtracting the laundered expression turns
+  # it into evidence: a second raw path in the same method survives into the residue and
+  # is judged on its own merit, by the same PATH_RE.
+  def scan_source(src)
+    launder_stripped(strip_comments(src))
+  end
+
+  LAUNDER_CALL = "TaskUsageSandbox.enforce!("
+
+  # Blank the first argument of every TaskUsageSandbox.enforce!(<PATH>, store: …) call —
+  # the path expression it launders — extracted by BALANCED PARENS so a nested
+  # File.join(…) or a ternary is taken whole, and with newlines preserved so every
+  # reported line number still points at the real file. What is NOT blanked: a second
+  # raw path elsewhere in the method, and any OTHER mention of a producer (e.g. a raw
+  # `snapshot_path` re-named in a rescue message) — both survive to be flagged.
+  def launder_stripped(src)
+    out = src.dup
+    idx = 0
+    while (pos = src.index(LAUNDER_CALL, idx))
+      open = pos + LAUNDER_CALL.length - 1 # the "(" of enforce!(
+      stop = first_arg_end(src, open)
+      if stop
+        (open + 1...stop).each { |i| out[i] = " " unless out[i] == "\n" }
+        idx = stop
+      else
+        idx = open + 1
+      end
+    end
+    out
+  end
+
+  # The index of the first TOP-LEVEL comma after the "(" at +open+ (which ends the first
+  # argument), else the matching ")". Tracks paren depth and skips string literals, so a
+  # "," or ")" inside a quoted ".agents" segment cannot end the argument early.
+  def first_arg_end(src, open)
+    depth = 0
+    quote = nil
+    i = open
+    while i < src.length
+      c = src[i]
+      if quote
+        quote = nil if c == quote && src[i - 1] != "\\"
+      elsif c == '"' || c == "'"
+        quote = c
+      elsif c == "("
+        depth += 1
+      elsif c == ")"
+        depth -= 1
+        return i if depth.zero? # single-argument call: the path is the whole arg list
+      elsif c == "," && depth == 1
+        return i # the first top-level comma — end of the path argument
+      end
+      i += 1
+    end
+    nil
+  end
+
   # The last expression a method evaluates — its RETURN value, near enough for these
   # scripts. `rescue`/`ensure`/`end`/bare-`nil` tails are the best-effort epilogue
   # every one of these callers shares, never the value that matters.
@@ -258,13 +329,22 @@ class StateStoreContainmentTest < Minitest::Test
   # Names that RESOLVE a raw (unlaundered) store path — the footguns a later method can
   # pick up without ever naming .agents itself.
   #
-  # A producer RETURNS a path. That distinction is the whole correctness of this scan:
+  # A producer RETURNS a raw path. That distinction is the whole correctness of this scan:
   # `read_cached_token` CALLS the path builder but returns the token STRING, and an
   # earlier draft that treated "calls a producer" as "is a producer" propagated taint
   # through it into a method named `token` — after which the word "token" appearing in
   # ANY body (`"token" => tok`) read as a store path. So: return-position only, fixpoint
-  # over indirection (snapshot_path → agent_registry_dir), and a laundering method is not
-  # a producer at all — it hands back a GUARDED path, which is the point of it.
+  # over indirection (snapshot_path → agent_registry_dir).
+  #
+  # LAUNDERED RETURNS ARE NOT PRODUCERS — and this must be judged PER PATH, not per method.
+  # +src+/+methods+ arrive from scan_source, so a method that RETURNS enforce!(raw) has
+  # that argument already blanked: its return line no longer names a path and it drops out
+  # here, which is correct — it hands back a GUARDED path. But a method that launders path
+  # A and RETURNS raw path B keeps B in its return line and IS a producer for B. The old
+  # code skipped any method whose body merely MENTIONED enforce! (`next if m.body =~
+  # LAUNDER_RE`), so a decoy launder on A killed taint for B and every caller of B went
+  # invisible. Deleting that skip is half the per-path fix; scan_source blanking the
+  # laundered argument is the other half.
   #
   # CONSTANTS are producers too (`SESSIONS = File.join(root, ".agents", "sessions")`),
   # which is the constant-indirection vector: without this, the method that uses the
@@ -281,7 +361,6 @@ class StateStoreContainmentTest < Minitest::Test
       before = producers.size
       methods.each do |m|
         next if producers.include?(m.name)
-        next if m.body =~ LAUNDER_RE
 
         ret = return_line(m.body)
         via = producers.any? { |p| p != m.name && ret =~ /\b#{Regexp.escape(p)}\b/ }
@@ -328,20 +407,22 @@ class StateStoreContainmentTest < Minitest::Test
   # not on the file's justified read-only list. Note what is absent — any notion of what
   # the method DOES with the path. Holding it is the violation.
   def violations_in(src, path: "(memory)", reads: {})
-    code = strip_comments(src)
+    code = scan_source(src)
     methods = methods_in(code)
     raw = raw_producers(code, methods)
 
     found = methods.filter_map do |m|
-      next if m.body =~ LAUNDER_RE
       next if reads.key?(m.name)
 
+      # m.body is the RESIDUE (scan_source blanked every laundered path expression), so a
+      # match here is a path this method held that the guard was NOT handed. No method-wide
+      # launder skip: laundering path A no longer excuses raw path B beside it.
       reaches = (m.body =~ PATH_RE) ||
                 raw.any? { |p| p != m.name && m.body =~ /\b#{Regexp.escape(p)}\b/ }
       next unless reaches
 
-      "#{path}:#{m.line} #{m.name} — reaches a raw <projects>/.agents path without " \
-        "TaskUsageSandbox.enforce! (what it DOES with the path is irrelevant — holding it is the violation)"
+      "#{path}:#{m.line} #{m.name} — reaches a raw <projects>/.agents path that TaskUsageSandbox.enforce! " \
+        "was NOT handed (what it DOES with the path is irrelevant — holding an unlaundered path is the violation)"
     end
 
     # TOP-LEVEL script code, outside any def — the region a method-only scan never looks
@@ -433,7 +514,7 @@ class StateStoreContainmentTest < Minitest::Test
   # inherits a free pass nobody granted it.
   def test_unit_read_only_exemptions_are_not_stale
     stale = UNGUARDED_PATH_METHODS.flat_map do |path, reads|
-      src = strip_comments(File.read(File.join(ROOT, path)))
+      src = scan_source(File.read(File.join(ROOT, path)))
       raw = raw_producers(src, methods_in(src))
       methods = methods_in(src)
 
@@ -474,7 +555,7 @@ class StateStoreContainmentTest < Minitest::Test
 
   def test_unit_no_shared_lib_exports_a_raw_store_path
     exported = Dir.glob(File.join(ROOT, "bin", "lib", "*.rb")).flat_map do |file|
-      src = strip_comments(File.read(file))
+      src = scan_source(File.read(file))
       next [] unless src =~ PATH_RE
 
       private_names = private_method_names(src)
@@ -593,6 +674,81 @@ class StateStoreContainmentTest < Minitest::Test
     assert_match(/clear_activity_usage_baselines/, found.join("\n"))
   end
 
+  # THE ROUND-N BLOCKER, as an acceptance test. The launder was a METHOD-SCOPED PRESENCE
+  # TEST — "does TaskUsageSandbox.enforce! appear ANYWHERE in this body?" — so ONE enforce!
+  # call, on ANY store, free-passed every other raw path in the method. That is a
+  # DECLARATION that some path was laundered, not EVIDENCE that THIS one was. The fix is
+  # subtraction: strip the expression enforce! was HANDED, then re-ask the same path
+  # question of what is left. Put TWO raw paths in one method, launder ONE, and the OTHER
+  # must go RED — and laundering BOTH must go green, or the subtraction is not exact.
+  def test_unit_launder_excuses_only_the_path_it_was_handed_not_the_whole_method
+    one_laundered = <<~RUBY
+      def two_paths_one_launder(id)
+        TaskUsageSandbox.enforce!(File.join(dir, ".agents", "task-usage"), store: "task-usage")
+        File.delete(File.join(dir, ".agents", "sessions", "\#{id}.open-activity"))
+      end
+    RUBY
+
+    found = violations_in(one_laundered, path: "bin/agent-worktree")
+    refute_empty found,
+                 "one enforce! call laundered the cost-store path; the SECOND raw path (the marker delete) " \
+                 "is still held unlaundered and must be flagged. A method-scoped presence test passed this — " \
+                 "that is the blocker's failure shape under a new name."
+    assert_match(/two_paths_one_launder/, found.join("\n"))
+
+    both_laundered = <<~RUBY
+      def two_paths_both_laundered(id)
+        TaskUsageSandbox.enforce!(File.join(dir, ".agents", "task-usage"), store: "task-usage")
+        File.delete(TaskUsageSandbox.enforce!(File.join(dir, ".agents", "sessions", "\#{id}.json"), store: "session-marker"))
+      end
+    RUBY
+
+    assert_empty violations_in(both_laundered, path: "bin/agent-worktree"),
+                 "when EVERY raw path in the method is the argument of its own enforce!, the residue is empty " \
+                 "and the method is clean — the subtraction must be exact, not merely present-or-absent."
+  end
+
+  # The WORSE half of the same blocker (:284 in raw_producers): a decoy launder on store A
+  # let a builder RETURN a raw path B unlaundered, and because the old code skipped any
+  # method that MENTIONED enforce!, B was never registered as a producer — so taint died
+  # there and EVERY caller of B went invisible. The reviewer reproduced this exactly in
+  # bin/task (stale_marker_path decoy-launders task-usage, returns a raw sessions path;
+  # prune_stale_markers! deletes it and names nothing). Both must go RED — and the guarded
+  # variant, where the builder launders the path it RETURNS, must go green.
+  def test_unit_a_decoy_launder_does_not_kill_taint_through_a_producer
+    leaky = <<~RUBY
+      def stale_marker_path(session_id)
+        TaskUsageSandbox.enforce!(File.join(PROJECTS, ".agents", "task-usage"), store: "task-usage")
+        File.join(PROJECTS, ".agents", "sessions", "\#{session_id}.open-activity")
+      end
+
+      def prune_stale_markers!(session_id)
+        File.delete(stale_marker_path(session_id))
+      end
+    RUBY
+
+    found = violations_in(leaky, path: "bin/task")
+    assert_match(/stale_marker_path/, found.join("\n"),
+                 "the builder decoy-launders task-usage but RETURNS a raw sessions path — it is a producer")
+    assert_match(/prune_stale_markers!/, found.join("\n"),
+                 "the caller names nothing itself; it is caught by taint from the producer it borrows the path " \
+                 "from. If the decoy launder killed that taint, this caller would be invisible — the blocker.")
+
+    guarded = <<~RUBY
+      def stale_marker_path(session_id)
+        TaskUsageSandbox.enforce!(File.join(PROJECTS, ".agents", "sessions", "\#{session_id}.json"), store: "session-marker")
+      end
+
+      def prune_stale_markers!(session_id)
+        File.delete(stale_marker_path(session_id))
+      end
+    RUBY
+
+    assert_empty violations_in(guarded, path: "bin/task"),
+                 "when the builder launders the path it RETURNS, it is not a producer and its caller borrows a " \
+                 "GUARDED path — the mechanism is evidence-based, so two methods are not red by default."
+  end
+
   # THE VECTOR THAT DEFEATED THE FIRST DRAFT. A real bin/leaky-demo, with this exact
   # body, deleted the operator's live .open-activity marker and the containment suite
   # ran 6 / 0 failures — GREEN. No File.join, no marker_path: nothing for the old regex
@@ -695,7 +851,7 @@ class StateStoreContainmentTest < Minitest::Test
     # test_unit_no_shared_lib_exports_a_raw_store_path — this is the same claim, checked
     # here against the two real builders so the two tests cannot drift apart.
     %w[bin/lib/agent_api.rb bin/lib/session_markers.rb].each do |lib|
-      src = strip_comments(File.read(File.join(ROOT, lib)))
+      src = scan_source(File.read(File.join(ROOT, lib)))
       private_names = private_method_names(src)
 
       raw_producers(src, methods_in(src)).each do |p|
