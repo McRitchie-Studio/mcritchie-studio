@@ -114,10 +114,20 @@ wrong checkout (e.g. the hub primary on `main`) exits 1 naming the worktree to
    coverage.) Scope it exactly: the cert stands in for CI's **`test` job**, not for
    all of CI — `scan_ruby` (brakeman), `scan_js` (importmap audit) and
    turf-monster's `playwright` e2e job are CI's alone, which is why review's
-   gate-zero still holds the authoritative CI verdict. Where CI's Ruby suite is
-   split so this one-command lane could only run PART of it — across steps, across
-   **jobs**, a multi-line script, or a foreign runner beside the rails step — the
-   cert **REFUSES loudly** instead of certifying the narrower half. Two consequences
+   gate-zero still holds the authoritative CI verdict. The cert keeps that claim by
+   **refusing whatever it cannot SEE or cannot RUN**, across the repo's **PR-gating
+   workflows**: CI's Ruby suite split across steps, across **jobs**, or across
+   **workflow files**; a suite it can see but cannot run verbatim (a multi-line
+   script, or a **wrapper** like `docker compose run web bin/rails test:system`); a
+   foreign runner beside the rails step; a job it **cannot see into** (a job-level
+   `uses:`, a composite action, a body with no `steps:`); and a command whose text
+   does not say what it runs (`run: ${{ matrix.cmd }}`, `run: $SUITE`) each make the
+   cert **REFUSE loudly** instead of certifying the narrower half. What it still does
+   NOT see, stated plainly: a suite inside a **third-party `uses:` action** (list it
+   in `KNOWN_INERT_ACTIONS` once you have checked it, or it refuses) or behind an
+   executable that is neither a known runner nor a readable file in this repo; and a
+   repo with **no `ci.yml`** falls back to the `DEFAULT` full-suite command — a
+   superset, not CI's own line. Two consequences
    worth knowing: the system tier drives a real headless **Chrome**, and a host
    without one **aborts up front as an ENV error** — *"NOT a regression in your
    diff"* — never as a red suite; and the command's shape is load-bearing —

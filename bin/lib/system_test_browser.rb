@@ -48,11 +48,17 @@ module SystemTestBrowser
   #   * STRUCTURAL (bin/lib/ci_test_command.rb) — parse the command and ask whether a
   #     RAILS invocation is handed the tier. This is what catches the PATH form,
   #     `bin/rails test test/system`, which a substring scan misses entirely.
-  #   * TEXTUAL — does the command text mention `test:system` at all. This is what
-  #     catches every WRAPPER form, which the parser misses entirely: in `docker
-  #     compose run web bin/rails test:system`, `ssh host 'bin/rails test:system'` or
-  #     `timeout 30m bin/rails test:system`, the EXECUTABLE is not rails, so the
-  #     structural probe reads it as "no rails invocation" and says false.
+  #   * TEXTUAL — does the command text mention the tier at all (`test:system`, or the
+  #     path form `test/system`). This is what catches every WRAPPER form, which the
+  #     parser misses entirely: in `docker compose run web bin/rails test:system`, `ssh
+  #     host 'bin/rails test:system'` or `timeout 30m bin/rails test:system`, the
+  #     EXECUTABLE is not rails, so the structural probe reads it as "no rails
+  #     invocation" and says false.
+  #
+  # BOTH textual spellings, because their INTERSECTION is a real command that BOTH
+  # halves miss: `docker compose run web bin/rails test test/system` is structurally
+  # invisible (the exe is docker) AND carries no literal `test:system`. One probe per
+  # spelling of the tier is what the asymmetry below demands.
   #
   # Unifying the guard on the parser alone (the shared-probe refactor) bought the path
   # form and QUIETLY TRADED AWAY the wrapper forms the textual probe had covered since
@@ -67,7 +73,7 @@ module SystemTestBrowser
   # The parser's own `system_tier?` stays EXACT (it answers "what tier does this
   # command run?"); the SAFE union belongs here, with the guard.
   def self.system_tier?(cmd)
-    CiTestCommand.system_tier?(cmd) || cmd.to_s.include?("test:system")
+    CiTestCommand.system_tier?(cmd) || CiTestCommand::SUITE_MARKERS.any? { |marker| cmd.to_s.include?(marker) }
   end
 
   def self.available?(env = ENV)

@@ -242,7 +242,8 @@ class FullSuiteCheckTest < Minitest::Test
   # `extra_jobs` writes ADDITIONAL jobs beside `test` — the grain the resolver used to
   # be blind to (it read exactly `jobs.test.steps`), and the grain turf-monster's real
   # ci.yml already uses.
-  def with_ci_repo(ci_cmd: "bin/rails db:test:prepare test test:system", ci_steps: nil, extra_jobs: nil)
+  def with_ci_repo(ci_cmd: "bin/rails db:test:prepare test test:system", ci_steps: nil, extra_jobs: nil,
+                   extra_yaml: nil)
     steps = ci_steps || (ci_cmd && [ci_cmd])
     with_repo do |dir|
       if steps
@@ -253,6 +254,7 @@ class FullSuiteCheckTest < Minitest::Test
           yaml << "  #{job}:\n    steps:\n"
           job_steps.each { |step| yaml << "      - name: Step\n        run: #{step}\n" }
         end
+        yaml << extra_yaml if extra_yaml
         File.write(File.join(dir, ".github", "workflows", "ci.yml"), yaml)
       end
       log = File.join(dir, "rails.log")
@@ -369,6 +371,40 @@ class FullSuiteCheckTest < Minitest::Test
       refute_match(/\[full-suite@/, out, "a suite split across jobs must certify NOTHING")
       refute_path_exists log,
                          "the lane RAN the narrower job's command — the green cert with no system tier, back again"
+    end
+  end
+
+  # THE TWO ESCAPES PAST THE JOB-GRAIN GUARD, at the cert lane itself. Both resolved
+  # GREEN against the previous round: the job-grain scan reused the NARROW structural
+  # probe (which cannot see a WRAPPER), and the workflow reader SKIPPED any job with no
+  # `steps:` (so a job-level `uses:` was invisible). Each ran `bin/rails test` and
+  # stamped a green cert with the system tier NEVER RUN — the same lie, respelled.
+
+  def test_a_WRAPPED_suite_in_ANOTHER_JOB_is_refused_not_narrowly_certified
+    with_ci_repo(ci_cmd: "bin/rails test",
+                 extra_jobs: { "system_test" => ["docker compose run web bin/rails db:test:prepare test:system"] }) do |dir, log|
+      out, code = run_default_test_lane(dir)
+
+      assert_equal 1, code, out
+      assert_match(/MORE THAN ONE JOB/, out, "a wrapped suite one job over is STILL a split suite")
+      assert_match(/system_test/, out, "the refusal must NAME the job it would have left unrun")
+      refute_match(/\[full-suite@/, out, "a suite the cert cannot see must certify NOTHING")
+      refute_path_exists log, "the lane RAN the narrow half — the green cert with no system tier, back again"
+    end
+  end
+
+  def test_a_JOB_THE_CERT_CANNOT_SEE_INTO_is_refused_not_certified_around
+    # A job-level `uses:` has no `steps:`. Skipping it is not "not raising" — it is
+    # PASSING, and a suite hiding in it certifies green, unread and unnamed.
+    with_ci_repo(ci_cmd: "bin/rails test",
+                 extra_yaml: "  system_test:\n    uses: ./.github/workflows/system.yml\n") do |dir, log|
+      out, code = run_default_test_lane(dir)
+
+      assert_equal 1, code, out
+      assert_match(/CANNOT SEE INTO/, out)
+      assert_match(/system_test/, out, "the refusal must NAME the job it could not read")
+      refute_match(/\[full-suite@/, out)
+      refute_path_exists log
     end
   end
 

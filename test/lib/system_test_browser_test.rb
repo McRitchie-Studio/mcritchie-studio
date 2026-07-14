@@ -58,6 +58,19 @@ class SystemTestBrowserTest < Minitest::Test
            "the wrapper form — caught only by the TEXTUAL half"
   end
 
+  def test_the_union_covers_the_WRAPPER_and_PATH_intersection
+    # The one form BOTH halves miss on their own: the executable is docker (so the
+    # STRUCTURAL half sees no rails invocation) AND there is no literal `test:system`
+    # (so a `test:system`-only TEXTUAL half sees nothing either). It still runs the
+    # tier — and an under-firing browser guard ejects a GOOD PR at the last gate before
+    # prod. Both textual spellings, or this hole stays open.
+    cmd = "docker compose run web bin/rails test test/system"
+    refute CiTestCommand.system_tier?(cmd), "structurally invisible: the exe is docker"
+    refute cmd.include?("test:system"), "…and it carries no literal `test:system`"
+    assert SystemTestBrowser.system_tier?(cmd),
+           "the guard must still demand a browser: this command DOES drive Chrome"
+  end
+
   def test_the_union_does_not_over_fire_on_the_integration_subset
     # Over-firing is the CHEAP error, but it is still an error: a satellite whose
     # gate command runs the integration subset must not demand Chrome on the host.
