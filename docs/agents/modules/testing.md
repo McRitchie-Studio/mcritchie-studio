@@ -28,6 +28,7 @@ checks to `checks_run` as each stage completes.
 | QA acceptance | Stable QA URL | QA/devnet only when named | No; blocks production promotion | G3 Candidate | After every QA deploy; runs task acceptance criteria against the merged result |
 | Production smoke | Production URL | No by default | N/A | G4 Ship (the seal — non-blocking) | After approved production deploy; verifies health and key read-only routes |
 | Nightly/deep | Dedicated local/QA/devnet target | Often yes | No | — | devnet/on-chain, browser matrix, longer seeded workflows |
+| Quarantine | Any | Varies | No until fixed | — | Known flaky or unrelated checks that still matter but should produce follow-up tasks instead of blocking unrelated PRs |
 
 **The Playwright suite BLOCKS MERGE as of 2026-07-13 (PR #543).** It is a PR-gate
 lane, not a nightly one: a red spec makes CI red and the PR does not merge. Before
@@ -38,9 +39,20 @@ every `ui+db` change — the tier was "collected" by a builder typing `[e2e] …
 `--grep-invert @quarantine`, and their count is ratcheted (ceiling 18, may only fall)
 by `test/lib/e2e_quarantine_ratchet_test.rb`. Do not read the green `playwright`
 check as "the whole e2e suite passes" until that ceiling reaches 0
-(`/tasks/repair-rotted-e2e-specs`). Never tag a spec `@quarantine` to green a PR —
-the ratchet will turn red, by design.
-| Quarantine | Any | Varies | No until fixed | — | Known flaky or unrelated checks that still matter but should produce follow-up tasks instead of blocking unrelated PRs |
+(`/tasks/repair-rotted-e2e-specs`).
+
+**What stops a spec from quietly leaving the lane.** `test/lib/e2e_quarantine_ratchet_test.rb`
+pins the **executed set**, not the ci.yml command: **69 specs committed − 18
+quarantined == the 51 CI runs.** It is arithmetic, so it does not care how you drop a
+spec. `@quarantine`, `test.only` (which collapses the lane to a single spec while the
+other two shards select ZERO tests and **exit 0 in silence** — sharding suppresses
+playwright's own "no tests found" guard), `test.skip`, `test.fixme`, a `testDir` or
+`testIgnore` edit, a deleted spec file, an empty shard: all red. Spec declarations are
+**default-deny** — a bare `test(…)` is the only accepted form, and any modifier not on
+the inert allowlist is refused by name, including ones Playwright has not shipped yet.
+`playwright.config.js` also sets `forbidOnly` under CI as a hard stop at the lane
+itself. So there are two honest moves for a red spec and no third: **fix it**, or
+`@quarantine` it — which the ratchet makes you account for — and **block on it**.
 
 The Gate column names the branded testing gate whose attempt records that
 lane's verdicts — attempt-aware GateRun rows with per-SOP results, rendered on

@@ -998,8 +998,11 @@ general strategy, across all five repos. Three pieces: tier definitions (the
 
 Tiers are the **what**; the existing **test lanes** are the **when/where**.
 Mapping: Unit+Component+Integration → `pr_review_gate`/`local_proof` (block
-merge); E2E happy-path → `local_proof`, full E2E → `nightly_deep`; Manual →
-`qa_acceptance`; post-deploy → `production_smoke`.
+merge); **E2E → the sharded `playwright` job in `ci.yml`, which BLOCKS MERGE**
+(G2 Review) — as of 2026-07-13 (PR #543); before that no lane ran it at all and
+this line routed it to `nightly_deep`, which is why the `e2e` tier went uncollected
+while `feature_shapes.yml` demanded it. Manual → `qa_acceptance`; post-deploy →
+`production_smoke`.
 
 ### 3.2 Shape → test contract (the adaptation)
 

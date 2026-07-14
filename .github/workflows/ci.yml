@@ -161,10 +161,20 @@ jobs:
       # to green a PR turns that test red. The norm in playwright.config.js asks you not
       # to; the ratchet is what makes it a gate.
       #
-      # The scope of this command is also guarded: test/lib/ci_workflow_triggers_test.rb
-      # asserts this lane runs the WHOLE suite unconditionally — no job/step `if:`, no
-      # positional spec path, no positive --grep. Narrowing it is a test failure, not a
-      # code review question.
+      # TWO GUARDS, AND THE SECOND IS THE ONE THAT MATTERS.
+      #   1. THE COMMAND. test/lib/ci_workflow_triggers_test.rb asserts this lane runs the
+      #      WHOLE suite unconditionally — no job/step `if:`, no positional spec path, no
+      #      positive --grep. Narrowing it is a test failure, not a code review question.
+      #   2. THE EXECUTED SET. Guarding the command is NOT ENOUGH, and review of #543 proved
+      #      it by mutation: committing `test.only` on one healthy spec collapsed this lane
+      #      from 51 specs to 1 while this command stayed byte-identical. Shard 1/3 ran the
+      #      single test and passed; shards 2/3 and 3/3 selected ZERO tests and EXITED 0 —
+      #      sharding suppresses playwright's own "No tests found" guard, so an empty shard
+      #      is SILENT. Three green checks over 1/51st of the suite. So
+      #      e2e_quarantine_ratchet_test.rb now pins the SET arithmetically (69 committed −
+      #      18 quarantined == the 51 run here), spec declarations are default-deny, and
+      #      playwright.config.js sets `forbidOnly` under CI. `.only`, `.skip`, `.fixme`, a
+      #      testDir/testIgnore edit, a deleted spec file and an empty shard are all red.
       - name: Run Playwright e2e suite
         env:
           RAILS_ENV: test
