@@ -575,7 +575,10 @@ class FastCheckTest < Minitest::Test
   # The OS's own start-time record, read independently of the code under test — a
   # fixture that builds itself with the implementation it is checking proves nothing.
   def os_start_time(pid)
-    out = `ps -p #{pid.to_i} -o lstart=`.strip.squeeze(" ")
+    # 2>/dev/null: the dead-cert fixtures name pids like 999_999 on purpose, and `ps`
+    # grumbles "process id too large" onto stderr. A cert log is a signal; do not
+    # teach anyone to read past noise in it.
+    out = `ps -p #{pid.to_i} -o lstart= 2>/dev/null`.strip.squeeze(" ")
     out.empty? ? nil : out
   end
 
