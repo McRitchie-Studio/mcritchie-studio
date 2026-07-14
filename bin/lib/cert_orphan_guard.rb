@@ -113,7 +113,12 @@ require "fileutils"
 # predicate, `kill_command` is the single place copy is rendered, and both kill sites
 # call the same predicate. Two parallel guards drift — that drift is this whole bug.
 module CertOrphanGuard
-  LOCK_REL = File.join("tmp", "cert-run.json")
+  LOCK_NAME = "cert-run.json"
+
+  # Where the runlock lives when the root is NOT a git repo at all (the unit fixtures;
+  # a tarball checkout). Safe by the same argument as the git-dir path below: with no
+  # repo there is no `git status` to be dirt to.
+  LOCK_REL = File.join("tmp", LOCK_NAME)
 
   # The lowest id we will ever aim a signal at — as a process GROUP or as a PID.
   #
@@ -130,9 +135,63 @@ module CertOrphanGuard
   LSTART_TOKENS = 5
 
   # --- the runlock ---------------------------------------------------------------
-
+  #
+  # THE RUNLOCK MUST NEVER BE VISIBLE TO `git status`. It lives in the GIT DIR, not in
+  # the working tree, and that is a correctness requirement — not tidiness.
+  #
+  # The lock's whole job is to SURVIVE a SIGKILLed cert: it is the only record of who
+  # the orphan is, so a cert that dies without running a handler must leave it behind.
+  # That makes it a durable file the cert itself creates. Put it in the tracked tree —
+  # it was `tmp/cert-run.json` — and it becomes an UNTRACKED FILE in any repo that does
+  # not happen to ignore `tmp/`. `git check-ignore` says studio-engine and turf-vault
+  # do not. And the cert now REFUSES a dirty tree (bin/lib/cert_tree_guard.rb, #546),
+  # reading dirtiness with `git status --porcelain`, which sees untracked-not-ignored
+  # files. So in those two repos the sequence was:
+  #
+  #   1. a SIGKILLed cert leaves the runlock — BY DESIGN
+  #   2. the next cert sees `?? tmp/` and aborts "working tree is DIRTY"
+  #   3. THE ORPHAN PREFLIGHT NEVER RUNS. The orphan is never reaped, the lock is never
+  #      cleared, and every retry hits the same wall — with the cert telling the agent
+  #      to `git add -A && git commit`, i.e. to COMMIT A RUNLOCK.
+  #
+  # That is precisely the deadlock this guard exists to end ("three attempts, 35
+  # minutes, zero progress"), rebuilt out of the guard's own artefact. Reproduced by
+  # execution against the auto-merged tree, not argued (test/lib/cert_runlock_test.rb).
+  #
+  # Merge order does NOT save it: the two guard blocks are DISJOINT hunks, git merges
+  # them silently, and the dirty guard lands above the preflight. "The sweep will order
+  # the hunks" is a convention, not an invariant — and drift between two things that
+  # must agree is the exact bug class this file was reworked to eliminate for kills.
+  #
+  # So the property is made STRUCTURAL. The git dir is not part of the working tree, in
+  # any repo, present or future, whatever its .gitignore says — `git status` cannot see
+  # into it, and there is nothing for a later refactor to silently re-break. (Adding
+  # `tmp/` to two .gitignore files fixes today's two repos and leaves the trap armed for
+  # the next one.) In a git WORKTREE this resolves to `.git/worktrees/<name>/`, so the
+  # lock stays per-desk exactly as before — the isolation comes free.
   def self.lock_path(root)
-    File.join(root.to_s, LOCK_REL)
+    dir = git_dir(root)
+    return File.join(dir, LOCK_NAME) if dir
+
+    root.to_s.empty? ? LOCK_REL : File.join(root.to_s, LOCK_REL)
+  end
+
+  # The repo's git dir for `root`, absolute, or nil when `root` is not in a repo.
+  #
+  # `--absolute-git-dir` over `--git-dir`: the latter answers RELATIVE to the cwd when
+  # the cwd is the toplevel (a bare ".git"), and we resolve for an arbitrary `root` that
+  # is usually not the cwd. Absolute is the only answer that is right from anywhere.
+  # In a worktree it returns `<main>/.git/worktrees/<name>` — the per-desk dir we want.
+  def self.git_dir(root)
+    return nil if root.to_s.empty?
+
+    out = IO.popen(["git", "-C", root.to_s, "rev-parse", "--absolute-git-dir"],
+                   err: File::NULL, &:read).to_s.strip
+    return nil unless $?.success? && !out.empty?
+
+    out
+  rescue Errno::ENOENT, SystemCallError
+    nil # no git on PATH → no `git status` either → nothing to be dirt to
   end
 
   def self.read_lock(root)
@@ -292,8 +351,17 @@ module CertOrphanGuard
   #
   # Structural safety, checked at the KILL SITE and not merely at the decision: the last
   # line of defence belongs next to the trigger.
+  # `coerce_pid` FIRST, and not because a caller needs it today: `pgid.to_i` on the `{}`
+  # that a malformed lock can hold is a NoMethodError, so THE ONE PREDICATE could be made
+  # to CRASH rather than refuse. Every in-tree caller happens to be guarded by coerce_pid
+  # upstream — which is exactly the argument this file rejects two screens up: the last
+  # line of defence belongs next to the trigger, "not one frame up in the caller that
+  # happens to check today". A guard that dies on garbage has no opinion about garbage;
+  # garbage is not signalable, so say so. Semantics-preserving for every valid input.
   def self.signalable?(pgid, self_pid: Process.pid, self_pgid: Process.getpgrp)
-    pgid = pgid.to_i
+    pgid = coerce_pid(pgid)
+    return false if pgid.nil?
+
     pgid >= MIN_SIGNALABLE_PGID && pgid != self_pgid.to_i && pgid != self_pid.to_i
   end
 
@@ -587,7 +655,7 @@ module CertOrphanGuard
   # to kill. So we say so out loud and move on, and the DB backstop below is what speaks
   # for a real orphan, on evidence, if one is actually holding the database.
   def self.malformed_message(root: nil, db: nil)
-    lock = root ? File.join(root.to_s, LOCK_REL) : LOCK_REL
+    lock = lock_path(root) # the path we actually READ — never a second guess at it
     "MALFORMED RUNLOCK — #{lock} does not name a process id and process group we can read. " \
       "It proves nothing: a lock that names nobody cannot authorize a kill, and this guard only " \
       "ever kills what it can prove it spawned. Discarding it and continuing" \
@@ -622,15 +690,17 @@ module CertOrphanGuard
   # 1 is garbage BY CONSTRUCTION (no cert ever ran in group 1), so there is no stranded
   # suite behind it to reap, and nothing a kill could correctly do.
   def self.unverifiable_message(pgid:, subject: :group, found: nil, members: [], db: nil, root: nil)
+    return unsafe_pgid_message(pgid: pgid, root: root, db: db) if subject == :unsafe_pgid
+
     live = ([found].compact + members).uniq { |p| p[:pid] }
     named = live.map { |p| "pid #{p[:pid]} (#{p[:command].to_s[0, 50]}, started #{p[:started_at]})" }.join(", ")
-    lock = root ? File.join(root.to_s, LOCK_REL) : LOCK_REL
+    lock = lock_path(root)
     reap = kill_command("TERM", pgid)
     subject_line =
-      case subject
-      when :cert then "the cert process named in the runlock (pid #{found ? found[:pid] : '?'}) is alive"
-      when :unsafe_pgid then "the runlock names process group #{pgid}, which is not a group any cert may signal"
-      else "process group #{pgid} from the runlock has live members"
+      if subject == :cert
+        "the cert process named in the runlock (pid #{found ? found[:pid] : '?'}) is alive"
+      else
+        "process group #{pgid} from the runlock has live members"
       end
 
     "REFUSING — #{subject_line}, but this runlock does not carry the identity needed to prove those " \
@@ -643,6 +713,42 @@ module CertOrphanGuard
       "rm #{lock.to_s.shellescape}   # discard the runlock" \
       "#{reap ? '' : " — a lock naming group #{pgid.to_i} is garbage by construction; there is nothing to reap"}\n" \
       "Then re-run the cert. This is an ENV condition — NOT a regression in your diff." \
+      "#{db ? " (test DB: #{db})" : ''}"
+  end
+
+  # A runlock naming group 0 or 1 is NOT an identity gap. It is a STRUCTURALLY INVALID
+  # lock: no cert ever ran in group 0 (that is the reader's own group) or group 1 (init;
+  # and `kill -TERM -1` is every process we own). So there is no suite behind it to reap,
+  # nothing to verify, and exactly ONE remedy — which means there is no decision to hand
+  # a human and no target to name.
+  #
+  # It used to borrow the :cert/:group prose and got all of that wrong. It blamed a
+  # missing identity ("this runlock does not carry the identity needed to prove those
+  # processes are ours… A pgid is a recyclable integer… A human decides") when the truth
+  # is that the lock is corrupt; and it then printed "Alive now: pid 4321 (…)" — processes
+  # that merely SHARE group 0/1 and are DEFINITIONALLY NOT OURS — naming them as targets
+  # underneath a refusal which says there is nothing to reap. Copy asserting more than the
+  # code can prove: the same drift class as the `kill -TERM -1` bug this file was written
+  # to end, one message over. Say only what is true, and offer only what is safe.
+  # NOTE the prose below names NO kill command, not even to explain why one would be
+  # wrong. The first draft of this message read "...and `kill -TERM -1` signals every
+  # process you own" — an explanation, but the KILL_IN_COPY invariant caught it, and the
+  # invariant is right: this message exists to be COPY-PASTED, by an agent or by a tired
+  # operator, and a refusal that contains the forbidden command as a literal string is
+  # one careless paste away from being the bug. Describe the danger; never spell it.
+  def self.unsafe_pgid_message(pgid:, root: nil, db: nil)
+    pgid = coerce_pid(pgid).to_i
+    "REFUSING — this worktree's runlock names process group #{pgid}, which is not a group any cert can " \
+      "ever have run in: group 0 addresses this process's OWN group, and group 1 addresses init — " \
+      "signalling it would hit every process you own. The lock is CORRUPT — a truncated write, a " \
+      "hand-edit, a half-flushed file from a SIGKILLed cert — not merely unverifiable. It names NO " \
+      "suite of ours: there is nothing to reap and nothing in it we could be entitled to kill, so no " \
+      "kill is offered here, because none would be correct. Nor are any live processes named: whatever " \
+      "shares group #{pgid} is, by definition, NOT ours.\n" \
+      "  Clear it:  rm #{lock_path(root).to_s.shellescape}   # discard the corrupt runlock\n" \
+      "  Inspect:   #{inspect_command(pgid)}   # if a suite IS stranded, it has PPID 1 — found by NAME, not by this lock\n" \
+      "Then re-run the cert. If a real orphan IS holding the test DB, the backstop names it on the " \
+      "evidence. This is an ENV condition — NOT a regression in your diff." \
       "#{db ? " (test DB: #{db})" : ''}"
   end
 

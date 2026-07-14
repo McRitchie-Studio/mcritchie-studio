@@ -481,9 +481,47 @@ class CertOrphanGuardTest < Minitest::Test
                  "`grep -E 'rails test|1'` matches nearly every line of ps (every pid/ppid/pgid with a 1 " \
                  "in it) — the whole process table handed back as suspects: noise dressed as evidence")
     assert_match(/grep -E 'rails test'/, msg, "the grep still finds a stranded suite by NAME")
+
+    # A CORRUPT lock is not an IDENTITY GAP, and the copy must not confuse the two. This
+    # message used to borrow the :cert/:group prose wholesale: it blamed a missing identity
+    # ("does not carry the identity needed to prove those processes are ours… A human
+    # decides") and then listed "Alive now: pid 4311 (…)" — a process that merely SHARES
+    # group 1 and is DEFINITIONALLY NOT OURS — naming it as a target underneath a refusal
+    # that says there is nothing to reap. Copy asserting more than the code can prove: the
+    # same drift class as printing a kill we refuse to fire, one message over.
+    refute_match(/Alive now/, msg,
+                 "a lock naming group 0/1 names NOBODY — whatever shares that group is definitionally " \
+                 "not ours, so the refusal must not parade it as a target")
+    refute_match(/#{4311}/, msg, "…and specifically must not name the bystander it was handed")
+    refute_match(/identity needed to prove|A human decides/, msg,
+                 "the lock is STRUCTURALLY INVALID, not unverifiable — there is exactly one remedy, so " \
+                 "there is no decision to hand a human and no identity gap to blame")
   end
 
   # --- [unit] a malformed lock names nobody, so it kills nobody --------------------
+
+  # THE ONE PREDICATE MUST NOT CRASH ON GARBAGE. `signalable?` guarded with `pgid.to_i`,
+  # and `Hash#to_i` is a NoMethodError — so `{"pgid": {}}`, a lock a half-flushed SIGKILLed
+  # cert can genuinely leave, could make the single gate that stands between this guard and
+  # `kill -TERM -1` RAISE instead of refuse. Every in-tree caller happens to be guarded by
+  # coerce_pid one frame up, which is exactly the argument this file rejects: the last line
+  # of defence belongs next to the trigger, not in the caller that happens to check today.
+  # A guard that dies on garbage has no opinion about garbage. Garbage is not signalable.
+  def test_signalable_refuses_garbage_instead_of_raising
+    [{}, [], "not-a-pid", nil, "", Object.new].each do |garbage|
+      refute CertOrphanGuard.signalable?(garbage),
+             "signalable?(#{garbage.inspect}) must REFUSE — it is not a pid, and the predicate that " \
+             "gates every kill in this file must never raise on input a corrupt lock can hold"
+    end
+
+    # …and it stays semantics-preserving for everything valid.
+    assert CertOrphanGuard.signalable?(4300), "a real group is still signalable"
+    assert CertOrphanGuard.signalable?("4300"), "…including one that came out of JSON as a string"
+    refute CertOrphanGuard.signalable?(0), "0 is the reader's own group"
+    refute CertOrphanGuard.signalable?(1), "1 is init — and every process we own"
+    refute CertOrphanGuard.signalable?(Process.getpgrp), "never our own group"
+    refute CertOrphanGuard.signalable?(Process.pid), "never our own pid"
+  end
 
   def test_a_malformed_lock_is_graded_not_raised
     # `{"pgid": {}}` — a truncated write, a hand-edit, a half-flushed file from a SIGKILLed

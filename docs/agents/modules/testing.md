@@ -316,8 +316,11 @@ against this (`bin/lib/cert_process.rb`, `bin/lib/cert_orphan_guard.rb`):
   GROUP on any signal it can catch (TERM/INT/HUP) or on an exception. The suite can
   no longer outlive the cert that spawned it.
 - **Detect** — a SIGKILL runs no handler, so prevention can never be complete. Each
-  lane writes a runlock (`tmp/cert-run.json`) naming its process group **and the OS's
-  start time for it**; the **next** cert reads it and, before any lane runs:
+  lane writes a runlock naming its process group **and the OS's start time for it** —
+  in the repo's **git dir** (`<git-dir>/cert-run.json`; per-worktree, and invisible to
+  `git status` in every repo, because a lock that must survive a SIGKILL would otherwise
+  be untracked dirt and the cert refuses a dirty tree). The **next** cert reads it and,
+  before any lane runs:
   - cert pid **alive and provably ours** → a real concurrent cert in this tree →
     **refuse** (never kill a live sibling; two suites on one worktree test DB corrupt
     each other's fixtures and SIGSEGV Ruby),

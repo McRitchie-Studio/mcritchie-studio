@@ -25,6 +25,56 @@ class FastCheckTest < Minitest::Test
   BIN = File.expand_path("../../bin/fast-check", __dir__)
   DOR = File.expand_path("../../bin/dor-check", __dir__)
 
+  # THE CHILD CERT HAS NO DATABASE. Say so, or it inherits ours.
+  #
+  # Every test here spawns the REAL bin/fast-check against a THROWAWAY git repo in a
+  # tmpdir — a repo with no database anywhere near it. But the child inherits this
+  # process's env, and a worktree's `bin/rails test` exports TEST_DATABASE_URL (from
+  # .env.test.local) AND holds an open connection to that database the moment anything
+  # in the run loads test_helper. So the child cert resolved the DB from the INHERITED
+  # env (test_db_url reads ENV before the root's dotenv), probed OUR worktree's test DB,
+  # found one foreign backend holding it — THE TEST RUNNER THAT SPAWNED IT — and did
+  # exactly what it is built to do: REFUSED. Exit 1.
+  #
+  #   fast-check: REFUSING — the test DB mcritchie_studio_test_<worktree> is held by 1
+  #   other session(s): pid 505 (bin/rails).            # ← pid 505 IS the test runner
+  #
+  # 27 tests across this file and full_suite_check_test.rb went red that way under
+  # `bin/rails test test/lib/` (the whole dir in ONE process), and stayed green when run
+  # alone — because a bare minitest file opens no AR connection and there is then nothing
+  # holding the DB. That difference reads as a spooky "inter-file interaction"; it is
+  # only ever this, and it will red-light the cert's own mapped lane for anyone whose
+  # diff touches these files alongside an AR-touching test.
+  #
+  # The fix is to stop lying to the child: this tmpdir repo has NO database. Unset the
+  # inherited URL (test_db_url → nil → foreign_backends → [], no probe at all) and point
+  # the probe at a psql that does not exist. cert_orphan_guard_reaper_test.rb already
+  # carried this defence (its NO_DB_ENV); it simply never reached the two harness files.
+  # The DB backstop is covered on its own terms there and in cert_orphan_guard_test.rb.
+  NO_AMBIENT_DB = { "TEST_DATABASE_URL" => nil, "CERT_GUARD_PSQL" => "/nonexistent/psql" }.freeze
+
+  # THE one place a child env is built in this file. Both scrubs — the agent session
+  # (SessionEnv) and the ambient database (above) — are applied HERE, so a new spawn
+  # site cannot quietly acquire either leak; patching five call sites one at a time is
+  # how the fifth gets missed. Same discipline the guard itself now follows: ONE
+  # predicate, not a rule repeated wherever someone remembers it.
+  def child_env(overrides = {})
+    SessionEnv.neutralized(NO_AMBIENT_DB.merge(overrides))
+  end
+
+  # --- [unit] the harness's own child env --------------------------------------------
+
+  def test_child_env_never_hands_the_child_our_database
+    env = child_env("FAST_CHECK_ROOT" => "/tmp/whatever")
+
+    assert env.key?("TEST_DATABASE_URL"), "the key must be PRESENT and nil — that is what UNSETS it"
+    assert_nil env["TEST_DATABASE_URL"],
+              "a child cert rooted at a throwaway repo must not inherit THIS suite's test DB: it would " \
+              "probe our database, find the test runner that spawned it holding a connection, and refuse"
+    assert_nil env["CLAUDE_CODE_SESSION_ID"], "…and it still must not inherit the live agent session"
+    assert_equal "/tmp/whatever", env["FAST_CHECK_ROOT"], "overrides still pass through"
+  end
+
   # --- [unit] merge_evidence with lanes: the fast writer must not drop full evidence
 
   def test_fast_lane_merge_replaces_only_prior_fast_cert_lines
@@ -124,9 +174,10 @@ class FastCheckTest < Minitest::Test
     lane = write_stub(dir, "lane-stub", "LANE")
     gate = write_stub(dir, "gate-stub", "GATE")
     task = write_stub(dir, "task-stub", "TASK")
-    # SessionEnv.neutralized: the child must name NO agent session — bin/fast-check
-    # shells to bin/task and the gate. See test/support/session_env.rb.
-    env = SessionEnv.neutralized({
+    # child_env: the child must name NO agent session (bin/fast-check shells to bin/task
+    # and the gate — test/support/session_env.rb) and must not inherit our test DB
+    # (NO_AMBIENT_DB). Both scrubs live in child_env; never build a child env by hand.
+    env = child_env({
       "FAST_CHECK_ROOT" => dir,
       "FAST_CHECK_DIFF_BASE" => "HEAD",
       "FAST_CHECK_SPINE" => File.join(dir, "spine.yml"),
@@ -328,7 +379,7 @@ class FastCheckTest < Minitest::Test
     with_repo do |dir, _|
       out, = run_check(dir)
       runner_fp = out[/@([0-9a-f]{7,64})\]/, 1]
-      dor_fp = IO.popen(SessionEnv.neutralized("DOR_CHECK_DIFF_ROOT" => dir),
+      dor_fp = IO.popen(child_env("DOR_CHECK_DIFF_ROOT" => dir),
                         "#{DOR} --suite-fingerprint 2>/dev/null", &:read).strip
       assert_equal dor_fp, runner_fp
     end
@@ -533,14 +584,16 @@ class FastCheckTest < Minitest::Test
   def test_a_killed_cert_does_not_orphan_the_suite_it_spawned
     with_repo do |dir, _|
       lane = write_hanging_lane(dir)
-      env = SessionEnv.neutralized(
-        "FAST_CHECK_ROOT" => dir,
-        "FAST_CHECK_DIFF_BASE" => "HEAD",
-        "FAST_CHECK_SPINE" => File.join(dir, "spine.yml"),
-        "FAST_CHECK_TEST_PREPARE_CMD" => "true",
-        "FAST_CHECK_TEST_CMD" => lane.shellescape,
-        "FAST_CHECK_RUBOCOP_CMD" => "true",
-        "FAST_CHECK_SKIP_ORPHAN_GUARD" => "1" # the guard is tested separately below
+      env = child_env(
+        {
+          "FAST_CHECK_ROOT" => dir,
+          "FAST_CHECK_DIFF_BASE" => "HEAD",
+          "FAST_CHECK_SPINE" => File.join(dir, "spine.yml"),
+          "FAST_CHECK_TEST_PREPARE_CMD" => "true",
+          "FAST_CHECK_TEST_CMD" => lane.shellescape,
+          "FAST_CHECK_RUBOCOP_CMD" => "true",
+          "FAST_CHECK_SKIP_ORPHAN_GUARD" => "1" # the guard is tested separately below
+        }
       )
       cert = Process.spawn(env, BIN, "--print", chdir: dir, out: File::NULL, err: File::NULL)
       pid_file = File.join(dir, "lane.pid")
@@ -586,10 +639,21 @@ class FastCheckTest < Minitest::Test
   # `pgid_started_at:` overrides the identity, to forge the two locks that matter:
   # a recycled pgid (a start time that is not this process's) and a legacy lock
   # (`nil` — written before the guard recorded identity at all).
+  # The runlock lives in the GIT DIR, never in the working tree — a lock inside the tree
+  # is untracked dirt in any repo that does not ignore `tmp/`, and the cert now refuses a
+  # dirty tree (see bin/lib/cert_orphan_guard.rb#lock_path). Resolved here by asking git
+  # DIRECTLY, not by calling CertOrphanGuard: a fixture that builds itself with the
+  # implementation it is checking proves nothing.
+  def git_dir(dir)
+    out = `git -C #{dir.shellescape} rev-parse --absolute-git-dir 2>/dev/null`.strip
+    refute_empty out, "the fixture repo must be a git repo"
+    out
+  end
+
   def write_lock(dir, cert_pid:, pgid:, pgid_started_at: :real, cert_started_at: :real)
     started = pgid_started_at == :real ? os_start_time(pgid) : pgid_started_at
     cert_started = cert_started_at == :real ? os_start_time(cert_pid) : cert_started_at
-    lock = File.join(dir, "tmp", "cert-run.json")
+    lock = File.join(git_dir(dir), "cert-run.json")
     FileUtils.mkdir_p(File.dirname(lock))
     File.write(lock, JSON.generate("cert_pid" => cert_pid, "cert_started_at" => cert_started,
                                    "pgid" => pgid, "pgid_started_at" => started, "lane" => "spine",

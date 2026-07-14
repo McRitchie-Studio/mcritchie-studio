@@ -63,9 +63,8 @@ before any lane runs. A cert that outran its harness timeout leaves its
 `bin/rails test` grandchild alive, holding the worktree's test DB — and every
 retry then dies in test-prepare on `PG::ObjectInUse`, so the retry path recreates
 the deadlock and the agent can never dig out (live, 2026-07-13: three attempts,
-35 minutes, zero board progress). Each cert therefore leaves a runlock
-(`tmp/cert-run.json`) naming its process group **and that group's OS start time**,
-and the next cert reads it:
+35 minutes, zero board progress). Each cert therefore leaves a runlock naming its
+process group **and that group's OS start time**, and the next cert reads it:
 
 | It finds | It does |
 |----------|---------|
@@ -73,11 +72,21 @@ and the next cert reads it:
 | a **live** sibling cert | **refuses** — two suites on one test DB SIGSEGV Ruby |
 | the pgid **recycled** onto a stranger | **never kills it**; discards the lock, continues |
 | a group it **cannot prove** is ours | **refuses** and names what is alive — a human decides |
-| a **garbage** lock (group 0/1, malformed) | discards it loudly; `rm tmp/cert-run.json` is the only remedy |
+| a **malformed** lock (names no integer pid/pgid) | **clears it** loudly and continues — it names nobody, so there is nobody to kill; the DB backstop speaks for a real orphan |
+| a lock naming group **0 or 1** | **refuses** and leaves the lock — the lock is corrupt, no cert ever ran in those groups, and no kill would be correct. `rm` it yourself |
 
 An exit-1 from the preflight is an **ENV refusal, not a red diff** — it names the
 pid and the DB. Never `rm` the runlock to get past a refusal you have not read: it
 is naming a process that is still holding your database.
+
+**The runlock lives in the repo's git dir** (`<git-dir>/cert-run.json`; in a worktree
+that is `.git/worktrees/<name>/`, so each desk keeps its own), **never in the working
+tree**. It has to: the lock's job is to SURVIVE a SIGKILLed cert, so a lock inside the
+tree is an untracked file in any repo that does not ignore `tmp/` — studio-engine and
+turf-vault do not — and the cert **refuses a dirty tree**. The next cert would abort
+`DIRTY` on the guard's own artefact, the orphan preflight would never run, and the
+deadlock above would be back, permanently. Keeping the lock out of the tree makes that
+impossible by construction rather than by every repo remembering to ignore `tmp/`.
 
 1. **Certify — fast route (default):**
 
