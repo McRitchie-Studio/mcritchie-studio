@@ -25,6 +25,156 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     FileUtils.rm_rf(@projects_dir) if @projects_dir
   end
 
+  # --- `new` is ATOMIC: a complete desk, or nothing --------------------------------
+  #
+  # THE BUG (live, 2026-07-13): with the Redis band at its physical ceiling, `new` cut the
+  # git worktree FIRST and only then tried to allocate a Redis DB — so it exited non-zero
+  # having left a desk on disk with no stack env, no port, and NO ISOLATED TEST DB. That
+  # desk looks usable. config/database.yml falls back to the SHARED base <app>_test when
+  # TEST_DATABASE_URL is blank, so an agent who lands on it certifies against the database
+  # the primary checkout and the release gate workspaces are running on. Silently.
+  #
+  # Every failure below is FORCED at a DIFFERENT provisioning step, because a rollback
+  # tested only against the failure we thought of is a rollback we do not know works.
+
+  test "new at the Redis ceiling creates nothing at all" do
+    setup_provisioning!
+    # databases=10 => the only band DB that physically exists is 9, and the pre-existing
+    # desk already holds it. Zero free slots, exactly like the live band at 55/55.
+    out, err, status = agent_worktree("new", "mcritchie-studio", "doomed-desk",
+                                      env: provision_env("FAKE_REDIS_DATABASES" => "10"))
+
+    refute status.success?, "bringup must fail when there is no Redis DB to hand out\n#{out}"
+    assert_nothing_left_behind("doomed-desk")
+    assert_pre_existing_desk_intact
+    # Refused BEFORE the first side effect — it never even reached git.
+    assert_includes err, "Nothing was created"
+    assert_includes err, "cleanup --reclaim", "the message must name the remedy, not just the failure"
+  end
+
+  test "new with no free port creates nothing at all" do
+    setup_provisioning!
+    # Ports 3001-3099 all held (no REDIS_URL: this vector must fail on the PORT, not the band).
+    (3001..3099).each { |port| occupy_stack("port-hog-#{port}", port: port) }
+
+    out, _err, status = agent_worktree("new", "mcritchie-studio", "no-port-desk", env: provision_env)
+
+    refute status.success?, "bringup must fail when the port range is exhausted\n#{out}"
+    assert_nothing_left_behind("no-port-desk")
+    assert_pre_existing_desk_intact
+  end
+
+  test "new rolls back the worktree when the test DB cannot be created" do
+    setup_provisioning!
+    # The step the OLD code merely WARNED about: it kept the desk, and the desk had no
+    # isolated test DB. This is the vector that armed the hazard.
+    out, err, status = agent_worktree("new", "mcritchie-studio", "no-db-desk",
+                                      env: provision_env("FAKE_RAILS_FAIL" => "1"))
+
+    refute status.success?, "a desk with no isolated test DB must not be kept\n#{out}"
+    assert_nothing_left_behind("no-db-desk")
+    assert_pre_existing_desk_intact
+    assert_includes err, "SHARED", "the message must say WHY a desk without its own DB is dangerous"
+    # Named as an env problem, so nobody hunts their diff for a phantom regression.
+    assert_includes err, "not a problem with the task"
+  end
+
+  test "new drops a test database it created when a later step fails" do
+    setup_provisioning!
+    # The prepare half-lands: the database IS created, then the task dies. The database
+    # lives OUTSIDE the worktree dir, so removing the desk does not remove it — a rollback
+    # that forgets it strands a stale schema for the next `new` of the same slug to adopt.
+    _out, _err, status = agent_worktree("new", "mcritchie-studio", "stray-db-desk",
+                                        env: provision_env("FAKE_RAILS_FAIL_AFTER_CREATE" => "1"))
+
+    refute status.success?
+    assert_includes dropped_databases, test_db_for("stray-db-desk"), "the rollback must DROP the test DB it created"
+    assert_nothing_left_behind("stray-db-desk")
+  end
+
+  test "new rolls back when Postgres cannot verify the test DB" do
+    setup_provisioning!
+    # bin/rails exits 0 but Postgres is unreachable, so the isolated DB cannot be VERIFIED.
+    # "Unknown" is not "fine": an unverifiable desk is exactly the one that silently shares
+    # the base test DB. The property is asserted; the exit code is not trusted.
+    _out, err, status = agent_worktree("new", "mcritchie-studio", "unverified-desk",
+                                       env: provision_env("FAKE_PG_DOWN" => "1"))
+
+    refute status.success?, "a desk whose isolation cannot be verified must not be kept"
+    assert_nothing_left_behind("unverified-desk")
+    assert_includes err, "Postgres"
+  end
+
+  test "new rolls back a Redis band it grew" do
+    setup_provisioning!
+    # Band floor 20 (DBs 9-28), all taken, but Redis physically has room to 39 — so
+    # allocate_redis_db GROWS the band (restart-free) to hand out DB 29. That growth is
+    # persisted state: a failed `new` that forgets it permanently inflates a band whose
+    # slot it never used.
+    (9..28).each { |db| occupy_stack("band-hog-#{db}", redis_db: db) }
+    capacity_file = File.join(@projects_dir, ".agents", "redis-capacity.json")
+
+    _out, _err, status = agent_worktree("new", "mcritchie-studio", "grown-band-desk",
+                                        env: provision_env("FAKE_REDIS_DATABASES" => "40",
+                                                           "FAKE_RAILS_FAIL" => "1"))
+
+    refute status.success?
+    assert_nothing_left_behind("grown-band-desk")
+    assert_equal 20, JSON.parse(File.read(capacity_file)).fetch("current_capacity"),
+                 "the rollback must shrink the band back: a growth kept for a desk that does not exist is a leak"
+  end
+
+  test "new provisions a complete desk on the happy path" do
+    setup_provisioning!
+    out, err, status = agent_worktree("new", "mcritchie-studio", "good-desk", env: provision_env)
+
+    assert status.success?, "#{out}\n#{err}"
+    dir = desk_dir("good-desk")
+    assert Dir.exist?(dir)
+    assert branch?("feat/good-desk")
+
+    stack = File.read(File.join(dir, ".env.agent-stack"))
+    assert_match(/APP_PORT=\d+/, stack)
+    assert_match(%r{REDIS_URL=redis://localhost:6379/\d+}, stack)
+
+    # The property the whole desk exists for: its OWN test DB, pinned where a plain
+    # `bin/rails test` will find it (dotenv auto-loads .env.test.local for RAILS_ENV=test).
+    assert_includes File.read(File.join(dir, ".env.test.local")),
+                    "TEST_DATABASE_URL=postgresql://localhost/#{test_db_for('good-desk')}"
+    assert_includes databases, test_db_for("good-desk"), "the isolated test DB must really exist"
+  end
+
+  test "new repairs a half-built desk instead of refusing it" do
+    setup_provisioning!
+    # A desk left by the OLD tool: the worktree and branch exist, the stack env does not.
+    # They are on disk right now, so `new` must COMPLETE one — not refuse, and not delete it.
+    git!(@hub_dir, "worktree", "add", desk_dir("half-built"), "-b", "feat/half-built")
+    refute File.exist?(File.join(desk_dir("half-built"), ".env.agent-stack")), "premise: half-built"
+
+    out, err, status = agent_worktree("new", "mcritchie-studio", "half-built", env: provision_env)
+
+    assert status.success?, "#{out}\n#{err}"
+    assert File.exist?(File.join(desk_dir("half-built"), ".env.agent-stack")), "the repair must write the stack env"
+    assert_includes File.read(File.join(desk_dir("half-built"), ".env.test.local")), "TEST_DATABASE_URL="
+    assert_includes databases, test_db_for("half-built")
+  end
+
+  test "a failed repair leaves the pre-existing worktree alone" do
+    setup_provisioning!
+    # Never over-delete: rollback undoes what THIS run created, not what it found. The
+    # stack env it wrote goes; the worktree it did not create stays.
+    git!(@hub_dir, "worktree", "add", desk_dir("half-built"), "-b", "feat/half-built")
+
+    _out, _err, status = agent_worktree("new", "mcritchie-studio", "half-built",
+                                        env: provision_env("FAKE_RAILS_FAIL" => "1"))
+
+    refute status.success?
+    assert Dir.exist?(desk_dir("half-built")), "the rollback deleted a worktree it did not create"
+    assert branch?("feat/half-built"), "the rollback deleted a branch it did not create"
+    refute File.exist?(File.join(desk_dir("half-built"), ".env.agent-stack")),
+           "the stack env THIS run wrote must be rolled back (it holds a port + Redis DB)"
+  end
+
   test "bind-task records the production task on env and context marker" do
     out, err, status = agent_worktree("bind-task", "mcritchie-studio", @task, "task-abc123")
 
@@ -1433,6 +1583,183 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
       ]
     )}\n")
     path
+  end
+
+  # --- atomic-bringup fixtures ----------------------------------------------------
+  # Everything below is HERMETIC: fake redis-cli / pg_isready / psql / dropdb / bin/rails
+  # on the sandbox PATH. The "band full" condition is SIMULATED (a redis-cli reporting a
+  # small `databases`), never provoked by really filling the live band — the desks of
+  # every other agent on this machine hang off that Redis.
+
+  def fake_pg_state
+    File.join(@projects_dir, "fake-pg-databases")
+  end
+
+  def fake_dropdb_log
+    File.join(@projects_dir, "fake-dropdb.log")
+  end
+
+  def databases
+    File.exist?(fake_pg_state) ? File.readlines(fake_pg_state).map(&:strip).reject(&:empty?) : []
+  end
+
+  def dropped_databases
+    File.exist?(fake_dropdb_log) ? File.readlines(fake_dropdb_log).map(&:strip).reject(&:empty?) : []
+  end
+
+  # redis-cli (physical `databases` — the ceiling the band can never exceed) plus the
+  # Postgres trio bin/agent-worktree shells out to: pg_isready (reachable?), psql (does
+  # this DB exist?), dropdb (the rollback's undo). State is a plain file of DB names.
+  def fake_bin_dir
+    dir = File.join(@projects_dir, "fake-bin")
+    FileUtils.mkdir_p(dir)
+    return dir if File.exist?(File.join(dir, "psql"))
+
+    write_shim(dir, "redis-cli", <<~RUBY)
+      # CONFIG GET databases -> the physical ceiling. Everything else (flushdb) is a no-op.
+      if ARGV.include?("CONFIG")
+        puts "databases"
+        puts ENV.fetch("FAKE_REDIS_DATABASES", "64")
+      end
+      exit 0
+    RUBY
+
+    write_shim(dir, "pg_isready", <<~RUBY)
+      exit(ENV["FAKE_PG_DOWN"] == "1" ? 1 : 0)
+    RUBY
+
+    write_shim(dir, "psql", <<~RUBY)
+      # -Atqc "SELECT 1 FROM pg_database WHERE datname='x'" postgres
+      name = ARGV.join(" ")[/datname='([^']*)'/, 1].to_s
+      state = ENV["FAKE_PG_STATE"].to_s
+      dbs = File.exist?(state) ? File.readlines(state).map(&:strip) : []
+      puts 1 if dbs.include?(name)
+      exit 0
+    RUBY
+
+    write_shim(dir, "dropdb", <<~RUBY)
+      name = ARGV.reject { |a| a.start_with?("--") }.first.to_s
+      state = ENV["FAKE_PG_STATE"].to_s
+      dbs = File.exist?(state) ? File.readlines(state).map(&:strip) : []
+      File.write(state, dbs.reject { |db| db == name }.join("\\n"))
+      File.open(ENV["FAKE_DROPDB_LOG"].to_s, "a") { |f| f.puts(name) }
+      exit 0
+    RUBY
+
+    dir
+  end
+
+  def write_shim(dir, name, body)
+    path = File.join(dir, name)
+    File.write(path, "#!/usr/bin/env ruby\n#{body}")
+    File.chmod(0o755, path)
+    path
+  end
+
+  # The sandbox repo's `bin/rails`, standing in for the one real seam that provisions the
+  # isolated test DB: `db:test:prepare` creates it (bin/agent-worktree passes the worktree's
+  # TEST database as DATABASE_URL). Committed on main and published to origin/main so every
+  # worktree `new` cuts carries it.
+  #   FAKE_RAILS_FAIL=1              — the prepare fails outright; no DB is created.
+  #   FAKE_RAILS_FAIL_AFTER_CREATE=1 — the DB IS created, then the task dies (a half-landed
+  #                                    prepare, so the rollback has a real database to drop).
+  def install_fake_rails!
+    bin = File.join(@hub_dir, "bin")
+    FileUtils.mkdir_p(bin)
+    write_shim(bin, "rails", <<~RUBY)
+      exit 1 if ENV["FAKE_RAILS_FAIL"] == "1"
+      if ARGV.include?("db:test:prepare") && ENV["FAKE_PG_DOWN"] != "1"
+        # No database gets created on a Postgres that is down — the shim stays honest.
+        db = ENV["DATABASE_URL"].to_s.split("/").last.to_s
+        File.open(ENV["FAKE_PG_STATE"].to_s, "a") { |f| f.puts(db) } unless db.empty?
+      end
+      exit 1 if ENV["FAKE_RAILS_FAIL_AFTER_CREATE"] == "1"
+      exit 0
+    RUBY
+    git!(@hub_dir, "add", "bin/rails")
+    git!(@hub_dir, "commit", "-m", "Add rails entrypoint")
+    git!(@hub_dir, "update-ref", "refs/remotes/origin/main", "HEAD")
+  end
+
+  # A LOCAL bare origin: `new` fetches origin before cutting a branch, and the sandbox's
+  # SSH-form remote would reach for the network. Offline and instant.
+  def use_local_origin!
+    bare = File.join(@projects_dir, "origin.git")
+    Open3.capture3(SessionEnv.neutralized, "git", "init", "-q", "--bare", bare)
+    git!(@hub_dir, "remote", "set-url", "origin", bare)
+    git!(@hub_dir, "push", "-q", "origin", "main")
+    git!(@hub_dir, "update-ref", "refs/remotes/origin/main", "HEAD")
+  end
+
+  # Commit bin/rails BEFORE publishing the origin: `new` fetches origin and cuts the desk
+  # from origin/main, so a commit that only exists locally is a commit the desk never sees.
+  def setup_provisioning!
+    install_fake_rails!
+    use_local_origin!
+  end
+
+  def provision_env(extra = {})
+    {
+      "PATH" => "#{fake_bin_dir}:#{ENV.fetch('PATH', '')}",
+      "AGENT_REDIS_MIN_DB" => "9",
+      "FAKE_PG_STATE" => fake_pg_state,
+      "FAKE_DROPDB_LOG" => fake_dropdb_log,
+      "FAKE_REDIS_DATABASES" => "64",
+      # Hard network guard: anything reaching for github fails fast instead of hanging.
+      "GIT_SSH_COMMAND" => "/usr/bin/false"
+    }.merge(extra)
+  end
+
+  # A desk that exists only as a stack env — enough to HOLD a port and a Redis DB
+  # (allocated_ports / allocated_redis_dbs glob .worktrees/*/.env.agent-stack), which is
+  # all it takes to exhaust a resource without minting real git worktrees.
+  def occupy_stack(slug, port: nil, redis_db: nil)
+    dir = File.join(@hub_dir, ".worktrees", slug)
+    FileUtils.mkdir_p(dir)
+    lines = []
+    lines << "APP_PORT=#{port}" if port
+    lines << "REDIS_URL=redis://localhost:6379/#{redis_db}" if redis_db
+    File.write(File.join(dir, ".env.agent-stack"), "#{lines.join("\n")}\n")
+    dir
+  end
+
+  def desk_dir(task)
+    File.join(@hub_dir, ".worktrees", task)
+  end
+
+  def branch?(name)
+    out, _err, _status = Open3.capture3(SessionEnv.neutralized, "git", "-C", @hub_dir, "branch", "--list", name)
+    !out.strip.empty?
+  end
+
+  def git_registered?(dir)
+    out, _err, _status = Open3.capture3(SessionEnv.neutralized, "git", "-C", @hub_dir, "worktree", "list")
+    out.include?(dir)
+  end
+
+  def test_db_for(task)
+    "mcritchie_studio_test_#{task.tr('-', '_')}"
+  end
+
+  # NOTHING left behind: not the checkout, not git's registration of it, not the branch,
+  # not the stack env that IS the port + Redis reservation, and not a stray database.
+  # A rollback that forgets any ONE of these is a leak — and the Redis one silently
+  # refills the band that was full to begin with.
+  def assert_nothing_left_behind(task)
+    dir = desk_dir(task)
+    refute Dir.exist?(dir), "left a worktree DIRECTORY behind: #{dir}"
+    refute git_registered?(dir), "left a git worktree REGISTRATION behind: #{dir}"
+    refute branch?("feat/#{task}"), "left the BRANCH feat/#{task} behind"
+    refute File.exist?(File.join(dir, ".env.agent-stack")), "left the port + Redis RESERVATION behind"
+    refute_includes databases, test_db_for(task), "left a stray test DATABASE behind"
+  end
+
+  # The pre-existing desk (setup_repo's terminal-context) is untouched. A rollback that
+  # over-deletes is worse than the bug it fixes: it destroys a colleague's desk.
+  def assert_pre_existing_desk_intact
+    assert Dir.exist?(@worktree_dir), "rollback destroyed a PRE-EXISTING worktree"
+    assert File.exist?(File.join(@worktree_dir, ".env.agent-stack")), "rollback destroyed a pre-existing stack env"
+    assert branch?("feat/terminal-context"), "rollback deleted a pre-existing branch"
   end
 
   def write_fake_gh

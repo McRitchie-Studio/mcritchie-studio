@@ -626,11 +626,7 @@ def allocate_redis_db
         next
       end
 
-      abort <<~MSG.strip
-        no free Redis DB in band #{redis_db_min}-#{ceiling}; physical Redis ceiling reached (databases=#{physical}).
-        Free a slot:   bin/agent-worktree cleanup   (then remove merged worktrees)
-        Raise ceiling: bin/agent-worktree scale --provision   (raises Redis databases to #{redis_physical_target}, restarts Redis once)
-      MSG
+      abort band_full_message(physical)
     end
   end
 end
@@ -655,6 +651,119 @@ def maybe_scale_in
     write_current_capacity(target)
     log_act("scaled in: #{current} -> #{target} slots (band redis DBs #{redis_db_min}-#{redis_db_min + target - 1})")
   end
+end
+
+# Slots `new` can actually hand out RIGHT NOW. Not `current band - used`: the band
+# grows restart-free up to the physical room, so availability is measured against
+# the ROOM (what Redis physically has above the band floor), not the band as it
+# currently stands. Zero here means the next `new` cannot get a Redis DB.
+def redis_slots_free
+  physical = redis_physical_count
+  reachable = [load_current_capacity, physical_band_capacity(physical)].max
+  allocatable_free(reachable, physical, allocated_band_dbs.size)
+end
+
+# The `new` message for a band with no slot left — the operator-facing half of the
+# hazard. Named remedies, cheapest first.
+def band_full_message(physical = redis_physical_count)
+  <<~MSG.strip
+    no free Redis DB: the worktree band is FULL at the physical Redis ceiling (databases=#{physical}, DBs #{redis_db_min}-#{physical - 1}).
+    Nothing was created — a desk without its own Redis DB, port, and test DB is worse than no desk at all.
+    Free slots (cheapest first):
+      bin/agent-worktree cleanup --reclaim         # dry run: merged + clean desks, safe to release
+      bin/agent-worktree cleanup --reclaim --yes   # release them, shrinking the band
+    Or raise the ceiling (INFRA LANE — restarts Redis and bounces every running stack):
+      bin/agent-worktree scale --provision
+  MSG
+end
+
+# Refuse BEFORE the first side effect. Bringup can roll back what it created, but a
+# rollback that misses a case is a leak — so the failure we KNOW is coming (a full
+# band, the live 2026-07-13 condition) never gets to create anything at all.
+# A desk that is already provisioned (dir + stack env) holds its slot already: a
+# repeat `new` on it is a resume, not an allocation, so it skips the check.
+def preflight_capacity!(app, task)
+  return unless parse_env(stack_env_path(app, task)).empty?
+
+  with_worktree_lock do
+    abort band_full_message if redis_slots_free <= 0
+  end
+end
+
+# The undo stack for a partial bringup. Every step that touches shared state — the
+# git worktree, the branch, the stack env (which IS the port + Redis reservation:
+# allocated_ports/allocated_redis_dbs read it back), the grown Redis band, the test
+# database — registers its inverse THE MOMENT IT LANDS. Any non-local exit out of
+# provisioning unwinds them in reverse.
+#
+# Deliberately not a list of known failure modes: `new` shells out to git, rails,
+# psql and Redis, and each of those can fail in ways nobody enumerated. Registering
+# the inverse of what actually happened is the only version that covers the vector
+# we did not think of.
+class DeskRollback
+  Step = Struct.new(:label, :action)
+
+  def initialize
+    @steps = []
+  end
+
+  def register(label, &action)
+    @steps << Step.new(label, action)
+  end
+
+  def commit!
+    @steps.clear
+  end
+
+  def empty?
+    @steps.empty?
+  end
+
+  # Unwind in reverse. Each undo is best-effort and NEVER raises: a rollback that
+  # blows up halfway leaves behind exactly the debris it exists to remove, so a
+  # failing step is REPORTED and the rest still run.
+  def unwind!
+    return if @steps.empty?
+
+    log_act("rolling back partial bringup (#{@steps.size} step#{"s" unless @steps.size == 1})")
+    @steps.reverse_each do |step|
+      step.action.call
+      log_ok("rolled back: #{step.label}")
+    rescue StandardError, SystemExit => e
+      log_fail("ROLLBACK STEP FAILED: #{step.label} (#{e.class}) — remove it by hand")
+    end
+    @steps.clear
+  end
+end
+
+# Undo of `ensure_git_worktree`: drop the checkout, its git registration, and the
+# branch it cut. `--force` because a half-built desk can carry the copied .env;
+# rm_rf + prune because a worktree that git never finished registering is a plain
+# directory git refuses to remove.
+def remove_worktree_and_branch(app, dir, branch)
+  repo = app.fetch("repo")
+  sh("git", "-C", repo, "worktree", "remove", "--force", dir, allow_fail: true)
+  FileUtils.rm_rf(dir)
+  sh("git", "-C", repo, "worktree", "prune", allow_fail: true)
+  return if branch.to_s.empty? || %w[main master release].include?(branch)
+
+  sh("git", "-C", repo, "branch", "-D", branch, allow_fail: true)
+end
+
+# Undo of the test-DB provision. The database lives OUTSIDE the worktree dir, so
+# unlike .env.test.local it does not disappear when the desk is removed — an
+# un-dropped test DB is the leak that makes the next `new` for the same slug adopt
+# a stale schema.
+#
+# Raises (rather than returning quietly) when it cannot do its job: DeskRollback
+# turns that into a named "ROLLBACK STEP FAILED" line. A skipped undo that says
+# nothing is how a leak becomes invisible.
+def drop_database!(db_name)
+  return if db_name.to_s.empty?
+  raise "Postgres is unreachable, so #{db_name} could not be dropped" unless system("pg_isready", "-q", out: File::NULL, err: File::NULL)
+
+  ok, _out, err = capture_status("dropdb", "--if-exists", db_name)
+  raise "dropdb #{db_name} failed: #{err.to_s.strip}" unless ok
 end
 
 def allocate_port(app)
@@ -914,6 +1023,136 @@ def prepare_test_env(dir, app, values)
   end
   tasks << "test:prepare"
   sh("bin/rails", *tasks, chdir: dir, env: test_command_env(app, values), allow_fail: true)
+end
+
+# The desk's ONE non-negotiable property: it owns its test database.
+#
+# config/database.yml renders `url: <%= ENV["TEST_DATABASE_URL"] %>` and falls back
+# to the SHARED base `<app>_test` when that is blank — the same database the primary
+# checkout and the release gate workspaces use. So a desk with no isolated test DB
+# does not fail; it QUIETLY JOINS the shared one, and its `bin/rails test` pollutes,
+# and is polluted by, every concurrent suite (PG::ObjectInUse on purge, phantom
+# order-dependent failures). Nothing about the directory announces it.
+#
+# prepare_test_env is best-effort (allow_fail) — it must be, since a stack can be
+# rebuilt when Postgres is down. That is exactly why the OUTCOME is verified here
+# instead of its exit code being trusted: assert the property, then keep the desk.
+# Anything short of a real, reachable, isolated test DB and the desk does not exist.
+def isolated_test_db_failure(dir, values)
+  test_url = test_database_url(values)
+  return "the stack env has no DATABASE_URL to derive a test database from" if test_url.nil?
+
+  declared = parse_env(test_env_local_path(dir))["TEST_DATABASE_URL"].to_s.strip
+  return "#{test_env_local_path(dir)} was not written (no TEST_DATABASE_URL to pin the test env)" if declared.empty?
+
+  db = db_name_from_url(test_url)
+  case database_exists?(db)
+  when true then nil
+  when false then "the test database #{db} does not exist (db:test:prepare did not create it)"
+  else "Postgres is unreachable (pg_isready), so the test database #{db} could not be verified"
+  end
+end
+
+# Provision a DESK, ATOMICALLY: a complete, isolated worktree — or NOTHING.
+#
+# It used to build in order and `abort` on the first failure, so a full Redis band
+# (live, 2026-07-13) left the worktree and the branch on disk with NO stack env and
+# NO isolated test DB. That desk LOOKS usable — and an agent who lands on it
+# certifies against the SHARED test DB, silently. The isolation the desk exists to
+# provide is void and nothing says so.
+#
+# Three locks on that door:
+#   1. PREFLIGHT  — refuse before creating anything we would have to unwind.
+#   2. ALLOCATE FIRST — the port + Redis DB are claimed BEFORE the git worktree is
+#      cut, so the failure we know about can't get past step 0.
+#   3. UNDO STACK — anything that lands registers its inverse; ANY non-local exit
+#      (an `abort` inside `sh`, a raise, a Ctrl-C) unwinds it in reverse.
+# Then the desk is ASSERTED complete (isolated_test_db_failure) before it is kept.
+#
+# Resumable, and it never over-deletes: only what THIS run created is registered
+# for rollback, so re-running `new` over an existing (or half-built) desk repairs
+# the missing pieces and a failure leaves the pre-existing parts alone.
+def provision_desk!(app, task, type)
+  preflight_capacity!(app, task)
+
+  dir = worktree_dir(app, task)
+  branch = "#{type}/#{task}"
+  rollback = DeskRollback.new
+
+  begin
+    values = with_worktree_lock do
+      # Allocation and the artifacts that RESERVE it under ONE lock: the stack env
+      # IS the reservation (allocated_ports/allocated_redis_dbs read it back), so a
+      # concurrent `new` must not slip into the window between choosing and writing.
+      existing_env = parse_env(stack_env_path(app, task))
+      capacity_before = load_current_capacity
+      resolved = existing_env.empty? ? stack_values(app, task) : local_email_values.merge(existing_env)
+      # allocate_redis_db may GROW the persisted band (restart-free). Unwind that too,
+      # or a failed `new` permanently inflates a band it never used a slot of.
+      rollback.register("redis band growth") { maybe_scale_in } if load_current_capacity != capacity_before
+
+      fresh_worktree = !Dir.exist?(dir)
+      ensure_git_worktree(app, task, type)
+      rollback.register("git worktree #{dir} + branch #{branch}") { remove_worktree_and_branch(app, dir, branch) } if fresh_worktree
+
+      if existing_env.empty?
+        path = write_stack_env(app, task, resolved)
+        rollback.register("stack env #{path} (port + redis reservation)") { FileUtils.rm_f(path) }
+      end
+      resolved
+    end
+
+    write_context_marker(app, task, values, dir)
+    puts "worktree ready: #{dir}"
+    puts "stack env:      #{stack_env_path(app, task)}"
+    puts "context:        #{context_path(dir)}"
+
+    # Provision the isolated TEST DB, write .env.test.local, and BUILD the bundled
+    # assets, so a fresh worktree runs `bin/rails test` — and bin/fast-check, whose
+    # lanes pass explicit test paths — out of the box (no manual db:create / unsetting
+    # DATABASE_URL / tailwindcss:build). app/assets/builds/ is gitignored, so a virgin
+    # worktree has no CSS until something builds it; see prepare_test_env.
+    test_db = db_name_from_url(test_database_url(values))
+    unless test_db.empty? || database_exists?(test_db)
+      # Registered BEFORE the create, so a create that half-lands is still dropped.
+      # Skipped when the DB already exists: that one is not ours to destroy.
+      rollback.register("test database #{test_db}") { drop_database!(test_db) }
+    end
+    puts "test db:        #{test_db} (provisioning)" unless test_db.empty?
+    puts "assets:         app/assets/builds/tailwind.css (building)"
+    prepared = prepare_test_env(dir, app, values)
+
+    # BOTH halves, because either alone lets a broken desk through:
+    #   - the OUTCOME (isolated_test_db_failure), because prepare_test_env is best-effort
+    #     and its exit code is not the property we care about; and
+    #   - the COMMAND, because a db:test:prepare that HALF-lands (database created, schema
+    #     load died) leaves a DB that exists and answers `psql` while holding no schema.
+    #     The desk would look isolated and pass the outcome check.
+    # A desk is complete or it does not exist. Re-running `new` is cheap; a silent
+    # half-desk costs a day of chasing a phantom regression.
+    failure = isolated_test_db_failure(dir, values)
+    failure ||= "`bin/rails db:test:prepare test:prepare` failed (its output is above)" unless prepared
+    abort <<~MSG.strip if failure
+      bringup could not give this desk its own test database — #{failure}.
+
+      A desk with no isolated test DB does not fail loudly; it falls back to the SHARED
+      base test database (the one the primary checkout and the release gate workspaces
+      use) and every `bin/rails test` run in it pollutes, and is polluted by, whatever
+      else is running. That is the exact hazard the desk exists to prevent, so nothing
+      is kept: this bringup rolls back and leaves no worktree behind.
+
+      This is an ENV problem on this machine, not a problem with the task. Usually Postgres:
+        pg_isready                              # is it up?
+        brew services start postgresql@17       # start it
+        bin/agent-worktree new #{app.fetch("slug")} #{task}   # re-run; bringup is idempotent
+    MSG
+
+    rollback.commit!
+    [dir, values]
+  rescue SystemExit, Interrupt, StandardError
+    rollback.unwind!
+    raise
+  end
 end
 
 def prepare_rails(dir, app, values)
@@ -3112,29 +3351,8 @@ if $PROGRAM_NAME == __FILE__
     task = clean_slug(raw_task)
     type = maybe_type&.start_with?("--") ? "feat" : (maybe_type || "feat")
     start = ARGV.include?("--start")
-    dir = ensure_git_worktree(app, task, type)
-    values, path = with_worktree_lock do
-      existing = parse_env(stack_env_path(app, task))
-      resolved = existing.empty? ? stack_values(app, task) : local_email_values.merge(existing)
-      [resolved, write_stack_env(app, task, resolved)]
-    end
-    write_context_marker(app, task, values, dir)
-    puts "worktree ready: #{dir}"
-    puts "stack env:      #{path}"
-    puts "context:        #{context_path(dir)}"
-    # Provision the isolated TEST DB, write .env.test.local, and BUILD the bundled
-    # assets now, so a fresh worktree runs `bin/rails test` — and bin/fast-check, whose
-    # lanes pass explicit test paths — out of the box (no manual db:create / unsetting
-    # DATABASE_URL / tailwindcss:build). app/assets/builds/ is gitignored, so a virgin
-    # worktree has no CSS until something builds it; see prepare_test_env. allow_fail
-    # keeps `new` resilient if Postgres/Rails are unavailable — `up`/`test` re-run
-    # prepare_test_env idempotently.
-    puts "test db:        #{db_name_from_url(test_database_url(values))} (provisioning)" if test_database_url(values)
-    puts "assets:         app/assets/builds/tailwind.css (building)"
-    unless prepare_test_env(dir, app, values)
-      warn "agent-worktree: best-effort test-env prepare failed (Postgres/Rails down?) — " \
-           "`up`/`test` will retry; run `bin/rails db:test:prepare test:prepare` in the worktree to see why."
-    end
+    # ATOMIC: a complete desk, or nothing at all. See provision_desk!.
+    dir, values = provision_desk!(app, task, type)
     puts
     print_plan(app, task, values, dir)
     if start

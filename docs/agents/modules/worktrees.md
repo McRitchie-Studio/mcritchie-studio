@@ -99,6 +99,27 @@ bin/agent-worktree finish turf-monster docs-stack
 
 The launcher creates `/Users/alex/projects/<repo>/.worktrees/<task-slug>`, branches from the current **base ref** — `origin/release` when the repo has one (the persistent feature-PR target), else `origin/main` for repos that have not run `bin/release init` — copies the primary `.env`, writes `.env.agent-stack`, prepares the isolated database, and prints the local URL.
 
+### `new` is atomic: a complete desk, or nothing
+
+`bin/agent-worktree new` either produces a **fully-working desk** or it leaves **nothing behind**. It refuses up front when there is no Redis slot or no free port (nothing is created), and if any later step fails — the git worktree, the stack env, the isolated test DB — it **rolls back everything it created**: the checkout, its git registration, the branch, the stack env (which *is* the port + Redis reservation), a Redis band it grew, and a test database it created. Then it exits non-zero naming the remedy.
+
+This matters because the desk's whole job is **isolation**. A desk with no isolated test DB does not fail loudly: `config/database.yml` falls back to the shared base `<app>_test` whenever `TEST_DATABASE_URL` is blank, so the suite silently joins the database the primary checkout and the release gate workspaces use — cross-suite pollution, `PG::ObjectInUse` on purge, phantom order-dependent failures. Until 2026-07-14, a full Redis band left exactly that desk on disk (worktree + branch, no stack env, no test DB) and said nothing.
+
+Bringup is **idempotent**: re-running `new` over an existing or half-built desk completes the missing pieces and never deletes what it did not create. So the repair for any partial desk — including one left by the old tool — is simply:
+
+```bash
+bin/agent-worktree new <app> <task-slug>
+```
+
+**When the band is full**, `new` refuses with the remedies, cheapest first:
+
+```bash
+bin/agent-worktree cleanup --reclaim         # dry run: merged + clean desks, safe to release
+bin/agent-worktree cleanup --reclaim --yes   # release them, shrinking the band
+bin/agent-worktree scale --provision         # INFRA LANE: raises the Redis ceiling, restarts Redis,
+                                             # bounces every running stack
+```
+
 Use `bin/agent-worktree status <app> <task-slug>` to recover the URL later, and `bin/agent-worktree down <app> <task-slug>` to stop a running stack.
 Use `bin/agent-worktree finish <app> <task-slug>` when the work is committed
 and ready for PR/QA handoff.
@@ -501,6 +522,12 @@ bin/agent-worktree test mcritchie-studio <slug>   # same, single-process + herme
 ```
 
 Do **not** `source .env.agent-stack` before running tests. You do not need the dev `DATABASE_URL` to test (the test DB resolves on its own), and sourcing it sets `AGENT_WORKTREE=1`/`LOCAL_EMAIL_CAPTURE=1`, which routes mail into the local capture store and diverges email-delivery tests from CI. Source `.env.agent-stack` only for dev-DB chores like `bin/rails runner` seeding. `bin/agent-worktree test` sidesteps this with a hermetic env (correct Ruby PATH, `RAILS_ENV=test`, single-process to avoid the parallel worker-DB clone deadlock on a cold test DB).
+
+### The desk guard
+
+`bin/fast-check` and `bin/full-suite-check` **refuse to run in a desk that has no isolated test DB** (`bin/lib/desk_guard.rb`). A desk missing `.env.test.local` (and with no `TEST_DATABASE_URL` in the env) would resolve `RAILS_ENV=test` to the shared base `<app>_test` — so the cert would run against the same database the primary checkout and the release gate workspaces use, and `full-suite-check`'s first lane (`db:test:purge`) would *destroy* it mid-suite. The refusal names it as an **env issue, not a regression in your diff**, and points at the repair (`bin/agent-worktree new <app> <slug>`).
+
+Bringup is atomic now and cannot leave such a desk behind, so this is the second lock on the same door — it still earns its keep: desks half-built by the old tool are on disk, `.env.test.local` can be deleted by hand, and a rollback that missed a case must never yield a silently-shared suite. The guard asserts the **positive** property (this tree has a test DB of its own) rather than blacklisting the ways bringup can break. The reserved `_gate` / `_ship` release workspaces are not agent desks and are covered by their own, stricter `assert_private_gate_db!`.
 
 ## Scale Note
 

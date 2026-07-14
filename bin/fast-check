@@ -97,6 +97,7 @@ require_relative "lib/repo_root"
 require_relative "lib/fast_cert"
 require_relative "lib/cert_emission"
 require_relative "lib/cert_root_guard"
+require_relative "lib/desk_guard"
 
 # ROOT = this script's OWN repo (the hub): CONFIG (the spine) and the board CLIs
 # anchor here. The CODE we run + fingerprint roots at the agent's worktree.
@@ -154,6 +155,15 @@ if slug && ENV["FAST_CHECK_ROOT"].to_s.strip.empty?
   wrong_root = CertRootGuard.refusal(task_bin: TASK_BIN, slug: slug, root: root)
   abort "fast-check: #{wrong_root}" if wrong_root
 end
+
+# --- desk guard ----------------------------------------------------------------
+# Right root, but is it a WHOLE desk? A worktree with no isolated test DB runs its
+# suite against the SHARED base test database (config/database.yml falls back there
+# when TEST_DATABASE_URL is blank) — so it would pollute, and be polluted by, every
+# concurrent suite, and certify against a database that is not its own. Refuse before
+# any lane or gate write, and name it as the ENV issue it is. bin/lib/desk_guard.rb.
+half_built = DeskGuard.refusal(root)
+abort "fast-check: #{half_built}" if half_built
 
 # --- lane plumbing (mirrors bin/full-suite-check) ------------------------------
 

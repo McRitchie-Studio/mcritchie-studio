@@ -70,8 +70,12 @@ class FastCheckTest < Minitest::Test
 
   # A temp git repo shaped like an app: a changed model + its convention test, a
   # spine test + spine config, and one committed baseline. Yields the dir.
-  def with_repo
-    Dir.mktmpdir do |dir|
+  # `subpath:` puts the repo somewhere specific under the temp dir — e.g.
+  # ".worktrees/<slug>", which is what makes it read as an agent DESK (DeskGuard).
+  def with_repo(subpath: nil)
+    Dir.mktmpdir do |tmp|
+      dir = subpath ? File.join(tmp, subpath) : tmp
+      FileUtils.mkdir_p(dir)
       git = ->(args) { assert(system("git -C #{dir} #{args} >/dev/null 2>&1"), "git #{args}") }
       write = lambda do |rel, body|
         full = File.join(dir, rel)
@@ -431,6 +435,41 @@ class FastCheckTest < Minitest::Test
       "branch" => "feat/task-x", "worktree_slug" => "task-x", "checks_run" => []
     } }
   )
+
+  # --- [integration] desk guard: a desk with no isolated test DB may not certify -----
+  # Right root, but a HALF-BUILT one. config/database.yml falls back to the SHARED base
+  # <app>_test whenever TEST_DATABASE_URL is blank, so a desk whose bringup did not finish
+  # certifies against the database the primary checkout and the release gate workspaces are
+  # using — silently. bin/agent-worktree's bringup is atomic now and cannot leave such a
+  # desk behind; this is the second lock, because desks half-built by the OLD tool are
+  # still on disk and .env.test.local can be deleted by hand. bin/lib/desk_guard.rb.
+
+  def test_a_desk_with_no_isolated_test_db_is_refused_before_any_lane_runs
+    with_repo(subpath: ".worktrees/half-built") do |dir, _|
+      out, code, lines = run_check(dir, implicit_root: true,
+                                   extra_env: { "TEST_DATABASE_URL" => nil })
+
+      assert_equal 1, code, "a desk with no isolated test DB must refuse, not certify: #{out}"
+      assert_match(/no isolated test DB/, out)
+      assert_match(/SHARED base test database/, out, "the refusal says WHY it matters")
+      assert_match(/ENV issue/, out, "and names it as an env issue, not a regression in the diff")
+      assert_empty lane_calls(lines, "TEST"), "the refusal fires BEFORE any lane runs"
+      refute_match(/\[fast-cert@/, out, "nothing certified against a shared database")
+    end
+  end
+
+  def test_a_desk_pinned_to_its_own_test_db_certifies_normally
+    # The control: same desk layout, isolated DB present. The guard must not refuse a
+    # properly-provisioned worktree — that is where every cert legitimately runs.
+    with_repo(subpath: ".worktrees/whole-desk") do |dir, write|
+      write.call(".env.test.local", "TEST_DATABASE_URL=postgresql://localhost/studio_test_whole_desk\n")
+      out, code, lines = run_check(dir, implicit_root: true,
+                                   extra_env: { "TEST_DATABASE_URL" => nil })
+
+      assert_equal 0, code, out
+      refute_empty lane_calls(lines, "TEST"), "the lanes must run in a whole desk"
+    end
+  end
 
   def test_wrong_root_cert_is_refused_before_any_lane_runs
     with_repo do |dir, _|

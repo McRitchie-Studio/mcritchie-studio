@@ -167,6 +167,18 @@ Two rules follow:
   `bin/rails db:test:prepare test:prepare`, one boot. `test/lib/tasks/test_prepare_asset_hook_test.rb`
   pins the hook that makes this work.
 
+### A desk with no isolated test DB may not run a test lane
+
+`bin/fast-check` / `bin/full-suite-check` **refuse** in a worktree that has no
+`.env.test.local` (and no `TEST_DATABASE_URL` in the env) — `bin/lib/desk_guard.rb`.
+Without it, `config/database.yml` falls back to the shared base `<app>_test`, so the
+run would certify against the database the primary checkout and the release gate
+workspaces use, and `full-suite-check`'s `db:test:purge` lane would destroy it
+mid-suite. If you see that refusal it is an **env issue with the desk, not a
+regression in your diff**: re-provision with `bin/agent-worktree new <app> <slug>`
+(bringup is atomic and idempotent — it repairs the missing pieces). See
+[worktrees.md](worktrees.md).
+
 ## A Test May Never Write The Operator's Real `.agents` State
 
 The `bin/` stack keeps two stores **outside** the repo, under the real projects

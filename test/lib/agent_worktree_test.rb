@@ -64,6 +64,16 @@ class AgentWorktreeTest < Minitest::Test
     MSG
   end
 
+  # Same seam, for the checks whose subject is what the script REPORTS rather than what
+  # it returns: the log helpers (log_ok/log_act/log_fail) write to stderr so the plan /
+  # snapshot stdout other tooling parses stays clean.
+  def run_in_script_stderr(body)
+    script = "load #{BIN.inspect}\n#{body}"
+    _out, err, status = Open3.capture3(SessionEnv.neutralized, "ruby", "-e", script)
+    assert status.success?, "script raised: #{err}"
+    err
+  end
+
   # --- allocate_port: reserved_ports are skipped, not just live listeners ------
 
   def test_allocate_port_skips_reserved_ports
@@ -567,5 +577,183 @@ class AgentWorktreeTest < Minitest::Test
     RUBY
     assert_equal '[["bin/rails", "test:prepare"]]', out,
                  "no test DB skips db:test:prepare ONLY — the bundled-asset build still runs"
+  end
+
+  # --- atomic bringup: the undo stack -----------------------------------------
+  # `new` used to abort on a full Redis band AFTER cutting the git worktree, leaving a
+  # desk with no stack env and NO ISOLATED TEST DB — which silently shares the base test
+  # DB. Bringup is atomic now: whatever landed is unwound. The end-to-end proof (a forced
+  # failure at each provisioning step leaves nothing on disk) is in
+  # test/commands/agent_worktree_test.rb; these pin the mechanism.
+
+  def test_rollback_unwinds_in_reverse_order
+    # Reverse order is the whole contract: the worktree dir must go AFTER the things
+    # inside it, the Redis band must shrink AFTER the reservation that grew it is gone.
+    out = run_in_script(<<~RUBY)
+      done = []
+      rollback = DeskRollback.new
+      rollback.register("worktree") { done << "worktree" }
+      rollback.register("stack env") { done << "stack env" }
+      rollback.register("test db") { done << "test db" }
+      rollback.unwind!
+      print done.join(" -> ")
+    RUBY
+    assert_equal "test db -> stack env -> worktree", out
+  end
+
+  def test_rollback_runs_every_remaining_step_even_when_one_fails
+    # A rollback that dies halfway leaves exactly the debris it exists to remove — so a
+    # failing undo is REPORTED and the remaining steps still run.
+    out = run_in_script(<<~RUBY)
+      done = []
+      rollback = DeskRollback.new
+      rollback.register("worktree") { done << "worktree" }
+      rollback.register("test db") { raise "dropdb: connection refused" }
+      rollback.unwind!
+      print done.join(",")
+    RUBY
+    assert_equal "worktree", out, "the failing test-db drop must not strand the worktree on disk"
+  end
+
+  def test_rollback_reports_a_failed_step_so_it_is_never_silent
+    err = run_in_script_stderr(<<~RUBY)
+      rollback = DeskRollback.new
+      rollback.register("test database studio_test_x") { raise "dropdb: connection refused" }
+      rollback.unwind!
+    RUBY
+    assert_includes err, "ROLLBACK STEP FAILED"
+    assert_includes err, "test database studio_test_x", "the leak must be named so it can be removed by hand"
+  end
+
+  def test_commit_disarms_the_rollback
+    out = run_in_script(<<~RUBY)
+      done = []
+      rollback = DeskRollback.new
+      rollback.register("worktree") { done << "worktree" }
+      rollback.commit!
+      rollback.unwind!
+      print "undone=" + done.size.to_s + " empty=" + rollback.empty?.to_s
+    RUBY
+    assert_equal "undone=0 empty=true", out, "a desk that completed must never be unwound"
+  end
+
+  # --- atomic bringup: the capacity preflight ---------------------------------
+
+  def test_redis_slots_free_measures_against_physical_room_not_the_current_band
+    # The band GROWS restart-free up to the physical room, so `current - used` understates
+    # availability. Room = databases(24) - floor(9) = 15 slots; 10 are taken => 5 free.
+    out = run_in_script(<<~RUBY)
+      def load_current_capacity; 10; end
+      def redis_physical_count; 24; end
+      def allocated_band_dbs; (9..18).to_a; end
+      print redis_slots_free
+    RUBY
+    assert_equal "5", out
+  end
+
+  def test_redis_slots_free_is_zero_at_the_physical_ceiling
+    # The live 2026-07-13 condition: the band is as big as Redis physically allows and
+    # every slot is taken. This is what makes bringup refuse BEFORE it creates anything.
+    out = run_in_script(<<~RUBY)
+      def load_current_capacity; 55; end
+      def redis_physical_count; 64; end
+      def allocated_band_dbs; (9..63).to_a; end
+      print redis_slots_free
+    RUBY
+    assert_equal "0", out
+  end
+
+  def test_redis_slots_free_never_reports_slots_that_do_not_physically_exist
+    # A band inflated past the physical ceiling (floor 20 on a stock databases=16 Redis)
+    # must not promise 20 slots: only DBs 9-15 exist, and 7 of them are usable.
+    out = run_in_script(<<~RUBY)
+      def load_current_capacity; 20; end
+      def redis_physical_count; 16; end
+      def allocated_band_dbs; []; end
+      print redis_slots_free
+    RUBY
+    assert_equal "7", out
+  end
+
+  def test_band_full_message_names_the_reclaim_remedy
+    out = run_in_script(<<~RUBY)
+      def redis_db_min; 9; end
+      print band_full_message(64)
+    RUBY
+    assert_includes out, "Nothing was created"
+    assert_includes out, "cleanup --reclaim --yes", "the cheapest remedy must be named, not just the Redis restart"
+    assert_includes out, "scale --provision"
+  end
+
+  def test_preflight_refuses_when_the_band_is_full
+    out = run_in_script(<<~RUBY)
+      def parse_env(_path); {}; end
+      def redis_slots_free; 0; end
+      def with_worktree_lock; yield; end
+      begin
+        preflight_capacity!({ "slug" => "mcritchie-studio", "repo" => "/tmp/repo" }, "doomed")
+      rescue SystemExit
+        print "refused"
+      end
+    RUBY
+    assert_equal "refused", out
+  end
+
+  def test_preflight_lets_an_already_provisioned_desk_through
+    # A desk that already holds a stack env holds its slot: re-running `new` on it is a
+    # RESUME, not an allocation. Refusing it would make a full band un-repairable.
+    out = run_in_script(<<~RUBY)
+      def parse_env(_path); { "APP_PORT" => "3010", "REDIS_URL" => "redis://localhost:6379/20" }; end
+      def redis_slots_free; 0; end
+      def with_worktree_lock; raise "must not take the lock: nothing is being allocated"; end
+      preflight_capacity!({ "slug" => "mcritchie-studio", "repo" => "/tmp/repo" }, "existing")
+      print "allowed"
+    RUBY
+    assert_equal "allowed", out
+  end
+
+  # --- atomic bringup: the isolation assertion --------------------------------
+  # prepare_test_env is best-effort by design (a stack must be rebuildable with Postgres
+  # down), so its exit code is not the property. The PROPERTY is: this desk owns a real,
+  # reachable test database. Verify it; do not trust the command said so.
+
+  def test_isolation_assertion_passes_only_for_a_real_reachable_test_db
+    out = run_in_script(<<~RUBY)
+      def parse_env(_p); { "TEST_DATABASE_URL" => "postgresql://localhost/studio_test_x" }; end
+      def database_exists?(_db); true; end
+      print isolated_test_db_failure("/tmp/desk", { "DATABASE_URL" => "postgresql://localhost/studio_development_x" }).inspect
+    RUBY
+    assert_equal "nil", out
+  end
+
+  def test_isolation_assertion_catches_a_test_db_that_was_never_created
+    out = run_in_script(<<~RUBY)
+      def parse_env(_p); { "TEST_DATABASE_URL" => "postgresql://localhost/studio_test_x" }; end
+      def database_exists?(_db); false; end
+      print isolated_test_db_failure("/tmp/desk", { "DATABASE_URL" => "postgresql://localhost/studio_development_x" })
+    RUBY
+    assert_includes out, "does not exist"
+  end
+
+  def test_isolation_assertion_catches_an_unreachable_postgres
+    # database_exists? returns nil when pg_isready fails. "Unknown" is NOT "fine": an
+    # unverifiable desk is exactly the one that silently shares the base test DB.
+    out = run_in_script(<<~RUBY)
+      def parse_env(_p); { "TEST_DATABASE_URL" => "postgresql://localhost/studio_test_x" }; end
+      def database_exists?(_db); nil; end
+      print isolated_test_db_failure("/tmp/desk", { "DATABASE_URL" => "postgresql://localhost/studio_development_x" })
+    RUBY
+    assert_includes out, "Postgres is unreachable"
+  end
+
+  def test_isolation_assertion_catches_a_missing_env_test_local
+    # The DB can exist while nothing PINS the desk to it — `bin/rails test` reads
+    # TEST_DATABASE_URL, and without .env.test.local it resolves to the shared base DB.
+    out = run_in_script(<<~RUBY)
+      def parse_env(_p); {}; end
+      def database_exists?(_db); true; end
+      print isolated_test_db_failure("/tmp/desk", { "DATABASE_URL" => "postgresql://localhost/studio_development_x" })
+    RUBY
+    assert_includes out, "was not written"
   end
 end

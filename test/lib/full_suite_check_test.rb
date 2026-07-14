@@ -58,8 +58,12 @@ class FullSuiteCheckTest < Minitest::Test
   end
 
   # A temp git repo with one commit; yields its dir.
-  def with_repo
-    Dir.mktmpdir do |dir|
+  # `subpath:` puts the repo somewhere specific under the temp dir — e.g.
+  # ".worktrees/<slug>", which is what makes it read as an agent DESK (DeskGuard).
+  def with_repo(subpath: nil)
+    Dir.mktmpdir do |tmp|
+      dir = subpath ? File.join(tmp, subpath) : tmp
+      FileUtils.mkdir_p(dir)
       git = ->(args) { assert(system("git -C #{dir} #{args} >/dev/null 2>&1"), "git #{args}") }
       File.write(File.join(dir, "app.rb"), "base\n")
       git.call("init -q")
@@ -400,12 +404,33 @@ class FullSuiteCheckTest < Minitest::Test
       "FULL_SUITE_TASK_BIN" => write_cli_stub(dir, "task-stub", "TASK"),
       "FULL_SUITE_GATE_BIN" => write_cli_stub(dir, "gate-stub", "GATE"),
       "TASK_SHOW_JSON" => GUARD_JSON,
-      "STUB_LOG" => log
+      "STUB_LOG" => log,
+      # UNSET (nil unsets on spawn): this suite runs from a real desk, whose dotenv exports
+      # a TEST_DATABASE_URL the child would otherwise inherit — and inheriting it would let
+      # a half-built fixture desk satisfy the guard, testing nothing.
+      "TEST_DATABASE_URL" => nil
     )
     out = IO.popen(env, "#{BIN} #{args} 2>&1", chdir: dir, &:read)
     code = $?.exitstatus
     lines = File.exist?(log) ? File.readlines(log, chomp: true).map { |l| l.split("\t") } : []
     [out, code, lines]
+  end
+
+  # --- [integration] desk guard: a half-built desk may not purge the shared test DB ---
+  # This gate's FIRST lane is `db:test:purge`. In a desk with no isolated test DB,
+  # config/database.yml resolves RAILS_ENV=test to the SHARED base <app>_test — so that
+  # purge lands on the database the primary checkout and the release gate workspaces are
+  # using, mid-suite. Assert the desk owns its DB before destroying anything, the same
+  # order the gate workspaces assert in. bin/lib/desk_guard.rb.
+  def test_a_desk_with_no_isolated_test_db_is_refused_before_the_purge
+    with_repo(subpath: ".worktrees/half-built") do |dir|
+      out, code, lines = run_check_implicit_root(dir, "")
+
+      assert_equal 1, code, "a desk with no isolated test DB must refuse, not purge: #{out}"
+      assert_match(/no isolated test DB/, out)
+      assert_match(/SHARED base test database/, out)
+      refute(lines.any? { |l| l[0] == "GATE" }, "the refusal fires BEFORE any gate attempt opens")
+    end
   end
 
   def test_wrong_root_cert_is_refused_before_any_lane_runs

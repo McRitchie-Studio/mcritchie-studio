@@ -59,6 +59,7 @@ require_relative "lib/repo_root"
 require_relative "lib/session_identity"
 require_relative "lib/cert_emission"
 require_relative "lib/cert_root_guard"
+require_relative "lib/desk_guard"
 
 # ROOT = the gate script's OWN repo (the hub). CONFIG (lib/) is required relative
 # to __dir__, and the board is reached via TASK_BIN — both stay anchored here. The
@@ -167,6 +168,16 @@ if slug && ENV["FULL_SUITE_ROOT"].to_s.strip.empty?
   wrong_root = CertRootGuard.refusal(task_bin: TASK_BIN, slug: slug, root: root)
   abort "full-suite-check: #{wrong_root}" if wrong_root
 end
+
+# --- desk guard ----------------------------------------------------------------
+# Right root, but is it a WHOLE desk? A worktree with no isolated test DB resolves
+# RAILS_ENV=test to the SHARED base test database (config/database.yml's fallback when
+# TEST_DATABASE_URL is blank) — and THIS gate's first lane is `db:test:purge`. On a
+# half-built desk that purge lands on the database the primary checkout and the release
+# gate workspaces are using, mid-suite. Assert the desk owns its DB before we destroy
+# anything, the same order the gate workspaces assert in. bin/lib/desk_guard.rb.
+half_built = DeskGuard.refusal(root)
+abort "full-suite-check: #{half_built}" if half_built
 
 test_cmd = ENV.fetch("FULL_SUITE_TEST_CMD", "bin/rails test")
 rubocop_cmd = ENV.fetch("FULL_SUITE_RUBOCOP_CMD", "bin/rubocop")
