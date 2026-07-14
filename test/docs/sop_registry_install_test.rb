@@ -48,6 +48,7 @@ class SopRegistryInstallTest < ActiveSupport::TestCase
         "CODEX_REQUIREMENTS_PATH" => File.join(sandbox, "etc-codex", "requirements.toml"),
         "AGENT_DOCS_RUNTIME_ROOT" => File.join(sandbox, "runtime"),
         "AGENT_RUNTIME_ZPROFILE" => File.join(home, ".zprofile"),
+        "AGENT_RUNTIME_RUBY_PATH_PREFIX" => File.join(sandbox, "ruby-bin"),
         # Never let a test inherit the live session's identity or board.
         "AGENT_SESSION_ID" => nil,
         "ATOMIC_CAPTURE_URL" => nil,
@@ -105,26 +106,81 @@ class SopRegistryInstallTest < ActiveSupport::TestCase
 
   # THE DURABLE HALF. The list above is a blacklist, and a blacklist always misses one —
   # this test's own first cut missed /etc/codex. So ALSO assert the POSITIVE invariant:
-  # every write destination the SCRIPT names must be overridable, and this test must pin
-  # every one of them. Add a new `FOO_PATH="${FOO_PATH:-/somewhere/real}"` to the
-  # installer without pinning it here and THIS goes red — before it can escape.
+  # every ABSOLUTE default the installer can be pointed at must be pinned by this test.
+  #
+  # ⛔ THE FIRST CUT OF *THIS GUARD* WAS ITSELF INERT, and the way it failed is the whole
+  # lesson. It scanned for `NAME="${NAME:-/abs}"` with a BACKREFERENCE — which forces the
+  # shell variable's name to EQUAL the env-var's name. That is the installer's MINORITY
+  # spelling. Three of its five hatches read `LOCAL="${AGENT_ENV_NAME:-/abs}"`, where the
+  # two names DIFFER:
+  #
+  #     RUNTIME_ROOT="${AGENT_DOCS_RUNTIME_ROOT:-$(runtime_root)}"
+  #     RUBY_PATH_PREFIX="${AGENT_RUNTIME_RUBY_PATH_PREFIX:-/opt/homebrew/...}"
+  #     ZPROFILE_PATH="${AGENT_RUNTIME_ZPROFILE:-$HOME/.zprofile}"
+  #
+  # …so the scan saw ONE destination out of five, the `pinned` list carried six names the
+  # regex could never emit (an illusion of coverage), and with no non-empty floor the whole
+  # assertion could pass while checking NOTHING. Both reviewers defeated it by adding a
+  # write path to the operator's real ~/.claude/skills in the script's own house style.
+  #
+  # The rule this violated is written one file over, in sop_registry_docs_test.rb:
+  # "A subset assertion over an EMPTY set passes trivially — the exact way this family of
+  # test fails open." Hence: capture BOTH names independently, and assert a floor.
   test "every overridable write destination in install-agent-docs is pinned by this test" do
     script = Rails.root.join("bin/install-agent-docs").read
 
-    # `NAME="${NAME:-<default>}"` — the script's own escape-hatch idiom. Absolute
-    # defaults are the ones that can escape a sandbox; relative ones resolve under $ROOT.
-    escapes = script.scan(/^(\w+)="\$\{\1:-(\/[^}"]+)\}"/).to_h
+    # LHS and the env-var name are captured SEPARATELY — they are routinely different.
+    # We key on the ENV VAR (group 2): that is the name a caller must set to redirect it.
+    hatches = script.scan(/^\s*(\w+)="\$\{(\w+):-([^}"]*)\}"/)
+
+    # Only ABSOLUTE defaults can escape a sandbox. `$HOME/...` counts: HOME is pinned here,
+    # but an unpinned var that expands under a REAL home would not be — so treat it as
+    # in-scope and require it to be named.
+    escaping = hatches.select { |_lhs, _var, default| default.start_with?("/", "$HOME", "~") }
+                      .to_h { |_lhs, var, default| [var, default] }
 
     pinned = %w[PROJECTS_DIR HOME CODEX_REQUIREMENTS_PATH AGENT_DOCS_RUNTIME_ROOT
-                AGENT_RUNTIME_ZPROFILE AGENT_ACTIVITY_BOARD_URL AGENT_INSIGHTS_BOARD_URL]
+                AGENT_RUNTIME_RUBY_PATH_PREFIX AGENT_RUNTIME_ZPROFILE
+                AGENT_ACTIVITY_BOARD_URL AGENT_INSIGHTS_BOARD_URL]
 
-    unpinned = escapes.keys - pinned
+    # THE FLOOR. Without this, a reworded installer yields an empty set and the subset
+    # check below passes trivially — green, and asserting nothing. This is the exact
+    # failure the previous version of this very test shipped with.
+    assert_operator escaping.length, :>=, 3,
+                    "the escape-hatch scan matched #{escaping.length} absolute default(s) in " \
+                    "bin/install-agent-docs — it has at least 3. The scan has stopped seeing the " \
+                    "script's idiom, so this test is now asserting NOTHING. Fix the scan, do not " \
+                    "lower this floor."
+
+    unpinned = escaping.keys - pinned
 
     assert_empty unpinned,
-                 "bin/install-agent-docs can write to an ABSOLUTE path via #{unpinned.inspect}, and this " \
-                 "test does not pin it — so running the installer under test would escape the sandbox and " \
-                 "touch the real machine (defaults: #{escapes.slice(*unpinned).values.inspect}). Pin it in " \
-                 "the `env` hash AND add it to REAL_ROOT_DOCS."
+                 "bin/install-agent-docs can be pointed at an ABSOLUTE path via #{unpinned.inspect}, and " \
+                 "this test does not pin it — so running the installer under test would escape the sandbox " \
+                 "and touch the real machine (defaults: #{escaping.slice(*unpinned).values.inspect}). Pin " \
+                 "it in the `env` hash AND add its destination to REAL_ROOT_DOCS."
+  end
+
+  # Guards the guard: every name in `pinned` must be one the scan can actually EMIT.
+  # The previous version listed six names the regex could never produce — a reader would
+  # believe seven destinations were held by the invariant when exactly one was.
+  test "the pinned list contains no names the escape-hatch scan cannot produce" do
+    script = Rails.root.join("bin/install-agent-docs").read
+    # Scan for `${VAR:-` ANYWHERE, not line-anchored: the board URLs are NESTED hatches
+    # (`X="${A:-${B:-default}}"`), so the inner var never appears at the start of a line.
+    # A line-anchored scan here would call a REAL, reachable override a phantom.
+    known = script.scan(/\$\{(\w+):-/).flatten.to_set
+    # HOME and PROJECTS_DIR are pinned for real but are not `${X:-default}` hatches.
+    declared = %w[CODEX_REQUIREMENTS_PATH AGENT_DOCS_RUNTIME_ROOT AGENT_RUNTIME_RUBY_PATH_PREFIX
+                  AGENT_RUNTIME_ZPROFILE AGENT_ACTIVITY_BOARD_URL AGENT_INSIGHTS_BOARD_URL]
+
+    phantom = declared.reject { |name| known.include?(name) }
+
+    assert_empty phantom,
+                 "these names are pinned by this test but bin/install-agent-docs never reads them: " \
+                 "#{phantom.inspect}. Either the installer renamed them (and the pin is now dead, so a " \
+                 "REAL destination may be unguarded), or the list is decoration. Coverage you cannot " \
+                 "produce is coverage you do not have."
   end
 
   # Content fingerprint of the real installed docs + skills tree. Missing paths hash
