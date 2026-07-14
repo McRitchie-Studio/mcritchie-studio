@@ -74,10 +74,18 @@ process group **and that group's OS start time**, and the next cert reads it:
 | a group it **cannot prove** is ours | **refuses** and names what is alive — a human decides |
 | a **malformed** lock (names no integer pid/pgid) | **clears it** loudly and continues — it names nobody, so there is nobody to kill; the DB backstop speaks for a real orphan |
 | a lock naming group **0 or 1** | **refuses** and leaves the lock — the lock is corrupt, no cert ever ran in those groups, and no kill would be correct. `rm` it yourself |
+| a reap it **could not perform** (the suite outlived TERM+KILL, or its identity stopped matching under us) | **refuses, and KEEPS the runlock** — the lock is the only record naming that process. It offers a kill **only** when the group is still provably ours; against a stranger it offers `rm <lock>` and an `inspect` line, never a kill |
 
 An exit-1 from the preflight is an **ENV refusal, not a red diff** — it names the
 pid and the DB. Never `rm` the runlock to get past a refusal you have not read: it
 is naming a process that is still holding your database.
+
+**Every kill the cert prints is a kill it would fire.** The command in a refusal is an
+instruction — it gets pasted into a shell exactly as printed — so the copy is gated on
+the same predicate as the trigger (`CertOrphanGuard.reapable?`): signalable **and**
+provably ours, re-proved at the moment of emission. When the guard cannot prove the
+group is ours it prints **no kill at all**, because none would be correct. If you ever
+see the cert suggest a kill it did not itself attempt, that is a bug — report it.
 
 **The runlock lives in the repo's git dir** (`<git-dir>/cert-run.json`; in a worktree
 that is `.git/worktrees/<name>/`, so each desk keeps its own), **never in the working
@@ -226,6 +234,15 @@ and the bounce round-trip — are in [`dor.md`](dor.md).
   CI-status gate: `docs/agents/system/devops-cycle-design.md` §3.3.
 - Evidence format + fingerprint implementation: `bin/lib/full_suite_gate.rb`;
   test selection: `bin/lib/fast_cert.rb`.
+- **Disarm switches — for the harness only, never for a wedge.**
+  `FAST_CHECK_SKIP_ORPHAN_GUARD=1` (`bin/fast-check`) and
+  `FULL_SUITE_SKIP_ORPHAN_GUARD=1` (`bin/full-suite-check`) skip the orphan
+  preflight entirely. They exist so the guard's OWN test suite can spawn certs
+  without each one refusing against its siblings. **Do not reach for them to get
+  past a refusal**: the refusal is naming a live process holding your test DB,
+  and skipping it just walks you back into `PG::ObjectInUse` with the evidence
+  suppressed. `CERT_GUARD_PS` / `CERT_GUARD_PSQL` likewise exist to inject
+  fixtures in tests, not to steer a real cert.
 
 ## Related
 

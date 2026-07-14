@@ -80,9 +80,14 @@ class CertOrphanGuardReaperTest < Minitest::Test
 
   # Make the reap FAIL. Hand-rolled rather than minitest/mock, because this file must
   # also run standalone (`ruby -Itest ...`), where minitest/mock is not on the path.
-  def with_a_reap_that_fails
+  #
+  # `:survived` — we PROVED the group was ours, signalled TERM then KILL, and it outlived
+  # us (an unkillable process, stuck in an uninterruptible syscall). NOT `:refused`: that
+  # is the other failure, where we never signalled at all because we could not prove
+  # ownership. They get opposite remediations, so the fixture must say which one it means.
+  def with_a_reap_that_fails(outcome = :survived)
     original = CertOrphanGuard.method(:reap_group)
-    CertOrphanGuard.define_singleton_method(:reap_group) { |*_args, **_kwargs| false }
+    CertOrphanGuard.define_singleton_method(:reap_group) { |*_args, **_kwargs| outcome }
     yield
   ensure
     CertOrphanGuard.define_singleton_method(:reap_group, original)
@@ -125,20 +130,38 @@ class CertOrphanGuardReaperTest < Minitest::Test
     # handed on.
     bystander, bygid, = spawn_group
 
-    refute CertOrphanGuard.reap_group(bygid, started_at: "Mon Jul  6 18:40:11 2026"),
-           "an unproven group must not be signalled"
+    assert_equal :refused, CertOrphanGuard.reap_group(bygid, started_at: "Mon Jul  6 18:40:11 2026"),
+                 "an unproven group must not be signalled"
     sleep 0.2
     assert alive?(bystander), "the bystander survives a reaper that cannot name it"
   end
 
   def test_reap_group_refuses_a_nil_identity
     # A lock with no recorded start time (one written by the previous version of this
-    # guard) can prove nothing. It must reap nothing.
+    # guard, or by a `ps` that returned nothing at spawn) can prove nothing. It must reap
+    # nothing — and it must say `:refused`, NOT `:absent`. Those two both used to be
+    # `false`, and the caller that cleared the runlock on `false` deleted the only record
+    # naming a live process it had just declined to kill.
     bystander, bygid, = spawn_group
 
-    refute CertOrphanGuard.reap_group(bygid, started_at: nil)
+    assert_equal :refused, CertOrphanGuard.reap_group(bygid, started_at: nil)
     sleep 0.2
     assert alive?(bystander)
+  end
+
+  def test_reap_group_reports_absent_when_there_is_simply_nothing_to_reap
+    # THE TRI-STATE'S WHOLE REASON TO EXIST. A group that has already exited is not a
+    # refusal — there is nothing there. This is what EVERY CLEAN CERT looks like at its
+    # ensure block, so a caller that treats it as a refusal strands a stale runlock behind
+    # every successful run. `:absent` and `:refused` must never collapse back into `false`.
+    dead, deadgid, started_at = spawn_group
+    Process.kill("KILL", dead)
+
+    assert wait_until_dead(dead), "the group is gone before we ask"
+    assert_equal :absent, CertOrphanGuard.reap_group(deadgid, started_at: started_at)
+    assert CertOrphanGuard.reap_cleared?(:absent), "nothing to reap → the lock may go"
+    refute CertOrphanGuard.reap_cleared?(:refused), "a refusal KEEPS the lock — it names the process"
+    refute CertOrphanGuard.reap_cleared?(:survived), "a survivor KEEPS the lock too"
   end
 
   # --- [integration] the catastrophic groups ------------------------------------
@@ -146,11 +169,13 @@ class CertOrphanGuardReaperTest < Minitest::Test
   def test_reap_group_never_aims_at_group_1_or_0_or_its_own
     # `kill(sig, -1)` means EVERY process the caller may signal. If the reaper would
     # address it, this test process — and the suite running it — would be among the
-    # dead. That it returns false (rather than taking us all down) IS the assertion.
-    refute CertOrphanGuard.reap_group(1, started_at: CertOrphanGuard.process_started_at(1))
-    refute CertOrphanGuard.reap_group(0, started_at: nil)
-    refute CertOrphanGuard.reap_group(Process.getpgrp,
-                                      started_at: CertOrphanGuard.process_started_at(Process.getpgrp))
+    # dead. That it REFUSES (rather than taking us all down) IS the assertion.
+    assert_equal :refused,
+                 CertOrphanGuard.reap_group(1, started_at: CertOrphanGuard.process_started_at(1))
+    assert_equal :refused, CertOrphanGuard.reap_group(0, started_at: nil)
+    assert_equal :refused,
+                 CertOrphanGuard.reap_group(Process.getpgrp,
+                                            started_at: CertOrphanGuard.process_started_at(Process.getpgrp))
     assert alive?(Process.pid), "we are, gratifyingly, still here"
   end
 

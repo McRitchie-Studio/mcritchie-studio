@@ -392,13 +392,24 @@ class CertOrphanGuardTest < Minitest::Test
   # here: the invariant is a property of the FILE, not of the messages we remembered.
   def all_messages(pgid)
     found = { pid: pgid, started_at: OURS, command: "ruby bin/rails test" }
+    # `reap_failed_message` is rendered against a world where the group IS provably ours —
+    # its most kill-prone configuration, where the guard has every reason to print a kill
+    # and ONLY the predicate stands between it and the copy. Rendering it on a world it
+    # would refuse anyway would pass this test for the wrong reason.
+    reap_failed = with_stub(CertOrphanGuard, :process_table,
+                            [process(pid: pgid, pgid: pgid, started_at: OURS)]) do
+      CertOrphanGuard.reap_failed_message(pgid: pgid, lane: "spine", db: DB, root: ROOT,
+                                          reason: :survived, started_at: OURS)
+    end
+
     %i[cert group unsafe_pgid].map do |subject|
       CertOrphanGuard.unverifiable_message(pgid: pgid, subject: subject, found: found,
                                            members: [found], db: DB, root: ROOT)
     end + [
       CertOrphanGuard.orphan_message(pgid: pgid, lane: "spine", db: DB, started_at: OURS),
+      CertOrphanGuard.orphan_vanished_message(pgid: pgid, lane: "spine", db: DB),
       CertOrphanGuard.recycled_message(pgid: pgid, found: found, recorded_start: OURS),
-      CertOrphanGuard.reap_failed_message(pgid: pgid, lane: "spine", db: DB),
+      reap_failed,
       CertOrphanGuard.concurrent_message(cert_pid: pgid, lane: "spine", db: DB),
       CertOrphanGuard.malformed_message(root: ROOT, db: DB),
       CertOrphanGuard.foreign_backend_message(db: DB, url: "postgres://localhost/#{DB}",
@@ -452,6 +463,86 @@ class CertOrphanGuardTest < Minitest::Test
     assert_only_signalable_kills(0, "process group 0 (the reader's OWN process group)")
     assert_only_signalable_kills(1, "process group 1 (EVERY process the caller owns)")
     assert_only_signalable_kills(Process.getpgrp, "the cert's OWN process group")
+  end
+
+  # --- [unit] THE SHARED-PREDICATE INVARIANT ---------------------------------------------
+  #
+  # `signalable?` — the invariant above — is only the WEAKER half. It says the NUMBER is
+  # safe to aim at; it says NOTHING about whether what answers to it is OURS. The reaper
+  # gated its trigger on `signalable? AND identity`, while the copy gated its Clear: line on
+  # `signalable?` ALONE — so a group the reaper had PROVEN was a stranger, and refused to
+  # touch, was still handed to the operator as `Clear: kill -KILL -4300`. Three rounds of
+  # review missed it because the test above only ever rendered that message on a group that
+  # WAS ours, where the two predicates happen to agree.
+  #
+  # The fix is not a second guard that agrees with the first by convention. It is ONE
+  # predicate — `reapable?` — asked by both emitters. This test asserts exactly that: over a
+  # matrix of worlds, WHATEVER `reapable?` says, the trigger and the copy both obey it. Two
+  # predicates that must agree WILL drift; one predicate cannot.
+  def assert_emitters_obey_the_predicate(pgid:, leader_start:, recorded:, why:)
+    table = leader_start ? [process(pid: pgid, pgid: pgid, started_at: leader_start)] : []
+    fired = []
+    reapable = nil
+    printed = nil
+
+    with_stub(Process, :kill, ->(_signal, target) { fired << target.to_i }) do
+      with_stub(CertOrphanGuard, :process_table, table) do
+        reapable = CertOrphanGuard.reapable?(pgid, recorded)
+        CertOrphanGuard.reap_group(pgid, started_at: recorded, grace: 0.0)
+        printed = kill_targets_in(
+          CertOrphanGuard.reap_failed_message(pgid: pgid, lane: "spine", db: DB, root: ROOT,
+                                              reason: :survived, started_at: recorded)
+        )
+      end
+    end
+
+    if reapable
+      refute_empty fired, "reapable? admits #{why}, so the reaper must actually FIRE at it"
+      refute_empty printed, "reapable? admits #{why}, so the honest remediation IS a kill — print it"
+    else
+      assert_empty fired,
+                   "the guard SIGNALLED a group `reapable?` REFUSES: #{why}"
+      assert_empty printed,
+                   "the guard PRINTED `kill ... #{printed.first}` at a group `reapable?` REFUSES: #{why}. " \
+                   "The code just established this is not ours — and then told a tired operator to kill it. " \
+                   "A command we would refuse to FIRE is a command we must refuse to PRINT."
+    end
+  end
+
+  def test_both_emitters_obey_the_one_shared_predicate
+    # THE RACE the re-proof exists for (cert_orphan_guard.rb:456-458): the leader was
+    # provably ours when `decide` read the table, then exited, and the OS handed its number
+    # to a stranger before the trigger fired. This is the vector that shipped the bug.
+    assert_emitters_obey_the_predicate(
+      pgid: 4300, leader_start: OTHER, recorded: OURS,
+      why: "a PROVEN STRANGER holding a recycled pgid (identity :not_ours)"
+    )
+    # A lock with no recorded identity (a legacy lock, or a `ps` that returned nothing at
+    # spawn). Unprovable is not ownership, and we never kill on a guess.
+    assert_emitters_obey_the_predicate(
+      pgid: 4300, leader_start: OURS, recorded: nil,
+      why: "a group whose identity was never recorded (identity :unprovable)"
+    )
+    # Nothing alive under the number at all: nothing to fire at, nothing to print.
+    assert_emitters_obey_the_predicate(
+      pgid: 4300, leader_start: nil, recorded: OURS,
+      why: "a group that is already gone (:absent)"
+    )
+    # The catastrophic numbers, with identity forged to match — so ONLY the predicate stands
+    # between the guard and `kill -TERM -1`.
+    [0, 1, Process.getpgrp].each do |pgid|
+      assert_emitters_obey_the_predicate(
+        pgid: pgid, leader_start: OURS, recorded: OURS,
+        why: "the unsignalable group #{pgid}, whose identity MATCHES"
+      )
+    end
+    # THE POSITIVE HALF. A predicate that refuses everything is not a guard, it is a brick.
+    # A real group, provably ours, that outlived TERM+KILL: the kill is honest — fire it AND
+    # print it.
+    assert_emitters_obey_the_predicate(
+      pgid: 4300, leader_start: OURS, recorded: OURS,
+      why: "a real group 4300 that is PROVABLY ours"
+    )
   end
 
   def test_a_signalable_group_still_gets_the_kill_commands_it_needs

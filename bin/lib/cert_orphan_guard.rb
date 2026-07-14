@@ -144,9 +144,10 @@ module CertOrphanGuard
   # That makes it a durable file the cert itself creates. Put it in the tracked tree —
   # it was `tmp/cert-run.json` — and it becomes an UNTRACKED FILE in any repo that does
   # not happen to ignore `tmp/`. `git check-ignore` says studio-engine and turf-vault
-  # do not. And the cert now REFUSES a dirty tree (bin/lib/cert_tree_guard.rb, #546),
-  # reading dirtiness with `git status --porcelain`, which sees untracked-not-ignored
-  # files. So in those two repos the sequence was:
+  # do not. And a cert that REFUSES a dirty tree (bin/lib/cert_tree_guard.rb — LANDING IN
+  # #546; not on this branch or on release yet, so this is the hazard it WOULD have hit,
+  # not one it hits today) reads dirtiness with `git status --porcelain`, which sees
+  # untracked-not-ignored files. So in those two repos the sequence would have been:
   #
   #   1. a SIGKILLed cert leaves the runlock — BY DESIGN
   #   2. the next cert sees `?? tmp/` and aborts "working tree is DIRTY"
@@ -182,10 +183,24 @@ module CertOrphanGuard
   # the cwd is the toplevel (a bare ".git"), and we resolve for an arbitrary `root` that
   # is usually not the cwd. Absolute is the only answer that is right from anywhere.
   # In a worktree it returns `<main>/.git/worktrees/<name>` — the per-desk dir we want.
+  #
+  # MEMOIZED per root: `lock_path` is on the read/write/clear path AND inside every message
+  # renderer, so an un-memoized `git rev-parse` forked a subprocess on each call — several
+  # per cert, in a module whose entire job is to run before the suite does. A root's git dir
+  # cannot change inside one cert. Nil is cached too (`key?`, not `||=`): "not a repo" is an
+  # answer, and re-forking git to re-learn it every time is the same waste.
   def self.git_dir(root)
     return nil if root.to_s.empty?
 
-    out = IO.popen(["git", "-C", root.to_s, "rev-parse", "--absolute-git-dir"],
+    key = root.to_s
+    @git_dirs ||= {}
+    return @git_dirs[key] if @git_dirs.key?(key)
+
+    @git_dirs[key] = resolve_git_dir(key)
+  end
+
+  def self.resolve_git_dir(root)
+    out = IO.popen(["git", "-C", root, "rev-parse", "--absolute-git-dir"],
                    err: File::NULL, &:read).to_s.strip
     return nil unless $?.success? && !out.empty?
 
@@ -448,25 +463,70 @@ module CertOrphanGuard
 
   # --- reaping: only ever what we have PROVEN is ours --------------------------------
 
+  # THE ONE PREDICATE FOR "MAY WE REAP THIS GROUP?" — and therefore the one predicate for
+  # "may we PRINT a kill at this group?". `reap_group` gates its trigger on it and
+  # `reap_failed_message` gates its Clear: line on it: the SAME CALL, not two guards that
+  # agree by convention.
+  #
+  # `signalable?` is only the WEAKER half. It says the NUMBER is safe to aim at (not 0,
+  # not 1, not our own group) — it says NOTHING about whether what answers to that number
+  # is OURS. Gating the code on `signalable? AND identity` while gating the copy on
+  # `signalable?` ALONE is exactly the drift that printed `Clear: kill -KILL -4300` at a
+  # group the reaper had just PROVEN was a stranger and refused to touch. Two predicates
+  # that must agree WILL drift; one predicate cannot.
+  #
+  # Read at the TRIGGER, never trusted from `decide`: between the decision and the kill the
+  # leader can exit and its pid be handed to someone else. The proof must be adjacent to
+  # the act — and the act includes the act of TELLING AN OPERATOR TO KILL IT.
+  def self.reapable?(pgid, started_at, ps: "ps",
+                     self_pid: Process.pid, self_pgid: Process.getpgrp)
+    return false unless signalable?(pgid, self_pid: self_pid, self_pgid: self_pgid)
+
+    identity_of(live_process(process_table(ps: ps), pgid), started_at) == :ours
+  end
+
+  # Outcomes of a reap that CLEAR the runlock: the group is gone, and we know it.
+  # `:survived` and `:refused` do NOT — see `reap_group`.
+  REAP_CLEARED = %i[reaped absent].freeze
+
+  def self.reap_cleared?(outcome)
+    REAP_CLEARED.include?(outcome)
+  end
+
   # Reap a process GROUP we can prove we created. `started_at` is the OS start time the
   # lock recorded for the group leader; without a match we do not signal. The group is
   # the unit that matters — the suite forks (spring, parallel workers, a `sh -c`
   # wrapper), and killing only the leader strands the rest on the DB.
   #
-  # Identity is re-verified HERE, not trusted from `decide`: between the decision and
-  # the trigger the leader can exit and its number be handed to someone else. The
-  # proof must be adjacent to the kill.
+  # Returns a TRI-STATE, because the old boolean CONFLATED outcomes whose remediations are
+  # opposites, and every caller then had to guess:
   #
-  # Returns true when the group we proved was ours is gone; false when we refused to
-  # signal (which is a success of a different kind).
+  #   :reaped   — proved it was ours, signalled, and the group is gone.
+  #   :absent   — nothing is alive under that pgid. Nothing to reap; not a refusal.
+  #   :survived — proved it was ours, signalled TERM+KILL, and it OUTLIVED us.
+  #   :refused  — we could not prove the group is ours (a stranger holds the recycled
+  #               number, or `started_at` is nil so identity is :unprovable), or the pgid
+  #               is not signalable at all. WE NEVER SIGNALLED.
+  #
+  # The distinction is load-bearing for the RUNLOCK. `false` used to mean both "already
+  # gone, nothing to do" and "alive and I refused" — so a caller that cleared the lock on
+  # false destroyed the only record naming a process it had just declined to kill, and a
+  # caller that KEPT the lock on false left a stale lock behind every clean cert. Neither
+  # is recoverable from a boolean. Clear the lock on `reap_cleared?`; keep it otherwise.
   def self.reap_group(pgid, started_at:, grace: 3.0, ps: "ps",
                       self_pid: Process.pid, self_pgid: Process.getpgrp)
     pgid = pgid.to_i
-    return false unless signalable?(pgid, self_pid: self_pid, self_pgid: self_pgid)
+    return :refused unless signalable?(pgid, self_pid: self_pid, self_pgid: self_pgid)
 
     table = process_table(ps: ps)
     leader = live_process(table, pgid)
-    return false unless identity_of(leader, started_at) == :ours
+    unless identity_of(leader, started_at) == :ours
+      # Nothing alive under the number at all → there is simply nothing to reap, and the
+      # lock may go. Anything ELSE alive under it is a group we cannot prove is ours, and
+      # an unprovable group is exactly the one we must not kill — and must not name in a
+      # kill we hand to an operator either.
+      return leader.nil? && group_members(table, pgid).empty? ? :absent : :refused
+    end
 
     # Everything in the group at the instant we proved ownership. These, and only
     # these, are ours to kill.
@@ -477,7 +537,7 @@ module CertOrphanGuard
     sleep 0.1 while survivors(victims, ps: ps).any? && Time.now < deadline
 
     escalate(pgid, victims, started_at, ps: ps, self_pid: self_pid, self_pgid: self_pgid)
-    survivors(victims, ps: ps).empty?
+    survivors(victims, ps: ps).empty? ? :reaped : :survived
   end
 
   # TERM did not do it. Escalate — but re-prove first. If the leader is still provably
@@ -627,6 +687,17 @@ module CertOrphanGuard
     "ps -eo pid,ppid,pgid,lstart,command | grep -E '#{pattern}'"
   end
 
+  # The lock named a group that was alive when we DECIDED and gone by the time we reached
+  # the trigger — it exited on its own. Clearing the lock is right; claiming we reaped it
+  # is not. We killed nothing, so we take credit for nothing.
+  def self.orphan_vanished_message(pgid:, lane: nil, db: nil)
+    "ORPHAN GONE — this worktree's runlock named a suite (process group #{pgid}" \
+      "#{lane ? ", lane: #{lane}" : ''}) that was still running when we read the process table, but it " \
+      "EXITED on its own before we signalled it. We reaped NOTHING — there was nothing left to reap. " \
+      "Discarded the stale runlock#{db ? " (test DB: #{db})" : ''} and continuing. " \
+      "This is an ENV condition — NOT a regression in your diff."
+  end
+
   def self.orphan_message(pgid:, lane: nil, db: nil, started_at: nil)
     "ORPHAN REAPED — a previous cert's test process was still running and holding the test DB. " \
       "It is an orphan: the cert that spawned it is gone (its harness timed out and killed the parent), " \
@@ -752,24 +823,47 @@ module CertOrphanGuard
       "#{db ? " (test DB: #{db})" : ''}"
   end
 
-  # We proved the orphan was ours, went to reap it, and it did not die (or its identity
-  # changed under us between the proof and the trigger, and we refused to fire). Either
-  # way the suite is still holding the test DB. Say exactly that — never print a kill we
-  # did not perform.
+  # The reap did not clear the group. TWO CAUSES, and they get OPPOSITE remediations —
+  # collapsing them is what printed a kill at a proven stranger for three rounds:
   #
-  # Only a :orphan verdict reaches here and that verdict already required `signalable?`,
-  # so `kill_command` can never come back nil in practice. It is rendered through the gate
-  # anyway: "unreachable" is a property of today's callers, and the invariant is a property
-  # of the file. The test renders THIS message at pgid 0/1 too.
-  def self.reap_failed_message(pgid:, lane: nil, db: nil)
-    clear = kill_command("KILL", pgid)
-    "REFUSING — this worktree's runlock names an orphaned suite (process group #{pgid}" \
-      "#{lane ? ", lane: #{lane}" : ''}) that we could NOT reap. It is still running, and while it holds " \
-      "#{db ? "the test DB #{db}" : 'the test DB'} every cert here dies in test-prepare on PG::ObjectInUse. " \
-      "The runlock is left in place on purpose: it names the process.\n" \
-      "  Inspect: #{inspect_command(pgid)}\n" \
-      "#{clear ? "  Clear:   #{clear}\n" : ''}" \
-      "Then re-run the cert. This is an ENV condition — NOT a regression in your diff."
+  #   :survived — we PROVED it was ours, signalled TERM then KILL, and it outlived us.
+  #               It is still running and still holding the DB. A kill is the honest
+  #               remediation: we know whose it is, and we already tried to fire it.
+  #   :refused  — we could NOT prove the group is ours. What answers to that pgid now is,
+  #               by definition, NOT the suite we spawned (a recycled number, or an
+  #               identity we cannot establish). There is NOTHING here we are entitled to
+  #               kill, so NO kill is offered — the same shape as `unsafe_pgid_message`.
+  #
+  # The Clear: line is gated on `reapable?` — THE SAME CALL `reap_group` gates its trigger
+  # on. It is not a second guard that agrees with the first by convention; it is the first
+  # guard. A command we would refuse to FIRE is a command we must refuse to PRINT, and the
+  # only way to guarantee that is to ask the one predicate both times.
+  def self.reap_failed_message(pgid:, lane: nil, db: nil, root: nil, reason: :refused,
+                               started_at: nil, ps: "ps")
+    clear = kill_command("KILL", pgid) if reapable?(pgid, started_at, ps: ps)
+    held = db ? "the test DB #{db}" : "the test DB"
+    head = "REFUSING — this worktree's runlock names an orphaned suite (process group #{pgid}" \
+           "#{lane ? ", lane: #{lane}" : ''}) that we could NOT reap. "
+
+    if clear
+      "#{head}It is still running, and while it holds #{held} every cert here dies in " \
+        "test-prepare on PG::ObjectInUse. It is PROVABLY ours (the group leader's start time still " \
+        "matches the one this worktree's runlock recorded), we signalled it TERM then KILL, and it " \
+        "outlived both. The runlock is left in place on purpose: it names the process.\n" \
+        "  Inspect: #{inspect_command(pgid)}\n" \
+        "  Clear:   #{clear}\n" \
+        "Then re-run the cert. This is an ENV condition — NOT a regression in your diff."
+    else
+      "#{head}We could NOT prove the group is OURS: the leader's start time does not match the one " \
+        "this worktree's runlock recorded when it spawned the suite#{reason == :survived ? ' (its identity changed under us between the proof and the trigger)' : ''}. " \
+        "Whatever answers to group #{pgid} now is, by definition, NOT our suite — the number was " \
+        "recycled, or its identity cannot be established — so we did NOT signal it, and NO kill is " \
+        "offered here, because none would be correct. Killing it would kill a stranger's process.\n" \
+        "  Clear it:  rm #{lock_path(root).to_s.shellescape}   # the lock names nobody we can verify\n" \
+        "  Inspect:   #{inspect_command(pgid)}   # if a suite IS stranded it has PPID 1 — found by NAME, not by this lock\n" \
+        "Then re-run the cert. If a real orphan IS holding #{held}, the backstop names it on the " \
+        "evidence. This is an ENV condition — NOT a regression in your diff."
+    end
   end
 
   # The unwedge command must connect the way the PROBE connected. `foreign_backends` dials
@@ -836,19 +930,31 @@ module CertOrphanGuard
                                             db: db, root: root)]
     when :orphan
       # Gate the notice on what actually HAPPENED, not on what we set out to do. The
-      # old code discarded this boolean and printed "ORPHAN REAPED ... Continuing with a
+      # old code discarded this return and printed "ORPHAN REAPED ... Continuing with a
       # clean test DB" even when the reap had failed — then failed closed anyway on the
       # DB backstop, handing the operator a contradictory ORPHAN REAPED + REFUSING pair
       # and no idea which to believe. A cert that reports a kill it did not perform is
       # back to asserting rather than evidencing.
-      reaped = reap_group(detail[:pgid], started_at: detail[:pgid_started_at], ps: ps)
-      unless reaped
-        return [:refuse, reap_failed_message(pgid: detail[:pgid], lane: detail[:lane], db: db)]
+      #
+      # `started_at:` and `ps:` are handed to the MESSAGE too, so it can ask the same
+      # `reapable?` the reap asked. Without them the renderer could only see the pgid —
+      # and a renderer that can only see the number can only gate on the number.
+      outcome = reap_group(detail[:pgid], started_at: detail[:pgid_started_at], ps: ps)
+      unless reap_cleared?(outcome)
+        return [:refuse, reap_failed_message(pgid: detail[:pgid], lane: detail[:lane], db: db,
+                                             root: root, reason: outcome,
+                                             started_at: detail[:pgid_started_at], ps: ps)]
       end
 
       clear_lock(root)
-      notices << orphan_message(pgid: detail[:pgid], lane: detail[:lane], db: db,
-                                started_at: detail[:started_at])
+      notices << if outcome == :absent
+                   # It died between the decision and the trigger. The lock may go — but we
+                   # reaped NOTHING, and we say so rather than take credit for the exit.
+                   orphan_vanished_message(pgid: detail[:pgid], lane: detail[:lane], db: db)
+                 else
+                   orphan_message(pgid: detail[:pgid], lane: detail[:lane], db: db,
+                                  started_at: detail[:started_at])
+                 end
     when :recycled
       clear_lock(root)
       notices << recycled_message(pgid: detail[:pgid], found: detail[:found],
