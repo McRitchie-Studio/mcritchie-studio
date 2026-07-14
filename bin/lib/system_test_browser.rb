@@ -43,14 +43,31 @@ module SystemTestBrowser
 
   # Does this command run the SYSTEM tier (and therefore need a browser)?
   #
-  # ONE definition, and it lives with the command PARSER (bin/lib/ci_test_command.rb)
-  # — "what tier does this command run?" is a property of the command, and a second
-  # copy here is exactly the drift these guards exist to prevent. It is structural,
-  # not a substring probe: `bin/rails test test/system` runs the tier too, and a
-  # `include?("test:system")` scan misses it — costing the caller the browser guard
-  # and handing it the confusing red suite the guard exists to explain.
+  # A UNION of two probes, because a browser guard must FAIL SAFE:
+  #
+  #   * STRUCTURAL (bin/lib/ci_test_command.rb) — parse the command and ask whether a
+  #     RAILS invocation is handed the tier. This is what catches the PATH form,
+  #     `bin/rails test test/system`, which a substring scan misses entirely.
+  #   * TEXTUAL — does the command text mention `test:system` at all. This is what
+  #     catches every WRAPPER form, which the parser misses entirely: in `docker
+  #     compose run web bin/rails test:system`, `ssh host 'bin/rails test:system'` or
+  #     `timeout 30m bin/rails test:system`, the EXECUTABLE is not rails, so the
+  #     structural probe reads it as "no rails invocation" and says false.
+  #
+  # Unifying the guard on the parser alone (the shared-probe refactor) bought the path
+  # form and QUIETLY TRADED AWAY the wrapper forms the textual probe had covered since
+  # the guard was written. Keep BOTH: the two probes miss different things, and the
+  # cost of their two errors is nowhere near symmetric —
+  #   * OVER-firing costs an "install Chrome" message on a host that did not need one;
+  #   * UNDER-firing runs the system tier with NO BROWSER, where Selenium fails INSIDE
+  #     the suite and reads exactly like a RED SUITE — at the release gate that EJECTS
+  #     A GOOD PR at the last gate before production, and at the cert it sends a
+  #     builder hunting a phantom bug in their own diff.
+  # A guard whose two failure modes cost that differently does not get to be clever.
+  # The parser's own `system_tier?` stays EXACT (it answers "what tier does this
+  # command run?"); the SAFE union belongs here, with the guard.
   def self.system_tier?(cmd)
-    CiTestCommand.system_tier?(cmd)
+    CiTestCommand.system_tier?(cmd) || cmd.to_s.include?("test:system")
   end
 
   def self.available?(env = ENV)

@@ -239,13 +239,21 @@ class FullSuiteCheckTest < Minitest::Test
   # `ci_steps:` writes a MULTI-STEP `test` job (each string one `run:`), which is
   # what it takes to exercise the step-SELECTION bug: with only one step there is
   # nothing to select wrong.
-  def with_ci_repo(ci_cmd: "bin/rails db:test:prepare test test:system", ci_steps: nil)
+  # `extra_jobs` writes ADDITIONAL jobs beside `test` — the grain the resolver used to
+  # be blind to (it read exactly `jobs.test.steps`), and the grain turf-monster's real
+  # ci.yml already uses.
+  def with_ci_repo(ci_cmd: "bin/rails db:test:prepare test test:system", ci_steps: nil, extra_jobs: nil)
     steps = ci_steps || (ci_cmd && [ci_cmd])
     with_repo do |dir|
       if steps
         FileUtils.mkdir_p(File.join(dir, ".github", "workflows"))
         runs = steps.map { |step| "      - name: Step\n        run: #{step}\n" }.join
-        File.write(File.join(dir, ".github", "workflows", "ci.yml"), "jobs:\n  test:\n    steps:\n#{runs}")
+        yaml = +"jobs:\n  test:\n    steps:\n#{runs}"
+        extra_jobs&.each do |job, job_steps|
+          yaml << "  #{job}:\n    steps:\n"
+          job_steps.each { |step| yaml << "      - name: Step\n        run: #{step}\n" }
+        end
+        File.write(File.join(dir, ".github", "workflows", "ci.yml"), yaml)
       end
       log = File.join(dir, "rails.log")
       FileUtils.mkdir_p(File.join(dir, "bin"))
@@ -337,6 +345,69 @@ class FullSuiteCheckTest < Minitest::Test
       refute_match(/\[full-suite@/, out, "a half-run suite must certify NOTHING")
       refute_path_exists log,
                          "the lane RAN CI's first test step — that is the green cert with no system tier, back again"
+    end
+  end
+
+  # --- [integration] CI's suite split ACROSS JOBS is refused, not narrowly certified -
+  # THE THIRD REGRESSION, end to end — the same lie one grain up. The resolver read
+  # exactly `jobs.test.steps`, so the identical split that refuses across STEPS
+  # resolved in TOTAL SILENCE across JOBS: `jobs.test` still holds one single-line
+  # rails test step, every step-grain guard passes, and the lane runs `bin/rails test`
+  # and stamps `[full-suite@<fp>] … green` with test/system NEVER RUN — in a job the
+  # cert never even read. Not hypothetical: turf-monster runs a second test-bearing
+  # job (playwright) TODAY.
+
+  def test_ci_that_runs_its_tests_in_ANOTHER_JOB_is_refused_not_narrowly_certified
+    with_ci_repo(ci_cmd: "bin/rails test",
+                 extra_jobs: { "system_test" => ["bin/rails db:test:prepare test:system"] }) do |dir, log|
+      out, code = run_default_test_lane(dir)
+
+      assert_equal 1, code, out
+      assert_match(/MORE THAN ONE JOB/, out, "the refusal must say the suite is split across JOBS")
+      assert_match(/system_test/, out, "and NAME the job the lane would have left unrun")
+      assert_match(/test:system/, out, "and the step inside it")
+      refute_match(/\[full-suite@/, out, "a suite split across jobs must certify NOTHING")
+      refute_path_exists log,
+                         "the lane RAN the narrower job's command — the green cert with no system tier, back again"
+    end
+  end
+
+  def test_a_foreign_runner_beside_the_rails_step_is_refused_not_silently_dropped
+    # The set COUNT's blind spot, end to end: `runs_tests?` is a whitelist, and a
+    # whitelist fails OPEN when COUNTING — playwright was invisible, so the lane ran
+    # the rails step alone and stamped green with CI's other runner never invoked.
+    with_ci_repo(ci_steps: ["bin/rails db:test:prepare test test:system", "npx playwright test"]) do |dir, log|
+      out, code = run_default_test_lane(dir)
+
+      assert_equal 1, code, out
+      assert_match(/ANOTHER RUNNER/, out)
+      assert_match(/playwright/, out, "the refusal must NAME the runner it would have dropped")
+      refute_match(/\[full-suite@/, out)
+      refute_path_exists log
+    end
+  end
+
+  def test_a_turf_style_PLAYWRIGHT_JOB_still_certifies
+    # THE LIVE NO-REGRESSION PROOF, at the cert lane itself. turf-monster's real ci.yml
+    # runs a second test-bearing job (sharded playwright) beside `test` — and its cert
+    # lane WORKS today. The job-grain guard must not brick it: playwright is a tier
+    # this lane never claimed (docs/topics/testing.md), not a split of CI's RUBY suite.
+    # Its rails steps are SETUP and must not read as tests — note `bin/rails runner -e
+    # test e2e/seed.rb`, where `test` is the VALUE of -e (the RAILS_ENV), not a task.
+    #
+    # A guard that refuses a WORKING lane is worse than the latent bug it closes.
+    turf_playwright = ["npm ci",
+                       "npx playwright install --with-deps chromium",
+                       "bin/rails db:test:prepare && bin/rails runner -e test e2e/seed.rb",
+                       "bin/rails tailwindcss:build",
+                       "npm test -- --grep-invert @devnet --shard=1/3"]
+    with_ci_repo(extra_jobs: { "playwright" => turf_playwright }) do |dir, log|
+      out, code = run_default_test_lane(dir)
+
+      assert_equal 0, code, "turf-monster's playwright job must not brick its cert lane: #{out}"
+      assert_equal ["db:test:prepare test test:system"], File.readlines(log, chomp: true),
+                   "the lane must still run CI's `test` job command, verbatim"
+      assert_match(/\[full-suite@/, out)
     end
   end
 

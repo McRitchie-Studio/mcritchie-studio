@@ -13,6 +13,7 @@ require "minitest/autorun"
 require "tmpdir"
 require "fileutils"
 require_relative "../../bin/lib/system_test_browser"
+require_relative "../../bin/lib/ci_test_command"
 
 class SystemTestBrowserTest < Minitest::Test
   def test_system_tier_binds_only_commands_that_run_test_system
@@ -22,6 +23,47 @@ class SystemTestBrowserTest < Minitest::Test
     refute SystemTestBrowser.system_tier?("bin/rails test")
     refute SystemTestBrowser.system_tier?("bin/rails test test/integration")
     refute SystemTestBrowser.system_tier?(nil)
+  end
+
+  # --- the union: the guard must FAIL SAFE ---------------------------------------
+
+  def test_the_guard_still_sees_the_tier_through_a_WRAPPER
+    # THE REGRESSION. Unifying the guard on the command PARSER bought the PATH form
+    # (`bin/rails test test/system`) and LOST every WRAPPER form: the parser asks
+    # whether a RAILS invocation is handed the tier, and in `docker compose run web
+    # bin/rails test:system` the executable is `docker`. #518's substring probe caught
+    # these. The guard takes BOTH now — a browser guard does not get to be clever:
+    # over-firing costs an "install Chrome" message; UNDER-firing runs the tier
+    # browserless, where Selenium dies INSIDE the suite and reads as a RED SUITE —
+    # at the release gate, that EJECTS A GOOD PR at the last gate before production.
+    [
+      "docker compose run web bin/rails test:system",
+      "docker compose run --rm web bundle exec rails db:test:prepare test:system",
+      "timeout 30m bin/rails db:test:prepare test test:system",
+      "ssh ci-host 'cd /app && bin/rails test:system'",
+      "bin/with-env test bin/rails test:system",
+    ].each do |cmd|
+      assert SystemTestBrowser.system_tier?(cmd),
+             "the browser guard went BLIND on a wrapper form: #{cmd}"
+    end
+  end
+
+  def test_the_union_keeps_BOTH_halves
+    # The two halves catch different things, and neither alone is enough.
+    assert SystemTestBrowser.system_tier?("bin/rails test test/system"),
+           "the PATH form — caught only by the STRUCTURAL half"
+    refute CiTestCommand.system_tier?("docker compose run web bin/rails test:system"),
+           "the structural half does NOT see wrapper forms — which is why the union exists"
+    assert SystemTestBrowser.system_tier?("docker compose run web bin/rails test:system"),
+           "the wrapper form — caught only by the TEXTUAL half"
+  end
+
+  def test_the_union_does_not_over_fire_on_the_integration_subset
+    # Over-firing is the CHEAP error, but it is still an error: a satellite whose
+    # gate command runs the integration subset must not demand Chrome on the host.
+    refute SystemTestBrowser.system_tier?("bin/rails test test/integration test/models")
+    refute SystemTestBrowser.system_tier?("docker compose run web bin/rails test")
+    refute SystemTestBrowser.system_tier?("bin/rails db:test:prepare")
   end
 
   def test_available_is_forced_by_the_test_seam

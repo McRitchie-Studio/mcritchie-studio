@@ -101,15 +101,23 @@ wrong checkout (e.g. the hub primary on `main`) exits 1 naming the worktree to
    ```
 
    Lanes: `test-db-reset` (`bin/rails db:test:purge db:test:prepare`),
-   `full-suite` (**what CI runs, verbatim** — read from the repo's own
+   `full-suite` (**what CI's `test` job runs, verbatim** — read from the repo's own
    `.github/workflows/ci.yml`; today `bin/rails db:test:prepare test test:system`,
-   the ENTIRE suite **including the system tier**), `rubocop` (`bin/rubocop`, the
-   whole repo). Green lanes stamp `[full-suite@<fp>]` + `[rubocop@<fp>]`.
+   the ENTIRE Ruby suite **including the system tier**), `rubocop` (`bin/rubocop`,
+   the whole repo — CI's `lint` job). Green lanes stamp `[full-suite@<fp>]` +
+   `[rubocop@<fp>]`.
 
    The lane runs CI's command because this route's whole claim is
-   CI-INDEPENDENCE — it may never test *less* than CI. (It once did: it ran
-   `bin/rails test`, which **skips `test/system`**, so a builder could take the
-   CI-independent route, go green, and have zero system coverage.) Two consequences
+   CI-INDEPENDENCE — **it may never run less of CI's Ruby suite than CI does**.
+   (It once did: it ran `bin/rails test`, which **skips `test/system`**, so a
+   builder could take the CI-independent route, go green, and have zero system
+   coverage.) Scope it exactly: the cert stands in for CI's **`test` job**, not for
+   all of CI — `scan_ruby` (brakeman), `scan_js` (importmap audit) and
+   turf-monster's `playwright` e2e job are CI's alone, which is why review's
+   gate-zero still holds the authoritative CI verdict. Where CI's Ruby suite is
+   split so this one-command lane could only run PART of it — across steps, across
+   **jobs**, a multi-line script, or a foreign runner beside the rails step — the
+   cert **REFUSES loudly** instead of certifying the narrower half. Two consequences
    worth knowing: the system tier drives a real headless **Chrome**, and a host
    without one **aborts up front as an ENV error** — *"NOT a regression in your
    diff"* — never as a red suite; and the command's shape is load-bearing —
