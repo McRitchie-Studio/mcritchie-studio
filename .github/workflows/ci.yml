@@ -157,9 +157,12 @@ jobs:
       # /tasks/repair-rotted-e2e-specs. When that lands, DELETE this flag.
       #
       # The hole is BOUNDED, not merely deplored: test/lib/e2e_quarantine_ratchet_test.rb
-      # ratchets the @quarantine count (ceiling 18, may only fall). Tagging one more spec
-      # to green a PR turns that test red. The norm in playwright.config.js asks you not
-      # to; the ratchet is what makes it a gate.
+      # ratchets the @quarantine count (ceiling 18, may only fall) — against the value on
+      # `origin/release`, NOT against the copy in the PR's own tree, because a ceiling that
+      # moves when the author edits it bounds nothing. (Measured: with the earlier version,
+      # tagging a 19th spec and bumping the contract went green on every guard AND on the
+      # receipt.) Tagging one more spec to green a PR is now a red build. The norm in
+      # playwright.config.js asks you not to; the ratchet is what makes it a gate.
       #
       # THREE GUARDS, AND THE THIRD IS THE ONLY ONE THAT GENERALIZES.
       #   1. THE COMMAND. test/lib/ci_workflow_triggers_test.rb asserts this lane runs the
@@ -299,8 +302,21 @@ jobs:
           sudo rm -f /usr/local/bin/chromedriver /usr/bin/chromedriver || true
           echo "chromedriver remaining on PATH: $(which chromedriver 2>/dev/null || echo none)"
 
+      # fetch-depth: 0 IS LOAD-BEARING — do not "optimize" it back to the default.
+      #
+      # test/lib/e2e_quarantine_ratchet_test.rb ratchets the @quarantine ceiling against its
+      # value on `origin/release` — the one number a PR's own diff cannot move. actions/checkout
+      # defaults to a depth-1 fetch of the head SHA ALONE, which leaves `origin/release`
+      # unresolvable, and a ratchet that cannot see its baseline cannot certify monotonicity.
+      #
+      # So the ratchet FAILS CLOSED on a missing baseline: delete this line and the `test` job
+      # goes RED and says why. It cannot quietly demote itself back to the pin it used to be —
+      # which is exactly what it was, and how the hole grew once with every guard green.
+      # Pinned by test/lib/ci_workflow_triggers_test.rb.
       - name: Checkout code
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1

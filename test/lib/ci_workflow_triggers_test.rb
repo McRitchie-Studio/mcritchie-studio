@@ -292,9 +292,17 @@ class CiWorkflowTriggersTest < Minitest::Test
   #   --grep-invert  the ONE sanctioned exclusion — and it is VALUE-PINNED below, because a
   #                  flag that is allowed to exist but not allowed to say anything is exactly
   #                  the door frame this PR left unbolted while it was ratcheting the lock.
-  #   --reporter     chooses the OUTPUT FORMAT. It cannot change which specs run — and it is
-  #                  what emits the JSON receipt the executed-set gate is judged on.
-  INERT_E2E_FLAGS = %w[--shard --grep-invert --reporter].freeze
+  #   --reporter     chooses the OUTPUT FORMAT. It cannot change which specs run.
+  #
+  # THE NAME OF THIS CONSTANT USED TO BE `INERT_E2E_FLAGS`, AND THAT WAS ITSELF AN OVER-CLAIM —
+  # the exact failure mode this PR exists to kill, sitting in the guard that hunts it.
+  # `--reporter` is NOT inert. It cannot narrow the lane, but it EMITS THE JSON RECEIPT the
+  # executed-set gate is judged on: drop `json` from it and the lane still runs all 51 specs
+  # while the only evidence that it did evaporates. So the property these three share is the
+  # narrow, true one — they cannot SHRINK THE SELECTED SET — and that is what the name says
+  # now. `--reporter`'s second, load-bearing job is pinned separately, by
+  # test_integration_the_e2e_lane_emits_the_receipt_it_is_judged_on.
+  NON_NARROWING_E2E_FLAGS = %w[--shard --grep-invert --reporter].freeze
   # ====================================================================================
 
   # Every argument that NARROWS which specs the e2e lane runs.
@@ -311,10 +319,11 @@ class CiWorkflowTriggersTest < Minitest::Test
   #   · a POSITIONAL argument — a spec file or directory (`playwright test e2e/smoke.spec.js`);
   #   · a POSITIVE `--grep` — an inclusion filter (`--grep @smoke`).
   #
-  # NOT narrowings, and deliberately allowed (see INERT_E2E_FLAGS — everything else is denied
-  # by name, so this is an allowlist, not a list of the cheats we happened to imagine):
+  # NOT narrowings, and deliberately allowed (see NON_NARROWING_E2E_FLAGS — everything else is
+  # denied by name, so this is an allowlist, not a list of the cheats we happened to imagine):
   #   · `--shard=i/n` — the shards UNION to the whole suite; that is the point of the matrix.
-  #   · `--reporter` — chooses the output format, not the test set.
+  #   · `--reporter` — chooses the output format, not the test set (but it DOES emit the
+  #     receipt: separately pinned, see NON_NARROWING_E2E_FLAGS).
   #   · `--grep-invert @quarantine` — the ONE sanctioned narrowing: a named, ticketed
   #     EXCLUSION (/tasks/repair-rotted-e2e-specs), pinned to that EXACT VALUE below.
   #
@@ -344,7 +353,7 @@ class CiWorkflowTriggersTest < Minitest::Test
       elsif token.start_with?("-")
         flag, inline_value = token.split("=", 2)
         skip_next = VALUE_FLAGS.include?(flag) && inline_value.nil?
-        narrowing << token unless INERT_E2E_FLAGS.include?(flag)
+        narrowing << token unless NON_NARROWING_E2E_FLAGS.include?(flag)
       else
         narrowing << token
       end
@@ -816,6 +825,75 @@ class CiWorkflowTriggersTest < Minitest::Test
                    "shrinking what the green `playwright` check means — do that deliberately, " \
                    "in config/e2e_lane.yml, where the numbers have to add up and a reviewer " \
                    "sees the diff."
+    end
+  end
+  # ====================================================================================
+
+  # ==== THE RATCHET'S BASELINE MUST BE FETCHABLE ======================================
+  # test/lib/e2e_quarantine_ratchet_test.rb ratchets the @quarantine ceiling against
+  # `origin/release` — the only copy of that number a PR's own diff cannot move. But
+  # actions/checkout fetches ONLY the head SHA by default (depth 1), and then `origin/release`
+  # does not resolve.
+  #
+  # The ratchet fails CLOSED in that case (RED, with the reason), so the failure mode is loud
+  # rather than silent — but "loud" is worth exactly nothing if the next person makes CI green
+  # by deleting the ratchet instead of restoring the fetch. So the fetch is PINNED here: the
+  # `test` job — the job that runs the ratchet — must check out with `fetch-depth: 0`.
+  #
+  # This is the same lesson as the receipt, in miniature: an invariant that depends on a
+  # condition must ASSERT that condition, or it is just hoping.
+  def test_integration_the_test_job_can_see_the_ratchets_baseline
+    jobs = jobs_of(File.read(CI_YML))
+    job = jobs["test"]
+
+    refute_nil job, "no `test` job in ci.yml — that is the job that runs the ratchet"
+
+    checkouts = Array(job["steps"]).select { |s| s.is_a?(Hash) && s["uses"].to_s.start_with?("actions/checkout") }
+    refute_empty checkouts, "the `test` job does not check out the repo"
+
+    depths = checkouts.map { |s| (s["with"] || {})["fetch-depth"] }
+
+    assert_includes depths, 0,
+                    "the `test` job checks out with fetch-depth #{depths.inspect}, so " \
+                    "`origin/release` DOES NOT RESOLVE in that checkout — and " \
+                    "test/lib/e2e_quarantine_ratchet_test.rb reads the @quarantine ceiling's " \
+                    "baseline from exactly that ref.\n" \
+                    "Without it the ratchet cannot see the one value this branch's diff cannot " \
+                    "move, and a ratchet without a baseline is a PIN — which is what it was, " \
+                    "and how the quarantine hole once grew by a spec with every guard in the " \
+                    "repo green. Restore `fetch-depth: 0` on the `test` job's checkout."
+  end
+  # ====================================================================================
+
+  # ==== THE RECEIPT MUST ACTUALLY BE EMITTED ==========================================
+  # `--reporter` is on the non-narrowing allowlist because it cannot change WHICH specs run.
+  # True — and for three rounds this file called it "inert", which was a LIE OF EXACTLY THE
+  # KIND THIS PR IS ABOUT: --reporter is the flag that EMITS THE RECEIPT the executed-set gate
+  # is judged on. It cannot narrow the lane, but it can silence the only evidence we have that
+  # the lane was not narrowed.
+  #
+  # The gate does fail closed if the receipt vanishes (no artifact -> zero reports -> RED), so
+  # this is not a hole. It is a diagnosis: pinned here, a dropped `json` reporter says "you
+  # broke the receipt" instead of "e2e_executed_set found no reports", which is the difference
+  # between a five-second fix and an afternoon.
+  def test_integration_the_e2e_lane_emits_the_receipt_it_is_judged_on
+    lanes = e2e_command_lanes(File.read(CI_YML))
+
+    refute_empty lanes, "no ci.yml step runs the playwright suite — see the primary guard"
+
+    lanes.each do |job_name, _job, step|
+      run = step["run"].to_s
+
+      assert_match(/--reporter[= ]\S*\bjson\b/, run,
+                   "#{lane_label(job_name, step)} runs playwright WITHOUT a `json` reporter. " \
+                   "That is the receipt bin/e2e-executed-set-check reads to prove the lane " \
+                   "executed the specs it claims to — no JSON, no evidence, and the executed-set " \
+                   "gate is left auditing nothing.")
+
+      assert_match(/PLAYWRIGHT_JSON_OUTPUT_NAME/, YAML.dump(step["env"] || {}),
+                   "#{lane_label(job_name, step)} does not set PLAYWRIGHT_JSON_OUTPUT_NAME, so " \
+                   "the json reporter writes to STDOUT and no receipt file is produced for the " \
+                   "upload step to collect.")
     end
   end
   # ====================================================================================

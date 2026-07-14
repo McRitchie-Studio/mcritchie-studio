@@ -28,6 +28,11 @@
 # TO CHANGE THESE NUMBERS you must edit this file, which is a visible, reviewable diff line
 # with a comment attached. That is the point: the hole cannot grow silently. It can only
 # grow ON PURPOSE, in front of a reviewer.
+#
+# And `quarantined` cannot grow even then, not on a green build: it is RATCHETED against its
+# value on `origin/release` (test/lib/e2e_quarantine_ratchet_test.rb), which is the one copy of
+# the number a feature branch's diff cannot move. Raising it is a red build and a conversation
+# — a reviewer agreeing to give up coverage — rather than a line nobody reads.
 ---
 # Every `test(...)` committed under e2e/. Verified against Playwright's own model, not prose:
 #   npx playwright test --list   ->  69 tests in 27 files
@@ -37,9 +42,18 @@ total_specs: 69
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
 # with a name and a ticket: /tasks/repair-rotted-e2e-specs.
 #
-# THIS NUMBER MAY ONLY FALL. Repair a spec: drop its tag, lower `quarantined`, raise
-# `executed`, same commit. Tagging one MORE spec to green a PR is the exact self-declaration
-# disease this whole lane exists to cure.
+# THIS NUMBER MAY ONLY FALL, AND THAT IS ENFORCED — not merely requested here.
+# test/lib/e2e_quarantine_ratchet_test.rb compares this value against its value on
+# `origin/release` and goes RED if it is higher. That comparison is the whole point: it reads
+# a copy of the number that YOUR edit cannot reach. The first version of the guard compared
+# this line to... this line, and review proved what that is worth by tagging a 19th spec,
+# bumping this number to 19, and watching every guard in the repo AND the runtime receipt go
+# green over a suite that had just lost a spec. A ratchet whose reference value moves with the
+# thing it restrains is a PIN.
+#
+# Repair a spec: drop its tag, lower `quarantined`, raise `executed`, same commit — the guard
+# will tell you both numbers. Tagging one MORE spec to green a PR is the exact self-declaration
+# disease this whole lane exists to cure, and it is now a red build rather than a red face.
 quarantined: 18
 
 # total_specs - quarantined. What the lane MUST execute — asserted against the runner's own

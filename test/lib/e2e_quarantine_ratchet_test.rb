@@ -48,8 +48,15 @@
 # `--grep-invert @quarantine` (.github/workflows/ci.yml), excluding the 18 specs that were
 # already RED on an untouched `release` checkout the day the lane was switched on. That
 # exclusion buys the healthy 51 a real lane TODAY instead of holding them hostage to a
-# repair — but it is a hole, and until this file existed it was UNBOUNDED. The count may
-# fall; it may never rise.
+# repair — but it is a hole, and until this file existed it was UNBOUNDED.
+#
+# The count may fall; it may never rise — and "may never rise" is ENFORCED, not asserted in a
+# comment: the ceiling is compared against its value on `origin/release` (see BASELINE_REF), a
+# number no edit in this working tree can reach. The first version of this guard compared the
+# ceiling to the contract file the author was editing, which is a PIN wearing a ratchet's
+# name; review proved it by tagging a 19th spec, bumping the contract, and watching every
+# guard in the repo — this one and the receipt both — go green over a suite that had just
+# shrunk. Read test_integration_the_quarantine_ceiling_never_rises before touching this.
 #
 # TO REPAIR A SPEC: drop its ` @quarantine` tag, and move BOTH counters below in the same
 # commit (CEILING down by one, LANE_SPECS up by one; TOTAL_SPECS does not move). The
@@ -67,13 +74,15 @@
 
 require "minitest/autorun"
 require "yaml"
+require "open3"
 
 class E2eQuarantineRatchetTest < Minitest::Test
   ROOT = File.expand_path("../..", __dir__)
   E2E_DIR = File.join(ROOT, "e2e")
   CONFIG_PATH = File.join(ROOT, "playwright.config.js")
   CI_PATH = File.join(ROOT, ".github", "workflows", "ci.yml")
-  CONTRACT_PATH = File.join(ROOT, "config", "e2e_lane.yml")
+  CONTRACT_REL = "config/e2e_lane.yml"
+  CONTRACT_PATH = File.join(ROOT, CONTRACT_REL)
 
   # ==== THE CONTRACT ==================================================================
   # The numbers live in config/e2e_lane.yml — ONE file, so there is ONE line to bump and the
@@ -87,6 +96,31 @@ class E2eQuarantineRatchetTest < Minitest::Test
   LANE_SPECS     = CONTRACT.fetch("executed")      # TOTAL_SPECS - CEILING == what CI executes
   SHARDS         = CONTRACT.fetch("shards")
   QUARANTINE_TAG = CONTRACT.fetch("quarantine_tag")
+  # ====================================================================================
+
+  # ==== THE BASELINE — the one number this author's diff CANNOT move ==================
+  # Round 4 of review killed the previous version of the ratchet with one measurement, and it
+  # is worth stating plainly because the bug is subtle and it is THE BUG THIS WHOLE PR IS ABOUT:
+  #
+  #   The old assertion was `count == CEILING`, and CEILING is read from config/e2e_lane.yml —
+  #   THE SAME FILE THE AUTHOR EDITS. So tagging a 19th spec and bumping the contract 18 -> 19
+  #   passed with ZERO failures, and the receipt (50 == 50) went green right behind it. THE
+  #   HOLE GREW WITH EVERY GUARD IN THE REPO GREEN. A "ratchet" whose reference value moves
+  #   with the thing it is supposed to be restraining is a PIN, not a ratchet.
+  #
+  # This is the same disease as the receipt, one level up: a guard that reads only what the
+  # author wrote can only ever confirm that the author wrote it. The cure is the same one —
+  # read something OUTSIDE the diff. For the executed set that is Playwright's own report. For
+  # the ceiling it is `origin/release`: the value as it stands on the branch this PR must merge
+  # into, which no edit in this working tree can touch.
+  #
+  # FAIL CLOSED. If the baseline cannot be resolved, this guard goes RED — it does not shrug and
+  # pass. A ratchet that cannot see its baseline cannot certify monotonicity, and a green light
+  # it has no basis for is precisely the lie being hunted. (CI must therefore fetch the ref:
+  # .github/workflows/ci.yml checks out the `test` job with `fetch-depth: 0`, pinned by
+  # test/lib/ci_workflow_triggers_test.rb, so dropping it turns the lane RED and loud rather
+  # than quietly demoting this back to a pin.)
+  BASELINE_REF = "origin/release"
   # ====================================================================================
 
   # A SPEC is a BARE `test(` / `it(` call with a title. No modifier. That is the only form
@@ -154,8 +188,14 @@ class E2eQuarantineRatchetTest < Minitest::Test
     strip_comments(source).lines.filter_map { |line| line.match(GROUP_DECLARATION)&.[](:title) }
   end
 
+  # The tag comes from the CONTRACT, never from a literal. The file's whole claim is that both
+  # halves of the guard read ONE contract; a hardcoded "@quarantine" here would have made that
+  # claim false the day someone changed `quarantine_tag:` — the static half would have kept
+  # counting the old spelling while the runtime half excluded the new one, and they would have
+  # certified two different suites while agreeing on the number. Small, but it is the same
+  # disease: a claim ("one contract") outrunning the mechanism (a literal).
   def quarantined_titles(source)
-    spec_titles(source).select { |title| title.include?("@quarantine") }
+    spec_titles(source).select { |title| title.include?(QUARANTINE_TAG) }
   end
 
   # BOTH axes, unioned, reported as written (`test.only`, `test.describe.skip`,
@@ -188,11 +228,85 @@ class E2eQuarantineRatchetTest < Minitest::Test
     each_spec_file.sum { |_path, source| quarantined_titles(source).size }
   end
 
+  # ---- the baseline ------------------------------------------------------------------
+
+  # `quarantined` out of a contract BLOB (not the working file). Returns nil for anything we
+  # cannot read as the contract — a truncated blob, a renamed key, a YAML error. nil means
+  # UNKNOWN, and every caller treats UNKNOWN as RED: see baseline_ceiling.
+  def ceiling_in(yaml_text)
+    value = YAML.safe_load(yaml_text.to_s)
+    return nil unless value.is_a?(Hash)
+
+    ceiling = value["quarantined"]
+    ceiling.is_a?(Integer) ? ceiling : nil
+  rescue Psych::Exception
+    nil
+  end
+
+  def git(*args)
+    out, status = Open3.capture2e("git", "-C", ROOT, *args)
+    status.success? ? out : nil
+  end
+
+  # The ceiling as it stands OUTSIDE this working tree. Returns [ceiling, provenance], or
+  # [nil, why_not] — and [nil, …] is a RED, never a pass.
+  #
+  # TWO SOURCES, IN ORDER, AND THE SECOND ONE IS NOT A LOOPHOLE:
+  #
+  #   1. THE RELEASED CEILING — `origin/release:config/e2e_lane.yml`. Once the contract is on
+  #      release this is the only baseline, forever. Nothing in a feature branch can move it.
+  #
+  #   2. THE INTRODUCING COMMIT — for the ONE branch that ADDS the contract (this one: the file
+  #      does not exist on release yet). There is no released value to ratchet against, so the
+  #      baseline is the value at the commit that first added the file on this branch.
+  #
+  #      Without case 2 the bootstrap branch would have NO baseline, and "no baseline" would
+  #      have to mean either RED (this PR can never be green — absurd) or PASS (the ratchet is
+  #      decorative on the exact PR that introduces it — which is the bug, shipped one level up,
+  #      and is precisely how I would have re-committed the offense I am fixing). Case 2 is what
+  #      makes the mutation vector — tag a 19th spec, bump the contract — go RED **today**,
+  #      on this branch, rather than someday after merge.
+  #
+  #      What it does NOT do is let the ceiling drift up inside this branch: a later commit that
+  #      raises it is measured against the introducing commit and goes RED. The initial value is
+  #      the one thing case 2 cannot police, and it does not need to — a brand-new contract file
+  #      is a wholly-added diff, and its ceiling is a reviewed line on it. After merge, case 1
+  #      takes over and case 2 can never fire for this file again.
+  def baseline_ceiling
+    return [nil, "git cannot read #{ROOT} (not a repository?)"] unless git("rev-parse", "--git-dir")
+
+    unless git("rev-parse", "--verify", "--quiet", "#{BASELINE_REF}^{commit}")
+      return [nil, "`#{BASELINE_REF}` does not resolve — run `git fetch origin release`"]
+    end
+
+    released = git("show", "#{BASELINE_REF}:#{CONTRACT_REL}")
+    if released
+      ceiling = ceiling_in(released)
+      return [nil, "`#{BASELINE_REF}:#{CONTRACT_REL}` has no readable `quarantined:`"] if ceiling.nil?
+
+      return [ceiling, "#{BASELINE_REF}:#{CONTRACT_REL}"]
+    end
+
+    # Case 2: the contract is NEW to release. Find the commit that added it on this branch.
+    log = git("log", "#{BASELINE_REF}..HEAD", "--diff-filter=A", "--format=%H", "--", CONTRACT_REL)
+    introduced = log.to_s.split("\n").map(&:strip).reject(&:empty?).last
+    if introduced.nil?
+      return [nil, "#{CONTRACT_REL} is on neither `#{BASELINE_REF}` nor any commit in " \
+                   "`#{BASELINE_REF}..HEAD` — commit it before this guard can baseline it"]
+    end
+
+    ceiling = ceiling_in(git("show", "#{introduced}:#{CONTRACT_REL}"))
+    return [nil, "#{introduced[0, 8]}:#{CONTRACT_REL} has no readable `quarantined:`"] if ceiling.nil?
+
+    [ceiling, "#{introduced[0, 8]}:#{CONTRACT_REL} (the commit that ADDED the contract; it is " \
+              "not on `#{BASELINE_REF}` yet)"]
+  end
+
   # Files carrying at least one spec the lane actually runs. Playwright keeps a file's specs
   # together when sharding, so this — not the spec count alone — is what floors a shard.
   def committed_lane_file_count
     each_spec_file.count do |_path, source|
-      spec_titles(source).any? { |title| !title.include?("@quarantine") }
+      spec_titles(source).any? { |title| !title.include?(QUARANTINE_TAG) }
     end
   end
 
@@ -373,6 +487,37 @@ class E2eQuarantineRatchetTest < Minitest::Test
   end
   # ====================================================================================
 
+  # --- [unit] the baseline parser --------------------------------------------------------
+  # The ratchet is only as good as its baseline, and the baseline arrives as a git BLOB — a
+  # string that may be anything at all. `nil` means UNKNOWN and every caller turns UNKNOWN into
+  # RED, so these cases are the difference between a ratchet that fails closed and one that
+  # quietly waves a bad blob through.
+
+  def test_unit_reads_the_ceiling_from_a_contract_blob
+    assert_equal 18, ceiling_in("total_specs: 69\nquarantined: 18\nexecuted: 51\n")
+  end
+
+  def test_unit_an_unparseable_baseline_is_unknown_not_zero
+    # Zero would be the WORST possible default: `CEILING <= 0` fails every non-empty ceiling,
+    # which LOOKS strict — and then someone "fixes the flaky guard" by relaxing it. nil is
+    # honest: we do not know, so we do not certify.
+    assert_nil ceiling_in("\tthis: is: not: yaml\n[")
+    assert_nil ceiling_in("")
+    assert_nil ceiling_in(nil)
+  end
+
+  def test_unit_a_baseline_missing_the_key_is_unknown
+    assert_nil ceiling_in("total_specs: 69\nexecuted: 51\n")
+  end
+
+  def test_unit_a_non_integer_ceiling_is_unknown
+    # `quarantined: eighteen` would make `CEILING <= "eighteen"` raise ArgumentError — an
+    # ERROR, which reads as "the test is broken" and gets rerun, not investigated. Caught here
+    # so it reads as what it is: a baseline we cannot trust.
+    assert_nil ceiling_in("quarantined: eighteen\n")
+    assert_nil ceiling_in("quarantined:\n")
+  end
+
   # --- [integration] the real committed suite ------------------------------------------
 
   # ==== THE EXECUTED-SET INVARIANT ====================================================
@@ -434,37 +579,78 @@ class E2eQuarantineRatchetTest < Minitest::Test
   # which is the one thing the arithmetic may not do.
   def test_integration_no_group_is_quarantined
     offenders = each_spec_file.flat_map do |path, source|
-      group_titles(source).select { |title| title.include?("@quarantine") }
+      group_titles(source).select { |title| title.include?(QUARANTINE_TAG) }
                           .map { |title| "#{File.basename(path)}: #{title}" }
     end
 
     assert_empty offenders,
-                 "a `describe` block is tagged @quarantine:\n  #{offenders.join("\n  ")}\n" \
+                 "a `describe` block is tagged #{QUARANTINE_TAG}:\n  #{offenders.join("\n  ")}\n" \
                  "`--grep-invert` drops EVERY spec in that block, but the ceiling counts " \
                  "specs individually — so the hole would grow by N while the counter moved " \
                  "by 0. Tag the individual specs instead."
   end
 
-  # ==== THE RATCHET ===================================================================
-  # Exact equality, both directions, zero headroom: tag one more spec and this is red;
-  # repair one and this MAKES YOU lower the ceiling in the same commit, so the hole cannot
-  # quietly grow back to where it started. Bounded is not the same as shrinking.
-  def test_integration_the_quarantine_hole_never_grows_and_ratchets_down
+  # ==== THE PIN — the source agrees with the contract =================================
+  # Exact equality, both directions, zero headroom: the tags actually committed under e2e/
+  # must be the number the contract declares. This keeps the two halves of the guard honest
+  # about the SAME suite — but note what it CANNOT do, because for three rounds it was
+  # mistaken for the thing below: it compares the author's tags to the author's contract.
+  # Move both together and it is green. That is a PIN. The ratchet is the next test.
+  def test_integration_the_declared_quarantine_set_matches_the_contract
     count = committed_quarantine_count
 
     assert_equal CEILING, count,
-                 "#{count} specs under e2e/ carry @quarantine; CEILING is #{CEILING}.\n" \
-                 "If you ADDED a tag: CI runs the e2e lane with `--grep-invert @quarantine`, " \
-                 "so every tag SILENTLY DELETES a spec from the only lane that runs it — the " \
-                 "check stays green over less and less. Tagging a spec to green a PR is the " \
-                 "exact self-declaration disease this lane was built to cure. Two honest " \
-                 "moves, no third: FIX the spec, or BLOCK on it.\n" \
-                 "If you REPAIRED #{CEILING - count} spec(s) — thank you — now lower CEILING " \
-                 "to #{count} and raise LANE_SPECS to #{TOTAL_SPECS - count} in THIS commit. " \
-                 "Otherwise the hole you just shrank can quietly grow back and no guard will " \
-                 "say a word. When CEILING hits 0, drop the `--grep-invert @quarantine` flag " \
-                 "from .github/workflows/ci.yml: the suite is whole. " \
+                 "#{count} specs under e2e/ carry #{QUARANTINE_TAG}; the contract " \
+                 "(#{CONTRACT_REL}) declares #{CEILING}.\n" \
+                 "If you ADDED a tag: CI runs the e2e lane with `--grep-invert " \
+                 "#{QUARANTINE_TAG}`, so every tag SILENTLY DELETES a spec from the only lane " \
+                 "that runs it — the check stays green over less and less. Tagging a spec to " \
+                 "green a PR is the exact self-declaration disease this lane was built to " \
+                 "cure. Two honest moves, no third: FIX the spec, or BLOCK on it. (And the " \
+                 "ratchet below will refuse the contract bump anyway.)\n" \
+                 "If you REPAIRED #{CEILING - count} spec(s) — thank you — now lower " \
+                 "`quarantined` to #{count} and raise `executed` to #{TOTAL_SPECS - count} in " \
+                 "THIS commit. When `quarantined` hits 0, drop the `--grep-invert " \
+                 "#{QUARANTINE_TAG}` flag from .github/workflows/ci.yml: the suite is whole. " \
                  "(/tasks/repair-rotted-e2e-specs)"
+  end
+
+  # ==== THE RATCHET — and this one actually ratchets ==================================
+  # The ceiling is measured against `origin/release` (see BASELINE_REF), NOT against the copy
+  # in this working tree. That is the whole difference between a ratchet and a pin, and it is
+  # the difference review MEASURED: with the old assertion, tagging a 19th spec and bumping
+  # the contract 18 -> 19 was GREEN — every guard in the repo, plus the receipt, all green,
+  # while the hole grew.
+  #
+  # The name promises exactly what is enforced and no more: the ceiling NEVER RISES. Nothing
+  # here forces it DOWN — a ratchet prevents backsliding, it does not do the work. Driving 18
+  # to 0 is /tasks/repair-rotted-e2e-specs, and this guard is what stops the number from
+  # quietly wandering back up while that ticket waits.
+  def test_integration_the_quarantine_ceiling_never_rises
+    baseline, provenance = baseline_ceiling
+
+    refute_nil baseline,
+               "THE RATCHET CANNOT SEE ITS BASELINE, so it cannot certify anything: " \
+               "#{provenance}.\n" \
+               "This is RED ON PURPOSE. The ceiling is monotonic only if it is compared to a " \
+               "value OUTSIDE this working tree (`#{BASELINE_REF}`); a guard that silently " \
+               "passed when it could not read that value would be a green light with nothing " \
+               "behind it — the exact failure this lane exists to prevent. Fetch the ref " \
+               "(`git fetch origin release`) and run it again."
+
+    assert_operator CEILING, :<=, baseline,
+                    "THE QUARANTINE HOLE IS GROWING. The contract (#{CONTRACT_REL}) now " \
+                    "declares `quarantined: #{CEILING}`; the baseline is #{baseline} " \
+                    "(#{provenance}).\n" \
+                    "Every increment here PERMANENTLY DELETES a spec from the only lane that " \
+                    "runs it, and the receipt will happily go green over the smaller suite — " \
+                    "50 == 50 is just as green as 51 == 51. That is why this number may not " \
+                    "rise: it is the one thing no other guard in this PR can see.\n" \
+                    "You are #{CEILING - baseline} over. Two honest moves, no third: FIX the " \
+                    "spec(s) you were about to tag, or BLOCK your task on " \
+                    "/tasks/repair-rotted-e2e-specs. If you genuinely believe the ceiling must " \
+                    "rise, that is a REVIEW decision, not a green build: say so in the PR and " \
+                    "let a human agree to give up the coverage."
   end
   # ====================================================================================
 

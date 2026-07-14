@@ -19,7 +19,7 @@
 #
 # Known tiers: unit, component, integration, e2e
 #
-# EVERY TIER HERE IS RUN BY A LANE — enforced, not promised.
+# EVERY TIER HERE IS RUN BY A LANE **IN THIS REPO** — enforced, not promised.
 # test/lib/feature_shape_tiers_test.rb asserts that every tier any shape below demands
 # is EXECUTED by a real runner (.github/workflows/ci.yml, bin/fast-check,
 # bin/full-suite-check). Add a tier to a shape with no lane behind it and that guard
@@ -28,6 +28,29 @@
 # because a builder typed them into checks_run, so the gate demanded evidence it never
 # collected and accepted a self-declaration in its place (the disease catalogued in
 # docs/agents/audits/release-gate-and-devops-process-review-2026-07-12.md).
+#
+# ⚠️ READ THE BOLD PART: **IN THIS REPO**. That qualifier is not hedging — it is the exact
+# edge of what the guard proves, and outside that edge the disease is still alive.
+#
+# THIS FILE IS ECOSYSTEM-WIDE. `bin/dor-check` reads it for a task in ANY repo. But a LANE is
+# per-repo, and the guard runs in mcritchie-studio's CI, where no sibling repo is checked out.
+# So it proves the claim for THIS repo's runners and is structurally blind to the others.
+# Audited by hand, 2026-07-14 (do not re-derive; DO re-check when a repo is added):
+#   · mcritchie-studio — `playwright` job in ci.yml.                        e2e COLLECTED.
+#   · turf-monster     — `playwright` job in its own ci.yml.                e2e COLLECTED.
+#   · rolio            — NO playwright lane. NO e2e/ directory AT ALL.      e2e **NOT COLLECTED**.
+#     A `ui+db` task in rolio therefore demands the `e2e` tier that nothing in rolio runs, and
+#     bin/dor-check credits the `[e2e]` tag a builder types. That is THE ORIGINAL BUG of
+#     /tasks/e2e-tiers-are-decorative, still breathing, one repo over. It is not a live wound
+#     today only because rolio is dormant — which is luck, not a mechanism, and luck is what
+#     this file is supposed to have replaced.
+#   · studio-engine, solana-studio, turf-vault — libraries/programs; no shape here demands e2e
+#     of them (`library`/`onchain` are unit+integration).
+# The fix is a per-repo tier-collectability check in bin/dor-check (resolve the task's repo,
+# read ITS ci.yml through the bin/lib/ci_test_command.rb seam, REFUSE a tier that repo runs no
+# lane for — fail closed, so deleting a lane goes red rather than granting an exemption).
+# That is a gate change with its own blast radius, so it is a task, not a footnote:
+# /tasks/dor-check-tiers-per-repo. Until it lands, this header claims only what it can prove.
 #
 # What that cost, measured the day the lane was finally switched on: the studio's
 # 69-spec Playwright suite was 18 SPECS RED on an untouched `release` checkout. It had
@@ -79,7 +102,11 @@ shapes:
     description: UI plus persistence — a form that writes, a record-backed view, a stateful flow.
     dor_tiers: [unit, component, integration, e2e]
     required_metadata: [acceptance, repositories, risk_tags, test_plan, local_url]
-    notes: e2e here is the happy path only; the full browser matrix runs nightly.
+    notes: >-
+      e2e here is the happy path, CHROMIUM ONLY (playwright.config.js runs one project) —
+      there is no browser matrix and no nightly backstop anywhere in the ecosystem. If a flow
+      needs cross-browser or deeper coverage, it needs a LANE first; do not thin an e2e spec
+      on the belief that something else re-runs it wider.
 
   backend:
     description: Background job, service, or pure server logic with no UI surface.

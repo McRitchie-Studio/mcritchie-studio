@@ -274,7 +274,17 @@ class FeatureShapeTiersTest < Minitest::Test
   # evidence it never collects, which is how every check in the 2026-07-12 wave came to
   # lie. If this fails: either WIRE THE LANE, or STOP ASKING FOR THE TIER. Those are the
   # only two honest moves, and no third one should be invented to make this green.
-  def test_integration_every_required_tier_is_run_by_a_real_lane
+  #
+  # THE NAME SAYS `_in_this_repo` AND IT MEANS IT — that suffix is the guard's honest
+  # confession of its own blind spot, and it was added the day I audited my own PR and found
+  # the disease alive behind it. config/feature_shapes.yml is ECOSYSTEM-WIDE (bin/dor-check
+  # reads it for a task in any repo), but RUNNER_FILES below are MCRITCHIE-STUDIO's runners,
+  # because sibling repos are not checked out in this repo's CI and cannot be. So this proves
+  # "every demanded tier has a lane HERE" and proves nothing whatsoever about rolio — which
+  # has no Playwright lane and no e2e/ directory, while `ui+db` demands `e2e` of it.
+  # An unqualified name here would be the same lie one level up, in the guard built to hunt it.
+  # See the audit block in config/feature_shapes.yml, and /tasks/dor-check-tiers-per-repo.
+  def test_integration_every_required_tier_is_run_by_a_real_lane_in_this_repo
     commands = runner_commands
     tiers = required_tiers(File.read(FEATURE_SHAPES))
 

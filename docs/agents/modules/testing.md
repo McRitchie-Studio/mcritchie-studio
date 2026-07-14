@@ -28,7 +28,7 @@ checks to `checks_run` as each stage completes.
 | Local proof | Worktree URL | Local DB only | Usually yes | G1 Cert (builder evidence) | UI, auth, task, contest, navigation, email capture, Redis, or worker changes |
 | QA acceptance | Stable QA URL | QA/devnet only when named | No; blocks production promotion | G3 Candidate | After every QA deploy; runs task acceptance criteria against the merged result |
 | Production smoke | Production URL | No by default | N/A | G4 Ship (the seal — non-blocking) | After approved production deploy; verifies health and key read-only routes |
-| Nightly/deep | Dedicated local/QA/devnet target | Often yes | No | — | devnet/on-chain, browser matrix, longer seeded workflows |
+| Nightly/deep | Dedicated local/QA/devnet target | Often yes | No | — | devnet/on-chain and longer seeded workflows. **No browser matrix exists** — Playwright is Chromium-only in every repo — and the ecosystem's only scheduled workflow (turf-monster's `devnet-nightly.yml`) is disabled and has never run. Treat this row as a *target shape*, not as coverage you have |
 | Quarantine | Any | Varies | No until fixed | — | Known flaky or unrelated checks that still matter but should produce follow-up tasks instead of blocking unrelated PRs |
 
 **The Playwright suite BLOCKS MERGE as of 2026-07-13 (PR #543).** It is a PR-gate
@@ -41,6 +41,17 @@ every `ui+db` change — the tier was "collected" by a builder typing `[e2e] …
 by `test/lib/e2e_quarantine_ratchet_test.rb`. Do not read the green `playwright`
 check as "the whole e2e suite passes" until that ceiling reaches 0
 (`/tasks/repair-rotted-e2e-specs`).
+
+**"May only fall" is enforced, and note WHERE the baseline comes from** — the ratchet
+compares the ceiling against its value on **`origin/release`**, not against the copy in
+your branch. The first version compared it to the contract file the author was editing,
+which is a **pin, not a ratchet**: review tagged a 19th spec, bumped the contract 18 → 19,
+and *every guard in the repo went green — including the runtime receipt*, because 50 == 50
+is just as green as 51 == 51. The hole grew with the whole build green. A guard whose
+reference value moves with the thing it restrains restrains nothing; the fix, as everywhere
+else in this lane, was to read a number the author's own diff cannot reach. (The `test` job
+therefore checks out with `fetch-depth: 0`, and the ratchet fails **closed** — red, saying
+why — if it cannot resolve the baseline.)
 
 **What stops a spec from quietly leaving the lane.** Two guards, and only one of them
 generalizes. Both read the same contract, `config/e2e_lane.yml` — **69 committed − 18
