@@ -185,19 +185,26 @@ class DorCheckReviewFingerprintTest < Minitest::Test
     end
   end
 
-  # The bug, reproduced: the SAME fast cert, graded from the SAME primary checkout
-  # WITHOUT the review rooting (builder role), fingerprints the working tree — a
-  # different tree — so the cert reads STALE and the gate refuses. This is exactly
-  # what reviewers hit; the review role above is the fix.
-  def test_integration_builder_role_fingerprints_the_working_tree_false_stale
+  # An EXPLICIT root is the caller's declaration, and it still wins — even when it
+  # points at a tree that isn't the task's. review_check always sets
+  # DOR_CHECK_DIFF_ROOT, so this run grades that root's working tree and the cert
+  # reads STALE.
+  #
+  # This is NOT the builder lane's production behavior any more. An IMPLICIT root
+  # (the real path: an agent standing in the primary, no override) used to land here
+  # too — a false STALE for a perfectly fresh cert, 6 of 6 tasks on 2026-07-14 — and
+  # is now caught by the task-root guard, which re-roots at the task's tree and says
+  # so. See test/lib/dor_check_root_guard_test.rb. What survives here is only the
+  # narrow, correct rule the cert writers share: DECLARE a root and you own it.
+  def test_integration_an_explicitly_declared_foreign_root_is_still_graded_as_asked
     with_reviewer_repo do |dir, _base, branch_tree|
       primary_tree = FullSuiteGate.fingerprint(dir)
       verdict, code = review_check(task_json(branch_tree), dir) # builder role (default)
 
-      assert_equal 1, code, "builder role from a non-branch checkout reads the fast cert STALE"
+      assert_equal 1, code, "an explicitly declared non-branch root grades that root — cert reads STALE"
       refute verdict["ready"]
       assert_equal primary_tree, verdict.dig("full_suite", "fingerprint"),
-                   "builder role stays rooted at the cwd working tree (unchanged)"
+                   "DOR_CHECK_DIFF_ROOT wins over the guard, exactly as FAST_CHECK_ROOT does"
       assert_nil verdict.dig("full_suite", "route")
     end
   end

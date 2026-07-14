@@ -156,6 +156,17 @@ module FullSuiteGate
     CertEvidence.extract_fingerprint(line, lane)
   end
 
+  # Every fingerprint RECORDED for `lane` (the "[lane@<fp>]" tags), de-duped, in
+  # order. lane_status collapses these to :fresh/:stale/:missing — a verdict, but
+  # not an EXPLANATION. "STALE" alone reads as "you edited since certifying" even
+  # when the real cause is that the gate is standing in the WRONG TREE, and the two
+  # want opposite fixes (re-certify vs. re-root). Surfacing what the evidence was
+  # certified FOR lets dor-check print the DELTA — certified @abc, HEAD is now @def
+  # — so the cause is legible instead of guessed at.
+  def recorded_fingerprints(checks, lane)
+    Array(checks).filter_map { |line| extract_fingerprint(line, lane) }.uniq
+  end
+
   # A recorded, sanctioned bypass: "[full-suite-bypass] <reason>" with a non-empty
   # reason. Returns the reason string or nil. Like the post_deploy "none" hatch,
   # the bypass is an explicit RECORD (it lives in checks_run, prints loud, shows in
@@ -173,10 +184,13 @@ module FullSuiteGate
   #   2. an injected status (tests only — DOR_CHECK_SUITE_EVIDENCE) short-circuits
   #      the git+tag work so the gate logic can be exercised without a real run;
   #   3. otherwise recompute the fingerprint and grade every evidence lane.
-  # Returns a Hash: { ok:, bypass:, verifiable:, fingerprint:, lanes: { ... } }.
+  # Returns a Hash: { ok:, bypass:, verifiable:, fingerprint:, lanes:, recorded: }.
   # `ok` means the FULL cert is satisfied (LANES fresh). lanes[FAST_LANE] carries
   # the fast-cert lane's freshness so dor-check can pair a fresh fast cert with a
-  # green GitHub CI — this module grades evidence; it never reads CI.
+  # green GitHub CI — this module grades evidence; it never reads CI. `recorded`
+  # carries each lane's RECORDED fingerprints (what the evidence was certified for)
+  # so a STALE verdict can be reported as a delta against `fingerprint` rather than
+  # as an opaque label.
   #
   # `fingerprint_override` (the review gate-zero seam): grade against THIS tree
   # hash instead of recomputing `fingerprint(root)`. The reviewer runs from a
@@ -195,14 +209,20 @@ module FullSuiteGate
     return verdict(ok: false, verifiable: false) if fp.nil?
 
     lanes = EVIDENCE_LANES.to_h { |lane| [lane, lane_status(checks, lane, fp)] }
-    verdict(ok: LANES.all? { |lane| lanes[lane] == :fresh }, fingerprint: fp, lanes: lanes)
+    recorded = EVIDENCE_LANES.to_h { |lane| [lane, recorded_fingerprints(checks, lane)] }
+    verdict(ok: LANES.all? { |lane| lanes[lane] == :fresh }, fingerprint: fp, lanes: lanes, recorded: recorded)
   end
 
   # --- internals -----------------------------------------------------------
 
-  def verdict(ok:, bypass: nil, verifiable: true, fingerprint: nil, lanes: nil)
+  def verdict(ok:, bypass: nil, verifiable: true, fingerprint: nil, lanes: nil, recorded: nil)
     lanes ||= EVIDENCE_LANES.to_h { |lane| [lane, ok ? :fresh : :missing] }
-    { ok: ok, bypass: bypass, verifiable: verifiable, fingerprint: fingerprint, lanes: lanes }
+    # The bypass/injected/unverifiable paths never read the checks, so they carry no
+    # recorded fingerprints — an EMPTY list per lane, not a missing key, so callers
+    # can always index it. dor-check falls back to the plain STALE wording there.
+    recorded ||= EVIDENCE_LANES.to_h { |lane| [lane, []] }
+    { ok: ok, bypass: bypass, verifiable: verifiable, fingerprint: fingerprint, lanes: lanes,
+      recorded: recorded }
   end
 
   # Map a DOR_CHECK_SUITE_EVIDENCE token to a verdict (test seam only). Tokens:

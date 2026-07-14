@@ -78,6 +78,53 @@ check — the same failure shape as the G4 registry-string inference (see
 nobody has to be malicious for it to be wrong. It was: PR #512 (`kind: chore`)
 shipped `.github/workflows/ci.yml` and DoR printed "n/a → ready to advance".
 
+## The gate grades the TASK's tree — never the one you stand in
+
+A cert's fingerprint is a git **TREE hash** (content-addressed), so a checkout
+that is not the task's tree can **never** match a recorded cert. That does not
+surface as "wrong root" — it surfaces as **`STALE`**, which reads as "you edited
+since certifying" and sends you off to re-certify code that was already green.
+
+Both lanes have been bitten:
+
+- **Review** — reviewers run from the **primary** checkout by design, so
+  `--gate-role review` roots the suite fingerprint at the **task branch's
+  committed tree** (`origin/feat/<slug>^{tree}`).
+- **Builder** — a builder-lane run from the wrong checkout had **no** such cure
+  and false-read `STALE` for **6 of 6 tasks on 2026-07-14**, including certs 90
+  seconds old. An agent that hits an unexplainable STALE *stops*, so the false
+  STALE stranded finished tasks in `building` behind green PRs.
+
+`bin/dor-check` now consults the **task-root guard**
+(`bin/lib/cert_root_guard.rb` — the same guard `bin/fast-check` and
+`bin/full-suite-check` already required; dor-check was the one command in the
+family that never did). When the root is not the task's tree it **re-roots**, in
+this order, and **says so loudly on stderr**:
+
+1. the task's **worktree** is on disk → re-root the whole gate there;
+2. else its **branch** resolves in this repo → root the *fingerprint* at that
+   branch's committed tree;
+3. else → **refuse**, naming the problem, instead of grading a foreign tree and
+   calling a fresh cert stale.
+
+**Resolve, not refuse — and never silently.** The cert *writers* refuse a wrong
+root, and must: they **stamp** evidence about the tree they stand in, so a chdir
+could green-cert a stale worktree while your real edits sat untested where you
+ran from. `dor-check` **writes no evidence** — it grades what is already
+recorded — so re-rooting cannot forge a cert; it can only make the gate judge
+the right code. But a *silent* chdir is its own hazard (a gate quietly judging a
+different tree than the one you are looking at is how you end up arguing with a
+verdict), so every re-root announces both roots.
+
+**A real STALE now names its cause.** The refusal prints the fingerprint
+**delta** — `certified for @abc123…, but HEAD is now @def456… (root: /path)` —
+so "re-certify" and "re-root" are distinguishable at a glance. `--json` carries
+`code_root` and `full_suite.recorded` for the same reason.
+
+`DOR_CHECK_DIFF_ROOT=<path>` bypasses the guard: that is the caller **declaring**
+a root (the CI/test seam), exactly as `FAST_CHECK_ROOT` / `FULL_SUITE_ROOT` do
+for the cert writers.
+
 ## Who runs it
 
 - **The feature (builder) agent**, from the task worktree, at submit —

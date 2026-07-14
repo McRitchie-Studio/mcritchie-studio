@@ -111,7 +111,104 @@ class CertRootGuardTest < Minitest::Test
     end
   end
 
+  # ── [unit] assess: the RESOLVE half (bin/dor-check's remedy) ─────────────────
+  # The cert writers refuse a foreign root; the READER re-roots at it. #assess is
+  # what tells it where — and it must never claim a worktree that isn't there.
+
+  def test_assess_returns_nil_when_the_root_is_the_tasks_tree
+    stub = write_task_stub(nil)
+    with_git_repo(branch: "feat/task-x") do |repo|
+      assert_nil CertRootGuard.assess(task_bin: stub, slug: "task-x", root: repo),
+                 "nil is the whole contract for 'this IS the task's tree — proceed'"
+    end
+  end
+
+  def test_assess_resolves_the_tasks_worktree_when_it_is_on_disk
+    # The production case: the agent stands in the PRIMARY, the task's code lives in
+    # <app>/.worktrees/<slug>. assess must hand the reader that path to re-root at.
+    with_projects_dir do |projects, worktree|
+      with_git_repo do |primary| # NOT the task's branch — the wrong-root case
+        found = CertRootGuard.assess(task_bin: write_task_stub(nil), slug: "task-x",
+                                     root: primary, projects_dir: projects)
+        refute_nil found, "a primary checkout is not the task's tree"
+        assert_equal worktree, found[:resolved_root]
+        assert_equal "feat/task-x", found[:expected_branch]
+        assert_equal "task-x", found[:worktree_slug]
+        refute_nil found[:message], "the refusal text is still available to the cert writers"
+      end
+    end
+  end
+
+  def test_assess_resolved_root_is_nil_when_no_worktree_exists
+    # No worktree on disk → the reader gets nil and must NOT re-root; it falls back
+    # to the branch tree, or refuses. Inventing a path here would be the fail-GREEN.
+    Dir.mktmpdir do |empty_projects|
+      with_git_repo do |primary|
+        found = CertRootGuard.assess(task_bin: write_task_stub(nil), slug: "task-x",
+                                     root: primary, projects_dir: empty_projects)
+        refute_nil found
+        assert_nil found[:resolved_root]
+      end
+    end
+  end
+
+  def test_assess_reports_the_branch_the_caller_is_actually_standing_on
+    stub = write_task_stub(nil)
+    with_git_repo(branch: "release") do |repo|
+      found = CertRootGuard.assess(task_bin: stub, slug: "task-x", root: repo)
+      assert_equal "release", found[:actual_branch], "the loud re-root banner names where you WERE"
+    end
+  end
+
+  def test_assess_accepts_a_prefetched_devops_without_reading_the_board
+    # dor-check already holds the task when it consults the guard. Passing devops:
+    # must skip the board read entirely — a stub that would BLOW UP if executed
+    # proves it never runs.
+    exploding = "/nonexistent/task-bin-that-must-never-run"
+    with_git_repo(branch: "fix/custom") do |repo|
+      assert_nil CertRootGuard.assess(task_bin: exploding, slug: "task-x", root: repo,
+                                      devops: { "branch" => "fix/custom" }),
+                 "the prefetched branch is authoritative and the board is never called"
+    end
+  end
+
+  def test_refusal_still_returns_the_message_string
+    # Backwards compatibility: bin/fast-check and bin/full-suite-check call #refusal
+    # and abort on a truthy String. #assess must not have changed that contract.
+    stub = write_task_stub(nil)
+    with_git_repo(branch: "feat/task-x") do |repo|
+      assert_nil CertRootGuard.refusal(task_bin: stub, slug: "task-x", root: repo)
+    end
+    with_git_repo do |repo|
+      message = CertRootGuard.refusal(task_bin: stub, slug: "task-x", root: repo)
+      assert_kind_of String, message
+      assert_includes message, "refusing to certify it"
+    end
+  end
+
   # ── [unit] helpers ───────────────────────────────────────────────────────────
+
+  # A temp projects root holding <app>/.worktrees/task-x as a real git repo on the
+  # task's branch — the layout worktree_hint globs for. Yields [projects, worktree].
+  def with_projects_dir
+    Dir.mktmpdir do |raw|
+      projects = File.realpath(raw)
+      worktree = File.join(projects, "myapp", ".worktrees", "task-x")
+      with_git_repo(branch: "feat/task-x", dir: worktree) do |real|
+        yield projects, real
+      end
+    end
+  end
+
+  def test_worktree_hint_finds_any_apps_worktree_and_nil_otherwise
+    # The glob spans every app because a SATELLITE task's worktree lives under the
+    # satellite, not under the hub whose gate scripts are running.
+    with_projects_dir do |projects, worktree|
+      assert_equal worktree, CertRootGuard.worktree_hint("task-x", projects)
+      assert_nil CertRootGuard.worktree_hint("task-never-created", projects)
+    end
+  end
+
 
   def test_current_branch_reads_the_checkout_and_nil_outside_git
     with_git_repo(branch: "feat/task-x") do |repo|
