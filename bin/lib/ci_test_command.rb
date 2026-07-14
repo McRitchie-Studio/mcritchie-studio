@@ -168,6 +168,45 @@ module CiTestCommand
   # `bin/rake`, `rake` — compared by BASENAME so the path can't hide them.
   RAILS_ENTRYPOINTS = %w[rails rake].freeze
 
+  # Rails COMMANDS that take their own argv — after one of these, the rest of the line
+  # belongs to the SCRIPT, not to rails, and a `test` token in it is not a task.
+  #
+  # This is what ENDS a rails task list. It used to be "the first flag", and that was
+  # the bug: a flag is not a boundary, it is just an argument, so `bin/rails
+  # db:test:prepare --trace test` hid a whole tier behind `--trace`. The REAL boundary
+  # is an argv-consuming command, and naming it directly is what lets the task scan
+  # walk PAST flags (see `rails_task_args`) while `bin/rails runner -e test
+  # e2e/seed.rb` (turf-monster's playwright job, live) still reads as NO test run —
+  # that `test` is the value of `-e`, and we never even reach it because `runner`
+  # stopped the scan.
+  ARGV_CONSUMING_RAILS_COMMANDS = %w[
+    runner console server dbconsole generate destroy new plugin credentials secrets
+  ].freeze
+
+  # Commands PROVEN not to EXECUTE an argument — the ONE exception to "an interpolation
+  # this cert cannot read makes the step opaque" (`interpolation_reason`).
+  #
+  # WHY AN EXCEPTION LIST AT ALL, AND WHY THIS POLARITY. `docker compose run --rm web
+  # $SUITE` and `sudo rm -f "$bin"` are THE SAME SHAPE: executable, some words, a flag,
+  # a variable. No positional rule tells them apart, because the difference is not
+  # structural — it is whether the executable RUNS one of its arguments. docker does;
+  # rm does not. So the parser must know that about the executable, and there is no way
+  # around it.
+  #
+  # Given the enumeration is irreducible, the only real choice is its DEFAULT, and it
+  # is the same fail-closed default as KNOWN_INERT_ACTIONS:
+  #   * an executable NOT on this list is one we have NOT proven inert → if a token we
+  #     cannot read sits in its arguments, that token MIGHT BE THE COMMAND → REFUSE;
+  #   * an executable ON this list has been checked by a human, once → the interpolation
+  #     is data it manipulates, never a command it runs → silent.
+  # Omitting an entry costs one loud message and one line HERE. Getting it wrong the
+  # other way — assuming an unknown wrapper is inert — is a green cert with a tier never
+  # run, which is the lie this module exists to kill. Every entry below manipulates
+  # files or text and execs nothing.
+  INTERPOLATION_INERT_COMMANDS = %w[
+    rm cp mv mkdir rmdir ln touch chmod chown cat echo printf true false
+  ].freeze
+
   # Shell operators that end one invocation and start the next inside a single
   # step (`bin/rails db:test:prepare && bin/rails test`).
   SHELL_SEPARATORS = %w[&& || | ; &].freeze
@@ -263,14 +302,15 @@ module CiTestCommand
   # `nix-shell --run …`. Enumerating wrappers would have missed the next one — there
   # is no end to that list. So we do not enumerate: a wrapper is just TOKENS THAT
   # PRECEDE a command, and a rails invocation is a rails invocation wherever it sits.
-  # The task list is still the LEADING run of non-flag args AFTER the entrypoint, which
-  # is what keeps `bin/rails runner -e test e2e/seed.rb` (turf's playwright job) from
-  # reading as a test run: that `test` is the VALUE of `-e`, the RAILS_ENV, not a task.
+  # The task list is read PAST FLAGS (`rails_task_args`) — a flag is an argument, not a
+  # boundary, and treating it as one hid the tier in `bin/rails db:test:prepare --trace
+  # test`. turf's `bin/rails runner -e test e2e/seed.rb` still reads as NO test run: the
+  # scan stops at `runner`, so it never reaches the `test` that is the value of `-e`.
   def self.rails_invocation_anywhere?(tokens)
     tokens.each_with_index.any? do |token, index|
       next false unless RAILS_ENTRYPOINTS.include?(File.basename(token.to_s))
 
-      task_args(tokens.drop(index + 1)).any? { |arg| test_task?(arg) }
+      rails_task_args(tokens.drop(index + 1)).any? { |arg| test_task?(arg) }
     end
   end
 
@@ -368,10 +408,40 @@ module CiTestCommand
     token == "test" || token.start_with?("test:", "test/")
   end
 
-  # The LEADING run of non-flag arguments — the task list. Stopping at the first flag
-  # is what makes `-e test` a RAILS_ENV value rather than a task.
+  # The LEADING run of non-flag arguments. The CONSERVATIVE reader, for the SELECTION
+  # side only (`direct_rails_test?`, `system_tier?`, the foreign-runner sniff): those
+  # ask "can I RUN this / what tier is this", and a narrow, exact answer is the safe one.
+  #
+  # Do NOT reach for this on the SENSITIVE side. Stopping at the first flag means a flag
+  # HIDES everything behind it, and that is a miss — which on the sensitive side is a
+  # green cert with a tier never run. `rails_task_args` is the reader for that side.
   def self.task_args(args)
     args.take_while { |arg| !arg.to_s.start_with?("-") }
+  end
+
+  # The rails/rake TASK LIST — the SENSITIVE reader, and it walks PAST flags.
+  #
+  # A FLAG IS NOT A BOUNDARY. That assumption is what let `bin/rails db:test:prepare
+  # --trace test` and `docker compose run --rm web $SUITE` through: the scan stopped at
+  # `--trace` / `--rm` and never saw the tier behind it. In real shell, flags are
+  # INTERLEAVED with arguments everywhere; a command's arguments do not end at the first
+  # `-`. So this skips flags and keeps reading.
+  #
+  # What DOES end the task list is an argv-consuming command (`runner`, `console`, …),
+  # because after one of those the tokens belong to the script, not to rails. That is
+  # the honest boundary, and it is the one that keeps turf-monster's live `bin/rails
+  # runner -e test e2e/seed.rb` reading as NO test run — we stop at `runner` and never
+  # reach the `test` that is merely the value of `-e`.
+  def self.rails_task_args(args)
+    tasks = []
+    args.each do |arg|
+      arg = arg.to_s
+      next if arg.start_with?("-") # a flag is just a token; keep reading past it
+      break if ARGV_CONSUMING_RAILS_COMMANDS.include?(arg) # the rest is the script's argv
+
+      tasks << arg
+    end
+    tasks
   end
 
   # The DIRECT probe: is this command, at position 0, a rails/rake test invocation?
@@ -661,12 +731,28 @@ module CiTestCommand
   # inert. A templated command is NOT a command proven to run no tests: it is a command
   # we cannot see, exactly like a job with no steps. REFUSE.
   #
-  # WHERE we look is load-bearing, and the hub's own CI is the calibration. We check the
-  # EXECUTABLE position (any expansion at all) and the LEADING, pre-flag ARGUMENT run
-  # (where a wrapper's inner command sits: `docker compose run web $SUITE`) — and a
-  # WHOLE-TOKEN variable only. `sudo rm -f "$bin"` and `echo "… $(which chromedriver)"`
-  # — the hub's real chromedriver-evict script, which must NEVER brick the hub's cert —
-  # interpolate INSIDE an argument of a command we can already see, and stay silent.
+  # WHERE we look is load-bearing, and it is where the LAST round of this bug lived.
+  #
+  # This probe used to scan only the EXECUTABLE position and the LEADING, PRE-FLAG run of
+  # arguments. So a flag ENDED the scan — and a flag in the middle of a command is not a
+  # terminator, it is just an argument. One `--rm` was the whole defeat:
+  #
+  #     docker compose run web $SUITE          → caught (the docstring's own example)
+  #     docker compose run --rm web $SUITE     → INVISIBLE. Not opaque (no refusal), not
+  #                                              a suite (no rails token) — it fell through
+  #                                              BOTH nets, and the cert resolved the
+  #                                              NARROWER step and stamped GREEN.
+  #
+  # So we no longer stop at a flag: an interpolation ANYWHERE in the invocation is a token
+  # this cert cannot read, and a token it cannot read MIGHT BE THE COMMAND.
+  #
+  # THE ONE EXCEPTION, and why it cannot be positional. `docker compose run --rm web
+  # $SUITE` and the hub's own `sudo rm -f "$bin"` are the SAME SHAPE — exe, words, flag,
+  # variable. Nothing in the TEXT separates them; the difference is that docker EXECUTES
+  # an argument and rm does not. So the exception is stated on the executable, not on the
+  # position: an interpolation owned by a command PROVEN not to exec its arguments
+  # (INTERPOLATION_INERT_COMMANDS) is data. Everything else refuses. That keeps the hub's
+  # chromedriver-evict script silent without letting one flag hide a suite.
   def self.interpolated_commands(run)
     invocations(run).filter_map do |tokens|
       why = interpolation_reason(tokens)
@@ -680,13 +766,30 @@ module CiTestCommand
     exe = raw_entrypoint(tokens)
     return "its command is interpolated (`#{exe}`)" if exe && exe.start_with?("$")
 
-    inner = task_args(command_head(tokens).drop(1)).find { |arg| bare_interpolation?(arg) }
-    return "its command is interpolated (`#{inner}`)" if inner
-
     task = interpolated_rails_task(tokens)
     return "its rails task list is interpolated (`#{task}`)" if task
 
-    nil
+    hidden = hidden_command_token(tokens)
+    return nil if hidden.nil?
+
+    "it hands an interpolated token (`#{hidden}`) to `#{exe}`, which may EXECUTE it"
+  end
+
+  # The first token this cert cannot read, in an invocation that might RUN it — or nil
+  # when the invocation is owned by a command proven to exec nothing.
+  def self.hidden_command_token(tokens)
+    index = tokens.index { |token| bare_interpolation?(token) }
+    return nil if index.nil?
+    return nil if inert_owner?(tokens.take(index))
+
+    tokens[index]
+  end
+
+  # Is this interpolation owned by a command PROVEN not to execute its arguments? The
+  # owner must PRECEDE the token (`sudo rm -f "$bin"` — rm owns $bin); a bare `$SUITE`
+  # with no owner ahead of it is a command, not an argument.
+  def self.inert_owner?(preceding)
+    preceding.any? { |token| INTERPOLATION_INERT_COMMANDS.include?(File.basename(token.to_s)) }
   end
 
   # A WHOLE token that is an expression/variable — `${{ matrix.cmd }}`, `$SUITE`,
@@ -698,12 +801,14 @@ module CiTestCommand
   end
 
   # `bin/rails db:test:prepare ${{ matrix.tier }}` — the executable is visible, the TASK
-  # is not, and the task is what decides whether this runs the suite.
+  # is not, and the task is what decides whether this runs the suite. Read PAST FLAGS
+  # (`rails_task_args`), or `bin/rails db:test:prepare --trace ${{ matrix.tier }}` hides
+  # the templated tier behind `--trace`.
   def self.interpolated_rails_task(tokens)
     tokens.each_with_index do |token, index|
       next unless RAILS_ENTRYPOINTS.include?(File.basename(token.to_s))
 
-      task = task_args(tokens.drop(index + 1)).find { |arg| bare_interpolation?(arg) }
+      task = rails_task_args(tokens.drop(index + 1)).find { |arg| bare_interpolation?(arg) }
       return task if task
     end
 

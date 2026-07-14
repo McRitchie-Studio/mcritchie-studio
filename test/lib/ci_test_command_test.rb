@@ -1117,37 +1117,101 @@ class CiTestCommandTest < Minitest::Test
   # --- THE INTERPOLATED COMMAND ---------------------------------------------------
   #
   # A command whose TEXT does not say what it runs is not a command proven to run no
-  # tests. All four of these resolved GREEN against the wrapper + opacity fixes: the
-  # parser read `${{ matrix.cmd }}`, found no rails token, and called the job inert.
+  # tests. The bug this round closed: the probe scanned only the executable and the
+  # LEADING, PRE-FLAG arguments, so ONE flag hid the interpolation behind it —
+  # `docker compose run --rm web $SUITE` fell through BOTH nets (not opaque, not a
+  # suite) and the cert resolved the NARROWER step and stamped GREEN.
+  #
+  # The POSITIVE INVARIANT this table asserts — NOT a blacklist of the five spellings
+  # last round happened to imagine: an interpolated token this cert cannot read, in a
+  # COMMAND position of a step's invocation (past ANY number of flags, wrappers, env
+  # assignments, `--` separators, or subcommands), makes that step OPAQUE, and an
+  # opaque step in a PR-gating workflow REFUSES. A command position is one whose owning
+  # executable might EXECUTE the token — everything but the proven-inert file/text tools.
+  #
+  # Each vector below is a DIFFERENT way to place the interpolation on that axis; the
+  # point is the axis, so `for_each_placement` also drops the interpolation behind an
+  # EXTRA leading flag it was not written with, proving the rule is positional-agnostic.
+  INTERPOLATED_COMMAND_VECTORS = [
+    "$SUITE",                                       # bare env var IS the command
+    "${SUITE}",                                     # braced form
+    "${{ matrix.cmd }}",                            # the matrix templates the command
+    "$(cat ci/suite-cmd.txt)",                      # …or a file, at run time
+    "docker compose run web $SUITE",                # wrapper, interpolation last (the OLD catch)
+    "docker compose run --rm web $SUITE",           # …one flag past it → the DEFEAT
+    "docker compose run -T --rm web $SUITE",        # …several flags, interleaved
+    "bash -c \"$SUITE\"",                           # -c hands the whole command to a shell
+    "sh -c $SUITE",                                 # …unquoted, a bare token
+    "timeout 30m docker run --rm img $SUITE",       # a wrapper before the wrapper
+    "env FOO=1 docker run --rm img $SUITE",         # env(1) prefix, then flags
+    "bin/rails db:test:prepare ${{ matrix.tier }}", # the rails TASK LIST is templated
+    "bin/rails db:test:prepare --trace ${{ matrix.tier }}" # …one flag past IT, too
+  ].freeze
 
-  def test_an_INTERPOLATED_command_refuses
-    ["${{ matrix.cmd }}",                          # the matrix templates the command
-     "bin/rails db:test:prepare ${{ matrix.tier }}", # …or just the TASK LIST
-     "$SUITE",                                     # the command comes from a job env var
-     "$(cat ci/suite-cmd.txt)",                    # …or from a file, at run time
-     "docker compose run web $SUITE"].each do |templated|
-      yaml = <<~YAML
-        jobs:
-          test:
-            steps:
-              - run: bin/rails test
-          tiers:
-            steps:
-              - run: #{templated.include?('${{') ? "\"#{templated}\"" : templated}
-      YAML
-      with_ci(yaml) do |dir|
-        assert_nil CiTestCommand.for_root(dir),
-                   "`#{templated}` could BE the system tier — the cert cannot see what it runs"
-        assert_match(/CANNOT SEE INTO/, CiTestCommand.refusal(dir).to_s)
+  def test_an_INTERPOLATED_command_in_ANY_position_makes_the_step_opaque
+    INTERPOLATED_COMMAND_VECTORS.each do |base|
+      for_each_placement(base) do |vector|
+        yaml = <<~YAML
+          jobs:
+            test:
+              steps:
+                - run: bin/rails db:test:prepare test
+                - run: |
+                    #{vector}
+        YAML
+        with_ci(yaml) do |dir|
+          assert_nil CiTestCommand.for_root(dir),
+                     "`#{vector}` could BE the system tier — the cert must not resolve the narrow step and call it CI"
+          assert_match(/CANNOT SEE INTO/, CiTestCommand.refusal(dir).to_s,
+                       "`#{vector}` — an unreadable command position must make the step OPAQUE, not inert")
+        end
       end
     end
   end
 
-  # THE OVER-FIRE GUARD for the interpolation rule, and it is the HUB'S OWN CI. Its
-  # chromedriver-evict script interpolates INSIDE the arguments of commands we can
-  # already see (`sudo rm -f "$bin"`, `echo "… $(which chromedriver)"`), and turf's
-  # playwright job templates a SHARD, not a command (`npm test -- --shard=${{ … }}`).
-  # Refuse on those and every repo in the ecosystem is bricked.
+  # The same command run through the FULL resolver via CiTestCommand.refusal on a
+  # single line, so a regression is caught even by the unit probe in isolation.
+  def test_the_interpolation_probe_reads_past_flags
+    INTERPOLATED_COMMAND_VECTORS.each do |vector|
+      refute_empty CiTestCommand.interpolated_commands(vector),
+                   "`#{vector}` hides a command the cert cannot read — it must be flagged opaque"
+    end
+  end
+
+  # Drop each vector one extra leading flag deeper — if the rule stopped at a flag,
+  # exactly this shift would reopen the hole.
+  def for_each_placement(base)
+    yield base
+    exe, rest = base.split(" ", 2)
+    return if rest.nil? || exe.start_with?("$", "bin/rails")
+
+    yield "#{exe} --deeper #{rest}"
+  end
+
+  # THE OVER-FIRE COUNTER-TABLE. The mirror invariant: an interpolation that is NOT in
+  # a command position — it is DATA an inert file/text tool manipulates, or it is not a
+  # whole-token variable at all — must stay SILENT, or every repo in the ecosystem is
+  # bricked. These are the shapes the live ci.yml files really contain.
+  SILENT_INTERPOLATION_VECTORS = [
+    %q{sudo rm -f "$bin"},                                       # rm does not exec its arg (hub, live)
+    %q{rm -rf ${DIR}},                                           # …braced
+    %q{cp $SRC $DST},                                            # cp moves files, execs nothing
+    %q{echo "running $SUITE"},                                   # echo prints, execs nothing
+    %q{for bin in $(which -a chromedriver); do rm -f "$bin"; done}, # the hub's real evict loop
+    %q{npm test -- --shard=${{ matrix.shard }}/3},              # a SHARD is templated, not the command (turf, live)
+    %q{bin/rails db:test:prepare test test:system}             # no interpolation at all
+  ].freeze
+
+  def test_an_interpolation_NOT_in_a_command_position_stays_silent
+    SILENT_INTERPOLATION_VECTORS.each do |vector|
+      assert_empty CiTestCommand.interpolated_commands(vector),
+                   "`#{vector}` interpolates DATA, not a command — refusing on it bricks the ecosystem"
+    end
+  end
+
+  # THE OVER-FIRE GUARD at workflow grain, and it is the HUB'S OWN CI woven together
+  # with turf's sharded playwright job — the two live shapes a naive "scan every token"
+  # fix would brick.
   def test_interpolation_INSIDE_a_visible_command_does_not_refuse
     yaml = <<~YAML
       jobs:
