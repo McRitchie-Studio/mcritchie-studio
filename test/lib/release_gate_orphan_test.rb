@@ -149,8 +149,23 @@ class ReleaseGateOrphanTest < Minitest::Test
     File.read(path).strip.to_i
   end
 
-  def lock_path = File.join(@root, "tmp", "cert-run.json")
+  # Ask the GUARD where its lock lives — never hardcode `<root>/tmp/cert-run.json`. #539
+  # resolves the path through `git rev-parse --absolute-git-dir`, so a root inside a repo
+  # puts the lock in that repo's git dir instead. A test that hardcodes the old path is a
+  # test that silently stops looking at the file the code actually writes.
+  def lock_path = CertOrphanGuard.lock_path(@root)
   def read_lock = JSON.parse(File.read(lock_path))
+
+  # CertProcess writes the runlock AFTER it spawns (it has to: the lock names the group it
+  # just created, and it reads the OS start time for two pids first). So the child can be
+  # up — and its pid file written — a beat BEFORE the lock exists. Killing the conductor in
+  # that window leaves no lock to find, which under a parallel full suite is a real flake
+  # and not a hypothetical one: it errored exactly here, once, in 3946 runs. Wait for the
+  # artifact the assertion depends on, not for a proxy that merely usually precedes it.
+  def wait_for_runlock
+    assert wait_until { File.exist?(lock_path) },
+           "the conductor never wrote its runlock (#{lock_path}) — nothing for the next gate to read"
+  end
 
   def pgid_of(pid)
     Process.getpgid(pid)
@@ -376,6 +391,11 @@ class ReleaseGateOrphanTest < Minitest::Test
          guard: { root: #{@root.dump}, lane: "gate:mcritchie-studio bin/rails test", db: nil })
     RUBY
     suite = read_pid_file(marker)
+    # The signal handlers go up immediately AFTER the runlock is written, so the lock
+    # appearing is our proof the conductor is armed. TERM it before that and we would be
+    # testing the default handler, not the fix — a flake that fails the guard for doing
+    # its job.
+    wait_for_runlock
 
     # The structural half of the fix: the suite leads a group of its OWN. Under the old
     # `system` spawn it sat in the conductor's group — which on a real run is the
@@ -401,6 +421,7 @@ class ReleaseGateOrphanTest < Minitest::Test
          guard: { root: #{@root.dump}, lane: "gate:mcritchie-studio bin/rails test", db: nil })
     RUBY
     suite = read_pid_file(marker)
+    wait_for_runlock # the lock is written just after the spawn — do not race it
 
     # SIGKILL: no trap runs, nothing is reaped. Exactly the case prevention cannot cover.
     Process.kill("KILL", conductor)
