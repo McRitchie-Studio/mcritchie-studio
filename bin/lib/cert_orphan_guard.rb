@@ -85,16 +85,44 @@ require "fileutils"
 #
 # `decide` is PURE: it takes the lock plus a SNAPSHOT of the process table and
 # returns what to do. Nothing in it reads the clock, the process table, or the DB.
+#
+# ------------------------------------------------------------------------------
+# A GUARD EMITS KILLS ON TWO LAYERS — AND BOTH ARE THE SAME GUARD
+# ------------------------------------------------------------------------------
+# The second cut of this file hardened the CODE path and left the COPY path wide
+# open (review, 2026-07-14). `unverifiable_message` rendered its remediation lines
+# with no gate at all, so a runlock naming pgid 1 printed, verbatim, under the
+# house's authoritative "here is how to clear it" framing:
+#
+#   If it IS a stranded suite:  kill -TERM -1
+#
+# — the exact POSIX catastrophe `MIN_SIGNALABLE_PGID` exists to prevent. pgid 0
+# rendered `kill -TERM -0`: the reader's own process group. We had stopped the
+# program from doing it and then told the human to do it by hand. The audience for
+# that line is an agent, or a tired operator 35 minutes into a wedged cert; its
+# whole job is to be copy-pasted. A command we would REFUSE TO FIRE is a command we
+# must REFUSE TO PRINT.
+#
+# So the invariant is stated once, over BOTH layers, and it is what the tests assert:
+#
+#   EVERY kill command this guard emits — whether it FIRES it (`signal_group` /
+#   `signal_pid`) or PRINTS it for a human to paste (`*_message`) — addresses a
+#   number that `signalable?` admits.
+#
+# It holds BY CONSTRUCTION, not by two guards agreeing: `signalable?` is the single
+# predicate, `kill_command` is the single place copy is rendered, and both kill sites
+# call the same predicate. Two parallel guards drift — that drift is this whole bug.
 module CertOrphanGuard
   LOCK_REL = File.join("tmp", "cert-run.json")
 
-  # The lowest pgid we will ever aim a signal at.
+  # The lowest id we will ever aim a signal at — as a process GROUP or as a PID.
   #
   # `kill(sig, -1)` does not mean "process group 1". POSIX defines it as EVERY
   # process the caller is permitted to signal — the entire user session. The first
   # cut of this reaper guarded the kill with `pgid.positive?`, which happily admits
   # 1, so one truncated lock file was all that stood between a wedged cert and
-  # `kill -TERM -1`. Groups 0 and 1 are never ours; refuse to address them.
+  # `kill -TERM -1`. And `kill(sig, 0)` addresses our OWN group; `kill(sig, 1)` aims
+  # at init. Groups and pids 0 and 1 are never ours; refuse to address them.
   MIN_SIGNALABLE_PGID = 2
 
   # `ps -o lstart=` renders 5 whitespace-separated tokens: "Tue Jul 14 11:05:12 2026"
@@ -221,36 +249,15 @@ module CertOrphanGuard
     table.select { |p| p[:pgid] == pgid && !zombie?(p) }
   end
 
-  # True when `id` still names something running — as a PROCESS (pid) or as a PROCESS
-  # GROUP (pgid). Signal 0 tests for existence without delivering anything; a negative
-  # target addresses the group. EPERM means "alive, but not ours".
-  #
-  # LIVENESS IS NOT IDENTITY. This answers "does something exist under this number",
-  # which is exactly the predicate that got an innocent process killed. It is used to
-  # WAIT on a group we have already proven is ours — never to decide to kill one.
-  def self.any_alive?(id)
-    id = id.to_i
-    return false unless id.positive?
-
-    reap_zombie(id)
-    signal_ok?(id) || signal_ok?(-id)
-  end
-
-  # Clear an exited child we still own. ECHILD (not our child) / ESRCH: nothing to do.
-  def self.reap_zombie(pid)
-    Process.waitpid(pid, Process::WNOHANG)
-  rescue Errno::ECHILD, Errno::ESRCH
-    nil
-  end
-
-  def self.signal_ok?(target)
-    Process.kill(0, target)
-    true
-  rescue Errno::EPERM
-    true
-  rescue Errno::ESRCH, RangeError, ArgumentError
-    false
-  end
+  # NOTE — `any_alive?`/`reap_zombie`/`signal_ok?` USED to live here: a liveness probe
+  # (`Process.kill(0, -id)` guarded by nothing but `id.positive?`). They were deleted in
+  # review, and it is worth saying why rather than letting the next author reinvent them.
+  # They had ZERO callers and ZERO coverage — dead code that nonetheless modelled, in this
+  # file of all files, THE VERY PREDICATE THIS FILE CONDEMNS: `positive?` admits pgid 1,
+  # and `kill(0, -1)` probes every process in the session. An unused footgun in a safety
+  # module is still a footgun; the next person to need "is it alive?" would have found it
+  # sitting right here, pre-blessed. If you need liveness, read it off `process_table` —
+  # and remember that liveness is not identity, and never becomes it.
 
   # --- identity ---------------------------------------------------------------------
 
@@ -273,12 +280,32 @@ module CertOrphanGuard
     observed == recorded ? :ours : :not_ours
   end
 
-  # Never aim a signal at group 0 (our own), group 1 (== every process we own), or the
-  # group this very cert is running in. Structural safety, checked at the KILL SITE and
-  # not merely at the decision — the last line of defence belongs next to the trigger.
+  # THE ONE PREDICATE. May we aim a signal at this number — as a process GROUP (`kill
+  # sig, -id`) or as a PID (`kill sig, id`)?
+  #
+  # Never 0 (our own group), never 1 (== every process we own, and init), never the group
+  # or pid this very cert is running in. It is deliberately ONE predicate for both kill
+  # forms and for both emission layers: `signal_group` fires through it, `signal_pid`
+  # fires through it, and `kill_command` PRINTS through it. Two separate guards — one for
+  # the code, one for the copy — is exactly the drift that shipped `kill -TERM -1` in a
+  # message while the code refused to fire it.
+  #
+  # Structural safety, checked at the KILL SITE and not merely at the decision: the last
+  # line of defence belongs next to the trigger.
   def self.signalable?(pgid, self_pid: Process.pid, self_pgid: Process.getpgrp)
     pgid = pgid.to_i
     pgid >= MIN_SIGNALABLE_PGID && pgid != self_pgid.to_i && pgid != self_pid.to_i
+  end
+
+  # A pid/pgid out of a JSON lock is whatever was on disk — `{"pgid": {}}` is a Hash, and
+  # `Hash#to_i` is a NoMethodError, which crashed `decide` (review, 2026-07-14) instead of
+  # refusing cleanly. A guard that dies on malformed input has no opinion about malformed
+  # input. Anything that is not plainly an integer is not a pid, and we never guess at one.
+  def self.coerce_pid(value)
+    case value
+    when Integer then value
+    when String then Integer(value.strip, exception: false)
+    end # nil / Hash / Array / bool → nil, and nil means "this lock names nobody"
   end
 
   # --- the decision (PURE) ---------------------------------------------------------
@@ -288,6 +315,12 @@ module CertOrphanGuard
   # without spawning anything.
   #
   #   :none         — no lock; nothing ran here before
+  #   :malformed    — the lock does not name an integer pid + pgid → it proves nothing
+  #                   and names nobody we could verify. Discard it LOUDLY (there is no
+  #                   process in it to kill), and let the DB backstop speak for any real
+  #                   orphan. Refusing on it instead would wedge every cert in the tree
+  #                   behind a corrupt file with zero evidence of a live suite — a gate
+  #                   asserting rather than evidencing, which is this wave's whole disease.
   #   :concurrent   — the cert PROCESS is provably still alive → refuse (do not kill)
   #   :orphan       — the cert is dead and the group leader is PROVABLY ours → reap
   #   :recycled     — something is alive under that pgid but it is PROVABLY NOT ours
@@ -298,13 +331,14 @@ module CertOrphanGuard
   def self.decide(lock:, table:, self_pid: Process.pid, self_pgid: Process.getpgrp)
     return [:none, {}] if lock.nil? || lock.empty?
 
-    cert_pid = lock["cert_pid"].to_i
-    pgid = lock["pgid"].to_i
+    cert_pid = coerce_pid(lock["cert_pid"])
+    pgid = coerce_pid(lock["pgid"])
     detail = {
       cert_pid: cert_pid, pgid: pgid, lane: lock["lane"], db: lock["db"],
       started_at: lock["started_at"], cert_started_at: lock["cert_started_at"],
       pgid_started_at: lock["pgid_started_at"]
     }
+    return [:malformed, detail] if cert_pid.nil? || pgid.nil?
 
     # 1. Is the cert that wrote this lock still running? Identity, not a bare pid: a
     #    recycled cert_pid graded :concurrent forever, wedging every cert in the tree
@@ -426,10 +460,19 @@ module CertOrphanGuard
     nil # the group is gone (or was never ours). Escalation is by identity, not by guess.
   end
 
-  def self.signal_pid(pid, signal)
+  # Signal ONE pid — the escalation path for a survivor we have already proven is ours.
+  # It goes through the SAME predicate as the group kill: `kill(sig, 1)` aims at init and
+  # `kill(sig, 0)` aims at our own process group, so a pid is no safer an integer than a
+  # pgid is. This guard had none of its own until review (2026-07-14) — and the doctrine
+  # of this file is that the last line of defence belongs next to the trigger, not one
+  # frame up in the caller that happens to check today.
+  def self.signal_pid(pid, signal, self_pid: Process.pid, self_pgid: Process.getpgrp)
+    return false unless signalable?(pid, self_pid: self_pid, self_pgid: self_pgid)
+
     Process.kill(signal, pid.to_i)
+    true
   rescue StandardError
-    nil
+    false
   end
 
   # --- the test-DB backstop ----------------------------------------------------------
@@ -488,6 +531,33 @@ module CertOrphanGuard
   # A cert that refuses and NAMES the orphan is a good cert. A cert that blames "an
   # ENV gap" and lets you retry into the same wall is the bug. And a cert that KILLS a
   # process it cannot name is worse than either.
+  #
+  # A message here is not commentary — it is an INSTRUCTION to an agent or to a tired
+  # operator, and every command in it will be pasted into a shell exactly as printed.
+  # So the copy obeys the same law as the code: see `kill_command`.
+
+  # THE ONLY PLACE THIS FILE RENDERS A KILL INTO COPY. Same predicate as the kill site,
+  # so a command we would refuse to FIRE can never be one we PRINT. Returns nil when the
+  # target is unsignalable, and callers OMIT the line rather than degrade it — there is
+  # nothing safe to suggest about group 0 or 1, and a "careful, don't run this one"
+  # caveat is not a safety mechanism. It is a `kill -TERM -1` with a footnote.
+  #
+  # `-pgid` addresses the GROUP; a bare pid addresses one process. Both go through here.
+  def self.kill_command(signal, target, group: true)
+    return nil unless signalable?(target)
+
+    "kill -#{signal} #{group ? '-' : ''}#{target.to_i}"
+  end
+
+  # The `ps | grep` we hand over so a human can look before they leap. When the pgid is
+  # garbage we must not offer it as a grep alternate either: `grep -E 'rails test|1'`
+  # matches nearly every line of `ps` output (every pid, ppid or pgid containing a 1), so
+  # the "inspect it yourself" step would hand back the whole process table as suspects —
+  # noise dressed as evidence, one impatient paste away from the kill we just refused.
+  def self.inspect_command(pgid)
+    pattern = signalable?(pgid) ? "rails test|#{pgid.to_i}" : "rails test"
+    "ps -eo pid,ppid,pgid,lstart,command | grep -E '#{pattern}'"
+  end
 
   def self.orphan_message(pgid:, lane: nil, db: nil, started_at: nil)
     "ORPHAN REAPED — a previous cert's test process was still running and holding the test DB. " \
@@ -500,11 +570,29 @@ module CertOrphanGuard
   end
 
   def self.concurrent_message(cert_pid:, lane: nil, db: nil)
+    # Even the "if you know it is dead" escape hatch is a kill we are PRINTING, so it is
+    # rendered through the same gate as every other one.
+    reap = kill_command("TERM", cert_pid, group: false)
     "REFUSING — another cert is already running in this worktree (pid #{cert_pid}" \
       "#{lane ? ", lane: #{lane}" : ''}). Two suites against one worktree test DB" \
       "#{db ? " (#{db})" : ''} corrupt each other's fixtures and SIGSEGV Ruby, so this cert will not " \
-      "start beside it. Wait for it to finish and re-run — or, if you know it is dead, kill pid " \
-      "#{cert_pid} and re-run. This is an ENV condition — NOT a regression in your diff."
+      "start beside it. Wait for it to finish and re-run" \
+      "#{reap ? " — or, if you know it is dead, `#{reap}` and re-run" : ''}. " \
+      "This is an ENV condition — NOT a regression in your diff."
+  end
+
+  # The lock is garbage: it does not name an integer pid and pgid at all (a truncated
+  # write, a hand-edit, a half-flushed file from a SIGKILLed cert). It therefore names
+  # NOBODY — there is no process in it to verify and nothing in it we could be entitled
+  # to kill. So we say so out loud and move on, and the DB backstop below is what speaks
+  # for a real orphan, on evidence, if one is actually holding the database.
+  def self.malformed_message(root: nil, db: nil)
+    lock = root ? File.join(root.to_s, LOCK_REL) : LOCK_REL
+    "MALFORMED RUNLOCK — #{lock} does not name a process id and process group we can read. " \
+      "It proves nothing: a lock that names nobody cannot authorize a kill, and this guard only " \
+      "ever kills what it can prove it spawned. Discarding it and continuing" \
+      "#{db ? " (test DB: #{db})" : ''} — if a real orphan IS holding the test DB, the backstop " \
+      "below names it on the evidence. This is an ENV condition — NOT a regression in your diff."
   end
 
   # The lock is stale AND its pgid now belongs to somebody else. We say so out loud
@@ -523,10 +611,21 @@ module CertOrphanGuard
   # We could not prove ownership either way. This is the one case where we hand the
   # decision to a human: we will not kill on a guess, and we will not walk blindly into
   # PG::ObjectInUse either.
+  #
+  # THE HANDED-OVER KILL IS ITSELF A KILL. This message is where the second bug lived:
+  # it printed `kill -TERM -#{pgid}` unconditionally, so the :unsafe_pgid case — the case
+  # that EXISTS because the pgid is 0 or 1 — printed `kill -TERM -1`. We refused to fire
+  # it and then instructed a human to fire it, in a message whose entire purpose is to be
+  # copy-pasted. Now the kill line is rendered by `kill_command`, which is the same gate
+  # the trigger uses, so for an unsignalable group NO kill is offered at all: the only
+  # remediation is `rm` the lock. That is not a degradation — a runlock naming group 0 or
+  # 1 is garbage BY CONSTRUCTION (no cert ever ran in group 1), so there is no stranded
+  # suite behind it to reap, and nothing a kill could correctly do.
   def self.unverifiable_message(pgid:, subject: :group, found: nil, members: [], db: nil, root: nil)
     live = ([found].compact + members).uniq { |p| p[:pid] }
     named = live.map { |p| "pid #{p[:pid]} (#{p[:command].to_s[0, 50]}, started #{p[:started_at]})" }.join(", ")
     lock = root ? File.join(root.to_s, LOCK_REL) : LOCK_REL
+    reap = kill_command("TERM", pgid)
     subject_line =
       case subject
       when :cert then "the cert process named in the runlock (pid #{found ? found[:pid] : '?'}) is alive"
@@ -539,9 +638,10 @@ module CertOrphanGuard
       "A pgid is a recyclable integer: killing it on liveness alone is how a reaper murders an innocent " \
       "bystander, so this cert will NOT kill anything it cannot name as its own. A human decides.\n" \
       "  Alive now: #{named.empty? ? '(nothing nameable)' : named}\n" \
-      "  Inspect:   ps -eo pid,ppid,pgid,lstart,command | grep -E 'rails test|#{pgid}'   # an orphan has PPID 1\n" \
-      "  If it IS a stranded suite:  kill -TERM -#{pgid}\n" \
-      "  If it is NOT yours at all:  rm #{lock.to_s.shellescape}   # discard the stale runlock\n" \
+      "  Inspect:   #{inspect_command(pgid)}   # an orphan has PPID 1\n" \
+      "#{reap ? "  If it IS a stranded suite:  #{reap}\n  If it is NOT yours at all:  " : '  Clear it:  '}" \
+      "rm #{lock.to_s.shellescape}   # discard the runlock" \
+      "#{reap ? '' : " — a lock naming group #{pgid.to_i} is garbage by construction; there is nothing to reap"}\n" \
       "Then re-run the cert. This is an ENV condition — NOT a regression in your diff." \
       "#{db ? " (test DB: #{db})" : ''}"
   end
@@ -550,27 +650,62 @@ module CertOrphanGuard
   # changed under us between the proof and the trigger, and we refused to fire). Either
   # way the suite is still holding the test DB. Say exactly that — never print a kill we
   # did not perform.
+  #
+  # Only a :orphan verdict reaches here and that verdict already required `signalable?`,
+  # so `kill_command` can never come back nil in practice. It is rendered through the gate
+  # anyway: "unreachable" is a property of today's callers, and the invariant is a property
+  # of the file. The test renders THIS message at pgid 0/1 too.
   def self.reap_failed_message(pgid:, lane: nil, db: nil)
+    clear = kill_command("KILL", pgid)
     "REFUSING — this worktree's runlock names an orphaned suite (process group #{pgid}" \
       "#{lane ? ", lane: #{lane}" : ''}) that we could NOT reap. It is still running, and while it holds " \
       "#{db ? "the test DB #{db}" : 'the test DB'} every cert here dies in test-prepare on PG::ObjectInUse. " \
       "The runlock is left in place on purpose: it names the process.\n" \
-      "  Inspect: ps -eo pid,ppid,pgid,lstart,command | grep #{pgid}\n" \
-      "  Clear:   kill -KILL -#{pgid}\n" \
+      "  Inspect: #{inspect_command(pgid)}\n" \
+      "#{clear ? "  Clear:   #{clear}\n" : ''}" \
       "Then re-run the cert. This is an ENV condition — NOT a regression in your diff."
   end
 
-  def self.foreign_backend_message(db:, backends:)
+  # The unwedge command must connect the way the PROBE connected. `foreign_backends` dials
+  # the full TEST_DATABASE_URL; printing `psql <db-name>` told the operator to dial a bare
+  # name, which resolves only where DATABASE_URL happens to be a default local socket with
+  # a matching role — anywhere else (a non-default port, a host, a role, CI) the handed-over
+  # fix fails on the operator with a confusing auth error, at the exact moment they are 35
+  # minutes into a wedge and trusting us. Print the URL we actually used.
+  def self.foreign_backend_message(db:, backends:, url: nil)
     named = backends.map { |b| "pid #{b[:pid]} (#{b[:application_name]})" }.join(", ")
     pids = backends.map { |b| b[:pid] }.join(", ")
+    target, caveat = psql_target(url, db)
     "REFUSING — the test DB #{db} is held by #{backends.size} other session(s): #{named}. " \
       "A cert cannot prepare a database another process is holding (db:test:purge → PG::ObjectInUse), " \
       "and running beside it corrupts both suites. This is almost certainly an ORPHANED test process " \
       "from a cert that outran its timeout. It is an ENV condition — NOT a regression in your diff.\n" \
       "  Inspect: ps -eo pid,ppid,pgid,command | grep 'rails test'   # the orphan has PPID 1\n" \
-      "  Clear:   psql #{db.to_s.shellescape} -c 'SELECT pg_terminate_backend(pid) FROM pg_stat_activity " \
-      "WHERE pid IN (#{pids})'\n" \
+      "  Clear:   psql #{target} -c 'SELECT pg_terminate_backend(pid) FROM pg_stat_activity " \
+      "WHERE pid IN (#{pids})'\n#{caveat}" \
       "Then re-run the cert."
+  end
+
+  # The psql target, and a caveat line when we had to redact. A test DB URL CAN carry a
+  # password (Heroku, a CI service container), and a cert log is a durable artefact that
+  # gets pasted into PRs — so the password never goes in it. House rule, no exceptions:
+  # never print a secret. Locally (the case that actually wedges an agent) the worktree URL
+  # has no password, so the command is exactly copy-pasteable as printed.
+  def self.psql_target(url, db)
+    raw = url.to_s
+    return [db.to_s.shellescape, ""] if raw.empty?
+
+    uri = begin
+      URI.parse(raw)
+    rescue StandardError
+      nil
+    end
+    return [raw.shellescape, ""] if uri.nil? || uri.password.to_s.empty?
+
+    uri.password = "REDACTED"
+    [uri.to_s.shellescape,
+     "  (the password above is REDACTED — a cert log is not a place for secrets; " \
+     "run it with the real TEST_DATABASE_URL from .env.test.local)\n"]
   end
 
   # --- the preflight both cert lanes run BEFORE any lane -----------------------------
@@ -612,6 +747,12 @@ module CertOrphanGuard
       clear_lock(root)
       notices << recycled_message(pgid: detail[:pgid], found: detail[:found],
                                   recorded_start: detail[:pgid_started_at])
+    when :malformed
+      # It names nobody, so there is nobody to verify and nobody we may kill. Discard it
+      # LOUDLY and fall through to the DB backstop, which refuses on EVIDENCE if a real
+      # orphan is holding the database.
+      clear_lock(root)
+      notices << malformed_message(root: root, db: db)
     when :stale
       clear_lock(root)
     end
@@ -624,7 +765,7 @@ module CertOrphanGuard
     # After a reap, give the backends we just orphaned a moment to close: a suite we
     # PROVED was ours and killed must not then be reported back to us as a stranger.
     backends = settle_backends(url, psql: env.fetch("CERT_GUARD_PSQL", "psql"), settle: reaped)
-    return [:refuse, foreign_backend_message(db: db, backends: backends)] if backends.any?
+    return [:refuse, foreign_backend_message(db: db, backends: backends, url: url)] if backends.any?
 
     [:ok, notices]
   end

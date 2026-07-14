@@ -58,6 +58,27 @@ wrong checkout (e.g. the hub primary on `main`) exits 1 naming the worktree to
 `cd` into instead of green-certifying an unrelated tree
 (`bin/lib/cert_root_guard.rb`).
 
+Both cert runners open with an **orphan preflight** (`bin/lib/cert_orphan_guard.rb`)
+before any lane runs. A cert that outran its harness timeout leaves its
+`bin/rails test` grandchild alive, holding the worktree's test DB — and every
+retry then dies in test-prepare on `PG::ObjectInUse`, so the retry path recreates
+the deadlock and the agent can never dig out (live, 2026-07-13: three attempts,
+35 minutes, zero board progress). Each cert therefore leaves a runlock
+(`tmp/cert-run.json`) naming its process group **and that group's OS start time**,
+and the next cert reads it:
+
+| It finds | It does |
+|----------|---------|
+| a suite whose start time **matches** the runlock | **reaps** the group, names it, continues |
+| a **live** sibling cert | **refuses** — two suites on one test DB SIGSEGV Ruby |
+| the pgid **recycled** onto a stranger | **never kills it**; discards the lock, continues |
+| a group it **cannot prove** is ours | **refuses** and names what is alive — a human decides |
+| a **garbage** lock (group 0/1, malformed) | discards it loudly; `rm tmp/cert-run.json` is the only remedy |
+
+An exit-1 from the preflight is an **ENV refusal, not a red diff** — it names the
+pid and the DB. Never `rm` the runlock to get past a refusal you have not read: it
+is naming a process that is still holding your database.
+
 1. **Certify — fast route (default):**
 
    ```bash
@@ -67,10 +88,15 @@ wrong checkout (e.g. the hub primary on `main`) exits 1 naming the worktree to
    Lanes, in order (each recorded on the gate as one executed-SOP entry):
 
    - `test-prepare` — `bin/rails db:test:prepare test:prepare` (abort on red —
-     never certify against an unprepared test env; a red here is USUALLY an ENV
-     gap rather than a regression in your diff, but a broken stylesheet in the
-     diff fails the asset build here too — read the output). Both tasks, one
-     boot: the test DB, and
+     never certify against an unprepared test env). **Read the output; do not
+     assume the cause.** A red here has three quite different meanings and
+     guessing among them is what burned 35 minutes: `PG::ObjectInUse` is an
+     ORPHANED suite holding your test DB (the preflight above names it — if it
+     did not, say so, that is a guard gap); an asset error such as `The asset
+     "tailwind.css" is not present` after a stylesheet change is a REGRESSION IN
+     YOUR DIFF failing the asset build; a missing DB/role is a genuine env gap.
+     Blaming "an ENV gap" by reflex is the reflex this gate exists to break.
+     Both tasks, one boot: the test DB, and
      Rails' `test:prepare` hook, which is what BUILDS the gitignored
      `app/assets/builds/tailwind.css`. The lanes below pass explicit test
      paths, and Rails skips its own `test:prepare` whenever an argument looks

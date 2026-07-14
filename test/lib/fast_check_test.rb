@@ -719,4 +719,35 @@ class FastCheckTest < Minitest::Test
       end
     end
   end
+
+  # THE SECOND BUG, end to end through the real bin/fast-check (review, 2026-07-14).
+  #
+  # A truncated runlock names process group 1. pid 1 (launchd/init) is always alive, so the
+  # guard finds live members under that number and REFUSES — correctly. The bug was what it
+  # PRINTED while refusing:
+  #
+  #   If it IS a stranded suite:  kill -TERM -1
+  #
+  # POSIX defines `kill -TERM -1` as EVERY process the caller may signal. The cert would not
+  # fire it — `signalable?` saw to that — and then handed it to a human to paste, in the
+  # house's authoritative "here is how to clear it" voice, at the exact moment (35 minutes
+  # into a wedge) that a human pastes without reading. The code path was hardened and the
+  # COPY path was not, and the copy path is the one with a human on the end of it.
+  #
+  # This asserts it where an operator actually meets it: on the real cert's real stdout.
+  def test_a_runlock_naming_group_1_refuses_without_ever_printing_kill_TERM_minus_1
+    with_repo do |dir, _|
+      write_lock(dir, cert_pid: 999_999, pgid: 1, pgid_started_at: nil)
+
+      out, code, lines = run_check(dir, implicit_root: true)
+
+      assert_equal 1, code, "a runlock naming group 1 is garbage — refuse, never run beside it: #{out}"
+      refute_match(/kill\s+(?:-\w+\s+)*-?[01]\b/, out,
+                   "THE BUG: the cert refused to FIRE `kill -TERM -1` and then PRINTED it for a human " \
+                   "to paste. It signals every process the caller owns. Full output:\n#{out}")
+      assert_match(/rm .*cert-run\.json/, out,
+                   "a lock naming group 1 is garbage by construction; the only remediation is to discard it")
+      assert_empty lane_calls(lines, "TEST"), "refusal fires BEFORE any lane runs"
+    end
+  end
 end

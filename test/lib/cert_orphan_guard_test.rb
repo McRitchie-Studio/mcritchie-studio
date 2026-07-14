@@ -46,11 +46,14 @@
 # Run directly:  ruby -Itest test/lib/cert_orphan_guard_test.rb
 
 require "minitest/autorun"
+require "tmpdir"
 require_relative "../../bin/lib/cert_orphan_guard"
 
 class CertOrphanGuardTest < Minitest::Test
   OURS  = "Mon Jul 13 05:00:00 2026"   # when the lock says our suite started
   OTHER = "Wed Jul  9 22:14:03 2026"   # when the process alive under that number ACTUALLY started
+  DB    = "studio_test_x"
+  ROOT  = "/tmp/wt"
 
   # One row of `ps -Ao pid=,pgid=,state=,lstart=,command=`.
   def process(pid:, pgid: nil, state: "S", started_at: OURS, command: "ruby bin/rails test")
@@ -347,5 +350,220 @@ class CertOrphanGuardTest < Minitest::Test
   def test_an_unparseable_ps_line_yields_no_identity_and_therefore_no_kill
     assert_nil CertOrphanGuard.parse_ps_line("garbage")
     assert_nil CertOrphanGuard.parse_ps_line("")
+  end
+
+  # --- [unit] THE INVARIANT, ASSERTED ACROSS BOTH EMISSION LAYERS ------------------
+  #
+  # A guard emits a kill on TWO layers. It FIRES one (`signal_group`, `signal_pid`), and
+  # it PRINTS one for a human to paste (`*_message`). The second cut of this file hardened
+  # the first layer and left the second wide open (review, 2026-07-14): for a runlock
+  # naming pgid 1, `unverifiable_message` rendered, verbatim,
+  #
+  #   If it IS a stranded suite:  kill -TERM -1
+  #
+  # — the exact POSIX catastrophe `MIN_SIGNALABLE_PGID` exists to prevent (`kill -TERM -1`
+  # signals EVERY process the caller may signal), under the house's authoritative "here is
+  # how to clear it" framing, addressed to an agent or to an operator 35 minutes into a
+  # wedged cert. pgid 0 rendered `kill -TERM -0`: the reader's own process group. We had
+  # stopped the PROGRAM from doing it and then told the HUMAN to do it by hand. A line whose
+  # whole job is to be copy-pasted is not commentary — it is an instruction, and it needs
+  # the same guard as the trigger.
+  #
+  # WHY IT SLIPPED, precisely: the message tests only ever rendered pgid 4300 — a SAFE
+  # pgid. A test that never renders the dangerous vector cannot see the dangerous output.
+  # So the fix is not a second guard bolted onto the copy (two guards drift, and that drift
+  # IS this bug); it is ONE test asserting the POSITIVE invariant over BOTH layers at the
+  # vectors that matter:
+  #
+  #   Every kill command this guard emits — FIRED or PRINTED — addresses a number that
+  #   `signalable?` admits.
+
+  # Every kill command in a blob of copy, as its TARGET: `kill -TERM -4300` → -4300,
+  # `kill -9 4242` → 4242, `kill pid 4242` → 4242. Matched on the SHAPE OF THE COMMAND, not
+  # on the strings this file happens to emit today — a blacklist of the spellings we thought
+  # of is exactly how the copy path got missed the first time.
+  KILL_IN_COPY = /\bkill(?:[ \t]+-\w+)*[ \t]+(?:pid[ \t]+)?(-?\d+)/
+
+  def kill_targets_in(text)
+    text.to_s.scan(KILL_IN_COPY).flatten.map(&:to_i)
+  end
+
+  # EVERY message this guard can emit, rendered at one pgid. If you add a message, add it
+  # here: the invariant is a property of the FILE, not of the messages we remembered.
+  def all_messages(pgid)
+    found = { pid: pgid, started_at: OURS, command: "ruby bin/rails test" }
+    %i[cert group unsafe_pgid].map do |subject|
+      CertOrphanGuard.unverifiable_message(pgid: pgid, subject: subject, found: found,
+                                           members: [found], db: DB, root: ROOT)
+    end + [
+      CertOrphanGuard.orphan_message(pgid: pgid, lane: "spine", db: DB, started_at: OURS),
+      CertOrphanGuard.recycled_message(pgid: pgid, found: found, recorded_start: OURS),
+      CertOrphanGuard.reap_failed_message(pgid: pgid, lane: "spine", db: DB),
+      CertOrphanGuard.concurrent_message(cert_pid: pgid, lane: "spine", db: DB),
+      CertOrphanGuard.malformed_message(root: ROOT, db: DB),
+      CertOrphanGuard.foreign_backend_message(db: DB, url: "postgres://localhost/#{DB}",
+                                              backends: [{ pid: pgid, application_name: "bin/rails" }])
+    ]
+  end
+
+  # A stub without `minitest/mock`: this file promises a standalone run (`ruby -Itest
+  # test/lib/cert_orphan_guard_test.rb`), and the ambient minitest there is not necessarily
+  # the bundled one — minitest 6 does not ship the mock library at all.
+  def with_stub(receiver, name, value)
+    original = receiver.method(name)
+    receiver.define_singleton_method(name) do |*args, **kwargs|
+      value.respond_to?(:call) ? value.call(*args, **kwargs) : value
+    end
+    yield
+  ensure
+    receiver.define_singleton_method(name, original)
+  end
+
+  # Every kill the guard FIRES at `pgid`, with `Process.kill` stubbed so nothing actually
+  # dies and the raw targets are visible. The process table is forged so identity grades
+  # :ours — that is, the guard has every reason to kill, and ONLY `signalable?` stands
+  # between it and the trigger. (Anything less and the test passes for the wrong reason.)
+  def kill_targets_fired(pgid)
+    fired = []
+    table = [process(pid: pgid, pgid: pgid, started_at: OURS)]
+    with_stub(Process, :kill, ->(_signal, target) { fired << target.to_i }) do
+      with_stub(CertOrphanGuard, :process_table, table) do
+        CertOrphanGuard.signal_group(pgid, "TERM")
+        CertOrphanGuard.signal_pid(pgid, "KILL")
+        CertOrphanGuard.reap_group(pgid, started_at: OURS, grace: 0.0)
+      end
+    end
+    fired
+  end
+
+  def assert_only_signalable_kills(pgid, what)
+    printed = all_messages(pgid).flat_map { |message| kill_targets_in(message) }
+    fired = kill_targets_fired(pgid)
+
+    (printed + fired).each do |target|
+      assert CertOrphanGuard.signalable?(target.abs),
+             "the guard emits `kill ... #{target}` at #{what} — a number it would REFUSE to signal. " \
+             "`kill -TERM -1` signals EVERY process the caller owns; `kill -TERM -0` signals the " \
+             "reader's own process group. A kill we refuse to FIRE is a kill we must refuse to PRINT."
+    end
+  end
+
+  def test_no_kill_the_guard_emits_in_code_or_in_copy_targets_an_unsignalable_pgid
+    assert_only_signalable_kills(0, "process group 0 (the reader's OWN process group)")
+    assert_only_signalable_kills(1, "process group 1 (EVERY process the caller owns)")
+    assert_only_signalable_kills(Process.getpgrp, "the cert's OWN process group")
+  end
+
+  def test_a_signalable_group_still_gets_the_kill_commands_it_needs
+    # The invariant is a GATE, not a gag. Deleting every kill command would satisfy the test
+    # above perfectly and leave an operator wedged with no way out — so assert the other half:
+    # a REAL group still gets a real reap command, printed and fired.
+    copy = all_messages(4300).join("\n")
+
+    assert_includes copy, "kill -TERM -4300", "a stranded suite in a real group still gets its reap command"
+    assert_includes copy, "kill -KILL -4300", "and the escalation, when TERM did not do it"
+    assert_includes kill_targets_fired(4300), -4300, "and the guard still FIRES at a group it proved is ours"
+  end
+
+  def test_the_unsafe_pgid_refusal_offers_only_rm_and_never_greps_for_1
+    msg = CertOrphanGuard.unverifiable_message(
+      pgid: 1, subject: :unsafe_pgid, db: DB, root: ROOT,
+      members: [{ pid: 4311, started_at: OURS, command: "ruby bin/rails test" }]
+    )
+
+    assert_empty kill_targets_in(msg),
+                 "THE BUG: the guard refused to FIRE `kill -TERM -1` and then PRINTED it. " \
+                 "A lock naming group 1 is garbage by construction — no cert ever ran in group 1 — " \
+                 "so there is no stranded suite behind it and nothing a kill could correctly do."
+    assert_match(%r{rm /tmp/wt/tmp/cert-run\.json}, msg, "the ONLY correct remediation: discard the garbage lock")
+    assert_match(/garbage by construction|nothing to reap/i, msg, "and say WHY no kill is offered")
+    refute_match(/grep -E 'rails test\|1'/, msg,
+                 "`grep -E 'rails test|1'` matches nearly every line of ps (every pid/ppid/pgid with a 1 " \
+                 "in it) — the whole process table handed back as suspects: noise dressed as evidence")
+    assert_match(/grep -E 'rails test'/, msg, "the grep still finds a stranded suite by NAME")
+  end
+
+  # --- [unit] a malformed lock names nobody, so it kills nobody --------------------
+
+  def test_a_malformed_lock_is_graded_not_raised
+    # `{"pgid": {}}` — a truncated write, a hand-edit, a half-flushed file from a SIGKILLed
+    # cert. `Hash#to_i` is a NoMethodError, and a guard that CRASHES on a malformed lock has
+    # no opinion about malformed locks: it takes the cert down with a backtrace naming
+    # neither the lock nor the orphan, which is the blind-retry loop all over again.
+    [
+      { "cert_pid" => 4242, "pgid" => {} },          # the vector from review
+      { "cert_pid" => 4242, "pgid" => "not-a-pid" },
+      { "cert_pid" => [4242], "pgid" => 4300 },
+      { "cert_pid" => nil, "pgid" => 4300 }
+    ].each do |garbage|
+      verdict, = decide(garbage, table: [process(pid: 4300)])
+
+      assert_equal :malformed, verdict, "a lock that names nobody: #{garbage.inspect}"
+    end
+  end
+
+  def test_a_numeric_string_is_still_a_pid
+    # JSON is not typed and this lock is written by more than one tool over time. Refusing a
+    # perfectly good `"4300"` would strand a REAL orphan behind a "malformed" verdict.
+    verdict, detail = decide({ "cert_pid" => "999999", "pgid" => "4300",
+                               "cert_started_at" => OURS, "pgid_started_at" => OURS },
+                             table: [process(pid: 4300, started_at: OURS)])
+
+    assert_equal :orphan, verdict
+    assert_equal 4300, detail[:pgid]
+  end
+
+  def test_preflight_discards_a_malformed_lock_loudly_and_does_not_wedge_the_cert
+    # Refusing on a malformed lock would wedge every cert in the tree behind a corrupt FILE
+    # with zero evidence of a live suite — a gate asserting rather than evidencing, which is
+    # the disease this whole task exists to treat. Say it out loud, discard it, and let the
+    # DB backstop speak for a real orphan on real evidence.
+    Dir.mktmpdir do |root|
+      FileUtils.mkdir_p(File.join(root, "tmp"))
+      lock = CertOrphanGuard.lock_path(root)
+      File.write(lock, JSON.generate("cert_pid" => 4242, "pgid" => {}))
+
+      verdict, notices = CertOrphanGuard.preflight(root: root, env: { "CERT_GUARD_PSQL" => "/nonexistent" })
+
+      assert_equal :ok, verdict, "a corrupt file is not evidence of a live suite"
+      assert_match(/MALFORMED RUNLOCK/, notices.join("\n"), "never discard it silently")
+      assert_empty kill_targets_in(notices.join("\n")), "it names nobody, so it may not suggest killing anybody"
+      refute_path_exists lock, "the garbage lock is cleared, not left to refuse the next cert too"
+    end
+  end
+
+  # --- [unit] the unwedge command must connect the way the PROBE connected ----------
+
+  def test_the_psql_command_dials_the_url_the_probe_used_not_a_bare_db_name
+    # `foreign_backends` dials the full TEST_DATABASE_URL. Printing `psql studio_test_x`
+    # tells the operator to dial a bare name — which resolves ONLY where DATABASE_URL is a
+    # default local socket with a matching role. Anywhere else (a non-default port, a host,
+    # CI) the handed-over fix fails with an auth error, at the exact moment they are 35
+    # minutes deep and trusting us.
+    url = "postgres://alex@localhost:5433/#{DB}"
+    msg = CertOrphanGuard.foreign_backend_message(db: DB, url: url,
+                                                  backends: [{ pid: 46_382, application_name: "bin/rails" }])
+
+    assert_match(/psql #{Regexp.escape(url)} -c/, msg, "dial exactly what the probe dialed")
+    assert_match(/pg_terminate_backend/, msg)
+  end
+
+  def test_a_password_in_the_test_db_url_is_never_printed_into_a_cert_log
+    # A cert log is a durable artefact that gets pasted into PRs and task records. House
+    # rule, no exceptions: never print a secret.
+    msg = CertOrphanGuard.foreign_backend_message(
+      db: DB, url: "postgres://user:hunter2@db.example.com:5432/#{DB}",
+      backends: [{ pid: 46_382, application_name: "bin/rails" }]
+    )
+
+    refute_match(/hunter2/, msg, "a password must never reach a cert log")
+    assert_match(/REDACTED/, msg, "and the operator must be TOLD it was redacted, not left to wonder")
+  end
+
+  def test_no_url_falls_back_to_the_db_name
+    msg = CertOrphanGuard.foreign_backend_message(db: DB, url: nil,
+                                                  backends: [{ pid: 46_382, application_name: "bin/rails" }])
+
+    assert_match(/psql #{DB} -c/, msg, "best effort beats no command at all")
   end
 end
