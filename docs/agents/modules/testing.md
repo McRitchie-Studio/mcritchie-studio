@@ -196,9 +196,21 @@ boots the suite straight onto the shared development database. `TestDatabasePurg
 therefore refuses (raises `UnsafeDatabase`) unless **both** hold: `Rails.env.test?`,
 **and** the database read back from the live connection is the `database:` literal
 `config/database.yml` declares for `test`, or a legitimate derivative (`…-0` clones,
-`…_<worktree>` isolated DBs). Same doctrine as the release gate's
-`assert_private_gate_db!` — *ask the booted app, and treat a foreign DB as a hard
-abort, never a silent stomp.*
+`…_<worktree>` isolated DBs, and the release workspaces' `<app>_gate_test` /
+`<app>_ship_test`). Same doctrine as the release gate's `assert_private_gate_db!` —
+*ask the booted app, and treat a foreign DB as a hard abort, never a silent stomp.*
+
+**Widening that admission list is the hazard — keep it an EXACT set.** The release
+workspaces infix their role *before* `_test` (`mcritchie_studio_gate_test`), so they do
+not start with the base (`mcritchie_studio_test`) and the guard's first cut REFUSED the
+release gate's own database — bricking every release the day it landed (2026-07-14). The
+fix admits those two names **by equality, derived from the base**, and nothing else:
+relax it into a prefix or substring rule and `mcritchie_studio_development` is admitted
+too, which is the exact database this guard exists to spare. `test/lib/test_database_purge_test.rb`
+pins both directions — the workspace DBs are admitted (against the names
+`Release::GateWorkspace` actually mints, so a new role goes red there instead of in a
+release), and foreign look-alikes (`…_gate_testing`, `…_deploy_test`, `other_app_gate_test`)
+are still refused.
 
 **Anchor the expectation in something the ENV var cannot move.** The obvious check —
 "connected DB == `configs_for(env_name: "test").database`" — is a **placebo**, and it

@@ -145,15 +145,53 @@ module TestDatabasePurge
       ActiveRecord::Base.configurations.configs_for(env_name: "test", name: "primary")&.database
     end
 
+    # The roles bin/release.rb runs an ISOLATED WORKSPACE for — kept in lockstep with
+    # Release::GateWorkspace::ROLES (the code that actually mints these databases) by
+    # a test, not by hope. Duplicated rather than referenced on purpose: this guard is
+    # the last thing standing between a stray boot and a truncated database, and it
+    # will not have its refusal logic depend on an autoloadable app model.
+    WORKSPACE_ROLES = %w[gate ship].freeze
+
     # Is `name` the base test database, or one of its LEGITIMATE derivatives?
-    #   "<base>-0"      Rails parallel-test clones (parallelize forks a DB per worker)
-    #   "<base>_<slug>" per-worktree / release-gate isolated test DBs (TEST_DATABASE_URL)
-    # The separator is REQUIRED, so a look-alike like "mcritchie_studio_testing_dev"
-    # does not sneak through on a bare prefix match.
+    #   "<base>"            the base test DB itself
+    #   "<base>-0"          Rails parallel-test clones (parallelize forks a DB per worker)
+    #   "<base>_<slug>"     per-worktree isolated test DBs (TEST_DATABASE_URL)
+    #   "<app>_gate_test"   bin/release.rb's isolated GATE workspace  ┐ role INFIXED
+    #   "<app>_ship_test"   bin/release.rb's isolated SHIP workspace  ┘ before `_test`
+    #
+    # The separator is REQUIRED on the prefix rules, so a look-alike like
+    # "mcritchie_studio_testing_dev" does not sneak through on a bare prefix match.
+    #
+    # The workspace DBs (added 2026-07-14) do not fit those rules AT ALL: the role is
+    # infixed BEFORE `_test`, so "mcritchie_studio_gate_test" does not begin with
+    # "mcritchie_studio_test" and the first cut of this guard FALSE-REFUSED the release
+    # gate's own database — bricking every release the day it landed. They are admitted
+    # as an EXACT, CLOSED SET derived from the base (workspace_databases), never as a
+    # loosened prefix/substring rule: widening this predicate to wave them through by
+    # shape would also wave through "mcritchie_studio_development", which is precisely
+    # the database this guard exists to spare.
     def derived_from?(name, base)
       return false if name.blank? || base.blank?
 
-      name == base || name.start_with?("#{base}-") || name.start_with?("#{base}_")
+      name == base ||
+        name.start_with?("#{base}-") ||
+        name.start_with?("#{base}_") ||
+        workspace_databases(base).include?(name)
+    end
+
+    # The release workspaces' FIXED test-DB names, derived from the base test DB:
+    #   "mcritchie_studio_test" -> ["mcritchie_studio_gate_test", "mcritchie_studio_ship_test"]
+    # Exact names only — the caller matches by EQUALITY. Returns nothing when the base
+    # is not an "<app>_test" identifier (a SQLite lane's file path, say): there is then
+    # no app name to derive from, and this will not invent one.
+    def workspace_databases(base)
+      base = base.to_s
+      return [] unless base.end_with?("_test")
+
+      app = base.delete_suffix("_test")
+      return [] if app.blank?
+
+      WORKSPACE_ROLES.map { |role| "#{app}_#{role}_test" }
     end
 
     def refuse!(reason, remedy = nil)
