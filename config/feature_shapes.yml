@@ -17,7 +17,62 @@
 #   [e2e] npx playwright test e2e/upload.spec.js
 # A tier counts as satisfied when at least one checks_run line is tagged with it.
 #
-# Known tiers: unit, component, integration, e2e, e2e_onchain
+# Known tiers: unit, component, integration, e2e
+#
+# EVERY TIER HERE IS RUN BY A LANE **IN THIS REPO** — enforced, not promised.
+# test/lib/feature_shape_tiers_test.rb asserts that every tier any shape below demands
+# is EXECUTED by a real runner (.github/workflows/ci.yml, bin/fast-check,
+# bin/full-suite-check). Add a tier to a shape with no lane behind it and that guard
+# goes red. This is not decoration: until 2026-07-13 this file demanded `e2e` and
+# `e2e_onchain` and NOTHING RAN EITHER — the tags were credited by bin/dor-check purely
+# because a builder typed them into checks_run, so the gate demanded evidence it never
+# collected and accepted a self-declaration in its place (the disease catalogued in
+# docs/agents/audits/release-gate-and-devops-process-review-2026-07-12.md).
+#
+# ⚠️ READ THE BOLD PART: **IN THIS REPO**. That qualifier is not hedging — it is the exact
+# edge of what the guard proves, and outside that edge the disease is still alive.
+#
+# THIS FILE IS ECOSYSTEM-WIDE. `bin/dor-check` reads it for a task in ANY repo. But a LANE is
+# per-repo, and the guard runs in mcritchie-studio's CI, where no sibling repo is checked out.
+# So it proves the claim for THIS repo's runners and is structurally blind to the others.
+# Audited by hand, 2026-07-14 (do not re-derive; DO re-check when a repo is added):
+#   · mcritchie-studio — `playwright` job in ci.yml.                        e2e COLLECTED.
+#   · turf-monster     — `playwright` job in its own ci.yml.                e2e COLLECTED.
+#   · rolio            — NO playwright lane. NO e2e/ directory AT ALL.      e2e **NOT COLLECTED**.
+#     A `ui+db` task in rolio therefore demands the `e2e` tier that nothing in rolio runs, and
+#     bin/dor-check credits the `[e2e]` tag a builder types. That is THE ORIGINAL BUG of
+#     /tasks/e2e-tiers-are-decorative, still breathing, one repo over. It is not a live wound
+#     today only because rolio is dormant — which is luck, not a mechanism, and luck is what
+#     this file is supposed to have replaced.
+#   · studio-engine, solana-studio, turf-vault — libraries/programs; no shape here demands e2e
+#     of them (`library`/`onchain` are unit+integration).
+# The fix is a per-repo tier-collectability check in bin/dor-check (resolve the task's repo,
+# read ITS ci.yml through the bin/lib/ci_test_command.rb seam, REFUSE a tier that repo runs no
+# lane for — fail closed, so deleting a lane goes red rather than granting an exemption).
+# That is a gate change with its own blast radius, so it is a task, not a footnote:
+# /tasks/dor-check-tiers-per-repo. Until it lands, this header claims only what it can prove.
+#
+# What that cost, measured the day the lane was finally switched on: the studio's
+# 69-spec Playwright suite was 18 SPECS RED on an untouched `release` checkout. It had
+# gone unrun long enough for a quarter of it to rot — board filters shipped and hid the
+# cards its specs waited on; a seeded fixture string vanished. An uncollected tier does
+# not sit idle and honest. It DECAYS, and the first person to trust it inherits the
+# decay. (Repair: /tasks/repair-rotted-e2e-specs.)
+#
+# REMOVED 2026-07-13 — `e2e_onchain`. It was demanded by `onchain` and `onchain-vertical`
+# and collected NOWHERE, and never had been: turf-vault (the Anchor program itself) has
+# no CI at all, and turf-monster's devnet-nightly.yml — the only workflow that could
+# serve — is gated on a repo variable, has completed `skipped` on every scheduled run,
+# and has never once executed. So the strictest-LOOKING tier in the ecosystem was the
+# emptiest, on the two shapes that move real money.
+#
+# It is not coming back as a tier until it is a lane. A "FRESH devnet run for this
+# change" needs a funded bot wallet, a real cluster, SOL for a program deploy, and
+# minutes of settle — it cannot be a cert or CI lane, and forcing it into one would only
+# move the lie down a level. On-chain verification is REAL and still required; it is an
+# operator/QA-stop act, the same category this file already carves out for `manual`
+# below — NOT a pre-submit tier a builder self-certifies. Build the lane first:
+# /tasks/build-devnet-e2e-lane. The guard test enforces that order.
 #
 # SEPARATE from these tier tags, the merge gate also requires FULL-suite + FULL-
 # rubocop evidence, recorded as fingerprint-bound checks_run lines the tier-tag
@@ -47,7 +102,11 @@ shapes:
     description: UI plus persistence — a form that writes, a record-backed view, a stateful flow.
     dor_tiers: [unit, component, integration, e2e]
     required_metadata: [acceptance, repositories, risk_tags, test_plan, local_url]
-    notes: e2e here is the happy path only; the full browser matrix runs nightly.
+    notes: >-
+      e2e here is the happy path, CHROMIUM ONLY (playwright.config.js runs one project) —
+      there is no browser matrix and no nightly backstop anywhere in the ecosystem. If a flow
+      needs cross-browser or deeper coverage, it needs a LANE first; do not thin an e2e spec
+      on the belief that something else re-runs it wider.
 
   backend:
     description: Background job, service, or pure server logic with no UI surface.
@@ -66,15 +125,20 @@ shapes:
 
   onchain:
     description: turf-vault program change or its Solana::* Ruby integration.
-    dor_tiers: [unit, integration, e2e_onchain]
+    dor_tiers: [unit, integration]
     required_metadata: [acceptance, repositories, risk_tags, test_plan]
     notes: >-
-      unit+integration = Anchor instruction tests + a multi-instruction lifecycle;
-      e2e_onchain = a FRESH devnet run for this change — do not rely on last
-      night's nightly. Highest-scrutiny review (Opus).
+      unit+integration = Anchor instruction tests + a multi-instruction lifecycle.
+      A fresh devnet run for the change is still REQUIRED before it ships — but it
+      is an operator/QA-stop act (like `manual`), not a self-certified pre-submit
+      tier: no lane has ever run it (see the e2e_onchain note in the header;
+      /tasks/build-devnet-e2e-lane). Highest-scrutiny review (Opus).
 
   onchain-vertical:
     description: A full new workflow spanning wallet + DB + UI + program.
-    dor_tiers: [unit, component, integration, e2e, e2e_onchain]
+    dor_tiers: [unit, component, integration, e2e]
     required_metadata: [acceptance, repositories, risk_tags, test_plan, local_url]
-    notes: Almost always a multi-task `release`. Highest scrutiny; usually conductor-review.
+    notes: >-
+      Almost always a multi-task `release`. Highest scrutiny; usually
+      conductor-review. Devnet verification is an operator/QA-stop act, as in
+      `onchain` above.

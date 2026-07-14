@@ -97,6 +97,7 @@ require_relative "lib/repo_root"
 require_relative "lib/fast_cert"
 require_relative "lib/cert_emission"
 require_relative "lib/cert_root_guard"
+require_relative "lib/cert_tree_guard"
 require_relative "lib/cert_orphan_guard"
 require_relative "lib/cert_process"
 
@@ -155,6 +156,22 @@ end
 if slug && ENV["FAST_CHECK_ROOT"].to_s.strip.empty?
   wrong_root = CertRootGuard.refusal(task_bin: TASK_BIN, slug: slug, root: root)
   abort "fast-check: #{wrong_root}" if wrong_root
+end
+
+# --- dirty-tree guard ----------------------------------------------------------
+# Same family as the root guard above, same fail-GREEN shape: the root guard stops
+# a cert of the wrong TREE, this one stops a cert of an UNCOMMITTED tree. The
+# fingerprint hashes the WORKING tree (git add -A + write-tree), so certifying with
+# edits still uncommitted stamps GREEN evidence over code the PR never receives —
+# live on 2026-07-14, when a worktree's 146 lines of certified work never reached
+# PR #537. Certify AFTER the final commit; this makes that a rule, not a memory.
+# Same gating as the root guard: only with a slug (no slug → --print/hook, nothing
+# is recorded, nothing to protect) and only on an IMPLICIT root (an explicit
+# FAST_CHECK_ROOT is the deliberate CI/test seam). The index is refreshed before it
+# is read, so a stat-stale tree cannot false-refuse. bin/lib/cert_tree_guard.rb.
+if slug && ENV["FAST_CHECK_ROOT"].to_s.strip.empty?
+  dirty = CertTreeGuard.refusal(command: "bin/fast-check", root: root)
+  abort "fast-check: #{dirty}" if dirty
 end
 
 # --- lane plumbing (mirrors bin/full-suite-check) ------------------------------

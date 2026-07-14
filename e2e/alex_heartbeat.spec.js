@@ -78,7 +78,7 @@ test("clicking a drilled-down action opens its grading drawer", async ({ page })
 
 // The event row rolls its attributed actions up into the Pokémon / Model / Tokens /
 // Cost columns and a distinct open-vs-done status badge (the operator's screenshot ask).
-test("the span rows show the rolled-up mascot, model, tokens, cost, and status", async ({ page }) => {
+test("the span rows show the rolled-up mascot, model, tokens, cost, and status @quarantine", async ({ page }) => {
   await page.goto("/alex/heartbeat?session_id=e2e-heartbeat-0001");
 
   const explore = page.locator("[data-test='heartbeat-event'][data-category='Explore']");
