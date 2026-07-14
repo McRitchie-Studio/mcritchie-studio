@@ -437,7 +437,7 @@ class StateStoreContainmentTest < Minitest::Test
     # value cannot delete a file. Everything else at top level — a call, a block, a
     # shell-out — is refused, and the fix is always the same: hoist it into a named
     # method, where it becomes either laundered or declared. That is why bin/task grew
-    # `usage_audit_dir` in this PR: its store path used to sit inline in the dispatch.
+    # `usage_audit!` in this PR: its store path used to sit inline in the dispatch.
     #
     # This grammar is THREE closed forms, checked positively — not a blacklist of the
     # things a top-level statement might do, which would be the SINK_RE mistake again.
