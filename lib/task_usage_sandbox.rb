@@ -20,9 +20,10 @@ require_relative "../bin/lib/projects_root"
 # the remaining three were found by the review that caught the second, and are
 # closed here rather than left in a PR body. A PR body is not a backlog.
 #
-# The store names below are the WHOLE family, and test/lib/state_store_containment_test.rb
-# re-derives that family FROM THE SOURCE on every run: a sixth store added later
-# without a guard fails the suite. The list cannot rot into a lie quietly.
+# The seven store names below are the WHOLE family, and
+# test/lib/state_store_containment_test.rb re-derives that family FROM THE SOURCE on
+# every run: an EIGHTH store added later without a guard fails the suite. The list
+# cannot rot into a lie quietly.
 #
 # WHY THIS EXISTS (a live production leak, not a hypothetical). Both stores are
 # resolved by FALLBACK — TASK_USAGE_DIR else <projects>/.agents/task-usage;

@@ -116,7 +116,6 @@ heartbeat_claim() {  # slug stage is_desk
   [ -z "$slug" ] && return 0
   [ -z "$sid" ] && return 0
   [ -x "$TASK_BIN" ] || return 0
-  marker_write_refused && return 0   # fail closed: unpinned marker destination
   # Only a live BUILD claim is renewed. A claim is forged ONLY by an explicit
   # `move building`, so:
   #   building → renew (the explicit claim), whatever the source.
@@ -142,6 +141,12 @@ heartbeat_claim() {  # slug stage is_desk
     age=$(( $(date +%s) - mtime ))
     [ "$age" -lt "$throttle" ] && return 0
   fi
+  # Fail closed: unpinned marker destination. DELIBERATELY the last gate before the
+  # write — every `return 0` above means no write was ever pending, and a refusal
+  # printed for a write that was never going to happen is noise that dilutes exactly
+  # the signal this message exists to carry (a SILENT refusal is indistinguishable
+  # from "nothing happened", which is why it must be loud when it is real).
+  marker_write_refused && return 0
   mkdir -p "$mdir" 2>/dev/null
   : > "$marker"
   if [ "$STATUSLINE_HEARTBEAT_FG" = "1" ]; then
@@ -163,7 +168,6 @@ heartbeat_shift() {
   sid=$(agent_session_id)
   [ -z "$sid" ] && return 0
   [ -x "$SHIFT_BIN" ] || return 0
-  marker_write_refused && return 0   # fail closed: unpinned marker destination
   local marker="$PROJECTS/.agents/sessions/${sid}.devops-shift"
   [ -f "$marker" ] || return 0
   lane=$(head -n1 "$marker" 2>/dev/null | tr -d '[:space:]')
@@ -176,6 +180,10 @@ heartbeat_shift() {
     age=$(( $(date +%s) - mtime ))
     [ "$age" -lt "$throttle" ] && return 0
   fi
+  # Fail closed, and LAST — see heartbeat_claim. The common case by far is a session
+  # holding no shift at all, which returns above; refusing there printed a warning on
+  # nearly every render for a write that was never pending.
+  marker_write_refused && return 0
   mkdir -p "$PROJECTS/.agents/sessions" 2>/dev/null
   : > "$throttle_marker"
   if [ "$STATUSLINE_HEARTBEAT_FG" = "1" ]; then

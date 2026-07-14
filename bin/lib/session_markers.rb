@@ -49,13 +49,24 @@ require_relative "../../lib/task_usage_sandbox"
 #   1. STRUCTURAL — +marker_path+ is private (see below), so no caller outside this
 #      module can get an unguarded marker path from us at all. bin/atomic-event and
 #      bin/devops-shift now hold ZERO raw marker paths; there is nothing to misuse.
-#   2. STATIC — test/lib/session_marker_containment_test.rb re-derives the mutation
-#      set from the SOURCE on every run and fails on any marker path (ours OR a
-#      hand-rolled File.join) that reaches a filesystem sink without passing
-#      enforce!. It is default-DENY: an unrecognized sink is a violation, so a
-#      seventh writer invented years from now — with a spelling nobody here
-#      imagined — fails the suite instead of quietly leaking. The rule is enforced
-#      against the tree, not against this comment.
+#      This is not decoration: test/lib/state_store_containment_test.rb's LAYER 2a
+#      ASSERTS the builder is private, because a lib that hands out a raw path lets a
+#      caller mutate the store without ever naming ".agents" — which no source scan
+#      can see, in any spelling.
+#   2. STATIC — test/lib/state_store_containment_test.rb re-derives the mutation set
+#      from the SOURCE on every run and fails on any method that HOLDS a raw marker
+#      path (ours OR a hand-rolled one, in ANY spelling — File.join, interpolation, a
+#      constant) without passing enforce!.
+#
+#      Be precise about WHY that is default-DENY, because the first draft of that test
+#      claimed this and did not deliver it. It does NOT work by recognising the write:
+#      it never looks at the write at all. It works on the PRECONDITION — you cannot
+#      mutate a path you never named — so a seventh writer invented years from now is
+#      refused for HOLDING the path, whether it reaches for File.write, Pathname#delete,
+#      File.binwrite, or `system("rm …")`. There is no list of IO verbs to keep current,
+#      which is exactly what the old version got wrong: it had one, a shell-out was
+#      invisible to it by construction, and an ordinary interpolated path walked past it
+#      GREEN. The rule is enforced against the tree, not against this comment.
 #
 # WHO ELSE TOUCHES THIS STORE, precisely — do not let this list rot (the
 # containment test above will catch you if you do):
@@ -68,7 +79,9 @@ require_relative "../../lib/task_usage_sandbox"
 #                      leans on the Ruby CLIs it shells for rule 2 (see its header).
 #   bin/agent-marker,  READ-only. Unguarded on purpose: a read cannot pollute — so
 #   bin/atomic-capture-hook  agent-marker resolving its own read path by hand is
-#                      allowed, and the containment test permits read-only sinks.
+#                      allowed. Each such method is named, with its reason, in the
+#                      containment test's UNGUARDED_PATH_METHODS — a closed list of
+#                      methods, NOT a list of permitted IO verbs.
 #
 # FAIL-CLOSED vs. NARRATION-IS-NON-FATAL — the tension, and its resolution.
 # Narration must NEVER block an agent's real work, so every marker write in

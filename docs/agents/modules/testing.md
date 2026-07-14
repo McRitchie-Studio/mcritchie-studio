@@ -278,12 +278,28 @@ A test that spawns any of those CLIs and pins nothing hands its child the
   beside a guarded sibling that did the same job correctly; no amount of testing the
   guarded surface could see it. So the containment is asserted **against the tree**:
   `test/lib/state_store_containment_test.rb` refuses (1) any file outside a small
-  sanctioned allowlist that so much as **constructs** a path under `.agents`, and
-  (2) any method that reaches a raw store path and performs filesystem IO without
-  laundering it through `TaskUsageSandbox.enforce!`. Rule (1) is default-**deny** and
-  never looks at IO at all, so an exotic write nobody anticipated (`Pathname#delete`,
-  a shell `rm`) is refused for the same reason a `File.write` is. **A guard that only
-  guards the callers you remembered is a naming convention.**
+  sanctioned allowlist that so much as **constructs** a path under `.agents`, in any
+  spelling, and (2) inside that allowlist, any method that **holds** a raw store path
+  without laundering it through `TaskUsageSandbox.enforce!`.
+
+  **It guards the precondition, not the verb — you cannot write to a path you never
+  named.** Nothing in the scan looks at what a method *does* with a path, so
+  `system("rm #{p}")`, `Pathname#delete`, `File.binwrite` and a spelling nobody has
+  invented yet are all refused for the identical reason a `File.write` is: the method
+  held the path. There is no list of IO verbs that can be incomplete.
+
+  That is a correction, not a boast. The **first** version of this test did enumerate
+  the sinks, and it leaked exactly as an enumeration must: a `bin/leaky-demo` deleting
+  the operator's live `.open-activity` with an **ordinary interpolated path** ran
+  against it **green**. Enumerate the spellings and you refuse only the spellings you
+  thought of; assert the precondition and you refuse the class. **A guard that only
+  guards the callers — or the verbs — you remembered is a naming convention.**
+
+  Two limits it states about itself, because a guarantee oversold is worse than none:
+  `bin/statusline` is **bash** and no Ruby source scan can read it, so its containment
+  is proven at the **boundary** instead (the test executes it armed + unpinned and
+  observes that the real store does not change); and a program that *computes* its own
+  path string defeats any text scan, which is the same lane's job.
 
 A violation exits via `abort` (SystemExit) **on purpose**. Every caller of this
 state is best-effort (`rescue StandardError => nil`, so a usage hiccup can never
@@ -311,9 +327,16 @@ billion-token baseline legitimately and magnitude proves nothing.
 
 **The other six stores have no audit sweep.** `usage-audit` does not look at them,
 so do not read a clean run as "nothing leaked" — it answers one store's question.
-The narration store alone currently holds ~123 `.heartbeat` and ~27
-`.activity-usage.json` files under `<projects>/.agents/sessions`, and a leaked
-marker is not distinguishable from a real one by inspection either. Residue is the
+The narration store alone holds over a hundred `.heartbeat` files and dozens of
+`.activity-usage.json` files under `<projects>/.agents/sessions` — count them
+yourself rather than trusting a number in a doc, which is the same discipline this
+section is arguing for:
+
+```bash
+ls "$(cd ~/projects && pwd)/.agents/sessions" | sed 's/.*\.//' | sort | uniq -c | sort -rn
+```
+
+A leaked marker is not distinguishable from a real one by inspection either. Residue is the
 **operator's** call to clear; the guard's job is to stop new residue, and the
 containment test's job is to stop a new *writer*. If you want a sweep for the other
 stores, that is unbuilt work — say so plainly rather than implying coverage that
