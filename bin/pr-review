@@ -567,6 +567,16 @@ def start_review(task, review_number)
   when :none
     puts "  ci=NONE (no checks reported yet) — deferring until CI reports"
     return base.merge(ci_wait: ci)
+  when :unreadable
+    # MUST NOT defer. A deferral waits for CI to "report" — but CI already reported
+    # and this token cannot hear it, so the wave would defer this task forever while
+    # the board looked healthy (the PR-#509 failure mode, with a credential as the
+    # cause). Proceed to review, and say plainly that CI went UNCHECKED — the reviewer
+    # is now the only thing standing between a red CI and a merge.
+    puts "  ci=UNREADABLE (#{ci[:reason]}) — the token was refused; NOT deferring (CI has reported; we cannot read it)"
+    puts "  #{CiStatus.unreadable_remedy(CiStatus.repo_from_pr_url(task.dig("devops", "pr_url")),
+                                        cause: ci[:cause])}"
+    puts "  proceeding to review WITHOUT a CI verdict — review this PR as if CI were unchecked, because it is"
   when :green
     puts "  ci=green#{ci[:count] ? " (#{ci[:count]} checks)" : ""}"
   else

@@ -8,10 +8,32 @@ require_relative "../support/session_env"
 # The PRODUCTION counterpart, loaded for real so the drift guard below compares
 # against the LIVE list instead of a copy of it. Release::GateEnv is PURE and
 # Rails-free by construction (see its header) — bin/release.rb requires it exactly
-# this way. Under the full Rails suite Zeitwerk has already autoloaded it, and
-# require_relative'ing an autoloadable path a second time is the trap the Rails
-# guide warns about, so only load it when running this file bare.
-require_relative "../../app/models/release/gate_env" unless defined?(Release::GateEnv)
+# this way, and so must the BARE run of this file (`ruby test/lib/session_env_test.rb`),
+# which has no autoloader.
+#
+# Gate on WHETHER ZEITWERK WILL OWN app/models — not on the constant being defined
+# yet. The `unless defined?(Release::GateEnv)` guard that used to stand here did NOT
+# save us. Under `bin/rails test` the runner requires the test files BEFORE any of
+# them boots the app (this one deliberately never requires test_helper), so when this
+# file loaded first the constant was undefined, the require_relative fired, and it
+# defined ::Release as a PLAIN MODULE. Zeitwerk could then never take the name back —
+# Ruby's `autoload` is a NO-OP on an already-defined constant — so the real Release AR
+# model stayed shadowed and every later test in the process died on Task#release with
+# "The Release model class ... is not an ActiveRecord::Base subclass". That is the
+# order-dependent false-red that the release gate (which collects all of test/lib)
+# tripped over, while GitHub CI stayed green on the same SHA.
+#
+# `defined?(Rails)` alone is NOT enough either: railties is loaded, so the constant
+# exists, but the app is not initialized and nothing is autoloadable yet. So BOOT the
+# app — exactly what test_helper does — and then let Zeitwerk resolve the constant.
+# Bare (`ruby test/lib/session_env_test.rb`, and the same load path bin/release.rb
+# uses) there is no Rails at all, and the require_relative is correct and load-bearing.
+if defined?(Rails)
+  require_relative "../../config/environment"
+  Release::GateEnv.name # Zeitwerk resolves it — never require_relative an autoloadable path
+else
+  require_relative "../../app/models/release/gate_env"
+end
 
 # The neutralizer's own contract. Standalone (bare minitest/autorun) BY DESIGN —
 # it is the same load path the test/lib/*.rb spawner tests use, so this file
@@ -43,6 +65,26 @@ class SessionEnvTest < Minitest::Test
     assert_equal Release::GateEnv::SESSION_KEYS, SessionEnv::SESSION_KEYS,
                  "SessionEnv and Release::GateEnv session keys have DRIFTED — " \
                  "they must stay in lockstep; add the key to both."
+  end
+
+  # THE POISONING GUARD. Loading this file must never shadow the ::Release AR model
+  # with a plain module — the bug that made the release gate a false-red: a
+  # require_relative of the autoloadable app/models/release/gate_env.rb defined
+  # ::Release itself outside Zeitwerk, and every later test in the process died on
+  # Task#release. Asserted as the POSITIVE property (Release is the real model), so
+  # it holds against any spelling of the mistake, not just the one we made. Skipped
+  # bare, where there is no Rails and a plain ::Release module is the correct answer.
+  def test_loading_this_file_does_not_shadow_the_release_model
+    skip "no Rails in the bare run — a plain ::Release module is correct here" unless defined?(Rails)
+
+    # Both halves of the contract, each with its own legible red. The boot assertion
+    # is not ceremony: it is the state the OLD code silently skipped, and without it
+    # a reintroduced require_relative fails here as a baffling "uninitialized constant
+    # ActiveRecord" instead of naming the actual mistake.
+    assert Rails.application&.initialized?,
+           "Rails is loaded but the app was never booted — nothing under app/ is autoloadable"
+    assert_operator Release, :<, ActiveRecord::Base,
+                    "::Release was defined OUTSIDE Zeitwerk — an autoloadable path was require_relative'd"
   end
 
   # The same contract asserted as BEHAVIOR, end-to-end through a real spawn: every

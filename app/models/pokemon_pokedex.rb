@@ -31,6 +31,27 @@ class PokemonPokedex
   # only for the single winning sighting.
   Appearance = Struct.new(:slug, :at, :shiny, :session_id, :task_slug, keyword_init: true)
 
+  # One cell of the collection grid: a species plus the COLLECTION STATE the grid
+  # renders it in. The three states are exclusive and ordered by the dex invariant
+  # (caught ⊆ seen), so :caught is decided before :seen. `evolutions` are the cells
+  # this form evolves into — themselves Entries, so each evolution circle is drawn in
+  # its OWN state and an unseen form never spoils itself through its own line.
+  Entry = Struct.new(:pokemon, :state, :shiny_seen, :evolutions, keyword_init: true) do
+    def caught?
+      state == :caught
+    end
+
+    def unseen?
+      state == :unseen
+    end
+
+    # Revealed = encountered at all. The grid only lets a revealed species flip to
+    # its shiny art; flipping a silhouette would just redraw the same silhouette.
+    def revealed?
+      !unseen?
+    end
+  end
+
   attr_reader :recent_limit
 
   def initialize(recent_limit: 20)
@@ -51,6 +72,53 @@ class PokemonPokedex
   # pre-evolutions. shiny:true counts only species caught via a shiny ship.
   def caught_pokemon(shiny: false)
     caught_slugs(shiny: shiny).size
+  end
+
+  # THE COLLECTION GRID: every seeded species in dex order, each carrying the state
+  # the grid draws it in — :caught (shipped, full color), :seen (encountered, dimmed)
+  # or :unseen (silhouette) — plus whether it has ever been sighted shiny.
+  #
+  # It reads ONLY the memos the two cards above already built: the in-memory dex, the
+  # first-sighting map, and the caught set. So rendering all 251 cells adds ZERO
+  # queries to a public pageview — the whole grid is a re-projection of numbers the
+  # page had already paid for.
+  def dex_entries
+    @dex_entries ||= begin
+      shiny_seen = seen_slugs(shiny: true)
+      entries = all_pokemon.map do |pokemon|
+        Entry.new(pokemon: pokemon, state: entry_state(pokemon.slug),
+                  shiny_seen: shiny_seen.include?(pokemon.slug), evolutions: [])
+      end
+
+      # Link each entry to the ENTRIES it evolves into, in a second pass over the map
+      # just built. Pokemon#evolutions would query per cell — 251 of them on a public
+      # page — and the evolution circles need each next form's state anyway.
+      by_slug = entries.index_by { |entry| entry.pokemon.slug }
+      entries.each do |entry|
+        entry.evolutions = Array(entry.pokemon.evolution).filter_map { |slug| by_slug[slug] }
+      end
+    end
+  end
+
+  # Every seeded species, dex order. Sorted in Ruby off the map the cards already
+  # loaded rather than re-querying with an ORDER BY — see #dex_entries.
+  def all_pokemon
+    @all_pokemon ||= pokemon_by_slug.values.sort_by(&:dex)
+  end
+
+  # The SEEN species as a Set of slugs — the same first-sighting map #seen_pokemon
+  # counts, exposed for the grid instead of recomputed.
+  def seen_slugs(shiny: false)
+    (@seen_slugs ||= {})[shiny] ||= first_sightings(shiny: shiny).keys.to_set
+  end
+
+  # The CAUGHT species as a Set of slugs: each shipped mascot PLUS its pre-evolutions.
+  # A task ships its FINAL form, so catching it also catches everything earlier in the
+  # line. Only seeded Pokémon count. This is what #caught_pokemon counts.
+  def caught_slugs(shiny: false)
+    (@caught_slugs ||= {})[shiny] ||= catch_appearances(shiny: shiny).each_with_object(Set.new) do |appearance, set|
+      lineage_up_to(appearance.slug).each { |slug| set << slug if pokemon_by_slug.key?(slug) }
+    end
   end
 
   # The newest UNIQUE Pokémon — the species whose earliest sighting is the most
@@ -87,6 +155,20 @@ class PokemonPokedex
   end
 
   private
+
+  # One species' collection state. The order is the dex invariant, not a preference:
+  # caught is a SUBSET of seen (a catch is an encounter), so every caught species is
+  # also in `seen_slugs` and must be claimed by :caught first or it would render as
+  # merely seen.
+  def entry_state(slug)
+    if caught_slugs.include?(slug)
+      :caught
+    elsif seen_slugs.include?(slug)
+      :seen
+    else
+      :unseen
+    end
+  end
 
   # Build the featured Sighting from the earliest-per-species map: pick the species
   # whose first sighting is the most recent, then resolve its Pokémon + task.
@@ -228,15 +310,6 @@ class PokemonPokedex
         .each_with_object({}) do |(task_slug, mascot, shiny_flag), map|
           map[task_slug] = [mascot, Task.shiny_value?(shiny_flag)] if mascot.present?
         end
-  end
-
-  # The set of caught species: each shipped mascot PLUS its pre-evolutions. A task
-  # ships its FINAL form, so catching it also catches everything earlier in the
-  # line. Only seeded Pokémon count.
-  def caught_slugs(shiny: false)
-    (@caught_slugs ||= {})[shiny] ||= catch_appearances(shiny: shiny).each_with_object(Set.new) do |appearance, set|
-      lineage_up_to(appearance.slug).each { |slug| set << slug if pokemon_by_slug.key?(slug) }
-    end
   end
 
   # A caught slug plus its PRE-EVOLUTIONS: the ancestor path base -> slug.

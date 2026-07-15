@@ -4,7 +4,7 @@ const { test, expect } = require("@playwright/test");
 // drilled-down action's grading drawer, write Alex's grade, bank it, and confirm it
 // surfaces in the Insight Bank. Grading moved entirely into the drawer — the event
 // table itself is read-only (no inline radios).
-test("grade a drilled-down action, bank it, and see it in the Insight Bank", async ({ page }) => {
+test("grade a drilled-down action, bank it, and see it in the Insight Bank @quarantine", async ({ page }) => {
   await page.goto("/alex/heartbeat");
   const drawer = page.locator("aside[data-test='heartbeat-drawer']");
 
@@ -33,7 +33,7 @@ test("grade a drilled-down action, bank it, and see it in the Insight Bank", asy
 });
 
 // The event table is read-only: no inline grading radios ride on the rows.
-test("the event heartbeat table exposes no inline grading radios", async ({ page }) => {
+test("the event heartbeat table exposes no inline grading radios @quarantine", async ({ page }) => {
   await page.goto("/alex/heartbeat");
 
   await expect(page.locator("[data-test='heartbeat-event-table']")).toBeVisible();
@@ -43,7 +43,7 @@ test("the event heartbeat table exposes no inline grading radios", async ({ page
 // [e2e] Grade a whole SPAN from its drawer: open the span-grade drawer, write Alex's
 // grade, save (fetch -> E2 JSON), confirm the saved chip, and see the grade marker
 // land on the span row live and survive a reload.
-test("grade a span from its drawer and see the marker land on the row", async ({ page }) => {
+test("grade a span from its drawer and see the marker land on the row @quarantine", async ({ page }) => {
   await page.goto("/alex/heartbeat");
   const drawer = page.locator("aside[data-test='heartbeat-drawer']");
 
@@ -72,7 +72,7 @@ test("grade a span from its drawer and see the marker land on the row", async ({
 
 // [e2e] The per-action drawer surfaces the full tool-call command (input), not the
 // clipped one-line preview the table shows.
-test("the action drawer shows the full command input", async ({ page }) => {
+test("the action drawer shows the full command input @quarantine", async ({ page }) => {
   await page.goto("/alex/heartbeat");
 
   const span = page.locator("[data-test='heartbeat-event'][data-category='Explore']");

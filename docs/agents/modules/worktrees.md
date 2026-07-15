@@ -182,9 +182,9 @@ bin/agent-worktree scale status
   can never nominate a desk the sweep would refuse. The board read is genuinely
   bounded (10s, `AGENT_WORKTREE_TASK_TIMEOUT`) because it kills the child — so a
   hung or black-holed board cannot stall a sweep. A withheld desk is named with its
-  reason and the builder's heartbeat age, and **every branch that gives up on
-  checking says so**, because a guard that silently disables itself is worse than no
-  guard.
+  reason — and, for a confirmed live claim, the builder's heartbeat age — and **every
+  branch that gives up on checking says so**, because a guard that silently disables
+  itself is worse than no guard.
   - **A QUIET desk is still a HELD desk — quiet never makes it reclaimable.** The
     board also reports a task's last *durable* progress beside its liveness (see
     [`devops-task-board.md`](devops-task-board.md#the-build-claim-liveness-and-progress-are-two-facts)),
@@ -195,13 +195,23 @@ bin/agent-worktree scale status
     minutes at p99), so reclaiming on staleness would trade a rare lying-green for
     a **frequent lying-red** — and a false reclaim destroys work in flight. A human
     reads the progress fact and decides; the sweep never does.
-  - **Fail-open, except where it would destroy something.** The three "we did not
-    find a live claim" cases are *not* alike, and the destroy path treats them
-    differently:
+  - **Fail-open, except where it would destroy something.** When the guard reads the
+    claim, the dispositions short of a *confirmed, parseable* live lease are *not*
+    alike, and the destroy path treats them differently:
     - **lapsed** — we checked; the builder is gone. Reclaimable everywhere. ✔
     - **unbound** — we cannot *identify* the desk, so there is no claim to look up.
       A forced fail-open everywhere (withholding every unidentifiable desk would
       wedge cleanup). It warns.
+    - **corrupt** — a claim is present but its lease timestamp is *unparseable*, so
+      liveness cannot be checked. **Withheld everywhere**, exactly like an unreadable
+      board: a desk we cannot verify must never read as free on a destroy path. But
+      the hold is named *honestly* — `claim expiry unverifiable … inspect task
+      <slug>`, **not** `held by a live builder` — because we never confirmed a
+      builder, only that we could not check (and there is no heartbeat age to report).
+      `ClaimLease.corrupt_expiry?` exists precisely to make this branch. Distinct from
+      a **blank** expiry, which is a never-renewed relic and stays fail-open (lapsed):
+      the renewer always writes an expiry, so blank means dead, unparseable means
+      unreadable.
     - **bound, but the board could not be read** (500 / timeout / auth) — we know the
       desk *could* be claimed and simply failed to find out. It is **withheld
       everywhere**. The board 500s under Postgres pressure during heavy parallel
