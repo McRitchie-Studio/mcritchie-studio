@@ -316,7 +316,16 @@ class FullSuiteCheckTest < Minitest::Test
   # parent shell cannot mask the default. The browser seam is forced PRESENT so the
   # verdict is identical on a Mac and on CI's Linux runner.
   def run_default_test_lane(dir, extra_env = {})
-    env = SessionEnv.neutralized({
+    # child_env, NOT bare SessionEnv.neutralized — this shells a full-suite-check that
+    # runs its DB preflight, so it MUST inherit NO_AMBIENT_DB (TEST_DATABASE_URL=nil +
+    # CERT_GUARD_PSQL disabled) exactly as run_check does. Without it, the child inherits
+    # the AMBIENT test DB and refuses when that DB is held — which is deterministic inside
+    # the release gate, whose own suite is running in mcritchie_studio_gate_test while this
+    # child tries to prepare it. (Green in CI, red in the gate: the exact gate-host
+    # divergence the pre-QA gate warns about.) The stub bin/rails never touches a real DB,
+    # so scrubbing the ambient one changes nothing this test asserts — it only stops the
+    # child from colliding with the suite that spawned it.
+    env = child_env({
       "FULL_SUITE_ROOT" => dir,
       "FULL_SUITE_TEST_CMD" => nil,
       "FULL_SUITE_TEST_DB_RESET_CMD" => "true",
