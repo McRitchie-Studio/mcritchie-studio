@@ -8,6 +8,16 @@
 > `submitted` seam — plus `blocked` (side) and `archived` (terminal).
 > `bin/task`, `bin/dor-check`, and the board speak it.
 >
+> **DevOps v2 — the `accepted` ladder + Actions-authoritative gates (approved
+> 2026-07-14, in rollout).** Feature PRs will target a new persistent **`accepted`**
+> branch below `release` (review merges there, stamping `merged: "accepted"`);
+> **GitHub Actions becomes the authoritative gate verdict** at each promotion seam
+> (G1 stays a fast local pre-flight); and QA + prod **deploys move into Actions**,
+> gated by GitHub Environments (optimistic QA, operator-confirmed prod). See the
+> **target-model** subsection at the head of §1 and the phased rollout in
+> "Implementation order". Piloted in `mcritchie-studio`, then rolio, then
+> turf-monster; the Phase-1 base-flip cuts over onto an empty board.
+>
 > **Landed since:** the `Release` singleton model; the persistent-`release`
 > branch CLI — `bin/release init|merge|prepare|ship` (§1.1); and
 > `bin/agent-worktree`'s release-aware base default — `new` cuts the feature
@@ -142,6 +152,83 @@ reviewed|assembled|shipped|submitted|building`, never the default flat `bin/task
 list` (it caps at the 20 newest tasks across all stages with no truncation
 warning, so older actionable work silently falls off). See
 [`parallel-agent-devops.md` → Step 0](../modules/parallel-agent-devops.md#step-0--assess-the-queue-by-stage).
+
+### Target model — the `accepted` ladder + Actions-authoritative gates (read this first)
+
+*Approved 2026-07-14; landing incrementally (phases in "Implementation order"),
+piloted in `mcritchie-studio` first. The subsections that follow (§1.1, §1.2, the
+Feature/Bug SOPs, §3.3 DoR, and Workflow 2 in §4) describe today's two-branch
+mechanics and are reconciled to this model as each phase lands. Where they still
+say "PR into `release`", "the sweep merges each feature PR", or "the gate runs the
+local suite", read the target below.*
+
+**Why.** Today the *authoritative* test-and-deploy verdict runs locally on a
+developer machine — `fast-check`/`full-suite-check` certify G1, and `bin/release
+prepare`/`ship` run the G3/G4 suites in local gate workspaces and `git push heroku`
+directly. That local-cert model is the root of a documented flakiness class
+(parallel-cert SIGSEGVs, stale-cert false positives, shared-primary-torn-mid-suite
+false reds) that we have spent real effort mitigating with fingerprinting and
+isolated gate workspaces. v2 moves the deciding run onto clean, isolated GitHub
+Actions runners and moves deploys into Actions — deterministic verdicts, and
+orchestrators that "just work with PRs and trigger Actions".
+
+**Three persistent branches per repo — a promotion ladder.** `accepted → release
+→ main`, one name each, all permanent (like today's `release`) and each
+re-baselined after a ship:
+
+- **`accepted`** — the integration line. `feat/<slug>` PRs target it, and
+  **review merges them here on approval** (the merge *is* the acceptance). This is
+  new authority: today review is review-only and nobody merges at review.
+  Complications are resolved on `accepted`, never on `release`.
+- **`release`** — the release-state machine (the exact code a release *is*). qa
+  promotes **ONE `accepted → release` batch PR** — replacing today's N per-task
+  `feat → release` sweep-merges — merges it on green, and QA-deploys.
+- **`main`** — production. `release → main` is the production candidate; the merge
+  is a formality after the release gate + operator confirm.
+
+**`merged` gains an `"accepted"` state.** The crash-recovery git-location field
+becomes `nil → "accepted" → "release" → "main"` (each stamp = where the code
+physically sits: review-merged onto `accepted` → swept into `release` → ff'd into
+`main`). An interrupted reviewer skips re-merging `accepted`; the interrupted-Steffon
+(re-merge `release`) and interrupted-Avi (re-ff `main`) skips are unchanged.
+
+**GitHub Actions is the authoritative test verdict at every seam**, read via
+`CiStatus`/`gh` and recorded into the same attempt-aware `GateRun` rows the gates
+already use. One reusable workflow, one tier per seam:
+
+| Seam (PR into) | CI tier | Grain | Gate |
+|---|---|---|---|
+| `accepted` | **Tier 1** — scan + lint + full base+system suite | per-feature ("granular") | **G1 / G2** |
+| `release` (+ push to `release`) | **Tier 2** — the batch suite | release-batch ("group") | **G3** |
+| `main` | **Tier 3** — exhaustive / pre-prod superset | full app | **G4** precondition |
+
+**G1 stays a fast local pre-flight** (`fast-check`, ~1 min) to save Actions
+minutes and catch obvious breaks; the **authoritative** G1/G2/G3/G4 verdict is the
+Actions conclusion for the seam's SHA (at G3/G4 this *promotes* today's existing
+non-blocking CI auditor to the verdict). On the hub all three tiers run the same
+suite — the hub already runs full+system+scans per PR — so they differ mostly in
+scope; depth divergence (e.g. staging Playwright/@devnet) is a turf-monster
+concern.
+
+**Deploys run in GitHub Actions, gated by GitHub Environments:**
+
+- **QA — auto + optimistic.** A push to `release` triggers the `qa-deploy`
+  workflow (`qa` environment, no reviewer). qa does **not** block on it: once
+  Tier-2 CI is green it opens the `release → main` PR immediately (a broken QA boot
+  no longer stalls the pipeline — the prod Environment reviewer is the human gate).
+- **Production — operator-confirmed.** The `prod-deploy` workflow is
+  `workflow_dispatch` into a `production` environment carrying a **required
+  reviewer**; the operator's ship approval *is* that Environment approval (an
+  audit-trailed click), replacing the local interactive confirm. It is
+  `workflow_dispatch`, **not** `push:[main]`, so the ship's `release → main`
+  ref-push can't self-fire a production deploy.
+
+**Rollout** (each phase = its own task + PR through the cycle): **0** ratify this
+doc · **1** `accepted` + tiered CI (hub) · **2** Actions CD (hub) · **3** flip gate
+authority + rewrite SOPs (hub) · **4** canary + delete the demoted local gates ·
+**5** propagate to rolio then turf-monster. The Phase-1 base-flip cutover lands on
+an **empty board** (after the current release drain), so the in-flight-PR retarget
+risk is zero.
 
 ### 1.1 The Release model + the persistent `release` branch
 
@@ -1373,3 +1460,33 @@ surfaces.
 3. The heartbeat agent script for the OpenClaw box (review→QA first; ship gate as
    a no-op approval check).
 4. turf-vault single-writer advisory lane.
+
+**DevOps v2 — the `accepted` ladder + Actions-authoritative gates (in rollout, hub-first)**
+
+The target model is specified at the head of §1. Each phase is its own task + PR
+through the cycle; the Phase-1 base-flip cuts over onto an **empty board** (after
+the current release drain), so the in-flight-PR retarget risk is zero.
+
+0. **Ratify this doc** — the target-model subsection + status note (this task).
+1. **`accepted` + tiered CI (hub)** — create the persistent `accepted` branch
+   (`origin/release` ref-push, mirroring `bin/release init`); split `ci.yml` into a
+   `workflow_call` suite (`ci-suite.yml`, suite step kept literal) + a thin
+   entrypoint that selects Tier 1/2/3 by target branch **via `with:`** (never
+   `if:`/`concurrency:`/path filters — the trigger guard tests forbid them); repoint
+   `ci_workflow_triggers_test.rb` / `repos_test.rb` per-tier; flip the feature-branch
+   base `release → accepted` in `bin/dor-check`, `bin/fast-check`,
+   `bin/agent-worktree`.
+2. **Actions CD (hub)** — `qa-deploy.yml` (push→`release`, `qa` env, optimistic
+   `/up` smoke) + `prod-deploy.yml` (`workflow_dispatch`, `production` env with a
+   required reviewer, hard-gated `/up`); the conductor triggers + `gh run watch`es
+   instead of local `git push heroku`.
+3. **Flip gate authority + rewrite SOPs (hub)** — promote the existing `CiStatus`
+   auditor to the G3/G4 verdict (G1 stays a local pre-flight); reconcile §1.1/§1.2,
+   the Feature/Bug SOPs, §3.3 DoR, Workflow 2 (§4), and the gate docs to the target
+   model; `bin/install-agent-docs`.
+4. **Canary + cleanup** — drive one change end-to-end through the new pipeline;
+   then delete the demoted local gate execution.
+5. **Propagate** — rolio (resolve its RUNBOOK "no release branch" note + the
+   system-wait-budget prereq), then turf-monster (`repo_script` deploy + Solana
+   keys + Playwright staging; per-tier registry↔CI binding). Gems (publish-first) +
+   turf-vault (on-chain) are separate tracks.
