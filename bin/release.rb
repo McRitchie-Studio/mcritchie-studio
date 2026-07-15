@@ -185,6 +185,12 @@ AGENT_ACTIVITY = File.expand_path("agent-activity", __dir__)
 # it, ship fast-forwards it into main.
 RELEASE_BRANCH = "release"
 
+# DevOps v2 TRANSITION branch. Phase 1 flipped feature-branch base release→accepted,
+# but the sweep still merges into `release`. Until Phase 3 (review merges accepted,
+# then a promoted accepted→release batch PR), the sweep AUTO-RETARGETS an
+# accepted-based PR to `release` instead of aborting — see ensure_pr_base_release!.
+ACCEPTED_BRANCH = "accepted"
+
 # The producer/consumer repo registry (config/release_repos.yml) — tells the CLI
 # which members are gems (published producer-first, no app branch) vs apps. Same
 # single source of truth Release::Repos reads on the record side.
@@ -384,7 +390,42 @@ def dispatch_and_watch(workflow, inputs = {}, chdir: nil)
   return false unless run_id
 
   _, watched = sh("gh", "run", "watch", run_id.to_s, "--exit-status", chdir: chdir)
-  watched
+  return true if watched
+
+  # Don't trust the WATCH's exit alone. Seen LIVE (Phase 2 validation, run
+  # 29440752482): a transient GitHub HTTP 500 killed `gh run watch` mid-watch while
+  # the run itself SUCCEEDED (prod deployed, /up 200). Returning the watch's exit
+  # would then ABORT a ship that actually shipped — an operator-facing false
+  # negative. So a failed watch is not a verdict: re-query the run's REAL
+  # conclusion and let THAT decide (fails closed if the run genuinely failed or
+  # never completes).
+  say("  ⚠ `gh run watch` exited non-zero for run #{run_id} — re-querying the run's real conclusion (a transient watcher failure is not a failed deploy)")
+  run_concluded_success?(run_id, chdir: chdir)
+end
+
+# The run's REAL conclusion, straight from GitHub, for when `gh run watch` could
+# not report it (a transient watcher failure — an HTTP 500 mid-watch — must never
+# be read as a failed deploy). Polls `gh run view --json status,conclusion` until
+# `status == "completed"`, then returns `conclusion == "success"`. Bounded and
+# FAILS CLOSED: a run that never completes in the budget, or a gh that keeps
+# failing, returns false (a redundant re-verify beats a false green).
+def run_concluded_success?(run_id, chdir: nil, attempts: 20, delay: 5)
+  attempts.times do |i|
+    out, ok = sh("gh", "run", "view", run_id.to_s, "--json", "status,conclusion",
+                 "--jq", "[.status, .conclusion] | @tsv", chdir: chdir, capture: true)
+    if ok
+      status, conclusion = out.strip.split("\t", 2)
+      if status == "completed"
+        say("  run #{run_id} concluded: #{conclusion}")
+        return conclusion == "success"
+      end
+    end
+    break if i == attempts - 1
+
+    sleep delay
+  end
+  say("  ⚠ run #{run_id} never reported a completed status within #{attempts}×#{delay}s — failing closed")
+  false
 end
 
 # The newest GitHub Actions run id for `workflow` — 0 when none exists yet, or
@@ -1149,6 +1190,42 @@ def enforce_review_gate!(screen)
   say("  ⚠ OVERRIDE: sweeping #{named} past the review gate — recording a `review_bypassed` audit event per task.")
 end
 
+# Verify (and, per the DevOps v2 transition stopgap, FIX) a to-merge PR's base
+# before the sweep merges it into `release`. Shared by the explicit `merge`
+# command and `prepare`'s self-healing sweep so the base rule lives in ONE place.
+#
+#   * unreadable base  → ABORT (fail closed — never merge an unverified base).
+#   * base == release  → proceed (already correct).
+#   * base == accepted → RETARGET to `release` (`gh pr edit --base release`) and
+#     proceed. STOPGAP: Phase 1 based feature PRs on `accepted`, but the sweep
+#     merges into `release`; Phase 3 replaces this with review-merges-accepted +
+#     a promoted accepted→release batch PR. Abort if the retarget itself fails.
+#   * any other base   → ABORT (a real misconfiguration, not the transition gap).
+#
+# A DRY run reads the base (so the plan prints the gh call) but changes/verifies
+# nothing — the base read/edit are live gh calls, exactly as the prior inline
+# guards were `if !DRY`. SweepPlan.base_action owns the pure decision.
+def ensure_pr_base_release!(pr_url, slug)
+  base, base_ok = sh("gh", "pr", "view", pr_url, "--json", "baseRefName", "-q", ".baseRefName", capture: true)
+  base = base.strip
+  return if DRY
+
+  abort!("could not read the PR base for #{pr_url} (#{slug}; gh pr view failed) — verify it targets `#{RELEASE_BRANCH}`") unless base_ok
+
+  case Release::SweepPlan.base_action(base, RELEASE_BRANCH, ACCEPTED_BRANCH)
+  when :proceed
+    nil
+  when :retarget
+    step("retarget PR base #{base} → #{RELEASE_BRANCH} for #{slug} (#{pr_url}) — DevOps v2 transition stopgap")
+    _, edited = sh("gh", "pr", "edit", pr_url, "--base", RELEASE_BRANCH, capture: false)
+    abort!("could not retarget #{pr_url} (#{slug}) base #{base} → #{RELEASE_BRANCH} (`gh pr edit` failed) — " \
+           "retarget it by hand (`gh pr edit #{pr_url} --base #{RELEASE_BRANCH}`), then re-run.") unless edited
+  else
+    abort!("PR #{pr_url} (#{slug}) targets '#{base}', not '#{RELEASE_BRANCH}' — retarget it " \
+           "(`gh pr edit #{pr_url} --base #{RELEASE_BRANCH}`), then re-run.")
+  end
+end
+
 def merge
   # `--override` is the audited review-gate escape hatch — consume it BEFORE
   # positional_slugs reads the rest (take_flag deletes it from ARGV so it's never
@@ -1202,19 +1279,11 @@ def merge
   end
   merge_overlap_report(pr_groups)
 
-  # 4. Verify EVERY to-merge PR's base is `release` up front (fail-fast: nothing
-  #    merged yet, so a wrong base can't leave a half-merged batch).
-  pr_groups.each do |info|
-    pr_url = info["pr_url"]
-    base, base_ok = sh("gh", "pr", "view", pr_url, "--json", "baseRefName", "-q", ".baseRefName", capture: true)
-    base = base.strip
-    # Fail CLOSED: if the base can't be read, don't proceed to an unverified merge.
-    abort!("could not read the PR base for #{pr_url} (#{info['slug']}; gh pr view failed) — verify it targets `#{RELEASE_BRANCH}`") if !DRY && !base_ok
-    if !DRY && base != RELEASE_BRANCH
-      abort!("PR #{pr_url} (#{info['slug']}) targets '#{base}', not '#{RELEASE_BRANCH}' — retarget it " \
-             "(`gh pr edit #{pr_url} --base #{RELEASE_BRANCH}`), then re-run.")
-    end
-  end
+  # 4. Verify EVERY to-merge PR's base up front (fail-fast: nothing merged yet, so
+  #    a wrong base can't leave a half-merged batch). An `accepted`-based PR is
+  #    auto-retargeted to `release` (transition stopgap); any other non-release
+  #    base still aborts. See ensure_pr_base_release!.
+  pr_groups.each { |info| ensure_pr_base_release!(info["pr_url"], info["slug"]) }
 
   # 5. Merge each PR (bases verified). Track everything merged-or-skipped so the
   #    BATCHED sweep (step 6, in `ensure`) records every landed PR even if a
@@ -2156,16 +2225,9 @@ def prepare
   to_merge  = cands.select { |c| c["merged"].to_s.empty? && !c["pr_url"].to_s.empty? }
   pr_groups = merge_pr_groups(to_merge)
   merge_overlap_report(pr_groups)
-  pr_groups.each do |info|
-    pr_url = info["pr_url"]
-    base, base_ok = sh("gh", "pr", "view", pr_url, "--json", "baseRefName", "-q", ".baseRefName", capture: true)
-    base = base.strip
-    abort!("could not read the PR base for #{pr_url} (#{info['slug']}; gh pr view failed) — verify it targets `#{RELEASE_BRANCH}`") if !DRY && !base_ok
-    if !DRY && base != RELEASE_BRANCH
-      abort!("PR #{pr_url} (#{info['slug']}) targets '#{base}', not '#{RELEASE_BRANCH}' — retarget it " \
-             "(`gh pr edit #{pr_url} --base #{RELEASE_BRANCH}`), then re-run.")
-    end
-  end
+  # Bases verified fail-fast — an `accepted`-based PR is auto-retargeted to
+  # `release` (transition stopgap), any other non-release base aborts the sweep.
+  pr_groups.each { |info| ensure_pr_base_release!(info["pr_url"], info["slug"]) }
 
   landed = plan["skip"].map { |row| row["slug"] }
   left_reviewed = []

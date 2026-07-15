@@ -3415,6 +3415,93 @@ class ReleaseCliTest < Minitest::Test
     assert_includes out, "usage: bin/release merge", "no slug → usage abort"
   end
 
+  # --- DevOps v2 transition stopgap: auto-retarget an accepted-based PR ---------
+  # Phase 1 flipped feature-branch base release→accepted, but the sweep merges into
+  # `release`. A reviewed PR still on `accepted` must be RETARGETED and swept, not
+  # aborted (ensure_pr_base_release! → SweepPlan.base_action). These drive the real
+  # `merge` sweep with conductor/sh/gh stubbed.
+  def test_merge_auto_retargets_an_accepted_based_pr_then_merges
+    setup = <<~RUBY
+      def conductor(ruby, read_only: false)
+        if read_only
+          { "tasks" => [{ "slug" => "task-a", "pr_url" => "https://gh/pr/1", "repo" => "mcritchie-studio", "stage" => "reviewed" }] }
+        else
+          $stdout.puts("ADOPT-CALL")
+          { "adopted" => [], "slug" => "rel-batch", "state" => "assembling" }
+        end
+      end
+      def sh(*a, **_k)
+        if a.include?("baseRefName")
+          ["accepted", true]                       # Phase 1 default base
+        elsif a[0, 3] == ["gh", "pr", "edit"]
+          $stdout.puts("EDIT-CALL " + a.join(" "))
+          ["", true]
+        elsif a.include?("--merge")
+          $stdout.puts("MERGE-CALL")
+          ["", true]
+        else
+          ["", true]
+        end
+      end
+      def gh_pr_files(_pr) = []
+    RUBY
+    out = run_cli(%w[task-a], call: "merge", setup: setup)
+
+    assert_includes out, "retarget PR base accepted → release for task-a",
+                     "an accepted-based PR is retargeted, not aborted"
+    assert_includes out, "EDIT-CALL", "the retarget runs `gh pr edit`"
+    assert_includes out, "--base release", "…to base release"
+    assert_includes out, "MERGE-CALL", "and the sweep proceeds to merge it"
+    assert_includes out, "Swept task-a"
+  end
+
+  def test_merge_aborts_on_a_base_that_is_neither_release_nor_accepted
+    setup = <<~RUBY
+      def conductor(ruby, read_only: false)
+        read_only ? { "tasks" => [{ "slug" => "task-a", "pr_url" => "https://gh/pr/1", "repo" => "mcritchie-studio", "stage" => "reviewed" }] } : { "adopted" => [], "slug" => "rel-batch", "state" => "assembling" }
+      end
+      def sh(*a, **_k)
+        if a.include?("baseRefName")
+          ["some-random-branch", true]
+        elsif a.include?("--merge")
+          $stdout.puts("MERGE-CALL")
+          ["", true]
+        else
+          ["", true]
+        end
+      end
+      def gh_pr_files(_pr) = []
+    RUBY
+    out = run_cli(%w[task-a], call: "begin; merge; rescue SystemExit => e; puts('ABORTED: ' + e.message); end", setup: setup)
+
+    assert_includes out, "ABORTED", "a non-release, non-accepted base aborts the sweep"
+    assert_includes out, "targets 'some-random-branch', not 'release'"
+    refute_includes out, "MERGE-CALL", "nothing merges when a base is wrong"
+  end
+
+  def test_merge_leaves_a_release_based_pr_untouched
+    setup = <<~RUBY
+      def conductor(ruby, read_only: false)
+        if read_only
+          { "tasks" => [{ "slug" => "task-a", "pr_url" => "https://gh/pr/1", "repo" => "mcritchie-studio", "stage" => "reviewed" }] }
+        else
+          $stdout.puts("ADOPT-CALL")
+          { "adopted" => [], "slug" => "rel-batch", "state" => "assembling" }
+        end
+      end
+      def sh(*a, **_k)
+        $stdout.puts("EDIT-CALL") if a[0, 3] == ["gh", "pr", "edit"]
+        a.include?("baseRefName") ? ["release", true] : ["", true]
+      end
+      def gh_pr_files(_pr) = []
+    RUBY
+    out = run_cli(%w[task-a], call: "merge", setup: setup)
+
+    refute_includes out, "EDIT-CALL", "a release-based PR is never retargeted"
+    refute_includes out, "retarget PR base", "…and no stopgap step prints"
+    assert_includes out, "Swept task-a"
+  end
+
   # The ensure-adopt is the half-state killer: if a LATER gh pr merge fails, the
   # batched adopt STILL records the PRs that DID merge (so none is left "merged
   # but stuck reviewed"), then the command aborts.
@@ -4219,6 +4306,56 @@ class ReleaseCliTest < Minitest::Test
 
     assert_includes out, "WATCHED 101", "must watch the strictly-greater run it created, not the pre-existing one"
     assert_includes out, "RESULT true", "a green watched run returns true"
+  end
+
+  # [integration] `gh run watch` is not a trustworthy verdict on its own. Seen LIVE
+  # at Phase 2 validation: a transient GitHub HTTP 500 killed the watch mid-run
+  # while the run SUCCEEDED (prod deployed, /up 200). dispatch_and_watch must not
+  # abort a ship that actually shipped — on a failed watch it re-queries the run's
+  # REAL conclusion (`gh run view`) and lets THAT decide. These stub the watch to
+  # fail, then vary what the conclusion poll reports.
+  #
+  # A shared stub builder: watch always FAILS; `gh run view` returns `run_view`.
+  def gha_watch_500_setup(run_view)
+    <<~RUBY
+      def sleep(*) = nil
+      $list_calls = 0
+      def sh(*cmd, capture: false, chdir: nil, env: nil)
+        if cmd[0, 3] == ["gh", "run", "list"]
+          $list_calls += 1
+          return [($list_calls == 1 ? "100" : "101"), true]
+        end
+        return ["", false] if cmd[0, 3] == ["gh", "run", "watch"]   # transient HTTP 500 kills the watcher
+        return [#{run_view.inspect}, true] if cmd[0, 3] == ["gh", "run", "view"]
+        ["", true]   # gh workflow run
+      end
+    RUBY
+  end
+
+  def test_dispatch_and_watch_trusts_the_run_conclusion_when_the_watch_500s
+    # The exact live scenario: watch dies, but `gh run view` reports completed/success.
+    out = run_cli(["--yes"], setup: gha_watch_500_setup("completed\tsuccess"),
+                  call: %{puts("RESULT " + dispatch_and_watch("prod-deploy.yml", { "sha" => "abc" }).to_s)})
+
+    assert_includes out, "RESULT true",
+                     "a watcher HTTP 500 must NOT abort a run that actually succeeded"
+  end
+
+  def test_dispatch_and_watch_fails_when_the_run_itself_concluded_failure
+    out = run_cli(["--yes"], setup: gha_watch_500_setup("completed\tfailure"),
+                  call: %{puts("RESULT " + dispatch_and_watch("prod-deploy.yml", { "sha" => "abc" }).to_s)})
+
+    assert_includes out, "RESULT false",
+                     "a genuinely failed run (watch failed AND conclusion=failure) fails closed"
+  end
+
+  def test_dispatch_and_watch_fails_closed_when_the_run_never_completes
+    # watch failed and the run never reaches completed within the budget → false.
+    out = run_cli(["--yes"], setup: gha_watch_500_setup("in_progress\t"),
+                  call: %{puts("RESULT " + dispatch_and_watch("prod-deploy.yml", { "sha" => "abc" }).to_s)})
+
+    assert_includes out, "RESULT false",
+                     "a run that never completes must fail closed, not hang or false-green"
   end
 
   # [unit] The env contract for a repo's OWN deploy script. It gets the workspace's

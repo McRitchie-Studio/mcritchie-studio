@@ -83,4 +83,31 @@ class Release::SweepPlanTest < ActiveSupport::TestCase
 
     assert_equal ["task-a"], plan["unmergeable"]
   end
+
+  # --- base_action: the DevOps v2 transition-stopgap base decision -------------
+
+  test "[unit] base_action proceeds on a release-based PR (already correct)" do
+    assert_equal :proceed, Release::SweepPlan.base_action("release", "release", "accepted")
+  end
+
+  test "[unit] base_action RETARGETS an accepted-based PR (transition stopgap)" do
+    # Phase 1 based feature PRs on `accepted`; the sweep merges into `release`, so
+    # an accepted base is retargeted-and-swept, not aborted.
+    assert_equal :retarget, Release::SweepPlan.base_action("accepted", "release", "accepted")
+  end
+
+  test "[unit] base_action ABORTS any other non-release base (a real misconfiguration)" do
+    assert_equal :abort, Release::SweepPlan.base_action("main", "release", "accepted")
+    assert_equal :abort, Release::SweepPlan.base_action("feat/whatever", "release", "accepted")
+  end
+
+  test "[unit] base_action treats a blank/whitespace base as abort — never passes as release" do
+    assert_equal :abort, Release::SweepPlan.base_action("", "release", "accepted")
+    assert_equal :abort, Release::SweepPlan.base_action("  ", "release", "accepted")
+  end
+
+  test "[unit] base_action trims surrounding whitespace before matching" do
+    assert_equal :proceed,  Release::SweepPlan.base_action(" release ", "release", "accepted")
+    assert_equal :retarget, Release::SweepPlan.base_action("accepted\n", "release", "accepted")
+  end
 end
