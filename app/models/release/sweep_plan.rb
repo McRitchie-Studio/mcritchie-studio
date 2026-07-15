@@ -41,6 +41,26 @@ class Release
       }
     end
 
+    # What to do with a to-merge PR's base before the sweep merges it into
+    # `release`. DevOps v2 TRANSITION STOPGAP (Phase 1 → Phase 3): Phase 1 flipped
+    # feature-branch base release→accepted, but the sweep merges into `release`, so
+    # a reviewed PR that still targets `accepted` must be RETARGETED and swept, not
+    # aborted. Any OTHER non-release base is a real misconfiguration → abort.
+    #   release_branch  → :proceed  (already correct — merge as-is)
+    #   accepted_branch → :retarget (gh pr edit --base release, then merge — STOPGAP)
+    #   anything else   → :abort
+    # Pure/IO-free (the CLI owns the gh pr view/edit around it). A blank base reads
+    # as :abort — an unreadable base must never pass as release. Phase 3 removes the
+    # :retarget arm (review merges accepted; a promoted accepted→release batch PR
+    # carries the work), leaving the plain release-or-abort guard.
+    def base_action(base, release_branch, accepted_branch)
+      b = base.to_s.strip
+      return :proceed  if b == release_branch.to_s
+      return :retarget if b == accepted_branch.to_s
+
+      :abort
+    end
+
     # The unique PRs to merge, grouped by pr_url in first-appearance order —
     # several task records may intentionally ride one PR, which is checked and
     # merged ONCE while every rider is swept.
