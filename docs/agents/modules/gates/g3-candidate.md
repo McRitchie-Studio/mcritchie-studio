@@ -241,7 +241,7 @@ informational, never an alarm, never a block:
 
 | State | Means |
 |-------|-------|
-| `none` | No check-run exists for this SHA. `ci.yml` now triggers on `pull_request` + `push:[main, release]` (the `run-ci-on-release-branch` task landed), so a pushed `release` tip normally DOES build — `none` now means a SHA never pushed to GitHub (or a non-GitHub remote), not the everyday case it once was. |
+| `none` | No check-run exists for this SHA. `ci.yml` now triggers on `pull_request` + `push:[main, release]` (the `run-ci-on-release-branch` task landed), so a pushed `release` tip normally DOES build — `none` now means a SHA never pushed to GitHub, not the everyday case it once was (a non-GitHub remote reads as `unverified`, the row below). |
 | `pending` | The push-triggered run has not settled — prepare gates seconds after the merge. |
 | `unverified` | No `gh`, no network, a 404, a non-GitHub remote. |
 | `unreadable` | **The API refused the read** (401/403) — CI may well be green; this client cannot read it. No data, like the rows above, so it never blocks or alarms — but it is **not** benign, and the cross-check says so in its own voice: the auditor is *switched off* for that repo, so its gate is **unaudited, not confirmed**. Prints the repo, classified cause, and cause-specific remedy. |
