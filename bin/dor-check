@@ -257,10 +257,11 @@ end
 #       unstaged  git diff --name-only
 #       untracked git ls-files --others --exclude-standard
 #   * committed against the release-aware base (see diff_base/default_diff_base):
-#     git diff <base>...HEAD. Default base is origin/release when it exists, else
-#     origin/main — because post-cutover branches are cut off `release` (which runs
-#     AHEAD of `main`), so diffing against origin/main drags in everyone else's
-#     already-merged-to-release work → a false code diff. DOR_CHECK_DIFF_BASE
+#     git diff <base>...HEAD. Default base is origin/accepted when it exists, else
+#     origin/release, else origin/main — post-v2 branches are cut off `accepted`
+#     (which runs AHEAD of `release`, which runs AHEAD of `main`), so diffing
+#     against a lower ref drags in everyone else's already-integrated work → a
+#     false code diff. DOR_CHECK_DIFF_BASE
 #     overrides the default. Best-effort; the base can be unfetched on a fresh
 #     branch, which is fine — the working-tree views above don't depend on it.
 # Diff dir defaults to the agent's worktree (cwd's git toplevel) so a SATELLITE
