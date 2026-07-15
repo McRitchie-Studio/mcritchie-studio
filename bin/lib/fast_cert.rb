@@ -52,12 +52,15 @@ module FastCert
     files.map(&:strip).reject(&:empty?).uniq
   end
 
-  # origin/release when it exists (post-cutover branches are cut off `release`,
-  # which runs AHEAD of main), else origin/main — same default as bin/dor-check.
+  # origin/accepted when it exists (post-v2 branches are cut off `accepted`), else
+  # origin/release, else origin/main — same three-tier default as bin/dor-check.
   def default_diff_base(root)
-    ok = system("git", "-C", root.to_s, "rev-parse", "--verify", "origin/release",
-                out: File::NULL, err: File::NULL)
-    ok ? "origin/release" : "origin/main"
+    %w[origin/accepted origin/release].each do |ref|
+      ok = system("git", "-C", root.to_s, "rev-parse", "--verify", ref,
+                  out: File::NULL, err: File::NULL)
+      return ref if ok
+    end
+    "origin/main"
   rescue SystemCallError
     "origin/main"
   end

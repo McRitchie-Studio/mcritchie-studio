@@ -237,6 +237,16 @@ class DorCheckTest < Minitest::Test
     with_release_ahead_repo { |dir| assert_equal "origin/release", resolved_base(dir) }
   end
 
+  # origin/accepted (the v2 integration branch feature PRs target) is preferred
+  # over origin/release when present — the base-flip regression.
+  def test_default_diff_base_prefers_origin_accepted_over_release
+    with_release_ahead_repo do |dir|
+      assert_equal "origin/release", resolved_base(dir)
+      assert system("git -C #{dir} update-ref refs/remotes/origin/accepted HEAD >/dev/null 2>&1"), "forge origin/accepted"
+      assert_equal "origin/accepted", resolved_base(dir)
+    end
+  end
+
   def test_default_diff_base_falls_back_to_origin_main_without_release
     # Plain repo: no origin/release forged → falls back to origin/main.
     with_git_repo { |dir| assert_equal "origin/main", resolved_base(dir) }

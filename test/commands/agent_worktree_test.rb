@@ -194,6 +194,20 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     assert_match %r{/compare/release\.\.\.}, record.fetch("compare_url")
   end
 
+  test "snapshot prefers origin/accepted as the base when the accepted branch exists" do
+    register_release_ref_ahead_of_main
+    register_accepted_ref_ahead_of_release
+    registry_path = File.join(@projects_dir, ".agents", "registry-accepted.json")
+
+    out, err, status = agent_worktree("snapshot", "mcritchie-studio", "--write", env: { "AGENT_WORKTREE_REGISTRY" => registry_path })
+
+    assert status.success?, err
+    record = snapshot_record(registry_path)
+    assert_equal "origin/accepted", record.fetch("base_ref")
+    assert_equal "accepted", record.fetch("base_branch")
+    assert_match %r{/compare/accepted\.\.\.}, record.fetch("compare_url")
+  end
+
   test "finish push pr blocks without a bound production task" do
     out, err, status = agent_worktree("finish", "mcritchie-studio", @task, "--push", "--pr")
 
@@ -1416,6 +1430,24 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     git!(@hub_dir, "update-ref", "refs/remotes/origin/release", sha.strip)
     git!(@hub_dir, "worktree", "remove", build_dir, "--force")
     git!(@hub_dir, "branch", "-D", "release-build")
+  end
+
+  # Register refs/remotes/origin/accepted one commit ahead of release, so base
+  # resolution can be exercised against the v2 integration branch (preferred over
+  # release/main by base_ref_for).
+  def register_accepted_ref_ahead_of_release
+    build_dir = File.join(@projects_dir, "accepted-build")
+    git!(@hub_dir, "worktree", "add", "-b", "accepted-build", build_dir, "refs/remotes/origin/release")
+    git!(build_dir, "config", "user.email", "agent-test@example.com")
+    git!(build_dir, "config", "user.name", "Agent Test")
+    File.write(File.join(build_dir, "accepted.txt"), "accepted\n")
+    git!(build_dir, "add", "accepted.txt")
+    git!(build_dir, "commit", "-m", "Accepted-only commit")
+    sha, _err, status = Open3.capture3(SessionEnv.neutralized, "git", "rev-parse", "HEAD", chdir: build_dir)
+    assert status.success?, "could not resolve accepted-build HEAD"
+    git!(@hub_dir, "update-ref", "refs/remotes/origin/accepted", sha.strip)
+    git!(@hub_dir, "worktree", "remove", build_dir, "--force")
+    git!(@hub_dir, "branch", "-D", "accepted-build")
   end
 
   def snapshot_record(registry_path)

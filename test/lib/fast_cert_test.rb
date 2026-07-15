@@ -235,4 +235,16 @@ class FastCertTest < Minitest::Test
       assert_equal "origin/release", FastCert.default_diff_base(dir)
     end
   end
+
+  # origin/accepted (the v2 integration branch feature PRs target) is preferred
+  # over origin/release when present — the base-flip regression.
+  def test_default_diff_base_prefers_origin_accepted_over_release
+    with_git_repo do |dir, git|
+      sha = `git -C #{dir} rev-parse HEAD`.strip
+      git.call("update-ref refs/remotes/origin/release #{sha}")
+      assert_equal "origin/release", FastCert.default_diff_base(dir)
+      git.call("update-ref refs/remotes/origin/accepted #{sha}")
+      assert_equal "origin/accepted", FastCert.default_diff_base(dir)
+    end
+  end
 end
