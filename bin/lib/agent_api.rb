@@ -6,6 +6,7 @@ require "uri"
 require "time"
 require "fileutils"
 require_relative "projects_root"
+require_relative "../../lib/task_usage_sandbox"
 
 # AgentApi — the ONE agent-API client behind the narration/insights bin stack
 # (bin/agent-activity, bin/atomic-capture-hook, bin/session-insights). Each of
@@ -67,7 +68,11 @@ class AgentApi
   # (each anchored one level up from bin/).
   REPO_ROOT = File.expand_path("../..", __dir__)
 
-  attr_reader :open_timeout, :read_timeout
+  # +env+ is exposed because it is what RESOLVED projects_dir — and the marker
+  # sandbox (bin/lib/session_markers.rb) must evaluate its "was the store pinned?"
+  # rule against that SAME env, not the process ENV. A test that injects an env
+  # here is correctly pinned even though the process ENV is not.
+  attr_reader :open_timeout, :read_timeout, :env
 
   def initialize(open_timeout:, read_timeout:, env: ENV)
     @env = env
@@ -108,8 +113,22 @@ class AgentApi
   end
 
   # Drop the cached token (the caller's 401 policy) so the next call re-mints.
+  #
+  # GUARDED, like every other write into the operator's real .agents state — and
+  # this one is routinely exercised: the narration leak this guard family was built
+  # for fired an authenticated GET at the PRODUCTION board on every unpinned suite
+  # run, and a 401 on that GET drives exactly this delete.
+  #
+  # HONEST SEVERITY, because it sets the priority and an overstatement here would
+  # be its own bug: token.json is a RE-MINTABLE CACHE, not a credential. `token`
+  # (above) re-mints from the 1Password/env secret on the very next call, so a stray
+  # delete is a self-healing cache eviction — a wasted `op read`, not credential
+  # destruction, and nothing an operator would notice. It is guarded because it is
+  # an unguarded write into the real store and the whole point of this family is
+  # that there is no such thing as a write we may leave to luck; not because it is
+  # an emergency.
   def invalidate_token!
-    File.delete(token_cache_path)
+    File.delete(guarded_token_cache_path)
   rescue StandardError
     nil
   end
@@ -138,6 +157,19 @@ class AgentApi
     File.join(projects_dir, ".agents", "atomic-capture", "token.json")
   end
 
+  # token_cache_path resolved FOR MUTATION — the choke point for this store. Reads
+  # (read_cached_token) use the raw builder: a read cannot pollute. Writes and the
+  # delete come through here, so a sandboxed process that cannot prove its
+  # destination aborts instead of falling back onto the operator's real cache.
+  #
+  # The pin comes from @env (which resolved projects_dir) and the arming from the
+  # process ENV — TaskUsageSandbox.guard_env; see its comment for why the two
+  # differ.
+  def guarded_token_cache_path
+    TaskUsageSandbox.enforce!(token_cache_path, store: "agent-token",
+                                                env: TaskUsageSandbox.guard_env(@env))
+  end
+
   def read_cached_token
     path = token_cache_path
     return nil unless File.file?(path)
@@ -155,7 +187,7 @@ class AgentApi
   end
 
   def write_cached_token(tok, expires_at)
-    path = token_cache_path
+    path = guarded_token_cache_path
     FileUtils.mkdir_p(File.dirname(path))
     File.write(path, JSON.generate("token" => tok, "expires_at" => expires_at))
   rescue StandardError

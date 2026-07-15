@@ -66,8 +66,10 @@ class AgentActivityCliTest < Minitest::Test
   def test_unit_open_activity_marker_round_trip_and_clear
     Dir.mktmpdir do |proj|
       c = cli("CLAUDE_PROJECTS_DIR" => proj)
-      path = c.send(:open_activity_path, SESSION)
-      legacy = c.send(:legacy_open_span_path, SESSION)
+      # The CLI no longer holds a raw marker path at all (that was the footgun), so a
+      # test that wants one reaches into SessionMarkers' private builder explicitly.
+      path = SessionMarkers.send(:marker_path, SESSION, proj, ".open-activity")
+      legacy = SessionMarkers.send(:marker_path, SESSION, proj, ".open-span")
 
       c.send(:write_open_activity, SESSION, 777)
       assert_equal "777", File.read(path).strip
@@ -874,5 +876,113 @@ class AgentActivityCliTest < Minitest::Test
 
   def stub_response(code, body_hash)
     Struct.new(:code, :body).new(code, JSON.generate(body_hash))
+  end
+
+  # PUBLIC AGAIN — and this is not cosmetic. Everything below sat under the `private`
+  # at the top of this helper section, and Minitest only collects PUBLIC `test_*`
+  # methods. So the two sandbox integration tests below NEVER RAN: the suite reported
+  # 53 green and silently skipped them, while the PR's checks_run cited them as the
+  # proof that an unpinned spawn aborts. A test that cannot fail proves nothing, and a
+  # count that does not notice its absence is how it goes unseen. The `private` above
+  # still covers the helpers it was written for.
+  public
+
+  # --- [integration] the narration-marker sandbox (spawned-child vector) --------
+  #
+  # bin/atomic-event writes four markers into <projects>/.agents/sessions —
+  # .acting-agent, .open-activity, .open-span, .activity-usage.json — and resolved
+  # each by the CLAUDE_PROJECTS_DIR-else-real-projects-root FALLBACK. The tests in
+  # this file pin the root, but that pinning is a CONVENTION: nothing failed
+  # closed when a spawned child forgot. This is the assertion that it now does.
+  #
+  # `heartbeat` is the probe because it is LOCAL-only (no HTTP) — it writes
+  # .acting-agent straight to disk, so the guard is the only thing between the
+  # child and the operator's store. The unpinned case ABORTS before any IO, so
+  # this never writes the real store even when it goes red.
+  def spawn_unpinned(*argv)
+    env = SessionEnv.neutralized(
+      "CLAUDE_CODE_SESSION_ID" => SESSION,
+      "CLAUDE_PROJECTS_DIR" => nil,   # THE BUG: unset ⇒ falls back to the real ~/projects
+      "TASK_USAGE_SANDBOX" => "1"     # a test child always inherits this
+    )
+    Open3.capture3(env, RbConfig.ruby, BIN, *argv)
+  end
+
+  # ── [unit] the CLOSE path — the one no guarded-API test could see ─────────────
+  #
+  # THE BUG THIS FILE SHIPPED. Every violation shape above drives the guarded API, so
+  # every one of them was blind to a caller that never ENTERS it — and
+  # clear_activity_usage_baselines was exactly that: it took SessionMarkers' pure path
+  # BUILDER and raw-File.deleted the result. Unguarded, and on the COMMON path — it
+  # fires on effectively every `end`/`next` (whenever the closing activity was the last
+  # one open), so a sandboxed-but-unpinned child DELETED
+  # <real projects>/.agents/sessions/<sid>.activity-usage.json where every guarded
+  # sibling aborts. The WRITE path was covered; the CLOSE path was not. It is now.
+  #
+  # Safe against the real store: the guard aborts BEFORE any IO, so this asserts the
+  # refusal without ever attempting the delete it forbids.
+  def test_unit_an_unpinned_activity_usage_clear_aborts_instead_of_deleting_the_real_store
+    real = File.join(TaskUsageSandbox.real_state_dir, "sessions", "#{SESSION}.activity-usage.json")
+    existed = File.exist?(real)
+
+    # No CLAUDE_PROJECTS_DIR ⇒ projects_dir falls back to the operator's REAL root.
+    c = AgentActivityCli.new(env: { "CLAUDE_CODE_SESSION_ID" => SESSION })
+
+    err = capture_abort { c.send(:clear_activity_usage_baselines, SESSION) }
+    assert_match(/sandbox/i, err, "the abort must say WHY")
+    assert_includes err, "CLAUDE_PROJECTS_DIR", "and must name the var to pin"
+    assert_equal existed, File.exist?(real), "the operator's real baseline file must be untouched"
+  end
+
+  # And the happy path the guard must not break: pinned, the clear still clears.
+  def test_unit_a_pinned_activity_usage_clear_still_removes_the_baseline
+    Dir.mktmpdir do |proj|
+      c = cli("CLAUDE_PROJECTS_DIR" => proj)
+      path = SessionMarkers.send(:marker_path, SESSION, proj, ".activity-usage.json")
+      FileUtils.mkdir_p(File.dirname(path))
+      File.write(path, JSON.generate("77" => { "totals" => {} }))
+
+      c.send(:clear_activity_usage_baselines, SESSION)
+      refute_path_exists path, "a pinned clear must still delete the baseline — narration keeps working"
+    end
+  end
+
+  def capture_abort(&block)
+    original = $stderr
+    $stderr = StringIO.new
+    ex = assert_raises(SystemExit, "an unguarded marker mutation must ABORT, not degrade to a silent skip", &block)
+    refute_predicate ex.status, :zero?, "the abort must exit non-zero"
+    "#{ex.message}\n#{$stderr.string}"
+  ensure
+    $stderr = original
+  end
+
+  def test_integration_an_unpinned_marker_write_aborts_instead_of_reaching_the_real_store
+    _out, err, status = spawn_unpinned("heartbeat", "carl")
+
+    refute_predicate status, :success?, "a spawned child that cannot prove its marker destination must ABORT"
+    assert_match(/sandbox/i, err, "the abort must say WHY")
+    assert_includes err, "CLAUDE_PROJECTS_DIR", "and must name the var to pin"
+    refute_path_exists File.join(TaskUsageSandbox.real_state_dir, "sessions", "#{SESSION}.acting-agent"),
+                       "the operator's real marker store must be untouched"
+  end
+
+  # The happy path the guard must NOT break: pinned at a tmpdir, the same write
+  # lands normally. Narration keeps working under test — a guard that fails closed
+  # on the happy path is worse than the leak it closes.
+  def test_integration_a_pinned_marker_write_still_lands
+    Dir.mktmpdir do |proj|
+      env = SessionEnv.neutralized(
+        "CLAUDE_CODE_SESSION_ID" => SESSION,
+        "CLAUDE_PROJECTS_DIR" => proj,
+        "HOME" => proj,
+        "TASK_USAGE_SANDBOX" => "1"
+      )
+      _out, _err, status = Open3.capture3(env, RbConfig.ruby, BIN, "heartbeat", "carl")
+
+      assert_predicate status, :success?, "a PINNED sandboxed write must succeed"
+      marker = File.join(proj, ".agents", "sessions", "#{SESSION}.acting-agent")
+      assert_equal "carl\n", File.read(marker), "the sticky acting-agent still writes normally"
+    end
   end
 end

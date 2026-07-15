@@ -298,22 +298,43 @@ swap the anchor back to `configs_for` and the "placebo case" goes red.)
 
 ## A Test May Never Write The Operator's Real `.agents` State
 
-The `bin/` stack keeps two stores **outside** the repo, under the real projects
-root, and both are resolved by **fallback**:
+The `bin/` stack keeps **seven** stores **outside** the repo, under the real
+projects root, and every one of them is resolved by the same **fallback** — an
+env var, else a path under the operator's real `<projects>/.agents`:
 
-| store | pinned by | falls back to |
-|-------|-----------|---------------|
-| usage/cost baselines | `TASK_USAGE_DIR` | `<projects>/.agents/task-usage` |
-| session marker | `CLAUDE_PROJECTS_DIR` | `<projects>/.agents/sessions` |
+| store | pinned by | falls back to | written by |
+|-------|-----------|---------------|------------|
+| usage/cost baselines | `TASK_USAGE_DIR` | `<projects>/.agents/task-usage` | `bin/task`, `bin/release`, `bin/reviewer-select` |
+| narration markers | `CLAUDE_PROJECTS_DIR` | `<projects>/.agents/sessions` | `bin/task`, `bin/atomic-event`, `bin/devops-shift`, `bin/statusline` |
+| agent-API token cache | `CLAUDE_PROJECTS_DIR` | `<projects>/.agents/atomic-capture` | `bin/lib/agent_api.rb` (every AgentApi consumer) |
+| conductor locks | `MCR_PRIMARY_LOCK_DIR` | `<projects>/.agents/locks` | `bin/release` |
+| worktree registry | `AGENT_WORKTREE_REGISTRY` or `PROJECTS_DIR` | `<projects>/.agents/worktree-registry.json` | `bin/agent-worktree` |
+| DB-allocation flock | `AGENT_WORKTREE_LOCK` or `PROJECTS_DIR` | `<projects>/.agents/agent-worktree.lock` | `bin/agent-worktree` |
+| Redis band | `AGENT_REDIS_CAPACITY_FILE` or `PROJECTS_DIR` | `<projects>/.agents/redis-capacity.json` | `bin/agent-worktree` |
 
-A test that spawns `bin/task`, `bin/release` or `bin/reviewer-select` and pins
-neither hands its child the **operator's live store**. This is not theoretical:
-`task_cli_test.rb` pinned neither, its `SESSION` constant is a **real past
-session id** whose 30MB transcript still sits in `~/.claude` (HOME was unpinned
-too), and so `bin/task create` under the suite globbed that transcript and wrote
-its ~1.9-billion-token totals into the real cost store under the stub slug
-`demo-task`. Measured `$cost` derives `actual_size` and seeds the reviewer-select
-baselines, so a fixture row skews the sizing intelligence.
+**Do not maintain this table by hand.** `lib/task_usage_sandbox.rb`'s `STORES` is
+the source of truth, and `test/lib/state_store_containment_test.rb` re-derives the
+family **from the source** on every run — an eighth store, or a new writer of an
+existing one, fails the suite rather than joining a list nobody updated. (Both
+leaks below were closed store-by-store, and each fix left live unguarded writers
+behind. That is what the containment test exists to stop.)
+
+A test that spawns any of those CLIs and pins nothing hands its child the
+**operator's live store**. Neither leak below was theoretical:
+
+- **The cost store.** `task_cli_test.rb` pinned nothing, and its `SESSION`
+  constant is a **real past session id** whose 30MB transcript still sits in
+  `~/.claude` (HOME was unpinned too), so `bin/task create` under the suite
+  globbed that transcript and wrote its ~1.9-billion-token totals into the real
+  cost store under the stub slug `demo-task`. Measured `$cost` derives
+  `actual_size` and seeds the reviewer-select baselines, so a fixture row skews
+  the sizing intelligence.
+- **The narration store.** `statusline_test.rb#render_in` pinned neither
+  `CLAUDE_PROJECTS_DIR` nor `HOME` on a `stage: "building"` context, so for ~3
+  weeks **every suite run** re-wrote a 0-byte `<session>.heartbeat` into the
+  operator's live sessions dir and fired the real `bin/task heartbeat` at the
+  **production board** — at a **real production task**, because the fixture named
+  one. Pin your roots; and never let a fixture name a live record.
 
 **The rule, in two halves — you need both.**
 
@@ -336,6 +357,35 @@ baselines, so a fixture row skews the sizing intelligence.
   real `<projects>/.agents` is refused whatever pointed it there. A pin you have
   to *remember* is the bug; the guard is the half that cannot rot.
 
+- **Contained.** The two halves above only bind a caller that actually reaches the
+  guard — and *twice* now, the caller that leaked never did. `bin/atomic-event`
+  took the marker store's pure path **builder** and hand-rolled a raw `File.delete`
+  beside a guarded sibling that did the same job correctly; no amount of testing the
+  guarded surface could see it. So the containment is asserted **against the tree**:
+  `test/lib/state_store_containment_test.rb` refuses (1) any file outside a small
+  sanctioned allowlist that so much as **constructs** a path under `.agents`, in any
+  spelling, and (2) inside that allowlist, any method that **holds** a raw store path
+  without laundering it through `TaskUsageSandbox.enforce!`.
+
+  **It guards the precondition, not the verb — you cannot write to a path you never
+  named.** Nothing in the scan looks at what a method *does* with a path, so
+  `system("rm #{p}")`, `Pathname#delete`, `File.binwrite` and a spelling nobody has
+  invented yet are all refused for the identical reason a `File.write` is: the method
+  held the path. There is no list of IO verbs that can be incomplete.
+
+  That is a correction, not a boast. The **first** version of this test did enumerate
+  the sinks, and it leaked exactly as an enumeration must: a `bin/leaky-demo` deleting
+  the operator's live `.open-activity` with an **ordinary interpolated path** ran
+  against it **green**. Enumerate the spellings and you refuse only the spellings you
+  thought of; assert the precondition and you refuse the class. **A guard that only
+  guards the callers — or the verbs — you remembered is a naming convention.**
+
+  Two limits it states about itself, because a guarantee oversold is worse than none:
+  `bin/statusline` is **bash** and no Ruby source scan can read it, so its containment
+  is proven at the **boundary** instead (the test executes it armed + unpinned and
+  observes that the real store does not change); and a program that *computes* its own
+  path string defeats any text scan, which is the same lane's job.
+
 A violation exits via `abort` (SystemExit) **on purpose**. Every caller of this
 state is best-effort (`rescue StandardError => nil`, so a usage hiccup can never
 kill a stage transition), and a violation raised as a `StandardError` would be
@@ -353,12 +403,29 @@ combined `bin/rails test` run — green alone, red in any process where a siblin
 file armed the sandbox.
 
 **Finding what already leaked.** `bin/task usage-audit` is a read-only sweep of
-the store for rows keyed by a slug only a test stub serves (`demo-task`,
-`cli-board-sample`). It reports and exits 2; it never purges — a baseline is
+**the cost store only** — it reports rows keyed by a slug only a test stub serves
+(`demo-task`, `cli-board-sample`), exits 2, and never purges: a baseline is
 indistinguishable at the file level from real operator state, so removing one is
 the operator's call. Note the signal is the **slug, not the size**: a stored row
 is the session's *cumulative* totals, so a long real session banks a
 billion-token baseline legitimately and magnitude proves nothing.
+
+**The other six stores have no audit sweep.** `usage-audit` does not look at them,
+so do not read a clean run as "nothing leaked" — it answers one store's question.
+The narration store alone holds over a hundred `.heartbeat` files and dozens of
+`.activity-usage.json` files under `<projects>/.agents/sessions` — count them
+yourself rather than trusting a number in a doc, which is the same discipline this
+section is arguing for:
+
+```bash
+ls "$(cd ~/projects && pwd)/.agents/sessions" | sed 's/.*\.//' | sort | uniq -c | sort -rn
+```
+
+A leaked marker is not distinguishable from a real one by inspection either. Residue is the
+**operator's** call to clear; the guard's job is to stop new residue, and the
+containment test's job is to stop a new *writer*. If you want a sweep for the other
+stores, that is unbuilt work — say so plainly rather than implying coverage that
+does not exist.
 
 ## Test Suite Catalog
 

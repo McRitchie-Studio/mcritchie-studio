@@ -30,6 +30,58 @@ PROJECTS="${CLAUDE_PROJECTS_DIR:-$HOME/projects}"
 
 s_in() { printf '%s' "$input" | "$JQ" -r "$1 // empty" 2>/dev/null; }
 
+# --- Narration-marker sandbox (the bash half of TaskUsageSandbox) -------------
+# This script WRITES the narration-marker store (the .heartbeat / .shift-heartbeat
+# throttles below) through the same CLAUDE_PROJECTS_DIR-else-real-projects-root
+# FALLBACK that leaked the cost store in PR #525 — and it leaked here too, live:
+# test/lib/statusline_test.rb#render_in spawns this script with neither
+# CLAUDE_PROJECTS_DIR nor HOME pinned, on a context whose stage is "building". So
+# `$HOME/projects` resolved to the OPERATOR'S REAL store, and every run of the
+# suite re-wrote a 0-byte `<session>.heartbeat` there — and fired the REAL
+# `bin/task heartbeat` at the production board behind it, detached.
+#
+# THE RULE (rule 1 of TaskUsageSandbox, enforced where this script can honestly
+# enforce it). When the sandbox is ARMED — a test process; test/support/
+# task_usage_sandbox.rb sets TASK_USAGE_SANDBOX process-wide and every child
+# inherits it — the marker destination must be PINNED. An unpinned $PROJECTS is
+# exactly the fallback that reaches the operator's store, so it is REFUSED, never
+# silently defaulted. A pinned one (a test's tmpdir) is written normally: the
+# heartbeat tests below pin CLAUDE_PROJECTS_DIR and MUST keep firing. Failing
+# closed on the happy path would be worse than the leak.
+#
+# Rule 2 (a pin that points back INSIDE the real .agents) is NOT re-derived here.
+# Proving it means resolving the real root through ProjectsRoot — which climbs
+# out of .worktrees — and comparing on a separator boundary: Ruby, and not
+# something to hand-roll a second copy of in shell. It does not need to be: these
+# markers are only throttles for the `$TASK_BIN` / `$SHIFT_BIN` shell-outs below,
+# and BOTH of those are Ruby CLIs that run the full two-rule guard themselves
+# (bin/lib/session_markers.rb). A pinned-into-the-real-store run is caught there.
+#
+# NON-FATAL BY CONSTRUCTION: this gates only the marker WRITES and the lease
+# renewals they throttle. The status line still RENDERS in full. We fail the
+# write, never the caller — the same contract the Ruby half keeps.
+marker_write_refused() {
+  # Case-INSENSITIVE, matching the Ruby half exactly (TaskUsageSandbox::FALSEY is
+  # compared against value.downcase). A bash `case` is case-sensitive, so listing
+  # spellings by hand diverged: "False"/"Off" read as ARMED here and DISARMED there.
+  # Both directions were safe, but a guard whose two halves disagree about whether
+  # they are on is a guard nobody can reason about. Lowercase once, compare once.
+  local armed
+  armed=$(printf '%s' "${TASK_USAGE_SANDBOX:-}" | tr '[:upper:]' '[:lower:]')
+  case "$armed" in
+    ""|0|false|no|off) return 1 ;;                # real session → guard is a strict no-op
+  esac
+  [ -n "${CLAUDE_PROJECTS_DIR:-}" ] && return 1   # sandboxed but PINNED → destination is provable
+
+  # Sandboxed + unpinned → refuse. Say so ON STDERR: the Ruby half aborts loudly, and
+  # a silent bash refusal is indistinguishable from "nothing happened". If
+  # TASK_USAGE_SANDBOX ever leaked into an interactive shell, every render would stop
+  # renewing BOTH the build claim and the shift lease with no way to tell why. The
+  # status line itself still renders — we fail the WRITE, not the caller.
+  printf 'statusline: TASK_USAGE_SANDBOX is on and CLAUDE_PROJECTS_DIR is unset — refusing to write the narration marker into the real store.\n' >&2
+  return 0
+}
+
 cwd=$(s_in '.workspace.current_dir'); [ -z "$cwd" ] && cwd=$(s_in '.cwd'); [ -z "$cwd" ] && cwd="$PWD"
 model=$(s_in '.model.display_name')
 
@@ -89,6 +141,12 @@ heartbeat_claim() {  # slug stage is_desk
     age=$(( $(date +%s) - mtime ))
     [ "$age" -lt "$throttle" ] && return 0
   fi
+  # Fail closed: unpinned marker destination. DELIBERATELY the last gate before the
+  # write — every `return 0` above means no write was ever pending, and a refusal
+  # printed for a write that was never going to happen is noise that dilutes exactly
+  # the signal this message exists to carry (a SILENT refusal is indistinguishable
+  # from "nothing happened", which is why it must be loud when it is real).
+  marker_write_refused && return 0
   mkdir -p "$mdir" 2>/dev/null
   : > "$marker"
   if [ "$STATUSLINE_HEARTBEAT_FG" = "1" ]; then
@@ -122,6 +180,10 @@ heartbeat_shift() {
     age=$(( $(date +%s) - mtime ))
     [ "$age" -lt "$throttle" ] && return 0
   fi
+  # Fail closed, and LAST — see heartbeat_claim. The common case by far is a session
+  # holding no shift at all, which returns above; refusing there printed a warning on
+  # nearly every render for a write that was never pending.
+  marker_write_refused && return 0
   mkdir -p "$PROJECTS/.agents/sessions" 2>/dev/null
   : > "$throttle_marker"
   if [ "$STATUSLINE_HEARTBEAT_FG" = "1" ]; then

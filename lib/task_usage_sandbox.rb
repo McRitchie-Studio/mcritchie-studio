@@ -2,11 +2,28 @@
 
 require_relative "../bin/lib/projects_root"
 
-# TaskUsageSandbox — the fail-closed guard on the two state stores the bin/ stack
+# TaskUsageSandbox — the fail-closed guard on EVERY state store the bin/ stack
 # writes OUTSIDE its repo, under the operator's real projects root:
 #
-#   <projects>/.agents/task-usage/<session>.json   the usage/cost baselines
-#   <projects>/.agents/sessions/<session>.json     the active-feature marker
+#   <projects>/.agents/task-usage/<session>.json     the usage/cost baselines
+#   <projects>/.agents/sessions/<session>.*          the narration markers
+#   <projects>/.agents/atomic-capture/token.json     the agent-API token cache
+#   <projects>/.agents/locks/*.lock                  the conductor's flocks
+#   <projects>/.agents/worktree-registry.json        the worktree registry
+#   <projects>/.agents/agent-worktree.lock           the DB-allocation flock
+#   <projects>/.agents/redis-capacity.json           the elastic Redis band
+#
+# ONE FAMILY, not five bugs. Every one of these is resolved by the SAME fallback
+# shape — an env var, ELSE a path under the operator's real <projects>/.agents —
+# so every one of them hands a spawned, unpinned test the operator's live state.
+# The cost store leaked first (PR #525), the narration store second (PR #549);
+# the remaining three were found by the review that caught the second, and are
+# closed here rather than left in a PR body. A PR body is not a backlog.
+#
+# The seven store names below are the WHOLE family, and
+# test/lib/state_store_containment_test.rb re-derives that family FROM THE SOURCE on
+# every run: an EIGHTH store added later without a guard fails the suite. The list
+# cannot rot into a lie quietly.
 #
 # WHY THIS EXISTS (a live production leak, not a hypothetical). Both stores are
 # resolved by FALLBACK — TASK_USAGE_DIR else <projects>/.agents/task-usage;
@@ -56,13 +73,54 @@ module TaskUsageSandbox
   FALSEY = %w[0 false no off].freeze
 
   # The stores this guard covers, and the env var that pins each. The key is what
-  # a caller passes as `store:`.
+  # a caller passes as `store:`. Adding a store here is not enough — the guard
+  # must be CALLED at that store's write seam, and the containment test proves it
+  # is (it fails on a path into <projects>/.agents that reaches IO unguarded).
+  # Each store maps to the env vars that can LOCATE it. A store is PINNED when ANY
+  # of them is set — because any one of them is enough to steer the path away from
+  # the operator's real root, which is the only thing rule 1 is defending against.
+  #
+  # Why a LIST and not one var. bin/agent-worktree resolves its three stores from
+  # PROJECTS_DIR (the root) with an optional per-file override, so a test that pins
+  # only the root is ALREADY safe — its path cannot reach the real store. Demanding
+  # the specific var there would abort a legitimate caller: a guard that fails closed
+  # on the HAPPY path, which is worse than the leak it closes. Accepting either is
+  # safe because rule 2 is the backstop — a pin aimed back INSIDE the real .agents is
+  # refused whatever var pointed it there.
   STORES = {
-    "task-usage" => "TASK_USAGE_DIR",
-    "session-marker" => "CLAUDE_PROJECTS_DIR"
+    "task-usage" => %w[TASK_USAGE_DIR],            # lib/task_usage_baseline.rb, bin/task, bin/release.rb, bin/reviewer-select
+    "session-marker" => %w[CLAUDE_PROJECTS_DIR],   # bin/lib/session_markers.rb (the choke point), bin/task
+    "agent-token" => %w[CLAUDE_PROJECTS_DIR],      # bin/lib/agent_api.rb — the token cache
+    "agent-locks" => %w[MCR_PRIMARY_LOCK_DIR],     # bin/release.rb — the conductor flocks
+    "worktree-registry" => %w[AGENT_WORKTREE_REGISTRY PROJECTS_DIR], # bin/agent-worktree — the registry snapshot
+    "worktree-lock" => %w[AGENT_WORKTREE_LOCK PROJECTS_DIR],         # bin/agent-worktree — the DB-allocation flock
+    "redis-capacity" => %w[AGENT_REDIS_CAPACITY_FILE PROJECTS_DIR]   # bin/agent-worktree — the elastic Redis band
   }.freeze
 
   module_function
+
+  # The env a guard is evaluated against, for the callers that carry an INJECTABLE
+  # env (AgentApi#env, and the CLIs built on it) rather than reading ENV directly.
+  # Deliberately assembled from TWO sources, because the guard's two rules answer
+  # to different scopes:
+  #
+  #   THE PIN (CLAUDE_PROJECTS_DIR, …) comes from the CALLER'S env, because that is
+  #     what resolved the path. A test that constructs a client with a tmpdir pin IS
+  #     correctly pinned, and reading the process ENV instead would abort it — a
+  #     guard that fails closed on the HAPPY path is worse than the leak it closes.
+  #   THE ARMING (TASK_USAGE_SANDBOX) comes from the PROCESS ENV whenever the
+  #     caller's env is silent about it. Arming is a property of the PROCESS — a test
+  #     arms it for itself and every child it spawns — so an injected env that simply
+  #     OMITS it must not be able to disarm the guard. Otherwise `AgentApi.new(env: {})`
+  #     resolves the real projects root with the sandbox reading as OFF and writes the
+  #     operator's store: the very hole this exists to close. An env that names it
+  #     explicitly still wins.
+  def guard_env(env)
+    env = env.to_h
+    return env if env.key?(ENV_KEY)
+
+    env.merge(ENV_KEY => ENV[ENV_KEY]).compact
+  end
 
   # The operator's real cross-repo state dir — <projects>/.agents. Resolved from
   # the repo's own location (ProjectsRoot climbs out of .worktrees), NOT from an
@@ -83,10 +141,12 @@ module TaskUsageSandbox
   def violation(path, store:, env: ENV, state_dir: real_state_dir)
     return nil unless active?(env)
 
-    pin = STORES.fetch(store)
-    if env[pin].to_s.strip.empty?
-      return "#{ENV_KEY} is on and #{pin} is unset — refusing to fall back to the operator's real " \
-             "#{store} store under #{state_dir}. Pin #{pin} at a tmpdir (test/support/task_usage_sandbox.rb)."
+    pins = STORES.fetch(store)
+    if pins.none? { |pin| !env[pin].to_s.strip.empty? }
+      named = pins.join(" or ")
+      return "#{ENV_KEY} is on and #{named} #{pins.one? ? "is" : "are all"} unset — refusing to fall back to " \
+             "the operator's real #{store} store under #{state_dir}. Pin #{named} at a tmpdir " \
+             "(test/support/task_usage_sandbox.rb)."
     end
 
     return nil unless inside?(path, state_dir)

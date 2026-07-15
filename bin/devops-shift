@@ -225,24 +225,17 @@ class DevopsShiftCli
   end
 
   # ── Local held-shift marker (so bin/statusline knows what to renew) ───────────
-  def marker_path(sid)
-    safe = sid.to_s.gsub(/[^A-Za-z0-9._-]/, "")
-    File.join(@api.projects_dir, ".agents", "sessions", "#{safe}.devops-shift")
-  end
+  # Path resolution AND the fail-closed sandbox guard both live on SessionMarkers
+  # — this marker shares the narration store with .open-activity/.acting-agent, so
+  # it shares their one choke point rather than re-deriving the path here.
+  DEVOPS_SHIFT = ".devops-shift"
 
   def write_marker(sid, lane)
-    path = marker_path(sid)
-    FileUtils.mkdir_p(File.dirname(path))
-    File.write(path, "#{lane}\n")
-  rescue StandardError
-    nil
+    SessionMarkers.write(sid, @api.projects_dir, DEVOPS_SHIFT, "#{lane}\n", env: @api.env)
   end
 
   def clear_marker(sid, _lane)
-    path = marker_path(sid)
-    File.delete(path) if File.file?(path)
-  rescue StandardError
-    nil
+    SessionMarkers.delete(sid, @api.projects_dir, DEVOPS_SHIFT, env: @api.env)
   end
 
   def usage_lane(cmd)

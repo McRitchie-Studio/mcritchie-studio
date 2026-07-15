@@ -82,11 +82,15 @@ def seed_review_usage_baseline(slug)
   return if session.empty? || slug.to_s.strip.empty?
 
   projects = (d = ENV["CLAUDE_PROJECTS_DIR"].to_s.strip).empty? ? File.expand_path("../..", __dir__) : File.expand_path(d)
-  dir = (u = ENV["TASK_USAGE_DIR"].to_s.strip).empty? ? File.join(projects, ".agents", "task-usage") : u
+  pinned = ENV["TASK_USAGE_DIR"].to_s.strip
   # Same live-store fallback bin/task carries, so it takes the same fail-closed
   # sandbox guard: under TASK_USAGE_SANDBOX an unpinned run aborts rather than
-  # seeding a baseline into the operator's real cost store.
-  dir = TaskUsageSandbox.enforce!(dir, store: "task-usage")
+  # seeding a baseline into the operator's real cost store. The raw fallback is the
+  # guard's ARGUMENT, never a local it is told about afterwards — see bin/task#usage_dir.
+  dir = TaskUsageSandbox.enforce!(
+    pinned.empty? ? File.join(projects, ".agents", "task-usage") : pinned,
+    store: "task-usage"
+  )
   TaskUsageBaseline.new(session: session, provider: provider, dir: dir).seed(slug)
 rescue StandardError
   nil

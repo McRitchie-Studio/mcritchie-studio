@@ -30,6 +30,10 @@ require "socket"
 require "time"
 require "yaml"
 
+# The fail-closed guard on the operator's real <projects>/.agents state — this
+# script writes the worktree registry there (run_snapshot).
+require_relative "../lib/task_usage_sandbox"
+
 # The IO-free restore-primary safety decision (refuse-on-dirty/unpushed, else ff
 # to main). Pure Ruby with no Rails deps — the same `require_relative` shape
 # bin/release uses to pull in Release::ShipSequence (its detect-side complement).
@@ -534,8 +538,12 @@ def with_worktree_lock
     end
   end
 
-  FileUtils.mkdir_p(File.dirname(worktree_lock_path))
-  File.open(worktree_lock_path, File::RDWR | File::CREAT, 0o644) do |lock|
+  # Guarded like every other write into the operator's real .agents state: a
+  # sandboxed run with an unpinned AGENT_WORKTREE_LOCK would flock the LIVE lock that
+  # serialises real DB allocation, and hold it for the length of a test.
+  lock_path = TaskUsageSandbox.enforce!(worktree_lock_path, store: "worktree-lock")
+  FileUtils.mkdir_p(File.dirname(lock_path))
+  File.open(lock_path, File::RDWR | File::CREAT, 0o644) do |lock|
     lock.flock(File::LOCK_EX)
     $worktree_lock_depth += 1
     begin
@@ -558,7 +566,9 @@ end
 
 def write_current_capacity(value)
   value = REDIS_BAND_FLOOR if value < REDIS_BAND_FLOOR
-  path = redis_capacity_path
+  # Guarded: an unpinned sandboxed run would rewrite the REAL Redis band, and the
+  # band is what keeps two live worktrees off the same Redis DB.
+  path = TaskUsageSandbox.enforce!(redis_capacity_path, store: "redis-capacity")
   FileUtils.mkdir_p(File.dirname(path))
   File.write(path, "#{JSON.pretty_generate(
     "current_capacity" => value,
@@ -2117,11 +2127,21 @@ def run_snapshot(app = nil, write: false)
     return
   end
 
-  FileUtils.mkdir_p(File.dirname(snapshot_path))
-  File.write(snapshot_path, "#{json}\n")
-  puts "wrote #{payload.fetch("worktrees").size} worktree record(s) to #{snapshot_path}"
+  # The registry is cross-repo state under the operator's real <projects>/.agents,
+  # resolved by the same env-else-real-root fallback as every other store in this
+  # family — so it gets the same fail-closed guard. Reads stay unguarded (bin/qa-intake
+  # only READS this file; a read cannot pollute). Under TASK_USAGE_SANDBOX an
+  # unpinned AGENT_WORKTREE_REGISTRY aborts rather than overwriting the live
+  # registry that every conductor and QA session reads.
+  path = TaskUsageSandbox.enforce!(snapshot_path, store: "worktree-registry")
+  FileUtils.mkdir_p(File.dirname(path))
+  File.write(path, "#{json}\n")
+  puts "wrote #{payload.fetch("worktrees").size} worktree record(s) to #{path}"
 rescue Errno::EACCES, Errno::EPERM => e
-  abort "could not write worktree registry to #{snapshot_path}: #{e.message}\nSet AGENT_WORKTREE_REGISTRY=/tmp/worktree-registry.json for a scratch write, or rerun with filesystem approval for the projects registry."
+  # Report the LAUNDERED path, not a second raw `snapshot_path`: the containment scan
+  # subtracts only the expression enforce! was handed, so re-naming the producer here
+  # is a raw hold it (correctly) flags. `path` is bound before the write that can EACCES.
+  abort "could not write worktree registry to #{path}: #{e.message}\nSet AGENT_WORKTREE_REGISTRY=/tmp/worktree-registry.json for a scratch write, or rerun with filesystem approval for the projects registry."
 end
 
 # The git-eligible worktrees split into [free, withheld], where withheld is
