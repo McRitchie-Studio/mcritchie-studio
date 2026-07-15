@@ -155,15 +155,33 @@ impossible by construction rather than by every repo remembering to ignore `tmp/
    ```
 
    Lanes: `test-db-reset` (`bin/rails db:test:purge db:test:prepare`),
-   `full-suite` (**what CI runs, verbatim** — read from the repo's own
+   `full-suite` (**what CI's `test` job runs, verbatim** — read from the repo's own
    `.github/workflows/ci.yml`; today `bin/rails db:test:prepare test test:system`,
-   the ENTIRE suite **including the system tier**), `rubocop` (`bin/rubocop`, the
-   whole repo). Green lanes stamp `[full-suite@<fp>]` + `[rubocop@<fp>]`.
+   the ENTIRE Ruby suite **including the system tier**), `rubocop` (`bin/rubocop`,
+   the whole repo — CI's `lint` job). Green lanes stamp `[full-suite@<fp>]` +
+   `[rubocop@<fp>]`.
 
    The lane runs CI's command because this route's whole claim is
-   CI-INDEPENDENCE — it may never test *less* than CI. (It once did: it ran
-   `bin/rails test`, which **skips `test/system`**, so a builder could take the
-   CI-independent route, go green, and have zero system coverage.) Two consequences
+   CI-INDEPENDENCE — **it may never run less of CI's Ruby suite than CI does**.
+   (It once did: it ran `bin/rails test`, which **skips `test/system`**, so a
+   builder could take the CI-independent route, go green, and have zero system
+   coverage.) Scope it exactly: the cert stands in for CI's **`test` job**, not for
+   all of CI — `scan_ruby` (brakeman), `scan_js` (importmap audit) and
+   turf-monster's `playwright` e2e job are CI's alone, which is why review's
+   gate-zero still holds the authoritative CI verdict. The cert keeps that claim by
+   **refusing whatever it cannot SEE or cannot RUN**, across the repo's **PR-gating
+   workflows**: CI's Ruby suite split across steps, across **jobs**, or across
+   **workflow files**; a suite it can see but cannot run verbatim (a multi-line
+   script, or a **wrapper** like `docker compose run web bin/rails test:system`); a
+   foreign runner beside the rails step; a job it **cannot see into** (a job-level
+   `uses:`, a composite action, a body with no `steps:`); and a command whose text
+   does not say what it runs (`run: ${{ matrix.cmd }}`, `run: $SUITE`) each make the
+   cert **REFUSE loudly** instead of certifying the narrower half. What it still does
+   NOT see, stated plainly: a suite inside a **third-party `uses:` action** (list it
+   in `KNOWN_INERT_ACTIONS` once you have checked it, or it refuses) or behind an
+   executable that is neither a known runner nor a readable file in this repo; and a
+   repo with **no `ci.yml`** falls back to the `DEFAULT` full-suite command — a
+   superset, not CI's own line. Two consequences
    worth knowing: the system tier drives a real headless **Chrome**, and a host
    without one **aborts up front as an ENV error** — *"NOT a regression in your
    diff"* — never as a red suite; and the command's shape is load-bearing —

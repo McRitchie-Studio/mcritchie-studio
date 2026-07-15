@@ -213,12 +213,15 @@ end
 # `bin/rails test` here is what let this "CI-independent" cert skip test/system
 # entirely; resolving from ci.yml means the two can't drift apart again.
 #
-# The resolver selects CI's step by what it DOES (does it run tests?), never by a
+# The resolver judges CI by what it RUNS (does the step run tests?), never by a
 # `bin/rails` mention — a setup step parked ahead of the real one would otherwise
 # BE the "full-suite lane": it runs, exits 0, and stamps green having run ZERO
-# tests. And when it can read CI's `test` job but finds no test command in it, it
-# REFUSES here, loudly, rather than certify something that isn't CI's suite. An
-# explicit FULL_SUITE_TEST_CMD is the operator saying "run THIS" — it overrides
+# tests. And it REFUSES, loudly, whatever it cannot SEE or cannot RUN: a suite
+# split across steps, jobs or workflow files; a suite behind a wrapper it cannot
+# invoke verbatim; a job with no readable steps; a readable `test` job with no test
+# command in it at all; a command whose text does not say what it runs. A cert that
+# cannot find CI's whole suite must say so, not quietly certify something narrower.
+# An explicit FULL_SUITE_TEST_CMD is the operator saying "run THIS" — it overrides
 # both the resolution and the refusal.
 #
 # This resolution MUST stay above the system-tier browser guard below — that guard

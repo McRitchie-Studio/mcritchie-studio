@@ -475,4 +475,908 @@ class CiTestCommandTest < Minitest::Test
     assert_equal CiTestCommand.for_root(HUB_ROOT), CiTestCommand.resolve(HUB_ROOT)
     assert_includes CiTestCommand.resolve(HUB_ROOT), "test:system"
   end
+
+  # --- the JOB-grain split -------------------------------------------------------
+  #
+  # The resolver read exactly `jobs.test.steps`, so the SAME suite split that refuses
+  # across STEPS resolved QUIETLY across JOBS: the cert took the narrower command,
+  # dropped the system tier, and stamped green. Third spelling of the lying cert.
+  #
+  # THE POSITIVE INVARIANT these pin: the cert's net may not be SMALLER than CI's
+  # RUBY SUITE, wherever in the workflow that suite runs — not just in one job.
+
+  def test_a_suite_split_across_JOBS_refuses
+    # THE BUG. Ordinary CI refactor: move the system tier into its own job for
+    # parallelism. `jobs.test` still holds one single-line rails test step, so every
+    # STEP-grain guard passes — and the cert certifies `bin/rails test` with the
+    # system tier NEVER RUN, in a different job, entirely unread.
+    yaml = <<~YAML
+      jobs:
+        test:
+          steps:
+            - name: Install packages
+              run: sudo apt-get update && sudo apt-get install -y postgresql-client
+            - name: Run tests
+              run: bin/rails db:test:prepare test
+        system_test:
+          steps:
+            - name: Run system tests
+              run: bin/rails db:test:prepare test:system
+    YAML
+    with_ci(yaml) do |dir|
+      assert_nil CiTestCommand.for_root(dir),
+                 "resolved to the `test` job's narrower command and dropped CI's other test JOB"
+
+      refusal = CiTestCommand.refusal(dir).to_s
+      assert_match(/MORE THAN ONE JOB/, refusal)
+      assert_match(/system_test/, refusal, "the refusal must NAME the job it saw")
+      assert_match(/test:system/, refusal, "and the step it saw")
+    end
+  end
+
+  def test_a_second_test_job_is_seen_under_ANY_name
+    # By CONTENT, not by name — the resolver may not be blinded by what the second
+    # job is called, exactly as it may not be blinded by what a STEP is called.
+    %w[e2e ruby-system zzz_extra].each do |job|
+      yaml = <<~YAML
+        jobs:
+          test:
+            steps:
+              - run: bin/rails test
+          #{job}:
+            steps:
+              - run: bundle exec rails test:system
+      YAML
+      with_ci(yaml) do |dir|
+        assert_nil CiTestCommand.for_root(dir), "a test job named `#{job}` went unseen"
+        assert_match(/#{Regexp.escape(job)}/, CiTestCommand.refusal(dir).to_s)
+      end
+    end
+  end
+
+  def test_a_stray_test_step_in_a_NON_test_job_refuses
+    # A vector nobody proposed: nobody adds a `system_test` job — they append a rails
+    # test step to a job that already exists (here, `lint`). Same hole, no new job.
+    # Also pins the ENV-ASSIGNMENT prefix path across the job boundary.
+    yaml = <<~YAML
+      jobs:
+        test:
+          steps:
+            - run: bin/rails db:test:prepare test
+        lint:
+          steps:
+            - run: bin/rubocop -f github
+            - run: RAILS_ENV=test bin/rails test:system
+    YAML
+    with_ci(yaml) do |dir|
+      assert_nil CiTestCommand.for_root(dir)
+      assert_match(/lint/, CiTestCommand.refusal(dir).to_s)
+    end
+  end
+
+  def test_the_test_job_running_NO_tests_while_another_job_does_refuses
+    # The migrated suite: `jobs.test` is left holding only setup. Today's message
+    # ("NONE of them runs tests") is true but points at the wrong place — the tests
+    # DO exist, one job over, and the refusal must say so.
+    yaml = <<~YAML
+      jobs:
+        test:
+          steps:
+            - run: bin/rails db:test:prepare
+        ruby-tests:
+          steps:
+            - run: bin/rails db:test:prepare test test:system
+    YAML
+    with_ci(yaml) do |dir|
+      assert_nil CiTestCommand.for_root(dir)
+      assert_match(/ruby-tests/, CiTestCommand.refusal(dir).to_s)
+    end
+  end
+
+  # --- the JOB-grain split: what must NOT refuse ---------------------------------
+  #
+  # The cross-job scan is only safe because `runs_tests?` is STRUCTURAL. These are
+  # the live vectors it has to clear: a substring sniff would refuse turf-monster's
+  # cert lane TODAY, and a guard that bricks a working lane is worse than the latent
+  # bug it closes.
+
+  def test_a_turf_style_PLAYWRIGHT_job_beside_the_test_job_still_resolves
+    # turf-monster's REAL second test-bearing job, reproduced. It runs a different
+    # TIER with a different runner (npm/playwright), plus rails SETUP invocations
+    # that must not read as tests: `bin/rails runner -e test e2e/seed.rb` (that
+    # `test` is the VALUE of -e, the RAILS_ENV) and `bin/rails tailwindcss:build`.
+    #
+    # This lane stands in for CI's RUBY suite; playwright is a tier it never claimed
+    # (see docs/topics/testing.md). Refuse here and turf-monster's cert lane — which
+    # works today — starts aborting on every run.
+    yaml = <<~YAML
+      jobs:
+        test:
+          steps:
+            - name: Run tests
+              run: bin/rails db:test:prepare test test:system
+        playwright:
+          strategy:
+            matrix:
+              shard: [1, 2, 3]
+          steps:
+            - name: Seed test DB
+              run: bin/rails db:test:prepare && bin/rails runner -e test e2e/seed.rb
+            - name: Build Tailwind CSS for the test server
+              run: bin/rails tailwindcss:build
+            - name: Run Playwright (excluding @devnet)
+              run: npm test -- --grep-invert "@devnet" --shard=1/3
+    YAML
+    with_ci(yaml) do |dir|
+      assert_equal "bin/rails db:test:prepare test test:system", CiTestCommand.for_root(dir),
+                   "turf-monster's playwright job must not brick its cert lane"
+      assert_nil CiTestCommand.refusal(dir)
+    end
+  end
+
+  def test_rails_SETUP_steps_in_other_jobs_do_not_refuse
+    # `db:migrate`, `assets:precompile`, `db:seed` are rails invocations in other
+    # jobs that run no tests. They fail by SHAPE (not one of them IS the test task),
+    # so no enumeration of setup tasks is needed here either.
+    yaml = <<~YAML
+      jobs:
+        test:
+          steps:
+            - run: bin/rails db:test:prepare test test:system
+        deploy:
+          steps:
+            - run: bin/rails db:migrate
+            - run: bin/rails db:seed
+        assets:
+          steps:
+            - run: bin/rails assets:precompile
+    YAML
+    with_ci(yaml) do |dir|
+      assert_equal "bin/rails db:test:prepare test test:system", CiTestCommand.for_root(dir)
+      assert_nil CiTestCommand.refusal(dir)
+    end
+  end
+
+  # --- THE OPAQUE: a job this cert CANNOT SEE INTO -------------------------------
+  #
+  # THE TEST THAT ASSERTED THE WRONG PROPERTY. This used to be
+  # `test_a_job_with_no_steps_does_not_crash_the_scan`, and it asserted that a
+  # `uses:` job RESOLVES GREEN — pinning the bug as if it were the feature. "Must not
+  # RAISE" is not "must not LIE": a cert that does not crash while certifying nothing
+  # is the exact failure this module exists to kill, and a test proving it doesn't
+  # crash proves nothing about that.
+  #
+  # A job with no readable `steps:` is not a job we have PROVEN runs no tests. It is a
+  # job we cannot see. REFUSE, and NAME it.
+
+  def test_a_job_this_cert_CANNOT_SEE_INTO_refuses
+    # A job-level `uses:` (a reusable/called workflow) has NO steps: its steps live in
+    # another file. Read `jobs.test.steps` and this job is INVISIBLE — so the system
+    # tier can move here and the cert stamps GREEN having never run it.
+    yaml = <<~YAML
+      jobs:
+        test:
+          steps:
+            - run: bin/rails test
+        system_test:
+          uses: ./.github/workflows/system.yml
+    YAML
+    with_ci(yaml) do |dir|
+      assert_nil CiTestCommand.for_root(dir),
+                 "a job whose steps this cert cannot read must never resolve GREEN"
+      refusal = CiTestCommand.refusal(dir).to_s
+      assert_match(/CANNOT SEE INTO/, refusal)
+      assert_match(/system_test/, refusal, "the refusal must NAME the job it could not read")
+      assert_match(%r{\./\.github/workflows/system\.yml}, refusal, "…and its `uses:` target")
+    end
+  end
+
+  def test_an_UNREADABLE_job_body_refuses_rather_than_being_skipped
+    # A null job body is legal YAML and has no steps either. Same rule, same reason:
+    # skipping is not "not raising" — it is PASSING.
+    yaml = <<~YAML
+      jobs:
+        test:
+          steps:
+            - run: bin/rails db:test:prepare test test:system
+        empty:
+    YAML
+    with_ci(yaml) do |dir|
+      assert_nil CiTestCommand.for_root(dir)
+      assert_match(/CANNOT SEE INTO/, CiTestCommand.refusal(dir).to_s)
+    end
+  end
+
+  def test_a_composite_ACTION_step_refuses_because_its_steps_live_elsewhere
+    # `uses: ./.github/actions/x` — the steps are in another file, so a suite can hide
+    # in one exactly like a job-level `uses:`.
+    yaml = <<~YAML
+      jobs:
+        test:
+          steps:
+            - run: bin/rails test
+        system_test:
+          steps:
+            - uses: ./.github/actions/run-system-tests
+    YAML
+    with_ci(yaml) do |dir|
+      assert_nil CiTestCommand.for_root(dir)
+      assert_match(/run-system-tests/, CiTestCommand.refusal(dir).to_s)
+    end
+  end
+
+  def test_the_actions_the_ECOSYSTEM_really_uses_are_proven_inert_and_do_not_refuse
+    # THE OVER-FIRE GUARD RAIL for the opacity rule. Every `uses:` in the four live
+    # ci.yml files must be on KNOWN_INERT_ACTIONS, or this rule bricks every repo in
+    # the ecosystem on its next cert. If a repo adds a new action, this is where the
+    # cost lands: a human decides "does it run tests?" ONCE — that is the point.
+    yaml = <<~YAML
+      jobs:
+        test:
+          steps:
+            - uses: actions/checkout@v7
+            - uses: ruby/setup-ruby@v1
+            - uses: browser-actions/setup-chrome@v1
+            - uses: actions/setup-node@v4
+            - uses: actions/cache@v4
+            - run: bin/rails db:test:prepare test test:system
+            - uses: actions/upload-artifact@v4
+    YAML
+    with_ci(yaml) do |dir|
+      assert_nil CiTestCommand.refusal(dir),
+                 "the actions the live ci.yml files really use must be PROVEN INERT, not opaque"
+      assert_equal "bin/rails db:test:prepare test test:system", CiTestCommand.for_root(dir)
+    end
+  end
+
+  def test_a_version_BUMP_of_an_inert_action_does_not_refuse
+    # KNOWN_INERT_ACTIONS matches owner/repo, not owner/repo@ref — so a Dependabot bump
+    # cannot brick a cert lane.
+    yaml = <<~YAML
+      jobs:
+        test:
+          steps:
+            - uses: actions/checkout@v99
+            - run: bin/rails db:test:prepare test test:system
+    YAML
+    with_ci(yaml) { |dir| assert_nil CiTestCommand.refusal(dir) }
+  end
+
+  def test_the_HUBS_OWN_workflow_has_no_stray_test_job
+    # The live pin. The cross-job scan runs against the hub's REAL ci.yml on every
+    # cert: its scan_ruby (brakeman), scan_js (importmap audit) and lint (rubocop)
+    # jobs must read as ZERO test steps. If this goes red, the hub's own cert lane
+    # is refusing — which is how we learn the scan over-fires, HERE, not at a gate.
+    assert_nil CiTestCommand.refusal(HUB_ROOT),
+               "the cross-job scan must not refuse the hub's own ci.yml"
+    assert_equal CiTestCommand::DEFAULT, CiTestCommand.for_root(HUB_ROOT)
+  end
+
+  # --- a FOREIGN test runner beside the rails step -------------------------------
+  #
+  # The set COUNT is derived from the `runs_tests?` whitelist, and a whitelist fails
+  # OPEN when COUNTING: selection correctly refuses an unrecognized spelling, but the
+  # count silently DROPS it — so a non-rails test step beside the rails one certified
+  # green with that step never run. #538's round-2 defect, in the parser's blind spot.
+  #
+  # SAFE POLARITY: the known-runner sniff may only ADD A REFUSAL, never SELECT.
+
+  def test_a_foreign_test_runner_beside_the_rails_step_refuses
+    ["npx playwright test", "npm test", "bundle exec rspec", "make test", "yarn test:e2e",
+     "pnpm run test:ci", "go test ./...", "npx jest", "pytest -q"].each do |runner|
+      yaml = <<~YAML
+        jobs:
+          test:
+            steps:
+              - name: Run tests
+                run: bin/rails db:test:prepare test test:system
+              - name: Run the other tests
+                run: #{runner}
+      YAML
+      with_ci(yaml) do |dir|
+        assert_nil CiTestCommand.for_root(dir),
+                   "`#{runner}` was silently DROPPED and the rails step certified green"
+        assert_match(/ANOTHER RUNNER/, CiTestCommand.refusal(dir).to_s)
+      end
+    end
+  end
+
+  def test_the_foreign_runner_refusal_names_what_it_saw
+    yaml = <<~YAML
+      jobs:
+        test:
+          steps:
+            - run: bin/rails db:test:prepare test test:system
+            - run: npx playwright test --grep-invert "@devnet"
+    YAML
+    with_ci(yaml) do |dir|
+      assert_match(/playwright/, CiTestCommand.refusal(dir).to_s)
+    end
+  end
+
+  def test_a_foreign_runner_CHAINED_INSIDE_the_rails_step_still_resolves
+    # The boundary, and the reason the sniff excludes steps that already run rails
+    # tests: chained into ONE step, the lane runs the whole string VERBATIM — the
+    # playwright run HAPPENS. The refusal is about steps the lane would DROP, not
+    # about how many runners appear.
+    yaml = <<~YAML
+      jobs:
+        test:
+          steps:
+            - run: bin/rails db:test:prepare test test:system && npx playwright test
+    YAML
+    with_ci(yaml) do |dir|
+      assert_equal "bin/rails db:test:prepare test test:system && npx playwright test",
+                   CiTestCommand.for_root(dir)
+      assert_nil CiTestCommand.refusal(dir)
+    end
+  end
+
+  def test_a_SHIMMED_foreign_runner_beside_the_rails_step_refuses
+    # The shims. `npx playwright test` is an invocation OF playwright, and so are
+    # `pnpm dlx playwright test` and `npm exec jest` — the sniff must see THROUGH the
+    # shim, or the same drop hides behind one extra word.
+    ["npx playwright test", "pnpm dlx playwright test", "npm exec jest",
+     "yarn dlx vitest run"].each do |runner|
+      yaml = <<~YAML
+        jobs:
+          test:
+            steps:
+              - run: bin/rails db:test:prepare test test:system
+              - run: #{runner}
+      YAML
+      with_ci(yaml) { |dir| assert_nil CiTestCommand.for_root(dir), "`#{runner}` was DROPPED" }
+    end
+  end
+
+  def test_NON_test_uses_of_the_known_runners_do_not_refuse
+    # The over-fire check, and the sharpest vector here: `npx playwright install
+    # --with-deps chromium` is what turf-monster's CI really runs one step ABOVE its
+    # real playwright call. Sniff the EXECUTABLE alone and this reads as a test run —
+    # so the guard refuses a repo for INSTALLING A BROWSER. (This vector caught exactly
+    # that bug in the first cut of the sniff.) `npm ci`, `npm run build`, `yarn
+    # install`, `go build`, `make setup` are the same shape.
+    ["npm ci", "npm install", "npm run build", "yarn install --frozen-lockfile",
+     "go build ./...", "make setup", "npx playwright install --with-deps chromium",
+     "pnpm dlx playwright install"].each do |setup|
+      yaml = <<~YAML
+        jobs:
+          test:
+            steps:
+              - run: #{setup}
+              - run: bin/rails db:test:prepare test test:system
+      YAML
+      with_ci(yaml) do |dir|
+        assert_equal "bin/rails db:test:prepare test test:system", CiTestCommand.for_root(dir),
+                     "`#{setup}` is SETUP and must not refuse"
+        assert_nil CiTestCommand.refusal(dir)
+      end
+    end
+  end
+
+  def test_an_UNCLASSIFIABLE_step_degrades_to_todays_behavior
+    # THE POLARITY, asserted. An opaque script we cannot classify is NOT a refusal:
+    # the hub's own `test` job carries a multi-line chromedriver-evict script, so
+    # "refuse on anything unrecognized" would refuse the HUB. A missed runner
+    # degrades to today's silence; a KNOWN one adds loudness. Do not invert this.
+    yaml = <<~YAML
+      jobs:
+        test:
+          steps:
+            - name: Evict any chromedriver on PATH
+              run: |
+                for bin in $(which -a chromedriver 2>/dev/null); do sudo rm -f "$bin"; done
+                echo "chromedriver remaining: $(which chromedriver 2>/dev/null || echo none)"
+            - name: Some house script
+              run: ./bin/ci-extra.sh
+            - name: Run tests
+              run: bin/rails db:test:prepare test test:system
+    YAML
+    with_ci(yaml) do |dir|
+      assert_equal "bin/rails db:test:prepare test test:system", CiTestCommand.for_root(dir)
+      assert_nil CiTestCommand.refusal(dir)
+    end
+  end
+
+  # --- THE NET, AT WORKFLOW GRAIN -------------------------------------------------
+  #
+  # Everything below is ONE bug in nine spellings: THE PARSER LOOKED AT A NARROWER
+  # SLICE OF CI THAN CI ACTUALLY RUNS, so the Ruby suite could sit somewhere it never
+  # looked and the cert stamped GREEN with a tier NEVER RUN.
+  #
+  # Each of these vectors was VERIFIED GREEN against the previous round's code before
+  # the fix landed. They are not hypotheticals — they are the transcript of a guard
+  # being walked past nine different ways. So do not test them one spelling at a time:
+  # the ASSERTION is the property — "CI's Ruby suite runs where this cert can SEE it
+  # and RUN it, or the cert REFUSES" — and these are merely the vectors that prove the
+  # property holds where it used to leak.
+
+  # A step's command is a command WHEREVER the rails invocation sits in it. Enumerating
+  # wrappers would miss the next one; there is no end to that list.
+  def test_a_WRAPPED_rails_suite_in_another_job_refuses
+    ["docker compose run web bin/rails db:test:prepare test:system",
+     "ssh runner bin/rails db:test:prepare test:system",
+     "timeout 30m bin/rails db:test:prepare test:system",
+     "sudo -u ci bin/rails db:test:prepare test:system",
+     "nix-shell --run bin/rails db:test:prepare test:system",
+     "docker compose run web bin/rails test test/system"].each do |wrapped|
+      yaml = <<~YAML
+        jobs:
+          test:
+            steps:
+              - run: bin/rails test
+          system_test:
+            steps:
+              - run: #{wrapped}
+      YAML
+      with_ci(yaml) do |dir|
+        assert_nil CiTestCommand.for_root(dir),
+                   "`#{wrapped}` is CI's system tier, one job over — it must never resolve to the narrow half"
+        assert_match(/MORE THAN ONE JOB/, CiTestCommand.refusal(dir).to_s)
+      end
+    end
+  end
+
+  # THE VECTOR THAT ACTUALLY TESTS THE STRUCTURAL FIX — and the one the first cut of
+  # these tests MISSED. Every wrapper vector above carries a literal `test:system` /
+  # `test/system`, so the TEXTUAL half of the probe catches them all: neuter the
+  # wrapper-transparent structural probe entirely and those tests still pass. They
+  # prove the union, not the parser.
+  #
+  # A wrapped UNIT tier carries NO marker at all. Only "a rails invocation ANYWHERE in
+  # the line" can see it — so THIS is what fails if anyone narrows the probe back to
+  # position 0. (Mutation-proved: it does.)
+  def test_a_WRAPPED_suite_with_NO_TEXTUAL_MARKER_still_refuses
+    ["docker compose run web bin/rails test",
+     "docker compose run --rm web bundle exec rails test",
+     "timeout 30m bin/rails test test/models",
+     "sudo -u ci bin/rake test",
+     "ssh runner bin/rails test"].each do |wrapped|
+      refute wrapped.include?("test:system"), "vector must be invisible to the textual probe"
+      refute wrapped.include?("test/system"), "vector must be invisible to the textual probe"
+      refute CiTestCommand.runs_tests?(wrapped), "…and invisible to the OLD position-0 probe"
+      assert CiTestCommand.runs_ruby_suite?(wrapped), "the NET probe must still SEE `#{wrapped}`"
+
+      yaml = <<~YAML
+        jobs:
+          test:
+            steps:
+              - run: bin/rails test test/models
+          unit_extra:
+            steps:
+              - run: #{wrapped}
+      YAML
+      with_ci(yaml) do |dir|
+        assert_nil CiTestCommand.for_root(dir), "`#{wrapped}` is CI's suite, one job over, in a wrapper"
+        assert_match(/MORE THAN ONE JOB/, CiTestCommand.refusal(dir).to_s)
+      end
+    end
+  end
+
+  # The same wrapper, in the TEST job itself: the lane can SEE the suite and cannot RUN
+  # it. That is a REFUSAL, never a quiet fallback to a narrower command.
+  def test_a_WRAPPED_suite_in_the_test_job_refuses_rather_than_narrowing
+    yaml = <<~YAML
+      jobs:
+        test:
+          steps:
+            - run: docker compose run web bin/rails db:test:prepare test test:system
+    YAML
+    with_ci(yaml) do |dir|
+      cmd = "docker compose run web bin/rails db:test:prepare test test:system"
+      assert CiTestCommand.runs_ruby_suite?(cmd), "the NET probe must SEE a wrapped suite"
+      refute CiTestCommand.runnable_here?(cmd), "the SELECTION probe must refuse to run it verbatim"
+      assert_nil CiTestCommand.for_root(dir)
+      assert_match(/WRAPPER/, CiTestCommand.refusal(dir).to_s)
+    end
+  end
+
+  # THE TEXTUAL HALF OF THE NET PROBE, and the vector that PROVES it earns its keep.
+  #
+  # Everything the structural probe can see, it sees better. The textual markers are
+  # load-bearing in exactly one place: an indirection this cert CANNOT read, handed the
+  # tier as an argument — `./bin/ci-runner test:system`, a house script that is not in
+  # the repo (or not readable). No rails token, nothing to follow — and the command
+  # still says, in plain text, that it runs the system tier.
+  #
+  # Drop the textual union and NOTHING else in this file goes red (mutation-proved —
+  # that is why this test exists). That is precisely how the browser guard lost its
+  # textual half in the shared-probe refactor: untested code is code the next
+  # simplification deletes.
+  def test_an_UNREADABLE_indirection_that_NAMES_the_tier_refuses
+    ["./bin/ci-runner test:system",
+     "ci/run-suite test/system",
+     "some-global-tool run test:system"].each do |named|
+      refute CiTestCommand.runs_tests?(named), "no rails token: the structural probe cannot see this"
+      assert CiTestCommand.runs_ruby_suite?(named), "the TEXTUAL half must: the command NAMES the tier"
+
+      yaml = <<~YAML
+        jobs:
+          test:
+            steps:
+              - run: bin/rails test
+          system_test:
+            steps:
+              - run: #{named}
+      YAML
+      with_ci(yaml) do |dir|
+        assert_nil CiTestCommand.for_root(dir)
+        assert_match(/MORE THAN ONE JOB/, CiTestCommand.refusal(dir).to_s)
+      end
+    end
+  end
+
+  def test_a_QUOTED_inner_command_is_still_a_command
+    yaml = <<~YAML
+      jobs:
+        test:
+          steps:
+            - run: bin/rails test
+        system_test:
+          steps:
+            - run: sh -c "bin/rails db:test:prepare test:system"
+    YAML
+    with_ci(yaml) do |dir|
+      assert_nil CiTestCommand.for_root(dir)
+      assert_match(/MORE THAN ONE JOB/, CiTestCommand.refusal(dir).to_s)
+    end
+  end
+
+  # A `container:` job needs NO new code — its steps' `run:` text is unchanged, and the
+  # property reads the text. Pinned so a future "simplification" cannot regress it.
+  def test_a_CONTAINER_job_running_the_suite_refuses
+    yaml = <<~YAML
+      jobs:
+        test:
+          steps:
+            - run: bin/rails test
+        system_test:
+          container: ruby:3.3
+          steps:
+            - run: bin/rails db:test:prepare test:system
+    YAML
+    with_ci(yaml) { |dir| assert_match(/MORE THAN ONE JOB/, CiTestCommand.refusal(dir).to_s) }
+  end
+
+  def test_a_MATRIX_job_whose_steps_come_from_a_yaml_anchor_refuses
+    # YAML aliases are resolved by the parser (`aliases: true`), so templated steps
+    # materialize and the property sees them.
+    yaml = <<~YAML
+      x-suite: &suite
+        - run: bin/rails db:test:prepare test:system
+      jobs:
+        test:
+          steps:
+            - run: bin/rails test
+        tiers:
+          strategy:
+            matrix:
+              tier: [system]
+          steps: *suite
+    YAML
+    with_ci(yaml) { |dir| assert_match(/MORE THAN ONE JOB/, CiTestCommand.refusal(dir).to_s) }
+  end
+
+  # An indirection INTO THIS REPO is READABLE. Read it, rather than assume it is inert.
+  def test_a_MAKEFILE_target_that_runs_the_suite_refuses
+    yaml = <<~YAML
+      jobs:
+        test:
+          steps:
+            - run: bin/rails test
+        system_test:
+          steps:
+            - run: make system
+    YAML
+    with_ci(yaml) do |dir|
+      File.write(File.join(dir, "Makefile"), "system:\n\tbin/rails db:test:prepare test:system\n")
+      assert_nil CiTestCommand.for_root(dir)
+      assert_match(/MORE THAN ONE JOB/, CiTestCommand.refusal(dir).to_s)
+    end
+  end
+
+  def test_a_REPO_LOCAL_SCRIPT_that_runs_the_suite_refuses
+    yaml = <<~YAML
+      jobs:
+        test:
+          steps:
+            - run: bin/rails test
+        system_test:
+          steps:
+            - run: ./bin/ci-system
+    YAML
+    with_ci(yaml) do |dir|
+      FileUtils.mkdir_p(File.join(dir, "bin"))
+      File.write(File.join(dir, "bin", "ci-system"), "#!/bin/sh\nbin/rails db:test:prepare test:system\n")
+      assert_nil CiTestCommand.for_root(dir)
+      assert_match(/MORE THAN ONE JOB/, CiTestCommand.refusal(dir).to_s)
+    end
+  end
+
+  # A repo-local script that runs NO tests must stay SILENT — the same read, the other
+  # verdict. This is the over-fire guard for following indirections at all: the hub's
+  # own `bin/brakeman`, `bin/importmap` and `bin/rubocop` are exactly this shape.
+  def test_a_repo_local_script_that_runs_NO_tests_does_not_refuse
+    yaml = <<~YAML
+      jobs:
+        test:
+          steps:
+            - run: bin/rails db:test:prepare test test:system
+        scan:
+          steps:
+            - run: ./bin/scan
+    YAML
+    with_ci(yaml) do |dir|
+      FileUtils.mkdir_p(File.join(dir, "bin"))
+      File.write(File.join(dir, "bin", "scan"), "#!/bin/sh\nbin/brakeman --no-pager\n")
+      assert_equal "bin/rails db:test:prepare test test:system", CiTestCommand.for_root(dir)
+      assert_nil CiTestCommand.refusal(dir)
+    end
+  end
+
+  # --- THE INTERPOLATED COMMAND ---------------------------------------------------
+  #
+  # A command whose TEXT does not say what it runs is not a command proven to run no
+  # tests. The bug this round closed: the probe scanned only the executable and the
+  # LEADING, PRE-FLAG arguments, so ONE flag hid the interpolation behind it —
+  # `docker compose run --rm web $SUITE` fell through BOTH nets (not opaque, not a
+  # suite) and the cert resolved the NARROWER step and stamped GREEN.
+  #
+  # The POSITIVE INVARIANT this table asserts — NOT a blacklist of the five spellings
+  # last round happened to imagine: an interpolated token this cert cannot read, in a
+  # COMMAND position of a step's invocation (past ANY number of flags, wrappers, env
+  # assignments, `--` separators, or subcommands), makes that step OPAQUE, and an
+  # opaque step in a PR-gating workflow REFUSES. A command position is one whose owning
+  # executable might EXECUTE the token — everything but the proven-inert file/text tools.
+  #
+  # Each vector below is a DIFFERENT way to place the interpolation on that axis; the
+  # point is the axis, so `for_each_placement` also drops the interpolation behind an
+  # EXTRA leading flag it was not written with, proving the rule is positional-agnostic.
+  INTERPOLATED_COMMAND_VECTORS = [
+    "$SUITE",                                       # bare env var IS the command
+    "${SUITE}",                                     # braced form
+    "${{ matrix.cmd }}",                            # the matrix templates the command
+    "$(cat ci/suite-cmd.txt)",                      # …or a file, at run time
+    "docker compose run web $SUITE",                # wrapper, interpolation last (the OLD catch)
+    "docker compose run --rm web $SUITE",           # …one flag past it → the DEFEAT
+    "docker compose run -T --rm web $SUITE",        # …several flags, interleaved
+    "bash -c \"$SUITE\"",                           # -c hands the whole command to a shell
+    "sh -c $SUITE",                                 # …unquoted, a bare token
+    "timeout 30m docker run --rm img $SUITE",       # a wrapper before the wrapper
+    "env FOO=1 docker run --rm img $SUITE",         # env(1) prefix, then flags
+    "bin/rails db:test:prepare ${{ matrix.tier }}", # the rails TASK LIST is templated
+    "bin/rails db:test:prepare --trace ${{ matrix.tier }}" # …one flag past IT, too
+  ].freeze
+
+  def test_an_INTERPOLATED_command_in_ANY_position_makes_the_step_opaque
+    INTERPOLATED_COMMAND_VECTORS.each do |base|
+      for_each_placement(base) do |vector|
+        yaml = <<~YAML
+          jobs:
+            test:
+              steps:
+                - run: bin/rails db:test:prepare test
+                - run: |
+                    #{vector}
+        YAML
+        with_ci(yaml) do |dir|
+          assert_nil CiTestCommand.for_root(dir),
+                     "`#{vector}` could BE the system tier — the cert must not resolve the narrow step and call it CI"
+          assert_match(/CANNOT SEE INTO/, CiTestCommand.refusal(dir).to_s,
+                       "`#{vector}` — an unreadable command position must make the step OPAQUE, not inert")
+        end
+      end
+    end
+  end
+
+  # The same command run through the FULL resolver via CiTestCommand.refusal on a
+  # single line, so a regression is caught even by the unit probe in isolation.
+  def test_the_interpolation_probe_reads_past_flags
+    INTERPOLATED_COMMAND_VECTORS.each do |vector|
+      refute_empty CiTestCommand.interpolated_commands(vector),
+                   "`#{vector}` hides a command the cert cannot read — it must be flagged opaque"
+    end
+  end
+
+  # THE SENSITIVE HALF, PINNED. `runs_ruby_suite?` must see a REAL rails tier no matter
+  # how many flags precede it — the same flag-is-not-a-boundary rule, on the net probe.
+  # A flag before the tier used to end the task scan, so the suite went unseen and the
+  # step counted as neither suite nor opaque.
+  def test_the_suite_probe_sees_a_tier_past_any_number_of_flags
+    ["bin/rails db:test:prepare --trace test",             # one flag before the tier
+     "bin/rails --trace db:test:prepare test test:system", # flag before AND between
+     "docker compose run --rm web bin/rails test:system",  # a wrapper, a flag, then the tier
+     "sudo -u ci timeout 30m bin/rails db:test:prepare test test:system"].each do |cmd|
+      assert CiTestCommand.runs_ruby_suite?(cmd),
+             "`#{cmd}` runs the Ruby suite — a flag before the tier must not hide it"
+    end
+
+    # …and the `-e test` trap still holds PAST a flag: the scan stops at `runner`, so it
+    # never reaches the `test` that is merely the RAILS_ENV value of `-e`.
+    refute CiTestCommand.runs_ruby_suite?("bin/rails runner --trace -e test e2e/seed.rb"),
+           "`runner` ends the task list — the `test` after it is the -e value, not a tier"
+  end
+
+  # Drop each vector one extra leading flag deeper — if the rule stopped at a flag,
+  # exactly this shift would reopen the hole.
+  def for_each_placement(base)
+    yield base
+    exe, rest = base.split(" ", 2)
+    return if rest.nil? || exe.start_with?("$", "bin/rails")
+
+    yield "#{exe} --deeper #{rest}"
+  end
+
+  # THE OVER-FIRE COUNTER-TABLE. The mirror invariant: an interpolation that is NOT in
+  # a command position — it is DATA an inert file/text tool manipulates, or it is not a
+  # whole-token variable at all — must stay SILENT, or every repo in the ecosystem is
+  # bricked. These are the shapes the live ci.yml files really contain.
+  SILENT_INTERPOLATION_VECTORS = [
+    %q{sudo rm -f "$bin"},                                       # rm does not exec its arg (hub, live)
+    %q{rm -rf ${DIR}},                                           # …braced
+    %q{cp $SRC $DST},                                            # cp moves files, execs nothing
+    %q{echo "running $SUITE"},                                   # echo prints, execs nothing
+    %q{for bin in $(which -a chromedriver); do rm -f "$bin"; done}, # the hub's real evict loop
+    %q{npm test -- --shard=${{ matrix.shard }}/3},              # a SHARD is templated, not the command (turf, live)
+    %q{bin/rails db:test:prepare test test:system}             # no interpolation at all
+  ].freeze
+
+  def test_an_interpolation_NOT_in_a_command_position_stays_silent
+    SILENT_INTERPOLATION_VECTORS.each do |vector|
+      assert_empty CiTestCommand.interpolated_commands(vector),
+                   "`#{vector}` interpolates DATA, not a command — refusing on it bricks the ecosystem"
+    end
+  end
+
+  # THE OVER-FIRE GUARD at workflow grain, and it is the HUB'S OWN CI woven together
+  # with turf's sharded playwright job — the two live shapes a naive "scan every token"
+  # fix would brick.
+  def test_interpolation_INSIDE_a_visible_command_does_not_refuse
+    yaml = <<~YAML
+      jobs:
+        test:
+          steps:
+            - name: Evict any chromedriver on PATH
+              run: |
+                for bin in $(which -a chromedriver 2>/dev/null); do sudo rm -f "$bin"; done
+                sudo rm -f /usr/local/bin/chromedriver || true
+                echo "chromedriver remaining on PATH: $(which chromedriver 2>/dev/null || echo none)"
+            - run: bin/rails db:test:prepare test test:system
+        playwright:
+          steps:
+            - run: npm test -- --grep-invert "@devnet" --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+            - run: bin/rails runner -e test e2e/seed.rb
+    YAML
+    with_ci(yaml) do |dir|
+      assert_nil CiTestCommand.refusal(dir),
+                 "the HUB's own chromedriver script and turf's sharded playwright job must NEVER brick a cert"
+      assert_equal "bin/rails db:test:prepare test test:system", CiTestCommand.for_root(dir)
+    end
+  end
+
+  # --- THE WORKFLOW FILE ITSELF ---------------------------------------------------
+
+  def test_the_suite_in_a_SIBLING_pr_gating_workflow_refuses
+    # The net is not `jobs.test.steps` of ci.yml. It is CI's Ruby suite, wherever in the
+    # PR verdict it runs — including another workflow FILE.
+    yaml = <<~YAML
+      on: [pull_request]
+      jobs:
+        test:
+          steps:
+            - run: bin/rails test
+    YAML
+    sibling = <<~YAML
+      on: [pull_request]
+      jobs:
+        system:
+          steps:
+            - run: bin/rails db:test:prepare test:system
+    YAML
+    with_ci(yaml) do |dir|
+      File.write(File.join(dir, ".github", "workflows", "system.yml"), sibling)
+      assert_nil CiTestCommand.for_root(dir)
+      refusal = CiTestCommand.refusal(dir).to_s
+      assert_match(/MORE THAN ONE JOB/, refusal)
+      assert_match(/system\.yml/, refusal, "the refusal must NAME the workflow file it found the suite in")
+    end
+  end
+
+  def test_a_NON_pr_gating_workflow_is_NOT_part_of_the_net
+    # THE OVER-FIRE GUARD for reading sibling workflows, and it is turf-monster's REAL
+    # devnet-nightly.yml: a SCHEDULED workflow is not part of the verdict this lane
+    # stands in for. Read it into the net and turf's cert lane refuses on every run.
+    yaml = <<~YAML
+      on: [pull_request]
+      jobs:
+        test:
+          steps:
+            - run: bin/rails db:test:prepare test test:system
+    YAML
+    nightly = <<~YAML
+      on:
+        schedule:
+          - cron: "0 7 * * *"
+        workflow_dispatch:
+      jobs:
+        devnet:
+          steps:
+            - run: bin/rails db:test:prepare test:system
+    YAML
+    with_ci(yaml) do |dir|
+      File.write(File.join(dir, ".github", "workflows", "devnet-nightly.yml"), nightly)
+      assert_nil CiTestCommand.refusal(dir),
+                 "a scheduled (non-PR) workflow is not part of the PR verdict this lane stands in for"
+      assert_equal "bin/rails db:test:prepare test test:system", CiTestCommand.for_root(dir)
+    end
+  end
+
+  def test_psych_parses_the_bare_on_key_as_TRUE_and_the_scan_survives_it
+    # MIND THE YAML: Psych reads the bare key `on:` as the BOOLEAN true (YAML 1.1), so
+    # `doc["on"]` is nil for every GitHub workflow ever written. Read only "on" and the
+    # scan sees ZERO pr-gating workflows and this entire guard evaporates — a fail-open
+    # one typo wide. This asserts the guard still FIRES through the real spelling.
+    assert_equal({ true => "pull_request" }, YAML.safe_load("on: pull_request"),
+                 "if Psych ever stops folding `on:` into true, simplify pr_gating? — until then, do NOT")
+
+    yaml = <<~YAML
+      on:
+        pull_request:
+        push:
+          branches: [ main ]
+      jobs:
+        test:
+          steps:
+            - run: bin/rails test
+        system_test:
+          steps:
+            - run: bin/rails db:test:prepare test:system
+    YAML
+    with_ci(yaml) { |dir| assert_match(/MORE THAN ONE JOB/, CiTestCommand.refusal(dir).to_s) }
+  end
+
+  def test_an_unreadable_trigger_is_scanned_rather_than_skipped
+    # Fail closed: a trigger we cannot read is not proof the workflow does not gate PRs.
+    yaml = <<~YAML
+      jobs:
+        test:
+          steps:
+            - run: bin/rails test
+        system_test:
+          steps:
+            - run: bin/rails db:test:prepare test:system
+    YAML
+    with_ci(yaml) { |dir| assert_match(/MORE THAN ONE JOB/, CiTestCommand.refusal(dir).to_s) }
+  end
+
+  # --- THE LIVE ECOSYSTEM: the over-fire guard rail, on the real files -------------
+
+  def test_EVERY_ecosystem_repo_still_resolves_CLEAN
+    # The guard that matters most. A cert lane that REFUSES a working repo is worse
+    # than the latent bug it closes, so every repo in the ecosystem is run through the
+    # REAL parser against its REAL workflows on every suite run. Siblings are skipped
+    # when absent (CI checks out only this repo), so this is a LOCAL pin — which is
+    # exactly where an over-fire would otherwise be discovered: at a builder's gate.
+    %w[mcritchie-studio turf-monster rolio chain-ops studio-engine solana-studio turf-vault].each do |repo|
+      root = File.expand_path("../../../#{repo}", HUB_ROOT)
+      next unless File.directory?(root)
+
+      assert_nil CiTestCommand.refusal(root),
+                 "the cert net REFUSES #{repo} — the guard over-fires on a live repo"
+      assert_includes CiTestCommand.resolve(root), "test:system",
+                      "#{repo}'s cert lane must still carry the system tier"
+    end
+  end
+
+  def test_the_four_RAILS_repos_resolve_their_OWN_ci_command
+    # …and they resolve it from their own ci.yml — not by falling back to DEFAULT with
+    # a refusal quietly suppressed.
+    %w[mcritchie-studio turf-monster rolio chain-ops].each do |repo|
+      root = File.expand_path("../../../#{repo}", HUB_ROOT)
+      next unless File.directory?(root)
+
+      assert_equal "bin/rails db:test:prepare test test:system", CiTestCommand.for_root(root),
+                   "#{repo} must RESOLVE its own ci.yml test command, not fall back"
+    end
+  end
 end
