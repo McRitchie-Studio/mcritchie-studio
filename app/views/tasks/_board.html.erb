@@ -422,6 +422,13 @@ function kanbanBoard(live) {
       <%= render "heartbeats_card", card_class: "h-full min-w-0" %>
       <%= render "release_duration_card", dashboard: release_duration_dashboard, card_class: "h-full min-w-0" %>
     </div>
+
+    <%# Live GitHub Actions status strip — latest run per workflow (CI / QA Deploy /
+        Production Deploy). Deploy lane only; @github_actions_runs is set by
+        TasksController#deployments. Broadcaster.github_actions REPLACEs it live. %>
+    <% if current_page == "deployments" %>
+      <%= render "github_actions_panel", runs: (@github_actions_runs || []) %>
+    <% end %>
   <% end %>
 
   <%# App filter — toggle a repo to hide all its cards (client-side, like the agent
