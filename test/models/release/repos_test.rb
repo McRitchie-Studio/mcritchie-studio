@@ -90,11 +90,13 @@ class Release::ReposTest < ActiveSupport::TestCase
     assert_nil Release::Repos.app_meta("nope")
   end
 
-  test "prod_deploy returns the git_push_heroku adapter for mcritchie-studio" do
+  test "prod_deploy returns the github_actions adapter for mcritchie-studio" do
+    # DevOps v2 Phase 2: the hub deploys through GitHub Actions (prod-deploy.yml),
+    # not a local git push. smoke_url stays for the board/deploy record even though
+    # the workflow (not the conductor) runs the smoke.
     adapter = Release::Repos.prod_deploy("mcritchie-studio")
-    assert_equal "git_push_heroku", adapter["strategy"]
-    assert_equal "heroku", adapter["remote"]
-    assert_equal "main", adapter["branch"]
+    assert_equal "github_actions", adapter["strategy"]
+    assert_equal "prod-deploy.yml", adapter["workflow"]
     assert_equal "https://mcritchie.studio", adapter["smoke_url"]
   end
 

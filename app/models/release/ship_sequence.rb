@@ -24,9 +24,18 @@ class Release
     # The prod_deploy `strategy` → the bin/release handler that runs it. Raises on
     # an unregistered strategy so a typo in config/release_repos.yml fails loudly
     # at ship time rather than silently skipping a repo's deploy.
+    #   * git_push_heroku — the conductor ref-pushes the frozen SHA to a Heroku
+    #     git remote and smokes /up itself (rolio).
+    #   * repo_script     — the conductor shells out to the repo's own deploy
+    #     script in a ship workspace (turf-monster).
+    #   * github_actions  — the conductor dispatches a GitHub Actions workflow and
+    #     WATCHES it; the workflow does the Heroku push + hard /up smoke server-
+    #     side, and the production Environment's required reviewer is the ship-
+    #     confirm gate (the hub — DevOps v2 Phase 2).
     STRATEGY_HANDLERS = {
       "git_push_heroku" => :git_push_heroku,
-      "repo_script" => :repo_script
+      "repo_script" => :repo_script,
+      "github_actions" => :github_actions
     }.freeze
 
     def strategy_handler(adapter)

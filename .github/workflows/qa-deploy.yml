@@ -3,9 +3,17 @@
 # Environment + HEROKU_API_KEY secret exist (see PHASE2-PLAN.md).
 name: QA Deploy
 
+# workflow_dispatch, NOT push:[release]: the conductor's sweep (`bin/release
+# prepare`) merges N reviewed PRs into `release`, which is N pushes — a push
+# trigger would fire N QA deploys, each racing the next. Dispatch means the
+# conductor fires exactly ONE deploy, of the FINAL release tip, after the whole
+# sweep lands (bin/release.rb dispatch_and_watch). Same shape as prod-deploy.yml.
 on:
-  push:
-    branches: [release]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Release-tip SHA to deploy to QA (the swept `release` HEAD)"
+        required: true
 
 # One QA deploy at a time; never cancel an in-flight deploy. Not a CI suite lane,
 # so the anti-concurrency trigger guard (ci_workflow_triggers_test.rb parses only
@@ -19,17 +27,18 @@ jobs:
     runs-on: ubuntu-latest
     environment: qa            # auto — no reviewer; optimistic
     steps:
-      # fetch-depth: 0 — Heroku's git receiver needs the pushed commit's ancestry.
-      - name: Checkout the release tip (full history)
+      # fetch-depth: 0 — Heroku's git receiver needs the deployed commit's ancestry.
+      - name: Checkout the dispatched SHA (full history)
         uses: actions/checkout@v7
         with:
+          ref: ${{ inputs.sha }}
           fetch-depth: 0
 
       - name: Deploy the release SHA to Heroku QA
         run: |
           git push --force \
             "https://heroku:${{ secrets.HEROKU_API_KEY }}@git.heroku.com/mcritchie-studio-qa.git" \
-            "${{ github.sha }}:refs/heads/main"
+            "${{ inputs.sha }}:refs/heads/main"
 
       # OPTIMISTIC: the smoke is informational and never fails the job — a broken QA
       # boot must not stall the pipeline (the prod Environment reviewer is the human

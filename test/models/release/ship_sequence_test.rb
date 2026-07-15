@@ -16,6 +16,11 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
     assert_equal :repo_script, S.strategy_handler("repo_script")
   end
 
+  test "strategy_handler maps github_actions" do
+    # DevOps v2 Phase 2 — the hub deploys by dispatching a GitHub Actions workflow.
+    assert_equal :github_actions, S.strategy_handler("github_actions")
+  end
+
   test "strategy_handler raises on an unknown strategy" do
     err = assert_raises(ArgumentError) { S.strategy_handler("rsync_box") }
     assert_match(/unknown prod_deploy strategy/, err.message)

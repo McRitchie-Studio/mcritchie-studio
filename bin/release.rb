@@ -334,6 +334,53 @@ def sh(*cmd, capture: false, chdir: nil, env: nil)
   end
 end
 
+# Dispatch a GitHub Actions workflow (`gh workflow run`) and WATCH it to
+# completion; returns true iff the run concluded SUCCESSFULLY. The DevOps v2
+# Phase-2 deploy mechanic for the hub: prepare fires qa-deploy.yml, ship fires
+# prod-deploy.yml. The `production` Environment's required reviewer means the
+# prod run PAUSES for the operator's approval mid-watch — that pause IS the
+# ship-confirm gate (it replaced the local interactive prompt), so the watch is
+# expected to block until the operator clicks. DRY short-circuits before any `gh`.
+#
+# FINDING THE RUN ID is the one subtlety. `gh workflow run` prints nothing that
+# identifies the run it created, and `gh run list --limit 1` alone is a trap: a
+# PRIOR concluded run of the same workflow (prod deploys repeat, so one usually
+# exists) is the newest until ours registers, and watching THAT would read a
+# stale verdict. GitHub run ids increase monotonically, so we snapshot the newest
+# id BEFORE dispatch and poll (the run takes a couple seconds to register) until a
+# run with a STRICTLY GREATER id appears — that run is unambiguously ours.
+def dispatch_and_watch(workflow, inputs = {}, chdir: nil)
+  return true if DRY
+
+  # The newest run id for this workflow, or 0 when none exists yet.
+  newest_run_id = lambda do
+    out, ok = sh("gh", "run", "list", "--workflow", workflow, "--limit", "1",
+                 "--json", "databaseId", "--jq", ".[0].databaseId // empty",
+                 chdir: chdir, capture: true)
+    ok ? out.strip.to_i : 0
+  end
+  before_id = newest_run_id.call
+
+  args = ["gh", "workflow", "run", workflow]
+  inputs.each { |k, v| args += ["-f", "#{k}=#{v}"] }
+  _, dispatched = sh(*args, chdir: chdir)
+  return false unless dispatched
+
+  run_id = nil
+  20.times do
+    latest = newest_run_id.call
+    if latest > before_id
+      run_id = latest
+      break
+    end
+    sleep 3
+  end
+  return false unless run_id
+
+  _, watched = sh("gh", "run", "watch", run_id.to_s, "--exit-status", chdir: chdir)
+  watched
+end
+
 # The SHELL-SAFE `rails runner` payload for a conductor snippet. The snippet is
 # wrapped (`require 'json'`), Base64-encoded, and shipped as
 # `eval(Base64.urlsafe_decode64("<blob>"))` — so the command line carries ONLY a
@@ -2269,10 +2316,26 @@ def prepare
       end
     end
 
-    # c. deploy origin/release to the repo's own QA app. qa-server resolves the
-    #    ref in the sibling and pushes its SHA — no local checkout/branch-cut.
-    step("qa deploy: bin/qa-server deploy #{qa_app} origin/#{RELEASE_BRANCH} --yes")
-    _, qa_ok = sh("bin/qa-server", "deploy", qa_app, "origin/#{RELEASE_BRANCH}", "--yes", capture: false)
+    # c. deploy origin/release to the repo's own QA app. The github_actions apps
+    #    (the hub — DevOps v2 Phase 2) dispatch ONE qa-deploy.yml run at the swept
+    #    release tip: qa-deploy.yml is workflow_dispatch, not push:[release], so the
+    #    N PR-merge pushes of the sweep never fire N QA deploys — the conductor
+    #    fires exactly one. Every other app keeps the local qa-server force-push
+    #    (qa-server resolves origin/release in the sibling and pushes its SHA — no
+    #    local checkout/branch-cut). The /up boot poll (c2) gates the flip EITHER way.
+    if (group["prod_deploy"] || {})["strategy"].to_s == "github_actions"
+      tip = ""
+      unless DRY
+        out, tip_ok = sh("git", "-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}", capture: true)
+        tip = out.strip if tip_ok
+        abort!("could not resolve origin/#{RELEASE_BRANCH} in #{repo} for the QA deploy dispatch") if tip.empty?
+      end
+      step("qa deploy: gh workflow run qa-deploy.yml -f sha=#{short(tip)} — GitHub Actions QA deploy of the release tip")
+      qa_ok = dispatch_and_watch("qa-deploy.yml", { "sha" => tip }, chdir: path)
+    else
+      step("qa deploy: bin/qa-server deploy #{qa_app} origin/#{RELEASE_BRANCH} --yes")
+      _, qa_ok = sh("bin/qa-server", "deploy", qa_app, "origin/#{RELEASE_BRANCH}", "--yes", capture: false)
+    end
 
     # c2. wait for the dyno to actually BOOT before treating the deploy as done.
     #     `bin/qa-server deploy` returns once the push is accepted, but a slow dyno
@@ -3351,6 +3414,21 @@ def deploy_app(group, frozen)
     gate_sop("deploy:#{repo}", "#{command} #{args.join(' ')}".strip, ok,
              ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - deploy_started) * 1000).round)
     abort!("#{repo} deploy script failed (#{command}) — its own rollback applies; fix + re-run `bin/release ship`") unless ok
+  when :github_actions
+    # DevOps v2 Phase 2 (the hub): the Heroku push AND the hard /up smoke run
+    # INSIDE the dispatched workflow, so there is NO separate conductor curl-smoke
+    # here — dispatch_and_watch's success return already means "deployed AND
+    # smoked green". push_frozen_main above still advanced origin/main by ref; the
+    # workflow deploys the frozen SHA it is handed, independent of that push (which
+    # is exactly why prod-deploy.yml is workflow_dispatch, not push:[main]).
+    workflow = adapter["workflow"].to_s
+    abort!("github_actions adapter for #{repo} has no `workflow`") if workflow.empty? && !DRY
+    step("deploy: gh workflow run #{workflow} -f sha=#{short(frozen)} — GitHub Actions does the Heroku push + hard /up smoke")
+    deploy_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    ok = dispatch_and_watch(workflow, { "sha" => frozen }, chdir: path)
+    gate_sop("deploy:#{repo}", "gh workflow run #{workflow} -f sha=#{short(frozen)}", ok || DRY,
+             ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - deploy_started) * 1000).round)
+    abort!("GitHub Actions prod deploy failed for #{repo} (#{workflow}) — check the run; fix + re-run `bin/release ship`") unless ok || DRY
   end
   @ship_live << "app #{repo} deployed to production"
 end
