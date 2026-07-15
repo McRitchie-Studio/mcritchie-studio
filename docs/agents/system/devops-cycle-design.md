@@ -1048,8 +1048,10 @@ A task **may not advance `submitted → reviewed`** unless, for its shape:
 - the **FULL test suite and a FULL `rubocop`** are certified green against the
   *exact code being shipped* — not the touched-file subset. The shape's tier tags
   prove the agent *wrote* unit/integration; they do not prove nothing *else*
-  broke. `bin/full-suite-check <task>` runs `bin/rails test` and `bin/rubocop` in
-  full and stamps fingerprint-bound `[full-suite@<fp>]` / `[rubocop@<fp>]`
+  broke. `bin/full-suite-check <task>` runs **what CI runs, verbatim** — read from
+  the repo's own `.github/workflows/ci.yml`, today `bin/rails db:test:prepare test
+  test:system` (base **and** system tiers) — plus `bin/rubocop` in full, and stamps
+  fingerprint-bound `[full-suite@<fp>]` / `[rubocop@<fp>]`
   `checks_run` lines; `bin/dor-check` re-grades them against the current code
   fingerprint (a git tree hash — content-addressed, so it is **stable across the
   pre-commit→commit boundary** and identical in a reviewer's fresh checkout of the
@@ -1115,8 +1117,12 @@ verdict by `bin/lib/ci_status.rb`): a **failing**, **still-running**, or
 **closed/merged** PR is refused — a closed PR's green checks are *historical*, not
 a live target, so a stale `pr_url` never passes as green — an **all-green open** PR
 passes, and a task with **no PR yet** stays silent (nothing to verify). This closes the blocker-analysis
-**#1 class** — a PR green *locally* but red on CI, because the local cert runs
-`bin/rails test` and **not** the browser `test:system` lane GitHub also runs. It
+**#1 class** — a PR green *locally* but red on CI, because the **fast** local cert
+(`bin/fast-check`, the builder default) runs only the diff-mapped tests + the core
+spine, and **not** the browser `test:system` lane GitHub also runs. (The *full*
+cert no longer has this gap: `bin/full-suite-check` runs CI's own command verbatim,
+`test:system` included — which is why `dor-check` credits it without CI's verdict,
+and credits the fast cert only once CI is green.) It
 rides the existing gate-zero re-run: the feature agent's pre-PR run is silent on
 CI, but the heartbeat's `--gate merge` gate zero runs **after** the PR is up and
 refuses a red (or not-yet-green) PR before any review-judgment tokens are spent. A

@@ -112,8 +112,21 @@ false-refuse a tree nobody edited.)
    ```
 
    Lanes: `test-db-reset` (`bin/rails db:test:purge db:test:prepare`),
-   `full-suite` (`bin/rails test`, the ENTIRE suite), `rubocop` (`bin/rubocop`,
-   the whole repo). Green lanes stamp `[full-suite@<fp>]` + `[rubocop@<fp>]`.
+   `full-suite` (**what CI runs, verbatim** — read from the repo's own
+   `.github/workflows/ci.yml`; today `bin/rails db:test:prepare test test:system`,
+   the ENTIRE suite **including the system tier**), `rubocop` (`bin/rubocop`, the
+   whole repo). Green lanes stamp `[full-suite@<fp>]` + `[rubocop@<fp>]`.
+
+   The lane runs CI's command because this route's whole claim is
+   CI-INDEPENDENCE — it may never test *less* than CI. (It once did: it ran
+   `bin/rails test`, which **skips `test/system`**, so a builder could take the
+   CI-independent route, go green, and have zero system coverage.) Two consequences
+   worth knowing: the system tier drives a real headless **Chrome**, and a host
+   without one **aborts up front as an ENV error** — *"NOT a regression in your
+   diff"* — never as a red suite; and the command's shape is load-bearing —
+   `bin/rails test test:system` is **broken** (`test` is a real rails command, so
+   `test:system` parses as a path → `LoadError`), which is why `db:test:prepare`
+   leads and routes the line through rake. See `bin/lib/ci_test_command.rb`.
 
 3. **Record the tier tags as you built** — in either order, before or after you
    certify:

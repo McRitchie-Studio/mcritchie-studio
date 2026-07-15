@@ -164,6 +164,9 @@ require_relative "../lib/agent_session_usage"
 require_relative "../lib/task_usage_baseline"
 require_relative "../lib/task_usage_sandbox"
 require_relative "lib/session_identity"
+# The headless-Chrome probe behind the system-tier gate guard below — SHARED with
+# bin/full-suite-check's cert-side twin so both read one definition of "has Chrome".
+require_relative "lib/system_test_browser"
 # G3's AUDITOR: the same GitHub-CI verdict bin/dor-check reads for a PR, asked
 # about the COMMIT the pre-QA gate just certified (CiStatus.for_sha). The local
 # gate stays the verdict; CI only gets to DISAGREE — loudly. See ci_cross_check.
@@ -1690,25 +1693,18 @@ end
 #
 # Only asserted when the registered command actually runs the tier, so the
 # integration-subset satellites never need a browser on the gate host.
-CHROME_BINARIES = %w[google-chrome google-chrome-stable chromium chromium-browser chrome].freeze
-MACOS_CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-
-def system_tier?(cmd) = cmd.to_s.include?("test:system")
-
-# Pure PATH scan (no subprocess): does an executable by this name exist?
-def executable_on_path?(name)
-  ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).any? do |dir|
-    next false if dir.empty?
-
-    File.executable?(File.join(dir, name))
-  end
-end
+#
+# The PROBE (which binaries count as Chrome, and how a host is checked for one) is
+# shared with bin/full-suite-check's cert-side twin of this guard —
+# bin/lib/system_test_browser.rb. Only the abort WORDING lives here, because the
+# consequence does: at the gate, a misread ENV failure ejects a good PR.
+def system_tier?(cmd) = SystemTestBrowser.system_tier?(cmd)
 
 # Chrome itself — NOT chromedriver. There is deliberately no driver on PATH: like
 # ci.yml, we let Selenium Manager fetch the chromedriver MATCHED to the installed
 # Chrome (a stale/mismatched driver on PATH is preferred by Selenium Manager and
 # then fails on a major-version skew).
-def chrome_available? = File.executable?(MACOS_CHROME) || CHROME_BINARIES.any? { |b| executable_on_path?(b) }
+def chrome_available? = SystemTestBrowser.available?
 
 def assert_system_test_browser!(repo, cmd)
   return unless system_tier?(cmd)
@@ -1717,9 +1713,7 @@ def assert_system_test_browser!(repo, cmd)
   abort!("gate #{repo}: the registered gate command runs the SYSTEM tier (`#{cmd}`) but this host has " \
          "NO Chrome — headless Chrome is required to drive test/system, and without it Selenium fails " \
          "inside the suite and looks exactly like a red suite. This is an ENV issue, NOT a release " \
-         "regression — nothing to eject or revert. Install Chrome (macOS: `brew install --cask " \
-         "google-chrome`; Linux: install google-chrome/chromium), then re-run. Do NOT install a " \
-         "chromedriver — Selenium Manager fetches the one matching your Chrome.")
+         "regression — nothing to eject or revert. #{SystemTestBrowser::INSTALL_HINT}")
 end
 
 # PRE-QA GATE (prepare step 4): run each app's registered `qa_test_cmd` against
