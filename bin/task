@@ -235,7 +235,7 @@ end
 # WRITES a fresh parseable lease via ClaimLease.renewed — a reversible act that
 # heals the corrupted record — whereas reclaiming destroys a desk, which heals
 # nothing. Same disposition, opposite stakes.
-def enforce_claim_gate!(slug, devops, mover_session, steal:)
+def enforce_claim_gate!(slug, devops, mover_session, steal:, task: nil)
   claim = ClaimLease.from_devops(devops)
   decision = ClaimLease.evaluate(claim, session: mover_session, nonce: claim_nonce)
   return if decision != :held_by_other || steal
@@ -245,9 +245,27 @@ def enforce_claim_gate!(slug, devops, mover_session, steal:)
   warn!("⚠  task #{slug} is already claimed by a DIFFERENT live instance:")
   warn!("     session …#{held[-4..] || held}  instance #{claim["claim_nonce"]}  ·  last heartbeat ~#{age}s ago " \
         "(lease TTL #{ClaimLease::DEFAULT_TTL_SECONDS}s)")
+  # The heartbeat above only proves a TERMINAL IS PAINTING — it says nothing about
+  # whether the holder is advancing. Name the progress fact too, so the decision to
+  # --steal is made on evidence instead of on a green dot.
+  warn!("     #{progress_line(task)}") if task
   warn!("   Another terminal looks active on this task. To take it over anyway, re-run with --steal:")
   warn!("     bin/task move #{slug} building --steal")
   exit 1
+end
+
+# "last durable progress ~28m ago (cert failed)" — or an honest "unknown" when the
+# task has produced no artifact yet. Never dress an absence of evidence as trouble.
+def progress_line(task)
+  seconds = task["progress_seconds_ago"]
+  return "last durable progress: none recorded yet (no cert, gate, or stage move)" if seconds.nil?
+
+  label = task["last_progress_label"].to_s
+  detail = label.empty? ? "" : " (#{label})"
+  quiet = task["progress_quiet"] ? "  ← held, but nothing has landed in a long time" : ""
+  # ClaimLease owns the formatter (required above): the gate and the board card
+  # state the same fact, so they render it through the same code.
+  "last durable progress ~#{ClaimLease.humanize_age(seconds)} ago#{detail}#{quiet}"
 end
 
 SCALAR_FLAGS = {
@@ -987,7 +1005,7 @@ when "move"
   if stage == "building" && !mover_session.nil?
     current = api(:get, "/api/v1/tasks/#{slug}")["data"]
     current_devops = current.dig("metadata", "devops") || {}
-    enforce_claim_gate!(slug, current_devops, mover_session, steal: steal)
+    enforce_claim_gate!(slug, current_devops, mover_session, steal: steal, task: current)
     # Seed the usage baseline at the CLAIM so the build work transition
     # (building→submitted) records a true token delta. Idempotent: a no-op when
     # autofill above already wrote a baseline this move (e.g. a bare move), it

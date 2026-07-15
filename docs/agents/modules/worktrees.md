@@ -185,6 +185,16 @@ bin/agent-worktree scale status
   reason — and, for a confirmed live claim, the builder's heartbeat age — and **every
   branch that gives up on checking says so**, because a guard that silently disables
   itself is worse than no guard.
+  - **A QUIET desk is still a HELD desk — quiet never makes it reclaimable.** The
+    board also reports a task's last *durable* progress beside its liveness (see
+    [`devops-task-board.md`](devops-task-board.md#the-build-claim-liveness-and-progress-are-two-facts)),
+    and a live claim that has landed nothing in hours reads `quiet`. That is
+    **informational**: `reclaim_verdict` rides on `ClaimLease.live?` and nothing
+    else, so a quiet desk is withheld exactly like a busy one. This is on purpose.
+    A healthy build legitimately goes silent for a long time (certs reach 94
+    minutes at p99), so reclaiming on staleness would trade a rare lying-green for
+    a **frequent lying-red** — and a false reclaim destroys work in flight. A human
+    reads the progress fact and decides; the sweep never does.
   - **Fail-open, except where it would destroy something.** When the guard reads the
     claim, the dispositions short of a *confirmed, parseable* live lease are *not*
     alike, and the destroy path treats them differently:

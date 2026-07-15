@@ -43,13 +43,14 @@ class TaskCliTest < Minitest::Test
   # a nil value deletes that var from the child (used to clear the session vars so
   # the test never depends on a real ambient session).
   def run_task(args, env: {}, stub_devops: { "kind" => "feature" }, stub_stage: "building", chdir: nil, fail_get: nil,
-               fail_get_body: nil, stub_persist: true, fail_patch: nil,
+               fail_get_body: nil, stub_persist: true, fail_patch: nil, stub_progress: nil,
                stub_session_mascot: { "mascot" => "snorlax", "mascot_color" => "#A8A77A", "mascot_emoji" => "🔶",
                                       "app" => "mcritchie-studio", "app_color" => "#B57EDC" },
                stub_agent: { "name" => "Jasper", "status_color" => "#22D3EE", "emoji" => "🧪" })
     # The GET response the stub serves — lets a test seed an existing claim so the
     # move-to-building gate (and the heartbeat) read a real claim state.
     @stub_devops = stub_devops
+    @stub_progress = stub_progress
     @stub_stage = stub_stage
     # The board's PERSISTED stage, which a GET reads back. A stage-move PATCH
     # advances it — UNLESS stub_persist is false, which models the false-success
@@ -183,11 +184,14 @@ class TaskCliTest < Minitest::Test
     nil
   end
 
+  # The API projects the PROGRESS fact alongside the claim (see Api::V1::TasksController
+  # #task_json), so the claim gate can tell a second agent what the holder has actually
+  # PRODUCED — not merely that its terminal is painting. @stub_progress seeds it.
   def task_response(stage)
     JSON.generate("data" => {
       "slug" => "demo-task", "stage" => stage,
       "metadata" => { "devops" => @stub_devops }
-    })
+    }.merge(@stub_progress || {}))
   end
 
   def devops_of(request)
@@ -831,6 +835,52 @@ class TaskCliTest < Minitest::Test
     assert_nil patch_of(requests), "a refused move must NOT PATCH the stage"
     assert_match(/different live instance/i, err)
     assert_match(/--steal/, err)
+  end
+
+  # [integration] The refusal must name the PROGRESS fact, not just the heartbeat.
+  # A heartbeat says only "a terminal is painting" — it stayed green through the
+  # 2026-07-13 wedge. A second agent deciding whether to --steal needs to know what
+  # the holder has actually LANDED, so the gate prints the last durable artifact.
+  def test_refusal_names_the_holders_last_durable_progress
+    _requests, _out, err, status = run_task(
+      ["move", "demo-task", "building"],
+      env: { "CLAUDE_CODE_SESSION_ID" => SESSION, "TASK_CLAIM_NONCE" => "inst-B" },
+      stub_devops: claim_devops(session: SESSION, nonce: "inst-A", expires_in: 300),
+      stub_progress: { "progress_seconds_ago" => 9000, "last_progress_label" => "g1_cert failed",
+                       "progress_quiet" => true }
+    )
+    refute status.success?
+    assert_match(/last durable progress ~2\.5h ago \(g1_cert failed\)/, err)
+    assert_match(/nothing has landed in a long time/, err)
+    # ...and it still refuses. Naming a quiet holder never frees the desk: the
+    # operator still has to choose --steal. Nothing here reclaims anything.
+    assert_match(/--steal/, err)
+  end
+
+  # A healthy holder mid-cert is NOT dressed up as trouble — the gate reports its
+  # progress plainly, with no quiet warning.
+  def test_refusal_reports_a_progressing_holder_without_alarm
+    _requests, _out, err, = run_task(
+      ["move", "demo-task", "building"],
+      env: { "CLAUDE_CODE_SESSION_ID" => SESSION, "TASK_CLAIM_NONCE" => "inst-B" },
+      stub_devops: claim_devops(session: SESSION, nonce: "inst-A", expires_in: 300),
+      stub_progress: { "progress_seconds_ago" => 120, "last_progress_label" => "g1_cert running",
+                       "progress_quiet" => false }
+    )
+    assert_match(/last durable progress ~2m ago \(g1_cert running\)/, err)
+    refute_match(/nothing has landed/, err)
+  end
+
+  # Fail safe: a board that reports no progress fact (an older API, a task that has
+  # produced nothing yet) must read as UNKNOWN — never as a stalled holder.
+  def test_refusal_states_unknown_progress_honestly
+    _requests, _out, err, = run_task(
+      ["move", "demo-task", "building"],
+      env: { "CLAUDE_CODE_SESSION_ID" => SESSION, "TASK_CLAIM_NONCE" => "inst-B" },
+      stub_devops: claim_devops(session: SESSION, nonce: "inst-A", expires_in: 300)
+    )
+    assert_match(/none recorded yet/, err)
+    refute_match(/nothing has landed/, err)
   end
 
   # AC #1: --steal overrides the gate and takes the claim for the stealer's instance.

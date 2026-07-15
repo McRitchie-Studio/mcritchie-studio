@@ -546,6 +546,58 @@ class Task < ApplicationRecord
     ClaimLease.heartbeat_age(devops, now: now)
   end
 
+  # --- The progress fact (see the long note in ClaimLease) -------------------
+  # `claim_live?` above says only "a terminal is rendering". These say what the
+  # task has actually PRODUCED, read from the durable evidence we already write:
+  # TaskEvents (stage moves, intents, cert checkpoints) and GateRuns (a gate
+  # opening, recording a lane, or closing). No new heartbeat, no new write path —
+  # a wedged agent cannot fake these, because they only exist when work landed.
+  #
+  # nil means UNKNOWN (a task that has produced nothing yet), and unknown always
+  # reads as healthy: never invent trouble from an absence of evidence.
+  PROGRESS_IN_FLIGHT_BUDGET = 6.hours # past the longest cert ever measured (321m)
+
+  def last_progress_event
+    @last_progress_event ||= progress_evidence.max_by(&:first)
+  end
+
+  def last_progress_at
+    last_progress_event&.first
+  end
+
+  # What the last durable artifact WAS ("cert started", "moved to building") —
+  # the difference between "no progress in 40m" and a reader who can act on it.
+  def last_progress_label
+    last_progress_event&.last
+  end
+
+  def progress_seconds_ago(now: Time.current)
+    ClaimLease.progress_age(last_progress_at, now: now)
+  end
+
+  # A gate is demonstrably running right now (opened, never closed, and recently
+  # enough to be plausible). Open gate rows latch forever when a run crashes, so
+  # this is BOUNDED — an ancient open gate is not evidence of anything.
+  #
+  # Filtered in Ruby over the SAME association progress_evidence reads, so the board
+  # (which preloads :gate_runs) answers this from loaded rows instead of issuing a
+  # fresh EXISTS on every call — and the card asks two or three times per live desk.
+  def gate_in_flight?(now: Time.current)
+    window = (now - PROGRESS_IN_FLIGHT_BUDGET)..now
+
+    gate_runs.any? { |gate| gate.finished_at.nil? && gate.started_at.present? && window.cover?(gate.started_at) }
+  end
+
+  # Held by a live session, yet nothing durable has landed in a long time.
+  # Informational only — it reclaims nothing and blocks nothing.
+  def claim_progress_quiet?(now: Time.current)
+    ClaimLease.quiet?(devops,
+                      last_progress_at: last_progress_at,
+                      in_flight: gate_in_flight?(now: now),
+                      now: now)
+  end
+
+
   def devops_repositories
     devops_list("repositories")
   end
@@ -1083,6 +1135,54 @@ class Task < ApplicationRecord
   end
 
   private
+
+  # [[time, label], ...] — the durable artifacts this task has produced. Reads the
+  # LOADED associations when there are any: the board preloads BOTH :task_events and
+  # :gate_runs, so a card's chip costs it no extra query. Off the board (a single
+  # task, the API) each association loads once and is then cached on the record, so
+  # the repeated asks the chip makes still cost nothing further.
+  def progress_evidence
+    evidence = []
+
+    event = task_events.max_by(&:occurred_at)
+    evidence << [event.occurred_at, progress_event_label(event)] if event&.occurred_at
+
+    gate = gate_runs.max_by(&:updated_at)
+    evidence << [gate.updated_at, progress_gate_label(gate)] if gate&.updated_at
+
+    evidence
+  end
+
+  def progress_event_label(event)
+    case event.kind
+    when TaskEvent::CHECKPOINT then checkpoint_label(event)
+    when TaskEvent::INTENT     then "intent recorded"
+    # The event's OWN destination, not the task's current stage. The row carries the
+    # fact one column away; reading the task instead reports where the task is NOW,
+    # which is a different (and, once a later move lands, wrong) claim.
+    else "moved to #{event.to_stage.presence || stage}"
+    end
+  end
+
+  # A checkpoint's NAME is its `to_stage` (record_checkpoint_event writes
+  # `to_stage: name`), and checkpoints are NOT cert-only: review check-ins route
+  # through the same spine (`review_primary_complete`), and `bin/task checkpoint
+  # <slug> <name>` takes an arbitrary name. This label used to hardcode "cert", so a
+  # review check-in rendered as "cert passed" — the board naming an artifact it had
+  # never seen, and naming it in the one string the claim gate shows a second agent
+  # deciding whether to take the desk. Read the name off the event.
+  def checkpoint_label(event)
+    name = event.to_stage.to_s.strip.presence || "checkpoint"
+    status = event.metadata.to_h["status"].presence
+
+    status ? "#{name} #{status}" : name
+  end
+
+  def progress_gate_label(gate)
+    return "#{gate.key} running" if gate.finished_at.nil?
+
+    "#{gate.key} #{gate.success ? 'passed' : 'failed'}"
+  end
 
   # Refresh the testing-phase projection after a stage transition — the only edit
   # ON THIS ROW that moves a v2 task-owned phase window (build/ci/review bounds).

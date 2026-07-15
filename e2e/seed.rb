@@ -276,6 +276,54 @@ cleared_block_task = Task.create!(
   agent_slug: "carl",
   metadata: { "devops" => { "kind" => "bug", "repositories" => ["mcritchie-studio"] } }
 )
+# --- The claim chip: liveness and progress, never conflated -------------------
+# Two BUILDING desks, both holding a LIVE claim (a terminal is painting). They
+# differ only in what they have PRODUCED, which is the whole point of the chip:
+#
+#   quiet    — heartbeating for hours with no durable artifact (the 2026-07-13 lie)
+#   working  — a cert gate open right now (a healthy long build, never flagged)
+#
+# The lease expiry is seeded FAR in the future on purpose. A real lease carries a
+# 120s TTL renewed by bin/statusline; a fixture has no statusline, so a real TTL
+# would lapse between `seed` and the spec run and the chip would vanish (flake).
+def e2e_claim(expires_at: 1.day.from_now)
+  {
+    "kind" => "feature", "repositories" => ["mcritchie-studio"],
+    "claimed_session" => "e2e-session", "claim_nonce" => "e2e-instance",
+    "claim_expires_at" => expires_at.utc.iso8601
+  }
+end
+
+quiet_claim_task = Task.create!(
+  title: "Quiet claim chip demo",
+  slug: "e2e-quiet-claim-demo",
+  description: "A live claim that has landed nothing in hours — held, but not progressing.",
+  stage: "building", priority: 1, agent_slug: "carl",
+  metadata: { "devops" => e2e_claim }
+)
+# Its only durable artifact sits past the derived quiet threshold — stated relative
+# to the threshold so the fixture keeps demonstrating quiet if the corpus is
+# re-measured. to_stage carries the checkpoint's NAME, exactly as the app writes it.
+quiet_silence = ClaimLease::PROGRESS_QUIET_SECONDS + 30.minutes
+TaskEvent.where(task_slug: quiet_claim_task.slug).update_all(occurred_at: (quiet_silence + 1.hour).ago)
+TaskEvent.create!(task_slug: quiet_claim_task.slug, kind: TaskEvent::CHECKPOINT,
+                  from_stage: "building", to_stage: "cert", occurred_at: quiet_silence.ago,
+                  metadata: { "status" => "started" })
+
+working_claim_task = Task.create!(
+  title: "Working claim chip demo",
+  slug: "e2e-working-claim-demo",
+  description: "A live claim mid-cert — a long build that must never be flagged.",
+  stage: "building", priority: 1, agent_slug: "carl",
+  metadata: { "devops" => e2e_claim }
+)
+TaskEvent.where(task_slug: working_claim_task.slug).update_all(occurred_at: 6.hours.ago)
+# An OPEN gate: the cert is running right now. This is the evidence that keeps a
+# slow-but-healthy build off the quiet list, however long it stays silent.
+GateRun.create!(subject_type: "task", subject_slug: working_claim_task.slug, key: "g1_cert",
+                attempt: 1, started_at: 3.minutes.ago,
+                created_at: 3.minutes.ago, updated_at: 3.minutes.ago)
+
 Activity.create!(task_slug: cleared_block_task.slug, activity_type: "qa_feedback",
                  description: "Blocked: please add a regression test.", created_at: 2.hours.ago)
 Activity.create!(task_slug: cleared_block_task.slug, activity_type: "handoff",
