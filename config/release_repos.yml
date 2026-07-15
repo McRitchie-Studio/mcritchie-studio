@@ -27,6 +27,17 @@
 #       remote    — the git remote name or Heroku git URL to push to (e.g. heroku).
 #       branch    — the branch the remote deploys (e.g. main).
 #       smoke_url — the production URL to smoke-test after the push.
+#   github_actions — dispatch a GitHub Actions workflow and WATCH it to completion
+#                 (DevOps v2 Phase 2 — the HUB). The workflow does the Heroku push
+#                 AND the hard /up smoke server-side, and the `production`
+#                 Environment's required reviewer is the operator ship-confirm (it
+#                 replaced the local interactive prompt). The conductor runs NO
+#                 curl-smoke of its own for this adapter — the workflow owns it.
+#       workflow  — the .github/workflows filename to dispatch (e.g. prod-deploy.yml).
+#       smoke_url — the production URL, KEPT for the board/deploy record even though
+#                 the workflow (not the conductor) runs the smoke.
+#     The QA-deploy twin is a fixed `qa-deploy.yml`, dispatched by `bin/release
+#     prepare` for this adapter instead of `bin/qa-server deploy`.
 #   repo_script — shell out to a deploy script that lives IN the app repo (the
 #                 repo owns its own deploy logic; the conductor just invokes it).
 #       command — the repo-relative deploy script (e.g. bin/deploy).
@@ -56,8 +67,9 @@
 # `bin/release ship` runs it (cwd = the repo's ISOLATED GATE WORKSPACE, at its
 # QA-frozen SHA) right before the irreversible prod deploy and scoped-aborts on
 # red. DOUBLE-TEST CAVEAT: only set it where the repo's own deploy does NOT
-# already run the suite. The hub deploys via git_push_heroku (no test step), so
-# it carries `test_cmd: bin/rails db:test:prepare test test:system` (any command SHAPE
+# already run the suite. The hub deploys via github_actions (a workflow that runs
+# NO test step, just the Heroku push + smoke), so it carries
+# `test_cmd: bin/rails db:test:prepare test test:system` (any command SHAPE
 # works here — argless or path-arg — because `prepare_gate_workspace!` runs
 # `bin/rails db:test:prepare test:prepare` in the gate workspace first, building the
 # gitignored app/assets/builds/tailwind.css whatever the registered line looks like;
@@ -107,8 +119,9 @@
 #     tier, and their ship test_cmd / own deploy owns the full pre-prod run
 #     (registering the same full suite twice would re-run it every ship, since
 #     their SHAs routinely drift via re-pins).
-#   * a repo deployed by git_push_heroku (the HUB and ROLIO) — NO test step runs at
-#     deploy, so the registered command IS the last gate before prod and must be
+#   * a repo whose deploy runs NO test step (ROLIO via git_push_heroku, the HUB via
+#     github_actions — its workflow only pushes + smokes) — the registered command
+#     IS the last gate before prod and must be
 #     CI's FULL suite, VERBATIM (`bin/rails db:test:prepare test test:system`), at
 #     BOTH gates. The 90/10 policy certifies the whole release batch ONCE at G3, and
 #     ship's test_gate self-gates when the frozen SHA matches that certified run, so
@@ -190,7 +203,9 @@ gems:
 
 apps:
   mcritchie-studio:
-    # Hub: git_push_heroku has no test step, so gate prod on the suite here.
+    # Hub: github_actions deploys via a workflow that runs NO test step (just the
+    # Heroku push + /up smoke), so gate prod on the suite here — same as the old
+    # git_push_heroku mechanic did.
     # (Ship's gate SELF-GATES when the frozen SHA is exactly what the G3 pre-QA
     # gate below already certified this run — full suite runs once per batch.
     # test_cmd and qa_test_cmd must stay the SAME STRING or that skip misses and
@@ -201,10 +216,14 @@ apps:
     # command VERBATIM, and repos_test.rb parses ci.yml and asserts they match,
     # so the gate cannot silently drift out from under CI again.
     qa_test_cmd: bin/rails db:test:prepare test test:system
+    # DevOps v2 Phase 2: the hub deploys through GitHub Actions (prod-deploy.yml),
+    # NOT a local git push. The workflow does the Heroku push + hard /up smoke;
+    # smoke_url stays for the board/deploy record. QA goes through qa-deploy.yml
+    # (dispatched by `bin/release prepare` for this adapter). rolio + turf are
+    # unchanged.
     prod_deploy:
-      strategy: git_push_heroku
-      remote: heroku
-      branch: main
+      strategy: github_actions
+      workflow: prod-deploy.yml
       smoke_url: https://mcritchie.studio
   turf-monster:
     # Self-gates at SHIP (bin/deploy runs the full suite pre-prod) — but nothing

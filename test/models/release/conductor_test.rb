@@ -885,7 +885,7 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_equal [studio.slug], studio_group[:members].map { |m| m[:slug] }
     assert_equal "release", studio_group[:release_branch] # the persistent per-repo branch
     assert_equal "mcritchie-studio", studio_group[:qa_app]
-    assert_equal "git_push_heroku", studio_group[:prod_deploy]["strategy"]
+    assert_equal "github_actions", studio_group[:prod_deploy]["strategy"] # DevOps v2 Phase 2: hub ships via Actions
 
     turf_group = plan.find { |g| g[:repo] == "turf-monster" }
     assert_equal :app, turf_group[:kind]

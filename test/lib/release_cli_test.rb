@@ -523,6 +523,40 @@ class ReleaseCliTest < Minitest::Test
                      "prepare must keep `release` ahead of main"
   end
 
+  # A deploy plan where the hub carries the github_actions adapter (as the real
+  # registry now does) alongside a repo_script app, so prepare's QA path dispatches
+  # qa-deploy.yml for the hub while the non-Actions app keeps the qa-server push.
+  GHA_QA_STUB = <<~RUBY
+    def conductor(ruby, read_only: false)
+      return { "tasks" => [], "release" => { "slug" => "rel-gha", "state" => "assembling" }, "screen" => {} } if ruby.include?("sweep_candidates")
+      { "slug" => "rel-gha", "state" => "assembling", "branch" => "release", "repos" => [
+        { "repo" => "mcritchie-studio", "kind" => "app", "release_branch" => "release",
+          "qa_app" => "mcritchie-studio",
+          "prod_deploy" => { "strategy" => "github_actions", "workflow" => "prod-deploy.yml" },
+          "members" => [{ "slug" => "t-studio", "branch" => "feat/studio" }] },
+        { "repo" => "turf-monster", "kind" => "app", "release_branch" => "release",
+          "qa_app" => "turf-monster",
+          "prod_deploy" => { "strategy" => "repo_script", "command" => "bin/deploy", "args" => ["--yes"] },
+          "members" => [{ "slug" => "t-turf", "branch" => "feat/turf" }] }
+      ] }
+    end
+  RUBY
+
+  # DevOps v2 Phase 2: the hub's QA deploy is scoped by prod_deploy strategy. A
+  # github_actions app dispatches ONE qa-deploy.yml run at the release tip
+  # (workflow_dispatch, so the N PR-merge pushes of the sweep don't fire N deploys);
+  # a non-Actions app keeps the local qa-server force-push, byte-unchanged.
+  def test_prepare_dry_run_dispatches_github_actions_qa_only_for_the_hub
+    out = run_cli(["--dry-run"], call: "prepare", setup: GHA_QA_STUB)
+
+    assert_includes out, "gh workflow run qa-deploy.yml",
+                     "the hub (github_actions) dispatches qa-deploy.yml for QA, not qa-server"
+    refute_includes out, "bin/qa-server deploy mcritchie-studio",
+                     "the hub no longer QA-deploys via qa-server"
+    assert_includes out, "bin/qa-server deploy turf-monster origin/release",
+                     "a non-github_actions app keeps the qa-server force-push (mechanic scoped to the hub)"
+  end
+
   def test_prepare_dry_run_no_longer_cuts_a_release_branch_or_merges_members
     out = run_cli(["--dry-run"], call: "prepare", setup: STUB_CONDUCTOR)
 
@@ -4097,6 +4131,94 @@ class ReleaseCliTest < Minitest::Test
       assert_equal "feat/live-session", git_out(clone, "rev-parse", "--abbrev-ref", "HEAD"),
                    "the primary is never checked out by the satellite deploy"
     end
+  end
+
+  # [integration] github_actions (the hub, DevOps v2 Phase 2) deploys by dispatching
+  # a workflow, not by pushing itself. push_frozen_main still ref-advances origin/main
+  # (the workflow deploys the FROZEN SHA it is handed, not origin/main — which is why
+  # prod-deploy.yml is workflow_dispatch, not push:[main]); then the conductor
+  # dispatches prod-deploy.yml at the frozen SHA and watches it. The workflow owns the
+  # Heroku push AND the hard /up smoke, so there is NO conductor curl-smoke here.
+  # dispatch_and_watch is stubbed to capture the call without shelling out to real gh.
+  def test_deploy_app_github_actions_dispatches_the_prod_workflow_at_the_frozen_sha
+    Dir.mktmpdir do |dir|
+      clone  = build_sibling_fixture(dir)
+      frozen = git_out(clone, "rev-parse", "release")
+
+      group = %({ "repo" => "sibling", "members" => [],
+                  "prod_deploy" => { "strategy" => "github_actions", "workflow" => "prod-deploy.yml" } })
+      setup = <<~RUBY
+        def repo_path(_repo) = #{clone.inspect}
+        def record_merged_main(_s); end
+        def dispatch_and_watch(workflow, inputs = {}, chdir: nil)
+          puts("DISPATCH \#{workflow} sha=\#{inputs['sha']}")
+          true
+        end
+      RUBY
+      out = run_cli(["--yes"], setup: setup,
+                    call: %{deploy_app(#{group}, #{frozen.inspect}); puts("PASSED")})
+
+      assert_includes out, "PASSED", "the github_actions deploy must succeed: #{out}"
+      assert_includes out, "DISPATCH prod-deploy.yml sha=#{frozen}",
+                      "the hub deploy dispatches prod-deploy.yml at the FROZEN sha"
+      assert_equal frozen, git_out(File.join(dir, "origin.git"), "rev-parse", "main"),
+                   "push_frozen_main still ref-advances origin/main to the frozen SHA before the dispatch"
+      refute_includes out, "smoke: GET",
+                      "no conductor curl-smoke for github_actions — the workflow owns the /up smoke"
+    end
+  end
+
+  # [integration] dispatch_and_watch's run-id selection is the correctness core of
+  # the github_actions deploy: `gh workflow run` names no run, so it snapshots the
+  # newest run id BEFORE dispatch and watches the first STRICTLY-greater one. These
+  # stub `sh` (+ no-op `sleep`) to drive that wiring without real gh; the pure truth
+  # table lives in Release::ShipSequenceTest#new_run_id.
+  def test_dispatch_and_watch_aborts_when_the_pre_dispatch_snapshot_never_answers
+    # A `gh run list` FAILURE must NOT read as before_id=0 — that would let the poll
+    # latch a PRE-EXISTING run and false-green a prod deploy. When the snapshot never
+    # answers, dispatch_and_watch returns false AND never dispatches the workflow.
+    setup = <<~RUBY
+      def sleep(*) = nil
+      $dispatched = false
+      def sh(*cmd, capture: false, chdir: nil, env: nil)
+        return ["", false] if cmd[0, 3] == ["gh", "run", "list"]   # snapshot always fails
+        $dispatched = true if cmd[0, 3] == ["gh", "workflow", "run"]
+        ["", true]
+      end
+    RUBY
+    out = run_cli(["--yes"], setup: setup,
+                  call: %{r = dispatch_and_watch("prod-deploy.yml", { "sha" => "abc" }); } +
+                        %{puts("RESULT \#{r}"); puts("DISPATCHED \#{$dispatched}")})
+
+    assert_includes out, "RESULT false", "a snapshot that never answers must ABORT, not watch a stale run"
+    assert_includes out, "DISPATCHED false", "and must not even dispatch the workflow without a baseline"
+  end
+
+  def test_dispatch_and_watch_watches_the_strictly_greater_run_it_created
+    # before_id snapshot = 100 (a prior run). After dispatch a NEW run 101 appears;
+    # dispatch_and_watch must watch 101 (strictly greater), never the pre-existing 100.
+    setup = <<~RUBY
+      def sleep(*) = nil
+      $list_calls = 0
+      $watched = nil
+      def sh(*cmd, capture: false, chdir: nil, env: nil)
+        if cmd[0, 3] == ["gh", "run", "list"]
+          $list_calls += 1
+          return [($list_calls == 1 ? "100" : "101"), true]   # 1st = snapshot, then our new run
+        end
+        if cmd[0, 3] == ["gh", "run", "watch"]
+          $watched = cmd[3]
+          return ["", true]
+        end
+        ["", true]   # gh workflow run
+      end
+    RUBY
+    out = run_cli(["--yes"], setup: setup,
+                  call: %{r = dispatch_and_watch("prod-deploy.yml", { "sha" => "abc" }); } +
+                        %{puts("RESULT \#{r} WATCHED \#{$watched}")})
+
+    assert_includes out, "WATCHED 101", "must watch the strictly-greater run it created, not the pre-existing one"
+    assert_includes out, "RESULT true", "a green watched run returns true"
   end
 
   # [unit] The env contract for a repo's OWN deploy script. It gets the workspace's

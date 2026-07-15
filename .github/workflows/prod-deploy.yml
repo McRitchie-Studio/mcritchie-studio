@@ -1,0 +1,54 @@
+# Phase 2 (DevOps v2) — Production deploy, moved into GitHub Actions.
+# Runs only once the `production` Environment (+ required reviewer = you) and
+# HEROKU_API_KEY secret exist (see PHASE2-PLAN.md).
+#
+# workflow_dispatch, NOT push:[main]: the ship's `release -> main` ref-push
+# (bin/release.rb push_frozen_main) would otherwise SELF-FIRE a prod deploy, and
+# ci.yml already runs on push:[main]. Dispatch also means a human must click "Run"
+# which, with the production Environment's required reviewer, IS the operator
+# ship-confirm that replaced the local interactive prompt.
+name: Production Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Frozen SHA to deploy (the QA-green release tip)"
+        required: true
+      release_pr:
+        description: "release->main PR number (for the record; optional)"
+        required: false
+
+concurrency:
+  group: prod-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production    # required-reviewer here = the operator ship-confirm
+    steps:
+      - name: Checkout the frozen SHA (full history)
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.sha }}
+          fetch-depth: 0
+
+      - name: Deploy the frozen SHA to Heroku production
+        run: |
+          git push --force \
+            "https://heroku:${{ secrets.HEROKU_API_KEY }}@git.heroku.com/mcritchie-studio.git" \
+            "${{ inputs.sha }}:refs/heads/main"
+
+      # HARD-GATED: a production boot that never returns 200 FAILS the deploy
+      # (preserves deploy_app's abort-on-smoke semantics, now server-side).
+      - name: Smoke production /up (hard gate)
+        run: |
+          for i in $(seq 1 40); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" https://mcritchie.studio/up || true)
+            echo "attempt $i: /up -> $code"
+            [ "$code" = "200" ] && { echo "production live"; exit 0; }
+            sleep 5
+          done
+          echo "::error::production /up never returned 200 — failing the deploy"
+          exit 1
