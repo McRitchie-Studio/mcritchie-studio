@@ -13,8 +13,8 @@ name as ordinary prose, generic GitHub triage, or a broad workflow request.
 
 McRitchie operating procedures are normal repo docs, not installed skills. When
 Mr. McRitchie names an SOP or heartbeat act such as `pr-review`, `qa-release`,
-`production-deploy`, or `full-cycle`, resolve that phrase through the SOP
-registry and directory convention here, read the mapped SOP, then execute it.
+`production-deploy`, `clean-up`, or `full-cycle`, resolve that phrase through the
+SOP registry and directory convention here, read the mapped SOP, then execute it.
 
 SOP locations:
 
@@ -56,6 +56,7 @@ required execution path. Do not follow a Background reference to run an SOP.
 | `archive-completed` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
 | `Steffon Heartbeat` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/HEARTBEAT.md` |
 | `full-cycle` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/full-cycle.md` |
+| `clean-up` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/clean-up.md` |
 | `grade-events` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/grade-events.md` |
 | `share-insights` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/share-insights.md` |
 | `Alex Heartbeat` | Alex | `mcritchie-studio/docs/agents/agents/alex/HEARTBEAT.md` |
@@ -378,6 +379,7 @@ verdict). Do not merge or deploy unless I explicitly assigned that lane.
 | Alex grade events SOP | `mcritchie-studio/docs/agents/agents/alex/sops/grade-events.md` |
 | Alex share insights SOP | `mcritchie-studio/docs/agents/agents/alex/sops/share-insights.md` |
 | Alex full cycle SOP | `mcritchie-studio/docs/agents/agents/alex/sops/full-cycle.md` |
+| Alex clean up SOP (board → 0 + infra sweep) | `mcritchie-studio/docs/agents/agents/alex/sops/clean-up.md` |
 | DevOps task-board handoff | `mcritchie-studio/docs/agents/modules/devops-task-board.md` |
 | Task-board API (auth + contract) | `mcritchie-studio/docs/agents/modules/task-board-api.md` |
 | Parallel agents and worktrees | `mcritchie-studio/docs/agents/modules/worktrees.md` |
@@ -401,6 +403,7 @@ verdict). Do not merge or deploy unless I explicitly assigned that lane.
 | Prior ecosystem closeout | `mcritchie-studio/docs/agents/audits/final-closeout-2026-06-14.md` |
 | Latest ecosystem audit | `mcritchie-studio/docs/agents/audits/broader-ecosystem-audit-2026-06-14.md` |
 | Delete later ledger | `mcritchie-studio/docs/agents/maintenance/delete-later.md` |
+| Parking lot (kept, not on the board) | `mcritchie-studio/docs/agents/maintenance/parking-lot.md` |
 
 ## SOP Registry
 
@@ -430,6 +433,7 @@ depend on the heartbeat.
 | `grade-events` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/grade-events.md` |
 | `share-insights` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/share-insights.md` |
 | `full-cycle` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/full-cycle.md` |
+| `clean-up` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/clean-up.md` |
 
 ## Repos
 

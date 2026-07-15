@@ -1,0 +1,1164 @@
+diff --git a/app/models/release/ship_sequence.rb b/app/models/release/ship_sequence.rb
+index 33fbd843..43a9a8cd 100644
+--- a/app/models/release/ship_sequence.rb
++++ b/app/models/release/ship_sequence.rb
+@@ -105,12 +105,12 @@ def preflight_offenders(states)
+       Array(states).filter_map do |s|
+         branch    = (s["branch"] || s[:branch]).to_s
+         all_files = Array(s["dirty_files"] || s[:dirty_files]).map(&:to_s).reject(&:empty?)
+-        # Drop KNOWN-GENERATED artifacts (a `bin/release retro` doc, the
+-        # agent-worktree ledger) — they routinely sit uncommitted in the deploy
+-        # checkout and counting them as dirt blocked EVERY ship's fast-forward.
+-        # Narrow allowlist (see GENERATED_ARTIFACT_GLOBS), NOT a blanket docs/
+-        # ignore — any other dirty file still gates the ship.
+-        files = all_files.reject { |f| generated_artifact?(f) }
++        # Ignore KNOWN-GENERATED artifacts ONLY when they are the sole dirt. If
++        # any real file makes this checkout an offender, keep EVERY dirty path in
++        # the offender so the auto-clean safety check reconciles everything a
++        # `git reset --hard` would discard, generated docs included.
++        real_files = all_files.reject { |f| generated_artifact?(f) }
++        files = real_files.any? ? all_files : []
+         dirty = if all_files.any?
+                   # A concrete file list is authoritative: dirty IFF a non-
+                   # generated file remains after the allowlist.
+@@ -174,8 +174,64 @@ def preflight_message(offenders)
+         "then re-run `bin/release ship`."
+     end
+ 
++    # --- ship-preflight AUTO-CLEAN: the release-identical dirty-primary case ---
++    #
++    # feedback_ship_preflight_dirty_primary: `bin/release merge` leaves the just-
++    # merged PR files re-STAGED on the primary's `main`, byte-identical to
++    # origin/release — pure redundant noise that blocks the ship's fast-forward.
++    # That dirt is ALREADY committed on release (which the ship ff's main up to), so
++    # `git reset --hard origin/main` returns a clean committed main and loses
++    # NOTHING. Before this, the preflight aborted and someone reset it by hand every
++    # ship; now the preflight auto-cleans the provably-safe case and still REFUSES
++    # anything else.
++    #
++    # This is the PURE decision: given an offender the CLI augmented with release-
++    # reconciliation facts (the git I/O seam), is it SAFE to auto-clean? An offender
++    # is AUTO-CLEANABLE only when ALL hold — else it stays BLOCKING (refuse, never
++    # discard local work):
++    #   * on_main               — a branch drift (pr-NNN) is NOT auto-cleaned,
++    #   * reconcile_checked      — the IO seam actually gathered the facts, so an
++    #                             un-reconciled offender / a stub defaults to REFUSE,
++    #   * main_ancestor_of_release — origin/main is strictly behind origin/release,
++    #                             so resetting main to origin/main drops no merged
++    #                             history (the ship ff re-applies release's commits),
++    #   * head_at_origin_main    — HEAD is NOT ahead of origin/main (no unpushed
++    #                             local commits). `git reset --hard origin/main`
++    #                             would ORPHAN any commit HEAD carries beyond
++    #                             origin/main; the dirty FILES being on release says
++    #                             nothing about unpushed COMMITS, so an ahead HEAD
++    #                             must REFUSE (never discard unpushed work),
++    #   * dirty_files present AND unreconciled_files empty — EVERY dirty file's
++    #                             content is already on origin/release, so the reset
++    #                             discards only redundant copies; nothing local is lost.
++    def autocleanable?(offender)
++      o = offender || {}
++      return false unless truthy(o["on_main"] || o[:on_main])
++      return false unless truthy(o["reconcile_checked"] || o[:reconcile_checked])
++      return false unless truthy(o["main_ancestor_of_release"] || o[:main_ancestor_of_release])
++      return false unless truthy(o["head_at_origin_main"] || o[:head_at_origin_main])
++
++      dirty = Array(o["dirty_files"] || o[:dirty_files]).map(&:to_s).reject(&:empty?)
++      unreconciled = Array(o["unreconciled_files"] || o[:unreconciled_files]).map(&:to_s).reject(&:empty?)
++      dirty.any? && unreconciled.empty?
++    end
++
++    # Split preflight offenders into [auto_cleanable, blocking]. The CLI resets the
++    # auto-cleanable primaries (`git reset --hard origin/main`) and refuses the rest
++    # via preflight_message — the auto-clean-else-refuse rule in one call.
++    def partition_autocleanable(offenders)
++      Array(offenders).partition { |o| autocleanable?(o) }
++    end
++
+     # --- internals -----------------------------------------------------------
+ 
++    # A value that reads as boolean-true — a real `true`, or the string "true" (the
++    # reconciliation facts arrive as Ruby booleans, but stay tolerant of the string
++    # form a JSON round-trip could introduce).
++    def truthy(value)
++      value == true || value.to_s.strip.casecmp("true").zero?
++    end
++
+     def group_repo(group)
+       (group[:repo] || group["repo"]).to_s
+     end
+diff --git a/bin/dor-check b/bin/dor-check
+index 98d1ba62..b0b19364 100755
+--- a/bin/dor-check
++++ b/bin/dor-check
+@@ -366,11 +366,19 @@ def suite_evidence_error(eval, slug)
+     return "FULL-suite gate unverifiable — couldn't fingerprint the working tree (no git repo / git identity?). " \
+       "Run bin/full-suite-check from inside the repo so the FULL suite + rubocop are certified."
+   end
++  current = eval[:fingerprint].to_s
++  recorded = eval[:recorded] || {}
+   parts = []
+   eval[:lanes].each do |lane, state|
+     case state
+     when :stale
+-      parts << "#{lane}: STALE (certified for older code — re-run after your latest edits)"
++      # Print the fingerprint DELTA — the recorded "[lane@<fp>]" fingerprint(s) vs
++      # the current `git write-tree` — so a stale refusal shows WHY (certified for
++      # THAT code, but HEAD is now THIS code) instead of an opaque "STALE".
++      recs = Array(recorded[lane]).map { |fp| fp[0, 12] }
++      rec_str = recs.empty? ? "an older code fingerprint" : "@#{recs.join(', @')}"
++      cur_str = current.empty? ? "the current tree" : "@#{current[0, 12]}"
++      parts << "#{lane}: STALE (certified for #{rec_str}, but HEAD is now #{cur_str} — re-run after your latest edits)"
+     when :missing
+       parts << "#{lane}: MISSING (never certified for this exact code)"
+     end
+@@ -602,7 +610,8 @@ if options[:json]
+       bypass: suite_eval[:bypass],
+       verifiable: suite_eval[:verifiable],
+       fingerprint: suite_eval[:fingerprint],
+-      lanes: suite_eval[:lanes]
++      lanes: suite_eval[:lanes],
++      recorded: suite_eval[:recorded]
+     }
+   )
+   exit(ready ? 0 : 1)
+diff --git a/bin/full-suite-check b/bin/full-suite-check
+index 5e9ce67a..fb5d8d45 100755
+--- a/bin/full-suite-check
++++ b/bin/full-suite-check
+@@ -31,8 +31,13 @@
+ #   FULL_SUITE_RUBOCOP_CMD  override the rubocop lane command (default: bin/rubocop)
+ #   FULL_SUITE_ROOT         repo dir to run + fingerprint in  (default: this repo)
+ #
+-# Exit code: 0 = both lanes green (evidence recorded), 1 = a lane failed or no
+-# fingerprint (nothing certified).
++# It REFUSES a dirty/uncommitted tree (see the dirty-tree guard below): certify is
++# the LAST build step, run AFTER the final commit, so the recorded fingerprint
++# always covers HEAD — closing the "certified before the final commit → STALE
++# re-block" trap.
++#
++# Exit code: 0 = both lanes green (evidence recorded), 1 = a lane failed, the tree
++# is dirty, or no fingerprint (nothing certified).
+ 
+ require "optparse"
+ require "json"
+@@ -110,6 +115,18 @@ def uninstall_pre_push_hook(root)
+   end
+ end
+ 
++# The uncommitted-change list at `root` (`git status --porcelain`: staged,
++# unstaged, AND untracked-not-ignored files — exactly what the fingerprint's
++# `git add -A` + write-tree captures). Returns [] for a clean tree, or nil when git
++# can't read the working tree (no repo) — nil is "unverifiable", left to the later
++# nil-fingerprint refusal, NOT treated as clean.
++def working_tree_changes(root)
++  out = IO.popen(["git", "-C", root.to_s, "status", "--porcelain"], err: File::NULL, &:read)
++  return nil unless $?.success?
++
++  out.to_s.lines.map(&:strip).reject(&:empty?)
++end
++
+ if options[:install_hook]
+   install_pre_push_hook(root)
+   exit 0
+@@ -118,6 +135,26 @@ elsif options[:uninstall_hook]
+   exit 0
+ end
+ 
++# --- dirty-tree guard: certify only a fully-committed HEAD --------------------
++# The fingerprint (a git tree hash) is stable across the pre-commit→commit
++# boundary, so an EARLIER design let you certify a dirty tree. But that opened the
++# "certified before the final commit → STALE re-block" trap (feedback_certify_
++# after_final_commit): you'd certify, then make ONE more edit / land the final
++# commit AFTER the cert, so the recorded [full-suite@<fp>] no longer covered HEAD
++# and dor-check refused it. Closing it here: REFUSE to certify a dirty or
++# uncommitted tree, so the recorded fingerprint ALWAYS equals the committed HEAD's
++# tree. Commit EVERY edit first, THEN certify (the last build step). git can't read
++# the tree (no repo) → skip; the nil-fingerprint refusal below handles it.
++changes = working_tree_changes(root)
++if changes&.any?
++  warn "full-suite-check: working tree at #{root} is DIRTY (#{changes.size} uncommitted change(s)) — refusing to certify."
++  warn "  The recorded fingerprint must cover HEAD: commit EVERY edit first, THEN run this (it's the LAST build step)."
++  warn "  Certifying now would record a fingerprint that a later commit invalidates → a STALE re-block at the merge gate."
++  sample = changes.first(10).join(", ")
++  warn "  Uncommitted: #{sample}#{changes.size > 10 ? " (+#{changes.size - 10} more)" : ''}"
++  exit 1
++end
++
+ test_cmd = ENV.fetch("FULL_SUITE_TEST_CMD", "bin/rails test")
+ rubocop_cmd = ENV.fetch("FULL_SUITE_RUBOCOP_CMD", "bin/rubocop")
+ test_db_reset_cmd = ENV.fetch("FULL_SUITE_TEST_DB_RESET_CMD", "bin/rails db:test:purge db:test:prepare")
+diff --git a/bin/lib/full_suite_gate.rb b/bin/lib/full_suite_gate.rb
+index 9aee0046..53bffa8a 100644
+--- a/bin/lib/full_suite_gate.rb
++++ b/bin/lib/full_suite_gate.rb
+@@ -108,6 +108,17 @@ def extract_fingerprint(line, lane)
+     m && m[1].downcase
+   end
+ 
++  # Every DISTINCT fingerprint recorded for `lane` in `checks` (in order). Feeds
++  # the STALE delta dor-check prints — the recorded "[lane@<fp>]" fingerprint(s)
++  # vs the current tree hash — so a stale refusal shows WHY (which code it was
++  # certified for) instead of an opaque "STALE".
++  def recorded_fingerprints(checks, lane)
++    Array(checks).each_with_object([]) do |line, values|
++      fp = extract_fingerprint(line, lane)
++      values << fp if fp
++    end.uniq
++  end
++
+   # A recorded, sanctioned bypass: "[full-suite-bypass] <reason>" with a non-empty
+   # reason. Returns the reason string or nil. Like the post_deploy "none" hatch,
+   # the bypass is an explicit RECORD (it lives in checks_run, prints loud, shows in
+@@ -136,14 +147,15 @@ def evaluate(checks:, root:, injected: nil)
+     return verdict(ok: false, verifiable: false) if fp.nil?
+ 
+     lanes = LANES.to_h { |lane| [lane, lane_status(checks, lane, fp)] }
+-    verdict(ok: lanes.values.all?(:fresh), fingerprint: fp, lanes: lanes)
++    recorded = LANES.to_h { |lane| [lane, recorded_fingerprints(checks, lane)] }
++    verdict(ok: lanes.values.all?(:fresh), fingerprint: fp, lanes: lanes, recorded: recorded)
+   end
+ 
+   # --- internals -----------------------------------------------------------
+ 
+-  def verdict(ok:, bypass: nil, verifiable: true, fingerprint: nil, lanes: nil)
++  def verdict(ok:, bypass: nil, verifiable: true, fingerprint: nil, lanes: nil, recorded: nil)
+     lanes ||= LANES.to_h { |lane| [lane, ok ? :fresh : :missing] }
+-    { ok: ok, bypass: bypass, verifiable: verifiable, fingerprint: fingerprint, lanes: lanes }
++    { ok: ok, bypass: bypass, verifiable: verifiable, fingerprint: fingerprint, lanes: lanes, recorded: recorded || {} }
+   end
+ 
+   # Map a DOR_CHECK_SUITE_EVIDENCE token to a verdict (test seam only). Tokens:
+diff --git a/bin/lib/qa_readonly_lint.rb b/bin/lib/qa_readonly_lint.rb
+new file mode 100644
+index 00000000..c539581b
+--- /dev/null
++++ b/bin/lib/qa_readonly_lint.rb
+@@ -0,0 +1,97 @@
++# frozen_string_literal: true
++
++# bin/lib/qa_readonly_lint.rb — the @qa-readonly-vs-seed-fixture lint.
++#
++# The post-ship `bin/prod-smoke` SEAL (`bin/release ship`'s final step) runs every
++# @qa-readonly-tagged Playwright spec against PRODUCTION (`npx playwright test
++# --grep @qa-readonly`), with NO local Rails boot and NO `e2e/seed.rb`. So a
++# @qa-readonly spec must assert only env-agnostic structure (public routes, page
++# scaffolding, `data-test` hooks) — NEVER a record seeded by e2e/seed.rb, which
++# does not exist in fixture-less prod.
++#
++# The failure this catches (feedback_qa_readonly_no_seed_fixtures, 2026-07-03):
++# e2e/board_cleared_block.spec.js was @qa-readonly but asserted
++# `#card-e2e-cleared-block-demo` (a seed fixture) toBeVisible. CI + QA passed (seed
++# runs there), but the prod seal went 🔴 RED ("element not found") on a HEALTHY
++# ship — a false alarm that reads as a prod defect. The sibling alex_pipeline.spec.js
++# (also @qa-readonly) is fine: it asserts `[data-test='alex-pipeline']` / `#col-*`
++# — structural, so those hold against prod.
++#
++# The lint (a unit test asserts the real e2e/ tree is clean; also usable from a bin
++# script) flags a @qa-readonly spec that references a seed fixture slug via a
++# fixture-PINNING form. Pure: it takes the seed text + spec texts in and returns
++# violations out, so it's trivially unit-tested with synthetic specs.
++module QaReadonlyLint
++  module_function
++
++  # Every seed fixture slug declared in e2e/seed.rb — each `slug: "..."` literal.
++  # These are the records that exist ONLY in the seeded test DB, never in prod.
++  def seed_slugs(seed_text)
++    seed_text.to_s.scan(/\bslug:\s*["']([a-z0-9][a-z0-9\-]*)["']/i).flatten.uniq
++  end
++
++  # A spec is in the prod-smoke set when a TEST or DESCRIBE *title* carries the
++  # @qa-readonly tag — the same thing `--grep @qa-readonly` selects. A bare mention
++  # in a `//` comment (e.g. release_seal.spec.js documents the seal) is NOT a tag,
++  # so it must not count — hence the title-string match, not a blanket file grep.
++  # Matches `test(`, `test.describe(`, or `describe(` followed by a quoted title
++  # that contains "@qa-readonly".
++  QA_READONLY_TITLE = %r{\b(?:test(?:\.describe)?|describe)\s*\(\s*(["'`])[^"'`]*@qa-readonly[^"'`]*\1}
++
++  def readonly_spec?(spec_text)
++    QA_READONLY_TITLE.match?(spec_text.to_s)
++  end
++
++  # The seed slugs a spec references via a FIXTURE-PINNING form — a selector/path
++  # that only resolves when that exact seeded record exists:
++  #   * `#card-<slug>`   — the task-board card id (the canonical fixture pin),
++  #   * `#<slug>`        — an element id equal to the slug,
++  #   * `/tasks/<slug>`  — the task detail path (terminal segment),
++  #   * a whole quoted token equal to the slug (`"<slug>"` / `'<slug>'` / `` `<slug>` ``).
++  # Deliberately NOT matched: structural ids (`#col-actions`, `[data-test=...]`) and
++  # route segments like `/alex/pipeline` — those hold in ANY environment, so the
++  # legitimately-@qa-readonly alex_pipeline spec (which references the `alex` route,
++  # not the `alex` fixture) is never flagged.
++  def fixture_references(spec_text, slugs)
++    text = spec_text.to_s
++    slugs.select { |slug| references_fixture?(text, slug) }
++  end
++
++  def references_fixture?(text, slug)
++    esc = Regexp.escape(slug)
++    forms = [
++      /\#card-#{esc}(?![a-z0-9\-])/i,          # #card-<slug>
++      /\#\s*#{esc}(?![a-z0-9\-])/i,            # #<slug> id selector
++      %r{/tasks/#{esc}(?![a-z0-9\-/])}i,       # /tasks/<slug> (terminal segment)
++      /(["'`])#{esc}\1/                        # whole quoted token == slug
++    ]
++    forms.any? { |re| re.match?(text) }
++  end
++
++  # Lint a batch of specs against the seed slugs. `specs` is a Hash of
++  # { name => spec_text }. Returns the violations, each:
++  #   { "spec" => <name>, "slugs" => [referenced seed slugs] }
++  # Only @qa-readonly specs are checked; an empty result means the batch is clean.
++  def violations(specs, seed_text)
++    slugs = seed_slugs(seed_text)
++    specs.filter_map do |name, text|
++      next unless readonly_spec?(text)
++
++      refs = fixture_references(text, slugs)
++      { "spec" => name, "slugs" => refs } if refs.any?
++    end
++  end
++
++  # The loud, actionable message for a non-empty `violations` list — names each
++  # spec, the seed slug(s) it pins, and the fix (drop @qa-readonly).
++  def message(violations)
++    lines = Array(violations).map do |v|
++      "  - #{v["spec"]}: references seed fixture slug(s) #{Array(v["slugs"]).join(", ")}"
++    end
++    "@qa-readonly spec(s) reference e2e/seed.rb fixtures — the post-ship bin/prod-smoke seal runs them " \
++      "against fixture-less PROD, so they will FALSE-RED on a healthy ship:\n" \
++      "#{lines.join("\n")}\n" \
++      "  Fix: drop @qa-readonly from the offending test title (it still runs in CI/full-suite against the " \
++      "seeded test DB). A @qa-readonly spec must assert only env-agnostic structure — never seeded data."
++  end
++end
+diff --git a/bin/release.rb b/bin/release.rb
+index ee6c754a..9284de6c 100755
+--- a/bin/release.rb
++++ b/bin/release.rb
+@@ -1951,6 +1951,15 @@ def deploy_app(group, frozen)
+ # (offenders + message) lives in Release::ShipSequence; this owns only the git
+ # reads. A dry-run prints the plan and runs NO git (so a preview never aborts on a
+ # legitimately-dirty dev sibling).
++#
++# AUTO-CLEAN (feedback_ship_preflight_dirty_primary): the ONE dirty case that is
++# safe to fix automatically is a primary ON `main` whose dirt is ALL already on
++# origin/release — the merge noise `bin/release merge` re-stages every ship. That
++# is redundant (release is what the ff advances main to), so the preflight resets
++# it to origin/main instead of aborting. Everything else — an off-main branch, or
++# ANY dirty file NOT already on release — still BLOCKS the ship (never discard
++# local work). The reconcile/reset git I/O are seams (reconcile_offender /
++# autoclean_primary!); the safe-or-refuse verdict is pure (ShipSequence).
+ 
+ # The current branch + dirty-file list for a checkout (live git reads). Split out
+ # as the I/O seam ship_preflight calls per app repo (stubbed in tests).
+@@ -1961,6 +1970,68 @@ def repo_git_state(repo, path)
+   { "repo" => repo, "branch" => branch.to_s.strip, "dirty" => files.any?, "dirty_files" => files }
+ end
+ 
++# Augment a dirty ON-MAIN offender with the release-reconciliation facts the pure
++# auto-clean decision (Release::ShipSequence.autocleanable?) needs. The I/O seam
++# ship_preflight calls per offender (stubbed in tests); an off-main or non-dirty
++# offender is returned untouched (never auto-cleanable, so no git is consulted).
++#   * main_ancestor_of_release — origin/main is an ancestor of origin/release, so a
++#     reset to origin/main drops no merged history.
++#   * head_at_origin_main — HEAD is an ancestor of origin/main (i.e. NOT ahead of
++#     it: no unpushed local commits). `git reset --hard origin/main` would ORPHAN
++#     any commit HEAD carries beyond origin/main, so an ahead HEAD must REFUSE — the
++#     files being on release says nothing about unpushed COMMITS.
++#   * unreconciled_files — the dirty files whose content is NOT already on
++#     origin/release (would be LOST by a reset). Empty ⇒ nothing local is lost.
++def reconcile_offender(offender)
++  return offender unless (offender["on_main"] || offender[:on_main]) && (offender["dirty"] || offender[:dirty])
++
++  path = repo_path(offender["repo"] || offender[:repo])
++  _, ancestor = sh("git", "-C", path, "merge-base", "--is-ancestor", "origin/main", "origin/release", capture: true)
++  _, head_at_origin_main = sh("git", "-C", path, "merge-base", "--is-ancestor", "HEAD", "origin/main", capture: true)
++  files = Array(offender["dirty_files"] || offender[:dirty_files])
++  unreconciled = files.reject { |file| file_on_release?(path, file) }
++  offender.merge(
++    "reconcile_checked" => true,
++    "main_ancestor_of_release" => ancestor,
++    "head_at_origin_main" => head_at_origin_main,
++    "unreconciled_files" => unreconciled
++  )
++end
++
++# True when `path`'s WORKING-TREE content of `file` is byte-identical to
++# origin/release's version — the safety test for auto-clean (nothing local is
++# lost). REFUSES (returns false) any file that is UNTRACKED (a `git reset --hard`
++# can't clear it, and a genuinely-new file must never be discarded), MISSING (a
++# local delete is a change not on release), or absent on origin/release. Otherwise
++# compares git blob hashes: reconciled IFF the worktree blob equals origin/release's.
++def file_on_release?(path, file)
++  _, tracked = sh("git", "-C", path, "ls-files", "--error-unmatch", "--", file, capture: true)
++  return false unless tracked
++  return false unless File.exist?(File.join(path, file))
++
++  worktree, wt_ok  = sh("git", "-C", path, "hash-object", "--", file, capture: true)
++  release,  rel_ok = sh("git", "-C", path, "rev-parse", "--verify", "--quiet", "origin/release:#{file}", capture: true)
++  wt_ok && rel_ok && !release.strip.empty? && worktree.strip == release.strip
++end
++
++# Auto-clean a release-identical dirty primary: `git reset --hard origin/main`
++# returns it to a clean committed `main` (the ship's own ff then advances it to the
++# frozen SHA). SAFE by construction — the pure decision already confirmed every
++# dirty file's content is on origin/release, so nothing local is lost. LOUD: names
++# the repo and the discarded redundant files. The I/O seam (stubbed in tests).
++def autoclean_primary!(offender)
++  repo = offender["repo"] || offender[:repo]
++  path = repo_path(repo)
++  files = Array(offender["dirty_files"] || offender[:dirty_files])
++  sample = files.first(5).join(", ")
++  more = files.size > 5 ? " (+#{files.size - 5} more)" : ""
++  say("  ↺ #{repo}: dirty `main` is release-identical (#{files.size} file(s) already on origin/release) — " \
++      "auto-cleaning with `git reset --hard origin/main` (the ship ff re-applies them). Discarding: #{sample}#{more}")
++  _, ok = sh("git", "-C", path, "reset", "--hard", "origin/main", capture: true)
++  abort!("ship preflight auto-clean FAILED: `git reset --hard origin/main` in #{repo} (#{path}). " \
++         "Clean it by hand, then re-run `bin/release ship`.") unless ok
++end
++
+ def ship_preflight(app_groups)
+   say("")
+   step("ship preflight: each app checkout must be on a clean `main` before any ff")
+@@ -1971,7 +2042,17 @@ def ship_preflight(app_groups)
+ 
+   states = app_groups.map { |g| repo_git_state(g["repo"], repo_path(g["repo"])) }
+   offenders = Release::ShipSequence.preflight_offenders(states)
+-  abort!(Release::ShipSequence.preflight_message(offenders)) if offenders.any?
++
++  # AUTO-CLEAN pass (feedback_ship_preflight_dirty_primary): a dirty ON-MAIN
++  # offender whose dirt is ALL already on origin/release is redundant merge noise —
++  # reset it to a clean origin/main (the ff re-applies release's commits). Anything
++  # NOT provably-safe stays BLOCKING and aborts the ship, exactly as before.
++  if offenders.any?
++    reconciled = offenders.map { |o| reconcile_offender(o) }
++    cleanable, blocking = Release::ShipSequence.partition_autocleanable(reconciled)
++    cleanable.each { |o| autoclean_primary!(o) }
++    abort!(Release::ShipSequence.preflight_message(blocking)) if blocking.any?
++  end
+ 
+   say("  ✓ #{states.size} app checkout(s) on a clean `main`")
+ end
+diff --git a/docs/agents/system/devops-cycle-design.md b/docs/agents/system/devops-cycle-design.md
+index 4e91c4fa..92a35882 100644
+--- a/docs/agents/system/devops-cycle-design.md
++++ b/docs/agents/system/devops-cycle-design.md
+@@ -724,8 +724,19 @@ files — if any isn't. ship ff's each repo's `main` up to the QA-frozen SHA, so
+ checkout a review agent left on a leftover `pr-NNN` branch or with an uncommitted
+ stale `schema.rb` would otherwise break the ff *mid-ship* (after gems published +
+ the ship authorization — the worst time). The preflight catches it up front,
+-before anything irreversible. Pure decision:
+-`Release::ShipSequence.preflight_offenders` / `.preflight_message`. **Live ship
++before anything irreversible. **Auto-clean (the release-identical dirty primary):**
++the ONE dirty case ship fixes automatically is a primary **on `main` whose dirt is
++ALL already on `origin/release`** — the merged-PR files `bin/release merge`
++re-stages every ship (redundant noise, since `release` is what the ff advances
++`main` to). ship resets it (`git reset --hard origin/main`; the ff re-applies
++release) instead of aborting — but ONLY when **HEAD is not ahead of `origin/main`**
++(no unpushed local commits: a reset would orphan them, and the dirty *files* being
++on release says nothing about unpushed *commits*). **Anything else still blocks** —
++an off-main branch, an **HEAD ahead of `origin/main`**, or *any* dirty file not
++already on `origin/release` (genuine local work is **never** discarded without the
++operator). Pure decision:
++`Release::ShipSequence.preflight_offenders` / `.autocleanable?` / `.preflight_message`.
++**Live ship
+ crew:** right after ship authorization (so a declined gated ship never shows it),
+ ship **auto-records the Avi → `shipped` intent** for every member
+ (`Release::Conductor.record_deploy_intents!(r, to_stage: "shipped", actor:
+@@ -749,7 +760,17 @@ release phase runs migrations), and smokes `/up`. After every app deploys + smok
+ `devops.post_deploy_cmd` on its **production app** via `heroku run`, records the
+ `[post-deploy]` outcome, and **aborts `ship` on a non-zero exit** — the abort
+ lands before `ship!`, so the release stays `assembled` (recoverable) and a re-run
+-resumes (the command is expected idempotent). On success it stamps `deployed_sha`,
++resumes (the command is expected idempotent). It then runs the **post-ship
++production smoke SEAL** — the read-only `@qa-readonly` Playwright suite
++(`bin/prod-smoke`, `npx playwright test --grep @qa-readonly`) against **live prod**
++— and records a 🟢/🔴 seal (a *seal*, not a gate: a red seal alerts + prints the
++rollback but never aborts the ship). Because this runs against **fixture-less
++prod** (no `e2e/seed.rb`), a `@qa-readonly` spec must assert only **env-agnostic
++structure** — public routes, page scaffolding, `data-test` hooks — and **never a
++seeded record** (a `#card-<slug>` / `/tasks/<slug>` fixture pin would FALSE-RED the
++seal on a healthy ship). `bin/full-suite-check`'s suite enforces this: a **lint**
++(`QaReadonlyLint`, `test/lib/qa_readonly_lint_test.rb`) FAILS when a `@qa-readonly`
++spec references an `e2e/seed.rb` fixture slug. On success it stamps `deployed_sha`,
+ flips the RC + its members to `shipped` (`Release::Conductor.ship!`), and
+ **auto-posts release notes**
+ (`Release::Conductor.post_release_notes` → the same Formatter/Discord path as
+@@ -959,7 +980,14 @@ A task **may not advance `submitted → reviewed`** unless, for its shape:
+   fingerprint (a git tree hash — content-addressed, so it is **stable across the
+   pre-commit→commit boundary** and identical in a reviewer's fresh checkout of the
+   same tree), so a **stale** (edited-since) or **partial** (one-lane / touched-files)
+-  record is **refused**. Both gates root the CODE they run + fingerprint at the
++  record is **refused**. `bin/full-suite-check` **REFUSES to certify a dirty /
++  uncommitted tree** — commit EVERY edit first, then certify as the **last build
++  step**, so the recorded fingerprint always covers HEAD (this closes the
++  "certified before the final commit → STALE re-block" trap; after a rebase,
++  re-cert). When a lane IS stale, `bin/dor-check` prints the **fingerprint delta** —
++  the recorded `[full-suite@<fp>]` vs the current `git write-tree` — so you see WHY
++  ("certified for @abc… but HEAD is now @def…"), not an opaque `STALE`. Both gates
++  root the CODE they run + fingerprint at the
+   **current worktree** (the cwd's git toplevel), so a **satellite** task (turf-monster,
+   rolio) certifies its OWN repo even though it runs the hub's gate script — while the
+   shape config (`feature_shapes.yml`) stays resolved from the studio. Run
+diff --git a/test/lib/dor_check_test.rb b/test/lib/dor_check_test.rb
+index 061823e6..5c355fa3 100644
+--- a/test/lib/dor_check_test.rb
++++ b/test/lib/dor_check_test.rb
+@@ -970,6 +970,35 @@ def test_e2e_evidence_goes_stale_after_an_edit
+     end
+   end
+ 
++  def test_e2e_stale_refusal_prints_the_fingerprint_delta
++    # Guardrail: a STALE refusal names the recorded "[full-suite@<fp>]" fingerprint
++    # AND the current git-write-tree, so you see WHY it's stale (certified for THAT
++    # code, HEAD is now THIS code) — not an opaque "STALE".
++    with_suite_repo do |dir, fp|
++      devops = SUITE_CONTRACT.merge("checks_run" => SUITE_CONTRACT["checks_run"] + suite_evidence(fp))
++      File.write(File.join(dir, "app.rb"), "base\nedited\n")
++      current_fp = suite_fingerprint(dir)
++      refute_equal fp, current_fp, "the edit must move the fingerprint (guards the test itself)"
++
++      out, code = check_real_suite(dir, devops)
++      assert_equal 1, code, out
++      assert_match(/certified for @#{fp[0, 12]}/, out, "the recorded fingerprint is named")
++      assert_match(/HEAD is now @#{current_fp[0, 12]}/, out, "the current tree fingerprint is named")
++    end
++  end
++
++  def test_e2e_stale_refusal_surfaces_recorded_fingerprints_in_json
++    with_suite_repo do |dir, fp|
++      devops = SUITE_CONTRACT.merge("checks_run" => SUITE_CONTRACT["checks_run"] + suite_evidence(fp))
++      File.write(File.join(dir, "app.rb"), "base\nedited\n")
++      out, code = check_real_suite(dir, devops, "--json")
++      assert_equal 1, code, out
++      verdict = JSON.parse(out)
++      assert_equal [fp], verdict["full_suite"]["recorded"]["full-suite"],
++                   "the recorded fingerprint(s) are machine-readable for the delta"
++    end
++  end
++
+   def test_e2e_touched_files_only_pr_is_refused
+     # The retro case in the real path: [unit]/[integration] tagged, but NO
+     # full-suite/rubocop evidence at all → both lanes MISSING → REFUSED.
+diff --git a/test/lib/full_suite_check_test.rb b/test/lib/full_suite_check_test.rb
+index 380db55a..36bfbce3 100644
+--- a/test/lib/full_suite_check_test.rb
++++ b/test/lib/full_suite_check_test.rb
+@@ -159,18 +159,21 @@ def test_recorded_fingerprint_matches_dor_check_view
+     end
+   end
+ 
++  # The fingerprint-property tests drive FullSuiteGate.fingerprint DIRECTLY (not via
++  # the runner) because the runner now REFUSES a dirty tree (the dirty-tree guard —
++  # see the guard tests below). These verify the property the guard relies on: the
++  # fingerprint is a content-addressed git tree hash, stable across the pre-commit→
++  # commit boundary, so a clean committed tree fingerprints the same as it did dirty.
++
+   def test_fingerprint_stable_across_commit
+-    # Certify a dirty tree, commit the same change → identical fingerprint, so the
+-    # evidence stays valid in a fresh checkout at the committed HEAD.
++    # A dirty change and the same change committed produce the SAME fingerprint, so
++    # the evidence certified at HEAD stays valid in a fresh checkout at that commit.
+     with_repo do |dir|
+       File.write(File.join(dir, "app.rb"), "base\nchange\n")
+-      dirty, = run_check(dir, test_cmd: "true", rubocop_cmd: "true")
+-      dirty_fp = dirty[/@([0-9a-f]{7,64})\]/, 1]
++      dirty_fp = FullSuiteGate.fingerprint(dir)
+       assert system("git -C #{dir} add -A >/dev/null 2>&1")
+       assert system("git -C #{dir} commit -q -m change >/dev/null 2>&1")
+-      committed, = run_check(dir, test_cmd: "true", rubocop_cmd: "true")
+-      committed_fp = committed[/@([0-9a-f]{7,64})\]/, 1]
+-      assert_equal dirty_fp, committed_fp
++      assert_equal dirty_fp, FullSuiteGate.fingerprint(dir)
+     end
+   end
+ 
+@@ -182,34 +185,96 @@ def test_fingerprint_stable_across_commit_for_a_new_file
+     # against the old stash-create fingerprint, passes against the temp-index one.
+     with_repo do |dir|
+       File.write(File.join(dir, "added.rb"), "brand new\n") # untracked, never add'd
+-      dirty, = run_check(dir, test_cmd: "true", rubocop_cmd: "true")
+-      dirty_fp = dirty[/@([0-9a-f]{7,64})\]/, 1]
++      dirty_fp = FullSuiteGate.fingerprint(dir)
+       assert system("git -C #{dir} add -A >/dev/null 2>&1")
+       assert system("git -C #{dir} commit -q -m add-file >/dev/null 2>&1")
+-      committed, = run_check(dir, test_cmd: "true", rubocop_cmd: "true")
+-      committed_fp = committed[/@([0-9a-f]{7,64})\]/, 1]
+-      assert_equal dirty_fp, committed_fp,
++      assert_equal dirty_fp, FullSuiteGate.fingerprint(dir),
+                    "adding a file must not change the fingerprint across the commit boundary"
+     end
+   end
+ 
+   def test_fingerprint_changes_when_an_untracked_file_is_edited
+-    # Freshness must fire for untracked files too: certify with an untracked file
+-    # present, then edit it (still untracked) → the fingerprint must change so the
++    # Freshness must fire for untracked files too: fingerprint with an untracked file
++    # present, then edit it (still untracked) → the fingerprint must change so any
+     # recorded evidence goes STALE. The old stash-create fingerprint ignored
+     # untracked content, so this edit slipped past the staleness check.
+     with_repo do |dir|
+       File.write(File.join(dir, "scratch.rb"), "one\n") # untracked
+-      first, = run_check(dir, test_cmd: "true", rubocop_cmd: "true")
+-      first_fp = first[/@([0-9a-f]{7,64})\]/, 1]
++      first_fp = FullSuiteGate.fingerprint(dir)
+       File.write(File.join(dir, "scratch.rb"), "two\n") # edit, still untracked
+-      second, = run_check(dir, test_cmd: "true", rubocop_cmd: "true")
+-      second_fp = second[/@([0-9a-f]{7,64})\]/, 1]
+-      refute_equal first_fp, second_fp,
++      refute_equal first_fp, FullSuiteGate.fingerprint(dir),
+                    "editing an untracked file must change the fingerprint (staleness fires)"
+     end
+   end
+ 
++  # --- [integration] dirty-tree guard: certify only a fully-committed HEAD ------
++  # The runner REFUSES a dirty/uncommitted tree, so the recorded fingerprint always
++  # covers HEAD — closing the "certified before the final commit → STALE re-block"
++  # trap. The clean committed tree (the guard's own must-not-block case) still certifies.
++
++  # Like run_check but keeps STDERR (the guard's refusal prints there via warn).
++  def run_check_err(dir, test_cmd:, rubocop_cmd:, reset_cmd: "true")
++    env = {
++      "FULL_SUITE_ROOT" => dir,
++      "FULL_SUITE_TEST_DB_RESET_CMD" => reset_cmd,
++      "FULL_SUITE_TEST_CMD" => test_cmd,
++      "FULL_SUITE_RUBOCOP_CMD" => rubocop_cmd
++    }
++    out = IO.popen(env, "#{BIN} --print 2>&1", &:read)
++    [out, $?.exitstatus]
++  end
++
++  def test_refuses_to_certify_a_dirty_tracked_file
++    with_repo do |dir|
++      File.write(File.join(dir, "app.rb"), "base\nuncommitted edit\n") # dirty, not committed
++      out, code = run_check_err(dir, test_cmd: "true", rubocop_cmd: "true")
++      assert_equal 1, code, out
++      assert_match(/DIRTY/, out)
++      assert_match(/commit EVERY edit first/i, out)
++      refute_match(/\[full-suite@/, out, "a dirty tree certifies nothing")
++    end
++  end
++
++  def test_refuses_to_certify_with_an_untracked_file
++    # Untracked-but-not-ignored files are part of the fingerprint, so they count as
++    # dirt: the cert must cover a committed HEAD, not loose scratch files.
++    with_repo do |dir|
++      File.write(File.join(dir, "scratch.rb"), "wip\n") # untracked
++      out, code = run_check_err(dir, test_cmd: "true", rubocop_cmd: "true")
++      assert_equal 1, code, out
++      assert_match(/DIRTY/, out)
++      assert_match(/scratch\.rb/, out)
++      refute_match(/\[full-suite@/, out)
++    end
++  end
++
++  def test_refuses_before_running_the_lanes_on_a_dirty_tree
++    # The guard fails FAST — the (stubbed) lanes never run, so no wasted suite.
++    with_repo do |dir|
++      log = File.join(dir, "lane.log")
++      File.write(File.join(dir, "app.rb"), "base\ndirty\n")
++      _, code = run_check_err(
++        dir,
++        reset_cmd: append_command(log, "reset"),
++        test_cmd: append_command(log, "test"),
++        rubocop_cmd: append_command(log, "rubocop")
++      )
++      assert_equal 1, code
++      refute File.exist?(log), "no lane (not even the db reset) runs once the tree is refused as dirty"
++    end
++  end
++
++  def test_certifies_a_clean_committed_tree
++    # The guard's OWN must-not-block case: a fully-committed tree (with_repo commits
++    # everything) certifies normally — the dirty-tree guard is not a blanket refusal.
++    with_repo do |dir|
++      out, code = run_check(dir, test_cmd: "true", rubocop_cmd: "true")
++      assert_equal 0, code, out
++      assert_match(/\[full-suite@[0-9a-f]{7,64}\]/, out)
++      assert_match(/\[rubocop@[0-9a-f]{7,64}\]/, out)
++    end
++  end
++
+   def test_no_fingerprint_outside_a_repo_exits_nonzero
+     Dir.mktmpdir do |dir| # not a git repo
+       out, code = run_check(dir, test_cmd: "true", rubocop_cmd: "true")
+diff --git a/test/lib/qa_readonly_lint_test.rb b/test/lib/qa_readonly_lint_test.rb
+new file mode 100644
+index 00000000..29400ae8
+--- /dev/null
++++ b/test/lib/qa_readonly_lint_test.rb
+@@ -0,0 +1,130 @@
++# frozen_string_literal: true
++
++# Standalone test for bin/lib/qa_readonly_lint — the @qa-readonly-vs-seed-fixture
++# lint. The pure module cases run against synthetic specs; the final [integration]
++# case asserts the REAL e2e/ tree is clean (the regression guard for the
++# board_cleared_block false-red seal). Run directly:
++#   ruby -Itest test/lib/qa_readonly_lint_test.rb
++# Also picked up by the normal `bin/rails test` sweep.
++
++require "minitest/autorun"
++require_relative "../../bin/lib/qa_readonly_lint"
++
++class QaReadonlyLintTest < Minitest::Test
++  L = QaReadonlyLint
++
++  E2E_DIR = File.expand_path("../../e2e", __dir__)
++
++  # --- [unit] seed_slugs: every `slug: "..."` literal in e2e/seed.rb -----------
++
++  def test_seed_slugs_extracts_every_slug_literal
++    seed = <<~RUBY
++      Task.create!(title: "X", slug: "e2e-cleared-block-demo", stage: "submitted")
++      Task.create!(title: "Y", slug: 'timeline-demo')
++      Agent.create!(name: "Alex", slug: "alex")
++    RUBY
++    slugs = L.seed_slugs(seed)
++    assert_includes slugs, "e2e-cleared-block-demo"
++    assert_includes slugs, "timeline-demo"
++    assert_includes slugs, "alex"
++  end
++
++  def test_seed_slugs_dedupes
++    assert_equal ["alex"], L.seed_slugs('slug: "alex"\nslug: "alex"')
++  end
++
++  # --- [unit] readonly_spec?: only a @qa-readonly TITLE counts ------------------
++
++  def test_readonly_spec_detects_a_tagged_test_title
++    assert L.readonly_spec?('test("renders the board @qa-readonly", async () => {})')
++  end
++
++  def test_readonly_spec_detects_a_tagged_describe_title
++    assert L.readonly_spec?('test.describe("QA read-only smoke @qa-readonly", () => {})')
++  end
++
++  def test_readonly_spec_ignores_a_comment_mention
++    # release_seal.spec.js documents @qa-readonly in a // comment — NOT a runnable
++    # tag, so --grep never selects it and the lint must not treat it as readonly.
++    spec = <<~JS
++      // the verdict of the read-only @qa-readonly suite (bin/prod-smoke)
++      test("release seal renders", async () => {});
++    JS
++    refute L.readonly_spec?(spec)
++  end
++
++  # --- [unit] fixture_references: pin forms match, structural/routes do not -----
++
++  SLUGS = %w[e2e-cleared-block-demo timeline-demo alex].freeze
++
++  def test_flags_a_board_card_selector
++    assert_equal ["e2e-cleared-block-demo"],
++                 L.fixture_references('page.locator("#card-e2e-cleared-block-demo")', SLUGS)
++  end
++
++  def test_flags_a_task_detail_path
++    assert_equal ["timeline-demo"], L.fixture_references('page.goto("/tasks/timeline-demo")', SLUGS)
++  end
++
++  def test_flags_a_whole_quoted_slug_token
++    assert_equal ["timeline-demo"], L.fixture_references("getByText('timeline-demo')", SLUGS)
++  end
++
++  def test_does_not_flag_a_route_segment_that_merely_contains_a_slug
++    # /alex/pipeline references the alex ROUTE, not the alex fixture — a legitimately
++    # @qa-readonly assertion. The `alex` slug must not match here (the real-world
++    # false-positive that would wrongly demand dropping the tag from alex_pipeline).
++    text = 'page.goto("/alex/pipeline"); page.locator("[data-test=\'alex-pipeline\']")'
++    assert_empty L.fixture_references(text, SLUGS)
++  end
++
++  def test_does_not_flag_structural_ids_or_data_test_hooks
++    text = 'page.locator("#col-actions"); page.locator("[data-test=\'pl-span\']")'
++    assert_empty L.fixture_references(text, SLUGS)
++  end
++
++  # --- [unit] violations: only @qa-readonly specs are checked -------------------
++
++  SEED = 'Task.create!(slug: "e2e-cleared-block-demo")'
++
++  def test_violation_when_a_readonly_spec_pins_a_fixture
++    specs = { "bad.spec.js" => 'test("x @qa-readonly", () => { page.locator("#card-e2e-cleared-block-demo"); })' }
++    v = L.violations(specs, SEED)
++    assert_equal 1, v.size
++    assert_equal "bad.spec.js", v.first["spec"]
++    assert_equal ["e2e-cleared-block-demo"], v.first["slugs"]
++  end
++
++  def test_no_violation_when_a_NON_readonly_spec_pins_a_fixture
++    # A fixture-dependent spec is FINE as long as it is not @qa-readonly — it runs
++    # in CI/full-suite against the seeded DB, just not in the prod seal.
++    specs = { "ok.spec.js" => 'test("x", () => { page.locator("#card-e2e-cleared-block-demo"); })' }
++    assert_empty L.violations(specs, SEED)
++  end
++
++  def test_no_violation_when_a_readonly_spec_is_structural_only
++    specs = { "ok.spec.js" => 'test("x @qa-readonly", () => { page.locator("#col-actions"); })' }
++    assert_empty L.violations(specs, SEED)
++  end
++
++  def test_message_names_spec_slug_and_the_fix
++    v = [{ "spec" => "bad.spec.js", "slugs" => ["e2e-cleared-block-demo"] }]
++    msg = L.message(v)
++    assert_match(/bad\.spec\.js/, msg)
++    assert_match(/e2e-cleared-block-demo/, msg)
++    assert_match(/drop @qa-readonly/, msg)
++  end
++
++  # --- [integration] the REAL e2e/ tree must be clean --------------------------
++  # The regression guard: this is what would have caught the board_cleared_block
++  # false-red seal. Reads the actual e2e/seed.rb + every e2e/*.spec.js.
++
++  def test_real_e2e_specs_have_no_readonly_seed_fixture_violations
++    seed_text = File.read(File.join(E2E_DIR, "seed.rb"))
++    specs = Dir.glob(File.join(E2E_DIR, "*.spec.js")).to_h { |path| [File.basename(path), File.read(path)] }
++    refute_empty specs, "expected e2e/*.spec.js files to lint"
++
++    violations = L.violations(specs, seed_text)
++    assert_empty violations, L.message(violations)
++  end
++end
+diff --git a/test/lib/release_cli_test.rb b/test/lib/release_cli_test.rb
+index 303ef067..68c03477 100644
+--- a/test/lib/release_cli_test.rb
++++ b/test/lib/release_cli_test.rb
+@@ -1927,11 +1927,16 @@ def repo_git_state(repo, _path)
+   end
+ 
+   def test_ship_preflight_aborts_on_a_dirty_main_tree
++    # reconcile_offender stubbed to a no-op (returns the offender un-reconciled) so
++    # the dirty offender stays BLOCKING — and, crucially, NO real git/reset runs
++    # against the sibling checkout. The default-refuse (no reconcile_checked) keeps
++    # this a hard abort, exactly as before the auto-clean pass existed.
+     setup = <<~RUBY
+       def repo_git_state(repo, _path)
+         files = repo == "mcritchie-studio" ? ["db/schema.rb"] : []
+         { "repo" => repo, "branch" => "main", "dirty" => files.any?, "dirty_files" => files }
+       end
++      def reconcile_offender(offender) = offender
+     RUBY
+     out = run_cli(["--yes"], setup: setup,
+                   call: "begin; ship_preflight(#{APP_GROUPS}); rescue SystemExit => e; puts('ABORTED: ' + e.message); end")
+@@ -1989,13 +1994,210 @@ def repo_git_state(repo, _path)
+           ["docs/agents/audits/retro-rel-1.md", "db/schema.rb"] : []
+         { "repo" => repo, "branch" => "main", "dirty" => files.any?, "dirty_files" => files }
+       end
++      def reconcile_offender(offender) = offender
+     RUBY
+     out = run_cli(["--yes"], setup: setup,
+                   call: "begin; ship_preflight(#{APP_GROUPS}); rescue SystemExit => e; puts('ABORTED: ' + e.message); end")
+ 
+     assert_includes out, "ABORTED", "real code dirt still gates the ship"
+     assert_includes out, "db/schema.rb", "the abort names the real dirty file"
+-    refute_includes out, "retro-rel-1.md", "the generated artifact is not named as dirt"
++    assert_includes out, "retro-rel-1.md", "generated dirt beside real dirt must be part of the safety check"
++  end
++
++  # --- ship preflight AUTO-CLEAN: the release-identical dirty-primary case ----
++  # feedback_ship_preflight_dirty_primary: `bin/release merge` re-stages the merged
++  # PR files on the primary's `main`, byte-identical to origin/release. That
++  # redundant noise blocked EVERY ship's ff. Now the preflight auto-cleans it (reset
++  # to origin/main; the ff re-applies release) and still refuses genuine local work.
++  # The reconcile/reset git I/O are stubbed so no real sibling checkout is touched.
++
++  def test_ship_preflight_auto_cleans_a_release_identical_dirty_primary
++    setup = <<~RUBY
++      def repo_git_state(repo, _path)
++        files = repo == "mcritchie-studio" ? ["db/schema.rb", "app/x.rb"] : []
++        { "repo" => repo, "branch" => "main", "dirty" => files.any?, "dirty_files" => files }
++      end
++      # Facts say: on main, main behind release, HEAD not ahead of origin/main, and
++      # EVERY dirty file already on origin/release → nothing local is lost → auto-cleanable.
++      def reconcile_offender(offender)
++        offender.merge("reconcile_checked" => true, "main_ancestor_of_release" => true,
++                       "head_at_origin_main" => true, "unreconciled_files" => [])
++      end
++      def autoclean_primary!(offender) = puts("AUTOCLEANED " + offender["repo"] + ": " + offender["dirty_files"].join(","))
++    RUBY
++    out = run_cli(["--yes"], setup: setup,
++                  call: "begin; ship_preflight(#{APP_GROUPS}); puts('PASSED'); rescue SystemExit => e; puts('ABORTED: ' + e.message); end")
++
++    assert_includes out, "AUTOCLEANED mcritchie-studio: db/schema.rb,app/x.rb", "the release-identical primary is reset"
++    assert_includes out, "PASSED", "the ship proceeds after the auto-clean"
++    refute_includes out, "ABORTED", "a provably-safe dirty primary does not block the ship"
++  end
++
++  def test_ship_preflight_refuses_when_the_dirt_is_not_all_on_release
++    setup = <<~RUBY
++      def repo_git_state(repo, _path)
++        files = repo == "mcritchie-studio" ? ["db/schema.rb"] : []
++        { "repo" => repo, "branch" => "main", "dirty" => files.any?, "dirty_files" => files }
++      end
++      # A dirty file that is NOT on origin/release = genuine local work → REFUSE,
++      # never auto-reset (nothing is discarded without the operator).
++      def reconcile_offender(offender)
++        offender.merge("reconcile_checked" => true, "main_ancestor_of_release" => true,
++                       "head_at_origin_main" => true, "unreconciled_files" => offender["dirty_files"])
++      end
++      def autoclean_primary!(offender) = puts("WRONGLY AUTO-CLEANED " + offender["repo"])
++    RUBY
++    out = run_cli(["--yes"], setup: setup,
++                  call: "begin; ship_preflight(#{APP_GROUPS}); puts('PASSED'); rescue SystemExit => e; puts('ABORTED: ' + e.message); end")
++
++    assert_includes out, "ABORTED", "un-reconciled local dirt still blocks the ship"
++    assert_includes out, "db/schema.rb", "the abort names the offending file"
++    refute_includes out, "WRONGLY AUTO-CLEANED", "local work is NEVER discarded"
++    refute_includes out, "PASSED"
++  end
++
++  # --- [integration] ship preflight auto-clean over a REAL git tree -----------
++  # The stubbed tests above cover the WIRING; this drives the DESTRUCTIVE seams for
++  # real — reconcile_offender → file_on_release? → autoclean_primary! (the actual
++  # `git reset --hard origin/main`) — against a temp primary checkout with real
++  # origin/main + origin/release refs. A boolean inversion in file_on_release? or a
++  # wrong ref in autoclean_primary! would silently reset a live primary and destroy
++  # un-merged work with the suite still green; this is the test that would catch it.
++  # NONE of the three seams are stubbed (only repo_path is redirected to the temp
++  # repo). Covers the full adversarial matrix the design claims to handle.
++
++  # A temp PRIMARY checkout on `main` with real remote-tracking refs: origin/release
++  # is AHEAD of origin/main (release ADDS from_release.rb; main is a clean ancestor).
++  # Yields the repo dir, with the working `main` reset to a clean origin/main.
++  def with_primary_repo
++    Dir.mktmpdir do |dir|
++      git = ->(args) { assert(system("git -C #{dir} #{args} >/dev/null 2>&1"), "git #{args}") }
++      File.write(File.join(dir, "shared.rb"), "base\n")
++      git.call("init -q")
++      git.call("config user.email tester@example.com")
++      git.call("config user.name tester")
++      git.call("add -A")
++      git.call("commit -q -m base")
++      git.call("branch -M main")
++      git.call("update-ref refs/remotes/origin/main HEAD")     # origin/main = base
++      File.write(File.join(dir, "from_release.rb"), "release-added\n")
++      git.call("add -A")
++      git.call("commit -q -m release")
++      git.call("update-ref refs/remotes/origin/release HEAD")  # origin/release ahead of main
++      git.call("reset --hard refs/remotes/origin/main")        # working main behind release, clean
++      yield dir
++    end
++  end
++
++  # Drive the REAL ship_preflight against `dir`: only repo_path is redirected; the
++  # reconcile / file_on_release? / reset seams all run for real. Returns the output.
++  def run_real_preflight(dir)
++    run_cli(["--yes"], setup: %(def repo_path(_repo) = #{dir.inspect}),
++            call: "begin; ship_preflight([{ 'repo' => 'mcritchie-studio' }]); puts('PASSED'); " \
++                  "rescue SystemExit => e; puts('ABORTED: ' + e.message); end")
++  end
++
++  def porcelain(dir)
++    IO.popen(["git", "-C", dir, "status", "--porcelain"], &:read).to_s.strip
++  end
++
++  def test_ship_preflight_real_git_autoclean_adversarial_matrix
++    # (1) A release-identical STAGED file → AUTO-CLEANED. The real `git reset --hard
++    #     origin/main` runs; the working tree ends clean and nothing is lost (the
++    #     discarded content still lives on origin/release, which the ship ff re-applies).
++    with_primary_repo do |dir|
++      File.write(File.join(dir, "from_release.rb"), "release-added\n") # byte-identical to origin/release
++      assert system("git -C #{dir} add from_release.rb")
++      out = run_real_preflight(dir)
++
++      assert_includes out, "PASSED", out
++      refute_includes out, "ABORTED", out
++      assert_match(%r{auto-cleaning with `git reset --hard origin/main`}, out, "the real reset path ran")
++      assert_equal "", porcelain(dir), "auto-clean leaves the working tree clean"
++      assert system("git -C #{dir} rev-parse --verify --quiet origin/release:from_release.rb >/dev/null"),
++             "nothing lost: the discarded content still lives on origin/release"
++    end
++
++    # (2) A genuinely-new UNTRACKED file mixed in with release-identical dirt → REFUSED.
++    #     NO reset runs, and the untracked local work survives intact.
++    with_primary_repo do |dir|
++      File.write(File.join(dir, "from_release.rb"), "release-added\n")
++      assert system("git -C #{dir} add from_release.rb")               # release-identical, staged
++      File.write(File.join(dir, "brand_new.rb"), "unmerged local work\n") # untracked, NOT on release
++      out = run_real_preflight(dir)
++
++      assert_includes out, "ABORTED", out
++      refute_includes out, "PASSED", out
++      refute_match(%r{auto-cleaning}, out, "no reset is attempted when any dirt is unreconciled")
++      assert_equal "unmerged local work\n", File.read(File.join(dir, "brand_new.rb")),
++                   "untracked local work is NEVER discarded — no reset ran"
++      assert File.exist?(File.join(dir, "from_release.rb")), "no reset ran, so the staged file also remains"
++    end
++
++    # (3) A locally-modified TRACKED file whose content is NOT on release → REFUSED.
++    #     The local modification survives (no reset).
++    with_primary_repo do |dir|
++      File.write(File.join(dir, "shared.rb"), "local hack not on release\n")
++      out = run_real_preflight(dir)
++
++      assert_includes out, "ABORTED", out
++      refute_includes out, "PASSED", out
++      assert_equal "local hack not on release\n", File.read(File.join(dir, "shared.rb")),
++                   "a tracked local change not on release survives — no reset ran"
++    end
++
++    # (4) The data-loss guard: primary AHEAD of origin/main (an UNPUSHED local
++    #     commit) PLUS the routine release-identical staged dirt → REFUSED. Every
++    #     dirty FILE is on release, but `git reset --hard origin/main` would ORPHAN
++    #     the unpushed COMMIT, so it must NOT run — HEAD stays put and the commit
++    #     survives. (with_primary_repo leaves main == origin/main, so we advance it.)
++    with_primary_repo do |dir|
++      File.write(File.join(dir, "unpushed.rb"), "unpushed local commit\n")
++      assert system("git -C #{dir} add unpushed.rb")
++      assert system("git -C #{dir} commit -q -m 'unpushed local work'") # HEAD now ahead of origin/main
++      File.write(File.join(dir, "from_release.rb"), "release-added\n")   # release-identical staged dirt
++      assert system("git -C #{dir} add from_release.rb")
++      head_before = `git -C #{dir} rev-parse HEAD`.strip
++
++      out = run_real_preflight(dir)
++
++      assert_includes out, "ABORTED", out
++      refute_includes out, "PASSED", out
++      refute_match(%r{auto-cleaning}, out, "an ahead HEAD is NEVER auto-cleaned")
++      assert_equal head_before, `git -C #{dir} rev-parse HEAD`.strip,
++                   "no reset ran — HEAD is unmoved and the unpushed commit is intact"
++      assert File.exist?(File.join(dir, "unpushed.rb")), "the unpushed local work survives"
++    end
++
++    # (5) A tracked GENERATED artifact mixed with release-identical dirt → REFUSED
++    #     unless the artifact itself is also reconciled. `git reset --hard` resets the
++    #     whole tracked tree, so filtering generated docs out of dirty_files would
++    #     silently discard the ledger while auto-cleaning the merge noise.
++    with_primary_repo do |dir|
++      ledger = File.join(dir, "docs/agents/maintenance/delete-later.md")
++      FileUtils.mkdir_p(File.dirname(ledger))
++      File.write(ledger, "ledger base\n")
++      assert system("git -C #{dir} add docs/agents/maintenance/delete-later.md")
++      assert system("git -C #{dir} commit -q -m 'track generated ledger'")
++      assert system("git -C #{dir} update-ref refs/remotes/origin/main HEAD")
++      File.write(File.join(dir, "from_release.rb"), "release-added\n")
++      assert system("git -C #{dir} add from_release.rb")
++      assert system("git -C #{dir} commit -q -m 'release after ledger'")
++      assert system("git -C #{dir} update-ref refs/remotes/origin/release HEAD")
++      assert system("git -C #{dir} reset --hard refs/remotes/origin/main")
++      File.write(File.join(dir, "from_release.rb"), "release-added\n")
++      assert system("git -C #{dir} add from_release.rb")
++      File.write(ledger, "ledger base\nlocal generated entry\n")
++
++      out = run_real_preflight(dir)
++
++      assert_includes out, "ABORTED", out
++      refute_includes out, "PASSED", out
++      refute_match(%r{auto-cleaning}, out, "no reset runs while generated dirt is unreconciled")
++      assert_equal "ledger base\nlocal generated entry\n", File.read(ledger),
++                   "dirty generated docs are preserved because no reset ran"
++      assert File.exist?(File.join(dir, "from_release.rb")), "no reset ran, so staged merge noise remains too"
++    end
+   end
+ 
+   # --- regression: the silent swallowed-subprocess flake ------------------------
+diff --git a/test/models/release/ship_sequence_test.rb b/test/models/release/ship_sequence_test.rb
+index 10ea5435..3256a005 100644
+--- a/test/models/release/ship_sequence_test.rb
++++ b/test/models/release/ship_sequence_test.rb
+@@ -227,9 +227,11 @@ def state(repo, branch: "main", dirty_files: [])
+   end
+ 
+   # --- generated-artifact allowlist: a retro doc / the worktree ledger ------
+-  # ship_preflight must NOT count KNOWN-GENERATED files as dirt (a retro-*.md or
+-  # the delete-later.md ledger routinely sit uncommitted in the deploy checkout
+-  # and blocked EVERY ship's ff). Narrow allowlist — real code dirt still gates.
++  # ship_preflight must NOT count KNOWN-GENERATED files as dirt when they are the
++  # only dirt (a retro-*.md or the delete-later.md ledger routinely sit
++  # uncommitted in the deploy checkout and blocked EVERY ship's ff). Narrow
++  # allowlist — real code dirt still gates, and once it gates, generated dirt must
++  # stay in the offender so an auto-clean reset cannot discard it silently.
+ 
+   test "generated_artifact? matches a retro doc and the worktree ledger only" do
+     assert S.generated_artifact?("docs/agents/audits/retro-rel-20260624-b2f18e.md")
+@@ -250,13 +252,13 @@ def state(repo, branch: "main", dirty_files: [])
+                  "a retro doc + the worktree ledger are generated artifacts, not real dirt"
+   end
+ 
+-  test "preflight_offenders still flags REAL dirt alongside a generated artifact" do
++  test "preflight_offenders keeps generated dirt in the offender when real dirt also exists" do
+     o = S.preflight_offenders([state("mcritchie-studio", dirty_files: [
+       "docs/agents/audits/retro-rel-1.md", "db/schema.rb"
+     ])]).first
+     assert o["dirty"], "a real dirty file still gates the ship"
+-    assert_equal ["db/schema.rb"], o["dirty_files"],
+-                 "the generated artifact is filtered out of the reported dirty files"
++    assert_equal ["docs/agents/audits/retro-rel-1.md", "db/schema.rb"], o["dirty_files"],
++                 "a generated artifact beside real dirt must be reconciled before any reset"
+   end
+ 
+   test "preflight_offenders still flags an off-main checkout even with only generated artifacts" do
+@@ -284,4 +286,74 @@ def state(repo, branch: "main", dirty_files: [])
+     msg = S.preflight_message(S.preflight_offenders([state("x", dirty_files: files)]))
+     assert_match(/\(\+4 more\)/, msg, "only the first 5 files are listed, then a +N more")
+   end
++
++  # --- autocleanable?: the release-identical dirty-primary auto-clean decision ---
++  #
++  # feedback_ship_preflight_dirty_primary: a dirty ON-MAIN primary whose dirt is ALL
++  # already on origin/release is redundant merge noise — SAFE to `git reset --hard
++  # origin/main`. Anything not provably-safe stays BLOCKING (refuse, never discard
++  # local work). The CLI gathers the facts (git I/O); this is the pure verdict.
++
++  # A fully-safe (auto-cleanable) offender: on main, facts gathered, main behind
++  # release, HEAD not ahead of origin/main, dirty, and NOTHING unreconciled.
++  def cleanable_offender(overrides = {})
++    {
++      "repo" => "mcritchie-studio", "on_main" => true, "reconcile_checked" => true,
++      "main_ancestor_of_release" => true, "head_at_origin_main" => true,
++      "dirty_files" => ["app/x.rb"], "unreconciled_files" => []
++    }.merge(overrides)
++  end
++
++  test "autocleanable? is true for a dirty on-main primary whose dirt is all on release" do
++    assert S.autocleanable?(cleanable_offender)
++  end
++
++  test "autocleanable? is false for an off-main checkout (a branch drift is never auto-cleaned)" do
++    assert_not S.autocleanable?(cleanable_offender("on_main" => false))
++  end
++
++  test "autocleanable? is false when the reconciliation facts were never gathered (default refuse)" do
++    # A stubbed / un-reconciled offender lacks reconcile_checked → REFUSE, never a
++    # blind reset just because unreconciled_files happens to be absent/empty.
++    offender = { "repo" => "x", "on_main" => true, "dirty_files" => ["a.rb"] }
++    assert_not S.autocleanable?(offender)
++  end
++
++  test "autocleanable? is false when origin/main is NOT an ancestor of origin/release" do
++    assert_not S.autocleanable?(cleanable_offender("main_ancestor_of_release" => false))
++  end
++
++  test "autocleanable? is false when HEAD is AHEAD of origin/main (unpushed commits)" do
++    # The data-loss guard: reset --hard origin/main would ORPHAN an unpushed local
++    # commit. The dirty FILES being on release says nothing about unpushed COMMITS,
++    # so an ahead HEAD must REFUSE even when every other fact says auto-clean.
++    assert_not S.autocleanable?(cleanable_offender("head_at_origin_main" => false))
++  end
++
++  test "autocleanable? is false when any dirty file is not on origin/release (local work)" do
++    assert_not S.autocleanable?(cleanable_offender("unreconciled_files" => ["app/local_only.rb"]))
++  end
++
++  test "autocleanable? is false when there are no dirty files to clean" do
++    assert_not S.autocleanable?(cleanable_offender("dirty_files" => [], "unreconciled_files" => []))
++  end
++
++  test "autocleanable? accepts symbol-keyed facts and string boolean flags" do
++    sym = { repo: "x", on_main: true, reconcile_checked: true, main_ancestor_of_release: true,
++            head_at_origin_main: true, dirty_files: ["a.rb"], unreconciled_files: [] }
++    assert S.autocleanable?(sym)
++    # A JSON round-trip could stringify the booleans — still honored.
++    assert S.autocleanable?(cleanable_offender("main_ancestor_of_release" => "true"))
++    assert_not S.autocleanable?(cleanable_offender("reconcile_checked" => "false"))
++  end
++
++  test "partition_autocleanable splits the safe resets from the blocking offenders" do
++    safe = cleanable_offender("repo" => "mcritchie-studio")
++    blocked_dirty = cleanable_offender("repo" => "turf-monster", "unreconciled_files" => ["a.rb"])
++    blocked_branch = cleanable_offender("repo" => "rolio", "on_main" => false)
++
++    cleanable, blocking = S.partition_autocleanable([safe, blocked_dirty, blocked_branch])
++    assert_equal %w[mcritchie-studio], cleanable.map { |o| o["repo"] }
++    assert_equal %w[turf-monster rolio], blocking.map { |o| o["repo"] }
++  end
+ end
