@@ -1075,11 +1075,13 @@ def git_success?(dir, *args)
 end
 
 # Resolve the integration base ref ONCE for branch-cut, ahead/behind, and merge
-# checks. Post-cutover every repo keeps a persistent `release` branch (created by
-# `bin/release init`) that feature branches cut from and PR into; we reckon
-# against `origin/release`. Repos that have not run `bin/release init` (no
-# `origin/release`) transparently fall back to `origin/main` so nothing breaks.
+# checks. Post-v2-cutover feature branches cut from and PR into the persistent
+# `accepted` integration branch (created off `release`), so it is preferred here.
+# We fall back to `origin/release` (pre-v2, or a repo not yet on the accepted
+# ladder) and then `origin/main` (no `bin/release init`), so nothing breaks during
+# or after cutover.
 def base_ref_for(dir)
+  return "origin/accepted" if git_success?(dir, "rev-parse", "--verify", "origin/accepted")
   return "origin/release" if git_success?(dir, "rev-parse", "--verify", "origin/release")
 
   "origin/main"

@@ -413,14 +413,18 @@ end
 
 # Release-aware DEFAULT committed-diff base. Post-cutover every repo keeps a
 # persistent `release` branch that feature branches cut from and PR into, and
-# `origin/release` runs AHEAD of `origin/main` (merged-but-unshipped work). So we
-# diff against origin/release when it exists, falling back to origin/main when it
-# doesn't — mirroring bin/agent-worktree's base_ref_for. Resolved against `root`
+# `accepted` → `release` → `main` each run AHEAD of the next (merged-but-unshipped
+# work). So we diff against the first that exists — post-v2, feature branches cut
+# from `accepted` — falling back through to origin/main, mirroring
+# bin/agent-worktree's base_ref_for. Resolved against `root`
 # (DOR_CHECK_DIFF_ROOT) so tests can drive it at a temp repo. Git missing or no
 # repo → origin/main, consistent with changed_files' best-effort committed view.
 def default_diff_base(root)
-  IO.popen(["git", "-C", root, "rev-parse", "--verify", "origin/release"], err: File::NULL, &:read)
-  $?.success? ? "origin/release" : "origin/main"
+  %w[origin/accepted origin/release].each do |ref|
+    IO.popen(["git", "-C", root, "rev-parse", "--verify", ref], err: File::NULL, &:read)
+    return ref if $?.success?
+  end
+  "origin/main"
 rescue SystemCallError
   "origin/main"
 end
