@@ -72,6 +72,22 @@ class DeploymentsBroadcaster
     end
   end
 
+  # Re-render the GitHub Actions panel to every /deployments viewer after a
+  # workflow run is upserted (GithubWorkflowRunIngestJob → GithubWorkflowRun
+  # after_commit), so CI / QA Deploy / Production Deploy status updates live with no
+  # reload. One REPLACE action targeting the stable #github-actions-panel slot;
+  # the panel is recomputed fresh from GithubWorkflowRun.latest_per_workflow.
+  # Guarded by safe_broadcast so a cable failure can NEVER break the run write.
+  def self.github_actions
+    Studio::Cable.safe_broadcast do
+      Turbo::StreamsChannel.broadcast_replace_to(
+        STREAM, target: "github-actions-panel",
+        partial: "tasks/github_actions_panel",
+        locals: { runs: GithubWorkflowRun.latest_per_workflow }
+      )
+    end
+  end
+
   # A gate run opened or closed (GateRun) — refresh the gate-bearing surfaces.
   # Release-grain runs re-render the release modules; task-grain runs replace the
   # task's board card in place (parity with checkpoint events — no stage move

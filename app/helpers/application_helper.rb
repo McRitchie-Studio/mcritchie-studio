@@ -391,6 +391,63 @@ module ApplicationHelper
     end
   end
 
+  # Collapses a run's (status, conclusion) into one outcome key for the Actions
+  # panel. A non-completed run is its raw status ("queued" / "in_progress"); a
+  # completed run is its conclusion, defaulting a rare blank to "neutral" so it
+  # never masquerades as a real result. Kept separate from the visual map so both
+  # the panel and any test can reason about the SAME six-plus-fallback vocabulary.
+  def github_run_outcome(run)
+    return run.status.to_s unless run.status == "completed"
+
+    run.conclusion.presence || "neutral"
+  end
+
+  # Maps a run's outcome to the /deployments Actions panel visual — six states the
+  # operator can tell apart at a glance, each a distinct pill + dot with light+dark
+  # parity built on the engine `.badge` utility:
+  #   queued      — hollow dashed amber, static (waiting, not yet started)
+  #   in_progress — filled amber, gently PULSING (running)
+  #   success     — green (passed)
+  #   failure     — red (failed)
+  #   cancelled   — muted grey (a cancel is not a failure)
+  #   timed_out   — orange (a distinct kind of failure)
+  # Any other terminal conclusion (neutral / skipped / stale / action_required / a
+  # blank) falls back to muted grey labelled by the raw conclusion. The POSITIVE
+  # invariant: green appears ONLY for an explicit "success". Class strings live here
+  # so Tailwind's helper scan compiles them (tailwind.config.js globs app/helpers).
+  def github_run_visual(run)
+    case github_run_outcome(run)
+    when "queued"
+      { state: "queued", label: "queued",
+        pill: "badge border-dashed border-amber-400 bg-transparent text-amber-700 dark:border-amber-500/50 dark:text-amber-300",
+        dot: "border border-amber-500 bg-transparent" }
+    when "in_progress"
+      { state: "running", label: "running",
+        pill: "badge animate-pulse border-amber-300 bg-amber-100 text-amber-700 dark:border-amber-500/40 dark:bg-amber-500/15 dark:text-amber-300",
+        dot: "bg-amber-500 animate-pulse" }
+    when "success"
+      { state: "passed", label: "passed",
+        pill: "badge border-green-300 bg-green-100 text-green-700 dark:border-green-500/40 dark:bg-green-500/15 dark:text-green-300",
+        dot: "bg-green-500" }
+    when "failure"
+      { state: "failed", label: "failed",
+        pill: "badge border-red-300 bg-red-100 text-red-700 dark:border-red-500/40 dark:bg-red-500/15 dark:text-red-300",
+        dot: "bg-red-500" }
+    when "cancelled"
+      { state: "cancelled", label: "cancelled",
+        pill: "badge border-gray-300 bg-gray-100 text-gray-600 dark:border-gray-600/50 dark:bg-gray-500/15 dark:text-gray-300",
+        dot: "bg-gray-400" }
+    when "timed_out"
+      { state: "timed_out", label: "timed out",
+        pill: "badge border-orange-300 bg-orange-100 text-orange-700 dark:border-orange-500/40 dark:bg-orange-500/15 dark:text-orange-300",
+        dot: "bg-orange-500" }
+    else
+      { state: "neutral", label: (run.conclusion.presence&.tr("_", " ") || "done"),
+        pill: "badge border-gray-300 bg-gray-100 text-gray-600 dark:border-gray-600/50 dark:bg-gray-500/15 dark:text-gray-300",
+        dot: "bg-gray-400" }
+    end
+  end
+
   # The DevOps SOP vocabulary — the owner definition, the node types, and the four
   # accountability lanes (each step's expectation + gate) — is the SINGLE SOURCE OF
   # TRUTH in config/devops_vocabulary.yml, read via Devops::Vocabulary. Rename a term
