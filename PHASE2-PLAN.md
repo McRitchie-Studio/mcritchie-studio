@@ -1,53 +1,51 @@
-# Phase 2 — Actions CD for the hub (WIP prep, blocked on operator setup)
+# Phase 2 — Actions CD for the hub
 
-The two deploy workflows are drafted in `.github/workflows/qa-deploy.yml` and
-`prod-deploy.yml`. This branch is prep only — no PR yet. To finish + ship Phase 2:
+DevOps v2 Phase 2 moves the **hub's deploy MECHANIC** off the laptop into GitHub
+Actions. Hub-only — rolio + turf-monster deploy exactly as before. The conductor
+FLOW is unchanged (sweep → wait-for-QA-boot → flip assembled on green; ship gate →
+deploy → smoke); only the deploy mechanic moved. (The flow/optimistic-QA changes
+are Phase 3, not here.)
 
-## 1. Operator setup (~10 min, admin only)
-- Heroku deploy token, in a private terminal:
-  `heroku authorizations:create --description github-actions-deploy --short`
+**Status:** env wiring DONE (operator) · conductor DONE (this branch) · remaining
+= the first live canary.
+
+## What ships here
+- **Workflows** — `.github/workflows/qa-deploy.yml` (`workflow_dispatch`,
+  optimistic `/up` smoke) and `prod-deploy.yml` (`workflow_dispatch`, hard `/up`
+  smoke, reviewer-gated `production` Environment).
+- **Strategy** — `config/release_repos.yml` hub `prod_deploy` is
+  `strategy: github_actions` (`workflow: prod-deploy.yml`); the handler is
+  registered in `Release::ShipSequence::STRATEGY_HANDLERS`. rolio stays
+  `git_push_heroku`, turf stays `repo_script`.
+- **Conductor** (`bin/release.rb`) — `dispatch_and_watch` fires a workflow and
+  watches it to conclusion (finding its own run by a monotonic-run-id snapshot);
+  `prepare`'s QA path dispatches `qa-deploy.yml` for `github_actions` apps
+  (`bin/qa-server` otherwise); `deploy_app`'s `:github_actions` branch dispatches
+  `prod-deploy.yml` at the frozen SHA. `push_frozen_main` still ref-advances
+  `origin/main` (the `release->main` formality — the workflow deploys the SHA it
+  is handed, not `origin/main`).
+
+## Operator setup (DONE — kept here for fresh-machine rebuild)
+- Heroku deploy token: `heroku authorizations:create --description
+  github-actions-deploy --short`.
 - GitHub → repo Settings → Environments:
   - **`qa`** — secret `HEROKU_API_KEY` = token · no protection rules.
-  - **`production`** — Required reviewers → add yourself · secret `HEROKU_API_KEY`
-    = same token. (If required-reviewers is greyed out on a private/free repo, skip
-    it — `workflow_dispatch` still needs a human click, which is the confirm.)
+  - **`production`** — required reviewer (the operator) · secret `HEROKU_API_KEY`
+    = same token. That reviewer prompt IS the ship-confirm (it replaced the local
+    interactive prompt).
 - App names are hardcoded in the workflows: QA `mcritchie-studio-qa`, prod
   `mcritchie-studio` (matches the Heroku remotes).
 
-## 2. Conductor changes (bin/release.rb) — the "trigger + observe" rewrite
-- **QA path in `prepare`** (~L2236-2266): stop calling `bin/qa-server deploy` (the
-  local Heroku push). The sweep's `gh pr merge` onto `release` already pushes
-  `release`, which auto-triggers `qa-deploy.yml`. The conductor's QA duty shrinks
-  to proceeding optimistically (open the `release->main` PR on Tier-2 CI green);
-  optionally `gh run watch` the qa-deploy run for the log. `bin/qa-server
-  run_deploy` (~L460-488) becomes break-glass.
-- **Prod path in `deploy_app :git_push_heroku`** (~L3253-3278): replace the local
-  `git push <remote> <frozen>:refs/heads/main` with:
-  ```
-  gh workflow run prod-deploy.yml -f sha=<frozen> -f release_pr=<pr>
-  run_id=$(gh run list --workflow=prod-deploy.yml --limit 1 --json databaseId -q '.[0].databaseId')
-  gh run watch "$run_id" --exit-status
-  ```
-  The operator approves the `production` Environment prompt mid-run; `gh run watch`
-  blocks until the job (incl. the `/up` smoke) concludes, and its exit status
-  drives `deploy_app`'s existing abort. `gate_sop("deploy:#{repo}")` records the
-  workflow conclusion instead of the local push.
-- **`push_frozen_main`** (~L2637) unchanged — still advances `origin/main` by
-  ref-push (the `release->main` formality; prod-deploy reads that SHA).
-- `config/release_repos.yml` hub `prod_deploy`: consider a new
-  `strategy: github_actions` adapter, or keep `git_push_heroku` and branch on an
-  env flag; the mechanic is now the workflow.
-
-## 3. Validation (after setup)
-- Merge a trivial PR into `release` → confirm `qa-deploy.yml` fires and QA `/up`
-  → 200.
-- `gh workflow run prod-deploy.yml -f sha=<current release SHA>` → approve the
-  Environment prompt → confirm prod `/up` → 200.
-- Then wire the conductor changes and run a full canary through `prepare`/`ship`.
+## Remaining — the first live canary
+- Merge a trivial PR into `release`, run `bin/release prepare` → confirm ONE
+  `qa-deploy.yml` run fires at the release tip and QA `/up` → 200.
+- Run `bin/release ship` → approve the `production` Environment prompt → confirm
+  prod `/up` → 200 and the deploy gate records green.
 
 ## Design invariants (don't regress)
-- prod-deploy is `workflow_dispatch`, **not** `push:[main]` (else the ship's
-  `release->main` ref-push self-fires it).
+- Both deploy workflows are `workflow_dispatch`, **not** push-triggered: prod so
+  the ship's `release->main` ref-push can't self-fire it; QA so the sweep's N PR
+  merges into `release` fire ONE deploy of the final tip, not N.
 - QA smoke is informational (optimistic); prod smoke is hard-gated.
 - Secrets are **Environment**-scoped, not repo-wide — the prod token lives behind
   the reviewer-gated `production` env so a fork PR can't exfiltrate it.

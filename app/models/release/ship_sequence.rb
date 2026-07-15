@@ -45,6 +45,32 @@ class Release
       end
     end
 
+    # --- github_actions deploy: WHICH run did our dispatch create? -------------
+    #
+    # bin/release's dispatch_and_watch fires `gh workflow run` and must then WATCH
+    # the run it created — but `gh workflow run` prints no run id, and `gh run list
+    # --limit 1` returns the newest run, which BEFORE ours registers is a PRIOR
+    # concluded run of the same workflow (prod deploys repeat). Watching that stale
+    # run would read a wrong verdict → a FALSE-GREEN production deploy.
+    #
+    # GitHub run ids increase monotonically, so the choice is: given the newest id
+    # snapshotted BEFORE dispatch (`before_id`) and a newest id read during the
+    # poll (`latest_id`), the dispatched run is the first `latest_id` STRICTLY
+    # GREATER than `before_id`. This is the pure decision; the I/O (the two `gh run
+    # list` reads, the retries, the sleeps) stays in the shell.
+    #
+    # FAILS CLOSED — nil in, nil out. `before_id` is nil when the shell could not
+    # read the pre-dispatch snapshot (gh failed), and `latest_id` is nil on a
+    # transient poll-read failure; either way NO run is selected, so the shell
+    # aborts (or keeps polling) rather than latch the wrong run. `before_id` of 0
+    # is the GENUINE empty case (the workflow had no prior runs) — the first run,
+    # any id > 0, is then ours.
+    def new_run_id(before_id, latest_id)
+      return nil if before_id.nil? || latest_id.nil?
+
+      latest_id > before_id ? latest_id : nil
+    end
+
     # The app deploy groups with the hub pulled to the front, the rest left in
     # their incoming (producer-first) order. Stable: a non-hub group keeps its
     # relative position. Accepts symbol- OR string-keyed groups (repo_plan returns

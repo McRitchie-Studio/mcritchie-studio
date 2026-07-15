@@ -21,6 +21,35 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
     assert_equal :github_actions, S.strategy_handler("github_actions")
   end
 
+  # --- new_run_id: WHICH dispatched Actions run to watch -------------------
+
+  test "new_run_id picks a run STRICTLY greater than the pre-dispatch snapshot" do
+    assert_equal 101, S.new_run_id(100, 101)
+  end
+
+  test "new_run_id ignores a run that is not newer (the stale pre-existing run)" do
+    # equal or smaller = the prior run `gh run list` returns until ours registers —
+    # watching it would read a stale verdict, the exact false-green this prevents.
+    assert_nil S.new_run_id(100, 100)
+    assert_nil S.new_run_id(100, 99)
+  end
+
+  test "new_run_id treats a 0 before-snapshot as the genuine empty baseline" do
+    # jq `// empty` → 0 means the workflow had NO prior runs; the first run is ours.
+    assert_equal 5, S.new_run_id(0, 5)
+  end
+
+  test "new_run_id FAILS CLOSED on a nil before_id (the snapshot gh could not read)" do
+    # A FAILED pre-dispatch `gh run list` must NEVER resolve a run — reading it as 0
+    # would let the poll latch a pre-existing run and false-green a deploy.
+    assert_nil S.new_run_id(nil, 101)
+  end
+
+  test "new_run_id FAILS CLOSED on a nil latest_id (a transient poll-read failure)" do
+    # A transient list failure during the poll is SKIPPED, never compared.
+    assert_nil S.new_run_id(100, nil)
+  end
+
   test "strategy_handler raises on an unknown strategy" do
     err = assert_raises(ArgumentError) { S.strategy_handler("rsync_box") }
     assert_match(/unknown prod_deploy strategy/, err.message)

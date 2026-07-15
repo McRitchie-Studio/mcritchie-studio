@@ -346,20 +346,27 @@ end
 # identifies the run it created, and `gh run list --limit 1` alone is a trap: a
 # PRIOR concluded run of the same workflow (prod deploys repeat, so one usually
 # exists) is the newest until ours registers, and watching THAT would read a
-# stale verdict. GitHub run ids increase monotonically, so we snapshot the newest
-# id BEFORE dispatch and poll (the run takes a couple seconds to register) until a
-# run with a STRICTLY GREATER id appears — that run is unambiguously ours.
+# stale verdict → a false-green deploy. GitHub run ids increase monotonically, so
+# we snapshot the newest id BEFORE dispatch and poll (the run takes a couple
+# seconds to register) until a run with a STRICTLY GREATER id appears — that run
+# is unambiguously ours (Release::ShipSequence.new_run_id owns that pure choice).
+#
+# FAILS CLOSED on a gh that won't answer. newest_run_id returns nil on a `gh run
+# list` FAILURE (distinct from 0 = "no runs exist yet"): a transient failure of
+# the PRE-dispatch snapshot must NOT read as before_id=0, or the poll could latch
+# a pre-existing run. So we retry the snapshot, ABORT if it never answers, and in
+# the poll SKIP a nil read rather than compare it.
 def dispatch_and_watch(workflow, inputs = {}, chdir: nil)
   return true if DRY
 
-  # The newest run id for this workflow, or 0 when none exists yet.
-  newest_run_id = lambda do
-    out, ok = sh("gh", "run", "list", "--workflow", workflow, "--limit", "1",
-                 "--json", "databaseId", "--jq", ".[0].databaseId // empty",
-                 chdir: chdir, capture: true)
-    ok ? out.strip.to_i : 0
+  before_id = nil
+  5.times do
+    before_id = newest_run_id(workflow, chdir: chdir)
+    break unless before_id.nil?
+
+    sleep 3
   end
-  before_id = newest_run_id.call
+  return false if before_id.nil? # gh never answered — do not watch a stale run
 
   args = ["gh", "workflow", "run", workflow]
   inputs.each { |k, v| args += ["-f", "#{k}=#{v}"] }
@@ -368,17 +375,29 @@ def dispatch_and_watch(workflow, inputs = {}, chdir: nil)
 
   run_id = nil
   20.times do
-    latest = newest_run_id.call
-    if latest > before_id
-      run_id = latest
-      break
-    end
+    # nil (a transient list failure) is SKIPPED, never compared to before_id.
+    run_id = Release::ShipSequence.new_run_id(before_id, newest_run_id(workflow, chdir: chdir))
+    break if run_id
+
     sleep 3
   end
   return false unless run_id
 
   _, watched = sh("gh", "run", "watch", run_id.to_s, "--exit-status", chdir: chdir)
   watched
+end
+
+# The newest GitHub Actions run id for `workflow` — 0 when none exists yet, or
+# nil when `gh run list` FAILED. The nil-vs-0 distinction is load-bearing (see
+# dispatch_and_watch): a caller must not read a transient failure as "no runs".
+# jq `// empty` yields "" on an empty list, which `to_i` maps to the genuine 0.
+def newest_run_id(workflow, chdir: nil)
+  out, ok = sh("gh", "run", "list", "--workflow", workflow, "--limit", "1",
+               "--json", "databaseId", "--jq", ".[0].databaseId // empty",
+               chdir: chdir, capture: true)
+  return nil unless ok
+
+  out.strip.to_i
 end
 
 # The SHELL-SAFE `rails runner` payload for a conductor snippet. The snippet is
