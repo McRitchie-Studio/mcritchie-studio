@@ -185,20 +185,146 @@ class DorCheckReviewFingerprintTest < Minitest::Test
     end
   end
 
-  # The bug, reproduced: the SAME fast cert, graded from the SAME primary checkout
-  # WITHOUT the review rooting (builder role), fingerprints the working tree — a
-  # different tree — so the cert reads STALE and the gate refuses. This is exactly
-  # what reviewers hit; the review role above is the fix.
-  def test_integration_builder_role_fingerprints_the_working_tree_false_stale
+  # An EXPLICIT root is the caller's declaration, and it still wins — even when it
+  # points at a tree that isn't the task's. review_check always sets
+  # DOR_CHECK_DIFF_ROOT, so this run grades that root's working tree and the cert
+  # reads STALE.
+  #
+  # This is NOT the builder lane's production behavior any more. An IMPLICIT root
+  # (the real path: an agent standing in the primary, no override) used to land here
+  # too — a false STALE for a perfectly fresh cert, 6 of 6 tasks on 2026-07-14 — and
+  # is now caught by the task-root guard, which re-roots at the task's tree and says
+  # so. See test/lib/dor_check_root_guard_test.rb. What survives here is only the
+  # narrow, correct rule the cert writers share: DECLARE a root and you own it.
+  def test_integration_an_explicitly_declared_foreign_root_is_still_graded_as_asked
     with_reviewer_repo do |dir, _base, branch_tree|
       primary_tree = FullSuiteGate.fingerprint(dir)
       verdict, code = review_check(task_json(branch_tree), dir) # builder role (default)
 
-      assert_equal 1, code, "builder role from a non-branch checkout reads the fast cert STALE"
+      assert_equal 1, code, "an explicitly declared non-branch root grades that root — cert reads STALE"
       refute verdict["ready"]
       assert_equal primary_tree, verdict.dig("full_suite", "fingerprint"),
-                   "builder role stays rooted at the cwd working tree (unchanged)"
+                   "DOR_CHECK_DIFF_ROOT wins over the guard, exactly as FAST_CHECK_ROOT does"
       assert_nil verdict.dig("full_suite", "route")
+    end
+  end
+
+  # ── [integration] THE PROVENANCE INVARIANT ─────────────────────────────────
+  #
+  #     The root NAMED in a fingerprint message is the root that was HASHED
+  #     to produce it.
+  #
+  # Stated positively, and checked by RECOMPUTING: take the root the gate names,
+  # hash it the way the gate says it hashed it, and you must get the fingerprint the
+  # gate printed. Not "diff_root is usually right" — no third number, ever.
+  #
+  # The bug this kills: the message unconditionally printed diff_root. In the review
+  # lane the fingerprint ALWAYS comes from the branch tree (that IS the fix in this
+  # file), while diff_root is the reviewer's PRIMARY checkout — which was never
+  # hashed and hashes to something else entirely. So the gate printed a precise hash
+  # beside a root that could not have produced it, in the one lane whose verdict is
+  # authoritative. A confident wrong root is worse than the opaque STALE it replaced:
+  # the opaque one sent you nowhere, this one sends you somewhere WRONG.
+
+  # Recompute the fingerprint from the provenance the verdict itself declares, and
+  # assert it comes back identical. `repo` is only used to catch a gate that fails to
+  # declare its repo at all.
+  def assert_fingerprint_recomputes_from_its_named_root(verdict, repo)
+    fs = verdict["full_suite"]
+    refute_nil fs, "no full_suite block — nothing was graded"
+    printed = fs["fingerprint"]
+    named = fs["fingerprint_root"]
+    source = fs["fingerprint_source"]
+    refute_nil printed, "a graded verdict must carry the fingerprint it graded"
+    refute_nil named, "a fingerprint with no declared root is a number nobody can check"
+
+    recomputed =
+      case source
+      when "branch-tree"
+        assert_equal repo, fs["fingerprint_repo"], "a ref is only resolvable inside a named repo"
+        git_out(fs["fingerprint_repo"], "rev-parse", named)
+      when "working-tree" then FullSuiteGate.fingerprint(named)
+      else flunk "unknown fingerprint_source #{source.inspect}"
+      end
+
+    assert_equal printed, recomputed,
+                 "THE INVARIANT: the root the gate NAMES (#{named}, #{source}) must be the root it HASHED. " \
+                 "Recomputing it gave #{recomputed.inspect}, but the gate printed #{printed.inspect} — a third number."
+    fs
+  end
+
+  # The review lane, where the override is UNCONDITIONAL. A stale cert forces the
+  # reporting path (the message + the JSON provenance) to actually render.
+  def test_integration_review_lane_names_the_branch_tree_it_hashed_not_the_reviewers_root
+    with_reviewer_repo do |dir, _base, branch_tree|
+      primary_tree = FullSuiteGate.fingerprint(dir) # the THIRD number: never hashed for this verdict
+      refute_equal branch_tree, primary_tree, "fixture must distinguish the two trees or this proves nothing"
+
+      stale_cert = "0" * 40
+      verdict, code = review_check(task_json(stale_cert), dir, "--gate-role", "review")
+      assert_equal 1, code, "a stale cert must still refuse — this test needs the STALE message rendered"
+
+      fs = assert_fingerprint_recomputes_from_its_named_root(verdict, dir)
+      assert_equal FullSuiteGate::BRANCH_TREE_SOURCE, fs["fingerprint_source"]
+      assert_equal branch_tree, fs["fingerprint"]
+      assert_equal "origin/feat/x^{tree}", fs["fingerprint_root"],
+                   "the review lane hashed the branch tree, so THAT is what it must name"
+      refute_equal dir, fs["fingerprint_root"], "naming the reviewer's primary checkout is the bug"
+
+      blame = verdict["errors"].join(" ")
+      assert_includes blame, "origin/feat/x^{tree}", "the message must name the ref it hashed"
+      refute_includes blame, "(root: #{dir})", "the old lie: diff_root printed as the fingerprint's root"
+      refute_includes blame, primary_tree[0, 12],
+                      "the primary's own tree hash must appear NOWHERE — it graded nothing"
+    end
+  end
+
+  # The non-override half of the same invariant: no override → the working tree at
+  # the declared root IS what was hashed, so that is what gets named. Same assertion,
+  # opposite branch — the invariant holds over BOTH paths or it holds over neither.
+  def test_integration_working_tree_lane_names_the_root_it_hashed
+    with_reviewer_repo do |dir, _base, branch_tree|
+      verdict, code = review_check(task_json(branch_tree), dir) # builder role: no override
+      assert_equal 1, code, "the declared root's working tree is not the branch tree → STALE"
+
+      fs = assert_fingerprint_recomputes_from_its_named_root(verdict, dir)
+      assert_equal FullSuiteGate::WORKING_TREE_SOURCE, fs["fingerprint_source"]
+      assert_equal dir, fs["fingerprint_root"], "no override → the root it hashed is the root it names"
+
+      blame = verdict["errors"].join(" ")
+      assert_includes blame, dir
+      refute_includes blame, "HEAD is now",
+                      "the fingerprint is the as-if-committed tree, NOT HEAD^{tree} — an agent who " \
+                      "verifies 'HEAD' by hand gets a different hash and concludes the tool is broken"
+    end
+  end
+
+  # A fingerprint with no provenance cannot be announced honestly, so the gate module
+  # refuses to grade one. This is what makes the invariant STRUCTURAL rather than a
+  # convention every future caller has to remember.
+  def test_unit_evaluate_refuses_an_override_with_no_provenance
+    with_reviewer_repo do |dir, _base, branch_tree|
+      err = assert_raises(ArgumentError) do
+        FullSuiteGate.evaluate(checks: ["[full-suite@#{branch_tree}] x"], root: dir,
+                               fingerprint_override: branch_tree)
+      end
+      assert_match(/provenance|fingerprint_origin/i, err.message)
+    end
+  end
+
+  def test_unit_evaluate_records_the_ref_it_hashed_as_the_fingerprint_root
+    with_reviewer_repo do |dir, _base, branch_tree|
+      origin = FullSuiteGate.fingerprint_of_first_ref(dir, "origin/feat/x", "feat/x")
+      assert_equal branch_tree, origin[:fingerprint]
+      assert_equal "origin/feat/x^{tree}", origin[:ref], "the hash and the ref that produced it travel together"
+
+      verdict = FullSuiteGate.evaluate(checks: ["[full-suite@#{branch_tree}] x"], root: dir,
+                                       fingerprint_override: origin[:fingerprint], fingerprint_origin: origin)
+      assert_equal branch_tree, verdict[:fingerprint]
+      assert_equal "origin/feat/x^{tree}", verdict[:fingerprint_root]
+      assert_equal dir, verdict[:fingerprint_repo]
+      assert_equal FullSuiteGate::BRANCH_TREE_SOURCE, verdict[:fingerprint_source]
+      refute_equal dir, verdict[:fingerprint_root], "root is NOT the provenance when an override is in play"
     end
   end
 

@@ -110,7 +110,15 @@ module Api
           "gates" => Task::GatesProjection.cached_or_built(task),
           "latest_activity" => latest_activity_json(task),
           "unresolved_feedback" => activity_json(task.unresolved_feedback_activity),
-          "review_in_progress" => task.review_in_progress?
+          "review_in_progress" => task.review_in_progress?,
+          # The progress fact, beside the liveness fact. The claim gate in bin/task
+          # reads these to tell a second agent what the holder has actually DONE
+          # ("last progress 28m ago · cert failed"), not merely that its terminal
+          # is painting. nil = unknown, which must always read as healthy.
+          "last_progress_at" => task.last_progress_at,
+          "last_progress_label" => task.last_progress_label,
+          "progress_seconds_ago" => task.progress_seconds_ago,
+          "progress_quiet" => task.claim_progress_quiet?
         )
       end
 

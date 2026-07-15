@@ -47,14 +47,27 @@
 # before spawning reviewers, and the primary's gate-zero (--gate-role review)
 # keeps the strict semantics (red AND pending both block; fast evidence needs
 # the settled green). Format + fingerprint live in bin/lib/full_suite_gate.rb.
-# Review-role fingerprint ROOTING: reviewers run --gate-role review from the
-# PRIMARY checkout (on release/main), not the task's worktree, so fingerprinting
-# the cwd working tree grades the cert against the WRONG tree → a false STALE. So
-# --gate-role review roots the suite fingerprint at the TASK BRANCH's committed
-# tree (origin/feat/<slug>'s ^{tree}, content-addressed == what the builder
-# certified) via review_fingerprint/FullSuiteGate.fingerprint_of_ref, falling back
-# to the cwd working tree (DOR_CHECK_DIFF_ROOT-honoring) only when the branch isn't
-# fetched. Builder-side is unchanged (working tree of diff_root).
+# Fingerprint ROOTING — the gate must grade the TASK's tree, not the checkout the
+# caller happens to stand in. The fingerprint is a git TREE hash, so a foreign root
+# can NEVER match a recorded cert; it doesn't read as "wrong root", it reads as
+# "STALE". Both lanes have now been bitten by that:
+#   * REVIEW — reviewers run --gate-role review from the PRIMARY checkout (on
+#     release/main) by design, so it roots the suite fingerprint at the TASK
+#     BRANCH's committed tree (origin/feat/<slug>'s ^{tree}, content-addressed ==
+#     what the builder certified) via review_fingerprint/FullSuiteGate.fingerprint_of_ref.
+#   * BUILDER — a builder-lane run from the wrong checkout had NO such cure and
+#     false-read STALE for 6 of 6 tasks on 2026-07-14, including certs 90 seconds
+#     old. The task-root GUARD (bin/lib/cert_root_guard.rb — which both cert runners
+#     already required, and which dor-check alone never consulted) now catches it and
+#     RE-ROOTS at the task's tree, loudly. See the guard block below for refuse-vs-
+#     resolve and the exact scope.
+# And when a lane really IS stale, the refusal prints the fingerprint DELTA
+# (certified for @abc…, but <the tree it actually hashed> is @def…) — so "STALE"
+# names its cause instead of hiding it (stale_delta). The tree it names is the tree
+# it HASHED, always: recompute the root in the message and you get the hash in the
+# message. In the review lane that root is the task BRANCH's committed tree, never
+# the reviewer's checkout, and never HEAD (the working-tree fingerprint includes
+# uncommitted edits by design).
 #
 # dor-check still does NOT run the suite itself — it stays a fast, deterministic
 # verdict; bin/full-suite-check is the (slower) runner that produces the evidence.
@@ -99,12 +112,26 @@ require_relative "lib/repo_root"
 require_relative "lib/ci_status"
 require_relative "lib/code_diff"
 require_relative "lib/task_board"
+require_relative "lib/cert_root_guard"
 
 # ROOT = the gate script's OWN repo (the hub). CONFIG (feature_shapes.yml) and the
 # token .env resolve from here and STAY here — the shape taxonomy is studio-owned.
-# The code DIFF + fingerprint, though, root at the agent's worktree (diff_root).
+# The code DIFF roots at the agent's worktree (diff_root). The suite FINGERPRINT
+# usually does too — but not always: the review lane and the reclaimed-worktree
+# remedy hash a committed BRANCH TREE instead, so the fingerprint carries its own
+# provenance (full_suite.fingerprint_root/_repo/_source) rather than borrowing
+# diff_root's name.
 ROOT = File.expand_path("..", __dir__)
 CONFIG_PATH = File.join(ROOT, "config", "feature_shapes.yml")
+# The board CLI the task-root guard reads devops.branch/worktree_slug through when
+# a caller has no task in hand. dor-check always DOES (it just fetched one), so it
+# passes `devops:` and this stays unused on the normal path; tests stub it.
+TASK_BIN = ENV.fetch("DOR_CHECK_TASK_BIN", File.expand_path("task", __dir__))
+# Where the root guard globs for the task's worktree (…/<app>/.worktrees/<slug>).
+# nil → ProjectsRoot's default. The test seam: it redirects the glob at a temp
+# projects root, and (see the guard block below) it is what opts a --file run into
+# the guard at all.
+PROJECTS_DIR = ENV["DOR_CHECK_PROJECTS_DIR"]
 # Kinds that MAY skip the shape/test-tier gate — chore/cleanup/docs. The label
 # alone NEVER earns the skip: the exemption must be EARNED by an observed
 # doc-only diff (CodeDiff.code_files empty). "There is no size exemption"
@@ -242,8 +269,11 @@ end
 # working tree at all (no repo), the diff is INDETERMINATE and the merge gate
 # ENFORCES the tiers (resolve_branch_diff) — it never defaults to exempt. A gate
 # that cannot see must not wave things through.
+# MEMOIZED, because the task-root guard below can RE-ROOT it: when the cwd turns out
+# not to be the task's tree, every later reader (the diff, the Gemfile pair, the
+# suite fingerprint) must see the SAME corrected root, resolved once.
 def diff_root
-  RepoRoot.code_root(ENV["DOR_CHECK_DIFF_ROOT"], ROOT)
+  @diff_root ||= RepoRoot.code_root(ENV["DOR_CHECK_DIFF_ROOT"], ROOT)
 end
 
 # The diff under gate, resolved ONCE as [files, source]. Sources, in priority:
@@ -418,14 +448,20 @@ end
 # reviewers hit tonight). A git tree hash is content-addressed, so the branch's
 # committed ^{tree} equals the working-tree fingerprint the builder certified
 # before pushing. Prefer origin/<branch> (what CI/QA graded), fall back to a local
-# <branch>. Returns the tree hash, or nil when the branch isn't resolvable locally
-# (unfetched) — the caller then falls back to the working-tree fingerprint of
-# diff_root (still honoring DOR_CHECK_DIFF_ROOT, the manual reviewer workaround).
+# <branch>.
+#
+# Returns { fingerprint:, ref:, root: } — the hash AND the ref expression that
+# produced it, in the repo it was resolved in — or nil when the branch isn't
+# resolvable locally (unfetched); the caller then falls back to the working-tree
+# fingerprint of diff_root (still honoring DOR_CHECK_DIFF_ROOT, the manual reviewer
+# workaround). The PROVENANCE rides along because every message that prints this
+# hash must name the tree that produced it: printing `root:` here — the reviewer's
+# primary checkout, which is never what an override hashed — is the exact bug this
+# now makes unrepresentable.
 def review_fingerprint(root, branch)
   return nil if branch.to_s.strip.empty?
 
-  FullSuiteGate.fingerprint_of_ref(root, "origin/#{branch}") ||
-    FullSuiteGate.fingerprint_of_ref(root, branch)
+  FullSuiteGate.fingerprint_of_first_ref(root, "origin/#{branch}", branch)
 end
 
 # The subset of changed files that ships BEHAVIOR (CodeDiff's type-only rule:
@@ -508,6 +544,63 @@ end
 # gate-zero says "defer until CI settles"; the builder says "open the PR" — and a
 # CONFLICTED PR overrides both (its CI is never coming; "open the PR"/"defer"
 # would each be wrong advice — the fix is rebase/merge release).
+
+# The STALE fingerprint DELTA: what the evidence was certified FOR, what the code IS
+# now, and WHERE "now" was read from.
+#
+# A bare "STALE (certified for older code)" states a verdict and hides its cause. It
+# reads as "you edited since certifying" — but the fingerprint is a git TREE hash, so
+# the SAME message appears when nothing was edited at all and the gate is simply
+# standing in a different checkout (the 2026-07-14 false STALE: a cert taken in the
+# task's worktree can never match a primary checkout's tree). The two causes want
+# OPPOSITE fixes — re-certify vs. re-root — and an agent that can't tell them apart
+# re-runs the cert, watches it go green, watches dor-check still say STALE, and
+# stops. Naming both hashes and the root makes them distinguishable at a glance.
+#
+# THE ROOT IT NAMES IS THE ROOT IT HASHED. That is the invariant, and it takes NO
+# `root` argument precisely so no caller can hand it a different one: the provenance
+# rides in the verdict (FullSuiteGate#provenance), which is the only thing that
+# actually knows. The first cut of this message printed dor-check's `diff_root`
+# unconditionally — so in the review lane, where the fingerprint ALWAYS comes from
+# the branch tree, it printed the reviewer's primary checkout beside a hash the
+# primary never produced, and recomputing the named root gave a THIRD number. A
+# precise-looking hash that sends the reader to the wrong tree is worse than the
+# opaque STALE this replaced: it is a lie with an air of authority.
+#
+# So the wording follows the SOURCE, and each form is recomputable by hand:
+#   working-tree → `bin/dor-check <slug> --suite-fingerprint` (or hash the path)
+#   branch-tree  → `git -C <repo> rev-parse <ref>^{tree}`
+# It is deliberately NOT called "HEAD": the working-tree fingerprint is the
+# as-if-committed tree INCLUDING uncommitted edits — which is usually the very
+# reason it moved — so an agent verifying it with `git rev-parse HEAD^{tree}` would
+# get a different hash and conclude the tool is broken.
+#
+# Falls back to the old wording when there is nothing to compare: the bypass /
+# injected / unverifiable verdicts carry no fingerprint, and so no provenance.
+def stale_delta(eval, lane)
+  recorded = Array(eval.dig(:recorded, lane)).reject { |fp| fp.to_s.strip.empty? }
+  current = eval[:fingerprint].to_s
+  return "certified for older code" if recorded.empty? || current.empty?
+
+  "certified for #{recorded.map { |fp| "@#{fp[0, 12]}" }.join(', ')}, " \
+    "but #{current_code_phrase(eval)} is @#{current[0, 12]}"
+end
+
+# WHAT the current fingerprint is a hash OF — named so it can be recomputed.
+def current_code_phrase(eval)
+  root = eval[:fingerprint_root].to_s
+  return "the code now" if root.empty?
+
+  if eval[:fingerprint_source] == FullSuiteGate::BRANCH_TREE_SOURCE
+    # The override lanes: the hash came from a COMMITTED ref, not from any working
+    # tree — least of all the one you are standing in. Name the ref and the repo it
+    # resolves in, which is the whole recompute command.
+    "the branch tree #{root} (in #{eval[:fingerprint_repo]}) — NOT this checkout —"
+  else
+    "the working tree at #{root} (as-if-committed, uncommitted edits included; not HEAD)"
+  end
+end
+
 def suite_evidence_error(eval, slug, ci, review_role)
   unless eval[:verifiable]
     return "FULL-suite gate unverifiable — couldn't fingerprint the working tree (no git repo / git identity?). " \
@@ -545,13 +638,16 @@ def suite_evidence_error(eval, slug, ci, review_role)
   FullSuiteGate::LANES.each do |lane|
     case lanes[lane]
     when :stale
-      parts << "#{lane}: STALE (certified for older code — re-run after your latest edits)"
+      parts << "#{lane}: STALE (#{stale_delta(eval, lane)} — re-run after your latest edits, " \
+               "or re-run from the task's tree if those hashes differ only because you are standing elsewhere)"
     when :missing
       parts << "#{lane}: MISSING (never certified for this exact code)"
     end
   end
   if lanes[FullSuiteGate::FAST_LANE] == :stale
-    parts << "fast-cert: STALE (certified for older code — re-run bin/fast-check after your latest edits)"
+    parts << "fast-cert: STALE (#{stale_delta(eval, FullSuiteGate::FAST_LANE)} — re-run bin/fast-check " \
+             "after your latest edits, or re-run from the task's tree if those hashes differ only because you " \
+             "are standing elsewhere)"
   end
   "the FULL suite + FULL rubocop are not certified green for this code — #{parts.join("; ")}. " \
     "Run `bin/full-suite-check #{slug}` (runs `bin/rails test` + `bin/rubocop` IN FULL and records " \
@@ -602,7 +698,8 @@ end
 if options[:suite_fingerprint]
   if options[:gate_role] == "review"
     branch = review_branch({}, ARGV.first)
-    puts(review_fingerprint(diff_root, branch) || FullSuiteGate.fingerprint(diff_root))
+    origin = review_fingerprint(diff_root, branch)
+    puts(origin ? origin[:fingerprint] : FullSuiteGate.fingerprint(diff_root))
   else
     puts FullSuiteGate.fingerprint(diff_root)
   end
@@ -623,9 +720,90 @@ devops = task.dig("metadata", "devops") || {}
 shape = devops["shape"].to_s.strip
 shape_def = shapes[shape]
 kind = devops["kind"].to_s.strip.downcase
+review_role = options[:gate_role] == "review"
 # Feeds the :pr diff source (resolve_branch_diff). Set BEFORE the first
 # changed_files call below, which memoizes the resolution.
 @pr_url = devops["pr_url"]
+
+# --- task-root guard (bin/lib/cert_root_guard.rb) -----------------------------
+#
+# The suite gate grades a cert's fingerprint — a git TREE hash — against the code at
+# diff_root, so diff_root MUST BE the task's tree. It wasn't, and nothing checked:
+# run `bin/dor-check <task>` from the hub PRIMARY for a task whose code lives in a
+# worktree and it fingerprints the PRIMARY's tree, which is CONTENT-ADDRESSED and
+# therefore can never equal the tree the builder certified. A perfectly fresh cert
+# reads "STALE (certified for older code)". Live 2026-07-14: STALE for 6 of 6 tasks,
+# including ones certified green 90 seconds earlier — and an agent that hits an
+# unexplainable STALE stops, so this stranded finished tasks in `building` behind
+# green PRs nobody handed off. The guard already EXISTED for exactly this: both cert
+# runners require it (bin/fast-check, bin/full-suite-check). dor-check — the one
+# command in the family that READS the evidence — never consulted it.
+#
+# REFUSE vs RESOLVE. The cert writers REFUSE, and must: they stamp evidence about
+# the tree they stand in, so a chdir could green-cert a stale worktree while the
+# operator's real edits sat untested where they ran from. dor-check WRITES NO
+# EVIDENCE — it grades what is already recorded — so re-rooting cannot forge a cert.
+# It can only make the gate judge the RIGHT code. So dor-check RESOLVES. But
+# cert_root_guard.rb is explicit that a SILENT chdir is its own hazard, and it is
+# right: a gate that quietly judges a different tree than the one you are looking at
+# is how you end up arguing with a verdict instead of reading it. Every re-root
+# below therefore ANNOUNCES itself on stderr, naming both roots.
+#
+# Remedies, in order, once the root is found foreign:
+#   1. the task's worktree is ON DISK → re-root the whole gate there. Its working
+#      tree is exactly what the builder certified (uncommitted edits included).
+#   2. else its BRANCH resolves in this repo → root the FINGERPRINT at that branch's
+#      committed tree. Content-addressed, so it equals the certified tree. This is
+#      the same mechanism --gate-role review has used since the reviewers hit this
+#      from the other side; the builder lane simply never got it.
+#   3. else → no tree here can honestly grade this cert. REFUSE (below, at the suite
+#      gate) rather than grade a foreign tree and call a fresh cert STALE.
+#
+# Scope — the BUILDER lane at the MERGE gate, with a positional slug and an IMPLICIT
+# root. Deliberately NOT:
+#   * --gate-role review — it already roots at the branch tree and runs from a
+#     primary checkout BY DESIGN. It is not the broken lane; leave it alone.
+#   * --gate build — the task is at `designed`. No code, no branch, no worktree yet;
+#     there is no tree to root at, and nothing that reads one.
+#   * DOR_CHECK_DIFF_ROOT — an EXPLICIT declaration by the caller (the CI/test seam,
+#     and the documented manual reviewer workaround). It bypasses the guard exactly
+#     as FAST_CHECK_ROOT / FULL_SUITE_ROOT do for the cert writers.
+#   * --file without DOR_CHECK_PROJECTS_DIR — the offline seam has no board and no
+#     on-disk tree relationship to assert (no production caller passes --file).
+foreign_root = nil
+task_fingerprint_override = nil
+if gate != "build" && !review_role && !slug.to_s.strip.empty? &&
+   ENV["DOR_CHECK_DIFF_ROOT"].to_s.strip.empty? &&
+   (options[:file].nil? || !PROJECTS_DIR.to_s.strip.empty?)
+  foreign_root = CertRootGuard.assess(
+    task_bin: TASK_BIN, slug: slug, root: diff_root, devops: devops, projects_dir: PROJECTS_DIR
+  )
+end
+
+if foreign_root
+  standing = diff_root
+  standing_branch = foreign_root[:actual_branch] || "unknown"
+  if foreign_root[:resolved_root]
+    warn!("⚠ dor-check: RE-ROOTING. You are standing in #{standing} (branch #{standing_branch}), which is " \
+          "NOT #{slug}'s tree — every check below would have graded the wrong code, and the cert would have " \
+          "read STALE no matter how fresh it is (the fingerprint is a git TREE hash; a foreign checkout can " \
+          "never match one). Re-rooted at the task's worktree: #{foreign_root[:resolved_root]}. dor-check " \
+          "READS evidence and never writes a cert, so it re-roots rather than refusing — but it will not do " \
+          "it silently: the verdict below is about THAT tree, not the one you are in.")
+    @diff_root = foreign_root[:resolved_root]
+    foreign_root = nil # the root IS the task's tree now
+  else
+    task_fingerprint_override = review_fingerprint(diff_root, foreign_root[:expected_branch])
+    if task_fingerprint_override
+      warn!("⚠ dor-check: RE-ROOTING the cert fingerprint. You are standing in #{standing} (branch " \
+            "#{standing_branch}), which is NOT #{slug}'s tree, and no worktree " \
+            ".worktrees/#{foreign_root[:worktree_slug]} exists here — so the cert is graded against branch " \
+            "#{foreign_root[:expected_branch]}'s committed tree — #{task_fingerprint_override[:ref]} " \
+            "= @#{task_fingerprint_override[:fingerprint][0, 12]} — not against this checkout's. Announced, " \
+            "not silent, and NAMED so you can recompute it: the verdict below is about the BRANCH's code.")
+    end
+  end
+end
 
 # An EXEMPT kind (chore/cleanup/docs) may skip the shape/test-tier gate — but it
 # has to EARN the skip with an observed doc-only diff. Three outcomes:
@@ -813,7 +991,6 @@ end
 # Evaluated BEFORE the suite gate because the suite gate's fast route depends on it.
 # Non-blocking SUGGESTIONS collect here too (never affect `ready`); more join below.
 suggestions = []
-review_role = options[:gate_role] == "review"
 ci = nil
 if gate != "build"
   ci = CiStatus.evaluate(devops["pr_url"], ENV["DOR_CHECK_CI_STATUS"])
@@ -869,37 +1046,66 @@ end
 suite_eval = nil
 suite_route = nil # "full" | "fast" | "fast-provisional" | "bypass" when satisfied
 if gate != "build" && shape_def && !dor_tiers.empty?
-  # Review gate-zero: root the suite fingerprint at the TASK BRANCH tree, not the
-  # reviewer's cwd (the primary checkout, on release/main) — else the cert
-  # false-reads STALE. Builder-side (default) review_fp stays nil → the working-
-  # tree fingerprint of diff_root, unchanged. A branch that can't be resolved
-  # locally (unfetched) also yields nil → the same working-tree fallback, with the
-  # loud suggestion below so the reviewer fetches the branch / sets the override.
-  review_branch_ref = review_role ? review_branch(devops, task["slug"] || slug) : nil
-  review_fp = review_branch_ref ? review_fingerprint(diff_root, review_branch_ref) : nil
-  suite_eval = FullSuiteGate.evaluate(
-    checks: checks,
-    root: diff_root,
-    injected: ENV["DOR_CHECK_SUITE_EVIDENCE"],
-    fingerprint_override: review_fp
-  )
-  if review_role && review_branch_ref && review_fp.nil? && ENV["DOR_CHECK_SUITE_EVIDENCE"].to_s.empty?
-    suggestions << "review gate-zero: couldn't resolve branch #{review_branch_ref.inspect} locally to root the " \
-      "suite fingerprint at the PR tree, so it fell back to the cwd working tree — which reads STALE from a " \
-      "primary checkout. Fetch the branch (git fetch origin #{review_branch_ref}) or set " \
-      "DOR_CHECK_DIFF_ROOT=<task worktree>, then re-run."
-  end
-  fast_fresh = suite_eval.dig(:lanes, FullSuiteGate::FAST_LANE) == :fresh
-  if suite_eval[:ok]
-    suite_route = suite_eval[:bypass] ? "bypass" : "full"
-  elsif fast_fresh && ci && ci[:state] == :green
-    suite_route = "fast"
-  elsif fast_fresh && !review_role && ci && %i[pending none].include?(ci[:state])
-    # ci-gate-review-handoff: the builder submits without the CI wait. The PR is
-    # OPEN and its CI will settle; review's gate-zero holds the strict verdict.
-    suite_route = "fast-provisional"
+  if foreign_root && task_fingerprint_override.nil?
+    # Root guard, remedy 3 (see the guard block above). The root is NOT the task's
+    # tree, its worktree isn't on disk, and its branch isn't in this repo — so there
+    # is no tree here that can honestly grade this cert. Grading the checkout we
+    # happen to stand in is precisely the bug: it would report a FRESH cert as STALE.
+    # Refuse, and say which of the three fixes to reach for. This is a TRUTHFUL exit
+    # 1 replacing a LYING one — the old code exited 1 here too, just with "STALE".
+    errors << "root guard: this run roots at #{diff_root} (branch " \
+      "#{foreign_root[:actual_branch] || 'unknown'}), which is NOT #{task["slug"] || slug}'s tree — its " \
+      "worktree (.worktrees/#{foreign_root[:worktree_slug]}) is not on disk and its branch " \
+      "#{foreign_root[:expected_branch]} is not in this repo, so NO tree here can grade its cert. The cert " \
+      "fingerprint is a git TREE hash: grading the checkout you are standing in would report a perfectly " \
+      "FRESH cert as STALE (the false STALE that stranded six tasks on 2026-07-14), so this refuses instead " \
+      "of lying. Fix it one of three ways: run dor-check from the task's worktree; or fetch its branch " \
+      "(git fetch origin #{foreign_root[:expected_branch]}); or declare the root explicitly with " \
+      "DOR_CHECK_DIFF_ROOT=<path to the task's checkout>."
   else
-    errors << suite_evidence_error(suite_eval, task["slug"] || slug, ci, review_role)
+    # Root the suite fingerprint at the TASK's tree, not at whatever checkout the
+    # caller stands in. Two overrides feed the same seam:
+    #   * review gate-zero — the reviewer runs from the PRIMARY (on release/main) BY
+    #     DESIGN, so fingerprinting their cwd grades the wrong tree; root at the task
+    #     BRANCH's committed tree instead (content-addressed == what was certified).
+    #   * builder from a foreign root with no worktree on disk — the root guard's
+    #     remedy 2, the same branch-tree rooting, announced above.
+    # Both nil (the normal builder run, already standing in the task's tree) → the
+    # working-tree fingerprint of diff_root, unchanged.
+    #
+    # Whichever fires, the override travels as { fingerprint:, ref:, root: } — the
+    # hash AND the ref that produced it — and evaluate REFUSES a hash with no origin.
+    # The verdict therefore always knows what it hashed, so the STALE message can
+    # name it instead of naming diff_root, which in the review lane is the reviewer's
+    # primary checkout and was never hashed at all.
+    review_branch_ref = review_role ? review_branch(devops, task["slug"] || slug) : nil
+    review_fp = review_branch_ref ? review_fingerprint(diff_root, review_branch_ref) : nil
+    override = review_fp || task_fingerprint_override
+    suite_eval = FullSuiteGate.evaluate(
+      checks: checks,
+      root: diff_root,
+      injected: ENV["DOR_CHECK_SUITE_EVIDENCE"],
+      fingerprint_override: override && override[:fingerprint],
+      fingerprint_origin: override
+    )
+    if review_role && review_branch_ref && review_fp.nil? && ENV["DOR_CHECK_SUITE_EVIDENCE"].to_s.empty?
+      suggestions << "review gate-zero: couldn't resolve branch #{review_branch_ref.inspect} locally to root the " \
+        "suite fingerprint at the PR tree, so it fell back to the cwd working tree — which reads STALE from a " \
+        "primary checkout. Fetch the branch (git fetch origin #{review_branch_ref}) or set " \
+        "DOR_CHECK_DIFF_ROOT=<task worktree>, then re-run."
+    end
+    fast_fresh = suite_eval.dig(:lanes, FullSuiteGate::FAST_LANE) == :fresh
+    if suite_eval[:ok]
+      suite_route = suite_eval[:bypass] ? "bypass" : "full"
+    elsif fast_fresh && ci && ci[:state] == :green
+      suite_route = "fast"
+    elsif fast_fresh && !review_role && ci && %i[pending none].include?(ci[:state])
+      # ci-gate-review-handoff: the builder submits without the CI wait. The PR is
+      # OPEN and its CI will settle; review's gate-zero holds the strict verdict.
+      suite_route = "fast-provisional"
+    else
+      errors << suite_evidence_error(suite_eval, task["slug"] || slug, ci, review_role)
+    end
   end
 end
 
@@ -1009,6 +1215,14 @@ if options[:json]
     suggestions: suggestions,
     missing_metadata: missing_meta,
     missing_tiers: missing_tiers,
+    # The checkout the DIFF was read from (after the root guard's re-root) — the ONE
+    # fact that made the false STALE unreadable when it was absent. It is NOT
+    # necessarily what the suite fingerprint was hashed from: when an override is in
+    # play (the review lane ALWAYS, and the reclaimed-worktree remedy) the hash comes
+    # from a committed BRANCH TREE, and saying otherwise here is how a confident,
+    # wrong root label gets born. The fingerprint's own provenance therefore travels
+    # WITH the fingerprint, in full_suite below.
+    code_root: diff_root,
     ci: ci && { state: ci[:state], cause: ci[:cause], reason: ci[:reason], failing: ci[:failing],
                 pending: ci[:pending], count: ci[:count] }.compact,
     full_suite: suite_eval && {
@@ -1017,7 +1231,20 @@ if options[:json]
       bypass: suite_eval[:bypass],
       verifiable: suite_eval[:verifiable],
       fingerprint: suite_eval[:fingerprint],
-      lanes: suite_eval[:lanes]
+      # WHAT was hashed to produce `fingerprint` — the invariant a monitor can CHECK:
+      #   fingerprint_source "working-tree" → fingerprint_root is a PATH; recompute by
+      #     hashing that tree (bin/dor-check <slug> --suite-fingerprint).
+      #   fingerprint_source "branch-tree"  → fingerprint_root is a REF EXPRESSION;
+      #     recompute: git -C <fingerprint_repo> rev-parse <fingerprint_root>.
+      # Either way, recomputing the root NAMED here returns the fingerprint printed
+      # here. There is no third number.
+      fingerprint_root: suite_eval[:fingerprint_root],
+      fingerprint_repo: suite_eval[:fingerprint_repo],
+      fingerprint_source: suite_eval[:fingerprint_source],
+      lanes: suite_eval[:lanes],
+      # What each lane's evidence was certified FOR — the machine-readable half of
+      # the STALE delta (fingerprint is what the code IS now).
+      recorded: suite_eval[:recorded]
     }
   )
   exit(ready ? 0 : 1)

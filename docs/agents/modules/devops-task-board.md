@@ -603,18 +603,55 @@ After confirming the rendered `message`, repeat the same request without
 `DISCORD_DEPLOY_WEBHOOK_URL` retained as a fallback for older environments.
 Never commit webhook URLs.
 
-## Future Heartbeats
+## The build claim: liveness and progress are two facts
 
-For now, Mr. McRitchie starts and observes agent sessions directly. When agents
-start claiming work without direct supervision, add lease fields or a `TaskRun`
-model with:
+Unsupervised task claiming arrived, so the lease fields this section once
+deferred now ship. They live in `metadata.devops` and the math is `ClaimLease`
+(`lib/claim_lease.rb`), shared verbatim by the `bin/task` CLI and the Task model:
 
-- `claimed_by`
-- `claim_expires_at`
-- `last_heartbeat_at`
-- `blocked_reason`
-- `worktree_path`
-- `current_command`
+- `claimed_session` — the agent session holding the desk
+- `claim_nonce` — a per-PROCESS token (two terminals resuming one session id are
+  two instances)
+- `claim_expires_at` — a 120s TTL, renewed by the heartbeat in `bin/statusline`
 
-Do not add that operational weight until open, unsupervised task claiming
-actually starts.
+**Read the lease for exactly what it attests: A TERMINAL IS PAINTING.** It is
+renewed by the ~5s status-line render, so it stays green through a wedged agent —
+on 2026-07-13 a session held a perfectly healthy-looking lease for 35 minutes
+while producing nothing, and the board's green dot was read as progress. It never
+meant that.
+
+So the board carries a **second, independent fact** beside it — the task's last
+**durable artifact**, derived (never declared) from evidence we already write:
+
+- **TaskEvents** — stage moves, intents, and cert checkpoints
+- **GateRuns** — a gate opening, recording a lane, or closing
+
+`Task#last_progress_at` / `#last_progress_label` / `#progress_seconds_ago` expose
+it; the API projects it on the task; the card and the claim gate state it in words
+("last durable progress ~2.5h ago · g1_cert failed"). A wedged agent cannot fake
+these, because they exist only when work actually landed.
+
+**There is deliberately no STALLED verdict, and you should not add one.** Measured
+over 243 real building windows (prod, 14 days): the median HEALTHY window already
+contains a **26-minute** board-write silence (p90 66m, p99 125m), and legitimate
+certs run to **94 minutes** at p99. A "no durable write in 15m ⇒ stalled" rule —
+the obvious design — flags **79% of healthy desks**, and still misses the wedge
+that motivated it (its failing certs wrote no gate rows at all). Silence is not
+evidence of a wedge: agents think, run long certs, and wait on the operator. A
+chip that cries wolf on four of five healthy desks is the same lying gate with its
+polarity flipped, and it trains every reader to ignore it.
+
+What ships instead is honest and quiet about its limits:
+
+- the **age** is always shown for a live claim — a fact, not a verdict;
+- a conservative `quiet` note, **derived from the measurements above rather than
+  chosen**: `ClaimLease::PROGRESS_QUIET_SECONDS` = the worst measured healthy
+  window (the 125m p99) × 1.5 = **3h07m**. It carries a margin because at n=243
+  that p99 rests on two or three tail observations — a point estimate the corpus
+  cannot pin down — and a threshold parked ON it would flag healthy desks whenever
+  the tail breathed. It is suppressed while a gate is in flight, and reads
+  **healthy whenever the fact is unknown**. Re-measure the corpus and the
+  threshold moves with it; the guard test asserts the property (no measured
+  healthy window may ever render quiet), never the literal;
+- **nothing is destructive.** Quiet reclaims no desk, blocks no move, and never
+  touches the lease. A quiet desk is still a HELD desk.

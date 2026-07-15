@@ -64,6 +64,27 @@ module FullSuiteGate
   EVIDENCE_LANES = CertEvidence::EVIDENCE_LANES
   EVIDENCE_RE = CertEvidence::EVIDENCE_RE
 
+  # --- fingerprint PROVENANCE ------------------------------------------------
+  # A fingerprint without provenance is a number nobody can check. Every verdict
+  # therefore carries WHAT was hashed to produce it, in two flavours:
+  #
+  #   WORKING_TREE — the as-if-committed tree of a directory. fingerprint_root is
+  #                  that absolute PATH. Recompute: FullSuiteGate.fingerprint(path).
+  #   BRANCH_TREE  — a COMMITTED git ref's tree (the review gate-zero, and the
+  #                  builder's reclaimed-worktree remedy). fingerprint_root is the
+  #                  REF EXPRESSION (e.g. "origin/feat/x^{tree}"), resolved inside
+  #                  fingerprint_repo. Recompute:
+  #                  git -C <fingerprint_repo> rev-parse <fingerprint_root>.
+  #
+  # This exists because the announcement used to name the caller's `root` no matter
+  # which of the two produced the hash — so in the review lane (where the override
+  # is ALWAYS on) it printed the reviewer's primary checkout beside a hash taken
+  # from the branch tree, and recomputing the named root gave a THIRD number. A
+  # confident, wrong log line is worse than the opaque STALE it replaced. The rule
+  # is now structural: the fingerprint and its origin leave this module TOGETHER.
+  WORKING_TREE_SOURCE = "working-tree"
+  BRANCH_TREE_SOURCE = "branch-tree"
+
   module_function
 
   # Content-addressed fingerprint of the CURRENT code — tracked edits AND
@@ -102,8 +123,28 @@ module FullSuiteGate
   def fingerprint_of_ref(root, ref)
     return nil if ref.to_s.strip.empty?
 
-    tree = capture(["git", "-C", root.to_s, "rev-parse", "--verify", "--quiet", "#{ref}^{tree}"]).strip
+    tree = capture(["git", "-C", root.to_s, "rev-parse", "--verify", "--quiet", ref_expression(ref)]).strip
     tree.empty? ? nil : tree
+  end
+
+  # The exact ref expression fingerprint_of_ref resolves — the string an agent can
+  # paste into `git -C <repo> rev-parse …` and get the SAME hash back. One
+  # definition, so what we ANNOUNCE and what we HASH cannot drift apart.
+  def ref_expression(ref)
+    "#{ref}^{tree}"
+  end
+
+  # Try each ref in order and return the fingerprint of the first that resolves,
+  # WITH the ref that produced it: { fingerprint:, ref:, root: } — or nil when none
+  # resolve. The hash and its provenance are yielded by ONE call, so a caller cannot
+  # hold a fingerprint from ref A while reporting ref B (or, as the bug went, while
+  # reporting a filesystem root that was never hashed at all).
+  def fingerprint_of_first_ref(root, *refs)
+    refs.flatten.compact.each do |ref|
+      fp = fingerprint_of_ref(root, ref)
+      return { fingerprint: fp, ref: ref_expression(ref), root: root.to_s } if fp
+    end
+    nil
   end
 
   # --- the evidence-namespace contract (lib/cert_evidence.rb) ---------------
@@ -156,6 +197,17 @@ module FullSuiteGate
     CertEvidence.extract_fingerprint(line, lane)
   end
 
+  # Every fingerprint RECORDED for `lane` (the "[lane@<fp>]" tags), de-duped, in
+  # order. lane_status collapses these to :fresh/:stale/:missing — a verdict, but
+  # not an EXPLANATION. "STALE" alone reads as "you edited since certifying" even
+  # when the real cause is that the gate is standing in the WRONG TREE, and the two
+  # want opposite fixes (re-certify vs. re-root). Surfacing what the evidence was
+  # certified FOR lets dor-check print the DELTA — certified @abc, HEAD is now @def
+  # — so the cause is legible instead of guessed at.
+  def recorded_fingerprints(checks, lane)
+    Array(checks).filter_map { |line| extract_fingerprint(line, lane) }.uniq
+  end
+
   # A recorded, sanctioned bypass: "[full-suite-bypass] <reason>" with a non-empty
   # reason. Returns the reason string or nil. Like the post_deploy "none" hatch,
   # the bypass is an explicit RECORD (it lives in checks_run, prints loud, shows in
@@ -173,36 +225,78 @@ module FullSuiteGate
   #   2. an injected status (tests only — DOR_CHECK_SUITE_EVIDENCE) short-circuits
   #      the git+tag work so the gate logic can be exercised without a real run;
   #   3. otherwise recompute the fingerprint and grade every evidence lane.
-  # Returns a Hash: { ok:, bypass:, verifiable:, fingerprint:, lanes: { ... } }.
+  # Returns a Hash: { ok:, bypass:, verifiable:, fingerprint:, lanes:, recorded: }.
   # `ok` means the FULL cert is satisfied (LANES fresh). lanes[FAST_LANE] carries
   # the fast-cert lane's freshness so dor-check can pair a fresh fast cert with a
-  # green GitHub CI — this module grades evidence; it never reads CI.
+  # green GitHub CI — this module grades evidence; it never reads CI. `recorded`
+  # carries each lane's RECORDED fingerprints (what the evidence was certified for)
+  # so a STALE verdict can be reported as a delta against `fingerprint` rather than
+  # as an opaque label.
   #
   # `fingerprint_override` (the review gate-zero seam): grade against THIS tree
   # hash instead of recomputing `fingerprint(root)`. The reviewer runs from a
   # primary checkout that isn't on the task branch, so the working-tree hash there
   # is the wrong tree — dor-check passes the branch's committed tree (via
-  # fingerprint_of_ref) so the cert grades against the code the builder certified.
-  # nil (the default / a branch that couldn't be resolved) → recompute from root,
-  # the builder-side behavior.
-  def evaluate(checks:, root:, injected: nil, fingerprint_override: nil)
+  # fingerprint_of_first_ref) so the cert grades against the code the builder
+  # certified. nil (the default / a branch that couldn't be resolved) → recompute
+  # from root, the builder-side behavior.
+  #
+  # An override MUST arrive with its `fingerprint_origin` — the { ref:, root: } the
+  # hash came from (fingerprint_of_first_ref hands you both). Passing a hash with no
+  # provenance raises: the verdict has to be able to say WHAT it hashed, and the one
+  # bug this seam has ever had was a fingerprint from the branch tree reported beside
+  # the caller's `root`, which was never hashed to produce it. An unattributed
+  # override is not a thing this module will grade.
+  def evaluate(checks:, root:, injected: nil, fingerprint_override: nil, fingerprint_origin: nil)
     reason = bypass_reason(checks)
     return verdict(ok: true, bypass: reason) if reason
 
     return injected_verdict(injected) if injected && !injected.empty?
 
+    fp_root, fp_repo, fp_source = provenance(root, fingerprint_override, fingerprint_origin)
     fp = fingerprint_override || fingerprint(root)
     return verdict(ok: false, verifiable: false) if fp.nil?
 
     lanes = EVIDENCE_LANES.to_h { |lane| [lane, lane_status(checks, lane, fp)] }
-    verdict(ok: LANES.all? { |lane| lanes[lane] == :fresh }, fingerprint: fp, lanes: lanes)
+    recorded = EVIDENCE_LANES.to_h { |lane| [lane, recorded_fingerprints(checks, lane)] }
+    verdict(ok: LANES.all? { |lane| lanes[lane] == :fresh }, fingerprint: fp, lanes: lanes, recorded: recorded,
+            fingerprint_root: fp_root, fingerprint_repo: fp_repo, fingerprint_source: fp_source)
+  end
+
+  # Where the graded fingerprint CAME FROM → [fingerprint_root, fingerprint_repo,
+  # fingerprint_source]. Override → the ref expression it was resolved from, in the
+  # repo it was resolved in. No override → the working tree at `root`, which is both.
+  # Refuses an override with no origin rather than guessing one, because guessing is
+  # exactly how `root` ended up labelling a hash it never produced.
+  def provenance(root, override, origin)
+    return [root.to_s, root.to_s, WORKING_TREE_SOURCE] if override.nil?
+
+    origin = { ref: origin } unless origin.is_a?(Hash)
+    ref = origin[:ref].to_s.strip
+    if ref.empty?
+      raise ArgumentError, "fingerprint_override requires fingerprint_origin (the ref it was hashed from) — " \
+                           "a fingerprint whose provenance is unknown cannot be honestly announced"
+    end
+
+    repo = origin[:root].to_s.strip
+    [ref, repo.empty? ? root.to_s : repo, BRANCH_TREE_SOURCE]
   end
 
   # --- internals -----------------------------------------------------------
 
-  def verdict(ok:, bypass: nil, verifiable: true, fingerprint: nil, lanes: nil)
+  def verdict(ok:, bypass: nil, verifiable: true, fingerprint: nil, lanes: nil, recorded: nil,
+              fingerprint_root: nil, fingerprint_repo: nil, fingerprint_source: nil)
     lanes ||= EVIDENCE_LANES.to_h { |lane| [lane, ok ? :fresh : :missing] }
-    { ok: ok, bypass: bypass, verifiable: verifiable, fingerprint: fingerprint, lanes: lanes }
+    # The bypass/injected/unverifiable paths never read the checks, so they carry no
+    # recorded fingerprints — an EMPTY list per lane, not a missing key, so callers
+    # can always index it. dor-check falls back to the plain STALE wording there.
+    # They carry no fingerprint either, hence no provenance: nil, never a root we
+    # did not hash. "No fingerprint" and "a fingerprint from somewhere" are different
+    # claims and the verdict must not blur them.
+    recorded ||= EVIDENCE_LANES.to_h { |lane| [lane, []] }
+    { ok: ok, bypass: bypass, verifiable: verifiable, fingerprint: fingerprint, lanes: lanes,
+      recorded: recorded, fingerprint_root: fingerprint_root, fingerprint_repo: fingerprint_repo,
+      fingerprint_source: fingerprint_source }
   end
 
   # Map a DOR_CHECK_SUITE_EVIDENCE token to a verdict (test seam only). Tokens:

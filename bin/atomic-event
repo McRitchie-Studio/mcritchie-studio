@@ -593,34 +593,19 @@ class AgentActivityCli
   # plain text. Presence = a `<Soul> Heartbeat` is running and every activity should
   # attribute to that soul. Deliberately a SEPARATE file from the mascot marker
   # (which `bin/task` owns) so we never read-modify-write / clobber it.
-  def acting_agent_path(session_id)
-    safe = session_id.to_s.gsub(/[^A-Za-z0-9._-]/, "")
-    File.join(projects_dir, ".agents", "sessions", "#{safe}.acting-agent")
-  end
+  ACTING_AGENT = ".acting-agent"
 
   def read_acting_agent(session_id)
-    path = acting_agent_path(session_id)
-    return nil unless File.file?(path)
-
-    value = File.read(path).to_s.strip
+    value = SessionMarkers.read(session_id, projects_dir, ACTING_AGENT).to_s.strip
     present?(value) ? value : nil
-  rescue StandardError
-    nil
   end
 
   def write_acting_agent(session_id, soul)
-    path = acting_agent_path(session_id)
-    FileUtils.mkdir_p(File.dirname(path))
-    File.write(path, "#{soul.to_s.strip}\n")
-  rescue StandardError
-    nil
+    SessionMarkers.write(session_id, projects_dir, ACTING_AGENT, "#{soul.to_s.strip}\n", env: @api.env)
   end
 
   def clear_acting_agent(session_id)
-    path = acting_agent_path(session_id)
-    File.delete(path) if File.file?(path)
-  rescue StandardError
-    nil
+    SessionMarkers.delete(session_id, projects_dir, ACTING_AGENT, env: @api.env)
   end
 
   # ── Open-activity marker (per-session, session-scoped) ───────────────────
@@ -631,15 +616,8 @@ class AgentActivityCli
   # tool-call time, not resolved against whatever the server finds open when the
   # async POST lands. The legacy .open-span file is cleared too for sessions
   # crossing the taxonomy rename.
-  def open_activity_path(session_id)
-    safe = session_id.to_s.gsub(/[^A-Za-z0-9._-]/, "")
-    File.join(projects_dir, ".agents", "sessions", "#{safe}.open-activity")
-  end
-
-  def legacy_open_span_path(session_id)
-    safe = session_id.to_s.gsub(/[^A-Za-z0-9._-]/, "")
-    File.join(projects_dir, ".agents", "sessions", "#{safe}.open-span")
-  end
+  OPEN_ACTIVITY = ".open-activity"
+  LEGACY_OPEN_SPAN = ".open-span"
 
   def record_open_activity(session_id, res)
     return unless res && res.code.to_i.between?(200, 299)
@@ -652,11 +630,7 @@ class AgentActivityCli
   def write_open_activity(session_id, id)
     return unless present?(id)
 
-    path = open_activity_path(session_id)
-    FileUtils.mkdir_p(File.dirname(path))
-    File.write(path, "#{id}\n")
-  rescue StandardError
-    nil
+    SessionMarkers.write(session_id, projects_dir, OPEN_ACTIVITY, "#{id}\n", env: @api.env)
   end
 
   # Read the id of the session's currently-open activity from the marker `start`
@@ -664,21 +638,14 @@ class AgentActivityCli
   # action. `action` uses it to attribute an off-box row to the open span. nil when
   # no activity is open (marker absent/empty), so a caller outside a span no-ops.
   def read_open_activity(session_id)
-    path = open_activity_path(session_id)
-    return nil unless File.file?(path)
-
-    id = File.read(path).strip
+    id = SessionMarkers.read(session_id, projects_dir, OPEN_ACTIVITY).to_s.strip
     id.empty? ? nil : id
-  rescue StandardError
-    nil
   end
 
   def clear_open_activity(session_id)
-    [open_activity_path(session_id), legacy_open_span_path(session_id)].each do |path|
-      File.delete(path) if File.file?(path)
+    [OPEN_ACTIVITY, LEGACY_OPEN_SPAN].each do |suffix|
+      SessionMarkers.delete(session_id, projects_dir, suffix, env: @api.env)
     end
-  rescue StandardError
-    nil
   end
 
   # ── Per-activity usage baseline (session transcript close-diff) ───────────
@@ -687,26 +654,19 @@ class AgentActivityCli
   # not an activity measurement. The activity close path therefore diffs the
   # owning session transcript from the baseline captured at activity open and
   # stamps that measured delta directly on AgentActivity.
-  def activity_usage_path(session_id)
-    safe = session_id.to_s.gsub(/[^A-Za-z0-9._-]/, "")
-    File.join(projects_dir, ".agents", "sessions", "#{safe}.activity-usage.json")
-  end
+  ACTIVITY_USAGE = ".activity-usage.json"
 
   def read_activity_usage_baselines(session_id)
-    path = activity_usage_path(session_id)
-    return {} unless File.file?(path)
+    raw = SessionMarkers.read(session_id, projects_dir, ACTIVITY_USAGE)
+    return {} unless raw
 
-    JSON.parse(File.read(path)) || {}
+    JSON.parse(raw) || {}
   rescue StandardError
     {}
   end
 
   def write_activity_usage_baselines(session_id, baselines)
-    path = activity_usage_path(session_id)
-    FileUtils.mkdir_p(File.dirname(path))
-    File.write(path, "#{JSON.generate(baselines)}\n")
-  rescue StandardError
-    nil
+    SessionMarkers.write(session_id, projects_dir, ACTIVITY_USAGE, "#{JSON.generate(baselines)}\n", env: @api.env)
   end
 
   def seed_activity_usage_baseline(session_id, activity_id, agent = nil)
@@ -739,10 +699,7 @@ class AgentActivityCli
   end
 
   def clear_activity_usage_baselines(session_id)
-    path = activity_usage_path(session_id)
-    File.delete(path) if File.file?(path)
-  rescue StandardError
-    nil
+    SessionMarkers.delete(session_id, projects_dir, ACTIVITY_USAGE, env: @api.env)
   end
 
   # ── Lane-aware open-activity + baseline entry shape ────────────────────────

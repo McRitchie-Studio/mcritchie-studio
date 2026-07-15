@@ -22,6 +22,42 @@ class FullSuiteCheckTest < Minitest::Test
   BIN = File.expand_path("../../bin/full-suite-check", __dir__)
   DOR = File.expand_path("../../bin/dor-check", __dir__)
 
+  # THE CHILD CERT HAS NO DATABASE — say so, or it inherits ours. The child is spawned
+  # against a THROWAWAY tmpdir repo, but it inherits this process's env, where a
+  # worktree's `bin/rails test` has exported TEST_DATABASE_URL (.env.test.local) and is
+  # itself holding an open connection to that DB (any test in the run that loads
+  # test_helper opens one). The orphan guard's DB backstop then probes the URL it was
+  # handed, finds a foreign backend — THE TEST RUNNER THAT SPAWNED IT — and correctly
+  # REFUSES, reddening these tests whenever the suite runs as one process. Full write-up
+  # in test/lib/fast_check_test.rb (NO_AMBIENT_DB), which is where it bit hardest.
+  #
+  # NOTE the precedence is NOT the bug: cert_orphan_guard.rb#test_db_url reads the ambient
+  # TEST_DATABASE_URL BEFORE the root's .env.test.local, and it must — config/database.yml
+  # renders `url: <%= ENV["TEST_DATABASE_URL"] %>` and dotenv never overwrites an
+  # already-set var, so the ambient value is the DB the LANE will really open. A guard
+  # that resolved the DB any other way would probe one database while the suite trashed
+  # another. The bug was that this harness handed the child a URL that had nothing to do
+  # with the root it was certifying.
+  NO_AMBIENT_DB = { "TEST_DATABASE_URL" => nil, "CERT_GUARD_PSQL" => "/nonexistent/psql" }.freeze
+
+  # THE one place a child env is built in this file — the agent-session scrub and the
+  # ambient-database scrub, together, so no spawn site can pick up either leak. (This
+  # file had THREE spawn helpers; the third was found only because the first two were
+  # fixed and four tests stayed red.)
+  def child_env(overrides = {})
+    SessionEnv.neutralized(NO_AMBIENT_DB.merge(overrides))
+  end
+
+  def test_child_env_never_hands_the_child_our_database
+    env = child_env("FULL_SUITE_ROOT" => "/tmp/whatever")
+
+    assert env.key?("TEST_DATABASE_URL"), "the key must be PRESENT and nil — that is what UNSETS it"
+    assert_nil env["TEST_DATABASE_URL"],
+              "a child cert rooted at a throwaway repo must not inherit THIS suite's test DB"
+    assert_nil env["CLAUDE_CODE_SESSION_ID"], "…and still no live agent session"
+    assert_equal "/tmp/whatever", env["FULL_SUITE_ROOT"], "overrides still pass through"
+  end
+
   # --- [unit] merge_evidence: the writer must PRESERVE tier tags ---------------
   # bin/task update --checks REPLACES the whole list, so the runner merges. This
   # pure function is the merge: keep tier tags + bypass, replace prior evidence.
@@ -80,14 +116,17 @@ class FullSuiteCheckTest < Minitest::Test
 
   # Run the runner in --print mode (no task board) with both lanes stubbed.
   # Returns [stdout, exitcode]. test:/rubocop: are shell commands ("true"/"false").
-  # SessionEnv.neutralized: bin/full-suite-check resolves SessionIdentity, so an
-  # un-neutralized child would read the LIVE agent session (test/support/session_env.rb).
+  # child_env: bin/full-suite-check resolves SessionIdentity, so an un-neutralized child
+  # would read the LIVE agent session (test/support/session_env.rb) — and it would probe
+  # our test DB (see NO_AMBIENT_DB). Both scrubs live in child_env.
   def run_check(dir, test_cmd:, rubocop_cmd:, reset_cmd: "true")
-    env = SessionEnv.neutralized(
-      "FULL_SUITE_ROOT" => dir,
-      "FULL_SUITE_TEST_DB_RESET_CMD" => reset_cmd,
-      "FULL_SUITE_TEST_CMD" => test_cmd,
-      "FULL_SUITE_RUBOCOP_CMD" => rubocop_cmd
+    env = child_env(
+      {
+        "FULL_SUITE_ROOT" => dir,
+        "FULL_SUITE_TEST_DB_RESET_CMD" => reset_cmd,
+        "FULL_SUITE_TEST_CMD" => test_cmd,
+        "FULL_SUITE_RUBOCOP_CMD" => rubocop_cmd
+      }
     )
     out = IO.popen(env, "#{BIN} --print 2>/dev/null", &:read)
     [out, $?.exitstatus]
@@ -165,7 +204,7 @@ class FullSuiteCheckTest < Minitest::Test
     with_repo do |dir|
       out, = run_check(dir, test_cmd: "true", rubocop_cmd: "true")
       runner_fp = out[/@([0-9a-f]{7,64})\]/, 1]
-      dor_fp = IO.popen(SessionEnv.neutralized("DOR_CHECK_DIFF_ROOT" => dir), "#{DOR} --suite-fingerprint 2>/dev/null", &:read).strip
+      dor_fp = IO.popen(child_env("DOR_CHECK_DIFF_ROOT" => dir), "#{DOR} --suite-fingerprint 2>/dev/null", &:read).strip
       assert_equal dor_fp, runner_fp
     end
   end
@@ -520,18 +559,18 @@ class FullSuiteCheckTest < Minitest::Test
 
   def test_install_hook_writes_an_executable_opt_in_pre_push_hook
     with_repo do |dir|
-      out = IO.popen(SessionEnv.neutralized("FULL_SUITE_ROOT" => dir), "#{BIN} --install-hook 2>&1", &:read)
+      out = IO.popen(child_env("FULL_SUITE_ROOT" => dir), "#{BIN} --install-hook 2>&1", &:read)
       assert_equal 0, $?.exitstatus, out
       hook = File.join(dir, ".git", "hooks", "pre-push")
       assert File.exist?(hook), "pre-push hook should be installed: #{out}"
       assert File.executable?(hook), "pre-push hook should be executable"
       assert_includes File.read(hook), "exec bin/full-suite-check --print"
       # Idempotent: re-running succeeds and leaves a single managed hook.
-      out2 = IO.popen(SessionEnv.neutralized("FULL_SUITE_ROOT" => dir), "#{BIN} --install-hook 2>&1", &:read)
+      out2 = IO.popen(child_env("FULL_SUITE_ROOT" => dir), "#{BIN} --install-hook 2>&1", &:read)
       assert_equal 0, $?.exitstatus, out2
       assert_equal 1, File.read(hook).scan("exec bin/full-suite-check --print").size
       # Uninstall removes the managed hook.
-      IO.popen(SessionEnv.neutralized("FULL_SUITE_ROOT" => dir), "#{BIN} --uninstall-hook 2>&1", &:read)
+      IO.popen(child_env("FULL_SUITE_ROOT" => dir), "#{BIN} --uninstall-hook 2>&1", &:read)
       refute File.exist?(hook), "uninstall should remove the managed hook"
     end
   end
@@ -542,7 +581,7 @@ class FullSuiteCheckTest < Minitest::Test
       FileUtils.mkdir_p(hooks)
       foreign = File.join(hooks, "pre-push")
       File.write(foreign, "#!/bin/sh\necho not-ours\n")
-      out = IO.popen(SessionEnv.neutralized("FULL_SUITE_ROOT" => dir), "#{BIN} --install-hook 2>&1", &:read)
+      out = IO.popen(child_env("FULL_SUITE_ROOT" => dir), "#{BIN} --install-hook 2>&1", &:read)
       assert_equal 1, $?.exitstatus, "should refuse to clobber a foreign hook: #{out}"
       assert_equal "#!/bin/sh\necho not-ours\n", File.read(foreign), "a foreign hook must be left untouched"
     end
@@ -575,15 +614,17 @@ class FullSuiteCheckTest < Minitest::Test
   # emits is an Array<Hash> of parsed emit flags (empty when nothing emitted).
   def run_check_with_telemetry(dir, agent_activity:, session:, test_cmd: "true", rubocop_cmd: "true", reset_cmd: "true")
     log = File.join(dir, "emit.log")
-    env = SessionEnv.neutralized(
-      "FULL_SUITE_ROOT" => dir,
-      "FULL_SUITE_TEST_DB_RESET_CMD" => reset_cmd,
-      "FULL_SUITE_TEST_CMD" => test_cmd,
-      "FULL_SUITE_RUBOCOP_CMD" => rubocop_cmd,
-      "FULL_SUITE_AGENT_ACTIVITY" => agent_activity,
-      "STUB_LOG" => log,
-      # The fake session this run emits into — blank ⇒ UNSET (no session at all).
-      "CLAUDE_CODE_SESSION_ID" => session
+    env = child_env(
+      {
+        "FULL_SUITE_ROOT" => dir,
+        "FULL_SUITE_TEST_DB_RESET_CMD" => reset_cmd,
+        "FULL_SUITE_TEST_CMD" => test_cmd,
+        "FULL_SUITE_RUBOCOP_CMD" => rubocop_cmd,
+        "FULL_SUITE_AGENT_ACTIVITY" => agent_activity,
+        "STUB_LOG" => log,
+        # The fake session this run emits into — blank ⇒ UNSET (no session at all).
+        "CLAUDE_CODE_SESSION_ID" => session
+      }
     )
     out = IO.popen(env, "#{BIN} --print 2>/dev/null", &:read)
     code = $?.exitstatus
@@ -687,14 +728,16 @@ class FullSuiteCheckTest < Minitest::Test
   # stdout so the refusal message is assertable. Returns [out, exitcode, log_lines].
   def run_check_implicit_root(dir, args)
     log = File.join(dir, "stub.log")
-    env = SessionEnv.neutralized(
-      "FULL_SUITE_TEST_DB_RESET_CMD" => "true",
-      "FULL_SUITE_TEST_CMD" => "true",
-      "FULL_SUITE_RUBOCOP_CMD" => "true",
-      "FULL_SUITE_TASK_BIN" => write_cli_stub(dir, "task-stub", "TASK"),
-      "FULL_SUITE_GATE_BIN" => write_cli_stub(dir, "gate-stub", "GATE"),
-      "TASK_SHOW_JSON" => GUARD_JSON,
-      "STUB_LOG" => log
+    env = child_env(
+      {
+        "FULL_SUITE_TEST_DB_RESET_CMD" => "true",
+        "FULL_SUITE_TEST_CMD" => "true",
+        "FULL_SUITE_RUBOCOP_CMD" => "true",
+        "FULL_SUITE_TASK_BIN" => write_cli_stub(dir, "task-stub", "TASK"),
+        "FULL_SUITE_GATE_BIN" => write_cli_stub(dir, "gate-stub", "GATE"),
+        "TASK_SHOW_JSON" => GUARD_JSON,
+        "STUB_LOG" => log
+      }
     )
     out = IO.popen(env, "#{BIN} #{args} 2>&1", chdir: dir, &:read)
     code = $?.exitstatus
@@ -722,6 +765,51 @@ class FullSuiteCheckTest < Minitest::Test
       assert_equal 0, code, "the task's own tree certifies from cwd with no override: #{out}"
       assert_match(/\[full-suite@/, out)
       assert(lines.any? { |l| l[0] == "TASK" && l[1] == "update" }, "evidence recorded: #{lines.inspect}")
+    end
+  end
+
+  # --- [integration] the orphan guard is wired into THIS cert too ---------------------
+  #
+  # This lane is the more exposed of the two: a multi-minute full suite (it will outrun
+  # any agent-harness timeout) whose reset lane LEADS with `db:test:purge` — a DROP
+  # DATABASE that Postgres refuses outright while an orphan holds a connection
+  # (PG::ObjectInUse). The policy and its decision table are tested in
+  # test/lib/cert_orphan_guard_test.rb and exercised end-to-end in
+  # test/lib/fast_check_test.rb; here we prove the WIRING: this cert consults the guard
+  # before any lane, and a refusal stops it dead.
+
+  def test_a_live_concurrent_cert_is_refused_before_any_lane_runs
+    with_repo do |dir|
+      # A runlock whose cert process is still ALIVE: a real concurrent cert in this
+      # tree. Running beside it puts two suites on one worktree test DB — they corrupt
+      # each other's fixtures and SIGSEGV Ruby. Refuse; never kill a live sibling.
+      assert system("git", "-C", dir, "checkout", "-qb", "feat/task-x", out: File::NULL, err: File::NULL)
+      sibling = Process.spawn("sleep 60", pgroup: true)
+      # The GIT DIR, not the tree: a runlock in the working tree is untracked dirt, and
+      # the cert refuses a dirty tree. Asked of git directly, not of the code under test.
+      git_dir = `git -C #{dir.shellescape} rev-parse --absolute-git-dir 2>/dev/null`.strip
+      refute_empty git_dir, "the fixture repo must be a git repo"
+      lock = File.join(git_dir, "cert-run.json")
+      FileUtils.mkdir_p(File.dirname(lock))
+      File.write(lock, JSON.generate("cert_pid" => sibling, "pgid" => Process.getpgid(sibling),
+                                     "lane" => "full-suite", "started_at" => "2026-07-13T05:00:00Z"))
+
+      out, code, lines = run_check_implicit_root(dir, "task-x")
+
+      assert_equal 1, code, "a concurrent cert in the same tree must be refused: #{out}"
+      assert_match(/#{sibling}/, out, "the refusal names the running cert")
+      assert_match(/NOT a regression in your diff/, out, "an ENV-class refusal must say so")
+      refute_match(/\[full-suite@/, out, "nothing is certified against a contended test DB")
+      refute(lines.any? { |l| l[0] == "GATE" }, "refusal fires BEFORE the G1 attempt opens: #{lines.inspect}")
+    ensure
+      begin
+        if sibling
+          Process.kill("KILL", sibling)
+          Process.waitpid(sibling)
+        end
+      rescue Errno::ESRCH, Errno::ECHILD
+        nil
+      end
     end
   end
 

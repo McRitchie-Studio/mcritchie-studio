@@ -3,18 +3,14 @@
 require "json"
 require_relative "projects_root"
 
-# CertRootGuard — refuse a cert whose resolved CODE root is not the task's tree.
+# CertRootGuard — is this resolved CODE root the task's tree, and if not, what now?
 #
-# The G1 cert runners (bin/fast-check, bin/full-suite-check) root at the cwd's
-# git toplevel (RepoRoot.code_root), so a run from the WRONG checkout — e.g. the
-# hub primary on main — used to certify whatever tree it stood in and record
-# GREEN "[…@<fp>]" evidence for code the task never touched. A fail-GREEN gate:
-# hit live 2026-07-12, caught only downstream by bin/dor-check's fingerprint
-# staleness. The gate KNOWS the task slug, so before running any lane it
-# verifies the root IS the task's tree and REFUSES otherwise. Refusal (not a
-# silent chdir into the task worktree): a chdir could green-cert a STALE
-# worktree while the operator's real edits sat untested in the checkout they
-# ran from — trading one fail-GREEN for another. Fail closed, say where to run.
+# The G1 gates root at the cwd's git toplevel (RepoRoot.code_root), so a run from
+# the WRONG checkout — e.g. the hub primary on main — roots at whatever tree it
+# stands in. Because a cert's fingerprint is a git TREE hash, a foreign root is
+# never harmlessly wrong; it is wrong in a direction, and the direction depends on
+# whether the caller WRITES evidence or READS it. So the guard answers one question
+# — "is `root` the task's tree?" — and the caller picks the remedy.
 #
 # A root is accepted as the task's tree when EITHER:
 #   - its checked-out branch is the task's branch (board metadata.devops.branch,
@@ -23,33 +19,89 @@ require_relative "projects_root"
 #   - it is the task's worktree directory (…/.worktrees/<worktree_slug>), which
 #     covers detached-HEAD states (mid-rebase) inside the right worktree.
 #
-# The guard applies only to the IMPLICIT root (cwd-resolved). An EXPLICIT
-# override (FULL_SUITE_ROOT / FAST_CHECK_ROOT) bypasses it at the call site:
-# the caller declared that root deliberately (the CI/test seam), and dor-check's
-# fingerprint match against origin/<branch> stays the backstop either way.
+# THE TWO REMEDIES
+#
+#   * A cert WRITER — bin/fast-check, bin/full-suite-check — REFUSES (#refusal).
+#     It STAMPS "[…@<fp>]" evidence about the tree it stands in, so from the wrong
+#     checkout it green-certified code the task never touched: a fail-GREEN, hit
+#     live 2026-07-12, caught only downstream by bin/dor-check's staleness. And it
+#     must not silently chdir into the task worktree instead — that could green-cert
+#     a STALE worktree while the operator's real edits sat untested in the checkout
+#     they ran from, trading one fail-GREEN for another. Fail closed, say where to
+#     run.
+#
+#   * The READER — bin/dor-check — RE-ROOTS (#assess → :resolved_root). It writes
+#     no evidence, so re-rooting cannot forge a cert; it can only make the gate
+#     grade the RIGHT tree instead of a foreign one. Refusing to read is the
+#     costlier failure: because the fingerprint is content-addressed, a cert taken
+#     in the task's worktree can NEVER match a primary checkout's tree, so
+#     dor-check from the primary reported "STALE (certified for older code)" for
+#     certs that were perfectly fresh — 6 of 6 tasks on 2026-07-14, including ones
+#     certified green 90 seconds earlier. An agent that hits an unexplainable STALE
+#     stops working, so the false STALE stranded finished tasks in `building`.
+#     The re-root is LOUD by contract: the hazard of resolving is doing it
+#     SILENTLY, which leaves the tool and the operator believing different things
+#     about which code was judged.
+#
+# The guard applies only to the IMPLICIT root (cwd-resolved). An EXPLICIT override
+# (FULL_SUITE_ROOT / FAST_CHECK_ROOT / DOR_CHECK_DIFF_ROOT) bypasses it at the call
+# site: the caller declared that root deliberately (the CI/test seam).
 #
 # Board reads are best-effort: an unreachable board falls back to the naming
-# conventions, so the hub-primary-on-main case still refuses offline.
+# conventions, so the hub-primary-on-main case still refuses offline. A caller that
+# already holds the task passes `devops:` and skips the board read entirely.
 module CertRootGuard
   module_function
 
   # nil when `root` is `slug`'s tree (the cert may proceed); else the refusal
   # message. A blank slug (standalone --print / hook runs) never refuses —
-  # there is no task to root at.
-  def refusal(task_bin:, slug:, root:)
+  # there is no task to root at. The cert WRITERS' entry point.
+  def refusal(task_bin:, slug:, root:, devops: nil, projects_dir: nil)
+    assess(task_bin: task_bin, slug: slug, root: root, devops: devops, projects_dir: projects_dir)
+      &.fetch(:message)
+  end
+
+  # The full assessment of `root` against the task. nil when `root` IS the task's
+  # tree — the caller proceeds, unchanged. Otherwise a Hash the caller chooses a
+  # remedy from (see THE TWO REMEDIES above):
+  #
+  #   :message         — the refusal text (what #refusal returns).
+  #   :resolved_root   — the task's tree ON DISK (…/<app>/.worktrees/<worktree_slug>),
+  #                      or nil when no such worktree exists here. The RESOLVE half:
+  #                      a READER re-roots at this instead of refusing.
+  #   :expected_branch — the branch that IS the task's tree (board, else feat/<slug>).
+  #   :actual_branch   — what `root` has checked out ("HEAD" when detached, nil when
+  #                      `root` isn't a git tree at all).
+  #   :worktree_slug   — the task's worktree slug.
+  #
+  # `devops` short-circuits the board read for a caller that already holds the task;
+  # `projects_dir` overrides where the worktree glob looks (the test seam).
+  def assess(task_bin:, slug:, root:, devops: nil, projects_dir: nil)
     return nil if slug.to_s.strip.empty?
 
-    devops = task_devops(task_bin, slug)
+    devops ||= task_devops(task_bin, slug)
     expected_branch = first_present(devops["branch"], "feat/#{slug}")
     worktree_slug = first_present(devops["worktree_slug"], slug)
     actual_branch = current_branch(root)
     return nil if actual_branch == expected_branch
     return nil if worktree_dir?(root, worktree_slug)
 
+    {
+      message: refusal_message(slug, root, actual_branch, expected_branch, worktree_slug, projects_dir),
+      resolved_root: worktree_hint(worktree_slug, projects_dir),
+      expected_branch: expected_branch,
+      actual_branch: actual_branch,
+      worktree_slug: worktree_slug
+    }
+  end
+
+  # The cert writers' refusal text: where you ARE, where the task's tree IS, and the
+  # concrete `cd` that fixes it when the worktree is on disk.
+  def refusal_message(slug, root, actual_branch, expected_branch, worktree_slug, projects_dir = nil)
     message = "this run roots at #{root} (branch #{actual_branch || 'unknown'}), " \
               "which is not #{slug}'s tree — refusing to certify it.\n" \
               "Expected branch #{expected_branch} or the task worktree .worktrees/#{worktree_slug}."
-    hint = worktree_hint(worktree_slug)
+    hint = worktree_hint(worktree_slug, projects_dir)
     message += "\nRun the cert from the task worktree: cd #{hint}" if hint
     message
   end
@@ -81,10 +133,15 @@ module CertRootGuard
       File.basename(File.dirname(dir.to_s)) == ".worktrees"
   end
 
-  # A concrete on-disk worktree path to point the refusal at, when one exists
-  # under the projects root (any app's .worktrees/). Best-effort.
-  def worktree_hint(worktree_slug)
-    Dir.glob(File.join(ProjectsRoot.default_projects_dir, "*", ".worktrees", worktree_slug)).first
+  # The task's tree ON DISK: any app's .worktrees/<worktree_slug> under the projects
+  # root. Doubles as the refusal's `cd` hint and the reader's :resolved_root. The
+  # glob spans every app because a SATELLITE task (turf-monster, rolio) runs the
+  # hub's gate scripts — its worktree lives under the satellite, not the hub.
+  # `projects_dir` overrides the search root (the test seam). Best-effort: nil when
+  # no such worktree exists here.
+  def worktree_hint(worktree_slug, projects_dir = nil)
+    base = projects_dir.to_s.strip.empty? ? ProjectsRoot.default_projects_dir : projects_dir.to_s
+    Dir.glob(File.join(base, "*", ".worktrees", worktree_slug)).find { |path| File.directory?(path) }
   rescue StandardError
     nil
   end

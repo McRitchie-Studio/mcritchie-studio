@@ -78,6 +78,81 @@ check — the same failure shape as the G4 registry-string inference (see
 nobody has to be malicious for it to be wrong. It was: PR #512 (`kind: chore`)
 shipped `.github/workflows/ci.yml` and DoR printed "n/a → ready to advance".
 
+## The gate grades the TASK's tree — never the one you stand in
+
+A cert's fingerprint is a git **TREE hash** (content-addressed), so a checkout
+that is not the task's tree can **never** match a recorded cert. That does not
+surface as "wrong root" — it surfaces as **`STALE`**, which reads as "you edited
+since certifying" and sends you off to re-certify code that was already green.
+
+Both lanes have been bitten:
+
+- **Review** — reviewers run from the **primary** checkout by design, so
+  `--gate-role review` roots the suite fingerprint at the **task branch's
+  committed tree** (`origin/feat/<slug>^{tree}`).
+- **Builder** — a builder-lane run from the wrong checkout had **no** such cure
+  and false-read `STALE` for **6 of 6 tasks on 2026-07-14**, including certs 90
+  seconds old. An agent that hits an unexplainable STALE *stops*, so the false
+  STALE stranded finished tasks in `building` behind green PRs.
+
+`bin/dor-check` now consults the **task-root guard**
+(`bin/lib/cert_root_guard.rb` — the same guard `bin/fast-check` and
+`bin/full-suite-check` already required; dor-check was the one command in the
+family that never did). When the root is not the task's tree it resolves in this
+order:
+
+1. the task's **worktree** is on disk → re-root the whole gate there, and
+   **announce it on stderr** (naming both roots: where you stood, where it went);
+2. else its **branch** resolves in this repo → root the *fingerprint* at that
+   branch's committed tree, and **announce that on stderr** too;
+3. else → **refuse**, naming the problem, instead of grading a foreign tree and
+   calling a fresh cert stale. The refusal is an `errors` entry (so it prints in
+   the verdict, not as an stderr banner) and it lives in the **suite-gate** block
+   — so a kind that is EXEMPT from the suite gate (chore/cleanup/docs) never
+   reaches it and passes without a root complaint. That is not a fail-open: the
+   diff those kinds are graded on comes from the **PR**, which is
+   root-independent; they need no cert; and a task with no PR still fails closed
+   as indeterminate.
+
+**Resolve, not refuse — and never silently.** The cert *writers* refuse a wrong
+root, and must: they **stamp** evidence about the tree they stand in, so a chdir
+could green-cert a stale worktree while your real edits sat untested where you
+ran from. `dor-check` **writes no evidence** — it grades what is already
+recorded — so re-rooting cannot forge a cert; it can only make the gate judge
+the right code. But a *silent* chdir is its own hazard (a gate quietly judging a
+different tree than the one you are looking at is how you end up arguing with a
+verdict), so **both re-rooting arms announce both roots**.
+
+**A real STALE now names its cause** — and names it *accurately*. The refusal
+prints the fingerprint **delta**: what the evidence was certified for, and what
+the code is now. The invariant is that **the root it names is the root it
+hashed**, so recomputing the named root returns the printed hash:
+
+| the gate hashed | it names | recompute it with |
+|---|---|---|
+| a **working tree** (the normal builder run) | that path | `bin/dor-check <task> --suite-fingerprint` |
+| a **branch tree** (the `--gate-role review` lane *always*; and remedy 2 above) | the ref expression, e.g. `origin/feat/<slug>^{tree}` | `git -C <repo> rev-parse origin/feat/<slug>^{tree}` |
+
+This distinction is load-bearing. Under an override, the checkout you are
+standing in **never produced the hash** and hashes to a different number
+entirely — so printing it beside the fingerprint (as the first cut of this
+message did) sends the reader to the wrong tree with the authority of a precise
+hash. A confident wrong root is worse than the opaque `STALE` it replaced. Note
+also that the working-tree fingerprint is the **as-if-committed** tree —
+uncommitted edits included, which is usually *why* it moved — so it is
+deliberately **not** called `HEAD`: `git rev-parse HEAD^{tree}` will not
+reproduce it.
+
+`--json` carries the same facts machine-readably: `code_root` (the checkout the
+**diff** was read from) plus `full_suite.fingerprint`, `.fingerprint_root`,
+`.fingerprint_repo`, `.fingerprint_source` (`working-tree` | `branch-tree`), and
+`.recorded`. `code_root` is *not* the fingerprint's root under an override —
+that is precisely why the provenance travels with the fingerprint instead.
+
+`DOR_CHECK_DIFF_ROOT=<path>` bypasses the guard: that is the caller **declaring**
+a root (the CI/test seam), exactly as `FAST_CHECK_ROOT` / `FULL_SUITE_ROOT` do
+for the cert writers.
+
 ## Who runs it
 
 - **The feature (builder) agent**, from the task worktree, at submit —

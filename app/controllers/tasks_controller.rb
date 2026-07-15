@@ -244,7 +244,10 @@ class TasksController < ApplicationController
   # columns. Each view passes its own column list to the _board partial; archived
   # is a board-side toggle, so grouping the full task set here is intentional.
   def load_board
-    tasks = Task.ordered.includes(:task_events)
+    # :gate_runs rides along with :task_events because the claim chip reads BOTH for
+    # its progress fact (last durable artifact + is a gate in flight) — preloading
+    # only the events would leave the chip issuing a fresh gate query per live card.
+    tasks = Task.ordered.includes(:task_events, :gate_runs)
     agent_filter = params[:agent_slug].presence || params[:agent].presence
     tasks = tasks.where(agent_slug: agent_filter) if agent_filter
     stage_filter = params[:stage].presence

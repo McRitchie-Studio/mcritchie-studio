@@ -298,22 +298,43 @@ swap the anchor back to `configs_for` and the "placebo case" goes red.)
 
 ## A Test May Never Write The Operator's Real `.agents` State
 
-The `bin/` stack keeps two stores **outside** the repo, under the real projects
-root, and both are resolved by **fallback**:
+The `bin/` stack keeps **seven** stores **outside** the repo, under the real
+projects root, and every one of them is resolved by the same **fallback** — an
+env var, else a path under the operator's real `<projects>/.agents`:
 
-| store | pinned by | falls back to |
-|-------|-----------|---------------|
-| usage/cost baselines | `TASK_USAGE_DIR` | `<projects>/.agents/task-usage` |
-| session marker | `CLAUDE_PROJECTS_DIR` | `<projects>/.agents/sessions` |
+| store | pinned by | falls back to | written by |
+|-------|-----------|---------------|------------|
+| usage/cost baselines | `TASK_USAGE_DIR` | `<projects>/.agents/task-usage` | `bin/task`, `bin/release`, `bin/reviewer-select` |
+| narration markers | `CLAUDE_PROJECTS_DIR` | `<projects>/.agents/sessions` | `bin/task`, `bin/atomic-event`, `bin/devops-shift`, `bin/statusline` |
+| agent-API token cache | `CLAUDE_PROJECTS_DIR` | `<projects>/.agents/atomic-capture` | `bin/lib/agent_api.rb` (every AgentApi consumer) |
+| conductor locks | `MCR_PRIMARY_LOCK_DIR` | `<projects>/.agents/locks` | `bin/release` |
+| worktree registry | `AGENT_WORKTREE_REGISTRY` or `PROJECTS_DIR` | `<projects>/.agents/worktree-registry.json` | `bin/agent-worktree` |
+| DB-allocation flock | `AGENT_WORKTREE_LOCK` or `PROJECTS_DIR` | `<projects>/.agents/agent-worktree.lock` | `bin/agent-worktree` |
+| Redis band | `AGENT_REDIS_CAPACITY_FILE` or `PROJECTS_DIR` | `<projects>/.agents/redis-capacity.json` | `bin/agent-worktree` |
 
-A test that spawns `bin/task`, `bin/release` or `bin/reviewer-select` and pins
-neither hands its child the **operator's live store**. This is not theoretical:
-`task_cli_test.rb` pinned neither, its `SESSION` constant is a **real past
-session id** whose 30MB transcript still sits in `~/.claude` (HOME was unpinned
-too), and so `bin/task create` under the suite globbed that transcript and wrote
-its ~1.9-billion-token totals into the real cost store under the stub slug
-`demo-task`. Measured `$cost` derives `actual_size` and seeds the reviewer-select
-baselines, so a fixture row skews the sizing intelligence.
+**Do not maintain this table by hand.** `lib/task_usage_sandbox.rb`'s `STORES` is
+the source of truth, and `test/lib/state_store_containment_test.rb` re-derives the
+family **from the source** on every run — an eighth store, or a new writer of an
+existing one, fails the suite rather than joining a list nobody updated. (Both
+leaks below were closed store-by-store, and each fix left live unguarded writers
+behind. That is what the containment test exists to stop.)
+
+A test that spawns any of those CLIs and pins nothing hands its child the
+**operator's live store**. Neither leak below was theoretical:
+
+- **The cost store.** `task_cli_test.rb` pinned nothing, and its `SESSION`
+  constant is a **real past session id** whose 30MB transcript still sits in
+  `~/.claude` (HOME was unpinned too), so `bin/task create` under the suite
+  globbed that transcript and wrote its ~1.9-billion-token totals into the real
+  cost store under the stub slug `demo-task`. Measured `$cost` derives
+  `actual_size` and seeds the reviewer-select baselines, so a fixture row skews
+  the sizing intelligence.
+- **The narration store.** `statusline_test.rb#render_in` pinned neither
+  `CLAUDE_PROJECTS_DIR` nor `HOME` on a `stage: "building"` context, so for ~3
+  weeks **every suite run** re-wrote a 0-byte `<session>.heartbeat` into the
+  operator's live sessions dir and fired the real `bin/task heartbeat` at the
+  **production board** — at a **real production task**, because the fixture named
+  one. Pin your roots; and never let a fixture name a live record.
 
 **The rule, in two halves — you need both.**
 
@@ -336,6 +357,35 @@ baselines, so a fixture row skews the sizing intelligence.
   real `<projects>/.agents` is refused whatever pointed it there. A pin you have
   to *remember* is the bug; the guard is the half that cannot rot.
 
+- **Contained.** The two halves above only bind a caller that actually reaches the
+  guard — and *twice* now, the caller that leaked never did. `bin/atomic-event`
+  took the marker store's pure path **builder** and hand-rolled a raw `File.delete`
+  beside a guarded sibling that did the same job correctly; no amount of testing the
+  guarded surface could see it. So the containment is asserted **against the tree**:
+  `test/lib/state_store_containment_test.rb` refuses (1) any file outside a small
+  sanctioned allowlist that so much as **constructs** a path under `.agents`, in any
+  spelling, and (2) inside that allowlist, any method that **holds** a raw store path
+  without laundering it through `TaskUsageSandbox.enforce!`.
+
+  **It guards the precondition, not the verb — you cannot write to a path you never
+  named.** Nothing in the scan looks at what a method *does* with a path, so
+  `system("rm #{p}")`, `Pathname#delete`, `File.binwrite` and a spelling nobody has
+  invented yet are all refused for the identical reason a `File.write` is: the method
+  held the path. There is no list of IO verbs that can be incomplete.
+
+  That is a correction, not a boast. The **first** version of this test did enumerate
+  the sinks, and it leaked exactly as an enumeration must: a `bin/leaky-demo` deleting
+  the operator's live `.open-activity` with an **ordinary interpolated path** ran
+  against it **green**. Enumerate the spellings and you refuse only the spellings you
+  thought of; assert the precondition and you refuse the class. **A guard that only
+  guards the callers — or the verbs — you remembered is a naming convention.**
+
+  Two limits it states about itself, because a guarantee oversold is worse than none:
+  `bin/statusline` is **bash** and no Ruby source scan can read it, so its containment
+  is proven at the **boundary** instead (the test executes it armed + unpinned and
+  observes that the real store does not change); and a program that *computes* its own
+  path string defeats any text scan, which is the same lane's job.
+
 A violation exits via `abort` (SystemExit) **on purpose**. Every caller of this
 state is best-effort (`rescue StandardError => nil`, so a usage hiccup can never
 kill a stage transition), and a violation raised as a `StandardError` would be
@@ -353,12 +403,29 @@ combined `bin/rails test` run — green alone, red in any process where a siblin
 file armed the sandbox.
 
 **Finding what already leaked.** `bin/task usage-audit` is a read-only sweep of
-the store for rows keyed by a slug only a test stub serves (`demo-task`,
-`cli-board-sample`). It reports and exits 2; it never purges — a baseline is
+**the cost store only** — it reports rows keyed by a slug only a test stub serves
+(`demo-task`, `cli-board-sample`), exits 2, and never purges: a baseline is
 indistinguishable at the file level from real operator state, so removing one is
 the operator's call. Note the signal is the **slug, not the size**: a stored row
 is the session's *cumulative* totals, so a long real session banks a
 billion-token baseline legitimately and magnitude proves nothing.
+
+**The other six stores have no audit sweep.** `usage-audit` does not look at them,
+so do not read a clean run as "nothing leaked" — it answers one store's question.
+The narration store alone holds over a hundred `.heartbeat` files and dozens of
+`.activity-usage.json` files under `<projects>/.agents/sessions` — count them
+yourself rather than trusting a number in a doc, which is the same discipline this
+section is arguing for:
+
+```bash
+ls "$(cd ~/projects && pwd)/.agents/sessions" | sed 's/.*\.//' | sort | uniq -c | sort -rn
+```
+
+A leaked marker is not distinguishable from a real one by inspection either. Residue is the
+**operator's** call to clear; the guard's job is to stop new residue, and the
+containment test's job is to stop a new *writer*. If you want a sweep for the other
+stores, that is unbuilt work — say so plainly rather than implying coverage that
+does not exist.
 
 ## Test Suite Catalog
 
@@ -406,9 +473,82 @@ npm test
 > overrides), so a plain `bin/rails test` is reliable locally while CI keeps the
 > parallel speedup. `bin/agent-worktree test <app> <slug>` also runs single-process
 > **and clears orphaned `rails test` procs first** — a killed/hung run leaves
-> workers holding the test DB and deadlocks the next run (otherwise
-> `pkill -f "rails test"`, never the dev server). Don't pipe a run through `| tail`
-> (it buffers to EOF, so a hang looks identical to "working") — write to a logfile.
+> workers holding the test DB and deadlocks the next run. Don't pipe a run through
+> `| tail` (it buffers to EOF, so a hang looks identical to "working") — write to a
+> logfile. **Never `pkill -f "rails test"`**: with several agents building at once
+> that reaps a SIBLING worktree's cert mid-run. Kill by pid, or let the cert's own
+> orphan guard do it (below) — it is scoped to one worktree.
+
+### The cert's orphan guard (the timeout-orphan)
+
+A cert can outlive its harness. `bin/fast-check` on a diff that maps to ~120 test
+files runs 7+ minutes — well past an agent harness's 120s Bash timeout. When that
+timeout killed the cert **parent**, the `bin/rails test` **grandchild survived it**,
+reparented to launchd (`PPID 1`), still holding an open connection to the worktree's
+test DB:
+
+```
+PID   PPID  PGID  STAT COMMAND
+41578    1  41538  R   ruby bin/rails test test/models/task_test.rb ...
+pg_stat_activity: pid 41763 | idle in transaction | bin/rails
+```
+
+Every retry then died in the test-prepare lane — `db:test:purge` cannot DROP a
+database another session holds:
+
+```
+PG::ObjectInUse: ERROR: database "..._test_..." is being accessed by other users
+DETAIL: There is 1 other session using the database.
+Tasks: TOP => db:test:load_schema => db:test:purge
+```
+
+…and the cert reported that as *"USUALLY an ENV gap … NOT a regression in your
+diff"*, never **naming** the orphan. So the agent retried into the same wall: three
+attempts, 35 minutes, zero board progress (live, 2026-07-13) — while its ClaimLease
+heartbeat kept the task looking healthy on the board. Both cert lanes now defend
+against this (`bin/lib/cert_process.rb`, `bin/lib/cert_orphan_guard.rb`):
+
+- **Prevent** — each lane runs in its **own process group**, and the cert reaps that
+  GROUP on any signal it can catch (TERM/INT/HUP) or on an exception. The suite can
+  no longer outlive the cert that spawned it.
+- **Detect** — a SIGKILL runs no handler, so prevention can never be complete. Each
+  lane writes a runlock naming its process group **and the OS's start time for it** —
+  in the repo's **git dir** (`<git-dir>/cert-run.json`; per-worktree, and invisible to
+  `git status` in every repo, because a lock that must survive a SIGKILL would otherwise
+  be untracked dirt and the cert refuses a dirty tree). The **next** cert reads it and,
+  before any lane runs:
+  - cert pid **alive and provably ours** → a real concurrent cert in this tree →
+    **refuse** (never kill a live sibling; two suites on one worktree test DB corrupt
+    each other's fixtures and SIGSEGV Ruby),
+  - cert pid dead, group leader **alive and provably ours** → our own orphan →
+    **reap the group, loudly**,
+  - something alive under that pgid that is **provably NOT ours** → the OS recycled
+    the number → **never kill it**; the lock is a corpse, so discard it and carry on,
+  - something alive whose ownership we **cannot prove** (a lock predating this guard) →
+    **refuse and name it**, and let a human decide,
+  - any **other** session holding the test DB (a pre-fix orphan, a stray manual run,
+    a `bin/release` gate suite) → **refuse and name it**, with the
+    `pg_terminate_backend` command that clears it.
+
+**A pgid is a recyclable integer — liveness is never identity.** The first cut of this
+guard reaped on the predicate *"some process with this pgid is alive"*, and the runlock
+is repo-relative (it outlives reboots), so a nine-day-old lock whose pgid the OS had
+since handed to an unrelated process made the guard **kill an innocent bystander** and
+report "ORPHAN REAPED" (caught in review, 2026-07-14). Identity is therefore the OS's
+own start-time record (`ps -o lstart=`) for the pid — recorded at spawn, re-read and
+matched exactly before any signal. The rule is: **kill only what you can prove is
+yours; if you cannot prove it, refuse and say so.** A reaper that guesses is worse than
+no reaper — it turns a stalled cert into a corrupted machine. (And a signal is never
+aimed at pgid 0, 1, or the cert's own group: `kill(sig, -1)` means *every process you
+own*, not "group 1".)
+
+Every one of those messages says **"NOT a regression in your diff"**, because that is
+what an ENV-class failure is. A cert that refuses and names the orphan is a good cert;
+a cert that blames "an ENV gap" and lets you retry into a wall is the bug; a cert that
+kills a process it cannot name is worse than either.
+
+Skip the guard only in harness tests: `FAST_CHECK_SKIP_ORPHAN_GUARD=1` /
+`FULL_SUITE_SKIP_ORPHAN_GUARD=1`.
 
 ## Turf Monster
 

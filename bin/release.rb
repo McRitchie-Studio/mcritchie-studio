@@ -681,12 +681,16 @@ end
 # `bin/task intent`, then advance the baseline. Resolves the same baseline dir as
 # bin/task (honors TASK_USAGE_DIR; else <projects>/.agents/task-usage).
 def release_usage_dir
-  dir = ENV["TASK_USAGE_DIR"].to_s.strip
-  dir = File.join(projects_root, ".agents", "task-usage") if dir.empty?
+  pinned = ENV["TASK_USAGE_DIR"].to_s.strip
   # Same live-store fallback bin/task carries, so it takes the same fail-closed
   # sandbox guard (lib/task_usage_sandbox.rb): under TASK_USAGE_SANDBOX an
-  # unpinned run aborts rather than writing the operator's real cost store.
-  TaskUsageSandbox.enforce!(dir, store: "task-usage")
+  # unpinned run aborts rather than writing the operator's real cost store. The raw
+  # fallback is the guard's ARGUMENT, not a local handed to it afterwards — see
+  # bin/task#usage_dir and test/lib/state_store_containment_test.rb.
+  TaskUsageSandbox.enforce!(
+    pinned.empty? ? File.join(projects_root, ".agents", "task-usage") : pinned,
+    store: "task-usage"
+  )
 end
 
 # The captured per-transition usage for one task slug, or {} when there's no
@@ -1273,11 +1277,32 @@ end
 # live conductor, and a test flocking it while a G3 gate (which holds it for
 # its whole suite run) executes that test would deadlock the gate against
 # itself.
-def primary_checkout_lock_path(repo)
+# The lock dir RESOLVED — pure: no guard, no IO. Split out from the seam below so a
+# test can assert the DEFAULT shape (<projects>/.agents/locks) without asking the code
+# to mkdir_p the operator's real store in order to prove where it is. It used to do
+# exactly that: the two "defaults to" tests deleted MCR_PRIMARY_LOCK_DIR and called
+# the seam, so every suite run created the live <projects>/.agents/locks.
+def primary_checkout_lock_dir
   dir = ENV["MCR_PRIMARY_LOCK_DIR"].to_s
-  dir = File.join(projects_root, ".agents", "locks") if dir.empty?
+  dir.empty? ? File.join(projects_root, ".agents", "locks") : dir
+end
+
+# THE CHOKE POINT for the lock store — guard, then create. Committed to creating a
+# file from here (both callers flock it with File::CREAT), so the guard comes BEFORE
+# mkdir_p, the same seam bin/task's write_feature_marker guards at. Under
+# TASK_USAGE_SANDBOX an unpinned MCR_PRIMARY_LOCK_DIR aborts instead of falling back
+# onto the LIVE conductor's lock dir — a test that flocks the real file can deadlock a
+# running G3 gate against itself (that gate holds the lock for its whole suite run).
+# The comment above has always SAID every test must pin it; this makes the pin a
+# guarantee rather than a request.
+def guarded_lock_dir
+  dir = TaskUsageSandbox.enforce!(primary_checkout_lock_dir, store: "agent-locks")
   FileUtils.mkdir_p(dir)
-  File.join(dir, "mcr-primary-checkout-#{repo}.lock")
+  dir
+end
+
+def primary_checkout_lock_path(repo)
+  File.join(guarded_lock_dir, "mcr-primary-checkout-#{repo}.lock")
 end
 
 # --- the workspace locks (gate + ship) ---------------------------------------
@@ -1313,10 +1338,7 @@ end
 # isolate ALL of them by pointing it at a tmpdir. Do not "fix" the naming by giving
 # a lock its own dir: a split would silently un-isolate one of them.
 def gate_workspace_lock_path(repo, role: "gate")
-  dir = ENV["MCR_PRIMARY_LOCK_DIR"].to_s
-  dir = File.join(projects_root, ".agents", "locks") if dir.empty?
-  FileUtils.mkdir_p(dir)
-  File.join(dir, "mcr-#{Release::GateWorkspace.role!(role)}-workspace-#{repo}.lock")
+  File.join(guarded_lock_dir, "mcr-#{Release::GateWorkspace.role!(role)}-workspace-#{repo}.lock")
 end
 
 # Run the block holding `repo`'s WORKSPACE lock for `role`. Always waits: a queued

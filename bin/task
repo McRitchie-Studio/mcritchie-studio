@@ -138,6 +138,19 @@ def feature_marker_path
   File.join(PROJECTS_DIR, ".agents", "sessions", "#{sid.gsub(/[^A-Za-z0-9._-]/, "")}.json")
 end
 
+# READ-ONLY audit of the cost store. A METHOD, not four inline lines in the dispatch
+# `case` below, because test/lib/state_store_containment_test.rb forbids top-level
+# script code from reaching a raw <projects>/.agents path at all: every store path must
+# live in a named method, where the containment scan can see it and where it must be
+# either laundered or declared (this one is declared — TaskUsageAudit.report only reads).
+# An inline store path in a 1,200-line `case` is exactly where the next unguarded write
+# goes unnoticed, which is the bug that PR #549's review found in bin/atomic-event.
+def usage_audit!(dir)
+  text, suspects = TaskUsageAudit.report(dir || File.join(PROJECTS_DIR, ".agents", "task-usage"))
+  print(text)
+  exit(suspects.zero? ? 0 : 2)
+end
+
 # The agent session working this task — stamped on create + on the move to
 # `building` (the claim moment) so the board + status line can show which
 # terminal owns a task and offer a click-to-copy resume command. Claude exposes
@@ -235,7 +248,7 @@ end
 # WRITES a fresh parseable lease via ClaimLease.renewed — a reversible act that
 # heals the corrupted record — whereas reclaiming destroys a desk, which heals
 # nothing. Same disposition, opposite stakes.
-def enforce_claim_gate!(slug, devops, mover_session, steal:)
+def enforce_claim_gate!(slug, devops, mover_session, steal:, task: nil)
   claim = ClaimLease.from_devops(devops)
   decision = ClaimLease.evaluate(claim, session: mover_session, nonce: claim_nonce)
   return if decision != :held_by_other || steal
@@ -245,9 +258,27 @@ def enforce_claim_gate!(slug, devops, mover_session, steal:)
   warn!("⚠  task #{slug} is already claimed by a DIFFERENT live instance:")
   warn!("     session …#{held[-4..] || held}  instance #{claim["claim_nonce"]}  ·  last heartbeat ~#{age}s ago " \
         "(lease TTL #{ClaimLease::DEFAULT_TTL_SECONDS}s)")
+  # The heartbeat above only proves a TERMINAL IS PAINTING — it says nothing about
+  # whether the holder is advancing. Name the progress fact too, so the decision to
+  # --steal is made on evidence instead of on a green dot.
+  warn!("     #{progress_line(task)}") if task
   warn!("   Another terminal looks active on this task. To take it over anyway, re-run with --steal:")
   warn!("     bin/task move #{slug} building --steal")
   exit 1
+end
+
+# "last durable progress ~28m ago (cert failed)" — or an honest "unknown" when the
+# task has produced no artifact yet. Never dress an absence of evidence as trouble.
+def progress_line(task)
+  seconds = task["progress_seconds_ago"]
+  return "last durable progress: none recorded yet (no cert, gate, or stage move)" if seconds.nil?
+
+  label = task["last_progress_label"].to_s
+  detail = label.empty? ? "" : " (#{label})"
+  quiet = task["progress_quiet"] ? "  ← held, but nothing has landed in a long time" : ""
+  # ClaimLease owns the formatter (required above): the gate and the board card
+  # state the same fact, so they render it through the same code.
+  "last durable progress ~#{ClaimLease.humanize_age(seconds)} ago#{detail}#{quiet}"
 end
 
 SCALAR_FLAGS = {
@@ -619,8 +650,13 @@ end
 def write_feature_marker(task)
   return if ENV["TASK_SKIP_MARKER"] == "1"
   return if Dir.pwd.include?("/.worktrees/")
-  path = feature_marker_path
-  return if path.nil?
+  # The one condition under which feature_marker_path returns nil — asked HERE, of the
+  # session id, rather than by binding the path and testing it for nil. Nothing in this
+  # file may hold a raw store path: the containment scan subtracts the path expression
+  # the guard was HANDED, so a path that reaches a local first is a path the guard is
+  # trusted-not-proven to have seen. See test/lib/state_store_containment_test.rb.
+  return if session_identity.first.to_s.strip.empty?
+
   slug = task["slug"].to_s
   return if slug.empty?
 
@@ -628,7 +664,7 @@ def write_feature_marker(task)
   # marker (below) out of what might be the operator's real state dir. Under
   # TASK_USAGE_SANDBOX an unpinned CLAUDE_PROJECTS_DIR aborts instead of falling
   # back to <projects>/.agents/sessions. See lib/task_usage_sandbox.rb.
-  path = TaskUsageSandbox.enforce!(path, store: "session-marker")
+  path = TaskUsageSandbox.enforce!(feature_marker_path, store: "session-marker")
 
   dv = task.dig("metadata", "devops") || {}
   mascot, mascot_color, mascot_emoji, mascot_shiny = marker_mascot_attrs(task, path)
@@ -760,9 +796,15 @@ end
 # is exactly how a test child once wrote a 1.9-billion-token fixture row into the
 # operator's real cost store. See lib/task_usage_sandbox.rb.
 def usage_dir
-  dir = ENV["TASK_USAGE_DIR"].to_s.strip
-  dir = File.join(PROJECTS_DIR, ".agents", "task-usage") if dir.empty?
-  TaskUsageSandbox.enforce!(dir, store: "task-usage")
+  pinned = ENV["TASK_USAGE_DIR"].to_s.strip
+  # The raw fallback is an ARGUMENT to the guard, never a local the guard is told about
+  # afterwards. The containment scan subtracts what enforce! was handed and re-asks the
+  # path question of what is left, so a path that lands in a local first is a path the
+  # scan cannot prove was laundered — and it says so.
+  TaskUsageSandbox.enforce!(
+    pinned.empty? ? File.join(PROJECTS_DIR, ".agents", "task-usage") : pinned,
+    store: "task-usage"
+  )
 end
 
 # The baseline store for THIS session, or nil when there's no session (a plain
@@ -987,7 +1029,7 @@ when "move"
   if stage == "building" && !mover_session.nil?
     current = api(:get, "/api/v1/tasks/#{slug}")["data"]
     current_devops = current.dig("metadata", "devops") || {}
-    enforce_claim_gate!(slug, current_devops, mover_session, steal: steal)
+    enforce_claim_gate!(slug, current_devops, mover_session, steal: steal, task: current)
     # Seed the usage baseline at the CLAIM so the build work transition
     # (building→submitted) records a true token delta. Idempotent: a no-op when
     # autofill above already wrote a baseline this move (e.g. a bare move), it
@@ -1133,10 +1175,11 @@ when "session-mascot"
   end
   begin
     sid = session_identity.first.to_s.strip
-    path = feature_marker_path
-    unless ENV["TASK_SKIP_MARKER"] == "1" || sid.empty? || path.nil?
+    # `sid.empty?` IS feature_marker_path's nil case (it is the only one), asked without
+    # binding the raw path — see write_feature_marker.
+    unless ENV["TASK_SKIP_MARKER"] == "1" || sid.empty?
       # The marker store's second write seam — guarded like write_feature_marker's.
-      path = TaskUsageSandbox.enforce!(path, store: "session-marker")
+      path = TaskUsageSandbox.enforce!(feature_marker_path, store: "session-marker")
       body = {}
       body["parent_session_id"] = parent_session_identity if parent_session_identity
       data = api(:post, "/api/v1/sessions/#{sid}/mascot", body.empty? ? nil : body)["data"]
@@ -1264,10 +1307,7 @@ when "usage-audit"
     else unknown_flag!(arg, valid: %w[--dir], context: "usage-audit")
     end
   end
-  dir ||= File.join(PROJECTS_DIR, ".agents", "task-usage")
-  text, suspects = TaskUsageAudit.report(dir)
-  print(text)
-  exit(suspects.zero? ? 0 : 2)
+  usage_audit!(dir)
 else
   print_usage!
   exit(cmd == "help" || HELP_FLAGS.include?(cmd) ? 0 : 1)

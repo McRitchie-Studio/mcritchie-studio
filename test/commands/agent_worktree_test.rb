@@ -1423,6 +1423,48 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     registry.fetch("worktrees").find { |item| item.fetch("task") == @task }
   end
 
+  # PUBLIC — these sit in the helper region, below the class's `private`, and Minitest
+  # only collects PUBLIC test methods. Without this they are DEFINED and never RUN, and
+  # a `-n /registry/` filter still reports green because it matches OTHER tests whose
+  # names contain "registry". That is a test that cannot fail, reported as proof.
+  public
+
+  # ── [integration] this script writes THREE stores in the operator's real .agents ──
+  #
+  # The registry, the DB-allocation flock, and the elastic Redis band all resolve by
+  # the same PROJECTS_DIR-else-real-root fallback that leaked the cost store (PR #525)
+  # and the narration markers (PR #549). Nobody had them on a list — the containment
+  # test (test/lib/state_store_containment_test.rb) found them by reading the tree.
+  # The pins below were already CORRECT in this file; they were just remembered rather
+  # than enforced, and a pin you have to remember is the bug. Now an unpinned spawn
+  # aborts instead of overwriting the live registry every conductor session reads.
+  #
+  # Spawned fully unpinned, so this drives the real fallback — and the guard aborts
+  # BEFORE any IO, so it never writes the operator's store even when it goes red.
+  def test_integration_an_unpinned_registry_write_aborts_instead_of_reaching_the_real_store
+    real = File.join(TaskUsageSandbox.real_state_dir, "worktree-registry.json")
+    before = File.exist?(real) ? File.mtime(real) : nil
+
+    env = SessionEnv.neutralized("PATH" => ENV.fetch("PATH", "")) # every pin unset
+    _out, err, status = Open3.capture3(env, RbConfig.ruby, @script, "snapshot", "--write", chdir: Rails.root.to_s)
+
+    refute_predicate status, :success?, "an unpinned registry write must ABORT, not fall back to the real store"
+    assert_match(/sandbox/i, err, "the abort must say WHY")
+    assert_match(/AGENT_WORKTREE_REGISTRY|PROJECTS_DIR/, err, "and must name a var to pin")
+
+    after = File.exist?(real) ? File.mtime(real) : nil
+    assert_equal before, after, "the operator's real worktree registry must be untouched"
+  end
+
+  # The happy path the guard must not break — pinned, the snapshot still lands.
+  def test_integration_a_pinned_registry_write_still_lands
+    registry_path = File.join(@projects_dir, ".agents", "pinned-registry.json")
+    out, err, status = agent_worktree("snapshot", "--write", env: { "AGENT_WORKTREE_REGISTRY" => registry_path })
+
+    assert_predicate status, :success?, "#{out}\n#{err}"
+    assert_path_exists registry_path, "a pinned snapshot must still write the registry"
+  end
+
   # Child env for a spawned bin/ command: the sandbox pins, with the ambient
   # agent-session vars unset (see test/support/session_env.rb).
   def command_env(extra = {})

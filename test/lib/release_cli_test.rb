@@ -281,6 +281,52 @@ class ReleaseCliTest < Minitest::Test
     RUBY
   end
 
+  # ── [unit] the conductor's locks live in the operator's real .agents ──────────
+  #
+  # <projects>/.agents/locks resolves by the same env-else-real-root fallback that
+  # leaked the cost store (PR #525) and the narration markers (PR #549). The comment
+  # on primary_checkout_lock_path has always SAID every test must pin
+  # MCR_PRIMARY_LOCK_DIR — and the stakes are real: a test that flocks the LIVE file
+  # while a G3 gate holds it (the gate holds it for its whole suite run) deadlocks the
+  # gate against itself. A pin you have to remember is exactly the bug this family is
+  # about, so it is now enforced, not requested.
+  #
+  # The guard aborts BEFORE mkdir_p, so this proves the refusal without creating the
+  # real lock dir. `abort` raises SystemExit carrying the message, so the wording is
+  # assertable in-process (the same trick guard_verdict uses).
+  def test_unit_an_unpinned_conductor_lock_aborts_instead_of_flocking_the_real_one
+    %w[primary_checkout_lock_path gate_workspace_lock_path].each do |helper|
+      out = run_ruby_unpinned(<<~RUBY)
+        load #{BIN.inspect}
+        begin
+          #{helper}("mcritchie-studio")
+          print "NO_ABORT"
+        rescue SystemExit => e
+          print "ABORTED|" + e.message.to_s
+        end
+      RUBY
+
+      assert_match(/\AABORTED\|/, out, "#{helper} must refuse to fall back to the LIVE conductor lock dir")
+      assert_match(/sandbox/i, out, "the abort must say WHY")
+      assert_match(/MCR_PRIMARY_LOCK_DIR/, out, "and must name the var to pin")
+    end
+  end
+
+  # The happy path the guard must not break: pinned, the locks still resolve.
+  def test_unit_a_pinned_conductor_lock_still_resolves
+    path = eval_helper(%(primary_checkout_lock_path("mcritchie-studio")))
+    assert_equal self.class.lock_dir, File.dirname(path), "a pinned lock must still land in the pinned dir"
+  end
+
+  # run_ruby, but with MCR_PRIMARY_LOCK_DIR explicitly UNSET — the fallback that
+  # reaches the operator's real lock dir. (run_ruby pins it, which is the point of it.)
+  def run_ruby_unpinned(script)
+    env = SessionEnv.neutralized("MCR_PRIMARY_LOCK_DIR" => nil)
+    out, err, status = Open3.capture3(env, "ruby", "-e", script)
+    assert_predicate status, :success?, "the abort must be caught in-process, not crash the child: #{err}"
+    out
+  end
+
   # Evaluate a bin/release helper in a clean subprocess (see run_ruby).
   def eval_helper(expr)
     run_ruby(%(load #{BIN.inspect}; print(#{expr})))
@@ -1762,10 +1808,21 @@ class ReleaseCliTest < Minitest::Test
   # [unit] The DEFAULT lock dir (no override) anchors to <projects_root>/
   # .agents/locks — TMPDIR-independent, so two conductors launched with
   # different TMPDIR values contend on the SAME file (round-2 review nit).
-  def test_primary_checkout_lock_path_defaults_to_projects_root_agents_locks
+  # Asserted on the PURE resolver, not the guarded seam. This test used to delete
+  # MCR_PRIMARY_LOCK_DIR and call primary_checkout_lock_path — which mkdir_p's the dir
+  # — so proving "the default is <projects>/.agents/locks" CREATED the operator's real
+  # <projects>/.agents/locks, on every suite run. A test that has to perform the write
+  # it is describing in order to describe it is the leak, not the proof.
+  def test_primary_checkout_lock_dir_defaults_to_projects_root_agents_locks
     out = run_cli(["--yes"], setup: %(ENV.delete("MCR_PRIMARY_LOCK_DIR")),
-                  call: %{print((primary_checkout_lock_path("x") == File.join(projects_root, ".agents", "locks", "mcr-primary-checkout-x.lock")).inspect)})
+                  call: %{print((primary_checkout_lock_dir == File.join(projects_root, ".agents", "locks")).inspect)})
     assert_equal "true", out
+  end
+
+  # And the FILENAME shape, through the guarded seam with the pin on (run_ruby pins it).
+  def test_primary_checkout_lock_path_is_named_per_repo
+    out = eval_helper(%(File.basename(primary_checkout_lock_path("x"))))
+    assert_equal "mcr-primary-checkout-x.lock", out
   end
 
   # [unit] The REPLACEMENT guarantee for the old "the gate holds the primary lock
@@ -1936,11 +1993,16 @@ class ReleaseCliTest < Minitest::Test
   # independent, so two conductors contend on one file) — never the primary's. If
   # these two ever resolved to the same path the gate would hold the primary hostage
   # for its whole suite again, which is the shape this change exists to retire.
+  # Same split as above: the SHARED dir is asserted on the pure resolver (no IO), the
+  # per-role filenames through the guarded seam with the pin on. Both locks live in
+  # one dir on purpose — see guarded_lock_dir.
   def test_gate_workspace_lock_path_is_a_separate_file_from_the_primary_checkout_lock
-    out = run_cli(["--yes"], setup: %(ENV.delete("MCR_PRIMARY_LOCK_DIR")),
-                  call: %{print([gate_workspace_lock_path("x") == File.join(projects_root, ".agents", "locks", "mcr-gate-workspace-x.lock"), gate_workspace_lock_path("x") != primary_checkout_lock_path("x")].inspect)})
+    expr = '[gate_workspace_lock_path("x") != primary_checkout_lock_path("x"), ' \
+           'File.basename(gate_workspace_lock_path("x")), ' \
+           'File.dirname(gate_workspace_lock_path("x")) == File.dirname(primary_checkout_lock_path("x"))].inspect'
+    out = eval_helper(expr)
 
-    assert_equal "[true, true]", out
+    assert_equal %([true, "mcr-gate-workspace-x.lock", true]), out
   end
 
   # Poll until the block goes truthy, or flunk. The cross-process lock tests observe

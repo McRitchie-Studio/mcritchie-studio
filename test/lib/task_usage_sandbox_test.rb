@@ -51,6 +51,61 @@ class TaskUsageSandboxTest < Minitest::Test
 
   # --- rule 1: PINNED (the actual bug) ---------------------------------------
 
+  # --- the WHOLE family, not the two stores someone remembered ----------------
+  #
+  # Both leaks in this family (cost store PR #525, narration markers PR #549) were
+  # closed store-by-store, and each fix left live unguarded stores behind — the
+  # #549 review found three more, and the containment test found two beyond THOSE
+  # (the worktree flock and the Redis band). So the rules are asserted over STORES
+  # itself: register a store without both rules holding and this goes red, instead
+  # of the guard silently covering five of seven.
+  #
+  # (That every store's write SEAM actually calls enforce! is the other half, and it
+  # is asserted statically — test/lib/state_store_containment_test.rb.)
+
+  def test_every_registered_store_refuses_an_unpinned_write
+    TaskUsageSandbox::STORES.each do |store, pins|
+      env = { "TASK_USAGE_SANDBOX" => "1" } # every pin absent
+      message = TaskUsageSandbox.violation("/anywhere", store: store, env: env)
+
+      refute_nil message, "#{store} must refuse to fall back to the operator's real store"
+      pins.each do |pin|
+        assert_match(/#{Regexp.escape(pin)}/, message, "#{store}'s refusal must name #{pin}, a var that pins it")
+      end
+    end
+  end
+
+  # ANY one acceptable pin is enough — a store whose root is already steered at a
+  # tmpdir cannot reach the real store, and aborting it would be a guard failing
+  # closed on the happy path.
+  def test_any_single_acceptable_pin_satisfies_rule_one
+    Dir.mktmpdir do |root|
+      TaskUsageSandbox::STORES.each do |store, pins|
+        pins.each do |pin|
+          env = { "TASK_USAGE_SANDBOX" => "1", pin => root }
+          assert_nil TaskUsageSandbox.violation(File.join(root, "x"), store: store, env: env,
+                                                                      state_dir: File.join(root, ".agents")),
+                     "#{store}: #{pin} alone must count as pinned"
+        end
+      end
+    end
+  end
+
+  def test_every_registered_store_refuses_a_pin_aimed_back_inside_the_real_state_dir
+    Dir.mktmpdir do |root|
+      state = File.join(root, ".agents") # stands in for the real <projects>/.agents
+      inside = File.join(state, "somewhere")
+
+      TaskUsageSandbox::STORES.each do |store, pins|
+        pins.each do |pin|
+          env = { "TASK_USAGE_SANDBOX" => "1" }.merge(pin => inside)
+          refute_nil TaskUsageSandbox.violation(inside, store: store, env: env, state_dir: state),
+                     "#{store}: a #{pin} pointing back INTO the real state dir is not a sandbox"
+        end
+      end
+    end
+  end
+
   def test_an_unpinned_usage_store_is_a_violation
     env = { "TASK_USAGE_SANDBOX" => "1", "CLAUDE_PROJECTS_DIR" => "/tmp/p" } # TASK_USAGE_DIR absent
     message = TaskUsageSandbox.violation("/anywhere", store: "task-usage", env: env)
