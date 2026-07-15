@@ -98,6 +98,8 @@ require_relative "lib/fast_cert"
 require_relative "lib/cert_emission"
 require_relative "lib/cert_root_guard"
 require_relative "lib/cert_tree_guard"
+require_relative "lib/cert_orphan_guard"
+require_relative "lib/cert_process"
 
 # ROOT = this script's OWN repo (the hub): CONFIG (the spine) and the board CLIs
 # anchor here. The CODE we run + fingerprint roots at the agent's worktree.
@@ -204,10 +206,14 @@ def emit_cert_checkpoint(slug, status)
   CertEmission.emit_cert_checkpoint(TASK_BIN, slug, status)
 end
 
+# The lane runs in its OWN process group (CertProcess), so a signal aimed at this
+# cert reaps the SUITE too. A bare `system` left `bin/rails test` running with PPID
+# 1 when the harness's 120s timeout killed the cert — holding the worktree test DB
+# and failing every retry with PG::ObjectInUse. See bin/lib/cert_process.rb.
 def run_lane(label, cmd, root, env: {}, gate_slug: nil)
   warn "== #{label}: #{cmd} =="
   started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-  ok = system(env, cmd, chdir: root)
+  ok = CertProcess.run(env, cmd, chdir: root, root: root, lane: label)
   duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
   warn(ok ? "   #{label}: PASS (#{format('%.1fs', duration_ms / 1000.0)})" : "   #{label}: FAIL")
   CertEmission.emit_gate_sop(GATE_BIN, gate_slug, label, cmd, ok, duration_ms) if gate_slug
@@ -220,6 +226,22 @@ def skip_lane(label, why, gate_slug: nil)
   warn "== #{label}: skipped (#{why}) =="
   CertEmission.emit_gate_sop(GATE_BIN, gate_slug, label, "skipped: #{why}", true, 0) if gate_slug
   true
+end
+
+# --- orphan guard ----------------------------------------------------------------
+# A cert that outran its harness timeout leaves a `bin/rails test` orphan holding the
+# worktree test DB; the retry then dies in test-prepare with PG::ObjectInUse and
+# blames "an ENV gap", so the agent retries into the same wall (live 2026-07-13:
+# three attempts, 35 minutes, zero progress). Prevention (the process-group reap
+# above) cannot cover a SIGKILL, so before ANY lane runs we read the runlock a
+# previous cert left: reap what is provably our own orphan, REFUSE a live concurrent
+# cert or a test DB somebody else is holding, and NAME whatever we find. Fail closed
+# and loud beats a blind retry. bin/lib/cert_orphan_guard.rb.
+unless ENV["FAST_CHECK_SKIP_ORPHAN_GUARD"] == "1"
+  verdict, payload = CertOrphanGuard.preflight(root: root)
+  abort "fast-check: #{payload}" if verdict == :refuse
+
+  Array(payload).each { |notice| warn "fast-check: #{notice}" }
 end
 
 # --- run ------------------------------------------------------------------------

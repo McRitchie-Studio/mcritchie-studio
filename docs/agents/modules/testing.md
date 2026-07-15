@@ -473,9 +473,82 @@ npm test
 > overrides), so a plain `bin/rails test` is reliable locally while CI keeps the
 > parallel speedup. `bin/agent-worktree test <app> <slug>` also runs single-process
 > **and clears orphaned `rails test` procs first** — a killed/hung run leaves
-> workers holding the test DB and deadlocks the next run (otherwise
-> `pkill -f "rails test"`, never the dev server). Don't pipe a run through `| tail`
-> (it buffers to EOF, so a hang looks identical to "working") — write to a logfile.
+> workers holding the test DB and deadlocks the next run. Don't pipe a run through
+> `| tail` (it buffers to EOF, so a hang looks identical to "working") — write to a
+> logfile. **Never `pkill -f "rails test"`**: with several agents building at once
+> that reaps a SIBLING worktree's cert mid-run. Kill by pid, or let the cert's own
+> orphan guard do it (below) — it is scoped to one worktree.
+
+### The cert's orphan guard (the timeout-orphan)
+
+A cert can outlive its harness. `bin/fast-check` on a diff that maps to ~120 test
+files runs 7+ minutes — well past an agent harness's 120s Bash timeout. When that
+timeout killed the cert **parent**, the `bin/rails test` **grandchild survived it**,
+reparented to launchd (`PPID 1`), still holding an open connection to the worktree's
+test DB:
+
+```
+PID   PPID  PGID  STAT COMMAND
+41578    1  41538  R   ruby bin/rails test test/models/task_test.rb ...
+pg_stat_activity: pid 41763 | idle in transaction | bin/rails
+```
+
+Every retry then died in the test-prepare lane — `db:test:purge` cannot DROP a
+database another session holds:
+
+```
+PG::ObjectInUse: ERROR: database "..._test_..." is being accessed by other users
+DETAIL: There is 1 other session using the database.
+Tasks: TOP => db:test:load_schema => db:test:purge
+```
+
+…and the cert reported that as *"USUALLY an ENV gap … NOT a regression in your
+diff"*, never **naming** the orphan. So the agent retried into the same wall: three
+attempts, 35 minutes, zero board progress (live, 2026-07-13) — while its ClaimLease
+heartbeat kept the task looking healthy on the board. Both cert lanes now defend
+against this (`bin/lib/cert_process.rb`, `bin/lib/cert_orphan_guard.rb`):
+
+- **Prevent** — each lane runs in its **own process group**, and the cert reaps that
+  GROUP on any signal it can catch (TERM/INT/HUP) or on an exception. The suite can
+  no longer outlive the cert that spawned it.
+- **Detect** — a SIGKILL runs no handler, so prevention can never be complete. Each
+  lane writes a runlock naming its process group **and the OS's start time for it** —
+  in the repo's **git dir** (`<git-dir>/cert-run.json`; per-worktree, and invisible to
+  `git status` in every repo, because a lock that must survive a SIGKILL would otherwise
+  be untracked dirt and the cert refuses a dirty tree). The **next** cert reads it and,
+  before any lane runs:
+  - cert pid **alive and provably ours** → a real concurrent cert in this tree →
+    **refuse** (never kill a live sibling; two suites on one worktree test DB corrupt
+    each other's fixtures and SIGSEGV Ruby),
+  - cert pid dead, group leader **alive and provably ours** → our own orphan →
+    **reap the group, loudly**,
+  - something alive under that pgid that is **provably NOT ours** → the OS recycled
+    the number → **never kill it**; the lock is a corpse, so discard it and carry on,
+  - something alive whose ownership we **cannot prove** (a lock predating this guard) →
+    **refuse and name it**, and let a human decide,
+  - any **other** session holding the test DB (a pre-fix orphan, a stray manual run,
+    a `bin/release` gate suite) → **refuse and name it**, with the
+    `pg_terminate_backend` command that clears it.
+
+**A pgid is a recyclable integer — liveness is never identity.** The first cut of this
+guard reaped on the predicate *"some process with this pgid is alive"*, and the runlock
+is repo-relative (it outlives reboots), so a nine-day-old lock whose pgid the OS had
+since handed to an unrelated process made the guard **kill an innocent bystander** and
+report "ORPHAN REAPED" (caught in review, 2026-07-14). Identity is therefore the OS's
+own start-time record (`ps -o lstart=`) for the pid — recorded at spawn, re-read and
+matched exactly before any signal. The rule is: **kill only what you can prove is
+yours; if you cannot prove it, refuse and say so.** A reaper that guesses is worse than
+no reaper — it turns a stalled cert into a corrupted machine. (And a signal is never
+aimed at pgid 0, 1, or the cert's own group: `kill(sig, -1)` means *every process you
+own*, not "group 1".)
+
+Every one of those messages says **"NOT a regression in your diff"**, because that is
+what an ENV-class failure is. A cert that refuses and names the orphan is a good cert;
+a cert that blames "an ENV gap" and lets you retry into a wall is the bug; a cert that
+kills a process it cannot name is worse than either.
+
+Skip the guard only in harness tests: `FAST_CHECK_SKIP_ORPHAN_GUARD=1` /
+`FULL_SUITE_SKIP_ORPHAN_GUARD=1`.
 
 ## Turf Monster
 

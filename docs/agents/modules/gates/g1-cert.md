@@ -69,6 +69,44 @@ index — a file rewritten with identical content, so only its mtime moved — i
 NOT dirt: the guard refreshes the index before reading it, so it cannot
 false-refuse a tree nobody edited.)
 
+Both cert runners open with an **orphan preflight** (`bin/lib/cert_orphan_guard.rb`)
+before any lane runs. A cert that outran its harness timeout leaves its
+`bin/rails test` grandchild alive, holding the worktree's test DB — and every
+retry then dies in test-prepare on `PG::ObjectInUse`, so the retry path recreates
+the deadlock and the agent can never dig out (live, 2026-07-13: three attempts,
+35 minutes, zero board progress). Each cert therefore leaves a runlock naming its
+process group **and that group's OS start time**, and the next cert reads it:
+
+| It finds | It does |
+|----------|---------|
+| a suite whose start time **matches** the runlock | **reaps** the group, names it, continues |
+| a **live** sibling cert | **refuses** — two suites on one test DB SIGSEGV Ruby |
+| the pgid **recycled** onto a stranger | **never kills it**; discards the lock, continues |
+| a group it **cannot prove** is ours | **refuses** and names what is alive — a human decides |
+| a **malformed** lock (names no integer pid/pgid) | **clears it** loudly and continues — it names nobody, so there is nobody to kill; the DB backstop speaks for a real orphan |
+| a lock naming group **0 or 1** | **refuses** and leaves the lock — the lock is corrupt, no cert ever ran in those groups, and no kill would be correct. `rm` it yourself |
+| a reap it **could not perform** (the suite outlived TERM+KILL, or its identity stopped matching under us) | **refuses, and KEEPS the runlock** — the lock is the only record naming that process. It offers a kill **only** when the group is still provably ours; against a stranger it offers `rm <lock>` and an `inspect` line, never a kill |
+
+An exit-1 from the preflight is an **ENV refusal, not a red diff** — it names the
+pid and the DB. Never `rm` the runlock to get past a refusal you have not read: it
+is naming a process that is still holding your database.
+
+**Every kill the cert prints is a kill it would fire.** The command in a refusal is an
+instruction — it gets pasted into a shell exactly as printed — so the copy is gated on
+the same predicate as the trigger (`CertOrphanGuard.reapable?`): signalable **and**
+provably ours, re-proved at the moment of emission. When the guard cannot prove the
+group is ours it prints **no kill at all**, because none would be correct. If you ever
+see the cert suggest a kill it did not itself attempt, that is a bug — report it.
+
+**The runlock lives in the repo's git dir** (`<git-dir>/cert-run.json`; in a worktree
+that is `.git/worktrees/<name>/`, so each desk keeps its own), **never in the working
+tree**. It has to: the lock's job is to SURVIVE a SIGKILLed cert, so a lock inside the
+tree is an untracked file in any repo that does not ignore `tmp/` — studio-engine and
+turf-vault do not — and the cert **refuses a dirty tree**. The next cert would abort
+`DIRTY` on the guard's own artefact, the orphan preflight would never run, and the
+deadlock above would be back, permanently. Keeping the lock out of the tree makes that
+impossible by construction rather than by every repo remembering to ignore `tmp/`.
+
 1. **Certify — fast route (default):**
 
    ```bash
@@ -78,10 +116,15 @@ false-refuse a tree nobody edited.)
    Lanes, in order (each recorded on the gate as one executed-SOP entry):
 
    - `test-prepare` — `bin/rails db:test:prepare test:prepare` (abort on red —
-     never certify against an unprepared test env; a red here is USUALLY an ENV
-     gap rather than a regression in your diff, but a broken stylesheet in the
-     diff fails the asset build here too — read the output). Both tasks, one
-     boot: the test DB, and
+     never certify against an unprepared test env). **Read the output; do not
+     assume the cause.** A red here has three quite different meanings and
+     guessing among them is what burned 35 minutes: `PG::ObjectInUse` is an
+     ORPHANED suite holding your test DB (the preflight above names it — if it
+     did not, say so, that is a guard gap); an asset error such as `The asset
+     "tailwind.css" is not present` after a stylesheet change is a REGRESSION IN
+     YOUR DIFF failing the asset build; a missing DB/role is a genuine env gap.
+     Blaming "an ENV gap" by reflex is the reflex this gate exists to break.
+     Both tasks, one boot: the test DB, and
      Rails' `test:prepare` hook, which is what BUILDS the gitignored
      `app/assets/builds/tailwind.css`. The lanes below pass explicit test
      paths, and Rails skips its own `test:prepare` whenever an argument looks
@@ -215,6 +258,15 @@ and the bounce round-trip — are in [`dor.md`](dor.md).
   CI-status gate: `docs/agents/system/devops-cycle-design.md` §3.3.
 - Evidence format + fingerprint implementation: `bin/lib/full_suite_gate.rb`;
   test selection: `bin/lib/fast_cert.rb`.
+- **Disarm switches — for the harness only, never for a wedge.**
+  `FAST_CHECK_SKIP_ORPHAN_GUARD=1` (`bin/fast-check`) and
+  `FULL_SUITE_SKIP_ORPHAN_GUARD=1` (`bin/full-suite-check`) skip the orphan
+  preflight entirely. They exist so the guard's OWN test suite can spawn certs
+  without each one refusing against its siblings. **Do not reach for them to get
+  past a refusal**: the refusal is naming a live process holding your test DB,
+  and skipping it just walks you back into `PG::ObjectInUse` with the evidence
+  suppressed. `CERT_GUARD_PS` / `CERT_GUARD_PSQL` likewise exist to inject
+  fixtures in tests, not to steer a real cert.
 
 ## Related
 

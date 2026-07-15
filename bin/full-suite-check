@@ -81,6 +81,8 @@ require_relative "lib/cert_root_guard"
 require_relative "lib/ci_test_command"
 require_relative "lib/system_test_browser"
 require_relative "lib/cert_tree_guard"
+require_relative "lib/cert_orphan_guard"
+require_relative "lib/cert_process"
 
 # ROOT = the gate script's OWN repo (the hub). CONFIG (lib/) is required relative
 # to __dir__, and the board is reached via TASK_BIN — both stay anchored here. The
@@ -306,15 +308,33 @@ def emit_gate(slug, *args)
   CertEmission.emit_gate(GATE_BIN, slug, *args)
 end
 
+# The lane runs in its OWN process group (CertProcess) so a signal aimed at this cert
+# reaps the SUITE with it. This lane is the MOST exposed of the two certs: it is a
+# multi-minute full suite (it will outrun any agent-harness timeout), and its
+# test-db-reset lane leads with `db:test:purge` — a DROP DATABASE that PG refuses
+# outright while an orphan holds a connection. See bin/lib/cert_process.rb.
 def run_lane(label, cmd, root, env: {}, gate_slug: nil)
   warn "== #{label}: #{cmd} =="
   started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-  ok = system(env, cmd, chdir: root)
+  ok = CertProcess.run(env, cmd, chdir: root, root: root, lane: label)
   duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
   warn(ok ? "   #{label}: PASS" : "   #{label}: FAIL")
   emit_test_scope(LANE_SCOPES[label], ok, duration_ms, cmd)
   CertEmission.emit_gate_sop(GATE_BIN, gate_slug, label, cmd, ok, duration_ms) if gate_slug
   ok
+end
+
+# --- orphan guard ----------------------------------------------------------------
+# Same policy as bin/fast-check: reap a previous cert's orphaned process group (it is
+# what holds the test DB and makes `db:test:purge` raise PG::ObjectInUse), REFUSE a
+# live concurrent cert (two suites on one worktree test DB corrupt each other and
+# SIGSEGV Ruby), and NAME any other session holding the DB rather than walking into
+# it blind. Runs before ANY lane. bin/lib/cert_orphan_guard.rb.
+unless ENV["FULL_SUITE_SKIP_ORPHAN_GUARD"] == "1"
+  guard_verdict, guard_payload = CertOrphanGuard.preflight(root: root)
+  abort "full-suite-check: #{guard_payload}" if guard_verdict == :refuse
+
+  Array(guard_payload).each { |notice| warn "full-suite-check: #{notice}" }
 end
 
 # Open the Local Certification testing phase (durable checkpoint on the task)
