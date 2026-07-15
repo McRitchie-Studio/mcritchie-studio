@@ -193,6 +193,29 @@ class AgentWorktreeTest < Minitest::Test
     assert_match(/builder heartbeat \d+s ago/, out, "the age makes the hold verifiable, not a bare refusal")
   end
 
+  # A CORRUPT claim — the lease is PRESENT but its expiry is unparseable, so liveness cannot be
+  # verified. live? merges it into "possibly live" (the desk is still WITHHELD, which is right),
+  # but the honest reason is NOT "a builder is here" — it is "we could not check". Before this
+  # branch existed the corrupt case fell through to the live-builder message and interpolated a
+  # nil heartbeat age ("builder heartbeat  s ago"), both misattributing the hold AND printing
+  # garbage. ClaimLease.corrupt_expiry? exists precisely to split this out.
+  def test_claim_hold_reason_for_a_corrupt_claim_says_expiry_unverifiable_not_live_builder
+    out = run_in_script(<<~RUBY)
+      def task_record_for_pr(_r, fresh: false)
+        { "metadata" => { "devops" => { "claimed_session" => "s", "claim_expires_at" => "not-a-timestamp" } } }
+      end
+      print claim_hold({ env: { "TASK_RECORD_SLUG" => "busy-task" }, task: "busy-task" })
+    RUBY
+    assert_match(/expiry unverifiable/, out,
+                 "a corrupt lease means we could not check liveness — the hold must say so")
+    assert_match(/busy-task/, out, "name the task so the operator can inspect it")
+    refute_match(/live builder/, out,
+                 "a corrupt claim must NOT be misattributed to a confirmed live builder")
+    refute_match(/heartbeat/, out,
+                 "no heartbeat age is knowable from an unparseable lease — the garbled " \
+                 "'heartbeat  s ago' interpolation must be gone entirely")
+  end
+
   def test_claim_hold_is_nil_when_free
     out = run_in_script(<<~RUBY)
       def task_record_for_pr(_r, fresh: false); { "metadata" => { "devops" => {} } }; end

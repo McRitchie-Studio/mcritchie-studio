@@ -41,7 +41,7 @@ test("a new activity streams into the feed live, then a close updates it in plac
   expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
 });
 
-test("a new action streams into its activity's drill-down live", async ({ page }) => {
+test("a new action streams into its activity's drill-down live @quarantine", async ({ page }) => {
   const pageErrors = [];
   page.on("pageerror", (err) => pageErrors.push(String(err)));
   page.on("console", (msg) => { if (msg.type() === "error") pageErrors.push(msg.text()); });

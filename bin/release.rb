@@ -1782,7 +1782,15 @@ end
 
 # The CI states that mean "GitHub has nothing to say about this SHA". Never an
 # alarm, never a block — a missing verdict is not a contradicting one.
-CI_NO_DATA = %i[none pending unverified no_pr closed merged].freeze
+#
+# :unreadable belongs here for the same reason :unverified does — the auditor got NO
+# verdict, so it has nothing to contradict. But it is NOT the same fact, and
+# ci_cross_check prints it differently: :unverified is noise to shrug at, while
+# :unreadable means THE AUDITOR IS SWITCHED OFF for this repo — every SHA it gates
+# will silently skip the cross-check until the token is fixed. Omitting it here would
+# be worse still: an unlisted state falls through to the contradiction branch and the
+# gate would alarm "CI RED" at a token error, which is a lie in the loudest direction.
+CI_NO_DATA = %i[none pending unverified unreadable no_pr closed merged].freeze
 
 # "owner/repo" for a repo's origin remote (the gh api path), or "" when the remote
 # isn't GitHub — which CiStatus reads as no data, never as a red.
@@ -1820,6 +1828,18 @@ def ci_cross_check(repo, sha, local_ok, ci)
   state = ci[:state]
   named = (Array(ci[:failing]) + Array(ci[:pending])).join(", ")
 
+  # An UNREADABLE CI is "no data" like the rest — but it is not benign, and it must
+  # not read as benign. The other no-data states are the world being quiet; this one
+  # is the AUDITOR ITSELF being disabled, silently, for every future SHA in this repo.
+  # That is precisely the "gate that cannot see" the cross-check exists to prevent, so
+  # it says so in its own voice instead of hiding in the informational shrug.
+  if state == :unreadable
+    say("  #{repo}: CI cross-check DISABLED — the token was REFUSED reading CI for #{short(sha)} " \
+        "(#{ci[:reason]}). The G3 auditor is BLIND on #{repo} until this is fixed: it cannot contradict a bad " \
+        "local gate here, so the gate is unaudited, not confirmed.")
+    say("  #{repo}: #{CiStatus.unreadable_remedy(repo_name_with_owner(repo), cause: ci[:cause])}")
+    return false
+  end
   if CI_NO_DATA.include?(state)
     detail = ci[:reason].to_s.empty? ? state.to_s : "#{state}: #{ci[:reason]}"
     say("  #{repo}: CI cross-check — no GitHub verdict for #{short(sha)} (#{detail}); informational only, " \
