@@ -1,0 +1,46 @@
+# Phase 2 (DevOps v2) — QA deploy, moved into GitHub Actions.
+# Mirrors today's bin/qa-server:477 force-push mechanic. Runs only once the `qa`
+# Environment + HEROKU_API_KEY secret exist (see PHASE2-PLAN.md).
+name: QA Deploy
+
+on:
+  push:
+    branches: [release]
+
+# One QA deploy at a time; never cancel an in-flight deploy. Not a CI suite lane,
+# so the anti-concurrency trigger guard (ci_workflow_triggers_test.rb parses only
+# ci.yml/ci-suite.yml) does not apply here.
+concurrency:
+  group: qa-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: qa            # auto — no reviewer; optimistic
+    steps:
+      # fetch-depth: 0 — Heroku's git receiver needs the pushed commit's ancestry.
+      - name: Checkout the release tip (full history)
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Deploy the release SHA to Heroku QA
+        run: |
+          git push --force \
+            "https://heroku:${{ secrets.HEROKU_API_KEY }}@git.heroku.com/mcritchie-studio-qa.git" \
+            "${{ github.sha }}:refs/heads/main"
+
+      # OPTIMISTIC: the smoke is informational and never fails the job — a broken QA
+      # boot must not stall the pipeline (the prod Environment reviewer is the human
+      # gate). The conductor opens the release->main PR on Tier-2 CI green, not on this.
+      - name: Smoke QA /up (informational)
+        continue-on-error: true
+        run: |
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" https://qa.mcritchie.studio/up || true)
+            echo "attempt $i: /up -> $code"
+            [ "$code" = "200" ] && { echo "QA live"; exit 0; }
+            sleep 5
+          done
+          echo "::warning::QA /up did not return 200 within ~150s (non-blocking)"
