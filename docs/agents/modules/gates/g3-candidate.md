@@ -229,12 +229,19 @@ run is asynchronous: to block on it, a *local* gate would have to poll GitHub fo
 minutes and would acquire a hard GitHub dependency (a `gh` outage would stall
 every release). The local gate stays the verdict; CI only gets to disagree.
 
+> **v2 (in rollout) inverts this.** Under the DevOps v2 model (the target-model
+> subsection at the head of `devops-cycle-design.md` §1), **Tier-2 Actions CI on
+> the `accepted → release` PR becomes the authoritative G3 verdict** and the local
+> suite is demoted to a fast pre-flight. The async-poll objection is resolved by
+> the conductor *watching* the run (`gh run watch`) rather than a local gate
+> polling for minutes. The paragraph above describes today's pre-v2 behavior.
+
 **No CI data is not a failure.** These are silence, not contradiction —
 informational, never an alarm, never a block:
 
 | State | Means |
 |-------|-------|
-| `none` | No check-run for this SHA. **This is today's normal answer:** `ci.yml` triggers on `pull_request` + `push: main`, so `release` builds nothing until task `run-ci-on-release-branch` lands. |
+| `none` | No check-run exists for this SHA. `ci.yml` now triggers on `pull_request` + `push:[main, release]` (the `run-ci-on-release-branch` task landed), so a pushed `release` tip normally DOES build — `none` now means a SHA never pushed to GitHub, not the everyday case it once was (a non-GitHub remote reads as `unverified`, the row below). |
 | `pending` | The push-triggered run has not settled — prepare gates seconds after the merge. |
 | `unverified` | No `gh`, no network, a 404, a non-GitHub remote. |
 | `unreadable` | **The API refused the read** (401/403) — CI may well be green; this client cannot read it. No data, like the rows above, so it never blocks or alarms — but it is **not** benign, and the cross-check says so in its own voice: the auditor is *switched off* for that repo, so its gate is **unaudited, not confirmed**. Prints the repo, classified cause, and cause-specific remedy. |
