@@ -292,6 +292,10 @@ Rails.application.routes.draw do
     namespace :v1 do
       post "auth", to: "auth#create"
       post "release_notes", to: "release_notes#create"
+      # GitHub Actions webhook receiver (workflow_run events). Called by GitHub,
+      # not an agent — GithubWebhooksController skips bearer auth and gates ONLY
+      # on the HMAC signature. DevOps v2: agents read CI status off the board.
+      post "github/webhook", to: "github_webhooks#create"
       resources :agents, only: [:index, :show, :update], param: :slug
       # Stages move via PATCH update (task: { stage: ... }); no named-transition
       # endpoints — one path for the CLI, the board, and external callers.

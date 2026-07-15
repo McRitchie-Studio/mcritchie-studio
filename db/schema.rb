@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_12_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_15_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -655,6 +655,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_12_120000) do
     t.datetime "created_at", null: false
     t.datetime "observed_through_at"
     t.datetime "updated_at", null: false
+  end
+
+  create_table "github_workflow_runs", force: :cascade do |t|
+    t.string "conclusion"
+    t.datetime "created_at", null: false
+    t.string "head_branch"
+    t.string "head_sha"
+    t.string "html_url"
+    t.string "repo", null: false
+    t.bigint "run_id", null: false
+    t.datetime "run_started_at"
+    t.string "status", null: false
+    t.datetime "updated_at", null: false
+    t.string "workflow_name"
+    t.index ["head_sha"], name: "index_github_workflow_runs_on_head_sha"
+    t.index ["run_id"], name: "index_github_workflow_runs_on_run_id", unique: true
   end
 
   create_table "image_caches", force: :cascade do |t|

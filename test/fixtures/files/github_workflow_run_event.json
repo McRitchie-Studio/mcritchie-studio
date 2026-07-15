@@ -1,0 +1,29 @@
+{
+  "action": "completed",
+  "workflow_run": {
+    "id": 987654321,
+    "name": "CI",
+    "node_id": "WFR_kwLOExampleRun",
+    "head_branch": "feat/webhook-push-not-poll",
+    "head_sha": "9f2c1b7ad4e5c60f1e2d3a4b5c6d7e8f90123456",
+    "run_number": 42,
+    "event": "pull_request",
+    "status": "completed",
+    "conclusion": "success",
+    "workflow_id": 161335,
+    "html_url": "https://github.com/mcritchie/mcritchie-studio/actions/runs/987654321",
+    "run_started_at": "2026-07-15T12:00:00Z",
+    "created_at": "2026-07-15T12:00:01Z",
+    "updated_at": "2026-07-15T12:04:33Z"
+  },
+  "repository": {
+    "id": 55512345,
+    "name": "mcritchie-studio",
+    "full_name": "mcritchie/mcritchie-studio",
+    "private": true
+  },
+  "sender": {
+    "login": "mcritchie",
+    "type": "User"
+  }
+}
