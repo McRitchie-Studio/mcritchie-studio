@@ -2111,6 +2111,31 @@ def ci_pass?(ci)
   ci.is_a?(Hash) && ci[:state] == :green
 end
 
+# The poll DECISION for the pre-QA CI gate, factored PURE so it is unit-testable on
+# its own — the CI-verdict analogue of Release::ShipSequence.run_watch_verdict. Given
+# ONE ci_verdict Hash it says whether the gate can decide now or must keep polling:
+#   :pass  — a GREEN conclusion certifies the SHA (the ONLY pass; ci_pass? green).
+#   :abort — a TERMINAL non-green that waiting can NEVER turn green, so the gate stops
+#            polling and fails closed at once:
+#              * :red        — a regression is riding origin/#{RELEASE_BRANCH} (the
+#                              eject/revert recovery), and
+#              * :unreadable — a token/credential fault; polling a refused token only
+#                              burns the whole timeout and never heals it mid-sweep.
+#   :wait  — CI has NOT concluded yet: :none (no run registered), :pending (the push
+#            run is still building — the raw queued/in_progress/waiting statuses all
+#            fold to :pending), :unverified (a transient read miss), or anything else
+#            not-yet-green. THIS is the just-merged-SHA case that used to abort the
+#            sweep's first run: the caller HOLDS and re-reads until green, a terminal
+#            abort, or the timeout — then it fails CLOSED on the last verdict read.
+def ci_poll_action(ci)
+  return :pass if ci_pass?(ci)
+
+  state = ci.is_a?(Hash) ? ci[:state] : nil
+  return :abort if %i[red unreadable].include?(state)
+
+  :wait
+end
+
 # A one-line CI verdict detail for a gate message: "state" or "state: reason".
 def ci_detail(ci)
   state  = ci.is_a?(Hash) ? ci[:state].to_s : ""
@@ -2215,22 +2240,78 @@ rescue SystemExit, StandardError => e
       "suite on the frozen SHA rather than skip it (fail-open)")
 end
 
-# The G3 fail-closed abort text. A RED CI is a regression riding origin/#{RELEASE_BRANCH}
-# — the eject/revert recovery. Any OTHER non-green (none/pending/unverified/unreadable)
-# is CI without a green verdict yet: hold and re-run. Neither is ever a pass.
+# The G3 fail-closed abort text, chosen by the state the gate STOPPED on:
+#   * :red        — a regression riding origin/#{RELEASE_BRANCH}: the eject/revert recovery.
+#   * :unreadable — a credential/token fault the gate did NOT poll (a refused token never
+#                   heals mid-sweep), so it aborts on the first read with the remedy.
+#   * else        — a :pending/:none/:unverified verdict that never reached green before
+#                   the poll timed out: let CI finish and re-run. None is ever a pass.
 def pre_qa_ci_abort(repo, sha, ci)
-  if ci[:state] == :red
+  case ci[:state]
+  when :red
     named = Array(ci[:failing]).join(", ")
     "pre-QA gate FAILED for #{repo}: GitHub CI called #{short(sha)} RED#{named.empty? ? '' : " (#{named})"} — a " \
       "regression is riding origin/#{RELEASE_BRANCH}. Identify the offending task, eject it " \
       "(`bin/release eject <task> --feedback \"…\"`), revert its merge commit on `#{RELEASE_BRANCH}` " \
       "(git revert -m 1 <merge-sha>; push), then re-run `bin/release prepare` — the sweep self-heals and the " \
       "REST of the RC rides on."
+  when :unreadable
+    "pre-QA gate FAILED for #{repo}: GitHub CI is UNREADABLE for #{short(sha)} (#{ci_detail(ci)}). CI is the G3 " \
+      "verdict now and FAILS CLOSED — an :unreadable verdict is a credential/token fault, NOT a missing or still-" \
+      "running CI, so the gate does NOT poll it (a refused token never heals mid-sweep). " \
+      "#{CiStatus.unreadable_remedy(repo_name_with_owner(repo), cause: ci[:cause])}"
   else
-    "pre-QA gate HELD for #{repo}: GitHub CI has NO green verdict for #{short(sha)} (#{ci_detail(ci)}). CI is the " \
-      "G3 verdict now and FAILS CLOSED on anything but green — an absent, pending, or unreadable verdict never " \
-      "certifies a SHA. Wait for CI to conclude on origin/#{RELEASE_BRANCH}, then re-run `bin/release prepare` " \
-      "(an :unreadable state is a token fault — fix the credential first)."
+    "pre-QA gate HELD for #{repo}: GitHub CI reached NO green verdict for #{short(sha)} (#{ci_detail(ci)}) before " \
+      "the poll timed out. CI is the G3 verdict now and FAILS CLOSED on anything but green — a still-pending or " \
+      "absent verdict never certifies a SHA. The gate POLLED origin/#{RELEASE_BRANCH} until ~#{ci_poll_timeout}s " \
+      "elapsed; let CI conclude (or widen RELEASE_CI_POLL_TIMEOUT), then re-run `bin/release prepare`."
+  end
+end
+
+# Seconds between CI verdict re-reads, and the outer wall-clock bound on the whole
+# poll. The defaults cover a full release-CI run (the same suite PR CI runs) with
+# headroom; BOTH are ENV-overridable so an operator can widen the window on a slow
+# runner — or a test collapse it to a single read (timeout 0) — without touching code.
+def ci_poll_interval = ENV.fetch("RELEASE_CI_POLL_INTERVAL", "15").to_i
+def ci_poll_timeout  = ENV.fetch("RELEASE_CI_POLL_TIMEOUT", "1200").to_i
+
+def monotonic_s = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+# POLL GitHub CI's verdict for `sha` until it CONCLUDES, mirroring
+# dispatch_and_watch / run_concluded_success?. Since DevOps v2 Phase 3 Slice 3 made CI
+# the G3 verdict, reading it ONCE aborted every sweep's first run: the sweep merges to
+# origin/#{RELEASE_BRANCH}, CI STARTS on that fresh SHA, and the gate read it :pending and
+# held — forcing a manual "wait for release CI to conclude, then re-run bin/release
+# prepare" round-trip (observed @ 015241f and @ f05cdf5). So a :wait verdict now HOLDS
+# and re-reads every ci_poll_interval seconds until CI concludes (:green/:red) or
+# ci_poll_timeout elapses, instead of failing closed on the first pending read.
+#
+# STILL FAIL-CLOSED, exactly as the single read was (ci_poll_action owns the split): a
+# :red or :unreadable verdict returns AT ONCE — a regression riding the branch, or a
+# token fault polling cannot fix — and a timeout returns the LAST still-pending verdict,
+# never a fabricated green. The caller runs ci_pass? on the returned Hash, so ONLY a
+# genuine :green certifies; every other outcome aborts the gate.
+def poll_ci_verdict(repo, sha)
+  timeout    = ci_poll_timeout
+  interval   = ci_poll_interval
+  deadline   = monotonic_s + timeout
+  last_state = nil
+  ci = nil
+  loop do
+    ci = ci_verdict(repo, sha)
+    return ci unless ci_poll_action(ci) == :wait
+
+    remaining = deadline - monotonic_s
+    if remaining <= 0
+      say("  #{repo}: CI still #{ci[:state]} for #{short(sha)} after ~#{timeout}s — poll timed out, failing closed")
+      return ci
+    end
+    if ci[:state] != last_state
+      say("  #{repo}: CI #{ci[:state].to_s.upcase} for #{short(sha)} — holding for it to conclude " \
+          "(re-reading every #{interval}s, up to ~#{timeout}s; set RELEASE_CI_POLL_TIMEOUT to widen)")
+    end
+    last_state = ci[:state]
+    sleep([interval, remaining].min)
   end
 end
 
@@ -2281,10 +2362,13 @@ def pre_qa_gate(app_groups, rel_slug = nil)
     #   _, ok = run_test_scope("pre_qa_gate", *test_cmd_argv(cmd), chdir: workspace, repo: repo, env: gate_env(repo))
     # end
 
-    # THE VERDICT: GitHub CI's conclusion for the SHA under test, fail-CLOSED via
-    # ci_pass? — only :green certifies; a red (a regression riding origin/#{RELEASE_BRANCH})
-    # and every no-data/pending state (none/pending/unverified/unreadable) are NOT a pass.
-    ci = ci_verdict(repo, sha)
+    # THE VERDICT: GitHub CI's conclusion for the SHA under test, POLLED until it
+    # concludes (poll_ci_verdict) and fail-CLOSED via ci_pass? — only :green certifies.
+    # A red (a regression riding origin/#{RELEASE_BRANCH}) or an :unreadable token fault
+    # aborts at once; a still-:pending/:none/:unverified verdict is HELD — a just-merged
+    # SHA's CI is still building — until it goes green, red, or the poll times out. This
+    # replaces the single read that aborted every sweep's first run on a pending CI.
+    ci = poll_ci_verdict(repo, sha)
     ok = ci_pass?(ci)
     step("pre-QA gate #{repo}: GitHub CI #{ci[:state].to_s.upcase} @ #{short(sha)} " \
          "(#{cmd} recorded for the G4 drift check, not run here)")

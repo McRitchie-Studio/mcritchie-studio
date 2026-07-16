@@ -252,18 +252,22 @@ local gate polling GitHub for minutes.
 > ship gate's drift assertion holds — only its *execution* moved to CI.
 
 **No green CI verdict FAILS CLOSED — the single most important invariant.** The gate
-certifies on **exactly one** state (`green`) and holds/aborts on every other. A false
-green here deploys an **untested** SHA to QA, so an absent, pending, or unreadable
-verdict must **never** read as a pass:
+certifies on **exactly one** state (`green`). A just-merged `release` SHA reports its
+CI `pending` for the first minutes, so the gate **polls** the not-yet-concluded states
+(`none`/`pending`/`unverified`) — holding and re-reading until CI concludes or a bounded
+timeout elapses — instead of aborting the sweep's first run on the first pending read
+(`RELEASE_CI_POLL_TIMEOUT` / `RELEASE_CI_POLL_INTERVAL` bound it; defaults ~1200s / 15s).
+A false green here deploys an **untested** SHA to QA, so an absent, still-pending, or
+unreadable verdict must **never** read as a pass:
 
 | State | Means | G3 result |
 |-------|-------|-----------|
 | `green` | Every check-run passed/skipped for this SHA. | **PASS** — certify, record `ok:true`, QA deploys. |
 | `red` | A check failed/cancelled. | **FAIL** — a regression is riding `release`: eject the offender, revert, re-`prepare`. |
-| `none` | No check-run for this SHA. `ci.yml` triggers on `pull_request` + `push:[main, release]`, so a pushed `release` tip normally DOES build — `none` means a SHA never reached GitHub (a non-GitHub remote reads as `unverified`). | **HOLD** — wait for CI, then re-`prepare`. |
-| `pending` | The push-triggered run has not settled — prepare gates seconds after the merge. | **HOLD** — wait for CI to conclude. |
-| `unverified` | No `gh`, no network, a 404, a non-GitHub remote. | **HOLD** — no readable verdict, so no certification. |
-| `unreadable` | **The API refused the read** (401/403) — CI may well be green; this client cannot read it. | **HOLD** — a credential fault, not a missing CI; fix the token, then re-run. |
+| `none` | No check-run for this SHA. `ci.yml` triggers on `pull_request` + `push:[main, release]`, so a pushed `release` tip normally DOES build — `none` is the brief window before the run registers (a non-GitHub remote reads as `unverified`). | **POLL** — hold and re-read until CI concludes; fail closed at the timeout. |
+| `pending` | The push-triggered run has not settled — the gate reads it seconds after the merge. | **POLL** — the expected just-merged state; hold and re-read until it concludes. |
+| `unverified` | No `gh`, no network, a 404, a non-GitHub remote. | **POLL** — a transient read miss; hold and re-read, fail closed at the timeout. |
+| `unreadable` | **The API refused the read** (401/403) — CI may well be green; this client cannot read it. | **ABORT** — a credential fault, not a running CI; the gate does **not** poll a refused token. Fix the token, then re-run. |
 
 Every non-green row records `ok:false` (a red G3 is stamped *failed*, never silently
 un-recorded) and does not certify. The gate never trades a green for silence.
@@ -293,10 +297,13 @@ inversion:
   re-`prepare`; the sweep self-heals and the rest of the RC rides on. G4 no longer
   "fails open and re-runs a local suite" — it reads CI on the frozen SHA too, and a
   red SHA never reaches it because a red G3 aborts `prepare` first.
-- **CI not green (`none`/`pending`/`unverified`/`unreadable`)** → the gate **holds**.
-  It never trades a green for silence, and it never certifies a SHA GitHub has not
-  vouched for. Wait for CI to conclude (or fix the token for `unreadable`), then
-  re-`prepare`.
+- **CI not concluded (`none`/`pending`/`unverified`)** → the gate **polls**, holding
+  and re-reading until CI concludes green/red or a bounded timeout elapses (then it
+  fails closed). A just-merged SHA's CI is still building; the gate waits it out in-line
+  instead of bouncing to a manual re-`prepare`. **`unreadable`** is the exception — a
+  credential fault the gate does NOT poll: it aborts at once with the token remedy.
+  Either way it never trades a green for silence or certifies a SHA GitHub has not
+  vouched for.
 
 The verdict is recorded (see [Certification](#certification-what-g4-reads)) so it is
 auditable after the run instead of scrolling past in a terminal. The old "promote the
@@ -317,14 +324,19 @@ have evidence otherwise.
 2. **Eject the offender** (`bin/release eject <task> --feedback "…"`), revert its
    merge commit on `release`, and re-run `bin/release prepare` — the sweep
    self-heals and the rest of the RC rides on.
-3. **A `hold` is not a red.** `none`/`pending`/`unverified`/`unreadable` is CI
-   without a green verdict *yet*, not a regression: wait for the run to conclude
-   (or, for `unreadable`, fix the token the abort names), then re-`prepare`. The
-   gate holds rather than certify blind.
+3. **A `hold` is not a red.** `none`/`pending`/`unverified` is CI without a green
+   verdict *yet*, not a regression: the gate **polls** and holds in-line until the run
+   concludes, failing closed only if the bounded timeout elapses — no manual
+   re-`prepare` for a run that was merely still building. `unreadable` is the one it
+   does **not** poll (a credential fault): fix the token the abort names, then
+   re-`prepare`. The gate holds rather than certify blind.
 4. **Never blank `qa_test_cmd`/`test_cmd` to get past it.** That old recipe silently
    disarmed the G4 production gate, and it still does not work: `ship_gate_skip?`
-   returns false on a blank `cmd`, so a blanked registry fails G4's CI read closed
-   too. The supported override is ship-side, explicit, and loud: `bin/release ship
+   self-skips only against G3's own recorded green verdict for the exact command
+   and frozen SHA (`ship_sequence.rb`), and a blank `cmd` returns false there — so
+   a blanked registry can't forge the skip; G4 falls through to its CI read and
+   fails closed on a non-green frozen SHA. (An app with no `test_cmd` still
+   self-gates — it runs its suite at its own deploy.) The supported override is ship-side, explicit, and loud: `bin/release ship
    --skip-test-gate --reason "…"`, which confirms and records a **red**
    `ship_test_gate` gate SOP on the release.
 

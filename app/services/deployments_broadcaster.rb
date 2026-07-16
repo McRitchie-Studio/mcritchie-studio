@@ -22,6 +22,9 @@ class DeploymentsBroadcaster
 
   STREAM = "deployments"
   PARTIAL = "tasks/task_card"
+  # The stable-id CI bar slot (components/_ci_progress_slot) — rendered inline by
+  # the task card + Next Release card AND re-rendered here for the live morph push.
+  CI_SLOT_PARTIAL = "components/ci_progress_slot"
   # The stages the deploy board shows as columns. Blocked tasks are `building`
   # tasks (a block is an attribute); `archived` (or anything off this list) means
   # the card left the board.
@@ -86,6 +89,52 @@ class DeploymentsBroadcaster
         locals: { runs: GithubWorkflowRun.latest_per_workflow }
       )
     end
+  end
+
+  # A CI check job was upserted (CiCheckJob after_commit) — push the refreshed CI
+  # progress bar to the affected task card + the Next Release card so the board ticks
+  # up with NO reload. Only the tiny bar SLOT swaps — a MORPH, so the fill width
+  # animates the tick and the card never flashes or loses Alpine state, even across a
+  # run's ~24 workflow_job events. Mirrors .github_actions: a dedicated stable slot
+  # replaced with a freshly-computed partial, wrapped in the safe_broadcast SEV-1
+  # guard so a cable failure can never break the ingest write. The fresh progress is
+  # read the SAME way the page render reads it (Ci::ProgressReader, live-first), so a
+  # push and a reload always agree.
+  def self.ci_progress(job)
+    return if job.head_branch.blank? || job.head_sha.blank?
+
+    Studio::Cable.safe_broadcast do
+      reader = Ci::ProgressReader.new
+
+      reader.eligible_tasks_for(job.repo, job.head_branch).each do |task|
+        broadcast_ci_slot("ci-progress-#{task.slug}", reader.for_task(task),
+                          compact: true, test_id: "task-ci-progress",
+                          wrapper_class: "mb-1.5", inner_test_id: "task-card-ci-progress")
+      end
+
+      if job.head_branch == Release::BRANCH && (release = Release.current)
+        broadcast_ci_slot("release-ci-progress", reader.for_release(release),
+                          label: "G3 CI", test_id: "release-ci-progress",
+                          wrapper_class: "mt-2", inner_test_id: "release-card-ci-progress")
+      end
+    end
+  end
+
+  # One MORPH replace of a CI bar slot. Morph (not a plain replace) keeps the fill
+  # element in place so its transition-[width] animates the new width instead of
+  # snapping, and touches nothing else on the card. The rendered partial roots the
+  # SAME #dom_id so the slot survives the next push.
+  def self.broadcast_ci_slot(dom_id, progress, **bar_locals)
+    rendered = ApplicationController.render(
+      partial: CI_SLOT_PARTIAL, formats: [:html],
+      locals: { dom_id: dom_id, progress: progress, **bar_locals }
+    )
+    Turbo::StreamsChannel.broadcast_stream_to(
+      STREAM,
+      content: ApplicationController.helpers.turbo_stream_action_tag(
+        :replace, target: dom_id, method: "morph", template: rendered
+      )
+    )
   end
 
   # A gate run opened or closed (GateRun) — refresh the gate-bearing surfaces.

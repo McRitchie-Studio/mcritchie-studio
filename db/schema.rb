@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_16_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_16_130000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -333,6 +333,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_16_120000) do
     t.index ["person_id"], name: "index_builders_on_person_id"
     t.index ["primary_language", "active"], name: "index_builders_on_primary_language_and_active"
     t.index ["source_dataset"], name: "index_builders_on_source_dataset"
+  end
+
+  create_table "ci_check_jobs", force: :cascade do |t|
+    t.datetime "completed_at"
+    t.string "conclusion"
+    t.datetime "created_at", null: false
+    t.string "head_branch"
+    t.string "head_sha", null: false
+    t.bigint "job_id", null: false
+    t.string "name"
+    t.string "repo", null: false
+    t.bigint "run_id"
+    t.datetime "started_at"
+    t.string "status", null: false
+    t.datetime "updated_at", null: false
+    t.string "workflow_name"
+    t.index ["job_id"], name: "index_ci_check_jobs_on_job_id", unique: true
+    t.index ["repo", "head_sha"], name: "index_ci_check_jobs_on_repo_and_head_sha"
   end
 
   create_table "coach_rankings", force: :cascade do |t|

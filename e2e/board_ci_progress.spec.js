@@ -27,3 +27,18 @@ test("the Next Release card shows the G3 candidate CI meter", async ({ page }) =
   await expect(page.locator("#current-release [data-test='release-ci-progress']")).toBeVisible();
   await expect(page.locator("#current-release [data-test='release-ci-progress-fraction']")).toContainText("8 / 8");
 });
+
+// v1.1 — the live path: this card's bar is folded from ingested CiCheckJob rows
+// (the workflow_job webhook), NOT the fixture seam. Its SHA has no CI_PROGRESS_FIXTURES
+// entry, so a rendered bar proves Ci::ProgressReader prefers the live rows. The stable
+// #ci-progress slot is what a real workflow_job push morph-replaces with no reload.
+test("a submitted task card renders its CI meter from LIVE workflow_job rows", async ({ page }) => {
+  await page.goto("/deployments");
+
+  const card = page.locator("#card-e2e-live-ci-progress-demo");
+  await expect(card).toBeVisible();
+
+  await expect(card.locator("[data-test='task-card-ci-progress']")).toBeVisible();
+  await expect(card.locator("[data-test='task-ci-progress-fraction']")).toContainText("5 / 8");
+  await expect(card.locator("#ci-progress-e2e-live-ci-progress-demo")).toBeVisible();
+});
