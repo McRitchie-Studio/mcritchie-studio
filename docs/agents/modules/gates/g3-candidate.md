@@ -322,10 +322,12 @@ have evidence otherwise.
    (or, for `unreadable`, fix the token the abort names), then re-`prepare`. The
    gate holds rather than certify blind.
 4. **Never blank `qa_test_cmd`/`test_cmd` to get past it.** That old recipe silently
-   disarmed the G4 production gate, and it still does not work: `test_gate`'s
-   `cmd.empty?` early-return aborts *before* the CI read, and `ship_gate_skip?`
-   returns false on a blank `cmd` — so a blanked registry still can't disarm G4;
-   it fails closed on the empty command, not on the CI read. The supported override is ship-side, explicit, and loud: `bin/release ship
+   disarmed the G4 production gate, and it still does not work: `ship_gate_skip?`
+   self-skips only against G3's own recorded green verdict for the exact command
+   and frozen SHA (`ship_sequence.rb`), and a blank `cmd` returns false there — so
+   a blanked registry can't forge the skip; G4 falls through to its CI read and
+   fails closed on a non-green frozen SHA. (An app with no `test_cmd` still
+   self-gates — it runs its suite at its own deploy.) The supported override is ship-side, explicit, and loud: `bin/release ship
    --skip-test-gate --reason "…"`, which confirms and records a **red**
    `ship_test_gate` gate SOP on the release.
 
