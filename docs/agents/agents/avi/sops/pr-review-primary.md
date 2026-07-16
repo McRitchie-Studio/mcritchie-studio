@@ -43,7 +43,7 @@ README / runbook / topic docs for the change surface before reviewing.
 
 ## Preconditions
 
-The supervisor handed you a task slug, its PR (base `release`), branch, repos,
+The supervisor handed you a task slug, its PR (base `accepted`), branch, repos,
 risk tags, acceptance criteria, and the checks already reported. If any of that
 is missing, note it as a finding — do not guess.
 
