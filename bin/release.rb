@@ -398,34 +398,73 @@ def dispatch_and_watch(workflow, inputs = {}, chdir: nil)
   # would then ABORT a ship that actually shipped — an operator-facing false
   # negative. So a failed watch is not a verdict: re-query the run's REAL
   # conclusion and let THAT decide (fails closed if the run genuinely failed or
-  # never completes).
+  # becomes unobservable).
   say("  ⚠ `gh run watch` exited non-zero for run #{run_id} — re-querying the run's real conclusion (a transient watcher failure is not a failed deploy)")
   run_concluded_success?(run_id, chdir: chdir)
 end
 
 # The run's REAL conclusion, straight from GitHub, for when `gh run watch` could
 # not report it (a transient watcher failure — an HTTP 500 mid-watch — must never
-# be read as a failed deploy). Polls `gh run view --json status,conclusion` until
-# `status == "completed"`, then returns `conclusion == "success"`. Bounded and
-# FAILS CLOSED: a run that never completes in the budget, or a gh that keeps
-# failing, returns false (a redundant re-verify beats a false green).
-def run_concluded_success?(run_id, chdir: nil, attempts: 20, delay: 5)
-  attempts.times do |i|
+# be read as a failed deploy). MIRRORS `gh run watch`: it FOLLOWS the run to its
+# GitHub-side conclusion, however long that takes, on `gh run view --json
+# status,conclusion`, and lets Release::ShipSequence.run_watch_verdict decide each
+# read (:success / :failed / :pending — pure, unit-tested).
+#
+# WHY IT IS NOT A SHORT WALL-CLOCK BUDGET (the bug this closes, run 29450907913):
+# a prod-deploy run PAUSES at the `production` Environment's required reviewer,
+# reporting `waiting` for as long as the operator takes to click (3h34m live). The
+# old fallback polled only 20×5s=100s for `completed` and failed the ship CLOSED
+# over a deploy that had simply not been approved yet. A `waiting`/`queued`/
+# `in_progress` run is LIVE — reading any live status is affirmative proof the run
+# is alive, so the watcher HOLDS on it (unbounded, exactly as `gh run watch`
+# would; GitHub's own job timeout concludes a truly hung run).
+#
+# FAILS CLOSED on exactly two things — a redundant re-verify beats a false green:
+#   * a TERMINAL non-success (:failed) → promptly, over one poll.
+#   * an UNOBSERVABLE run — `gh run view` erroring or returning no status for
+#     `unreadable_limit` CONSECUTIVE polls (a genuine stuck-timeout with no state
+#     progress: the "never-appearing" run). A single successful live read resets
+#     the streak, so an approval pause of any length never trips it.
+def run_concluded_success?(run_id, chdir: nil, poll: 10, unreadable_limit: 30)
+  unreadable = 0
+  last_status = nil
+  loop do
     out, ok = sh("gh", "run", "view", run_id.to_s, "--json", "status,conclusion",
                  "--jq", "[.status, .conclusion] | @tsv", chdir: chdir, capture: true)
-    if ok
-      status, conclusion = out.strip.split("\t", 2)
-      if status == "completed"
-        say("  run #{run_id} concluded: #{conclusion}")
-        return conclusion == "success"
+    status, conclusion = ok ? out.strip.split("\t", 2) : [nil, nil]
+
+    # A read we could not make (gh errored) OR that returned no status is an
+    # UNOBSERVED poll — it counts toward the stuck-timeout, never toward a verdict.
+    if status.to_s.strip.empty?
+      unreadable += 1
+      if unreadable >= unreadable_limit
+        say("  ⚠ run #{run_id} unobservable for #{unreadable} consecutive polls — failing closed")
+        return false
+      end
+      sleep poll
+      next
+    end
+    unreadable = 0
+
+    case Release::ShipSequence.run_watch_verdict(status, conclusion)
+    when :success
+      say("  run #{run_id} concluded: success")
+      return true
+    when :failed
+      say("  run #{run_id} concluded: #{conclusion} — failing closed")
+      return false
+    else # :pending — the run is still live; hold, exactly as `gh run watch` would
+      if status != last_status
+        note = Release::ShipSequence.approval_pause?(status) ?
+                 "WAITING for the production approval — holding (an approval pause is not a failure)" :
+                 "#{status} — holding"
+        say("  run #{run_id} #{note}")
       end
     end
-    break if i == attempts - 1
 
-    sleep delay
+    last_status = status
+    sleep poll
   end
-  say("  ⚠ run #{run_id} never reported a completed status within #{attempts}×#{delay}s — failing closed")
-  false
 end
 
 # The newest GitHub Actions run id for `workflow` — 0 when none exists yet, or

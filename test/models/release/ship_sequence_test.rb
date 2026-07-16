@@ -50,6 +50,67 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
     assert_nil S.new_run_id(100, nil)
   end
 
+  # --- run_watch_verdict: the fallback watcher's per-poll STATE verdict --------
+  #
+  # After `gh run watch` dies on a TRANSIENT blip, the fallback re-reads the run's
+  # own state and this pure classifier decides what that read MEANS. The bug it
+  # fixes (run 29450907913, LIVE): the old fallback polled only for `completed`
+  # and gave up after 100s — but a prod-deploy run PAUSED for the operator's
+  # `production` approval reports `waiting` for HOURS (3h34m in the incident), so
+  # a blip during that pause failed the ship CLOSED over a deploy that had simply
+  # not been approved yet. A `waiting`/`queued`/`in_progress` run is LIVE, not
+  # failed — the watcher must keep waiting, and this is where that is decided.
+
+  test "[unit] run_watch_verdict treats a WAITING run as keep-waiting, NEVER failed" do
+    # THE REGRESSION. `waiting` = paused for the production Environment's required
+    # reviewer. It is the exact state the old fallback read as "never completed"
+    # and failed closed on. It must be :pending (hold), never :failed.
+    assert_equal :pending, S.run_watch_verdict("waiting", ""),
+                 "a run paused for the operator's approval is LIVE, not a failed deploy"
+    assert_equal :pending, S.run_watch_verdict("waiting", nil)
+  end
+
+  test "[unit] run_watch_verdict treats queued/in_progress (and any non-terminal) as pending" do
+    %w[queued in_progress requested pending action_required].each do |status|
+      assert_equal :pending, S.run_watch_verdict(status, nil),
+                   "#{status} is a LIVE run — keep waiting, do not fail closed"
+    end
+    # A status GitHub might add that we don't recognize is still NOT `completed`,
+    # so the run has not ended — treat it as live (keep waiting), never a verdict.
+    assert_equal :pending, S.run_watch_verdict("some_new_state", nil)
+  end
+
+  test "[unit] run_watch_verdict returns :success ONLY on completed + success" do
+    assert_equal :success, S.run_watch_verdict("completed", "success")
+  end
+
+  test "[unit] run_watch_verdict fails closed on a TERMINAL non-success conclusion" do
+    # `completed` is the one terminal status; every non-success conclusion under it
+    # is a genuine failed deploy → :failed → the ship fails closed PROMPTLY.
+    %w[failure cancelled timed_out startup_failure action_required neutral stale skipped].each do |conclusion|
+      assert_equal :failed, S.run_watch_verdict("completed", conclusion),
+                   "completed+#{conclusion} is a real terminal failure — fail closed"
+    end
+    assert_equal :failed, S.run_watch_verdict("completed", ""),
+                 "completed with an empty conclusion is not a success — fail closed, do not hang"
+  end
+
+  test "[unit] run_watch_verdict tolerates surrounding whitespace from the jq read" do
+    assert_equal :success, S.run_watch_verdict(" completed ", " success ")
+    assert_equal :pending, S.run_watch_verdict(" waiting ", "")
+  end
+
+  # --- approval_pause?: the run is specifically PAUSED for the operator ---------
+
+  test "[unit] approval_pause? is true only for the waiting (required-reviewer) status" do
+    assert S.approval_pause?("waiting"), "waiting = paused for the production approval"
+    assert S.approval_pause?(" waiting "), "…tolerant of the jq read's whitespace"
+    %w[queued in_progress completed requested].each do |status|
+      assert_not S.approval_pause?(status), "#{status} is not the approval pause"
+    end
+    assert_not S.approval_pause?(nil)
+  end
+
   test "strategy_handler raises on an unknown strategy" do
     err = assert_raises(ArgumentError) { S.strategy_handler("rsync_box") }
     assert_match(/unknown prod_deploy strategy/, err.message)

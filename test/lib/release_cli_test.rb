@@ -4349,13 +4349,72 @@ class ReleaseCliTest < Minitest::Test
                      "a genuinely failed run (watch failed AND conclusion=failure) fails closed"
   end
 
-  def test_dispatch_and_watch_fails_closed_when_the_run_never_completes
-    # watch failed and the run never reaches completed within the budget → false.
-    out = run_cli(["--yes"], setup: gha_watch_500_setup("in_progress\t"),
+  # [integration] THE approval-pause regression (run 29450907913). A prod-deploy
+  # run PAUSES at the `production` Environment's required reviewer, reporting
+  # `waiting` for as long as the operator takes to click (3h34m live). If a
+  # transient blip kills `gh run watch` DURING that pause, the fallback must HOLD
+  # on the still-live run — a `waiting`/`in_progress` read is not a failed deploy —
+  # and only conclude when the run actually finishes. The old fallback polled a
+  # 100s budget for `completed` and failed the ship CLOSED over an unapproved
+  # deploy; this proves it now waits through the pause and then succeeds. `sleep`
+  # is stubbed to a no-op so the "hold" costs no wall-clock in the test.
+  def test_dispatch_and_watch_holds_through_a_waiting_approval_pause_then_succeeds
+    setup = <<~RUBY
+      def sleep(*) = nil
+      $list_calls = 0
+      # The run sits WAITING for approval, moves to in_progress, then completes.
+      $views = ["waiting\\t", "waiting\\t", "in_progress\\t", "completed\\tsuccess"]
+      $view_i = 0
+      def sh(*cmd, capture: false, chdir: nil, env: nil)
+        if cmd[0, 3] == ["gh", "run", "list"]
+          $list_calls += 1
+          return [($list_calls == 1 ? "100" : "101"), true]
+        end
+        return ["", false] if cmd[0, 3] == ["gh", "run", "watch"]   # transient blip mid-approval
+        if cmd[0, 3] == ["gh", "run", "view"]
+          v = $views[$view_i] || $views.last
+          $view_i += 1
+          return [v, true]
+        end
+        ["", true]   # gh workflow run
+      end
+    RUBY
+    out = run_cli(["--yes"], setup: setup,
+                  call: %{puts("RESULT " + dispatch_and_watch("prod-deploy.yml", { "sha" => "abc" }).to_s)})
+
+    assert_includes out, "WAITING for the production approval",
+                     "the fallback must RECOGNIZE the approval pause and hold, not fail closed on it"
+    assert_includes out, "RESULT true",
+                     "a run that was merely paused for approval and then succeeded must ship"
+  end
+
+  # [integration] The stuck-timeout / never-appearing run — the fail-closed case
+  # that SURVIVES the fix. `gh run view` can never read the run (it keeps erroring),
+  # so there is no state to observe: after unreadable_limit consecutive unobserved
+  # polls the fallback fails closed. This is distinct from an OBSERVABLE live run
+  # (waiting/in_progress) which now holds — only a genuinely UNOBSERVABLE run gives
+  # up. A redundant re-verify beats a false-green prod deploy.
+  def test_dispatch_and_watch_fails_closed_when_the_run_is_unobservable
+    setup = <<~RUBY
+      def sleep(*) = nil
+      $list_calls = 0
+      def sh(*cmd, capture: false, chdir: nil, env: nil)
+        if cmd[0, 3] == ["gh", "run", "list"]
+          $list_calls += 1
+          return [($list_calls == 1 ? "100" : "101"), true]
+        end
+        return ["", false] if cmd[0, 3] == ["gh", "run", "watch"]
+        return ["", false] if cmd[0, 3] == ["gh", "run", "view"]   # gh can NEVER read the run
+        ["", true]
+      end
+    RUBY
+    out = run_cli(["--yes"], setup: setup,
                   call: %{puts("RESULT " + dispatch_and_watch("prod-deploy.yml", { "sha" => "abc" }).to_s)})
 
     assert_includes out, "RESULT false",
-                     "a run that never completes must fail closed, not hang or false-green"
+                     "an unobservable run (gh can't read it at all) must fail closed, not hang or false-green"
+    assert_includes out, "unobservable",
+                     "…and say WHY it failed closed — the stuck-timeout, not a false conclusion"
   end
 
   # [unit] The env contract for a repo's OWN deploy script. It gets the workspace's

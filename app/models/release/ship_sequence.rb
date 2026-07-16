@@ -71,6 +71,52 @@ class Release
       latest_id > before_id ? latest_id : nil
     end
 
+    # --- github_actions deploy: the fallback watcher's per-poll STATE verdict ---
+    #
+    # When `gh run watch` DIES on a transient blip (a real GitHub `connection reset
+    # by peer` / HTTP 500 mid-watch, seen LIVE on run 29450907913), bin/release's
+    # run_concluded_success? falls back to re-reading the run's own state. This is
+    # the pure decision that turns one `gh run view --json status,conclusion` read
+    # into a verdict; the polling/sleeping IO stays in the shell.
+    #
+    # THE BUG THIS FIXES: a prod-deploy run PAUSES at the `production` Environment's
+    # required reviewer, reporting status `waiting` — for as long as the operator
+    # takes to click (3h34m in the incident). The old fallback polled only for
+    # `status == "completed"` on a 20×5s=100s budget, so a blip during that pause
+    # read the still-`waiting` run as "never concluded" and failed the ship CLOSED
+    # over a deploy that had simply not been approved yet. `completed` is the ONLY
+    # terminal status GitHub reports; every other status (`waiting`, `queued`,
+    # `in_progress`, and any GitHub might add) means the run is still LIVE.
+    #
+    #   * :success — completed + success → the deploy landed.
+    #   * :failed  — completed + a non-success conclusion (failure/cancelled/
+    #                timed_out/…) → a genuine terminal failure; fail closed PROMPTLY.
+    #   * :pending — any non-`completed` status → the run is still live (paused for
+    #                approval, queued, or running); KEEP WAITING. A mid-approval
+    #                pause of ANY length is not a failed deploy. This is the fix.
+    #
+    # Note the asymmetry that keeps it fail-closed: an empty/unknown CONCLUSION on a
+    # `completed` run is :failed (a completed run with no success is not a success),
+    # while an empty/unknown STATUS is :pending (not completed = not concluded). The
+    # shell's stuck-timeout — not this classifier — bounds an UNOBSERVABLE run (one
+    # `gh run view` cannot read at all): reading a live status is affirmative proof
+    # the run is alive, so an observable run holds exactly as `gh run watch` would.
+    def run_watch_verdict(status, conclusion)
+      return :pending unless status.to_s.strip == "completed"
+
+      conclusion.to_s.strip == "success" ? :success : :failed
+    end
+
+    # Is the run specifically PAUSED for the operator's `production` approval? The
+    # `waiting` status IS the required-reviewer pause (it is what replaced the local
+    # ship-confirm prompt), so the fallback watcher needs no extra
+    # `actions/runs/<id>/pending_deployments` read to detect it — the status says so.
+    # Used only to tell the operator WHY the watcher is holding (see
+    # run_concluded_success?); the run/skip decision is run_watch_verdict's.
+    def approval_pause?(status)
+      status.to_s.strip == "waiting"
+    end
+
     # The app deploy groups with the hub pulled to the front, the rest left in
     # their incoming (producer-first) order. Stable: a non-hub group keeps its
     # relative position. Accepts symbol- OR string-keyed groups (repo_plan returns
