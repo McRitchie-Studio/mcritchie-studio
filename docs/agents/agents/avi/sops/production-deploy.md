@@ -141,9 +141,28 @@ Run ship only when status shows a ready QA-green release:
 bin/release ship --yes
 ```
 
-Ship from the primary checkout, not a feature worktree. `--yes` only answers the
-non-interactive confirmation. It does not skip the preflight, frozen-SHA tests,
-gem publish ordering, deploy smoke, release notes, or partial-ship recovery.
+Ship from the primary checkout, not a feature worktree. `--yes` answers one
+local guard — the pre-dispatch `confirm("Deploy this release to production?")`
+that runs before any deploy — so a hands-off run opts in instead of hanging on a
+prompt. It skips nothing else: the preflight, frozen-SHA test gate, gem-publish
+ordering, deploy smoke, release notes, and partial-ship recovery all still run.
+**`--yes` does not bypass the production approval below** — that gate lives on
+GitHub, and the ship blocks on it whether or not you passed `--yes`.
+
+**The real ship-confirm is the `production` GitHub Environment approval, not a
+local prompt.** The hub deploys through GitHub Actions: `bin/release ship`
+dispatches `prod-deploy.yml` (`gh workflow run prod-deploy.yml -f sha=<frozen>`)
+and watches the run. That workflow is `workflow_dispatch`, and it pauses at the
+`production` Environment for the operator's required-reviewer approval — the gate
+that replaced the old local interactive prompt. Until the operator clicks
+**Review deployments → Approve** on the run, it sits `waiting` and the ship
+HOLDS on it — unbounded, however long the approval takes. So announce the paused
+run and wait; do not read the block as a hang. Once approved, GitHub Actions
+force-pushes the frozen SHA to Heroku `main` and hard-gates a `/up` smoke — it
+retries `/up` and FAILS the deploy if production never returns 200. The watch
+returns green only after that deploy-and-smoke concludes, so Actions — not a
+local hub curl — now runs the deploy `/up` smoke. (The post-ship `@qa-readonly`
+production smoke seal below still runs locally on the hub.)
 
 **A dirty app primary does NOT block the ship.** The deploy runs from its own
 checkout — a private detached worktree at `<repo>/.worktrees/_ship`, pinned at the
@@ -155,6 +174,16 @@ that refusal once aborted a ship *after the gems had published*.) If you want a
 primary clean, the preflight prints the exact rescue — commit the stranded work to
 a labeled `rescue/<repo>-<timestamp>` branch. **Never stash it and never discard
 it**: it may be a live session's work.
+
+**The ship also advances `accepted`, not just `main`.** The moment `main` lands,
+it re-baselines each repo's `origin/accepted` integration branch onto the same
+frozen SHA (`git push origin <frozen>:refs/heads/accepted`) — feature branches
+cut from `accepted`, so keeping it level with `main` stops it drifting stale
+behind production. This retires the manual `git push origin
+origin/main:refs/heads/accepted` chore. The advance is guarded (only where
+`origin/accepted` exists), fail-closed (no `--force`; a non-fast-forward means
+`accepted` diverged, so git refuses and the ship warns and moves on), and
+non-fatal — it never aborts a landing deploy.
 
 **One thing still gates on a primary: a gem repo with modified TRACKED files.**
 `gem build` packages what is on disk, so those edits would be *published* — and a
