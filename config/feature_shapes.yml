@@ -145,3 +145,15 @@ shapes:
       Almost always a multi-task `release`. Highest scrutiny; usually
       conductor-review. Devnet verification is an operator/QA-stop act, as in
       `onchain` above.
+
+  docs:
+    description: Documentation-only change — SOP, runbook, agent-operating-model, or README. No code, no persistence.
+    dor_tiers: []
+    required_metadata: [acceptance, repositories, risk_tags]
+    notes: >-
+      No code tiers: a doc change certifies by REVIEW, not a test lane — so
+      dor_tiers is empty (nothing to fabricate) and the full-suite merge gate is
+      skipped. It routes to the documentation seat (Alex) in ReviewerSelector's
+      SHAPE_DOMAINS. test_plan is dropped from required_metadata for the same
+      reason there is nothing to plan; prose acceptance is the reviewer's and the
+      operator's at the QA stop, not a pre-submit tier.

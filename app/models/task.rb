@@ -185,7 +185,7 @@ class Task < ApplicationRecord
   DEVOPS_KEYS = (DEVOPS_SCALAR_KEYS + DEVOPS_LIST_KEYS).freeze
   # The change shape selects its DoR test contract. Keep in sync with
   # config/feature_shapes.yml (the source of truth that bin/dor-check reads).
-  SHAPES = %w[ui-only ui+db backend library onchain onchain-vertical].freeze
+  SHAPES = %w[ui-only ui+db backend library onchain onchain-vertical docs].freeze
 
   belongs_to :agent, foreign_key: :agent_slug, primary_key: :slug, optional: true
   belongs_to :release, foreign_key: :release_slug, primary_key: :slug, optional: true, inverse_of: :tasks
