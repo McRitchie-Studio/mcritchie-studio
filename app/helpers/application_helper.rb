@@ -459,6 +459,27 @@ module ApplicationHelper
       dot: "bg-amber-500 ring-2 ring-amber-300/70 animate-pulse" }
   end
 
+  # A task's PR-head CI progress (a Ci::CheckProgress) for the board card's
+  # progress bar — blank until the task is submitted with a PR and a CI run
+  # exists. The board preloads these in one batch (@ci_progress_by_slug); this is
+  # the single-card fallback for the Turbo re-render path. Reads through
+  # Ci::ProgressReader, which is cached and degrades to blank on any error.
+  def task_ci_progress(task)
+    ci_progress_reader.for_task(task)
+  end
+
+  # The G3 candidate suite CI progress for a release (the CI run on the
+  # release-branch tip) — the Next Release card's bar. Blank unless the release is
+  # active. Same reader, same graceful degrade.
+  def release_ci_progress(release)
+    ci_progress_reader.for_release(release)
+  end
+
+  # One reader per request, so a page of cards shares its Github::Client + cache.
+  def ci_progress_reader
+    @ci_progress_reader ||= Ci::ProgressReader.new
+  end
+
   # The DevOps SOP vocabulary — the owner definition, the node types, and the four
   # accountability lanes (each step's expectation + gate) — is the SINGLE SOURCE OF
   # TRUTH in config/devops_vocabulary.yml, read via Devops::Vocabulary. Rename a term

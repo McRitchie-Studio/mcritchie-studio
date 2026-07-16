@@ -850,4 +850,32 @@ GithubWorkflowRun.create!(
   pending_environment: "production", pending_since: 10.minutes.ago
 )
 
+# CI progress bars (feature: visual-ci-progress-bars): a submitted task whose PR has
+# a live GitHub CI run, plus a CI run on the release-branch tip, so the board e2e can
+# assert the task-card "X / Y checks" meter and the Next Release G3 bar. Ci::ProgressReader
+# resolves the SHA from these rows (owner amcritchie, the reader's DEFAULT_OWNER — the
+# panel rows above use a legacy owner and are repo-scoped away), then folds the counts
+# from CI_PROGRESS_FIXTURES (playwright webServer env) keyed by these SHAs — no network.
+# run_started_at is OLDER than the panel runs above so latest_per_workflow (global, one
+# row per workflow_name) still shows those on the /deployments Actions panel.
+Task.create!(
+  slug: "e2e-ci-progress-demo", title: "E2E CI progress demo", stage: "submitted", priority: 1,
+  agent_slug: "shannon",
+  metadata: { "devops" => {
+    "branch" => "feat/ci-progress-e2e",
+    "repositories" => ["mcritchie-studio"],
+    "pr_url" => "https://github.com/amcritchie/mcritchie-studio/pull/900"
+  } }
+)
+GithubWorkflowRun.create!(
+  repo: "amcritchie/mcritchie-studio", run_id: 5_000_101, status: "in_progress",
+  workflow_name: "CI", head_sha: "e2e-task-sha", head_branch: "feat/ci-progress-e2e",
+  html_url: "https://github.com/amcritchie/mcritchie-studio/actions/runs/5000101", run_started_at: 30.minutes.ago
+)
+GithubWorkflowRun.create!(
+  repo: "amcritchie/mcritchie-studio", run_id: 5_000_102, status: "completed", conclusion: "success",
+  workflow_name: "CI", head_sha: "e2e-rel-sha", head_branch: "release",
+  html_url: "https://github.com/amcritchie/mcritchie-studio/actions/runs/5000102", run_started_at: 30.minutes.ago
+)
+
 puts "Seeded: #{User.count} users, #{Agent.count} agents, #{Task.count} tasks, #{Activity.count} activities, #{Coach.count} coaches, #{Release.count} releases, #{AtomicAction.count} atomic actions, #{AtomicEvent.count} atomic events, #{GithubWorkflowRun.count} github runs"

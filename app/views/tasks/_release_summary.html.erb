@@ -74,6 +74,18 @@
         <% if rel.production_url.present? %><%= link_to "Prod ↗", rel.production_url, target: "_blank", rel: "noopener", class: link_class %><% end %>
         <% if rel.deployed_sha.present? %><code class="text-muted" title="deployed SHA"><%= rel.deployed_sha.first(7) %></code><% end %>
       </div>
+    <%# G3 candidate suite CI meter (Next Release card only): the GitHub CI run on
+        the release-branch tip, shown while the release assembles. Same reusable
+        components/_ci_progress_bar as the task card; renders nothing until a
+        release-branch CI run exists. %>
+    <% if current %>
+      <% g3_progress = release_ci_progress(rel) %>
+      <% if g3_progress&.present? %>
+        <div class="mt-2" data-test="release-card-ci-progress">
+          <%= render "components/ci_progress_bar", progress: g3_progress, label: "G3 CI", test_id: "release-ci-progress" %>
+        </div>
+      <% end %>
+    <% end %>
     <% if members.any? || trailing %>
       <%# Member pills on the left; optional trailing chip (e.g. the kickoff chip)
           inline on the right of the same row. Last Release pills stay on one

@@ -87,7 +87,19 @@ if (!externalBaseURL) {
     // CABLE_ADAPTER=async gives the e2e server REAL in-process ActionCable delivery
     // to the browser (the default `test` adapter only captures broadcasts for
     // minitest assertions), so the /deployments live-update round-trip works.
-    env: { RAILS_ENV: "test", LOCAL_EMAIL_CAPTURE: "1", CABLE_ADAPTER: "async" },
+    env: {
+      RAILS_ENV: "test",
+      LOCAL_EMAIL_CAPTURE: "1",
+      CABLE_ADAPTER: "async",
+      // Deterministic CI check counts for the board's CI progress bars (feature:
+      // visual-ci-progress-bars), keyed by the SHAs e2e/seed.rb assigns to the demo
+      // task branch + the release-branch CI run — so the reader folds real numbers
+      // without a GitHub round-trip.
+      CI_PROGRESS_FIXTURES: JSON.stringify({
+        "e2e-task-sha": { passed: 6, failed: 0, pending: 2 },
+        "e2e-rel-sha": { passed: 8, failed: 0, pending: 0 },
+      }),
+    },
   };
 }
 

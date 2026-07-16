@@ -1,4 +1,4 @@
-<%# locals: (task:, agents:, crew_board: :deploy, mascot: nil, type_enumerals: nil, latest_activity: nil, activity_count: 0, unresolved_feedback: nil, ever_blocked: nil, review_in_progress: nil) %>
+<%# locals: (task:, agents:, crew_board: :deploy, mascot: nil, type_enumerals: nil, latest_activity: nil, activity_count: 0, unresolved_feedback: nil, ever_blocked: nil, review_in_progress: nil, ci_progress: nil) %>
 <%#
   ONE board card. Extracted from _board so a single card can be re-rendered
   server-side and pushed over Turbo Streams (the "deployments" stream) for live
@@ -19,6 +19,10 @@
 <% local_url = task.devops? ? task.devops_url("local") : nil %>
 <% pr_url = task.devops? ? task.devops_url("pr") : nil %>
 <% waiting_for_review = task.stage == "submitted" && pr_url.present? && !review_in_progress && unresolved_feedback.blank? && block_state != :cleared %>
+<%# CI progress meter (a Ci::CheckProgress) — preloaded by the board in one batch,
+    with a single-card helper fallback for the Turbo re-render path. Blank (renders
+    nothing) until the task is submitted with a PR and a CI run exists. %>
+<% ci_progress = local_assigns.key?(:ci_progress) ? local_assigns[:ci_progress] : task_ci_progress(task) %>
 <%# Per-card pulse seed (slug hash): feeds --task-pulse-delay/--task-pulse-duration
     so every flashing status bar AND the approval glow pulse OUT of phase across
     the board — irregular breathing, not one synchronized strobe. %>
@@ -248,6 +252,15 @@
               test_id: "cleared-feedback",
               title: "A QA block was resolved — ready for another review." %>
       <% end %>
+    </div>
+  <% end %>
+
+  <%# CI progress meter — "X / Y checks" plus a bar for this PR's GitHub CI run.
+      The reusable components/_ci_progress_bar primitive; renders nothing until the
+      task has a submitted PR with a CI run. %>
+  <% if ci_progress&.present? %>
+    <div class="mb-1.5" data-test="task-card-ci-progress">
+      <%= render "components/ci_progress_bar", progress: ci_progress, compact: true, test_id: "task-ci-progress" %>
     </div>
   <% end %>
 
