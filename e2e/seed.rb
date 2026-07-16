@@ -23,6 +23,7 @@ Team.delete_all
 Person.delete_all
 GateRun.delete_all # slug-keyed, no FK — delete_all wipes above skip callbacks, so stale runs would otherwise survive reseeds and inflate attempt counts
 GithubWorkflowRun.delete_all # cached Actions runs for the /deployments panel — reseeded below
+CiCheckJob.delete_all # per-check LIVE CI progress rows (workflow_job) — reseeded below
 Release.delete_all
 SessionMascot.delete_all
 Pokemon.delete_all
@@ -877,5 +878,37 @@ GithubWorkflowRun.create!(
   workflow_name: "CI", head_sha: "e2e-rel-sha", head_branch: "release",
   html_url: "https://github.com/amcritchie/mcritchie-studio/actions/runs/5000102", run_started_at: 30.minutes.ago
 )
+
+# LIVE CI progress (feature: live-ci-progress-updates): a submitted task whose PR
+# CI is recorded per-check as CiCheckJob rows — the workflow_job webhook path, NOT
+# CI_PROGRESS_FIXTURES. Its SHA is deliberately ABSENT from the playwright fixture
+# map, so a bar here can come ONLY from these live rows (5 of 8 passed) — the board
+# e2e proves Ci::ProgressReader folds ingested jobs, and the stable #ci-progress
+# slot is present so a real workflow_job push can morph just this bar with no reload.
+Task.create!(
+  slug: "e2e-live-ci-progress-demo", title: "E2E live CI progress demo", stage: "submitted", priority: 1,
+  agent_slug: "shannon",
+  metadata: { "devops" => {
+    "branch" => "feat/ci-progress-live-e2e",
+    "repositories" => ["mcritchie-studio"],
+    "pr_url" => "https://github.com/amcritchie/mcritchie-studio/pull/901"
+  } }
+)
+GithubWorkflowRun.create!(
+  repo: "amcritchie/mcritchie-studio", run_id: 5_000_103, status: "in_progress",
+  workflow_name: "CI", head_sha: "e2e-live-task-sha", head_branch: "feat/ci-progress-live-e2e",
+  html_url: "https://github.com/amcritchie/mcritchie-studio/actions/runs/5000103", run_started_at: 25.minutes.ago
+)
+e2e_live_job_id = 5_100_000
+5.times do |i|
+  CiCheckJob.create!(repo: "amcritchie/mcritchie-studio", job_id: e2e_live_job_id + i, run_id: 5_000_103,
+                     head_sha: "e2e-live-task-sha", head_branch: "feat/ci-progress-live-e2e",
+                     workflow_name: "CI", name: "check-#{i}", status: "completed", conclusion: "success")
+end
+3.times do |i|
+  CiCheckJob.create!(repo: "amcritchie/mcritchie-studio", job_id: e2e_live_job_id + 5 + i, run_id: 5_000_103,
+                     head_sha: "e2e-live-task-sha", head_branch: "feat/ci-progress-live-e2e",
+                     workflow_name: "CI", name: "pending-#{i}", status: "in_progress")
+end
 
 puts "Seeded: #{User.count} users, #{Agent.count} agents, #{Task.count} tasks, #{Activity.count} activities, #{Coach.count} coaches, #{Release.count} releases, #{AtomicAction.count} atomic actions, #{AtomicEvent.count} atomic events, #{GithubWorkflowRun.count} github runs"

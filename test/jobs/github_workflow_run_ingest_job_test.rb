@@ -88,9 +88,9 @@ class GithubWorkflowRunIngestJobTest < ActiveJob::TestCase
     assert_equal "success", GithubWorkflowRun.find_by(run_id: RUN_ID).conclusion
   end
 
-  test "[unit] non-workflow_run events are ignored gracefully" do
-    assert_no_difference "GithubWorkflowRun.count" do
-      GithubWorkflowRunIngestJob.perform_now("workflow_job", event(status: "queued"))
+  test "[unit] an unhandled event is ignored gracefully (no run, no check job)" do
+    assert_no_difference ["GithubWorkflowRun.count", "CiCheckJob.count"] do
+      GithubWorkflowRunIngestJob.perform_now("push", event(status: "queued"))
     end
   end
 
@@ -122,6 +122,118 @@ class GithubWorkflowRunIngestJobTest < ActiveJob::TestCase
       end
     end
     assert_equal RUN_ID.to_s, ErrorLog.order(:id).last.target_name
+  end
+
+  # ── workflow_job (per-check LIVE progress) ───────────────────────────────
+  JOB_ID = 555_123_456
+  JOB_SHA = "9f2c1b7ad4e5c60f1e2d3a4b5c6d7e8f90123456"
+
+  # A realistic workflow_job event, parameterized on the lifecycle status.
+  def job_event(status:, conclusion: nil, job_id: JOB_ID, workflow_name: "CI", head_sha: JOB_SHA, **overrides)
+    {
+      "action" => (status == "completed" ? "completed" : status),
+      "workflow_job" => {
+        "id" => job_id,
+        "run_id" => 987_654_321,
+        "workflow_name" => workflow_name,
+        "name" => "lint",
+        "status" => status,
+        "conclusion" => conclusion,
+        "head_sha" => head_sha,
+        "head_branch" => "feat/webhook-push-not-poll",
+        "started_at" => "2026-07-15T12:00:10Z",
+        "completed_at" => (status == "completed" ? "2026-07-15T12:01:40Z" : nil)
+      }.merge(overrides),
+      "repository" => { "full_name" => "amcritchie/mcritchie-studio" }
+    }
+  end
+
+  def ingest_job(status:, **kwargs)
+    GithubWorkflowRunIngestJob.perform_now("workflow_job", job_event(status: status, **kwargs))
+  end
+
+  test "[unit] a workflow_job delivery records a CiCheckJob row with the mapped fields" do
+    assert_difference "CiCheckJob.count", 1 do
+      ingest_job(status: "completed", conclusion: "success")
+    end
+
+    job = CiCheckJob.find_by(job_id: JOB_ID)
+    assert_equal "amcritchie/mcritchie-studio", job.repo
+    assert_equal 987_654_321, job.run_id
+    assert_equal "CI", job.workflow_name
+    assert_equal "lint", job.name
+    assert_equal JOB_SHA, job.head_sha
+    assert_equal "feat/webhook-push-not-poll", job.head_branch
+    assert_equal "completed", job.status
+    assert_equal "success", job.conclusion
+    assert_not_nil job.started_at
+    assert_not_nil job.completed_at
+  end
+
+  test "[unit] a re-delivered workflow_job is idempotent — no duplicate row" do
+    2.times { ingest_job(status: "in_progress") }
+    assert_equal 1, CiCheckJob.where(job_id: JOB_ID).count
+    assert_equal "in_progress", CiCheckJob.find_by(job_id: JOB_ID).status
+  end
+
+  test "[unit] a workflow_job status advances queued -> in_progress -> completed" do
+    ingest_job(status: "queued")
+    ingest_job(status: "in_progress")
+    ingest_job(status: "completed", conclusion: "success")
+
+    job = CiCheckJob.find_by(job_id: JOB_ID)
+    assert_equal "completed", job.status
+    assert_equal "success", job.conclusion
+  end
+
+  test "[unit] a late in_progress re-delivery never regresses a completed check job" do
+    ingest_job(status: "completed", conclusion: "failure")
+    ingest_job(status: "in_progress", conclusion: nil)
+
+    job = CiCheckJob.find_by(job_id: JOB_ID)
+    assert_equal "completed", job.status, "monotonic: must not regress to in_progress"
+    assert_equal "failure", job.conclusion, "conclusion is first-write-wins; must survive"
+  end
+
+  test "[unit] a re-delivered completed workflow_job does not overwrite the conclusion" do
+    ingest_job(status: "completed", conclusion: "success")
+    ingest_job(status: "completed", conclusion: "failure")
+    assert_equal "success", CiCheckJob.find_by(job_id: JOB_ID).conclusion
+  end
+
+  test "[unit] a non-CI workflow_job is skipped — the table is for the CI bar only" do
+    assert_no_difference "CiCheckJob.count" do
+      ingest_job(status: "in_progress", workflow_name: "Production Deploy")
+    end
+  end
+
+  test "[unit] a workflow_job missing head_sha is skipped (the fold is SHA-keyed)" do
+    assert_no_difference "CiCheckJob.count" do
+      ingest_job(status: "queued", head_sha: nil)
+    end
+  end
+
+  test "[unit] a workflow_job missing its id is skipped without a row" do
+    payload = job_event(status: "queued")
+    payload["workflow_job"]["id"] = nil
+    assert_no_difference "CiCheckJob.count" do
+      GithubWorkflowRunIngestJob.perform_now("workflow_job", payload)
+    end
+  end
+
+  test "[unit] eight completed CI jobs for a SHA fold into a full 8/8 bar" do
+    8.times { |i| ingest_job(status: "completed", conclusion: "success", job_id: 700 + i) }
+    rows = CiCheckJob.progress_rows("amcritchie/mcritchie-studio", JOB_SHA)
+    assert_equal "8 / 8", Ci::CheckProgress.from_check_runs(rows).fraction_label
+  end
+
+  test "[unit] a failure inside the check-job upsert is captured to ErrorLog, not re-raised" do
+    CiCheckJob.stub(:find_or_initialize_by, ->(*) { raise "check-job upsert blew up" }) do
+      assert_difference -> { ErrorLog.count }, 1 do
+        assert_nothing_raised { ingest_job(status: "queued") }
+      end
+    end
+    assert_equal JOB_ID.to_s, ErrorLog.order(:id).last.target_name
   end
 
   # ── deployment_review (pending-approval gate) ────────────────────────────

@@ -256,13 +256,14 @@
   <% end %>
 
   <%# CI progress meter — "X / Y checks" plus a bar for this PR's GitHub CI run.
-      The reusable components/_ci_progress_bar primitive; renders nothing until the
-      task has a submitted PR with a CI run. %>
-  <% if ci_progress&.present? %>
-    <div class="mb-1.5" data-test="task-card-ci-progress">
-      <%= render "components/ci_progress_bar", progress: ci_progress, compact: true, test_id: "task-ci-progress" %>
-    </div>
-  <% end %>
+      Wrapped in the stable-id components/_ci_progress_slot so a live workflow_job
+      webhook can morph JUST this bar in place (it ticks up with no reload); the slot
+      renders nothing visible until the task has a submitted PR with a CI run. %>
+  <%= render "components/ci_progress_slot",
+        dom_id: "ci-progress-#{task.slug}",
+        progress: ci_progress, compact: true,
+        test_id: "task-ci-progress",
+        wrapper_class: "mb-1.5", inner_test_id: "task-card-ci-progress" %>
 
   <%# Secondary meta row — QA/Prod quick links, only when present. The release-slug
       badge was dropped from the card: it's pipeline plumbing, not useful at the

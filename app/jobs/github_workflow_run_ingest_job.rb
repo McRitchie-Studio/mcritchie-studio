@@ -1,8 +1,14 @@
 # Ingests GitHub Actions webhook deliveries into a GithubWorkflowRun row so the
-# board reflects CI + deploy status without polling `gh`. Two event families,
-# keyed on the SAME immutable run_id:
-#   * `workflow_run`                       — the CI/deploy lifecycle (queued →
-#                                            in_progress → completed).
+# board reflects CI + deploy status without polling `gh`. Event families:
+#   * `workflow_run`                       — the per-RUN CI/deploy lifecycle
+#                                            (queued → in_progress → completed),
+#                                            keyed on the immutable run_id.
+#   * `workflow_job`                       — the per-JOB CI check lifecycle: one
+#                                            CiCheckJob row per Actions job, keyed on
+#                                            the immutable job_id, so Ci::ProgressReader
+#                                            folds a SHA's checks into a LIVE progress
+#                                            bar (v1.1). Only "CI"-workflow jobs are
+#                                            recorded — the table exists for that bar.
 #   * `deployment_review` /                — a run reached a protected environment
 #     `deployment_protection_rule`           (required reviewers) and is WAITING on
 #                                            a human. Stamps `pending_environment`
@@ -28,10 +34,13 @@ class GithubWorkflowRunIngestJob < ApplicationJob
   def perform(event_name, payload)
     payload = stringify(payload)
     @run_id = nil
+    @job_id = nil
 
     case event_name.to_s
     when "workflow_run"
       ingest_workflow_run(payload)
+    when "workflow_job"
+      ingest_workflow_job(payload)
     when *GithubWorkflowRun::PENDING_REVIEW_EVENTS
       ingest_deployment_review(payload)
     else
@@ -39,7 +48,7 @@ class GithubWorkflowRunIngestJob < ApplicationJob
     end
   rescue StandardError => e
     log = ErrorLog.capture!(e)
-    log.target_name = @run_id.to_s if @run_id.present?
+    log.target_name = (@run_id || @job_id).to_s if (@run_id || @job_id).present?
     log.save!
   end
 
@@ -77,6 +86,56 @@ class GithubWorkflowRunIngestJob < ApplicationJob
         record.pending_environment = nil
         record.pending_since = nil
       end
+
+      record.save!
+    end
+  end
+
+  # ── workflow_job lifecycle (per-check LIVE progress) ──────────────────────
+  # One CiCheckJob row per Actions job, upserted on every queued/in_progress/
+  # completed delivery, so Ci::ProgressReader folds a SHA's checks into a live
+  # bar. Only "CI"-workflow jobs are recorded — the deploy workflows' jobs never
+  # feed a CI bar, and the table is purpose-built for it. Head_sha is required
+  # (the fold is SHA-keyed); a job event missing it or the id is skipped.
+  def ingest_workflow_job(payload)
+    job = payload["workflow_job"] || {}
+    @job_id = job["id"]
+    if @job_id.blank?
+      Rails.logger.warn("[GithubWorkflowRunIngestJob] workflow_job.id missing; skipping")
+      return
+    end
+    return unless job["workflow_name"].to_s == GithubWorkflowRun::CI_WORKFLOW
+
+    head_sha = job["head_sha"].to_s.presence
+    if head_sha.blank?
+      Rails.logger.warn("[GithubWorkflowRunIngestJob] workflow_job ##{@job_id} missing head_sha; skipping")
+      return
+    end
+
+    upsert_job!(job: job, repo: payload.dig("repository", "full_name"), head_sha: head_sha)
+  end
+
+  def upsert_job!(job:, repo:, head_sha:)
+    with_insert_retry do
+      record = CiCheckJob.find_or_initialize_by(job_id: @job_id)
+      incoming = job["status"].to_s
+
+      # MONOTONIC guard: drop a status ranking BELOW what we already stored (a late
+      # / out-of-order re-delivery) without touching the row — mirrors the run upsert.
+      return if record.persisted? && CiCheckJob.status_rank(incoming) < CiCheckJob.status_rank(record.status)
+
+      record.repo          = repo if repo.present?
+      record.run_id      ||= job["run_id"]
+      record.head_sha    ||= head_sha
+      record.head_branch ||= job["head_branch"].presence
+      record.workflow_name = job["workflow_name"] if job["workflow_name"].present?
+      record.name          = job["name"] if job["name"].present?
+      record.started_at  ||= parse_time(job["started_at"])
+      record.status        = incoming if incoming.present?
+
+      # FIRST-WRITE-WINS on conclusion + completed_at — never overwrite a settled result.
+      record.conclusion   = job["conclusion"] if job["conclusion"].present? && record.conclusion.blank?
+      record.completed_at ||= parse_time(job["completed_at"])
 
       record.save!
     end

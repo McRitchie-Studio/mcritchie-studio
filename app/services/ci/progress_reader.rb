@@ -6,19 +6,21 @@ module Ci
   # Reads GitHub CI check progress for a commit and folds it into a
   # Ci::CheckProgress (passed / total / state) for the board's progress bars.
   #
-  # DATA SOURCE (deliberate, "start simple"): a render-time, SHA-addressed
-  # check-runs read via the in-app Github::Client, wrapped in Rails.cache so the
-  # board makes at most one API call per SHA per TTL window regardless of how many
-  # viewers or cards ask. The SHA itself is resolved for FREE from the already-
-  # ingested `GithubWorkflowRun` webhook rows (a task's branch tip; the `release`
-  # branch tip) — so we hit GitHub ONLY for the per-check counts the webhook does
-  # not store, and only once a CI run actually exists.
+  # DATA SOURCE (two paths, live-first): for a SHA whose per-job progress the
+  # `workflow_job` webhook has already recorded (CiCheckJob rows), we fold THOSE —
+  # a free DB read, no network, and the same rows a live Turbo push re-renders as
+  # each check settles (v1.1). Only a SHA with NO ingested jobs — a task whose CI
+  # predates the webhook subscription, or a run whose first job event has not landed
+  # — falls back to the render-time, SHA-addressed check-runs read via the in-app
+  # Github::Client, wrapped in Rails.cache so the board makes at most one API call
+  # per SHA per TTL window regardless of how many viewers or cards ask.
   #
-  # This touches nothing the release conductor / sweep own: it READS GitHub CI, it
-  # never emits progress from the pipeline. A live check_run -> Turbo Stream push
-  # is a clean future upgrade (see components/_ci_progress_bar.html.erb); we chose
-  # cached-on-render over extending the webhook because it needs no GitHub App
-  # config change and no new table — cheaper to ship, honest about the trade.
+  # The SHA itself is resolved for FREE from the already-ingested `GithubWorkflowRun`
+  # webhook rows (a task's branch tip; the `release` branch tip) — so even the
+  # fallback hits GitHub only for the per-check counts, and only once a CI run exists.
+  #
+  # This touches nothing the release conductor / sweep own: it READS CI state (from
+  # our own webhook rows or GitHub), it never emits progress from the pipeline.
   #
   # DEGRADES TO BLANK, ALWAYS: no PR, no CI run, no token, an unreadable payload,
   # a slow/hung API, or any error -> Ci::CheckProgress.blank (the bar renders
@@ -91,12 +93,17 @@ module Ci
       for_sha(nwo, sha)
     end
 
-    # The core read: SHA -> Ci::CheckProgress, cached + budgeted + rescued.
+    # The core read: SHA -> Ci::CheckProgress. Live-first — a SHA the `workflow_job`
+    # webhook has recorded folds straight from CiCheckJob rows (no network); only a
+    # SHA with no ingested jobs falls back to the cached, budgeted GitHub API read.
     def for_sha(nwo, sha)
       nwo = nwo.to_s
       sha = sha.to_s
       return CheckProgress.blank if nwo.empty? || sha.empty?
       return fixture_progress(sha) if fixture?(sha)
+
+      live = live_progress(nwo, sha)
+      return live if live&.present?
 
       cache_key = "ci:progress:#{nwo}:#{sha}"
       cached = @cache.read(cache_key)
@@ -107,7 +114,37 @@ module Ci
       progress
     end
 
+    # The submitted-onward tasks on a repo+branch whose CI bar this webhook event
+    # affects — the broadcast fan-out target (usually 0 or 1). Reuses the exact
+    # eligibility + repo/branch resolution the render path uses, so a live push and
+    # a page load agree on which cards carry a bar. The candidate set is the deploy
+    # queue (submitted/reviewed/assembled), a handful of rows — not the whole board.
+    def eligible_tasks_for(nwo, branch)
+      nwo = nwo.to_s
+      branch = branch.to_s
+      return [] if nwo.empty? || branch.empty?
+
+      Task.where(stage: TASK_STAGES_WITH_CI).select do |task|
+        eligible_task?(task) && nwo_for(task_repo(task)) == nwo && task_branch(task) == branch
+      end
+    end
+
     private
+
+    # Live per-SHA progress folded from the CiCheckJob rows the `workflow_job`
+    # webhook records — the push-driven path. nil (NOT blank) when no rows exist yet,
+    # so for_sha falls THROUGH to the cached API read rather than showing an empty bar
+    # for a SHA whose jobs simply have not been ingested. Rescued to nil + logged, so
+    # a DB hiccup degrades to the API path, never masks it.
+    def live_progress(nwo, sha)
+      rows = CiCheckJob.progress_rows(nwo, sha)
+      return nil if rows.empty?
+
+      CheckProgress.from_check_runs(rows, sha: sha)
+    rescue StandardError => e
+      ErrorLog.capture!(e)
+      nil
+    end
 
     # HTTP + fold, budgeted and fully rescued. Any failure is a blank bar, logged.
     def fetch_progress(nwo, sha)
@@ -155,7 +192,7 @@ module Ci
 
       GithubWorkflowRun
         .for_repo(nwo)
-        .where(head_branch: branch, workflow_name: "CI")
+        .where(head_branch: branch, workflow_name: GithubWorkflowRun::CI_WORKFLOW)
         .order(Arel.sql(LATEST_RUN_ORDER))
         .limit(1)
         .pick(:head_sha)
@@ -167,7 +204,7 @@ module Ci
       return {} if pairs.empty?
 
       rows = GithubWorkflowRun
-             .where(repo: pairs.map(&:first).uniq, head_branch: pairs.map(&:last).uniq, workflow_name: "CI")
+             .where(repo: pairs.map(&:first).uniq, head_branch: pairs.map(&:last).uniq, workflow_name: GithubWorkflowRun::CI_WORKFLOW)
              .order(Arel.sql(LATEST_RUN_ORDER))
              .pluck(:repo, :head_branch, :head_sha)
 
@@ -181,6 +218,10 @@ module Ci
     # so a local demo and the test suite render real bars without hitting GitHub —
     # the same shape the check-runs fold consumes.
     def env_fixtures
+      # The fixture seam is a demo/test affordance only — never let a stray
+      # CI_PROGRESS_FIXTURES on a production dyno paint fake bars over real CI.
+      return {} if Rails.env.production?
+
       raw = ENV["CI_PROGRESS_FIXTURES"].to_s.strip
       return {} if raw.empty?
 

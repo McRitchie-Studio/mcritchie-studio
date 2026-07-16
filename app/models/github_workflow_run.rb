@@ -14,6 +14,11 @@ class GithubWorkflowRun < ApplicationRecord
   # order and sorts any other workflow after them, alphabetically.
   CANONICAL_WORKFLOWS = ["CI", "QA Deploy", "Production Deploy"].freeze
 
+  # The one workflow whose per-job progress feeds the board's CI bars — the single
+  # source both the ingest (which CiCheckJob rows to record) and Ci::ProgressReader
+  # (which run's SHA to fold) key on.
+  CI_WORKFLOW = "CI"
+
   # The GitHub webhook events that mean "a deployment is waiting for a human". A
   # standard environment with required reviewers fires `deployment_review`; a
   # custom (GitHub App) protection rule fires `deployment_protection_rule`. Both
