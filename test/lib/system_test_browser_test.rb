@@ -1,10 +1,10 @@
 # frozen_string_literal: true
 
-# [unit] tests for bin/lib/system_test_browser.rb — the shared headless-Chrome
-# probe behind BOTH system-tier guards: bin/release.rb's gate guard (a missing
-# browser must not read as a red release) and bin/full-suite-check's cert guard
-# (a missing browser must not read as a red diff). Pure; the callers' abort
-# WORDING is asserted in their own tests (release_cli_test / full_suite_check_test).
+# [unit] tests for bin/lib/system_test_browser.rb — the headless-Chrome probe
+# behind bin/full-suite-check's cert guard (a missing browser must not read as a
+# red diff). Pure; the caller's abort WORDING is asserted in its own test
+# (full_suite_check_test). (bin/release.rb's gate guard used this too until the
+# local gate suite was deleted in DevOps v2 Phase 4 — GitHub CI is the gate now.)
 # Run directly:
 #   ruby -Itest test/lib/system_test_browser_test.rb
 # Also picked up by the normal `bin/rails test` sweep.
