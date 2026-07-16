@@ -2189,6 +2189,112 @@ class ReleaseCliTest < Minitest::Test
     end
   end
 
+  # --- post-ship: re-baseline origin/accepted onto the shipped SHA -------------
+  #
+  # DevOps v2 Phase 3, Slice 1. After push_frozen_main advances `main`, it also
+  # fast-forwards this repo's persistent `accepted` integration branch onto the
+  # same frozen SHA — retiring the manual `git push origin
+  # origin/main:refs/heads/accepted` the conductor ran by hand after every ship.
+  # Guarded (only where accepted exists), fail-closed (no --force), NON-FATAL (a
+  # failed advance never aborts a live ship). These are the proofs on a REAL git
+  # fixture.
+
+  # [integration] The core acceptance: with an origin/accepted present, it advances
+  # to the shipped SHA alongside main. accepted starts BEHIND at the base commit, so
+  # reaching the frozen SHA proves the advance actually pushed.
+  def test_push_frozen_main_advances_origin_accepted_when_it_exists
+    Dir.mktmpdir do |dir|
+      clone  = build_sibling_fixture(dir)
+      origin = File.join(dir, "origin.git")
+      base   = git_out(clone, "rev-parse", "main")
+
+      # accepted exists on origin, sitting BEHIND at the base commit.
+      run_git(clone, "push", "-q", "origin", "main:accepted")
+
+      # The frozen SHA is one commit ahead — a real fast-forward for BOTH main and
+      # accepted, so reaching it proves the ref push happened.
+      run_git(clone, "checkout", "-q", "release")
+      File.write(File.join(clone, "shipped.rb"), "shipped")
+      run_git(clone, "add", "shipped.rb")
+      run_git(clone, "commit", "-q", "-m", "shipped")
+      run_git(clone, "push", "-q", "origin", "release")
+      frozen = git_out(clone, "rev-parse", "release")
+
+      setup = %(def repo_path(_repo) = #{clone.inspect})
+      out = run_cli(["--yes"], setup: setup,
+                    call: %{push_frozen_main("sibling", #{frozen.inspect}); puts("PASSED")})
+
+      assert_includes out, "PASSED", out
+      assert_equal frozen, git_out(origin, "rev-parse", "main"),
+                   "origin/main must reach the frozen SHA"
+      assert_equal frozen, git_out(origin, "rev-parse", "accepted"),
+                   "origin/accepted must be re-baselined onto the shipped SHA"
+      refute_equal base, git_out(origin, "rev-parse", "accepted"),
+                   "accepted must have actually advanced off its stale base"
+    end
+  end
+
+  # [integration] GUARDED. A repo with no origin/accepted (rolio/turf pre-Phase-5)
+  # is a clean no-op — main advances, and NO accepted branch is conjured into being.
+  def test_push_frozen_main_is_a_clean_noop_on_accepted_when_the_branch_is_absent
+    Dir.mktmpdir do |dir|
+      clone  = build_sibling_fixture(dir)
+      origin = File.join(dir, "origin.git")
+      frozen = git_out(clone, "rev-parse", "release")
+
+      setup = %(def repo_path(_repo) = #{clone.inspect})
+      out = run_cli(["--yes"], setup: setup,
+                    call: %{push_frozen_main("sibling", #{frozen.inspect}); puts("PASSED")})
+
+      assert_includes out, "PASSED", out
+      assert_equal frozen, git_out(origin, "rev-parse", "main"),
+                   "main still advances for a repo with no accepted branch"
+      _, status = Open3.capture2e("git", "-C", origin, "rev-parse", "--verify", "--quiet", "refs/heads/accepted")
+      refute status.success?, "no accepted branch may be created for a repo that had none"
+    end
+  end
+
+  # [integration] NON-FATAL + FAIL-CLOSED. A DIVERGED accepted (a commit the frozen
+  # SHA cannot fast-forward onto) must NOT abort the ship and must NOT be force-
+  # rewound: main still advances, the warning names the refusal, and accepted is
+  # left exactly as it was — the same best-effort contract as the merged:main stamp.
+  def test_push_frozen_main_accepted_advance_is_non_fatal_and_never_forces
+    Dir.mktmpdir do |dir|
+      clone  = build_sibling_fixture(dir)
+      origin = File.join(dir, "origin.git")
+      base   = git_out(clone, "rev-parse", "main")
+
+      # The frozen SHA: one commit ahead of base on release.
+      run_git(clone, "checkout", "-q", "release")
+      File.write(File.join(clone, "shipped.rb"), "shipped")
+      run_git(clone, "add", "shipped.rb")
+      run_git(clone, "commit", "-q", "-m", "shipped")
+      run_git(clone, "push", "-q", "origin", "release")
+      frozen = git_out(clone, "rev-parse", "release")
+
+      # accepted has DIVERGED off base on its own line — the frozen SHA cannot
+      # fast-forward onto it, so the advance must refuse rather than --force.
+      run_git(clone, "checkout", "-q", "-b", "accepted-work", base)
+      File.write(File.join(clone, "hotfix.txt"), "pushed straight to accepted")
+      run_git(clone, "add", "hotfix.txt")
+      run_git(clone, "commit", "-q", "-m", "diverged accepted")
+      run_git(clone, "push", "-q", "origin", "accepted-work:accepted")
+      diverged = git_out(origin, "rev-parse", "accepted")
+
+      setup = %(def repo_path(_repo) = #{clone.inspect})
+      out = run_cli(["--yes"], setup: setup,
+                    call: %{begin; push_frozen_main("sibling", #{frozen.inspect}); puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+      assert_includes out, "PASSED", "a diverged accepted must NOT abort the ship: #{out}"
+      refute_includes out, "ABORTED", "the accepted advance is non-fatal — it never aborts the deploy"
+      assert_includes out, "NOT forcing", "the warning must say it refused to force accepted"
+      assert_equal frozen, git_out(origin, "rev-parse", "main"),
+                   "main still advances to the frozen SHA — the accepted failure doesn't block the deploy"
+      assert_equal diverged, git_out(origin, "rev-parse", "accepted"),
+                   "a diverged accepted must be left EXACTLY as it was — never force-rewound"
+    end
+  end
+
   # [unit] The ship gate now mutates NOTHING. It used to fast-forward each app's
   # `main` in the primary (under the primary lock) before running the suite — but
   # the suite moved to the isolated gate workspace at the frozen SHA, so that ff fed

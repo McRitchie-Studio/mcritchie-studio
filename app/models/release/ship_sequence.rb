@@ -117,6 +117,32 @@ class Release
       status.to_s.strip == "waiting"
     end
 
+    # --- post-ship accepted re-baseline: should we advance origin/accepted? -----
+    #
+    # After a ship fast-forwards a repo's `main` to the frozen SHA, that repo's
+    # persistent `accepted` integration branch (feature branches are cut from and
+    # PR into it) is left STALE behind `main` — nothing re-baselines it, so the
+    # conductor has had to run `git push origin origin/main:refs/heads/accepted` by
+    # hand after every ship. bin/release now does it automatically (advance_accepted),
+    # and this is the pure guard for that advance. DevOps v2 Phase 3, Slice 1.
+    #
+    # TRUE only when BOTH hold:
+    #   * the repo HAS an origin/accepted (`accepted_exists`) — the post-v2 accepted
+    #     ladder. A repo without one (rolio/turf, pre-Phase-5) is a clean NO-OP:
+    #     this returns false and the caller pushes nothing, AND
+    #   * there is a frozen SHA to push. Blank is never advanced — the caller's main
+    #     push would already have aborted on a blank SHA, but the guard owns the
+    #     decision, so it stays honest on its own.
+    #
+    # The I/O — the `ls-remote` existence probe against the remote and the
+    # fail-closed (no --force) ref push — stays in bin/release's advance_accepted;
+    # only the yes/no lives here.
+    def advance_accepted?(sha:, accepted_exists:)
+      return false unless accepted_exists
+
+      !sha.to_s.strip.empty?
+    end
+
     # The app deploy groups with the hub pulled to the front, the rest left in
     # their incoming (producer-first) order. Stable: a non-hub group keeps its
     # relative position. Accepts symbol- OR string-keyed groups (repo_plan returns
