@@ -18,6 +18,13 @@ test.describe("deploy approval gate", () => {
     await expect(pending).toContainText("Production Deploy");
     await expect(pending).toContainText("production");
 
+    // An obvious, styled link to the GitHub run page (the card is not a whole-row anchor).
+    const viewRun = pending.locator("a[data-test='github-actions-view-run']");
+    await expect(viewRun).toBeVisible();
+    await expect(viewRun).toHaveText(/view run on github/i);
+    await expect(viewRun).toHaveAttribute("href", /\/actions\/runs\/\d+/);
+    await expect(viewRun).toHaveAttribute("target", "_blank");
+
     // No Approve button for a signed-out visitor; the locked hint stands in.
     await expect(pending.locator("[data-test='github-actions-approve']")).toHaveCount(0);
     await expect(pending.locator("[data-test='github-actions-approve-locked']")).toBeVisible();
