@@ -159,9 +159,9 @@
 #         no tailwindcss-rails hook here to rely on, and none is needed.
 #   * The BROWSER is driven headless by Selenium Manager, which fetches a chromedriver
 #     matched to the installed Chrome (same reason ci.yml installs NO chromedriver).
-#     A host with no Chrome fails at driver resolution — an ENV error, not a release
-#     regression; assert_system_test_browser! turns that into an up-front ENV abort
-#     so nobody ejects a task for it.
+#     This suite no longer runs at the gate — since DevOps v2 Phase 4 GitHub CI is the
+#     G3/G4 verdict — so there is no local no-Chrome pre-check: CI's Actions runner
+#     always has Chrome, and a browserless dev host never gates this command.
 #
 # NOT to be confused with the PLAYWRIGHT e2e tier, which still does NOT belong
 # here: Rails system tests boot their OWN Puma in-process (Capybara), so they run
@@ -278,9 +278,9 @@ apps:
     #     public/assets/app.css, the .gitignore merely un-ignores that NAME), and
     #     there is no tailwindcss-rails `test:prepare` hook here to depend on.
     #   * Chrome: test/application_system_test_case.rb is `driven_by :selenium,
-    #     using: :headless_chrome`, so assert_system_test_browser! binds this
-    #     command too — a browserless host aborts as an ENV error, NOT as a red
-    #     suite handing out eject/revert guidance.
+    #     using: :headless_chrome`, so this command needs a browser — but it now runs
+    #     only on GitHub CI (since DevOps v2 Phase 4 CI is the gate verdict), whose
+    #     Actions runner always has Chrome; no local browserless pre-check is needed.
     #
     # Keep db:test:prepare FIRST (the rake-path trap — see the hub's entry), and
     # keep test_cmd and qa_test_cmd the SAME STRING or ship_gate_skip? can never

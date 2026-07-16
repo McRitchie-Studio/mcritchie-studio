@@ -65,9 +65,9 @@ run inside it rides the close:
   compile at request time from tracked sources. In both, Selenium Manager fetches
   a chromedriver matched to the installed Chrome; a host with **no Chrome** fails
   at driver resolution — an **ENV error, NOT a release regression**: nothing to
-  eject or revert. (The pre-v2 gate guarded this up front with
-  `assert_system_test_browser!`, deleted in Phase 4 with the local suite; CI's
-  `test:system` lane runs on an Actions runner that always has Chrome.)
+  eject or revert. (The pre-v2 gate guarded this up front with a browser pre-check,
+  deleted in Phase 4 with the local suite; CI's `test:system` lane runs on an
+  Actions runner that always has Chrome.)
 
   **⚠ A gate is only as trustworthy as the suite it runs — and the suite must be
   sized for THIS host.** Rolio's system tier was driven in its isolated gate

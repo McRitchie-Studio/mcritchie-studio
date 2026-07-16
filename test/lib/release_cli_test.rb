@@ -3014,7 +3014,6 @@ class ReleaseCliTest < Minitest::Test
     def sh(*a, **_k)
       a.include?("baseRefName") ? ["release", true] : ["", true]
     end
-    def gh_pr_files(_pr) = []
   RUBY
 
   def test_merge_refuses_an_unreviewed_task_without_override
