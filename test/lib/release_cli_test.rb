@@ -1164,6 +1164,12 @@ class ReleaseCliTest < Minitest::Test
   def ci_gate_stub(dir, ci_status)
     %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
       %(ENV["RELEASE_CI_STATUS"] = #{ci_status.inspect}\n) +
+      # Collapse the poll window to a SINGLE read: RELEASE_CI_STATUS injects ONE static
+      # verdict, so a :wait state (none/pending/unverified) would otherwise poll for the
+      # default ~20 min. timeout 0 makes the gate read once and fail closed at once —
+      # the single-read fail-closed these no-data tests assert. The polling behavior is
+      # driven end-to-end by ci_poll_gate_stub, whose ci_verdict CHANGES between reads.
+      %(ENV["RELEASE_CI_POLL_TIMEOUT"] = "0"\nENV["RELEASE_CI_POLL_INTERVAL"] = "0"\n) +
       %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
         def qa_gate_cmd(_repo) = "bin/suite"
         def conductor(ruby, read_only: false) = $stdout.puts("CONDUCTOR " + ruby)
@@ -1191,6 +1197,33 @@ class ReleaseCliTest < Minitest::Test
     assert_equal "false", eval_helper(%(ci_pass?({}))), "a stateless verdict fails closed"
     assert_equal "false", eval_helper(%(ci_pass?({ state: "green" }))),
                  "a STRING 'green' is not the :green symbol — fail closed, no loose coercion"
+  end
+
+  # [unit] ci_poll_action is the PURE poll decision (the CI-verdict analogue of
+  # Release::ShipSequence.run_watch_verdict), factored so pending→hold / green→certify /
+  # red→abort / unreadable→abort is testable without a poll loop or a clock. The POSITIVE
+  # invariant, asserted directly (not by blacklisting failure spellings): GREEN is the
+  # ONLY :pass; :red and :unreadable are the ONLY :abort — a terminal non-green that
+  # waiting can never turn green; EVERY other state is :wait, so a just-merged SHA's
+  # not-yet-concluded CI is HELD and re-read instead of aborting the sweep's first run.
+  # It is also proven against states the gate never actually feeds it (no_pr/closed/
+  # merged/conflicted) so the rule holds for vectors nobody has to enumerate — they hold
+  # then fail closed at the timeout, never a false pass.
+  def test_ci_poll_action_classifies_each_verdict
+    assert_equal ":pass", eval_helper(%(ci_poll_action({ state: :green }).inspect)), "green certifies"
+    assert_equal ":pass", eval_helper(%(ci_poll_action({ state: :green, count: 3 }).inspect)),
+                 "green with detail still certifies"
+    %i[red unreadable].each do |state|
+      assert_equal ":abort", eval_helper(%(ci_poll_action({ state: #{state.inspect} }).inspect)),
+                   "#{state} is terminal — abort now, never poll a verdict waiting cannot fix"
+    end
+    %i[none pending unverified no_pr closed merged conflicted].each do |state|
+      assert_equal ":wait", eval_helper(%(ci_poll_action({ state: #{state.inspect} }).inspect)),
+                   "#{state} has no green verdict YET — hold and re-read, do not abort the sweep"
+    end
+    assert_equal ":wait", eval_helper(%(ci_poll_action(nil).inspect)),
+                 "a nil verdict holds (fails closed at the timeout, never a false pass)"
+    assert_equal ":wait", eval_helper(%(ci_poll_action({}).inspect)), "a stateless verdict holds"
   end
 
   # [integration] GREEN CI certifies: the gate passes on a green CI verdict for the
@@ -1237,14 +1270,61 @@ class ReleaseCliTest < Minitest::Test
     end
   end
 
-  # [integration] NO GREEN VERDICT FAILS CLOSED — the single most important invariant.
-  # A missing run (:none), a still-running push CI (:pending), and a gh/network error
-  # (:unverified) are all "GitHub has no GREEN verdict for this SHA". Under Phase 3 the
-  # gate FAILS CLOSED on every one of them: an absent/unknown verdict must NEVER read as
-  # a pass — a false green here deploys an untested SHA to QA. It records ok:false and
-  # holds for CI to conclude, rather than certifying blind.
-  def test_pre_qa_gate_fails_closed_on_a_no_data_or_pending_verdict
-    %w[none pending unverified unreadable].each do |state|
+  # A gate whose CI verdict CHANGES across reads: :pending for the first two polls, then
+  # :green — the just-merged-SHA timeline (CI STARTS on the fresh origin/release SHA and
+  # concludes a few polls later). RELEASE_CI_STATUS injects a STATIC verdict, so the poll
+  # loop is exercised by overriding ci_verdict itself. interval 0 keeps the test instant;
+  # the timeout is generous so the green is REACHED, never timed out. `$ci_reads` counts
+  # the reads so a test can prove it polled (3) rather than read once.
+  def ci_poll_gate_stub(dir)
+    %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
+      %(ENV["RELEASE_CI_POLL_INTERVAL"] = "0"\nENV["RELEASE_CI_POLL_TIMEOUT"] = "60"\n) +
+      %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
+        $ci_reads = 0
+        def ci_verdict(_repo, _sha)
+          $ci_reads += 1
+          $ci_reads <= 2 ? { state: :pending, pending: ["ci"] } : { state: :green, count: 3 }
+        end
+        def qa_gate_cmd(_repo) = "bin/suite"
+        def conductor(ruby, read_only: false) = $stdout.puts("CONDUCTOR " + ruby)
+        def sh(*a, **k)
+          g = gate_git(a, k)
+          return g if g
+          ["", true]
+        end
+      RUBY
+  end
+
+  # [integration] A PENDING CI IS POLLED UNTIL IT CONCLUDES — THE FIX. A just-merged
+  # release SHA reports its push CI :pending for the first minutes; Slice 3's single read
+  # aborted every sweep's first run on it (observed @ 015241f, @ f05cdf5), forcing a manual
+  # "wait for release CI, re-run bin/release prepare" round-trip. The gate now HOLDS and
+  # re-reads: two pending reads, then green → it PASSES and certifies. ci_verdict CHANGES
+  # across reads, so this drives the real poll loop, not a static injected verdict.
+  def test_pre_qa_gate_polls_a_pending_ci_until_it_concludes_green
+    Dir.mktmpdir do |dir|
+      out = run_cli(["--yes"], setup: ci_poll_gate_stub(dir),
+                    call: %{pre_qa_gate([{ "repo" => "sibling" }], "rel-cli"); puts("READS=" + $ci_reads.to_s); puts("PASSED")})
+
+      assert_includes out, "holding for it to conclude", "a pending CI is HELD, not aborted on the first read"
+      assert_includes out, "READS=3", "it re-read until CI concluded (2 pending + 1 green), not once"
+      assert_includes out, "GitHub CI GREEN @ #{GATE_SHA[0, 7]}", "the concluded verdict is the one it gates on"
+      record = out.lines.find { |l| l.start_with?("CONDUCTOR") }
+      assert record, "the green conclusion is certified: #{out}"
+      assert_includes record, "ok: true", "a polled-to-green CI records ok:true so G4 may self-skip"
+      assert_includes out, "PASSED", "the gate passes once CI concludes green"
+    end
+  end
+
+  # [integration] NO GREEN VERDICT FAILS CLOSED after the poll times out — the single most
+  # important invariant. A missing run (:none), a still-running push CI (:pending), and a
+  # gh/network read miss (:unverified) are all "GitHub has no GREEN verdict for this SHA
+  # YET". These are :wait states, so the gate POLLS them; with the window collapsed to a
+  # single read (ci_gate_stub sets RELEASE_CI_POLL_TIMEOUT=0) a verdict that never turns
+  # green fails CLOSED — an absent/unknown verdict must NEVER read as a pass (a false green
+  # deploys an untested SHA to QA). It records ok:false rather than certifying blind.
+  def test_pre_qa_gate_fails_closed_when_ci_never_reaches_green
+    %w[none pending unverified].each do |state|
       Dir.mktmpdir do |dir|
         out = run_cli(["--yes"], setup: ci_gate_stub(dir, state),
                       call: %{begin; pre_qa_gate([{ "repo" => "sibling" }], "rel-cli"); puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
@@ -1252,8 +1332,28 @@ class ReleaseCliTest < Minitest::Test
         assert_includes out, "ABORTED", "#{state}: an absent/unknown CI verdict must FAIL CLOSED, never pass"
         assert_includes out, "NO green verdict for #{GATE_SHA[0, 7]}", "#{state}: names what it could not certify"
         assert_includes out, "FAILS CLOSED", "#{state}: the gate says why it held"
+        assert_includes out, "poll timed out", "#{state}: it POLLED for a conclusion, not aborted on the first read"
         refute_includes out, "PASSED", "#{state}: a green never comes out of no-data"
       end
+    end
+  end
+
+  # [integration] AN UNREADABLE CI ABORTS IMMEDIATELY — it does NOT poll. :unreadable is a
+  # token/credential fault, and a refused token never heals mid-sweep, so polling it would
+  # only burn the whole timeout to no end. The gate fails closed on the FIRST read and
+  # prints the one shared credential remedy (CiStatus.unreadable_remedy), never a "wait for
+  # CI to conclude" hold. This is the deliberate split from the no-data hold above.
+  def test_pre_qa_gate_fails_closed_immediately_on_an_unreadable_ci
+    Dir.mktmpdir do |dir|
+      out = run_cli(["--yes"], setup: ci_gate_stub(dir, "unreadable"),
+                    call: %{begin; pre_qa_gate([{ "repo" => "sibling" }], "rel-cli"); puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+      assert_includes out, "ABORTED", "an unreadable CI verdict fails the gate closed"
+      assert_includes out, "UNREADABLE for #{GATE_SHA[0, 7]}", "…naming the SHA it could not read"
+      assert_includes out, "credential/token fault", "…as a credential fault, not a missing CI"
+      assert_includes out, "does NOT poll it", "…and it did NOT poll a broken token"
+      refute_includes out, "poll timed out", "unreadable aborts on the FIRST read — no poll window is spent"
+      refute_includes out, "PASSED"
     end
   end
 
