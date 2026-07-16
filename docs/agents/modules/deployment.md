@@ -340,3 +340,38 @@ If deployment changes a provider, domain, callback URL, env var, or local port, 
 - `mcritchie-studio/docs/ECOSYSTEM.md`
 - the app README/runbook
 - any provider-specific docs under the app's `docs/`
+
+## GitHub Actions panel + prod-deploy approval gate
+
+`/deployments` carries a live GitHub Actions panel (`_github_actions_panel`) —
+the latest run per workflow (CI / QA Deploy / Production Deploy), status-pilled
+and REPLACE-broadcast over Turbo Streams. It is fed by webhooks, not polling:
+GitHub POSTs to `/api/v1/github/webhook` (`GithubWebhooksController`, HMAC-verified
+against `GITHUB_WEBHOOK_SECRET`), which enqueues `GithubWorkflowRunIngestJob` for an
+idempotent, monotonic upsert into `GithubWorkflowRun`.
+
+**Prod-deploy approval gate.** When a run reaches the `production` environment's
+required-reviewer gate, GitHub delivers a `deployment_review` (standard
+environment) or `deployment_protection_rule` (custom rule) event. The same
+ingest job stamps `pending_environment` on the run, so the panel shows an amber
+**awaiting approval** row, and nudges Discord (see below). Admins get an
+**Approve deploy** button that POSTs `/deployments/:run_id/approve`
+(`GithubDeploymentsController`, admin-gated). The controller reads the run's
+pending deployments and approves them via GitHub
+`POST /repos/{owner}/{repo}/actions/runs/{run_id}/pending_deployments`
+(`state=approved`), authenticated with the agent PAT `GITHUB_TOKEN` (1Password
+`agent.github` field `personal-access-token`). Approving optimistically clears the
+local gate; GitHub's follow-up `deployment_review approved` / `workflow_run`
+webhooks reconcile it.
+
+**Env vars for this vertical:**
+
+| Var | Purpose |
+|-----|---------|
+| `GITHUB_WEBHOOK_SECRET` | HMAC secret verifying webhook deliveries (fail-closed). |
+| `GITHUB_TOKEN` | Agent PAT used to approve pending deployments. |
+| `DISCORD_DEVOPS_PROGRESS_WEBHOOK_URL` | qa-chatter channel for the "awaiting approval" nudge (falls back to `DISCORD_RELEASE_NOTES_WEBHOOK_URL`). |
+
+The Discord nudge (`Devops::DeployApprovalNotifier`) is a no-op when its webhook
+is unset and never raises — a delivery failure logs to `ErrorLog`. Never commit
+webhook URLs or the PAT.

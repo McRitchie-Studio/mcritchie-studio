@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_15_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_16_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -663,6 +663,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_15_120000) do
     t.string "head_branch"
     t.string "head_sha"
     t.string "html_url"
+    t.string "pending_environment"
+    t.datetime "pending_since"
     t.string "repo", null: false
     t.bigint "run_id", null: false
     t.datetime "run_started_at"
@@ -670,6 +672,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_15_120000) do
     t.datetime "updated_at", null: false
     t.string "workflow_name"
     t.index ["head_sha"], name: "index_github_workflow_runs_on_head_sha"
+    t.index ["pending_environment"], name: "index_github_workflow_runs_on_pending_environment", where: "(pending_environment IS NOT NULL)"
     t.index ["run_id"], name: "index_github_workflow_runs_on_run_id", unique: true
   end
 

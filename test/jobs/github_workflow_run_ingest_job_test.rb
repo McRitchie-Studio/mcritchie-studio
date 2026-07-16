@@ -123,4 +123,113 @@ class GithubWorkflowRunIngestJobTest < ActiveJob::TestCase
     end
     assert_equal RUN_ID.to_s, ErrorLog.order(:id).last.target_name
   end
+
+  # ── deployment_review (pending-approval gate) ────────────────────────────
+
+  # A deployment_review event, parameterized on action + environment.
+  def review_event(action: "requested", environment: "production", run_id: RUN_ID, **run_overrides)
+    {
+      "action" => action,
+      "environment" => environment,
+      "since" => "2026-07-15T09:00:00Z",
+      "workflow_run" => {
+        "id" => run_id,
+        "name" => "Production Deploy",
+        "status" => "waiting",
+        "head_sha" => "9f2c1b7ad4e5c60f1e2d3a4b5c6d7e8f90123456",
+        "head_branch" => "release",
+        "html_url" => "https://github.com/mcritchie/mcritchie-studio/actions/runs/#{run_id}",
+        "run_started_at" => "2026-07-15T08:59:00Z"
+      }.merge(run_overrides),
+      "repository" => { "full_name" => "mcritchie/mcritchie-studio" }
+    }
+  end
+
+  def ingest_review(event_name: "deployment_review", **kwargs)
+    # Silence the Discord nudge unless a test explicitly asserts on it.
+    Devops::DeployApprovalNotifier.stub(:notify_pending, true) do
+      GithubWorkflowRunIngestJob.perform_now(event_name, review_event(**kwargs))
+    end
+  end
+
+  test "[unit] deployment_review requested stamps the pending environment" do
+    ingest_review
+
+    run = GithubWorkflowRun.find_by(run_id: RUN_ID)
+    assert_equal "production", run.pending_environment
+    assert run.pending_approval?
+    assert_not_nil run.pending_since
+    assert_equal "Production Deploy", run.workflow_name
+    assert_equal "mcritchie/mcritchie-studio", run.repo
+  end
+
+  test "[unit] deployment_review requested seeds a fresh row with an in_progress status floor" do
+    assert_difference "GithubWorkflowRun.count", 1 do
+      ingest_review
+    end
+    assert_equal "in_progress", GithubWorkflowRun.find_by(run_id: RUN_ID).status
+  end
+
+  test "[unit] deployment_review flags an existing workflow_run row without regressing status" do
+    ingest(status: "completed", conclusion: "success")
+    ingest_review
+
+    run = GithubWorkflowRun.find_by(run_id: RUN_ID)
+    assert_equal "completed", run.status, "the review flag must not disturb the status ladder"
+    assert_equal "success", run.conclusion
+    assert_equal "production", run.pending_environment
+  end
+
+  test "[unit] deployment_review approved clears the pending flag" do
+    ingest_review
+    assert GithubWorkflowRun.find_by(run_id: RUN_ID).pending_approval?
+
+    ingest_review(action: "approved")
+    assert_not GithubWorkflowRun.find_by(run_id: RUN_ID).pending_approval?
+  end
+
+  test "[unit] deployment_protection_rule requested is handled like deployment_review" do
+    ingest_review(event_name: "deployment_protection_rule")
+    assert_equal "production", GithubWorkflowRun.find_by(run_id: RUN_ID).pending_environment
+  end
+
+  test "[unit] a completed workflow_run clears a prior pending flag" do
+    ingest_review
+    assert GithubWorkflowRun.find_by(run_id: RUN_ID).pending_approval?
+
+    ingest(status: "completed", conclusion: "success")
+    assert_not GithubWorkflowRun.find_by(run_id: RUN_ID).pending_approval?
+  end
+
+  test "[unit] entering pending fires the Discord nudge exactly once" do
+    calls = 0
+    Devops::DeployApprovalNotifier.stub(:notify_pending, ->(_run) { calls += 1; true }) do
+      GithubWorkflowRunIngestJob.perform_now("deployment_review", review_event)
+      # A re-delivery of the same requested event must NOT re-ping (already pending).
+      GithubWorkflowRunIngestJob.perform_now("deployment_review", review_event)
+    end
+    assert_equal 1, calls
+  end
+
+  test "[unit] approved/rejected reviews do not ping" do
+    calls = 0
+    Devops::DeployApprovalNotifier.stub(:notify_pending, ->(_run) { calls += 1; true }) do
+      GithubWorkflowRunIngestJob.perform_now("deployment_review", review_event(action: "approved"))
+    end
+    assert_equal 0, calls
+  end
+
+  test "[unit] a review event missing a run id is skipped without a row" do
+    payload = review_event
+    payload["workflow_run"]["id"] = nil
+    assert_no_difference "GithubWorkflowRun.count" do
+      ingest_review_payload(payload)
+    end
+  end
+
+  def ingest_review_payload(payload)
+    Devops::DeployApprovalNotifier.stub(:notify_pending, true) do
+      GithubWorkflowRunIngestJob.perform_now("deployment_review", payload)
+    end
+  end
 end

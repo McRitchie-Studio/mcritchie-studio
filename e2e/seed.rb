@@ -22,6 +22,7 @@ Coach.delete_all
 Team.delete_all
 Person.delete_all
 GateRun.delete_all # slug-keyed, no FK — delete_all wipes above skip callbacks, so stale runs would otherwise survive reseeds and inflate attempt counts
+GithubWorkflowRun.delete_all # cached Actions runs for the /deployments panel — reseeded below
 Release.delete_all
 SessionMascot.delete_all
 Pokemon.delete_all
@@ -834,4 +835,19 @@ CSV.parse(model_pricing_rows.strip, headers: false).each do |session_id, seq, ca
   )
 end
 
-puts "Seeded: #{User.count} users, #{Agent.count} agents, #{Task.count} tasks, #{Activity.count} activities, #{Coach.count} coaches, #{Release.count} releases, #{AtomicAction.count} atomic actions, #{AtomicEvent.count} atomic events"
+# GitHub Actions panel on /deployments: a passed CI run plus a Production Deploy
+# run BLOCKED at its environment gate (pending_environment set) so the e2e spec
+# can assert the "awaiting approval" state + the admin-only Approve button.
+GithubWorkflowRun.create!(
+  repo: "mcritchie/mcritchie-studio", run_id: 5_000_001, status: "completed", conclusion: "success",
+  workflow_name: "CI", head_sha: "9f2c1b7ad4e5c60f1e2d3a4b5c6d7e8f90123456", head_branch: "release",
+  html_url: "https://github.com/mcritchie/mcritchie-studio/actions/runs/5000001", run_started_at: 20.minutes.ago
+)
+GithubWorkflowRun.create!(
+  repo: "mcritchie/mcritchie-studio", run_id: 5_000_002, status: "in_progress",
+  workflow_name: "Production Deploy", head_sha: "9f2c1b7ad4e5c60f1e2d3a4b5c6d7e8f90123456", head_branch: "release",
+  html_url: "https://github.com/mcritchie/mcritchie-studio/actions/runs/5000002", run_started_at: 15.minutes.ago,
+  pending_environment: "production", pending_since: 10.minutes.ago
+)
+
+puts "Seeded: #{User.count} users, #{Agent.count} agents, #{Task.count} tasks, #{Activity.count} activities, #{Coach.count} coaches, #{Release.count} releases, #{AtomicAction.count} atomic actions, #{AtomicEvent.count} atomic events, #{GithubWorkflowRun.count} github runs"

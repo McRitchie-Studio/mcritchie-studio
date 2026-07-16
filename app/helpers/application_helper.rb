@@ -448,6 +448,17 @@ module ApplicationHelper
     end
   end
 
+  # The SEVENTH panel state, ORTHOGONAL to the six run outcomes above: a deploy
+  # blocked at a protected-environment gate, waiting on an operator. Solid amber
+  # with a ringed, pulsing dot so it reads as "needs YOU" — louder than a passive
+  # `queued` (hollow amber) or `in_progress` (filled amber) — and pairs with the
+  # Approve CTA. Class strings live here so Tailwind's helper-glob scan compiles them.
+  def github_pending_visual
+    { state: "pending_approval", label: "awaiting approval",
+      pill: "badge border-amber-400 bg-amber-100 text-amber-800 dark:border-amber-400/60 dark:bg-amber-500/20 dark:text-amber-200",
+      dot: "bg-amber-500 ring-2 ring-amber-300/70 animate-pulse" }
+  end
+
   # The DevOps SOP vocabulary — the owner definition, the node types, and the four
   # accountability lanes (each step's expectation + gate) — is the SINGLE SOURCE OF
   # TRUTH in config/devops_vocabulary.yml, read via Devops::Vocabulary. Rename a term

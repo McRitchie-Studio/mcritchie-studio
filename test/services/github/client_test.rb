@@ -59,6 +59,38 @@ class Github::ClientTest < ActiveSupport::TestCase
     assert_not_includes response.to_h.to_s, "secret-token"
   end
 
+  test "[unit] post sends a JSON body with the matching content-type and parses the response" do
+    captured = nil
+    client = Github::Client.new(
+      token: "secret-token",
+      logger: nil,
+      executor: ->(_uri, request) {
+        captured = request
+        FakeResponse.new("200", '{"approved":true}', { "x-ratelimit-remaining" => "50" })
+      }
+    )
+
+    result = client.post("/repos/owner/repo/actions/runs/1/pending_deployments",
+                         body: { environment_ids: [7], state: "approved" })
+
+    assert_equal({ "approved" => true }, result)
+    assert_equal "POST", captured.method
+    assert_equal "application/json", captured["Content-Type"]
+    assert_equal({ "environment_ids" => [7], "state" => "approved" }, JSON.parse(captured.body))
+    assert_equal "Bearer secret-token", captured["Authorization"]
+  end
+
+  test "[unit] post raises HttpError on a non-2xx GitHub response" do
+    client = Github::Client.new(
+      logger: nil,
+      executor: ->(_uri, _request) { FakeResponse.new("422", '{"message":"bad"}', {}) }
+    )
+
+    assert_raises(Github::Client::HttpError) do
+      client.post("/repos/owner/repo/actions/runs/1/pending_deployments", body: { state: "approved" })
+    end
+  end
+
   test "paginates array responses using link header" do
     responses = [
       FakeResponse.new(
