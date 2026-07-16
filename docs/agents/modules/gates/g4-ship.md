@@ -15,12 +15,14 @@ The four gates in order: [G1 Cert](g1-cert.md) → [G2 Review](g2-review.md) →
 
 The gate window spans the whole irreversible half of the ship:
 
-- **The frozen-SHA test gate** (`ship_test_gate` SOPs) — each app's registry
-  `test_cmd` (`config/release_repos.yml`) runs at the repo's QA-frozen SHA
-  BEFORE ship authority and before any push, so "shipped" can never mean
-  "untested". This is the tier ship owns (`Release::STEP_TEST_TIERS`:
-  `ship → full-suite` — the registry `test_cmd`, the repo's highest LOCAL
-  tier; it was never a browser e2e run, hence the honest label).
+- **The frozen-SHA test gate** (`ship_test_gate` SOPs) — **GitHub CI's conclusion
+  for the repo's QA-frozen SHA** is read BEFORE ship authority and before any push,
+  so "shipped" can never mean "untested". Since DevOps v2 Phase 3 the verdict is CI
+  (`ci_verdict(repo, frozen_sha)` → `ci_pass?`, fail-closed — **only green ships**),
+  not a local re-run: the registry `test_cmd` is still **recorded** (the drift/skip
+  check needs it) but its execution in an isolated gate workspace is demoted
+  (commented out in `bin/release.rb`, deleted in Phase 4). CI's Actions run covers
+  the repo's full suite INCLUDING the browser `test:system` lane no local gate ran.
 - **Ship authority** — the explicit production confirm, after the gate and
   before any deploy.
 - **The prod deploys** (`deploy:<repo>` SOPs) — per-app `git push` to Heroku
@@ -35,36 +37,40 @@ The gate window spans the whole irreversible half of the ship:
 
 ## G4 self-gating (the 90/10 policy)
 
-The full suite runs **once per release batch, at G3**. The ship test gate SKIPS
-a repo **only against G3's own recorded verdict** —
-`release.metadata["qa_gates"][repo] = {"sha", "cmd", "ok", "ci"}`, which `prepare`
-writes ONLY after that repo's pre-QA suite comes back GREEN. It skips iff
+CI's verdict for the release SHA is established **once per release batch, at G3**.
+The ship test gate SKIPS re-reading it for a repo **only against G3's own recorded
+verdict** — `release.metadata["qa_gates"][repo] = {"sha", "cmd", "ok", "ci"}`, which
+`prepare` writes ONLY after that repo's G3 verdict came back GREEN. It skips iff
 (`Release::ShipSequence.ship_gate_skip?`, unit-tested):
 
 - a G3 record exists for the repo and is **green** (`"ok" => true`), **and**
 - its `"cmd"` is EXACTLY the `test_cmd` the ship gate would run, **and**
 - its `"sha"` is EXACTLY the frozen ship SHA, **and**
 - its **auditor did not go red** — `"ci" => {"state" => "red"}` means GitHub CI
-  called that SAME SHA broken while G3 called it green, so the certification is
-  precisely what must not be trusted (see
-  [G3's CI cross-check](g3-candidate.md#the-ci-cross-check-cis-verdict-on-the-same-sha)).
+  called that SAME SHA broken (in Phase 3 a red CI aborts `prepare`, so this is a
+  defensive check against a stale or hand-built record — see
+  [G3 Certification](g3-candidate.md#certification-what-g4-reads)).
 
-Everything else **fails open — the gate RUNS**: no record, a red record, a
-different command, a drifted/straggler SHA, a red auditor, blank inputs.
+Everything else does **not** self-skip — no record, an `ok:false` record, a
+different command, a drifted/straggler SHA, a red auditor, blank inputs — and G4
+**re-derives the verdict from GitHub CI on the frozen SHA** (`ci_verdict` → `ci_pass?`).
 
-Two properties of the auditor clause, because a gate is only as good as its
-failure mode:
+The skip decision and the verdict have **different failure modes**, and the
+distinction is the whole point:
 
-- **Fail-open only, never fail-closed.** A red auditor makes the gate *run*; it
-  can never block a ship on its own. Only the suite's verdict stops a ship.
-- **No data never arms it.** `none` / `pending` / `unverified` (and a record with
-  no `"ci"` key — every release from before the cross-check landed) leave the
-  skip decision exactly as it was.
+- **The skip is fail-OPEN.** A missing/mismatched/red-auditor record makes G4
+  *re-check* rather than trust the record — a skip never fires on doubt. `none` /
+  `pending` / `unverified` and a record with no `"ci"` key leave the skip decision
+  exactly as it was (no data never arms the non-skip).
+- **The verdict is fail-CLOSED.** Once G4 re-reads CI, only a **green** frozen SHA
+  ships; red, and every no-data/pending state (`none`/`pending`/`unverified`/
+  `unreadable` — e.g. a just-pushed re-pin whose CI has not concluded), **abort the
+  ship**. This is the Phase 3 inversion: the pre-v2 gate re-ran a *local* suite here
+  (fail-open, "not a backstop for CI's lane"); now CI itself is the last verdict
+  before the irreversible deploy, and it CAN see every lane.
 
-When a red auditor is what triggered the run, the ship **says so** — and it is
-honest that the re-run is *not* a backstop for CI's verdict: it re-runs the
-**local** `test_cmd`, the same suite that already passed, while the failing lane
-is one only CI can see.
+When a red auditor is what triggered the re-check, the ship **says so** — it names
+the distrusted record and re-derives the verdict from GitHub CI on the frozen SHA.
 
 > **Why not the registry + `qa_shas`?** That was the old rule, and it was a
 > silent **disarm**. `qa_shas` is stamped by the QA *deploy loop*, so it records
@@ -83,14 +89,21 @@ at G3 and G4) skips on an unchanged, G3-certified SHA; satellites (integration
 subset at G3, full suite at their own deploy) always run their full pre-prod
 check.
 
-## Where the suite runs
+## Where the verdict comes from
 
-In the repo's **isolated gate workspace** (`Release::GateWorkspace`, role `gate`)
-— a private detached worktree at `<repo>/.worktrees/_gate` pinned at the frozen
-ship SHA, under the dedicated gate-workspace lock, with a test DB the gate
-**proves** is private before running — **never** on the shared primary checkout.
-See [`g3-candidate.md`](g3-candidate.md) for why: a suite that lazily autoloads
-over minutes against a tree other sessions can `git checkout` is not a check.
+**GitHub CI**, on the frozen ship SHA — `ci_verdict(repo, frozen_sha)` reads the
+Actions conclusion for that exact commit, and the gate result is `ci_pass?` of it.
+Nothing runs on this machine; the verdict comes off the laptop.
+
+> **Pre-v2 (demoted): the isolated gate workspace.** Before Phase 3 the suite ran
+> in the repo's isolated gate workspace (`Release::GateWorkspace`, role `gate`) — a
+> private detached worktree at `<repo>/.worktrees/_gate` pinned at the frozen ship
+> SHA, under the dedicated gate-workspace lock, with a test DB the gate **proved**
+> private, **never** the shared primary. That apparatus is retained (commented out
+> in `bin/release.rb`) for the rollback window and deleted in Phase 4. Its whole
+> reason for existing — a suite that lazily autoloads over minutes against a tree
+> other sessions can `git checkout` is not a check — is now moot: CI runs in a clean,
+> isolated Actions environment by construction.
 
 ## Where the DEPLOY runs — the ship has its own checkout too
 
@@ -160,11 +173,12 @@ never be re-pushed. The preflight therefore still **aborts** on that (and only
 that: untracked files are invisible to the gemspec's `git ls-files`), *before*
 anything is published, printing the same labeled-branch rescue.
 
-**Operator note — ship can now take LONGER than it used to.** G4 fails open: after
-a G3 that was skipped, red, never recorded, **or contradicted by its CI auditor**,
-the ship gate **runs the full suite** on the frozen SHA where it previously
-self-skipped. That is the point (an uncertified SHA must not reach production
-unchecked), but budget for it.
+**Operator note — ship is now FASTER, but a non-green CI HOLDS it.** Since Phase 3
+the ship gate no longer re-runs a local suite on the frozen SHA — it reads GitHub
+CI's already-computed verdict, which is near-instant. The trade: an uncertified SHA
+(a re-pin whose CI has not concluded, a red frozen commit) **fails the gate closed**
+and holds the ship until CI is green — or you take the `--skip-test-gate` override
+below. An uncertified SHA must not reach production unchecked.
 
 ## Overriding a ship gate you believe is a false negative
 

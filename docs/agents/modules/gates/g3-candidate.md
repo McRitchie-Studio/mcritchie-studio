@@ -13,6 +13,14 @@ The four gates in order: [G1 Cert](g1-cert.md) → [G2 Review](g2-review.md) →
 
 ## What this gate verifies
 
+> **DevOps v2 Phase 3 (LIVE): the G3 verdict is GitHub CI**, not a local suite — see
+> [The G3 verdict](#the-g3-verdict-github-ci-on-the-release-sha-devops-v2-phase-3--live)
+> below. The registry/tier detail in this section describes the `qa_test_cmd` that is
+> still **recorded** on the release (the G4 drift check needs it); its **execution** in
+> an isolated gate workspace is demoted (commented out in `bin/release.rb`, deleted in
+> Phase 4). Read the workspace/DB-probe/bundle-guard machinery below as the pre-v2
+> pre-flight that is retained but no longer run.
+
 The gate window spans prepare's whole test-and-deploy half, and every test SOP
 run inside it rides the close:
 
@@ -78,10 +86,11 @@ run inside it rides the close:
 - **Post-deploy hooks** (`qa_post_deploy` SOPs) — each member's declared
   `devops.post_deploy_cmd` runs against its QA app; a non-zero exit aborts
   prepare.
-- **The CI cross-check** — for every SHA the pre-QA suite gates, GitHub CI's
-  verdict on that same commit is fetched, printed, and recorded beside the
-  local one. It **audits**; it never blocks. See
-  [The CI cross-check](#the-ci-cross-check-cis-verdict-on-the-same-sha) below.
+- **The CI verdict** — GitHub CI's conclusion for the release SHA **IS** the G3
+  verdict (DevOps v2 Phase 3): green certifies, every other state fails closed. The
+  verdict is recorded on the release (`qa_gates[repo]`). See
+  [The G3 verdict](#the-g3-verdict-github-ci-on-the-release-sha-devops-v2-phase-3--live)
+  below.
 - **The QA-green flip** — `Release::Conductor.qa_green!` flips swept members
   `reviewed → assembled` and the RC `assembling → assembled`. The gate closes
   `success` only beside that flip.
@@ -215,39 +224,53 @@ The gate's spawn env (`Release::GateEnv`) also **unsets**
 `CLAUDE_CODE_SESSION_ID` / `CODEX_THREAD_ID`, so the suite's subprocess-spawning
 tests see the same no-session environment CI does, and pins the mise ruby.
 
-## The CI cross-check (CI's verdict on the same SHA)
+## The G3 verdict: GitHub CI on the release SHA (DevOps v2 Phase 3 — LIVE)
 
-The local gate is trustworthy — but it was also the **only** verdict on the
-release tip, and nothing independent checked it. So for every SHA it gates, the
-conductor also asks GitHub what CI made of **that exact commit**
-(`CiStatus.for_sha` → `gh api repos/{owner}/{repo}/commits/{sha}/check-runs`),
-prints both verdicts, records both on the release, and **alarms on a
-contradiction**.
+**GitHub CI's conclusion for the release SHA IS the G3 verdict.** For each app the
+gate resolves `origin/release`, asks GitHub what CI made of **that exact commit**
+(`CiStatus.for_sha` → `gh api repos/{owner}/{repo}/commits/{sha}/check-runs`), and
+turns the answer into the gate result via `ci_pass?`: **green certifies; every
+other state fails closed.** `ci.yml` triggers on `push:[main, release]`, so the
+merge commit the sweep produces earns its own clean-env verdict — the exact
+artifact QA deploys — instead of relying on a local gate no independent lane checks.
 
-**CI is the auditor, never the verdict — it does not block.** A push-triggered CI
-run is asynchronous: to block on it, a *local* gate would have to poll GitHub for
-minutes and would acquire a hard GitHub dependency (a `gh` outage would stall
-every release). The local gate stays the verdict; CI only gets to disagree.
+This **inverts** the pre-v2 model, in which a *local* suite ran in an isolated gate
+workspace and CI was only an *auditor* that could alarm but never block. That local
+suite is now **demoted** (`bin/release.rb`: the `run_test_scope("pre_qa_gate")`
+execution is commented out, retained for the canary/rollback window; Phase 4 deletes
+it). The whole local-cert flakiness class — a lazily-autoloaded suite torn by a
+concurrent checkout — retires with it, and the async-poll objection to *blocking* on
+CI is answered by the conductor **watching** the run (`gh run watch`) instead of a
+local gate polling GitHub for minutes.
 
-> **v2 (in rollout) inverts this.** Under the DevOps v2 model (the target-model
-> subsection at the head of `devops-cycle-design.md` §1), **Tier-2 Actions CI on
-> the `accepted → release` PR becomes the authoritative G3 verdict** and the local
-> suite is demoted to a fast pre-flight. The async-poll objection is resolved by
-> the conductor *watching* the run (`gh run watch`) rather than a local gate
-> polling for minutes. The paragraph above describes today's pre-v2 behavior.
+> **Retained-but-demoted machinery.** The isolated-workspace apparatus described
+> below (the private-DB probe, the bundle guard, the gate workspace, and the
+> "reproduce in the gate workspace" advice) still lives in `bin/release.rb`, but the
+> gate no longer runs it. Those paragraphs describe the pre-v2 pre-flight and are
+> kept for the rollback window; Phase 4 removes them with the code. The **cmd** each
+> app registers is still recorded on the release (`qa_gates[repo]["cmd"]`) so the G4
+> ship gate's drift assertion holds — only its *execution* moved to CI.
 
-**No CI data is not a failure.** These are silence, not contradiction —
-informational, never an alarm, never a block:
+**No green CI verdict FAILS CLOSED — the single most important invariant.** The gate
+certifies on **exactly one** state (`green`) and holds/aborts on every other. A false
+green here deploys an **untested** SHA to QA, so an absent, pending, or unreadable
+verdict must **never** read as a pass:
 
-| State | Means |
-|-------|-------|
-| `none` | No check-run exists for this SHA. `ci.yml` now triggers on `pull_request` + `push:[main, release]` (the `run-ci-on-release-branch` task landed), so a pushed `release` tip normally DOES build — `none` now means a SHA never pushed to GitHub, not the everyday case it once was (a non-GitHub remote reads as `unverified`, the row below). |
-| `pending` | The push-triggered run has not settled — prepare gates seconds after the merge. |
-| `unverified` | No `gh`, no network, a 404, a non-GitHub remote. |
-| `unreadable` | **The API refused the read** (401/403) — CI may well be green; this client cannot read it. No data, like the rows above, so it never blocks or alarms — but it is **not** benign, and the cross-check says so in its own voice: the auditor is *switched off* for that repo, so its gate is **unaudited, not confirmed**. Prints the repo, classified cause, and cause-specific remedy. |
+| State | Means | G3 result |
+|-------|-------|-----------|
+| `green` | Every check-run passed/skipped for this SHA. | **PASS** — certify, record `ok:true`, QA deploys. |
+| `red` | A check failed/cancelled. | **FAIL** — a regression is riding `release`: eject the offender, revert, re-`prepare`. |
+| `none` | No check-run for this SHA. `ci.yml` triggers on `pull_request` + `push:[main, release]`, so a pushed `release` tip normally DOES build — `none` means a SHA never reached GitHub (a non-GitHub remote reads as `unverified`). | **HOLD** — wait for CI, then re-`prepare`. |
+| `pending` | The push-triggered run has not settled — prepare gates seconds after the merge. | **HOLD** — wait for CI to conclude. |
+| `unverified` | No `gh`, no network, a 404, a non-GitHub remote. | **HOLD** — no readable verdict, so no certification. |
+| `unreadable` | **The API refused the read** (401/403) — CI may well be green; this client cannot read it. | **HOLD** — a credential fault, not a missing CI; fix the token, then re-run. |
 
-**`unreadable` is not `unverified`, and the difference is the point.** The rows
-above mean *the world has nothing to say yet* — the fix is to wait. `unreadable`
+Every non-green row records `ok:false` (a red G3 is stamped *failed*, never silently
+un-recorded) and does not certify. The gate never trades a green for silence.
+
+**`unreadable` is not `unverified`, and the difference is the point** — both fail
+closed, but the operator's next move differs. `none`/`pending`/`unverified` mean *the
+world has nothing to say yet* — the fix is to wait. `unreadable`
 means *the world has plenty to say and this token may not hear it* — waiting is
 futile and the fix is credentials, permissions, or API-limit recovery. A plain
 403 does not prove a missing scope, so the gate does not prescribe one unless
@@ -259,88 +282,88 @@ builder to "push the branch and open the PR"** for a PR that was already open an
 already green. A gate that cannot see must name *why* it cannot see; a gate that
 lies gets routed around, and a gate nobody reads is how a genuinely RED CI ships.
 
-**The two real disagreements are not symmetric:**
+**There is no local-vs-CI disagreement to arbitrate any more — CI *is* the
+verdict.** The two asymmetric cases the pre-v2 auditor once drew are settled by the
+inversion:
 
-- **Gate GREEN + CI RED** → CI saw something the gate structurally *cannot*: the
-  browser `test:system` lane no local gate runs (the #1 blocker class). Probably
-  real. QA still deploys (CI audits, it does not veto), **and this SHA's G3
-  certification is distrusted at ship**: [G4 Ship](g4-ship.md) fails open and
-  **re-runs** its suite on the frozen SHA instead of self-gating on a
-  certification CI contradicts.
-  **Do not read that re-run as a backstop.** It runs the *local* `test_cmd` — the
-  very suite that already passed — while the failing lane is one only CI can see.
-  **Nothing downstream will catch this for you.** The alarm is the control: read
-  the failing check and fix or eject **before** the ship. Shipping past it is a
-  deliberate, unguarded call.
-- **Gate RED + CI GREEN** → **suspect the gate, not the code.** This is
-  `rel-20260711-7f2913`'s signature: a false-negative gate nearly got a good PR
-  ejected. The gate still aborts (it *is* the verdict), but the abort tells you to
-  reproduce in the gate workspace **before ejecting anyone**.
+- **CI RED** → a regression is riding `release`. CI saw it — including the browser
+  `test:system` lane no local gate ran (the #1 blocker class) — and the gate **fails
+  closed**: QA does not deploy. Read the failing check, eject the offender
+  (`bin/release eject <task> --feedback "…"`), revert its merge commit, and
+  re-`prepare`; the sweep self-heals and the rest of the RC rides on. G4 no longer
+  "fails open and re-runs a local suite" — it reads CI on the frozen SHA too, and a
+  red SHA never reaches it because a red G3 aborts `prepare` first.
+- **CI not green (`none`/`pending`/`unverified`/`unreadable`)** → the gate **holds**.
+  It never trades a green for silence, and it never certifies a SHA GitHub has not
+  vouched for. Wait for CI to conclude (or fix the token for `unreadable`), then
+  re-`prepare`.
 
-The verdict pair is recorded (see [Certification](#certification-what-g4-reads))
-so a disagreement is auditable after the run instead of scrolling past in a
-terminal — and so agreement data accrues release over release. Promoting the
-auditor to a blocker is a decision to revisit on that evidence, not before it.
+The verdict is recorded (see [Certification](#certification-what-g4-reads)) so it is
+auditable after the run instead of scrolling past in a terminal. The old "promote the
+auditor to a blocker" decision is **done** — this slice *is* that promotion.
 
 `RELEASE_CI_STATUS` injects a canned verdict (a bare token, or a raw check-runs
 payload) — the test seam; it also short-circuits the network.
 
 ## A red gate — what to do (and what NOT to do)
 
-**Start from: the gate is right.** It runs in a private tree at the exact SHA,
-against a private DB it PROVED is private, from a session-less env, under the same
-ruby as CI. A red gate is a regression until you have evidence otherwise. The
-whole reason this gate was rebuilt is that a conductor mis-diagnosed a red gate as
-an env problem, and a reviewer nearly ejected a good PR over the false alarm that
-followed.
+**Start from: CI is right.** The G3 verdict is GitHub CI's conclusion for the
+release SHA — run in a clean CI environment on the exact commit, including the
+browser `test:system` lane no local gate ran. A red CI is a regression until you
+have evidence otherwise.
 
-1. **Read the abort.** The env-class failures name themselves — the bundle guard,
-   the DB-privacy assertion, and the workspace builder all abort with *"This is an
-   ENV issue, NOT a release regression — nothing to eject or revert."* If you see
-   that, fix the environment; do not eject a task.
-2. **Otherwise, eject the offender** (`bin/release eject <task> --feedback "…"`),
-   revert its merge commit on `release`, and re-run `bin/release prepare` — the
-   sweep self-heals and the rest of the RC rides on.
-3. **If you still believe the instrument is wrong**, reproduce it *in the gate
-   workspace itself* — it is a normal checkout:
-   `cd <repo>/.worktrees/_gate && bin/rails test …`. If the gate is genuinely
-   broken, **fix the gate and say so loudly.** An unreliable gate is worse than no
-   gate. (**The cross-check does this for you:** if GitHub CI says that SHA is
-   GREEN, the abort itself raises the alarm — *suspect the gate first*. Reproduce
-   before ejecting anyone.)
-4. **Never blank `qa_test_cmd`/`test_cmd` to get past it.** That old recipe
-   silently disarmed the G4 production gate (it made G4 "self-gate" on a suite
-   nothing had run). It no longer works, by design. The supported override is
-   ship-side, explicit, and loud: `bin/release ship --skip-test-gate --reason "…"`,
-   which confirms, and records a **red** `ship_test_gate` gate SOP on the release.
+1. **Read the failing check.** `bin/release prepare` names CI's red verdict and the
+   failing check(s) for the SHA. That is the regression to chase.
+2. **Eject the offender** (`bin/release eject <task> --feedback "…"`), revert its
+   merge commit on `release`, and re-run `bin/release prepare` — the sweep
+   self-heals and the rest of the RC rides on.
+3. **A `hold` is not a red.** `none`/`pending`/`unverified`/`unreadable` is CI
+   without a green verdict *yet*, not a regression: wait for the run to conclude
+   (or, for `unreadable`, fix the token the abort names), then re-`prepare`. The
+   gate holds rather than certify blind.
+4. **Never blank `qa_test_cmd`/`test_cmd` to get past it.** That old recipe silently
+   disarmed the G4 production gate, and it still does not work: `ship_gate_skip?`
+   returns false on a blank `cmd`, so a blanked registry fails G4's CI read closed
+   too. The supported override is ship-side, explicit, and loud: `bin/release ship
+   --skip-test-gate --reason "…"`, which confirms and records a **red**
+   `ship_test_gate` gate SOP on the release.
+
+> **Pre-v2 red-gate playbook (demoted).** Before Phase 3 a *local* suite was the
+> verdict, so a red gate could be an env fault (the private-DB probe, the bundle
+> guard, a virgin-workspace stylesheet) rather than a regression, and the move was to
+> reproduce it in the gate workspace (`cd <repo>/.worktrees/_gate && bin/rails test`).
+> With CI as the verdict that whole env class moves to the CI runner; the
+> reproduction path is retained in `bin/release.rb` for the rollback window and
+> deleted in Phase 4.
 
 ## Certification (what G4 reads)
 
-On GREEN, the gate stamps **what it actually certified** onto the release:
-`metadata["qa_gates"][repo] = {"sha", "cmd", "ok" => true, "ci" => {"state",
-"checks", "count", "reason"}}` (the `ci` sub-keys beyond `state` appear only when
-GitHub gave them). That record is the **only** grounds on which
-[G4 Ship](g4-ship.md) may skip its own suite. A gate that skipped, was
-misconfigured, or went red leaves **no record**, so G4 fails open and runs the
-suite itself — a skipped G3 can never certify a SHA.
+On **every** verdict the gate stamps what CI concluded onto the release:
+`metadata["qa_gates"][repo] = {"sha", "cmd", "ok", "ci" => {"state", "checks",
+"count", "reason"}}`. `ok` is `true` on a green CI verdict and **`false` on a
+non-green one** — a red G3 is recorded *failed*, never silently un-stamped. The
+`cmd` is recorded on every verdict: it is no longer executed here, but the G4 drift
+assertion (`certified_cmd == cmd && certified_sha == sha`) still needs it, so it must
+never be blank. The `ci` sub-keys beyond `state` appear only when GitHub gave them.
 
-The `"ci"` half is the auditor's verdict on that same SHA (above), and it is
-**armed — in the fail-open direction only**:
+A green `ok:true` record is the **only** grounds on which [G4 Ship](g4-ship.md) may
+skip its own gate (`Release::ShipSequence.ship_gate_skip?`). Anything else — an
+`ok:false` record, a different `cmd`/`sha`, or no record — makes G4 **re-derive the
+verdict from GitHub CI on the frozen SHA**, fail-closed. G4 no longer re-runs a local
+suite; the demoted-suite framing of the pre-v2 doc is gone.
 
-- `"state" => "red"` → `Release::ShipSequence.ship_gate_skip?` returns **false**:
-  G4 stops self-gating on this certification and **re-runs** the suite on the
-  frozen SHA. Without this, a green G3 would still hand G4 a matching
-  `ok`/`cmd`/`sha` and the ship gate would skip — so the G3 alarm would have been
-  the *only* thing between a CI-red commit and production, while the alarm text
-  claimed a backstop that did not exist. A gate system that claims a backstop it
-  does not have makes its own alarm dismissible.
-- **Every other state — and no `ci` key at all — changes nothing.**
-  `none`/`pending`/`unverified`/`unreadable` are no data, and no data must never arm the gate
-  (or every ship would pay for a verdict nobody gave). Releases recorded before
-  the cross-check landed carry no `ci` key and self-gate exactly as before.
-- **Fail-open only, never fail-closed.** A red auditor can cause *more* checking;
-  it can never block a ship by itself. The suite's own verdict remains the only
-  thing that stops one. Cost of a false red: one redundant suite run.
+- `"state" => "red"` in a green-looking record → `ship_gate_skip?` returns **false**:
+  G4 does not self-skip and re-reads CI on the frozen SHA. In Phase 3 this is
+  **defensive** — a red CI aborts `prepare` before it can ever produce a green
+  `ok:true` stamp — but a stale or hand-built record carrying that shape must still be
+  re-gated, never trusted.
+- **No `ci` key, or a green `ok:true` record, self-skips.** The green verdict is what
+  G4 trusts; a release recorded before the auditor landed carries no `ci` key and
+  self-gates on its green `ok` exactly as before.
+- **G4 is itself fail-closed on the frozen SHA.** The pre-v2 "fail-open only, never
+  fail-closed" rule applied to the *auditor* beside a local suite; now that CI is the
+  verdict at G4 too, a non-green frozen SHA fails the ship gate closed (see
+  [G4 Ship](g4-ship.md)).
 
 ## Related
 

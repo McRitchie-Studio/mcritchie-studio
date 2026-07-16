@@ -2017,6 +2017,29 @@ def ci_gate_record(ci)
   record
 end
 
+# THE GATE VERDICT, fail-CLOSED. Since DevOps v2 Phase 3 (promote-ci-to-gate-verdict)
+# GitHub CI's conclusion for a SHA IS the G3/G4 verdict — no longer an auditor's
+# footnote beside a local suite. So this passes on EXACTLY ONE state (:green) and
+# fails closed on every other, red AND every no-data/pending state alike
+# (none/pending/unverified/unreadable/no_pr/closed/merged) — there is deliberately
+# NO second "unknown ⇒ pass" branch. A false green here would deploy an untested SHA
+# to QA (G3) or ship it to production (G4), so an absent/unknown/red verdict must
+# never read as certified. nil or a non-Hash is green-less ⇒ false.
+def ci_pass?(ci)
+  ci.is_a?(Hash) && ci[:state] == :green
+end
+
+# A one-line CI verdict detail for a gate message: "state" or "state: reason".
+def ci_detail(ci)
+  state  = ci.is_a?(Hash) ? ci[:state].to_s : ""
+  reason = ci.is_a?(Hash) ? ci[:reason].to_s : ""
+  reason.empty? ? state : "#{state}: #{reason}"
+end
+
+# DevOps v2 Phase 3: DEMOTED. pre_qa_gate no longer cross-checks a LOCAL verdict
+# against CI — CI IS the G3/G4 verdict now (ci_pass?), so there is no second opinion
+# to contradict. Retained (uncalled) for the canary/rollback window; Phase 4 deletes.
+#
 # Print the cross-check and return TRUE when the two verdicts CONTRADICT each
 # other (green-vs-red, either direction). Never aborts — the caller decides, and
 # on a green gate the answer is: deploy, but say it loudly.
@@ -2081,27 +2104,28 @@ end
 # record (Release::ShipSequence.ship_gate_skip?) — never against the registry or
 # the deployed SHA, neither of which proves a suite ever ran.
 #
-# It also carries the AUDITOR's verdict for the same SHA (`ci: {state, checks}`,
-# plus `count`/`reason` when GitHub gave them), so the pair is auditable after the
-# run — a disagreement that only ever scrolled past in a terminal is not evidence.
+# It also carries the CI verdict for the same SHA (`ci: {state, checks}`, plus
+# `count`/`reason` when GitHub gave them). Since DevOps v2 Phase 3 that verdict is no
+# longer a footnote beside a local suite — it is what `ok` was DERIVED from
+# (ci_pass?), so the pair is the whole audit: what CI concluded, and the gate result
+# it produced.
 #
-# That ci half is ARMED, in the SAFE direction only: a "red" auditor makes G4 FAIL
-# OPEN and re-run its suite on the frozen SHA instead of self-gating on this
-# certification (Release::ShipSequence.ship_gate_skip?). It can cause MORE
-# checking; it can never block a ship, and no-data (none/pending/unverified) never
-# changes anything.
+# `ok` is now a PARAMETER (was hardcoded true): a GREEN CI records ok:true and lets
+# G4 self-skip (ship_gate_skip?); a non-green G3 records ok:FALSE — a red gate must
+# be recorded as failed, never silently un-stamped — and then aborts (fail-closed).
 #
 # Best-effort like the other record steps: a board hiccup must not fail a GREEN
-# gate. But a missing record makes G4 FAIL OPEN (it re-runs the suite), so the
-# worst case of a lost stamp is a redundant run, never an unguarded ship.
-def record_qa_gate(rel_slug, repo, sha, cmd, ci = nil)
+# gate. A missing green record makes G4 re-derive the verdict from CI on the frozen
+# SHA (never a self-skip), so the worst case of a lost stamp is a redundant CI read,
+# never an unguarded ship.
+def record_qa_gate(rel_slug, repo, sha, cmd, ci = nil, ok = true)
   return if rel_slug.to_s.empty? || DRY
 
   ci_arg = ci ? ", ci: #{ci_gate_record(ci).inspect}" : ""
   conductor(
     "r = Release.find_by(slug: #{rel_slug.to_s.inspect}); " \
     "Release::Conductor.record_qa_gate(release: r, repo: #{repo.to_s.inspect}, " \
-    "sha: #{sha.to_s.inspect}, cmd: #{cmd.to_s.inspect}, ok: true#{ci_arg}) if r; " \
+    "sha: #{sha.to_s.inspect}, cmd: #{cmd.to_s.inspect}, ok: #{ok ? 'true' : 'false'}#{ci_arg}) if r; " \
     "puts({ qa_gate: #{repo.to_s.inspect} }.to_json)"
   )
 rescue SystemExit, StandardError => e
@@ -2109,13 +2133,33 @@ rescue SystemExit, StandardError => e
       "suite on the frozen SHA rather than skip it (fail-open)")
 end
 
+# The G3 fail-closed abort text. A RED CI is a regression riding origin/#{RELEASE_BRANCH}
+# — the eject/revert recovery. Any OTHER non-green (none/pending/unverified/unreadable)
+# is CI without a green verdict yet: hold and re-run. Neither is ever a pass.
+def pre_qa_ci_abort(repo, sha, ci)
+  if ci[:state] == :red
+    named = Array(ci[:failing]).join(", ")
+    "pre-QA gate FAILED for #{repo}: GitHub CI called #{short(sha)} RED#{named.empty? ? '' : " (#{named})"} — a " \
+      "regression is riding origin/#{RELEASE_BRANCH}. Identify the offending task, eject it " \
+      "(`bin/release eject <task> --feedback \"…\"`), revert its merge commit on `#{RELEASE_BRANCH}` " \
+      "(git revert -m 1 <merge-sha>; push), then re-run `bin/release prepare` — the sweep self-heals and the " \
+      "REST of the RC rides on."
+  else
+    "pre-QA gate HELD for #{repo}: GitHub CI has NO green verdict for #{short(sha)} (#{ci_detail(ci)}). CI is the " \
+      "G3 verdict now and FAILS CLOSED on anything but green — an absent, pending, or unreadable verdict never " \
+      "certifies a SHA. Wait for CI to conclude on origin/#{RELEASE_BRANCH}, then re-run `bin/release prepare` " \
+      "(an :unreadable state is a token fault — fix the credential first)."
+  end
+end
+
 def pre_qa_gate(app_groups, rel_slug = nil)
   say("")
-  # The banner names what THIS step actually runs — each app's registered
-  # qa_test_cmd. (The old "integration + e2e-smoke" overstated it: the e2e-smoke
-  # half of prepare's tier is the deploy loop's own /up boot wait, not this gate.)
-  step("pre-QA gate: each app's registered qa_test_cmd on origin/#{RELEASE_BRANCH} " \
-       "(isolated gate workspace, before any QA deploy)")
+  # The banner names what THIS step does now (DevOps v2 Phase 3): it reads GitHub
+  # CI's verdict for each app's origin/#{RELEASE_BRANCH} SHA. The local suite that
+  # used to run in an isolated gate workspace is DEMOTED — CI is the verdict — so the
+  # registered qa_test_cmd is still RECORDED for the G4 drift check, just not executed.
+  step("pre-QA gate: GitHub CI's verdict for each app's origin/#{RELEASE_BRANCH} SHA " \
+       "(before any QA deploy)")
   app_groups.each do |group|
     repo = group["repo"]
     cmd  = qa_gate_cmd(repo)
@@ -2123,12 +2167,13 @@ def pre_qa_gate(app_groups, rel_slug = nil)
       say("  #{repo}: no qa_test_cmd registered — self-gates (suite runs at ship / its own deploy); skip")
       next
     end
-    # Parse BEFORE the dry-run return and the git dance — a malformed registry
-    # value should abort a preview too, and never churn a checkout.
-    argv = test_cmd_argv(cmd)
+    # Validate the registry command even though the suite is DEMOTED (Phase 3): a
+    # malformed value must still abort a preview, and it is recorded for the G4 drift
+    # check below, so it may not be garbage. test_cmd_argv aborts on an unbalanced quote.
+    test_cmd_argv(cmd)
     if DRY
-      say("  [dry-run] pre-QA gate #{repo}: (cd #{Release::GateWorkspace.path(repo_path(repo))}) #{cmd} " \
-          "@ origin/#{RELEASE_BRANCH}")
+      say("  [dry-run] pre-QA gate #{repo}: GitHub CI verdict for origin/#{RELEASE_BRANCH} " \
+          "(#{cmd} recorded for the G4 drift check, not run)")
       next
     end
 
@@ -2139,44 +2184,36 @@ def pre_qa_gate(app_groups, rel_slug = nil)
     abort!("could not resolve origin/#{RELEASE_BRANCH} in #{repo} for the pre-QA gate — fetch, then re-run") unless ok
     sha = out.strip
 
-    # The suite runs in the isolated workspace, pinned at the SHA under test.
-    # The GATE-WORKSPACE lock (never the primary's — the primary stays free) is
-    # held across pin → prepare → suite: the workspace is private to the CONDUCTOR,
-    # not to a process, so a second bin/release would otherwise reset --hard this
-    # tree and purge this DB mid-suite. See with_gate_workspace.
-    ok = false
-    with_gate_workspace(repo) do
-      workspace = gate_workspace!(repo, sha)
-      prepare_gate_workspace!(repo, workspace)
-      # A missing browser must abort as ENV, never as a red suite (see the guard).
-      assert_system_test_browser!(repo, cmd)
-      step("pre-QA gate #{repo}: #{cmd}  [#{short(sha)} · isolated workspace]")
-      _, ok = run_test_scope("pre_qa_gate", *argv, chdir: workspace, repo: repo, env: gate_env(repo))
-    end
+    # DevOps v2 Phase 3: local exec demoted; CI is the verdict. Phase 4 deletes.
+    # The pre-QA suite no longer runs on the conductor's machine — GitHub CI's verdict
+    # for this exact origin/#{RELEASE_BRANCH} SHA IS the gate now, so the whole
+    # local-cert flakiness class (a lazily-autoloaded suite torn by a concurrent
+    # checkout) retires with it. The isolated-workspace apparatus is retained,
+    # commented, for the canary/rollback window:
+    # ok = false
+    # with_gate_workspace(repo) do
+    #   workspace = gate_workspace!(repo, sha)
+    #   prepare_gate_workspace!(repo, workspace)
+    #   assert_system_test_browser!(repo, cmd)
+    #   step("pre-QA gate #{repo}: #{cmd}  [#{short(sha)} · isolated workspace]")
+    #   _, ok = run_test_scope("pre_qa_gate", *test_cmd_argv(cmd), chdir: workspace, repo: repo, env: gate_env(repo))
+    # end
 
-    # THE AUDITOR: ask GitHub what CI made of the SAME SHA, print the cross-check,
-    # and alarm on a contradiction. Never blocks (see the CI_NO_DATA block above) —
-    # it only makes a disagreement loud, and on a RED gate it redirects the
-    # conductor away from ejecting a task the gate may be lying about.
+    # THE VERDICT: GitHub CI's conclusion for the SHA under test, fail-CLOSED via
+    # ci_pass? — only :green certifies; a red (a regression riding origin/#{RELEASE_BRANCH})
+    # and every no-data/pending state (none/pending/unverified/unreadable) are NOT a pass.
     ci = ci_verdict(repo, sha)
-    disagrees = ci_cross_check(repo, sha, ok, ci)
+    ok = ci_pass?(ci)
+    step("pre-QA gate #{repo}: GitHub CI #{ci[:state].to_s.upcase} @ #{short(sha)} " \
+         "(#{cmd} recorded for the G4 drift check, not run here)")
 
-    if ok
-      # Certify: the ONLY evidence G4 accepts for skipping its own gate. Carries
-      # the auditor's verdict for the same SHA alongside it.
-      record_qa_gate(rel_slug, repo, sha, cmd, ci)
-      next
-    end
+    # Certify — the ONLY evidence G4 accepts for skipping its own gate. Recorded for
+    # GREEN and non-green alike: a red G3 records ok:FALSE (it must not silently skip
+    # recording), carrying CI's verdict for the audit trail.
+    record_qa_gate(rel_slug, repo, sha, cmd, ci, ok)
+    next if ok
 
-    suspect_gate = disagrees ? " ⚠ BUT GitHub CI says this SHA is GREEN — SUSPECT THE GATE FIRST: reproduce the " \
-                               "failure in the gate workspace before ejecting anyone (a gate-host/env divergence " \
-                               "is not a regression)." : ""
-    abort!("pre-QA gate failed for #{repo} (#{cmd}) — a regression is riding origin/#{RELEASE_BRANCH}.#{suspect_gate} " \
-           "Identify the offending task, eject it (`bin/release eject <task> --feedback \"…\"`), revert its " \
-           "merge commit on `#{RELEASE_BRANCH}` (git revert -m 1 <merge-sha>; push), then re-run " \
-           "`bin/release prepare` — the sweep self-heals and the REST of the RC rides on. " \
-           "(Exception: a boot-time Bundler::GemNotFound in the output is a bundle/toolchain ENV issue " \
-           "— fix with `#{suite_bundle_argv(repo_path(repo)).join(' ')} install` in the repo, not by ejecting.)")
+    abort!(pre_qa_ci_abort(repo, sha, ci))
   end
 end
 
@@ -3040,6 +3077,25 @@ end
 # SHA) and G3's alarm would be the ONLY thing between a CI-red commit and prod.
 # FAIL-OPEN ONLY: a red auditor causes MORE checking, never a block, and no-data
 # (none/pending/unverified) changes nothing.
+# The G4 fail-closed abort text. A RED CI is a broken frozen commit — it must not
+# ship. Any OTHER non-green (none/pending/unverified/unreadable) is CI without a
+# green verdict for the frozen SHA yet (a just-pushed re-pin may still be pending):
+# hold and re-run, or take the first-class --skip-test-gate override. Never a pass.
+def ship_test_gate_ci_abort(repo, frozen_sha, ci)
+  if ci[:state] == :red
+    named = Array(ci[:failing]).join(", ")
+    "test gate FAILED for #{repo}: GitHub CI called frozen #{short(frozen_sha)} " \
+      "RED#{named.empty? ? '' : " (#{named})"} — aborting BEFORE the irreversible prod deploy. A red frozen SHA " \
+      "must not ship: read the failing check, fix on `#{RELEASE_BRANCH}` + re-run `bin/release ship`."
+  else
+    "test gate HELD for #{repo}: GitHub CI has NO green verdict for frozen #{short(frozen_sha)} (#{ci_detail(ci)}). " \
+      "The ship gate is CI now and FAILS CLOSED on anything but green — a just-pushed re-pin may still be PENDING, " \
+      "and an :unreadable state is a token fault. Wait for CI to conclude on the frozen SHA, then re-run " \
+      "`bin/release ship`. To ship past a verdict you believe is a false negative, use " \
+      "`bin/release ship --skip-test-gate --reason \"…\"` (records a RED gate)."
+  end
+end
+
 def test_gate(repo, frozen_sha: nil, qa_gate: nil)
   cmd = app_meta_for(repo)["test_cmd"].to_s
   if cmd.empty?
@@ -3048,18 +3104,24 @@ def test_gate(repo, frozen_sha: nil, qa_gate: nil)
   end
 
   # Say WHY the batch certification is being ignored — a gate that silently
-  # re-runs teaches the operator nothing, and this is the one signal that says
-  # "G3 and CI disagreed about this exact commit".
+  # re-derives teaches the operator nothing, and this is the one signal that says
+  # "G3's record and CI disagreed about this exact commit".
   #
-  # Name the SHA G3 ACTUALLY CERTIFIED (record["sha"]), not the frozen ship SHA:
-  # when the RC was re-pinned the two differ, and "G3 certified <frozen_sha>" would
-  # be a second false claim printed by the very code that exists to kill one.
+  # DevOps v2 Phase 3: a red-auditor G3 record is now DEFENSIVE — G3 derives ok from CI
+  # (ci_pass?), so a red CI aborts prepare and never produces a green ok:true record.
+  # A stale or hand-built record can still carry this shape, and it must still be
+  # re-gated, never trusted. G4 re-derives the verdict from GitHub CI on the FROZEN SHA
+  # below — which, unlike the demoted local suite, CAN see every lane — and fails the
+  # ship CLOSED if that SHA is not green.
+  #
+  # Name the SHA G3's record CERTIFIED (record["sha"]), not the frozen ship SHA: when
+  # the RC was re-pinned the two differ, and "G3 certified <frozen_sha>" would be a
+  # second false claim printed by the very code that exists to kill one.
   if Release::ShipSequence.auditor_red?(qa_gate)
     audited_sha = (qa_gate["sha"] || qa_gate[:sha]).to_s
-    say("  ⚠ #{repo}: G3 certified #{short(audited_sha)} GREEN but GitHub CI called that SHA RED — the batch " \
-        "certification is NOT trusted. Re-running `#{cmd}` on frozen #{short(frozen_sha)} (fail-open).")
-    say("    (CI runs a lane no local gate does — the browser test:system suite. This re-run CANNOT see that " \
-        "lane, so it is NOT a backstop for it: read the failing check before you ship.)")
+    say("  ⚠ #{repo}: G3's record certified #{short(audited_sha)} GREEN but GitHub CI called that SHA RED — the " \
+        "batch certification is NOT trusted, so G4 does not self-skip on it. It RE-DERIVES the verdict from " \
+        "GitHub CI on frozen #{short(frozen_sha)} below, and CI fails this gate closed if that SHA is not green.")
   end
 
   if Release::ShipSequence.ship_gate_skip?(test_cmd: cmd, frozen_sha: frozen_sha, qa_gate: qa_gate)
@@ -3095,29 +3157,36 @@ def test_gate(repo, frozen_sha: nil, qa_gate: nil)
     return
   end
 
-  # Parse before the dry-run return so a malformed registry value aborts a
-  # preview too (see test_cmd_argv).
-  argv = test_cmd_argv(cmd)
-  step("test gate: (cd #{repo}) #{cmd}  [frozen SHA · isolated workspace · before prod]")
+  # Validate the registry command even though the suite is DEMOTED (Phase 3): a
+  # malformed value must still abort a preview. test_cmd_argv aborts on an unbalanced quote.
+  test_cmd_argv(cmd)
+  step("test gate: #{repo} — GitHub CI verdict for frozen #{short(frozen_sha)} " \
+       "(#{cmd} recorded, not run; before prod)")
   return if DRY
 
-  # Same isolation as G3: the suite runs in the private gate worktree pinned at
-  # the FROZEN ship SHA, never on the shared primary — so nothing can flip the
-  # tree (or share the test DB) under the last gate before an irreversible deploy.
-  # Under the GATE-WORKSPACE lock, so a concurrent conductor can't reset --hard
-  # the tree or purge the DB mid-suite (the workspace is private to the conductor,
-  # not to a process). NOT the primary lock — the primary stays free.
-  ok = false
-  with_gate_workspace(repo) do
-    workspace = gate_workspace!(repo, frozen_sha)
-    prepare_gate_workspace!(repo, workspace)
-    # A missing browser must abort as ENV, never as a red suite (see the guard) —
-    # doubly so here, where a "red gate" reads as a regression at the LAST gate
-    # before an irreversible prod deploy.
-    assert_system_test_browser!(repo, cmd)
-    _, ok = run_test_scope("ship_test_gate", *argv, chdir: workspace, repo: repo, label: cmd, env: gate_env(repo))
-  end
-  abort!("test_cmd failed for #{repo} (#{cmd}) — aborting before the irreversible prod deploy; fix + re-run") unless ok
+  # DevOps v2 Phase 3: local exec demoted; CI is the verdict. Phase 4 deletes.
+  # The frozen SHA's last gate before prod is now GitHub CI's conclusion for that
+  # exact commit, not a re-run of the local suite. The isolated-workspace apparatus
+  # is retained, commented, for the canary/rollback window:
+  # ok = false
+  # with_gate_workspace(repo) do
+  #   workspace = gate_workspace!(repo, frozen_sha)
+  #   prepare_gate_workspace!(repo, workspace)
+  #   assert_system_test_browser!(repo, cmd)
+  #   _, ok = run_test_scope("ship_test_gate", *test_cmd_argv(cmd), chdir: workspace, repo: repo, label: cmd, env: gate_env(repo))
+  # end
+
+  # THE VERDICT, fail-CLOSED before the irreversible prod deploy: ci_pass? passes on
+  # ONLY :green. A red (a broken frozen commit) and every no-data/pending state
+  # (none/pending/unverified/unreadable — e.g. a just-pushed re-pin whose CI has not
+  # concluded) all FAIL the gate. A false green is the one error that ships untested
+  # code to production. CI's conclusion is recorded as this gate's Tier-3 SOP.
+  ci = ci_verdict(repo, frozen_sha)
+  ok = ci_pass?(ci)
+  gate_sop("ship_test_gate",
+           "GitHub CI #{ci[:state].to_s.upcase} @ #{short(frozen_sha)} — #{cmd} " \
+           "(Tier-3 Actions conclusion; local suite demoted)", ok)
+  abort!(ship_test_gate_ci_abort(repo, frozen_sha, ci)) unless ok
 end
 
 # `bundle lock --update <gem>` with a bounded retry/backoff for RubyGems
