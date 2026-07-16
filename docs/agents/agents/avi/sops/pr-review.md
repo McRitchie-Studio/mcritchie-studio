@@ -2,13 +2,16 @@
 
 ## Status: Active
 
-This is Avi's `pr-review` SOP. It reviews all submitted PRs in bounded waves and
-stops approved work at `reviewed`. Steffon's `qa-release` sweep owns the merge.
+This is Avi's `pr-review` SOP. It reviews all submitted PRs in bounded waves,
+and on a merge-ready verdict **merges the feat PR into `accepted`** and stops the
+task at `reviewed` — the accepted-ladder's first rung. Steffon's `qa-release`
+sweep then promotes `accepted → release`.
 
 ## Scope
 
-Avi owns review delegation and product acceptance. This SOP does not merge PRs,
-deploy QA, ship production, or archive work.
+Avi owns review delegation and product acceptance. On approval this SOP merges
+the feat PR into the `accepted` branch (the ladder's first rung); it never merges
+to `release`/`main`, deploys QA, ships production, or archives work.
 
 ## Entry
 
@@ -174,12 +177,24 @@ waves of five or fewer agents.
 
 Verdicts:
 
-- Two approvals, no blockers:
+- Two approvals, no blockers → **merge the feat PR into `accepted`, stamp the
+  git-location, then move `reviewed`** (the accepted-ladder's first rung). The
+  supervisor does this in ONE step — the order is load-bearing:
 
   ```bash
+  gh pr merge <feat-pr> --merge        # feat → accepted (retarget a mis-based PR to accepted first)
+  bin/task merged <task> accepted      # stamp the git-location BEFORE the stage move
   bin/task move <task> reviewed
-  bin/task note <task> --handoff "Avi review approved; ready for Steffon's qa-release sweep." --agent avi
+  bin/task note <task> --handoff "Avi review approved; merged into accepted; ready for Steffon's qa-release sweep." --agent avi
   ```
+
+  Order matters: merge → stamp → move, so the task is `reviewed` **iff** its code
+  is on `accepted` (invariant: `reviewed` ⟺ code-on-`accepted`). If the `gh pr
+  merge` FAILS, leave the task `submitted` and UNSTAMPED (never move to
+  `reviewed`) — resolve the conflict/checks on GitHub, then re-review. A mis-based
+  feat PR (base ≠ `accepted`) self-heals: retarget it to `accepted`, then merge.
+  (The `bin/pr-review` supervisor runs this whole sequence for you; the commands
+  above are what it executes.)
 
 - Request changes, missing metadata, red CI, merge risk, or acceptance mismatch:
 
@@ -193,8 +208,9 @@ Verdicts:
 - Wait-for-CI or conductor-review: defer and re-query after the defer window.
   A still-running CI defers at the pre-spawn check, before any reviewer spawns.
 
-Approved tasks stop at `reviewed` with `merged: nil`. Steffon's next
-`qa-release` sweep moves them forward.
+Approved tasks stop at `reviewed` with `merged: "accepted"` (code on the
+`accepted` branch). Steffon's next `qa-release` sweep promotes `accepted →
+release` and moves them forward.
 
 ## Exit Seam
 

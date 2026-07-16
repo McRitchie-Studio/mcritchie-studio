@@ -39,6 +39,33 @@ class ReleaseFlowTest < ActionDispatch::IntegrationTest
     assert_equal %w[main main], [a.merged, b.merged], "ship stamps the final git-location"
   end
 
+  # The accepted-ladder end to end (DB side): review leaves a member merged:"accepted"
+  # (its code on the accepted branch). The sweep records membership and Release#add
+  # DOWNGRADES the stamp accepted → release; QA-green then flips it assembled and ship
+  # stamps main — so a member walks the full accepted → release → main ladder.
+  test "[integration] accepted-ladder: a merged:accepted member is swept → downgraded to release → assembled → shipped" do
+    a = Task.create!(title: "Accepted ladder member", stage: "reviewed", merged: Task::MERGED_ACCEPTED,
+                     metadata: { "devops" => { "shape" => "backend", "repositories" => ["mcritchie-studio"] } })
+
+    rel = Release::Conductor.sweep!(a)
+    assert_equal "assembling", rel.state
+    assert_equal "reviewed", a.reload.stage, "the sweep records membership WITHOUT moving the stage"
+    assert_equal "release", a.merged, "Release#add downgrades merged:accepted → release at sweep"
+    assert_equal rel.slug, a.release_slug
+    assert_equal 1, rel.reload.tasks.count
+
+    # QA-green flips the member assembled (merged stays release — QA in flight).
+    Release::Conductor.prepare!(task_slugs: [])
+    assert_equal "assembled", rel.reload.state
+    assert_equal "assembled", a.reload.stage
+    assert_equal "release", a.merged
+
+    # Ship completes the ladder: release → main.
+    rel.ship!(by: "alex")
+    assert_equal "shipped", a.reload.stage
+    assert_equal "main", a.merged, "ship stamps the final git-location"
+  end
+
   test "a mixed gem + app release plans the gem first (producer-first) with its version" do
     gem = Task.create!(title: "engine 0.8 gem release", stage: "reviewed",
                        metadata: { "devops" => { "shape" => "library", "repositories" => ["studio-engine"] } })

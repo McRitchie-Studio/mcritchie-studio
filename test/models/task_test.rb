@@ -1480,13 +1480,24 @@ class TaskTest < ActiveSupport::TestCase
 
   test "[unit] merged accepts nil + the known git locations, rejects anything else" do
     task = Task.create!(title: "merged validation task")
-    [nil, Task::MERGED_RELEASE, Task::MERGED_MAIN].each do |value|
+    [nil, Task::MERGED_ACCEPTED, Task::MERGED_RELEASE, Task::MERGED_MAIN].each do |value|
       task.merged = value
       assert task.valid?, "merged=#{value.inspect} should be valid"
     end
     task.merged = "somewhere-else"
     assert_not task.valid?, "an unknown merged location must be a hard error"
     assert_includes task.errors[:merged].to_s, "is not included"
+  end
+
+  # The accepted-ladder's first rung: review stamps merged:"accepted" when it lands a
+  # feat PR on `accepted`. It MUST be a legal value (the whole ladder rests on it),
+  # and it is the constant the sweep's promotion keys on.
+  test "[unit] merged:accepted is a legal git-location (the accepted-ladder's first rung)" do
+    assert_equal "accepted", Task::MERGED_ACCEPTED
+    assert_includes Task::MERGED_STATES, Task::MERGED_ACCEPTED
+    task = Task.create!(title: "accepted stamp task", stage: "reviewed", merged: Task::MERGED_ACCEPTED)
+    assert task.valid?
+    assert_equal "accepted", task.reload.merged
   end
 
   test "[unit] ship! stamps merged=main alongside the shipped stage" do

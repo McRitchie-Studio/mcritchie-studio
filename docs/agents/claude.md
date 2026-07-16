@@ -51,24 +51,29 @@ Before handoff:
    (CI-independent). The pipeline's gates run
    **G1 Cert → G2 Review → G3 Candidate → G4 Ship**; standalone SOPs:
    `mcritchie-studio/docs/agents/modules/gates/`.
-5. Push, open a PR **into `release`** (base `release`, not `main`) whose body
-   **leads with the task URL**; then verdict: run **`bin/dor-check <task>`**
-   and fix whatever it flags — it refuses an under-tested PR and its verdict
-   closes the gate. Then `bin/task move <task> submitted` **without waiting
-   for CI** — pending CI is a loud suggestion (the fast cert is credited
+5. Push, open a PR **into `accepted`** (base `accepted`, not `release`/`main`)
+   whose body **leads with the task URL**; then verdict: run **`bin/dor-check
+   <task>`** and fix whatever it flags — it refuses an under-tested PR and its
+   verdict closes the gate. Then `bin/task move <task> submitted` **without
+   waiting for CI** — pending CI is a loud suggestion (the fast cert is credited
    provisionally); red CI blocks; review's gate-zero holds the authoritative
    CI verdict and bounces a red-CI task back before any reviewer spawns.
 
 Task lifecycle is two workflows meeting at the `submitted` seam — **Build**
 (feature agent) `designed → building → submitted` (you own through `submitted`)
-and **Deploy** (DevOps) `submitted → reviewed → assembled → shipped`. Every repo
-keeps a **persistent `release` branch** that feature PRs merge into (not `main`):
-review is **review-only** — QA reviews → `reviewed` or `bin/task block`s it back;
-Steffon's self-healing `qa-release` sweep (`bin/release prepare`) merges reviewed
-tasks + stragglers into `release` (stamping `merged: "release"`), deploys QA, and
-flips members `assembled` only on QA-green; Avi's `production-deploy`
-(`bin/release ship`) fast-forwards `release → main` (stamping `merged: "main"`).
-`blocked` = needs attention; `archived` = terminal.
+and **Deploy** (DevOps) `submitted → reviewed → assembled → shipped`. The code
+walks a three-rung branch ladder — **`accepted` → `release` → `main`**: every
+repo keeps persistent `accepted` and `release` branches, and feature PRs target
+**`accepted`** (not `release`/`main`). On a merge-ready verdict review **merges
+the feat PR into `accepted`**, stamps `merged: "accepted"`, then moves the task
+`reviewed` (invariant: `reviewed` ⟺ code-on-`accepted`; a merge failure leaves it
+`submitted`). Review is still review-only in that it never touches `release`/
+`main` and never deploys. Steffon's self-healing `qa-release` sweep (`bin/release
+prepare`) then **promotes ALL of `accepted` onto `release` via ONE batch PR per
+repo** (not N per-task merges), records membership (re-stamping `merged:
+"release"`), deploys QA, and flips members `assembled` only on QA-green; Avi's
+`production-deploy` (`bin/release ship`) fast-forwards `release → main` (stamping
+`merged: "main"`). `blocked` = needs attention; `archived` = terminal.
 Full spec: `mcritchie-studio/docs/agents/system/devops-cycle-design.md`.
 
 **Sizing trio (po/dev/actual).** Avi is the default sizer — he sets `po_size` at

@@ -63,6 +63,12 @@
 #       a per-process nonce) under a TTL lease. It REFUSES (loudly) if a DIFFERENT,
 #       non-expired instance already holds it — pass --steal to take it over. An
 #       expired / dead-session lease is reclaimed automatically. )
+#   bin/task merged <slug> <accepted|release|main>
+#     ( set the git-location crash-recovery signal (Task::MERGED_STATES) — where the
+#       task's code physically is. Review stamps `accepted` when it lands a feat PR
+#       on the accepted branch (the ladder's first rung); the sweep/ship stamp
+#       release/main. NOT a stage move, NOT event-recorded; read back to confirm it
+#       persisted so a dropped stamp never strands the task off every RC. )
 #   bin/task heartbeat <slug>                         # renew this instance's build-claim lease (bin/statusline calls it)
 #   bin/task session-mascot [--persona SLUG|none] [--print]
 #     ( draw this Claude/Codex session's Pokémon marker before a task exists.
@@ -898,6 +904,37 @@ def verify_move_persisted!(slug, expected_stage)
   exit 1
 end
 
+# The `merged` twin of read_back_stage — the git-location crash-recovery signal
+# (nil/accepted/release/main). Same degrade-on-unverifiable contract: a non-2xx
+# or transport error returns nil (could not verify), never an abort. Empty string
+# means the board read the task back with no merged stamp.
+def read_back_merged(slug)
+  res = TaskBoard.request(:get, "/api/v1/tasks/#{slug}", base_url: BASE_URL, token: token)
+  return nil unless res.code.to_i.between?(200, 299)
+
+  data = TaskBoard.parse_body(res)["data"]
+  data.is_a?(Hash) ? data["merged"].to_s : nil
+rescue StandardError
+  nil
+end
+
+# CONFIRM a `merged` stamp actually landed before reporting success — the twin of
+# verify_move_persisted!. A dropped git-location write is not cosmetic: the sweep
+# classifies a `reviewed` member with merged:"" as a HELD anomaly and leaves it
+# behind, so a silently-non-persisting stamp would strand the task off every RC.
+# On a DEFINITE mismatch exit nonzero + loud; an unverifiable read (nil) degrades
+# to the prior behavior (not proof of a failed write).
+def verify_merged_persisted!(slug, expected)
+  persisted = read_back_merged(slug)
+  return if persisted.nil? || persisted == expected
+
+  shown = persisted.empty? ? "nil" : persisted
+  warn!("✗ merged NOT persisted: #{slug} → merged:#{expected} reported success, but a fresh read shows merged:[#{shown}].")
+  warn!("  The git-location write did not land — the sweep treats an unstamped `reviewed` member as an anomaly and leaves it behind.")
+  warn!("  Re-run: bin/task merged #{slug} #{expected}   (if it recurs the board write is failing server-side — check ErrorLog).")
+  exit 1
+end
+
 cmd = ARGV.shift || "help"
 case cmd
 when "list"
@@ -1046,6 +1083,27 @@ when "move"
   # task while the handoff claims it advanced.
   verify_move_persisted!(slug, stage)
   write_feature_marker(task)
+  print_task(task)
+when "merged"
+  # Set the git-location crash-recovery signal (Task::MERGED_STATES). Review stamps
+  # `accepted` the moment it lands a feat PR on the accepted branch — the ladder's
+  # first rung — so an interrupted sweep can promote accepted→release WITHOUT
+  # re-reviewing (Release#add later downgrades it to "release" at sweep). NOT a
+  # stage move and NOT event-recorded: it's the durable "where is the code" fact
+  # the deploy heartbeats read. Set through the same one-path PATCH update as
+  # `move` (config/routes.rb: no named-transition endpoint), then read back to
+  # confirm it persisted — a 200 is not persistence, and a dropped stamp would
+  # strand the task off every RC (the sweep leaves a merged:"" `reviewed` member
+  # behind as a HELD anomaly).
+  usage = "usage: bin/task merged <slug> <accepted|release|main>"
+  slug = positional!(ARGV.shift || die!(usage), usage)
+  state = positional!(ARGV.shift || die!(usage), usage)
+  valid = %w[accepted release main]
+  die!("merged must be one of #{valid.join(", ")} (got #{state.inspect})") unless valid.include?(state)
+  die!(usage) unless ARGV.empty?
+  task = api(:patch, "/api/v1/tasks/#{slug}", { "merged" => state })["data"]
+  verify_merged_persisted!(slug, state)
+  puts "merged set on #{slug}: #{state}"
   print_task(task)
 when "intent"
   # Record an INTENT — an agent (or the two senior reviewers) STARTING a stage's

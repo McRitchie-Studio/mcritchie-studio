@@ -23,6 +23,7 @@ class PrReviewCommandTest < Minitest::Test
     @codex_log = File.join(@dir, "codex.log")
     @task_log = File.join(@dir, "task.log")
     @gate_log = File.join(@dir, "gate.log")
+    @gh_log = File.join(@dir, "gh.log")
     @sequence_log = File.join(@dir, "sequence.log")
     @narration_log = File.join(@dir, "narration.log")
     write_fakes
@@ -86,6 +87,29 @@ class PrReviewCommandTest < Minitest::Test
       #!#{RbConfig.ruby}
       require "json"
       File.open(ENV.fetch("GATE_LOG"), "a") { |f| f.puts JSON.generate(ARGV) }
+    RUBY
+
+    # gh fake — the accepted-ladder's review-merge shells `gh` (base read, retarget,
+    # merge, merge-state). Deterministic + injectable so the review-merge tests never
+    # touch a live PR. Defaults: base=accepted (no retarget), merge succeeds.
+    #   GH_PR_BASE   — the feat PR's base (default accepted; set "release" to force a retarget)
+    #   GH_MERGE_FAIL=1 — `gh pr merge` exits nonzero
+    #   GH_EDIT_FAIL=1  — `gh pr edit` (retarget) exits nonzero
+    #   GH_PR_STATE  — `gh pr view --json state` value (default OPEN; "MERGED" = crash recovery)
+    write_exec("gh", <<~RUBY)
+      #!#{RbConfig.ruby}
+      require "json"
+      File.open(ENV.fetch("GH_LOG"), "a") { |f| f.puts JSON.generate(ARGV) }
+      File.open(ENV.fetch("SEQUENCE_LOG"), "a") { |f| f.puts JSON.generate(["gh", *ARGV]) }
+      if ARGV[0] == "pr" && ARGV[1] == "view" && ARGV.include?("baseRefName")
+        puts ENV.fetch("GH_PR_BASE", "accepted"); exit 0
+      end
+      if ARGV[0] == "pr" && ARGV[1] == "view" && ARGV.include?("state")
+        puts ENV.fetch("GH_PR_STATE", "OPEN"); exit 0
+      end
+      exit(ENV["GH_EDIT_FAIL"].to_s == "1" ? 1 : 0) if ARGV[0] == "pr" && ARGV[1] == "edit"
+      exit(ENV["GH_MERGE_FAIL"].to_s == "1" ? 1 : 0) if ARGV[0] == "pr" && ARGV[1] == "merge"
+      exit 0
     RUBY
   end
 
@@ -176,6 +200,8 @@ class PrReviewCommandTest < Minitest::Test
       "TASK_BIN" => File.join(@dir, "task"),
       "CODEX_BIN" => File.join(@dir, "codex"),
       "GATE_BIN" => File.join(@dir, "gate"),
+      "GH_BIN" => File.join(@dir, "gh"),
+      "GH_LOG" => @gh_log,
       "SNAPSHOT_DIR" => @snapshots,
       "SNAPSHOT_COUNTER" => @counter,
       "DEVOPS_LOG" => @devops_log,
@@ -836,5 +862,104 @@ class PrReviewCommandTest < Minitest::Test
     moves = json_lines(@task_log).select { |args| args.first == "move" }
     assert_equal [["move", "fuzzy-pr", "reviewed", "--actor", "avi"]], moves
     assert_match(/ci=unverified/i, out)
+  end
+
+  # --- the accepted-ladder's first rung: review MERGES feat → accepted ----------
+  # On a merge-ready verdict the supervisor now merges the feat PR into `accepted`,
+  # stamps merged:"accepted", THEN moves the task `reviewed` (the sweep later promotes
+  # accepted→release). The order is load-bearing: merge → stamp → move, so a failure
+  # can never leave the forbidden (reviewed, unstamped) state. GH_BIN fakes the merge.
+
+  # [integration] Happy path: merge the feat PR into accepted, stamp merged:accepted,
+  # move reviewed — IN THAT ORDER.
+  def test_merge_ready_merges_feat_into_accepted_then_stamps_then_moves
+    ready = task("ladder-pr", created_at: "2026-06-29T12:00:00Z")
+    reviewed = task("ladder-pr", created_at: "2026-06-29T12:00:00Z",
+                                 reports: [report("carl", "merge-ready"), report("shannon", "merge-ready")])
+    write_snapshots(snapshot([ready]), snapshot([reviewed]))
+
+    out, err, status = run_heartbeat("--run", "--limit", "1")
+    assert status.success?, err
+    assert_includes out, "approved=1"
+
+    # The feat PR was merged into accepted.
+    merge_call = json_lines(@gh_log).find { |a| a[0] == "pr" && a[1] == "merge" }
+    assert merge_call, "a merge-ready verdict merges the feat PR into accepted"
+
+    # The task was stamped merged:accepted AND moved reviewed.
+    task_calls = json_lines(@task_log)
+    assert_includes task_calls, ["merged", "ladder-pr", "accepted"], "review stamps merged:accepted"
+    moves = task_calls.select { |a| a.first == "move" }
+    assert_equal [["move", "ladder-pr", "reviewed", "--actor", "avi"]], moves
+
+    # ORDER across the shared sequence log: merge → stamp → move.
+    seq = json_lines(@sequence_log)
+    merge_i = seq.index { |e| e[0] == "gh" && e[1] == "pr" && e[2] == "merge" }
+    stamp_i = seq.index { |e| e[0] == "task" && e[1] == "merged" }
+    move_i  = seq.index { |e| e[0] == "task" && e[1] == "move" }
+    assert merge_i && stamp_i && move_i, "expected merge, stamp, and move all to run"
+    assert merge_i < stamp_i, "merge the feat PR onto accepted BEFORE stamping merged:accepted"
+    assert stamp_i < move_i, "stamp merged:accepted BEFORE moving reviewed (invariant: never reviewed+unstamped)"
+  end
+
+  # [unit] A mis-based feat PR (base != accepted) is RETARGETED to accepted, then
+  # merged — the review-merge self-heals instead of stranding a PR opened on release.
+  def test_merge_ready_retargets_a_misbased_feat_pr_then_merges
+    ready = task("misbased-pr", created_at: "2026-06-29T12:00:00Z")
+    reviewed = task("misbased-pr", created_at: "2026-06-29T12:00:00Z",
+                                   reports: [report("carl", "merge-ready"), report("shannon", "merge-ready")])
+    write_snapshots(snapshot([ready]), snapshot([reviewed]))
+
+    out, err, status = run_heartbeat("--run", "--limit", "1", env: { "GH_PR_BASE" => "release" })
+    assert status.success?, err
+
+    gh = json_lines(@gh_log)
+    edit = gh.find { |a| a[0] == "pr" && a[1] == "edit" && a.include?("accepted") }
+    assert edit, "a mis-based feat PR (base release) is retargeted to accepted before merging"
+    assert gh.find { |a| a[0] == "pr" && a[1] == "merge" }, "then it is merged"
+    assert_match(/retarget misbased-pr PR base release/, out)
+
+    moves = json_lines(@task_log).select { |a| a.first == "move" }
+    assert_equal [["move", "misbased-pr", "reviewed", "--actor", "avi"]], moves
+  end
+
+  # [unit] A feat-merge FAILURE leaves the task submitted+unstamped — the invariant
+  # reviewed ⟺ code-on-accepted. No merged stamp, no move to reviewed.
+  def test_merge_failure_leaves_the_task_submitted_and_unstamped
+    ready = task("broken-pr", created_at: "2026-06-29T12:00:00Z")
+    reviewed = task("broken-pr", created_at: "2026-06-29T12:00:00Z",
+                                 reports: [report("carl", "merge-ready"), report("shannon", "merge-ready")])
+    write_snapshots(snapshot([ready]), snapshot([reviewed]))
+
+    # Merge fails AND the PR is still OPEN (not an interrupted prior-run merge).
+    out, err, status = run_heartbeat("--run", "--limit", "1",
+                                     env: { "GH_MERGE_FAIL" => "1", "GH_PR_STATE" => "OPEN" })
+    assert status.success?, err
+    assert_includes out, "tool_failures=1"
+    assert_includes out, "approved=0"
+
+    verbs = json_lines(@task_log).map(&:first)
+    refute_includes verbs, "move", "a failed feat merge must NOT move the task reviewed"
+    refute_includes verbs, "merged", "and must NOT stamp merged:accepted (invariant: reviewed ⟺ code-on-accepted)"
+  end
+
+  # [unit] Crash recovery: a `gh pr merge` that fails because the PR ALREADY merged on
+  # a prior interrupted run (whose stamp/move died) is NOT a bounce — the review-merge
+  # reads the PR state, sees MERGED, and proceeds to stamp + move.
+  def test_merge_failure_but_pr_already_merged_proceeds_to_stamp_and_move
+    ready = task("recovered-pr", created_at: "2026-06-29T12:00:00Z")
+    reviewed = task("recovered-pr", created_at: "2026-06-29T12:00:00Z",
+                                    reports: [report("carl", "merge-ready"), report("shannon", "merge-ready")])
+    write_snapshots(snapshot([ready]), snapshot([reviewed]))
+
+    out, err, status = run_heartbeat("--run", "--limit", "1",
+                                     env: { "GH_MERGE_FAIL" => "1", "GH_PR_STATE" => "MERGED" })
+    assert status.success?, err
+    assert_includes out, "already merged on GitHub (interrupted prior run)"
+
+    task_calls = json_lines(@task_log)
+    assert_includes task_calls, ["merged", "recovered-pr", "accepted"]
+    moves = task_calls.select { |a| a.first == "move" }
+    assert_equal [["move", "recovered-pr", "reviewed", "--actor", "avi"]], moves
   end
 end

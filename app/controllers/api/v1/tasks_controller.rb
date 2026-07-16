@@ -211,6 +211,12 @@ module Api
           :po_size,
           :dev_size,
           :actual_size,
+          # The git-location crash-recovery signal (nil/accepted/release/main —
+          # Task::MERGED_STATES). Review stamps "accepted" via `bin/task merged`
+          # when it lands a feat PR on the accepted branch; the model validates it.
+          # Set through the same one-path PATCH update as `stage` (no named-transition
+          # endpoint — see config/routes.rb).
+          :merged,
           required_skills: [],
           metadata: {}
         )

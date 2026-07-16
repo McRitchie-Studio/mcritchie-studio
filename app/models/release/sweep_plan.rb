@@ -2,72 +2,67 @@ class Release
   # The PURE per-task sweep decision behind `bin/release prepare`'s self-healing
   # sweep (and `bin/release merge`'s crash-recovery skip). Given the detected
   # candidate rows — each { "slug", "stage", "merged", "pr_url", "repo" } straight
-  # off the board read — it decides, per task, whether the CLI must `gh pr merge`
-  # its PR, can SKIP the merge (its PR already rides `release`/`main` — the
-  # `merged` crash-recovery signal), or must LEAVE it behind (no PR to merge).
+  # off the board read — it partitions them into the members to RECORD onto the RC
+  # versus the anomalies to leave behind.
   #
-  # Like Release::ShipSequence / Release::MergePlan this is deliberately IO-free
-  # and Rails-free (bin/release `require_relative`s it directly), so the
-  # merge/skip/leave decision lives in ONE unit-tested place instead of inline
-  # shell logic. The CLI owns the `gh`/`heroku` I/O around it.
+  # DevOps v2 accepted-ladder (Phase 3 Slice 4): review now MERGES each feat PR into
+  # the `accepted` branch and stamps merged:"accepted", so by the time the sweep
+  # runs every eligible member already carries its code on `accepted`. The sweep no
+  # longer merges N per-task feat PRs — the CLI promotes ONE accepted→release batch
+  # PR (promote_accepted_to_release!) — so this plan is purely "which members ride,
+  # which are anomalies", NOT "which PRs to merge". The `merged` stamp IS the ticket:
+  #   accepted/release/main → RECORD (code is on accepted or already past it),
+  #   ""                    → HELD anomaly (a `reviewed` member with no code on
+  #                           accepted — review's merge never landed; leave it
+  #                           behind, the CLI warns, it self-heals on re-review).
+  #
+  # Like Release::ShipSequence / Release::MergePlan this is deliberately IO-free and
+  # Rails-free (bin/release `require_relative`s it directly), so the partition lives
+  # in ONE unit-tested place instead of inline shell logic. The CLI owns the
+  # `gh`/`heroku` I/O around it.
   module SweepPlan
     module_function
 
     # Compute the sweep plan. Returns (all keys always present):
-    #   "merge"       — [{ "pr_url", "slugs" }] the unique PRs to `gh pr merge`,
-    #                   grouped (several task records may ride one PR), in the
-    #                   order given.
-    #   "skip"        — [{ "slug", "merged" }] tasks whose PR is ALREADY on the
-    #                   release branch (merged "release") or past it ("main") —
-    #                   the interrupted-run recovery: never re-merge, just
-    #                   (re-)record membership.
-    #   "unmergeable" — [slug] tasks with NO pr_url and NO merged stamp: nothing
-    #                   to merge, so they are left off the sweep (they stay
-    #                   `reviewed`; the CLI warns).
-    #   "sweep"       — [slug] every task to record membership for (skip + merge
-    #                   groups), in the order given.
+    #   "record" — [{ "slug", "merged" }] members to (re-)record onto the RC: their
+    #              code is on `accepted` (merged "accepted") or already past it
+    #              ("release"/"main" — the interrupted-run crash recovery). Order
+    #              given. Release#add downgrades an "accepted" stamp to "release" as
+    #              it attaches the member.
+    #   "held"   — [slug] `reviewed` members with NO merged stamp: review's feat→
+    #              accepted merge never landed, so there is no code on accepted to
+    #              promote. Left off the sweep (they stay `reviewed`; the CLI warns).
+    #              The invariant reviewed ⟺ code-on-accepted makes this a rare
+    #              anomaly, not a routine "waiting on a PR" state.
+    #   "sweep"  — [slug] every member to record membership for (= record), in order.
     def compute(rows)
       rows = Array(rows).map { |row| normalize(row) }
 
-      skip        = rows.select { |row| row["merged"] != "" }
-      to_merge    = rows.select { |row| row["merged"] == "" && row["pr_url"] != "" }
-      unmergeable = rows.select { |row| row["merged"] == "" && row["pr_url"] == "" }
+      record = rows.select { |row| row["merged"] != "" }
+      held   = rows.select { |row| row["merged"] == "" }
 
       {
-        "merge"       => group_by_pr(to_merge),
-        "skip"        => skip.map { |row| { "slug" => row["slug"], "merged" => row["merged"] } },
-        "unmergeable" => unmergeable.map { |row| row["slug"] },
-        "sweep"       => (skip + to_merge).map { |row| row["slug"] }
+        "record" => record.map { |row| { "slug" => row["slug"], "merged" => row["merged"] } },
+        "held"   => held.map { |row| row["slug"] },
+        "sweep"  => record.map { |row| row["slug"] }
       }
     end
 
-    # What to do with a to-merge PR's base before the sweep merges it into
-    # `release`. DevOps v2 TRANSITION STOPGAP (Phase 1 → Phase 3): Phase 1 flipped
-    # feature-branch base release→accepted, but the sweep merges into `release`, so
-    # a reviewed PR that still targets `accepted` must be RETARGETED and swept, not
-    # aborted. Any OTHER non-release base is a real misconfiguration → abort.
-    #   release_branch  → :proceed  (already correct — merge as-is)
-    #   accepted_branch → :retarget (gh pr edit --base release, then merge — STOPGAP)
-    #   anything else   → :abort
-    # Pure/IO-free (the CLI owns the gh pr view/edit around it). A blank base reads
-    # as :abort — an unreadable base must never pass as release. Phase 3 removes the
-    # :retarget arm (review merges accepted; a promoted accepted→release batch PR
-    # carries the work), leaving the plain release-or-abort guard.
-    def base_action(base, release_branch, accepted_branch)
+    # Assert a batch PR's base before the sweep merges it into `release`. In the
+    # accepted-ladder the sweep opens/reuses ONE `--base release --head accepted`
+    # batch PR (promote_accepted_to_release!), so the only valid base is `release`;
+    # anything else is a real misconfiguration.
+    #   release_branch → :proceed  (correct — merge as-is)
+    #   anything else  → :abort
+    # Pure/IO-free (the CLI owns the gh pr view around it). A blank base reads as
+    # :abort — an unreadable base must never pass as release. (Phase 3 Slice 4
+    # retired the :retarget arm: review merges feat→accepted, so there is no longer
+    # an accepted-based feat PR for the sweep to retarget.)
+    def base_action(base, release_branch)
       b = base.to_s.strip
-      return :proceed  if b == release_branch.to_s
-      return :retarget if b == accepted_branch.to_s
+      return :proceed if b == release_branch.to_s
 
       :abort
-    end
-
-    # The unique PRs to merge, grouped by pr_url in first-appearance order —
-    # several task records may intentionally ride one PR, which is checked and
-    # merged ONCE while every rider is swept.
-    def group_by_pr(rows)
-      Array(rows).group_by { |row| row["pr_url"] }.map do |pr_url, group|
-        { "pr_url" => pr_url, "slugs" => group.map { |row| row["slug"] } }
-      end
     end
 
     def normalize(row)

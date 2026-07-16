@@ -3,7 +3,8 @@
 ## Status: Active
 
 This is Steffon's `qa-release` SOP. It is the self-healing release prepare sweep:
-detect reviewed work and release stragglers, merge them onto `release`, run the
+detect reviewed work and release stragglers, promote `accepted → release` via ONE
+batch PR per repo (review already merged each feat PR onto `accepted`), run the
 pre-QA gate, deploy QA, and flip members to `assembled` only on QA-green.
 `qa-deploy` is the legacy name for this same act.
 
@@ -89,9 +90,10 @@ Agent-tool subagent (`subagent_type: steffon`) for sub-agent-tree visibility.
   with the session) and the autonomous heartbeat has no terminal, so it renders no
   tree at all.
 
-Normalize any PR the sweep should carry: `gh pr ready <n>` un-drafts it and
-`gh pr edit <n> --base release` retargets a mis-based PR (a no-op when the base
-is already `release`).
+Review has already merged each feat PR into `accepted` (stamping `merged:
+"accepted"`), so the sweep no longer carries per-task feat PRs — the accepted-
+ladder retarget stopgap is retired. `prepare` opens/merges ONE `accepted →
+release` batch PR per repo instead.
 
 Run the self-healing prepare sweep:
 
@@ -103,8 +105,15 @@ bin/release prepare --yes
 
 1. Detect every `reviewed` task plus any `assembled` straggler.
 2. Open or resume the release candidate.
-3. Merge each task's PR onto `release`, skipping work already stamped
-   `merged: release` or `merged: main`.
+3. **Promote `accepted → release`**: for each repo with reviewed work, open (or
+   reuse) ONE `--base release --head accepted` batch PR and merge it — landing ALL
+   of `accepted` on `release` at once, not N per-task merges. Idempotent +
+   fail-closed: if `accepted` is level with `release` it skips the PR but still
+   records + deploys. Then record membership (re-stamping `merged: "release"`),
+   skipping work already stamped `merged: release`/`main`. A `reviewed` member
+   with no `merged` stamp (`merged: ""`) is a HELD anomaly — review never landed
+   its feat PR on `accepted` — so it is warned and left `reviewed` (re-review to
+   heal), never swept onto the RC.
 4. Run the pre-QA gate on `origin/release`. The suite runs in the repo's
    **isolated gate workspace** — a private detached worktree at
    `<repo>/.worktrees/_gate`, under its own lock, with a test DB the gate proves
@@ -197,9 +206,10 @@ Do not hand-merge, do not hand-flip stages, and above all do not leave a
 half-finished candidate sitting because you are unsure whether a re-run would
 double-merge. It will not:
 
-- **Already-merged PRs are skipped.** The sweep skips any task already stamped
-  `merged: release` or `merged: main` — the merge step is crash-recovery-aware, so
-  a PR that landed before the interruption is never re-merged.
+- **Already-promoted work is skipped.** The sweep skips re-promoting any task
+  already stamped `merged: release` or `merged: main`, and the `accepted → release`
+  promote is crash-recovery-aware (idempotent: `accepted` level with `release` →
+  skip the PR), so work that landed before the interruption is never re-merged.
 - **An interrupted run leaves members `reviewed`** (the flip lands only on
   QA-green), which is exactly the state the next run detects and finishes.
 - **A re-run resumes the candidate**; it does not open a second one.
@@ -217,7 +227,8 @@ must not reflexively re-run. Each abort names its own case and its own fix:
 | **Pre-QA gate red — a member REGRESSION** | `bin/release eject <task> --feedback "<failing evidence>"`, then revert its merge commit on `release` (the abort prints the guidance) — as the eject step above says | re-run `prepare`; the rest of the RC rides |
 | **Pre-QA gate red — ENV/toolchain** (unsatisfied bundle, Postgres down, Ruby divergence) | **Nothing to eject or revert.** Fix the environment exactly as the abort names it | re-run `prepare` |
 | **QA deploy / boot FAILED** | Fix the boot failure (the summary prints the `bin/qa-server deploy …` retry); eject the member if it is the cause | re-run `prepare` **once QA boots** |
-| **`gh` merge failed** (task left `reviewed`) | Resolve the conflict, or `bin/task block` the task | re-run `prepare` |
+| **`accepted → release` promote failed** (a conflict on the batch PR) | Resolve the conflict on the batch PR (or `bin/task block` the offending member) | re-run `prepare` |
+| **Member left `reviewed` with `merged: ""`** (review never landed its feat PR on `accepted`) | Re-review the task so `pr-review` merges it onto `accepted` | re-run `prepare` |
 
 `prepare` never force-ships a red candidate. The only ways past a real regression
 are to eject it or to fix it forward — never to re-run harder.
@@ -225,7 +236,8 @@ are to eject it or to fix it forward — never to re-run harder.
 ### Detecting an UNFINISHED release candidate
 
 An unfinished RC is a candidate whose members are **merged but never assembled** —
-the sweep merged the PR (step 3) but never reached the `assembled` flip (step 6).
+the sweep promoted `accepted → release` (step 3) but never reached the `assembled`
+flip (step 6).
 Nothing is corrupt, but nothing is finished, and it is invisible unless you look:
 
 ```bash

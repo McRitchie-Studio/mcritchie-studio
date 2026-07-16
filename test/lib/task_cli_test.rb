@@ -58,6 +58,10 @@ class TaskCliTest < Minitest::Test
     # in-memory record) but the persisted stage never changes, so a read-back
     # still shows the old one. fail_patch forces the PATCH itself to a non-2xx.
     @persisted_stage = stub_stage
+    # The board's PERSISTED merged git-location, read back by `bin/task merged`'s
+    # verification. A merged PATCH advances it UNLESS stub_persist is false (the
+    # false-success shape: 200 + echoed value, but the persisted value never moves).
+    @persisted_merged = ""
     @stub_persist = stub_persist
     @fail_patch = fail_patch
     # The POST /api/v1/sessions/:id/mascot response (the eager session-mascot draw).
@@ -165,6 +169,14 @@ class TaskCliTest < Minitest::Test
         @persisted_stage = requested if @stub_persist
         return ["200 OK", task_response(requested)]
       end
+      # A `bin/task merged` PATCH carries the git-location, no stage. Advance the
+      # persisted merged value (unless stub_persist:false models the dropped write)
+      # so the CLI's read-back verification reads it back.
+      merged = merged_of(body)
+      if merged
+        @persisted_merged = merged if @stub_persist
+        return ["200 OK", task_response(@persisted_stage)]
+      end
     end
 
     # The GET in the move read-merge returns an existing task carrying prior
@@ -184,12 +196,22 @@ class TaskCliTest < Minitest::Test
     nil
   end
 
+  # The git-location a `bin/task merged` PATCH requests, or nil when the body
+  # carries none (so an ordinary stage/devops PATCH never touches @persisted_merged).
+  def merged_of(body)
+    return nil if body.to_s.empty?
+
+    JSON.parse(body)["merged"]
+  rescue JSON::ParserError
+    nil
+  end
+
   # The API projects the PROGRESS fact alongside the claim (see Api::V1::TasksController
   # #task_json), so the claim gate can tell a second agent what the holder has actually
   # PRODUCED — not merely that its terminal is painting. @stub_progress seeds it.
   def task_response(stage)
     JSON.generate("data" => {
-      "slug" => "demo-task", "stage" => stage,
+      "slug" => "demo-task", "stage" => stage, "merged" => @persisted_merged,
       "metadata" => { "devops" => @stub_devops }
     }.merge(@stub_progress || {}))
   end
@@ -1816,5 +1838,48 @@ class TaskCliTest < Minitest::Test
     assert_equal 1, status.exitstatus,
                  "flag rejection stays exit 1 — distinct from success (0) and from not-found (4): a parse " \
                  "rejection from a version-skewed caller must never read as 'task gone'"
+  end
+
+  # --- `bin/task merged` — the accepted-ladder git-location setter (Step B) -----
+
+  def test_merged_sets_the_git_location_via_a_top_level_patch
+    requests, out, _err, status = run_task(["merged", "demo-task", "accepted"])
+    assert_equal 0, status.exitstatus, "the merged setter succeeds once the read-back confirms it"
+    patch = requests.find { |r| r[:method] == "PATCH" && r[:path] == "/api/v1/tasks/demo-task" }
+    refute_nil patch, "expected a PATCH carrying the merged git-location"
+    body = JSON.parse(patch[:body])
+    assert_equal "accepted", body["merged"], "merged rides as a TOP-LEVEL field, not under devops"
+    refute body.key?("stage"), "the merged setter must not move the stage"
+    assert_includes out, "merged set on demo-task: accepted"
+  end
+
+  def test_merged_accepts_release_and_main_too
+    %w[release main].each do |state|
+      requests, _out, _err, status = run_task(["merged", "demo-task", state])
+      assert_equal 0, status.exitstatus
+      patch = requests.find { |r| r[:method] == "PATCH" }
+      assert_equal state, JSON.parse(patch[:body])["merged"]
+    end
+  end
+
+  def test_merged_rejects_an_unknown_git_location_before_any_write
+    requests, _out, err, status = run_task(["merged", "demo-task", "somewhere-else"])
+    assert_equal 1, status.exitstatus, "an unknown git-location is a client-side reject"
+    assert_match(/must be one of/, err)
+    assert_empty requests.select { |r| r[:method] == "PATCH" }, "nothing is written on a rejected value"
+  end
+
+  def test_merged_needs_both_a_slug_and_a_state
+    _requests, _out, _err, status = run_task(["merged", "demo-task"])
+    assert_equal 1, status.exitstatus, "the state positional is required"
+  end
+
+  # A 200 is not persistence: if the board echoes the value but the write never
+  # lands, the read-back must catch it and exit NONZERO — a silently-unstamped
+  # `reviewed` member would be dropped by the sweep as a HELD anomaly.
+  def test_merged_exits_nonzero_when_the_stamp_does_not_persist
+    _requests, _out, err, status = run_task(["merged", "demo-task", "accepted"], stub_persist: false)
+    assert_equal 1, status.exitstatus, "a non-persisting stamp must not report success"
+    assert_match(/merged NOT persisted/, err)
   end
 end

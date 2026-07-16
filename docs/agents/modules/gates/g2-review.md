@@ -90,10 +90,13 @@ What the supervisor records, per reviewed task:
    its lane in flight** — the next wave's open reuses the same attempt.
 
 The task-level outcome is separate from the lanes: two `merge-ready` reports →
-the supervisor moves the task `reviewed`; any `request-changes` → the task is
-blocked for rework (a `building` attribute — `bin/task block` stamps
-`blocked_at`/`block_kind` and lands it on `building`, not a `blocked` stage);
-`wait-for-ci` / `conductor-review` / a missing report → deferred and re-queried.
+the supervisor **merges the feat PR into `accepted`** (the accepted-ladder's first
+rung), stamps `merged: "accepted"`, then moves the task `reviewed` (invariant:
+`reviewed` ⟺ code-on-`accepted`; a merge failure leaves it `submitted`); any
+`request-changes` → the task is blocked for rework (a `building` attribute —
+`bin/task block` stamps `blocked_at`/`block_kind` and lands it on `building`, not
+a `blocked` stage); `wait-for-ci` / `conductor-review` / a missing report →
+deferred and re-queried.
 See Avi's
 [`pr-review.md`](../../agents/avi/sops/pr-review.md) for the full verdict
 handling.
