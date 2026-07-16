@@ -2854,11 +2854,56 @@ def push_frozen_main(repo, sha)
   abort!("repo not found at #{path} — clone it as a sibling at the projects root") unless Dir.exist?(path)
 
   _, ok = sh("git", "-C", path, "push", "origin", "#{sha}:refs/heads/main")
+  unless ok
+    abort!("could not fast-forward #{repo} origin/main to #{short(sha)} — git REFUSED the ref update, which " \
+           "means origin/main has diverged from the frozen SHA (someone pushed to main). NOT forcing. " \
+           "Reconcile main, re-run `bin/release prepare` to re-freeze, then re-run `bin/release ship`.")
+  end
+
+  # main is advanced — now re-baseline this repo's origin/accepted onto it
+  # (guarded, idempotent, NON-FATAL). See advance_accepted.
+  advance_accepted(repo, path, sha)
+end
+
+# After push_frozen_main advances a repo's `main`, re-baseline that repo's
+# persistent `accepted` integration branch onto the same frozen SHA. This retires
+# the manual post-ship chore the conductor has run by hand after every ship —
+# `git push origin origin/main:refs/heads/accepted` — because `accepted` (feature
+# branches are cut from and PR into it) is left STALE behind `main` after a ship
+# and nothing else re-baselines it. DevOps v2 Phase 3, Slice 1: a step toward
+# Phase 3 fully automating accepted-maintenance; a later slice restructures the
+# ladder and retires the manual chore entirely.
+#
+# Three properties, each load-bearing:
+#
+#   * GUARDED — advance ONLY a repo that HAS an origin/accepted, queried LIVE
+#     against the remote with `ls-remote` (not the primary's remote-tracking ref,
+#     which can be stale or missing here and would false-negative the guard into
+#     never advancing). A repo without an accepted branch (rolio/turf, pre-Phase-5)
+#     is a clean NO-OP. The yes/no is the pure ShipSequence.advance_accepted?.
+#
+#   * FAIL-CLOSED — no --force. `accepted` trails `main`, so the advance is
+#     normally a fast-forward; a non-ff means `accepted` has DIVERGED (someone
+#     pushed to it), and forcing would silently discard that. git refuses the
+#     non-ff and we leave it for a human.
+#
+#   * NON-FATAL — `main` is already advanced and the deploy is landing, so a failed
+#     accepted push (a divergence, a transient git error) must NEVER abort a live
+#     ship. Warn with the manual command and CONTINUE — the same best-effort
+#     contract as the merged:main stamp (record_merged_main).
+def advance_accepted(repo, path, sha)
+  _, exists = sh("git", "-C", path, "ls-remote", "--exit-code", "--heads", "origin", "accepted", capture: true)
+  return unless Release::ShipSequence.advance_accepted?(sha: sha, accepted_exists: exists)
+
+  step("advance #{repo} origin/accepted → #{short(sha)} (ref push — accepted trails main)")
+  _, ok = sh("git", "-C", path, "push", "origin", "#{sha}:refs/heads/accepted")
   return if ok
 
-  abort!("could not fast-forward #{repo} origin/main to #{short(sha)} — git REFUSED the ref update, which " \
-         "means origin/main has diverged from the frozen SHA (someone pushed to main). NOT forcing. " \
-         "Reconcile main, re-run `bin/release prepare` to re-freeze, then re-run `bin/release ship`.")
+  say("  ⚠ #{repo}: origin/accepted NOT advanced to #{short(sha)} — git refused the ref update " \
+      "(accepted has DIVERGED from main; NOT forcing). Deploy continues — reconcile by hand: " \
+      "git -C #{path} push origin #{sha}:refs/heads/accepted")
+rescue SystemExit, StandardError => e
+  say("  ⚠ #{repo}: origin/accepted advance failed (#{e.message}); deploy continues (maintenance only)")
 end
 
 # Put a GEM repo's primary checkout back on `main` after the artifact build left it

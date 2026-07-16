@@ -111,6 +111,35 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
     assert_not S.approval_pause?(nil)
   end
 
+  # --- advance_accepted?: the post-ship origin/accepted re-baseline guard ------
+  #
+  # After a ship advances `main` to the frozen SHA, a repo on the accepted ladder
+  # also fast-forwards its origin/accepted to that SHA — retiring the manual
+  # `git push origin origin/main:refs/heads/accepted` the conductor ran by hand
+  # after every ship. This pure guard decides IF that push happens; the ls-remote
+  # existence probe and the fail-closed (no --force) ref push are the shell's.
+  # DevOps v2 Phase 3, Slice 1.
+
+  test "[unit] advance_accepted? advances with a frozen SHA and an existing origin/accepted" do
+    assert S.advance_accepted?(sha: "abc123", accepted_exists: true)
+  end
+
+  test "[unit] advance_accepted? is a clean NO-OP for a repo without origin/accepted" do
+    # rolio/turf pre-Phase-5 have no accepted branch — advance nothing.
+    assert_not S.advance_accepted?(sha: "abc123", accepted_exists: false)
+  end
+
+  test "[unit] advance_accepted? never advances on a blank/nil SHA" do
+    # The caller's main push aborts on a blank SHA, but the guard is honest alone.
+    assert_not S.advance_accepted?(sha: "", accepted_exists: true)
+    assert_not S.advance_accepted?(sha: "   ", accepted_exists: true)
+    assert_not S.advance_accepted?(sha: nil, accepted_exists: true)
+  end
+
+  test "[unit] advance_accepted? requires BOTH — no SHA and no accepted is false" do
+    assert_not S.advance_accepted?(sha: "", accepted_exists: false)
+  end
+
   test "strategy_handler raises on an unknown strategy" do
     err = assert_raises(ArgumentError) { S.strategy_handler("rsync_box") }
     assert_match(/unknown prod_deploy strategy/, err.message)
