@@ -257,6 +257,10 @@ class TasksController < ApplicationController
     tasks = tasks.where(stage: stage_filter) if Task::STAGES.include?(stage_filter)
     load_board_task_conversation(tasks)
     @tasks_by_stage = tasks.group_by(&:stage)
+    # CI progress bars: one batched read for every submitted-onward PR's GitHub CI,
+    # so a card never issues its own check-runs call. Degrades to an empty map (no
+    # bars) on any error — see Ci::ProgressReader.
+    @ci_progress_by_slug = Ci::ProgressReader.new.progress_by_slug(tasks)
     @agents = Agent.order(:position)
   end
 
