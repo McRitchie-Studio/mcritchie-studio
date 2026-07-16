@@ -7,10 +7,12 @@ require "test_helper"
 # → the domain experts. Avi picks the pair (bin/reviewer-select) and SPAWNS both
 # the PRIMARY and LIGHT reviewers IN PARALLEL as sibling children (NOT the old
 # "primary spawns the light" nested chain), collects both verdicts, and gates.
-# And — since move-release-assembly-to-steffon (2026-07-03) — review is
-# REVIEW-ONLY: the merge belongs to Steffon's self-healing qa-release sweep, which
-# flips members assembled on QA-green. These assertions are deliberate tripwires:
-# revert the model and they fail.
+# And — under the LIVE accepted ladder — review MERGES the feat PR into `accepted`
+# (stamping merged: "accepted") and then STOPS at reviewed: review never touches
+# release/main and never deploys. Steffon's self-healing qa-release sweep promotes
+# ONE accepted→release batch PR per repo (not N per-task merges), re-stamps
+# merged: "release", and flips members assembled on QA-green. These assertions are
+# deliberate tripwires: revert the model and they fail.
 class ReviewLaneDocsTest < ActiveSupport::TestCase
   AGENTS = Rails.root.join("docs", "agents")
 
@@ -34,12 +36,17 @@ class ReviewLaneDocsTest < ActiveSupport::TestCase
     refute_match(/\bheavy\b/i, body, "the heavy→primary rename must not regress in the docs")
   end
 
-  test "[static] the devops-cycle runbook gives the merge to Steffon's sweep — review is review-only" do
+  test "[static] the devops-cycle runbook has review merge to accepted and the sweep promote ONE accepted→release batch PR" do
     body = norm("system/devops-cycle-design.md")
-    assert_match(/review-only/i, body, "review stops at reviewed — the 2026-07-03 contract")
+    assert_match(/merges? the feat(ure)? PR into accepted/i, body,
+      "review merges the feat PR into accepted — the accepted-ladder authority")
+    assert_match(/merged: "accepted"/i, body,
+      "review stamps the accepted git-location (merged: accepted) on merge")
+    assert_match(/one accepted → release batch PR/i, body,
+      "the sweep promotes ONE accepted→release batch PR per repo — not N per-task merges")
     assert_match(/self-healing/i, body, "Steffon's qa-release is the self-healing sweep")
     assert_match(/sweep[^.\n]{0,300}merged: "release"/im, body,
-      "the sweep stamps the merged git-location (the crash-recovery signal)")
+      "the sweep re-stamps the merged git-location (the crash-recovery signal)")
     assert_match(/supervisor/i, body, "Avi is the review SUPERVISOR")
     assert_match(/spawns?[^.\n]{0,120}parallel/im, body,
       "Avi spawns the primary and light IN PARALLEL (not primary-spawns-light)")
@@ -122,7 +129,10 @@ class ReviewLaneDocsTest < ActiveSupport::TestCase
     refute_match(/nested cascade/i, body, "review is no longer a nested cascade")
     refute_match(/spawns?\s+the\s+light/i, body,
       "the primary must NOT spawn the light — Avi spawns both in parallel")
-    assert_match(/review-only/i, body, "the launch docs state the review-only contract")
+    assert_match(/merges? the feat(ure)? PR into accepted/i, body,
+      "the launch docs state review merges the feat PR into accepted")
+    assert_match(/one accepted → release batch PR/i, body,
+      "the launch docs state the sweep promotes ONE accepted→release batch PR per repo")
 
     body = norm("agents/steffon/sops/qa-release.md")
     assert_match(/self-healing/i, body, "…and hands the merge to Steffon's self-healing sweep")
