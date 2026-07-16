@@ -1117,6 +1117,7 @@ tiers that must be green by the time the task is `submitted` for review:
 | **library** | studio-engine change | `unit` `integration` — in the engine, plus consumer-CI in *both* apps |
 | **onchain** | new turf-vault instruction | `unit` `integration` — Anchor unit, Anchor lifecycle, Ruby decoder unit |
 | **onchain-vertical** | new workflow w/ wallet + DB + UI + program | `unit` `component` `integration` `e2e` — almost always its own `release` |
+| **docs** | SOP / runbook / README edit | none — no code tiers; routes to the documentation seat (Alex) and certifies by review, not a test lane |
 
 **The backticked tier names are load-bearing, not formatting.** They are the
 canonical `dor_tiers` from `config/feature_shapes.yml`, and

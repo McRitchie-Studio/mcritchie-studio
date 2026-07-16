@@ -114,7 +114,14 @@ class ReviewerSelector
     "backend"          => %w[backend],
     "library"          => %w[backend],
     "onchain"          => %w[web3 onchain],
-    "onchain-vertical" => %w[web3 onchain ui backend]
+    "onchain-vertical" => %w[web3 onchain ui backend],
+    # A documentation-only change (SOP / runbook / operating-model / README) needs
+    # the pool's Documentation seat — Alex, whose seeded domains carry both `docs`
+    # and `documentation`. Both tokens map here so a doc-shaped task fits Alex
+    # (fit 2) and nobody else (fit 0), landing him the PRIMARY seat. This is the
+    # metadata-side fix: BOTH the CLI preview (.decision) and the recorder (.select)
+    # read the shape, so they stay reproducible — a diff-only heuristic would not.
+    "docs"             => %w[docs documentation]
   }.freeze
 
   # A risk tag → the domain whose reviewer should weigh in (deepens the fit for
