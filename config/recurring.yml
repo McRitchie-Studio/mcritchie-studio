@@ -6,3 +6,10 @@ production:
   clear_solid_queue_finished_jobs:
     command: "SolidQueue::Job.clear_finished_in_batches(sleep_between_batches: 0.3)"
     schedule: every hour at minute 12
+  scan_pending_deployments:
+    # Prod-deploy approval gate: GitHub won't deliver deployment_review to our
+    # PAT-created webhook, so poll for runs waiting on an environment review and
+    # replay them through the ingest job (see Github::PendingDeploymentScanner).
+    class: ScanPendingDeploymentsJob
+    schedule: every 3 minutes
+    args: []

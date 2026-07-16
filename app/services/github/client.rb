@@ -65,6 +65,14 @@ module Github
       parse_json(response.body)
     end
 
+    # A JSON POST, sharing the same retry / rate-limit / error machinery as GET.
+    # +body+ is JSON-encoded (a Hash) or sent verbatim (a String). Used by
+    # Github::DeploymentApprover to approve a pending deployment.
+    def post(path, body: nil, params: {}, headers: {})
+      response = request(path, params: params, headers: headers, method: :post, body: body)
+      parse_json(response.body)
+    end
+
     def get_response(path, params: {}, headers: {})
       response = request(path, params: params, headers: headers)
       Response.new(
@@ -98,10 +106,9 @@ module Github
 
     private
 
-    def request(path, params:, headers:)
+    def request(path, params:, headers:, method: :get, body: nil)
       uri = build_uri(path, params)
-      req = Net::HTTP::Get.new(uri)
-      default_headers.merge(headers).each { |key, value| req[key] = value }
+      req = build_request(uri, method, headers, body)
 
       attempts = 0
       rate_limit_attempts = 0
@@ -153,6 +160,19 @@ module Github
           raise HttpError, "GitHub API request failed: #{e.class}: #{e.message}"
         end
       end
+    end
+
+    # Build the Net::HTTP request for the verb, applying default + caller headers.
+    # A POST body is JSON-encoded (Hash) or passed through (String) with the
+    # matching Content-Type.
+    def build_request(uri, method, headers, body)
+      req = method == :post ? Net::HTTP::Post.new(uri) : Net::HTTP::Get.new(uri)
+      default_headers.merge(headers).each { |key, value| req[key] = value }
+      if body
+        req["Content-Type"] = "application/json"
+        req.body = body.is_a?(String) ? body : body.to_json
+      end
+      req
     end
 
     def execute(uri, request)
