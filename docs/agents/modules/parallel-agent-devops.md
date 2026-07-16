@@ -68,9 +68,9 @@ Two corollaries worth knowing before you need them:
    command; `bin/dor-check` enforces this, but read the metadata yourself.
    Avi classifies check failures by lane before deciding whether to move the
    task to `reviewed`, wait, or send `qa_feedback`.
-3. **Assemble + QA: `reviewed → assembled`** — Steffon's `qa-release` sweep merges
-   reviewed PRs into the persistent `release` branch, deploys `origin/release` to
-   the QA app, and records QA URL, deployed SHA, release slug, and QA checks in
+3. **Assemble + QA: `reviewed → assembled`** — Steffon's `qa-release` sweep
+   promotes ONE `accepted → release` batch PR per repo, deploys `origin/release`
+   to the QA app, and records QA URL, deployed SHA, release slug, and QA checks in
    `checks_run`.
 4. **Ship: `assembled → shipped`** — Release conductor promotes only accepted
    QA work after explicit approval. Production smoke results, production URL,
@@ -169,10 +169,12 @@ McRitchie Studio task record.
 Avi owns PR **intake** as the review SUPERVISOR — a thin gate that never reviews
 the code: product-acceptance + reviewer selection. He then **spawns the PRIMARY
 and LIGHT reviewers in parallel** as siblings — the PRIMARY does the deep review,
-the LIGHT a focused second read — **review-only**
-(2026-07-03): approved work stops at `reviewed`, and Steffon's self-healing
-`qa-release` sweep (`bin/release prepare`) merges it into `release` and flips it
-`assembled` on QA-green.
+the LIGHT a focused second read. On a merge-ready verdict review **merges the
+feat PR into `accepted`** (stamping `merged: "accepted"`) and stops at
+`reviewed` — review still never touches `release`/`main` and never deploys.
+Steffon's self-healing `qa-release` sweep (`bin/release prepare`) then promotes
+**ONE `accepted → release` batch PR per repo** (not N per-task merges),
+re-stamps `merged: "release"`, and flips members `assembled` on QA-green.
 
 ### Picking the two senior reviewers (`bin/reviewer-select`)
 
@@ -615,13 +617,12 @@ The intended cycle is:
 2. Feature agent moves the task to `submitted`.
 3. The review lane runs: Avi (SUPERVISOR) spawns the **PRIMARY** and **LIGHT**
    reviewers **in parallel** as siblings — the PRIMARY does the deep review, the
-   LIGHT a focused second read — and on two approvals the supervisor drives the
-   task to `reviewed` (review-only). Steffon's sweep (`bin/release prepare`, or the
-   per-task `bin/release merge <task> [<task> …]` primitive) does the `gh pr
-   merge` + membership record — one OR many slugs, merged once each, swept in a
-   **single `heroku run`** (stages stay `reviewed` until QA-green); with ≥2
-   slugs it first prints an **overlap planner**: colliding files + suggested
-   order + likely rebases, warning-only.
+   LIGHT a focused second read — and on two approvals the supervisor merges the
+   feat PR into `accepted` (stamping `merged: "accepted"`) and drives the task to
+   `reviewed` — review never touches `release`/`main` and never deploys. Steffon's
+   sweep (`bin/release prepare`) then promotes ONE `accepted → release` batch PR
+   per repo, recording membership + `merged: "release"` in a **single `heroku
+   run`** (stages stay `reviewed` until QA-green).
 4. Avi or Steffon provisions the QA app once if `bin/qa-server status <app>`
    reports `missing-app`.
 5. Avi or Steffon deploys the `release` ref to the app's QA server with
