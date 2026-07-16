@@ -81,6 +81,26 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     assert_equal "primary", weight_of(result, "alex"), "the docs-domain owner takes the primary seat"
   end
 
+  test "a docs-SHAPED task routes the primary seat to Alex (the documentation seat)" do
+    # The gap this task closes: doc-only PRs used to be shaped `ui-only`/`backend`
+    # (there was no `docs` shape), so SHAPE_DOMAINS pointed the pick at the wrong
+    # domain owner and Avi had to override the intent to Alex by hand. With the
+    # `docs` shape mapped to the doc domain, needed_domains = [docs, documentation]
+    # → only Alex fits (fit 2) → he takes the deep/primary seat, no override.
+    result = ReviewerSelector.select(task_for(shape: "docs"))
+    assert_includes slugs(result), "alex", "the docs shape selects Alex"
+    assert_equal "primary", weight_of(result, "alex"), "and lands him the primary (deep) seat"
+  end
+
+  test "the docs shape does not perturb a non-doc pick — a backend task still routes to Carl" do
+    # Guards the other half of the acceptance: adding a domain for the `docs`
+    # shape must leave every other shape's selection unchanged. A backend task
+    # keeps Carl in the primary seat and never promotes Alex to primary.
+    result = ReviewerSelector.select(task_for(shape: "backend"))
+    assert_equal "primary", weight_of(result, "carl"), "backend still routes to the backend owner"
+    refute_equal "primary", weight_of(result, "alex"), "Alex is never the primary on a non-doc shape"
+  end
+
   # --- no self-gating: the QA owner (steffon) is never a reviewer ---
 
   test "steffon is never picked — he QAs the assembled RC, so reviewing too would self-gate" do
