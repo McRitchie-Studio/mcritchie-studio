@@ -17,9 +17,10 @@ The four gates in order: [G1 Cert](g1-cert.md) → [G2 Review](g2-review.md) →
 > [The G3 verdict](#the-g3-verdict-github-ci-on-the-release-sha-devops-v2-phase-3--live)
 > below. The registry/tier detail in this section describes the `qa_test_cmd` that is
 > still **recorded** on the release (the G4 drift check needs it); its **execution** in
-> an isolated gate workspace is demoted (commented out in `bin/release.rb`, deleted in
-> Phase 4). Read the workspace/DB-probe/bundle-guard machinery below as the pre-v2
-> pre-flight that is retained but no longer run.
+> an isolated gate workspace was demoted then **deleted in Phase 4** — the gate no
+> longer runs a local suite. Read the workspace/DB-probe/bundle-guard machinery below
+> as the pre-v2 pre-flight the gate no longer invokes; the apparatus itself survives
+> because the G4 **ship** reuses it to run a `repo_script` satellite's own deploy suite.
 
 The gate window spans prepare's whole test-and-deploy half, and every test SOP
 run inside it rides the close:
@@ -64,8 +65,9 @@ run inside it rides the close:
   compile at request time from tracked sources. In both, Selenium Manager fetches
   a chromedriver matched to the installed Chrome; a host with **no Chrome** fails
   at driver resolution — an **ENV error, NOT a release regression**: nothing to
-  eject or revert (`assert_system_test_browser!` aborts up front so it can't be
-  mistaken for one).
+  eject or revert. (The pre-v2 gate guarded this up front with
+  `assert_system_test_browser!`, deleted in Phase 4 with the local suite; CI's
+  `test:system` lane runs on an Actions runner that always has Chrome.)
 
   **⚠ A gate is only as trustworthy as the suite it runs — and the suite must be
   sized for THIS host.** Rolio's system tier was driven in its isolated gate
@@ -236,20 +238,22 @@ artifact QA deploys — instead of relying on a local gate no independent lane c
 
 This **inverts** the pre-v2 model, in which a *local* suite ran in an isolated gate
 workspace and CI was only an *auditor* that could alarm but never block. That local
-suite is now **demoted** (`bin/release.rb`: the `run_test_scope("pre_qa_gate")`
-execution is commented out, retained for the canary/rollback window; Phase 4 deletes
-it). The whole local-cert flakiness class — a lazily-autoloaded suite torn by a
+suite is now **gone** (`bin/release.rb`: the `run_test_scope("pre_qa_gate")`
+execution was commented out during the canary window and **deleted in Phase 4**). The
+whole local-cert flakiness class — a lazily-autoloaded suite torn by a
 concurrent checkout — retires with it, and the async-poll objection to *blocking* on
 CI is answered by the conductor **watching** the run (`gh run watch`) instead of a
 local gate polling GitHub for minutes.
 
-> **Retained-but-demoted machinery.** The isolated-workspace apparatus described
-> below (the private-DB probe, the bundle guard, the gate workspace, and the
-> "reproduce in the gate workspace" advice) still lives in `bin/release.rb`, but the
-> gate no longer runs it. Those paragraphs describe the pre-v2 pre-flight and are
-> kept for the rollback window; Phase 4 removes them with the code. The **cmd** each
-> app registers is still recorded on the release (`qa_gates[repo]["cmd"]`) so the G4
-> ship gate's drift assertion holds — only its *execution* moved to CI.
+> **The gate no longer runs the isolated-workspace suite.** In Phase 4 the gate's
+> `run_test_scope` execution was deleted — the G3/G4 gates read only CI's verdict now.
+> The isolated-workspace apparatus itself (the private-DB probe, the bundle guard, the
+> gate workspace) still lives in `bin/release.rb`, **not** for the gate but because the
+> G4 **ship** reuses it (role `ship`) to run a `repo_script` satellite's own pre-prod
+> deploy suite in a private, pinned checkout. Read the paragraphs below as that
+> ship-workspace's mechanics. The **cmd** each app registers is still recorded on the
+> release (`qa_gates[repo]["cmd"]`) so the G4 ship gate's drift assertion holds — only
+> its *execution* moved to CI.
 
 **No green CI verdict FAILS CLOSED — the single most important invariant.** The gate
 certifies on **exactly one** state (`green`). A just-merged `release` SHA reports its
@@ -344,9 +348,9 @@ have evidence otherwise.
 > verdict, so a red gate could be an env fault (the private-DB probe, the bundle
 > guard, a virgin-workspace stylesheet) rather than a regression, and the move was to
 > reproduce it in the gate workspace (`cd <repo>/.worktrees/_gate && bin/rails test`).
-> With CI as the verdict that whole env class moves to the CI runner; the
-> reproduction path is retained in `bin/release.rb` for the rollback window and
-> deleted in Phase 4.
+> With CI as the verdict that whole env class moves to the CI runner; the gate's own
+> reproduction path was **deleted in Phase 4** (the workspace machinery it used lives
+> on only for the G4 ship's `repo_script` deploy).
 
 ## Certification (what G4 reads)
 

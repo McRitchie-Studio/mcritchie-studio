@@ -515,8 +515,8 @@ class Release
     #                                  "ci" => { "state" =>, "checks" => [...],
     #                                            "count" =>, "reason" => } }
     #
-    # The "ci" half is the AUDITOR's verdict on the SAME SHA — what GitHub CI made
-    # of the commit the local gate just certified (bin/release's ci_cross_check;
+    # The "ci" half is GitHub CI's verdict for the SAME SHA — the conclusion the G3
+    # gate DERIVED its result from since DevOps v2 Phase 3 (bin/release's ci_verdict;
     # CiStatus.for_sha). Beyond "state" its keys are best-effort colour: "checks"
     # (the failing/pending names), "count" (a green's check count), "reason" (why a
     # verdict was unverified) — each present only when GitHub gave it. Recorded so a

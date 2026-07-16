@@ -168,12 +168,9 @@ require_relative "../lib/agent_session_usage"
 require_relative "../lib/task_usage_baseline"
 require_relative "../lib/task_usage_sandbox"
 require_relative "lib/session_identity"
-# The headless-Chrome probe behind the system-tier gate guard below — SHARED with
-# bin/full-suite-check's cert-side twin so both read one definition of "has Chrome".
-require_relative "lib/system_test_browser"
-# G3's AUDITOR: the same GitHub-CI verdict bin/dor-check reads for a PR, asked
-# about the COMMIT the pre-QA gate just certified (CiStatus.for_sha). The local
-# gate stays the verdict; CI only gets to DISAGREE — loudly. See ci_cross_check.
+# GitHub CI's verdict for a COMMIT — the same source bin/dor-check reads for a PR,
+# asked about the release-tip SHA the pre-QA/ship gate certifies (CiStatus.for_sha).
+# Since DevOps v2 Phase 3 CI IS the G3/G4 verdict (ci_pass?), not a cross-check.
 require_relative "lib/ci_status"
 
 APP = "mcritchie-studio"
@@ -194,7 +191,7 @@ RELEASE_BRANCH = "release"
 # of `accepted` onto `release` via ONE batch PR per repo (promote_accepted_to_release!
 # uses this as the `--head`). KEPT — the batch PR's head needs the branch name.
 # (Phase 3 Slice 4 retired the release→accepted base-retarget stopgap that used to
-# live here; its remnant is the commented ensure_pr_base_release! below.)
+# live here; Phase 4 deleted its last remnant.)
 ACCEPTED_BRANCH = "accepted"
 
 # The producer/consumer repo registry (config/release_repos.yml) — tells the CLI
@@ -1133,83 +1130,10 @@ end
 # prior run merged the PR but died before the record write (so `merged` is still
 # nil), the next run's `gh pr merge` fails — this read distinguishes "already
 # merged, carry on" from a genuine merge failure. Read-only; goes straight to
-# Open3 (runs even in --dry-run, like gh_pr_files).
+# Open3 (runs even in --dry-run).
 def pr_merged?(pr_url)
   out, status = Open3.capture2e("gh", "pr", "view", pr_url, "--json", "state", "-q", ".state")
   status.success? && out.strip == "MERGED"
-end
-
-# A PR's changed-file paths (read-only; goes straight to Open3 so it runs even in
-# --dry-run, like git_capture / conductor read_only). [] when gh fails / none.
-def gh_pr_files(pr_url)
-  out, status = Open3.capture2e("gh", "pr", "view", pr_url, "--json", "files", "-q", ".files[].path")
-  return [] unless status.success?
-
-  out.lines.map(&:strip).reject(&:empty?)
-end
-
-# Overlap planner (WARNING ONLY — never blocks): before merging a batch, fetch
-# each PR's changed files and print the pairwise file collisions, a suggested
-# (smallest-footprint-first) merge order, and which PRs will likely need a
-# post-merge rebase (they share a file with an earlier-merged same-repo PR). Born
-# from real rework: siblings that all touched task.rb/docs/a shared helper passed
-# review independently, then conflicted on `release`. The pure decision lives in
-# Release::MergePlan; this owns only the gh I/O + printing. A single PR has
-# nothing to compare, so it's skipped.
-# ⚠ PHASE-4-DELETES (accepted-ladder canary stopgap) — the per-feat-PR sweep
-# machinery retired with the base guard: the sweep no longer merges N feat PRs, it
-# promotes ONE accepted→release batch PR per repo (promote_accepted_to_release!),
-# so there are no per-PR groups to overlap-plan. Kept COMMENTED for one canary
-# cycle (with ensure_pr_base_release!), deleted in the follow-up slice.
-=begin PHASE-4-DELETES accepted-ladder canary stopgap
-def merge_overlap_report(infos)
-  return if infos.size < 2
-
-  say("")
-  step("overlap planner: #{infos.size} PRs — fetching changed files (gh pr view)")
-  prs = infos.map do |info|
-    { "slug" => info["slug"], "repo" => info["repo"], "files" => gh_pr_files(info["pr_url"]) }
-  end
-  plan = Release::MergePlan.compute(prs)
-
-  if plan["overlaps"].empty?
-    say("  ✓ no overlapping files across the batch — merges are independent")
-    return
-  end
-
-  plan["overlaps"].each do |o|
-    files = o["files"].first(8).join(", ")
-    more  = o["files"].size > 8 ? " (+#{o['files'].size - 8} more)" : ""
-    say("  ⚠ #{o['a']} ∩ #{o['b']} → #{files}#{more}")
-  end
-  say("  suggested merge order (smallest-footprint first): #{plan['suggested_order'].join(', ')}")
-  if plan["rebase"].any?
-    say("  post-merge rebase likely (shares files with an earlier-merged PR): #{plan['rebase'].join(', ')}")
-  end
-  say("  (warning only — `bin/release merge` proceeds in the order given)")
-end
-
-# Multiple task-board records can legitimately point at the same PR. Merge/check
-# each PR once, then sweep every associated task slug after that PR lands.
-def merge_pr_groups(infos)
-  Array(infos).group_by { |info| info["pr_url"].to_s }.map do |pr_url, group|
-    slugs = group.map { |info| info["slug"].to_s }.reject(&:empty?)
-    first = group.first || {}
-    first.merge(
-      "slug" => merge_pr_group_label(slugs),
-      "slugs" => slugs,
-      "pr_url" => pr_url
-    )
-  end
-end
-=end
-
-def merge_pr_group_label(slugs)
-  list = Array(slugs)
-  return "" if list.empty?
-  return list.first if list.one?
-
-  "#{list.first} (+#{list.size - 1} #{list.size == 2 ? 'task' : 'tasks'})"
 end
 
 # Review-gate guard for the sweep (`bin/release merge` + `prepare`). The
@@ -1323,52 +1247,6 @@ def accepted_release_pr_url(repo, label: nil)
          "open it by hand (`gh pr create --base #{RELEASE_BRANCH} --head #{ACCEPTED_BRANCH}`), then re-run.") unless created
   out.strip
 end
-
-# ⚠ PHASE-4-DELETES (accepted-ladder canary stopgap) — retired, kept COMMENTED for
-# one canary cycle then deleted in the follow-up slice (mirrors the Slice-3 demote→
-# confirm→delete). The accepted-ladder retired the per-feat-PR base guard: review
-# now merges each feat PR into `accepted` and the sweep promotes ONE accepted→release
-# batch PR (promote_accepted_to_release!), so no accepted-based feat PR ever reaches
-# the sweep for it to retarget. ACCEPTED_BRANCH is KEPT (the batch PR's --head needs
-# it). Re-enable = uncomment this + its call sites and revert the promote flow.
-#
-# Verify (and, per the DevOps v2 transition stopgap, FIX) a to-merge PR's base
-# before the sweep merges it into `release`. Shared by the explicit `merge`
-# command and `prepare`'s self-healing sweep so the base rule lives in ONE place.
-#
-#   * unreadable base  → ABORT (fail closed — never merge an unverified base).
-#   * base == release  → proceed (already correct).
-#   * base == accepted → RETARGET to `release` (`gh pr edit --base release`) and
-#     proceed. STOPGAP: Phase 1 based feature PRs on `accepted`, but the sweep
-#     merges into `release`; Phase 3 replaces this with review-merges-accepted +
-#     a promoted accepted→release batch PR. Abort if the retarget itself fails.
-#   * any other base   → ABORT (a real misconfiguration, not the transition gap).
-#
-# A DRY run reads the base (so the plan prints the gh call) but changes/verifies
-# nothing — the base read/edit are live gh calls, exactly as the prior inline
-# guards were `if !DRY`. SweepPlan.base_action owns the pure decision.
-=begin PHASE-4-DELETES accepted-ladder canary stopgap — see the marker note above.
-def ensure_pr_base_release!(pr_url, slug)
-  base, base_ok = sh("gh", "pr", "view", pr_url, "--json", "baseRefName", "-q", ".baseRefName", capture: true)
-  base = base.strip
-  return if DRY
-
-  abort!("could not read the PR base for #{pr_url} (#{slug}; gh pr view failed) — verify it targets `#{RELEASE_BRANCH}`") unless base_ok
-
-  case Release::SweepPlan.base_action(base, RELEASE_BRANCH, ACCEPTED_BRANCH)
-  when :proceed
-    nil
-  when :retarget
-    step("retarget PR base #{base} → #{RELEASE_BRANCH} for #{slug} (#{pr_url}) — DevOps v2 transition stopgap")
-    _, edited = sh("gh", "pr", "edit", pr_url, "--base", RELEASE_BRANCH, capture: false)
-    abort!("could not retarget #{pr_url} (#{slug}) base #{base} → #{RELEASE_BRANCH} (`gh pr edit` failed) — " \
-           "retarget it by hand (`gh pr edit #{pr_url} --base #{RELEASE_BRANCH}`), then re-run.") unless edited
-  else
-    abort!("PR #{pr_url} (#{slug}) targets '#{base}', not '#{RELEASE_BRANCH}' — retarget it " \
-           "(`gh pr edit #{pr_url} --base #{RELEASE_BRANCH}`), then re-run.")
-  end
-end
-=end
 
 def merge
   # `--override` is the audited review-gate escape hatch — consume it BEFORE
@@ -1972,104 +1850,6 @@ end
 # Only asserted when the registered command actually runs the tier, so the
 # integration-subset satellites never need a browser on the gate host.
 #
-# The PROBE (which binaries count as Chrome, and how a host is checked for one) is
-# shared with bin/full-suite-check's cert-side twin of this guard —
-# bin/lib/system_test_browser.rb. Only the abort WORDING lives here, because the
-# consequence does: at the gate, a misread ENV failure ejects a good PR.
-def system_tier?(cmd) = SystemTestBrowser.system_tier?(cmd)
-
-# Chrome itself — NOT chromedriver. There is deliberately no driver on PATH: like
-# ci.yml, we let Selenium Manager fetch the chromedriver MATCHED to the installed
-# Chrome (a stale/mismatched driver on PATH is preferred by Selenium Manager and
-# then fails on a major-version skew).
-def chrome_available? = SystemTestBrowser.available?
-
-def assert_system_test_browser!(repo, cmd)
-  return unless system_tier?(cmd)
-  return if chrome_available?
-
-  abort!("gate #{repo}: the registered gate command runs the SYSTEM tier (`#{cmd}`) but this host has " \
-         "NO Chrome — headless Chrome is required to drive test/system, and without it Selenium fails " \
-         "inside the suite and looks exactly like a red suite. This is an ENV issue, NOT a release " \
-         "regression — nothing to eject or revert. #{SystemTestBrowser::INSTALL_HINT}")
-end
-
-# PRE-QA GATE (prepare step 4): run each app's registered `qa_test_cmd` against
-# origin/release BEFORE anything deploys to QA, so a regression riding the
-# release branch is caught while the members are still `reviewed` (nothing
-# flipped, nothing deployed). A red gate aborts the WHOLE prepare with eject
-# guidance: block the offender OUT of the RC (`bin/release eject`), revert its
-# merge commit on `release`, then re-run — the sweep self-heals and the REST of
-# the RC rides on. Apps with no qa_test_cmd are skipped (self-gating).
-#
-# The suite runs in the repo's ISOLATED GATE WORKSPACE (Release::GateWorkspace) —
-# a private detached worktree pinned at the origin/release SHA, with its own test
-# DB — NOT on the shared primary. The primary is never checked out to `release`
-# at all now, which is what makes the verdict trustworthy: the test env autoloads
-# LAZILY (config.eager_load is false outside CI), so a concurrent `git checkout`
-# in the shared primary used to tear the code snapshot mid-suite and false-fail
-# green code. The old flock could not prevent that — it only bound other
-# bin/release invocations. It also means the primary stays on a clean `main`, so
-# the gate no longer fights concurrent feature sessions for it.
-#
-# On GREEN the gate RECORDS what it certified (repo → sha + cmd) on the release:
-# that record is the ONLY thing G4's ship gate will accept as grounds for
-# skipping its own suite (Release::ShipSequence.ship_gate_skip?). A gate that
-# skipped, was misconfigured, or went red leaves NO record, so G4 fails open and
-# runs the suite itself.
-#
-# Either way the gate is CROSS-CHECKED against GitHub CI for the SAME SHA
-# (ci_cross_check): both verdicts are printed, both are recorded, and a
-# CONTRADICTION alarms. CI audits; it never blocks. See the auditor block below.
-# --- G3's AUDITOR: GitHub CI's verdict on the SAME SHA the gate certified -----
-#
-# The local gate is the ONLY verdict on the release tip, and until now NOTHING
-# independent checked it. So for every SHA it gates, ALSO ask GitHub what CI made
-# of that exact commit (CiStatus.for_sha → `gh api …/commits/<sha>/check-runs`),
-# record BOTH verdicts on the release, and make a DISAGREEMENT impossible to miss.
-#
-# CI is the AUDITOR, never the verdict — it does NOT block:
-#   * The shape is deliberate. CI on a push is ASYNCHRONOUS: to BLOCK on it the
-#     gate would have to poll for minutes, and a LOCAL operation would acquire a
-#     hard GitHub dependency (a gh outage would stall every release).
-#   * "No CI data" is the NORMAL answer, not a fault — :none (no run for this SHA:
-#     ci.yml triggers on pull_request + push:main, so `release` builds NOTHING
-#     until task run-ci-on-release-branch lands), :pending (the push-triggered run
-#     has not settled — prepare gates seconds after the merge), :unverified (no gh,
-#     no network, a 404). None of those is a disagreement; they are SILENCE, and
-#     silence never blocks.
-#   * There is ZERO agreement data yet. A blocking rule with no data is a rule that
-#     only ever fires wrong. The alarm BUILDS that data set (the verdict pair lands
-#     on release.metadata["qa_gates"][repo]) — audit first, escalate on evidence.
-#
-# The two disagreements are not symmetric, and the loud one is the SECOND:
-#   * gate GREEN + CI RED — CI saw something the gate structurally cannot: the
-#     browser `test:system` lane no local gate runs (the #1 blocker class). QA
-#     still deploys, AND the SHA's G3 certification is DISTRUSTED at ship: G4
-#     fails open and re-runs its suite on the frozen SHA rather than self-gating
-#     on a certification CI contradicts (ShipSequence.ship_gate_skip?). Be exact
-#     about what that re-run is NOT, though: it runs the LOCAL suite — the very
-#     one that already passed — while the failing lane is one only CI can see. So
-#     there is NO automated backstop for this direction, and the alarm must not
-#     pretend otherwise. The alarm IS the control: read the failing check and fix
-#     or eject BEFORE the ship.
-#   * gate RED + CI GREEN — the GATE is the suspect, not the code. That is
-#     rel-20260711-7f2913 verbatim: the gate false-failed genuinely-green code and
-#     a reviewer nearly EJECTED a good PR over it. The gate still aborts (it IS the
-#     verdict), but the abort now tells the conductor to reproduce before ejecting.
-
-# The CI states that mean "GitHub has nothing to say about this SHA". Never an
-# alarm, never a block — a missing verdict is not a contradicting one.
-#
-# :unreadable belongs here for the same reason :unverified does — the auditor got NO
-# verdict, so it has nothing to contradict. But it is NOT the same fact, and
-# ci_cross_check prints it differently: :unverified is noise to shrug at, while
-# :unreadable means THE AUDITOR IS SWITCHED OFF for this repo — every SHA it gates
-# will silently skip the cross-check until the token is fixed. Omitting it here would
-# be worse still: an unlisted state falls through to the contradiction branch and the
-# gate would alarm "CI RED" at a token error, which is a lie in the loudest direction.
-CI_NO_DATA = %i[none pending unverified unreadable no_pr closed merged].freeze
-
 # "owner/repo" for a repo's origin remote (the gh api path), or "" when the remote
 # isn't GitHub — which CiStatus reads as no data, never as a red.
 def repo_name_with_owner(repo)
@@ -2141,69 +1921,6 @@ def ci_detail(ci)
   state  = ci.is_a?(Hash) ? ci[:state].to_s : ""
   reason = ci.is_a?(Hash) ? ci[:reason].to_s : ""
   reason.empty? ? state : "#{state}: #{reason}"
-end
-
-# DevOps v2 Phase 3: DEMOTED. pre_qa_gate no longer cross-checks a LOCAL verdict
-# against CI — CI IS the G3/G4 verdict now (ci_pass?), so there is no second opinion
-# to contradict. Retained (uncalled) for the canary/rollback window; Phase 4 deletes.
-#
-# Print the cross-check and return TRUE when the two verdicts CONTRADICT each
-# other (green-vs-red, either direction). Never aborts — the caller decides, and
-# on a green gate the answer is: deploy, but say it loudly.
-def ci_cross_check(repo, sha, local_ok, ci)
-  state = ci[:state]
-  named = (Array(ci[:failing]) + Array(ci[:pending])).join(", ")
-
-  # An UNREADABLE CI is "no data" like the rest — but it is not benign, and it must
-  # not read as benign. The other no-data states are the world being quiet; this one
-  # is the AUDITOR ITSELF being disabled, silently, for every future SHA in this repo.
-  # That is precisely the "gate that cannot see" the cross-check exists to prevent, so
-  # it says so in its own voice instead of hiding in the informational shrug.
-  if state == :unreadable
-    say("  #{repo}: CI cross-check DISABLED — the token was REFUSED reading CI for #{short(sha)} " \
-        "(#{ci[:reason]}). The G3 auditor is BLIND on #{repo} until this is fixed: it cannot contradict a bad " \
-        "local gate here, so the gate is unaudited, not confirmed.")
-    say("  #{repo}: #{CiStatus.unreadable_remedy(repo_name_with_owner(repo), cause: ci[:cause])}")
-    return false
-  end
-  if CI_NO_DATA.include?(state)
-    detail = ci[:reason].to_s.empty? ? state.to_s : "#{state}: #{ci[:reason]}"
-    say("  #{repo}: CI cross-check — no GitHub verdict for #{short(sha)} (#{detail}); informational only, " \
-        "the local gate stands")
-    return false
-  end
-  if local_ok ? state == :green : state == :red
-    say("  #{repo}: CI cross-check — GitHub CI AGREES (#{state.to_s.upcase} @ #{short(sha)})")
-    return false
-  end
-
-  bar = "═" * 76
-  say("")
-  say("  #{bar}")
-  say("  ⚠  ALARM — the G3 gate and GitHub CI DISAGREE about #{repo} @ #{short(sha)}")
-  say("  #{bar}")
-  if local_ok
-    say("  local pre-QA gate: GREEN   ·   GitHub CI: RED (#{named})")
-    say("  The gate passed a SHA GitHub says is BROKEN. CI runs a lane no local gate does")
-    say("  (the browser `test:system` suite) — so this is probably REAL. QA still deploys:")
-    say("  CI is the auditor, not the verdict.")
-    say("  WHAT THIS CHANGES AT SHIP: this SHA's G3 certification is now DISTRUSTED —")
-    say("  G4 will RE-RUN `test_cmd` on the frozen SHA instead of self-gating on it")
-    say("  (ShipSequence.ship_gate_skip? fails open on a red auditor).")
-    say("  THAT RE-RUN IS NOT A BACKSTOP FOR THIS: it runs the LOCAL suite, which is")
-    say("  exactly the suite that already passed. The failing lane is one only CI can")
-    say("  see. NOTHING downstream will catch it for you — READ #{named} and fix or")
-    say("  eject BEFORE the ship. Shipping past this is a deliberate, unguarded call.")
-  else
-    say("  local pre-QA gate: RED   ·   GitHub CI: GREEN (#{ci[:count]} checks)")
-    say("  The gate FAILED a SHA GitHub says is GREEN — suspect the GATE, not the code.")
-    say("  This is rel-20260711-7f2913's signature (a false-negative gate nearly got a")
-    say("  good PR ejected). REPRODUCE the failure in the gate workspace BEFORE ejecting")
-    say("  anyone: a gate-host/env divergence is not a regression riding the release.")
-  end
-  say("  #{bar}")
-  say("")
-  true
 end
 
 # Stamp what the G3 pre-QA gate actually CERTIFIED for a repo: the SHA it ran on
@@ -2347,20 +2064,10 @@ def pre_qa_gate(app_groups, rel_slug = nil)
     abort!("could not resolve origin/#{RELEASE_BRANCH} in #{repo} for the pre-QA gate — fetch, then re-run") unless ok
     sha = out.strip
 
-    # DevOps v2 Phase 3: local exec demoted; CI is the verdict. Phase 4 deletes.
-    # The pre-QA suite no longer runs on the conductor's machine — GitHub CI's verdict
-    # for this exact origin/#{RELEASE_BRANCH} SHA IS the gate now, so the whole
-    # local-cert flakiness class (a lazily-autoloaded suite torn by a concurrent
-    # checkout) retires with it. The isolated-workspace apparatus is retained,
-    # commented, for the canary/rollback window:
-    # ok = false
-    # with_gate_workspace(repo) do
-    #   workspace = gate_workspace!(repo, sha)
-    #   prepare_gate_workspace!(repo, workspace)
-    #   assert_system_test_browser!(repo, cmd)
-    #   step("pre-QA gate #{repo}: #{cmd}  [#{short(sha)} · isolated workspace]")
-    #   _, ok = run_test_scope("pre_qa_gate", *test_cmd_argv(cmd), chdir: workspace, repo: repo, env: gate_env(repo))
-    # end
+    # DevOps v2 Phase 3+4: the pre-QA suite no longer runs on the conductor's machine.
+    # GitHub CI's verdict for this exact origin/#{RELEASE_BRANCH} SHA IS the gate now
+    # (poll_ci_verdict -> ci_pass?), so the whole local-cert flakiness class (a lazily-
+    # autoloaded suite torn by a concurrent checkout) retired with it.
 
     # THE VERDICT: GitHub CI's conclusion for the SHA under test, POLLED until it
     # concludes (poll_ci_verdict) and fail-CLOSED via ci_pass? — only :green certifies.
@@ -3318,17 +3025,8 @@ def test_gate(repo, frozen_sha: nil, qa_gate: nil)
        "(#{cmd} recorded, not run; before prod)")
   return if DRY
 
-  # DevOps v2 Phase 3: local exec demoted; CI is the verdict. Phase 4 deletes.
-  # The frozen SHA's last gate before prod is now GitHub CI's conclusion for that
-  # exact commit, not a re-run of the local suite. The isolated-workspace apparatus
-  # is retained, commented, for the canary/rollback window:
-  # ok = false
-  # with_gate_workspace(repo) do
-  #   workspace = gate_workspace!(repo, frozen_sha)
-  #   prepare_gate_workspace!(repo, workspace)
-  #   assert_system_test_browser!(repo, cmd)
-  #   _, ok = run_test_scope("ship_test_gate", *test_cmd_argv(cmd), chdir: workspace, repo: repo, label: cmd, env: gate_env(repo))
-  # end
+  # DevOps v2 Phase 3+4: the frozen SHA's last gate before prod is GitHub CI's
+  # conclusion for that exact commit (ci_pass?), not a re-run of the local suite.
 
   # THE VERDICT, fail-CLOSED before the irreversible prod deploy: ci_pass? passes on
   # ONLY :green. A red (a broken frozen commit) and every no-data/pending state

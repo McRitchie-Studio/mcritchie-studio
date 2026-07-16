@@ -20,8 +20,8 @@ The gate window spans the whole irreversible half of the ship:
   so "shipped" can never mean "untested". Since DevOps v2 Phase 3 the verdict is CI
   (`ci_verdict(repo, frozen_sha)` → `ci_pass?`, fail-closed — **only green ships**),
   not a local re-run: the registry `test_cmd` is still **recorded** (the drift/skip
-  check needs it) but its execution in an isolated gate workspace is demoted
-  (commented out in `bin/release.rb`, deleted in Phase 4). CI's Actions run covers
+  check needs it) but its execution in an isolated gate workspace was demoted then
+  **deleted in Phase 4**. CI's Actions run covers
   the repo's full suite INCLUDING the browser `test:system` lane no local gate ran.
 - **Ship authority** — the explicit production confirm, after the gate and
   before any deploy.
@@ -95,15 +95,17 @@ check.
 Actions conclusion for that exact commit, and the gate result is `ci_pass?` of it.
 Nothing runs on this machine; the verdict comes off the laptop.
 
-> **Pre-v2 (demoted): the isolated gate workspace.** Before Phase 3 the suite ran
+> **Pre-v2 (deleted): the isolated gate workspace suite.** Before Phase 3 the suite ran
 > in the repo's isolated gate workspace (`Release::GateWorkspace`, role `gate`) — a
 > private detached worktree at `<repo>/.worktrees/_gate` pinned at the frozen ship
 > SHA, under the dedicated gate-workspace lock, with a test DB the gate **proved**
-> private, **never** the shared primary. That apparatus is retained (commented out
-> in `bin/release.rb`) for the rollback window and deleted in Phase 4. Its whole
-> reason for existing — a suite that lazily autoloads over minutes against a tree
-> other sessions can `git checkout` is not a check — is now moot: CI runs in a clean,
-> isolated Actions environment by construction.
+> private, **never** the shared primary. The gate's invocation of it was commented out
+> in the canary window and **deleted in Phase 4**. The `GateWorkspace` primitive itself
+> lives on under role `ship` — the ship reuses it to run a `repo_script` satellite's own
+> pre-prod deploy suite — but no gate runs a suite in it. Its whole reason for existing
+> as a *gate* — a suite that lazily autoloads over minutes against a tree other sessions
+> can `git checkout` is not a check — is now moot: CI runs in a clean, isolated Actions
+> environment by construction.
 
 ## Where the DEPLOY runs — the ship has its own checkout too
 
