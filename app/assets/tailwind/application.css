@@ -466,7 +466,9 @@
 }
 
 @utility criterion-value {
-  font-size: 1.75rem;
+  /* Sized to keep the longest header ("Service Business") on one line,
+     including the tight md 3-column breakpoint. */
+  font-size: clamp(1rem, 2vw, 1.25rem);
 }
 
 @utility dropping-texts {

@@ -1,23 +1,30 @@
 module LinkTreeHelper
   def public_link_sections
-    sections = [
-      { title: "Studio", links: [
-        { label: "Dashboard", href: dashboard_path, emoji: "📊", hover_emoji: "📈", desc: "Overview + activity" },
-        { label: "Agents", href: agents_path, emoji: "🦞", hover_emoji: "🤝", desc: "Meet the McRitchie agents" },
-        { label: "Tasks", href: tasks_path, emoji: "✅", hover_emoji: "🚦", desc: "Task board" },
-        { label: "News", href: news_index_path, emoji: "📰", hover_emoji: "🔎", desc: "News pipeline" },
-        { label: "Content", href: contents_path, emoji: "🎬", hover_emoji: "✨", desc: "Content pipeline" },
-      ] },
-      { title: "NFL", links: [
-        { label: "NFL Hub", href: nfl_hub_path, emoji: "🏈", hover_emoji: "📈", desc: "Rankings + grades" },
-        { label: "2026 Season", href: games_season_path(2026), emoji: "📅", hover_emoji: "🏟️", desc: "Schedule + results" },
-      ] },
-      { title: "Directory", links: [
-        { label: "Teams", href: teams_path, emoji: "🛡️", hover_emoji: "📋", desc: "All teams" },
-        { label: "People", href: people_path, emoji: "👤", hover_emoji: "🪪", desc: "Players + staff" },
-        { label: "Docs", href: docs_path, emoji: "📚", hover_emoji: "🔎", desc: "Documentation" },
-      ] },
-    ]
+    sections = []
+
+    # Session wall: Studio/NFL/Directory links show only to signed-in users.
+    # The Apps section below stays public so anyone can reach the satellites.
+    if logged_in?
+      sections += [
+        { title: "Studio", links: [
+          { label: "Dashboard", href: dashboard_path, emoji: "📊", hover_emoji: "📈", desc: "Overview + activity" },
+          { label: "Agents", href: agents_path, emoji: "🦞", hover_emoji: "🤝", desc: "Meet the McRitchie agents" },
+          { label: "Builders", href: builders_path, emoji: "🏗️", hover_emoji: "🚀", desc: "Builder roster + commit pace" },
+          { label: "Tasks", href: tasks_path, emoji: "✅", hover_emoji: "🚦", desc: "Task board" },
+          { label: "News", href: news_index_path, emoji: "📰", hover_emoji: "🔎", desc: "News pipeline" },
+          { label: "Content", href: contents_path, emoji: "🎬", hover_emoji: "✨", desc: "Content pipeline" },
+        ] },
+        { title: "NFL", links: [
+          { label: "NFL Hub", href: nfl_hub_path, emoji: "🏈", hover_emoji: "📈", desc: "Rankings + grades" },
+          { label: "2026 Season", href: games_season_path(2026), emoji: "📅", hover_emoji: "🏟️", desc: "Schedule + results" },
+        ] },
+        { title: "Directory", links: [
+          { label: "Teams", href: teams_path, emoji: "🛡️", hover_emoji: "📋", desc: "All teams" },
+          { label: "People", href: people_path, emoji: "👤", hover_emoji: "🪪", desc: "Players + staff" },
+          { label: "Docs", href: docs_path, emoji: "📚", hover_emoji: "🔎", desc: "Documentation" },
+        ] },
+      ]
+    end
 
     if defined?(Satellite) && Satellite.active.any?
       sections << {
