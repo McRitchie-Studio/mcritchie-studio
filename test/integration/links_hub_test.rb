@@ -1,21 +1,25 @@
 require "test_helper"
 
 class LinksHubTest < ActionDispatch::IntegrationTest
-  test "public /links renders the general hub for anyone (no auth)" do
+  test "public /links shows only the Apps section behind the session wall" do
     get links_path
     assert_response :success
     assert_select "h1", "Links"
-    assert_match "Dashboard", response.body
+    assert_match "Turf Monster", response.body
+    # Studio/NFL/Directory links are walled off until sign-in
+    assert_select "a[href=?]", dashboard_path, count: 0
     # general hub must NOT expose the on-chain console
     assert_no_match "Signing Console", response.body
   end
 
-  test "navbar link sidebar renders the public link tree for anonymous visitors" do
+  test "anonymous link sidebar exposes only the public Apps section" do
     get links_path
     assert_response :success
     assert_select "button[data-link-sidebar-trigger][aria-controls=?]", "studio-link-sidebar studio-link-sidebar-mobile"
-    assert_select "#studio-link-sidebar a[href=?]", dashboard_path
+    # Apps (satellites) stays public; the emoji-swap proves the Turf Monster link rendered
     assert_select "#studio-link-sidebar .studio-emoji-swap"
+    # Studio and the on-chain console are behind the session wall
+    assert_select "#studio-link-sidebar a[href=?]", dashboard_path, count: 0
     assert_select "#studio-link-sidebar a[href=?]", admin_signing_requests_path, count: 0
   end
 

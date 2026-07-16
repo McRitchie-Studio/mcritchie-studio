@@ -61,20 +61,51 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     refute_includes labels, "Deployments"
   end
 
+  test "logged-out sidebar shows only the public Apps section" do
+    self.admin_enabled = false
+    self.logged_in_enabled = false
+
+    sections = sidebar_link_sections
+
+    assert_equal ["Apps"], sections.map { |section| section.fetch(:title) }
+    labels = sections.flat_map { |section| section.fetch(:links) }.map { |link| link[:label] }
+    refute_includes labels, "Dashboard"
+    refute_includes labels, "Agents"
+    refute_includes labels, "Builders"
+  end
+
+  test "logged-in sidebar reveals Studio with Agents and Builders together" do
+    self.admin_enabled = false
+    self.logged_in_enabled = true
+
+    sections = sidebar_link_sections
+    studio = sections.find { |section| section.fetch(:title) == "Studio" }
+
+    assert studio, "expected a Studio section for signed-in users"
+    labels = studio.fetch(:links).map { |link| link.fetch(:label) }
+    assert_includes labels, "Agents"
+    assert_includes labels, "Builders"
+    assert_equal labels.index("Agents") + 1, labels.index("Builders"),
+      "Builders should sit right after Agents"
+    other_titles = sections.reject { |section| section.fetch(:title) == "Studio" }.map { |section| section.fetch(:title) }
+    assert_equal ["NFL", "Directory", "Apps"], other_titles
+  end
+
   private
 
-  attr_accessor :admin_enabled
+  attr_accessor :admin_enabled, :logged_in_enabled
 
   def admin?
     !!admin_enabled
   end
 
   def logged_in?
-    false
+    !!logged_in_enabled
   end
 
   def dashboard_path = "/dashboard"
   def agents_path = "/agents"
+  def builders_path = "/builders"
   def tasks_path = "/tasks"
   def news_index_path = "/news"
   def contents_path = "/contents"
