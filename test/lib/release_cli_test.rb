@@ -355,6 +355,22 @@ class ReleaseCliTest < Minitest::Test
     run_ruby(%(ARGV.replace(#{argv.inspect}); load #{BIN.inspect}; #{setup}; #{call}))
   end
 
+  # DevOps v2 Phase 3 (promote-ci-to-gate-verdict): the G3 pre_qa_gate and G4 test_gate
+  # no longer EXECUTE the local suite — GitHub CI's verdict IS the gate (ci_pass?). The
+  # isolated-workspace apparatus (with_gate_workspace / gate_workspace! /
+  # prepare_gate_workspace! / the DB probe / the bundle guard / run_test_scope) still
+  # lives in bin/release and is still unit-callable, but the gates no longer invoke it,
+  # so tests that drove it THROUGH a gate assert a demoted path. They are SKIPPED, not
+  # deleted: the demotion is reversible during the canary window, a visible skip records
+  # WHY, and they return (or are deleted with the apparatus) in Phase 4. The NEW invariant
+  # — the local suite does NOT run — is affirmatively pinned by
+  # test_pre_qa_gate_does_not_execute_the_local_suite and its G4 twin, so this is a
+  # demotion WITH a positive replacement, never a silent coverage hole.
+  def demoted_local_exec!
+    skip("DevOps v2 Phase 3: local gate exec demoted; GitHub CI is the verdict " \
+         "(promote-ci-to-gate-verdict). This apparatus test returns or is deleted in Phase 4.")
+  end
+
   # A canned multi-repo deploy plan (gem + two apps) so `prepare` exercises the
   # real shell orchestration without touching Rails or the DB.
   STUB_CONDUCTOR = <<~RUBY
@@ -616,7 +632,10 @@ class ReleaseCliTest < Minitest::Test
 
   # A full self-healing sweep: one fresh candidate (gh merge needed), one already
   # merged (crash-recovery skip), one with no PR (left behind, warning only).
-  SWEEP_FLOW_STUB = GATE_GIT_STUB + %(def repo_path(_repo) = #{stub_repo.inspect}\n) + <<~'RUBY'
+  # RELEASE_CI_STATUS=green is the GATE precondition (DevOps v2 Phase 3): the G3 pre-QA
+  # gate's verdict is GitHub CI now, so these downstream-flow tests inject a green CI to
+  # let the gate pass and the sweep/deploy/assemble path continue.
+  SWEEP_FLOW_STUB = GATE_GIT_STUB + %(ENV["RELEASE_CI_STATUS"] = "green"\ndef repo_path(_repo) = #{stub_repo.inspect}\n) + <<~'RUBY'
     def conductor(ruby, read_only: false)
       if ruby.include?("sweep_candidates")
         { "tasks" => [
@@ -748,15 +767,15 @@ class ReleaseCliTest < Minitest::Test
     setup = STUB_CONDUCTOR + %(\ndef qa_gate_cmd(repo) = repo == "mcritchie-studio" ? "bin/rails test:integration" : "")
     out = run_cli(["--dry-run"], call: "prepare", setup: setup)
 
-    # The banner names what the step actually runs — each app's registered
-    # qa_test_cmd (the old "integration + e2e-smoke" overstated this gate) — and
-    # WHERE it runs it: the isolated gate workspace, never the shared primary.
-    assert_includes out, "pre-QA gate: each app's registered qa_test_cmd on origin/release " \
-                         "(isolated gate workspace, before any QA deploy)"
-    # The preview names the WORKSPACE the suite would run in (…/.worktrees/_gate),
-    # not the primary checkout — the plan matches what a real run executes.
-    assert_includes out, "[dry-run] pre-QA gate mcritchie-studio: " \
-                         "(cd #{gate_workspace_path('mcritchie-studio')}) bin/rails test:integration @ origin/release"
+    # DevOps v2 Phase 3: the banner names what the step does now — read GitHub CI's
+    # verdict for each app's origin/release SHA. The registered qa_test_cmd is still
+    # RECORDED for the G4 drift check, just no longer executed in a local workspace.
+    assert_includes out, "pre-QA gate: GitHub CI's verdict for each app's origin/release SHA " \
+                         "(before any QA deploy)"
+    # The preview states the CI verdict is the gate and the command is RECORDED (not
+    # run) — the plan matches what a real run executes.
+    assert_includes out, "[dry-run] pre-QA gate mcritchie-studio: GitHub CI verdict for origin/release " \
+                         "(bin/rails test:integration recorded for the G4 drift check, not run)"
     assert_includes out, "turf-monster: no qa_test_cmd registered", "an unregistered app self-gates (skip)"
   end
 
@@ -771,40 +790,20 @@ class ReleaseCliTest < Minitest::Test
   end
 
   def test_pre_qa_gate_red_aborts_with_eject_guidance
-    # Per-test lock dir — NEVER the real one: a live conductor's lock file is not
-    # this test's to flock (activity-1307). The gate no longer TAKES the lock at
-    # all (its suite runs in the isolated workspace), but repo_path/lock resolution
-    # still reads the env, so keep every child pointed at a throwaway dir.
+    # DevOps v2 Phase 3: the RED verdict now comes from GitHub CI, not a local suite —
+    # a red CI is a regression riding origin/release, and the abort routes to the
+    # eject/revert/keep-the-rest recovery exactly as the local-suite red used to.
     Dir.mktmpdir do |dir|
-      setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
-              %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
-        def qa_gate_cmd(_repo) = "bin/failing-suite"
-        def sh(*a, **k)
-          $stdout.puts("GIT " + a.join(" ")) if a[0] == "git"
-          g = gate_git(a, k)
-          return g if g
-          return ["", false] if a[0] == "bin/failing-suite" # the tier suite is RED
-          ["", true]
-        end
-      RUBY
-      out = run_cli(["--yes"], setup: setup,
-                    call: %{begin; pre_qa_gate([{ "repo" => "mcritchie-studio" }]); puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+      out = run_cli(["--yes"], setup: ci_gate_stub(dir, "red"),
+                    call: %{begin; pre_qa_gate([{ "repo" => "sibling" }], "rel-cli"); puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
 
-      assert_includes out, "ABORTED", "a red pre-QA gate aborts prepare"
+      assert_includes out, "ABORTED", "a red CI verdict aborts prepare (fail-closed)"
+      assert_includes out, "GitHub CI called", "…NAMING GitHub CI as the source of the RED verdict"
+      assert_includes out, "regression is riding origin/release"
       assert_includes out, "bin/release eject", "the abort points at the block-on-regression move"
       assert_includes out, "git revert -m 1", "…and the merge-commit revert"
       assert_includes out, "REST of the RC rides on", "keep-the-rest is the stated recovery"
-      assert_includes out, "Bundler::GemNotFound",
-                      "the abort distinguishes a boot-time GemNotFound (env) from a real regression"
       refute_includes out, "PASSED"
-      # The old gate checked `release` out ON THE PRIMARY and restored `main` in an
-      # ensure; both are GONE. Even on the red path the primary's HEAD is never
-      # touched — there is nothing to restore, so nothing can be left flipped when
-      # the gate aborts (a killed gate used to strand the shared checkout on
-      # `release`).
-      git_ops = out.lines.select { |l| l.start_with?("GIT ") }
-      refute(git_ops.any? { |l| l.include?(" checkout ") },
-             "the gate must never checkout ANYTHING on the primary: #{git_ops.inspect}")
     end
   end
 
@@ -825,6 +824,7 @@ class ReleaseCliTest < Minitest::Test
   # it, and runs the suite THERE (chdir = <repo>/.worktrees/_gate) — never a
   # `git checkout` of `release` (or anything else) on the primary.
   def test_pre_qa_gate_runs_the_suite_in_the_isolated_workspace_never_on_the_primary
+    demoted_local_exec!
     Dir.mktmpdir do |dir|
       setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
               %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
@@ -866,6 +866,7 @@ class ReleaseCliTest < Minitest::Test
   # alone, turf's gate resolved the SHARED `turf_monster_test` and db:test:prepare
   # would have PURGED it.
   def test_pre_qa_gate_spawns_the_suite_under_the_gate_env_overlay
+    demoted_local_exec!
     Dir.mktmpdir do |dir|
       plant_database_yml(dir) # a postgres app → the gate overlays its private DB url
       setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
@@ -951,6 +952,7 @@ class ReleaseCliTest < Minitest::Test
   # that ran after it would be an autopsy, not a guard — the concurrent suite's data
   # would already be gone.
   def test_pre_qa_gate_refuses_a_shared_test_db_before_db_test_prepare_can_purge_it
+    demoted_local_exec!
     Dir.mktmpdir do |dir|
       plant_database_yml(dir)
       out = run_cli(["--yes"], setup: db_probe_stub(dir, "turf_monster_test"),
@@ -976,6 +978,7 @@ class ReleaseCliTest < Minitest::Test
   # [unit] The green path: the probe resolves the gate's OWN postgres DB → the gate
   # states the verdict and rides on, probe → prepare → suite, in that order.
   def test_pre_qa_gate_runs_when_the_probe_resolves_the_gates_own_private_db
+    demoted_local_exec!
     Dir.mktmpdir do |dir|
       plant_database_yml(dir)
       out = run_cli(["--yes"], setup: db_probe_stub(dir, "sibling_gate_test"),
@@ -999,6 +1002,7 @@ class ReleaseCliTest < Minitest::Test
   # a live trap the moment it took effect) and the probe's file path still satisfies
   # the invariant.
   def test_pre_qa_gate_runs_a_sqlite_app_whose_test_db_is_a_file_inside_the_workspace
+    demoted_local_exec!
     Dir.mktmpdir do |dir|
       plant_database_yml(dir, adapter: "sqlite3")
       out = run_cli(["--yes"], setup: db_probe_stub(dir, "%WORKSPACE%/storage/test.sqlite3"),
@@ -1018,6 +1022,7 @@ class ReleaseCliTest < Minitest::Test
   # PRIMARY's storage/test.sqlite3) is NOT private — a workspace-relative resolve
   # would have waved it through, and the gate would purge the checkout's own test DB.
   def test_pre_qa_gate_refuses_a_sqlite_db_outside_the_gate_workspace
+    demoted_local_exec!
     Dir.mktmpdir do |dir|
       plant_database_yml(dir, adapter: "sqlite3")
       primary_db = File.join(dir, "storage", "test.sqlite3") # the PRIMARY's file, not the workspace's
@@ -1036,6 +1041,7 @@ class ReleaseCliTest < Minitest::Test
   # the gate rather than assuming the DB is fine (fail CLOSED: an unverifiable DB is
   # exactly the case where db:test:prepare must not fire).
   def test_pre_qa_gate_aborts_as_env_when_the_db_probe_cannot_boot
+    demoted_local_exec!
     Dir.mktmpdir do |dir|
       plant_database_yml(dir)
       out = run_cli(["--yes"], setup: db_probe_stub(dir, ""),
@@ -1051,20 +1057,22 @@ class ReleaseCliTest < Minitest::Test
     end
   end
 
-  # --- G3's AUDITOR: the gate cross-checked against GitHub CI on the SAME SHA ----
+  # --- G3's VERDICT: GitHub CI on the SAME SHA (DevOps v2 Phase 3) --------------
   #
-  # The local gate is the ONLY verdict on the release tip; nothing independent
-  # checked it. Now every gated SHA is ALSO queried against GitHub CI
-  # (CiStatus.for_sha → gh api …/commits/<sha>/check-runs), BOTH verdicts land on
-  # the release, and a CONTRADICTION alarms. CI audits — it never blocks (a push CI
-  # is asynchronous; blocking would make a local gate poll GitHub for minutes).
+  # GitHub CI's conclusion for the SHA under test IS the G3 verdict now (ci_pass?):
+  # the gate queries CiStatus.for_sha (→ gh api …/commits/<sha>/check-runs), passes
+  # on ONLY a green conclusion, and FAILS CLOSED on red AND on every no-data/pending
+  # state (none/pending/unverified/unreadable) — the local suite it used to run in an
+  # isolated workspace is demoted. A false green would deploy an untested SHA to QA.
   #
   # RELEASE_CI_STATUS injects the verdict (a bare token, or a raw check-runs
   # payload), so these never touch the network — the DOR_CHECK_CI_STATUS seam,
   # reused. An injected verdict also skips the `git remote get-url` lookup.
 
-  # A gate whose suite goes GREEN, with CI's verdict injected. `rel-cli` is passed
-  # as the release slug so record_qa_gate actually fires (it no-ops on a blank slug).
+  # A gate whose CI verdict is injected. `rel-cli` is passed as the release slug so
+  # record_qa_gate actually fires (it no-ops on a blank slug). No suite runs here —
+  # `bin/suite` is registered only so a real code path would have had something to
+  # record; the gate never executes it (see qa_gate_cmd / the demoted apparatus).
   def ci_gate_stub(dir, ci_status)
     %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
       %(ENV["RELEASE_CI_STATUS"] = #{ci_status.inspect}\n) +
@@ -1080,98 +1088,114 @@ class ReleaseCliTest < Minitest::Test
       RUBY
   end
 
-  # [integration] The happy audit: gate GREEN, CI GREEN for the same SHA. Both
-  # verdicts are stated, and BOTH are recorded on the release — agreement is data
-  # too (it is what would justify ever promoting the auditor to a blocker).
-  def test_pre_qa_gate_records_cis_verdict_beside_its_own_when_they_agree
+  # [unit] ci_pass? is THE gate verdict, fail-closed: :green is the ONLY pass; red and
+  # EVERY no-data/pending/unknown state fail closed, and so do nil and a stateless hash.
+  # This is the single invariant a false-green would violate — an untested SHA would ship.
+  # A STRING "green" is not the :green symbol ci_verdict returns, so it fails closed too:
+  # no loose coercion where a false pass ships code.
+  def test_ci_pass_is_true_only_for_green_and_fails_closed_on_everything_else
+    assert_equal "true", eval_helper(%(ci_pass?({ state: :green }))), "green is the ONLY pass"
+    %i[red none pending unverified unreadable no_pr closed merged conflicted].each do |state|
+      assert_equal "false", eval_helper(%(ci_pass?({ state: #{state.inspect} }))),
+                   "#{state} must FAIL CLOSED — an absent/unknown/red verdict never certifies a SHA"
+    end
+    assert_equal "false", eval_helper(%(ci_pass?(nil))), "a nil verdict fails closed"
+    assert_equal "false", eval_helper(%(ci_pass?({}))), "a stateless verdict fails closed"
+    assert_equal "false", eval_helper(%(ci_pass?({ state: "green" }))),
+                 "a STRING 'green' is not the :green symbol — fail closed, no loose coercion"
+  end
+
+  # [integration] GREEN CI certifies: the gate passes on a green CI verdict for the
+  # SHA under test, states that verdict, and records ok:true WITH CI's verdict for the
+  # audit trail (record_qa_gate — the ONLY evidence G4 accepts for skipping its gate).
+  def test_pre_qa_gate_records_a_green_ci_verdict_as_the_certification
     Dir.mktmpdir do |dir|
       out = run_cli(["--yes"], setup: ci_gate_stub(dir, "green"),
                     call: %{pre_qa_gate([{ "repo" => "sibling" }], "rel-cli"); puts("PASSED")})
 
-      assert_includes out, "CI cross-check — GitHub CI AGREES (GREEN @ #{GATE_SHA[0, 7]})"
+      assert_includes out, "GitHub CI GREEN @ #{GATE_SHA[0, 7]}", "the gate STATES the CI verdict it gated on"
       record = out.lines.find { |l| l.start_with?("CONDUCTOR") }
-      assert record, "the gate must still record what it certified: #{out}"
+      assert record, "a green gate records its certification: #{out}"
       assert_includes record, "record_qa_gate", "…through the same conductor write as before"
-      assert_match(/ci:\s*\{/, record, "…now carrying the AUDITOR's verdict for the same SHA")
+      assert_includes record, "ok: true", "a green CI records ok:true so G4 may self-skip"
+      assert_match(/ci:\s*\{/, record, "…carrying CI's verdict for the same SHA")
       assert_match(/"state"\s*=>\s*"green"/, record)
       assert_includes out, "PASSED"
     end
   end
 
-  # [integration] THE ALARM, direction 1: the gate says GREEN, GitHub says RED for
-  # that exact SHA. CI runs a lane no local cert does (the browser test:system
-  # suite), so this is probably real — but it does NOT block: QA still deploys, the
-  # disagreement is screamed, and it is recorded on the release for the ship call.
-  def test_pre_qa_gate_alarms_but_does_not_block_when_it_is_green_and_ci_is_red
+  # [integration] RED CI FAILS CLOSED. GitHub says RED for the SHA under test —
+  # under DevOps v2 Phase 3 CI IS the verdict, so the gate ABORTS (it does not deploy
+  # to QA) and records ok:FALSE with CI's verdict (a red G3 must be recorded as failed,
+  # never silently un-stamped). A RAW check-runs payload exercises the mapping shim
+  # end-to-end: status+conclusion → bucket → verdict, no network.
+  def test_pre_qa_gate_fails_closed_when_ci_is_red
     Dir.mktmpdir do |dir|
-      # A RAW check-runs payload (not a token) — the mapping shim end-to-end:
-      # status+conclusion → bucket → verdict, no network.
       payload = '{"total_count":2,"check_runs":[' \
                 '{"name":"test","status":"completed","conclusion":"success"},' \
                 '{"name":"test:system","status":"completed","conclusion":"failure"}]}'
       out = run_cli(["--yes"], setup: ci_gate_stub(dir, payload),
-                    call: %{pre_qa_gate([{ "repo" => "sibling" }], "rel-cli"); puts("PASSED")})
-
-      assert_includes out, "ALARM — the G3 gate and GitHub CI DISAGREE"
-      assert_includes out, "local pre-QA gate: GREEN   ·   GitHub CI: RED (test:system)",
-                      "the alarm NAMES the failing check, not just the fact of a disagreement"
-      # THE ALARM MUST NOT CLAIM A BACKSTOP IT DOES NOT HAVE. It says what actually
-      # happens at ship (G4 stops self-gating on this certification) AND what that
-      # re-run does NOT prove: it re-runs the LOCAL suite — the one that already
-      # passed — while the failing lane is one only CI can see. An alarm that
-      # promises someone else will catch it is an alarm the operator learns to
-      # dismiss.
-      assert_includes out, "certification is now DISTRUSTED"
-      assert_includes out, "NOT A BACKSTOP FOR THIS"
-      assert_includes out, "NOTHING downstream will catch it for you"
-      assert_includes out, "eject BEFORE the ship"
-      assert_includes out, "PASSED",
-                       "CI is the AUDITOR, not the verdict — a red audit never blocks prepare (a push CI is " \
-                       "asynchronous; blocking would hand a LOCAL gate a hard GitHub dependency)"
-      record = out.lines.find { |l| l.start_with?("CONDUCTOR") }
-      assert_match(/"state"\s*=>\s*"red"/, record, "the disagreement is RECORDED, not just printed")
-      assert_match(/"test:system"/, record)
-    end
-  end
-
-  # [integration] THE ALARM, direction 2 — the valuable one. The gate says RED,
-  # GitHub says GREEN: the GATE is the suspect, not the code (rel-20260711-7f2913,
-  # where a false-negative gate nearly got a good PR ejected). The gate still
-  # aborts — it IS the verdict — but the abort redirects the conductor away from
-  # ejecting a task the gate may be lying about.
-  def test_pre_qa_gate_red_beside_a_green_ci_tells_the_conductor_to_suspect_the_gate
-    Dir.mktmpdir do |dir|
-      setup = ci_gate_stub(dir, "green") + %(\ndef qa_gate_cmd(_repo) = "bin/failing-suite")
-      out = run_cli(["--yes"], setup: setup,
                     call: %{begin; pre_qa_gate([{ "repo" => "sibling" }], "rel-cli"); puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
 
-      assert_includes out, "ALARM — the G3 gate and GitHub CI DISAGREE"
-      assert_includes out, "suspect the GATE, not the code"
-      assert_includes out, "ABORTED", "the LOCAL gate is still the verdict — a green audit does not wave a red gate through"
-      assert_includes out, "SUSPECT THE GATE FIRST", "…but the abort no longer sends the conductor straight to eject"
-      assert_includes out, "bin/release eject", "the eject path is still there for a REAL regression"
-      refute_includes out, "CONDUCTOR", "a RED gate certifies nothing — no record, so G4 fails open and re-runs"
+      assert_includes out, "ABORTED", "a RED CI verdict FAILS the gate — CI is the verdict now, not an auditor"
+      assert_includes out, "GitHub CI called #{GATE_SHA[0, 7]} RED", "…naming the SHA and the source"
+      assert_includes out, "test:system", "…and the failing check"
+      assert_includes out, "regression is riding origin/release"
+      record = out.lines.find { |l| l.start_with?("CONDUCTOR") }
+      assert record, "a red gate must be RECORDED as failed, not silently un-stamped: #{out}"
+      assert_includes record, "ok: false", "the red verdict records ok:false"
+      assert_match(/"state"\s*=>\s*"red"/, record, "…carrying CI's red verdict for the audit trail")
       refute_includes out, "PASSED"
     end
   end
 
-  # [integration] NO CI DATA IS NOT A FAILURE — the state of the world TODAY.
-  # ci.yml triggers on pull_request + push:main, so a release-tip SHA has NO
-  # check-runs at all until task run-ci-on-release-branch lands. That answer
-  # (:none), a still-running push CI (:pending), and a gh/network error
-  # (:unverified) are all SILENCE: informational, never an alarm, never a block.
-  def test_pre_qa_gate_treats_a_missing_ci_run_as_no_data_not_a_disagreement
-    %w[none pending unverified].each do |state|
+  # [integration] NO GREEN VERDICT FAILS CLOSED — the single most important invariant.
+  # A missing run (:none), a still-running push CI (:pending), and a gh/network error
+  # (:unverified) are all "GitHub has no GREEN verdict for this SHA". Under Phase 3 the
+  # gate FAILS CLOSED on every one of them: an absent/unknown verdict must NEVER read as
+  # a pass — a false green here deploys an untested SHA to QA. It records ok:false and
+  # holds for CI to conclude, rather than certifying blind.
+  def test_pre_qa_gate_fails_closed_on_a_no_data_or_pending_verdict
+    %w[none pending unverified unreadable].each do |state|
       Dir.mktmpdir do |dir|
         out = run_cli(["--yes"], setup: ci_gate_stub(dir, state),
-                      call: %{pre_qa_gate([{ "repo" => "sibling" }], "rel-cli"); puts("PASSED")})
+                      call: %{begin; pre_qa_gate([{ "repo" => "sibling" }], "rel-cli"); puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
 
-        assert_includes out, "no GitHub verdict for #{GATE_SHA[0, 7]}",
-                        "#{state} is GitHub having nothing to say about this SHA"
-        assert_includes out, "informational only, the local gate stands"
-        refute_includes out, "ALARM", "silence is not a contradiction (#{state})"
-        assert_includes out, "PASSED", "…and it can never fail a green gate (#{state})"
+        assert_includes out, "ABORTED", "#{state}: an absent/unknown CI verdict must FAIL CLOSED, never pass"
+        assert_includes out, "NO green verdict for #{GATE_SHA[0, 7]}", "#{state}: names what it could not certify"
+        assert_includes out, "FAILS CLOSED", "#{state}: the gate says why it held"
+        refute_includes out, "PASSED", "#{state}: a green never comes out of no-data"
       end
+    end
+  end
+
+  # [integration] THE DEMOTION, affirmatively pinned (the positive replacement for the
+  # skipped apparatus tests): on a GREEN CI verdict the G3 gate PASSES without ever
+  # pinning an isolated workspace or booting the local suite — the verdict comes off the
+  # laptop. `git worktree add`, `bin/suite`, and `bin/rails db:test:prepare` must NOT run.
+  def test_pre_qa_gate_does_not_execute_the_local_suite
+    Dir.mktmpdir do |dir|
+      setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
+              %(ENV["RELEASE_CI_STATUS"] = "green"\n) +
+              %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
+        def qa_gate_cmd(_repo) = "bin/suite"
+        def conductor(ruby, read_only: false) = {}
+        def sh(*a, **k)
+          $stdout.puts("SUITE-RAN") if a[0] == "bin/suite"
+          $stdout.puts("WORKTREE-ADD") if a[0] == "git" && a.include?("worktree") && a.include?("add")
+          $stdout.puts("DB-PREPARE") if a[0] == "bin/rails" && a[1] == "db:test:prepare"
+          g = gate_git(a, k)
+          return g if g
+          ["", true]
+        end
+      RUBY
+      out = run_cli(["--yes"], setup: setup,
+                    call: %{pre_qa_gate([{ "repo" => "sibling" }], "rel-cli"); puts("PASSED")})
+
+      assert_includes out, "PASSED", "a green CI verdict passes the gate"
+      refute_includes out, "SUITE-RAN", "the demoted local suite must NOT run — CI is the verdict"
+      refute_includes out, "WORKTREE-ADD", "…and no isolated workspace is pinned"
+      refute_includes out, "DB-PREPARE", "…and no gate DB is prepared"
     end
   end
 
@@ -1192,15 +1216,19 @@ class ReleaseCliTest < Minitest::Test
 
   # --- G3 certification: the ONLY evidence G4 accepts for skipping its gate ------
   #
-  # A GREEN gate stamps release.metadata["qa_gates"][repo] = {sha, cmd, ok: true}.
-  # A red / skipped / misconfigured gate leaves NOTHING — which makes G4 FAIL OPEN
-  # (it re-runs the suite on the frozen SHA). See the ship-gate skip matrix below
-  # for why that asymmetry is load-bearing.
+  # A GREEN CI verdict stamps release.metadata["qa_gates"][repo] = {sha, cmd, ok:true}.
+  # A RED CI verdict stamps the SAME shape with ok:FALSE — an honest failed record, not
+  # a silent omission (record_qa_gate's caveat). A skipped/absent gate leaves NOTHING.
+  # Only a green ok:true record lets G4 self-skip (ship_gate_skip?); ok:false AND an
+  # absent record both make G4 re-derive the verdict from CI on the frozen SHA. The cmd
+  # is recorded in every case so the G4 drift assertion (certified_cmd == cmd) can hold.
 
-  # [unit] A green gate records what it CERTIFIED: this repo, this SHA, this cmd.
-  def test_pre_qa_gate_records_the_g3_certification_on_a_green_suite
+  # [unit] A GREEN CI verdict records what it CERTIFIED: this repo, this SHA, this cmd,
+  # ok:true. The cmd is RECORDED (not run), which is what keeps the G4 drift check valid.
+  def test_pre_qa_gate_records_the_g3_certification_on_a_green_ci_verdict
     Dir.mktmpdir do |dir|
       setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
+              %(ENV["RELEASE_CI_STATUS"] = "green"\n) +
               %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
         def qa_gate_cmd(_repo) = "bin/suite"
         def conductor(ruby, read_only: false)
@@ -1217,22 +1245,24 @@ class ReleaseCliTest < Minitest::Test
                     call: %{pre_qa_gate([{ "repo" => "sibling" }], "rel-cert"); puts("PASSED")})
 
       cert = out.lines.find { |l| l.start_with?("CERT-CALL") }
-      assert cert, "a GREEN gate must record its certification: #{out}"
+      assert cert, "a GREEN CI verdict must record its certification: #{out}"
       assert_includes cert, "Release::Conductor.record_qa_gate", "the stamp rides the tested conductor primitive"
       assert_includes cert, %(slug: "rel-cert")
       assert_includes cert, %(repo: "sibling")
-      assert_includes cert, %(sha: "#{GATE_SHA}"), "it certifies the SHA the suite actually ran on"
-      assert_includes cert, %(cmd: "bin/suite"), "…and the command it actually ran"
+      assert_includes cert, %(sha: "#{GATE_SHA}"), "it certifies the SHA CI gave a verdict on"
+      assert_includes cert, %(cmd: "bin/suite"), "…and RECORDS the command (for the G4 drift check), never runs it"
       assert_includes cert, "ok: true"
       assert_includes out, "PASSED"
     end
   end
 
-  # [unit] A RED gate records NOTHING — no half-certification, no "we ran it" stamp.
-  # (The abort is the loud half; the SILENCE is what keeps G4 armed.)
-  def test_pre_qa_gate_records_no_certification_when_the_suite_is_red
+  # [unit] A RED CI verdict RECORDS ok:false — it must NOT silently un-stamp (the
+  # record_qa_gate caveat). ok:false is not a green record, so G4's ship_gate_skip? still
+  # runs the gate; the honest failed stamp is what the release audit trail reads.
+  def test_pre_qa_gate_records_ok_false_when_ci_is_red
     Dir.mktmpdir do |dir|
       setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
+              %(ENV["RELEASE_CI_STATUS"] = "red"\n) +
               %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
         def qa_gate_cmd(_repo) = "bin/suite"
         def conductor(ruby, read_only: false)
@@ -1242,16 +1272,18 @@ class ReleaseCliTest < Minitest::Test
         def sh(*a, **k)
           g = gate_git(a, k)
           return g if g
-          return ["", false] if a[0] == "bin/suite" # RED
           ["", true]
         end
       RUBY
       out = run_cli(["--yes"], setup: setup,
                     call: %{begin; pre_qa_gate([{ "repo" => "sibling" }], "rel-cert"); puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
 
-      assert_includes out, "ABORTED", "a red gate still aborts the prepare"
-      refute_includes out, "CERT-CALL",
-                      "a RED gate must certify NOTHING — a stamp here would let G4 self-skip on a failed suite"
+      assert_includes out, "ABORTED", "a red CI verdict still aborts the prepare (fail-closed)"
+      cert = out.lines.find { |l| l.start_with?("CERT-CALL") }
+      assert cert, "a RED gate must RECORD its failure, not silently skip recording: #{out}"
+      assert_includes cert, "Release::Conductor.record_qa_gate"
+      assert_includes cert, "ok: false", "…as ok:false — an honest failed stamp, never a green one"
+      assert_includes cert, %(cmd: "bin/suite"), "the cmd is recorded even on a red verdict"
       refute_includes out, "PASSED"
     end
   end
@@ -1290,6 +1322,7 @@ class ReleaseCliTest < Minitest::Test
   # the suite burns minutes. (The pin replaced the old primary `git checkout
   # release`; the ordering guarantee it anchors is unchanged.)
   def test_pre_qa_gate_bundle_checks_under_the_suite_ruby_before_the_suite
+    demoted_local_exec!
     Dir.mktmpdir do |dir|
       primary, = build_binstub_fixture(dir)
       setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
@@ -1326,6 +1359,7 @@ class ReleaseCliTest < Minitest::Test
   # ruby → same gem home) runs before the suite, and a green install lets the
   # gate ride on.
   def test_pre_qa_gate_installs_the_bundle_when_the_check_fails
+    demoted_local_exec!
     Dir.mktmpdir do |dir|
       primary, = build_binstub_fixture(dir)
       setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
@@ -1358,6 +1392,7 @@ class ReleaseCliTest < Minitest::Test
   # divergence) and NEVER routes to the eject/revert regression path — that
   # guidance burned two gate runs on rel-20260708-32701b.
   def test_pre_qa_gate_aborts_as_env_when_the_suite_bundle_cannot_be_fixed
+    demoted_local_exec!
     Dir.mktmpdir do |dir|
       primary, workspace = build_binstub_fixture(dir)
       setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
@@ -1412,6 +1447,7 @@ class ReleaseCliTest < Minitest::Test
   # binstubs do), NEVER bare `bundle` (a shell PATH lookup that re-picks the
   # conductor ruby — the exact divergence the guard exists to close).
   def test_pre_qa_gate_bundle_checks_a_registered_app_without_a_binstub_under_the_suite_ruby
+    demoted_local_exec!
     Dir.mktmpdir do |dir|
       primary   = File.join(dir, "repo")
       workspace = File.join(primary, ".worktrees", "_gate") # a Gemfile but deliberately NO bin/bundle
@@ -1446,6 +1482,7 @@ class ReleaseCliTest < Minitest::Test
   # guard self-gates (this also keeps the real-git fixtures in this file, which
   # carry no Gemfile, out of the guard's way).
   def test_pre_qa_gate_skips_the_bundle_guard_without_a_gemfile
+    demoted_local_exec!
     Dir.mktmpdir do |dir|
       fix = File.join(dir, "repo")
       FileUtils.mkdir_p(fix)
@@ -1493,6 +1530,7 @@ class ReleaseCliTest < Minitest::Test
   # both BEFORE the suite: test:prepare is what builds the gitignored stylesheet the
   # virgin workspace lacks.
   def test_gate_workspace_prepares_the_test_env_for_a_path_arg_lane
+    demoted_local_exec!
     Dir.mktmpdir do |dir|
       primary, = build_binstub_fixture(dir)
       setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
@@ -1528,6 +1566,7 @@ class ReleaseCliTest < Minitest::Test
   # code path for every registered shape. Asserted so nobody "optimizes" the gate back
   # into being shape-aware, which is the trap this bug came from.
   def test_gate_workspace_prepares_the_test_env_for_an_argless_lane_too
+    demoted_local_exec!
     Dir.mktmpdir do |dir|
       primary, = build_binstub_fixture(dir)
       setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
@@ -1559,6 +1598,7 @@ class ReleaseCliTest < Minitest::Test
   # overclaim "this is definitely env" either. Say usually-env, but name the real other
   # cause. Do not ship a third lying gate.
   def test_a_failed_test_env_prepare_aborts_as_env_not_as_a_regression
+    demoted_local_exec!
     Dir.mktmpdir do |dir|
       primary, = build_binstub_fixture(dir)
       setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
@@ -1650,6 +1690,7 @@ class ReleaseCliTest < Minitest::Test
   end
 
   def test_pre_qa_gate_passes_a_quoted_spaced_arg_as_one_argv_element
+    demoted_local_exec!
     # Per-test lock dir + a throwaway repo dir — the gate mkdir_p's its workspace
     # under repo_path, so a test must never point that at a live checkout.
     Dir.mktmpdir do |dir|
@@ -1676,6 +1717,7 @@ class ReleaseCliTest < Minitest::Test
   end
 
   def test_ship_test_gate_passes_a_quoted_spaced_arg_as_one_argv_element
+    demoted_local_exec!
     Dir.mktmpdir do |dir|
       setup = %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
         def app_meta_for(_repo) = { "test_cmd" => %q{bin/rails test "test/models/a b_test.rb"} }
@@ -1718,6 +1760,7 @@ class ReleaseCliTest < Minitest::Test
   # THERE end-to-end, with a quoted spaced arg arriving intact and the PRIMARY
   # checkout never leaving `main`.
   def test_pre_qa_gate_integration_runs_a_real_suite_in_the_isolated_workspace
+    demoted_local_exec!
     Dir.mktmpdir do |dir|
       clone     = build_sibling_fixture(dir)
       workspace = File.join(clone, ".worktrees", "_gate")
@@ -1869,6 +1912,7 @@ class ReleaseCliTest < Minitest::Test
   # actually did the flipping (the flock is advisory) while it stalled the ones it
   # could.
   def test_pre_qa_gate_leaves_the_primary_free_while_the_suite_runs
+    demoted_local_exec!
     Dir.mktmpdir do |dir|
       clone = build_sibling_fixture(dir)
       probe = File.join(dir, "probe.rb")
@@ -1933,6 +1977,7 @@ class ReleaseCliTest < Minitest::Test
   # those same moments: this is a NEW lock, not the old hold-the-primary-hostage shape
   # wearing a different name.
   def test_pre_qa_gate_holds_the_gate_workspace_lock_across_pin_prepare_and_suite
+    demoted_local_exec!
     Dir.mktmpdir do |dir|
       plant_database_yml(dir)
       setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
@@ -1968,6 +2013,7 @@ class ReleaseCliTest < Minitest::Test
   # alternative to a queued gate is not two gates, it is two gates destroying each
   # other's tree and database.
   def test_a_second_gate_queues_behind_the_conductor_holding_the_gate_workspace_lock
+    demoted_local_exec!
     Dir.mktmpdir do |dir|
       plant_database_yml(dir)
       marks = File.join(dir, "marks.log")
@@ -2196,7 +2242,8 @@ class ReleaseCliTest < Minitest::Test
   # declined ship-authority confirm leaves the machine exactly as it found it.
   def test_avi_ship_gate_mutates_nothing_before_ship_authority
     Dir.mktmpdir do |dir|
-      setup = %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
+      setup = %(ENV["RELEASE_CI_STATUS"] = "green"\n) +
+              %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
         def app_meta_for(_repo) = { "test_cmd" => "bin/ship-suite" }
         def with_primary_checkout(repo, wait: true)
           $stdout.puts("PRIMARY-LOCK-TAKEN #{repo}")
@@ -2215,7 +2262,11 @@ class ReleaseCliTest < Minitest::Test
       out = run_cli(["--yes"], setup: setup,
                     call: %{avi_ship_gate([{ "repo" => "x" }], { "x" => #{GATE_SHA.inspect} }, {}); puts("PASSED")})
 
-      assert_includes out, "SUITE", "the gate must still RUN the suite on the frozen SHA: #{out}"
+      # DevOps v2 Phase 3: the gate READS GitHub CI's verdict for the frozen SHA — the
+      # local suite is demoted — but the invariant this test pins is unchanged: the gate
+      # mutates NOTHING (no primary lock, no primary writes) before ship authority.
+      assert_includes out, "GitHub CI verdict for frozen", "the gate reads the CI verdict on the frozen SHA: #{out}"
+      refute_includes out, "SUITE", "the demoted local suite must NOT run — CI is the verdict"
       refute_includes out, "PRIMARY-LOCK-TAKEN",
                       "the gate has nothing to serialize against the primary any more — it must not take its lock"
       refute_includes out, "PRIMARY-WRITE",
@@ -2230,6 +2281,7 @@ class ReleaseCliTest < Minitest::Test
   # the suite is back on the primary, holding the shared checkout for its whole run
   # while STILL not excluding the sessions that flip it.
   def test_avi_ship_gate_leaves_the_primary_free_while_the_suite_runs
+    demoted_local_exec!
     Dir.mktmpdir do |dir|
       clone = build_sibling_fixture(dir)
       sha, = Open3.capture2("git", "-C", clone, "rev-parse", "main")
@@ -2304,12 +2356,16 @@ class ReleaseCliTest < Minitest::Test
          "ci" => { "state" => "green", "count" => 4 } }, :skip]
   }.freeze
 
-  # [unit] test_gate SKIPS only against a matching GREEN G3 record, and RUNS the
-  # suite in every other case — absent, red, different SHA, different command.
+  # [unit] test_gate SKIPS only against a matching GREEN G3 record; in every other case
+  # — absent, red, different SHA, different command — it RE-DERIVES the verdict from
+  # GitHub CI on the frozen SHA (green injected here so a re-gate passes) instead of the
+  # demoted local suite. The skip/run decision is UNCHANGED (ship_gate_skip?); what a
+  # "run" means is now a CI read, not a suite run — so the local suite NEVER executes.
   def test_ship_test_gate_skips_only_against_a_matching_green_g3_record
     Dir.mktmpdir do |dir|
       SHIP_GATE_SKIP_CASES.each do |label, (record, expected)|
-        setup = %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
+        setup = %(ENV["RELEASE_CI_STATUS"] = "green"\n) +
+                %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
           def app_meta_for(_repo) = { "test_cmd" => "bin/suite" }
           def sh(*a, **k)
             $stdout.puts("SUITE-RAN") if a[0] == "bin/suite"
@@ -2322,25 +2378,29 @@ class ReleaseCliTest < Minitest::Test
                       call: %{test_gate("x", frozen_sha: #{GATE_SHA.inspect}, qa_gate: #{record.inspect}); puts("PASSED")})
 
         if expected == :skip
-          refute_includes out, "SUITE-RAN", "#{label}: the suite must be SKIPPED (G3 already certified it)"
           assert_includes out, "already CERTIFIED green", "#{label}: the skip is a VISIBLE SOP, never silent"
+          refute_includes out, "GitHub CI verdict for frozen", "#{label}: a self-skip does not re-read CI"
         else
-          assert_includes out, "SUITE-RAN",
-                          "#{label}: G4 must FAIL OPEN and run the suite — a skip here disarms the last gate " \
-                          "before an irreversible prod deploy"
+          assert_includes out, "GitHub CI verdict for frozen",
+                          "#{label}: G4 must NOT self-skip — it re-derives the verdict from CI on the frozen SHA " \
+                          "(a skip here disarms the last gate before an irreversible prod deploy)"
+          refute_includes out, "already CERTIFIED green", "#{label}: a re-gate is not a skip"
         end
-        assert_includes out, "PASSED", "#{label}: the gate itself is green either way"
+        refute_includes out, "SUITE-RAN", "#{label}: the demoted local suite NEVER runs — CI is the verdict"
+        assert_includes out, "PASSED", "#{label}: green CI (injected) → the gate passes either way"
       end
     end
   end
 
-  # [integration] A gate that silently re-runs teaches the operator nothing. When
-  # the auditor is what cost the certification its skip, the ship SAYS so — and it
-  # is honest about what the re-run does NOT prove (it re-runs the LOCAL suite,
-  # which is the very suite that already passed; only CI can see CI's lane).
-  def test_ship_test_gate_names_the_red_auditor_as_the_reason_it_is_re_running
+  # [integration] A G3 record whose recorded auditor went RED is a certification GitHub
+  # CONTRADICTS, so G4 does NOT self-skip on it — it RE-DERIVES the verdict from GitHub
+  # CI on the frozen SHA (which, unlike the demoted local suite, CAN see every lane). In
+  # Phase 3 a red G3 auditor aborts prepare, so this record is DEFENSIVE — a stale or
+  # hand-built record must still be re-gated, never trusted.
+  def test_ship_test_gate_re_derives_from_ci_when_the_recorded_auditor_is_red
     Dir.mktmpdir do |dir|
-      setup = %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
+      setup = %(ENV["RELEASE_CI_STATUS"] = "green"\n) +
+              %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
         def app_meta_for(_repo) = { "test_cmd" => "bin/suite" }
         def sh(*a, **k)
           $stdout.puts("SUITE-RAN") if a[0] == "bin/suite"
@@ -2354,12 +2414,84 @@ class ReleaseCliTest < Minitest::Test
       out = run_cli(["--yes"], setup: setup,
                     call: %{test_gate("x", frozen_sha: #{GATE_SHA.inspect}, qa_gate: #{record.inspect}); puts("PASSED")})
 
-      assert_includes out, "GitHub CI called that SHA RED", "the ship NAMES why it distrusts the certification"
-      assert_includes out, "fail-open"
-      assert_includes out, "runs a lane no local gate does",
-                      "…and does NOT let the operator read the re-run as a backstop for CI's lane"
-      assert_includes out, "SUITE-RAN"
-      assert_includes out, "PASSED", "fail-OPEN, never fail-closed: the auditor re-runs the gate, it never blocks"
+      assert_includes out, "GitHub CI called that SHA RED", "the ship NAMES why it distrusts the record"
+      assert_includes out, "RE-DERIVES the verdict from", "…and re-reads CI rather than self-skipping on it"
+      assert_includes out, "GitHub CI verdict for frozen", "the re-derivation reads CI on the frozen SHA"
+      refute_includes out, "SUITE-RAN", "the local suite is demoted — the re-derivation is a CI read, not a suite run"
+      assert_includes out, "PASSED", "the re-derived CI verdict here is green → the gate passes"
+    end
+  end
+
+  # --- G4 ship gate: GitHub CI is the verdict on the FROZEN SHA (DevOps v2 Phase 3) ---
+  #
+  # With no matching green G3 record to self-skip on (a straggler, a re-pin, or plain
+  # drift), test_gate re-derives the verdict from GitHub CI for the FROZEN ship SHA —
+  # ci_pass?, fail-closed — instead of re-running the demoted local suite. qa_gate: nil
+  # forces the non-skip path so these exercise the CI verdict directly.
+  def ship_ci_gate_stub(dir, ci_status)
+    %(ENV["RELEASE_CI_STATUS"] = #{ci_status.inspect}\n) +
+      %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
+        def app_meta_for(_repo) = { "test_cmd" => "bin/suite" }
+        def sh(*a, **k)
+          $stdout.puts("SUITE-RAN") if a[0] == "bin/suite"
+          g = gate_git(a, k)
+          return g if g
+          ["", true]
+        end
+      RUBY
+  end
+
+  # [integration] GREEN CI on the frozen SHA PASSES the ship gate, records the CI
+  # conclusion as the ship_test_gate SOP, and NEVER runs the local suite.
+  def test_ship_test_gate_passes_and_records_on_a_green_ci_verdict
+    Dir.mktmpdir do |dir|
+      out = run_cli(["--yes"], setup: ship_ci_gate_stub(dir, "green"),
+                    call: %{$gate_sops = []; test_gate("x", frozen_sha: #{GATE_SHA.inspect}, qa_gate: nil); puts("SOPS " + $gate_sops.inspect); puts("PASSED")})
+
+      assert_includes out, "GitHub CI verdict for frozen #{GATE_SHA[0, 7]}", "the gate reads CI for the frozen SHA"
+      refute_includes out, "SUITE-RAN", "the local suite is demoted — a green CI ships without it"
+      sops = out.lines.find { |l| l.start_with?("SOPS") }
+      assert sops, "the CI conclusion must be recorded as the gate SOP: #{out}"
+      assert_includes sops, %("sop"=>"ship_test_gate")
+      assert_includes sops, %("result"=>"pass")
+      assert_includes sops, "GitHub CI GREEN", "…naming the Tier-3 Actions conclusion"
+      assert_includes out, "PASSED"
+    end
+  end
+
+  # [integration] RED CI on the frozen SHA FAILS the ship gate CLOSED — a red frozen
+  # commit must not reach the irreversible prod deploy — and records a RED SOP.
+  def test_ship_test_gate_fails_closed_on_a_red_ci_verdict
+    Dir.mktmpdir do |dir|
+      out = run_cli(["--yes"], setup: ship_ci_gate_stub(dir, "red"),
+                    call: %{$gate_sops = []; begin; test_gate("x", frozen_sha: #{GATE_SHA.inspect}, qa_gate: nil); puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end; puts("SOPS " + $gate_sops.inspect)})
+
+      assert_includes out, "ABORTED", "a red frozen SHA must abort BEFORE the prod deploy"
+      assert_includes out, "RED", "…naming CI's red verdict"
+      assert_includes out, "must not ship"
+      refute_includes out, "SUITE-RAN", "no local suite runs — CI is the verdict"
+      sops = out.lines.find { |l| l.start_with?("SOPS") }
+      assert_includes sops, %("result"=>"fail"), "the red gate is recorded as a failed SOP"
+      refute_includes out, "PASSED"
+    end
+  end
+
+  # [integration] NO GREEN VERDICT FAILS CLOSED at G4 too: a pending/no-data verdict for
+  # the frozen SHA (e.g. a just-pushed re-pin whose CI has not concluded) HOLDS the ship,
+  # points at the --skip-test-gate override, and never reads as a pass.
+  def test_ship_test_gate_fails_closed_on_a_pending_or_no_data_verdict
+    %w[pending none unverified unreadable].each do |state|
+      Dir.mktmpdir do |dir|
+        out = run_cli(["--yes"], setup: ship_ci_gate_stub(dir, state),
+                      call: %{begin; test_gate("x", frozen_sha: #{GATE_SHA.inspect}, qa_gate: nil); puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+        assert_includes out, "ABORTED", "#{state}: an absent/unknown CI verdict must fail the ship gate closed"
+        assert_includes out, "NO green verdict for frozen", "#{state}: names what it could not certify"
+        assert_includes out, "FAILS CLOSED", "#{state}: says why it held"
+        assert_includes out, "--skip-test-gate", "#{state}: points at the first-class override"
+        refute_includes out, "SUITE-RAN", "#{state}: no local suite runs"
+        refute_includes out, "PASSED"
+      end
     end
   end
 
@@ -2660,12 +2792,13 @@ class ReleaseCliTest < Minitest::Test
     assert_operator ship_at, :<, deploy_at, "ship authority precedes any deploy"
   end
 
-  def test_ship_avi_gate_runs_the_suite_on_the_frozen_sha
+  def test_ship_avi_gate_reads_the_ci_verdict_for_the_frozen_sha
     out = run_cli(["--dry-run"], call: "ship", setup: SHIP_STUB)
-    # The gate runs the suite in the isolated workspace pinned at the frozen hub SHA.
+    # DevOps v2 Phase 3: the gate reads GitHub CI's verdict for the frozen hub SHA
+    # (the local suite is demoted); the plan still names that frozen SHA.
     assert_includes out, "Avi ship gate"
     assert_includes out, "FROZEN ship SHA"
-    assert_includes out, "bbbbbbb", "the gate runs on the hub's QA-frozen SHA"
+    assert_includes out, "bbbbbbb", "the gate is judged on the hub's QA-frozen SHA"
   end
 
   # --- prepare: wait_for_boot closes the /up-smoke race before assembling ---
@@ -3067,7 +3200,10 @@ class ReleaseCliTest < Minitest::Test
   # (stub_repo — NOT Dir.pwd: the gate mkdir_p's a .worktrees/ under whatever
   # repo_path returns) — the git/qa-server I/O against it is fully stubbed by `sh`,
   # so the repo's identity on disk is irrelevant to what this test asserts.
-  PAREN_POST_DEPLOY_PREP_STUB = GATE_GIT_STUB + %(def repo_path(_repo) = #{stub_repo.inspect}\n) + <<~'RUBY'
+  # RELEASE_CI_STATUS=green is the GATE precondition (DevOps v2 Phase 3): the G3 pre-QA
+  # gate verdict is GitHub CI now, so a green CI is injected to let the gate pass and the
+  # post-deploy/assemble path this stub exercises continue.
+  PAREN_POST_DEPLOY_PREP_STUB = GATE_GIT_STUB + %(ENV["RELEASE_CI_STATUS"] = "green"\ndef repo_path(_repo) = #{stub_repo.inspect}\n) + <<~'RUBY'
     def conductor(ruby, read_only: false)
       payload = conductor_payload(ruby)               # the REAL shell-safe encoder
       $stdout.puts("UNSAFE-PAYLOAD") if payload.include?("Rails.root.join") || payload.include?("(%q(")
