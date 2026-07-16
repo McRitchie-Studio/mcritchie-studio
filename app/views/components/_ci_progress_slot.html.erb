@@ -1,0 +1,20 @@
+<%# locals: (dom_id:, progress:, label: "CI", test_id: "ci-progress-bar", compact: false, wrapper_class: nil, inner_test_id: nil) %>
+<%#
+  Stable-id wrapper around components/_ci_progress_bar so a LIVE CI update
+  (CiCheckJob after_commit, via DeploymentsBroadcaster) can morph-replace THIS
+  slot alone — the fill width animates, the surrounding card never flashes.
+
+  The outer div ALWAYS renders (even when the bar is blank) so the Turbo replace
+  target exists before the run's first check settles; empty, it is a zero-height
+  block that adds nothing visible. Rendered inline by the task card + Next Release
+  card AND by the broadcast, so both paths share one markup and one #dom_id.
+%>
+<div id="<%= dom_id %>" data-test="<%= dom_id %>-slot">
+  <% if progress.respond_to?(:present?) && progress.present? %>
+    <div class="<%= wrapper_class %>"<% if inner_test_id %> data-test="<%= inner_test_id %>"<% end %>>
+      <%= render "components/ci_progress_bar",
+            progress: progress, label: (label || "CI"),
+            test_id: test_id, compact: compact %>
+    </div>
+  <% end %>
+</div>

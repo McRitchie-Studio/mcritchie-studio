@@ -350,6 +350,17 @@ GitHub POSTs to `/api/v1/github/webhook` (`GithubWebhooksController`, HMAC-verif
 against `GITHUB_WEBHOOK_SECRET`), which enqueues `GithubWorkflowRunIngestJob` for an
 idempotent, monotonic upsert into `GithubWorkflowRun`.
 
+**Live CI progress bars — the `workflow_job` path.** The SAME receiver + ingest job
+also handles **`workflow_job`** deliveries (per-CI-job lifecycle: queued →
+in_progress → completed), upserting one `CiCheckJob` row per job — idempotent +
+monotonic on the immutable `job_id`, mirroring the run upsert, and recording only
+`CI`-workflow jobs. `Ci::ProgressReader` reads those rows **live-first**: a SHA whose
+jobs are ingested folds straight from `CiCheckJob` (no network), and a SHA with none
+(CI predating the subscription) falls back to the cached GitHub check-runs API read.
+Each `CiCheckJob` upsert then morph-broadcasts the refreshed bar to the task card +
+the Next Release G3 slot over Turbo Streams, so the board's CI progress bars **tick
+up live with no reload** as each check passes.
+
 **Prod-deploy approval gate.** When a run reaches the `production` environment's
 required-reviewer gate it stamps `pending_environment` on the run, so the panel
 shows an amber **awaiting approval** row and nudges Discord (see below). Admins
@@ -363,8 +374,10 @@ local gate; the next scan (or webhook) reconciles it.
 
 **The pending signal — poll, not webhook.** GitHub **refuses to deliver
 `deployment_review` to a repo webhook created with a PAT** (`422: events not
-allowed`), so the webhook receiver only ever carries `workflow_run` in prod. The
-pending state is therefore driven by a recurring poll: `ScanPendingDeploymentsJob`
+allowed`) — even though it accepts `workflow_run` and `workflow_job` on that same
+PAT hook (`653247220`). So the prod receiver carries those two events but never the
+pending-approval one, and the pending state is instead driven by a recurring poll:
+`ScanPendingDeploymentsJob`
 (`config/recurring.yml`, every 3 min, **production only**) runs
 `Github::PendingDeploymentScanner`, which lists runs `waiting` on an environment
 gate, reads each run's `pending_deployments` for the environment name, and REPLAYS

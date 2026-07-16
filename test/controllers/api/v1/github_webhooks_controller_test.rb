@@ -88,6 +88,17 @@ module Api
         end
       end
 
+      test "[integration] a workflow_job delivery enqueues the ingest job under its event name" do
+        job_body = file_fixture("github_workflow_job_event.json").read
+        assert_enqueued_with(
+          job: GithubWorkflowRunIngestJob,
+          args: ["workflow_job", JSON.parse(job_body)]
+        ) do
+          post_webhook(body: job_body, event: "workflow_job", signature: sign(job_body))
+        end
+        assert_response :ok
+      end
+
       test "[integration] a deployment_review delivery enqueues the ingest job under its event name" do
         review = file_fixture("github_deployment_review_event.json").read
         assert_enqueued_with(

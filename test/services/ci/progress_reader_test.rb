@@ -10,7 +10,10 @@ class Ci::ProgressReaderTest < ActiveSupport::TestCase
     end
   end
 
-  setup { GithubWorkflowRun.delete_all }
+  setup do
+    GithubWorkflowRun.delete_all
+    CiCheckJob.delete_all
+  end
 
   test "[unit] for_sha folds the check-runs payload into a CheckProgress" do
     reader = build_reader(&ok([
@@ -96,7 +99,72 @@ class Ci::ProgressReaderTest < ActiveSupport::TestCase
     assert_not reader.for_release(Release.new(state: "shipped")).present?
   end
 
+  # ── live-first: the workflow_job (CiCheckJob) path preferred over the API ──
+
+  test "[unit] for_sha folds ingested CiCheckJob rows and never calls the API" do
+    calls = 0
+    reader = build_reader do |_uri, _req|
+      calls += 1
+      FakeResponse.new("500", "boom — the API must not be reached", {})
+    end
+    seed_jobs("nwo/x", "live-sha", passed: 5, pending: 3)
+
+    progress = reader.for_sha("nwo/x", "live-sha")
+    assert_equal "5 / 8", progress.fraction_label
+    assert_equal :pending, progress.state
+    assert_equal 0, calls, "live rows must short-circuit the GitHub API entirely"
+  end
+
+  test "[unit] for_sha falls back to the API when no check jobs are ingested" do
+    reader = build_reader(&ok([{ "status" => "completed", "conclusion" => "success" }]))
+
+    progress = reader.for_sha("nwo/x", "no-jobs-sha")
+    assert_equal "1 / 1", progress.fraction_label, "with no live rows the API read is used"
+  end
+
+  test "[unit] for_task prefers live check-job rows over the API fallback" do
+    reader = build_reader { |_uri, _req| FakeResponse.new("500", "API must not be hit", {}) }
+    task = make_task(stage: "submitted", pr_url: pr_url, branch: "feat/live")
+    seed_run(branch: "feat/live", sha: "task-live-sha")
+    seed_jobs("amcritchie/mcritchie-studio", "task-live-sha", passed: 7, pending: 1)
+
+    assert_equal "7 / 8", reader.for_task(task).fraction_label
+  end
+
+  test "[unit] eligible_tasks_for returns the submitted-onward tasks on the repo+branch" do
+    submitted = make_task(stage: "submitted", pr_url: pr_url, branch: "feat/match")
+    reviewed = make_task(stage: "reviewed", pr_url: pr_url, branch: "feat/match")
+    make_task(stage: "building", pr_url: nil, branch: "feat/match")   # no PR → ineligible
+    make_task(stage: "submitted", pr_url: pr_url, branch: "feat/other") # wrong branch
+
+    slugs = Ci::ProgressReader.new.eligible_tasks_for("amcritchie/mcritchie-studio", "feat/match").map(&:slug)
+    assert_equal [submitted.slug, reviewed.slug].sort, slugs.sort
+  end
+
+  test "[unit] eligible_tasks_for is empty for a blank repo or branch" do
+    reader = Ci::ProgressReader.new
+    assert_empty reader.eligible_tasks_for("", "feat/x")
+    assert_empty reader.eligible_tasks_for("nwo/x", "")
+  end
+
+  test "[unit] the fixture seam is disabled in production" do
+    ENV["CI_PROGRESS_FIXTURES"] = { "demo" => { "passed" => 1, "failed" => 0, "pending" => 0 } }.to_json
+    Rails.stub(:env, ActiveSupport::StringInquirer.new("production")) do
+      assert_empty Ci::ProgressReader.new.send(:env_fixtures),
+        "CI_PROGRESS_FIXTURES must never paint fake bars on a production dyno"
+    end
+  ensure
+    ENV.delete("CI_PROGRESS_FIXTURES")
+  end
+
   private
+
+  def seed_jobs(repo, sha, passed: 0, failed: 0, pending: 0)
+    id = SecureRandom.random_number(10**12)
+    passed.times  { CiCheckJob.create!(repo: repo, job_id: (id += 1), head_sha: sha, workflow_name: "CI", status: "completed", conclusion: "success") }
+    failed.times  { CiCheckJob.create!(repo: repo, job_id: (id += 1), head_sha: sha, workflow_name: "CI", status: "completed", conclusion: "failure") }
+    pending.times { CiCheckJob.create!(repo: repo, job_id: (id += 1), head_sha: sha, workflow_name: "CI", status: "in_progress") }
+  end
 
   def pr_url
     "https://github.com/amcritchie/mcritchie-studio/pull/9"

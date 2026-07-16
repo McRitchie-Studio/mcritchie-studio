@@ -280,6 +280,66 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
     assert_not_includes tone, "bg-red-50", "a never-blocked card is plain, not red"
   end
 
+  # --- live CI progress: a workflow_job push morphs just the bar slot ----------
+
+  def seed_ci(repo:, branch:, sha:, passed:, pending:)
+    GithubWorkflowRun.create!(repo: repo, workflow_name: "CI", run_id: SecureRandom.random_number(10**12),
+                              status: "in_progress", head_branch: branch, head_sha: sha, run_started_at: Time.current)
+    id = SecureRandom.random_number(10**12)
+    passed.times  { CiCheckJob.create!(repo: repo, job_id: (id += 1), head_sha: sha, head_branch: branch, workflow_name: "CI", status: "completed", conclusion: "success") }
+    pending.times { CiCheckJob.create!(repo: repo, job_id: (id += 1), head_sha: sha, head_branch: branch, workflow_name: "CI", status: "in_progress") }
+    CiCheckJob.new(repo: repo, job_id: id + 1, head_sha: sha, head_branch: branch, workflow_name: "CI", status: "completed", conclusion: "success")
+  end
+
+  test "[integration] ci_progress morph-replaces the affected task's bar slot with fresh counts" do
+    repo = "amcritchie/mcritchie-studio"
+    task = Task.create!(title: "Live CI bar task", stage: "submitted",
+                        metadata: { "devops" => { "branch" => "feat/live-bar", "repositories" => ["mcritchie-studio"],
+                                                  "pr_url" => "https://github.com/amcritchie/mcritchie-studio/pull/5" } })
+    job = seed_ci(repo: repo, branch: "feat/live-bar", sha: "live-bar-sha", passed: 5, pending: 3)
+
+    streams = capture_turbo_stream_broadcasts("deployments") { DeploymentsBroadcaster.ci_progress(job) }
+
+    assert_equal 1, streams.size
+    assert_equal "replace", streams.first["action"]
+    assert_equal "morph", streams.first["method"], "morph animates the fill width instead of snapping"
+    assert_equal "ci-progress-#{task.slug}", streams.first["target"]
+    assert_includes streams.first.to_html, "5 / 8", "the slot re-renders the live 5-of-8 fraction"
+  end
+
+  test "[integration] ci_progress morph-replaces the Next Release G3 slot for a release-branch job" do
+    Release.open! # the active candidate → Release.current
+    job = seed_ci(repo: "amcritchie/mcritchie-studio", branch: Release::BRANCH, sha: "rel-live-sha", passed: 8, pending: 0)
+
+    streams = capture_turbo_stream_broadcasts("deployments") { DeploymentsBroadcaster.ci_progress(job) }
+
+    release_stream = streams.find { |s| s["target"] == "release-ci-progress" }
+    assert release_stream, "the release-branch job pushes the G3 candidate bar"
+    assert_equal "morph", release_stream["method"]
+    assert_includes release_stream.to_html, "8 / 8"
+  end
+
+  test "[integration] ci_progress with no eligible task or release broadcasts nothing" do
+    job = CiCheckJob.new(repo: "amcritchie/mcritchie-studio", job_id: 1, head_sha: "orphan-sha",
+                         head_branch: "feat/nobody", workflow_name: "CI", status: "queued")
+    streams = capture_turbo_stream_broadcasts("deployments") { DeploymentsBroadcaster.ci_progress(job) }
+    assert_empty streams
+  end
+
+  test "[integration] CiCheckJob wires the live CI broadcast on after_commit" do
+    assert CiCheckJob._commit_callbacks.any? { |c| c.filter == :broadcast_ci_progress },
+      "CiCheckJob must push the live CI bar after a commit"
+  end
+
+  test "[unit] ci_progress is guarded — a dead cable can't break the ingest write" do
+    job = CiCheckJob.new(repo: "amcritchie/mcritchie-studio", job_id: 1, head_sha: "s",
+                         head_branch: Release::BRANCH, workflow_name: "CI", status: "queued")
+    Release.open!
+    Turbo::StreamsChannel.stub(:broadcast_stream_to, ->(*_a, **_k) { raise Gem::LoadError, "redis not in bundle" }) do
+      assert_nothing_raised { assert_nil DeploymentsBroadcaster.ci_progress(job) }
+    end
+  end
+
   def create_shipped_tracker_release(slug:, shipped_at:)
     testing_started_at = shipped_at - 24.minutes
     assembling_started_at = testing_started_at + 2.minutes
