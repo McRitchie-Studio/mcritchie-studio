@@ -160,8 +160,9 @@ HOLDS on it — unbounded, however long the approval takes. So announce the paus
 run and wait; do not read the block as a hang. Once approved, GitHub Actions
 force-pushes the frozen SHA to Heroku `main` and hard-gates a `/up` smoke — it
 retries `/up` and FAILS the deploy if production never returns 200. The watch
-returns green only after that deploy-and-smoke concludes, so the hub runs no
-separate local smoke.
+returns green only after that deploy-and-smoke concludes, so Actions — not a
+local hub curl — now runs the deploy `/up` smoke. (The post-ship `@qa-readonly`
+production smoke seal below still runs locally on the hub.)
 
 **A dirty app primary does NOT block the ship.** The deploy runs from its own
 checkout — a private detached worktree at `<repo>/.worktrees/_ship`, pinned at the
