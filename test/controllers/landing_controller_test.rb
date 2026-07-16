@@ -23,6 +23,16 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes response.body, "Chat Right Now"
   end
 
+  test "contact section links to the correct social profiles" do
+    get root_path
+
+    assert_response :success
+    assert_select "a[href=?]", "https://www.linkedin.com/in/amcritchie/"
+    assert_select "a[href=?]", "https://x.com/mcritchiealex"
+    # the stale "alexmcritchie" handles must not come back
+    assert_select "a[href*=?]", "alexmcritchie", count: 0
+  end
+
   test "pwa manifest renders the corrected app name" do
     get pwa_manifest_path(format: :json)
 
