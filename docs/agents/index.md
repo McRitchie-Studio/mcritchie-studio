@@ -61,9 +61,10 @@ required execution path. Do not follow a Background reference to run an SOP.
 | `share-insights` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/share-insights.md` |
 | `Alex Heartbeat` | Alex | `mcritchie-studio/docs/agents/agents/alex/HEARTBEAT.md` |
 
-For `pr-review`, read Avi's `pr-review.md` and run the bounded review-only
-supervisor described there. Approved work stops at `reviewed`; Steffon's
-`qa-release` owns merge plus QA.
+For `pr-review`, read Avi's `pr-review.md` and run the bounded review
+supervisor described there. It merges approved work onto `accepted` and stops at
+`reviewed` (never `release`/`main`, never a deploy); Steffon's `qa-release`
+promotes `accepted → release` plus QA.
 
 ## First Rules
 
@@ -89,9 +90,10 @@ supervisor described there. Approved work stops at `reviewed`; Steffon's
   code or app docs, create or enter an isolated worktree with an allocated port
   before making changes unless Mr. McRitchie explicitly assigns you as the
   deploy owner for that repo.
-- A pushed feature branch preserves code. `main` is for reviewed integration,
-  not backup. Feature agents push their own branch and graduate through PR/QA;
-  review is review-only — Steffon's `qa-release` sweep merges reviewed work.
+- A pushed feature branch preserves code. `main` is for shipped integration,
+  not backup. Feature agents push their own branch and open a PR into `accepted`;
+  review merges it onto `accepted`, and Steffon's `qa-release` sweep promotes
+  `accepted → release` for QA.
 
 ## House Writing Style — correct Mr. McRitchie's copy
 
@@ -210,28 +212,37 @@ Before handoff:
    `bin/fast-check <task>` (the builder default — diff-mapped tests + core
    spine + rubocop on changed files, ~1 min) or `bin/full-suite-check <task>`
    (CI-independent).
-6. Push, open a PR **into `release`** (base `release`, not `main`) whose body
-   **leads with the task URL**, then verdict: run **`bin/dor-check <task>`**
-   and fix whatever it flags — it refuses an under-tested PR and its verdict
-   closes the gate. Then `bin/task move <task> submitted` **without waiting
-   for CI**: a pending CI is a loud suggestion (the fast cert is credited
+6. Push, open a PR **into `accepted`** (base `accepted`, not `release`/`main`)
+   whose body **leads with the task URL**, then verdict: run **`bin/dor-check
+   <task>`** and fix whatever it flags — it refuses an under-tested PR and its
+   verdict closes the gate. Then `bin/task move <task> submitted` **without
+   waiting for CI**: a pending CI is a loud suggestion (the fast cert is credited
    provisionally), a red CI still blocks, and the authoritative CI verdict is
    review's gate-zero — `pr-review`'s supervisor bounces a red-CI task back
    with the failing checks named before any reviewer spawns.
 
 The task lifecycle is two workflows (full spec:
-`docs/agents/system/devops-cycle-design.md`):
+`docs/agents/system/devops-cycle-design.md`), and the code walks a three-rung
+branch ladder — **`accepted` → `release` → `main`**:
 
 - **Build** (feature agent) — `designed → building → submitted`. You own
-  `designed` through `submitted` (the seam); opening the PR hands off to DevOps.
+  `designed` through `submitted` (the seam); opening the PR (base `accepted`)
+  hands off to DevOps.
 - **Deploy** (DevOps) — `submitted → reviewed → assembled → shipped`. Every repo
-  keeps a **persistent `release` branch** (feature PRs target it, never `main`).
-  Review is **review-only**: the submitted PR is approved → `reviewed`, or
-  `bin/task block <task> --kind rework --feedback "…"` (back to you) — nobody
-  merges at review. Steffon's self-healing `qa-release` sweep (`bin/release
-  prepare`) merges reviewed tasks + `assembled` stragglers into `release`
-  (stamping `merged: "release"`), deploys QA, and flips members `assembled` only
-  on **QA-green**. Avi's `production-deploy` (`bin/release ship`) fast-forwards
+  keeps persistent `accepted` and `release` branches (feature PRs target
+  **`accepted`**, never `release`/`main`). Review **merges the feat PR into
+  `accepted`**: on a merge-ready verdict `pr-review` `gh pr merge`s it, stamps
+  `merged: "accepted"`, then moves the task `reviewed` (invariant: `reviewed` ⟺
+  code-on-`accepted`; a merge failure leaves it `submitted`, a mis-based PR
+  self-heals by retargeting to `accepted`) — or `bin/task block <task> --kind
+  rework --feedback "…"` (back to you). Review still never touches `release`/
+  `main` and never deploys. Steffon's self-healing `qa-release` sweep
+  (`bin/release prepare`) then **promotes ALL of `accepted` onto `release` via
+  ONE batch PR per repo** (`--base release --head accepted`, not N per-task
+  merges), records `reviewed` members + `assembled` stragglers (re-stamping
+  `merged: "release"`; a `reviewed` member with no `merged` stamp is a HELD
+  anomaly, left behind), deploys QA, and flips members `assembled` only on
+  **QA-green**. Avi's `production-deploy` (`bin/release ship`) fast-forwards
   each repo's `release → main` (stamping `merged: "main"`) → `shipped`.
 - **`blocked`** is the "not in the pipeline's court" side state (env blocker, QA
   rework, or a dependency); **`archived`** is terminal.

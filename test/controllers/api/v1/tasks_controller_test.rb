@@ -567,6 +567,18 @@ module Api
         assert_nil @task.reload.po_size, "an invalid size is not persisted"
       end
 
+      # The accepted-ladder's first rung: `bin/task merged <slug> accepted` PATCHes
+      # the git-location as a top-level column, so `merged` must be permitted.
+      test "update permits the merged git-location and validates it" do
+        patch api_v1_task_path(@task.slug), params: { merged: "accepted" }, headers: @headers, as: :json
+        assert_response :success
+        assert_equal "accepted", @task.reload.merged
+
+        patch api_v1_task_path(@task.slug), params: { merged: "nowhere" }, headers: @headers, as: :json
+        assert_response :unprocessable_entity
+        assert_equal "accepted", @task.reload.merged, "an unknown git-location is rejected, not persisted"
+      end
+
       # End-to-end size lifecycle through the API: Avi creates + sizes (po_size) →
       # the builder claims at building (dev_size) → ship auto-derives actual_size
       # from the measured token total. The trio (po/dev/actual) all land.

@@ -67,6 +67,12 @@ DEVOPS_CYCLE_BIN = BinHelpers.bin_for("DEVOPS_CYCLE_BIN", "devops-cycle")
 REVIEWER_SELECT_BIN = BinHelpers.bin_for("REVIEWER_SELECT_BIN", "reviewer-select")
 TASK_BIN = BinHelpers.bin_for("TASK_BIN", "task")
 GATE_BIN = BinHelpers.bin_for("GATE_BIN", "gate")
+# The accepted-ladder's first rung: on a merge-ready verdict the supervisor merges
+# the feat PR into `accepted` and stamps merged:"accepted" before moving the task
+# `reviewed` (the sweep later promotes accepted→release). GH_BIN is the injectable
+# gh seam (mirrors TASK_BIN) so the command tests fake the merge without shelling.
+GH_BIN = BinHelpers.bin_for("GH_BIN", "gh")
+ACCEPTED_BRANCH = "accepted"
 # start_review → gate key per launch role (the G2 review lanes, GateRun::GATES).
 G2_LANE_KEYS = { "primary" => "g2a_primary", "light" => "g2b_light" }.freeze
 CODEX_BIN = ENV["CODEX_BIN"].to_s.strip.empty? ? "codex" : ENV["CODEX_BIN"].strip
@@ -509,9 +515,86 @@ def close_review_gates(slug, reviewers, reports)
   end
 end
 
-def move_reviewed(slug, reviewers, reports)
+# The gh READ seam (PR base, merge state) — routed through GH_BIN so the command
+# tests inject a fake instead of shelling to a live PR. Returns [stdout, ok].
+def gh_capture(*args)
+  out, _err, status = run_capture(managed_command(GH_BIN, *args))
+  [out.to_s.strip, !!(status&.success?)]
+end
+
+# A gh WRITE (pr merge / pr edit). No-ops under dry-run (prints what it WOULD run),
+# exactly like task_write. move_reviewed is never reached in a dry-run
+# (finish_review stops at the preview), but this keeps a stray call inert too.
+def gh_write(*args)
+  cmd = managed_command(GH_BIN, *args)
+  unless OPTIONS.fetch(:run)
+    puts "  dry-run: would run #{shell_join(cmd)}"
+    return true
+  end
+
+  out, err, status = run_capture(cmd)
+  puts out unless out.strip.empty?
+  warn err unless err.strip.empty?
+  !!(status&.success?)
+end
+
+# The PR's live merge state — the crash-recovery read: a gh merge that fails
+# because the PR ALREADY merged on a prior interrupted run (whose stamp/move died)
+# must not bounce the task back.
+def pr_already_merged?(pr_url)
+  state, ok = gh_capture("pr", "view", pr_url, "--json", "state", "-q", ".state")
+  ok && state.upcase == "MERGED"
+end
+
+# Merge the feature PR into `accepted` — the accepted-ladder's first rung. Self-heals
+# a mis-based feat PR (base != accepted) by retargeting it before merging, so a PR
+# opened against release/main is corrected rather than stranded. Returns true when
+# the code is on `accepted` (freshly merged OR already merged on a prior run), false
+# on ANY failure — the caller then leaves the task `submitted` and UNSTAMPED,
+# preserving the invariant reviewed ⟺ code-on-accepted.
+def merge_feature_pr(slug, pr_url)
+  if pr_url.to_s.empty?
+    puts "  cannot merge #{slug}: no PR url on the task (devops.pr_url) — leaving it submitted"
+    return false
+  end
+
+  base, base_ok = gh_capture("pr", "view", pr_url, "--json", "baseRefName", "-q", ".baseRefName")
+  if base_ok && !base.empty? && base != ACCEPTED_BRANCH
+    puts "  retarget #{slug} PR base #{base} → #{ACCEPTED_BRANCH} (mis-based feat PR self-heals)"
+    unless gh_write("pr", "edit", pr_url, "--base", ACCEPTED_BRANCH)
+      puts "  could not retarget #{pr_url} base → #{ACCEPTED_BRANCH} — leaving #{slug} submitted"
+      return false
+    end
+  end
+
+  puts "  gh pr merge #{pr_url} --merge (feat → #{ACCEPTED_BRANCH})"
+  ok = gh_write("pr", "merge", pr_url, "--merge")
+  if !ok && OPTIONS.fetch(:run) && pr_already_merged?(pr_url)
+    puts "  ↷ #{pr_url} already merged on GitHub (interrupted prior run) — proceeding to stamp + move"
+    ok = true
+  end
+  puts "  gh pr merge FAILED for #{pr_url} (#{slug}) — leaving it submitted (resolve conflicts/checks on GitHub, then re-review)" unless ok
+  ok
+end
+
+# The merge-ready verdict handoff — the accepted-ladder's first rung. Merge the
+# feat PR into `accepted`, stamp merged:"accepted", then move the task `reviewed`
+# and leave the Steffon-QA handoff note. ORDER is load-bearing:
+#   1. Merge first. A merge FAILURE returns false WITHOUT stamping or moving, so a
+#      broken PR keeps the task `submitted` (invariant: reviewed ⟺ code-on-accepted).
+#   2. Stamp merged:"accepted" BEFORE the stage move — the two board writes aren't
+#      atomic, so stamp-first means a failure between them can only leave
+#      (submitted, merged:accepted), which self-heals on the next wave (re-merge is
+#      a no-op, the stamp is idempotent), NEVER the forbidden (reviewed, unstamped)
+#      the sweep would drop as a HELD anomaly.
+def move_reviewed(slug, task, reviewers, reports)
+  return false unless merge_feature_pr(slug, task&.dig("devops", "pr_url"))
+  return false unless task_write(["merged", slug, "accepted"])
+
   ok = task_write(["move", slug, "reviewed", "--actor", "avi"])
-  note = "pr-review moved #{slug} to reviewed after #{reviewers.map { |r| r["slug"] }.join(" + ")} reported merge-ready. Left for Steffon QA.\n\n" \
+  note = "pr-review merged #{slug} into `#{ACCEPTED_BRANCH}` and moved it reviewed after " \
+         "#{reviewers.map { |r| r["slug"] }.join(" + ")} reported merge-ready. Left for Steffon QA " \
+         "(the sweep promotes accepted→release).\n\n" \
          "Reports:\n#{reports.map { |r| "- #{report_summary(r)}" }.join("\n")}"
   ok && task_write(["note", slug, "--handoff", note, "--agent", "avi"])
 end
@@ -742,7 +825,7 @@ def finish_review(review, events, handled, deferred_until)
 
   case outcome
   when "merge-ready"
-    ok = move_reviewed(slug, reviewers, reports)
+    ok = move_reviewed(slug, fresh_task, reviewers, reports)
     status = ok ? :reviewed : :tool_failure
     events << { slug: slug, status: status, category: ok ? "approved" : "task-write", reason: "merge-ready", reviewers: reviewer_slugs }
     handled[slug] = true

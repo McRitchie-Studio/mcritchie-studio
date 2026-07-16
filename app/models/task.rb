@@ -86,12 +86,17 @@ class Task < ApplicationRecord
   # position) — so an interrupted assemble/deploy heartbeat contextualizes itself
   # from durable state instead of guessing (an interrupted Steffon skips
   # re-merging a `release` task; an interrupted Avi skips re-ff'ing a `main` one).
-  #   nil       — not merged anywhere (submitted / reviewed)
-  #   "release" — merged onto the release branch (going through QA)
-  #   "main"    — fast-forwarded into main (going through prod deploy)
-  MERGED_RELEASE = "release"
-  MERGED_MAIN    = "main"
-  MERGED_STATES  = [MERGED_RELEASE, MERGED_MAIN].freeze
+  #   nil        — not merged anywhere (submitted)
+  #   "accepted" — merged onto the accepted branch by review (reviewed, pre-sweep):
+  #                the ladder's first rung. An interrupted Steffon reads this to
+  #                promote accepted→release without re-reviewing. Release#add
+  #                downgrades it to "release" when the task is swept onto an RC.
+  #   "release"  — merged onto the release branch (going through QA)
+  #   "main"     — fast-forwarded into main (going through prod deploy)
+  MERGED_ACCEPTED = "accepted"
+  MERGED_RELEASE  = "release"
+  MERGED_MAIN     = "main"
+  MERGED_STATES   = [MERGED_ACCEPTED, MERGED_RELEASE, MERGED_MAIN].freeze
   # Board columns per page. /tasks is the feature-agent lane (the Build workflow;
   # blocked tasks ride the Building column as a red-glowing attribute, not a
   # separate lane). /deployments shows the full pipeline as swim lanes — the

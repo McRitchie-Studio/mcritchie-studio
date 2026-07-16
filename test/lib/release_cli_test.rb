@@ -630,26 +630,28 @@ class ReleaseCliTest < Minitest::Test
     refute_includes out, "bin/qa-server deploy", "nothing deploys on a no-op"
   end
 
-  # A full self-healing sweep: one fresh candidate (gh merge needed), one already
-  # merged (crash-recovery skip), one with no PR (left behind, warning only).
-  # RELEASE_CI_STATUS=green is the GATE precondition (DevOps v2 Phase 3): the G3 pre-QA
-  # gate's verdict is GitHub CI now, so these downstream-flow tests inject a green CI to
-  # let the gate pass and the sweep/deploy/assemble path continue.
+  # A full self-healing sweep, accepted-ladder edition: review already merged each
+  # feat PR into `accepted`, so a reviewed member carries merged:"accepted". The
+  # sweep PROMOTES accepted→release (ONE batch PR per repo), records the members,
+  # and flips them on QA-green. Candidates: one reviewed member on accepted (promote
+  # + record), one crash-recovery straggler already on release (record, no promote),
+  # one anomaly with NO merged stamp (HELD — warned, left reviewed). RELEASE_CI_STATUS
+  # =green is the G3 pre-QA gate precondition (GitHub CI is the verdict).
   SWEEP_FLOW_STUB = GATE_GIT_STUB + %(ENV["RELEASE_CI_STATUS"] = "green"\ndef repo_path(_repo) = #{stub_repo.inspect}\n) + <<~'RUBY'
     def conductor(ruby, read_only: false)
       if ruby.include?("sweep_candidates")
         { "tasks" => [
-            { "slug" => "task-new", "stage" => "reviewed", "merged" => "", "pr_url" => "https://gh/pr/9", "repo" => "mcritchie-studio" },
+            { "slug" => "task-accepted", "stage" => "reviewed", "merged" => "accepted", "pr_url" => "https://gh/pr/9", "repo" => "mcritchie-studio" },
             { "slug" => "task-swept", "stage" => "reviewed", "merged" => "release", "pr_url" => "https://gh/pr/8", "repo" => "mcritchie-studio" },
-            { "slug" => "task-naked", "stage" => "reviewed", "merged" => "", "pr_url" => "", "repo" => "mcritchie-studio" }
+            { "slug" => "task-held", "stage" => "reviewed", "merged" => "", "pr_url" => "", "repo" => "mcritchie-studio" }
           ],
           "release" => nil,
           "screen" => { "rows" => [], "blocked" => [], "overridden" => [], "missing" => [], "proceed" => true } }
       elsif ruby.include?("sweep!")
         $stdout.puts("SWEEP-CALL " + ruby.gsub("\n", " "))
-        { "slug" => "rel-sweep", "state" => "assembling", "swept" => %w[task-swept task-new], "repos" => [
+        { "slug" => "rel-sweep", "state" => "assembling", "swept" => %w[task-accepted task-swept], "repos" => [
           { "repo" => "mcritchie-studio", "kind" => "app", "release_branch" => "release",
-            "qa_app" => "mcritchie-studio", "members" => [{ "slug" => "task-new", "branch" => "feat/n" }] }
+            "qa_app" => "mcritchie-studio", "members" => [{ "slug" => "task-accepted", "branch" => "feat/n" }] }
         ] }
       elsif ruby.include?("qa_green!")
         $stdout.puts("QA-GREEN-CALL")
@@ -661,7 +663,13 @@ class ReleaseCliTest < Minitest::Test
     def sh(*a, **k)
       g = gate_git(a, k)
       return g if g
-      return ["release", true] if a.include?("baseRefName")
+      return ["2", true] if a[0] == "git" && a.include?("rev-list")   # accepted ahead of release
+      return ["git@github.com:amcritchie/mcritchie-studio.git", true] if a[0] == "git" && a.include?("remote")
+      return ["", true] if a[0] == "gh" && a[1] == "pr" && a[2] == "list"   # no existing batch PR
+      if a[0] == "gh" && a[1] == "pr" && a[2] == "create"
+        $stdout.puts("GH-CREATE " + a.join(" "))
+        return ["https://gh/pr/accepted-release", true]
+      end
       if a[0] == "gh" && a.include?("merge")
         $stdout.puts("GH-MERGE " + a.find { |x| x.to_s.start_with?("https") }.to_s)
         return ["", true]
@@ -669,41 +677,121 @@ class ReleaseCliTest < Minitest::Test
       return ["200", true] if a.join(" ").include?("curl")
       ["", true]
     end
-    def gh_pr_files(_pr) = []
   RUBY
 
-  def test_prepare_sweeps_the_detected_queue_with_the_crash_recovery_skip
+  def test_prepare_promotes_accepted_to_release_and_records_the_members
     out = run_cli(["--yes"], call: "prepare", setup: SWEEP_FLOW_STUB)
 
-    # The crash-recovery skip: the already-merged PR is NEVER re-merged.
-    assert_includes out, "skip gh pr merge for task-swept — already merged: release"
-    assert_equal 1, out.scan("GH-MERGE").size, "only the fresh PR gh-merges"
-    assert_includes out, "GH-MERGE https://gh/pr/9"
-    refute_includes out, "GH-MERGE https://gh/pr/8", "the merged: release PR skips the gh merge"
+    # ONE accepted→release batch PR promotes the whole repo — NOT one merge per task.
+    assert_equal 1, out.scan("GH-MERGE").size, "one accepted→release batch PR per repo, not one per task"
+    assert_includes out, "GH-MERGE https://gh/pr/accepted-release"
+    assert_includes out, "promote accepted → release in mcritchie-studio"
+    refute_includes out, "GH-MERGE https://gh/pr/9", "no per-feat-PR merge — review already landed it on accepted"
 
-    # The unmergeable task is warned + left reviewed — never an abort in prepare.
-    assert_includes out, "task-naked: no PR url"
-    assert_includes out, "left `reviewed` for a later sweep"
+    # The crash-recovery straggler (merged:release) records but is not re-promoted.
+    assert_includes out, "skip promote for task-swept — already merged: release"
 
-    # ONE batched record write sweeps skip + fresh (not the naked one).
+    # The anomaly (merged:"") is warned + left reviewed — never an abort in prepare.
+    assert_includes out, "task-held"
+    assert_includes out, "left `reviewed` (re-review to heal)"
+
+    # ONE batched record write sweeps the two members with code (not the held one).
     assert_equal 1, out.scan("SWEEP-CALL").size, "the sweep records in ONE heroku run"
     sweep = out.lines.find { |l| l.start_with?("SWEEP-CALL") }
+    assert_includes sweep, "task-accepted"
     assert_includes sweep, "task-swept"
-    assert_includes sweep, "task-new"
-    refute_includes sweep, "task-naked", "nothing to merge and nothing merged → not swept"
+    refute_includes sweep, "task-held", "an unstamped reviewed member is never swept onto the RC"
 
     # QA booted green → the QA-green flip fires and the RC assembles.
     assert_equal 1, out.scan("QA-GREEN-CALL").size, "QA-green flips the swept members via qa_green!"
     assert_includes out, "Assembled rel-sweep"
   end
 
-  def test_prepare_dry_run_previews_the_sweep_without_recording
+  def test_prepare_dry_run_previews_the_promote_without_recording
     out = run_cli(["--dry-run"], call: "prepare", setup: SWEEP_FLOW_STUB)
 
-    assert_includes out, "sweep task-new (reviewed)", "the dry run previews the detected sweep"
-    assert_includes out, "skip gh pr merge for task-swept — already merged: release"
+    assert_includes out, "sweep task-accepted (reviewed", "the dry run previews the detected sweep"
+    assert_includes out, "promote accepted → release in mcritchie-studio", "the dry run previews the ONE batch PR"
+    assert_includes out, "skip promote for task-swept — already merged: release"
+    refute_includes out, "GH-MERGE", "a dry run merges nothing"
+    refute_includes out, "GH-CREATE", "a dry run opens no PR"
     refute_includes out, "SWEEP-CALL", "a dry run records nothing"
     refute_includes out, "QA-GREEN-CALL", "a dry run flips nothing"
+  end
+
+  # The plan's key assertion: the sweep promotes accepted→release as ONE batch PR per
+  # repo — NOT one merge per reviewed task (the old per-feat-PR sweep). Three reviewed
+  # tasks in one repo → exactly one promote line, zero per-feat-PR merges.
+  ONE_BATCH_STUB = %(def repo_path(_repo) = #{stub_repo.inspect}\n) + <<~'RUBY'
+    def conductor(ruby, read_only: false)
+      if ruby.include?("sweep_candidates")
+        { "tasks" => [
+            { "slug" => "t1", "stage" => "reviewed", "merged" => "accepted", "pr_url" => "https://gh/pr/1", "repo" => "mcritchie-studio" },
+            { "slug" => "t2", "stage" => "reviewed", "merged" => "accepted", "pr_url" => "https://gh/pr/2", "repo" => "mcritchie-studio" },
+            { "slug" => "t3", "stage" => "reviewed", "merged" => "accepted", "pr_url" => "https://gh/pr/3", "repo" => "mcritchie-studio" }
+          ], "release" => nil, "screen" => { "proceed" => true } }
+      else
+        {}
+      end
+    end
+  RUBY
+
+  def test_prepare_dry_run_promotes_one_accepted_to_release_batch_pr_not_one_per_task
+    out = run_cli(["--dry-run"], call: "prepare", setup: ONE_BATCH_STUB)
+
+    promote_lines = out.lines.select { |l| l.include?("promote accepted → release in mcritchie-studio") }
+    assert_equal 1, promote_lines.size,
+                 "3 reviewed tasks in one repo → ONE accepted→release batch PR, not 3 per-task merges"
+    %w[1 2 3].each do |n|
+      refute_match(%r{gh pr merge https://gh/pr/#{n}}, out, "no per-feat-PR merge in the accepted-ladder sweep")
+    end
+  end
+
+  # ahead == 0: accepted is level with release (a prior run promoted it, or nothing
+  # new). promote SKIPS the batch PR — the caller still records + deploys.
+  def test_promote_skips_the_batch_pr_when_accepted_is_level_with_release
+    setup = %(def repo_path(_r) = #{self.class.stub_repo.inspect}\n) + <<~'RUBY'
+      def sh(*a, **k)
+        return ["", true] if a[0] == "git" && a.include?("fetch")
+        return ["0", true] if a[0] == "git" && a.include?("rev-list")   # ahead == 0
+        $stdout.puts("GH " + a.join(" ")) if a[0] == "gh"
+        ["", true]
+      end
+    RUBY
+    out = run_cli([], call: %(promote_accepted_to_release!(["mcritchie-studio"])), setup: setup)
+
+    assert_includes out, "level with `release` — nothing to promote"
+    refute_includes out, "GH ", "no gh PR is opened or merged when accepted is level with release"
+  end
+
+  # ahead > 0: promote opens/reuses ONE `--base release --head accepted` batch PR
+  # and merges it.
+  def test_promote_opens_and_merges_one_batch_pr_when_accepted_is_ahead
+    setup = %(def repo_path(_r) = #{self.class.stub_repo.inspect}\n) + <<~'RUBY'
+      def sh(*a, **k)
+        return ["", true] if a[0] == "git" && a.include?("fetch")
+        return ["3", true] if a[0] == "git" && a.include?("rev-list")   # accepted 3 ahead
+        return ["git@github.com:amcritchie/mcritchie-studio.git", true] if a[0] == "git" && a.include?("remote")
+        return ["", true] if a[0] == "gh" && a[2] == "list"             # no existing batch PR
+        if a[0] == "gh" && a[2] == "create"
+          $stdout.puts("CREATE " + a.join(" "))
+          return ["https://gh/pr/batch", true]
+        end
+        if a[0] == "gh" && a.include?("merge")
+          $stdout.puts("MERGE " + a.find { |x| x.to_s.start_with?("https") }.to_s)
+          return ["", true]
+        end
+        ["", true]
+      end
+    RUBY
+    out = run_cli([], call: %(promote_accepted_to_release!(["mcritchie-studio"], label: "rel-x")), setup: setup)
+
+    assert_includes out, "promote accepted → release in mcritchie-studio (3 commits)"
+    assert_equal 1, out.scan("CREATE").size, "opens exactly ONE batch PR"
+    assert_includes out, "--base release"
+    assert_includes out, "--head accepted"
+    assert_equal 1, out.scan("MERGE").size, "merges the batch PR once"
+    assert_includes out, "MERGE https://gh/pr/batch"
   end
 
   # --task names a slug detection DROPPED (typo, or neither `reviewed` nor an
@@ -735,9 +823,9 @@ class ReleaseCliTest < Minitest::Test
   # The surviving --task list still previews/sweeps normally (the loud fail only
   # fires on a MISSING slug, not on curation itself).
   def test_prepare_task_flag_sweeps_a_named_slug_that_survives_detection
-    out = run_cli(["--dry-run", "--task", "task-new"], call: "prepare", setup: SWEEP_FLOW_STUB)
+    out = run_cli(["--dry-run", "--task", "task-accepted"], call: "prepare", setup: SWEEP_FLOW_STUB)
 
-    assert_includes out, "sweep task-new (reviewed)", "the named survivor previews"
+    assert_includes out, "sweep task-accepted (reviewed", "the named survivor previews"
     refute_includes out, "not sweepable", "no loud fail when every named slug survived"
   end
 
@@ -3544,106 +3632,100 @@ class ReleaseCliTest < Minitest::Test
   # in ONE read, then runs ALL the adopts in ONE `heroku run` (single dyno, N
   # flips). These drive the real shell orchestration with conductor/sh/gh stubbed.
 
-  # A stub that ECHOES the adopt vs resolve conductor calls so we can count them
-  # and inspect the embedded slugs from the subprocess's stdout. The (read-only)
-  # resolve returns two reviewed PRs; the (write) adopt returns the release.
-  MERGE_STUB = <<~RUBY
+  # Shared promote plumbing: accepted 2 ahead of release, no existing batch PR, and
+  # gh pr create/merge succeed (echoed so tests count them). repo_path → /tmp so the
+  # missing-checkout guard passes.
+  PROMOTE_SH = <<~'RUBY'
+    def repo_path(_repo) = "/tmp"
+    def sh(*a, **_k)
+      return ["", true] if a[0] == "git" && a.include?("fetch")
+      return ["2", true] if a[0] == "git" && a.include?("rev-list")
+      return ["git@github.com:amcritchie/mcritchie-studio.git", true] if a[0] == "git" && a.include?("remote")
+      return ["", true] if a[0] == "gh" && a[2] == "list"
+      if a[0] == "gh" && a[2] == "create"
+        $stdout.puts("PR-CREATE " + a.join(" "))
+        return ["https://gh/pr/batch", true]
+      end
+      if a[0] == "gh" && a.include?("merge")
+        $stdout.puts("PROMOTE-MERGE " + a.find { |x| x.to_s.start_with?("https") }.to_s)
+        return ["", true]
+      end
+      ["", true]
+    end
+  RUBY
+
+  # A stub that ECHOES the record vs resolve conductor calls so we can count them
+  # and inspect the embedded slugs. The (read-only) resolve returns two reviewed
+  # members already on accepted (merged:"accepted"); the (write) record returns the RC.
+  MERGE_STUB = PROMOTE_SH + <<~'RUBY'
     def conductor(ruby, read_only: false)
       if read_only
         $stdout.puts("RESOLVE-CALL")
         { "tasks" => [
-          { "slug" => "task-a", "pr_url" => "https://gh/pr/1", "repo" => "mcritchie-studio", "stage" => "reviewed" },
-          { "slug" => "task-b", "pr_url" => "https://gh/pr/2", "repo" => "mcritchie-studio", "stage" => "reviewed" }
+          { "slug" => "task-a", "merged" => "accepted", "pr_url" => "https://gh/pr/1", "repo" => "mcritchie-studio", "stage" => "reviewed" },
+          { "slug" => "task-b", "merged" => "accepted", "pr_url" => "https://gh/pr/2", "repo" => "mcritchie-studio", "stage" => "reviewed" }
         ] }
       else
-        $stdout.puts("ADOPT-CALL " + ruby.gsub("\\n", " "))
+        $stdout.puts("ADOPT-CALL " + ruby.gsub("\n", " "))
         { "adopted" => [], "slug" => "rel-batch", "state" => "assembling" }
       end
     end
-    def sh(*a, **_k)
-      a.include?("baseRefName") ? ["release", true] : ["", true]
-    end
-    def gh_pr_files(pr_url)
-      pr_url.end_with?("1") ? ["app/models/task.rb", "a-only.rb"] : ["app/models/task.rb", "b-only.rb"]
-    end
   RUBY
 
-  def test_merge_runs_all_adopts_in_a_single_heroku_run
+  def test_merge_promotes_accepted_and_records_all_named_slugs_in_one_run
     out = run_cli(%w[task-a task-b], call: "merge", setup: MERGE_STUB)
 
-    # The whole batch resolves in ONE read and adopts in ONE write — not one
-    # heroku-run per PR (the cold-start that blew the timeout).
-    assert_equal 1, out.scan("RESOLVE-CALL").size, "all PRs resolve in ONE read conductor call"
-    assert_equal 1, out.scan("ADOPT-CALL").size, "all adopts run in ONE write conductor call (single dyno)"
-
+    assert_equal 1, out.scan("RESOLVE-CALL").size, "all slugs resolve in ONE read conductor call"
+    # ONE accepted→release batch PR promotes the repo — NOT one merge per feat PR.
+    assert_equal 1, out.scan("PROMOTE-MERGE").size, "one accepted→release batch PR per repo"
+    assert_includes out, "PROMOTE-MERGE https://gh/pr/batch"
+    refute_includes out, "PROMOTE-MERGE https://gh/pr/1", "no per-feat-PR merge — review already landed it on accepted"
+    # ONE record write covers both named slugs (single dyno spin-up).
+    assert_equal 1, out.scan("ADOPT-CALL").size, "all records run in ONE write conductor call"
     adopt = out.lines.find { |l| l.start_with?("ADOPT-CALL") }
-    assert_includes adopt, "task-a", "the single sweep call covers task-a"
-    assert_includes adopt, "task-b", "the single sweep call covers task-b"
+    assert_includes adopt, "task-a"
+    assert_includes adopt, "task-b"
     assert_includes adopt, "sweep!", "the batched call drives Release::Conductor.sweep!"
+    assert_includes out, "Swept task-a"
   end
 
-  def test_merge_collapses_duplicate_pr_urls_but_adopts_every_task
-    setup = <<~RUBY
+  def test_merge_promotes_once_per_distinct_repo_across_a_multi_repo_batch
+    setup = PROMOTE_SH + <<~'RUBY'
       def conductor(ruby, read_only: false)
         if read_only
           { "tasks" => [
-            { "slug" => "task-a", "pr_url" => "https://gh/pr/1", "repo" => "mcritchie-studio", "stage" => "reviewed" },
-            { "slug" => "task-b", "pr_url" => "https://gh/pr/1", "repo" => "mcritchie-studio", "stage" => "reviewed" }
+            { "slug" => "task-a", "merged" => "accepted", "pr_url" => "https://gh/pr/1", "repo" => "mcritchie-studio", "stage" => "reviewed" },
+            { "slug" => "task-b", "merged" => "accepted", "pr_url" => "https://gh/pr/2", "repo" => "turf-monster", "stage" => "reviewed" }
           ] }
         else
-          $stdout.puts("ADOPT-CALL " + ruby.gsub("\\n", " "))
+          $stdout.puts("ADOPT-CALL " + ruby.gsub("\n", " "))
           { "adopted" => [], "slug" => "rel-batch", "state" => "assembling" }
         end
       end
-      def sh(*a, **_k)
-        pr_url = a.find { |arg| arg.to_s.start_with?("https://") }
-        if a.include?("baseRefName")
-          $stdout.puts("BASE-CALL " + pr_url.to_s)
-          ["release", true]
-        else
-          $stdout.puts("MERGE-CALL " + pr_url.to_s)
-          ["", true]
-        end
-      end
-      def gh_pr_files(pr_url)
-        $stdout.puts("FILES-CALL " + pr_url)
-        ["app/models/task.rb"]
-      end
     RUBY
-
     out = run_cli(%w[task-a task-b], call: "merge", setup: setup)
 
-    assert_includes out, "2 task(s) map to 1 unique PR(s)"
-    assert_equal 1, out.scan("BASE-CALL https://gh/pr/1").size, "the shared PR base is read once"
-    assert_equal 1, out.scan("MERGE-CALL https://gh/pr/1").size, "the shared PR is merged once"
-    assert_equal 0, out.scan("FILES-CALL").size, "one unique PR needs no overlap report"
-
-    adopt = out.lines.find { |l| l.start_with?("ADOPT-CALL") }
-    assert_includes adopt, "task-a", "the first task riding the PR is adopted"
-    assert_includes adopt, "task-b", "the second task riding the PR is adopted"
+    assert_equal 2, out.scan("PROMOTE-MERGE").size, "one accepted→release batch PR per DISTINCT repo, not per task"
+    assert_includes out, "promote accepted → release in mcritchie-studio"
+    assert_includes out, "promote accepted → release in turf-monster"
   end
 
-  # A resolve that returns exactly ONE reviewed PR — for the single-slug path.
-  SINGLE_MERGE_STUB = <<~RUBY
+  # A resolve that returns exactly ONE reviewed member on accepted — single-slug path.
+  SINGLE_MERGE_STUB = PROMOTE_SH + <<~'RUBY'
     def conductor(ruby, read_only: false)
       if read_only
         { "tasks" => [
-          { "slug" => "task-a", "pr_url" => "https://gh/pr/1", "repo" => "mcritchie-studio", "stage" => "reviewed" }
+          { "slug" => "task-a", "merged" => "accepted", "pr_url" => "https://gh/pr/1", "repo" => "mcritchie-studio", "stage" => "reviewed" }
         ] }
       else
-        $stdout.puts("ADOPT-CALL " + ruby.gsub("\\n", " "))
+        $stdout.puts("ADOPT-CALL " + ruby.gsub("\n", " "))
         { "adopted" => [], "slug" => "rel-batch", "state" => "assembling" }
       end
     end
-    def sh(*a, **_k)
-      a.include?("baseRefName") ? ["release", true] : ["", true]
-    end
-    def gh_pr_files(_pr) = []
   RUBY
 
-  def test_merge_single_slug_is_backward_compatible
+  def test_merge_single_slug_promotes_and_records
     out = run_cli(%w[task-a], call: "merge", setup: SINGLE_MERGE_STUB)
-    # Single slug still works: one adopt, summary names the task.
     assert_equal 1, out.scan("ADOPT-CALL").size
     adopt = out.lines.find { |l| l.start_with?("ADOPT-CALL") }
     assert_includes adopt, "task-a"
@@ -3657,148 +3739,50 @@ class ReleaseCliTest < Minitest::Test
     assert_includes out, "usage: bin/release merge", "no slug → usage abort"
   end
 
-  # --- DevOps v2 transition stopgap: auto-retarget an accepted-based PR ---------
-  # Phase 1 flipped feature-branch base release→accepted, but the sweep merges into
-  # `release`. A reviewed PR still on `accepted` must be RETARGETED and swept, not
-  # aborted (ensure_pr_base_release! → SweepPlan.base_action). These drive the real
-  # `merge` sweep with conductor/sh/gh stubbed.
-  def test_merge_auto_retargets_an_accepted_based_pr_then_merges
-    setup = <<~RUBY
-      def conductor(ruby, read_only: false)
-        if read_only
-          { "tasks" => [{ "slug" => "task-a", "pr_url" => "https://gh/pr/1", "repo" => "mcritchie-studio", "stage" => "reviewed" }] }
-        else
-          $stdout.puts("ADOPT-CALL")
-          { "adopted" => [], "slug" => "rel-batch", "state" => "assembling" }
-        end
-      end
-      def sh(*a, **_k)
-        if a.include?("baseRefName")
-          ["accepted", true]                       # Phase 1 default base
-        elsif a[0, 3] == ["gh", "pr", "edit"]
-          $stdout.puts("EDIT-CALL " + a.join(" "))
-          ["", true]
-        elsif a.include?("--merge")
-          $stdout.puts("MERGE-CALL")
-          ["", true]
-        else
-          ["", true]
-        end
-      end
-      def gh_pr_files(_pr) = []
-    RUBY
-    out = run_cli(%w[task-a], call: "merge", setup: setup)
+  # --- accepted-ladder: held abort + straggler skip ----------------------------
+  # The retarget/base-guard/overlap machinery retired with the per-feat-PR sweep
+  # (review merges feat→accepted; the sweep promotes ONE accepted→release batch PR).
+  # What remains for the EXPLICIT `merge` command: a named task must have code on
+  # `accepted`, and a straggler already on release is recorded without a re-promote.
 
-    assert_includes out, "retarget PR base accepted → release for task-a",
-                     "an accepted-based PR is retargeted, not aborted"
-    assert_includes out, "EDIT-CALL", "the retarget runs `gh pr edit`"
-    assert_includes out, "--base release", "…to base release"
-    assert_includes out, "MERGE-CALL", "and the sweep proceeds to merge it"
-    assert_includes out, "Swept task-a"
-  end
-
-  def test_merge_aborts_on_a_base_that_is_neither_release_nor_accepted
-    setup = <<~RUBY
+  # A named task with NO code on accepted (merged:"") — review never landed its feat
+  # PR — is a HARD abort: the operator named it and there is nothing to promote.
+  def test_merge_aborts_on_a_named_task_with_no_code_on_accepted
+    setup = PROMOTE_SH + <<~'RUBY'
       def conductor(ruby, read_only: false)
-        read_only ? { "tasks" => [{ "slug" => "task-a", "pr_url" => "https://gh/pr/1", "repo" => "mcritchie-studio", "stage" => "reviewed" }] } : { "adopted" => [], "slug" => "rel-batch", "state" => "assembling" }
+        read_only ? { "tasks" => [
+          { "slug" => "task-a", "merged" => "", "pr_url" => "https://gh/pr/1", "repo" => "mcritchie-studio", "stage" => "reviewed" }
+        ] } : { "slug" => "rel-batch", "state" => "assembling" }
       end
-      def sh(*a, **_k)
-        if a.include?("baseRefName")
-          ["some-random-branch", true]
-        elsif a.include?("--merge")
-          $stdout.puts("MERGE-CALL")
-          ["", true]
-        else
-          ["", true]
-        end
-      end
-      def gh_pr_files(_pr) = []
     RUBY
     out = run_cli(%w[task-a], call: "begin; merge; rescue SystemExit => e; puts('ABORTED: ' + e.message); end", setup: setup)
 
-    assert_includes out, "ABORTED", "a non-release, non-accepted base aborts the sweep"
-    assert_includes out, "targets 'some-random-branch', not 'release'"
-    refute_includes out, "MERGE-CALL", "nothing merges when a base is wrong"
+    assert_includes out, "ABORTED", "a named task with no code on accepted aborts the merge"
+    assert_includes out, "no code on `accepted`"
+    assert_includes out, "task-a"
+    refute_includes out, "PROMOTE-MERGE", "nothing promotes when a named task is not on accepted"
   end
 
-  def test_merge_leaves_a_release_based_pr_untouched
-    setup = <<~RUBY
-      def conductor(ruby, read_only: false)
-        if read_only
-          { "tasks" => [{ "slug" => "task-a", "pr_url" => "https://gh/pr/1", "repo" => "mcritchie-studio", "stage" => "reviewed" }] }
-        else
-          $stdout.puts("ADOPT-CALL")
-          { "adopted" => [], "slug" => "rel-batch", "state" => "assembling" }
-        end
-      end
-      def sh(*a, **_k)
-        $stdout.puts("EDIT-CALL") if a[0, 3] == ["gh", "pr", "edit"]
-        a.include?("baseRefName") ? ["release", true] : ["", true]
-      end
-      def gh_pr_files(_pr) = []
-    RUBY
-    out = run_cli(%w[task-a], call: "merge", setup: setup)
-
-    refute_includes out, "EDIT-CALL", "a release-based PR is never retargeted"
-    refute_includes out, "retarget PR base", "…and no stopgap step prints"
-    assert_includes out, "Swept task-a"
-  end
-
-  # The ensure-adopt is the half-state killer: if a LATER gh pr merge fails, the
-  # batched adopt STILL records the PRs that DID merge (so none is left "merged
-  # but stuck reviewed"), then the command aborts.
-  def test_merge_adopts_the_already_merged_prs_even_when_a_later_merge_fails
-    setup = <<~RUBY
+  # A straggler already on release (merged:release) records membership but is NOT
+  # re-promoted — the crash-recovery skip.
+  def test_merge_skips_promote_for_a_straggler_already_on_release
+    setup = PROMOTE_SH + <<~'RUBY'
       def conductor(ruby, read_only: false)
         if read_only
           { "tasks" => [
-            { "slug" => "task-a", "pr_url" => "https://gh/pr/1", "repo" => "mcritchie-studio", "stage" => "reviewed" },
-            { "slug" => "task-b", "pr_url" => "https://gh/pr/2", "repo" => "mcritchie-studio", "stage" => "reviewed" }
+            { "slug" => "task-a", "merged" => "release", "pr_url" => "https://gh/pr/1", "repo" => "mcritchie-studio", "stage" => "reviewed" }
           ] }
         else
-          $stdout.puts("ADOPT-CALL " + ruby.gsub("\\n", " "))
-          { "adopted" => [], "slug" => "rel-batch", "state" => "assembling" }
+          $stdout.puts("ADOPT-CALL " + ruby.gsub("\n", " "))
+          { "slug" => "rel-batch", "state" => "assembling" }
         end
       end
-      $merge_n = 0
-      def sh(*a, **_k)
-        return ["release", true] if a.include?("baseRefName")
-        $merge_n += 1            # a `gh pr merge` call
-        $merge_n >= 2 ? ["", false] : ["", true]  # first merge ok, second FAILS
-      end
-      def gh_pr_files(_pr) = []
     RUBY
-    out = run_cli(%w[task-a task-b], setup: setup,
-                  call: "begin; merge; rescue SystemExit; puts('ABORTED'); end")
+    out = run_cli(%w[task-a], call: "merge", setup: setup)
 
-    assert_includes out, "ABORTED", "a failed gh pr merge aborts the command"
-    adopt = out.lines.find { |l| l.start_with?("ADOPT-CALL") }
-    refute_nil adopt, "the merged PR(s) are still adopted via the ensure block"
-    assert_includes adopt, "task-a", "the PR that DID merge is adopted (no half-state)"
-    refute_includes adopt, "task-b", "the PR that never merged is NOT adopted"
-  end
-
-  # --- overlap planner: pairwise file overlap, suggested order, rebase ------
-  # WARNING ONLY — it never blocks the merge. With both PRs touching task.rb it
-  # must print the collision, a suggested order, and the post-merge rebase note.
-  def test_merge_prints_the_overlap_planner_when_prs_collide
-    out = run_cli(%w[task-a task-b], call: "merge", setup: MERGE_STUB)
-
-    assert_includes out, "overlap planner", "the planner runs before the batch merge"
-    assert_includes out, "app/models/task.rb", "the shared file is named"
-    assert_includes out, "suggested merge order", "a suggested order is printed"
-    assert_includes out, "rebase", "the post-merge rebase heads-up is printed"
-    assert_includes out, "warning only", "the planner never blocks the merge"
-    # Warning-only: the merge still proceeds (the adopt still runs).
-    assert_equal 1, out.scan("ADOPT-CALL").size
-  end
-
-  def test_merge_overlap_planner_reports_no_collision_when_files_are_disjoint
-    # Re-define gh_pr_files AFTER MERGE_STUB (later def wins) so the two PRs touch
-    # disjoint files — the planner must then report independence.
-    setup = MERGE_STUB + %(\ndef gh_pr_files(pr_url); pr_url.end_with?("1") ? ["a-only.rb"] : ["b-only.rb"]; end)
-    out = run_cli(%w[task-a task-b], call: "merge", setup: setup)
-    assert_includes out, "no overlapping files", "disjoint batches report independence"
+    assert_includes out, "skip promote for task-a — already merged: release"
+    refute_includes out, "PROMOTE-MERGE", "a straggler already on release is not re-promoted"
+    assert_equal 1, out.scan("ADOPT-CALL").size, "…but it still records membership"
   end
 
   # --- review-gate guard: refuse an unreviewed merge unless --override ---------
@@ -3841,25 +3825,24 @@ class ReleaseCliTest < Minitest::Test
     assert_equal 0, out.scan("ADOPT-CALL").size, "nothing is merged or adopted — the guard runs BEFORE gh pr merge"
   end
 
-  # The same unreviewed task, now with --override → the run proceeds and the
-  # bypass threads into the adopt snippet.
-  OVERRIDE_MERGE_STUB = <<~RUBY
+  # The same task, now with --override → the run proceeds past the review-gate SCREEN
+  # and the bypass threads into the record snippet. NOTE (accepted-ladder): --override
+  # bypasses the stage-based review GATE, not the held check — the task still needs its
+  # code on `accepted` (merged:"accepted"), because the sweep promotes accepted→release
+  # and no longer merges a feat PR itself.
+  OVERRIDE_MERGE_STUB = PROMOTE_SH + <<~'RUBY'
     def conductor(ruby, read_only: false)
       if read_only
         { "tasks" => [
-            { "slug" => "task-a", "pr_url" => "https://gh/pr/1", "repo" => "mcritchie-studio", "stage" => "submitted" }
+            { "slug" => "task-a", "merged" => "accepted", "pr_url" => "https://gh/pr/1", "repo" => "mcritchie-studio", "stage" => "submitted" }
           ],
           "screen" => { "rows" => [{ "slug" => "task-a", "stage" => "submitted", "status" => "overridden" }],
                         "blocked" => [], "overridden" => ["task-a"], "missing" => [], "proceed" => true } }
       else
-        $stdout.puts("ADOPT-CALL " + ruby.gsub("\\n", " "))
+        $stdout.puts("ADOPT-CALL " + ruby.gsub("\n", " "))
         { "adopted" => [], "slug" => "rel-batch", "state" => "assembling" }
       end
     end
-    def sh(*a, **_k)
-      a.include?("baseRefName") ? ["release", true] : ["", true]
-    end
-    def gh_pr_files(_pr) = []
   RUBY
 
   def test_merge_override_merges_an_unreviewed_task_and_threads_the_bypass_to_adopt

@@ -26,32 +26,35 @@
 #     `origin/main` in every gem + app repo that doesn't already have one.
 #
 #   bin/release merge <task-slug> [<task-slug> ...] [--override] [--prod] [--dry-run]
-#     The per-task SWEEP primitive (prepare runs this same sweep for the whole
-#     queue): resolve every task's PR in ONE read, `gh pr merge` each UNIQUE PR
-#     once (base MUST be `release`; a task already `merged: release/main` SKIPS
-#     the gh merge — crash recovery), then sweep ALL task slugs in a SINGLE
-#     `heroku run` (membership + merged:"release"; the STAGE stays `reviewed` —
-#     it flips to `assembled` only on prepare's QA-green). Several task records
-#     can intentionally ride one PR.
-#     REVIEW-GATE GUARD: before any `gh pr merge`, every requested task must be
-#     sweepable (`reviewed`, or an `assembled` straggler) — anything else ABORTS
-#     the whole run (naming which task is in which stage). `--override` is the
-#     explicit escape hatch: it sweeps the task anyway AND records a
-#     `review_bypassed` event on the task's audit spine (the same spine `bin/task
-#     move` writes) — the bypass is never silent.
-#     With ≥2 slugs it first prints an overlap planner (colliding files +
-#     suggested order + likely rebases; warning-only). The batched sweep runs in
-#     an `ensure`, so a PR that merged is recorded even if a later merge aborts.
+#     The SWEEP primitive (prepare runs this same sweep for the whole queue).
+#     ACCEPTED-LADDER SEMANTIC NARROWING: review already merged each feat PR into
+#     `accepted`, so `merge <slug>` no longer touches the named task's feat PR — it
+#     PROMOTES all of `accepted` onto `release` (ONE batch PR per repo,
+#     promote_accepted_to_release!) and records the NAMED slugs' membership in a
+#     SINGLE `heroku run` (membership + merged:"release"; the STAGE stays `reviewed`
+#     — it flips to `assembled` only on prepare's QA-green). It therefore lands
+#     EVERY reviewed change on `accepted`, not just the named one — use it to force
+#     a specific reviewed task onto the RC ahead of the sweep. A named task with no
+#     code on `accepted` (merged:"") ABORTS (review must land its PR first); a task
+#     already `merged: release/main` skips the promote (crash recovery) but still
+#     records. Promote is idempotent + fail-closed (accepted level with release →
+#     skip the PR, still record).
+#     REVIEW-GATE GUARD: before the promote, every requested task must be sweepable
+#     (`reviewed`, or an `assembled` straggler) — anything else ABORTS the whole run
+#     (naming which task is in which stage). `--override` is the explicit escape
+#     hatch: it sweeps the task anyway AND records a `review_bypassed` event on the
+#     task's audit spine (the same spine `bin/task move` writes) — never silent.
 #
 #   bin/release prepare [--task SLUG ...] [--slug rel-YYYY-MM-DD-name] [--prod] [--dry-run]
 #     Steffon's SELF-HEALING qa-deploy — the whole middle of the pipeline:
 #       1. DETECT the work: every `reviewed` task + any `assembled` straggler not
 #          riding the current RC (nothing + no active release → idempotent no-op).
 #       2. Ensure a candidate exists (Release.current_or_open!).
-#       3. SWEEP: `gh pr merge` each detected task's PR into its repo's `release`
-#          (skipping tasks already `merged: release/main` — crash recovery), then
-#          record membership + merged:"release" in ONE `heroku run`. Stages stay
-#          `reviewed`.
+#       3. PROMOTE + RECORD: review already merged each feat PR into `accepted`, so
+#          the sweep PROMOTES all of `accepted` onto `release` via ONE batch PR per
+#          repo (promote_accepted_to_release!; a `reviewed` member with no code on
+#          `accepted` is a HELD anomaly, warned + left behind), then records
+#          membership + merged:"release" in ONE `heroku run`. Stages stay `reviewed`.
 #       4. PRE-QA GATE: run each app's registry `qa_test_cmd` (the integration +
 #          e2e-smoke tier) on origin/release BEFORE deploying; a regression aborts
 #          with eject guidance (`bin/release eject` the offender, keep the rest).
@@ -132,8 +135,9 @@ require_relative "../app/models/release/gemfile_repin"
 require_relative "../app/models/release/ship_sequence"
 require_relative "../app/models/release/post_deploy"
 require_relative "../app/models/release/merge_plan"
-# SweepPlan is the pure per-task sweep decision (merge / crash-recovery skip /
-# unmergeable) behind prepare's self-healing sweep + merge's skip. Rails-free.
+# SweepPlan is the pure per-task sweep partition (record onto the RC / held anomaly)
+# behind prepare's self-healing sweep + merge, plus the batch-PR base assertion.
+# Rails-free.
 require_relative "../app/models/release/sweep_plan"
 require_relative "../app/models/release/artifact_commit"
 require_relative "../app/models/release/cli"
@@ -185,10 +189,12 @@ AGENT_ACTIVITY = File.expand_path("agent-activity", __dir__)
 # it, ship fast-forwards it into main.
 RELEASE_BRANCH = "release"
 
-# DevOps v2 TRANSITION branch. Phase 1 flipped feature-branch base release→accepted,
-# but the sweep still merges into `release`. Until Phase 3 (review merges accepted,
-# then a promoted accepted→release batch PR), the sweep AUTO-RETARGETS an
-# accepted-based PR to `release` instead of aborting — see ensure_pr_base_release!.
+# The accepted-ladder's first rung (same name in every repo). Review MERGES each
+# feat PR into `accepted` and stamps merged:"accepted"; the sweep then promotes ALL
+# of `accepted` onto `release` via ONE batch PR per repo (promote_accepted_to_release!
+# uses this as the `--head`). KEPT — the batch PR's head needs the branch name.
+# (Phase 3 Slice 4 retired the release→accepted base-retarget stopgap that used to
+# live here; its remnant is the commented ensure_pr_base_release! below.)
 ACCEPTED_BRANCH = "accepted"
 
 # The producer/consumer repo registry (config/release_repos.yml) — tells the CLI
@@ -1071,22 +1077,21 @@ def init
 end
 
 # --- merge -----------------------------------------------------------------
-# The per-task SWEEP primitive: record one-or-more PR merges INTO the persistent
-# `release` branch. For each task: resolve its PR, verify its base is `release`,
-# `gh pr merge` it (SKIPPED for a task already `merged: release/main` — the
-# crash-recovery signal); then sweep ALL the tasks onto the active release in ONE
-# `heroku run` (membership + merged:"release"; stages don't move — the
+# The SWEEP primitive, accepted-ladder edition. Review already merged each feat PR
+# into `accepted` (merged:"accepted"), so this no longer merges per-task feat PRs:
+# it PROMOTES all of `accepted` onto the persistent `release` branch via ONE batch
+# PR per repo (promote_accepted_to_release!) and records the NAMED slugs' membership
+# in ONE `heroku run` (membership + merged:"release"; stages don't move — the
 # `reviewed`→`assembled` flip is prepare's QA-green step, and an `assembled`
-# straggler keeps its stage). Conflicts surface here (at PR-merge), not at deploy.
+# straggler keeps its stage). A named task with no code on `accepted` (merged:"")
+# ABORTS (review must land it first); a task already `merged: release/main` skips
+# the promote (crash recovery) but still records.
 #
-# BATCHED (the per-PR cold-start fix): the OLD merge did a `gh pr merge` + a
-# cold-start `heroku run` record-op PER PR; 3 in a loop blew the 2-min tool
-# timeout and a mid-run timeout left a PR merged but its task unrecorded. Now the
-# resolve is ONE read and the sweeps are ONE write (single dyno spin-up), and the
-# sweep runs in an `ensure` so any PR that merged is recorded even if a later
-# step aborts. If the record write STILL dies post-merge, the next run's gh-merge
-# failure falls back to pr_merged? (the PR state read), so the half-state
-# self-heals rather than wedging.
+# BATCHED + crash-safe: the resolve is ONE read and the record is ONE write (single
+# dyno spin-up). The promote is git-FIRST and fail-closed (a conflict/missing
+# checkout aborts before anything is recorded); it's idempotent — accepted level
+# with release → skip the PR, and a gh-merge failure falls back to pr_merged? (an
+# interrupted prior run merged it), so the half-state self-heals rather than wedging.
 
 # The one-shot read snippet that resolves EVERY merge slug's PR + `merged`
 # git-location AND runs the review-gate screen in a SINGLE conductor call (one
@@ -1151,6 +1156,12 @@ end
 # review independently, then conflicted on `release`. The pure decision lives in
 # Release::MergePlan; this owns only the gh I/O + printing. A single PR has
 # nothing to compare, so it's skipped.
+# ⚠ PHASE-4-DELETES (accepted-ladder canary stopgap) — the per-feat-PR sweep
+# machinery retired with the base guard: the sweep no longer merges N feat PRs, it
+# promotes ONE accepted→release batch PR per repo (promote_accepted_to_release!),
+# so there are no per-PR groups to overlap-plan. Kept COMMENTED for one canary
+# cycle (with ensure_pr_base_release!), deleted in the follow-up slice.
+=begin PHASE-4-DELETES accepted-ladder canary stopgap
 def merge_overlap_report(infos)
   return if infos.size < 2
 
@@ -1191,6 +1202,7 @@ def merge_pr_groups(infos)
     )
   end
 end
+=end
 
 def merge_pr_group_label(slugs)
   list = Array(slugs)
@@ -1229,6 +1241,97 @@ def enforce_review_gate!(screen)
   say("  ⚠ OVERRIDE: sweeping #{named} past the review gate — recording a `review_bypassed` audit event per task.")
 end
 
+# The merged-stamp value review writes when a feat PR lands on `accepted` — the
+# git-location "code is on accepted" ticket the sweep promotes. Same string as the
+# branch name, kept as its own const so the merged-state compare reads as intent.
+ACCEPTED_MERGED = "accepted"
+
+# Promote each repo's `accepted` branch onto its `release` branch — the accepted-
+# ladder's SECOND rung (it replaces the sweep's N per-feat-PR merges). Review already
+# merged each feat PR into `accepted` and stamped merged:"accepted"; this lands ALL
+# of that accumulated work onto `release` via ONE batch PR PER REPO (a single-repo
+# release is exactly one PR, not N per task). Git-side + fail-closed PER repo:
+#   * `git -C <path> fetch`, then ahead = rev-list origin/release..origin/accepted.
+#   * ahead == 0 (accepted level with release — nothing new, or a prior run already
+#     promoted): SKIP the PR. The caller STILL records membership + deploys — the
+#     reviewed members must ride THIS RC even when the code already landed.
+#   * ahead > 0: reuse an OPEN accepted→release PR or open one (`--base release
+#     --head accepted`), `gh pr merge` it. A gh-merge failure falls back to
+#     pr_merged? (an interrupted prior run merged it, its record write died) →
+#     treat as promoted; otherwise ABORT (fail-closed — nothing recorded, members
+#     stay `reviewed` for a clean re-run). A missing local checkout ABORTS too
+#     (never record members whose code was not promoted).
+# A DRY run PREVIEWS the one-batch-PR-per-repo plan without any git/gh call (so the
+# preview is hermetic and prints exactly ONE promote line per repo). `label` names
+# the RC in the PR title when known (the --slug option; nil → a generic title).
+def promote_accepted_to_release!(repos, label: nil)
+  Array(repos).map(&:to_s).reject(&:empty?).uniq.each do |repo|
+    if DRY
+      step("promote #{ACCEPTED_BRANCH} → #{RELEASE_BRANCH} in #{repo}: open/reuse ONE " \
+           "`gh pr create --base #{RELEASE_BRANCH} --head #{ACCEPTED_BRANCH}` batch PR and merge it")
+      next
+    end
+
+    path = repo_path(repo)
+    abort!("app repo not found at #{path} — clone it as a sibling to promote #{ACCEPTED_BRANCH} → #{RELEASE_BRANCH} " \
+           "(nothing recorded; members stay `reviewed`)") unless Dir.exist?(path)
+
+    sh("git", "-C", path, "fetch", "origin", RELEASE_BRANCH, ACCEPTED_BRANCH, "--quiet", capture: true)
+    ahead_out, ahead_ok = sh("git", "-C", path, "rev-list", "--count",
+                             "origin/#{RELEASE_BRANCH}..origin/#{ACCEPTED_BRANCH}", capture: true)
+    abort!("could not compare origin/#{RELEASE_BRANCH}..origin/#{ACCEPTED_BRANCH} in #{repo} " \
+           "(`git rev-list` failed) — fetch, then re-run `bin/release prepare`.") unless ahead_ok
+    ahead = ahead_out.strip.to_i
+    if ahead.zero?
+      step("#{repo}: `#{ACCEPTED_BRANCH}` is level with `#{RELEASE_BRANCH}` — nothing to promote " \
+           "(skip the batch PR; membership still records)")
+      next
+    end
+
+    pr_url = accepted_release_pr_url(repo, label: label)
+    step("gh pr merge #{pr_url} --merge — promote #{ACCEPTED_BRANCH} → #{RELEASE_BRANCH} in #{repo} " \
+         "(#{ahead} commit#{ahead == 1 ? '' : 's'})")
+    _, ok = sh("gh", "pr", "merge", pr_url, "--merge", capture: false)
+    if !ok && pr_merged?(pr_url)
+      say("  ↷ #{pr_url} already merged (interrupted prior run) — continuing to the record step")
+      ok = true
+    end
+    abort!("gh pr merge failed for the #{ACCEPTED_BRANCH}→#{RELEASE_BRANCH} batch PR in #{repo} (#{pr_url}) — " \
+           "resolve it on GitHub (conflicts/checks), then re-run `bin/release prepare`.") unless ok
+  end
+end
+
+# Find the OPEN accepted→release batch PR for a repo, or open one — idempotent
+# across interrupted runs (reuse, never a duplicate). Scoped to the repo via
+# `--repo owner/name` so it needs no chdir; aborts fail-closed if the PR can't be
+# opened. (Live gh — only reached in a non-DRY promote.)
+def accepted_release_pr_url(repo, label: nil)
+  nwo = repo_name_with_owner(repo)
+  repo_args = nwo.empty? ? [] : ["--repo", nwo]
+
+  existing, ok = sh("gh", "pr", "list", *repo_args, "--base", RELEASE_BRANCH, "--head", ACCEPTED_BRANCH,
+                    "--state", "open", "--json", "url", "-q", ".[0].url", capture: true)
+  return existing.strip if ok && !existing.strip.empty?
+
+  title = label.to_s.empty? ? "Promote #{ACCEPTED_BRANCH} → #{RELEASE_BRANCH}" \
+                            : "Promote #{ACCEPTED_BRANCH} → #{RELEASE_BRANCH} (#{label})"
+  body = "Batch promotion of the accepted-ladder: lands every reviewed change already merged onto " \
+         "`#{ACCEPTED_BRANCH}` onto `#{RELEASE_BRANCH}` for QA. Opened by `bin/release prepare`."
+  out, created = sh("gh", "pr", "create", *repo_args, "--base", RELEASE_BRANCH, "--head", ACCEPTED_BRANCH,
+                    "--title", title, "--body", body, capture: true)
+  abort!("could not open the #{ACCEPTED_BRANCH}→#{RELEASE_BRANCH} batch PR in #{repo} (`gh pr create` failed) — " \
+         "open it by hand (`gh pr create --base #{RELEASE_BRANCH} --head #{ACCEPTED_BRANCH}`), then re-run.") unless created
+  out.strip
+end
+
+# ⚠ PHASE-4-DELETES (accepted-ladder canary stopgap) — retired, kept COMMENTED for
+# one canary cycle then deleted in the follow-up slice (mirrors the Slice-3 demote→
+# confirm→delete). The accepted-ladder retired the per-feat-PR base guard: review
+# now merges each feat PR into `accepted` and the sweep promotes ONE accepted→release
+# batch PR (promote_accepted_to_release!), so no accepted-based feat PR ever reaches
+# the sweep for it to retarget. ACCEPTED_BRANCH is KEPT (the batch PR's --head needs
+# it). Re-enable = uncomment this + its call sites and revert the promote flow.
+#
 # Verify (and, per the DevOps v2 transition stopgap, FIX) a to-merge PR's base
 # before the sweep merges it into `release`. Shared by the explicit `merge`
 # command and `prepare`'s self-healing sweep so the base rule lives in ONE place.
@@ -1244,6 +1347,7 @@ end
 # A DRY run reads the base (so the plan prints the gh call) but changes/verifies
 # nothing — the base read/edit are live gh calls, exactly as the prior inline
 # guards were `if !DRY`. SweepPlan.base_action owns the pure decision.
+=begin PHASE-4-DELETES accepted-ladder canary stopgap — see the marker note above.
 def ensure_pr_base_release!(pr_url, slug)
   base, base_ok = sh("gh", "pr", "view", pr_url, "--json", "baseRefName", "-q", ".baseRefName", capture: true)
   base = base.strip
@@ -1264,6 +1368,7 @@ def ensure_pr_base_release!(pr_url, slug)
            "(`gh pr edit #{pr_url} --base #{RELEASE_BRANCH}`), then re-run.")
   end
 end
+=end
 
 def merge
   # `--override` is the audited review-gate escape hatch — consume it BEFORE
@@ -1290,69 +1395,46 @@ def merge
   end
 
   # 1b. REVIEW-GATE GUARD (the decision lives in Release::Conductor.screen_merge;
-  #     this only prints + aborts). Runs BEFORE any `gh pr merge`: an unsweepable
-  #     task ABORTS the whole run unless --override is given. With --override,
+  #     this only prints + aborts). Runs BEFORE the accepted→release promote: an
+  #     unsweepable task ABORTS the whole run unless --override is given. With --override,
   #     the offending tasks proceed but the skip is recorded as a
   #     `review_bypassed` audit event when sweep! flips them to `reviewed`.
   enforce_review_gate!(resolved["screen"] || {})
 
-  # 2. The SWEEP PLAN (pure: Release::SweepPlan): which PRs still need a
-  #    `gh pr merge`, which tasks SKIP it (`merged: release/main` — an
-  #    interrupted prior run; never re-merge), and which have nothing to merge.
-  #    For this EXPLICIT command an unmergeable task (no PR url, nothing merged)
-  #    is a hard abort — the operator named it; silently dropping it would lie.
+  # 2. The SWEEP PLAN (pure: Release::SweepPlan): partition the named tasks into the
+  #    members to RECORD (code on accepted/release/main) and HELD anomalies (a task
+  #    with no merged stamp — review never landed its feat PR on `accepted`). For
+  #    this EXPLICIT command a held task is a HARD abort: the operator named it and
+  #    there is no code on `accepted` to promote — silently dropping it would lie.
   plan = Release::SweepPlan.compute(infos)
-  if plan["unmergeable"].any?
-    abort!("task(s) have no PR url (devops.pr_url) — set it before merging: #{plan['unmergeable'].join(', ')}")
+  if plan["held"].any?
+    abort!("task(s) have no code on `#{ACCEPTED_BRANCH}` (merged:\"\") — review must land the feat PR on " \
+           "`#{ACCEPTED_BRANCH}` first: #{plan['held'].join(', ')}")
   end
-  plan["skip"].each do |row|
-    step("skip gh pr merge for #{row['slug']} — already merged: #{row['merged']} (crash recovery); membership still records")
+  plan["record"].reject { |row| row["merged"] == ACCEPTED_MERGED }.each do |row|
+    step("skip promote for #{row['slug']} — already merged: #{row['merged']} (crash recovery); membership still records")
   end
 
-  # 3. Overlap planner (warning only) over the PRs that WILL merge — BEFORE any
-  #    merge, so the operator sees the file collisions + suggested order first.
-  to_merge  = infos.select { |i| i["merged"].to_s.empty? }
-  pr_groups = merge_pr_groups(to_merge)
-  if pr_groups.size < to_merge.size
-    say("  #{to_merge.size} task(s) map to #{pr_groups.size} unique PR(s); each PR will be checked and merged once.")
-  end
-  merge_overlap_report(pr_groups)
+  # 3. PROMOTE accepted → release (the accepted-ladder's SECOND rung). SEMANTIC
+  #    NARROWING (accepted-ladder): `merge <slug>` no longer merges the named task's
+  #    ONE feat PR — review already merged it into `accepted`. It now promotes ALL of
+  #    `accepted` onto `release` via ONE batch PR per repo and records the NAMED
+  #    slugs' membership. So it lands EVERY reviewed change on `accepted`, not just
+  #    the named one — use it to force a specific reviewed task onto the RC ahead of
+  #    the sweep. Idempotent + fail-closed (accepted level with release → skip the
+  #    PR, still record). Git-FIRST (the irreversible step), then the record write.
+  promote_repos = infos.select { |i| i["merged"].to_s == ACCEPTED_MERGED }
+                       .map { |i| i["repo"].to_s }.reject(&:empty?).uniq
+  promote_accepted_to_release!(promote_repos) if promote_repos.any?
 
-  # 4. Verify EVERY to-merge PR's base up front (fail-fast: nothing merged yet, so
-  #    a wrong base can't leave a half-merged batch). An `accepted`-based PR is
-  #    auto-retargeted to `release` (transition stopgap); any other non-release
-  #    base still aborts. See ensure_pr_base_release!.
-  pr_groups.each { |info| ensure_pr_base_release!(info["pr_url"], info["slug"]) }
-
-  # 5. Merge each PR (bases verified). Track everything merged-or-skipped so the
-  #    BATCHED sweep (step 6, in `ensure`) records every landed PR even if a
-  #    later merge aborts — the "PR merged, task unrecorded" half-state can't
-  #    stick. A gh-merge failure falls back to pr_merged?: the PR may have merged
-  #    on a prior interrupted run whose record write died (`merged` still nil).
-  swept = plan["skip"].map { |row| row["slug"] }
-  begin
-    pr_groups.each do |info|
-      pr_url = info["pr_url"]
-      step("gh pr merge #{pr_url} --merge")
-      _, ok = sh("gh", "pr", "merge", pr_url, "--merge", capture: false)
-      if !ok && !DRY && pr_merged?(pr_url)
-        say("  ↷ #{pr_url} already merged on GitHub (interrupted prior run) — continuing to the record step")
-        ok = true
-      end
-      abort!("gh pr merge failed for #{pr_url} (#{info['slug']}) — resolve on GitHub (conflicts/checks), " \
-             "then re-run `bin/release merge` for the remaining slug(s).") unless ok || DRY
-      swept.concat(info["slugs"])
-    end
-  ensure
-    # 6. BATCHED sweep: ALL landed slugs in ONE `heroku run` (single dyno
-    #    spin-up, N membership writes). In `ensure` so a partial-failure batch
-    #    still records the PRs that DID merge. A board WRITE → suppressed in
-    #    dry-run. Stages don't move here — prepare's QA-green flips `reviewed`
-    #    members to `assembled`; a swept straggler is already there.
-    if swept.any?
-      step("record: Release::Conductor.sweep! ×#{swept.size} in ONE run (#{swept.join(', ')})")
-      @merge_result = conductor(batch_sweep_ruby(swept, override: override))
-    end
+  # 4. BATCHED record: ALL named members in ONE `heroku run` (single dyno spin-up,
+  #    N membership writes; conductor suppresses the write under --dry-run). Stages
+  #    don't move here — prepare's QA-green flips `reviewed` members to `assembled`;
+  #    a swept straggler is already there.
+  swept = plan["sweep"]
+  if swept.any?
+    step("record: Release::Conductor.sweep! ×#{swept.size} in ONE run (#{swept.join(', ')})")
+    @merge_result = conductor(batch_sweep_ruby(swept, override: override))
   end
 
   result = @merge_result || {}
@@ -2223,8 +2305,8 @@ def prepare
 
   say("Prepare release — Steffon qa-deploy (self-healing)#{PROD ? ' (PROD board)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
   warn_local!
-  # On the prod default a non-dry prepare fires REAL `gh pr merge`s + a REAL
-  # `bin/qa-server deploy`, so gate it like `ship` does. confirm returns true
+  # On the prod default a non-dry prepare fires a REAL accepted→release batch merge +
+  # a REAL `bin/qa-server deploy`, so gate it like `ship` does. confirm returns true
   # under --yes (hands-off) and --dry-run (previews nothing-executed).
   return unless confirm("Prepare the current release — sweep reviewed work onto `#{RELEASE_BRANCH}` + deploy QA?")
 
@@ -2281,55 +2363,43 @@ def prepare
   #     audited bypass, then re-run prepare.
   enforce_review_gate!(detect["screen"] || {}) if cands.any?
 
-  # 3. SWEEP PLAN (pure: Release::SweepPlan): which PRs need a `gh pr merge`,
-  #    which tasks SKIP it (`merged: release/main` — an interrupted prior run),
-  #    and which can't merge yet. Unlike the explicit `merge` command, an
-  #    unmergeable task here is WARNED + left `reviewed` (it sweeps on a later
-  #    run once its PR url lands) — self-healing never aborts on it.
+  # 3. SWEEP PLAN (pure: Release::SweepPlan): partition the candidates into the
+  #    members to RECORD onto the RC (code on accepted/release/main) and the HELD
+  #    anomalies (a `reviewed` member with no merged stamp — review's feat→accepted
+  #    merge never landed). Unlike the explicit `merge` command, a held member here
+  #    is WARNED + left `reviewed` (it self-heals on re-review) — the self-healing
+  #    sweep never aborts on it.
   plan = Release::SweepPlan.compute(cands)
-  plan["unmergeable"].each do |s|
-    say("  ⚠ #{s}: no PR url (devops.pr_url) and nothing merged — left `reviewed` for a later sweep")
+  held = plan["held"]
+  held.each do |s|
+    say("  ⚠ #{s}: `reviewed` but merged:\"\" — review never landed its feat PR on `#{ACCEPTED_BRANCH}`; " \
+        "left `reviewed` (re-review to heal)")
   end
-  plan["skip"].each do |row|
-    step("skip gh pr merge for #{row['slug']} — already merged: #{row['merged']} (crash recovery)")
+  plan["record"].reject { |row| row["merged"] == ACCEPTED_MERGED }.each do |row|
+    step("skip promote for #{row['slug']} — already merged: #{row['merged']} (crash recovery); membership still records")
   end
 
-  # 4. gh-merge the PRs that need it (bases verified fail-fast), sweeping past a
-  #    conflicted PR (block-and-move: it stays `reviewed`, the rest ride). The
-  #    batched record write runs in an `ensure`, so every PR that DID land is
-  #    recorded (+ validated + planned) even if a later step aborts.
-  to_merge  = cands.select { |c| c["merged"].to_s.empty? && !c["pr_url"].to_s.empty? }
-  pr_groups = merge_pr_groups(to_merge)
-  merge_overlap_report(pr_groups)
-  # Bases verified fail-fast — an `accepted`-based PR is auto-retargeted to
-  # `release` (transition stopgap), any other non-release base aborts the sweep.
-  pr_groups.each { |info| ensure_pr_base_release!(info["pr_url"], info["slug"]) }
+  # 4. PROMOTE accepted → release (the accepted-ladder's SECOND rung). Review already
+  #    merged each feat PR into `accepted` (merged:"accepted"), so the sweep no longer
+  #    merges N per-task feat PRs — it lands ALL of `accepted` onto `release` via ONE
+  #    batch PR per repo (a single-repo release = exactly one PR). Git-FIRST (the
+  #    irreversible step); the record write follows. Idempotent + fail-closed:
+  #    accepted level with release → skip the PR but still record + deploy; a promote
+  #    conflict / missing checkout ABORTS (members stay `reviewed` for a clean re-run).
+  promote_repos = cands.select { |c| c["merged"].to_s == ACCEPTED_MERGED }
+                       .map { |c| c["repo"].to_s }.reject(&:empty?).uniq
+  promote_accepted_to_release!(promote_repos, label: slug) if promote_repos.any?
 
-  landed = plan["skip"].map { |row| row["slug"] }
-  left_reviewed = []
+  # 5. Record membership for every member whose code is on accepted/release/main
+  #    (plan["sweep"]) + the repo plan, in ONE `heroku run`. A `held` member is NOT
+  #    in plan["sweep"], so it is never recorded onto the RC. Suppressed under
+  #    --dry-run (the promotion previewed above; nothing recorded).
+  landed = plan["sweep"]
+  left_reviewed = held
   result = {}
-  begin
-    pr_groups.each do |info|
-      pr_url = info["pr_url"]
-      step("gh pr merge #{pr_url} --merge")
-      _, ok = sh("gh", "pr", "merge", pr_url, "--merge", capture: false)
-      if !ok && !DRY && pr_merged?(pr_url)
-        say("  ↷ #{pr_url} already merged on GitHub (interrupted prior run) — continuing to the record step")
-        ok = true
-      end
-      if ok || DRY
-        landed.concat(info["slugs"])
-      else
-        left_reviewed.concat(info["slugs"])
-        say("  ⚠ gh pr merge failed for #{pr_url} (#{info['slug']}) — left `reviewed` (resolve the conflict " \
-            "on GitHub or `bin/task block` it); sweeping the rest")
-      end
-    end
-  ensure
-    if landed.any? && !DRY
-      step("record: Release::Conductor.sweep! ×#{landed.size} + repo plan in ONE run (#{landed.join(', ')})")
-      result = conductor(batch_sweep_with_plan_ruby(landed, slug))
-    end
+  if landed.any? && !DRY
+    step("record: Release::Conductor.sweep! ×#{landed.size} + repo plan in ONE run (#{landed.join(', ')})")
+    result = conductor(batch_sweep_with_plan_ruby(landed, slug))
   end
 
   # 4b. No sweep write happened (dry-run, or a pure re-run with nothing new) →
@@ -2355,7 +2425,7 @@ def prepare
     end
     say("")
     say("✓ Nothing to deploy — the release has no members yet" \
-        "#{left_reviewed.any? ? " (#{left_reviewed.join(', ')} left `reviewed` on merge failure)" : ''}.")
+        "#{left_reviewed.any? ? " (#{left_reviewed.join(', ')} left `reviewed` — no code on `#{ACCEPTED_BRANCH}`)" : ''}.")
     close_role_span("qa-deploy no-op — no members to deploy")
     return
   end
@@ -2625,7 +2695,7 @@ def prepare
       say("  app #{d['repo']} → #{RELEASE_BRANCH} — QA deploy FAILED, retry `bin/qa-server deploy #{d['qa_app']} origin/#{RELEASE_BRANCH}`")
     end
   end
-  say("  #{left_reviewed.join(', ')} left `reviewed` (gh merge failed) — resolve + re-run, or `bin/task block` them.") if left_reviewed.any?
+  say("  #{left_reviewed.join(', ')} left `reviewed` — no code on `#{ACCEPTED_BRANCH}` (re-review to heal), or `bin/task block` them.") if left_reviewed.any?
   # The Avi handoff exists only on QA-green — a NOT-green prepare hands off to
   # NOBODY (the step-8 warning already said: re-run prepare once QA boots).
   if qa_green
