@@ -480,6 +480,21 @@ module ApplicationHelper
     @ci_progress_reader ||= Ci::ProgressReader.new
   end
 
+  # A folded CI check's coarse state -> the symbol the SYMBOLIC row draws (v1.2 of
+  # visual-ci-progress-bars): one glyph per check when a suite has few of them.
+  # `spin` animates the pending glyph into a loading wheel (the operator's
+  # "spinner"); the label is the accessible verb the glyph stands for. The pending
+  # entry is the safe fallback — an unknown state is never a phantom pass/fail.
+  CI_CHECK_SYMBOLS = {
+    passed:  { glyph: "✅", label: "passed",  spin: false },
+    failed:  { glyph: "❌", label: "failed",  spin: false },
+    pending: { glyph: "🔄", label: "running", spin: true }
+  }.freeze
+
+  def ci_check_symbol(check)
+    CI_CHECK_SYMBOLS.fetch(check.state, CI_CHECK_SYMBOLS[:pending])
+  end
+
   # The DevOps SOP vocabulary — the owner definition, the node types, and the four
   # accountability lanes (each step's expectation + gate) — is the SINGLE SOURCE OF
   # TRUTH in config/devops_vocabulary.yml, read via Devops::Vocabulary. Rename a term

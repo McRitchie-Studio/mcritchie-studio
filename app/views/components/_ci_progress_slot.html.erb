@@ -1,20 +1,40 @@
-<%# locals: (dom_id:, progress:, label: "CI", test_id: "ci-progress-bar", compact: false, wrapper_class: nil, inner_test_id: nil) %>
+<%# locals: (dom_id:, progress:, label: "CI", test_id: "ci-progress-bar", compact: false, wrapper_class: nil, inner_test_id: nil, href: nil) %>
 <%#
-  Stable-id wrapper around components/_ci_progress_bar so a LIVE CI update
-  (CiCheckJob after_commit, via DeploymentsBroadcaster) can morph-replace THIS
-  slot alone — the fill width animates, the surrounding card never flashes.
+  Stable-id wrapper around the CI meter so a LIVE CI update (CiCheckJob
+  after_commit, via DeploymentsBroadcaster) can morph-replace THIS slot alone — the
+  meter re-renders, the surrounding card never flashes.
 
-  The outer div ALWAYS renders (even when the bar is blank) so the Turbo replace
-  target exists before the run's first check settles; empty, it is a zero-height
-  block that adds nothing visible. Rendered inline by the task card + Next Release
-  card AND by the broadcast, so both paths share one markup and one #dom_id.
+  Picks the meter shape by check count: components/_ci_progress_symbols when a suite
+  has FEW checks (progress.symbolic?, one glyph per check), else the numeric
+  components/_ci_progress_bar. Both share these locals, so a re-run that changes the
+  count re-renders whichever now fits.
+
+  When `href` is present (a task's devops.pr_url), the whole meter becomes a link
+  that opens the PR in a NEW TAB (target=_blank rel=noopener); @click.stop keeps the
+  card's own click-to-open-task handler from firing. Absent href (the release G3
+  slot has no single PR) -> a plain div, no link.
+
+  The outer div ALWAYS renders (even when blank) so the Turbo replace target exists
+  before the run's first check settles; empty, it is a zero-height block.
 %>
 <div id="<%= dom_id %>" data-test="<%= dom_id %>-slot">
   <% if progress.respond_to?(:present?) && progress.present? %>
-    <div class="<%= wrapper_class %>"<% if inner_test_id %> data-test="<%= inner_test_id %>"<% end %>>
-      <%= render "components/ci_progress_bar",
-            progress: progress, label: (label || "CI"),
-            test_id: test_id, compact: compact %>
-    </div>
+    <% meter = capture do %>
+      <% if progress.symbolic? %>
+        <%= render "components/ci_progress_symbols",
+              progress: progress, label: (label || "CI"), test_id: test_id, compact: compact %>
+      <% else %>
+        <%= render "components/ci_progress_bar",
+              progress: progress, label: (label || "CI"), test_id: test_id, compact: compact %>
+      <% end %>
+    <% end %>
+    <% if href.present? %>
+      <a href="<%= href %>" target="_blank" rel="noopener" @click.stop
+         class="ci-progress-link block hover:opacity-80 transition-opacity <%= wrapper_class %>"
+         <% if inner_test_id %>data-test="<%= inner_test_id %>"<% end %>
+         title="Open the pull request on GitHub"><%= meter %></a>
+    <% else %>
+      <div class="<%= wrapper_class %>"<% if inner_test_id %> data-test="<%= inner_test_id %>"<% end %>><%= meter %></div>
+    <% end %>
   <% end %>
 </div>

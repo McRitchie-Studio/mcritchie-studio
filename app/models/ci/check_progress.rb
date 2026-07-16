@@ -31,7 +31,23 @@ module Ci
       "stale" => :failed
     }.freeze
 
-    attr_reader :passed, :failed, :pending, :total, :sha
+    # Under this many checks the "X / Y" fraction + bar gives way to ONE SYMBOL PER
+    # CHECK (v1.2 of visual-ci-progress-bars): a handful of jobs reads clearer as
+    # ✅/❌/🔄 mapped 1:1 to the real CI jobs than as a fraction. At or above it the
+    # individual glyphs would crowd, so the numeric bar stays. `< 12` = symbols.
+    SYMBOLIC_THRESHOLD = 12
+
+    # One folded check: its coarse state (:passed / :failed / :pending) and its
+    # GitHub job NAME (for the symbol's hover title — nil from the count-only
+    # fixture seam, which has no per-check identity). The unit the symbolic row
+    # draws one glyph per; the counts are just a tally of these.
+    Check = Struct.new(:state, :name) do
+      def passed?  = state == :passed
+      def failed?  = state == :failed
+      def pending? = state == :pending
+    end
+
+    attr_reader :passed, :failed, :pending, :total, :sha, :checks
 
     # The always-safe "nothing to show" datum — no PR yet, no CI run, an
     # unreadable/absent payload. `present?` is false, so the bar renders nothing.
@@ -39,14 +55,13 @@ module Ci
       new(passed: 0, failed: 0, pending: 0, sha: sha)
     end
 
-    # PURE. A check-runs array (each `{ "status" =>, "conclusion" => }`) -> counts.
-    # Accepts the raw GitHub run objects; unknown/blank rows fold to `pending`
-    # rather than being dropped, so `total` always equals the rows seen.
+    # PURE. A check-runs array (each `{ "status" =>, "conclusion" =>, "name" => }`)
+    # -> a per-check datum. Accepts the raw GitHub run objects; unknown/blank rows
+    # fold to `pending` rather than being dropped, so `total` always equals the rows
+    # seen. Each run's `name` rides along so the symbolic row can title its glyph.
     def self.from_check_runs(runs, sha: nil)
-      runs = Array(runs)
-      tally = Hash.new(0)
-      runs.each { |run| tally[bucket_for(run)] += 1 }
-      new(passed: tally[:passed], failed: tally[:failed], pending: tally[:pending], sha: sha)
+      checks = Array(runs).map { |run| Check.new(bucket_for(run), run_name(run)) }
+      new(checks: checks, sha: sha)
     end
 
     # PURE. One run's status+conclusion -> :passed / :failed / :pending.
@@ -58,12 +73,23 @@ module Ci
       CHECK_RUN_BUCKETS.fetch(run["conclusion"].to_s.downcase, :pending)
     end
 
-    def initialize(passed:, failed:, pending:, sha: nil)
-      @passed = passed.to_i
-      @failed = failed.to_i
-      @pending = pending.to_i
-      @total = @passed + @failed + @pending
-      @sha = sha.presence
+    # PURE. One run's job name, or nil — the symbolic row titles each glyph with it.
+    def self.run_name(run)
+      (run || {})["name"].to_s.presence
+    end
+
+    # Two shapes fold in: a per-check list (`checks:`) from the check-runs / live
+    # CiCheckJob path, which carries each job's real state + name; or bare
+    # passed/failed/pending counts from the count-only fixture seam, which
+    # synthesize nameless checks so a symbolic row still renders the right glyph
+    # mix. The checks list is the single source of truth — counts derive FROM it.
+    def initialize(passed: 0, failed: 0, pending: 0, sha: nil, checks: nil)
+      @checks  = checks ? checks.map { |check| coerce_check(check) } : synthesize_checks(passed, failed, pending)
+      @passed  = @checks.count(&:passed?)
+      @failed  = @checks.count(&:failed?)
+      @pending = @checks.count(&:pending?)
+      @total   = @checks.size
+      @sha     = sha.presence
     end
 
     # Something worth drawing a bar for — at least one check exists. A zero-check
@@ -74,6 +100,16 @@ module Ci
 
     def blank?
       !present?
+    end
+
+    # A few checks render as one symbol each; a crowd keeps the numeric bar. Both
+    # require at least one check — a blank datum draws nothing in either mode.
+    def symbolic?
+      present? && total < SYMBOLIC_THRESHOLD
+    end
+
+    def numeric?
+      present? && !symbolic?
     end
 
     # Coarse state, colour-only. A failure OUTRANKS an in-flight check (a known-bad
@@ -109,6 +145,24 @@ module Ci
 
     def to_h
       { passed: passed, failed: failed, pending: pending, total: total, state: state, sha: sha }
+    end
+
+    private
+
+    # Accept an already-built Check, or a bare state symbol/string (which the
+    # synthesized fixture path never hits, but keeps the constructor forgiving).
+    def coerce_check(check)
+      return check if check.is_a?(Check)
+
+      Check.new(check.to_sym, nil)
+    end
+
+    # Count-only input (the fixture seam) -> nameless per-check data in a stable
+    # passed → failed → pending order, so the symbolic row still groups its glyphs.
+    def synthesize_checks(passed, failed, pending)
+      { passed: passed, failed: failed, pending: pending }.flat_map do |state, count|
+        Array.new(count.to_i) { Check.new(state, nil) }
+      end
     end
   end
 end

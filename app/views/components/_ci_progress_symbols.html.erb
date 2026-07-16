@@ -1,0 +1,35 @@
+<%# locals: (progress:, label: "CI", test_id: "ci-progress-bar", compact: false) %>
+<%#
+  The SYMBOLIC CI row (v1.2 of visual-ci-progress-bars): when a suite has FEW
+  checks (Ci::CheckProgress#symbolic?, under SYMBOLIC_THRESHOLD), the "X / Y" bar
+  gives way to ONE GLYPH PER CHECK — a green check for passed, a red x for failed,
+  a spinning wheel for running/queued — mapped 1:1 to the real CI jobs. The slot
+  picks this over components/_ci_progress_bar; both share the same locals so a live
+  workflow_job push re-renders whichever fits the (possibly re-run) check count.
+
+  role=img + one summary aria-label so assistive tech reads "6 of 8 checks passed",
+  not eight bare emoji; each glyph still carries its job name as a hover title.
+%>
+<% if progress.respond_to?(:present?) && progress.present? %>
+  <% text_class = case progress.state
+     when :green then "text-emerald-700 dark:text-emerald-300"
+     when :red then "text-red-700 dark:text-red-300"
+     else "text-amber-700 dark:text-amber-300"
+     end %>
+  <div class="ci-progress-symbols flex items-center gap-1.5 <%= compact ? "" : "py-0.5" %>"
+       data-test="<%= test_id %>-symbols"
+       data-ci-state="<%= progress.state %>"
+       role="img"
+       aria-label="<%= progress.passed %> of <%= progress.total %> CI checks passed">
+    <span class="font-semibold uppercase tracking-wide text-muted text-[10px] leading-none"><%= label %></span>
+    <span class="flex items-center gap-1 flex-wrap <%= text_class %>">
+      <% progress.checks.each do |check| %>
+        <% symbol = ci_check_symbol(check) %>
+        <span class="ci-check-symbol inline-flex items-center justify-center text-[13px] leading-none <%= "animate-spin" if symbol[:spin] %>"
+              data-test="ci-check-symbol"
+              data-ci-check-state="<%= check.state %>"
+              title="<%= check.name.presence || symbol[:label].capitalize %> — <%= symbol[:label] %>"><%= symbol[:glyph] %></span>
+      <% end %>
+    </span>
+  </div>
+<% end %>

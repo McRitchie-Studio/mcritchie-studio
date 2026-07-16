@@ -304,7 +304,13 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
     assert_equal "replace", streams.first["action"]
     assert_equal "morph", streams.first["method"], "morph animates the fill width instead of snapping"
     assert_equal "ci-progress-#{task.slug}", streams.first["target"]
-    assert_includes streams.first.to_html, "5 / 8", "the slot re-renders the live 5-of-8 fraction"
+    # 8 checks -> the symbolic row (5 passed + 3 running = 8 glyphs), and the live
+    # morph keeps the meter a new-tab link to the task's PR.
+    html = streams.first.to_html
+    assert_includes html, "task-ci-progress-symbols", "the slot re-renders the live symbolic row"
+    assert_equal 8, html.scan("data-test=\"ci-check-symbol\"").size
+    assert_includes html, "href=\"https://github.com/amcritchie/mcritchie-studio/pull/5\""
+    assert_includes html, "target=\"_blank\""
   end
 
   test "[integration] ci_progress morph-replaces the Next Release G3 slot for a release-branch job" do
@@ -316,7 +322,9 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
     release_stream = streams.find { |s| s["target"] == "release-ci-progress" }
     assert release_stream, "the release-branch job pushes the G3 candidate bar"
     assert_equal "morph", release_stream["method"]
-    assert_includes release_stream.to_html, "8 / 8"
+    # 8 checks -> the symbolic row; the release meter has no single PR, so no link.
+    assert_includes release_stream.to_html, "release-ci-progress-symbols"
+    assert_not_includes release_stream.to_html, "<a ", "the release meter is not clickable"
   end
 
   test "[integration] ci_progress with no eligible task or release broadcasts nothing" do
