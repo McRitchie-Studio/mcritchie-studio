@@ -31,7 +31,10 @@
               progress: progress, label: (label || "CI"), test_id: test_id, compact: compact %>
       <% end %>
     <% end %>
-    <% card_class = "ci-progress-card block space-y-1 rounded-lg border border-subtle bg-inset/50 px-2.5 py-2 #{wrapper_class}" %>
+    <%# Same card_bar_base_classes (w-full rounded border px-2 py-1) the status-flag
+        CTAs use, so this meter lines up as a coherent sibling in the stack — the
+        two content rows just make it a touch taller. Own tone: a subtle panel. %>
+    <% card_class = "ci-progress-card #{card_bar_base_classes} block space-y-1 border-subtle bg-inset/50 #{wrapper_class}" %>
     <% if href.present? %>
       <a href="<%= href %>" target="_blank" rel="noopener" @click.stop
          class="<%= card_class %> transition hover:border-primary/40 hover:bg-inset"

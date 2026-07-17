@@ -496,6 +496,18 @@ module ApplicationHelper
     CI_CHECK_SYMBOLS.fetch(check.state, CI_CHECK_SYMBOLS[:pending])
   end
 
+  # The shared geometry for the card-width bars stacked on the board task card —
+  # the status-flag CTAs (components/_card_status_bar) and the CI progress meter
+  # (components/_ci_progress_slot) both build on it, so they read as one coherent
+  # set: full width, the same radius, 1px border, and horizontal inset. Each caller
+  # layers its own tone (bg / text / border colour) on top; the CI card's taller
+  # two-row content is the only intended height difference.
+  CARD_BAR_BASE_CLASSES = "w-full rounded border px-2 py-1"
+
+  def card_bar_base_classes
+    CARD_BAR_BASE_CLASSES
+  end
+
   # The DevOps SOP vocabulary — the owner definition, the node types, and the four
   # accountability lanes (each step's expectation + gate) — is the SINGLE SOURCE OF
   # TRUTH in config/devops_vocabulary.yml, read via Devops::Vocabulary. Rename a term

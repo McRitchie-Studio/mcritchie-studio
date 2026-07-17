@@ -210,7 +210,9 @@
       Demo link into one flashing, card-width CTA that opens the local demo; the
       same component carries the QA/review flags for a consistent glance. %>
   <% if waiting_for_approval || waiting_for_review || review_in_progress || unresolved_feedback || block_state == :cleared %>
-    <div class="flex flex-col gap-1 mb-1.5">
+    <%# gap-1 here + the same gap to the CI meter below (mb-1) so the CTA badges and
+        the CI card read as ONE evenly-stacked set of card-width bars. %>
+    <div class="flex flex-col gap-1 mb-1">
       <% if waiting_for_approval %>
         <%# Thin, label-only bar — the whole bar is the Local Demo link (no action
             text) so it stays one line. %>
