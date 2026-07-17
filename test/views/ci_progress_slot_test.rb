@@ -54,6 +54,12 @@ class CiProgressSlotTest < ActionView::TestCase
     # @click.stop (card-nav guard) is an Alpine attr Nokogiri's CSS can't target;
     # asserted at the integration/e2e tier where the browser evaluates it.
     assert_includes rendered, "@click.stop", "the link stops the card's open-task click"
+    # Three-state background ladder: default bg-inset/50 -> group-hover (parent card)
+    # a touch darker -> direct hover darkest, ! so it beats group-hover's specificity.
+    assert_includes rendered, "bg-inset/50", "default background"
+    assert_includes rendered, "group-hover:bg-inset/75", "task-card hover goes a touch darker"
+    assert_includes rendered, "hover:!bg-inset", "direct hover is darkest and wins over group-hover"
+    assert_includes rendered, "transition-colors", "the shade change animates smoothly"
   end
 
   test "[component] no href renders a plain div, not a link" do

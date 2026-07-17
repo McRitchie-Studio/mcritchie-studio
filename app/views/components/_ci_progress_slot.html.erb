@@ -34,10 +34,15 @@
     <%# Same card_bar_base_classes (w-full rounded border px-2 py-1) the status-flag
         CTAs use, so this meter lines up as a coherent sibling in the stack — the
         two content rows just make it a touch taller. Own tone: a subtle panel. %>
-    <% card_class = "ci-progress-card #{card_bar_base_classes} block space-y-1 border-subtle bg-inset/50 #{wrapper_class}" %>
+    <% card_class = "ci-progress-card #{card_bar_base_classes} block space-y-1 border-subtle bg-inset/50 transition-colors #{wrapper_class}" %>
     <% if href.present? %>
+      <%# Three-state background ladder on the clickable card: default bg-inset/50 ->
+          a touch darker while the PARENT task card is hovered (group-hover:bg-inset/75)
+          -> darkest on DIRECT hover (hover:bg-inset). inset is the recessed/darkest
+          theme role, so more opacity reads darker in BOTH light and dark. The direct
+          hover carries ! so it beats the higher-specificity group-hover rule. %>
       <a href="<%= href %>" target="_blank" rel="noopener" @click.stop
-         class="<%= card_class %> transition hover:border-primary/40 hover:bg-inset"
+         class="<%= card_class %> group-hover:bg-inset/75 hover:!bg-inset hover:border-primary/40"
          <% if inner_test_id %>data-test="<%= inner_test_id %>"<% end %>
          title="Open the pull request on GitHub"><%= meter %></a>
     <% else %>
