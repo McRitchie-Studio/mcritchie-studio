@@ -15,24 +15,30 @@ class CiProgressSlotTest < ActionView::TestCase
                      wrapper_class: "mb-1.5", inner_test_id: "task-card-ci-progress" }
 
     assert_select "#ci-progress-my-task", 1, "the stable morph target must be present"
-    assert_select "#ci-progress-my-task [data-test='task-card-ci-progress']", 1
+    assert_select "#ci-progress-my-task .ci-progress-card.border[data-test='task-card-ci-progress']", 1, "the outlined card"
     assert_select "#ci-progress-my-task [data-test='task-ci-progress'][data-ci-state='pending']", 1
     assert_select "#ci-progress-my-task [data-test='task-ci-progress-fraction']", text: /6 \/ 14/
-    assert_select "#ci-progress-my-task .mb-1\\.5", 1, "the wrapper_class rides the inner element"
+    assert_select "#ci-progress-my-task [data-test='task-ci-progress-fill']", 1
+    assert_select "#ci-progress-my-task .mb-1\\.5", 1, "the wrapper_class rides the card element"
   end
 
-  test "[component] a small suite renders one symbol per check, no numeric fraction" do
+  test "[component] a small suite shows symbols AND the bar in an outlined card" do
     render partial: "components/ci_progress_slot",
            locals: { dom_id: "ci-progress-few",
                      progress: Ci::CheckProgress.new(passed: 5, failed: 1, pending: 2), # 8 -> symbolic
                      compact: true, test_id: "task-ci-progress",
                      wrapper_class: "mb-1.5", inner_test_id: "task-card-ci-progress" }
 
-    assert_select "#ci-progress-few [data-test='task-card-ci-progress']", 1
+    # The whole meter sits in a distinct bordered panel within the task card.
+    assert_select "#ci-progress-few .ci-progress-card.border[data-test='task-card-ci-progress']", 1
+    # Symbols…
     assert_select "#ci-progress-few [data-test='task-ci-progress-symbols'][data-ci-state='red']", 1
-    assert_select "#ci-progress-few [data-test='ci-check-symbol']", 8, "one glyph per check, 1:1 with the jobs"
+    assert_select "#ci-progress-few [data-test='ci-check-symbol']", 8, "one icon per check, 1:1 with the jobs"
     assert_select "#ci-progress-few [data-test='ci-check-symbol'][data-ci-check-state='failed']", 1
-    assert_select "#ci-progress-few [data-test='task-ci-progress-fraction']", 0, "the fraction gives way to symbols"
+    # …AND the bar, together (the symbolic view no longer replaces the track).
+    assert_select "#ci-progress-few [role='progressbar'][aria-valuenow='5'][aria-valuemax='8']", 1
+    assert_select "#ci-progress-few [data-test='task-ci-progress-fill']", 1
+    assert_select "#ci-progress-few [data-test='task-ci-progress-fraction']", 0, "the fraction text gives way to icons"
   end
 
   test "[component] a href turns the meter into a new-tab PR link that stops card nav" do
@@ -42,7 +48,7 @@ class CiProgressSlotTest < ActionView::TestCase
                      test_id: "task-ci-progress", inner_test_id: "task-card-ci-progress",
                      href: "https://github.com/amcritchie/mcritchie-studio/pull/42" }
 
-    link = "#ci-progress-linked a[data-test='task-card-ci-progress']"
+    link = "#ci-progress-linked a.ci-progress-card.border[data-test='task-card-ci-progress']"
     assert_select "#{link}[href='https://github.com/amcritchie/mcritchie-studio/pull/42']", 1
     assert_select "#{link}[target='_blank'][rel='noopener']", 1
     # @click.stop (card-nav guard) is an Alpine attr Nokogiri's CSS can't target;
@@ -57,7 +63,7 @@ class CiProgressSlotTest < ActionView::TestCase
                      inner_test_id: "task-card-ci-progress" }
 
     assert_select "#ci-progress-plain a", 0, "no PR context -> no link"
-    assert_select "#ci-progress-plain div[data-test='task-card-ci-progress']", 1
+    assert_select "#ci-progress-plain div.ci-progress-card.border[data-test='task-card-ci-progress']", 1
   end
 
   test "[component] blank progress still renders the slot wrapper but no meter" do

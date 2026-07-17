@@ -18,13 +18,16 @@ test("a submitted task card shows its CI checks as symbols, linked to the PR", a
   const card = page.locator("#card-e2e-ci-progress-demo");
   await expect(card).toBeVisible();
 
-  // A small suite (6 passed + 2 running) renders one glyph per check, not "X / Y".
+  // A small suite (6 passed + 2 running) renders one icon per check — plus the bar,
+  // together — inside a distinct outlined card, not the "X / Y" fraction text.
   await expect(card.locator("[data-test='task-ci-progress-symbols']")).toBeVisible();
   await expect(card.locator("[data-test='ci-check-symbol']")).toHaveCount(8);
+  await expect(card.locator("[data-test='ci-check-symbol'] svg").first()).toBeVisible();
+  await expect(card.locator("[data-test='task-card-ci-progress'] [role='progressbar']")).toBeVisible();
   await expect(card.locator("[data-test='task-ci-progress-fraction']")).toHaveCount(0);
 
-  // The whole meter is a link opening the task's PR in a new tab.
-  const link = card.locator("a[data-test='task-card-ci-progress']");
+  // The whole outlined card is a link opening the task's PR in a new tab.
+  const link = card.locator("a.ci-progress-card[data-test='task-card-ci-progress']");
   await expect(link).toHaveAttribute("href", /\/pull\/900$/);
   await expect(link).toHaveAttribute("target", "_blank");
   await expect(link).toHaveAttribute("rel", "noopener");

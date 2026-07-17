@@ -29,23 +29,23 @@ class BoardCiProgressTest < ActionDispatch::IntegrationTest
 
   teardown { ENV["CI_PROGRESS_FIXTURES"] = @prior_fixtures }
 
-  test "[integration] a small suite shows one symbol per check, linked to the PR" do
+  test "[integration] a small suite shows icons AND the bar, in a linked outlined card" do
     task = submitted_task(branch: "feat/ci-progress-demo", pr: 42)
     seed_run(branch: "feat/ci-progress-demo", sha: TASK_SHA)
 
     get deployments_path
     assert_response :success
 
-    within = "#card-#{task.slug} [data-test='task-card-ci-progress']"
-    assert_select within, 1
+    # A distinct bordered panel within the task card, AND the PR link.
+    card = "#card-#{task.slug} a.ci-progress-card.border[data-test='task-card-ci-progress']"
+    assert_select "#{card}[href='https://github.com/amcritchie/mcritchie-studio/pull/42'][target='_blank'][rel='noopener']", 1
+    # Icons, one per check…
     assert_select "#card-#{task.slug} [data-test='task-ci-progress-symbols']", 1
-    assert_select "#card-#{task.slug} [data-test='ci-check-symbol']", 8, "one glyph per check"
+    assert_select "#card-#{task.slug} [data-test='ci-check-symbol']", 8, "one icon per check"
     assert_select "#card-#{task.slug} [data-test='ci-check-symbol'][data-ci-check-state='pending']", 2
-    assert_select "#card-#{task.slug} [data-test='task-ci-progress-fraction']", 0, "symbols replace the fraction"
-
-    # The whole meter is a link to the PR, opening in a new tab.
-    assert_select "#card-#{task.slug} a[data-test='task-card-ci-progress']" \
-                  "[href='https://github.com/amcritchie/mcritchie-studio/pull/42'][target='_blank'][rel='noopener']", 1
+    # …AND the bar alongside them; the fraction text gives way to icons.
+    assert_select "#card-#{task.slug} [role='progressbar'][aria-valuemax='8']", 1
+    assert_select "#card-#{task.slug} [data-test='task-ci-progress-fraction']", 0
   end
 
   test "[integration] a large suite keeps the numeric X / Y bar" do

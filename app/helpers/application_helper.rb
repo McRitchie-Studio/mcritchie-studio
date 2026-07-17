@@ -480,15 +480,16 @@ module ApplicationHelper
     @ci_progress_reader ||= Ci::ProgressReader.new
   end
 
-  # A folded CI check's coarse state -> the symbol the SYMBOLIC row draws (v1.2 of
-  # visual-ci-progress-bars): one glyph per check when a suite has few of them.
-  # `spin` animates the pending glyph into a loading wheel (the operator's
-  # "spinner"); the label is the accessible verb the glyph stands for. The pending
-  # entry is the safe fallback — an unknown state is never a phantom pass/fail.
+  # A folded CI check's coarse state -> how the SYMBOLIC row draws its icon (v1.2 of
+  # visual-ci-progress-bars): a clean line SVG per check (the partial picks the
+  # path). `color` is the state tint (green check / red x / amber loader), `spin`
+  # animates the running loader, `label` is the accessible verb the icon stands for.
+  # The pending entry is the safe fallback — an unknown state is never a phantom
+  # pass/fail.
   CI_CHECK_SYMBOLS = {
-    passed:  { glyph: "✅", label: "passed",  spin: false },
-    failed:  { glyph: "❌", label: "failed",  spin: false },
-    pending: { glyph: "🔄", label: "running", spin: true }
+    passed:  { label: "passed",  color: "text-emerald-600 dark:text-emerald-400", spin: false },
+    failed:  { label: "failed",  color: "text-red-600 dark:text-red-400",         spin: false },
+    pending: { label: "running", color: "text-amber-600 dark:text-amber-400",     spin: true }
   }.freeze
 
   def ci_check_symbol(check)
