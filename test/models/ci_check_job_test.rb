@@ -43,15 +43,15 @@ class CiCheckJobTest < ActiveSupport::TestCase
     assert_equal(-1, CiCheckJob.status_rank("garbage"), "an unknown status must never outrank a real one")
   end
 
-  test "[unit] progress_rows returns the { status, conclusion } fold rows for a repo+SHA" do
-    build_job(job_id: 1, head_sha: "s1", status: "completed", conclusion: "success").save!
-    build_job(job_id: 2, head_sha: "s1", status: "in_progress", conclusion: nil).save!
-    build_job(job_id: 3, head_sha: "OTHER", status: "completed", conclusion: "failure").save!
+  test "[unit] progress_rows returns the { status, conclusion, name } fold rows for a repo+SHA" do
+    build_job(job_id: 1, head_sha: "s1", name: "lint", status: "completed", conclusion: "success").save!
+    build_job(job_id: 2, head_sha: "s1", name: "test", status: "in_progress", conclusion: nil).save!
+    build_job(job_id: 3, head_sha: "OTHER", name: "lint", status: "completed", conclusion: "failure").save!
 
     rows = CiCheckJob.progress_rows("amcritchie/mcritchie-studio", "s1")
     assert_equal 2, rows.size, "only the two jobs for this repo+SHA"
-    assert_includes rows, { "status" => "completed", "conclusion" => "success" }
-    assert_includes rows, { "status" => "in_progress", "conclusion" => nil }
+    assert_includes rows, { "status" => "completed", "conclusion" => "success", "name" => "lint" }
+    assert_includes rows, { "status" => "in_progress", "conclusion" => nil, "name" => "test" }
     # The rows fold straight into a Ci::CheckProgress — 1 passed of 2.
     progress = Ci::CheckProgress.from_check_runs(rows, sha: "s1")
     assert_equal "1 / 2", progress.fraction_label
@@ -59,6 +59,49 @@ class CiCheckJobTest < ActiveSupport::TestCase
 
   test "[unit] progress_rows is empty when no job has landed (reader then falls back)" do
     assert_empty CiCheckJob.progress_rows("amcritchie/mcritchie-studio", "never-seen")
+  end
+
+  # ── the reset/re-run duplication fix (v1.2): a re-run mints new job_ids for the
+  #    same check names on the same SHA; progress_rows must fold ONLY the latest
+  #    attempt of each check, so the count RESETS fresh instead of doubling. ──────
+
+  test "[unit] a re-run does not duplicate — only the latest attempt per check folds" do
+    # Attempt 1: three checks under run 100 (lint fails, test/build pass).
+    build_job(job_id: 1, run_id: 100, head_sha: "sha", name: "lint",  status: "completed", conclusion: "failure").save!
+    build_job(job_id: 2, run_id: 100, head_sha: "sha", name: "test",  status: "completed", conclusion: "success").save!
+    build_job(job_id: 3, run_id: 100, head_sha: "sha", name: "build", status: "completed", conclusion: "success").save!
+    # Re-run (a new workflow_run, 101) mints NEW job_ids for the SAME names.
+    build_job(job_id: 4, run_id: 101, head_sha: "sha", name: "lint",  status: "in_progress", conclusion: nil).save!
+    build_job(job_id: 5, run_id: 101, head_sha: "sha", name: "test",  status: "in_progress", conclusion: nil).save!
+    build_job(job_id: 6, run_id: 101, head_sha: "sha", name: "build", status: "in_progress", conclusion: nil).save!
+
+    rows = CiCheckJob.progress_rows("amcritchie/mcritchie-studio", "sha")
+
+    assert_equal 3, rows.size, "the re-run RESETS to 3 checks, never accumulates to 6"
+    assert_equal %w[in_progress in_progress in_progress].sort, rows.map { |r| r["status"] }.sort,
+      "the count reflects the LATEST attempt (fresh/pending), not the settled old one"
+    assert_equal "0 / 3", Ci::CheckProgress.from_check_runs(rows).fraction_label
+  end
+
+  test "[unit] re-run of a single FAILED job (same run, higher job_id) keeps the newer row" do
+    # Same run_id (a 're-run failed jobs'): only lint is re-run, with a higher job_id.
+    build_job(job_id: 10, run_id: 200, head_sha: "sha", name: "lint", status: "completed", conclusion: "failure").save!
+    build_job(job_id: 11, run_id: 200, head_sha: "sha", name: "test", status: "completed", conclusion: "success").save!
+    build_job(job_id: 12, run_id: 200, head_sha: "sha", name: "lint", status: "completed", conclusion: "success").save!
+
+    rows = CiCheckJob.progress_rows("amcritchie/mcritchie-studio", "sha")
+    assert_equal 2, rows.size, "two distinct checks — lint's retry replaces its first row"
+    lint = rows.find { |r| r["name"] == "lint" }
+    assert_equal "success", lint["conclusion"], "the newer (higher job_id) lint attempt wins"
+    assert_equal "2 / 2", Ci::CheckProgress.from_check_runs(rows).fraction_label
+  end
+
+  test "[unit] blank-named rows are never collapsed — each keys on its own job_id" do
+    build_job(job_id: 20, head_sha: "sha", name: nil, status: "completed", conclusion: "success").save!
+    build_job(job_id: 21, head_sha: "sha", name: nil, status: "completed", conclusion: "success").save!
+
+    rows = CiCheckJob.progress_rows("amcritchie/mcritchie-studio", "sha")
+    assert_equal 2, rows.size, "two nameless checks stay distinct, not folded into one"
   end
 
   test "[unit] terminal? is true only once completed" do

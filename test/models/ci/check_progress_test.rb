@@ -85,6 +85,50 @@ class Ci::CheckProgressTest < ActiveSupport::TestCase
     assert_equal :none, progress.state
   end
 
+  # ── per-check data + symbolic threshold (v1.2: one glyph per check) ──────────
+
+  test "[unit] from_check_runs keeps each check's state and name for the symbolic row" do
+    progress = Ci::CheckProgress.from_check_runs([
+      { "status" => "completed", "conclusion" => "success", "name" => "lint" },
+      { "status" => "completed", "conclusion" => "failure", "name" => "test" },
+      { "status" => "in_progress", "name" => "playwright (1)" }
+    ])
+
+    assert_equal 3, progress.checks.size, "one Check per run, mapping 1:1 to the CI jobs"
+    assert_equal %i[passed failed pending], progress.checks.map(&:state)
+    assert_equal ["lint", "test", "playwright (1)"], progress.checks.map(&:name)
+    assert_equal 1, progress.passed
+    assert_equal 1, progress.failed
+    assert_equal 1, progress.pending
+  end
+
+  test "[unit] count-only input synthesizes nameless checks totalling the counts" do
+    progress = Ci::CheckProgress.new(passed: 2, failed: 1, pending: 3)
+
+    assert_equal 6, progress.checks.size
+    assert_equal 2, progress.checks.count(&:passed?)
+    assert_equal 1, progress.checks.count(&:failed?)
+    assert_equal 3, progress.checks.count(&:pending?)
+    assert_nil progress.checks.first.name, "the fixture seam has no per-check identity"
+  end
+
+  test "[unit] a small suite is symbolic; a large one keeps the numeric bar" do
+    eleven = Ci::CheckProgress.from_check_runs(Array.new(11) { check_run(status: "completed", conclusion: "success") })
+    twelve = Ci::CheckProgress.from_check_runs(Array.new(12) { check_run(status: "completed", conclusion: "success") })
+
+    assert eleven.symbolic?, "under 12 checks renders one symbol per check"
+    assert_not eleven.numeric?
+    assert_not twelve.symbolic?, "12+ checks keeps the numeric X / Y bar"
+    assert twelve.numeric?
+    assert_equal 12, Ci::CheckProgress::SYMBOLIC_THRESHOLD
+  end
+
+  test "[unit] a blank datum is neither symbolic nor numeric — it draws nothing" do
+    blank = Ci::CheckProgress.blank
+    assert_not blank.symbolic?
+    assert_not blank.numeric?
+  end
+
   private
 
   def progress_percent(progress)

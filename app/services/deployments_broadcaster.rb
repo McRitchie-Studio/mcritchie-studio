@@ -109,6 +109,7 @@ class DeploymentsBroadcaster
       reader.eligible_tasks_for(job.repo, job.head_branch).each do |task|
         broadcast_ci_slot("ci-progress-#{task.slug}", reader.for_task(task),
                           compact: true, test_id: "task-ci-progress",
+                          href: task.devops_url("pr").presence,
                           wrapper_class: "mb-1.5", inner_test_id: "task-card-ci-progress")
       end
 

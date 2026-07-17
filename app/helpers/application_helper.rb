@@ -480,6 +480,34 @@ module ApplicationHelper
     @ci_progress_reader ||= Ci::ProgressReader.new
   end
 
+  # A folded CI check's coarse state -> how the SYMBOLIC row draws its icon (v1.2 of
+  # visual-ci-progress-bars): a clean line SVG per check (the partial picks the
+  # path). `color` is the state tint (green check / red x / amber loader), `spin`
+  # animates the running loader, `label` is the accessible verb the icon stands for.
+  # The pending entry is the safe fallback — an unknown state is never a phantom
+  # pass/fail.
+  CI_CHECK_SYMBOLS = {
+    passed:  { label: "passed",  color: "text-emerald-600 dark:text-emerald-400", spin: false },
+    failed:  { label: "failed",  color: "text-red-600 dark:text-red-400",         spin: false },
+    pending: { label: "running", color: "text-amber-600 dark:text-amber-400",     spin: true }
+  }.freeze
+
+  def ci_check_symbol(check)
+    CI_CHECK_SYMBOLS.fetch(check.state, CI_CHECK_SYMBOLS[:pending])
+  end
+
+  # The shared geometry for the card-width bars stacked on the board task card —
+  # the status-flag CTAs (components/_card_status_bar) and the CI progress meter
+  # (components/_ci_progress_slot) both build on it, so they read as one coherent
+  # set: full width, the same radius, 1px border, and horizontal inset. Each caller
+  # layers its own tone (bg / text / border colour) on top; the CI card's taller
+  # two-row content is the only intended height difference.
+  CARD_BAR_BASE_CLASSES = "w-full rounded border px-2 py-1"
+
+  def card_bar_base_classes
+    CARD_BAR_BASE_CLASSES
+  end
+
   # The DevOps SOP vocabulary — the owner definition, the node types, and the four
   # accountability lanes (each step's expectation + gate) — is the SINGLE SOURCE OF
   # TRUTH in config/devops_vocabulary.yml, read via Devops::Vocabulary. Rename a term

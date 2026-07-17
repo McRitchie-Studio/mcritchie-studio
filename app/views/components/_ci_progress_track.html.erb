@@ -1,0 +1,23 @@
+<%# locals: (progress:, test_id: "ci-progress-bar", compact: false) %>
+<%#
+  Just the meter TRACK — the state-coloured fill in a themed rail. Shared: the
+  numeric bar (components/_ci_progress_bar) renders it under its "X / Y" header, and
+  the symbolic view renders it BENEATH the glyph row, so a small suite shows BOTH the
+  per-check symbols AND the bar. role=progressbar exposes the fraction to assistive
+  tech; the fill animates its width on a live morph.
+%>
+<% fill_class = case progress.state
+   when :green then "bg-emerald-500"
+   when :red then "bg-red-500"
+   else "bg-amber-500"
+   end %>
+<div class="w-full <%= compact ? "h-1.5" : "h-2" %> rounded-full bg-inset border border-subtle overflow-hidden"
+     role="progressbar"
+     aria-valuenow="<%= progress.passed %>"
+     aria-valuemin="0"
+     aria-valuemax="<%= progress.total %>"
+     aria-valuetext="<%= progress.fraction_label %> checks passed">
+  <div class="h-full rounded-full <%= fill_class %> transition-[width] duration-500 ease-out"
+       style="width: <%= progress.percent %>%;"
+       data-test="<%= test_id %>-fill"></div>
+</div>
