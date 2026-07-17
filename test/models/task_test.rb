@@ -17,7 +17,7 @@ class TaskTest < ActiveSupport::TestCase
     assert_not_nil task.submitted_at
   end
 
-  test "[unit] submitting from building auto-confirms waiting approval" do
+  test "[unit] submitting from building settles waiting approval to none" do
     task = Task.create!(
       title: "Approval Exit Build",
       stage: "building",
@@ -34,13 +34,34 @@ class TaskTest < ActiveSupport::TestCase
 
     task.reload
     assert_equal "submitted", task.stage
-    assert_equal "approved", task.approval_status
+    # The review flow takes over on submit, so the WAITING APPROVAL badge drops —
+    # settled to "none", NOT self-approved (no fabricated operator grant).
+    assert_equal "none", task.approval_status
     assert_not task.waiting_for_operator_approval?
+    # The original request timestamp is preserved as history; no approval was granted.
     assert_equal requested_at, task.devops["approval_requested_at"]
-    assert task.devops["approval_approved_at"].present?
+    assert_nil task.devops["approval_approved_at"]
   end
 
-  test "[unit] resubmitting from a blocked build auto-confirms requested changes" do
+  test "[unit] submitting straight from designed also settles waiting approval" do
+    # The old build-exit callback only fired when LEAVING `building`; a
+    # designed→submitted jump stranded the WAITING APPROVAL badge on the submitted
+    # card. Keying off the transition INTO submitted covers that path too.
+    task = Task.create!(
+      title: "Approval Skip Building",
+      stage: "designed",
+      metadata: { "devops" => { "approval_status" => "waiting", "local_url" => "http://localhost:3021/tasks" } }
+    )
+
+    task.submit!
+
+    task.reload
+    assert_equal "submitted", task.stage
+    assert_equal "none", task.approval_status
+    assert_not task.waiting_for_operator_approval?
+  end
+
+  test "[unit] submitting leaves requested changes untouched" do
     task = Task.create!(
       title: "Approval Exit Blocked",
       stage: "building",
@@ -57,8 +78,75 @@ class TaskTest < ActiveSupport::TestCase
 
     task.reload
     assert_equal "submitted", task.stage
-    assert_equal "approved", task.approval_status
-    assert task.devops["approval_approved_at"].present?
+    # Only the "waiting" request settles on submit; changes_requested carries its
+    # own meaning into review and must survive the transition untouched.
+    assert_equal "changes_requested", task.approval_status
+    assert_nil task.devops["approval_approved_at"]
+  end
+
+  test "[unit] submitting leaves an already-approved grant untouched" do
+    task = Task.create!(
+      title: "Approval Already Granted",
+      stage: "building",
+      metadata: { "devops" => { "approval_status" => "approved", "approval_approved_at" => "2026-07-01T00:00:00Z" } }
+    )
+
+    task.submit!
+
+    task.reload
+    assert_equal "approved", task.approval_status, "a real operator grant survives submit"
+    assert_equal "2026-07-01T00:00:00Z", task.devops["approval_approved_at"]
+  end
+
+  test "[unit] settling waiting on submit is idempotent across a block/resubmit cycle" do
+    task = Task.create!(
+      title: "Approval Resettle On Resubmit",
+      stage: "building",
+      metadata: { "devops" => { "approval_status" => "waiting", "local_url" => "http://localhost:3021/tasks" } }
+    )
+
+    task.submit!
+    assert_equal "none", task.reload.approval_status
+
+    # QA rework sends it back to building; the demo is re-flagged waiting, then resubmitted.
+    task.block!(by: "avi", kind: "rework")
+    md = task.metadata.deep_dup
+    md["devops"]["approval_status"] = "waiting"
+    task.update!(metadata: md)
+    task.submit!
+
+    assert_equal "none", task.reload.approval_status, "re-entering submitted settles again, no-op-safe"
+    assert_not task.waiting_for_operator_approval?
+  end
+
+  test "[unit] an agent-sourced submit settles waiting without tripping the operator guard" do
+    task = Task.create!(
+      title: "Approval Agent Submit",
+      stage: "building",
+      metadata: { "devops" => { "approval_status" => "waiting", "local_url" => "http://localhost:3021/tasks" } }
+    )
+
+    Current.task_event_source = "cli" # the bin/task agent lane, normally barred from granting approval
+    assert_nothing_raised { task.submit! }
+
+    task.reload
+    assert_equal "none", task.approval_status, "the system settle resolves to the agent-writable none"
+    assert_nil task.devops["approval_approved_at"], "no operator grant is fabricated"
+  ensure
+    Current.reset
+  end
+
+  test "[unit] creating straight into submitted keeps a waiting request pending" do
+    # Not a transition INTO submitted — the operator-approval guard fixtures create
+    # submitted+waiting rows directly and rely on the request surviving.
+    task = Task.create!(
+      title: "Approval Born Submitted",
+      stage: "submitted",
+      metadata: { "devops" => { "approval_status" => "waiting", "local_url" => "http://localhost:3021/tasks" } }
+    )
+
+    assert_equal "waiting", task.reload.approval_status
+    assert task.waiting_for_operator_approval?
   end
 
   test "[unit] blocking a building task keeps approval open" do
