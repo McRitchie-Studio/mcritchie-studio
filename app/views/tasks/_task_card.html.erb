@@ -210,7 +210,9 @@
       Demo link into one flashing, card-width CTA that opens the local demo; the
       same component carries the QA/review flags for a consistent glance. %>
   <% if waiting_for_approval || waiting_for_review || review_in_progress || unresolved_feedback || block_state == :cleared %>
-    <div class="flex flex-col gap-1 mb-1.5">
+    <%# gap-1 here + the same gap to the CI meter below (mb-1) so the CTA badges and
+        the CI card read as ONE evenly-stacked set of card-width bars. %>
+    <div class="flex flex-col gap-1 mb-1">
       <% if waiting_for_approval %>
         <%# Thin, label-only bar — the whole bar is the Local Demo link (no action
             text) so it stays one line. %>
@@ -255,14 +257,15 @@
     </div>
   <% end %>
 
-  <%# CI progress meter — "X / Y checks" plus a bar for this PR's GitHub CI run.
-      Wrapped in the stable-id components/_ci_progress_slot so a live workflow_job
-      webhook can morph JUST this bar in place (it ticks up with no reload); the slot
-      renders nothing visible until the task has a submitted PR with a CI run. %>
+  <%# CI progress meter — a symbolic row (few checks) or the numeric "X / Y" bar for
+      this PR's GitHub CI run, and a LINK that opens the PR in a new tab. Wrapped in
+      the stable-id components/_ci_progress_slot so a live workflow_job webhook can
+      morph JUST this meter in place (it ticks up with no reload); the slot renders
+      nothing visible until the task has a submitted PR with a CI run. %>
   <%= render "components/ci_progress_slot",
         dom_id: "ci-progress-#{task.slug}",
         progress: ci_progress, compact: true,
-        test_id: "task-ci-progress",
+        test_id: "task-ci-progress", href: pr_url,
         wrapper_class: "mb-1.5", inner_test_id: "task-card-ci-progress" %>
 
   <%# Secondary meta row — QA/Prod quick links, only when present. The release-slug

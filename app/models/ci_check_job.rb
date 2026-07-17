@@ -15,9 +15,12 @@ class CiCheckJob < ApplicationRecord
   # not clobber a `completed` row) — mirrors GithubWorkflowRun::STATUS_ORDER.
   STATUS_ORDER = { "queued" => 0, "in_progress" => 1, "completed" => 2 }.freeze
 
-  # The CI status keys Ci::CheckProgress folds from — status + conclusion, the exact
-  # shape CheckProgress.from_check_runs consumes (the GitHub check-runs row shape).
-  PROGRESS_KEYS = %i[status conclusion].freeze
+  # The columns the fold reads: `name` is the check IDENTITY a re-run re-uses;
+  # `status` + `conclusion` are the fold input (the GitHub check-runs row shape
+  # CheckProgress.from_check_runs consumes); `run_id` + `job_id` are the
+  # newest-attempt key (both GitHub ids climb monotonically). Ordered as pluck
+  # returns them.
+  PROGRESS_COLUMNS = %i[name status conclusion run_id job_id].freeze
 
   validates :repo, :job_id, :head_sha, :status, presence: true
   validates :job_id, uniqueness: true
@@ -39,13 +42,32 @@ class CiCheckJob < ApplicationRecord
     STATUS_ORDER.fetch(status.to_s, -1)
   end
 
-  # A commit's CI jobs as the { "status" =>, "conclusion" => } rows
-  # Ci::CheckProgress.from_check_runs folds — one row per check. Empty when no
-  # job event has landed for this repo+SHA (the reader then falls back to the API).
+  # A commit's CI jobs as the { "status" =>, "conclusion" =>, "name" => } rows
+  # Ci::CheckProgress.from_check_runs folds — one row per CHECK. Empty when no job
+  # event has landed for this repo+SHA (the reader then falls back to the API).
+  #
+  # De-duplicated to the LATEST ATTEMPT per check (see latest_attempt_per_check):
+  # a re-run mints new job_ids for the same names on the same SHA, and folding
+  # every attempt DOUBLED the operator's live count — the v1.2 reset bug.
   def self.progress_rows(repo, sha)
-    for_repo(repo).for_sha(sha)
-      .pluck(*PROGRESS_KEYS)
-      .map { |status, conclusion| { "status" => status, "conclusion" => conclusion } }
+    latest_attempt_per_check(for_repo(repo).for_sha(sha).pluck(*PROGRESS_COLUMNS))
+  end
+
+  # A re-run — GitHub's "re-run all / failed jobs", or a fresh workflow_run on the
+  # same head SHA — mints NEW job_ids for the SAME check NAMES, so a SHA's raw rows
+  # can hold two-plus attempts at once. Folding them all is the reset/re-run
+  # DUPLICATION bug: an 8-check suite re-run once counted 16. Keep only the LATEST
+  # attempt of each check — group by check NAME, take the newest by (run_id,
+  # job_id). Both GitHub ids climb monotonically, so the re-run's row wins whether
+  # it landed under the SAME run (re-run failed → same run_id, higher job_id) or a
+  # NEW one (new run_id) — a re-run RESETS the display to the real check total
+  # instead of accumulating. A blank name (an older, pre-name row) can't be
+  # collapsed with others, so it keys on its own job_id and stays its own check.
+  def self.latest_attempt_per_check(rows)
+    rows
+      .group_by { |name, _status, _conclusion, _run_id, job_id| name.presence || "job:#{job_id}" }
+      .map { |_key, attempts| attempts.max_by { |_name, _status, _conclusion, run_id, job_id| [run_id.to_i, job_id.to_i] } }
+      .map { |name, status, conclusion, _run_id, _job_id| { "status" => status, "conclusion" => conclusion, "name" => name } }
   end
 
   def terminal?

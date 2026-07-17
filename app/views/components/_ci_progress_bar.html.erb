@@ -1,25 +1,12 @@
 <%# locals: (progress:, label: "CI", title: nil, test_id: "ci-progress-bar", compact: false) %>
 <%#
-  Reusable CI progress meter: "X / Y checks" plus a filled bar. The FIRST of a
-  reusable info-viz style (later patches expand it), so it stays a pure view of a
-  Ci::CheckProgress value object and takes no data source of its own. Used by the
-  board task card (a submitted PR's CI) and the Next Release card (the G3 suite).
-
-  START SIMPLE by design: a fraction and a bar, coloured by state. Richer states
-  (per-check breakdown, failure highlighting, a live check_run to Turbo Stream
-  push) are deliberately deferred to a later patch.
-
-  Renders NOTHING when there is no CI data (no PR, no run yet, an unreadable
-  payload) so a card without CI stays clean.
+  Numeric CI meter (12+ checks): "X / Y checks" plus the state-coloured track
+  (components/_ci_progress_track). A pure view of a Ci::CheckProgress value object,
+  coloured by state — emerald all-passed, amber running, red on a failure. The
+  symbolic view (under 12 checks) uses components/_ci_progress_symbols instead, over
+  the same track. Renders NOTHING when there is no CI data.
 %>
 <% if progress.respond_to?(:present?) && progress.present? %>
-  <%# State drives BOTH the fill colour and the fraction text colour: emerald when
-      every check passed, amber while checks are still running, red once one fails. %>
-  <% fill_class = case progress.state
-     when :green then "bg-emerald-500"
-     when :red then "bg-red-500"
-     else "bg-amber-500"
-     end %>
   <% text_class = case progress.state
      when :green then "text-emerald-700 dark:text-emerald-300"
      when :red then "text-red-700 dark:text-red-300"
@@ -29,27 +16,16 @@
        "GitHub CI: #{progress.passed} of #{progress.total} checks passed" +
        (progress.failed.positive? ? ", #{progress.failed} failed" : "") +
        (progress.pending.positive? ? ", #{progress.pending} running" : "") %>
-  <div class="ci-progress-bar w-full <%= compact ? "" : "space-y-1" %>"
+  <div class="ci-progress-bar w-full space-y-1"
        data-test="<%= test_id %>"
        data-ci-state="<%= progress.state %>"
        title="<%= bar_title %>">
-    <div class="flex items-center justify-between gap-2 <%= compact ? "mb-0.5" : "" %> text-[10px] leading-none">
+    <div class="flex items-center justify-between gap-2 text-[10px] leading-none">
       <span class="font-semibold uppercase tracking-wide text-muted"><%= label %></span>
       <span class="font-bold tabular-nums <%= text_class %>" data-test="<%= test_id %>-fraction">
         <%= progress.fraction_label %><span class="ml-1 font-medium text-muted normal-case tracking-normal">checks</span>
       </span>
     </div>
-    <%# The track (theme-aware inset) + the state-coloured fill. role=progressbar so
-        the fraction is exposed to assistive tech, not just visually implied. %>
-    <div class="w-full <%= compact ? "h-1.5" : "h-2" %> rounded-full bg-inset border border-subtle overflow-hidden"
-         role="progressbar"
-         aria-valuenow="<%= progress.passed %>"
-         aria-valuemin="0"
-         aria-valuemax="<%= progress.total %>"
-         aria-valuetext="<%= progress.fraction_label %> checks passed">
-      <div class="h-full rounded-full <%= fill_class %> transition-[width] duration-500 ease-out"
-           style="width: <%= progress.percent %>%;"
-           data-test="<%= test_id %>-fill"></div>
-    </div>
+    <%= render "components/ci_progress_track", progress: progress, test_id: test_id, compact: compact %>
   </div>
 <% end %>

@@ -16,7 +16,10 @@
      violet: "bg-violet-500/90 text-white border-violet-400/70 shadow-sm shadow-violet-500/30 hover:bg-violet-500",
    } %>
 <% tone = schemes.fetch(scheme.to_sym, schemes[:amber]) %>
-<% bar_class = "w-full flex items-center justify-center gap-1.5 rounded px-2 py-1 text-[10px] font-bold leading-tight border #{tone} #{'motion-safe:animate-pulse' if flashing}" %>
+<%# Shares card_bar_base_classes (w-full rounded border px-2 py-1) with the CI
+    progress meter so the two stack as one coherent set; the tone + centering + type
+    are this bar's own. %>
+<% bar_class = "#{card_bar_base_classes} flex items-center justify-center gap-1.5 text-[10px] font-bold leading-tight #{tone} #{'motion-safe:animate-pulse' if flashing}" %>
 <% pulse_style = ("animation-delay: var(--task-pulse-delay, 0s); animation-duration: var(--task-pulse-duration, 2s);" if flashing) %>
 <% bar_body = capture do %><% if icon %><span aria-hidden="true"><%= icon %></span><% end %><span><%= label %></span><% if action_label %><span class="opacity-60">·</span><span class="font-semibold"><%= action_label %></span><span aria-hidden="true">→</span><% end %><% end %>
 <% if href %>
