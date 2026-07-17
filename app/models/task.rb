@@ -147,14 +147,12 @@ class Task < ApplicationRecord
   OPERATOR_APPROVAL_WAITING = "waiting".freeze
   OPERATOR_APPROVAL_APPROVED = "approved".freeze
   OPERATOR_APPROVAL_CHANGES_REQUESTED = "changes_requested".freeze
-  OPERATOR_APPROVAL_OPEN_STATUSES = [
-    OPERATOR_APPROVAL_WAITING,
-    OPERATOR_APPROVAL_CHANGES_REQUESTED
-  ].freeze
-  # A task holds an open operator-approval request while it's still in the feature
-  # agent's hands (building — which is also where a blocked task sits). It
-  # auto-confirms on the exit to submitted.
-  OPERATOR_APPROVAL_HOLD_STAGES = %w[building].freeze
+  # The settled/moot resolution. An open "waiting" request is cleared to "none"
+  # the moment a task moves into `submitted` — the PR review flow takes over, so
+  # the local-preview approval is no longer pending. See
+  # #settle_operator_approval_on_submit. "none" is an ordinary agent-writable
+  # status (unlike "approved"), so this settle never trips the operator-lane guard.
+  OPERATOR_APPROVAL_NONE = "none".freeze
   # Request-layer sources allowed to GRANT approval (flip approval_status to
   # "approved"). "web" is stamped only by the admin-gated TasksController#update
   # — the board UI operator lane. A BLANK source is an internal/console write
@@ -258,7 +256,7 @@ class Task < ApplicationRecord
   # the transition's snapshot bakes the EVOLVED form (older events keep theirs).
   before_save :evolve_stage_mascot, if: -> { will_save_change_to_stage? && Task::MASCOT_EVOLUTION_GATES.key?(stage) }
   before_save :sync_app_identity
-  before_save :confirm_operator_approval_after_build_exit, if: -> { will_save_change_to_stage? }
+  before_save :settle_operator_approval_on_submit, if: -> { will_save_change_to_stage? }
   before_save :stamp_operator_approval_request
   before_save :stamp_operator_approval_approved
   # The cert evidence in devops.checks_run is MACHINE-owned and survives an
@@ -1499,19 +1497,41 @@ class Task < ApplicationRecord
     self.position ||= (Task.where(stage: stage).maximum(:position) || 0) + 100
   end
 
-  def confirm_operator_approval_after_build_exit
-    return unless operator_approval_exit_transition?
-    return unless OPERATOR_APPROVAL_OPEN_STATUSES.include?(approval_status)
+  # When a task moves INTO `submitted`, a still-open operator-approval REQUEST is
+  # settled: the PR review flow takes over, so the local-preview approval is moot
+  # and its WAITING APPROVAL treatment (the card_glow "approval" state and the
+  # operator-approval status bar, both keyed off #waiting_for_operator_approval?)
+  # must drop. We resolve it here, in the SAME save as the stage move (before_save
+  # → one UPDATE, one transaction), so a rollback can never strand a half-settled
+  # card.
+  #
+  # Only "waiting" is settled — "changes_requested" and an already-"approved"
+  # grant carry their own meaning into review and are left untouched. We resolve
+  # to "none" (a settled, no-badge status), NOT "approved": the operator never
+  # granted approval, so faking a grant would misreport the acceptance metric and
+  # self-approve the operator's lane. "none" is an ordinary agent-writable status,
+  # so it sidesteps #approval_flip_requires_operator entirely (that guard fires
+  # only on a flip TO "approved" or an approval_approved_at stamp) — this system
+  # state-machine transition never trips the agent-write guard.
+  #
+  # Fires only on a real transition into submitted on an EXISTING record, so a task
+  # created straight into `submitted` keeps its waiting request — the stage column
+  # defaults to "designed", so stage_was is never blank on create; #new_record? is
+  # the honest "did this move" signal, and the operator-approval guard fixtures rely
+  # on a directly-created submitted+waiting row surviving. Idempotent: once "none" it
+  # is a no-op, and a submitted→submitted re-save does not change stage, so the
+  # callback does not fire.
+  def settle_operator_approval_on_submit
+    return unless entering_submitted_stage?
+    return unless approval_status == OPERATOR_APPROVAL_WAITING
 
     merged = metadata.deep_dup
-    approval = (merged["devops"] ||= {})
-    approval["approval_status"] = OPERATOR_APPROVAL_APPROVED
+    (merged["devops"] ||= {})["approval_status"] = OPERATOR_APPROVAL_NONE
     self.metadata = merged
   end
 
-  def operator_approval_exit_transition?
-    OPERATOR_APPROVAL_HOLD_STAGES.include?(stage_was) &&
-      !OPERATOR_APPROVAL_HOLD_STAGES.include?(stage)
+  def entering_submitted_stage?
+    !new_record? && stage == "submitted" && stage_was != "submitted"
   end
 
   def stamp_operator_approval_request
@@ -1543,9 +1563,10 @@ class Task < ApplicationRecord
   # rejected. Non-changes pass: "waiting"/"changes_requested"/"none" stay
   # agent-writable, and a wholesale devops replace that ECHOES the existing
   # approval (bin/task update rewrites the full hash) isn't a change. The
-  # build-exit auto-confirm (confirm_operator_approval_after_build_exit) and the
-  # timestamp stamp both run in before_save, AFTER validation, so this guard
-  # never blocks them.
+  # submit-time settle (#settle_operator_approval_on_submit, waiting → "none")
+  # and the approval_approved_at stamp both run in before_save, AFTER validation;
+  # the settle resolves to the agent-writable "none" so it never grants approval,
+  # and either way this guard runs before them and never blocks them.
   def approval_flip_requires_operator
     return if operator_attributed_write?
     return unless agent_granting_operator_approval?
