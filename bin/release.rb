@@ -1869,13 +1869,49 @@ rescue StandardError => e
   { state: :unverified, reason: e.message.to_s[0, 140] }
 end
 
+# The G3 CREDIT probe (task dedupe-hub-release-suite): does this exact SHA already
+# carry a COMPLETED green conclusion that the still-pending runs merely duplicate?
+# Green-with-source when it does (CiStatus.credit_for_sha), nil for everything
+# else. Same injection seam as ci_verdict; only consulted after
+# fast_forward_promote? proved origin/#{RELEASE_BRANCH} IS the accepted head CI
+# already built. Best-effort BY DESIGN and fail-CLOSED into the NORMAL path: nil —
+# including any read/parse fault — sends the caller to poll_ci_verdict, so a probe
+# that cannot see never certifies and never blocks.
+def ci_credit_verdict(repo, sha)
+  injected = ENV["RELEASE_CI_STATUS"].to_s
+  nwo = injected.empty? ? repo_name_with_owner(repo) : ""
+  CiStatus.credit_for_sha(nwo, sha, injected)
+rescue StandardError
+  nil
+end
+
+# Was the accepted→release promote a FAST-FORWARD — origin/#{RELEASE_BRANCH}
+# resting on the SAME commit as origin/#{ACCEPTED_BRANCH}? Only then may the
+# pre-QA gate credit an existing conclusion: the release tip IS the accepted head
+# whose check-runs the PR/accepted seam already produced, so a green there proves
+# THIS tree. (The batch-PR promote mints a merge commit — a NEW SHA with fresh
+# check-runs — and never satisfies this.) The same-SHA discipline mirrors
+# Release::ShipSequence.ship_gate_skip?, which self-skips G4 only against G3's
+# record for the identical frozen SHA. An unresolvable accepted ref answers false
+# (no credit, normal poll) — never an abort.
+def fast_forward_promote?(path, release_sha)
+  return false if release_sha.to_s.empty?
+
+  out, ok = sh("git", "-C", path, "rev-parse", "origin/#{ACCEPTED_BRANCH}", capture: true)
+  ok && out.strip == release_sha.to_s
+end
+
 # The verdict pair, persisted: what CI said about the SHA the gate certified.
+# `credited` names the credited source when the G3 gate credited an existing green
+# conclusion instead of awaiting a duplicate run (ci_credit_verdict) — absent on
+# every polled verdict, so the audit trail distinguishes the two.
 def ci_gate_record(ci)
   record = { "state" => ci[:state].to_s }
   checks = (Array(ci[:failing]) + Array(ci[:pending])).map(&:to_s)
   record["checks"] = checks if checks.any?
   record["count"] = ci[:count].to_i if ci[:count]
   record["reason"] = ci[:reason].to_s if ci[:reason]
+  record["credited"] = ci[:credited].to_s if ci[:credited]
   record
 end
 
@@ -2069,15 +2105,34 @@ def pre_qa_gate(app_groups, rel_slug = nil)
     # (poll_ci_verdict -> ci_pass?), so the whole local-cert flakiness class (a lazily-
     # autoloaded suite torn by a concurrent checkout) retired with it.
 
+    # G3 DEDUPE (task dedupe-hub-release-suite): the hub registers the same full
+    # suite at the accepted seam and again on the release push, so a fast-forwarded
+    # promote queues a DUPLICATE run of checks this exact SHA already passed — and
+    # the poll below would wait that duplicate out. So when the promote
+    # fast-forwarded (origin/#{RELEASE_BRANCH} == origin/#{ACCEPTED_BRANCH} — no
+    # merge commit minted), the gate first reads the SHA's EXISTING completed
+    # check-runs and credits a green conclusion whose pending runs are pure
+    # duplicates (ci_credit_verdict — nil for anything else), recording the
+    # credited source in the gate note. NOTHING else changed: a non-credit — red,
+    # a genuinely still-running suite, missing checks, no fast-forward — falls
+    # through to the exact same poll below.
+    credit = fast_forward_promote?(path, sha) ? ci_credit_verdict(repo, sha) : nil
+    if credit
+      credit[:credited] = "#{credit[:credited]}; fast-forward promote — " \
+                          "origin/#{RELEASE_BRANCH} is the #{ACCEPTED_BRANCH} head CI already built"
+      say("  #{repo}: crediting the existing green conclusion for #{short(sha)} — no duplicate run awaited " \
+          "(#{credit[:credited]})")
+    end
+
     # THE VERDICT: GitHub CI's conclusion for the SHA under test, POLLED until it
     # concludes (poll_ci_verdict) and fail-CLOSED via ci_pass? — only :green certifies.
     # A red (a regression riding origin/#{RELEASE_BRANCH}) or an :unreadable token fault
     # aborts at once; a still-:pending/:none/:unverified verdict is HELD — a just-merged
     # SHA's CI is still building — until it goes green, red, or the poll times out. This
     # replaces the single read that aborted every sweep's first run on a pending CI.
-    ci = poll_ci_verdict(repo, sha)
+    ci = credit || poll_ci_verdict(repo, sha)
     ok = ci_pass?(ci)
-    step("pre-QA gate #{repo}: GitHub CI #{ci[:state].to_s.upcase} @ #{short(sha)} " \
+    step("pre-QA gate #{repo}: GitHub CI #{ci[:state].to_s.upcase}#{credit ? ' (credited)' : ''} @ #{short(sha)} " \
          "(#{cmd} recorded for the G4 drift check, not run here)")
 
     # Certify — the ONLY evidence G4 accepts for skipping its own gate. Recorded for

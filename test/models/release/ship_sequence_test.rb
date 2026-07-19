@@ -597,6 +597,21 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
     assert S.ship_gate_skip?(test_cmd: "bin/rails test", frozen_sha: "abc123", qa_gate: certified)
   end
 
+  test "[unit] a CREDITED G3 record self-skips and never arms the disagree path" do
+    # task dedupe-hub-release-suite: on a fast-forwarded promote the G3 gate may
+    # credit the SHA's existing green conclusion, recording the credited source in
+    # the gate note ("credited"). That is still a GREEN certification of the same
+    # command on the same SHA — G4 self-skips against it exactly as against a
+    # polled one, and the extra key must neither break the skip nor read as a
+    # DISAGREE (auditor_red? stays literal-"red"-only).
+    credited = certified.merge("ci" => { "state" => "green", "count" => 2,
+                                         "credited" => "2 completed check-runs already green; fast-forward promote" })
+
+    assert S.ship_gate_skip?(test_cmd: "bin/rails test", frozen_sha: "abc123", qa_gate: credited),
+           "a credited green record is the same proof ship_gate_skip? already accepts"
+    assert_not S.auditor_red?(credited), "a credited green must never arm the disagree/re-gate path"
+  end
+
   # NOTE — the other half of the fail-open contract ("a red auditor can never BLOCK
   # a ship, it only makes the gate RUN") is not assertable here: ship_gate_skip? is
   # a pure run/skip decision and has no way to express an abort. It is proven where

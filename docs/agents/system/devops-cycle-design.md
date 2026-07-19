@@ -210,7 +210,13 @@ Actions conclusion for the seam's SHA (at G3/G4 this *promotes* today's existing
 non-blocking CI auditor to the verdict). On the hub all three tiers run the same
 suite — the hub already runs full+system+scans per PR — so they differ mostly in
 scope; depth divergence (e.g. staging Playwright/@devnet) is a turf-monster
-concern.
+concern. To keep that overlap from running the identical suite twice on one
+commit, the G3 pre-QA gate **credits** an existing green conclusion for the exact
+`origin/release` SHA when the promote was a fast-forward (release tip == accepted
+head CI already built): instead of polling out the duplicate release-push run, it
+records the credited source in the gate note (`bin/release.rb` `ci_credit_verdict`
+→ `CiStatus.credit_for_sha`, the same-SHA discipline as G4's `ship_gate_skip?`).
+Red, genuinely still-running, and missing-checks verdicts poll exactly as before.
 
 **Deploys run in GitHub Actions, gated by GitHub Environments:**
 

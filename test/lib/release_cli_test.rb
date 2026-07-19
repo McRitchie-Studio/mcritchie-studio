@@ -912,6 +912,32 @@ class ReleaseCliTest < Minitest::Test
     assert_equal ":wait", eval_helper(%(ci_poll_action({}).inspect)), "a stateless verdict holds"
   end
 
+  # [unit] fast_forward_promote? — the SAME-SHA precondition for the G3 credit
+  # (task dedupe-hub-release-suite), mirroring ship_gate_skip?'s discipline: the
+  # credit may engage ONLY when origin/release IS the accepted head CI already
+  # built. A diverged tip (the batch-PR merge commit), an unresolvable accepted
+  # ref, and a blank release SHA all answer false — no credit, normal poll, never
+  # an abort.
+  def test_fast_forward_promote_is_true_only_when_release_is_the_accepted_head
+    same = %(def sh(*a, **_k)\n  a.include?("origin/accepted") ? [GATE_SHA, true] : ["", false]\nend\n)
+    out = run_cli(["--dry-run"], setup: GATE_GIT_STUB + same,
+                  call: %(print fast_forward_promote?("/x", GATE_SHA).inspect))
+    assert_equal "true", out, "release SHA == accepted head is the fast-forward shape"
+
+    out = run_cli(["--dry-run"], setup: GATE_GIT_STUB + same,
+                  call: %(print fast_forward_promote?("/x", "1111111111111111111111111111111111111111").inspect))
+    assert_equal "false", out, "a diverged release tip (merge-commit promote) must not read as a fast-forward"
+
+    failed = %(def sh(*a, **_k) = ["", false]\n)
+    out = run_cli(["--dry-run"], setup: GATE_GIT_STUB + failed,
+                  call: %(print fast_forward_promote?("/x", GATE_SHA).inspect))
+    assert_equal "false", out, "an unresolvable accepted ref answers false, never an abort"
+
+    out = run_cli(["--dry-run"], setup: GATE_GIT_STUB + same,
+                  call: %(print fast_forward_promote?("/x", "").inspect))
+    assert_equal "false", out, "a blank release SHA can never be a fast-forward"
+  end
+
   # [integration] GREEN CI certifies: the gate passes on a green CI verdict for the
   # SHA under test, states that verdict, and records ok:true WITH CI's verdict for the
   # audit trail (record_qa_gate — the ONLY evidence G4 accepts for skipping its gate).
@@ -1039,6 +1065,111 @@ class ReleaseCliTest < Minitest::Test
       assert_includes out, "credential/token fault", "…as a credential fault, not a missing CI"
       assert_includes out, "does NOT poll it", "…and it did NOT poll a broken token"
       refute_includes out, "poll timed out", "unreadable aborts on the FIRST read — no poll window is spent"
+      refute_includes out, "PASSED"
+    end
+  end
+
+  # --- G3 CREDIT: dedupe the hub's duplicate release suite (same SHA) ----------
+  #
+  # task dedupe-hub-release-suite. The hub registers the identical full suite at
+  # the accepted-PR seam and again on the release push. When the promote was a
+  # FAST-FORWARD (origin/release == origin/accepted — GATE_GIT_STUB answers both
+  # rev-parses with GATE_SHA), the exact SHA under test already carries the
+  # accepted seam's COMPLETED green check-runs, and the release push merely queues
+  # duplicates of them — which used to hold the gate for the whole poll window.
+  # The gate now credits that existing conclusion instead. Every one of these
+  # stubs collapses the poll window to a SINGLE read (RELEASE_CI_POLL_TIMEOUT=0,
+  # via ci_gate_stub), so a PASS can ONLY come from the credit path — a credit
+  # that failed to engage would fail closed on the pending duplicates.
+
+  # The credited shape: the accepted seam's suite concluded green, and the release
+  # push queued duplicate runs of the SAME check names.
+  CREDIT_PAYLOAD = '{"total_count":4,"check_runs":[' \
+                   '{"name":"test","status":"completed","conclusion":"success"},' \
+                   '{"name":"test:system","status":"completed","conclusion":"success"},' \
+                   '{"name":"test","status":"queued","conclusion":null},' \
+                   '{"name":"test:system","status":"in_progress","conclusion":null}]}'
+
+  # [integration] EXISTING GREEN CREDITED — the fix. A fast-forwarded promote +
+  # an already-green SHA passes the gate WITHOUT polling out the duplicate run
+  # (timeout 0: a poll would have failed closed), states the credit, and records
+  # the credited source in the gate note (record_qa_gate's ci half) with ok:true
+  # so G4 still self-skips against the same record.
+  def test_pre_qa_gate_credits_an_existing_green_conclusion_on_a_fast_forward_promote
+    Dir.mktmpdir do |dir|
+      out = run_cli(["--yes"], setup: ci_gate_stub(dir, CREDIT_PAYLOAD),
+                    call: %{pre_qa_gate([{ "repo" => "sibling" }], "rel-cli"); puts("PASSED")})
+
+      assert_includes out, "crediting the existing green conclusion for #{GATE_SHA[0, 7]}",
+                      "the gate SAYS it credited, and for which SHA"
+      assert_includes out, "no duplicate run awaited", "…and that no poll window was spent on the duplicate"
+      assert_includes out, "GitHub CI GREEN (credited) @ #{GATE_SHA[0, 7]}",
+                      "the gate line marks the credited verdict apart from a polled one"
+      record = out.lines.find { |l| l.start_with?("CONDUCTOR") }
+      assert record, "a credited gate still certifies through record_qa_gate: #{out}"
+      assert_includes record, "ok: true", "a credited green records ok:true so G4 may self-skip"
+      assert_match(/"credited"\s*=>/, record, "the gate note records the credited source")
+      assert_includes record, "fast-forward promote", "…naming WHY the credit applied"
+      assert_includes out, "PASSED", "the gate passes on the credit — no duplicate suite run awaited"
+    end
+  end
+
+  # [integration] NO FAST-FORWARD, NO CREDIT. The batch-PR promote mints a merge
+  # commit — origin/release != origin/accepted — so even a payload full of green
+  # conclusions for the release SHA must NOT credit (the same-SHA discipline that
+  # ship_gate_skip? enforces at G4). With the poll window collapsed, the pending
+  # duplicates fail closed exactly as before the credit existed.
+  def test_pre_qa_gate_does_not_credit_without_a_fast_forward_promote
+    Dir.mktmpdir do |dir|
+      diverged = %(\ndef sh(*a, **k)\n) +
+                 %(  return ["2222222222222222222222222222222222222222", true] if a.include?("origin/accepted")\n) +
+                 %(  g = gate_git(a, k)\n  return g if g\n  ["", true]\nend\n)
+      out = run_cli(["--yes"], setup: ci_gate_stub(dir, CREDIT_PAYLOAD) + diverged,
+                    call: %{begin; pre_qa_gate([{ "repo" => "sibling" }], "rel-cli"); puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+      refute_includes out, "crediting", "a diverged promote must never engage the credit"
+      assert_includes out, "ABORTED", "…so the pending duplicates fail closed exactly as before"
+      assert_includes out, "NO green verdict for #{GATE_SHA[0, 7]}"
+      refute_includes out, "PASSED"
+    end
+  end
+
+  # [integration] RED STILL BLOCKS — byte-for-byte. A failed run anywhere in the
+  # record refuses the credit (even alongside completed greens and their queued
+  # duplicates, on a genuine fast-forward), so the gate reads the SHA RED and
+  # aborts with the same eject/revert guidance as ever.
+  def test_pre_qa_gate_credit_never_overrides_a_red
+    Dir.mktmpdir do |dir|
+      payload = '{"total_count":4,"check_runs":[' \
+                '{"name":"test","status":"completed","conclusion":"success"},' \
+                '{"name":"test:system","status":"completed","conclusion":"failure"},' \
+                '{"name":"test","status":"queued","conclusion":null},' \
+                '{"name":"test:system","status":"queued","conclusion":null}]}'
+      out = run_cli(["--yes"], setup: ci_gate_stub(dir, payload),
+                    call: %{begin; pre_qa_gate([{ "repo" => "sibling" }], "rel-cli"); puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+      refute_includes out, "crediting", "a red record must never be re-read as a credit"
+      assert_includes out, "ABORTED", "a red CI verdict still fails the gate closed"
+      assert_includes out, "GitHub CI called #{GATE_SHA[0, 7]} RED"
+      assert_includes out, "test:system", "…naming the failing check"
+      refute_includes out, "PASSED"
+    end
+  end
+
+  # [integration] A GENUINE WAIT STILL WAITS. A pending check with NO completed
+  # counterpart is the ORIGINAL suite still running — not a duplicate — so the
+  # credit declines and the gate holds/fails closed on the poll exactly as before.
+  def test_pre_qa_gate_does_not_credit_a_half_finished_original_suite
+    Dir.mktmpdir do |dir|
+      payload = '{"total_count":2,"check_runs":[' \
+                '{"name":"test","status":"completed","conclusion":"success"},' \
+                '{"name":"test:system","status":"in_progress","conclusion":null}]}'
+      out = run_cli(["--yes"], setup: ci_gate_stub(dir, payload),
+                    call: %{begin; pre_qa_gate([{ "repo" => "sibling" }], "rel-cli"); puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+      refute_includes out, "crediting", "a half-finished first run must never credit"
+      assert_includes out, "ABORTED", "…the still-running suite fails closed at the (collapsed) poll window"
+      assert_includes out, "NO green verdict for #{GATE_SHA[0, 7]}"
       refute_includes out, "PASSED"
     end
   end
