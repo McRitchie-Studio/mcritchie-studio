@@ -4,6 +4,53 @@ Parallel agents should use git worktrees rather than sharing one checkout.
 The default for any code or active-doc edit is to work in an isolated worktree
 with an allocated port.
 
+## Fresh Worktree Checklist
+
+Run these in order. Each step names the command and the proof it worked.
+
+1. **Create the desk** — `bin/agent-worktree new <app> <task-slug>` from the
+   mcritchie-studio primary. It cuts `feat/<task-slug>` from the base ref
+   (`origin/accepted`), copies the primary `.env`, writes `.env.agent-stack`
+   (allocated port, isolated dev DB, Redis DB, `LOCAL_EMAIL_CAPTURE=1`),
+   provisions the isolated test DB, and builds `app/assets/builds/tailwind.css`.
+2. **Bind the task immediately** — `bin/agent-worktree bind-task <app>
+   <task-slug> <task-record-slug-or-url>`. `new` does NOT auto-bind. Unbound,
+   the session has no task URL (terminal context, PR body) and the desk sits
+   outside the live-claim guard — the exact window a cleanup sweep once
+   destroyed.
+3. **Preflight from the worktree** — `cd .worktrees/<task-slug> &&
+   bin/session-preflight <task-slug>`, using the worktree's own copy: the
+   script roots at its own file location, so the primary's copy inspects the
+   primary checkout instead. Fix everything it flags before editing.
+4. **Verify env and port** — `.env` exists in the worktree, and
+   `bin/agent-worktree whereami` prints the app, task URL, port, database, and
+   Redis DB. No port means the stack env is missing; re-run `new`.
+5. **Verify assets and test DB** — `new` runs `bin/rails db:test:prepare
+   test:prepare` best-effort; a printed warning means it failed. Confirm
+   `app/assets/builds/tailwind.css` exists: the directory is gitignored, and
+   `bin/rails test <file>` skips the asset build, so a missing `tailwind.css`
+   is the classic first-test failure (`The asset "tailwind.css" is not present
+   in the asset pipeline`). Recovery: `bin/rails db:test:prepare test:prepare`
+   in the worktree.
+6. **Boot before any live preview** — `bin/agent-worktree up <app>
+   <task-slug>`. It runs `bin/rails db:prepare` first (a hand-started `rails
+   server` without it 500s with `NoDatabaseError`), boots the stack in the
+   background, and polls `/up` until 200.
+7. **Prove the URL before claiming it** — hand out a demo URL only after `/up`
+   returns 200. `up` prints `(/up 200)`; re-check any time with
+   `bin/agent-worktree status <app> <task-slug>` or
+   `curl -s -o /dev/null -w "%{http_code}" http://localhost:<port>/up`.
+8. **Know your data** — the stack DB (`<app>_development_<task-slug>`) is NOT
+   the base dev DB. It starts from `db:prepare` (schema + seeds), not from the
+   primary's data. Never assume shared records; seed what the demo needs.
+9. **Run tests the worktree way** — `bin/agent-worktree test <app> <task-slug>`
+   or a plain `bin/rails test`. Worktree tests run single-process
+   (`PARALLEL_WORKERS=1`) BY DESIGN: parallel workers deadlock cloning a cold
+   test DB. Do not source `.env.agent-stack` before tests.
+10. **Email lands locally** — `LOCAL_EMAIL_CAPTURE=1` is the stack default;
+    magic links and all other mail appear at
+    `http://localhost:<port>/_studio/local_emails`, never in a real inbox.
+
 ## Current Direction
 
 Avoid visible sibling directories such as `turf-monster-feature-name` as the long-term default. They make `/Users/alex/projects` hard to scan at scale.
@@ -97,7 +144,7 @@ bin/agent-worktree up turf-monster docs-stack
 bin/agent-worktree finish turf-monster docs-stack
 ```
 
-The launcher creates `/Users/alex/projects/<repo>/.worktrees/<task-slug>`, branches from the current **base ref** — `origin/release` when the repo has one (the persistent feature-PR target), else `origin/main` for repos that have not run `bin/release init` — copies the primary `.env`, writes `.env.agent-stack`, prepares the isolated database, and prints the local URL.
+The launcher creates `/Users/alex/projects/<repo>/.worktrees/<task-slug>`, branches from the current **base ref** — `origin/accepted` when the repo has one (the persistent feature-PR target), else `origin/release`, else `origin/main` — copies the primary `.env`, writes `.env.agent-stack`, prepares the isolated database, and prints the local URL.
 
 Use `bin/agent-worktree status <app> <task-slug>` to recover the URL later, and `bin/agent-worktree down <app> <task-slug>` to stop a running stack.
 Use `bin/agent-worktree finish <app> <task-slug>` when the work is committed
@@ -146,7 +193,7 @@ bin/agent-worktree scale status
   behind the base ref, and already-merged branches. Add `--push` to push the
   branch. `--push --pr` additionally requires a bound production task record
   from `bind-task`, then creates a draft PR **based on the base branch
-  (`release`, else `main`)** through `gh` when available, and stamps the
+  (`accepted`, else `release`, else `main`)** through `gh` when available, and stamps the
   created PR's URL onto the bound task (`devops.pr_url`) in the same handoff
   (best-effort: a board blip warns with the manual `bin/task update --pr-url`
   command instead of failing the finish).
@@ -162,9 +209,9 @@ bin/agent-worktree scale status
   `AGENT_WORKTREE_REGISTRY=/tmp/worktree-registry.json` when a sandboxed
   session needs a scratch write instead of the shared projects registry.
 - `cleanup` is a dry run. It prints clean worktree candidates whose branch is
-  either contained in the base ref (`origin/release`, else `origin/main`) or has
+  either contained in the base ref (`origin/accepted`, else `origin/release`, else `origin/main`) or has
   an empty final diff against the base ref after a squash merge. A branch merged
-  into `release` but not yet shipped to `main` therefore counts as done. Each
+  into `accepted` but not yet shipped to `main` therefore counts as done. Each
   candidate prints the exact safety class (`merged` or `base-equivalent`), base
   ref, ahead/behind count, stack health, `/up` code, pidfile state, Redis DB,
   database state, and the exact `bin/agent-worktree remove … --yes` command. Use
@@ -292,16 +339,16 @@ PR lands, a branch can appear behind its base ref even when all of its content
 was merged. Do not rely on ahead/behind alone.
 
 The launcher now treats an empty final diff against the base ref
-(`origin/release`, else `origin/main`) as a cleanup candidate. Before removing a
-squash-merged worktree manually (substitute `origin/main` for repos without a
-`release` branch):
+(`origin/accepted`, else `origin/release`, else `origin/main`) as a cleanup
+candidate. Before removing a squash-merged worktree manually (substitute the
+repo's resolved base ref):
 
-1. Pull the primary checkout so `origin/release` is current.
+1. Pull the primary checkout so `origin/accepted` is current.
 2. From the feature worktree, confirm the final diff is empty:
 
    ```bash
-   git diff --stat origin/release..HEAD
-   git diff --name-status origin/release..HEAD
+   git diff --stat origin/accepted..HEAD
+   git diff --name-status origin/accepted..HEAD
    ```
 
 3. If both commands are empty, prefer
@@ -311,25 +358,25 @@ squash-merged worktree manually (substitute `origin/main` for repos without a
 
 ## Rules
 
-- Branch from the **base ref** (feature PRs target the persistent `release`
-  branch, not `main`). This is now the launcher default: `bin/agent-worktree new`
-  cuts from `origin/release`, `finish --pr` opens the PR with `--base release`,
-  and ahead/behind + cleanup/merge checks all reckon against `origin/release`.
-  - **Fallback:** a repo that has not run `bin/release init` has no
-    `origin/release`, so the launcher transparently falls back to `origin/main`
-    for the branch cut, the PR base, and the comparison base. The resolved base
-    is reported per-worktree (`base_ref` in `snapshot`/registry, the `base:` line
-    in `finish`). `bin/release merge` still rejects any PR whose base isn't
-    `release`, so a stray `main`-based PR is caught at merge time.
+- Branch from the **base ref** (feature PRs target the persistent `accepted`
+  branch, not `release`/`main`). This is the launcher default: `bin/agent-worktree
+  new` cuts from `origin/accepted`, `finish --pr` opens the PR with `--base
+  accepted`, and ahead/behind + cleanup/merge checks all reckon against
+  `origin/accepted`.
+  - **Fallback:** a repo with no `origin/accepted` falls back to
+    `origin/release`, then `origin/main`, for the branch cut, the PR base, and
+    the comparison base. The resolved base is reported per-worktree (`base_ref`
+    in `snapshot`/registry, the `base:` line in `finish`).
 - One task branch per worktree.
 - Never commit task work on the primary `main` checkout unless you are the
   explicit deploy owner for that repo.
-- A feature branch is the backup and collaboration unit. `release` is the
-  reviewed integration lane (`main` is the shipped lane, fast-forwarded from
-  `release` at ship time), not a place to rush code so it is not lost.
-- Feature agents push their branch and open/prepare a PR into `release`. Avi or
-  the designated release conductor owns merging to `release` (and shipping
-  `release → main`).
+- A feature branch is the backup and collaboration unit. `accepted` is the
+  reviewed integration lane (`release` is the QA lane; `main` is the shipped
+  lane, fast-forwarded from `release` at ship time), not a place to rush code
+  so it is not lost.
+- Feature agents push their branch and open/prepare a PR into `accepted`.
+  Review merges to `accepted`; Steffon's `qa-release` promotes
+  `accepted → release`; Avi ships `release → main`.
 - If the primary checkout is dirty, ahead, or moves while you are working, treat
   it as shared-floor drift. Do not fold those changes into your task silently.
   Report it and continue from the isolated worktree.
