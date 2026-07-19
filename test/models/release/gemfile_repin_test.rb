@@ -123,4 +123,99 @@ class Release::GemfileRepinTest < ActiveSupport::TestCase
     out = Release::GemfileRepin.rewrite(text, "studio-engine", "0.9.3")
     assert_equal %(gem "studio-engine", "~> 0.9"), out
   end
+
+  # --- version_requirements (the prepare-side consumer-bump read) ---
+
+  test "version_requirements reads a plain pessimistic pin" do
+    assert_equal ["~> 0.10"],
+                 Release::GemfileRepin.version_requirements(%(gem "studio-engine", "~> 0.10"\n), "studio-engine")
+  end
+
+  test "version_requirements reads every requirement on a multi-requirement line" do
+    text = %(gem "studio-engine", ">= 1.0", "< 2.0"\n)
+    assert_equal [">= 1.0", "< 2.0"], Release::GemfileRepin.version_requirements(text, "studio-engine")
+  end
+
+  test "version_requirements skips non-requirement options" do
+    text = %(gem "studio-engine", "~> 0.10", require: false\n)
+    assert_equal ["~> 0.10"], Release::GemfileRepin.version_requirements(text, "studio-engine")
+  end
+
+  test "version_requirements is empty for a bare, absent, or source-ref line" do
+    assert_empty Release::GemfileRepin.version_requirements(%(gem "studio-engine"\n), "studio-engine")
+    assert_empty Release::GemfileRepin.version_requirements(%(gem "rails"\n), "studio-engine")
+    assert_empty Release::GemfileRepin.version_requirements(
+      %(gem "studio-engine", github: "amcritchie/studio-engine", branch: "feat/x"\n), "studio-engine"
+    )
+  end
+
+  # --- constraint_allows? ---
+
+  test "constraint_allows? honors pessimistic semantics" do
+    # A two-segment `~>` holds the MAJOR: `~> 0.10` takes 0.10.5 AND 0.11.0
+    # (the house pin style — minor gem bumps are lock-only), but never 1.0.0.
+    assert Release::GemfileRepin.constraint_allows?(["~> 0.10"], "0.10.5")
+    assert Release::GemfileRepin.constraint_allows?(["~> 0.10"], "0.11.0")
+    assert_not Release::GemfileRepin.constraint_allows?(["~> 0.10"], "1.0.0")
+    # A three-segment `~>` holds the minor.
+    assert_not Release::GemfileRepin.constraint_allows?(["~> 0.10.0"], "0.11.0")
+  end
+
+  test "constraint_allows? treats an exact pin as exact" do
+    assert Release::GemfileRepin.constraint_allows?(["0.10.0"], "0.10.0")
+    assert_not Release::GemfileRepin.constraint_allows?(["0.10.0"], "0.10.1")
+  end
+
+  test "constraint_allows? allows anything on an empty requirement list" do
+    # A bare `gem "x"` line accepts every version — a lock-only bump suffices.
+    assert Release::GemfileRepin.constraint_allows?([], "9.9.9")
+  end
+
+  test "constraint_allows? fails closed on a malformed requirement" do
+    # Can't prove the pin allows the version → report the escape (the caller
+    # rewrites to a known-good pin).
+    assert_not Release::GemfileRepin.constraint_allows?(["~> not-a-version"], "1.0.0")
+  end
+
+  # --- rewrite_pin (constraint-escape rewrite) ---
+
+  test "rewrite_pin advances an escaped pessimistic pin" do
+    out = Release::GemfileRepin.rewrite_pin(%(gem "studio-engine", "~> 0.10"\n), "studio-engine", "0.11.0")
+    assert_equal %(gem "studio-engine", "~> 0.11"\n), out
+  end
+
+  test "rewrite_pin keeps non-requirement options and a trailing comment" do
+    text = %(  gem "studio-engine", "~> 0.10", require: false # engine\n)
+    out = Release::GemfileRepin.rewrite_pin(text, "studio-engine", "0.11.0")
+    assert_equal %(  gem "studio-engine", "~> 0.11", require: false # engine\n), out
+  end
+
+  test "rewrite_pin pins a bare declaration" do
+    out = Release::GemfileRepin.rewrite_pin(%(gem "studio-engine"\n), "studio-engine", "0.11.0")
+    assert_equal %(gem "studio-engine", "~> 0.11"\n), out
+  end
+
+  test "rewrite_pin leaves a source-ref line for rewrite" do
+    text = %(gem "studio-engine", github: "amcritchie/studio-engine", branch: "feat/x"\n)
+    assert_equal text, Release::GemfileRepin.rewrite_pin(text, "studio-engine", "0.11.0")
+  end
+
+  test "rewrite_pin only touches the targeted gem's line" do
+    text = <<~GEMFILE
+      gem "rails", "~> 7.2"
+      gem "studio-engine", "~> 0.10"
+    GEMFILE
+    out = Release::GemfileRepin.rewrite_pin(text, "studio-engine", "0.11.0")
+    expected = <<~GEMFILE
+      gem "rails", "~> 7.2"
+      gem "studio-engine", "~> 0.11"
+    GEMFILE
+    assert_equal expected, out
+  end
+
+  test "rewrite_pin running twice equals running once" do
+    once  = Release::GemfileRepin.rewrite_pin(%(gem "studio-engine", "~> 0.10"\n), "studio-engine", "0.11.0")
+    twice = Release::GemfileRepin.rewrite_pin(once, "studio-engine", "0.11.0")
+    assert_equal once, twice
+  end
 end

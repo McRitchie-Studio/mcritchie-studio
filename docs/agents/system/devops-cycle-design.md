@@ -393,24 +393,47 @@ alongside apps. The classification lives in `config/release_repos.yml` (read by
 `Release::Repos`): every member is a `:gem` (producer) or an `:app` (consumer).
 Gems and apps are handled differently at both ends of the Deploy workflow:
 
-- **Gem members are PUBLISHED, not app-deployed.** A gem's PR merges into the
-  gem's own repo's `release` branch like any other, but there is no app artifact
-  to deploy — so at **prepare** the conductor skips gem members in the QA-deploy
-  loop. They ride the release as a *record*, and are QA'd indirectly through a
-  consuming app (the consumer's branch is what gets deployed + tested).
-- **Run Deployment processes producer-before-consumer.** `Release#ordered_members`
-  returns members **gems-first** (then apps), honoring `dependencies` within
-  that. `bin/release ship` publishes every gem member to RubyGems first
-  (approval-gated `gem push`, version from the gem's `version_file`), and only
-  then deploys the apps. So a consuming app always builds + deploys against the
-  **just-published** gem version — never ahead of it. If a gem fails to publish,
-  the ship aborts before any app deploys.
+- **Gem members are PUBLISHED, not app-deployed — and published at *prepare*,
+  BEFORE QA** (publish-gems-before-qa). A gem's PR merges into the gem's own
+  repo's `release` branch like any other, but there is no app artifact to
+  deploy. `bin/release prepare` runs the producer-first sequence up front,
+  before the pre-QA gate and any QA deploy: publish each swept gem member's
+  `origin/release` version to RubyGems (skip-if-live), then commit each
+  consumer's `Gemfile.lock` bump onto the consumer's `release` branch — so the
+  pre-QA CI verdict targets the post-bump SHA, QA bundles the **real published
+  gem**, and prod ships the exact tree QA tested. The gem member itself still
+  rides the release as a *record* (no QA deploy of its own); it is QA'd through
+  the consuming app's bumped lock. **The accepted cost:** a publish is
+  irreversible (RubyGems forbids re-pushing a number), so a QA bounce can
+  orphan a published version — the fix bumps past it and the dead number sits
+  on RubyGems, harmless.
+- **The stranded-work guard.** For each swept gem repo, if `origin/release` is
+  ahead of the last published `v*` tag while the `version_file` still declares
+  the tagged version, prepare **BLOCKS loudly**, naming the stranded commits
+  and the fix (bump the version through the gem's own PR, re-run prepare).
+  Without it the publish silently self-skips ("already live") and the commits
+  ride nowhere — the failure mode that once stranded 9 engine commits behind an
+  all-green pipeline.
+- **Consumer pins: lock always, constraint only on escape.** Consumers pin
+  RubyGems versions (`gem "studio-engine", "~> 0.10"` — no git/branch refs).
+  The prepare bump always runs `bundle lock --update <gem> --conservative`;
+  it rewrites the Gemfile constraint **only when the published version escapes
+  it** (a two-segment `~>` holds the major, so minor/patch bumps are
+  lock-only). Pure decisions: `Release::ShipSequence.consumer_bump_action` /
+  `.stranded_gem_work?`, `Release::GemfileRepin.version_requirements` /
+  `.constraint_allows?` / `.rewrite_pin`.
+- **Run Deployment stays producer-before-consumer — as the idempotent VERIFY.**
+  `Release#ordered_members` returns members **gems-first** (then apps),
+  honoring `dependencies` within that. `bin/release ship` still walks every gem
+  member before any app deploy: on the happy path each version is already live
+  from prepare (skip + `release → main` collapse), and it remains the real
+  publish backstop for a release prepared before this change. If a gem fails to
+  publish, the ship aborts before any app deploys.
 - **The version lives in the gem's PR.** The version bump (`lib/studio/version.rb`
   for studio-engine, the `.gemspec` for solana-studio) is part of the gem task's
   own PR; `member_plan` reads it for the publish + the board's `💎 gem` badge.
-  Post-publish, consuming apps re-pin `~> x.y` and deploy as their own members
-  (or follow-up tasks). See `docs/agents/modules/deployment.md` →
-  "Releasing a gem (producer-first)" for the operator runbook.
+  See `docs/agents/modules/deployment.md` → "Releasing a gem (producer-first)"
+  for the operator runbook.
 
 This is the ordered `release_slug` from §4.2 ("gem publish → consumer lockfile
 bump → app deploy"), now expressed as first-class release membership rather than
@@ -859,25 +882,38 @@ ONE deterministic verb — **`bin/release prepare --yes [--task SLUG ...]
    semantics; `--override` = the audited `review_bypassed` bypass). The sweep
    records the reviewed→assembled intent, so assembly duration caches measure
    from the sweep to the QA-green flip.
-4. **Pre-QA gate.** Each app's registry **`qa_test_cmd`** (the integration +
+4. **Publish gem members + bump consumer locks (producer-first, BEFORE the
+   gate).** For each swept **gem** member: run the **stranded-work guard**
+   (`origin/release` ahead of the last `v*` tag with an unbumped `version_file`
+   → BLOCK, naming the commits), then publish its `origin/release` version to
+   RubyGems (skip-if-live; build gated on tracked-dirty gem primaries exactly
+   like ship's preflight). Then for each consumer app: `bundle lock --update
+   <gem> --conservative` in the ship workspace at the release tip — rewriting
+   the Gemfile pin only when the version escapes it — and **commit + push the
+   bump onto `origin/release`**, fast-forward-checked. The lock commit lands
+   BEFORE the gate resolves `origin/release`, so the CI verdict targets the
+   post-bump SHA and QA tests the real published gem
+   (`publish_gems_for_qa` / `bump_consumer_locks_for_qa`).
+5. **Pre-QA gate.** Each app's registry **`qa_test_cmd`** (the integration +
    e2e-smoke tier `prepare` owns — `Release::STEP_TEST_TIERS`) runs on
    `origin/release` BEFORE anything deploys. A regression → **eject the
    offender** (`bin/release eject <task> --feedback "…"` — detach + block +
    `merged` cleared — then revert its merge commit on `release`) and re-run: the
    sweep self-heals and the REST of the RC rides on. Unset `qa_test_cmd` = the
    repo self-gates (skip).
-5. **Deploy QA.** Auto-records the Steffon QA intent for every member
+6. **Deploy QA.** Auto-records the Steffon QA intent for every member
    (`Release::Conductor.record_deploy_intents!`, append-only + idempotent) so
    /deployments shows Steffon QA-ing live; runs the per-app **merge-forward
    guard** (keeps each repo's `release` ahead of `main`); then `bin/qa-server
    deploy <qa_app> origin/release` per **app** member — **gem members are
-   skipped** (no app artifact; they ride the record and are QA'd via a consuming
-   app). Records `release.qa_url` + per-repo QA SHAs, waits for boot
+   skipped** (no app artifact; already published at step 4, QA'd via the
+   consuming app's bumped lock). Records `release.qa_url` + per-repo QA SHAs,
+   waits for boot
    (`wait_for_boot` polls `/up`), then runs each member's declared
    `devops.post_deploy_cmd` on its **QA heroku app** (`heroku run`, records the
    `[post-deploy]` outcome, **aborts on non-zero** — the `{task, app, cmd}` plan
    is the unit-tested `Release::PostDeploy.plan`).
-6. **QA-green flip.** Only after every QA dyno boots AND every post-deploy hook
+7. **QA-green flip.** Only after every QA dyno boots AND every post-deploy hook
    is green: `Release::Conductor.qa_green!` flips the swept members `reviewed →
    assembled` (`merged` stays `"release"`) and the RC assembling→assembled. **A
    QA failure flips NOTHING** — members stay `reviewed`, the RC stays
@@ -920,12 +956,15 @@ ship **auto-records the Avi → `shipped` intent** for every member
 the whole deploy instead of an empty dashed ship slot until `ship!` lands (the
 2026-06-25 incident). Append-only + idempotent (`ship!` supersedes it; a
 partial-ship abort leaves it open — correct, Avi is still shipping — and a re-run
-reuses it). **Producer-first:** before any app deploy, it publishes every
-**gem member** to RubyGems in order — for each it prints the gem + target
-version and asks `Publish <repo> <version> to RubyGems?` (approval-gated; honors
-`--yes` / `--dry-run`), runs the gem's build (studio-engine: `bin/release-check
---build`; otherwise `gem build <gemspec>`), `gem push`es the artifact, and tags
-`v<version>` in the gem repo. A build/push failure **aborts the ship** before any
+reuses it). **Producer-first:** before any app deploy, it walks every
+**gem member** in order. On the happy path `prepare` already published each
+version BEFORE QA (publish-gems-before-qa), so this is the **idempotent
+verify** — already-live → skip, then the `release → main` collapse. When a
+version is NOT yet live (a release prepared before the prepare-side publish,
+or a version bumped after QA froze), it still publishes for real: the gem's
+build (studio-engine: `bin/release-check --build`; otherwise `gem build
+<gemspec>`), `gem push`, and a `v<version>` tag in the gem repo. A build/push
+failure **aborts the ship** before any
 app deploys, so apps never deploy against an unpublished gem. Then for the apps
 it fast-forwards each repo's `main` up to `release` (so `release` collapses into
 `main`), pushes origin — stamping that repo's members **`merged: "main"`** as
