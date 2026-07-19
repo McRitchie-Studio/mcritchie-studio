@@ -1,0 +1,263 @@
+# frozen_string_literal: true
+
+# [integration] Harness tests for bin/ship — the fast-lane handoff wrapper
+# (commit → fast-check → push → non-draft PR into accepted → record pr_url →
+# dor-check → move submitted → read-back verify). Follows the house seam
+# pattern (test/lib/fast_check_test.rb): the REAL script is shelled via Open3
+# against a throwaway git repo (with a real bare `origin`, so the push lane is
+# exercised for real), with the board/cert/gate/GitHub CLIs stubbed via SHIP_*
+# env seams. The skip decisions themselves are unit-tested in
+# test/lib/fast_lane_test.rb.
+# Run directly:
+#   ruby -Itest test/lib/ship_test.rb
+# Also picked up by the normal `bin/rails test` sweep.
+
+require "minitest/autorun"
+require "json"
+require "open3"
+require "tmpdir"
+require "fileutils"
+require "rbconfig"
+require_relative "../support/session_env"
+require_relative "../../bin/lib/full_suite_gate"
+
+class ShipTest < Minitest::Test
+  BIN = File.expand_path("../../bin/ship", __dir__)
+  SLUG = "fast-lane-demo"
+  BRANCH = "feat/#{SLUG}"
+  TASK_URL = "https://mcritchie.studio/tasks/#{SLUG}"
+  PR_URL = "https://github.com/amcritchie/mcritchie-studio/pull/999"
+
+  # A throwaway repo on the task branch with a bare `origin` carrying an
+  # `accepted` base — so push runs against a real remote, no network. Yields
+  # the workdir with one committed baseline and one uncommitted edit (the
+  # change ship's commit step must land).
+  def with_repo
+    Dir.mktmpdir do |root|
+      dir = File.join(root, "work")
+      origin = File.join(root, "origin.git")
+      FileUtils.mkdir_p(dir)
+      git = ->(args) { assert(system("git -C #{dir} #{args} >/dev/null 2>&1"), "git #{args}") }
+      write = lambda do |rel, body|
+        full = File.join(dir, rel)
+        FileUtils.mkdir_p(File.dirname(full))
+        File.write(full, body)
+      end
+      write.call("app.rb", "puts :v1\n")
+      write.call(".gitignore", "stub.log\n*-stub\n")
+      git.call("init -q -b #{BRANCH}")
+      git.call("config user.email tester@example.com")
+      git.call("config user.name tester")
+      git.call("add -A")
+      git.call("commit -q -m init")
+      assert system("git init -q --bare #{origin}"), "bare origin"
+      git.call("remote add origin #{origin}")
+      git.call("push -q origin #{BRANCH}:accepted")
+      write.call("app.rb", "puts :v2\n")
+      yield dir
+    end
+  end
+
+  # A stub CLI following the fast_check_test pattern: logs "<MARKER>\t<argv...>"
+  # to STUB_LOG; exits 1 when FAIL_<MARKER>=1 (after logging + printing). The
+  # TASK stub serves `show` from TASK_SHOW_JSON — and from TASK_SHOW_JSON_MOVED
+  # once a `move` call has been logged, modeling board persistence for the
+  # read-back verify. The GH stub serves `pr list` from GH_PR_LIST_JSON and
+  # prints a PR URL on `pr create`.
+  def write_stub(dir, name, marker)
+    stub = File.join(dir, name)
+    File.write(stub, <<~RUBY)
+      #!#{RbConfig.ruby}
+      log = ENV.fetch("STUB_LOG")
+      # One log line per call: escape embedded newlines (the PR body is multi-line).
+      File.open(log, "a") { |f| f.puts(["#{marker}", *ARGV].map { |a| a.to_s.gsub("\\n", "\\\\n") }.join("\\t")) }
+      if "#{marker}" == "TASK" && ARGV.first == "show"
+        moved = File.readlines(log).any? { |l| l.split("\\t")[0, 2] == %w[TASK move] }
+        puts(moved && ENV["TASK_SHOW_JSON_MOVED"] ? ENV["TASK_SHOW_JSON_MOVED"] : ENV["TASK_SHOW_JSON"])
+      end
+      if "#{marker}" == "GH" && ARGV[0, 2] == %w[pr list]
+        puts ENV.fetch("GH_PR_LIST_JSON", "[]")
+      end
+      if "#{marker}" == "GH" && ARGV[0, 2] == %w[pr create]
+        puts "#{PR_URL}"
+      end
+      exit(ENV["FAIL_#{marker}"] == "1" ? 1 : 0)
+    RUBY
+    FileUtils.chmod("+x", stub)
+    stub
+  end
+
+  def task_record(stage: "building", pr_url: nil, checks_run: [])
+    JSON.generate(
+      "slug" => SLUG, "stage" => stage, "title" => "Fast lane demo",
+      "metadata" => { "devops" => {
+        "branch" => BRANCH, "worktree_slug" => SLUG, "pr_url" => pr_url,
+        "acceptance" => ["ship collapses the handoff"], "checks_run" => checks_run
+      }.compact }
+    )
+  end
+
+  # Run bin/ship with every seam stubbed. Returns [out, err, status, log_lines]
+  # where log_lines is the parsed stub log ([[marker, argv...], ...] in call order).
+  def run_ship(dir, args: [SLUG], extra_env: {}, show_json: nil, moved_json: nil)
+    log = File.join(dir, "stub.log")
+    env = SessionEnv.neutralized({
+      "SHIP_ROOT" => dir,
+      "SHIP_TASK_BIN" => write_stub(dir, "task-stub", "TASK"),
+      "SHIP_FAST_CHECK_BIN" => write_stub(dir, "fast-stub", "FAST"),
+      "SHIP_DOR_CHECK_BIN" => write_stub(dir, "dor-stub", "DOR"),
+      "SHIP_GH_BIN" => write_stub(dir, "gh-stub", "GH"),
+      "STUB_LOG" => log,
+      "TASK_SHOW_JSON" => show_json || task_record,
+      "TASK_SHOW_JSON_MOVED" => moved_json || task_record(stage: "submitted", pr_url: PR_URL)
+    }.merge(extra_env))
+    out, err, status = Open3.capture3(env, RbConfig.ruby, BIN, *args)
+    lines = File.exist?(log) ? File.readlines(log, chomp: true).map { |l| l.split("\t") } : []
+    [out, err, status, lines]
+  end
+
+  def markers(lines)
+    lines.map { |l| l[0, 2].join(" ") }
+  end
+
+  # --- the green path ----------------------------------------------------------
+
+  def test_green_path_runs_every_step_in_order_and_verifies
+    with_repo do |dir|
+      out, err, status, lines = run_ship(dir)
+
+      assert status.success?, "expected green ship, got:\n#{err}\n#{out}"
+      assert_equal ["TASK show", "FAST #{SLUG}", "GH pr", "GH pr", "TASK update", "DOR #{SLUG}",
+                    "TASK move", "TASK show"], markers(lines),
+                   "steps must run in the handoff order (commit + push are real git, not stubs)"
+
+      # The commit landed and was pushed: origin's branch tip equals local HEAD.
+      assert_equal "", `git -C #{dir} status --porcelain`.strip, "ship must commit the dirty tree"
+      head = `git -C #{dir} rev-parse HEAD`.strip
+      assert_equal head, `git -C #{dir} rev-parse origin/#{BRANCH}`.strip, "the branch must be pushed"
+      assert_includes `git -C #{dir} log -1 --format=%s`, "Fast lane demo",
+                      "the commit message defaults to the task title"
+
+      create = lines.find { |l| l[0] == "GH" && l[2] == "create" }
+      assert create, "a PR must be created"
+      assert_equal "accepted", create[create.index("--base") + 1], "the PR must target accepted"
+      assert create[create.index("--body") + 1].start_with?(TASK_URL),
+             "the PR body must LEAD with the task URL"
+      refute_includes create, "--draft", "ship must never open a draft PR"
+
+      assert_equal [SLUG, "--pr-url", PR_URL],
+                   lines.find { |l| l[0, 2] == %w[TASK update] }[2, 3]
+      assert_equal [SLUG, "submitted"],
+                   lines.find { |l| l[0, 2] == %w[TASK move] }[2, 2]
+
+      assert_includes out, "Task: #{TASK_URL}"
+      assert_includes out, "PR: #{PR_URL}"
+      assert_includes out, "stage: submitted (read back verified)"
+    end
+  end
+
+  def test_commit_message_flag_overrides_the_title
+    with_repo do |dir|
+      _out, err, status, = run_ship(dir, args: [SLUG, "-m", "Land the widget cache"])
+
+      assert status.success?, err
+      assert_includes `git -C #{dir} log -1 --format=%s`, "Land the widget cache"
+    end
+  end
+
+  # --- idempotent resume -------------------------------------------------------
+
+  def test_resume_repairs_a_draft_misbased_pr_and_skips_landed_steps
+    with_repo do |dir|
+      # A previous run already landed everything: commit done, cert recorded for
+      # THIS exact tree, PR open (but draft + mis-based), pr_url stored, task
+      # already submitted. Rerun must repair the PR and re-verify — nothing else.
+      assert system("git -C #{dir} add -A >/dev/null 2>&1 && git -C #{dir} commit -q -m done")
+      fingerprint = FullSuiteGate.fingerprint(dir)
+      refute_nil fingerprint, "fixture repo must fingerprint"
+      recorded = task_record(stage: "submitted", pr_url: PR_URL,
+                             checks_run: ["[fast-cert@#{fingerprint}] green"])
+      existing = JSON.generate([{ "number" => 999, "url" => PR_URL, "isDraft" => true,
+                                  "baseRefName" => "main" }])
+
+      out, err, status, lines = run_ship(dir, extra_env: { "GH_PR_LIST_JSON" => existing },
+                                              show_json: recorded, moved_json: recorded)
+
+      assert status.success?, "resume must complete, got:\n#{err}\n#{out}"
+      refute_includes markers(lines), "FAST #{SLUG}", "a fresh fingerprint-bound cert must skip fast-check"
+      refute(lines.any? { |l| l[0] == "GH" && l[2] == "create" }, "an open PR must never be duplicated")
+      assert(lines.any? { |l| l[0] == "GH" && l[1, 2] == %w[pr ready] }, "a draft PR must be marked ready")
+      edit = lines.find { |l| l[0] == "GH" && l[1, 2] == %w[pr edit] }
+      assert edit, "a mis-based PR must be retargeted"
+      assert_equal "accepted", edit[edit.index("--base") + 1]
+      refute(lines.any? { |l| l[0, 2] == %w[TASK update] }, "an equal pr_url must not be re-recorded")
+      refute(lines.any? { |l| l[0, 2] == %w[TASK move] }, "an already-submitted task must not move again")
+      assert_includes out, "stage: submitted (read back verified)"
+    end
+  end
+
+  # --- red gates stop the line, resumably --------------------------------------
+
+  def test_red_fast_check_aborts_before_push_pr_and_move
+    with_repo do |dir|
+      _out, err, status, lines = run_ship(dir, extra_env: { "FAIL_FAST" => "1" })
+
+      refute status.success?, "a red cert must fail the ship"
+      assert_includes err, "fast-check failed"
+      assert_includes err, "re-run bin/ship #{SLUG}", "the failure must name the resume"
+      assert_equal ["TASK show", "FAST #{SLUG}"], markers(lines), "nothing may run past the red cert"
+      _remote = `git -C #{dir} rev-parse origin/#{BRANCH} 2>/dev/null`.strip
+      refute $?.success?, "the branch must NOT be pushed on a red cert"
+    end
+  end
+
+  def test_red_dor_check_aborts_before_move
+    with_repo do |dir|
+      _out, err, status, lines = run_ship(dir, extra_env: { "FAIL_DOR" => "1" })
+
+      refute status.success?, "a red DoR verdict must fail the ship"
+      assert_includes err, "dor-check refused"
+      refute(lines.any? { |l| l[0, 2] == %w[TASK move] }, "the task must not move on a red DoR")
+    end
+  end
+
+  def test_read_back_verify_fails_loud_when_the_move_never_persisted
+    with_repo do |dir|
+      # The board echoes success but the persisted stage never advances: the
+      # post-move read serves the same [building] record.
+      stuck = task_record(stage: "building", pr_url: PR_URL)
+      out, err, status, lines = run_ship(dir, moved_json: stuck)
+
+      refute status.success?, "a non-persisted move must fail the ship"
+      assert_includes err, "read-back verify FAILED"
+      assert(lines.any? { |l| l[0, 2] == %w[TASK move] }, "the move must have been attempted")
+      refute_includes out, "stage: submitted (read back verified)"
+    end
+  end
+
+  # --- guards ------------------------------------------------------------------
+
+  def test_task_past_the_seam_is_left_alone
+    with_repo do |dir|
+      out, err, status, lines = run_ship(dir, show_json: task_record(stage: "reviewed", pr_url: PR_URL))
+
+      assert status.success?
+      assert_includes err, "past the submitted seam"
+      assert_equal [%w[TASK show]], lines.map { |l| l[0, 2] }, "no step may run on a past-seam task"
+      assert_includes out, "Task: #{TASK_URL}"
+      refute_equal "", `git -C #{dir} status --porcelain`.strip, "the dirty tree must be left uncommitted"
+    end
+  end
+
+  def test_wrong_branch_refuses_before_any_write
+    with_repo do |dir|
+      assert system("git -C #{dir} checkout -q -b some-other-branch")
+      _out, err, status, lines = run_ship(dir)
+
+      refute status.success?
+      assert_includes err, "not the task branch"
+      assert_equal [%w[TASK show]], lines.map { |l| l[0, 2] }
+      refute_equal "", `git -C #{dir} status --porcelain`.strip, "no commit may land from the wrong branch"
+    end
+  end
+end

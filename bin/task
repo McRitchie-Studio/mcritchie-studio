@@ -49,6 +49,15 @@
 #     certify; both orders are safe. See lib/cert_evidence.rb. )
 #   ( --post-deploy-cmd: the release pipeline runs it on the deployed app after
 #     boot — QA on `bin/release prepare`, prod on `ship`. Must be idempotent. )
+#   bin/task begin --title T [--repo APP] [same flags as create]
+#   bin/task begin <slug>                            # resume a partial begin
+#     ( the fast-lane SESSION-START wrapper: create + agent-worktree new +
+#       bind-task + move building + session-preflight in ONE command, printing
+#       the worktree path, port, and task URL. The slug is derived from the
+#       title CLIENT-side and passed explicitly, so rerunning the same begin —
+#       or `begin <slug>` — RESUMES after a partial failure instead of minting
+#       a duplicate task. Orchestration only: the claim gate, preflight, and
+#       every later gate keep their own semantics. bin/ship is the handoff twin. )
 #   bin/task update <slug> [same flags as create]   # merges into existing devops
 #   bin/task move <slug> <stage>                     # designed|building|submitted|reviewed|assembled|shipped|blocked|archived
 #     [--model M] [--tokens-in N] [--tokens-out N] [--cost D] [--actor A] [--dev-size S] [--steal]
@@ -125,6 +134,9 @@ require_relative "../lib/feature_marker"
 require_relative "lib/task_board"
 require_relative "lib/session_identity"
 require_relative "lib/projects_root"
+require_relative "lib/bin_helpers"
+require_relative "lib/cert_root_guard"
+require_relative "lib/fast_lane"
 
 BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
 SHINY_EMOJI = "✨"
@@ -935,6 +947,30 @@ def verify_merged_persisted!(slug, expected)
   exit 1
 end
 
+# --- Fast lane: `begin` ------------------------------------------------------
+# The task record for `begin`'s resume decision: the data on 2xx, nil on the
+# board's POSITIVE "task not found" (create it), die on everything else — a
+# failed read must never be read as "no such task" (that is the same contract
+# task_not_found_response? guards for the worktree reclaim path).
+def fetch_task_for_begin(slug)
+  res = TaskBoard.request(:get, "/api/v1/tasks/#{slug}", base_url: BASE_URL, token: token)
+  parsed = TaskBoard.parse_body(res)
+  return parsed["data"] if res.code.to_i.between?(200, 299)
+  return nil if task_not_found_response?(res, parsed)
+
+  die!("GET /api/v1/tasks/#{slug} -> #{res.code}: #{parsed["error"] || res.body}")
+end
+
+# One begin step that shells a tool: narrate, run, die with a RESUME hint on
+# failure — rerunning `bin/task begin <slug>` continues from the failed step.
+def begin_step!(label, slug, *cmd, chdir: nil)
+  warn!("begin #{label} — #{cmd.join(" ")}#{chdir ? " (from #{chdir})" : ""}")
+  opts = chdir ? { chdir: chdir } : {}
+  return if system(*cmd, **opts)
+
+  die!("#{label} failed — fix what it printed above, then re-run: bin/task begin #{slug}   (it resumes).")
+end
+
 cmd = ARGV.shift || "help"
 case cmd
 when "list"
@@ -1008,6 +1044,81 @@ when "create"
   seed_usage_baseline(task["slug"]) if task.is_a?(Hash) && task["slug"]
   write_feature_marker(task) unless no_claim
   print_task(task)
+when "begin"
+  # The fast-lane SESSION-START wrapper: create → worktree → bind → claim →
+  # preflight, one command, idempotent at every seam. Orchestration ONLY — the
+  # create API's naming discipline, the worktree allocator, the build-claim
+  # gate (an explicit `move building`, so a foreign live claim still refuses),
+  # and session-preflight all keep their own semantics; `begin` sequences them
+  # and skips whatever a previous partial run already landed. bin/ship is the
+  # handoff twin at the other end of the build.
+  usage = "usage: bin/task begin --title \"Three To Five Words\" [--repo APP] [create flags]  |  bin/task begin <slug>"
+  positionals, scalars, lists, top = parse_flags(ARGV, context: "begin")
+  die!(usage) if positionals.size > 1
+  # The resume key: an explicit --slug, the positional slug of a prior begin, or
+  # the slug the board WOULD derive from the title (FastLane.derive_slug mirrors
+  # Task#generate_slug's parameterize) passed explicitly so client and server
+  # agree — rerunning the same begin finds its own task instead of a suffixed twin.
+  slug = [top["slug"], positionals.first, FastLane.derive_slug(top["title"])].find { |v| !v.to_s.strip.empty? }
+  die!(usage) if slug.to_s.empty?
+
+  task = fetch_task_for_begin(slug)
+  if task.nil?
+    die!("no task #{slug.inspect} to resume — pass --title to create one") unless top["title"]
+    scalars["kind"] = "feature" unless scalars.key?("kind")
+    devops = stamp_session(build_devops({}, scalars, lists))
+    body = top_body(top.merge("slug" => slug))
+    body["devops"] = devops unless devops.empty?
+    task = api(:post, "/api/v1/tasks", body)["data"]
+    seed_usage_baseline(task["slug"]) if task.is_a?(Hash) && task["slug"]
+    write_feature_marker(task)
+    warn!("begin 1/5 task — created #{slug} [designed]")
+  else
+    warn!("begin 1/5 task — #{slug} already exists [#{task["stage"]}]; resuming")
+  end
+
+  stage = task["stage"].to_s
+  unless %w[designed building].include?(stage)
+    die!("#{slug} is [#{stage}] — begin only starts a designed/building task. " \
+         "Pick a different title (or --slug) for new work; a #{stage} task is past the build seam.")
+  end
+
+  dv = task.dig("metadata", "devops") || {}
+  app = [(lists["repositories"].first if lists.key?("repositories")), Array(dv["repositories"]).first,
+         "mcritchie-studio"].find { |v| !v.to_s.strip.empty? }
+  worktree_slug = [dv["worktree_slug"], slug].find { |v| !v.to_s.strip.empty? }
+  worktree_bin = BinHelpers.bin_for("TASK_BEGIN_WORKTREE_BIN", "agent-worktree")
+  # agent-worktree `new` is idempotent (an existing desk is reused) and `bind-task`
+  # re-binds safely — `new` does NOT auto-bind, which is why begin welds them.
+  begin_step!("2/5 worktree", slug, worktree_bin, "new", app, worktree_slug)
+  begin_step!("3/5 bind", slug, worktree_bin, "bind-task", app, worktree_slug, slug)
+
+  if stage == "building"
+    warn!("begin 4/5 claim — already [building]; skipping the move")
+  else
+    # An explicit child `move building` so the claim lease, --dev-size stamp,
+    # usage-baseline seed, and read-back verify all ride the ONE existing path.
+    move_cmd = [File.expand_path(__FILE__), "move", slug, "building"]
+    move_cmd += ["--dev-size", top["dev_size"]] if top["dev_size"]
+    begin_step!("4/5 claim", slug, *move_cmd)
+  end
+
+  worktree_dir = CertRootGuard.worktree_hint(worktree_slug, ENV["TASK_BEGIN_PROJECTS_DIR"])
+  die!("worktree #{worktree_slug.inspect} not found on disk after allocation — check bin/agent-worktree output") if worktree_dir.nil?
+  preflight_bin = BinHelpers.bin_for("TASK_BEGIN_PREFLIGHT_BIN", "session-preflight")
+  begin_step!("5/5 preflight", slug, preflight_bin, slug, chdir: worktree_dir)
+
+  context = begin
+    JSON.parse(File.read(File.join(worktree_dir, ".agent-context.json")))
+  rescue StandardError
+    {}
+  end
+  puts "#{app} · #{slug} · #{BASE_URL}/tasks/#{slug}"
+  puts "worktree: #{worktree_dir}"
+  puts "port: #{context["app_port"]}" if context["app_port"]
+  puts "url: #{context["local_url"]}" if context["local_url"]
+  puts "task: #{BASE_URL}/tasks/#{slug}"
+  puts "next: build in the worktree, then hand off with: bin/ship #{slug}"
 when "update"
   usage = "usage: bin/task update <slug> [flags]"
   slug = positional!(ARGV.shift || die!(usage), usage)

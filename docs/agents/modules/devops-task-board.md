@@ -415,6 +415,40 @@ During handoff, the agent updates:
 - a `handoff` note on the task conversation summarizing what changed, what was
   verified, and what Avi should inspect first
 
+## Fast Lane: `bin/task begin` and `bin/ship`
+
+Two orchestration wrappers collapse the cycle's bookends into one command each.
+They change **no gate semantics** — every gate (the build claim,
+`bin/session-preflight`, `bin/fast-check`, `bin/dor-check`, the stage read-back
+verify) still runs and still owns its verdict; the wrappers only sequence the
+steps and skip the ones whose outcome is already durably recorded, so rerunning
+after a partial failure **resumes** instead of duplicating.
+
+Session start (create → `agent-worktree new` → `bind-task` → `move building` →
+`session-preflight`, printing the worktree path, port, and task URL):
+
+```bash
+bin/task begin --title "Three To Five Words" --repo <app> --shape <shape> \
+  --risk <tag> --accept "criterion" --test "[unit] ..."
+bin/task begin <task-slug>        # resume a partial begin
+```
+
+The slug is derived from the title client-side and passed explicitly, so the
+same `begin` rerun finds the task it created. Handoff (commit → `bin/fast-check`
+→ push → **non-draft** PR into `accepted` whose body leads with the task URL →
+record `pr_url` → `bin/dor-check` → `move submitted` → read-back verify):
+
+```bash
+bin/ship <task-slug>                     # commit message defaults to the task title
+bin/ship <task-slug> -m "Commit message"
+```
+
+Run `bin/ship` from the task worktree (elsewhere it re-roots at the worktree,
+loudly). It repairs an existing PR in place — `gh pr ready` for a draft, `gh pr
+edit --base accepted` for a mis-based one — and never duplicates it. The
+long-form commands remain the canonical path for anything the wrappers don't
+cover (multi-repo tasks, bespoke PR bodies, `--steal` claims).
+
 ## QA / Avi Duties
 
 Avi starts with the task board plus the local PR/worktree tools:
