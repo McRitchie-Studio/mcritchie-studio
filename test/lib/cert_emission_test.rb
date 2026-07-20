@@ -89,6 +89,30 @@ class CertEmissionTest < Minitest::Test
     end
   end
 
+  # ── [unit] missing_after_write — the read-back behind the "preserved" claim ──
+
+  def test_unit_missing_after_write_names_the_lines_the_board_lost
+    payload = JSON.generate("metadata" => { "devops" => { "checks_run" => ["[unit] kept"] } })
+    with_stub_bin("printf '%s' #{payload.inspect}") do |stub|
+      assert_equal ["[integration] lost"],
+                   CertEmission.missing_after_write(stub, "my-task", ["[unit] kept", "[integration] lost"])
+    end
+  end
+
+  def test_unit_missing_after_write_is_empty_when_everything_persisted
+    payload = JSON.generate("metadata" => { "devops" => { "checks_run" => ["[unit] a", "[integration] b"] } })
+    with_stub_bin("printf '%s' #{payload.inspect}") do |stub|
+      assert_equal [], CertEmission.missing_after_write(stub, "my-task", ["[unit] a"])
+    end
+  end
+
+  def test_unit_missing_after_write_is_nil_when_the_read_back_fails
+    with_stub_bin("exit 1") do |stub|
+      assert_nil CertEmission.missing_after_write(stub, "my-task", ["[unit] a"]),
+                 "an unreadable read-back is UNVERIFIABLE — distinct from a confirmed loss"
+    end
+  end
+
   private
 
   # A stub executable that appends its argv (one per line) to a log file.

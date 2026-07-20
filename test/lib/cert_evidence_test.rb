@@ -86,6 +86,46 @@ class CertEvidenceTest < Minitest::Test
     assert_equal [full_line], CertEvidence.preserve(prior: ["[unit] plan", full_line], incoming: [])
   end
 
+  # --- the reverse regression (2026-07-20, fast-check-preserves-checks): a CERT
+  # WRITER's pure-evidence write must not wipe the author's tier tags. bin/fast-check
+  # read the task's checks_run to merge, the read missed the builder's freshly
+  # recorded tier lines, and its update then carried ONLY the evidence line — and
+  # preserve let it supersede the whole author namespace with nothing, while the
+  # script's output claimed "tier tags preserved". The rule is now symmetric: a
+  # writer supersedes ONLY a namespace it supplies lines for, and the author
+  # namespace counts as a namespace. (An explicitly EMPTY incoming list keeps its
+  # documented meaning — a deliberate author-namespace clear — see below.)
+
+  def test_pure_evidence_fast_write_carries_author_lines
+    prior = ["[unit] bin/rails test test/models/task_test.rb",
+             "[integration] bin/rails test test/controllers"]
+
+    merged = CertEvidence.preserve(prior: prior, incoming: [fast_line])
+
+    assert_equal prior + [fast_line], merged,
+                 "a pure-evidence fast-cert write wiped the builder's tier tags"
+  end
+
+  def test_pure_evidence_full_write_carries_author_lines_and_unaddressed_lanes
+    prior = ["[unit] plan", "[full-suite-bypass] infra outage", fast_line(OLD_FP)]
+
+    merged = CertEvidence.preserve(prior: prior, incoming: [full_line, rubocop_line])
+
+    assert_includes merged, "[unit] plan", "tier tag wiped by a pure-evidence full-cert write"
+    assert_includes merged, "[full-suite-bypass] infra outage",
+                    "the bypass record is author-owned — a pure-evidence write addresses no author line"
+    assert_includes merged, fast_line(OLD_FP), "an unaddressed evidence lane is still carried"
+    assert_includes merged, full_line
+    assert_includes merged, rubocop_line
+  end
+
+  def test_pure_evidence_write_still_supersedes_its_own_lane
+    merged = CertEvidence.preserve(prior: ["[unit] plan", fast_line(OLD_FP)], incoming: [fast_line])
+
+    assert_equal ["[unit] plan", fast_line], merged,
+                 "carrying the author namespace must not stop a re-cert from replacing its own stale line"
+  end
+
   # --- the format contract (moved out of FullSuiteGate, must stay identical) ---
 
   def test_lane_of_reads_the_lane_from_an_evidence_line

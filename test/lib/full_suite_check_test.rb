@@ -104,7 +104,8 @@ class FullSuiteCheckTest < Minitest::Test
       # this they read as untracked dirt to the dirty-tree guard (cert_tree_guard.rb)
       # — test tooling, not uncommitted work. Committed with the baseline, so the
       # fixture yields a genuinely CLEAN tree.
-      File.write(File.join(dir, ".gitignore"), "stub.log\n*-stub\n")
+      # stub.log* also covers the TASK stub's read-back sentinel (stub.log.updated).
+      File.write(File.join(dir, ".gitignore"), "stub.log*\n*-stub\n")
       git.call("init -q")
       git.call("config user.email tester@example.com")
       git.call("config user.name tester")
@@ -721,12 +722,24 @@ class FullSuiteCheckTest < Minitest::Test
 
   # A stub board/gate CLI: appends "<MARKER>\t<argv…>" to STUB_LOG; `show` prints
   # TASK_SHOW_JSON (serving both the guard's read and the read-merge-write), exits 0.
+  # Minimally STATEFUL for the read-back verification: an `update` drops a sentinel
+  # beside STUB_LOG, after which `show` serves TASK_SHOW_JSON_AFTER_UPDATE when set
+  # (modelling a write the board lost) — same shape as fast_check_test's TASK stub.
   def write_cli_stub(dir, name, marker)
     stub = File.join(dir, name)
     File.write(stub, <<~RUBY)
       #!#{RbConfig.ruby}
       File.open(ENV.fetch("STUB_LOG"), "a") { |f| f.puts(["#{marker}", *ARGV].join("\\t")) }
-      puts ENV["TASK_SHOW_JSON"] if ARGV.first == "show" && ENV["TASK_SHOW_JSON"]
+      sentinel = ENV.fetch("STUB_LOG") + ".updated"
+      File.write(sentinel, "1") if ARGV.first == "update"
+      if ARGV.first == "show"
+        after = ENV["TASK_SHOW_JSON_AFTER_UPDATE"].to_s
+        if !after.empty? && File.exist?(sentinel)
+          puts after
+        elsif ENV["TASK_SHOW_JSON"]
+          puts ENV["TASK_SHOW_JSON"]
+        end
+      end
     RUBY
     FileUtils.chmod("+x", stub)
     stub
@@ -735,7 +748,7 @@ class FullSuiteCheckTest < Minitest::Test
   # Run the cert with an IMPLICIT root — cwd = `dir`, no FULL_SUITE_ROOT — and the
   # board/gate CLIs stubbed via the FULL_SUITE_*_BIN seams. stderr merges into
   # stdout so the refusal message is assertable. Returns [out, exitcode, log_lines].
-  def run_check_implicit_root(dir, args)
+  def run_check_implicit_root(dir, args, extra_env: {})
     log = File.join(dir, "stub.log")
     env = child_env(
       {
@@ -746,7 +759,7 @@ class FullSuiteCheckTest < Minitest::Test
         "FULL_SUITE_GATE_BIN" => write_cli_stub(dir, "gate-stub", "GATE"),
         "TASK_SHOW_JSON" => GUARD_JSON,
         "STUB_LOG" => log
-      }
+      }.merge(extra_env)
     )
     out = IO.popen(env, "#{BIN} #{args} 2>&1", chdir: dir, &:read)
     code = $?.exitstatus
@@ -774,6 +787,30 @@ class FullSuiteCheckTest < Minitest::Test
       assert_equal 0, code, "the task's own tree certifies from cwd with no override: #{out}"
       assert_match(/\[full-suite@/, out)
       assert(lines.any? { |l| l[0] == "TASK" && l[1] == "update" }, "evidence recorded: #{lines.inspect}")
+    end
+  end
+
+  # --- [integration] read-back: same property as bin/fast-check's recorder ---------
+  # The two certs share the recorder discipline (CertEmission): "preserved" is
+  # verified against the board after the write, and a write whose read-back lost
+  # pre-existing checks lines fails loudly, naming them for re-record.
+  def test_lost_preexisting_lines_after_the_write_fail_the_cert_loudly
+    with_repo do |dir|
+      assert system("git", "-C", dir, "checkout", "-qb", "feat/task-x", out: File::NULL, err: File::NULL)
+      with_tiers = JSON.generate(
+        "metadata" => { "devops" => {
+          "branch" => "feat/task-x", "worktree_slug" => "task-x",
+          "checks_run" => ["[unit] bin/rails test test/models"]
+        } }
+      )
+      after = JSON.generate("metadata" => { "devops" => { "checks_run" => [] } })
+      out, code, = run_check_implicit_root(dir, "task-x",
+                                           extra_env: { "TASK_SHOW_JSON" => with_tiers,
+                                                        "TASK_SHOW_JSON_AFTER_UPDATE" => after })
+      assert_equal 1, code, "a write whose read-back lost pre-existing checks lines must fail loudly: #{out}"
+      assert_match(/MISSING/, out)
+      assert_match(%r{\[unit\] bin/rails test test/models}, out, "the lost line is named for re-record")
+      refute_match(/tier tags preserved/, out)
     end
   end
 

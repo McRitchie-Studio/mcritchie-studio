@@ -340,7 +340,32 @@ unless system(TASK_BIN, "update", slug, *record_args)
   exit 1
 end
 
-warn "fast-check: all lanes green at #{fingerprint[0, 12]} in #{format('%.1fs', total)} — evidence recorded on " \
-     "#{slug} (tier tags preserved). dor-check accepts it provisionally once the PR is open (no CI wait at " \
-     "submit); review's gate-zero enforces the settled CI green."
+# "Preserved" is VERIFIED, never declared (regression 2026-07-20: this script
+# printed "tier tags preserved" over a write that had lost the builder's tier
+# lines): read the board back and check every pre-existing line survived. The
+# fresh evidence line's own write is covered by bin/task update's exit status.
+kept = final - [line]
+summary = "fast-check: all lanes green at #{fingerprint[0, 12]} in #{format('%.1fs', total)} — evidence " \
+          "recorded on #{slug}"
+followup = "dor-check accepts it provisionally once the PR is open (no CI wait at submit); review's " \
+           "gate-zero enforces the settled CI green."
+if kept.empty?
+  warn "#{summary} (no pre-existing checks lines to preserve). #{followup}"
+  exit 0
+end
+
+missing = CertEmission.missing_after_write(TASK_BIN, slug, kept)
+if missing.nil?
+  warn "#{summary}, but the read-back failed — UNVERIFIED that the #{kept.size} pre-existing checks line(s) " \
+       "survived. Verify: bin/task show #{slug} -v. #{followup}"
+elsif missing.any?
+  warn "fast-check: evidence recorded on #{slug}, but the read-back is MISSING #{missing.size} pre-existing " \
+       "checks line(s):"
+  missing.each { |lost| warn "  #{lost}" }
+  warn "fast-check: re-record them: bin/task update #{slug} " \
+       "#{missing.map { |lost| "--checks #{lost.inspect}" }.join(' ')}"
+  exit 1
+else
+  warn "#{summary} (read-back confirms all #{kept.size} pre-existing checks line(s) kept). #{followup}"
+end
 exit 0

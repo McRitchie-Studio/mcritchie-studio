@@ -29,12 +29,19 @@
 # author's lines ("tier tags preserved"); the author's --checks wiped the
 # machine's. This module makes that asymmetry symmetric.
 #
-# THE WRITE RULE (#preserve) — one sentence: a writer may only supersede an
-# evidence LANE it SUPPLIES evidence for. So:
+# THE WRITE RULE (#preserve) — one sentence: a writer may only supersede a
+# NAMESPACE it supplies lines for — each evidence LANE is a namespace, and the
+# author's lines (tier tags, bypasses, prose) are one namespace too. So:
 #   * an author `--checks` update (tier tags only, no `[lane@fp]` lines) can
 #     never drop a cert — every lane is carried over;
 #   * a cert writer that just ran a lane green stamps that lane and replaces its
-#     own prior line (no stale accumulation), leaving the other lanes intact.
+#     own prior line (no stale accumulation), leaving the other lanes intact;
+#   * a PURE-EVIDENCE write (only `[lane@fp]` lines — what the cert writers send
+#     when their own read of checks_run was stale or empty) can never drop the
+#     author's tier tags — the author namespace is carried over (reverse
+#     regression 2026-07-20: fast-check's read missed freshly recorded tier
+#     lines and its evidence write superseded the author namespace with nothing,
+#     while claiming "tier tags preserved").
 # Destroying a cert therefore REQUIRES writing a fingerprint-bound line for that
 # lane by hand — i.e. deliberately forging a certification, not fat-fingering an
 # ordinary `--checks` update. Ordering ("record --checks BEFORE you certify") is
@@ -104,15 +111,29 @@ module CertEvidence
   # THE WRITE RULE. `incoming` is the list the caller wants stored; `prior` is
   # what's stored now. Every evidence line whose lane the caller did NOT address
   # is carried over (appended, after the caller's lines — evidence reads last,
-  # the order the cert writers already stamp). Author lines in `prior` are NOT
-  # carried: --checks stays a REPLACE, scoped to the namespace the author owns.
+  # the order the cert writers already stamp).
+  #
+  # The AUTHOR namespace obeys the same rule (reverse regression, 2026-07-20 —
+  # fast-check-preserves-checks): a PURE-EVIDENCE write — every incoming line a
+  # `[lane@fp]` evidence line, which is what bin/fast-check / bin/full-suite-check
+  # send when their own read of checks_run came back stale or empty — supplies no
+  # author line, so it may not supersede the author namespace: the prior tier
+  # tags, bypass records, and prose are carried through, ahead of the evidence.
+  # An author write (any non-evidence line present) still REPLACES the author
+  # namespace wholesale — the documented `--checks` contract — and an explicitly
+  # EMPTY incoming list keeps its meaning as a deliberate author-namespace clear.
   def preserve(prior:, incoming:)
     incoming = Array(incoming).map(&:to_s)
+    prior = Array(prior).map(&:to_s)
     addressed = lanes_addressed(incoming)
-    carried = Array(prior).map(&:to_s).select do |line|
+    carried = prior.select do |line|
       lane = lane_of(line)
       lane && !addressed.include?(lane)
     end
+    if incoming.any? && incoming.all? { |line| lane_of(line) }
+      return prior.reject { |line| lane_of(line) } + incoming + carried
+    end
+
     incoming + carried
   end
 

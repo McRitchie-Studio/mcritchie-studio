@@ -422,5 +422,29 @@ unless system(TASK_BIN, "update", slug, *record_args)
   exit 1
 end
 
-warn "full-suite-check: both lanes green at #{fingerprint[0, 12]} — evidence recorded on #{slug} (tier tags preserved)."
+# "Preserved" is VERIFIED, never declared (regression 2026-07-20, shared with
+# bin/fast-check): read the board back and check every pre-existing line
+# survived the write. The fresh evidence lines' own write is covered by
+# bin/task update's exit status above.
+kept = final - passed_lines
+summary = "full-suite-check: both lanes green at #{fingerprint[0, 12]} — evidence recorded on #{slug}"
+if kept.empty?
+  warn "#{summary} (no pre-existing checks lines to preserve)."
+  exit 0
+end
+
+missing = CertEmission.missing_after_write(TASK_BIN, slug, kept)
+if missing.nil?
+  warn "#{summary}, but the read-back failed — UNVERIFIED that the #{kept.size} pre-existing checks line(s) " \
+       "survived. Verify: bin/task show #{slug} -v."
+elsif missing.any?
+  warn "full-suite-check: evidence recorded on #{slug}, but the read-back is MISSING #{missing.size} " \
+       "pre-existing checks line(s):"
+  missing.each { |lost| warn "  #{lost}" }
+  warn "full-suite-check: re-record them: bin/task update #{slug} " \
+       "#{missing.map { |lost| "--checks #{lost.inspect}" }.join(' ')}"
+  exit 1
+else
+  warn "#{summary} (read-back confirms all #{kept.size} pre-existing checks line(s) kept)."
+end
 exit 0

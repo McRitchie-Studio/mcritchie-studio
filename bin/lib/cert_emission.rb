@@ -58,4 +58,17 @@ module CertEmission
   rescue JSON::ParserError, SystemCallError
     nil
   end
+
+  # Read the task's checks_run BACK after an evidence write and return the lines
+  # from `expected` that did NOT persist — [] when every line landed, nil when
+  # the read-back itself failed (UNVERIFIABLE, distinct from a confirmed loss).
+  # The cert scripts use this so their "preserved" claim is about board state
+  # they have SEEN, never a declaration (the 2026-07-20 wipe printed "tier tags
+  # preserved" over a write that had lost the builder's tier lines).
+  def missing_after_write(task_bin, slug, expected)
+    persisted = fetch_checks(task_bin, slug)
+    return nil if persisted.nil?
+
+    Array(expected).map(&:to_s) - persisted.map(&:to_s)
+  end
 end

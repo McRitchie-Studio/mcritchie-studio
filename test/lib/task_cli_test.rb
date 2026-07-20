@@ -1599,6 +1599,29 @@ class TaskCliTest < Minitest::Test
     refute_includes checks, stale_full, "a re-cert must replace its own stale lane"
   end
 
+  # The reverse regression (2026-07-20, fast-check-preserves-checks): a cert
+  # writer whose OWN read of checks_run came back stale/empty sends a
+  # PURE-EVIDENCE --checks update. The CLI's read-merge (build_devops) reads the
+  # board's CURRENT list right before the PATCH, so it must carry the tier tags
+  # the writer's stale read missed — a write that supplies no author line may not
+  # supersede the author namespace.
+  def test_pure_evidence_update_carries_the_boards_tier_tags
+    fast = "[fast-cert@1512171634558ef1234567890abcdef123456789] fast cert green: 4 mapped"
+    requests, = run_task(
+      ["update", "demo-task", "--checks", fast],
+      stub_devops: { "kind" => "bug",
+                     "checks_run" => ["[unit] bin/rails test test/models",
+                                      "[integration] bin/rails test test/controllers"] }
+    )
+    patch = requests.find { |r| r[:method] == "PATCH" }
+    refute_nil patch
+    checks = JSON.parse(patch[:body]).dig("devops", "checks_run")
+    assert_includes checks, "[unit] bin/rails test test/models",
+                    "a pure-evidence cert write wiped the builder's tier tags"
+    assert_includes checks, "[integration] bin/rails test test/controllers"
+    assert_includes checks, fast
+  end
+
   def test_update_normalizes_dashed_approval_status
     requests, = run_task(["update", "demo-task", "--approval-status", "changes-requested"])
     patch = requests.find { |r| r[:method] == "PATCH" }

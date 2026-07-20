@@ -136,7 +136,8 @@ class FastCheckTest < Minitest::Test
       # this they read as untracked dirt to the dirty-tree guard (cert_tree_guard.rb)
       # — test tooling, not uncommitted work. Ignoring them keeps the fixture's dirt
       # HONEST: the only uncommitted file is the branch diff itself (widget.rb below).
-      write.call(".gitignore", "stub.log\n*-stub\n")
+      # stub.log* also covers the TASK stub's read-back sentinel (stub.log.updated).
+      write.call(".gitignore", "stub.log*\n*-stub\n")
       git.call("init -q")
       git.call("config user.email tester@example.com")
       git.call("config user.name tester")
@@ -150,14 +151,26 @@ class FastCheckTest < Minitest::Test
 
   # A stub CLI: appends "<MARKER>\t<argv...>" to STUB_LOG_<MARKER>; exits 1 when
   # FAIL_TOKEN is set and appears in its argv, else 0. For the TASK stub, `show`
-  # prints TASK_SHOW_JSON so the runner's read-merge-write can be exercised.
+  # prints TASK_SHOW_JSON so the runner's read-merge-write can be exercised. The
+  # stub is minimally STATEFUL for the read-back verification: an `update` drops
+  # a sentinel beside STUB_LOG, after which `show` serves TASK_SHOW_JSON_AFTER_UPDATE
+  # when set (modelling a write the board lost) and FAIL_SHOW_AFTER_UPDATE=1 fails
+  # the post-write read (modelling a read-back blip).
   def write_stub(dir, name, marker)
     stub = File.join(dir, name)
     File.write(stub, <<~RUBY)
       #!#{RbConfig.ruby}
       File.open(ENV.fetch("STUB_LOG"), "a") { |f| f.puts(["#{marker}", *ARGV].join("\\t")) }
-      if ARGV.first == "show" && ENV["TASK_SHOW_JSON"]
-        puts ENV["TASK_SHOW_JSON"]
+      sentinel = ENV.fetch("STUB_LOG") + ".updated"
+      File.write(sentinel, "1") if ARGV.first == "update"
+      if ARGV.first == "show"
+        exit 1 if ENV["FAIL_SHOW_AFTER_UPDATE"] == "1" && File.exist?(sentinel)
+        after = ENV["TASK_SHOW_JSON_AFTER_UPDATE"].to_s
+        if !after.empty? && File.exist?(sentinel)
+          puts after
+        elsif ENV["TASK_SHOW_JSON"]
+          puts ENV["TASK_SHOW_JSON"]
+        end
       end
       token = ENV["FAIL_TOKEN"].to_s
       exit(!token.empty? && ARGV.join(" ").include?(token) ? 1 : 0)
@@ -174,7 +187,7 @@ class FastCheckTest < Minitest::Test
   # WITH `dir` as its cwd instead — the root resolves from the cwd git toplevel,
   # exercising the task-root guard (which an explicit override bypasses). stderr
   # is merged into stdout there so the refusal message is assertable.
-  def run_check(dir, args: ["--print"], fail_token: "", extra_env: {}, implicit_root: false)
+  def run_check(dir, args: ["--print"], fail_token: "", extra_env: {}, implicit_root: false, merge_stderr: false)
     log = File.join(dir, "stub.log")
     lane = write_stub(dir, "lane-stub", "LANE")
     gate = write_stub(dir, "gate-stub", "GATE")
@@ -199,6 +212,8 @@ class FastCheckTest < Minitest::Test
       if implicit_root
         env.delete("FAST_CHECK_ROOT")
         IO.popen(env, "#{cmd} 2>&1", chdir: dir, &:read)
+      elsif merge_stderr
+        IO.popen(env, "#{cmd} 2>&1", &:read)
       else
         IO.popen(env, "#{cmd} 2>/dev/null", &:read)
       end
@@ -412,6 +427,57 @@ class FastCheckTest < Minitest::Test
       assert_includes checks, "[full-suite@fullfp] tests green", "full-cert evidence preserved"
       assert(checks.any? { |c| c =~ /\A\[fast-cert@[0-9a-f]{7,64}\]/ }, "fresh fast-cert line recorded")
       refute_includes checks.join("\n"), "[fast-cert@oldfp]", "prior fast-cert line replaced"
+    end
+  end
+
+  # --- [integration] read-back: "preserved" is VERIFIED, never declared -------------
+  # The 2026-07-20 wipe (fast-check-preserves-checks): the script printed "tier
+  # tags preserved" over a write whose result it never looked at. The claim is now
+  # backed by a post-write read of the board.
+
+  def test_lost_preexisting_lines_after_the_write_fail_the_cert_loudly
+    with_repo do |dir, _|
+      after = JSON.generate("metadata" => { "devops" => { "checks_run" => [] } })
+      out, code, = run_check(dir, args: ["task-x"], merge_stderr: true,
+                             extra_env: { "TASK_SHOW_JSON" => SHOW_JSON,
+                                          "TASK_SHOW_JSON_AFTER_UPDATE" => after })
+      assert_equal 1, code, "a write whose read-back lost pre-existing checks lines must fail loudly: #{out}"
+      assert_match(/MISSING/, out)
+      assert_match(%r{\[unit\] bin/rails test test/models/widget_test\.rb}, out,
+                   "the lost lines are named so the builder can re-record them")
+      refute_match(/tier tags preserved/, out, "no blanket claim over a write that lost lines")
+    end
+  end
+
+  def test_green_run_reports_read_back_verified_preservation
+    with_repo do |dir, _|
+      out, code, = run_check(dir, args: ["task-x"], merge_stderr: true,
+                             extra_env: { "TASK_SHOW_JSON" => SHOW_JSON })
+      assert_equal 0, code, out
+      assert_match(/read-back confirms all 2 pre-existing checks line/, out,
+                   "the preserved claim states what was verified, with a count")
+    end
+  end
+
+  def test_green_run_with_no_prior_checks_claims_no_preservation
+    with_repo do |dir, _|
+      empty = JSON.generate("metadata" => { "devops" => { "checks_run" => [] } })
+      out, code, = run_check(dir, args: ["task-x"], merge_stderr: true,
+                             extra_env: { "TASK_SHOW_JSON" => empty })
+      assert_equal 0, code, out
+      assert_match(/no pre-existing checks lines to preserve/, out)
+      refute_match(/tier tags preserved/, out, "never claim preservation when nothing pre-existed")
+    end
+  end
+
+  def test_unverifiable_read_back_reports_unverified_without_failing_the_cert
+    with_repo do |dir, _|
+      out, code, = run_check(dir, args: ["task-x"], merge_stderr: true,
+                             extra_env: { "TASK_SHOW_JSON" => SHOW_JSON,
+                                          "FAIL_SHOW_AFTER_UPDATE" => "1" })
+      assert_equal 0, code, "a read-back blip must not fail a recorded green cert: #{out}"
+      assert_match(/UNVERIFIED/, out)
+      refute_match(/tier tags preserved/, out, "an unverified write must not claim preservation")
     end
   end
 
