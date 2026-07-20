@@ -152,6 +152,10 @@ require_relative "../app/models/release/clean_check"
 require_relative "../app/models/release/smoke_seal"
 # ProdSmoke resolves the prod base URL for the seal smoke (bin/prod-smoke shares it).
 require_relative "../app/models/release/prod_smoke"
+# SealRetry is the seal's ONE caller-side boot-window retry (step 5c): first
+# failure waits ~30s, retries once; only a persisting failure seals red.
+# Caller-side so bin/prod-smoke stays single-shot. Rails-free → unit-tested.
+require_relative "../app/models/release/seal_retry"
 # GateRuby pins the LOCAL pre-QA / ship test gates to CI's ruby (mise 3.3.11) so a
 # gate host whose shell `ruby` is brew's ruby@3.3 doesn't diverge from CI — the
 # gate suite (and the bin/release / bin/dor-check subprocesses its meta-tests
@@ -3862,21 +3866,40 @@ def production_smoke_seal(app_groups, ship_sha, rel_slug)
   # And because the seal is non-blocking BY CONTRACT (see above), an
   # unresolvable/missing script DEGRADES to a red seal instead of raising —
   # Open3 raises SystemCallError on a bad path, it never returns ok=false.
+  # BOOT-WINDOW RETRY (rel-20260720-c06235): this seal runs seconds after the
+  # Actions deploy, and a smoke landing inside the dyno boot/restart window can
+  # fail against a HEALTHY prod (GET /tasks non-OK; 5/5 green on re-run). So on
+  # a first failure Release::SealRetry waits ~30s and retries ONCE — only a
+  # PERSISTING failure seals red, and a first-attempt pass never sleeps. The
+  # retry is CALLER-SIDE so bin/prod-smoke stays an honest single-shot tool;
+  # the seal's contract is unchanged — non-blocking, never auto-rolls-back.
   smoke_error = nil
-  begin
-    # Routed through the telemetry wrapper WITHOUT changing the seal's semantics:
-    # same chdir + capture, and run_test_scope RE-RAISES a raised SystemCallError
-    # (bad/missing script path) after emitting its FAILED action, so the rescue
-    # below still degrades it to a red seal (never ok=false from Open3 raising).
-    out, ok = run_test_scope("prod_smoke_seal", "bin/prod-smoke", APP,
-                             capture: true, chdir: repo_path(APP), repo: APP)
-  rescue SystemCallError => e
-    out, ok, smoke_error = "", false, e.message
+  result = Release::SealRetry.run(
+    on_retry: ->(delay) { say("  🔁 first smoke attempt failed — waiting #{delay}s for the dyno boot window, retrying once") }
+  ) do |_attempt|
+    smoke_error = nil # the FINAL attempt's error is the one the summary reports
+    begin
+      # Routed through the telemetry wrapper WITHOUT changing the seal's semantics:
+      # same chdir + capture, and run_test_scope RE-RAISES a raised SystemCallError
+      # (bad/missing script path) after emitting its FAILED action, so the rescue
+      # below still degrades it to a red seal (never ok=false from Open3 raising).
+      out, ok = run_test_scope("prod_smoke_seal", "bin/prod-smoke", APP,
+                               capture: true, chdir: repo_path(APP), repo: APP)
+    rescue SystemCallError => e
+      out, ok, smoke_error = "", false, e.message
+    end
+    print out unless out.to_s.empty? # each attempt's output prints as it lands
+    [out, ok]
   end
-  print out unless out.to_s.empty?
+  ok = result.ok
 
-  host    = PROD_URL
-  summary = ok ? "@qa-readonly green vs #{host}" : "@qa-readonly FAILED vs #{host} — #{smoke_error || 'see ship log'}"
+  host       = PROD_URL
+  retry_note = result.retried ? " (retried once after #{Release::SealRetry::DELAY_SECONDS}s boot-window wait)" : ""
+  summary = if ok
+              "@qa-readonly green vs #{host}#{retry_note}"
+            else
+              "@qa-readonly FAILED vs #{host}#{retry_note} — #{smoke_error || 'see ship log'}"
+            end
   smoke_status = ok ? "completed" : "failed"
   seal    = Release::SmokeSeal.from_result(passed: ok, summary: summary)
 
