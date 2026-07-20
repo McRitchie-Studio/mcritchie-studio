@@ -181,9 +181,31 @@ frozen SHA (`git push origin <frozen>:refs/heads/accepted`) — feature branches
 cut from `accepted`, so keeping it level with `main` stops it drifting stale
 behind production. This retires the manual `git push origin
 origin/main:refs/heads/accepted` chore. The advance is guarded (only where
-`origin/accepted` exists), fail-closed (no `--force`; a non-fast-forward means
-`accepted` diverged, so git refuses and the ship warns and moves on), and
-non-fatal — it never aborts a landing deploy.
+`origin/accepted` exists), fail-closed (no `--force`), and non-fatal — it never
+aborts a landing deploy.
+
+**A refused advance does NOT mean `accepted` diverged.** A non-fast-forward only
+says the push was not a fast-forward; the ship classifies WHY before advising,
+and prints one of three outcomes. Read the label — the right action differs:
+
+| Outcome | What it means | What you do |
+|---|---|---|
+| **AHEAD** | `accepted` already contains everything that shipped and carries more — a review pass merged into `accepted` while the ship ran (a supported, normal overlap) | **Nothing.** |
+| **DIVERGED** | `accepted` is genuinely missing shipped content | Reconcile with a **merge** (the ship prints the exact command) |
+| **UNDETERMINED** | the relation could not be read | Check before acting; do nothing blind |
+
+Two things follow. First, **never** reconcile with a bare `git push origin
+<sha>:refs/heads/accepted` — on an AHEAD `accepted` that DESTROYS the merged work
+(this happened on rel-20260720-1fc111 and is why the classification exists). The
+printed merge command is safe in every state. Second, run the printed command as
+given: it bases off `origin/accepted` via `checkout -B`, because the primary's
+LOCAL `accepted` is routinely tens of commits stale and merging onto it produces
+a push that is refused.
+
+Expect **DIVERGED to be the common outcome on any release carrying a gem.**
+Since #588, `bump_consumer_locks_for_qa` commits consumer lockfile bumps onto
+`release` during prepare, so the frozen tree legitimately differs from
+`accepted`'s. That is a true verdict, not a regression.
 
 **One thing still gates on a primary: a gem repo with modified TRACKED files.**
 `gem build` packages what is on disk, so those edits would be *published* — and a
