@@ -119,9 +119,13 @@ bin/release prepare --yes
    (producer-first, in two phases — a RubyGems push can never be re-pushed).
    Phase 1 **preflights EVERY swept gem before the first push**: a fail-closed
    fetch of `origin/release` (a stale ref must never drive an irreversible
-   decision), the `version_file` parses, the **stranded-work guard**
-   (`origin/release` ahead of the last published `v*` tag with an unbumped
-   `version_file` — the fix is a version bump through the gem's own PR), and a
+   decision), the `version_file` parses, the **stranded-work guard** —
+   `origin/release` ahead of the last published `v*` tag while the version did
+   NOT advance past that tag (compared with `Gem::Version` semantics, so
+   **equal, backward, and unparseable versions all block**; a backward version
+   would otherwise "skip as already live" and rewrite consumers DOWNWARD into a
+   production downgrade with every gate green). The fix is a version bump past
+   the tag through the gem's own PR. Plus a
    swept consuming app whose Gemfile declares the gem (a gem-only candidate,
    or a gem no swept consumer bundles, would assemble QA-green untested). ANY
    failure aborts loudly with every finding named and **zero gems published**.
@@ -234,7 +238,7 @@ must not reflexively re-run. Each abort names its own case and its own fix:
 
 | Abort | Fix FIRST | Then |
 |---|---|---|
-| **STRANDED GEM WORK** (gem `origin/release` ahead of its last `v*` tag, `version_file` unbumped) | Bump the gem's version through its own PR (the abort names the stranded commits), land it on `origin/release` | re-run `prepare`; nothing was published or deployed |
+| **STRANDED GEM WORK** (gem `origin/release` ahead of its last `v*` tag, version not advanced past it — unbumped, BACKWARD, or unparseable) | Bump the gem's version through its own PR PAST the tag the abort names (it also names the stranded commits). A **backward** version — the abort says `DOWNGRADE` — means a version conflict was resolved the wrong way on a merge into `release`; fix the version file, don't force it through | re-run `prepare`; nothing was published or deployed |
 | **Pre-QA gate red — a member REGRESSION** | `bin/release eject <task> --feedback "<failing evidence>"`, then revert its merge commit on `release` (the abort prints the guidance) — as the eject step above says | re-run `prepare`; the rest of the RC rides |
 | **Pre-QA gate red — ENV/toolchain** (unsatisfied bundle, Postgres down, Ruby divergence) | **Nothing to eject or revert.** Fix the environment exactly as the abort names it | re-run `prepare` |
 | **QA deploy / boot FAILED** | Fix the boot failure (the summary prints the `bin/qa-server deploy …` retry); eject the member if it is the cause | re-run `prepare` **once QA boots** |

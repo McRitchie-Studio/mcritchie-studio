@@ -411,13 +411,18 @@ Gems and apps are handled differently at both ends of the Deploy workflow:
   irreversible (RubyGems forbids re-pushing a number), so a QA bounce can
   orphan a published version — the fix bumps past it and the dead number sits
   on RubyGems, harmless.
-- **The stranded-work guard.** For each swept gem repo, if `origin/release` is
-  ahead of the last published `v*` tag while the `version_file` still declares
-  the tagged version, prepare **BLOCKS loudly**, naming the stranded commits
-  and the fix (bump the version through the gem's own PR, re-run prepare).
-  Without it the publish silently self-skips ("already live") and the commits
-  ride nowhere — the failure mode that once stranded 9 engine commits behind an
-  all-green pipeline.
+- **The stranded-work guard — an ORDERING invariant.** For each swept gem repo,
+  if `origin/release` is ahead of the last published `v*` tag while the version
+  did **not advance past that tag**, prepare **BLOCKS loudly**, naming the
+  stranded commits and the fix (bump the version past the tag through the gem's
+  own PR, re-run prepare). The comparison is `Gem::Version` semantics, not
+  string equality, so **three** vectors block together: an EQUAL version (the
+  publish silently self-skips "already live" and the commits ride nowhere — the
+  failure mode that once stranded 9 engine commits behind an all-green
+  pipeline), a BACKWARD version (worse: it skips as already-live AND rewrites
+  the consumer pin DOWNWARD, shipping a production downgrade with every gate
+  green), and an UNPARSEABLE version (it cannot prove it advanced, so it fails
+  to the blocking side).
 - **Consumer pins: lock always, constraint only on escape.** Consumers pin
   RubyGems versions (`gem "studio-engine", "~> 0.10"` — no git/branch refs).
   The prepare bump always runs `bundle lock --update <gem> --conservative`;

@@ -784,6 +784,31 @@ class ReleaseCliTest < Minitest::Test
     refute_includes out, "QA-DEPLOY"
   end
 
+  # [integration] THE PRODUCTION-DOWNGRADE vector, end to end (round-5 blocker).
+  # version_file declares 0.9.0 while the last published tag is v0.10.0 — the
+  # route in is a version.rb conflict resolved the wrong way on a merge into
+  # release. Before the ordering fix this walked the ENTIRE pipeline green:
+  # guard passed, publish "skipped" as already-live, and the consumer pin was
+  # rewritten DOWNWARD to `~> 0.9` and committed to origin/release. Now it must
+  # abort in phase 1: zero publishes, and — the assertion that matters most —
+  # NO downward pin rewrite ever reaches a commit.
+  def test_prepare_backward_gem_version_aborts_and_never_downgrades_a_consumer
+    out = run_cli(["--yes"], setup: gem_publish_stub(version: "0.9.0", live: [{ "number" => "0.9.0" }]),
+                  call: %{begin; prepare; puts("NO-ABORT"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+    assert_includes out, "ABORTED", "a backward version must BLOCK, never publish or skip"
+    assert_includes out, "DOWNGRADE", "the abort names the downgrade it prevented"
+    assert_includes out, "past the last published tag v0.10.0", "the abort names the REAL tag"
+    refute_includes out, "NO-ABORT"
+    refute_includes out, "already live on RubyGems — skip publish",
+                    "the misleading idempotent-skip line must NOT appear for a backward version"
+    refute_includes out, "GEM-PUSH", "zero gems publish on a backward version"
+    refute_includes out, %(GEMFILE-AFTER gem "studio-engine", "~> 0.9"),
+                    "the consumer pin must NEVER be rewritten downward"
+    refute_includes out, "LOCK-PUSH", "no downgrade commit reaches origin/release"
+    refute_includes out, "QA-DEPLOY"
+  end
+
   # The swept app's origin/release Gemfile does not declare the gem.
   EMPTY_CONSUMER_GEMFILE = <<~'RUBY'
     alias git_capture_before_empty_gemfile git_capture

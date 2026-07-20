@@ -3242,14 +3242,30 @@ end
 # self-healing re-run: already-live versions skip, an already-bumped lock
 # commits nothing.
 # PHASE 1 — VALIDATE EVERY GEM, PUBLISH NOTHING. A RubyGems push can never be
-# re-pushed, so every check that could abort the publish step runs for EVERY
-# swept gem BEFORE the first push: repo cloned, buildable primary (the artifact
-# builds from disk), FAIL-CLOSED fetch (a stale origin/release must never drive
-# an irreversible decision), version_file parses, stranded-work guard, and a
-# consuming app IN THIS SWEEP whose origin/release Gemfile declares the gem —
-# without one the published gem would assemble QA-green with QA never bundling
-# it (the gem-only bypass). ANY failure aborts with every finding named and
-# ZERO gems published. Returns the validated publish plan phase 2 executes.
+# re-pushed, so every check THIS PHASE OWNS runs for EVERY swept gem BEFORE the
+# first push: repo cloned, buildable primary (the artifact builds from disk),
+# FAIL-CLOSED fetch (a stale origin/release must never drive an irreversible
+# decision), version_file parses, stranded-work guard (ORDERING — the version
+# must be strictly newer than the last published tag; equal, backward, and
+# unparseable all block), and a consuming app IN THIS SWEEP whose
+# origin/release Gemfile declares the gem — without one the published gem would
+# assemble QA-green with QA never bundling it (the gem-only bypass). ANY
+# failure aborts with every finding named and ZERO gems published. Returns the
+# validated publish plan phase 2 executes.
+#
+# WHAT PHASE 1 DOES **NOT** COVER (be precise — an overclaim here is exactly the
+# kind of green badge on wrong behavior this PR exists to remove):
+#   * The gem's own `release_check`/`gem build` runs inside publish_gem, in
+#     PHASE 2 (see :1019-1028). So a gem whose BUILD is red is caught only when
+#     its turn to publish arrives — with an earlier gem already pushed. Phase 1
+#     shrinks the multi-gem blast radius to build failures alone; it does not
+#     eliminate it. Closing that fully means building every gem artifact up
+#     front (a real cost for the rare multi-gem sweep) — deliberately deferred,
+#     and NOT claimed here.
+#   * `already_live` is read from RubyGems in phase 1 and consumed in phase 2 —
+#     a TOCTOU on a network read. Worst case is a redundant push that RubyGems
+#     rejects and publish_gem aborts on, loudly. Fail-closed, so it is a wasted
+#     run, never a wrong publish.
 def validate_gems_for_qa(gem_groups, app_groups)
   return [] if gem_groups.empty?
 
@@ -3414,7 +3430,8 @@ def stranded_gem_failure(repo, path, tip, version)
 
   Release::ShipSequence.stranded_gem_message(
     repo, ahead_commits: commits, version: version,
-    version_file: gem_meta_for(repo)["version_file"]
+    version_file: gem_meta_for(repo)["version_file"],
+    tag_version: tag.delete_prefix("v")
   )
 end
 
