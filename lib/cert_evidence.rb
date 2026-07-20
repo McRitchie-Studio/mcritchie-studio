@@ -122,6 +122,20 @@ module CertEvidence
   # An author write (any non-evidence line present) still REPLACES the author
   # namespace wholesale — the documented `--checks` contract — and an explicitly
   # EMPTY incoming list keeps its meaning as a deliberate author-namespace clear.
+  #
+  # WHICH NAMESPACE A WRITE BELONGS TO IS INFERRED FROM CONTENT SHAPE, because the
+  # wire carries a list of strings and no intent flag (bin/task's `--checks` → the
+  # API → this rule). So the protection is exactly as good as the writers' output:
+  # a MIXED write (evidence PLUS one unparseable line) counts as an author write
+  # and replaces the author namespace with just that line. That is correct for a
+  # human `--checks` update carrying a hand-copied evidence line, and it is a
+  # FOOTGUN for a cert that ever emits a stray note beside its evidence.
+  # The coupling that makes it safe — every production evidence writer emits only
+  # #evidence_line output, which #lane_of always parses (it is prefix-keyed, so
+  # even a malformed fingerprint still classifies as evidence) — is ASSERTED in
+  # test/lib/cert_evidence_test.rb, not merely believed. Giving the write an
+  # explicit namespace would need an intent channel threaded through CLI → API →
+  # model; worth doing, but it is a contract change rather than this bug's fix.
   def preserve(prior:, incoming:)
     incoming = Array(incoming).map(&:to_s)
     prior = Array(prior).map(&:to_s)
@@ -135,28 +149,5 @@ module CertEvidence
     end
 
     incoming + carried
-  end
-
-  # Merge fresh evidence into an existing checks_run: replaces prior evidence for
-  # the lanes being stamped (so re-runs supersede rather than accumulate) and
-  # preserves tier tags, bypass records, and every other lane's evidence. `lanes`
-  # defaults to exactly the lanes `fresh_lines` carries, which is what keeps this
-  # identical to #preserve: you supersede what you supply, nothing else.
-  #
-  # NOT the cert writers' path anymore (2026-07-20). They used to compute a merged
-  # list here and SEND it, which made the write an AUTHOR write carrying a stale
-  # snapshot of lines they do not own — so a tier line recorded during the cert was
-  # replaced by content read before the lanes ran. The writers now send ONLY their
-  # own evidence and let #preserve merge against the board's CURRENT state at write
-  # time. This stays as the pure merge primitive (and the readable statement of the
-  # supersede rule) for a caller that needs to COMPUTE a merged list rather than
-  # store one; it has no production caller today.
-  def merge_evidence(existing, fresh_lines, lanes: nil)
-    lanes ||= lanes_addressed(fresh_lines)
-    existing = Array(existing).map(&:to_s)
-    return existing + Array(fresh_lines) if lanes.empty?
-
-    re = evidence_re(lanes)
-    existing.reject { |line| line.match?(re) } + Array(fresh_lines)
   end
 end

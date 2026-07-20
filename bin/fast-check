@@ -50,10 +50,18 @@
 #   mapped-tests    : bin/rails test <mapped files>      (skipped when none map)
 #   spine           : bin/rails test <spine entries>
 #   rubocop-changed : bin/rubocop <changed lintable files> (skipped when none)
-# All lanes green → ONE evidence line is merged into the task's checks_run
-# (bin/task update --checks REPLACES, so existing lines are read and preserved;
-# only a PRIOR fast-cert line is replaced — full-suite/rubocop evidence is kept):
+# All lanes green → ONE evidence line is recorded on the task's checks_run:
 #   [fast-cert@<fp>] <summary of what ran>
+# The write is PURE EVIDENCE — this cert sends ONLY the line it owns, never a
+# snapshot of the author's lines. The write funnel (bin/task's build_devops +
+# Task#preserve_cert_evidence, rule in lib/cert_evidence.rb) merges it against
+# the board's CURRENT checks_run at write time: tier tags, bypass records, and
+# the other lanes' evidence are carried forward, and only a PRIOR fast-cert line
+# is superseded. Resending a read-then-merged list is what this cert USED to do,
+# and it let content read before the lanes ran replace a tier line the builder
+# recorded during the run — see the write block near the end of this file.
+# The recorded lines are then READ BACK and verified, so "preserved" is a
+# checked claim rather than a declaration.
 # A red lane records nothing and exits non-zero.
 #
 # G1 gate-run markers mirror bin/full-suite-check's: OPEN the task's g1_cert

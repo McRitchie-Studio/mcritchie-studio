@@ -126,6 +126,36 @@ class CertEvidenceTest < Minitest::Test
                  "carrying the author namespace must not stop a re-cert from replacing its own stale line"
   end
 
+  # --- the coupling #preserve's safety RESTS on, asserted rather than believed ---
+  # A pure-evidence write is recognized by CONTENT SHAPE (there is no intent flag
+  # on the wire), so the author namespace is protected only while every evidence
+  # writer emits lines #lane_of can parse. Pin that: #evidence_line output must
+  # classify as evidence for EVERY lane, including the degenerate fingerprints a
+  # broken writer might produce — #lane_of is prefix-keyed precisely so a
+  # malformed fingerprint still counts as evidence instead of silently becoming
+  # an "author" line that licenses a wipe.
+  def test_every_evidence_line_this_module_builds_is_recognized_as_evidence
+    CertEvidence::EVIDENCE_LANES.each do |lane|
+      ["abc1234", "0" * 40, "", "not-hex"].each do |fingerprint|
+        line = CertEvidence.evidence_line(lane, fingerprint, "whatever ran")
+        assert_equal lane, CertEvidence.lane_of(line),
+                     "#{line.inspect} must classify as #{lane} evidence — a writer's line that fails to " \
+                     "parse would be treated as an AUTHOR line and could wipe the tier tags"
+      end
+    end
+  end
+
+  # The mixed-write footgun, pinned as KNOWN behavior so a future change has to
+  # face it deliberately: evidence + one unparseable line is an AUTHOR write.
+  def test_a_mixed_write_is_an_author_write_and_replaces_the_author_namespace
+    merged = CertEvidence.preserve(prior: ["[unit] plan"], incoming: [fast_line, "warning: junk"])
+
+    refute_includes merged, "[unit] plan",
+                    "documented: a write carrying ANY non-evidence line replaces the author namespace — " \
+                    "which is why a cert must emit evidence lines and nothing else"
+    assert_includes merged, fast_line
+  end
+
   # --- the format contract (moved out of FullSuiteGate, must stay identical) ---
 
   def test_lane_of_reads_the_lane_from_an_evidence_line
@@ -136,19 +166,4 @@ class CertEvidenceTest < Minitest::Test
     assert_nil CertEvidence.lane_of("[full-suite-bypass] infra outage"), "a bypass record is NOT evidence"
   end
 
-  def test_merge_evidence_supersedes_only_the_lanes_supplied
-    existing = ["[unit] plan", full_line(OLD_FP), rubocop_line(OLD_FP), fast_line(OLD_FP)]
-
-    merged = CertEvidence.merge_evidence(existing, [full_line, rubocop_line])
-
-    assert_equal ["[unit] plan", fast_line(OLD_FP), full_line, rubocop_line], merged
-  end
-
-  def test_merge_evidence_honors_an_explicit_lane_list
-    existing = ["[unit] plan", full_line, rubocop_line, fast_line(OLD_FP)]
-
-    merged = CertEvidence.merge_evidence(existing, [fast_line], lanes: [CertEvidence::FAST_LANE])
-
-    assert_equal ["[unit] plan", full_line, rubocop_line, fast_line], merged
-  end
 end

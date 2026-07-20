@@ -75,40 +75,6 @@ class FastCheckTest < Minitest::Test
     assert_equal "/tmp/whatever", env["FAST_CHECK_ROOT"], "overrides still pass through"
   end
 
-  # --- [unit] merge_evidence with lanes: the fast writer must not drop full evidence
-
-  def test_fast_lane_merge_replaces_only_prior_fast_cert_lines
-    existing = [
-      "[unit] bin/rails test test/foo_test.rb",
-      "[full-suite@fullfp] tests green",
-      "[rubocop@fullfp] lint clean",
-      "[fast-cert@oldfp] stale fast cert",
-      "[full-suite-bypass] tracked elsewhere"
-    ]
-    merged = FullSuiteGate.merge_evidence(existing, ["[fast-cert@newfp] fresh"],
-                                          lanes: [FullSuiteGate::FAST_LANE])
-
-    assert_includes merged, "[unit] bin/rails test test/foo_test.rb"
-    assert_includes merged, "[full-suite@fullfp] tests green", "full evidence must survive a fast write"
-    assert_includes merged, "[rubocop@fullfp] lint clean"
-    assert_includes merged, "[full-suite-bypass] tracked elsewhere"
-    assert_includes merged, "[fast-cert@newfp] fresh"
-    refute_includes merged, "[fast-cert@oldfp] stale fast cert"
-  end
-
-  def test_default_merge_supersedes_only_the_lanes_supplied
-    # The write rule (lib/cert_evidence.rb): a writer supersedes exactly the lanes
-    # it SUPPLIES evidence for. bin/full-suite-check stamps full-suite + rubocop,
-    # so those lanes are replaced and a prior fast-cert line is carried over — it
-    # used to be deleted, but the board now preserves any lane a write does not
-    # address (that is what stops `--checks` from wiping a cert), so deleting it
-    # here would only make the CLI disagree with what the board stores. The lingering
-    # line is inert: `ok` is graded off LANES (full-suite + rubocop) alone.
-    merged = FullSuiteGate.merge_evidence(["[fast-cert@oldfp] x"], ["[full-suite@newfp] y"])
-    assert_includes merged, "[fast-cert@oldfp] x"
-    assert_includes merged, "[full-suite@newfp] y"
-  end
-
   def test_evaluate_grades_the_fast_lane_alongside_the_full_lanes
     checks = ["[fast-cert@abc1234] fast green"]
     assert_equal :fresh, FullSuiteGate.lane_status(checks, FullSuiteGate::FAST_LANE, "abc1234")

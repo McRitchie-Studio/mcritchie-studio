@@ -74,18 +74,44 @@ class CertEmissionTest < Minitest::Test
   end
 
   def test_unit_fetch_checks_is_empty_array_when_the_task_has_none
-    with_stub_bin("printf '%s' '{}'") do |stub|
+    payload = JSON.generate("metadata" => { "devops" => { "kind" => "bug" } })
+    with_stub_bin("printf '%s' #{payload.inspect}") do |stub|
       assert_equal [], CertEmission.fetch_checks(stub, "my-task"),
-                   "[] = a task with none yet — distinct from nil (unreadable)"
+                   "[] = a task that HAS devops but no checks yet — distinct from nil (couldn't read)"
     end
   end
 
   def test_unit_fetch_checks_is_nil_on_failure_or_bad_json
     with_stub_bin("exit 1") do |stub|
-      assert_nil CertEmission.fetch_checks(stub, "my-task"), "a red bin/task show = don't risk wiping"
+      assert_nil CertEmission.fetch_checks(stub, "my-task"), "a red bin/task show = unverifiable, abort"
     end
     with_stub_bin("printf '%s' '{nope'") do |stub|
-      assert_nil CertEmission.fetch_checks(stub, "my-task"), "unparseable output = don't risk wiping"
+      assert_nil CertEmission.fetch_checks(stub, "my-task"), "unparseable output = unverifiable, abort"
+    end
+  end
+
+  # "I did not find the shape I was looking for" must not read as "there is
+  # nothing there". A record with no devops used to yield [], which both certs
+  # report as "no pre-existing checks lines to preserve" — a definite, reassuring
+  # verdict derived from absence, and the same degrade-open defect this gate
+  # exists to kill.
+  def test_unit_fetch_checks_is_nil_when_the_record_has_no_devops
+    with_stub_bin("printf '%s' '{}'") do |stub|
+      assert_nil CertEmission.fetch_checks(stub, "my-task"),
+                 "a record with no devops is UNREAD, not empty"
+    end
+    payload = JSON.generate("metadata" => {})
+    with_stub_bin("printf '%s' #{payload.inspect}") do |stub|
+      assert_nil CertEmission.fetch_checks(stub, "my-task"), "metadata without devops is UNREAD too"
+    end
+  end
+
+  def test_unit_missing_after_write_counts_duplicates_not_membership
+    payload = JSON.generate("metadata" => { "devops" => { "checks_run" => ["[unit] dupe"] } })
+    with_stub_bin("printf '%s' #{payload.inspect}") do |stub|
+      assert_equal ["[unit] dupe"],
+                   CertEmission.missing_after_write(stub, "my-task", ["[unit] dupe", "[unit] dupe"]),
+                   "one of two copies survived — that is still a line the builder recorded and lost"
     end
   end
 

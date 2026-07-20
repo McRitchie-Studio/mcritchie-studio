@@ -58,35 +58,6 @@ class FullSuiteCheckTest < Minitest::Test
     assert_equal "/tmp/whatever", env["FULL_SUITE_ROOT"], "overrides still pass through"
   end
 
-  # --- [unit] merge_evidence: the writer must PRESERVE tier tags ---------------
-  # bin/task update --checks REPLACES the whole list, so the runner merges. This
-  # pure function is the merge: keep tier tags + bypass, replace prior evidence.
-
-  def test_merge_evidence_preserves_tier_tags_and_replaces_prior_evidence
-    existing = [
-      "[unit] bin/rails test test/foo_test.rb",
-      "[integration] request->db",
-      "[full-suite@oldfp] stale tests",
-      "[rubocop@oldfp] stale lint",
-      "[full-suite-bypass] tracked elsewhere"
-    ]
-    fresh = ["[full-suite@newfp] tests green", "[rubocop@newfp] lint clean"]
-    merged = FullSuiteGate.merge_evidence(existing, fresh)
-
-    assert_includes merged, "[unit] bin/rails test test/foo_test.rb"
-    assert_includes merged, "[integration] request->db"
-    assert_includes merged, "[full-suite-bypass] tracked elsewhere"
-    assert_includes merged, "[full-suite@newfp] tests green"
-    assert_includes merged, "[rubocop@newfp] lint clean"
-    refute_includes merged, "[full-suite@oldfp] stale tests"
-    refute_includes merged, "[rubocop@oldfp] stale lint"
-  end
-
-  def test_merge_evidence_handles_empty_existing
-    merged = FullSuiteGate.merge_evidence([], ["[full-suite@fp] x", "[rubocop@fp] y"])
-    assert_equal ["[full-suite@fp] x", "[rubocop@fp] y"], merged
-  end
-
   def test_lane_status_grades_missing_stale_and_fresh_evidence
     checks = ["[full-suite@abc1234] tests green", "[rubocop@def5678] lint clean"]
 
