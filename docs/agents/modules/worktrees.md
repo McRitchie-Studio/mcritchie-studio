@@ -29,12 +29,12 @@ Run these in order. Each step names the command and the proof it worked.
    that repo — run the hub primary's copy pointed at the desk:
    `bin/session-preflight <task-slug> --root
    /Users/alex/projects/<repo>/.worktrees/<task-slug>`. Read the output as
-   signal, not a to-do list: the script measures drift against
-   `origin/release` (`default_base_ref` is still release-first), so an
-   accepted-based desk can see `ok=false` with accepted-branch files and PR
-   overlaps that are not yours. Resolve what touches YOUR task — blocked
-   feedback, stale terminology, overlap on files you will edit — before
-   editing.
+   signal, not a to-do list: drift, changed files, and PR overlap are measured
+   against the same ladder base the desk was cut from — `origin/accepted`,
+   falling back to `origin/release`, then `origin/main`, mirroring
+   `base_ref_for` in `bin/agent-worktree` — and the report names the ref it
+   compared against. Resolve what touches YOUR task — blocked feedback, stale
+   terminology, overlap on files you will edit — before editing.
 4. **Verify env and port** — `.env` exists in the worktree, and
    `bin/agent-worktree whereami` prints the app, task URL, port, database, and
    Redis DB. No port means the stack env is missing; re-run `new`.
