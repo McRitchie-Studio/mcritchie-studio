@@ -551,6 +551,24 @@ active_release.update_columns(created_at: 10.minutes.ago, updated_at: Time.curre
 active_release.stamp_stage!("testing", at: 9.minutes.ago)
 active_release.stamp_stage!("assembling", at: 8.minutes.ago)
 
+# /deployments/all pagination fixture: 26 ancient shipped releases push the table
+# past one page — with the 4 releases above, page 1 fills its 25 release rows + the
+# 2 pinned running-average rows, and page 2 holds the 5 oldest (rel-e2e-page-01
+# among them). Seeded HERE, not inside release_duration_dashboard.spec.js: that
+# spec used to boot `bin/rails runner` synchronously inside its own 30s test clock
+# (17-26s of it — the shard's top flake, run 29707557195). Dated 2020, far outside
+# the recent window, so they never enter Release::DurationCache's recent-3 average
+# (refreshed below) or the /deployments duration-card numbers other specs assert.
+pagination_base_time = Time.zone.parse("2020-01-01 12:00:00")
+26.times do |index|
+  page_release = Release.create!(slug: "rel-e2e-page-#{format('%02d', index + 1)}", branch: "release", state: "shipped")
+  page_release.update_columns( # rubocop:disable Rails/SkipsModelValidations
+    created_at: pagination_base_time + index.minutes,
+    shipped_at: pagination_base_time + index.minutes,
+    updated_at: pagination_base_time + index.minutes
+  )
+end
+
 # /intelligence demo: two SHIPPED tasks that each walked the full lifecycle with
 # priced/sized transitions and an actual_size at ship — so the dashboard's cycle
 # time, estimate-vs-actual, tokens, cost and model-mix charts all have signal in
