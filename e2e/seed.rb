@@ -497,7 +497,12 @@ shipped_release.update!(metadata: { "devops" => { "mascot" => "dragonite", "masc
   ["release-stack-last-c", "Auto-record deploy lane intents"]
 ].each { |slug, title| release_member!(shipped_release, slug: slug, title: title) }
 shipped_release.ship!
-stamp_tracker_stage_history!(shipped_release, shipped_at: Time.current)
+# Shipped 2 minutes ago, NOT Time.current: the seeded Last Release must sit
+# outside ANY fresh-deploy glow window (even the widened e2e one — playwright.
+# config.js's FRESH_DEPLOY_WINDOW_MS), so no spec ever loads a board where
+# Dragonite is still glowing. Only recency moves; every duration the tracker
+# and average assertions read is computed relative to this stamp.
+stamp_tracker_stage_history!(shipped_release, shipped_at: 2.minutes.ago)
 # A 🟢 post-ship production smoke seal on the Last Release, so the deployments e2e
 # can assert the seal badge renders (the @qa-readonly suite passed against prod).
 shipped_release.record_smoke_seal!(

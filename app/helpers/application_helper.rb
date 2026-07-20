@@ -345,6 +345,24 @@ module ApplicationHelper
     release_rainbow_glow_style(seed: seed, fresh_delay_ms: elapsed_ms)
   end
 
+  # The Last Release "fresh deploy" glow window, in milliseconds: how long a
+  # just-shipped release glows before settling into read-only history. ONE
+  # value drives every consumer — the server-rendered card state + glow phase
+  # (tasks/_last_release), the FX partial's CSS animation durations and JS
+  # cleanup timer (tasks/_deployments_live_fx), and the card's
+  # data-fresh-window-ms attribute, which the release-ship e2e spec reads to
+  # budget its waits. FRESH_DEPLOY_WINDOW_MS injects a wider window for the
+  # e2e server (playwright.config.js webServer env): the production 8s window
+  # raced that spec's own arrival waits under machine load — an expired glow is
+  # a state you cannot wait back into (task stabilize-release-ship-spec).
+  # Unparseable or non-positive values fall back to the default; a bad knob
+  # must never 500 every /deployments render.
+  FRESH_DEPLOY_WINDOW_DEFAULT_MS = 8_000
+  def fresh_deploy_window_ms
+    override = Integer(ENV["FRESH_DEPLOY_WINDOW_MS"].to_s, exception: false)
+    override&.positive? ? override : FRESH_DEPLOY_WINDOW_DEFAULT_MS
+  end
+
   def task_stage_count_classes(stage)
     case stage.to_s
     when "designed"  then "bg-blue-100 text-blue-800 border border-blue-200 dark:bg-blue-900/50 dark:text-blue-200 dark:border-blue-700/50"

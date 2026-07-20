@@ -37,7 +37,7 @@ gem "rack-attack"
 # Pure-Ruby Solana primitives (Borsh encode / PDA derivation / keypair / tx
 # build + partial-sign). Powers the admin signing console + durable-nonce
 # primitives. Same gem turf-monster uses.
-gem "solana-studio", "~> 0.4.6"
+gem "solana-studio", "~> 0.4.7"
 
 # Windows does not include zoneinfo files, so bundle the tzinfo-data gem
 gem "tzinfo-data", platforms: %i[ mswin mswin64 mingw x64_mingw jruby ]
@@ -87,4 +87,4 @@ gem "tailwindcss-rails", "~> 4.5"
 gem "sentry-ruby"
 gem "sentry-rails"
 
-gem "studio-engine", "~> 0.12" # 0.12 adds the model-page protocol (Studio::ModelPage); 0.11 widened Rails to < 8.2
+gem "studio-engine", "~> 0.13" # 0.13 ships engine component CSS + de-forked modal/user-nav primitives; 0.12 added the model-page protocol (Studio::ModelPage)
