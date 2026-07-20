@@ -49,15 +49,19 @@
 #     certify; both orders are safe. See lib/cert_evidence.rb. )
 #   ( --post-deploy-cmd: the release pipeline runs it on the deployed app after
 #     boot — QA on `bin/release prepare`, prod on `ship`. Must be idempotent. )
-#   bin/task begin --title T [--repo APP] [same flags as create]
-#   bin/task begin <slug>                            # resume a partial begin
+#   bin/task begin --title T [--repo APP] [--steal] [same flags as create]
+#   bin/task begin <slug> [--steal]                  # resume a partial begin
 #     ( the fast-lane SESSION-START wrapper: create + agent-worktree new +
 #       bind-task + move building + session-preflight in ONE command, printing
 #       the worktree path, port, and task URL. The slug is derived from the
 #       title CLIENT-side and passed explicitly, so rerunning the same begin —
 #       or `begin <slug>` — RESUMES after a partial failure instead of minting
 #       a duplicate task. Orchestration only: the claim gate, preflight, and
-#       every later gate keep their own semantics. bin/ship is the handoff twin. )
+#       every later gate keep their own semantics — a resume of an already-
+#       `building` task runs the SAME build-claim gate the move applies, so a
+#       task a DIFFERENT live instance holds refuses before any worktree step;
+#       --steal overrides it exactly as it does on `move`, and is forwarded to
+#       the child `move building` on the fresh path. bin/ship is the handoff twin. )
 #   bin/task update <slug> [same flags as create]   # merges into existing devops
 #   bin/task move <slug> <stage>                     # designed|building|submitted|reviewed|assembled|shipped|blocked|archived
 #     [--model M] [--tokens-in N] [--tokens-out N] [--cost D] [--actor A] [--dev-size S] [--steal]
@@ -266,7 +270,7 @@ end
 # WRITES a fresh parseable lease via ClaimLease.renewed — a reversible act that
 # heals the corrupted record — whereas reclaiming destroys a desk, which heals
 # nothing. Same disposition, opposite stakes.
-def enforce_claim_gate!(slug, devops, mover_session, steal:, task: nil)
+def enforce_claim_gate!(slug, devops, mover_session, steal:, task: nil, steal_hint: nil)
   claim = ClaimLease.from_devops(devops)
   decision = ClaimLease.evaluate(claim, session: mover_session, nonce: claim_nonce)
   return if decision != :held_by_other || steal
@@ -281,7 +285,9 @@ def enforce_claim_gate!(slug, devops, mover_session, steal:, task: nil)
   # --steal is made on evidence instead of on a green dot.
   warn!("     #{progress_line(task)}") if task
   warn!("   Another terminal looks active on this task. To take it over anyway, re-run with --steal:")
-  warn!("     bin/task move #{slug} building --steal")
+  # The hint names the caller's OWN command (`begin` passes its resume form) so
+  # the operator re-runs the path they were on, not a different one.
+  warn!("     #{steal_hint || "bin/task move #{slug} building --steal"}")
   exit 1
 end
 
@@ -1048,11 +1054,18 @@ when "begin"
   # The fast-lane SESSION-START wrapper: create → worktree → bind → claim →
   # preflight, one command, idempotent at every seam. Orchestration ONLY — the
   # create API's naming discipline, the worktree allocator, the build-claim
-  # gate (an explicit `move building`, so a foreign live claim still refuses),
-  # and session-preflight all keep their own semantics; `begin` sequences them
-  # and skips whatever a previous partial run already landed. bin/ship is the
-  # handoff twin at the other end of the build.
-  usage = "usage: bin/task begin --title \"Three To Five Words\" [--repo APP] [create flags]  |  bin/task begin <slug>"
+  # gate, and session-preflight all keep their own semantics; `begin` sequences
+  # them and skips whatever a previous partial run already landed. The claim
+  # gate holds on BOTH paths: a fresh/designed task rides the explicit child
+  # `move building` (which enforces it), and a resume of an already-`building`
+  # task runs the SAME gate inline below — a resume must never bypass a live
+  # foreign build claim. bin/ship is the handoff twin at the other end.
+  usage = "usage: bin/task begin --title \"Three To Five Words\" [--repo APP] [--steal] [create flags]  |  bin/task begin <slug> [--steal]"
+  # --steal: the house build-claim override, same meaning as on `move` — take
+  # over a task a DIFFERENT live instance holds. Honored by the resume gate
+  # below and forwarded to the child `move building`. Stripped before
+  # parse_flags (create's --no-claim pattern) so it never rides into the body.
+  steal = !ARGV.delete("--steal").nil?
   positionals, scalars, lists, top = parse_flags(ARGV, context: "begin")
   die!(usage) if positionals.size > 1
   # The resume key: an explicit --slug, the positional slug of a prior begin, or
@@ -1084,6 +1097,22 @@ when "begin"
   end
 
   dv = task.dig("metadata", "devops") || {}
+
+  # THE RESUME CLAIM GATE. An already-`building` task skips the child `move
+  # building` below — which is where the build-claim gate lives — so a bare
+  # resume once continued a task ANOTHER live instance owned (the review-blocked
+  # build-ownership hole). Run the SAME gate here, and run it BEFORE the
+  # worktree steps so a foreign-held desk is refused before begin touches it:
+  # :held_by_other refuses loudly (holder + progress named) unless --steal;
+  # unclaimed / expired / corrupt stay fail-open exactly as the move's gate
+  # treats them (the 4/5 re-claim writes the fresh, healing lease). No session
+  # identity → no gate and no claim, mirroring `move`'s plain-shell degrade.
+  mover_session = session_identity.first
+  if stage == "building" && !mover_session.nil?
+    enforce_claim_gate!(slug, dv, mover_session, steal: steal, task: task,
+                        steal_hint: "bin/task begin #{slug} --steal")
+  end
+
   app = [(lists["repositories"].first if lists.key?("repositories")), Array(dv["repositories"]).first,
          "mcritchie-studio"].find { |v| !v.to_s.strip.empty? }
   worktree_slug = [dv["worktree_slug"], slug].find { |v| !v.to_s.strip.empty? }
@@ -1094,12 +1123,30 @@ when "begin"
   begin_step!("3/5 bind", slug, worktree_bin, "bind-task", app, worktree_slug, slug)
 
   if stage == "building"
-    warn!("begin 4/5 claim — already [building]; skipping the move")
+    if mover_session.nil?
+      warn!("begin 4/5 claim — already [building]; no session identity, leaving the claim as-is")
+    else
+      # The gate above admitted this instance — now WRITE the claim so ownership
+      # durably lands on it: a --steal transfers it, an expired/corrupt lease is
+      # adopted (and healed), our own lease is renewed. Same read-merge-write as
+      # `move building` and `heartbeat` — a FRESH read so bind-task's writes are
+      # not clobbered — plus the marker + usage seed the move path stamps, so the
+      # statusline heartbeat renews the new holder's lease instead of letting a
+      # stolen claim silently lapse back after the TTL.
+      current = api(:get, "/api/v1/tasks/#{slug}")["data"] || {}
+      merged = stamp_session(current.dig("metadata", "devops") || {})
+      merged.merge!(ClaimLease.renewed(session: mover_session, nonce: claim_nonce))
+      api(:patch, "/api/v1/tasks/#{slug}", { "devops" => merged })
+      seed_usage_baseline(slug)
+      write_feature_marker(current.merge("metadata" => { "devops" => merged }))
+      warn!("begin 4/5 claim — already [building]; claim renewed for this instance")
+    end
   else
     # An explicit child `move building` so the claim lease, --dev-size stamp,
     # usage-baseline seed, and read-back verify all ride the ONE existing path.
     move_cmd = [File.expand_path(__FILE__), "move", slug, "building"]
     move_cmd += ["--dev-size", top["dev_size"]] if top["dev_size"]
+    move_cmd << "--steal" if steal
     begin_step!("4/5 claim", slug, *move_cmd)
   end
 

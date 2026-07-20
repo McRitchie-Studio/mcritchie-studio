@@ -434,7 +434,11 @@ bin/task begin <task-slug>        # resume a partial begin
 ```
 
 The slug is derived from the title client-side and passed explicitly, so the
-same `begin` rerun finds the task it created. Handoff (commit → `bin/fast-check`
+same `begin` rerun finds the task it created. A resume of an already-`building`
+task runs the **same build-claim gate** as `bin/task move building`, before any
+worktree step: a task a different live instance holds refuses loudly with the
+holder named; `bin/task begin <task-slug> --steal` takes it over, and on the
+fresh path `--steal` is forwarded to the child move. Handoff (commit → `bin/fast-check`
 → push → **non-draft** PR into `accepted` whose body leads with the task URL →
 record `pr_url` → `bin/dor-check` → `move submitted` → read-back verify):
 
@@ -447,7 +451,7 @@ Run `bin/ship` from the task worktree (elsewhere it re-roots at the worktree,
 loudly). It repairs an existing PR in place — `gh pr ready` for a draft, `gh pr
 edit --base accepted` for a mis-based one — and never duplicates it. The
 long-form commands remain the canonical path for anything the wrappers don't
-cover (multi-repo tasks, bespoke PR bodies, `--steal` claims).
+cover (multi-repo tasks, bespoke PR bodies).
 
 ## QA / Avi Duties
 
