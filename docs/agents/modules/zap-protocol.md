@@ -59,7 +59,7 @@ Where you commit depends on which seat you hold when you find the defect.
 | Seam | You are | Zap lands on | Recorded on (`bin/task note`) |
 |---|---|---|---|
 | **Builder** | Feature agent, mid-build | Your own `feat/<slug>` branch | Your own task |
-| **Reviewer** | PRIMARY reviewer, after both verdicts | The PR branch under review | The task under review (+ named in the primary verdict) |
+| **Reviewer** | PRIMARY reviewer, read done + light verdict in | The PR branch under review | The task under review (+ named in the primary verdict) |
 | **Conductor** | Sweep/release conductor | `accepted` only | The nearest member task of the open release |
 
 ### Builder — on your own feat branch
@@ -91,20 +91,30 @@ the `zap:` commit and the note and judges it with the rest of the diff.
 
 You are reviewing a PR and find a small defect — in the diff, or adjacent code
 the diff exposed. Instead of blocking the task back for a one-line fix, zap
-the PR branch. **The rule: only the PRIMARY reviewer applies the zap, and
-only after both lanes' verdicts are in.** During the read both lanes review
-one frozen head; a light reviewer who finds a zappable defect names it in the
-verdict and pushes nothing. The zap is then a bounded increment on top of the
-head both verdicts already cover — it can never invalidate what the sibling
-lane reviewed, because nothing moves the head while either lane is reading.
+the PR branch. **The rule: only the PRIMARY reviewer applies the zap — after
+the light verdict is in and the primary's own read is done.** The primary
+records its verdict after the zap, so the verdict can name both the head it
+reviewed and the zap SHA on top of it; that is the only coherent order.
+During the read both lanes review one frozen head; a light reviewer who finds
+a zappable defect names it in the verdict and pushes nothing. The zap is then
+a bounded increment on top of the head both reads already cover — it can
+never invalidate what the sibling lane reviewed, because nothing moves the
+head while either lane is reading.
 
 Apply it head-guarded, from a throwaway detached worktree — never by checking
-out the PR branch, which the builder's retained worktree still owns:
+out the PR branch, which the builder's retained worktree still owns.
+`REVIEWED` is **the SHA your read actually covered** — captured at read time
+(the head gate-zero's CI verdict ran against, the head the light verdict
+names) and carried to the apply. Never re-derive it from origin at apply
+time: the head right now is not the head you read.
 
 ```bash
 cd <repo-primary-checkout>
+REVIEWED=<sha-captured-at-read-time>   # the verdict-named reviewed head —
+                                       # NEVER $(git rev-parse origin/…) here
 git fetch origin <pr-branch>
-REVIEWED=$(git rev-parse origin/<pr-branch>)   # the head both verdicts reviewed
+[ "$(git rev-parse origin/<pr-branch>)" = "$REVIEWED" ] || exit 1
+                 # branch moved between read and apply — refuse; see below
 git worktree add ../zap-<task> --detach "$REVIEWED"
 cd ../zap-<task>
 # …fix, then:
@@ -114,12 +124,13 @@ git push origin HEAD:refs/heads/<pr-branch> \
 cd - && git worktree remove ../zap-<task>
 ```
 
-The lease pins the push to the reviewed head: if ANYONE moved the branch
-since the verdicts, the push refuses — nothing landed, and the zap lane
-closes for that issue. Do not re-apply against the new head; create a normal
-task (the escalation guard's move, with nothing to revert). The ledger is the
-same as every seam — a note on the task under review (task writes run from
-the hub):
+Two guards, one rule: the equality check refuses a branch that moved between
+the read and the apply; the lease refuses one that moves between the fetch
+and the push. Either refusal means the same thing — the head is no longer the
+one the reads cover, so **nothing lands and the zap lane closes for that
+issue**. Do not re-apply against the new head; create a normal task (the
+escalation guard's move, with nothing to revert). The ledger is the same as
+every seam — a note on the task under review (task writes run from the hub):
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio
@@ -127,11 +138,12 @@ bin/task note <task-under-review> \
   --comment "zap: <defect> — commit <sha>, <check run, or no-test: rationale>"
 ```
 
-The primary verdict ALSO names the zap SHA and the check run — that is the
-supervisor's merge condition, not the ledger: **the supervisor merges only
-when the PR head equals the zap SHA named in the primary verdict and CI is
-green on that head.** The zap push retriggers CI, so gate-zero's
-authoritative CI verdict covers the zapped head, never the pre-zap one.
+The primary verdict names the reviewed head, the zap SHA, and the check run —
+the SHA pair is the supervisor's merge condition, not the ledger: **the
+supervisor merges only when the PR head equals the zap SHA named in the
+primary verdict and CI is green on that head.** The zap push retriggers CI,
+so gate-zero's authoritative CI verdict covers the zapped head, never the
+pre-zap one.
 
 A reviewer zap never widens the review's scope: it must sit inside the
 eligibility bounds. If the fix the PR needs is bigger than a zap, that is
@@ -231,9 +243,10 @@ the process spiral it exists to prevent.
   cleanups, no feature slivers. A zap fixes a defect; it never improves code
   that was not broken.
 - **Not a review bypass.** Builder zaps ride the PR through normal review;
-  reviewer zaps land only after both verdicts and merge only with green CI on
-  the zapped head; conductor zaps ride the RC through G3 QA and G4's
-  frozen-SHA gate. The zap skips the *task ceremony*, never the *verification*.
+  reviewer zaps land only at the primary's verdict seam and merge only with
+  green CI on the zapped head; conductor zaps ride the RC through G3 QA and
+  G4's frozen-SHA gate. The zap skips the *task ceremony*, never the
+  *verification*.
 - **Not a pressure valve for big fixes.** A bounded fix that keeps almost
   qualifying is the classic loop-starter. When in doubt, task it.
 
