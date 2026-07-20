@@ -61,17 +61,32 @@ Where you commit depends on which seat you hold when you find the defect.
 | Seam | You are | Zap lands on | Recorded on (`bin/task note`) |
 |---|---|---|---|
 | **Builder** | Feature agent, mid-build | Your own `feat/<slug>` branch | Your own task |
-| **Reviewer** | PRIMARY reviewer, hand-coordinated review only | The PR branch under review | The task under review (+ named in the primary verdict) |
+| **Reviewer** | Primary/light reviewer, mid-review | Nowhere — NAME it in the verdict, apply nothing | The task under review, via the verdict finding |
 | **Conductor** | Sweep/release conductor | `accepted` only | The nearest member task of the open release |
+
+**Every seam that applies a zap prepares it on a throwaway desk** — a
+detached worktree (`git worktree add ../zap-<slug> --detach <base>`), never a
+checkout that holds other work. The payoff is the abort path: discarding the
+throwaway (`git worktree remove --force ../zap-<slug>`) removes the working
+copy, the index, and any zap-created files together — and cannot touch a desk
+where unrelated work lives.
 
 ### Builder — on your own feat branch
 
 You are building a task and notice a small defect in code your cycle already
-touches. Fix it on your feat branch as its own commit:
+touches. Prepare the zap on a throwaway desk off your feat head — your build
+desk may hold uncommitted work a cleanup must never touch — and land it as
+its own commit:
 
 ```bash
+git worktree add ../zap-<slug> --detach HEAD   # throwaway desk off your feat head
+cd ../zap-<slug>
+# …fix, then:
 git add -p
 git commit -m "zap: <what was broken, one line>"
+git push origin HEAD:refs/heads/feat/<slug>    # fast-forward; rejects loudly if stale
+cd - && git worktree remove ../zap-<slug>
+git pull --ff-only origin feat/<slug>          # bring your desk level
 ```
 
 Record it the way every seam records — a `bin/task note` on your own task
@@ -89,92 +104,55 @@ add one, remember **`--checks` REPLACES the whole list** (pass every line you
 want kept). The zap rides your PR through normal review; the reviewer sees
 the `zap:` commit and the note and judges it with the rest of the diff.
 
-### Reviewer — on the PR branch, hand-coordinated reviews only
+### Reviewer — name it, apply nothing
 
-You are reviewing a PR and find a small defect — in the diff, or adjacent code
-the diff exposed. Instead of blocking the task back for a one-line fix, zap
-the PR branch — **but only in a hand-coordinated review** (`pr-review-slow`,
-or an operator-conducted review), where one conductor sequences both lanes
-and the merge. **The automated `bin/pr-review` supervisor does not run this
-seam today**: it forbids force-pushes, merges on two merge-ready verdicts as
-they arrive, and validates neither the reviewed head, the zap SHA, nor
-post-zap CI. In that flow a zappable defect is NAMED in the verdict and
-pushed by no one — it lands afterward as a conductor zap on `accepted`, or
-rides a rework block if the fix must land first. Teaching `bin/pr-review` to
-run this seam (head + CI revalidation, a lease-push allowance) is a normal
-task, not a zap.
+You are reviewing a PR and find a small defect — in the diff, or adjacent
+code the diff exposed. **In v1 no reviewer pushes a zap — not to the PR
+branch, not anywhere.** Your move is to NAME the defect precisely in your
+verdict, so the fix can travel without you: the file and line, the one-line
+fix, and the bounds check (e.g. `within zap bounds: 3 lines, 1 file, no
+structure`).
 
-**The rule: only the PRIMARY reviewer applies the zap — after
-the light verdict is in and the primary's own read is done.** The primary
-records its verdict after the zap, so the verdict can name both the head it
-reviewed and the zap SHA on top of it; that is the only coherent order.
-During the read both lanes review one frozen head; a light reviewer who finds
-a zappable defect names it in the verdict and pushes nothing. The zap is then
-a bounded increment on top of the head both reads already cover — it can
-never invalidate what the sibling lane reviewed, because nothing moves the
-head while either lane is reading.
+What happens next is not the reviewer's to execute:
 
-Apply it head-guarded, from a throwaway detached worktree — never by checking
-out the PR branch, which the builder's retained worktree still owns.
-`REVIEWED` is **the SHA your read actually covered** — captured at read time
-(the head gate-zero's CI verdict ran against, the head the light verdict
-names) and carried to the apply. Never re-derive it from origin at apply
-time: the head right now is not the head you read.
+- On a merge-ready verdict, the named defect lands afterward as a
+  **conductor zap on `accepted`** — the seam below, applied by whoever holds
+  that seat, riding the current RC through G3 QA.
+- When the defect is the reason the PR cannot merge, it is not a zap from
+  the review seat at all: the supervisor routes it as rework feedback
+  (`bin/task block <task> --kind rework --feedback "…"`) and the builder
+  fixes it on the feat branch — where it may well be a builder zap.
 
-```bash
-cd <repo-primary-checkout>
-REVIEWED=<sha-captured-at-read-time>   # the verdict-named reviewed head —
-                                       # NEVER $(git rev-parse origin/…) here
-git fetch origin <pr-branch>
-[ "$(git rev-parse origin/<pr-branch>)" = "$REVIEWED" ] || exit 1
-                 # branch moved between read and apply — refuse; see below
-git worktree add ../zap-<task> --detach "$REVIEWED"
-cd ../zap-<task>
-# …fix, then:
-git add -p
-git commit -m "zap: <what was broken, one line>"
-git push origin HEAD:refs/heads/<pr-branch> \
-  --force-with-lease=refs/heads/<pr-branch>:"$REVIEWED"
-cd - && git worktree remove ../zap-<task>
-```
+#### Future: reviewer-applied zaps
 
-Two guards, one rule: the equality check refuses a branch that moved between
-the read and the apply; the lease refuses one that moves between the fetch
-and the push. Either refusal means the same thing — the head is no longer the
-one the reads cover, so **nothing lands and the zap lane closes for that
-issue**. Do not re-apply against the new head; create a normal task (the
-escalation guard's move, with nothing to revert). The ledger is the same as
-every seam — a note on the task under review (task writes run from the hub):
-
-```bash
-cd /Users/alex/projects/mcritchie-studio
-bin/task note <task-under-review> \
-  --comment "zap: <defect> — commit <sha>, <check run, or no-test: rationale>"
-```
-
-The primary verdict names the reviewed head, the zap SHA, and the check run —
-the SHA pair is the merge condition, not the ledger: **the review's conductor
-(never today's automated supervisor) merges only when the PR head equals the
-zap SHA named in the primary verdict and CI is green on that head.** The zap
-push retriggers CI, so the authoritative CI verdict covers the zapped head,
-never the pre-zap one.
-
-A reviewer zap never widens the review's scope: it must sit inside the
-eligibility bounds. If the fix the PR needs is bigger than a zap, that is
-what `bin/task block <task> --kind rework --feedback "…"` is for.
+A reviewer-applied zap — pushing the fix to the PR branch under review — is
+deliberately NOT in v1. Every current review lane, `pr-review` and
+`pr-review-slow` alike, runs the same automated `bin/pr-review` supervisor:
+its reviewer prompt forbids force-pushes, and its outcome resolver merges on
+two reports without validating a zapped head or its CI. Until `bin/pr-review`
+itself gains reviewed-head capture, post-zap head + CI revalidation, and a
+lease-push allowance, a reviewer-applied zap cannot be executed safely — and
+this doc does not promise it. That tooling is the groomed follow-up task
+https://mcritchie.studio/tasks/teach-pr-review-reviewer-zaps; when it lands,
+this seam comes back.
 
 ### Conductor — on `accepted` only
 
 You are sweeping or assembling a release and find a small defect in code
-already merged. Commit the zap directly on `accepted`, so the fix rides the
-**current** RC — no new task, no new PR, no extra release slot:
+already merged. Land the zap directly on `accepted`, so the fix rides the
+**current** RC — no new task, no new PR, no extra release slot. Prepare it on
+a throwaway desk, never on the primary checkout (the conductor's integration
+floor holds state a cleanup must never touch):
 
 ```bash
-git checkout accepted
+git fetch origin accepted
+git worktree add ../zap-<slug> --detach origin/accepted   # throwaway desk
+cd ../zap-<slug>
 # …fix, then:
 git add -p
 git commit -m "zap: <what was broken, one line>"
-git push origin accepted
+git push origin HEAD:refs/heads/accepted       # fast-forward; rejects loudly if stale
+cd - && git worktree remove ../zap-<slug>
 ```
 
 Two hard edges:
@@ -217,9 +195,8 @@ Every zap leaves the same two-part trail, whatever the seam:
    the explicit `no-test:` rationale).
 
 **The note is the ledger at every seam, builder included.** A `[zap]` line in
-`checks_run`, or the zap SHA named in a review verdict, is color on top —
-required where a gate reads it (the reviewer seam's merge condition), never a
-substitute for the note.
+`checks_run`, or a zappable defect named in a review verdict, is color on
+top — never a substitute for the note.
 
 The board CLI lives in `mcritchie-studio`: run every `bin/task` write from
 the hub (`cd /Users/alex/projects/mcritchie-studio && bin/task …`), whichever
@@ -240,12 +217,15 @@ zap, ever.** When any of these happens, the zap lane is closed for that issue:
   amend, or revert another zap.
 
 In every case the move is the same — **stop and escalate.** What you clean up
-first depends on whether a zap commit exists yet:
+first depends on whether the zap commit was pushed yet. Because every zap is
+prepared on a throwaway desk, the abort discards that desk and nothing else —
+no cleanup here may ever run on a checkout that holds other work:
 
 ```bash
-# No zap commit yet (the fix outgrew bounds mid-write, or a head-guard
-# refused the push): discard the working copy — nothing to revert.
-git restore .
+# Not pushed yet (the fix outgrew bounds mid-write, or the push was
+# rejected): discard the throwaway desk whole — working copy, index, and
+# zap-created files go together; no shared desk is touched.
+git worktree remove --force ../zap-<slug>
 
 # A zap commit landed (failed check, resurfaced defect, zap-on-zap candidate):
 git revert <zap-sha>            # in the repo the zap touched
@@ -268,10 +248,10 @@ the process spiral it exists to prevent.
   cleanups, no feature slivers. A zap fixes a defect; it never improves code
   that was not broken.
 - **Not a review bypass.** Builder zaps ride the PR through normal review;
-  reviewer zaps exist only in hand-coordinated reviews, land only at the
-  primary's verdict seam, and merge only with green CI on the zapped head;
-  conductor zaps ride the RC through G3 QA and G4's frozen-SHA gate. The zap
-  skips the *task ceremony*, never the *verification*.
+  conductor zaps ride the RC through G3 QA and G4's frozen-SHA gate; and in
+  v1 reviewers apply nothing — a defect named in a verdict lands through
+  those same reviewed lanes. The zap skips the *task ceremony*, never the
+  *verification*.
 - **Not a pressure valve for big fixes.** A bounded fix that keeps almost
   qualifying is the classic loop-starter. When in doubt, task it.
 
