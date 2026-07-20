@@ -995,13 +995,24 @@ module CertOrphanGuard
     [:ok, notices]
   end
 
-  def self.settle_backends(url, psql:, settle: false, grace: 2.0)
+  # `clock` and `sleeper` are the TEST SEAM for the waiting, and they exist because the
+  # property this loop must satisfy is "it did not sleep" / "it slept no longer than the
+  # grace" — which is a statement about THIS CODE, not about the wall clock. A test that
+  # measured `Time.now` deltas instead asserted the state of the whole MACHINE: it went
+  # red when a concurrent agent session loaded the box (a clean-DB fast path measured
+  # 1.32s against a `< 1s` bound and failed a cert that was in fact correct), and it
+  # would have gone green on a fast box even if this loop had slept half a second it was
+  # never supposed to sleep. Wrong in both directions. Injecting the pair lets a test
+  # drive VIRTUAL time and assert the sleeps themselves — deterministic under any load.
+  # Production passes neither argument and behaves exactly as before.
+  def self.settle_backends(url, psql:, settle: false, grace: 2.0,
+                           clock: -> { Time.now }, sleeper: ->(seconds) { sleep(seconds) })
     backends = foreign_backends(url, psql: psql)
     return backends unless settle && backends.any?
 
-    deadline = Time.now + grace
-    while backends.any? && Time.now < deadline
-      sleep 0.2
+    deadline = clock.call + grace
+    while backends.any? && clock.call < deadline
+      sleeper.call(0.2)
       backends = foreign_backends(url, psql: psql)
     end
     backends
