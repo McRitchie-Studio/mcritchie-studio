@@ -117,7 +117,9 @@ What happens next is not the reviewer's to execute:
 
 - On a merge-ready verdict, the named defect lands afterward as a
   **conductor zap on `accepted`** — the seam below, applied by whoever holds
-  that seat, riding the current RC through G3 QA.
+  that seat. It rides the current RC only if it lands before that repo's
+  `accepted → release` promote; after the promote it rides the next release
+  (the timing rule in that seam).
 - When the defect is the reason the PR cannot merge, it is not a zap from
   the review seat at all: the supervisor routes it as rework feedback
   (`bin/task block <task> --kind rework --feedback "…"`) and the builder
@@ -139,10 +141,11 @@ this seam comes back.
 ### Conductor — on `accepted` only
 
 You are sweeping or assembling a release and find a small defect in code
-already merged. Land the zap directly on `accepted`, so the fix rides the
-**current** RC — no new task, no new PR, no extra release slot. Prepare it on
-a throwaway desk, never on the primary checkout (the conductor's integration
-floor holds state a cleanup must never touch):
+already merged. Land the zap directly on `accepted` — no new task, no new PR,
+no extra release slot. **Which release it rides depends entirely on timing**
+(the rule below). Prepare it on a throwaway desk, never on the primary
+checkout (the conductor's integration floor holds state a cleanup must never
+touch):
 
 ```bash
 git fetch origin accepted
@@ -158,14 +161,33 @@ cd - && git worktree remove ../zap-<slug>
 Two hard edges:
 
 - **Never `release`, never `main`.** Complications resolve on `accepted` —
-  the only rung a conductor writes. If the defect must reach an RC already
-  swept onto `release`, land the zap on `accepted` and re-run the sweep:
-  `bin/release prepare` is self-healing and re-promotes ALL of `accepted`,
-  zap included. `main` moves by `bin/release ship` alone.
-- **Before the QA deploy.** Land the zap before Steffon's G3 QA deploy so QA
-  exercises it. After QA-green the RC's SHA is what G4's frozen-SHA gate
-  verifies — a zap after the freeze breaks the freeze. A defect found
-  post-freeze is a normal task, full stop.
+  the only rung a conductor writes. `release` moves by the sweep's promote
+  alone; `main` moves by `bin/release ship` alone.
+- **The promote is the cutoff — a zap reaches the CURRENT candidate only if
+  it lands before that repo's `accepted → release` promote.** Land it before
+  the sweep and it rides this RC through G3 QA and G4 unchanged. Land it
+  after, and it sits on `accepted` and rides the **NEXT** release — it does
+  not reach the in-flight one, and must never be described as fixing it.
+
+**Why re-running the sweep does not back-fill an in-flight RC.** The promote
+is candidate-driven: `bin/release prepare` promotes only repos whose member
+tasks are still stamped `merged: "accepted"` (`bin/release.rb`, the
+`promote_repos` selection). Once a sweep records membership it re-stamps
+those members `merged: "release"`, so a later re-run finds nothing to promote
+for that repo and the zap on `accepted` is skipped — the RC keeps its old
+SHA. The sweep self-heals INTERRUPTED promotes; it does not re-promote
+`accepted` drift into a candidate it already built.
+
+**If the defect must reach an already-promoted RC, it is not a zap.** Two
+implemented paths, both normal cycle work:
+
+- **Let the RC ride and fix forward** — file a normal task; the fix lands in
+  the next release. Correct whenever the defect is not release-blocking.
+- **Eject and re-prepare** — when the defect makes the RC unshippable,
+  `bin/release eject <member-task>` detaches the offending member (blocking
+  it for rework) and prints the git unwind; re-running `bin/release prepare`
+  then rebuilds the RC without it. Ejecting removes a member; it does not
+  inject a fix.
 
 Record it on the nearest member task of the open release — the task whose
 change surfaced or contains the defect; if none fits, the member task closest
@@ -181,7 +203,10 @@ bin/task note <nearest-member-task> \
 fixed three stale release-first comments in `bin/agent-worktree` directly on
 hub `accepted` — one commit, one file, 12 changed lines, inside every bound —
 comment-only with an explicit `no-test:` rationale, recorded with `bin/task
-note` on `worktree-fresh-start-sop`, the nearest existing record.
+note` on `worktree-fresh-start-sop`, the nearest existing record. It landed
+**before** the hub's `accepted → release` promote, which is exactly why it
+rode that candidate; the same commit made after the promote would have waited
+for the next release.
 
 ## Recording — one ledger, never a new task
 
@@ -221,22 +246,52 @@ first depends on whether the zap commit was pushed yet. Because every zap is
 prepared on a throwaway desk, the abort discards that desk and nothing else —
 no cleanup here may ever run on a checkout that holds other work:
 
+**Not pushed yet** (the fix outgrew bounds mid-write, or the push was
+rejected) — discard the throwaway desk whole; working copy, index, and
+zap-created files go together, and no shared desk is touched:
+
 ```bash
-# Not pushed yet (the fix outgrew bounds mid-write, or the push was
-# rejected): discard the throwaway desk whole — working copy, index, and
-# zap-created files go together; no shared desk is touched.
 git worktree remove --force ../zap-<slug>
+```
 
-# A zap commit landed (failed check, resurfaced defect, zap-on-zap candidate):
-git revert <zap-sha>            # in the repo the zap touched
+**A zap commit landed** (failed check, resurfaced defect, zap-on-zap
+candidate) — the bad commit is on a REMOTE branch, so reverting locally is
+not enough. Roll it back on the branch it actually landed on: `feat/<slug>`
+for a builder zap, `accepted` for a conductor zap. Same throwaway-desk rule,
+because the revert is another commit:
 
-# Either way, escalate to a normal task (--no-claim: filing is not building —
-# leave your session's active-feature marker on the live lane):
+```bash
+ZAPPED=<feat/your-slug | accepted>       # the branch the zap landed on
+git fetch origin "$ZAPPED"
+git worktree add ../unzap-<slug> --detach origin/"$ZAPPED"
+cd ../unzap-<slug>
+git revert --no-edit <zap-sha>
+git push origin HEAD:refs/heads/"$ZAPPED"   # fast-forward; rejects if stale
+cd - && git worktree remove ../unzap-<slug>
+```
+
+Record the rollback on the same record that carries the zap — the ledger
+tracks the reversal, not just the attempt:
+
+```bash
+cd /Users/alex/projects/mcritchie-studio
+bin/task note <same-record-as-the-zap> \
+  --comment "zap reverted: <defect> — <zap-sha> reverted by <revert-sha> on <branch>; escalated to <new-task-slug>"
+```
+
+**Either way, escalate to a normal task** (`--no-claim`: filing is not
+building — leave your session's active-feature marker on the live lane):
+
+```bash
 cd /Users/alex/projects/mcritchie-studio
 bin/task create --title "<3-5 words>" --kind bug --shape <shape> \
   --repo <app> --accept "<criterion>" --no-claim \
   --agent-context "Escalated from zap <sha, or the aborted attempt>: <what it tried, why it was not enough>"
 ```
+
+A conductor zap reverted **after** its RC promoted is the timing rule again:
+the revert rides the next release, and the in-flight RC still carries the bad
+commit — eject or ship-and-fix-forward, per the conductor seam above.
 
 No second zap on the same issue. No zap on a zap. No "one more line and it'll
 hold." Chain depth is capped at one by rule, so a zap can never recurse into
