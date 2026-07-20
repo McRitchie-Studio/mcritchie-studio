@@ -180,17 +180,20 @@ Verdicts:
 - Two approvals, no blockers → **merge the feat PR into `accepted`, stamp the
   git-location, then move `reviewed`** (the accepted-ladder's first rung).
 
-  **Merge condition — the head must still be the head that was reviewed.** Before
-  merging, re-read the PR head and compare it to the SHA the two verdicts were
-  rendered against. They must be equal. A moved head means the approvals describe
-  code nobody reviewed, so **do not merge**: re-run the lanes against the new head.
-  This is not hypothetical — the builder seam of
+  **Merge condition — the head must still be the head you spawned the lanes on.**
+  Record the PR head when you spawn the lanes, and re-read it before merging; they
+  must be equal. Anchor to the spawn-time head, not to "what the reviewers read" —
+  nothing in the scout-report schema records a reviewed SHA, and a comparison with
+  no left-hand side reads as satisfied by default. A moved head means the approvals
+  describe code nobody reviewed **and** the pre-spawn CI verdict was rendered on a
+  different SHA, so **do not merge**: re-run the lanes (which re-checks CI) against
+  the new head. This is not hypothetical — the builder seam of
   [`../../../modules/zap-protocol.md`](../../../modules/zap-protocol.md) invites a
   builder to fast-forward a `zap:` commit onto their own `feat/<slug>` branch
   mid-cycle, which can land while both lanes are reading.
 
   ```bash
-  gh pr view <feat-pr> --json headRefOid --jq .headRefOid   # must equal the reviewed SHA
+  gh pr view <feat-pr> --json headRefOid --jq .headRefOid   # at spawn AND before merge — must match
   ```
 
   The supervisor then merges in ONE step — the order is load-bearing:
@@ -202,18 +205,19 @@ Verdicts:
   bin/task note <task> --handoff "Avi review approved; merged into accepted; ready for Steffon's qa-release sweep." --agent avi
   ```
 
-  If a reviewer NAMED a zappable defect in a verdict, the fix does not land here —
-  reviewers apply nothing. Land it as a conductor zap on `accepted` after the merge,
-  within the bounds and recording rules in
-  [`../../../modules/zap-protocol.md`](../../../modules/zap-protocol.md).
-
   Order matters: merge → stamp → move, so the task is `reviewed` **iff** its code
   is on `accepted` (invariant: `reviewed` ⟺ code-on-`accepted`). If the `gh pr
   merge` FAILS, leave the task `submitted` and UNSTAMPED (never move to
   `reviewed`) — resolve the conflict/checks on GitHub, then re-review. A mis-based
   feat PR (base ≠ `accepted`) self-heals: retarget it to `accepted`, then merge.
-  (The `bin/pr-review` supervisor runs this whole sequence for you; the commands
-  above are what it executes.)
+  (The `bin/pr-review` supervisor runs the merge → stamp → move sequence for you;
+  the merge condition above is **not** automated — the script has no head-SHA
+  logic, so the supervisor checks it by hand.)
+
+  If a reviewer NAMED a zappable defect in a verdict, the fix does not land here —
+  reviewers apply nothing. It lands afterward as a conductor zap on `accepted`,
+  applied by whoever holds that seat, within the bounds, timing, and recording
+  rules in [`../../../modules/zap-protocol.md`](../../../modules/zap-protocol.md).
 
 - Request changes, missing metadata, red CI, merge risk, or acceptance mismatch:
 
