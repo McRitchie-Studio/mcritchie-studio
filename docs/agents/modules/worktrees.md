@@ -9,29 +9,46 @@ with an allocated port.
 Run these in order. Each step names the command and the proof it worked.
 
 1. **Create the desk** — `bin/agent-worktree new <app> <task-slug>` from the
-   mcritchie-studio primary. It cuts `feat/<task-slug>` from the base ref
-   (`origin/accepted`), copies the primary `.env`, writes `.env.agent-stack`
-   (allocated port, isolated dev DB, Redis DB, `LOCAL_EMAIL_CAPTURE=1`),
-   provisions the isolated test DB, and builds `app/assets/builds/tailwind.css`.
+   mcritchie-studio primary. It cuts `feat/<task-slug>` from the base ref —
+   `origin/accepted` when the repo has one, falling back to `origin/release`,
+   then `origin/main` (`base_ref_for`) — copies the primary `.env`, writes
+   `.env.agent-stack` (allocated port, isolated dev DB, Redis DB,
+   `LOCAL_EMAIL_CAPTURE=1`), provisions the isolated test DB, and builds
+   `app/assets/builds/tailwind.css`.
 2. **Bind the task immediately** — `bin/agent-worktree bind-task <app>
    <task-slug> <task-record-slug-or-url>`. `new` does NOT auto-bind. Unbound,
    the session has no task URL (terminal context, PR body) and the desk sits
    outside the live-claim guard — the exact window a cleanup sweep once
    destroyed.
-3. **Preflight from the worktree** — `cd .worktrees/<task-slug> &&
-   bin/session-preflight <task-slug>`, using the worktree's own copy: the
-   script roots at its own file location, so the primary's copy inspects the
-   primary checkout instead. Fix everything it flags before editing.
+3. **Preflight the desk** — `bin/session-preflight` ships ONLY in
+   mcritchie-studio. For a hub desk, run the worktree's own copy from inside
+   it (`cd /Users/alex/projects/mcritchie-studio/.worktrees/<task-slug> &&
+   bin/session-preflight <task-slug>`): the script roots at its own file
+   location, so the primary's copy inspects the primary checkout instead. For
+   a satellite desk (Turf Monster, Rolio, …), the script does not exist in
+   that repo — run the hub primary's copy pointed at the desk:
+   `bin/session-preflight <task-slug> --root
+   /Users/alex/projects/<repo>/.worktrees/<task-slug>`. Read the output as
+   signal, not a to-do list: the script measures drift against
+   `origin/release` (`default_base_ref` is still release-first), so an
+   accepted-based desk can see `ok=false` with accepted-branch files and PR
+   overlaps that are not yours. Resolve what touches YOUR task — blocked
+   feedback, stale terminology, overlap on files you will edit — before
+   editing.
 4. **Verify env and port** — `.env` exists in the worktree, and
    `bin/agent-worktree whereami` prints the app, task URL, port, database, and
    Redis DB. No port means the stack env is missing; re-run `new`.
 5. **Verify assets and test DB** — `new` runs `bin/rails db:test:prepare
-   test:prepare` best-effort; a printed warning means it failed. Confirm
-   `app/assets/builds/tailwind.css` exists: the directory is gitignored, and
-   `bin/rails test <file>` skips the asset build, so a missing `tailwind.css`
-   is the classic first-test failure (`The asset "tailwind.css" is not present
-   in the asset pipeline`). Recovery: `bin/rails db:test:prepare test:prepare`
-   in the worktree.
+   test:prepare` under `RAILS_ENV=test` best-effort; a printed warning means
+   it failed. Confirm `app/assets/builds/tailwind.css` exists: the directory
+   is gitignored, and `bin/rails test <file>` skips the asset build, so a
+   missing `tailwind.css` is the classic first-test failure (`The asset
+   "tailwind.css" is not present in the asset pipeline`). Recovery:
+   `RAILS_ENV=test bin/rails db:test:prepare test:prepare` in the worktree.
+   `RAILS_ENV=test` is load-bearing: dotenv loads `.env.test.local` (which
+   pins `TEST_DATABASE_URL` at the isolated test DB) only in the test env —
+   without it the test section resolves to the SHARED `<app>_test` database
+   and the command prepares the wrong one.
 6. **Boot before any live preview** — `bin/agent-worktree up <app>
    <task-slug>`. It runs `bin/rails db:prepare` first (a hand-started `rails
    server` without it 500s with `NoDatabaseError`), boots the stack in the
@@ -43,10 +60,18 @@ Run these in order. Each step names the command and the proof it worked.
 8. **Know your data** — the stack DB (`<app>_development_<task-slug>`) is NOT
    the base dev DB. It starts from `db:prepare` (schema + seeds), not from the
    primary's data. Never assume shared records; seed what the demo needs.
-9. **Run tests the worktree way** — `bin/agent-worktree test <app> <task-slug>`
-   or a plain `bin/rails test`. Worktree tests run single-process
-   (`PARALLEL_WORKERS=1`) BY DESIGN: parallel workers deadlock cloning a cold
-   test DB. Do not source `.env.agent-stack` before tests.
+9. **Run tests through the wrapper** — `bin/agent-worktree test <app>
+   <task-slug>` is the canonical path in EVERY repo: it re-runs the test-env
+   prep (isolated test DB + tailwind build), then runs the suite hermetically
+   — `RAILS_ENV=test`, the isolated test DB, and `PARALLEL_WORKERS=1`
+   injected by the wrapper (single-process BY DESIGN: parallel workers
+   deadlock cloning a cold test DB). A plain `bin/rails test` is an
+   acceptable substitute ONLY in the mcritchie-studio hub, whose
+   `test_helper` defaults local runs to one worker and whose `.env.test.local`
+   pins the isolated test DB. In Turf Monster and Rolio a plain run forks
+   `:number_of_processors` workers, and Turf's test config has no
+   `TEST_DATABASE_URL` seam — neither single-process nor isolated, so use the
+   wrapper. Do not source `.env.agent-stack` before tests.
 10. **Email lands locally** — `LOCAL_EMAIL_CAPTURE=1` is the stack default;
     magic links and all other mail appear at
     `http://localhost:<port>/_studio/local_emails`, never in a real inbox.
