@@ -270,6 +270,33 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_includes style, "--task-card-glow-color-b: #00c4ff"
   end
 
+  # The fresh-deploy glow window is ONE injectable value. Three hardcoded 8s
+  # spellings (_last_release, the FX partial's CSS + JS) turned the release-ship
+  # e2e into a wall-clock race under machine load (task
+  # stabilize-release-ship-spec); every consumer now renders from this helper,
+  # and FRESH_DEPLOY_WINDOW_MS widens it for the e2e server only
+  # (playwright.config.js webServer env).
+  test "[unit] fresh deploy window defaults to eight seconds" do
+    with_env("FRESH_DEPLOY_WINDOW_MS", nil) do
+      assert_equal 8_000, fresh_deploy_window_ms
+    end
+  end
+
+  test "[unit] fresh deploy window honors the e2e injection env var" do
+    with_env("FRESH_DEPLOY_WINDOW_MS", "20000") do
+      assert_equal 20_000, fresh_deploy_window_ms
+    end
+  end
+
+  test "[unit] fresh deploy window falls back on unparseable or non-positive overrides" do
+    # A bad knob must never 500 every /deployments render — fall back, don't raise.
+    ["bananas", "", "0", "-5"].each do |bad|
+      with_env("FRESH_DEPLOY_WINDOW_MS", bad) do
+        assert_equal 8_000, fresh_deploy_window_ms, "expected fallback for #{bad.inspect}"
+      end
+    end
+  end
+
   # Component-tier: render the board card's slug-row markup (mirrors
   # tasks/_board.html.erb) for a rolio-tagged task and assert the 📇 app badge
   # rides the slug. Guards the reported bug — rolio cards rendering glyph-less.
@@ -1112,7 +1139,7 @@ class ApplicationHelperTest < ActionView::TestCase
 
       render partial: "tasks/last_release", locals: { release: rel }
 
-      assert_select "#last-release[data-fresh-deploy='true'][data-shipped-at-ms]"
+      assert_select "#last-release[data-fresh-deploy='true'][data-shipped-at-ms][data-fresh-window-ms='8000']"
       card = css_select("#last-release").first
       assert_includes card["class"], "studio-border-glow"
       assert_includes card["class"], "release-fresh-glow"
@@ -1143,6 +1170,33 @@ class ApplicationHelperTest < ActionView::TestCase
       assert_not_includes card["class"], "release-fresh-glow"
       assert_not_includes card["class"], "lbfx-fresh-deploy"
       assert_nil card["style"]
+    end
+  end
+
+  # THE REGRESSION, at the lowest tier that shows it: +9s is stale under the
+  # production 8s window (the test above) — exactly what the release-ship e2e
+  # hit when its own arrival waits ate the window under load. Under the
+  # injected e2e window the SAME +9s render stays fresh, with the glow phase
+  # carrying the true elapsed time — that headroom is what un-races the spec.
+  test "[component] a widened injected window keeps a nine-second-old deploy fresh" do
+    rel = nil
+    travel_to Time.zone.local(2026, 7, 6, 12, 0, 0) do
+      rel = Release.open!
+      rel.ship!
+    end
+
+    with_env("FRESH_DEPLOY_WINDOW_MS", "20000") do
+      travel_to Time.zone.local(2026, 7, 6, 12, 0, 9) do
+        render partial: "tasks/last_release", locals: { release: rel.reload }
+
+        assert_select "#last-release[data-fresh-deploy='true'][data-fresh-window-ms='20000']"
+        card = css_select("#last-release").first
+        assert_includes card["class"], "studio-border-glow"
+        assert_includes card["class"], "release-fresh-glow"
+        assert_includes card["class"], "lbfx-fresh-deploy"
+        assert_not_includes card["class"], "opacity-75"
+        assert_includes card["style"], "--lbfx-fresh-delay: -9000ms"
+      end
     end
   end
 

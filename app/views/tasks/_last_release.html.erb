@@ -7,19 +7,24 @@
 <% rel = local_assigns.fetch(:release, nil) %>
 <% base_card_class = ["rounded-xl border border-subtle bg-surface p-4", local_assigns[:card_class]].compact.join(" ") %>
 <% if rel %>
-  <% fresh_deploy = rel.shipped_at.present? && rel.shipped_at >= 8.seconds.ago %>
-  <% fresh_deploy_elapsed_ms = fresh_deploy ? ((Time.current - rel.shipped_at) * 1000).clamp(0, 8_000).round : nil %>
+  <% fresh_window_ms = fresh_deploy_window_ms %>
+  <% fresh_deploy = rel.shipped_at.present? && rel.shipped_at >= (fresh_window_ms / 1000.0).seconds.ago %>
+  <% fresh_deploy_elapsed_ms = fresh_deploy ? ((Time.current - rel.shipped_at) * 1000).clamp(0, fresh_window_ms).round : nil %>
   <% fresh_glow_style = release_fresh_glow_style(rel, elapsed_ms: fresh_deploy_elapsed_ms) if fresh_deploy %>
   <% release_card_class = [
        base_card_class,
        ("opacity-75" unless fresh_deploy),
        ("studio-border-glow release-fresh-glow lbfx-fresh-deploy" if fresh_deploy)
      ].compact.join(" ") %>
-  <%# LiveBoardFx reads data-fresh-deploy + data-shipped-at-ms for the 8s freshness
-      glow. data-glow remains the fallback burst tint for non-fresh replacements. %>
+  <%# LiveBoardFx reads data-fresh-deploy + data-shipped-at-ms for the freshness
+      glow (fresh_deploy_window_ms long — 8s in production, injectable for e2e).
+      data-fresh-window-ms publishes that window so the release-ship e2e spec can
+      budget its waits from the page itself. data-glow remains the fallback burst
+      tint for non-fresh replacements. %>
   <div id="last-release"
        data-glow="<%= rel.mascot&.signature_color %>"
        data-fresh-deploy="<%= fresh_deploy ? "true" : "false" %>"
+       data-fresh-window-ms="<%= fresh_window_ms %>"
        data-shipped-at-ms="<%= (rel.shipped_at.to_f * 1000).round if rel.shipped_at.present? %>"
        <% if fresh_glow_style %>style="<%= fresh_glow_style %>"<% end %>
        class="<%= release_card_class %>">

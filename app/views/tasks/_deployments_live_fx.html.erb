@@ -10,6 +10,12 @@
     Event type is read from the Turbo Stream action itself (no buttons). Glow colour
     comes from the card's data-glow (its mascot's primary type colour). Only rendered
     on the deploy board (where the live socket is). %>
+<%# The fresh-deploy glow window (8s in production; FRESH_DEPLOY_WINDOW_MS injects
+    a wider one for the e2e server — see ApplicationHelper#fresh_deploy_window_ms).
+    The CSS durations below and the JS FRESH_DEPLOY_MS timer MUST move together:
+    a split window would fade the glow at one time and flip the state at another. %>
+<% fresh_window_ms = fresh_deploy_window_ms %>
+<% fresh_window_css = "#{(fresh_window_ms / 1000.0).round(3)}s" %>
 <style>
   .lbfx-pop { animation: lbfxPop .5s cubic-bezier(.2, 1.4, .3, 1); }
   @keyframes lbfxPop { 0% { transform: scale(.85); } 55% { transform: scale(1.05); } 100% { transform: scale(1); } }
@@ -37,16 +43,17 @@
            border-color: var(--task-card-glow-border-color); }
   }
 
-  /* Last Release deploy freshness: 4s of steady rainbow glow, then 4s fade.
-     JS sets a negative animation delay from data-shipped-at-ms so replacement
-     streams keep the same phase instead of restarting the glow. */
+  /* Last Release deploy freshness: steady rainbow glow for the window's first
+     half, then a fade through the second (the keyframes' 50% knee). JS sets a
+     negative animation delay from data-shipped-at-ms so replacement streams
+     keep the same phase instead of restarting the glow. */
   .lbfx-fresh-deploy {
-    animation: lbfxFreshDeployGlow 8s linear both;
+    animation: lbfxFreshDeployGlow <%= fresh_window_css %> linear both;
     animation-delay: var(--lbfx-fresh-delay, 0ms);
   }
   .release-fresh-glow.lbfx-fresh-deploy::before {
     animation-name: studioBorderGlowSteam, lbfxFreshDeployRingFade;
-    animation-duration: var(--studio-border-glow-duration, 20s), 8s;
+    animation-duration: var(--studio-border-glow-duration, 20s), <%= fresh_window_css %>;
     animation-timing-function: linear, linear;
     animation-iteration-count: infinite, 1;
     animation-fill-mode: none, both;
@@ -54,7 +61,7 @@
   }
   .release-fresh-glow.lbfx-fresh-deploy::after {
     animation-name: studioBorderGlowSteam, lbfxFreshDeployHaloFade;
-    animation-duration: var(--studio-border-glow-duration, 20s), 8s;
+    animation-duration: var(--studio-border-glow-duration, 20s), <%= fresh_window_css %>;
     animation-timing-function: linear, linear;
     animation-iteration-count: infinite, 1;
     animation-fill-mode: none, both;
@@ -93,11 +100,11 @@
   }
   @media (prefers-reduced-motion: reduce) {
     .release-fresh-glow.lbfx-fresh-deploy::before {
-      animation: lbfxFreshDeployRingFade 8s linear both;
+      animation: lbfxFreshDeployRingFade <%= fresh_window_css %> linear both;
       animation-delay: var(--lbfx-fresh-delay, 0ms);
     }
     .release-fresh-glow.lbfx-fresh-deploy::after {
-      animation: lbfxFreshDeployHaloFade 8s linear both;
+      animation: lbfxFreshDeployHaloFade <%= fresh_window_css %> linear both;
       animation-delay: var(--lbfx-fresh-delay, 0ms);
     }
   }
@@ -123,7 +130,7 @@
     const CONFETTI_COLORS = ["#00C4FF", "#34d399", "#f472b6", "#fbbf24", "#a78bfa", "#22d3ee", "#fb7185"];
     const REVIEWED_GUST_COLORS = ["#67e8f9", "#5eead4", "#fef3c7", "#ffffff", "#22d3ee"];
     const MIST_COLORS = ["rgba(226,232,240,.64)", "rgba(191,219,254,.5)", "rgba(203,213,225,.56)", "rgba(255,255,255,.52)"];
-    const FRESH_DEPLOY_MS = 8000;
+    const FRESH_DEPLOY_MS = <%= fresh_window_ms %>; // fresh_deploy_window_ms — same value as the CSS durations above
     const FRESH_DEPLOY_STYLE_PROPS = [
       "--lbfx-fresh-delay",
       "--studio-border-glow-offset",
@@ -140,8 +147,8 @@
 
     // The release modules above the board (replaced on a release state change) —
     // the dropzone observer never sees them, so they're flashed straight from the
-    // stream handler: an 8s fresh-deploy glow on the just-shipped Last Release, a
-    // subtle glow on the Next Release reset.
+    // stream handler: a FRESH_DEPLOY_MS fresh-deploy glow on the just-shipped
+    // Last Release, a subtle glow on the Next Release reset.
     const RELEASE_FX = { "last-release": "fresh-deploy", "current-release": "glow" };
 
     // Per-card coordination between the `remove` stream (intercepted) and the
