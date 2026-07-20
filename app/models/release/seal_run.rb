@@ -23,7 +23,8 @@ class Release
     # Yields the attempt number; the block runs ONE smoke and returns [out, ok].
     # `error` (optional callable) supplies the last attempt's error message for
     # a red summary — bin/release passes the SystemCallError it degraded.
-    def call(host:, delay: SealRetry::DELAY_SECONDS, sleeper: nil, on_retry: nil, error: nil, checked_at: nil, &smoke)
+    def call(host:, delay: nil, sleeper: nil, on_retry: nil, error: nil, checked_at: nil, &smoke)
+      delay ||= SealRetry.delay_seconds
       result = SealRetry.run(delay: delay, sleeper: sleeper, on_retry: on_retry, &smoke)
       seal   = SmokeSeal.from_result(
         passed: result.ok,

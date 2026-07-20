@@ -27,6 +27,19 @@ class Release
     # Raised INSTEAD of really sleeping when the suite's guard is armed.
     class RealSleepError < StandardError; end
 
+    # Test-only delay override. A test that drives the REAL ship seal in a
+    # SUBPROCESS (test/lib/release_cli_test.rb loads bin/release and calls
+    # production_smoke_seal) cannot inject a sleeper through the script, so
+    # before this existed each red-seal CLI test slept a genuine 30 seconds —
+    # ~90s of the suite. Set it to 0 there and the retry PATH is exercised for
+    # real at zero cost. Production never sets it: the boot window is a real wait.
+    DELAY_ENV = "SEAL_RETRY_DELAY_SECONDS".freeze
+
+    def delay_seconds
+      override = ENV[DELAY_ENV]
+      override && !override.strip.empty? ? override.to_f : DELAY_SECONDS
+    end
+
     # The real-sleep guard. A test that forgets to inject a `sleeper` would
     # silently burn 30 wall-clock seconds; relying on every caller remembering
     # is a CONVENTION, not a guarantee. test_helper arms SEAL_RETRY_NO_SLEEP=1
@@ -38,9 +51,15 @@ class Release
       return Kernel.method(:sleep) unless ENV[NO_SLEEP_ENV] == "1"
 
       lambda do |seconds|
+        # A ZERO delay costs nothing, so let it through: that is how a subprocess
+        # ship test exercises the real retry path (see DELAY_ENV). Only a delay
+        # that would actually burn wall-clock time is the mistake worth raising on.
+        return Kernel.sleep(seconds) unless seconds.to_f.positive?
+
         raise RealSleepError,
               "SealRetry tried to REALLY sleep #{seconds}s under test — inject a sleeper " \
-              "(SealRetry.run(sleeper: ->(s) { ... })) instead of delaying the suite."
+              "(SealRetry.run(sleeper: ->(s) { ... })), or set #{DELAY_ENV}=0 for a " \
+              "subprocess that drives the real ship seal, instead of delaying the suite."
       end
     end
 
@@ -53,7 +72,8 @@ class Release
     # Yields the attempt number (1, then at most 2); the block returns
     # [out, ok]. `on_retry` fires once, before the sleep, so the ship log
     # announces the wait as it starts.
-    def run(delay: DELAY_SECONDS, sleeper: nil, on_retry: nil)
+    def run(delay: nil, sleeper: nil, on_retry: nil)
+      delay   = delay_seconds if delay.nil?
       sleeper ||= default_sleeper
       out, ok = yield(1)
       return Result.new(out: out, ok: ok, attempts: 1, retried: false) if ok

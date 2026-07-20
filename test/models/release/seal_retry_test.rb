@@ -88,6 +88,31 @@ class Release
       end
     end
 
+    # The subprocess seam: test/lib/release_cli_test.rb drives the REAL ship seal
+    # by loading bin/release, so it cannot inject a sleeper — before the env
+    # override each of its red-seal tests slept a genuine 30s (~90s of suite time,
+    # the "real test sleeps" this round fixes).
+    test "[unit] SEAL_RETRY_DELAY_SECONDS overrides the wait for subprocess ship tests" do
+      with_env("SEAL_RETRY_DELAY_SECONDS", "0") do
+        assert_equal 0.0, SealRetry.delay_seconds
+      end
+      with_env("SEAL_RETRY_DELAY_SECONDS", nil) do
+        assert_equal 30, SealRetry.delay_seconds, "unset ⇒ the real 30s boot window"
+      end
+      with_env("SEAL_RETRY_DELAY_SECONDS", "  ") do
+        assert_equal 30, SealRetry.delay_seconds, "a blank override is not an override"
+      end
+    end
+
+    test "[unit] a ZERO delay is allowed to really sleep — that is how the CLI tests run the retry free" do
+      with_env("SEAL_RETRY_DELAY_SECONDS", "0") do
+        attempts = 0
+        result = SealRetry.run { |_a| [(attempts += 1).to_s, attempts == 2] } # no sleeper — guard must permit 0s
+        assert result.ok
+        assert_equal 2, result.attempts
+      end
+    end
+
     test "[unit] on_retry announces the wait BEFORE sleeping (ship-log ordering)" do
       order = []
       SealRetry.run(
