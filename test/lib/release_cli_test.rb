@@ -2163,8 +2163,7 @@ class ReleaseCliTest < Minitest::Test
       run_git(clone, "add", "app.rb")
       File.write(File.join(clone, "notes.txt"), "scratch")
 
-      setup = %(def repo_path(_repo) = #{clone.inspect})
-      out = run_cli(["--yes"], setup: setup,
+      out = run_cli(["--yes"], setup: advance_setup(clone, dir),
                     call: %{push_frozen_main("sibling", #{frozen.inspect}); puts("PASSED")})
 
       assert_includes out, "PASSED", "a dirty primary must NOT abort the ship: #{out}"
@@ -2238,8 +2237,7 @@ class ReleaseCliTest < Minitest::Test
       run_git(clone, "push", "-q", "origin", "release")
       frozen = git_out(clone, "rev-parse", "release")
 
-      setup = %(def repo_path(_repo) = #{clone.inspect})
-      out = run_cli(["--yes"], setup: setup,
+      out = run_cli(["--yes"], setup: advance_setup(clone, dir),
                     call: %{push_frozen_main("sibling", #{frozen.inspect}); puts("PASSED")})
 
       assert_includes out, "PASSED", out
@@ -2260,8 +2258,7 @@ class ReleaseCliTest < Minitest::Test
       origin = File.join(dir, "origin.git")
       frozen = git_out(clone, "rev-parse", "release")
 
-      setup = %(def repo_path(_repo) = #{clone.inspect})
-      out = run_cli(["--yes"], setup: setup,
+      out = run_cli(["--yes"], setup: advance_setup(clone, dir),
                     call: %{push_frozen_main("sibling", #{frozen.inspect}); puts("PASSED")})
 
       assert_includes out, "PASSED", out
@@ -2429,12 +2426,39 @@ class ReleaseCliTest < Minitest::Test
   # The reconcile command the ship PRINTS, pulled back out of its own output and
   # run for real. Advice that has never been executed is a guess; these tests
   # execute it. Returns [ok, combined_output].
-  def run_printed_reconcile(out)
-    command = out[/reconcile with: (git -C .+)$/, 1] || out[/own commits: (git -C .+)$/, 1]
-    flunk("no reconcile command found in output: #{out}") unless command
+  # The happy-path steps the ship PRINTS, in order. Deliberately NOT an && chain
+  # any more (round 3): a chain implies all-or-nothing, and this procedure has a
+  # branch in the middle. Indented six spaces and starting with `git -C`; the
+  # FINISH IT / BAIL OUT lines start with their label, so they do not match.
+  def printed_reconcile_steps(out)
+    steps = out.scan(/^ {6}(git -C \S.*)$/).flatten
+    flunk("no reconcile steps found in output: #{out}") if steps.empty?
 
-    result, status = Open3.capture2e("bash", "-c", command)
-    [status.success?, result]
+    steps
+  end
+
+  # Run the printed steps IN ORDER, stopping at the first failure — exactly what an
+  # operator following the recipe top to bottom experiences. Returns
+  # [ok, output, failed_step].
+  def run_printed_reconcile(out)
+    printed_reconcile_steps(out).each do |step|
+      result, status = Open3.capture2e("bash", "-c", step)
+      return [false, result, step] unless status.success?
+    end
+    [true, "", nil]
+  end
+
+  # The two labeled exits from a conflicted merge.
+  def printed_finish_command(out) = out[/FINISH IT — .*?then: (git -C .+)$/, 1]
+  def printed_bailout_command(out) = out[/BAIL OUT — .*?residue: (git -C .+)$/, 1]
+
+  # The accepted-advance stubs: the repo under test, plus a per-test scratch path.
+  # PRODUCTION uses a fixed /tmp path (predictable for the operator, and its own
+  # BAIL OUT command clears a leftover); tests must not share one, or two parallel
+  # CI workers would race for the same worktree directory.
+  def advance_setup(clone, dir)
+    %(def repo_path(_repo) = #{clone.inspect}\n) +
+      %(def reconcile_scratch_path(_repo) = #{File.join(dir, 'scratch-reconcile').inspect}\n)
   end
 
   # [integration] BLOCKER (round 2). The DIVERGED reconcile advice must WORK on a
@@ -2489,16 +2513,15 @@ class ReleaseCliTest < Minitest::Test
       refute_equal stale_local, git_out(clone, "rev-parse", "origin/accepted"),
                    "fixture precondition: origin/accepted moved ahead of the stale local ref"
 
-      setup = %(def repo_path(_repo) = #{clone.inspect})
-      out = run_cli(["--yes"], setup: setup,
+      out = run_cli(["--yes"], setup: advance_setup(clone, dir),
                     call: %{push_frozen_main("sibling", #{frozen.inspect}); puts("PASSED")})
 
       assert_includes out, "DIVERGED", "this fixture is a genuine divergence: #{out}"
-      assert_match(%r{checkout -B reconcile/accepted origin/accepted}, out,
-                   "the advice must base off the REMOTE-TRACKING ref, not the stale local branch: #{out}")
+      assert_match(/worktree add --detach \S+ origin\/accepted/, out,
+                   "the merge must be based on the REMOTE-TRACKING ref, never the stale local branch: #{out}")
 
-      ok, result = run_printed_reconcile(out)
-      assert ok, "the printed reconcile command must SUCCEED on a stale local accepted: #{result}"
+      ok, result, failed = run_printed_reconcile(out)
+      assert ok, "the printed reconcile must SUCCEED on a stale local accepted (failed at #{failed}): #{result}"
 
       # The proof: origin/accepted actually moved, and holds BOTH sides.
       reconciled = git_out(origin, "rev-parse", "accepted")
@@ -2554,8 +2577,7 @@ class ReleaseCliTest < Minitest::Test
                    git_out(clone, "rev-parse", "origin/accepted^{tree}"),
                    "fixture precondition: the lock bump makes the frozen tree differ from accepted's"
 
-      setup = %(def repo_path(_repo) = #{clone.inspect})
-      out = run_cli(["--yes"], setup: setup,
+      out = run_cli(["--yes"], setup: advance_setup(clone, dir),
                     call: %{push_frozen_main("sibling", #{frozen.inspect}); puts("PASSED")})
 
       assert_includes out, "PASSED", "a gem-carrying release must not abort the ship: #{out}"
@@ -2564,12 +2586,115 @@ class ReleaseCliTest < Minitest::Test
       refute_includes out, "UNDETERMINED",
                       "the signals are readable — a true refutation is not an unknown: #{out}"
 
-      ok, result = run_printed_reconcile(out)
-      assert ok, "the printed reconcile must work on the release shape #588 made common: #{result}"
+      ok, result, failed = run_printed_reconcile(out)
+      assert ok, "the printed reconcile must work on the shape #588 made common (failed at #{failed}): #{result}"
       %w[shipped.rb Gemfile.lock review-merge.md].each do |file|
         _, present = Open3.capture2e("git", "-C", origin, "cat-file", "-e", "accepted:#{file}")
         assert present.success?, "#{file} must survive the reconcile — the lock bump is the point"
       end
+    end
+  end
+
+  # [integration] BLOCKER (round 3). THE FAILING PATH. Every advice test before this
+  # one executed the recipe against a fixture that merges CLEANLY — they prove the
+  # advice works for shapes we already imagined. The invariant is stronger: the
+  # printed advice must never STRAND the operator, for ANY merge outcome.
+  #
+  # This is not a corner. This PR's own docs declare :diverged the ROUTINE outcome on
+  # a gem-carrying release, and the mechanism is a Gemfile.lock bump — the file most
+  # likely to have been touched on accepted too. The routine path IS the conflict
+  # path. The round-2 recipe was an && chain, so `git merge` exiting non-zero halted
+  # it: no push, no `checkout main`, operator left on an unfamiliar branch mid-
+  # conflict with a DIRTY primary — which on a gem repo also aborts the NEXT ship.
+  #
+  # So this asserts the operator is TOLD WHAT TO DO and left RECOVERABLE, not that
+  # the chain succeeds. Both sides genuinely touch the same line of Gemfile.lock.
+  def test_printed_reconcile_fails_safe_and_instructs_when_the_merge_conflicts
+    Dir.mktmpdir do |dir|
+      clone  = build_sibling_fixture(dir)
+      origin = File.join(dir, "origin.git")
+
+      File.write(File.join(clone, "Gemfile.lock"), "studio-engine (0.4.0)\n")
+      run_git(clone, "add", "Gemfile.lock")
+      run_git(clone, "commit", "-q", "-m", "lock 0.4.0")
+      run_git(clone, "push", "-q", "origin", "main")
+      # release must DESCEND from main, or the frozen SHA is not a fast-forward of it.
+      run_git(clone, "branch", "-f", "release", "main")
+      run_git(clone, "push", "-q", "-f", "origin", "release")
+      base = git_out(clone, "rev-parse", "main")
+
+      # accepted bumps the lock one way (a feature branch merged there)...
+      run_git(clone, "checkout", "-q", "-b", "accepted", base)
+      File.write(File.join(clone, "Gemfile.lock"), "studio-engine (0.4.1)\n")
+      run_git(clone, "add", "Gemfile.lock")
+      run_git(clone, "commit", "-q", "-m", "accepted: lock 0.4.1")
+      run_git(clone, "push", "-q", "origin", "accepted")
+      accepted_head = git_out(origin, "rev-parse", "accepted")
+
+      # ...and #588's prepare bumps the SAME line another way on the shipped side.
+      run_git(clone, "checkout", "-q", "release")
+      File.write(File.join(clone, "Gemfile.lock"), "studio-engine (0.5.0)\n")
+      File.write(File.join(clone, "shipped.rb"), "shipped")
+      run_git(clone, "add", "-A")
+      run_git(clone, "commit", "-q", "-m", "prepare: bump consumer lock for QA")
+      run_git(clone, "push", "-q", "origin", "release")
+      frozen = git_out(clone, "rev-parse", "release")
+      run_git(clone, "checkout", "-q", "main")
+
+      out = run_cli(["--yes"], setup: advance_setup(clone, dir),
+                    call: %{push_frozen_main("sibling", #{frozen.inspect}); puts("PASSED")})
+
+      assert_includes out, "PASSED", "a conflicting reconcile must not abort the ship: #{out}"
+
+      # The recipe is NOT an && chain any more — a chain implies all-or-nothing.
+      refute_match(/^ {6}git -C \S+ fetch origin &&/, out,
+                   "the recipe must not be a single && chain: a conflict halts it silently: #{out}")
+
+      # Follow it top to bottom, as an operator would. It STOPS at the merge...
+      ok, result, failed = run_printed_reconcile(out)
+      refute ok, "fixture precondition: this merge must genuinely conflict"
+      assert_match(/merge origin\/main/, failed, "it must stop at the MERGE step, not earlier: #{failed}")
+      assert_match(/CONFLICT|Automatic merge failed/, result, "the operator must see the conflict named: #{result}")
+
+      # ...and THAT IS SAFE, which is the whole point. The primary never moved.
+      assert_equal "main", git_out(clone, "rev-parse", "--abbrev-ref", "HEAD"),
+                   "the primary must still be on main — never stranded on a reconcile branch"
+      assert_empty git_out(clone, "status", "--porcelain"),
+                   "the primary must still be CLEAN — a dirty gem primary ABORTS the next ship"
+      assert_equal accepted_head, git_out(origin, "rev-parse", "accepted"),
+                   "origin/accepted must be untouched — no half-finished reconcile"
+
+      # The operator is TOLD WHAT TO DO, both ways, rather than left to invent it.
+      assert_match(/IF THE MERGE CONFLICTS/, out, "the conflict case must be named up front: #{out}")
+      finish = printed_finish_command(out)
+      bailout = printed_bailout_command(out)
+      assert finish,  "a FINISH IT instruction must be printed: #{out}"
+      assert bailout, "a BAIL OUT instruction must be printed: #{out}"
+
+      # BAIL OUT genuinely restores a clean machine.
+      _, bail_status = Open3.capture2e("bash", "-c", bailout)
+      assert bail_status.success?, "the printed BAIL OUT must succeed"
+      assert_empty git_out(clone, "status", "--porcelain"), "bailing out must leave the primary clean"
+      assert_equal "main", git_out(clone, "rev-parse", "--abbrev-ref", "HEAD"), "bailing out must leave main checked out"
+      refute_match(/reconcile/, git_out(clone, "worktree", "list"),
+                   "bailing out must leave NO worktree residue behind")
+
+      # And FINISH IT genuinely completes the reconcile after a resolution.
+      _, status = Open3.capture2e("bash", "-c", printed_reconcile_steps(out)[1])
+      assert status.success?, "re-creating the scratch worktree must succeed after a bail out"
+      scratch = File.join(dir, "scratch-reconcile")
+      Open3.capture2e("bash", "-c", printed_reconcile_steps(out)[2])
+      File.write(File.join(scratch, "Gemfile.lock"), "studio-engine (0.5.0)\n")
+      _, finish_status = Open3.capture2e("bash", "-c", finish)
+      assert finish_status.success?, "the printed FINISH IT must complete the reconcile after a resolution"
+
+      %w[shipped.rb Gemfile.lock].each do |file|
+        _, present = Open3.capture2e("git", "-C", origin, "cat-file", "-e", "accepted:#{file}")
+        assert present.success?, "#{file} must be on accepted after finishing the reconcile"
+      end
+      assert_equal "main", git_out(clone, "rev-parse", "--abbrev-ref", "HEAD"),
+                   "finishing the reconcile must also leave the primary on main"
+      assert_empty git_out(clone, "status", "--porcelain"), "finishing must leave the primary clean"
     end
   end
 

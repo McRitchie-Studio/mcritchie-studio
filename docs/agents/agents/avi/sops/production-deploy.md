@@ -191,21 +191,58 @@ and prints one of three outcomes. Read the label — the right action differs:
 | Outcome | What it means | What you do |
 |---|---|---|
 | **AHEAD** | `accepted` already contains everything that shipped and carries more — a review pass merged into `accepted` while the ship ran (a supported, normal overlap) | **Nothing.** |
-| **DIVERGED** | `accepted` is genuinely missing shipped content | Reconcile with a **merge** (the ship prints the exact command) |
-| **UNDETERMINED** | the relation could not be read | Check before acting; do nothing blind |
+| **DIVERGED** | `accepted` is genuinely missing shipped content | Reconcile with a **merge** — recipe below |
+| **UNDETERMINED** | the relation could not be read | Check first (below), then act |
 
-Two things follow. First, **never** reconcile with a bare `git push origin
-<sha>:refs/heads/accepted` — on an AHEAD `accepted` that DESTROYS the merged work
-(this happened on rel-20260720-1fc111 and is why the classification exists). The
-printed merge command is safe in every state. Second, run the printed command as
-given: it bases off `origin/accepted` via `checkout -B`, because the primary's
-LOCAL `accepted` is routinely tens of commits stale and merging onto it produces
-a push that is refused.
+**Never** reconcile with a bare `git push origin <sha>:refs/heads/accepted`. On an
+AHEAD `accepted` that DESTROYS the merged work — it happened on
+rel-20260720-1fc111, and it is why the classification exists.
 
-Expect **DIVERGED to be the common outcome on any release carrying a gem.**
-Since #588, `bump_consumer_locks_for_qa` commits consumer lockfile bumps onto
-`release` during prepare, so the frozen tree legitimately differs from
-`accepted`'s. That is a true verdict, not a regression.
+On **UNDETERMINED**, run `git -C <path> fetch origin && git -C <path> diff
+origin/accepted origin/main` and read it by this rule: **deletions only** (files
+on `accepted`, absent on `main`) means `accepted` is AHEAD — do nothing. **Any
+addition or modification** means content is genuinely missing — reconcile.
+
+### The reconcile recipe
+
+The ship prints this, but it is inlined here so this SOP stands alone. It merges
+in a **throwaway worktree**, never your primary:
+
+```bash
+git -C <path> fetch origin
+git -C <path> worktree add --detach /tmp/reconcile-accepted-<repo> origin/accepted
+git -C /tmp/reconcile-accepted-<repo> merge origin/main
+git -C /tmp/reconcile-accepted-<repo> push origin HEAD:accepted
+git -C <path> worktree remove /tmp/reconcile-accepted-<repo>
+```
+
+It bases off `origin/accepted`, never the local branch — the primary's LOCAL
+`accepted` is routinely **tens of commits stale** (measured at 45), and merging
+onto it produces a push that is refused.
+
+**The merge step can stop on a conflict, and that is expected** — see the gem note
+below. When it does, it prints the conflicted files and **your primary is
+untouched, still on `main`, still clean**. Pick one:
+
+```bash
+# FINISH IT — resolve the files in the scratch worktree, then:
+git -C /tmp/reconcile-accepted-<repo> add -A && git -C /tmp/reconcile-accepted-<repo> commit --no-edit
+git -C /tmp/reconcile-accepted-<repo> push origin HEAD:accepted
+git -C <path> worktree remove /tmp/reconcile-accepted-<repo>
+
+# BAIL OUT — discard everything, leave no residue:
+git -C <path> worktree remove --force /tmp/reconcile-accepted-<repo>
+```
+
+Expect **DIVERGED to be the common outcome on any release carrying a gem**, and
+expect that merge to be the one that conflicts. Since #588,
+`bump_consumer_locks_for_qa` commits consumer lockfile bumps onto `release` during
+prepare, so the frozen tree legitimately differs from `accepted`'s — a true
+verdict, not a regression — and the file it touches, `Gemfile.lock`, is the one
+most likely to have been touched on `accepted` too. The routine path and the
+conflict path are the same path, which is exactly why the merge is kept off your
+primary: on a **gem repo**, modified tracked files in the primary **abort the next
+ship**.
 
 **One thing still gates on a primary: a gem repo with modified TRACKED files.**
 `gem build` packages what is on disk, so those edits would be *published* — and a
