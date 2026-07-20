@@ -415,7 +415,16 @@ class FastCheckTest < Minitest::Test
     ] } }
   )
 
-  def test_recording_merges_evidence_preserving_tiers_and_full_cert_lines
+  # The cert records its evidence and NOTHING else. Preservation of the author's
+  # tier tags and the other lanes is the WRITE FUNNEL's job, not the writer's —
+  # asserting it on the writer's argv is asserting the wrong layer, and the
+  # writer-side "merge" it used to do is exactly what let a stale snapshot replace
+  # newer tier lines (round-3). The preservation half is covered where it lives:
+  # lib/cert_evidence.rb (test/lib/cert_evidence_test.rb), the board funnel
+  # (test/models/task_cert_evidence_test.rb), and the real CLI end-to-end
+  # (test/lib/task_cli_test.rb). The END STATE is asserted here by the read-back
+  # tests below.
+  def test_recording_records_the_fresh_evidence_line
     with_repo do |dir, _|
       out, code, lines = run_check(dir, args: ["task-x"], extra_env: { "TASK_SHOW_JSON" => SHOW_JSON })
       assert_equal 0, code, out
@@ -423,10 +432,9 @@ class FastCheckTest < Minitest::Test
       update = lines.find { |l| l[0] == "TASK" && l[1] == "update" }
       refute_nil update, "green run records evidence via task update: #{lines.inspect}"
       checks = update.each_cons(2).select { |a, _| a == "--checks" }.map(&:last)
-      assert_includes checks, "[unit] bin/rails test test/models/widget_test.rb", "tier tags preserved"
-      assert_includes checks, "[full-suite@fullfp] tests green", "full-cert evidence preserved"
       assert(checks.any? { |c| c =~ /\A\[fast-cert@[0-9a-f]{7,64}\]/ }, "fresh fast-cert line recorded")
-      refute_includes checks.join("\n"), "[fast-cert@oldfp]", "prior fast-cert line replaced"
+      refute_includes checks.join("\n"), "[fast-cert@oldfp]",
+                      "the stale fast-cert line is never resent — the funnel supersedes this lane"
     end
   end
 
@@ -449,6 +457,96 @@ class FastCheckTest < Minitest::Test
     end
   end
 
+  # Round-3 regression (review block, 2026-07-20 — Carl): the cert used to resend
+  # the WHOLE merged list (its snapshot of the author's lines + its evidence).
+  # That is an AUTHOR write, so the funnel replaces the author namespace with the
+  # SNAPSHOT — and any tier line the board gained after the snapshot was read (a
+  # builder recording checks during a multi-minute cert, a concurrent writer) is
+  # replaced by stale content. The cert owns exactly one namespace, so it now
+  # sends ONLY its evidence line: a PURE-EVIDENCE write, which the funnel merges
+  # against the board's CURRENT state at write time. No snapshot, no window.
+  def test_recording_sends_only_evidence_never_the_author_snapshot
+    with_repo do |dir, _|
+      _, code, lines = run_check(dir, args: ["task-x"], extra_env: { "TASK_SHOW_JSON" => SHOW_JSON })
+      assert_equal 0, code
+      update = lines.find { |l| l[0] == "TASK" && l[1] == "update" }
+      refute_nil update
+      checks = update.each_cons(2).select { |a, _| a == "--checks" }.map(&:last)
+      assert_equal 1, checks.size,
+                   "the cert must send ONE line — its own evidence. Resending its snapshot of the author's " \
+                   "lines lets a stale read replace newer tier lines: #{checks.inspect}"
+      assert_match(/\A\[fast-cert@[0-9a-f]{7,64}\]/, checks.first)
+    end
+  end
+
+  # The property the pure-evidence write buys: tier lines the board gained AFTER
+  # the cert's read still survive, because the funnel merges at write time.
+  def test_tier_lines_added_during_the_cert_are_not_replaced_by_the_stale_snapshot
+    with_repo do |dir, _|
+      # The board gained a newer tier line after the cert's pre-write read.
+      newer = JSON.generate("metadata" => { "devops" => { "checks_run" => [
+        "[unit] bin/rails test test/models/widget_test.rb",
+        "[full-suite@fullfp] tests green",
+        "[integration] recorded DURING the cert run"
+      ] } })
+      out, code, lines = run_check(dir, args: ["task-x"], merge_stderr: true,
+                                   extra_env: { "TASK_SHOW_JSON" => SHOW_JSON,
+                                                "TASK_SHOW_JSON_AFTER_UPDATE" => newer })
+      assert_equal 0, code, out
+      update = lines.find { |l| l[0] == "TASK" && l[1] == "update" }
+      sent = update.each_cons(2).select { |a, _| a == "--checks" }.map(&:last)
+      refute_includes sent, "[unit] bin/rails test test/models/widget_test.rb",
+                      "a stale author snapshot must never be resent — that is what replaces newer tier lines"
+      refute(sent.any? { |l| l.start_with?("[full-suite@") },
+             "the cert does not own another lane's evidence either: #{sent.inspect}")
+    end
+  end
+
+  # Round-3 regression (review block, 2026-07-20 — Shannon): the recovery command
+  # is meant to be PASTED into a shell, so every line must be SHELL-quoted.
+  # `String#inspect` is a RUBY literal: it leaves $(…), backticks and friends live
+  # inside double quotes, so pasting the remedy would execute them.
+  def test_recovery_command_is_shell_safe_not_ruby_inspect
+    with_repo do |dir, _|
+      pwned = File.join(dir, "pwned")
+      # A tier line carrying live shell syntax. `$(…)` and the backticks EXECUTE
+      # inside double quotes, which is exactly what a Ruby-inspect command emits.
+      nasty = %([integration] cost $(touch #{pwned}) and `touch #{pwned}` "quoted")
+      before = JSON.generate("metadata" => { "devops" => { "checks_run" => [nasty] } })
+      after = JSON.generate("metadata" => { "devops" => { "checks_run" => [] } })
+      out, code, = run_check(dir, args: ["task-x"], merge_stderr: true,
+                             extra_env: { "TASK_SHOW_JSON" => before,
+                                          "TASK_SHOW_JSON_AFTER_UPDATE" => after })
+      assert_equal 1, code, out
+      remedy = out.lines.find { |l| l.include?("bin/task update task-x") }
+      refute_nil remedy, out
+      command = remedy[/bin\/task update task-x.*/].strip
+
+      # The DECISIVE check: run the remedy through a REAL shell (Shellwords.split
+      # would not model command substitution and passes even for a Ruby-inspect
+      # command — a false green). A stub `bin/task` on PATH records the argv it
+      # actually received; the shell must hand it the line VERBATIM and must not
+      # execute the embedded substitution.
+      argv_log = File.join(dir, "remedy-argv.log")
+      bindir = File.join(dir, "remedy-bin")
+      FileUtils.mkdir_p(bindir)
+      File.write(File.join(bindir, "task"), <<~SH)
+        #!/bin/sh
+        for a in "$@"; do printf '%s\\n' "$a" >> #{argv_log.shellescape}; done
+      SH
+      FileUtils.chmod("+x", File.join(bindir, "task"))
+      system({ "PATH" => "#{bindir}:#{ENV.fetch('PATH')}" },
+             "/bin/sh", "-c", command.sub(%r{\Abin/task}, "task"),
+             out: File::NULL, err: File::NULL)
+
+      refute File.exist?(pwned),
+             "the remedy EXECUTED embedded shell syntax when pasted: #{command}"
+      received = File.exist?(argv_log) ? File.readlines(argv_log, chomp: true) : []
+      assert_equal nasty, received.last,
+                   "the shell must hand bin/task the line VERBATIM: #{received.inspect} from #{command}"
+    end
+  end
+
   # Round-2 regression (review block, 2026-07-20): on a PARTIAL loss the printed
   # recovery must re-record the UNION — the surviving lines AND the lost ones.
   # `--checks` replaces the author namespace, so a remedy listing only the lost
@@ -468,8 +566,13 @@ class FastCheckTest < Minitest::Test
       assert_equal 1, code, out
       remedy = out.lines.find { |l| l.include?("bin/task update task-x") }
       refute_nil remedy, "the loud failure prints a runnable re-record command: #{out}"
-      assert_includes remedy, "[integration] lost integration line", "the lost line is re-recorded"
-      assert_includes remedy, "[unit] surviving unit line",
+      # Assert the PROPERTY (what a shell parses out of the command), not the
+      # spelling — the lines are shell-quoted, so a raw substring match would be
+      # asserting the quoting style rather than the recovery content.
+      recorded = Shellwords.split(remedy[/bin\/task update task-x.*/].strip)
+                           .each_cons(2).select { |a, _| a == "--checks" }.map(&:last)
+      assert_includes recorded, "[integration] lost integration line", "the lost line is re-recorded"
+      assert_includes recorded, "[unit] surviving unit line",
                       "the SURVIVING line must be in the remedy too — --checks replaces the author " \
                       "namespace, so a lost-lines-only remedy would drop the survivors"
     end

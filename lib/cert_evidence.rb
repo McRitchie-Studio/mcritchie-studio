@@ -137,13 +137,20 @@ module CertEvidence
     incoming + carried
   end
 
-  # Merge fresh evidence into an existing checks_run — the cert writers' side of
-  # the same rule. Replaces prior evidence for the lanes being stamped (so
-  # re-runs supersede rather than accumulate) and preserves tier tags, bypass
-  # records, and every other lane's evidence. `lanes` defaults to exactly the
-  # lanes `fresh_lines` carries, which is what keeps this identical to #preserve:
-  # you supersede what you supply, nothing else. (bin/fast-check passes
-  # [FAST_LANE] explicitly; the effect is the same.)
+  # Merge fresh evidence into an existing checks_run: replaces prior evidence for
+  # the lanes being stamped (so re-runs supersede rather than accumulate) and
+  # preserves tier tags, bypass records, and every other lane's evidence. `lanes`
+  # defaults to exactly the lanes `fresh_lines` carries, which is what keeps this
+  # identical to #preserve: you supersede what you supply, nothing else.
+  #
+  # NOT the cert writers' path anymore (2026-07-20). They used to compute a merged
+  # list here and SEND it, which made the write an AUTHOR write carrying a stale
+  # snapshot of lines they do not own — so a tier line recorded during the cert was
+  # replaced by content read before the lanes ran. The writers now send ONLY their
+  # own evidence and let #preserve merge against the board's CURRENT state at write
+  # time. This stays as the pure merge primitive (and the readable statement of the
+  # supersede rule) for a caller that needs to COMPUTE a merged list rather than
+  # store one; it has no production caller today.
   def merge_evidence(existing, fresh_lines, lanes: nil)
     lanes ||= lanes_addressed(fresh_lines)
     existing = Array(existing).map(&:to_s)

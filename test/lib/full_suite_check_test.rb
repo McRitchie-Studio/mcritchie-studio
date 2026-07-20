@@ -814,6 +814,31 @@ class FullSuiteCheckTest < Minitest::Test
     end
   end
 
+  # Round-3 regression (review block, 2026-07-20 — Carl): the cert used to resend
+  # its SNAPSHOT of the author's lines alongside its evidence. That is an author
+  # write, so the funnel replaces the author namespace with content read before a
+  # multi-minute suite ran — clobbering any tier line the board gained meanwhile.
+  # The cert sends ONLY the lines it owns; the funnel merges at write time.
+  def test_recording_sends_only_evidence_never_the_author_snapshot
+    with_repo do |dir|
+      assert system("git", "-C", dir, "checkout", "-qb", "feat/task-x", out: File::NULL, err: File::NULL)
+      with_tiers = JSON.generate(
+        "metadata" => { "devops" => {
+          "branch" => "feat/task-x", "worktree_slug" => "task-x",
+          "checks_run" => ["[unit] bin/rails test test/models", "[integration] flows"]
+        } }
+      )
+      _, code, lines = run_check_implicit_root(dir, "task-x", extra_env: { "TASK_SHOW_JSON" => with_tiers })
+      assert_equal 0, code
+      update = lines.find { |l| l[0] == "TASK" && l[1] == "update" }
+      refute_nil update
+      sent = update.each_cons(2).select { |a, _| a == "--checks" }.map(&:last)
+      assert(sent.all? { |l| l.match?(/\A\[(full-suite|rubocop)@/) },
+             "the cert sends ONLY the lanes it owns — no author snapshot: #{sent.inspect}")
+      refute_includes sent, "[unit] bin/rails test test/models"
+    end
+  end
+
   # Round-2 regression (review block, 2026-07-20): on a PARTIAL loss the printed
   # recovery re-records the UNION — survivors AND lost. `--checks` replaces the
   # author namespace, so a lost-lines-only remedy would drop the survivors.
@@ -833,9 +858,52 @@ class FullSuiteCheckTest < Minitest::Test
       assert_equal 1, code, out
       remedy = out.lines.find { |l| l.include?("bin/task update task-x") }
       refute_nil remedy, "the loud failure prints a runnable re-record command: #{out}"
-      assert_includes remedy, "[integration] lost integration line", "the lost line is re-recorded"
-      assert_includes remedy, "[unit] surviving unit line",
+      # Assert the PROPERTY (what a shell parses out), not the quoting spelling.
+      recorded = Shellwords.split(remedy[/bin\/task update task-x.*/].strip)
+                           .each_cons(2).select { |a, _| a == "--checks" }.map(&:last)
+      assert_includes recorded, "[integration] lost integration line", "the lost line is re-recorded"
+      assert_includes recorded, "[unit] surviving unit line",
                       "the SURVIVING line must be in the remedy too — a lost-lines-only remedy drops survivors"
+    end
+  end
+
+  # Round-3 regression (review block, 2026-07-20 — Shannon): the remedy is PASTED
+  # into a shell, so it must be SHELL-quoted. String#inspect is a Ruby literal and
+  # leaves $(…)/backticks live inside double quotes. Proven with a REAL shell.
+  def test_recovery_command_is_shell_safe_not_ruby_inspect
+    with_repo do |dir|
+      assert system("git", "-C", dir, "checkout", "-qb", "feat/task-x", out: File::NULL, err: File::NULL)
+      pwned = File.join(dir, "pwned")
+      nasty = %([integration] cost $(touch #{pwned}) and `touch #{pwned}` "quoted")
+      before = JSON.generate(
+        "metadata" => { "devops" => {
+          "branch" => "feat/task-x", "worktree_slug" => "task-x", "checks_run" => [nasty]
+        } }
+      )
+      after = JSON.generate("metadata" => { "devops" => { "checks_run" => [] } })
+      out, code, = run_check_implicit_root(dir, "task-x",
+                                           extra_env: { "TASK_SHOW_JSON" => before,
+                                                        "TASK_SHOW_JSON_AFTER_UPDATE" => after })
+      assert_equal 1, code, out
+      remedy = out.lines.find { |l| l.include?("bin/task update task-x") }
+      refute_nil remedy, out
+      command = remedy[/bin\/task update task-x.*/].strip
+
+      argv_log = File.join(dir, "remedy-argv.log")
+      bindir = File.join(dir, "remedy-bin")
+      FileUtils.mkdir_p(bindir)
+      File.write(File.join(bindir, "task"), <<~SH)
+        #!/bin/sh
+        for a in "$@"; do printf '%s\\n' "$a" >> #{argv_log.shellescape}; done
+      SH
+      FileUtils.chmod("+x", File.join(bindir, "task"))
+      system({ "PATH" => "#{bindir}:#{ENV.fetch('PATH')}" },
+             "/bin/sh", "-c", command.sub(%r{\Abin/task}, "task"),
+             out: File::NULL, err: File::NULL)
+
+      refute File.exist?(pwned), "the remedy EXECUTED embedded shell syntax when pasted: #{command}"
+      received = File.exist?(argv_log) ? File.readlines(argv_log, chomp: true) : []
+      assert_equal nasty, received.last, "the shell must hand bin/task the line VERBATIM: #{received.inspect}"
     end
   end
 

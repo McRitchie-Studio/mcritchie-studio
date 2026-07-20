@@ -73,6 +73,7 @@
 
 require "optparse"
 require "json"
+require "shellwords" # the pasteable recovery commands are SHELL-quoted, not inspect'd
 require_relative "lib/full_suite_gate"
 require_relative "lib/repo_root"
 require_relative "lib/session_identity"
@@ -400,23 +401,26 @@ if options[:print] || slug.nil?
   exit 0
 end
 
-# Record the green evidence on the task. `--checks` replaces the AUTHOR's lines
-# (tier tags, bypass records), so we read the existing list and MERGE — keeping
-# those and dropping only PRIOR full-suite/rubocop evidence (a re-run supersedes
-# its own lanes rather than accumulating stale ones). The board would carry the
-# author's cert evidence forward either way (Task#preserve_cert_evidence), but not
-# the tier tags — they are ours to preserve. If the list can't be read, ABORT
-# rather than write a checks_run that drops them.
+# Read the current checks_run — the BASELINE the read-back below verifies against.
+# If it can't be read, ABORT rather than certify blind: an unverifiable write is
+# exactly the failure this gate exists to catch.
 existing = CertEmission.fetch_checks(TASK_BIN, slug)
 if existing.nil?
-  warn "full-suite-check: ran green but couldn't read #{slug.inspect}'s checks_run to merge evidence (bin/task " \
-       "show). Not writing (a blind --checks would wipe your tier tags). Re-run, or record by hand alongside your " \
-       "existing checks: bin/task update #{slug} #{passed_lines.map { |l| "--checks #{l.inspect}" }.join(" ")}"
+  warn "full-suite-check: ran green but couldn't read #{slug.inspect}'s checks_run (bin/task show), so the " \
+       "write cannot be verified. Not writing. Re-run, or record by hand: bin/task update #{slug} " \
+       "#{passed_lines.map { |l| "--checks #{Shellwords.escape(l)}" }.join(' ')}"
   exit 1
 end
 
-final = FullSuiteGate.merge_evidence(existing, passed_lines)
-record_args = final.flat_map { |line| ["--checks", line] }
+# Record the green evidence as a PURE-EVIDENCE write: ONLY the lines these lanes
+# own. The cert must NOT resend its snapshot of the author's lines — that is an
+# author write, and it replaces the author namespace with content read BEFORE the
+# lanes ran, clobbering any tier line the board gained since (a multi-minute suite
+# leaves a wide window). Sending just the evidence lets the write funnel
+# (bin/task's build_devops + Task#preserve_cert_evidence, lib/cert_evidence.rb)
+# merge against the board's CURRENT state at write time: the author namespace is
+# carried forward, and these lanes' prior lines are superseded.
+record_args = passed_lines.flat_map { |line| ["--checks", line] }
 unless system(TASK_BIN, "update", slug, *record_args)
   warn "full-suite-check: ran green but FAILED to record evidence on #{slug.inspect} (bin/task update). Re-run."
   exit 1
@@ -426,7 +430,9 @@ end
 # bin/fast-check): read the board back and check every pre-existing line
 # survived the write. The fresh evidence lines' own write is covered by
 # bin/task update's exit status above.
-kept = final - passed_lines
+# Everything the write does NOT supersede — every prior line except the lanes
+# this cert just stamped (their fresh lines replace the old by design).
+kept = existing.reject { |prior| prior.match?(FullSuiteGate.evidence_re(FullSuiteGate::LANES)) }
 summary = "full-suite-check: both lanes green at #{fingerprint[0, 12]} — evidence recorded on #{slug}"
 if kept.empty?
   warn "#{summary} (no pre-existing checks lines to preserve)."
@@ -443,10 +449,11 @@ elsif missing.any?
   missing.each { |lost| warn "  #{lost}" }
   # The remedy re-records the UNION — survivors AND lost. `--checks` replaces
   # the author namespace, so a lost-lines-only command would itself drop the
-  # lines that survived (round-2 review catch, 2026-07-20).
+  # lines that survived (round-2 review catch, 2026-07-20). SHELL-quoted, not
+  # String#inspect: the command is meant to be PASTED (round-3 catch).
   warn "full-suite-check: re-record the full pre-existing set (survivors AND lost — resending only the lost " \
        "lines would drop the survivors): bin/task update #{slug} " \
-       "#{kept.map { |line_kept| "--checks #{line_kept.inspect}" }.join(' ')}"
+       "#{kept.map { |line_kept| "--checks #{Shellwords.escape(line_kept)}" }.join(' ')}"
   exit 1
 else
   warn "#{summary} (read-back confirms all #{kept.size} pre-existing checks line(s) kept)."
