@@ -64,6 +64,30 @@ class Release
       assert_equal [5], sleeps
     end
 
+    # REVIEW ROUND 2 (carl, request-changes): "real test sleeps". The policy's
+    # default sleeper is the REAL Kernel#sleep, so any test that forgets to
+    # inject one silently burns 30 wall-clock seconds in the suite. Injecting by
+    # convention is a DECLARATION; these lock it as an enforced invariant —
+    # under the suite's SEAL_RETRY_NO_SLEEP guard a real sleep RAISES instead.
+    test "[unit] the suite BOOTS with the real-sleep guard armed" do
+      assert_equal "1", ENV["SEAL_RETRY_NO_SLEEP"],
+        "test_helper must arm the guard suite-wide, or a forgotten sleeper sleeps for real"
+    end
+
+    test "[unit] a retry that would REALLY sleep under test raises instead of burning 30s" do
+      error = assert_raises(SealRetry::RealSleepError) do
+        SealRetry.run(delay: 30) { |_attempt| ["down", false] } # no sleeper injected — on purpose
+      end
+      assert_match(/inject a sleeper/i, error.message, "the raise must name the fix")
+    end
+
+    test "[unit] the guard is scoped to the test process — production still sleeps for real" do
+      with_env("SEAL_RETRY_NO_SLEEP", nil) do
+        assert_equal Kernel.method(:sleep), SealRetry.default_sleeper,
+          "outside the guard the policy uses the REAL clock — the boot window is a real wait"
+      end
+    end
+
     test "[unit] on_retry announces the wait BEFORE sleeping (ship-log ordering)" do
       order = []
       SealRetry.run(

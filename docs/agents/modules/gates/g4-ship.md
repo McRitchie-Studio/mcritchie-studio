@@ -34,6 +34,18 @@ The gate window spans the whole irreversible half of the ship:
   (`metadata.seal: passed|failed`) but a red seal never flips the gate's
   success and never aborts the ship — the deploy already landed; the operator
   stays the gate on rollback.
+  - **It retries once through the boot window.** The seal fires seconds after
+    the deploy, so a smoke can land mid dyno boot/restart and fail against a
+    HEALTHY prod (rel-20260720-c06235 red-sealed on `GET /tasks`; a re-run
+    minutes later sealed 5/5 green). On a first failure the seal now waits
+    **30s** and re-runs the suite **exactly once**. A first-attempt pass never
+    waits — the happy path is unchanged.
+  - **Reading the verdict.** A green seal whose summary says *"retried once
+    after 30s boot-window wait"* passed on the second attempt — prod is fine,
+    the first run caught the boot window. A **red seal now means the failure
+    PERSISTED through the retry**: a confirmed failure, not a timing blip, so
+    treat it with more weight than before. The seal's contract is otherwise
+    unchanged — still non-blocking, still never auto-rolls-back.
 
 ## G4 self-gating (the 90/10 policy)
 

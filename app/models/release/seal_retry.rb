@@ -24,6 +24,26 @@ class Release
     # delaying the ship's closing beats (the seal is already post-deploy).
     DELAY_SECONDS = 30
 
+    # Raised INSTEAD of really sleeping when the suite's guard is armed.
+    class RealSleepError < StandardError; end
+
+    # The real-sleep guard. A test that forgets to inject a `sleeper` would
+    # silently burn 30 wall-clock seconds; relying on every caller remembering
+    # is a CONVENTION, not a guarantee. test_helper arms SEAL_RETRY_NO_SLEEP=1
+    # suite-wide, so a forgotten sleeper RAISES immediately and names the fix.
+    # Production never sets it — there the boot window is a real wait.
+    NO_SLEEP_ENV = "SEAL_RETRY_NO_SLEEP".freeze
+
+    def default_sleeper
+      return Kernel.method(:sleep) unless ENV[NO_SLEEP_ENV] == "1"
+
+      lambda do |seconds|
+        raise RealSleepError,
+              "SealRetry tried to REALLY sleep #{seconds}s under test — inject a sleeper " \
+              "(SealRetry.run(sleeper: ->(s) { ... })) instead of delaying the suite."
+      end
+    end
+
     # The final verdict: `out`/`ok` are the LAST attempt's smoke output +
     # pass/fail; `retried` flags that the verdict came after the boot-window
     # wait (the seal summary notes it either way — a green ride-through or a
@@ -33,7 +53,8 @@ class Release
     # Yields the attempt number (1, then at most 2); the block returns
     # [out, ok]. `on_retry` fires once, before the sleep, so the ship log
     # announces the wait as it starts.
-    def run(delay: DELAY_SECONDS, sleeper: Kernel.method(:sleep), on_retry: nil)
+    def run(delay: DELAY_SECONDS, sleeper: nil, on_retry: nil)
+      sleeper ||= default_sleeper
       out, ok = yield(1)
       return Result.new(out: out, ok: ok, attempts: 1, retried: false) if ok
 

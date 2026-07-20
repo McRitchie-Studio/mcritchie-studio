@@ -156,6 +156,9 @@ require_relative "../app/models/release/prod_smoke"
 # failure waits ~30s, retries once; only a persisting failure seals red.
 # Caller-side so bin/prod-smoke stays single-shot. Rails-free → unit-tested.
 require_relative "../app/models/release/seal_retry"
+# SealRun composes that retry with SmokeSeal into the recorded verdict (+ the
+# summary's retry note), so step 5c's behavior is testable on real objects.
+require_relative "../app/models/release/seal_run"
 # GateRuby pins the LOCAL pre-QA / ship test gates to CI's ruby (mise 3.3.11) so a
 # gate host whose shell `ruby` is brew's ruby@3.3 doesn't diverge from CI — the
 # gate suite (and the bin/release / bin/dor-check subprocesses its meta-tests
@@ -3873,8 +3876,13 @@ def production_smoke_seal(app_groups, ship_sha, rel_slug)
   # PERSISTING failure seals red, and a first-attempt pass never sleeps. The
   # retry is CALLER-SIDE so bin/prod-smoke stays an honest single-shot tool;
   # the seal's contract is unchanged — non-blocking, never auto-rolls-back.
+  # The VERDICT composition (retry + seal + summary) lives in Release::SealRun so
+  # it is testable on real objects; this script keeps the IO — chdir, capture,
+  # telemetry, and the ship-log narration.
   smoke_error = nil
-  result = Release::SealRetry.run(
+  result = Release::SealRun.call(
+    host: PROD_URL,
+    error: -> { smoke_error },
     on_retry: ->(delay) { say("  🔁 first smoke attempt failed — waiting #{delay}s for the dyno boot window, retrying once") }
   ) do |_attempt|
     smoke_error = nil # the FINAL attempt's error is the one the summary reports
@@ -3891,17 +3899,11 @@ def production_smoke_seal(app_groups, ship_sha, rel_slug)
     print out unless out.to_s.empty? # each attempt's output prints as it lands
     [out, ok]
   end
-  ok = result.ok
-
-  host       = PROD_URL
-  retry_note = result.retried ? " (retried once after #{Release::SealRetry::DELAY_SECONDS}s boot-window wait)" : ""
-  summary = if ok
-              "@qa-readonly green vs #{host}#{retry_note}"
-            else
-              "@qa-readonly FAILED vs #{host}#{retry_note} — #{smoke_error || 'see ship log'}"
-            end
+  ok      = result.ok
+  seal    = result.seal
+  summary = seal.summary
+  host    = PROD_URL
   smoke_status = ok ? "completed" : "failed"
-  seal    = Release::SmokeSeal.from_result(passed: ok, summary: summary)
 
   # Record the seal on prod (best-effort). conductor() abort!s on a heroku-run
   # failure → SystemExit; the deploy already happened, so a board blip on this

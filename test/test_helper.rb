@@ -1,4 +1,10 @@
 ENV["RAILS_ENV"] ||= "test"
+# Arm Release::SealRetry's real-sleep guard for the WHOLE suite. The ship seal's
+# boot-window retry waits ~30 real seconds in production; a test that forgets to
+# inject a `sleeper` would silently burn that per call. Armed here, the policy
+# RAISES instead of sleeping, so the mistake surfaces in milliseconds and cannot
+# ride into CI as a slow-suite mystery (see app/models/release/seal_retry.rb).
+ENV["SEAL_RETRY_NO_SLEEP"] = "1"
 require_relative "../config/environment"
 require "rails/test_help"
 # minitest/mock (Object#stub + Minitest::Mock) isn't auto-required by rails/test_help;
