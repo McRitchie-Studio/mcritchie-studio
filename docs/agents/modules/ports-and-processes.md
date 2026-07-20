@@ -9,12 +9,17 @@ Local app ports are assigned in hundreds so each app has room for worktree and p
 | Tax Studio | 3200 | 3200-3299 |
 | Rolio | 3300 | 3300-3399 reserved |
 | Chain Ops | 3400 | 3400-3499 |
+| Acquisition Studio | 3500 | 3500-3599 |
 
 The durable app registry decision surface is
 `mcritchie-studio/docs/agents/modules/app-registry.md`. Rolio's range is
 reserved, and its hosted QA/prod deploy targets are managed by the release
 registries. It is not managed by rebuild/nav automation. Chain Ops is planned for
-localnet/QA/node operations.
+localnet/QA/node operations. Acquisition Studio is a local-only,
+confidential studio-engine satellite (not in `config/satellites.yml`; no
+deploy pipeline); the worktree launcher does not allocate in its range yet.
+Caution: the unmanaged MSAA client workspace informally parks a dev app on
+`3510` — avoid that port for Acquisition Studio side stacks until MSAA moves.
 
 ## Primary Ports
 

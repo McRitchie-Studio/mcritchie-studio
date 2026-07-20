@@ -127,8 +127,9 @@ bin/session-kickoff pokemon  # return to the Pokémon
 | Tax Studio | planned satellite | 3200 | 3200-3299 | Keep reserved unless the app is deliberately dropped |
 | 📇 Rolio | release-managed standalone with reserved satellite range | 3300 | 3300-3399 | Dormant since the 2026-07-03 audit; QA/prod in release registries; satellite range protected until promoted |
 | Chain Ops | planned satellite | 3400 | 3400-3499 | Solana environment control plane; v1 localnet utility |
+| Acquisition Studio | unmanaged candidate (local-only) | 3500 | 3500-3599 | Confidential M&A deal data — studio-engine satellite runtime, auth enforced app-wide, **no deploy pipeline by design**; not in `config/satellites.yml`; repo `amcritchie/acquisition-studio` (private) |
 
-Do not reuse `3200-3499`. Rolio is already in `config/satellites.yml` with
+Do not reuse `3200-3599`. Rolio is already in `config/satellites.yml` with
 `status: reserved`, which protects its port block without adding it to the
 managed rebuild or hub navigation. Rolio is also release-managed for Heroku
 deploys through `config/release_repos.yml` and `config/qa_environments.yml`;
