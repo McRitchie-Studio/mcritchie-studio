@@ -178,8 +178,22 @@ waves of five or fewer agents.
 Verdicts:
 
 - Two approvals, no blockers → **merge the feat PR into `accepted`, stamp the
-  git-location, then move `reviewed`** (the accepted-ladder's first rung). The
-  supervisor does this in ONE step — the order is load-bearing:
+  git-location, then move `reviewed`** (the accepted-ladder's first rung).
+
+  **Merge condition — the head must still be the head that was reviewed.** Before
+  merging, re-read the PR head and compare it to the SHA the two verdicts were
+  rendered against. They must be equal. A moved head means the approvals describe
+  code nobody reviewed, so **do not merge**: re-run the lanes against the new head.
+  This is not hypothetical — the builder seam of
+  [`../../../modules/zap-protocol.md`](../../../modules/zap-protocol.md) invites a
+  builder to fast-forward a `zap:` commit onto their own `feat/<slug>` branch
+  mid-cycle, which can land while both lanes are reading.
+
+  ```bash
+  gh pr view <feat-pr> --json headRefOid --jq .headRefOid   # must equal the reviewed SHA
+  ```
+
+  The supervisor then merges in ONE step — the order is load-bearing:
 
   ```bash
   gh pr merge <feat-pr> --merge        # feat → accepted (retarget a mis-based PR to accepted first)
