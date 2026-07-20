@@ -13,6 +13,10 @@ class Release
   #   * which of a consumer's gems still need re-pinning     (gems_to_repin)
   #   * whether a gem version must still be published        (publish_needed?)
   #   * the QA-frozen SHA to ship for a repo (or fall back)  (frozen_sha)
+  # Plus the PREPARE-side gem decisions (the producer-first publish moved up in
+  # front of the pre-QA gate — publish-gems-before-qa):
+  #   * what a consumer Gemfile needs for a published gem    (consumer_bump_action)
+  #   * the stranded-work guard on an unbumped gem repo      (stranded_gem_work?)
   module ShipSequence
     module_function
 
@@ -160,6 +164,113 @@ class Release
       Array(published_gem_names).select do |gem_name|
         Release::GemfileRepin.references_branch?(gemfile_text, gem_name)
       end
+    end
+
+    # --- prepare-side consumer bump: what does THIS Gemfile need? --------------
+    #
+    # prepare publishes gem members BEFORE the pre-QA gate and QA deploy (the
+    # producer-first sequence, moved up from ship), then bumps each consumer's
+    # COMMITTED Gemfile.lock on its release branch so CI, QA, and prod all build
+    # the same lock. Per consumer × published gem, exactly one of:
+    #   * :absent         — the Gemfile never declares the gem; touch nothing.
+    #   * :rewrite_source — the line is a branch/source ref; re-pin it to the
+    #                       published version (GemfileRepin.rewrite) + bump the lock.
+    #   * :rewrite_pin    — a plain version pin the NEW version ESCAPES
+    #                       (0.11.0 vs "~> 0.10"); rewrite the constraint
+    #                       (GemfileRepin.rewrite_pin) + bump the lock.
+    #   * :lock_only      — the pin already allows the new version (the standard
+    #                       `~> x.y` patch/minor case); bump ONLY the lock.
+    def consumer_bump_action(gemfile_text, gem_name, version)
+      text = gemfile_text.to_s
+      return :absent unless Release::GemfileRepin.gem_line_for(text, gem_name)
+      return :rewrite_source if Release::GemfileRepin.references_branch?(text, gem_name)
+
+      requirements = Release::GemfileRepin.version_requirements(text, gem_name)
+      Release::GemfileRepin.constraint_allows?(requirements, version) ? :lock_only : :rewrite_pin
+    end
+
+    # The Gemfile text after the bump `consumer_bump_action` decided — the one
+    # transform the shell applies per published gem before `bundle lock`.
+    # :lock_only/:absent return the text unchanged (idempotent by construction).
+    def bumped_gemfile(gemfile_text, gem_name, version)
+      case consumer_bump_action(gemfile_text, gem_name, version)
+      when :rewrite_source then Release::GemfileRepin.rewrite(gemfile_text, gem_name, version)
+      when :rewrite_pin    then Release::GemfileRepin.rewrite_pin(gemfile_text, gem_name, version)
+      else gemfile_text.to_s
+      end
+    end
+
+    # --- prepare-side STRANDED-WORK guard: commits past the tag, version unbumped
+    #
+    # THE SILENT-SKIP HAZARD this closes: a gem repo's origin/release can carry
+    # commits PAST the last published tag while its version_file still declares
+    # the already-published number. publish_needed? then answers false ("already
+    # live — skip"), consumers bundle the OLD gem, and the new commits silently
+    # ride NOWHERE — the failure mode that stranded 9 engine commits with every
+    # gate green. The guard turns that silence into a loud prepare abort.
+    #
+    # TRUE (stranded — BLOCK) only when BOTH hold:
+    #   * commits exist past the last published tag (`ahead_commits` non-empty), AND
+    #   * the version at origin/release did NOT ADVANCE past the tag's version.
+    # NO prior tag (`tag_version` blank) is the first-ever publish — nothing to
+    # strand behind.
+    #
+    # THE INVARIANT IS ORDERING, NOT EQUALITY. An earlier cut of this guard asked
+    # `version == tag`, which is only the most obvious SPELLING of the violation
+    # and let the worst vector through: a BACKWARD version (0.9.0 against tag
+    # 0.10.0) passed the guard, publish_needed? answered false (0.9.0 is already
+    # on RubyGems), phase 2 printed "already live — skip", and the consumer pin
+    # was rewritten DOWNWARD — a production downgrade with every gate green and
+    # the real commits stranded. `0.10` vs `0.10.0` slipped through the same hole
+    # from the other side. So compare with Gem::Version (SEMANTIC, not textual)
+    # and assert the positive property: did this version actually advance?
+    #
+    # FAIL-SAFE on unparseable input: a version we cannot order cannot PROVE it
+    # advanced, so ArgumentError resolves to `true` (block) — never to publish.
+    def stranded_gem_work?(ahead_commits:, version:, tag_version:)
+      commits = Array(ahead_commits).map(&:to_s).map(&:strip).reject(&:empty?)
+      return false if commits.empty?
+
+      tag = tag_version.to_s.strip
+      return false if tag.empty?
+
+      begin
+        Gem::Version.new(version.to_s.strip) <= Gem::Version.new(tag)
+      rescue ArgumentError
+        true
+      end
+    end
+
+    # The loud, ACTIONABLE abort for stranded_gem_work?: name the repo, the
+    # stranded commits, and the exact fix (bump the version_file through its own
+    # PR, then re-run prepare) — never a bare "refusing".
+    #
+    # `tag_version` is REQUIRED and distinct from `version`: the guard now fires
+    # on ordering, so the two genuinely differ in the backward case (version
+    # 0.9.0, tag 0.10.0). Printing `version` as the tag — correct only while the
+    # guard fired solely on equality — would have told the operator the tag was
+    # v0.9.0 and buried the downgrade the message exists to expose.
+    def stranded_gem_message(repo, ahead_commits:, version:, version_file:, tag_version:)
+      commits = Array(ahead_commits).map(&:to_s).map(&:strip).reject(&:empty?)
+      sample  = commits.first(10).map { |c| "      #{c}" }.join("\n")
+      more    = commits.size > 10 ? "\n      (+#{commits.size - 10} more)" : ""
+      tag     = tag_version.to_s.strip
+      behind  = begin
+        Gem::Version.new(version.to_s.strip) < Gem::Version.new(tag)
+      rescue ArgumentError
+        false
+      end
+      verdict = if behind
+                  "#{version_file} declares #{version}, which is BEHIND the published tag — publishing " \
+                    "would DOWNGRADE consumers to an older gem"
+                else
+                  "#{version_file} still declares #{version} — publishing would silently SKIP " \
+                    "(\"already live\") and QA/prod consumers would bundle the OLD gem"
+                end
+      "#{repo} origin/release carries #{commits.size} commit(s) past the last published tag " \
+        "v#{tag} while #{verdict}, STRANDING these commits:\n#{sample}#{more}\n" \
+        "  Bump the version in #{repo}/#{version_file} PAST #{tag} (the bump rides the gem's own PR " \
+        "through the cycle), land it on origin/release, then re-run `bin/release prepare`."
     end
 
     # --- resuming a PARTIAL ship: the re-pin must be idempotent BY IDENTITY -----

@@ -879,4 +879,155 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
     # and a non-boolean truthy value is NOT treated as done (guard is `== true`).
     assert_includes S.finalize_pending?(state: "shipped", sealed: true, notes_completed: "yes"), :notes
   end
+
+  # --- consumer_bump_action: the prepare-side per-gem Gemfile decision ---------
+
+  test "consumer_bump_action is :absent when the Gemfile never declares the gem" do
+    assert_equal :absent, S.consumer_bump_action(%(gem "rails", "~> 7.2"\n), "studio-engine", "0.11.0")
+  end
+
+  test "consumer_bump_action is :rewrite_source for a branch-ref'd line" do
+    text = %(gem "studio-engine", github: "amcritchie/studio-engine", branch: "feat/x"\n)
+    assert_equal :rewrite_source, S.consumer_bump_action(text, "studio-engine", "0.11.0")
+  end
+
+  test "consumer_bump_action is :lock_only when the pin already allows the version" do
+    # The standard case: the house `~> major.minor` pin holds the MAJOR, so both
+    # a patch (0.10.5) and a minor bump (0.11.0) are lock-only.
+    assert_equal :lock_only, S.consumer_bump_action(%(gem "studio-engine", "~> 0.10"\n), "studio-engine", "0.10.5")
+    assert_equal :lock_only, S.consumer_bump_action(%(gem "studio-engine", "~> 0.10"\n), "studio-engine", "0.11.0")
+  end
+
+  test "consumer_bump_action is :rewrite_pin when the version escapes the constraint" do
+    # A major bump escapes `~> 0.10`; a minor bump escapes a three-segment pin.
+    assert_equal :rewrite_pin, S.consumer_bump_action(%(gem "studio-engine", "~> 0.10"\n), "studio-engine", "1.0.0")
+    assert_equal :rewrite_pin, S.consumer_bump_action(%(gem "studio-engine", "~> 0.10.0"\n), "studio-engine", "0.11.0")
+    assert_equal :rewrite_pin, S.consumer_bump_action(%(gem "studio-engine", "0.10.0"\n), "studio-engine", "0.10.1")
+  end
+
+  test "consumer_bump_action is :lock_only for a bare declaration" do
+    assert_equal :lock_only, S.consumer_bump_action(%(gem "studio-engine"\n), "studio-engine", "9.9.9")
+  end
+
+  test "bumped_gemfile rewrites only what the action demands" do
+    pinned = %(gem "studio-engine", "~> 0.10"\n)
+    # escape (major bump) → the pin advances
+    assert_equal %(gem "studio-engine", "~> 1.0"\n), S.bumped_gemfile(pinned, "studio-engine", "1.0.0")
+    # within constraint (patch AND minor under the house pin) → untouched (lock-only)
+    assert_equal pinned, S.bumped_gemfile(pinned, "studio-engine", "0.10.5")
+    assert_equal pinned, S.bumped_gemfile(pinned, "studio-engine", "0.11.0")
+    # source ref → re-pinned to the published version
+    branchy = %(gem "studio-engine", github: "amcritchie/studio-engine", branch: "feat/x"\n)
+    assert_equal %(gem "studio-engine", "~> 0.11"\n), S.bumped_gemfile(branchy, "studio-engine", "0.11.0")
+    # absent → untouched
+    other = %(gem "rails", "~> 7.2"\n)
+    assert_equal other, S.bumped_gemfile(other, "studio-engine", "0.11.0")
+  end
+
+  # --- stranded_gem_work?: the prepare-side silent-skip guard ------------------
+
+  test "stranded_gem_work? BLOCKS commits past the tag with an unbumped version" do
+    assert S.stranded_gem_work?(ahead_commits: ["abc123 engine fix"], version: "0.10.0", tag_version: "0.10.0"),
+           "an unbumped version_file over new commits is the silent publish-skip that strands work"
+  end
+
+  test "stranded_gem_work? passes a bumped version over new commits" do
+    assert_not S.stranded_gem_work?(ahead_commits: ["abc123 engine fix"], version: "0.11.0", tag_version: "0.10.0")
+  end
+
+  test "stranded_gem_work? passes when release is level with the tag" do
+    # The idempotent re-run: prepare already published + tagged this tip.
+    assert_not S.stranded_gem_work?(ahead_commits: [], version: "0.11.0", tag_version: "0.11.0")
+  end
+
+  test "stranded_gem_work? passes a never-published repo (no tag)" do
+    assert_not S.stranded_gem_work?(ahead_commits: ["abc123 first commit"], version: "0.1.0", tag_version: "")
+    assert_not S.stranded_gem_work?(ahead_commits: ["abc123 first commit"], version: "0.1.0", tag_version: nil)
+  end
+
+  test "stranded_gem_work? ignores blank commit lines" do
+    assert_not S.stranded_gem_work?(ahead_commits: ["", "  ", nil], version: "0.10.0", tag_version: "0.10.0")
+  end
+
+  # --- the PRODUCTION DOWNGRADE vector (round-5 blocker) ----------------------
+  #
+  # The guard's invariant is NOT "version equals the tag" — it is "the release
+  # version is STRICTLY NEWER than the last published tag". Equality was only
+  # the most obvious spelling of the violation. A BACKWARD version is the
+  # dangerous one, and it walks the whole pipeline wearing green: the guard
+  # passes, publish_needed? answers false (0.9.0 IS already on RubyGems), phase 2
+  # prints the actively-misleading "already live — skip", consumer_bump_action
+  # answers :rewrite_pin, and the consumer is rewritten DOWNWARD — a production
+  # downgrade, CI-green, QA-green, shipped, with the real commits stranded.
+  # Assert the POSITIVE property (did it advance?), never a list of bad spellings.
+
+  test "stranded_gem_work? BLOCKS a BACKWARD version (the silent production downgrade)" do
+    assert S.stranded_gem_work?(ahead_commits: ["abc123 engine fix"], version: "0.9.0", tag_version: "0.10.0"),
+           "a version BEHIND the last published tag must BLOCK — it would downgrade consumers, " \
+           "not publish; the guard asserts strictly-newer, not merely different"
+  end
+
+  test "stranded_gem_work? BLOCKS a version that only LOOKS different from the tag" do
+    # 0.10 == 0.10.0 under Gem::Version. A string compare calls this a healthy
+    # bump; it is the unbumped version wearing a different spelling.
+    assert S.stranded_gem_work?(ahead_commits: ["abc123 engine fix"], version: "0.10", tag_version: "0.10.0"),
+           "version equality is SEMANTIC (Gem::Version), not textual"
+  end
+
+  test "stranded_gem_work? BLOCKS an unparseable version (cannot prove it advanced)" do
+    assert S.stranded_gem_work?(ahead_commits: ["abc123 engine fix"], version: "not-a-version", tag_version: "0.10.0"),
+           "an unparseable version fails to the SAFE side — it can never prove it advanced"
+    assert S.stranded_gem_work?(ahead_commits: ["abc123 engine fix"], version: "0.11.0", tag_version: "garbage"),
+           "an unparseable TAG fails safe the same way"
+  end
+
+  test "stranded_gem_work? still passes a genuinely forward version, including prereleases" do
+    assert_not S.stranded_gem_work?(ahead_commits: ["abc123 fix"], version: "0.10.1", tag_version: "0.10.0")
+    assert_not S.stranded_gem_work?(ahead_commits: ["abc123 fix"], version: "1.0.0", tag_version: "0.10.0")
+    # a prerelease of the NEXT version is ahead of the tag (Gem::Version orders it so)
+    assert_not S.stranded_gem_work?(ahead_commits: ["abc123 fix"], version: "0.11.0.rc1", tag_version: "0.10.0")
+    # ...but a prerelease of the SAME version is NOT ahead of the released tag
+    assert S.stranded_gem_work?(ahead_commits: ["abc123 fix"], version: "0.10.0.rc1", tag_version: "0.10.0"),
+           "0.10.0.rc1 sorts BEFORE 0.10.0 — it has not advanced past the published tag"
+  end
+
+  test "stranded_gem_message names the commits, the version_file, and the fix" do
+    msg = S.stranded_gem_message("studio-engine",
+                                 ahead_commits: ["abc123 engine fix", "def456 second"],
+                                 version: "0.10.0", version_file: "lib/studio/version.rb",
+                                 tag_version: "0.10.0")
+    assert_includes msg, "studio-engine"
+    assert_includes msg, "2 commit(s)"
+    assert_includes msg, "abc123 engine fix"
+    assert_includes msg, "def456 second"
+    assert_includes msg, "lib/studio/version.rb"
+    assert_includes msg, "STRANDING"
+    assert_includes msg, "Bump the version"
+    assert_includes msg, "bin/release prepare"
+  end
+
+  test "stranded_gem_message samples long commit lists" do
+    commits = (1..14).map { |i| "sha#{i} commit #{i}" }
+    msg = S.stranded_gem_message("studio-engine", ahead_commits: commits,
+                                 version: "0.10.0", version_file: "lib/studio/version.rb",
+                                 tag_version: "0.10.0")
+    assert_includes msg, "sha10 commit 10"
+    assert_not_includes msg, "sha11 commit 11"
+    assert_includes msg, "(+4 more)"
+  end
+
+  # The message must report the REAL tag and call a downgrade a downgrade. Under
+  # the old signature it printed `version` as the tag — for the backward vector
+  # that told the operator the tag was v0.9.0 and buried the downgrade entirely.
+  test "stranded_gem_message reports the TAG (not the version) and names a downgrade" do
+    msg = S.stranded_gem_message("studio-engine", ahead_commits: ["abc123 engine fix"],
+                                 version: "0.9.0", version_file: "lib/studio/version.rb",
+                                 tag_version: "0.10.0")
+    assert_includes msg, "past the last published tag v0.10.0",
+                    "the message names the ACTUAL published tag, never the unbumped version_file value"
+    assert_includes msg, "DOWNGRADE", "a backward version must be called what it is"
+    assert_includes msg, "PAST 0.10.0", "the fix names the floor the bump must clear"
+    assert_not_includes msg, "already live",
+                        "the skip wording belongs to the equal-version case, not the backward one"
+  end
 end

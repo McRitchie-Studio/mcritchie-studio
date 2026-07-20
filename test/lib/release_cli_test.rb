@@ -528,7 +528,308 @@ class ReleaseCliTest < Minitest::Test
 
   def test_prepare_dry_run_gem_member_rides_the_release
     out = run_cli(["--dry-run"], call: "prepare", setup: STUB_CONDUCTOR)
-    assert_includes out, "rides the release", "a gem member is published at ship, not deployed in prepare"
+    assert_includes out, "rides the release",
+                    "a gem member is published before QA + verified at ship — never QA-deployed itself"
+  end
+
+  # --- prepare: producer-first gem publish + consumer lock bump (before QA) ----
+  #
+  # publish-gems-before-qa: prepare publishes each swept gem member's
+  # origin/release version and commits each consumer's Gemfile.lock bump onto its
+  # release branch BEFORE the pre-QA gate reads CI's verdict and BEFORE any QA
+  # deploy — so the gate's SHA, the QA tree, and the prod tree are the SAME tree
+  # (ship's publish stays as the idempotent verify). These drive the REAL prepare
+  # flow with the publish/bump I/O seams stubbed: RubyGems, the ship workspace,
+  # bundler, and every git read/write — no network, no real remotes.
+
+  # `version` is what origin/release's version_file declares; the last published
+  # tag is pinned at v0.10.0 and the tip is one commit past it, so:
+  #   version 1.0.0/0.11.0 → bumped (healthy publish); 0.10.0 → STRANDED (guard).
+  # `live` is the RubyGems listing; `lock_dirty` is whether the bundle-lock run
+  # left the workspace lock changed (false = already-bumped idempotent re-run).
+  def gem_publish_stub(version: "1.0.0", live: [], lock_dirty: true)
+    GATE_GIT_STUB +
+      %(ENV["RELEASE_CI_STATUS"] = "green"\n) +
+      %(def repo_path(_repo) = #{self.class.stub_repo.inspect}\n) +
+      %(def gem_version_from_ref(_repo, _ref) = #{version.inspect}\n) +
+      %(def rubygems_versions(_gem) = #{live.inspect}\n) +
+      %(LOCK_DIRTY = #{lock_dirty.inspect}\n) + <<~'RUBY'
+        def conductor(ruby, read_only: false)
+          return { "tasks" => [], "release" => { "slug" => "rel-gempub", "state" => "assembling" }, "screen" => {} } if ruby.include?("sweep_candidates")
+          return { "state" => "assembled" } if ruby.include?("qa_green!")
+          { "slug" => "rel-gempub", "state" => "assembling", "branch" => "release", "repos" => [
+            { "repo" => "studio-engine", "kind" => "gem", "members" => [{ "slug" => "t-gem", "branch" => nil }] },
+            { "repo" => "mcritchie-studio", "kind" => "app", "release_branch" => "release",
+              "qa_app" => "mcritchie-studio", "members" => [{ "slug" => "t-studio", "branch" => "feat/s" }] }
+          ] }
+        end
+        def repo_git_state(repo, _path) = { "repo" => repo, "branch" => "main", "dirty" => false, "dirty_files" => [], "tracked_dirty" => [] }
+        def git_capture(*a)
+          j = a.join(" ")
+          return ["v0.10.0", true] if j.include?("describe")
+          return ["abc123 stranded engine commit", true] if j.include?("log --oneline")
+          return [(LOCK_DIRTY ? " M Gemfile\n M Gemfile.lock" : ""), true] if j.include?("status --porcelain")
+          # Phase 1's consumer-coverage read: the swept app's Gemfile AT origin/release.
+          return [%(gem "studio-engine", "~> 0.10"\n), true] if j.include?(":Gemfile")
+          return [GATE_SHA, true] if j.include?("rev-parse")
+          ["", true]
+        end
+        def with_ship_workspace(_repo) = yield
+        def ship_workspace!(repo, _sha)
+          dir = File.join(Dir.tmpdir, "prep-ws-#{Process.pid}-#{repo}")
+          FileUtils.mkdir_p(dir)
+          File.write(File.join(dir, "Gemfile"), %(gem "studio-engine", "~> 0.10"\n))
+          dir
+        end
+        def bundle_lock(_path, gem, attempts: 3, conservative: false)
+          $stdout.puts("BUNDLE-LOCK #{gem} conservative=#{conservative}")
+        end
+        def sh(*a, **k)
+          g = gate_git(a, k)
+          return g if g
+          if a[0] == "gem" && a[1] == "build"
+            $stdout.puts("GEM-BUILD")
+            return ["", true]
+          end
+          if a[0] == "gem" && a[1] == "push"
+            $stdout.puts("GEM-PUSH")
+            return ["", true]
+          end
+          if a[0] == "git" && a.include?("add")
+            gemfile = File.join(a[a.index("-C") + 1].to_s, "Gemfile")
+            $stdout.puts("GEMFILE-AFTER " + File.read(gemfile).strip) if File.exist?(gemfile)
+            return ["", true]
+          end
+          if a[0] == "git" && a.any? { |x| x.to_s == "HEAD:refs/heads/release" }
+            $stdout.puts("LOCK-PUSH")
+            return ["", true]
+          end
+          $stdout.puts("QA-DEPLOY") if a[0] == "bin/qa-server"
+          return ["200", true] if a.join(" ").include?("curl")
+          ["", true]
+        end
+      RUBY
+  end
+
+  # [integration] The ordering that IS the feature: gem publish → consumer lock
+  # bump commit → pre-QA gate → QA deploy. The lock commit landing BEFORE the gate
+  # is what points the CI verdict at the post-bump release SHA.
+  def test_prepare_publishes_gems_and_bumps_locks_before_the_pre_qa_gate_and_qa_deploy
+    out = run_cli(["--yes"], call: "prepare", setup: gem_publish_stub)
+
+    publish = out.index("GEM-PUSH")
+    bump    = out.index("LOCK-PUSH")
+    gate    = out.index("pre-QA gate mcritchie-studio")
+    deploy  = out.index("QA-DEPLOY")
+    assert publish && bump && gate && deploy,
+           "publish, lock-bump, gate, and QA deploy must ALL appear: #{out}"
+    assert_operator publish, :<, bump,   "gems publish before any consumer lock bump (producer-first)"
+    assert_operator bump, :<, gate,      "the lock bump commits BEFORE the pre-QA gate reads origin/release"
+    assert_operator gate, :<, deploy,    "the gate still precedes the QA deploy"
+    assert_includes out, "BUNDLE-LOCK studio-engine conservative=true",
+                    "a single-gem bump uses conservative lock semantics"
+    assert_includes out, "committed studio-engine 1.0.0",
+                    "the bump commit narrates what landed on origin/release"
+  end
+
+  # [integration] The constraint-escape rule: `~> 0.10` HOLDS a minor bump
+  # (lock-only — the Gemfile pin is untouched) and is REWRITTEN by a major bump
+  # that escapes it.
+  def test_prepare_rewrites_the_consumer_pin_only_when_the_published_version_escapes_it
+    escaped = run_cli(["--yes"], call: "prepare", setup: gem_publish_stub(version: "1.0.0"))
+    assert_includes escaped, %(GEMFILE-AFTER gem "studio-engine", "~> 1.0"),
+                    "a major bump escapes `~> 0.10` — the pin advances with the lock"
+
+    held = run_cli(["--yes"], call: "prepare", setup: gem_publish_stub(version: "0.11.0"))
+    assert_includes held, %(GEMFILE-AFTER gem "studio-engine", "~> 0.10"),
+                    "a minor bump is WITHIN `~> 0.10` — lock-only, the pin stays"
+    assert_includes held, "BUNDLE-LOCK studio-engine conservative=true"
+  end
+
+  # [integration] The STRANDED-WORK guard: origin/release ahead of the last
+  # published tag with an UNBUMPED version_file must BLOCK loudly BEFORE anything
+  # publishes or deploys — the silent publish-skip that stranded engine commits.
+  def test_prepare_blocks_loudly_on_stranded_gem_work
+    out = run_cli(["--yes"], setup: gem_publish_stub(version: "0.10.0"),
+                  call: %{begin; prepare; puts("NO-ABORT"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+    assert_includes out, "ABORTED", "stranded gem work must abort prepare, never silently skip"
+    assert_includes out, "abc123 stranded engine commit", "the abort NAMES the stranded commits"
+    assert_includes out, "STRANDING"
+    assert_includes out, "Bump the version in studio-engine/", "the abort hands over the exact fix"
+    assert_includes out, "re-run `bin/release prepare`"
+    refute_includes out, "NO-ABORT"
+    refute_includes out, "GEM-PUSH", "nothing publishes past the guard"
+    refute_includes out, "LOCK-PUSH", "no lock bump past the guard"
+    refute_includes out, "QA-DEPLOY", "no QA deploy past the guard"
+  end
+
+  # [integration] The self-healing re-run: version already live + lock already
+  # bumped → publish and commit both skip, and the QA half still runs.
+  def test_prepare_gem_publish_and_lock_bump_are_idempotent_on_a_re_run
+    out = run_cli(["--yes"], call: "prepare",
+                  setup: gem_publish_stub(version: "1.0.0", live: [{ "number" => "1.0.0" }], lock_dirty: false))
+
+    assert_includes out, "already live on RubyGems — skip publish", "an already-published version skips"
+    assert_includes out, "nothing to commit (idempotent re-run)", "an already-bumped lock commits nothing"
+    refute_includes out, "GEM-BUILD"
+    refute_includes out, "GEM-PUSH"
+    refute_includes out, "LOCK-PUSH"
+    assert_includes out, "QA-DEPLOY", "the re-run still deploys QA (self-healing resumes the deploy half)"
+  end
+
+  def test_prepare_dry_run_previews_the_gem_publish_and_lock_bump_without_executing
+    out = run_cli(["--dry-run"], call: "prepare", setup: gem_publish_stub)
+
+    assert_includes out, "stranded-work guard", "the dry run previews the guard"
+    assert_includes out, "bump consumer locks", "the dry run previews the consumer bump"
+    assert_includes out, "idempotent; no-op when already current"
+    refute_includes out, "GEM-BUILD", "a dry run builds nothing"
+    refute_includes out, "GEM-PUSH", "a dry run publishes nothing"
+    refute_includes out, "BUNDLE-LOCK", "a dry run locks nothing"
+    refute_includes out, "LOCK-PUSH", "a dry run pushes nothing"
+  end
+
+  # --- prepare: the two-phase preflight (validate EVERY gem, THEN publish) ----
+  #
+  # A RubyGems push can never be re-pushed, so phase 1 must validate ALL swept
+  # gems before phase 2 pushes the first one. These vectors pin the discipline:
+  # a LATE validation failure publishes ZERO gems, and a failed fetch fails
+  # closed instead of publishing from a stale origin/release.
+
+  # A second gem member (solana-studio) rides the same release. Its version is
+  # parametrized per-repo so one gem can be healthy while the other fails.
+  TWO_GEM_SECOND_STRANDED = <<~'RUBY'
+    def conductor(ruby, read_only: false)
+      return { "tasks" => [], "release" => { "slug" => "rel-gempub", "state" => "assembling" }, "screen" => {} } if ruby.include?("sweep_candidates")
+      return { "state" => "assembled" } if ruby.include?("qa_green!")
+      { "slug" => "rel-gempub", "state" => "assembling", "branch" => "release", "repos" => [
+        { "repo" => "studio-engine", "kind" => "gem", "members" => [{ "slug" => "t-gem1", "branch" => nil }] },
+        { "repo" => "solana-studio", "kind" => "gem", "members" => [{ "slug" => "t-gem2", "branch" => nil }] },
+        { "repo" => "mcritchie-studio", "kind" => "app", "release_branch" => "release",
+          "qa_app" => "mcritchie-studio", "members" => [{ "slug" => "t-studio", "branch" => "feat/s" }] }
+      ] }
+    end
+    def gem_version_from_ref(repo, _ref) = repo == "solana-studio" ? "0.10.0" : "1.0.0"
+  RUBY
+
+  # [integration] THE irreversible-ordering regression: gem 1 (studio-engine
+  # 1.0.0) is healthy and would publish; gem 2 (solana-studio 0.10.0 == its last
+  # tag, one commit ahead) fails the stranded-work guard. Interleaved code pushes
+  # gem 1 BEFORE gem 2 aborts; the two-phase preflight must abort with ZERO
+  # pushes — nothing builds, nothing publishes, nothing bumps, nothing deploys.
+  def test_prepare_second_gem_validation_failure_publishes_zero_gems
+    out = run_cli(["--yes"], setup: gem_publish_stub + TWO_GEM_SECOND_STRANDED,
+                  call: %{begin; prepare; puts("NO-ABORT"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+    assert_includes out, "ABORTED", "a late validation failure must abort the whole publish step"
+    assert_includes out, "solana-studio", "the abort names the failing gem"
+    assert_includes out, "NOTHING was published", "the abort states the zero-publish guarantee"
+    refute_includes out, "NO-ABORT"
+    refute_includes out, "GEM-BUILD", "the healthy FIRST gem must not even build before the preflight settles"
+    refute_includes out, "GEM-PUSH", "ZERO gems publish when ANY swept gem fails validation"
+    refute_includes out, "LOCK-PUSH", "no consumer lock bump past a failed preflight"
+    refute_includes out, "QA-DEPLOY", "no QA deploy past a failed preflight"
+  end
+
+  # The gem repo's own fetch (`fetch origin --tags`) fails; the app fetches
+  # (no --tags) stay healthy, so the failure is exactly the gem's stale-ref lane.
+  GEM_FETCH_FAIL = <<~'RUBY'
+    alias sh_before_fetch_fail sh
+    def sh(*a, **k)
+      return ["", false] if a[0] == "git" && a.include?("fetch") && a.include?("--tags")
+      sh_before_fetch_fail(*a, **k)
+    end
+  RUBY
+
+  # [integration] FAIL CLOSED on a failed fetch: a transient fetch failure must
+  # never let a stale origin/release drive an irreversible publish (or silently
+  # skip a new gem, then gate + QA the old lock). Named abort, zero pushes.
+  def test_prepare_gem_fetch_failure_fails_closed_before_any_publish
+    out = run_cli(["--yes"], setup: gem_publish_stub + GEM_FETCH_FAIL,
+                  call: %{begin; prepare; puts("NO-ABORT"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+    assert_includes out, "ABORTED", "a failed gem fetch must abort, not proceed on a stale ref"
+    assert_includes out, "git fetch failed in gem studio-engine", "the abort names the repo and the failed fetch"
+    assert_includes out, "fail closed", "the abort states the discipline"
+    refute_includes out, "NO-ABORT"
+    refute_includes out, "GEM-PUSH", "nothing publishes from a possibly-stale origin/release"
+    refute_includes out, "LOCK-PUSH", "no lock bump on a failed preflight"
+  end
+
+  # A gem-only candidate: the sweep carries the gem and NO app member.
+  GEM_ONLY_CONDUCTOR = <<~'RUBY'
+    def conductor(ruby, read_only: false)
+      return { "tasks" => [], "release" => { "slug" => "rel-gemonly", "state" => "assembling" }, "screen" => {} } if ruby.include?("sweep_candidates")
+      return { "state" => "assembled" } if ruby.include?("qa_green!")
+      { "slug" => "rel-gemonly", "state" => "assembling", "branch" => "release", "repos" => [
+        { "repo" => "studio-engine", "kind" => "gem", "members" => [{ "slug" => "t-gem", "branch" => nil }] }
+      ] }
+    end
+  RUBY
+
+  # [integration] The gem-only bypass: with no app member there is no consumer
+  # lock bump, no app gate, and no QA deploy — the candidate would publish and
+  # assemble QA-green with QA never bundling the gem. Preflight must abort it
+  # BEFORE the irreversible publish, naming the enroll-a-consumer fix.
+  def test_prepare_gem_only_candidate_aborts_before_any_publish
+    out = run_cli(["--yes"], setup: gem_publish_stub + GEM_ONLY_CONDUCTOR,
+                  call: %{begin; prepare; puts("NO-ABORT"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+    assert_includes out, "ABORTED", "a gem-only candidate must not publish + assemble unQA'd"
+    assert_includes out, "NO app member", "the abort names the gem-only condition"
+    assert_includes out, "enroll the consuming app", "the abort hands over the fix"
+    refute_includes out, "NO-ABORT"
+    refute_includes out, "GEM-PUSH", "nothing publishes on a gem-only candidate"
+    refute_includes out, "QA-DEPLOY"
+  end
+
+  # [integration] THE PRODUCTION-DOWNGRADE vector, end to end (round-5 blocker).
+  # version_file declares 0.9.0 while the last published tag is v0.10.0 — the
+  # route in is a version.rb conflict resolved the wrong way on a merge into
+  # release. Before the ordering fix this walked the ENTIRE pipeline green:
+  # guard passed, publish "skipped" as already-live, and the consumer pin was
+  # rewritten DOWNWARD to `~> 0.9` and committed to origin/release. Now it must
+  # abort in phase 1: zero publishes, and — the assertion that matters most —
+  # NO downward pin rewrite ever reaches a commit.
+  def test_prepare_backward_gem_version_aborts_and_never_downgrades_a_consumer
+    out = run_cli(["--yes"], setup: gem_publish_stub(version: "0.9.0", live: [{ "number" => "0.9.0" }]),
+                  call: %{begin; prepare; puts("NO-ABORT"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+    assert_includes out, "ABORTED", "a backward version must BLOCK, never publish or skip"
+    assert_includes out, "DOWNGRADE", "the abort names the downgrade it prevented"
+    assert_includes out, "past the last published tag v0.10.0", "the abort names the REAL tag"
+    refute_includes out, "NO-ABORT"
+    refute_includes out, "already live on RubyGems — skip publish",
+                    "the misleading idempotent-skip line must NOT appear for a backward version"
+    refute_includes out, "GEM-PUSH", "zero gems publish on a backward version"
+    refute_includes out, %(GEMFILE-AFTER gem "studio-engine", "~> 0.9"),
+                    "the consumer pin must NEVER be rewritten downward"
+    refute_includes out, "LOCK-PUSH", "no downgrade commit reaches origin/release"
+    refute_includes out, "QA-DEPLOY"
+  end
+
+  # The swept app's origin/release Gemfile does not declare the gem.
+  EMPTY_CONSUMER_GEMFILE = <<~'RUBY'
+    alias git_capture_before_empty_gemfile git_capture
+    def git_capture(*a)
+      return ["", true] if a.join(" ").include?(":Gemfile")
+      git_capture_before_empty_gemfile(*a)
+    end
+  RUBY
+
+  # [integration] The same bypass with apps present: a gem NO swept consumer
+  # bundles would still assemble QA-green untested. Preflight must catch the
+  # missing coverage before the publish.
+  def test_prepare_gem_with_no_swept_consumer_aborts_before_any_publish
+    out = run_cli(["--yes"], setup: gem_publish_stub + EMPTY_CONSUMER_GEMFILE,
+                  call: %{begin; prepare; puts("NO-ABORT"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+    assert_includes out, "ABORTED", "a gem with no swept consumer must not publish"
+    assert_includes out, "no consuming app in this sweep", "the abort names the missing coverage"
+    refute_includes out, "NO-ABORT"
+    refute_includes out, "GEM-PUSH", "nothing publishes without a consumer to QA it through"
+    refute_includes out, "LOCK-PUSH"
   end
 
   # A release with a registered app that has NO qa_environments.yml entry
@@ -2683,6 +2984,22 @@ class ReleaseCliTest < Minitest::Test
                      "the resolver must not read stale local 0.10.0 and skip the real publish"
     # the pre-flight reflects the same truth — the bumped version will publish
     assert_includes out, "studio-engine 0.11.0: not published — will publish"
+  end
+
+  # [integration] publish-gems-before-qa's ship half: prepare already published
+  # 0.11.0 BEFORE QA, so ship's publish is the idempotent VERIFY — it skips the
+  # push (RubyGems forbids a re-push) and the train still completes the gem's
+  # release → main collapse.
+  def test_ship_publish_is_an_idempotent_skip_after_prepare_already_published
+    setup = PUBLISH_DECISION_STUB.sub(
+      '[{ "number" => "0.10.0" }] # 0.10.0 LIVE, 0.11.0 not yet',
+      '[{ "number" => "0.10.0" }, { "number" => "0.11.0" }] # prepare already published 0.11.0'
+    )
+    out = run_cli(["--yes"], call: "ship", setup: setup)
+
+    assert_includes out, "studio-engine 0.11.0: LIVE on RubyGems — will skip", "the pre-flight sees it live"
+    assert_includes out, "already live on RubyGems — skip publish", "ship verifies, never re-pushes"
+    refute_includes out, "PUBLISH-CALLED", "no second publish of a version prepare already pushed"
   end
 
   # --- archive --dry-run / run: the DevOps loop's conclusion (shipped → archived) ---

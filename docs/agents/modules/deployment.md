@@ -165,9 +165,12 @@ already-approved rollout prompt. Alex's `full-cycle` launcher and Avi's
 `production-deploy` and `deploy-with-task` acts are such pre-approved production
 prompts; `pr-review` and Steffon's `qa-release` sweep are not — they stop before
 prod.
-Gem publishes specifically are **part of**
-"Run Deployment" — they ride a release as first-class members and are published
-producer-first by `bin/release ship` (see below), not as a separate ad-hoc step.
+Gem publishes specifically ride a release as
+first-class members and are published producer-first by **`bin/release prepare`
+at QA assembly** (see below) — the one irreversible act inside Steffon's
+otherwise prod-stopping `qa-release` lane, taken only after a fail-closed
+preflight over every swept gem. `bin/release ship` re-verifies each gem
+idempotently (already-live → skip). Neither is a separate ad-hoc step.
 
 ## QA And Production URLs
 
@@ -208,35 +211,42 @@ How a gem rides a release:
    the **version bump lives in that PR** — `lib/studio/version.rb` for
    studio-engine, the `.gemspec` for solana-studio (the registry's
    `version_file`). It is reviewed → `reviewed` like any other task.
-2. **Prepare adds it as a member, skipping the merge.** `bin/release prepare`
-   adds the gem to the release record but does **not** merge a branch for it (it
-   has none here). The gem is QA'd indirectly through a consuming app — assemble
-   the consumer (or a QA-only spike) in the same release so the gem is exercised
-   end-to-end against the candidate.
-3. **Run Deployment publishes gems first, gated.** `bin/release ship` orders
+2. **Prepare preflights EVERY swept gem, then publishes — before the gate and
+   QA.** `bin/release prepare` adds the gem to the release record without
+   merging a branch for it (it has none here), then runs the two-phase
+   producer-first sequence: phase 1 validates ALL swept gems (fail-closed
+   fetch of `origin/release`, version_file parses, the stranded-work guard —
+   commits past the last `v*` tag with an unbumped version ABORT loudly — and
+   a swept consuming app whose Gemfile declares the gem); ANY failure aborts
+   with **zero gems published**, because a RubyGems push can never be
+   re-pushed. Phase 2 then publishes each validated gem from the frozen
+   `origin/release` tree (skip-if-live), tags `v<version>`, and commits each
+   consumer's `Gemfile.lock` bump (`bundle lock --update <gem>
+   --conservative`) onto the consumer's `origin/release` — so the pre-QA
+   gate's CI verdict, the QA deploy, and the prod tree all read the SAME
+   post-bump SHA, and QA exercises the REAL published artifact.
+3. **Run Deployment re-verifies gems first, gated.** `bin/release ship` orders
    members gems-before-apps (honoring `dependencies`) and, before any app
-   deploy, for each gem member: prints the gem + target version, asks
-   `Publish <repo> <version> to RubyGems?` (approval-gated — `--yes`/`--dry-run`
-   auto-confirm), runs the gem's build (studio-engine: `bin/release-check
-   --build`; otherwise `gem build <gemspec>`), `gem push`es it, and tags
-   `v<version>` in the gem repo. A failed build/push **aborts the ship** before
-   any app deploys.
-4. **Consumers re-pin and deploy.** After the gem is on RubyGems, the consuming
-   apps bump their `Gemfile` to `~> x.y`, `bundle`, and deploy — either as app
-   members of the same release or as fast-follow tasks. Never deploy a consumer
-   ahead of its gem.
+   deploy, re-runs the publish as an idempotent verify: on the happy path
+   every version is already live (skip); it remains the real publish only for
+   a release prepared before the prepare-time publish existed. A failed
+   build/push **aborts the ship** before any app deploys.
+4. **Consumers deploy on the bumped lock.** The consumer's lock bump landed on
+   `origin/release` at prepare (step 2), so QA and prod both build the bumped
+   lock. Never deploy a consumer ahead of its gem.
 
 Operational notes:
 
-- Run `ship` from a **primary checkout**, not a worktree: the gem repos are
-  resolved as siblings of `mcritchie-studio` at the projects root
+- Run `prepare` and `ship` from a **primary checkout**, not a worktree: the gem
+  repos are resolved as siblings of `mcritchie-studio` at the projects root
   (`/Users/alex/projects/<repo>`).
 - `gem push` requires a logged-in RubyGems credential (`gem signin`). A
   "version already published" error means the gem PR didn't bump its
   `version_file` — fix the version, don't re-push.
 - The manual gem build remains documented in `studio-engine/docs/RELEASE.md`;
-  `bin/release ship` automates that path (build → push → tag) as the release
-  conductor's producer-first step.
+  `bin/release prepare` automates that path (preflight → build → push → tag) as
+  the release conductor's producer-first step, and `bin/release ship` re-runs
+  it as the idempotent verify.
 
 ## QA Servers
 

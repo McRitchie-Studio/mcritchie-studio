@@ -4,8 +4,11 @@
 # The Deploy workflow ships a release PRODUCER-FIRST: a gem (a *producer*) is
 # published to RubyGems BEFORE the apps (its *consumers*) that depend on it
 # deploy, so a consuming app always builds against the just-published version.
-# `bin/release ship` ("Run Deployment") publishes every gem member first
-# (approval-gated `gem push`), then runs the app deploys.
+# `bin/release prepare` (Steffon's qa-release sweep) publishes every gem member
+# at QA assembly — after a fail-closed preflight over ALL swept gems, BEFORE
+# the pre-QA gate and any QA deploy — and commits each consumer's lock bump
+# onto origin/release. `bin/release ship` ("Run Deployment") re-verifies each
+# gem idempotently (already-live → skip) before the app deploys.
 #
 # Read by:
 #   * Release::Repos (app/models/release/repos.rb) — kind/gem?/app?/gem_meta
@@ -16,7 +19,9 @@
 # Two member kinds:
 #   gems — published to RubyGems. They have NO app branch in mcritchie-studio;
 #          their PR/branch lives in the gem's own repo. They ride the release as
-#          a record, are published at ship, and are QA'd via a consuming app.
+#          a record, are published at prepare (BEFORE the pre-QA gate + QA
+#          deploy; ship re-verifies idempotently), and are QA'd via a consuming
+#          app's bumped Gemfile.lock.
 #   apps — deployed. A HASH keyed by repo slug; each app carries a `prod_deploy`
 #          adapter describing HOW it ships to production (the multi-repo conductor
 #          reads this so one release can drive heterogeneous deploys). They have a

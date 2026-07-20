@@ -8,9 +8,14 @@ class Release
   # actually reads/writes the file + runs `bundle lock` lives elsewhere and this
   # stays trivially unit-testable.
   #
-  # The two real consumer shapes this handles:
+  # The real consumer shapes this handles:
   #   gem "studio-engine", github: "amcritchie/studio-engine", branch: "feat/x"
-  #   gem "studio-engine", "~> 0.8"   (already pinned — left untouched)
+  #     — a source ref; `rewrite` re-pins it to the published version.
+  #   gem "studio-engine", "~> 0.8"
+  #     — a plain version pin. `rewrite` leaves it untouched; the prepare-side
+  #       consumer bump reads it (`version_requirements` + `constraint_allows?`)
+  #       and `rewrite_pin`s it ONLY when the newly published version escapes
+  #       the constraint (a lock-file bump suffices otherwise).
   module GemfileRepin
     module_function
 
@@ -46,7 +51,78 @@ class Release
       end.join
     end
 
+    # The version-requirement strings on the gem's declaration line —
+    # `gem "x", "~> 0.10"` → ["~> 0.10"], `gem "x", ">= 1.0", "< 2"` → both.
+    # [] for a source-ref line (github:/git:/path:/branch: — no published
+    # requirement to read), a bare `gem "x"` line, or an absent gem.
+    def version_requirements(gemfile_text, gem_name)
+      line = gem_line_for(gemfile_text, gem_name)
+      return [] unless line && !source_ref?(line)
+
+      line_args(line, gem_name).filter_map do |arg|
+        arg[REQUIREMENT_STRING, 2]
+      end
+    end
+
+    # Does `version` satisfy the given requirement strings (Gem::Requirement
+    # semantics)? An EMPTY requirements list allows anything — a bare `gem "x"`
+    # line accepts every version, so a lock-only bump suffices there.
+    def constraint_allows?(requirements, version)
+      reqs = Array(requirements).map(&:to_s).reject(&:empty?)
+      return true if reqs.empty?
+
+      Gem::Requirement.new(*reqs).satisfied_by?(Gem::Version.new(version.to_s))
+    rescue ArgumentError
+      # A malformed requirement/version can't prove the pin allows the new
+      # version — report the escape so the caller rewrites to a known-good pin.
+      false
+    end
+
+    # Replace a plain version-pin line's requirement strings with the pessimistic
+    # constraint for `version`, KEEPING every non-requirement option (e.g.
+    # `require: false`) plus indentation and any trailing comment:
+    #   gem "x", "~> 0.10", require: false  →  gem "x", "~> 0.11", require: false
+    # The escape-hatch half of the consumer bump: used only when the published
+    # version escapes the existing constraint (see ShipSequence
+    # .consumer_bump_action). Source-ref lines are `rewrite`'s job and are left
+    # untouched here; idempotent when the pin already reads the target constraint.
+    def rewrite_pin(gemfile_text, gem_name, version)
+      gemfile_text.to_s.each_line.map do |line|
+        if gem_declaration?(line, gem_name) && !source_ref?(line)
+          rewrite_pin_line(line, gem_name, version)
+        else
+          line
+        end
+      end.join
+    end
+
     # --- internals -----------------------------------------------------------
+
+    # A quoted version-requirement argument: "~> 0.10", ">= 1.0", "0.8.0".
+    # Capture 2 is the requirement text without its quotes.
+    REQUIREMENT_STRING = /\A(['"])((?:~>|>=|<=|<|>|!=|=)?\s*\d[\w.\-]*)\1\z/
+
+    # The comma-split arguments AFTER `gem "<name>"` on a declaration line,
+    # comments stripped. Good for the plain-pin shapes this module handles
+    # (requirement strings + simple `key: value` options); source-ref lines
+    # never reach the callers that split.
+    def line_args(line, gem_name)
+      code = strip_comment(line)
+      head = code[/\A[ \t]*gem\s+(['"])#{Regexp.escape(gem_name.to_s)}\1/]
+      return [] unless head
+
+      code.delete_prefix(head).split(",").map(&:strip).reject(&:empty?)
+    end
+
+    def rewrite_pin_line(line, gem_name, version)
+      body    = line.chomp
+      indent  = body[/\A[ \t]*/]
+      comment = body[/\s*#.*\z/].to_s
+      newline = line[/\r?\n\z/].to_s
+      keep    = line_args(line, gem_name).reject { |arg| arg.match?(REQUIREMENT_STRING) }
+      args    = ["\"#{gem_name}\"", "\"#{pessimistic_constraint(version)}\"", *keep]
+      "#{indent}gem #{args.join(', ')}#{comment}#{newline}"
+    end
 
     # The first line that declares `gem "<name>"` (matching quote style), or nil.
     def gem_line_for(gemfile_text, gem_name)
