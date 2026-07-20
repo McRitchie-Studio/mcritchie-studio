@@ -11,6 +11,23 @@ Docs are part of the product surface for agents. When code changes behavior, upd
 - Audit process: `mcritchie-studio/docs/agents/modules/audit-playbook.md`
 - Historical audits and prompts: archive or ledger once their live facts are promoted
 
+## Editing The Entry Docs (`AGENTS.md` / `CLAUDE.md`)
+
+The projects-root `/Users/alex/projects/AGENTS.md` and `CLAUDE.md` are
+**generated**. `bin/install-agent-docs` copies `docs/agents/index.md` →
+`AGENTS.md` and `docs/agents/claude.md` → `CLAUDE.md` (plus the user-global
+skills). Edit the sources in this repo; never edit the generated roots — an edit
+there is silently reverted by the next install.
+
+Sequencing matters. **Run `bin/install-agent-docs install` from the
+mcritchie-studio PRIMARY after the change lands on `accepted`, not from the
+feature worktree.** Installing from a worktree publishes unreviewed doc text to
+the shared projects root, and because `bin/session-preflight` compares the root
+files against ITS OWN checkout's sources, every concurrent session — the primary
+and every other desk cut from `accepted` — starts reporting
+`installed docs/skills drift` until the branch merges. Verify with
+`bin/install-agent-docs check` (read-only) at any time.
+
 ## Drift Review
 
 When finishing a meaningful feature:
