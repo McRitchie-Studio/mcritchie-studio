@@ -60,6 +60,17 @@ module ActiveSupport
     fixtures :all
 
     # Add more helper methods to be used by all tests here...
+
+    # Pin one ENV key for the duration of the block, restoring the original
+    # value (or its absence) on the way out. Safe under CI's process-per-worker
+    # parallelism: each worker owns its ENV and runs its tests sequentially.
+    def with_env(key, value)
+      original = ENV[key]
+      value.nil? ? ENV.delete(key) : ENV[key] = value
+      yield
+    ensure
+      original.nil? ? ENV.delete(key) : ENV[key] = original
+    end
   end
 end
 

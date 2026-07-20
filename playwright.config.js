@@ -96,6 +96,17 @@ if (!externalBaseURL) {
       RAILS_ENV: "test",
       LOCAL_EMAIL_CAPTURE: "1",
       CABLE_ADAPTER: "async",
+      // The Last Release fresh-deploy glow window (ApplicationHelper#
+      // fresh_deploy_window_ms; production default 8s). 8s turned
+      // release_ship.spec.js into a wall-clock race: the spec's own arrival
+      // waits + reload could eat the whole window under machine load, and its
+      // fresh-deploy assertions then met a glow that had ALREADY expired — a
+      // state no timeout can wait back into (reproduced on the base seed under
+      // 8-way load, task stabilize-release-ship-spec). 20s keeps the glow
+      // mechanics identical while giving the fresh-phase assertions ~2x
+      // headroom; the spec reads the live value back from data-fresh-window-ms
+      // and budgets its expiry wait from it, so this number is spelled ONCE.
+      FRESH_DEPLOY_WINDOW_MS: "20000",
       // Deterministic CI check counts for the board's CI progress bars (feature:
       // visual-ci-progress-bars), keyed by the SHAs e2e/seed.rb assigns to the demo
       // task branch + the release-branch CI run — so the reader folds real numbers

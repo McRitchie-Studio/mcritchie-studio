@@ -71,6 +71,26 @@ class DeploymentsLiveFxTest < ActionView::TestCase
     assert_includes rendered, "document.addEventListener(\"DOMContentLoaded\", scheduleFreshDeployGlowInitialization, { once: true })"
   end
 
+  test "every fresh-glow duration renders from the injectable window" do
+    with_env("FRESH_DEPLOY_WINDOW_MS", "20000") do
+      render partial: "tasks/deployments_live_fx"
+
+      # The JS cleanup timer and ALL four fresh-glow CSS durations move together —
+      # a window where CSS and JS disagree would fade the glow at one time and
+      # flip the state at another.
+      assert_includes rendered, "const FRESH_DEPLOY_MS = 20000"
+      assert_includes rendered, "animation: lbfxFreshDeployGlow 20.0s linear both"
+      assert_includes rendered, "animation-duration: var(--studio-border-glow-duration, 20s), 20.0s;"
+      assert_includes rendered, "animation: lbfxFreshDeployRingFade 20.0s linear both"
+      assert_includes rendered, "animation: lbfxFreshDeployHaloFade 20.0s linear both"
+      # The property, not the spellings: NO default-window duration survives an
+      # override — a leftover hardcoded 8s would re-open the race the override
+      # exists to close. (The regex spares unrelated sub-second values like .8s.)
+      assert_no_match(/[\s,(]8s[;\s,]/, rendered)
+      assert_not_includes rendered, "= 8000"
+    end
+  end
+
   test "reviewed arrivals use a distinct behind-card gust" do
     render partial: "tasks/deployments_live_fx"
 
