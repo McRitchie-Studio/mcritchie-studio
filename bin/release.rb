@@ -1885,6 +1885,34 @@ rescue StandardError
   nil
 end
 
+# The G3 TREE credit (task dedupe-hub-release-suite, round 2): the LIVE promote is
+# a batch-PR `gh pr merge --merge`, which mints a NEW merge-commit SHA — so the
+# same-SHA credit above never fires on the normal path (the review block that
+# rebuilt this). But that merge commit usually SNAPSHOTS THE IDENTICAL TREE as the
+# accepted head (true whenever `accepted` was not behind `release` — e.g.
+# promotion #582: accepted 5b10402d and release cf93bab6 share tree 5b1c78e0), and
+# GitHub CI checks out CONTENT, not history: a completed green earned on the
+# accepted head certifies the exact tree the release merge re-runs. So when
+# tree_identical_promote proved the trees equal, this reads the ACCEPTED HEAD's
+# own verdict and credits ONLY a completed :green (ci_pass?, the gate's one pass
+# state). Everything else — the accepted run red, still pending, missing,
+# unreadable, unverified — returns nil and the caller polls the release SHA
+# exactly as today (strict fall-through; a red is never re-read, a pending
+# evidence run is a genuine wait). The credited note records BOTH full SHAs + the
+# shared tree so the audit trail shows precisely which run vouched for which
+# commit. Best-effort like ci_credit_verdict: a probe that raises credits nothing.
+def ci_tree_credit_verdict(repo, release_sha, promote)
+  ci = ci_verdict(repo, promote[:accepted_sha])
+  return nil unless ci_pass?(ci)
+
+  { state: :green, count: ci[:count],
+    credited: "tree-identical promote — #{ACCEPTED_BRANCH} head #{promote[:accepted_sha]} concluded green and " \
+              "shares tree #{promote[:tree]} with #{RELEASE_BRANCH} #{release_sha}; the release-push run " \
+              "re-executes an identical tree" }.compact
+rescue StandardError
+  nil
+end
+
 # Was the accepted→release promote a FAST-FORWARD — origin/#{RELEASE_BRANCH}
 # resting on the SAME commit as origin/#{ACCEPTED_BRANCH}? Only then may the
 # pre-QA gate credit an existing conclusion: the release tip IS the accepted head
@@ -1899,6 +1927,41 @@ def fast_forward_promote?(path, release_sha)
 
   out, ok = sh("git", "-C", path, "rev-parse", "origin/#{ACCEPTED_BRANCH}", capture: true)
   ok && out.strip == release_sha.to_s
+end
+
+# Did the batch-PR promote mint a merge commit whose TREE is the accepted head's
+# tree — a different SHA snapshotting IDENTICAL content? That is the LIVE promote
+# shape (`gh pr merge --merge`), and it holds whenever `accepted` was not behind
+# `release` at merge time — the common case. It BREAKS whenever release carries
+# commits accepted lacks: above all the consumer lock-bump commits `bin/release
+# prepare` lands on `release` when a gem rides (publish-gems-before-qa, PR #588 —
+# its step 4c commits the bump BEFORE pre_qa_gate resolves origin/release, so the
+# SHA read here is the post-bump one and its tree no longer matches accepted's).
+# Then this answers nil, the credit refuses, and the gate polls the post-bump SHA
+# exactly as today — the cross-PR contract pinned on #588, asserted by the
+# lock-bump interaction test in release_cli_test.
+#
+# Answers {accepted_sha:, tree:} ONLY when both trees resolve and match and the
+# SHAs DIFFER (the same-SHA case is fast_forward_promote?'s, checked first).
+# Every git fault — an unresolvable ref, a failed rev-parse — answers nil: no
+# credit, normal poll, never an abort.
+def tree_identical_promote(path, release_sha)
+  return nil if release_sha.to_s.empty?
+
+  accepted, ok = sh("git", "-C", path, "rev-parse", "origin/#{ACCEPTED_BRANCH}", capture: true)
+  return nil unless ok
+
+  accepted = accepted.strip
+  return nil if accepted.empty? || accepted == release_sha.to_s
+
+  release_tree, rel_ok = sh("git", "-C", path, "rev-parse", "#{release_sha}^{tree}", capture: true)
+  accepted_tree, acc_ok = sh("git", "-C", path, "rev-parse", "#{accepted}^{tree}", capture: true)
+  return nil unless rel_ok && acc_ok
+
+  release_tree = release_tree.strip
+  return nil if release_tree.empty? || release_tree != accepted_tree.strip
+
+  { accepted_sha: accepted, tree: release_tree }
 end
 
 # The verdict pair, persisted: what CI said about the SHA the gate certified.
@@ -2106,20 +2169,29 @@ def pre_qa_gate(app_groups, rel_slug = nil)
     # autoloaded suite torn by a concurrent checkout) retired with it.
 
     # G3 DEDUPE (task dedupe-hub-release-suite): the hub registers the same full
-    # suite at the accepted seam and again on the release push, so a fast-forwarded
-    # promote queues a DUPLICATE run of checks this exact SHA already passed — and
-    # the poll below would wait that duplicate out. So when the promote
-    # fast-forwarded (origin/#{RELEASE_BRANCH} == origin/#{ACCEPTED_BRANCH} — no
-    # merge commit minted), the gate first reads the SHA's EXISTING completed
-    # check-runs and credits a green conclusion whose pending runs are pure
-    # duplicates (ci_credit_verdict — nil for anything else), recording the
-    # credited source in the gate note. NOTHING else changed: a non-credit — red,
-    # a genuinely still-running suite, missing checks, no fast-forward — falls
-    # through to the exact same poll below.
+    # suite at the accepted seam (the batch PR's pull_request run on the accepted
+    # head) and again on the release push (the promote's merge commit), so every
+    # sweep re-runs — and the poll below waits out — checks an IDENTICAL TREE
+    # already earned. Two credits, tried in order, both fail-closed into the poll:
+    #   1. SAME-SHA (fast_forward_promote?): origin/#{RELEASE_BRANCH} IS the
+    #      accepted head — its own completed greens cover the pending duplicates
+    #      (ci_credit_verdict). The true-FF shape; rare under the batch-PR merge.
+    #   2. SAME-TREE (tree_identical_promote): the LIVE shape — the batch-PR merge
+    #      minted a NEW SHA whose tree EQUALS the accepted head's, so the accepted
+    #      head's completed green vouches for the identical content
+    #      (ci_tree_credit_verdict; both SHAs + the shared tree recorded).
+    # NOTHING else changed: a non-credit — red, a genuinely still-running suite,
+    # missing checks, diverged trees (e.g. a consumer lock-bump commit riding
+    # #{RELEASE_BRANCH} — see tree_identical_promote) — falls through to the exact
+    # same poll below.
     credit = fast_forward_promote?(path, sha) ? ci_credit_verdict(repo, sha) : nil
     if credit
       credit[:credited] = "#{credit[:credited]}; fast-forward promote — " \
                           "origin/#{RELEASE_BRANCH} is the #{ACCEPTED_BRANCH} head CI already built"
+    elsif (promote = tree_identical_promote(path, sha))
+      credit = ci_tree_credit_verdict(repo, sha, promote)
+    end
+    if credit
       say("  #{repo}: crediting the existing green conclusion for #{short(sha)} — no duplicate run awaited " \
           "(#{credit[:credited]})")
     end

@@ -612,6 +612,25 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
     assert_not S.auditor_red?(credited), "a credited green must never arm the disagree/re-gate path"
   end
 
+  test "[unit] a TREE-credited G3 record self-skips and never arms the disagree path" do
+    # task dedupe-hub-release-suite round 2: the LIVE batch-PR promote mints a NEW
+    # merge SHA, so the credit's evidence is the ACCEPTED head's green vouching for
+    # the IDENTICAL TREE (bin/release's ci_tree_credit_verdict), recorded with both
+    # SHAs + the shared tree in the note. The record still certifies THIS repo,
+    # THIS cmd, THIS (release) SHA with a green ci.state — G4 self-skips against
+    # it exactly as against a polled or same-SHA-credited one, and the richer
+    # credited prose must neither break the skip nor read as a DISAGREE.
+    tree_credited = certified.merge(
+      "ci" => { "state" => "green", "count" => 8,
+                "credited" => "tree-identical promote — accepted head 5b10402d… concluded green and " \
+                              "shares tree 5b1c78e0… with release abc123" }
+    )
+
+    assert S.ship_gate_skip?(test_cmd: "bin/rails test", frozen_sha: "abc123", qa_gate: tree_credited),
+           "a tree-credited green record is the same proof ship_gate_skip? already accepts"
+    assert_not S.auditor_red?(tree_credited), "a tree-credited green must never arm the disagree/re-gate path"
+  end
+
   # NOTE — the other half of the fail-open contract ("a red auditor can never BLOCK
   # a ship, it only makes the gate RUN") is not assertable here: ship_gate_skip? is
   # a pure run/skip decision and has no way to express an abort. It is proven where

@@ -114,33 +114,22 @@ bin/release prepare --yes
    with no `merged` stamp (`merged: ""`) is a HELD anomaly — review never landed
    its feat PR on `accepted` — so it is warned and left `reviewed` (re-review to
    heal), never swept onto the RC.
-4. Run the pre-QA gate on `origin/release`. The suite runs in the repo's
-   **isolated gate workspace** — a private detached worktree at
-   `<repo>/.worktrees/_gate`, under its own lock, with a test DB the gate proves
-   is private. It does NOT touch the primary checkout, which stays on a clean
-   `main`. On green it RECORDS what it certified (SHA + command), which is the
-   only thing the G4 ship gate will accept as grounds to skip its own suite.
-   A red gate, and what to do about it (hint: **do not** blank the registry's
-   `qa_test_cmd` — that silently disarms the production gate):
+4. Run the pre-QA gate on `origin/release`. **GitHub CI's conclusion for that
+   exact SHA IS the verdict** (DevOps v2 Phase 3 — the local isolated-workspace
+   suite is deleted at this gate; nothing runs on your machine): the gate reads
+   the SHA's check-runs, **polls** a not-yet-concluded run (a just-merged tip is
+   normally `pending` for a few minutes), passes on exactly one state — green —
+   and fails closed on everything else. Before polling it may **credit** an
+   existing green for the same commit or for the accepted head's **identical
+   tree** (the live batch-PR merge re-runs a tree the accepted seam already
+   greened); a credited pass names its source in the gate note and changes
+   nothing else — red, pending-evidence, and diverged trees (a gem sweep's
+   lock-bump commit) poll exactly as always. On green it RECORDS what it
+   certified (SHA + command + CI verdict), which is the only thing the G4 ship
+   gate will accept as grounds to skip its own gate. A red gate, and what to do
+   about it (hint: **do not** blank the registry's `qa_test_cmd` — that silently
+   disarms the production gate):
    [`../../../modules/gates/g3-candidate.md`](../../../modules/gates/g3-candidate.md).
-
-   **⚠ If the gate prints a `G3 / CI DISAGREE` ALARM, act on it — `prepare` will
-   NOT stop for you.** The gate also cross-checks each certified SHA against
-   GitHub CI, and the alarm means the two verdicts contradict each other:
-
-   - **Gate GREEN + CI RED** — `prepare` runs to completion: QA deploys and the
-     members flip `assembled` as usual. **Do not hand the RC to Avi yet.** CI saw
-     a lane the local gate cannot (the browser `test:system` suite), so treat it
-     as real: open the named check on the PR, and either fix it forward or
-     `bin/release eject <task> --feedback "<the failing check>"` and re-run
-     `prepare`. G4 will re-run its suite on that SHA (the certification is
-     distrusted), but that re-run **cannot** see CI's lane — nothing downstream
-     catches this for you. Shipping past it is a deliberate, unguarded call.
-   - **Gate RED + CI GREEN** — `prepare` aborts. **Suspect the gate, not the
-     code**: reproduce in the gate workspace (`cd <repo>/.worktrees/_gate &&
-     bin/rails test …`) BEFORE ejecting anyone.
-   - **"no GitHub verdict for `<sha>`"** is NOT an alarm — it is the normal line
-     today (CI does not build `release` yet). Nothing to do.
 5. Deploy QA and wait for boot.
 6. Flip members from `reviewed` to `assembled` only after QA is green.
 
