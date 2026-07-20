@@ -116,6 +116,24 @@ errors. Treat them as normal input, never as intent. The standing rules:
   written; proper nouns and domain jargon stand. App-bound copy still rides
   the DevOps cycle like any other change.
 
+## House Communication Style — reporting to Mr. McRitchie
+
+Mr. McRitchie reads slowly, but wants full specifics once an idea lands. Every
+operator-facing message (chat reply, handoff, task note, PR summary) carries
+**two layers, in order**:
+
+- **Layer 1 — the idea.** Lead with the outcome, in plain words, as if
+  explaining to a smart 13-year-old. One idea per sentence; each point a
+  sentence or less; three sentences is the ceiling before switching to a list.
+- **Layer 2 — the specifics.** A table or bulleted list with every handle he
+  needs to dive in: task URL, slug, file path, branch, PR URL, local URL +
+  port, function name, exact command. Never trade this layer away for brevity
+  — simple is not vague.
+- **Form factor:** prefer tables and bulleted lists over paragraphs; keep the
+  exact top-level labels (`Task:`, `Local Demo:`, `Local Inbox:`).
+
+Full module: `mcritchie-studio/docs/agents/modules/communication-style.md`.
+
 ## 📣 Narrate your trajectory — REQUIRED, every session, unprompted
 
 This is how you work here: **as you work you MUST narrate your trajectory into
@@ -406,6 +424,7 @@ verdict). Do not merge or deploy unless I explicitly assigned that lane.
 | Keeping docs clean | `mcritchie-studio/docs/agents/modules/docs-maintenance.md` |
 | Memory maintenance | `mcritchie-studio/docs/agents/modules/memory-maintenance.md` |
 | Result distillation (findings not raw ops) | `mcritchie-studio/docs/agents/modules/result-distillation.md` |
+| Communication style (reporting to Mr. McRitchie) | `mcritchie-studio/docs/agents/modules/communication-style.md` |
 | Audit playbook | `mcritchie-studio/docs/agents/modules/audit-playbook.md` |
 | Shared SES production proof | `mcritchie-studio/docs/agents/audits/ses-production-proof-2026-06-14.md` |
 | Current final closeout | `mcritchie-studio/docs/agents/audits/final-closeout-2026-06-17.md` |

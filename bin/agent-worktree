@@ -804,9 +804,9 @@ def ensure_git_worktree(app, task, type)
   FileUtils.mkdir_p(File.dirname(dir))
   sh("git", "-C", primary, "fetch", "origin", "--quiet")
 
-  # Cut from the persistent `release` branch (the feature-PR target) when the
-  # repo has one; fall back to `origin/main`, then to local HEAD for a repo with
-  # no fetched remote base at all.
+  # Cut from the persistent `accepted` branch (the feature-PR target) when the
+  # repo has one; fall back to `origin/release`, then `origin/main`, then to
+  # local HEAD for a repo with no fetched remote base at all.
   base_ref = base_ref_for(primary)
   unless sh("git", "-C", primary, "rev-parse", "--verify", base_ref, allow_fail: true)
     base_ref = "HEAD"
@@ -1087,7 +1087,7 @@ def base_ref_for(dir)
   "origin/main"
 end
 
-# Bare base branch name (`release` | `main`) for `gh pr create --base` and the
+# Bare base branch name (`accepted` | `release` | `main`) for `gh pr create --base` and the
 # GitHub compare URL — derived from the same resolution as base_ref_for.
 def base_branch_for(dir)
   base_ref_for(dir).delete_prefix("origin/")
@@ -2919,8 +2919,8 @@ end
 def open_draft_pr(record, dir, task)
   title = human_title(task)
   body = pr_body(record)
-  # Feature PRs target the persistent `release` branch (else `main` for repos
-  # without one) so `bin/release merge` can adopt them; never base on `main`.
+  # Feature PRs target the persistent `accepted` branch (falling back down the
+  # ladder for repos without one) so review can merge them; never base on `main`.
   ok, out, err = capture_status("gh", "pr", "create", "--draft", "--base", record[:base_branch],
                                 "--head", record[:branch], "--title", title, "--body", body, chdir: dir)
   $stderr.print err unless err.to_s.empty?
