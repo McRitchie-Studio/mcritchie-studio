@@ -448,10 +448,16 @@ bin/ship <task-slug> -m "Commit message"
 ```
 
 Run `bin/ship` from the task worktree (elsewhere it re-roots at the worktree,
-loudly). It repairs an existing PR in place — `gh pr ready` for a draft, `gh pr
-edit --base accepted` for a mis-based one — and never duplicates it. The
-long-form commands remain the canonical path for anything the wrappers don't
-cover (multi-repo tasks, bespoke PR bodies).
+loudly). Before its first side effect it enforces the two handoff-seam guards
+the child gates don't own: the task must be `building` (or `submitted` — a
+resume; a `designed` task is sent back through `bin/task begin`), and the
+build claim must not belong to a **different live instance** — take a held
+task over with `bin/task begin <task-slug> --steal` first, then ship. Its
+read-back pins the exact `pr_url` it recorded — a stale/foreign URL on the
+board fails the verify. It repairs an existing PR in place — `gh pr ready` for
+a draft, `gh pr edit --base accepted` for a mis-based one — and never
+duplicates it. The long-form commands remain the canonical path for anything
+the wrappers don't cover (multi-repo tasks, bespoke PR bodies).
 
 ## QA / Avi Duties
 

@@ -15,6 +15,7 @@
 require "minitest/autorun"
 require "json"
 require "open3"
+require "time"
 require "tmpdir"
 require "fileutils"
 require "rbconfig"
@@ -87,14 +88,21 @@ class ShipTest < Minitest::Test
     stub
   end
 
-  def task_record(stage: "building", pr_url: nil, checks_run: [])
+  def task_record(stage: "building", pr_url: nil, checks_run: [], claim: nil)
     JSON.generate(
       "slug" => SLUG, "stage" => stage, "title" => "Fast lane demo",
       "metadata" => { "devops" => {
         "branch" => BRANCH, "worktree_slug" => SLUG, "pr_url" => pr_url,
         "acceptance" => ["ship collapses the handoff"], "checks_run" => checks_run
-      }.compact }
+      }.merge(claim || {}).compact }
     )
+  end
+
+  # A build-claim devops slice with a lease `expires_in` seconds out — the shape
+  # `move building` writes (see test/lib/task_cli_test.rb's twin).
+  def claim_of(session:, nonce:, expires_in: 300)
+    { "claimed_session" => session, "claim_nonce" => nonce,
+      "claim_expires_at" => (Time.now + expires_in).utc.iso8601 }
   end
 
   # Run bin/ship with every seam stubbed. Returns [out, err, status, log_lines]
@@ -232,6 +240,75 @@ class ShipTest < Minitest::Test
       assert_includes err, "read-back verify FAILED"
       assert(lines.any? { |l| l[0, 2] == %w[TASK move] }, "the move must have been attempted")
       refute_includes out, "stage: submitted (read back verified)"
+    end
+  end
+
+  # --- builder ownership + the build-stage seam --------------------------------
+  # Ship hands off a BUILD: it must refuse a task that never walked the building
+  # seam, and refuse a task a DIFFERENT live instance is building — both BEFORE
+  # any side effect (commit/push/PR/move). The green-path tests above double as
+  # the session-less degrade vector (the harness env is session-neutralized).
+
+  def test_ship_refuses_an_unbuilt_designed_task
+    with_repo do |dir|
+      _out, err, status, lines = run_ship(dir, show_json: task_record(stage: "designed"))
+
+      refute status.success?, "a designed task must not be teleported past the building seam"
+      assert_includes err, "ship hands off a BUILD"
+      assert_includes err, "bin/task begin #{SLUG}", "the refusal must name the claim path"
+      assert_equal [%w[TASK show]], lines.map { |l| l[0, 2] }, "no step may run on an unbuilt task"
+      refute_equal "", `git -C #{dir} status --porcelain`.strip, "the dirty tree must be left uncommitted"
+    end
+  end
+
+  def test_ship_refuses_a_task_a_different_live_instance_holds
+    with_repo do |dir|
+      foreign = task_record(claim: claim_of(session: "sess-rival-9999", nonce: "inst-A"))
+      _out, err, status, lines = run_ship(
+        dir, show_json: foreign,
+        extra_env: { "CLAUDE_CODE_SESSION_ID" => "sess-shipper-1111", "TASK_CLAIM_NONCE" => "inst-default" }
+      )
+
+      refute status.success?, "shipping another builder's live task must refuse (non-zero exit)"
+      assert_match(/different live instance/i, err, "the refusal must say who holds it")
+      assert_match(/…9999/, err, "the refusal must name the holder")
+      assert_includes err, "bin/task begin #{SLUG} --steal", "the refusal must name the takeover path"
+      assert_equal [%w[TASK show]], lines.map { |l| l[0, 2] }, "no step may run past the ownership refusal"
+      refute_equal "", `git -C #{dir} status --porcelain`.strip, "no commit may land on a foreign-held task"
+    end
+  end
+
+  def test_ship_proceeds_when_this_instance_holds_the_claim
+    with_repo do |dir|
+      own = task_record(claim: claim_of(session: "sess-shipper-1111", nonce: "inst-default"))
+      _out, err, status, lines = run_ship(
+        dir, show_json: own,
+        extra_env: { "CLAUDE_CODE_SESSION_ID" => "sess-shipper-1111", "TASK_CLAIM_NONCE" => "inst-default" }
+      )
+
+      assert status.success?, "the claim holder must ship freely, got:\n#{err}"
+      assert(lines.any? { |l| l[0, 2] == %w[TASK move] }, "the holder's ship must reach the move")
+    end
+  end
+
+  def test_read_back_verify_refuses_a_wrong_persisted_pr_url
+    with_repo do |dir|
+      # The --pr-url write silently fails while a STALE pr_url (a different PR)
+      # sits on the board: the read-back must pin the EXACT URL this run
+      # recorded — any non-empty value must not pass as persistence.
+      stale = "https://github.com/amcritchie/mcritchie-studio/pull/111"
+      out, err, status, lines = run_ship(
+        dir,
+        show_json: task_record(stage: "building", pr_url: stale),
+        moved_json: task_record(stage: "submitted", pr_url: stale)
+      )
+
+      refute status.success?, "a persisted pr_url that is not the one just recorded must fail the verify"
+      assert_includes err, "read-back verify FAILED"
+      assert_includes err, stale, "the refusal must name the URL the board holds"
+      assert_includes err, PR_URL, "the refusal must name the URL this run recorded"
+      assert(lines.any? { |l| l[0, 2] == %w[TASK update] }, "the record step must have been attempted")
+      refute_includes out, "PR: #{stale}", "the summary must never print the wrong PR as shipped"
     end
   end
 
