@@ -170,7 +170,15 @@ class ReleaseCliTest < Minitest::Test
   end
 
   def run_ruby(script)
-    env = SessionEnv.neutralized("MCR_PRIMARY_LOCK_DIR" => self.class.lock_dir)
+    # SEAL_RETRY_DELAY_SECONDS=0: these subprocesses drive the REAL ship seal
+    # (production_smoke_seal), whose red path retries once after a 30s
+    # boot-window wait. A sleeper cannot be injected through the loaded script,
+    # so without this every red-seal test below would burn a genuine 30s. Zero
+    # keeps the retry PATH exercised end-to-end at no wall-clock cost.
+    env = SessionEnv.neutralized(
+      "MCR_PRIMARY_LOCK_DIR" => self.class.lock_dir,
+      "SEAL_RETRY_DELAY_SECONDS" => "0"
+    )
     last = nil
     SUBPROCESS_ATTEMPTS.times do
       out, err, status = Open3.capture3(env, "ruby", "-e", script)
