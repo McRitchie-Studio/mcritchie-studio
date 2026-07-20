@@ -449,6 +449,32 @@ class FastCheckTest < Minitest::Test
     end
   end
 
+  # Round-2 regression (review block, 2026-07-20): on a PARTIAL loss the printed
+  # recovery must re-record the UNION — the surviving lines AND the lost ones.
+  # `--checks` replaces the author namespace, so a remedy listing only the lost
+  # lines would itself drop the survivors when the builder runs it.
+  def test_partial_loss_recovery_re_records_survivors_and_lost_alike
+    with_repo do |dir, _|
+      before = JSON.generate("metadata" => { "devops" => { "checks_run" => [
+        "[unit] surviving unit line",
+        "[integration] lost integration line"
+      ] } })
+      after = JSON.generate("metadata" => { "devops" => { "checks_run" => [
+        "[unit] surviving unit line"
+      ] } })
+      out, code, = run_check(dir, args: ["task-x"], merge_stderr: true,
+                             extra_env: { "TASK_SHOW_JSON" => before,
+                                          "TASK_SHOW_JSON_AFTER_UPDATE" => after })
+      assert_equal 1, code, out
+      remedy = out.lines.find { |l| l.include?("bin/task update task-x") }
+      refute_nil remedy, "the loud failure prints a runnable re-record command: #{out}"
+      assert_includes remedy, "[integration] lost integration line", "the lost line is re-recorded"
+      assert_includes remedy, "[unit] surviving unit line",
+                      "the SURVIVING line must be in the remedy too — --checks replaces the author " \
+                      "namespace, so a lost-lines-only remedy would drop the survivors"
+    end
+  end
+
   def test_green_run_reports_read_back_verified_preservation
     with_repo do |dir, _|
       out, code, = run_check(dir, args: ["task-x"], merge_stderr: true,

@@ -441,8 +441,12 @@ elsif missing.any?
   warn "full-suite-check: evidence recorded on #{slug}, but the read-back is MISSING #{missing.size} " \
        "pre-existing checks line(s):"
   missing.each { |lost| warn "  #{lost}" }
-  warn "full-suite-check: re-record them: bin/task update #{slug} " \
-       "#{missing.map { |lost| "--checks #{lost.inspect}" }.join(' ')}"
+  # The remedy re-records the UNION — survivors AND lost. `--checks` replaces
+  # the author namespace, so a lost-lines-only command would itself drop the
+  # lines that survived (round-2 review catch, 2026-07-20).
+  warn "full-suite-check: re-record the full pre-existing set (survivors AND lost — resending only the lost " \
+       "lines would drop the survivors): bin/task update #{slug} " \
+       "#{kept.map { |line_kept| "--checks #{line_kept.inspect}" }.join(' ')}"
   exit 1
 else
   warn "#{summary} (read-back confirms all #{kept.size} pre-existing checks line(s) kept)."

@@ -814,6 +814,31 @@ class FullSuiteCheckTest < Minitest::Test
     end
   end
 
+  # Round-2 regression (review block, 2026-07-20): on a PARTIAL loss the printed
+  # recovery re-records the UNION — survivors AND lost. `--checks` replaces the
+  # author namespace, so a lost-lines-only remedy would drop the survivors.
+  def test_partial_loss_recovery_re_records_survivors_and_lost_alike
+    with_repo do |dir|
+      assert system("git", "-C", dir, "checkout", "-qb", "feat/task-x", out: File::NULL, err: File::NULL)
+      before = JSON.generate(
+        "metadata" => { "devops" => {
+          "branch" => "feat/task-x", "worktree_slug" => "task-x",
+          "checks_run" => ["[unit] surviving unit line", "[integration] lost integration line"]
+        } }
+      )
+      after = JSON.generate("metadata" => { "devops" => { "checks_run" => ["[unit] surviving unit line"] } })
+      out, code, = run_check_implicit_root(dir, "task-x",
+                                           extra_env: { "TASK_SHOW_JSON" => before,
+                                                        "TASK_SHOW_JSON_AFTER_UPDATE" => after })
+      assert_equal 1, code, out
+      remedy = out.lines.find { |l| l.include?("bin/task update task-x") }
+      refute_nil remedy, "the loud failure prints a runnable re-record command: #{out}"
+      assert_includes remedy, "[integration] lost integration line", "the lost line is re-recorded"
+      assert_includes remedy, "[unit] surviving unit line",
+                      "the SURVIVING line must be in the remedy too — a lost-lines-only remedy drops survivors"
+    end
+  end
+
   # --- [integration] the orphan guard is wired into THIS cert too ---------------------
   #
   # This lane is the more exposed of the two: a multi-minute full suite (it will outrun
