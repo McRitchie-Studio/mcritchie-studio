@@ -12,8 +12,8 @@ than the fix. The zap protocol replaces that with **one commit, one check, one
 note** on a record that already exists.
 
 A **zap** is one commit, prefixed `zap:`, that fixes ONE small defect found
-mid-cycle, carries its own check, and is recorded on the nearest existing
-record. Never a new board task; never a chain.
+mid-cycle, carries its own check, and is recorded with `bin/task note` on the
+nearest existing record. Never a new board task; never a chain.
 
 ## Eligibility — every bound must hold
 
@@ -56,11 +56,11 @@ guard below). Never push a zap with a red check to "fix forward."
 
 Where you commit depends on which seat you hold when you find the defect.
 
-| Seam | You are | Zap lands on | Recorded on |
+| Seam | You are | Zap lands on | Recorded on (`bin/task note`) |
 |---|---|---|---|
-| **Builder** | Feature agent, mid-build | Your own `feat/<slug>` branch | Your own task's `checks_run` |
-| **Reviewer** | Primary/light reviewer, mid-review | The PR branch under review | The review verdict + the task under review |
-| **Conductor** | Sweep/release conductor | `accepted` or the open release branch | The nearest member task of the open release |
+| **Builder** | Feature agent, mid-build | Your own `feat/<slug>` branch | Your own task |
+| **Reviewer** | PRIMARY reviewer, after both verdicts | The PR branch under review | The task under review (+ named in the primary verdict) |
+| **Conductor** | Sweep/release conductor | `accepted` only | The nearest member task of the open release |
 
 ### Builder — on your own feat branch
 
@@ -72,61 +72,90 @@ git add -p
 git commit -m "zap: <what was broken, one line>"
 ```
 
-Tag it in your task's checks. **`--checks` REPLACES the whole list** — pass
-every line you want kept, plus the zap line:
+Record it the way every seam records — a `bin/task note` on your own task
+(the board CLI lives in the hub; run task writes from there whichever repo
+the zap touched):
 
 ```bash
-bin/task update <your-task> \
-  --checks "[unit] <your existing check>" \
-  --checks "[zap] <defect> — <check run, or no-test: rationale>"
+cd /Users/alex/projects/mcritchie-studio
+bin/task note <your-task> \
+  --comment "zap: <defect> — commit <sha>, <check run, or no-test: rationale>"
 ```
 
-The zap rides your PR through normal review; the reviewer sees the `zap:`
-commit and the `[zap]` check line and judges it with the rest of the diff.
+A `[zap]` line in `checks_run` is optional color, never the record — if you
+add one, remember **`--checks` REPLACES the whole list** (pass every line you
+want kept). The zap rides your PR through normal review; the reviewer sees
+the `zap:` commit and the note and judges it with the rest of the diff.
 
-### Reviewer — on the PR branch under review
+### Reviewer — on the PR branch, by the primary, after both verdicts
 
 You are reviewing a PR and find a small defect — in the diff, or adjacent code
-the diff exposed. Instead of blocking the task back for a one-line fix, push a
-zap commit to the PR branch:
+the diff exposed. Instead of blocking the task back for a one-line fix, zap
+the PR branch. **The rule: only the PRIMARY reviewer applies the zap, and
+only after both lanes' verdicts are in.** During the read both lanes review
+one frozen head; a light reviewer who finds a zappable defect names it in the
+verdict and pushes nothing. The zap is then a bounded increment on top of the
+head both verdicts already cover — it can never invalidate what the sibling
+lane reviewed, because nothing moves the head while either lane is reading.
+
+Apply it head-guarded, from a throwaway detached worktree — never by checking
+out the PR branch, which the builder's retained worktree still owns:
 
 ```bash
+cd <repo-primary-checkout>
 git fetch origin <pr-branch>
-git checkout <pr-branch>
+REVIEWED=$(git rev-parse origin/<pr-branch>)   # the head both verdicts reviewed
+git worktree add ../zap-<task> --detach "$REVIEWED"
+cd ../zap-<task>
+# …fix, then:
 git commit -m "zap: <what was broken, one line>"
-git push origin <pr-branch>
+git push origin HEAD:refs/heads/<pr-branch> \
+  --force-with-lease=refs/heads/<pr-branch>:"$REVIEWED"
+cd - && git worktree remove ../zap-<task>
 ```
 
-Record it twice — in your review verdict (name the zap commit SHA and the check
-you ran), and on the task under review:
+The lease pins the push to the reviewed head: if ANYONE moved the branch
+since the verdicts, the push refuses — nothing landed, and the zap lane
+closes for that issue. Do not re-apply against the new head; create a normal
+task (the escalation guard's move, with nothing to revert). The ledger is the
+same as every seam — a note on the task under review (task writes run from
+the hub):
 
 ```bash
+cd /Users/alex/projects/mcritchie-studio
 bin/task note <task-under-review> \
   --comment "zap: <defect> — commit <sha>, <check run, or no-test: rationale>"
 ```
 
-A reviewer zap never widens the review's scope: it must sit inside the
-eligibility bounds, and the verdict must call it out so the supervisor gates
-with eyes open. If the fix the PR needs is bigger than a zap, that is what
-`bin/task block <task> --kind rework --feedback "…"` is for.
+The primary verdict ALSO names the zap SHA and the check run — that is the
+supervisor's merge condition, not the ledger: **the supervisor merges only
+when the PR head equals the zap SHA named in the primary verdict and CI is
+green on that head.** The zap push retriggers CI, so gate-zero's
+authoritative CI verdict covers the zapped head, never the pre-zap one.
 
-### Conductor — on `accepted` or the open release branch
+A reviewer zap never widens the review's scope: it must sit inside the
+eligibility bounds. If the fix the PR needs is bigger than a zap, that is
+what `bin/task block <task> --kind rework --feedback "…"` is for.
+
+### Conductor — on `accepted` only
 
 You are sweeping or assembling a release and find a small defect in code
-already merged. Commit the zap directly on `accepted` (or on the open release
-branch when the defect lives there), so the fix rides the **current** RC —
-no new task, no new PR, no extra release slot:
+already merged. Commit the zap directly on `accepted`, so the fix rides the
+**current** RC — no new task, no new PR, no extra release slot:
 
 ```bash
-git checkout accepted   # or the open release branch
+git checkout accepted
 git commit -m "zap: <what was broken, one line>"
 git push origin accepted
 ```
 
 Two hard edges:
 
-- **Never `main`.** A conductor zap lands on `accepted` or the open release
-  branch only. `main` moves by `bin/release ship` alone.
+- **Never `release`, never `main`.** Complications resolve on `accepted` —
+  the only rung a conductor writes. If the defect must reach an RC already
+  swept onto `release`, land the zap on `accepted` and re-run the sweep:
+  `bin/release prepare` is self-healing and re-promotes ALL of `accepted`,
+  zap included. `main` moves by `bin/release ship` alone.
 - **Before the QA deploy.** Land the zap before Steffon's G3 QA deploy so QA
   exercises it. After QA-green the RC's SHA is what G4's frozen-SHA gate
   verifies — a zap after the freeze breaks the freeze. A defect found
@@ -134,23 +163,39 @@ Two hard edges:
 
 Record it on the nearest member task of the open release — the task whose
 change surfaced or contains the defect; if none fits, the member task closest
-to the touched code:
+to the touched code (task writes run from the hub):
 
 ```bash
+cd /Users/alex/projects/mcritchie-studio
 bin/task note <nearest-member-task> \
-  --comment "zap: <defect> — commit <sha> on <branch>, <check run, or no-test: rationale>"
+  --comment "zap: <defect> — commit <sha> on accepted, <check run, or no-test: rationale>"
 ```
 
-## Recording — never a new task
+**Worked example — the protocol's first live use.** Conductor zap `ec81dbb2`
+fixed three stale release-first comments in `bin/agent-worktree` directly on
+hub `accepted` — one commit, one file, 12 changed lines, inside every bound —
+comment-only with an explicit `no-test:` rationale, recorded with `bin/task
+note` on `worktree-fresh-start-sop`, the nearest existing record.
+
+## Recording — one ledger, never a new task
 
 Every zap leaves the same two-part trail, whatever the seam:
 
 1. **The commit message prefix `zap:`** — this is the machine-readable marker.
    `git log --oneline --grep '^zap:'` must find every zap on a branch.
-2. **A note on the nearest existing record** — the builder's own task, the task
-   under review, or the nearest member task of the open release. The note names
-   the defect, the commit SHA, and the check run (or the explicit `no-test:`
-   rationale).
+2. **A `bin/task note` on the nearest existing record** — the builder's own
+   task, the task under review, or the nearest member task of the open
+   release. The note names the defect, the commit SHA, and the check run (or
+   the explicit `no-test:` rationale).
+
+**The note is the ledger at every seam, builder included.** A `[zap]` line in
+`checks_run`, or the zap SHA named in a review verdict, is color on top —
+required where a gate reads it (the reviewer seam's merge condition), never a
+substitute for the note.
+
+The board CLI lives in `mcritchie-studio`: run every `bin/task` write from
+the hub (`cd /Users/alex/projects/mcritchie-studio && bin/task …`), whichever
+in-cycle repo the zap commit landed in.
 
 That is the whole ledger. Do **not** create a board task for a qualifying zap —
 the entire point is that the fix attaches to a record that already exists.
@@ -169,7 +214,8 @@ zap, ever.** When any of these happens, the zap lane is closed for that issue:
 In every case the move is the same: **revert and escalate.**
 
 ```bash
-git revert <zap-sha>
+git revert <zap-sha>            # in the repo the zap touched
+cd /Users/alex/projects/mcritchie-studio
 bin/task create --title "<3-5 words>" --kind bug --shape <shape> \
   --repo <app> --accept "<criterion>" \
   --agent-context "Escalated from zap <sha>: <what the zap tried, why it was not enough>"
@@ -184,9 +230,10 @@ the process spiral it exists to prevent.
 - **Not a scope smuggler.** No refactors, no renames, no "while I'm here"
   cleanups, no feature slivers. A zap fixes a defect; it never improves code
   that was not broken.
-- **Not a review bypass.** Builder and reviewer zaps ride the PR through normal
-  review; conductor zaps ride the RC through G3 QA and G4's frozen-SHA gate.
-  The zap skips the *task ceremony*, never the *verification*.
+- **Not a review bypass.** Builder zaps ride the PR through normal review;
+  reviewer zaps land only after both verdicts and merge only with green CI on
+  the zapped head; conductor zaps ride the RC through G3 QA and G4's
+  frozen-SHA gate. The zap skips the *task ceremony*, never the *verification*.
 - **Not a pressure valve for big fixes.** A bounded fix that keeps almost
   qualifying is the classic loop-starter. When in doubt, task it.
 
