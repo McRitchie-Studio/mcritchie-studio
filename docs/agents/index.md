@@ -201,6 +201,50 @@ If your work will produce a code diff — a feature, a bug, or a chore, **even a
 "small" one** — you are a Feature agent and you follow the cycle. There is **no
 size exemption**: "it's just a small change" is exactly when this gets skipped.
 
+### The fast lane — the DEFAULT path
+
+Two wrappers collapse the cycle's bookends into one command each. Reach for
+them first; the long form below is the fallback.
+
+```bash
+cd /Users/alex/projects/mcritchie-studio
+bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> \
+  --shape <shape> --risk <tags> --accept "criterion" --test "[unit] ..."
+#   ... build in the worktree it prints ...
+bin/ship <task-slug> -m "Commit message"
+```
+
+`bin/task begin` runs steps 1-3 (create → `agent-worktree new` → `bind-task` →
+`move building` → `session-preflight`) and prints the worktree path, port, and
+task URL. `bin/ship`, run from that worktree, runs steps 5-6 (commit →
+`bin/fast-check` → push → **non-draft** PR into `accepted` led by the task URL →
+record `pr_url` → `bin/dor-check` → `move submitted` → read-back verify).
+Re-running either after a failure **resumes** — each skips the steps already
+durably recorded. Mechanics: `docs/agents/modules/devops-task-board.md`.
+
+**What the wrappers do NOT do — read before trusting them:**
+
+- They change **no gate semantics**. Every gate still runs and still owns its
+  verdict; the wrappers only sequence the steps.
+- `bin/ship` **stops at `submitted`**. It never merges, never deploys, never
+  touches `release`/`main`.
+- `bin/ship` has **no `--steal`**. Take a held task over with `bin/task begin
+  <task-slug> --steal`, then ship.
+- **You still write the tests** (step 4). Neither wrapper invents test tiers.
+- `bin/ship` is **not** `bin/release ship`. `bin/release ship` is the **G4
+  production deploy** (`release → main`, ship-authority only); `bin/ship` pins
+  base `accepted` and stops at the `submitted` seam.
+- ⚠️ **Known bug:** `begin`'s preflight step inspects the PRIMARY checkout, not
+  the new worktree, so its `OK session preflight passed` can describe a desk it
+  never examined (task `begin-preflight-wrong-root`). Until that lands, re-run
+  `bin/session-preflight <task-slug>` from inside the printed worktree.
+
+Use the long form when the fast lane does not cover the case: multi-repo tasks,
+a bespoke PR body, a task someone else created and shaped, or any single step
+you need to rerun piecemeal.
+
+### The long form (fallback)
+
 Before editing a single file:
 
 1. **Create the production task** (`bin/task create`, or the board UI at
@@ -306,8 +350,11 @@ assigns you that lane in this session. Full SOP + the two-workflow release model
 ## Default Operating Context
 
 Assume Mr. McRitchie starts agent sessions from `/Users/alex/projects`, and
-that a plain feature request should be enough context to begin. The default
-launch flow is:
+that a plain feature request should be enough context to begin. Steps 4-6 below
+are collapsed by `bin/task begin`, and step 10 by `bin/ship` — prefer those (see
+**DevOps Routing** above, including their limits). The flow is written out here
+so the fallback path, and what each wrapper is accountable for, stay legible.
+The default launch flow is:
 
 1. Read this file, then `mcritchie-studio/docs/ECOSYSTEM.md`.
 2. Identify the target repo and read its README/RUNBOOK/topic docs relevant to
@@ -361,20 +408,24 @@ and the feature. A good prompt is:
 
 ```text
 Work from /Users/alex/projects. Build this feature in <app>: <feature>.
-Create the production McRitchie Studio task FIRST with kind=feature, the shape
-(ui-only|ui+db|backend|library|onchain|onchain-vertical), acceptance criteria,
-affected repos, risk tags, and expected checks in devops["test_plan"]. Use an
-isolated worktree and allocated port before editing. Run bin/session-preflight
-<task> from the worktree and fix any blockers it reports before implementation.
+Use the fast lane: bin/task begin --title "Three To Five Words" --repo <app>
+--kind feature --shape (ui-only|ui+db|backend|library|onchain|onchain-vertical)
+--risk <tags> --accept "<criterion>" --test "<tier>". It creates the task,
+allocates the isolated worktree on an allocated port, claims the task, and
+preflights. Re-run bin/session-preflight <task> from inside the printed
+worktree (begin's preflight reads the wrong root until
+begin-preflight-wrong-root lands) and fix any blockers before implementation.
 Write the test tiers your shape requires as you go (unit-first); record them
 tier-tagged in devops["checks_run"]. Before PR handoff, mark local validation
 with `bin/task update <task> --local-url http://localhost:<port>/<path>
 --approval waiting`, return `Local Demo: http://localhost:<port>/<path>` in
 chat, and wait for approval or requested changes. Update docs if behavior
-changes. Before handoff commit, push the branch, and open a PR led by the task
-URL; then run bin/dor-check <task>, fix what it flags, and move the task to
-submitted for Avi QA without waiting for CI (review's gate-zero owns the CI
-verdict). Do not merge or deploy unless I explicitly assigned that lane.
+changes. Then hand off with bin/ship <task> -m "<commit message>" from the
+worktree — it commits, certifies, pushes, opens the non-draft PR into accepted
+led by the task URL, runs bin/dor-check, and moves the task to submitted
+without waiting for CI (review's gate-zero owns the CI verdict). Fall back to
+the long-form commands if the task spans repos or needs a bespoke PR body.
+Do not merge or deploy unless I explicitly assigned that lane.
 ```
 
 ## Start Here
@@ -411,6 +462,7 @@ verdict). Do not merge or deploy unless I explicitly assigned that lane.
 | Alex full cycle SOP | `mcritchie-studio/docs/agents/agents/alex/sops/full-cycle.md` |
 | Alex clean up SOP (board → 0 + infra sweep) | `mcritchie-studio/docs/agents/agents/alex/sops/clean-up.md` |
 | DevOps task-board handoff | `mcritchie-studio/docs/agents/modules/devops-task-board.md` |
+| Fast lane (`bin/task begin` / `bin/ship`) | `mcritchie-studio/docs/agents/modules/devops-task-board.md` |
 | Task-board API (auth + contract) | `mcritchie-studio/docs/agents/modules/task-board-api.md` |
 | Parallel agents and worktrees | `mcritchie-studio/docs/agents/modules/worktrees.md` |
 | LLM adapter policy | `mcritchie-studio/docs/agents/modules/llm-adapters.md` |
@@ -507,6 +559,16 @@ worktree:
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio
+bin/task begin --title "Three To Five Words" --repo turf-monster --shape <shape>
+bin/agent-worktree up turf-monster task-slug     # only when you need a live stack
+bin/ship task-slug -m "Commit message"           # from the worktree, at handoff
+```
+
+`bin/task begin` covers create + `new` + `bind-task` + `move building` +
+`session-preflight` (see **DevOps Routing** above for what it does NOT do). The
+long form stays available for multi-repo work and piecemeal reruns:
+
+```bash
 bin/agent-worktree plan turf-monster task-slug
 bin/agent-worktree new turf-monster task-slug
 bin/agent-worktree bind-task turf-monster task-slug task-abc123def456
