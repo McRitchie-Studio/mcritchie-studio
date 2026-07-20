@@ -569,6 +569,8 @@ class ReleaseCliTest < Minitest::Test
           return ["v0.10.0", true] if j.include?("describe")
           return ["abc123 stranded engine commit", true] if j.include?("log --oneline")
           return [(LOCK_DIRTY ? " M Gemfile\n M Gemfile.lock" : ""), true] if j.include?("status --porcelain")
+          # Phase 1's consumer-coverage read: the swept app's Gemfile AT origin/release.
+          return [%(gem "studio-engine", "~> 0.10"\n), true] if j.include?(":Gemfile")
           return [GATE_SHA, true] if j.include?("rev-parse")
           ["", true]
         end
@@ -686,6 +688,123 @@ class ReleaseCliTest < Minitest::Test
     refute_includes out, "GEM-PUSH", "a dry run publishes nothing"
     refute_includes out, "BUNDLE-LOCK", "a dry run locks nothing"
     refute_includes out, "LOCK-PUSH", "a dry run pushes nothing"
+  end
+
+  # --- prepare: the two-phase preflight (validate EVERY gem, THEN publish) ----
+  #
+  # A RubyGems push can never be re-pushed, so phase 1 must validate ALL swept
+  # gems before phase 2 pushes the first one. These vectors pin the discipline:
+  # a LATE validation failure publishes ZERO gems, and a failed fetch fails
+  # closed instead of publishing from a stale origin/release.
+
+  # A second gem member (solana-studio) rides the same release. Its version is
+  # parametrized per-repo so one gem can be healthy while the other fails.
+  TWO_GEM_SECOND_STRANDED = <<~'RUBY'
+    def conductor(ruby, read_only: false)
+      return { "tasks" => [], "release" => { "slug" => "rel-gempub", "state" => "assembling" }, "screen" => {} } if ruby.include?("sweep_candidates")
+      return { "state" => "assembled" } if ruby.include?("qa_green!")
+      { "slug" => "rel-gempub", "state" => "assembling", "branch" => "release", "repos" => [
+        { "repo" => "studio-engine", "kind" => "gem", "members" => [{ "slug" => "t-gem1", "branch" => nil }] },
+        { "repo" => "solana-studio", "kind" => "gem", "members" => [{ "slug" => "t-gem2", "branch" => nil }] },
+        { "repo" => "mcritchie-studio", "kind" => "app", "release_branch" => "release",
+          "qa_app" => "mcritchie-studio", "members" => [{ "slug" => "t-studio", "branch" => "feat/s" }] }
+      ] }
+    end
+    def gem_version_from_ref(repo, _ref) = repo == "solana-studio" ? "0.10.0" : "1.0.0"
+  RUBY
+
+  # [integration] THE irreversible-ordering regression: gem 1 (studio-engine
+  # 1.0.0) is healthy and would publish; gem 2 (solana-studio 0.10.0 == its last
+  # tag, one commit ahead) fails the stranded-work guard. Interleaved code pushes
+  # gem 1 BEFORE gem 2 aborts; the two-phase preflight must abort with ZERO
+  # pushes — nothing builds, nothing publishes, nothing bumps, nothing deploys.
+  def test_prepare_second_gem_validation_failure_publishes_zero_gems
+    out = run_cli(["--yes"], setup: gem_publish_stub + TWO_GEM_SECOND_STRANDED,
+                  call: %{begin; prepare; puts("NO-ABORT"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+    assert_includes out, "ABORTED", "a late validation failure must abort the whole publish step"
+    assert_includes out, "solana-studio", "the abort names the failing gem"
+    assert_includes out, "NOTHING was published", "the abort states the zero-publish guarantee"
+    refute_includes out, "NO-ABORT"
+    refute_includes out, "GEM-BUILD", "the healthy FIRST gem must not even build before the preflight settles"
+    refute_includes out, "GEM-PUSH", "ZERO gems publish when ANY swept gem fails validation"
+    refute_includes out, "LOCK-PUSH", "no consumer lock bump past a failed preflight"
+    refute_includes out, "QA-DEPLOY", "no QA deploy past a failed preflight"
+  end
+
+  # The gem repo's own fetch (`fetch origin --tags`) fails; the app fetches
+  # (no --tags) stay healthy, so the failure is exactly the gem's stale-ref lane.
+  GEM_FETCH_FAIL = <<~'RUBY'
+    alias sh_before_fetch_fail sh
+    def sh(*a, **k)
+      return ["", false] if a[0] == "git" && a.include?("fetch") && a.include?("--tags")
+      sh_before_fetch_fail(*a, **k)
+    end
+  RUBY
+
+  # [integration] FAIL CLOSED on a failed fetch: a transient fetch failure must
+  # never let a stale origin/release drive an irreversible publish (or silently
+  # skip a new gem, then gate + QA the old lock). Named abort, zero pushes.
+  def test_prepare_gem_fetch_failure_fails_closed_before_any_publish
+    out = run_cli(["--yes"], setup: gem_publish_stub + GEM_FETCH_FAIL,
+                  call: %{begin; prepare; puts("NO-ABORT"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+    assert_includes out, "ABORTED", "a failed gem fetch must abort, not proceed on a stale ref"
+    assert_includes out, "git fetch failed in gem studio-engine", "the abort names the repo and the failed fetch"
+    assert_includes out, "fail closed", "the abort states the discipline"
+    refute_includes out, "NO-ABORT"
+    refute_includes out, "GEM-PUSH", "nothing publishes from a possibly-stale origin/release"
+    refute_includes out, "LOCK-PUSH", "no lock bump on a failed preflight"
+  end
+
+  # A gem-only candidate: the sweep carries the gem and NO app member.
+  GEM_ONLY_CONDUCTOR = <<~'RUBY'
+    def conductor(ruby, read_only: false)
+      return { "tasks" => [], "release" => { "slug" => "rel-gemonly", "state" => "assembling" }, "screen" => {} } if ruby.include?("sweep_candidates")
+      return { "state" => "assembled" } if ruby.include?("qa_green!")
+      { "slug" => "rel-gemonly", "state" => "assembling", "branch" => "release", "repos" => [
+        { "repo" => "studio-engine", "kind" => "gem", "members" => [{ "slug" => "t-gem", "branch" => nil }] }
+      ] }
+    end
+  RUBY
+
+  # [integration] The gem-only bypass: with no app member there is no consumer
+  # lock bump, no app gate, and no QA deploy — the candidate would publish and
+  # assemble QA-green with QA never bundling the gem. Preflight must abort it
+  # BEFORE the irreversible publish, naming the enroll-a-consumer fix.
+  def test_prepare_gem_only_candidate_aborts_before_any_publish
+    out = run_cli(["--yes"], setup: gem_publish_stub + GEM_ONLY_CONDUCTOR,
+                  call: %{begin; prepare; puts("NO-ABORT"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+    assert_includes out, "ABORTED", "a gem-only candidate must not publish + assemble unQA'd"
+    assert_includes out, "NO app member", "the abort names the gem-only condition"
+    assert_includes out, "enroll the consuming app", "the abort hands over the fix"
+    refute_includes out, "NO-ABORT"
+    refute_includes out, "GEM-PUSH", "nothing publishes on a gem-only candidate"
+    refute_includes out, "QA-DEPLOY"
+  end
+
+  # The swept app's origin/release Gemfile does not declare the gem.
+  EMPTY_CONSUMER_GEMFILE = <<~'RUBY'
+    alias git_capture_before_empty_gemfile git_capture
+    def git_capture(*a)
+      return ["", true] if a.join(" ").include?(":Gemfile")
+      git_capture_before_empty_gemfile(*a)
+    end
+  RUBY
+
+  # [integration] The same bypass with apps present: a gem NO swept consumer
+  # bundles would still assemble QA-green untested. Preflight must catch the
+  # missing coverage before the publish.
+  def test_prepare_gem_with_no_swept_consumer_aborts_before_any_publish
+    out = run_cli(["--yes"], setup: gem_publish_stub + EMPTY_CONSUMER_GEMFILE,
+                  call: %{begin; prepare; puts("NO-ABORT"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+    assert_includes out, "ABORTED", "a gem with no swept consumer must not publish"
+    assert_includes out, "no consuming app in this sweep", "the abort names the missing coverage"
+    refute_includes out, "NO-ABORT"
+    refute_includes out, "GEM-PUSH", "nothing publishes without a consumer to QA it through"
+    refute_includes out, "LOCK-PUSH"
   end
 
   # A release with a registered app that has NO qa_environments.yml entry

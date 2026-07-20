@@ -397,8 +397,12 @@ Gems and apps are handled differently at both ends of the Deploy workflow:
   BEFORE QA** (publish-gems-before-qa). A gem's PR merges into the gem's own
   repo's `release` branch like any other, but there is no app artifact to
   deploy. `bin/release prepare` runs the producer-first sequence up front,
-  before the pre-QA gate and any QA deploy: publish each swept gem member's
-  `origin/release` version to RubyGems (skip-if-live), then commit each
+  before the pre-QA gate and any QA deploy — in **two phases**, because a
+  RubyGems push can never be re-pushed: phase 1 validates EVERY swept gem
+  (fail-closed fetch, version parses, stranded-work guard, a swept consumer
+  declares it) and aborts on ANY failure with zero gems published; phase 2
+  then publishes each validated gem's `origin/release` version to RubyGems
+  (skip-if-live) and commits each
   consumer's `Gemfile.lock` bump onto the consumer's `release` branch — so the
   pre-QA CI verdict targets the post-bump SHA, QA bundles the **real published
   gem**, and prod ships the exact tree QA tested. The gem member itself still
@@ -883,17 +887,23 @@ ONE deterministic verb — **`bin/release prepare --yes [--task SLUG ...]
    records the reviewed→assembled intent, so assembly duration caches measure
    from the sweep to the QA-green flip.
 4. **Publish gem members + bump consumer locks (producer-first, BEFORE the
-   gate).** For each swept **gem** member: run the **stranded-work guard**
-   (`origin/release` ahead of the last `v*` tag with an unbumped `version_file`
-   → BLOCK, naming the commits), then publish its `origin/release` version to
-   RubyGems (skip-if-live; build gated on tracked-dirty gem primaries exactly
-   like ship's preflight). Then for each consumer app: `bundle lock --update
-   <gem> --conservative` in the ship workspace at the release tip — rewriting
-   the Gemfile pin only when the version escapes it — and **commit + push the
-   bump onto `origin/release`**, fast-forward-checked. The lock commit lands
-   BEFORE the gate resolves `origin/release`, so the CI verdict targets the
-   post-bump SHA and QA tests the real published gem
-   (`publish_gems_for_qa` / `bump_consumer_locks_for_qa`).
+   gate — validate ALL, then publish).** Phase 1 preflights EVERY swept **gem**
+   member before the first irreversible push: fail-closed `origin/release`
+   fetch (a stale ref must never drive a publish), the `version_file` parses,
+   the **stranded-work guard** (`origin/release` ahead of the last `v*` tag
+   with an unbumped `version_file` → BLOCK, naming the commits), build gated
+   on tracked-dirty gem primaries exactly like ship's preflight, and a swept
+   consuming app whose `origin/release` Gemfile declares the gem (a gem-only
+   candidate would otherwise assemble QA-green untested). ANY failure aborts
+   with ZERO gems published. Phase 2 publishes each validated gem's
+   `origin/release` version to RubyGems (skip-if-live), then for each consumer
+   app: `bundle lock --update <gem> --conservative` in the ship workspace at
+   the release tip — rewriting the Gemfile pin only when the version escapes
+   it — and **commit + push the bump onto `origin/release`**,
+   fast-forward-checked behind its own fail-closed fetch. The lock commit
+   lands BEFORE the gate resolves `origin/release`, so the CI verdict targets
+   the post-bump SHA and QA tests the real published gem
+   (`validate_gems_for_qa` / `publish_gems_for_qa` / `bump_consumer_locks_for_qa`).
 5. **Pre-QA gate.** Each app's registry **`qa_test_cmd`** (the integration +
    e2e-smoke tier `prepare` owns — `Release::STEP_TEST_TIERS`) runs on
    `origin/release` BEFORE anything deploys. A regression → **eject the

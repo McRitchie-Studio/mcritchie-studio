@@ -116,13 +116,18 @@ bin/release prepare --yes
    its feat PR on `accepted` — so it is warned and left `reviewed` (re-review to
    heal), never swept onto the RC.
 4. **Publish gem members + bump consumer locks — BEFORE the gate and QA**
-   (producer-first). For each swept gem member, `prepare` first runs the
-   **stranded-work guard**: `origin/release` ahead of the last published `v*`
-   tag with an unbumped `version_file` ABORTS loudly, naming the stranded
-   commits — the fix is a version bump through the gem's own PR, then re-run.
-   It then publishes the gem's `origin/release` version to RubyGems
-   (skip-if-live, so re-runs are safe) and commits each consumer app's
-   `Gemfile.lock` bump (`bundle lock --update <gem> --conservative`; the
+   (producer-first, in two phases — a RubyGems push can never be re-pushed).
+   Phase 1 **preflights EVERY swept gem before the first push**: a fail-closed
+   fetch of `origin/release` (a stale ref must never drive an irreversible
+   decision), the `version_file` parses, the **stranded-work guard**
+   (`origin/release` ahead of the last published `v*` tag with an unbumped
+   `version_file` — the fix is a version bump through the gem's own PR), and a
+   swept consuming app whose Gemfile declares the gem (a gem-only candidate,
+   or a gem no swept consumer bundles, would assemble QA-green untested). ANY
+   failure aborts loudly with every finding named and **zero gems published**.
+   Phase 2 then publishes each validated gem's `origin/release` version to
+   RubyGems (skip-if-live, so re-runs are safe) and commits each consumer
+   app's `Gemfile.lock` bump (`bundle lock --update <gem> --conservative`; the
    Gemfile pin is rewritten only when the new version escapes it) onto the
    consumer's `origin/release`. The pre-QA gate and the QA deploy then read
    the post-bump SHA, so QA tests the real published gem and prod ships the

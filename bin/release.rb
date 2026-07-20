@@ -55,12 +55,18 @@
 #          repo (promote_accepted_to_release!; a `reviewed` member with no code on
 #          `accepted` is a HELD anomaly, warned + left behind), then records
 #          membership + merged:"release" in ONE `heroku run`. Stages stay `reviewed`.
-#       4. PRE-QA GATE: run each app's registry `qa_test_cmd` (the integration +
+#       4. GEM MEMBERS (publish-gems-before-qa) — two phases, because a RubyGems
+#          push is irreversible: preflight EVERY swept gem (fail-closed fetch,
+#          version bumped, stranded-work guard, a swept consumer declares it;
+#          ANY failure aborts with ZERO gems published), THEN publish each to
+#          RubyGems + commit each consumer's lock bump onto origin/release —
+#          BEFORE the gate and QA (ship's publish stays the idempotent verify).
+#       5. PRE-QA GATE: run each app's registry `qa_test_cmd` (the integration +
 #          e2e-smoke tier) on origin/release BEFORE deploying; a regression aborts
 #          with eject guidance (`bin/release eject` the offender, keep the rest).
-#       5. Deploy origin/release to QA (merge-forward guard → qa-server deploy →
+#       6. Deploy origin/release to QA (merge-forward guard → qa-server deploy →
 #          wait-for-boot /up smoke → post_deploy hooks).
-#       6. QA-GREEN → flip the swept members `reviewed → assembled`
+#       7. QA-GREEN → flip the swept members `reviewed → assembled`
 #          (Release::Conductor.qa_green!; merged stays "release") + assemble the
 #          RC. A QA failure leaves them `reviewed` — the next run self-heals.
 #     `--task` narrows the sweep to the named slugs (operator curation).
@@ -2361,15 +2367,18 @@ def prepare
   record_release_event(rel_slug, "assemble_release", "started")
 
   # 4c. PRODUCER-FIRST GEM PUBLISH + CONSUMER LOCK BUMP — BEFORE the pre-QA gate
-  #     and any QA deploy (publish-gems-before-qa). Publish each swept gem
-  #     member's origin/release version (stranded-work guard first: commits past
-  #     the last tag with an unbumped version_file ABORT loudly), then commit
-  #     each consumer's Gemfile.lock bump onto its release branch. Ordering is
-  #     load-bearing: the lock commits land BEFORE pre_qa_gate resolves
-  #     origin/release, so the CI verdict targets the post-bump SHA, QA bundles
-  #     the new lock, and prod ships the exact tree QA tested. Ship's publish
-  #     stays as the idempotent verify (already-live → skip).
-  bump_consumer_locks_for_qa(app_groups, publish_gems_for_qa(gem_groups))
+  #     and any QA deploy (publish-gems-before-qa). TWO PHASES, because a
+  #     RubyGems push can never be re-pushed: phase 1 VALIDATES every swept gem
+  #     (fail-closed fetch, version parses, stranded-work guard, a swept
+  #     consumer declares it) and aborts on ANY failure with ZERO gems
+  #     published; only then does phase 2 publish and commit each consumer's
+  #     Gemfile.lock bump onto its release branch. Ordering is load-bearing:
+  #     the lock commits land BEFORE pre_qa_gate resolves origin/release, so
+  #     the CI verdict targets the post-bump SHA, QA bundles the new lock, and
+  #     prod ships the exact tree QA tested. Ship's publish stays as the
+  #     idempotent verify (already-live → skip).
+  gem_plan = validate_gems_for_qa(gem_groups, app_groups)
+  bump_consumer_locks_for_qa(app_groups, publish_gems_for_qa(gem_plan))
 
   # 5. PRE-QA GATE — the prepare-owned test tier on origin/release, BEFORE any
   #    QA deploy. A regression aborts with eject guidance while every member is
@@ -3232,79 +3241,181 @@ end
 # prepared before this change. Everything here is idempotent for the
 # self-healing re-run: already-live versions skip, an already-bumped lock
 # commits nothing.
-def publish_gems_for_qa(gem_groups)
-  return {} if gem_groups.empty?
+# PHASE 1 — VALIDATE EVERY GEM, PUBLISH NOTHING. A RubyGems push can never be
+# re-pushed, so every check that could abort the publish step runs for EVERY
+# swept gem BEFORE the first push: repo cloned, buildable primary (the artifact
+# builds from disk), FAIL-CLOSED fetch (a stale origin/release must never drive
+# an irreversible decision), version_file parses, stranded-work guard, and a
+# consuming app IN THIS SWEEP whose origin/release Gemfile declares the gem —
+# without one the published gem would assemble QA-green with QA never bundling
+# it (the gem-only bypass). ANY failure aborts with every finding named and
+# ZERO gems published. Returns the validated publish plan phase 2 executes.
+def validate_gems_for_qa(gem_groups, app_groups)
+  return [] if gem_groups.empty?
 
-  published = {}
   say("")
   step("gem publish (producer-first, BEFORE the pre-QA gate + any QA deploy): " \
-       "publish each swept gem member from origin/#{RELEASE_BRANCH}, then bump consumer locks")
+       "preflight EVERY swept gem, then publish from origin/#{RELEASE_BRANCH}, then bump consumer locks")
+
+  if DRY
+    gem_groups.each do |group|
+      step("  gem #{group['repo']}: preflight (fail-closed fetch → version parses → stranded-work guard " \
+           "(commits past the last tag with an unbumped version_file ABORT) → a swept consumer declares " \
+           "the gem) — ALL swept gems validate BEFORE the first irreversible push → then publish the " \
+           "origin/#{RELEASE_BRANCH} version to RubyGems (skip if already live) → tag v<version>")
+    end
+    return gem_groups.map { |g| { "repo" => g["repo"], "version" => "", "dry" => true } }
+  end
+
+  failures = []
+  if app_groups.empty?
+    failures << "the sweep carries #{gem_groups.map { |g| g['repo'] }.join(', ')} but NO app member — " \
+                "a gem-only candidate would publish with no consumer lock bump, no pre-QA gate, and no " \
+                "QA deploy, then assemble QA-green untested; enroll the consuming app in the sweep " \
+                "(or eject the gem member)"
+  end
+  consumers = validated_consumer_gemfiles(app_groups, failures)
+
+  plan = []
   gem_groups.each do |group|
     repo = group["repo"]
     path = repo_path(repo)
-
-    if DRY
-      step("  gem #{repo}: stranded-work guard (commits past the last tag with an unbumped " \
-           "version_file ABORT) → publish the origin/#{RELEASE_BRANCH} version to RubyGems " \
-           "(skip if already live) → tag v<version>")
-      published[repo] = ""
+    unless Dir.exist?(path)
+      failures << "gem repo not found at #{path} — clone it as a sibling at the projects root"
       next
     end
-    abort!("gem repo not found at #{path} — clone it as a sibling at the projects root") unless Dir.exist?(path)
 
     # The artifact is BUILT from the gem's primary checkout (`gem build` packages
-    # what is ON DISK) — ship_preflight's one surviving primary hazard, gated
-    # here too, BEFORE anything irreversible.
+    # what is ON DISK) — ship_preflight's one surviving primary hazard.
     dirt = Release::ShipSequence.gem_build_offenders([repo_git_state(repo, path)])
-    abort!(Release::ShipSequence.gem_build_message(dirt, root: projects_root)) if dirt.any?
+    if dirt.any?
+      failures << Release::ShipSequence.gem_build_message(dirt, root: projects_root)
+      next
+    end
 
-    sh("git", "-C", path, "fetch", "origin", "--tags", "--quiet")
+    _, fetched = sh("git", "-C", path, "fetch", "origin", "--tags", "--quiet")
+    unless fetched
+      failures << "git fetch failed in gem #{repo} — a stale origin/#{RELEASE_BRANCH} must never drive an " \
+                  "irreversible publish (fail closed); fix the remote, then re-run `bin/release prepare`"
+      next
+    end
+
     out, ok = git_capture("-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}")
-    abort!("could not resolve origin/#{RELEASE_BRANCH} in #{repo} for the gem publish — fetch, then re-run `bin/release prepare`") unless ok
+    unless ok
+      failures << "could not resolve origin/#{RELEASE_BRANCH} in #{repo} for the gem publish — " \
+                  "fetch, then re-run `bin/release prepare`"
+      next
+    end
     tip = out.strip
 
     version = gem_version_from_ref(repo, tip)
-    abort!("could not resolve a version for gem #{repo} at origin/#{RELEASE_BRANCH} — " \
-           "check #{repo}/#{gem_meta_for(repo)['version_file']}") if version.empty?
-
-    guard_stranded_gem_work!(repo, path, tip, version)
-
-    if Release::ShipSequence.publish_needed?(version, rubygems_versions(repo))
-      step("  gem #{repo} #{version}: publish from origin/#{RELEASE_BRANCH} (#{short(tip)}) — " \
-           "QA must test consumers against the REAL published artifact")
-      checkout_detached(repo, tip) # build from the exact release tree
-      publish_gem(repo, version)   # reused: release-check → build → push → tag
-      restore_gem_primary(repo)
-    else
-      say("  gem #{repo} #{version} already live on RubyGems — skip publish (idempotent re-run)")
+    if version.empty?
+      failures << "could not resolve a version for gem #{repo} at origin/#{RELEASE_BRANCH} — " \
+                  "check #{repo}/#{gem_meta_for(repo)['version_file']}"
+      next
     end
-    published[repo] = version
+
+    if (stranded = stranded_gem_failure(repo, path, tip, version))
+      failures << stranded
+      next
+    end
+
+    if app_groups.any? && consumers.none? { |_, text| Release::ShipSequence.consumer_bump_action(text, repo, version) != :absent }
+      failures << "gem #{repo} #{version} has no consuming app in this sweep (checked: " \
+                  "#{consumers.keys.join(', ')}) — the published gem would assemble QA-green with QA never " \
+                  "bundling it; enroll the consuming app (or eject the gem member)"
+      next
+    end
+
+    plan << { "repo" => repo, "tip" => tip, "version" => version,
+              "already_live" => !Release::ShipSequence.publish_needed?(version, rubygems_versions(repo)) }
+  end
+
+  if failures.any?
+    abort!("gem publish preflight FAILED — NOTHING was published (every swept gem validates before the " \
+           "first irreversible push):\n  - " + failures.join("\n  - "))
+  end
+  plan
+end
+
+# Phase 1's consumer read: each swept app's Gemfile AT origin/release, behind a
+# FAIL-CLOSED fetch (the same stale-ref discipline as the gems). An app with no
+# Gemfile at the tip simply cannot consume — that alone is not a failure; the
+# per-gem coverage check above decides.
+def validated_consumer_gemfiles(app_groups, failures)
+  app_groups.each_with_object({}) do |group, gemfiles|
+    repo = group["repo"]
+    path = repo_path(repo)
+    unless Dir.exist?(path)
+      failures << "app repo not found at #{path} — clone it as a sibling at the projects root"
+      next
+    end
+    _, fetched = sh("git", "-C", path, "fetch", "origin", "--quiet")
+    unless fetched
+      failures << "git fetch failed in #{repo} — refusing to preflight gem consumers against a " \
+                  "possibly-stale origin/#{RELEASE_BRANCH} (fail closed)"
+      next
+    end
+    text, ok = git_capture("-C", path, "show", "origin/#{RELEASE_BRANCH}:Gemfile")
+    gemfiles[repo] = ok ? text : ""
+  end
+end
+
+# PHASE 2 — the irreversible loop, run ONLY after phase 1 validated every swept
+# gem. No new decisions here: the plan carries the tip, version, and live-state
+# phase 1 resolved. Idempotent for the self-healing re-run: already-live
+# versions skip.
+def publish_gems_for_qa(gem_plan)
+  return {} if gem_plan.empty?
+
+  published = {}
+  gem_plan.each do |gem|
+    repo = gem["repo"]
+    if gem["dry"]
+      published[repo] = ""
+      next
+    end
+
+    if gem["already_live"]
+      say("  gem #{repo} #{gem['version']} already live on RubyGems — skip publish (idempotent re-run)")
+    else
+      step("  gem #{repo} #{gem['version']}: publish from origin/#{RELEASE_BRANCH} (#{short(gem['tip'])}) — " \
+           "QA must test consumers against the REAL published artifact")
+      checkout_detached(repo, gem["tip"]) # build from the exact release tree
+      publish_gem(repo, gem["version"])   # reused: release-check → build → push → tag
+      restore_gem_primary(repo)
+    end
+    published[repo] = gem["version"]
   end
   published
 end
 
 # The STRANDED-WORK guard for one gem repo (the pure decision + message live in
 # Release::ShipSequence): origin/release ahead of the last published v* tag with
-# an UNBUMPED version_file blocks prepare loudly, naming the commits — the
-# silent-skip hazard that stranded engine commits behind a green pipeline. A
-# repo with no v* tag yet has nothing published to strand behind → no guard.
-def guard_stranded_gem_work!(repo, path, tip, version)
+# an UNBUMPED version_file is the silent-skip hazard that stranded engine
+# commits behind a green pipeline. Returns the loud failure message (naming the
+# commits) for phase 1 to collect, or nil. A repo with no v* tag yet has
+# nothing published to strand behind → no guard.
+def stranded_gem_failure(repo, path, tip, version)
   tag_out, tag_ok = git_capture("-C", path, "describe", "--tags", "--abbrev=0", "--match", "v*", tip)
-  return unless tag_ok # no published tag — first publish; nothing to strand behind
+  return nil unless tag_ok # no published tag — first publish; nothing to strand behind
 
   tag = tag_out.strip
   ahead_out, ahead_ok = git_capture("-C", path, "log", "--oneline", "#{tag}..#{tip}")
-  abort!("could not read #{repo} #{tag}..origin/#{RELEASE_BRANCH} for the stranded-work guard — fetch, then re-run `bin/release prepare`") unless ahead_ok
+  unless ahead_ok
+    return "could not read #{repo} #{tag}..origin/#{RELEASE_BRANCH} for the stranded-work guard — " \
+           "fetch, then re-run `bin/release prepare`"
+  end
 
   commits = ahead_out.lines.map(&:chomp).reject { |l| l.strip.empty? }
-  return unless Release::ShipSequence.stranded_gem_work?(
+  return nil unless Release::ShipSequence.stranded_gem_work?(
     ahead_commits: commits, version: version, tag_version: tag.delete_prefix("v")
   )
 
-  abort!(Release::ShipSequence.stranded_gem_message(
-           repo, ahead_commits: commits, version: version,
-           version_file: gem_meta_for(repo)["version_file"]
-         ))
+  Release::ShipSequence.stranded_gem_message(
+    repo, ahead_commits: commits, version: version,
+    version_file: gem_meta_for(repo)["version_file"]
+  )
 end
 
 # Bump each consumer's Gemfile.lock (and, only when the new version ESCAPES the
@@ -3336,7 +3447,9 @@ def bump_consumer_locks_for_qa(app_groups, published_gems)
 
     path = repo_path(repo)
     abort!("app repo not found at #{path} — clone it as a sibling at the projects root") unless Dir.exist?(path)
-    sh("git", "-C", path, "fetch", "origin", "--quiet")
+    _, fetched = sh("git", "-C", path, "fetch", "origin", "--quiet")
+    abort!("git fetch failed in #{repo} — refusing to bump the consumer lock against a possibly-stale " \
+           "origin/#{RELEASE_BRANCH} (fail closed); fix the remote, then re-run `bin/release prepare`") unless fetched
     out, ok = git_capture("-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}")
     abort!("could not resolve origin/#{RELEASE_BRANCH} in #{repo} for the consumer lock bump") unless ok
     tip = out.strip
