@@ -2026,9 +2026,12 @@ def ci_poll_action(ci)
   return :pass if ci_pass?(ci)
 
   state = ci.is_a?(Hash) ? ci[:state] : nil
-  # :ci_less joins the terminal set (task detect-ci-less-stale-prs): GitHub will never
-  # run CI for this subject, so polling is the one thing that CANNOT help — the same
-  # argument that puts :unreadable here. Waiting on it burned a full rework cycle.
+  # :ci_less is DEFENSIVE here, not a fix for an observed release-path stall: the only
+  # producer of :ci_less is CiStatus.combine, reached solely from evaluate(pr_url), and
+  # this gate is SHA-addressed (for_sha) — so today it can arrive only via an injected
+  # RELEASE_CI_STATUS token. Classified anyway, because if a future PR-scoped caller
+  # does reach this poll, "GitHub will never run CI for this subject" is terminal for
+  # the same reason :unreadable is: polling is the one thing that cannot help.
   return :abort if %i[red unreadable ci_less].include?(state)
 
   :wait

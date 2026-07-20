@@ -84,25 +84,70 @@ module CiStatus
   #
   # THE CONJUNCTION IS LOAD-BEARING. Zero checks ALONE is not ci-less — a PR GitHub
   # affirms is mergeable simply has not started its run yet, and that IS a wait. Only
-  # "no checks AND no confirmed merge" is the third state. Likewise a PR that HAS
-  # checks is never ci-less however ugly its merge state: the checks prove CI ran.
+  # "no checks AND a REFUTED merge" is the third state. Likewise a PR that HAS checks
+  # is never ci-less however ugly its merge state: the checks prove CI ran.
   #
-  # ABSENCE OF EVIDENCE IS NOT EVIDENCE. A view payload that never requested
-  # `mergeable` reads as confirmed, so an older/partial caller cannot have its silence
-  # turned into a false ci-less alarm.
+  # --- ABSENCE OF SIGNAL IS NOT NEGATIVE SIGNAL (round 2) ---------------------
+  #
+  # The round-1 predicate asked a YES/NO question — "is the merge confirmed?" — and a
+  # two-valued answer cannot represent "GitHub has not decided yet". It also answered
+  # that question INCONSISTENTLY: an ABSENT `mergeable` counted as confirmed while an
+  # explicit "UNKNOWN" did not, though both mean the same thing.
+  #
+  # That was not cosmetic. GitHub computes mergeability ASYNCHRONOUSLY after every
+  # push, answering UNKNOWN until it lands, and a brand-new head SHA has zero
+  # check-runs in that SAME window — so both halves of the conjunction go true at once
+  # for a perfectly HEALTHY PR. That window is exactly when builders run these tools
+  # ("push, open a PR, then run bin/dor-check"), and PRs #588/#601/#602 were all
+  # observed flipping to UNKNOWN within seconds of an unrelated merge and settling
+  # back with NO push. The harm is not the stale verdict — it is the INSTRUCTION the
+  # verdict carries, "rebase and --force-with-lease", which a compliant agent obeys,
+  # force-pushing a healthy branch and cancelling its in-flight CI.
+  #
+  # So mergeability is THREE-VALUED — :affirmed / :refuted / :unknown — and :unknown
+  # is NEVER converted into an actionable negative. It means "look again", and only a
+  # STABLE unknown (still unknown after a bounded re-read, with zero checks) is
+  # reported as ci-less. That is also the staleness floor this task's name always
+  # implied: a transient UNKNOWN settles on its own, a genuinely stale base never does.
+  #
+  # FAIL DIRECTION: uncertainty about GITHUB'S KNOWLEDGE falls toward wait; only an
+  # affirmative negative blocks. The asymmetry justifies it — a wrong block
+  # force-pushes a healthy branch, a wrong wait costs a bounded timeout.
 
-  # PURE. Does GitHub AFFIRM this PR merges? Only an explicit MERGEABLE counts —
-  # CONFLICTING and UNKNOWN (GitHub gave up, or has not decided) both fail to confirm.
-  # A payload with no `mergeable` key at all is treated as confirmed (see above).
-  def self.merge_confirmed?(view_raw)
+  # mergeStateStatus values that prove GitHub COMPUTED the merge commit. Their
+  # presence is settlement, whatever `mergeable` says: DIRTY is the computed NEGATIVE
+  # (handled as :refuted / :conflicted), and UNKNOWN is the only "still computing"
+  # answer. Keying off this field rather than `mergeable` is what makes {CLEAN +
+  # mergeable UNKNOWN} — a self-contradictory input that round 1 called ci-less —
+  # resolve correctly to "GitHub computed it; the run just has not started".
+  SETTLED_MERGE_STATES = %w[CLEAN BLOCKED BEHIND UNSTABLE HAS_HOOKS DRAFT].freeze
+
+  # How long to wait before the second look at an UNDETERMINED mergeability, and how
+  # many looks in total. Bounded on purpose: this is the only place the fleet sleeps
+  # on CI, and a transient UNKNOWN settles in seconds. Env-overridable so tests never
+  # sleep (CI_STATUS_RECHECK_SECONDS=0).
+  def self.recheck_seconds
+    raw = ENV["CI_STATUS_RECHECK_SECONDS"]
+    return 5.0 if raw.nil? || raw.to_s.strip.empty?
+
+    [raw.to_f, 0.0].max
+  end
+
+  # PURE. What does GitHub say about this PR's mergeability — :affirmed, :refuted, or
+  # :unknown? A SETTLED mergeStateStatus affirms on its own; DIRTY and CONFLICTING are
+  # the affirmative negatives; everything else (UNKNOWN, absent, unparseable) is
+  # :unknown, which is a request to look again, never a verdict.
+  def self.mergeability(view_raw)
     data = parse_view(view_raw)
-    return true unless data
+    return :unknown unless data
 
+    merge_state = data["mergeStateStatus"].to_s.upcase
     mergeable = data["mergeable"].to_s.upcase
-    return true if mergeable.empty? && data["mergeStateStatus"].to_s.upcase != "DIRTY"
-    return false if data["mergeStateStatus"].to_s.upcase == "DIRTY"
+    return :refuted if merge_state == "DIRTY" || mergeable == "CONFLICTING"
+    return :affirmed if SETTLED_MERGE_STATES.include?(merge_state)
+    return :affirmed if mergeable == "MERGEABLE"
 
-    mergeable == "MERGEABLE"
+    :unknown
   end
 
   # PURE. The `gh pr view` payload as a Hash, or nil when it is not JSON.
@@ -118,14 +163,38 @@ module CiStatus
   # PURE. The WHOLE PR verdict: the view payload's early verdict, else the checks
   # fold, with the ci-less upgrade applied to a bare :none. This is the seam the unit
   # vectors drive (pending / ci-less / green / red) without touching the network.
-  def self.combine(view_raw, checks_raw)
+  #
+  # `stable` is the SECOND look — see the three-valued section above. On the first
+  # read an UNDETERMINED mergeability returns the plain :none carrying `recheck: true`
+  # ("look again"), and only when the caller has re-read and found it STILL undecided
+  # does it become :ci_less. It is a second look, NOT a lower bar: an :affirmed merge
+  # stays a wait however many times it is read.
+  def self.combine(view_raw, checks_raw, stable: false)
     early = view_verdict(view_raw)
     return early if early
 
     verdict = parse(checks_raw)
     return verdict unless verdict[:state] == :none
-    return verdict if merge_confirmed?(view_raw)
 
+    case mergeability(view_raw)
+    when :affirmed
+      # GitHub computed the merge — the workflow just has not started. A real wait.
+      verdict
+    when :refuted
+      # An affirmative negative: GitHub says it cannot merge, so no CI is coming.
+      # Actionable on the FIRST read — this is a fact, not a pending computation.
+      ci_less_verdict(view_raw)
+    else
+      # `mergeability`, not `merge_state`: what is undetermined is GitHub's ANSWER,
+      # and naming it after the raw mergeStateStatus field would report a value
+      # GitHub may never have sent.
+      stable ? ci_less_verdict(view_raw) : verdict.merge(recheck: true, mergeability: :unknown)
+    end
+  end
+
+  # PURE. The :ci_less verdict with the evidence a reader needs to act: what GitHub
+  # reported, and the base to rebase onto.
+  def self.ci_less_verdict(view_raw)
     data = parse_view(view_raw) || {}
     {
       state: :ci_less,
@@ -135,10 +204,11 @@ module CiStatus
     }
   end
 
-  # THE ONE REMEDY STRING for :ci_less, so dor-check, pr-review, session-preflight and
-  # the release poll all prescribe the same cure. Names (a) that no CI is coming, (b)
-  # why, and (c) the exact command — because "pending" taught the reader to wait, and
-  # only a named action unteaches it.
+  # THE ONE REMEDY STRING for :ci_less. dor-check, pr-review and session-preflight all
+  # CALL this (session-preflight requires this file for exactly that reason — round 2
+  # caught it hand-rolling a rival message), so one PR cannot collect three cures.
+  # Names (a) that no CI is coming, (b) why, and (c) the exact command — because
+  # "pending" taught the reader to wait, and only a named action unteaches it.
   def self.ci_less_remedy(verdict = nil)
     v = verdict.is_a?(Hash) ? verdict : {}
     base = v[:base].to_s.strip
@@ -279,7 +349,20 @@ module CiStatus
       raw = `gh pr checks #{Shellwords.escape(pr)} --json name,state,bucket 2>&1`.to_s.strip
       # combine, not parse: a bare :none here may be the THIRD STATE (no CI will ever
       # run), and only the view payload can tell the difference.
-      return combine(view, raw)
+      verdict = combine(view, raw)
+      # An UNDETERMINED mergeability is not a verdict — it is a request to look again
+      # (the three-valued rule above). Back off once, re-read BOTH payloads, and only
+      # then let a STILL-undecided merge settle into :ci_less. A transient clears here;
+      # a genuinely stale base does not.
+      return verdict unless verdict[:recheck]
+
+      sleep(recheck_seconds)
+      view = `gh pr view #{Shellwords.escape(pr)} --json #{VIEW_FIELDS} 2>&1`.to_s.strip
+      settled = view_verdict(view)
+      return settled if settled
+
+      raw = `gh pr checks #{Shellwords.escape(pr)} --json name,state,bucket 2>&1`.to_s.strip
+      return combine(view, raw, stable: true)
     end
     parse(raw)
   end

@@ -81,7 +81,14 @@ itself**. Avi:
    spawns; a conflicted PR gets **no CI at all** (GitHub cannot compute the
    merge commit, so the workflow never fires), and it presents exactly like
    "no checks yet" — deferring it would strand the task in `submitted` forever
-   (the PR-#509/#521 stall); **pending / no checks yet** → defer this task to
+   (the PR-#509/#521 stall); **ci-less** (`gh pr checks` reports zero runs
+   **and** the merge is *refuted* — `mergeable CONFLICTING`) → the same
+   `bin/task block <task> --kind rework` with "rebase onto `<base>`"
+   (`outcome=ci-less`) — a base that drifted past GitHub's merge computation
+   gets no CI either and never reads `DIRTY`. An **undetermined** merge
+   (`mergeable UNKNOWN`, GitHub still computing) is NOT this state: it is
+   re-read after a bounded backoff, and only a stable unknown counts;
+   **pending / no checks yet** → defer this task to
    a later pass; **green** → continue.
 2. Confirms **product-acceptance** — does the open PR (base `release`) meet the
    task's acceptance criteria?

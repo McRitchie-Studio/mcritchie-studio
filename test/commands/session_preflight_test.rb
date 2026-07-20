@@ -239,6 +239,45 @@ class SessionPreflightTest < Minitest::Test
     refute JSON.parse(out).fetch("pr").fetch("ci_less")
   end
 
+  # [integration] ROUND 2 — the fresh-push window must not be called ci-less here
+  # either. GitHub answers mergeable UNKNOWN while it computes, and a brand-new head
+  # SHA has zero checks in that same window; preflight runs INSIDE that window by
+  # design, so an UNKNOWN must never produce the "rebase and force-push" blocker.
+  def test_undetermined_mergeability_is_not_reported_as_ci_less
+    task = write_task(devops: default_devops.merge("branch" => "feat/session-preflight"))
+    fake_bin = write_fake_gh(merge_state: "UNKNOWN", mergeable: "UNKNOWN", rollup: "[]")
+
+    out, err, status = run_preflight(
+      "--file", task, "--no-install-docs", "--no-fetch", "--json",
+      env: { "PATH" => "#{fake_bin}:#{ENV.fetch("PATH", "")}" }
+    )
+    assert status.success?, "an undetermined mergeability must not block\n#{out}\n#{err}"
+    report = JSON.parse(out)
+    refute report.fetch("pr").fetch("ci_less")
+    refute(report.fetch("errors").any? { |e| e.match?(/NO CI/i) }, report.fetch("errors").inspect)
+  end
+
+  # [integration] ROUND 2 — ONE taxonomy. A DIRTY PR is a CONFLICT, and the two tools
+  # must not hand the same PR different cures: preflight used to call it ci-less
+  # ("rebase onto accepted and force-push") while CiStatus.view_verdict calls it
+  # :conflicted ("merge release in and resolve the conflicts"). The first never
+  # mentions resolving anything, so it is wrong advice for a real conflict.
+  def test_a_dirty_pr_is_reported_as_a_conflict_not_as_ci_less
+    task = write_task(devops: default_devops.merge("branch" => "feat/session-preflight"))
+    fake_bin = write_fake_gh(merge_state: "DIRTY", mergeable: "CONFLICTING", rollup: "[]")
+
+    out, err, status = run_preflight(
+      "--file", task, "--no-install-docs", "--no-fetch", "--json",
+      env: { "PATH" => "#{fake_bin}:#{ENV.fetch("PATH", "")}" }
+    )
+    refute status.success?, "a DIRTY PR still blocks — as a conflict\n#{out}\n#{err}"
+    report = JSON.parse(out)
+    refute report.fetch("pr").fetch("ci_less"), "DIRTY belongs to the conflict report, not the ci-less one"
+    assert(report.fetch("errors").any? { |e| e.include?("DIRTY") }, report.fetch("errors").inspect)
+    refute(report.fetch("errors").any? { |e| e.match?(/NO CI/i) },
+           "a conflict must not also collect the ci-less cure")
+  end
+
   def test_docs_kind_without_shape_is_exempt_from_shape_gate
     task = write_task(devops: { "kind" => "docs", "branch" => "feat/session-preflight" })
 

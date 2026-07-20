@@ -195,6 +195,107 @@ class CiStatusTest < Minitest::Test
     assert_equal :none, CiStatus.combine(view("OPEN", "UNKNOWN"), "[]")[:state]
   end
 
+  # --- ROUND 2: UNKNOWN mergeability is NOT a negative verdict ------------------
+  #
+  # Review blocked round 1 (avi, siding with jasper's light lane; carl's primary
+  # lane found the same defect and rated it non-blocking — the CONVERGENCE is why it
+  # blocked). The round-1 predicate was SELF-INCONSISTENT: an ABSENT `mergeable`
+  # counted as confirmed, while an explicit "UNKNOWN" did not — though both mean the
+  # SAME thing, that GitHub has not told us it cannot merge.
+  #
+  # Why that was not cosmetic: GitHub computes mergeability ASYNCHRONOUSLY after
+  # every push, answering UNKNOWN until it lands, and a brand-new head SHA has zero
+  # check-runs in that SAME window. Both halves of the conjunction are therefore true
+  # at once for a perfectly HEALTHY PR — and that window is exactly when builders run
+  # these tools, because the operating model prescribes "push, open a PR, then run
+  # bin/dor-check". A reviewer watched #588, #601 and #602 all flip to UNKNOWN within
+  # seconds of an unrelated merge and settle back with NO push.
+  #
+  # The harm is not the stale verdict, it is the INSTRUCTION the verdict carries: a
+  # hard block reading "waiting can never clear it… rebase and --force-with-lease".
+  # A compliant agent force-pushes a healthy branch and cancels its in-flight CI.
+  #
+  # THE RULE, now three-valued: mergeability is AFFIRMED, REFUTED, or UNKNOWN, and
+  # UNKNOWN is never converted into an actionable negative. Uncertainty about
+  # GITHUB'S KNOWLEDGE falls toward wait; only an affirmative negative blocks. The
+  # asymmetry justifies it — a wrong block force-pushes a healthy branch, a wrong
+  # wait costs a bounded timeout.
+
+  def test_undetermined_mergeability_is_a_wait_not_ci_less
+    # The exact vector review prescribed. UNKNOWN + zero checks = the fresh-push
+    # window, not a stale base.
+    v = CiStatus.combine(view("OPEN", "UNKNOWN", mergeable: "UNKNOWN", base: "accepted"), "[]")
+    assert_equal :none, v[:state]
+  end
+
+  def test_a_settled_merge_state_confirms_regardless_of_mergeable
+    # Carl's sharper vector: CLEAN literally means GitHub DID compute the merge, so
+    # {CLEAN, mergeable UNKNOWN, zero checks} was self-contradictory AND classified
+    # ci-less. Any SETTLED mergeStateStatus is confirmation — it is the field that
+    # actually reports settlement.
+    CiStatus::SETTLED_MERGE_STATES.each do |settled|
+      v = CiStatus.combine(view("OPEN", settled, mergeable: "UNKNOWN", base: "accepted"), "[]")
+      assert_equal :none, v[:state], "#{settled} means GitHub computed the merge — never ci-less"
+    end
+  end
+
+  def test_absent_and_unknown_mergeable_are_treated_identically
+    # THE self-inconsistency, asserted as an EQUIVALENCE rather than two spellings:
+    # both inputs say "GitHub has not told us it cannot merge", so no reading of the
+    # pair may ever diverge.
+    %w[UNKNOWN CLEAN BEHIND].each do |merge_state|
+      absent = CiStatus.combine(view("OPEN", merge_state), "[]")
+      unknown = CiStatus.combine(view("OPEN", merge_state, mergeable: "UNKNOWN"), "[]")
+      assert_equal absent[:state], unknown[:state],
+                   "absent vs explicit-UNKNOWN mergeable must agree at #{merge_state}"
+    end
+  end
+
+  def test_mergeability_is_three_valued
+    # The POSITIVE invariant behind all of the above: three states, and only the
+    # REFUTED one is actionable. Absence of signal is never negative signal.
+    assert_equal :affirmed, CiStatus.mergeability(view("OPEN", "CLEAN", mergeable: "MERGEABLE"))
+    assert_equal :affirmed, CiStatus.mergeability(view("OPEN", "UNSTABLE", mergeable: "UNKNOWN")),
+                 "a settled merge state affirms even when `mergeable` lags"
+    assert_equal :refuted, CiStatus.mergeability(view("OPEN", "DIRTY", mergeable: "CONFLICTING"))
+    assert_equal :refuted, CiStatus.mergeability(view("OPEN", "UNKNOWN", mergeable: "CONFLICTING")),
+                 "CONFLICTING is an affirmative negative"
+    assert_equal :unknown, CiStatus.mergeability(view("OPEN", "UNKNOWN", mergeable: "UNKNOWN"))
+    assert_equal :unknown, CiStatus.mergeability(view("OPEN", "UNKNOWN")),
+                 "an absent mergeable is UNKNOWN, not affirmed and not refuted"
+  end
+
+  def test_an_unstable_unknown_asks_for_a_recheck_instead_of_a_verdict
+    # UNKNOWN + zero checks is not yet ANY verdict: it is a request to re-read. The
+    # flag is what lets `evaluate` back off and look again instead of guessing.
+    v = CiStatus.combine(view("OPEN", "UNKNOWN", mergeable: "UNKNOWN", base: "accepted"), "[]")
+    assert v[:recheck], "an undetermined mergeability must ask for a re-read"
+  end
+
+  def test_only_a_STABLE_unknown_becomes_ci_less
+    # The staleness floor the task name always implied. A transient UNKNOWN settles
+    # on its own; a genuinely stale base NEVER does. Re-read bounded, then decide —
+    # so the real trap is still caught and the fresh-push window is not.
+    v = CiStatus.combine(view("OPEN", "UNKNOWN", mergeable: "UNKNOWN", base: "accepted"), "[]", stable: true)
+    assert_equal :ci_less, v[:state]
+    refute v[:recheck], "a settled verdict does not ask for another read"
+  end
+
+  def test_a_refuted_merge_is_ci_less_on_the_FIRST_read
+    # No backoff for an affirmative negative — CONFLICTING is GitHub telling us it
+    # cannot merge, which is a fact, not a pending computation.
+    v = CiStatus.combine(view("OPEN", "UNKNOWN", mergeable: "CONFLICTING", base: "accepted"), "[]")
+    assert_equal :ci_less, v[:state]
+    refute v[:recheck]
+  end
+
+  def test_stability_never_overrides_an_affirmed_merge
+    # `stable: true` is the second look, NOT a lower bar: a PR GitHub affirms is
+    # mergeable stays a wait no matter how many times it is re-read.
+    v = CiStatus.combine(view("OPEN", "CLEAN", mergeable: "MERGEABLE", base: "accepted"), "[]", stable: true)
+    assert_equal :none, v[:state]
+  end
+
   def test_ci_less_is_an_injectable_token
     # The DOR_CHECK_CI_STATUS / PR_REVIEW_CI_STATUS seam, so the CLI tests can drive
     # the state without a network.
