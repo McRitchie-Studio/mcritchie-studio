@@ -1075,7 +1075,18 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     skip "no DATABASE_URL/TEST_DATABASE_URL to derive Postgres credentials from" if template.blank?
     template_uri = URI.parse(template)
 
-    long_slug = "regression-very-long-worktree-slug-db-name-overflow-probe"
+    # UNIQUE PER RUN, and it must be. This was a hardcoded literal, so every
+    # concurrent session on the box derived the SAME database name on the SAME
+    # Postgres cluster — and the `ensure` below drops it. Session A's dropdb could
+    # land between session B's db:test:prepare and B's pg_database probe, reddening
+    # B on a correct implementation. Same family as the shared-state fixes in this
+    # commit: a test whose verdict depended on what another agent was doing.
+    #
+    # The suffix rides safely through truncation because bounded_db_slug digests the
+    # WHOLE slug (SHA256, bin/agent-worktree) before clipping — so uniqueness lands
+    # in the digest, not in the part that gets cut. The probe's real subject is
+    # unchanged: this slug is still far over the 63-byte identifier limit.
+    long_slug = "regression-very-long-worktree-slug-db-name-overflow-probe-#{SecureRandom.hex(4)}"
     dev_name = script_eval(%(print worktree_db_name("mcritchie-studio", "#{long_slug}"))).strip
     test_name = script_eval(
       %(print test_database_url("DATABASE_URL" => "postgresql://localhost/#{dev_name}").split("/").last)
@@ -1472,20 +1483,51 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
   # aborts instead of overwriting the live registry every conductor session reads.
   #
   # Spawned fully unpinned, so this drives the real fallback — and the guard aborts
-  # BEFORE any IO, so it never writes the operator's store even when it goes red.
+  # BEFORE any IO, so it never writes the store even when it goes red.
+  #
+  # ── WHY THIS RUNS A STAGED COPY OF THE SCRIPT ────────────────────────────────
+  #
+  # The first version of this test asserted the mtime of the OPERATOR'S LIVE
+  # registry (<projects>/.agents/worktree-registry.json) was unchanged across the
+  # spawn. The claim was right; the instrument was machine-global. Any concurrent
+  # agent session doing something entirely legitimate — `bin/agent-worktree new`,
+  # a conductor snapshot — rewrote that file inside our window and reddened a cert
+  # that had found nothing wrong. It was a member of the same family as the
+  # wall-clock assertion in test/lib/cert_orphan_guard_test.rb: a test asserting
+  # the state of the BOX, and so a test any other agent could fail for us.
+  #
+  # The fix keeps the test fully unpinned — that is the whole point of it — and
+  # moves the FALLBACK instead. ProjectsRoot.default_projects_dir (bin/lib/) derives
+  # the root from the RUNNING SCRIPT'S OWN LOCATION, so a copy staged under the
+  # tmpdir hub resolves <tmpdir>/.agents through exactly the same code path, and the
+  # store this test protects is one it owns and tears down. Nothing else on the
+  # machine can touch it, and this test can no longer touch anything else.
+  #
+  # `SENTINEL` makes the proof stronger than the mtime version could be: we could
+  # never pre-seed the operator's real registry, so it could only ask "did the
+  # timestamp move". Owning the file lets us assert exact CONTENT — a write of any
+  # size, including one that lands within a filesystem timestamp granule, fails.
   def test_integration_an_unpinned_registry_write_aborts_instead_of_reaching_the_real_store
-    real = File.join(TaskUsageSandbox.real_state_dir, "worktree-registry.json")
-    before = File.exist?(real) ? File.mtime(real) : nil
+    script = stage_script
+    registry = File.join(@projects_dir, ".agents", "worktree-registry.json")
+    FileUtils.mkdir_p(File.dirname(registry))
+    File.write(registry, SENTINEL)
 
     env = SessionEnv.neutralized("PATH" => ENV.fetch("PATH", "")) # every pin unset
-    _out, err, status = Open3.capture3(env, RbConfig.ruby, @script, "snapshot", "--write", chdir: Rails.root.to_s)
+    _out, err, status = Open3.capture3(env, RbConfig.ruby, script, "snapshot", "--write", chdir: @hub_dir)
 
     refute_predicate status, :success?, "an unpinned registry write must ABORT, not fall back to the real store"
     assert_match(/sandbox/i, err, "the abort must say WHY")
     assert_match(/AGENT_WORKTREE_REGISTRY|PROJECTS_DIR/, err, "and must name a var to pin")
 
-    after = File.exist?(real) ? File.mtime(real) : nil
-    assert_equal before, after, "the operator's real worktree registry must be untouched"
+    # ANTI-VACUITY, and the assertion that keeps the redirection honest: the refusal
+    # must name OUR tmpdir root. Without this the test would still pass if the staged
+    # copy resolved the operator's real root instead — the sentinel would sit
+    # untouched while the live store took the write, which is the exact inversion of
+    # what this test claims to prove.
+    assert_match(/#{Regexp.escape(@projects_dir)}/, err,
+                 "the fallback must resolve into the test's own root, not the operator's")
+    assert_equal SENTINEL, File.read(registry), "the fallback registry must be untouched, byte for byte"
   end
 
   # The happy path the guard must not break — pinned, the snapshot still lands.
@@ -1495,6 +1537,28 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
 
     assert_predicate status, :success?, "#{out}\n#{err}"
     assert_path_exists registry_path, "a pinned snapshot must still write the registry"
+  end
+
+  # Content pre-seeded into the staged root's registry, so an unpinned write that
+  # reached it is caught by CONTENT rather than by a timestamp.
+  SENTINEL = "{\"sentinel\":\"must not be overwritten\"}\n"
+
+  # A RUNNABLE copy of bin/agent-worktree inside the tmpdir hub; answers its path.
+  #
+  # This is what redirects the unpinned fallback (see the test above): ProjectsRoot
+  # resolves the projects root from the running script's own location, so the copy
+  # resolves @projects_dir. Three trees cover the script's require_relative graph —
+  # bin/ (incl. bin/lib/projects_root), lib/ (task_usage_sandbox, claim_lease) and
+  # app/models/release/ (ship_sequence, restore_primary). Copy WHOLE trees rather
+  # than the five named files: a require added to the script later then keeps
+  # working, and if one ever escapes these trees the child dies on a LoadError whose
+  # stderr fails the /sandbox/i assertion loudly — never silently green.
+  def stage_script
+    FileUtils.mkdir_p(File.join(@hub_dir, "app", "models"))
+    FileUtils.cp_r(Rails.root.join("bin").to_s, @hub_dir)
+    FileUtils.cp_r(Rails.root.join("lib").to_s, @hub_dir)
+    FileUtils.cp_r(Rails.root.join("app", "models", "release").to_s, File.join(@hub_dir, "app", "models"))
+    File.join(@hub_dir, "bin", "agent-worktree")
   end
 
   # Child env for a spawned bin/ command: the sandbox pins, with the ambient
