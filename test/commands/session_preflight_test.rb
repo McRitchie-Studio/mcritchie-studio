@@ -70,6 +70,95 @@ class SessionPreflightTest < Minitest::Test
     assert report.fetch("errors").any? { |error| error.include?("behind origin/release") }, report.fetch("errors").inspect
   end
 
+  # [unit] The base ladder is accepted → release → main, mirroring
+  # base_ref_for in bin/agent-worktree. A desk cut from origin/accepted must be
+  # measured against origin/accepted — the release-first resolution used to
+  # report false "behind origin/release" blockers on every accepted-based desk.
+  def test_base_prefers_origin_accepted_over_release
+    task = write_task
+    git("update-ref", "refs/remotes/origin/accepted", head)
+
+    out, err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
+    assert status.success?, "#{out}\n#{err}"
+
+    report = JSON.parse(out)
+    assert_equal "origin/accepted", report.fetch("branch").fetch("base")
+    assert_equal 0, report.fetch("branch").fetch("behind")
+  end
+
+  def test_behind_accepted_blocker_names_the_compared_ref
+    task = write_task
+    git("update-ref", "refs/remotes/origin/accepted", head)
+    git("checkout", "-q", "--detach", "origin/accepted")
+    accepted_commit = commit_file("docs/accepted.md", "accepted\n", "accepted moves")
+    git("update-ref", "refs/remotes/origin/accepted", accepted_commit)
+    git("checkout", "-q", "feat/session-preflight")
+
+    out, _err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
+    refute status.success?
+
+    report = JSON.parse(out)
+    assert_equal "origin/accepted", report.fetch("branch").fetch("base")
+    assert_equal 1, report.fetch("branch").fetch("behind")
+    assert report.fetch("errors").any? { |error| error.include?("behind origin/accepted") }, report.fetch("errors").inspect
+  end
+
+  def test_base_falls_back_to_release_when_accepted_absent
+    task = write_task
+
+    out, err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
+    assert status.success?, "#{out}\n#{err}"
+
+    report = JSON.parse(out)
+    assert_equal "origin/release", report.fetch("branch").fetch("base")
+  end
+
+  def test_base_falls_back_to_main_when_accepted_and_release_absent
+    task = write_task
+    git("update-ref", "-d", "refs/remotes/origin/release")
+    git("update-ref", "refs/remotes/origin/main", head)
+
+    out, err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
+    assert status.success?, "#{out}\n#{err}"
+
+    report = JSON.parse(out)
+    assert_equal "origin/main", report.fetch("branch").fetch("base")
+  end
+
+  def test_missing_ladder_refs_warn_with_all_three_names
+    task = write_task
+    git("update-ref", "-d", "refs/remotes/origin/release")
+
+    out, err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
+    assert status.success?, "#{out}\n#{err}"
+
+    report = JSON.parse(out)
+    assert_nil report.fetch("branch").fetch("base")
+    assert_includes report.fetch("branch").fetch("warning"), "origin/accepted"
+    assert_includes report.fetch("branch").fetch("warning"), "origin/main"
+  end
+
+  # [unit] Fetching the ladder must tolerate missing rungs: a remote with only
+  # `main` (no accepted/release yet) is a valid pre-cutover repo, not a fetch
+  # failure worth warning about. The old fetch pulled ONLY `release`, so it
+  # never refreshed accepted and warned on release-less repos.
+  def test_fetch_tolerates_missing_ladder_rungs
+    task = write_task
+    bare = File.join(@sandbox, "origin.git")
+    git("init", "-q", "--bare", bare)
+    git("remote", "add", "origin", bare)
+    git("push", "-q", "origin", "HEAD:refs/heads/main")
+    git("update-ref", "-d", "refs/remotes/origin/release")
+    git("update-ref", "-d", "refs/remotes/origin/main")
+
+    out, err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--json")
+    assert status.success?, "#{out}\n#{err}"
+
+    report = JSON.parse(out)
+    assert_empty report.fetch("warnings").grep(/git fetch/), report.fetch("warnings").inspect
+    assert_equal "origin/main", report.fetch("branch").fetch("base")
+  end
+
   def test_stale_terminology_scan_blocks_active_docs
     task = write_task
     write_file("docs/agents/modules/stale.md", "Use GET /api/v1/tasks?stage=queued here.\n")

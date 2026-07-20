@@ -168,8 +168,25 @@ rescue Psych::Exception => e
   [{}, "could not parse #{path}: #{e.message}"]
 end
 
-def git_fetch_release(root)
-  capture("git", "-C", root, "fetch", "origin", "release", "--quiet")
+# The branch ladder is accepted → release → main: feature branches cut from and
+# PR into `origin/accepted`, so drift must be measured against the same rung the
+# desk was cut from. Mirrors base_ref_for in bin/agent-worktree — keep the two
+# resolutions in sync. (Divergence is deliberate in ONE spot: base_ref_for
+# assumes origin/main as a last resort; default_base_ref returns nil so the
+# report can name the missing refs instead of failing on a git error.)
+LADDER_BRANCHES = %w[accepted release main].freeze
+
+# Fetch every ladder rung the remote has. A missing rung (pre-cutover repo, no
+# `bin/release init` yet) is expected, not a failure — warn only when NO rung
+# could be fetched, which points at a real network/remote problem.
+def git_fetch_ladder(root)
+  results = LADDER_BRANCHES.map do |branch|
+    ok, _out, err = capture("git", "-C", root, "fetch", "origin", branch, "--quiet")
+    [branch, ok, err]
+  end
+  return [true, nil] if results.any? { |_branch, ok, _err| ok }
+
+  [false, results.map { |branch, _ok, err| "#{branch}: #{compact_lines(err).join("; ")}" }.join(" | ")]
 end
 
 def git_ref_exists?(root, ref)
@@ -178,9 +195,10 @@ def git_ref_exists?(root, ref)
 end
 
 def default_base_ref(root)
-  return "origin/release" if git_ref_exists?(root, "origin/release")
-  return "origin/main" if git_ref_exists?(root, "origin/main")
-
+  LADDER_BRANCHES.each do |branch|
+    ref = "origin/#{branch}"
+    return ref if git_ref_exists?(root, ref)
+  end
   nil
 end
 
@@ -190,7 +208,7 @@ def current_branch(root)
 end
 
 def branch_drift(root, base)
-  return { "base" => nil, "warning" => "no origin/release or origin/main ref found" } unless base
+  return { "base" => nil, "warning" => "no origin/accepted, origin/release, or origin/main ref found" } unless base
 
   ok, out, err = capture("git", "-C", root, "rev-list", "--left-right", "--count", "#{base}...HEAD")
   return { "base" => base, "warning" => compact_lines(err).join("; ") } unless ok
@@ -499,7 +517,7 @@ OptionParser.new do |opts|
   opts.on("--stale-path PATH", "Additional stale-scan path, repeatable") { |path| options[:stale_paths] << path }
   opts.on("--no-gh", "Skip GitHub CLI checks") { options[:gh] = false }
   opts.on("--no-install-docs", "Skip bin/install-agent-docs check") { options[:install_docs] = false }
-  opts.on("--no-fetch", "Skip git fetch origin release") { options[:fetch] = false }
+  opts.on("--no-fetch", "Skip git fetch of origin accepted/release/main") { options[:fetch] = false }
   opts.on("--json", "Emit machine-readable JSON") { options[:json] = true }
   opts.on("-h", "--help", "Show this help") do
     puts opts
@@ -520,8 +538,8 @@ if task["blocked_at"].to_s.strip != "" && task["stage"].to_s == "building"
 end
 
 if options[:fetch]
-  ok, _out, err = git_fetch_release(options[:root])
-  warnings << "git fetch origin release failed: #{compact_lines(err).join("; ")}" unless ok
+  ok, message = git_fetch_ladder(options[:root])
+  warnings << "git fetch origin accepted/release/main all failed: #{message}" unless ok
 end
 
 base = default_base_ref(options[:root])
