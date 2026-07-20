@@ -695,4 +695,154 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
     assert S.resumable_repin?(ancestor: true, changed_files: ["Gemfile\n", "Gemfile.lock\n"],
                               head_gemfile: EXPECTED_GEMFILE, expected_gemfile: EXPECTED_GEMFILE)
   end
+
+  # --- deploy_already_succeeded?: is the frozen SHA already live on prod? ------
+  #
+  # The guard both `bin/release finalize` and a `ship` RE-RUN turn on after a
+  # watch-process kill left a github_actions deploy landed but the board stranded.
+
+  test "deploy_already_succeeded? (github_actions) is TRUE only when main+/up+run all confirm" do
+    assert S.deploy_already_succeeded?(strategy: "github_actions",
+                                       main_at_sha: true, up_ok: true, run_success: true)
+  end
+
+  test "deploy_already_succeeded? (github_actions) FAILS CLOSED when the SHA's run did not succeed" do
+    # main advanced and prod is up, but the deploy run for the SHA is not a success
+    # — main+/up alone can be a stale prod serving the old build. Never mark shipped.
+    assert_not S.deploy_already_succeeded?(strategy: "github_actions",
+                                           main_at_sha: true, up_ok: true, run_success: false)
+    assert_not S.deploy_already_succeeded?(strategy: "github_actions",
+                                           main_at_sha: true, up_ok: true, run_success: nil)
+  end
+
+  test "deploy_already_succeeded? (github_actions) FAILS CLOSED when main is not at the SHA" do
+    assert_not S.deploy_already_succeeded?(strategy: "github_actions",
+                                           main_at_sha: false, up_ok: true, run_success: true)
+  end
+
+  test "deploy_already_succeeded? (github_actions) does NOT skip a FIRST ship (main advanced, run not yet)" do
+    # The first-ship state at the skip check: push_frozen_main advanced main (true)
+    # and prod /up serves the OLD build (200), but NO prod-deploy run for the frozen
+    # SHA has succeeded yet (the dispatch is still ahead) → run_success false → deploy.
+    assert_not S.deploy_already_succeeded?(strategy: "github_actions",
+                                           main_at_sha: true, up_ok: true, run_success: false)
+  end
+
+  test "deploy_already_succeeded? FAILS CLOSED when prod /up is not 200 (every strategy)" do
+    assert_not S.deploy_already_succeeded?(strategy: "github_actions",
+                                           main_at_sha: true, up_ok: false, run_success: true)
+    assert_not S.deploy_already_succeeded?(strategy: "git_push_heroku",
+                                           up_ok: false, deployed_at_sha: true)
+    assert_not S.deploy_already_succeeded?(strategy: "repo_script",
+                                           up_ok: false, deployed_at_sha: true)
+  end
+
+  test "deploy_already_succeeded? (git_push_heroku) needs a deployed-marker, NOT main_at_sha" do
+    # THE FIRST-SHIP TRAP: push_frozen_main advances origin/main to the frozen SHA
+    # BEFORE the Heroku push, so main_at_sha is true on a FIRST ship while prod still
+    # serves the OLD build (its /up still 200). main+/up must NOT read as deployed —
+    # only the Heroku release SHA (deployed_at_sha) proves the new build is live.
+    assert S.deploy_already_succeeded?(strategy: "git_push_heroku", up_ok: true, deployed_at_sha: true)
+    assert_not S.deploy_already_succeeded?(strategy: "git_push_heroku", up_ok: true, main_at_sha: true)
+    assert_not S.deploy_already_succeeded?(strategy: "git_push_heroku", up_ok: true, deployed_at_sha: nil)
+  end
+
+  test "deploy_already_succeeded? (repo_script) needs a deployed-marker at the SHA, not main" do
+    # Same first-ship trap: push_frozen_main advances main BEFORE the repo's script
+    # runs, so main alone proves nothing; require the repo's own deployed marker.
+    assert S.deploy_already_succeeded?(strategy: "repo_script", up_ok: true, deployed_at_sha: true)
+    assert_not S.deploy_already_succeeded?(strategy: "repo_script", up_ok: true, main_at_sha: true)
+    assert_not S.deploy_already_succeeded?(strategy: "repo_script", up_ok: true, deployed_at_sha: nil)
+  end
+
+  test "deploy_already_succeeded? is FALSE for an unknown strategy (never ship an unrecognized deploy)" do
+    assert_not S.deploy_already_succeeded?(strategy: "carrier_pigeon",
+                                           main_at_sha: true, up_ok: true, run_success: true)
+  end
+
+  # --- prod_run_succeeded?: pick the SHA's prod-deploy run out of `gh run list` ---
+
+  test "prod_run_succeeded? is TRUE when a run at the SHA is completed+success" do
+    runs = [{ "headSha" => "abc123", "status" => "completed", "conclusion" => "success" }]
+    assert S.prod_run_succeeded?(runs, "abc123")
+  end
+
+  test "prod_run_succeeded? ignores runs for a DIFFERENT SHA (a prior prod deploy)" do
+    runs = [{ "headSha" => "oldsha", "status" => "completed", "conclusion" => "success" }]
+    assert_not S.prod_run_succeeded?(runs, "abc123")
+  end
+
+  test "prod_run_succeeded? is FALSE when the SHA's run failed or is still in flight" do
+    failed  = [{ "headSha" => "abc123", "status" => "completed", "conclusion" => "failure" }]
+    waiting = [{ "headSha" => "abc123", "status" => "waiting", "conclusion" => nil }]
+    assert_not S.prod_run_succeeded?(failed, "abc123")
+    assert_not S.prod_run_succeeded?(waiting, "abc123")
+  end
+
+  test "prod_run_succeeded? finds the matching run among several, and reads symbol keys" do
+    runs = [
+      { "headSha" => "oldsha", "status" => "completed", "conclusion" => "success" },
+      { headSha: "abc123", status: "completed", conclusion: "success" }
+    ]
+    assert S.prod_run_succeeded?(runs, "abc123")
+  end
+
+  test "prod_run_succeeded? FAILS CLOSED on a blank sha or an empty list" do
+    assert_not S.prod_run_succeeded?([{ "headSha" => "abc123", "status" => "completed", "conclusion" => "success" }], "")
+    assert_not S.prod_run_succeeded?([], "abc123")
+    assert_not S.prod_run_succeeded?(nil, "abc123")
+  end
+
+  # --- finalize_pending?: which record+seal+install steps the killed ship skipped -
+
+  test "finalize_pending? lists ALL steps for a fully-stranded release (kill before step 6)" do
+    # The exact strand: deploy landed, but seal/ship!/notes never ran → board at assembled.
+    assert_equal %i[seal ship notes],
+                 S.finalize_pending?(state: "assembled", sealed: false, notes_completed: false)
+  end
+
+  test "finalize_pending? is EMPTY on an already-finalized release (a clean no-op)" do
+    # THE IDEMPOTENCY GUARD: a second finalize must not re-seal, re-ship, or re-post.
+    assert_equal [], S.finalize_pending?(state: "shipped", sealed: true, notes_completed: true)
+  end
+
+  test "finalize_pending? still includes :ship when members are unflipped (kill MID-cadence)" do
+    # state=shipped but a straggler member remains → Release#ship! RESUMES it (safe),
+    # so :ship must stay pending; dropping it would leave the member stranded.
+    assert_equal %i[ship], S.finalize_pending?(state: "shipped", sealed: true,
+                                               notes_completed: true, members_all_shipped: false)
+  end
+
+  test "finalize_pending? drops :ship only when shipped AND every member is flipped" do
+    # Release#ship! raises 'already terminal' ONLY here — which is exactly when :ship drops.
+    assert_not_includes S.finalize_pending?(state: "shipped", sealed: true,
+                                            notes_completed: true, members_all_shipped: true), :ship
+  end
+
+  test "finalize_pending? returns ONLY :notes when the kill landed between ship! and notes" do
+    # shipped + sealed but notes never delivered → post notes, nothing else (no double records).
+    assert_equal %i[notes],
+                 S.finalize_pending?(state: "shipped", sealed: true, notes_completed: false)
+  end
+
+  test "finalize_pending? returns :ship and :notes when the kill landed after the seal" do
+    assert_equal %i[ship notes],
+                 S.finalize_pending?(state: "assembled", sealed: true, notes_completed: false)
+  end
+
+  test "finalize_pending? keeps the seal→ship→notes order so notes read the seal verdict" do
+    # The order is load-bearing: the live ship records the seal (5c) before ship!+notes (6).
+    assert_equal %i[seal ship notes], S.finalize_pending?(state: "assembled", sealed: false, notes_completed: false)
+  end
+
+  # MUTATION CHECK on the idempotency guard: flip the `notes` done-test from
+  # `== true` to a truthy test (or drop it) and an already-finalized release would
+  # report :notes pending, re-delivering the Discord notes. This vector — the
+  # notes NOT completed — must produce :notes, and the completed vector must not.
+  test "finalize_pending? idempotency guard is EXACT: notes_completed=false ⇒ :notes, true ⇒ none" do
+    assert_includes S.finalize_pending?(state: "shipped", sealed: true, notes_completed: false), :notes
+    assert_not_includes S.finalize_pending?(state: "shipped", sealed: true, notes_completed: true), :notes
+    # and a non-boolean truthy value is NOT treated as done (guard is `== true`).
+    assert_includes S.finalize_pending?(state: "shipped", sealed: true, notes_completed: "yes"), :notes
+  end
 end

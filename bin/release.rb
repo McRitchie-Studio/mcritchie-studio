@@ -3414,6 +3414,84 @@ end
 #     shared primary might not be), and the IDL files it hashes are TRACKED, so
 #     they are present in the workspace. The one cosmetic difference is a "Not on
 #     main (current: HEAD)" warn, which does not affect its exit status.
+# --- resumable ship: is a group's frozen SHA ALREADY live on prod? -----------
+# The I/O half of Release::ShipSequence.deploy_already_succeeded? — it gathers the
+# live signals a killed watcher lost and hands them to the pure decision. Two
+# callers: deploy_app skips a redundant re-dispatch on a `ship` RE-RUN, and
+# `finalize` GUARDS against marking `shipped` a release that never deployed.
+#
+# All READS (they mutate nothing), so they run for real even in --dry-run — the
+# same "a read previews without mutating" contract as git_capture / conductor
+# (read_only:). They deliberately DO NOT go through `sh` (which would print
+# "[dry-run]" and skip), so a dry-run finalize can preview the real verdict.
+#   * origin/main via `git ls-remote` — the AUTHORITATIVE remote ref (never a
+#     local branch: the ship no longer moves the primary's local main).
+#   * prod /up via curl.
+#   * github_actions ONLY: the deploy workflow's recent runs, scanned for a
+#     completed+success run AT the frozen SHA (prod_run_succeeded?).
+def origin_main_sha(repo)
+  out, ok = git_capture("-C", repo_path(repo), "ls-remote", "origin", "refs/heads/main")
+  ok ? out.to_s.split(/\s+/).first.to_s.strip : ""
+end
+
+def prod_up_ok?(base_url)
+  url = base_url.to_s.strip
+  return false if url.empty?
+
+  out, status = Open3.capture2e("/usr/bin/curl", "-s", "-o", "/dev/null",
+                                "-w", "%{http_code}", "#{url}/up")
+  status.success? && out.strip == "200"
+end
+
+def deploy_workflow_runs(workflow, path)
+  wf = workflow.to_s.strip
+  return [] if wf.empty?
+
+  out, status = Open3.capture2e("gh", "run", "list", "--workflow", wf, "--limit", "20",
+                                "--json", "databaseId,headSha,status,conclusion", chdir: path)
+  return [] unless status.success?
+
+  JSON.parse(out)
+rescue JSON::ParserError
+  []
+end
+
+# The prod smoke URL for a group: the adapter's smoke_url, or the hub's PROD_URL
+# for github_actions (its adapter keeps smoke_url for the board, and the hub IS
+# PROD_URL). Blank → prod_up_ok? returns false (fail closed).
+def group_smoke_url(group)
+  adapter = group["prod_deploy"] || {}
+  smoke = adapter["smoke_url"].to_s.strip
+  return smoke unless smoke.empty?
+
+  group["repo"] == APP ? PROD_URL.to_s : ""
+end
+
+# Decide — over live signals — whether `group`'s frozen SHA is genuinely deployed.
+# Fails closed on any unreadable signal. deployed_at_sha (the repo_script marker)
+# is left nil for now: turf's mainnet-release marker read is a future tightening,
+# so a repo_script re-run re-dispatches (safe — its bin/deploy self-gates).
+def deploy_already_live?(group, frozen)
+  frozen = frozen.to_s.strip
+  return false if frozen.empty?
+
+  adapter  = group["prod_deploy"] || {}
+  strategy = adapter["strategy"].to_s
+  run_success =
+    if strategy == "github_actions"
+      Release::ShipSequence.prod_run_succeeded?(
+        deploy_workflow_runs(adapter["workflow"], repo_path(group["repo"])), frozen
+      )
+    end
+
+  Release::ShipSequence.deploy_already_succeeded?(
+    strategy: strategy,
+    up_ok: prod_up_ok?(group_smoke_url(group)),
+    main_at_sha: origin_main_sha(group["repo"]) == frozen,
+    run_success: run_success
+  )
+end
+
 def deploy_app(group, frozen)
   @ship_live ||= [] # ship() seeds this; never let a nil deref be the way a deploy fails
   repo    = group["repo"]
@@ -3433,6 +3511,20 @@ def deploy_app(group, frozen)
   # The ff landed on origin — stamp this repo's members merged:"main" (matrix:
   # assembled+main = prod-in-flight; an interrupted re-run reads it as "ff done").
   record_merged_main(Array(group["members"]).map { |m| m["slug"] })
+
+  # RESUMABLE SHIP (fix option b): on a RE-RUN after a watcher-process kill left the
+  # deploy landed but the ship stranded, skip re-dispatching a deploy that ALREADY
+  # concluded success — a re-dispatch would demand a 2nd `production` Environment
+  # approval and re-run the whole deploy for nothing. Only skips on affirmative,
+  # strategy-appropriate proof (deploy_already_live? → ShipSequence.deploy_already_
+  # succeeded?, which fails closed); anything less falls through to a normal deploy.
+  # Gated on !DRY so a dry-run preview always shows the full dispatch plan.
+  if !DRY && deploy_already_live?(group, frozen)
+    step("deploy: #{repo} ALREADY live at frozen #{short(frozen)} (prod-deploy previously concluded success) — skipping re-dispatch")
+    gate_sop("deploy:#{repo}", "skip re-dispatch (already deployed @ #{short(frozen)})", true, 0)
+    @ship_live << "app #{repo} already deployed to production (resumed — re-dispatch skipped)"
+    return
+  end
 
   case handler
   when :git_push_heroku
@@ -3694,6 +3786,12 @@ end
 
 # --- ship -------------------------------------------------------------------
 def ship
+  # RESUMABLE SHIP: `--finalize-only [<release>]` runs ONLY the record+seal+install
+  # steps a watcher-process kill skipped, against an already-deployed frozen SHA.
+  # It NEVER deploys — it guards that the SHA is genuinely live first, then records.
+  # `bin/release finalize <release>` is the same path with its own verb.
+  return finalize(Release::Cli.positional_slugs(ARGV).first) if Release::Cli.take_flag(ARGV, "--finalize-only")
+
   by = opt_value("--by") || ENV["USER"] || "operator"
   @ship_live = [] # the "what's live this run" trail for the partial-ship report
   avi_span = false # set once the Avi deploy-lane activity opens (gates its close)
@@ -3914,6 +4012,147 @@ rescue SystemExit => e
     warn("  Re-run `bin/release ship` to resume: published gems skip, fast-forwards no-op, re-pins are idempotent.")
   end
   exit(e.respond_to?(:status) && e.status ? e.status : 1)
+end
+
+# --- finalize: record the steps a KILLED ship skipped ------------------------
+# `bin/release finalize <release>` (also `bin/release ship --finalize-only <release>`).
+#
+# THE STRAND IT HEALS. The github_actions hub ship WATCHES prod-deploy.yml as a
+# long-lived process; GitHub Actions owns the Heroku push + /up smoke INDEPENDENTLY,
+# so a harness/OS kill of the watcher (IOError, stream-closed) leaves the deploy
+# LANDED but the board at `assembled` — Conductor.ship!, the smoke seal, and
+# install-agent-docs never ran. This finishes exactly those steps, IDEMPOTENTLY,
+# and REFUSES to run against a SHA that did not actually deploy. It replaces the
+# fragile hand-run `heroku run` recovery recipe with one guarded command; the
+# deploy mechanics (push_frozen_main, deploy_app) are untouched — this only wraps
+# the record+seal+install tail.
+#
+# It is IDEMPOTENT: the pure Release::ShipSequence.finalize_pending? decides which
+# of {seal, ship, notes} still need running from the release's own state, so a
+# re-run on an already-finalized release is a clean NO-OP (no double Discord notes,
+# no double records). install-agent-docs + primary-restore ride along (idempotent
+# file ops) whenever any step is pending.
+def finalize(slug = nil)
+  by = opt_value("--by") || ENV["USER"] || "operator"
+  @ship_live = []
+  say("Finalize release (record the steps a killed ship skipped)#{PROD ? ' (PROD)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
+  warn_local!
+
+  # 1. Resolve the release + its deploy plan + the post-deploy record state. A
+  #    READ (read_only:) so a dry-run previews without mutating. Address by the
+  #    given slug, else the last shipped/active release (a strand sits at either
+  #    `assembled` (nothing recorded) or `shipped` (a partial finalize)).
+  slug = slug.to_s.strip
+  slug = opt_value("--slug").to_s.strip if slug.empty?
+  step("record (read-only): release + repo_plan + qa_shas + finalize state")
+  lookup = slug.empty? ? "Release.current || Release.last_shipped" : "Release.find_by(slug: #{slug.inspect})"
+  result = conductor(
+    "r = #{lookup}; " \
+    "abort('no release to finalize' + (#{slug.inspect}.empty? ? '' : \" for slug #{slug}\")) unless r; " \
+    "puts({slug: r.slug, state: r.state, sealed: r.smoke_sealed?, " \
+    "notes_completed: r.event_completed?('release_notes'), " \
+    "members_all_shipped: r.tasks.where.not(stage: 'shipped').empty?, " \
+    "repos: Release::Conductor.repo_plan(r), qa_shas: (r.metadata['qa_shas'] || {})}.to_json)",
+    read_only: true
+  )
+  # --dry-run returns {} from a read? No — read_only bypasses the dry gate, so the
+  # read runs. But guard the empty case (a --local dry with no DB) defensively.
+  abort!("no release to finalize") if result["slug"].to_s.empty?
+  rel_slug = result["slug"]
+  state    = result["state"]
+  repos    = result["repos"] || []
+  qa_shas  = result["qa_shas"] || {}
+  sealed   = !!result["sealed"]
+  notes_completed = !!result["notes_completed"]
+  members_all_shipped = result.fetch("members_all_shipped", true)
+
+  # A release must be `assembled` (the strand) or `shipped` (a partial finalize) —
+  # never finalize something still in QA (that would mark shipped a release the
+  # deploy never even started).
+  unless %w[assembled shipped].include?(state)
+    abort!("release #{rel_slug} is '#{state}', not assembled/shipped — nothing to finalize (run `bin/release ship` to deploy it first)")
+  end
+
+  app_groups = Release::ShipSequence.ordered_app_groups(repos.select { |g| g["kind"] == "app" })
+  ship_sha   = {}
+  repos.each { |g| ship_sha[g["repo"]] = frozen_sha_for(g["repo"], qa_shas) }
+
+  # 2. GUARD — REFUSE unless the frozen SHA is genuinely LIVE on prod for EVERY app.
+  #    finalize records, it never deploys, so it must never mark shipped a release
+  #    that did not deploy. deploy_already_live? fails closed on any unreadable /
+  #    unconfirmed signal (per strategy — see Release::ShipSequence).
+  say("")
+  step("finalize guard: prove every app's frozen SHA is already live on prod")
+  not_live = app_groups.reject { |g| deploy_already_live?(g, ship_sha[g["repo"]]) }
+  if not_live.any?
+    names = not_live.map { |g| "#{g['repo']} @ #{short(ship_sha[g['repo']])}" }.join(", ")
+    # A DRY preview REPORTS the guard verdict but does not abort (so the plan still
+    # prints); a real finalize REFUSES — it records an already-deployed release and
+    # must never mark shipped a deploy that did not land.
+    abort!("refusing to finalize — NOT confirmed live on prod: #{names}. " \
+           "finalize records an already-deployed release; it never deploys. " \
+           "If the deploy really did not land, run `bin/release ship` to deploy it.") unless DRY
+    say("  ⚠ [dry-run] would REFUSE: NOT confirmed live on prod: #{names}")
+  else
+    say("  ✓ #{app_groups.size} app(s) confirmed live on prod at the frozen SHA")
+  end
+
+  # 3. What did the killed ship skip? (pure, from the release's own state.)
+  pending = Release::ShipSequence.finalize_pending?(state: state, sealed: sealed,
+                                                    notes_completed: notes_completed,
+                                                    members_all_shipped: members_all_shipped)
+  say("")
+  if pending.empty?
+    say("✓ #{rel_slug} is already finalized (state=#{state}, sealed, notes delivered) — nothing to do (clean no-op).")
+    return
+  end
+  say("  pending finalize steps: #{pending.join(', ')}")
+
+  # DRY stops here: the guard verdict + the pending plan are shown, nothing mutated.
+  if DRY
+    say("")
+    say("✓ Finalize plan previewed (DRY RUN — nothing executed). Re-run without --dry-run to record #{pending.join('/')}.")
+    return
+  end
+
+  abort!("aborted — finalize not confirmed") unless confirm("Finalize #{rel_slug} — record #{pending.join('/')} + install docs?")
+
+  # 4. Run ONLY the skipped steps, in the live-ship order (seal 5c → ship! 6 →
+  #    notes 6 → restore/install 7). Each is idempotent; finalize_pending? gates
+  #    the two non-idempotent-by-nature ones (notes' Discord delivery; the ship!
+  #    member cadence) so a re-run never double-fires.
+  seal_status = production_smoke_seal(app_groups, ship_sha, rel_slug) if pending.include?(:seal)
+
+  if pending.include?(:ship)
+    deployed_sha = ship_sha[APP].to_s
+    deployed_sha = git_capture("-C", repo_path(APP), "rev-parse", "origin/main").first.strip if deployed_sha.empty?
+    step("record: Release::Conductor.ship! + DurationCache.refresh_recent!")
+    conductor(
+      "r = Release.find_by!(slug: #{rel_slug.inspect}); " \
+      "Release::Conductor.ship!(release: r, deployed_sha: #{deployed_sha.inspect}, by: #{by.inspect}, production_url: #{PROD_URL.inspect}, usage_by_slug: {}, member_pause: 1); " \
+      "Release::DurationCache.refresh_recent!(limit: 3); " \
+      "puts({slug: r.slug, state: r.reload.state, sha: r.deployed_sha.to_s[0,7]}.to_json)"
+    )
+  end
+
+  if pending.include?(:notes)
+    step("record: Release::Conductor.post_release_notes")
+    notes = conductor(
+      "r = Release.find_by!(slug: #{rel_slug.inspect}); " \
+      "n = Release::Conductor.post_release_notes(release: r); " \
+      "puts({notes_delivered: n[:delivered]}.to_json)"
+    )
+    say("  release notes: #{notes['notes_delivered'] ? 'posted' : 'not delivered (webhook unset?)'}")
+  end
+
+  # 5. The idempotent tail: restore each app primary to a clean `main`, then sync
+  #    the installed agent docs from the shipped hub tree (the install-agent-docs
+  #    the killed ship skipped). Both best-effort + non-fatal.
+  restore_primaries(app_groups)
+  sync_agent_docs
+
+  say("")
+  say("✓ Finalized #{rel_slug} — recorded #{pending.join(', ')}. The board now reflects the shipped release.")
 end
 
 # Return each app's PRIMARY checkout to a clean `main` after a ship — the
@@ -4192,14 +4431,15 @@ if __FILE__ == $PROGRAM_NAME
   case ARGV.shift
   when "init"    then init
   when "merge"   then merge
-  when "prepare" then prepare
-  when "eject"   then eject
-  when "ship"    then ship
-  when "status"  then status
-  when "archive" then archive
-  when "retro"   then retro
+  when "prepare"  then prepare
+  when "eject"    then eject
+  when "ship"     then ship
+  when "finalize" then finalize(Release::Cli.positional_slugs(ARGV).first)
+  when "status"   then status
+  when "archive"  then archive
+  when "retro"    then retro
   else
-    warn "usage: bin/release {init|merge <task-slug> [<task-slug>...]|prepare|eject <task-slug>|ship|status|archive|retro} " \
+    warn "usage: bin/release {init|merge <task-slug> [<task-slug>...]|prepare|eject <task-slug>|ship [--finalize-only [<release>]]|finalize [<release>]|status|archive|retro} " \
          "[--task SLUG ...] [--slug REL] [--by NAME] [--feedback …] [--clean-only] " \
          "[--worked …] [--friction …] [--followup …] [--file-tasks] [--local] [--dry-run] [--yes]"
     exit 1

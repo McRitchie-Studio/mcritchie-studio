@@ -319,6 +319,108 @@ class Release
       record.is_a?(Hash) ? record : nil
     end
 
+    # --- resuming a KILLED ship: is the frozen SHA ALREADY live on prod? --------
+    #
+    # THE STRAND THIS ANSWERS (hit twice — Slice-4, rel-20260716-2a2075). For the
+    # github_actions hub, `bin/release ship` DISPATCHES prod-deploy.yml and then
+    # WATCHES the run as a long-lived process. GitHub Actions owns the Heroku push +
+    # /up smoke INDEPENDENTLY of that watcher, so when the harness/OS KILLS the
+    # watch process (an IOError, stream-closed) the DEPLOY still lands — push_frozen_
+    # main already advanced main, accepted auto-advanced, prod is live — but the
+    # record+seal+install steps (Conductor.ship!, the smoke seal, install-agent-docs)
+    # NEVER run, and the board strands at `assembled`. Both `bin/release finalize`
+    # (record the skipped steps) and a `ship` RE-RUN (skip the redundant re-dispatch)
+    # turn on this one question, so it lives here, pure and unit-tested.
+    #
+    # TRUE only on AFFIRMATIVE, strategy-appropriate proof the frozen SHA deployed —
+    # this decides what gets marked `shipped`, so it FAILS CLOSED on anything less.
+    #
+    # CRITICAL: `main_at_sha` (origin/main == frozen) is NOT proof of deployment on
+    # its own, because the caller runs push_frozen_main — which advances origin/main
+    # to the frozen SHA — BEFORE the actual prod deploy. So on a normal FIRST ship
+    # main_at_sha is already true while prod still serves the OLD build (and its /up
+    # still returns 200). The distinguishing signal must come from the deploy itself:
+    #   * github_actions — main advanced to the SHA (main_at_sha), prod /up is 200
+    #     (up_ok), AND a prod-deploy run FOR THE SHA concluded success (run_success,
+    #     from prod_run_succeeded?, which matches headSha == the frozen SHA). That
+    #     SHA-matched run is exactly the verdict a killed watcher lost, and it does
+    #     NOT exist yet on a first ship (the dispatch happens after this check) — so
+    #     it cleanly tells a re-run's landed deploy from a first ship's advanced main.
+    #   * git_push_heroku / repo_script — the deploy runs INLINE (a Heroku-remote
+    #     push / the repo's own script), so there is no dispatched run to consult AND
+    #     main_at_sha proves nothing. Each needs its OWN deployed-marker AT the SHA
+    #     (deployed_at_sha — the Heroku release SHA / turf's mainnet-release marker).
+    #     Absent it this stays false and the caller re-runs the deploy: an inline
+    #     re-run is cheap and idempotent (a same-SHA Heroku push is "up-to-date"; a
+    #     repo_script self-gates + self-rolls-back), where a false "already shipped"
+    #     is not — so failing closed here costs nothing and buys safety.
+    # Every unknown strategy is false (never mark an unrecognized deploy shipped).
+    def deploy_already_succeeded?(strategy:, up_ok:, main_at_sha: false,
+                                  run_success: nil, deployed_at_sha: nil)
+      return false unless up_ok == true
+
+      case strategy.to_s
+      when "github_actions" then main_at_sha == true && run_success == true
+      when "git_push_heroku", "repo_script" then deployed_at_sha == true
+      else false
+      end
+    end
+
+    # Did a prod-deploy run FOR `sha` conclude success? `runs` is the `gh run list`
+    # for the deploy workflow — an array of { "headSha", "status", "conclusion" }.
+    # A `workflow_dispatch` run's headSha is the ref HEAD at dispatch, and
+    # push_frozen_main advances main to the frozen SHA BEFORE the dispatch, so the
+    # run that deployed the frozen SHA carries headSha == sha — that is how the
+    # right run is identified WITHOUT reading workflow_dispatch inputs (which gh
+    # does not surface in `run list`). TRUE iff some matching run is completed +
+    # success (run_watch_verdict owns that per-run read). FAILS CLOSED: a blank
+    # sha, an empty/garbled list, or no SHA match → false (re-verify beats a false
+    # green).
+    def prod_run_succeeded?(runs, sha)
+      target = sha.to_s.strip
+      return false if target.empty?
+
+      Array(runs).any? do |run|
+        record = run.is_a?(Hash) ? run : {}
+        head = (record["headSha"] || record[:headSha]).to_s.strip
+        next false unless head == target
+
+        run_watch_verdict(record["status"] || record[:status],
+                          record["conclusion"] || record[:conclusion]) == :success
+      end
+    end
+
+    # --- finalize: WHICH record+seal+install steps did the killed ship skip? -----
+    #
+    # Given the release's post-deploy state, the ordered steps `bin/release finalize`
+    # still needs to run — so a finalize does ONLY the missing work, and a re-run on
+    # an already-finalized release is an EMPTY list (a clean no-op: no double Discord
+    # notes, no double records). The steps themselves are individually idempotent
+    # (Conductor.ship! skips already-shipped members via idempotency keys; the seal
+    # + install-docs are idempotent), but post_release_notes DELIVERS to Discord on
+    # EVERY call — so this is the guard that keeps a second finalize from re-posting.
+    #   * :seal  — the prod smoke seal was never recorded (release has no seal).
+    #   * :ship  — Conductor.ship! has work left: the release is not `shipped`, OR
+    #     it is shipped but member tasks are still unflipped (the kill landed
+    #     MID-member-cadence). Release#ship! resumes the stragglers in that case and
+    #     is a safe re-run; it ONLY raises "already terminal" once state==shipped AND
+    #     every member is shipped — which is exactly when :ship drops out here.
+    #   * :notes — release notes were never delivered (release_notes not completed).
+    # :seal precedes :ship precedes :notes so the seal is recorded before the notes
+    # read it, exactly as the live ship orders steps 5c → 6. The primary-restore +
+    # install-agent-docs steps are idempotent file ops the CLI rides along whenever
+    # ANY step is pending; they are not gated here.
+    FINALIZE_ORDER = %i[seal ship notes].freeze
+
+    def finalize_pending?(state:, sealed:, notes_completed:, members_all_shipped: true)
+      done = {
+        seal: sealed == true,
+        ship: state.to_s == "shipped" && members_all_shipped == true,
+        notes: notes_completed == true
+      }
+      FINALIZE_ORDER.reject { |step| done[step] }
+    end
+
     # --- ship preflight -------------------------------------------------------
     #
     # HISTORY — why this is no longer a GATE for apps (2026-07-12). ship used to
