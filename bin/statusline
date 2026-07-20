@@ -159,9 +159,15 @@ heartbeat_claim() {  # slug stage is_desk
 # --- DevOps SHIFT heartbeat (best-effort lease renewal) --------------------
 # A session that holds a devops SHIFT (bin/devops-shift acquire wrote a
 # <sid>.devops-shift marker naming the lane) renews it each render, exactly like the
-# build claim above — so a crashed/closed conductor stops renewing and its shift
-# lapses (TTL), freeing the lane for the next launch. Same throttle + detach posture,
-# on its OWN throttle marker so it never contends with the build-claim heartbeat.
+# build claim above. Same throttle + detach posture, on its OWN throttle marker so it
+# never contends with the build-claim heartbeat.
+#
+# THIS IS NO LONGER THE ONLY RENEWER, and must never become one again. Renewing here
+# alone made the lease a property of the UI: a headless holder (background agent run,
+# autonomous heartbeat) paints nothing, so it renewed nothing and lost its lane ~120s
+# in — two Avi supervisors then ran concurrently on 2026-07-20. `acquire` now starts
+# its own detached renewer tied to the run (bin/lib/shift_renewer.rb); this render-time
+# renew is a harmless, idempotent second beat. See docs/agents/system/devops-shift-lease.md.
 SHIFT_BIN="${SHIFT_BIN:-$(dirname "$0")/devops-shift}"
 heartbeat_shift() {
   local sid lane
