@@ -276,6 +276,30 @@ unreadable verdict must **never** read as a pass:
 Every non-green row records `ok:false` (a red G3 is stamped *failed*, never silently
 un-recorded) and does not certify. The gate never trades a green for silence.
 
+**Before polling, the gate may CREDIT an existing green** (task
+`dedupe-hub-release-suite`): the hub runs the identical full suite at the accepted
+seam (the batch PR's `pull_request` run on the accepted head) and again on the
+release push, so the poll would wait out a re-run of a tree that already earned a
+green. Two credit shapes, tried in order, both strictly fail-closed *into the
+poll* (a declined credit changes nothing — the table above is untouched):
+
+- **Same-SHA** — the promote fast-forwarded (`origin/release` ==
+  `origin/accepted`): the SHA's own completed greens must cover every pending
+  duplicate by check name (`ci_credit_verdict` → `CiStatus.credit_for_sha`).
+- **Same-TREE** — the live batch-PR merge minted a **new** SHA whose tree equals
+  the accepted head's (`tree_identical_promote`): the accepted head's own
+  **completed green** vouches for the identical content
+  (`ci_tree_credit_verdict`). A still-pending or red accepted run credits
+  nothing, and a consumer lock-bump commit riding `release` (gems publish before
+  QA) breaks tree identity by design — the post-bump SHA earns its own polled
+  verdict.
+
+A credited pass records the source in `qa_gates[repo]["ci"]["credited"]` — for
+the tree credit, both full SHAs plus the shared tree — so the audit trail always
+distinguishes a credited verdict from a polled one. The credit changes only the
+gate *decision*; the release-push workflow run itself still executes (canceling
+the superseded duplicate is an Actions-side follow-up, not a gate concern).
+
 **`unreadable` is not `unverified`, and the difference is the point** — both fail
 closed, but the operator's next move differs. `none`/`pending`/`unverified` mean *the
 world has nothing to say yet* — the fix is to wait. `unreadable`

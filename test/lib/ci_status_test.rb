@@ -248,6 +248,126 @@ class CiStatusTest < Minitest::Test
     assert_equal :unverified, CiStatus.for_sha("owner/repo", "", nil)[:state]
   end
 
+  # --- G3 CREDIT (credited_verdict / credit_for_sha) ---------------------------
+  #
+  # The dedupe probe for a fast-forwarded accepted→release promote (task
+  # dedupe-hub-release-suite): the SAME SHA already holds a completed green
+  # conclusion, and the release push queued a DUPLICATE run of the same checks.
+  # The probe credits ONLY that exact shape; every other answer is nil — "no
+  # credit, take the normal poll" — so red/pending/missing handling stays intact.
+
+  def test_credited_verdict_credits_when_every_pending_run_duplicates_a_completed_green
+    v = CiStatus.credited_verdict(check_runs(
+                                    { "name" => "test", "status" => "completed", "conclusion" => "success" },
+                                    { "name" => "test:system", "status" => "completed", "conclusion" => "success" },
+                                    { "name" => "test", "status" => "queued", "conclusion" => nil },
+                                    { "name" => "test:system", "status" => "in_progress", "conclusion" => nil }
+                                  ))
+    assert v, "an existing green conclusion whose pending runs are pure duplicates must credit"
+    assert_equal :green, v[:state]
+    assert_equal 2, v[:count], "count is the CONCLUDED runs, not the duplicates"
+    assert_includes v[:credited], "2 completed check-runs already green"
+    assert_includes v[:credited], "2 pending runs duplicate them"
+  end
+
+  def test_credited_verdict_counts_a_skipped_conclusion_as_a_concluded_counterpart
+    # A completed `skipped` run is how the original suite CONCLUDED that check —
+    # gh's own fold reads all-pass/skip as green — so a pending duplicate of it is
+    # covered. At least one genuine PASS is still required (asserted below).
+    v = CiStatus.credited_verdict(check_runs(
+                                    { "name" => "test", "status" => "completed", "conclusion" => "success" },
+                                    { "name" => "scan", "status" => "completed", "conclusion" => "skipped" },
+                                    { "name" => "scan", "status" => "queued", "conclusion" => nil }
+                                  ))
+    assert v
+    assert_equal :green, v[:state]
+  end
+
+  def test_credited_verdict_never_credits_a_failure_or_cancel
+    # RED STILL BLOCKS, byte-for-byte: any failed/cancelled run refuses the credit,
+    # so the caller's normal read aborts exactly as before.
+    %w[failure cancelled timed_out action_required].each do |conclusion|
+      assert_nil CiStatus.credited_verdict(check_runs(
+                                             { "name" => "test", "status" => "completed", "conclusion" => "success" },
+                                             { "name" => "test", "status" => "queued", "conclusion" => nil },
+                                             { "name" => "e2e", "status" => "completed", "conclusion" => conclusion }
+                                           )), "a #{conclusion} run must never be re-read as a credit"
+    end
+  end
+
+  def test_credited_verdict_never_credits_a_pending_check_with_no_completed_counterpart
+    # The ORIGINAL suite still running is a genuine wait, not a duplicate: a
+    # half-finished first run must never be folded into a false green.
+    assert_nil CiStatus.credited_verdict(check_runs(
+                                           { "name" => "test", "status" => "completed", "conclusion" => "success" },
+                                           { "name" => "test:system", "status" => "in_progress", "conclusion" => nil }
+                                         ))
+  end
+
+  def test_credited_verdict_never_credits_an_unnamed_pending_run
+    # No name, no way to prove it duplicates a concluded check — conservative nil.
+    assert_nil CiStatus.credited_verdict(check_runs(
+                                           { "name" => "test", "status" => "completed", "conclusion" => "success" },
+                                           { "status" => "queued", "conclusion" => nil }
+                                         ))
+  end
+
+  def test_credited_verdict_is_nil_when_nothing_is_pending
+    # All-completed green is the PLAIN verdict's job — for_sha already answers
+    # :green on the first read and no wait happens, so there is nothing to credit.
+    assert_nil CiStatus.credited_verdict(check_runs(
+                                           { "name" => "test", "status" => "completed", "conclusion" => "success" }
+                                         ))
+  end
+
+  def test_credited_verdict_requires_at_least_one_genuine_pass
+    # An all-skipped "conclusion" proves no suite ever ran — never credit it.
+    assert_nil CiStatus.credited_verdict(check_runs(
+                                           { "name" => "scan", "status" => "completed", "conclusion" => "skipped" },
+                                           { "name" => "scan", "status" => "queued", "conclusion" => nil }
+                                         ))
+  end
+
+  def test_credited_verdict_is_nil_on_a_truncated_read
+    # A partial page could hide a red on the page never read — no credit.
+    partial = JSON.generate("total_count" => 120,
+                            "check_runs" => [
+                              { "name" => "test", "status" => "completed", "conclusion" => "success" },
+                              { "name" => "test", "status" => "queued", "conclusion" => nil }
+                            ])
+    assert_nil CiStatus.credited_verdict(partial)
+  end
+
+  def test_credited_verdict_is_nil_on_empty_or_unreadable_payloads
+    assert_nil CiStatus.credited_verdict(check_runs), "no runs, no conclusion to credit"
+    assert_nil CiStatus.credited_verdict("gh: command not found")
+    assert_nil CiStatus.credited_verdict('{"message":"Not Found","status":"404"}')
+    assert_nil CiStatus.credited_verdict("")
+  end
+
+  def test_credit_for_sha_never_credits_a_bare_injected_token
+    # A bare token names a FOLDED state, not runs — no evidence of an existing
+    # conclusion. Notably "pending" must keep meaning "hold and poll", and even
+    # "green" carries no run record to credit (the plain read passes on its own).
+    CiStatus::TOKENS.each do |token|
+      assert_nil CiStatus.credit_for_sha("o/r", "abc", token), "token #{token} must not credit"
+    end
+  end
+
+  def test_credit_for_sha_accepts_an_injected_check_runs_payload
+    v = CiStatus.credit_for_sha("o/r", "abc", check_runs(
+                                                { "name" => "test", "status" => "completed", "conclusion" => "success" },
+                                                { "name" => "test", "status" => "queued", "conclusion" => nil }
+                                              ))
+    assert v
+    assert_equal :green, v[:state]
+  end
+
+  def test_credit_for_sha_is_nil_rather_than_shelling_out_without_a_repo_or_sha
+    assert_nil CiStatus.credit_for_sha("", "abc123", nil)
+    assert_nil CiStatus.credit_for_sha("owner/repo", "", nil)
+  end
+
   def test_name_with_owner_reads_every_github_remote_form
     assert_equal "amcritchie/mcritchie-studio", CiStatus.name_with_owner("git@github.com:amcritchie/mcritchie-studio.git")
     assert_equal "amcritchie/mcritchie-studio", CiStatus.name_with_owner("https://github.com/amcritchie/mcritchie-studio.git")

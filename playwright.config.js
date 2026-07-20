@@ -83,7 +83,12 @@ if (!externalBaseURL) {
       `bin/rails db:test:prepare && bin/rails tailwindcss:build && bin/rails runner e2e/seed.rb && bin/rails server -p ${port} -e test`,
     url: `http://127.0.0.1:${port}/up`,
     reuseExistingServer: !process.env.CI,
-    timeout: 30_000,
+    // The command above chains FOUR Rails boots (db:test:prepare, tailwindcss:build,
+    // the seed runner, then the server) before /up can answer. At ~4-8s per boot a
+    // loaded machine blows a 30s ceiling with the server perfectly healthy — measured
+    // 3/5 boot flakes under load (task stabilize-deployments-e2e-spec). 120s is
+    // pure headroom: a fast boot still starts in ~15s, only the timeout moved.
+    timeout: 120_000,
     // CABLE_ADAPTER=async gives the e2e server REAL in-process ActionCable delivery
     // to the browser (the default `test` adapter only captures broadcasts for
     // minitest assertions), so the /deployments live-update round-trip works.

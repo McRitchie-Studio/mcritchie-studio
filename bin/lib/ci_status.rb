@@ -296,17 +296,22 @@ module CiStatus
       return { state: :unverified, reason: "no GitHub owner/repo resolved" } if repo.empty?
       return { state: :unverified, reason: "no SHA to query" } if commit.empty?
 
-      # NO --paginate. This endpoint returns an OBJECT ({total_count, check_runs}),
-      # and past page 1 gh emits CONCATENATED JSON documents, which JSON.parse
-      # rejects → :unverified. The auditor would go SILENTLY BLIND on exactly the
-      # biggest suites (>30 runs) — the opposite of its job. One page of 100 covers
-      # every suite in this ecosystem, and parse_check_runs cross-checks the count
-      # it read against `total_count`, so a truncated read reports itself instead
-      # of folding a partial list into a false green.
-      path = "repos/#{repo}/commits/#{commit}/check-runs?per_page=100"
-      raw = `gh api #{Shellwords.escape(path)} 2>&1`.to_s.strip
+      raw = check_runs_raw(repo, commit)
     end
     parse_check_runs(raw)
+  end
+
+  # The ONE check-runs read, shared by the verdict fold (for_sha) and the G3 credit
+  # probe (credit_for_sha). NO --paginate. This endpoint returns an OBJECT
+  # ({total_count, check_runs}), and past page 1 gh emits CONCATENATED JSON
+  # documents, which JSON.parse rejects → :unverified. The auditor would go
+  # SILENTLY BLIND on exactly the biggest suites (>30 runs) — the opposite of its
+  # job. One page of 100 covers every suite in this ecosystem, and parse_check_runs
+  # cross-checks the count it read against `total_count`, so a truncated read
+  # reports itself instead of folding a partial list into a false green.
+  def self.check_runs_raw(repo, commit)
+    path = "repos/#{repo}/commits/#{commit}/check-runs?per_page=100"
+    `gh api #{Shellwords.escape(path)} 2>&1`.to_s.strip
   end
 
   # PURE. A check-runs API payload → verdict. Accepts the API's envelope
@@ -359,6 +364,78 @@ module CiStatus
   def self.check_run_state(run)
     conclusion = run["conclusion"].to_s
     conclusion.empty? ? run["status"].to_s : conclusion
+  end
+
+  # --- G3 CREDIT: an existing green conclusion for the SAME SHA ---------------
+  #
+  # The dedupe read for the pre-QA gate (task dedupe-hub-release-suite). When the
+  # accepted→release promote FAST-FORWARDED, origin/release IS the accepted head
+  # GitHub CI already built and greened at the PR/accepted seam — but the release
+  # push queues a DUPLICATE run of the same checks on the same SHA, so `for_sha`
+  # folds the commit :pending and the gate would wait out a suite that already
+  # concluded. This probe answers ONE narrow question: does this exact SHA already
+  # carry a COMPLETED green conclusion that the still-pending runs merely re-run?
+  #
+  # It returns a GREEN verdict carrying the credited source (`:credited`), or nil
+  # ("no credit — take the normal path"). The caller asserts the fast-forward
+  # itself (bin/release's pre_qa_gate); this half only reads the check-run record.
+  #
+  # The injection seam mirrors for_sha (RELEASE_CI_STATUS): a RAW check-runs
+  # payload exercises the credit fold; a BARE token names a folded state, not
+  # runs — no evidence of an existing conclusion, so it NEVER credits.
+  def self.credit_for_sha(nwo, sha, injected = nil)
+    raw = injected.to_s.strip
+    return nil if TOKENS.include?(raw)
+
+    if raw.empty?
+      repo = nwo.to_s.strip
+      commit = sha.to_s.strip
+      return nil if repo.empty? || commit.empty?
+
+      raw = check_runs_raw(repo, commit)
+    end
+    credited_verdict(raw)
+  end
+
+  # PURE. A check-runs payload → a credited GREEN verdict, or nil. Credits ONLY
+  # when ALL of the following hold — anything else falls through to the normal
+  # poll (pending still waits, red still aborts, missing checks still fail closed):
+  #   * the read saw the WHOLE record (a truncated page could hide a red);
+  #   * NO run failed or was cancelled — a red is never re-read as anything else;
+  #   * at least one completed run PASSED (an all-skipped set certifies nothing);
+  #   * something IS still pending (else the plain fold is already green — nothing
+  #     to credit, the normal read passes on its own); and
+  #   * every pending run re-runs a check NAME that already holds a completed
+  #     pass/skip conclusion for this SHA. A pending check with NO completed
+  #     counterpart (or no name to match on) is the ORIGINAL suite still running —
+  #     a genuine wait, not a duplicate — so NO credit.
+  def self.credited_verdict(raw)
+    data = begin
+      JSON.parse(raw)
+    rescue StandardError
+      nil
+    end
+    runs = data.is_a?(Hash) ? data["check_runs"] : data
+    return nil unless runs.is_a?(Array)
+
+    total = data.is_a?(Hash) && data["total_count"] ? data["total_count"].to_i : runs.size
+    return nil if runs.size < total
+
+    folded = runs.map { |run| { name: run["name"].to_s, bucket: check_run_bucket(run) } }
+    return nil if folded.any? { |run| %w[fail cancel].include?(run[:bucket]) }
+
+    concluded = folded.select { |run| %w[pass skipping].include?(run[:bucket]) }
+    passed    = concluded.select { |run| run[:bucket] == "pass" }
+    pending   = folded.select { |run| run[:bucket] == "pending" }
+    return nil if passed.empty? || pending.empty?
+
+    covered = concluded.map { |run| run[:name] }.reject(&:empty?)
+    return nil unless pending.all? { |run| !run[:name].empty? && covered.include?(run[:name]) }
+
+    { state: :green, count: concluded.size,
+      credited: "#{concluded.size} completed check-run#{concluded.size == 1 ? '' : 's'} already green " \
+                "(#{passed.size} passed); the #{pending.size} pending run#{pending.size == 1 ? '' : 's'} " \
+                "duplicate#{pending.size == 1 ? 's' : ''} them" }
   end
 
   # PURE. A git remote URL → "owner/repo" for the gh api path, or "" when the

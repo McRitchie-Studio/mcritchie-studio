@@ -71,6 +71,8 @@ GATE_BIN = BinHelpers.bin_for("GATE_BIN", "gate")
 # the feat PR into `accepted` and stamps merged:"accepted" before moving the task
 # `reviewed` (the sweep later promotes accepted→release). GH_BIN is the injectable
 # gh seam (mirrors TASK_BIN) so the command tests fake the merge without shelling.
+# No bin/gh sibling ships — gh is the external GitHub CLI, so bin_for resolves it
+# through PATH (the 2026-07-19 wave stranded 4 merge-ready verdicts when it didn't).
 GH_BIN = BinHelpers.bin_for("GH_BIN", "gh")
 ACCEPTED_BRANCH = "accepted"
 # start_review → gate key per launch role (the G2 review lanes, GateRun::GATES).

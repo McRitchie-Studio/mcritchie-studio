@@ -12,13 +12,19 @@ module BinHelpers
 
   module_function
 
-  # Resolve a helper binary: an explicit env override (for tests) wins, else the
-  # sibling script next to the caller (the real tool in production).
-  def bin_for(env_key, default_name)
+  # Resolve a helper binary: an explicit env override (for tests) wins; else the
+  # executable sibling script next to the caller when one ships in bin/ (the
+  # real tool in production); else the bare command name, so external CLIs that
+  # have no bin/ sibling (gh, the GitHub CLI) resolve through PATH at spawn
+  # instead of exec-failing on a nonexistent bin/ path. `dir:` exists for tests.
+  def bin_for(env_key, default_name, dir: BIN_DIR)
     override = ENV[env_key].to_s.strip
     return override unless override.empty?
 
-    File.join(BIN_DIR, default_name)
+    sibling = File.join(dir, default_name)
+    return sibling if File.file?(sibling) && File.executable?(sibling)
+
+    default_name
   end
 
   # Collapse a value to a filesystem-safe slug (scout/review artifact names).

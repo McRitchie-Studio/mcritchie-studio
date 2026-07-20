@@ -1,23 +1,11 @@
 const { test, expect } = require("@playwright/test");
-const { execFileSync } = require("node:child_process");
 
-function seedPaginationReleases() {
-  const script = `
-    base_time = Time.zone.parse("2020-01-01 12:00:00")
-    Release.where("slug LIKE ?", "rel-e2e-page-%").destroy_all
-    26.times do |index|
-      release = Release.create!(slug: "rel-e2e-page-#{format('%02d', index + 1)}", branch: "release", state: "shipped")
-      release.update_columns(created_at: base_time + index.minutes, shipped_at: base_time + index.minutes, updated_at: base_time + index.minutes)
-    end
-  `;
-  execFileSync("bin/rails", ["runner", script], {
-    env: { ...process.env, RAILS_ENV: "test" },
-    stdio: "inherit",
-  });
-}
-
+// Pagination fixture (the 26 rel-e2e-page-* shipped releases) lives in e2e/seed.rb
+// with every other spec's data. It USED to be seeded right here via a synchronous
+// `bin/rails runner` — a full Rails boot inside this test's own 30s clock, eating
+// 17-26s of it and starving the clicks below of retry headroom under load
+// (run 29707557195, shard 2). Never seed inside the test clock.
 test("deployments analytics card navigates to release history and detail", async ({ page }) => {
-  seedPaginationReleases();
   const pageErrors = [];
   page.on("pageerror", (err) => pageErrors.push(String(err)));
   page.on("console", (msg) => { if (msg.type() === "error") pageErrors.push(msg.text()); });
@@ -34,7 +22,14 @@ test("deployments analytics card navigates to release history and detail", async
     card.locator("[data-test='release-duration-stage'][data-stage='total']"),
   ).toContainText("Total");
 
-  await card.getByRole("link", { name: "All Deployments" }).click();
+  // Navbar-safe click. The card sits at the bottom of the board under the app's
+  // sticky top navbar (z-50, layouts/application.html.erb): Playwright's minimal
+  // auto-scroll can park the link at the very top edge, UNDER the navbar, and the
+  // header subtree then intercepts pointer events on every retry until timeout.
+  // Centering the link in the viewport first makes the geometry deterministic.
+  const allDeploymentsLink = card.getByRole("link", { name: "All Deployments" });
+  await allDeploymentsLink.evaluate((el) => el.scrollIntoView({ block: "center", behavior: "instant" }));
+  await allDeploymentsLink.click();
   await expect(page).toHaveURL(/\/deployments\/all$/);
   await expect(page.getByRole("heading", { name: "All Deployments" })).toBeVisible();
   // 25 release rows + the 2 pinned running-average rows (3-release / 10-release).
