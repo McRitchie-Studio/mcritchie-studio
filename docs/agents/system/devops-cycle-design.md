@@ -210,7 +210,21 @@ Actions conclusion for the seam's SHA (at G3/G4 this *promotes* today's existing
 non-blocking CI auditor to the verdict). On the hub all three tiers run the same
 suite — the hub already runs full+system+scans per PR — so they differ mostly in
 scope; depth divergence (e.g. staging Playwright/@devnet) is a turf-monster
-concern.
+concern. To keep that overlap from waiting out the identical suite twice on one
+tree, the G3 pre-QA gate **credits** an existing green conclusion before polling,
+in two shapes (both `bin/release.rb`, `pre_qa_gate`): **same-SHA** — the promote
+fast-forwarded, so the release tip IS the accepted head whose completed greens
+cover the pending duplicates (`ci_credit_verdict` → `CiStatus.credit_for_sha`,
+G4's `ship_gate_skip?` discipline); and **same-TREE** — the live batch-PR merge
+minted a new SHA snapshotting the accepted head's exact tree
+(`tree_identical_promote`), so the accepted head's own completed green vouches
+for that content (`ci_tree_credit_verdict`; the gate note records both SHAs + the shared
+tree in `qa_gates[repo]["ci"]["credited"]`). A consumer lock-bump commit riding
+`release` (gems publish before QA) breaks tree identity by design — the credit
+refuses and the post-bump SHA earns its own polled verdict. Red, pending,
+missing-checks, and diverged-tree verdicts poll exactly as before, and the
+release-push workflow still runs (canceling the superseded duplicate run is an
+Actions-side follow-up, not a gate concern).
 
 **Deploys run in GitHub Actions, gated by GitHub Environments:**
 

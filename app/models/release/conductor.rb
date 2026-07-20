@@ -519,9 +519,15 @@ class Release
     # gate DERIVED its result from since DevOps v2 Phase 3 (bin/release's ci_verdict;
     # CiStatus.for_sha). Beyond "state" its keys are best-effort colour: "checks"
     # (the failing/pending names), "count" (a green's check count), "reason" (why a
-    # verdict was unverified) — each present only when GitHub gave it. Recorded so a
-    # DISAGREEMENT is auditable after the run instead of scrolling past in a
-    # terminal, and so agreement data accrues release over release.
+    # verdict was unverified), "credited" (the credited source when the gate
+    # credited an existing green instead of awaiting a duplicate run: a
+    # fast-forwarded promote's own completed greens — bin/release's
+    # ci_credit_verdict — or, the live batch-PR shape, the accepted head's green
+    # vouching for the merge commit's IDENTICAL TREE, with both SHAs + the shared
+    # tree named — ci_tree_credit_verdict) — each present only when the gate had
+    # it. Recorded so a DISAGREEMENT is auditable after the
+    # run instead of scrolling past in a terminal, and so agreement data accrues
+    # release over release.
     #
     # It is ARMED for G4, in the FAIL-OPEN direction only: a "red" state makes
     # Release::ShipSequence.ship_gate_skip? refuse to skip, so the ship gate re-runs
