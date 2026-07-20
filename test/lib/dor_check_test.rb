@@ -1582,6 +1582,50 @@ class DorCheckTest < Minitest::Test
     assert(j["errors"].any? { |e| e.match?(/CONFLICTED/i) }, out)
   end
 
+  # --- CI-less PR (stale base, ZERO check-runs): the same hard blocker -----------
+  # Task detect-ci-less-stale-prs (2026-07-20). The :conflicted fix above only
+  # catches mergeStateStatus DIRTY, but a base that drifted past GitHub's merge
+  # computation gets zero check-runs WITHOUT ever reading DIRTY — indistinguishable
+  # from a slow CI to every watcher in the fleet, which then waits forever on checks
+  # that will never exist (a full rework cycle burned: a watcher armed at 05:47Z on a
+  # commit that never got checks; the cure was a rebase, which fired CI green 8/8).
+  # It must block in BOTH roles with the rebase named, and stay distinct from
+  # pending/none — the states that legitimately mean "wait".
+
+  def test_merge_gate_blocks_a_ci_less_pr
+    out, code = ci_check("ci_less")
+    assert_equal 1, code, out
+    assert_match(/NO CI WILL RUN/i, out)
+    assert_match(/rebase/i, out, "the blocker names the fix")
+    assert_match(/not ready to advance/, out)
+  end
+
+  def test_review_gate_zero_blocks_a_ci_less_pr
+    out, code = ci_check("ci_less", CI_PR, "--gate-role", "review")
+    assert_equal 1, code, out
+    assert_match(/NO CI WILL RUN/i, out)
+    assert_match(/not ready to advance/, out)
+  end
+
+  def test_ci_less_is_distinct_from_pending_and_from_no_checks_yet
+    # THE bug, at the CLI tier: pending/none are soft (CI is genuinely coming), while
+    # ci_less is hard. Folding ci_less into either is what made the stall invisible.
+    %w[pending none].each do |soft|
+      out, code = ci_check(soft)
+      assert_equal 0, code, out
+      refute_match(/NO CI WILL RUN/i, out, "#{soft} must not be reported as ci-less")
+    end
+  end
+
+  def test_ci_less_surfaces_in_the_json_verdict
+    out, code = ci_check("ci_less", CI_PR, "--json")
+    assert_equal 1, code, out
+    j = JSON.parse(out)
+    refute j["ready"]
+    assert_equal "ci_less", j.dig("ci", "state")
+    assert(j["errors"].any? { |e| e.match?(/NO CI WILL RUN/i) }, out)
+  end
+
   def test_missing_pr_is_silent_and_stays_ready
     # No PR yet + no injection → :no_pr via the real (gh-free) path. dor-check runs
     # before the PR exists on the normal path, so the CI gate has nothing to verify:

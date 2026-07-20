@@ -1198,8 +1198,10 @@ class ReleaseCliTest < Minitest::Test
   # Release::ShipSequence.run_watch_verdict), factored so pending→hold / green→certify /
   # red→abort / unreadable→abort is testable without a poll loop or a clock. The POSITIVE
   # invariant, asserted directly (not by blacklisting failure spellings): GREEN is the
-  # ONLY :pass; :red and :unreadable are the ONLY :abort — a terminal non-green that
-  # waiting can never turn green; EVERY other state is :wait, so a just-merged SHA's
+  # ONLY :pass; :red, :unreadable and :ci_less are the ONLY :abort — a terminal
+  # non-green that waiting can never turn green (:ci_less because GitHub will run NO
+  # CI at all for a stale base, so there is no run to wait for — task
+  # detect-ci-less-stale-prs); EVERY other state is :wait, so a just-merged SHA's
   # not-yet-concluded CI is HELD and re-read instead of aborting the sweep's first run.
   # It is also proven against states the gate never actually feeds it (no_pr/closed/
   # merged/conflicted) so the rule holds for vectors nobody has to enumerate — they hold
@@ -1208,7 +1210,7 @@ class ReleaseCliTest < Minitest::Test
     assert_equal ":pass", eval_helper(%(ci_poll_action({ state: :green }).inspect)), "green certifies"
     assert_equal ":pass", eval_helper(%(ci_poll_action({ state: :green, count: 3 }).inspect)),
                  "green with detail still certifies"
-    %i[red unreadable].each do |state|
+    %i[red unreadable ci_less].each do |state|
       assert_equal ":abort", eval_helper(%(ci_poll_action({ state: #{state.inspect} }).inspect)),
                    "#{state} is terminal — abort now, never poll a verdict waiting cannot fix"
     end

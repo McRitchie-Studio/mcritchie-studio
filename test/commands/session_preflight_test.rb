@@ -203,6 +203,42 @@ class SessionPreflightTest < Minitest::Test
     assert_equal ["docs/agents/index.md"], overlap.fetch("files")
   end
 
+  # [integration] The THIRD CI state at the preflight tier (task
+  # detect-ci-less-stale-prs). A base-drifted PR gets ZERO check-runs and GitHub never
+  # queues the workflow — but nothing said so, and the session armed a CI watcher that
+  # could never fire. Preflight is where the builder meets the PR first, so it is where
+  # "no CI is coming" has to be said, with the rebase named.
+  def test_ci_less_pr_blocks_preflight_and_names_the_rebase
+    task = write_task(devops: default_devops.merge("branch" => "feat/session-preflight"))
+    fake_bin = write_ci_less_gh
+
+    out, err, status = run_preflight(
+      "--file", task, "--no-install-docs", "--no-fetch", "--json",
+      env: { "PATH" => "#{fake_bin}:#{ENV.fetch("PATH", "")}" }
+    )
+    refute status.success?, "a PR that will never get CI must block the preflight\n#{out}\n#{err}"
+
+    report = JSON.parse(out)
+    assert report.fetch("pr").fetch("ci_less"), "the PR is classified ci-less"
+    blocker = report.fetch("errors").find { |e| e.match?(/NO CI/i) }
+    assert blocker, "an error names the missing CI: #{report.fetch("errors").inspect}"
+    assert_match(/rebase/i, blocker, "the blocker names the remedy")
+    assert_match(/accepted/, blocker, "the blocker names the base to rebase onto")
+  end
+
+  def test_a_mergeable_pr_with_checks_is_not_ci_less
+    # The GUARD: the normal green PR must not trip the new alarm.
+    task = write_task(devops: default_devops.merge("branch" => "feat/session-preflight"))
+    fake_bin = write_fake_gh
+
+    out, err, status = run_preflight(
+      "--file", task, "--no-install-docs", "--no-fetch", "--json",
+      env: { "PATH" => "#{fake_bin}:#{ENV.fetch("PATH", "")}" }
+    )
+    assert status.success?, "#{out}\n#{err}"
+    refute JSON.parse(out).fetch("pr").fetch("ci_less")
+  end
+
   def test_docs_kind_without_shape_is_exempt_from_shape_gate
     task = write_task(devops: { "kind" => "docs", "branch" => "feat/session-preflight" })
 
@@ -448,7 +484,15 @@ class SessionPreflightTest < Minitest::Test
     File.chmod(0o755, File.join(@repo, "bin", "install-agent-docs"))
   end
 
-  def write_fake_gh
+  # A PR GitHub will never run CI for: ZERO check-runs plus a merge it will not
+  # confirm (task detect-ci-less-stale-prs). `mergeable: "CONFLICTING"` with an empty
+  # rollup is the shape a base-drifted PR actually reports.
+  def write_ci_less_gh
+    write_fake_gh(merge_state: "UNKNOWN", mergeable: "CONFLICTING", rollup: "[]")
+  end
+
+  def write_fake_gh(merge_state: "CLEAN", mergeable: "MERGEABLE", rollup: nil)
+    rollup ||= '[{ name: "test", conclusion: "SUCCESS", status: "COMPLETED", detailsUrl: "https://example.test" }]'
     dir = File.join(@sandbox, "fake-bin")
     FileUtils.mkdir_p(dir)
     path = File.join(dir, "gh")
@@ -466,8 +510,10 @@ class SessionPreflightTest < Minitest::Test
             title: "Add Session Preflight",
             url: "https://github.com/amcritchie/mcritchie-studio/pull/5",
             headRefName: "feat/session-preflight",
-            mergeStateStatus: "CLEAN",
-            statusCheckRollup: [{ name: "test", conclusion: "SUCCESS", status: "COMPLETED", detailsUrl: "https://example.test" }]
+            baseRefName: "accepted",
+            mergeable: "#{mergeable}",
+            mergeStateStatus: "#{merge_state}",
+            statusCheckRollup: #{rollup}
           )
         end
       in ["pr", "list", "--state", state, "--limit", _limit, "--json", _fields]

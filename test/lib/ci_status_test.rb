@@ -65,8 +65,11 @@ class CiStatusTest < Minitest::Test
   # (PR #509, 2026-07-12). view_verdict reads state + mergeStateStatus in one gh
   # call and surfaces :conflicted as its own state.
 
-  def view(state, merge_state)
-    JSON.generate("state" => state, "mergeStateStatus" => merge_state)
+  def view(state, merge_state, mergeable: nil, base: nil)
+    payload = { "state" => state, "mergeStateStatus" => merge_state }
+    payload["mergeable"] = mergeable if mergeable
+    payload["baseRefName"] = base if base
+    JSON.generate(payload)
   end
 
   def test_view_verdict_conflicted_when_the_open_pr_is_dirty
@@ -96,6 +99,106 @@ class CiStatusTest < Minitest::Test
     v = CiStatus.view_verdict("gh: Not Found (HTTP 404)")
     assert_equal :unverified, v[:state]
     assert_includes v[:reason], "Not Found"
+  end
+
+  # --- the CI-LESS third state (task detect-ci-less-stale-prs, 2026-07-20) -----
+  #
+  # REGRESSION. When a PR's base drifts far enough that GitHub cannot compute a
+  # merge commit, GitHub runs NO CI AT ALL: the head SHA has zero check-runs and
+  # mergeStateStatus reads UNKNOWN/DIRTY. Reading only the checks folds that into
+  # :none, which every watcher in the fleet treats as "CI is still coming" — so it
+  # waits forever on checks that will NEVER exist. That burned a full rework cycle
+  # (a watcher armed at 05:47Z on a commit that never got checks; the cure was a
+  # rebase, which triggered CI green 8/8 immediately).
+  #
+  # "No CI will run" is a THIRD state, not a slow :pending: its remedy is a rebase,
+  # and no amount of waiting substitutes. These vectors pin the CLASSIFICATION
+  # property — four inputs, four DISTINCT verdicts — not any message spelling.
+
+  # The four vectors, as `combine` sees them: [gh pr view payload, gh pr checks payload].
+  def ci_vectors
+    {
+      # checks EXIST and have not concluded — CI is genuinely coming. Wait.
+      pending: [view("OPEN", "BLOCKED", mergeable: "MERGEABLE", base: "accepted"),
+                '[{"name":"test","bucket":"pending"}]'],
+      # ZERO checks AND GitHub will not confirm the merge — CI is NEVER coming. Rebase.
+      ci_less: [view("OPEN", "UNKNOWN", mergeable: "CONFLICTING", base: "accepted"),
+                "[]"],
+      green: [view("OPEN", "CLEAN", mergeable: "MERGEABLE", base: "accepted"),
+              '[{"name":"test","bucket":"pass"}]'],
+      red: [view("OPEN", "UNSTABLE", mergeable: "MERGEABLE", base: "accepted"),
+            '[{"name":"test","bucket":"fail"}]']
+    }
+  end
+
+  def test_combine_classifies_each_ci_vector_as_its_own_state
+    ci_vectors.each do |expected, (view_raw, checks_raw)|
+      assert_equal expected, CiStatus.combine(view_raw, checks_raw)[:state],
+                   "#{expected} vector must classify as :#{expected}"
+    end
+  end
+
+  def test_the_four_ci_vectors_never_collapse_into_each_other
+    # The POSITIVE invariant: four distinct inputs → four distinct verdicts. A fix
+    # that folded ci-less back into pending (or into green, or red) fails here even
+    # if every message string still reads well.
+    states = ci_vectors.values.map { |view_raw, checks_raw| CiStatus.combine(view_raw, checks_raw)[:state] }
+    assert_equal states.uniq.size, states.size, "each CI vector must be distinguishable: #{states.inspect}"
+  end
+
+  def test_ci_less_is_not_pending_not_green_not_red_and_not_none
+    # The bug verbatim: the ci-less PR read as one of these and the watcher waited
+    # forever. It must be none of them — waiting is the wrong instruction.
+    view_raw, checks_raw = ci_vectors[:ci_less]
+    state = CiStatus.combine(view_raw, checks_raw)[:state]
+    refute_includes %i[pending green red none], state,
+                    "a PR that will never get CI must not report a state that means 'wait'"
+  end
+
+  def test_ci_less_names_the_rebase_remedy_and_the_base_branch
+    # ACTIONABLE, not merely distinct: the reader must learn the cure without
+    # re-deriving it. Asserts the base branch is carried, not the prose around it.
+    view_raw, checks_raw = ci_vectors[:ci_less]
+    v = CiStatus.combine(view_raw, checks_raw)
+    assert_equal "accepted", v[:base]
+    remedy = CiStatus.ci_less_remedy(v)
+    assert_includes remedy, "accepted"
+    assert_match(/rebase/i, remedy)
+  end
+
+  def test_zero_checks_on_a_confirmed_mergeable_pr_stays_none
+    # The GUARD against over-reach. Zero checks alone is NOT ci-less: a PR GitHub
+    # affirms is mergeable simply has not started its run yet, and that IS a wait.
+    # Only the conjunction (no checks AND no confirmed merge) is the third state.
+    v = CiStatus.combine(view("OPEN", "CLEAN", mergeable: "MERGEABLE", base: "accepted"), "[]")
+    assert_equal :none, v[:state]
+  end
+
+  def test_ci_less_never_overrides_a_payload_that_reported_checks
+    # A PR that HAS checks is never ci-less, however ugly its merge state — the
+    # checks are the evidence that CI ran.
+    v = CiStatus.combine(view("OPEN", "UNKNOWN", mergeable: "CONFLICTING", base: "accepted"),
+                         '[{"name":"test","bucket":"pass"}]')
+    assert_equal :green, v[:state]
+  end
+
+  def test_combine_keeps_the_early_view_verdicts
+    # DIRTY is already :conflicted (PR #509) and outranks the ci-less read; a
+    # closed/merged PR is still its own verdict. combine must not regress those.
+    assert_equal :conflicted, CiStatus.combine(view("OPEN", "DIRTY", mergeable: "CONFLICTING"), "[]")[:state]
+    assert_equal :closed, CiStatus.combine(view("CLOSED", "UNKNOWN", mergeable: "CONFLICTING"), "[]")[:state]
+  end
+
+  def test_a_view_payload_without_the_mergeable_field_never_invents_ci_less
+    # BACKWARD COMPAT. A caller that did not ASK for `mergeable` must not have its
+    # silence read as "not mergeable" — absence of evidence is not evidence.
+    assert_equal :none, CiStatus.combine(view("OPEN", "UNKNOWN"), "[]")[:state]
+  end
+
+  def test_ci_less_is_an_injectable_token
+    # The DOR_CHECK_CI_STATUS / PR_REVIEW_CI_STATUS seam, so the CLI tests can drive
+    # the state without a network.
+    assert_equal :ci_less, CiStatus.evaluate("https://github.com/x/pull/1", "ci_less")[:state]
   end
 
   def test_no_pr_when_url_blank_and_nothing_injected

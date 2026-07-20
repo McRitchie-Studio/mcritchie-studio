@@ -17,6 +17,11 @@ require "shellwords"
 #                     pending one → BLOCK, with "rebase/merge release" as the fix.
 #                     Folding this into :none is the PR-#509 stall (2026-07-12): the
 #                     review wave deferred it forever while the board looked healthy.
+#   :ci_less        — ZERO check-runs AND GitHub will not confirm the PR is mergeable
+#                     (mergeStateStatus UNKNOWN/DIRTY, or mergeable CONFLICTING). The
+#                     base drifted far enough that GitHub cannot compute a merge
+#                     commit, so it runs NO CI AT ALL → BLOCK, remedy "rebase onto
+#                     <base>". See the THIRD STATE section below.
 #   :closed/:merged — the PR is not OPEN                  → BLOCK (its green checks are
 #                     HISTORICAL, not a live review target — a stale/abandoned pr_url)
 #   :green          — every check passed/skipped         → pass
@@ -50,7 +55,102 @@ require "shellwords"
 # release tip belongs to no PR). Both fold into the states above. See the
 # SHA-addressed section below.
 module CiStatus
-  TOKENS = %w[green red pending none unverified unreadable no_pr closed merged conflicted].freeze
+  TOKENS = %w[green red pending none unverified unreadable no_pr closed merged conflicted ci_less].freeze
+
+  # The `gh pr view` fields evaluate needs. `mergeable` and `baseRefName` joined
+  # state+mergeStateStatus for the THIRD STATE below: mergeStateStatus alone cannot
+  # separate "GitHub is still computing" from "GitHub gave up", and the remedy has to
+  # NAME the branch to rebase onto or the reader must go derive it.
+  VIEW_FIELDS = "state,mergeStateStatus,mergeable,baseRefName"
+
+  # --- THE THIRD STATE: a PR that will NEVER get CI ---------------------------
+  #
+  # A CI verdict has always had two "not green yet" shapes — :red (it ran, it failed)
+  # and :pending (it is running). Task detect-ci-less-stale-prs (2026-07-20) named a
+  # THIRD: CI is never going to run at all.
+  #
+  # When a PR's base drifts far enough that GitHub cannot compute a merge commit,
+  # GitHub does not queue the `pull_request` workflow — the head SHA gets ZERO
+  # check-runs and mergeStateStatus reads UNKNOWN/DIRTY. Read through the checks
+  # alone that is indistinguishable from a slow CI, so every watcher in the fleet
+  # folds it into :none/"pending" and waits forever on checks that will never exist.
+  # That burned a full rework cycle: a watcher armed at 05:47Z on a commit that never
+  # got checks, and the cure was a rebase, which triggered CI green 8/8 immediately.
+  #
+  # :pending and :ci_less demand OPPOSITE actions — one says wait, one says act — so
+  # collapsing them is not a cosmetic loss. :ci_less is deliberately neither: not
+  # green (nothing was verified), not red (nothing failed), not pending (nothing is
+  # coming).
+  #
+  # THE CONJUNCTION IS LOAD-BEARING. Zero checks ALONE is not ci-less — a PR GitHub
+  # affirms is mergeable simply has not started its run yet, and that IS a wait. Only
+  # "no checks AND no confirmed merge" is the third state. Likewise a PR that HAS
+  # checks is never ci-less however ugly its merge state: the checks prove CI ran.
+  #
+  # ABSENCE OF EVIDENCE IS NOT EVIDENCE. A view payload that never requested
+  # `mergeable` reads as confirmed, so an older/partial caller cannot have its silence
+  # turned into a false ci-less alarm.
+
+  # PURE. Does GitHub AFFIRM this PR merges? Only an explicit MERGEABLE counts —
+  # CONFLICTING and UNKNOWN (GitHub gave up, or has not decided) both fail to confirm.
+  # A payload with no `mergeable` key at all is treated as confirmed (see above).
+  def self.merge_confirmed?(view_raw)
+    data = parse_view(view_raw)
+    return true unless data
+
+    mergeable = data["mergeable"].to_s.upcase
+    return true if mergeable.empty? && data["mergeStateStatus"].to_s.upcase != "DIRTY"
+    return false if data["mergeStateStatus"].to_s.upcase == "DIRTY"
+
+    mergeable == "MERGEABLE"
+  end
+
+  # PURE. The `gh pr view` payload as a Hash, or nil when it is not JSON.
+  def self.parse_view(raw)
+    data = begin
+      JSON.parse(raw)
+    rescue StandardError
+      nil
+    end
+    data.is_a?(Hash) ? data : nil
+  end
+
+  # PURE. The WHOLE PR verdict: the view payload's early verdict, else the checks
+  # fold, with the ci-less upgrade applied to a bare :none. This is the seam the unit
+  # vectors drive (pending / ci-less / green / red) without touching the network.
+  def self.combine(view_raw, checks_raw)
+    early = view_verdict(view_raw)
+    return early if early
+
+    verdict = parse(checks_raw)
+    return verdict unless verdict[:state] == :none
+    return verdict if merge_confirmed?(view_raw)
+
+    data = parse_view(view_raw) || {}
+    {
+      state: :ci_less,
+      merge_state: data["mergeStateStatus"].to_s.upcase,
+      mergeable: data["mergeable"].to_s.upcase,
+      base: data["baseRefName"].to_s
+    }
+  end
+
+  # THE ONE REMEDY STRING for :ci_less, so dor-check, pr-review, session-preflight and
+  # the release poll all prescribe the same cure. Names (a) that no CI is coming, (b)
+  # why, and (c) the exact command — because "pending" taught the reader to wait, and
+  # only a named action unteaches it.
+  def self.ci_less_remedy(verdict = nil)
+    v = verdict.is_a?(Hash) ? verdict : {}
+    base = v[:base].to_s.strip
+    base = "the base branch" if base.empty?
+    detail = [v[:merge_state], v[:mergeable]].map(&:to_s).reject(&:empty?).join("/")
+    detail = detail.empty? ? "" : " (GitHub reports #{detail})"
+    "NO CI WILL RUN on this PR#{detail}: its base has drifted far enough that GitHub cannot compute a " \
+      "merge commit, so it never queues the pull_request workflow and the head SHA has ZERO check-runs. " \
+      "This is NOT a slow CI — waiting can never clear it. Fix: rebase onto #{base} " \
+      "(git fetch origin && git rebase origin/#{base} && git push --force-with-lease), which makes GitHub " \
+      "compute the merge commit and fires CI immediately."
+  end
 
   # An AUTH/PERMISSION denial — the token is understood and REFUSED, as opposed to a
   # 404 (ambiguous: a force-pushed SHA answers 404 too) or a transport error. Matched
@@ -169,11 +269,17 @@ module CiStatus
       #   * a merge-CONFLICTED PR (mergeStateStatus DIRTY) gets NO checks at all —
       #     GitHub cannot compute the merge commit, so reading only the checks folds
       #     it into :none and the PR stalls forever (PR #509). One gh call reads both.
-      view = `gh pr view #{Shellwords.escape(pr)} --json state,mergeStateStatus 2>&1`.to_s.strip
+      #   * a PR whose base drifted past GitHub's merge computation gets no checks
+      #     EITHER, without ever reading DIRTY — the ci-less third state, which needs
+      #     `mergeable` + `baseRefName` from this same call to name its remedy.
+      view = `gh pr view #{Shellwords.escape(pr)} --json #{VIEW_FIELDS} 2>&1`.to_s.strip
       verdict = view_verdict(view)
       return verdict if verdict
 
       raw = `gh pr checks #{Shellwords.escape(pr)} --json name,state,bucket 2>&1`.to_s.strip
+      # combine, not parse: a bare :none here may be the THIRD STATE (no CI will ever
+      # run), and only the view payload can tell the difference.
+      return combine(view, raw)
     end
     parse(raw)
   end

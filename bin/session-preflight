@@ -260,8 +260,24 @@ def summarize_rollup(items)
   end
 end
 
+# PURE. Will this PR NEVER get CI? Zero check-runs AND a merge GitHub will not
+# confirm (mergeable CONFLICTING/UNKNOWN, or mergeStateStatus DIRTY/UNKNOWN). The
+# CONJUNCTION is load-bearing: zero checks on a confirmed-mergeable PR is just a run
+# that has not started, which IS worth waiting for. Mirrors CiStatus.merge_confirmed?
+# in bin/lib/ci_status.rb — a payload with no `mergeable` field never trips the alarm.
+def ci_less?(gh_pr, checks)
+  return false unless Array(checks).empty?
+
+  mergeable = gh_pr["mergeable"].to_s.upcase
+  merge_state = gh_pr["mergeStateStatus"].to_s.upcase
+  return true if merge_state == "DIRTY"
+  return false if mergeable.empty?
+
+  mergeable != "MERGEABLE"
+end
+
 def gh_pr_view(ref, root)
-  fields = "number,title,url,headRefName,mergeStateStatus,statusCheckRollup"
+  fields = "number,title,url,headRefName,baseRefName,mergeable,mergeStateStatus,statusCheckRollup"
   ok, out, err = capture("gh", "pr", "view", ref.to_s, "--json", fields, chdir: root)
   return [nil, compact_lines(err).join("; ")] unless ok
 
@@ -575,7 +591,19 @@ if options[:gh]
           "merge_state" => merge_state,
           "checks" => checks
         }
+        pr["ci_less"] = ci_less?(gh_pr, checks)
         errors << "PR merge state is #{merge_state}" if BAD_MERGE_STATES.include?(merge_state)
+        # THE THIRD STATE (task detect-ci-less-stale-prs): zero checks AND a merge
+        # GitHub will not confirm means CI is not slow — it is never coming, and the
+        # session that waits for it burns the whole cycle. Named here so the builder
+        # learns it at preflight, before arming any watcher.
+        if pr["ci_less"]
+          errors << "PR has NO CI and none is coming: GitHub reports mergeStateStatus " \
+                    "#{merge_state.empty? ? "UNKNOWN" : merge_state}/mergeable " \
+                    "#{gh_pr["mergeable"].to_s.empty? ? "UNKNOWN" : gh_pr["mergeable"]} with ZERO check-runs, so it " \
+                    "cannot compute a merge commit and never queues the workflow. Do NOT wait for CI — rebase onto " \
+                    "#{gh_pr["baseRefName"].to_s.empty? ? "the base branch" : gh_pr["baseRefName"]} and force-push."
+        end
         failed.each { |check| errors << "PR check #{check["name"]} is #{check["state"]}" }
       else
         pr = { "status" => "missing", "message" => warning.to_s.empty? ? "no PR for #{ref}" : warning }
