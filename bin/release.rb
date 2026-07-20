@@ -206,6 +206,10 @@ RELEASE_BRANCH = "release"
 # (Phase 3 Slice 4 retired the release→accepted base-retarget stopgap that used to
 # live here; Phase 4 deleted its last remnant.)
 ACCEPTED_BRANCH = "accepted"
+# How far back down accepted's history to look for a shipped tree when explaining a
+# refused advance (tree_absorbed_by_accepted?). The absorbed commit sits a few merges
+# back on a live ladder; the bound keeps the read cheap on a deep repo.
+ACCEPTED_TREE_SCAN = 200
 
 # The producer/consumer repo registry (config/release_repos.yml) — tells the CLI
 # which members are gems (published producer-first, no app branch) vs apps. Same
@@ -2952,11 +2956,67 @@ def advance_accepted(repo, path, sha)
   _, ok = sh("git", "-C", path, "push", "origin", "#{sha}:refs/heads/accepted")
   return if ok
 
-  say("  ⚠ #{repo}: origin/accepted NOT advanced to #{short(sha)} — git refused the ref update " \
-      "(accepted has DIVERGED from main; NOT forcing). Deploy continues — reconcile by hand: " \
-      "git -C #{path} push origin #{sha}:refs/heads/accepted")
+  report_refused_advance(repo, path, sha)
 rescue SystemExit, StandardError => e
   say("  ⚠ #{repo}: origin/accepted advance failed (#{e.message}); deploy continues (maintenance only)")
+end
+
+# Explain a REFUSED (non-fast-forward) accepted advance — correctly.
+#
+# REGRESSION (rel-20260720-1fc111): this used to call every refusal "DIVERGED" and
+# suggest `git push origin <sha>:refs/heads/accepted`. On that ship accepted was
+# merely AHEAD — a concurrent review pass had merged two PRs into it mid-ship — and
+# the suggested command would have DESTROYED both. accepted was missing nothing.
+#
+# So classify BEFORE advising, on CONTENT and not just topology. The sweep merges
+# accepted INTO release, so the frozen main is a MERGE COMMIT whose tree equals the
+# accepted head it came from, and that merge commit never appears in accepted's
+# history — `merge-base --is-ancestor` is FALSE even when nothing is missing. The
+# second signal (main's tree already present in accepted's history) is what catches
+# that case. Verdict: Release::ShipSequence.accepted_relation.
+#
+# BEST-EFFORT like its caller: any git fault falls through to the conservative
+# DIVERGED advice, which is safe to run in either state.
+def report_refused_advance(repo, path, sha)
+  _, ancestor = sh("git", "-C", path, "merge-base", "--is-ancestor", sha, "origin/#{ACCEPTED_BRANCH}", capture: true)
+  relation = Release::ShipSequence.accepted_relation(
+    main_is_ancestor: ancestor,
+    main_tree_absorbed: tree_absorbed_by_accepted?(path, sha)
+  )
+
+  if relation == :ahead
+    count, ok = sh("git", "-C", path, "rev-list", "--count", "#{sha}..origin/#{ACCEPTED_BRANCH}", capture: true)
+    count = ok ? count.strip : "?"
+    say("  ✓ #{repo}: origin/accepted NOT advanced to #{short(sha)} — accepted is AHEAD of main by " \
+        "#{count} commit#{'s' unless count == '1'} (work merged while the ship ran) and is missing nothing " \
+        "that shipped. Nothing to do.")
+    return
+  end
+
+  say("  ⚠ #{repo}: origin/accepted NOT advanced to #{short(sha)} — git refused the ref update and accepted " \
+      "has genuinely DIVERGED from main (it is missing shipped content; NOT forcing). Deploy continues — " \
+      "reconcile by hand with a MERGE, which keeps accepted's own commits: " \
+      "git -C #{path} fetch origin && git -C #{path} checkout #{ACCEPTED_BRANCH} && " \
+      "git -C #{path} merge origin/main && git -C #{path} push origin #{ACCEPTED_BRANCH}")
+end
+
+# Is the frozen SHA's TREE already present somewhere in accepted's history?
+#
+# The content test behind the AHEAD verdict. A sweep-merge main carries the very
+# tree of the accepted head it came from, so that tree shows up on an accepted
+# ancestor even though the merge commit itself does not. Bounded to the recent
+# history (the absorbed commit is always a few merges back on a live ladder) so
+# this stays one cheap read on a large repo.
+def tree_absorbed_by_accepted?(path, sha)
+  tree, ok = sh("git", "-C", path, "rev-parse", "#{sha}^{tree}", capture: true)
+  return false unless ok
+
+  tree = tree.strip
+  return false if tree.empty?
+
+  trees, listed = sh("git", "-C", path, "log", "--max-count=#{ACCEPTED_TREE_SCAN}", "--format=%T",
+                     "origin/#{ACCEPTED_BRANCH}", capture: true)
+  listed && trees.split("\n").any? { |candidate| candidate.strip == tree }
 end
 
 # Put a GEM repo's primary checkout back on `main` after the artifact build left it

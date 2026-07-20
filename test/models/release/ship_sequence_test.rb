@@ -140,6 +140,38 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
     assert_not S.advance_accepted?(sha: "", accepted_exists: false)
   end
 
+  # --- accepted_relation: WHY the fail-closed advance refused ------------------
+  #
+  # REGRESSION (rel-20260720-1fc111): when the advance refused a non-fast-forward
+  # the CLI called it "DIVERGED" unconditionally and suggested
+  # `git push origin <sha>:refs/heads/accepted` — a bare ref push that would have
+  # DESTROYED two PRs a concurrent review pass merged into accepted mid-ship.
+  # accepted was not diverged; it was AHEAD. This classifier owns that verdict.
+  #
+  # The topological subtlety: the sweep merges accepted INTO release, so `main`
+  # ends up a MERGE COMMIT whose tree equals the accepted head it came from, and
+  # that merge commit never appears in accepted's history. Plain ancestry is
+  # therefore FALSE even though accepted is missing nothing — so absorption is
+  # judged on CONTENT (main's tree present in accepted's history) as well.
+
+  test "[unit] accepted_relation calls a plain ancestor main AHEAD" do
+    assert_equal :ahead, S.accepted_relation(main_is_ancestor: true, main_tree_absorbed: false)
+  end
+
+  test "[unit] accepted_relation calls an absorbed main tree AHEAD despite failed ancestry" do
+    # THE REGRESSION SHAPE: sweep-merge main is no ancestor of accepted, but its
+    # tree is already in accepted's history — nothing is missing, advise nothing.
+    assert_equal :ahead, S.accepted_relation(main_is_ancestor: false, main_tree_absorbed: true)
+  end
+
+  test "[unit] accepted_relation calls accepted DIVERGED only when main is neither ancestor nor absorbed" do
+    assert_equal :diverged, S.accepted_relation(main_is_ancestor: false, main_tree_absorbed: false)
+  end
+
+  test "[unit] accepted_relation is AHEAD when both signals hold" do
+    assert_equal :ahead, S.accepted_relation(main_is_ancestor: true, main_tree_absorbed: true)
+  end
+
   test "strategy_handler raises on an unknown strategy" do
     err = assert_raises(ArgumentError) { S.strategy_handler("rsync_box") }
     assert_match(/unknown prod_deploy strategy/, err.message)

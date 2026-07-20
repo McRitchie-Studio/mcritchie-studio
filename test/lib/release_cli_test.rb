@@ -2313,6 +2313,119 @@ class ReleaseCliTest < Minitest::Test
     end
   end
 
+  # [integration] REGRESSION (rel-20260720-1fc111): accepted AHEAD, not diverged.
+  #
+  # A review pass merged two PRs into accepted WHILE the ship ran — a lane the
+  # pipeline explicitly supports. The advance correctly refused the non-ff, then
+  # mislabelled it "DIVERGED" and suggested `git push origin <sha>:refs/heads/accepted`.
+  # Running that would have DESTROYED both merges. accepted was missing NOTHING.
+  #
+  # The fixture reproduces the exact topology that defeats a naive ancestor check:
+  # the sweep merges accepted INTO release (--no-ff), so the frozen main is a MERGE
+  # COMMIT whose tree equals the accepted head it came from — and that merge commit
+  # is never in accepted's history. `merge-base --is-ancestor` is FALSE here (the
+  # test asserts it) even though every byte of main is already in accepted.
+  def test_push_frozen_main_reports_accepted_ahead_and_suggests_nothing
+    Dir.mktmpdir do |dir|
+      clone  = build_sibling_fixture(dir)
+      origin = File.join(dir, "origin.git")
+      base   = git_out(clone, "rev-parse", "main")
+
+      # accepted carries the work that is about to ship.
+      run_git(clone, "checkout", "-q", "-b", "accepted", base)
+      File.write(File.join(clone, "shipped.rb"), "shipped")
+      run_git(clone, "add", "shipped.rb")
+      run_git(clone, "commit", "-q", "-m", "work that ships")
+      run_git(clone, "push", "-q", "origin", "accepted")
+      absorbed = git_out(clone, "rev-parse", "accepted")
+
+      # The sweep: accepted merged INTO release with --no-ff → a merge commit whose
+      # TREE equals accepted's, but which accepted's own history never contains.
+      run_git(clone, "checkout", "-q", "release")
+      run_git(clone, "merge", "-q", "--no-ff", "-m", "sweep: accepted → release", "accepted")
+      run_git(clone, "push", "-q", "origin", "release")
+      frozen = git_out(clone, "rev-parse", "release")
+      assert_equal git_out(clone, "rev-parse", "#{absorbed}^{tree}"),
+                   git_out(clone, "rev-parse", "#{frozen}^{tree}"),
+                   "fixture precondition: the sweep merge's tree equals the accepted head it came from"
+
+      # Concurrent review merges land on accepted DURING the ship: one brand-new
+      # file and one MODIFICATION of an already-shipped file (the real incident had
+      # both — a new module plus an index entry).
+      run_git(clone, "checkout", "-q", "accepted")
+      File.write(File.join(clone, "zap-protocol.md"), "merged mid-ship")
+      File.write(File.join(clone, "shipped.rb"), "shipped\nindex entry added mid-ship")
+      run_git(clone, "add", "zap-protocol.md", "shipped.rb")
+      run_git(clone, "commit", "-q", "-m", "review merge during the ship")
+      run_git(clone, "push", "-q", "origin", "accepted")
+      ahead = git_out(origin, "rev-parse", "accepted")
+
+      # The subtlety, pinned: plain ancestry says NO even though nothing is missing.
+      _, ancestry = Open3.capture2e("git", "-C", clone, "merge-base", "--is-ancestor", frozen, ahead)
+      refute ancestry.success?,
+             "fixture precondition: the sweep merge commit is NOT an ancestor of accepted"
+
+      setup = %(def repo_path(_repo) = #{clone.inspect})
+      out = run_cli(["--yes"], setup: setup,
+                    call: %{begin; push_frozen_main("sibling", #{frozen.inspect}); puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+      assert_includes out, "PASSED", "an accepted that is merely ahead must NOT abort the ship: #{out}"
+      assert_match(/AHEAD of main by 1 commit\b/, out,
+                   "the report must name the AHEAD relation and the commit count: #{out}")
+      refute_includes out, "DIVERGED",
+                      "accepted is ahead, not diverged — the alarming label must not appear: #{out}"
+      refute_includes out, "refs/heads/accepted",
+                       "NOTHING may be suggested when accepted is ahead — a bare ref push here DESTROYS merged work"
+      refute_includes out, "reconcile",
+                       "an ahead accepted needs no reconciliation at all: #{out}"
+      assert_equal frozen, git_out(origin, "rev-parse", "main"),
+                   "main still advances to the frozen SHA"
+      assert_equal ahead, git_out(origin, "rev-parse", "accepted"),
+                   "the concurrently-merged work on accepted must be left EXACTLY as it was"
+    end
+  end
+
+  # [integration] REGRESSION (rel-20260720-1fc111), the OTHER shape: accepted is
+  # GENUINELY missing shipped content. The report must still say so — but must
+  # suggest a MERGE of main into accepted, never a bare ref push, which would
+  # discard whatever accepted holds that main does not.
+  def test_push_frozen_main_advises_a_merge_when_accepted_is_genuinely_missing_shipped_content
+    Dir.mktmpdir do |dir|
+      clone  = build_sibling_fixture(dir)
+      origin = File.join(dir, "origin.git")
+      base   = git_out(clone, "rev-parse", "main")
+
+      # The frozen SHA carries content that never reached accepted.
+      run_git(clone, "checkout", "-q", "release")
+      File.write(File.join(clone, "shipped.rb"), "shipped")
+      run_git(clone, "add", "shipped.rb")
+      run_git(clone, "commit", "-q", "-m", "shipped")
+      run_git(clone, "push", "-q", "origin", "release")
+      frozen = git_out(clone, "rev-parse", "release")
+
+      # accepted went its own way off base and never absorbed the shipped file.
+      run_git(clone, "checkout", "-q", "-b", "accepted-work", base)
+      File.write(File.join(clone, "hotfix.txt"), "pushed straight to accepted")
+      run_git(clone, "add", "hotfix.txt")
+      run_git(clone, "commit", "-q", "-m", "diverged accepted")
+      run_git(clone, "push", "-q", "origin", "accepted-work:accepted")
+      diverged = git_out(origin, "rev-parse", "accepted")
+
+      setup = %(def repo_path(_repo) = #{clone.inspect})
+      out = run_cli(["--yes"], setup: setup,
+                    call: %{begin; push_frozen_main("sibling", #{frozen.inspect}); puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+      assert_includes out, "PASSED", "a genuinely diverged accepted must NOT abort the ship: #{out}"
+      assert_includes out, "DIVERGED", "genuine divergence keeps the DIVERGED label: #{out}"
+      assert_match(/git -C .* merge/, out,
+                   "the reconcile advice must be a MERGE of main into accepted: #{out}")
+      refute_match(/push origin \h+:refs\/heads\/accepted/, out,
+                   "a bare ref push must NEVER be suggested — it discards accepted's own commits: #{out}")
+      assert_equal diverged, git_out(origin, "rev-parse", "accepted"),
+                   "a diverged accepted must be left EXACTLY as it was"
+    end
+  end
+
   # [unit] The ship gate now mutates NOTHING. It used to fast-forward each app's
   # `main` in the primary (under the primary lock) before running the suite — but
   # the suite moved to the isolated gate workspace at the frozen SHA, so that ff fed

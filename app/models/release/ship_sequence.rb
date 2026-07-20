@@ -147,6 +147,38 @@ class Release
       !sha.to_s.strip.empty?
     end
 
+    # --- WHY a fail-closed advance refused: accepted AHEAD vs genuinely DIVERGED -
+    #
+    # A refused (non-fast-forward) advance has TWO very different causes, and the
+    # advice for one is destructive to the other:
+    #
+    #   :ahead    — accepted is missing NOTHING that shipped; it simply carries
+    #               MORE. The normal consequence of a review pass merging PRs into
+    #               accepted while a ship runs (different lanes, explicitly
+    #               supported). Correct action: NOTHING.
+    #   :diverged — accepted is genuinely missing shipped content. Correct action:
+    #               MERGE main into accepted. Never a bare ref push, which would
+    #               discard accepted's own commits.
+    #
+    # REGRESSION (rel-20260720-1fc111): the CLI called every refusal "DIVERGED" and
+    # suggested `git push origin <sha>:refs/heads/accepted`. accepted was AHEAD, and
+    # that command would have destroyed two concurrently-merged PRs.
+    #
+    # Two independent AHEAD signals, because topology alone is not enough:
+    #   * main_is_ancestor  — plain ancestry: main is reachable from accepted.
+    #   * main_tree_absorbed — CONTENT: main's tree is already in accepted's
+    #     history. Load-bearing because the sweep merges accepted INTO release, so
+    #     main ends up a MERGE COMMIT whose tree equals the accepted head it came
+    #     from — and that merge commit is never in accepted's history, so ancestry
+    #     is FALSE while nothing is actually missing.
+    #
+    # Either signal means nothing is missing. Only when BOTH fail is accepted
+    # genuinely behind on shipped content. The git reads live in bin/release's
+    # advance_accepted; only the verdict lives here.
+    def accepted_relation(main_is_ancestor:, main_tree_absorbed:)
+      main_is_ancestor || main_tree_absorbed ? :ahead : :diverged
+    end
+
     # The app deploy groups with the hub pulled to the front, the rest left in
     # their incoming (producer-first) order. Stable: a non-hub group keeps its
     # relative position. Accepts symbol- OR string-keyed groups (repo_plan returns
