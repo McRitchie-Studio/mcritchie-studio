@@ -188,6 +188,11 @@ Verdicts:
   bin/task note <task> --handoff "Avi review approved; merged into accepted; ready for Steffon's qa-release sweep." --agent avi
   ```
 
+  If a reviewer NAMED a zappable defect in a verdict, the fix does not land here —
+  reviewers apply nothing. Land it as a conductor zap on `accepted` after the merge,
+  within the bounds and recording rules in
+  [`../../../modules/zap-protocol.md`](../../../modules/zap-protocol.md).
+
   Order matters: merge → stamp → move, so the task is `reviewed` **iff** its code
   is on `accepted` (invariant: `reviewed` ⟺ code-on-`accepted`). If the `gh pr
   merge` FAILS, leave the task `submitted` and UNSTAMPED (never move to
