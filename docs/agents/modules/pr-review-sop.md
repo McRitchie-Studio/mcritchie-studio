@@ -86,8 +86,8 @@ itself**. Avi:
    `bin/task block <task> --kind rework` with "rebase onto `<base>`"
    (`outcome=ci-less`) — a base that drifted past GitHub's merge computation
    gets no CI either and never reads `DIRTY`. An **undetermined** merge
-   (`mergeable UNKNOWN`, GitHub still computing) is NOT this state: it is
-   re-read after a bounded backoff, and only a stable unknown counts;
+   (`mergeable UNKNOWN`, GitHub still computing) is NOT this state and never
+   becomes it — it is a wait that names its uncertainty;
    **pending / no checks yet** → defer this task to
    a later pass; **green** → continue.
 2. Confirms **product-acceptance** — does the open PR (base `release`) meet the

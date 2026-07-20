@@ -207,8 +207,8 @@ class SessionPreflightTest < Minitest::Test
   # detect-ci-less-stale-prs). A base-drifted PR gets ZERO check-runs and GitHub never
   # queues the workflow — but nothing said so, and the session armed a CI watcher that
   # could never fire. Preflight is where the builder meets the PR first, so it is where
-  # "no CI is coming" has to be said, with the rebase named.
-  def test_ci_less_pr_blocks_preflight_and_names_the_rebase
+  # "no CI is coming" has to be said, with a recoverable fix named.
+  def test_ci_less_pr_blocks_preflight_and_names_a_recoverable_fix
     task = write_task(devops: default_devops.merge("branch" => "feat/session-preflight"))
     fake_bin = write_ci_less_gh
 
@@ -222,8 +222,10 @@ class SessionPreflightTest < Minitest::Test
     assert report.fetch("pr").fetch("ci_less"), "the PR is classified ci-less"
     blocker = report.fetch("errors").find { |e| e.match?(/NO CI/i) }
     assert blocker, "an error names the missing CI: #{report.fetch("errors").inspect}"
-    assert_match(/rebase/i, blocker, "the blocker names the remedy")
-    assert_match(/accepted/, blocker, "the blocker names the base to rebase onto")
+    # The property, not the verb (see the dor-check twin): conflict work + a way back.
+    assert_match(/resolve/i, blocker, "the blocker names the conflict work")
+    assert_match(/--abort/, blocker, "the blocker names a way back to a known-good state")
+    assert_match(%r{origin/accepted\b}, blocker, "the blocker names the PR's actual base")
   end
 
   def test_a_mergeable_pr_with_checks_is_not_ci_less

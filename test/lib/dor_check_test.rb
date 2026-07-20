@@ -10,6 +10,7 @@ require "json"
 require "tmpdir"
 require "fileutils"
 require_relative "../support/session_env"
+require_relative "../../bin/lib/ci_status"
 
 class DorCheckTest < Minitest::Test
   BIN = File.expand_path("../../bin/dor-check", __dir__)
@@ -1589,15 +1590,33 @@ class DorCheckTest < Minitest::Test
   # from a slow CI to every watcher in the fleet, which then waits forever on checks
   # that will never exist (a full rework cycle burned: a watcher armed at 05:47Z on a
   # commit that never got checks; the cure was a rebase, which fired CI green 8/8).
-  # It must block in BOTH roles with the rebase named, and stay distinct from
+  # It must block in BOTH roles with a RECOVERABLE fix named, and stay distinct from
   # pending/none — the states that legitimately mean "wait".
 
   def test_merge_gate_blocks_a_ci_less_pr
     out, code = ci_check("ci_less")
     assert_equal 1, code, out
     assert_match(/NO CI WILL RUN/i, out)
-    assert_match(/rebase/i, out, "the blocker names the fix")
+    assert_match(/resolve/i, out, "the blocker names the conflict work")
     assert_match(/not ready to advance/, out)
+    # BLOCKER 4 at the tier that matters. The injection seam carries a bare token, so
+    # no base is resolvable here — and this is the path pr-review writes into REAL
+    # task feedback. The remedy must therefore OMIT its commands rather than print a
+    # placeholder: `git merge origin/the base branch` is not a command anyone can run.
+    refute_match(%r{origin/\S*\s}, out, "no half-built origin/<placeholder> ref may reach task feedback")
+    refute_match(/git (merge|rebase|fetch)/, out, "with no base resolved the commands are omitted, not guessed")
+  end
+
+  def test_a_ci_less_blocker_with_a_known_base_names_a_recoverable_fix
+    # The other half: when the base IS known the remedy must be runnable AND
+    # recoverable — conflict work named, a way back named, and no `&&` chain that
+    # halts silently mid-operation. Driven at the unit tier's verdict shape because
+    # the CLI's token seam cannot carry a base.
+    remedy = CiStatus.ci_less_remedy(state: :ci_less, base: "accepted", mergeable: "CONFLICTING")
+    assert_match(%r{git merge origin/accepted\b}, remedy)
+    assert_match(/resolve/i, remedy)
+    assert_match(/--abort/, remedy, "a way back to a known-good state")
+    refute_includes remedy, "&&", "no chaining past a step that can halt"
   end
 
   def test_review_gate_zero_blocks_a_ci_less_pr

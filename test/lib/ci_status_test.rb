@@ -6,6 +6,7 @@
 # Also picked up by the normal `bin/rails test` sweep.
 
 require "minitest/autorun"
+require "tmpdir"
 require_relative "../../bin/lib/ci_status"
 
 class CiStatusTest < Minitest::Test
@@ -155,15 +156,17 @@ class CiStatusTest < Minitest::Test
                     "a PR that will never get CI must not report a state that means 'wait'"
   end
 
-  def test_ci_less_names_the_rebase_remedy_and_the_base_branch
+  def test_ci_less_carries_an_actionable_remedy_naming_its_base
     # ACTIONABLE, not merely distinct: the reader must learn the cure without
-    # re-deriving it. Asserts the base branch is carried, not the prose around it.
+    # re-deriving it. Asserts the base branch is CARRIED and reaches a runnable
+    # command — deliberately not the verb, which round 3 changed from `rebase` to
+    # `merge` for recoverability. Pinning the spelling is how a test starts arguing
+    # for the wrong fix.
     view_raw, checks_raw = ci_vectors[:ci_less]
     v = CiStatus.combine(view_raw, checks_raw)
     assert_equal "accepted", v[:base]
     remedy = CiStatus.ci_less_remedy(v)
-    assert_includes remedy, "accepted"
-    assert_match(/rebase/i, remedy)
+    assert_match(%r{git \w+ origin/accepted\b}, remedy, "the remedy runs against the PR's actual base")
   end
 
   def test_zero_checks_on_a_confirmed_mergeable_pr_stays_none
@@ -265,20 +268,13 @@ class CiStatusTest < Minitest::Test
                  "an absent mergeable is UNKNOWN, not affirmed and not refuted"
   end
 
-  def test_an_unstable_unknown_asks_for_a_recheck_instead_of_a_verdict
-    # UNKNOWN + zero checks is not yet ANY verdict: it is a request to re-read. The
-    # flag is what lets `evaluate` back off and look again instead of guessing.
+  def test_an_undetermined_mergeability_names_its_uncertainty
+    # UNKNOWN + zero checks is not a verdict, and it is not silence either: the
+    # verdict REPORTS that GitHub has not decided, so a reader can tell "no data yet"
+    # from "checks are running" without being handed an action nobody can justify.
     v = CiStatus.combine(view("OPEN", "UNKNOWN", mergeable: "UNKNOWN", base: "accepted"), "[]")
-    assert v[:recheck], "an undetermined mergeability must ask for a re-read"
-  end
-
-  def test_only_a_STABLE_unknown_becomes_ci_less
-    # The staleness floor the task name always implied. A transient UNKNOWN settles
-    # on its own; a genuinely stale base NEVER does. Re-read bounded, then decide —
-    # so the real trap is still caught and the fresh-push window is not.
-    v = CiStatus.combine(view("OPEN", "UNKNOWN", mergeable: "UNKNOWN", base: "accepted"), "[]", stable: true)
-    assert_equal :ci_less, v[:state]
-    refute v[:recheck], "a settled verdict does not ask for another read"
+    assert_equal :none, v[:state]
+    assert_equal :unknown, v[:mergeability], "the uncertainty must be named, not swallowed"
   end
 
   def test_a_refuted_merge_is_ci_less_on_the_FIRST_read
@@ -286,14 +282,165 @@ class CiStatusTest < Minitest::Test
     # cannot merge, which is a fact, not a pending computation.
     v = CiStatus.combine(view("OPEN", "UNKNOWN", mergeable: "CONFLICTING", base: "accepted"), "[]")
     assert_equal :ci_less, v[:state]
-    refute v[:recheck]
   end
 
-  def test_stability_never_overrides_an_affirmed_merge
-    # `stable: true` is the second look, NOT a lower bar: a PR GitHub affirms is
-    # mergeable stays a wait no matter how many times it is re-read.
-    v = CiStatus.combine(view("OPEN", "CLEAN", mergeable: "MERGEABLE", base: "accepted"), "[]", stable: true)
-    assert_equal :none, v[:state]
+  # --- ROUND 3 -----------------------------------------------------------------
+  #
+  # BLOCKER 1 (both lanes): BOUND EXHAUSTION MUST NOT MANUFACTURE CONFIDENCE.
+  # Round 2 let a second look convert an undetermined mergeability into a hard
+  # :ci_less — so the SAME payload it correctly called :none became a confident block
+  # five seconds later, emitting `--force-with-lease` advice at a healthy PR. That is
+  # round 1's harm on a timer. It also contradicted this module's own stated fail
+  # direction ("uncertainty falls toward wait") and gates/g2-review.md.
+  #
+  # The discriminator was never sound: ONE 5s retry against an asynchronous GitHub
+  # computation that publishes no SLA. Running out of patience is not evidence. A
+  # stable-unknown block would need a live PR observed staying UNKNOWN indefinitely, a
+  # bound sized to GitHub's real settling time, and a test of the re-read loop — none
+  # of which existed, and the loop itself was untested.
+  #
+  # So the bound is GONE, and with it the sleep on a hot path both dor-check and
+  # pr-review call. :ci_less now has EXACTLY ONE producer: an affirmative negative.
+
+  def test_ci_less_has_exactly_one_producer_an_affirmative_negative
+    # THE invariant, asserted over the whole input space rather than by spot-checking
+    # spellings: across every merge-state x mergeable pairing, :ci_less appears if and
+    # only if mergeability is :refuted. No amount of uncertainty can produce it.
+    merge_states = %w[CLEAN BLOCKED BEHIND UNSTABLE HAS_HOOKS DRAFT UNKNOWN] + [nil]
+    mergeables = %w[MERGEABLE CONFLICTING UNKNOWN] + [nil]
+    merge_states.each do |ms|
+      mergeables.each do |m|
+        raw = view("OPEN", ms || "", mergeable: m, base: "accepted")
+        state = CiStatus.combine(raw, "[]")[:state]
+        refuted = CiStatus.mergeability(raw) == :refuted
+        assert_equal refuted, state == :ci_less,
+                     "ci_less iff refuted — #{ms.inspect}/#{m.inspect} gave :#{state}"
+      end
+    end
+  end
+
+  def test_no_bound_exhaustion_path_remains
+    # The removal, pinned: `combine` takes exactly two arguments. A future
+    # reintroduction of a "we waited long enough" flag fails here and has to argue
+    # for itself on the evidence this round said it would need.
+    assert_equal 2, CiStatus.method(:combine).arity,
+                  "combine must not regain a stability/exhaustion parameter"
+    refute CiStatus.respond_to?(:recheck_seconds),
+           "the timing heuristic is gone — no retry bound to exhaust"
+  end
+
+  # BLOCKER 2: PRECEDENCE — round 1's defect in mirror image. `:refuted` was tested
+  # BEFORE settlement, so a settled merge state lost to a stale async `mergeable`:
+  # {CLEAN + CONFLICTING} classified :refuted => :ci_less, contradicting this module's
+  # own docstring ("their presence is settlement, whatever mergeable says") and firing
+  # an IMMEDIATE force-push instruction at a healthy PR — the precise harm this work
+  # exists to prevent. Round 2 fixed {CLEAN + mergeable UNKNOWN}; this is that shape.
+
+  def test_a_settled_merge_state_outranks_a_stale_conflicting_mergeable
+    (CiStatus::SETTLED_MERGE_STATES - ["DIRTY"]).each do |settled|
+      raw = view("OPEN", settled, mergeable: "CONFLICTING", base: "accepted")
+      assert_equal :affirmed, CiStatus.mergeability(raw),
+                   "#{settled} is settlement — it must outrank a lagging CONFLICTING"
+      assert_equal :none, CiStatus.combine(raw, "[]")[:state],
+                   "#{settled} + CONFLICTING must not block a healthy PR"
+    end
+  end
+
+  def test_dirty_still_refutes_even_though_it_is_settled
+    # DIRTY is the settled NEGATIVE, so it must not be swept up by "settlement
+    # affirms" — it is the one merge state that both settles AND refutes.
+    assert_equal :refuted, CiStatus.mergeability(view("OPEN", "DIRTY", mergeable: "MERGEABLE"))
+  end
+
+  # BLOCKER 3: PRINTED ADVICE MUST FAIL SAFELY, NOT JUST SUCCEED.
+  #
+  # The round-2 remedy was `git fetch origin && git rebase origin/<base> && git push
+  # --force-with-lease`. But :refuted fires on `mergeable CONFLICTING` — GitHub
+  # affirming REAL conflicts — so the rebase HALTS, the `&&` chain stops silently, the
+  # push never runs, and the operator is left mid-rebase with no next instruction. The
+  # remedy never said "resolve the conflicts". The same defect appeared independently
+  # in a sibling PR the same day, which is why it is a standing lesson: we test that
+  # printed advice SUCCEEDS and never that it FAILS SAFELY.
+  #
+  # These assert the property (recoverable + clearly labeled), not the prose.
+
+  def refuted_remedy
+    CiStatus.ci_less_remedy(CiStatus.ci_less_verdict(view("OPEN", "UNKNOWN", mergeable: "CONFLICTING", base: "accepted")))
+  end
+
+  def test_the_remedy_never_chains_past_a_step_that_can_halt
+    # An && chain is the defect itself: it hides the stop. Steps that can pause must
+    # be given one at a time.
+    refute_includes refuted_remedy, "&&", "the remedy must not chain commands that can halt mid-way"
+  end
+
+  def test_the_remedy_names_the_conflict_work_and_a_way_back
+    # The two things the stranded operator needed and did not get: what to DO when it
+    # stops, and how to get back to a known-good state.
+    remedy = refuted_remedy
+    assert_match(/resolve/i, remedy, "the remedy must tell the operator to resolve conflicts")
+    assert_match(/--abort/, remedy, "the remedy must name a way back to a known-good state")
+  end
+
+  def test_the_remedy_leaves_a_conflicted_repo_recoverable_and_labeled
+    # EXECUTED, not asserted about. Builds a real conflict, runs the remedy's merge
+    # step, and proves the operator ends somewhere recoverable and clearly labeled —
+    # then that the named recovery actually restores the original commit.
+    Dir.mktmpdir do |dir|
+      git = ->(*args) { system("git", "-C", dir, *args, out: File::NULL, err: File::NULL) }
+      git.call("init", "-q", "-b", "accepted")
+      git.call("config", "user.email", "t@t.test")
+      git.call("config", "user.name", "T")
+      File.write(File.join(dir, "f.txt"), "base\n")
+      git.call("add", "-A")
+      git.call("commit", "-qm", "base")
+
+      # A feature branch and the base BOTH edit the same line — a real conflict.
+      git.call("checkout", "-qb", "feat")
+      File.write(File.join(dir, "f.txt"), "feature\n")
+      git.call("add", "-A")
+      git.call("commit", "-qm", "feature")
+      feature_head = `git -C #{dir} rev-parse HEAD`.strip
+
+      git.call("checkout", "-q", "accepted")
+      File.write(File.join(dir, "f.txt"), "moved\n")
+      git.call("add", "-A")
+      git.call("commit", "-qm", "moved")
+      git.call("checkout", "-q", "feat")
+
+      # The remedy's merge step, run exactly as printed. It MUST fail — that is the
+      # conflicting condition — and it must stop somewhere the operator can leave.
+      merged = git.call("merge", "accepted")
+      refute merged, "the merge must halt on a real conflict (that is the condition under test)"
+
+      status = `git -C #{dir} status --porcelain`
+      assert_match(/^(UU|AA)/, status, "the conflict is LABELED in the worktree, not silent")
+      assert_path_exists File.join(dir, ".git", "MERGE_HEAD"), "the operator is in a named, inspectable state"
+
+      # And the way back the remedy names actually works.
+      assert git.call("merge", "--abort"), "the remedy's named recovery must succeed"
+      assert_equal feature_head, `git -C #{dir} rev-parse HEAD`.strip,
+                   "aborting returns the branch to exactly where it started"
+      assert_empty `git -C #{dir} status --porcelain`.strip, "recovery leaves a clean tree"
+    end
+  end
+
+  # BLOCKER 4: a placeholder must never reach a RUNNABLE command. `base = "the base
+  # branch" if base.empty?` was interpolated straight into `git rebase origin/<base>`,
+  # printing `git rebase origin/the base branch` — and pr-review writes this string
+  # into REAL task block feedback.
+
+  def test_an_unknown_base_never_produces_a_runnable_command
+    remedy = CiStatus.ci_less_remedy(CiStatus.ci_less_verdict(view("OPEN", "UNKNOWN", mergeable: "CONFLICTING")))
+    refute_match(%r{origin/\S*\s}, remedy, "no half-built origin/<placeholder> ref may be printed")
+    refute_match(/git (merge|rebase|fetch)/, remedy,
+                 "with no base resolved the remedy must omit the commands, not guess them")
+    assert_match(/base/i, remedy, "it still has to say what is missing")
+  end
+
+  def test_a_known_base_produces_a_command_naming_that_base
+    remedy = refuted_remedy
+    assert_match(%r{git merge origin/accepted\b}, remedy)
   end
 
   def test_ci_less_is_an_injectable_token

@@ -71,10 +71,12 @@ What the supervisor records, per reviewed task:
      block-back shape (`--meta outcome=ci-less`), with "rebase onto `<base>`"
      named. A base that drifted past GitHub's merge computation gets no CI
      either, and never reads `DIRTY`, so it presents exactly like a slow CI.
-     **Only an affirmative negative counts**: GitHub answers `UNKNOWN` while it
-     is still computing mergeability — and a fresh head SHA has zero checks in
-     that same window — so an undetermined merge is re-read after a bounded
-     backoff and only a STABLE unknown is called ci-less. Uncertainty falls
+     **Only an affirmative negative counts** — GitHub reporting the merge is
+     refused. It answers `UNKNOWN` while it is still computing mergeability, and
+     a fresh head SHA has zero checks in that same window, so an **undetermined**
+     merge is reported as a wait that names its uncertainty and is NEVER
+     converted into a block: running out of patience is not evidence. A settled
+     `mergeStateStatus` also outranks a lagging `mergeable`. Uncertainty falls
      toward wait; a wrong block would force-push a healthy branch.
    - **pending / no checks yet** → the task defers to a later wave (the
      defer machinery); no lane opens.

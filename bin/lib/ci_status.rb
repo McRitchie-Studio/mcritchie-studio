@@ -17,11 +17,13 @@ require "shellwords"
 #                     pending one → BLOCK, with "rebase/merge release" as the fix.
 #                     Folding this into :none is the PR-#509 stall (2026-07-12): the
 #                     review wave deferred it forever while the board looked healthy.
-#   :ci_less        — ZERO check-runs AND GitHub will not confirm the PR is mergeable
-#                     (mergeStateStatus UNKNOWN/DIRTY, or mergeable CONFLICTING). The
-#                     base drifted far enough that GitHub cannot compute a merge
-#                     commit, so it runs NO CI AT ALL → BLOCK, remedy "rebase onto
-#                     <base>". See the THIRD STATE section below.
+#   :ci_less        — ZERO check-runs AND GitHub AFFIRMATIVELY reports the merge is
+#                     refused (`mergeable CONFLICTING`). GitHub cannot compute a merge
+#                     commit, so it runs NO CI AT ALL → BLOCK, remedy "bring the base
+#                     in and resolve". NOT reachable via `mergeStateStatus DIRTY`,
+#                     which view_verdict always resolves to :conflicted first, and NOT
+#                     via an UNDETERMINED mergeability, which is only ever a wait.
+#                     See the THIRD STATE section below.
 #   :closed/:merged — the PR is not OPEN                  → BLOCK (its green checks are
 #                     HISTORICAL, not a live review target — a stale/abandoned pr_url)
 #   :green          — every check passed/skipped         → pass
@@ -105,14 +107,31 @@ module CiStatus
   # force-pushing a healthy branch and cancelling its in-flight CI.
   #
   # So mergeability is THREE-VALUED — :affirmed / :refuted / :unknown — and :unknown
-  # is NEVER converted into an actionable negative. It means "look again", and only a
-  # STABLE unknown (still unknown after a bounded re-read, with zero checks) is
-  # reported as ci-less. That is also the staleness floor this task's name always
-  # implied: a transient UNKNOWN settles on its own, a genuinely stale base never does.
+  # is NEVER converted into an actionable negative. It is REPORTED (the verdict
+  # carries `mergeability: :unknown`) so a reader can tell "GitHub has not decided"
+  # from "checks are running", and there it stops.
   #
   # FAIL DIRECTION: uncertainty about GITHUB'S KNOWLEDGE falls toward wait; only an
   # affirmative negative blocks. The asymmetry justifies it — a wrong block
   # force-pushes a healthy branch, a wrong wait costs a bounded timeout.
+  #
+  # RUNNING OUT OF PATIENCE IS NOT EVIDENCE (round 3). Round 2 honoured that rule on
+  # the first read and then broke it on the second: a bounded re-read let an
+  # undetermined mergeability "settle" into a hard :ci_less, so the SAME payload this
+  # module correctly called :none became a confident block five seconds later —
+  # round 1's harm on a timer, and a direct contradiction of the paragraph above.
+  #
+  # The discriminator was never sound. ONE 5s retry against an ASYNCHRONOUS GitHub
+  # computation that publishes no SLA cannot separate "still computing" from "will
+  # never compute"; it only measures how long we were willing to wait. Licensing a
+  # block on a stable unknown would need a live PR observed staying UNKNOWN
+  # indefinitely, a bound sized to GitHub's real settling time, and a test of the
+  # re-read loop itself. None of those existed, and the loop was untested — so the
+  # bound is GONE, along with the sleep it put on a hot path that both dor-check and
+  # pr-review call.
+  #
+  # :ci_less therefore has EXACTLY ONE PRODUCER: an affirmative negative (:refuted).
+  # If a future change wants a stable-unknown to block, it has to bring that evidence.
 
   # mergeStateStatus values that prove GitHub COMPUTED the merge commit. Their
   # presence is settlement, whatever `mergeable` says: DIRTY is the computed NEGATIVE
@@ -122,29 +141,31 @@ module CiStatus
   # resolve correctly to "GitHub computed it; the run just has not started".
   SETTLED_MERGE_STATES = %w[CLEAN BLOCKED BEHIND UNSTABLE HAS_HOOKS DRAFT].freeze
 
-  # How long to wait before the second look at an UNDETERMINED mergeability, and how
-  # many looks in total. Bounded on purpose: this is the only place the fleet sleeps
-  # on CI, and a transient UNKNOWN settles in seconds. Env-overridable so tests never
-  # sleep (CI_STATUS_RECHECK_SECONDS=0).
-  def self.recheck_seconds
-    raw = ENV["CI_STATUS_RECHECK_SECONDS"]
-    return 5.0 if raw.nil? || raw.to_s.strip.empty?
-
-    [raw.to_f, 0.0].max
-  end
-
   # PURE. What does GitHub say about this PR's mergeability — :affirmed, :refuted, or
-  # :unknown? A SETTLED mergeStateStatus affirms on its own; DIRTY and CONFLICTING are
-  # the affirmative negatives; everything else (UNKNOWN, absent, unparseable) is
-  # :unknown, which is a request to look again, never a verdict.
+  # :unknown?
+  #
+  # ORDER IS LOAD-BEARING, and getting it wrong was round 3's blocker 2 — round 1's
+  # defect in mirror image. `mergeable` is computed asynchronously and LAGS, while
+  # mergeStateStatus reports settlement, so a stale CONFLICTING must never outrank a
+  # settled merge state: {CLEAN + CONFLICTING} classified :refuted and fired an
+  # immediate force-push instruction at a healthy PR. Each rung, in order:
+  #   1. DIRTY      — the settled NEGATIVE. Both settles and refutes, so it is tested
+  #                   before the affirming settlement rung that would otherwise sweep
+  #                   it up.
+  #   2. SETTLED    — GitHub computed the merge. This is settlement, WHATEVER
+  #                   `mergeable` says (the docstring the old order contradicted).
+  #   3. CONFLICTING— an affirmative negative, but only once settlement is silent.
+  #   4. MERGEABLE  — an affirmative positive, same rung logic.
+  #   5. otherwise  — :unknown. Never a verdict; see the section above.
   def self.mergeability(view_raw)
     data = parse_view(view_raw)
     return :unknown unless data
 
     merge_state = data["mergeStateStatus"].to_s.upcase
     mergeable = data["mergeable"].to_s.upcase
-    return :refuted if merge_state == "DIRTY" || mergeable == "CONFLICTING"
+    return :refuted if merge_state == "DIRTY"
     return :affirmed if SETTLED_MERGE_STATES.include?(merge_state)
+    return :refuted if mergeable == "CONFLICTING"
     return :affirmed if mergeable == "MERGEABLE"
 
     :unknown
@@ -164,12 +185,9 @@ module CiStatus
   # fold, with the ci-less upgrade applied to a bare :none. This is the seam the unit
   # vectors drive (pending / ci-less / green / red) without touching the network.
   #
-  # `stable` is the SECOND look — see the three-valued section above. On the first
-  # read an UNDETERMINED mergeability returns the plain :none carrying `recheck: true`
-  # ("look again"), and only when the caller has re-read and found it STILL undecided
-  # does it become :ci_less. It is a second look, NOT a lower bar: an :affirmed merge
-  # stays a wait however many times it is read.
-  def self.combine(view_raw, checks_raw, stable: false)
+  # There is NO second-look parameter, deliberately — see "running out of patience is
+  # not evidence" above. One read, one verdict.
+  def self.combine(view_raw, checks_raw)
     early = view_verdict(view_raw)
     return early if early
 
@@ -177,18 +195,20 @@ module CiStatus
     return verdict unless verdict[:state] == :none
 
     case mergeability(view_raw)
+    when :refuted
+      # An affirmative negative: GitHub says it cannot merge, so no CI is coming.
+      # The ONLY producer of :ci_less.
+      ci_less_verdict(view_raw)
     when :affirmed
       # GitHub computed the merge — the workflow just has not started. A real wait.
       verdict
-    when :refuted
-      # An affirmative negative: GitHub says it cannot merge, so no CI is coming.
-      # Actionable on the FIRST read — this is a fact, not a pending computation.
-      ci_less_verdict(view_raw)
     else
-      # `mergeability`, not `merge_state`: what is undetermined is GitHub's ANSWER,
-      # and naming it after the raw mergeStateStatus field would report a value
-      # GitHub may never have sent.
-      stable ? ci_less_verdict(view_raw) : verdict.merge(recheck: true, mergeability: :unknown)
+      # Undetermined: still a wait, but the uncertainty is NAMED rather than swallowed
+      # into a bare :none, so a reader can tell "GitHub has not decided" from "checks
+      # are running". `mergeability`, not `merge_state` — what is undetermined is
+      # GitHub's ANSWER, and naming it after the raw mergeStateStatus field would
+      # report a value GitHub may never have sent.
+      verdict.merge(mergeability: :unknown)
     end
   end
 
@@ -209,17 +229,38 @@ module CiStatus
   # caught it hand-rolling a rival message), so one PR cannot collect three cures.
   # Names (a) that no CI is coming, (b) why, and (c) the exact command — because
   # "pending" taught the reader to wait, and only a named action unteaches it.
+  # ADVICE MUST FAIL SAFELY, NOT MERELY SUCCEED (round 3, blocker 3). The old text was
+  # `git fetch origin && git rebase origin/<base> && git push --force-with-lease`.
+  # But :ci_less fires on an affirmative negative — GitHub reporting REAL conflicts —
+  # so the rebase halts, the `&&` chain stops silently, the push never runs, and the
+  # operator is stranded mid-rebase with no next instruction and no mention of
+  # resolving anything. So: no chaining past a step that can pause, the conflict work
+  # named, and a way back stated (bin/dor-check's :conflicted wording gets this right;
+  # this follows it, and prefers `merge` over `rebase` because a halted merge leaves
+  # the branch itself untouched).
+  #
+  # AND NO PLACEHOLDER MAY REACH A RUNNABLE COMMAND (blocker 4): interpolating a
+  # human-readable fallback produced `git rebase origin/the base branch`, which
+  # pr-review then wrote into real task feedback. With no base resolved the commands
+  # are OMITTED — an honest gap beats a command that cannot run.
   def self.ci_less_remedy(verdict = nil)
     v = verdict.is_a?(Hash) ? verdict : {}
     base = v[:base].to_s.strip
-    base = "the base branch" if base.empty?
     detail = [v[:merge_state], v[:mergeable]].map(&:to_s).reject(&:empty?).join("/")
     detail = detail.empty? ? "" : " (GitHub reports #{detail})"
-    "NO CI WILL RUN on this PR#{detail}: its base has drifted far enough that GitHub cannot compute a " \
-      "merge commit, so it never queues the pull_request workflow and the head SHA has ZERO check-runs. " \
-      "This is NOT a slow CI — waiting can never clear it. Fix: rebase onto #{base} " \
-      "(git fetch origin && git rebase origin/#{base} && git push --force-with-lease), which makes GitHub " \
-      "compute the merge commit and fires CI immediately."
+    diagnosis =
+      "NO CI WILL RUN on this PR#{detail}: GitHub cannot compute a merge commit for it, so it never queues " \
+      "the pull_request workflow and the head SHA has ZERO check-runs. This is NOT a slow CI — waiting can " \
+      "never clear it."
+    return "#{diagnosis} The base branch could not be resolved from the PR, so no commands are given here: " \
+           "read the PR's base on GitHub, then bring it into the branch and resolve any conflicts." if base.empty?
+
+    "#{diagnosis} Fix — run these ONE AT A TIME, because the merge stops if it finds conflicts:\n" \
+      "  git fetch origin\n" \
+      "  git merge origin/#{base}\n" \
+      "If it reports conflicts: resolve them, then `git add -A` and `git commit`. To return the branch to " \
+      "exactly where it started instead, run `git merge --abort`. Once the tree is clean and committed, " \
+      "`git push` and re-run this check — GitHub can then compute the merge commit and CI fires."
   end
 
   # An AUTH/PERMISSION denial — the token is understood and REFUSED, as opposed to a
@@ -349,20 +390,7 @@ module CiStatus
       raw = `gh pr checks #{Shellwords.escape(pr)} --json name,state,bucket 2>&1`.to_s.strip
       # combine, not parse: a bare :none here may be the THIRD STATE (no CI will ever
       # run), and only the view payload can tell the difference.
-      verdict = combine(view, raw)
-      # An UNDETERMINED mergeability is not a verdict — it is a request to look again
-      # (the three-valued rule above). Back off once, re-read BOTH payloads, and only
-      # then let a STILL-undecided merge settle into :ci_less. A transient clears here;
-      # a genuinely stale base does not.
-      return verdict unless verdict[:recheck]
-
-      sleep(recheck_seconds)
-      view = `gh pr view #{Shellwords.escape(pr)} --json #{VIEW_FIELDS} 2>&1`.to_s.strip
-      settled = view_verdict(view)
-      return settled if settled
-
-      raw = `gh pr checks #{Shellwords.escape(pr)} --json name,state,bucket 2>&1`.to_s.strip
-      return combine(view, raw, stable: true)
+      return combine(view, raw)
     end
     parse(raw)
   end
