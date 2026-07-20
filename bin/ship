@@ -1,0 +1,329 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/ship — the fast-lane HANDOFF wrapper: one command from "code done" to
+# `submitted`.
+#
+# Collapses the standing pre-handoff sequence — commit → G1 cert
+# (bin/fast-check) → push → NON-DRAFT PR into `accepted` (body led by the task
+# URL) → record pr_url → DoR verdict (bin/dor-check) → move `submitted` →
+# read-back verify — into one idempotent, resumable command. Its inverse is
+# `bin/task begin`, which collapses the session-start sequence.
+#
+# ORCHESTRATION plus the two guards the handoff seam itself owns. Every spawned
+# gate still runs and still owns its verdict: bin/fast-check certifies (with its
+# root/dirty-tree guards), bin/dor-check closes the DoR gate, bin/task move
+# read-back-verifies the stage write. But the move-to-SUBMITTED path has no
+# claim gate of its own (only move-to-building does), so ship asks two questions
+# BEFORE its first side effect:
+#
+#   * the BUILD-STAGE SEAM — the task must be [building] (or [submitted], a
+#     resume). Ship hands off a build; it never teleports a `designed` task
+#     past the claim/dev-size/baseline stamps the building move records.
+#   * BUILDER OWNERSHIP — the same ClaimLease the build gate enforces: a task a
+#     DIFFERENT live instance holds refuses loudly; take it over first with
+#     `bin/task begin <slug> --steal`, then re-run ship. Session-less runs
+#     degrade claim-free, exactly as `move`/`begin` do.
+#
+# Ship sequences the rest, and skips a step whose OUTCOME is already durably
+# recorded — which is exactly what makes a rerun after a partial failure
+# CONTINUE from where it died instead of duplicating work:
+#
+#   * clean tree            → commit skipped
+#   * fresh cert evidence   → fast-check skipped (fingerprint-bound: ANY edit
+#                             re-arms it — see FastLane.cert_fresh?)
+#   * branch already pushed → push is a no-op
+#   * open PR exists        → repaired in place (`gh pr ready` if draft — the
+#                             known finish --pr trap: a DRAFT PR defers
+#                             reviewers and the sweep skips it — and
+#                             `gh pr edit --base` if mis-based), never duplicated
+#   * pr_url already equal  → record skipped
+#   * already `submitted`   → move skipped; the read-back verify still runs
+#
+# ROOTING: run it from the task's worktree. From anywhere else it re-roots at
+# the task's worktree LOUDLY when that worktree exists on disk (the reader
+# remedy — every gate it then spawns re-verifies the root itself), and refuses
+# when it can't find the task's tree (CertRootGuard).
+#
+# Usage:
+#   bin/ship <task-slug>                     # commit message defaults to the task title
+#   bin/ship <task-slug> -m "Commit message"
+#
+# Test seams (the house pattern — each defaults to the real sibling tool):
+#   SHIP_TASK_BIN         board CLI (default bin/task)
+#   SHIP_FAST_CHECK_BIN   G1 cert runner (default bin/fast-check)
+#   SHIP_DOR_CHECK_BIN    DoR gate (default bin/dor-check)
+#   SHIP_GH_BIN           GitHub CLI (default gh)
+#   SHIP_ROOT             explicit code root — bypasses the root guard (CI/tests)
+#   SHIP_BASE_BRANCH      PR base (default accepted — the ladder's first rung)
+#   SHIP_PROJECTS_DIR     root-guard worktree glob root (tests)
+#
+# Exit code: 0 = task verified `submitted` with an open non-draft PR; 1 = a step
+# failed (fix what it printed, then re-run — ship resumes).
+
+require "json"
+require "optparse"
+require_relative "lib/repo_root"
+require_relative "lib/cert_root_guard"
+require_relative "lib/fast_lane"
+require_relative "lib/full_suite_gate"
+require_relative "lib/session_identity"
+require_relative "../lib/claim_lease"
+
+ROOT = File.expand_path("..", __dir__)
+TASK_BIN = ENV.fetch("SHIP_TASK_BIN", File.expand_path("task", __dir__))
+FAST_CHECK_BIN = ENV.fetch("SHIP_FAST_CHECK_BIN", File.expand_path("fast-check", __dir__))
+DOR_CHECK_BIN = ENV.fetch("SHIP_DOR_CHECK_BIN", File.expand_path("dor-check", __dir__))
+GH_BIN = ENV.fetch("SHIP_GH_BIN", "gh")
+BASE_BRANCH = ENV.fetch("SHIP_BASE_BRANCH", "accepted")
+BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
+# Stages past the seam ship hands off at — ship must never regress one of these.
+PAST_SUBMITTED = %w[reviewed assembled shipped archived].freeze
+
+def die!(msg)
+  warn "ship: #{msg}"
+  exit 1
+end
+
+def say(msg)
+  warn "ship: #{msg}"
+end
+
+options = { message: nil }
+OptionParser.new do |o|
+  o.banner = "Usage: bin/ship <task-slug> [-m MESSAGE]"
+  o.on("-m", "--message MESSAGE", "Commit message (default: the task title)") { |v| options[:message] = v }
+  o.on("-h", "--help", "Show this help") do
+    puts o
+    exit 0
+  end
+end.parse!
+
+slug = ARGV.shift
+die!("usage: bin/ship <task-slug> [-m MESSAGE]") if slug.to_s.strip.empty? || slug.start_with?("-")
+
+# --- the task record ---------------------------------------------------------
+
+# The full task JSON via the board CLI (never a hand-rolled HTTP call — the CLI
+# owns auth and the exit-code contract). Aborts when the record can't be read:
+# every later step keys on it.
+def fetch_task!(slug)
+  out = IO.popen([TASK_BIN, "show", slug, "--json"], &:read)
+  die!("could not read task #{slug.inspect} (#{TASK_BIN} show failed) — is the slug right?") unless $?.success?
+
+  JSON.parse(out)
+rescue JSON::ParserError
+  die!("unparseable task record for #{slug.inspect} from #{TASK_BIN} show --json")
+end
+
+task = fetch_task!(slug)
+devops = task.dig("metadata", "devops") || {}
+stage = task["stage"].to_s
+title = task["title"].to_s
+task_url = "#{BASE_URL}/tasks/#{slug}"
+branch = [devops["branch"], "feat/#{slug}"].find { |v| !v.to_s.strip.empty? }
+
+if PAST_SUBMITTED.include?(stage)
+  say "#{slug} is already [#{stage}] — past the submitted seam; nothing to ship."
+  puts "Task: #{task_url}"
+  exit 0
+end
+
+# --- the build-stage seam ----------------------------------------------------
+# Ship hands off a BUILD; it never starts one. A task that was never claimed at
+# `building` (still `designed`) must walk the seam through `bin/task begin` /
+# `move building` — where the build-claim gate, the dev-size stamp, and the
+# usage baseline live — not be teleported designed→submitted by the handoff
+# wrapper. Asked before any side effect.
+unless %w[building submitted].include?(stage)
+  die!("#{slug} is [#{stage}] — ship hands off a BUILD (building → submitted). " \
+       "Claim it first: bin/task begin #{slug} (or bin/task move #{slug} building), then re-run bin/ship #{slug}.")
+end
+
+# --- builder ownership -------------------------------------------------------
+# The same claim lease the build gate enforces, asked BEFORE the first side
+# effect (commit/push/PR/move): the move-to-submitted path has no claim gate of
+# its own, so without this a second session could hand off — and commit into —
+# a task another live instance is building. Only :held_by_other refuses
+# (unclaimed/expired/corrupt stay fail-open, the build gate's posture); a
+# session-less run degrades claim-free, exactly as `move`/`begin` do. The
+# takeover path is `bin/task begin <slug> --steal`, which durably TRANSFERS the
+# claim — ship deliberately has no --steal of its own: handing off work is
+# never the moment to seize it.
+mover_session = SessionIdentity.identity.first
+unless mover_session.nil?
+  claim = ClaimLease.from_devops(devops)
+  if ClaimLease.evaluate(claim, session: mover_session, nonce: SessionIdentity.nonce(ENV)) == :held_by_other
+    held = claim["claimed_session"].to_s
+    age = ClaimLease.heartbeat_age(claim)
+    die!("task #{slug} is claimed by a DIFFERENT live instance " \
+         "(session …#{held[-4..] || held}, instance #{claim["claim_nonce"]}, last heartbeat ~#{age}s ago, " \
+         "lease TTL #{ClaimLease::DEFAULT_TTL_SECONDS}s). Ship must not hand off another builder's work — " \
+         "take the task over first (bin/task begin #{slug} --steal), then re-run bin/ship #{slug}.")
+  end
+end
+
+# --- rooting -----------------------------------------------------------------
+# An explicit SHIP_ROOT is the deliberate CI/test seam (bypasses the guard, same
+# contract as FAST_CHECK_ROOT). Otherwise root at the cwd's git toplevel and ask
+# the root guard whether that IS the task's tree; ship WRITES (a commit), but
+# unlike a cert writer it re-roots rather than refuses when the task's worktree
+# exists on disk — loudly, and every gate it then runs re-verifies the root from
+# its own cwd, so a wrong re-root cannot survive to a recorded verdict.
+root = ENV["SHIP_ROOT"].to_s.strip
+if root.empty?
+  root = RepoRoot.git_toplevel(Dir.pwd) || Dir.pwd
+  assessment = CertRootGuard.assess(task_bin: TASK_BIN, slug: slug, root: root, devops: devops,
+                                    projects_dir: ENV["SHIP_PROJECTS_DIR"])
+  if assessment
+    resolved = assessment[:resolved_root]
+    die!(assessment[:message]) unless resolved
+
+    say "re-rooting at the task worktree #{resolved} (you ran from #{root})"
+    root = resolved
+  end
+else
+  root = File.expand_path(root)
+end
+
+def git(root, *args)
+  out = IO.popen(["git", "-C", root, *args], err: File::NULL, &:read).to_s.strip
+  [out, $?.success?]
+end
+
+actual_branch, = git(root, "rev-parse", "--abbrev-ref", "HEAD")
+unless actual_branch == branch
+  die!("#{root} has #{actual_branch.inspect} checked out, not the task branch #{branch.inspect} — " \
+       "check the branch out (or finish the rebase) before shipping.")
+end
+
+# --- 1/7 commit --------------------------------------------------------------
+
+git(root, "update-index", "-q", "--refresh") # never commit on stat-stale dirt (a false-dirty index)
+porcelain, = git(root, "status", "--porcelain")
+if porcelain.empty?
+  say "1/7 commit — working tree clean, nothing to commit."
+else
+  message = options[:message].to_s.strip
+  message = title if message.empty?
+  die!("nothing to use as a commit message (no -m and the task has no title)") if message.empty?
+
+  say "1/7 commit — committing #{porcelain.lines.size} changed path(s): #{message.inspect}"
+  _, added = git(root, "add", "-A")
+  die!("git add failed in #{root}") unless added
+  _, committed = git(root, "commit", "-m", message)
+  die!("git commit failed in #{root}") unless committed
+end
+
+# --- 2/7 G1 cert (bin/fast-check) --------------------------------------------
+# Skipped only when the recorded evidence is FRESH for this exact tree — the
+# fingerprint is a git tree hash, so any edit since the cert re-arms this step.
+
+fingerprint = FullSuiteGate.fingerprint(root)
+if FastLane.cert_fresh?(devops["checks_run"], fingerprint)
+  say "2/7 cert — fresh cert evidence already recorded for #{fingerprint.to_s[0, 12]}; skipping bin/fast-check."
+else
+  say "2/7 cert — running bin/fast-check #{slug}"
+  unless system(FAST_CHECK_BIN, slug, chdir: root)
+    die!("bin/fast-check failed — fix the red lane above, then re-run bin/ship #{slug} (it resumes here).")
+  end
+end
+
+# --- 3/7 push ----------------------------------------------------------------
+
+say "3/7 push — git push -u origin #{branch}"
+unless system("git", "-C", root, "push", "-u", "origin", branch)
+  die!("git push failed — resolve (fetch/rebase?) and re-run bin/ship #{slug}.")
+end
+
+# --- 4/7 PR (non-draft, base #{BASE_BRANCH}) ---------------------------------
+
+def gh_capture(root, *args)
+  out = IO.popen([GH_BIN, *args], chdir: root, &:read)
+  [out.to_s, $?.success?]
+end
+
+list_json, listed = gh_capture(root, "pr", "list", "--head", branch, "--state", "open",
+                               "--json", "number,url,isDraft,baseRefName")
+die!("gh pr list failed — is gh authenticated?") unless listed
+
+existing = FastLane.open_pr(list_json)
+if existing
+  number = existing["number"].to_s
+  pr_url = existing["url"].to_s
+  say "4/7 pr — open PR ##{number} already exists (#{pr_url})"
+  if existing["isDraft"]
+    # The known trap this wrapper exists to close: a DRAFT PR defers reviewers
+    # and the qa-release sweep skips it — the task strands. Mark it ready.
+    say "4/7 pr — PR ##{number} is a DRAFT; marking it ready for review."
+    _, ready = gh_capture(root, "pr", "ready", number)
+    die!("gh pr ready #{number} failed") unless ready
+  end
+  if existing["baseRefName"] != BASE_BRANCH
+    say "4/7 pr — PR ##{number} is based on #{existing["baseRefName"].inspect}; retargeting to #{BASE_BRANCH}."
+    _, retargeted = gh_capture(root, "pr", "edit", number, "--base", BASE_BRANCH)
+    die!("gh pr edit #{number} --base #{BASE_BRANCH} failed") unless retargeted
+  end
+else
+  say "4/7 pr — opening a non-draft PR into #{BASE_BRANCH}"
+  body = FastLane.pr_body(task_url, devops["acceptance"])
+  out, created = gh_capture(root, "pr", "create", "--base", BASE_BRANCH, "--head", branch,
+                            "--title", title.empty? ? slug : title, "--body", body)
+  die!("gh pr create failed: #{out.strip}") unless created
+
+  pr_url = out[%r{https://\S+/pull/\d+}].to_s
+  die!("gh pr create succeeded but printed no PR URL:\n#{out}") if pr_url.empty?
+end
+
+# --- 5/7 record pr_url -------------------------------------------------------
+
+if devops["pr_url"].to_s == pr_url
+  say "5/7 record — pr_url already recorded."
+else
+  say "5/7 record — bin/task update #{slug} --pr-url #{pr_url}"
+  die!("recording the PR URL failed (#{TASK_BIN} update)") unless system(TASK_BIN, "update", slug, "--pr-url", pr_url)
+end
+
+# --- 6/7 DoR verdict (bin/dor-check) -----------------------------------------
+# Always runs — the verdict closes the gate; there is no cached skip for it.
+
+say "6/7 dor — running bin/dor-check #{slug}"
+unless system(DOR_CHECK_BIN, slug, chdir: root)
+  die!("bin/dor-check refused — fix everything it flagged, then re-run bin/ship #{slug} (it resumes here).")
+end
+
+# --- 7/7 submit + read-back verify -------------------------------------------
+# bin/task move already refuses a silently-non-persisting write; the fresh show
+# below is ship's own end-to-end read-back so the summary NEVER reports a stage
+# the board doesn't hold.
+
+if stage == "submitted"
+  say "7/7 submit — task already [submitted]; verifying."
+else
+  say "7/7 submit — bin/task move #{slug} submitted"
+  die!("the move to submitted failed — see above; re-run bin/ship #{slug}.") unless system(TASK_BIN, "move", slug, "submitted")
+end
+
+final = fetch_task!(slug)
+final_stage = final["stage"].to_s
+final_pr = final.dig("metadata", "devops", "pr_url").to_s
+unless final_stage == "submitted"
+  die!("read-back verify FAILED: the board shows [#{final_stage}], not [submitted]. Do not hand off; " \
+       "re-run bin/ship #{slug} (if it recurs the board write is failing server-side — check ErrorLog).")
+end
+# Pin the EXACT URL this run recorded — never accept any non-empty value. A
+# stale/foreign pr_url left on the board (with the --pr-url write silently
+# dropped) once passed here as "persisted", and the summary handed review the
+# WRONG PR. Equality subsumes the old blank check.
+unless final_pr == pr_url
+  die!("read-back verify FAILED: the board holds pr_url #{final_pr.empty? ? "(blank)" : final_pr} — " \
+       "not the PR this run recorded (#{pr_url}). The --pr-url write did not land, or a stale/foreign " \
+       "URL sits on the task. Do not hand off; re-run bin/ship #{slug} " \
+       "(if it recurs the board write is failing server-side — check ErrorLog).")
+end
+
+say "shipped to the submitted seam — review picks it up from here."
+puts "Task: #{task_url}"
+puts "PR: #{final_pr}"
+puts "branch: #{branch}"
+puts "stage: submitted (read back verified)"

@@ -236,6 +236,22 @@ If a ship gate is a genuine false negative, the supported override is
 **red** gate SOP. **Never** blank the registry's `test_cmd`/`qa_test_cmd` to get
 past a gate: that silently disarmed this gate while printing "already green".
 
+**The seal retries once through the boot window — expect a possible ~30s
+pause.** The seal runs seconds after the deploy, so its smoke can land inside
+the dyno boot/restart window and fail against a perfectly healthy prod
+(rel-20260720-c06235 red-sealed on `GET /tasks`; the re-run sealed 5/5 green).
+On a first failure the ship prints `🔁 first smoke attempt failed — waiting 30s
+for the dyno boot window, retrying once`, waits **30s**, and re-runs the suite
+**once**. That pause is expected behavior, not a hung ship — do not interrupt
+it. A first-attempt pass never waits. When reading the result:
+
+- **Green with "retried once after 30s boot-window wait"** in the summary — it
+  passed on attempt two. Prod is healthy; the first run caught the boot window.
+- **Red** — the failure **persisted** through the retry. This is a confirmed
+  failure rather than a timing blip, so weigh it accordingly. The seal is still
+  non-blocking and still never auto-rolls-back: the rollback commands print,
+  and you decide.
+
 `ship` records its verdicts as the **G4 Ship gate**
 ([`../../../modules/gates/g4-ship.md`](../../../modules/gates/g4-ship.md)):
 it opens the release's `g4_ship` attempt at the ship gate and closes it

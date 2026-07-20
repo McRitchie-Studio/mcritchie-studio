@@ -393,24 +393,56 @@ alongside apps. The classification lives in `config/release_repos.yml` (read by
 `Release::Repos`): every member is a `:gem` (producer) or an `:app` (consumer).
 Gems and apps are handled differently at both ends of the Deploy workflow:
 
-- **Gem members are PUBLISHED, not app-deployed.** A gem's PR merges into the
-  gem's own repo's `release` branch like any other, but there is no app artifact
-  to deploy — so at **prepare** the conductor skips gem members in the QA-deploy
-  loop. They ride the release as a *record*, and are QA'd indirectly through a
-  consuming app (the consumer's branch is what gets deployed + tested).
-- **Run Deployment processes producer-before-consumer.** `Release#ordered_members`
-  returns members **gems-first** (then apps), honoring `dependencies` within
-  that. `bin/release ship` publishes every gem member to RubyGems first
-  (approval-gated `gem push`, version from the gem's `version_file`), and only
-  then deploys the apps. So a consuming app always builds + deploys against the
-  **just-published** gem version — never ahead of it. If a gem fails to publish,
-  the ship aborts before any app deploys.
+- **Gem members are PUBLISHED, not app-deployed — and published at *prepare*,
+  BEFORE QA** (publish-gems-before-qa). A gem's PR merges into the gem's own
+  repo's `release` branch like any other, but there is no app artifact to
+  deploy. `bin/release prepare` runs the producer-first sequence up front,
+  before the pre-QA gate and any QA deploy — in **two phases**, because a
+  RubyGems push can never be re-pushed: phase 1 validates EVERY swept gem
+  (fail-closed fetch, version parses, stranded-work guard, a swept consumer
+  declares it) and aborts on ANY failure with zero gems published; phase 2
+  then publishes each validated gem's `origin/release` version to RubyGems
+  (skip-if-live) and commits each
+  consumer's `Gemfile.lock` bump onto the consumer's `release` branch — so the
+  pre-QA CI verdict targets the post-bump SHA, QA bundles the **real published
+  gem**, and prod ships the exact tree QA tested. The gem member itself still
+  rides the release as a *record* (no QA deploy of its own); it is QA'd through
+  the consuming app's bumped lock. **The accepted cost:** a publish is
+  irreversible (RubyGems forbids re-pushing a number), so a QA bounce can
+  orphan a published version — the fix bumps past it and the dead number sits
+  on RubyGems, harmless.
+- **The stranded-work guard — an ORDERING invariant.** For each swept gem repo,
+  if `origin/release` is ahead of the last published `v*` tag while the version
+  did **not advance past that tag**, prepare **BLOCKS loudly**, naming the
+  stranded commits and the fix (bump the version past the tag through the gem's
+  own PR, re-run prepare). The comparison is `Gem::Version` semantics, not
+  string equality, so **three** vectors block together: an EQUAL version (the
+  publish silently self-skips "already live" and the commits ride nowhere — the
+  failure mode that once stranded 9 engine commits behind an all-green
+  pipeline), a BACKWARD version (worse: it skips as already-live AND rewrites
+  the consumer pin DOWNWARD, shipping a production downgrade with every gate
+  green), and an UNPARSEABLE version (it cannot prove it advanced, so it fails
+  to the blocking side).
+- **Consumer pins: lock always, constraint only on escape.** Consumers pin
+  RubyGems versions (`gem "studio-engine", "~> 0.10"` — no git/branch refs).
+  The prepare bump always runs `bundle lock --update <gem> --conservative`;
+  it rewrites the Gemfile constraint **only when the published version escapes
+  it** (a two-segment `~>` holds the major, so minor/patch bumps are
+  lock-only). Pure decisions: `Release::ShipSequence.consumer_bump_action` /
+  `.stranded_gem_work?`, `Release::GemfileRepin.version_requirements` /
+  `.constraint_allows?` / `.rewrite_pin`.
+- **Run Deployment stays producer-before-consumer — as the idempotent VERIFY.**
+  `Release#ordered_members` returns members **gems-first** (then apps),
+  honoring `dependencies` within that. `bin/release ship` still walks every gem
+  member before any app deploy: on the happy path each version is already live
+  from prepare (skip + `release → main` collapse), and it remains the real
+  publish backstop for a release prepared before this change. If a gem fails to
+  publish, the ship aborts before any app deploys.
 - **The version lives in the gem's PR.** The version bump (`lib/studio/version.rb`
   for studio-engine, the `.gemspec` for solana-studio) is part of the gem task's
   own PR; `member_plan` reads it for the publish + the board's `💎 gem` badge.
-  Post-publish, consuming apps re-pin `~> x.y` and deploy as their own members
-  (or follow-up tasks). See `docs/agents/modules/deployment.md` →
-  "Releasing a gem (producer-first)" for the operator runbook.
+  See `docs/agents/modules/deployment.md` → "Releasing a gem (producer-first)"
+  for the operator runbook.
 
 This is the ordered `release_slug` from §4.2 ("gem publish → consumer lockfile
 bump → app deploy"), now expressed as first-class release membership rather than
@@ -475,7 +507,7 @@ when it ships. **Bias to action: green tests = go**, because both `accepted` and
 | **submitted** (task) — REVIEW | **Avi** (SUPERVISOR) + PRIMARY/LIGHT experts | Avi (SUPERVISOR, never reviews) → spawns **PRIMARY** + **LIGHT** in parallel | Avi confirms **product-acceptance**, then picks **2 reviewers** from {Shannon=UI · Carl=backend · Jasper=Web3 · Steffon=DevOps/Platform · Alex=Documentation} by **domain fit + a logged, seeded-per-task tiebreak** via **`bin/reviewer-select <task>`**, assigning **1 PRIMARY (deep) + 1 LIGHT** (`ReviewerSelector`, excluding the QA owner so a reviewer never QAs their own change, **the task's builder** so a soul never reviews their own work, **and busy souls** so review never lands on an agent mid-build/review elsewhere — the builder is read from `devops.built_by`, **auto-stamped on the move to building from the soul build-claim actor (`--actor <soul>`) OR the task's assigned `agent_slug`** so a bare `bin/task move <slug> building` records the builder with **no manual flag**, falling back to the `→ building` event actor; **busy souls** come from `bin/reviewer-select --busy a,b,c` and/or `--busy-auto` (a board query of agents on `stage=building` tasks); **KEEP fallback:** when the builder + QA-owner + busy exclusions would leave fewer than two candidates, the least-bad ones are kept so a PRIMARY+LIGHT pair is always returned (the decision/log flags it), and a non-soul/non-pool builder is never reported excluded; the pair + primary/light is recorded on the `submitted→reviewed` `TaskEvent.metadata["reviewers"]` for the avatars UI). Avi then **spawns both the PRIMARY and LIGHT in parallel** as sibling children; the PRIMARY runs the deep review, the LIGHT a focused second read; each confirms DoR **base** tests green, code standards, code smell, scalability, **and acceptance**. No blocker on either → the **supervisor merges the feat PR into `accepted`** (stamping `merged: "accepted"`) and drives the task to `reviewed` ✅, then STOPS — review never touches `release`/`main` and never deploys; the `accepted → release` promotion (next row) is Steffon's; a blocker → `blocked` (rework, with `qa_feedback`) | **G2 Review** (lanes `g2a_primary` + `g2b_light`; the primary's gate-zero = `bin/dor-check <task> --gate-role review`, recorded on the separate `dor_review` gate) — **2 senior approvals** (PRIMARY = Opus on migration/payment/solana/auth); ⛔ one complete `qa_feedback` on fail |
 | **reviewed** ✅ — SWEEP (task) | **Steffon** (Platform Engineer) | DevOps agent *as Steffon* (`qa-release`) | `bin/release prepare` DETECTS every `reviewed` task + any `assembled` straggler off the current RC, ensures a candidate (`Release.current_or_open!`), and SWEEPS each: `gh pr merge` its PR into `release` (SKIPPED when `merged: release/main` — interrupted-run recovery), record membership + `merged: "release"` (`Release::Conductor.sweep!`) — **stage stays `reviewed`**. Honors `dependencies` + producer-first. Nothing detected + nothing active → idempotent no-op. **Bias to action: green tests = go** (`release` reverts cleanly) | deterministic sweep (conflicts surface at PR-merge; a conflicted PR is swept PAST — block-and-move); review gate: only `reviewed`/`assembled` tasks sweep (`--override` = audited `review_bypassed`) |
 | **assembled** (release) — QA | **Steffon** (Platform Engineer) | DevOps agent *as Steffon* (`qa-release`, same run) | After the sweep, the **pre-QA gate** runs the **next tier — integration + an e2e smoke** (registry `qa_test_cmd`) on `origin/release` BEFORE deploying; green → `prepare` deploys it to QA → **Discord QA-deployment note** → on **QA-green** `Release::Conductor.qa_green!` flips swept members `reviewed → assembled` (merged stays `release`) + release `assembled` | **G3 Candidate** (release-grain; spans pre-QA suite → QA boot smokes → post-deploy hooks; closes with the QA-green flip) — deterministic suite; ⛔ regression → **eject the offender** (`bin/release eject <task>` = detach + block + merged cleared; revert its merge commit) — the REST rides the re-run. **`prepare` waits-for-boot** (`/up`-smoke race) and **defers the flip** until QA returns 200 — a failure leaves members `reviewed` for the next self-healing run |
-| **→ shipped** (release) | **Avi**, then ship authority | Avi tests; operator or autonomous kickoff authorizes; conductor deploys | Avi runs the **full local suite (registry `test_cmd`) on the FROZEN ship SHA** (the exact prod code — fixes "shipped ≠ tested"; self-gated when G3 certified that exact SHA + command this run). A QA-only run (`pr-review` → Steffon's `qa-release`) stops here for the operator; Avi's **`production-deploy`** act ships a QA-green release, and Alex's **`full-cycle`** continues with `bin/conductor ship --run`. On ship authority: `bin/release ship` ff's `release → main` per repo (stamping members **`merged: "main"`** as each ff lands — the interrupted-Avi skip signal), deploys → `production_smoke` → **Discord release notes** → members `shipped` (merged stays `main`) | **G4 Ship** (release-grain; spans the frozen-SHA gate → prod deploys → `/up` smokes → hooks → the non-blocking smoke seal) — 🔒 explicit ship authority — after Avi's test confirmation, before deploy; rollback on smoke fail |
+| **→ shipped** (release) | **Avi**, then ship authority | Avi tests; operator or autonomous kickoff authorizes; conductor deploys | Avi runs the **full local suite (registry `test_cmd`) on the FROZEN ship SHA** (the exact prod code — fixes "shipped ≠ tested"; self-gated when G3 certified that exact SHA + command this run). A QA-only run (`pr-review` → Steffon's `qa-release`) stops here for the operator; Avi's **`production-deploy`** act ships a QA-green release, and Alex's **`full-cycle`** continues with `bin/conductor ship --run`. On ship authority: `bin/release ship` ff's `release → main` per repo (stamping members **`merged: "main"`** as each ff lands — the interrupted-Avi skip signal), deploys → `production_smoke` → **Discord release notes** → members `shipped` (merged stays `main`) | **G4 Ship** (release-grain; spans the frozen-SHA gate → prod deploys → `/up` smokes → hooks → the non-blocking smoke seal, which retries once after 30s through the dyno boot window before recording red) — 🔒 explicit ship authority — after Avi's test confirmation, before deploy; rollback on smoke fail |
 
 Clarifications:
 
@@ -859,25 +891,44 @@ ONE deterministic verb — **`bin/release prepare --yes [--task SLUG ...]
    semantics; `--override` = the audited `review_bypassed` bypass). The sweep
    records the reviewed→assembled intent, so assembly duration caches measure
    from the sweep to the QA-green flip.
-4. **Pre-QA gate.** Each app's registry **`qa_test_cmd`** (the integration +
+4. **Publish gem members + bump consumer locks (producer-first, BEFORE the
+   gate — validate ALL, then publish).** Phase 1 preflights EVERY swept **gem**
+   member before the first irreversible push: fail-closed `origin/release`
+   fetch (a stale ref must never drive a publish), the `version_file` parses,
+   the **stranded-work guard** (`origin/release` ahead of the last `v*` tag
+   with an unbumped `version_file` → BLOCK, naming the commits), build gated
+   on tracked-dirty gem primaries exactly like ship's preflight, and a swept
+   consuming app whose `origin/release` Gemfile declares the gem (a gem-only
+   candidate would otherwise assemble QA-green untested). ANY failure aborts
+   with ZERO gems published. Phase 2 publishes each validated gem's
+   `origin/release` version to RubyGems (skip-if-live), then for each consumer
+   app: `bundle lock --update <gem> --conservative` in the ship workspace at
+   the release tip — rewriting the Gemfile pin only when the version escapes
+   it — and **commit + push the bump onto `origin/release`**,
+   fast-forward-checked behind its own fail-closed fetch. The lock commit
+   lands BEFORE the gate resolves `origin/release`, so the CI verdict targets
+   the post-bump SHA and QA tests the real published gem
+   (`validate_gems_for_qa` / `publish_gems_for_qa` / `bump_consumer_locks_for_qa`).
+5. **Pre-QA gate.** Each app's registry **`qa_test_cmd`** (the integration +
    e2e-smoke tier `prepare` owns — `Release::STEP_TEST_TIERS`) runs on
    `origin/release` BEFORE anything deploys. A regression → **eject the
    offender** (`bin/release eject <task> --feedback "…"` — detach + block +
    `merged` cleared — then revert its merge commit on `release`) and re-run: the
    sweep self-heals and the REST of the RC rides on. Unset `qa_test_cmd` = the
    repo self-gates (skip).
-5. **Deploy QA.** Auto-records the Steffon QA intent for every member
+6. **Deploy QA.** Auto-records the Steffon QA intent for every member
    (`Release::Conductor.record_deploy_intents!`, append-only + idempotent) so
    /deployments shows Steffon QA-ing live; runs the per-app **merge-forward
    guard** (keeps each repo's `release` ahead of `main`); then `bin/qa-server
    deploy <qa_app> origin/release` per **app** member — **gem members are
-   skipped** (no app artifact; they ride the record and are QA'd via a consuming
-   app). Records `release.qa_url` + per-repo QA SHAs, waits for boot
+   skipped** (no app artifact; already published at step 4, QA'd via the
+   consuming app's bumped lock). Records `release.qa_url` + per-repo QA SHAs,
+   waits for boot
    (`wait_for_boot` polls `/up`), then runs each member's declared
    `devops.post_deploy_cmd` on its **QA heroku app** (`heroku run`, records the
    `[post-deploy]` outcome, **aborts on non-zero** — the `{task, app, cmd}` plan
    is the unit-tested `Release::PostDeploy.plan`).
-6. **QA-green flip.** Only after every QA dyno boots AND every post-deploy hook
+7. **QA-green flip.** Only after every QA dyno boots AND every post-deploy hook
    is green: `Release::Conductor.qa_green!` flips the swept members `reviewed →
    assembled` (`merged` stays `"release"`) and the RC assembling→assembled. **A
    QA failure flips NOTHING** — members stay `reviewed`, the RC stays
@@ -920,12 +971,15 @@ ship **auto-records the Avi → `shipped` intent** for every member
 the whole deploy instead of an empty dashed ship slot until `ship!` lands (the
 2026-06-25 incident). Append-only + idempotent (`ship!` supersedes it; a
 partial-ship abort leaves it open — correct, Avi is still shipping — and a re-run
-reuses it). **Producer-first:** before any app deploy, it publishes every
-**gem member** to RubyGems in order — for each it prints the gem + target
-version and asks `Publish <repo> <version> to RubyGems?` (approval-gated; honors
-`--yes` / `--dry-run`), runs the gem's build (studio-engine: `bin/release-check
---build`; otherwise `gem build <gemspec>`), `gem push`es the artifact, and tags
-`v<version>` in the gem repo. A build/push failure **aborts the ship** before any
+reuses it). **Producer-first:** before any app deploy, it walks every
+**gem member** in order. On the happy path `prepare` already published each
+version BEFORE QA (publish-gems-before-qa), so this is the **idempotent
+verify** — already-live → skip, then the `release → main` collapse. When a
+version is NOT yet live (a release prepared before the prepare-side publish,
+or a version bumped after QA froze), it still publishes for real: the gem's
+build (studio-engine: `bin/release-check --build`; otherwise `gem build
+<gemspec>`), `gem push`, and a `v<version>` tag in the gem repo. A build/push
+failure **aborts the ship** before any
 app deploys, so apps never deploy against an unpublished gem. Then for the apps
 it fast-forwards each repo's `main` up to `release` (so `release` collapses into
 `main`), pushes origin — stamping that repo's members **`merged: "main"`** as

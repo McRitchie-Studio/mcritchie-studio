@@ -4,9 +4,10 @@
 
 This is Steffon's `qa-release` SOP. It is the self-healing release prepare sweep:
 detect reviewed work and release stragglers, promote `accepted → release` via ONE
-batch PR per repo (review already merged each feat PR onto `accepted`), run the
-pre-QA gate, deploy QA, and flip members to `assembled` only on QA-green.
-`qa-deploy` is the legacy name for this same act.
+batch PR per repo (review already merged each feat PR onto `accepted`), publish
+gem members + bump consumer locks (producer-first, before anything tests or
+deploys), run the pre-QA gate, deploy QA, and flip members to `assembled` only on
+QA-green. `qa-deploy` is the legacy name for this same act.
 
 ## Scope
 
@@ -114,7 +115,30 @@ bin/release prepare --yes
    with no `merged` stamp (`merged: ""`) is a HELD anomaly — review never landed
    its feat PR on `accepted` — so it is warned and left `reviewed` (re-review to
    heal), never swept onto the RC.
-4. Run the pre-QA gate on `origin/release`. **GitHub CI's conclusion for that
+4. **Publish gem members + bump consumer locks — BEFORE the gate and QA**
+   (producer-first, in two phases — a RubyGems push can never be re-pushed).
+   Phase 1 **preflights EVERY swept gem before the first push**: a fail-closed
+   fetch of `origin/release` (a stale ref must never drive an irreversible
+   decision), the `version_file` parses, the **stranded-work guard** —
+   `origin/release` ahead of the last published `v*` tag while the version did
+   NOT advance past that tag (compared with `Gem::Version` semantics, so
+   **equal, backward, and unparseable versions all block**; a backward version
+   would otherwise "skip as already live" and rewrite consumers DOWNWARD into a
+   production downgrade with every gate green). The fix is a version bump past
+   the tag through the gem's own PR. Plus a
+   swept consuming app whose Gemfile declares the gem (a gem-only candidate,
+   or a gem no swept consumer bundles, would assemble QA-green untested). ANY
+   failure aborts loudly with every finding named and **zero gems published**.
+   Phase 2 then publishes each validated gem's `origin/release` version to
+   RubyGems (skip-if-live, so re-runs are safe) and commits each consumer
+   app's `Gemfile.lock` bump (`bundle lock --update <gem> --conservative`; the
+   Gemfile pin is rewritten only when the new version escapes it) onto the
+   consumer's `origin/release`. The pre-QA gate and the QA deploy then read
+   the post-bump SHA, so QA tests the real published gem and prod ships the
+   exact tree QA tested. Note: a publish is irreversible — a QA bounce can
+   orphan a published version; the fix bumps past it (a dead number on
+   RubyGems is harmless).
+5. Run the pre-QA gate on `origin/release`. **GitHub CI's conclusion for that
    exact SHA IS the verdict** (DevOps v2 Phase 3 — the local isolated-workspace
    suite is deleted at this gate; nothing runs on your machine): the gate reads
    the SHA's check-runs, **polls** a not-yet-concluded run (a just-merged tip is
@@ -124,14 +148,15 @@ bin/release prepare --yes
    tree** (the live batch-PR merge re-runs a tree the accepted seam already
    greened); a credited pass names its source in the gate note and changes
    nothing else — red, pending-evidence, and diverged trees (a gem sweep's
-   lock-bump commit) poll exactly as always. On green it RECORDS what it
-   certified (SHA + command + CI verdict), which is the only thing the G4 ship
-   gate will accept as grounds to skip its own gate. A red gate, and what to do
-   about it (hint: **do not** blank the registry's `qa_test_cmd` — that silently
-   disarms the production gate):
+   lock-bump commit from step 4) poll exactly as always. On green it RECORDS
+   what it certified (SHA + command + CI verdict), which is the only thing the
+   G4 ship gate will accept as grounds to skip its own gate. A red gate, and
+   what to do about it (hint: **do not** blank the registry's `qa_test_cmd` —
+   that silently disarms the production gate):
    [`../../../modules/gates/g3-candidate.md`](../../../modules/gates/g3-candidate.md).
-5. Deploy QA and wait for boot.
-6. Flip members from `reviewed` to `assembled` only after QA is green.
+6. Deploy QA and wait for boot (gem members are not QA-deployed — they were
+   published at step 4 and are QA'd through the consuming app's bumped lock).
+7. Flip members from `reviewed` to `assembled` only after QA is green.
 
 `prepare` also narrates the release's **stage timeline** as it goes — its
 conductor checkpoints (`assemble_release started/completed`, `deploy_qa
@@ -213,6 +238,7 @@ must not reflexively re-run. Each abort names its own case and its own fix:
 
 | Abort | Fix FIRST | Then |
 |---|---|---|
+| **STRANDED GEM WORK** (gem `origin/release` ahead of its last `v*` tag, version not advanced past it — unbumped, BACKWARD, or unparseable) | Bump the gem's version through its own PR PAST the tag the abort names (it also names the stranded commits). A **backward** version — the abort says `DOWNGRADE` — means a version conflict was resolved the wrong way on a merge into `release`; fix the version file, don't force it through | re-run `prepare`; nothing was published or deployed |
 | **Pre-QA gate red — a member REGRESSION** | `bin/release eject <task> --feedback "<failing evidence>"`, then revert its merge commit on `release` (the abort prints the guidance) — as the eject step above says | re-run `prepare`; the rest of the RC rides |
 | **Pre-QA gate red — ENV/toolchain** (unsatisfied bundle, Postgres down, Ruby divergence) | **Nothing to eject or revert.** Fix the environment exactly as the abort names it | re-run `prepare` |
 | **QA deploy / boot FAILED** | Fix the boot failure (the summary prints the `bin/qa-server deploy …` retry); eject the member if it is the cause | re-run `prepare` **once QA boots** |
@@ -226,7 +252,7 @@ are to eject it or to fix it forward — never to re-run harder.
 
 An unfinished RC is a candidate whose members are **merged but never assembled** —
 the sweep promoted `accepted → release` (step 3) but never reached the `assembled`
-flip (step 6).
+flip (step 7).
 Nothing is corrupt, but nothing is finished, and it is invisible unless you look:
 
 ```bash

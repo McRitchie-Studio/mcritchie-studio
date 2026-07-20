@@ -49,6 +49,19 @@
 #     certify; both orders are safe. See lib/cert_evidence.rb. )
 #   ( --post-deploy-cmd: the release pipeline runs it on the deployed app after
 #     boot — QA on `bin/release prepare`, prod on `ship`. Must be idempotent. )
+#   bin/task begin --title T [--repo APP] [--steal] [same flags as create]
+#   bin/task begin <slug> [--steal]                  # resume a partial begin
+#     ( the fast-lane SESSION-START wrapper: create + agent-worktree new +
+#       bind-task + move building + session-preflight in ONE command, printing
+#       the worktree path, port, and task URL. The slug is derived from the
+#       title CLIENT-side and passed explicitly, so rerunning the same begin —
+#       or `begin <slug>` — RESUMES after a partial failure instead of minting
+#       a duplicate task. Orchestration only: the claim gate, preflight, and
+#       every later gate keep their own semantics — a resume of an already-
+#       `building` task runs the SAME build-claim gate the move applies, so a
+#       task a DIFFERENT live instance holds refuses before any worktree step;
+#       --steal overrides it exactly as it does on `move`, and is forwarded to
+#       the child `move building` on the fresh path. bin/ship is the handoff twin. )
 #   bin/task update <slug> [same flags as create]   # merges into existing devops
 #   bin/task move <slug> <stage>                     # designed|building|submitted|reviewed|assembled|shipped|blocked|archived
 #     [--model M] [--tokens-in N] [--tokens-out N] [--cost D] [--actor A] [--dev-size S] [--steal]
@@ -125,6 +138,9 @@ require_relative "../lib/feature_marker"
 require_relative "lib/task_board"
 require_relative "lib/session_identity"
 require_relative "lib/projects_root"
+require_relative "lib/bin_helpers"
+require_relative "lib/cert_root_guard"
+require_relative "lib/fast_lane"
 
 BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
 SHINY_EMOJI = "✨"
@@ -254,7 +270,7 @@ end
 # WRITES a fresh parseable lease via ClaimLease.renewed — a reversible act that
 # heals the corrupted record — whereas reclaiming destroys a desk, which heals
 # nothing. Same disposition, opposite stakes.
-def enforce_claim_gate!(slug, devops, mover_session, steal:, task: nil)
+def enforce_claim_gate!(slug, devops, mover_session, steal:, task: nil, steal_hint: nil)
   claim = ClaimLease.from_devops(devops)
   decision = ClaimLease.evaluate(claim, session: mover_session, nonce: claim_nonce)
   return if decision != :held_by_other || steal
@@ -269,7 +285,9 @@ def enforce_claim_gate!(slug, devops, mover_session, steal:, task: nil)
   # --steal is made on evidence instead of on a green dot.
   warn!("     #{progress_line(task)}") if task
   warn!("   Another terminal looks active on this task. To take it over anyway, re-run with --steal:")
-  warn!("     bin/task move #{slug} building --steal")
+  # The hint names the caller's OWN command (`begin` passes its resume form) so
+  # the operator re-runs the path they were on, not a different one.
+  warn!("     #{steal_hint || "bin/task move #{slug} building --steal"}")
   exit 1
 end
 
@@ -935,6 +953,30 @@ def verify_merged_persisted!(slug, expected)
   exit 1
 end
 
+# --- Fast lane: `begin` ------------------------------------------------------
+# The task record for `begin`'s resume decision: the data on 2xx, nil on the
+# board's POSITIVE "task not found" (create it), die on everything else — a
+# failed read must never be read as "no such task" (that is the same contract
+# task_not_found_response? guards for the worktree reclaim path).
+def fetch_task_for_begin(slug)
+  res = TaskBoard.request(:get, "/api/v1/tasks/#{slug}", base_url: BASE_URL, token: token)
+  parsed = TaskBoard.parse_body(res)
+  return parsed["data"] if res.code.to_i.between?(200, 299)
+  return nil if task_not_found_response?(res, parsed)
+
+  die!("GET /api/v1/tasks/#{slug} -> #{res.code}: #{parsed["error"] || res.body}")
+end
+
+# One begin step that shells a tool: narrate, run, die with a RESUME hint on
+# failure — rerunning `bin/task begin <slug>` continues from the failed step.
+def begin_step!(label, slug, *cmd, chdir: nil)
+  warn!("begin #{label} — #{cmd.join(" ")}#{chdir ? " (from #{chdir})" : ""}")
+  opts = chdir ? { chdir: chdir } : {}
+  return if system(*cmd, **opts)
+
+  die!("#{label} failed — fix what it printed above, then re-run: bin/task begin #{slug}   (it resumes).")
+end
+
 cmd = ARGV.shift || "help"
 case cmd
 when "list"
@@ -1008,6 +1050,122 @@ when "create"
   seed_usage_baseline(task["slug"]) if task.is_a?(Hash) && task["slug"]
   write_feature_marker(task) unless no_claim
   print_task(task)
+when "begin"
+  # The fast-lane SESSION-START wrapper: create → worktree → bind → claim →
+  # preflight, one command, idempotent at every seam. Orchestration ONLY — the
+  # create API's naming discipline, the worktree allocator, the build-claim
+  # gate, and session-preflight all keep their own semantics; `begin` sequences
+  # them and skips whatever a previous partial run already landed. The claim
+  # gate holds on BOTH paths: a fresh/designed task rides the explicit child
+  # `move building` (which enforces it), and a resume of an already-`building`
+  # task runs the SAME gate inline below — a resume must never bypass a live
+  # foreign build claim. bin/ship is the handoff twin at the other end.
+  usage = "usage: bin/task begin --title \"Three To Five Words\" [--repo APP] [--steal] [create flags]  |  bin/task begin <slug> [--steal]"
+  # --steal: the house build-claim override, same meaning as on `move` — take
+  # over a task a DIFFERENT live instance holds. Honored by the resume gate
+  # below and forwarded to the child `move building`. Stripped before
+  # parse_flags (create's --no-claim pattern) so it never rides into the body.
+  steal = !ARGV.delete("--steal").nil?
+  positionals, scalars, lists, top = parse_flags(ARGV, context: "begin")
+  die!(usage) if positionals.size > 1
+  # The resume key: an explicit --slug, the positional slug of a prior begin, or
+  # the slug the board WOULD derive from the title (FastLane.derive_slug mirrors
+  # Task#generate_slug's parameterize) passed explicitly so client and server
+  # agree — rerunning the same begin finds its own task instead of a suffixed twin.
+  slug = [top["slug"], positionals.first, FastLane.derive_slug(top["title"])].find { |v| !v.to_s.strip.empty? }
+  die!(usage) if slug.to_s.empty?
+
+  task = fetch_task_for_begin(slug)
+  if task.nil?
+    die!("no task #{slug.inspect} to resume — pass --title to create one") unless top["title"]
+    scalars["kind"] = "feature" unless scalars.key?("kind")
+    devops = stamp_session(build_devops({}, scalars, lists))
+    body = top_body(top.merge("slug" => slug))
+    body["devops"] = devops unless devops.empty?
+    task = api(:post, "/api/v1/tasks", body)["data"]
+    seed_usage_baseline(task["slug"]) if task.is_a?(Hash) && task["slug"]
+    write_feature_marker(task)
+    warn!("begin 1/5 task — created #{slug} [designed]")
+  else
+    warn!("begin 1/5 task — #{slug} already exists [#{task["stage"]}]; resuming")
+  end
+
+  stage = task["stage"].to_s
+  unless %w[designed building].include?(stage)
+    die!("#{slug} is [#{stage}] — begin only starts a designed/building task. " \
+         "Pick a different title (or --slug) for new work; a #{stage} task is past the build seam.")
+  end
+
+  dv = task.dig("metadata", "devops") || {}
+
+  # THE RESUME CLAIM GATE. An already-`building` task skips the child `move
+  # building` below — which is where the build-claim gate lives — so a bare
+  # resume once continued a task ANOTHER live instance owned (the review-blocked
+  # build-ownership hole). Run the SAME gate here, and run it BEFORE the
+  # worktree steps so a foreign-held desk is refused before begin touches it:
+  # :held_by_other refuses loudly (holder + progress named) unless --steal;
+  # unclaimed / expired / corrupt stay fail-open exactly as the move's gate
+  # treats them (the 4/5 re-claim writes the fresh, healing lease). No session
+  # identity → no gate and no claim, mirroring `move`'s plain-shell degrade.
+  mover_session = session_identity.first
+  if stage == "building" && !mover_session.nil?
+    enforce_claim_gate!(slug, dv, mover_session, steal: steal, task: task,
+                        steal_hint: "bin/task begin #{slug} --steal")
+  end
+
+  app = [(lists["repositories"].first if lists.key?("repositories")), Array(dv["repositories"]).first,
+         "mcritchie-studio"].find { |v| !v.to_s.strip.empty? }
+  worktree_slug = [dv["worktree_slug"], slug].find { |v| !v.to_s.strip.empty? }
+  worktree_bin = BinHelpers.bin_for("TASK_BEGIN_WORKTREE_BIN", "agent-worktree")
+  # agent-worktree `new` is idempotent (an existing desk is reused) and `bind-task`
+  # re-binds safely — `new` does NOT auto-bind, which is why begin welds them.
+  begin_step!("2/5 worktree", slug, worktree_bin, "new", app, worktree_slug)
+  begin_step!("3/5 bind", slug, worktree_bin, "bind-task", app, worktree_slug, slug)
+
+  if stage == "building"
+    if mover_session.nil?
+      warn!("begin 4/5 claim — already [building]; no session identity, leaving the claim as-is")
+    else
+      # The gate above admitted this instance — now WRITE the claim so ownership
+      # durably lands on it: a --steal transfers it, an expired/corrupt lease is
+      # adopted (and healed), our own lease is renewed. Same read-merge-write as
+      # `move building` and `heartbeat` — a FRESH read so bind-task's writes are
+      # not clobbered — plus the marker + usage seed the move path stamps, so the
+      # statusline heartbeat renews the new holder's lease instead of letting a
+      # stolen claim silently lapse back after the TTL.
+      current = api(:get, "/api/v1/tasks/#{slug}")["data"] || {}
+      merged = stamp_session(current.dig("metadata", "devops") || {})
+      merged.merge!(ClaimLease.renewed(session: mover_session, nonce: claim_nonce))
+      api(:patch, "/api/v1/tasks/#{slug}", { "devops" => merged })
+      seed_usage_baseline(slug)
+      write_feature_marker(current.merge("metadata" => { "devops" => merged }))
+      warn!("begin 4/5 claim — already [building]; claim renewed for this instance")
+    end
+  else
+    # An explicit child `move building` so the claim lease, --dev-size stamp,
+    # usage-baseline seed, and read-back verify all ride the ONE existing path.
+    move_cmd = [File.expand_path(__FILE__), "move", slug, "building"]
+    move_cmd += ["--dev-size", top["dev_size"]] if top["dev_size"]
+    move_cmd << "--steal" if steal
+    begin_step!("4/5 claim", slug, *move_cmd)
+  end
+
+  worktree_dir = CertRootGuard.worktree_hint(worktree_slug, ENV["TASK_BEGIN_PROJECTS_DIR"])
+  die!("worktree #{worktree_slug.inspect} not found on disk after allocation — check bin/agent-worktree output") if worktree_dir.nil?
+  preflight_bin = BinHelpers.bin_for("TASK_BEGIN_PREFLIGHT_BIN", "session-preflight")
+  begin_step!("5/5 preflight", slug, preflight_bin, slug, chdir: worktree_dir)
+
+  context = begin
+    JSON.parse(File.read(File.join(worktree_dir, ".agent-context.json")))
+  rescue StandardError
+    {}
+  end
+  puts "#{app} · #{slug} · #{BASE_URL}/tasks/#{slug}"
+  puts "worktree: #{worktree_dir}"
+  puts "port: #{context["app_port"]}" if context["app_port"]
+  puts "url: #{context["local_url"]}" if context["local_url"]
+  puts "task: #{BASE_URL}/tasks/#{slug}"
+  puts "next: build in the worktree, then hand off with: bin/ship #{slug}"
 when "update"
   usage = "usage: bin/task update <slug> [flags]"
   slug = positional!(ARGV.shift || die!(usage), usage)

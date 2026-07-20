@@ -741,6 +741,30 @@ class CertOrphanGuardTest < Minitest::Test
     File.exist?(counter) ? File.read(counter).strip.to_i : 0
   end
 
+  # VIRTUAL time for the settle loop — the fix for a whole family of false reds.
+  #
+  # These tests used to assert on `Time.now` deltas, which does not measure this loop;
+  # it measures the BOX. Under a full-suite run with sibling agent sessions on the same
+  # machine the clean-DB fast path measured 1.32s against a `< 1s` bound and red-failed
+  # a cert whose code was correct — three times on one task, ~45 minutes of cert time.
+  # The reverse error was live too: on an idle box a `< 1s` bound would have waved
+  # through a 0.5s sleep the fast path must never take.
+  #
+  # So the clock is injected instead. `sleeper` records each requested duration AND
+  # advances the clock by it, so the loop's real deadline arithmetic runs unchanged
+  # while the test spends no wall time and reads nothing machine-global. Assert on
+  # `slept` — the sleeps ARE the property.
+  def virtual_time
+    now = 0.0
+    slept = []
+    clock = -> { now }
+    sleeper = lambda do |seconds|
+      slept << seconds
+      now += seconds
+    end
+    [clock, sleeper, slept]
+  end
+
   def test_settle_off_takes_the_first_answer_and_never_waits
     # The default for every verdict that did NOT just reap our own suite. Anything alive
     # on our test DB then is somebody ELSE's, and a stranger gets NO grace period — it
@@ -761,9 +785,11 @@ class CertOrphanGuardTest < Minitest::Test
     # backend from probe #1 and the cert refused on its own corpse.
     Dir.mktmpdir do |dir|
       psql, counter = psql_stub(dir, linger_calls: 1)
+      clock, sleeper, _slept = virtual_time
 
       backends = CertOrphanGuard.settle_backends("postgres://x@localhost/#{DB}", psql: psql,
-                                                 settle: true, grace: 2.0)
+                                                 settle: true, grace: 2.0,
+                                                 clock: clock, sleeper: sleeper)
 
       assert_empty backends, "our own reaped suite's backend closes — it must not be reported as a stranger"
       assert_operator psql_calls(counter), :>, 1, "the grace must RE-PROBE; one probe means the loop never ran"
@@ -777,31 +803,40 @@ class CertOrphanGuardTest < Minitest::Test
     # It waits, it re-probes, and then it names what is STILL there.
     Dir.mktmpdir do |dir|
       psql, counter = psql_stub(dir, linger_calls: 99)
+      clock, sleeper, slept = virtual_time
 
-      started  = Time.now
       backends = CertOrphanGuard.settle_backends("postgres://x@localhost/#{DB}", psql: psql,
-                                                 settle: true, grace: 0.6)
-      elapsed = Time.now - started
+                                                 settle: true, grace: 0.6,
+                                                 clock: clock, sleeper: sleeper)
 
       assert_equal [77_777], backends.map { |b| b[:pid] }, "a session that never closes is STILL reported"
       assert_operator psql_calls(counter), :>, 1, "it re-probed before giving its verdict"
-      assert_operator elapsed, :<, 5, "and the wait is BOUNDED by the grace — a cert may not hang here"
+      # Bounded by the grace plus at most ONE sleep quantum — the loop tests the deadline
+      # BEFORE sleeping, so it can overshoot by one 0.2s step and no more. The old
+      # `elapsed < 5` was eight times looser than the real bound AND load-dependent.
+      assert_operator slept.sum, :<, 0.6 + 0.2, "the wait is BOUNDED by the grace — a cert may not hang here"
     end
   end
 
   def test_a_clean_db_never_sleeps_even_with_settle_on
     # The fast path: nothing to settle, so nothing to wait for. A 2s tax on every clean
     # cert would be paid forever by every agent in the fleet.
+    #
+    # THE FALSE RED THIS FILE IS NAMED FOR. This assertion used to read `elapsed < 1`
+    # off the wall clock, so it passed or failed on how busy the OPERATOR'S BOX was:
+    # measured at 0.3s alone and 1.32s under a full-suite run with sibling sessions
+    # live, it red-failed correct certs. `slept` asserts the same claim — "never paid
+    # the grace" — against this loop alone, and is immune to every other process.
     Dir.mktmpdir do |dir|
       psql, counter = psql_stub(dir, linger_calls: 0)
+      clock, sleeper, slept = virtual_time
 
-      started  = Time.now
-      backends = CertOrphanGuard.settle_backends("postgres://x@localhost/#{DB}", psql: psql, settle: true)
-      elapsed = Time.now - started
+      backends = CertOrphanGuard.settle_backends("postgres://x@localhost/#{DB}", psql: psql,
+                                                 settle: true, clock: clock, sleeper: sleeper)
 
       assert_empty backends
       assert_equal 1, psql_calls(counter), "one probe answered it; do not go round the loop"
-      assert_operator elapsed, :<, 1, "a clean DB must not pay the grace"
+      assert_empty slept, "a clean DB must not pay the grace — not one sleep"
     end
   end
 end
