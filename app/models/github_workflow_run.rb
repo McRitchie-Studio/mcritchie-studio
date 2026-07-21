@@ -19,20 +19,11 @@ class GithubWorkflowRun < ApplicationRecord
   # (which run's SHA to fold) key on.
   CI_WORKFLOW = "CI"
 
-  # The GitHub webhook events that mean "a deployment is waiting for a human". A
-  # standard environment with required reviewers fires `deployment_review`; a
-  # custom (GitHub App) protection rule fires `deployment_protection_rule`. Both
-  # carry `environment` + `workflow_run`, so the ingest job handles them together.
-  PENDING_REVIEW_EVENTS = %w[deployment_review deployment_protection_rule].freeze
-
   validates :repo, :run_id, :status, presence: true
   validates :run_id, uniqueness: true
 
   scope :for_sha, ->(sha) { where(head_sha: sha) }
   scope :for_repo, ->(full_name) { where(repo: full_name) }
-  # Runs blocked on an operator approval — the read surface for the pending-approval
-  # panel state and its Discord nudge.
-  scope :pending_approval, -> { where.not(pending_environment: nil) }
 
   # Push the refreshed Actions panel to every live /deployments viewer whenever a
   # run is upserted. Delegates to the broadcaster, itself wrapped in
@@ -63,13 +54,6 @@ class GithubWorkflowRun < ApplicationRecord
 
   def terminal?
     status == "completed"
-  end
-
-  # True while this run is blocked on an operator approving a deployment to a
-  # protected environment. Orthogonal to `status` — the run is mid-flight
-  # (in_progress) and simultaneously waiting on a human.
-  def pending_approval?
-    pending_environment.present?
   end
 
   private

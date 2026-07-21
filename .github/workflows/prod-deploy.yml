@@ -1,12 +1,14 @@
 # Phase 2 (DevOps v2) — Production deploy, moved into GitHub Actions.
-# Runs only once the `production` Environment (+ required reviewer = you) and
-# HEROKU_API_KEY secret exist (see PHASE2-PLAN.md).
+# Runs under the `production` Environment (for HEROKU_API_KEY secret scoping and
+# the deployment history). The required-reviewer approval was REMOVED on
+# 2026-07-20 (task remove-prod-deploy-approval), so a dispatched run now deploys
+# straight through with no manual click.
 #
 # workflow_dispatch, NOT push:[main]: the ship's `release -> main` ref-push
 # (bin/release.rb push_frozen_main) would otherwise SELF-FIRE a prod deploy, and
-# ci.yml already runs on push:[main]. Dispatch also means a human must click "Run"
-# which, with the production Environment's required reviewer, IS the operator
-# ship-confirm that replaced the local interactive prompt.
+# ci.yml already runs on push:[main]. The operator ship-confirm is now the act of
+# launching `bin/release ship` (production-deploy SOP) plus its `--yes` guard —
+# not a second click on this run.
 name: Production Deploy
 
 on:
@@ -26,7 +28,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: production    # required-reviewer here = the operator ship-confirm
+    environment: production    # scopes HEROKU_API_KEY + deploy history (no required reviewer — see header)
     steps:
       - name: Checkout the frozen SHA (full history)
         uses: actions/checkout@v7

@@ -47,6 +47,9 @@ class DeploymentsGithubActionsTest < ActionDispatch::IntegrationTest
     # Short SHA (7 chars) is shown, not the full 40.
     assert_select "[data-test='github-actions-run'] code", text: "abcdef1"
     assert_select "[data-test='github-actions-run']", text: /feat\/webhook-push-not-poll/
+
+    # Every row is a whole-row anchor carrying a visible "View on GitHub" affordance.
+    assert_select "a[data-state='passed'] [data-test='github-actions-view-run']", text: /view on github/i
   end
 
   test "[integration] shows only the most recent run per workflow" do

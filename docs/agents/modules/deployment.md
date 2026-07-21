@@ -266,8 +266,10 @@ bin/qa-server deploy rolio origin/release --yes
 
 QA deploys are external writes, but they are not production deploys. They should
 use QA Heroku apps only, with production-like Rails boot and QA-safe config.
-Production deploy remains a separate explicit approval after Mr. McRitchie
-reviews the QA URL.
+Production deploy remains a separate, explicit ship decision Mr. McRitchie makes
+after he reviews the QA URL — a human gate in the pipeline (ship-authority), not
+an automated GitHub Environment reviewer rule. That automated rule and its in-app
+approval subsystem were removed 2026-07-20 (see the GitHub Actions panel section).
 
 Production deploy conductors should send Release Notes through McRitchie
 Studio's authenticated task-board API after successful production verification:
@@ -351,7 +353,7 @@ If deployment changes a provider, domain, callback URL, env var, or local port, 
 - the app README/runbook
 - any provider-specific docs under the app's `docs/`
 
-## GitHub Actions panel + prod-deploy approval gate
+## GitHub Actions panel + prod-deploy (approval subsystem removed 2026-07-20)
 
 `/deployments` carries a live GitHub Actions panel (`_github_actions_panel`) —
 the latest run per workflow (CI / QA Deploy / Production Deploy), status-pilled
@@ -371,44 +373,31 @@ Each `CiCheckJob` upsert then morph-broadcasts the refreshed bar to the task car
 the Next Release G3 slot over Turbo Streams, so the board's CI progress bars **tick
 up live with no reload** as each check passes.
 
-**Prod-deploy approval gate.** When a run reaches the `production` environment's
-required-reviewer gate it stamps `pending_environment` on the run, so the panel
-shows an amber **awaiting approval** row and nudges Discord (see below). Admins
-get an **Approve deploy** button that POSTs `/deployments/:run_id/approve`
-(`GithubDeploymentsController`, admin-gated). The controller reads the run's
-pending deployments and approves them via GitHub
-`POST /repos/{owner}/{repo}/actions/runs/{run_id}/pending_deployments`
-(`state=approved`), authenticated with the agent PAT `GITHUB_TOKEN` (1Password
-`agent.github` field `personal-access-token`). Approving optimistically clears the
-local gate; the next scan (or webhook) reconciles it.
+**Prod-deploy approval gate — REMOVED 2026-07-20 (task `remove-prod-deploy-approval`).**
+The `production` GitHub Environment's required-reviewer rule was deleted (a GitHub
+setting), so a dispatched prod-deploy run now deploys straight through — it never
+reaches a `waiting` state and the panel is never anything but the normal per-workflow
+status rows. The whole in-app approval subsystem that used to service that gate is
+GONE, not dormant: the recurring `waiting`-run poll (`ScanPendingDeploymentsJob` +
+`Github::PendingDeploymentScanner`), the amber **awaiting approval** row and admin
+**Approve deploy** button, the `/deployments/:run_id/approve` route +
+`GithubDeploymentsController`, the `Github::DeploymentApprover`, the
+`Devops::DeployApprovalNotifier` Discord nudge, and the ingest job's
+`deployment_review` / `deployment_protection_rule` branch (with its
+`pending_environment` stamp and pending scopes) were all deleted. If a required
+reviewer or other environment protection is ever wanted again, it would be a fresh
+build, not a re-enable. The `GITHUB_DEPLOY_APPROVAL_REPO` env var is retired with it.
 
-**The pending signal — poll, not webhook.** GitHub **refuses to deliver
-`deployment_review` to a repo webhook created with a PAT** (`422: events not
-allowed`) — even though it accepts `workflow_run` and `workflow_job` on that same
-PAT hook (`653247220`). So the prod receiver carries those two events but never the
-pending-approval one, and the pending state is instead driven by a recurring poll:
-`ScanPendingDeploymentsJob`
-(`config/recurring.yml`, every 3 min, **production only**) runs
-`Github::PendingDeploymentScanner`, which lists runs `waiting` on an environment
-gate, reads each run's `pending_deployments` for the environment name, and REPLAYS
-it through the SAME ingest job as a `deployment_review` event — so the stamp,
-ping-once, and Approve wiring stay in one place. Runs no longer waiting are cleared.
-The ingest job still accepts `deployment_review` / `deployment_protection_rule`
-directly, so a future GitHub App webhook (which *can* subscribe those events) needs
-no code change. A conductor-side signal (bin/release's deploy watcher already
-detects the approval pause) is the preferred future trigger to retire the poll.
-Configure the polled repo with `GITHUB_DEPLOY_APPROVAL_REPO` (default
-`amcritchie/mcritchie-studio`).
+The webhook receiver + ingest job are UNCHANGED for the two events that stay:
+`workflow_run` (per-run status rows) and `workflow_job` (the live CI progress bars
+above). The receiver is a dumb pass-through, so an unexpected event GitHub might still
+deliver is simply ignored by the ingest job — no approval handling remains.
 
 **Env vars for this vertical:**
 
 | Var | Purpose |
 |-----|---------|
 | `GITHUB_WEBHOOK_SECRET` | HMAC secret verifying webhook deliveries (fail-closed). |
-| `GITHUB_TOKEN` | Agent PAT used to poll waiting runs and approve pending deployments. |
-| `GITHUB_DEPLOY_APPROVAL_REPO` | Repo the poll scans for pending deploys (default `amcritchie/mcritchie-studio`). |
-| `DISCORD_DEVOPS_PROGRESS_WEBHOOK_URL` | qa-chatter channel for the "awaiting approval" nudge (falls back to `DISCORD_RELEASE_NOTES_WEBHOOK_URL`). |
+| `GITHUB_TOKEN` | Agent PAT `Github::Client` defaults to — used by `Ci::ProgressReader` for the check-runs API fallback. |
 
-The Discord nudge (`Devops::DeployApprovalNotifier`) is a no-op when its webhook
-is unset and never raises — a delivery failure logs to `ErrorLog`. Never commit
-webhook URLs or the PAT.
+Never commit the webhook secret or the PAT.

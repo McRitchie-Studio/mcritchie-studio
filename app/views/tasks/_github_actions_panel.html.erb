@@ -4,9 +4,7 @@
     DeploymentsBroadcaster.github_actions (fired from GithubWorkflowRun's after_commit)
     into the stable #github-actions-panel slot, so it updates live with no reload.
     State visuals come from github_run_visual: amber+pulse (running), green (passed),
-    red (failed). A run blocked at a protected-environment gate (pending_approval?)
-    overrides that with the amber "awaiting approval" treatment + an admin-only
-    Approve button (github_pending_visual). Compact by design — a status strip.
+    red (failed). Compact by design — a status strip.
     Local: runs (GithubWorkflowRun.latest_per_workflow). %>
 <% runs = local_assigns.fetch(:runs, []) %>
 <section id="github-actions-panel" data-test="github-actions-panel"
@@ -25,68 +23,25 @@
     <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3" data-test="github-actions-runs">
       <% runs.each do |run| %>
         <% ts = run.run_started_at || run.created_at %>
-        <% if run.pending_approval? %>
-          <%# Pending-approval row — NOT a whole-row anchor (it hosts an Approve form,
-              which cannot nest in an <a>). A distinct amber "needs you" card. %>
-          <% vis = github_pending_visual %>
-          <div class="flex flex-col gap-2 rounded-lg border border-amber-400/70 bg-amber-50 px-3 py-2 dark:border-amber-400/40 dark:bg-amber-500/10"
-               data-test="github-actions-run" data-workflow="<%= run.workflow_name %>" data-state="<%= vis[:state] %>">
-            <div class="flex items-start gap-3">
-              <span class="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full <%= vis[:dot] %>" aria-hidden="true"></span>
-              <span class="min-w-0 flex-1">
-                <span class="flex items-center gap-2">
-                  <span class="truncate text-sm font-semibold text-heading"><%= run.workflow_name %></span>
-                  <span class="<%= vis[:pill] %>" data-test="github-actions-pill"><%= vis[:label] %></span>
-                </span>
-                <span class="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[11px] text-muted">
-                  <% if run.head_sha.present? %><code class="font-mono text-secondary"><%= run.head_sha[0, 7] %></code><% end %>
-                  <% if run.head_branch.present? %><span class="min-w-0 truncate">· <%= run.head_branch %></span><% end %>
-                  <span class="shrink-0">· <%= run.pending_environment %></span>
-                  <% if (waiting = compact_time_ago(run.pending_since || ts)) %><span class="shrink-0" data-test="github-actions-waiting">· waiting <%= waiting %></span><% end %>
-                </span>
-              </span>
-            </div>
-            <% if run.html_url.present? %>
-              <%# Explicit, styled link — the pending card is not a whole-row anchor
-                  (it hosts the Approve form), so it needs an obvious way to reach GitHub. %>
-              <%= link_to run.html_url, target: "_blank", rel: "noopener",
-                    class: "inline-flex items-center gap-1 self-start text-xs font-semibold text-amber-800 underline decoration-amber-400/60 underline-offset-2 transition hover:text-amber-900 hover:decoration-amber-500 dark:text-amber-200 dark:decoration-amber-400/50 dark:hover:text-amber-100",
-                    data: { test: "github-actions-view-run" } do %>
-                View run on GitHub <span aria-hidden="true">↗</span>
-              <% end %>
-            <% end %>
-            <% if admin? %>
-              <%= form_with url: approve_deployment_path(run.run_id), method: :post, class: "mt-0.5" do %>
-                <button type="submit" data-test="github-actions-approve"
-                        class="inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-amber-500 px-3 py-1.5 text-sm font-semibold text-black transition hover:bg-amber-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300">
-                  Approve deploy
-                </button>
-              <% end %>
-            <% else %>
-              <p class="text-[11px] text-muted" data-test="github-actions-approve-locked">An admin must approve this deploy.</p>
-            <% end %>
-          </div>
-        <% else %>
-          <% vis = github_run_visual(run) %>
-          <%= link_to run.html_url.presence || "#", target: "_blank", rel: "noopener",
-                class: "group flex items-start gap-3 rounded-lg border border-subtle bg-inset/60 px-3 py-2 transition hover:border-primary/40 hover:bg-inset",
-                data: { test: "github-actions-run", workflow: run.workflow_name, state: vis[:state] } do %>
-            <span class="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full <%= vis[:dot] %>" aria-hidden="true"></span>
-            <span class="min-w-0 flex-1">
-              <span class="flex items-center gap-2">
-                <span class="truncate text-sm font-semibold text-heading"><%= run.workflow_name %></span>
-                <span class="<%= vis[:pill] %>" data-test="github-actions-pill"><%= vis[:label] %></span>
-              </span>
-              <span class="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[11px] text-muted">
-                <% if run.head_sha.present? %><code class="font-mono text-secondary"><%= run.head_sha[0, 7] %></code><% end %>
-                <% if run.head_branch.present? %><span class="min-w-0 truncate">· <%= run.head_branch %></span><% end %>
-                <% if (ago = compact_time_ago(ts)) %><span class="shrink-0">· <%= ago %></span><% end %>
-              </span>
+        <% vis = github_run_visual(run) %>
+        <%= link_to run.html_url.presence || "#", target: "_blank", rel: "noopener",
+              class: "group flex items-start gap-3 rounded-lg border border-subtle bg-inset/60 px-3 py-2 transition hover:border-primary/40 hover:bg-inset",
+              data: { test: "github-actions-run", workflow: run.workflow_name, state: vis[:state] } do %>
+          <span class="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full <%= vis[:dot] %>" aria-hidden="true"></span>
+          <span class="min-w-0 flex-1">
+            <span class="flex items-center gap-2">
+              <span class="truncate text-sm font-semibold text-heading"><%= run.workflow_name %></span>
+              <span class="<%= vis[:pill] %>" data-test="github-actions-pill"><%= vis[:label] %></span>
             </span>
-            <%# Always-visible affordance so the whole-row anchor reads as clickable
-                (underlines + brightens on hover; the row is already cursor-pointer). %>
-            <span class="shrink-0 self-center whitespace-nowrap text-[11px] font-medium text-secondary transition group-hover:text-primary group-hover:underline" data-test="github-actions-view-run">View on GitHub ↗</span>
-          <% end %>
+            <span class="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[11px] text-muted">
+              <% if run.head_sha.present? %><code class="font-mono text-secondary"><%= run.head_sha[0, 7] %></code><% end %>
+              <% if run.head_branch.present? %><span class="min-w-0 truncate">· <%= run.head_branch %></span><% end %>
+              <% if (ago = compact_time_ago(ts)) %><span class="shrink-0">· <%= ago %></span><% end %>
+            </span>
+          </span>
+          <%# Always-visible affordance so the whole-row anchor reads as clickable
+              (underlines + brightens on hover; the row is already cursor-pointer). %>
+          <span class="shrink-0 self-center whitespace-nowrap text-[11px] font-medium text-secondary transition group-hover:text-primary group-hover:underline" data-test="github-actions-view-run">View on GitHub ↗</span>
         <% end %>
       <% end %>
     </div>

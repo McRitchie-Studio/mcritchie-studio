@@ -859,19 +859,12 @@ CSV.parse(model_pricing_rows.strip, headers: false).each do |session_id, seq, ca
   )
 end
 
-# GitHub Actions panel on /deployments: a passed CI run plus a Production Deploy
-# run BLOCKED at its environment gate (pending_environment set) so the e2e spec
-# can assert the "awaiting approval" state + the admin-only Approve button.
+# GitHub Actions panel on /deployments: a passed CI run so the panel renders a
+# normal status-pilled row on the board.
 GithubWorkflowRun.create!(
   repo: "mcritchie/mcritchie-studio", run_id: 5_000_001, status: "completed", conclusion: "success",
   workflow_name: "CI", head_sha: "9f2c1b7ad4e5c60f1e2d3a4b5c6d7e8f90123456", head_branch: "release",
   html_url: "https://github.com/mcritchie/mcritchie-studio/actions/runs/5000001", run_started_at: 20.minutes.ago
-)
-GithubWorkflowRun.create!(
-  repo: "mcritchie/mcritchie-studio", run_id: 5_000_002, status: "in_progress",
-  workflow_name: "Production Deploy", head_sha: "9f2c1b7ad4e5c60f1e2d3a4b5c6d7e8f90123456", head_branch: "release",
-  html_url: "https://github.com/mcritchie/mcritchie-studio/actions/runs/5000002", run_started_at: 15.minutes.ago,
-  pending_environment: "production", pending_since: 10.minutes.ago
 )
 
 # CI progress bars (feature: visual-ci-progress-bars): a submitted task whose PR has

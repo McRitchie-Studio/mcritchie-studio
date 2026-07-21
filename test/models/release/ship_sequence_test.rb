@@ -100,13 +100,13 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
     assert_equal :pending, S.run_watch_verdict(" waiting ", "")
   end
 
-  # --- approval_pause?: the run is specifically PAUSED for the operator ---------
+  # --- approval_pause?: the run is PAUSED on a deployment-protection gate --------
 
-  test "[unit] approval_pause? is true only for the waiting (required-reviewer) status" do
-    assert S.approval_pause?("waiting"), "waiting = paused for the production approval"
+  test "[unit] approval_pause? is true only for the waiting (deployment-protection) status" do
+    assert S.approval_pause?("waiting"), "waiting = held on a deployment-protection gate"
     assert S.approval_pause?(" waiting "), "…tolerant of the jq read's whitespace"
     %w[queued in_progress completed requested].each do |status|
-      assert_not S.approval_pause?(status), "#{status} is not the approval pause"
+      assert_not S.approval_pause?(status), "#{status} is not the protection pause"
     end
     assert_not S.approval_pause?(nil)
   end
