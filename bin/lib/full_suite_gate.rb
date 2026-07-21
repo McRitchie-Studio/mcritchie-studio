@@ -163,20 +163,6 @@ module FullSuiteGate
     CertEvidence.evidence_re(lanes)
   end
 
-  # Merge fresh evidence lines into an existing checks_run, REPLACING prior
-  # evidence for the lanes being stamped (so re-runs supersede rather than
-  # accumulate) while PRESERVING tier tags ("[unit] ..."), bypass records, and
-  # every OTHER lane's evidence. Defaults to exactly the lanes `fresh_lines`
-  # carries — you supersede what you supply, which is the same rule the board
-  # applies to every writer (CertEvidence.preserve). A full cert therefore leaves
-  # a prior fast-cert line in place rather than deleting it: it is inert once the
-  # full lanes are fresh (evaluate's `ok` reads LANES only), and letting a writer
-  # delete a lane it did not run is precisely the destruction this gate now
-  # refuses to allow.
-  def merge_evidence(existing, fresh_lines, lanes: nil)
-    CertEvidence.merge_evidence(existing, fresh_lines, lanes: lanes)
-  end
-
   # Freshness of one lane against `fingerprint`: :fresh (a tag matches the current
   # fingerprint), :stale (tagged, but every tag is for a different fingerprint),
   # or :missing (no tag for this lane at all).

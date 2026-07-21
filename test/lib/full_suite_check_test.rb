@@ -58,35 +58,6 @@ class FullSuiteCheckTest < Minitest::Test
     assert_equal "/tmp/whatever", env["FULL_SUITE_ROOT"], "overrides still pass through"
   end
 
-  # --- [unit] merge_evidence: the writer must PRESERVE tier tags ---------------
-  # bin/task update --checks REPLACES the whole list, so the runner merges. This
-  # pure function is the merge: keep tier tags + bypass, replace prior evidence.
-
-  def test_merge_evidence_preserves_tier_tags_and_replaces_prior_evidence
-    existing = [
-      "[unit] bin/rails test test/foo_test.rb",
-      "[integration] request->db",
-      "[full-suite@oldfp] stale tests",
-      "[rubocop@oldfp] stale lint",
-      "[full-suite-bypass] tracked elsewhere"
-    ]
-    fresh = ["[full-suite@newfp] tests green", "[rubocop@newfp] lint clean"]
-    merged = FullSuiteGate.merge_evidence(existing, fresh)
-
-    assert_includes merged, "[unit] bin/rails test test/foo_test.rb"
-    assert_includes merged, "[integration] request->db"
-    assert_includes merged, "[full-suite-bypass] tracked elsewhere"
-    assert_includes merged, "[full-suite@newfp] tests green"
-    assert_includes merged, "[rubocop@newfp] lint clean"
-    refute_includes merged, "[full-suite@oldfp] stale tests"
-    refute_includes merged, "[rubocop@oldfp] stale lint"
-  end
-
-  def test_merge_evidence_handles_empty_existing
-    merged = FullSuiteGate.merge_evidence([], ["[full-suite@fp] x", "[rubocop@fp] y"])
-    assert_equal ["[full-suite@fp] x", "[rubocop@fp] y"], merged
-  end
-
   def test_lane_status_grades_missing_stale_and_fresh_evidence
     checks = ["[full-suite@abc1234] tests green", "[rubocop@def5678] lint clean"]
 
@@ -104,7 +75,8 @@ class FullSuiteCheckTest < Minitest::Test
       # this they read as untracked dirt to the dirty-tree guard (cert_tree_guard.rb)
       # — test tooling, not uncommitted work. Committed with the baseline, so the
       # fixture yields a genuinely CLEAN tree.
-      File.write(File.join(dir, ".gitignore"), "stub.log\n*-stub\n")
+      # stub.log* also covers the TASK stub's read-back sentinel (stub.log.updated).
+      File.write(File.join(dir, ".gitignore"), "stub.log*\n*-stub\n")
       git.call("init -q")
       git.call("config user.email tester@example.com")
       git.call("config user.name tester")
@@ -720,13 +692,47 @@ class FullSuiteCheckTest < Minitest::Test
   )
 
   # A stub board/gate CLI: appends "<MARKER>\t<argv…>" to STUB_LOG; `show` prints
-  # TASK_SHOW_JSON (serving both the guard's read and the read-merge-write), exits 0.
+  # TASK_SHOW_JSON (serving both the guard's read and the read-back baseline).
+  # Minimally STATEFUL, same shape as fast_check_test's TASK stub: an `update`
+  # drops a sentinel and CAPTURES its --checks VALUES (to .written), and `show`
+  # after an update serves TASK_SHOW_JSON_AFTER_UPDATE (else TASK_SHOW_JSON) with
+  # the captured lines MERGED IN — so the read-back sees the evidence lines the
+  # cert actually wrote (their runtime fingerprint no fixture can spell).
+  # STUB_READBACK_DROP_WRITTEN=1 suppresses the merge (models a write that never
+  # landed); an AFTER_UPDATE board with a line dropped models a lost pre-existing
+  # line (the written evidence is still merged back, that line is not).
   def write_cli_stub(dir, name, marker)
     stub = File.join(dir, name)
     File.write(stub, <<~RUBY)
       #!#{RbConfig.ruby}
-      File.open(ENV.fetch("STUB_LOG"), "a") { |f| f.puts(["#{marker}", *ARGV].join("\\t")) }
-      puts ENV["TASK_SHOW_JSON"] if ARGV.first == "show" && ENV["TASK_SHOW_JSON"]
+      require "json"
+      log = ENV.fetch("STUB_LOG")
+      File.open(log, "a") { |f| f.puts(["#{marker}", *ARGV].join("\\t")) }
+      sentinel = log + ".updated"
+      written  = log + ".written"
+      if ARGV.first == "update"
+        File.write(sentinel, "1")
+        vals = []
+        i = 0
+        while i < ARGV.length
+          if ARGV[i] == "--checks" then vals << ARGV[i + 1].to_s; i += 2 else i += 1 end
+        end
+        File.open(written, "a") { |f| vals.each { |v| f.puts(v) } }
+      end
+      if ARGV.first == "show"
+        after = ENV["TASK_SHOW_JSON_AFTER_UPDATE"].to_s
+        base  = (!after.empty? && File.exist?(sentinel)) ? after : ENV["TASK_SHOW_JSON"].to_s
+        unless base.empty?
+          doc = JSON.parse(base)
+          if File.exist?(sentinel) && File.exist?(written) && ENV["STUB_READBACK_DROP_WRITTEN"] != "1"
+            dv = ((doc["metadata"] ||= {})["devops"] ||= {})
+            checks = Array(dv["checks_run"])
+            File.readlines(written, chomp: true).each { |w| checks << w unless checks.include?(w) }
+            dv["checks_run"] = checks
+          end
+          puts JSON.generate(doc)
+        end
+      end
     RUBY
     FileUtils.chmod("+x", stub)
     stub
@@ -735,7 +741,7 @@ class FullSuiteCheckTest < Minitest::Test
   # Run the cert with an IMPLICIT root — cwd = `dir`, no FULL_SUITE_ROOT — and the
   # board/gate CLIs stubbed via the FULL_SUITE_*_BIN seams. stderr merges into
   # stdout so the refusal message is assertable. Returns [out, exitcode, log_lines].
-  def run_check_implicit_root(dir, args)
+  def run_check_implicit_root(dir, args, extra_env: {})
     log = File.join(dir, "stub.log")
     env = child_env(
       {
@@ -746,7 +752,7 @@ class FullSuiteCheckTest < Minitest::Test
         "FULL_SUITE_GATE_BIN" => write_cli_stub(dir, "gate-stub", "GATE"),
         "TASK_SHOW_JSON" => GUARD_JSON,
         "STUB_LOG" => log
-      }
+      }.merge(extra_env)
     )
     out = IO.popen(env, "#{BIN} #{args} 2>&1", chdir: dir, &:read)
     code = $?.exitstatus
@@ -774,6 +780,150 @@ class FullSuiteCheckTest < Minitest::Test
       assert_equal 0, code, "the task's own tree certifies from cwd with no override: #{out}"
       assert_match(/\[full-suite@/, out)
       assert(lines.any? { |l| l[0] == "TASK" && l[1] == "update" }, "evidence recorded: #{lines.inspect}")
+    end
+  end
+
+  # --- [integration] read-back: same property as bin/fast-check's recorder ---------
+  # The two certs share the recorder discipline (CertEmission): "preserved" is
+  # verified against the board after the write, and a write whose read-back lost
+  # pre-existing checks lines fails loudly, naming them for re-record.
+  def test_lost_preexisting_lines_after_the_write_fail_the_cert_loudly
+    with_repo do |dir|
+      assert system("git", "-C", dir, "checkout", "-qb", "feat/task-x", out: File::NULL, err: File::NULL)
+      with_tiers = JSON.generate(
+        "metadata" => { "devops" => {
+          "branch" => "feat/task-x", "worktree_slug" => "task-x",
+          "checks_run" => ["[unit] bin/rails test test/models"]
+        } }
+      )
+      after = JSON.generate("metadata" => { "devops" => { "checks_run" => [] } })
+      out, code, = run_check_implicit_root(dir, "task-x",
+                                           extra_env: { "TASK_SHOW_JSON" => with_tiers,
+                                                        "TASK_SHOW_JSON_AFTER_UPDATE" => after })
+      assert_equal 1, code, "a write whose read-back lost pre-existing checks lines must fail loudly: #{out}"
+      assert_match(/MISSING/, out)
+      assert_match(%r{\[unit\] bin/rails test test/models}, out, "the lost line is named for re-record")
+      refute_match(/tier tags preserved/, out)
+    end
+  end
+
+  # Round-3 regression (review block, 2026-07-20 — Carl): the cert used to resend
+  # its SNAPSHOT of the author's lines alongside its evidence. That is an author
+  # write, so the funnel replaces the author namespace with content read before a
+  # multi-minute suite ran — clobbering any tier line the board gained meanwhile.
+  # The cert sends ONLY the lines it owns; the funnel merges at write time.
+  def test_recording_sends_only_evidence_never_the_author_snapshot
+    with_repo do |dir|
+      assert system("git", "-C", dir, "checkout", "-qb", "feat/task-x", out: File::NULL, err: File::NULL)
+      with_tiers = JSON.generate(
+        "metadata" => { "devops" => {
+          "branch" => "feat/task-x", "worktree_slug" => "task-x",
+          "checks_run" => ["[unit] bin/rails test test/models", "[integration] flows"]
+        } }
+      )
+      _, code, lines = run_check_implicit_root(dir, "task-x", extra_env: { "TASK_SHOW_JSON" => with_tiers })
+      assert_equal 0, code
+      update = lines.find { |l| l[0] == "TASK" && l[1] == "update" }
+      refute_nil update
+      sent = update.each_cons(2).select { |a, _| a == "--checks" }.map(&:last)
+      assert(sent.all? { |l| l.match?(/\A\[(full-suite|rubocop)@/) },
+             "the cert sends ONLY the lanes it owns — no author snapshot: #{sent.inspect}")
+      refute_includes sent, "[unit] bin/rails test test/models"
+    end
+  end
+
+  # Round-5 regression (review block, 2026-07-20 — light lane): the cert must
+  # verify the lines it OWNS. If the fresh [full-suite@…]/[rubocop@…] evidence
+  # does not land, the cert cannot tell "landed" from "vanished" — the
+  # missing-signal-read-as-success shape this PR kills. A read-back missing the
+  # evidence must exit NONZERO and say "re-run the cert".
+  def test_evidence_lines_missing_from_the_read_back_fail_the_cert
+    with_repo do |dir|
+      assert system("git", "-C", dir, "checkout", "-qb", "feat/task-x", out: File::NULL, err: File::NULL)
+      with_tiers = JSON.generate(
+        "metadata" => { "devops" => {
+          "branch" => "feat/task-x", "worktree_slug" => "task-x",
+          "checks_run" => ["[unit] bin/rails test test/models"]
+        } }
+      )
+      out, code, lines = run_check_implicit_root(dir, "task-x",
+                                                 extra_env: { "TASK_SHOW_JSON" => with_tiers,
+                                                              "STUB_READBACK_DROP_WRITTEN" => "1" })
+      assert_equal 1, code, "a read-back missing the fresh evidence lines must FAIL the cert: #{out}"
+      assert_match(/MISSING/, out)
+      assert_match(/re-run the cert: bin\/full-suite-check task-x/, out)
+      refute_match(/read-back confirms/, out)
+      close = lines.select { |l| l[0] == "GATE" && l[1] == "close" }.last
+      refute_nil close
+      assert_includes close, "--failed", "the durable gate must not read success when the command exits 1"
+    end
+  end
+
+  # Round-2 regression (review block, 2026-07-20): on a PARTIAL loss the printed
+  # recovery re-records the UNION — survivors AND lost. `--checks` replaces the
+  # author namespace, so a lost-lines-only remedy would drop the survivors.
+  def test_partial_loss_recovery_re_records_survivors_and_lost_alike
+    with_repo do |dir|
+      assert system("git", "-C", dir, "checkout", "-qb", "feat/task-x", out: File::NULL, err: File::NULL)
+      before = JSON.generate(
+        "metadata" => { "devops" => {
+          "branch" => "feat/task-x", "worktree_slug" => "task-x",
+          "checks_run" => ["[unit] surviving unit line", "[integration] lost integration line"]
+        } }
+      )
+      after = JSON.generate("metadata" => { "devops" => { "checks_run" => ["[unit] surviving unit line"] } })
+      out, code, = run_check_implicit_root(dir, "task-x",
+                                           extra_env: { "TASK_SHOW_JSON" => before,
+                                                        "TASK_SHOW_JSON_AFTER_UPDATE" => after })
+      assert_equal 1, code, out
+      remedy = out.lines.find { |l| l.include?("bin/task update task-x") }
+      refute_nil remedy, "the loud failure prints a runnable re-record command: #{out}"
+      # Assert the PROPERTY (what a shell parses out), not the quoting spelling.
+      recorded = Shellwords.split(remedy[/bin\/task update task-x.*/].strip)
+                           .each_cons(2).select { |a, _| a == "--checks" }.map(&:last)
+      assert_includes recorded, "[integration] lost integration line", "the lost line is re-recorded"
+      assert_includes recorded, "[unit] surviving unit line",
+                      "the SURVIVING line must be in the remedy too — a lost-lines-only remedy drops survivors"
+    end
+  end
+
+  # Round-3 regression (review block, 2026-07-20 — Shannon): the remedy is PASTED
+  # into a shell, so it must be SHELL-quoted. String#inspect is a Ruby literal and
+  # leaves $(…)/backticks live inside double quotes. Proven with a REAL shell.
+  def test_recovery_command_is_shell_safe_not_ruby_inspect
+    with_repo do |dir|
+      assert system("git", "-C", dir, "checkout", "-qb", "feat/task-x", out: File::NULL, err: File::NULL)
+      pwned = File.join(dir, "pwned")
+      nasty = %([integration] cost $(touch #{pwned}) and `touch #{pwned}` "quoted")
+      before = JSON.generate(
+        "metadata" => { "devops" => {
+          "branch" => "feat/task-x", "worktree_slug" => "task-x", "checks_run" => [nasty]
+        } }
+      )
+      after = JSON.generate("metadata" => { "devops" => { "checks_run" => [] } })
+      out, code, = run_check_implicit_root(dir, "task-x",
+                                           extra_env: { "TASK_SHOW_JSON" => before,
+                                                        "TASK_SHOW_JSON_AFTER_UPDATE" => after })
+      assert_equal 1, code, out
+      remedy = out.lines.find { |l| l.include?("bin/task update task-x") }
+      refute_nil remedy, out
+      command = remedy[/bin\/task update task-x.*/].strip
+
+      argv_log = File.join(dir, "remedy-argv.log")
+      bindir = File.join(dir, "remedy-bin")
+      FileUtils.mkdir_p(bindir)
+      File.write(File.join(bindir, "task"), <<~SH)
+        #!/bin/sh
+        for a in "$@"; do printf '%s\\n' "$a" >> #{argv_log.shellescape}; done
+      SH
+      FileUtils.chmod("+x", File.join(bindir, "task"))
+      system({ "PATH" => "#{bindir}:#{ENV.fetch('PATH')}" },
+             "/bin/sh", "-c", command.sub(%r{\Abin/task}, "task"),
+             out: File::NULL, err: File::NULL)
+
+      refute File.exist?(pwned), "the remedy EXECUTED embedded shell syntax when pasted: #{command}"
+      received = File.exist?(argv_log) ? File.readlines(argv_log, chomp: true) : []
+      assert_equal nasty, received.last, "the shell must hand bin/task the line VERBATIM: #{received.inspect}"
     end
   end
 
