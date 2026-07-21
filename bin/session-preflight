@@ -575,8 +575,10 @@ branch["dirty"] = working_tree_dirty?(options[:root])
 # PRs, its overlap) when the task lives on a worktree; every number below is then
 # about the wrong tree. On a mismatch REFUSE and say so, and SUPPRESS the drift
 # blocker (its count is meaningless for a tree that isn't this task's). Skipped
-# only when the fact is unknowable: no task branch to expect, or the root is not a
-# branch checkout (detached / non-git → blank).
+# only when the fact is unknowable: no task branch to expect, or the root has no
+# resolvable branch (a non-git root → blank). A DETACHED HEAD is NOT skipped —
+# `git rev-parse --abbrev-ref HEAD` returns the literal "HEAD", which is never the
+# task's branch, so a detached root is refused like any other wrong checkout.
 expected_branch = devops["branch"].to_s.strip
 expected_branch = "feat/#{task["slug"]}" if expected_branch.empty? && present?(task["slug"])
 inspected_branch = current_branch(options[:root]).to_s.strip
