@@ -1592,18 +1592,19 @@ class ReleaseCliTest < Minitest::Test
     end
   end
 
-  # [integration] STRICT FALL-THROUGH: pending evidence is a GENUINE wait. On the
-  # live FIRST sweep the accepted head's run (started when the batch PR opened
-  # seconds earlier) has not concluded — the tree matches but nothing green exists
-  # yet, so the credit declines and the gate polls the release SHA exactly as
-  # today (collapsed here → fails closed).
-  def test_pre_qa_gate_tree_credit_declines_while_the_accepted_evidence_is_pending
+  # [integration] THE WAIT TIMES OUT → FALL THROUGH. The accepted head is IN FLIGHT
+  # but never concludes, and here the poll budget is collapsed to zero — so the gate
+  # tries the in-flight wait, finds no budget, and falls through to poll the release
+  # SHA's own run exactly as today (also pending → fails closed). Pending evidence
+  # still certifies NOTHING, and a wait that cannot conclude never fabricates a green.
+  def test_pre_qa_gate_tree_credit_wait_times_out_and_falls_through_when_pending
     Dir.mktmpdir do |dir|
       out = run_cli(["--yes"], setup: tree_gate_stub(dir, accepted_tree: SHARED_TREE, accepted_ci: ":pending"),
                     call: %{begin; pre_qa_gate([{ "repo" => "sibling" }], "rel-cli"); puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
 
       refute_includes out, "crediting", "pending evidence certifies nothing — no credit"
-      assert_includes out, "ABORTED", "…the gate holds/fails closed at the poll window exactly as today"
+      assert_includes out, "did not conclude before the poll budget", "it TRIED the in-flight wait, then fell through"
+      assert_includes out, "ABORTED", "…the gate holds/fails closed at the (collapsed) release-SHA poll"
       refute_includes out, "PASSED"
     end
   end
@@ -1622,6 +1623,58 @@ class ReleaseCliTest < Minitest::Test
       assert_includes out, "ABORTED"
       assert_includes out, "NO green verdict for #{GATE_SHA[0, 7]}", "…failing closed on the RELEASE SHA's own poll"
       refute_includes out, "PASSED"
+    end
+  end
+
+  # A tree-identical promote whose accepted-head run is IN FLIGHT: it reports
+  # :pending for the first two reads, then concludes :green — the live first-sweep
+  # timeline (the batch PR opened seconds earlier, so the accepted run is still
+  # building when the sweep reaches the gate). The RELEASE SHA's own run NEVER
+  # concludes (:pending forever), so a PASS can come ONLY from WAITING ON THE
+  # ACCEPTED RUN, never from falling through to poll the duplicate. $acc_reads
+  # counts the accepted-head reads so a test can prove it polled to conclusion.
+  def tree_wait_gate_stub(dir)
+    %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
+      %(ENV["RELEASE_CI_POLL_TIMEOUT"] = "10"\nENV["RELEASE_CI_POLL_INTERVAL"] = "0"\n) +
+      %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB +
+      %(ACC_SHA = #{ACC_SHA.inspect}\n) +
+      %(def qa_gate_cmd(_repo) = "bin/suite"\n) +
+      %(def conductor(ruby, read_only: false) = $stdout.puts("CONDUCTOR " + ruby)\n) +
+      %($acc_reads = 0\n) +
+      %(def ci_verdict(_repo, sha)\n) +
+      %(  if sha == ACC_SHA\n) +
+      %(    $acc_reads += 1\n) +
+      %(    return $acc_reads <= 2 ? { state: :pending, pending: ["test"] } : { state: :green, count: 8 }\n) +
+      %(  end\n) +
+      %(  { state: :pending, pending: ["test"] }\n) +
+      %(end\n) +
+      %(def sh(*a, **k)\n) +
+      %(  return [ACC_SHA, true] if a.include?("origin/accepted")\n) +
+      %(  return [#{SHARED_TREE.inspect}, true] if a.last.to_s == GATE_SHA + "^{tree}"\n) +
+      %(  return [#{SHARED_TREE.inspect}, true] if a.last.to_s == ACC_SHA + "^{tree}"\n) +
+      %(  g = gate_git(a, k)\n  return g if g\n  ["", true]\nend\n)
+  end
+
+  # [integration] THE FIX — an IN-FLIGHT accepted run is WAITED ON, not duplicated.
+  # MEASURED on rel-20260720-1fc111: in a fast pipeline the accepted CI is still
+  # BUILDING when the sweep reaches the gate, so the completed-green credit fell
+  # through and the hub ran the identical suite TWICE. The gate now recognises an
+  # in-flight accepted run on the identical tree and WAITS on it (same wall-clock,
+  # the duplicate release run skipped) — polling it to its green conclusion and
+  # crediting it, while the release SHA's own run is never awaited.
+  def test_pre_qa_gate_waits_on_the_inflight_accepted_run_and_credits_it
+    Dir.mktmpdir do |dir|
+      out = run_cli(["--yes"], setup: tree_wait_gate_stub(dir),
+                    call: %{pre_qa_gate([{ "repo" => "sibling" }], "rel-cli"); puts("ACC_READS=" + $acc_reads.to_s); puts("PASSED")})
+
+      assert_includes out, "waiting on it instead of re-running the duplicate",
+                      "an in-flight accepted run on the identical tree is WAITED ON, not fallen-through"
+      assert_includes out, "ACC_READS=3", "it polled the ACCEPTED head to its green conclusion (2 pending + 1 green)"
+      assert_includes out, "crediting the existing green conclusion for #{GATE_SHA[0, 7]}",
+                      "…then credited the accepted head's green — the duplicate release run is skipped"
+      assert_includes out, "GitHub CI GREEN (credited) @ #{GATE_SHA[0, 7]}"
+      refute_includes out, "poll timed out", "it NEVER fell through to poll the still-pending release SHA"
+      assert_includes out, "PASSED"
     end
   end
 
@@ -1662,31 +1715,50 @@ class ReleaseCliTest < Minitest::Test
     assert_equal "nil", out, "a blank release SHA can never match"
   end
 
-  # [unit] ci_tree_credit_verdict — credits ONLY a completed green on the accepted
-  # head (ci_pass?'s one pass state), carrying both SHAs + the tree in the note;
-  # red/pending/unverified evidence and a raising probe all answer nil.
-  def test_ci_tree_credit_verdict_credits_only_a_completed_green_evidence_run
+  # [unit] tree_identical_ci_outcome — the accepted-head decision for an identical
+  # tree. It CREDITS a completed green (both SHAs + the tree in the note), and for
+  # EVERY non-green verdict returns no credit plus a DIAGNOSTIC naming why — the gate
+  # was previously silent here, which is exactly why the round-3 bug was invisible
+  # without hand-forensics. A pending run with the budget already spent, and a raising
+  # probe, both fall through with their own reason. (`deadline: 0` collapses the wait so
+  # a :pending verdict times out at once instead of polling; the live in-flight WAIT is
+  # driven end to end by test_pre_qa_gate_waits_on_the_inflight_accepted_run_and_credits_it.)
+  def test_tree_identical_ci_outcome_credits_green_and_diagnoses_every_fall_through
     promote = %({ accepted_sha: #{ACC_SHA.inspect}, tree: #{SHARED_TREE.inspect} })
+
     green = %(def ci_verdict(_r, _s) = { state: :green, count: 8 }\n)
     out = run_cli(["--dry-run"], setup: green,
-                  call: %(v = ci_tree_credit_verdict("x", #{GATE_SHA.inspect}, #{promote}); print [v[:state], v[:credited]].inspect))
-    assert_includes out, ":green"
+                  call: %(o = tree_identical_ci_outcome("x", #{GATE_SHA.inspect}, #{promote}, deadline: 0); ) +
+                        %(print [o[:credit] && o[:credit][:state], o[:credit] && o[:credit][:credited], o[:diagnostic]].inspect))
+    assert_includes out, ":green", "a completed green is credited"
     assert_includes out, "tree-identical promote"
     assert_includes out, ACC_SHA, "the note names the accepted head that vouched"
     assert_includes out, GATE_SHA, "…the release merge commit vouched for"
     assert_includes out, SHARED_TREE, "…and the shared tree"
 
-    %i[red pending none unverified unreadable].each do |state|
+    %i[red none unverified unreadable].each do |state|
       declined = %(def ci_verdict(_r, _s) = { state: #{state.inspect} }\n)
       out = run_cli(["--dry-run"], setup: declined,
-                    call: %(print ci_tree_credit_verdict("x", #{GATE_SHA.inspect}, #{promote}).inspect))
-      assert_equal "nil", out, "#{state} evidence certifies nothing — strict fall-through to the poll"
+                    call: %(o = tree_identical_ci_outcome("x", #{GATE_SHA.inspect}, #{promote}, deadline: 0); ) +
+                          %(print [o[:credit], o[:diagnostic]].inspect))
+      assert_match(/\Anil,|\[nil,/, out.gsub(/\s/, ""), "#{state}: nothing is credited")
+      assert_includes out, "no green to credit", "#{state}: it says WHY — polling the release run instead"
+      assert_includes out, state.to_s, "#{state}: the diagnostic names the verdict it saw"
     end
+
+    pending = %(def ci_verdict(_r, _s) = { state: :pending }\n)
+    out = run_cli(["--dry-run"], setup: pending,
+                  call: %(o = tree_identical_ci_outcome("x", #{GATE_SHA.inspect}, #{promote}, deadline: 0); ) +
+                        %(print [o[:credit], o[:diagnostic]].inspect))
+    assert_includes out, "nil", "a pending run with no budget credits nothing"
+    assert_includes out, "did not conclude before the poll budget", "…and says the in-flight wait timed out"
 
     raises = %(def ci_verdict(_r, _s) = raise("boom")\n)
     out = run_cli(["--dry-run"], setup: raises,
-                  call: %(print ci_tree_credit_verdict("x", #{GATE_SHA.inspect}, #{promote}).inspect))
-    assert_equal "nil", out, "a probe that raises credits nothing (best-effort by construction)"
+                  call: %(o = tree_identical_ci_outcome("x", #{GATE_SHA.inspect}, #{promote}, deadline: 0); ) +
+                        %(print [o[:credit], o[:diagnostic]].inspect))
+    assert_includes out, "nil"
+    assert_includes out, "tree-credit probe errored", "a raising probe falls through with a reason"
   end
 
   # [integration] THE DEMOTION, affirmatively pinned (the positive replacement for the

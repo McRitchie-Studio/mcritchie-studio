@@ -681,7 +681,7 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
   test "[unit] a TREE-credited G3 record self-skips and never arms the disagree path" do
     # task dedupe-hub-release-suite round 2: the LIVE batch-PR promote mints a NEW
     # merge SHA, so the credit's evidence is the ACCEPTED head's green vouching for
-    # the IDENTICAL TREE (bin/release's ci_tree_credit_verdict), recorded with both
+    # the IDENTICAL TREE (bin/release's tree_identical_ci_outcome), recorded with both
     # SHAs + the shared tree in the note. The record still certifies THIS repo,
     # THIS cmd, THIS (release) SHA with a green ci.state — G4 self-skips against
     # it exactly as against a polled or same-SHA-credited one, and the richer

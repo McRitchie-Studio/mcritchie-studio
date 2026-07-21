@@ -1904,32 +1904,87 @@ rescue StandardError
   nil
 end
 
-# The G3 TREE credit (task dedupe-hub-release-suite, round 2): the LIVE promote is
-# a batch-PR `gh pr merge --merge`, which mints a NEW merge-commit SHA — so the
-# same-SHA credit above never fires on the normal path (the review block that
-# rebuilt this). But that merge commit usually SNAPSHOTS THE IDENTICAL TREE as the
-# accepted head (true whenever `accepted` was not behind `release` — e.g.
-# promotion #582: accepted 5b10402d and release cf93bab6 share tree 5b1c78e0), and
-# GitHub CI checks out CONTENT, not history: a completed green earned on the
-# accepted head certifies the exact tree the release merge re-runs. So when
-# tree_identical_promote proved the trees equal, this reads the ACCEPTED HEAD's
-# own verdict and credits ONLY a completed :green (ci_pass?, the gate's one pass
-# state). Everything else — the accepted run red, still pending, missing,
-# unreadable, unverified — returns nil and the caller polls the release SHA
-# exactly as today (strict fall-through; a red is never re-read, a pending
-# evidence run is a genuine wait). The credited note records BOTH full SHAs + the
-# shared tree so the audit trail shows precisely which run vouched for which
-# commit. Best-effort like ci_credit_verdict: a probe that raises credits nothing.
-def ci_tree_credit_verdict(repo, release_sha, promote)
-  ci = ci_verdict(repo, promote[:accepted_sha])
-  return nil unless ci_pass?(ci)
+# The G3 TREE credit (task dedupe-hub-release-suite, rounds 2 + 3): the LIVE promote
+# is a batch-PR `gh pr merge --merge`, which mints a NEW merge-commit SHA — so the
+# same-SHA credit never fires on the normal path. But that merge commit usually
+# SNAPSHOTS THE IDENTICAL TREE as the accepted head (true whenever `accepted` was not
+# behind `release` — e.g. promotion #582: accepted 5b10402d / release cf93bab6 share
+# tree 5b1c78e0), and GitHub CI checks out CONTENT, not history: a green earned on the
+# accepted head certifies the exact tree the release merge re-runs. tree_identical_promote
+# having proved the trees equal, this reads the accepted head's verdict and decides FOR
+# THE IDENTICAL TREE:
+#
+#   green (already, or after the wait) -> CREDIT it; the duplicate release run is skipped
+#                                         (the whole point of the dedupe).
+#   pending (round 3 — the MEASURED bug on rel-20260720-1fc111) -> the accepted run is
+#                                         IN FLIGHT. In a fast pipeline (review merges
+#                                         into `accepted`, the sweep runs minutes later)
+#                                         accepted CI is essentially NEVER settled at gate
+#                                         time, so the completed-green credit systematically
+#                                         MISSED precisely when the pipeline was moving —
+#                                         and the hub ran the identical suite TWICE. So WAIT
+#                                         on that in-flight run instead of falling through:
+#                                         same wall-clock, the duplicate release run skipped.
+#   red / none (missing or vanished) / unverified / unreadable / a wait that TIMES OUT ->
+#                                         FALL THROUGH. No credit; return a DIAGNOSTIC and
+#                                         let the caller poll the release SHA's OWN run
+#                                         exactly as today. A red/missing accepted verdict
+#                                         never credits and never shortcuts the fail-closed
+#                                         poll (do not weaken any red/missing path).
+#
+# Returns {credit:, diagnostic:}: `credit` is a green ci Hash to gate on (skip the poll)
+# or nil; `diagnostic` is the one-line reason the credit fired or did not — the gate now
+# LOGS it, because this bug was invisible without hand-forensics. The accepted-head poll
+# SHARES the caller's `deadline`, so a wait that times out and falls through does NOT then
+# spend a SECOND full poll window on the release SHA. Best-effort: a probe that raises
+# credits nothing and hands the caller back to the poll.
+def tree_identical_ci_outcome(repo, release_sha, promote, deadline:)
+  accepted_sha = promote[:accepted_sha]
+  tree         = promote[:tree]
+  interval     = ci_poll_interval
+  waited       = false
 
+  loop do
+    ci = ci_verdict(repo, accepted_sha)
+    state = ci.is_a?(Hash) ? ci[:state] : nil
+
+    if ci_pass?(ci)
+      return { credit: tree_credit_note(ci, release_sha, promote), diagnostic: nil }
+    elsif state == :pending
+      remaining = deadline - monotonic_s
+      if remaining <= 0
+        return { credit: nil,
+                 diagnostic: "waited on the in-flight #{ACCEPTED_BRANCH} head #{short(accepted_sha)} " \
+                             "(identical tree #{short(tree)}) but it did not conclude before the poll budget " \
+                             "elapsed — polling #{RELEASE_BRANCH}'s own run" }
+      end
+      unless waited
+        say("  #{repo}: #{ACCEPTED_BRANCH} head #{short(accepted_sha)} CI PENDING on the identical tree " \
+            "#{short(tree)} — waiting on it instead of re-running the duplicate (up to ~#{remaining.to_i}s)")
+      end
+      waited = true
+      sleep([interval, remaining].min)
+    else
+      # red / none (no run or vanished) / unverified / unreadable / no_pr / … — nothing to
+      # credit and nothing to wait on. Fall through to the poll on the release SHA, which
+      # OWNS the fail-closed verdict (a red aborts, a missing verdict holds then times out).
+      return { credit: nil,
+               diagnostic: "#{ACCEPTED_BRANCH} head #{short(accepted_sha)} gives no green to credit " \
+                           "(#{ci_detail(ci)}) — polling #{RELEASE_BRANCH}'s own run" }
+    end
+  end
+rescue StandardError => e
+  { credit: nil, diagnostic: "tree-credit probe errored (#{e.message.to_s[0, 80]}) — polling #{RELEASE_BRANCH}'s own run" }
+end
+
+# The credited-green note for a tree-identical promote: names BOTH full SHAs + the shared
+# tree so the audit trail shows precisely which accepted-head run vouched for which release
+# merge commit. Carries CI's count when GitHub gave one.
+def tree_credit_note(ci, release_sha, promote)
   { state: :green, count: ci[:count],
     credited: "tree-identical promote — #{ACCEPTED_BRANCH} head #{promote[:accepted_sha]} concluded green and " \
               "shares tree #{promote[:tree]} with #{RELEASE_BRANCH} #{release_sha}; the release-push run " \
               "re-executes an identical tree" }.compact
-rescue StandardError
-  nil
 end
 
 # Was the accepted→release promote a FAST-FORWARD — origin/#{RELEASE_BRANCH}
@@ -2135,10 +2190,9 @@ def monotonic_s = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 # token fault polling cannot fix — and a timeout returns the LAST still-pending verdict,
 # never a fabricated green. The caller runs ci_pass? on the returned Hash, so ONLY a
 # genuine :green certifies; every other outcome aborts the gate.
-def poll_ci_verdict(repo, sha)
+def poll_ci_verdict(repo, sha, deadline: monotonic_s + ci_poll_timeout)
   timeout    = ci_poll_timeout
   interval   = ci_poll_interval
-  deadline   = monotonic_s + timeout
   last_state = nil
   ci = nil
   loop do
@@ -2206,18 +2260,29 @@ def pre_qa_gate(app_groups, rel_slug = nil)
     #      (ci_credit_verdict). The true-FF shape; rare under the batch-PR merge.
     #   2. SAME-TREE (tree_identical_promote): the LIVE shape — the batch-PR merge
     #      minted a NEW SHA whose tree EQUALS the accepted head's, so the accepted
-    #      head's completed green vouches for the identical content
-    #      (ci_tree_credit_verdict; both SHAs + the shared tree recorded).
-    # NOTHING else changed: a non-credit — red, a genuinely still-running suite,
-    # missing checks, diverged trees (e.g. a consumer lock-bump commit riding
+    #      head's green vouches for the identical content — CREDITED when it is
+    #      already green, and WAITED ON when it is still in flight, because in a
+    #      fast pipeline accepted CI is essentially never settled at gate time
+    #      (tree_identical_ci_outcome; both SHAs + the shared tree recorded, and
+    #      every non-credit LOGS why). Shares the gate's poll deadline.
+    # NOTHING else weakens: a non-credit — red, a vanished/absent accepted run, a
+    # wait that times out, diverged trees (e.g. a consumer lock-bump commit riding
     # #{RELEASE_BRANCH} — see tree_identical_promote) — falls through to the exact
     # same poll below.
+    # ONE shared poll budget for the whole gate: the tree credit may spend part of it
+    # WAITING on the in-flight accepted run, and a wait that times out then falls through
+    # must not spend a SECOND full window polling the release SHA.
+    deadline = monotonic_s + ci_poll_timeout
     credit = fast_forward_promote?(path, sha) ? ci_credit_verdict(repo, sha) : nil
     if credit
       credit[:credited] = "#{credit[:credited]}; fast-forward promote — " \
                           "origin/#{RELEASE_BRANCH} is the #{ACCEPTED_BRANCH} head CI already built"
     elsif (promote = tree_identical_promote(path, sha))
-      credit = ci_tree_credit_verdict(repo, sha, promote)
+      # SAME-TREE: credit an accepted-head green, or WAIT on it while it is in flight —
+      # the round-3 fix (credit-waits-accepted-ci). Whatever the outcome, it LOGS why.
+      outcome = tree_identical_ci_outcome(repo, sha, promote, deadline: deadline)
+      credit = outcome[:credit]
+      say("  #{repo}: #{outcome[:diagnostic]}") if outcome[:diagnostic]
     end
     if credit
       say("  #{repo}: crediting the existing green conclusion for #{short(sha)} — no duplicate run awaited " \
@@ -2229,8 +2294,10 @@ def pre_qa_gate(app_groups, rel_slug = nil)
     # A red (a regression riding origin/#{RELEASE_BRANCH}) or an :unreadable token fault
     # aborts at once; a still-:pending/:none/:unverified verdict is HELD — a just-merged
     # SHA's CI is still building — until it goes green, red, or the poll times out. This
-    # replaces the single read that aborted every sweep's first run on a pending CI.
-    ci = credit || poll_ci_verdict(repo, sha)
+    # replaces the single read that aborted every sweep's first run on a pending CI. The
+    # poll shares the gate's deadline (see above) so the tree-credit wait + this poll
+    # never exceed one window together.
+    ci = credit || poll_ci_verdict(repo, sha, deadline: deadline)
     ok = ci_pass?(ci)
     step("pre-QA gate #{repo}: GitHub CI #{ci[:state].to_s.upcase}#{credit ? ' (credited)' : ''} @ #{short(sha)} " \
          "(#{cmd} recorded for the G4 drift check, not run here)")

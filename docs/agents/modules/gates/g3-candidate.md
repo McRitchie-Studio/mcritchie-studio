@@ -287,12 +287,19 @@ poll* (a declined credit changes nothing — the table above is untouched):
   `origin/accepted`): the SHA's own completed greens must cover every pending
   duplicate by check name (`ci_credit_verdict` → `CiStatus.credit_for_sha`).
 - **Same-TREE** — the live batch-PR merge minted a **new** SHA whose tree equals
-  the accepted head's (`tree_identical_promote`): the accepted head's own
-  **completed green** vouches for the identical content
-  (`ci_tree_credit_verdict`). A still-pending or red accepted run credits
-  nothing, and a consumer lock-bump commit riding `release` (gems publish before
-  QA) breaks tree identity by design — the post-bump SHA earns its own polled
-  verdict.
+  the accepted head's (`tree_identical_promote`): the accepted head's own green
+  vouches for the identical content (`tree_identical_ci_outcome`). It is
+  **credited** when the accepted run is already green, and **waited on** when
+  that run is still **in flight** — in a fast pipeline (review merges into
+  `accepted`, the sweep runs minutes later) accepted CI is essentially never
+  settled at gate time, so a completed-green-only credit systematically missed
+  and the hub ran the identical suite twice. A **red** accepted run credits
+  nothing and falls through to the release SHA's own poll; a vanished/absent run
+  or a wait that times out likewise falls through (the wait shares the gate's
+  poll deadline, so it never doubles the wall-clock). Every non-credit **logs
+  which condition fired**. A consumer lock-bump commit riding `release` (gems
+  publish before QA) breaks tree identity by design — the post-bump SHA earns
+  its own polled verdict.
 
 A credited pass records the source in `qa_gates[repo]["ci"]["credited"]` — for
 the tree credit, both full SHAs plus the shared tree — so the audit trail always

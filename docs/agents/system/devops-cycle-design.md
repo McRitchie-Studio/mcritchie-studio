@@ -217,12 +217,16 @@ fast-forwarded, so the release tip IS the accepted head whose completed greens
 cover the pending duplicates (`ci_credit_verdict` → `CiStatus.credit_for_sha`,
 G4's `ship_gate_skip?` discipline); and **same-TREE** — the live batch-PR merge
 minted a new SHA snapshotting the accepted head's exact tree
-(`tree_identical_promote`), so the accepted head's own completed green vouches
-for that content (`ci_tree_credit_verdict`; the gate note records both SHAs + the shared
-tree in `qa_gates[repo]["ci"]["credited"]`). A consumer lock-bump commit riding
+(`tree_identical_promote`), so the accepted head's green vouches for that content
+— credited when it is already green, and **waited on** when it is still in flight
+(`tree_identical_ci_outcome`; the gate note records both SHAs + the shared tree
+in `qa_gates[repo]["ci"]["credited"]`), since in a fast pipeline accepted CI is
+essentially never settled at gate time. A consumer lock-bump commit riding
 `release` (gems publish before QA) breaks tree identity by design — the credit
-refuses and the post-bump SHA earns its own polled verdict. Red, pending,
-missing-checks, and diverged-tree verdicts poll exactly as before, and the
+refuses and the post-bump SHA earns its own polled verdict. Red, missing-checks,
+and diverged-tree verdicts poll exactly as before; an in-flight (pending)
+accepted run on the identical tree is now WAITED ON rather than duplicated (the
+wait shares the gate's poll deadline), and every non-credit logs why. The
 release-push workflow still runs (canceling the superseded duplicate run is an
 Actions-side follow-up, not a gate concern).
 
