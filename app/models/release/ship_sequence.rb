@@ -111,12 +111,15 @@ class Release
       conclusion.to_s.strip == "success" ? :success : :failed
     end
 
-    # Is the run specifically PAUSED for the operator's `production` approval? The
-    # `waiting` status IS the required-reviewer pause (it is what replaced the local
-    # ship-confirm prompt), so the fallback watcher needs no extra
-    # `actions/runs/<id>/pending_deployments` read to detect it — the status says so.
-    # Used only to tell the operator WHY the watcher is holding (see
-    # run_concluded_success?); the run/skip decision is run_watch_verdict's.
+    # Is the run PAUSED on a deployment-protection gate? The `waiting` status is
+    # GitHub's signal for a protection rule holding a deployment (a required reviewer
+    # or a wait timer). The `production` Environment's required-reviewer approval was
+    # REMOVED on 2026-07-20 (task remove-prod-deploy-approval), so a normal prod run
+    # no longer reaches `waiting`; this stays as defense-in-depth should a protection
+    # rule ever be re-added — the status alone detects it, with no extra
+    # `actions/runs/<id>/pending_deployments` read. Used only to tell the operator WHY
+    # the watcher is holding (see run_concluded_success?); the run/skip decision is
+    # run_watch_verdict's.
     def approval_pause?(status)
       status.to_s.strip == "waiting"
     end

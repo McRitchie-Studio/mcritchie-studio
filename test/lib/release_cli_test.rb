@@ -4440,20 +4440,22 @@ class ReleaseCliTest < Minitest::Test
                      "a genuinely failed run (watch failed AND conclusion=failure) fails closed"
   end
 
-  # [integration] THE approval-pause regression (run 29450907913). A prod-deploy
-  # run PAUSES at the `production` Environment's required reviewer, reporting
-  # `waiting` for as long as the operator takes to click (3h34m live). If a
-  # transient blip kills `gh run watch` DURING that pause, the fallback must HOLD
-  # on the still-live run — a `waiting`/`in_progress` read is not a failed deploy —
-  # and only conclude when the run actually finishes. The old fallback polled a
-  # 100s budget for `completed` and failed the ship CLOSED over an unapproved
-  # deploy; this proves it now waits through the pause and then succeeds. `sleep`
-  # is stubbed to a no-op so the "hold" costs no wall-clock in the test.
-  def test_dispatch_and_watch_holds_through_a_waiting_approval_pause_then_succeeds
+  # [integration] THE protection-pause regression (run 29450907913). A prod-deploy
+  # run can sit in GitHub's `waiting` status — a deployment-protection gate holding
+  # the deploy. (Historically this was the `production` Environment's required
+  # reviewer, held `waiting` for as long as the operator took to click — 3h34m live —
+  # before that approval was removed on 2026-07-20; a re-added protection rule would
+  # produce it again.) If a transient blip kills `gh run watch` DURING that pause,
+  # the fallback must HOLD on the still-live run — a `waiting`/`in_progress` read is
+  # not a failed deploy — and only conclude when the run actually finishes. The old
+  # fallback polled a 100s budget for `completed` and failed the ship CLOSED over a
+  # run that was simply still live; this proves it now waits through the pause and
+  # then succeeds. `sleep` is stubbed to a no-op so the "hold" costs no wall-clock.
+  def test_dispatch_and_watch_holds_through_a_waiting_protection_pause_then_succeeds
     setup = <<~RUBY
       def sleep(*) = nil
       $list_calls = 0
-      # The run sits WAITING for approval, moves to in_progress, then completes.
+      # The run sits WAITING on a protection gate, moves to in_progress, then completes.
       $views = ["waiting\\t", "waiting\\t", "in_progress\\t", "completed\\tsuccess"]
       $view_i = 0
       def sh(*cmd, capture: false, chdir: nil, env: nil)
@@ -4461,7 +4463,7 @@ class ReleaseCliTest < Minitest::Test
           $list_calls += 1
           return [($list_calls == 1 ? "100" : "101"), true]
         end
-        return ["", false] if cmd[0, 3] == ["gh", "run", "watch"]   # transient blip mid-approval
+        return ["", false] if cmd[0, 3] == ["gh", "run", "watch"]   # transient blip mid-hold
         if cmd[0, 3] == ["gh", "run", "view"]
           v = $views[$view_i] || $views.last
           $view_i += 1
@@ -4473,10 +4475,10 @@ class ReleaseCliTest < Minitest::Test
     out = run_cli(["--yes"], setup: setup,
                   call: %{puts("RESULT " + dispatch_and_watch("prod-deploy.yml", { "sha" => "abc" }).to_s)})
 
-    assert_includes out, "WAITING for the production approval",
-                     "the fallback must RECOGNIZE the approval pause and hold, not fail closed on it"
+    assert_includes out, "WAITING on a deployment protection gate",
+                     "the fallback must RECOGNIZE the protection pause and hold, not fail closed on it"
     assert_includes out, "RESULT true",
-                     "a run that was merely paused for approval and then succeeded must ship"
+                     "a run that was merely paused on a protection gate and then succeeded must ship"
   end
 
   # [integration] The stuck-timeout / never-appearing run — the fail-closed case
