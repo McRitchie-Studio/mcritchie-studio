@@ -567,7 +567,27 @@ end
 base = default_base_ref(options[:root])
 branch = branch_drift(options[:root], base)
 branch["dirty"] = working_tree_dirty?(options[:root])
-errors << "branch is #{branch["behind"]} commit(s) behind #{branch["base"]}; rebase before work or handoff" if branch["behind"].to_i.positive?
+
+# SELF-DEFENSE (begin-preflight-wrong-root): a preflight is only meaningful
+# against the TASK'S OWN checkout. Assert the positive property — the inspected
+# root carries the task's branch — rather than trusting the caller's --root. The
+# classic failure is a report that silently describes the PRIMARY (its drift, its
+# PRs, its overlap) when the task lives on a worktree; every number below is then
+# about the wrong tree. On a mismatch REFUSE and say so, and SUPPRESS the drift
+# blocker (its count is meaningless for a tree that isn't this task's). Skipped
+# only when the fact is unknowable: no task branch to expect, or the root is not a
+# branch checkout (detached / non-git → blank).
+expected_branch = devops["branch"].to_s.strip
+expected_branch = "feat/#{task["slug"]}" if expected_branch.empty? && present?(task["slug"])
+inspected_branch = current_branch(options[:root]).to_s.strip
+branch["wrong_checkout"] = !expected_branch.empty? && !inspected_branch.empty? && inspected_branch != expected_branch
+if branch["wrong_checkout"]
+  errors << "WRONG checkout: inspecting #{options[:root]} on branch #{inspected_branch.inspect}, but task " \
+            "#{task["slug"]} lives on #{expected_branch.inspect} — this is NOT the task's worktree, so the drift/" \
+            "PR/overlap here describe the wrong tree. Run bin/session-preflight from the task's worktree, or pass " \
+            "--root <worktree>."
+end
+errors << "branch is #{branch["behind"]} commit(s) behind #{branch["base"]}; rebase before work or handoff" if !branch["wrong_checkout"] && branch["behind"].to_i.positive?
 warnings << "working tree has uncommitted changes" if branch["dirty"]
 changed = changed_files(options[:root], base)
 

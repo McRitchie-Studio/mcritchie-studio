@@ -204,6 +204,31 @@ class TaskBeginTest < Minitest::Test
     assert_includes out, "bin/ship #{SLUG}", "the summary must name the handoff twin"
   end
 
+  # [unit] begin invokes preflight against the WORKTREE root — the
+  # begin-preflight-wrong-root bug. begin ran the PRIMARY's copy of
+  # session-preflight (BinHelpers.bin_for resolves it relative to bin/task's own
+  # dir), and session-preflight resolves its root from __dir__, so `chdir: worktree`
+  # was cosmetic — it silently inspected the PRIMARY. That is a false GREEN (a desk
+  # it never examined reads "OK") and, whenever the primary drifts behind accepted
+  # (routine), a false RED that EXITS begin non-zero. The fix pins the inspected
+  # root by passing --root <worktree>; assert that handle is present and points at
+  # the task's worktree, not the primary.
+  def test_begin_pins_preflight_root_to_the_worktree
+    _requests, _out, err, status, lines = run_begin([SLUG], existing: building_task)
+
+    assert status.success?, "expected green begin, got:\n#{err}"
+    preflight = lines.find { |l| l[0] == "PREFLIGHT" }
+    assert preflight, "begin must run session-preflight"
+
+    argv = preflight[1...-1] # drop the MARKER (first) and the trailing cwd (last)
+    root_idx = argv.index("--root")
+    assert root_idx, "begin must pass --root to pin preflight to the worktree, got argv: #{argv.inspect}"
+
+    worktree = File.realpath(File.join(sandbox_root, "fake-projects", APP, ".worktrees", SLUG))
+    assert_equal worktree, File.realpath(argv[root_idx + 1]),
+                 "preflight's --root must be the task worktree, not the primary checkout"
+  end
+
   # --- resume ------------------------------------------------------------------
 
   def test_begin_resumes_an_existing_building_task_without_duplicating

@@ -1153,7 +1153,12 @@ when "begin"
   worktree_dir = CertRootGuard.worktree_hint(worktree_slug, ENV["TASK_BEGIN_PROJECTS_DIR"])
   die!("worktree #{worktree_slug.inspect} not found on disk after allocation — check bin/agent-worktree output") if worktree_dir.nil?
   preflight_bin = BinHelpers.bin_for("TASK_BEGIN_PREFLIGHT_BIN", "session-preflight")
-  begin_step!("5/5 preflight", slug, preflight_bin, slug, chdir: worktree_dir)
+  # Pin the inspected root to the worktree. session-preflight resolves its own
+  # root from __dir__, so `chdir` alone left the primary's copy inspecting the
+  # PRIMARY (begin-preflight-wrong-root): a false GREEN, and a false RED that
+  # exited begin whenever the primary drifted behind accepted. --root names the
+  # desk explicitly; session-preflight self-defends that it really is this task's.
+  begin_step!("5/5 preflight", slug, preflight_bin, slug, "--root", worktree_dir, chdir: worktree_dir)
 
   context = begin
     JSON.parse(File.read(File.join(worktree_dir, ".agent-context.json")))
