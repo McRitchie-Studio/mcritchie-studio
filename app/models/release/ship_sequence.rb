@@ -147,6 +147,63 @@ class Release
       !sha.to_s.strip.empty?
     end
 
+    # --- WHY a fail-closed advance refused: accepted AHEAD vs genuinely DIVERGED -
+    #
+    # A refused (non-fast-forward) advance has TWO very different causes, and the
+    # advice for one is destructive to the other:
+    #
+    #   :ahead    — accepted is missing NOTHING that shipped; it simply carries
+    #               MORE. The normal consequence of a review pass merging PRs into
+    #               accepted while a ship runs (different lanes, explicitly
+    #               supported). Correct action: NOTHING.
+    #   :diverged — accepted is genuinely missing shipped content. Correct action:
+    #               MERGE main into accepted. Never a bare ref push, which would
+    #               discard accepted's own commits.
+    #
+    # REGRESSION (rel-20260720-1fc111): the CLI called every refusal "DIVERGED" and
+    # suggested `git push origin <sha>:refs/heads/accepted`. accepted was AHEAD, and
+    # that command would have destroyed two concurrently-merged PRs.
+    #
+    # Two independent AHEAD signals, because topology alone is not enough:
+    #   * main_is_ancestor  — plain ancestry: main is reachable from accepted.
+    #   * main_tree_absorbed — CONTENT: main's tree is already in accepted's
+    #     history. Load-bearing because the sweep merges accepted INTO release, so
+    #     main ends up a MERGE COMMIT whose tree equals the accepted head it came
+    #     from — and that merge commit is never in accepted's history, so ancestry
+    #     is FALSE while nothing is actually missing.
+    #
+    # Each signal is TRI-STATE — :affirmed, :refuted, or :unknown — never a bare
+    # boolean. The defect this method exists to fix was itself an ABSENCE of signal
+    # (a non-fast-forward, which only says "not a fast-forward") read as a POSITIVE
+    # one ("accepted has diverged"). Collapsing an unreadable git state into
+    # :refuted would rebuild that same bug one layer down, so a signal we could not
+    # READ says so, and the caller reports uncertainty instead of asserting a
+    # confident verdict it cannot support.
+    #
+    # Resolution order:
+    #   * ANY :affirmed ⇒ :ahead. Positive proof of absorption settles it; a second
+    #     unreadable signal cannot subtract from evidence already in hand.
+    #   * else ANY :unknown ⇒ :unknown. We cannot tell — say so, advise verification.
+    #   * else (BOTH :refuted) ⇒ :diverged. Only proven-absent content is divergence.
+    #
+    # NARRATIVE DRIFT since #588 (publish-gems-before-qa, da71d865): its
+    # bump_consumer_locks_for_qa commits consumer Gemfile.lock bumps onto `release`
+    # during prepare, so for ANY gem-carrying release the frozen main's tree
+    # legitimately differs from accepted's head tree. main_tree_absorbed is then
+    # correctly :refuted and such a refusal lands on :diverged. That is a TRUE
+    # verdict — the two changes compose correctly — but it means :ahead is now the
+    # RARER outcome on the hub and :diverged a routine one. Do not read a run of
+    # :diverged verdicts as this classifier regressing; check whether the release
+    # carried a gem first.
+    #
+    # The git reads live in bin/release's advance_accepted; only the verdict here.
+    def accepted_relation(main_is_ancestor:, main_tree_absorbed:)
+      return :ahead if main_is_ancestor == :affirmed || main_tree_absorbed == :affirmed
+      return :unknown if main_is_ancestor == :unknown || main_tree_absorbed == :unknown
+
+      :diverged
+    end
+
     # The app deploy groups with the hub pulled to the front, the rest left in
     # their incoming (producer-first) order. Stable: a non-hub group keeps its
     # relative position. Accepts symbol- OR string-keyed groups (repo_plan returns

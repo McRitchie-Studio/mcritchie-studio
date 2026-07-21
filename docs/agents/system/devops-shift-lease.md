@@ -20,23 +20,58 @@ enforced; review/conductor acts took no lease at all.
 `DevopsShift` is a board-held singleton **per lane**, where a lane is a ROLE/shift
 key. It reuses the build-claim lease math verbatim: a holder is a LIVE INSTANCE
 (session id + per-process nonce, `SessionIdentity.nonce`) under a **120s TTL**
-renewed by the status-line heartbeat. `acquire` is an atomic compare-and-set (one
-row per lane, taken under `with_lock`) so two simultaneous acquirers serialize and
-exactly one wins.
+renewed by a **detached renewer the acquiring run starts for itself**. `acquire` is
+an atomic compare-and-set (one row per lane, taken under `with_lock`) so two
+simultaneous acquirers serialize and exactly one wins.
+
+**Renewal belongs to the run, not to the UI** (fixed 2026-07-20). Renewal used to
+live only in `bin/statusline`, so it happened when Claude Code PAINTED A STATUS LINE.
+A headless holder — a background agent run, and critically the **autonomous
+heartbeat** — painted nothing, renewed nothing, and lost its lane ~120s into work
+that ran far longer; `acquire` then truthfully reported the lane FREE to the next
+session. That is not theoretical: two Avi review supervisors ran concurrently and
+duplicated four reviewer lanes on PR #601, the exact collision this lease exists to
+prevent. Now `acquire` spawns `bin/devops-shift renew-loop`
+(`bin/lib/shift_renewer.rb`), which renews every **30s** (TTL ÷ 4, derived from the
+TTL so the two cannot drift) for as long as its **anchor process** — the long-lived
+`claude`/`codex` process the nonce is already derived from — stays alive.
+`bin/statusline` still renews; it is now a harmless second renewer rather than the
+only one.
 
 - **Simple** — the careless double. Session A holds `avi`; a second Avi launch
   `acquire avi` → the row is live-held → `acquired:false` → the CLI prints
   `🛑 avi shift already held — STAND DOWN` naming the holder, and exits **10**. The
   SOP tells the second session to stop. No duplicate reviews, no doubled fan-out.
-- **Crash** — A dies mid-shift, stops renewing; within the TTL the lease lapses and
-  the next launch `acquire`s it (`disposition: expired`). Self-healing — a dead
-  shift never wedges the lane.
+- **Crash** — A dies mid-shift; its renewer sees the anchor process gone and exits,
+  so nothing renews. Within the TTL the lease lapses and the next launch `acquire`s
+  it (`disposition: expired`). Self-healing — a dead shift never wedges the lane.
+  This is why the headless fix is a renewer and NOT a fail-closed `acquire`: refusing
+  whenever we cannot prove the holder dead would invert `ClaimLease`'s fail-open
+  posture and let one crash lock a lane indefinitely. A crash must cost a delay,
+  never a deadlock.
+- **Headless** — a holder with no status line retains the lane for the whole run.
+  Asserted, not assumed: `test/models/devops_shift_test.rb` walks a 20-minute window
+  (ten TTLs) refusing a second acquire at every step, and
+  `test/lib/devops_shift_renewer_integration_test.rb` spawns the REAL detached
+  renewer against a stub board and asserts its renewals carry the holder's own
+  session + nonce (a renewer with the wrong nonce posts happily while the board
+  no-ops every call — the same bug wearing a disguise).
 - **Different lanes coexist** — `steffon` (qa-release) and `avi` (review/ship) are
   distinct leases, so those acts run side by side; only two of the SAME role collide.
 
-Surface: `bin/devops-shift acquire|renew|release|status`; the board endpoints
+`release` frees the lane immediately instead of waiting out the TTL, and **reports
+what the board did**. It used to print success unconditionally, so a caller that was
+not the holder (board answers 204, nothing released) saw `shift released.` while
+`status` went on showing the shift — two commands disagreeing about one fact. Both
+now speak from the board: the verdict comes from the release response, and on a 204
+the holder line is re-read from the same `GET …/devops_shifts` that `status` renders.
+
+Surface: `bin/devops-shift acquire|renew|release|status` (+ the internal
+`renew-loop`); the board endpoints
 `POST /api/v1/devops_shifts/{acquire,renew,release}` + `GET …/devops_shifts`; the
-status-line renewer (reads the `<sid>.devops-shift` marker `acquire` writes); and the
+`<sid>.devops-shift` marker `acquire` writes (the lane, for `bin/statusline`) and its
+`<sid>.devops-shift-renewer` sibling (the renewer's pid, so `release` can stop it);
+and the
 `avi`/`steffon`/`alex` acquire-or-stand-down preambles in `pr-review.md`,
 `qa-release.md`, `production-deploy.md`. Enforcement is cooperative (the SOP stands
 the loser down) per the studio's honor-system posture; the exit code (0 acquired /

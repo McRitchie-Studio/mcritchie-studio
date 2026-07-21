@@ -10,6 +10,7 @@ require "json"
 require "tmpdir"
 require "fileutils"
 require_relative "../support/session_env"
+require_relative "../../bin/lib/ci_status"
 
 class DorCheckTest < Minitest::Test
   BIN = File.expand_path("../../bin/dor-check", __dir__)
@@ -1580,6 +1581,68 @@ class DorCheckTest < Minitest::Test
     refute j["ready"]
     assert_equal "conflicted", j.dig("ci", "state")
     assert(j["errors"].any? { |e| e.match?(/CONFLICTED/i) }, out)
+  end
+
+  # --- CI-less PR (stale base, ZERO check-runs): the same hard blocker -----------
+  # Task detect-ci-less-stale-prs (2026-07-20). The :conflicted fix above only
+  # catches mergeStateStatus DIRTY, but a base that drifted past GitHub's merge
+  # computation gets zero check-runs WITHOUT ever reading DIRTY — indistinguishable
+  # from a slow CI to every watcher in the fleet, which then waits forever on checks
+  # that will never exist (a full rework cycle burned: a watcher armed at 05:47Z on a
+  # commit that never got checks; the cure was a rebase, which fired CI green 8/8).
+  # It must block in BOTH roles with a RECOVERABLE fix named, and stay distinct from
+  # pending/none — the states that legitimately mean "wait".
+
+  def test_merge_gate_blocks_a_ci_less_pr
+    out, code = ci_check("ci_less")
+    assert_equal 1, code, out
+    assert_match(/NO CI WILL RUN/i, out)
+    assert_match(/resolve/i, out, "the blocker names the conflict work")
+    assert_match(/not ready to advance/, out)
+    # BLOCKER 4 at the tier that matters. The injection seam carries a bare token, so
+    # no base is resolvable here — and this is the path pr-review writes into REAL
+    # task feedback. The remedy must therefore OMIT its commands rather than print a
+    # placeholder: `git merge origin/the base branch` is not a command anyone can run.
+    refute_match(%r{origin/\S*\s}, out, "no half-built origin/<placeholder> ref may reach task feedback")
+    refute_match(/git (merge|rebase|fetch)/, out, "with no base resolved the commands are omitted, not guessed")
+  end
+
+  def test_a_ci_less_blocker_with_a_known_base_names_a_recoverable_fix
+    # The other half: when the base IS known the remedy must be runnable AND
+    # recoverable — conflict work named, a way back named, and no `&&` chain that
+    # halts silently mid-operation. Driven at the unit tier's verdict shape because
+    # the CLI's token seam cannot carry a base.
+    remedy = CiStatus.ci_less_remedy(state: :ci_less, base: "accepted", mergeable: "CONFLICTING")
+    assert_match(%r{git merge origin/accepted\b}, remedy)
+    assert_match(/resolve/i, remedy)
+    assert_match(/--abort/, remedy, "a way back to a known-good state")
+    refute_includes remedy, "&&", "no chaining past a step that can halt"
+  end
+
+  def test_review_gate_zero_blocks_a_ci_less_pr
+    out, code = ci_check("ci_less", CI_PR, "--gate-role", "review")
+    assert_equal 1, code, out
+    assert_match(/NO CI WILL RUN/i, out)
+    assert_match(/not ready to advance/, out)
+  end
+
+  def test_ci_less_is_distinct_from_pending_and_from_no_checks_yet
+    # THE bug, at the CLI tier: pending/none are soft (CI is genuinely coming), while
+    # ci_less is hard. Folding ci_less into either is what made the stall invisible.
+    %w[pending none].each do |soft|
+      out, code = ci_check(soft)
+      assert_equal 0, code, out
+      refute_match(/NO CI WILL RUN/i, out, "#{soft} must not be reported as ci-less")
+    end
+  end
+
+  def test_ci_less_surfaces_in_the_json_verdict
+    out, code = ci_check("ci_less", CI_PR, "--json")
+    assert_equal 1, code, out
+    j = JSON.parse(out)
+    refute j["ready"]
+    assert_equal "ci_less", j.dig("ci", "state")
+    assert(j["errors"].any? { |e| e.match?(/NO CI WILL RUN/i) }, out)
   end
 
   def test_missing_pr_is_silent_and_stays_ready

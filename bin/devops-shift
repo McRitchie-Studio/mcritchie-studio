@@ -6,14 +6,22 @@
 # pr-review), the mirror of bin/task's build-claim lease at the ROLE granularity.
 #
 #   bin/devops-shift acquire <lane> [--label <text>]   # take the shift, or stand down
-#   bin/devops-shift renew   <lane>                     # heartbeat (bin/statusline calls this)
+#   bin/devops-shift renew   <lane>                     # one heartbeat (bin/statusline calls this)
 #   bin/devops-shift release <lane>                     # clean drop at session end
 #   bin/devops-shift status                             # who's on shift, per lane
+#   bin/devops-shift renew-loop <lane> --anchor-pid <p> --anchor-start <s>   # internal
 #
 # A LANE is a role/shift key — `avi`, `steffon`, `alex`. Two live instances of the
 # same lane contend; different lanes coexist (a review vs a qa-release). Identity is
 # the SAME live-instance identity the build claim uses (session id + per-process
 # nonce, SessionIdentity), so the heartbeat renews the right shift.
+#
+# RENEWAL IS OWNED BY THE RUN, NOT BY THE UI. `acquire` starts a detached renewer
+# (`renew-loop`, see bin/lib/shift_renewer.rb) anchored to the agent process, and
+# `release` stops it. Before this, the ONLY renewer was bin/statusline's status-line
+# paint — so a headless holder (a background agent run, the autonomous heartbeat)
+# renewed nothing and lost the lane ~120s in, while still working. bin/statusline
+# still calls `renew`; it is now a harmless second renewer, not the only one.
 #
 # EXIT CODES make the acquire gate scriptable (and the SOP branch on it):
 #   0  — acquired (you hold the shift; proceed)
@@ -24,9 +32,11 @@
 
 require "json"
 require "fileutils"
+require "rbconfig"
 require_relative "lib/agent_api"
 require_relative "lib/session_identity"
 require_relative "lib/session_markers"
+require_relative "lib/shift_renewer"
 
 class DevopsShiftCli
   OPEN_TIMEOUT = 2
@@ -44,6 +54,9 @@ class DevopsShiftCli
     @out = out
     @err = err
     @api = AgentApi.new(env: env, open_timeout: OPEN_TIMEOUT, read_timeout: READ_TIMEOUT)
+    # Injected in tests so no test ever forks a real renewer or signals a real pid.
+    @spawner = method(:spawn_detached)
+    @killer  = method(:terminate)
   end
 
   # Entry point. Returns the process exit code.
@@ -53,10 +66,11 @@ class DevopsShiftCli
     flags = parse_flags(argv)
 
     case command
-    when "acquire" then acquire(lane, flags)
-    when "renew"   then renew(lane)
-    when "release" then release(lane)
-    when "status"  then status
+    when "acquire"    then acquire(lane, flags)
+    when "renew"      then renew(lane)
+    when "renew-loop" then renew_loop(lane, flags)
+    when "release"    then release(lane)
+    when "status"     then status
     else
       @err.puts("usage: devops-shift acquire <lane> [--label <text>] | renew <lane> | release <lane> | status " \
                 "(lanes: #{LANES.join(', ')})")
@@ -84,6 +98,7 @@ class DevopsShiftCli
     data = parse_data(res)
     if data["acquired"]
       write_marker(sid, lane)
+      start_renewer(sid, lane)
       @out.puts("devops-shift: ✅ #{lane} shift acquired — you're on shift.")
       OK
     else
@@ -102,13 +117,35 @@ class DevopsShiftCli
     OK
   end
 
+  # The detached renewer body (started by `acquire`; not for hand invocation). Renews
+  # while the anchor process lives, so the lease follows the RUN and not the UI. It
+  # inherits DEVOPS_SHIFT_SESSION + TASK_CLAIM_NONCE from its parent because, once
+  # detached, it can no longer re-derive the live-instance identity by walking its own
+  # ancestry — a renewer that guessed its nonce would renew NOTHING, and every renew
+  # would 204 silently, which is indistinguishable from the bug it exists to fix.
+  def renew_loop(lane, flags)
+    return usage_lane("renew-loop") unless present?(lane)
+
+    pid = flags["anchor-pid"]
+    start = flags["anchor-start"]
+    ShiftRenewer.run(
+      alive:   -> { SessionIdentity.process_alive?(pid, start) },
+      renew:   -> { renewed?(lane) },
+      sleeper: ->(seconds) { sleep(seconds) },
+      clock:   -> { Time.now },
+      interval: ShiftRenewer.interval_from(@env["DEVOPS_SHIFT_RENEW_INTERVAL"])
+    )
+    OK
+  end
+
   def release(lane)
     return usage_lane("release") unless present?(lane)
 
     sid = session_id
-    post("/api/v1/devops_shifts/release", { "lane" => lane, "session" => sid, "nonce" => nonce }) if present?(sid)
+    res = (post("/api/v1/devops_shifts/release", { "lane" => lane, "session" => sid, "nonce" => nonce }) if present?(sid))
+    stop_renewer(sid)
     clear_marker(sid, lane)
-    @out.puts("devops-shift: #{lane} shift released.")
+    report_release(lane, res)
     OK
   end
 
@@ -128,7 +165,117 @@ class DevopsShiftCli
     OK
   end
 
+  # ── The detached renewer ─────────────────────────────────────────────────────
+
+  # Start a renewer for the shift we just took. No anchor process ⇒ no renewer: we
+  # will not start a background process whose owner we cannot identify, because
+  # nothing would ever tell it to stop. That case (a plain shell, CI) simply keeps
+  # the old status-line/manual renewal, and we say so rather than implying cover we
+  # are not providing.
+  def start_renewer(sid, lane)
+    anchor = anchor_process
+    unless anchor
+      @out.puts("devops-shift: note — no agent process to anchor a renewer to; " \
+                "this shift lapses in ~#{lease_ttl_seconds}s unless something renews it.")
+      return nil
+    end
+
+    argv = [RbConfig.ruby, __FILE__, "renew-loop", lane,
+            "--anchor-pid", anchor[:pid].to_s, "--anchor-start", anchor[:start].to_s]
+    pid = @spawner.call(renewer_env(sid), argv)
+    write_renewer_marker(sid, pid) if pid
+    pid
+  rescue StandardError => e
+    @err.puts("devops-shift: could not start the shift renewer (#{e.class}) — " \
+              "the lease will rely on the status line as before.")
+    nil
+  end
+
+  # The identity the renewer must carry. Detached, it cannot walk its way back to the
+  # agent process, so both halves of the live-instance identity are handed down
+  # explicitly — the nonce especially, since a wrong one renews nothing, silently.
+  def renewer_env(sid)
+    { "DEVOPS_SHIFT_SESSION" => sid.to_s, "TASK_CLAIM_NONCE" => nonce.to_s }
+  end
+
+  # The process to anchor the lease lifetime to. DEVOPS_SHIFT_ANCHOR_PID lets a
+  # headless runner (or a test) name its own long-lived owner instead of relying on a
+  # `claude`/`codex` ancestor being present.
+  def anchor_process
+    override = @env["DEVOPS_SHIFT_ANCHOR_PID"].to_s.strip
+    return { pid: override.to_i, start: SessionIdentity.proc_start(override) } unless override.empty?
+
+    SessionIdentity.agent_process
+  end
+
+  # One heartbeat from inside the loop. TRUE keeps the loop running.
+  #
+  # A definitive 204 means the board says we are no longer the holder — released
+  # elsewhere, or the lane changed hands — so we stop. An unreachable board is NOT
+  # that: it is no evidence either way, and stopping there would guarantee losing a
+  # lane we probably still hold. So a network blip keeps renewing (bounded by the
+  # renewer's safety cap), while a clear "you don't hold this" stops.
+  def renewed?(lane)
+    res = post("/api/v1/devops_shifts/renew", { "lane" => lane, "session" => session_id, "nonce" => nonce })
+    return true if res.nil? # board unreachable — not proof we lost the shift
+
+    res.code.to_i != 204
+  end
+
+  def stop_renewer(sid)
+    pid = read_renewer_marker(sid)
+    @killer.call(pid) if pid
+    clear_renewer_marker(sid)
+  rescue StandardError
+    nil
+  end
+
+  def spawn_detached(env, argv)
+    pid = Process.spawn(env, *argv, out: File::NULL, err: File::NULL, pgroup: true)
+    Process.detach(pid)
+    pid
+  end
+
+  def terminate(pid)
+    Process.kill("TERM", pid.to_i)
+  rescue StandardError
+    nil # already gone, or never ours to kill
+  end
+
   # ── Rendering ────────────────────────────────────────────────────────────────
+
+  # Report what the BOARD did, not what we hoped it did.
+  #
+  # This used to print "shift released." unconditionally. The board answers 204 when
+  # the caller is not the holder — nothing is released — so `release` claimed success
+  # while `status` went on showing the shift, and the operator had two commands
+  # disagreeing about one fact. Both now speak from the board: the verdict comes from
+  # the release response, and the holder line is re-read from the very endpoint
+  # `status` renders.
+  def report_release(lane, res)
+    if res.nil?
+      @out.puts("devops-shift: could not reach the board — the #{lane} shift will lapse " \
+                "on its own within ~#{lease_ttl_seconds}s.")
+    elsif res.code.to_i == 204
+      @out.puts("devops-shift: #{lane} shift was not held by this session — nothing released.")
+      report_live_holder(lane)
+    elsif ok?(res)
+      @out.puts("devops-shift: #{lane} shift released.")
+    else
+      @out.puts("devops-shift: the board refused the #{lane} release (HTTP #{res.code}) — " \
+                "it will lapse within ~#{lease_ttl_seconds}s.")
+    end
+  end
+
+  # Who `status` would show for this lane, read from the same endpoint status reads.
+  def report_live_holder(lane)
+    res = get("/api/v1/devops_shifts")
+    return unless ok?(res)
+
+    rows = parse_data(res)
+    row = rows.is_a?(Array) ? rows.find { |r| r["lane"] == lane && r["live"] } : nil
+    @out.puts(row ? "  still on shift: #{holder_line(row)}" : "  the #{lane} lane is free.")
+  end
 
   # The stand-down message: name the live holder so the operator/agent knows WHO is
   # already on shift and can stop cleanly.
@@ -230,12 +377,32 @@ class DevopsShiftCli
   # it shares their one choke point rather than re-deriving the path here.
   DEVOPS_SHIFT = ".devops-shift"
 
+  # The renewer's pid lives in its OWN marker rather than as a second line of
+  # .devops-shift: bin/statusline reads that file for the lane, and widening a file
+  # another reader parses is how a small change breaks a distant one.
+  DEVOPS_SHIFT_RENEWER = ".devops-shift-renewer"
+
   def write_marker(sid, lane)
     SessionMarkers.write(sid, @api.projects_dir, DEVOPS_SHIFT, "#{lane}\n", env: @api.env)
   end
 
   def clear_marker(sid, _lane)
     SessionMarkers.delete(sid, @api.projects_dir, DEVOPS_SHIFT, env: @api.env)
+  end
+
+  def write_renewer_marker(sid, pid)
+    SessionMarkers.write(sid, @api.projects_dir, DEVOPS_SHIFT_RENEWER, "#{pid}\n", env: @api.env)
+  end
+
+  def read_renewer_marker(sid)
+    pid = SessionMarkers.read(sid, @api.projects_dir, DEVOPS_SHIFT_RENEWER).to_s.strip.to_i
+    pid.positive? ? pid : nil
+  rescue StandardError
+    nil
+  end
+
+  def clear_renewer_marker(sid)
+    SessionMarkers.delete(sid, @api.projects_dir, DEVOPS_SHIFT_RENEWER, env: @api.env)
   end
 
   def usage_lane(cmd)

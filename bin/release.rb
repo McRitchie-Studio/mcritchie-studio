@@ -206,6 +206,10 @@ RELEASE_BRANCH = "release"
 # (Phase 3 Slice 4 retired the release→accepted base-retarget stopgap that used to
 # live here; Phase 4 deleted its last remnant.)
 ACCEPTED_BRANCH = "accepted"
+# How far back down accepted's history to look for a shipped tree when explaining a
+# refused advance (tree_absorbed_by_accepted?). The absorbed commit sits a few merges
+# back on a live ladder; the bound keeps the read cheap on a deep repo.
+ACCEPTED_TREE_SCAN = 200
 
 # The producer/consumer repo registry (config/release_repos.yml) — tells the CLI
 # which members are gems (published producer-first, no app branch) vs apps. Same
@@ -2012,7 +2016,10 @@ end
 #              * :red        — a regression is riding origin/#{RELEASE_BRANCH} (the
 #                              eject/revert recovery), and
 #              * :unreadable — a token/credential fault; polling a refused token only
-#                              burns the whole timeout and never heals it mid-sweep.
+#                              burns the whole timeout and never heals it mid-sweep, and
+#              * :ci_less    — GitHub will run NO CI for this subject at all (a stale
+#                              base it cannot compute a merge commit for), so there is
+#                              no run to wait for; the remedy is a rebase, not patience.
 #   :wait  — CI has NOT concluded yet: :none (no run registered), :pending (the push
 #            run is still building — the raw queued/in_progress/waiting statuses all
 #            fold to :pending), :unverified (a transient read miss), or anything else
@@ -2023,7 +2030,13 @@ def ci_poll_action(ci)
   return :pass if ci_pass?(ci)
 
   state = ci.is_a?(Hash) ? ci[:state] : nil
-  return :abort if %i[red unreadable].include?(state)
+  # :ci_less is DEFENSIVE here, not a fix for an observed release-path stall: the only
+  # producer of :ci_less is CiStatus.combine, reached solely from evaluate(pr_url), and
+  # this gate is SHA-addressed (for_sha) — so today it can arrive only via an injected
+  # RELEASE_CI_STATUS token. Classified anyway, because if a future PR-scoped caller
+  # does reach this poll, "GitHub will never run CI for this subject" is terminal for
+  # the same reason :unreadable is: polling is the one thing that cannot help.
+  return :abort if %i[red unreadable ci_less].include?(state)
 
   :wait
 end
@@ -2952,11 +2965,188 @@ def advance_accepted(repo, path, sha)
   _, ok = sh("git", "-C", path, "push", "origin", "#{sha}:refs/heads/accepted")
   return if ok
 
-  say("  ⚠ #{repo}: origin/accepted NOT advanced to #{short(sha)} — git refused the ref update " \
-      "(accepted has DIVERGED from main; NOT forcing). Deploy continues — reconcile by hand: " \
-      "git -C #{path} push origin #{sha}:refs/heads/accepted")
+  report_refused_advance(repo, path, sha)
 rescue SystemExit, StandardError => e
   say("  ⚠ #{repo}: origin/accepted advance failed (#{e.message}); deploy continues (maintenance only)")
+end
+
+# Explain a REFUSED (non-fast-forward) accepted advance — correctly.
+#
+# REGRESSION (rel-20260720-1fc111): this used to call every refusal "DIVERGED" and
+# suggest `git push origin <sha>:refs/heads/accepted`. On that ship accepted was
+# merely AHEAD — a concurrent review pass had merged two PRs into it mid-ship — and
+# the suggested command would have DESTROYED both. accepted was missing nothing.
+#
+# So classify BEFORE advising, on CONTENT and not just topology. The sweep merges
+# accepted INTO release, so the frozen main is a MERGE COMMIT whose tree equals the
+# accepted head it came from, and that merge commit never appears in accepted's
+# history — `merge-base --is-ancestor` is FALSE even when nothing is missing. The
+# second signal (main's tree already present in accepted's history) is what catches
+# that case. Verdict: Release::ShipSequence.accepted_relation.
+#
+# BEST-EFFORT like its caller: a signal we cannot READ reports :unknown rather
+# than a confident verdict, and NO branch ever suggests a bare ref push.
+def report_refused_advance(repo, path, sha)
+  # FETCH FIRST — the whole classification below reads `origin/#{ACCEPTED_BRANCH}`,
+  # and it is STALE here. The advance push we just made was REFUSED (non-fast-
+  # forward), and a rejected push does not update the remote-tracking ref; nor did
+  # anything earlier on the app-repo ship path fetch `accepted` (the only fetch is
+  # gem-only, in checkout_detached). In production the concurrent review merge that
+  # caused the refusal landed on the remote from ANOTHER clone, so this clone has
+  # never seen it. Classifying against the stale ref is the very mistake the guard
+  # in advance_accepted's header warns about ("not the primary's remote-tracking
+  # ref, which can be stale... and would false-negative") — read a ref we could not
+  # trust, then print a confident verdict, which is this PR's own bug one layer
+  # down. It printed "AHEAD by 0 commits" against a truth of 13. Non-fatal like the
+  # rest of this path: a failed fetch just leaves the ref as stale as before.
+  sh("git", "-C", path, "fetch", "origin", ACCEPTED_BRANCH, "--quiet", capture: true)
+
+  relation = Release::ShipSequence.accepted_relation(
+    main_is_ancestor: ancestor_signal(path, sha),
+    main_tree_absorbed: tree_absorbed_signal(path, sha)
+  )
+
+  if relation == :ahead
+    count, ok = sh("git", "-C", path, "rev-list", "--count", "#{sha}..origin/#{ACCEPTED_BRANCH}", capture: true)
+    count = ok ? count.strip : "?"
+    say("  ✓ #{repo}: origin/accepted NOT advanced to #{short(sha)} — accepted is AHEAD of main by " \
+        "#{count} commit#{'s' unless count == '1'} (work merged while the ship ran) and already contains " \
+        "everything that shipped. Nothing to do.")
+    return
+  end
+
+  if relation == :unknown
+    say("  ⚠ #{repo}: origin/accepted NOT advanced to #{short(sha)} — git refused the ref update, and the " \
+        "accepted/main relation could NOT be read, so this is reported as UNDETERMINED rather than guessed. " \
+        "The ship is NOT forcing. Deploy continues.")
+    say("    CHECK FIRST, and READ THE DIFF THIS WAY: " \
+        "git -C #{path} fetch origin && git -C #{path} diff origin/accepted origin/main")
+    say("    Any ADDITION or MODIFICATION means accepted is missing shipped content — reconcile below. " \
+        "DELETIONS ONLY usually means accepted merely gained files after the freeze — but a shipped file " \
+        "DELETION looks identical in this diff, so when in doubt, reconcile: the merge is non-destructive either way.")
+    say_reconcile_recipe(repo, path)
+    return
+  end
+
+  say("  ⚠ #{repo}: origin/accepted NOT advanced to #{short(sha)} — main's content was NOT found in accepted's " \
+      "recent history, so accepted appears to be missing shipped content; the ship is NOT forcing. " \
+      "Deploy continues.")
+  say_reconcile_recipe(repo, path)
+end
+
+# The one reconcile recipe, shared by the :diverged and :unknown branches.
+#
+# ROUND-2 fixed WHERE the merge is based (the round-1 `checkout accepted` landed on
+# the primary's stale LOCAL branch, so the push was refused non-fast-forward).
+# ROUND-3 fixes WHERE the merge HAPPENS, because basing it correctly was not enough:
+#
+#   * It was an `&&` chain, and `git merge` exits non-zero on CONFLICT. The chain
+#     HALTED at the merge, so neither the push nor the trailing `checkout main` ran
+#     and the operator was left on a branch they had never seen, mid-conflict.
+#   * That is not an exotic path. This very file documents :diverged as the ROUTINE
+#     outcome on a gem-carrying release (post-#588), and the mechanism is
+#     bump_consumer_locks_for_qa writing Gemfile.lock — the file most likely to have
+#     been touched on accepted too. THE ROUTINE PATH AND THE CONFLICT PATH ARE THE
+#     SAME PATH.
+#   * Worst of all on a gem repo: a conflicted merge leaves MODIFIED TRACKED FILES in
+#     the primary, and a gem repo in that state ABORTS the next ship. Advice printed
+#     to unblock one release could wedge the following one.
+#
+# So the merge no longer happens in the primary at all. It happens in a THROWAWAY
+# WORKTREE, which is also the house rule (worktrees are desks; primaries are loading
+# docks). Walked on a throwaway clone with a genuinely conflicting Gemfile.lock: the
+# merge still stops — every recipe must — but the primary stays on `main` and CLEAN,
+# origin/accepted is untouched, the conflict is contained in the scratch checkout,
+# and BOTH exits (finish it, or bail out) are printed rather than left to invention.
+# A conflict is now a labeled decision point instead of a stranding.
+#
+# Printed as discrete labeled steps, never one `&&` chain: a chain implies all-or-
+# nothing, and this procedure genuinely has a branch in the middle.
+def reconcile_scratch_path(repo) = "/tmp/reconcile-#{ACCEPTED_BRANCH}-#{repo}"
+
+def say_reconcile_recipe(repo, path)
+  scratch = reconcile_scratch_path(repo)
+  say("    RECONCILE with a MERGE (keeps accepted's own commits) in a SCRATCH WORKTREE, " \
+      "so a conflict can never dirty your primary or wedge the next ship:")
+  say("      git -C #{path} fetch origin")
+  say("      git -C #{path} worktree add --detach #{scratch} origin/#{ACCEPTED_BRANCH}   " \
+      "# if this says 'already exists', an old recovery was abandoned — see BAIL OUT below to clear it")
+  say("      git -C #{scratch} merge origin/main   # can stop here on a conflict; see IF THE MERGE CONFLICTS below")
+  say("      git -C #{scratch} push origin HEAD:#{ACCEPTED_BRANCH}")
+  say("      git -C #{path} worktree remove #{scratch}")
+  say("    IF THE MERGE CONFLICTS (expect Gemfile.lock on a gem-carrying release) the " \
+      "merge step STOPS and prints the conflicted files. Your primary is untouched. Either:")
+  say("      FINISH IT — resolve the files in #{scratch}, then: " \
+      "git -C #{scratch} add -A && git -C #{scratch} commit --no-edit " \
+      "&& git -C #{scratch} push origin HEAD:#{ACCEPTED_BRANCH} " \
+      "&& git -C #{path} worktree remove #{scratch}")
+  say("      BAIL OUT — discard everything, leaving no residue: " \
+      "git -C #{path} worktree remove --force #{scratch}")
+end
+
+# Is `main` reachable from accepted? TRI-STATE (:affirmed/:refuted/:unknown).
+#
+# `merge-base --is-ancestor` exits 1 for "no" and non-zero for a FAULT too, and our
+# `sh` reports only success/failure — so a bad ref would masquerade as a confident
+# "not an ancestor". Resolve both refs first: only when both READ can a non-zero
+# exit honestly mean :refuted.
+def ancestor_signal(path, sha)
+  return :unknown unless rev_parse_ok?(path, sha) && rev_parse_ok?(path, "origin/#{ACCEPTED_BRANCH}")
+
+  _, ok = sh("git", "-C", path, "merge-base", "--is-ancestor", sha, "origin/#{ACCEPTED_BRANCH}", capture: true)
+  ok ? :affirmed : :refuted
+end
+
+def rev_parse_ok?(path, ref)
+  out, ok = sh("git", "-C", path, "rev-parse", "--verify", "--quiet", "#{ref}^{commit}", capture: true)
+  ok && !out.strip.empty?
+end
+
+# Is the frozen SHA's TREE already present somewhere in accepted's history?
+# TRI-STATE (:affirmed/:refuted/:unknown).
+#
+# The content test behind the AHEAD verdict. A sweep-merge main carries the very
+# tree of the accepted head it came from, so that tree shows up on an accepted
+# ancestor even though the merge commit itself does not. Bounded to the recent
+# history (the absorbed commit is always a few merges back on a live ladder) so
+# this stays one cheap read on a large repo.
+#
+# A git read that FAILS answers :unknown, never :refuted — "I could not look" is
+# not "it is not there".
+#
+# TWO DELIBERATE IMPRECISIONS, both named here because each is a mild instance of
+# the very bug shape this file exists to fix, and a silent tradeoff is how that
+# shape survives a review:
+#
+#   1. THE SCAN BOUND. A tree absorbed further back than ACCEPTED_TREE_SCAN answers
+#      :refuted — absence of evidence reported as refutation. Kept because the
+#      alternative (:unknown past the bound) would report UNDETERMINED on every
+#      deep history, drowning the signal; and because :refuted degrades toward the
+#      :diverged branch, whose advice is a non-destructive merge.
+#   2. EQUALITY, NOT CONTAINMENT. The real invariant is "accepted CONTAINS main's
+#      content"; this tests "some accepted commit has main's EXACT tree". Equality
+#      implies containment, so an :affirmed is always sound — the imprecision is
+#      one-directional and can only UNDER-claim :ahead, never over-claim it.
+#
+# Both therefore fail toward warning too much rather than too little, which is the
+# safe direction when the wrong call costs merged work. If :diverged verdicts ever
+# start arriving where :ahead is plainly right, this is the first thing to revisit.
+#
+# Since #588 a gem-carrying release legitimately :refutes this: bump_consumer_locks_for_qa
+# commits consumer lock bumps onto `release` during prepare, so the frozen tree is
+# genuinely not accepted's. That is a true refutation, not a fault.
+def tree_absorbed_signal(path, sha)
+  tree, ok = sh("git", "-C", path, "rev-parse", "#{sha}^{tree}", capture: true)
+  return :unknown unless ok
+
+  tree = tree.strip
+  return :unknown if tree.empty?
+
+  trees, listed = sh("git", "-C", path, "log", "--max-count=#{ACCEPTED_TREE_SCAN}", "--format=%T",
+                     "origin/#{ACCEPTED_BRANCH}", capture: true)
+  return :unknown unless listed
+
+  trees.split("\n").any? { |candidate| candidate.strip == tree } ? :affirmed : :refuted
 end
 
 # Put a GEM repo's primary checkout back on `main` after the artifact build left it

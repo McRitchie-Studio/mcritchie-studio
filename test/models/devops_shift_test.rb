@@ -1,6 +1,10 @@
 # frozen_string_literal: true
 
 require "test_helper"
+# The renewer's cadence is the thing that keeps the lease below alive, so the window
+# test drives the REAL constant rather than a number retyped here. It lives in bin/lib
+# (plain Ruby, so the standalone CLI can load it) and is not on the Rails autoload path.
+require_relative "../../bin/lib/shift_renewer"
 
 # Unit coverage for the DevopsShift lease — acquire / renew / release / self-heal,
 # reusing the ClaimLease math. The atomic CAS itself (with_lock) is exercised through
@@ -93,6 +97,61 @@ class DevopsShiftTest < ActiveSupport::TestCase
   test "lane is normalized (case/space) so 'Avi ' and 'avi' are one lane" do
     assert acquire(lane: "Avi ", **A).acquired
     refute acquire(lane: "avi", **B).acquired, "the normalized lane collides"
+  end
+
+  # --- [unit] THE PROPERTY: a headless holder RETAINS the lane -------------------
+  #
+  # The regression, stated as the invariant rather than as the mechanism. On
+  # 2026-07-20 two Avi review supervisors ran concurrently and duplicated four
+  # reviewer lanes, because the holder was headless (no status line ⇒ no renewal) and
+  # its lease lapsed ~120s into a much longer piece of work.
+  #
+  # This walks a 20-minute work window — ten TTLs — renewing on the RENEWER's cadence
+  # (which is what bin/lib/shift_renewer.rb now drives, independent of any UI) and
+  # asserts a second instance is refused at EVERY point in it. Note what is NOT here:
+  # nothing simulates a status line, because nothing may depend on one.
+  test "a headless holder keeps the lane for the whole work window, and a second acquire is refused throughout" do
+    t0 = Time.utc(2026, 7, 20, 3, 0, 0)
+    ttl = ClaimLease::DEFAULT_TTL_SECONDS
+    beat = ShiftRenewer::INTERVAL_SECONDS
+
+    assert acquire(**A, now: t0, label: "Hoothoot").acquired
+
+    work_window = 20.minutes.to_i
+    checks = 0
+    (beat..work_window).step(beat) do |elapsed|
+      now = t0 + elapsed
+      # What the detached renewer does, on its own cadence, with no UI in the loop.
+      assert DevopsShift.renew(lane: "avi", session: A[:session], nonce: A[:nonce], now: now),
+             "the holder's own renewer must keep the lease alive at t+#{elapsed}s"
+
+      out = acquire(**B, now: now)
+      refute out.acquired,
+             "a second conductor must be REFUSED at t+#{elapsed}s — this is the collision the lease exists to prevent"
+      assert_equal :held_by_other, out.disposition
+      checks += 1
+    end
+
+    assert_operator checks, :>, work_window / ttl,
+                    "the window must span several TTLs, or it proves nothing about the lapse"
+    assert_equal "sess-A", DevopsShift.find_by(lane: "avi").claimed_session, "still A's shift at the end"
+  end
+
+  # The other half, and the reason we did NOT simply make acquire fail closed: a
+  # crashed holder must never wedge the lane. Its renewer dies with it, so nothing
+  # renews, and the lane is reclaimable one TTL later.
+  test "a genuinely dead holder stops renewing and the lane is reclaimable" do
+    t0 = Time.utc(2026, 7, 20, 3, 0, 0)
+    assert acquire(**A, now: t0).acquired
+
+    dead_at = t0 + ClaimLease::DEFAULT_TTL_SECONDS + 1
+    refute DevopsShift.renew(lane: "avi", session: A[:session], nonce: A[:nonce], now: dead_at),
+           "a lapsed lease cannot be renewed back to life"
+
+    out = acquire(**B, now: dead_at)
+    assert out.acquired, "a crash must never deadlock the lane"
+    assert_equal :expired, out.disposition
+    assert_equal "sess-B", out.shift.claimed_session
   end
 
   test "status reports each lane's holder and heartbeat age" do

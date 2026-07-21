@@ -6,6 +6,7 @@
 # Also picked up by the normal `bin/rails test` sweep.
 
 require "minitest/autorun"
+require "tmpdir"
 require_relative "../../bin/lib/ci_status"
 
 class CiStatusTest < Minitest::Test
@@ -65,8 +66,11 @@ class CiStatusTest < Minitest::Test
   # (PR #509, 2026-07-12). view_verdict reads state + mergeStateStatus in one gh
   # call and surfaces :conflicted as its own state.
 
-  def view(state, merge_state)
-    JSON.generate("state" => state, "mergeStateStatus" => merge_state)
+  def view(state, merge_state, mergeable: nil, base: nil)
+    payload = { "state" => state, "mergeStateStatus" => merge_state }
+    payload["mergeable"] = mergeable if mergeable
+    payload["baseRefName"] = base if base
+    JSON.generate(payload)
   end
 
   def test_view_verdict_conflicted_when_the_open_pr_is_dirty
@@ -96,6 +100,377 @@ class CiStatusTest < Minitest::Test
     v = CiStatus.view_verdict("gh: Not Found (HTTP 404)")
     assert_equal :unverified, v[:state]
     assert_includes v[:reason], "Not Found"
+  end
+
+  # --- the CI-LESS third state (task detect-ci-less-stale-prs, 2026-07-20) -----
+  #
+  # REGRESSION. When a PR's base drifts far enough that GitHub cannot compute a
+  # merge commit, GitHub runs NO CI AT ALL: the head SHA has zero check-runs and
+  # mergeStateStatus reads UNKNOWN/DIRTY. Reading only the checks folds that into
+  # :none, which every watcher in the fleet treats as "CI is still coming" — so it
+  # waits forever on checks that will NEVER exist. That burned a full rework cycle
+  # (a watcher armed at 05:47Z on a commit that never got checks; the cure was a
+  # rebase, which triggered CI green 8/8 immediately).
+  #
+  # "No CI will run" is a THIRD state, not a slow :pending: its remedy is a rebase,
+  # and no amount of waiting substitutes. These vectors pin the CLASSIFICATION
+  # property — four inputs, four DISTINCT verdicts — not any message spelling.
+
+  # The four vectors, as `combine` sees them: [gh pr view payload, gh pr checks payload].
+  def ci_vectors
+    {
+      # checks EXIST and have not concluded — CI is genuinely coming. Wait.
+      pending: [view("OPEN", "BLOCKED", mergeable: "MERGEABLE", base: "accepted"),
+                '[{"name":"test","bucket":"pending"}]'],
+      # ZERO checks AND GitHub will not confirm the merge — CI is NEVER coming. Rebase.
+      ci_less: [view("OPEN", "UNKNOWN", mergeable: "CONFLICTING", base: "accepted"),
+                "[]"],
+      green: [view("OPEN", "CLEAN", mergeable: "MERGEABLE", base: "accepted"),
+              '[{"name":"test","bucket":"pass"}]'],
+      red: [view("OPEN", "UNSTABLE", mergeable: "MERGEABLE", base: "accepted"),
+            '[{"name":"test","bucket":"fail"}]']
+    }
+  end
+
+  def test_combine_classifies_each_ci_vector_as_its_own_state
+    ci_vectors.each do |expected, (view_raw, checks_raw)|
+      assert_equal expected, CiStatus.combine(view_raw, checks_raw)[:state],
+                   "#{expected} vector must classify as :#{expected}"
+    end
+  end
+
+  def test_the_four_ci_vectors_never_collapse_into_each_other
+    # The POSITIVE invariant: four distinct inputs → four distinct verdicts. A fix
+    # that folded ci-less back into pending (or into green, or red) fails here even
+    # if every message string still reads well.
+    states = ci_vectors.values.map { |view_raw, checks_raw| CiStatus.combine(view_raw, checks_raw)[:state] }
+    assert_equal states.uniq.size, states.size, "each CI vector must be distinguishable: #{states.inspect}"
+  end
+
+  def test_ci_less_is_not_pending_not_green_not_red_and_not_none
+    # The bug verbatim: the ci-less PR read as one of these and the watcher waited
+    # forever. It must be none of them — waiting is the wrong instruction.
+    view_raw, checks_raw = ci_vectors[:ci_less]
+    state = CiStatus.combine(view_raw, checks_raw)[:state]
+    refute_includes %i[pending green red none], state,
+                    "a PR that will never get CI must not report a state that means 'wait'"
+  end
+
+  def test_ci_less_carries_an_actionable_remedy_naming_its_base
+    # ACTIONABLE, not merely distinct: the reader must learn the cure without
+    # re-deriving it. Asserts the base branch is CARRIED and reaches a runnable
+    # command — deliberately not the verb, which round 3 changed from `rebase` to
+    # `merge` for recoverability. Pinning the spelling is how a test starts arguing
+    # for the wrong fix.
+    view_raw, checks_raw = ci_vectors[:ci_less]
+    v = CiStatus.combine(view_raw, checks_raw)
+    assert_equal "accepted", v[:base]
+    remedy = CiStatus.ci_less_remedy(v)
+    assert_match(%r{git \w+ origin/accepted\b}, remedy, "the remedy runs against the PR's actual base")
+  end
+
+  def test_zero_checks_on_a_confirmed_mergeable_pr_stays_none
+    # The GUARD against over-reach. Zero checks alone is NOT ci-less: a PR GitHub
+    # affirms is mergeable simply has not started its run yet, and that IS a wait.
+    # Only the conjunction (no checks AND no confirmed merge) is the third state.
+    v = CiStatus.combine(view("OPEN", "CLEAN", mergeable: "MERGEABLE", base: "accepted"), "[]")
+    assert_equal :none, v[:state]
+  end
+
+  def test_ci_less_never_overrides_a_payload_that_reported_checks
+    # A PR that HAS checks is never ci-less, however ugly its merge state — the
+    # checks are the evidence that CI ran.
+    v = CiStatus.combine(view("OPEN", "UNKNOWN", mergeable: "CONFLICTING", base: "accepted"),
+                         '[{"name":"test","bucket":"pass"}]')
+    assert_equal :green, v[:state]
+  end
+
+  def test_combine_keeps_the_early_view_verdicts
+    # DIRTY is already :conflicted (PR #509) and outranks the ci-less read; a
+    # closed/merged PR is still its own verdict. combine must not regress those.
+    assert_equal :conflicted, CiStatus.combine(view("OPEN", "DIRTY", mergeable: "CONFLICTING"), "[]")[:state]
+    assert_equal :closed, CiStatus.combine(view("CLOSED", "UNKNOWN", mergeable: "CONFLICTING"), "[]")[:state]
+  end
+
+  def test_a_view_payload_without_the_mergeable_field_never_invents_ci_less
+    # BACKWARD COMPAT. A caller that did not ASK for `mergeable` must not have its
+    # silence read as "not mergeable" — absence of evidence is not evidence.
+    assert_equal :none, CiStatus.combine(view("OPEN", "UNKNOWN"), "[]")[:state]
+  end
+
+  # --- ROUND 2: UNKNOWN mergeability is NOT a negative verdict ------------------
+  #
+  # Review blocked round 1 (avi, siding with jasper's light lane; carl's primary
+  # lane found the same defect and rated it non-blocking — the CONVERGENCE is why it
+  # blocked). The round-1 predicate was SELF-INCONSISTENT: an ABSENT `mergeable`
+  # counted as confirmed, while an explicit "UNKNOWN" did not — though both mean the
+  # SAME thing, that GitHub has not told us it cannot merge.
+  #
+  # Why that was not cosmetic: GitHub computes mergeability ASYNCHRONOUSLY after
+  # every push, answering UNKNOWN until it lands, and a brand-new head SHA has zero
+  # check-runs in that SAME window. Both halves of the conjunction are therefore true
+  # at once for a perfectly HEALTHY PR — and that window is exactly when builders run
+  # these tools, because the operating model prescribes "push, open a PR, then run
+  # bin/dor-check". A reviewer watched #588, #601 and #602 all flip to UNKNOWN within
+  # seconds of an unrelated merge and settle back with NO push.
+  #
+  # The harm is not the stale verdict, it is the INSTRUCTION the verdict carries: a
+  # hard block reading "waiting can never clear it… rebase and --force-with-lease".
+  # A compliant agent force-pushes a healthy branch and cancels its in-flight CI.
+  #
+  # THE RULE, now three-valued: mergeability is AFFIRMED, REFUTED, or UNKNOWN, and
+  # UNKNOWN is never converted into an actionable negative. Uncertainty about
+  # GITHUB'S KNOWLEDGE falls toward wait; only an affirmative negative blocks. The
+  # asymmetry justifies it — a wrong block force-pushes a healthy branch, a wrong
+  # wait costs a bounded timeout.
+
+  def test_undetermined_mergeability_is_a_wait_not_ci_less
+    # The exact vector review prescribed. UNKNOWN + zero checks = the fresh-push
+    # window, not a stale base.
+    v = CiStatus.combine(view("OPEN", "UNKNOWN", mergeable: "UNKNOWN", base: "accepted"), "[]")
+    assert_equal :none, v[:state]
+  end
+
+  def test_a_settled_merge_state_confirms_regardless_of_mergeable
+    # Carl's sharper vector: CLEAN literally means GitHub DID compute the merge, so
+    # {CLEAN, mergeable UNKNOWN, zero checks} was self-contradictory AND classified
+    # ci-less. Any SETTLED mergeStateStatus is confirmation — it is the field that
+    # actually reports settlement. Driven from the LITERAL list, not the constant, for
+    # the same reason as blocker 1 below: iterating the constant would let a dropped
+    # member escape the assertion.
+    REQUIRED_SETTLED_STATES.each do |settled|
+      v = CiStatus.combine(view("OPEN", settled, mergeable: "UNKNOWN", base: "accepted"), "[]")
+      assert_equal :none, v[:state], "#{settled} means GitHub computed the merge — never ci-less"
+    end
+  end
+
+  def test_absent_and_unknown_mergeable_are_treated_identically
+    # THE self-inconsistency, asserted as an EQUIVALENCE rather than two spellings:
+    # both inputs say "GitHub has not told us it cannot merge", so no reading of the
+    # pair may ever diverge.
+    %w[UNKNOWN CLEAN BEHIND].each do |merge_state|
+      absent = CiStatus.combine(view("OPEN", merge_state), "[]")
+      unknown = CiStatus.combine(view("OPEN", merge_state, mergeable: "UNKNOWN"), "[]")
+      assert_equal absent[:state], unknown[:state],
+                   "absent vs explicit-UNKNOWN mergeable must agree at #{merge_state}"
+    end
+  end
+
+  def test_mergeability_is_three_valued
+    # The POSITIVE invariant behind all of the above: three states, and only the
+    # REFUTED one is actionable. Absence of signal is never negative signal.
+    assert_equal :affirmed, CiStatus.mergeability(view("OPEN", "CLEAN", mergeable: "MERGEABLE"))
+    assert_equal :affirmed, CiStatus.mergeability(view("OPEN", "UNSTABLE", mergeable: "UNKNOWN")),
+                 "a settled merge state affirms even when `mergeable` lags"
+    assert_equal :refuted, CiStatus.mergeability(view("OPEN", "DIRTY", mergeable: "CONFLICTING"))
+    assert_equal :refuted, CiStatus.mergeability(view("OPEN", "UNKNOWN", mergeable: "CONFLICTING")),
+                 "CONFLICTING is an affirmative negative"
+    assert_equal :unknown, CiStatus.mergeability(view("OPEN", "UNKNOWN", mergeable: "UNKNOWN"))
+    assert_equal :unknown, CiStatus.mergeability(view("OPEN", "UNKNOWN")),
+                 "an absent mergeable is UNKNOWN, not affirmed and not refuted"
+  end
+
+  def test_an_undetermined_mergeability_names_its_uncertainty
+    # UNKNOWN + zero checks is not a verdict, and it is not silence either: the
+    # verdict REPORTS that GitHub has not decided, so a reader can tell "no data yet"
+    # from "checks are running" without being handed an action nobody can justify.
+    v = CiStatus.combine(view("OPEN", "UNKNOWN", mergeable: "UNKNOWN", base: "accepted"), "[]")
+    assert_equal :none, v[:state]
+    assert_equal :unknown, v[:mergeability], "the uncertainty must be named, not swallowed"
+  end
+
+  def test_a_refuted_merge_is_ci_less_on_the_FIRST_read
+    # No backoff for an affirmative negative — CONFLICTING is GitHub telling us it
+    # cannot merge, which is a fact, not a pending computation.
+    v = CiStatus.combine(view("OPEN", "UNKNOWN", mergeable: "CONFLICTING", base: "accepted"), "[]")
+    assert_equal :ci_less, v[:state]
+  end
+
+  # --- ROUND 3 -----------------------------------------------------------------
+  #
+  # BLOCKER 1 (both lanes): BOUND EXHAUSTION MUST NOT MANUFACTURE CONFIDENCE.
+  # Round 2 let a second look convert an undetermined mergeability into a hard
+  # :ci_less — so the SAME payload it correctly called :none became a confident block
+  # five seconds later, emitting `--force-with-lease` advice at a healthy PR. That is
+  # round 1's harm on a timer. It also contradicted this module's own stated fail
+  # direction ("uncertainty falls toward wait") and gates/g2-review.md.
+  #
+  # The discriminator was never sound: ONE 5s retry against an asynchronous GitHub
+  # computation that publishes no SLA. Running out of patience is not evidence. A
+  # stable-unknown block would need a live PR observed staying UNKNOWN indefinitely, a
+  # bound sized to GitHub's real settling time, and a test of the re-read loop — none
+  # of which existed, and the loop itself was untested.
+  #
+  # So the bound is GONE, and with it the sleep on a hot path both dor-check and
+  # pr-review call. :ci_less now has EXACTLY ONE producer: an affirmative negative.
+
+  def test_ci_less_has_exactly_one_producer_an_affirmative_negative
+    # THE invariant, asserted over the whole input space rather than by spot-checking
+    # spellings: across every merge-state x mergeable pairing, :ci_less appears if and
+    # only if mergeability is :refuted. No amount of uncertainty can produce it.
+    merge_states = %w[CLEAN BLOCKED BEHIND UNSTABLE HAS_HOOKS DRAFT UNKNOWN] + [nil]
+    mergeables = %w[MERGEABLE CONFLICTING UNKNOWN] + [nil]
+    merge_states.each do |ms|
+      mergeables.each do |m|
+        raw = view("OPEN", ms || "", mergeable: m, base: "accepted")
+        state = CiStatus.combine(raw, "[]")[:state]
+        refuted = CiStatus.mergeability(raw) == :refuted
+        assert_equal refuted, state == :ci_less,
+                     "ci_less iff refuted — #{ms.inspect}/#{m.inspect} gave :#{state}"
+      end
+    end
+  end
+
+  def test_no_bound_exhaustion_path_remains
+    # The removal, pinned: `combine` takes exactly two arguments. A future
+    # reintroduction of a "we waited long enough" flag fails here and has to argue
+    # for itself on the evidence this round said it would need.
+    assert_equal 2, CiStatus.method(:combine).arity,
+                  "combine must not regain a stability/exhaustion parameter"
+    refute CiStatus.respond_to?(:recheck_seconds),
+           "the timing heuristic is gone — no retry bound to exhaust"
+  end
+
+  # BLOCKER 2: PRECEDENCE — round 1's defect in mirror image. `:refuted` was tested
+  # BEFORE settlement, so a settled merge state lost to a stale async `mergeable`:
+  # {CLEAN + CONFLICTING} classified :refuted => :ci_less, contradicting this module's
+  # own docstring ("their presence is settlement, whatever mergeable says") and firing
+  # an IMMEDIATE force-push instruction at a healthy PR — the precise harm this work
+  # exists to prevent. Round 2 fixed {CLEAN + mergeable UNKNOWN}; this is that shape.
+
+  # The settled merge states, enumerated INDEPENDENTLY of the constant under test —
+  # round 4, blocker 1. A loop over `CiStatus::SETTLED_MERGE_STATES` cannot catch a
+  # member being DROPPED from that constant, because the constant is also the loop's
+  # source: remove CLEAN and CLEAN simply leaves the iteration, no assertion fires,
+  # and {CLEAN + CONFLICTING} silently returns to :ci_less — round-3 blocker 2's exact
+  # harm. So the expectation is a literal list here; a divergence between it and the
+  # constant is the bug.
+  REQUIRED_SETTLED_STATES = %w[CLEAN BLOCKED BEHIND UNSTABLE HAS_HOOKS DRAFT].freeze
+
+  def test_the_settled_states_constant_contains_every_required_member
+    # MEMBERSHIP, asserted against the independent list. Dropping CLEAN (or DRAFT —
+    # mutation M15) from the constant fails HERE, whatever the rung order does.
+    REQUIRED_SETTLED_STATES.each do |state|
+      assert_includes CiStatus::SETTLED_MERGE_STATES, state,
+                      "#{state} must be treated as a settled merge state"
+    end
+  end
+
+  def test_every_required_settled_state_outranks_a_stale_conflicting_mergeable
+    # THE POSITIVE PROPERTY, driven from the literal list, not the constant. For each
+    # state GitHub uses to say "I computed the merge", a lagging CONFLICTING must not
+    # win — the PR is affirmed and a healthy PR with zero checks is a wait, never
+    # ci-less.
+    REQUIRED_SETTLED_STATES.each do |settled|
+      raw = view("OPEN", settled, mergeable: "CONFLICTING", base: "accepted")
+      assert_equal :affirmed, CiStatus.mergeability(raw),
+                   "#{settled} is settlement — it must outrank a lagging CONFLICTING"
+      assert_equal :none, CiStatus.combine(raw, "[]")[:state],
+                   "#{settled} + CONFLICTING must not block a healthy PR"
+    end
+  end
+
+  def test_dirty_still_refutes_even_though_it_is_settled
+    # DIRTY is the settled NEGATIVE, so it must not be swept up by "settlement
+    # affirms" — it is the one merge state that both settles AND refutes.
+    assert_equal :refuted, CiStatus.mergeability(view("OPEN", "DIRTY", mergeable: "MERGEABLE"))
+  end
+
+  # BLOCKER 3: PRINTED ADVICE MUST FAIL SAFELY, NOT JUST SUCCEED.
+  #
+  # The round-2 remedy was `git fetch origin && git rebase origin/<base> && git push
+  # --force-with-lease`. But :refuted fires on `mergeable CONFLICTING` — GitHub
+  # affirming REAL conflicts — so the rebase HALTS, the `&&` chain stops silently, the
+  # push never runs, and the operator is left mid-rebase with no next instruction. The
+  # remedy never said "resolve the conflicts". The same defect appeared independently
+  # in a sibling PR the same day, which is why it is a standing lesson: we test that
+  # printed advice SUCCEEDS and never that it FAILS SAFELY.
+  #
+  # These assert the property (recoverable + clearly labeled), not the prose.
+
+  def refuted_remedy
+    CiStatus.ci_less_remedy(CiStatus.ci_less_verdict(view("OPEN", "UNKNOWN", mergeable: "CONFLICTING", base: "accepted")))
+  end
+
+  def test_the_remedy_never_chains_past_a_step_that_can_halt
+    # An && chain is the defect itself: it hides the stop. Steps that can pause must
+    # be given one at a time.
+    refute_includes refuted_remedy, "&&", "the remedy must not chain commands that can halt mid-way"
+  end
+
+  def test_the_remedy_names_the_conflict_work_and_a_way_back
+    # The two things the stranded operator needed and did not get: what to DO when it
+    # stops, and how to get back to a known-good state.
+    remedy = refuted_remedy
+    assert_match(/resolve/i, remedy, "the remedy must tell the operator to resolve conflicts")
+    assert_match(/--abort/, remedy, "the remedy must name a way back to a known-good state")
+  end
+
+  def test_the_remedy_leaves_a_conflicted_repo_recoverable_and_labeled
+    # EXECUTED, not asserted about. Builds a real conflict, runs the remedy's merge
+    # step, and proves the operator ends somewhere recoverable and clearly labeled —
+    # then that the named recovery actually restores the original commit.
+    Dir.mktmpdir do |dir|
+      git = ->(*args) { system("git", "-C", dir, *args, out: File::NULL, err: File::NULL) }
+      git.call("init", "-q", "-b", "accepted")
+      git.call("config", "user.email", "t@t.test")
+      git.call("config", "user.name", "T")
+      File.write(File.join(dir, "f.txt"), "base\n")
+      git.call("add", "-A")
+      git.call("commit", "-qm", "base")
+
+      # A feature branch and the base BOTH edit the same line — a real conflict.
+      git.call("checkout", "-qb", "feat")
+      File.write(File.join(dir, "f.txt"), "feature\n")
+      git.call("add", "-A")
+      git.call("commit", "-qm", "feature")
+      feature_head = `git -C #{dir} rev-parse HEAD`.strip
+
+      git.call("checkout", "-q", "accepted")
+      File.write(File.join(dir, "f.txt"), "moved\n")
+      git.call("add", "-A")
+      git.call("commit", "-qm", "moved")
+      git.call("checkout", "-q", "feat")
+
+      # The remedy's merge step, run exactly as printed. It MUST fail — that is the
+      # conflicting condition — and it must stop somewhere the operator can leave.
+      merged = git.call("merge", "accepted")
+      refute merged, "the merge must halt on a real conflict (that is the condition under test)"
+
+      status = `git -C #{dir} status --porcelain`
+      assert_match(/^(UU|AA)/, status, "the conflict is LABELED in the worktree, not silent")
+      assert_path_exists File.join(dir, ".git", "MERGE_HEAD"), "the operator is in a named, inspectable state"
+
+      # And the way back the remedy names actually works.
+      assert git.call("merge", "--abort"), "the remedy's named recovery must succeed"
+      assert_equal feature_head, `git -C #{dir} rev-parse HEAD`.strip,
+                   "aborting returns the branch to exactly where it started"
+      assert_empty `git -C #{dir} status --porcelain`.strip, "recovery leaves a clean tree"
+    end
+  end
+
+  # BLOCKER 4: a placeholder must never reach a RUNNABLE command. `base = "the base
+  # branch" if base.empty?` was interpolated straight into `git rebase origin/<base>`,
+  # printing `git rebase origin/the base branch` — and pr-review writes this string
+  # into REAL task block feedback.
+
+  def test_an_unknown_base_never_produces_a_runnable_command
+    remedy = CiStatus.ci_less_remedy(CiStatus.ci_less_verdict(view("OPEN", "UNKNOWN", mergeable: "CONFLICTING")))
+    refute_match(%r{origin/\S*\s}, remedy, "no half-built origin/<placeholder> ref may be printed")
+    refute_match(/git (merge|rebase|fetch)/, remedy,
+                 "with no base resolved the remedy must omit the commands, not guess them")
+    assert_match(/base/i, remedy, "it still has to say what is missing")
+  end
+
+  def test_a_known_base_produces_a_command_naming_that_base
+    remedy = refuted_remedy
+    assert_match(%r{git merge origin/accepted\b}, remedy)
+  end
+
+  def test_ci_less_is_an_injectable_token
+    # The DOR_CHECK_CI_STATUS / PR_REVIEW_CI_STATUS seam, so the CLI tests can drive
+    # the state without a network.
+    assert_equal :ci_less, CiStatus.evaluate("https://github.com/x/pull/1", "ci_less")[:state]
   end
 
   def test_no_pr_when_url_blank_and_nothing_injected

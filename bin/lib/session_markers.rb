@@ -12,6 +12,7 @@ require_relative "../../lib/task_usage_sandbox"
 #   <projects>/.agents/sessions/<id>.open-span            its legacy name, cleared on close
 #   <projects>/.agents/sessions/<id>.activity-usage.json  per-activity usage baselines
 #   <projects>/.agents/sessions/<id>.devops-shift         the held shift lane (bin/devops-shift)
+#   <projects>/.agents/sessions/<id>.devops-shift-renewer its detached renewer's pid (ditto)
 #   <projects>/.agents/sessions/<id>.heartbeat            statusline's claim throttle (bash)
 #
 # It began as the shared READS bin/atomic-event and bin/atomic-capture-hook each

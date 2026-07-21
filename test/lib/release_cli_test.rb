@@ -1198,8 +1198,10 @@ class ReleaseCliTest < Minitest::Test
   # Release::ShipSequence.run_watch_verdict), factored so pending→hold / green→certify /
   # red→abort / unreadable→abort is testable without a poll loop or a clock. The POSITIVE
   # invariant, asserted directly (not by blacklisting failure spellings): GREEN is the
-  # ONLY :pass; :red and :unreadable are the ONLY :abort — a terminal non-green that
-  # waiting can never turn green; EVERY other state is :wait, so a just-merged SHA's
+  # ONLY :pass; :red, :unreadable and :ci_less are the ONLY :abort — a terminal
+  # non-green that waiting can never turn green (:ci_less because GitHub will run NO
+  # CI at all for a stale base, so there is no run to wait for — task
+  # detect-ci-less-stale-prs); EVERY other state is :wait, so a just-merged SHA's
   # not-yet-concluded CI is HELD and re-read instead of aborting the sweep's first run.
   # It is also proven against states the gate never actually feeds it (no_pr/closed/
   # merged/conflicted) so the rule holds for vectors nobody has to enumerate — they hold
@@ -1208,7 +1210,7 @@ class ReleaseCliTest < Minitest::Test
     assert_equal ":pass", eval_helper(%(ci_poll_action({ state: :green }).inspect)), "green certifies"
     assert_equal ":pass", eval_helper(%(ci_poll_action({ state: :green, count: 3 }).inspect)),
                  "green with detail still certifies"
-    %i[red unreadable].each do |state|
+    %i[red unreadable ci_less].each do |state|
       assert_equal ":abort", eval_helper(%(ci_poll_action({ state: #{state.inspect} }).inspect)),
                    "#{state} is terminal — abort now, never poll a verdict waiting cannot fix"
     end
@@ -2163,8 +2165,7 @@ class ReleaseCliTest < Minitest::Test
       run_git(clone, "add", "app.rb")
       File.write(File.join(clone, "notes.txt"), "scratch")
 
-      setup = %(def repo_path(_repo) = #{clone.inspect})
-      out = run_cli(["--yes"], setup: setup,
+      out = run_cli(["--yes"], setup: advance_setup(clone, dir),
                     call: %{push_frozen_main("sibling", #{frozen.inspect}); puts("PASSED")})
 
       assert_includes out, "PASSED", "a dirty primary must NOT abort the ship: #{out}"
@@ -2238,8 +2239,7 @@ class ReleaseCliTest < Minitest::Test
       run_git(clone, "push", "-q", "origin", "release")
       frozen = git_out(clone, "rev-parse", "release")
 
-      setup = %(def repo_path(_repo) = #{clone.inspect})
-      out = run_cli(["--yes"], setup: setup,
+      out = run_cli(["--yes"], setup: advance_setup(clone, dir),
                     call: %{push_frozen_main("sibling", #{frozen.inspect}); puts("PASSED")})
 
       assert_includes out, "PASSED", out
@@ -2260,8 +2260,7 @@ class ReleaseCliTest < Minitest::Test
       origin = File.join(dir, "origin.git")
       frozen = git_out(clone, "rev-parse", "release")
 
-      setup = %(def repo_path(_repo) = #{clone.inspect})
-      out = run_cli(["--yes"], setup: setup,
+      out = run_cli(["--yes"], setup: advance_setup(clone, dir),
                     call: %{push_frozen_main("sibling", #{frozen.inspect}); puts("PASSED")})
 
       assert_includes out, "PASSED", out
@@ -2310,6 +2309,463 @@ class ReleaseCliTest < Minitest::Test
                    "main still advances to the frozen SHA — the accepted failure doesn't block the deploy"
       assert_equal diverged, git_out(origin, "rev-parse", "accepted"),
                    "a diverged accepted must be left EXACTLY as it was — never force-rewound"
+    end
+  end
+
+  # [integration] REGRESSION (rel-20260720-1fc111): accepted AHEAD, not diverged.
+  #
+  # A review pass merged two PRs into accepted WHILE the ship ran — a lane the
+  # pipeline explicitly supports. The advance correctly refused the non-ff, then
+  # mislabelled it "DIVERGED" and suggested `git push origin <sha>:refs/heads/accepted`.
+  # Running that would have DESTROYED both merges. accepted was missing NOTHING.
+  #
+  # The fixture reproduces the exact topology that defeats a naive ancestor check:
+  # the sweep merges accepted INTO release (--no-ff), so the frozen main is a MERGE
+  # COMMIT whose tree equals the accepted head it came from — and that merge commit
+  # is never in accepted's history. `merge-base --is-ancestor` is FALSE here (the
+  # test asserts it) even though every byte of main is already in accepted.
+  def test_push_frozen_main_reports_accepted_ahead_and_suggests_nothing
+    Dir.mktmpdir do |dir|
+      clone  = build_sibling_fixture(dir)
+      origin = File.join(dir, "origin.git")
+      base   = git_out(clone, "rev-parse", "main")
+
+      # accepted carries the work that is about to ship.
+      run_git(clone, "checkout", "-q", "-b", "accepted", base)
+      File.write(File.join(clone, "shipped.rb"), "shipped")
+      run_git(clone, "add", "shipped.rb")
+      run_git(clone, "commit", "-q", "-m", "work that ships")
+      run_git(clone, "push", "-q", "origin", "accepted")
+      absorbed = git_out(clone, "rev-parse", "accepted")
+
+      # The sweep: accepted merged INTO release with --no-ff → a merge commit whose
+      # TREE equals accepted's, but which accepted's own history never contains.
+      run_git(clone, "checkout", "-q", "release")
+      run_git(clone, "merge", "-q", "--no-ff", "-m", "sweep: accepted → release", "accepted")
+      run_git(clone, "push", "-q", "origin", "release")
+      frozen = git_out(clone, "rev-parse", "release")
+      assert_equal git_out(clone, "rev-parse", "#{absorbed}^{tree}"),
+                   git_out(clone, "rev-parse", "#{frozen}^{tree}"),
+                   "fixture precondition: the sweep merge's tree equals the accepted head it came from"
+
+      # Concurrent review merges land on accepted DURING the ship — one brand-new
+      # file and one MODIFICATION of an already-shipped file (the real incident had
+      # both: a new module plus an index entry). CRUCIALLY they arrive from a SEPARATE
+      # clone, as a review pass on another machine does, so the ship's own clone never
+      # fetches them and its origin/accepted stays STALE at `absorbed`. A same-clone
+      # push (rounds 1-3) freshened that ref in a way production never does and hid a
+      # missing fetch in the classifier — the round-4 gap that printed "AHEAD by 0
+      # commits" against a truth of 13.
+      ahead = land_concurrent_merge_on_accepted(dir, origin, label: "ahead",
+                                                files: { "zap-protocol.md" => "merged mid-ship",
+                                                         "shipped.rb" => "shipped\nindex entry added mid-ship" })
+
+      # The staleness, pinned as the fixture precondition: the ship's clone still
+      # sees the PRE-merge accepted, while the true origin has moved ahead of it.
+      assert_equal absorbed, git_out(clone, "rev-parse", "origin/accepted"),
+                   "fixture precondition: the ship's clone must have a STALE origin/accepted (it never fetched the concurrent merge)"
+      refute_equal absorbed, ahead,
+                   "fixture precondition: the TRUE origin/accepted moved ahead of what the ship's clone last saw"
+
+      # The subtlety, pinned: plain ancestry says NO even though nothing is missing.
+      _, ancestry = Open3.capture2e("git", "-C", clone, "merge-base", "--is-ancestor", frozen, ahead)
+      refute ancestry.success?,
+             "fixture precondition: the sweep merge commit is NOT an ancestor of accepted"
+
+      out = run_cli(["--yes"], setup: advance_setup(clone, dir),
+                    call: %{begin; push_frozen_main("sibling", #{frozen.inspect}); puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+      assert_includes out, "PASSED", "an accepted that is merely ahead must NOT abort the ship: #{out}"
+      # THE ROUND-4 LOCK: the count must reflect the TRUE accepted, which the ship can
+      # only see if it FETCHES first. Against the stale ref this reads "0 commits"
+      # while claiming work merged concurrently — self-contradictory. Only the fetch
+      # makes it honest.
+      assert_match(/AHEAD of main by 1 commit\b/, out,
+                   "the report must name the AHEAD relation and the TRUE commit count (needs a fetch): #{out}")
+      refute_match(/DIVERGED|missing shipped content/, out,
+                   "accepted is ahead, not diverged — no missing-content alarm may appear: #{out}")
+      refute_includes out, "refs/heads/accepted",
+                       "NOTHING may be suggested when accepted is ahead — a bare ref push here DESTROYS merged work"
+      refute_includes out, "reconcile",
+                       "an ahead accepted needs no reconciliation at all: #{out}"
+      assert_equal frozen, git_out(origin, "rev-parse", "main"),
+                   "main still advances to the frozen SHA"
+      assert_equal ahead, git_out(origin, "rev-parse", "accepted"),
+                   "the concurrently-merged work on accepted must be left EXACTLY as it was"
+    end
+  end
+
+  # [integration] REGRESSION (rel-20260720-1fc111), the OTHER shape: accepted is
+  # GENUINELY missing shipped content. The report must still say so — but must
+  # suggest a MERGE of main into accepted, never a bare ref push, which would
+  # discard whatever accepted holds that main does not.
+  def test_push_frozen_main_advises_a_merge_when_accepted_is_genuinely_missing_shipped_content
+    Dir.mktmpdir do |dir|
+      clone  = build_sibling_fixture(dir)
+      origin = File.join(dir, "origin.git")
+      base   = git_out(clone, "rev-parse", "main")
+
+      # The frozen SHA carries content that never reached accepted.
+      run_git(clone, "checkout", "-q", "release")
+      File.write(File.join(clone, "shipped.rb"), "shipped")
+      run_git(clone, "add", "shipped.rb")
+      run_git(clone, "commit", "-q", "-m", "shipped")
+      run_git(clone, "push", "-q", "origin", "release")
+      frozen = git_out(clone, "rev-parse", "release")
+
+      # accepted went its own way off base and never absorbed the shipped file.
+      run_git(clone, "checkout", "-q", "-b", "accepted-work", base)
+      File.write(File.join(clone, "hotfix.txt"), "pushed straight to accepted")
+      run_git(clone, "add", "hotfix.txt")
+      run_git(clone, "commit", "-q", "-m", "diverged accepted")
+      run_git(clone, "push", "-q", "origin", "accepted-work:accepted")
+      diverged = git_out(origin, "rev-parse", "accepted")
+
+      setup = %(def repo_path(_repo) = #{clone.inspect})
+      out = run_cli(["--yes"], setup: setup,
+                    call: %{begin; push_frozen_main("sibling", #{frozen.inspect}); puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+      assert_includes out, "PASSED", "a genuinely diverged accepted must NOT abort the ship: #{out}"
+      assert_includes out, "appears to be missing shipped content",
+                      "genuine divergence must be reported as missing shipped content: #{out}"
+      assert_match(/git -C .* merge/, out,
+                   "the reconcile advice must be a MERGE of main into accepted: #{out}")
+      refute_match(/push origin \h+:refs\/heads\/accepted/, out,
+                   "a bare ref push must NEVER be suggested — it discards accepted's own commits: #{out}")
+      assert_equal diverged, git_out(origin, "rev-parse", "accepted"),
+                   "a diverged accepted must be left EXACTLY as it was"
+    end
+  end
+
+  # The reconcile command the ship PRINTS, pulled back out of its own output and
+  # run for real. Advice that has never been executed is a guess; these tests
+  # execute it. Returns [ok, combined_output].
+  # The happy-path steps the ship PRINTS, in order. Deliberately NOT an && chain
+  # any more (round 3): a chain implies all-or-nothing, and this procedure has a
+  # branch in the middle. Indented six spaces and starting with `git -C`; the
+  # FINISH IT / BAIL OUT lines start with their label, so they do not match.
+  def printed_reconcile_steps(out)
+    steps = out.scan(/^ {6}(git -C \S.*)$/).flatten
+    flunk("no reconcile steps found in output: #{out}") if steps.empty?
+
+    steps
+  end
+
+  # Run the printed steps IN ORDER, stopping at the first failure — exactly what an
+  # operator following the recipe top to bottom experiences. Returns
+  # [ok, output, failed_step].
+  def run_printed_reconcile(out)
+    printed_reconcile_steps(out).each do |step|
+      result, status = Open3.capture2e("bash", "-c", step)
+      return [false, result, step] unless status.success?
+    end
+    [true, "", nil]
+  end
+
+  # The two labeled exits from a conflicted merge.
+  def printed_finish_command(out) = out[/FINISH IT — .*?then: (git -C .+)$/, 1]
+  def printed_bailout_command(out) = out[/BAIL OUT — .*?residue: (git -C .+)$/, 1]
+
+  # The accepted-advance stubs: the repo under test, plus a per-test scratch path.
+  # PRODUCTION uses a fixed /tmp path (predictable for the operator, and its own
+  # BAIL OUT command clears a leftover); tests must not share one, or two parallel
+  # CI workers would race for the same worktree directory.
+  def advance_setup(clone, dir)
+    %(def repo_path(_repo) = #{clone.inspect}\n) +
+      %(def reconcile_scratch_path(_repo) = #{File.join(dir, 'scratch-reconcile').inspect}\n)
+  end
+
+  # Land a commit on origin/accepted from a SEPARATE clone — the way a concurrent
+  # review merge arrives in production (another agent, another machine). The point
+  # is what it does NOT do: the ship's own `clone` never fetches it, so that clone's
+  # origin/accepted remote-tracking ref stays STALE. A same-clone push would freshen
+  # that ref in a way production never does, and hide a missing fetch in the
+  # classifier — the round-4 gap that printed "AHEAD by 0 commits" against a truth of
+  # 13. Returns the true origin/accepted SHA after the push.
+  def land_concurrent_merge_on_accepted(dir, origin, label:, files:)
+    side = File.join(dir, "concurrent-#{label}")
+    system("git", "clone", "-q", origin, side, out: File::NULL, err: File::NULL) || flunk("concurrent clone failed")
+    run_git(side, "checkout", "-q", "accepted")
+    files.each { |name, content| File.write(File.join(side, name), content) }
+    run_git(side, "add", *files.keys)
+    run_git(side, "commit", "-q", "-m", "review merge during the ship (#{label})")
+    run_git(side, "push", "-q", "origin", "accepted")
+    git_out(origin, "rev-parse", "accepted")
+  end
+
+  # [integration] BLOCKER (round 2). The DIVERGED reconcile advice must WORK on a
+  # real primary — one that already has a STALE LOCAL `accepted` branch.
+  #
+  # The round-1 advice (`fetch && checkout accepted && merge origin/main && push
+  # origin accepted`) failed exactly there, and NOT for want of a fetch: `git fetch`
+  # moves the remote-tracking ref origin/accepted, but `git checkout accepted` lands
+  # on the LOCAL branch, which the fetch never touches. The hub primary carries that
+  # stale local ref (measured 45 commits behind), so the merge lands on a stale base
+  # and the push is refused non-fast-forward. It only ever worked on a checkout with
+  # NO local accepted, where `checkout accepted` DWIMs off the remote — which is why
+  # it passed round-1 testing and would have failed the operator under ship pressure.
+  #
+  # This pins the stale-local case by RUNNING the printed command end to end.
+  def test_printed_reconcile_command_works_against_a_stale_local_accepted_branch
+    Dir.mktmpdir do |dir|
+      clone  = build_sibling_fixture(dir)
+      origin = File.join(dir, "origin.git")
+      base   = git_out(clone, "rev-parse", "main")
+
+      # The frozen SHA carries content accepted never absorbed.
+      run_git(clone, "checkout", "-q", "release")
+      File.write(File.join(clone, "shipped.rb"), "shipped")
+      run_git(clone, "add", "shipped.rb")
+      run_git(clone, "commit", "-q", "-m", "shipped")
+      run_git(clone, "push", "-q", "origin", "release")
+      frozen = git_out(clone, "rev-parse", "release")
+
+      # accepted diverges on its own line, and the checkout keeps a LOCAL accepted
+      # pinned at that first commit — the operator's primary, exactly.
+      run_git(clone, "checkout", "-q", "-b", "accepted", base)
+      File.write(File.join(clone, "hotfix.txt"), "straight to accepted")
+      run_git(clone, "add", "hotfix.txt")
+      run_git(clone, "commit", "-q", "-m", "diverged accepted")
+      run_git(clone, "push", "-q", "origin", "accepted")
+      stale_local = git_out(clone, "rev-parse", "accepted")
+
+      # origin/accepted then moves on WITHOUT the local ref following it.
+      second = File.join(dir, "second")
+      system("git", "clone", "-q", origin, second, out: File::NULL, err: File::NULL) || flunk("second clone failed")
+      run_git(second, "checkout", "-q", "accepted")
+      File.write(File.join(second, "review-merge.md"), "merged by review")
+      run_git(second, "add", "review-merge.md")
+      run_git(second, "commit", "-q", "-m", "review merge")
+      run_git(second, "push", "-q", "origin", "accepted")
+      run_git(clone, "fetch", "-q", "origin")
+      run_git(clone, "checkout", "-q", "main")
+
+      assert_equal stale_local, git_out(clone, "rev-parse", "accepted"),
+                   "fixture precondition: the LOCAL accepted stayed put across the fetch"
+      refute_equal stale_local, git_out(clone, "rev-parse", "origin/accepted"),
+                   "fixture precondition: origin/accepted moved ahead of the stale local ref"
+
+      out = run_cli(["--yes"], setup: advance_setup(clone, dir),
+                    call: %{push_frozen_main("sibling", #{frozen.inspect}); puts("PASSED")})
+
+      assert_includes out, "appears to be missing shipped content", "this fixture is a genuine divergence: #{out}"
+      assert_match(/worktree add --detach \S+ origin\/accepted/, out,
+                   "the merge must be based on the REMOTE-TRACKING ref, never the stale local branch: #{out}")
+
+      ok, result, failed = run_printed_reconcile(out)
+      assert ok, "the printed reconcile must SUCCEED on a stale local accepted (failed at #{failed}): #{result}"
+
+      # The proof: origin/accepted actually moved, and holds BOTH sides.
+      reconciled = git_out(origin, "rev-parse", "accepted")
+      refute_equal stale_local, reconciled, "origin/accepted must actually advance"
+      %w[shipped.rb hotfix.txt review-merge.md].each do |file|
+        _, present = Open3.capture2e("git", "-C", origin, "cat-file", "-e", "accepted:#{file}")
+        assert present.success?, "#{file} must survive the reconcile — nothing may be discarded"
+      end
+      assert_equal "main", git_out(clone, "rev-parse", "--abbrev-ref", "HEAD"),
+                   "the recovery must leave the primary back on main, not stranded on a reconcile branch"
+    end
+  end
+
+  # [integration] The post-#588 GEM-CARRYING RELEASE. bump_consumer_locks_for_qa
+  # commits consumer lockfile bumps onto `release` during prepare, so the frozen
+  # tree legitimately differs from accepted's head tree — tree absorption is truly
+  # REFUTED and the refusal lands on :diverged. That verdict is CORRECT (accepted
+  # really is missing the lock bump), and #588 makes it the common path, so the
+  # advice it prints has to work here too.
+  def test_gem_carrying_release_reports_diverged_truthfully_with_working_advice
+    Dir.mktmpdir do |dir|
+      clone  = build_sibling_fixture(dir)
+      origin = File.join(dir, "origin.git")
+      base   = git_out(clone, "rev-parse", "main")
+
+      # accepted carries the work that ships.
+      run_git(clone, "checkout", "-q", "-b", "accepted", base)
+      File.write(File.join(clone, "shipped.rb"), "shipped")
+      run_git(clone, "add", "shipped.rb")
+      run_git(clone, "commit", "-q", "-m", "work that ships")
+      run_git(clone, "push", "-q", "origin", "accepted")
+
+      # The sweep merges accepted into release...
+      run_git(clone, "checkout", "-q", "release")
+      run_git(clone, "merge", "-q", "--no-ff", "-m", "sweep: accepted → release", "accepted")
+      # ...and then #588's prepare commits the consumer lock bump ON TOP, on release
+      # only. From here the frozen tree can never equal any accepted tree.
+      File.write(File.join(clone, "Gemfile.lock"), "studio-engine (0.4.2)")
+      run_git(clone, "add", "Gemfile.lock")
+      run_git(clone, "commit", "-q", "-m", "bump consumer lock for QA")
+      run_git(clone, "push", "-q", "origin", "release")
+      frozen = git_out(clone, "rev-parse", "release")
+
+      # A concurrent review merge lands on accepted from a SEPARATE clone, so the
+      # advance is refused — and the ship's clone keeps a STALE origin/accepted, as
+      # in production. (Round-4 sweep: this fixture pushed the concurrent merge from
+      # the SAME clone, freshening the ref and masking the missing fetch.)
+      run_git(clone, "checkout", "-q", "main")
+      land_concurrent_merge_on_accepted(dir, origin, label: "gem",
+                                        files: { "review-merge.md" => "merged by review" })
+
+      refute_equal git_out(origin, "rev-parse", "#{frozen}^{tree}"),
+                   git_out(origin, "rev-parse", "accepted^{tree}"),
+                   "fixture precondition: the lock bump makes the frozen tree differ from the TRUE accepted's"
+
+      out = run_cli(["--yes"], setup: advance_setup(clone, dir),
+                    call: %{push_frozen_main("sibling", #{frozen.inspect}); puts("PASSED")})
+
+      assert_includes out, "PASSED", "a gem-carrying release must not abort the ship: #{out}"
+      assert_includes out, "appears to be missing shipped content",
+                      "accepted genuinely lacks the lock bump — the missing-content verdict is TRUE here: #{out}"
+      refute_includes out, "UNDETERMINED",
+                      "the signals are readable — a true refutation is not an unknown: #{out}"
+
+      ok, result, failed = run_printed_reconcile(out)
+      assert ok, "the printed reconcile must work on the shape #588 made common (failed at #{failed}): #{result}"
+      %w[shipped.rb Gemfile.lock review-merge.md].each do |file|
+        _, present = Open3.capture2e("git", "-C", origin, "cat-file", "-e", "accepted:#{file}")
+        assert present.success?, "#{file} must survive the reconcile — the lock bump is the point"
+      end
+    end
+  end
+
+  # [integration] BLOCKER (round 3). THE FAILING PATH. Every advice test before this
+  # one executed the recipe against a fixture that merges CLEANLY — they prove the
+  # advice works for shapes we already imagined. The invariant is stronger: the
+  # printed advice must never STRAND the operator, for ANY merge outcome.
+  #
+  # This is not a corner. This PR's own docs declare :diverged the ROUTINE outcome on
+  # a gem-carrying release, and the mechanism is a Gemfile.lock bump — the file most
+  # likely to have been touched on accepted too. The routine path IS the conflict
+  # path. The round-2 recipe was an && chain, so `git merge` exiting non-zero halted
+  # it: no push, no `checkout main`, operator left on an unfamiliar branch mid-
+  # conflict with a DIRTY primary — which on a gem repo also aborts the NEXT ship.
+  #
+  # So this asserts the operator is TOLD WHAT TO DO and left RECOVERABLE, not that
+  # the chain succeeds. Both sides genuinely touch the same line of Gemfile.lock.
+  def test_printed_reconcile_fails_safe_and_instructs_when_the_merge_conflicts
+    Dir.mktmpdir do |dir|
+      clone  = build_sibling_fixture(dir)
+      origin = File.join(dir, "origin.git")
+
+      File.write(File.join(clone, "Gemfile.lock"), "studio-engine (0.4.0)\n")
+      run_git(clone, "add", "Gemfile.lock")
+      run_git(clone, "commit", "-q", "-m", "lock 0.4.0")
+      run_git(clone, "push", "-q", "origin", "main")
+      # release must DESCEND from main, or the frozen SHA is not a fast-forward of it.
+      run_git(clone, "branch", "-f", "release", "main")
+      run_git(clone, "push", "-q", "-f", "origin", "release")
+      base = git_out(clone, "rev-parse", "main")
+
+      # accepted bumps the lock one way (a feature branch merged there)...
+      run_git(clone, "checkout", "-q", "-b", "accepted", base)
+      File.write(File.join(clone, "Gemfile.lock"), "studio-engine (0.4.1)\n")
+      run_git(clone, "add", "Gemfile.lock")
+      run_git(clone, "commit", "-q", "-m", "accepted: lock 0.4.1")
+      run_git(clone, "push", "-q", "origin", "accepted")
+      accepted_head = git_out(origin, "rev-parse", "accepted")
+
+      # ...and #588's prepare bumps the SAME line another way on the shipped side.
+      run_git(clone, "checkout", "-q", "release")
+      File.write(File.join(clone, "Gemfile.lock"), "studio-engine (0.5.0)\n")
+      File.write(File.join(clone, "shipped.rb"), "shipped")
+      run_git(clone, "add", "-A")
+      run_git(clone, "commit", "-q", "-m", "prepare: bump consumer lock for QA")
+      run_git(clone, "push", "-q", "origin", "release")
+      frozen = git_out(clone, "rev-parse", "release")
+      run_git(clone, "checkout", "-q", "main")
+
+      out = run_cli(["--yes"], setup: advance_setup(clone, dir),
+                    call: %{push_frozen_main("sibling", #{frozen.inspect}); puts("PASSED")})
+
+      assert_includes out, "PASSED", "a conflicting reconcile must not abort the ship: #{out}"
+
+      # The recipe is NOT an && chain any more — a chain implies all-or-nothing.
+      refute_match(/^ {6}git -C \S+ fetch origin &&/, out,
+                   "the recipe must not be a single && chain: a conflict halts it silently: #{out}")
+
+      # Follow it top to bottom, as an operator would. It STOPS at the merge...
+      ok, result, failed = run_printed_reconcile(out)
+      refute ok, "fixture precondition: this merge must genuinely conflict"
+      assert_match(/merge origin\/main/, failed, "it must stop at the MERGE step, not earlier: #{failed}")
+      assert_match(/CONFLICT|Automatic merge failed/, result, "the operator must see the conflict named: #{result}")
+
+      # ...and THAT IS SAFE, which is the whole point. The primary never moved.
+      assert_equal "main", git_out(clone, "rev-parse", "--abbrev-ref", "HEAD"),
+                   "the primary must still be on main — never stranded on a reconcile branch"
+      assert_empty git_out(clone, "status", "--porcelain"),
+                   "the primary must still be CLEAN — a dirty gem primary ABORTS the next ship"
+      assert_equal accepted_head, git_out(origin, "rev-parse", "accepted"),
+                   "origin/accepted must be untouched — no half-finished reconcile"
+
+      # The operator is TOLD WHAT TO DO, both ways, rather than left to invent it.
+      assert_match(/IF THE MERGE CONFLICTS/, out, "the conflict case must be named up front: #{out}")
+      finish = printed_finish_command(out)
+      bailout = printed_bailout_command(out)
+      assert finish,  "a FINISH IT instruction must be printed: #{out}"
+      assert bailout, "a BAIL OUT instruction must be printed: #{out}"
+
+      # BAIL OUT genuinely restores a clean machine.
+      _, bail_status = Open3.capture2e("bash", "-c", bailout)
+      assert bail_status.success?, "the printed BAIL OUT must succeed"
+      assert_empty git_out(clone, "status", "--porcelain"), "bailing out must leave the primary clean"
+      assert_equal "main", git_out(clone, "rev-parse", "--abbrev-ref", "HEAD"), "bailing out must leave main checked out"
+      refute_match(/reconcile/, git_out(clone, "worktree", "list"),
+                   "bailing out must leave NO worktree residue behind")
+
+      # And FINISH IT genuinely completes the reconcile after a resolution.
+      _, status = Open3.capture2e("bash", "-c", printed_reconcile_steps(out)[1])
+      assert status.success?, "re-creating the scratch worktree must succeed after a bail out"
+      scratch = File.join(dir, "scratch-reconcile")
+      Open3.capture2e("bash", "-c", printed_reconcile_steps(out)[2])
+      File.write(File.join(scratch, "Gemfile.lock"), "studio-engine (0.5.0)\n")
+      _, finish_status = Open3.capture2e("bash", "-c", finish)
+      assert finish_status.success?, "the printed FINISH IT must complete the reconcile after a resolution"
+
+      %w[shipped.rb Gemfile.lock].each do |file|
+        _, present = Open3.capture2e("git", "-C", origin, "cat-file", "-e", "accepted:#{file}")
+        assert present.success?, "#{file} must be on accepted after finishing the reconcile"
+      end
+      assert_equal "main", git_out(clone, "rev-parse", "--abbrev-ref", "HEAD"),
+                   "finishing the reconcile must also leave the primary on main"
+      assert_empty git_out(clone, "status", "--porcelain"), "finishing must leave the primary clean"
+    end
+  end
+
+  # [integration] ABSENCE of signal is not a NEGATIVE signal. When the git reads
+  # cannot resolve the relation, the ship must say UNDETERMINED and tell the
+  # operator to check — never assert a confident DIVERGED it cannot support. This
+  # is the same shape as the original defect, one layer down.
+  def test_unreadable_relation_reports_undetermined_rather_than_guessing_diverged
+    Dir.mktmpdir do |dir|
+      clone  = build_sibling_fixture(dir)
+      base   = git_out(clone, "rev-parse", "main")
+
+      run_git(clone, "checkout", "-q", "release")
+      File.write(File.join(clone, "shipped.rb"), "shipped")
+      run_git(clone, "add", "shipped.rb")
+      run_git(clone, "commit", "-q", "-m", "shipped")
+      run_git(clone, "push", "-q", "origin", "release")
+      frozen = git_out(clone, "rev-parse", "release")
+
+      run_git(clone, "checkout", "-q", "-b", "accepted-work", base)
+      File.write(File.join(clone, "hotfix.txt"), "straight to accepted")
+      run_git(clone, "add", "hotfix.txt")
+      run_git(clone, "commit", "-q", "-m", "diverged accepted")
+      run_git(clone, "push", "-q", "origin", "accepted-work:accepted")
+
+      # The relation becomes UNREADABLE: the remote-tracking ref will not resolve.
+      setup = %(def repo_path(_repo) = #{clone.inspect}\n) +
+              %(def rev_parse_ok?(_path, ref) = !ref.to_s.include?("origin/accepted")\n)
+      out = run_cli(["--yes"], setup: setup,
+                    call: %{push_frozen_main("sibling", #{frozen.inspect}); puts("PASSED")})
+
+      assert_includes out, "PASSED", "an unreadable relation must NOT abort the ship: #{out}"
+      assert_includes out, "UNDETERMINED", "an unreadable relation must be reported as such: #{out}"
+      refute_match(/appears to be missing shipped content/, out,
+                   "an unreadable state must never be asserted as genuine divergence: #{out}")
+      refute_includes out, "AHEAD of main",
+                      "nor may it claim accepted is ahead — the point is that we do not know: #{out}"
+      refute_match(/push origin \h+:refs\/heads\/accepted/, out,
+                   "no bare ref push, in any state: #{out}")
     end
   end
 
