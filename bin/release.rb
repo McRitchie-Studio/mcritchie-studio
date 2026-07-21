@@ -2012,7 +2012,10 @@ end
 #              * :red        — a regression is riding origin/#{RELEASE_BRANCH} (the
 #                              eject/revert recovery), and
 #              * :unreadable — a token/credential fault; polling a refused token only
-#                              burns the whole timeout and never heals it mid-sweep.
+#                              burns the whole timeout and never heals it mid-sweep, and
+#              * :ci_less    — GitHub will run NO CI for this subject at all (a stale
+#                              base it cannot compute a merge commit for), so there is
+#                              no run to wait for; the remedy is a rebase, not patience.
 #   :wait  — CI has NOT concluded yet: :none (no run registered), :pending (the push
 #            run is still building — the raw queued/in_progress/waiting statuses all
 #            fold to :pending), :unverified (a transient read miss), or anything else
@@ -2023,7 +2026,13 @@ def ci_poll_action(ci)
   return :pass if ci_pass?(ci)
 
   state = ci.is_a?(Hash) ? ci[:state] : nil
-  return :abort if %i[red unreadable].include?(state)
+  # :ci_less is DEFENSIVE here, not a fix for an observed release-path stall: the only
+  # producer of :ci_less is CiStatus.combine, reached solely from evaluate(pr_url), and
+  # this gate is SHA-addressed (for_sha) — so today it can arrive only via an injected
+  # RELEASE_CI_STATUS token. Classified anyway, because if a future PR-scoped caller
+  # does reach this poll, "GitHub will never run CI for this subject" is terminal for
+  # the same reason :unreadable is: polling is the one thing that cannot help.
+  return :abort if %i[red unreadable ci_less].include?(state)
 
   :wait
 end

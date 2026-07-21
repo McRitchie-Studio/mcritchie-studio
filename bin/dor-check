@@ -619,6 +619,10 @@ def suite_evidence_error(eval, slug, ci, review_role)
       if ci && ci[:state] == :conflicted
         "This PR is merge-CONFLICTED (mergeStateStatus DIRTY), so its CI will NEVER fire — rebase or merge " \
           "release into the branch, resolve the conflicts, and push; the refreshed PR then runs CI"
+      elsif ci && ci[:state] == :ci_less
+        # A fast cert is credited against a GREEN CI, and here there is no CI to be
+        # green — waiting for one is the exact trap this state exists to break.
+        CiStatus.ci_less_remedy(ci)
       elsif ci && ci[:state] == :unreadable
         # The rolio bug, verbatim: the OLD text below told a builder whose PR was
         # ALREADY open and ALREADY green to "push the branch and open the PR". They
@@ -1012,6 +1016,12 @@ if gate != "build"
       "merge commit, so the pull_request workflow NEVER fires: this PR has NO CI coming, not a pending one, and " \
       "review's gate-zero would defer it forever while the board looks healthy. Rebase or merge release into the " \
       "branch (git fetch origin && git merge origin/release), resolve the conflicts, push, and re-run dor-check."
+  when :ci_less
+    # The SAME hard-blocker shape as :conflicted, for the case that never reads DIRTY:
+    # zero check-runs plus a merge GitHub will not confirm. Softer treatment strands
+    # the task exactly like the PR-#509 stall — see the THIRD STATE section in
+    # bin/lib/ci_status.rb.
+    errors << CiStatus.ci_less_remedy(ci)
   when :pending
     if review_role
       errors << "GitHub CI is still RUNNING for the PR (#{Array(ci[:pending]).join(", ")}) — not green YET. The " \
@@ -1199,7 +1209,7 @@ if !options[:json] && options[:file].nil? && gate != "build" && !slug.to_s.empty
       case ci[:state]
       when :green then "pass"
       when :pending then review_role ? "fail" : "pending"
-      when :red, :conflicted, :closed, :merged then "fail"
+      when :red, :conflicted, :ci_less, :closed, :merged then "fail"
       else "unverified"
       end
     repo = CiStatus.repo_from_pr_url(devops["pr_url"])
@@ -1280,6 +1290,9 @@ if ready
     # Defensive: :conflicted always lands in `errors` above, so a ready verdict
     # shouldn't reach here — but if a future reordering ever lets it, say it loudly.
     puts "  ⚠ PR merge-CONFLICTED (mergeStateStatus DIRTY) — CI never fires; rebase/merge release"
+  elsif ci && ci[:state] == :ci_less
+    # Defensive, like :conflicted above — :ci_less always lands in `errors`.
+    puts "  ⚠ NO CI WILL RUN (stale base) — rebase onto #{ci[:base].to_s.empty? ? "the base branch" : ci[:base]}"
   elsif ci && %i[none unverified unreadable].include?(ci[:state])
     puts "  ⚠ GitHub CI UNVERIFIED (#{ci[:state]}) — see the suggestion below"
   end

@@ -23,6 +23,7 @@ require "pathname"
 require "time"
 require "uri"
 require "yaml"
+require_relative "lib/ci_status"
 require_relative "lib/code_diff"
 require_relative "lib/task_board"
 
@@ -260,8 +261,29 @@ def summarize_rollup(items)
   end
 end
 
+# Will this PR NEVER get CI? Zero check-runs AND a REFUTED merge, delegating the
+# classification to CiStatus.mergeability so preflight and the gates cannot drift into
+# two taxonomies for one PR (review round 2: this predicate used to answer DIRTY
+# differently from CiStatus.view_verdict, so the same PR got "rebase onto accepted and
+# force-push" here and "merge release in and resolve the conflicts" there — and the
+# first is wrong advice for a real conflict, since it never mentions resolving).
+#
+# DIRTY belongs to the CONFLICT report, not this one: view_verdict calls it
+# :conflicted and BAD_MERGE_STATES already surfaces it below, so it returns false here
+# and lets the conflict speak for itself with the correct cure.
+#
+# An :unknown mergeability NEVER lands here either — GitHub answers UNKNOWN while it
+# computes, which is exactly the fresh-push window preflight runs in. Only an
+# affirmative negative counts. See the three-valued section in bin/lib/ci_status.rb.
+def ci_less?(gh_pr, checks)
+  return false unless Array(checks).empty?
+  return false if gh_pr["mergeStateStatus"].to_s.upcase == "DIRTY"
+
+  CiStatus.mergeability(JSON.generate(gh_pr)) == :refuted
+end
+
 def gh_pr_view(ref, root)
-  fields = "number,title,url,headRefName,mergeStateStatus,statusCheckRollup"
+  fields = "number,title,url,headRefName,baseRefName,mergeable,mergeStateStatus,statusCheckRollup"
   ok, out, err = capture("gh", "pr", "view", ref.to_s, "--json", fields, chdir: root)
   return [nil, compact_lines(err).join("; ")] unless ok
 
@@ -575,7 +597,14 @@ if options[:gh]
           "merge_state" => merge_state,
           "checks" => checks
         }
+        pr["ci_less"] = ci_less?(gh_pr, checks)
         errors << "PR merge state is #{merge_state}" if BAD_MERGE_STATES.include?(merge_state)
+        # THE THIRD STATE (task detect-ci-less-stale-prs): zero checks AND a REFUTED
+        # merge means CI is not slow — it is never coming, and the session that waits
+        # for it burns the whole cycle. Named here so the builder learns it at
+        # preflight, before arming any watcher. The message is CiStatus's shared
+        # remedy, not a local paraphrase, so every tool prescribes one cure.
+        errors << CiStatus.ci_less_remedy(CiStatus.ci_less_verdict(JSON.generate(gh_pr))) if pr["ci_less"]
         failed.each { |check| errors << "PR check #{check["name"]} is #{check["state"]}" }
       else
         pr = { "status" => "missing", "message" => warning.to_s.empty? ? "no PR for #{ref}" : warning }

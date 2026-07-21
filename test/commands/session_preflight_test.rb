@@ -203,6 +203,110 @@ class SessionPreflightTest < Minitest::Test
     assert_equal ["docs/agents/index.md"], overlap.fetch("files")
   end
 
+  # [integration] The THIRD CI state at the preflight tier (task
+  # detect-ci-less-stale-prs). A base-drifted PR gets ZERO check-runs and GitHub never
+  # queues the workflow — but nothing said so, and the session armed a CI watcher that
+  # could never fire. Preflight is where the builder meets the PR first, so it is where
+  # "no CI is coming" has to be said, with a recoverable fix named.
+  def test_ci_less_pr_blocks_preflight_and_names_a_recoverable_fix
+    task = write_task(devops: default_devops.merge("branch" => "feat/session-preflight"))
+    fake_bin = write_ci_less_gh
+
+    out, err, status = run_preflight(
+      "--file", task, "--no-install-docs", "--no-fetch", "--json",
+      env: { "PATH" => "#{fake_bin}:#{ENV.fetch("PATH", "")}" }
+    )
+    refute status.success?, "a PR that will never get CI must block the preflight\n#{out}\n#{err}"
+
+    report = JSON.parse(out)
+    assert report.fetch("pr").fetch("ci_less"), "the PR is classified ci-less"
+    blocker = report.fetch("errors").find { |e| e.match?(/NO CI/i) }
+    assert blocker, "an error names the missing CI: #{report.fetch("errors").inspect}"
+    # The property, not the verb (see the dor-check twin): conflict work + a way back.
+    assert_match(/resolve/i, blocker, "the blocker names the conflict work")
+    assert_match(/--abort/, blocker, "the blocker names a way back to a known-good state")
+    assert_match(%r{origin/accepted\b}, blocker, "the blocker names the PR's actual base")
+  end
+
+  def test_a_mergeable_pr_with_checks_is_not_ci_less
+    # The GUARD: the normal green PR must not trip the new alarm.
+    task = write_task(devops: default_devops.merge("branch" => "feat/session-preflight"))
+    fake_bin = write_fake_gh
+
+    out, err, status = run_preflight(
+      "--file", task, "--no-install-docs", "--no-fetch", "--json",
+      env: { "PATH" => "#{fake_bin}:#{ENV.fetch("PATH", "")}" }
+    )
+    assert status.success?, "#{out}\n#{err}"
+    refute JSON.parse(out).fetch("pr").fetch("ci_less")
+  end
+
+  # [integration] ROUND 2 — the fresh-push window must not be called ci-less here
+  # either. GitHub answers mergeable UNKNOWN while it computes, and a brand-new head
+  # SHA has zero checks in that same window; preflight runs INSIDE that window by
+  # design, so an UNKNOWN must never produce the "rebase and force-push" blocker.
+  def test_undetermined_mergeability_is_not_reported_as_ci_less
+    task = write_task(devops: default_devops.merge("branch" => "feat/session-preflight"))
+    fake_bin = write_fake_gh(merge_state: "UNKNOWN", mergeable: "UNKNOWN", rollup: "[]")
+
+    out, err, status = run_preflight(
+      "--file", task, "--no-install-docs", "--no-fetch", "--json",
+      env: { "PATH" => "#{fake_bin}:#{ENV.fetch("PATH", "")}" }
+    )
+    assert status.success?, "an undetermined mergeability must not block\n#{out}\n#{err}"
+    report = JSON.parse(out)
+    refute report.fetch("pr").fetch("ci_less")
+    refute(report.fetch("errors").any? { |e| e.match?(/NO CI/i) }, report.fetch("errors").inspect)
+  end
+
+  # [integration] ROUND 2 — ONE taxonomy. A DIRTY PR is a CONFLICT, and the two tools
+  # must not hand the same PR different cures: preflight used to call it ci-less
+  # ("rebase onto accepted and force-push") while CiStatus.view_verdict calls it
+  # :conflicted ("merge release in and resolve the conflicts"). The first never
+  # mentions resolving anything, so it is wrong advice for a real conflict.
+  def test_a_dirty_pr_is_reported_as_a_conflict_not_as_ci_less
+    task = write_task(devops: default_devops.merge("branch" => "feat/session-preflight"))
+    fake_bin = write_fake_gh(merge_state: "DIRTY", mergeable: "CONFLICTING", rollup: "[]")
+
+    out, err, status = run_preflight(
+      "--file", task, "--no-install-docs", "--no-fetch", "--json",
+      env: { "PATH" => "#{fake_bin}:#{ENV.fetch("PATH", "")}" }
+    )
+    refute status.success?, "a DIRTY PR still blocks — as a conflict\n#{out}\n#{err}"
+    report = JSON.parse(out)
+    refute report.fetch("pr").fetch("ci_less"), "DIRTY belongs to the conflict report, not the ci-less one"
+    assert(report.fetch("errors").any? { |e| e.include?("DIRTY") }, report.fetch("errors").inspect)
+    refute(report.fetch("errors").any? { |e| e.match?(/NO CI/i) },
+           "a conflict must not also collect the ci-less cure")
+  end
+
+  # [integration] ROUND 4, blocker 2 — the CONJUNCTION is load-bearing in preflight
+  # too, and its zero-checks guard was the unasserted copy. `combine`'s identical
+  # guard is covered (mutation M11), but preflight hand-rolls its own `ci_less?` and
+  # nothing pinned that half: delete `return false unless Array(checks).empty?` and a
+  # PR that HAS checks + a refuted merge reports ci-less — GitHub demonstrably ran CI,
+  # so "no CI will run" is a lie. A PR with checks is NEVER ci-less, whatever its merge
+  # state.
+  def test_a_pr_with_checks_is_never_ci_less_even_when_the_merge_is_refuted
+    task = write_task(devops: default_devops.merge("branch" => "feat/session-preflight"))
+    # A run that HAS reported (one passing check) AND a refuted merge — the exact
+    # pairing the conjunction must keep out of ci-less.
+    fake_bin = write_fake_gh(
+      merge_state: "UNKNOWN", mergeable: "CONFLICTING",
+      rollup: '[{ name: "test", conclusion: "SUCCESS", status: "COMPLETED", detailsUrl: "https://example.test" }]'
+    )
+
+    out, err, status = run_preflight(
+      "--file", task, "--no-install-docs", "--no-fetch", "--json",
+      env: { "PATH" => "#{fake_bin}:#{ENV.fetch("PATH", "")}" }
+    )
+    assert status.success?, "a PR that already has checks is not ci-less\n#{out}\n#{err}"
+    report = JSON.parse(out)
+    refute report.fetch("pr").fetch("ci_less"), "a PR with reported checks can never be ci-less"
+    refute(report.fetch("errors").any? { |e| e.match?(/NO CI/i) },
+           "GitHub ran CI here — the ci-less cure must not fire")
+  end
+
   def test_docs_kind_without_shape_is_exempt_from_shape_gate
     task = write_task(devops: { "kind" => "docs", "branch" => "feat/session-preflight" })
 
@@ -448,7 +552,15 @@ class SessionPreflightTest < Minitest::Test
     File.chmod(0o755, File.join(@repo, "bin", "install-agent-docs"))
   end
 
-  def write_fake_gh
+  # A PR GitHub will never run CI for: ZERO check-runs plus a merge it will not
+  # confirm (task detect-ci-less-stale-prs). `mergeable: "CONFLICTING"` with an empty
+  # rollup is the shape a base-drifted PR actually reports.
+  def write_ci_less_gh
+    write_fake_gh(merge_state: "UNKNOWN", mergeable: "CONFLICTING", rollup: "[]")
+  end
+
+  def write_fake_gh(merge_state: "CLEAN", mergeable: "MERGEABLE", rollup: nil)
+    rollup ||= '[{ name: "test", conclusion: "SUCCESS", status: "COMPLETED", detailsUrl: "https://example.test" }]'
     dir = File.join(@sandbox, "fake-bin")
     FileUtils.mkdir_p(dir)
     path = File.join(dir, "gh")
@@ -466,8 +578,10 @@ class SessionPreflightTest < Minitest::Test
             title: "Add Session Preflight",
             url: "https://github.com/amcritchie/mcritchie-studio/pull/5",
             headRefName: "feat/session-preflight",
-            mergeStateStatus: "CLEAN",
-            statusCheckRollup: [{ name: "test", conclusion: "SUCCESS", status: "COMPLETED", detailsUrl: "https://example.test" }]
+            baseRefName: "accepted",
+            mergeable: "#{mergeable}",
+            mergeStateStatus: "#{merge_state}",
+            statusCheckRollup: #{rollup}
           )
         end
       in ["pr", "list", "--state", state, "--limit", _limit, "--json", _fields]
