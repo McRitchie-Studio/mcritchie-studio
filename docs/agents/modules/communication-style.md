@@ -42,14 +42,14 @@ simpler, the specifics stay exact.
 ## Name work by its task slug
 
 To Mr. McRitchie the task slug **is** the name of the work: it reads as words
-(`remove-prod-approval`) and it is the board URL (`/tasks/<slug>`). PR numbers,
+(`remove-prod-deploy-approval`) and it is the board URL (`/tasks/<slug>`). PR numbers,
 branch names, and SHAs are pipeline plumbing.
 
 - **Slug first, everywhere the work is named** — in layer-1 prose, in table row
-  keys, in handoffs: `remove-prod-approval`, never a bare `#610`.
+  keys, in handoffs: `remove-prod-deploy-approval`, never a bare `#610`.
 - **PR numbers ride in layer 2 only**, printed beside the slug they belong to.
 - Wrong: `#610 is one approval away.`
-  Right: `remove-prod-approval is one approval away (PR #610).`
+  Right: `remove-prod-deploy-approval is one approval away (PR #610).`
 
 ## The shape of a report
 
