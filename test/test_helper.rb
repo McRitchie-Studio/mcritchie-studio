@@ -9,11 +9,21 @@ require_relative "../config/environment"
 require "rails/test_help"
 
 # Draw the route set NOW — under the real (local) test env, before any test can
-# stub Rails.env. Routes draw LAZILY whenever eager_load is off, which is EVERY
-# non-CI test process: local `bin/rails test`, local `rake test`, and CI's own
-# `rake test` lane (eager_load = ENV["CI"].present?, and the rake lane runs with
-# it off). The dev-only namespace in config/routes.rb draws ONLY when
-# Rails.env.local?. So a test that resolved a `dev_board_*` helper for the FIRST
+# stub Rails.env. Routes draw LAZILY whenever eager loading is off, and TWO
+# different Rails settings decide that — the rake test lane is governed by the
+# second, which is the subtlety that trips readers (config.eager_load reads TRUE
+# under CI, so it LOOKS like routes are eager there, but they are not):
+#   * config.eager_load = ENV["CI"].present? (config/environments/test.rb) — TRUE
+#     under CI. Governs the app server, `rails console`, and `rails runner`
+#     (all eager; routes drawn at boot).
+#   * config.rake_eager_load — Rails-DEFAULT FALSE (we never set it), and it is
+#     what governs RAKE tasks. `rails test` / `rake test` / CI's
+#     `db:test:prepare test` lane are ALL rake tasks, so they run with eager
+#     loading OFF **even when CI=true** — routes stay lazy. (Measured: `rails
+#     runner` under CI => routes_loaded true; the rake test lane => lazy, which is
+#     exactly how the dev_board pollution reached CI.)
+# The dev-only namespace in config/routes.rb draws ONLY when Rails.env.local?. So a
+# test that resolved a `dev_board_*` helper for the FIRST
 # time inside a `Rails.stub(:env, "production")` block used to draw the WHOLE set
 # with local? => false, silently dropping the dev namespace for the rest of that
 # worker — every later test then died with `undefined method dev_board_generate_path`.
