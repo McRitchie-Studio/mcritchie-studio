@@ -61,9 +61,12 @@ Two mechanisms, both automatic on the `bin/pr-review` supervisor path below:
    double-review collision the old role lease prevented, now prevented at the task
    grain WITHOUT blocking a second session's other work.
 
-The supervisor does both for you: it claims each task in the wave, skips (and
-briefly defers) any it cannot take, spawns reviewers only for the ones it holds,
-and releases on the verdict. Keep each session's fan-out to **waves of five or
+The supervisor does both for you: it **selects candidates from the reviewable
+queue** (the `--reviewable` read above), and it reviews a task **only on a
+CONFIRMED claim** — a task another live session holds is skipped, and a task whose
+claim it cannot confirm (no session id / board unreachable) is **deferred, never
+reviewed on an unconfirmed claim** (proceeding blind is the double-review the claim
+exists to prevent) — then it releases on the verdict. Keep each session's fan-out to **waves of five or
 fewer agents** (the per-session cap); the parallel-claim is what makes concurrent
 sessions safe, not a global lock — the enforced cross-session connection budget is
 tracked separately (follow-up C in

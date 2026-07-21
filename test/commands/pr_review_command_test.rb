@@ -73,18 +73,31 @@ class PrReviewCommandTest < Minitest::Test
       exit ENV["CODEX_FAIL"].to_s == "1" ? 1 : 0
     RUBY
 
-    # bin/task fake — logs every call. `review-claim acquire <slug>` exits 10
-    # (already under review) for any slug named in REVIEW_CLAIM_SKIP, else 0, so a
-    # test can simulate another live session holding a task; every other verb exits 0.
+    # bin/task fake — logs every call. `review-claim acquire <slug>` exits 10 (held by
+    # another session) for a slug in REVIEW_CLAIM_SKIP and 1 (unconfirmed — no session
+    # id / board down) for a slug in REVIEW_CLAIM_UNCONFIRMED, else 0. `list --stage
+    # submitted --reviewable` prints REVIEWABLE_SLUGS in the real "slug [stage] title"
+    # format (+ the "(N task(s))" line the supervisor keys on) when set; every other
+    # verb exits 0.
     write_exec("task", <<~RUBY)
       #!#{RbConfig.ruby}
       require "json"
       File.open(ENV.fetch("TASK_LOG"), "a") { |f| f.puts JSON.generate(ARGV) }
       File.open(ENV.fetch("SEQUENCE_LOG"), "a") { |f| f.puts JSON.generate(["task", *ARGV]) }
-      if ARGV[0] == "review-claim" && ARGV[1] == "acquire" &&
-         ENV.fetch("REVIEW_CLAIM_SKIP", "").split(",").include?(ARGV[2])
-        STDOUT.puts "review-claim: SKIP \#{ARGV[2]} (under review by another session)"
-        exit 10
+      if ARGV[0] == "review-claim" && ARGV[1] == "acquire"
+        slug = ARGV[2]
+        if ENV.fetch("REVIEW_CLAIM_SKIP", "").split(",").include?(slug)
+          STDOUT.puts "review-claim: SKIP \#{slug} (under review by another session)"; exit 10
+        end
+        if ENV.fetch("REVIEW_CLAIM_UNCONFIRMED", "").split(",").include?(slug)
+          STDERR.puts "review-claim: no session id — cannot confirm the claim"; exit 1
+        end
+      end
+      if ARGV[0] == "list" && ARGV.include?("--reviewable") && !ENV.fetch("REVIEWABLE_SLUGS", "").empty?
+        slugs = ENV.fetch("REVIEWABLE_SLUGS").split(",")
+        slugs.each { |s| puts "\#{s}  [submitted]  \#{s} title" }
+        puts "(\#{slugs.length} task(s))"
+        exit 0
       end
       puts "task fake: \#{ARGV.join(" ")}"
     RUBY
@@ -416,6 +429,61 @@ class PrReviewCommandTest < Minitest::Test
     # We release ONLY the claim we actually took — never one we skipped.
     releases = json_lines(@task_log).select { |a| a.first == "review-claim" && a[1] == "release" }
     assert_equal ["free-pr"], releases.map { |a| a[2] }, "release only the tasks we claimed, not the skipped one"
+  end
+
+  # [integration] The supervisor reviews ONLY on a CONFIRMED claim. A task whose
+  # `review-claim acquire` cannot be confirmed (exit 1 — no session id / board down) is
+  # NOT reviewed: proceeding on an unconfirmed claim is the double-review the gate
+  # exists to prevent. It defers (loudly) while the confirmable task proceeds.
+  def test_a_task_with_an_unconfirmable_claim_is_not_reviewed
+    unc = task("unconfirmed-pr", created_at: "2026-06-29T12:30:00Z")
+    ok = task("ok-pr", created_at: "2026-06-29T12:20:00Z")
+    ok_reviewed = task("ok-pr", created_at: "2026-06-29T12:20:00Z",
+                                reports: [report("carl", "merge-ready"), report("shannon", "merge-ready")])
+    write_snapshots(snapshot([unc, ok]), snapshot([unc, ok_reviewed]))
+
+    out, err, status = run_heartbeat(
+      "--run", "--fast", "--limit", "2", "--max-agents", "5",
+      env: { "REVIEW_CLAIM_UNCONFIRMED" => "unconfirmed-pr", "CODEX_SLEEP" => "0.05" }
+    )
+
+    assert status.success?, err
+    assert_match(/unconfirmed-pr: review claim UNCONFIRMED/, out,
+                 "the supervisor says loudly it will not review on an unconfirmed claim")
+
+    reviewer_slugs = json_lines(@reviewer_log).map(&:first)
+    refute_includes reviewer_slugs, "unconfirmed-pr",
+                    "a task whose claim cannot be confirmed is NOT reviewed (no double-review)"
+    assert_equal ["ok-pr"], reviewer_slugs, "the confirmable task is reviewed"
+
+    releases = json_lines(@task_log).select { |a| a.first == "review-claim" && a[1] == "release" }
+    refute_includes releases.map { |a| a[2] }, "unconfirmed-pr", "never releases a claim it never held"
+  end
+
+  # [integration] The supervisor SELECTS from the board's reviewable queue (the
+  # operator's headline query) rather than fetching every submitted task and leaning on
+  # the claim alone. A submitted task the board reports as NOT reviewable (under review
+  # elsewhere) is never even claim-attempted.
+  def test_supervisor_reviews_only_the_boards_reviewable_queue
+    a = task("queue-a", created_at: "2026-06-29T12:30:00Z")
+    b = task("queue-b", created_at: "2026-06-29T12:20:00Z")
+    a_reviewed = task("queue-a", created_at: "2026-06-29T12:30:00Z",
+                                 reports: [report("carl", "merge-ready"), report("shannon", "merge-ready")])
+    write_snapshots(snapshot([a, b]), snapshot([a_reviewed, b]))
+
+    # The board's reviewable queue lists ONLY queue-a; queue-b is under review elsewhere.
+    out, err, status = run_heartbeat(
+      "--run", "--fast", "--limit", "2", "--max-agents", "5",
+      env: { "REVIEWABLE_SLUGS" => "queue-a", "CODEX_SLEEP" => "0.05" }
+    )
+
+    assert status.success?, err
+    reviewer_slugs = json_lines(@reviewer_log).map(&:first)
+    assert_includes reviewer_slugs, "queue-a"
+    refute_includes reviewer_slugs, "queue-b", "a task outside the reviewable queue is never attempted"
+
+    acquires = json_lines(@task_log).select { |a| a.first == "review-claim" && a[1] == "acquire" }
+    refute_includes acquires.map { |a| a[2] }, "queue-b", "the filtered task isn't even claim-attempted"
   end
 
   def test_run_mode_places_codex_global_flags_before_exec

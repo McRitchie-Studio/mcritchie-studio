@@ -91,7 +91,10 @@ SKIPS any already under a live claim, so many `pr-review` sessions run at once a
 never review one task twice. The board exposes the unclaimed queue as
 `Task.reviewable` (`GET /api/v1/tasks?stage=submitted&reviewable=1`); the CLI is
 `bin/task review-claim acquire|release|status <task>` (exit 0 claimed / 10 skip / 1
-fail-open); and `bin/pr-review` claims-or-skips each task in its wave. Only the
+could-not-confirm); and `bin/pr-review` SELECTS candidates from the reviewable queue
+and reviews a task only on a CONFIRMED claim — exit 10 (held) skips, exit 1 (no
+session id / board unreachable) DEFERS rather than reviewing on an unconfirmed claim,
+so the no-double-review contract holds even when the board is unreachable. Only the
 MUTATING lanes — `qa-release`, `production-deploy`, `clean-up` — still stand a
 same-role second session down, because they rewrite one shared release candidate (or
 sweep shared worktrees) and per-task skipping cannot help there. This realizes the
