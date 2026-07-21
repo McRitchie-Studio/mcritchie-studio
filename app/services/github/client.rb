@@ -66,8 +66,7 @@ module Github
     end
 
     # A JSON POST, sharing the same retry / rate-limit / error machinery as GET.
-    # +body+ is JSON-encoded (a Hash) or sent verbatim (a String). Used by
-    # Github::DeploymentApprover to approve a pending deployment.
+    # +body+ is JSON-encoded (a Hash) or sent verbatim (a String).
     def post(path, body: nil, params: {}, headers: {})
       response = request(path, params: params, headers: headers, method: :post, body: body)
       parse_json(response.body)

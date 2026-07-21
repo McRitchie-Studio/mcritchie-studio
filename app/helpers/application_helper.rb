@@ -466,17 +466,6 @@ module ApplicationHelper
     end
   end
 
-  # The SEVENTH panel state, ORTHOGONAL to the six run outcomes above: a deploy
-  # blocked at a protected-environment gate, waiting on an operator. Solid amber
-  # with a ringed, pulsing dot so it reads as "needs YOU" — louder than a passive
-  # `queued` (hollow amber) or `in_progress` (filled amber) — and pairs with the
-  # Approve CTA. Class strings live here so Tailwind's helper-glob scan compiles them.
-  def github_pending_visual
-    { state: "pending_approval", label: "awaiting approval",
-      pill: "badge border-amber-400 bg-amber-100 text-amber-800 dark:border-amber-400/60 dark:bg-amber-500/20 dark:text-amber-200",
-      dot: "bg-amber-500 ring-2 ring-amber-300/70 animate-pulse" }
-  end
-
   # A task's PR-head CI progress (a Ci::CheckProgress) for the board card's
   # progress bar — blank until the task is submitted with a PR and a CI run
   # exists. The board preloads these in one batch (@ci_progress_by_slug); this is

@@ -27,7 +27,7 @@ module Ci
   # nothing). Every rescue lands in ErrorLog (backend discipline).
   class ProgressReader
     # The org every managed repo lives under (amcritchie/<repo>), overridable for a
-    # fork/test. Matches Github::PendingDeploymentScanner::DEFAULT_REPO's owner.
+    # fork/test.
     DEFAULT_OWNER = ENV.fetch("GITHUB_REPO_OWNER", "amcritchie").freeze
 
     # The repo whose `release` branch tip carries the G3 candidate suite CI run.
