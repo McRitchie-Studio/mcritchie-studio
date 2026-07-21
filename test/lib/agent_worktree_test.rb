@@ -445,15 +445,25 @@ class AgentWorktreeTest < Minitest::Test
   # thread, which blocks until the child exits, swallowing the Timeout::Error (a 2s guard
   # around `sleep 6` returned after 6.01s on Ruby 3.3.11). A hung board would have stalled a
   # whole sweep while the code claimed to be bounded. The bound must KILL the child.
-  def test_capture_status_timeout_actually_kills_the_child
+  #
+  # Asserted by BEHAVIOUR, not wall-clock. The old guard measured `elapsed < 3` around a
+  # SPAWNED subprocess — only 3x headroom, and spawn latency inflated ~2.75x under load, so
+  # it red-failed a CORRECT implementation on a busy box. Instead assert the enforcement
+  # directly: (1) the read FAILED via the timeout branch — it carries the "timed out"
+  # message ONLY that branch emits, where a natural 6s exit takes the success branch and
+  # never says it; and (2) terminate_group's grace loop never asked to sleep beyond its
+  # 0.05s quantum, read off an INJECTED sleeper — so an unbounded wait would surface as an
+  # over-quantum sleep, not as a slow clock. Mutation-proof: drop the bound (join without
+  # the timeout) and the child exits naturally -> ok:true, no "timed out" -> RED.
+  def test_capture_status_timeout_kills_the_child_bounded_not_waited_out
     out = run_in_script(<<~RUBY)
-      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-      ok, _out, err = capture_status("sleep", "6", timeout: 1)
-      elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
-      print [ok, err.include?("timed out"), elapsed < 3].inspect
+      slept = []
+      ok, _out, err = capture_status("sleep", "6", timeout: 1, sleeper: ->(s) { slept << s; sleep(s) })
+      print [ok, err.include?("timed out"), (slept.max || 0) <= 0.05].inspect
     RUBY
     assert_equal "[false, true, true]", out,
-                 "a 1s bound around `sleep 6` must return in ~1s as a failed read, not after 6s"
+                 "a 1s bound around `sleep 6` fails the read through the timeout branch and kills the child " \
+                 "within terminate_group's 0.05s poll quantum — no unbounded wait, and no wall-clock assertion"
   end
 
   # --- integration: the REAL mcritchie config carries the reservation through
