@@ -231,13 +231,16 @@ Actions-side follow-up, not a gate concern).
 - **QA — auto + optimistic.** A push to `release` triggers the `qa-deploy`
   workflow (`qa` environment, no reviewer). qa does **not** block on it: once
   Tier-2 CI is green it opens the `release → main` PR immediately (a broken QA boot
-  no longer stalls the pipeline — the prod Environment reviewer is the human gate).
-- **Production — operator-confirmed.** The `prod-deploy` workflow is
-  `workflow_dispatch` into a `production` environment carrying a **required
-  reviewer**; the operator's ship approval *is* that Environment approval (an
-  audit-trailed click), replacing the local interactive confirm. It is
-  `workflow_dispatch`, **not** `push:[main]`, so the ship's `release → main`
-  ref-push can't self-fire a production deploy.
+  no longer stalls the pipeline — the operator launching `production-deploy` is the
+  human gate).
+- **Production — operator-launched.** The `prod-deploy` workflow is
+  `workflow_dispatch` into a `production` environment (kept for `HEROKU_API_KEY`
+  secret scoping + deploy history); its required-reviewer approval was **removed
+  2026-07-20** (task `remove-prod-deploy-approval`), so a dispatched run deploys
+  straight through. The human gate is the operator's act of launching `bin/release
+  ship` plus its `--yes` confirm — not a second click. It is `workflow_dispatch`,
+  **not** `push:[main]`, so the ship's `release → main` ref-push can't self-fire a
+  production deploy.
 
 **Rollout** (each phase = its own task + PR through the cycle): **0** ratify this
 doc · **1** `accepted` + tiered CI (hub) · **2** Actions CD (hub) · **3** flip gate
@@ -1489,7 +1492,7 @@ surfaces.
 | Release-notes formatting | deterministic | `POST /api/v1/release_notes` | none |
 | Release-notes highlights prose | light judgment | small model | Haiku |
 | Discord digest / event messages | deterministic templates | script | none |
-| Production approval | **human** | — | Mr. McRitchie |
+| Production ship authority | **human** | `production-deploy` launch + `--yes` | Mr. McRitchie |
 
 ---
 
@@ -1559,9 +1562,11 @@ the current release drain), so the in-flight-PR retarget risk is zero.
    base `release → accepted` in `bin/dor-check`, `bin/fast-check`,
    `bin/agent-worktree`.
 2. **Actions CD (hub)** — `qa-deploy.yml` (push→`release`, `qa` env, optimistic
-   `/up` smoke) + `prod-deploy.yml` (`workflow_dispatch`, `production` env with a
-   required reviewer, hard-gated `/up`); the conductor triggers + `gh run watch`es
-   instead of local `git push heroku`.
+   `/up` smoke) + `prod-deploy.yml` (`workflow_dispatch`, `production` env, hard-gated
+   `/up`; the `production` required reviewer this phase added was later removed
+   2026-07-20 — task `remove-prod-deploy-approval` — so the dispatched run deploys
+   straight through); the conductor triggers + `gh run watch`es instead of local
+   `git push heroku`.
 3. **Flip gate authority + rewrite SOPs (hub)** — promote the existing `CiStatus`
    auditor to the G3/G4 verdict (G1 stays a local pre-flight); reconcile §1.1/§1.2,
    the Feature/Bug SOPs, §3.3 DoR, Workflow 2 (§4), and the gate docs to the target

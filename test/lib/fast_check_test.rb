@@ -75,40 +75,6 @@ class FastCheckTest < Minitest::Test
     assert_equal "/tmp/whatever", env["FAST_CHECK_ROOT"], "overrides still pass through"
   end
 
-  # --- [unit] merge_evidence with lanes: the fast writer must not drop full evidence
-
-  def test_fast_lane_merge_replaces_only_prior_fast_cert_lines
-    existing = [
-      "[unit] bin/rails test test/foo_test.rb",
-      "[full-suite@fullfp] tests green",
-      "[rubocop@fullfp] lint clean",
-      "[fast-cert@oldfp] stale fast cert",
-      "[full-suite-bypass] tracked elsewhere"
-    ]
-    merged = FullSuiteGate.merge_evidence(existing, ["[fast-cert@newfp] fresh"],
-                                          lanes: [FullSuiteGate::FAST_LANE])
-
-    assert_includes merged, "[unit] bin/rails test test/foo_test.rb"
-    assert_includes merged, "[full-suite@fullfp] tests green", "full evidence must survive a fast write"
-    assert_includes merged, "[rubocop@fullfp] lint clean"
-    assert_includes merged, "[full-suite-bypass] tracked elsewhere"
-    assert_includes merged, "[fast-cert@newfp] fresh"
-    refute_includes merged, "[fast-cert@oldfp] stale fast cert"
-  end
-
-  def test_default_merge_supersedes_only_the_lanes_supplied
-    # The write rule (lib/cert_evidence.rb): a writer supersedes exactly the lanes
-    # it SUPPLIES evidence for. bin/full-suite-check stamps full-suite + rubocop,
-    # so those lanes are replaced and a prior fast-cert line is carried over — it
-    # used to be deleted, but the board now preserves any lane a write does not
-    # address (that is what stops `--checks` from wiping a cert), so deleting it
-    # here would only make the CLI disagree with what the board stores. The lingering
-    # line is inert: `ok` is graded off LANES (full-suite + rubocop) alone.
-    merged = FullSuiteGate.merge_evidence(["[fast-cert@oldfp] x"], ["[full-suite@newfp] y"])
-    assert_includes merged, "[fast-cert@oldfp] x"
-    assert_includes merged, "[full-suite@newfp] y"
-  end
-
   def test_evaluate_grades_the_fast_lane_alongside_the_full_lanes
     checks = ["[fast-cert@abc1234] fast green"]
     assert_equal :fresh, FullSuiteGate.lane_status(checks, FullSuiteGate::FAST_LANE, "abc1234")
@@ -136,7 +102,8 @@ class FastCheckTest < Minitest::Test
       # this they read as untracked dirt to the dirty-tree guard (cert_tree_guard.rb)
       # — test tooling, not uncommitted work. Ignoring them keeps the fixture's dirt
       # HONEST: the only uncommitted file is the branch diff itself (widget.rb below).
-      write.call(".gitignore", "stub.log\n*-stub\n")
+      # stub.log* also covers the TASK stub's read-back sentinel (stub.log.updated).
+      write.call(".gitignore", "stub.log*\n*-stub\n")
       git.call("init -q")
       git.call("config user.email tester@example.com")
       git.call("config user.name tester")
@@ -150,14 +117,55 @@ class FastCheckTest < Minitest::Test
 
   # A stub CLI: appends "<MARKER>\t<argv...>" to STUB_LOG_<MARKER>; exits 1 when
   # FAIL_TOKEN is set and appears in its argv, else 0. For the TASK stub, `show`
-  # prints TASK_SHOW_JSON so the runner's read-merge-write can be exercised.
+  # prints TASK_SHOW_JSON so the runner's read-then-write can be exercised.
+  #
+  # It is minimally STATEFUL so the cert's read-back is exercised end to end —
+  # crucially INCLUDING the fresh evidence line, whose runtime fingerprint no
+  # fixture can spell, so the only faithful way to model "the write landed" is to
+  # reflect the ACTUAL written line back:
+  #   * `update` drops a sentinel beside STUB_LOG and CAPTURES the --checks VALUES
+  #     it stored (to .written), so a later `show` can echo them — the real board
+  #     makes a write readable, which is the whole premise of the read-back.
+  #   * `show` after an update serves TASK_SHOW_JSON_AFTER_UPDATE (else
+  #     TASK_SHOW_JSON) with the captured lines merged in, so the read-back sees
+  #     the evidence line the cert actually wrote. Overrides:
+  #       - STUB_READBACK_DROP_WRITTEN=1 → do NOT merge the written lines (models a
+  #         write that never landed — e.g. the evidence line vanished).
+  #       - FAIL_SHOW_AFTER_UPDATE=1 → the post-write read itself fails (a blip).
+  #     TASK_SHOW_JSON_AFTER_UPDATE with a line DROPPED still models a lost
+  #     pre-existing line: the written evidence is merged back, that line is not.
   def write_stub(dir, name, marker)
     stub = File.join(dir, name)
     File.write(stub, <<~RUBY)
       #!#{RbConfig.ruby}
-      File.open(ENV.fetch("STUB_LOG"), "a") { |f| f.puts(["#{marker}", *ARGV].join("\\t")) }
-      if ARGV.first == "show" && ENV["TASK_SHOW_JSON"]
-        puts ENV["TASK_SHOW_JSON"]
+      require "json"
+      log = ENV.fetch("STUB_LOG")
+      File.open(log, "a") { |f| f.puts(["#{marker}", *ARGV].join("\\t")) }
+      sentinel = log + ".updated"
+      written  = log + ".written"
+      if ARGV.first == "update"
+        File.write(sentinel, "1")
+        vals = []
+        i = 0
+        while i < ARGV.length
+          if ARGV[i] == "--checks" then vals << ARGV[i + 1].to_s; i += 2 else i += 1 end
+        end
+        File.open(written, "a") { |f| vals.each { |v| f.puts(v) } }
+      end
+      if ARGV.first == "show"
+        exit 1 if ENV["FAIL_SHOW_AFTER_UPDATE"] == "1" && File.exist?(sentinel)
+        after = ENV["TASK_SHOW_JSON_AFTER_UPDATE"].to_s
+        base  = (!after.empty? && File.exist?(sentinel)) ? after : ENV["TASK_SHOW_JSON"].to_s
+        unless base.empty?
+          doc = JSON.parse(base)
+          if File.exist?(sentinel) && File.exist?(written) && ENV["STUB_READBACK_DROP_WRITTEN"] != "1"
+            dv = ((doc["metadata"] ||= {})["devops"] ||= {})
+            checks = Array(dv["checks_run"])
+            File.readlines(written, chomp: true).each { |w| checks << w unless checks.include?(w) }
+            dv["checks_run"] = checks
+          end
+          puts JSON.generate(doc)
+        end
       end
       token = ENV["FAIL_TOKEN"].to_s
       exit(!token.empty? && ARGV.join(" ").include?(token) ? 1 : 0)
@@ -174,7 +182,7 @@ class FastCheckTest < Minitest::Test
   # WITH `dir` as its cwd instead — the root resolves from the cwd git toplevel,
   # exercising the task-root guard (which an explicit override bypasses). stderr
   # is merged into stdout there so the refusal message is assertable.
-  def run_check(dir, args: ["--print"], fail_token: "", extra_env: {}, implicit_root: false)
+  def run_check(dir, args: ["--print"], fail_token: "", extra_env: {}, implicit_root: false, merge_stderr: false)
     log = File.join(dir, "stub.log")
     lane = write_stub(dir, "lane-stub", "LANE")
     gate = write_stub(dir, "gate-stub", "GATE")
@@ -199,6 +207,8 @@ class FastCheckTest < Minitest::Test
       if implicit_root
         env.delete("FAST_CHECK_ROOT")
         IO.popen(env, "#{cmd} 2>&1", chdir: dir, &:read)
+      elsif merge_stderr
+        IO.popen(env, "#{cmd} 2>&1", &:read)
       else
         IO.popen(env, "#{cmd} 2>/dev/null", &:read)
       end
@@ -400,7 +410,16 @@ class FastCheckTest < Minitest::Test
     ] } }
   )
 
-  def test_recording_merges_evidence_preserving_tiers_and_full_cert_lines
+  # The cert records its evidence and NOTHING else. Preservation of the author's
+  # tier tags and the other lanes is the WRITE FUNNEL's job, not the writer's —
+  # asserting it on the writer's argv is asserting the wrong layer, and the
+  # writer-side "merge" it used to do is exactly what let a stale snapshot replace
+  # newer tier lines (round-3). The preservation half is covered where it lives:
+  # lib/cert_evidence.rb (test/lib/cert_evidence_test.rb), the board funnel
+  # (test/models/task_cert_evidence_test.rb), and the real CLI end-to-end
+  # (test/lib/task_cli_test.rb). The END STATE is asserted here by the read-back
+  # tests below.
+  def test_recording_records_the_fresh_evidence_line
     with_repo do |dir, _|
       out, code, lines = run_check(dir, args: ["task-x"], extra_env: { "TASK_SHOW_JSON" => SHOW_JSON })
       assert_equal 0, code, out
@@ -408,10 +427,209 @@ class FastCheckTest < Minitest::Test
       update = lines.find { |l| l[0] == "TASK" && l[1] == "update" }
       refute_nil update, "green run records evidence via task update: #{lines.inspect}"
       checks = update.each_cons(2).select { |a, _| a == "--checks" }.map(&:last)
-      assert_includes checks, "[unit] bin/rails test test/models/widget_test.rb", "tier tags preserved"
-      assert_includes checks, "[full-suite@fullfp] tests green", "full-cert evidence preserved"
       assert(checks.any? { |c| c =~ /\A\[fast-cert@[0-9a-f]{7,64}\]/ }, "fresh fast-cert line recorded")
-      refute_includes checks.join("\n"), "[fast-cert@oldfp]", "prior fast-cert line replaced"
+      refute_includes checks.join("\n"), "[fast-cert@oldfp]",
+                      "the stale fast-cert line is never resent — the funnel supersedes this lane"
+    end
+  end
+
+  # --- [integration] read-back: "preserved" is VERIFIED, never declared -------------
+  # The 2026-07-20 wipe (fast-check-preserves-checks): the script printed "tier
+  # tags preserved" over a write whose result it never looked at. The claim is now
+  # backed by a post-write read of the board.
+
+  def test_lost_preexisting_lines_after_the_write_fail_the_cert_loudly
+    with_repo do |dir, _|
+      after = JSON.generate("metadata" => { "devops" => { "checks_run" => [] } })
+      out, code, = run_check(dir, args: ["task-x"], merge_stderr: true,
+                             extra_env: { "TASK_SHOW_JSON" => SHOW_JSON,
+                                          "TASK_SHOW_JSON_AFTER_UPDATE" => after })
+      assert_equal 1, code, "a write whose read-back lost pre-existing checks lines must fail loudly: #{out}"
+      assert_match(/MISSING/, out)
+      assert_match(%r{\[unit\] bin/rails test test/models/widget_test\.rb}, out,
+                   "the lost lines are named so the builder can re-record them")
+      refute_match(/tier tags preserved/, out, "no blanket claim over a write that lost lines")
+    end
+  end
+
+  # Round-3 regression (review block, 2026-07-20 — Carl): the cert used to resend
+  # the WHOLE merged list (its snapshot of the author's lines + its evidence).
+  # That is an AUTHOR write, so the funnel replaces the author namespace with the
+  # SNAPSHOT — and any tier line the board gained after the snapshot was read (a
+  # builder recording checks during a multi-minute cert, a concurrent writer) is
+  # replaced by stale content. The cert owns exactly one namespace, so it now
+  # sends ONLY its evidence line: a PURE-EVIDENCE write, which the funnel merges
+  # against the board's CURRENT state at write time. No snapshot, no window.
+  def test_recording_sends_only_evidence_never_the_author_snapshot
+    with_repo do |dir, _|
+      _, code, lines = run_check(dir, args: ["task-x"], extra_env: { "TASK_SHOW_JSON" => SHOW_JSON })
+      assert_equal 0, code
+      update = lines.find { |l| l[0] == "TASK" && l[1] == "update" }
+      refute_nil update
+      checks = update.each_cons(2).select { |a, _| a == "--checks" }.map(&:last)
+      assert_equal 1, checks.size,
+                   "the cert must send ONE line — its own evidence. Resending its snapshot of the author's " \
+                   "lines lets a stale read replace newer tier lines: #{checks.inspect}"
+      assert_match(/\A\[fast-cert@[0-9a-f]{7,64}\]/, checks.first)
+    end
+  end
+
+  # The property the pure-evidence write buys: tier lines the board gained AFTER
+  # the cert's read still survive, because the funnel merges at write time.
+  def test_tier_lines_added_during_the_cert_are_not_replaced_by_the_stale_snapshot
+    with_repo do |dir, _|
+      # The board gained a newer tier line after the cert's pre-write read.
+      newer = JSON.generate("metadata" => { "devops" => { "checks_run" => [
+        "[unit] bin/rails test test/models/widget_test.rb",
+        "[full-suite@fullfp] tests green",
+        "[integration] recorded DURING the cert run"
+      ] } })
+      out, code, lines = run_check(dir, args: ["task-x"], merge_stderr: true,
+                                   extra_env: { "TASK_SHOW_JSON" => SHOW_JSON,
+                                                "TASK_SHOW_JSON_AFTER_UPDATE" => newer })
+      assert_equal 0, code, out
+      update = lines.find { |l| l[0] == "TASK" && l[1] == "update" }
+      sent = update.each_cons(2).select { |a, _| a == "--checks" }.map(&:last)
+      refute_includes sent, "[unit] bin/rails test test/models/widget_test.rb",
+                      "a stale author snapshot must never be resent — that is what replaces newer tier lines"
+      refute(sent.any? { |l| l.start_with?("[full-suite@") },
+             "the cert does not own another lane's evidence either: #{sent.inspect}")
+    end
+  end
+
+  # Round-5 regression (review block, 2026-07-20 — light lane): the cert must
+  # verify the ONE line it OWNS. If the fresh [fast-cert@…] evidence line does not
+  # land on the board, the cert cannot tell "my evidence landed" from "my evidence
+  # vanished" — the missing-signal-read-as-success shape this PR exists to kill,
+  # turned on the cert's own output. A read-back missing the evidence line must
+  # exit NONZERO and say "re-run the cert" (NOT the author re-record remedy — a
+  # hand-written evidence line forges the certification).
+  def test_evidence_line_missing_from_the_read_back_fails_the_cert
+    with_repo do |dir, _|
+      # DROP_WRITTEN models the evidence write never landing; the pre-existing
+      # lines are all still present, so ONLY the cert's own line is missing.
+      out, code, lines = run_check(dir, args: ["task-x"], merge_stderr: true,
+                                   extra_env: { "TASK_SHOW_JSON" => SHOW_JSON,
+                                                "STUB_READBACK_DROP_WRITTEN" => "1" })
+      assert_equal 1, code, "a read-back missing the fresh evidence line must FAIL the cert: #{out}"
+      assert_match(/MISSING/, out)
+      assert_match(/re-run the cert: bin\/fast-check task-x/, out,
+                   "the remedy for a lost evidence line is a re-run, never a hand-written evidence line")
+      refute_match(/read-back confirms/, out, "a vanished evidence line must not report a confirmed cert")
+      # The G1 attempt must close FAILED, not success-while-exit-1.
+      close = lines.select { |l| l[0] == "GATE" && l[1] == "close" }.last
+      refute_nil close
+      assert_includes close, "--failed", "the durable gate must not read success when the command exits 1"
+    end
+  end
+
+  # Round-3 regression (review block, 2026-07-20 — Shannon): the recovery command
+  # is meant to be PASTED into a shell, so every line must be SHELL-quoted.
+  # `String#inspect` is a RUBY literal: it leaves $(…), backticks and friends live
+  # inside double quotes, so pasting the remedy would execute them.
+  def test_recovery_command_is_shell_safe_not_ruby_inspect
+    with_repo do |dir, _|
+      pwned = File.join(dir, "pwned")
+      # A tier line carrying live shell syntax. `$(…)` and the backticks EXECUTE
+      # inside double quotes, which is exactly what a Ruby-inspect command emits.
+      nasty = %([integration] cost $(touch #{pwned}) and `touch #{pwned}` "quoted")
+      before = JSON.generate("metadata" => { "devops" => { "checks_run" => [nasty] } })
+      after = JSON.generate("metadata" => { "devops" => { "checks_run" => [] } })
+      out, code, = run_check(dir, args: ["task-x"], merge_stderr: true,
+                             extra_env: { "TASK_SHOW_JSON" => before,
+                                          "TASK_SHOW_JSON_AFTER_UPDATE" => after })
+      assert_equal 1, code, out
+      remedy = out.lines.find { |l| l.include?("bin/task update task-x") }
+      refute_nil remedy, out
+      command = remedy[/bin\/task update task-x.*/].strip
+
+      # The DECISIVE check: run the remedy through a REAL shell (Shellwords.split
+      # would not model command substitution and passes even for a Ruby-inspect
+      # command — a false green). A stub `bin/task` on PATH records the argv it
+      # actually received; the shell must hand it the line VERBATIM and must not
+      # execute the embedded substitution.
+      argv_log = File.join(dir, "remedy-argv.log")
+      bindir = File.join(dir, "remedy-bin")
+      FileUtils.mkdir_p(bindir)
+      File.write(File.join(bindir, "task"), <<~SH)
+        #!/bin/sh
+        for a in "$@"; do printf '%s\\n' "$a" >> #{argv_log.shellescape}; done
+      SH
+      FileUtils.chmod("+x", File.join(bindir, "task"))
+      system({ "PATH" => "#{bindir}:#{ENV.fetch('PATH')}" },
+             "/bin/sh", "-c", command.sub(%r{\Abin/task}, "task"),
+             out: File::NULL, err: File::NULL)
+
+      refute File.exist?(pwned),
+             "the remedy EXECUTED embedded shell syntax when pasted: #{command}"
+      received = File.exist?(argv_log) ? File.readlines(argv_log, chomp: true) : []
+      assert_equal nasty, received.last,
+                   "the shell must hand bin/task the line VERBATIM: #{received.inspect} from #{command}"
+    end
+  end
+
+  # Round-2 regression (review block, 2026-07-20): on a PARTIAL loss the printed
+  # recovery must re-record the UNION — the surviving lines AND the lost ones.
+  # `--checks` replaces the author namespace, so a remedy listing only the lost
+  # lines would itself drop the survivors when the builder runs it.
+  def test_partial_loss_recovery_re_records_survivors_and_lost_alike
+    with_repo do |dir, _|
+      before = JSON.generate("metadata" => { "devops" => { "checks_run" => [
+        "[unit] surviving unit line",
+        "[integration] lost integration line"
+      ] } })
+      after = JSON.generate("metadata" => { "devops" => { "checks_run" => [
+        "[unit] surviving unit line"
+      ] } })
+      out, code, = run_check(dir, args: ["task-x"], merge_stderr: true,
+                             extra_env: { "TASK_SHOW_JSON" => before,
+                                          "TASK_SHOW_JSON_AFTER_UPDATE" => after })
+      assert_equal 1, code, out
+      remedy = out.lines.find { |l| l.include?("bin/task update task-x") }
+      refute_nil remedy, "the loud failure prints a runnable re-record command: #{out}"
+      # Assert the PROPERTY (what a shell parses out of the command), not the
+      # spelling — the lines are shell-quoted, so a raw substring match would be
+      # asserting the quoting style rather than the recovery content.
+      recorded = Shellwords.split(remedy[/bin\/task update task-x.*/].strip)
+                           .each_cons(2).select { |a, _| a == "--checks" }.map(&:last)
+      assert_includes recorded, "[integration] lost integration line", "the lost line is re-recorded"
+      assert_includes recorded, "[unit] surviving unit line",
+                      "the SURVIVING line must be in the remedy too — --checks replaces the author " \
+                      "namespace, so a lost-lines-only remedy would drop the survivors"
+    end
+  end
+
+  def test_green_run_reports_read_back_verified_preservation
+    with_repo do |dir, _|
+      out, code, = run_check(dir, args: ["task-x"], merge_stderr: true,
+                             extra_env: { "TASK_SHOW_JSON" => SHOW_JSON })
+      assert_equal 0, code, out
+      assert_match(/read-back confirms the evidence line landed/, out,
+                   "the confirmed claim names the evidence line the cert verified")
+      assert_match(/all 2 pre-existing checks line\(s\) kept/, out,
+                   "…and states the pre-existing count that was verified")
+    end
+  end
+
+  def test_green_run_with_no_prior_checks_claims_no_preservation
+    with_repo do |dir, _|
+      empty = JSON.generate("metadata" => { "devops" => { "checks_run" => [] } })
+      out, code, = run_check(dir, args: ["task-x"], merge_stderr: true,
+                             extra_env: { "TASK_SHOW_JSON" => empty })
+      assert_equal 0, code, out
+      assert_match(/no pre-existing checks lines to preserve/, out)
+      refute_match(/tier tags preserved/, out, "never claim preservation when nothing pre-existed")
+    end
+  end
+
+  def test_unverifiable_read_back_reports_unverified_without_failing_the_cert
+    with_repo do |dir, _|
+      out, code, = run_check(dir, args: ["task-x"], merge_stderr: true,
+                             extra_env: { "TASK_SHOW_JSON" => SHOW_JSON,
+                                          "FAIL_SHOW_AFTER_UPDATE" => "1" })
+      assert_equal 0, code, "a read-back blip must not fail a recorded green cert: #{out}"
+      assert_match(/UNVERIFIED/, out)
+      refute_match(/tier tags preserved/, out, "an unverified write must not claim preservation")
     end
   end
 

@@ -39,10 +39,6 @@ Rails.application.routes.draw do
   # are public-read like /tasks (mutations stay admin-gated in TasksController).
   get "deployments", to: "tasks#deployments", as: :deployments
   get "deployments/all", to: "releases#index", as: :all_deployments
-  # Approve a prod deploy waiting at its environment gate (admin-gated in the
-  # controller). Numeric run_id constraint keeps this off the :slug show route below.
-  post "deployments/:run_id/approve", to: "github_deployments#approve",
-       as: :approve_deployment, constraints: { run_id: /\d+/ }
   get "deployments/:slug", to: "releases#show", as: :deployment
   get "review_events", to: "tasks#review_events_hub", as: :review_events_hub
   get "stages", to: "tasks#stages", as: :stages

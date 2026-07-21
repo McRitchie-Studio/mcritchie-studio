@@ -1621,7 +1621,11 @@ class Task < ApplicationRecord
   # own the fingerprint-bound evidence ("[full-suite@<tree-hash>] ..."), which
   # bin/dor-check reads to decide whether this exact code is certified. A write
   # may supersede an evidence LANE only by SUPPLYING evidence for it; every lane
-  # the incoming list does not address is carried forward.
+  # the incoming list does not address is carried forward. The rule is symmetric
+  # (reverse regression 2026-07-20, fast-check-preserves-checks): a PURE-EVIDENCE
+  # write — every incoming line `[lane@fp]`, what a cert writer sends when its own
+  # read of checks_run came back stale or empty — supplies no author line and so
+  # cannot supersede the author namespace; the tier tags are carried forward too.
   #
   # Regression (2026-07-12, hit twice in one session): `bin/task update --checks`
   # replaced the whole array, so an agent recording its tier-tagged test plan

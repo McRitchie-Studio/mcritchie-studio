@@ -68,6 +68,26 @@ class TaskCertEvidenceTest < ActiveSupport::TestCase
     assert_equal ["[unit] fresh plan", FULL], task.reload.devops_checks_run
   end
 
+  # The reverse regression (2026-07-20, fast-check-preserves-checks): the cert
+  # writer's read of checks_run missed the builder's freshly recorded tier lines,
+  # so its update carried ONLY evidence — and the funnel let that pure-evidence
+  # write supersede the whole author namespace. The board must carry the author
+  # lines whenever the incoming list supplies none.
+  test "[unit] a cert writer's pure-evidence write cannot wipe the tier tags" do
+    task = certified_task(checks: ["[unit] bin/rails test test/models",
+                                   "[integration] bin/rails test test/controllers"])
+
+    # Exactly what bin/fast-check sends after a stale/empty read: the fresh
+    # evidence line alone.
+    task.update!(metadata: { "devops" => task.devops.merge("checks_run" => [FAST]) })
+
+    checks = task.reload.devops_checks_run
+    assert_includes checks, "[unit] bin/rails test test/models",
+                    "a pure-evidence write wiped the builder's tier tags"
+    assert_includes checks, "[integration] bin/rails test test/controllers"
+    assert_includes checks, FAST
+  end
+
   test "[unit] clearing checks_run cannot take the cert down with it" do
     task = certified_task(checks: ["[unit] plan", FULL, RUBOCOP])
 

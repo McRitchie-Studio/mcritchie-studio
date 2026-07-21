@@ -146,23 +146,24 @@ local guard — the pre-dispatch `confirm("Deploy this release to production?")`
 that runs before any deploy — so a hands-off run opts in instead of hanging on a
 prompt. It skips nothing else: the preflight, frozen-SHA test gate, gem-publish
 ordering, deploy smoke, release notes, and partial-ship recovery all still run.
-**`--yes` does not bypass the production approval below** — that gate lives on
-GitHub, and the ship blocks on it whether or not you passed `--yes`.
+**That local confirm is now the only human gate** — the ship no longer blocks on
+a GitHub approval (see below).
 
-**The real ship-confirm is the `production` GitHub Environment approval, not a
-local prompt.** The hub deploys through GitHub Actions: `bin/release ship`
-dispatches `prod-deploy.yml` (`gh workflow run prod-deploy.yml -f sha=<frozen>`)
-and watches the run. That workflow is `workflow_dispatch`, and it pauses at the
-`production` Environment for the operator's required-reviewer approval — the gate
-that replaced the old local interactive prompt. Until the operator clicks
-**Review deployments → Approve** on the run, it sits `waiting` and the ship
-HOLDS on it — unbounded, however long the approval takes. So announce the paused
-run and wait; do not read the block as a hang. Once approved, GitHub Actions
-force-pushes the frozen SHA to Heroku `main` and hard-gates a `/up` smoke — it
-retries `/up` and FAILS the deploy if production never returns 200. The watch
-returns green only after that deploy-and-smoke concludes, so Actions — not a
-local hub curl — now runs the deploy `/up` smoke. (The post-ship `@qa-readonly`
-production smoke seal below still runs locally on the hub.)
+**The ship-confirm is launching this SOP, not a second click.** The hub deploys
+through GitHub Actions: `bin/release ship` dispatches `prod-deploy.yml` (`gh
+workflow run prod-deploy.yml -f sha=<frozen>`) and watches the run. That workflow
+is `workflow_dispatch` into the `production` Environment, kept for
+`HEROKU_API_KEY` secret scoping and the deployment history — but its
+required-reviewer approval was **REMOVED on 2026-07-20** (task
+`remove-prod-deploy-approval`), so the run deploys straight through with **no
+manual approval click**. GitHub Actions force-pushes the frozen SHA to Heroku
+`main` and hard-gates a `/up` smoke — it retries `/up` and FAILS the deploy if
+production never returns 200. The watch returns green only after that
+deploy-and-smoke concludes, so Actions — not a local hub curl — runs the deploy
+`/up` smoke. (The post-ship `@qa-readonly` production smoke seal below still runs
+locally on the hub.) The watcher still HOLDS unbounded on any live run status, so
+if a protection rule is ever re-added the ship waits it out rather than failing
+closed.
 
 **A dirty app primary does NOT block the ship.** The deploy runs from its own
 checkout — a private detached worktree at `<repo>/.worktrees/_ship`, pinned at the

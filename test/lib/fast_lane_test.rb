@@ -84,6 +84,23 @@ class FastLaneTest < Minitest::Test
            "the full route needs BOTH full lanes; one alone must not skip the cert"
   end
 
+  # [unit] The push-retry decision for ship-handles-rebased-branch: a
+  # non-fast-forward rejection (a rebased branch) earns a --force-with-lease
+  # retry; every OTHER failure must NOT (never force over auth/network/foreign).
+  def test_push_rejected_non_fast_forward_classifies_git_output
+    assert FastLane.push_rejected_non_fast_forward?(
+      "! [rejected]        feat/x -> feat/x (non-fast-forward)\nerror: failed to push some refs"
+    ), "a real rebase rejection must be recognized"
+    assert FastLane.push_rejected_non_fast_forward?("hint: Updates were rejected (fetch first)"),
+           "the (fetch first) shape counts too"
+    refute FastLane.push_rejected_non_fast_forward?("fatal: Authentication failed for 'origin'"),
+           "an auth failure is NOT a rebase — must not be force-pushed"
+    refute FastLane.push_rejected_non_fast_forward?("fatal: unable to access ... Could not resolve host"),
+           "a network failure is NOT a rebase"
+    refute FastLane.push_rejected_non_fast_forward?("")
+    refute FastLane.push_rejected_non_fast_forward?(nil)
+  end
+
   def test_cert_not_fresh_without_evidence_or_fingerprint
     refute FastLane.cert_fresh?([], "abc1234")
     refute FastLane.cert_fresh?(["[unit] bin/rails test test/foo_test.rb"], "abc1234")

@@ -1135,7 +1135,9 @@ when "begin"
       # stolen claim silently lapse back after the TTL.
       current = api(:get, "/api/v1/tasks/#{slug}")["data"] || {}
       merged = stamp_session(current.dig("metadata", "devops") || {})
-      merged.merge!(ClaimLease.renewed(session: mover_session, nonce: claim_nonce))
+      # prior: the stored claim, so a blank-nonce renewal never erases a good nonce.
+      merged.merge!(ClaimLease.renewed(session: mover_session, nonce: claim_nonce,
+                                       prior: current.dig("metadata", "devops")))
       api(:patch, "/api/v1/tasks/#{slug}", { "devops" => merged })
       seed_usage_baseline(slug)
       write_feature_marker(current.merge("metadata" => { "devops" => merged }))
@@ -1153,7 +1155,12 @@ when "begin"
   worktree_dir = CertRootGuard.worktree_hint(worktree_slug, ENV["TASK_BEGIN_PROJECTS_DIR"])
   die!("worktree #{worktree_slug.inspect} not found on disk after allocation — check bin/agent-worktree output") if worktree_dir.nil?
   preflight_bin = BinHelpers.bin_for("TASK_BEGIN_PREFLIGHT_BIN", "session-preflight")
-  begin_step!("5/5 preflight", slug, preflight_bin, slug, chdir: worktree_dir)
+  # Pin the inspected root to the worktree. session-preflight resolves its own
+  # root from __dir__, so `chdir` alone left the primary's copy inspecting the
+  # PRIMARY (begin-preflight-wrong-root): a false GREEN, and a false RED that
+  # exited begin whenever the primary drifted behind accepted. --root names the
+  # desk explicitly; session-preflight self-defends that it really is this task's.
+  begin_step!("5/5 preflight", slug, preflight_bin, slug, "--root", worktree_dir, chdir: worktree_dir)
 
   context = begin
     JSON.parse(File.read(File.join(worktree_dir, ".agent-context.json")))
@@ -1231,7 +1238,7 @@ when "move"
     # matters when explicit usage flags skipped autofill.
     seed_usage_baseline(slug)
     merged = stamp_session(current_devops)
-    merged.merge!(ClaimLease.renewed(session: mover_session, nonce: claim_nonce))
+    merged.merge!(ClaimLease.renewed(session: mover_session, nonce: claim_nonce, prior: current_devops))
     body["devops"] = merged
   end
   task = api(:patch, "/api/v1/tasks/#{slug}", body)["data"]
@@ -1356,7 +1363,7 @@ when "heartbeat"
         devops = current.dig("metadata", "devops") || {}
         decision = ClaimLease.evaluate(ClaimLease.from_devops(devops), session: session, nonce: claim_nonce)
         unless decision == :held_by_other # don't steal a live foreign claim via a heartbeat
-          merged = devops.merge(ClaimLease.renewed(session: session, nonce: claim_nonce))
+          merged = devops.merge(ClaimLease.renewed(session: session, nonce: claim_nonce, prior: devops))
           api(:patch, "/api/v1/tasks/#{slug}", { "devops" => merged })
         end
       end

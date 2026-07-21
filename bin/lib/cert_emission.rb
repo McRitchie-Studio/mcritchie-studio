@@ -2,12 +2,18 @@
 
 require "json"
 
-# CertEmission — the best-effort durable-record emits the two G1 cert gates
-# (bin/fast-check, bin/full-suite-check) used to carry byte-identical copies of:
-# the GateRun markers (open / per-lane sop / close --failed via bin/gate), the
-# "cert" checkpoint TaskEvent bounding the Local Certification phase, and the
-# checks_run read that lets a green cert MERGE its evidence line (bin/task
-# update --checks REPLACES the whole list).
+# CertEmission — the durable-record emits the two G1 cert gates (bin/fast-check,
+# bin/full-suite-check) used to carry byte-identical copies of: the GateRun
+# markers (open / per-lane sop / close --failed via bin/gate), the "cert"
+# checkpoint TaskEvent bounding the Local Certification phase, and the checks_run
+# reads that BOUND a green cert's evidence write — the baseline before it
+# (#fetch_checks) and the verification after it (#missing_after_write).
+#
+# The certs do NOT merge. Each sends ONLY the evidence line it owns and lets the
+# write funnel merge against the board's CURRENT state (lib/cert_evidence.rb);
+# a cert that read, merged, and resent the whole list is what let a stale
+# snapshot replace newer tier lines. These reads exist to VERIFY that write,
+# not to compute it.
 #
 # PARAMETERIZED, not unified: each gate passes its own gate_bin/task_bin (they
 # keep their separate FAST_CHECK_*/fixed-path seams), and the lane RUNNERS stay
@@ -46,16 +52,55 @@ module CertEmission
     nil
   end
 
-  # The task's current checks_run (Array), or nil if it can't be read — so the
-  # caller can MERGE new evidence into it. nil is the "don't risk wiping it"
-  # signal, distinct from [] (a task with none yet).
+  # The task's current checks_run (Array) — the BASELINE a cert's read-back is
+  # verified against, NOT input to a merge (the certs no longer merge; see the
+  # module note above).
+  #
+  # nil means the board could not be read, and the callers treat it as ABORT, DO
+  # NOT WRITE: a write whose preservation cannot afterwards be VERIFIED is exactly
+  # the failure this gate exists to catch, so the cert refuses rather than
+  # certifying blind (bin/fast-check + bin/full-suite-check both exit 1). That is
+  # the INVERSE of the old contract, where nil meant "don't risk wiping it"
+  # because the read fed a merge.
+  #
+  # nil is returned for an unreadable/unparseable response AND for a record with
+  # no devops hash at all — "I did not find the shape I was looking for" is not
+  # evidence of absence. Only a task that genuinely carries devops with no checks
+  # yields [], so a bare [] can be trusted to mean "none to preserve".
   def fetch_checks(task_bin, slug)
     out = IO.popen([task_bin, "show", slug, "--json"], err: File::NULL, &:read)
     return nil unless $?.success?
 
     record = JSON.parse(out)
-    Array(record.dig("metadata", "devops", "checks_run"))
+    devops = record.is_a?(Hash) ? record.dig("metadata", "devops") : nil
+    return nil unless devops.is_a?(Hash)
+
+    Array(devops["checks_run"])
   rescue JSON::ParserError, SystemCallError
     nil
+  end
+
+  # Read the task's checks_run BACK after an evidence write and return the lines
+  # from `expected` that did NOT persist — [] when every line landed, nil when
+  # the read-back itself failed (UNVERIFIABLE, distinct from a confirmed loss).
+  # The cert scripts use this so their "preserved" claim is about board state
+  # they have SEEN, never a declaration (the 2026-07-20 wipe printed "tier tags
+  # preserved" over a write that had lost the builder's tier lines).
+  # Counts MULTIPLICITY, not membership: Array#- would report a line as kept when
+  # only one of its two copies survived, which is still a loss of a line the
+  # builder recorded. Each expected occurrence must be matched by its own
+  # persisted occurrence.
+  def missing_after_write(task_bin, slug, expected)
+    persisted = fetch_checks(task_bin, slug)
+    return nil if persisted.nil?
+
+    remaining = persisted.map(&:to_s).tally
+    Array(expected).map(&:to_s).each_with_object([]) do |line, lost|
+      if remaining.fetch(line, 0).positive?
+        remaining[line] -= 1
+      else
+        lost << line
+      end
+    end
   end
 end

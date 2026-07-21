@@ -363,10 +363,10 @@ end
 # Dispatch a GitHub Actions workflow (`gh workflow run`) and WATCH it to
 # completion; returns true iff the run concluded SUCCESSFULLY. The DevOps v2
 # Phase-2 deploy mechanic for the hub: prepare fires qa-deploy.yml, ship fires
-# prod-deploy.yml. The `production` Environment's required reviewer means the
-# prod run PAUSES for the operator's approval mid-watch — that pause IS the
-# ship-confirm gate (it replaced the local interactive prompt), so the watch is
-# expected to block until the operator clicks. DRY short-circuits before any `gh`.
+# prod-deploy.yml. The `production` Environment's required-reviewer approval was
+# REMOVED (2026-07-20), so a prod run now deploys straight through with no pause;
+# the watch still HOLDS on any live status (see run_concluded_success?) should a
+# deployment-protection gate ever be re-added. DRY short-circuits before any `gh`.
 #
 # FINDING THE RUN ID is the one subtlety. `gh workflow run` prints nothing that
 # identifies the run it created, and `gh run list --limit 1` alone is a trap: a
@@ -431,13 +431,15 @@ end
 # read (:success / :failed / :pending — pure, unit-tested).
 #
 # WHY IT IS NOT A SHORT WALL-CLOCK BUDGET (the bug this closes, run 29450907913):
-# a prod-deploy run PAUSES at the `production` Environment's required reviewer,
-# reporting `waiting` for as long as the operator takes to click (3h34m live). The
-# old fallback polled only 20×5s=100s for `completed` and failed the ship CLOSED
-# over a deploy that had simply not been approved yet. A `waiting`/`queued`/
-# `in_progress` run is LIVE — reading any live status is affirmative proof the run
-# is alive, so the watcher HOLDS on it (unbounded, exactly as `gh run watch`
-# would; GitHub's own job timeout concludes a truly hung run).
+# a prod-deploy run can sit in a LIVE non-terminal status — `waiting` (a
+# deployment-protection gate), `queued`, or `in_progress` — far longer than a short
+# poll budget. (Historically the `production` Environment's required reviewer held a
+# run `waiting` for as long as the operator took to click — 3h34m live — before that
+# approval was removed on 2026-07-20.) The old fallback polled only 20×5s=100s for
+# `completed` and failed the ship CLOSED over a run that was simply still live.
+# Reading any live status is affirmative proof the run is alive, so the watcher
+# HOLDS on it (unbounded, exactly as `gh run watch` would; GitHub's own job timeout
+# concludes a truly hung run).
 #
 # FAILS CLOSED on exactly two things — a redundant re-verify beats a false green:
 #   * a TERMINAL non-success (:failed) → promptly, over one poll.
@@ -476,7 +478,7 @@ def run_concluded_success?(run_id, chdir: nil, poll: 10, unreadable_limit: 30)
     else # :pending — the run is still live; hold, exactly as `gh run watch` would
       if status != last_status
         note = Release::ShipSequence.approval_pause?(status) ?
-                 "WAITING for the production approval — holding (an approval pause is not a failure)" :
+                 "WAITING on a deployment protection gate — holding (a protection pause is not a failure)" :
                  "#{status} — holding"
         say("  run #{run_id} #{note}")
       end
@@ -4159,11 +4161,11 @@ def deploy_app(group, frozen)
 
   # RESUMABLE SHIP (fix option b): on a RE-RUN after a watcher-process kill left the
   # deploy landed but the ship stranded, skip re-dispatching a deploy that ALREADY
-  # concluded success — a re-dispatch would demand a 2nd `production` Environment
-  # approval and re-run the whole deploy for nothing. Only skips on affirmative,
-  # strategy-appropriate proof (deploy_already_live? → ShipSequence.deploy_already_
-  # succeeded?, which fails closed); anything less falls through to a normal deploy.
-  # Gated on !DRY so a dry-run preview always shows the full dispatch plan.
+  # concluded success — a re-dispatch would re-run the whole deploy for nothing.
+  # Only skips on affirmative, strategy-appropriate proof (deploy_already_live? →
+  # ShipSequence.deploy_already_succeeded?, which fails closed); anything less falls
+  # through to a normal deploy. Gated on !DRY so a dry-run preview always shows the
+  # full dispatch plan.
   if !DRY && deploy_already_live?(group, frozen)
     step("deploy: #{repo} ALREADY live at frozen #{short(frozen)} (prod-deploy previously concluded success) — skipping re-dispatch")
     gate_sop("deploy:#{repo}", "skip re-dispatch (already deployed @ #{short(frozen)})", true, 0)

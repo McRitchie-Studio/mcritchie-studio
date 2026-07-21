@@ -34,10 +34,11 @@
 #       smoke_url — the production URL to smoke-test after the push.
 #   github_actions — dispatch a GitHub Actions workflow and WATCH it to completion
 #                 (DevOps v2 Phase 2 — the HUB). The workflow does the Heroku push
-#                 AND the hard /up smoke server-side, and the `production`
-#                 Environment's required reviewer is the operator ship-confirm (it
-#                 replaced the local interactive prompt). The conductor runs NO
-#                 curl-smoke of its own for this adapter — the workflow owns it.
+#                 AND the hard /up smoke server-side. The `production` Environment's
+#                 required-reviewer approval was removed 2026-07-20, so the dispatched
+#                 run deploys straight through — the ship-confirm is launching
+#                 bin/release ship. The conductor runs NO curl-smoke of its own for
+#                 this adapter — the workflow owns it.
 #       workflow  — the .github/workflows filename to dispatch (e.g. prod-deploy.yml).
 #       smoke_url — the production URL, KEPT for the board/deploy record even though
 #                 the workflow (not the conductor) runs the smoke.

@@ -65,10 +65,23 @@ module ClaimLease
     # never-renewed claim frees the task rather than locking it forever.
     return :expired if expires.nil? || expires <= now
 
-    if stored_session == session.to_s && claim["claim_nonce"].to_s == nonce.to_s
-      :same_instance
+    return :held_by_other unless stored_session == session.to_s
+
+    # Same session — now decide whether it's the SAME live instance or a second
+    # terminal of it. Distinguish the two ONLY when BOTH nonces are known: a BLANK
+    # on either side means "instance unknown", and the degrade contract
+    # (SessionIdentity.nonce) is a session-only lease, so the same session is the
+    # same holder. Reading blank-vs-populated as a DIFFERENT instance is the
+    # ship-claim-blank-nonce bug: a detached heartbeat renewal blanked the STORED
+    # nonce, then the owner's populated nonce was compared against blank and the
+    # true owner was locked out of its own task. Absence of a signal must never
+    # read as an affirmative negative.
+    stored_nonce = claim["claim_nonce"].to_s.strip
+    current_nonce = nonce.to_s.strip
+    if !stored_nonce.empty? && !current_nonce.empty? && stored_nonce != current_nonce
+      :held_by_other # two terminals of one session (both nonces resolved, and differ)
     else
-      :held_by_other
+      :same_instance
     end
   end
 
@@ -217,10 +230,26 @@ module ClaimLease
 
   # The claim hash a fresh renewal writes — the holder's identity plus a lease
   # that expires `ttl` from now. Merge this into the devops payload.
-  def self.renewed(session:, nonce:, now: Time.now, ttl: DEFAULT_TTL_SECONDS)
+  #
+  # `prior` (the claim being renewed, optional) guards the one thing a renewal
+  # must never do: DOWNGRADE a good nonce to blank. A renewal can run where no
+  # nonce resolves — the classic case is the DETACHED status-line heartbeat, whose
+  # process reparents away from the `claude`/`codex` ancestor so
+  # SessionIdentity.nonce degrades to "". Writing that blank through would erase
+  # the per-instance token the two-terminals guard needs on every render. So when
+  # the fresh nonce is blank but the SAME session's prior claim already carries
+  # one, keep it. A freshly RESOLVED nonce always wins (that is how a blanked
+  # claim self-heals); a DIFFERENT session's nonce is never inherited.
+  def self.renewed(session:, nonce:, now: Time.now, ttl: DEFAULT_TTL_SECONDS, prior: nil)
+    nonce = nonce.to_s
+    if nonce.strip.empty? && prior
+      prior_session = (prior["claimed_session"] || prior[:claimed_session]).to_s
+      prior_nonce = (prior["claim_nonce"] || prior[:claim_nonce]).to_s
+      nonce = prior_nonce if prior_session == session.to_s && !prior_nonce.strip.empty?
+    end
     {
       "claimed_session"  => session.to_s,
-      "claim_nonce"      => nonce.to_s,
+      "claim_nonce"      => nonce,
       "claim_expires_at" => (now + ttl).utc.iso8601
     }
   end
