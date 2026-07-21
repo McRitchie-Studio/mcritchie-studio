@@ -4,6 +4,7 @@ require "fileutils"
 require "json"
 require "open3"
 require "rbconfig"
+require "securerandom"
 require "tmpdir"
 require "uri"
 require "yaml"
@@ -1096,6 +1097,11 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     assert_operator test_name.length, :<=, 63
 
     pg_env = pg_conn_env(template_uri)
+    drop_test_db = ->(name) { system(pg_env, "dropdb", "--if-exists", name, out: File::NULL, err: File::NULL) }
+    # Lease the UNIQUE per-run DB before provisioning it: the `ensure` drops it on a
+    # clean exit, but a SIGKILL runs no `ensure`, and this lease is what lets the next
+    # run's CertDatabaseReaper drop the database this one stranded. See the reaper.
+    CertDatabaseReaper.register(test_name)
     begin
       out, err, status = Open3.capture3(
         SessionEnv.neutralized(
@@ -1117,7 +1123,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
       assert_equal "1", found.strip,
         "the provisioned test DB must be findable by its full literal name (no truncation drift)"
     ensure
-      system(pg_env, "dropdb", "--if-exists", test_name, out: File::NULL, err: File::NULL)
+      CertDatabaseReaper.release(test_name, drop: drop_test_db)
     end
   end
 

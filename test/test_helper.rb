@@ -57,6 +57,20 @@ require_relative "support/session_env"
 require_relative "support/test_database_purge"
 TestDatabasePurge.purge!
 
+# CertDatabaseReaper — sweep the per-run cert test databases a hard-killed prior
+# run stranded. The DB-provisioning probe (test/commands/agent_worktree_test.rb)
+# mints a UNIQUE Postgres DB per run and drops it in an `ensure`; a SIGKILL runs no
+# `ensure` and leaks it. Every suite boot is the periodic sweep: it drops only the
+# databases whose leasing run is provably gone (see the reaper). Best-effort and
+# once, in the main process only (never per parallel worker) — a DB blip here must
+# never fail the suite.
+require_relative "support/cert_database_reaper"
+begin
+  CertDatabaseReaper.reap!
+rescue StandardError => e
+  warn "cert-db reaper (non-fatal): #{e.class}: #{e.message}"
+end
+
 OmniAuth.config.test_mode = true
 
 # How many test workers to fork. Parallel workers fork-clone the test DB
