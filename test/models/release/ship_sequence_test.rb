@@ -140,6 +140,72 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
     assert_not S.advance_accepted?(sha: "", accepted_exists: false)
   end
 
+  # --- accepted_relation: WHY the fail-closed advance refused ------------------
+  #
+  # REGRESSION (rel-20260720-1fc111): when the advance refused a non-fast-forward
+  # the CLI called it "DIVERGED" unconditionally and suggested
+  # `git push origin <sha>:refs/heads/accepted` — a bare ref push that would have
+  # DESTROYED two PRs a concurrent review pass merged into accepted mid-ship.
+  # accepted was not diverged; it was AHEAD. This classifier owns that verdict.
+  #
+  # The topological subtlety: the sweep merges accepted INTO release, so `main`
+  # ends up a MERGE COMMIT whose tree equals the accepted head it came from, and
+  # that merge commit never appears in accepted's history. Plain ancestry is
+  # therefore FALSE even though accepted is missing nothing — so absorption is
+  # judged on CONTENT (main's tree present in accepted's history) as well.
+
+  test "[unit] accepted_relation calls a plain ancestor main AHEAD" do
+    assert_equal :ahead, S.accepted_relation(main_is_ancestor: :affirmed, main_tree_absorbed: :refuted)
+  end
+
+  test "[unit] accepted_relation calls an absorbed main tree AHEAD despite refuted ancestry" do
+    # THE REGRESSION SHAPE: sweep-merge main is no ancestor of accepted, but its
+    # tree is already in accepted's history — nothing is missing, advise nothing.
+    assert_equal :ahead, S.accepted_relation(main_is_ancestor: :refuted, main_tree_absorbed: :affirmed)
+  end
+
+  test "[unit] accepted_relation calls accepted DIVERGED only when BOTH signals are refuted" do
+    # Proven-absent content — not merely unproven-present. This is also the
+    # post-#588 gem-carrying-release shape: the lock bump genuinely refutes the tree.
+    assert_equal :diverged, S.accepted_relation(main_is_ancestor: :refuted, main_tree_absorbed: :refuted)
+  end
+
+  test "[unit] accepted_relation is AHEAD when both signals are affirmed" do
+    assert_equal :ahead, S.accepted_relation(main_is_ancestor: :affirmed, main_tree_absorbed: :affirmed)
+  end
+
+  # --- ABSENCE of signal is NOT a negative signal -------------------------------
+  #
+  # The original defect WAS this shape: a non-fast-forward (which only says "not a
+  # fast-forward") was read as "accepted has diverged". Collapsing an unreadable
+  # git state into :refuted would rebuild that bug one layer down, so an unreadable
+  # signal must surface as :unknown and never manufacture a confident verdict.
+
+  test "[unit] accepted_relation reports UNKNOWN when a signal could not be read" do
+    assert_equal :unknown, S.accepted_relation(main_is_ancestor: :unknown, main_tree_absorbed: :refuted)
+    assert_equal :unknown, S.accepted_relation(main_is_ancestor: :refuted, main_tree_absorbed: :unknown)
+    assert_equal :unknown, S.accepted_relation(main_is_ancestor: :unknown, main_tree_absorbed: :unknown)
+  end
+
+  test "[unit] accepted_relation never downgrades AFFIRMED evidence to unknown" do
+    # Positive proof of absorption settles it; a second unreadable signal cannot
+    # subtract from evidence already in hand.
+    assert_equal :ahead, S.accepted_relation(main_is_ancestor: :affirmed, main_tree_absorbed: :unknown)
+    assert_equal :ahead, S.accepted_relation(main_is_ancestor: :unknown, main_tree_absorbed: :affirmed)
+  end
+
+  test "[unit] accepted_relation never calls an unreadable state DIVERGED" do
+    # The safety property, asserted positively: :diverged is reachable ONLY from
+    # two refutations, so no combination containing an :unknown can produce it.
+    signals = %i[affirmed refuted unknown]
+    signals.product(signals).each do |ancestor, absorbed|
+      next unless [ancestor, absorbed].include?(:unknown)
+
+      assert_not_equal :diverged, S.accepted_relation(main_is_ancestor: ancestor, main_tree_absorbed: absorbed),
+                       "an unreadable signal (#{ancestor}/#{absorbed}) must never yield a confident DIVERGED"
+    end
+  end
+
   test "strategy_handler raises on an unknown strategy" do
     err = assert_raises(ArgumentError) { S.strategy_handler("rsync_box") }
     assert_match(/unknown prod_deploy strategy/, err.message)

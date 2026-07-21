@@ -181,9 +181,72 @@ frozen SHA (`git push origin <frozen>:refs/heads/accepted`) — feature branches
 cut from `accepted`, so keeping it level with `main` stops it drifting stale
 behind production. This retires the manual `git push origin
 origin/main:refs/heads/accepted` chore. The advance is guarded (only where
-`origin/accepted` exists), fail-closed (no `--force`; a non-fast-forward means
-`accepted` diverged, so git refuses and the ship warns and moves on), and
-non-fatal — it never aborts a landing deploy.
+`origin/accepted` exists), fail-closed (no `--force`), and non-fatal — it never
+aborts a landing deploy.
+
+**A refused advance does NOT mean `accepted` diverged.** A non-fast-forward only
+says the push was not a fast-forward; the ship classifies WHY before advising,
+and prints one of three outcomes. Read the label — the right action differs:
+
+| Outcome | What it means | What you do |
+|---|---|---|
+| **AHEAD** | `accepted` already contains everything that shipped and carries more — a review pass merged into `accepted` while the ship ran (a supported, normal overlap) | **Nothing.** |
+| **DIVERGED** | `accepted` is genuinely missing shipped content | Reconcile with a **merge** — recipe below |
+| **UNDETERMINED** | the relation could not be read | Check first (below), then act |
+
+**Never** reconcile with a bare `git push origin <sha>:refs/heads/accepted`. On an
+AHEAD `accepted` that DESTROYS the merged work — it happened on
+rel-20260720-1fc111, and it is why the classification exists.
+
+On **UNDETERMINED**, run `git -C <path> fetch origin && git -C <path> diff
+origin/accepted origin/main` and read it by this rule: **any addition or
+modification** means `accepted` is missing shipped content — reconcile.
+**Deletions only** usually means `accepted` merely gained files after the freeze
+— but a shipped file *deletion* looks identical in this diff, so **when in doubt,
+reconcile**: the merge is non-destructive either way.
+
+### The reconcile recipe
+
+The ship prints this, but it is inlined here so this SOP stands alone. It merges
+in a **throwaway worktree**, never your primary:
+
+```bash
+git -C <path> fetch origin
+git -C <path> worktree add --detach /tmp/reconcile-accepted-<repo> origin/accepted
+git -C /tmp/reconcile-accepted-<repo> merge origin/main
+git -C /tmp/reconcile-accepted-<repo> push origin HEAD:accepted
+git -C <path> worktree remove /tmp/reconcile-accepted-<repo>
+```
+
+It bases off `origin/accepted`, never the local branch — the primary's LOCAL
+`accepted` is routinely **tens of commits stale** (measured at 45), and merging
+onto it produces a push that is refused. If `worktree add` complains the path
+**already exists**, an earlier recovery was abandoned; the **BAIL OUT** command
+below (`worktree remove --force`) clears it, then re-run from the top.
+
+**The merge step can stop on a conflict, and that is expected** — see the gem note
+below. When it does, it prints the conflicted files and **your primary is
+untouched, still on `main`, still clean**. Pick one:
+
+```bash
+# FINISH IT — resolve the files in the scratch worktree, then:
+git -C /tmp/reconcile-accepted-<repo> add -A && git -C /tmp/reconcile-accepted-<repo> commit --no-edit
+git -C /tmp/reconcile-accepted-<repo> push origin HEAD:accepted
+git -C <path> worktree remove /tmp/reconcile-accepted-<repo>
+
+# BAIL OUT — discard everything, leave no residue:
+git -C <path> worktree remove --force /tmp/reconcile-accepted-<repo>
+```
+
+Expect **DIVERGED to be the common outcome on any release carrying a gem**, and
+expect that merge to be the one that conflicts. Since #588,
+`bump_consumer_locks_for_qa` commits consumer lockfile bumps onto `release` during
+prepare, so the frozen tree legitimately differs from `accepted`'s — a true
+verdict, not a regression — and the file it touches, `Gemfile.lock`, is the one
+most likely to have been touched on `accepted` too. The routine path and the
+conflict path are the same path, which is exactly why the merge is kept off your
+primary: on a **gem repo**, modified tracked files in the primary **abort the next
+ship**.
 
 **One thing still gates on a primary: a gem repo with modified TRACKED files.**
 `gem build` packages what is on disk, so those edits would be *published* — and a
