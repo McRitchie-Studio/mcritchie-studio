@@ -256,7 +256,7 @@ end
 say "3/7 push — git push -u origin #{branch}"
 out, pushed = git_push(root, branch)
 unless pushed
-  if out =~ /\((?:non-fast-forward|fetch first)\)|!\s*\[rejected\]/i
+  if FastLane.push_rejected_non_fast_forward?(out)
     say "3/7 push — non-fast-forward (the branch was rebased); retrying with --force-with-lease."
     out, leased = git_push(root, branch, lease: true)
     unless leased
