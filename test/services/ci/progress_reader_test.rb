@@ -91,12 +91,65 @@ class Ci::ProgressReaderTest < ActiveSupport::TestCase
     assert_nil map[building.slug], "an ineligible task is absent from the map"
   end
 
-  test "[unit] for_release shows the release-branch tip only while active" do
-    reader = build_reader(fixtures: { "release-sha" => { "passed" => 8, "failed" => 0, "pending" => 0 } }, &ok([]))
-    seed_run(branch: Release::BRANCH, sha: "release-sha")
+  test "[unit] for_release returns one CheckProgress per member repo" do
+    reader = build_reader(fixtures: {
+      "hub-rc"  => { "passed" => 8, "failed" => 0, "pending" => 0 },
+      "turf-rc" => { "passed" => 3, "failed" => 0, "pending" => 5 }
+    }, &ok([]))
+    rel = release_with_members("mcritchie-studio", "turf-monster")
+    seed_run(repo: "amcritchie/mcritchie-studio", branch: Release::BRANCH, sha: "hub-rc")
+    seed_run(repo: "amcritchie/turf-monster",     branch: Release::BRANCH, sha: "turf-rc")
 
-    assert_equal "8 / 8", reader.for_release(Release.new(state: "assembling")).fraction_label
-    assert_not reader.for_release(Release.new(state: "shipped")).present?
+    progress = reader.for_release(rel)
+    assert_equal %w[mcritchie-studio turf-monster], progress.keys.sort
+    assert_equal "8 / 8", progress["mcritchie-studio"].fraction_label
+    assert_equal "3 / 8", progress["turf-monster"].fraction_label
+  end
+
+  test "[unit] for_release is empty unless the release is active" do
+    # The active? gate short-circuits BEFORE member enumeration, so an unpersisted
+    # stub is enough — an inactive release shows no tracks at all.
+    assert_empty Ci::ProgressReader.new.for_release(Release.new(state: "shipped"))
+  end
+
+  test "[unit] for_release resolves a gem member from its main suite CI, not the consumer CI" do
+    reader = build_reader(fixtures: { "engine-rc" => { "passed" => 6, "failed" => 0, "pending" => 0 } }, &ok([]))
+    rel = release_with_members("studio-engine")
+    # The gem's OWN suite (Engine CI on main) IS the RC verdict...
+    seed_run(repo: "amcritchie/studio-engine", branch: "main", sha: "engine-rc", workflow: "Engine CI")
+    # ...NOT the downstream Consumer CI that also runs on main — and it is NEWER, so a
+    # missing workflow-name filter would wrongly pick it.
+    seed_run(repo: "amcritchie/studio-engine", branch: "main", sha: "consumer-rc",
+             workflow: "Consumer CI", started_at: 1.minute.from_now)
+
+    progress = reader.for_release(rel)
+    assert_equal ["studio-engine"], progress.keys
+    assert_equal "6 / 6", progress["studio-engine"].fraction_label,
+                 "the gem track must read Engine CI, not the Consumer CI on the same branch"
+  end
+
+  test "[unit] a member repo with no ingested run yields a blank (invisible) track" do
+    reader = build_reader(&ok([]))
+    rel = release_with_members("turf-monster")
+
+    progress = reader.for_release(rel)
+    assert progress.key?("turf-monster"), "the slot must exist so the live morph target pre-renders"
+    assert_not progress["turf-monster"].present?, "with no run it degrades to a blank bar"
+  end
+
+  test "[unit] release_ci_slot_for morphs only a member repo on its own release-CI branch" do
+    reader = build_reader(fixtures: { "turf-rc" => { "passed" => 2, "failed" => 0, "pending" => 6 } }, &ok([]))
+    rel = release_with_members("turf-monster")
+    seed_run(repo: "amcritchie/turf-monster", branch: Release::BRANCH, sha: "turf-rc")
+
+    repo, progress = reader.release_ci_slot_for(rel, "amcritchie/turf-monster", Release::BRANCH)
+    assert_equal "turf-monster", repo
+    assert_equal "2 / 8", progress.fraction_label
+
+    assert_nil reader.release_ci_slot_for(rel, "amcritchie/turf-monster", "main"),
+               "an app repo push on the WRONG branch does not fire its release track"
+    assert_nil reader.release_ci_slot_for(rel, "amcritchie/rolio", Release::BRANCH),
+               "a NON-member repo never fires a release track"
   end
 
   # ── live-first: the workflow_job (CiCheckJob) path preferred over the API ──
@@ -189,11 +242,23 @@ class Ci::ProgressReaderTest < ActiveSupport::TestCase
     Task.create!(title: "ci bar task #{SecureRandom.hex(3)}", stage: stage, metadata: { "devops" => devops })
   end
 
-  def seed_run(branch:, sha:)
+  def seed_run(branch:, sha:, repo: "amcritchie/mcritchie-studio", workflow: "CI", started_at: Time.current)
     GithubWorkflowRun.create!(
-      repo: "amcritchie/mcritchie-studio", workflow_name: "CI",
+      repo: repo, workflow_name: workflow,
       run_id: SecureRandom.random_number(10**12), status: "in_progress",
-      head_branch: branch, head_sha: sha, run_started_at: Time.current
+      head_branch: branch, head_sha: sha, run_started_at: started_at
     )
+  end
+
+  # A persisted active (assembling) release with one member task per repo, so
+  # ordered_members/release_repo resolve real member repos for for_release.
+  def release_with_members(*repos)
+    rel = Release.open!(branch: "release/ci-tracks-#{SecureRandom.hex(3)}")
+    repos.each_with_index do |repo, index|
+      Task.create!(title: "member #{repo} #{SecureRandom.hex(2)}", stage: "reviewed",
+                   position: (index + 1) * 10, release_slug: rel.slug,
+                   metadata: { "devops" => { "repositories" => [repo] } })
+    end
+    rel
   end
 end

@@ -475,11 +475,19 @@ module ApplicationHelper
     ci_progress_reader.for_task(task)
   end
 
-  # The G3 candidate suite CI progress for a release (the CI run on the
-  # release-branch tip) — the Next Release card's bar. Blank unless the release is
-  # active. Same reader, same graceful degrade.
+  # The G3 candidate suite CI progress for a release, ONE Ci::CheckProgress PER
+  # MEMBER REPO: an ordered { repo_slug => progress } map (producer-first), so the
+  # Next Release card renders one CI track per app whose code is in the release.
+  # Empty ({}) unless the release is active. Same reader, same graceful degrade.
   def release_ci_progress(release)
     ci_progress_reader.for_release(release)
+  end
+
+  # The label for one repo's release-CI track — "G3 CI" plus the repo's app emoji so
+  # the per-repo tracks read apart at a glance. Shared by the release card render and
+  # the live DeploymentsBroadcaster morph so the two never drift.
+  def release_ci_track_label(repo)
+    ["G3 CI", app_emoji(repo)].compact.join(" ")
   end
 
   # One reader per request, so a page of cards shares its Github::Client + cache.

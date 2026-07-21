@@ -113,10 +113,17 @@ class DeploymentsBroadcaster
                           wrapper_class: "mb-1.5", inner_test_id: "task-card-ci-progress")
       end
 
-      if job.head_branch == Release::BRANCH && (release = Release.current)
-        broadcast_ci_slot("release-ci-progress", reader.for_release(release),
-                          label: "G3 CI", test_id: "release-ci-progress",
-                          wrapper_class: "mt-2", inner_test_id: "release-card-ci-progress")
+      # Per-repo release-CI tracks: a job for a MEMBER repo on the branch that repo's
+      # track reads morphs JUST that repo's slot (app repos on `release`, gem members
+      # on `main`). release_ci_slot_for owns the member + branch match, so this fires
+      # for any member's release-CI push, not only the release branch.
+      if (release = Release.current) &&
+         (slot = reader.release_ci_slot_for(release, job.repo, job.head_branch))
+        repo, progress = slot
+        broadcast_ci_slot("release-ci-progress-#{repo}", progress,
+                          label: ApplicationController.helpers.release_ci_track_label(repo),
+                          test_id: "release-ci-progress-#{repo}",
+                          wrapper_class: "mt-2", inner_test_id: "release-card-ci-progress-#{repo}")
       end
     end
   end

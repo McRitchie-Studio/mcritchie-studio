@@ -313,18 +313,31 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
     assert_includes html, "target=\"_blank\""
   end
 
-  test "[integration] ci_progress morph-replaces the Next Release G3 slot for a release-branch job" do
-    Release.open! # the active candidate → Release.current
+  test "[integration] ci_progress morph-replaces a member repo's Next Release G3 track for its release-branch job" do
+    rel = Release.open! # the active candidate → Release.current
+    rel.add(Task.create!(title: "Hub release CI member", stage: "reviewed",
+                         metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } }))
     job = seed_ci(repo: "amcritchie/mcritchie-studio", branch: Release::BRANCH, sha: "rel-live-sha", passed: 8, pending: 0)
 
     streams = capture_turbo_stream_broadcasts("deployments") { DeploymentsBroadcaster.ci_progress(job) }
 
-    release_stream = streams.find { |s| s["target"] == "release-ci-progress" }
-    assert release_stream, "the release-branch job pushes the G3 candidate bar"
+    # The track is now PER-REPO: the hub member's job morphs its own #release-ci-progress-<repo>.
+    release_stream = streams.find { |s| s["target"] == "release-ci-progress-mcritchie-studio" }
+    assert release_stream, "the release-branch job pushes that member repo's G3 candidate track"
     assert_equal "morph", release_stream["method"]
     # 8 checks -> the symbolic row; the release meter has no single PR, so no link.
-    assert_includes release_stream.to_html, "release-ci-progress-symbols"
+    assert_includes release_stream.to_html, "release-ci-progress-mcritchie-studio-symbols"
     assert_not_includes release_stream.to_html, "<a ", "the release meter is not clickable"
+  end
+
+  test "[integration] ci_progress does NOT push a release track for a non-member repo's release push" do
+    Release.open! # active, but with NO members
+    job = seed_ci(repo: "amcritchie/turf-monster", branch: Release::BRANCH, sha: "orphan-sha", passed: 4, pending: 0)
+
+    streams = capture_turbo_stream_broadcasts("deployments") { DeploymentsBroadcaster.ci_progress(job) }
+
+    assert_empty streams.select { |s| s["target"].to_s.start_with?("release-ci-progress") },
+                 "a repo that is not a release member fires no G3 track"
   end
 
   test "[integration] ci_progress with no eligible task or release broadcasts nothing" do
