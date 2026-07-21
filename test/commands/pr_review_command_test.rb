@@ -73,11 +73,19 @@ class PrReviewCommandTest < Minitest::Test
       exit ENV["CODEX_FAIL"].to_s == "1" ? 1 : 0
     RUBY
 
+    # bin/task fake — logs every call. `review-claim acquire <slug>` exits 10
+    # (already under review) for any slug named in REVIEW_CLAIM_SKIP, else 0, so a
+    # test can simulate another live session holding a task; every other verb exits 0.
     write_exec("task", <<~RUBY)
       #!#{RbConfig.ruby}
       require "json"
       File.open(ENV.fetch("TASK_LOG"), "a") { |f| f.puts JSON.generate(ARGV) }
       File.open(ENV.fetch("SEQUENCE_LOG"), "a") { |f| f.puts JSON.generate(["task", *ARGV]) }
+      if ARGV[0] == "review-claim" && ARGV[1] == "acquire" &&
+         ENV.fetch("REVIEW_CLAIM_SKIP", "").split(",").include?(ARGV[2])
+        STDOUT.puts "review-claim: SKIP \#{ARGV[2]} (under review by another session)"
+        exit 10
+      end
       puts "task fake: \#{ARGV.join(" ")}"
     RUBY
 
@@ -369,6 +377,45 @@ class PrReviewCommandTest < Minitest::Test
       ["move", "second-new", "reviewed", "--actor", "avi"],
       ["move", "third-new", "reviewed", "--actor", "avi"]
     ], moves
+  end
+
+  # [integration] Parallel-safe review (the per-task claim REPLACING the per-role
+  # stand-down): a task already under LIVE review by ANOTHER session — its
+  # `review-claim acquire` returns exit 10 — is SKIPPED (no reviewer-select, no
+  # reviewer spawn, no verdict, no released claim it never took) while the unclaimed
+  # task in the same wave is reviewed normally. This is what lets many pr-review
+  # sessions run at once: each skips only the tasks others hold, never stands down.
+  def test_a_task_under_review_by_another_session_is_skipped_and_the_rest_proceed
+    taken = task("taken-pr", created_at: "2026-06-29T12:30:00Z")
+    free = task("free-pr", created_at: "2026-06-29T12:20:00Z")
+    free_reviewed = task("free-pr", created_at: "2026-06-29T12:20:00Z",
+                                    reports: [report("carl", "merge-ready"), report("shannon", "merge-ready")])
+    write_snapshots(
+      snapshot([taken, free]),
+      snapshot([taken, free_reviewed])
+    )
+
+    out, err, status = run_heartbeat(
+      "--run", "--fast", "--limit", "2", "--max-agents", "5",
+      env: { "REVIEW_CLAIM_SKIP" => "taken-pr", "CODEX_SLEEP" => "0.05" }
+    )
+
+    assert status.success?, err
+    assert_match(/SKIP taken-pr/, out, "the wave log names the task another session is reviewing")
+
+    # The taken task never reaches reviewer selection or a reviewer spawn.
+    reviewer_slugs = json_lines(@reviewer_log).map(&:first)
+    refute_includes reviewer_slugs, "taken-pr", "a task under review by another session is skipped"
+    assert_equal ["free-pr"], reviewer_slugs, "only the unclaimed task is reviewed"
+    assert_equal 2, json_lines(@codex_log).size, "one review pair total — none for the skipped task"
+
+    # Only the free task is resolved (merged → reviewed); the taken task is untouched.
+    moves = json_lines(@task_log).select { |a| a.first == "move" }
+    assert_equal [["move", "free-pr", "reviewed", "--actor", "avi"]], moves
+
+    # We release ONLY the claim we actually took — never one we skipped.
+    releases = json_lines(@task_log).select { |a| a.first == "review-claim" && a[1] == "release" }
+    assert_equal ["free-pr"], releases.map { |a| a[2] }, "release only the tasks we claimed, not the skipped one"
   end
 
   def test_run_mode_places_codex_global_flags_before_exec

@@ -72,14 +72,30 @@ Surface: `bin/devops-shift acquire|renew|release|status` (+ the internal
 `<sid>.devops-shift` marker `acquire` writes (the lane, for `bin/statusline`) and its
 `<sid>.devops-shift-renewer` sibling (the renewer's pid, so `release` can stop it);
 and the
-`avi`/`steffon`/`alex` acquire-or-stand-down preambles in `pr-review.md`,
-`qa-release.md`, `production-deploy.md`. Enforcement is cooperative (the SOP stands
-the loser down) per the studio's honor-system posture; the exit code (0 acquired /
-10 stand down / 1 fail-open) makes it scriptable.
+acquire-or-stand-down preambles in the conductor SOPs `qa-release.md` (`steffon`)
+and `production-deploy.md` / `clean-up.md` (`avi`). Enforcement is cooperative (the
+SOP stands the loser down) per the studio's honor-system posture; the exit code (0
+acquired / 10 stand down / 1 fail-open) makes it scriptable.
 
-The lane is a role, not an act, so a single Avi session that runs `pr-review` then
-`production-deploy` holds `avi` across both (a re-`acquire` by the same instance is a
+The lane is a role, not an act, so a single Avi session that runs two `avi`-lane
+acts back to back holds `avi` across both (a re-`acquire` by the same instance is a
 no-op renew).
+
+**The review lane left this lease (2026-07-21).** `pr-review` no longer acquires
+`avi`. Review is a READ act on INDEPENDENT tasks, so standing a whole second
+supervisor down was the wrong grain — it stopped the PR #601 double-review only by
+forbidding parallel review outright. Review now takes a **per-TASK** claim
+(`TaskReviewClaim`, `app/models/task_review_claim.rb`) — the SAME `ClaimLease` math
+one more level down (role → task): each session claims the tasks it reviews and
+SKIPS any already under a live claim, so many `pr-review` sessions run at once and
+never review one task twice. The board exposes the unclaimed queue as
+`Task.reviewable` (`GET /api/v1/tasks?stage=submitted&reviewable=1`); the CLI is
+`bin/task review-claim acquire|release|status <task>` (exit 0 claimed / 10 skip / 1
+fail-open); and `bin/pr-review` claims-or-skips each task in its wave. Only the
+MUTATING lanes — `qa-release`, `production-deploy`, `clean-up` — still stand a
+same-role second session down, because they rewrite one shared release candidate (or
+sweep shared worktrees) and per-task skipping cannot help there. This realizes the
+"per-act lanes" follow-up as a per-task claim rather than a lane split.
 
 ## D — the reclaim guard (conductor ↔ builder)
 
@@ -168,5 +184,8 @@ the stage gate already prevents it.
 ## Follow-ups (separate tasks)
 
 - **C** — enforce the global concurrency budget (make the ≤5 / PG-20-conn cap real).
-- **Per-act lanes** — the lease is keyed by an arbitrary string; splitting `avi` into
-  `review`/`ship` is a caller-side config flip, no model change.
+- **Per-act lanes** — DONE for review (2026-07-21): the review act left the role
+  lease for a per-TASK claim (`TaskReviewClaim`) rather than a lane split, so many
+  review sessions run in parallel and skip only the tasks others hold. The remaining
+  `avi`-lane acts (`production-deploy`, `clean-up`) stay single-conductor; splitting
+  them further is still a caller-side config flip, no model change.

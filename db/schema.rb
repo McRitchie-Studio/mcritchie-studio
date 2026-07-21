@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_16_130000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_21_002918) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1207,6 +1207,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_16_130000) do
     t.datetime "updated_at", null: false
     t.index ["task_slug", "kind"], name: "index_task_events_on_task_slug_and_kind"
     t.index ["task_slug", "occurred_at"], name: "index_task_events_on_task_slug_and_occurred_at"
+  end
+
+  create_table "task_review_claims", force: :cascade do |t|
+    t.datetime "acquired_at"
+    t.datetime "claim_expires_at"
+    t.string "claim_nonce"
+    t.string "claimed_session"
+    t.datetime "created_at", null: false
+    t.string "holder_label"
+    t.string "task_slug", null: false
+    t.datetime "updated_at", null: false
+    t.index ["task_slug"], name: "index_task_review_claims_on_task_slug", unique: true
   end
 
   create_table "tasks", force: :cascade do |t|

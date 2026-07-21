@@ -1526,6 +1526,16 @@ when "usage-audit"
     end
   end
   usage_audit!(dir)
+when "review-claim"
+  # The per-TASK REVIEW claim (per-task-pr-review-claim) — the review LANE's per-task
+  # lease, so MANY pr-review sessions run in parallel and each SKIPS a task already
+  # under live review. Delegated whole to ReviewClaimCli (bin/lib/review_claim_cli.rb),
+  # the mirror of bin/devops-shift one granularity down (lane → task): same
+  # live-instance identity, TTL, and detached renewer. `cmd` is already shifted, so
+  # ARGV is [<sub> <slug> ...flags]. Exit codes: 0 claimed · 10 skipped (already under
+  # review by another) · 1 fail-open (no session / no board).
+  require_relative "lib/review_claim_cli"
+  exit(ReviewClaimCli.new.run(ARGV))
 else
   print_usage!
   exit(cmd == "help" || HELP_FLAGS.include?(cmd) ? 0 : 1)
