@@ -77,6 +77,9 @@ DOR_CHECK_BIN = ENV.fetch("SHIP_DOR_CHECK_BIN", File.expand_path("dor-check", __
 GH_BIN = ENV.fetch("SHIP_GH_BIN", "gh")
 BASE_BRANCH = ENV.fetch("SHIP_BASE_BRANCH", "accepted")
 BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
+# The narration CLI (fast-lane-narrates-activities): ship CLOSES the cycle's
+# activity trail — the twin of `bin/task begin`'s orient open. Overridable for tests.
+ACTIVITY_BIN = ENV.fetch("SHIP_ACTIVITY_BIN", File.expand_path("agent-activity", __dir__))
 # Stages past the seam ship hands off at — ship must never regress one of these.
 PAST_SUBMITTED = %w[reviewed assembled shipped archived].freeze
 
@@ -87,6 +90,17 @@ end
 
 def say(msg)
   warn "ship: #{msg}"
+end
+
+# Best-effort narration (fast-lane-narrates-activities): ship closes the cycle's
+# activity trail with the handoff outcome. NON-FATAL — never fails the ship; a run
+# with no session identity skips it, mirroring the claim-gate degrade.
+def narrate(*args)
+  return if SessionIdentity.identity.first.nil?
+
+  system(ACTIVITY_BIN, *args, out: File::NULL, err: File::NULL)
+rescue StandardError
+  nil
 end
 
 options = { message: nil }
@@ -356,6 +370,9 @@ unless final_pr == pr_url
 end
 
 say "shipped to the submitted seam — review picks it up from here."
+# Close the cycle's activity trail with the real handoff outcome (twin of begin's
+# orient open) — names the submitted stage and the PR so the trail reads end-to-end.
+narrate("end", "--outcome", "shipped #{slug} → submitted; PR #{final_pr}")
 puts "Task: #{task_url}"
 puts "PR: #{final_pr}"
 puts "branch: #{branch}"
