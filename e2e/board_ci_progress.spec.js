@@ -33,10 +33,15 @@ test("a submitted task card shows its CI checks as symbols, linked to the PR", a
   await expect(link).toHaveAttribute("rel", "noopener");
 });
 
-test("the Next Release card shows the G3 candidate CI as symbols", async ({ page }) => {
+test("the Next Release card shows the G3 candidate CI as symbols, per member repo", async ({ page }) => {
   await page.goto("/deployments");
 
-  const meter = page.locator("#current-release [data-test='release-ci-progress-symbols']");
+  // The G3 meter is now ONE TRACK PER MEMBER REPO (release-ci-progress-<repo>). The
+  // seed's active release carries mcritchie-studio members and a mcritchie-studio
+  // release-branch CI run (e2e-rel-sha → 8 checks), so its hub track renders here.
+  const meter = page.locator(
+    "#current-release [data-test='release-ci-progress-mcritchie-studio-symbols']"
+  );
   await expect(meter).toBeVisible();
   await expect(page.locator("#current-release [data-test='ci-check-symbol']")).toHaveCount(8);
 });
