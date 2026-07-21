@@ -19,6 +19,17 @@ class GithubWorkflowRun < ApplicationRecord
   # (which run's SHA to fold) key on.
   CI_WORKFLOW = "CI"
 
+  # The CI-SUITE workflows whose per-job progress feeds the board's release CI
+  # meters: the app repos' `CI` PLUS each gem repo's own suite workflow
+  # (studio-engine's "Engine CI"). The ingest records CiCheckJob rows ONLY for
+  # these — a gem's downstream "Consumer CI" runs on the same `main` SHA but is NOT
+  # a surfaced track, so it is never recorded. Ci::ProgressReader additionally
+  # SCOPES each track's fold to its own workflow, so even a sibling workflow that
+  # slips in never blends into a gem's track. Kept in sync with
+  # Ci::ProgressReader::GEM_CI_WORKFLOWS by
+  # test/models/ci_progress_workflow_consistency_test.rb.
+  CI_PROGRESS_WORKFLOWS = [CI_WORKFLOW, "Engine CI"].freeze
+
   validates :repo, :run_id, :status, presence: true
   validates :run_id, uniqueness: true
 

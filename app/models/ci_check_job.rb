@@ -46,11 +46,19 @@ class CiCheckJob < ApplicationRecord
   # Ci::CheckProgress.from_check_runs folds — one row per CHECK. Empty when no job
   # event has landed for this repo+SHA (the reader then falls back to the API).
   #
+  # `workflow_name` SCOPES the fold to a single workflow — load-bearing for a gem
+  # repo, whose `main` SHA carries BOTH its own suite (studio-engine's "Engine CI")
+  # and the downstream "Consumer CI": folding both would drag the gem's track red on
+  # a failing sibling. Nil (the app default) folds every recorded row, correct
+  # because an app's release branch runs only `CI`.
+  #
   # De-duplicated to the LATEST ATTEMPT per check (see latest_attempt_per_check):
   # a re-run mints new job_ids for the same names on the same SHA, and folding
   # every attempt DOUBLED the operator's live count — the v1.2 reset bug.
-  def self.progress_rows(repo, sha)
-    latest_attempt_per_check(for_repo(repo).for_sha(sha).pluck(*PROGRESS_COLUMNS))
+  def self.progress_rows(repo, sha, workflow_name = nil)
+    scope = for_repo(repo).for_sha(sha)
+    scope = scope.where(workflow_name: workflow_name) if workflow_name.present?
+    latest_attempt_per_check(scope.pluck(*PROGRESS_COLUMNS))
   end
 
   # A re-run — GitHub's "re-run all / failed jobs", or a fresh workflow_run on the

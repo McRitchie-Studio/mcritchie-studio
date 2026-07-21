@@ -89,7 +89,12 @@ class GithubWorkflowRunIngestJob < ApplicationJob
       Rails.logger.warn("[GithubWorkflowRunIngestJob] workflow_job.id missing; skipping")
       return
     end
-    return unless job["workflow_name"].to_s == GithubWorkflowRun::CI_WORKFLOW
+    # Record per-job progress for every CI-SUITE workflow we surface — the app
+    # repos' `CI` and each gem's own suite (e.g. studio-engine's "Engine CI") — so a
+    # gem's release track has LIVE, per-workflow rows (and live-updates on ingest)
+    # instead of falling through to the workflow-blind check-runs API, which blends
+    # sibling workflows on the same SHA.
+    return unless GithubWorkflowRun::CI_PROGRESS_WORKFLOWS.include?(job["workflow_name"].to_s)
 
     head_sha = job["head_sha"].to_s.presence
     if head_sha.blank?
