@@ -204,6 +204,11 @@ class Task < ApplicationRecord
   # lanes) — slug-FK like the spines above, scoped to task-grain subjects.
   has_many :gate_runs, -> { where(subject_type: "task") },
            foreign_key: :subject_slug, primary_key: :slug, dependent: :delete_all
+  # The per-task REVIEW claim (TaskReviewClaim) — at most one live pr-review session
+  # per submitted task. Slug-FK like everything else; destroyed with the task so a
+  # teardown never strands a claim row behind a gone task.
+  has_one :review_claim, class_name: "TaskReviewClaim",
+          foreign_key: :task_slug, primary_key: :slug, dependent: :destroy
 
   validates :title, presence: true
   validates :slug, presence: true, uniqueness: true
@@ -313,6 +318,20 @@ class Task < ApplicationRecord
   # Tasks still in play — everything except the two terminal stages. A live task's
   # mascot is "taken"; shipping or archiving returns its Pokémon to the deck.
   scope :live, -> { where.not(stage: %w[shipped archived]) }
+  # The load-bearing query of the per-task review claim: submitted PR tasks NOT
+  # already under LIVE review. It's a proper SERVER-SIDE query (NOT EXISTS on
+  # task_review_claims where the lease is still in the future), not a Ruby filter —
+  # the whole point is that many parallel pr-review sessions each ask the board for
+  # the unclaimed-for-review work in one round trip. `claim_expires_at` is a real
+  # datetime column, so it can never be the "corrupt/unparseable" lease ClaimLease
+  # guards for a JSON string claim: NULL (never claimed / released) and a past
+  # expiry (lapsed) both fall through as reviewable; only a future expiry excludes.
+  scope :reviewable, ->(now: Time.current) {
+    by_stage("submitted").where(
+      "NOT EXISTS (SELECT 1 FROM task_review_claims trc " \
+      "WHERE trc.task_slug = tasks.slug AND trc.claim_expires_at > ?)", now
+    )
+  }
 
   # The tasks that render in a board column. Blocked tasks ARE building tasks now
   # (a block is a building attribute), so the building column no longer folds in a
@@ -547,6 +566,16 @@ class Task < ApplicationRecord
   # Seconds since the holder's last heartbeat (nil when unclaimed / no lease).
   def claim_heartbeat_seconds_ago(now: Time.current)
     ClaimLease.heartbeat_age(devops, now: now)
+  end
+
+  # --- Review claim lease (the per-TASK review gate) ------------------------
+  # A DIFFERENT lease from the build claim above: this one guards WHO is REVIEWING
+  # the submitted task, stored in its own row (TaskReviewClaim) rather than in the
+  # devops metadata, so many parallel pr-review sessions contend per-task and skip a
+  # task already under live review. True while a non-expired review claim is held —
+  # the liveness fact the `reviewable` scope filters on, exposed per-row for the API.
+  def review_claim_live?(now: Time.current)
+    review_claim&.live?(now: now) || false
   end
 
   # --- The progress fact (see the long note in ClaimLease) -------------------
