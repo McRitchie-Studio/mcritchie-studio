@@ -74,18 +74,6 @@
         <% if rel.production_url.present? %><%= link_to "Prod ↗", rel.production_url, target: "_blank", rel: "noopener", class: link_class %><% end %>
         <% if rel.deployed_sha.present? %><code class="text-muted" title="deployed SHA"><%= rel.deployed_sha.first(7) %></code><% end %>
       </div>
-    <%# G3 candidate suite CI meter (Next Release card only): the GitHub CI run on
-        the release-branch tip, shown while the release assembles. Wrapped in the
-        stable-id components/_ci_progress_slot so a live release-branch workflow_job
-        morphs JUST this bar with no reload; renders nothing until a release-branch
-        CI run exists. Same #release-ci-progress id the broadcaster targets. %>
-    <% if current %>
-      <%= render "components/ci_progress_slot",
-            dom_id: "release-ci-progress",
-            progress: release_ci_progress(rel),
-            label: "G3 CI", test_id: "release-ci-progress",
-            wrapper_class: "mt-2", inner_test_id: "release-card-ci-progress" %>
-    <% end %>
     <% if members.any? || trailing %>
       <%# Member pills on the left; optional trailing chip (e.g. the kickoff chip)
           inline on the right of the same row. Last Release pills stay on one
@@ -140,4 +128,18 @@
       <div class="mt-4 pt-3 border-t border-subtle/70" data-test="release-tracker" aria-label="Release progress">
         <%= render "tasks/release_tracker", release: rel %>
       </div>
+    <% end %>
+    <%# G3 candidate suite CI meter (Next Release card only): the GitHub CI run on
+        the release-branch tip, shown while the release assembles. Wrapped in the
+        stable-id components/_ci_progress_slot so a live release-branch workflow_job
+        morphs JUST this bar with no reload; renders nothing until a release-branch
+        CI run exists. Same #release-ci-progress id the broadcaster targets. Sits
+        directly below the pizza tracker so the release-progress column reads
+        top-down: member chips, then the stage tracker, then its candidate-suite CI. %>
+    <% if current %>
+      <%= render "components/ci_progress_slot",
+            dom_id: "release-ci-progress",
+            progress: release_ci_progress(rel),
+            label: "G3 CI", test_id: "release-ci-progress",
+            wrapper_class: "mt-2", inner_test_id: "release-card-ci-progress" %>
     <% end %>
