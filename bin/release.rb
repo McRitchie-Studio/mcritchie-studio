@@ -2978,6 +2978,20 @@ end
 # BEST-EFFORT like its caller: a signal we cannot READ reports :unknown rather
 # than a confident verdict, and NO branch ever suggests a bare ref push.
 def report_refused_advance(repo, path, sha)
+  # FETCH FIRST — the whole classification below reads `origin/#{ACCEPTED_BRANCH}`,
+  # and it is STALE here. The advance push we just made was REFUSED (non-fast-
+  # forward), and a rejected push does not update the remote-tracking ref; nor did
+  # anything earlier on the app-repo ship path fetch `accepted` (the only fetch is
+  # gem-only, in checkout_detached). In production the concurrent review merge that
+  # caused the refusal landed on the remote from ANOTHER clone, so this clone has
+  # never seen it. Classifying against the stale ref is the very mistake the guard
+  # in advance_accepted's header warns about ("not the primary's remote-tracking
+  # ref, which can be stale... and would false-negative") — read a ref we could not
+  # trust, then print a confident verdict, which is this PR's own bug one layer
+  # down. It printed "AHEAD by 0 commits" against a truth of 13. Non-fatal like the
+  # rest of this path: a failed fetch just leaves the ref as stale as before.
+  sh("git", "-C", path, "fetch", "origin", ACCEPTED_BRANCH, "--quiet", capture: true)
+
   relation = Release::ShipSequence.accepted_relation(
     main_is_ancestor: ancestor_signal(path, sha),
     main_tree_absorbed: tree_absorbed_signal(path, sha)
@@ -2998,14 +3012,16 @@ def report_refused_advance(repo, path, sha)
         "The ship is NOT forcing. Deploy continues.")
     say("    CHECK FIRST, and READ THE DIFF THIS WAY: " \
         "git -C #{path} fetch origin && git -C #{path} diff origin/accepted origin/main")
-    say("    DELETIONS ONLY (files present on accepted, absent on main) means accepted is AHEAD — do NOTHING. " \
-        "Any ADDITION or MODIFICATION means accepted is genuinely missing shipped content — reconcile below.")
+    say("    Any ADDITION or MODIFICATION means accepted is missing shipped content — reconcile below. " \
+        "DELETIONS ONLY usually means accepted merely gained files after the freeze — but a shipped file " \
+        "DELETION looks identical in this diff, so when in doubt, reconcile: the merge is non-destructive either way.")
     say_reconcile_recipe(repo, path)
     return
   end
 
-  say("  ⚠ #{repo}: origin/accepted NOT advanced to #{short(sha)} — accepted has genuinely DIVERGED from main: " \
-      "it is missing shipped content, and the ship is NOT forcing. Deploy continues.")
+  say("  ⚠ #{repo}: origin/accepted NOT advanced to #{short(sha)} — main's content was NOT found in accepted's " \
+      "recent history, so accepted appears to be missing shipped content; the ship is NOT forcing. " \
+      "Deploy continues.")
   say_reconcile_recipe(repo, path)
 end
 
@@ -3044,8 +3060,9 @@ def say_reconcile_recipe(repo, path)
   say("    RECONCILE with a MERGE (keeps accepted's own commits) in a SCRATCH WORKTREE, " \
       "so a conflict can never dirty your primary or wedge the next ship:")
   say("      git -C #{path} fetch origin")
-  say("      git -C #{path} worktree add --detach #{scratch} origin/#{ACCEPTED_BRANCH}")
-  say("      git -C #{scratch} merge origin/main")
+  say("      git -C #{path} worktree add --detach #{scratch} origin/#{ACCEPTED_BRANCH}   " \
+      "# if this says 'already exists', an old recovery was abandoned — see BAIL OUT below to clear it")
+  say("      git -C #{scratch} merge origin/main   # can stop here on a conflict; see IF THE MERGE CONFLICTS below")
   say("      git -C #{scratch} push origin HEAD:#{ACCEPTED_BRANCH}")
   say("      git -C #{path} worktree remove #{scratch}")
   say("    IF THE MERGE CONFLICTS (expect Gemfile.lock on a gem-carrying release) the " \

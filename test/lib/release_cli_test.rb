@@ -2346,31 +2346,42 @@ class ReleaseCliTest < Minitest::Test
                    git_out(clone, "rev-parse", "#{frozen}^{tree}"),
                    "fixture precondition: the sweep merge's tree equals the accepted head it came from"
 
-      # Concurrent review merges land on accepted DURING the ship: one brand-new
+      # Concurrent review merges land on accepted DURING the ship — one brand-new
       # file and one MODIFICATION of an already-shipped file (the real incident had
-      # both — a new module plus an index entry).
-      run_git(clone, "checkout", "-q", "accepted")
-      File.write(File.join(clone, "zap-protocol.md"), "merged mid-ship")
-      File.write(File.join(clone, "shipped.rb"), "shipped\nindex entry added mid-ship")
-      run_git(clone, "add", "zap-protocol.md", "shipped.rb")
-      run_git(clone, "commit", "-q", "-m", "review merge during the ship")
-      run_git(clone, "push", "-q", "origin", "accepted")
-      ahead = git_out(origin, "rev-parse", "accepted")
+      # both: a new module plus an index entry). CRUCIALLY they arrive from a SEPARATE
+      # clone, as a review pass on another machine does, so the ship's own clone never
+      # fetches them and its origin/accepted stays STALE at `absorbed`. A same-clone
+      # push (rounds 1-3) freshened that ref in a way production never does and hid a
+      # missing fetch in the classifier — the round-4 gap that printed "AHEAD by 0
+      # commits" against a truth of 13.
+      ahead = land_concurrent_merge_on_accepted(dir, origin, label: "ahead",
+                                                files: { "zap-protocol.md" => "merged mid-ship",
+                                                         "shipped.rb" => "shipped\nindex entry added mid-ship" })
+
+      # The staleness, pinned as the fixture precondition: the ship's clone still
+      # sees the PRE-merge accepted, while the true origin has moved ahead of it.
+      assert_equal absorbed, git_out(clone, "rev-parse", "origin/accepted"),
+                   "fixture precondition: the ship's clone must have a STALE origin/accepted (it never fetched the concurrent merge)"
+      refute_equal absorbed, ahead,
+                   "fixture precondition: the TRUE origin/accepted moved ahead of what the ship's clone last saw"
 
       # The subtlety, pinned: plain ancestry says NO even though nothing is missing.
       _, ancestry = Open3.capture2e("git", "-C", clone, "merge-base", "--is-ancestor", frozen, ahead)
       refute ancestry.success?,
              "fixture precondition: the sweep merge commit is NOT an ancestor of accepted"
 
-      setup = %(def repo_path(_repo) = #{clone.inspect})
-      out = run_cli(["--yes"], setup: setup,
+      out = run_cli(["--yes"], setup: advance_setup(clone, dir),
                     call: %{begin; push_frozen_main("sibling", #{frozen.inspect}); puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
 
       assert_includes out, "PASSED", "an accepted that is merely ahead must NOT abort the ship: #{out}"
+      # THE ROUND-4 LOCK: the count must reflect the TRUE accepted, which the ship can
+      # only see if it FETCHES first. Against the stale ref this reads "0 commits"
+      # while claiming work merged concurrently — self-contradictory. Only the fetch
+      # makes it honest.
       assert_match(/AHEAD of main by 1 commit\b/, out,
-                   "the report must name the AHEAD relation and the commit count: #{out}")
-      refute_includes out, "DIVERGED",
-                      "accepted is ahead, not diverged — the alarming label must not appear: #{out}"
+                   "the report must name the AHEAD relation and the TRUE commit count (needs a fetch): #{out}")
+      refute_match(/DIVERGED|missing shipped content/, out,
+                   "accepted is ahead, not diverged — no missing-content alarm may appear: #{out}")
       refute_includes out, "refs/heads/accepted",
                        "NOTHING may be suggested when accepted is ahead — a bare ref push here DESTROYS merged work"
       refute_includes out, "reconcile",
@@ -2413,7 +2424,8 @@ class ReleaseCliTest < Minitest::Test
                     call: %{begin; push_frozen_main("sibling", #{frozen.inspect}); puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
 
       assert_includes out, "PASSED", "a genuinely diverged accepted must NOT abort the ship: #{out}"
-      assert_includes out, "DIVERGED", "genuine divergence keeps the DIVERGED label: #{out}"
+      assert_includes out, "appears to be missing shipped content",
+                      "genuine divergence must be reported as missing shipped content: #{out}"
       assert_match(/git -C .* merge/, out,
                    "the reconcile advice must be a MERGE of main into accepted: #{out}")
       refute_match(/push origin \h+:refs\/heads\/accepted/, out,
@@ -2459,6 +2471,24 @@ class ReleaseCliTest < Minitest::Test
   def advance_setup(clone, dir)
     %(def repo_path(_repo) = #{clone.inspect}\n) +
       %(def reconcile_scratch_path(_repo) = #{File.join(dir, 'scratch-reconcile').inspect}\n)
+  end
+
+  # Land a commit on origin/accepted from a SEPARATE clone — the way a concurrent
+  # review merge arrives in production (another agent, another machine). The point
+  # is what it does NOT do: the ship's own `clone` never fetches it, so that clone's
+  # origin/accepted remote-tracking ref stays STALE. A same-clone push would freshen
+  # that ref in a way production never does, and hide a missing fetch in the
+  # classifier — the round-4 gap that printed "AHEAD by 0 commits" against a truth of
+  # 13. Returns the true origin/accepted SHA after the push.
+  def land_concurrent_merge_on_accepted(dir, origin, label:, files:)
+    side = File.join(dir, "concurrent-#{label}")
+    system("git", "clone", "-q", origin, side, out: File::NULL, err: File::NULL) || flunk("concurrent clone failed")
+    run_git(side, "checkout", "-q", "accepted")
+    files.each { |name, content| File.write(File.join(side, name), content) }
+    run_git(side, "add", *files.keys)
+    run_git(side, "commit", "-q", "-m", "review merge during the ship (#{label})")
+    run_git(side, "push", "-q", "origin", "accepted")
+    git_out(origin, "rev-parse", "accepted")
   end
 
   # [integration] BLOCKER (round 2). The DIVERGED reconcile advice must WORK on a
@@ -2516,7 +2546,7 @@ class ReleaseCliTest < Minitest::Test
       out = run_cli(["--yes"], setup: advance_setup(clone, dir),
                     call: %{push_frozen_main("sibling", #{frozen.inspect}); puts("PASSED")})
 
-      assert_includes out, "DIVERGED", "this fixture is a genuine divergence: #{out}"
+      assert_includes out, "appears to be missing shipped content", "this fixture is a genuine divergence: #{out}"
       assert_match(/worktree add --detach \S+ origin\/accepted/, out,
                    "the merge must be based on the REMOTE-TRACKING ref, never the stale local branch: #{out}")
 
@@ -2565,24 +2595,24 @@ class ReleaseCliTest < Minitest::Test
       run_git(clone, "push", "-q", "origin", "release")
       frozen = git_out(clone, "rev-parse", "release")
 
-      # A concurrent review merge lands on accepted, so the advance is refused.
-      run_git(clone, "checkout", "-q", "accepted")
-      File.write(File.join(clone, "review-merge.md"), "merged by review")
-      run_git(clone, "add", "review-merge.md")
-      run_git(clone, "commit", "-q", "-m", "review merge during the ship")
-      run_git(clone, "push", "-q", "origin", "accepted")
+      # A concurrent review merge lands on accepted from a SEPARATE clone, so the
+      # advance is refused — and the ship's clone keeps a STALE origin/accepted, as
+      # in production. (Round-4 sweep: this fixture pushed the concurrent merge from
+      # the SAME clone, freshening the ref and masking the missing fetch.)
       run_git(clone, "checkout", "-q", "main")
+      land_concurrent_merge_on_accepted(dir, origin, label: "gem",
+                                        files: { "review-merge.md" => "merged by review" })
 
-      refute_equal git_out(clone, "rev-parse", "#{frozen}^{tree}"),
-                   git_out(clone, "rev-parse", "origin/accepted^{tree}"),
-                   "fixture precondition: the lock bump makes the frozen tree differ from accepted's"
+      refute_equal git_out(origin, "rev-parse", "#{frozen}^{tree}"),
+                   git_out(origin, "rev-parse", "accepted^{tree}"),
+                   "fixture precondition: the lock bump makes the frozen tree differ from the TRUE accepted's"
 
       out = run_cli(["--yes"], setup: advance_setup(clone, dir),
                     call: %{push_frozen_main("sibling", #{frozen.inspect}); puts("PASSED")})
 
       assert_includes out, "PASSED", "a gem-carrying release must not abort the ship: #{out}"
-      assert_includes out, "DIVERGED",
-                      "accepted genuinely lacks the lock bump — DIVERGED is the TRUE verdict here: #{out}"
+      assert_includes out, "appears to be missing shipped content",
+                      "accepted genuinely lacks the lock bump — the missing-content verdict is TRUE here: #{out}"
       refute_includes out, "UNDETERMINED",
                       "the signals are readable — a true refutation is not an unknown: #{out}"
 
@@ -2728,7 +2758,7 @@ class ReleaseCliTest < Minitest::Test
 
       assert_includes out, "PASSED", "an unreadable relation must NOT abort the ship: #{out}"
       assert_includes out, "UNDETERMINED", "an unreadable relation must be reported as such: #{out}"
-      refute_match(/genuinely DIVERGED/, out,
+      refute_match(/appears to be missing shipped content/, out,
                    "an unreadable state must never be asserted as genuine divergence: #{out}")
       refute_includes out, "AHEAD of main",
                       "nor may it claim accepted is ahead — the point is that we do not know: #{out}"

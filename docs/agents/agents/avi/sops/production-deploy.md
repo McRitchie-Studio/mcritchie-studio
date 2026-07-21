@@ -199,9 +199,11 @@ AHEAD `accepted` that DESTROYS the merged work — it happened on
 rel-20260720-1fc111, and it is why the classification exists.
 
 On **UNDETERMINED**, run `git -C <path> fetch origin && git -C <path> diff
-origin/accepted origin/main` and read it by this rule: **deletions only** (files
-on `accepted`, absent on `main`) means `accepted` is AHEAD — do nothing. **Any
-addition or modification** means content is genuinely missing — reconcile.
+origin/accepted origin/main` and read it by this rule: **any addition or
+modification** means `accepted` is missing shipped content — reconcile.
+**Deletions only** usually means `accepted` merely gained files after the freeze
+— but a shipped file *deletion* looks identical in this diff, so **when in doubt,
+reconcile**: the merge is non-destructive either way.
 
 ### The reconcile recipe
 
@@ -218,7 +220,9 @@ git -C <path> worktree remove /tmp/reconcile-accepted-<repo>
 
 It bases off `origin/accepted`, never the local branch — the primary's LOCAL
 `accepted` is routinely **tens of commits stale** (measured at 45), and merging
-onto it produces a push that is refused.
+onto it produces a push that is refused. If `worktree add` complains the path
+**already exists**, an earlier recovery was abandoned; the **BAIL OUT** command
+below (`worktree remove --force`) clears it, then re-run from the top.
 
 **The merge step can stop on a conflict, and that is expected** — see the gem note
 below. When it does, it prints the conflicted files and **your primary is
