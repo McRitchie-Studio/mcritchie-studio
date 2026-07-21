@@ -129,6 +129,10 @@ operator-facing message (chat reply, handoff, task note, PR summary) carries
   needs to dive in: task URL, slug, file path, branch, PR URL, local URL +
   port, function name, exact command. Never trade this layer away for brevity
   — simple is not vague.
+- **Review handoffs lead with a magic link.** Mint a signed-in link that lands
+  on the exact page to review (`Studio::Link.create_magic_link(email:,
+  return_to:, ttl: 12.hours)` → `http://localhost:<port>/l/<token>`) and put it
+  on a `Magic Link:` label above `Local Demo:`. Recipe in the module below.
 - **Form factor:** prefer tables and bulleted lists over paragraphs; keep the
   exact top-level labels (`Task:`, `Local Demo:`, `Local Inbox:`).
 
@@ -600,8 +604,15 @@ to hunt through prose:
 
 ```text
 Task: https://mcritchie.studio/tasks/<task-slug>
+Magic Link: http://localhost:<port>/l/<token>
 Local Demo: http://localhost:<port>/<path>
 ```
+
+`Magic Link:` is a minted sign-in link that lands on the page under review
+(single-use, 12-hour TTL for reviews) — the recipe lives in
+`mcritchie-studio/docs/agents/modules/communication-style.md`. `Local Demo:`
+stays the plain path: it is the durable fallback and what `--local-url`
+records on the task.
 
 For email or auth flows, also return the printed local inbox:
 

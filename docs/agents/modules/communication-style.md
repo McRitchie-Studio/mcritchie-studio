@@ -55,6 +55,44 @@ PR:   <pr-url>  (base `accepted`)
 Checks: [unit] geo_gate_test.rb · [integration] funding flow spec
 ```
 
+## Review handoffs — hand a magic link
+
+When work waits on Mr. McRitchie's review, never hand him a URL that greets
+him with a login wall. Mint a **magic link** that signs him in AND lands on
+the exact page to review, and lead the handoff with it — one copy-paste from
+chat to reviewing.
+
+```bash
+# From the worktree, against the SAME database the demo server runs on:
+set -a; source .env.agent-stack; set +a
+bin/rails runner 'l = Studio::Link.create_magic_link(email: "alex@mcritchie.studio",
+  return_to: "/<path>", ttl: 12.hours); puts "http://localhost:#{ENV.fetch("PORT")}/l/#{l.token}"'
+```
+
+Labels in the handoff:
+
+```text
+Task: https://mcritchie.studio/tasks/<slug>
+Magic Link: http://localhost:<port>/l/<token>
+Local Demo: http://localhost:<port>/<path>
+```
+
+The mechanics that matter (`studio-engine/app/models/studio/link.rb:37`):
+
+- **The landing page is baked in at mint time.** `return_to:` must be a
+  same-origin absolute path (`/admin/theme`); appending `?return_to=` to the
+  click URL does nothing.
+- **Mint in the stack's database.** A worktree stack serves from its own DB —
+  load `.env.agent-stack` first or the server will not know the token.
+- **Mint review links with `ttl: 12.hours`.** The 15-minute default is tuned
+  for email login, not an async review.
+- **Links are single-use** (burned on the consume POST; the GET interstitial
+  is inert and scanner-safe). Always include the plain `Local Demo:` URL as
+  fallback; if the link is burned or expired, re-mint on request — or he can
+  self-serve via `Local Inbox: http://localhost:<port>/_studio/local_emails`.
+- **turf-monster caveat:** its request-side controllers derive `return_to`
+  from contest params, but minting via the engine model as above still works.
+
 ## Guardrails
 
 - Same limits as the House Writing Style section: never rename code
