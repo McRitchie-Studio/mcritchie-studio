@@ -71,6 +71,15 @@ class BoardCiProgressTest < ActionDispatch::IntegrationTest
     assert_select "#current-release [data-test='release-ci-progress-symbols'][data-ci-state='green']", 1
     assert_select "#current-release [data-test='ci-check-symbol']", 8
     assert_select "#current-release a", 0, "the release meter has no single PR to link"
+
+    # Order: the G3 CI bar renders BELOW the pizza tracker (not above the chips).
+    # `~` (general sibling) matches ONLY when #release-ci-progress FOLLOWS the tracker
+    # as a sibling; the negative pins that it no longer precedes it. Together they
+    # assert the tracker -> CI-bar order regardless of the (member-less) fixture.
+    assert_select "#current-release [data-test='release-tracker'] ~ #release-ci-progress", 1,
+      "the G3 CI bar sits directly below the pizza tracker"
+    assert_select "#current-release #release-ci-progress ~ [data-test='release-tracker']", 0,
+      "the G3 CI bar no longer renders above the tracker"
   end
 
   test "[integration] a submitted card renders its meter from LIVE workflow_job rows (no fixture, no API)" do
