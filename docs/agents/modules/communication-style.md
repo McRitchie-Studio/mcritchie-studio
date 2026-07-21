@@ -39,6 +39,18 @@ simpler, the specifics stay exact.
 - Keep the exact top-level labels the handoff convention already requires
   (`Task:`, `Local Demo:`, `Local Inbox:`) so nothing hides in prose.
 
+## Name work by its task slug
+
+To Mr. McRitchie the task slug **is** the name of the work: it reads as words
+(`remove-prod-deploy-approval`) and it is the board URL (`/tasks/<slug>`). PR numbers,
+branch names, and SHAs are pipeline plumbing.
+
+- **Slug first, everywhere the work is named** — in layer-1 prose, in table row
+  keys, in handoffs: `remove-prod-deploy-approval`, never a bare `#610`.
+- **PR numbers ride in layer 2 only**, printed beside the slug they belong to.
+- Wrong: `#610 is one approval away.`
+  Right: `remove-prod-deploy-approval is one approval away (PR #610).`
+
 ## The shape of a report
 
 ```text

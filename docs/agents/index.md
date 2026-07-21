@@ -135,6 +135,9 @@ operator-facing message (chat reply, handoff, task note, PR summary) carries
   on a `Magic Link:` label above `Local Demo:`. Recipe in the module below.
 - **Form factor:** prefer tables and bulleted lists over paragraphs; keep the
   exact top-level labels (`Task:`, `Local Demo:`, `Local Inbox:`).
+- **Name work by its task slug.** The slug (`remove-prod-deploy-approval`) is the
+  operator's name for the work; a bare PR number (`#610`) is plumbing. PR
+  numbers, branches, and SHAs stay in layer 2, beside the slug they belong to.
 
 Full module: `mcritchie-studio/docs/agents/modules/communication-style.md`.
 
