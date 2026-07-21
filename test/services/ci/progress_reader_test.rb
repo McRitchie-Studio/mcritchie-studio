@@ -128,6 +128,30 @@ class Ci::ProgressReaderTest < ActiveSupport::TestCase
                  "the gem track must read Engine CI, not the Consumer CI on the same branch"
   end
 
+  test "[unit] a gem track folds ONLY its own workflow, not a failing sibling on the same SHA" do
+    # THE REVIEWERS' LIVE CASE: studio-engine main carries Engine CI = success AND
+    # Consumer CI = failure on the SAME SHA, and the commit check-runs endpoint returns
+    # BOTH. The gem track must reflect Engine CI ONLY — a failing Consumer CI must not
+    # drag it red — and must read that from the workflow-scoped LIVE rows, never the
+    # workflow-blind API.
+    calls = 0
+    reader = build_reader do |_uri, _req|
+      calls += 1
+      FakeResponse.new("500", "the blind check-runs API must NOT be consulted for a gem", {})
+    end
+    rel = release_with_members("studio-engine")
+    seed_run(repo: "amcritchie/studio-engine", branch: "main", sha: "engine-mix-sha", workflow: "Engine CI")
+    seed_check_job(repo: "amcritchie/studio-engine", sha: "engine-mix-sha", workflow: "Engine CI", conclusion: "success")
+    seed_check_job(repo: "amcritchie/studio-engine", sha: "engine-mix-sha", workflow: "Engine CI", conclusion: "success")
+    seed_check_job(repo: "amcritchie/studio-engine", sha: "engine-mix-sha", workflow: "Consumer CI", conclusion: "failure")
+
+    progress = reader.for_release(rel)["studio-engine"]
+    assert_equal :green, progress.state,
+                 "a failing Consumer CI on the same SHA must NOT drag the Engine CI track red"
+    assert_equal "2 / 2", progress.fraction_label, "only the 2 Engine CI checks are folded"
+    assert_equal 0, calls, "the gem fold reads live per-workflow rows only; the blind API is never consulted"
+  end
+
   test "[unit] a member repo with no ingested run yields a blank (invisible) track" do
     reader = build_reader(&ok([]))
     rel = release_with_members("turf-monster")
@@ -240,6 +264,14 @@ class Ci::ProgressReaderTest < ActiveSupport::TestCase
     devops = { "branch" => branch, "repositories" => ["mcritchie-studio"] }
     devops["pr_url"] = pr_url if pr_url
     Task.create!(title: "ci bar task #{SecureRandom.hex(3)}", stage: stage, metadata: { "devops" => devops })
+  end
+
+  # One ingested CI job (workflow_job row) — distinct check name per call so the
+  # latest-attempt fold counts it as its own check.
+  def seed_check_job(repo:, sha:, workflow:, conclusion:, status: "completed", branch: "main")
+    CiCheckJob.create!(repo: repo, job_id: SecureRandom.random_number(10**12), head_sha: sha,
+                       head_branch: branch, workflow_name: workflow, status: status, conclusion: conclusion,
+                       name: "#{workflow} #{SecureRandom.hex(3)}")
   end
 
   def seed_run(branch:, sha:, repo: "amcritchie/mcritchie-studio", workflow: "CI", started_at: Time.current)

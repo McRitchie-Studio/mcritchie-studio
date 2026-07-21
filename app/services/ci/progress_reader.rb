@@ -114,7 +114,9 @@ module Ci
       member_repos(release).index_with do |repo|
         nwo, branch, workflow = ci_target_for(repo)
         sha = branch.present? ? latest_ci_sha(nwo, branch, workflow) : nil
-        sha ? for_sha(nwo, sha) : CheckProgress.blank
+        # Scope the fold to the target workflow — a gem's `main` SHA carries a sibling
+        # "Consumer CI" the gem track must not blend in.
+        sha ? for_sha(nwo, sha, workflow) : CheckProgress.blank
       end
     end
 
@@ -134,20 +136,32 @@ module Ci
       return nil unless branch.to_s == target_branch
 
       sha = latest_ci_sha(target_nwo, target_branch, workflow)
-      [repo, sha ? for_sha(target_nwo, sha) : CheckProgress.blank]
+      [repo, sha ? for_sha(target_nwo, sha, workflow) : CheckProgress.blank]
     end
 
     # The core read: SHA -> Ci::CheckProgress. Live-first — a SHA the `workflow_job`
     # webhook has recorded folds straight from CiCheckJob rows (no network); only a
     # SHA with no ingested jobs falls back to the cached, budgeted GitHub API read.
-    def for_sha(nwo, sha)
+    #
+    # `workflow_name` SCOPES the fold to one workflow (the gem path — see for_release).
+    # It is load-bearing in TWO places: the live fold filters CiCheckJob to that
+    # workflow, AND the API fallback is REFUSED for any scoped workflow other than
+    # `CI`. The check-runs API is workflow-BLIND — it returns every workflow's checks
+    # on the SHA — so falling back to it for a gem would re-introduce the exact
+    # blending the scope exists to prevent (a failing "Consumer CI" dragging the gem's
+    # "Engine CI" track red). `CI` is the one safe fallback: it is the only workflow on
+    # the branches an app track reads, so the blind API cannot blend anything there.
+    def for_sha(nwo, sha, workflow_name = nil)
       nwo = nwo.to_s
       sha = sha.to_s
       return CheckProgress.blank if nwo.empty? || sha.empty?
       return fixture_progress(sha) if fixture?(sha)
 
-      live = live_progress(nwo, sha)
+      live = live_progress(nwo, sha, workflow_name)
       return live if live&.present?
+
+      # A workflow-scoped read for anything but CI must not fall back to the blind API.
+      return CheckProgress.blank(sha: sha) if workflow_name.present? && workflow_name != GithubWorkflowRun::CI_WORKFLOW
 
       cache_key = "ci:progress:#{nwo}:#{sha}"
       cached = @cache.read(cache_key)
@@ -180,8 +194,8 @@ module Ci
     # so for_sha falls THROUGH to the cached API read rather than showing an empty bar
     # for a SHA whose jobs simply have not been ingested. Rescued to nil + logged, so
     # a DB hiccup degrades to the API path, never masks it.
-    def live_progress(nwo, sha)
-      rows = CiCheckJob.progress_rows(nwo, sha)
+    def live_progress(nwo, sha, workflow_name = nil)
+      rows = CiCheckJob.progress_rows(nwo, sha, workflow_name)
       return nil if rows.empty?
 
       CheckProgress.from_check_runs(rows, sha: sha)

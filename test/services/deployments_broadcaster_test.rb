@@ -282,13 +282,13 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
 
   # --- live CI progress: a workflow_job push morphs just the bar slot ----------
 
-  def seed_ci(repo:, branch:, sha:, passed:, pending:)
-    GithubWorkflowRun.create!(repo: repo, workflow_name: "CI", run_id: SecureRandom.random_number(10**12),
+  def seed_ci(repo:, branch:, sha:, passed:, pending:, workflow: "CI")
+    GithubWorkflowRun.create!(repo: repo, workflow_name: workflow, run_id: SecureRandom.random_number(10**12),
                               status: "in_progress", head_branch: branch, head_sha: sha, run_started_at: Time.current)
     id = SecureRandom.random_number(10**12)
-    passed.times  { CiCheckJob.create!(repo: repo, job_id: (id += 1), head_sha: sha, head_branch: branch, workflow_name: "CI", status: "completed", conclusion: "success") }
-    pending.times { CiCheckJob.create!(repo: repo, job_id: (id += 1), head_sha: sha, head_branch: branch, workflow_name: "CI", status: "in_progress") }
-    CiCheckJob.new(repo: repo, job_id: id + 1, head_sha: sha, head_branch: branch, workflow_name: "CI", status: "completed", conclusion: "success")
+    passed.times  { CiCheckJob.create!(repo: repo, job_id: (id += 1), head_sha: sha, head_branch: branch, workflow_name: workflow, status: "completed", conclusion: "success") }
+    pending.times { CiCheckJob.create!(repo: repo, job_id: (id += 1), head_sha: sha, head_branch: branch, workflow_name: workflow, status: "in_progress") }
+    CiCheckJob.new(repo: repo, job_id: id + 1, head_sha: sha, head_branch: branch, workflow_name: workflow, status: "completed", conclusion: "success")
   end
 
   test "[integration] ci_progress morph-replaces the affected task's bar slot with fresh counts" do
@@ -328,6 +328,23 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
     # 8 checks -> the symbolic row; the release meter has no single PR, so no link.
     assert_includes release_stream.to_html, "release-ci-progress-mcritchie-studio-symbols"
     assert_not_includes release_stream.to_html, "<a ", "the release meter is not clickable"
+  end
+
+  test "[integration] ci_progress live-updates a GEM member's track on its own Engine CI job (main branch)" do
+    rel = Release.open! # active candidate → Release.current
+    rel.add(Task.create!(title: "Studio engine gem member", stage: "reviewed",
+                         metadata: { "devops" => { "repositories" => ["studio-engine"] } }))
+    # A gem's verdict is Engine CI on MAIN — the fan-out must reach it there, not only
+    # on the `release` branch app repos use.
+    job = seed_ci(repo: "amcritchie/studio-engine", branch: "main", sha: "engine-live-sha",
+                  passed: 1, pending: 0, workflow: "Engine CI")
+
+    streams = capture_turbo_stream_broadcasts("deployments") { DeploymentsBroadcaster.ci_progress(job) }
+
+    gem_stream = streams.find { |s| s["target"] == "release-ci-progress-studio-engine" }
+    assert gem_stream, "a gem member's Engine CI job morphs its own #release-ci-progress-<repo> track"
+    assert_equal "morph", gem_stream["method"]
+    assert_includes gem_stream.to_html, "release-ci-progress-studio-engine-symbols"
   end
 
   test "[integration] ci_progress does NOT push a release track for a non-member repo's release push" do
