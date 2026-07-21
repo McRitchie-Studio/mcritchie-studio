@@ -61,25 +61,28 @@ class BoardCiProgressTest < ActionDispatch::IntegrationTest
     assert_select "#card-#{task.slug} [data-test='task-ci-progress-symbols']", 0, "12+ checks stay numeric"
   end
 
-  test "[integration] the Next Release card shows the G3 candidate CI meter" do
-    Release.open! # the active candidate -> Release.current -> the Next Release card
+  test "[integration] the Next Release card shows the G3 candidate CI meter, per member repo" do
+    rel = Release.open! # the active candidate -> Release.current -> the Next Release card
+    rel.add(Task.create!(title: "Hub release CI member", stage: "reviewed",
+                         metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } }))
     seed_run(branch: Release::BRANCH, sha: RELEASE_SHA)
 
     get deployments_path
     assert_response :success
 
-    assert_select "#current-release [data-test='release-ci-progress-symbols'][data-ci-state='green']", 1
+    # The track is per-repo now: the hub member's own #release-ci-progress-mcritchie-studio.
+    assert_select "#current-release [data-test='release-ci-progress-mcritchie-studio-symbols'][data-ci-state='green']", 1
     assert_select "#current-release [data-test='ci-check-symbol']", 8
-    assert_select "#current-release a", 0, "the release meter has no single PR to link"
+    # The CI meter itself is not a link (no single PR); member pills legitimately are.
+    assert_select "#current-release a.ci-progress-card", 0, "the release meter has no single PR to link"
 
-    # Order: the G3 CI bar renders BELOW the pizza tracker (not above the chips).
-    # `~` (general sibling) matches ONLY when #release-ci-progress FOLLOWS the tracker
-    # as a sibling; the negative pins that it no longer precedes it. Together they
-    # assert the tracker -> CI-bar order regardless of the (member-less) fixture.
-    assert_select "#current-release [data-test='release-tracker'] ~ #release-ci-progress", 1,
-      "the G3 CI bar sits directly below the pizza tracker"
-    assert_select "#current-release #release-ci-progress ~ [data-test='release-tracker']", 0,
-      "the G3 CI bar no longer renders above the tracker"
+    # Order (from #611): the per-repo G3 CI track renders BELOW the pizza tracker (not
+    # above the chips). `~` (general sibling) matches ONLY when the track FOLLOWS the
+    # tracker as a sibling; the negative pins that it no longer precedes it.
+    assert_select "#current-release [data-test='release-tracker'] ~ #release-ci-progress-mcritchie-studio", 1,
+      "the G3 CI track sits below the pizza tracker"
+    assert_select "#current-release #release-ci-progress-mcritchie-studio ~ [data-test='release-tracker']", 0,
+      "the G3 CI track no longer renders above the tracker"
   end
 
   test "[integration] a submitted card renders its meter from LIVE workflow_job rows (no fixture, no API)" do

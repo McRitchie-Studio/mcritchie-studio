@@ -115,6 +115,7 @@ class ShipTest < Minitest::Test
       "SHIP_FAST_CHECK_BIN" => write_stub(dir, "fast-stub", "FAST"),
       "SHIP_DOR_CHECK_BIN" => write_stub(dir, "dor-stub", "DOR"),
       "SHIP_GH_BIN" => write_stub(dir, "gh-stub", "GH"),
+      "SHIP_ACTIVITY_BIN" => write_stub(dir, "activity-stub", "ACTIVITY"),
       "STUB_LOG" => log,
       "TASK_SHOW_JSON" => show_json || task_record,
       "TASK_SHOW_JSON_MOVED" => moved_json || task_record(stage: "submitted", pr_url: PR_URL)
@@ -232,6 +233,43 @@ class ShipTest < Minitest::Test
       assert_equal foreign_sha, `git -C #{origin} rev-parse #{BRANCH}`.strip,
                    "the foreign commit must survive — ship must NEVER clobber it"
       refute(lines.any? { |l| l[0, 2] == %w[TASK move] }, "a refused push must not reach the submit step")
+    end
+  end
+
+  # --- narration (fast-lane-narrates-activities) -------------------------------
+  # ship closes the cycle's activity trail (the twin of begin's orient open) with
+  # a real outcome naming the submitted stage and the PR.
+
+  def test_ship_closes_the_activity_trail_naming_the_pr_and_submitted
+    with_repo do |dir|
+      _out, err, status, lines = run_ship(dir, extra_env: { "CLAUDE_CODE_SESSION_ID" => "sess-ship-narrate" })
+
+      assert status.success?, err
+      activity = lines.find { |l| l[0] == "ACTIVITY" }
+      assert activity, "ship must close the activity trail"
+      assert_equal "end", activity[1], "ship CLOSES the trail (end), never leaves one open"
+      outcome = activity[activity.index("--outcome") + 1]
+      assert_match(/submitted/i, outcome, "the outcome names the submitted stage")
+      assert_includes outcome, PR_URL, "the outcome names the PR"
+    end
+  end
+
+  def test_ship_narration_is_non_fatal
+    with_repo do |dir|
+      _out, err, status, = run_ship(dir, extra_env: {
+        "CLAUDE_CODE_SESSION_ID" => "sess-ship-narrate", "FAIL_ACTIVITY" => "1"
+      })
+
+      assert status.success?, "a failing narration CLI must never fail the ship: #{err}"
+    end
+  end
+
+  def test_ship_without_a_session_does_not_narrate
+    with_repo do |dir|
+      _out, _err, status, lines = run_ship(dir)
+
+      assert status.success?
+      refute(lines.any? { |l| l[0] == "ACTIVITY" }, "a session-less ship must not narrate")
     end
   end
 
