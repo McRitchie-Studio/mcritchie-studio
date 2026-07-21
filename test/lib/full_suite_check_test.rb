@@ -692,23 +692,45 @@ class FullSuiteCheckTest < Minitest::Test
   )
 
   # A stub board/gate CLI: appends "<MARKER>\t<argv…>" to STUB_LOG; `show` prints
-  # TASK_SHOW_JSON (serving both the guard's read and the read-merge-write), exits 0.
-  # Minimally STATEFUL for the read-back verification: an `update` drops a sentinel
-  # beside STUB_LOG, after which `show` serves TASK_SHOW_JSON_AFTER_UPDATE when set
-  # (modelling a write the board lost) — same shape as fast_check_test's TASK stub.
+  # TASK_SHOW_JSON (serving both the guard's read and the read-back baseline).
+  # Minimally STATEFUL, same shape as fast_check_test's TASK stub: an `update`
+  # drops a sentinel and CAPTURES its --checks VALUES (to .written), and `show`
+  # after an update serves TASK_SHOW_JSON_AFTER_UPDATE (else TASK_SHOW_JSON) with
+  # the captured lines MERGED IN — so the read-back sees the evidence lines the
+  # cert actually wrote (their runtime fingerprint no fixture can spell).
+  # STUB_READBACK_DROP_WRITTEN=1 suppresses the merge (models a write that never
+  # landed); an AFTER_UPDATE board with a line dropped models a lost pre-existing
+  # line (the written evidence is still merged back, that line is not).
   def write_cli_stub(dir, name, marker)
     stub = File.join(dir, name)
     File.write(stub, <<~RUBY)
       #!#{RbConfig.ruby}
-      File.open(ENV.fetch("STUB_LOG"), "a") { |f| f.puts(["#{marker}", *ARGV].join("\\t")) }
-      sentinel = ENV.fetch("STUB_LOG") + ".updated"
-      File.write(sentinel, "1") if ARGV.first == "update"
+      require "json"
+      log = ENV.fetch("STUB_LOG")
+      File.open(log, "a") { |f| f.puts(["#{marker}", *ARGV].join("\\t")) }
+      sentinel = log + ".updated"
+      written  = log + ".written"
+      if ARGV.first == "update"
+        File.write(sentinel, "1")
+        vals = []
+        i = 0
+        while i < ARGV.length
+          if ARGV[i] == "--checks" then vals << ARGV[i + 1].to_s; i += 2 else i += 1 end
+        end
+        File.open(written, "a") { |f| vals.each { |v| f.puts(v) } }
+      end
       if ARGV.first == "show"
         after = ENV["TASK_SHOW_JSON_AFTER_UPDATE"].to_s
-        if !after.empty? && File.exist?(sentinel)
-          puts after
-        elsif ENV["TASK_SHOW_JSON"]
-          puts ENV["TASK_SHOW_JSON"]
+        base  = (!after.empty? && File.exist?(sentinel)) ? after : ENV["TASK_SHOW_JSON"].to_s
+        unless base.empty?
+          doc = JSON.parse(base)
+          if File.exist?(sentinel) && File.exist?(written) && ENV["STUB_READBACK_DROP_WRITTEN"] != "1"
+            dv = ((doc["metadata"] ||= {})["devops"] ||= {})
+            checks = Array(dv["checks_run"])
+            File.readlines(written, chomp: true).each { |w| checks << w unless checks.include?(w) }
+            dv["checks_run"] = checks
+          end
+          puts JSON.generate(doc)
         end
       end
     RUBY
@@ -807,6 +829,33 @@ class FullSuiteCheckTest < Minitest::Test
       assert(sent.all? { |l| l.match?(/\A\[(full-suite|rubocop)@/) },
              "the cert sends ONLY the lanes it owns — no author snapshot: #{sent.inspect}")
       refute_includes sent, "[unit] bin/rails test test/models"
+    end
+  end
+
+  # Round-5 regression (review block, 2026-07-20 — light lane): the cert must
+  # verify the lines it OWNS. If the fresh [full-suite@…]/[rubocop@…] evidence
+  # does not land, the cert cannot tell "landed" from "vanished" — the
+  # missing-signal-read-as-success shape this PR kills. A read-back missing the
+  # evidence must exit NONZERO and say "re-run the cert".
+  def test_evidence_lines_missing_from_the_read_back_fail_the_cert
+    with_repo do |dir|
+      assert system("git", "-C", dir, "checkout", "-qb", "feat/task-x", out: File::NULL, err: File::NULL)
+      with_tiers = JSON.generate(
+        "metadata" => { "devops" => {
+          "branch" => "feat/task-x", "worktree_slug" => "task-x",
+          "checks_run" => ["[unit] bin/rails test test/models"]
+        } }
+      )
+      out, code, lines = run_check_implicit_root(dir, "task-x",
+                                                 extra_env: { "TASK_SHOW_JSON" => with_tiers,
+                                                              "STUB_READBACK_DROP_WRITTEN" => "1" })
+      assert_equal 1, code, "a read-back missing the fresh evidence lines must FAIL the cert: #{out}"
+      assert_match(/MISSING/, out)
+      assert_match(/re-run the cert: bin\/full-suite-check task-x/, out)
+      refute_match(/read-back confirms/, out)
+      close = lines.select { |l| l[0] == "GATE" && l[1] == "close" }.last
+      refute_nil close
+      assert_includes close, "--failed", "the durable gate must not read success when the command exits 1"
     end
   end
 

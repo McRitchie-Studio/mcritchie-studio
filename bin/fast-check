@@ -57,11 +57,14 @@
 # Task#preserve_cert_evidence, rule in lib/cert_evidence.rb) merges it against
 # the board's CURRENT checks_run at write time: tier tags, bypass records, and
 # the other lanes' evidence are carried forward, and only a PRIOR fast-cert line
-# is superseded. Resending a read-then-merged list is what this cert USED to do,
-# and it let content read before the lanes ran replace a tier line the builder
+# is superseded. This cert USED to resend a read-then-merged list instead, which
+# let a snapshot read before the lanes ran overwrite a tier line the builder had
 # recorded during the run — see the write block near the end of this file.
-# The recorded lines are then READ BACK and verified, so "preserved" is a
-# checked claim rather than a declaration.
+# After the write the board is READ BACK and BOTH the recorded [fast-cert@<fp>]
+# evidence line AND every pre-existing line are checked present — so "recorded"
+# and "preserved" are verified claims, not declarations. A read-back that finds
+# the evidence line gone fails the cert (re-run it); a lost pre-existing line
+# fails it too (re-record).
 # A red lane records nothing and exits non-zero.
 #
 # G1 gate-run markers mirror bin/full-suite-check's: OPEN the task's g1_cert
@@ -306,13 +309,16 @@ unless mapped_ok && spine_ok && rubocop_ok
   exit 1
 end
 
-# All lanes green — cert self-closes the g1_cert attempt success (dor-check no
-# longer owns G1's close; its DoR verdict is the separate dor/dor_review gates).
-emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--success") if gate_slug
-
+# All lanes green. The g1_cert attempt is NOT closed --success here (dor-check no
+# longer owns G1's close either): a green cert still has to RECORD and then VERIFY
+# its evidence, and closing success before that would leave the gate reading
+# success on a write/read-back failure that exits 1. The success close now lives
+# at the very end, after the read-back confirms; every failure path below closes
+# --failed on its way out.
 fingerprint = FullSuiteGate.fingerprint(root)
 if fingerprint.nil?
   warn "fast-check: could not fingerprint the code at #{root} (no git repo / identity?) — nothing certified."
+  emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
   exit 1
 end
 
@@ -337,6 +343,7 @@ if existing.nil?
   warn "fast-check: ran green but couldn't read #{slug.inspect}'s checks_run (bin/task show), so the write " \
        "cannot be verified. Not writing. Re-run, or record by hand: bin/task update #{slug} " \
        "--checks #{Shellwords.escape(line)}"
+  emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
   exit 1
 end
 
@@ -352,43 +359,65 @@ end
 record_args = ["--checks", line]
 unless system(TASK_BIN, "update", slug, *record_args)
   warn "fast-check: ran green but FAILED to record evidence on #{slug.inspect} (bin/task update). Re-run."
+  emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
   exit 1
 end
 
-# "Preserved" is VERIFIED, never declared (regression 2026-07-20: this script
-# printed "tier tags preserved" over a write that had lost the builder's tier
-# lines): read the board back and check every pre-existing line survived. The
-# fresh evidence line's own write is covered by bin/task update's exit status.
-# Everything the write does NOT supersede — i.e. every prior line except this
-# lane's own (which the fresh evidence replaces by design). These must survive.
+# ── read-back: VERIFY the write. This block is kept BYTE-IDENTICAL with its twin
+# in the sibling cert (bin/fast-check ⇄ bin/full-suite-check) down to the comments;
+# only the script name, the recorded-evidence set, and the re-run command differ.
+# "Recorded" and "preserved" are VERIFIED, never declared. Read the board back and
+# check that BOTH the evidence line(s) this cert OWNS and every pre-existing line
+# it must not disturb are present. Verifying only the pre-existing lines and
+# trusting bin/task's 200 for the line(s) the cert is responsible for is the exact
+# missing-signal-read-as-success defect this gate exists to catch, turned on the
+# cert's own output. `kept` is every prior line except this cert's own lane(s),
+# whose fresh evidence supersedes the old by design.
 kept = existing.reject { |prior| prior.match?(FullSuiteGate.evidence_re([FullSuiteGate::FAST_LANE])) }
+recorded = [line]
 summary = "fast-check: all lanes green at #{fingerprint[0, 12]} in #{format('%.1fs', total)} — evidence " \
           "recorded on #{slug}"
 followup = "dor-check accepts it provisionally once the PR is open (no CI wait at submit); review's " \
            "gate-zero enforces the settled CI green."
-if kept.empty?
-  warn "#{summary} (no pre-existing checks lines to preserve). #{followup}"
+
+missing = CertEmission.missing_after_write(TASK_BIN, slug, recorded + kept)
+if missing.nil?
+  # The write returned 200 (bin/task update exited 0); only the confirming READ
+  # did not complete. The certification happened — close success, exit 0.
+  warn "#{summary}, but the read-back FAILED — UNVERIFIED that the recorded evidence" \
+       "#{kept.empty? ? '' : " and the #{kept.size} pre-existing checks line(s)"} landed. " \
+       "Verify: bin/task show #{slug} -v. #{followup}"
+  emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--success") if gate_slug
   exit 0
 end
 
-missing = CertEmission.missing_after_write(TASK_BIN, slug, kept)
-if missing.nil?
-  warn "#{summary}, but the read-back failed — UNVERIFIED that the #{kept.size} pre-existing checks line(s) " \
-       "survived. Verify: bin/task show #{slug} -v. #{followup}"
-elsif missing.any?
-  warn "fast-check: evidence recorded on #{slug}, but the read-back is MISSING #{missing.size} pre-existing " \
-       "checks line(s):"
+lost_evidence = missing & recorded
+lost_kept = missing - recorded
+if lost_evidence.any? || lost_kept.any?
+  warn "fast-check: green cert, but the read-back is MISSING #{missing.size} recorded checks line(s):"
   missing.each { |lost| warn "  #{lost}" }
-  # The remedy re-records the UNION — survivors AND lost. `--checks` replaces
-  # the author namespace, so a lost-lines-only command would itself drop the
-  # lines that survived (round-2 review catch, 2026-07-20).
-  # SHELL-quoted (Shellwords), not String#inspect: this command is meant to be
-  # PASTED, and a Ruby literal leaves $(…)/backticks live inside double quotes.
-  warn "fast-check: re-record the full pre-existing set (survivors AND lost — resending only the lost lines " \
-       "would drop the survivors): bin/task update #{slug} " \
-       "#{kept.map { |line_kept| "--checks #{Shellwords.escape(line_kept)}" }.join(' ')}"
+  if lost_evidence.any?
+    # The cert's OWN evidence line(s) did not land — re-running regenerates them.
+    # Never hand-write a "[<lane>@<fp>]" line: that forges the certification.
+    warn "fast-check: the evidence line did NOT land — re-run the cert: bin/fast-check #{slug}"
+  end
+  if lost_kept.any?
+    # Re-record the UNION — survivors AND lost. `--checks` REPLACES the author
+    # namespace, so a lost-lines-only command would itself drop the survivors
+    # (round-2 catch). SHELL-quoted (Shellwords), not String#inspect: this command
+    # is PASTED, and a Ruby literal leaves $(…)/backticks live in double quotes
+    # (round-3 catch).
+    warn "fast-check: re-record the full pre-existing set (survivors AND lost — resending only the lost " \
+         "lines would drop the survivors): bin/task update #{slug} " \
+         "#{kept.map { |line_kept| "--checks #{Shellwords.escape(line_kept)}" }.join(' ')}"
+  end
+  emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
   exit 1
-else
-  warn "#{summary} (read-back confirms all #{kept.size} pre-existing checks line(s) kept). #{followup}"
 end
+
+# Write CONFIRMED on the board — only NOW self-close the G1 attempt success.
+emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--success") if gate_slug
+warn "#{summary} (read-back confirms the evidence line landed" \
+     "#{kept.empty? ? '; no pre-existing checks lines to preserve' : " and all #{kept.size} pre-existing checks line(s) kept"}). " \
+     "#{followup}"
 exit 0

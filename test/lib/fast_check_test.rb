@@ -117,25 +117,54 @@ class FastCheckTest < Minitest::Test
 
   # A stub CLI: appends "<MARKER>\t<argv...>" to STUB_LOG_<MARKER>; exits 1 when
   # FAIL_TOKEN is set and appears in its argv, else 0. For the TASK stub, `show`
-  # prints TASK_SHOW_JSON so the runner's read-merge-write can be exercised. The
-  # stub is minimally STATEFUL for the read-back verification: an `update` drops
-  # a sentinel beside STUB_LOG, after which `show` serves TASK_SHOW_JSON_AFTER_UPDATE
-  # when set (modelling a write the board lost) and FAIL_SHOW_AFTER_UPDATE=1 fails
-  # the post-write read (modelling a read-back blip).
+  # prints TASK_SHOW_JSON so the runner's read-then-write can be exercised.
+  #
+  # It is minimally STATEFUL so the cert's read-back is exercised end to end —
+  # crucially INCLUDING the fresh evidence line, whose runtime fingerprint no
+  # fixture can spell, so the only faithful way to model "the write landed" is to
+  # reflect the ACTUAL written line back:
+  #   * `update` drops a sentinel beside STUB_LOG and CAPTURES the --checks VALUES
+  #     it stored (to .written), so a later `show` can echo them — the real board
+  #     makes a write readable, which is the whole premise of the read-back.
+  #   * `show` after an update serves TASK_SHOW_JSON_AFTER_UPDATE (else
+  #     TASK_SHOW_JSON) with the captured lines merged in, so the read-back sees
+  #     the evidence line the cert actually wrote. Overrides:
+  #       - STUB_READBACK_DROP_WRITTEN=1 → do NOT merge the written lines (models a
+  #         write that never landed — e.g. the evidence line vanished).
+  #       - FAIL_SHOW_AFTER_UPDATE=1 → the post-write read itself fails (a blip).
+  #     TASK_SHOW_JSON_AFTER_UPDATE with a line DROPPED still models a lost
+  #     pre-existing line: the written evidence is merged back, that line is not.
   def write_stub(dir, name, marker)
     stub = File.join(dir, name)
     File.write(stub, <<~RUBY)
       #!#{RbConfig.ruby}
-      File.open(ENV.fetch("STUB_LOG"), "a") { |f| f.puts(["#{marker}", *ARGV].join("\\t")) }
-      sentinel = ENV.fetch("STUB_LOG") + ".updated"
-      File.write(sentinel, "1") if ARGV.first == "update"
+      require "json"
+      log = ENV.fetch("STUB_LOG")
+      File.open(log, "a") { |f| f.puts(["#{marker}", *ARGV].join("\\t")) }
+      sentinel = log + ".updated"
+      written  = log + ".written"
+      if ARGV.first == "update"
+        File.write(sentinel, "1")
+        vals = []
+        i = 0
+        while i < ARGV.length
+          if ARGV[i] == "--checks" then vals << ARGV[i + 1].to_s; i += 2 else i += 1 end
+        end
+        File.open(written, "a") { |f| vals.each { |v| f.puts(v) } }
+      end
       if ARGV.first == "show"
         exit 1 if ENV["FAIL_SHOW_AFTER_UPDATE"] == "1" && File.exist?(sentinel)
         after = ENV["TASK_SHOW_JSON_AFTER_UPDATE"].to_s
-        if !after.empty? && File.exist?(sentinel)
-          puts after
-        elsif ENV["TASK_SHOW_JSON"]
-          puts ENV["TASK_SHOW_JSON"]
+        base  = (!after.empty? && File.exist?(sentinel)) ? after : ENV["TASK_SHOW_JSON"].to_s
+        unless base.empty?
+          doc = JSON.parse(base)
+          if File.exist?(sentinel) && File.exist?(written) && ENV["STUB_READBACK_DROP_WRITTEN"] != "1"
+            dv = ((doc["metadata"] ||= {})["devops"] ||= {})
+            checks = Array(dv["checks_run"])
+            File.readlines(written, chomp: true).each { |w| checks << w unless checks.include?(w) }
+            dv["checks_run"] = checks
+          end
+          puts JSON.generate(doc)
         end
       end
       token = ENV["FAIL_TOKEN"].to_s
@@ -468,6 +497,32 @@ class FastCheckTest < Minitest::Test
     end
   end
 
+  # Round-5 regression (review block, 2026-07-20 — light lane): the cert must
+  # verify the ONE line it OWNS. If the fresh [fast-cert@…] evidence line does not
+  # land on the board, the cert cannot tell "my evidence landed" from "my evidence
+  # vanished" — the missing-signal-read-as-success shape this PR exists to kill,
+  # turned on the cert's own output. A read-back missing the evidence line must
+  # exit NONZERO and say "re-run the cert" (NOT the author re-record remedy — a
+  # hand-written evidence line forges the certification).
+  def test_evidence_line_missing_from_the_read_back_fails_the_cert
+    with_repo do |dir, _|
+      # DROP_WRITTEN models the evidence write never landing; the pre-existing
+      # lines are all still present, so ONLY the cert's own line is missing.
+      out, code, lines = run_check(dir, args: ["task-x"], merge_stderr: true,
+                                   extra_env: { "TASK_SHOW_JSON" => SHOW_JSON,
+                                                "STUB_READBACK_DROP_WRITTEN" => "1" })
+      assert_equal 1, code, "a read-back missing the fresh evidence line must FAIL the cert: #{out}"
+      assert_match(/MISSING/, out)
+      assert_match(/re-run the cert: bin\/fast-check task-x/, out,
+                   "the remedy for a lost evidence line is a re-run, never a hand-written evidence line")
+      refute_match(/read-back confirms/, out, "a vanished evidence line must not report a confirmed cert")
+      # The G1 attempt must close FAILED, not success-while-exit-1.
+      close = lines.select { |l| l[0] == "GATE" && l[1] == "close" }.last
+      refute_nil close
+      assert_includes close, "--failed", "the durable gate must not read success when the command exits 1"
+    end
+  end
+
   # Round-3 regression (review block, 2026-07-20 — Shannon): the recovery command
   # is meant to be PASTED into a shell, so every line must be SHELL-quoted.
   # `String#inspect` is a RUBY literal: it leaves $(…), backticks and friends live
@@ -549,8 +604,10 @@ class FastCheckTest < Minitest::Test
       out, code, = run_check(dir, args: ["task-x"], merge_stderr: true,
                              extra_env: { "TASK_SHOW_JSON" => SHOW_JSON })
       assert_equal 0, code, out
-      assert_match(/read-back confirms all 2 pre-existing checks line/, out,
-                   "the preserved claim states what was verified, with a count")
+      assert_match(/read-back confirms the evidence line landed/, out,
+                   "the confirmed claim names the evidence line the cert verified")
+      assert_match(/all 2 pre-existing checks line\(s\) kept/, out,
+                   "…and states the pre-existing count that was verified")
     end
   end
 
