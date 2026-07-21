@@ -70,6 +70,25 @@ class TaskReviewClaimTest < ActiveSupport::TestCase
     assert_equal "Haunter", out.claim.holder_label
   end
 
+  test "a change-of-hands after expiry does NOT inherit the prior holder's label" do
+    t0 = Time.utc(2026, 7, 21, 3, 0, 0)
+    acquire(**A, now: t0, label: "Gastly")
+    # B takes over after A's lease lapsed, WITHOUT supplying its own label.
+    out = acquire(**B, now: t0 + ClaimLease::DEFAULT_TTL_SECONDS + 1, label: nil)
+    assert out.acquired
+    assert_equal :expired, out.disposition
+    assert_equal "sess-B", out.claim.claimed_session
+    assert_nil out.claim.holder_label, "a new holder must not wear the crashed prior holder's label"
+  end
+
+  test "a same-instance renew with no label keeps the holder's existing label" do
+    t0 = Time.utc(2026, 7, 21, 3, 0, 0)
+    acquire(**A, now: t0, label: "Gastly")
+    out = acquire(**A, now: t0 + 30, label: nil)
+    assert_equal :same_instance, out.disposition
+    assert_equal "Gastly", out.claim.holder_label, "a renew keeps the label it was acquired with"
+  end
+
   test "renew extends only for the holder, never steals" do
     t0 = Time.utc(2026, 7, 21, 3, 0, 0)
     acquire(**A, now: t0)

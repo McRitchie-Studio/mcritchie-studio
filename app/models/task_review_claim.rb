@@ -42,7 +42,10 @@ class TaskReviewClaim < ApplicationRecord
           claimed_session:  session.to_s,
           claim_nonce:      nonce.to_s,
           claim_expires_at: now + ttl,
-          holder_label:     label.to_s.strip.presence || row.holder_label,
+          # keep the holder's own label; on a genuine change-of-hands (expired/
+          # unclaimed) do NOT inherit the PRIOR holder's label — reset to the new
+          # holder's label, or nil, exactly as acquired_at resets below.
+          holder_label:     label.to_s.strip.presence || (disposition == :same_instance ? row.holder_label : nil),
           # keep the original acquired_at across a same-instance renewal; stamp it
           # fresh only when the review genuinely changes hands.
           acquired_at:      (disposition == :same_instance ? (row.acquired_at || now) : now)

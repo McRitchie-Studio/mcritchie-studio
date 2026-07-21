@@ -980,10 +980,16 @@ end
 cmd = ARGV.shift || "help"
 case cmd
 when "list"
+  # --reviewable is a boolean filter (submitted PRs with NO live review claim — the
+  # parallel-review queue). Strip it before parse_flags (which rejects any flag not
+  # in PARSE_FLAG_NAMES) and pass it through as a query param: the same read as
+  # GET /api/v1/tasks?reviewable=1, powered by the Task.reviewable scope.
+  reviewable = !ARGV.delete("--reviewable").nil?
   _pos, _sc, _ls, top = parse_flags(ARGV, context: "list")
   q = []
   q << "stage=#{top["stage"]}" if top["stage"]
   q << "agent_slug=#{top["agent"]}" if top["agent"]
+  q << "reviewable=1" if reviewable
   path = "/api/v1/tasks#{q.empty? ? "" : "?#{q.join("&")}"}"
   tasks = api(:get, path)["data"] || []
   tasks.each { |t| puts "#{t["slug"]}  [#{t["stage"]}]  #{t["title"]}" }
