@@ -201,9 +201,29 @@ class GithubWorkflowRunIngestJobTest < ActiveJob::TestCase
     assert_equal "success", CiCheckJob.find_by(job_id: JOB_ID).conclusion
   end
 
-  test "[unit] a non-CI workflow_job is skipped — the table is for the CI bar only" do
+  test "[unit] a workflow_job outside the CI-suite allowlist is skipped — the table is for the CI meters only" do
+    # A deploy workflow is not a CI-suite verdict, so it never gets a progress row.
     assert_no_difference "CiCheckJob.count" do
       ingest_job(status: "in_progress", workflow_name: "Production Deploy")
+    end
+  end
+
+  test "[unit] a gem's own CI-suite workflow_job IS recorded, tagged with its workflow" do
+    # studio-engine's "Engine CI" is a surfaced release track (GithubWorkflowRun::
+    # CI_PROGRESS_WORKFLOWS), so its per-job progress must be recorded — and tagged
+    # by workflow so the reader can fold it apart from a sibling "Consumer CI".
+    assert_difference "CiCheckJob.count", 1 do
+      ingest_job(status: "completed", conclusion: "success", job_id: JOB_ID + 7,
+                 workflow_name: "Engine CI", head_sha: "engine-main-sha")
+    end
+    assert_equal "Engine CI", CiCheckJob.find_by(head_sha: "engine-main-sha").workflow_name
+  end
+
+  test "[unit] a gem's downstream Consumer CI workflow_job is NOT recorded" do
+    # "Consumer CI" runs the DOWNSTREAM apps' suites on the same gem SHA — not the
+    # gem's own verdict, so it is deliberately outside the allowlist and never rows.
+    assert_no_difference "CiCheckJob.count" do
+      ingest_job(status: "in_progress", workflow_name: "Consumer CI")
     end
   end
 

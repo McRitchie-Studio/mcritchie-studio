@@ -129,17 +129,22 @@
         <%= render "tasks/release_tracker", release: rel %>
       </div>
     <% end %>
-    <%# G3 candidate suite CI meter (Next Release card only): the GitHub CI run on
-        the release-branch tip, shown while the release assembles. Wrapped in the
-        stable-id components/_ci_progress_slot so a live release-branch workflow_job
-        morphs JUST this bar with no reload; renders nothing until a release-branch
-        CI run exists. Same #release-ci-progress id the broadcaster targets. Sits
-        directly below the pizza tracker so the release-progress column reads
-        top-down: member chips, then the stage tracker, then its candidate-suite CI. %>
+    <%# G3 candidate suite CI meters (Next Release card only): ONE track PER MEMBER
+        REPO — a release spanning turf-monster + mcritchie-studio shows two, plus a
+        gem member a third. Each reads that repo's own release-candidate CI (app repos
+        on the `release` tip, gem repos on their `main` suite). Each track is wrapped in
+        the stable-id components/_ci_progress_slot on a PER-REPO #dom_id
+        (release-ci-progress-<repo>) so a live workflow_job for that repo morphs JUST
+        its bar; a repo with no CI run yet renders an empty, zero-height slot the
+        broadcaster can fill in place. Sits directly below the pizza tracker so the
+        release-progress column reads top-down: member chips, then the stage tracker,
+        then its per-app candidate-suite CI. %>
     <% if current %>
-      <%= render "components/ci_progress_slot",
-            dom_id: "release-ci-progress",
-            progress: release_ci_progress(rel),
-            label: "G3 CI", test_id: "release-ci-progress",
-            wrapper_class: "mt-2", inner_test_id: "release-card-ci-progress" %>
+      <% release_ci_progress(rel).each do |repo, progress| %>
+        <%= render "components/ci_progress_slot",
+              dom_id: "release-ci-progress-#{repo}",
+              progress: progress,
+              label: release_ci_track_label(repo), test_id: "release-ci-progress-#{repo}",
+              wrapper_class: "mt-2", inner_test_id: "release-card-ci-progress-#{repo}" %>
+      <% end %>
     <% end %>

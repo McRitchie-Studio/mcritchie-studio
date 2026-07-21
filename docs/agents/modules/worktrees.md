@@ -9,11 +9,10 @@ with an allocated port.
 **Steps 1-3 are what `bin/task begin` automates** — it is the default path for a
 single-repo task (`bin/task begin --title "Three To Five Words" --repo <app> …`,
 or `bin/task begin <task-slug>` to resume), and it prints the worktree path,
-port, and task URL. One caveat while `begin-preflight-wrong-root` is open: its
-preflight step (step 3 here) inspects the PRIMARY checkout, not the new
-worktree, so re-run step 3 yourself from inside the desk. Run the checklist
-by hand when the fast lane does not fit, and use steps 4-10 either way —
-`begin` does not cover them.
+port, and task URL. (`begin` runs step 3 below with `--root <worktree>`, so its
+preflight inspects the desk it just created.) Run the checklist by hand when the
+fast lane does not fit, and use steps 4-10 either way — `begin` does not cover
+them.
 
 Run these in order. Each step names the command and the proof it worked.
 

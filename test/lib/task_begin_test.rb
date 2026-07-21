@@ -85,6 +85,7 @@ class TaskBeginTest < Minitest::Test
       "TASK_CLAIM_NONCE" => "inst-default",
       "TASK_BEGIN_WORKTREE_BIN" => write_stub("worktree-stub", "WORKTREE"),
       "TASK_BEGIN_PREFLIGHT_BIN" => write_stub("preflight-stub", "PREFLIGHT"),
+      "TASK_ACTIVITY_BIN" => write_stub("activity-stub", "ACTIVITY"),
       "TASK_BEGIN_PROJECTS_DIR" => projects,
       "STUB_LOG" => log
     }.merge(TaskUsageSandboxEnv.child_env(sandbox_root)).merge(env))
@@ -204,6 +205,31 @@ class TaskBeginTest < Minitest::Test
     assert_includes out, "bin/ship #{SLUG}", "the summary must name the handoff twin"
   end
 
+  # [unit] begin invokes preflight against the WORKTREE root — the
+  # begin-preflight-wrong-root bug. begin ran the PRIMARY's copy of
+  # session-preflight (BinHelpers.bin_for resolves it relative to bin/task's own
+  # dir), and session-preflight resolves its root from __dir__, so `chdir: worktree`
+  # was cosmetic — it silently inspected the PRIMARY. That is a false GREEN (a desk
+  # it never examined reads "OK") and, whenever the primary drifts behind accepted
+  # (routine), a false RED that EXITS begin non-zero. The fix pins the inspected
+  # root by passing --root <worktree>; assert that handle is present and points at
+  # the task's worktree, not the primary.
+  def test_begin_pins_preflight_root_to_the_worktree
+    _requests, _out, err, status, lines = run_begin([SLUG], existing: building_task)
+
+    assert status.success?, "expected green begin, got:\n#{err}"
+    preflight = lines.find { |l| l[0] == "PREFLIGHT" }
+    assert preflight, "begin must run session-preflight"
+
+    argv = preflight[1...-1] # drop the MARKER (first) and the trailing cwd (last)
+    root_idx = argv.index("--root")
+    assert root_idx, "begin must pass --root to pin preflight to the worktree, got argv: #{argv.inspect}"
+
+    worktree = File.realpath(File.join(sandbox_root, "fake-projects", APP, ".worktrees", SLUG))
+    assert_equal worktree, File.realpath(argv[root_idx + 1]),
+                 "preflight's --root must be the task worktree, not the primary checkout"
+  end
+
   # --- resume ------------------------------------------------------------------
 
   def test_begin_resumes_an_existing_building_task_without_duplicating
@@ -313,6 +339,42 @@ class TaskBeginTest < Minitest::Test
     move = patches_of(requests).find { |r| JSON.parse(r[:body])["stage"] == "building" }
     assert move, "the child move must have claimed the task"
     assert_equal SESSION, JSON.parse(move[:body]).dig("devops", "claimed_session")
+  end
+
+  # --- narration (fast-lane-narrates-activities) -------------------------------
+  # begin owns the session's ORIENT activity so the default fast-lane path leaves
+  # a task-attributed trail from the first move instead of an Unlabeled gap.
+
+  def test_begin_opens_a_task_attributed_orient_activity
+    _requests, _out, _err, status, lines = run_begin(
+      [SLUG], existing: building_task, env: { "CLAUDE_CODE_SESSION_ID" => SESSION }
+    )
+
+    assert status.success?
+    activity = lines.find { |l| l[0] == "ACTIVITY" }
+    assert activity, "begin must open an activity, got markers: #{lines.map(&:first).inspect}"
+    assert_equal "start", activity[1], "the orient activity is opened, not closed"
+    assert_includes activity, "Explore", "the orient activity is an Explore"
+    assert_equal SLUG, activity[activity.index("--task") + 1], "the orient must be task-attributed"
+  end
+
+  def test_begin_narration_is_non_fatal_when_the_activity_cli_fails
+    _requests, _out, _err, status, lines = run_begin(
+      [SLUG], existing: building_task,
+      env: { "CLAUDE_CODE_SESSION_ID" => SESSION, "FAIL_ACTIVITY" => "1" }
+    )
+
+    assert status.success?, "a failing narration CLI must never fail begin"
+    assert(lines.any? { |l| l[0] == "PREFLIGHT" }, "begin still runs its real steps")
+  end
+
+  def test_begin_without_a_session_does_not_narrate
+    # Plain-shell / CI degrade: no session identity ⇒ no orient (nothing to
+    # attribute to), mirroring the claim gate's session-less posture.
+    _requests, _out, _err, status, lines = run_begin([SLUG], existing: building_task)
+
+    assert status.success?
+    refute(lines.any? { |l| l[0] == "ACTIVITY" }, "a session-less begin must not narrate")
   end
 
   # --- guards ------------------------------------------------------------------

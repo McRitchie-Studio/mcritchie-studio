@@ -68,14 +68,46 @@ class Dev::BoardControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "[unit] the endpoints are forbidden outside development/test (production)" do
-    # Resolve the path BEFORE stubbing the env: routes draw lazily, and the dev
-    # namespace only draws when Rails.env.local? — if this test runs first in the
-    # process, drawing under the stub would strip dev_board_* for every later test.
+    # Resolve the path BEFORE stubbing the env. Routes draw lazily (eager_load off
+    # outside CI's non-rake lane) and the dev namespace only draws when
+    # Rails.env.local?, so resolving a dev_board_* helper for the first time under
+    # this production stub would draw the whole set without the dev namespace and
+    # strip dev_board_* for every later test in the worker. test_helper.rb now forces
+    # that first draw up front (belt), and resolving here first is the suspenders.
     path = dev_board_generate_path
     Rails.stub(:env, ActiveSupport::StringInquirer.new("production")) do
       post path
       assert_response :forbidden
     end
+  end
+
+  # REGRESSION GUARD (task fix-dev-board-route-pollution). The bug: this file's
+  # production-guard tests resolved dev_board_* helpers INSIDE a
+  # `Rails.stub(:env, "production")` block. When that was a worker's first route
+  # access (routes are lazy unless eager_load), the whole set drew with
+  # Rails.env.local? false, the dev namespace vanished, and every later
+  # dev_board_* call in that worker raised NameError — deterministically at
+  # seed 30076 (that ordering ran the release-toys guard first). Two invariants
+  # keep it from silently returning:
+  #   1. test_helper draws routes under the real local env before any test runs, so
+  #      the dev namespace is present and the route set is already loaded; and
+  #   2. even a hostile first-touch under a production stub can no longer be the
+  #      draw, so the dev_board_* helpers still resolve.
+  test "[unit] dev route helpers survive being first touched under a production env stub" do
+    assert Rails.application.routes_reloader.loaded,
+           "test_helper must draw the route set under the real local env before any test runs"
+    assert_respond_to Rails.application.routes.url_helpers, :dev_board_generate_path,
+                      "the local-only dev namespace must be present under the real (local) test env"
+
+    Rails.stub(:env, ActiveSupport::StringInquirer.new("production")) do
+      # This is the exact shape that used to poison the process — the first touch of
+      # a dev helper happening under the stub. It must now resolve cleanly.
+      assert_nothing_raised { dev_board_generate_path }
+      assert_nothing_raised { dev_board_open_release_path }
+    end
+
+    assert_respond_to Rails.application.routes.url_helpers, :dev_board_generate_path,
+                      "the dev namespace must still be intact for every later caller"
   end
 
   test "[integration] ship_release ships the active release" do
@@ -220,12 +252,20 @@ class Dev::BoardControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "[unit] the release toys are forbidden outside development/test (production)" do
+    # Resolve the paths BEFORE stubbing the env (see the companion note above):
+    # a dev_board_* helper resolved for the first time under the production stub
+    # would draw the whole route set with Rails.env.local? false, stripping the
+    # dev namespace for every later test. test_helper draws routes up front too,
+    # but keep the local hygiene so this test never depends on that ordering.
+    open_path    = dev_board_open_release_path
+    advance_path = dev_board_advance_release_path
+    reset_path   = dev_board_reset_release_path
     Rails.stub(:env, ActiveSupport::StringInquirer.new("production")) do
-      post dev_board_open_release_path
+      post open_path
       assert_response :forbidden
-      post dev_board_advance_release_path
+      post advance_path
       assert_response :forbidden
-      post dev_board_reset_release_path
+      post reset_path
       assert_response :forbidden
     end
   end

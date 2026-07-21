@@ -129,8 +129,15 @@ operator-facing message (chat reply, handoff, task note, PR summary) carries
   needs to dive in: task URL, slug, file path, branch, PR URL, local URL +
   port, function name, exact command. Never trade this layer away for brevity
   — simple is not vague.
+- **Review handoffs lead with a magic link.** Mint a signed-in link that lands
+  on the exact page to review (`Studio::Link.create_magic_link(email:,
+  return_to:, ttl: 12.hours)` → `http://localhost:<port>/l/<token>`) and put it
+  on a `Magic Link:` label above `Local Demo:`. Recipe in the module below.
 - **Form factor:** prefer tables and bulleted lists over paragraphs; keep the
   exact top-level labels (`Task:`, `Local Demo:`, `Local Inbox:`).
+- **Name work by its task slug.** The slug (`remove-prod-deploy-approval`) is the
+  operator's name for the work; a bare PR number (`#610`) is plumbing. PR
+  numbers, branches, and SHAs stay in layer 2, beside the slug they belong to.
 
 Full module: `mcritchie-studio/docs/agents/modules/communication-style.md`.
 
@@ -234,10 +241,9 @@ durably recorded. Mechanics: `docs/agents/modules/devops-task-board.md`.
 - `bin/ship` is **not** `bin/release ship`. `bin/release ship` is the **G4
   production deploy** (`release → main`, ship-authority only); `bin/ship` pins
   base `accepted` and stops at the `submitted` seam.
-- ⚠️ **Known bug:** `begin`'s preflight step inspects the PRIMARY checkout, not
-  the new worktree, so its `OK session preflight passed` can describe a desk it
-  never examined (task `begin-preflight-wrong-root`). Until that lands, re-run
-  `bin/session-preflight <task-slug>` from inside the printed worktree.
+- `begin` passes `--root <worktree>` to `bin/session-preflight`, and the
+  preflight self-defends that the inspected root is the task's own desk — so its
+  verdict describes the worktree it just created, not the primary checkout.
 
 Use the long form when the fast lane does not cover the case: multi-repo tasks,
 a bespoke PR body, a task someone else created and shaped, or any single step
@@ -412,9 +418,8 @@ Use the fast lane: bin/task begin --title "Three To Five Words" --repo <app>
 --kind feature --shape (ui-only|ui+db|backend|library|onchain|onchain-vertical)
 --risk <tags> --accept "<criterion>" --test "<tier>". It creates the task,
 allocates the isolated worktree on an allocated port, claims the task, and
-preflights. Re-run bin/session-preflight <task> from inside the printed
-worktree (begin's preflight reads the wrong root until
-begin-preflight-wrong-root lands) and fix any blockers before implementation.
+preflights (pinning the worktree via --root). Read the preflight output and fix
+any blockers before implementation.
 Write the test tiers your shape requires as you go (unit-first); record them
 tier-tagged in devops["checks_run"]. Before PR handoff, mark local validation
 with `bin/task update <task> --local-url http://localhost:<port>/<path>
@@ -602,8 +607,15 @@ to hunt through prose:
 
 ```text
 Task: https://mcritchie.studio/tasks/<task-slug>
+Magic Link: http://localhost:<port>/l/<token>
 Local Demo: http://localhost:<port>/<path>
 ```
+
+`Magic Link:` is a minted sign-in link that lands on the page under review
+(single-use, 12-hour TTL for reviews) — the recipe lives in
+`mcritchie-studio/docs/agents/modules/communication-style.md`. `Local Demo:`
+stays the plain path: it is the durable fallback and what `--local-url`
+records on the task.
 
 For email or auth flows, also return the printed local inbox:
 

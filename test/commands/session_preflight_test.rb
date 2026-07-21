@@ -103,6 +103,53 @@ class SessionPreflightTest < Minitest::Test
     assert report.fetch("errors").any? { |error| error.include?("behind origin/accepted") }, report.fetch("errors").inspect
   end
 
+  # [unit] SELF-DEFENSE for begin-preflight-wrong-root: a preflight is only
+  # meaningful against the task's OWN checkout. When the inspected root is on a
+  # different branch than the task (the classic failure: the report describes the
+  # PRIMARY, not the task worktree), every drift/PR/overlap number is about the
+  # wrong tree, so the command must REFUSE and say so — never silently report.
+  # Asserted with an UNRELATED branch (not "main", not a ladder rung) so the guard
+  # is the positive property "the inspected checkout holds the task's branch", not
+  # a blacklist of known-wrong branch names.
+  def test_wrong_checkout_root_is_refused
+    task = write_task # devops.branch = feat/session-preflight
+    git("update-ref", "refs/remotes/origin/accepted", head)
+    git("checkout", "-q", "-b", "feat/some-other-desk") # a DIFFERENT branch than the task's
+    # Put the wrong branch genuinely BEHIND accepted so the drift-suppression path is
+    # exercised NON-vacuously: without the wrong_checkout guard a "behind" blocker
+    # would fire; with it, that meaningless drift number for the wrong tree must be
+    # suppressed. (An at-tip wrong branch would make the suppression assertion pass
+    # trivially — there would be no drift to suppress.)
+    git("checkout", "-q", "--detach", "origin/accepted")
+    accepted_commit = commit_file("docs/accepted.md", "moved\n", "accepted moves ahead")
+    git("update-ref", "refs/remotes/origin/accepted", accepted_commit)
+    git("checkout", "-q", "feat/some-other-desk")
+
+    out, _err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
+    refute status.success?, "a root on the wrong branch must be refused"
+
+    report = JSON.parse(out)
+    assert_equal 1, report.fetch("branch").fetch("behind"),
+                 "the wrong branch IS behind accepted — so the suppression below is non-vacuous"
+    assert report.fetch("errors").any? { |error| error.downcase.include?("wrong checkout") },
+           "must name the wrong-checkout blocker, got: #{report.fetch("errors").inspect}"
+    refute report.fetch("errors").any? { |error| error.include?("behind") },
+           "a real-but-meaningless drift number for the wrong tree must be SUPPRESSED, not surfaced"
+  end
+
+  # [unit] The self-defense must NOT fire when the inspected checkout IS the task's
+  # desk — the same-branch case that every green preflight relies on.
+  def test_matching_checkout_root_passes_self_defense
+    task = write_task # devops.branch = feat/session-preflight; repo is on feat/session-preflight
+    git("update-ref", "refs/remotes/origin/accepted", head)
+
+    out, err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
+    assert status.success?, "#{out}\n#{err}"
+    report = JSON.parse(out)
+    refute report.fetch("errors").any? { |error| error.downcase.include?("wrong checkout") },
+           report.fetch("errors").inspect
+  end
+
   def test_base_falls_back_to_release_when_accepted_absent
     task = write_task
 

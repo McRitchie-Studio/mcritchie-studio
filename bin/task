@@ -260,6 +260,24 @@ def claim_nonce
   @claim_nonce = SessionIdentity.nonce(ENV)
 end
 
+# The narration CLI (fast-lane-narrates-activities): `begin` opens the session's
+# ORIENT activity through this so the default fast-lane path leaves a
+# task-attributed trail instead of stranding orientation in the Unlabeled bucket.
+# Overridable for tests.
+ACTIVITY_BIN = ENV.fetch("TASK_ACTIVITY_BIN", File.expand_path("agent-activity", __dir__))
+
+# Fire one bin/agent-activity subcommand, best-effort — narration is NON-FATAL by
+# contract and must NEVER fail a board op. No session identity → skip (nothing to
+# attribute to), mirroring the claim/plain-shell degrade. Output is discarded so
+# narration never clutters the CLI.
+def narrate(*args)
+  return if session_identity.first.nil?
+
+  system(ACTIVITY_BIN, *args, out: File::NULL, err: File::NULL)
+rescue StandardError
+  nil
+end
+
 # Refuse a move-to-building when the task is already claimed by a DIFFERENT,
 # still-live instance — unless --steal. Unclaimed / expired / corrupt /
 # same-instance claim freely. Loud (not a hard block): it prints WHO holds it +
@@ -1119,6 +1137,14 @@ when "begin"
                         steal_hint: "bin/task begin #{slug} --steal")
   end
 
+  # Open the session's ORIENT activity now — after the claim gate admits this
+  # instance, before the worktree/preflight steps that are the session's first
+  # real tool calls — so the fast-lane trail is task-attributed from the start
+  # (fast-lane-narrates-activities). Non-fatal; the agent stays free to open its
+  # own finer-grained activities in between, and bin/ship closes the trail.
+  narrate("start", "--category", "Explore", "--task", slug,
+          "--reason", "orient: #{task["title"].to_s.strip.empty? ? slug : task["title"]}")
+
   app = [(lists["repositories"].first if lists.key?("repositories")), Array(dv["repositories"]).first,
          "mcritchie-studio"].find { |v| !v.to_s.strip.empty? }
   worktree_slug = [dv["worktree_slug"], slug].find { |v| !v.to_s.strip.empty? }
@@ -1161,7 +1187,12 @@ when "begin"
   worktree_dir = CertRootGuard.worktree_hint(worktree_slug, ENV["TASK_BEGIN_PROJECTS_DIR"])
   die!("worktree #{worktree_slug.inspect} not found on disk after allocation — check bin/agent-worktree output") if worktree_dir.nil?
   preflight_bin = BinHelpers.bin_for("TASK_BEGIN_PREFLIGHT_BIN", "session-preflight")
-  begin_step!("5/5 preflight", slug, preflight_bin, slug, chdir: worktree_dir)
+  # Pin the inspected root to the worktree. session-preflight resolves its own
+  # root from __dir__, so `chdir` alone left the primary's copy inspecting the
+  # PRIMARY (begin-preflight-wrong-root): a false GREEN, and a false RED that
+  # exited begin whenever the primary drifted behind accepted. --root names the
+  # desk explicitly; session-preflight self-defends that it really is this task's.
+  begin_step!("5/5 preflight", slug, preflight_bin, slug, "--root", worktree_dir, chdir: worktree_dir)
 
   context = begin
     JSON.parse(File.read(File.join(worktree_dir, ".agent-context.json")))

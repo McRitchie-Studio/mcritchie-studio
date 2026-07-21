@@ -314,6 +314,36 @@ class InstallAgentSkillsTest < Minitest::Test
       "check should report the Codex skill as matching")
   end
 
+  # [unit] install-check-worktree-advice: a failing `check` run from a WORKTREE
+  # must NOT hand back a publish command. The entry docs/skills install GLOBALLY,
+  # so `bin/install-agent-docs` from a feature desk would push unreviewed,
+  # mid-branch text to the shared roots and flip every concurrent session to
+  # "installed docs drift". From a worktree, check gives POST-MERGE sequencing;
+  # only the primary gets the install command. Worktree-ness is ROOT != RUNTIME_ROOT.
+  def test_check_from_a_worktree_gives_post_merge_advice_not_a_publish_command
+    run_installer("install")
+    File.write(installed_claude_wrap, "#{File.read(installed_claude_wrap)}\nlocal drift\n") # make check FAIL
+    _out, err, status = run_installer("check", "AGENT_DOCS_RUNTIME_ROOT" => "/some/primary-checkout")
+
+    refute status.success?, "drift must fail the check"
+    assert_match(/after .*merge|post-merge|from the primary/i, err,
+                 "a worktree must get post-merge sequencing advice, got:\n#{err}")
+    refute_match(%r{cd \S+ && bin/install-agent-docs}, err,
+                 "a worktree must NEVER be told to RUN the installer — that publishes unreviewed docs fleet-wide")
+  end
+
+  # [unit] The other half of the property: from the PRIMARY (ROOT == RUNTIME_ROOT)
+  # a failing check DOES print the install command, because there it is correct.
+  def test_check_from_the_primary_gives_the_install_command
+    run_installer("install")
+    File.write(installed_claude_wrap, "#{File.read(installed_claude_wrap)}\nlocal drift\n")
+    _out, err, status = run_installer("check", "AGENT_DOCS_RUNTIME_ROOT" => ROOT) # ROOT == the script's $ROOT ⇒ primary
+
+    refute status.success?, "drift must fail the check"
+    assert_match(%r{Run: cd \S+ && bin/install-agent-docs}, err,
+                 "the primary must be told to install, got:\n#{err}")
+  end
+
   def test_integration_check_fails_when_any_local_skill_modified
     installed_wraps.each do |path|
       run_installer("install")

@@ -31,7 +31,18 @@ module Ci
     DEFAULT_OWNER = ENV.fetch("GITHUB_REPO_OWNER", "amcritchie").freeze
 
     # The repo whose `release` branch tip carries the G3 candidate suite CI run.
+    # Retained for the task-card fallback repo; the release meter now reads EVERY
+    # member repo (see for_release), not just the hub.
     HUB_REPO = "mcritchie-studio"
+
+    # A GEM member has no `release` branch (two-rung ladder), so its release-candidate
+    # verdict is its OWN suite CI on `main`. GEM_CI_WORKFLOWS pins WHICH workflow that
+    # is per gem — studio-engine also runs a "Consumer CI" on main (the downstream
+    # apps' suites), which is NOT the gem's own verdict, so the name filter is
+    # load-bearing. A gem absent from this map resolves the newest `main` run of any
+    # workflow (solana-studio ships none → a blank, invisible track).
+    GEM_CI_WORKFLOWS = { "studio-engine" => "Engine CI" }.freeze
+    GEM_CI_BRANCH = "main"
 
     # Only a submitted-onward task shows a CI bar — before the PR there is no run.
     TASK_STAGES_WITH_CI = %w[submitted reviewed assembled].freeze
@@ -81,29 +92,76 @@ module Ci
       end
     end
 
-    # The G3 candidate suite: the CI run on the release-branch tip of the hub repo,
-    # shown while the release is assembling/assembled. Blank otherwise.
+    # The G3 candidate suite CI, decomposed ONE TRACK PER MEMBER REPO: a release
+    # spanning turf-monster + mcritchie-studio yields two entries, +studio-engine
+    # three — one per app whose code is actually in the release. Returns an ordered
+    # { repo_slug => Ci::CheckProgress } (producer-first, mirroring ordered_members),
+    # or {} when the release is not active.
+    #
+    # Each repo reads its OWN release-candidate CI run, resolved by ci_target_for:
+    #   * an APP repo — the `name: "CI"` run on the swept `release` branch tip
+    #     (already per-repo: each app is its own GitHub repo and each runs CI on
+    #     push:release, ingested into GithubWorkflowRun/CiCheckJob keyed on repo+sha);
+    #   * a GEM repo — its own two-rung suite on `main` (studio-engine's "Engine CI"),
+    #     since a gem has no `release` branch.
+    #
+    # Every member repo gets an ENTRY even with no ingested run yet — a blank
+    # CheckProgress (renders an empty, zero-height slot) — so the live #dom_id target
+    # exists before that repo's first check settles and the broadcaster can morph it in.
     def for_release(release)
-      return CheckProgress.blank unless release.respond_to?(:active?) && release.active?
+      return {} unless release.respond_to?(:active?) && release.active?
 
-      nwo = nwo_for(HUB_REPO)
-      sha = latest_ci_sha(nwo, Release::BRANCH)
-      return CheckProgress.blank unless sha
+      member_repos(release).index_with do |repo|
+        nwo, branch, workflow = ci_target_for(repo)
+        sha = branch.present? ? latest_ci_sha(nwo, branch, workflow) : nil
+        # Scope the fold to the target workflow — a gem's `main` SHA carries a sibling
+        # "Consumer CI" the gem track must not blend in.
+        sha ? for_sha(nwo, sha, workflow) : CheckProgress.blank
+      end
+    end
 
-      for_sha(nwo, sha)
+    # The ONE release-CI track a `workflow_job` on (nwo, branch) affects, as
+    # [repo_slug, Ci::CheckProgress], or nil — the live broadcaster's fan-out unit, so
+    # a single job event morphs JUST that repo's G3 track. Fires only when nwo is a
+    # MEMBER repo of the active release AND `branch` is the branch that repo's track
+    # reads (app → `release`, gem → `main`), so a hub `main` push — whose release track
+    # lives on `release` — never triggers a release-CI morph on the wrong branch.
+    def release_ci_slot_for(release, nwo, branch)
+      return nil unless release.respond_to?(:active?) && release.active?
+
+      repo = repo_slug(nwo)
+      return nil unless member_repos(release).include?(repo)
+
+      target_nwo, target_branch, workflow = ci_target_for(repo)
+      return nil unless branch.to_s == target_branch
+
+      sha = latest_ci_sha(target_nwo, target_branch, workflow)
+      [repo, sha ? for_sha(target_nwo, sha, workflow) : CheckProgress.blank]
     end
 
     # The core read: SHA -> Ci::CheckProgress. Live-first — a SHA the `workflow_job`
     # webhook has recorded folds straight from CiCheckJob rows (no network); only a
     # SHA with no ingested jobs falls back to the cached, budgeted GitHub API read.
-    def for_sha(nwo, sha)
+    #
+    # `workflow_name` SCOPES the fold to one workflow (the gem path — see for_release).
+    # It is load-bearing in TWO places: the live fold filters CiCheckJob to that
+    # workflow, AND the API fallback is REFUSED for any scoped workflow other than
+    # `CI`. The check-runs API is workflow-BLIND — it returns every workflow's checks
+    # on the SHA — so falling back to it for a gem would re-introduce the exact
+    # blending the scope exists to prevent (a failing "Consumer CI" dragging the gem's
+    # "Engine CI" track red). `CI` is the one safe fallback: it is the only workflow on
+    # the branches an app track reads, so the blind API cannot blend anything there.
+    def for_sha(nwo, sha, workflow_name = nil)
       nwo = nwo.to_s
       sha = sha.to_s
       return CheckProgress.blank if nwo.empty? || sha.empty?
       return fixture_progress(sha) if fixture?(sha)
 
-      live = live_progress(nwo, sha)
+      live = live_progress(nwo, sha, workflow_name)
       return live if live&.present?
+
+      # A workflow-scoped read for anything but CI must not fall back to the blind API.
+      return CheckProgress.blank(sha: sha) if workflow_name.present? && workflow_name != GithubWorkflowRun::CI_WORKFLOW
 
       cache_key = "ci:progress:#{nwo}:#{sha}"
       cached = @cache.read(cache_key)
@@ -136,8 +194,8 @@ module Ci
     # so for_sha falls THROUGH to the cached API read rather than showing an empty bar
     # for a SHA whose jobs simply have not been ingested. Rescued to nil + logged, so
     # a DB hiccup degrades to the API path, never masks it.
-    def live_progress(nwo, sha)
-      rows = CiCheckJob.progress_rows(nwo, sha)
+    def live_progress(nwo, sha, workflow_name = nil)
+      rows = CiCheckJob.progress_rows(nwo, sha, workflow_name)
       return nil if rows.empty?
 
       CheckProgress.from_check_runs(rows, sha: sha)
@@ -186,16 +244,41 @@ module Ci
       "#{DEFAULT_OWNER}/#{repo}"
     end
 
-    # Latest ingested CI-run SHA for one repo+branch, or nil.
-    def latest_ci_sha(nwo, branch)
+    # The bare repo slug from an owner/repo (the inverse of nwo_for) — so a
+    # workflow_job's `repo` full name maps back to a release member slug.
+    def repo_slug(nwo)
+      nwo.to_s.strip.split("/").last.to_s
+    end
+
+    # The DISTINCT member repos of a release, producer-first (mirroring
+    # ordered_members: gems before apps), one entry per repo whose code is in the
+    # release. Empty for a release with no members or that cannot enumerate them.
+    def member_repos(release)
+      return [] unless release.respond_to?(:ordered_members)
+
+      release.ordered_members.filter_map { |task| task.release_repo.presence }.uniq
+    end
+
+    # Where a repo's release-candidate CI lives: [nwo, branch, workflow_name]. App
+    # repos → the `release` branch's `name: "CI"` run; gem repos → their own suite on
+    # `main` (workflow may be nil for an unmapped gem, meaning "newest main run of any
+    # workflow"). See GEM_CI_WORKFLOWS.
+    def ci_target_for(repo)
+      nwo = nwo_for(repo)
+      return [nwo, GEM_CI_BRANCH, GEM_CI_WORKFLOWS[repo]] if Release::Repos.gem?(repo)
+
+      [nwo, Release::BRANCH, GithubWorkflowRun::CI_WORKFLOW]
+    end
+
+    # Latest ingested CI-run SHA for one repo+branch, or nil. `workflow_name` scopes
+    # to a single workflow (the app-repo default `"CI"`); pass nil to take the newest
+    # run on the branch regardless of workflow (the unmapped-gem fallback).
+    def latest_ci_sha(nwo, branch, workflow_name = GithubWorkflowRun::CI_WORKFLOW)
       return nil if nwo.to_s.empty? || branch.to_s.empty?
 
-      GithubWorkflowRun
-        .for_repo(nwo)
-        .where(head_branch: branch, workflow_name: GithubWorkflowRun::CI_WORKFLOW)
-        .order(Arel.sql(LATEST_RUN_ORDER))
-        .limit(1)
-        .pick(:head_sha)
+      scope = GithubWorkflowRun.for_repo(nwo).where(head_branch: branch)
+      scope = scope.where(workflow_name: workflow_name) if workflow_name.present?
+      scope.order(Arel.sql(LATEST_RUN_ORDER)).limit(1).pick(:head_sha)
     end
 
     # Batched sibling of latest_ci_sha: one query for every [nwo, branch] pair.
