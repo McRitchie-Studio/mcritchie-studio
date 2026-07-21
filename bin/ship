@@ -191,6 +191,18 @@ def git(root, *args)
   [out, $?.success?]
 end
 
+# A push that CAPTURES git's combined output (its rejection hints go to stderr), so
+# the caller can tell a non-fast-forward apart from a real failure. lease:true adds
+# --force-with-lease — safe by construction: it refuses unless the remote tip is
+# still the one our remote-tracking ref records (never a bare --force).
+def git_push(root, branch, lease: false)
+  cmd = ["git", "-C", root, "push"]
+  cmd << "--force-with-lease" if lease
+  cmd += ["-u", "origin", branch]
+  out = IO.popen(cmd, err: [:child, :out], &:read).to_s
+  [out, $?.success?]
+end
+
 actual_branch, = git(root, "rev-parse", "--abbrev-ref", "HEAD")
 unless actual_branch == branch
   die!("#{root} has #{actual_branch.inspect} checked out, not the task branch #{branch.inspect} — " \
@@ -231,9 +243,30 @@ end
 
 # --- 3/7 push ----------------------------------------------------------------
 
+# A plain push fast-forwards the common case (first push, or the branch only
+# grew). It fails NON-FAST-FORWARD when the branch was REBASED — routine here,
+# because accepted moves constantly and desks rebase onto it. That is not an error
+# to paper over with a merge (git's own "pull before pushing" hint reintroduces the
+# pre-rebase history) nor with a bare --force (which would clobber a genuine
+# foreign commit). --force-with-lease threads the needle: it replays a rebased
+# branch, and REFUSES when the remote tip is not the one our remote-tracking ref
+# records — i.e. when someone else pushed. So: try plain; on a non-fast-forward,
+# retry with the lease; if the lease refuses, real foreign work is on the remote —
+# stop and send the operator to reconcile.
 say "3/7 push — git push -u origin #{branch}"
-unless system("git", "-C", root, "push", "-u", "origin", branch)
-  die!("git push failed — resolve (fetch/rebase?) and re-run bin/ship #{slug}.")
+out, pushed = git_push(root, branch)
+unless pushed
+  if out =~ /\((?:non-fast-forward|fetch first)\)|!\s*\[rejected\]/i
+    say "3/7 push — non-fast-forward (the branch was rebased); retrying with --force-with-lease."
+    out, leased = git_push(root, branch, lease: true)
+    unless leased
+      die!("push refused by --force-with-lease: origin/#{branch} moved under you — someone else pushed a commit " \
+           "your branch does not have. This is NOT a rebase, and ship never force-pushes over foreign work. " \
+           "Reconcile first (git fetch origin #{branch}; git rebase origin/#{branch}), then re-run bin/ship #{slug}.\n#{out}")
+    end
+  else
+    die!("git push failed — resolve it and re-run bin/ship #{slug}.\n#{out}")
+  end
 end
 
 # --- 4/7 PR (non-draft, base #{BASE_BRANCH}) ---------------------------------
