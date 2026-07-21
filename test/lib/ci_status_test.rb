@@ -467,6 +467,58 @@ class CiStatusTest < Minitest::Test
     assert_match(%r{git merge origin/accepted\b}, remedy)
   end
 
+  # --- conflict-remedy-names-wrong-branch -------------------------------------
+  # The :conflicted (mergeStateStatus DIRTY) remedy must read the PR's ACTUAL base,
+  # not a hardcoded `release`. Feature PRs target `accepted`, so "git merge
+  # origin/release" names the WRONG branch and would pull unreviewed release-only
+  # content into the PR. This mirrors the :ci_less remedy, which already got it
+  # right — same properties, asserted for :conflicted.
+
+  def test_view_verdict_conflicted_carries_the_pr_base
+    v = CiStatus.view_verdict(view("OPEN", "DIRTY", base: "accepted"))
+    assert_equal :conflicted, v[:state]
+    assert_equal "accepted", v[:base], "the conflicted verdict must surface the PR's base so the remedy can name it"
+  end
+
+  def conflicted_remedy_for(base)
+    CiStatus.conflicted_remedy(CiStatus.view_verdict(view("OPEN", "DIRTY", base: base)))
+  end
+
+  def test_conflicted_remedy_names_the_pr_base_not_a_hardcoded_release
+    remedy = conflicted_remedy_for("accepted")
+    assert_match(%r{git merge origin/accepted\b}, remedy, "the remedy must merge the PR's ACTUAL base")
+    refute_match(%r{origin/release\b}, remedy, "it must NOT hardcode release — feature PRs target accepted")
+  end
+
+  def test_conflicted_remedy_is_failure_safe_merge_not_rebase_with_a_way_back
+    remedy = conflicted_remedy_for("accepted")
+    refute_includes remedy, "&&", "no && chain past a step that can halt (the advice-failure-path lesson)"
+    assert_match(%r{git merge origin/accepted}, remedy, "prefer merge — a halted merge leaves the branch untouched")
+    refute_match(/git rebase/, remedy, "a rebase halt rewrites history; the conflict remedy must merge")
+    assert_match(/--abort/, remedy, "the remedy must name a way back to a known-good state")
+    assert_match(/resolve/i, remedy, "and tell the operator to resolve the conflicts")
+  end
+
+  def test_conflicted_remedy_omits_commands_when_the_base_is_unknown
+    remedy = CiStatus.conflicted_remedy(CiStatus.view_verdict(view("OPEN", "DIRTY")))
+    refute_match(%r{origin/\S*\s}, remedy, "no half-built origin/<placeholder> ref may be printed")
+    refute_match(/git (merge|rebase|fetch)/, remedy, "with no base resolved, omit the commands — never guess them")
+    assert_match(/base/i, remedy, "it still has to say what is missing")
+  end
+
+  # [integration] The SAME fix must land in BOTH callers — neither bin/pr-review nor
+  # bin/dor-check may hardcode the conflict cure's branch; both route through
+  # CiStatus.conflicted_remedy so one PR cannot collect three cures (the ci_less lesson).
+  def test_pr_review_and_dor_check_do_not_hardcode_the_conflict_branch
+    %w[pr-review dor-check].each do |bin|
+      src = File.read(File.expand_path("../../bin/#{bin}", __dir__))
+      refute_match(%r{git merge origin/release},  src,
+                   "bin/#{bin} must not hardcode `git merge origin/release` in the conflict remedy")
+      assert_includes src, "conflicted_remedy",
+                       "bin/#{bin} must route the :conflicted cure through CiStatus.conflicted_remedy"
+    end
+  end
+
   def test_ci_less_is_an_injectable_token
     # The DOR_CHECK_CI_STATUS / PR_REVIEW_CI_STATUS seam, so the CLI tests can drive
     # the state without a network.

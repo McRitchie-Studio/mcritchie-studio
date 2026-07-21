@@ -35,7 +35,7 @@ self-closes its own `g1_cert` window, and CI stays a **handoff, not a gate**
 - The PR's **live GitHub CI** is not failing (a red, closed/merged,
   merge-conflicted, or **ci-less** PR is refused — `mergeStateStatus DIRTY`
   means GitHub can't compute the merge commit, so that PR's CI **never fires**;
-  the fix is rebase/merge release. **ci-less** is the same fact arriving without
+  the fix is merge the PR's base in and resolve. **ci-less** is the same fact arriving without
   `DIRTY`: zero check-runs plus GitHub *affirmatively* reporting the merge is
   refused. An **undetermined** mergeability is NOT this state — it is a wait).
   CI is checked here but **never its own gate** — it records as a `ci` SOP on
@@ -209,7 +209,7 @@ The CI **wait** belongs to the review handoff, not the builder's wall-clock
   supervisor checks the PR's live CI **before spawning reviewers** — red bounces
   the task back naming the failing checks (recorded as a failed `dor_review`
   attempt with a `ci` SOP), a **conflicted** PR bounces back the same way
-  (`outcome=ci-conflicted`, rebase/merge release named — its CI is never
+  (`outcome=ci-conflicted`, "merge the PR's base in and resolve" named — its CI is never
   coming, so a defer would strand it), a **ci-less** PR bounces back too
   (`outcome=ci-less`), pending defers the wave — and the
   primary's gate-zero

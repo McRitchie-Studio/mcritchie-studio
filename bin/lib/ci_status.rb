@@ -14,7 +14,7 @@ require "shellwords"
 #   :conflicted     — mergeStateStatus DIRTY: the PR has merge conflicts against its
 #                     base, so GitHub CANNOT compute the merge commit and the
 #                     pull_request workflow NEVER fires — the PR has NO CI, not a
-#                     pending one → BLOCK, with "rebase/merge release" as the fix.
+#                     pending one → BLOCK, with "merge the PR's base in and resolve" as the fix.
 #                     Folding this into :none is the PR-#509 stall (2026-07-12): the
 #                     review wave deferred it forever while the board looked healthy.
 #   :ci_less        — ZERO check-runs AND GitHub AFFIRMATIVELY reports the merge is
@@ -267,6 +267,34 @@ module CiStatus
       "`git push` and re-run this check — GitHub can then compute the merge commit and CI fires."
   end
 
+  # THE ONE REMEDY STRING for :conflicted (mergeStateStatus DIRTY) — the twin of
+  # ci_less_remedy. dor-check and pr-review both CALL this, so a conflicted PR
+  # collects ONE cure, not two hand-rolled ones that drift. It reads the PR's ACTUAL
+  # base (conflict-remedy-names-wrong-branch): the old wording hardcoded `git merge
+  # origin/release`, but feature PRs target `accepted` under the accepted→release→main
+  # ladder, so following it merged unreviewed release-only content into the branch.
+  # Same failure-safe shape as ci_less_remedy: one command at a time (a DIRTY PR IS a
+  # real conflict, so the merge halts), merge over rebase (a halted merge leaves the
+  # branch untouched), a way back stated, and — with no base resolvable — the commands
+  # OMITTED rather than a placeholder interpolated into a runnable `origin/<...>`.
+  def self.conflicted_remedy(verdict = nil)
+    v = verdict.is_a?(Hash) ? verdict : {}
+    base = v[:base].to_s.strip
+    diagnosis =
+      "This PR is merge-CONFLICTED against its base (mergeStateStatus DIRTY): GitHub cannot compute a merge " \
+      "commit for it, so it never queues the pull_request workflow and the head SHA has ZERO check-runs. This " \
+      "is NOT pending CI — waiting can never clear it."
+    return "#{diagnosis} The base branch could not be resolved from the PR, so no commands are given here: " \
+           "read the PR's base on GitHub, then bring it into the branch and resolve the conflicts." if base.empty?
+
+    "#{diagnosis} Fix — run these ONE AT A TIME, because the merge stops when it finds conflicts:\n" \
+      "  git fetch origin\n" \
+      "  git merge origin/#{base}\n" \
+      "If it reports conflicts: resolve them, then `git add -A` and `git commit`. To return the branch to " \
+      "exactly where it started instead, run `git merge --abort`. Once the tree is clean and committed, " \
+      "`git push` and re-run this check — GitHub can then compute the merge commit and CI fires."
+  end
+
   # An AUTH/PERMISSION denial — the token is understood and REFUSED, as opposed to a
   # 404 (ambiguous: a force-pushed SHA answers 404 too) or a transport error. Matched
   # against the RAW gh output, because `gh api` prints the JSON error body on stdout
@@ -421,7 +449,12 @@ module CiStatus
       return { state: :unverified, reason: raw.to_s.lines.first.to_s.strip[0, 140] }
     end
     return { state: state.downcase.to_sym } unless state == "OPEN"
-    return { state: :conflicted, merge_state: "DIRTY" } if data["mergeStateStatus"].to_s.upcase == "DIRTY"
+    # Carry the PR's base so conflicted_remedy can name the RIGHT branch to merge —
+    # feature PRs target `accepted`, not a hardcoded `release`
+    # (conflict-remedy-names-wrong-branch). Same field ci_less_verdict surfaces.
+    if data["mergeStateStatus"].to_s.upcase == "DIRTY"
+      return { state: :conflicted, merge_state: "DIRTY", base: data["baseRefName"].to_s }
+    end
 
     nil
   end
