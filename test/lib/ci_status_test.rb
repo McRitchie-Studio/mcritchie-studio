@@ -512,8 +512,12 @@ class CiStatusTest < Minitest::Test
   def test_pr_review_and_dor_check_do_not_hardcode_the_conflict_branch
     %w[pr-review dor-check].each do |bin|
       src = File.read(File.expand_path("../../bin/#{bin}", __dir__))
-      refute_match(%r{git merge origin/release},  src,
-                   "bin/#{bin} must not hardcode `git merge origin/release` in the conflict remedy")
+      # Catch the CLASS, not one spelling: `git merge origin/release`, `merge
+      # release into the branch`, etc. all hardcode the wrong branch. (This guard
+      # itself missed the second spelling on the fresh-fast-cert path in round 1 —
+      # the very lesson.)
+      refute_match(%r{merge\s+(?:origin/)?release\b}, src,
+                   "bin/#{bin} must not hardcode a `merge release` / `merge origin/release` conflict cure")
       assert_includes src, "conflicted_remedy",
                        "bin/#{bin} must route the :conflicted cure through CiStatus.conflicted_remedy"
     end

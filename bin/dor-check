@@ -617,8 +617,9 @@ def suite_evidence_error(eval, slug, ci, review_role)
     state = ci && ci[:state] ? ci[:state].to_s.upcase : "UNKNOWN"
     guidance =
       if ci && ci[:state] == :conflicted
-        "This PR is merge-CONFLICTED (mergeStateStatus DIRTY), so its CI will NEVER fire — rebase or merge " \
-          "release into the branch, resolve the conflicts, and push; the refreshed PR then runs CI"
+        # The PR's ACTUAL base, via the centralized remedy — the twin of the
+        # :ci_less case beside it (conflict-remedy-names-wrong-branch).
+        CiStatus.conflicted_remedy(ci)
       elsif ci && ci[:state] == :ci_less
         # A fast cert is credited against a GREEN CI, and here there is no CI to be
         # green — waiting for one is the exact trap this state exists to break.

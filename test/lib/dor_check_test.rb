@@ -1721,6 +1721,19 @@ class DorCheckTest < Minitest::Test
     assert_match(/fast-cert evidence is FRESH/, out, "the suite gate refuses too — fast needs CI green")
   end
 
+  # conflict-remedy-names-wrong-branch: the fresh-fast-cert path ALSO emits a conflict
+  # cure (suite_evidence_error), and it HARDCODED "merge release into the branch" —
+  # the reachable path both reviewers flagged, and the one untested CI state here. It
+  # must route through CiStatus.conflicted_remedy and never name a hardcoded release.
+  def test_fresh_fast_cert_with_conflicted_ci_names_the_base_not_release
+    out, code = fast_check_ci("fast_fresh", "conflicted")
+    assert_equal 1, code, out
+    assert_match(/CONFLICTED/i, out, "a conflicted PR on the fresh-cert path is refused, not credited")
+    assert_match(/resolve/i, out, "the guidance names the fix — resolve the conflicts")
+    refute_match(%r{merge\s+(?:origin/)?release\b}, out,
+                 "the cure must NOT hardcode release — feature PRs target accepted")
+  end
+
   def test_fresh_fast_cert_with_pending_ci_is_credited_provisionally_at_submit
     # ci-gate-review-handoff: submit-side, a fresh fast cert with CI still running
     # is credited PROVISIONALLY — the builder hands off now, and the review-side
