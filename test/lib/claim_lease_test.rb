@@ -151,6 +151,68 @@ class ClaimLeaseTest < Minitest::Test
     assert_equal :held_by_other, ClaimLease.evaluate(held, session: OTHER_SESSION, nonce: "", now: NOW)
   end
 
+  # --- ship-claim-blank-nonce: absence of a nonce is NOT a different instance ---
+  # A BLANK nonce on EITHER side means "instance unknown" (the SessionIdentity
+  # degrade contract), so a same-session claim still reads as the SAME instance.
+  # The live failure: a detached status-line heartbeat renewal blanked the STORED
+  # nonce, then the true owner's populated CURRENT nonce was compared against blank
+  # and the owner was locked out of its OWN task. Assert the POSITIVE invariant
+  # across the whole nonce-visibility matrix, not one spelling: two DISTINCT live
+  # instances are refused ONLY when BOTH nonces are known and differ; every case
+  # with a blank on either side degrades to session-level.
+  def test_same_session_blank_nonce_on_either_side_is_the_same_instance
+    good = "inst-A"
+    { # [stored_nonce, current_nonce] => expected disposition, same session
+      ["", good]       => :same_instance,  # the live bug: blank stored, populated current
+      [good, ""]       => :same_instance,  # current process can't resolve a nonce (degrade)
+      ["", ""]         => :same_instance,  # neither side knows (matrix completeness)
+      [good, good]     => :same_instance,  # the very same instance re-asking
+      [good, "inst-B"] => :held_by_other   # BOTH known and differ → two real terminals
+    }.each do |(stored, current), expected|
+      decision = ClaimLease.evaluate(claim(nonce: stored), session: SESSION, nonce: current, now: NOW)
+      assert_equal expected, decision,
+                   "same session, stored=#{stored.inspect}, current=#{current.inspect} must be #{expected}"
+    end
+  end
+
+  def test_blank_stored_nonce_still_refuses_a_different_session
+    # The fix must not over-open: a blank stored nonce degrades to SESSION level,
+    # which still refuses a genuinely different session (the original duplicate-
+    # work guard). Absence lowers the resolution; it never disables the gate.
+    decision = ClaimLease.evaluate(claim(session: SESSION, nonce: ""), session: OTHER_SESSION, nonce: "inst-B", now: NOW)
+    assert_equal :held_by_other, decision, "a different session is refused even when the stored nonce is blank"
+  end
+
+  # --- ship-claim-blank-nonce: renewal must never DOWNGRADE a good nonce -------
+  # The second half of the fix. Once evaluate treats blank as same-instance, the
+  # detached blank-nonce heartbeat no longer SKIPS — it renews. If that renewal
+  # wrote the blank through, it would erase the per-instance token on every render
+  # and permanently weaken the two-terminals guard. A renewal whose fresh nonce is
+  # blank must keep the SAME session's prior nonce.
+  def test_renewed_preserves_a_good_nonce_when_the_fresh_one_is_blank
+    prior = claim(session: SESSION, nonce: "inst-A", expires: NOW + 30)
+    fresh = ClaimLease.renewed(session: SESSION, nonce: "", now: NOW, ttl: 120, prior: prior)
+    assert_equal "inst-A", fresh["claim_nonce"], "a blank renewal must not erase the stored nonce"
+    assert_equal (NOW + 120).utc.iso8601, fresh["claim_expires_at"], "the lease is still freshly extended"
+    # The preserved nonce keeps the two-terminals guard alive for the task.
+    assert_equal :held_by_other, ClaimLease.evaluate(fresh, session: SESSION, nonce: "inst-B", now: NOW)
+  end
+
+  def test_renewed_never_inherits_a_different_sessions_nonce
+    prior = claim(session: OTHER_SESSION, nonce: "inst-A", expires: NOW + 30)
+    fresh = ClaimLease.renewed(session: SESSION, nonce: "", now: NOW, ttl: 120, prior: prior)
+    assert_equal "", fresh["claim_nonce"], "a different session's nonce must never be inherited"
+    assert_equal SESSION, fresh["claimed_session"]
+  end
+
+  def test_renewed_prefers_a_freshly_resolved_nonce_over_the_prior
+    # A later render that DOES resolve a nonce re-populates a blanked claim — this
+    # is how the blank self-heals. A resolved nonce always wins over the prior.
+    prior = claim(session: SESSION, nonce: "", expires: NOW + 30)
+    fresh = ClaimLease.renewed(session: SESSION, nonce: "inst-A", now: NOW, ttl: 120, prior: prior)
+    assert_equal "inst-A", fresh["claim_nonce"], "a freshly resolved nonce heals a previously blank claim"
+  end
+
   # --- live? + heartbeat_age + renewed -----------------------------------------
 
   def test_live_predicate
