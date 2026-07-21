@@ -88,11 +88,27 @@ class AgentWorktreeTest < Minitest::Test
 
   # --- worktree header task line (fast-lane-output-clarity) --------------------
 
-  # [unit] The header's task line must not READ like a failure when the desk isn't
-  # bound yet. `new`/`plan` print this before bind-task runs, and the old
-  # "bind after task creation" fallback — seen top-down inside `bin/task begin`,
-  # which binds at its very next step — looked as if the bind had FAILED. The
-  # fallback now states the next action plainly instead.
+  # [unit] The task-line VALUE: a bound URL passes through; an unbound desk gets a
+  # non-alarming "here's how to bind" fallback, never the old "bind after task
+  # creation" that read like a failed bind inside `bin/task begin`.
+  def test_task_line_value_falls_back_to_a_non_alarming_message
+    out = run_in_script(<<~RUBY)
+      print [
+        task_line_value("https://mcritchie.studio/tasks/demo"),
+        "|",
+        task_line_value(nil)
+      ].join
+    RUBY
+    bound, unbound = out.split("|", 2)
+    assert_equal "https://mcritchie.studio/tasks/demo", bound, "a bound URL passes through unchanged"
+    refute_includes unbound, "bind after task creation", "the stale, failure-reading fallback is gone"
+    assert_includes unbound, "bind-task", "the fallback names the next action"
+  end
+
+  # [integration] The whole header render through the REAL script (load + print_plan):
+  # the `task:` line must not READ like a failure when the desk isn't bound yet.
+  # `new`/`plan` print this before bind-task runs, and inside `bin/task begin` — which
+  # binds at its very next step — the old fallback looked as if the bind had FAILED.
   def test_worktree_header_task_line_is_not_alarming_when_unbound
     out = run_in_script(<<~RUBY)
       def task_url(_v); nil; end                  # the desk is not bound yet

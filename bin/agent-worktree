@@ -769,12 +769,20 @@ def command_env(app, values)
   values.merge("PATH" => path_parts.join(":"))
 end
 
+# The worktree header's `task:` value: the bound task URL, or a non-alarming
+# "not yet bound, here's how" fallback (fast-lane-output-clarity). The old
+# fallback ("bind after task creation"), read top-down inside `bin/task begin`
+# — which binds at its very next step — looked as if the bind had FAILED.
+def task_line_value(task_record_url)
+  task_record_url || "(unbound — run bind-task to bind)"
+end
+
 def print_plan(app, task, values, dir = worktree_dir(app, task))
   redis_db = values.fetch("REDIS_URL").split("/").last
   task_record_url = task_url(values)
   puts "app:      #{app.fetch("display_name", app.fetch("slug"))}"
   puts "repo:     #{app.fetch("repo")}"
-  puts "task:     #{task_record_url || "(unbound — run bind-task to bind)"}"
+  puts "task:     #{task_line_value(task_record_url)}"
   puts "worktree: #{dir}"
   puts "url:      http://localhost:#{values.fetch("APP_PORT")}"
   puts "email:    http://localhost:#{values.fetch("APP_PORT")}/_studio/local_emails"
