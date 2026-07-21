@@ -45,11 +45,9 @@ stops at `submitted` and never merges or deploys; `bin/ship` has no `--steal`
 (take a held task over with `bin/task begin <task-slug> --steal`, then ship);
 you still write the tests in step 3; and `bin/ship` is **not** `bin/release
 ship`, which is the G4 **production** deploy (`release → main`,
-ship-authority only). ⚠️ Known bug: `begin`'s preflight step inspects the
-PRIMARY checkout rather than the new worktree, so its "OK session preflight
-passed" can describe a desk it never examined (task
-`begin-preflight-wrong-root`) — until that lands, re-run
-`bin/session-preflight <task-slug>` from inside the printed worktree.
+ship-authority only). `begin` passes `--root <worktree>` to
+`bin/session-preflight`, and the preflight self-defends that the inspected root
+is the task's own desk, so its verdict describes the worktree it just created.
 
 The long form below stays canonical for what the wrappers don't cover
 (multi-repo tasks, a bespoke PR body, rerunning one step piecemeal). Either

@@ -473,15 +473,11 @@ the dangerous direction — reaching for `bin/ship` when you meant production do
 strictly less — but it has already caused one false alarm in a review brief, so
 name the distinction rather than assume it.
 
-⚠️ **Known bug — `begin`'s preflight reads the wrong root.** Step 5 of `begin`
-invokes `bin/session-preflight` such that it inspects the PRIMARY checkout
-rather than the worktree it just created (`session-preflight` roots at its own
-file location — see `modules/worktrees.md`, Fresh Worktree Checklist step 3).
-It can therefore print `OK session preflight passed`, and a `Branch:` line
-naming the primary's branch, for a desk it never examined. Tracked as
-`begin-preflight-wrong-root`. Until it lands, treat begin's preflight verdict as
-unproven and re-run `bin/session-preflight <task-slug>` from inside the printed
-worktree.
+`begin`'s step 5 invokes `bin/session-preflight` with `--root <worktree>` (the
+script otherwise roots at its own file location — see `modules/worktrees.md`,
+Fresh Worktree Checklist step 3), and the preflight self-defends that the
+inspected root carries the task's branch, refusing a mismatched checkout. So
+begin's preflight verdict describes the worktree it just created.
 
 ## QA / Avi Duties
 
