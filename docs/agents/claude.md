@@ -20,8 +20,40 @@ or GitHub PR discovery.
 
 If your work will produce a code diff, you are a **Feature agent** and you MUST
 run the DevOps cycle. There is **no size exemption** — "it's just a small change"
-or "just a registry entry" is exactly when this gets skipped. Do **not** start
-editing files until you have:
+or "just a registry entry" is exactly when this gets skipped.
+
+**Use the fast lane — it is the DEFAULT path.** Two wrappers collapse the
+bookends below into one command each:
+
+```bash
+cd /Users/alex/projects/mcritchie-studio
+bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> \
+  --shape <shape> --risk <tags> --accept "criterion" --test "[unit] ..."
+#   ... build in the worktree it prints ...
+bin/ship <task-slug> -m "Commit message"
+```
+
+`bin/task begin` runs steps 1-2 (create → worktree → bind → `move building` →
+preflight) and prints the worktree path, port, and task URL. `bin/ship`, run
+from that worktree, runs steps 4-5 (commit → `bin/fast-check` → push →
+**non-draft** PR into `accepted` led by the task URL → record `pr_url` →
+`bin/dor-check` → `move submitted` → read-back verify). Re-run either after a
+failure and it **resumes**.
+
+Their limits, stated plainly: they change **no gate semantics**; `bin/ship`
+stops at `submitted` and never merges or deploys; `bin/ship` has no `--steal`
+(take a held task over with `bin/task begin <task-slug> --steal`, then ship);
+you still write the tests in step 3; and `bin/ship` is **not** `bin/release
+ship`, which is the G4 **production** deploy (`release → main`,
+ship-authority only). ⚠️ Known bug: `begin`'s preflight step inspects the
+PRIMARY checkout rather than the new worktree, so its "OK session preflight
+passed" can describe a desk it never examined (task
+`begin-preflight-wrong-root`) — until that lands, re-run
+`bin/session-preflight <task-slug>` from inside the printed worktree.
+
+The long form below stays canonical for what the wrappers don't cover
+(multi-repo tasks, a bespoke PR body, rerunning one step piecemeal). Either
+way, do **not** start editing files until you have:
 
 1. **Created the production task** —
    `cd /Users/alex/projects/mcritchie-studio && bin/task create --title "<feature>"

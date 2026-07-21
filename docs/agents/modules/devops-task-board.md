@@ -418,6 +418,9 @@ During handoff, the agent updates:
 ## Fast Lane: `bin/task begin` and `bin/ship`
 
 Two orchestration wrappers collapse the cycle's bookends into one command each.
+**They are the default path for a single-repo task** — the entry docs
+(`docs/agents/index.md`, `docs/agents/claude.md`) route feature agents here
+first and keep the long form as the fallback.
 They change **no gate semantics** — every gate (the build claim,
 `bin/session-preflight`, `bin/fast-check`, `bin/dor-check`, the stage read-back
 verify) still runs and still owns its verdict; the wrappers only sequence the
@@ -458,6 +461,27 @@ board fails the verify. It repairs an existing PR in place — `gh pr ready` for
 a draft, `gh pr edit --base accepted` for a mis-based one — and never
 duplicates it. The long-form commands remain the canonical path for anything
 the wrappers don't cover (multi-repo tasks, bespoke PR bodies).
+
+**Limits, stated plainly.** `bin/ship` stops at the `submitted` seam — it never
+merges, never deploys, never touches `release`/`main`. It has **no `--steal` of
+its own**; takeover is `bin/task begin <task-slug> --steal`, then ship. Neither
+wrapper writes your tests. And `bin/ship` is **not** `bin/release ship`: despite
+the name collision, `bin/release ship` is the **G4 production deploy**
+(`release → main`, ship-authority only), while `bin/ship:79` pins
+`BASE_BRANCH=accepted` and halts at `submitted`. The collision is fail-safe in
+the dangerous direction — reaching for `bin/ship` when you meant production does
+strictly less — but it has already caused one false alarm in a review brief, so
+name the distinction rather than assume it.
+
+⚠️ **Known bug — `begin`'s preflight reads the wrong root.** Step 5 of `begin`
+invokes `bin/session-preflight` such that it inspects the PRIMARY checkout
+rather than the worktree it just created (`session-preflight` roots at its own
+file location — see `modules/worktrees.md`, Fresh Worktree Checklist step 3).
+It can therefore print `OK session preflight passed`, and a `Branch:` line
+naming the primary's branch, for a desk it never examined. Tracked as
+`begin-preflight-wrong-root`. Until it lands, treat begin's preflight verdict as
+unproven and re-run `bin/session-preflight <task-slug>` from inside the printed
+worktree.
 
 ## QA / Avi Duties
 
