@@ -774,7 +774,7 @@ def print_plan(app, task, values, dir = worktree_dir(app, task))
   task_record_url = task_url(values)
   puts "app:      #{app.fetch("display_name", app.fetch("slug"))}"
   puts "repo:     #{app.fetch("repo")}"
-  puts "task:     #{task_record_url || "bind after task creation"}"
+  puts "task:     #{task_record_url || "(unbound — run bind-task to bind)"}"
   puts "worktree: #{dir}"
   puts "url:      http://localhost:#{values.fetch("APP_PORT")}"
   puts "email:    http://localhost:#{values.fetch("APP_PORT")}/_studio/local_emails"

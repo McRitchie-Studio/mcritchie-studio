@@ -86,6 +86,31 @@ class AgentWorktreeTest < Minitest::Test
     assert_equal "3020", out, "control: without the reservation 3020 is allocated"
   end
 
+  # --- worktree header task line (fast-lane-output-clarity) --------------------
+
+  # [unit] The header's task line must not READ like a failure when the desk isn't
+  # bound yet. `new`/`plan` print this before bind-task runs, and the old
+  # "bind after task creation" fallback — seen top-down inside `bin/task begin`,
+  # which binds at its very next step — looked as if the bind had FAILED. The
+  # fallback now states the next action plainly instead.
+  def test_worktree_header_task_line_is_not_alarming_when_unbound
+    out = run_in_script(<<~RUBY)
+      def task_url(_v); nil; end                  # the desk is not bound yet
+      def base_branch_for(_r); "accepted"; end
+      def redis_physical_count; 64; end
+      app = { "display_name" => "Demo", "slug" => "demo", "repo" => "/tmp/demo",
+              "session_env" => "DEMO_SESSION_KEY", "primary_port" => 3000 }
+      values = { "REDIS_URL" => "redis://localhost/29", "APP_PORT" => "3029",
+                 "DATABASE_URL" => "postgresql://localhost/demo_dev", "DEMO_SESSION_KEY" => "_demo_session" }
+      print_plan(app, "my-task", values, "/tmp/demo/.worktrees/my-task")
+    RUBY
+    task_line = out.lines.find { |l| l.start_with?("task:") }
+    assert task_line, "the header must print a task: line, got:\\n#{out}"
+    refute_includes task_line, "bind after task creation",
+                    "the stale, failure-reading fallback must be gone"
+    assert_includes task_line, "bind-task", "the fallback must name the next action (bind-task)"
+  end
+
   # --- own_stack_on_port?: the foreign-adoption guard -------------------------
 
   def test_own_stack_true_when_listener_cwd_is_the_worktree
