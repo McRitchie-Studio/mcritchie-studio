@@ -38,7 +38,8 @@ class SessionMarkersTest < Minitest::Test
   SESSION = "e7c1a930-0000-4000-8000-abcdefabcdef"
   REAL = ProjectsRoot.default_projects_dir              # the operator's real projects root
   ON = { "TASK_USAGE_SANDBOX" => "1" }.freeze
-  SUFFIXES = %w[.json .acting-agent .open-activity .open-span .activity-usage.json .devops-shift].freeze
+  SUFFIXES = %w[.json .acting-agent .open-activity .open-span .activity-usage.json
+                .devops-shift .devops-shift-renewer].freeze
 
   # ── [unit] read_context_marker ───────────────────────────────────────────────
 

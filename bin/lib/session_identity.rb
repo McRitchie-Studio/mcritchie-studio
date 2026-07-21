@@ -52,16 +52,48 @@ module SessionIdentity
     override = env["TASK_CLAIM_NONCE"].to_s.strip
     return override unless override.empty?
 
-    chain = process_ancestry
-    agent = chain.find { |p| AGENT_COMMANDS.include?(File.basename(p[:comm].to_s.split(/\s+/).first.to_s)) }
-    return short_hash("pid:#{agent[:pid]}|start:#{proc_start(agent[:pid])}") if agent
+    agent = agent_process
+    return short_hash("pid:#{agent[:pid]}|start:#{agent[:start]}") if agent
 
-    tty = chain.map { |p| p[:tty] }.find { |t| !t.to_s.empty? && t != "?" && t != "??" }
+    tty = process_ancestry.map { |p| p[:tty] }.find { |t| !t.to_s.empty? && t != "?" && t != "??" }
     return short_hash("tty:#{tty}") if tty
 
     "" # could not determine — degrade to a session-only lease
   rescue StandardError
     ""
+  end
+
+  # The long-lived AGENT process this bin/ invocation descends from — the `claude` or
+  # `codex` CLI — as `{ pid:, start: }`, or nil when none is in our ancestry (a plain
+  # shell, CI). It is the anchor for TWO things that must not drift apart: the lease
+  # IDENTITY above (its pid+start hash IS the nonce) and the lease LIFETIME
+  # (bin/lib/shift_renewer.rb renews only while this process lives). One fact, one
+  # source. The start time is carried alongside the pid because a bare pid is reused
+  # after exit, and "the pid is alive" would then be a false positive for a holder
+  # that died an hour ago.
+  def agent_process
+    process_ancestry.find { |p| AGENT_COMMANDS.include?(File.basename(p[:comm].to_s.split(/\s+/).first.to_s)) }
+                    &.then { |p| { pid: p[:pid], start: proc_start(p[:pid]) } }
+  rescue StandardError
+    nil
+  end
+
+  # Is the process at +pid+ still the SAME process that was running at +start+?
+  #
+  # Fails toward "no" on every uncertainty — a blank/garbled start signature, a pid we
+  # cannot read, ps unavailable. The only consumer is the shift renewer, and there the
+  # safe direction is to STOP renewing: a lease that lapses early is recoverable
+  # (the lane frees, the next acquire takes it), while a renewer that keeps a lane
+  # alive on an unverifiable anchor is a phantom holder nobody can clear.
+  def process_alive?(pid, start)
+    return false if pid.to_i <= 0
+
+    signature = start.to_s.strip
+    return false if signature.empty?
+
+    proc_start(pid) == signature
+  rescue StandardError
+    false
   end
 
   # Walk the process tree from us up to init: [{pid:, ppid:, tty:, comm:}, ...].

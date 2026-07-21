@@ -32,9 +32,10 @@ class DevopsShiftCliTest < Minitest::Test
   class FakeApi
     attr_reader :posts
 
-    def initialize(projects_dir:, data: {})
+    def initialize(projects_dir:, data: {}, code: 200)
       @projects_dir = projects_dir
       @data = data
+      @code = code
       @posts = []
     end
 
@@ -52,14 +53,20 @@ class DevopsShiftCliTest < Minitest::Test
 
     def http_json(method, path, body = nil, **)
       @posts << { method: method, path: path, body: body }
-      Resp.new(200, JSON.generate({ data: @data }))
+      Resp.new(@code, JSON.generate({ data: @data }))
     end
   end
 
-  def cli(env: {}, data: {}, projects_dir:)
-    c = DevopsShiftCli.new(env: { "DEVOPS_SHIFT_SESSION" => SESSION }.merge(env),
+  # Every cli() gets a RECORDING spawner, so no test ever forks a real renewer, and
+  # an explicit anchor pid, so anchor resolution never depends on whether the suite
+  # happens to run under a `claude` process.
+  def cli(env: {}, data: {}, code: 200, projects_dir:)
+    c = DevopsShiftCli.new(env: { "DEVOPS_SHIFT_SESSION" => SESSION,
+                                  "DEVOPS_SHIFT_ANCHOR_PID" => Process.pid.to_s }.merge(env),
                            out: (@out = StringIO.new), err: (@err = StringIO.new))
-    c.instance_variable_set(:@api, FakeApi.new(projects_dir: projects_dir, data: data))
+    c.instance_variable_set(:@api, FakeApi.new(projects_dir: projects_dir, data: data, code: code))
+    @spawned = []
+    c.instance_variable_set(:@spawner, ->(spawn_env, argv) { @spawned << [spawn_env, argv]; 4242 })
     c
   end
 
@@ -157,6 +164,91 @@ class DevopsShiftCliTest < Minitest::Test
       assert_equal DevopsShiftCli::OK, c.run(%w[release avi])
       refute File.exist?(marker(proj)), "release clears the held-shift marker"
       assert(c.instance_variable_get(:@api).posts.any? { |p| p[:path] == "/api/v1/devops_shifts/release" })
+    end
+  end
+
+  # --- [unit] REGRESSION: acquire must arrange its OWN renewal -------------------
+  #
+  # Before this fix, the ONLY renewer was bin/statusline. A headless holder (a
+  # background agent run, the autonomous heartbeat) therefore never renewed, its
+  # lease lapsed one TTL after acquisition, and the lane read FREE to the next
+  # session while the first was still working. Acquire now starts a renewer tied to
+  # the run itself, so the guarantee no longer depends on a UI affordance.
+  def test_unit_acquire_starts_a_renewer_so_a_headless_holder_keeps_the_lane
+    Dir.mktmpdir do |proj|
+      c = cli(projects_dir: proj, data: { "acquired" => true, "holder" => {} })
+      assert_equal DevopsShiftCli::OK, c.run(%w[acquire avi])
+
+      assert_equal 1, @spawned.length,
+                   "acquire must start its own renewer — the status line is not always there"
+      spawn_env, argv = @spawned.first
+      assert_includes argv, "renew-loop", "the child runs the renewer command"
+      assert_includes argv, "avi", "for the lane it just took"
+      assert_includes argv, "--anchor-pid", "and is anchored to a process it can probe for liveness"
+    end
+  end
+
+  # The renewer runs DETACHED, so it cannot re-derive the live-instance identity by
+  # walking its own ancestry (it has been reparented away from the agent process).
+  # If it guessed, `renew` would silently 204 forever and the lease would lapse
+  # exactly as before — a renewer that runs but renews nothing. So identity is
+  # handed down explicitly.
+  def test_unit_the_renewer_inherits_the_live_instance_identity_explicitly
+    Dir.mktmpdir do |proj|
+      c = cli(projects_dir: proj, env: { "TASK_CLAIM_NONCE" => "inst-A" },
+              data: { "acquired" => true, "holder" => {} })
+      c.run(%w[acquire avi])
+
+      spawn_env, = @spawned.first
+      assert_equal SESSION, spawn_env["DEVOPS_SHIFT_SESSION"], "same session id as the holder"
+      assert_equal "inst-A", spawn_env["TASK_CLAIM_NONCE"],
+                   "same nonce — a renewer with a different nonce renews NOTHING and no-ops silently"
+    end
+  end
+
+  def test_unit_a_stood_down_session_never_starts_a_renewer
+    Dir.mktmpdir do |proj|
+      c = cli(projects_dir: proj, data: { "acquired" => false, "holder" => { "label" => "Exeggcute" } })
+      assert_equal DevopsShiftCli::STOOD_DOWN, c.run(%w[acquire avi])
+      assert_empty @spawned, "you cannot renew a lease you were refused"
+    end
+  end
+
+  # --- [unit] REGRESSION: release must report what the BOARD did -----------------
+  #
+  # Reported alongside the lease bug: `release` printed success unconditionally while
+  # `status` kept showing the shift. The board answers 204 when the caller is NOT the
+  # holder (so nothing was released) — release ignored that and claimed success, so
+  # the two commands disagreed about one fact. Both now report from the board.
+  def test_unit_release_the_board_refused_must_not_claim_success
+    Dir.mktmpdir do |proj|
+      c = cli(projects_dir: proj, code: 204, data: {})
+      assert_equal DevopsShiftCli::OK, c.run(%w[release avi]), "release is still never a hard failure"
+      refute_match(/shift released\./, @out.string,
+                   "a 204 means NOTHING was released — saying otherwise is the lie status contradicts")
+      assert_match(/not held by this session/i, @out.string, "and it says so plainly")
+    end
+  end
+
+  def test_unit_release_that_the_board_honored_reports_success
+    Dir.mktmpdir do |proj|
+      c = cli(projects_dir: proj, code: 200, data: { "released" => true })
+      assert_equal DevopsShiftCli::OK, c.run(%w[release avi])
+      assert_match(/shift released\./, @out.string)
+    end
+  end
+
+  def test_unit_release_stops_the_renewer_it_started
+    Dir.mktmpdir do |proj|
+      acquirer = cli(projects_dir: proj, data: { "acquired" => true, "holder" => {} })
+      acquirer.run(%w[acquire avi])
+
+      killed = []
+      releaser = cli(projects_dir: proj, code: 200, data: { "released" => true })
+      releaser.instance_variable_set(:@killer, ->(pid) { killed << pid })
+      releaser.run(%w[release avi])
+
+      assert_equal [4242], killed, "the renewer must not outlive the shift it was renewing"
     end
   end
 
