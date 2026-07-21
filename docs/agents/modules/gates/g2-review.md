@@ -20,8 +20,8 @@ The gate flow order: [G1 Cert](g1-cert.md) → [DoR](dor.md) → **G2 Review**
   merge-conflicted PR (`mergeStateStatus DIRTY`) bounces back too with
   "rebase/merge release" named (its CI is never coming — GitHub can't compute
   the merge commit), a **ci-less** PR (zero check-runs plus a *refuted* merge)
-  bounces back with "rebase onto the base" named, pending defers to a later
-  wave, green proceeds.
+  bounces back with "merge the base in and resolve" named, pending defers to a
+  later wave, green proceeds.
 - **G2a Primary** — the deep review: diff vs. acceptance, the shape's DoR
   tiers + suite evidence + CI (the **gate-zero** re-run of dor-check, which
   keeps the strict red/pending-both-block semantics and records on the separate
@@ -68,8 +68,9 @@ What the supervisor records, per reviewed task:
      merge commit — so deferring "until CI reports" would strand it in
      `submitted` forever (the PR-#509 stall, 2026-07-12).
    - **ci-less** (zero check-runs **and** a *refuted* merge) → the same
-     block-back shape (`--meta outcome=ci-less`), with "rebase onto `<base>`"
-     named. A base that drifted past GitHub's merge computation gets no CI
+     block-back shape (`--meta outcome=ci-less`), with "merge `origin/<base>` in
+     and resolve" named (merge, not rebase — a halted merge leaves the branch
+     untouched). A base that drifted past GitHub's merge computation gets no CI
      either, and never reads `DIRTY`, so it presents exactly like a slow CI.
      **Only an affirmative negative counts** — GitHub reporting the merge is
      refused. It answers `UNKNOWN` while it is still computing mergeability, and

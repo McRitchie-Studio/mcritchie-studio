@@ -280,6 +280,33 @@ class SessionPreflightTest < Minitest::Test
            "a conflict must not also collect the ci-less cure")
   end
 
+  # [integration] ROUND 4, blocker 2 — the CONJUNCTION is load-bearing in preflight
+  # too, and its zero-checks guard was the unasserted copy. `combine`'s identical
+  # guard is covered (mutation M11), but preflight hand-rolls its own `ci_less?` and
+  # nothing pinned that half: delete `return false unless Array(checks).empty?` and a
+  # PR that HAS checks + a refuted merge reports ci-less — GitHub demonstrably ran CI,
+  # so "no CI will run" is a lie. A PR with checks is NEVER ci-less, whatever its merge
+  # state.
+  def test_a_pr_with_checks_is_never_ci_less_even_when_the_merge_is_refuted
+    task = write_task(devops: default_devops.merge("branch" => "feat/session-preflight"))
+    # A run that HAS reported (one passing check) AND a refuted merge — the exact
+    # pairing the conjunction must keep out of ci-less.
+    fake_bin = write_fake_gh(
+      merge_state: "UNKNOWN", mergeable: "CONFLICTING",
+      rollup: '[{ name: "test", conclusion: "SUCCESS", status: "COMPLETED", detailsUrl: "https://example.test" }]'
+    )
+
+    out, err, status = run_preflight(
+      "--file", task, "--no-install-docs", "--no-fetch", "--json",
+      env: { "PATH" => "#{fake_bin}:#{ENV.fetch("PATH", "")}" }
+    )
+    assert status.success?, "a PR that already has checks is not ci-less\n#{out}\n#{err}"
+    report = JSON.parse(out)
+    refute report.fetch("pr").fetch("ci_less"), "a PR with reported checks can never be ci-less"
+    refute(report.fetch("errors").any? { |e| e.match?(/NO CI/i) },
+           "GitHub ran CI here — the ci-less cure must not fire")
+  end
+
   def test_docs_kind_without_shape_is_exempt_from_shape_gate
     task = write_task(devops: { "kind" => "docs", "branch" => "feat/session-preflight" })
 

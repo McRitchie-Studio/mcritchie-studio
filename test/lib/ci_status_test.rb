@@ -235,8 +235,10 @@ class CiStatusTest < Minitest::Test
     # Carl's sharper vector: CLEAN literally means GitHub DID compute the merge, so
     # {CLEAN, mergeable UNKNOWN, zero checks} was self-contradictory AND classified
     # ci-less. Any SETTLED mergeStateStatus is confirmation — it is the field that
-    # actually reports settlement.
-    CiStatus::SETTLED_MERGE_STATES.each do |settled|
+    # actually reports settlement. Driven from the LITERAL list, not the constant, for
+    # the same reason as blocker 1 below: iterating the constant would let a dropped
+    # member escape the assertion.
+    REQUIRED_SETTLED_STATES.each do |settled|
       v = CiStatus.combine(view("OPEN", settled, mergeable: "UNKNOWN", base: "accepted"), "[]")
       assert_equal :none, v[:state], "#{settled} means GitHub computed the merge — never ci-less"
     end
@@ -336,8 +338,30 @@ class CiStatusTest < Minitest::Test
   # an IMMEDIATE force-push instruction at a healthy PR — the precise harm this work
   # exists to prevent. Round 2 fixed {CLEAN + mergeable UNKNOWN}; this is that shape.
 
-  def test_a_settled_merge_state_outranks_a_stale_conflicting_mergeable
-    (CiStatus::SETTLED_MERGE_STATES - ["DIRTY"]).each do |settled|
+  # The settled merge states, enumerated INDEPENDENTLY of the constant under test —
+  # round 4, blocker 1. A loop over `CiStatus::SETTLED_MERGE_STATES` cannot catch a
+  # member being DROPPED from that constant, because the constant is also the loop's
+  # source: remove CLEAN and CLEAN simply leaves the iteration, no assertion fires,
+  # and {CLEAN + CONFLICTING} silently returns to :ci_less — round-3 blocker 2's exact
+  # harm. So the expectation is a literal list here; a divergence between it and the
+  # constant is the bug.
+  REQUIRED_SETTLED_STATES = %w[CLEAN BLOCKED BEHIND UNSTABLE HAS_HOOKS DRAFT].freeze
+
+  def test_the_settled_states_constant_contains_every_required_member
+    # MEMBERSHIP, asserted against the independent list. Dropping CLEAN (or DRAFT —
+    # mutation M15) from the constant fails HERE, whatever the rung order does.
+    REQUIRED_SETTLED_STATES.each do |state|
+      assert_includes CiStatus::SETTLED_MERGE_STATES, state,
+                      "#{state} must be treated as a settled merge state"
+    end
+  end
+
+  def test_every_required_settled_state_outranks_a_stale_conflicting_mergeable
+    # THE POSITIVE PROPERTY, driven from the literal list, not the constant. For each
+    # state GitHub uses to say "I computed the merge", a lagging CONFLICTING must not
+    # win — the PR is affirmed and a healthy PR with zero checks is a wait, never
+    # ci-less.
+    REQUIRED_SETTLED_STATES.each do |settled|
       raw = view("OPEN", settled, mergeable: "CONFLICTING", base: "accepted")
       assert_equal :affirmed, CiStatus.mergeability(raw),
                    "#{settled} is settlement — it must outrank a lagging CONFLICTING"

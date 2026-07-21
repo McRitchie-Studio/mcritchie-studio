@@ -138,9 +138,9 @@ checks named, no reviewers spawned; **conflicted** (`mergeStateStatus DIRTY`) �
 blocked back too, with rebase/merge-release named as the fix — a conflicted PR
 gets **no CI at all** (GitHub can't compute the merge commit), so deferring
 would strand it in `submitted`; **ci-less** (zero check-runs and a *refuted*
-merge) → blocked back as well, with "rebase onto the base" named — a base that
-drifted past GitHub's merge computation gets no CI either, without ever reading
-`DIRTY`; **pending or no checks yet** → the task
+merge) → blocked back as well, with "merge the base in and resolve" named — a
+base that drifted past GitHub's merge computation gets no CI either, without ever
+reading `DIRTY`; **pending or no checks yet** → the task
 defers to a later wave; **green** → proceed), records `bin/reviewer-select`
 intent, spawns the selected PRIMARY + LIGHT reviewers **in parallel**,
 re-queries the board before each final decision, writes the task handoff, and

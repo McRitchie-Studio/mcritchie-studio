@@ -149,9 +149,13 @@ module CiStatus
   # mergeStateStatus reports settlement, so a stale CONFLICTING must never outrank a
   # settled merge state: {CLEAN + CONFLICTING} classified :refuted and fired an
   # immediate force-push instruction at a healthy PR. Each rung, in order:
-  #   1. DIRTY      — the settled NEGATIVE. Both settles and refutes, so it is tested
-  #                   before the affirming settlement rung that would otherwise sweep
-  #                   it up.
+  #   1. DIRTY      — the settled NEGATIVE, and NOT a member of SETTLED_MERGE_STATES
+  #                   (so rung 2 never matches it — do not add it there). It is tested
+  #                   first because a LAGGING `mergeable` would otherwise mask it: a
+  #                   DIRTY PR still reporting a stale `mergeable: MERGEABLE` would
+  #                   reach rung 4 and be affirmed, and `mergeable: UNKNOWN` would fall
+  #                   to :unknown — both wrong for a PR GitHub has settled as
+  #                   unmergeable.
   #   2. SETTLED    — GitHub computed the merge. This is settlement, WHATEVER
   #                   `mergeable` says (the docstring the old order contradicted).
   #   3. CONFLICTING— an affirmative negative, but only once settlement is silent.

@@ -846,6 +846,41 @@ class PrReviewCommandTest < Minitest::Test
     assert_includes close, "outcome=ci-conflicted"
   end
 
+  # [integration] CI-less PR: blocked BACK like conflicted, never deferred, and the
+  # feedback must NOT re-introduce "rebase" vocabulary (round 4, blocker 3 — both
+  # lanes). This block feedback is the exact channel this work names as the pollution
+  # channel, and round 3 rewrote the remedy to prescribe `merge` because a halted
+  # rebase strands the operator. A trailing "push the rebased branch" would undo that
+  # rewrite one sentence later, into task feedback a compliant agent then obeys.
+  def test_ci_less_pr_is_blocked_back_with_a_remedy_that_never_says_rebase
+    stuck = task("ciless-pr", created_at: "2026-06-29T12:00:00Z")
+    write_snapshots(snapshot([stuck]))
+
+    out, err, status = run_heartbeat("--run", "--limit", "1", env: { "PR_REVIEW_CI_STATUS" => "ci_less" })
+
+    assert status.success?, err
+    assert_includes out, "blocked=1"
+
+    # No reviewer tokens burned — like the red/conflicted bounce.
+    assert_empty json_lines(@reviewer_log), "a ci-less PR must not reach reviewer-select"
+    assert_empty json_lines(@codex_log), "a ci-less PR must not spawn reviewers"
+
+    block_call = json_lines(@task_log).find { |args| args.first == "block" }
+    assert block_call, "expected a task block, not a defer"
+    assert_equal "ciless-pr", block_call[1]
+    feedback = block_call[block_call.index("--feedback") + 1]
+    assert_match(/NO CI WILL RUN/i, feedback, "the feedback names the state")
+    # THE regression: no rebase vocabulary reaches task feedback, and no silently
+    # halting && chain.
+    refute_match(/rebas/i, feedback, "the remedy must not say rebase — round 3 chose merge for recoverability")
+    refute_includes feedback, "&&", "no command chain that halts mid-way in task feedback"
+
+    close = json_lines(@gate_log).find { |args| args.first == "close" && args.include?("dor_review") }
+    assert close, "expected a failed dor_review close for the ci-less bounce"
+    assert_includes close, "--failed"
+    assert_includes close, "outcome=ci-less"
+  end
+
   # [unit] An UNVERIFIED CI read (gh/network error) proceeds to spawn — the gate
   # never trades a flaky CI lane for a flaky review loop; the primary's strict
   # gate-zero still holds the authoritative verdict downstream.
