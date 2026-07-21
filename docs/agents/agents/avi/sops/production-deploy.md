@@ -26,27 +26,35 @@ cd /Users/alex/projects/mcritchie-studio
 
 Use the production board by default. Do not add `--local`.
 
-## Shift lease — acquire the `avi` shift FIRST, or stand down
+## Deployer claim — automatic, on the RELEASE record
 
-Before confirming or shipping, take the DevOps shift lease so two `avi` sessions
-can't ship the same release (or a ship and a `pr-review` collide on Avi's lane):
+The lock that stops two `avi` sessions from shipping the same release now lives on the
+RELEASE RECORD, not on a per-role `avi` shift. **`bin/release ship` takes it for you** —
+the per-release `deployer` conductor claim (`ReleaseConductorClaim`) — BEFORE the
+frozen-SHA gate and any deploy mutation, over the fast HTTP claim path, spawns a
+detached renewer for the ship's whole life, and releases it on completion. There is
+**no `bin/devops-shift acquire avi` step for the ship any more.**
 
-```bash
-bin/devops-shift acquire avi
-```
+What you will see:
 
-- **Exit 0 (acquired)** — you're on shift; continue. (If this session already ran
-  `pr-review` and holds `avi`, re-acquiring is a no-op renew — same live instance.)
-- **Exit 10 ("🛑 … STAND DOWN")** — another live `avi` session holds the shift. **Do
-  NOT confirm or ship.** Announce the holder it names and STOP; its lease lapses
-  ~120s after it stops if it truly died.
+- **Stand down** — if another live session is already shipping this release,
+  `bin/release ship` prints `🛑 <release> deployer already held — STAND DOWN`, names the
+  holder, and **aborts (exit non-zero) before any deploy**. Announce the holder and
+  STOP; its lease lapses ~120s after that session stops if it truly died.
+- **Resume** — an INTERRUPTED ship re-run resumes: re-running `bin/release ship` from
+  the same session re-acquires the same `deployer` claim (same session + nonce = a
+  no-op renew), so the partial-ship recovery picks up where it left off instead of
+  standing itself down.
+- **Fail-open** — a claim-transport hiccup never wedges the ship; `bin/release`
+  proceeds unclaimed rather than blocking on telemetry.
 
-The status line renews it automatically. Release it once the ship completes (or you
-stop early):
+Because the lock is on the release record (which turns over each release), a stale or
+ghost claim can never strand the ship lane again. (Background — not needed to execute:
+`docs/agents/system/devops-shift-lease.md`, section B.)
 
-```bash
-bin/devops-shift release avi
-```
+> Note: `clean-up` still takes the `avi` **shift** lease (`bin/devops-shift acquire
+> avi`) for its board sweep — that lane is unchanged. Only the SHIP left the shift for
+> the release-record claim.
 
 ## Preconditions
 

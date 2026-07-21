@@ -47,7 +47,10 @@ class DevopsShiftCli
   STOOD_DOWN = 10
   CANT_RUN = 1
 
-  LANES = %w[avi steffon alex].freeze
+  # `steffon` RETIRED (release-conductor-claims): the qa-release lock moved onto the
+  # release record (the `assembler` conductor claim, inside bin/release prepare), and
+  # avi-ship onto the `deployer` claim. `avi` stays for `clean-up`'s board sweep.
+  LANES = %w[avi alex].freeze
 
   def initialize(env: ENV, out: $stdout, err: $stderr)
     @env = env

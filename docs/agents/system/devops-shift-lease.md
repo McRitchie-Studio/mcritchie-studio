@@ -4,7 +4,10 @@ The elegant fix for concurrent devops/builder collisions: two Avi heartbeats, an
 Avi heartbeat launched alongside a `pr-review`, two `qa-release` sweeps racing the
 release candidate, or a conductor's `cleanup --reclaim` evicting a builder who just
 sat down. One primitive — the build-claim lease (`lib/claim_lease.rb`) — applied to
-two more scopes.
+more scopes at three grains: a per-ROLE **shift** lease (section A), a per-TASK
+**review** claim (`TaskReviewClaim`), and a per-RELEASE **conductor** claim
+(`ReleaseConductorClaim`, section B) — each the SAME lease math one level down from
+the last, so the lock lives on the finest record the act contends over.
 
 ## The problem
 
@@ -15,7 +18,7 @@ PRs), **exhaust the board's Postgres 20-connection limit** (combined fan-out), a
 `cleanup --reclaim` reclaims an active desk). The ≤5 cap was documented, not
 enforced; review/conductor acts took no lease at all.
 
-## A — the shift lease (`avi` / `steffon` / `alex`)
+## A — the shift lease (`avi` / `alex`)
 
 `DevopsShift` is a board-held singleton **per lane**, where a lane is a ROLE/shift
 key. It reuses the build-claim lease math verbatim: a holder is a LIVE INSTANCE
@@ -23,6 +26,13 @@ key. It reuses the build-claim lease math verbatim: a holder is a LIVE INSTANCE
 renewed by a **detached renewer the acquiring run starts for itself**. `acquire` is
 an atomic compare-and-set (one row per lane, taken under `with_lock`) so two
 simultaneous acquirers serialize and exactly one wins.
+
+**Two lanes left this lease (`steffon` retired 2026-07-21).** The `steffon`
+(`qa-release`) and the `avi`-**ship** (`production-deploy`) locks moved OFF the
+per-role shift and ONTO the RELEASE RECORD — see **section B**. The shift lease now
+covers only `clean-up`'s `avi` lane (a board sweep over shared worktrees) and the
+vestigial `alex`. The model and table are KEPT; only `steffon` left the default
+`DevopsShift::LANES` set.
 
 **Renewal belongs to the run, not to the UI** (fixed 2026-07-20). Renewal used to
 live only in `bin/statusline`, so it happened when Claude Code PAINTED A STATUS LINE.
@@ -56,8 +66,8 @@ only one.
   renewer against a stub board and asserts its renewals carry the holder's own
   session + nonce (a renewer with the wrong nonce posts happily while the board
   no-ops every call — the same bug wearing a disguise).
-- **Different lanes coexist** — `steffon` (qa-release) and `avi` (review/ship) are
-  distinct leases, so those acts run side by side; only two of the SAME role collide.
+- **Different lanes coexist** — `avi` (clean-up) and `alex` are distinct leases, so
+  those acts run side by side; only two of the SAME role collide.
 
 `release` frees the lane immediately instead of waiting out the TTL, and **reports
 what the board did**. It used to print success unconditionally, so a caller that was
@@ -71,11 +81,12 @@ Surface: `bin/devops-shift acquire|renew|release|status` (+ the internal
 `POST /api/v1/devops_shifts/{acquire,renew,release}` + `GET …/devops_shifts`; the
 `<sid>.devops-shift` marker `acquire` writes (the lane, for `bin/statusline`) and its
 `<sid>.devops-shift-renewer` sibling (the renewer's pid, so `release` can stop it);
-and the
-acquire-or-stand-down preambles in the conductor SOPs `qa-release.md` (`steffon`)
-and `production-deploy.md` / `clean-up.md` (`avi`). Enforcement is cooperative (the
-SOP stands the loser down) per the studio's honor-system posture; the exit code (0
-acquired / 10 stand down / 1 fail-open) makes it scriptable.
+and the acquire-or-stand-down preamble in the `clean-up.md` conductor SOP (`avi`).
+(`qa-release` and `production-deploy` no longer preamble a shift acquire — their lock
+moved onto the release record, taken automatically inside `bin/release prepare`/`ship`;
+see section B.) Enforcement is cooperative (the SOP stands the loser down) per the
+studio's honor-system posture; the exit code (0 acquired / 10 stand down / 1
+fail-open) makes it scriptable.
 
 The lane is a role, not an act, so a single Avi session that runs two `avi`-lane
 acts back to back holds `avi` across both (a re-`acquire` by the same instance is a
@@ -94,11 +105,52 @@ never review one task twice. The board exposes the unclaimed queue as
 could-not-confirm); and `bin/pr-review` SELECTS candidates from the reviewable queue
 and reviews a task only on a CONFIRMED claim — exit 10 (held) skips, exit 1 (no
 session id / board unreachable) DEFERS rather than reviewing on an unconfirmed claim,
-so the no-double-review contract holds even when the board is unreachable. Only the
-MUTATING lanes — `qa-release`, `production-deploy`, `clean-up` — still stand a
-same-role second session down, because they rewrite one shared release candidate (or
-sweep shared worktrees) and per-task skipping cannot help there. This realizes the
-"per-act lanes" follow-up as a per-task claim rather than a lane split.
+so the no-double-review contract holds even when the board is unreachable. Of the
+remaining MUTATING acts, `qa-release` and `production-deploy` then left the shift
+lease too — onto the RELEASE RECORD (section B) — leaving only `clean-up` on the
+`avi` shift, because it sweeps shared worktrees rather than one release. This realizes
+the "per-act lanes" follow-up as per-task / per-release claims rather than a lane split.
+
+## B — the release-record conductor claim (`assembler` / `deployer`)
+
+`ReleaseConductorClaim` (`app/models/release_conductor_claim.rb`) is the SAME lease
+math one level down from the shift — role → **(release, role)** — for the two
+release-lifecycle acts: `assembler` (`qa-release` / `bin/release prepare`) and
+`deployer` (`production-deploy` / `bin/release ship`). Two independent rows per
+release, keyed by the **composite unique index `[release_slug, role]`** (the atomic
+CAS), so an assembler and a deployer on one release never contend, and two of the
+SAME role on one release do.
+
+**Why it left the shift.** The shift lock was a GLOBAL lane — one `steffon` session,
+one `avi`-ship session, ever. A stale or ghost lease on that lane could strand the
+WHOLE lane for a TTL. Moving the lock onto the release record, which **turns over
+every release**, means a stale claim dies with its release: a lock that can never
+strand a global lane again. This is the same move the review lane made (lane → task);
+here it is lane → (release, role).
+
+Identity, TTL, the detached renewer, the fail-open posture, and the
+`holder_label`/`acquired_at` reset-on-change-of-hands are all inherited verbatim from
+the lease math above. Two properties matter for the release acts specifically:
+
+- **A same-instance re-acquire RESUMES.** An interrupted `bin/release ship` re-run,
+  from the same agent session (same session id + nonce), re-acquires the `deployer`
+  claim as a no-op renew rather than standing itself down — so a killed ship resumes.
+- **Fail-open on transport, stand down on a live holder.** `bin/release` takes the
+  claim over the FAST HTTP AgentApi (`bin/lib/release_claim_cli.rb`), never a
+  per-heartbeat `heroku run` (a ship holds the claim for many minutes; a dyno per 30s
+  renew is unacceptable). A telemetry hiccup fails OPEN (the release proceeds
+  unclaimed — a claim outage must never wedge a real release); a live DIFFERENT holder
+  (exit 10) still stands the run down.
+
+Surface: `bin/lib/release_claim_cli.rb acquire|renew|release|status <release-slug>
+--role assembler|deployer` (+ the internal `renew-loop`), invoked automatically by
+`bin/release prepare` (assembler, before the accepted→release promote) and `bin/release
+ship` (deployer, before the frozen-SHA gate + deploy), released on completion; the
+board endpoints `GET/POST /api/v1/releases/:slug/conductor_claim` +
+`…/conductor_claim/{renew,release}`; and the `<sid>.release-conductor-claim-<role>`
+marker (with its `-renewer-<role>` sibling for the renewer pid). Because the acquire
+is INSIDE `bin/release`, `qa-release.md` and `production-deploy.md` no longer preamble
+a `bin/devops-shift acquire` — the lock is automatic.
 
 ## D — the reclaim guard (conductor ↔ builder)
 
@@ -187,8 +239,10 @@ the stage gate already prevents it.
 ## Follow-ups (separate tasks)
 
 - **C** — enforce the global concurrency budget (make the ≤5 / PG-20-conn cap real).
-- **Per-act lanes** — DONE for review (2026-07-21): the review act left the role
-  lease for a per-TASK claim (`TaskReviewClaim`) rather than a lane split, so many
-  review sessions run in parallel and skip only the tasks others hold. The remaining
-  `avi`-lane acts (`production-deploy`, `clean-up`) stay single-conductor; splitting
-  them further is still a caller-side config flip, no model change.
+- **Per-act lanes** — DONE for review AND the two release acts (2026-07-21): review
+  left the role lease for a per-TASK claim (`TaskReviewClaim`), and `qa-release` /
+  `production-deploy` left for the per-RELEASE `ReleaseConductorClaim` (assembler /
+  deployer, section B), so the lock lives on the finest record each act contends over
+  and a stale lease can never strand a global lane. Only `clean-up` remains on the
+  `avi` shift (it sweeps shared worktrees, not one release); splitting it further is a
+  caller-side config flip, no model change.

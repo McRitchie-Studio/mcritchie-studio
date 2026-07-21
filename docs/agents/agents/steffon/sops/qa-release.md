@@ -30,30 +30,32 @@ cd /Users/alex/projects/mcritchie-studio
 
 Use the production board by default. Do not add `--local`.
 
-## Shift lease — acquire the `steffon` shift FIRST, or stand down
+## Assembler claim — automatic, on the RELEASE record
 
-Before preparing anything, take the DevOps shift lease so two `qa-release` sessions
-can't both merge onto `release` and race the candidate N-behind (the parallel-
-conductor bug):
+The lock that stops two `qa-release` sessions from both merging onto `release` and
+racing the candidate N-behind (the parallel-conductor bug) now lives on the RELEASE
+RECORD, not on a per-role `steffon` shift. **`bin/release prepare` takes it for you** —
+the per-release `assembler` conductor claim (`ReleaseConductorClaim`) — BEFORE the
+irreversible `accepted → release` promote, over the fast HTTP claim path, spawns a
+detached renewer for the sweep's whole life, and releases it on completion. There is
+**no `bin/devops-shift acquire steffon` step any more.**
 
-```bash
-bin/devops-shift acquire steffon
-```
+What you will see when a second session is already assembling:
 
-- **Exit 0 (acquired)** — you're on shift; continue.
-- **Exit 10 ("🛑 … STAND DOWN")** — another live `steffon` session already holds the
-  shift. **Do NOT merge, deploy QA, or flip stages.** Announce the holder it names
-  and STOP; its lease lapses ~120s after it stops if it truly died.
+- **Stand down** — `bin/release prepare` prints `🛑 <release> assembler already held —
+  STAND DOWN`, names the holder, and **aborts (exit non-zero) before anything merges or
+  deploys**. Announce the holder and STOP; its lease lapses ~120s after that session
+  stops if it truly died, and a re-run then resumes.
+- **Resume** — if YOUR OWN earlier prepare was interrupted, re-running `bin/release
+  prepare` re-acquires the same claim (same session + nonce = a no-op renew) and picks
+  up where it left off.
+- **Fail-open** — a claim-transport hiccup never wedges the sweep; `bin/release`
+  proceeds unclaimed rather than blocking on telemetry.
 
-The status line renews the lease automatically. Release it when the sweep is done
-(or you stop early) so the lane frees immediately:
-
-```bash
-bin/devops-shift release steffon
-```
-
-(The `steffon` lane is independent of the `avi` review/ship lane, so a `qa-release`
-and a `pr-review` run side by side — only two of the SAME role collide.)
+Because the lock is on the release record (which turns over each release), a stale or
+ghost claim can never strand the whole qa-release lane again — the failure the old
+`steffon` shift lease could suffer. (Background — not needed to execute: the design is
+`docs/agents/system/devops-shift-lease.md`, section B.)
 
 ## Preconditions
 

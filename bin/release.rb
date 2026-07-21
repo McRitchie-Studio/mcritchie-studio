@@ -181,6 +181,13 @@ require_relative "../lib/agent_session_usage"
 require_relative "../lib/task_usage_baseline"
 require_relative "../lib/task_usage_sandbox"
 require_relative "lib/session_identity"
+# The per-RELEASE conductor claim (release-conductor-claims) — the assembler
+# (prepare) and deployer (ship) locks, on the release record now, spoken over the
+# fast HTTP AgentApi. Loaded for its exit-code constants (STOOD_DOWN/OK); the CLI's
+# own `$PROGRAM_NAME == __FILE__` guard keeps a plain `require` from dispatching.
+require_relative "lib/release_claim_cli"
+# The shared lease math (ClaimLease) — only the TTL constant, for the stand-down copy.
+require_relative "../lib/claim_lease"
 # GitHub CI's verdict for a COMMIT — the same source bin/dor-check reads for a PR,
 # asked about the release-tip SHA the pre-QA/ship gate certifies (CiStatus.for_sha).
 # Since DevOps v2 Phase 3 CI IS the G3/G4 verdict (ci_pass?), not a cross-check.
@@ -604,6 +611,72 @@ end
 def close_role_span(outcome)
   agent_activity("end", "--outcome", outcome)
   $role_span_open = false
+end
+
+# --- per-RELEASE conductor claim (release-conductor-claims) -------------------
+# The QA-assemble (`assembler`) and prod-deploy (`deployer`) locks live on the
+# RELEASE RECORD now, not on a per-ROLE devops shift (bin/devops-shift acquire
+# steffon|avi). Because the lock turns over each release, a stale/ghost claim can
+# never strand a global lane again — the anti-stranding property the shift lease
+# lacked. It runs through the FAST HTTP AgentApi (bin/lib/release_claim_cli.rb),
+# NEVER a per-heartbeat `heroku run`: a ship holds the deployer claim for many
+# minutes, so the lease is renewed by a cheap DETACHED renewer over HTTP.
+#
+# FAIL-OPEN posture (ClaimLease's): a telemetry hiccup (no board, no session id,
+# error) NEVER wedges a real release — the run proceeds unclaimed. But a live
+# DIFFERENT holder (exit 10) DOES stand us down: that is the collision the claim
+# exists to prevent. A same-instance re-acquire is a no-op renew, so an interrupted
+# ship re-run RESUMES its deployer claim instead of standing itself down.
+RELEASE_CLAIM_CLI = File.expand_path("lib/release_claim_cli.rb", __dir__)
+
+# Shell out to the claim CLI over the fast HTTP path and return its exit code
+# (0 held, 10 stood down, else fail-open/nil), echoing its ✅/🛑 line into the
+# release log. Best-effort — any error returns nil so the caller fails OPEN.
+# Inert under --dry-run (a preview holds no claim).
+def conductor_claim(*args)
+  return nil if DRY
+
+  out, err, status = Open3.capture3(RbConfig.ruby, RELEASE_CLAIM_CLI, *args)
+  msg = [out, err].map(&:to_s).join.strip
+  say(msg.gsub(/^/, "  ")) unless msg.empty?
+  status&.exitstatus
+rescue StandardError => e
+  warn("  conductor-claim #{args.first} error (#{e.class}: #{e.message}) — proceeding without a claim (fail-open)")
+  nil
+end
+
+# Take the role's claim on the release, or ABORT (stand down) if a DIFFERENT live
+# instance holds it. Idempotent per run: the first acquire records the held (slug,
+# role) in @conductor_claim, so a second call this run is a no-op (and a same-instance
+# re-acquire on a resumed ship is a renew, never a stand-down). A blank slug (no
+# release identity resolved yet) is a fail-open skip — there is nothing to guard. On
+# stand-down, `span_close` (optional) closes any open role span before aborting so the
+# heartbeat activity resolves.
+def acquire_conductor_claim!(role, slug, span_close: nil)
+  return if @conductor_claim # already holding a claim this run
+
+  s = slug.to_s.strip
+  return if s.empty? # no release identity yet → nothing to guard (fail-open)
+
+  case conductor_claim("acquire", s, "--role", role)
+  when ReleaseClaimCli::STOOD_DOWN
+    span_close&.call
+    abort!("#{role} claim for #{s} is held by another live release conductor — standing down (see the holder " \
+           "above). Its lease lapses within ~#{ClaimLease::DEFAULT_TTL_SECONDS}s of that session stopping; re-run then.")
+  when ReleaseClaimCli::OK
+    @conductor_claim = { slug: s, role: role }
+  end
+  # any other code (nil / CANT_RUN) → fail-open: proceed unclaimed
+end
+
+# Drop the claim this run acquired (clean completion or handled abort), stopping its
+# detached renewer. Best-effort + idempotent — nothing held ⇒ no-op.
+def release_conductor_claim!
+  claim = @conductor_claim
+  return unless claim
+
+  conductor_claim("release", claim[:slug], "--role", claim[:role])
+  @conductor_claim = nil
 end
 
 # --- test-scope telemetry (best-effort) --------------------------------------
@@ -2309,6 +2382,18 @@ def prepare
   #     audited bypass, then re-run prepare.
   enforce_review_gate!(detect["screen"] || {}) if cands.any?
 
+  # 2c. ASSEMBLER CLAIM — take the per-RELEASE `assembler` lock (release-conductor-claims)
+  #     BEFORE the irreversible promote below, so two concurrent qa-release sessions
+  #     can't both sweep the same active release N-behind (the parallel-conductor race).
+  #     This replaces the old `bin/devops-shift acquire steffon` shift lease: the lock
+  #     is on the release record, which turns over each release, so a stale claim can
+  #     never strand the whole lane. The slug is the ACTIVE release (or --slug); on a
+  #     brand-new release with no name yet it is blank here and the claim is taken once
+  #     `rel_slug` resolves below (idempotent — the second call is a no-op). A DIFFERENT
+  #     live holder stands us down (exit 10); a telemetry hiccup fails open.
+  acquire_conductor_claim!("assembler", (active && active["slug"]) || slug,
+                           span_close: -> { close_role_span("stood down — another session is assembling this release") })
+
   # 3. SWEEP PLAN (pure: Release::SweepPlan): partition the candidates into the
   #    members to RECORD onto the RC (code on accepted/release/main) and the HELD
   #    anomalies (a `reviewed` member with no merged stamp — review's feat→accepted
@@ -2379,6 +2464,13 @@ def prepare
   app_groups = repos.select { |g| g["kind"] == "app" }
   gem_groups = repos.select { |g| g["kind"] == "gem" }
   say("  release #{rel_slug} (#{result['state']}) · #{repos.size} repo(s): #{app_groups.size} app, #{gem_groups.size} gem")
+
+  # ASSEMBLER CLAIM (idempotent) — for a brand-new release the slug was blank at 2c
+  # above, so take the assembler lock now that `rel_slug` is concrete, BEFORE the gem
+  # publish + QA deploy. Already-held (the active/named path claimed at 2c) ⇒ no-op.
+  acquire_conductor_claim!("assembler", rel_slug,
+                           span_close: -> { close_role_span("stood down — another session is assembling this release") })
+
   record_release_event(rel_slug, "assemble_release", "started")
 
   # 4c. PRODUCER-FIRST GEM PUBLISH + CONSUMER LOCK BUMP — BEFORE the pre-QA gate
@@ -2663,6 +2755,10 @@ def prepare
     say("")
     say("  Review the QA app(s) above, then hand off to Avi: `bin/release ship`.")
   end
+  # Drop the assembler claim (clean completion, whether or not QA went green) so the
+  # next conductor can pick this release up immediately; a crash self-heals via the
+  # lease TTL. Best-effort — see release_conductor_claim!.
+  release_conductor_claim!
   close_role_span(qa_green ? "assembled #{rel_slug} → QA" : "prepared #{rel_slug} — QA not green, members stay reviewed")
 rescue SystemExit
   # G3 close-fail wrapper: an abort INSIDE the gate window (a red pre_qa_gate,
@@ -2671,6 +2767,11 @@ rescue SystemExit
   # is itself best-effort (it can never raise), and the `raise` below ALWAYS
   # re-raises: the gate write must never mask the abort.
   record_gate_close(rel_slug, "g3_candidate", false, metadata: { "aborted" => true }) if g3_gate == :open
+  # Drop the assembler claim on an aborted prepare too (best-effort): a re-run is
+  # same-instance and simply re-acquires (renews), so freeing it now — rather than
+  # waiting out the TTL — lets a different conductor take over sooner if this session
+  # is truly done. A stand-down abort never acquired, so this is a no-op there.
+  release_conductor_claim!
   # An abort mid-prepare closes the Steffon activity with the abort outcome
   # (best-effort) before re-raising, so the heartbeat activity resolves instead of
   # hanging open.
@@ -4497,6 +4598,17 @@ def ship
     abort!("release is '#{state}', not assembled — `bin/release prepare` + QA it first")
   end
 
+  # DEPLOYER CLAIM — take the per-RELEASE `deployer` lock (release-conductor-claims)
+  # BEFORE the frozen-SHA gate and any deploy mutation, so a second concurrent
+  # `bin/release ship` on this release STANDS DOWN (exit 10) instead of double-shipping.
+  # This replaces the old `bin/devops-shift acquire avi` shift lease: the lock is on
+  # the release record, which turns over each release, so a stale claim can never
+  # strand the ship lane. A same-instance re-acquire is a no-op renew, so an INTERRUPTED
+  # ship re-run RESUMES its claim rather than standing itself down; a telemetry hiccup
+  # fails open. No role span is open yet (it opens after ship authority), so a stand-down
+  # here needs no span close.
+  acquire_conductor_claim!("deployer", rel_slug)
+
   gem_groups = repos.select { |g| g["kind"] == "gem" } # already producer-first
   app_groups = Release::ShipSequence.ordered_app_groups(repos.select { |g| g["kind"] == "app" }) # hub first
   say("  shipping #{rel_slug} (#{state}): #{gem_groups.size} gem(s) → hub → #{[app_groups.size - 1, 0].max} satellite(s)")
@@ -4654,6 +4766,8 @@ def ship
   #     with a live session's work (a qa-release-time prepare run would install
   #     main's STALE docs and leave the drift in place). See sync_agent_docs.
   sync_agent_docs
+  # Drop the deployer claim on a clean ship so the release frees immediately. Best-effort.
+  release_conductor_claim!
   close_role_span("shipped #{rel_slug} → prod")
 rescue SystemExit => e
   # G4 close-fail wrapper: an abort inside the gate window (a red frozen-SHA
@@ -4662,6 +4776,11 @@ rescue SystemExit => e
   # (record_gate_close can never raise) and the abort ALWAYS proceeds below
   # (raise in dry-run, exit(status) otherwise) — the close never masks it.
   record_gate_close(rel_slug, "g4_ship", false, metadata: { "aborted" => true }) if g4_gate == :open
+  # Drop the deployer claim on an aborted ship (best-effort). A re-run is same-instance
+  # and re-acquires (renews) to RESUME, so releasing here — rather than waiting out the
+  # TTL — lets the release free sooner if this session is genuinely done. A stand-down
+  # abort never acquired, so this is a no-op there.
+  release_conductor_claim!
   # Close the Avi activity on a partial-ship abort too (best-effort) so the
   # heartbeat activity resolves instead of hanging open. Gated by avi_span so an
   # abort BEFORE the activity opened (e.g. no active release) never emits a stray

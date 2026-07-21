@@ -329,6 +329,18 @@ Rails.application.routes.draw do
           post "events/:step/start", to: "release_events#start", as: :event_start
           post "events/:step/complete", to: "release_events#complete", as: :event_complete
           post "events/:step/fail", to: "release_events#fail", as: :event_fail
+          # Per-RELEASE conductor claim (release-conductor-claims) — the assembler
+          # (prepare/qa-release) and deployer (ship/production-deploy) locks live on
+          # the RELEASE record now, not on a per-role devops shift, so a stale claim
+          # can never strand a global lane: the lock turns over each release.
+          # `conductor_claim` is the atomic take-or-stand-down; `renew` the detached
+          # renewer's heartbeat; `release` the clean completion drop. Role travels in
+          # the body/param. Mirrors the review lane's per-task claim one level over
+          # (task → release, role).
+          get  "conductor_claim", to: "release_conductor_claims#show", as: :conductor_claim_status
+          post "conductor_claim", to: "release_conductor_claims#acquire", as: :conductor_claim
+          post "conductor_claim/renew", to: "release_conductor_claims#renew", as: :conductor_claim_renew
+          post "conductor_claim/release", to: "release_conductor_claims#release", as: :conductor_claim_release
         end
       end
       # Gate-run markers — the branded testing gates (GateRun::GATES, G1 Cert …
