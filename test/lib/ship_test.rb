@@ -173,6 +173,68 @@ class ShipTest < Minitest::Test
     end
   end
 
+  # --- rebased branch: force-with-lease, never a bare force --------------------
+
+  # [unit] A rebased branch pushes with --force-with-lease. Rebasing is ROUTINE
+  # here — accepted moves constantly and desks rebase onto it — so a plain
+  # `git push` that fails non-fast-forward on our OWN superseded history must not
+  # strand the ship (git's "pull before pushing" hint is the WRONG remedy: it
+  # would merge the pre-rebase history back in). ship replays with
+  # --force-with-lease, which is safe: it refuses if the remote moved under us.
+  def test_rebased_branch_pushes_with_force_with_lease
+    with_repo do |dir|
+      git = ->(a) { assert system("git -C #{dir} #{a} >/dev/null 2>&1"), "git #{a}" }
+      git.call("add -A"); git.call("commit -q -m v2")            # C1
+      git.call("push -q -u origin #{BRANCH}")                    # origin/#{BRANCH} = C1 (remote-tracking too)
+      git.call("commit --amend -q -m v2-rebased")               # rewrite history → local diverges from C1
+      File.write(File.join(dir, "app.rb"), "puts :v3\n")        # a dirty edit for ship's commit step
+
+      out, err, status, = run_ship(dir)
+
+      assert status.success?, "a rebased branch must ship with no manual force, got:\n#{err}\n#{out}"
+      head = `git -C #{dir} rev-parse HEAD`.strip
+      assert_equal head, `git -C #{dir} rev-parse origin/#{BRANCH}`.strip,
+                   "the rebased history must land on origin via --force-with-lease"
+    end
+  end
+
+  # [unit] The distinction the fix must NOT collapse: a GENUINE foreign commit on
+  # the remote is refused, never force-pushed away. The foreign push is staged
+  # from a SEPARATE clone so our remote-tracking origin/#{BRANCH} stays STALE —
+  # exactly as production (fixtures-live-in-one-clone). Stage it in `dir` and the
+  # remote-tracking ref would freshen, and --force-with-lease would wrongly PASS.
+  def test_foreign_commit_on_remote_is_refused_not_clobbered
+    with_repo do |dir|
+      origin = File.join(File.dirname(dir), "origin.git")
+      git = ->(a) { assert system("git -C #{dir} #{a} >/dev/null 2>&1"), "git #{a}" }
+      git.call("add -A"); git.call("commit -q -m v2")           # C1
+      git.call("push -q -u origin #{BRANCH}")                   # origin/#{BRANCH} = C1, remote-tracking = C1
+
+      # A DIFFERENT actor pushes to origin/#{BRANCH} from ITS OWN clone, so `dir`
+      # never learns of it — remote-tracking stays C1, as it would in production.
+      clone2 = File.join(File.dirname(dir), "clone2")
+      assert system("git clone -q #{origin} #{clone2} >/dev/null 2>&1"), "second clone"
+      c2 = ->(a) { assert system("git -C #{clone2} -c user.email=x@y.z -c user.name=x #{a} >/dev/null 2>&1"), "git #{a}" }
+      c2.call("checkout -q -B #{BRANCH} origin/#{BRANCH}")
+      File.write(File.join(clone2, "foreign.txt"), "someone else's work\n")
+      c2.call("add -A"); c2.call("commit -q -m foreign")
+      c2.call("push -q origin #{BRANCH}")
+      foreign_sha = `git -C #{clone2} rev-parse HEAD`.strip
+
+      # We rebase locally too, so a plain push is non-ff and a naive fix would force.
+      git.call("commit --amend -q -m v2-rebased")
+      File.write(File.join(dir, "app.rb"), "puts :v3\n")
+
+      _out, err, status, lines = run_ship(dir)
+
+      refute status.success?, "a genuine foreign commit must refuse, not force-push"
+      assert_match(/reconcile|fetch|foreign/i, err, "the refusal must point at fetch/reconcile")
+      assert_equal foreign_sha, `git -C #{origin} rev-parse #{BRANCH}`.strip,
+                   "the foreign commit must survive — ship must NEVER clobber it"
+      refute(lines.any? { |l| l[0, 2] == %w[TASK move] }, "a refused push must not reach the submit step")
+    end
+  end
+
   # --- idempotent resume -------------------------------------------------------
 
   def test_resume_repairs_a_draft_misbased_pr_and_skips_landed_steps

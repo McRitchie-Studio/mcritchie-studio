@@ -65,4 +65,15 @@ module FastLane
 
     FullSuiteGate::LANES.all? { |lane| FullSuiteGate.lane_status(checks, lane, fingerprint) == :fresh }
   end
+
+  # Did a `git push` fail specifically because the branch is NON-FAST-FORWARD —
+  # the shape a REBASED branch produces (routine here: accepted moves and desks
+  # rebase onto it)? True ⇒ ship retries with --force-with-lease (safe: the lease
+  # refuses if the remote moved under us). False on any OTHER failure (auth,
+  # network, a protected ref) — those are not a rebase and must never be forced.
+  # Reads git's own rejection wording; nil/blank ⇒ false.
+  def push_rejected_non_fast_forward?(push_output)
+    text = push_output.to_s
+    text.match?(/\((?:non-fast-forward|fetch first)\)/) || text.match?(/!\s*\[rejected\]/)
+  end
 end
