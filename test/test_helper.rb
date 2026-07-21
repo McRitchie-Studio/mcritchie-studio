@@ -7,6 +7,19 @@ ENV["RAILS_ENV"] ||= "test"
 ENV["SEAL_RETRY_NO_SLEEP"] = "1"
 require_relative "../config/environment"
 require "rails/test_help"
+
+# Draw the route set NOW — under the real (local) test env, before any test can
+# stub Rails.env. Routes draw LAZILY whenever eager_load is off, which is EVERY
+# non-CI test process: local `bin/rails test`, local `rake test`, and CI's own
+# `rake test` lane (eager_load = ENV["CI"].present?, and the rake lane runs with
+# it off). The dev-only namespace in config/routes.rb draws ONLY when
+# Rails.env.local?. So a test that resolved a `dev_board_*` helper for the FIRST
+# time inside a `Rails.stub(:env, "production")` block used to draw the WHOLE set
+# with local? => false, silently dropping the dev namespace for the rest of that
+# worker — every later test then died with `undefined method dev_board_generate_path`.
+# Forcing the first draw here, un-stubbed, means no later env stub can ever be it.
+# See test/controllers/dev/board_controller_test.rb (task fix-dev-board-route-pollution).
+Rails.application.reload_routes_unless_loaded
 # minitest/mock (Object#stub + Minitest::Mock) isn't auto-required by rails/test_help;
 # the pinned minitest ~> 5.25 keeps it available (6.0 dropped it — see Gemfile), so
 # make it loadable suite-wide for tests that stub a seam (e.g. the LLM adapter).
