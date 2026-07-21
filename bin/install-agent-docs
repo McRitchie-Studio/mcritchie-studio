@@ -148,7 +148,20 @@ if [ "$MODE" = "check" ]; then
       fi
     done
   done
-  [ "$status" -eq 0 ] || echo "Run: cd $ROOT && bin/install-agent-docs" >&2
+  if [ "$status" -ne 0 ]; then
+    if [ "$ROOT" != "$RUNTIME_ROOT" ]; then
+      # Invoked from a feature WORKTREE (ROOT sits under a primary's checkout).
+      # The entry docs/skills install GLOBALLY, so running the installer HERE would
+      # publish unreviewed, mid-branch text to the shared roots and flip every
+      # concurrent session to "installed docs drift". The install is a POST-MERGE
+      # step from the primary — so give sequencing, never a runnable install command.
+      echo "Do NOT run bin/install-agent-docs from a worktree: these entry docs/skills install GLOBALLY, so publishing mid-branch text flips every concurrent session to 'installed docs drift'." >&2
+      echo "The install is a POST-MERGE step: after this branch merges to accepted and rides a release, install from the PRIMARY checkout ($RUNTIME_ROOT)." >&2
+      echo "See docs/agents/modules/docs-maintenance.md § Editing The Entry Docs." >&2
+    else
+      echo "Run: cd $ROOT && bin/install-agent-docs" >&2
+    fi
+  fi
   exit "$status"
 fi
 
