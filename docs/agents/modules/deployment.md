@@ -351,7 +351,7 @@ If deployment changes a provider, domain, callback URL, env var, or local port, 
 - the app README/runbook
 - any provider-specific docs under the app's `docs/`
 
-## GitHub Actions panel + prod-deploy approval gate
+## GitHub Actions panel + prod-deploy (approval gate removed 2026-07-20)
 
 `/deployments` carries a live GitHub Actions panel (`_github_actions_panel`) —
 the latest run per workflow (CI / QA Deploy / Production Deploy), status-pilled
@@ -371,18 +371,28 @@ Each `CiCheckJob` upsert then morph-broadcasts the refreshed bar to the task car
 the Next Release G3 slot over Turbo Streams, so the board's CI progress bars **tick
 up live with no reload** as each check passes.
 
-**Prod-deploy approval gate.** When a run reaches the `production` environment's
-required-reviewer gate it stamps `pending_environment` on the run, so the panel
-shows an amber **awaiting approval** row and nudges Discord (see below). Admins
-get an **Approve deploy** button that POSTs `/deployments/:run_id/approve`
-(`GithubDeploymentsController`, admin-gated). The controller reads the run's
-pending deployments and approves them via GitHub
+**Prod-deploy approval gate — REMOVED 2026-07-20 (task `remove-prod-deploy-approval`).**
+The `production` Environment's required-reviewer rule was deleted, so a dispatched
+prod-deploy run now deploys straight through: it never reaches a
+`pending_environment`/`waiting` state, the panel shows no amber **awaiting approval**
+row, and no Discord approval nudge fires for production. The wiring below stays in the
+codebase as GENERIC, currently-DORMANT infrastructure — it would light up again only
+if a required reviewer (or other protection rule) were added to some environment, of
+which there is none today. Its former behavior, for reference: reaching the gate
+stamped `pending_environment` on the run, driving an amber row plus an admin
+**Approve deploy** button that POSTs `/deployments/:run_id/approve`
+(`GithubDeploymentsController`, admin-gated), which read the run's pending deployments
+and approved them via GitHub
 `POST /repos/{owner}/{repo}/actions/runs/{run_id}/pending_deployments`
 (`state=approved`), authenticated with the agent PAT `GITHUB_TOKEN` (1Password
-`agent.github` field `personal-access-token`). Approving optimistically clears the
-local gate; the next scan (or webhook) reconciles it.
+`agent.github` field `personal-access-token`). Retiring this now-dormant subsystem is
+a tracked follow-up (`retire-dormant-approval-subsystem`).
 
-**The pending signal — poll, not webhook.** GitHub **refuses to deliver
+**The pending signal — poll, not webhook (now dormant for production).** With the
+`production` required reviewer removed 2026-07-20, `ScanPendingDeploymentsJob` finds
+no `waiting` prod runs and is a harmless no-op poll today; the mechanics below are
+how it worked while the gate existed, and how it would work again for any future
+gated environment. GitHub **refuses to deliver
 `deployment_review` to a repo webhook created with a PAT** (`422: events not
 allowed`) — even though it accepts `workflow_run` and `workflow_job` on that same
 PAT hook (`653247220`). So the prod receiver carries those two events but never the

@@ -34,8 +34,9 @@ class Release
     #     script in a ship workspace (turf-monster).
     #   * github_actions  — the conductor dispatches a GitHub Actions workflow and
     #     WATCHES it; the workflow does the Heroku push + hard /up smoke server-
-    #     side, and the production Environment's required reviewer is the ship-
-    #     confirm gate (the hub — DevOps v2 Phase 2).
+    #     side (the hub — DevOps v2 Phase 2). The production Environment's
+    #     required-reviewer approval was removed 2026-07-20, so the dispatched run
+    #     deploys straight through — the ship-confirm is launching bin/release ship.
     STRATEGY_HANDLERS = {
       "git_push_heroku" => :git_push_heroku,
       "repo_script" => :repo_script,
@@ -83,14 +84,16 @@ class Release
     # the pure decision that turns one `gh run view --json status,conclusion` read
     # into a verdict; the polling/sleeping IO stays in the shell.
     #
-    # THE BUG THIS FIXES: a prod-deploy run PAUSES at the `production` Environment's
-    # required reviewer, reporting status `waiting` — for as long as the operator
-    # takes to click (3h34m in the incident). The old fallback polled only for
-    # `status == "completed"` on a 20×5s=100s budget, so a blip during that pause
-    # read the still-`waiting` run as "never concluded" and failed the ship CLOSED
-    # over a deploy that had simply not been approved yet. `completed` is the ONLY
-    # terminal status GitHub reports; every other status (`waiting`, `queued`,
-    # `in_progress`, and any GitHub might add) means the run is still LIVE.
+    # THE BUG THIS FIXES: a prod-deploy run can report a LIVE non-terminal status —
+    # `waiting`, `queued`, or `in_progress` — for far longer than a short poll budget.
+    # (Historically a `production` Environment required reviewer held it `waiting` for
+    # as long as the operator took to click — 3h34m in the incident — before that
+    # approval was removed 2026-07-20.) The old fallback polled only for `status ==
+    # "completed"` on a 20×5s=100s budget, so a blip during that pause read the
+    # still-live run as "never concluded" and failed the ship CLOSED over a run that
+    # was simply not done. `completed` is the ONLY terminal status GitHub reports;
+    # every other status (`waiting`, `queued`, `in_progress`, and any GitHub might
+    # add) means the run is still LIVE.
     #
     #   * :success — completed + success → the deploy landed.
     #   * :failed  — completed + a non-success conclusion (failure/cancelled/

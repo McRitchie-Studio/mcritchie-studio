@@ -1562,9 +1562,11 @@ the current release drain), so the in-flight-PR retarget risk is zero.
    base `release → accepted` in `bin/dor-check`, `bin/fast-check`,
    `bin/agent-worktree`.
 2. **Actions CD (hub)** — `qa-deploy.yml` (push→`release`, `qa` env, optimistic
-   `/up` smoke) + `prod-deploy.yml` (`workflow_dispatch`, `production` env with a
-   required reviewer, hard-gated `/up`); the conductor triggers + `gh run watch`es
-   instead of local `git push heroku`.
+   `/up` smoke) + `prod-deploy.yml` (`workflow_dispatch`, `production` env, hard-gated
+   `/up`; the `production` required reviewer this phase added was later removed
+   2026-07-20 — task `remove-prod-deploy-approval` — so the dispatched run deploys
+   straight through); the conductor triggers + `gh run watch`es instead of local
+   `git push heroku`.
 3. **Flip gate authority + rewrite SOPs (hub)** — promote the existing `CiStatus`
    auditor to the G3/G4 verdict (G1 stays a local pre-flight); reconcile §1.1/§1.2,
    the Feature/Bug SOPs, §3.3 DoR, Workflow 2 (§4), and the gate docs to the target
