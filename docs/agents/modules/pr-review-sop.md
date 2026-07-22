@@ -77,7 +77,7 @@ itself**. Avi:
    `bin/task block <task> --kind rework` naming the failing checks — stop, no
    reviewer spawns; **conflicted** (`gh pr view <pr> --json mergeStateStatus`
    reports `DIRTY`) → `bin/task block <task> --kind rework` with
-   rebase/merge-release guidance (`outcome=ci-conflicted`) — stop, no reviewer
+   "merge the PR's base in and resolve" guidance (`outcome=ci-conflicted`) — stop, no reviewer
    spawns; a conflicted PR gets **no CI at all** (GitHub cannot compute the
    merge commit, so the workflow never fires), and it presents exactly like
    "no checks yet" — deferring it would strand the task in `submitted` forever

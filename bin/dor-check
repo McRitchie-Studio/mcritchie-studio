@@ -548,7 +548,7 @@ end
 # pretending the evidence is bad. `review_role` picks the guidance: the review
 # gate-zero says "defer until CI settles"; the builder says "open the PR" — and a
 # CONFLICTED PR overrides both (its CI is never coming; "open the PR"/"defer"
-# would each be wrong advice — the fix is rebase/merge release).
+# would each be wrong advice — the fix is merge the PR's base in and resolve).
 
 # The STALE fingerprint DELTA: what the evidence was certified FOR, what the code IS
 # now, and WHERE "now" was read from.
@@ -617,8 +617,9 @@ def suite_evidence_error(eval, slug, ci, review_role)
     state = ci && ci[:state] ? ci[:state].to_s.upcase : "UNKNOWN"
     guidance =
       if ci && ci[:state] == :conflicted
-        "This PR is merge-CONFLICTED (mergeStateStatus DIRTY), so its CI will NEVER fire — rebase or merge " \
-          "release into the branch, resolve the conflicts, and push; the refreshed PR then runs CI"
+        # The PR's ACTUAL base, via the centralized remedy — the twin of the
+        # :ci_less case beside it (conflict-remedy-names-wrong-branch).
+        CiStatus.conflicted_remedy(ci)
       elsif ci && ci[:state] == :ci_less
         # A fast cert is credited against a GREEN CI, and here there is no CI to be
         # green — waiting for one is the exact trap this state exists to break.
@@ -1012,10 +1013,8 @@ if gate != "build"
     # HARD blocker in BOTH roles, distinct from :pending/:none ("CI still coming",
     # genuinely deferrable): a conflicted PR's CI is never coming, so anything
     # softer strands the task in submitted forever (the PR-#509 stall).
-    errors << "the PR is merge-CONFLICTED against its base (mergeStateStatus DIRTY) — GitHub cannot compute the " \
-      "merge commit, so the pull_request workflow NEVER fires: this PR has NO CI coming, not a pending one, and " \
-      "review's gate-zero would defer it forever while the board looks healthy. Rebase or merge release into the " \
-      "branch (git fetch origin && git merge origin/release), resolve the conflicts, push, and re-run dor-check."
+    errors << "review's gate-zero would defer this forever while the board looks healthy. " +
+      CiStatus.conflicted_remedy(ci)
   when :ci_less
     # The SAME hard-blocker shape as :conflicted, for the case that never reads DIRTY:
     # zero check-runs plus a merge GitHub will not confirm. Softer treatment strands
@@ -1289,7 +1288,7 @@ if ready
   elsif ci && ci[:state] == :conflicted
     # Defensive: :conflicted always lands in `errors` above, so a ready verdict
     # shouldn't reach here — but if a future reordering ever lets it, say it loudly.
-    puts "  ⚠ PR merge-CONFLICTED (mergeStateStatus DIRTY) — CI never fires; rebase/merge release"
+    puts "  ⚠ PR merge-CONFLICTED (mergeStateStatus DIRTY) — CI never fires; merge #{ci[:base].to_s.empty? ? "the PR's base" : "origin/#{ci[:base]}"} in and resolve"
   elsif ci && ci[:state] == :ci_less
     # Defensive, like :conflicted above — :ci_less always lands in `errors`.
     puts "  ⚠ NO CI WILL RUN (stale base) — rebase onto #{ci[:base].to_s.empty? ? "the base branch" : ci[:base]}"

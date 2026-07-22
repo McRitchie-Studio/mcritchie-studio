@@ -961,7 +961,9 @@ class PrReviewCommandTest < Minitest::Test
     assert_includes block_call, "rework"
     feedback = block_call[block_call.index("--feedback") + 1]
     assert_match(/conflict/i, feedback)
-    assert_match(/rebase|merge release/i, feedback, "the feedback names the fix")
+    assert_match(/resolve.*conflict/i, feedback, "the feedback names the fix — resolve the conflicts")
+    refute_match(%r{origin/release}, feedback,
+                 "conflict-remedy-names-wrong-branch: the cure must NOT hardcode release — feature PRs target accepted")
     assert_match(/no.*CI|CI never fires/i, feedback, "the feedback explains WHY deferring would strand it")
 
     # The bounce records as a failed dor_review (gate-zero) attempt, distinct

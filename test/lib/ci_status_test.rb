@@ -481,6 +481,150 @@ class CiStatusTest < Minitest::Test
     assert_match(%r{git merge origin/accepted\b}, remedy)
   end
 
+  # --- conflict-remedy-names-wrong-branch -------------------------------------
+  # The :conflicted (mergeStateStatus DIRTY) remedy must read the PR's ACTUAL base,
+  # not a hardcoded `release`. Feature PRs target `accepted`, so "git merge
+  # origin/release" names the WRONG branch and would pull unreviewed release-only
+  # content into the PR. This mirrors the :ci_less remedy, which already got it
+  # right — same properties, asserted for :conflicted.
+
+  def test_view_verdict_conflicted_carries_the_pr_base
+    v = CiStatus.view_verdict(view("OPEN", "DIRTY", base: "accepted"))
+    assert_equal :conflicted, v[:state]
+    assert_equal "accepted", v[:base], "the conflicted verdict must surface the PR's base so the remedy can name it"
+  end
+
+  def conflicted_remedy_for(base)
+    CiStatus.conflicted_remedy(CiStatus.view_verdict(view("OPEN", "DIRTY", base: base)))
+  end
+
+  def test_conflicted_remedy_names_the_pr_base_not_a_hardcoded_release
+    remedy = conflicted_remedy_for("accepted")
+    assert_match(%r{git merge origin/accepted\b}, remedy, "the remedy must merge the PR's ACTUAL base")
+    refute_match(%r{origin/release\b}, remedy, "it must NOT hardcode release — feature PRs target accepted")
+  end
+
+  def test_conflicted_remedy_is_failure_safe_merge_not_rebase_with_a_way_back
+    remedy = conflicted_remedy_for("accepted")
+    refute_includes remedy, "&&", "no && chain past a step that can halt (the advice-failure-path lesson)"
+    assert_match(%r{git merge origin/accepted}, remedy, "prefer merge — a halted merge leaves the branch untouched")
+    refute_match(/git rebase/, remedy, "a rebase halt rewrites history; the conflict remedy must merge")
+    assert_match(/--abort/, remedy, "the remedy must name a way back to a known-good state")
+    assert_match(/resolve/i, remedy, "and tell the operator to resolve the conflicts")
+  end
+
+  def test_conflicted_remedy_omits_commands_when_the_base_is_unknown
+    remedy = CiStatus.conflicted_remedy(CiStatus.view_verdict(view("OPEN", "DIRTY")))
+    refute_match(%r{origin/\S*\s}, remedy, "no half-built origin/<placeholder> ref may be printed")
+    refute_match(/git (merge|rebase|fetch)/, remedy, "with no base resolved, omit the commands — never guess them")
+    assert_match(/base/i, remedy, "it still has to say what is missing")
+  end
+
+  # --- conflict-remedy-names-wrong-branch (round 5): the base is HOSTILE ---------
+  # base = the GitHub PR's baseRefName. pr-review and dor-check interpolate it VERBATIM
+  # into task feedback a human then PASTES INTO A SHELL, so the property under test IS
+  # the injection property — asserted on the EFFECT (what parses out of the printed
+  # line), never on one spelling of the output. A base that is not a plain git ref must
+  # NEVER surface as a LIVE shell token in a runnable `git …` line: the commands are
+  # omitted (an honest gap), or at most the ref appears shell-escaped and inert. A
+  # spelling assertion (refute the literal "; rm") would pass the instant an attacker
+  # picks a metacharacter the author did not enumerate; asserting the EFFECT catches
+  # every vector, including the ones we did not imagine.
+
+  # A base carrying any of these can, unescaped, run a SECOND command, open a
+  # substitution, split into a second argument, or be read as a git/ssh OPTION.
+  HOSTILE_BASES = [
+    "; rm -rf ~",       # command separator
+    "$(touch pwned)",   # $() substitution
+    "`id`",             # backtick substitution
+    "a b",              # whitespace → two arguments
+    "a|b",              # pipe
+    "a&&b",             # AND-chain a second command
+    "a>b",              # output redirection
+    "--upload-pack=x",  # leading dash → git/ssh reads it as an OPTION
+    "..",               # range / parent-traversal refspec, never a branch
+    ""                  # nothing resolved at all
+  ].freeze
+
+  # Both remedies that interpolate a base into a runnable `git merge origin/<base>`,
+  # keyed by name so a failure says WHICH sibling regressed.
+  def base_remedies(base)
+    v = { base: base, merge_state: "DIRTY", mergeable: "CONFLICTING" }
+    { "conflicted_remedy" => CiStatus.conflicted_remedy(v),
+      "ci_less_remedy"    => CiStatus.ci_less_remedy(v) }
+  end
+
+  # THE EFFECT, asserted two ways so it holds whether the impl OMITS the commands or
+  # escapes the ref to an inert token — it certifies safety, not the strategy.
+  def assert_no_injectable_command(remedy, base, label)
+    # (1) The raw external value never reaches the runnable argument position — the
+    #     exact defect the blocker named. Stays true under a future switch to
+    #     shell-escaping, because the escaped form differs from the raw one.
+    refute_includes remedy, "origin/#{base}",
+                     "#{label}: unescaped base #{base.inspect} reached a runnable `git merge origin/<base>`"
+    # (2) No copy-paste-runnable git line carries a character that could start a second
+    #     command or a substitution. The legit lines (`git fetch origin`, `git merge
+    #     origin/<ref>`) contain none of these, so this never false-fires on a valid
+    #     ref — only an injected payload that survived into a command line trips it.
+    remedy.each_line do |line|
+      next unless line =~ /\A\s*git\b/
+
+      refute_match(/[;&|`$(){}<>\\'"]/, line,
+                   "#{label}: a runnable git line carries a shell-active char for base #{base.inspect}: #{line.inspect}")
+    end
+  end
+
+  def test_a_hostile_base_never_reaches_a_runnable_command_in_either_remedy
+    HOSTILE_BASES.each do |base|
+      base_remedies(base).each do |label, remedy|
+        assert_no_injectable_command(remedy, base, label)
+        # And it still tells the reader what is missing rather than emitting a broken line.
+        assert_match(/base/i, remedy, "#{label}: must still name the unresolved base for #{base.inspect}")
+      end
+    end
+  end
+
+  def test_a_normal_base_names_origin_accepted_and_reads_cleanly_in_both_remedies
+    base_remedies("accepted").each do |label, remedy|
+      assert_match(%r{git merge origin/accepted\b}, remedy, "#{label}: must name the PR's real base")
+      remedy.each_line do |line|
+        next unless line =~ /\A\s*git\b/
+
+        refute_match(/[;&|`$(){}<>\\'"]/, line, "#{label}: a normal base must produce a clean, inert command line")
+      end
+    end
+  end
+
+  # The predicate itself, at the property grain — a safe ref is exactly a plain git
+  # ref, and every shell-active or option-like shape is rejected.
+  def test_safe_git_ref_accepts_plain_refs_and_rejects_everything_dangerous
+    %w[accepted release main feat/foo v1.2.3 a-b_c].each do |ref|
+      assert CiStatus.safe_git_ref?(ref), "#{ref.inspect} is a plain git ref and must be allowed"
+    end
+    (HOSTILE_BASES + ["-x", "a\nb", "a..b"]).each do |ref|
+      refute CiStatus.safe_git_ref?(ref), "#{ref.inspect} is not a plain git ref and must be rejected"
+    end
+  end
+
+  # [integration] The SAME fix must land in BOTH callers — neither bin/pr-review nor
+  # bin/dor-check may hardcode the conflict cure's branch; both route through
+  # CiStatus.conflicted_remedy so one PR cannot collect three cures (the ci_less lesson).
+  def test_pr_review_and_dor_check_do_not_hardcode_the_conflict_branch
+    %w[pr-review dor-check].each do |bin|
+      src = File.read(File.expand_path("../../bin/#{bin}", __dir__))
+      # Catch the CLASS, not one spelling: `git merge origin/release`, `merge
+      # release into the branch`, `rebase on release`, `rebase onto release` — all
+      # name the wrong branch (feature PRs target accepted). The narrow guard
+      # missed the second AND third spellings in earlier rounds — the very lesson,
+      # so this asserts the whole (rebase|merge)…release family. `accepted→release`
+      # (the sweep promotion) is NOT a rebase/merge onto release, so it's safe.
+      refute_match(%r{(?:rebase|merge)\s+(?:on\s+|onto\s+|origin/)?release\b}, src,
+                   "bin/#{bin} must not tell a builder to rebase/merge RELEASE for a conflict — the base is the PR's own")
+      assert_includes src, "conflicted_remedy",
+                       "bin/#{bin} must route the :conflicted cure through CiStatus.conflicted_remedy"
+    end
+  end
+
   def test_ci_less_is_an_injectable_token
     # The DOR_CHECK_CI_STATUS / PR_REVIEW_CI_STATUS seam, so the CLI tests can drive
     # the state without a network.

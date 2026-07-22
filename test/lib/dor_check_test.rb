@@ -1546,14 +1546,17 @@ class DorCheckTest < Minitest::Test
   # GitHub cannot compute the merge commit, so the pull_request workflow never
   # fires. Pre-fix the gate read that as :none → a soft "CI UNVERIFIED" suggestion,
   # and the PR sat in submitted forever looking healthy. DIRTY must block in BOTH
-  # roles, with the fix named (rebase/merge release), and stay distinct from
-  # pending/none — which mean "CI still coming" and genuinely defer.
+  # roles, with the fix named (resolve conflicts against the PR's ACTUAL base, never
+  # a hardcoded release), and stay distinct from pending/none — which mean "CI still
+  # coming" and genuinely defer.
 
   def test_merge_gate_blocks_a_conflicted_pr
     out, code = ci_check("conflicted")
     assert_equal 1, code, out
     assert_match(/CONFLICTED/i, out)
-    assert_match(/rebase|merge release/i, out, "the blocker names the fix")
+    assert_match(/resolve.*conflict/i, out, "the blocker names the fix — resolve the conflicts")
+    refute_match(%r{origin/release}, out,
+                 "conflict-remedy-names-wrong-branch: the cure must NOT hardcode release — feature PRs target accepted")
     assert_match(/not ready to advance/, out)
   end
 
@@ -1716,6 +1719,19 @@ class DorCheckTest < Minitest::Test
     assert_equal 1, code, out
     assert_match(/GitHub CI is RED/, out)
     assert_match(/fast-cert evidence is FRESH/, out, "the suite gate refuses too — fast needs CI green")
+  end
+
+  # conflict-remedy-names-wrong-branch: the fresh-fast-cert path ALSO emits a conflict
+  # cure (suite_evidence_error), and it HARDCODED "merge release into the branch" —
+  # the reachable path both reviewers flagged, and the one untested CI state here. It
+  # must route through CiStatus.conflicted_remedy and never name a hardcoded release.
+  def test_fresh_fast_cert_with_conflicted_ci_names_the_base_not_release
+    out, code = fast_check_ci("fast_fresh", "conflicted")
+    assert_equal 1, code, out
+    assert_match(/CONFLICTED/i, out, "a conflicted PR on the fresh-cert path is refused, not credited")
+    assert_match(/resolve/i, out, "the guidance names the fix — resolve the conflicts")
+    refute_match(%r{merge\s+(?:origin/)?release\b}, out,
+                 "the cure must NOT hardcode release — feature PRs target accepted")
   end
 
   def test_fresh_fast_cert_with_pending_ci_is_credited_provisionally_at_submit
