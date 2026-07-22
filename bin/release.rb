@@ -2964,23 +2964,47 @@ def eject
   say("Eject #{slug} from the release train#{PROD ? ' (PROD board)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
   warn_local!
 
-  # Free-text feedback is safe to embed via .inspect: the whole snippet rides
-  # `heroku run` as a url-safe Base64 blob (conductor_payload), so quotes/parens
-  # survive the remote re-quoting intact.
-  feedback_ruby = feedback.to_s.empty? ? "nil" : feedback.inspect
-  step("record: Release::Conductor.eject!(#{slug}) — detach + block for rework")
-  result = conductor(
-    "t = Task.find_by!(slug: #{slug.inspect}); " \
-    "Release::Conductor.eject!(t, feedback: #{feedback_ruby}); " \
-    "puts({ slug: t.slug, stage: t.reload.stage, merged: t.merged }.to_json)"
+  # Resolve the ACTIVE release with a MINIMAL, STABLE read (just slug/state) so we can
+  # claim its assembler lane BEFORE the membership mutation. A read — runs even under
+  # --dry-run.
+  step("record (read-only): resolve the active release for the assembler claim")
+  active = conductor(
+    "r = Release.current; puts((r ? { slug: r.slug, state: r.state } : {}).to_json)",
+    read_only: true
   )
-  say("  #{slug} → blocked (rework)#{feedback ? ' — feedback noted' : ''}") unless DRY || result.empty?
 
-  say("")
-  say("Now unwind its code from the branch (the record is detached; git is yours):")
-  say("  1. find its merge commit:  git log origin/#{RELEASE_BRANCH} --oneline --merges | head")
-  say("  2. revert it (never force-push): git revert -m 1 <merge-sha> && git push origin #{RELEASE_BRANCH}")
-  say("  3. re-run `bin/release prepare` — the sweep self-heals and the REST of the RC rides on.")
+  # ASSEMBLER CLAIM — eject! MUTATES release-candidate membership (release_slug + `merged`
+  # cleared: a member is detached off the RC), the SAME assembler-lane write `prepare`/`merge`
+  # guard. A concurrent eject DURING a `prepare` sweep would race that membership write, so
+  # take the SAME per-release `assembler` claim first: the active release's real slug when one
+  # exists (contending with prepare/merge's active-path claim), else the `__forming__`
+  # sentinel (a fresh-create prepare's guard). A live DIFFERENT holder stands us down
+  # (acquire_conductor_claim! aborts). eject is a discrete op (like merge/finalize), so the
+  # begin/ensure frees the claim on EVERY exit. Inert under --dry-run (conductor_claim no-ops).
+  assembler_slug = (active && active["slug"]).to_s.strip
+  assembler_slug = ReleaseClaimCli::FORMING_SLUG if assembler_slug.empty?
+  acquire_conductor_claim!("assembler", assembler_slug)
+  begin
+    # Free-text feedback is safe to embed via .inspect: the whole snippet rides
+    # `heroku run` as a url-safe Base64 blob (conductor_payload), so quotes/parens
+    # survive the remote re-quoting intact.
+    feedback_ruby = feedback.to_s.empty? ? "nil" : feedback.inspect
+    step("record: Release::Conductor.eject!(#{slug}) — detach + block for rework")
+    result = conductor(
+      "t = Task.find_by!(slug: #{slug.inspect}); " \
+      "Release::Conductor.eject!(t, feedback: #{feedback_ruby}); " \
+      "puts({ slug: t.slug, stage: t.reload.stage, merged: t.merged }.to_json)"
+    )
+    say("  #{slug} → blocked (rework)#{feedback ? ' — feedback noted' : ''}") unless DRY || result.empty?
+
+    say("")
+    say("Now unwind its code from the branch (the record is detached; git is yours):")
+    say("  1. find its merge commit:  git log origin/#{RELEASE_BRANCH} --oneline --merges | head")
+    say("  2. revert it (never force-push): git revert -m 1 <merge-sha> && git push origin #{RELEASE_BRANCH}")
+    say("  3. re-run `bin/release prepare` — the sweep self-heals and the REST of the RC rides on.")
+  ensure
+    release_conductor_claim!
+  end
 end
 
 # --- ship (multi-repo, producer-first) -------------------------------------

@@ -2641,8 +2641,16 @@ end
 # :unknown. Read over the SAME board this file's task reads hit, via the release-claim CLI's
 # `any-live` query (exit 0 live / 3 none / else can't-tell). Overridable for tests with
 # AGENT_WORKTREE_DEPLOYER_CLAIM=live|none|unknown. Memoized for the command (one board read).
-def deployer_claim_liveness
-  return @deployer_claim_liveness if defined?(@deployer_claim_liveness)
+#
+# `fresh: true` BYPASSES that memo and re-reads the live board — EXACT parity with the
+# build-claim guard's task_record_for_pr(fresh:), for the SAME reason: the under-lock
+# re-verify (reclaim_verdict → claim_hold, fresh: true) exists precisely to catch a claim
+# taken AFTER the candidate list was selected, so a cached :none there would reintroduce
+# the very staleness it guards against — a ship STARTING mid `cleanup --reclaim --yes` loop
+# would read the memoized stale :none and reclaim its live `_ship`/`_gate`, breaking the
+# in-flight production deploy.
+def deployer_claim_liveness(fresh: false)
+  return @deployer_claim_liveness if !fresh && defined?(@deployer_claim_liveness)
 
   @deployer_claim_liveness = compute_deployer_claim_liveness
 end
@@ -2668,9 +2676,14 @@ end
 # a ship MIGHT be running and reclaiming its workspace breaks a production deploy, so an
 # unreadable liveness read withholds — matching claim_hold's withhold-on-outage posture, and
 # cheap here because bin/release recreates the workspaces on demand.
-def ship_workspace_hold(record, announce: false)
+#
+# `fresh:` threads straight through to deployer_claim_liveness so the under-lock re-verify
+# (claim_hold fresh: true) re-reads the board here too — parity with the build-claim guard,
+# which already bypasses its own memo on the re-verify. Without it, a cached :none from the
+# selection pass would let a mid-loop ship's `_ship`/`_gate` be reclaimed.
+def ship_workspace_hold(record, fresh: false, announce: false)
   ws = record[:task]
-  case deployer_claim_liveness
+  case deployer_claim_liveness(fresh: fresh)
   when :live
     warn "note: #{worktree_label(record)}: a ship is live (deployer claim held) — withholding #{ws} from reclaim" if announce
     "a ship is live (deployer claim held) — withholding #{ws} from reclaim; bin/release recreates it on demand"
@@ -2718,9 +2731,11 @@ def claim_hold(record, fresh: false, announce: false)
   # exclusion here — withhold `_ship`/`_gate` whenever a live deployer claim exists (a ship
   # is in progress), or when we cannot tell (a destroy path withholds on an unreadable
   # board, per this file's doctrine). No live claim ⇒ fall through: they are then safe to
-  # reclaim, exactly as the clean-up SOP says.
+  # reclaim, exactly as the clean-up SOP says. `fresh:` threads through so the under-lock
+  # re-verify re-reads the deployer claim (parity with the build-claim guard below) — a ship
+  # STARTING mid `cleanup --reclaim` loop is caught, not read from a stale :none.
   if ship_workspace_record?(record)
-    hold = ship_workspace_hold(record, announce: announce)
+    hold = ship_workspace_hold(record, fresh: fresh, announce: announce)
     return hold if hold
   end
 
