@@ -448,22 +448,39 @@ class AgentWorktreeTest < Minitest::Test
   #
   # Asserted by BEHAVIOUR, not wall-clock. The old guard measured `elapsed < 3` around a
   # SPAWNED subprocess — only 3x headroom, and spawn latency inflated ~2.75x under load, so
-  # it red-failed a CORRECT implementation on a busy box. Instead assert the enforcement
-  # directly: (1) the read FAILED via the timeout branch — it carries the "timed out"
-  # message ONLY that branch emits, where a natural 6s exit takes the success branch and
-  # never says it; and (2) terminate_group's grace loop never asked to sleep beyond its
-  # 0.05s quantum, read off an INJECTED sleeper — so an unbounded wait would surface as an
-  # over-quantum sleep, not as a slow clock. Mutation-proof: drop the bound (join without
-  # the timeout) and the child exits naturally -> ok:true, no "timed out" -> RED.
-  def test_capture_status_timeout_kills_the_child_bounded_not_waited_out
-    out = run_in_script(<<~RUBY)
+  # it red-failed a CORRECT implementation on a busy box. But asserting only the timeout
+  # BRANCH is not enough: a no-op terminate_group STILL returns the timed-out verdict (the
+  # unbounded popen3 ensure just waits the child out), so the read failing "timed out"
+  # proves the branch, not the KILL. So force the kill to PROVE ITSELF: the child TRAPS
+  # SIGTERM, so only terminate_group's escalation-to-KILL can stop it — and the escalation
+  # runs its grace-poll, which calls the INJECTED sleeper. Reading the sleeper is thus a
+  # deterministic witness of the kill (no wall-clock): with an injected clock the grace
+  # deadline elapses at once, the poll fires once, and the KILL lands.
+  #
+  # The assertion, all four deterministic: the read FAILED (ok=false) through the timeout
+  # branch (the "timed out" message only it emits), the escalation poll RAN (slept.any? —
+  # the witness of the kill on a TERM-ignoring child), and it never slept beyond its 0.05s
+  # quantum. Mutations each go RED: drop the bound (join without the timeout) -> child exits
+  # naturally, ok:true; make terminate_group a no-op -> the child is never killed and the
+  # poll never runs, slept.empty?; sleep past the quantum -> slept.max > 0.05.
+  def test_capture_status_timeout_escalates_to_kill_a_term_ignoring_child
+    out = run_in_script(<<~'RUBY')
       slept = []
-      ok, _out, err = capture_status("sleep", "6", timeout: 1, sleeper: ->(s) { slept << s; sleep(s) })
-      print [ok, err.include?("timed out"), (slept.max || 0) <= 0.05].inspect
+      # An injected clock whose first read seeds the grace deadline and whose next read is
+      # already past it, so terminate_group polls once (the witness) then escalates to KILL —
+      # no real grace wait, no wall-clock in the assertion.
+      ticks = [0.0, 0.01, 100.0]
+      clock = -> { ticks.length > 1 ? ticks.shift : ticks.first }
+      # `trap '' TERM` makes the child IGNORE SIGTERM: only the escalation KILL stops it, so a
+      # no-op bound would sleep it out to natural exit and the poll (sleeper) would never run.
+      ok, _out, err = capture_status("sh", "-c", "trap '' TERM; sleep 6", timeout: 1,
+                                     clock: clock, sleeper: ->(s) { slept << s })
+      print [ok, err.include?("timed out"), slept.any?, (slept.max || 0) <= 0.05].inspect
     RUBY
-    assert_equal "[false, true, true]", out,
-                 "a 1s bound around `sleep 6` fails the read through the timeout branch and kills the child " \
-                 "within terminate_group's 0.05s poll quantum — no unbounded wait, and no wall-clock assertion"
+    assert_equal "[false, true, true, true]", out,
+                 "a 1s bound around a TERM-ignoring `sleep 6` fails the read through the timeout branch AND " \
+                 "reaches terminate_group's escalation KILL (its grace poll ran) — proof of the kill itself, " \
+                 "within the 0.05s quantum, with no wall-clock assertion"
   end
 
   # --- integration: the REAL mcritchie config carries the reservation through
