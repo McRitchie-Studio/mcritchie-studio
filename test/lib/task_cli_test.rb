@@ -1924,4 +1924,16 @@ class TaskCliTest < Minitest::Test
     assert_equal 1, status.exitstatus, "a non-persisting stamp must not report success"
     assert_match(/merged NOT persisted/, err)
   end
+
+  # THE 2026-07-21 ROOT CAUSE: under board load the merged PATCH drops AND the read-back GET
+  # fails together. The verifier read the failed GET as nil and treated nil as "persisted" —
+  # absence of signal as success — so a dropped stamp reached a `reviewed` member as merged:None
+  # and the sweep left nine tasks stranded. An UNREADABLE read-back must now fail closed, exactly
+  # like a blank one: a failed read is never a confirmation.
+  def test_merged_exits_nonzero_when_the_read_back_is_unreadable
+    _requests, _out, err, status = run_task(["merged", "demo-task", "accepted"], fail_get: 503)
+    assert_equal 1, status.exitstatus, "an unconfirmable stamp (board unreadable) must not report success"
+    assert_match(/merged NOT persisted/, err)
+    assert_match(/unreadable/i, err, "the failure names that the board could not be read")
+  end
 end
