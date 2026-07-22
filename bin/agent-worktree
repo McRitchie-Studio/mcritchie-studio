@@ -198,10 +198,20 @@ end
 # exit-code contract on it, and nil can never equal a contract code, so an
 # unclassifiable exit always reads as a FAILED command. Callers that only
 # destructure three names simply ignore it.
-def capture_status(*cmd, chdir: nil, env: {}, timeout: nil)
+# Real defaults for the timeout injection seams (below): the monotonic clock the grace
+# loop measures against, and the sleep it yields between liveness probes.
+MONOTONIC_CLOCK = -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) }
+REAL_SLEEPER = ->(seconds) { sleep(seconds) }
+
+# `clock:`/`sleeper:` are injection seams (same shape as bin/lib/cert_orphan_guard.rb):
+# they default to the real monotonic clock and sleep so every production call site is
+# unchanged, and a test drives the bound's ENFORCEMENT deterministically instead of
+# asserting a spawn-latency-inflated wall-clock elapsed. They matter only on the bounded
+# lane (they thread to terminate_group's grace loop); the plain lane never sleeps.
+def capture_status(*cmd, chdir: nil, env: {}, timeout: nil, clock: MONOTONIC_CLOCK, sleeper: REAL_SLEEPER)
   options = {}
   options[:chdir] = chdir if chdir
-  return capture_bounded(cmd, options, env, timeout) if timeout
+  return capture_bounded(cmd, options, env, timeout, clock: clock, sleeper: sleeper) if timeout
 
   out, err, status = Open3.capture3(env, *cmd, **options)
   [status.success?, out, err, status.exitstatus]
@@ -225,7 +235,7 @@ end
 # The child runs in its OWN process group (pgroup: true) so the signal reaches anything it
 # spawned (bin/task shells out to Ruby, which opens the socket that actually hangs).
 # Timing out reads exactly like any other failed command → the guard fails open.
-def capture_bounded(cmd, options, env, timeout)
+def capture_bounded(cmd, options, env, timeout, clock: MONOTONIC_CLOCK, sleeper: REAL_SLEEPER)
   Open3.popen3(env, *cmd, **options.merge(pgroup: true)) do |stdin, stdout, stderr, wait_thr|
     stdin.close
     # Drain both pipes on threads: a child that fills a pipe buffer would otherwise block
@@ -238,7 +248,7 @@ def capture_bounded(cmd, options, env, timeout)
       # bound holds only because we kill the group first. If both signals were to fail
       # (EPERM — the child is not ours), that ensure would block; terminate_group therefore
       # escalates TERM -> KILL, and a KILL we are permitted to send always lands.
-      terminate_group(wait_thr.pid)
+      terminate_group(wait_thr.pid, clock: clock, sleeper: sleeper)
       wait_thr.join(2)
       [out_reader, err_reader].each { |thread| thread.join(1) || thread.kill }
       # No exit code on a timeout — the child was killed, it did not ANSWER. nil
@@ -272,14 +282,14 @@ end
 # well-behaved child (bin/task) exits on TERM, so the blind KILL was both unnecessary and a
 # needless 0.2s on every timeout. ESRCH/EPERM mean it is already gone (or was never ours) —
 # either way there is nothing left to bound.
-def terminate_group(pid, grace: 2.0)
+def terminate_group(pid, grace: 2.0, clock: MONOTONIC_CLOCK, sleeper: REAL_SLEEPER)
   Process.kill("TERM", -pid)
 
-  deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + grace
-  while Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline
+  deadline = clock.call + grace
+  while clock.call < deadline
     return unless process_group_alive?(pid)
 
-    sleep 0.05
+    sleeper.call(0.05)
   end
 
   Process.kill("KILL", -pid)
