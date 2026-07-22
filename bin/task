@@ -141,6 +141,7 @@ require_relative "lib/projects_root"
 require_relative "lib/bin_helpers"
 require_relative "lib/cert_root_guard"
 require_relative "lib/fast_lane"
+require_relative "lib/stamp_confirmation"
 
 BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
 SHINY_EMOJI = "✨"
@@ -961,13 +962,21 @@ end
 # On a DEFINITE mismatch exit nonzero + loud; an unverifiable read (nil) degrades
 # to the prior behavior (not proof of a failed write).
 def verify_merged_persisted!(slug, expected)
-  persisted = read_back_merged(slug)
-  return if persisted.nil? || persisted == expected
+  # A 200 is not persistence: confirm the stamp by reading it back. Only an EXACT match
+  # passes — a blank value (the write dropped) AND an unreadable board (the read-back GET
+  # failed) both stay unconfirmed. The old code returned on a nil read-back, treating an
+  # unreadable board as verified; under load the PATCH drops and the GET fails together, so
+  # that silent pass is exactly how a dropped stamp reached a `reviewed` member as merged:None
+  # (2026-07-21). Retries survive a transient read miss without accepting a genuine drop.
+  return if StampConfirmation.confirmed?(expected,
+                                         read_back: -> { read_back_merged(slug) },
+                                         sleeper: ->(seconds) { sleep(seconds) })
 
-  shown = persisted.empty? ? "nil" : persisted
-  warn!("✗ merged NOT persisted: #{slug} → merged:#{expected} reported success, but a fresh read shows merged:[#{shown}].")
-  warn!("  The git-location write did not land — the sweep treats an unstamped `reviewed` member as an anomaly and leaves it behind.")
-  warn!("  Re-run: bin/task merged #{slug} #{expected}   (if it recurs the board write is failing server-side — check ErrorLog).")
+  last = read_back_merged(slug)
+  shown = last.nil? ? "unreadable" : (last.empty? ? "nil" : last)
+  warn!("✗ merged NOT persisted: #{slug} → merged:#{expected} reported success, but the read-back shows merged:[#{shown}].")
+  warn!("  A failed read is NOT a confirmation — the git-location write did not land (or the board is unreadable); the sweep treats an unstamped `reviewed` member as an anomaly and leaves it behind.")
+  warn!("  Re-run: bin/task merged #{slug} #{expected}   (if it recurs the board write is failing server-side — check ErrorLog / PG connections).")
   exit 1
 end
 

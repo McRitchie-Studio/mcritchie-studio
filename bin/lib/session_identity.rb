@@ -52,6 +52,8 @@ module SessionIdentity
     override = env["TASK_CLAIM_NONCE"].to_s.strip
     return override unless override.empty?
 
+    # Delegates to the (now spare-refusing) agent_process, so the lease IDENTITY answers to
+    # the same owning-session fact as its LIFETIME — a warm bg-spare anchors neither.
     agent = agent_process
     return short_hash("pid:#{agent[:pid]}|start:#{agent[:start]}") if agent
 
@@ -71,11 +73,36 @@ module SessionIdentity
   # source. The start time is carried alongside the pid because a bare pid is reused
   # after exit, and "the pid is alive" would then be a false positive for a holder
   # that died an hour ago.
-  def agent_process
-    process_ancestry.find { |p| AGENT_COMMANDS.include?(File.basename(p[:comm].to_s.split(/\s+/).first.to_s)) }
-                    &.then { |p| { pid: p[:pid], start: proc_start(p[:pid]) } }
+  #
+  # A BACKGROUND claude IS NEVER THE ANCHOR. claude runs long-lived processes that OUTLIVE the
+  # session that used them: the pooled helpers "claude bg-spare" / "claude bg-pty-host", AND the
+  # "claude daemon run" that roots the pool (reparented to init, up to 12h old). Anchoring a
+  # lease to any of them renews it FOREVER after the real run ended (2026-07-21: a phantom pinned
+  # the avi/steffon lane — held by a lane whose heartbeat was seconds-fresh with no review in
+  # flight, unclearable). They all share the `claude` command; the distinguisher is a subcommand
+  # token in the FULL argv — `bg-spare`/`bg-pty-host` (the helpers rewrite their title) and
+  # `daemon` (the daemon keeps its exec-path title, so only the argv shows `daemon run`).
+  # owning_agent? refuses them, so agent_process finds the real session BEHIND them or returns
+  # nil: no renewer, and the lease lapses on the ordinary TTL (the recoverable direction, never a
+  # phantom). `ancestry` is injectable so the selection is tested as data, not by walking a live tree.
+  BACKGROUND_ROLE_MARKER = /\bbg-(?:spare|pty-host)\b|\bdaemon\b/
+
+  def agent_process(ancestry: process_ancestry)
+    ancestry.find { |p| owning_agent?(p[:command]) }
+            &.then { |p| { pid: p[:pid], start: proc_start(p[:pid]) } }
   rescue StandardError
     nil
+  end
+
+  # Is this ancestry entry an OWNING agent — a `claude`/`codex` CLI that is NOT a background
+  # helper or daemon? The role token rides in the full argv after the command name, so a bare
+  # `claude` (or `claude --flags`, or a full path to it) is the owner while a `claude bg-spare`,
+  # `claude bg-pty-host`, or `…/claude daemon run …` is refused. `command` is the full command line.
+  def owning_agent?(command)
+    text = command.to_s
+    return false if text.match?(BACKGROUND_ROLE_MARKER)
+
+    AGENT_COMMANDS.include?(File.basename(text.split(/\s+/).first.to_s))
   end
 
   # Is the process at +pid+ still the SAME process that was running at +start+?
@@ -96,17 +123,21 @@ module SessionIdentity
     false
   end
 
-  # Walk the process tree from us up to init: [{pid:, ppid:, tty:, comm:}, ...].
+  # Walk the process tree from us up to init: [{pid:, ppid:, tty:, command:}, ...].
   # One `ps` per level (≈5 deep) — cheap, and this isn't a hot path.
   def process_ancestry(max_depth: 12)
     chain = []
     pid = Process.pid
     max_depth.times do
-      out = IO.popen(["ps", "-o", "ppid=,tty=,comm=", "-p", pid.to_s], err: File::NULL, &:read).to_s.strip
+      # `command=` (the FULL argv), not `comm=`: the claude DAEMON keeps its exec-path title
+      # ("…/claude") while the bg-spare/bg-pty-host helpers rewrite theirs, so ONLY the full
+      # command line exposes the `daemon run` subcommand that marks the pool's long-lived root
+      # as non-owning. owning_agent? reads this field; the first token still yields the command.
+      out = IO.popen(["ps", "-o", "ppid=,tty=,command=", "-p", pid.to_s], err: File::NULL, &:read).to_s.strip
       break if out.empty?
 
-      ppid, tty, comm = out.split(/\s+/, 3)
-      chain << { pid: pid.to_i, ppid: ppid.to_i, tty: tty.to_s, comm: comm.to_s }
+      ppid, tty, command = out.split(/\s+/, 3)
+      chain << { pid: pid.to_i, ppid: ppid.to_i, tty: tty.to_s, command: command.to_s }
       pid = ppid.to_i
       break if pid <= 1
     end

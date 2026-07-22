@@ -20,7 +20,14 @@
 class DevopsShift < ApplicationRecord
   # The known role lanes. NOT an inclusion validation — a new role/lane may appear
   # before this list is updated; the constant is documentation + the CLI's default set.
-  LANES = %w[avi steffon alex].freeze
+  #
+  # `steffon` was RETIRED here (release-conductor-claims): the qa-release lock moved
+  # OFF this per-role shift and ONTO the release record (ReleaseConductorClaim, role
+  # `assembler`), and avi-SHIP likewise (role `deployer`). `avi` STAYS — `clean-up`
+  # still takes the avi shift for its board-sweep. The shift model/table are KEPT (the
+  # avi lane is live); only steffon left the default set. An old row for a retired lane
+  # is harmless: nothing acquires it, and it simply lapses.
+  LANES = %w[avi alex].freeze
 
   # The acquire verdict: whether THIS instance now holds the lane, the ClaimLease
   # disposition it was in, and the (updated) row for the holder message.

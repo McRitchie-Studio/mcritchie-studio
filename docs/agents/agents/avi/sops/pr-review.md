@@ -208,26 +208,29 @@ Verdicts:
 - Two approvals, no blockers → **merge the feat PR into `accepted`, stamp the
   git-location, then move `reviewed`** (the accepted-ladder's first rung).
 
-  **Merge condition — the head must still be the head you spawned the lanes on.**
-  Record the PR head when you spawn the lanes, and re-read it before merging; they
-  must be equal. Anchor to the spawn-time head, not to "what the reviewers read" —
-  nothing in the scout-report schema records a reviewed SHA, and a comparison with
-  no left-hand side reads as satisfied by default. A moved head means the approvals
-  describe code nobody reviewed **and** the pre-spawn CI verdict was rendered on a
-  different SHA, so **do not merge**: re-run the lanes (which re-checks CI) against
-  the new head. This is not hypothetical — the builder seam of
-  [`../../../modules/zap-protocol.md`](../../../modules/zap-protocol.md) invites a
-  builder to fast-forward a `zap:` commit onto their own `feat/<slug>` branch
-  mid-cycle, which can land while both lanes are reading.
+  **Merge condition — merge only a head you have VALIDATED.** Record the PR head
+  **before** you spawn the lanes (so it is a provable lower bound on what each
+  reviewer reads), and re-read it before merging. Anchor to that before-spawn head,
+  not to "what the reviewers read" — nothing in the scout-report schema records a
+  reviewed SHA, and a comparison with no left-hand side reads as satisfied by
+  default. If the two are **equal**, the approvals and the pre-spawn CI verdict both
+  describe that head — merge it. If the head **moved** during review, the approvals
+  and pre-spawn CI describe a different SHA, so do not merge on the reviewers' word
+  alone: **revalidate the new head's CI, and merge only if it is green** (pinned with
+  `--match-head-commit`), holding for re-review otherwise. This is not hypothetical —
+  the seam of [`../../../modules/zap-protocol.md`](../../../modules/zap-protocol.md)
+  invites a builder (or a reviewer) to lease-push a `zap:` commit mid-cycle, which
+  can land while both lanes are reading.
 
   ```bash
-  gh pr view <feat-pr> --json headRefOid --jq .headRefOid   # at spawn AND before merge — must match
+  gh pr view <feat-pr> --json headRefOid --jq .headRefOid   # BEFORE spawn AND before merge
+  # equal → merge; moved → revalidate the new head's CI, merge only if green, else hold for re-review
   ```
 
   The supervisor then merges in ONE step — the order is load-bearing:
 
   ```bash
-  gh pr merge <feat-pr> --merge        # feat → accepted (retarget a mis-based PR to accepted first)
+  gh pr merge <feat-pr> --merge --match-head-commit <validated-head>   # feat → accepted; pin the head you validated (retarget a mis-based PR first)
   bin/task merged <task> accepted      # stamp the git-location BEFORE the stage move
   bin/task move <task> reviewed
   bin/task note <task> --handoff "Avi review approved; merged into accepted; ready for Steffon's qa-release sweep." --agent avi
@@ -238,14 +241,18 @@ Verdicts:
   merge` FAILS, leave the task `submitted` and UNSTAMPED (never move to
   `reviewed`) — resolve the conflict/checks on GitHub, then re-review. A mis-based
   feat PR (base ≠ `accepted`) self-heals: retarget it to `accepted`, then merge.
-  (The `bin/pr-review` supervisor runs the merge → stamp → move sequence for you;
-  the merge condition above is **not** automated — the script has no head-SHA
-  logic, so the supervisor checks it by hand.)
+  (The `bin/pr-review` supervisor runs the merge → stamp → move sequence for you.
+  It captures the PR head BEFORE it launches the lanes and REVALIDATES it before
+  merging — an advanced head, e.g. a reviewer-applied zap, merges only if its own
+  CI is green, and holds for re-review otherwise. The merge itself is pinned with
+  `--match-head-commit`, so a head that advances again after revalidation is refused,
+  not merged.)
 
-  If a reviewer NAMED a zappable defect in a verdict, the fix does not land here —
-  reviewers apply nothing. It lands afterward as a conductor zap on `accepted`,
-  applied by whoever holds that seat, within the bounds, timing, and recording
-  rules in [`../../../modules/zap-protocol.md`](../../../modules/zap-protocol.md).
+  A reviewer who finds a zappable defect may **apply a bounded zap** — lease-push
+  a `zap:` commit to the PR branch — and leave the verdict merge-ready; the
+  supervisor's head revalidation gates it on the post-zap CI. Otherwise the
+  reviewer **names** it and it lands afterward as a conductor zap on `accepted`.
+  Bounds, timing, and recording: [`../../../modules/zap-protocol.md`](../../../modules/zap-protocol.md).
 
 - Request changes, missing metadata, red CI, merge risk, or acceptance mismatch:
 

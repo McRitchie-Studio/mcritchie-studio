@@ -25,6 +25,7 @@ require "digest"
 require "fileutils"
 require "json"
 require "open3"
+require "rbconfig" # RbConfig.ruby — invokes the release-claim CLI for the ship-workspace guard
 require "shellwords"
 require "socket"
 require "time"
@@ -2626,6 +2627,62 @@ def task_devops_for_pr(task_record)
   devops.is_a?(Hash) ? devops : {}
 end
 
+# The fixed-path ship/cert workspaces (bin/release's Release::GateWorkspace `_gate` +
+# `_ship`), keyed by their worktree basename — which is `record[:task]` (stack_record sets
+# task = File.basename(dir)). These are infrastructure, not task desks.
+SHIP_WORKSPACE_TASKS = %w[_ship _gate].freeze
+
+def ship_workspace_record?(record)
+  SHIP_WORKSPACE_TASKS.include?(record[:task].to_s)
+end
+
+# Is a production ship in progress? A live `deployer` ReleaseConductorClaim on ANY release
+# means `_ship`/`_gate` are pinned by a running `bin/release ship`. Returns :live / :none /
+# :unknown. Read over the SAME board this file's task reads hit, via the release-claim CLI's
+# `any-live` query (exit 0 live / 3 none / else can't-tell). Overridable for tests with
+# AGENT_WORKTREE_DEPLOYER_CLAIM=live|none|unknown. Memoized for the command (one board read).
+def deployer_claim_liveness
+  return @deployer_claim_liveness if defined?(@deployer_claim_liveness)
+
+  @deployer_claim_liveness = compute_deployer_claim_liveness
+end
+
+def compute_deployer_claim_liveness
+  override = ENV["AGENT_WORKTREE_DEPLOYER_CLAIM"].to_s.strip
+  return %w[live none unknown].include?(override) ? override.to_sym : :unknown unless override.empty?
+
+  cli = File.join(HUB_DIR, "bin", "lib", "release_claim_cli.rb")
+  return :unknown unless File.exist?(cli) # no CLI to ask ⇒ can't tell (withhold on a destroy path)
+
+  _ok, _out, _err, code = capture_status(RbConfig.ruby, cli, "any-live", "--role", "deployer",
+                                         timeout: TASK_READ_TIMEOUT)
+  case code
+  when 0 then :live
+  when 3 then :none
+  else :unknown # 1/other/nil — could not read the board (fail-closed for a destroy path)
+  end
+end
+
+# The withhold reason for a `_ship`/`_gate` workspace while a ship may be live, or nil when
+# no ship is running (then they are ordinary reclaim candidates). Fail-CLOSED on can't-tell:
+# a ship MIGHT be running and reclaiming its workspace breaks a production deploy, so an
+# unreadable liveness read withholds — matching claim_hold's withhold-on-outage posture, and
+# cheap here because bin/release recreates the workspaces on demand.
+def ship_workspace_hold(record, announce: false)
+  ws = record[:task]
+  case deployer_claim_liveness
+  when :live
+    warn "note: #{worktree_label(record)}: a ship is live (deployer claim held) — withholding #{ws} from reclaim" if announce
+    "a ship is live (deployer claim held) — withholding #{ws} from reclaim; bin/release recreates it on demand"
+  when :unknown
+    warn "warning: #{worktree_label(record)}: could not check for a live ship (deployer claim) — withholding #{ws}" if announce
+    "could not check for a live ship (deployer claim), so cannot rule out an in-flight ship; withholding #{ws} " \
+      "rather than reclaiming a workspace a live production deploy may be using (re-run once the board is reachable)"
+  else # :none — the board answered: no ship is live
+    nil
+  end
+end
+
 # The reason this worktree is withheld from destruction, or nil when it is free to release.
 #
 # A desk is held when its bound task carries a live build-claim lease: a builder is on it,
@@ -2651,6 +2708,22 @@ end
 # Every branch that gives up on checking says so when `announce` is set — a guard that
 # silently disables itself is worse than no guard.
 def claim_hold(record, fresh: false, announce: false)
+  # SHIP WORKSPACES FIRST. `_ship`/`_gate` are the ship/cert INFRASTRUCTURE workspaces
+  # (fixed-path, detached checkouts bin/release recreates on demand), not task desks — so
+  # they carry no bound task and would otherwise fail open through the UNBOUND branch
+  # below. But a `bin/release ship` PINS `_ship` (and the cert pins `_gate`) for its whole
+  # run, so reclaiming them MID-SHIP breaks a live production deploy. Before the
+  # release-conductor-claims PR the shared `avi` shift excluded clean-up from a live ship;
+  # ship now holds the per-release `deployer` claim instead, so we RE-ENFORCE that
+  # exclusion here — withhold `_ship`/`_gate` whenever a live deployer claim exists (a ship
+  # is in progress), or when we cannot tell (a destroy path withholds on an unreadable
+  # board, per this file's doctrine). No live claim ⇒ fall through: they are then safe to
+  # reclaim, exactly as the clean-up SOP says.
+  if ship_workspace_record?(record)
+    hold = ship_workspace_hold(record, announce: announce)
+    return hold if hold
+  end
+
   # nil-safe: a record without :env must not raise into the rescue below — that would
   # silently disable the guard on a destructive path, the exact failure the warnings exist
   # to prevent.
