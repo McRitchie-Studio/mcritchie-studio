@@ -9,10 +9,17 @@
 # same live-instance identity + TTL + detached-renewer machinery.
 #
 #   bin/task review-claim acquire <slug> [--label <text>]   # take the review, or skip
+#   bin/task claim-next-review    [--label <text>]           # ATOMIC server pop: claim the
+#                                                            # next reviewable GREEN-CI task
 #   bin/task review-claim renew   <slug>                     # one heartbeat (internal)
 #   bin/task review-claim release <slug>                     # clean drop when the review lands
 #   bin/task review-claim status  <slug>                     # who (if anyone) is reviewing it
 #   bin/task review-claim renew-loop <slug> --anchor-pid <p> --anchor-start <s>  # internal
+#
+# `claim-next-review` is the server-authoritative sibling of `acquire`: instead of the
+# caller naming a task it picked, the BOARD selects the highest-ranked reviewable task
+# with green CI and claims it in one transaction. It anchors a renewer just like
+# `acquire`, and prints the claimed slug to stdout (exit 0) or "none" (exit 4).
 #
 # Identity is the SAME live-instance identity the build claim and the shift lease use
 # (session id + per-process nonce, SessionIdentity), so the renewer renews the right
@@ -24,6 +31,8 @@
 # EXIT CODES make the acquire gate scriptable (and the SOP branch on it):
 #   0  — acquired (you hold the review; proceed to review this task)
 #   10 — skipped (a DIFFERENT live instance is already reviewing it; pick another)
+#   4  — none (claim-next-review only): the atomic pop found NOTHING eligible (no
+#        reviewable task, or none with green CI) — a normal empty pop, not a failure.
 #   1  — could not run (no session id / no board / usage error) — fail OPEN so a
 #        telemetry hiccup never wedges a real review.
 # Best-effort and never raises; renew/release/status always exit 0.
@@ -44,6 +53,10 @@ class ReviewClaimCli
   OK = 0
   SKIPPED = 10
   CANT_RUN = 1
+  # `claim-next` outcome: the atomic server pop found NOTHING eligible (no reviewable
+  # task, or none green-CI) — a normal empty pop, not a failure, but nonzero so a
+  # caller can branch (`slug=$(bin/task claim-next-review) || idle`).
+  NONE = 4
 
   def initialize(env: ENV, out: $stdout, err: $stderr)
     @env = env
@@ -63,6 +76,7 @@ class ReviewClaimCli
 
     case command
     when "acquire"    then acquire(slug, flags)
+    when "claim-next" then claim_next(flags)
     when "renew"      then renew(slug)
     when "renew-loop" then renew_loop(slug, flags)
     when "release"    then release(slug)
@@ -99,6 +113,37 @@ class ReviewClaimCli
     else
       report_skip(slug, data["holder"] || {})
       SKIPPED
+    end
+  end
+
+  # `bin/task claim-next-review` — the ATOMIC server pop. Asks the board for the
+  # highest-ranked reviewable GREEN-CI task and claims it in ONE request (the server
+  # does reviewable + rank + green-CI filter + acquire in one transaction), then
+  # anchors a renewer so the claim follows this RUN exactly like `acquire`. Prints the
+  # claimed slug to stdout (exit 0), so a caller can `slug=$(bin/task claim-next-review)`,
+  # or "none" (exit NONE) when nothing is eligible. Fail-open on no session / no board.
+  def claim_next(flags)
+    sid = session_id
+    return cant_run("no session id — cannot identify this review") unless present?(sid)
+
+    label = flags["label"].to_s.strip
+    label = session_mascot(sid) if label.empty?
+    res = post("/api/v1/tasks/claim_next_review", { "session" => sid, "nonce" => nonce, "label" => label })
+    return cant_run("no response from the board — could not claim a review") unless ok?(res)
+
+    data = parse_data(res)
+    claimed = data["claimed"]
+    slug = claimed.is_a?(Hash) ? claimed["slug"].to_s : ""
+    if present?(slug)
+      write_marker(sid, slug)
+      start_renewer(sid, slug)
+      @out.puts(slug) # JUST the slug, so `slug=$(bin/task claim-next-review)` captures it
+      OK
+    else
+      reason = data["reason"].to_s
+      @err.puts("claim-next-review: nothing eligible to review#{reason.empty? ? '' : " (#{reason})"}.")
+      @out.puts("none")
+      NONE
     end
   end
 
