@@ -446,41 +446,43 @@ class AgentWorktreeTest < Minitest::Test
   # around `sleep 6` returned after 6.01s on Ruby 3.3.11). A hung board would have stalled a
   # whole sweep while the code claimed to be bounded. The bound must KILL the child.
   #
-  # Asserted by BEHAVIOUR, not wall-clock. The old guard measured `elapsed < 3` around a
-  # SPAWNED subprocess — only 3x headroom, and spawn latency inflated ~2.75x under load, so
-  # it red-failed a CORRECT implementation on a busy box. But asserting only the timeout
-  # BRANCH is not enough: a no-op terminate_group STILL returns the timed-out verdict (the
-  # unbounded popen3 ensure just waits the child out), so the read failing "timed out"
-  # proves the branch, not the KILL. So force the kill to PROVE ITSELF: the child TRAPS
-  # SIGTERM, so only terminate_group's escalation-to-KILL can stop it — and the escalation
-  # runs its grace-poll, which calls the INJECTED sleeper. Reading the sleeper is thus a
-  # deterministic witness of the kill (no wall-clock): with an injected clock the grace
-  # deadline elapses at once, the poll fires once, and the KILL lands.
+  # Asserted by BEHAVIOUR, not wall-clock — and the behaviour is the KILL ITSELF, not a
+  # proxy for it. The old guard measured `elapsed < 3` around a SPAWNED subprocess (3x
+  # headroom, spawn latency inflated ~2.75x under load -> red on a busy box). But observing
+  # the timeout BRANCH is not enough (a no-op terminate_group STILL returns the timed-out
+  # verdict — the unbounded popen3 ensure just waits the child out), and observing the grace
+  # POLL is not enough either (a run that TERMs and polls but never sends the KILL still ran
+  # the poll). So the child itself reports whether it was killed: it IGNORES SIGTERM and,
+  # only if it SURVIVES its sleep, writes a marker on natural exit. The marker's ABSENCE is
+  # the witness — the child was stopped before it could finish, which on a TERM-ignoring
+  # child ONLY the escalation KILL can do.
   #
-  # The assertion, all four deterministic: the read FAILED (ok=false) through the timeout
-  # branch (the "timed out" message only it emits), the escalation poll RAN (slept.any? —
-  # the witness of the kill on a TERM-ignoring child), and it never slept beyond its 0.05s
-  # quantum. Mutations each go RED: drop the bound (join without the timeout) -> child exits
-  # naturally, ok:true; make terminate_group a no-op -> the child is never killed and the
-  # poll never runs, slept.empty?; sleep past the quantum -> slept.max > 0.05.
-  def test_capture_status_timeout_escalates_to_kill_a_term_ignoring_child
+  # An injected clock elapses the grace deadline at once, so the correct path polls once
+  # then KILLs and returns fast — no wall-clock. The assertion: the read FAILED (ok=false)
+  # through the timeout branch, the marker is ABSENT (killed, not waited out), and
+  # terminate_group never slept beyond its 0.05s quantum. Every mutation goes RED: drop the
+  # bound (join without the timeout) -> ok:true; remove ONLY the escalation KILL (keep
+  # TERM+poll) -> the child sleeps out and writes the marker -> present; no-op terminate ->
+  # present too; sleep past the quantum -> slept.max > 0.05.
+  def test_capture_status_timeout_actually_kills_the_child
     out = run_in_script(<<~'RUBY')
-      slept = []
-      # An injected clock whose first read seeds the grace deadline and whose next read is
-      # already past it, so terminate_group polls once (the witness) then escalates to KILL —
-      # no real grace wait, no wall-clock in the assertion.
-      ticks = [0.0, 0.01, 100.0]
-      clock = -> { ticks.length > 1 ? ticks.shift : ticks.first }
-      # `trap '' TERM` makes the child IGNORE SIGTERM: only the escalation KILL stops it, so a
-      # no-op bound would sleep it out to natural exit and the poll (sleeper) would never run.
-      ok, _out, err = capture_status("sh", "-c", "trap '' TERM; sleep 6", timeout: 1,
-                                     clock: clock, sleeper: ->(s) { slept << s })
-      print [ok, err.include?("timed out"), slept.any?, (slept.max || 0) <= 0.05].inspect
+      require "tmpdir"
+      Dir.mktmpdir do |dir|
+        marker = File.join(dir, "child-finished")
+        slept = []
+        ticks = [0.0, 0.01, 100.0] # seed the grace deadline, then jump past it: one poll, then KILL
+        clock = -> { ticks.length > 1 ? ticks.shift : ticks.first }
+        # `trap '' TERM` -> the child IGNORES SIGTERM; it writes the marker ONLY if it lives
+        # through `sleep 6` to natural exit. Only the escalation KILL stops it first.
+        ok, _out, err = capture_status("sh", "-c", "trap '' TERM; sleep 6; : > #{marker}", timeout: 1,
+                                       clock: clock, sleeper: ->(s) { slept << s })
+        print [ok, err.include?("timed out"), File.exist?(marker), (slept.max || 0) <= 0.05].inspect
+      end
     RUBY
-    assert_equal "[false, true, true, true]", out,
-                 "a 1s bound around a TERM-ignoring `sleep 6` fails the read through the timeout branch AND " \
-                 "reaches terminate_group's escalation KILL (its grace poll ran) — proof of the kill itself, " \
-                 "within the 0.05s quantum, with no wall-clock assertion"
+    assert_equal "[false, true, false, true]", out,
+                 "a 1s bound around a TERM-ignoring child must KILL it before it can finish its sleep — the " \
+                 "marker it writes only on natural exit is ABSENT — through the timeout branch, within the " \
+                 "0.05s grace quantum, with no wall-clock assertion"
   end
 
   # --- integration: the REAL mcritchie config carries the reservation through
