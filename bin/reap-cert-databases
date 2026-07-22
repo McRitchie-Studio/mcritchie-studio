@@ -1,0 +1,22 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/reap-cert-databases — drop the per-run cert test databases a hard-killed run
+# stranded, for a periodic or manual sweep (the suite also sweeps on every boot; see
+# test/test_helper.rb). It acts ONLY on databases named in a lease WE wrote and whose
+# leasing run is provably gone, and it re-proves each name is a per-run TEST database
+# before dropping — never mcritchie_studio_development. Full doctrine:
+# test/support/cert_database_reaper.rb.
+#
+# Usage:  bin/reap-cert-databases
+
+ENV["RAILS_ENV"] ||= "test"
+require_relative "../config/environment"
+require_relative "../test/support/cert_database_reaper"
+
+result = CertDatabaseReaper.reap!
+
+puts "reaped:  #{result[:reaped].size}#{" — #{result[:reaped].join(", ")}" unless result[:reaped].empty?}"
+puts "skipped: #{result[:skipped].size} (a live run owns them)"
+puts "failed:  #{result[:failed].size}#{" — #{result[:failed].join(", ")}" unless result[:failed].empty?} (drop failed; lease kept for retry)" unless result[:failed].empty?
+puts "refused: #{result[:refused].size}#{" — #{result[:refused].join(", ")}" unless result[:refused].empty?}" unless result[:refused].empty?
