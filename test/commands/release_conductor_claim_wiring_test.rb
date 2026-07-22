@@ -82,14 +82,14 @@ class ReleaseConductorClaimWiringTest < ActiveSupport::TestCase
     assert prepare, "prepare must be defined"
 
     # A fresh create has no real slug at 2c, so it falls back to the FORMING sentinel.
-    assert_match(/ReleaseConductorClaim::FORMING_SLUG if assembler_slug\.empty\?/, prepare,
+    assert_match(/ReleaseClaimCli::FORMING_SLUG if assembler_slug\.empty\?/, prepare,
                  "a blank slug at 2c must fall back to the FORMING sentinel so the promote is still guarded")
 
     lines = prepare.lines
     sentinel_acquire = lines.index { |l| l =~ /acquire_conductor_claim!\("assembler", assembler_slug/ }
     promote          = lines.index { |l| l =~ /promote_accepted_to_release!\(promote_repos, label: slug\)/ }
     real_acquire     = lines.index { |l| l =~ /acquire_conductor_claim!\("assembler", rel_slug/ }
-    handoff          = lines.index { |l| l =~ /release_conductor_claim!\(role: "assembler", slug: ReleaseConductorClaim::FORMING_SLUG\)/ }
+    handoff          = lines.index { |l| l =~ /release_conductor_claim!\(role: "assembler", slug: ReleaseClaimCli::FORMING_SLUG\)/ }
 
     assert sentinel_acquire && promote && real_acquire && handoff, "all four sentinel/hand-off steps must be present"
     assert sentinel_acquire < promote,

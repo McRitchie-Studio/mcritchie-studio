@@ -2422,7 +2422,7 @@ def prepare
   #     resolves below, so ownership is continuous across the promote.
   stood_down = -> { close_role_span("stood down — another session is assembling this release") }
   assembler_slug = ((active && active["slug"]) || slug).to_s.strip
-  assembler_slug = ReleaseConductorClaim::FORMING_SLUG if assembler_slug.empty?
+  assembler_slug = ReleaseClaimCli::FORMING_SLUG if assembler_slug.empty?
   acquire_conductor_claim!("assembler", assembler_slug, span_close: stood_down)
 
   # 3. SWEEP PLAN (pure: Release::SweepPlan): partition the candidates into the
@@ -2508,7 +2508,7 @@ def prepare
   # the release-by-slug below is a no-op.
   acquire_conductor_claim!("assembler", rel_slug,
                            span_close: -> { close_role_span("stood down — another session is assembling this release") })
-  release_conductor_claim!(role: "assembler", slug: ReleaseConductorClaim::FORMING_SLUG)
+  release_conductor_claim!(role: "assembler", slug: ReleaseClaimCli::FORMING_SLUG)
 
   record_release_event(rel_slug, "assemble_release", "started")
 

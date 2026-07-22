@@ -57,6 +57,12 @@ class ReleaseClaimCli
   # set — an unknown role is a usage error, not a fail-open.
   ROLES = %w[assembler deployer].freeze
 
+  # The reserved "forming" sentinel release_slug (mirrors ReleaseConductorClaim::
+  # FORMING_SLUG). bin/release.rb runs STANDALONE — it never boots Rails, so it cannot
+  # read the ActiveRecord model's constant; it reads the sentinel from here instead.
+  # A drift-guard test pins both to the same literal.
+  FORMING_SLUG = "__forming__"
+
   def initialize(env: ENV, out: $stdout, err: $stderr)
     @env = env
     @out = out

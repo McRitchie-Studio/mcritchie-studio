@@ -82,6 +82,15 @@ class ReleaseClaimCliTest < Minitest::Test
     File.join(projects_dir, ".agents", "sessions", "#{SESSION}.release-conductor-claim-renewer-#{role}-#{slug}")
   end
 
+  # Drift guard: the standalone bin/release CLI reads the forming sentinel from
+  # ReleaseClaimCli::FORMING_SLUG (it can't load the AR model), so it MUST equal the
+  # literal the model pins. If these two drift, the fresh-create hand-off releases the
+  # wrong row.
+  def test_forming_slug_constant_matches_the_reserved_sentinel_literal
+    assert_equal "__forming__", ReleaseClaimCli::FORMING_SLUG
+    assert_equal FORMING, ReleaseClaimCli::FORMING_SLUG
+  end
+
   def test_acquire_success_exits_zero_and_writes_the_marker
     Dir.mktmpdir do |proj|
       code = cli(projects_dir: proj, data: { "acquired" => true, "holder" => { "label" => "Snorlax" } })
