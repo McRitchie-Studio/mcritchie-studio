@@ -79,6 +79,7 @@ class CertDatabaseReaperTest < Minitest::Test
       "mcritchie_studio_test_foo_deadbee",            # 7 hex — too short
       "mcritchie_studio_test_foo_deadbeef1",          # 9 trailing chars — not a clean _<8hex>
       "mcritchie_studio_test_foo_DEADBEEF",           # uppercase — our digests are lowercase
+      "mcritchie_studio_test_deadbeef",               # NO-SLUG look-alike: <base>_<8hex>, no slug between
       "mcritchie_studio_test_",                       # empty slug
       "",
     ].each do |name|
@@ -103,6 +104,21 @@ class CertDatabaseReaperTest < Minitest::Test
     assert_equal ["mcritchie_studio_test_x_deadbeef"], dropped
     assert_equal ["mcritchie_studio_test_x_deadbeef"], result[:reaped]
     assert_empty lease_files, "the lease must be forgotten once its database is dropped"
+  end
+
+  # A drop that FAILS (permission/connection — not a merely-absent DB) must NOT be
+  # reported reaped, and its lease must SURVIVE so a later sweep retries. The first cut
+  # ignored drop's result: a failed drop erased the only retry record and stranded the DB.
+  def test_a_failed_drop_keeps_the_lease_and_is_not_reported_reaped
+    CertDatabaseReaper.register("mcritchie_studio_test_x_deadbeef", dir: @dir, pid: 4242)
+
+    result = CertDatabaseReaper.reap!(dir: @dir, base: BASE,
+                                      alive: ->(_pid) { false },
+                                      drop: ->(_name) { false }) # the dropdb failed
+
+    assert_empty result[:reaped], "a failed drop must never be reported reaped"
+    assert_equal ["mcritchie_studio_test_x_deadbeef"], result[:failed]
+    refute_empty lease_files, "a failed drop must KEEP the lease so a later sweep retries it"
   end
 
   def test_skips_a_live_owners_database

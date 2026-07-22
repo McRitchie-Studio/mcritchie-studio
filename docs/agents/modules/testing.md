@@ -296,6 +296,35 @@ same ENV var just rewrote is comparing a moved value **to itself**. The `databas
 literal does not move — anchor there. (`test/lib/test_database_purge_test.rb` pins this:
 swap the anchor back to `configs_for` and the "placebo case" goes red.)
 
+### Stranded per-run cert test databases are reaped
+
+One test provisions a **real** Postgres database to exercise db provisioning end to
+end (the worktree DB-name overflow probe in `test/commands/agent_worktree_test.rb`).
+It mints a **unique per-run** name (`mcritchie_studio_test_<slug>_<8hex>`) so concurrent
+runs can't corrupt each other, and drops it in an `ensure`. But an `ensure` does **not**
+run under SIGKILL — and parallel certs here *have* hit SIGKILL/SIGSEGV — so every hard
+kill would strand a distinct database that nothing reclaims: a slow but unbounded leak.
+
+`test/support/cert_database_reaper.rb` (`CertDatabaseReaper`) closes it. The mint site
+writes a **lease** naming the database and the owning PID before provisioning; a clean
+run drops the DB and clears the lease, a hard kill leaves both. The reaper acts **only**
+on databases named in a lease it wrote (a name pattern can't be the identity — a
+long-slug worktree's test DB has the same `_<8hex>` shape), drops those whose leasing PID
+is provably gone (a false-alive only ever leaks; a false-dead is impossible for a
+per-run-unique DB), re-proves each name is a `<base>_<slug>_<8hex>` test database before
+dropping — never `mcritchie_studio_development` — and **keeps the lease when a drop
+fails** so a later sweep retries. It runs two ways:
+
+- **on every suite boot** (`test/test_helper.rb`, once, best-effort) — the periodic
+  sweep; a DB blip never fails the suite.
+- **`bin/reap-cert-databases`** — a standalone/manual sweep (boots the app, prints
+  `reaped`/`skipped`/`failed`/`refused` counts).
+
+`test/lib/cert_database_reaper_test.rb` pins the guard (the dev DB and no-slug
+look-alikes are refused; a failed drop keeps the lease), and
+`cert_database_reaper_integration_test.rb` proves the drop/skip end to end against a real
+cluster.
+
 ## A Test May Never Write The Operator's Real `.agents` State
 
 The `bin/` stack keeps **seven** stores **outside** the repo, under the real

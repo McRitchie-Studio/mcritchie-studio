@@ -55,11 +55,6 @@ require_relative "test_database_purge"
 # env-independent way the purge guard reads it (the `database:` literal in
 # config/database.yml's test env), never guessed from a name.
 module CertDatabaseReaper
-  # The per-run digest suffix every ephemeral cert DB carries: `_` + 8 lowercase hex
-  # (DB_SLUG_HASH_LEN in bin/agent-worktree; SecureRandom.hex(4) in the probe). This
-  # is the per-run PROPERTY, asserted positively — never a list of names to exclude.
-  RUN_SUFFIX = /_[0-9a-f]{8}\z/
-
   LEASE_DIR_REL = File.join("tmp", "cert_db_leases")
 
   class << self
@@ -78,14 +73,15 @@ module CertDatabaseReaper
       db_name
     end
 
-    # Clean teardown: drop the database, then forget the lease. `drop` is injected
-    # so the mint site can reuse its own credentialed pg env.
+    # Clean teardown: drop the database, then forget the lease — but ONLY when the drop
+    # succeeded. A failed drop KEEPS the lease so a later reap retries it, never leaving a
+    # live database with no record of who owns it. `drop` is injected so the mint site can
+    # reuse its own credentialed pg env.
     def release(db_name, dir: lease_dir, drop: method(:drop_database))
       db_name = db_name.to_s
       return if db_name.empty?
 
-      drop.call(db_name)
-      forget(db_name, dir: dir)
+      forget(db_name, dir: dir) if drop.call(db_name)
     end
 
     def forget(db_name, dir: lease_dir)
@@ -97,16 +93,19 @@ module CertDatabaseReaper
     # --- the reaper ---------------------------------------------------------
 
     # Drop every leased database whose owning run is provably gone AND whose name
-    # proves out as a per-run test database. Returns {reaped:, skipped:, refused:}
+    # proves out as a per-run test database. Returns {reaped:, skipped:, refused:, failed:}
     # — factual, so a caller reports what happened, never what it hoped happened.
     #
     #   skipped : a live run owns it (PID alive, or its liveness is unknowable).
     #   refused : the lease is malformed, or its name is not an admissible per-run
     #             test DB — NAME it, never guess it away and never drop it.
-    #   reaped  : owner gone + name admissible -> dropped and forgotten.
+    #   failed  : owner gone + name proven, but the DROP failed (permission/connection —
+    #             dropdb --if-exists exits 0 for a merely-absent DB). The lease is KEPT so
+    #             a later sweep retries; a failed drop is NEVER reported reaped.
+    #   reaped  : owner gone + name admissible + drop SUCCEEDED -> dropped and forgotten.
     def reap!(dir: lease_dir, base: default_base,
               alive: method(:process_alive?), drop: method(:drop_database))
-      result = { reaped: [], skipped: [], refused: [] }
+      result = { reaped: [], skipped: [], refused: [], failed: [] }
 
       leases(dir).each do |lease|
         db = lease["db"].to_s
@@ -118,10 +117,11 @@ module CertDatabaseReaper
           result[:skipped] << db                 # AC2: a live run owns it
         elsif !admissible?(db, base: base)
           result[:refused] << db                 # AC3: the closed-set floor
-        else
-          drop.call(db)                           # AC1: owner gone + name proven -> drop
+        elsif drop.call(db)                       # AC1: owner gone + name proven + drop OK
           delete_file(lease["_path"])
           result[:reaped] << db
+        else
+          result[:failed] << db                  # drop failed: KEEP the lease so a later sweep retries
         end
       end
 
@@ -129,16 +129,18 @@ module CertDatabaseReaper
     end
 
     # AC3 guard: is `name` one of THIS app's per-run test databases? A positive
-    # invariant (test namespace + per-run digest), so everything else — above all
-    # mcritchie_studio_development — falls outside it and is refused.
+    # invariant asserting the full ephemeral SHAPE — `<base>_<slug>_<8hex>` — so
+    # everything else falls outside it and is refused, above all
+    # mcritchie_studio_development. The `.+` between the separators is a NON-EMPTY slug:
+    # it refuses a no-slug look-alike (`<base>_<8hex>`, which could be a real per-worktree
+    # test DB, not a per-run ephemeral one) as well as the base, its parallel clones, and
+    # the release workspaces — none of which carry a `_<slug>_<8hex>` tail.
     def admissible?(name, base: default_base)
       name = name.to_s
       base = base.to_s
       return false if name.empty? || base.empty?
-      return false unless name.start_with?("#{base}_") # in the test namespace; the `_` separator is required
-      return false unless name.match?(RUN_SUFFIX)      # carries the per-run digest suffix
 
-      true
+      name.match?(/\A#{Regexp.escape(base)}_.+_[0-9a-f]{8}\z/)
     end
 
     def default_base

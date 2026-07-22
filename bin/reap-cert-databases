@@ -18,4 +18,5 @@ result = CertDatabaseReaper.reap!
 
 puts "reaped:  #{result[:reaped].size}#{" — #{result[:reaped].join(", ")}" unless result[:reaped].empty?}"
 puts "skipped: #{result[:skipped].size} (a live run owns them)"
+puts "failed:  #{result[:failed].size}#{" — #{result[:failed].join(", ")}" unless result[:failed].empty?} (drop failed; lease kept for retry)" unless result[:failed].empty?
 puts "refused: #{result[:refused].size}#{" — #{result[:refused].join(", ")}" unless result[:refused].empty?}" unless result[:refused].empty?
