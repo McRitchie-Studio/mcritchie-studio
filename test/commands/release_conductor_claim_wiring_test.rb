@@ -193,6 +193,36 @@ class ReleaseConductorClaimWiringTest < ActiveSupport::TestCase
     assert release > ensure_i, "merge releases the claim in an ensure — a discrete op frees it on EVERY exit"
   end
 
+  # --- FIX b: eject — the FOURTH assembler seam is guarded too -----------------
+  # eject! MUTATES release-candidate membership (release_slug + `merged` cleared), the same
+  # assembler-lane write as prepare/merge. A concurrent eject during a prepare sweep would
+  # race that write, so guard it with the SAME per-release assembler claim, released in an
+  # ensure. Falls back to the FORMING sentinel when no release is active.
+  test "eject takes the assembler claim before the membership detach and releases it in an ensure" do
+    src = File.read(RELEASE_RB)
+    eject = src[/^def eject\b.*?^end$/m]
+    assert eject, "eject must be defined"
+
+    lines    = eject.lines
+    resolve  = lines.index { |l| l =~ /puts\(\(r \? \{ slug: r\.slug, state: r\.state \}/ } # minimal STABLE active-release read
+    acquire  = lines.index { |l| l =~ /acquire_conductor_claim!\("assembler", assembler_slug\)/ }
+    begin_i  = lines.index { |l| l =~ /^  begin$/ }
+    detach   = lines.index { |l| l =~ /Release::Conductor\.eject!/ }                        # the MUTABLE membership write
+    ensure_i = lines.index { |l| l =~ /^  ensure$/ }
+    release  = lines.rindex { |l| l =~ /^\s*release_conductor_claim!$/ }
+
+    assert [resolve, acquire, begin_i, detach, ensure_i, release].all?, "all eject claim anchors must be present"
+    assert_match(/ReleaseClaimCli::FORMING_SLUG if assembler_slug\.empty\?/, eject,
+                 "eject falls back to the FORMING sentinel when there is no active release")
+    assert resolve < acquire,
+           "the active release is resolved by a MINIMAL, STABLE read (slug/state) BEFORE the claim"
+    assert acquire < begin_i, "the acquire precedes the begin/ensure"
+    assert acquire < detach,
+           "the assembler claim is held BEFORE the membership detach (eject!) — a concurrent prepare sweep can't race it"
+    assert detach > begin_i && detach < ensure_i, "the detach runs INSIDE the begin/ensure (under the claim)"
+    assert release > ensure_i, "eject releases the claim in an ensure — a discrete op frees it on EVERY exit"
+  end
+
   # --- FIX 3: prepare + ship free the claim on a NON-SystemExit error too ------
   # The rescue arms catch only SystemExit; a raw StandardError after the acquire would
   # escape with the renewer still holding the claim. An additive method-level ensure
@@ -214,10 +244,10 @@ class ReleaseConductorClaimWiringTest < ActiveSupport::TestCase
   end
 
   # --- the claim is dropped on completion (success AND abort) across all paths --
-  test "prepare, ship, merge, and finalize all release the conductor claim on completion/abort" do
-    assert_operator release_lines.count { |l| l =~ /release_conductor_claim!/ }, :>=, 9,
+  test "prepare, ship, merge, finalize, and eject all release the conductor claim on completion/abort" do
+    assert_operator release_lines.count { |l| l =~ /release_conductor_claim!/ }, :>=, 10,
                     "prepare (success/abort/hand-off/empty + ensure), ship (success/abort + ensure), merge (hand-off + " \
-                    "ensure), and finalize (ensure) all free the claim"
+                    "ensure), finalize (ensure), and eject (ensure) all free the claim"
   end
 
   # --- transport: the claim runs over the fast HTTP CLI, not a heroku-run dyno --

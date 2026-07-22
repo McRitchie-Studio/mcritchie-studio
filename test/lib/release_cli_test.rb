@@ -3145,9 +3145,14 @@ class ReleaseCliTest < Minitest::Test
   def test_eject_records_the_conductor_eject_and_prints_the_revert_guidance
     setup = <<~'RUBY'
       def conductor(ruby, read_only: false)
-        $stdout.puts("EJECT-CALL " + ruby.gsub("\n", " "))
-        { "slug" => "task-bad", "stage" => "blocked", "merged" => nil }
+        if read_only
+          { "slug" => "rel-active", "state" => "assembling" }   # the active RC to claim
+        else
+          $stdout.puts("EJECT-CALL " + ruby.gsub("\n", " "))
+          { "slug" => "task-bad", "stage" => "blocked", "merged" => nil }
+        end
       end
+      def conductor_claim(*a) = ReleaseClaimCli::OK
     RUBY
     out = run_cli(["task-bad", "--feedback", "integration regression on release"], call: "eject", setup: setup)
 
@@ -3157,6 +3162,66 @@ class ReleaseCliTest < Minitest::Test
     assert_includes out, "task-bad → blocked (rework)"
     assert_includes out, "git revert -m 1", "the git unwind guidance is printed"
     assert_includes out, "bin/release prepare", "…ending at the self-healing re-run"
+  end
+
+  # --- eject (FIX b): the assembler claim SERIALIZES the membership detach ------
+  # eject! MUTATES release-candidate membership (release_slug + `merged` cleared) — the
+  # SAME assembler-lane write prepare/merge guard. A concurrent eject during a prepare
+  # sweep would race that write, so eject takes the per-release `assembler` claim first.
+  # These drive bin/release IN A SUBPROCESS with conductor_claim STUBBED, proving the
+  # runtime effect the source-ordering wiring test can only assert structurally.
+
+  # HELD claim → eject stands DOWN before the detach: the observable effect is that the
+  # membership mutation (EJECT-CALL) NEVER runs — eject refuses rather than racing.
+  def test_eject_stands_down_before_the_membership_detach_when_the_assembler_claim_is_held
+    setup = <<~'RUBY'
+      def conductor(ruby, read_only: false)
+        if read_only
+          { "slug" => "rel-active", "state" => "assembling" }    # the active RC the claim keys on
+        else
+          $stdout.puts("EJECT-CALL " + ruby.gsub("\n", " "))     # the membership mutation — must NOT run
+          { "slug" => "task-bad", "stage" => "blocked", "merged" => nil }
+        end
+      end
+      def conductor_claim(*a); $stdout.puts("CLAIM-CHECK " + a.join(" ")); ReleaseClaimCli::STOOD_DOWN; end
+    RUBY
+    out = run_cli(["task-bad"], setup: setup,
+                  call: "begin; eject; puts('NO-ABORT'); rescue SystemExit => e; puts('ABORTED: ' + e.message); end")
+
+    assert_includes out, "CLAIM-CHECK acquire rel-active --role assembler",
+                     "eject resolves the active release, then CONSULTS the per-release assembler claim BEFORE mutating membership"
+    assert_includes out, "ABORTED", "a held assembler claim (STOOD_DOWN) stands eject down"
+    assert_includes out, "held by another live release conductor", "and names the stand-down cause"
+    refute_includes out, "NO-ABORT", "eject must not fall through past the claim gate"
+    refute_includes out, "EJECT-CALL",
+                     "the membership detach (Release::Conductor.eject!) must NOT run — eject serializes BEFORE the write, never racing a concurrent sweep"
+  end
+
+  # OK claim → eject holds the claim ACROSS the detach and releases it AFTER: the
+  # observable effect is the write-ordering acquire(assembler) → detach → release.
+  def test_eject_holds_the_assembler_claim_across_the_detach_then_releases_it
+    setup = <<~'RUBY'
+      def conductor(ruby, read_only: false)
+        if read_only
+          { "slug" => "rel-active", "state" => "assembling" }
+        else
+          $stdout.puts("DETACH")                                  # the membership mutation
+          { "slug" => "task-bad", "stage" => "blocked", "merged" => nil }
+        end
+      end
+      def conductor_claim(op, *a); $stdout.puts("CLAIM-#{op.upcase} " + a.join(" ")); ReleaseClaimCli::OK; end
+    RUBY
+    out = run_cli(["task-bad"], call: "eject", setup: setup)
+
+    seq     = out.lines.map(&:strip).select { |l| l.start_with?("CLAIM-", "DETACH") }
+    acquire = seq.index { |l| l.start_with?("CLAIM-ACQUIRE") }
+    detach  = seq.index("DETACH")
+    release = seq.index { |l| l.start_with?("CLAIM-RELEASE") }
+
+    assert [acquire, detach, release].all?, "acquire, detach, and release must all occur: got #{seq.inspect}"
+    assert_includes seq[acquire], "--role assembler", "the claim taken is the per-release ASSEMBLER lane"
+    assert acquire < detach, "the assembler claim is ACQUIRED before the membership detach"
+    assert detach < release, "and RELEASED only AFTER the detach — the claim is held ACROSS the whole membership write"
   end
 
   def test_eject_without_a_slug_aborts_with_usage
