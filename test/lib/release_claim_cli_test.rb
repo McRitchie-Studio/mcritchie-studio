@@ -26,6 +26,7 @@ load File.expand_path("../../bin/lib/release_claim_cli.rb", __dir__)
 class ReleaseClaimCliTest < Minitest::Test
   SESSION = "7cc218a6-8676-4cf5-ce12-81804d9cb728"
   SLUG = "rel-20260721-abc123"
+  FORMING = "__forming__" # the fresh-create assembly sentinel (ReleaseConductorClaim::FORMING_SLUG)
 
   Resp = Struct.new(:code, :body)
 
@@ -70,12 +71,15 @@ class ReleaseClaimCliTest < Minitest::Test
     c
   end
 
-  def marker(projects_dir, role = "assembler")
-    File.join(projects_dir, ".agents", "sessions", "#{SESSION}.release-conductor-claim-#{role}")
+  # Markers are keyed per (session, ROLE, SLUG) — the slug is in the suffix so the
+  # forming sentinel and the real assembler claim (same role, different slug) never
+  # share a renewer-pid marker.
+  def marker(projects_dir, role = "assembler", slug = SLUG)
+    File.join(projects_dir, ".agents", "sessions", "#{SESSION}.release-conductor-claim-#{role}-#{slug}")
   end
 
-  def renewer_marker(projects_dir, role)
-    File.join(projects_dir, ".agents", "sessions", "#{SESSION}.release-conductor-claim-renewer-#{role}")
+  def renewer_marker(projects_dir, role, slug = SLUG)
+    File.join(projects_dir, ".agents", "sessions", "#{SESSION}.release-conductor-claim-renewer-#{role}-#{slug}")
   end
 
   def test_acquire_success_exits_zero_and_writes_the_marker
@@ -286,6 +290,36 @@ class ReleaseClaimCliTest < Minitest::Test
       assert_equal [111], killed, "releasing assembler kills ONLY the assembler renewer, never the deployer's"
       refute_path_exists renewer_marker(proj, "assembler"), "the assembler renewer marker is cleared"
       assert_path_exists renewer_marker(proj, "deployer"), "the deployer renewer survives the assembler release"
+    end
+  end
+
+  # GAP 1 (marker collision): the fresh-create hand-off holds the FORMING sentinel and
+  # the real assembler claim AT ONCE (same role, different slug). A role-ONLY marker key
+  # would make releasing the sentinel read the REAL claim's renewer pid and TERM it —
+  # the real claim would lapse mid-assembly. Keying markers per (role, slug) keeps them
+  # independent: the hand-off release kills only the sentinel's renewer.
+  def test_unit_sentinel_and_real_assembler_claims_track_renewers_independently
+    Dir.mktmpdir do |proj|
+      sentinel = cli(projects_dir: proj, data: { "acquired" => true, "holder" => {} })
+      sentinel.instance_variable_set(:@spawner, ->(_env, _argv) { 111 })
+      sentinel.run(["acquire", FORMING, "--role", "assembler"])
+
+      real = cli(projects_dir: proj, data: { "acquired" => true, "holder" => {} })
+      real.instance_variable_set(:@spawner, ->(_env, _argv) { 222 })
+      real.run(["acquire", SLUG, "--role", "assembler"])
+
+      assert_path_exists renewer_marker(proj, "assembler", FORMING), "the sentinel renewer is tracked"
+      assert_path_exists renewer_marker(proj, "assembler", SLUG), "the real assembler renewer is tracked separately"
+
+      killed = []
+      releaser = cli(projects_dir: proj, code: 200, data: { "released" => true })
+      releaser.instance_variable_set(:@killer, ->(pid) { killed << pid })
+      releaser.run(["release", FORMING, "--role", "assembler"]) # the hand-off
+
+      assert_equal [111], killed, "the hand-off release kills ONLY the sentinel renewer, never the real claim's"
+      refute_path_exists renewer_marker(proj, "assembler", FORMING), "sentinel renewer marker cleared"
+      assert_path_exists renewer_marker(proj, "assembler", SLUG),
+                         "the REAL assembler renewer survives the sentinel hand-off — assembly stays guarded"
     end
   end
 

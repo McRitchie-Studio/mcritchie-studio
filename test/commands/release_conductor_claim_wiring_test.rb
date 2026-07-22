@@ -60,13 +60,69 @@ class ReleaseConductorClaimWiringTest < ActiveSupport::TestCase
     assert_match(/ReleaseClaimCli::STOOD_DOWN/, body, "it must branch on the stand-down exit code")
     assert_match(/abort!/, body, "a live DIFFERENT holder must ABORT the run (stand down)")
     assert_match(/ReleaseClaimCli::OK/, body, "and record the held claim on a successful acquire")
-    assert_match(/return if @conductor_claim/, body, "idempotent per run — a resumed ship re-acquire is a no-op renew")
+    assert_match(/return if holding_conductor_claim\?\(role, s\)/, body,
+                 "idempotent per (role, slug) — no second renewer for a claim already held this run")
   end
 
-  # --- the claim is dropped on completion (both success AND abort) -------------
-  test "prepare and ship both release the conductor claim on completion" do
-    assert_operator release_lines.count { |l| l =~ /release_conductor_claim!/ }, :>=, 4,
-                    "prepare + ship must each release the claim on BOTH the success path and the abort rescue"
+  # --- the helper is MULTI-SLOT (sentinel + real held at once during hand-off) --
+  test "the claim helpers track MULTIPLE held claims and support a targeted (role, slug) release" do
+    src = File.read(RELEASE_RB)
+    assert_match(/def held_conductor_claims\b/, src, "held claims are a LIST — a fresh prepare holds sentinel + real at once")
+    assert_match(/@conductor_claims \|\|= \[\]/, src, "the list is the tracking slot, not a single ivar")
+    release = src[/^def release_conductor_claim!.*?^end$/m]
+    assert release, "release_conductor_claim! must be defined"
+    assert_match(/def release_conductor_claim!\(role: nil, slug: nil\)/, release,
+                 "release must support a TARGETED (role, slug) drop — the sentinel hand-off frees only the sentinel")
+  end
+
+  # --- GAP 1: fresh assembly — the FORMING sentinel guards the promote, then hands off
+  test "prepare guards a fresh promote with the FORMING sentinel, before the promote, then hands off" do
+    src = File.read(RELEASE_RB)
+    prepare = src[/^def prepare\b.*?^end$/m]
+    assert prepare, "prepare must be defined"
+
+    # A fresh create has no real slug at 2c, so it falls back to the FORMING sentinel.
+    assert_match(/ReleaseConductorClaim::FORMING_SLUG if assembler_slug\.empty\?/, prepare,
+                 "a blank slug at 2c must fall back to the FORMING sentinel so the promote is still guarded")
+
+    lines = prepare.lines
+    sentinel_acquire = lines.index { |l| l =~ /acquire_conductor_claim!\("assembler", assembler_slug/ }
+    promote          = lines.index { |l| l =~ /promote_accepted_to_release!\(promote_repos, label: slug\)/ }
+    real_acquire     = lines.index { |l| l =~ /acquire_conductor_claim!\("assembler", rel_slug/ }
+    handoff          = lines.index { |l| l =~ /release_conductor_claim!\(role: "assembler", slug: ReleaseConductorClaim::FORMING_SLUG\)/ }
+
+    assert sentinel_acquire && promote && real_acquire && handoff, "all four sentinel/hand-off steps must be present"
+    assert sentinel_acquire < promote,
+           "the (sentinel-or-real) assembler claim must be held BEFORE the promote — the fresh-create gap the review flagged"
+    assert real_acquire < handoff,
+           "the real claim must be acquired BEFORE the sentinel is freed — ownership is CONTINUOUS across the hand-off"
+    assert promote < real_acquire, "the real claim + hand-off come after rel_slug resolves (post-promote)"
+  end
+
+  # --- GAP 2: finalize — the deployer claim guards its record mutations ---------
+  test "finalize acquires the deployer claim before its record mutations and releases it in an ensure" do
+    src = File.read(RELEASE_RB)
+    finalize = src[/^def finalize\b.*?^end$/m]
+    assert finalize, "finalize must be defined"
+
+    lines = finalize.lines
+    acquire  = lines.index { |l| l =~ /acquire_conductor_claim!\("deployer", rel_slug\)/ }
+    ship_mut = lines.index { |l| l =~ /Release::Conductor\.ship!/ }
+    ensure_i = lines.index { |l| l =~ /^  ensure$/ }
+    release  = lines.index { |l| l =~ /release_conductor_claim!/ }
+
+    assert acquire, "finalize must acquire the `deployer` claim — the --finalize-only path skips ship's acquire"
+    assert ship_mut, "finalize must still record Release::Conductor.ship!"
+    assert acquire < ship_mut,
+           "the deployer claim must be held BEFORE finalize's record mutations, or two concurrent finalizes double-record"
+    assert ensure_i, "finalize (which has no outer rescue) must release the claim in an ensure"
+    assert release && release > ensure_i, "the release must live in the ensure so EVERY finalize exit frees the claim"
+  end
+
+  # --- the claim is dropped on completion (success AND abort) across all paths --
+  test "prepare, ship, and finalize all release the conductor claim on completion/abort" do
+    assert_operator release_lines.count { |l| l =~ /release_conductor_claim!/ }, :>=, 6,
+                    "each of prepare (success/abort/hand-off/empty), ship (success/abort), and finalize (ensure) frees the claim"
   end
 
   # --- transport: the claim runs over the fast HTTP CLI, not a heroku-run dyno --

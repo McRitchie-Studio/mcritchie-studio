@@ -233,6 +233,77 @@ class ReleaseConductorClaimTest < ActiveSupport::TestCase
     assert_equal first.id, second.id, "both first-acquirers converge on ONE row (the unique index enforces it)"
   end
 
+  # --- [unit] GAP 1: the FORMING sentinel + the hand-off to the real claim --------
+  #
+  # A brand-new qa-release promotes `accepted → release` BEFORE any release record
+  # exists, so there is no real slug to claim. Two concurrent fresh sessions guard the
+  # promote by claiming the reserved FORMING_SLUG sentinel instead — an atomic CAS, so
+  # exactly one may promote. Then the winner hands off to the real (rel_slug) claim and
+  # frees the sentinel, with ownership continuous across the hand-off (never a gap).
+  test "FORMING_SLUG is a reserved sentinel no real release can collide with" do
+    assert_equal "__forming__", ReleaseConductorClaim::FORMING_SLUG
+  end
+
+  test "the forming sentinel is an atomic CAS — one fresh session wins, the other stands down" do
+    won = acquire(release_slug: ReleaseConductorClaim::FORMING_SLUG, **A, label: "Snorlax")
+    assert won.acquired, "the first fresh qa-release takes the forming sentinel and may promote"
+
+    lost = acquire(release_slug: ReleaseConductorClaim::FORMING_SLUG, **B)
+    refute lost.acquired, "a second concurrent fresh qa-release must STAND DOWN — it cannot also promote"
+    assert_equal :held_by_other, lost.disposition
+    assert_equal "Snorlax", lost.claim.holder_label
+  end
+
+  test "the hand-off holds the real claim AND the sentinel at once, then frees ONLY the sentinel" do
+    forming = ReleaseConductorClaim::FORMING_SLUG
+    real = "rel-20260721-fresh"
+
+    # 1. Fresh session A guards the promote with the sentinel.
+    assert acquire(release_slug: forming, **A).acquired
+
+    # 2. The release now exists; A takes the REAL claim BEFORE releasing the sentinel —
+    #    so at THIS instant it holds BOTH (continuous ownership, no gap across hand-off).
+    assert acquire(release_slug: real, **A).acquired
+    assert ReleaseConductorClaim.find_by(release_slug: forming, role: "assembler").live?, "sentinel still live"
+    assert ReleaseConductorClaim.find_by(release_slug: real, role: "assembler").live?, "real claim now live too"
+
+    # 3. Hand-off: free ONLY the sentinel. The real claim must be untouched, and the
+    #    sentinel must be free for the next fresh session.
+    assert ReleaseConductorClaim.release(release_slug: forming, role: "assembler", session: A[:session], nonce: A[:nonce])
+    refute ReleaseConductorClaim.find_by(release_slug: forming, role: "assembler").live?, "sentinel released"
+    assert ReleaseConductorClaim.find_by(release_slug: real, role: "assembler").live?,
+           "the REAL claim survives the sentinel hand-off — the assembly is still guarded"
+    assert acquire(release_slug: forming, **B).acquired, "a later fresh session can take the freed sentinel"
+  end
+
+  # --- [unit] GAP 2: the deployer claim across ship → finalize --------------------
+  #
+  # `finalize` (the `--finalize-only` / `bin/release finalize` resume path) records the
+  # steps a killed ship skipped — real mutation — and must hold the SAME deployer claim
+  # the normal ship holds. A second finalize (or a finalize racing a fresh ship) stands
+  # down; a `ship → finalize` in ONE session (same instance) renews and RESUMES.
+  test "a second finalize on a release already being deployed stands down" do
+    rel = "rel-20260721-ship"
+    assert acquire(release_slug: rel, role: "deployer", **A).acquired, "the ship/finalize holds the deployer claim"
+    out = acquire(release_slug: rel, role: "deployer", **B)
+    refute out.acquired, "a second concurrent finalize/ship must STAND DOWN — no double-record"
+    assert_equal :held_by_other, out.disposition
+  end
+
+  test "a ship→finalize (or resumed finalize) in one session renews the deployer claim, never stands down" do
+    rel = "rel-20260721-ship"
+    t0 = Time.utc(2026, 7, 21, 5, 0, 0)
+    ship = acquire(release_slug: rel, role: "deployer", **A, now: t0)
+    assert ship.acquired
+    original = ship.claim.acquired_at
+
+    # The SAME session later runs `bin/release finalize` (same session + nonce).
+    finalize = acquire(release_slug: rel, role: "deployer", **A, now: t0 + 45)
+    assert finalize.acquired, "finalize from the same live instance RESUMES — it must not stand itself down"
+    assert_equal :same_instance, finalize.disposition
+    assert_equal original.to_i, finalize.claim.acquired_at.to_i, "acquired_at is stable across the ship→finalize resume"
+  end
+
   test "status_for reports the holder and heartbeat age, nil when never claimed" do
     assert_nil ReleaseConductorClaim.status_for("never-claimed", "deployer")
 

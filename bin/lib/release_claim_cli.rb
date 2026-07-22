@@ -421,10 +421,14 @@ class ReleaseClaimCli
   # this marker shares the narration store with .devops-shift/.task-review-claim, so it
   # shares their one choke point rather than re-deriving the path here.
   #
-  # KEYED PER (session, ROLE) — a conductor session runs EITHER a prepare (assembler)
-  # OR a ship (deployer), never both, but keying the marker by role keeps the two
-  # independent so a stray release of one can never TERM the other's renewer. The role
-  # (a closed set) is already filesystem-safe.
+  # KEYED PER (session, ROLE, SLUG) — NOT per (session, role) alone. A fresh-create
+  # `bin/release prepare` briefly holds TWO assembler claims at once: the `__forming__`
+  # SENTINEL guarding the promote, plus the real (rel_slug) claim it hands off to. A
+  # role-only key would make them share one renewer-pid marker, so releasing the
+  # sentinel would read the REAL claim's pid and TERM its renewer — the real claim then
+  # lapses mid-assembly, the exact double-assembly this gate prevents. The slug in the
+  # suffix keeps each claim's marker (and its renewer) independent, mirroring
+  # review_claim_cli's per-slug keying.
   RELEASE_CLAIM = ".release-conductor-claim"
 
   # The renewer's pid lives in its OWN marker rather than as a second line of
@@ -433,32 +437,35 @@ class ReleaseClaimCli
   # breaks a distant one.
   RELEASE_CLAIM_RENEWER = ".release-conductor-claim-renewer"
 
-  # The per-(session, role) marker suffix.
-  def marker_suffix(base, role)
-    "#{base}-#{role}"
+  # The per-(session, role, slug) marker suffix. Roles are a closed set (safe); slugs
+  # are kebab-case (validated on the board) plus the `__forming__` sentinel, all
+  # filesystem-safe — sanitize defensively anyway.
+  def marker_suffix(base, role, slug)
+    "#{base}-#{role}-#{slug.to_s.gsub(/[^A-Za-z0-9._-]/, '')}"
   end
 
   def write_marker(sid, role, slug)
-    SessionMarkers.write(sid, @api.projects_dir, marker_suffix(RELEASE_CLAIM, role), "#{slug}\n", env: @api.env)
+    SessionMarkers.write(sid, @api.projects_dir, marker_suffix(RELEASE_CLAIM, role, slug), "#{slug}\n", env: @api.env)
   end
 
-  def clear_marker(sid, role, _slug)
-    SessionMarkers.delete(sid, @api.projects_dir, marker_suffix(RELEASE_CLAIM, role), env: @api.env)
+  def clear_marker(sid, role, slug)
+    SessionMarkers.delete(sid, @api.projects_dir, marker_suffix(RELEASE_CLAIM, role, slug), env: @api.env)
   end
 
-  def write_renewer_marker(sid, role, _slug, pid)
-    SessionMarkers.write(sid, @api.projects_dir, marker_suffix(RELEASE_CLAIM_RENEWER, role), "#{pid}\n", env: @api.env)
+  def write_renewer_marker(sid, role, slug, pid)
+    SessionMarkers.write(sid, @api.projects_dir, marker_suffix(RELEASE_CLAIM_RENEWER, role, slug), "#{pid}\n",
+                         env: @api.env)
   end
 
-  def read_renewer_marker(sid, role, _slug)
-    pid = SessionMarkers.read(sid, @api.projects_dir, marker_suffix(RELEASE_CLAIM_RENEWER, role)).to_s.strip.to_i
+  def read_renewer_marker(sid, role, slug)
+    pid = SessionMarkers.read(sid, @api.projects_dir, marker_suffix(RELEASE_CLAIM_RENEWER, role, slug)).to_s.strip.to_i
     pid.positive? ? pid : nil
   rescue StandardError
     nil
   end
 
-  def clear_renewer_marker(sid, role, _slug)
-    SessionMarkers.delete(sid, @api.projects_dir, marker_suffix(RELEASE_CLAIM_RENEWER, role), env: @api.env)
+  def clear_renewer_marker(sid, role, slug)
+    SessionMarkers.delete(sid, @api.projects_dir, marker_suffix(RELEASE_CLAIM_RENEWER, role, slug), env: @api.env)
   end
 
   def usage_slug(cmd)

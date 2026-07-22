@@ -645,18 +645,31 @@ rescue StandardError => e
   nil
 end
 
-# Take the role's claim on the release, or ABORT (stand down) if a DIFFERENT live
-# instance holds it. Idempotent per run: the first acquire records the held (slug,
-# role) in @conductor_claim, so a second call this run is a no-op (and a same-instance
-# re-acquire on a resumed ship is a renew, never a stand-down). A blank slug (no
-# release identity resolved yet) is a fail-open skip — there is nothing to guard. On
-# stand-down, `span_close` (optional) closes any open role span before aborting so the
-# heartbeat activity resolves.
-def acquire_conductor_claim!(role, slug, span_close: nil)
-  return if @conductor_claim # already holding a claim this run
+# The claims this run currently holds — a LIST of { slug:, role: }, not a single slot,
+# because a fresh-create prepare briefly holds TWO assembler claims at once: the
+# `__forming__` SENTINEL (which guards the accepted→release promote before any release
+# record exists) plus the real (rel_slug) claim it hands off to. Each (role, slug) is a
+# distinct board row with its own detached renewer, tracked independently here.
+def held_conductor_claims
+  @conductor_claims ||= []
+end
 
+def holding_conductor_claim?(role, slug)
+  held_conductor_claims.any? { |c| c[:role] == role && c[:slug] == slug }
+end
+
+# Take the role's claim on the release, or ABORT (stand down) if a DIFFERENT live
+# instance holds it. Idempotent per (role, slug): a re-acquire of one we already hold
+# this run is a no-op (so we never start a second renewer for it), and a same-instance
+# re-acquire of one held by an EARLIER run of this session is a renew, never a
+# stand-down (an interrupted ship/finalize resumes). A blank slug (no release identity
+# resolved yet) is a fail-open skip — there is nothing to guard. On stand-down,
+# `span_close` (optional) closes any open role span before aborting so the heartbeat
+# activity resolves.
+def acquire_conductor_claim!(role, slug, span_close: nil)
   s = slug.to_s.strip
   return if s.empty? # no release identity yet → nothing to guard (fail-open)
+  return if holding_conductor_claim?(role, s) # already held this run → no second renewer
 
   case conductor_claim("acquire", s, "--role", role)
   when ReleaseClaimCli::STOOD_DOWN
@@ -664,19 +677,29 @@ def acquire_conductor_claim!(role, slug, span_close: nil)
     abort!("#{role} claim for #{s} is held by another live release conductor — standing down (see the holder " \
            "above). Its lease lapses within ~#{ClaimLease::DEFAULT_TTL_SECONDS}s of that session stopping; re-run then.")
   when ReleaseClaimCli::OK
-    @conductor_claim = { slug: s, role: role }
+    held_conductor_claims << { slug: s, role: role }
   end
   # any other code (nil / CANT_RUN) → fail-open: proceed unclaimed
 end
 
-# Drop the claim this run acquired (clean completion or handled abort), stopping its
-# detached renewer. Best-effort + idempotent — nothing held ⇒ no-op.
-def release_conductor_claim!
-  claim = @conductor_claim
-  return unless claim
-
-  conductor_claim("release", claim[:slug], "--role", claim[:role])
-  @conductor_claim = nil
+# Drop conductor claims this run holds, stopping each one's detached renewer. With NO
+# args it drops EVERY held claim (clean completion or an abort rescue — this is what
+# frees a still-held sentinel on a mid-prepare abort). With role:/slug: it drops just
+# that one — the SENTINEL HAND-OFF: once the real (rel_slug) claim is held, the forming
+# sentinel is released by (role, slug) so the real claim is never touched.
+# Best-effort + idempotent — nothing matching ⇒ no-op.
+def release_conductor_claim!(role: nil, slug: nil)
+  targets =
+    if role && slug
+      s = slug.to_s.strip
+      held_conductor_claims.select { |c| c[:role] == role && c[:slug] == s }
+    else
+      held_conductor_claims.dup
+    end
+  targets.each do |c|
+    conductor_claim("release", c[:slug], "--role", c[:role])
+    held_conductor_claims.delete(c)
+  end
 end
 
 # --- test-scope telemetry (best-effort) --------------------------------------
@@ -2384,15 +2407,23 @@ def prepare
 
   # 2c. ASSEMBLER CLAIM — take the per-RELEASE `assembler` lock (release-conductor-claims)
   #     BEFORE the irreversible promote below, so two concurrent qa-release sessions
-  #     can't both sweep the same active release N-behind (the parallel-conductor race).
-  #     This replaces the old `bin/devops-shift acquire steffon` shift lease: the lock
-  #     is on the release record, which turns over each release, so a stale claim can
-  #     never strand the whole lane. The slug is the ACTIVE release (or --slug); on a
-  #     brand-new release with no name yet it is blank here and the claim is taken once
-  #     `rel_slug` resolves below (idempotent — the second call is a no-op). A DIFFERENT
-  #     live holder stands us down (exit 10); a telemetry hiccup fails open.
-  acquire_conductor_claim!("assembler", (active && active["slug"]) || slug,
-                           span_close: -> { close_role_span("stood down — another session is assembling this release") })
+  #     can't both sweep/promote and race the candidate N-behind (the parallel-conductor
+  #     race). This replaces the old `bin/devops-shift acquire steffon` shift lease: the
+  #     lock is on the release record, which turns over each release, so a stale claim
+  #     can never strand the whole lane.
+  #
+  #     For an ACTIVE/named release the slug is known here (its own slug / --slug), so we
+  #     claim it directly. For a BRAND-NEW release the slug does NOT exist yet — the
+  #     promote CREATES the release — so we claim the reserved `__forming__` SENTINEL
+  #     instead. Either way, EXCLUSIVE OWNERSHIP IS HELD BEFORE THE PROMOTE: two
+  #     concurrent fresh sessions contend on the sentinel's composite-unique CAS, and the
+  #     loser stands down (exit 10) rather than double-promoting. A telemetry hiccup fails
+  #     open. The sentinel is handed off to the real claim (and freed) once `rel_slug`
+  #     resolves below, so ownership is continuous across the promote.
+  stood_down = -> { close_role_span("stood down — another session is assembling this release") }
+  assembler_slug = ((active && active["slug"]) || slug).to_s.strip
+  assembler_slug = ReleaseConductorClaim::FORMING_SLUG if assembler_slug.empty?
+  acquire_conductor_claim!("assembler", assembler_slug, span_close: stood_down)
 
   # 3. SWEEP PLAN (pure: Release::SweepPlan): partition the candidates into the
   #    members to RECORD onto the RC (code on accepted/release/main) and the HELD
@@ -2447,6 +2478,9 @@ def prepare
   rel_slug = result["slug"] || slug || "rel-pending"
   repos    = result["repos"] || []
   if repos.empty?
+    # Nothing to deploy → free any claim held (the forming sentinel from 2c, or the
+    # real claim for an active release) before the early return so it never leaks.
+    release_conductor_claim!
     if DRY && cands.any?
       say("")
       say("✓ Dry run: #{cands.size} task(s) would sweep onto a fresh candidate — the repo plan (and the QA deploy preview) " \
@@ -2465,11 +2499,16 @@ def prepare
   gem_groups = repos.select { |g| g["kind"] == "gem" }
   say("  release #{rel_slug} (#{result['state']}) · #{repos.size} repo(s): #{app_groups.size} app, #{gem_groups.size} gem")
 
-  # ASSEMBLER CLAIM (idempotent) — for a brand-new release the slug was blank at 2c
-  # above, so take the assembler lock now that `rel_slug` is concrete, BEFORE the gem
-  # publish + QA deploy. Already-held (the active/named path claimed at 2c) ⇒ no-op.
+  # ASSEMBLER CLAIM HAND-OFF — now that `rel_slug` is concrete, take the real
+  # (rel_slug, assembler) claim BEFORE the gem publish + QA deploy, then FREE the
+  # forming sentinel. Ordering is load-bearing: acquire the real claim FIRST, so
+  # exclusive ownership is continuous (the sentinel is only released once the real
+  # claim is held — never a gap across the promote). For the active/named path the real
+  # claim was already taken at 2c (idempotent no-op here) and no sentinel was held, so
+  # the release-by-slug below is a no-op.
   acquire_conductor_claim!("assembler", rel_slug,
                            span_close: -> { close_role_span("stood down — another session is assembling this release") })
+  release_conductor_claim!(role: "assembler", slug: ReleaseConductorClaim::FORMING_SLUG)
 
   record_release_event(rel_slug, "assemble_release", "started")
 
@@ -4903,42 +4942,59 @@ def finalize(slug = nil)
 
   abort!("aborted — finalize not confirmed") unless confirm("Finalize #{rel_slug} — record #{pending.join('/')} + install docs?")
 
-  # 4. Run ONLY the skipped steps, in the live-ship order (seal 5c → ship! 6 →
-  #    notes 6 → restore/install 7). Each is idempotent; finalize_pending? gates
-  #    the two non-idempotent-by-nature ones (notes' Discord delivery; the ship!
-  #    member cadence) so a re-run never double-fires.
-  seal_status = production_smoke_seal(app_groups, ship_sha, rel_slug) if pending.include?(:seal)
+  # DEPLOYER CLAIM — finalize marks the release shipped, flips member tasks to
+  # `shipped`, posts notes, seals, and installs docs: REAL mutation that the normal
+  # `ship` guards with the deployer claim, but the `--finalize-only` / `bin/release
+  # finalize` early-return SKIPS the ship acquire. Take it HERE, before any of those
+  # mutations, so two concurrent finalizes (or a finalize racing a fresh ship) can't
+  # double-record. A same-instance re-acquire RENEWS, so a `ship → finalize` in one
+  # session, or a resumed finalize, resumes rather than standing down; a live DIFFERENT
+  # holder stands us down; a telemetry hiccup fails open. finalize has NO outer rescue,
+  # so the claim is released on EVERY exit path via the ensure below (a mid-finalize
+  # abort would otherwise leave the renewer holding it, anchored to the live session).
+  acquire_conductor_claim!("deployer", rel_slug)
+  begin
+    # 4. Run ONLY the skipped steps, in the live-ship order (seal 5c → ship! 6 →
+    #    notes 6 → restore/install 7). Each is idempotent; finalize_pending? gates
+    #    the two non-idempotent-by-nature ones (notes' Discord delivery; the ship!
+    #    member cadence) so a re-run never double-fires.
+    seal_status = production_smoke_seal(app_groups, ship_sha, rel_slug) if pending.include?(:seal)
 
-  if pending.include?(:ship)
-    deployed_sha = ship_sha[APP].to_s
-    deployed_sha = git_capture("-C", repo_path(APP), "rev-parse", "origin/main").first.strip if deployed_sha.empty?
-    step("record: Release::Conductor.ship! + DurationCache.refresh_recent!")
-    conductor(
-      "r = Release.find_by!(slug: #{rel_slug.inspect}); " \
-      "Release::Conductor.ship!(release: r, deployed_sha: #{deployed_sha.inspect}, by: #{by.inspect}, production_url: #{PROD_URL.inspect}, usage_by_slug: {}, member_pause: 1); " \
-      "Release::DurationCache.refresh_recent!(limit: 3); " \
-      "puts({slug: r.slug, state: r.reload.state, sha: r.deployed_sha.to_s[0,7]}.to_json)"
-    )
+    if pending.include?(:ship)
+      deployed_sha = ship_sha[APP].to_s
+      deployed_sha = git_capture("-C", repo_path(APP), "rev-parse", "origin/main").first.strip if deployed_sha.empty?
+      step("record: Release::Conductor.ship! + DurationCache.refresh_recent!")
+      conductor(
+        "r = Release.find_by!(slug: #{rel_slug.inspect}); " \
+        "Release::Conductor.ship!(release: r, deployed_sha: #{deployed_sha.inspect}, by: #{by.inspect}, production_url: #{PROD_URL.inspect}, usage_by_slug: {}, member_pause: 1); " \
+        "Release::DurationCache.refresh_recent!(limit: 3); " \
+        "puts({slug: r.slug, state: r.reload.state, sha: r.deployed_sha.to_s[0,7]}.to_json)"
+      )
+    end
+
+    if pending.include?(:notes)
+      step("record: Release::Conductor.post_release_notes")
+      notes = conductor(
+        "r = Release.find_by!(slug: #{rel_slug.inspect}); " \
+        "n = Release::Conductor.post_release_notes(release: r); " \
+        "puts({notes_delivered: n[:delivered]}.to_json)"
+      )
+      say("  release notes: #{notes['notes_delivered'] ? 'posted' : 'not delivered (webhook unset?)'}")
+    end
+
+    # 5. The idempotent tail: restore each app primary to a clean `main`, then sync
+    #    the installed agent docs from the shipped hub tree (the install-agent-docs
+    #    the killed ship skipped). Both best-effort + non-fatal.
+    restore_primaries(app_groups)
+    sync_agent_docs
+
+    say("")
+    say("✓ Finalized #{rel_slug} — recorded #{pending.join(', ')}. The board now reflects the shipped release.")
+  ensure
+    # Drop the deployer claim on EVERY finalize exit (success, conductor failure, or a
+    # mid-mutation abort) — the anti-leak the missing rescue would otherwise cause.
+    release_conductor_claim!
   end
-
-  if pending.include?(:notes)
-    step("record: Release::Conductor.post_release_notes")
-    notes = conductor(
-      "r = Release.find_by!(slug: #{rel_slug.inspect}); " \
-      "n = Release::Conductor.post_release_notes(release: r); " \
-      "puts({notes_delivered: n[:delivered]}.to_json)"
-    )
-    say("  release notes: #{notes['notes_delivered'] ? 'posted' : 'not delivered (webhook unset?)'}")
-  end
-
-  # 5. The idempotent tail: restore each app primary to a clean `main`, then sync
-  #    the installed agent docs from the shipped hub tree (the install-agent-docs
-  #    the killed ship skipped). Both best-effort + non-fatal.
-  restore_primaries(app_groups)
-  sync_agent_docs
-
-  say("")
-  say("✓ Finalized #{rel_slug} — recorded #{pending.join(', ')}. The board now reflects the shipped release.")
 end
 
 # Return each app's PRIMARY checkout to a clean `main` after a ship — the

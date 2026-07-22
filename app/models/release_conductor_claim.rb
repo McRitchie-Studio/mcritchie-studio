@@ -31,6 +31,16 @@ class ReleaseConductorClaim < ApplicationRecord
   # is one of exactly these two, so it IS an inclusion validation.
   ROLES = %w[assembler deployer].freeze
 
+  # The reserved "forming" sentinel release_slug. A brand-new `qa-release` promotes
+  # `accepted → release` BEFORE any release record exists, so there is no real slug to
+  # claim yet — two concurrent fresh sessions would both promote, unguarded. They both
+  # `acquire(FORMING_SLUG, :assembler)` first instead: the composite-unique CAS lets
+  # exactly one win the forming phase; the loser stands down. Once the real release
+  # exists, prepare acquires its real (rel_slug, assembler) claim and HANDS OFF — frees
+  # this sentinel — so ownership is continuous across the promote. Double-underscored
+  # so no real release slug (kebab-case, board-validated) can ever collide with it.
+  FORMING_SLUG = "__forming__"
+
   # The acquire verdict: whether THIS instance now holds the (release, role), the
   # ClaimLease disposition it was in, and the (updated) row for the stand-down message.
   Outcome = Struct.new(:acquired, :disposition, :claim, keyword_init: false)
