@@ -238,14 +238,16 @@ Verdicts:
   merge` FAILS, leave the task `submitted` and UNSTAMPED (never move to
   `reviewed`) — resolve the conflict/checks on GitHub, then re-review. A mis-based
   feat PR (base ≠ `accepted`) self-heals: retarget it to `accepted`, then merge.
-  (The `bin/pr-review` supervisor runs the merge → stamp → move sequence for you;
-  the merge condition above is **not** automated — the script has no head-SHA
-  logic, so the supervisor checks it by hand.)
+  (The `bin/pr-review` supervisor runs the merge → stamp → move sequence for you.
+  It also captures the PR head when the review begins and REVALIDATES it before
+  merging — an advanced head, e.g. a reviewer-applied zap, merges only if its own
+  CI is green, and holds for re-review otherwise.)
 
-  If a reviewer NAMED a zappable defect in a verdict, the fix does not land here —
-  reviewers apply nothing. It lands afterward as a conductor zap on `accepted`,
-  applied by whoever holds that seat, within the bounds, timing, and recording
-  rules in [`../../../modules/zap-protocol.md`](../../../modules/zap-protocol.md).
+  A reviewer who finds a zappable defect may **apply a bounded zap** — lease-push
+  a `zap:` commit to the PR branch — and leave the verdict merge-ready; the
+  supervisor's head revalidation gates it on the post-zap CI. Otherwise the
+  reviewer **names** it and it lands afterward as a conductor zap on `accepted`.
+  Bounds, timing, and recording: [`../../../modules/zap-protocol.md`](../../../modules/zap-protocol.md).
 
 - Request changes, missing metadata, red CI, merge risk, or acceptance mismatch:
 

@@ -61,6 +61,7 @@ require "time"
 require_relative "lib/ci_status"
 require_relative "lib/bin_helpers"
 require_relative "lib/projects_root"
+require_relative "lib/zap_revalidation"
 
 ROOT = File.expand_path("..", __dir__)
 PROJECTS_ROOT = ProjectsRoot.default_projects_dir(ROOT)
@@ -364,7 +365,13 @@ def reviewer_prompt(task, reviewer, role, reviewers)
     - Check whether the PR could overwrite or conflict with another agent's work.
     - Classify findings as blockers, non-blockers, or questions.
     - Recommend one outcome to Avi: merge-ready, wait-for-CI, request-changes, or conductor-review.
-    - Do not merge, deploy, publish gems, change provider config, rotate credentials, or force-push.
+    - Do not merge, deploy, publish gems, change provider config, or rotate credentials.
+    - You MAY apply ONE bounded reviewer zap when the fix is in zap bounds (docs/agents/modules/zap-protocol.md,
+      Reviewer seam): prepare a `zap:` commit on a throwaway detached worktree off the PR head, run its test tier,
+      and lease-push it to the PR branch (git push --force-with-lease origin HEAD:refs/heads/#{task.dig("devops", "branch") || "feat/#{task.fetch("slug")}"}
+      — a lease rejects if the branch moved under you). Do NOT plain force-push, and do NOT zap outside the bounds.
+      The supervisor recaptured this head at read time and REVALIDATES it: your zapped head merges only if its own CI
+      is green, so leave the verdict merge-ready and the zap's CI does the vouching.
     - Do not move the task stage. The pr-review supervisor owns the final move to reviewed or blocked.
     - Do not launch another reviewer; the pr-review supervisor already launched the pair.
 
@@ -552,6 +559,19 @@ def pr_already_merged?(pr_url)
   ok && state.upcase == "MERGED"
 end
 
+def short(sha) = sha.to_s[0, 7]
+
+# The PR's current head commit — captured at review READ time (start_review) and
+# re-read before the merge, so the supervisor can tell whether the head moved while
+# the reviewers were looking (a reviewer-applied zap). A gh read fault answers nil,
+# which zap_revalidation treats as "cannot prove a move" → the ordinary merge path.
+def pr_head_oid(pr_url)
+  return nil if pr_url.to_s.empty?
+
+  oid, ok = gh_capture("pr", "view", pr_url, "--json", "headRefOid", "-q", ".headRefOid")
+  ok && !oid.to_s.strip.empty? ? oid.strip : nil
+end
+
 # Merge the feature PR into `accepted` — the accepted-ladder's first rung. Self-heals
 # a mis-based feat PR (base != accepted) by retargeting it before merging, so a PR
 # opened against release/main is corrected rather than stranded. Returns true when
@@ -593,14 +613,19 @@ end
 #      (submitted, merged:accepted), which self-heals on the next wave (re-merge is
 #      a no-op, the stamp is idempotent), NEVER the forbidden (reviewed, unstamped)
 #      the sweep would drop as a HELD anomaly.
-def move_reviewed(slug, task, reviewers, reports)
+def move_reviewed(slug, task, reviewers, reports, reviewed_head: nil, zap_head: nil)
   return false unless merge_feature_pr(slug, task&.dig("devops", "pr_url"))
   return false unless task_write(["merged", slug, "accepted"])
 
   ok = task_write(["move", slug, "reviewed", "--actor", "avi"])
+  # A reviewer-applied zap advanced the head during review; its post-zap CI was
+  # revalidated green before this merge (zap_revalidation). Name it in the handoff so
+  # the audit trail shows the merged head is NOT the one the reviewers first approved.
+  zap_line = zap_head ? "\n\nReviewer zap: the PR head advanced #{short(reviewed_head)} → #{short(zap_head)} " \
+                        "during review; its post-zap CI was revalidated green before this merge." : ""
   note = "pr-review merged #{slug} into `#{ACCEPTED_BRANCH}` and moved it reviewed after " \
          "#{reviewers.map { |r| r["slug"] }.join(" + ")} reported merge-ready. Left for Steffon QA " \
-         "(the sweep promotes accepted→release).\n\n" \
+         "(the sweep promotes accepted→release).#{zap_line}\n\n" \
          "Reports:\n#{reports.map { |r| "- #{report_summary(r)}" }.join("\n")}"
   ok && task_write(["note", slug, "--handoff", note, "--agent", "avi"])
 end
@@ -772,7 +797,13 @@ def start_review(task, review_number)
     launch_reviewer(task, reviewer, roles.fetch(index), reviewers)
   end
 
-  { task: task, slug: slug, reviewers: reviewers, reviewer_slugs: reviewer_slugs, launches: launches }
+  # Capture the head the reviewers are about to look at. If it advances during their
+  # review (a reviewer-applied zap), finish_review revalidates the new head's CI before
+  # merging — never merging a head the reviewers did not see on a non-green CI.
+  reviewed_head = pr_head_oid(task.dig("devops", "pr_url"))
+
+  { task: task, slug: slug, reviewers: reviewers, reviewer_slugs: reviewer_slugs,
+    launches: launches, reviewed_head: reviewed_head }
 rescue StandardError => e
   { task: task, slug: task["slug"], reviewers: [], reviewer_slugs: [], launches: [], error: e.message }
 end
@@ -922,9 +953,33 @@ def finish_review(review, events, handled, deferred_until)
 
   case outcome
   when "merge-ready"
-    ok = move_reviewed(slug, fresh_task, reviewers, reports)
+    # Revalidate the reviewed head before merging — the reviewer-zap seam. If the head
+    # advanced during review, its OWN CI must be green to merge; otherwise HOLD it for
+    # the next wave to re-review the zapped head (never merge an unseen head on non-green CI).
+    reviewed_head = review[:reviewed_head]
+    current_head = pr_head_oid(fresh_task&.dig("devops", "pr_url"))
+    head_moved = reviewed_head && current_head && current_head != reviewed_head
+    reval_ci = head_moved ? supervisor_ci_check(fresh_task) : nil
+    decision = ZapRevalidation.decide(reviewed_head, current_head, reval_ci&.dig(:state))
+
+    if decision == :hold_for_rereview
+      reason = "PR head advanced #{short(reviewed_head)} → #{short(current_head)} during review " \
+               "(a reviewer zap), but its CI is #{reval_ci[:state]} — holding for re-review, not merging " \
+               "a head the reviewers did not see on a non-green CI"
+      note_deferred(slug, "zap-revalidate: #{reason}", reports)
+      events << { slug: slug, status: :deferred, category: "zap-revalidate", reason: reason, reviewers: reviewer_slugs }
+      deferred_until[slug] = Time.now + OPTIONS.fetch(:defer_seconds)
+      puts "  deferred: #{reason}"
+      return false
+    end
+
+    puts "  reviewer zap: head #{short(reviewed_head)} → #{short(current_head)}, post-zap CI green — merging the zapped head" if decision == :merge_after_zap
+    ok = move_reviewed(slug, fresh_task, reviewers, reports,
+                       reviewed_head: reviewed_head,
+                       zap_head: (decision == :merge_after_zap ? current_head : nil))
     status = ok ? :reviewed : :tool_failure
-    events << { slug: slug, status: status, category: ok ? "approved" : "task-write", reason: "merge-ready", reviewers: reviewer_slugs }
+    reason = decision == :merge_after_zap ? "merge-ready (post-zap CI revalidated green)" : "merge-ready"
+    events << { slug: slug, status: status, category: ok ? "approved" : "task-write", reason: reason, reviewers: reviewer_slugs }
     handled[slug] = true
     ok
   when "request-changes"

@@ -117,11 +117,23 @@ class PrReviewCommandTest < Minitest::Test
     #   GH_MERGE_FAIL=1 — `gh pr merge` exits nonzero
     #   GH_EDIT_FAIL=1  — `gh pr edit` (retarget) exits nonzero
     #   GH_PR_STATE  — `gh pr view --json state` value (default OPEN; "MERGED" = crash recovery)
+    #   GH_HEAD_OID  — `gh pr view --json headRefOid` on the FIRST read (review-start capture)
+    #   GH_HEAD_OID_AFTER — the head on the SECOND+ read (pre-merge revalidation); when set
+    #                 different from GH_HEAD_OID it models a reviewer zap pushed mid-review.
+    #                 A per-process counter file switches from the first to the after value.
     write_exec("gh", <<~RUBY)
       #!#{RbConfig.ruby}
       require "json"
       File.open(ENV.fetch("GH_LOG"), "a") { |f| f.puts JSON.generate(ARGV) }
       File.open(ENV.fetch("SEQUENCE_LOG"), "a") { |f| f.puts JSON.generate(["gh", *ARGV]) }
+      if ARGV[0] == "pr" && ARGV[1] == "view" && ARGV.include?("headRefOid")
+        first = ENV.fetch("GH_HEAD_OID", "head0000")
+        after = ENV.fetch("GH_HEAD_OID_AFTER", first)
+        counter = File.join(ENV.fetch("GH_LOG") + ".headcount")
+        n = (File.read(counter).to_i rescue 0)
+        File.write(counter, (n + 1).to_s)
+        puts(n.zero? ? first : after); exit 0
+      end
       if ARGV[0] == "pr" && ARGV[1] == "view" && ARGV.include?("baseRefName")
         puts ENV.fetch("GH_PR_BASE", "accepted"); exit 0
       end
@@ -1111,5 +1123,56 @@ class PrReviewCommandTest < Minitest::Test
     assert_includes task_calls, ["merged", "recovered-pr", "accepted"]
     moves = task_calls.select { |a| a.first == "move" }
     assert_equal [["move", "recovered-pr", "reviewed", "--actor", "avi"]], moves
+  end
+
+  # --- reviewer-applied zaps: revalidate the head before merging ----------------
+  # A reviewer may push a bounded `zap:` fix to the PR branch WHILE reviewing it, so the
+  # head a merge-ready verdict lands may NOT be the head the reviewers approved. The
+  # supervisor captures the head at review-read time and re-reads it before merging.
+
+  # [integration] A head that ADVANCED during review (a reviewer zap) with a GREEN CI
+  # merges — the zapped head's own CI vouches for it — and the handoff note records that
+  # the merged head is not the one the reviewers first approved.
+  def test_reviewer_zap_with_green_ci_merges_the_advanced_head_and_records_it
+    ready = task("zap-green-pr", created_at: "2026-06-29T12:00:00Z")
+    reviewed = task("zap-green-pr", created_at: "2026-06-29T12:00:00Z",
+                                    reports: [report("carl", "merge-ready"), report("shannon", "merge-ready")])
+    write_snapshots(snapshot([ready]), snapshot([reviewed]))
+
+    # head0000 at review-read, zap00001 at pre-merge revalidation; CI green throughout.
+    out, err, status = run_heartbeat("--run", "--limit", "1",
+                                     env: { "GH_HEAD_OID" => "head0000", "GH_HEAD_OID_AFTER" => "zap00001" })
+    assert status.success?, err
+    assert_includes out, "approved=1"
+    assert_match(/reviewer zap: head head000 . zap0000, post-zap CI green/, out)
+
+    assert json_lines(@gh_log).find { |a| a[0] == "pr" && a[1] == "merge" }, "the zapped head merges on green CI"
+    task_calls = json_lines(@task_log)
+    assert_includes task_calls, ["merged", "zap-green-pr", "accepted"]
+    note = task_calls.find { |a| a.first == "note" }
+    assert note && note.any? { |arg| arg.to_s.include?("Reviewer zap") && arg.to_s.include?("head000") && arg.to_s.include?("zap0000") },
+           "the handoff note records the head advance and that post-zap CI was revalidated green"
+  end
+
+  # [integration] A head that advanced during review whose CI is NOT green (here
+  # unverified: gate-zero proceeds, but revalidation demands a positive green) is HELD
+  # for re-review — never merged. No merge, no reviewed move; the wave defers.
+  def test_reviewer_zap_without_green_ci_holds_for_rereview
+    ready = task("zap-hold-pr", created_at: "2026-06-29T12:00:00Z")
+    reviewed = task("zap-hold-pr", created_at: "2026-06-29T12:00:00Z",
+                                   reports: [report("carl", "merge-ready"), report("shannon", "merge-ready")])
+    write_snapshots(snapshot([ready]), snapshot([reviewed]))
+
+    out, err, status = run_heartbeat("--run", "--limit", "1",
+                                     env: { "GH_HEAD_OID" => "head0000", "GH_HEAD_OID_AFTER" => "zap00001",
+                                            "PR_REVIEW_CI_STATUS" => "unverified" })
+    assert status.success?, err
+    assert_match(/deferred: PR head advanced head000 . zap0000/, out)
+
+    refute json_lines(@gh_log).find { |a| a[0] == "pr" && a[1] == "merge" },
+           "an advanced head on a non-green CI must NOT merge"
+    verbs = json_lines(@task_log).map(&:first)
+    refute_includes verbs, "merged", "and must NOT stamp merged:accepted"
+    refute_includes verbs, "move", "and must NOT move the task reviewed — it holds for re-review"
   end
 end
