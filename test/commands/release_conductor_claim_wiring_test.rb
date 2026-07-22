@@ -75,8 +75,20 @@ class ReleaseConductorClaimWiringTest < ActiveSupport::TestCase
                  "release must support a TARGETED (role, slug) drop — the sentinel hand-off frees only the sentinel")
   end
 
-  # --- GAP 1: fresh assembly — the FORMING sentinel guards the promote, then hands off
-  test "prepare guards a fresh promote with the FORMING sentinel, before the promote, then hands off" do
+  # --- ROUND-2 regression: bin/release is STANDALONE — no Rails-model constants ----
+  # bin/release.rb never boots Rails, so a `ReleaseConductorClaim::…` reference would be
+  # a NameError the instant that line executes (only surfaced by the subprocess CLI
+  # test). The sentinel value comes from ReleaseClaimCli::FORMING_SLUG, defined in the
+  # standalone CLI bin/release requires.
+  test "bin/release.rb references NO Rails-model constant (it runs standalone, without Rails)" do
+    src = File.read(RELEASE_RB)
+    refute_match(/ReleaseConductorClaim/, src,
+                 "bin/release runs standalone (no Rails) — a ReleaseConductorClaim reference is a runtime NameError; " \
+                 "use ReleaseClaimCli::FORMING_SLUG (defined in the standalone CLI) instead")
+  end
+
+  # --- GAP 1 (FIX B): fresh assembly — the real claim is held the INSTANT rel_slug exists
+  test "prepare guards a fresh promote with the FORMING sentinel, then hands off to the real claim the instant rel_slug exists" do
     src = File.read(RELEASE_RB)
     prepare = src[/^def prepare\b.*?^end$/m]
     assert prepare, "prepare must be defined"
@@ -84,39 +96,63 @@ class ReleaseConductorClaimWiringTest < ActiveSupport::TestCase
     # A fresh create has no real slug at 2c, so it falls back to the FORMING sentinel.
     assert_match(/ReleaseClaimCli::FORMING_SLUG if assembler_slug\.empty\?/, prepare,
                  "a blank slug at 2c must fall back to the FORMING sentinel so the promote is still guarded")
+    # FIX B: the hand-off runs only for a REAL created release, never the rel-pending fallback.
+    assert_match(/if result\["slug"\]\.to_s\.strip != ""/, prepare,
+                 "the hand-off is guarded to a real created release, not the rel-pending fallback")
 
     lines = prepare.lines
     sentinel_acquire = lines.index { |l| l =~ /acquire_conductor_claim!\("assembler", assembler_slug/ }
     promote          = lines.index { |l| l =~ /promote_accepted_to_release!\(promote_repos, label: slug\)/ }
+    rel_slug_resolve = lines.index { |l| l =~ /rel_slug = result\["slug"\] \|\| slug \|\| "rel-pending"/ }
     real_acquire     = lines.index { |l| l =~ /acquire_conductor_claim!\("assembler", rel_slug/ }
     handoff          = lines.index { |l| l =~ /release_conductor_claim!\(role: "assembler", slug: ReleaseClaimCli::FORMING_SLUG\)/ }
+    repos_print      = lines.index { |l| l =~ /say\("  release #\{rel_slug\}/ }
+    record_event     = lines.index { |l| l =~ /record_release_event\(rel_slug, "assemble_release", "started"\)/ }
 
-    assert sentinel_acquire && promote && real_acquire && handoff, "all four sentinel/hand-off steps must be present"
+    assert [sentinel_acquire, promote, rel_slug_resolve, real_acquire, handoff, repos_print, record_event].all?,
+           "all sentinel / hand-off / window anchors must be present"
     assert sentinel_acquire < promote,
            "the (sentinel-or-real) assembler claim must be held BEFORE the promote — the fresh-create gap the review flagged"
+    assert promote < rel_slug_resolve, "rel_slug resolves after the sweep/promote"
+    # THE CLOSED WINDOW: the real claim is taken the INSTANT rel_slug names a real
+    # release — before the repos.empty? check, the 'release … N repos' print, and
+    # record_release_event — so a session keying on rel_slug directly is excluded at once.
+    assert rel_slug_resolve < real_acquire, "the real (rel_slug, assembler) claim is taken RIGHT AFTER rel_slug resolves"
     assert real_acquire < handoff,
-           "the real claim must be acquired BEFORE the sentinel is freed — ownership is CONTINUOUS across the hand-off"
-    assert promote < real_acquire, "the real claim + hand-off come after rel_slug resolves (post-promote)"
+           "acquire the real claim BEFORE freeing the sentinel — ownership is CONTINUOUS across the hand-off"
+    assert real_acquire < repos_print,
+           "the real claim precedes the 'release … N repos' print — the fresh-create window carl flagged is closed"
+    assert real_acquire < record_event, "and precedes record_release_event — no rel_slug work runs unguarded"
   end
 
-  # --- GAP 2: finalize — the deployer claim guards its record mutations ---------
-  test "finalize acquires the deployer claim before its record mutations and releases it in an ensure" do
+  # --- GAP 2 (FIX A): finalize — the deployer claim guards the MUTABLE decision snapshot
+  test "finalize resolves rel_slug with a minimal read, then takes the deployer claim BEFORE the mutable snapshot, releasing in an ensure" do
     src = File.read(RELEASE_RB)
     finalize = src[/^def finalize\b.*?^end$/m]
     assert finalize, "finalize must be defined"
 
     lines = finalize.lines
+    minimal  = lines.index { |l| l =~ /puts\(\{slug: r\.slug\}\.to_json\)/ }      # the minimal STABLE read
     acquire  = lines.index { |l| l =~ /acquire_conductor_claim!\("deployer", rel_slug\)/ }
+    begin_i  = lines.index { |l| l =~ /^  begin$/ }
+    snapshot = lines.index { |l| l =~ /sealed: r\.smoke_sealed\?/ }              # the MUTABLE decision snapshot
+    pending  = lines.index { |l| l =~ /Release::ShipSequence\.finalize_pending\?/ }
     ship_mut = lines.index { |l| l =~ /Release::Conductor\.ship!/ }
     ensure_i = lines.index { |l| l =~ /^  ensure$/ }
     release  = lines.index { |l| l =~ /release_conductor_claim!/ }
 
-    assert acquire, "finalize must acquire the `deployer` claim — the --finalize-only path skips ship's acquire"
-    assert ship_mut, "finalize must still record Release::Conductor.ship!"
-    assert acquire < ship_mut,
-           "the deployer claim must be held BEFORE finalize's record mutations, or two concurrent finalizes double-record"
-    assert ensure_i, "finalize (which has no outer rescue) must release the claim in an ensure"
-    assert release && release > ensure_i, "the release must live in the ensure so EVERY finalize exit frees the claim"
+    assert [minimal, acquire, begin_i, snapshot, pending, ship_mut, ensure_i, release].all?,
+           "all finalize ordering anchors must be present"
+    assert minimal < acquire,
+           "rel_slug is resolved by a MINIMAL, STABLE read (just r.slug) BEFORE the claim — existence/slug don't drift"
+    assert acquire < snapshot,
+           "the deployer claim precedes the MUTABLE decision snapshot — snapshot-under-claim, so a concurrent " \
+           "finalizer cannot complete the pending steps in the gap and leave us replaying stale work"
+    assert acquire < pending, "and precedes finalize_pending? — the decision is computed UNDER the claim"
+    assert acquire < begin_i, "the acquire is taken before the begin/ensure"
+    assert begin_i < snapshot && snapshot < ensure_i, "the mutable snapshot read lives INSIDE the begin/ensure (under the claim)"
+    assert acquire < ship_mut, "the claim is held before the record mutations"
+    assert release > ensure_i, "the release lives in the ensure — EVERY finalize exit (returns, aborts, completion) frees the claim"
   end
 
   # --- the claim is dropped on completion (success AND abort) across all paths --
