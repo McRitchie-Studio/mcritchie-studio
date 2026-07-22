@@ -506,6 +506,92 @@ class CiStatusTest < Minitest::Test
     assert_match(/base/i, remedy, "it still has to say what is missing")
   end
 
+  # --- conflict-remedy-names-wrong-branch (round 5): the base is HOSTILE ---------
+  # base = the GitHub PR's baseRefName. pr-review and dor-check interpolate it VERBATIM
+  # into task feedback a human then PASTES INTO A SHELL, so the property under test IS
+  # the injection property — asserted on the EFFECT (what parses out of the printed
+  # line), never on one spelling of the output. A base that is not a plain git ref must
+  # NEVER surface as a LIVE shell token in a runnable `git …` line: the commands are
+  # omitted (an honest gap), or at most the ref appears shell-escaped and inert. A
+  # spelling assertion (refute the literal "; rm") would pass the instant an attacker
+  # picks a metacharacter the author did not enumerate; asserting the EFFECT catches
+  # every vector, including the ones we did not imagine.
+
+  # A base carrying any of these can, unescaped, run a SECOND command, open a
+  # substitution, split into a second argument, or be read as a git/ssh OPTION.
+  HOSTILE_BASES = [
+    "; rm -rf ~",       # command separator
+    "$(touch pwned)",   # $() substitution
+    "`id`",             # backtick substitution
+    "a b",              # whitespace → two arguments
+    "a|b",              # pipe
+    "a&&b",             # AND-chain a second command
+    "a>b",              # output redirection
+    "--upload-pack=x",  # leading dash → git/ssh reads it as an OPTION
+    "..",               # range / parent-traversal refspec, never a branch
+    ""                  # nothing resolved at all
+  ].freeze
+
+  # Both remedies that interpolate a base into a runnable `git merge origin/<base>`,
+  # keyed by name so a failure says WHICH sibling regressed.
+  def base_remedies(base)
+    v = { base: base, merge_state: "DIRTY", mergeable: "CONFLICTING" }
+    { "conflicted_remedy" => CiStatus.conflicted_remedy(v),
+      "ci_less_remedy"    => CiStatus.ci_less_remedy(v) }
+  end
+
+  # THE EFFECT, asserted two ways so it holds whether the impl OMITS the commands or
+  # escapes the ref to an inert token — it certifies safety, not the strategy.
+  def assert_no_injectable_command(remedy, base, label)
+    # (1) The raw external value never reaches the runnable argument position — the
+    #     exact defect the blocker named. Stays true under a future switch to
+    #     shell-escaping, because the escaped form differs from the raw one.
+    refute_includes remedy, "origin/#{base}",
+                     "#{label}: unescaped base #{base.inspect} reached a runnable `git merge origin/<base>`"
+    # (2) No copy-paste-runnable git line carries a character that could start a second
+    #     command or a substitution. The legit lines (`git fetch origin`, `git merge
+    #     origin/<ref>`) contain none of these, so this never false-fires on a valid
+    #     ref — only an injected payload that survived into a command line trips it.
+    remedy.each_line do |line|
+      next unless line =~ /\A\s*git\b/
+
+      refute_match(/[;&|`$(){}<>\\'"]/, line,
+                   "#{label}: a runnable git line carries a shell-active char for base #{base.inspect}: #{line.inspect}")
+    end
+  end
+
+  def test_a_hostile_base_never_reaches_a_runnable_command_in_either_remedy
+    HOSTILE_BASES.each do |base|
+      base_remedies(base).each do |label, remedy|
+        assert_no_injectable_command(remedy, base, label)
+        # And it still tells the reader what is missing rather than emitting a broken line.
+        assert_match(/base/i, remedy, "#{label}: must still name the unresolved base for #{base.inspect}")
+      end
+    end
+  end
+
+  def test_a_normal_base_names_origin_accepted_and_reads_cleanly_in_both_remedies
+    base_remedies("accepted").each do |label, remedy|
+      assert_match(%r{git merge origin/accepted\b}, remedy, "#{label}: must name the PR's real base")
+      remedy.each_line do |line|
+        next unless line =~ /\A\s*git\b/
+
+        refute_match(/[;&|`$(){}<>\\'"]/, line, "#{label}: a normal base must produce a clean, inert command line")
+      end
+    end
+  end
+
+  # The predicate itself, at the property grain — a safe ref is exactly a plain git
+  # ref, and every shell-active or option-like shape is rejected.
+  def test_safe_git_ref_accepts_plain_refs_and_rejects_everything_dangerous
+    %w[accepted release main feat/foo v1.2.3 a-b_c].each do |ref|
+      assert CiStatus.safe_git_ref?(ref), "#{ref.inspect} is a plain git ref and must be allowed"
+    end
+    (HOSTILE_BASES + ["-x", "a\nb", "a..b"]).each do |ref|
+      refute CiStatus.safe_git_ref?(ref), "#{ref.inspect} is not a plain git ref and must be rejected"
+    end
+  end
+
   # [integration] The SAME fix must land in BOTH callers — neither bin/pr-review nor
   # bin/dor-check may hardcode the conflict cure's branch; both route through
   # CiStatus.conflicted_remedy so one PR cannot collect three cures (the ci_less lesson).

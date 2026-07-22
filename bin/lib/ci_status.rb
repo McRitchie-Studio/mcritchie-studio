@@ -228,6 +228,31 @@ module CiStatus
     }
   end
 
+  # A `base` we can SAFELY interpolate into a runnable `git merge origin/<base>`.
+  #
+  # base is GitHub's `baseRefName` — an EXTERNAL value that pr-review and dor-check
+  # write VERBATIM into task feedback a human then pastes into a shell. So the only
+  # question that matters is a PROPERTY, not a set of known-bad spellings: is this a
+  # plain git ref and NOTHING else? Assert the property (a placeholder must NEVER
+  # reach a runnable command as a live shell token); a blocklist of "; $() ` |" would
+  # miss the next metacharacter GitHub or an attacker picks.
+  #   \A\w         — must START with a word char, so a leading `-` can never make git
+  #                  or ssh read the ref as an OPTION (e.g. `--upload-pack=…`).
+  #   [\w.\-/]*\z  — thereafter ONLY word chars, dot, dash, slash — the whole alphabet
+  #                  a real branch/tag name draws from. EVERY shell-active character
+  #                  (whitespace, ; | & $ ` ( ) < > quotes, glob) is excluded, so
+  #                  nothing in a validated ref can open a second command, a
+  #                  substitution, or a second argument.
+  # `\w` is ASCII-only in Ruby by default ([A-Za-z0-9_]) — no Unicode look-alikes.
+  # `..` is rejected separately: it satisfies the char class (`a..b`) yet is a range /
+  # parent-traversal refspec, never a branch name, and never a safe merge target.
+  SAFE_GIT_REF = %r{\A\w[\w.\-/]*\z}.freeze
+
+  def self.safe_git_ref?(ref)
+    ref = ref.to_s
+    SAFE_GIT_REF.match?(ref) && !ref.include?("..")
+  end
+
   # THE ONE REMEDY STRING for :ci_less. dor-check, pr-review and session-preflight all
   # CALL this (session-preflight requires this file for exactly that reason — round 2
   # caught it hand-rolling a rival message), so one PR cannot collect three cures.
@@ -247,6 +272,13 @@ module CiStatus
   # human-readable fallback produced `git rebase origin/the base branch`, which
   # pr-review then wrote into real task feedback. With no base resolved the commands
   # are OMITTED — an honest gap beats a command that cannot run.
+  #
+  # AND NO UNSAFE BASE MAY REACH A RUNNABLE COMMAND (round 5): base is GitHub's
+  # baseRefName, an EXTERNAL string, and this remedy is pasted into a shell. A base
+  # that is not a plain git ref (safe_git_ref?) is treated as UNRESOLVABLE and takes
+  # the SAME omit path as an empty one — an honest gap beats an injectable command.
+  # When a validated base IS interpolated it is still Shellwords.escape'd, so even if
+  # the predicate is ever loosened nothing can inject (belt and suspenders).
   def self.ci_less_remedy(verdict = nil)
     v = verdict.is_a?(Hash) ? verdict : {}
     base = v[:base].to_s.strip
@@ -256,12 +288,14 @@ module CiStatus
       "NO CI WILL RUN on this PR#{detail}: GitHub cannot compute a merge commit for it, so it never queues " \
       "the pull_request workflow and the head SHA has ZERO check-runs. This is NOT a slow CI — waiting can " \
       "never clear it."
-    return "#{diagnosis} The base branch could not be resolved from the PR, so no commands are given here: " \
-           "read the PR's base on GitHub, then bring it into the branch and resolve any conflicts." if base.empty?
+    unless safe_git_ref?(base)
+      return "#{diagnosis} The base branch could not be resolved to a safe git ref from the PR, so no commands " \
+             "are given here: read the PR's base on GitHub, then bring it into the branch and resolve any conflicts."
+    end
 
     "#{diagnosis} Fix — run these ONE AT A TIME, because the merge stops if it finds conflicts:\n" \
       "  git fetch origin\n" \
-      "  git merge origin/#{base}\n" \
+      "  git merge origin/#{Shellwords.escape(base)}\n" \
       "If it reports conflicts: resolve them, then `git add -A` and `git commit`. To return the branch to " \
       "exactly where it started instead, run `git merge --abort`. Once the tree is clean and committed, " \
       "`git push` and re-run this check — GitHub can then compute the merge commit and CI fires."
@@ -276,7 +310,10 @@ module CiStatus
   # Same failure-safe shape as ci_less_remedy: one command at a time (a DIRTY PR IS a
   # real conflict, so the merge halts), merge over rebase (a halted merge leaves the
   # branch untouched), a way back stated, and — with no base resolvable — the commands
-  # OMITTED rather than a placeholder interpolated into a runnable `origin/<...>`.
+  # OMITTED rather than a placeholder interpolated into a runnable `origin/<...>`. And,
+  # because base is GitHub's baseRefName pasted into a shell, an UNSAFE base (not a
+  # plain git ref) takes that same omit path, and a validated base is still
+  # Shellwords.escape'd (round 5 — see ci_less_remedy's note).
   def self.conflicted_remedy(verdict = nil)
     v = verdict.is_a?(Hash) ? verdict : {}
     base = v[:base].to_s.strip
@@ -284,12 +321,14 @@ module CiStatus
       "This PR is merge-CONFLICTED against its base (mergeStateStatus DIRTY): GitHub cannot compute a merge " \
       "commit for it, so it never queues the pull_request workflow and the head SHA has ZERO check-runs. This " \
       "is NOT pending CI — waiting can never clear it."
-    return "#{diagnosis} The base branch could not be resolved from the PR, so no commands are given here: " \
-           "read the PR's base on GitHub, then bring it into the branch and resolve the conflicts." if base.empty?
+    unless safe_git_ref?(base)
+      return "#{diagnosis} The base branch could not be resolved to a safe git ref from the PR, so no commands " \
+             "are given here: read the PR's base on GitHub, then bring it into the branch and resolve the conflicts."
+    end
 
     "#{diagnosis} Fix — run these ONE AT A TIME, because the merge stops when it finds conflicts:\n" \
       "  git fetch origin\n" \
-      "  git merge origin/#{base}\n" \
+      "  git merge origin/#{Shellwords.escape(base)}\n" \
       "If it reports conflicts: resolve them, then `git add -A` and `git commit`. To return the branch to " \
       "exactly where it started instead, run `git merge --abort`. Once the tree is clean and committed, " \
       "`git push` and re-run this check — GitHub can then compute the merge commit and CI fires."
