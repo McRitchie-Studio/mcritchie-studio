@@ -647,6 +647,11 @@ install_codex_user_hook() {
 # Idempotent: only added when absent, so it never clobbers user settings.
 settings="$HOME/.claude/settings.json"
 note_write "$settings"
+# The jq blocks below — and the codex hook blocks above — write transient files via
+# `mktemp` (many sites) and `mv` them onto their target. The durable destinations are
+# already named; name the scratch ROOT too so the manifest reflects those writes, and a
+# TMPDIR pointed outside the sandbox is caught like any other escape.
+note_write "${TMPDIR:-/tmp}"
 if [ "$MODE" != "manifest" ] && command -v jq >/dev/null 2>&1; then
   mkdir -p "$HOME/.claude"
   [ -f "$settings" ] || echo '{}' > "$settings"

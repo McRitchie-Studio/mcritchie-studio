@@ -36,7 +36,7 @@ class SopRegistryInstallTest < ActiveSupport::TestCase
     Dir.mktmpdir("sop-install") do |sandbox|
       projects = File.join(sandbox, "projects")
       home     = File.join(sandbox, "home")
-      FileUtils.mkdir_p([projects, home])
+      FileUtils.mkdir_p([projects, home, File.join(sandbox, "tmp")]) # tmp: the pinned TMPDIR mktemp resolves
       env = sandbox_env(sandbox, projects, home)
 
       out, status = Open3.capture2e(env, Rails.root.join("bin/install-agent-docs").to_s, "install",
@@ -167,12 +167,13 @@ class SopRegistryInstallTest < ActiveSupport::TestCase
     # the distinction that matters: we are excluding a NON-VARIABLE, not classifying a value.
     hatches = script.scan(/\$\{(\w+):-/).flatten.uniq.reject { |name| name.match?(/\A\d+\z/) }
 
-    # PATH is read (`for dir in ${PATH:-}`), never written. It is pinned anyway rather than
-    # special-cased: pinning costs nothing, and every exception carved into this list is a
-    # place the next spelling can hide.
-    pinned = %w[PROJECTS_DIR HOME PATH CODEX_REQUIREMENTS_PATH AGENT_DOCS_RUNTIME_ROOT
-                AGENT_RUNTIME_RUBY_PATH_PREFIX AGENT_RUNTIME_ZPROFILE
-                AGENT_ACTIVITY_BOARD_URL AGENT_INSIGHTS_BOARD_URL]
+    # COUPLED to the authority — `sandbox_env` is the exact env this test runs the installer
+    # under, so derive the expected pin set FROM it (a hardcoded copy can silently drift from
+    # what the manifest test actually pins). A knob added to the installer but not to
+    # sandbox_env then goes RED here, not silently unpinned. PATH is read-only
+    # (`for dir in ${PATH:-}`), never a write target, so it is the one hatch sandbox_env
+    # need not pin — added explicitly.
+    pinned = sandbox_env("/s", "/p", "/h").keys + %w[PATH]
 
     # THE FLOOR. A subset assertion over an EMPTY set passes trivially — the exact way this
     # family of test fails open (see the same rule in sop_registry_docs_test.rb). If the scan
@@ -202,9 +203,12 @@ class SopRegistryInstallTest < ActiveSupport::TestCase
     # (`X="${A:-${B:-default}}"`), so the inner var never appears at the start of a line.
     # A line-anchored scan here would call a REAL, reachable override a phantom.
     known = script.scan(/\$\{(\w+):-/).flatten.to_set
-    # HOME and PROJECTS_DIR are pinned for real but are not `${X:-default}` hatches.
-    declared = %w[CODEX_REQUIREMENTS_PATH AGENT_DOCS_RUNTIME_ROOT AGENT_RUNTIME_RUBY_PATH_PREFIX
-                  AGENT_RUNTIME_ZPROFILE AGENT_ACTIVITY_BOARD_URL AGENT_INSIGHTS_BOARD_URL]
+    # Coupled to sandbox_env too: every ${VAR:-} hatch it pins must be one the scan can
+    # produce, or the pin is dead. HOME is read as `$HOME` and the session neutralizers are
+    # not write knobs — they are the sandbox_env pins that legitimately are NOT `${X:-}`
+    # hatches, so they are excluded here rather than flagged phantom.
+    non_hatch_pins = %w[HOME AGENT_SESSION_ID ATOMIC_CAPTURE_URL]
+    declared = sandbox_env("/s", "/p", "/h").keys - non_hatch_pins
 
     phantom = declared.reject { |name| known.include?(name) }
 
@@ -227,6 +231,10 @@ class SopRegistryInstallTest < ActiveSupport::TestCase
       "AGENT_DOCS_RUNTIME_ROOT" => File.join(sandbox, "runtime"),
       "AGENT_RUNTIME_ZPROFILE" => File.join(home, ".zprofile"),
       "AGENT_RUNTIME_RUBY_PATH_PREFIX" => File.join(sandbox, "ruby-bin"),
+      # The installer's many jq blocks scratch through `mktemp`, which resolves TMPDIR —
+      # pin it into the sandbox too so those transient writes can't land on the real
+      # machine, and so the manifest's `${TMPDIR:-/tmp}` destination proves out inside.
+      "TMPDIR" => File.join(sandbox, "tmp"),
       # Never let a test inherit the live session's identity or board.
       "AGENT_SESSION_ID" => nil,
       "ATOMIC_CAPTURE_URL" => nil,
