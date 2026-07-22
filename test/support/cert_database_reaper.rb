@@ -45,6 +45,9 @@ require_relative "test_database_purge"
 #                  the database is unique to that one run, it is PROVABLY orphaned.
 # A false-DEAD (dropping a database a live run still needs) is therefore impossible.
 # Every uncertain answer resolves toward "alive" — absence of signal is never a drop.
+# A candidate pid must FIRST be a positive integer: a non-positive or unparseable value is a
+# malformed lease (and a negative pid would make Process.kill(0, -N) probe a process GROUP,
+# whose absence reads as ESRCH=dead and would fail OPEN), so it is REFUSED, never liveness-probed.
 #
 # THE GUARD (assert_test_database!'s doctrine, reused). Even acting only on leased
 # names, the reaper re-proves each name is a per-run TEST database before it drops:
@@ -52,12 +55,19 @@ require_relative "test_database_purge"
 # the per-run digest suffix. This is a positive structural invariant, not a blacklist
 # of forbidden spellings — so a corrupt or hostile lease naming `mcritchie_studio_
 # development` (the database test_database_purge.rb exists to spare, and whose first
-# cut once bricked every release) is REFUSED, not dropped. The base is read the same
-# env-independent way the purge guard reads it (the `database:` literal in
-# config/database.yml's test env), never guessed from a name.
+# cut once bricked every release) is REFUSED, not dropped. It also refuses any name past
+# Postgres's 63-byte identifier limit — `dropdb` would TRUNCATE a longer name and could act on
+# a DIFFERENT 63-byte database; a minted name is already bounded to fit, so a longer one never
+# named a DB we minted. The base is read the same env-independent way the purge guard reads it
+# (the `database:` literal in config/database.yml's test env), never guessed from a name.
 module CertDatabaseReaper
-  # Shared, worktree-independent, and outside any repo — see lease_dir for why.
-  LEASE_DIR = File.join(Dir.tmpdir, "mcritchie-cert-db-leases")
+  # Durable, shared per-user, and outside any repo/worktree — see lease_dir for why.
+  LEASE_DIR = File.join(Dir.home, ".mcritchie", "cert-db-leases")
+
+  # Postgres NAMEDATALEN-1: identifiers longer than this are TRUNCATED. `dropdb` on an
+  # over-long name would act on the truncated head and could drop a DIFFERENT 63-byte
+  # database, so a name past this bound is refused — a minted name is already bounded to fit.
+  MAX_IDENTIFIER_BYTES = 63
 
   class << self
     # --- lease lifecycle (called by the mint site) --------------------------
@@ -142,6 +152,7 @@ module CertDatabaseReaper
       name = name.to_s
       base = base.to_s
       return false if name.empty? || base.empty?
+      return false if name.bytesize > MAX_IDENTIFIER_BYTES # dropdb would TRUNCATE and could hit another DB
 
       name.match?(/\A#{Regexp.escape(base)}_[a-z0-9_]+_[0-9a-f]{8}\z/)
     end
@@ -197,11 +208,14 @@ module CertDatabaseReaper
 
     # --- lease store --------------------------------------------------------
 
-    # SHARED across every worktree on this host, and OUTSIDE any repo — a lease under a
-    # worktree's own `tmp/` would VANISH when that worktree is cleaned up, stranding the
-    # database it named (the reaper drops from the shared Postgres cluster, which outlives
-    # the worktree). Dir.tmpdir is stable per user/host, so every run's boot sweep sees
-    # every other run's leases.
+    # DURABLE, SHARED per-user, and OUTSIDE any repo/worktree. The lease is the ONLY identity
+    # record for a database that lives in the shared Postgres cluster, so it must outlive
+    # everything shorter-lived than that cluster. A lease under a worktree's own `tmp/` VANISHES
+    # on worktree cleanup; a lease under Dir.tmpdir (`/var/folders/.../T`, `/tmp`) is pruned by
+    # the OS temp-cleaner — either way the database it named is stranded as PERMANENTLY unreapable
+    # (its only identity gone, its name inadmissible to a blind pattern drop). A per-user home dir
+    # survives worktree cleanup, temp sweeps, and reboots, and is still shared across every run on
+    # the host, so each boot sweep sees every other run's leases.
     def lease_dir
       LEASE_DIR
     end
@@ -222,8 +236,12 @@ module CertDatabaseReaper
       end
     end
 
+    # A provable owner PID is a POSITIVE integer. A non-positive value is malformed — and a
+    # NEGATIVE pid handed to Process.kill(0, -N) probes a process GROUP, whose absence reads as
+    # ESRCH=dead and would fail OPEN into a drop. Coerce those to nil so reap! REFUSES the lease.
     def coerce_pid(value)
-      Integer(value)
+      pid = Integer(value)
+      pid.positive? ? pid : nil
     rescue ArgumentError, TypeError
       nil
     end

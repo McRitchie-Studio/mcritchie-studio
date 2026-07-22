@@ -94,6 +94,20 @@ class CertDatabaseReaperTest < Minitest::Test
     refute CertDatabaseReaper.admissible?("mcritchie_studio_test_x_deadbeef", base: "")
   end
 
+  # Postgres truncates identifiers at 63 bytes, so `dropdb` on a longer name acts on the
+  # TRUNCATED head and could drop a DIFFERENT real 63-byte database. A minted name is already
+  # bounded to fit — a longer one never named a DB we minted, so it is inadmissible. The 63-byte
+  # boundary case still ADMITS, proving the bound is a length gate, not an accidental narrowing.
+  def test_refuses_a_name_past_the_postgres_identifier_limit
+    over = "mcritchie_studio_test_#{"a" * 40}_deadbeef" # 71 bytes; matches the per-run pattern
+    assert over.bytesize > 63
+    refute CertDatabaseReaper.admissible?(over, base: BASE), "an over-limit name must be refused"
+
+    fits = "mcritchie_studio_test_#{"a" * 32}_deadbeef" # exactly 63 bytes
+    assert_equal 63, fits.bytesize
+    assert CertDatabaseReaper.admissible?(fits, base: BASE), "a 63-byte name still admits"
+  end
+
   # --- AC1 / AC2: reap! behaviour with injected liveness + drop -----------------
 
   def test_reaps_a_dead_owners_database
@@ -165,6 +179,43 @@ class CertDatabaseReaperTest < Minitest::Test
     assert_equal ["mcritchie_studio_test_x_deadbeef"], result[:refused]
   end
 
+  # Fail-closed vector 1 (reap!-level): a NON-POSITIVE pid must be REFUSED, never liveness-probed
+  # into a drop. A negative pid handed to Process.kill(0, -N) probes a process GROUP whose absence
+  # reads as ESRCH=dead — a fail-OPEN drop on a malformed lease. The injected `alive` says DEAD, so
+  # the only thing that can stop the drop is the pid being unprovable. (Old code dropped these.)
+  def test_a_non_positive_pid_lease_is_refused_not_dropped
+    %w[0 -1 -4242].each do |bad|
+      dir = Dir.mktmpdir("cert-db-leases")
+      File.write(File.join(dir, "mcritchie_studio_test_x_deadbeef.json"),
+                 JSON.generate("db" => "mcritchie_studio_test_x_deadbeef", "pid" => bad))
+      dropped = []
+
+      result = CertDatabaseReaper.reap!(dir: dir, base: BASE,
+                                        alive: ->(_pid) { false }, # would report DEAD
+                                        drop: ->(name) { dropped << name })
+
+      assert_empty dropped, "a #{bad.inspect} pid must never trigger a drop"
+      assert_equal ["mcritchie_studio_test_x_deadbeef"], result[:refused], "pid #{bad.inspect} refused"
+    ensure
+      FileUtils.rm_rf(dir)
+    end
+  end
+
+  # Fail-closed vector 2 (reap!-level): a dead-owner lease whose NAME exceeds Postgres's 63-byte
+  # identifier limit is REFUSED, not dropped — `dropdb` would truncate it onto a different database.
+  def test_a_dead_owner_lease_with_an_over_limit_name_is_refused_not_dropped
+    over = "mcritchie_studio_test_#{"a" * 40}_deadbeef"
+    CertDatabaseReaper.register(over, dir: @dir, pid: 4242)
+    dropped = []
+
+    result = CertDatabaseReaper.reap!(dir: @dir, base: BASE,
+                                      alive: ->(_pid) { false },
+                                      drop: ->(name) { dropped << name })
+
+    assert_empty dropped, "an over-limit name (dropdb would truncate it) must never be dropped"
+    assert_equal [over], result[:refused]
+  end
+
   def test_reaps_the_dead_and_keeps_the_live_in_one_sweep
     CertDatabaseReaper.register("mcritchie_studio_test_dead_aaaaaaaa", dir: @dir, pid: 1)
     CertDatabaseReaper.register("mcritchie_studio_test_live_bbbbbbbb", dir: @dir, pid: 2)
@@ -197,6 +248,19 @@ class CertDatabaseReaperTest < Minitest::Test
   def test_process_alive_treats_an_unknown_pid_as_alive
     assert CertDatabaseReaper.process_alive?(nil)
     assert CertDatabaseReaper.process_alive?("not-a-pid")
+  end
+
+  # --- lease durability: the store must outlive the OS temp-cleaner ------------
+
+  # The lease is the ONLY identity record for a persistent Postgres database. If it lived under
+  # Dir.tmpdir, the OS temp-cleaner would prune it and strand the database it named as PERMANENTLY
+  # unreapable (identity gone, name inadmissible to a blind pattern drop). Assert the durable-location
+  # PROPERTY — per-user home, not the disposable OS temp dir — not a literal path spelling.
+  def test_the_lease_store_is_durable_not_the_disposable_os_temp_dir
+    refute CertDatabaseReaper::LEASE_DIR.start_with?(Dir.tmpdir),
+           "the lease store must not live under the OS temp dir the cleaner prunes"
+    assert CertDatabaseReaper::LEASE_DIR.start_with?(Dir.home),
+           "the lease store must live under a durable per-user home directory"
   end
 
   private
