@@ -1444,6 +1444,7 @@ class ReleaseCliTest < Minitest::Test
                     call: %{begin; pre_qa_gate([{ "repo" => "sibling" }], "rel-cli"); puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
 
       refute_includes out, "crediting", "a diverged promote must never engage either credit"
+      assert_includes out, "shares neither SHA nor tree", "the non-credit is NAMED, not silent (no hand-forensics)"
       assert_includes out, "ABORTED", "…so the pending duplicates fail closed exactly as before"
       assert_includes out, "NO green verdict for #{GATE_SHA[0, 7]}"
       refute_includes out, "PASSED"
@@ -1484,6 +1485,7 @@ class ReleaseCliTest < Minitest::Test
                     call: %{begin; pre_qa_gate([{ "repo" => "sibling" }], "rel-cli"); puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
 
       refute_includes out, "crediting", "a half-finished first run must never credit"
+      assert_includes out, "no completed green to credit yet", "the fast-forward decline is NAMED, not silent"
       assert_includes out, "ABORTED", "…the still-running suite fails closed at the (collapsed) poll window"
       assert_includes out, "NO green verdict for #{GATE_SHA[0, 7]}"
       refute_includes out, "PASSED"

@@ -2273,17 +2273,32 @@ def pre_qa_gate(app_groups, rel_slug = nil)
     # WAITING on the in-flight accepted run, and a wait that times out then falls through
     # must not spend a SECOND full window polling the release SHA.
     deadline = monotonic_s + ci_poll_timeout
-    credit = fast_forward_promote?(path, sha) ? ci_credit_verdict(repo, sha) : nil
-    if credit
-      credit[:credited] = "#{credit[:credited]}; fast-forward promote — " \
-                          "origin/#{RELEASE_BRANCH} is the #{ACCEPTED_BRANCH} head CI already built"
+    credit = nil
+    diagnostic = nil
+    if fast_forward_promote?(path, sha)
+      credit = ci_credit_verdict(repo, sha)
+      if credit
+        credit[:credited] = "#{credit[:credited]}; fast-forward promote — " \
+                            "origin/#{RELEASE_BRANCH} is the #{ACCEPTED_BRANCH} head CI already built"
+      else
+        diagnostic = "origin/#{RELEASE_BRANCH} IS the #{ACCEPTED_BRANCH} head (fast-forward) but it carries no " \
+                     "completed green to credit yet — polling its own run"
+      end
     elsif (promote = tree_identical_promote(path, sha))
       # SAME-TREE: credit an accepted-head green, or WAIT on it while it is in flight —
       # the round-3 fix (credit-waits-accepted-ci). Whatever the outcome, it LOGS why.
       outcome = tree_identical_ci_outcome(repo, sha, promote, deadline: deadline)
       credit = outcome[:credit]
-      say("  #{repo}: #{outcome[:diagnostic]}") if outcome[:diagnostic]
+      diagnostic = outcome[:diagnostic]
+    else
+      # No credit is even possible: the release tip is neither the accepted head (fast-forward)
+      # nor a tree-identical promote of it (a diverged tree — e.g. a consumer lock-bump commit
+      # riding #{RELEASE_BRANCH}). Say so, rather than falling through silently — every non-credit
+      # now names its condition (a mismatch this gate used to leave to hand-forensics).
+      diagnostic = "#{short(sha)} shares neither SHA nor tree with the #{ACCEPTED_BRANCH} head — no credit " \
+                   "possible; polling its own run"
     end
+    say("  #{repo}: #{diagnostic}") if diagnostic && !credit
     if credit
       say("  #{repo}: crediting the existing green conclusion for #{short(sha)} — no duplicate run awaited " \
           "(#{credit[:credited]})")
