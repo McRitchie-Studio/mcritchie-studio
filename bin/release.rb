@@ -1214,13 +1214,18 @@ end
 # this read-only resolve and previews under --dry-run. Emits ONE JSON line:
 #   { "tasks": [ { slug, pr_url, repo, stage, merged } | { slug, missing: true } ],
 #     "screen": { rows:[…], blocked:[…], overridden:[…], missing:[…], proceed: } }
+# The active release (`Release.current`) rides this same read so `merge` can take its
+# assembler claim on the SAME slug `prepare` would, BEFORE its promote — the real
+# rel_slug isn't known until sweep! records. (A comment must NOT interrupt the
+# backslash-continued string literal below, or only the last fragment survives.)
 def batch_resolve_ruby(slugs, override: false)
   "slugs = #{slugs.inspect}; " \
   "rows = slugs.map { |s| t = Task.find_by(slug: s); " \
   "t ? { slug: t.slug, pr_url: t.devops_url('pr').to_s, repo: t.release_repo.to_s, stage: t.stage, merged: t.merged.to_s } " \
   ": { slug: s, missing: true } }; " \
   "screen = Release::Conductor.screen_merge(slugs, override: #{override ? 'true' : 'false'}); " \
-  "puts({ tasks: rows, screen: screen }.to_json)"
+  "cur = Release.current; " \
+  "puts({ tasks: rows, screen: screen, release: (cur ? { slug: cur.slug } : nil) }.to_json)"
 end
 
 # The one-shot write snippet that sweeps EVERY slug in a SINGLE `heroku run` — N
@@ -1408,32 +1413,61 @@ def merge
     step("skip promote for #{row['slug']} — already merged: #{row['merged']} (crash recovery); membership still records")
   end
 
-  # 3. PROMOTE accepted → release (the accepted-ladder's SECOND rung). SEMANTIC
-  #    NARROWING (accepted-ladder): `merge <slug>` no longer merges the named task's
-  #    ONE feat PR — review already merged it into `accepted`. It now promotes ALL of
-  #    `accepted` onto `release` via ONE batch PR per repo and records the NAMED
-  #    slugs' membership. So it lands EVERY reviewed change on `accepted`, not just
-  #    the named one — use it to force a specific reviewed task onto the RC ahead of
-  #    the sweep. Idempotent + fail-closed (accepted level with release → skip the
-  #    PR, still record). Git-FIRST (the irreversible step), then the record write.
-  promote_repos = infos.select { |i| i["merged"].to_s == ACCEPTED_MERGED }
-                       .map { |i| i["repo"].to_s }.reject(&:empty?).uniq
-  promote_accepted_to_release!(promote_repos) if promote_repos.any?
+  # ASSEMBLER CLAIM — `merge` runs the SAME promote (accepted→release) + `sweep!` that
+  # `prepare` guards: the assembler-lane mutation. `prepare` even routes operators HERE
+  # (`bin/release merge --override`), so an unguarded merge is a THIRD seam that breaks
+  # the "no two assemblers on one release" invariant — a concurrent merge/prepare would
+  # double-assemble. Guard it with the SAME per-release assembler claim. The real
+  # rel_slug isn't known until `sweep!` records, so claim the ACTIVE release slug when
+  # one exists (contending with prepare's active-path claim), else the `__forming__`
+  # sentinel (contending with prepare's fresh-create sentinel + other merges); hand off
+  # to the real slug after sweep! — acquire the real claim BEFORE freeing the sentinel,
+  # so ownership is CONTINUOUS across the promote+sweep. A live DIFFERENT holder stands
+  # us down (abort!). merge, like finalize, is a discrete op, so the begin/ensure frees
+  # the claim on EVERY exit. Inert under --dry-run (conductor_claim no-ops).
+  active = resolved["release"]
+  assembler_slug = (active && active["slug"]).to_s.strip
+  assembler_slug = ReleaseClaimCli::FORMING_SLUG if assembler_slug.empty?
+  acquire_conductor_claim!("assembler", assembler_slug)
+  begin
+    # 3. PROMOTE accepted → release (the accepted-ladder's SECOND rung). SEMANTIC
+    #    NARROWING (accepted-ladder): `merge <slug>` no longer merges the named task's
+    #    ONE feat PR — review already merged it into `accepted`. It now promotes ALL of
+    #    `accepted` onto `release` via ONE batch PR per repo and records the NAMED
+    #    slugs' membership. So it lands EVERY reviewed change on `accepted`, not just
+    #    the named one — use it to force a specific reviewed task onto the RC ahead of
+    #    the sweep. Idempotent + fail-closed (accepted level with release → skip the
+    #    PR, still record). Git-FIRST (the irreversible step), then the record write.
+    promote_repos = infos.select { |i| i["merged"].to_s == ACCEPTED_MERGED }
+                         .map { |i| i["repo"].to_s }.reject(&:empty?).uniq
+    promote_accepted_to_release!(promote_repos) if promote_repos.any?
 
-  # 4. BATCHED record: ALL named members in ONE `heroku run` (single dyno spin-up,
-  #    N membership writes; conductor suppresses the write under --dry-run). Stages
-  #    don't move here — prepare's QA-green flips `reviewed` members to `assembled`;
-  #    a swept straggler is already there.
-  swept = plan["sweep"]
-  if swept.any?
-    step("record: Release::Conductor.sweep! ×#{swept.size} in ONE run (#{swept.join(', ')})")
-    @merge_result = conductor(batch_sweep_ruby(swept, override: override))
+    # 4. BATCHED record: ALL named members in ONE `heroku run` (single dyno spin-up,
+    #    N membership writes; conductor suppresses the write under --dry-run). Stages
+    #    don't move here — prepare's QA-green flips `reviewed` members to `assembled`;
+    #    a swept straggler is already there.
+    swept = plan["sweep"]
+    if swept.any?
+      step("record: Release::Conductor.sweep! ×#{swept.size} in ONE run (#{swept.join(', ')})")
+      @merge_result = conductor(batch_sweep_ruby(swept, override: override))
+    end
+
+    result = @merge_result || {}
+
+    # HAND-OFF — the real rel_slug is known now; take it, then free the sentinel (a
+    # no-op for the active/named path, which already holds the real slug). Guarded to a
+    # real recorded slug so a --dry-run (no record) never claims a bogus slug.
+    if result["slug"].to_s.strip != ""
+      acquire_conductor_claim!("assembler", result["slug"])
+      release_conductor_claim!(role: "assembler", slug: ReleaseClaimCli::FORMING_SLUG)
+    end
+
+    say("")
+    say("✓ Swept #{swept.join(', ')} onto `#{RELEASE_BRANCH}`#{DRY ? ' (DRY RUN — nothing executed)' : ''} — stages don't move: `reviewed` members flip `assembled` at QA-green (assembled stragglers keep their stage).")
+    say("  release #{result['slug']} (#{result['state']}) — `bin/release prepare` deploys QA and flips members `assembled` on green.") unless DRY || result.empty?
+  ensure
+    release_conductor_claim!
   end
-
-  result = @merge_result || {}
-  say("")
-  say("✓ Swept #{swept.join(', ')} onto `#{RELEASE_BRANCH}`#{DRY ? ' (DRY RUN — nothing executed)' : ''} — stages don't move: `reviewed` members flip `assembled` at QA-green (assembled stragglers keep their stage).")
-  say("  release #{result['slug']} (#{result['state']}) — `bin/release prepare` deploys QA and flips members `assembled` on green.") unless DRY || result.empty?
 end
 
 # --- prepare (Steffon's self-healing qa-deploy) ------------------------------
@@ -2823,6 +2857,13 @@ rescue SystemExit
   # hanging open.
   close_role_span("prepare aborted before QA-green") if steffon_span
   raise
+ensure
+  # A raw StandardError (not a SystemExit) raised after the assembler claim was
+  # acquired would escape BOTH the success path and the rescue-SystemExit arm above with
+  # the agent-anchored renewer still holding the claim. The ensure frees it on EVERY
+  # exit — idempotent with the releases above (a no-op once nothing is held), matching
+  # finalize's begin/ensure posture. Crash/SIGKILL still relies on the TTL.
+  release_conductor_claim!
 end
 
 # --- eject (block-on-regression) ---------------------------------------------
@@ -4844,6 +4885,13 @@ rescue SystemExit => e
     warn("  Re-run `bin/release ship` to resume: published gems skip, fast-forwards no-op, re-pins are idempotent.")
   end
   exit(e.respond_to?(:status) && e.status ? e.status : 1)
+ensure
+  # A raw StandardError (not a SystemExit) raised after the deployer claim was acquired
+  # would escape BOTH the success path and the rescue-SystemExit arm above with the
+  # renewer still holding the claim. The ensure frees it on EVERY exit — idempotent with
+  # the releases above. Crash/SIGKILL still relies on the TTL; the same-session resume is
+  # unchanged (a re-run re-acquires either way).
+  release_conductor_claim!
 end
 
 # --- finalize: record the steps a KILLED ship skipped ------------------------

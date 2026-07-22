@@ -11,8 +11,9 @@
 #   bin/devops-shift status                             # who's on shift, per lane
 #   bin/devops-shift renew-loop <lane> --anchor-pid <p> --anchor-start <s>   # internal
 #
-# A LANE is a role/shift key — `avi`, `steffon`, `alex`. Two live instances of the
-# same lane contend; different lanes coexist (a review vs a qa-release). Identity is
+# A LANE is a role/shift key — `avi`, `alex` (the `steffon` lane was RETIRED when the
+# qa-release lock moved onto the release record; see LANES below). Two live instances of
+# the same lane contend; different lanes coexist (a clean-up vs an alex act). Identity is
 # the SAME live-instance identity the build claim uses (session id + per-process
 # nonce, SessionIdentity), so the heartbeat renews the right shift.
 #

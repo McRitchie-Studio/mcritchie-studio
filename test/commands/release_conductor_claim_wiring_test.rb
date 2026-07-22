@@ -155,10 +155,59 @@ class ReleaseConductorClaimWiringTest < ActiveSupport::TestCase
     assert release > ensure_i, "the release lives in the ensure — EVERY finalize exit (returns, aborts, completion) frees the claim"
   end
 
+  # --- GAP 3 (FIX 1): merge — the THIRD assembler seam is guarded too ----------
+  # `merge` runs the SAME promote (accepted→release) + sweep! prepare guards, and
+  # prepare routes operators to it (`bin/release merge --override`). Guard it or the
+  # "no two assemblers on one release" invariant is false. Same sentinel→real hand-off.
+  test "merge takes the assembler claim before its promote+sweep, hands off to the real slug, releases in an ensure" do
+    src = File.read(RELEASE_RB)
+    merge = src[/^def merge\b.*?^end$/m]
+    assert merge, "merge must be defined"
+
+    lines = merge.lines
+    acquire  = lines.index { |l| l =~ /acquire_conductor_claim!\("assembler", assembler_slug\)/ }
+    promote  = lines.index { |l| l =~ /promote_accepted_to_release!\(promote_repos\)/ }
+    sweep    = lines.index { |l| l =~ /batch_sweep_ruby\(swept/ }
+    real     = lines.index { |l| l =~ /acquire_conductor_claim!\("assembler", result\["slug"\]\)/ }
+    handoff  = lines.index { |l| l =~ /release_conductor_claim!\(role: "assembler", slug: ReleaseClaimCli::FORMING_SLUG\)/ }
+    ensure_i = lines.index { |l| l =~ /^  ensure$/ }
+    release  = lines.index { |l| l =~ /^\s*release_conductor_claim!$/ }
+
+    assert [acquire, promote, sweep, real, handoff, ensure_i, release].all?, "all merge claim anchors must be present"
+    assert_match(/ReleaseClaimCli::FORMING_SLUG if assembler_slug\.empty\?/, merge,
+                 "merge falls back to the FORMING sentinel when there is no active release")
+    assert acquire < promote, "the assembler claim is held BEFORE the irreversible promote"
+    assert promote < sweep, "promote then sweep! (the record that resolves the real slug)"
+    assert sweep < real, "the real-slug claim is taken AFTER sweep! resolves it"
+    assert real < handoff, "acquire the real claim BEFORE freeing the sentinel — continuous ownership across promote+sweep"
+    assert release > ensure_i, "merge releases the claim in an ensure — a discrete op frees it on EVERY exit"
+  end
+
+  # --- FIX 3: prepare + ship free the claim on a NON-SystemExit error too ------
+  # The rescue arms catch only SystemExit; a raw StandardError after the acquire would
+  # escape with the renewer still holding the claim. An additive method-level ensure
+  # frees it on ANY exception.
+  test "prepare and ship free the conductor claim via a method-level ensure (any exception, not only SystemExit)" do
+    src = File.read(RELEASE_RB)
+    %w[prepare ship].each do |m|
+      body = src[/^def #{m}\b.*?^end$/m]
+      assert body, "#{m} must be defined"
+      lines = body.lines
+      rescue_i = lines.index { |l| l =~ /^rescue\b/ }                       # the method-level SystemExit rescue
+      ensure_i = lines.index { |l| l =~ /^ensure$/ }                        # the additive method-level ensure
+      release  = lines.rindex { |l| l =~ /^\s*release_conductor_claim!$/ }  # the ensure's release
+      assert rescue_i, "#{m} keeps its rescue-SystemExit arm"
+      assert ensure_i, "#{m} adds a method-level ensure (so a raw StandardError, not only SystemExit, releases)"
+      assert rescue_i < ensure_i, "the ensure FOLLOWS the rescue — additive, not replacing the gate-close logic"
+      assert release && release > ensure_i, "the method-level ensure frees the claim on ANY exception"
+    end
+  end
+
   # --- the claim is dropped on completion (success AND abort) across all paths --
-  test "prepare, ship, and finalize all release the conductor claim on completion/abort" do
-    assert_operator release_lines.count { |l| l =~ /release_conductor_claim!/ }, :>=, 6,
-                    "each of prepare (success/abort/hand-off/empty), ship (success/abort), and finalize (ensure) frees the claim"
+  test "prepare, ship, merge, and finalize all release the conductor claim on completion/abort" do
+    assert_operator release_lines.count { |l| l =~ /release_conductor_claim!/ }, :>=, 9,
+                    "prepare (success/abort/hand-off/empty + ensure), ship (success/abort + ensure), merge (hand-off + " \
+                    "ensure), and finalize (ensure) all free the claim"
   end
 
   # --- transport: the claim runs over the fast HTTP CLI, not a heroku-run dyno --

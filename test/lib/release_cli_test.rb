@@ -4183,6 +4183,83 @@ class ReleaseCliTest < Minitest::Test
     assert_includes adopt, "override: false", "a normal merge threads NO bypass"
   end
 
+  # --- the per-release ASSEMBLER/DEPLOYER conductor claim, at RUNTIME -----------
+  # These drive bin/release IN A SUBPROCESS with conductor_claim STUBBED, so they prove
+  # the runtime stand-down the source-ordering wiring test can only assert structurally.
+
+  # FIX 1 — `merge` runs the same assembler-lane promote+sweep prepare guards. A held
+  # assembler claim must stand merge down BEFORE the (irreversible) promote runs.
+  def test_merge_stands_down_before_the_promote_when_the_assembler_claim_is_held
+    setup = MERGE_STUB + %(\ndef conductor_claim(*a) = ReleaseClaimCli::STOOD_DOWN\n)
+    out = run_cli(%w[task-a], setup: setup,
+                  call: "begin; merge; puts('NO-ABORT'); rescue SystemExit => e; puts('ABORTED: ' + e.message); end")
+
+    assert_includes out, "ABORTED", "a held assembler claim must stand merge down"
+    assert_includes out, "held by another live release conductor", "and names the stand-down cause"
+    refute_includes out, "NO-ABORT", "merge must not fall through past the claim gate"
+    refute_includes out, "PROMOTE-MERGE",
+                     "the accepted→release promote must NOT run — merge stands down BEFORE the irreversible mutation"
+    refute_includes out, "ADOPT-CALL", "and sweep! (the record) must NOT run either"
+  end
+
+  # FIX 2(a) — BEHAVIORAL finalize snapshot-under-claim: finalize must stand down BEFORE
+  # it reads its MUTABLE decision snapshot (state/sealed/… → finalize_pending?), or a
+  # concurrent finalizer could complete the pending steps in the gap and leave us
+  # replaying stale work. The minimal stable slug read (puts({slug: r.slug})) runs
+  # pre-claim; the "sealed:" snapshot must NOT be read once we're stood down.
+  def test_finalize_stands_down_before_reading_its_mutable_decision_snapshot
+    setup = <<~'RUBY'
+      def conductor(ruby, read_only: false)
+        $stdout.puts("SNAPSHOT-READ") if ruby.include?("sealed:")            # the MUTABLE decision snapshot
+        return { "slug" => "rel-x" } if ruby.include?("puts({slug: r.slug}") # the minimal STABLE read
+        {}
+      end
+      def conductor_claim(*a) = ReleaseClaimCli::STOOD_DOWN
+    RUBY
+    out = run_cli(["--yes"], setup: setup,
+                  call: "begin; finalize('rel-x'); puts('NO-ABORT'); rescue SystemExit => e; puts('ABORTED: ' + e.message); end")
+
+    assert_includes out, "ABORTED", "a held deployer claim must stand finalize down"
+    assert_includes out, "held by another live release conductor", "and names the stand-down cause"
+    refute_includes out, "NO-ABORT", "finalize must not fall through past the claim gate"
+    refute_includes out, "SNAPSHOT-READ",
+                     "finalize must stand down BEFORE reading its mutable decision snapshot — snapshot-under-claim at runtime"
+  end
+
+  # FIX 2(b) — the acquire_conductor_claim! BRANCH TABLE. This is the single runtime
+  # hinge for finalize's snapshot-under-claim AND the prepare/merge exclusion; a
+  # branch-inversion (swap the STOOD_DOWN/OK arms) or a dropped record would ship the
+  # stale-replay / renewer-leak bug green. Pin all three arms behaviorally.
+  def test_acquire_conductor_claim_stood_down_arm_aborts_and_records_nothing
+    out = run_cli([], setup: %(def conductor_claim(*a) = ReleaseClaimCli::STOOD_DOWN),
+                  call: %(begin; acquire_conductor_claim!("deployer", "rel-x"); ) +
+                        %(puts("NO-ABORT COUNT=" + held_conductor_claims.size.to_s); ) +
+                        %(rescue SystemExit; puts("ABORTED COUNT=" + held_conductor_claims.size.to_s); end))
+    assert_includes out, "ABORTED COUNT=0",
+                     "STOOD_DOWN must raise SystemExit (stand down) AND record nothing (no renewer to leak)"
+    refute_includes out, "NO-ABORT", "the STOOD_DOWN arm must not fall through to recording a claim"
+  end
+
+  def test_acquire_conductor_claim_ok_arm_records_exactly_the_held_claim
+    out = run_cli([], setup: %(def conductor_claim(*a) = ReleaseClaimCli::OK),
+                  call: %(acquire_conductor_claim!("deployer", "rel-x"); c = held_conductor_claims; ) +
+                        %(puts("COUNT=" + c.size.to_s); puts("SLUG=" + c.first[:slug].to_s); puts("ROLE=" + c.first[:role].to_s)))
+    assert_includes out, "COUNT=1",
+                     "an OK acquire records EXACTLY one held claim — a dropped record leaks the renewer (no release ever fires)"
+    assert_includes out, "SLUG=rel-x"
+    assert_includes out, "ROLE=deployer"
+  end
+
+  def test_acquire_conductor_claim_fail_open_arms_never_raise_and_hold_nothing
+    [%(def conductor_claim(*a) = nil), %(def conductor_claim(*a) = ReleaseClaimCli::CANT_RUN)].each do |stub|
+      out = run_cli([], setup: stub,
+                    call: %(acquire_conductor_claim!("deployer", "rel-x"); ) +
+                          %(puts("FAIL-OPEN COUNT=" + held_conductor_claims.size.to_s)))
+      assert_includes out, "FAIL-OPEN COUNT=0",
+                       "a fail-open acquire (nil/CANT_RUN) never raises and holds nothing — a claim outage never wedges a release"
+    end
+  end
+
   # --- batch_sweep_ruby / batch_resolve_ruby: pure snippet builders ---------
   # These build the ONE-shot conductor snippets the batched merge runs; unit-test
   # them directly (eval_helper) so the single-call guarantee + slug embedding are
@@ -4217,6 +4294,15 @@ class ReleaseCliTest < Minitest::Test
     assert_includes out, "screen_merge", "the resolve snippet runs the review-gate screen in the same read"
     assert_includes out, "override: true", "the override flag threads into the screen"
     assert_equal 1, out.scan("puts(").size, "resolve + screen still emit ONE JSON line"
+  end
+
+  def test_batch_resolve_ruby_also_reads_the_active_release_for_the_assembler_claim
+    # merge takes the assembler claim on the active release slug (or the FORMING
+    # sentinel) BEFORE its promote — so the batched resolve read carries Release.current.
+    out = eval_helper(%(batch_resolve_ruby(["task-a"])))
+    assert_includes out, "Release.current", "the resolve snippet reads the active release for merge's assembler claim"
+    assert_includes out, "release:", "and emits it in the JSON so merge can key its claim on the active slug"
+    assert_equal 1, out.scan("puts(").size, "still ONE JSON line (the release rides the same read)"
   end
 
   # --- conductor_payload: the shell-safe rails-runner bootstrap (the blocker) --
