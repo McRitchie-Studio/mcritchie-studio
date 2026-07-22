@@ -61,7 +61,7 @@ Where you commit depends on which seat you hold when you find the defect.
 | Seam | You are | Zap lands on | Recorded on (`bin/task note`) |
 |---|---|---|---|
 | **Builder** | Feature agent, mid-build | Your own `feat/<slug>` branch | Your own task |
-| **Reviewer** | Primary/light reviewer, mid-review | Nowhere — NAME it in the verdict, apply nothing | The task under review, via the verdict finding |
+| **Reviewer** | Primary/light reviewer, mid-review | The PR branch under review (lease-push a `zap:`), or NAME it in the verdict | The task under review, via the verdict finding |
 | **Conductor** | Sweep/release conductor | `accepted` only | The nearest member task of the open release |
 
 **Every seam that applies a zap prepares it on a throwaway desk** — a
@@ -104,39 +104,53 @@ add one, remember **`--checks` REPLACES the whole list** (pass every line you
 want kept). The zap rides your PR through normal review; the reviewer sees
 the `zap:` commit and the note and judges it with the rest of the diff.
 
-### Reviewer — name it, apply nothing
+### Reviewer — apply a bounded zap, or name it
 
 You are reviewing a PR and find a small defect — in the diff, or adjacent
-code the diff exposed. **In v1 no reviewer pushes a zap — not to the PR
-branch, not anywhere.** Your move is to NAME the defect precisely in your
-verdict, so the fix can travel without you: the file and line, the one-line
-fix, and the bounds check (e.g. `within zap bounds: 3 lines, 1 file, no
-structure`).
+code the diff exposed. You have two moves.
 
-What happens next is not the reviewer's to execute:
+**Apply it** when the fix is in zap bounds. Prepare it on a throwaway desk off
+the PR head, run its test tier, and **lease-push** the `zap:` commit to the PR
+branch:
 
-- On a merge-ready verdict, the named defect lands afterward as a
-  **conductor zap on `accepted`** — the seam below, applied by whoever holds
-  that seat. It rides the current RC only if it lands before that repo's
-  `accepted → release` promote; after the promote it rides the next release
-  (the timing rule in that seam).
-- When the defect is the reason the PR cannot merge, it is not a zap from
-  the review seat at all: the supervisor routes it as rework feedback
-  (`bin/task block <task> --kind rework --feedback "…"`) and the builder
-  fixes it on the feat branch — where it may well be a builder zap.
+```bash
+git worktree add ../zap-<slug> --detach FETCH_HEAD   # off the PR head you fetched
+cd ../zap-<slug>
+BASE=$(git rev-parse HEAD)                            # the head you zap FROM — pin the lease to it
+# ...one bounded fix...
+git commit -m "zap: <what was broken, one line>"
+git push --force-with-lease=refs/heads/feat/<slug>:$BASE origin HEAD:refs/heads/feat/<slug>
+cd - && git worktree remove ../zap-<slug>
+```
 
-#### Future: reviewer-applied zaps
+An **explicit** lease-push (`--force-with-lease=<ref>:<sha>`), never a **bare**
+`--force-with-lease` and never a plain force-push: the pinned form expects the
+remote branch to still be at the exact `$BASE` you zapped from, so if a sibling
+zap or a builder push advanced it first, your push is REJECTED rather than
+overwriting their commit. A bare `--force-with-lease` trusts your local
+remote-tracking ref, which a background fetch can quietly advance — that defeats
+the guard and clobbers the sibling, so the explicit `=<ref>:<sha>` form is the
+safe one. If your push rejects, a sibling already landed: do NOT retry or
+override — name the fix in your verdict instead. Then leave your verdict
+**merge-ready** and let the zap's own CI vouch for it — the `bin/pr-review`
+supervisor **captured the head BEFORE it launched your review and REVALIDATES it
+before merging** (the merge is pinned with `--match-head-commit`): an advanced
+head merges only if its post-zap CI is green, and holds for re-review otherwise
+(it never merges a head the reviewers didn't see on a non-green CI). Record the
+zap on the task the ordinary way (§ Recording).
 
-A reviewer-applied zap — pushing the fix to the PR branch under review — is
-deliberately NOT in v1. Every current review lane, `pr-review` and
-`pr-review-slow` alike, runs the same automated `bin/pr-review` supervisor:
-its reviewer prompt forbids force-pushes, and its outcome resolver merges on
-two reports without validating a zapped head or its CI. Until `bin/pr-review`
-itself gains reviewed-head capture, post-zap head + CI revalidation, and a
-lease-push allowance, a reviewer-applied zap cannot be executed safely — and
-this doc does not promise it. That tooling is the groomed follow-up task
-https://mcritchie.studio/tasks/teach-pr-review-reviewer-zaps; when it lands,
-this seam comes back.
+**Name it instead** when it is out of bounds, or you'd rather not apply it:
+state the file and line, the one-line fix, and the bounds check (e.g. `within
+zap bounds: 3 lines, 1 file, no structure`) in your verdict, and it travels
+without you —
+
+- On a merge-ready verdict, a named defect can land afterward as a **conductor
+  zap on `accepted`** (the seam below), riding the current RC only if it lands
+  before that repo's `accepted → release` promote.
+- When the defect is the reason the PR cannot merge, it is not a zap from the
+  review seat at all: the supervisor routes it as rework feedback (`bin/task
+  block <task> --kind rework --feedback "…"`) and the builder fixes it on the
+  feat branch — where it may well be a builder zap.
 
 ### Conductor — on `accepted` only
 
@@ -303,10 +317,10 @@ the process spiral it exists to prevent.
   cleanups, no feature slivers. A zap fixes a defect; it never improves code
   that was not broken.
 - **Not a review bypass.** Builder zaps ride the PR through normal review;
-  conductor zaps ride the RC through G3 QA and G4's frozen-SHA gate; and in
-  v1 reviewers apply nothing — a defect named in a verdict lands through
-  those same reviewed lanes. The zap skips the *task ceremony*, never the
-  *verification*.
+  conductor zaps ride the RC through G3 QA and G4's frozen-SHA gate; and a
+  reviewer-applied zap is gated by the supervisor's head revalidation — an
+  advanced head merges only on a green post-zap CI. The zap skips the *task
+  ceremony*, never the *verification*.
 - **Not a pressure valve for big fixes.** A bounded fix that keeps almost
   qualifying is the classic loop-starter. When in doubt, task it.
 
