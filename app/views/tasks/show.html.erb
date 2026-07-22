@@ -77,7 +77,15 @@
           <p class="mt-2 text-sm text-secondary">Open follow-up work before adding changes to this branch.</p>
         <% end %>
         <% if @unresolved_feedback_activity %>
-          <p class="mt-2 text-sm text-body whitespace-pre-wrap"><%= @unresolved_feedback_activity.description %></p>
+          <% summary = @unresolved_feedback_activity.block_summary %>
+          <% details = @unresolved_feedback_activity.description.to_s %>
+          <p class="mt-2 text-sm font-semibold text-body" data-test="task-unresolved-feedback-summary"><%= summary %></p>
+          <% if details.strip.present? && details.strip != summary %>
+            <details class="mt-1" data-test="task-unresolved-feedback-details">
+              <summary class="cursor-pointer select-none text-xs text-secondary hover:text-heading transition">Details</summary>
+              <p class="mt-2 text-sm text-body whitespace-pre-wrap"><%= details %></p>
+            </details>
+          <% end %>
         <% end %>
       </div>
     <% end %>

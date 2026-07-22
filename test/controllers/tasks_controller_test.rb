@@ -804,6 +804,47 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "#card-#{task.slug} [data-test='activity-box']", text: /Handoff/
   end
 
+  test "[integration] show renders the blocker summary as the headline and details in an expand" do
+    task = Task.create!(title: "split blocker task", stage: "submitted")
+    Activity.create!(task_slug: task.slug, activity_type: "qa_feedback",
+                     description: "The stage transition bypasses the server guard; re-gate it before resubmit.",
+                     metadata: { "summary" => "Stage move skips server guard" })
+
+    get task_path(task.slug)
+
+    assert_response :success
+    assert_select "[data-test='task-unresolved-feedback-summary']", text: "Stage move skips server guard"
+    assert_select "[data-test='task-unresolved-feedback-details']" do
+      assert_select "summary", text: "Details"
+      assert_select "p", text: /re-gate it before resubmit/
+    end
+  end
+
+  test "[integration] show derives a headline for a legacy blocker with no summary" do
+    task = Task.create!(title: "legacy blocker task", stage: "submitted")
+    Activity.create!(task_slug: task.slug, activity_type: "qa_feedback",
+                     description: "The stage transition bypasses the server guard entirely and must be re-gated.")
+
+    get task_path(task.slug)
+
+    assert_response :success
+    assert_select "[data-test='task-unresolved-feedback-summary']",
+                  text: "The stage transition bypasses the server…"
+    # The full details still render below the derived headline.
+    assert_select "[data-test='task-unresolved-feedback-details'] p", text: /must be re-gated/
+  end
+
+  test "[integration] show skips the details expand when a short blocker equals its summary" do
+    task = Task.create!(title: "short blocker task", stage: "submitted")
+    Activity.create!(task_slug: task.slug, activity_type: "qa_feedback", description: "Rebase before QA.")
+
+    get task_path(task.slug)
+
+    assert_response :success
+    assert_select "[data-test='task-unresolved-feedback-summary']", text: "Rebase before QA."
+    assert_select "[data-test='task-unresolved-feedback-details']", count: 0
+  end
+
   test "[component] review intent shows review started on card and task page" do
     task = Task.create!(title: "review started guard", stage: "submitted")
     task.record_intent_event(

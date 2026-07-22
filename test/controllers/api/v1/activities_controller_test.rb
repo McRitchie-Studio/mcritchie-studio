@@ -30,6 +30,25 @@ module Api
         assert_equal "qa_feedback", activity.activity_type
       end
 
+      test "[integration] create persists the blocker summary in metadata" do
+        post api_v1_activities_path,
+             params: {
+               task_slug: @task.slug,
+               agent_slug: "avi",
+               activity_type: "qa_feedback",
+               description: "The stage transition bypasses the server guard; re-gate it.",
+               metadata: { summary: "Stage move skips server guard" }
+             },
+             headers: @headers,
+             as: :json
+
+        assert_response :created
+        activity = Activity.order(:created_at).last
+        assert_equal "Stage move skips server guard", activity.metadata["summary"],
+                     "the endpoint must permit and persist metadata['summary']"
+        assert_equal "Stage move skips server guard", activity.block_summary
+      end
+
       test "[integration] create records task-linked clarification" do
         assert_difference "Activity.count", 1 do
           post api_v1_activities_path,

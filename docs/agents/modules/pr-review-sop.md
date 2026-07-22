@@ -185,8 +185,12 @@ one complete send-back, then the conductor moves on (block-and-move: one block
 never holds back the PRs that passed):
 
 ```bash
-bin/task block <task> --kind rework --feedback "<what is wrong + why>"
+bin/task block <task> --kind rework --summary "<4-6 word headline>" --feedback "<what is wrong + why>"
 ```
+
+`--summary` is the short headline the task header shows; `--feedback` carries
+the full detail the builder fixes from. Omit `--summary` and the header derives
+one from the feedback's first line, so legacy blocks still read clean.
 
 That returns the task to the builder as a fresh feature-agent cycle (block notes
 land in the task activities as `qa_feedback`). Surface each blocking event in the

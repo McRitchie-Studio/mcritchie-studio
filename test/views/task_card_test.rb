@@ -439,6 +439,21 @@ class TaskCardTest < ActionView::TestCase
     assert_select "[data-test='cleared-feedback']", count: 0
   end
 
+  test "[component] the unresolved-feedback card tooltip shows the blocker summary, not the full details" do
+    task = Task.create!(title: "Tooltip summary card", stage: "submitted")
+    feedback = Activity.create!(task_slug: task.slug, activity_type: "qa_feedback",
+                                description: "The stage transition bypasses the server guard; re-gate it before resubmit.",
+                                metadata: { "summary" => "Stage move skips server guard" })
+
+    render partial: "tasks/task_card",
+           locals: { task: task.reload, agents: @agents, crew_board: :deploy,
+                     unresolved_feedback: feedback, ever_blocked: true }
+
+    bar = css_select("[data-test='unresolved-feedback']").first
+    assert_equal "Stage move skips server guard", bar["title"], "hover shows the short summary"
+    refute_includes bar["title"].to_s, "re-gate it before resubmit", "the full details stay off the tooltip"
+  end
+
   test "[component] a never-blocked submitted card stays plain" do
     task = Task.create!(title: "Never blocked card", stage: "submitted")
 
