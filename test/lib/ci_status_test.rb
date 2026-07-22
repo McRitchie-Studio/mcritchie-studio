@@ -513,11 +513,13 @@ class CiStatusTest < Minitest::Test
     %w[pr-review dor-check].each do |bin|
       src = File.read(File.expand_path("../../bin/#{bin}", __dir__))
       # Catch the CLASS, not one spelling: `git merge origin/release`, `merge
-      # release into the branch`, etc. all hardcode the wrong branch. (This guard
-      # itself missed the second spelling on the fresh-fast-cert path in round 1 —
-      # the very lesson.)
-      refute_match(%r{merge\s+(?:origin/)?release\b}, src,
-                   "bin/#{bin} must not hardcode a `merge release` / `merge origin/release` conflict cure")
+      # release into the branch`, `rebase on release`, `rebase onto release` — all
+      # name the wrong branch (feature PRs target accepted). The narrow guard
+      # missed the second AND third spellings in earlier rounds — the very lesson,
+      # so this asserts the whole (rebase|merge)…release family. `accepted→release`
+      # (the sweep promotion) is NOT a rebase/merge onto release, so it's safe.
+      refute_match(%r{(?:rebase|merge)\s+(?:on\s+|onto\s+|origin/)?release\b}, src,
+                   "bin/#{bin} must not tell a builder to rebase/merge RELEASE for a conflict — the base is the PR's own")
       assert_includes src, "conflicted_remedy",
                        "bin/#{bin} must route the :conflicted cure through CiStatus.conflicted_remedy"
     end
