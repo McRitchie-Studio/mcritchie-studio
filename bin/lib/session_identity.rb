@@ -123,7 +123,7 @@ module SessionIdentity
     false
   end
 
-  # Walk the process tree from us up to init: [{pid:, ppid:, tty:, comm:}, ...].
+  # Walk the process tree from us up to init: [{pid:, ppid:, tty:, command:}, ...].
   # One `ps` per level (≈5 deep) — cheap, and this isn't a hot path.
   def process_ancestry(max_depth: 12)
     chain = []
