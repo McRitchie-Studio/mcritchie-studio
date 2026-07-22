@@ -248,8 +248,16 @@ class Release
       return :absent unless Release::GemfileRepin.gem_line_for(text, gem_name)
       return :rewrite_source if Release::GemfileRepin.references_branch?(text, gem_name)
 
+      # The pin is rewritten ONLY UPWARD — to a version strictly newer than it names. A
+      # version the pin allows is :lock_only; a version that ESCAPES it is :rewrite_pin ONLY
+      # when the escape is upward. A below-floor (backward) version escapes downward: never
+      # rewrite the pin down to it (the silent-downgrade sibling of stranded_gem_work?) —
+      # leave the pin, :lock_only. In a well-formed pipeline the upstream strictly-newer guard
+      # guarantees `version` is ahead; this is the transform owning that invariant itself.
       requirements = Release::GemfileRepin.version_requirements(text, gem_name)
-      Release::GemfileRepin.constraint_allows?(requirements, version) ? :lock_only : :rewrite_pin
+      return :lock_only if Release::GemfileRepin.constraint_allows?(requirements, version)
+
+      Release::GemfileRepin.escapes_upward?(requirements, version) ? :rewrite_pin : :lock_only
     end
 
     # The Gemfile text after the bump `consumer_bump_action` decided — the one

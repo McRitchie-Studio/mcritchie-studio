@@ -56,6 +56,29 @@ class Release::ConductorTest < ActiveSupport::TestCase
     refute_includes cands["reviewed"].map(&:slug), member.slug
   end
 
+  test "[unit] sweep_candidates detects a NULL-release_slug assembled task WHILE a release is active" do
+    # The NULL guard's boundary, tested where it actually bites: with a release ACTIVE, an
+    # assembled task carrying NO release_slug (pre-conductor / detached work) must STILL be a
+    # straggler — SQL `release_slug != 'rel'` is NULL (not true) for a null row, so it would be
+    # silently dropped WITHOUT the explicit `release_slug IS NULL OR`. Mutation evidence: delete
+    # that clause and this null-slug straggler VANISHES from the sweep while a release is active,
+    # stranding it forever. Every other straggler test either has no active release (the `if
+    # release` clause is skipped) or excludes a NON-null slug — neither observes the NULL drop.
+    member = reviewed_task("member")
+    rel = Release::Conductor.sweep!(member)
+    Release::Conductor.qa_green!(rel)
+    assert Release.current, "a release must be active for this boundary"
+
+    orphan = Task.create!(title: "detached null slug assembled task", stage: "assembled",
+                          metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } })
+    assert_nil orphan.release_slug, "the boundary needs a genuinely null release_slug"
+
+    cands = Release::Conductor.sweep_candidates
+
+    assert_includes cands["stragglers"].map(&:slug), orphan.slug,
+                    "a null-release_slug assembled task is a straggler even while a release is active"
+  end
+
   test "[unit] sweep_candidates with NO active release treats every assembled task as a straggler" do
     orphan = Task.create!(title: "orphan assembled task here", stage: "assembled",
                           metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } })

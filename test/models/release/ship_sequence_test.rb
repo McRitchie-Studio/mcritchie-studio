@@ -681,7 +681,7 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
   test "[unit] a TREE-credited G3 record self-skips and never arms the disagree path" do
     # task dedupe-hub-release-suite round 2: the LIVE batch-PR promote mints a NEW
     # merge SHA, so the credit's evidence is the ACCEPTED head's green vouching for
-    # the IDENTICAL TREE (bin/release's ci_tree_credit_verdict), recorded with both
+    # the IDENTICAL TREE (bin/release's tree_identical_ci_outcome), recorded with both
     # SHAs + the shared tree in the note. The record still certifies THIS repo,
     # THIS cmd, THIS (release) SHA with a green ci.state — G4 self-skips against
     # it exactly as against a polled or same-SHA-credited one, and the richer
@@ -973,6 +973,19 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
 
   test "consumer_bump_action is :lock_only for a bare declaration" do
     assert_equal :lock_only, S.consumer_bump_action(%(gem "studio-engine"\n), "studio-engine", "9.9.9")
+  end
+
+  test "consumer_bump_action NEVER rewrites a pin DOWNWARD for a backward version" do
+    # The invariant is UPWARD-ONLY, the silent-downgrade sibling of stranded_gem_work?. A
+    # version BELOW the pin floor escapes the constraint too, but rewriting the pin down to it
+    # is a production downgrade. It must be :lock_only (pin left as-is), never :rewrite_pin.
+    # Mutation evidence: the pre-fix `constraint_allows? ? :lock_only : :rewrite_pin` returned
+    # :rewrite_pin here and `bumped_gemfile` rewrote `~> 0.10` DOWN to `~> 0.9`.
+    assert_equal :lock_only, S.consumer_bump_action(%(gem "studio-engine", "~> 0.10"\n), "studio-engine", "0.9.0")
+    assert_equal :lock_only, S.consumer_bump_action(%(gem "studio-engine", "0.10.0"\n), "studio-engine", "0.9.9")
+    pinned = %(gem "studio-engine", "~> 0.10"\n)
+    assert_equal pinned, S.bumped_gemfile(pinned, "studio-engine", "0.9.0"),
+                 "a backward version leaves the Gemfile pin untouched — no downgrade"
   end
 
   test "bumped_gemfile rewrites only what the action demands" do
