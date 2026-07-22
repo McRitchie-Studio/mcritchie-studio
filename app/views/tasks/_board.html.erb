@@ -78,8 +78,17 @@ function kanbanBoard(live) {
     },
 
     init() {
-      this.$el.dataset.alpineReady = 'true';
+      // alpineReady is set in $nextTick, NOT synchronously here: x-init runs while Alpine
+      // is still walking the component's subtree, so the chip buttons' @click handlers are
+      // not bound yet at this point. A test (or any script) that waited for
+      // data-alpine-ready and then clicked a chip could land the click on an unwired button
+      // — the toggle would no-op and the card never hide (the board_app_filter_test flake).
+      // $nextTick runs after Alpine finishes this tick's directive walk, so the flag now
+      // means "the board is fully wired and interactive."
       this.$nextTick(() => {
+        // First, and independent of initSortables succeeding: the flag means "directives
+        // bound / chips clickable," not "drag-drop wired."
+        this.$el.dataset.alpineReady = 'true';
         this.initSortables();
         if (this.live) {
           this.observeLive();
