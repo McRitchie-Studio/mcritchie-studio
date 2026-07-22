@@ -52,6 +52,8 @@ module SessionIdentity
     override = env["TASK_CLAIM_NONCE"].to_s.strip
     return override unless override.empty?
 
+    # Delegates to the (now spare-refusing) agent_process, so the lease IDENTITY answers to
+    # the same owning-session fact as its LIFETIME — a warm bg-spare anchors neither.
     agent = agent_process
     return short_hash("pid:#{agent[:pid]}|start:#{agent[:start]}") if agent
 
@@ -71,11 +73,35 @@ module SessionIdentity
   # source. The start time is carried alongside the pid because a bare pid is reused
   # after exit, and "the pid is alive" would then be a false positive for a holder
   # that died an hour ago.
-  def agent_process
-    process_ancestry.find { |p| AGENT_COMMANDS.include?(File.basename(p[:comm].to_s.split(/\s+/).first.to_s)) }
-                    &.then { |p| { pid: p[:pid], start: proc_start(p[:pid]) } }
+  #
+  # A WARM HELPER IS NEVER THE ANCHOR. claude keeps POOLED background helpers around
+  # between runs — "claude bg-spare" and "claude bg-pty-host" — that OUTLIVE the session
+  # that used them. They share the `claude` command, so only the role token in `comm`
+  # tells them apart from an owning session; the pre-fix code split that token off and
+  # anchored to the helper, which then renewed the lease FOREVER after the real run ended
+  # (2026-07-21: a phantom pinned the avi/steffon lane — held by a lane whose heartbeat
+  # was seconds-fresh with no review in flight, unclearable). owning_agent? refuses them,
+  # so agent_process finds the real session BEHIND the helper or returns nil: no renewer,
+  # and the lease lapses on the ordinary TTL (the recoverable direction, never a phantom).
+  # `ancestry` is injectable so the selection is tested as data, not by walking a live tree.
+  SPARE_ROLE_MARKER = /\bbg-(?:spare|pty-host)\b/
+
+  def agent_process(ancestry: process_ancestry)
+    ancestry.find { |p| owning_agent?(p[:comm]) }
+            &.then { |p| { pid: p[:pid], start: proc_start(p[:pid]) } }
   rescue StandardError
     nil
+  end
+
+  # Is this ancestry entry's command an OWNING agent — a `claude`/`codex` CLI that is NOT
+  # a warm background helper? The role token rides in `comm` after the command name, so a
+  # bare `claude` (or `claude --flags`, or a full path to it) is the owner while a
+  # `claude bg-spare` / `claude bg-pty-host` is refused.
+  def owning_agent?(comm)
+    text = comm.to_s
+    return false if text.match?(SPARE_ROLE_MARKER)
+
+    AGENT_COMMANDS.include?(File.basename(text.split(/\s+/).first.to_s))
   end
 
   # Is the process at +pid+ still the SAME process that was running at +start+?
