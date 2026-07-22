@@ -452,14 +452,22 @@ module CiStatus
   # PURE. The verdict fold, shared by BOTH payload shapes: an array of checks
   # carrying a normalized `bucket` (pass/fail/pending/skipping/cancel). A failure
   # OUTRANKS a still-running check — a known-bad tree is never "not yet".
+  # THE INVARIANT IS POSITIVE: :green iff EVERY check AFFIRMATIVELY passed or skipped.
+  # It is NOT "nothing failed and nothing is pending" — that greens a bucket we do not
+  # recognize (gh vocabulary drift, a malformed row), inventing a pass from the absence of
+  # a known-bad reading. So an unrecognized bucket is UNSETTLED → :pending (no verdict yet),
+  # exactly as the SHA path's check_run_bucket fail-safes an unknown conclusion to pending.
   def self.fold(checks)
     return { state: :none } if checks.empty?
 
     name = ->(c) { c["name"].to_s.empty? ? c["state"].to_s : c["name"].to_s }
     failing = checks.select { |c| %w[fail cancel].include?(c["bucket"].to_s) }.map(&name)
-    pending = checks.select { |c| c["bucket"].to_s == "pending" }.map(&name)
     return { state: :red, failing: failing } if failing.any?
-    return { state: :pending, pending: pending } if pending.any?
+
+    # Every remaining check must prove out as pass/skip. A pending run — or ANY bucket that
+    # is neither a pass/skip nor a known fail — is "no verdict yet", never a green.
+    unsettled = checks.reject { |c| %w[pass skipping].include?(c["bucket"].to_s) }.map(&name)
+    return { state: :pending, pending: unsettled } if unsettled.any?
 
     { state: :green, count: checks.size }
   end
