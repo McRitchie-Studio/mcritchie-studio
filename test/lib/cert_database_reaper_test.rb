@@ -78,8 +78,11 @@ class CertDatabaseReaperTest < Minitest::Test
       "x_mcritchie_studio_test_foo_deadbeef",         # base is a substring, not a prefix
       "mcritchie_studio_test_foo_deadbee",            # 7 hex — too short
       "mcritchie_studio_test_foo_deadbeef1",          # 9 trailing chars — not a clean _<8hex>
-      "mcritchie_studio_test_foo_DEADBEEF",           # uppercase — our digests are lowercase
+      "mcritchie_studio_test_foo_DEADBEEF",           # uppercase digest — our digests are lowercase
       "mcritchie_studio_test_deadbeef",               # NO-SLUG look-alike: <base>_<8hex>, no slug between
+      "mcritchie_studio_test_FOO_deadbeef",           # NON-MINTABLE: uppercase slug (no mint produces it)
+      "mcritchie_studio_test_foo-bar_deadbeef",       # NON-MINTABLE: hyphen in slug (mint tr's - -> _)
+      "mcritchie_studio_test_foo.bar_deadbeef",       # NON-MINTABLE: dot in slug
       "mcritchie_studio_test_",                       # empty slug
       "",
     ].each do |name|

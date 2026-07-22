@@ -3,6 +3,7 @@
 require "json"
 require "fileutils"
 require "time"
+require "tmpdir"
 require "uri"
 
 require_relative "test_database_purge"
@@ -55,7 +56,8 @@ require_relative "test_database_purge"
 # env-independent way the purge guard reads it (the `database:` literal in
 # config/database.yml's test env), never guessed from a name.
 module CertDatabaseReaper
-  LEASE_DIR_REL = File.join("tmp", "cert_db_leases")
+  # Shared, worktree-independent, and outside any repo — see lease_dir for why.
+  LEASE_DIR = File.join(Dir.tmpdir, "mcritchie-cert-db-leases")
 
   class << self
     # --- lease lifecycle (called by the mint site) --------------------------
@@ -129,18 +131,19 @@ module CertDatabaseReaper
     end
 
     # AC3 guard: is `name` one of THIS app's per-run test databases? A positive
-    # invariant asserting the full ephemeral SHAPE — `<base>_<slug>_<8hex>` — so
-    # everything else falls outside it and is refused, above all
-    # mcritchie_studio_development. The `.+` between the separators is a NON-EMPTY slug:
-    # it refuses a no-slug look-alike (`<base>_<8hex>`, which could be a real per-worktree
-    # test DB, not a per-run ephemeral one) as well as the base, its parallel clones, and
-    # the release workspaces — none of which carry a `_<slug>_<8hex>` tail.
+    # invariant asserting the full ephemeral SHAPE a run could actually MINT —
+    # `<base>_<slug>_<8hex>` where the slug is the MINTABLE charset only. A Postgres DB
+    # name minted here is lowercase `[a-z0-9_]` (bounded_db_slug tr's `-`->`_` and clips a
+    # SHA-hex digest), so the slug segment is `[a-z0-9_]+` and the digest is `[0-9a-f]{8}`.
+    # Anything else falls outside and is refused: mcritchie_studio_development, the base,
+    # its parallel clones, the release workspaces, a no-slug `<base>_<8hex>` look-alike, and
+    # a non-mintable look-alike (uppercase, hyphen, or any char no mint could have produced).
     def admissible?(name, base: default_base)
       name = name.to_s
       base = base.to_s
       return false if name.empty? || base.empty?
 
-      name.match?(/\A#{Regexp.escape(base)}_.+_[0-9a-f]{8}\z/)
+      name.match?(/\A#{Regexp.escape(base)}_[a-z0-9_]+_[0-9a-f]{8}\z/)
     end
 
     def default_base
@@ -194,8 +197,13 @@ module CertDatabaseReaper
 
     # --- lease store --------------------------------------------------------
 
+    # SHARED across every worktree on this host, and OUTSIDE any repo — a lease under a
+    # worktree's own `tmp/` would VANISH when that worktree is cleaned up, stranding the
+    # database it named (the reaper drops from the shared Postgres cluster, which outlives
+    # the worktree). Dir.tmpdir is stable per user/host, so every run's boot sweep sees
+    # every other run's leases.
     def lease_dir
-      File.join(repo_root, LEASE_DIR_REL)
+      LEASE_DIR
     end
 
     def lease_path(dir, db_name)
@@ -224,14 +232,6 @@ module CertDatabaseReaper
       File.delete(path) if path
     rescue Errno::ENOENT
       nil
-    end
-
-    def repo_root
-      if defined?(Rails) && Rails.respond_to?(:root) && Rails.root
-        Rails.root.to_s
-      else
-        Dir.pwd
-      end
     end
   end
 end

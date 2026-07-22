@@ -307,7 +307,11 @@ kill would strand a distinct database that nothing reclaims: a slow but unbounde
 
 `test/support/cert_database_reaper.rb` (`CertDatabaseReaper`) closes it. The mint site
 writes a **lease** naming the database and the owning PID before provisioning; a clean
-run drops the DB and clears the lease, a hard kill leaves both. The reaper acts **only**
+run drops the DB and clears the lease, a hard kill leaves both. Leases live in a
+**shared, host-level dir** (`Dir.tmpdir/mcritchie-cert-db-leases`), NOT a worktree's own
+`tmp/` — a per-worktree lease would vanish when that worktree is cleaned up, stranding the
+database it named on the shared cluster; the shared dir also lets every run's boot sweep
+see every other run's leases. The reaper acts **only**
 on databases named in a lease it wrote (a name pattern can't be the identity — a
 long-slug worktree's test DB has the same `_<8hex>` shape), drops those whose leasing PID
 is provably gone (a false-alive only ever leaks; a false-dead is impossible for a
