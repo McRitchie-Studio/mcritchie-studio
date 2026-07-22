@@ -62,6 +62,7 @@ require_relative "lib/ci_status"
 require_relative "lib/bin_helpers"
 require_relative "lib/projects_root"
 require_relative "lib/zap_revalidation"
+require_relative "lib/merge_command"
 
 ROOT = File.expand_path("..", __dir__)
 PROJECTS_ROOT = ProjectsRoot.default_projects_dir(ROOT)
@@ -367,11 +368,17 @@ def reviewer_prompt(task, reviewer, role, reviewers)
     - Recommend one outcome to Avi: merge-ready, wait-for-CI, request-changes, or conductor-review.
     - Do not merge, deploy, publish gems, change provider config, or rotate credentials.
     - You MAY apply ONE bounded reviewer zap when the fix is in zap bounds (docs/agents/modules/zap-protocol.md,
-      Reviewer seam): prepare a `zap:` commit on a throwaway detached worktree off the PR head, run its test tier,
-      and lease-push it to the PR branch (git push --force-with-lease origin HEAD:refs/heads/#{task.dig("devops", "branch") || "feat/#{task.fetch("slug")}"}
-      — a lease rejects if the branch moved under you). Do NOT plain force-push, and do NOT zap outside the bounds.
-      The supervisor recaptured this head at read time and REVALIDATES it: your zapped head merges only if its own CI
-      is green, so leave the verdict merge-ready and the zap's CI does the vouching.
+      Reviewer seam): create a throwaway detached worktree off the PR head, RECORD that base SHA
+      (BASE=$(git rev-parse HEAD)), prepare a `zap:` commit, run its test tier, then lease-push with the lease
+      PINNED to that base SHA:
+        git push --force-with-lease=refs/heads/#{task.dig("devops", "branch") || "feat/#{task.fetch("slug")}"}:$BASE origin HEAD:refs/heads/#{task.dig("devops", "branch") || "feat/#{task.fetch("slug")}"}
+      The EXPLICIT =ref:sha lease expects the remote branch to still be at the head you zapped from; a BARE
+      --force-with-lease trusts your local tracking ref, which can be stale and would CLOBBER a sibling zap that
+      landed first. If the push REJECTS, a sibling already advanced the branch — do NOT retry or override; leave a
+      request-changes note instead. Do NOT plain force-push, and do NOT zap outside the bounds. The supervisor
+      captured this head BEFORE launching you and REVALIDATES the branch before merge: your zapped head merges only
+      if its own CI is green (and the merge is pinned with --match-head-commit), so leave the verdict merge-ready
+      and the zap's CI does the vouching.
     - Do not move the task stage. The pr-review supervisor owns the final move to reviewed or blocked.
     - Do not launch another reviewer; the pr-review supervisor already launched the pair.
 
@@ -578,7 +585,7 @@ end
 # the code is on `accepted` (freshly merged OR already merged on a prior run), false
 # on ANY failure — the caller then leaves the task `submitted` and UNSTAMPED,
 # preserving the invariant reviewed ⟺ code-on-accepted.
-def merge_feature_pr(slug, pr_url)
+def merge_feature_pr(slug, pr_url, merge_head: nil)
   if pr_url.to_s.empty?
     puts "  cannot merge #{slug}: no PR url on the task (devops.pr_url) — leaving it submitted"
     return false
@@ -593,8 +600,15 @@ def merge_feature_pr(slug, pr_url)
     end
   end
 
-  puts "  gh pr merge #{pr_url} --merge (feat → #{ACCEPTED_BRANCH})"
-  ok = gh_write("pr", "merge", pr_url, "--merge")
+  # Pin the merge to the exact head the supervisor REVALIDATED. If the head advanced again
+  # between revalidation and this merge (a late zap, a racing push), --match-head-commit makes
+  # `gh pr merge` REFUSE rather than silently merge an unvalidated head — the task then stays
+  # submitted and the next wave re-reviews the new head. Absent a known head (a gh read fault
+  # at capture time), MergeCommand falls back to the unpinned merge (the documented degraded path).
+  merge_args = MergeCommand.args(pr_url, merge_head)
+  match = merge_head.to_s.strip.empty? ? "" : " --match-head-commit #{short(merge_head)}"
+  puts "  gh pr merge #{pr_url} --merge (feat → #{ACCEPTED_BRANCH})#{match}"
+  ok = gh_write(*merge_args)
   if !ok && OPTIONS.fetch(:run) && pr_already_merged?(pr_url)
     puts "  ↷ #{pr_url} already merged on GitHub (interrupted prior run) — proceeding to stamp + move"
     ok = true
@@ -614,7 +628,9 @@ end
 #      a no-op, the stamp is idempotent), NEVER the forbidden (reviewed, unstamped)
 #      the sweep would drop as a HELD anomaly.
 def move_reviewed(slug, task, reviewers, reports, reviewed_head: nil, zap_head: nil)
-  return false unless merge_feature_pr(slug, task&.dig("devops", "pr_url"))
+  # Pin the merge to the head we revalidated: the zapped head when a zap advanced it,
+  # else the head the reviewers saw. finish_review already proved this head's CI green.
+  return false unless merge_feature_pr(slug, task&.dig("devops", "pr_url"), merge_head: zap_head || reviewed_head)
   return false unless task_write(["merged", slug, "accepted"])
 
   ok = task_write(["move", slug, "reviewed", "--actor", "avi"])
@@ -793,14 +809,18 @@ def start_review(task, review_number)
     key = G2_LANE_KEYS[roles[index]] or next
     gate_write("open", "task", slug, key, "--actor", reviewer.fetch("slug"))
   end
+  # Capture the head the reviewers are ABOUT TO look at — BEFORE launch, so it is a provable
+  # lower bound on what each reviewer clones (a reviewer reads head >= reviewed_head). Capturing
+  # it AFTER launch (the original bug) would miss a zap that lands DURING launch: reviewed_head
+  # would already be the zapped head, so finish_review sees no move and merges an unrevalidated
+  # head the reviewers never saw. If the head advances during review (a reviewer-applied zap),
+  # finish_review revalidates the new head's CI before merging — never merging a head the
+  # reviewers did not see on a non-green CI.
+  reviewed_head = pr_head_oid(task.dig("devops", "pr_url"))
+
   launches = reviewers.each_with_index.map do |reviewer, index|
     launch_reviewer(task, reviewer, roles.fetch(index), reviewers)
   end
-
-  # Capture the head the reviewers are about to look at. If it advances during their
-  # review (a reviewer-applied zap), finish_review revalidates the new head's CI before
-  # merging — never merging a head the reviewers did not see on a non-green CI.
-  reviewed_head = pr_head_oid(task.dig("devops", "pr_url"))
 
   { task: task, slug: slug, reviewers: reviewers, reviewer_slugs: reviewer_slugs,
     launches: launches, reviewed_head: reviewed_head }
