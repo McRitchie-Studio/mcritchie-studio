@@ -257,8 +257,13 @@ Verdicts:
 - Request changes, missing metadata, red CI, merge risk, or acceptance mismatch:
 
   ```bash
-  bin/task block <task> --kind rework --feedback "<one complete send-back>" --agent avi
+  bin/task block <task> --kind rework --summary "<4-6 word headline>" \
+    --feedback "<one complete send-back>" --agent avi
   ```
+
+  `--summary` is the short headline the task **header** shows (keep it 4-6
+  words); `--feedback` stays the full send-back the builder fixes from. Omit
+  `--summary` and the header derives one from the feedback's first line.
 
   (A red CI is normally caught by the supervisor's pre-spawn check and blocked
   back automatically, with the failing checks named in the feedback.)

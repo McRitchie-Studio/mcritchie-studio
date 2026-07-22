@@ -42,4 +42,40 @@ class ActivityTest < ActiveSupport::TestCase
     assert handoff.resolves_feedback?
     refute comment.resolves_feedback?
   end
+
+  test "[unit] block_summary reads the stored 4-6 word summary from metadata" do
+    activity = Activity.new(
+      activity_type: "qa_feedback",
+      description: "The stage transition bypasses the server guard entirely, so a client can force it.",
+      metadata: { "summary" => "Stage move skips server guard" }
+    )
+
+    assert_equal "Stage move skips server guard", activity.block_summary
+  end
+
+  test "[unit] block_summary derives a truncated headline for a legacy blocker with no summary" do
+    activity = Activity.new(
+      activity_type: "qa_feedback",
+      description: "The stage transition bypasses the server guard entirely and must be re-gated.\nSee the diff."
+    )
+
+    # First line, first six words, ellipsis — legacy blockers still render clean.
+    assert_equal "The stage transition bypasses the server…", activity.block_summary
+  end
+
+  test "[unit] block_summary of a short legacy blocker is the details verbatim" do
+    activity = Activity.new(activity_type: "qa_feedback", description: "Rebase before QA.")
+
+    assert_equal "Rebase before QA.", activity.block_summary
+  end
+
+  test "[unit] block_summary ignores a blank stored summary and falls back to derivation" do
+    activity = Activity.new(
+      activity_type: "qa_feedback",
+      description: "Fix the failing system test before merge.",
+      metadata: { "summary" => "   " }
+    )
+
+    assert_equal "Fix the failing system test before…", activity.block_summary
+  end
 end

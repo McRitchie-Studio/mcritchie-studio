@@ -35,8 +35,8 @@
 # — a reviewer agreeing to give up coverage — rather than a line nobody reads.
 ---
 # Every `test(...)` committed under e2e/. Verified against Playwright's own model, not prose:
-#   npx playwright test --list   ->  74 tests in 29 files
-total_specs: 74
+#   npx playwright test --list   ->  75 tests in 30 files
+total_specs: 75
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -58,8 +58,8 @@ quarantined: 18
 
 # total_specs - quarantined. What the lane MUST execute — asserted against the runner's own
 # report, so no source-level spelling on any axis can move it without moving this line.
-#   npx playwright test --list --grep-invert @quarantine  ->  56 tests in 27 files
-executed: 56
+#   npx playwright test --list --grep-invert @quarantine  ->  57 tests in 28 files
+executed: 57
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to

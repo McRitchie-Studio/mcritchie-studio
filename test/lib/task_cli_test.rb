@@ -415,6 +415,48 @@ class TaskCliTest < Minitest::Test
     assert_equal "shannon", JSON.parse(note[:body])["agent_slug"]
   end
 
+  def test_block_summary_rides_into_the_qa_feedback_metadata
+    requests, = run_task([
+      "block", "demo-task", "--kind", "rework",
+      "--summary", "Stage move skips server guard",
+      "--feedback", "The stage transition bypasses the server guard; re-gate it before resubmit.",
+      "--agent", "shannon"
+    ])
+
+    note = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/activities" }
+    refute_nil note, "expected a qa_feedback activity"
+    body = JSON.parse(note[:body])
+    assert_equal "qa_feedback", body["activity_type"]
+    assert_equal "The stage transition bypasses the server guard; re-gate it before resubmit.",
+                 body["description"], "--feedback stays the details body"
+    assert_equal "Stage move skips server guard", body.dig("metadata", "summary"),
+                 "--summary rides into the activity metadata (no column)"
+  end
+
+  def test_block_details_alias_writes_the_feedback_body
+    requests, = run_task([
+      "block", "demo-task", "--kind", "rework",
+      "--summary", "Missing regression test",
+      "--details", "Add a failing test for the nil guard first.",
+      "--agent", "shannon"
+    ])
+
+    note = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/activities" }
+    refute_nil note, "expected a qa_feedback activity from --details"
+    body = JSON.parse(note[:body])
+    assert_equal "Add a failing test for the nil guard first.", body["description"],
+                 "--details is an alias for the feedback body"
+    assert_equal "Missing regression test", body.dig("metadata", "summary")
+  end
+
+  def test_block_without_a_summary_omits_the_metadata_key
+    requests, = run_task(["block", "demo-task", "--kind", "rework", "--feedback", "Needs rework.", "--agent", "shannon"])
+
+    note = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/activities" }
+    body = JSON.parse(note[:body])
+    refute body.key?("metadata"), "no --summary means no metadata payload (legacy shape preserved)"
+  end
+
   def test_block_without_a_named_actor_does_not_stamp_the_raw_session
     requests, = run_task(
       ["block", "demo-task", "--kind", "dependency"],

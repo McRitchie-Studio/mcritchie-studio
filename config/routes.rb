@@ -300,6 +300,14 @@ Rails.application.routes.draw do
       # Stages move via PATCH update (task: { stage: ... }); no named-transition
       # endpoints — one path for the CLI, the board, and external callers.
       resources :tasks, only: [:index, :show, :create, :update, :destroy], param: :slug do
+        collection do
+          # The ATOMIC review pop (relocate-review-selection-to-server) — a COLLECTION
+          # route (no slug: the server picks WHICH task). Claims the highest-ranked
+          # reviewable GREEN-CI task in one transaction. Mirrors the per-task
+          # review_claim member routes below, one decision up (the server chooses the
+          # task instead of the caller naming it). CLI: `bin/task claim-next-review`.
+          post "claim_next_review", to: "task_review_claims#claim_next"
+        end
         member do
           # Record an INTENT — an agent STARTING a stage's work (review pair picked,
           # Steffon QA started, Avi ship e2e started) — so the board + task timeline

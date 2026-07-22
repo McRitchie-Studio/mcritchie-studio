@@ -269,4 +269,47 @@ class ReviewClaimCliTest < Minitest::Test
       assert_equal "Gastly", flags["label"]
     end
   end
+
+  # --- [unit] claim-next-review: the ATOMIC server pop --------------------------
+  # The server picks WHICH task (highest-ranked reviewable green-CI) and claims it in
+  # one request; the CLI just relays. On success it prints JUST the slug (so a caller
+  # can `slug=$(bin/task claim-next-review)`) and, like acquire, anchors a renewer.
+  def test_unit_claim_next_prints_the_slug_writes_the_marker_and_starts_a_renewer
+    Dir.mktmpdir do |proj|
+      c = cli(projects_dir: proj,
+              data: { "claimed" => { "slug" => "popped-task" }, "holder" => { "label" => "Gastly" } })
+      code = c.run(["claim-next"])
+
+      assert_equal ReviewClaimCli::OK, code, "a claim exits 0"
+      assert_equal "popped-task\n", @out.string, "stdout is JUST the slug for `slug=$(…)` capture"
+      assert_equal "popped-task\n", File.read(marker(proj, "popped-task")),
+                   "the held-review marker records the popped slug for release"
+      assert_equal 1, @spawned.length, "the pop anchors a renewer just like acquire"
+      _env, argv = @spawned.first
+      assert_includes argv, "renew-loop"
+      assert_includes argv, "popped-task"
+      assert(c.instance_variable_get(:@api).posts.any? { |p| p[:path] == "/api/v1/tasks/claim_next_review" },
+             "it POSTs the collection pop endpoint")
+    end
+  end
+
+  def test_unit_claim_next_prints_none_and_exits_nonzero_when_nothing_eligible
+    Dir.mktmpdir do |proj|
+      c = cli(projects_dir: proj, data: { "claimed" => nil, "reason" => "no_green_ci" })
+      code = c.run(["claim-next"])
+
+      assert_equal ReviewClaimCli::NONE, code, "an empty pop exits nonzero (4), distinct from cant-run (1)"
+      refute_equal 0, code
+      assert_match(/^none$/, @out.string, "stdout says plainly there is nothing to review")
+      assert_empty @spawned, "nothing claimed ⇒ no renewer"
+      refute_path_exists marker(proj, "popped-task"), "no claim ⇒ no marker"
+    end
+  end
+
+  def test_unit_claim_next_without_a_session_id_fails_open
+    Dir.mktmpdir do |proj|
+      code = cli(env: { "TASK_REVIEW_CLAIM_SESSION" => "" }, projects_dir: proj).run(["claim-next"])
+      assert_equal ReviewClaimCli::CANT_RUN, code, "no session id → fail open (exit 1), never a false claim"
+    end
+  end
 end

@@ -333,6 +333,71 @@ class Task < ApplicationRecord
     )
   }
 
+  # The verdict of an atomic review pop. `task` is nil when nothing was claimed;
+  # `reason` names why ("claimed" / "none_reviewable" / "no_green_ci").
+  ClaimNextResult = Struct.new(:task, :outcome, :reason, keyword_init: true) do
+    def claimed?
+      task.present?
+    end
+  end
+
+  # The ATOMIC review pop (relocate-review-selection-to-server): claim the single
+  # highest-ranked reviewable task whose PR CI has concluded GREEN, in one board
+  # transaction, stamping the review lease on it. This relocates the "which task do I
+  # review next" decision bin/pr-review assembled CLIENT-side (reviewable list →
+  # per-PR live `gh` CI read → per-task acquire) into ONE authoritative SERVER pop, so
+  # the UI gets one fast answer and two parallel pr-review sessions never collide.
+  #
+  # Walks `reviewable.ordered` in rank order and, per candidate, in its OWN short
+  # transaction:
+  #   1. re-selects the row `FOR UPDATE SKIP LOCKED`, so two concurrent callers never
+  #      grind the same top task — the loser SKIPS the locked row to the next;
+  #   2. gates on Ci::ReviewGate.green? — :red / :pending / :ci_less / :none are
+  #      SKIPPED, never claimed (a non-green PR is not a review target);
+  #   3. claims it via TaskReviewClaim.acquire, whose per-claim-row lock is the FINAL
+  #      winner-picker — a claim already held by a racer skips to the next candidate.
+  # The first candidate that clears all three is returned; a non-claim commits the
+  # short transaction (releasing its row lock) so an un-green/locked task is never held.
+  #
+  # `ci_status` is the test seam mirroring bin/pr-review's injected_ci_state: a Hash
+  # `{ slug => token }` (or a bare token for the whole wave) applied AS each task's CI
+  # verdict, so a rank/skip unit test drives green vs. not-green per slug without
+  # ingesting GithubWorkflowRun rows. Production passes nil — the real DB fold runs.
+  def self.claim_next_review(session:, nonce:, label: nil, now: Time.current, ci_status: nil)
+    ordered_slugs = reviewable(now: now).ordered.pluck(:slug)
+    return ClaimNextResult.new(task: nil, outcome: nil, reason: "none_reviewable") if ordered_slugs.empty?
+
+    skipped_ungreen = false
+    ordered_slugs.each do |slug|
+      claimed = transaction do
+        task = reviewable(now: now).where(slug: slug).lock("FOR UPDATE SKIP LOCKED").first
+        next nil unless task # locked by a concurrent caller, or claimed since the pluck
+
+        unless Ci::ReviewGate.green?(task, injected: ci_status_token(ci_status, slug))
+          skipped_ungreen = true
+          next nil # red / pending / ci-less / none — never claim a non-green PR
+        end
+
+        outcome = TaskReviewClaim.acquire(task_slug: slug, session: session, nonce: nonce, label: label, now: now)
+        next nil unless outcome.acquired # claim held by a racer — skip to the next
+
+        ClaimNextResult.new(task: task, outcome: outcome, reason: "claimed")
+      end
+      return claimed if claimed
+    end
+
+    ClaimNextResult.new(task: nil, outcome: nil, reason: skipped_ungreen ? "no_green_ci" : "none_reviewable")
+  end
+
+  # The injected CI verdict for one slug (test seam) — a per-slug Hash lookup, a bare
+  # token applied to every slug, or nil (no injection → the real Ci::ReviewGate read).
+  def self.ci_status_token(injection, slug)
+    return nil if injection.nil?
+    return injection[slug] || injection[slug.to_sym] if injection.is_a?(Hash)
+
+    injection
+  end
+
   # The tasks that render in a board column. Blocked tasks ARE building tasks now
   # (a block is a building attribute), so the building column no longer folds in a
   # separate "blocked" bucket — the stage grouping already carries them.

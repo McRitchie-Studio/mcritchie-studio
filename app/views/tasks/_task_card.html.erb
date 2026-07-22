@@ -244,7 +244,7 @@
               label: "UNRESOLVED QA",
               href: task_path(task.slug), new_tab: false,
               test_id: "unresolved-feedback",
-              title: unresolved_feedback.description %>
+              title: unresolved_feedback.block_summary %>
       <% elsif block_state == :cleared %>
         <%# A prior QA block was resolved and the task is resubmitted — flag it so
             the reviewer knows to look again (pairs with the amber card tone). %>

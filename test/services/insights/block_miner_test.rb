@@ -43,6 +43,24 @@ class Insights::BlockMinerTest < ActiveSupport::TestCase
     assert_not cand.banked, "a candidate is awaiting grade, not yet banked"
   end
 
+  test "[unit] mines the full DETAILS as the lesson even when the block carries a summary" do
+    now = Time.current
+    span(task_slug: "t-split", opened_at: now - 10.minutes, seq: 0)
+    blk = Activity.create!(task_slug: "t-split", activity_type: "qa_feedback",
+                           description: "The stage transition bypasses the server guard entirely here",
+                           metadata: { "summary" => "Stage move skips server guard" },
+                           created_at: now - 5.minutes)
+    resolution(task_slug: "t-split", at: now - 1.minute)
+
+    created = assert_difference -> { ActionGrade.seeded_candidates.count }, 1 do
+      Insights::BlockMiner.mine!
+    end
+    cand = created.first || ActionGrade.seeded_candidates.last
+
+    assert_equal blk.description, cand.long_form, "the lesson is the full details, not the short summary"
+    assert_equal "The stage transition bypasses the server guard", cand.slug, "slug still derives from the details"
+  end
+
   test "[unit] is idempotent — a re-run seeds no duplicate for the same block" do
     now = Time.current
     span(task_slug: "t-idem", opened_at: now - 10.minutes)

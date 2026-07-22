@@ -332,6 +332,29 @@ Activity.create!(task_slug: cleared_block_task.slug, activity_type: "handoff",
                  description: "Added the regression test — ready for another review.",
                  metadata: { "resolves_feedback" => true }, created_at: 20.minutes.ago)
 
+# Split-blocker demo: an OPEN QA block whose feedback is split into a short
+# SUMMARY (metadata["summary"], 4-6 words — the task header headline) and the
+# full DETAILS (description — the builder's fixing prose, shown in the expand).
+# Drives the two-part-blocker e2e; the task page renders block_summary as the
+# headline and the description in a <details> disclosure.
+split_blocker_task = Task.create!(
+  title: "Split blocker demo",
+  slug: "e2e-split-blocker-demo",
+  description: "A task with an OPEN QA block whose feedback is split into summary + details.",
+  stage: "submitted",
+  priority: 1,
+  agent_slug: "carl",
+  metadata: { "devops" => { "kind" => "bug", "repositories" => ["mcritchie-studio"] } }
+)
+Activity.create!(
+  task_slug: split_blocker_task.slug, activity_type: "qa_feedback", agent_slug: "avi",
+  description: "The stage transition PATCH trusts the client-sent stage and bypasses the " \
+               "server-side guard, so a caller can force a task straight to reviewed. Re-gate " \
+               "it on the server, add a regression test at the request tier, and resubmit.",
+  metadata: { "summary" => "Stage move skips server guard" },
+  created_at: 30.minutes.ago
+)
+
 # A second submitted task for the live STAGE-CHANGE round-trip: the e2e moves it
 # submitted→reviewed and asserts the card FLIPs columns AND the per-column count
 # badges update (the regression guard for the updateCounts() call in applyLiveUpdate).
