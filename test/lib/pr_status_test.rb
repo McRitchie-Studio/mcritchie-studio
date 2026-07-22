@@ -41,7 +41,8 @@ class PrStatusTest < Minitest::Test
   def test_conflicting_pr_prints_the_summary_plus_the_hint
     json = JSON.generate(
       "number" => 157, "state" => "OPEN", "mergeable" => "CONFLICTING",
-      "mergeStateStatus" => "DIRTY", "isDraft" => false, "statusCheckRollup" => []
+      "mergeStateStatus" => "DIRTY", "isDraft" => false, "statusCheckRollup" => [],
+      "baseRefName" => "accepted"
     )
     out, status = run_with_gh(json, "157")
 
@@ -49,6 +50,8 @@ class PrStatusTest < Minitest::Test
     assert_includes out, "mergeState=DIRTY"
     assert_includes out, "ci=none", "no checks registered on an unmergeable PR"
     assert_includes out, "CONFLICTING — GitHub skips CI", "the diagnostic hint fires"
-    assert_includes out, "merge origin/release"
+    # conflict-remedy-names-wrong-branch: name the PR's ACTUAL base, never a hardcoded release
+    assert_includes out, "merge origin/accepted", "the hint names the PR's real base"
+    refute_includes out, "origin/release", "feature PRs target accepted, not release"
   end
 end

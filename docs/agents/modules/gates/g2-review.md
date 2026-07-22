@@ -18,7 +18,7 @@ The gate flow order: [G1 Cert](g1-cert.md) → [DoR](dor.md) → **G2 Review**
   supervisor checks the PR's CI **before spawning the pair**: red bounces the
   task back naming the failing checks (no reviewer tokens burned), a
   merge-conflicted PR (`mergeStateStatus DIRTY`) bounces back too with
-  "rebase/merge release" named (its CI is never coming — GitHub can't compute
+  "merge the PR's base in and resolve" named (its CI is never coming — GitHub can't compute
   the merge commit), a **ci-less** PR (zero check-runs plus a *refuted* merge)
   bounces back with "merge the base in and resolve" named, pending defers to a
   later wave, green proceeds.
@@ -63,8 +63,8 @@ What the supervisor records, per reviewed task:
      attempt** with a `ci` SOP (`--meta outcome=ci-red`, actor `avi`) — not a
      G2 review lane, since no reviewer ran. No reviewer tokens burned.
    - **conflicted** (`mergeStateStatus DIRTY`) → the same block-back shape
-     (`--meta outcome=ci-conflicted`), with rebase/merge-release named as the
-     fix. A conflicted PR gets **no CI at all** — GitHub cannot compute the
+     (`--meta outcome=ci-conflicted`), with "merge the PR's base in and resolve"
+     named as the fix. A conflicted PR gets **no CI at all** — GitHub cannot compute the
      merge commit — so deferring "until CI reports" would strand it in
      `submitted` forever (the PR-#509 stall, 2026-07-12).
    - **ci-less** (zero check-runs **and** a *refuted* merge) → the same

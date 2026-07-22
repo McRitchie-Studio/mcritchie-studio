@@ -160,7 +160,7 @@ submitted tasks first, **checks the PR's live GitHub CI before anything else**
 (builders submit without waiting for CI, so this pre-spawn check is the
 authoritative CI verdict: **red** → the task is blocked back with the failing
 checks named, no reviewers spawned; **conflicted** (`mergeStateStatus DIRTY`) →
-blocked back too, with rebase/merge-release named as the fix — a conflicted PR
+blocked back too, with "merge the PR's base in and resolve" named as the fix — a conflicted PR
 gets **no CI at all** (GitHub can't compute the merge commit), so deferring
 would strand it in `submitted`; **ci-less** (zero check-runs and a *refuted*
 merge) → blocked back as well, with "merge the base in and resolve" named — a

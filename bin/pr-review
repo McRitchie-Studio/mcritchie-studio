@@ -22,7 +22,7 @@
 #   red      → block the task back (bin/task block --kind rework) with the failing
 #              checks named — no reviewer tokens burned; the bounce records as a
 #              failed dor_review (gate-zero) attempt with a ci SOP.
-#   conflicted → block the task back too (rebase/merge release named as the fix):
+#   conflicted → block the task back too (merge the PR's base in and resolve named as the fix):
 #              a merge-conflicted PR (mergeStateStatus DIRTY) gets NO CI at all —
 #              GitHub cannot compute the merge commit — so deferring "until CI
 #              reports" would strand it in submitted forever (the PR-#509 stall).
@@ -902,10 +902,8 @@ def finish_review(review, events, handled, deferred_until)
     gate_write("close", "task", slug, "dor_review", "--failed", "--actor", "avi",
                "--sop-json", JSON.generate({ "sop" => "ci", "result" => "fail" }),
                "--meta", "outcome=ci-conflicted")
-    feedback = "pr-review CI gate: the PR is merge-CONFLICTED against its base (mergeStateStatus DIRTY) — GitHub " \
-               "cannot compute the merge commit, so CI never fires for this PR (it has NO checks coming, not " \
-               "pending ones) and deferring would strand it in submitted. Rebase or merge release into the branch " \
-               "(git fetch origin && git merge origin/release), resolve the conflicts, push, and resubmit."
+    feedback = "pr-review CI gate — deferring a conflicted PR would strand this task in submitted. " +
+               CiStatus.conflicted_remedy(review[:ci_conflicted])
     ok = task_write(["block", slug, "--kind", "rework", "--feedback", feedback, "--agent", "avi"])
     events << { slug: slug, status: ok ? :blocked : :tool_failure, category: "ci-conflicted",
                 reason: "PR merge-conflicted against base (mergeStateStatus DIRTY)", reviewers: [] }
@@ -1087,7 +1085,7 @@ def print_retrospective(started_at, events, idle_cycles)
   suggestions << "improve PR/task/worktree readiness before submission" if counts["request-changes"].to_i.positive?
   suggestions << "separate CI-waiting cards from review-ready intake" if counts["wait-for-ci"].to_i.positive?
   suggestions << "red-CI submits reached review — check builders see dor-check's submit-side CI suggestion" if counts["ci-red"].to_i.positive?
-  suggestions << "conflicted PRs reached review — builders should rebase on release before submit (dor-check now flags DIRTY)" if counts["ci-conflicted"].to_i.positive?
+  suggestions << "conflicted PRs reached review — builders should merge their PR's base in and resolve conflicts before submit (dor-check now flags DIRTY)" if counts["ci-conflicted"].to_i.positive?
   suggestions << "CI-less PRs reached review — a stale base means GitHub runs NO CI at all; builders should merge the current base in before submit (dor-check now flags it)" if counts["ci-less"].to_i.positive?
   suggestions << "add clearer high-risk escalation rules" if counts["conductor-review"].to_i.positive?
   suggestions << "no systemic refactor surfaced in this heartbeat" if suggestions.empty?

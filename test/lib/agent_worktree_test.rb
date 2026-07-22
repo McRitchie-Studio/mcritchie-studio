@@ -311,7 +311,7 @@ class AgentWorktreeTest < Minitest::Test
 
   def ship_hold(liveness, task)
     run_in_script(<<~RUBY)
-      def deployer_claim_liveness; #{liveness.inspect}; end
+      def deployer_claim_liveness(fresh: false); #{liveness.inspect}; end
       print claim_hold({ task: #{task.inspect}, dir: "/repo/.worktrees/#{task}", env: {} }).inspect
     RUBY
   end
@@ -343,7 +343,7 @@ class AgentWorktreeTest < Minitest::Test
     # Only the fixed-path _ship/_gate are guarded by the deployer claim; a normal task desk
     # must NOT consult it (that would wedge task reclaim on every live ship).
     out = run_in_script(<<~RUBY)
-      def deployer_claim_liveness; :live; end
+      def deployer_claim_liveness(fresh: false); :live; end
       def task_record_for_pr(_r, fresh: false); { "metadata" => { "devops" => {} } }; end
       print claim_hold({ task: "t", dir: "/repo/.worktrees/t", env: { "TASK_RECORD_SLUG" => "t" } }).inspect
     RUBY
@@ -352,7 +352,7 @@ class AgentWorktreeTest < Minitest::Test
 
   def test_reclaim_verdict_withholds_ship_workspace_during_a_live_ship
     out = run_in_script(<<~RUBY)
-      def deployer_claim_liveness; :live; end
+      def deployer_claim_liveness(fresh: false); :live; end
       record = { task: "_ship", dir: "/repo/.worktrees/_ship", dirty: false, merged: true,
                  equivalent_to_main: true, env: {} }
       print reclaim_verdict(record).inspect
@@ -363,12 +363,43 @@ class AgentWorktreeTest < Minitest::Test
 
   def test_reclaim_verdict_reclaims_ship_workspace_when_no_ship_is_live
     out = run_in_script(<<~RUBY)
-      def deployer_claim_liveness; :none; end
+      def deployer_claim_liveness(fresh: false); :none; end
       record = { task: "_gate", dir: "/repo/.worktrees/_gate", dirty: false, merged: true,
                  equivalent_to_main: true, env: {} }
       print reclaim_verdict(record).inspect
     RUBY
     assert_equal "[true, nil]", out, "with no live ship, _gate is a normal reclaim candidate (bin/release recreates it)"
+  end
+
+  # --- reclaim TOCTOU: fresh: true RE-READS the deployer claim under-lock ---------------
+  #
+  # deployer_claim_liveness memoizes @deployer_claim_liveness PROCESS-WIDE (one board read
+  # per command). The reclaim under-lock re-verify (reclaim_verdict → claim_hold, fresh:
+  # true) exists to catch a claim taken AFTER the candidate list was selected — but the
+  # ship-workspace path used to IGNORE `fresh:`, so a ship STARTING mid `cleanup --reclaim
+  # --yes` loop was read from the memoized stale :none and its `_ship`/`_gate` reclaimed,
+  # breaking the in-flight deploy. The build-claim guard already bypasses its own memo on the
+  # re-verify (task_record_for_pr fresh:); this pins the SAME parity for the deployer claim.
+  #
+  # The EFFECT under test — not a branch, not "a method was called": with the memo seeded
+  # :none and the LIVE state then changed to a held ship claim, a non-fresh re-check STILL
+  # reads the stale :none (reclaimable), while fresh: true RE-READS and returns the CURRENT
+  # held value (WITHHELD). compute_deployer_claim_liveness is stubbed to a mutable state so
+  # the memo/bypass distinction is observable through the REAL memoization logic.
+  def test_reclaim_toctou_fresh_reverify_rereads_the_live_deployer_claim
+    out = run_in_script(<<~RUBY)
+      $live = :none
+      def compute_deployer_claim_liveness; $live; end
+      rec = { task: "_ship", dir: "/repo/.worktrees/_ship", env: {} }
+      seeded = deployer_claim_liveness              # memoizes the stale :none from selection
+      $live  = :live                                # a ship STARTS after the list was picked
+      stale  = claim_hold(rec.dup)                  # non-fresh → memoized :none → reclaimable (nil)
+      fresh  = claim_hold(rec.dup, fresh: true)     # under-lock re-verify → MUST re-read → :live → withhold
+      print [seeded, stale.nil?, fresh].inspect
+    RUBY
+    assert_match(/\A\[:none, true, ".*ship is live/, out,
+                 "fresh: true RE-READS the deployer claim and returns the CURRENT held-ship value (WITHHELD), " \
+                 "even though the process-wide memo was seeded :none and a non-fresh re-check still reads that stale :none")
   end
 
   # --- the held-desk PROSE must not invert under a substring test -------------------------
