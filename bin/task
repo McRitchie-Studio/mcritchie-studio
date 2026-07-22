@@ -1485,16 +1485,18 @@ when "session-mascot"
     nil # best-effort: never disrupt session start
   end
 when "block"
-  usage = "usage: bin/task block <slug> [--kind environment|rework|dependency] [--feedback \"...\"] [--agent A]"
+  usage = "usage: bin/task block <slug> [--kind environment|rework|dependency] [--summary \"4-6 words\"] [--feedback \"...\"] [--agent A]"
   slug = positional!(ARGV.shift || die!(usage), usage)
-  kind = feedback = agent = nil
+  kind = feedback = summary = agent = nil
   i = 0
   while i < ARGV.length
     case ARGV[i]
-    when "--kind"     then kind = ARGV[i + 1] || die!("--kind needs a value"); i += 2
-    when "--feedback" then feedback = ARGV[i + 1] || die!("--feedback needs a value"); i += 2
-    when "--agent"    then agent = ARGV[i + 1] || die!("--agent needs a value"); i += 2
-    else unknown_flag!(ARGV[i], valid: %w[--kind --feedback --agent], context: "block")
+    when "--kind"                  then kind = ARGV[i + 1] || die!("--kind needs a value"); i += 2
+    when "--summary"               then summary = ARGV[i + 1] || die!("--summary needs a value"); i += 2
+    # --feedback is the details body; --details is an alias for it.
+    when "--feedback", "--details" then feedback = ARGV[i + 1] || die!("#{ARGV[i]} needs a value"); i += 2
+    when "--agent"                 then agent = ARGV[i + 1] || die!("--agent needs a value"); i += 2
+    else unknown_flag!(ARGV[i], valid: %w[--kind --summary --feedback --details --agent], context: "block")
     end
   end
   die!("--kind must be one of: #{BLOCK_KINDS.join(", ")}") if kind && !BLOCK_KINDS.include?(kind)
@@ -1514,6 +1516,10 @@ when "block"
   if feedback
     note = { "task_slug" => slug, "activity_type" => "qa_feedback", "description" => feedback }
     note["agent_slug"] = blocker unless blocker.empty?
+    # The 4-6 word summary rides in the activity's metadata (no column, no
+    # migration). The details stay in `description`; Activity#block_summary reads
+    # this back and falls back to a derived headline for legacy blocks.
+    note["metadata"] = { "summary" => summary.strip } if summary && !summary.strip.empty?
     api(:post, "/api/v1/activities", note)
     puts "noted [qa_feedback] on #{slug}"
   end

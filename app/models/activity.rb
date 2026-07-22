@@ -62,7 +62,34 @@ class Activity < ApplicationRecord
     activity_type == "handoff" && truthy_metadata?("resolves_feedback")
   end
 
+  # The short (4-6 word) headline for a blocker — what the task header and card
+  # tooltip show, keeping the glance-level surface clean while `description`
+  # carries the full fixing detail for the builder. A new block stores this in
+  # `metadata["summary"]` (written by `bin/task block --summary`). A LEGACY block
+  # (raised before the split) has no summary, so we DERIVE one from the details:
+  # the first line, truncated to BLOCK_SUMMARY_WORDS words with an ellipsis, so
+  # old blockers still render a clean headline.
+  BLOCK_SUMMARY_WORDS = 6
+
+  def block_summary
+    stored = metadata.to_h["summary"].to_s.strip
+    return stored if stored.present?
+
+    derived_block_summary
+  end
+
   private
+
+  # First line of the details, capped at BLOCK_SUMMARY_WORDS words. When the
+  # details are already that short, the summary IS the details (the header render
+  # then skips the redundant expand).
+  def derived_block_summary
+    first_line = description.to_s.strip.lines.first.to_s.strip
+    words = first_line.split(/\s+/)
+    return first_line if words.length <= BLOCK_SUMMARY_WORDS
+
+    "#{words.first(BLOCK_SUMMARY_WORDS).join(" ")}…"
+  end
 
   # Enqueue the block miner for this task the moment a block is resolved. Best-effort
   # (a broken queue must not fail the handoff): an enqueue error is captured to
