@@ -111,6 +111,19 @@ lease too — onto the RELEASE RECORD (section B) — leaving only `clean-up` on
 `avi` shift, because it sweeps shared worktrees rather than one release. This realizes
 the "per-act lanes" follow-up as per-task / per-release claims rather than a lane split.
 
+**The atomic server-side pop (2026-07-22).** The "which task next" decision above is
+assembled CLIENT-side in `bin/pr-review` (fetch the reviewable queue → read each PR's
+CI → `acquire` one). `POST /api/v1/tasks/claim_next_review` (`Task.claim_next_review`,
+`Api::V1::TaskReviewClaimsController#claim_next`) relocates that whole decision into ONE
+authoritative board transaction: it walks `reviewable.ordered`, filters to PRs whose CI
+concluded GREEN — the DB-native green fold `Ci::ReviewGate` runs over the ingested
+`GithubWorkflowRun` rows for the task's PR head_sha, reusing `bin/lib/ci_status.rb`'s
+verdict semantics — and claims the top one via `TaskReviewClaim.acquire`, each candidate
+selected `FOR UPDATE SKIP LOCKED` so two concurrent callers pop DIFFERENT tasks. The CLI
+is `bin/task claim-next-review` (prints the claimed slug / exit 0, or `none` / exit 4).
+It is the server-authoritative counterpart to the per-task `acquire` above; `bin/pr-review`
+does not consume it yet (that wiring is a later task).
+
 ## B — the release-record conductor claim (`assembler` / `deployer`)
 
 `ReleaseConductorClaim` (`app/models/release_conductor_claim.rb`) is the SAME lease

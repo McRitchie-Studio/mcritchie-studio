@@ -35,6 +35,40 @@ module Api
         })
       end
 
+      # POST /api/v1/tasks/claim_next_review { session, nonce, label }
+      #
+      # The ATOMIC review pop (relocate-review-selection-to-server) — a COLLECTION
+      # action (no slug: the SERVER picks WHICH task). Claims the single
+      # highest-ranked reviewable task whose PR CI has concluded GREEN and stamps the
+      # review lease on it, one authoritative server decision replacing bin/pr-review's
+      # client-side reviewable-list → per-PR `gh` CI read → per-task acquire loop.
+      #
+      # Always 200. On a claim: { claimed: <task>, disposition, holder }. When nothing
+      # is eligible (no reviewable task, or none green): { claimed: null, reason }. An
+      # empty pop is a NORMAL outcome, not an error — the caller idles, it does not
+      # retry-storm. The write is wrapped in rescue_and_log (backend discipline): a
+      # failure lands in ErrorLog before the Layer-1 500, rather than escaping unlogged.
+      def claim_next
+        result = nil
+        rescue_and_log do
+          result = Task.claim_next_review(
+            session: claim_params[:session],
+            nonce:   claim_params[:nonce],
+            label:   claim_params[:label]
+          )
+        end
+
+        if result.claimed?
+          render_data({
+            "claimed"     => claimed_task_json(result.task),
+            "disposition" => result.outcome.disposition.to_s,
+            "holder"      => result.outcome.claim.holder_info
+          })
+        else
+          render_data({ "claimed" => nil, "reason" => result.reason.to_s })
+        end
+      end
+
       # POST /api/v1/tasks/:slug/review_claim/renew { session, nonce } — the
       # heartbeat. 200 { renewed: true } when this instance still holds the review;
       # 204 no-op otherwise (lost/expired/never-held — never an error).
@@ -56,6 +90,18 @@ module Api
       end
 
       private
+
+      # The claimed task's identity + review handles for the CLI/UI — the slug the
+      # caller reviews next, plus the PR/branch it lands on.
+      def claimed_task_json(task)
+        {
+          "slug"   => task.slug,
+          "title"  => task.title,
+          "stage"  => task.stage,
+          "pr_url" => task.devops_url("pr"),
+          "branch" => task.devops_field("branch")
+        }
+      end
 
       def claim_params
         params.permit(:slug, :session, :nonce, :label)

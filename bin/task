@@ -1582,6 +1582,16 @@ when "review-claim"
   # review by another) · 1 fail-open (no session / no board).
   require_relative "lib/review_claim_cli"
   exit(ReviewClaimCli.new.run(ARGV))
+when "claim-next-review"
+  # The ATOMIC server-side review pop (relocate-review-selection-to-server): ask the
+  # board for the single highest-ranked reviewable GREEN-CI task and claim it in ONE
+  # request, instead of assembling that decision client-side (reviewable list →
+  # per-PR CI read → per-task acquire). Prints the claimed slug (exit 0), or "none"
+  # (exit 4) when nothing is eligible. Delegated to ReviewClaimCli, reusing its
+  # live-instance identity + detached-renewer machinery. ARGV is [<flags>] (the
+  # subcommand is already shifted off).
+  require_relative "lib/review_claim_cli"
+  exit(ReviewClaimCli.new.run(["claim-next", *ARGV]))
 else
   print_usage!
   exit(cmd == "help" || HELP_FLAGS.include?(cmd) ? 0 : 1)
