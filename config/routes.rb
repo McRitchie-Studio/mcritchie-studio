@@ -309,6 +309,16 @@ Rails.application.routes.draw do
           # the block columns and lands the task on building (no →blocked stage).
           patch :block
           post "review_events", to: "review_events#create", as: :review_events
+          # Per-task REVIEW claim (per-task-pr-review-claim) — the review LANE's
+          # per-task lease, so many pr-review sessions run in parallel and skip a
+          # task already under live review. `review_claim` is the atomic
+          # take-or-skip; `renew` the detached renewer's heartbeat; `release` the
+          # clean review-end drop. Mirrors the role-lease (devops_shifts) one level
+          # down. The submitted-and-unclaimed query is GET /tasks?reviewable=1.
+          get  "review_claim", to: "task_review_claims#show", as: :review_claim_status
+          post "review_claim", to: "task_review_claims#acquire", as: :review_claim
+          post "review_claim/renew", to: "task_review_claims#renew", as: :review_claim_renew
+          post "review_claim/release", to: "task_review_claims#release", as: :review_claim_release
           post "events/:stage/start", to: "task_events#start", as: :event_start
           post "events/:stage/complete", to: "task_events#complete", as: :event_complete
           post "events/:stage/fail", to: "task_events#fail", as: :event_fail

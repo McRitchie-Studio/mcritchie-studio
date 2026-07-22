@@ -625,12 +625,79 @@ def task_wave_size(remaining_reviews)
   [pair_capacity, remaining_reviews].min
 end
 
+# ── Per-task review claim — the parallel-review gate ─────────────────────────
+# MANY pr-review sessions run at once; the claim (bin/task review-claim) makes each
+# task at-most-one-reviewer WITHOUT standing a whole session down. We review a task
+# ONLY on a CONFIRMED claim — the whole point is no-double-review, so a claim we could
+# not confirm must NOT be treated as held. `acquire` returns:
+#   :ours        exit 0  — we hold the claim; review it.
+#   :held        exit 10 — a DIFFERENT live session holds it; skip to the next task.
+#   :unconfirmed else    — no session id / board unreachable / error. We do NOT know we
+#                          hold it, so we must NOT review (proceeding would risk the
+#                          double-review this gate exists to prevent); defer instead.
+# The CLI's own ✅/⏭️ line is echoed so the wave log names who holds the task.
+def review_claim_acquire(slug)
+  out, err, status = run_capture(managed_command(TASK_BIN, "review-claim", "acquire", slug))
+  msg = [out, err].map(&:to_s).join.strip
+  puts msg.gsub(/^/, "  ") unless msg.empty?
+  case status&.exitstatus
+  when 0  then :ours
+  when 10 then :held
+  else :unconfirmed
+  end
+rescue StandardError => e
+  warn "  review-claim acquire error (#{e.class}: #{e.message}) — treating as UNCONFIRMED (will not review)"
+  :unconfirmed
+end
+
+# The board's UNCLAIMED review queue — submitted PRs with NO live review claim
+# (bin/task list --stage submitted --reviewable, backed by Task.reviewable). This is
+# the operator's headline query: the supervisor SELECTS candidates from it instead of
+# fetching every submitted task and leaning on the claim alone. Returns the reviewable
+# slugs, or nil when the board can't answer (feature not yet deployed / down / error),
+# in which case the caller does NOT pre-filter and the atomic per-task claim remains
+# the sole guarantee. `list` always ends in a "(N task(s))" line, so its absence marks
+# a non-list response we must not parse into a filter.
+def reviewable_slugs
+  out, _err, status = run_capture(managed_command(TASK_BIN, "list", "--stage", "submitted", "--reviewable"))
+  return nil unless status&.success? && out.include?("task(s)")
+
+  out.lines.filter_map { |line| line[/\A(\S+)\s+\[\w+\]/, 1] }
+rescue StandardError
+  nil
+end
+
+# Drop the claim once the review lands (verdict / block / defer) so the next session
+# (or wave) can pick the task up immediately; on a crash the lease lapses within its
+# TTL, so a missed release is self-healing, never a wedged task.
+def review_claim_release(slug)
+  run_capture(managed_command(TASK_BIN, "review-claim", "release", slug))
+rescue StandardError
+  nil
+end
+
 def start_review(task, review_number)
   slug = task.fetch("slug")
   puts
   puts "Review #{review_number}/#{OPTIONS.fetch(:limit)}: #{slug} #{task["title"]}"
   puts "  submitted_at=#{task["submitted_at"] || "-"} created_at=#{task["created_at"]} task=#{task["task_url"]}"
   puts "  pr=#{task.dig("devops", "pr_url") || "missing"}"
+
+  base = { task: task, slug: slug, reviewers: [], reviewer_slugs: [], launches: [] }
+
+  # Per-task review claim (the parallel-review gate) — take the task before spending
+  # any CI or reviewer tokens on it. We review ONLY when we CONFIRMED we hold it:
+  # :held (a live session already has it) SKIPS to the next task; :unconfirmed (no
+  # session id / board unreachable) must NOT review — proceeding on a claim we cannot
+  # confirm is the double-review this gate prevents, so DEFER it. A dry run spawns
+  # nothing, so it never claims. Released after finish_review; a crash self-heals via
+  # the lease TTL.
+  if OPTIONS.fetch(:run)
+    case review_claim_acquire(slug)
+    when :held        then return base.merge(skipped: true)
+    when :unconfirmed then return base.merge(claim_unconfirmed: true)
+    end
+  end
 
   # CI gate-zero — the supervisor's opening act (ci-gate-review-handoff): the
   # builder submitted without waiting for CI, so check the PR's LIVE CI before
@@ -639,7 +706,6 @@ def start_review(task, review_number)
   # Unverified/no_pr/closed/merged proceed — the primary's strict gate-zero
   # (dor-check --gate-role review) is the authoritative verdict.
   ci = supervisor_ci_check(task)
-  base = { task: task, slug: slug, reviewers: [], reviewer_slugs: [], launches: [] }
   case ci[:state]
   when :red
     puts "  ci=RED (#{Array(ci[:failing]).join(", ")}) — blocking back without spawning reviewers"
@@ -975,6 +1041,13 @@ loop do
   snapshot = fetch_snapshot
   candidates = submitted_tasks(snapshot).reject { |task| handled[task.fetch("slug")] }
   candidates = candidates.select { |task| due_for_retry?(task.fetch("slug"), deferred_until) }
+  # Select from the board's UNCLAIMED review queue — don't even attempt tasks already
+  # under review elsewhere (the operator's headline query, GET ...?reviewable=1).
+  # Best-effort: nil means the board couldn't answer, so we fall back to the atomic
+  # claim as the sole guarantee rather than reviewing blind.
+  if OPTIONS.fetch(:run) && (queue = reviewable_slugs)
+    candidates = candidates.select { |task| queue.include?(task.fetch("slug")) }
+  end
 
   if candidates.empty?
     idle_cycles += 1
@@ -996,7 +1069,24 @@ loop do
   end
 
   started.each do |review|
+    # Not reviewed this wave, and not claimed by us, so nothing to resolve or release:
+    #   :skipped           — a live session already holds the claim (:held).
+    #   :claim_unconfirmed — we could NOT confirm we hold it (no session id / board
+    #                        down); reviewing would risk the double-review the claim
+    #                        prevents, so we declined — say so LOUDLY.
+    # Both DEFER so this session moves on to other reviewable tasks and idles out
+    # instead of spinning, and neither resolves a verdict from stale scout reports.
+    if review[:claim_unconfirmed]
+      puts "  #{review.fetch(:slug)}: review claim UNCONFIRMED — NOT reviewing " \
+           "(no-double-review needs a confirmed claim); deferring"
+    end
+    if review[:skipped] || review[:claim_unconfirmed]
+      deferred_until[review.fetch(:slug)] = Time.now + OPTIONS.fetch(:defer_seconds)
+      next
+    end
+
     completed_reviews += 1 if finish_review(review, events, handled, deferred_until)
+    review_claim_release(review.fetch(:slug)) if OPTIONS.fetch(:run)
   end
 
   break if OPTIONS.fetch(:once)

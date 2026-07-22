@@ -179,6 +179,12 @@ class TaskCliTest < Minitest::Test
       end
     end
 
+    # The tasks INDEX (bin/task list): data is an ARRAY, not a single record. Without
+    # this the fallback below returns one object and `list` would iterate a Hash.
+    if method == "GET" && path =~ %r{\A/api/v1/tasks(\?.*)?\z}
+      return ["200 OK", JSON.generate("data" => [])]
+    end
+
     # The GET in the move read-merge returns an existing task carrying prior
     # devops (configurable per-test via stub_devops), so the test can prove the
     # session stamp / claim is MERGED, not a wipe, and seed an existing claim. Its
@@ -1715,6 +1721,19 @@ class TaskCliTest < Minitest::Test
     assert_empty requests
     assert_match(/unknown flag "--stag"/, err)
     assert_match(/--stage/, err, "a close typo earns a suggestion")
+  end
+
+  # --reviewable is the parallel-review queue filter: the SOP documents
+  # `bin/task list --stage submitted --reviewable`, so the flag must be ACCEPTED (not
+  # "unknown flag") and must append reviewable=1 — the same read as
+  # GET /api/v1/tasks?reviewable=1, powered by Task.reviewable.
+  def test_list_reviewable_appends_the_query_param
+    requests, _out, err, status = run_task(["list", "--stage", "submitted", "--reviewable"])
+    assert status.success?, "--reviewable is a valid list filter, not an unknown flag (#{err})"
+    get = requests.find { |r| r[:method] == "GET" && r[:path].start_with?("/api/v1/tasks?") }
+    assert get, "list issues a GET to the tasks index"
+    assert_includes get[:path], "stage=submitted"
+    assert_includes get[:path], "reviewable=1", "--reviewable appends reviewable=1"
   end
 
   # A misspelling (not a prefix) still earns the nearest-flag suggestion.

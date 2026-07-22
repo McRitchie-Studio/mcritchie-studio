@@ -83,13 +83,28 @@ fi
 
 usage() {
   cat <<USAGE
-Usage: bin/install-agent-docs [install|check]
+Usage: bin/install-agent-docs [install|check|manifest]
 
 install  Copy the agent entrypoints to \$PROJECTS_DIR (AGENTS.md + CLAUDE.md),
          mirror user-global skills, and prune retired managed skills.
 check    Verify \$PROJECTS_DIR/{AGENTS,CLAUDE}.md plus ~/.claude/skills and
          ~/.codex/skills match the tracked sources, with retired skills absent.
+manifest DRY RUN: write NOTHING; print every absolute path install WOULD write,
+         one per line, each prefixed "WRITE\\t". Lets a guard assert ATTRIBUTABLY
+         that no destination escapes a sandbox — without fingerprinting the
+         runtime-written skills dirs (which the Claude/Codex runtimes also touch).
 USAGE
+}
+
+# Manifest (dry-run) chokepoint. Every write site calls this with its ABSOLUTE
+# destination; in `manifest` mode it prints the path (and the site then performs no
+# write), in every other mode it is a silent no-op. So the manifest is emitted by the
+# SAME code paths that write — a destination added without a note_write is a destination
+# that also never installs, which its own generation test would catch. Always returns 0
+# so it is safe under `set -e` at a bare `note_write "$x"` call.
+note_write() {
+  [ "$MODE" = "manifest" ] && printf 'WRITE\t%s\n' "$1"
+  return 0
 }
 
 # Compare one source against its installed target. Missing target counts as drift
@@ -103,12 +118,14 @@ check_pair() {
 # $PROJECTS_DIR for the root docs — mkdir -p is idempotent for both).
 install_pair() {
   local src="$1" tgt="$2"
+  note_write "$tgt"
+  [ "$MODE" = "manifest" ] && return 0
   mkdir -p "$(dirname "$tgt")"
   cp "$src" "$tgt"
 }
 
 case "$MODE" in
-  install|check) ;;
+  install|check|manifest) ;;
   -h|--help|help) usage; exit 0 ;;
   *) echo "ERROR: unknown mode: $MODE" >&2; usage >&2; exit 64 ;;
 esac
@@ -165,12 +182,17 @@ if [ "$MODE" = "check" ]; then
   exit "$status"
 fi
 
-mkdir -p "$PROJECTS_DIR"
-echo "Installed:"
+note_write "$PROJECTS_DIR"
+[ "$MODE" = "manifest" ] || mkdir -p "$PROJECTS_DIR"
+[ "$MODE" = "manifest" ] && echo "Would write (dry run):" || echo "Installed:"
+# Retired skills: a REMOVAL is a write to that path too, so a mis-sandboxed run
+# would rm inside a real skills dir — the manifest names every one it WOULD remove.
 for skill in "${RETIRED_SKILLS[@]}"; do
   for dest_dir in "${SKILLS_DEST_DIRS[@]}"; do
     retired="$dest_dir/$skill"
-    if [ -e "$retired" ]; then
+    if [ "$MODE" = "manifest" ]; then
+      note_write "$retired"
+    elif [ -e "$retired" ]; then
       rm -rf "$retired"
       echo "  removed retired skill $retired"
     fi
@@ -179,11 +201,13 @@ done
 for pair in "${ALL_PAIRS[@]}"; do
   src="${pair%%:*}"; tgt="${pair##*:}"
   install_pair "$src" "$tgt"
-  echo "  $tgt (from $src)"
+  [ "$MODE" = "manifest" ] || echo "  $tgt (from $src)"
 done
 
 ensure_codex_tui_config() {
   local config="$1"
+  note_write "$config"
+  [ "$MODE" = "manifest" ] && return 0
   mkdir -p "$(dirname "$config")"
   ruby - "$config" <<'RUBY'
 path = ARGV.fetch(0)
@@ -269,6 +293,8 @@ RUBY
 
 install_zprofile_ruby_path() {
   local zprofile="$1" ruby_path="$2"
+  note_write "$zprofile"
+  [ "$MODE" = "manifest" ] && return 0
   mkdir -p "$(dirname "$zprofile")"
   ruby - "$zprofile" "$ruby_path" <<'RUBY'
 require "shellwords"
@@ -376,6 +402,11 @@ RUBY
 
 install_codex_managed_requirements() {
   local requirements="$1" cmd="$2" managed_dir="$3" staged="$4" insights_cmd="$5" capture_cmd="$6" close_open_cmd="$7"
+  note_write "$staged"
+  note_write "$requirements"
+  # Manifest: return SUCCESS so the caller's `then` branch (which reaches
+  # prune_codex_user_hook -> note_write "$codex_hooks") is the path enumerated.
+  [ "$MODE" = "manifest" ] && return 0
   mkdir -p "$(dirname "$staged")"
   render_codex_managed_requirements "$cmd" "$managed_dir" "$insights_cmd" "$capture_cmd" "$close_open_cmd" > "$staged"
 
@@ -469,6 +500,8 @@ RUBY
 
 prune_codex_user_hook() {
   local hooks="$1"
+  note_write "$hooks"
+  [ "$MODE" = "manifest" ] && return 0
   command -v jq >/dev/null 2>&1 || return 0
   [ -f "$hooks" ] || return 0
 
@@ -504,6 +537,8 @@ prune_codex_user_hook() {
 
 install_codex_user_hook() {
   local hooks="$1" cmd="$2" insights_cmd="$3" capture_cmd="$4" close_open_cmd="$5"
+  note_write "$hooks"
+  [ "$MODE" = "manifest" ] && return 0
   command -v jq >/dev/null 2>&1 || return 0
 
   mkdir -p "$(dirname "$hooks")"
@@ -611,7 +646,13 @@ install_codex_user_hook() {
 # hooks must point at the primary checkout so they survive worktree cleanup.
 # Idempotent: only added when absent, so it never clobbers user settings.
 settings="$HOME/.claude/settings.json"
-if command -v jq >/dev/null 2>&1; then
+note_write "$settings"
+# The jq blocks below — and the codex hook blocks above — write transient files via
+# `mktemp` (many sites) and `mv` them onto their target. The durable destinations are
+# already named; name the scratch ROOT too so the manifest reflects those writes, and a
+# TMPDIR pointed outside the sandbox is caught like any other escape.
+note_write "${TMPDIR:-/tmp}"
+if [ "$MODE" != "manifest" ] && command -v jq >/dev/null 2>&1; then
   mkdir -p "$HOME/.claude"
   [ -f "$settings" ] || echo '{}' > "$settings"
   if ! jq -e '.statusLine' "$settings" >/dev/null 2>&1; then

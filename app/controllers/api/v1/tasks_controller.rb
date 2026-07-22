@@ -5,7 +5,7 @@ module Api
       # rejected with a 400 rather than silently ignored — a `?status=submitted`
       # used to fall through to "no filter" and return EVERY task (the param is
       # `stage`, not `status`). `page`/`per_page` are read by Api::Paginatable.
-      INDEX_PARAMS = %w[stage agent_slug page per_page].freeze
+      INDEX_PARAMS = %w[stage agent_slug reviewable page per_page].freeze
 
       before_action :capture_task_event_context, only: [:create, :update, :intent, :block]
       before_action :set_task, only: [:show, :update, :destroy, :intent, :block]
@@ -16,6 +16,11 @@ module Api
         tasks = Task.recent
         tasks = tasks.by_stage(params[:stage]) if params[:stage].present?
         tasks = tasks.where(agent_slug: params[:agent_slug]) if params[:agent_slug].present?
+        # `reviewable=1` narrows to submitted tasks NOT already under live review —
+        # the per-task-review-claim query many parallel pr-review sessions poll. It
+        # already implies stage=submitted (Task.reviewable folds it in), so it works
+        # with or without an explicit `stage=submitted`.
+        tasks = tasks.merge(Task.reviewable) if ActiveModel::Type::Boolean.new.cast(params[:reviewable])
         result = paginate(tasks)
         render_data(result[:records], meta: result[:meta])
       end

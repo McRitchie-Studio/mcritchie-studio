@@ -13,6 +13,8 @@ require_relative "../../lib/task_usage_sandbox"
 #   <projects>/.agents/sessions/<id>.activity-usage.json  per-activity usage baselines
 #   <projects>/.agents/sessions/<id>.devops-shift         the held shift lane (bin/devops-shift)
 #   <projects>/.agents/sessions/<id>.devops-shift-renewer its detached renewer's pid (ditto)
+#   <projects>/.agents/sessions/<id>.task-review-claim-<slug>          a held per-task review claim (bin/task review-claim)
+#   <projects>/.agents/sessions/<id>.task-review-claim-renewer-<slug>  its detached renewer's pid (ditto)
 #   <projects>/.agents/sessions/<id>.heartbeat            statusline's claim throttle (bash)
 #
 # It began as the shared READS bin/atomic-event and bin/atomic-capture-hook each

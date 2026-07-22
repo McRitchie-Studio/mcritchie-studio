@@ -23,29 +23,54 @@ cd /Users/alex/projects/mcritchie-studio
 
 Use the production board by default. Do not add `--local`.
 
-## Shift lease — acquire the `avi` shift FIRST, or stand down
+## Parallel-first — claim each task, skip what's already being reviewed
 
-Before touching the queue, take the DevOps shift lease so two `avi` sessions (a
-second `pr-review`, or an Avi heartbeat launched alongside this one) can't review
-the same PRs and double the reviewer fan-out into the board's connection limit:
+Review is a READ act on INDEPENDENT tasks, so **many `pr-review` sessions run at
+once**. The goal of a sitting is to review as many submitted PRs as you can; the
+one rule is **never review a task another session is already reviewing.** That
+guarantee lives at the TASK, not the role — there is no shift lease to acquire and
+no standing down. (The deploy/QA lanes are different: `qa-release` and
+`production-deploy` mutate one shared release candidate, so they keep the
+single-conductor `bin/devops-shift` lease. Review does not.)
 
-```bash
-bin/devops-shift acquire avi
-```
+Two mechanisms, both automatic on the `bin/pr-review` supervisor path below:
 
-- **Exit 0 (acquired)** — you're on shift; continue.
-- **Exit 10 ("🛑 … STAND DOWN")** — another live `avi` session already holds the
-  shift. **Do NOT review, gate, or spawn reviewers.** Announce the holder it names
-  and STOP; that session is covering the queue. Its lease lapses ~120s after it
-  stops, so if it truly died, re-run this SOP in a minute.
+1. **Query the unclaimed queue** — ask the board for submitted PRs with no live
+   review claim:
 
-The lease is renewed automatically by this session's status line. When the wave is
-done (or you stop early), release it so the lane frees immediately instead of
-waiting out the TTL:
+   ```bash
+   bin/task list --stage submitted --reviewable
+   ```
 
-```bash
-bin/devops-shift release avi
-```
+   (`GET /api/v1/tasks?stage=submitted&reviewable=1` is the same read.)
+
+2. **Claim each task before reviewing it — skip if taken.** The review claim is an
+   atomic per-task lease (`TaskReviewClaim`, reusing `ClaimLease`: 120s TTL, renewed
+   by the run, self-healing on crash — the build-claim's math, one level down from
+   the role lease):
+
+   ```bash
+   bin/task review-claim acquire <task>   # 0 = yours → review it · 10 = SKIP (another session has it) · 1 = fail-open
+   bin/task review-claim release <task>   # on the verdict (a crash frees it via the TTL)
+   ```
+
+   Exit **10** means a live session already holds that task — **move to the next
+   reviewable one; do NOT stand your whole session down.** Exit **0** means it is
+   yours: review it, then release on the verdict. Two sessions racing for one task
+   serialize under a row lock, so exactly one wins and the other skips — the
+   double-review collision the old role lease prevented, now prevented at the task
+   grain WITHOUT blocking a second session's other work.
+
+The supervisor does both for you: it **selects candidates from the reviewable
+queue** (the `--reviewable` read above), and it reviews a task **only on a
+CONFIRMED claim** — a task another live session holds is skipped, and a task whose
+claim it cannot confirm (no session id / board unreachable) is **deferred, never
+reviewed on an unconfirmed claim** (proceeding blind is the double-review the claim
+exists to prevent) — then it releases on the verdict. Keep each session's fan-out to **waves of five or
+fewer agents** (the per-session cap); the parallel-claim is what makes concurrent
+sessions safe, not a global lock — the enforced cross-session connection budget is
+tracked separately (follow-up C in
+[`../../../system/devops-shift-lease.md`](../../../system/devops-shift-lease.md)).
 
 ## Preconditions
 
