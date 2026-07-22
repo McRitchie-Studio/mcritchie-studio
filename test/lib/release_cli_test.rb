@@ -3196,6 +3196,7 @@ class ReleaseCliTest < Minitest::Test
   # on purpose so the dry-run proves ship reorders the hub to the front.
   SHIP_STUB = <<~RUBY
     def conductor(ruby, read_only: false)
+      return { "slug" => "rel-ship" } if ruby.include?("last_shipped") # the minimal STABLE read (pre-claim)
       return {} unless ruby.include?("repo_plan")
       { "slug" => "rel-ship", "state" => "assembled", "branch" => "release",
         "qa_shas" => {
@@ -3396,6 +3397,7 @@ class ReleaseCliTest < Minitest::Test
   # NO real shell I/O is reached.
   PUBLISH_DECISION_STUB = <<~RUBY
     def conductor(ruby, read_only: false)
+      return { "slug" => "rel-pub" } if ruby.include?("last_shipped") # the minimal STABLE read (pre-claim)
       if ruby.include?("repo_plan")
         { "slug" => "rel-pub", "state" => "assembled", "branch" => "release",
           "qa_shas" => { "studio-engine" => "frozensha000000000000000000000000000000000" },
@@ -3765,6 +3767,7 @@ class ReleaseCliTest < Minitest::Test
   # A ship plan (assembled + qa_shas) where a member declares a post_deploy_cmd.
   POST_DEPLOY_SHIP_STUB = <<~RUBY
     def conductor(ruby, read_only: false)
+      return { "slug" => "rel-pd-ship" } if ruby.include?("last_shipped") # the minimal STABLE read (pre-claim)
       return {} unless ruby.include?("repo_plan")
       { "slug" => "rel-pd-ship", "state" => "assembled", "branch" => "release",
         "qa_shas" => { "turf-monster" => "ccccccc3333333333333333333333333333333333" },
@@ -4224,6 +4227,35 @@ class ReleaseCliTest < Minitest::Test
     refute_includes out, "NO-ABORT", "finalize must not fall through past the claim gate"
     refute_includes out, "SNAPSHOT-READ",
                      "finalize must stand down BEFORE reading its mutable decision snapshot — snapshot-under-claim at runtime"
+  end
+
+  # FIX B — BEHAVIORAL ship snapshot-under-claim: ship must stand down BEFORE it reads its
+  # MUTABLE decision snapshot (repo_plan/state/qa_shas → resuming_member_ship + the assembled
+  # gate), or a concurrent ship/finalize could change that state between the read and the
+  # deploy. The minimal stable slug read (puts({slug: r.slug})) runs pre-claim; the
+  # "repo_plan" snapshot must NOT be read once we're stood down.
+  def test_ship_stands_down_before_reading_its_mutable_decision_snapshot
+    # CLAIM-CHECK proves ship reached the acquire (PAST the minimal read); its args show the
+    # claim is consulted on rel_slug BEFORE any repo_plan read. (ship's rescue re-exits, so
+    # the stand-down MESSAGE lands on stderr — the behavioral proof is CLAIM-CHECK before,
+    # SNAPSHOT-READ never, NO-ABORT never.)
+    setup = <<~'RUBY'
+      def conductor(ruby, read_only: false)
+        $stdout.puts("SNAPSHOT-READ") if ruby.include?("repo_plan")   # the MUTABLE decision snapshot
+        return { "slug" => "rel-x" } if ruby.include?("last_shipped") # the minimal STABLE read
+        {}
+      end
+      def conductor_claim(*a); $stdout.puts("CLAIM-CHECK " + a.join(" ")); ReleaseClaimCli::STOOD_DOWN; end
+    RUBY
+    out = run_cli(["--yes"], setup: setup,
+                  call: "begin; ship; puts('NO-ABORT'); rescue SystemExit; puts('ABORTED'); end")
+
+    assert_includes out, "CLAIM-CHECK acquire rel-x --role deployer",
+                     "ship resolves rel_slug via the minimal read, then CONSULTS the deployer claim"
+    assert_includes out, "ABORTED", "a held deployer claim (STOOD_DOWN) stands ship down"
+    refute_includes out, "NO-ABORT", "ship must not fall through past the claim gate"
+    refute_includes out, "SNAPSHOT-READ",
+                     "ship stands down BEFORE reading its mutable decision snapshot (repo_plan) — snapshot-under-claim at runtime"
   end
 
   # FIX 2(b) — the acquire_conductor_claim! BRANCH TABLE. This is the single runtime
@@ -5691,6 +5723,7 @@ class ReleaseCliTest < Minitest::Test
   # SHIP_STUB's full plan + the intent write abort!ing (the prod-board failure).
   INTENT_FAIL_SHIP_STUB = <<~RUBY
     def conductor(ruby, read_only: false)
+      return { "slug" => "rel-ship" } if ruby.include?("last_shipped") # the minimal STABLE read (pre-claim)
       abort!("record op failed:\\nFATAL: remaining connection slots are reserved") if ruby.include?("record_deploy_intents!")
       return {} unless ruby.include?("repo_plan")
       { "slug" => "rel-ship", "state" => "assembled", "branch" => "release",

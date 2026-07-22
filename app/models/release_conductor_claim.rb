@@ -123,6 +123,22 @@ class ReleaseConductorClaim < ApplicationRecord
     find_by(release_slug: release_slug.to_s.strip, role: role.to_s.strip.downcase)&.holder_info(now: now)
   end
 
+  # Is ANY claim for `role` currently live (its lease unlapsed)? The CROSS-RELEASE read
+  # behind bin/agent-worktree's "is a ship in progress?" reclaim guard: a live `deployer`
+  # claim means the fixed-path `_ship`/`_gate` workspaces are pinned by a running
+  # `bin/release ship` and must NOT be reclaimed mid-ship (the exclusion the retired `avi`
+  # shift used to provide). Iterates the (few) rows for the role so the ClaimLease
+  # liveness rules — including the corrupt-expiry "possibly live" fold — apply exactly as
+  # everywhere else.
+  def self.any_live?(role:, now: Time.current)
+    where(role: role.to_s.strip.downcase).any? { |c| c.live?(now: now) }
+  end
+
+  # The first live holder's descriptor for `role`, or nil — powers the withhold message.
+  def self.live_holder(role:, now: Time.current)
+    where(role: role.to_s.strip.downcase).find { |c| c.live?(now: now) }&.holder_info(now: now)
+  end
+
   # Find (or create) the singleton row for a (release, role), tolerating the create
   # race — two first-acquirers hit the composite unique index; the loser re-reads the
   # winner's row.

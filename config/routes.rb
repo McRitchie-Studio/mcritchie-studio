@@ -324,6 +324,11 @@ Rails.application.routes.draw do
           post "events/:stage/fail", to: "task_events#fail", as: :event_fail
         end
       end
+      # Cross-release conductor-claim liveness (release-conductor-claims) — "is ANY
+      # claim for this role live?" (NOT nested under a slug). bin/agent-worktree's
+      # `_ship`/`_gate` reclaim guard asks `?role=deployer`: a live deployer claim means a
+      # ship is in progress, so those fixed-path workspaces must not be reclaimed mid-ship.
+      get "release_conductor_claims/live", to: "release_conductor_claims#live", as: :release_conductor_claims_live
       resources :releases, only: [], param: :slug do
         member do
           post "events/:step/start", to: "release_events#start", as: :event_start

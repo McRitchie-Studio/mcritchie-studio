@@ -53,6 +53,13 @@ class ReleaseClaimCli
   STOOD_DOWN = 10
   CANT_RUN = 1
 
+  # `any-live` exit codes (bin/agent-worktree's _ship/_gate reclaim guard reads these):
+  #   0 (OK)       — a live claim for the role exists (a ship is in progress) → WITHHOLD
+  #   3 (NOT_LIVE) — the board answered: no live claim for the role → free to reclaim
+  #   1 (CANT_RUN) — could not read the board → the caller decides (a destroy path
+  #                  WITHHOLDS on can't-tell; a ship MIGHT be live).
+  NOT_LIVE = 3
+
   # The two release-lifecycle roles (mirrors ReleaseConductorClaim::ROLES). A closed
   # set — an unknown role is a usage error, not a fail-open.
   ROLES = %w[assembler deployer].freeze
@@ -91,10 +98,11 @@ class ReleaseClaimCli
     when "renew-loop" then renew_loop(slug, flags)
     when "release"    then release(slug, flags)
     when "status"     then status(slug, flags)
+    when "any-live"   then any_live(flags)
     else
       @err.puts("usage: release-claim acquire <release-slug> --role <role> [--label <text>] | " \
                 "renew <release-slug> --role <role> | release <release-slug> --role <role> | " \
-                "status <release-slug> --role <role> (roles: #{ROLES.join(', ')})")
+                "status <release-slug> --role <role> | any-live --role <role> (roles: #{ROLES.join(', ')})")
       CANT_RUN
     end
   rescue StandardError => e
@@ -198,6 +206,27 @@ class ReleaseClaimCli
       @out.puts("release-claim: #{slug} #{role} is free to claim.")
     end
     OK
+  end
+
+  # Is ANY claim for the role live (a ship in progress)? The CROSS-RELEASE liveness read
+  # (no slug), for bin/agent-worktree's `_ship`/`_gate` reclaim guard. Exit 0 = live
+  # (withhold the workspaces), NOT_LIVE = the board says none (free to reclaim), CANT_RUN
+  # = could not read (the caller withholds — a ship MIGHT be live). Never raises.
+  def any_live(flags)
+    role = role_of(flags)
+    return usage_role("any-live") unless role
+
+    res = get("/api/v1/release_conductor_claims/live?role=#{role}")
+    return cant_run("could not read #{role} claim liveness — cannot tell if a ship is live") unless ok?(res)
+
+    data = parse_data(res)
+    if data["live"]
+      @out.puts("release-claim: a live #{role} claim exists — #{holder_line(data['holder'] || {})}")
+      OK
+    else
+      @out.puts("release-claim: no live #{role} claim.")
+      NOT_LIVE
+    end
   end
 
   # ── The detached renewer ─────────────────────────────────────────────────────

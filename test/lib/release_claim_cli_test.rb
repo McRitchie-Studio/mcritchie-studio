@@ -332,6 +332,52 @@ class ReleaseClaimCliTest < Minitest::Test
     end
   end
 
+  # `any-live` — the cross-release liveness read behind bin/agent-worktree's _ship/_gate
+  # reclaim guard. Exit 0 = a live claim (withhold), NOT_LIVE = board says none (reclaim),
+  # CANT_RUN = unreadable board (the caller withholds — a ship might be live).
+  def test_any_live_exits_ok_when_a_live_claim_exists
+    Dir.mktmpdir do |proj|
+      code = cli(projects_dir: proj, data: { "live" => true, "holder" => { "label" => "Machamp" } })
+             .run(["any-live", "--role", "deployer"])
+      assert_equal ReleaseClaimCli::OK, code, "a live claim → exit 0 (a ship is in progress → the caller withholds)"
+      assert_match(/a live deployer claim exists/, @out.string)
+    end
+  end
+
+  def test_any_live_exits_not_live_when_the_board_says_none
+    Dir.mktmpdir do |proj|
+      code = cli(projects_dir: proj, data: { "live" => false, "holder" => nil })
+             .run(["any-live", "--role", "deployer"])
+      assert_equal ReleaseClaimCli::NOT_LIVE, code, "the board says none → exit 3 (free to reclaim)"
+      assert_match(/no live deployer claim/, @out.string)
+    end
+  end
+
+  def test_any_live_fails_closed_when_the_board_is_unreadable
+    Dir.mktmpdir do |proj|
+      code = cli(projects_dir: proj, code: 500, data: {}).run(["any-live", "--role", "deployer"])
+      assert_equal ReleaseClaimCli::CANT_RUN, code,
+                   "an unreadable board → exit 1 (can't tell — the reclaim caller withholds _ship/_gate)"
+    end
+  end
+
+  def test_any_live_without_a_role_is_a_usage_error
+    Dir.mktmpdir do |proj|
+      assert_equal ReleaseClaimCli::CANT_RUN, cli(projects_dir: proj).run(["any-live"])
+      assert_match(/needs --role/, @err.string)
+    end
+  end
+
+  def test_any_live_targets_the_cross_release_liveness_endpoint
+    Dir.mktmpdir do |proj|
+      c = cli(projects_dir: proj, data: { "live" => false })
+      c.run(["any-live", "--role", "deployer"])
+      got = c.instance_variable_get(:@api).posts.find { |p| p[:path].to_s.include?("release_conductor_claims/live") }
+      refute_nil got, "any-live reads the cross-release /release_conductor_claims/live endpoint"
+      assert_includes got[:path], "role=deployer", "the role travels in the query"
+    end
+  end
+
   def test_renew_is_always_a_clean_exit_zero
     Dir.mktmpdir do |proj|
       assert_equal ReleaseClaimCli::OK,

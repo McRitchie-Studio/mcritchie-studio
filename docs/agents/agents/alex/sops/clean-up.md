@@ -411,8 +411,15 @@ bin/agent-worktree cleanup --reclaim --yes   # full teardown + Redis band shrink
   worktrees" and the dry run finds seventeen, surface the discrepancy — and believe
   the gate.
 - **`_gate` and `_ship` are infrastructure, not desks** — fixed-path workspaces for
-  the cert and the ship. They ARE safe to reclaim: `bin/release.rb` re-creates them
-  on demand with `git worktree add --detach`. Just never reclaim them **mid-ship**.
+  the cert and the ship. They are safe to reclaim BETWEEN ships: `bin/release.rb`
+  re-creates them on demand with `git worktree add --detach`. Reclaiming them
+  **mid-ship** is now BLOCKED automatically — `bin/agent-worktree` withholds `_ship`/
+  `_gate` whenever a live `deployer` ReleaseConductorClaim exists (a ship is in
+  progress). This is the exclusion the retired shared `avi` shift used to provide (a
+  `bin/release ship` held `avi`, so `clean-up` — also `avi` — could not run against it);
+  ship now holds the per-release `deployer` claim instead, and the reclaim gate reads it.
+  So the gate stands you down (`withheld … a ship is live (deployer claim held)`) rather
+  than relying on you to remember — re-run once the ship completes.
 
 > ### ⛔ The reclaim gate refuses a desk whose commits live nowhere else — LISTEN to it
 > `bin/agent-worktree remove` will refuse with *"branch content is not represented on

@@ -141,16 +141,27 @@ the lease math above. Two properties matter for the release acts specifically:
   renew is unacceptable). A telemetry hiccup fails OPEN (the release proceeds
   unclaimed — a claim outage must never wedge a real release); a live DIFFERENT holder
   (exit 10) still stands the run down.
+- **It re-provides the ship↔cleanup exclusion the shift used to.** When ship held the
+  `avi` shift, `clean-up` (also `avi`) could not run against a live ship — so it could
+  never reclaim ship's fixed-path `_ship`/`_gate` workspaces mid-ship. Ship left the
+  shift, so `bin/agent-worktree`'s reclaim guard now reads the claim directly: it
+  WITHHOLDS `_ship`/`_gate` from reclaim whenever a live `deployer` claim exists on ANY
+  release (the cross-release `GET /api/v1/release_conductor_claims/live?role=deployer`,
+  fronted by `release_claim_cli.rb any-live`), and withholds on an unreadable board
+  (fail-closed for a destroy path — a ship might be live). Task desks are unaffected.
 
 Surface: `bin/lib/release_claim_cli.rb acquire|renew|release|status <release-slug>
---role assembler|deployer` (+ the internal `renew-loop`), invoked automatically by
-`bin/release prepare` (assembler, before the accepted→release promote) and `bin/release
-ship` (deployer, before the frozen-SHA gate + deploy), released on completion; the
-board endpoints `GET/POST /api/v1/releases/:slug/conductor_claim` +
-`…/conductor_claim/{renew,release}`; and the `<sid>.release-conductor-claim-<role>`
-marker (with its `-renewer-<role>` sibling for the renewer pid). Because the acquire
-is INSIDE `bin/release`, `qa-release.md` and `production-deploy.md` no longer preamble
-a `bin/devops-shift acquire` — the lock is automatic.
+--role assembler|deployer` + `any-live --role <role>` (the cross-release liveness read;
++ the internal `renew-loop`), invoked automatically by `bin/release prepare` (assembler,
+before the accepted→release promote) and `bin/release ship` (deployer, before the
+frozen-SHA gate + deploy), released on completion; the board endpoints `GET/POST
+/api/v1/releases/:slug/conductor_claim` + `…/conductor_claim/{renew,release}` + the
+cross-release `GET /api/v1/release_conductor_claims/live`; the
+`<sid>.release-conductor-claim-<role>` marker (with its `-renewer-<role>` sibling for the
+renewer pid); and `bin/agent-worktree`'s `_ship`/`_gate` reclaim guard (which reads
+`any-live`). Because the acquire is INSIDE `bin/release`, `qa-release.md` and
+`production-deploy.md` no longer preamble a `bin/devops-shift acquire` — the lock is
+automatic.
 
 ## D — the reclaim guard (conductor ↔ builder)
 

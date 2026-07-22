@@ -109,6 +109,41 @@ module Api
                                                         headers: {}, as: :json
         assert_response :unauthorized
       end
+
+      # The CROSS-RELEASE liveness read — bin/agent-worktree's _ship/_gate reclaim guard.
+      test "[integration] the live read reports whether ANY claim for a role is live" do
+        get "/api/v1/release_conductor_claims/live", params: { role: "deployer" }, headers: @headers
+        assert_response :ok
+        refute response.parsed_body.dig("data", "live"), "no claim → not live"
+        assert_nil response.parsed_body.dig("data", "holder")
+
+        # a live deployer claim on SOME release
+        acquire(session: "A", nonce: "a", role: "deployer", slug: "rel-live-1", label: "Machamp")
+        get "/api/v1/release_conductor_claims/live", params: { role: "deployer" }, headers: @headers
+        assert_response :ok
+        assert response.parsed_body.dig("data", "live"), "a live deployer claim on ANY release → live"
+        assert_equal "Machamp", response.parsed_body.dig("data", "holder", "label")
+
+        # a DIFFERENT role is unaffected
+        get "/api/v1/release_conductor_claims/live", params: { role: "assembler" }, headers: @headers
+        assert_response :ok
+        refute response.parsed_body.dig("data", "live"), "the assembler role has no live claim"
+      end
+
+      test "[integration] a lapsed deployer claim does NOT read as live" do
+        # acquire then let it lapse by expiring the lease directly.
+        acquire(session: "A", nonce: "a", role: "deployer", slug: "rel-lapsed")
+        ReleaseConductorClaim.find_by(release_slug: "rel-lapsed", role: "deployer")
+                             .update!(claim_expires_at: 5.minutes.ago)
+        get "/api/v1/release_conductor_claims/live", params: { role: "deployer" }, headers: @headers
+        assert_response :ok
+        refute response.parsed_body.dig("data", "live"), "a lapsed lease is not a live ship"
+      end
+
+      test "[integration] the live read requires auth" do
+        get "/api/v1/release_conductor_claims/live", params: { role: "deployer" }, headers: {}
+        assert_response :unauthorized
+      end
     end
   end
 end

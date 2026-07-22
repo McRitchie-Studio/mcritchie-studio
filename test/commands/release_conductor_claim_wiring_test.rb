@@ -40,16 +40,26 @@ class ReleaseConductorClaimWiringTest < ActiveSupport::TestCase
            "sessions can both sweep the same release N-behind"
   end
 
-  # --- ship: deployer claim BEFORE any deploy mutation -------------------------
-  test "ship takes the deployer claim before the ship preflight/deploy" do
-    acquire   = index(/acquire_conductor_claim!\("deployer", rel_slug\)/)
-    preflight = index(/ship_preflight\(app_groups, gem_groups, ship_sha\)/)
+  # --- ship (FIX B): deployer claim BEFORE the mutable snapshot AND the deploy -
+  test "ship resolves rel_slug with a minimal read, takes the deployer claim before its mutable snapshot + the preflight" do
+    src = File.read(RELEASE_RB)
+    ship = src[/^def ship\b.*?^end$/m]
+    assert ship, "ship must be defined"
 
-    assert acquire, "bin/release ship must acquire the `deployer` conductor claim"
-    assert preflight, "bin/release ship must still run ship_preflight"
+    lines = ship.lines
+    minimal   = lines.index { |l| l =~ /puts\(\{slug: r\.slug\}\.to_json\)/ }              # the minimal STABLE read
+    acquire   = lines.index { |l| l =~ /acquire_conductor_claim!\("deployer", rel_slug\)/ }
+    snapshot  = lines.index { |l| l =~ /Release::Conductor\.repo_plan\(r\)/ }               # the MUTABLE decision snapshot
+    preflight = lines.index { |l| l =~ /ship_preflight\(app_groups, gem_groups, ship_sha\)/ }
+
+    assert [minimal, acquire, snapshot, preflight].all?, "all ship ordering anchors must be present"
+    assert minimal < acquire,
+           "rel_slug is resolved by a MINIMAL, STABLE read (just r.slug) BEFORE the claim — existence/slug don't drift"
+    assert acquire < snapshot,
+           "the deployer claim precedes the MUTABLE decision snapshot (repo_plan/state/qa_shas) — snapshot-under-claim, " \
+           "so a concurrent ship/finalize can't change it between the read and the deploy"
     assert acquire < preflight,
-           "the deployer claim must be taken BEFORE the frozen-SHA gate + deploy, or a second concurrent ship " \
-           "double-deploys the release"
+           "the deployer claim must be held BEFORE the frozen-SHA gate + deploy, or a second concurrent ship double-deploys"
   end
 
   # --- the decision: stand down on a live holder, resume otherwise -------------

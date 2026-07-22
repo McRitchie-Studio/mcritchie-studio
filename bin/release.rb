@@ -4653,15 +4653,40 @@ def ship
   say("Run Deployment#{PROD ? ' (PROD)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
   warn_local!
 
-  # 1. Read the active release + its per-repo deploy plan + the QA-frozen SHAs.
-  #    If the prior run already promoted the release card but did not finish
-  #    member flips, resume that shipped release by slug. A READ (read_only:) so
-  #    a dry-run previews the real plan without mutating.
-  step("record (read-only): release + repo_plan + qa_shas")
-  result = conductor(
+  # 1a. MINIMAL, STABLE read — resolve WHICH release ships + its slug, BEFORE the claim.
+  #     If the prior run already promoted the release card but did not finish member flips,
+  #     this resolves that shipped release by slug (Release.current || Release.last_shipped).
+  #     A release's existence/slug don't change under a concurrent ship — only its member
+  #     stages / state do — so this is safe pre-claim. read_only bypasses the dry gate.
+  step("record (read-only): resolve the release to ship")
+  head = conductor(
     "r = Release.current || Release.last_shipped; " \
-    "unfinished = r ? r.tasks.where.not(stage: 'shipped').count : 0; " \
-    "abort('no active release to ship') unless r && (r.active? || unfinished.positive?); " \
+    "abort('no active release to ship') unless r; " \
+    "puts({slug: r.slug}.to_json)",
+    read_only: true
+  )
+  rel_slug = head["slug"].to_s
+  abort!("no active release to ship") if rel_slug.empty?
+
+  # 1b. DEPLOYER CLAIM — take it BEFORE the MUTABLE decision snapshot below (carl: "ship
+  #     snapshots mutable state before claiming"). The per-RELEASE `deployer` lock replaces
+  #     the old `bin/devops-shift acquire avi` shift lease. A second concurrent `bin/release
+  #     ship` on this release STANDS DOWN (exit 10) instead of double-shipping; a
+  #     same-instance re-acquire is a no-op renew, so an INTERRUPTED ship re-run RESUMES its
+  #     claim; a telemetry hiccup fails open. Released on EVERY exit via the rescue-SystemExit
+  #     arm + the method-level ensure. Inert under --dry-run. No role span is open yet.
+  acquire_conductor_claim!("deployer", rel_slug)
+
+  # 1c. The MUTABLE decision snapshot — read UNDER the claim, addressed by the resolved
+  #     rel_slug (no longer re-resolving current/last_shipped, which could drift). state /
+  #     member stages / repo_plan / qa_shas drive resuming_member_ship + the assembled gate,
+  #     so a concurrent ship/finalize must not be able to change them between the read and the
+  #     deploy — hence under the claim.
+  step("record (read-only): repo_plan + qa_shas + member/ship state")
+  result = conductor(
+    "r = Release.find_by!(slug: #{rel_slug.inspect}); " \
+    "unfinished = r.tasks.where.not(stage: 'shipped').count; " \
+    "abort('no active release to ship') unless r.active? || unfinished.positive?; " \
     "puts({slug: r.slug, state: r.state, branch: r.branch, " \
     "resuming_member_ship: (!r.active? && unfinished.positive?), unfinished_members: unfinished, " \
     "repos: Release::Conductor.repo_plan(r), qa_shas: (r.metadata['qa_shas'] || {}), " \
@@ -4669,7 +4694,6 @@ def ship
     read_only: true
   )
   abort!("no active release to ship") if result["slug"].to_s.empty?
-  rel_slug = result["slug"]
   state    = result["state"]
   repos    = result["repos"] || []
   qa_shas  = result["qa_shas"] || {}
@@ -4684,17 +4708,6 @@ def ship
   if !DRY && state != "assembled" && !resuming_member_ship
     abort!("release is '#{state}', not assembled — `bin/release prepare` + QA it first")
   end
-
-  # DEPLOYER CLAIM — take the per-RELEASE `deployer` lock (release-conductor-claims)
-  # BEFORE the frozen-SHA gate and any deploy mutation, so a second concurrent
-  # `bin/release ship` on this release STANDS DOWN (exit 10) instead of double-shipping.
-  # This replaces the old `bin/devops-shift acquire avi` shift lease: the lock is on
-  # the release record, which turns over each release, so a stale claim can never
-  # strand the ship lane. A same-instance re-acquire is a no-op renew, so an INTERRUPTED
-  # ship re-run RESUMES its claim rather than standing itself down; a telemetry hiccup
-  # fails open. No role span is open yet (it opens after ship authority), so a stand-down
-  # here needs no span close.
-  acquire_conductor_claim!("deployer", rel_slug)
 
   gem_groups = repos.select { |g| g["kind"] == "gem" } # already producer-first
   app_groups = Release::ShipSequence.ordered_app_groups(repos.select { |g| g["kind"] == "app" }) # hub first

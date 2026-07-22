@@ -54,7 +54,11 @@ ghost claim can never strand the ship lane again. (Background — not needed to 
 
 > Note: `clean-up` still takes the `avi` **shift** lease (`bin/devops-shift acquire
 > avi`) for its board sweep — that lane is unchanged. Only the SHIP left the shift for
-> the release-record claim.
+> the release-record claim. The one thing the shared shift used to guarantee — that
+> `clean-up` could not reclaim ship's fixed-path `_ship`/`_gate` workspaces mid-ship — is
+> now enforced directly: `bin/agent-worktree` withholds `_ship`/`_gate` from reclaim
+> whenever a live `deployer` claim exists (a ship in progress), so a concurrent `clean-up`
+> stands down on those workspaces instead of tearing them out from under a live deploy.
 
 ## Preconditions
 

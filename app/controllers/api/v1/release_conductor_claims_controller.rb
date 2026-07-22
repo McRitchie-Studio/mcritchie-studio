@@ -18,6 +18,19 @@ module Api
         render_data({ "holder" => ReleaseConductorClaim.status_for(params[:slug], claim_params[:role]) })
       end
 
+      # GET /api/v1/release_conductor_claims/live?role=deployer — the CROSS-RELEASE "is
+      # ANY claim for this role live?" read (NOT nested under a slug). bin/agent-worktree's
+      # `_ship`/`_gate` reclaim guard asks this: a live `deployer` claim = a ship is in
+      # progress, so those fixed-path workspaces must not be reclaimed. 200 { live: bool,
+      # holder: <info>|null }.
+      def live
+        role = claim_params[:role]
+        render_data({
+          "live"   => ReleaseConductorClaim.any_live?(role: role),
+          "holder" => ReleaseConductorClaim.live_holder(role: role)
+        })
+      end
+
       # POST /api/v1/releases/:slug/conductor_claim { role, session, nonce, label }
       #
       # Atomic take-or-stand-down. Always 200 with { acquired, disposition, holder } —
