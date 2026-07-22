@@ -50,4 +50,16 @@ class PrReviewZapSafetyTest < Minitest::Test
     refute_match(/--force-with-lease\s+origin/, SRC,
                  "a BARE --force-with-lease (no =ref:sha) can clobber a sibling zap that landed first")
   end
+
+  # The canonical zap-protocol MODULE reviewers copy their bash from must teach the SAME pinned
+  # lease as the tool. A bare --force-with-lease there (with a "never clobber" claim) is the exact
+  # clobber the pin prevents — keep the module, the SOP, and bin/pr-review telling ONE story.
+  ZAP_PROTOCOL = File.read(File.expand_path("../../docs/agents/modules/zap-protocol.md", __dir__))
+
+  def test_zap_protocol_module_teaches_the_pinned_lease_too
+    assert_includes ZAP_PROTOCOL, "--force-with-lease=refs/heads/",
+                    "the zap-protocol module must teach the explicit pinned lease, matching bin/pr-review"
+    refute_match(/--force-with-lease\s+origin/, ZAP_PROTOCOL,
+                 "a BARE --force-with-lease in the module reviewers copy from would clobber a sibling zap")
+  end
 end

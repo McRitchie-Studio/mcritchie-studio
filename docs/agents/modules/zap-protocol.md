@@ -116,20 +116,28 @@ branch:
 ```bash
 git worktree add ../zap-<slug> --detach FETCH_HEAD   # off the PR head you fetched
 cd ../zap-<slug>
+BASE=$(git rev-parse HEAD)                            # the head you zap FROM — pin the lease to it
 # ...one bounded fix...
 git commit -m "zap: <what was broken, one line>"
-git push --force-with-lease origin HEAD:refs/heads/feat/<slug>   # lease rejects if the branch moved under you
+git push --force-with-lease=refs/heads/feat/<slug>:$BASE origin HEAD:refs/heads/feat/<slug>
 cd - && git worktree remove ../zap-<slug>
 ```
 
-A **lease**-push (`--force-with-lease`), never a plain force-push: the lease
-refuses if anyone advanced the branch since you fetched it, so you can never
-clobber the builder's or another reviewer's commit. Then leave your verdict
+An **explicit** lease-push (`--force-with-lease=<ref>:<sha>`), never a **bare**
+`--force-with-lease` and never a plain force-push: the pinned form expects the
+remote branch to still be at the exact `$BASE` you zapped from, so if a sibling
+zap or a builder push advanced it first, your push is REJECTED rather than
+overwriting their commit. A bare `--force-with-lease` trusts your local
+remote-tracking ref, which a background fetch can quietly advance — that defeats
+the guard and clobbers the sibling, so the explicit `=<ref>:<sha>` form is the
+safe one. If your push rejects, a sibling already landed: do NOT retry or
+override — name the fix in your verdict instead. Then leave your verdict
 **merge-ready** and let the zap's own CI vouch for it — the `bin/pr-review`
-supervisor **captured the head when your review began and REVALIDATES it before
-merging**: an advanced head merges only if its post-zap CI is green, and holds
-for re-review otherwise (it never merges a head the reviewers didn't see on a
-non-green CI). Record the zap on the task the ordinary way (§ Recording).
+supervisor **captured the head BEFORE it launched your review and REVALIDATES it
+before merging** (the merge is pinned with `--match-head-commit`): an advanced
+head merges only if its post-zap CI is green, and holds for re-review otherwise
+(it never merges a head the reviewers didn't see on a non-green CI). Record the
+zap on the task the ordinary way (§ Recording).
 
 **Name it instead** when it is out of bounds, or you'd rather not apply it:
 state the file and line, the one-line fix, and the bounds check (e.g. `within
