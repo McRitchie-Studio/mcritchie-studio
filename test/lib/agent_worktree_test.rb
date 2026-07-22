@@ -300,6 +300,77 @@ class AgentWorktreeTest < Minitest::Test
                  "unclaimed is still reclaimable, or the sweep is silently wedged"
   end
 
+  # --- reclaim guard: the _ship/_gate SHIP-WORKSPACE exclusion (release-conductor-claims) ---
+  # `bin/release ship` moved OFF the shared `avi` shift and ONTO the per-release `deployer`
+  # ReleaseConductorClaim, so the shift no longer excludes clean-up from a live ship. These
+  # re-enforce "never reclaim _ship/_gate mid-ship" via that claim: withhold the fixed-path
+  # ship/cert workspaces while a live deployer claim exists (a ship in progress), reclaim
+  # them when none, and WITHHOLD on can't-tell (a destroy path — a ship MIGHT be live).
+  # deployer_claim_liveness is stubbed here; its board read is covered by the CLI +
+  # controller tests. Only _ship/_gate are guarded — a task desk ignores the ship claim.
+
+  def ship_hold(liveness, task)
+    run_in_script(<<~RUBY)
+      def deployer_claim_liveness; #{liveness.inspect}; end
+      print claim_hold({ task: #{task.inspect}, dir: "/repo/.worktrees/#{task}", env: {} }).inspect
+    RUBY
+  end
+
+  def test_ship_workspace_withheld_while_a_deployer_claim_is_live
+    %w[_ship _gate].each do |ws|
+      out = ship_hold(:live, ws)
+      refute_equal "nil", out, "#{ws} must be WITHHELD while a live deployer claim exists (a ship in progress)"
+      assert_match(/a ship is live/, out, "#{ws} names the reason: a ship is live")
+      assert_match(/deployer claim/, out)
+    end
+  end
+
+  def test_ship_workspace_reclaimable_when_no_deployer_claim_is_live
+    %w[_ship _gate].each do |ws|
+      assert_equal "nil", ship_hold(:none, ws),
+                   "#{ws} is a normal reclaim candidate when the board says no ship is live"
+    end
+  end
+
+  def test_ship_workspace_withheld_when_the_deployer_claim_read_fails
+    out = ship_hold(:unknown, "_ship")
+    assert_match(/could not check for a live ship/, out,
+                 "an unreadable deployer-claim read WITHHOLDS _ship (fail-closed on a destroy path — a ship MIGHT be live)")
+    assert_match(/withholding/, out)
+  end
+
+  def test_a_task_desk_is_unaffected_by_the_ship_deployer_claim
+    # Only the fixed-path _ship/_gate are guarded by the deployer claim; a normal task desk
+    # must NOT consult it (that would wedge task reclaim on every live ship).
+    out = run_in_script(<<~RUBY)
+      def deployer_claim_liveness; :live; end
+      def task_record_for_pr(_r, fresh: false); { "metadata" => { "devops" => {} } }; end
+      print claim_hold({ task: "t", dir: "/repo/.worktrees/t", env: { "TASK_RECORD_SLUG" => "t" } }).inspect
+    RUBY
+    assert_equal "nil", out, "a task desk is reclaimable regardless of a live ship — the guard is _ship/_gate only"
+  end
+
+  def test_reclaim_verdict_withholds_ship_workspace_during_a_live_ship
+    out = run_in_script(<<~RUBY)
+      def deployer_claim_liveness; :live; end
+      record = { task: "_ship", dir: "/repo/.worktrees/_ship", dirty: false, merged: true,
+                 equivalent_to_main: true, env: {} }
+      print reclaim_verdict(record).inspect
+    RUBY
+    assert_match(/\A\[false, ".*ship is live/, out,
+                 "a live ship withholds _ship from reclaim through the ONE decision every destroy path routes through")
+  end
+
+  def test_reclaim_verdict_reclaims_ship_workspace_when_no_ship_is_live
+    out = run_in_script(<<~RUBY)
+      def deployer_claim_liveness; :none; end
+      record = { task: "_gate", dir: "/repo/.worktrees/_gate", dirty: false, merged: true,
+                 equivalent_to_main: true, env: {} }
+      print reclaim_verdict(record).inspect
+    RUBY
+    assert_equal "[true, nil]", out, "with no live ship, _gate is a normal reclaim candidate (bin/release recreates it)"
+  end
+
   # --- the held-desk PROSE must not invert under a substring test -------------------------
   #
   # The doctor/registry issue text for a held desk used to read "…; not a cleanup candidate".

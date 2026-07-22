@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_21_002918) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_21_004500) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -843,6 +843,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_21_002918) do
     t.datetime "updated_at", null: false
     t.index ["dex"], name: "index_pokemons_on_dex", unique: true
     t.index ["slug"], name: "index_pokemons_on_slug", unique: true
+  end
+
+  create_table "release_conductor_claims", force: :cascade do |t|
+    t.datetime "acquired_at"
+    t.datetime "claim_expires_at"
+    t.string "claim_nonce"
+    t.string "claimed_session"
+    t.datetime "created_at", null: false
+    t.string "holder_label"
+    t.string "release_slug", null: false
+    t.string "role", null: false
+    t.datetime "updated_at", null: false
+    t.index ["release_slug", "role"], name: "index_release_conductor_claims_on_release_slug_and_role", unique: true
   end
 
   create_table "release_events", force: :cascade do |t|
