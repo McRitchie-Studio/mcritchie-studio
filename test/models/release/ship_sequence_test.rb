@@ -975,6 +975,19 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
     assert_equal :lock_only, S.consumer_bump_action(%(gem "studio-engine"\n), "studio-engine", "9.9.9")
   end
 
+  test "consumer_bump_action NEVER rewrites a pin DOWNWARD for a backward version" do
+    # The invariant is UPWARD-ONLY, the silent-downgrade sibling of stranded_gem_work?. A
+    # version BELOW the pin floor escapes the constraint too, but rewriting the pin down to it
+    # is a production downgrade. It must be :lock_only (pin left as-is), never :rewrite_pin.
+    # Mutation evidence: the pre-fix `constraint_allows? ? :lock_only : :rewrite_pin` returned
+    # :rewrite_pin here and `bumped_gemfile` rewrote `~> 0.10` DOWN to `~> 0.9`.
+    assert_equal :lock_only, S.consumer_bump_action(%(gem "studio-engine", "~> 0.10"\n), "studio-engine", "0.9.0")
+    assert_equal :lock_only, S.consumer_bump_action(%(gem "studio-engine", "0.10.0"\n), "studio-engine", "0.9.9")
+    pinned = %(gem "studio-engine", "~> 0.10"\n)
+    assert_equal pinned, S.bumped_gemfile(pinned, "studio-engine", "0.9.0"),
+                 "a backward version leaves the Gemfile pin untouched — no downgrade"
+  end
+
   test "bumped_gemfile rewrites only what the action demands" do
     pinned = %(gem "studio-engine", "~> 0.10"\n)
     # escape (major bump) → the pin advances

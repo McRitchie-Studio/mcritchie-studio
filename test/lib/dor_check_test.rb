@@ -1729,6 +1729,18 @@ class DorCheckTest < Minitest::Test
     assert_match(/gate-zero/, out, "the provisional credit names the authoritative verdict's home")
   end
 
+  def test_fresh_fast_cert_with_unverified_ci_is_refused_not_credited
+    # The provisional-credit set is EXACTLY {pending, none} — CI that is genuinely COMING.
+    # An :unverified reading is a gh/network error: absence of a verdict, NOT "coming soon",
+    # so it must never provisionally credit a fast cert (the same three-state discipline the
+    # CI fold preaches). Mutation evidence: widen `%i[pending none]` to include :unverified
+    # and, without this test, an unreadable-by-network CI silently credits provisional green.
+    out, code = fast_check_ci("fast_fresh", "unverified")
+    assert_equal 1, code, "an :unverified (network-error) CI must NOT credit a fast cert:\n#{out}"
+    assert_match(/fast-cert evidence is FRESH/, out, "the suite gate refuses — fast needs a READABLE green")
+    assert_match(/UNVERIFIED/, out, "the CI state is named as the reason it could not credit")
+  end
+
   # --- CI :unreadable — the gate names its own blindness ----------------------
   #
   # task dor-check-misses-rolio-ci (2026-07-13): a fine-grained PAT with no

@@ -37,6 +37,20 @@ class CiStatusTest < Minitest::Test
     assert_equal 2, v[:count]
   end
 
+  # GREEN is the POSITIVE property — EVERY check passed/skipped — not "nothing fail/pending".
+  # An UNRECOGNIZED bucket (gh vocabulary drift, a malformed row) is "no verdict yet", never a
+  # pass. Mutation evidence: the pre-fix `fold` (green = not-fail-and-not-pending) returned
+  # :green here — a fail-open on the dor-check merge gate, asymmetric with the SHA path's
+  # check_run_bucket which fail-safes an unknown conclusion to pending.
+  def test_an_unrecognized_bucket_is_pending_never_a_green
+    assert_equal :pending, CiStatus.parse('[{"name":"x","bucket":"queued"}]')[:state],
+                 "an unknown gh bucket must not be invented as a pass"
+    assert_equal :pending, CiStatus.parse('[{"name":"a","bucket":"pass"},{"name":"b","bucket":"weird"}]')[:state],
+                 "one unrecognized bucket makes the whole fold unsettled, not green"
+    assert_equal :red, CiStatus.parse('[{"name":"a","bucket":"fail"},{"name":"b","bucket":"weird"}]')[:state],
+                 "a real failure still wins over an unknown bucket"
+  end
+
   def test_none_when_empty_or_no_checks_reported
     assert_equal :none, CiStatus.parse("[]")[:state]
     assert_equal :none, CiStatus.parse("no checks reported on the 'feat/x' branch")[:state]
@@ -540,6 +554,24 @@ class CiStatusTest < Minitest::Test
     assert_equal 3, v[:count]
   end
 
+  # A completed run whose conclusion GitHub adds LATER (one we do not map) is "no verdict
+  # yet" — never invented as a pass or a fail. The `CHECK_RUN_BUCKETS.fetch(_, "pending")`
+  # default IS this guard; pin it, because GitHub extending its conclusion vocabulary is a
+  # WHEN not an IF. Mutation evidence: change the fetch default to "pass" and, without this
+  # test, nothing goes red — the G3 auditor would invent a green from an unknown conclusion.
+  def test_check_runs_an_unmapped_conclusion_is_pending_never_a_green
+    v = CiStatus.parse_check_runs(check_runs(
+                                    { "name" => "test", "status" => "completed", "conclusion" => "future_state" }
+                                  ))
+    assert_equal :pending, v[:state], "an unknown completed conclusion is no verdict, never a pass"
+    # A known green alongside an unmapped conclusion is still unsettled — the unknown holds it.
+    mixed = CiStatus.parse_check_runs(check_runs(
+                                        { "name" => "test", "status" => "completed", "conclusion" => "success" },
+                                        { "name" => "e2e", "status" => "completed", "conclusion" => "brand_new" }
+                                      ))
+    assert_equal :pending, mixed[:state]
+  end
+
   def test_check_runs_none_when_the_sha_has_no_runs
     # THE STATE OF THE WORLD TODAY: ci.yml triggers on pull_request + push:main, so
     # a release-tip SHA has NO check-runs. GitHub answers 200 with an empty list —
@@ -685,6 +717,20 @@ class CiStatusTest < Minitest::Test
                                            { "name" => "test", "status" => "completed", "conclusion" => "success" },
                                            { "status" => "queued", "conclusion" => nil }
                                          ))
+  end
+
+  # The invariant is `pending.all?` (EVERY pending run duplicates a concluded pass), not
+  # `.any?`. A MIXED pending set — one duplicate of a concluded check AND one genuinely-new
+  # in-flight check — must NOT credit; the new run is the original suite still working.
+  # Mutation evidence: with `all?` weakened to `any?` this credits :green (the single-
+  # pending tests above can't tell them apart — for one pending run all? ≡ any?).
+  def test_credited_verdict_never_credits_a_mixed_pending_set_with_a_genuinely_new_run
+    assert_nil CiStatus.credited_verdict(check_runs(
+                                           { "name" => "test", "status" => "completed", "conclusion" => "success" },
+                                           { "name" => "test", "status" => "queued", "conclusion" => nil },        # duplicate of the concluded pass
+                                           { "name" => "e2e",  "status" => "in_progress", "conclusion" => nil }    # NO concluded counterpart — still running
+                                         )),
+               "a pending run with no concluded counterpart, mixed in with a covered one, is a real wait"
   end
 
   def test_credited_verdict_is_nil_when_nothing_is_pending

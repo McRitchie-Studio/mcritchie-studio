@@ -78,6 +78,24 @@ class Release
       false
     end
 
+    # Does `version` escape the pin UPWARD — strictly newer than every version the pin
+    # names? Only an upward escape may rewrite the pin: a version BELOW the pin's floor is
+    # a DOWNGRADE (a backward publish the upstream strictly-newer guard should have blocked),
+    # and rewriting the pin down to it is exactly the silent-downgrade bug this exists to
+    # refuse. Empty requirements (a bare `gem "x"`) never reach here (constraint_allows? is
+    # already true). A malformed requirement/version → false: an unproven escape is never
+    # rewritten, so the pin is left as-is rather than risk a downgrade.
+    def escapes_upward?(requirements, version)
+      reqs = Array(requirements).map(&:to_s).reject(&:empty?)
+      return false if reqs.empty?
+
+      new_version = Gem::Version.new(version.to_s.strip)
+      pinned = Gem::Requirement.new(*reqs).requirements.map { |(_op, gem_version)| gem_version }
+      pinned.any? && new_version > pinned.max
+    rescue ArgumentError
+      false
+    end
+
     # Replace a plain version-pin line's requirement strings with the pessimistic
     # constraint for `version`, KEEPING every non-requirement option (e.g.
     # `require: false`) plus indentation and any trailing comment:
