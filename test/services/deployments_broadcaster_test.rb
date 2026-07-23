@@ -265,7 +265,8 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
     assert_includes tone, "bg-amber-50", "a qa_feedback in the loaded set → ever_blocked=true → amber re-review tone"
     assert_not_includes tone, "bg-red-50", "a cleared (resolved) block is amber, not red"
     assert_not_includes tone, "bg-surface", "a cleared block is not the plain tone"
-    assert_includes streams.first.to_html, "RE-REVIEW", "the cleared card carries the re-review badge"
+    # The RE-REVIEW badge was dropped as redundant — the amber tone above carries it.
+    assert_not_includes streams.first.to_html, "RE-REVIEW", "the badge is gone; the amber tone carries re-review"
   end
 
   test "[integration] a never-blocked card broadcasts the plain tone (ever_blocked derived false)" do

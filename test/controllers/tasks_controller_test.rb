@@ -795,7 +795,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "[component] task cards show unresolved feedback independent of latest note" do
+  test "[component] task cards carry unresolved feedback as the red tone + blocker-summary bar, independent of latest note" do
     task = Task.create!(title: "unresolved feedback card", stage: "submitted")
     Activity.create!(task_slug: task.slug, activity_type: "qa_feedback", description: "Needs rework before merge.")
     Activity.create!(task_slug: task.slug, activity_type: "handoff", description: "Latest handoff context.")
@@ -803,7 +803,13 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     get tasks_path
 
     assert_response :success
-    assert_select "#card-#{task.slug} [data-test='unresolved-feedback']", text: "UNRESOLVED QA"
+    # The generic UNRESOLVED QA label was dropped; the red block card-tone carries the
+    # open feedback and the blocker's own summary rides a red bar linking to the detail.
+    # The activity box still shows the latest note beneath it.
+    assert_select "#card-#{task.slug}[class*=bg-red-50]"
+    assert_select "#card-#{task.slug} [data-test='unresolved-feedback']", count: 0
+    assert_select "#card-#{task.slug} a[data-test='blocker-summary'][href='#{task_path(task.slug)}']",
+                  text: "Needs rework before merge."
     assert_select "#card-#{task.slug} [data-test='activity-box']", text: /Handoff/
   end
 
@@ -848,7 +854,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='task-unresolved-feedback-details']", count: 0
   end
 
-  test "[component] review intent shows review started on card and task page" do
+  test "[component] the REVIEW STARTED card flag is dropped; the task page still carries it" do
     task = Task.create!(title: "review started guard", stage: "submitted")
     task.record_intent_event(
       to_stage: "reviewed",
@@ -858,13 +864,103 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     get tasks_path
 
     assert_response :success
-    assert_select "#card-#{task.slug} [data-test='review-in-progress']", text: "REVIEW STARTED"
+    # Dropped from the card — the deploy-board crew avatar carries live review now
+    # (see board_card_stage_avatars_test); the detail page keeps the explicit label.
+    assert_select "#card-#{task.slug} [data-test='review-in-progress']", count: 0
 
     get task_path(task.slug)
 
     assert_response :success
     assert_select "[data-test='task-review-in-progress']", text: "REVIEW STARTED"
     assert_includes response.body, "Open follow-up work before adding changes to this branch."
+  end
+
+  # === local_review: the WAITING APPROVAL CTA's mint-on-click magic link ===
+
+  test "[unit] local_review mints a magic link to the local page and redirects to the /l interstitial" do
+    log_in_as(@admin)
+    task = Task.create!(
+      title: "local review mint task",
+      stage: "building",
+      metadata: { "devops" => { "approval_status" => "waiting", "local_url" => "http://localhost:3009/demo?x=1" } }
+    )
+
+    assert_difference -> { Studio::Link.magic_links.count }, 1 do
+      get local_review_task_path(task.slug)
+    end
+
+    link = Studio::Link.magic_links.order(:created_at).last
+    assert_equal @admin.email, link.email, "the link signs in the current admin"
+    assert_equal "/demo?x=1", link.return_to, "return_to is the same-origin PATH extracted from local_url"
+    assert_operator link.expires_at, :>, 11.hours.from_now, "a 12-hour TTL"
+    assert_redirected_to link_url(link.token)
+  end
+
+  test "[unit] local_review mints a FRESH single-use link on every click (a fixed link would go stale)" do
+    log_in_as(@admin)
+    task = Task.create!(
+      title: "local review fresh task",
+      stage: "building",
+      metadata: { "devops" => { "local_url" => "http://localhost:3009/demo" } }
+    )
+
+    get local_review_task_path(task.slug)
+    first = Studio::Link.magic_links.order(:created_at).last.token
+    get local_review_task_path(task.slug)
+    second = Studio::Link.magic_links.order(:created_at).last.token
+
+    assert_not_equal first, second, "each click mints a new token — a single-use link is burned on first consume"
+  end
+
+  test "[unit] local_review with no local_url bounces to the task without minting" do
+    log_in_as(@admin)
+    task = Task.create!(title: "local review no url task", stage: "building")
+
+    assert_no_difference -> { Studio::Link.count } do
+      get local_review_task_path(task.slug)
+    end
+    assert_redirected_to task_path(task.slug)
+  end
+
+  test "[unit] local_review is admin-gated — a non-admin cannot mint a sign-in link" do
+    log_in_as(@viewer)
+    task = Task.create!(
+      title: "local review gated task",
+      stage: "building",
+      metadata: { "devops" => { "local_url" => "http://localhost:3009/demo" } }
+    )
+
+    assert_no_difference -> { Studio::Link.count } do
+      get local_review_task_path(task.slug)
+    end
+    assert_redirected_to root_path
+  end
+
+  test "[unit] local_review neutralizes a hostile local_url — return_to never targets another host" do
+    log_in_as(@admin)
+    # The host/scheme are stripped (only the same-origin PATH survives), and a
+    # protocol-relative path is rejected by Studio::LinkToken.sanitize_path → nil.
+    # Either way the minted link can never redirect the operator off our own host.
+    {
+      "http://evil.com/pwn" => "/pwn",             # host discarded — only "/pwn" on OUR host survives
+      "http://localhost:3009//evil.com" => nil,    # protocol-relative "//" → sanitized to nil
+      "https://evil.com" => "/"                     # no path → falls back to root, never the host
+    }.each do |hostile, expected|
+      task = Task.create!(title: "hostile url #{SecureRandom.hex(2)}", stage: "building",
+                          metadata: { "devops" => { "local_url" => hostile } })
+
+      get local_review_task_path(task.slug)
+
+      link = Studio::Link.magic_links.order(:created_at).last
+      if expected.nil?
+        assert_nil link.return_to, "return_to for #{hostile.inspect} must be nil (protocol-relative rejected)"
+      else
+        assert_equal expected, link.return_to,
+                     "return_to for #{hostile.inspect} must be #{expected.inspect} (same-origin path)"
+      end
+      refute_includes link.return_to.to_s, "evil.com",
+                      "the minted link must never redirect to evil.com"
+    end
   end
 
   test "[component] reactivated building tasks render above blocked cards" do
