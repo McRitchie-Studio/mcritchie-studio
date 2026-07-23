@@ -421,6 +421,13 @@ module ApplicationHelper
   # has not been picked up shows no face. This is the ONE source both the initial
   # /deployments render AND the DeploymentsBroadcaster live morph read (both render
   # tasks/_release_summary), so the two paths never drift.
+  #
+  # STRICT READ: this runs on a GET render + a live morph, so it uses
+  # SessionMascot.find_by — NOT SessionMascot.for (which is find-or-CREATE-with-draw).
+  # A read must never MINT a mascot as a side effect; a holder session that never
+  # drew one resolves to nil and renders nothing (mirrors the conductor-mascot row
+  # just above, which reads rel.mascot without writing). The conductor's OWN session
+  # drew its mascot at session start, so the face is present for every real holder.
   def release_role_owner_face(release, role)
     return nil if release.blank?
 
@@ -428,7 +435,7 @@ module ApplicationHelper
     session = info && info["session"].presence
     return nil if session.blank?
 
-    session_mascot = SessionMascot.for(session)
+    session_mascot = SessionMascot.find_by(session_id: session)
     pokemon = session_mascot&.pokemon
     return nil if pokemon.blank?
 

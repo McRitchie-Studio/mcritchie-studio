@@ -54,13 +54,18 @@ class ReleaseOwnerFaceHelperTest < ActionView::TestCase
                "a released claim has no holder session, so it renders nothing"
   end
 
-  test "[unit] a holder session with no mascot yet renders nothing (never a faceless face)" do
+  test "[unit] a holder session with no SessionMascot row renders nothing (strict read, no mint)" do
     release = Release.create!(slug: "rel-nomascot", branch: "release", state: "assembling")
     claim_role("rel-nomascot", "assembler", session: "sess-none")
-    # No Pokémon seeded means SessionMascot.for draws nothing -> no mascot -> no face.
-    Pokemon.delete_all
+    # The holder session never drew a mascot — there is NO SessionMascot row for it.
+    # The helper reads with find_by (never .for), so it must resolve to nil WITHOUT
+    # minting one: a write-on-read on a GET/morph is the bug this pins.
+    assert_nil SessionMascot.find_by(session_id: "sess-none"), "precondition: no row yet"
 
     assert_nil release_role_owner_face(release, "assembler")
+
+    assert_nil SessionMascot.find_by(session_id: "sess-none"),
+               "rendering the face must NOT create a SessionMascot as a side effect"
   end
 
   private
