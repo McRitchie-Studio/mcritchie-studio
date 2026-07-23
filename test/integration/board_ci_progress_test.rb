@@ -130,6 +130,18 @@ class BoardCiProgressTest < ActionDispatch::IntegrationTest
     assert_select "#card-#{task.slug} [data-test='task-card-ci-progress']", 0
   end
 
+  test "[integration] a reviewed task hides the CI meter — its CI is in the past" do
+    task = submitted_task(branch: "feat/ci-reviewed-demo", pr: 99)
+    seed_run(branch: "feat/ci-reviewed-demo", sha: TASK_SHA)
+    task.update!(stage: "reviewed") # same PR + CI run, but the meter is now stale noise
+
+    get deployments_path
+    assert_response :success
+
+    assert_select "#card-#{task.slug} [data-test='task-card-ci-progress']", 0
+    assert_select "#ci-progress-#{task.slug}", 0, "the whole stable slot is gone once past submitted"
+  end
+
   private
 
   def submitted_task(branch:, pr:)

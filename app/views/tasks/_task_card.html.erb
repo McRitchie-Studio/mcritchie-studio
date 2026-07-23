@@ -18,7 +18,6 @@
 <% waiting_for_approval = task.waiting_for_operator_approval? %>
 <% local_url = task.devops? ? task.devops_url("local") : nil %>
 <% pr_url = task.devops? ? task.devops_url("pr") : nil %>
-<% waiting_for_review = task.stage == "submitted" && pr_url.present? && !review_in_progress && unresolved_feedback.blank? && block_state != :cleared %>
 <%# CI progress meter (a Ci::CheckProgress) — preloaded by the board in one batch,
     with a single-card helper fallback for the Turbo re-render path. Blank (renders
     nothing) until the task is submitted with a PR and a CI run exists. %>
@@ -171,7 +170,7 @@
   <%# Stage crew (agent-events summary) sits directly under the title — build-lane
       stages wear the task's mascot; deploy-lane shows who reviewed/assembled/
       shipped. Renders nothing when there are no events. %>
-  <%= render "components/stage_agent_avatars", task: task, agents: agents, variant: :stack, board: crew_board, mascot: mascot %>
+  <%= render "components/stage_agent_avatars", task: task, agents: agents, variant: :stack, board: crew_board, mascot: mascot, review_in_progress: review_in_progress %>
 
   <%# Slug (left) + affected-app emojis (right) now sits between the crew and
       footer timestamp. The slug fades on the right when it overflows
@@ -205,89 +204,66 @@
     </div>
   <% end %>
 
-  <%# Status flags — each a full-length bar (components/card_status_bar). The
-      operator-approval bar merges the old WAITING APPROVAL pill with the Local
-      Demo link into one flashing, card-width CTA that opens the local demo; the
-      same component carries the QA/review flags for a consistent glance. %>
-  <% if waiting_for_approval || waiting_for_review || review_in_progress || unresolved_feedback || block_state == :cleared %>
-    <%# gap-1 here + the same gap to the CI meter below (mb-1) so the CTA badges and
-        the CI card read as ONE evenly-stacked set of card-width bars. %>
+  <%# Operator-approval CTA — the ONE status bar kept on the card. A task with a
+      local example flashes a card-width bar that mints a FRESH single-use magic
+      link on click (GET /tasks/:slug/local-review) and lands the operator
+      signed-in on the local page — a fixed embedded link would go stale after one
+      use. The old WAITING REVIEW / REVIEW STARTED / UNRESOLVED QA / RE-REVIEW bars
+      were dropped as redundant: the CI meter below links to the PR, the
+      block-lifecycle card tone (Task#block_state) already carries blocked (red)
+      and cleared/re-review (amber), and the review-lane crew avatar shows a
+      reviewer face only while review is LIVE. %>
+  <% if waiting_for_approval %>
+    <%# mb-1 here matches the gap to the CI meter below so the CTA and the CI card
+        read as one evenly-stacked set of card-width bars. %>
     <div class="flex flex-col gap-1 mb-1">
-      <% if waiting_for_approval %>
-        <%# Thin, label-only bar — the whole bar is the Local Demo link (no action
-            text) so it stays one line. %>
-        <%= render "components/card_status_bar",
-              scheme: :amber, flashing: true,
-              label: "WAITING APPROVAL",
-              href: local_url, new_tab: true,
-              test_id: "operator-approval-waiting",
-              title: "Waiting for Mr. McRitchie's local demo approval — click to open it." %>
-      <% end %>
-      <% if waiting_for_review %>
-        <%= render "components/card_status_bar",
-              scheme: :amber, flashing: true,
-              label: "WAITING REVIEW",
-              href: pr_url, new_tab: true,
-              test_id: "review-waiting",
-              title: "Waiting for Carl's PR review — click to open the PR." %>
-      <% end %>
-      <% if review_in_progress %>
-        <%= render "components/card_status_bar",
-              scheme: :violet,
-              label: "REVIEW STARTED",
-              test_id: "review-in-progress",
-              title: "Review has started; use a follow-up task for new changes." %>
-      <% end %>
-      <% if unresolved_feedback %>
-        <%= render "components/card_status_bar",
-              scheme: :red, flashing: true,
-              label: "UNRESOLVED QA",
-              href: task_path(task.slug), new_tab: false,
-              test_id: "unresolved-feedback",
-              title: unresolved_feedback.block_summary %>
-      <% elsif block_state == :cleared %>
-        <%# A prior QA block was resolved and the task is resubmitted — flag it so
-            the reviewer knows to look again (pairs with the amber card tone). %>
-        <%= render "components/card_status_bar",
-              scheme: :amber,
-              label: "RE-REVIEW",
-              test_id: "cleared-feedback",
-              title: "A QA block was resolved — ready for another review." %>
-      <% end %>
+      <%# Thin, label-only bar. With a local URL the whole bar is the mint endpoint
+          (opens a fresh signed-in link to the local page); with none it stays a
+          static notice. The plain local_url rides along as a data-fallback handle. %>
+      <%= render "components/card_status_bar",
+            scheme: :amber, flashing: true,
+            label: "WAITING APPROVAL",
+            href: (local_url.present? ? local_review_task_path(task.slug) : nil),
+            link_data: (local_url.present? ? { "local-url" => local_url } : {}),
+            new_tab: true,
+            test_id: "operator-approval-waiting",
+            title: "Waiting for Mr. McRitchie's local demo approval — sign in and open it." %>
     </div>
   <% end %>
 
-  <%# Per-application RELEASE INCLUSION marker — reviewed stage only. Makes Avi's
-      qa-release disposition (which applications ride the next candidate) visible ON the
-      board: a green "IN RELEASE" bar for the default (every reviewed task ships) or an
-      amber "HELD FROM RELEASE" bar for a member Avi held out (included_in_release:false)
-      when order-of-operations matters. Names the release app so the per-app decision
-      reads at a glance. %>
-  <% if task.stage == "reviewed" %>
+  <%# Per-application RELEASE INCLUSION marker — reviewed stage, HELD case ONLY. The
+      default is to ship EVERY reviewed task (included_in_release? defaults true), so a
+      green "IN RELEASE" bar is a given on every reviewed card — pure noise. Only the
+      EXCEPTION earns a bar: an amber "HELD FROM RELEASE · <app>" for a member Avi held
+      out (included_in_release:false) when order-of-operations matters. A reviewed card
+      with nothing held shows no bar. %>
+  <% if task.stage == "reviewed" && !task.included_in_release? %>
     <% release_app = task.release_repo.presence %>
-    <% included = task.included_in_release? %>
-    <div class="mb-1.5" data-test="release-inclusion-marker" data-included="<%= included %>" data-app="<%= release_app %>">
+    <div class="mb-1.5" data-test="release-inclusion-marker" data-included="false" data-app="<%= release_app %>">
       <%= render "components/card_status_bar",
-            scheme: (included ? :mint : :amber),
-            label: ["#{included ? 'IN RELEASE' : 'HELD FROM RELEASE'}", release_app].compact.join(" · "),
-            icon: (included ? "🚀" : "⏸️"),
-            test_id: (included ? "release-inclusion-in" : "release-inclusion-held"),
-            title: (included ?
-              "Rides the next release candidate (Avi's default: ship all reviewed). Mark included_in_release:false to hold #{release_app || 'this app'} back." :
-              "Held from the next release candidate by Avi's disposition (included_in_release:false) — enforced via bin/release prepare --task / bin/release eject.") %>
+            scheme: :amber,
+            label: ["HELD FROM RELEASE", release_app].compact.join(" · "),
+            icon: "⏸️",
+            test_id: "release-inclusion-held",
+            title: "Held from the next release candidate by Avi's disposition (included_in_release:false) — enforced via bin/release prepare --task / bin/release eject." %>
     </div>
   <% end %>
 
   <%# CI progress meter — a symbolic row (few checks) or the numeric "X / Y" bar for
-      this PR's GitHub CI run, and a LINK that opens the PR in a new tab. Wrapped in
-      the stable-id components/_ci_progress_slot so a live workflow_job webhook can
-      morph JUST this meter in place (it ticks up with no reload); the slot renders
-      nothing visible until the task has a submitted PR with a CI run. %>
-  <%= render "components/ci_progress_slot",
-        dom_id: "ci-progress-#{task.slug}",
-        progress: ci_progress, compact: true,
-        test_id: "task-ci-progress", href: pr_url,
-        wrapper_class: "mb-1.5", inner_test_id: "task-card-ci-progress" %>
+      this PR's GitHub CI run, and a LINK that opens the PR in a new tab. SUBMITTED
+      stage ONLY: once a task is reviewed/assembled/shipped its CI is in the past, so
+      the meter is stale noise (a building task has no PR, so the slot is empty there
+      anyway). Wrapped in the stable-id components/_ci_progress_slot so a live
+      workflow_job webhook can morph JUST this meter in place (it ticks up with no
+      reload); the slot renders nothing visible until the task has a submitted PR with
+      a CI run. %>
+  <% if task.stage == "submitted" %>
+    <%= render "components/ci_progress_slot",
+          dom_id: "ci-progress-#{task.slug}",
+          progress: ci_progress, compact: true,
+          test_id: "task-ci-progress", href: pr_url,
+          wrapper_class: "mb-1.5", inner_test_id: "task-card-ci-progress" %>
+  <% end %>
 
   <%# Secondary meta row — QA/Prod quick links, only when present. The release-slug
       badge was dropped from the card: it's pipeline plumbing, not useful at the

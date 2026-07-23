@@ -220,7 +220,7 @@ module StageAgentsHelper
     entries.any? || (mascot.present? && (build_step_board?(task, board) || task.blocked?))
   end
 
-  def crew_columns(task, entries, board:, mascot: nil, agents: nil, events: nil)
+  def crew_columns(task, entries, board:, mascot: nil, agents: nil, events: nil, review_live: nil)
     # A blocked card reads the SAME on both boards — design · building · blocker+✕
     # (blocked_stage_columns). The build lane is split back out so slots 1/2 name the
     # design + build mascots and slot 3 is the actual blocking agent (never the mascot),
@@ -230,6 +230,20 @@ module StageAgentsHelper
     return build_step_columns(task, entries, mascot) if build_step_board?(task, board)
 
     by_lane = crew_clusters(task, entries).index_by(&:lane)
+
+    # The review lane's face on a card means ONE thing: review is happening RIGHT
+    # NOW. A task that was reviewed, QA-blocked, and resubmitted still carries a
+    # HISTORICAL →reviewed cluster in by_lane[:review]; on a `submitted` card that
+    # lingering prior-round face would read as an in-flight review. Clear it while
+    # the task sits in `submitted` without a LIVE review, so only the live intent
+    # (refilled by in_progress_work below) can put a reviewer face there — keeping
+    # the board's "avatar absent = waiting, present = started" read honest even for
+    # a resubmitted-after-block task. `review_live` is the card's preloaded
+    # review_in_progress?; nil (detail page, tests) self-queries.
+    if task.stage == "submitted"
+      review_live = task.review_in_progress? if review_live.nil?
+      by_lane.delete(:review) unless review_live
+    end
 
     # Surface LIVE deploy-stage work (review picked · Avi QA · Steffon ship) as a
     # ticking cluster in its lane before the transition lands — the Deploy mirror of

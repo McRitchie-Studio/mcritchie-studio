@@ -49,10 +49,12 @@ class BoardTaskRankTest < ActionDispatch::IntegrationTest
     order = card_order_in("dropzone-building")
     assert_operator order.index("card-#{waiting.slug}"), :<, order.index("card-#{normal.slug}"),
                     "operator approval requests should float to the top of the stage list"
-    # WAITING APPROVAL + Local Demo are now ONE full-length bar — the whole flashing
-    # bar links to the local demo.
-    assert_select "#card-#{waiting.slug} a[data-test='operator-approval-waiting'][href='http://localhost:3001/demo']",
+    # The WAITING APPROVAL bar is ONE full-length CTA that links to the mint endpoint
+    # (a fresh single-use magic link per click), NOT the raw local_url.
+    assert_select "#card-#{waiting.slug} a[data-test='operator-approval-waiting'][href='#{local_review_task_path(waiting.slug)}']",
                   text: "WAITING APPROVAL"
+    bar = css_select("#card-#{waiting.slug} a[data-test='operator-approval-waiting']").first
+    assert_equal "http://localhost:3001/demo", bar["data-local-url"], "the raw local_url rides along as a data-fallback"
   end
 
   test "[integration] submitted approval-exit card no longer waits for approval" do
@@ -75,7 +77,7 @@ class BoardTaskRankTest < ActionDispatch::IntegrationTest
     assert_select "#card-#{task.slug} [data-test='operator-approval-waiting']", count: 0
   end
 
-  test "[integration] submitted PR cards show the waiting review bar" do
+  test "[integration] submitted PR cards no longer show a waiting-review bar" do
     task = Task.create!(
       title: "submitted review peer",
       stage: "submitted",
@@ -85,8 +87,8 @@ class BoardTaskRankTest < ActionDispatch::IntegrationTest
     get tasks_path
     assert_response :success
 
-    assert_select "#card-#{task.slug} a[data-test='review-waiting'][href='https://github.com/acme/app/pull/42']",
-                  text: "WAITING REVIEW"
+    # Dropped as redundant — the CI meter below links the PR; no shortcut lost.
+    assert_select "#card-#{task.slug} [data-test='review-waiting']", count: 0
   end
 
   test "[integration] deployments column puts freshly shipped tasks above older shipped cards" do

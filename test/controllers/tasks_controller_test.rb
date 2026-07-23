@@ -795,7 +795,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "[component] task cards show unresolved feedback independent of latest note" do
+  test "[component] task cards carry unresolved feedback as the red block tone, independent of latest note" do
     task = Task.create!(title: "unresolved feedback card", stage: "submitted")
     Activity.create!(task_slug: task.slug, activity_type: "qa_feedback", description: "Needs rework before merge.")
     Activity.create!(task_slug: task.slug, activity_type: "handoff", description: "Latest handoff context.")
@@ -803,7 +803,10 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     get tasks_path
 
     assert_response :success
-    assert_select "#card-#{task.slug} [data-test='unresolved-feedback']", text: "UNRESOLVED QA"
+    # The UNRESOLVED QA bar was dropped; the red block card-tone carries the open
+    # feedback now, and the activity box still shows the latest note beneath it.
+    assert_select "#card-#{task.slug}[class*=bg-red-50]"
+    assert_select "#card-#{task.slug} [data-test='unresolved-feedback']", count: 0
     assert_select "#card-#{task.slug} [data-test='activity-box']", text: /Handoff/
   end
 
@@ -848,7 +851,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='task-unresolved-feedback-details']", count: 0
   end
 
-  test "[component] review intent shows review started on card and task page" do
+  test "[component] the REVIEW STARTED card flag is dropped; the task page still carries it" do
     task = Task.create!(title: "review started guard", stage: "submitted")
     task.record_intent_event(
       to_stage: "reviewed",
@@ -858,13 +861,76 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     get tasks_path
 
     assert_response :success
-    assert_select "#card-#{task.slug} [data-test='review-in-progress']", text: "REVIEW STARTED"
+    # Dropped from the card — the deploy-board crew avatar carries live review now
+    # (see board_card_stage_avatars_test); the detail page keeps the explicit label.
+    assert_select "#card-#{task.slug} [data-test='review-in-progress']", count: 0
 
     get task_path(task.slug)
 
     assert_response :success
     assert_select "[data-test='task-review-in-progress']", text: "REVIEW STARTED"
     assert_includes response.body, "Open follow-up work before adding changes to this branch."
+  end
+
+  # === local_review: the WAITING APPROVAL CTA's mint-on-click magic link ===
+
+  test "[unit] local_review mints a magic link to the local page and redirects to the /l interstitial" do
+    log_in_as(@admin)
+    task = Task.create!(
+      title: "local review mint task",
+      stage: "building",
+      metadata: { "devops" => { "approval_status" => "waiting", "local_url" => "http://localhost:3009/demo?x=1" } }
+    )
+
+    assert_difference -> { Studio::Link.magic_links.count }, 1 do
+      get local_review_task_path(task.slug)
+    end
+
+    link = Studio::Link.magic_links.order(:created_at).last
+    assert_equal @admin.email, link.email, "the link signs in the current admin"
+    assert_equal "/demo?x=1", link.return_to, "return_to is the same-origin PATH extracted from local_url"
+    assert_operator link.expires_at, :>, 11.hours.from_now, "a 12-hour TTL"
+    assert_redirected_to link_url(link.token)
+  end
+
+  test "[unit] local_review mints a FRESH single-use link on every click (a fixed link would go stale)" do
+    log_in_as(@admin)
+    task = Task.create!(
+      title: "local review fresh task",
+      stage: "building",
+      metadata: { "devops" => { "local_url" => "http://localhost:3009/demo" } }
+    )
+
+    get local_review_task_path(task.slug)
+    first = Studio::Link.magic_links.order(:created_at).last.token
+    get local_review_task_path(task.slug)
+    second = Studio::Link.magic_links.order(:created_at).last.token
+
+    assert_not_equal first, second, "each click mints a new token — a single-use link is burned on first consume"
+  end
+
+  test "[unit] local_review with no local_url bounces to the task without minting" do
+    log_in_as(@admin)
+    task = Task.create!(title: "local review no url task", stage: "building")
+
+    assert_no_difference -> { Studio::Link.count } do
+      get local_review_task_path(task.slug)
+    end
+    assert_redirected_to task_path(task.slug)
+  end
+
+  test "[unit] local_review is admin-gated — a non-admin cannot mint a sign-in link" do
+    log_in_as(@viewer)
+    task = Task.create!(
+      title: "local review gated task",
+      stage: "building",
+      metadata: { "devops" => { "local_url" => "http://localhost:3009/demo" } }
+    )
+
+    assert_no_difference -> { Studio::Link.count } do
+      get local_review_task_path(task.slug)
+    end
+    assert_redirected_to root_path
   end
 
   test "[component] reactivated building tasks render above blocked cards" do

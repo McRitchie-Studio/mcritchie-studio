@@ -2,7 +2,7 @@ class TasksController < ApplicationController
   skip_before_action :verify_authenticity_token, if: -> { request.format.json? }
   skip_before_action :require_authentication, only: [:index, :show, :recent, :review_events, :review_events_hub, :deployments, :stages, :sop]
   before_action :require_admin, except: [:index, :show, :recent, :review_events, :review_events_hub, :deployments, :stages, :sop]
-  before_action :set_task, only: [:show, :review_events, :edit, :update, :destroy, :comment, :block, :unblock]
+  before_action :set_task, only: [:show, :review_events, :local_review, :edit, :update, :destroy, :comment, :block, :unblock]
 
   def reorder
     slugs = params[:slugs]
@@ -82,6 +82,24 @@ class TasksController < ApplicationController
     @task_events = @task.task_events.chronological.to_a
     @review_events = @task.review_check_in_events
     load_review_process_context
+  end
+
+  # The board's WAITING APPROVAL CTA target. Admin-only (require_admin — this mints
+  # a sign-in link): create a FRESH single-use magic link for the current admin to
+  # the task's local page, then redirect to the /l/<token> interstitial, so a click
+  # lands Mr. McRitchie signed-in on the local demo. Minted per click because a
+  # single-use magic link is burned on first consume — a fixed embedded link would
+  # go stale after one use. The plain local_url stays the card's data-fallback.
+  def local_review
+    local_url = @task.devops_url("local")
+    return redirect_to(task_path(@task.slug), alert: "This task has no local demo URL yet.") if local_url.blank?
+
+    link = Studio::Link.create_magic_link(
+      email: current_user.email,
+      return_to: local_return_path(local_url),
+      ttl: 12.hours
+    )
+    redirect_to link_url(link.token), allow_other_host: false
   end
 
   def review_events_hub
@@ -201,6 +219,18 @@ class TasksController < ApplicationController
   def set_task
     @task = Task.find_by(slug: params[:slug])
     return redirect_to tasks_path, alert: "Task not found" unless @task
+  end
+
+  # The same-origin PATH of the task's local page, pulled from its full local_url
+  # (e.g. "http://localhost:3009/demo?x=1" -> "/demo?x=1"). Studio::Link keeps only
+  # a same-origin path as return_to (an absolute URL sanitizes to nil), so the path
+  # is extracted here; anything unparseable falls back to root.
+  def local_return_path(local_url)
+    uri = URI.parse(local_url.to_s)
+    path = [uri.path.presence, uri.query.presence].compact.join("?")
+    path.start_with?("/") ? path : "/"
+  rescue URI::InvalidURIError
+    "/"
   end
 
   def load_task_conversation

@@ -83,7 +83,7 @@ class TaskCardTest < ActionView::TestCase
     assert_includes card["style"], "--task-card-glow-color-b: #F95587"
   end
 
-  test "[component] waiting approval card pulses and merges the local demo into one full-length link" do
+  test "[component] waiting approval card pulses and links the whole bar to the mint-on-click magic-link endpoint" do
     task = Task.create!(
       title: "Approval waiting card",
       stage: "building",
@@ -106,8 +106,14 @@ class TaskCardTest < ActionView::TestCase
     badge_classes = css_select("[data-test='operator-approval-waiting']").first["class"].split
     assert_includes badge_classes, "motion-safe:animate-pulse"
     assert_not_includes badge_classes, "animate-pulse"
-    # the Local Demo link is merged INTO the waiting bar — the whole flashing bar IS the demo link
-    assert_select "a[data-test='operator-approval-waiting'][href='http://localhost:3001/demo']"
+    # The whole flashing bar is the mint endpoint (mints a FRESH single-use magic
+    # link per click and lands the operator signed-in on the local page) — NOT the
+    # raw local_url, which would go stale after one use. The plain local_url rides
+    # along as a data-fallback.
+    bar = css_select("a[data-test='operator-approval-waiting']").first
+    assert_equal local_review_task_path(task.slug), bar["href"]
+    assert_not_equal "http://localhost:3001/demo", bar["href"], "must not link the raw local_url directly"
+    assert_equal "http://localhost:3001/demo", bar["data-local-url"], "local_url is the data-fallback handle"
   end
 
   test "[component] submitted approval-exit card drops the waiting bar" do
@@ -132,33 +138,26 @@ class TaskCardTest < ActionView::TestCase
     assert_select "[data-test='operator-approval-waiting']", count: 0
   end
 
-  test "[component] submitted PR card shows a waiting review bar linked to the PR" do
+  test "[component] the four redundant review-status flags are gone from the card" do
+    # WAITING REVIEW / REVIEW STARTED / UNRESOLVED QA / RE-REVIEW were dropped as
+    # inferable: the CI meter links the PR, the block card-tone carries blocked +
+    # re-review, and the crew avatar carries live review. A submitted PR card with a
+    # live review intent + a cleared block would have lit three of them at once.
     task = Task.create!(
-      title: "Waiting review card",
+      title: "Flags gone card",
       stage: "submitted",
       metadata: { "devops" => { "pr_url" => "https://github.com/acme/app/pull/42" } }
     )
-
-    render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :deploy }
-
-    card = css_select("#card-#{task.slug}").first
-    assert_equal "submitted", card["data-stage-glow"]
-    assert_select "[data-test='review-waiting']", text: "WAITING REVIEW"
-    badge_classes = css_select("[data-test='review-waiting']").first["class"].split
-    assert_includes badge_classes, "motion-safe:animate-pulse"
-    assert_select "a[data-test='review-waiting'][href='https://github.com/acme/app/pull/42']"
-  end
-
-  test "[component] waiting review bar clears after the task leaves submitted" do
-    task = Task.create!(
-      title: "Reviewed no waiting",
-      stage: "reviewed",
-      metadata: { "devops" => { "pr_url" => "https://github.com/acme/app/pull/42" } }
+    task.record_intent_event(
+      to_stage: "reviewed",
+      reviewers: [{ "slug" => "carl", "weight" => "primary" }]
     )
 
     render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :deploy }
 
-    assert_select "[data-test='review-waiting']", false
+    %w[review-waiting review-in-progress unresolved-feedback cleared-feedback].each do |flag|
+      assert_select "[data-test='#{flag}']", { count: 0 }, "the '#{flag}' flag must be gone from the card"
+    end
   end
 
   test "[component] footer shows created + updated stamps, not the local demo or PR links" do
@@ -196,22 +195,17 @@ class TaskCardTest < ActionView::TestCase
     assert_not_includes card["style"], "0 0 118px color-mix(in srgb, var(--task-card-glow-color) 12%, transparent)"
   end
 
-  test "[component] a reviewed card shows the green IN RELEASE inclusion marker by default" do
+  test "[component] a reviewed card with the default inclusion shows NO release marker (only the held exception does)" do
     task = Task.create!(title: "Reviewed inclusion default", stage: "reviewed",
                         metadata: { "devops" => { "pr_url" => "https://github.com/amcritchie/turf-monster/pull/5" } })
 
     render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :deploy }
 
-    marker = css_select("[data-test='release-inclusion-marker']").first
-    assert marker, "a reviewed card must carry the release-inclusion marker"
-    assert_equal "true", marker["data-included"]
-    assert_equal "turf-monster", marker["data-app"]
-    bar = css_select("[data-test='release-inclusion-in']").first
-    assert bar, "the default reviewed disposition renders the IN RELEASE bar"
-    assert_includes bar.text, "IN RELEASE"
-    assert_includes bar.text, "turf-monster", "the marker names the release app"
-    assert_includes bar["class"], "bg-mint-500", "the included marker wears the mint scheme"
-    assert_select "[data-test='release-inclusion-held']", count: 0
+    assert task.included_in_release?, "sanity: the default reviewed disposition is included"
+    # The green IN RELEASE bar was dropped as noise — included is the default on every
+    # reviewed card, so only the HELD exception earns a bar.
+    assert_select "[data-test='release-inclusion-marker']", count: 0
+    assert_select "[data-test='release-inclusion-in']", count: 0
   end
 
   test "[component] a held-back reviewed card shows the amber HELD FROM RELEASE marker" do
@@ -241,6 +235,21 @@ class TaskCardTest < ActionView::TestCase
       assert_select "[data-test='release-inclusion-marker']", { count: 0 },
                     "the inclusion marker must not render on the #{stage} stage"
     end
+  end
+
+  test "[component] the CI meter slot renders only while submitted, not once reviewed" do
+    submitted = Task.create!(title: "ci meter submitted card", stage: "submitted",
+                             metadata: { "devops" => { "pr_url" => "https://github.com/acme/app/pull/9" } })
+    reviewed = Task.create!(title: "ci meter reviewed card", stage: "reviewed",
+                            metadata: { "devops" => { "pr_url" => "https://github.com/acme/app/pull/9" } })
+
+    render partial: "tasks/task_card",
+           locals: { task: submitted.reload, agents: @agents, crew_board: :deploy, ci_progress: nil }
+    assert_select "#ci-progress-#{submitted.slug}", 1, "a submitted card carries the stable CI slot"
+
+    render partial: "tasks/task_card",
+           locals: { task: reviewed.reload, agents: @agents, crew_board: :deploy, ci_progress: nil }
+    assert_select "#ci-progress-#{reviewed.slug}", 0, "past submitted the CI meter is stale noise — the whole slot is gone"
   end
 
   test "deploy attention cards step up from subtle to medium to pokemon-color border glows" do
@@ -453,7 +462,7 @@ class TaskCardTest < ActionView::TestCase
     assert_select "#card-#{task.slug}"
   end
 
-  test "[component] a cleared-block card wears the amber re-review tone + badge" do
+  test "[component] a cleared-block card wears the amber re-review tone (the badge is dropped; the tone carries it)" do
     task = Task.create!(title: "Cleared block card", stage: "submitted")
 
     render partial: "tasks/task_card",
@@ -464,7 +473,7 @@ class TaskCardTest < ActionView::TestCase
     assert_includes card["class"], "bg-amber-50"
     assert_includes card["class"], "dark:bg-amber-950/40"
     assert_includes card["class"], "hover:bg-amber-100/70"
-    assert_select "[data-test='cleared-feedback']", text: "RE-REVIEW"
+    assert_select "[data-test='cleared-feedback']", { count: 0 }, "the RE-REVIEW badge is dropped; the amber tone carries it"
     assert_not_includes card["class"], "bg-red-50", "a cleared block is amber, not red"
   end
 
@@ -482,23 +491,8 @@ class TaskCardTest < ActionView::TestCase
     assert_includes card["class"], "bg-red-50"
     assert_includes card["class"], "task-card-stage-glow-blocked"
     assert_not_includes card["class"], "studio-border-glow"
-    assert_select "[data-test='unresolved-feedback']"
+    assert_select "[data-test='unresolved-feedback']", { count: 0 }, "the UNRESOLVED QA bar is dropped; the red tone carries the open block"
     assert_select "[data-test='cleared-feedback']", count: 0
-  end
-
-  test "[component] the unresolved-feedback card tooltip shows the blocker summary, not the full details" do
-    task = Task.create!(title: "Tooltip summary card", stage: "submitted")
-    feedback = Activity.create!(task_slug: task.slug, activity_type: "qa_feedback",
-                                description: "The stage transition bypasses the server guard; re-gate it before resubmit.",
-                                metadata: { "summary" => "Stage move skips server guard" })
-
-    render partial: "tasks/task_card",
-           locals: { task: task.reload, agents: @agents, crew_board: :deploy,
-                     unresolved_feedback: feedback, ever_blocked: true }
-
-    bar = css_select("[data-test='unresolved-feedback']").first
-    assert_equal "Stage move skips server guard", bar["title"], "hover shows the short summary"
-    refute_includes bar["title"].to_s, "re-gate it before resubmit", "the full details stay off the tooltip"
   end
 
   test "[component] a never-blocked submitted card stays plain" do
