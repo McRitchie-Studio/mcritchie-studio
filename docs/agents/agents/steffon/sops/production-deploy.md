@@ -29,6 +29,15 @@ Use the production board by default. Do not add `--local`.
 
 ## Deployer claim — automatic, on the RELEASE record
 
+> **Lane name vs. owner (read this first).** The `avi` in this section is a
+> historical shift-LANE key from when the ship used to be Avi's — it is NOT the
+> current owner. After the 2026-07-22 reslot **Steffon owns production-deploy** (you,
+> running this SOP) and **Avi owns qa-release**. The ship's `avi` shift is retired
+> anyway: its lock moved to the per-release `deployer` claim described below. The only
+> `avi` shift still live is `clean-up`'s board-sweep lane — a code identifier left
+> unchanged. Read `avi`/`steffon` here as opaque lease names, and take the act-owner
+> from the SOP that owns the act, never from the lane key.
+
 The lock that stops two `avi` sessions from shipping the same release now lives on the
 RELEASE RECORD, not on a per-role `avi` shift. **`bin/release ship` takes it for you** —
 the per-release `deployer` conductor claim (`ReleaseConductorClaim`) — BEFORE the

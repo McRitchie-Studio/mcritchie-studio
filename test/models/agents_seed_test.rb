@@ -29,23 +29,40 @@ class AgentsSeedTest < ActiveSupport::TestCase
       "an unchanged re-seed must not bump any updated_at"
   end
 
-  test "Steffon is the Platform Engineer — ship gate + QA-owner exclusion" do
+  test "Steffon is the Platform Engineer — ship gate, no longer the QA owner" do
     run_seed
     steffon = Agent.find_by!(slug: "steffon")
     assert_equal "Platform Engineer", steffon.title
     assert steffon.metadata["reviewer"], "Steffon is the DevOps/Platform light reviewer"
     assert steffon.metadata["ship_gate"], "Steffon owns production-deploy (the ship gate)"
-    assert steffon.metadata["qa_owner"], "the reviewer-select QA-owner exclusion keys on Steffon"
+    refute steffon.metadata["qa_owner"], "after the reslot the QA-owner exclusion keys on Avi, not Steffon"
     assert_includes Array(steffon.metadata["domains"]), "devops"
   end
 
-  test "Avi is the qa-release assembler, not a pool reviewer" do
+  test "Avi is the qa-release assembler and the QA owner, not a pool reviewer" do
     run_seed
     avi = Agent.find_by!(slug: "avi")
     assert_nil avi.metadata["review_role"], "Avi no longer delegates review — Carl owns it"
     assert avi.metadata["assembler"], "Avi owns the qa-release sweep + QA"
+    assert avi.metadata["qa_owner"], "the reviewer-select QA-owner exclusion keys on Avi (he runs qa-release + QA)"
     refute avi.metadata["ship_gate"], "Avi no longer owns the ship gate — Steffon ships"
     refute avi.metadata["reviewer"], "Avi is not one of the pool reviewers"
+  end
+
+  test "re-seeding strips a stale qa_owner left on a non-Avi row (the merge alone can't)" do
+    # A pre-reslot row: Steffon still carrying the old qa_owner flag. The metadata
+    # merge only ADDS/overwrites keys present in seed data, so dropping qa_owner from
+    # Steffon's seed can't remove a flag already on the live row — the seed's
+    # reconciliation must. Avi ends the sole qa_owner.
+    run_seed
+    steffon = Agent.find_by!(slug: "steffon")
+    steffon.update!(metadata: steffon.metadata.merge("qa_owner" => true))
+    assert steffon.reload.metadata["qa_owner"], "precondition: the stale flag is present"
+
+    run_seed
+
+    refute Agent.find_by!(slug: "steffon").metadata["qa_owner"], "the stale qa_owner is reconciled off Steffon"
+    assert Agent.find_by!(slug: "avi").metadata["qa_owner"], "Avi remains the sole qa_owner"
   end
 
   test "Carl is the Lead Architect and standing primary review owner" do

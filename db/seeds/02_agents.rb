@@ -20,9 +20,11 @@
 # Carl is the LEAD ARCHITECT and STANDING PRIMARY — the deep reviewer + OWNER on
 # EVERY PR (there is no Avi supervisor). He summons ONE domain LIGHT from the
 # specialist pool {Shannon=UI · Jasper=Web3 · Steffon=DevOps/Platform ·
-# Alex=Documentation}. Steffon is `qa_owner` and must never review a PR he will
-# then QA (no self-gating). See docs/agents/agents/carl/sops/pr-review.md and
-# app/services/reviewer_selector.rb.
+# Alex=Documentation}. After the 2026-07-22 reslot **Avi** is the `qa_owner` (he runs
+# qa-release: the accepted→release sweep + QA), so he is kept out of the light pool —
+# no soul both reviews AND QAs the same change (no self-gating). Steffon moved to
+# production-deploy and rejoined the light specialist pool. See
+# docs/agents/agents/carl/sops/pr-review.md and app/services/reviewer_selector.rb.
 agents_data = [
   {
     name: "Alex",
@@ -53,6 +55,7 @@ agents_data = [
       "review_role" => nil,
       "reviewer" => false,
       "assembler" => true,
+      "qa_owner" => true,
       "responsibilities" => ["ticket-refinement", "sizing", "qa-release", "qa-deploy"]
     }
   },
@@ -111,7 +114,7 @@ agents_data = [
     status: "active",
     agent_type: "specialist",
     title: "Platform Engineer",
-    description: "Platform Engineer (Ship + Infrastructure). Owns production-deploy — the frozen-SHA ship gate, then bin/release ship (ff release → main, deploy prod, smoke, release notes) — plus archive-shipped, Heroku deploys, env vars, CI, observability, and the recovery protocol. Domain light reviewer for DevOps/Platform PRs. The reviewer-select QA-owner exclusion still keys on him (no self-gating).",
+    description: "Platform Engineer (Ship + Infrastructure). Owns production-deploy — the frozen-SHA ship gate, then bin/release ship (ff release → main, deploy prod, smoke, release notes) — plus archive-shipped, Heroku deploys, env vars, CI, observability, and the recovery protocol. Domain light reviewer for DevOps/Platform PRs. After the reslot the reviewer-select QA-owner exclusion keys on Avi (who runs qa-release), not on Steffon, so Steffon is back in the light pool.",
     avatar: "/agents/steffon.png",
     position: 7,
     metadata: {
@@ -119,7 +122,6 @@ agents_data = [
       "reviewer" => true,
       "domains" => ["devops", "release", "infrastructure", "ci", "observability", "heroku"],
       "review_weight" => 2.0,
-      "qa_owner" => true,
       "ship_gate" => true
     }
   },
@@ -201,6 +203,19 @@ agents_data.each do |data|
   )
   agent.save! if agent.new_record? || agent.changed?
   puts "Agent: #{agent.name} (#{agent.agent_type}) — #{agent.title}"
+end
+
+# The `qa_owner` flag moved from Steffon to Avi in the 2026-07-22 reslot (Avi now
+# runs qa-release + the QA deploy; Steffon moved to production-deploy). The metadata
+# merge above only ADDS/overwrites the keys present in each soul's seed data, so an
+# existing Steffon row keeps its stale `qa_owner` unless we strip it. Reconcile to a
+# single owner: Avi holds `qa_owner`; clear the key from everyone else. Idempotent —
+# a no-op once Avi is the sole holder.
+Agent.where.not(slug: "avi").find_each do |agent|
+  next unless agent.metadata.is_a?(Hash) && agent.metadata.key?("qa_owner")
+
+  agent.update!(metadata: agent.metadata.except("qa_owner"))
+  puts "Agent: cleared stale qa_owner from #{agent.slug} (it moved to avi)"
 end
 
 # The Documentation reviewer used to be a separate `alex-docs` persona; it's now

@@ -55,8 +55,8 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     result = ReviewerSelector.select(task_for(shape: "backend"))
     assert_equal "carl", primary_slug(result)
     refute_equal "carl", light_slug(result), "the light is a specialist, never Carl"
-    refute_equal "steffon", light_slug(result), "the QA owner is never the light"
-    assert_includes %w[shannon jasper alex], light_slug(result), "the light is drawn from the specialist pool"
+    refute_equal "avi", light_slug(result), "the QA owner (avi) is never the light"
+    assert_includes %w[shannon jasper steffon alex], light_slug(result), "the light is drawn from the specialist pool"
   end
 
   # --- the LIGHT is a domain-fit pick from the specialist pool ---
@@ -93,13 +93,20 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     assert_equal "jasper", light_slug(result), "the turf-vault repo pulls the Web3 specialist into the light"
   end
 
-  # --- no self-gating: the QA owner (steffon) is never a reviewer ---
+  # --- no self-gating: the QA owner (avi) is never a reviewer; steffon rejoined ---
 
-  test "steffon is never picked — he QAs the assembled RC, so reviewing too would self-gate" do
+  test "avi (the default QA owner) is never a light reviewer — he runs qa-release, so reviewing too would self-gate" do
     Task::SHAPES.each do |shape|
       result = ReviewerSelector.select(task_for(shape: shape))
-      refute_includes slugs(result), "steffon", "steffon must be excluded on a #{shape} task"
+      refute_includes slugs(result), "avi", "avi must be excluded on a #{shape} task (he QAs the assembled RC)"
     end
+  end
+
+  test "steffon rejoins the light pool after the reslot — avi is the QA owner now" do
+    decision = ReviewerSelector.explain(task_for(shape: "backend"))
+    assert_equal "avi", decision["excluded_qa_owner"], "the default QA-owner exclusion targets avi"
+    assert_includes decision["candidates"], "steffon",
+      "steffon is a light candidate again (he moved to production-deploy, no longer the QA owner)"
   end
 
   test "a custom qa_owner is excluded from the light seat" do
@@ -115,7 +122,7 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     refute_includes slugs(result), "carl", "the builder never reviews their own work — not even Carl"
     assert_equal 2, result.size, "a primary+light pair still forms from the specialist pool"
     assert_equal slugs(result).uniq, slugs(result), "two distinct specialists"
-    refute_includes slugs(result), "steffon", "the QA owner stays excluded"
+    refute_includes slugs(result), "avi", "the QA owner (avi) stays excluded"
     # onchain needs web3 → jasper is the best fit and takes the (yielded) deep seat.
     assert_equal "jasper", primary_slug(result), "the best-fit specialist takes the yielded deep seat"
   end
@@ -178,7 +185,8 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     assert_nil decision["builder"], "no builder known"
     assert_nil decision["excluded_builder"]
     assert_equal "carl", decision["standing_primary"]
-    refute_includes decision["candidates"], "steffon", "the QA-owner exclusion still applies"
+    assert_equal "avi", decision["excluded_qa_owner"], "the QA-owner exclusion targets avi"
+    assert_includes decision["candidates"], "steffon", "steffon is a light candidate again"
   end
 
   test "a known non-specialist builder excludes nobody from the light pool" do
@@ -274,10 +282,10 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
   end
 
   test "a busy soul that isn't a light candidate excludes nobody" do
-    # `mack` isn't a specialist and `steffon` is the already-excluded QA owner —
+    # `mack` isn't a specialist and `avi` is the QA owner (never in the light pool) —
     # neither is a removable candidate, so the busy filter is a no-op for them.
     baseline = ReviewerSelector.explain(task_for(shape: "backend"))["candidates"]
-    decision = ReviewerSelector.new(task_for(shape: "backend"), busy: %w[mack steffon]).decision
+    decision = ReviewerSelector.new(task_for(shape: "backend"), busy: %w[mack avi]).decision
 
     assert_equal [], decision["excluded_busy"], "a non-candidate busy soul removes nobody"
     assert_equal baseline.sort, decision["candidates"].sort, "the light candidate set is unchanged"
@@ -332,9 +340,10 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     decision = ReviewerSelector.explain(task, busy: ["jasper"])
     assert_equal "shannon", decision["excluded_builder"], "the assigned builder is excluded from the light"
     assert_equal ["jasper"], decision["excluded_busy"], "the busy soul is excluded"
-    %w[shannon jasper steffon].each { |slug| refute_includes decision["candidates"], slug }
+    %w[shannon jasper].each { |slug| refute_includes decision["candidates"], slug }
+    assert_includes decision["candidates"], "steffon", "steffon stays eligible (avi is the QA owner now)"
     assert_equal "carl", decision["reviewers"].first["slug"], "Carl is the standing primary"
-    assert_equal "alex", light_slug(decision["reviewers"]), "the last remaining specialist is the light"
+    assert_includes %w[steffon alex], light_slug(decision["reviewers"]), "the light is one of the remaining specialists"
   end
 
   # --- logged random tiebreak ---
@@ -374,7 +383,7 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     assert_equal slugs(result).uniq, slugs(result)
     assert_equal "carl", primary_slug(result), "Carl is the standing primary even with no Agent rows"
     assert_equal %w[primary light].sort, result.map { |r| r["weight"] }.sort
-    refute_includes slugs(result), "steffon"
+    refute_includes slugs(result), "avi", "the QA owner (avi) is never a reviewer"
   end
 
   test "an unknown / blank shape still returns a valid Carl+light pair" do
@@ -427,8 +436,9 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     light = decision["reviewers"].last
     assert_equal "jasper", light["slug"], "the Web3 specialist is the light"
     assert_includes light["matched"], "web3", "the light seat shows which needed domains it covers"
-    assert_equal "steffon", decision["excluded_qa_owner"]
-    refute_includes decision["candidates"], "steffon", "the QA owner is not a light candidate (no self-gating)"
+    assert_equal "avi", decision["excluded_qa_owner"]
+    refute_includes decision["candidates"], "avi", "the QA owner is not a light candidate (no self-gating)"
+    assert_includes decision["candidates"], "steffon", "steffon rejoined the light pool (avi is the QA owner now)"
     refute_includes decision["candidates"], "carl", "Carl is the standing primary, never a light candidate"
   end
 

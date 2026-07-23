@@ -25,8 +25,9 @@
 # · jasper=Web3 · steffon=DevOps/Platform · alex=Documentation}, scored by the
 # task's shape + repositories + risk tags vs each soul's Agent.metadata["domains"]
 # with a LOGGED, SEEDED-PER-TASK tiebreak (reproducible — not process-random). The
-# QA owner (steffon by default) is EXCLUDED from the light seat so one soul never
-# both reviews AND QAs the same change. Because the tiebreak is seeded from the
+# QA owner (avi by default — after the 2026-07-22 reslot he runs qa-release + the QA
+# deploy) is EXCLUDED from the light seat so one soul never both reviews AND QAs the
+# same change. Because the tiebreak is seeded from the
 # task identity, for the DEFAULT qa_owner this preview matches the pair the app
 # records on the submitted→reviewed TaskEvent (a custom --qa-owner shifts the light
 # pool + seed, so the preview is then advisory).
@@ -258,7 +259,7 @@ OptionParser.new do |o|
     options[:record] = v
   end
   o.on("--dry", "--dry-run", "Advisory only — print the pick, record NOTHING (alias for --no-record)") { options[:record] = false }
-  o.on("--qa-owner SLUG", "Exclude this slug instead of the default QA owner (steffon)") { |v| options[:qa_owner] = v }
+  o.on("--qa-owner SLUG", "Exclude this slug instead of the default QA owner (avi)") { |v| options[:qa_owner] = v }
   o.on("--builder SLUG", "Exclude this builder (overrides the task's recorded built_by)") { |v| options[:builder] = v }
   o.on("--busy LIST", "Exclude these busy souls — mid-build/review elsewhere (comma/space separated; repeatable)") do |v|
     options[:busy].concat(v.split(/[\s,]+/))
