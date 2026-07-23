@@ -145,6 +145,8 @@
               dom_id: "release-ci-progress-#{repo}",
               progress: progress,
               label: release_ci_track_label(repo), test_id: "release-ci-progress-#{repo}",
+              href: release_ci_run_url(rel, repo),
+              link_title: "Open #{repo} G3 CI run on GitHub",
               wrapper_class: "mt-2", inner_test_id: "release-card-ci-progress-#{repo}" %>
       <% end %>
     <% end %>

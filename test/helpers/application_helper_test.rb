@@ -1258,6 +1258,22 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_nil heartbeat_launcher_for(nil)
   end
 
+  test "[unit] release_ci_track_label leads with the emoji, then the app, then G3 tests" do
+    # A mapped repo: emoji FIRST, then the app (repo) slug, then "G3 tests".
+    assert_equal "#{app_emoji('turf-monster')} turf-monster G3 tests", release_ci_track_label("turf-monster")
+    assert_equal "#{app_emoji('mcritchie-studio')} mcritchie-studio G3 tests", release_ci_track_label("mcritchie-studio")
+
+    # Order is load-bearing: the emoji leads, "G3 tests" trails.
+    label = release_ci_track_label("turf-monster")
+    assert label.start_with?(app_emoji("turf-monster")), "the app emoji leads the label"
+    assert label.end_with?("G3 tests"), "the label trails with 'G3 tests', not the old 'G3 CI'"
+    assert_not_includes label, "G3 CI", "the old 'G3 CI' wording is gone"
+
+    # An unmapped repo has no emoji: compact drops the nil and the slug leads.
+    assert_nil app_emoji("mystery-repo")
+    assert_equal "mystery-repo G3 tests", release_ci_track_label("mystery-repo")
+  end
+
   def create_shipped_tracker_release(slug:, shipped_at:, assembling_seconds:)
     testing_seconds = 2.minutes
     qa_seconds = 5.minutes

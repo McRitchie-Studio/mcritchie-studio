@@ -139,6 +139,21 @@ module Ci
       [repo, sha ? for_sha(target_nwo, sha, workflow) : CheckProgress.blank]
     end
 
+    # The GitHub Actions run URL for a repo's release-candidate CI track, or nil — the
+    # html_url the Next Release card's G3 track links to. Resolves the SAME run
+    # for_release folds its progress from (ci_target_for's [nwo, branch, workflow], the
+    # newest ingested run on that branch+workflow), then reads that run's html_url from
+    # the already-ingested GithubWorkflowRun rows — no network. nil when the release is
+    # inactive or no run is ingested yet, so the track renders UNLINKED (never an
+    # href="#"). Same ordering as latest_ci_sha, so the URL points at the EXACT run
+    # whose SHA drove that track's progress.
+    def release_ci_run_url(release, repo)
+      return nil unless release.respond_to?(:active?) && release.active?
+
+      nwo, branch, workflow = ci_target_for(repo)
+      latest_ci_run_url(nwo, branch, workflow)
+    end
+
     # The core read: SHA -> Ci::CheckProgress. Live-first — a SHA the `workflow_job`
     # webhook has recorded folds straight from CiCheckJob rows (no network); only a
     # SHA with no ingested jobs falls back to the cached, budgeted GitHub API read.
@@ -279,6 +294,17 @@ module Ci
       scope = GithubWorkflowRun.for_repo(nwo).where(head_branch: branch)
       scope = scope.where(workflow_name: workflow_name) if workflow_name.present?
       scope.order(Arel.sql(LATEST_RUN_ORDER)).limit(1).pick(:head_sha)
+    end
+
+    # Sibling of latest_ci_sha: the html_url of the newest ingested CI run for one
+    # repo+branch(+workflow), or nil. Same scope + ordering, so the URL points at the
+    # EXACT run whose SHA latest_ci_sha resolves for that track's progress.
+    def latest_ci_run_url(nwo, branch, workflow_name = GithubWorkflowRun::CI_WORKFLOW)
+      return nil if nwo.to_s.empty? || branch.to_s.empty?
+
+      scope = GithubWorkflowRun.for_repo(nwo).where(head_branch: branch)
+      scope = scope.where(workflow_name: workflow_name) if workflow_name.present?
+      scope.order(Arel.sql(LATEST_RUN_ORDER)).limit(1).pick(:html_url).presence
     end
 
     # Batched sibling of latest_ci_sha: one query for every [nwo, branch] pair.

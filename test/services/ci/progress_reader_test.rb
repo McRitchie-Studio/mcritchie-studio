@@ -176,6 +176,44 @@ class Ci::ProgressReaderTest < ActiveSupport::TestCase
                "a NON-member repo never fires a release track"
   end
 
+  # ── release_ci_run_url: the G3 track's clickable Actions-run URL ──
+
+  test "[unit] release_ci_run_url resolves a track's ingested Actions run html_url" do
+    reader = Ci::ProgressReader.new
+    rel = release_with_members("turf-monster")
+    seed_run(repo: "amcritchie/turf-monster", branch: Release::BRANCH, sha: "turf-rc",
+             html_url: "https://github.com/amcritchie/turf-monster/actions/runs/7788")
+
+    assert_equal "https://github.com/amcritchie/turf-monster/actions/runs/7788",
+                 reader.release_ci_run_url(rel, "turf-monster"),
+                 "the track links to that repo's release-branch CI run"
+  end
+
+  test "[unit] release_ci_run_url picks the NEWEST run, matching latest_ci_sha" do
+    reader = Ci::ProgressReader.new
+    rel = release_with_members("turf-monster")
+    seed_run(repo: "amcritchie/turf-monster", branch: Release::BRANCH, sha: "old-rc",
+             started_at: 1.hour.ago, html_url: "https://github.com/amcritchie/turf-monster/actions/runs/1")
+    seed_run(repo: "amcritchie/turf-monster", branch: Release::BRANCH, sha: "new-rc",
+             started_at: 1.minute.ago, html_url: "https://github.com/amcritchie/turf-monster/actions/runs/2")
+
+    assert_equal "https://github.com/amcritchie/turf-monster/actions/runs/2",
+                 reader.release_ci_run_url(rel, "turf-monster"),
+                 "the URL points at the same newest run whose SHA drives the progress"
+  end
+
+  test "[unit] release_ci_run_url is nil with no ingested run (the track renders unlinked)" do
+    reader = Ci::ProgressReader.new
+    rel = release_with_members("turf-monster")
+
+    assert_nil reader.release_ci_run_url(rel, "turf-monster"),
+               "no run -> nil, so the slot renders a plain panel, never an href='#'"
+  end
+
+  test "[unit] release_ci_run_url is nil for an inactive release" do
+    assert_nil Ci::ProgressReader.new.release_ci_run_url(Release.new(state: "shipped"), "turf-monster")
+  end
+
   # ── live-first: the workflow_job (CiCheckJob) path preferred over the API ──
 
   test "[unit] for_sha folds ingested CiCheckJob rows and never calls the API" do
@@ -274,11 +312,11 @@ class Ci::ProgressReaderTest < ActiveSupport::TestCase
                        name: "#{workflow} #{SecureRandom.hex(3)}")
   end
 
-  def seed_run(branch:, sha:, repo: "amcritchie/mcritchie-studio", workflow: "CI", started_at: Time.current)
+  def seed_run(branch:, sha:, repo: "amcritchie/mcritchie-studio", workflow: "CI", started_at: Time.current, html_url: nil)
     GithubWorkflowRun.create!(
       repo: repo, workflow_name: workflow,
       run_id: SecureRandom.random_number(10**12), status: "in_progress",
-      head_branch: branch, head_sha: sha, run_started_at: started_at
+      head_branch: branch, head_sha: sha, run_started_at: started_at, html_url: html_url
     )
   end
 
