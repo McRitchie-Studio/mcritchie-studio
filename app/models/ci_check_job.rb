@@ -31,8 +31,7 @@ class CiCheckJob < ApplicationRecord
   # Push the refreshed CI progress bar to the affected task card + Next Release card
   # whenever a job is upserted, so the board ticks up with no reload. Delegates to
   # the broadcaster, itself wrapped in Studio::Cable.safe_broadcast, so this
-  # after_commit can never raise into the ingest job's write (the SEV-1 guard,
-  # mirroring GithubWorkflowRun#broadcast_actions_panel).
+  # after_commit can never raise into the ingest job's write (the SEV-1 guard).
   after_commit :broadcast_ci_progress, on: %i[create update]
 
   # Rank of a lifecycle status, or -1 for anything unknown so it never outranks a

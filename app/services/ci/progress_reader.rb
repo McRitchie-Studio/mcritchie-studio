@@ -47,7 +47,7 @@ module Ci
     # Only a submitted-onward task shows a CI bar — before the PR there is no run.
     TASK_STAGES_WITH_CI = %w[submitted reviewed assembled].freeze
 
-    # Newest-run ordering, mirroring GithubWorkflowRun.latest_per_workflow.
+    # Newest-run ordering — the canonical run-recency sort (Ci::ReviewGate mirrors it).
     LATEST_RUN_ORDER = "run_started_at DESC NULLS LAST, created_at DESC, run_id DESC"
 
     # Render-path budget: a cold GitHub call may never stall the board for long.
