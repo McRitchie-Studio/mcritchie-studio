@@ -1,0 +1,21 @@
+<%# One conductor-owner face on the Next Release card: the Pokémon of the SESSION
+    holding this release's ReleaseConductorClaim for a role. assembler is QA
+    (bin/release prepare); deployer is the production deploy (bin/release ship).
+    Resolved and gated by ApplicationHelper#release_role_owner_face, which renders
+    NOTHING without a holder session and mascot, so BOTH the page render and the
+    DeploymentsBroadcaster live morph draw the same face with no drift. A live claim
+    shows full-colour with a soft ring; an idle (lapsed-lease) claim dims. Mirrors
+    the conductor-mascot img row just above.
+    Locals: role (String), pokemon (Pokemon), name (String),
+            label (String, title/aria), shiny (Boolean), live (Boolean). %>
+<% sprite = pokemon.display_sprite(shiny: shiny) %>
+<span class="flex items-center gap-1.5 min-w-0<%= " opacity-50" unless live %>"
+      data-test="release-owner-face" data-role="<%= role %>" data-pokemon="<%= pokemon.slug %>"
+      data-live="<%= live %>" title="<%= label %>" aria-label="<%= label %>">
+  <% if sprite.present? %>
+    <img src="<%= sprite %>" alt="<%= name %>" width="24" height="24" loading="lazy"
+         class="w-6 h-6 shrink-0<%= " ring-2 ring-primary/50 rounded-full" if live %>"
+         style="image-rendering: pixelated;">
+  <% end %>
+  <span class="sr-only"><%= label %></span>
+</span>
