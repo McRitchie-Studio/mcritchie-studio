@@ -33,7 +33,7 @@ class ShipDocsSyncDocsTest < ActiveSupport::TestCase
   end
 
   test "[static] the canonical production-deploy SOP (Avi) carries the docs-sync step" do
-    body = norm("agents/avi/sops/production-deploy.md")
+    body = norm("agents/steffon/sops/production-deploy.md")
     assert_match(/post-ship[^.]{0,200}install-agent-docs/im, body,
       "the SOP documents the post-ship installer run (relocated from the retired qa-release SKILL)")
     assert_match(/steffon owns the step/i, body, "the SOP names Steffon as the step's owner")

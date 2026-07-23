@@ -24,8 +24,8 @@ Carl owns PR review. His heartbeat is review-only:
   rung) and move the task to `reviewed`; otherwise block it back to the builder.
 - Stop at `reviewed`. Never touch `release`/`main`, deploy QA, or ship production.
 
-Steffon's `qa-release` sweep owns promoting `accepted → release`, deploying QA,
-and flipping members `assembled`. Avi's `production-deploy` owns `release → main`.
+Avi's `qa-release` sweep owns promoting `accepted → release`, deploying QA,
+and flipping members `assembled`. Steffon's `production-deploy` owns `release → main`.
 Do not run `bin/release prepare`, `bin/release ship`, or a QA/production deploy
 from Carl's review unless Mr. McRitchie explicitly assigns that lane in the same
 session.
@@ -69,7 +69,7 @@ End every Carl heartbeat with a short report:
 - review result per task: `reviewed` (merged into `accepted`), `blocked`, or
   deferred with a reason
 - any `Block Resolved` lines for work sent back
-- confirmation that approved work is waiting for Steffon's `qa-release` sweep
+- confirmation that approved work is waiting for Avi's `qa-release` sweep
 
 On a clean run with no blockers, omit the blocker section entirely.
 

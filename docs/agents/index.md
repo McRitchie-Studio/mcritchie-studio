@@ -43,15 +43,16 @@ required execution path. Do not follow a Background reference to run an SOP.
 
 | Invocation | Owner | Read first |
 |------------|-------|------------|
-| `pr-review` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review.md` |
-| `pr-review-slow` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review-slow.md` |
-| `pr-review-primary` (role SOP) | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review-primary.md` |
-| `pr-review-light` (role SOP) | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review-light.md` |
-| `production-deploy` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/production-deploy.md` |
+| `pr-review` | Carl | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review.md` |
+| `pr-review-slow` | Carl | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review-slow.md` |
+| `pr-review-primary` (role SOP) | Carl | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review-primary.md` |
+| `pr-review-light` (role SOP) | Carl | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review-light.md` |
+| `Carl Heartbeat` | Carl | `mcritchie-studio/docs/agents/agents/carl/HEARTBEAT.md` |
+| `qa-release` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/qa-release.md` |
+| `qa-deploy` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/qa-release.md` |
 | `deploy-with-task` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/deploy-with-task.md` |
 | `Avi Heartbeat` | Avi | `mcritchie-studio/docs/agents/agents/avi/HEARTBEAT.md` |
-| `qa-release` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/qa-release.md` |
-| `qa-deploy` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/qa-release.md` |
+| `production-deploy` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/production-deploy.md` |
 | `archive-shipped` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
 | `archive-completed` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
 | `Steffon Heartbeat` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/HEARTBEAT.md` |
@@ -60,11 +61,15 @@ required execution path. Do not follow a Background reference to run an SOP.
 | `grade-events` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/grade-events.md` |
 | `share-insights` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/share-insights.md` |
 | `Alex Heartbeat` | Alex | `mcritchie-studio/docs/agents/agents/alex/HEARTBEAT.md` |
+| `address-blocker` | Shared | `mcritchie-studio/docs/agents/modules/address-blocker.md` |
 
-For `pr-review`, read Avi's `pr-review.md` and run the bounded review
-supervisor described there. It merges approved work onto `accepted` and stops at
-`reviewed` (never `release`/`main`, never a deploy); Steffon's `qa-release`
-promotes `accepted → release` plus QA.
+For `pr-review`, read Carl's `pr-review.md` and run the bounded review it
+describes. A review session (a Pokémon orchestrator) spins one Carl per PR;
+there is no Avi supervisor. Each Carl runs the deep review, summons a domain
+light at his discretion, merges approved work onto `accepted`, and stops at
+`reviewed` (never `release`/`main`, never a deploy); Avi's `qa-release` sweep
+promotes `accepted → release` plus QA, and Steffon's `production-deploy` ships
+`release → main`.
 
 ## First Rules
 
@@ -92,7 +97,7 @@ promotes `accepted → release` plus QA.
   deploy owner for that repo.
 - A pushed feature branch preserves code. `main` is for shipped integration,
   not backup. Feature agents push their own branch and open a PR into `accepted`;
-  review merges it onto `accepted`, and Steffon's `qa-release` sweep promotes
+  review merges it onto `accepted`, and Avi's `qa-release` sweep promotes
   `accepted → release` for QA.
 
 ## House Writing Style — correct Mr. McRitchie's copy
@@ -286,8 +291,9 @@ Before handoff:
    verdict closes the gate. Then `bin/task move <task> submitted` **without
    waiting for CI**: a pending CI is a loud suggestion (the fast cert is credited
    provisionally), a red CI still blocks, and the authoritative CI verdict is
-   review's gate-zero — `pr-review`'s supervisor bounces a red-CI task back
-   with the failing checks named before any reviewer spawns.
+   review's gate-zero — the `pr-review` session only pops green-CI PRs, and a CI
+   that flips red mid-review is bounced back by Carl's gate-zero with the failing
+   checks named.
 
 The task lifecycle is two workflows (full spec:
 `docs/agents/system/devops-cycle-design.md`), and the code walks a three-rung
@@ -304,13 +310,13 @@ branch ladder — **`accepted` → `release` → `main`**:
   code-on-`accepted`; a merge failure leaves it `submitted`, a mis-based PR
   self-heals by retargeting to `accepted`) — or `bin/task block <task> --kind
   rework --feedback "…"` (back to you). Review still never touches `release`/
-  `main` and never deploys. Steffon's self-healing `qa-release` sweep
+  `main` and never deploys. Avi's self-healing `qa-release` sweep
   (`bin/release prepare`) then **promotes ALL of `accepted` onto `release` via
   ONE batch PR per repo** (`--base release --head accepted`, not N per-task
   merges), records `reviewed` members + `assembled` stragglers (re-stamping
   `merged: "release"`; a `reviewed` member with no `merged` stamp is a HELD
   anomaly, left behind), deploys QA, and flips members `assembled` only on
-  **QA-green**. Avi's `production-deploy` (`bin/release ship`) fast-forwards
+  **QA-green**. Steffon's `production-deploy` (`bin/release ship`) fast-forwards
   each repo's `release → main` (stamping `merged: "main"`) → `shipped`.
 - **`blocked`** is the "not in the pipeline's court" side state (env blocker, QA
   rework, or a dependency); **`archived`** is terminal.
@@ -319,10 +325,10 @@ branch ladder — **`accepted` → `release` → `main`**:
 recorded as four attempt-aware gates: **G1 Cert** (the builder's
 certification — fast/full cert + the dor-check verdict, closed at submit even
 with CI still pending) → **G2 Review** (the authoritative CI verdict — the
-supervisor's pre-spawn CI check plus the primary + light review lanes; the
+green-CI-only claim pop plus the primary + light review lanes; the
 primary's gate-zero is `bin/dor-check <task> --gate-role review`, strict on
-red/pending CI) → **G3 Candidate** (Steffon's pre-QA suite + QA deploy,
-release-grain) → **G4 Ship** (Avi's frozen-SHA gate + prod deploy,
+red/pending CI) → **G3 Candidate** (Avi's pre-QA suite + QA deploy,
+release-grain) → **G4 Ship** (Steffon's frozen-SHA gate + prod deploy,
 release-grain, self-gated against G3). Task gates render on the task's gates
 card; release gates as the /deployments G3/G4 columns. Each gate's standalone
 SOP lives in `mcritchie-studio/docs/agents/modules/gates/`.
@@ -451,16 +457,18 @@ Do not merge or deploy unless I explicitly assigned that lane.
 | Modular PR review SOP | `mcritchie-studio/docs/agents/modules/pr-review-sop.md` |
 | Zap protocol (small mid-cycle fixes, no new task) | `mcritchie-studio/docs/agents/modules/zap-protocol.md` |
 | Heartbeats (three soul launchers) | `mcritchie-studio/docs/agents/modules/heartbeats.md` |
+| Carl heartbeat launcher | `mcritchie-studio/docs/agents/agents/carl/HEARTBEAT.md` |
+| Carl PR review SOP (orchestrator) | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review.md` |
+| Carl slow PR review SOP | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review-slow.md` |
+| Carl primary reviewer role SOP | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review-primary.md` |
+| Carl light reviewer role SOP | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review-light.md` |
 | Avi heartbeat launcher | `mcritchie-studio/docs/agents/agents/avi/HEARTBEAT.md` |
-| Avi production deploy SOP | `mcritchie-studio/docs/agents/agents/avi/sops/production-deploy.md` |
-| Avi PR review SOP (supervisor) | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review.md` |
-| Avi slow PR review SOP | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review-slow.md` |
-| Avi primary reviewer role SOP | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review-primary.md` |
-| Avi light reviewer role SOP | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review-light.md` |
+| Avi QA release SOP | `mcritchie-studio/docs/agents/agents/avi/sops/qa-release.md` |
 | Avi deploy with task SOP | `mcritchie-studio/docs/agents/agents/avi/sops/deploy-with-task.md` |
 | Steffon heartbeat launcher | `mcritchie-studio/docs/agents/agents/steffon/HEARTBEAT.md` |
-| Steffon QA release SOP | `mcritchie-studio/docs/agents/agents/steffon/sops/qa-release.md` |
+| Steffon production deploy SOP | `mcritchie-studio/docs/agents/agents/steffon/sops/production-deploy.md` |
 | Steffon archive shipped SOP | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
+| Address a blocker (shared primitive) | `mcritchie-studio/docs/agents/modules/address-blocker.md` |
 | Alex heartbeat launcher | `mcritchie-studio/docs/agents/agents/alex/HEARTBEAT.md` |
 | Alex grade events SOP | `mcritchie-studio/docs/agents/agents/alex/sops/grade-events.md` |
 | Alex share insights SOP | `mcritchie-studio/docs/agents/agents/alex/sops/share-insights.md` |
@@ -505,23 +513,25 @@ depend on the heartbeat.
 
 | Invocation | Owner | Read |
 |------------|-------|------|
+| `Carl Heartbeat` | Carl | `mcritchie-studio/docs/agents/agents/carl/HEARTBEAT.md` |
+| `pr-review` | Carl | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review.md` |
+| `pr-review-slow` | Carl | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review-slow.md` |
+| `pr-review-primary` (role SOP) | Carl | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review-primary.md` |
+| `pr-review-light` (role SOP) | Carl | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review-light.md` |
 | `Avi Heartbeat` | Avi | `mcritchie-studio/docs/agents/agents/avi/HEARTBEAT.md` |
-| `production-deploy` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/production-deploy.md` |
-| `pr-review` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review.md` |
-| `pr-review-slow` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review-slow.md` |
-| `pr-review-primary` (role SOP) | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review-primary.md` |
-| `pr-review-light` (role SOP) | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/pr-review-light.md` |
+| `qa-release` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/qa-release.md` |
+| `qa-deploy` (legacy alias) | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/qa-release.md` |
 | `deploy-with-task` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/deploy-with-task.md` |
 | `Steffon Heartbeat` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/HEARTBEAT.md` |
+| `production-deploy` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/production-deploy.md` |
 | `archive-shipped` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
 | `archive-completed` (legacy alias) | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
-| `qa-release` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/qa-release.md` |
-| `qa-deploy` (legacy alias) | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/qa-release.md` |
 | `Alex Heartbeat` | Alex | `mcritchie-studio/docs/agents/agents/alex/HEARTBEAT.md` |
 | `grade-events` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/grade-events.md` |
 | `share-insights` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/share-insights.md` |
 | `full-cycle` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/full-cycle.md` |
 | `clean-up` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/clean-up.md` |
+| `address-blocker` | Shared | `mcritchie-studio/docs/agents/modules/address-blocker.md` |
 
 ## Repos
 
@@ -627,9 +637,9 @@ Worktree stacks default to `LOCAL_EMAIL_CAPTURE=1`, so magic links and other ema
 
 Feature work graduates through PR/QA, not direct `main` pushes. Use
 `bin/agent-worktree finish <app> <task-slug> --push --pr` when the branch is
-ready for Avi review. The same handoff must update the task with the branch,
+ready for review. The same handoff must update the task with the branch,
 PR URL, local URL, and `devops["checks_run"]`, then move the task to
-`submitted`. Keep the worktree and branch until Avi confirms the PR was merged
+`submitted`. Keep the worktree and branch until review confirms the PR was merged
 or intentionally abandoned.
 
 For a dedicated review/QA session, use the recurring QA intake prompt in

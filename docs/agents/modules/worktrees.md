@@ -408,7 +408,7 @@ repo's resolved base ref):
   lane, fast-forwarded from `release` at ship time), not a place to rush code
   so it is not lost.
 - Feature agents push their branch and open/prepare a PR into `accepted`.
-  Review merges to `accepted`; Steffon's `qa-release` promotes
+  Review merges to `accepted`; Avi's `qa-release` promotes
   `accepted → release`; Avi ships `release → main`.
 - If the primary checkout is dirty, ahead, or moves while you are working, treat
   it as shared-floor drift. Do not fold those changes into your task silently.

@@ -17,7 +17,7 @@ on a defect it spots).
 
 You review-only in one direction: you merge the feat PR into `accepted` (the
 ladder's first rung) but never merge to `release`/`main`, deploy QA, ship
-production, or archive work. Steffon's `qa-release` sweep owns everything past
+production, or archive work. Avi's `qa-release` sweep owns everything past
 `accepted`.
 
 ## Scope
@@ -129,7 +129,7 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
      gh pr merge <feat-pr> --merge --match-head-commit <validated-head>   # feat → accepted (retarget a mis-based PR first)
      bin/task merged <task-slug> accepted     # stamp the git-location BEFORE the stage move
      bin/task move <task-slug> reviewed
-     bin/task note <task-slug> --handoff "Carl review approved; merged into accepted; ready for Steffon's qa-release sweep." --agent carl
+     bin/task note <task-slug> --handoff "Carl review approved; merged into accepted; ready for Avi's qa-release sweep." --agent carl
      ```
 
      Order matters: merge → stamp → move, so the task is `reviewed` **iff** its

@@ -87,7 +87,7 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_same mascot, phase_tile_face("build", mascot_face: mascot, avi: avi)
     assert_same mascot, phase_tile_face("local_certification", mascot_face: mascot, avi: avi)
     assert_same mascot, phase_tile_face("ci", mascot_face: mascot, avi: avi)
-    # REVIEW belongs to Avi, the review supervisor.
+    # REVIEW wears the review-owner face passed in as `avi:` (resolved from review_avi).
     assert_same avi, phase_tile_face("review", mascot_face: mascot, avi: avi)
 
     assert_nil phase_tile_face("build", mascot_face: nil, avi: avi),
@@ -428,7 +428,7 @@ class ApplicationHelperTest < ActionView::TestCase
     rel.stamp_stage!("qa_deployed")
     assert_equal %i[complete complete complete pending pending],
                  release_tracker_steps(rel.reload).map { |step| step[:state] },
-                 "Live on QA is Steffon's finish line — Confirming stays dark until Avi starts"
+                 "Live on QA is Avi's finish line — Confirming stays dark until Steffon starts"
     assert_equal [ "Tested", "Assembled", "Live on QA", "Confirming", "Deploying" ],
                  release_tracker_steps(rel.reload).map { |step| step[:label] }
     assert_equal %i[complete complete pending pending pending],
@@ -438,7 +438,7 @@ class ApplicationHelperTest < ActionView::TestCase
     rel.stamp_stage!("confirming")
     assert_equal %i[complete complete complete active pending],
                  release_tracker_steps(rel.reload).map { |step| step[:state] },
-                 "Avi's confirming stamp lights stage four"
+                 "Steffon's confirming stamp lights stage four"
     assert_equal %i[complete complete active pending pending],
                  release_tracker_steps(rel.reload).map { |step| step[:connector_state] }
 
@@ -701,15 +701,15 @@ class ApplicationHelperTest < ActionView::TestCase
     end
 
     deploy = guide["Deploy"].index_by { |row| row[:stage] }
-    # review is a NESTED chain: Avi thin-delegates → the PRIMARY owns the lane → the LIGHT, scoped to base-tier tests
+    # review is Carl-owned: one Carl per PR (standing primary + owner) + a domain LIGHT, base-tier tests
     assert_match(/primary/i, deploy["submitted"][:who])
     assert_match(/light/i, deploy["submitted"][:who])
     assert_match(/base/i, deploy["submitted"][:tests])
-    # Steffon owns the reviewed-stage merge sweep and QA release.
-    assert_match(/steffon/i, deploy["reviewed"][:who])
+    # Avi owns the reviewed-stage sweep and QA release.
+    assert_match(/avi/i, deploy["reviewed"][:who])
     assert_match(/qa-release/i, deploy["reviewed"][:what])
-    # Steffon owns QA; Avi runs the frozen-SHA suite; production authority is explicit
-    assert_match(/steffon/i, deploy["assembled"][:who])
+    # Avi owns QA; Steffon runs the frozen-SHA suite; production authority is explicit
+    assert_match(/avi/i, deploy["assembled"][:who])
     assert_match(/frozen ship sha/i, deploy["shipped"][:tests])
     assert_match(/qa-release/i, deploy["shipped"][:gate])
     assert_match(/full-cycle/i, deploy["shipped"][:gate])
@@ -875,28 +875,28 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_not_includes plain, "<span"
   end
 
-  test "[unit] heartbeat_launchers maps the three souls to prompt + atom-act launchers" do
+  test "[unit] heartbeat_launchers maps the four souls to prompt + atom-act launchers" do
     launchers = heartbeat_launchers
 
-    assert_equal 3, launchers.size
-    assert_equal %w[avi steffon alex], launchers.map { |l| l[:agent_slug] }
-    # Row 1 is the prompt-like soul heartbeat phrase (Avi's two lanes now share one
-    # column); acts are the launcher atoms that scope it.
-    assert_equal ["Avi Heartbeat", "Steffon Heartbeat", "Alex Heartbeat"],
+    assert_equal 4, launchers.size
+    assert_equal %w[carl avi steffon alex], launchers.map { |l| l[:agent_slug] }
+    # Row 1 is the prompt-like soul heartbeat phrase; acts are the launcher atoms.
+    assert_equal ["Carl Heartbeat", "Avi Heartbeat", "Steffon Heartbeat", "Alex Heartbeat"],
                  launchers.map { |l| l[:heartbeat] }
-    # Acts run DOWNSTREAM-FIRST: each soul leads with its idempotent close-out
-    # action (production-deploy / archive-shipped) before the new-work action.
+    # Acts read across the souls in pipeline order: review → assemble → ship → archive.
     # deploy-with-task trails Avi's list — direct-invoke only, never composed.
-    assert_equal ["production-deploy", "pr-review", "pr-review-slow", "deploy-with-task"], launchers[0][:actions]
-    assert_equal ["archive-shipped", "qa-release"], launchers[1][:actions]
-    assert_equal ["grade-events", "share-insights", "full-cycle"], launchers[2][:actions]
+    assert_equal ["pr-review", "pr-review-slow"], launchers[0][:actions]
+    assert_equal ["qa-release", "deploy-with-task"], launchers[1][:actions]
+    assert_equal ["production-deploy", "archive-shipped"], launchers[2][:actions]
+    assert_equal ["grade-events", "share-insights", "full-cycle"], launchers[3][:actions]
     assert(launchers.all? { |l| l[:label].present? && l[:title].present? }, "each launcher carries a label + tooltip")
-    # review-only contract (2026-07-03): Avi's tooltip must not claim the merge —
-    # pr-review stops at reviewed; Steffon's sweep merges.
-    refute_match(/merge/i, launchers[0][:title], "Avi's tooltip must not claim review + merge")
+    # review-only contract: Carl's tooltip frames review, not the merge — pr-review
+    # stops at reviewed (merged to accepted); Avi's sweep promotes accepted→release.
+    refute_match(/merge/i, launchers[0][:title], "Carl's tooltip stays review-framed, not merge-framed")
   end
 
-  test "[component] _heartbeats_card renders the three soul heartbeat launchers in a responsive grid" do
+  test "[component] _heartbeats_card renders the four soul heartbeat launchers in a responsive grid" do
+    Agent.find_or_create_by!(slug: "carl") { |a| a.name = "Carl" }
     Agent.find_or_create_by!(slug: "avi") { |a| a.name = "Avi" }
     Agent.find_or_create_by!(slug: "steffon") { |a| a.name = "Steffon" }
     Agent.find_or_create_by!(slug: "alex") { |a| a.name = "Alex" }
@@ -904,11 +904,11 @@ class ApplicationHelperTest < ActionView::TestCase
     render partial: "tasks/heartbeats_card"
 
     # The heartbeats live in their own card, one launcher per soul, stacked on
-    # narrow screens and 3-up once there is room.
+    # narrow screens and 4-up once there is room.
     assert_select "[data-test='heartbeats-card']", count: 1
     assert_select "[data-test='heartbeats-card'][data-compact-limit='3']", count: 1
     assert_select "[data-test='heartbeats-card'][x-data*='heartbeatsExpanded']", count: 1
-    assert_select "[data-test='heartbeats-card'] div.grid.grid-cols-1.sm\\:grid-cols-3 [data-test='heartbeat-launcher']", count: 3
+    assert_select "[data-test='heartbeats-card'] div.grid.grid-cols-1.sm\\:grid-cols-4 [data-test='heartbeat-launcher']", count: 4
     assert_select "[data-test='heartbeat-compact-toggle']", text: /Show All/
     assert_select "[data-test='heartbeat-compact-toggle'] span[x-show='heartbeatsExpanded']", text: "Compact"
     # The tracker does NOT live here — it stays in the Current Release card.
@@ -929,24 +929,27 @@ class ApplicationHelperTest < ActionView::TestCase
       # Exactly (1 heartbeat + N acts) independently-copyable rows per launcher.
       assert_select "#{scope} button[data-clip]", count: 1 + launcher[:actions].size
     end
-    # The new pr-review-slow + deploy-with-task (Avi) and full-cycle (Alex) acts
-    # are copyable rows.
-    assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] button[data-row='action'] code", text: "pr-review-slow"
+    # Carl (pr-review + slow), Avi (qa-release + deploy-with-task), Steffon
+    # (production-deploy + archive-shipped), Alex (grade + share + full-cycle).
+    assert_select "[data-test='heartbeat-launcher'][data-agent='carl'] button[data-row='action'] code", text: "pr-review-slow"
     assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] button[data-row='action'] code", text: "deploy-with-task"
     assert_select "[data-test='heartbeat-launcher'][data-agent='alex'] button[data-row='action'] code", text: "full-cycle"
-    assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] [data-copy-row-index='2'] button[data-clip='pr-review']"
-    assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] [data-copy-row-index='3'] button[data-clip='production-deploy']"
-    assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] [data-copy-row-index='2'] button[data-clip='qa-release']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='carl'] [data-copy-row-index='2'] button[data-clip='pr-review']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='carl'] [data-copy-row-index='3'] button[data-clip='pr-review-slow']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] [data-copy-row-index='2'] button[data-clip='qa-release']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] [data-copy-row-index='3'] button[data-clip='deploy-with-task']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] [data-copy-row-index='2'] button[data-clip='production-deploy']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] [data-copy-row-index='3'] button[data-clip='archive-shipped']"
     assert_select "[data-test='heartbeat-launcher'] > span.text-muted", count: 0
-    # Rows 4+ are still rendered as copy targets, but tucked behind the card toggle.
-    assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] [data-test='heartbeat-copy-row'][data-copy-row-index='4'][x-show='heartbeatsExpanded'][x-cloak]"
-    assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] [data-test='heartbeat-copy-row'][data-copy-row-index='5'][x-show='heartbeatsExpanded'][x-cloak]"
+    # Only Alex's list exceeds the compact limit (4 rows) → its row 4 (full-cycle)
+    # is tucked behind the card toggle; Carl/Avi/Steffon (3 rows) have none hidden.
     assert_select "[data-test='heartbeat-launcher'][data-agent='alex'] [data-test='heartbeat-copy-row'][data-copy-row-index='4'][x-show='heartbeatsExpanded'][x-cloak]"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='carl'] [data-test='heartbeat-copy-row'][x-show='heartbeatsExpanded']", count: 0
+    assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] [data-test='heartbeat-copy-row'][x-show='heartbeatsExpanded']", count: 0
     assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] [data-test='heartbeat-copy-row'][x-show='heartbeatsExpanded']", count: 0
-    # Each soul heartbeat row (row 1) carries a leading ❤️; there are exactly three.
-    assert_select "[data-test='heartbeat-heart']", count: 3
-    assert_select "[data-test='heartbeat-launcher'] button[data-row='heartbeat'] [data-test='heartbeat-heart']", text: "❤️", count: 3
+    # Each soul heartbeat row (row 1) carries a leading ❤️; there are exactly four.
+    assert_select "[data-test='heartbeat-heart']", count: 4
+    assert_select "[data-test='heartbeat-launcher'] button[data-row='heartbeat'] [data-test='heartbeat-heart']", text: "❤️", count: 4
     # Every act carries a leading icon — a 1️⃣–4️⃣ keycap for the four ordered release
     # acts, a themed glyph for the rest.
     assert_select "button[data-row='action'][data-clip='pr-review'] [data-test='action-icon']", text: "1️⃣"
@@ -958,7 +961,7 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_select "button[data-row='action'][data-clip='share-insights'] [data-test='action-icon']", text: "📡"
     assert_select "button[data-row='action'][data-clip='full-cycle'] [data-test='action-icon']", text: "🌎"
     assert_select "button[data-row='action'][data-clip='deploy-with-task'] [data-test='action-icon']", text: "⚡"
-    # One icon per act row: Avi 4 + Steffon 2 + Alex 3 = 9.
+    # One icon per act row: Carl 2 + Avi 2 + Steffon 2 + Alex 3 = 9.
     assert_select "[data-test='action-icon']", count: 9
     # The copy helper (with its execCommand fallback) is present on the page.
     assert_includes rendered, "window.copyText"
@@ -1220,7 +1223,7 @@ class ApplicationHelperTest < ActionView::TestCase
   end
 
   test "[unit] action_description maps the known acts to their captions" do
-    assert_equal "Review all submitted PRs (review-only — Steffon sweeps)", action_description("pr-review")
+    assert_equal "Review all submitted PRs (review-only — Avi sweeps)", action_description("pr-review")
     assert_equal "Review submitted PRs one at a time", action_description("pr-review-slow")
     assert_equal "Ship a QA-ready release to production", action_description("production-deploy")
     assert_equal "Prepare + deploy the QA release", action_description("qa-release")
@@ -1245,7 +1248,11 @@ class ApplicationHelperTest < ActionView::TestCase
     avi = heartbeat_launcher_for("avi")
     assert avi.present?
     assert_equal "Avi Heartbeat", avi[:heartbeat]
-    assert_equal ["production-deploy", "pr-review", "pr-review-slow", "deploy-with-task"], avi[:actions]
+    assert_equal ["qa-release", "deploy-with-task"], avi[:actions]
+
+    carl = heartbeat_launcher_for("carl")
+    assert carl.present?
+    assert_equal ["pr-review", "pr-review-slow"], carl[:actions]
 
     assert_nil heartbeat_launcher_for("shannon"), "a non-heartbeat agent has no launcher"
     assert_nil heartbeat_launcher_for(nil)

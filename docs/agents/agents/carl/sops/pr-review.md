@@ -5,7 +5,7 @@
 This is Carl's `pr-review` SOP — the Lead Architect owns PR review. It reviews
 submitted PRs in bounded waves, and on a merge-ready verdict **merges the feat PR
 into `accepted`** and stops the task at `reviewed` — the accepted-ladder's first
-rung. Steffon's `qa-release` sweep then promotes `accepted → release`.
+rung. Avi's `qa-release` sweep then promotes `accepted → release`.
 
 **There is no Avi supervisor layer.** The driving SESSION is a Pokémon
 orchestrator; it claims reviewable PRs and spins up **one Carl per PR**. Each Carl
@@ -209,7 +209,7 @@ doc).
   gh pr merge <feat-pr> --merge --match-head-commit <validated-head>   # feat → accepted; pin the head you validated (retarget a mis-based PR first)
   bin/task merged <task> accepted      # stamp the git-location BEFORE the stage move
   bin/task move <task> reviewed
-  bin/task note <task> --handoff "Carl review approved; merged into accepted; ready for Steffon's qa-release sweep." --agent carl
+  bin/task note <task> --handoff "Carl review approved; merged into accepted; ready for Avi's qa-release sweep." --agent carl
   ```
 
   Order matters: merge → stamp → move, so the task is `reviewed` **iff** its code
@@ -245,7 +245,7 @@ doc).
   auto-decision.
 
 Approved tasks stop at `reviewed` with `merged: "accepted"` (code on the
-`accepted` branch). Steffon's next `qa-release` sweep promotes `accepted →
+`accepted` branch). Avi's next `qa-release` sweep promotes `accepted →
 release` and moves them forward.
 
 ## Exit Seam

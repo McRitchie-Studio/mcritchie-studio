@@ -23,17 +23,21 @@ class ReviewLaneDocsTest < ActiveSupport::TestCase
     File.read(AGENTS.join(rel)).gsub(/[*`]/, "").gsub(/\s+/, " ")
   end
 
-  test "[static] avi role.md frames Avi as the review SUPERVISOR who spawns both experts in parallel and never reviews" do
-    body = norm("agents/avi/role.md")
-    assert_match(/primary reviewer/i, body, "the PRIMARY reviewer is named")
-    assert_match(/supervisor/i, body, "Avi is the review SUPERVISOR, not a reviewer")
-    assert_match(/never[^.\n]{0,40}review/i, body, "Avi never reviews the code himself")
-    assert_match(/parallel/i, body, "Avi spawns the primary and light IN PARALLEL")
-    refute_match(/spawns?\s+the\s+light/i, body,
-      "the primary must NOT spawn the light — Avi spawns both in parallel (siblings)")
-    refute_match(/nested chain/i, body, "review is no longer a nested chain")
-    assert_match(/thin/i, body, "Avi's review role is a thin gate")
+  test "[static] carl role.md frames Carl as the standing primary review OWNER — no Avi supervisor" do
+    body = norm("agents/carl/role.md")
+    assert_match(/standing primary/i, body, "Carl is the standing primary reviewer")
+    assert_match(/owner of PR review|PR Review Ownership|review owner/i, body, "Carl owns PR review")
+    assert_match(/no Avi supervisor/i, body, "the model has no Avi supervisor layer")
+    assert_match(/one Carl per PR/i, body, "the review session spins one Carl per PR")
+    assert_match(/light/i, body, "Carl summons a domain light specialist at his discretion")
+    assert_match(/merges? approved work into[^.\n]{0,20}accepted/i, body, "Carl merges approved work into accepted")
     refute_match(/\bheavy\b/i, body, "the heavy→primary rename must not regress in the docs")
+  end
+
+  test "[static] avi role.md no longer claims the review supervisor role" do
+    body = norm("agents/avi/role.md")
+    refute_match(/review supervisor|SUPERVISOR/i, body, "Avi is no longer the review supervisor — Carl owns review")
+    assert_match(/qa-release/i, body, "Avi owns the qa-release assembly + QA step")
   end
 
   test "[static] the devops-cycle runbook has review merge to accepted and the sweep promote ONE accepted→release batch PR" do
@@ -44,18 +48,15 @@ class ReviewLaneDocsTest < ActiveSupport::TestCase
       "review stamps the accepted git-location (merged: accepted) on merge")
     assert_match(/one accepted → release batch PR/i, body,
       "the sweep promotes ONE accepted→release batch PR per repo — not N per-task merges")
-    assert_match(/self-healing/i, body, "Steffon's qa-release is the self-healing sweep")
+    assert_match(/self-healing/i, body, "the qa-release is the self-healing sweep")
     assert_match(/sweep[^.\n]{0,300}merged: "release"/im, body,
       "the sweep re-stamps the merged git-location (the crash-recovery signal)")
-    assert_match(/supervisor/i, body, "Avi is the review SUPERVISOR")
-    assert_match(/spawns?[^.\n]{0,120}parallel/im, body,
-      "Avi spawns the primary and light IN PARALLEL (not primary-spawns-light)")
-    refute_match(/spawns?\s+the\s+light/i, body,
-      "the primary must NOT spawn the light — Avi spawns both in parallel (siblings)")
-    refute_match(/nested chain/i, body, "review is no longer a nested chain — siblings under Avi")
-    # The old primary-owns-merge framing must be gone (reversed 2026-07-03).
+    # Review is Carl-owned — one Carl per PR, no Avi supervisor (re-homed 2026-07-22).
+    assert_match(/one Carl per PR/i, body, "review is one Carl per PR")
+    assert_match(/no Avi supervisor|not a supervisor/i, body, "there is no Avi supervisor")
+    # The old primary-owns-release-merge framing must be gone — review merges only to accepted.
     refute_match(/primary[^.\n]{0,120}runs bin\/release merge/im, body,
-      "the PRIMARY no longer runs the merge — review is review-only; Steffon sweeps")
+      "review is review-only for release — it merges to accepted; the sweep promotes accepted→release")
     refute_match(/release conductor then merges each approved PR/i, body,
       "the overview must not regress to the pre-2026-07-02 conductor-merge framing either")
   end
@@ -85,7 +86,7 @@ class ReviewLaneDocsTest < ActiveSupport::TestCase
       refute_match(/conductor reviews\b/i, body,
         "#{rel}: the conductor never reviews — Avi thin-delegates, the PRIMARY reviews")
       refute_match(/reviews,?\s+(and\s+)?merges/i, body,
-        "#{rel}: drop 'reviews, merges' — review (PRIMARY) and merge (Steffon's sweep) are separate hands")
+        "#{rel}: drop 'reviews, merges' — review (Carl) merges to accepted; the accepted→release merge (Avi's sweep) is a separate hand")
       refute_match(/primary[^.\n]{0,120}runs bin\/release merge/im, body,
         "#{rel}: the PRIMARY no longer merges — review-only since 2026-07-03; the sweep owns it")
     end
@@ -104,7 +105,7 @@ class ReviewLaneDocsTest < ActiveSupport::TestCase
     assert_match(/Do not treat an SOP name as ordinary prose, generic GitHub triage, or a broad workflow request/i, body)
     assert_match(/McRitchie operating procedures are normal repo docs, not installed skills/i, body)
     assert_match(/Agent-specific SOPs live at mcritchie-studio\/docs\/agents\/agents\/<agent>\/sops\/<sop>\.md/i, body)
-    assert_match(/pr-review \| Avi \| mcritchie-studio\/docs\/agents\/agents\/avi\/sops\/pr-review\.md/i, body)
+    assert_match(/pr-review \| Carl \| mcritchie-studio\/docs\/agents\/agents\/carl\/sops\/pr-review\.md/i, body)
     assert_match(/read the mapped HEARTBEAT\.md or SOP file before queue inspection, --help probing, GitHub PR discovery, or tool\/plugin selection/i, body)
   end
 
@@ -118,24 +119,22 @@ class ReviewLaneDocsTest < ActiveSupport::TestCase
       "SOP prompts must be resolved before generic workflow handling"
     assert_match(/McRitchie SOPs live in \/Users\/alex\/projects\/AGENTS\.md's SOP Invocation Standard/i, body)
     assert_match(/SOPs are first-class registered commands with finite names and stable files/i, body)
-    assert_match(/pr-review means read mcritchie-studio\/docs\/agents\/agents\/avi\/sops\/pr-review\.md first/i, body)
+    assert_match(/pr-review means read mcritchie-studio\/docs\/agents\/agents\/carl\/sops\/pr-review\.md first/i, body)
     assert_match(/do not start with bin\/pr-review --help, bin\/qa-intake, or GitHub PR discovery/i, body)
   end
 
-  test "[static] markdown launch docs describe the parallel primary+light siblings under the supervisor, review-only" do
+  test "[static] markdown launch docs describe one Carl per PR (no Avi supervisor), review-only, merge to accepted" do
     body = norm("modules/parallel-agent-devops.md")
-    assert_match(/supervisor/i, body, "Avi is the review SUPERVISOR")
-    assert_match(/parallel/i, body, "the two experts are spawned in parallel as siblings")
-    refute_match(/nested cascade/i, body, "review is no longer a nested cascade")
-    refute_match(/spawns?\s+the\s+light/i, body,
-      "the primary must NOT spawn the light — Avi spawns both in parallel")
+    assert_match(/one Carl per PR/i, body, "review is one Carl per PR — the standing primary + owner")
+    assert_match(/no Avi supervisor|not a supervisor/i, body, "there is no Avi supervisor")
+    assert_match(/parallel/i, body, "many pr-review sessions run in parallel on independent tasks")
     assert_match(/merges? the feat(ure)? PR into accepted/i, body,
       "the launch docs state review merges the feat PR into accepted")
     assert_match(/one accepted → release batch PR/i, body,
       "the launch docs state the sweep promotes ONE accepted→release batch PR per repo")
 
-    body = norm("agents/steffon/sops/qa-release.md")
-    assert_match(/self-healing/i, body, "…and hands the merge to Steffon's self-healing sweep")
+    body = norm("agents/avi/sops/qa-release.md")
+    assert_match(/self-healing/i, body, "…and hands the accepted→release promotion to Avi's self-healing sweep")
 
     Dir.glob(AGENTS.join("agents", "*", "sops", "*.md")).each do |path|
       refute_match(/atomic-event heartbeat/i, File.read(path),
@@ -143,7 +142,7 @@ class ReviewLaneDocsTest < ActiveSupport::TestCase
     end
   end
 
-  test "[static] the SOP vocabulary hands the merge to Steffon's sweep (no divergence notes)" do
+  test "[static] the SOP vocabulary hands the merge to the self-healing sweep (no divergence notes)" do
     steps = Devops::Vocabulary.lanes.flat_map { |lane| lane[:steps] }
     assert(steps.none? { |step| step[:diverges].present? },
       "no SOP step should carry a :diverges note — the model matches the SOP")
@@ -155,36 +154,37 @@ class ReviewLaneDocsTest < ActiveSupport::TestCase
       "the merge no longer belongs to the PRIMARY reviewer — review is review-only")
   end
 
-  # harden-review-lane-roles: the supervisor spawns BOTH reviewers as its own
-  # parallel children, announced by two intent-labeled delegate actions — the
-  # primary never spawns the light. Both the interactive SOP and the shared
-  # primitive must name the two labels so the interactive Agent-tool path can't
-  # drift back to "Avi spawns only the primary; the primary spawns the light".
-  test "[integration] the pr-review SOP and primitive name the two intent-labeled delegate actions" do
+  # reslot-souls-heartbeats: the review session spins ONE Carl per PR (the standing
+  # primary + owner — no Avi supervisor), and Carl summons ONE domain light at his
+  # discretion (his own child), labeled `light review: <soul>`. Both the SOP and the
+  # shared primitive must frame the Carl-owned model so neither drifts back to the
+  # retired "Avi supervisor spawns both in parallel" framing.
+  test "[integration] the pr-review SOP and primitive frame the Carl-owned model (one Carl per PR, a light at his discretion)" do
     [
-      "agents/avi/sops/pr-review.md",
+      "agents/carl/sops/pr-review.md",
       "modules/pr-review-sop.md"
     ].each do |rel|
       body = norm(rel)
-      assert_match(/summon primary review/i, body,
-        "#{rel}: the primary spawn is an intent-labeled delegate action")
-      assert_match(/summon light review/i, body,
-        "#{rel}: the light spawn is an intent-labeled delegate action")
-      assert_match(/parallel/i, body, "#{rel}: both reviewers spawn in parallel")
-      refute_match(/spawns?\s+the\s+light/i, body,
-        "#{rel}: the primary must NOT spawn the light — the supervisor spawns both")
+      assert_match(/one Carl per PR/i, body,
+        "#{rel}: the session spins one Carl per PR — the standing primary + owner")
+      assert_match(/no Avi supervisor/i, body,
+        "#{rel}: there is no Avi supervisor layer")
+      assert_match(/light/i, body,
+        "#{rel}: Carl summons a domain light specialist at his discretion")
+      refute_match(/summon primary review/i, body,
+        "#{rel}: there is no separate primary spawn — the session spins one Carl")
     end
   end
 
   # harden-review-lane-roles: the role SOPs sharpen the split — PRIMARY owns the
   # gates + drives the verdict, LIGHT is a focused second read that does neither.
   test "[integration] the primary and light role SOPs sharpen the gate/verdict ownership split" do
-    primary = norm("agents/avi/sops/pr-review-primary.md")
+    primary = norm("agents/carl/sops/pr-review-primary.md")
     assert_match(/review OWNER/i, primary, "the PRIMARY is the review owner")
     assert_match(/own the gates/i, primary, "the PRIMARY owns the gates")
     assert_match(/DRIVE the verdict/i, primary, "the PRIMARY drives the verdict")
 
-    light = norm("agents/avi/sops/pr-review-light.md")
+    light = norm("agents/carl/sops/pr-review-light.md")
     assert_match(/focused second read/i, light, "the LIGHT is a focused second read")
     assert_match(/do not run the gates/i, light, "the LIGHT does not run the gates")
     assert_match(/do not drive the verdict/i, light, "the LIGHT does not drive the verdict")

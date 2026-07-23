@@ -273,9 +273,10 @@ Run the review wave — **delegated**, per `pr-review`:
 ```bash
 bin/devops-shift acquire avi
 ```
-Summon an **Avi supervisor subagent** who selects and spawns a PRIMARY + LIGHT
-reviewer pair per task, in parallel, as his own children. Avi supervises; he does
-not review. See [`../../avi/sops/pr-review.md`](../../avi/sops/pr-review.md).
+Spin **one Carl per PR** — the standing primary AND owner (no Avi supervisor) —
+who summons his own domain LIGHT for a focused second read, drives the verdict,
+and merges approved work into `accepted`. See
+[`../../carl/sops/pr-review.md`](../../carl/sops/pr-review.md).
 
 > ### ⛔ THE SIGNATURE RISK OF A CLEANUP: bugs that live BETWEEN the PRs
 > A cleanup ships a dozen PRs at once. Each is reviewed alone, each is correct alone —

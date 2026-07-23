@@ -12,10 +12,11 @@ module StageAgentsHelper
   STAGE_AGENT_ORDER = %w[designed building submitted reviewed assembled shipped].freeze
   # The canonical role owner of each Deploy-lane stage — who handles it by role
   # when the mover left no actor (a conductor/model transition records only the
-  # spine). Steffon (Platform Engineer) QAs the assembled RC; Avi runs the ship
-  # e2e. Used to backfill a BLANK actor so the Deploy crew never goes faceless — a
-  # PRESENT but unresolved actor (a raw session id) is left as-is, not overridden.
-  STAGE_OWNER = { "assembled" => "steffon", "shipped" => "avi" }.freeze
+  # spine). Avi (Product Owner) QAs the assembled RC via qa-release; Steffon
+  # (Platform Engineer) runs the ship e2e + prod deploy. Used to backfill a BLANK
+  # actor so the Deploy crew never goes faceless — a PRESENT but unresolved actor
+  # (a raw session id) is left as-is, not overridden.
+  STAGE_OWNER = { "assembled" => "avi", "shipped" => "steffon" }.freeze
   # The stage each pipeline stage produces next, and the task timestamp marking
   # when the task entered a stage — together they place the LIVE "who's on it now"
   # ticker on the consolidated timeline + board.
@@ -145,8 +146,8 @@ module StageAgentsHelper
   # duration that matters for that compartment:
   #   build     → total build time, shown once submitted; LIVE counter while building
   #   review    → the longer of the two reviews (they share the →reviewed event)
-  #   assembled → Steffon's QA-stage time, on its own
-  #   shipped   → Avi's ship time, on its own
+  #   assembled → Avi's QA-stage time, on its own
+  #   shipped   → Steffon's ship time, on its own
   CrewCluster = Struct.new(:lane, :stacked, :seconds, :live_since, keyword_init: true)
 
   def crew_clusters(task, entries)
@@ -230,7 +231,7 @@ module StageAgentsHelper
 
     by_lane = crew_clusters(task, entries).index_by(&:lane)
 
-    # Surface LIVE deploy-stage work (review picked · Steffon QA · Avi ship) as a
+    # Surface LIVE deploy-stage work (review picked · Avi QA · Steffon ship) as a
     # ticking cluster in its lane before the transition lands — the Deploy mirror of
     # the build lane's live counter. Needs the agent map to resolve the intent's
     # actor; when it isn't passed (older callers) this is simply skipped, so no-
@@ -253,11 +254,11 @@ module StageAgentsHelper
                             live_since: work[:live_since])
           elsif work[:lane] == :assembled && existing.live_since.nil?
             # Standard-flow QA: the member is already `assembled` (the merge flipped
-            # it), so the assembled column is ALREADY filled (Steffon, static, with
-            # the merge-wait duration). Mark it LIVE in place — Steffon is QA-ing the
+            # it), so the assembled column is ALREADY filled (Avi, static, with
+            # the merge-wait duration). Mark it LIVE in place — Avi is QA-ing the
             # RC right now (the prepare window) — keeping its avatars + static time
             # instead of discarding them. (Without this, the pre-filled assembled slot
-            # would swallow the live QA ticker and Steffon would never tick on the
+            # would swallow the live QA ticker and Avi would never tick on the
             # board in the standard flow — the reviewer's blocker.)
             CrewCluster.new(lane: :assembled, stacked: existing.stacked,
                             seconds: existing.seconds, live_since: work[:live_since])
@@ -377,8 +378,8 @@ module StageAgentsHelper
   #               did the build-lane move — designer, builder, submitter)
   #   reviewed  → the two senior reviewers (off the →reviewed event's metadata,
   #               with primary/light) — the canonical write target, NOT task.reviewers
-  #   assembled → the actor of the →assembled event (Steffon, Platform Engineer)
-  #   shipped   → the actor of the →shipped event (Avi)
+  #   assembled → the actor of the →assembled event (Avi, Product Owner)
+  #   shipped   → the actor of the →shipped event (Steffon, Platform Engineer)
   # When a stage has several landing events (e.g. blocked→building bounces) the
   # MOST RECENT one wins. Each entry carries seconds_in_from of that event, so the
   # pill reads "how long the prior stage took". A build/assembled/shipped event
@@ -407,7 +408,7 @@ module StageAgentsHelper
   # mascot never rides the assembled/shipped cards; it lives on the Build lane and
   # (when it evolves) the Evolve reel. An actor-LESS assembled/shipped move (a
   # conductor/model transition that recorded only the spine) is attributed to the
-  # stage's canonical role owner (Steffon QAs `assembled`, Avi ships) so the Deploy
+  # stage's canonical role owner (Avi QAs `assembled`, Steffon ships) so the Deploy
   # crew never goes blank — but a PRESENT yet unresolved actor (a raw session id)
   # keeps its palette stand-in, not overridden.
   def event_stage_agents(evt, by_slug, mascot_agent)
@@ -549,8 +550,8 @@ module StageAgentsHelper
       # The timeline frames live work as the real pipeline TRANSITION it produces —
       # `to_stage` is the next stage and `timeline_agents` is that stage's crew. This
       # is what keeps a re-homed QA intent from rendering "Assembled → Assembled":
-      # it reads as the ship it rides toward, "Assembled → Shipped · Avi" (the board
-      # still shows Steffon QA-ing the assembled lane off `work[:agents]`).
+      # it reads as the ship it rides toward, "Assembled → Shipped · Steffon" (the board
+      # still shows Avi QA-ing the assembled lane off `work[:agents]`).
       # The single badge on a live card shows the ACTIVE (gerund) form of the stage
       # still underway — "Assembling", not "Assembled" — since the work isn't done.
       blocks << TimelineBlock.new(

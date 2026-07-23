@@ -102,8 +102,8 @@ subagent (`subagent_type: steffon`) for sub-agent-tree visibility.
 - **Visibility is not a reason to delegate.** The durable record is the Activities
   timeline and the release's stage timeline, not the ephemeral sub-agent tree.
 
-**Gate before activating Avi.** Do not post `confirming/start` just because
-`Release.current` exists. The Avi handoff exists only when the next release is
+**Gate before confirming the ship.** Do not post `confirming/start` just because
+`Release.current` exists. The Avi → Steffon handoff exists only when the next release is
 already live on QA: `Release.current.state == "assembled"` and the
 `qa_deployed_at` stage timestamp is present.
 
@@ -128,7 +128,7 @@ heroku run -a mcritchie-studio --no-tty --exit-code rails runner \
    exit(ready ? 0 : 1)'
 ```
 
-If that command exits nonzero, the release is not ready for Avi. Do not stamp
+If that command exits nonzero, the release is not ready to ship. Do not stamp
 `confirming/start`, do not run `bin/release ship`, and report "nothing to ship"
 with the printed release state.
 
@@ -140,7 +140,7 @@ timeline"):
 
 ```bash
 # api() helper + TOKEN per task-board-api.md "Worked example"
-api POST /api/v1/releases/current/events/confirming/start '{"event": {"actor": "avi"}}'
+api POST /api/v1/releases/current/events/confirming/start '{"event": {"actor": "steffon"}}'
 ```
 
 `start` needs no usage metadata. The stamp is first-write-wins, so a re-run is a

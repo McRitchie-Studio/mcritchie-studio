@@ -508,8 +508,8 @@ class DorCheckTest < Minitest::Test
     # PR #513's exact diff — the legitimate skip. It must still pass cleanly.
     files = %w[
       docs/agents/agents/alex/sops/full-cycle.md
-      docs/agents/agents/avi/sops/pr-review.md
-      docs/agents/agents/steffon/sops/qa-release.md
+      docs/agents/agents/carl/sops/pr-review.md
+      docs/agents/agents/avi/sops/qa-release.md
       docs/agents/modules/heartbeats.md
     ].join("\n")
     out, code = with_changed_files(files) { check("kind" => "chore") }
@@ -808,7 +808,7 @@ class DorCheckTest < Minitest::Test
     with_git_repo do |dir|
       out, code = with_env(
         "DOR_CHECK_DIFF_ROOT" => dir, "DOR_CHECK_DIFF_BASE" => "HEAD", "DOR_CHECK_CHANGED_FILES" => nil,
-        "DOR_CHECK_PR_FILES" => "docs/agents/modules/heartbeats.md\ndocs/agents/agents/avi/sops/pr-review.md"
+        "DOR_CHECK_PR_FILES" => "docs/agents/modules/heartbeats.md\ndocs/agents/agents/carl/sops/pr-review.md"
       ) { check("kind" => "chore", "pr_url" => "https://github.com/o/r/pull/513") }
       assert_equal 0, code, out
       assert_match(/DoR n\/a/, out)
