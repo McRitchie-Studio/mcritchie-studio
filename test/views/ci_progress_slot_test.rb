@@ -62,6 +62,36 @@ class CiProgressSlotTest < ActionView::TestCase
     assert_includes rendered, "transition-colors", "the shade change animates smoothly"
   end
 
+  test "[component] link_title names the destination on the anchor (title + aria-label)" do
+    # The release G3 track passes an Actions-run href + a repo-specific link_title, so
+    # the link has an accessible name that says WHERE it goes (not the default PR copy).
+    render partial: "components/ci_progress_slot",
+           locals: { dom_id: "release-ci-progress-turf-monster",
+                     progress: Ci::CheckProgress.new(passed: 8, failed: 0, pending: 0),
+                     label: "🐊 turf-monster G3 tests",
+                     test_id: "release-ci-progress-turf-monster",
+                     inner_test_id: "release-card-ci-progress-turf-monster",
+                     href: "https://github.com/amcritchie/turf-monster/actions/runs/7788",
+                     link_title: "Open turf-monster G3 CI run on GitHub" }
+
+    link = "#release-ci-progress-turf-monster a.ci-progress-card[data-test='release-card-ci-progress-turf-monster']"
+    assert_select "#{link}[href='https://github.com/amcritchie/turf-monster/actions/runs/7788']", 1
+    assert_select "#{link}[target='_blank'][rel='noopener']", 1
+    assert_select "#{link}[aria-label='Open turf-monster G3 CI run on GitHub']", 1, "the link carries an accessible name"
+    assert_select "#{link}[title='Open turf-monster G3 CI run on GitHub']", 1
+  end
+
+  test "[component] an href with no link_title falls back to the PR wording" do
+    render partial: "components/ci_progress_slot",
+           locals: { dom_id: "ci-progress-default-title",
+                     progress: Ci::CheckProgress.new(passed: 3, failed: 0, pending: 5),
+                     inner_test_id: "task-card-ci-progress",
+                     href: "https://github.com/amcritchie/mcritchie-studio/pull/42" }
+
+    assert_select "#ci-progress-default-title a[aria-label='Open the pull request on GitHub']", 1
+    assert_select "#ci-progress-default-title a[title='Open the pull request on GitHub']", 1
+  end
+
   test "[component] no href renders a plain div, not a link" do
     render partial: "components/ci_progress_slot",
            locals: { dom_id: "ci-progress-plain",

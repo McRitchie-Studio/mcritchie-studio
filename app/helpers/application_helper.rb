@@ -483,11 +483,22 @@ module ApplicationHelper
     ci_progress_reader.for_release(release)
   end
 
-  # The label for one repo's release-CI track — "G3 CI" plus the repo's app emoji so
-  # the per-repo tracks read apart at a glance. Shared by the release card render and
-  # the live DeploymentsBroadcaster morph so the two never drift.
+  # The label for one repo's release-CI track — the app emoji, then the app (repo)
+  # slug, then "G3 tests", so each per-repo track LEADS with its app and reads apart
+  # at a glance ("🐊 turf-monster G3 tests"). An unmapped repo drops the nil emoji and
+  # leads with the slug. Shared by the release card render and the live
+  # DeploymentsBroadcaster morph so the two never drift.
   def release_ci_track_label(repo)
-    ["G3 CI", app_emoji(repo)].compact.join(" ")
+    [app_emoji(repo), repo, "G3 tests"].compact.join(" ")
+  end
+
+  # The GitHub Actions run URL for one repo's release-CI track, or nil — the html_url
+  # the Next Release card's G3 track links to (opened in a new tab). Resolved through
+  # the same reader as release_ci_progress, so the link points at the EXACT run whose
+  # progress that track charts. nil (no ingested run) -> the track renders unlinked,
+  # never a broken href. Shared by the release card render and the live morph.
+  def release_ci_run_url(release, repo)
+    ci_progress_reader.release_ci_run_url(release, repo)
   end
 
   # One reader per request, so a page of cards shares its Github::Client + cache.
