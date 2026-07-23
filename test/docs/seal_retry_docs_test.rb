@@ -24,7 +24,7 @@ class SealRetryDocsTest < ActiveSupport::TestCase
   end
 
   test "[static] the production-deploy SOP tells the operator what the retry looks like" do
-    body = norm("agents/avi/sops/production-deploy.md")
+    body = norm("agents/steffon/sops/production-deploy.md")
     assert_match(/boot.window/i, body, "the SOP names the boot-window retry at the seal step")
     assert_match(/retr[^.]{0,300}(30s|30 seconds)/i, body,
       "the SOP warns the ship can pause ~30s at the seal — not a hang")
@@ -33,7 +33,7 @@ class SealRetryDocsTest < ActiveSupport::TestCase
   end
 
   test "[static] the docs state a red seal means the failure PERSISTED through the retry" do
-    sop  = norm("agents/avi/sops/production-deploy.md")
+    sop  = norm("agents/steffon/sops/production-deploy.md")
     gate = norm("modules/gates/g4-ship.md")
     assert_match(/persist/i, sop + gate,
       "a red seal is now a CONFIRMED failure (it survived the retry) — the docs must say so")

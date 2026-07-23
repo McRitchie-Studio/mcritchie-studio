@@ -163,7 +163,7 @@ class Release
     # remediation (revert the member's merge commit on `release`, never a
     # force-push): after the revert its PR is genuinely off the branch, so the
     # next sweep of the reworked task correctly re-merges. Returns the task.
-    def eject!(task, feedback: nil, by: "steffon")
+    def eject!(task, feedback: nil, by: "avi")
       Task.transaction do
         task.update!(release_slug: nil, merged: nil)
         task.block!(by: by, kind: "rework")
@@ -176,9 +176,9 @@ class Release
     end
 
     # Stamp the git-location on a set of members — the `merged: "main"` write
-    # Avi's `bin/release ship` records per repo right after that repo's
+    # Steffon's `bin/release ship` records per repo right after that repo's
     # `release → main` fast-forward lands on origin (matrix: assembled+main =
-    # ff'd, prod-deploy in flight). An interrupted Avi run reads this to skip
+    # ff'd, prod-deploy in flight). An interrupted ship run reads this to skip
     # re-ff'ing; Task#ship! re-stamps "main" at the record step regardless, so a
     # missed stamp degrades to the git no-op, never a wrong deploy. Validated by
     # Task's `merged` inclusion — an unknown location raises. Returns the slugs.
@@ -189,7 +189,7 @@ class Release
     end
 
     # The sweep/assembly bookend: the assembly window OPENS when the task is swept
-    # onto the release train (Steffon's qa-deploy), before QA-green concludes it.
+    # onto the release train (Avi's qa-deploy), before QA-green concludes it.
     # This gives analytics an explicit start timestamp for the assembly window
     # instead of relying only on the reviewed→assembled transition. Idempotent
     # through Task#record_intent_event.
@@ -561,17 +561,17 @@ class Release
 
     # The canonical role owner of each Deploy-lane stage — the actor stamped on the
     # OPEN intent when the CLI doesn't pass one. Mirrors StageAgentsHelper::STAGE_OWNER
-    # (the view-layer backfill for actor-less completed transitions): Steffon
-    # (Platform Engineer) QAs the assembled RC, Avi runs the ship. Kept here, on the
-    # record side, so `record_deploy_intents!` defaults the actor without reaching
-    # into a helper.
-    DEPLOY_LANE_ACTORS = { "assembled" => "steffon", "shipped" => "avi" }.freeze
+    # (the view-layer backfill for actor-less completed transitions): Avi
+    # (Product Owner) QAs the assembled RC via qa-release, Steffon (Platform Engineer)
+    # runs the ship. Kept here, on the record side, so `record_deploy_intents!`
+    # defaults the actor without reaching into a helper.
+    DEPLOY_LANE_ACTORS = { "assembled" => "avi", "shipped" => "steffon" }.freeze
 
     # Record the Deploy-lane OPEN intents that drive the live "who's on it now" crew
     # ticker on /deployments + the consolidated Stage Timeline
     # (StageAgentsHelper#in_progress_work reads the open intent for the member's NEXT
-    # pipeline stage): who is QA-ing the RC (Steffon → assembled) and who is shipping
-    # it (Avi → shipped) RIGHT NOW, recorded the moment `bin/release prepare` / `ship`
+    # pipeline stage): who is QA-ing the RC (Avi → assembled) and who is shipping
+    # it (Steffon → shipped) RIGHT NOW, recorded the moment `bin/release prepare` / `ship`
     # starts that lane's work. This is the Deploy mirror of `bin/reviewer-select`,
     # which records the primary/light pair → reviewed by default. Without it the QA/ship
     # crew slots render as empty dashed placeholders until the transition lands — the
@@ -586,9 +586,9 @@ class Release
     #
     # The two lanes record DIFFERENTLY because the QA window does not map cleanly onto a
     # pipeline transition:
-    #   * shipped (what `bin/release ship` fires) → a plain Avi → shipped intent,
+    #   * shipped (what `bin/release ship` fires) → a plain Steffon → shipped intent,
     #     superseded when `ship!` lands the shipped transition.
-    #   * assembled (what `bin/release prepare` fires) → the Steffon QA intent via
+    #   * assembled (what `bin/release prepare` fires) → the Avi QA intent via
     #     #record_qa_intent. A swept member is still `reviewed` at prepare time (the
     #     flip waits for QA-green), so the plain toward-`assembled` intent renders;
     #     an already-`assembled` member (a straggler / re-run) gets the qa-marked

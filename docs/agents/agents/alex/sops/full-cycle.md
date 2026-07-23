@@ -123,8 +123,8 @@ The release is shipped, or the run cleanly reports no work. Report:
 
 ## Related
 
-- [`../../../agents/avi/sops/pr-review.md`](../../../agents/avi/sops/pr-review.md)
-  - review-only PR review.
+- [`../../../agents/carl/sops/pr-review.md`](../../../agents/carl/sops/pr-review.md)
+  - review-only PR review (Carl).
 - [`../../../agents/avi/sops/qa-release.md`](../../../agents/avi/sops/qa-release.md)
   - QA release sweep.
 - [`../../../agents/steffon/sops/production-deploy.md`](../../../agents/steffon/sops/production-deploy.md)

@@ -4,147 +4,135 @@ This is the **reusable, self-contained PR-review procedure** — the review half
 the Deploy workflow (`submitted → reviewed`), factored out so any conductor or QA
 session can invoke it the same way "all over the place." The release SOP
 ([`../system/devops-cycle-design.md`](../system/devops-cycle-design.md) §1.2 /
-§1.4), the [heartbeats launcher map](heartbeats.md), and Avi's
-[`pr-review`](../agents/avi/sops/pr-review.md) /
-[`pr-review-slow`](../agents/avi/sops/pr-review-slow.md) SOPs all include this
+§1.4), the [heartbeats launcher map](heartbeats.md), and Carl's
+[`pr-review`](../agents/carl/sops/pr-review.md) /
+[`pr-review-slow`](../agents/carl/sops/pr-review-slow.md) SOPs all include this
 module **by reference** rather than restating it — edit the review contract here
 and it flows everywhere.
 
 > **This module IS the `review-one <task>` atom** — the indivisible PRIMITIVE the
 > composable deploy launchers are built from (§1.4). One run = **one PR / one
-> task**: Avi (the SUPERVISOR) picks + spawns the pair **in parallel** → PRIMARY +
-> LIGHT review as **siblings** → on all-clear the **supervisor** gates the task to
-> **`reviewed` and STOPS** (review-only, 2026-07-03 — the merge
-> is no longer the reviewer's; Steffon's self-healing `qa-release` sweeps the
-> reviewed queue, merges the PRs into `release`, and flips members `assembled` on
-> QA-green), or **any** reviewer blocks. The plural atoms just LOOP this body over
-> the `submitted` queue: **`pr-review`** runs it fanned across all submitted PRs
-> in **waves of ≤5**; **`pr-review-slow`** runs it serialized, one PR at a time.
-> So the sections below are the body of `review-one`; the loop that turns it into
-> `pr-review` is the concurrency wrapper in §1.4 — nothing here changes between
-> the two.
+> task**: the review session spins **one Carl** (the standing primary + owner) →
+> Carl summons **one domain LIGHT** at his discretion → on a merge-ready verdict
+> Carl **merges the feat PR into `accepted`** and drives the task to **`reviewed`
+> and STOPS** (review never touches `release`/`main` and never deploys — Avi's
+> self-healing `qa-release` sweeps the reviewed queue, promotes the `accepted →
+> release` batch PR, and flips members `assembled` on QA-green), or **any**
+> reviewer blocks. The plural atoms just LOOP this body over the `submitted`
+> queue: **`pr-review`** runs it fanned across all submitted PRs in **waves of
+> ≤5**; **`pr-review-slow`** runs it serialized, one PR at a time. So the sections
+> below are the body of `review-one`; the loop that turns it into `pr-review` is
+> the concurrency wrapper in §1.4 — nothing here changes between the two.
 
-It follows the established **2-senior review** model, but **formalizes the agent
-roles** in a **3-level hierarchy**: the session Pokémon (identity) → **Avi, the
-SUPERVISOR** (a thin gate + orchestration that **never reviews code**) → the
-**domain experts** who actually review. Avi selects a **primary** and one **light**
-reviewer and spawns **both in parallel** as siblings; each reviewer reviews **as
-their own soul**, and each review shows up in the Agent column of the Alex
-heartbeat (`/alex/heartbeat`) attributed to that soul. Nothing here overrides the
-canonical stage ownership in `devops-cycle-design.md` §1.2 — it is the operational
-how-to for that stage.
+It follows the established **2-read review** model (a deep primary + a focused
+light), but **formalizes the agent roles**: the session Pokémon (identity +
+orchestrator) → **one Carl per PR** (the standing primary AND owner) → **one domain
+LIGHT** Carl summons. **There is no Avi supervisor.** Carl reviews deeply, owns the
+gates, summons the light, drives the verdict, and merges. Each reviewer reviews **as
+their own soul**, and each review shows up in the Agent column of the Alex heartbeat
+(`/alex/heartbeat`) attributed to that soul. Nothing here overrides the canonical
+stage ownership in `devops-cycle-design.md` §1.2 — it is the operational how-to for
+that stage.
 
 ## When to invoke
 
 Run this whenever a `submitted` task's PR needs review before it can advance —
 as the `review-one` atom inside a `full-cycle` / `deploy-with-task`
-composition, as the body of an Avi Heartbeat `pr-review` / `pr-review-slow`
-sweep (review-only — the merge belongs to Steffon's `qa-release` sweep), or a one-off
-review a conductor kicks off by hand. The unit of work is
-**one PR / one task**; a queue is just this cascade run per task (`pr-review`), in
-**waves of ≤5 concurrent agents** (the board DB's connection budget — see
-"Concurrency cap" in the operating model).
+composition, as the body of a Carl Heartbeat `pr-review` / `pr-review-slow`
+sweep (review-only — the `accepted → release` promotion belongs to Avi's
+`qa-release` sweep), or a one-off review a conductor kicks off by hand. The unit
+of work is **one PR / one task**; a queue is just this cascade run per task
+(`pr-review`), in **waves of ≤5 concurrent agents** (the board DB's connection
+budget — a Carl and his light count as two; see "Concurrency cap" in the
+operating model).
 
-You are the **CONDUCTOR** here, not a feature agent — you orchestrate review on
-work that is **already built**. Do not create a task, take a worktree, or write
-feature code.
+You are the **SESSION orchestrator** here, not a feature agent — you orchestrate
+review on work that is **already built**. Do not create a task, take a worktree, or
+write feature code.
 
-## The reviewer pool
+## The reviewer pool — Carl is the standing primary; the light is the domain pick
 
-The senior reviewer pool is **one soul per domain**; Avi picks from it by the
-PR's change surface:
+Carl is the **standing primary** on every PR (Lead Architect). The **LIGHT** is the
+domain specialist Carl summons at his discretion by the PR's change surface:
 
-| Change surface | Reviewer soul | `subagent_type` |
+| Change surface | Light reviewer soul | `subagent_type` |
 |---|---|---|
-| Backend — Rails, models, jobs, services | **Carl** | `carl` |
+| Backend — Rails, models, jobs, services | **Carl** is primary; light rarely needed | `carl` |
 | UI — ERB, Tailwind, Alpine, theme | **Shannon** | `shannon` |
 | On-chain / Solana — turf-vault, `Solana::*`, wallets | **Jasper** | `jasper` |
 | Infra / deploy — Heroku, CI, env, buildpacks | **Steffon** | `steffon` |
 | Docs / operating-model — agent docs, runbooks, README | **Alex** | `alex` |
 
 Alex is the orchestrator **and** the pool's launchable Documentation review seat —
-one identity. Each review names exactly **one PRIMARY** (deep review, owns the
-lane) and **one or more LIGHT** reviewers (a focused second perspective).
+one identity. Each review names exactly **one PRIMARY** — Carl (deep review, owns
+the lane) — and **one LIGHT** (a focused domain second read).
 
-## Step 1 — Avi assigns the reviewers
+## Step 1 — the session spins one Carl; Carl's gate-zero
 
-The conductor **spawns Avi** (Agent tool, `subagent_type: avi`) as the **review
-SUPERVISOR** — a thin gate + orchestration that **never reviews the code
-itself**. Avi:
+The session claims a green-CI PR (`bin/task claim-next-review`) and **spins one
+Carl** (Agent tool, `subagent_type: carl`) as the **review OWNER** — there is no
+Avi supervisor. Carl:
 
-1. Checks the PR's **live GitHub CI first** (builders submit without waiting
-   for CI, so this pre-spawn check is the authoritative verdict): **red** →
-   `bin/task block <task> --kind rework` naming the failing checks — stop, no
-   reviewer spawns; **conflicted** (`gh pr view <pr> --json mergeStateStatus`
-   reports `DIRTY`) → `bin/task block <task> --kind rework` with
-   "merge the PR's base in and resolve" guidance (`outcome=ci-conflicted`) — stop, no reviewer
-   spawns; a conflicted PR gets **no CI at all** (GitHub cannot compute the
-   merge commit, so the workflow never fires), and it presents exactly like
-   "no checks yet" — deferring it would strand the task in `submitted` forever
-   (the PR-#509/#521 stall); **ci-less** (`gh pr checks` reports zero runs
-   **and** the merge is *refuted* — `mergeable CONFLICTING`) → the same
-   `bin/task block <task> --kind rework` with "merge `origin/<base>` in and
-   resolve" (`outcome=ci-less`) — a base that drifted past GitHub's merge computation
-   gets no CI either and never reads `DIRTY`. An **undetermined** merge
-   (`mergeable UNKNOWN`, GitHub still computing) is NOT this state and never
-   becomes it — it is a wait that names its uncertainty;
-   **pending / no checks yet** → defer this task to
-   a later pass; **green** → continue.
-2. Confirms **product-acceptance** — does the open PR (base `release`) meet the
+1. Re-checks the PR's **live GitHub CI** (the claim only pops green-CI PRs, but CI
+   can flip mid-review): his gate-zero `bin/dor-check <task> --gate-role review` is
+   **strict** — **red** → `bin/task block <task> --kind rework` naming the failing
+   checks; **conflicted** (`gh pr view <pr> --json mergeStateStatus` reports
+   `DIRTY`) → `bin/task block <task> --kind rework` with "merge the PR's base in and
+   resolve" guidance (`outcome=ci-conflicted`); **pending** → defer to a later pass;
+   **green** → continue. (A red or conflicted PR is never claimed in the first
+   place — `claim-next-review` only pops green-CI tasks — so this is the mid-review
+   catch.)
+2. Confirms **product-acceptance** — does the open PR (base `accepted`) meet the
    task's acceptance criteria?
-3. Determines the **primary + light** pair by change surface (the table above),
-   running **`bin/reviewer-select <task>`**. It scores the pool by domain fit with
-   a logged, seeded-per-task tiebreak and **excludes** the QA owner (Steffon, who
-   QAs the assembled RC — no self-gating), **the builder** (a soul never reviews
-   its own work — read from `devops.built_by`, auto-stamped on the build move),
-   and any **busy souls** (`--busy a,b,c` and/or `--busy-auto`). The pool is never
-   starved below a pair.
+3. Determines the **domain LIGHT** by change surface (the table above), previewing
+   with **`bin/reviewer-select <task>`**. It scores the pool by domain fit with a
+   logged, seeded-per-task tiebreak and **excludes** the QA owner (who QAs the
+   assembled RC — no self-gating), **the builder** (a soul never reviews its own
+   work — read from `devops.built_by`, auto-stamped on the build move), and any
+   **busy souls** (`--busy a,b,c` and/or `--busy-auto`). The pool is never starved
+   below a pair.
 
 **Record the intent.** `bin/reviewer-select <task>` **records the picked pair by
-default** — it writes them onto the task as the live **review intent** (the
-"record intent on PR review" convention), so `/deployments` and the task timeline
-show the two seniors reviewing live — a green ticking timer — the moment review
-kicks off, before `→ reviewed` lands. Pass `--no-record` / `--dry` only for an
+default** — it writes Carl + the light onto the task as the live **review intent**
+(the "record intent on PR review" convention), so `/deployments` and the task
+timeline show them reviewing live — a green ticking timer — the moment review kicks
+off, before `→ reviewed` lands. Pass `--no-record` / `--dry` only for an
 advisory-only preview. (The manual fallback is
-`bin/task intent <task> --to reviewed --actor <primary>`.)
+`bin/task intent <task> --to reviewed --actor carl`.)
 
-Avi then **spawns both the primary and the light reviewer in parallel** (Step 2)
-— they are his own sibling children, not a hand-off to be re-delegated.
+Carl then **summons his LIGHT** (Step 2) — his own child, nested under him.
 
-## Step 2 — Reviewers review AS their soul
+## Step 2 — Carl reviews deep; the LIGHT reads AS its soul
 
-The supervisor spawns **both** reviewers (Agent tool, each its domain
-`subagent_type`) **in parallel as siblings** — the PRIMARY runs the deep review
-([`../agents/avi/sops/pr-review-primary.md`](../agents/avi/sops/pr-review-primary.md)),
-the LIGHT runs the focused second read
-([`../agents/avi/sops/pr-review-light.md`](../agents/avi/sops/pr-review-light.md)).
-The primary does **not** spawn its sibling; the supervisor oversees both
-concurrently and collects both verdicts. Avi performs **no** review of his own.
+Carl runs the deep review
+([`../agents/carl/sops/pr-review-primary.md`](../agents/carl/sops/pr-review-primary.md))
+and **summons one LIGHT** (Agent tool, the light's domain `subagent_type`) for the
+focused second read
+([`../agents/carl/sops/pr-review-light.md`](../agents/carl/sops/pr-review-light.md)).
+The light is Carl's own child (nested), running concurrently with his deep review
+and reporting up to him. Carl summons **at most one** light — a focused second read,
+not a committee (he may skip it on a trivial change and note that he did).
 
-The supervisor emits **two intent-labeled delegate actions**, one per reviewer,
-in a **single message so they run in parallel** — the Agent-tool `description`
-**is** the action label: **`summon primary review: <soul>`** and
-**`summon light review: <soul>`**. (`bin/pr-review` prints the same two labels on
-the deterministic path.) Two supervisor-emitted, role-tagged spawns keep the
-structure legible and keep the primary from re-delegating.
+Carl emits the light spawn as an **intent-labeled delegate action** — the Agent-tool
+`description` **is** the action label: **`light review: <soul>`**. (`bin/pr-review`
+prints the same label on the deterministic path.) The spawn's label keeps the
+structure legible; the review tree nests the light under Carl.
 
-**The split is role, not just depth.** The **PRIMARY is the review OWNER**: it
-runs the gates (`bin/dor-check <task> --gate-role review` / cert / CI /
+**The split is role, not just depth.** **Carl, the PRIMARY, is the review OWNER**:
+he runs the gates (`bin/dor-check <task> --gate-role review` / cert / CI /
 acceptance) and **drives the verdict** (merge-ready or request-changes). The
-**LIGHT is a focused second read**
-through its domain lens that **reports up to the primary**: it does **not** run
-the gates and does **not** drive the verdict — though **any reviewer can block**
-on a defect. This closes the observed drift where Avi spawned only the primary,
-the primary spawned the light, and the light drove the verdict (role inversion).
+**LIGHT is a focused second read** through its domain lens that **reports up to
+Carl**: it does **not** run the gates and does **not** drive the verdict — though
+**any reviewer can block** on a defect.
 
 **The review is the task's G2 Review gate**
 ([`gates/g2-review.md`](gates/g2-review.md)): two task-grain lanes,
 `g2a_primary` + `g2b_light`, opened as the pair launches and each closed from
-its own reviewer's scout report (`merge-ready` = passed). The primary's
+its own reviewer's scout report (`merge-ready` = passed). Carl's
 gate-zero runs with `--gate-role review` so its verdict opens+closes its own
 `dor_review` gate instead of touching the builder's G1 Cert or a G2 lane.
 `bin/pr-review` posts all of this
-automatically; on a hand-run review the supervisor posts the same markers with
+automatically; on a hand-run review Carl posts the same markers with
 `bin/gate` (the exact commands are in the gate doc).
 
 **Each reviewer narrates their review as their own soul** so the Agent column
@@ -166,22 +154,22 @@ Each reviewer goes through the review cycle and **responds with concise notes**:
 
 - **diff vs. acceptance** — the change does what the task's acceptance criteria say.
 - **checks / tests** — the shape's DoR **base** tiers are green in `checks_run`;
-  `bin/dor-check <task> --gate-role review` passes (the PRIMARY's gate-zero —
+  `bin/dor-check <task> --gate-role review` passes (Carl's gate-zero —
   its verdict opens+closes its own `dor_review` gate, never the builder's G1 or
   a G2 lane).
-- **code standards + code smell + scalability** — the PRIMARY goes deep here
+- **code standards + code smell + scalability** — Carl goes deep here
   (Opus on `migration` / `payment` / `solana` / `auth`); the LIGHT gives a focused
   second read.
 - **docs** — behavior/env/ports/auth/deploy changes carry doc updates.
 
 Reviewers may also broadcast in-app progress with
-`POST /api/v1/tasks/:slug/review_events` (heavy = `primary` swimlane, light =
-light swimlane) — see [`parallel-agent-devops.md`](parallel-agent-devops.md#picking-the-two-senior-reviewers-binreviewer-select).
+`POST /api/v1/tasks/:slug/review_events` (primary = `primary` swimlane, light =
+light swimlane) — see [`parallel-agent-devops.md`](parallel-agent-devops.md#picking-the-domain-light-binreviewer-select).
 
 ## Step 3 — Any reviewer can BLOCK
 
 If a reviewer finds something wrong, **any** reviewer marks the task blocked —
-one complete send-back, then the conductor moves on (block-and-move: one block
+one complete send-back, then the session moves on (block-and-move: one block
 never holds back the PRs that passed):
 
 ```bash
@@ -199,23 +187,25 @@ recorded and routed back, not fixed); omit that section entirely on a clean run.
 
 ## Step 4 — Verdict
 
-The **supervisor collects both verdicts and gates**; the PRIMARY's deep verdict
-carries the most weight, the LIGHT adds a focused second perspective.
+**Carl, the review OWNER, collects the light's read and drives the verdict**; his
+deep review carries the most weight, the LIGHT adds a focused second perspective.
 
-- **All-clear** (no reviewer blocked) → the **supervisor** drives the task to
-  `reviewed` (`bin/task move <task> reviewed --actor avi`) — **and stops there.**
-  Review is **review-only** (2026-07-03): the supervisor does NOT run
-  `bin/release merge`;
-  Steffon's self-healing **`qa-release`** (`bin/release prepare`) sweeps the whole
-  reviewed queue, merges each PR into `release` (stamping `merged: "release"`),
-  and flips members to `assembled` only on QA-green. **Bias to action: green
-  tests = go** — the sweep follows promptly, and `release` is recoverable by
-  revert. The **sweep → QA → ship** pipeline continues from there
+- **Merge-ready** (no reviewer blocked) → **Carl merges the feat PR into
+  `accepted`** — revalidate the head, `gh pr merge --merge --match-head-commit`,
+  `bin/task merged <task> accepted`, then `bin/task move <task> reviewed --actor
+  carl` (merge → stamp → move; the task is `reviewed` iff its code is on
+  `accepted`) — **and stops there.** Review is **review-only**: Carl does NOT run
+  `bin/release merge` and never touches `release`/`main`. Avi's self-healing
+  **`qa-release`** (`bin/release prepare`) sweeps the whole reviewed queue, promotes
+  the **ONE `accepted → release` batch PR per repo** (stamping `merged: "release"`),
+  and flips members to `assembled` only on QA-green. **Bias to action: a clean
+  merge-ready verdict = go** — the sweep follows promptly, and `accepted`/`release`
+  are recoverable by revert. The **sweep → QA → ship** pipeline continues from there
   (`devops-cycle-design.md` §1.4).
 - **Any block** → the task is at `blocked` (Step 3), out of the pipeline until the
   builder resubmits.
 - **Low confidence** (humility valve) → a reviewer marks `conductor-review` and
-  routes to a human Avi/Steffon session instead of approving the merge.
+  routes to a human Carl / Avi / Steffon session instead of merging.
 
 ## At a glance
 
@@ -224,23 +214,22 @@ One `review-one <task>` run, start to finish (the loop that fans this across the
 
 | # | Actor | Agent (`subagent_type`) | Does | Records |
 |---|---|---|---|---|
-| 1 | **Avi** (SUPERVISOR — never reviews) | `avi` | product-acceptance + `bin/reviewer-select`; **spawns both reviewers in parallel** via two labeled delegates — `summon primary review: <soul>` + `summon light review: <soul>` | review intent (pair) on the task; opens the `dor_review` gate-zero + the G2a + G2b gate lanes |
-| 2 | **PRIMARY** (review OWNER) | domain soul | deep review + **owns the gates** (dor `--gate-role review`/cert/CI/acceptance) + **drives the verdict** (runs `pr-review-primary.md`) | `Verify --agent <soul>` activity + notes; gate-zero verdict on the `dor_review` gate |
-| 2 | **LIGHT** | domain soul | focused second read through its domain lens; **reports up to the primary**; no gates, no verdict-drive (runs `pr-review-light.md`); **sibling** of the primary | `Verify --agent <soul>` activity + notes |
+| 1 | **Session Pokémon** (orchestrator — never reviews) | base mascot | `bin/task claim-next-review` → spins one Carl per PR | claim lease on the task |
+| 2 | **Carl** (PRIMARY — review OWNER) | `carl` | product-acceptance + gate-zero (`--gate-role review`); deep review; **owns the gates** + **drives the verdict**; **summons one LIGHT** (`light review: <soul>`); on merge-ready **merges the feat PR into `accepted`** (runs `pr-review-primary.md`) | review intent (pair) on the task; opens the `dor_review` gate-zero + the G2a lane; `submitted → reviewed` + `merged: accepted` |
+| 2 | **LIGHT** | domain soul | focused second read through its domain lens; **reports up to Carl**; no gates, no verdict-drive (runs `pr-review-light.md`); Carl's **child** | `Verify --agent <soul>` activity + notes; closes the G2b lane |
 | 3 | any reviewer | — | block on a defect | `bin/task block --kind rework --feedback` |
-| 4 | **Avi** (SUPERVISOR) | `avi` | collects **both** verdicts → `reviewed` (review-only; Steffon's qa-release sweeps + merges) | `submitted → reviewed`; closes each G2 lane from its reviewer's scout report |
 
 ## Where this plugs in
 
 - [`../system/devops-cycle-design.md`](../system/devops-cycle-design.md) §1.2 /
   §1.4 — the canonical stage ownership and the `Review submitted PRs` building
   block; this module is its formalized, agent-role how-to.
-- [`../agents/avi/sops/pr-review.md`](../agents/avi/sops/pr-review.md) and
-  [`../agents/avi/sops/pr-review-slow.md`](../agents/avi/sops/pr-review-slow.md)
-  — the Avi-owned SUPERVISOR SOPs that run this cascade unattended, spawning the
-  [`pr-review-primary.md`](../agents/avi/sops/pr-review-primary.md) and
-  [`pr-review-light.md`](../agents/avi/sops/pr-review-light.md) role SOPs in
-  parallel.
+- [`../agents/carl/sops/pr-review.md`](../agents/carl/sops/pr-review.md) and
+  [`../agents/carl/sops/pr-review-slow.md`](../agents/carl/sops/pr-review-slow.md)
+  — the Carl-owned SOPs that run this cascade unattended, spinning one Carl per PR
+  who runs the
+  [`pr-review-primary.md`](../agents/carl/sops/pr-review-primary.md) and summons the
+  [`pr-review-light.md`](../agents/carl/sops/pr-review-light.md) role SOP.
 - [`parallel-agent-devops.md`](parallel-agent-devops.md) — the `bin/reviewer-select`
   mechanics, review-events API, and broader queue/scout context.
 - [`review-comment-taxonomy.md`](review-comment-taxonomy.md) — which activity type

@@ -10,9 +10,9 @@ lanes.
 location.
 
 Feature agents should feel free to move quickly inside isolated worktrees, but
-they do not merge to `main`. Work graduates through a PR review lane where Avi
-protects integration, Steffon adds QA/deploy scrutiny when needed, and the
-release conductor handles production effects.
+they do not merge to `main`. Work graduates through a PR review lane where Carl
+(the standing primary + owner) protects integration, Avi assembles + QAs the
+release candidate, and Steffon ships production.
 
 ## Fan out the READS; direct-drive the MUTATIONS
 
@@ -60,15 +60,15 @@ Two corollaries worth knowing before you need them:
    acceptance criteria, affected repos, risk tags, expected `test_plan`,
    worktree slug, branch, PR URL, local URL when relevant, and completed
    `checks_run`. The task moves to `submitted`.
-2. **Review: `submitted → reviewed`** — Avi reviews task metadata, PR body, diff, docs,
+2. **Review: `submitted → reviewed`** — Carl reviews task metadata, PR body, diff, docs,
    migrations, merge safety, CI, local proof, and overlap with other agents.
    **Review `devops.post_deploy_cmd`, not just the diff** — it runs verbatim
    against prod on ship, so a bare `db:seed` (loads all of `db/seeds.rb` →
    demo data + a non-idempotent abort) must be rejected for a narrow, idempotent
    command; `bin/dor-check` enforces this, but read the metadata yourself.
-   Avi classifies check failures by lane before deciding whether to move the
-   task to `reviewed`, wait, or send `qa_feedback`.
-3. **Assemble + QA: `reviewed → assembled`** — Steffon's `qa-release` sweep
+   Carl classifies check failures by lane before deciding whether to merge the
+   feat PR into `accepted` and move the task to `reviewed`, wait, or send `qa_feedback`.
+3. **Assemble + QA: `reviewed → assembled`** — Avi's `qa-release` sweep
    promotes ONE `accepted → release` batch PR per repo, deploys `origin/release`
    to the QA app, and records QA URL, deployed SHA, release slug, and QA checks in
    `checks_run`.
@@ -81,8 +81,9 @@ Two corollaries worth knowing before you need them:
 | Lane | Owner | Purpose | May push branch | May merge → `release` | May deploy/publish |
 |------|-------|---------|-----------------|-----------------------|--------------------|
 | Feature | Task agent | Build scoped work in an isolated worktree | Yes, own branch only | No | No |
-| QA / Integration | Avi | Review PRs and prevent dropped code | Yes, review/fix branches when needed | No | No, unless explicitly acting as release conductor |
-| Quality / Infra Gate | Steffon | Validate risky PRs, merge reviewed work, QA deploy readiness, provider infra | Yes, review/fix branches when needed | Yes, through `qa-release` | QA only, unless release conductor |
+| Review | Carl (standing primary + owner) | Review PRs, prevent dropped code, merge the feat PR into `accepted` | Yes, review/fix branches when needed | No (merges to `accepted`, never `release`/`main`) | No |
+| Assemble + QA | Avi | Sweep reviewed work onto `release`, QA deploy readiness | Yes, review/fix branches when needed | Yes, through `qa-release` | QA only, unless release conductor |
+| Ship + Infra | Steffon | Ship the QA-green RC to prod, provider infra, archive | Yes, review/fix branches when needed | ff `release → main` at ship | Yes, with explicit approval |
 | Release | Designated conductor | Gem publish, app deploy, production verification | Yes | Yes | Yes, with explicit approval |
 
 Approved work merges into the **persistent per-repo `release` branch**, not
@@ -164,26 +165,28 @@ It blocks dirty worktrees, branches with no commits, branches already merged to
 `--push --pr`, it also blocks worktrees that are not bound to a production
 McRitchie Studio task record.
 
-## QA / Avi Review
+## PR Review — Carl (one Carl per PR)
 
-Avi owns PR **intake** as the review SUPERVISOR — a thin gate that never reviews
-the code: product-acceptance + reviewer selection. He then **spawns the PRIMARY
-and LIGHT reviewers in parallel** as siblings — the PRIMARY does the deep review,
-the LIGHT a focused second read. On a merge-ready verdict review **merges the
-feat PR into `accepted`** (stamping `merged: "accepted"`) and stops at
-`reviewed` — review still never touches `release`/`main` and never deploys.
-Steffon's self-healing `qa-release` sweep (`bin/release prepare`) then promotes
-**ONE `accepted → release` batch PR per repo** (not N per-task merges),
-re-stamps `merged: "release"`, and flips members `assembled` on QA-green.
+Carl owns PR review end-to-end. The review session (a Pokémon orchestrator)
+claims a green-CI PR and spins **one Carl per PR** — the standing primary AND
+owner. **There is no Avi supervisor.** Each Carl does the deep review, owns the
+gates, and **summons one domain LIGHT** at his discretion (his own child) for a
+focused second read — many `pr-review` sessions run in **parallel** on independent
+tasks. On a merge-ready verdict Carl **merges the feat PR into `accepted`**
+(stamping `merged: "accepted"`) and stops at `reviewed` — review still never
+touches `release`/`main` and never deploys. Avi's self-healing `qa-release` sweep
+(`bin/release prepare`) then promotes **ONE `accepted → release` batch PR per
+repo** (not N per-task merges), re-stamps `merged: "release"`, and flips members
+`assembled` on QA-green.
 
-### Picking the two senior reviewers (`bin/reviewer-select`)
+### Picking the domain light (`bin/reviewer-select`)
 
-Avi runs `bin/reviewer-select <task>` to choose the **1 PRIMARY + 1 LIGHT** pair by
+Carl runs `bin/reviewer-select <task>` to preview **Carl (primary) + 1 LIGHT** by
 domain fit with a logged, seeded-per-task tiebreak. Three exclusions keep review
 honest, and **none of them needs a manual flag in the common case**:
 
-- **QA owner** (Steffon by default) — never reviews a PR he then QAs. Override
-  with `--qa-owner SLUG` when someone else QAs this task.
+- **QA owner** (the soul who QAs the assembled RC) — never a light on a PR he then
+  QAs. Override with `--qa-owner SLUG` when someone else QAs this task.
 - **Builder** — a soul never reviews their own work. The builder is read from
   `devops.built_by`, which is **auto-stamped on the move to building**: a bare
   `bin/task move <slug> building` records the task's assigned `agent_slug` (an
@@ -281,10 +284,9 @@ bin/conductor qa    [--run]   # thin drive: bin/release prepare (deploy origin/r
 ```
 
 `plan` maps each stage to its deterministic next command: `submitted` →
-`bin/reviewer-select <slug>` (then spawn the reviewers — Avi (SUPERVISOR, never
-reviews) spawns the **PRIMARY** and **LIGHT** experts **in parallel** as siblings;
-the **review needs AGENTS**, so conductor surfaces the assignment, it never
-fabricates a verdict);
+`bin/task claim-next-review` (then spin one Carl — the standing primary + owner —
+who summons his own domain **LIGHT**; **review needs AGENTS**, so conductor
+surfaces the assignment, it never fabricates a verdict);
 `reviewed` → `bin/release prepare` (the self-healing sweep merges the whole
 queue; `bin/release merge <slugs>` stays as the per-task primitive); `assembled`
 → QA-green already — the ship gate. It flags `blocked` + non-pipeline
@@ -327,19 +329,19 @@ DevOps session so task IDs, PR URLs, QA URLs, and next actions are visible
 before reviewing individual diffs. It is read-only by default.
 
 Use `bin/pr-review --run --codex-workdir "$PWD"` when Mr. McRitchie wants
-Avi to review submitted PRs unattended for hours without assembling a release
-(`--codex-workdir` must be a trusted git checkout — the projects-root default
-makes `codex exec` refuse and every reviewer exit 1; full flags in the
-[`../agents/avi/sops/pr-review.md`](../agents/avi/sops/pr-review.md) SOP). That is the
-[`pr-review-slow`](../agents/avi/sops/pr-review-slow.md) act: newest `submitted`
+Carl to review submitted PRs unattended for hours without assembling a release
+(full flags in the
+[`../agents/carl/sops/pr-review.md`](../agents/carl/sops/pr-review.md) SOP). That is the
+[`pr-review-slow`](../agents/carl/sops/pr-review-slow.md) act: newest `submitted`
 task first, one PR at a time, fresh
 `bin/devops-cycle --json --decisions --scout-reports` query before selection and
 again after reviewer completion. Add `--fast` for the
-[`pr-review`](../agents/avi/sops/pr-review.md) act when submitted PRs have stacked up; it launches bounded
-waves of selected PRIMARY + LIGHT reviewer pairs, defaulting to the operating
-model's five-agent cap (two complete PR pairs per wave). Both modes leave Avi as
-the final resolver: two-approval work moves to `reviewed` for Steffon/release
-assembly, request-changes blocks for rework, and CI/conductor waits defer for a
+[`pr-review`](../agents/carl/sops/pr-review.md) act when submitted PRs have stacked up; it launches bounded
+waves of Carls (each with his own light), defaulting to the operating
+model's five-agent cap (a Carl + his light count as two). Both modes leave Carl as
+the review owner: a merge-ready verdict merges the feat PR into `accepted` and
+moves the task `reviewed` for Avi's `qa-release` sweep,
+request-changes blocks for rework, and CI/conductor waits defer for a
 later pass. They stop after ten completed PR reviews by default and print a
 retrospective of friction, blockers, common blocker patterns, and refactor
 candidates. They do not merge, deploy, ship, publish gems, or archive.
@@ -615,20 +617,20 @@ The intended cycle is:
 
 1. Feature agent opens a PR.
 2. Feature agent moves the task to `submitted`.
-3. The review lane runs: Avi (SUPERVISOR) spawns the **PRIMARY** and **LIGHT**
-   reviewers **in parallel** as siblings — the PRIMARY does the deep review, the
-   LIGHT a focused second read — and on two approvals the supervisor merges the
+3. The review lane runs: the review session spins **one Carl per PR** — the
+   standing primary + owner (no Avi supervisor) — who summons his own domain
+   **LIGHT** for a focused second read, and on a merge-ready verdict Carl merges the
    feat PR into `accepted` (stamping `merged: "accepted"`) and drives the task to
-   `reviewed` — review never touches `release`/`main` and never deploys. Steffon's
+   `reviewed` — review never touches `release`/`main` and never deploys. Avi's
    sweep (`bin/release prepare`) then promotes ONE `accepted → release` batch PR
    per repo, recording membership + `merged: "release"` in a **single `heroku
    run`** (stages stay `reviewed` until QA-green).
-4. Avi or Steffon provisions the QA app once if `bin/qa-server status <app>`
+4. Avi provisions the QA app once if `bin/qa-server status <app>`
    reports `missing-app`.
-5. Avi or Steffon deploys the `release` ref to the app's QA server with
+5. Avi deploys the `release` ref to the app's QA server with
    `bin/qa-server deploy <app> origin/release --yes` (or `bin/release prepare`,
    which runs this for every app member).
-6. Avi or Steffon moves the task to `assembled` and records the QA URL,
+6. Avi moves the task to `assembled` and records the QA URL,
    deployed SHA, release-slug tag when present, and QA checks run.
 7. Mr. McRitchie reviews the QA URL.
 8. Production deploy happens only after Mr. McRitchie explicitly approves it.

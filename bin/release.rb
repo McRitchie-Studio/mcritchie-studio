@@ -11,14 +11,14 @@
 # conflict (it never auto-resolves).
 #
 # The integration branch is PERSISTENT: every repo keeps a single `release`
-# branch that feature PRs merge INTO. The souls BOOKEND the pipeline (2026-07-03):
-# Avi reviews (review-only, stops at `reviewed`) and ships; STEFFON owns the whole
-# middle — his self-healing `prepare` SWEEPS the reviewed queue (+ any assembled
-# stragglers) onto the candidate, merges their PRs into `release`, deploys QA,
-# and flips members `reviewed → assembled` ONLY on QA-green. The task's `merged`
-# column ("release"/"main"/nil) is the git-location crash-recovery signal: an
-# interrupted Steffon run skips re-merging a `merged: release` task; an
-# interrupted Avi run skips re-ff'ing a `merged: main` one.
+# branch that feature PRs merge INTO. The souls split the pipeline (2026-07-22):
+# Carl reviews (review-only, stops at `reviewed`, merges to `accepted`); AVI owns
+# the whole middle — his self-healing `prepare` SWEEPS the reviewed queue (+ any
+# assembled stragglers) onto the candidate, merges their PRs into `release`,
+# deploys QA, and flips members `reviewed → assembled` ONLY on QA-green; STEFFON
+# ships. The task's `merged` column ("release"/"main"/nil) is the git-location
+# crash-recovery signal: an interrupted Avi run skips re-merging a `merged:
+# release` task; an interrupted Steffon run skips re-ff'ing a `merged: main` one.
 #
 # Usage:
 #   bin/release init [--dry-run]
@@ -559,8 +559,8 @@ end
 
 # --- deploy-lane self-narration (best-effort) -------------------------------
 # Open+close an AgentActivity around a release phase, stamped with the ROLE
-# soul the board already attributes that phase to — Steffon assembles (prepare),
-# Avi ships — so the heartbeat's deploy activities match the board's stage timeline.
+# soul the board already attributes that phase to — Avi assembles (prepare),
+# Steffon ships — so the heartbeat's deploy activities match the board's stage timeline.
 # Narrated through bin/agent-activity (the SAME path the session narrates with,
 # which the capture hook DROPS from raw actions, so only the resulting activity
 # shows). BEST-EFFORT + NON-FATAL: telemetry must never break a release, so a
@@ -2461,7 +2461,7 @@ def prepare
   task_slugs = opt_values("--task")
   slug = opt_value("--slug")
 
-  say("Prepare release — Steffon qa-deploy (self-healing)#{PROD ? ' (PROD board)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
+  say("Prepare release — Avi qa-deploy (self-healing)#{PROD ? ' (PROD board)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
   warn_local!
   # On the prod default a non-dry prepare fires a REAL accepted→release batch merge +
   # a REAL `bin/qa-server deploy`, so gate it like `ship` does. confirm returns true
@@ -2473,7 +2473,7 @@ def prepare
   # him (matching the board's stage timeline). Best-effort — see the narrate
   # helpers. `steffon_span` gates the close in the rescue so an abort BEFORE this
   # point never emits a stray `end`.
-  open_role_span("steffon", "sweep → deploy RC to QA")
+  open_role_span("avi", "sweep → deploy RC to QA")
   steffon_span = true
 
   # 1. DETECT (a read — runs even in --dry-run): the reviewed queue + assembled
@@ -2660,7 +2660,7 @@ def prepare
   #    every test SOP inside it rides the close via the run_test_scope collector.
   #    Closed success beside qa_green!, failed at the boot-failure branch, and
   #    failed by the SystemExit wrapper below when anything in the window aborts.
-  record_gate_open(rel_slug, "g3_candidate", actor: "steffon")
+  record_gate_open(rel_slug, "g3_candidate", actor: "avi")
   g3_gate = :open
   pre_qa_gate(app_groups, rel_slug)
 
@@ -2676,11 +2676,11 @@ def prepare
   #     (conductor prints the plan). BEST-EFFORT (record_deploy_intent): this
   #     cosmetic ticker write must never abort the QA deploy on a transient
   #     prod-board failure — it warns and continues.
-  step("record: Steffon assembled QA intent (live crew ticker)")
+  step("record: Avi assembled QA intent (live crew ticker)")
   record_deploy_intent(
     "Steffon assembled QA intent",
-    "r = Release.current; n = Release::Conductor.record_deploy_intents!(r, to_stage: 'assembled', actor: 'steffon'); " \
-    "puts({ intent: 'assembled', actor: 'steffon', members: n.size }.to_json)"
+    "r = Release.current; n = Release::Conductor.record_deploy_intents!(r, to_stage: 'assembled', actor: 'avi'); " \
+    "puts({ intent: 'assembled', actor: 'avi', members: n.size }.to_json)"
   )
 
   # 6. Per-app: keep the persistent `release` branch ahead of main (merge-forward
@@ -2911,11 +2911,11 @@ def prepare
     end
   end
   say("  #{left_reviewed.join(', ')} left `reviewed` — no code on `#{ACCEPTED_BRANCH}` (re-review to heal), or `bin/task block` them.") if left_reviewed.any?
-  # The Avi handoff exists only on QA-green — a NOT-green prepare hands off to
+  # The Steffon handoff exists only on QA-green — a NOT-green prepare hands off to
   # NOBODY (the step-8 warning already said: re-run prepare once QA boots).
   if qa_green
     say("")
-    say("  Review the QA app(s) above, then hand off to Avi: `bin/release ship`.")
+    say("  Review the QA app(s) above, then hand off to Steffon: `bin/release ship`.")
   end
   # Drop the assembler claim (clean completion, whether or not QA went green) so the
   # next conductor can pick this release up immediately; a crash self-heals via the
@@ -4855,35 +4855,35 @@ def ship
   avi_ship_gate(app_groups, ship_sha, qa_gates)
   record_release_event(rel_slug, "ship_gate", "completed", actor: by)
 
-  # 2b. The ship-authority gate — explicit, AFTER Avi's test confirmation and
+  # 2b. The ship-authority gate — explicit, AFTER Steffon's test confirmation and
   #     BEFORE any deploy. confirm() honors --yes (hands-off) + --dry-run (previews).
-  step("ship authority: Avi's ship gate passed on the frozen SHA — confirming production deploy")
+  step("ship authority: Steffon's ship gate passed on the frozen SHA — confirming production deploy")
   record_release_event(rel_slug, "ship_authorized", "started", actor: by)
   abort!("aborted — production deploy not confirmed") unless confirm("Deploy this release to production?")
   record_release_event(rel_slug, "ship_authorized", "completed", actor: by)
 
-  # Deploy-lane narration: the ship is authorized — Avi is shipping to prod. Open a
+  # Deploy-lane narration: the ship is authorized — Steffon is shipping to prod. Open a
   # role activity (best-effort) so the heartbeat attributes the deploy to him, matching
-  # the board's Avi→shipped intent recorded just below. Opened AFTER ship authority
-  # so a declined ship never shows Avi shipping.
-  open_role_span("avi", "ship → prod")
+  # the board's Steffon→shipped intent recorded just below. Opened AFTER ship authority
+  # so a declined ship never shows Steffon shipping.
+  open_role_span("steffon", "ship → prod")
   avi_span = true
 
-  # 2c. The ship is now authorized + proceeding — record the Avi → shipped intent for
+  # 2c. The ship is now authorized + proceeding — record the Steffon → shipped intent for
   #     every member so /deployments shows him shipping LIVE (a green ticking timer)
   #     through the deploy, instead of an empty dashed ship slot until `ship!` lands
   #     (the 2026-06-25 unfilled-ship-slot incident). Recorded AFTER ship authority
-  #     so a declined ship never shows Avi shipping. Append-only + idempotent
+  #     so a declined ship never shows Steffon shipping. Append-only + idempotent
   #     (record_intent_event reuses the open intent; `ship!` supersedes it). On a
-  #     partial-ship abort the intent stays open — correct (Avi is still shipping) and
+  #     partial-ship abort the intent stays open — correct (Steffon is still shipping) and
   #     a re-run reuses it. A board WRITE → suppressed in --dry-run. BEST-EFFORT
   #     (record_deploy_intent): a transient prod-board failure on this cosmetic ship-slot
   #     write must never abort the production deploy — it warns and continues.
-  step("record: Avi shipped intent (live crew ticker)")
+  step("record: Steffon shipped intent (live crew ticker)")
   record_deploy_intent(
-    "Avi shipped intent",
-    "r = Release.current; n = Release::Conductor.record_deploy_intents!(r, to_stage: 'shipped', actor: 'avi'); " \
-    "puts({ intent: 'shipped', actor: 'avi', members: n.size }.to_json)"
+    "Steffon shipped intent",
+    "r = Release.current; n = Release::Conductor.record_deploy_intents!(r, to_stage: 'shipped', actor: 'steffon'); " \
+    "puts({ intent: 'shipped', actor: 'steffon', members: n.size }.to_json)"
   )
   record_release_event(rel_slug, "deploy_prod", "started", actor: by)
 

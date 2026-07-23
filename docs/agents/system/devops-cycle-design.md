@@ -34,12 +34,14 @@
 > **not** hub-only. The heartbeat planner `bin/devops-cycle` was also migrated off
 > the legacy stage names (it speaks `submitted`/`reviewed`/`assembled`).
 >
-> **Deploy-flow redesign (decided, 2026-06-22).** The `submitted → shipped` half
-> was re-homed by role — review is **delegated by Avi to two seniors** (no longer
-> his solo gate), `assembled` is owned by **Steffon** (now titled **Platform
-> Engineer**), and `shipped` is owned by **Avi** (full e2e on the frozen ship
-> SHA) plus explicit ship authority: the default operator gate or the
-> `Merge, Assemble, Deploy` autonomous kickoff. **§1.2 is the rewritten spec.**
+> **Deploy-flow redesign (decided, 2026-06-22; review + release lanes re-homed
+> 2026-07-22).** The `submitted → shipped` half was re-homed by role — review is
+> **owned by Carl** (one Carl per PR, the standing primary + owner; no Avi
+> supervisor), `assembled` is owned by **Avi** (Product Owner, the `qa-release`
+> sweep + QA), and `shipped` is owned by **Steffon** (now titled **Platform
+> Engineer**; full e2e on the frozen ship SHA) plus explicit ship authority: the
+> default operator gate or the `full-cycle` autonomous kickoff. **§1.2 is the
+> rewritten spec.**
 > It lands via three build tasks: `deploy-flow-heartbeat-tooling` (planner/tooling + the
 > `prepare` retry/wait-for-boot fix), `stages-page-step-outlines` (the per-step
 > `/stages` outlines), and `seed-souls-prod-qa` (the reviewer souls, incl. a new
@@ -96,24 +98,23 @@ lifecycles that meet at one seam — `submitted`.
   (`building`), and opens a PR (`submitted`) — where the feature agent's part
   ends. A wall, bounced PR, or unready dependency parks it at **`blocked`**.
 - **Workflow 2 — Deploy (per release · DevOps):** `submitted → reviewed →
-  assembled → shipped`. **The souls bookend it (2026-07-03): Avi supervises
-  review and ships; Steffon owns the whole middle.** Review runs a **3-level
-  hierarchy**: **Avi is the SUPERVISOR** (a thin gate that never reviews the
-  code) — he confirms **product-acceptance** and picks the **primary + light**
-  pair (`bin/reviewer-select`), then **spawns both reviewers in parallel** as his
-  own sibling children. The **PRIMARY** does the deep review (acceptance, base
-  tests, standards, smell, scalability); the **LIGHT** gives a focused second
-  read. On **two approvals** with no blocker the **supervisor merges the feat PR
-  into `accepted`** (stamping `merged: "accepted"`) and drives the task to
-  **`reviewed`** — then STOPS. Review still never touches `release`/`main` and
-  never deploys. A blocker lands it at **`blocked`** (rework, with a
-  `qa_feedback` note). **Steffon** (Platform Engineer) then runs the
-  **self-healing `qa-release`** (`bin/release prepare`): it promotes **ONE
-  `accepted → release` batch PR per repo** — not N per-task merges — onto the
-  single **release candidate (RC)**, re-stamping `merged: "release"` on its
+  assembled → shipped`. **The souls split it (2026-07-22): Carl owns review; Avi
+  assembles + QAs; Steffon ships.** Review runs as **one Carl per PR** — the
+  review session (a Pokémon orchestrator) claims reviewable PRs and spins up one
+  **Carl**, the standing primary AND owner. **There is no Avi supervisor.** Each
+  Carl does the deep review (acceptance, base tests, standards, smell,
+  scalability), owns the gates, **summons a domain LIGHT specialist at his
+  discretion** for a focused second read, drives the verdict, and on a
+  merge-ready verdict **merges the feat PR into `accepted`** (stamping `merged:
+  "accepted"`) and drives the task to **`reviewed`** — then STOPS. Review still
+  never touches `release`/`main` and never deploys. A blocker lands it at
+  **`blocked`** (rework, with a `qa_feedback` note). **Avi** (Product Owner) then
+  runs the **self-healing `qa-release`** (`bin/release prepare`): it promotes
+  **ONE `accepted → release` batch PR per repo** — not N per-task merges — onto
+  the single **release candidate (RC)**, re-stamping `merged: "release"` on its
   members (stages unmoved), gates `origin/release` on the next tier (integration
   + an e2e smoke), deploys it to QA, and flips members `reviewed → assembled`
-  only on **QA-green**. At ship **Avi** runs the full e2e
+  only on **QA-green**. At ship **Steffon** runs the full e2e
   on the frozen ship SHA and, with explicit ship authority, the conductor
   fast-forwards `release → main` (stamping `merged: "main"`, then `shipped`).
   `submitted` is the seam — the feature agent hands the PR to DevOps there.
@@ -191,8 +192,8 @@ re-baselined after a ship:
 **`merged` gains an `"accepted"` state.** The crash-recovery git-location field
 becomes `nil → "accepted" → "release" → "main"` (each stamp = where the code
 physically sits: review-merged onto `accepted` → swept into `release` → ff'd into
-`main`). An interrupted reviewer skips re-merging `accepted`; the interrupted-Steffon
-(re-merge `release`) and interrupted-Avi (re-ff `main`) skips are unchanged.
+`main`). An interrupted reviewer skips re-merging `accepted`; the interrupted-Avi
+(re-merge `release`) and interrupted-Steffon (re-ff `main`) skips are unchanged.
 
 **GitHub Actions is the authoritative test verdict at every seam**, read via
 `CiStatus`/`gh` and recorded into the same attempt-aware `GateRun` rows the gates
@@ -314,8 +315,8 @@ brackets its `pre_qa_gate` (the integration/e2e-smoke test run) with
 on `assembling`). A node
 lights yellow ONLY on its own start stamp, so a finished stage leaves the next
 node **dark until its owner posts their start**. That gap is the explicit
-**Steffon → Avi handoff**: Steffon's qa-release finishes at `qa_deployed` (three
-greens, Confirming dark, "Live on QA"); stage 4 lights only when Avi posts
+**Avi → Steffon handoff**: Avi's qa-release finishes at `qa_deployed` (three
+greens, Confirming dark, "Live on QA"); stage 4 lights only when Steffon posts
 `confirming/start` as he picks the candidate up (`production-deploy` SOP).
 `reopen!` (a late sweep onto an assembled RC) clears the `assembled` →
 `confirmed` stamps so the re-assembly + re-QA re-stamp fresh; `shipped` is only
@@ -328,7 +329,7 @@ timeline").
 | Field | Meaning |
 |---|---|
 | `release_slug` | The Release this task rides (null until the sweep attaches it; the stage flips `assembled` on QA-green, not at merge). |
-| `merged` | WHERE the code physically is — the crash-recovery git-location, orthogonal to `stage`: `nil` = not merged anywhere · `"release"` = merged onto the release branch (QA in flight) · `"main"` = ff'd into main (prod deploy in flight). Matrix: reviewed+nil = not swept · reviewed+release = swept/QA-in-flight · assembled+release = QA-green awaiting Avi · assembled+main = ff'd/prod-in-flight · shipped+main = done. An interrupted Steffon skips re-merging `release`; an interrupted Avi skips re-ff'ing `main`. |
+| `merged` | WHERE the code physically is — the crash-recovery git-location, orthogonal to `stage`: `nil` = not merged anywhere · `"release"` = merged onto the release branch (QA in flight) · `"main"` = ff'd into main (prod deploy in flight). Matrix: reviewed+nil = not swept · reviewed+release = swept/QA-in-flight · assembled+release = QA-green awaiting Steffon · assembled+main = ff'd/prod-in-flight · shipped+main = done. An interrupted Avi skips re-merging `release`; an interrupted Steffon skips re-ff'ing `main`. |
 | `dependencies` | Array of task slugs this one needs shipped first. **Now enforced** by the conductor (`Release::Ordering`) — a member sorts after every task listed here — composed under the producer-first rule (e.g. an engine gem before the apps that consume it). |
 
 `dependencies` (task→task) and the exclusive **lanes** (resource-level:
@@ -341,7 +342,7 @@ task-to-task edges. See "Gem members & producer-first ordering" below.
 
 **Membership records at the sweep; the stage flips on QA-green.** Feature PRs
 already target `release`, so there is no branch-cut and no PR-base retarget.
-Steffon's **`bin/release prepare`** (the self-healing qa-release) DETECTS the
+Avi's **`bin/release prepare`** (the self-healing qa-release) DETECTS the
 work — every `reviewed` task plus any `assembled` straggler not riding the
 current RC — ensures a candidate exists (`Release.current_or_open!`), and SWEEPS
 each detected task: `gh pr merge` its PR into its repo's `release` (SKIPPED for
@@ -364,7 +365,7 @@ flips the swept members `reviewed → assembled` (`Release::Conductor.qa_green!`
 A QA failure flips NOTHING — members stay `reviewed` and the next self-healing
 run picks them back up, skipping the already-done merges. A late PR sweeping in
 after the flip **reopens** the RC (`Release#reopen!`) so it re-QAs before
-shipping. At ship, **Avi** first runs the **full e2e + highest-tier suite on the
+shipping. At ship, **Steffon** first runs the **full e2e + highest-tier suite on the
 frozen ship SHA** (the exact prod code — closing the merge-forward "shipped ≠
 tested" gap); on green the ending depends on the trigger. A QA-only run
 (`pr-review` → `qa-release`) stops for the operator, while `full-cycle`
@@ -372,7 +373,7 @@ continues with the already-authorized ship. The ship action (surfaced as the cur
 `/deployments`, not a passive status): `bin/release ship` fast-forwards each
 repo's `main` up to `release` (so `release` collapses into `main`), stamps that
 repo's members `merged: "main"` as each ff lands, deploys prod, and flips
-members to `shipped`. Ship authority always lands **after Avi's test
+members to `shipped`. Ship authority always lands **after Steffon's test
 confirmation, before the deploy**.
 
 Release progress is also recorded as explicit `ReleaseEvent` checkpoints
@@ -477,30 +478,31 @@ each lane's hat; accountability maps to a soul; there is exactly **one operator
 gate** — the ship.
 
 **Redesigned `submitted → shipped` (decided, 2026-06-22; review lane re-homed
-2026-06-26; assembly moved to Steffon 2026-07-03).** The Deploy half is re-homed
-by role — **the souls bookend: Avi supervises review and ships; Steffon owns the
-whole middle (the `accepted → release` sweep + QA)**. Review runs a **3-level hierarchy, not a
-serial hand-off**: **Avi is the SUPERVISOR** (a thin gate that never reviews) — he
-confirms product-acceptance and picks the **primary + light** pair
-(`bin/reviewer-select`), then **spawns both reviewers in parallel** as sibling
-children (the PRIMARY does the deep technical review, the LIGHT a focused second
-read). On two approvals the supervisor **merges the feat PR into `accepted`**
-(stamping `merged: "accepted"`) and the task stops at `reviewed` — review never
-touches `release`/`main` and never deploys. **The `accepted → release` promotion
-and `assembled`** are owned by **Steffon** (Platform Engineer) via the
-self-healing `qa-release` sweep; and
-**`shipped`** is owned by **Avi** (who runs the full e2e on the frozen ship SHA)
-ahead of explicit ship authority. The senior reviewer pool is **{Shannon = UI ·
-Carl = backend · Jasper = Web3 · Steffon = DevOps/Platform · Alex = Documentation}**
-(Alex is both the orchestrator and the pool's launchable Documentation review
-seat — one identity). Avi picks the pair with **`bin/reviewer-select <task>`**
-(wraps `ReviewerSelector`).
+2026-06-26; assembly moved to Steffon 2026-07-03; review re-homed to Carl and
+release lanes flipped 2026-07-22).** The Deploy half is re-homed by role —
+**Carl owns review; Avi assembles + QAs (`accepted → release` sweep + QA);
+Steffon ships**. Review runs as **one Carl per PR, not a supervisor hierarchy**:
+the review session (a Pokémon orchestrator) claims a PR and spins one **Carl**,
+the standing primary AND owner — **there is no Avi supervisor**. Carl does the
+deep technical review, owns the gates, **summons a domain LIGHT specialist at his
+discretion** (a focused second read), drives the verdict, and on a merge-ready
+verdict **merges the feat PR into `accepted`** (stamping `merged: "accepted"`)
+and the task stops at `reviewed` — review never touches `release`/`main` and
+never deploys. **The `accepted → release` promotion and `assembled`** are owned
+by **Avi** (Product Owner) via the self-healing `qa-release` sweep; and
+**`shipped`** is owned by **Steffon** (Platform Engineer, who runs the full e2e
+on the frozen ship SHA) ahead of explicit ship authority. The senior reviewer
+pool is **{Shannon = UI · Carl = backend · Jasper = Web3 · Steffon =
+DevOps/Platform · Alex = Documentation}** (Carl is the standing primary on every
+PR; Alex is both the orchestrator and the pool's launchable Documentation review
+seat — one identity). Carl previews the domain light with **`bin/reviewer-select
+<task>`** (wraps `ReviewerSelector`).
 
-**Merge timing (accepted ladder — LIVE):** on **two approvals** (primary +
-light) with no blocker the **supervisor merges the feat PR into the persistent
-`accepted` branch** (stamping `merged: "accepted"`) and drives the task to
-`reviewed`, then stops — review still never touches `release`/`main` and never
-deploys. **Steffon's self-healing `qa-release` sweep** (`bin/release prepare`)
+**Merge timing (accepted ladder — LIVE):** on a merge-ready verdict (Carl's deep
+review + the light's second read) with no blocker **Carl merges the feat PR into
+the persistent `accepted` branch** (stamping `merged: "accepted"`) and drives the
+task to `reviewed`, then stops — review still never touches `release`/`main` and
+never deploys. **Avi's self-healing `qa-release` sweep** (`bin/release prepare`)
 then promotes **ONE `accepted → release` batch PR per repo** — not N per-task
 `feat → release` merges — re-stamping `merged: "release"` on its members but
 moving NO stage; the `reviewed → assembled` flip lands only on **QA-green**.
@@ -511,10 +513,10 @@ when it ships. **Bias to action: green tests = go**, because both `accepted` and
 | Stage (entity) | Accountable | Progressed by | Action | Gate |
 |---|---|---|---|---|
 | **→ submitted** (task, entry) | Feature agent | Feature agent | certify — `bin/fast-check` (~1 min; credited once the PR's GitHub CI is green) or `bin/full-suite-check` (CI-independent) → pass `bin/dor-check`, record `checks_run`, open PR (base `release`), move in | self-gate — **G1 Cert** (the cert self-opens+closes its `g1_cert` attempt) → **DoR** (the `bin/dor-check` verdict opens+closes the `dor` gate) |
-| **submitted** (task) — REVIEW | **Avi** (SUPERVISOR) + PRIMARY/LIGHT experts | Avi (SUPERVISOR, never reviews) → spawns **PRIMARY** + **LIGHT** in parallel | Avi confirms **product-acceptance**, then picks **2 reviewers** from {Shannon=UI · Carl=backend · Jasper=Web3 · Steffon=DevOps/Platform · Alex=Documentation} by **domain fit + a logged, seeded-per-task tiebreak** via **`bin/reviewer-select <task>`**, assigning **1 PRIMARY (deep) + 1 LIGHT** (`ReviewerSelector`, excluding the QA owner so a reviewer never QAs their own change, **the task's builder** so a soul never reviews their own work, **and busy souls** so review never lands on an agent mid-build/review elsewhere — the builder is read from `devops.built_by`, **auto-stamped on the move to building from the soul build-claim actor (`--actor <soul>`) OR the task's assigned `agent_slug`** so a bare `bin/task move <slug> building` records the builder with **no manual flag**, falling back to the `→ building` event actor; **busy souls** come from `bin/reviewer-select --busy a,b,c` and/or `--busy-auto` (a board query of agents on `stage=building` tasks); **KEEP fallback:** when the builder + QA-owner + busy exclusions would leave fewer than two candidates, the least-bad ones are kept so a PRIMARY+LIGHT pair is always returned (the decision/log flags it), and a non-soul/non-pool builder is never reported excluded; the pair + primary/light is recorded on the `submitted→reviewed` `TaskEvent.metadata["reviewers"]` for the avatars UI). Avi then **spawns both the PRIMARY and LIGHT in parallel** as sibling children; the PRIMARY runs the deep review, the LIGHT a focused second read; each confirms DoR **base** tests green, code standards, code smell, scalability, **and acceptance**. No blocker on either → the **supervisor merges the feat PR into `accepted`** (stamping `merged: "accepted"`) and drives the task to `reviewed` ✅, then STOPS — review never touches `release`/`main` and never deploys; the `accepted → release` promotion (next row) is Steffon's; a blocker → `blocked` (rework, with `qa_feedback`) | **G2 Review** (lanes `g2a_primary` + `g2b_light`; the primary's gate-zero = `bin/dor-check <task> --gate-role review`, recorded on the separate `dor_review` gate) — **2 senior approvals** (PRIMARY = Opus on migration/payment/solana/auth); ⛔ one complete `qa_feedback` on fail |
-| **reviewed** ✅ — SWEEP (task) | **Steffon** (Platform Engineer) | DevOps agent *as Steffon* (`qa-release`) | `bin/release prepare` DETECTS every `reviewed` task + any `assembled` straggler off the current RC, ensures a candidate (`Release.current_or_open!`), and SWEEPS each: `gh pr merge` its PR into `release` (SKIPPED when `merged: release/main` — interrupted-run recovery), record membership + `merged: "release"` (`Release::Conductor.sweep!`) — **stage stays `reviewed`**. Honors `dependencies` + producer-first. Nothing detected + nothing active → idempotent no-op. **Bias to action: green tests = go** (`release` reverts cleanly) | deterministic sweep (conflicts surface at PR-merge; a conflicted PR is swept PAST — block-and-move); review gate: only `reviewed`/`assembled` tasks sweep (`--override` = audited `review_bypassed`) |
-| **assembled** (release) — QA | **Steffon** (Platform Engineer) | DevOps agent *as Steffon* (`qa-release`, same run) | After the sweep, the **pre-QA gate** runs the **next tier — integration + an e2e smoke** (registry `qa_test_cmd`) on `origin/release` BEFORE deploying; green → `prepare` deploys it to QA → **Discord QA-deployment note** → on **QA-green** `Release::Conductor.qa_green!` flips swept members `reviewed → assembled` (merged stays `release`) + release `assembled` | **G3 Candidate** (release-grain; spans pre-QA suite → QA boot smokes → post-deploy hooks; closes with the QA-green flip) — deterministic suite; ⛔ regression → **eject the offender** (`bin/release eject <task>` = detach + block + merged cleared; revert its merge commit) — the REST rides the re-run. **`prepare` waits-for-boot** (`/up`-smoke race) and **defers the flip** until QA returns 200 — a failure leaves members `reviewed` for the next self-healing run |
-| **→ shipped** (release) | **Avi**, then ship authority | Avi tests; operator or autonomous kickoff authorizes; conductor deploys | Avi runs the **full local suite (registry `test_cmd`) on the FROZEN ship SHA** (the exact prod code — fixes "shipped ≠ tested"; self-gated when G3 certified that exact SHA + command this run). A QA-only run (`pr-review` → Steffon's `qa-release`) stops here for the operator; Avi's **`production-deploy`** act ships a QA-green release, and Alex's **`full-cycle`** continues with `bin/conductor ship --run`. On ship authority: `bin/release ship` ff's `release → main` per repo (stamping members **`merged: "main"`** as each ff lands — the interrupted-Avi skip signal), deploys → `production_smoke` → **Discord release notes** → members `shipped` (merged stays `main`) | **G4 Ship** (release-grain; spans the frozen-SHA gate → prod deploys → `/up` smokes → hooks → the non-blocking smoke seal, which retries once after 30s through the dyno boot window before recording red) — 🔒 explicit ship authority — after Avi's test confirmation, before deploy; rollback on smoke fail |
+| **submitted** (task) — REVIEW | **Carl** (standing primary + owner) + a domain LIGHT | Session Pokémon spins **one Carl per PR** → Carl summons **one LIGHT** at his discretion | The review session claims a green-CI PR (`bin/task claim-next-review`) and spins **one Carl** — the standing primary AND owner; **there is no Avi supervisor**. Carl does the deep review, owns the gates, and **summons one domain LIGHT** for a focused second read — the domain pick from {Shannon=UI · Jasper=Web3 · Steffon=DevOps/Platform · Alex=Documentation}, previewed by **`bin/reviewer-select <task>`** (`ReviewerSelector`, excluding the QA owner so a reviewer never QAs their own change, **the task's builder** so a soul never reviews their own work, **and busy souls** — the builder is read from `devops.built_by`, **auto-stamped on the move to building from the soul build-claim actor (`--actor <soul>`) OR the task's assigned `agent_slug`**; **busy souls** come from `--busy a,b,c` and/or `--busy-auto`; **KEEP fallback:** when the exclusions would leave too few, the least-bad are kept; the primary Carl + domain light is recorded on the `submitted→reviewed` `TaskEvent.metadata["reviewers"]` for the avatars UI). Carl and the light confirm DoR **base** tests green, code standards, code smell, scalability, **and acceptance**. No blocker → **Carl merges the feat PR into `accepted`** (stamping `merged: "accepted"`) and drives the task to `reviewed` ✅, then STOPS — review never touches `release`/`main` and never deploys; the `accepted → release` promotion (next row) is Avi's; a blocker → `blocked` (rework, with `qa_feedback`) | **G2 Review** (lanes `g2a_primary` + `g2b_light`; Carl's gate-zero = `bin/dor-check <task> --gate-role review`, recorded on the separate `dor_review` gate) — merge-ready primary + light reads (Carl = Opus on migration/payment/solana/auth); ⛔ one complete `qa_feedback` on fail |
+| **reviewed** ✅ — SWEEP (task) | **Avi** (Product Owner) | DevOps agent *as Avi* (`qa-release`) | `bin/release prepare` DETECTS every `reviewed` task + any `assembled` straggler off the current RC, ensures a candidate (`Release.current_or_open!`), and SWEEPS each: `gh pr merge` its PR into `release` (SKIPPED when `merged: release/main` — interrupted-run recovery), record membership + `merged: "release"` (`Release::Conductor.sweep!`) — **stage stays `reviewed`**. Honors `dependencies` + producer-first. Nothing detected + nothing active → idempotent no-op. **Bias to action: green tests = go** (`release` reverts cleanly) | deterministic sweep (conflicts surface at PR-merge; a conflicted PR is swept PAST — block-and-move); review gate: only `reviewed`/`assembled` tasks sweep (`--override` = audited `review_bypassed`) |
+| **assembled** (release) — QA | **Avi** (Product Owner) | DevOps agent *as Avi* (`qa-release`, same run) | After the sweep, the **pre-QA gate** runs the **next tier — integration + an e2e smoke** (registry `qa_test_cmd`) on `origin/release` BEFORE deploying; green → `prepare` deploys it to QA → **Discord QA-deployment note** → on **QA-green** `Release::Conductor.qa_green!` flips swept members `reviewed → assembled` (merged stays `release`) + release `assembled` | **G3 Candidate** (release-grain; spans pre-QA suite → QA boot smokes → post-deploy hooks; closes with the QA-green flip) — deterministic suite; ⛔ regression → **eject the offender** (`bin/release eject <task>` = detach + block + merged cleared; revert its merge commit) — the REST rides the re-run. **`prepare` waits-for-boot** (`/up`-smoke race) and **defers the flip** until QA returns 200 — a failure leaves members `reviewed` for the next self-healing run |
+| **→ shipped** (release) | **Steffon**, then ship authority | Steffon tests; operator or autonomous kickoff authorizes; conductor deploys | Steffon runs the **full local suite (registry `test_cmd`) on the FROZEN ship SHA** (the exact prod code — fixes "shipped ≠ tested"; self-gated when G3 certified that exact SHA + command this run). A QA-only run (`pr-review` → Avi's `qa-release`) stops here for the operator; Steffon's **`production-deploy`** act ships a QA-green release, and Alex's **`full-cycle`** continues with `bin/conductor ship --run`. On ship authority: `bin/release ship` ff's `release → main` per repo (stamping members **`merged: "main"`** as each ff lands — the interrupted-ship skip signal), deploys → `production_smoke` → **Discord release notes** → members `shipped` (merged stays `main`) | **G4 Ship** (release-grain; spans the frozen-SHA gate → prod deploys → `/up` smokes → hooks → the non-blocking smoke seal, which retries once after 30s through the dyno boot window before recording red) — 🔒 explicit ship authority — after Steffon's test confirmation, before deploy; rollback on smoke fail |
 
 Clarifications:
 
@@ -524,9 +526,9 @@ Clarifications:
   once before merge, once before prod — not a one-time gate.
 - **Test-tier → step map (efficiency — no redundant re-runs):** **base**
   (unit/component) @ **review** (the two seniors — the **G2 Review** gate) ·
-  **integration + e2e-smoke** @ **QA** (Steffon — the **G3 Candidate** gate;
+  **integration + e2e-smoke** @ **QA** (Avi — the **G3 Candidate** gate;
   the hub registers its FULL suite as `qa_test_cmd`, the batch certification) ·
-  **full-suite** @ **ship** (Avi, on the frozen ship SHA — the **G4 Ship**
+  **full-suite** @ **ship** (Steffon, on the frozen ship SHA — the **G4 Ship**
   gate; the honest relabel from "full e2e": the registry `test_cmd` is the
   repo's highest LOCAL tier, never a browser run). Each tier runs once, at the
   step that owns it — no step re-runs a lower tier the previous step already
@@ -537,8 +539,8 @@ Clarifications:
   (`Release::ShipSequence.ship_gate_skip?`; fail-open only — an auditor can cause
   more checking, never block a ship, and no-data never arms it). Encoded as
   `Release::STEP_TEST_TIERS` (ownership is disjoint by construction — a tier maps
-  to exactly one step); ship runs Avi's frozen-SHA gate **before**
-  ship authorization (`bin/release ship` → `avi_ship_gate`, then `confirm`, unless
+  to exactly one step); ship runs Steffon's frozen-SHA gate **before**
+  ship authorization (`bin/release ship` → `ship_gate`, then `confirm`, unless
   the authorized autonomous workflow passes `--yes`). Each gate's verdicts are
   recorded as attempt-aware `GateRun` rows — the standalone gate docs live in
   `docs/agents/modules/gates/` (`g1-cert.md` … `g4-ship.md`).
@@ -546,17 +548,17 @@ Clarifications:
   `assembled` only when the QA deploy it rides smokes green
   (`Release::Conductor.qa_green!`) — being merged into `release` alone leaves it
   `reviewed` + `merged: "release"`. The *release* assembles in the same flip.
-  Production authority is at **ship** (after Avi's full-suite run on the frozen
+  Production authority is at **ship** (after Steffon's full-suite run on the frozen
   SHA), **not here** — at this scope `assembled` is a state the conductor flips,
   not a human approval.
-- **Review is supervised, then parallel — not Avi's solo gate.** Avi is the
-  **SUPERVISOR** — product-acceptance + reviewer selection — who **spawns the
-  PRIMARY and LIGHT reviewers in parallel** as sibling children: the PRIMARY does
-  the deep review, the LIGHT a focused second read. On two approvals the
-  supervisor merges the feat PR into `accepted` (stamping `merged: "accepted"`),
-  drives `reviewed`, and stops — review never touches `release`/`main` and never
-  deploys; the `accepted → release` promotion belongs to Steffon's sweep. Avi
-  never reviews the code himself.
+- **Review is Carl-owned — one Carl per PR, not an Avi supervisor gate.** The
+  review session (a Pokémon orchestrator) spins **one Carl** per PR — the
+  standing primary AND owner. Carl does the deep review, owns the gates, and
+  **summons one domain LIGHT** at his discretion for a focused second read. On a
+  merge-ready verdict Carl merges the feat PR into `accepted` (stamping `merged:
+  "accepted"`), drives `reviewed`, and stops — review never touches
+  `release`/`main` and never deploys; the `accepted → release` promotion belongs
+  to Avi's sweep. There is no Avi supervisor.
   The selection tiebreak is **seeded per task** (reproducible, not
   process-random) and **logged** (auditable), so reviews spread across the pool
   instead of always landing on the obvious domain owner. Because the seed is
@@ -565,17 +567,17 @@ Clarifications:
   the CLI and the in-app recorder roll identically and never disagree. (That
   match holds for the **default QA owner**; passing a custom `--qa-owner` changes
   the candidate pool + seed, so the preview is then advisory.)
-- **No self-gating:** Avi must **not** pick **Steffon** as a reviewer on a PR
-  Steffon will then QA at the `assembled` step — one soul cannot both review and
-  QA the same change. (Steffon remains a valid reviewer for **other** PRs,
-  especially DevOps/Platform ones.)
+- **No self-gating:** `bin/reviewer-select` **excludes the QA owner** (the soul
+  who QAs the assembled RC) from the light pool, so one soul never both reviews
+  and QAs the same change. (That soul remains a valid reviewer for **other**
+  PRs.)
 - **Alex is the Documentation reviewer.** The `alex` seat is the orchestrator who
   **also** holds the **Documentation** domain review seat — one identity (seeded in
   `db/seeds/02_agents.rb`, a launchable review agent). `ReviewerSelector` /
   `bin/reviewer-select` pick `alex` for docs-shaped PRs (the QA-owner and
   builder exclusions still apply, so Alex never reviews a change he built).
-- **There is no per-task QA stage.** Steffon owns the QA deploy, the QA tier
-  (integration + e2e-smoke), and the prod mechanics — but there is no separate
+- **There is no per-task QA stage.** Avi owns the QA deploy, the QA tier
+  (integration + e2e-smoke), and Steffon owns the prod mechanics — but there is no separate
   approval ceremony; the suite is a green/red *signal* and the operator OK at
   ship is the gate. QA + production are properties of the **release**, not the
   task.
@@ -588,20 +590,21 @@ Clarifications:
   human pre-sweep gate for `payment`/`solana` would require a code/config
   change, not a doc-only knob.
 - **Humility valve:** low confidence → a reviewer marks `conductor-review` and
-  routes to a *human* Avi/Steffon session instead of approving the task into the
-  sweep queue.
+  routes to a *human* Carl/Avi/Steffon session instead of approving the task into
+  the sweep queue.
 
 ### 1.3 Decided — and where to tune the release builder
 
 Resolved: `release_train` → **`release_slug`** (one field/model); **feature PRs
 merge into a persistent per-repo `release` branch, membership recording at
-Steffon's sweep with the `assembled` flip on QA-green (2026-07-03)**;
+Avi's sweep with the `assembled` flip on QA-green (2026-07-03)**;
 no per-task QA stage; Release is its own singleton model — states `assembling →
 assembled → shipped`, where explicit ship authority **Makes the release** from
-the assembled RC. **Decided 2026-06-22 (§1.2):** review is **delegated by Avi to
-two seniors** (not his solo gate); the merge + `assembled` are owned by
-**Steffon** (titled **Platform Engineer**); and at `shipped` **Avi** runs the
-full e2e + highest tier on the **frozen ship SHA** *before* ship authority is
+the assembled RC. **Decided 2026-06-22 (§1.2); re-homed 2026-07-22:** review is
+**owned by Carl** (one Carl per PR — the standing primary + owner, no Avi
+supervisor); the `accepted → release` sweep + `assembled` are owned by **Avi**
+(Product Owner); and at `shipped` **Steffon** (titled **Platform Engineer**) runs
+the full e2e + highest tier on the **frozen ship SHA** *before* ship authority is
 exercised — so the deploy gate sits **after test confirmation, before the
 deploy**.
 
@@ -616,7 +619,7 @@ tunable config file, `config/release_builder.yml`, read by
   but waits before changing release state.
 - Production ship remains **operator-gated by default**
   (`production_ship.operator_gated` is `true`) for a QA-only run (`pr-review` →
-  Steffon's `qa-release`). Alex's **`full-cycle`** launcher is the explicit
+  Avi's `qa-release`). Alex's **`full-cycle`** launcher is the explicit
   autonomous production authorization; it uses the same frozen-SHA/test/smoke
   gates, then passes `--yes` to the production ship command.
 
@@ -638,16 +641,16 @@ each command to a deterministic runbook. The release-wide launchers are the
 (`ApplicationHelper#heartbeat_launchers`; every row is a recognized launcher —
 see "The three soul heartbeat launchers" below):
 
-- **`pr-review`** / **`pr-review-slow`** (`Avi Heartbeat` acts) — review ALL
+- **`pr-review`** / **`pr-review-slow`** (`Carl Heartbeat` acts) — review ALL
   `submitted` PRs, in waves of ≤5 or serialized one PR at a time. On a
   merge-ready verdict review **merges the feat PR into `accepted`** (stamping
   `merged: "accepted"`) and stops at `reviewed` — it never touches
   `release`/`main` and never deploys; the `accepted → release` promotion is
-  Steffon's sweep.
-- **`qa-release`** (`Steffon Heartbeat` act) — the **self-healing sweep**: merge
+  Avi's sweep.
+- **`qa-release`** (`Avi Heartbeat` act) — the **self-healing sweep**: merge
   reviewed tasks + `assembled` stragglers onto `release`, deploy QA, and flip
   members `assembled` only on QA-green.
-- **`production-deploy`** (`Avi Heartbeat` act; ship authority) — ship a
+- **`production-deploy`** (`Steffon Heartbeat` act; ship authority) — ship a
   QA-green release: fast-forward `release → main` and deploy prod; idempotent
   no-op when nothing is ready.
 - **`full-cycle`** (`Alex Heartbeat` act; full ship authority) — the whole
@@ -669,9 +672,9 @@ or the `review-one` SOP; none is a new command to build):
 
 | Atom | Is | Command / SOP |
 |---|---|---|
-| **`review-one <task>`** | the PRIMITIVE — the Modular PR-Review SOP on ONE PR (Avi `reviewer-select` → spawns PRIMARY + LIGHT in parallel → all-clear = the supervisor merges the feat PR into `accepted` + drives `reviewed`, then STOPS (never touches `release`/`main`, never deploys); else block) | [`pr-review-sop.md`](../modules/pr-review-sop.md) |
-| **`pr-review`** | `review-one` fanned across **all** `submitted` PRs, in **waves of ≤5** (review merges to `accepted`; Steffon's sweep promotes `accepted → release`) | [`agents/avi/sops/pr-review.md`](../agents/avi/sops/pr-review.md) |
-| **`pr-review-slow`** | the same, **serialized** — one PR at a time | [`agents/avi/sops/pr-review-slow.md`](../agents/avi/sops/pr-review-slow.md) |
+| **`review-one <task>`** | the PRIMITIVE — the Modular PR-Review SOP on ONE PR (one Carl per PR — the standing primary + owner; Carl summons a domain LIGHT at his discretion → merge-ready = Carl merges the feat PR into `accepted` + drives `reviewed`, then STOPS (never touches `release`/`main`, never deploys); else block) | [`pr-review-sop.md`](../modules/pr-review-sop.md) |
+| **`pr-review`** | `review-one` fanned across **all** `submitted` PRs, in **waves of ≤5** (review merges to `accepted`; Avi's sweep promotes `accepted → release`) | [`agents/carl/sops/pr-review.md`](../agents/carl/sops/pr-review.md) |
+| **`pr-review-slow`** | the same, **serialized** — one PR at a time | [`agents/carl/sops/pr-review-slow.md`](../agents/carl/sops/pr-review-slow.md) |
 | **`qa-release`** | the SELF-HEALING sweep: detect `reviewed` + stragglers → merge PRs into `release` (skip `merged:` ones) → pre-QA gate → deploy QA → members `assembled` on QA-green | [`agents/avi/sops/qa-release.md`](../agents/avi/sops/qa-release.md) / `bin/release prepare --yes` |
 | **`archive-shipped`** | archive shipped work and reclaim completed worktrees from prior cycles | [`agents/steffon/sops/archive-shipped.md`](../agents/steffon/sops/archive-shipped.md) / `bin/release archive --yes` |
 | **`production-deploy`** | ff each repo `release → main` (members stamp `merged: "main"`), deploy prod, smoke, release notes (members → `shipped`), post-ship agent-docs sync — **ship-authority gated** | [`agents/steffon/sops/production-deploy.md`](../agents/steffon/sops/production-deploy.md) / `bin/release ship` |
@@ -686,10 +689,10 @@ or the `review-one` SOP; none is a new command to build):
 > **Retired chips (2026-07-02).** The four legacy release-card chips — `Avi Heartbeat
 > Slow`, `Avi Heartbeat Fast`, `Build and Deploy QA Release`, `Merge, Assemble,
 > Deploy` — were removed from the UI and relocated into the soul heartbeat acts:
-> serialized review is now Avi's **`pr-review-slow`** act, QA-only is `pr-review` →
-> Steffon's **`qa-release`**, and the full autonomous run is Alex's **`full-cycle`**
-> act. (2026-07-03: the acts went back to **review-only** — the merge now lives in
-> Steffon's self-healing `qa-release` sweep.) The `bin/pr-review` review-only
+> serialized review is now Carl's **`pr-review-slow`** act, QA-only is `pr-review` →
+> Avi's **`qa-release`**, and the full autonomous run is Alex's **`full-cycle`**
+> act. (2026-07-03: the acts went back to **review-only** — the accepted→release
+> merge lives in Avi's self-healing `qa-release` sweep.) The `bin/pr-review` review-only
 > loop still exists but is no longer a card chip.
 
 The only NEW code this set required is the clean-release **GUARD** that
@@ -721,17 +724,18 @@ live with the souls:
 
 | Soul (row 1) | Acts | Does | Exit seam |
 |---|---|---|---|
-| **Avi** (`Avi Heartbeat`) | `production-deploy` · `pr-review` · `pr-review-slow` · `deploy-with-task` (direct-invoke only) | **downstream-first:** ship a QA-green release (`bin/release ship --yes`, stages 4–5, stamping `merged: "main"` at each ff) if one is ready; then review submitted PRs — **merging each to `accepted`, never touching `release`/`main`** (waves ≤5, or serialized via `pr-review-slow`) | the ready release `shipped` (or no-op); then each PR `reviewed`/`blocked` |
-| **Steffon** (`Steffon Heartbeat`) | `archive-shipped` · `qa-release` | **downstream-first:** archive shipped tasks (`bin/release archive --yes`) from the prior cycle; then the **self-healing sweep** — merge the reviewed queue onto `release`, pre-QA gate, deploy QA, flip members `assembled` on QA-green (`bin/release prepare --yes`, stages 1–3) | prior cycle `archived` (or no-op); then RC **deployed to QA**, members `assembled` |
+| **Carl** (`Carl Heartbeat`) | `pr-review` · `pr-review-slow` | review submitted PRs — one Carl per PR, **merging each to `accepted`, never touching `release`/`main`** (waves ≤5, or serialized via `pr-review-slow`) | each PR `reviewed`/`blocked` |
+| **Avi** (`Avi Heartbeat`) | `qa-release` · `deploy-with-task` (direct-invoke only) | the **self-healing sweep** — merge the reviewed queue onto `release`, pre-QA gate, deploy QA, flip members `assembled` on QA-green (`bin/release prepare --yes`, stages 1–3) | RC **deployed to QA**, members `assembled` |
+| **Steffon** (`Steffon Heartbeat`) | `production-deploy` · `archive-shipped` | **downstream-first:** ship a QA-green release (`bin/release ship --yes`, stages 4–5, stamping `merged: "main"` at each ff) if one is ready; then archive shipped tasks (`bin/release archive --yes`) from the prior cycle | the ready release `shipped` (or no-op); then prior cycle `archived` |
 | **Alex** (`Alex Heartbeat`) | `grade-events` · `share-insights` · `full-cycle` | grade the 10 most recent resolved activities at `/alex/heartbeat`; share the `mcr`-confirmed insights out (regenerate the lessons doc + distribute); OR run the whole cycle review→assemble→QA→prod ship (`full-cycle`, full ship authority) | 10 graded + insights banked; confirmed insights shared out; or the whole release `shipped` |
 
 **The release handoff seam.** The pizza-tracker (`RELEASE_TRACKER_STAGES`) is five
 stages: 1 **Testing**, 2 **Assembling**, 3 **Deploying QA**, 4 **Confirming**, 5
-**Deploying** (prod). **Steffon owns stages 1–3** (`qa-release` = `bin/release
-prepare`) and stops at **Live on QA**; **Avi owns stages 4–5** (`production-deploy`
+**Deploying** (prod). **Avi owns stages 1–3** (`qa-release` = `bin/release
+prepare`) and stops at **Live on QA**; **Steffon owns stages 4–5** (`production-deploy`
 = `bin/release ship`) and finishes at **Deployed**. The seam between them —
-**"deployed to QA."** — is the **Steffon → Avi handoff**: Steffon's `qa-release`
-ends and reports there; Avi's `production-deploy` starts only once it is true.
+**"deployed to QA."** — is the **Avi → Steffon handoff**: Avi's `qa-release`
+ends and reports there; Steffon's `production-deploy` starts only once it is true.
 
 These are **operator-launched (copy-paste) today, schedule-ready tomorrow** — each
 act is idempotent, with an explicit precondition + a named exit seam, so a
@@ -780,59 +784,56 @@ in `config/release_repos.yml` that doesn't already have one. Idempotent — a re
 that already has `origin/release` is skipped.
 
 **`Review submitted PRs`**  *(submitted → reviewed — review merges the feat PR into `accepted`)*
-Review is a **3-level hierarchy** (§1.2): **Avi is the SUPERVISOR** — a thin gate
-that never reviews — who **spawns the PRIMARY and LIGHT reviewers in parallel** as
-sibling children and collects both verdicts (on all-clear the supervisor merges
-the feat PR into `accepted`; the `accepted → release` promotion is Steffon's
-sweep). Not a solo `avi` pass, and **not a serial primary→light hand-off**. The
-formalized, agent-role how-to for
-this cascade — Avi assigns the pair, each reviewer narrates its review **as its
+Review is **one Carl per PR** (§1.2): the review session (a Pokémon orchestrator)
+claims a green-CI PR and spins **one Carl** — the standing primary AND owner.
+**There is no Avi supervisor.** Carl does the deep review, owns the gates,
+**summons one domain LIGHT** at his discretion for a focused second read, drives
+the verdict, and on all-clear merges the feat PR into `accepted` (the
+`accepted → release` promotion is Avi's sweep). The formalized, agent-role
+how-to — Carl summons the light, each reviewer narrates its review **as its
 soul** (`--agent`) into the heartbeat's Agent column, any reviewer can block — is
 the reusable **[PR Review SOP module](../modules/pr-review-sop.md)**; this section
 is its release-context anchor. For each `submitted` task (`bin/task list` or the
 board):
 
-1. **Spawn Avi (SUPERVISOR — thin gate).** He confirms **product-acceptance** —
-   does the open PR (base `accepted`) meet the task's acceptance criteria? — and
-   picks the pair (step 2). He **never** runs the deep technical review.
-2. **Pick the two seniors.** Avi runs **`bin/reviewer-select <task>`** — it loads
-   the app and scores the pool `{shannon, carl, jasper, steffon, alex}` by
+1. **Claim the PR + spin one Carl.** The session claims the highest-ranked
+   reviewable green-CI PR (`bin/task claim-next-review`) and spins **one Carl**,
+   the standing primary + owner. Carl confirms the open PR (base `accepted`) meets
+   the task's acceptance criteria.
+2. **Carl picks his domain LIGHT.** Carl runs **`bin/reviewer-select <task>`** — it
+   loads the app and scores the pool `{shannon, jasper, steffon, alex}` by
    **domain fit** (the task's shape + repositories + risk tags vs each soul's
-   `domains`) with a **logged, seeded-per-task tiebreak**, returns **1 PRIMARY + 1 LIGHT**, and
-   **excludes the QA owner** (Steffon, who QAs the assembled RC — no self-gating),
-   **the builder** (read from `devops.built_by`, auto-stamped on the build move
-   from the assigned `agent_slug` — so a soul never reviews their own work with
-   **no manual flag**), **and any busy souls** you name. `alex` is the
+   `domains`) with a **logged, seeded-per-task tiebreak**, previews **Carl (primary)
+   + 1 LIGHT**, and **excludes the QA owner** (whoever QAs the assembled RC — no
+   self-gating), **the builder** (read from `devops.built_by`, auto-stamped on the
+   build move from the assigned `agent_slug` — so a soul never reviews their own
+   work with **no manual flag**), **and any busy souls** you name. `alex` is the
    orchestrator who also holds the launchable Documentation review seat — one
-   identity. (`--qa-owner SLUG` excludes a different soul when Steffon isn't the
-   one QAing this task; `--builder SLUG` overrides the recorded built_by;
-   **`--busy a,b,c`** and/or **`--busy-auto`** (a board query of agents on
-   `stage=building` tasks) drop agents mid-build/review elsewhere — the pool is
-   never starved below a pair, the least-bad are kept back; `--json` for a
-   machine-readable pick; **`--record`** writes the picked pair onto the task as a
-   **review intent** so /deployments + the task timeline show the two seniors
-   reviewing live — a green ticking timer — the moment Avi kicks off review,
-   before `→reviewed` lands. With a custom `--qa-owner` or a non-empty `--busy`
-   set the preview is **advisory** — `--record` it so the busy-aware pair is the
-   one the timeline shows.)
-3. **Spawn the PRIMARY and LIGHT in parallel (siblings under Avi).** The
-   supervisor spawns **both** reviewers as its own sub-agents at once. The
-   **PRIMARY** does the deep pass (Opus on `migration`/`payment`/`solana`/`auth`)
-   — **diff-vs-acceptance + code standards + code smell + scalability**, plus
-   confirming the shape's **base** tiers are green — while the **LIGHT** gives a
-   focused second read. Both experts are the supervisor's children (siblings, not
-   a serial hand-off), running concurrently. **Honor the ≤5-concurrent cap** (operating model): across all PRs in
-   flight, keep at most 5 review agents running at once — a queue wider than ~2 PRs
+   identity. (`--qa-owner SLUG` excludes a different soul; `--builder SLUG`
+   overrides the recorded built_by; **`--busy a,b,c`** and/or **`--busy-auto`** (a
+   board query of agents on `stage=building` tasks) drop agents mid-build/review
+   elsewhere — the pool is never starved below a pair, the least-bad are kept
+   back; `--json` for a machine-readable pick; **`--record`** writes the picked
+   pair onto the task as a **review intent** so /deployments + the task timeline
+   show Carl + the light reviewing live — a green ticking timer — the moment
+   review kicks off, before `→reviewed` lands.)
+3. **Carl summons the LIGHT (his own child).** Carl does the deep pass (Opus on
+   `migration`/`payment`/`solana`/`auth`) — **diff-vs-acceptance + code standards +
+   code smell + scalability**, plus confirming the shape's **base** tiers are
+   green — and summons **one** domain LIGHT as his own child for a focused second
+   read (nested under Carl, not a supervisor's siblings). **Honor the
+   ≤5-concurrent cap** (operating model): across all PRs in flight, keep at most 5
+   review agents running at once (a Carl + his light count as two) — a wider queue
    reviews in **waves of ≤5**, never the whole batch at once.
-4. **Resolve — the SUPERVISOR owns the close.** Both complete and **neither flags
-   a blocker** → the **supervisor merges the feat PR into `accepted`** (stamping
-   `merged: "accepted"`) and drives the task to `reviewed` (`bin/task move
-   <task> reviewed --actor avi`), then STOPS — review never touches
-   `release`/`main` and never deploys; Steffon's `qa-release` sweep then promotes
-   `accepted → release` and flips the member `assembled` on QA-green. Any reviewer
-   blocks → **`bin/task block <task> --kind rework --feedback "…"`** (one complete
-   send-back). Bias to action: two green approvals = go (`release` reverts
-   cleanly, and the sweep follows promptly).
+4. **Resolve — Carl, the OWNER, owns the close.** Carl's deep read + the light's
+   second read complete with **no blocker** → **Carl merges the feat PR into
+   `accepted`** (stamping `merged: "accepted"`) and drives the task to `reviewed`
+   (`bin/task move <task> reviewed --actor carl`), then STOPS — review never
+   touches `release`/`main` and never deploys; Avi's `qa-release` sweep then
+   promotes `accepted → release` and flips the member `assembled` on QA-green. Any
+   reviewer blocks → **`bin/task block <task> --kind rework --feedback "…"`** (one
+   complete send-back). Bias to action: a clean merge-ready verdict = go (`release`
+   reverts cleanly, and the sweep follows promptly).
 
 **Agentic intent — the live "who's on it now".** Each event carries the agent
 that STARTED it, not only the one that completed it, so /deployments and the
@@ -856,23 +857,23 @@ exists. The build-lane face is the task's
 Pokémon mascot (assigned at create). The
 review pair is recorded by **`bin/reviewer-select <task>`** (step 2 — recording
 is the DEFAULT now; pass `--no-record`/`--dry` for an advisory-only preview);
-Steffon's QA and Avi's ship intents are **auto-recorded by the deploy CLI** —
-**`bin/release prepare`** fires the `assembled` intent (`actor: steffon`) and
-**`bin/release ship`** the `shipped` intent (`actor: avi`), both via
+Avi's QA and Steffon's ship intents are **auto-recorded by the deploy CLI** —
+**`bin/release prepare`** fires the `assembled` intent (`actor: avi`) and
+**`bin/release ship`** the `shipped` intent (`actor: steffon`), both via
 `Release::Conductor.record_deploy_intents!` over every release member (the Deploy
 mirror of `bin/reviewer-select`'s default review-intent write). So the conductor
 no longer hand-runs them — the 2026-06-25 unfilled-ship-slot incident (a missed
-manual `bin/task intent --to shipped --actor avi` left the ship crew slot blank
+manual `bin/task intent --to shipped --actor steffon` left the ship crew slot blank
 mid-deploy). The manual **`bin/task intent <task> --to assembled --actor
-steffon`** / **`--to shipped --actor avi`** (or `POST
+avi`** / **`--to shipped --actor steffon`** (or `POST
 /api/v1/tasks/<slug>/intent`) stays as the fallback / one-off path. All of them
 are append-only + idempotent — an identical open intent in the current
 source-stage cycle is reused, and the call is a no-op once the target stage has
 landed in that cycle. Actor-less
 conductor moves on `assembled`/`shipped` still attribute to their role owners
-(Steffon QAs `assembled`, Avi ships) so the Deploy crew never goes blank.
+(Avi QAs `assembled`, Steffon ships) so the Deploy crew never goes blank.
 
-**`Prepare release`**  *(reviewed → assembled — Steffon's SELF-HEALING qa-release)*
+**`Prepare release`**  *(reviewed → assembled — Avi's SELF-HEALING qa-release)*
 ONE deterministic verb — **`bin/release prepare --yes [--task SLUG ...]
 [--slug rel-…] [--prod]`** — owns the whole middle:
 
@@ -972,12 +973,12 @@ session's work. Pure decisions: `Release::ShipSequence.preflight_offenders` /
 `.advisory_message` / `.gem_build_offenders` / `.gem_build_message` /
 `.rescue_commands`. **Live ship
 crew:** right after ship authorization (so a declined gated ship never shows it),
-ship **auto-records the Avi → `shipped` intent** for every member
+ship **auto-records the Steffon → `shipped` intent** for every member
 (`Release::Conductor.record_deploy_intents!(r, to_stage: "shipped", actor:
-"avi")`) so /deployments shows Avi shipping live — a green ticking timer — through
+"steffon")`) so /deployments shows Steffon shipping live — a green ticking timer — through
 the whole deploy instead of an empty dashed ship slot until `ship!` lands (the
 2026-06-25 incident). Append-only + idempotent (`ship!` supersedes it; a
-partial-ship abort leaves it open — correct, Avi is still shipping — and a re-run
+partial-ship abort leaves it open — correct, Steffon is still shipping — and a re-run
 reuses it). **Producer-first:** before any app deploy, it walks every
 **gem member** in order. On the happy path `prepare` already published each
 version BEFORE QA (publish-gems-before-qa), so this is the **idempotent
@@ -1328,7 +1329,7 @@ rows; "Option B" split, 2026-07-11):
 - **DoR** — the Definition-of-Ready **verdict**, its own gate now, split by
   role: the builder's `bin/dor-check <task>` opens+closes **`dor`**, and the
   reviewer's gate-zero `bin/dor-check <task> --gate-role review` opens+closes
-  **`dor_review`** (the supervisor's pre-spawn CI-red bounce also closes
+  **`dor_review`** (the review session's pre-claim CI-red skip also closes
   `dor_review` failed). CI stays a **handoff, not a gate** — its verdict rides as
   a `ci` SOP inside DoR, never its own gate row.
 
@@ -1380,19 +1381,19 @@ for each task in {submitted}:
   acquire lease (claimed_by, claim_expires_at)   # resilience: reclaimable
   1. bin/dor-check --gate merge (gate-zero: metadata + tiers + FRESH full-suite/rubocop evidence) — fail ⇒ block(rework) + qa_feedback, release
   2. run pr_review_gate suite (base: unit/component)            — fail ⇒ classify, block(rework), release
-  3. Avi delegates: 2 seniors (domain fit + LOGGED tiebreak), 1 PRIMARY + 1 LIGHT — §1.2
+  3. one Carl per PR (standing primary + owner) summons 1 domain LIGHT (fit + LOGGED tiebreak) — §1.2
      each: diff-vs-acceptance + standards/smell/scalability     — changes ⇒ ONE complete qa_feedback + block
-  4. on 2 approvals → reviewed ✅                                — Discord: approved
+  4. on a merge-ready verdict → reviewed ✅                       — Discord: approved
 
 # Workflow 2 — the ONE active release (singleton).
 release.assembling:
-  bin/release prepare (Steffon, SELF-HEALING): detect reviewed + assembled stragglers, honoring dependencies + lanes (§4.2)
+  bin/release prepare (Avi, SELF-HEALING): detect reviewed + assembled stragglers, honoring dependencies + lanes (§4.2)
   sweep: overlap planner (warn) → gh pr merge each (base release; SKIP merged: release/main) → sweep! ALL in ONE heroku run (ensure)  — conflict ⇒ leave reviewed, keep the rest
   members reviewed + merged:release; pre-QA gate (qa_test_cmd: integration + e2e-smoke on origin/release)  — regression ⇒ bin/release eject <task> + revert, keep the rest
   deploy origin/release → QA + Discord notes → wait-for-boot /up → QA-GREEN ⇒ qa_green!: members → assembled + release.assembled  — failure ⇒ members stay reviewed (next run self-heals)
-  # full e2e + highest tier runs at ship, on the FROZEN ship SHA (Avi) — §1.2
+  # full e2e + highest tier runs at ship, on the FROZEN ship SHA (Steffon) — §1.2
 release.assembled:
-  Avi: full e2e + highest tier on the FROZEN ship SHA          # §1.2 — closes "shipped ≠ tested"
+  Steffon: full e2e + highest tier on the FROZEN ship SHA      # §1.2 — closes "shipped ≠ tested"
   if operator_made_the_release: bin/release ship → PREFLIGHT (each app on clean main, else abort) → ff release → main, bin/deploy → production_smoke → notes → members shipped  # ONLY here
   else: no-op (HARD STOP — wait for the operator to Make the release)
 

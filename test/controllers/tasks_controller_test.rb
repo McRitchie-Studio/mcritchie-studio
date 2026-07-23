@@ -163,21 +163,24 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     # The launchers live in the Heartbeats card, NOT the current-release or DevOps cards.
     assert_select "#current-release [data-test='heartbeat-launcher']", count: 0
     assert_select "#release-duration-card [data-test='heartbeat-launcher']", count: 0
-    assert_select "[data-test='heartbeats-card'] [data-test='heartbeat-launcher']", count: 3
-    # The card is launchers-only — a plain 3-up grid of the soul launchers, no release
+    assert_select "[data-test='heartbeats-card'] [data-test='heartbeat-launcher']", count: 4
+    # The card is launchers-only — a plain 4-up grid of the soul launchers, no release
     # tracker and no stage-ownership layout (that pairing was the rejected design; the
     # tracker stays in the Next Release card).
     # Each avatar links to the soul's /agents/<slug> page.
+    assert_select "[data-test='heartbeat-launcher'][data-agent='carl'] a[data-test='heartbeat-avatar-link'][href='/agents/carl']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] a[data-test='heartbeat-avatar-link'][href='/agents/avi']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] a[data-test='heartbeat-avatar-link'][href='/agents/steffon']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='alex'] a[data-test='heartbeat-avatar-link'][href='/agents/alex']"
     # Each launcher exposes a prompt-like heartbeat row (row 1) plus its atom action rows —
-    # Avi now carries pr-review-slow, Alex now carries full-cycle.
+    # Carl owns pr-review + pr-review-slow, Avi owns qa-release, Steffon owns
+    # production-deploy, Alex carries full-cycle.
+    assert_select "[data-test='heartbeat-launcher'][data-agent='carl'] button[data-row='heartbeat'][data-clip='Carl Heartbeat']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='carl'] button[data-row='action'][data-clip='pr-review']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='carl'] button[data-row='action'][data-clip='pr-review-slow']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] button[data-row='heartbeat'][data-clip='Avi Heartbeat']"
-    assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] button[data-row='action'][data-clip='pr-review']"
-    assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] button[data-row='action'][data-clip='pr-review-slow']"
-    assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] button[data-row='action'][data-clip='production-deploy']"
-    assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] button[data-row='action'][data-clip='qa-release']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] button[data-row='action'][data-clip='qa-release']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] button[data-row='action'][data-clip='production-deploy']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='alex'] button[data-row='action'][data-clip='grade-events']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='alex'] button[data-row='action'][data-clip='full-cycle']"
   end
@@ -267,9 +270,9 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "#current-release code", { text: /Avi Heartbeat Slow/, count: 0 }
     assert_select "#current-release code", { text: /Merge, Assemble, Deploy/, count: 0 }
     # The launchers now live in the Heartbeats card — one per soul, including
-    # the new pr-review-slow (Avi) and full-cycle (Alex) acts.
-    assert_select "[data-test='heartbeats-card'] [data-test='heartbeat-launcher']", count: 3
-    assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] code", text: "pr-review-slow"
+    # Carl's pr-review-slow and Alex's full-cycle acts.
+    assert_select "[data-test='heartbeats-card'] [data-test='heartbeat-launcher']", count: 4
+    assert_select "[data-test='heartbeat-launcher'][data-agent='carl'] code", text: "pr-review-slow"
     assert_select "[data-test='heartbeat-launcher'][data-agent='alex'] code", text: "full-cycle"
   end
 
@@ -485,7 +488,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     # The four legacy chips were retired from the current-release card.
     assert_select "#current-release code", { text: /Avi Heartbeat Slow/, count: 0 }
     # The Heartbeats card still offers the launchers even with no active release.
-    assert_select "[data-test='heartbeats-card'] [data-test='heartbeat-launcher']", count: 3
+    assert_select "[data-test='heartbeats-card'] [data-test='heartbeat-launcher']", count: 4
     # With nothing shipped, Last Release shows its muted empty state (keeps the 2×2 cell).
     assert_select "#last-release", text: /none yet/
   end
@@ -928,9 +931,9 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     # Deploy steps now spell out their tests-run + gate (devops-cycle-design §1.2)
     assert_includes response.body, "Tests run"
     assert_includes response.body, "Gate"
-    assert_includes response.body, "two senior reviewers"     # review delegated, not Avi-solo
-    assert_includes response.body, "FROZEN ship SHA"          # Avi's ship-time suite
-    assert_includes response.body, "qa-release"               # Steffon's QA release lane
+    assert_includes response.body, "Carl per PR"              # review is Carl-owned, not Avi-supervised
+    assert_includes response.body, "FROZEN ship SHA"          # Steffon's ship-time suite
+    assert_includes response.body, "qa-release"               # Avi's QA release lane
     assert_includes response.body, "full-cycle"               # the Alex full-cycle ship launcher
   end
 
@@ -1279,12 +1282,12 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
                         { "slug" => "carl", "weight" => "light" }
                       ] })
     TaskEvent.create!(task_slug: task.slug, from_stage: "reviewed", to_stage: "assembled",
-                      occurred_at: 1.hour.ago, seconds_in_from: 1800, actor: "steffon")
-    # The standard QA window: Steffon's QA intent rides toward `shipped` (qa-marked),
+                      occurred_at: 1.hour.ago, seconds_in_from: 1800, actor: "avi")
+    # The standard QA window: Avi's QA intent rides toward `shipped` (qa-marked),
     # re-homed to the assembled LANE on the board. The /tasks/:id timeline must frame
-    # it as the real transition — Assembled → Shipped, owned by Avi — never the old
+    # it as the real transition — Assembled → Shipped, owned by Steffon — never the old
     # nonsensical "Assembled → Assembled" no-op.
-    task.record_intent_event(to_stage: "shipped", actor: "steffon", qa: true)
+    task.record_intent_event(to_stage: "shipped", actor: "avi", qa: true)
 
     get task_path(task.slug)
     assert_response :success
@@ -1294,7 +1297,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
                   message: "the live assembled card targets the shipped stage"
     assert_select "#{inprogress}[data-stage='assembled']", count: 0,
                   message: "no Assembled → Assembled no-op block"
-    assert_includes css_select(inprogress).to_s, "Avi", "the live ship card is owned by Avi"
+    assert_includes css_select(inprogress).to_s, "Steffon", "the live ship card is owned by Steffon"
 
     # While the stage is still in progress, the transition row shows ONLY the
     # current stage in its ACTIVE (gerund) form — "Assembling", not "Assembled" —

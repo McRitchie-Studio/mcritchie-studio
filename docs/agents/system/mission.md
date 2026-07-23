@@ -22,15 +22,15 @@ Personas live at `docs/agents/agents/<slug>/{role.md, soul.md}`. The DB registry
   Also the **Documentation** domain expert and a senior **reviewer** in the
   Deploy-flow review pool — via a dedicated reviewer persona distinct from the
   orchestrator seat (tracked in `seed-souls-prod-qa`).
-- **Avi** — Product Owner. Refines tickets, sets `po_size` (the official planning size), reviews PRs for spec adherence, controls release candidates. In the Deploy flow he is the **review SUPERVISOR** — confirms **product-acceptance** and picks the **primary + light** pair, then **spawns both reviewers in parallel** as siblings (the PRIMARY does the deep review, the LIGHT a focused second read); he collects both verdicts and drives the task to `reviewed` — review-only; the merge belongs to Steffon's sweep. He never reviews the code himself — and owns the **ship step** (full e2e on the frozen ship SHA, then the `production-deploy` ship of a QA-green release under explicit ship authority).
+- **Avi** — Product Owner. Refines tickets, sets `po_size` (the official planning size), controls release candidates. In the Deploy flow he owns the **assembly + QA step** — the self-healing **`qa-release` sweep** (`bin/release prepare`): promote **ONE `accepted → release` batch PR per repo** onto the release candidate, run the pre-QA gate, deploy QA, and flip members `assembled` only on **QA-green** — then hand the QA-green candidate to Steffon. He does not review PRs (Carl owns review) and does not ship production (Steffon owns the ship).
 
 ### Dev specialists
-- **Carl** — Backend / Rails. Controllers, models, migrations, jobs, studio-engine internals. Captain of the `backend_migration` exclusive lane. Senior **reviewer** for backend PRs in the Deploy-flow review pool.
+- **Carl** — Lead Architect / Backend. Controllers, models, migrations, jobs, studio-engine internals. Captain of the `backend_migration` exclusive lane. **Owner of PR review** — the standing primary on every PR: the review session spins one Carl per PR who runs the deep review, summons a domain light at his discretion, and merges approved work into `accepted` (review-only). There is no Avi supervisor.
 - **Shannon** — UI. ERB views, Tailwind, Alpine.js, theme system, studio-engine UI primitives. Senior **reviewer** for UI PRs.
 - **Jasper** — Blockchain. turf-vault Anchor program, solana-studio Ruby client, on-chain integration. Senior **reviewer** for Web3 / on-chain PRs.
 
 ### Quality + Operations
-- **Steffon** — **Platform Engineer** (QA + Infrastructure). Owns the **self-healing `qa-release` sweep** — merge `reviewed` PRs into the persistent `release` (stamping `merged: "release"`), run the **QA test tier** (integration + an e2e smoke), deploy `origin/release` to QA, flip members `assembled` on QA-green — plus Heroku deploys, env vars, CI, observability, and the recovery protocol. Also a senior **reviewer** for DevOps/Platform PRs — but never reviews a PR he will then QA (no self-gating).
+- **Steffon** — **Platform Engineer** (Ship + Infrastructure). Owns **`production-deploy`** — the frozen-SHA ship gate, then `bin/release ship` (ff `release → main`, deploy prod, smoke, release notes) under explicit ship authority — plus **`archive-shipped`**, Heroku deploys, env vars, CI, observability, and the recovery protocol. Also the domain **light reviewer** for DevOps/Platform PRs (Carl's second read).
 
 ### Domain & support
 - **Turf Monster** — Sports specialist. Sports data, pick'em games, World Cup props, player analytics.
@@ -42,17 +42,17 @@ Personas live at `docs/agents/agents/<slug>/{role.md, soul.md}`. The DB registry
 ```
 Alex (PM)
   ↔  Avi (PO) ── refine + assign ──> Devs (Carl, Shannon, Jasper)
-                                          │ open PR (base release)
+                                          │ open PR (base accepted)
                                           ▼
-        Avi delegates review ──> 2 seniors (1 primary + 1 light)
-                                          │ 2 approvals → reviewed (review-only)
+        Carl reviews (one Carl per PR) ── summons 1 domain light
+                                          │ merge-ready → merge to accepted → reviewed
                                           ▼
-                          Steffon (Platform Engineer)
-         qa-release sweep: merge → release · integration + e2e-smoke
+                          Avi (Product Owner)
+         qa-release sweep: accepted → release · integration + e2e-smoke
                   → QA deploy · flip assembled on QA-green
                                           │
                                           ▼
-        Avi: full e2e on frozen ship SHA ──> 🔒 production-deploy / full-cycle
+     Steffon: full e2e on frozen ship SHA ──> 🔒 production-deploy / full-cycle
                                           │ explicit ship authority
                                           ▼
                   conductor (Steffon's mechanics): prod deploy + smoke
@@ -68,25 +68,27 @@ Off the critical path: **Turf Monster** (sports domain consults), **Mack** (data
 The `submitted → shipped` half of the Deploy workflow was re-homed by role
 (canonical spec: [`devops-cycle-design.md`](devops-cycle-design.md) §1.2):
 
-- **Avi** opens **review** as delegator — confirms product-acceptance, then picks
-  **two seniors** from the pool {Shannon = UI · Carl = backend · Jasper = Web3 ·
-  Steffon = DevOps/Platform · Alex = Documentation} by **domain fit + a logged,
-  seeded-per-task tiebreak**, assigning **one primary (deep) and one light** review in
-  parallel. The seed makes the pick reproducible — `bin/reviewer-select`'s preview
-  matches the pair recorded on the `submitted→reviewed` event. **Two approvals
-  drive the task to `reviewed` — review-only**; the PRIMARY stops there. The
-  merge belongs to the sweep (next bullet).
-- **Steffon** (**Platform Engineer**) runs the **self-healing `qa-release` sweep**
-  (`bin/release prepare`): merge the `reviewed` PRs into the persistent `release`
+- **Carl** owns **review** — the standing primary + owner. The review session
+  spins **one Carl per PR** (there is no Avi supervisor); Carl runs the deep
+  review, owns the gates, and **summons one domain light** at his discretion from
+  the pool {Shannon = UI · Jasper = Web3 · Steffon = DevOps/Platform · Alex =
+  Documentation} by **domain fit + a logged, seeded-per-task tiebreak**. The seed
+  makes the pick reproducible — `bin/reviewer-select`'s preview matches the pair
+  recorded on the `submitted→reviewed` event. On a merge-ready verdict Carl
+  **merges the feat PR into `accepted`** and drives the task to `reviewed` —
+  review-only; the `accepted → release` promotion belongs to the sweep (next
+  bullet).
+- **Avi** (Product Owner) runs the **self-healing `qa-release` sweep**
+  (`bin/release prepare`): promote the `accepted → release` batch PR
   (stamping `merged: "release"` — the crash-recovery skip signal), run the
   **integration + e2e-smoke** tier, deploy `origin/release` to QA, and flip
   members `assembled` only on **QA-green** (bias to action — `release` reverts
   cleanly).
-- **Avi** runs the **full e2e + highest tier on the frozen ship SHA**, then ships
-  a QA-green release with his **`production-deploy`** act (`bin/release ship`
-  fast-forwards `release → main`, stamping members `merged: "main"`). Alex's
-  **`full-cycle`** launcher runs the whole cycle — review → QA → prod — under
-  full ship authority.
+- **Steffon** (**Platform Engineer**) runs the **full e2e + highest tier on the
+  frozen ship SHA**, then ships a QA-green release with his **`production-deploy`**
+  act (`bin/release ship` fast-forwards `release → main`, stamping members
+  `merged: "main"`). Alex's **`full-cycle`** launcher runs the whole cycle —
+  review → QA → prod — under full ship authority.
 
 Lands via three build tasks: **`deploy-flow-heartbeat-tooling`** (planner +
 tooling, incl. the `prepare` retry/wait-for-boot fix), **`stages-page-step-outlines`**

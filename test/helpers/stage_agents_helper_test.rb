@@ -16,7 +16,7 @@ class StageAgentsHelperTest < ActionView::TestCase
 
   # Build a Deploy-half task with explicit TaskEvents so the per-stage attribution
   # and durations are deterministic (seconds chosen distinct per stage).
-  def deploy_task(stage:, reviewers: nil, assembled_actor: "steffon", shipped_actor: "avi")
+  def deploy_task(stage:, reviewers: nil, assembled_actor: "avi", shipped_actor: "steffon")
     task = Task.create!(title: "deploy crew #{stage} task", stage: stage)
     task.task_events.delete_all
     # Reviewers ride the →reviewed EVENT's metadata (the canonical write target,
@@ -85,22 +85,22 @@ class StageAgentsHelperTest < ActionView::TestCase
 
   # --- stage_agent_groups -----------------------------------------------------
 
-  test "a shipped task yields 2 reviewers + steffon + avi with per-stage seconds" do
+  test "a shipped task yields 2 reviewers + avi + steffon with per-stage seconds" do
     groups = stage_agent_groups(deploy_task(stage: "shipped", reviewers: REVIEWERS), @agents)
 
     assert_equal %w[reviewed reviewed assembled shipped], groups.map(&:stage)
-    assert_equal %w[shannon carl steffon avi], groups.map { |g| g.agent&.slug }
+    assert_equal %w[shannon carl avi steffon], groups.map { |g| g.agent&.slug }
     assert_equal ["primary", "light", nil, nil], groups.map(&:weight)
     # seconds_in_from of the event that COMPLETED each stage (reviewers share the
     # →reviewed event); 3600 = review, 1800 = assemble wait, 600 = QA wait
     assert_equal [3600, 3600, 1800, 600], groups.map(&:seconds)
   end
 
-  test "an assembled task shows the 2 reviewers + steffon, but no avi" do
+  test "an assembled task shows the 2 reviewers + avi, but no steffon" do
     groups = stage_agent_groups(deploy_task(stage: "assembled", reviewers: REVIEWERS), @agents)
 
     assert_equal %w[reviewed reviewed assembled], groups.map(&:stage)
-    assert_equal %w[shannon carl steffon], groups.map { |g| g.agent&.slug }
+    assert_equal %w[shannon carl avi], groups.map { |g| g.agent&.slug }
   end
 
   test "reviewers absent yields no reviewer avatars even with a reviewed event" do
@@ -108,18 +108,18 @@ class StageAgentsHelperTest < ActionView::TestCase
 
     # graceful: no reviewers metadata → only the assembled actor renders
     assert_equal %w[assembled], groups.map(&:stage)
-    assert_equal %w[steffon], groups.map { |g| g.agent&.slug }
+    assert_equal %w[avi], groups.map { |g| g.agent&.slug }
   end
 
-  test "actor-less assembled / shipped fall back to their canonical role owners (Steffon / Avi)" do
+  test "actor-less assembled / shipped fall back to their canonical role owners (Avi / Steffon)" do
     # A conductor/model move records only the spine (blank actor); the Deploy crew
-    # must still show who OWNS the stage by role — Steffon QAs assembled, Avi ships —
+    # must still show who OWNS the stage by role — Avi QAs assembled, Steffon ships —
     # so they never go faceless. (A PRESENT but unresolved actor is NOT overridden;
     # see the session-id stand-in test below.)
     groups = stage_agent_groups(deploy_task(stage: "shipped", reviewers: nil, assembled_actor: nil, shipped_actor: nil), @agents)
 
     assert_equal %w[assembled shipped], groups.map(&:stage)
-    assert_equal %w[steffon avi], groups.map { |g| g.agent&.slug }
+    assert_equal %w[avi steffon], groups.map { |g| g.agent&.slug }
   end
 
   test "an unresolved actor falls back to a palette stand-in without crashing" do
@@ -171,7 +171,7 @@ class StageAgentsHelperTest < ActionView::TestCase
     groups = stage_agent_groups(task.reload, @agents)
 
     assert_equal %w[designed building reviewed reviewed assembled shipped], groups.map(&:stage)
-    assert_equal %w[carl shannon shannon carl steffon avi], groups.map { |g| g.agent&.slug }
+    assert_equal %w[carl shannon shannon carl avi steffon], groups.map { |g| g.agent&.slug }
   end
 
   test "the most recent landing event wins when a stage is re-entered" do
@@ -285,11 +285,11 @@ class StageAgentsHelperTest < ActionView::TestCase
     assert_equal "https://example.test/snorlax-sprite.png", by_stage["building"].first.avatar
     # Deploy lane → the real crew ALONE; reviewed stays the pure pair.
     assert_equal %w[shannon carl], by_stage["reviewed"].map { |g| g.agent&.slug }
-    assert_equal %w[steffon], by_stage["assembled"].map { |g| g.agent&.slug }
-    assert_equal %w[avi], by_stage["shipped"].map { |g| g.agent&.slug }
+    assert_equal %w[avi], by_stage["assembled"].map { |g| g.agent&.slug }
+    assert_equal %w[steffon], by_stage["shipped"].map { |g| g.agent&.slug }
     assert_not_equal "https://example.test/snorlax-sprite.png", by_stage["shipped"].first.avatar
     # …and the mascot never rides the deploy cards — it lives on the Build lane
-    # (and, when it evolves, the Evolve reel), not beside Steffon/Avi.
+    # (and, when it evolves, the Evolve reel), not beside Avi/Steffon.
     refute [by_stage["assembled"], by_stage["shipped"]].flatten.any? { |g| g.agent.is_a?(StageAgentsHelper::MascotAgent) },
            "no mascot companion rides assembled/shipped"
   end
@@ -297,14 +297,14 @@ class StageAgentsHelperTest < ActionView::TestCase
   test "the mascot never rides the deploy cards even without an evolution" do
     # A non-evolving mascot (no Evolve reel to claim it) must still stay OFF the
     # deploy cards — the regression guard for the removed companion. Passing a live
-    # mascot means the pre-change code WOULD have added it beside Steffon/Avi.
+    # mascot means the pre-change code WOULD have added it beside Avi/Steffon.
     mon = Pokemon.create!(dex: 131, name: "Lapras", slug: "lapras-deploy", generation: 1,
                           sprite_url: "https://example.test/lapras.png")
     by_stage = stage_agent_groups(deploy_task(stage: "shipped", reviewers: REVIEWERS), @agents, mascot: mon)
                .group_by(&:stage)
 
-    assert_equal %w[steffon], by_stage["assembled"].map { |g| g.agent&.slug }
-    assert_equal %w[avi], by_stage["shipped"].map { |g| g.agent&.slug }
+    assert_equal %w[avi], by_stage["assembled"].map { |g| g.agent&.slug }
+    assert_equal %w[steffon], by_stage["shipped"].map { |g| g.agent&.slug }
     refute [by_stage["assembled"], by_stage["shipped"]].flatten.any? { |g| g.agent.is_a?(StageAgentsHelper::MascotAgent) }
   end
 
@@ -447,15 +447,15 @@ class StageAgentsHelperTest < ActionView::TestCase
                  "the existing mascot (and every devops field) survives the deploy crew render verbatim"
   end
 
-  test "crew_columns backfills Avi on an actor-less ship intent over an assembled task" do
+  test "crew_columns backfills Steffon on an actor-less ship intent over an assembled task" do
     # A conductor-recorded ship intent (no actor) still surfaces a face — the ship
-    # lane's canonical owner, Avi — so the assembled card never goes faceless mid-deploy.
+    # lane's canonical owner, Steffon — so the assembled card never goes faceless mid-deploy.
     task = deploy_task(stage: "assembled", reviewers: REVIEWERS)
     task.record_intent_event(to_stage: "shipped", actor: nil)
     ship = crew_columns(task.reload, stage_agent_groups(task, @agents), board: :deploy, agents: @agents)
            .find { |c| c.lane == :shipped }
 
-    assert_equal %w[avi], ship.stacked.map { |a| a.agent&.slug }, "actor-less ship intent backfills Avi"
+    assert_equal %w[steffon], ship.stacked.map { |a| a.agent&.slug }, "actor-less ship intent backfills Steffon"
     assert_not_nil ship.live_since
   end
 
@@ -570,16 +570,16 @@ class StageAgentsHelperTest < ActionView::TestCase
     assert_equal %w[reviewed assembled shipped], blocks.reject(&:in_progress?).map(&:to_stage),
                  "one block per completed transition, newest last"
     shipped = blocks.find { |b| b.to_stage == "shipped" }
-    assert_equal %w[avi], shipped.agents.map { |a| a.agent&.slug }
+    assert_equal %w[steffon], shipped.agents.map { |a| a.agent&.slug }
     assert_equal 600, shipped.seconds
   end
 
-  test "stage_timeline backfills Steffon/Avi on actor-less assembled/shipped blocks" do
+  test "stage_timeline backfills Avi/Steffon on actor-less assembled/shipped blocks" do
     task = deploy_task(stage: "shipped", reviewers: REVIEWERS, assembled_actor: nil, shipped_actor: nil)
     by_stage = stage_timeline(task, @agents).index_by(&:to_stage)
 
-    assert_equal %w[steffon], by_stage["assembled"].agents.map { |a| a.agent&.slug }
-    assert_equal %w[avi], by_stage["shipped"].agents.map { |a| a.agent&.slug }
+    assert_equal %w[avi], by_stage["assembled"].agents.map { |a| a.agent&.slug }
+    assert_equal %w[steffon], by_stage["shipped"].agents.map { |a| a.agent&.slug }
   end
 
   test "stage_timeline appends a live in-progress block for an open review intent" do
@@ -594,15 +594,15 @@ class StageAgentsHelperTest < ActionView::TestCase
     assert_equal %w[primary light], live.agents.map(&:weight)
   end
 
-  test "stage_timeline's live assembled card reads Assembled -> Shipped owned by Avi" do
+  test "stage_timeline's live assembled card reads Assembled -> Shipped owned by Steffon" do
     # The standard QA window: the member is already `assembled`, so prepare records
-    # Steffon's QA intent toward `shipped` (qa:true), RE-HOMED to the assembled LANE
+    # Avi's QA intent toward `shipped` (qa:true), RE-HOMED to the assembled LANE
     # for the board. The timeline must NOT echo that re-homed lane as the badge
     # target (the old nonsensical "Assembled -> Assembled" no-op) — it frames the
     # live work as the real transition it rides toward, →shipped, owned by the ship
-    # owner Avi (operator decision: the timeline diverges from the board here).
+    # owner Steffon (operator decision: the timeline diverges from the board here).
     task = deploy_task(stage: "assembled", reviewers: REVIEWERS)
-    task.record_intent_event(to_stage: "shipped", actor: "steffon", qa: true)
+    task.record_intent_event(to_stage: "shipped", actor: "avi", qa: true)
     live = stage_timeline(task.reload, @agents).find(&:in_progress?)
 
     assert_not_nil live, "an open QA intent surfaces as a live block"
@@ -610,18 +610,18 @@ class StageAgentsHelperTest < ActionView::TestCase
     assert_equal "Assembling", live.from_label, "a live card shows the ACTIVE (gerund) stage form"
     assert_equal "shipped", live.to_stage, "badge reads toward the REAL next stage, not the re-homed lane"
     assert_equal "Shipped", live.to_label
-    assert_equal %w[avi], live.agents.map { |a| a.agent&.slug }, "the ship owner (Avi) heads the live ship card"
+    assert_equal %w[steffon], live.agents.map { |a| a.agent&.slug }, "the ship owner (Steffon) heads the live ship card"
     assert_not_nil live.live_since
   end
 
-  test "stage_timeline's live assembled card stays Avi once his own ship intent is open" do
+  test "stage_timeline's live assembled card stays Steffon once his own ship intent is open" do
     task = deploy_task(stage: "assembled", reviewers: REVIEWERS)
-    task.record_intent_event(to_stage: "shipped", actor: "steffon", qa: true) # QA first
-    task.record_intent_event(to_stage: "shipped", actor: "avi")               # ship starts later
+    task.record_intent_event(to_stage: "shipped", actor: "avi", qa: true)     # QA first
+    task.record_intent_event(to_stage: "shipped", actor: "steffon")           # ship starts later
     live = stage_timeline(task.reload, @agents).find(&:in_progress?)
 
     assert_equal "shipped", live.to_stage
-    assert_equal %w[avi], live.agents.map { |a| a.agent&.slug }
+    assert_equal %w[steffon], live.agents.map { |a| a.agent&.slug }
   end
 
   test "stage_timeline merges live building into the existing designed to building card" do
@@ -718,15 +718,15 @@ class StageAgentsHelperTest < ActionView::TestCase
     assert_equal %w[avi], work[:agents].map { |a| a.agent&.slug }
   end
 
-  test "crew_columns marks the assembled column LIVE from an open QA intent (Steffon)" do
+  test "crew_columns marks the assembled column LIVE from an open QA intent (Avi)" do
     # The reviewer's board assertion: an already-assembled member whose QA intent is
-    # open shows the assembled cluster ticking — Steffon QA-ing — keeping his avatar.
+    # open shows the assembled cluster ticking — Avi QA-ing — keeping his avatar.
     task = deploy_task(stage: "assembled", reviewers: REVIEWERS)
-    task.record_intent_event(to_stage: "shipped", actor: "steffon", qa: true)
+    task.record_intent_event(to_stage: "shipped", actor: "avi", qa: true)
     cols = crew_columns(task.reload, stage_agent_groups(task, @agents), board: :deploy, agents: @agents)
 
     assembled = cols.find { |c| c.lane == :assembled }
-    assert_equal %w[steffon], assembled.stacked.map { |a| a.agent&.slug }, "Steffon still owns the assembled column"
+    assert_equal %w[avi], assembled.stacked.map { |a| a.agent&.slug }, "Avi still owns the assembled column"
     assert_not_nil assembled.live_since, "and it now ticks LIVE — QA in progress"
     assert_empty cols.find { |c| c.lane == :shipped }.stacked, "ship slot stays empty while only QA is live"
   end

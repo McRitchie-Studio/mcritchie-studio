@@ -1074,22 +1074,22 @@ class ReleaseCliTest < Minitest::Test
     refute_includes out, "not sweepable", "no loud fail when every named slug survived"
   end
 
-  # --- the Avi handoff line: printed on QA-green ONLY ---------------------------
+  # --- the Steffon handoff line: printed on QA-green ONLY ------------------------
 
-  def test_prepare_prints_the_avi_handoff_only_on_qa_green
+  def test_prepare_prints_the_steffon_handoff_only_on_qa_green
     out = run_cli(["--yes"], call: "prepare", setup: SWEEP_FLOW_STUB)
 
     assert_includes out, "Assembled rel-sweep"
-    assert_includes out, "hand off to Avi: `bin/release ship`", "QA-green prepare hands the RC to Avi"
+    assert_includes out, "hand off to Steffon: `bin/release ship`", "QA-green prepare hands the RC to Steffon"
   end
 
-  def test_prepare_omits_the_avi_handoff_when_qa_is_not_green
+  def test_prepare_omits_the_steffon_handoff_when_qa_is_not_green
     setup = SWEEP_FLOW_STUB + %(\ndef wait_for_boot(_url) = false)
     out = run_cli(["--yes"], call: "prepare", setup: setup)
 
     assert_includes out, "QA is NOT green", "the boot failure is reported"
     assert_includes out, "Prepared (NOT assembled — QA not green)"
-    refute_includes out, "hand off to Avi",
+    refute_includes out, "hand off to Steffon",
                     "a NOT-green prepare must not point at `bin/release ship` — there is nothing to ship yet"
     refute_includes out, "QA-GREEN-CALL", "no flip on a QA-red prepare"
   end
@@ -4585,23 +4585,23 @@ class ReleaseCliTest < Minitest::Test
     assert_equal "nil", out, "no conductor session → nothing to narrate"
   end
 
-  # [integration] prepare records a Steffon deploy span end-to-end (the paren
+  # [integration] prepare records an Avi deploy span end-to-end (the paren
   # post_deploy stub reaches assemble under --yes; narration is captured, not shelled).
-  def test_prepare_narrates_a_steffon_deploy_span
+  def test_prepare_narrates_an_avi_deploy_span
     out = run_cli(["--yes"], call: "prepare", setup: PAREN_POST_DEPLOY_PREP_STUB + NARRATION_CAPTURE)
 
-    assert_includes out, "ATOMIC start --category Remote --reason sweep → deploy RC to QA --agent steffon",
-                     "prepare opens a Steffon span"
+    assert_includes out, "ATOMIC start --category Remote --reason sweep → deploy RC to QA --agent avi",
+                     "prepare opens an Avi span"
     assert_match(/ATOMIC end --outcome assembled/, out, "and closes it once the RC is assembled")
   end
 
-  # [integration] ship records an Avi deploy span end-to-end (the publish-decision
+  # [integration] ship records a Steffon deploy span end-to-end (the publish-decision
   # stub runs the real ship flow under --yes with only the git/gem/heroku I/O stubbed).
-  def test_ship_narrates_an_avi_deploy_span
+  def test_ship_narrates_a_steffon_deploy_span
     out = run_cli(["--yes"], call: "ship", setup: PUBLISH_DECISION_STUB + NARRATION_CAPTURE)
 
-    assert_includes out, "ATOMIC start --category Remote --reason ship → prod --agent avi",
-                     "ship opens an Avi span after ship authority"
+    assert_includes out, "ATOMIC start --category Remote --reason ship → prod --agent steffon",
+                     "ship opens a Steffon span after ship authority"
     assert_match(/ATOMIC end --outcome shipped/, out, "and closes it once shipped to prod")
   end
 

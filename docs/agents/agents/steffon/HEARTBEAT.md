@@ -5,27 +5,28 @@
 This is Steffon's heartbeat launcher. It sets Steffon's session attribution and
 routes to two independent act SOPs:
 
+- [`production-deploy`](sops/production-deploy.md) - ship a QA-green release to
+  production when one is ready.
 - [`archive-shipped`](sops/archive-shipped.md) - archive shipped work and
   reclaim completed worktrees.
-- [`qa-release`](sops/qa-release.md) - run the self-healing release prepare sweep
-  through QA.
 
 Use this file when Mr. McRitchie invokes `Steffon Heartbeat`. When he invokes a
 single Steffon act directly, read that act's SOP file.
 
 ## Scope
 
-Steffon owns the middle of the release pipeline:
+Steffon is the downstream bookend — the ship + archive end of the pipeline:
 
+- Ship a QA-green release that Avi already brought to `assembled` (stages 4-5):
+  run the frozen-SHA gate, fast-forward `release → main`, deploy prod, smoke,
+  post release notes.
 - Archive shipped work and reclaim completed worktrees.
-- Sweep reviewed work onto the persistent `release` branch.
-- Run the pre-QA gate, deploy QA, and flip members to `assembled` on QA-green.
-- Stop at the Steffon -> Avi seam: the release is live on QA and ready for Avi's
-  production-deploy act.
+- Stop before merge and QA assembly.
 
-Do not ship production from Steffon's heartbeat. Stages 4-5 belong to Avi's
-`production-deploy`, or to Alex's `full-cycle` only when Mr. McRitchie launched
-that ship-authorized act.
+Avi's `qa-release` sweep owns merging reviewed PRs onto `release`, deploying QA,
+and flipping members `assembled`. Do not run `bin/release prepare` or a QA deploy
+from Steffon's heartbeat unless Mr. McRitchie explicitly assigns a separate
+conductor lane in the same session. Review is Carl's.
 
 ## Entry
 
@@ -49,32 +50,30 @@ not run `bin/agent-activity heartbeat steffon` themselves.
 
 Run Steffon's heartbeat composition downstream-first:
 
-1. [`archive-shipped`](sops/archive-shipped.md) - close out shipped work from the
+1. [`production-deploy`](sops/production-deploy.md) - close out an
+   already-QA-green release if one is ready (stages 4-5).
+2. [`archive-shipped`](sops/archive-shipped.md) - close out shipped work from the
    prior cycle.
-2. [`qa-release`](sops/qa-release.md) - sweep reviewed work through release
-   assembly and QA.
 
 When Mr. McRitchie launches `Steffon Heartbeat`, run both acts in that order.
 When an act is invoked directly, run only that act.
 
 ## Legacy Aliases
 
-The old launcher names still refer to the same work:
+The old launcher name still refers to the same work:
 
 - `archive-completed` -> [`archive-shipped`](sops/archive-shipped.md)
-- `qa-deploy` -> [`qa-release`](sops/qa-release.md)
 
 ## Handoff
 
 End every Steffon heartbeat with a short report:
 
+- production ship result, or "nothing to ship"
 - archive result, or "nothing to archive"
-- QA deploy result, or "nothing to prepare"
-- release slug, QA URL, and member task list when a candidate moved
-- any ejected task and the failing evidence
-- confirmation that the release is handed to Avi only after it is deployed to QA
+- release slug and production URL when a release shipped
+- any blocker and the failing evidence
 
-On a clean run with no ejections or blockers, omit the blocker section entirely.
+On a clean run with no blockers, omit the blocker section entirely.
 
 ## Background — not needed to execute
 

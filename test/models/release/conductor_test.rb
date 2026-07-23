@@ -497,7 +497,7 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_equal "building", bad.stage, "a block is a building attribute now"
     assert bad.blocked?
     assert_equal "rework", bad.block_kind
-    assert_equal "steffon", bad.blocked_by
+    assert_equal "avi", bad.blocked_by, "eject is Avi's — it runs during his qa-release sweep"
     assert_nil bad.release_slug, "the offender is OFF the candidate"
     assert_nil bad.merged, "cleared — pairs with the documented merge-commit revert"
     note = Activity.for_task(bad).by_type("qa_feedback").last
@@ -1343,19 +1343,19 @@ class Release::ConductorTest < ActiveSupport::TestCase
     end
   end
 
-  test "record_deploy_intents! defaults the actor to the stage's role owner (Avi ships, Steffon QAs)" do
+  test "record_deploy_intents! defaults the actor to the stage's role owner (Steffon ships, Avi QAs)" do
     rel = green_release_with(reviewed_task("shipper"))
     member = rel.tasks.first
 
-    Release::Conductor.record_deploy_intents!(rel.reload, to_stage: "shipped") # actor nil → avi
-    assert_equal "avi", member.reload.open_intent_for("shipped").actor
+    Release::Conductor.record_deploy_intents!(rel.reload, to_stage: "shipped") # actor nil → steffon
+    assert_equal "steffon", member.reload.open_intent_for("shipped").actor
 
     # A member still at `reviewed` (swept, flip pending — THE standard shape at
-    # prepare time now) defaults to Steffon, the QA owner.
+    # prepare time now) defaults to Avi, the QA owner.
     pending = reviewed_task("pending")
     Release::Conductor.sweep!(pending) # attached, still reviewed
-    Release::Conductor.record_deploy_intents!(rel.reload, to_stage: "assembled") # actor nil → steffon
-    assert_equal "steffon", pending.reload.open_intent_for("assembled").actor
+    Release::Conductor.record_deploy_intents!(rel.reload, to_stage: "assembled") # actor nil → avi
+    assert_equal "avi", pending.reload.open_intent_for("assembled").actor
   end
 
   test "record_deploy_intents! is idempotent — a re-run reuses the open intent, never stacks" do
