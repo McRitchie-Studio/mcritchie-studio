@@ -165,7 +165,7 @@ class Task < ApplicationRecord
   # (a block is a `building` attribute, not devops metadata). See #block_kind.
   DEVOPS_SCALAR_KEYS = %w[
     kind shape worktree_slug branch pr_url local_url qa_url production_url release_slug
-    requires_release_conductor agent_context session_id session_provider mascot
+    requires_release_conductor included_in_release agent_context session_id session_provider mascot
     mascot_session claimed_session claim_nonce claim_expires_at post_deploy_cmd built_by
     persona approval_status approval_requested_at approval_requested_by approval_approved_at
   ].freeze
@@ -403,6 +403,21 @@ class Task < ApplicationRecord
   # separate "blocked" bucket — the stage grouping already carries them.
   def self.board_column_tasks(tasks_by_stage, stage)
     Array((tasks_by_stage || {})[stage.to_s])
+  end
+
+  # Avi's per-APPLICATION release disposition over the `reviewed` queue — the read
+  # behind the reviewed-stage board marker and the `qa-release` disposition step. It
+  # groups the reviewed candidates by their release application (Task#release_repo) and
+  # reports, per app, whether it rides the next candidate (`included`) and which task
+  # members carry it. An app is `included` only when EVERY one of its reviewed members
+  # is `included_in_release?` — a single member Avi holds out (`included_in_release:
+  # false`) flags its whole app as held from this release, so the marker never says
+  # "shipping" while a member is deliberately ejected. Default is include-all, so a
+  # fresh reviewed queue reports every app included. `scope` is injectable for tests.
+  def self.reviewed_release_inclusion(scope = where(stage: "reviewed"))
+    scope.to_a.group_by(&:release_repo).transform_values do |members|
+      { included: members.all?(&:included_in_release?), members: members }
+    end
   end
 
   def self.unresolved_feedback_by_slug(task_slugs)
@@ -969,6 +984,19 @@ class Task < ApplicationRecord
 
   def requires_release_conductor?
     ActiveModel::Type::Boolean.new.cast(devops.fetch("requires_release_conductor", false))
+  end
+
+  # Per-application RELEASE INCLUSION — Avi's disposition over the `reviewed` queue in
+  # `qa-release`. The DEFAULT is to ship EVERY reviewed task (this reads true when the
+  # flag is unset), so a plain reviewed task rides the next candidate. Avi HOLDS an
+  # application back — when order-of-operations matters, e.g. a gem that must publish
+  # before its consumer, or an app that should wait a release — by marking its reviewed
+  # tasks `included_in_release: false`. That decision is board-visible on the reviewed
+  # stage (the card's inclusion marker) and enforced through the existing sweep controls
+  # (`bin/release prepare --task …` / `bin/release eject`). A blank/absent flag is
+  # included; only an explicit false holds a member out.
+  def included_in_release?
+    ActiveModel::Type::Boolean.new.cast(devops.fetch("included_in_release", true))
   end
 
   # The ecosystem repo this task's PR/branch lives in — the unit the Deploy

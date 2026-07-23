@@ -278,6 +278,34 @@ cleared_block_task = Task.create!(
   agent_slug: "carl",
   metadata: { "devops" => { "kind" => "bug", "repositories" => ["mcritchie-studio"] } }
 )
+
+# --- Per-application RELEASE INCLUSION markers (Avi's qa-release disposition) ----
+# Two REVIEWED cards on the Deploy board carry the inclusion marker: the default
+# ships (green IN RELEASE), and an app Avi held back for order-of-operations wears
+# the amber HELD FROM RELEASE marker (included_in_release:false). Read-only against
+# these fixtures on /deployments.
+Task.create!(
+  title: "Release inclusion IN demo",
+  slug: "e2e-release-inclusion-in-demo",
+  description: "A reviewed member riding the next candidate — the default disposition.",
+  stage: "reviewed",
+  priority: 1,
+  agent_slug: "carl",
+  metadata: { "devops" => { "kind" => "feature", "repositories" => ["turf-monster"],
+                            "pr_url" => "https://github.com/amcritchie/turf-monster/pull/8501" } }
+)
+Task.create!(
+  title: "Release inclusion HELD demo",
+  slug: "e2e-release-inclusion-held-demo",
+  description: "A reviewed member Avi held from the candidate for order-of-operations.",
+  stage: "reviewed",
+  priority: 1,
+  agent_slug: "carl",
+  metadata: { "devops" => { "kind" => "feature", "repositories" => ["mcritchie-studio"],
+                            "pr_url" => "https://github.com/amcritchie/mcritchie-studio/pull/8502",
+                            "included_in_release" => "false" } }
+)
+
 # --- The claim chip: liveness and progress, never conflated -------------------
 # Two BUILDING desks, both holding a LIVE claim (a terminal is painting). They
 # differ only in what they have PRODUCED, which is the whole point of the chip:

@@ -304,6 +304,57 @@ class ReleaseConductorClaimTest < ActiveSupport::TestCase
     assert_equal original.to_i, finalize.claim.acquired_at.to_i, "acquired_at is stable across the ship→finalize resume"
   end
 
+  # --- [unit] OPERATOR OVERRIDE: force-reassign a LIVE claim -----------------------
+  #
+  # `acquire` deliberately STANDS DOWN on a live holder (the anti-double-assembly
+  # guarantee), so a stuck/ghost holder strands the (release, role) until its TTL
+  # lapses. `reassign` is the operator's escape hatch: it hands the claim to the session
+  # asking even over a live holder, so the next prepare/ship resumes as :same_instance.
+  test "[unit] reassign force-takes a LIVE claim that acquire would refuse" do
+    held = acquire(**A, label: "Snorlax")
+    assert held.acquired
+    # A different instance can NOT acquire — it stands down (the property reassign overrides).
+    refute acquire(**B).acquired, "precondition: a live holder refuses a normal acquire"
+
+    out = ReleaseConductorClaim.reassign(release_slug: REL, role: "assembler",
+                                         session: B[:session], nonce: B[:nonce], label: "Gengar")
+    assert out.acquired
+    assert_equal :reassigned, out.disposition
+    assert_equal "sess-B", out.claim.claimed_session, "the claim now belongs to the session asking"
+    assert_equal "Gengar", out.claim.holder_label
+    assert out.claim.live?
+  end
+
+  test "[unit] after reassign the new holder acquires as same_instance (its ship resumes)" do
+    acquire(**A, label: "Snorlax")
+    ReleaseConductorClaim.reassign(release_slug: REL, role: "assembler",
+                                   session: B[:session], nonce: B[:nonce], label: "Gengar")
+    resumed = acquire(**B)
+    assert resumed.acquired, "the reassigned session now holds it, so its next acquire is a renew"
+    assert_equal :same_instance, resumed.disposition
+  end
+
+  test "[unit] a same-instance reassign keeps acquired_at and the existing label" do
+    t0 = Time.utc(2026, 7, 21, 3, 0, 0)
+    first = acquire(**A, now: t0, label: "Snorlax")
+    original = first.claim.acquired_at
+    out = ReleaseConductorClaim.reassign(release_slug: REL, role: "assembler",
+                                         session: A[:session], nonce: A[:nonce], now: t0 + 30)
+    assert_equal :reassigned, out.disposition
+    assert_equal original.to_i, out.claim.acquired_at.to_i, "re-arming the SAME instance keeps acquired_at"
+    assert_equal "Snorlax", out.claim.holder_label, "no new label keeps the holder's label"
+  end
+
+  test "[unit] reassign only touches its own (release, role) row" do
+    acquire(role: "assembler", **A)
+    acquire(role: "deployer", **A, label: "Machamp")
+    ReleaseConductorClaim.reassign(release_slug: REL, role: "assembler",
+                                   session: B[:session], nonce: B[:nonce])
+    assert_equal "sess-B", ReleaseConductorClaim.find_by(release_slug: REL, role: "assembler").claimed_session
+    assert_equal "sess-A", ReleaseConductorClaim.find_by(release_slug: REL, role: "deployer").claimed_session,
+                 "reassigning the assembler leaves the deployer claim untouched"
+  end
+
   test "status_for reports the holder and heartbeat age, nil when never claimed" do
     assert_nil ReleaseConductorClaim.status_for("never-claimed", "deployer")
 

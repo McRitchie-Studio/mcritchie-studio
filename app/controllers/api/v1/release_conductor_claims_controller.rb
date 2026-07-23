@@ -53,6 +53,44 @@ module Api
         })
       end
 
+      # POST /api/v1/releases/:slug/conductor_claim/reassign
+      #   { role, session, nonce, label, operator_secret }
+      #
+      # OPERATOR-GATED force-reassign — the escape hatch from "only a TTL lapse frees a
+      # LIVE claim." Hands the (release, role) to the session asking (its session +
+      # nonce) even over a live holder, so a stuck/ghost claim never strands the lane
+      # for a full TTL and the next prepare/ship resumes immediately. This is NOT a
+      # normal agent steal: `acquire` stands down on a live holder and always will.
+      # Beyond the shared agent bearer (every agent has one), it requires the OPERATOR
+      # secret — `Rails.application.credentials.operator_api_secret ||
+      # ENV["OPERATOR_API_SECRET"]`. Fail-closed: with no operator secret configured the
+      # override is INERT (503), so it can never be bypassed by leaving it unset. 200
+      # { reassigned: true, disposition, holder } on success.
+      def reassign
+        unless operator_secret.present?
+          return render_error("Operator override is not configured", status: :service_unavailable,
+                                                                     error_code: "OPERATOR_OVERRIDE_UNCONFIGURED")
+        end
+        unless operator_authorized?
+          return render_error("Operator authorization required", status: :forbidden,
+                                                                 error_code: "OPERATOR_FORBIDDEN")
+        end
+        if claim_params[:session].blank? || claim_params[:nonce].blank?
+          return render_error("session and nonce are required", status: :unprocessable_entity,
+                                                                error_code: "VALIDATION_FAILED")
+        end
+
+        outcome = ReleaseConductorClaim.reassign(
+          release_slug: params[:slug], role: claim_params[:role],
+          session: claim_params[:session], nonce: claim_params[:nonce], label: claim_params[:label]
+        )
+        render_data({
+          "reassigned"  => outcome.acquired,
+          "disposition" => outcome.disposition.to_s,
+          "holder"      => outcome.claim.holder_info
+        })
+      end
+
       # POST /api/v1/releases/:slug/conductor_claim/renew { role, session, nonce } —
       # the heartbeat. 200 { renewed: true } when this instance still holds the
       # (release, role); 204 no-op otherwise (lost/expired/never-held — never an error).
@@ -83,7 +121,25 @@ module Api
       private
 
       def claim_params
-        params.permit(:slug, :role, :session, :nonce, :label)
+        params.permit(:slug, :role, :session, :nonce, :label, :operator_secret)
+      end
+
+      # The operator-elevation secret — the one credential a normal agent bearer does
+      # NOT carry, so it is what makes `reassign` an operator act rather than an agent
+      # steal. Read from credentials first, then ENV (mirrors AuthController's
+      # agent_api_secret). Blank ⇒ the override is unconfigured (the action fails closed).
+      def operator_secret
+        @operator_secret ||= (Rails.application.credentials.operator_api_secret.presence ||
+                              ENV["OPERATOR_API_SECRET"].presence).to_s
+      end
+
+      # Constant-time compare of the provided secret against the configured one — the
+      # same idiom AuthController uses for the agent secret. Never true when either side
+      # is blank.
+      def operator_authorized?
+        provided = params[:operator_secret].to_s
+        provided.present? && operator_secret.present? &&
+          ActiveSupport::SecurityUtils.secure_compare(provided, operator_secret)
       end
     end
   end

@@ -110,6 +110,95 @@ module Api
         assert_response :unauthorized
       end
 
+      # --- OPERATOR-GATED force-reassign -------------------------------------------
+      OPERATOR_SECRET = "op-secret-under-test"
+
+      def with_operator_secret(secret = OPERATOR_SECRET)
+        prior = ENV["OPERATOR_API_SECRET"]
+        ENV["OPERATOR_API_SECRET"] = secret
+        yield
+      ensure
+        if prior.nil?
+          ENV.delete("OPERATOR_API_SECRET")
+        else
+          ENV["OPERATOR_API_SECRET"] = prior
+        end
+      end
+
+      def reassign(session:, nonce:, role: "assembler", slug: SLUG, label: nil, operator_secret: OPERATOR_SECRET,
+                   headers: @headers)
+        post conductor_claim_reassign_api_v1_release_path(slug),
+             params: { role: role, session: session, nonce: nonce, label: label, operator_secret: operator_secret },
+             headers: headers, as: :json
+      end
+
+      test "[integration] reassign with the operator secret force-takes a LIVE claim the asker could not acquire" do
+        with_operator_secret do
+          acquire(session: "A", nonce: "a", label: "Snorlax")
+          acquire(session: "B", nonce: "b")
+          refute response.parsed_body.dig("data", "acquired"), "precondition: B stands down on A's live claim"
+
+          reassign(session: "B", nonce: "b", label: "Gengar")
+          assert_response :ok
+          body = response.parsed_body.fetch("data")
+          assert body["reassigned"]
+          assert_equal "reassigned", body["disposition"]
+          assert_equal "Gengar", body.dig("holder", "label")
+          assert body.dig("holder", "live")
+        end
+        # And now the reassigned session holds it — its next acquire is a same-instance renew.
+        with_operator_secret do
+          acquire(session: "B", nonce: "b")
+          assert_equal "same_instance", response.parsed_body.dig("data", "disposition"),
+                       "the session asking now owns the claim, so it resumes instead of standing down"
+        end
+      end
+
+      test "[integration] reassign is refused without the operator secret (not a normal agent steal)" do
+        with_operator_secret do
+          acquire(session: "A", nonce: "a", label: "Snorlax")
+          reassign(session: "B", nonce: "b", operator_secret: nil)
+          assert_response :forbidden
+          assert_equal "OPERATOR_FORBIDDEN", response.parsed_body["error_code"]
+          assert ReleaseConductorClaim.find_by(release_slug: SLUG, role: "assembler").claimed_session == "A",
+                 "the bearer alone must not move a live claim"
+        end
+      end
+
+      test "[integration] reassign is refused with a WRONG operator secret" do
+        with_operator_secret do
+          acquire(session: "A", nonce: "a")
+          reassign(session: "B", nonce: "b", operator_secret: "not-the-secret")
+          assert_response :forbidden
+          assert_equal "OPERATOR_FORBIDDEN", response.parsed_body["error_code"]
+        end
+      end
+
+      test "[integration] reassign fails CLOSED when no operator secret is configured (inert override)" do
+        prior = ENV.delete("OPERATOR_API_SECRET")
+        acquire(session: "A", nonce: "a")
+        reassign(session: "B", nonce: "b", operator_secret: "anything")
+        assert_response :service_unavailable
+        assert_equal "OPERATOR_OVERRIDE_UNCONFIGURED", response.parsed_body["error_code"]
+      ensure
+        ENV["OPERATOR_API_SECRET"] = prior unless prior.nil?
+      end
+
+      test "[integration] reassign still requires the bearer token" do
+        with_operator_secret do
+          reassign(session: "B", nonce: "b", headers: {})
+          assert_response :unauthorized
+        end
+      end
+
+      test "[integration] reassign refuses a blank session/nonce" do
+        with_operator_secret do
+          reassign(session: "", nonce: "")
+          assert_response :unprocessable_entity
+          assert_equal "VALIDATION_FAILED", response.parsed_body["error_code"]
+        end
+      end
+
       # The CROSS-RELEASE liveness read — bin/agent-worktree's _ship/_gate reclaim guard.
       test "[integration] the live read reports whether ANY claim for a role is live" do
         get "/api/v1/release_conductor_claims/live", params: { role: "deployer" }, headers: @headers

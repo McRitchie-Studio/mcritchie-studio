@@ -100,7 +100,7 @@ run inside it rides the close:
 ## Who runs it
 
 **Steffon**, via the `qa-release` SOP
-([`../../agents/steffon/sops/qa-release.md`](../../agents/steffon/sops/qa-release.md)).
+([`../../agents/avi/sops/qa-release.md`](../../agents/avi/sops/qa-release.md)).
 The gate writes are conductor-owned (actor `steffon`, source `conductor`) —
 you never post G3 markers by hand on the happy path.
 
@@ -414,7 +414,7 @@ suite; the demoted-suite framing of the pre-v2 doc is gone.
 
 ## Related
 
-- [`../../agents/steffon/sops/qa-release.md`](../../agents/steffon/sops/qa-release.md)
+- [`../../agents/avi/sops/qa-release.md`](../../agents/avi/sops/qa-release.md)
   — the owning SOP; run that end-to-end, this doc explains the gate it
   produces.
 - [`g4-ship.md`](g4-ship.md) — the next gate; its frozen-SHA test gate skips only

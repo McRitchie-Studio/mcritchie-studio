@@ -354,6 +354,10 @@ Rails.application.routes.draw do
           post "conductor_claim", to: "release_conductor_claims#acquire", as: :conductor_claim
           post "conductor_claim/renew", to: "release_conductor_claims#renew", as: :conductor_claim_renew
           post "conductor_claim/release", to: "release_conductor_claims#release", as: :conductor_claim_release
+          # OPERATOR-GATED force-reassign — hands a LIVE (release, role) claim to the
+          # session asking without waiting out its TTL (release-conductor-claims).
+          # Requires the operator secret on top of the bearer, so it is not an agent steal.
+          post "conductor_claim/reassign", to: "release_conductor_claims#reassign", as: :conductor_claim_reassign
         end
       end
       # Gate-run markers — the branded testing gates (GateRun::GATES, G1 Cert …

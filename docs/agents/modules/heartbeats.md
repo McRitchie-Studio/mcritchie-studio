@@ -192,7 +192,7 @@ Canonical heartbeat launcher:
 [`../agents/avi/HEARTBEAT.md`](../agents/avi/HEARTBEAT.md). The summary below
 keeps the cross-soul page readable; Avi's standalone act SOPs win for Avi
 mechanics:
-[`production-deploy`](../agents/avi/sops/production-deploy.md),
+[`production-deploy`](../agents/steffon/sops/production-deploy.md),
 [`pr-review`](../agents/avi/sops/pr-review.md), and
 [`pr-review-slow`](../agents/avi/sops/pr-review-slow.md).
 
@@ -206,7 +206,7 @@ owns release **stages 4–5** (post-QA → prod).
 ### Act 1 — `production-deploy`
 
 Canonical SOP:
-[`../agents/avi/sops/production-deploy.md`](../agents/avi/sops/production-deploy.md).
+[`../agents/steffon/sops/production-deploy.md`](../agents/steffon/sops/production-deploy.md).
 
 Ship the assembled, QA-green release to production.
 
@@ -302,7 +302,7 @@ Steffon mechanics.
 **Enter as Steffon.** Two acts, run **downstream-first**. The detailed act SOPs
 live with Steffon:
 [`archive-shipped`](../agents/steffon/sops/archive-shipped.md) closes the prior
-cycle, and [`qa-release`](../agents/steffon/sops/qa-release.md) sweeps reviewed
+cycle, and [`qa-release`](../agents/avi/sops/qa-release.md) sweeps reviewed
 work through merge, QA, and the QA-green flip. Steffon owns release **stages
 1–3** (Testing → Assembling → Deploying QA) — the whole middle, **including the
 merge**.
@@ -318,7 +318,7 @@ legacy alias.
 ### Act 2 — `qa-release`
 
 Canonical SOP:
-[`../agents/steffon/sops/qa-release.md`](../agents/steffon/sops/qa-release.md).
+[`../agents/avi/sops/qa-release.md`](../agents/avi/sops/qa-release.md).
 
 Run the self-healing `bin/release prepare --yes` sweep: reviewed work plus
 stragglers onto `release`, pre-QA gate, QA deploy, and members `assembled` only
