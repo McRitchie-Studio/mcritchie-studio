@@ -238,7 +238,7 @@ with the default flat `bin/task list`:
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio
-bin/task list --stage reviewed    # sweep queue — approved, awaiting Steffon's qa-release sweep
+bin/task list --stage reviewed    # sweep queue — approved, awaiting Avi's qa-release sweep
 bin/task list --stage assembled   # members of the current release candidate (RC)
 bin/task list --stage shipped     # baseline / reconciliation (recent ships)
 bin/task list --stage submitted   # review intake — the Build → Deploy seam
@@ -395,7 +395,7 @@ and structured scout report outcomes into conservative Avi recommendations:
 
 The decision summary is a queue accelerator, not an authority transfer. Avi
 still reviews the underlying PR, decides whether the report is sufficient, and
-performs any review-stage move or feedback action. Steffon's `qa-release` sweep
+performs any review-stage move or feedback action. Avi's `qa-release` sweep
 owns merge plus QA deploy.
 
 Use `bin/devops-cycle --scout-packets` when the conductor wants to hand

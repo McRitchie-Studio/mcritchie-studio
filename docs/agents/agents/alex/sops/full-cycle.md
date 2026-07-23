@@ -10,8 +10,8 @@ deploy with explicit ship authority.
 `full-cycle` composes existing release atoms:
 
 1. Avi-style review-only PR review.
-2. Steffon's self-healing `qa-release`.
-3. Avi's `production-deploy`.
+2. Avi's self-healing `qa-release`.
+3. Steffon's `production-deploy`.
 
 This SOP crosses the production gate. Use it only when Mr. McRitchie launched
 `full-cycle` or otherwise granted production ship authority in this session.
@@ -92,7 +92,7 @@ serial*.
 Keep the same guards each atom owns:
 
 - Review in waves of five or fewer reviewers.
-- Use Steffon's `qa-release` sweep for merge plus QA.
+- Use Avi's `qa-release` sweep for merge plus QA.
 - Ship only after QA-green.
 - Do not deploy production unless ship authority is explicit.
 

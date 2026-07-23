@@ -4,7 +4,7 @@
 
 G4 Ship is the fourth and final branded testing gate: the **release-grain**
 record (GateRun key `g4_ship`, subject = the release slug) that the **frozen
-ship SHA was certified and deployed to production**. It is produced by Avi's
+ship SHA was certified and deployed to production**. It is produced by Steffon's
 `production-deploy` act — `bin/release ship` opens it at the ship gate and
 closes it after the post-ship smoke seal.
 
@@ -209,7 +209,7 @@ Do not do that: it **silently disarmed** this gate while printing "already green
 
 ## Who runs it
 
-**Avi**, via the `production-deploy` SOP
+**Steffon**, via the `production-deploy` SOP
 ([`../../agents/steffon/sops/production-deploy.md`](../../agents/steffon/sops/production-deploy.md))
 — ship authority is granted per session by Mr. McRitchie. The gate writes are
 conductor-owned (actor = the ship's `--by`, defaulting to the operator's

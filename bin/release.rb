@@ -2471,10 +2471,10 @@ def prepare
   # Deploy-lane narration: Steffon owns the whole middle — sweep, QA deploy, and
   # the QA-green flip. Open a role activity so the heartbeat attributes this phase to
   # him (matching the board's stage timeline). Best-effort — see the narrate
-  # helpers. `steffon_span` gates the close in the rescue so an abort BEFORE this
+  # helpers. `avi_span` gates the close in the rescue so an abort BEFORE this
   # point never emits a stray `end`.
   open_role_span("avi", "sweep → deploy RC to QA")
-  steffon_span = true
+  avi_span = true
 
   # 1. DETECT (a read — runs even in --dry-run): the reviewed queue + assembled
   #    stragglers with their PR/merged state, the review-gate screen, and the
@@ -2937,7 +2937,7 @@ rescue SystemExit
   # An abort mid-prepare closes the Steffon activity with the abort outcome
   # (best-effort) before re-raising, so the heartbeat activity resolves instead of
   # hanging open.
-  close_role_span("prepare aborted before QA-green") if steffon_span
+  close_role_span("prepare aborted before QA-green") if avi_span
   raise
 ensure
   # A raw StandardError (not a SystemExit) raised after the assembler claim was
@@ -4753,7 +4753,7 @@ def ship
 
   by = opt_value("--by") || ENV["USER"] || "operator"
   @ship_live = [] # the "what's live this run" trail for the partial-ship report
-  avi_span = false # set once the Avi deploy-lane activity opens (gates its close)
+  steffon_span = false # set once the Steffon deploy-lane activity opens (gates its close)
   g4_gate = nil    # :open once the G4 Ship gate opens; :closed once a verdict lands
 
   say("Run Deployment#{PROD ? ' (PROD)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
@@ -4867,7 +4867,7 @@ def ship
   # the board's Steffon→shipped intent recorded just below. Opened AFTER ship authority
   # so a declined ship never shows Steffon shipping.
   open_role_span("steffon", "ship → prod")
-  avi_span = true
+  steffon_span = true
 
   # 2c. The ship is now authorized + proceeding — record the Steffon → shipped intent for
   #     every member so /deployments shows him shipping LIVE (a green ticking timer)
@@ -4988,10 +4988,10 @@ rescue SystemExit => e
   # abort never acquired, so this is a no-op there.
   release_conductor_claim!
   # Close the Avi activity on a partial-ship abort too (best-effort) so the
-  # heartbeat activity resolves instead of hanging open. Gated by avi_span so an
+  # heartbeat activity resolves instead of hanging open. Gated by steffon_span so an
   # abort BEFORE the activity opened (e.g. no active release) never emits a stray
   # `end`.
-  close_role_span("ship aborted partway") if avi_span
+  close_role_span("ship aborted partway") if steffon_span
   # Partial-ship recovery: abort! (Kernel#abort) raised SystemExit mid-train. The
   # abort message already printed; add what's live + the idempotent re-run path.
   raise if DRY # a dry-run abort (e.g. no active release) surfaces as-is

@@ -163,7 +163,7 @@ Release-lane work. A feature agent can recommend deploy, but only the designated
 release conductor should run it after explicit approval from Mr. McRitchie or an
 already-approved rollout prompt. Alex's `full-cycle` launcher and Avi's
 `production-deploy` and `deploy-with-task` acts are such pre-approved production
-prompts; `pr-review` and Steffon's `qa-release` sweep are not — they stop before
+prompts; `pr-review` and Avi's `qa-release` sweep are not — they stop before
 prod.
 Gem publishes specifically ride a release as
 first-class members and are published producer-first by **`bin/release prepare`
