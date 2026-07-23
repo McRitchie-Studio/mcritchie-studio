@@ -1,45 +1,52 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# bin/reviewer-select — picks the TWO senior reviewers for a submitted task's PR.
+# bin/reviewer-select — previews the reviewer pair for a submitted task's PR under
+# the Carl-owns-review model (docs/agents/agents/carl/sops/pr-review.md).
 #
-# This is the tool AVI runs at the review step of the Deploy workflow
-# (docs/agents/system/devops-cycle-design.md §1.2): after confirming
-# product-acceptance, he runs `bin/reviewer-select <task>` to choose the pair,
-# then spawns those two named seniors in parallel as review agents.
+# **Carl is the STANDING PRIMARY** — the Lead Architect, deep reviewer, and OWNER
+# of every PR review. There is no Avi supervisor. The review SESSION (a Pokémon
+# orchestrator) claims reviewable PRs and spins ONE Carl per PR; each Carl runs
+# the deep review and picks a LIGHT specialist at his discretion. This tool
+# previews that pair — primary Carl + the domain-fit LIGHT — and records the review
+# intent so the board shows the pair live.
 #
 # RECORDING IS THE DEFAULT. Producing the assignment also POSTs the picked pair as
 # the `--to reviewed` review INTENT — an idempotent board write to
 # /api/v1/tasks/<slug>/intent, the SAME endpoint `bin/task intent` uses — so
-# /deployments + the task timeline show the two seniors reviewing LIVE (the crew
-# ticker) the moment Avi runs this, before the →reviewed transition lands. Pass
-# `--no-record` (or `--dry`) for the old advisory-only behavior (print the pick,
-# write NOTHING). The board write is best-effort: a failure warns but never blocks
-# the printed pick, and `--file` mode is always advisory (offline — nothing to
-# write to).
+# /deployments + the task timeline show the reviewers LIVE (the crew ticker), before
+# the →reviewed transition lands. Pass `--no-record` (or `--dry`) for advisory-only
+# behavior (print the pick, write NOTHING). The board write is best-effort: a
+# failure warns but never blocks the printed pick, and `--file` mode is always
+# advisory (offline — nothing to write to).
 #
-# It loads the Rails app and calls `ReviewerSelector` for the task — scoring the
-# senior pool {shannon=UI · carl=backend · jasper=Web3 · steffon=DevOps/Platform ·
-# alex=Documentation} by DOMAIN FIT (the task's shape + repositories + risk
-# tags vs each soul's Agent.metadata["domains"]) with a LOGGED, SEEDED-PER-TASK
-# tiebreak (reproducible — not process-random), and splitting the pick 1 PRIMARY
-# (deep review) + 1 LIGHT. The QA owner (steffon by default) is EXCLUDED so one
-# soul never both reviews AND QAs the same change. Because the tiebreak is seeded
-# from the task identity, for the DEFAULT qa_owner this preview matches the pair
-# the app records on the submitted→reviewed TaskEvent (a custom --qa-owner shifts
-# the candidate pool + seed, so the preview is then advisory).
+# It loads the Rails app and calls `ReviewerSelector` for the task. The PRIMARY is
+# always Carl; the LIGHT is a domain-fit pick from the specialist pool {shannon=UI
+# · jasper=Web3 · steffon=DevOps/Platform · alex=Documentation}, scored by the
+# task's shape + repositories + risk tags vs each soul's Agent.metadata["domains"]
+# with a LOGGED, SEEDED-PER-TASK tiebreak (reproducible — not process-random). The
+# QA owner (steffon by default) is EXCLUDED from the light seat so one soul never
+# both reviews AND QAs the same change. Because the tiebreak is seeded from the
+# task identity, for the DEFAULT qa_owner this preview matches the pair the app
+# records on the submitted→reviewed TaskEvent (a custom --qa-owner shifts the light
+# pool + seed, so the preview is then advisory).
+#
+# Carl YIELDS the primary seat only to the hard no-self-review rule: if Carl BUILT
+# the task (devops.built_by == carl) or a caller names him the qa_owner, he reviews
+# nothing and BOTH seats become domain-fit picks from the specialist pool.
 #
 # Task source: the production task board API (same auth as bin/task / bin/dor-check),
 # or a local JSON via --file (offline / tests). Degrades gracefully — a missing
 # Agent row (or no DB at all) falls back to ReviewerSelector's domain defaults.
 #
-# The BUILDER is auto-excluded too (read from the task's devops.built_by, stamped
-# on the move to building) so a soul never reviews their own work — no manual flag
-# needed. BUSY souls (agents mid-build / mid-review on OTHER in-flight tasks) are
-# excluded via `--busy a,b,c` and/or `--busy-auto` (which reads the board's
-# stage=building tasks). Both the builder and the busy drops YIELD rather than
-# starve: if the exclusions would leave fewer than a PRIMARY+LIGHT pair, the
-# least-bad ones are KEPT back so a pair is always returned (flagged in the audit).
+# The BUILDER is auto-excluded from the LIGHT seat too (read from the task's
+# devops.built_by, stamped on the move to building) so a soul never reviews their
+# own work — no manual flag needed. BUSY souls (agents mid-build / mid-review on
+# OTHER in-flight tasks) are excluded from the LIGHT seat via `--busy a,b,c` and/or
+# `--busy-auto` (which reads the board's stage=building tasks). Both the builder and
+# the busy drops YIELD rather than starve: if the exclusions would leave too few
+# light candidates, the least-bad ones are KEPT back so a pair is always returned
+# (flagged in the audit).
 #
 # Usage:
 #   bin/reviewer-select <task-slug>                 # print the pair AND record the review intent (default)
@@ -187,18 +194,22 @@ def seat_line(label, seat)
          label, seat["slug"], matched, seat["fit"], seat["roll"])
 end
 
-# The auditable "who's out" line: the QA owner always, plus the builder when
-# known — flagged "(builder)" when excluded, or "(builder — KEPT: …)" when it was
-# kept because excluding it would leave too few candidates — plus any busy souls
-# (excluded, or KEPT when excluding them would have starved the pool).
+# The auditable "who's out" line of the LIGHT pool: the QA owner always, plus the
+# builder when known — flagged "(builder — excluded)" when removed from the light
+# pool, "(builder — KEPT: …)" when kept because excluding it would starve the pool,
+# or "(builder — not a light candidate)" when the builder was never eligible for
+# the light seat (Carl the standing primary, a non-specialist, or the QA owner) —
+# plus any busy souls (excluded, or KEPT when excluding them would have starved).
 def excluded_line(decision)
   parts = ["#{decision["excluded_qa_owner"]} (QA owner — never reviews a PR he then QAs)"]
   builder = decision["builder"].to_s
   unless builder.empty?
     parts << if decision["excluded_builder"].to_s == builder
       "#{builder} (builder — a soul never reviews their own work)"
-    else
+    elsif decision["builder_candidate"]
       "#{builder} (builder — KEPT: excluding would leave too few candidates)"
+    else
+      "#{builder} (builder — not a light candidate; reviews nothing on this PR)"
     end
   end
   Array(decision["excluded_busy"]).each { |s| parts << "#{s} (busy — mid-build/review elsewhere)" }

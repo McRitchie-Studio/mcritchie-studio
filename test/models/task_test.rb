@@ -367,8 +367,10 @@ class TaskTest < ActiveSupport::TestCase
     assert_equal "carl", task.reload.devops_built_by, "a soul slug is recorded as the builder"
 
     decision = ReviewerSelector.explain(task)
-    assert_equal "carl", decision["excluded_builder"], "the soul builder is excluded from review"
-    refute_includes decision["candidates"], "carl"
+    assert_equal "carl", decision["builder"], "the soul builder is identified"
+    assert_nil decision["standing_primary"], "Carl yields the primary seat on a PR he built"
+    refute_includes decision["candidates"], "carl", "Carl is never a light candidate"
+    refute_includes decision["reviewers"].map { |r| r["slug"] }, "carl", "a soul never reviews their own work"
   ensure
     Current.reset
   end
@@ -387,7 +389,9 @@ class TaskTest < ActiveSupport::TestCase
 
     decision = ReviewerSelector.explain(task)
     assert_nil decision["excluded_builder"], "no soul is falsely excluded"
-    assert_includes decision["candidates"], "carl", "the full pool (minus QA owner) stays eligible"
+    assert_equal "carl", decision["standing_primary"], "with no builder, Carl is the standing primary"
+    assert_includes decision["candidates"], "shannon", "the light pool (minus QA owner) stays eligible"
+    refute_includes decision["candidates"], "steffon", "the QA owner stays excluded from the light pool"
   ensure
     Current.reset
   end
@@ -480,8 +484,9 @@ class TaskTest < ActiveSupport::TestCase
 
     decision = ReviewerSelector.explain(task.reload)
     assert_equal "carl", decision["builder"], "the assigned builder is read from devops.built_by"
-    assert_equal "carl", decision["excluded_builder"]
-    refute_includes decision["candidates"], "carl", "carl never reviews the PR carl built"
+    assert_nil decision["standing_primary"], "Carl yields the primary seat on a PR he built"
+    refute_includes decision["candidates"], "carl", "carl is never a light candidate"
+    refute_includes decision["reviewers"].map { |r| r["slug"] }, "carl", "carl never reviews the PR carl built"
   end
 
   # --- Workflow 2: Deploy transitions ---
