@@ -46,22 +46,34 @@ class AgentsSeedTest < ActiveSupport::TestCase
     refute avi.metadata["reviewer"], "Avi delegates review; he is not one of the two seniors"
   end
 
-  test "senior reviewers carry domains + a numeric review_weight" do
+  test "Carl is the Lead Architect and standing primary review owner" do
     run_seed
+    carl = Agent.find_by!(slug: "carl")
+    assert_equal "Lead Architect", carl.title
+    assert carl.metadata["reviewer"], "Carl is in the review pool"
+    assert_equal "owner", carl.metadata["review_role"], "Carl owns PR review"
+    assert carl.metadata["standing_primary"], "Carl is the standing primary on every PR"
+    assert_includes Array(carl.metadata["domains"]), "backend"
+    assert_equal 2.0, carl.metadata["review_weight"]
+  end
+
+  test "the light specialists carry domains + a numeric review_weight" do
+    run_seed
+    # Carl is the standing primary (tested above); the four below are the LIGHT
+    # specialist pool the review draws a domain second-read from.
     {
       "shannon" => "ui",
-      "carl"    => "backend",
       "jasper"  => "web3",
       "steffon" => "devops",
       "alex"    => "documentation"
     }.each do |slug, domain|
       agent = Agent.find_by!(slug: slug)
-      assert agent.metadata["reviewer"], "#{slug} must be a senior pool reviewer"
+      assert agent.metadata["reviewer"], "#{slug} must be a light-pool specialist"
       assert_equal "reviewer", agent.metadata["review_role"], "#{slug} review_role"
       assert_includes Array(agent.metadata["domains"]), domain, "#{slug} owns the #{domain} domain"
       # review_weight is stored NUMERICally (not the legacy "heavy"/"light" label a
       # bare String#to_f would silently zero — see ReviewerSelector::WEIGHT_LABELS).
-      # All five seniors are heavy-capable, so they share the heavy weight (2.0).
+      # The specialists share the heavy weight (2.0) — it breaks a LIGHT-seat tie.
       assert_equal 2.0, agent.metadata["review_weight"], "#{slug} carries the heavy numeric weight"
     end
   end

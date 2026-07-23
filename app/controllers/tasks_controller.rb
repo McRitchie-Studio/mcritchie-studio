@@ -335,6 +335,7 @@ class TasksController < ApplicationController
         :release_slug,
         :release_train,
         :requires_release_conductor,
+        :included_in_release,
         :approval_status,
         :approval_requested_at,
         :approval_requested_by,

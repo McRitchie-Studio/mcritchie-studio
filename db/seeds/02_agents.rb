@@ -6,21 +6,23 @@
 # docs/agents/system/devops-cycle-design.md §1.2):
 #
 #   metadata["reviewer"]       — true if in the senior review pool
-#   metadata["review_role"]    — "delegator" | "reviewer" | "orchestrator"
+#   metadata["review_role"]    — "owner" | "delegator" | "reviewer" | "orchestrator"
 #   metadata["domains"]        — areas/repos this soul reviews (domain-fit input)
-#   metadata["review_weight"]  — NUMERIC review weight (higher = takes the heavy,
-#                                deep-review seat when a pair ties on domain fit).
+#   metadata["review_weight"]  — NUMERIC review weight (higher = wins the single
+#                                LIGHT seat when two specialists tie on domain fit).
 #                                Stored as a number, NOT the "heavy"/"light" label
 #                                a bare String#to_f would silently zero (see
-#                                ReviewerSelector::WEIGHT_LABELS). All five seniors
-#                                are heavy-capable, so they share the heavy weight;
-#                                within a pair the seat falls to fit then the
-#                                logged roll. ReviewerSelector::WEIGHT_LABELS maps
-#                                heavy->2.0 / light->1.0 for any legacy label rows.
+#                                ReviewerSelector::WEIGHT_LABELS). The specialists
+#                                share the heavy weight; the light falls to fit then
+#                                the logged roll. ReviewerSelector::WEIGHT_LABELS
+#                                maps heavy->2.0 / light->1.0 for legacy label rows.
 #
-# Pool {Shannon=UI · Carl=backend · Jasper=Web3 · Steffon=DevOps/Platform ·
-# Alex=Documentation}. Avi is the delegator (selects 1 heavy + 1 light), not a
-# pool member; Steffon is `qa_owner` and must never review a PR he will then QA.
+# Carl is the LEAD ARCHITECT and STANDING PRIMARY — the deep reviewer + OWNER on
+# EVERY PR (there is no Avi supervisor). He summons ONE domain LIGHT from the
+# specialist pool {Shannon=UI · Jasper=Web3 · Steffon=DevOps/Platform ·
+# Alex=Documentation}. Steffon is `qa_owner` and must never review a PR he will
+# then QA (no self-gating). See docs/agents/agents/carl/sops/pr-review.md and
+# app/services/reviewer_selector.rb.
 agents_data = [
   {
     name: "Alex",
@@ -59,13 +61,14 @@ agents_data = [
     slug: "carl",
     status: "active",
     agent_type: "specialist",
-    title: "Dev Backend Expert",
-    description: "Crack Rails dev. Owns controllers, models, migrations, background jobs, ActiveRecord performance, and the studio-engine internals. Senior reviewer for backend PRs in the Deploy-flow review pool.",
+    title: "Lead Architect",
+    description: "Lead Architect and owner of PR review. Crack Rails dev — controllers, models, migrations, background jobs, ActiveRecord performance, and the studio-engine internals. The STANDING PRIMARY on every PR: the deep reviewer who owns the gates, summons a domain light specialist at his discretion, drives the verdict, and merges approved work into the accepted branch.",
     avatar: "/agents/carl.png",
     position: 4,
     metadata: {
-      "review_role" => "reviewer",
+      "review_role" => "owner",
       "reviewer" => true,
+      "standing_primary" => true,
       "domains" => ["backend", "models", "controllers", "migrations", "jobs", "studio-engine"],
       "review_weight" => 2.0
     }

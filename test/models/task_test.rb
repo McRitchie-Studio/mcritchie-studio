@@ -367,8 +367,10 @@ class TaskTest < ActiveSupport::TestCase
     assert_equal "carl", task.reload.devops_built_by, "a soul slug is recorded as the builder"
 
     decision = ReviewerSelector.explain(task)
-    assert_equal "carl", decision["excluded_builder"], "the soul builder is excluded from review"
-    refute_includes decision["candidates"], "carl"
+    assert_equal "carl", decision["builder"], "the soul builder is identified"
+    assert_nil decision["standing_primary"], "Carl yields the primary seat on a PR he built"
+    refute_includes decision["candidates"], "carl", "Carl is never a light candidate"
+    refute_includes decision["reviewers"].map { |r| r["slug"] }, "carl", "a soul never reviews their own work"
   ensure
     Current.reset
   end
@@ -387,7 +389,9 @@ class TaskTest < ActiveSupport::TestCase
 
     decision = ReviewerSelector.explain(task)
     assert_nil decision["excluded_builder"], "no soul is falsely excluded"
-    assert_includes decision["candidates"], "carl", "the full pool (minus QA owner) stays eligible"
+    assert_equal "carl", decision["standing_primary"], "with no builder, Carl is the standing primary"
+    assert_includes decision["candidates"], "shannon", "the light pool (minus QA owner) stays eligible"
+    refute_includes decision["candidates"], "steffon", "the QA owner stays excluded from the light pool"
   ensure
     Current.reset
   end
@@ -480,8 +484,9 @@ class TaskTest < ActiveSupport::TestCase
 
     decision = ReviewerSelector.explain(task.reload)
     assert_equal "carl", decision["builder"], "the assigned builder is read from devops.built_by"
-    assert_equal "carl", decision["excluded_builder"]
-    refute_includes decision["candidates"], "carl", "carl never reviews the PR carl built"
+    assert_nil decision["standing_primary"], "Carl yields the primary seat on a PR he built"
+    refute_includes decision["candidates"], "carl", "carl is never a light candidate"
+    refute_includes decision["reviewers"].map { |r| r["slug"] }, "carl", "carl never reviews the PR carl built"
   end
 
   # --- Workflow 2: Deploy transitions ---
@@ -996,6 +1001,62 @@ class TaskTest < ActiveSupport::TestCase
     assert_nil task.release_repo
     assert_not task.gem_release?
     assert_equal :unknown, task.release_kind
+  end
+
+  # --- Per-application release inclusion (Avi's qa-release disposition) ---
+
+  test "[unit] included_in_release? defaults true so a plain reviewed task ships" do
+    task = Task.create!(title: "default inclusion task", stage: "reviewed")
+    assert task.included_in_release?, "the default is to ship ALL reviewed work"
+  end
+
+  test "[unit] an explicit false holds a member out of the release" do
+    task = Task.create!(title: "held back task", stage: "reviewed",
+                        metadata: { "devops" => { "included_in_release" => "false" } })
+    assert_not task.included_in_release?, "an explicit false marks the member held from the release"
+  end
+
+  test "[unit] included_in_release survives normalize_devops_metadata as a client key" do
+    normalized = Task.normalize_devops_metadata("included_in_release" => "false")
+    assert_equal "false", normalized["included_in_release"],
+                 "the flag must be a permitted devops key so the API/board can write it"
+  end
+
+  test "[unit] reviewed_release_inclusion marks the reviewed app members, grouped by app" do
+    included = Task.create!(title: "turf app member in", stage: "reviewed",
+                            metadata: { "devops" => {
+                              "pr_url" => "https://github.com/amcritchie/turf-monster/pull/1"
+                            } })
+    held = Task.create!(title: "hub app member held", stage: "reviewed",
+                        metadata: { "devops" => {
+                          "pr_url" => "https://github.com/amcritchie/mcritchie-studio/pull/2",
+                          "included_in_release" => "false"
+                        } })
+    # A non-reviewed task must never appear in the reviewed disposition.
+    Task.create!(title: "submitted not reviewed", stage: "submitted",
+                 metadata: { "devops" => { "pr_url" => "https://github.com/amcritchie/turf-monster/pull/9" } })
+
+    inclusion = Task.reviewed_release_inclusion
+
+    assert_equal %w[mcritchie-studio turf-monster].sort, inclusion.keys.sort
+    assert inclusion["turf-monster"][:included], "the turf app rides by default (all members included)"
+    assert_includes inclusion["turf-monster"][:members], included
+    assert_not inclusion["mcritchie-studio"][:included], "one held member flags its whole app as held from release"
+    assert_includes inclusion["mcritchie-studio"][:members], held
+  end
+
+  test "[unit] an app is held only when EVERY reviewed member is held" do
+    Task.create!(title: "turf member shipping", stage: "reviewed",
+                 metadata: { "devops" => { "pr_url" => "https://github.com/amcritchie/turf-monster/pull/3" } })
+    Task.create!(title: "turf member held out", stage: "reviewed",
+                 metadata: { "devops" => {
+                   "pr_url" => "https://github.com/amcritchie/turf-monster/pull/4",
+                   "included_in_release" => "false"
+                 } })
+
+    inclusion = Task.reviewed_release_inclusion
+    assert_not inclusion["turf-monster"][:included],
+               "a single held member holds the whole app so the marker never says 'shipping' over an ejected member"
   end
 
   # --- Naming discipline: terse title + acceptance, agent_context ---

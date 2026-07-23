@@ -672,9 +672,9 @@ or the `review-one` SOP; none is a new command to build):
 | **`review-one <task>`** | the PRIMITIVE — the Modular PR-Review SOP on ONE PR (Avi `reviewer-select` → spawns PRIMARY + LIGHT in parallel → all-clear = the supervisor merges the feat PR into `accepted` + drives `reviewed`, then STOPS (never touches `release`/`main`, never deploys); else block) | [`pr-review-sop.md`](../modules/pr-review-sop.md) |
 | **`pr-review`** | `review-one` fanned across **all** `submitted` PRs, in **waves of ≤5** (review merges to `accepted`; Steffon's sweep promotes `accepted → release`) | [`agents/avi/sops/pr-review.md`](../agents/avi/sops/pr-review.md) |
 | **`pr-review-slow`** | the same, **serialized** — one PR at a time | [`agents/avi/sops/pr-review-slow.md`](../agents/avi/sops/pr-review-slow.md) |
-| **`qa-release`** | the SELF-HEALING sweep: detect `reviewed` + stragglers → merge PRs into `release` (skip `merged:` ones) → pre-QA gate → deploy QA → members `assembled` on QA-green | [`agents/steffon/sops/qa-release.md`](../agents/steffon/sops/qa-release.md) / `bin/release prepare --yes` |
+| **`qa-release`** | the SELF-HEALING sweep: detect `reviewed` + stragglers → merge PRs into `release` (skip `merged:` ones) → pre-QA gate → deploy QA → members `assembled` on QA-green | [`agents/avi/sops/qa-release.md`](../agents/avi/sops/qa-release.md) / `bin/release prepare --yes` |
 | **`archive-shipped`** | archive shipped work and reclaim completed worktrees from prior cycles | [`agents/steffon/sops/archive-shipped.md`](../agents/steffon/sops/archive-shipped.md) / `bin/release archive --yes` |
-| **`production-deploy`** | ff each repo `release → main` (members stamp `merged: "main"`), deploy prod, smoke, release notes (members → `shipped`), post-ship agent-docs sync — **ship-authority gated** | [`agents/avi/sops/production-deploy.md`](../agents/avi/sops/production-deploy.md) / `bin/release ship` |
+| **`production-deploy`** | ff each repo `release → main` (members stamp `merged: "main"`), deploy prod, smoke, release notes (members → `shipped`), post-ship agent-docs sync — **ship-authority gated** | [`agents/steffon/sops/production-deploy.md`](../agents/steffon/sops/production-deploy.md) / `bin/release ship` |
 
 **Compositions** (the operator-facing launcher phrases = a sequence of atoms):
 

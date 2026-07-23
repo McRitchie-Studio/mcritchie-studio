@@ -84,6 +84,35 @@ class ReleaseConductorClaim < ApplicationRecord
     outcome
   end
 
+  # OPERATOR OVERRIDE — force the (release, role) to the asking instance regardless of
+  # who currently holds it. `acquire` deliberately STANDS DOWN when a DIFFERENT live
+  # instance holds the claim (that is the whole anti-double-assembly/ship guarantee), so
+  # a stuck or ghost holder strands the (release, role) until its TTL lapses. `reassign`
+  # is the operator's escape hatch from that wait: it hands the claim to the session
+  # asking — its session + nonce + label BECOME the holder — even over a live holder, so
+  # the next `bin/release prepare`/`ship` re-run sees `:same_instance` and RESUMES
+  # immediately instead of standing down. It is NEVER on a normal agent path: only the
+  # operator-gated controller action reaches it (a plain `acquire` can never steal a
+  # live claim, and never will). Atomic under the same row lock as acquire. Returns an
+  # Outcome with `disposition: :reassigned` (always acquired).
+  def self.reassign(release_slug:, role:, session:, nonce:, label: nil, now: Time.current, ttl: ClaimLease::DEFAULT_TTL_SECONDS)
+    row = claim_row(release_slug, role)
+    row.with_lock do
+      # A same-instance reassign (the operator re-arming a claim this session already
+      # holds) keeps the label it was acquired with unless a new one is given; a genuine
+      # change of hands resets acquired_at to now — this instance owns it from now on.
+      same = ClaimLease.evaluate(row.claim_hash, session: session, nonce: nonce, now: now) == :same_instance
+      row.update!(
+        claimed_session:  session.to_s,
+        claim_nonce:      nonce.to_s,
+        claim_expires_at: now + ttl,
+        holder_label:     label.to_s.strip.presence || (same ? row.holder_label : nil),
+        acquired_at:      (same ? (row.acquired_at || now) : now)
+      )
+    end
+    Outcome.new(true, :reassigned, row)
+  end
+
   # Extend the lease — but ONLY for the instance that already holds it (renew never
   # steals). Returns true when renewed, false otherwise. This is the renewer's path.
   def self.renew(release_slug:, role:, session:, nonce:, now: Time.current, ttl: ClaimLease::DEFAULT_TTL_SECONDS)

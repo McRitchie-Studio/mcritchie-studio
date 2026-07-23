@@ -99,6 +99,26 @@ docs are how the next session starts from a wrong map.
 - Confirm every task you touched is in its correct stage. Nothing stranded in
   `building` (a leaked claim) or left un-`submitted` when its PR is open.
 
+### Open blockers — what / why / fix
+Surface every task sitting **blocked** so the warm context can clear one before it
+goes cold, or so the operator plainly sees what's owed. A live block is a
+`building` task carrying an open `qa_feedback` and a red card — list them, don't
+pass by silently.
+- Find them: `bin/task list --stage building`, then read each with `--json` — a
+  blocked one has a non-null top-level `.block_kind` and an open
+  `.unresolved_feedback`. Pull both report fields in one shot:
+
+  ```bash
+  bin/task show <slug> --json | jq '{summary: .unresolved_feedback.metadata.summary, kind: .block_kind}'
+  ```
+- Report each as three **4-6 word** lines:
+  - **what** — the blocker's own 4-6 word summary (its headline);
+  - **why** — the misalignment class from `block_kind`: `rework` = diff needs
+    changes · `environment` = desk/QA/creds · `dependency` = waiting on upstream;
+  - **fix** — the narrowest next move.
+- To clear one while warm, follow `modules/address-blocker.md`: read summary →
+  details → PR/task context → recontextualize to the gap → fix → resubmit.
+
 ## 6. Worktree / stack status
 - Report **this session's** worktree stacks in full — any still serving (ports), so
   the operator can reclaim them. `bin/agent-worktree list` for the picture.

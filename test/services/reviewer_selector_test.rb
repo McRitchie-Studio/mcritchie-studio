@@ -1,9 +1,13 @@
 require "test_helper"
 
-# ReviewerSelector picks the two senior reviewers for a submitted PR — by domain
-# fit, with a LOGGED random tiebreak, splitting the pair 1 primary / 1 light, and
-# never picking the QA owner (no self-gating). It degrades gracefully when the
-# reviewer Agent rows aren't seeded.
+# ReviewerSelector picks the reviewer pair for a submitted PR under the
+# Carl-owns-review model: **Carl is the STANDING PRIMARY** (Lead Architect, deep
+# reviewer + owner) on every PR, and the selection only chooses the LIGHT (focused
+# second read) — a domain-fit pick from the specialist pool {shannon, jasper,
+# steffon, alex}, with a LOGGED random tiebreak, never the QA owner (no
+# self-gating). Carl yields the primary seat only to the hard no-self-review rule
+# (he built the task, or a caller names him the qa_owner). It degrades gracefully
+# when the soul Agent rows aren't seeded.
 class ReviewerSelectorTest < ActiveSupport::TestCase
   # Captures the structured tiebreak log line so the audit trail is assertable.
   class CapturingLogger
@@ -32,73 +36,61 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
 
   def slugs(result) = result.map { |r| r["slug"] }
   def weight_of(result, slug) = result.find { |r| r["slug"] == slug }&.fetch("weight")
+  def primary_slug(result) = result.find { |r| r["weight"] == "primary" }&.fetch("slug")
+  def light_slug(result) = result.find { |r| r["weight"] == "light" }&.fetch("slug")
 
-  # --- domain fit ---
+  # --- Carl is the standing primary on every PR ---
 
-  test "a backend task puts the backend reviewer (carl) in the primary seat" do
-    result = ReviewerSelector.select(task_for(shape: "backend"))
-
-    assert_equal 2, result.size
-    assert_equal slugs(result).uniq, slugs(result), "two distinct reviewers"
-    assert_includes slugs(result), "carl"
-    assert_equal "primary", weight_of(result, "carl"), "the domain owner takes the primary (deep) seat"
-    assert_equal %w[primary light].sort, result.map { |r| r["weight"] }.sort, "exactly one primary + one light"
+  test "Carl takes the primary seat on every shape" do
+    Task::SHAPES.each do |shape|
+      result = ReviewerSelector.select(task_for(shape: shape))
+      assert_equal 2, result.size
+      assert_equal slugs(result).uniq, slugs(result), "two distinct reviewers on a #{shape} task"
+      assert_equal "carl", primary_slug(result), "Carl is the standing primary on a #{shape} task"
+      assert_equal %w[primary light].sort, result.map { |r| r["weight"] }.sort, "exactly one primary + one light"
+    end
   end
 
-  test "an onchain task selects the Web3 reviewer (jasper) as primary" do
+  test "a backend task pairs primary Carl with a non-Carl light specialist" do
+    result = ReviewerSelector.select(task_for(shape: "backend"))
+    assert_equal "carl", primary_slug(result)
+    refute_equal "carl", light_slug(result), "the light is a specialist, never Carl"
+    refute_equal "steffon", light_slug(result), "the QA owner is never the light"
+    assert_includes %w[shannon jasper alex], light_slug(result), "the light is drawn from the specialist pool"
+  end
+
+  # --- the LIGHT is a domain-fit pick from the specialist pool ---
+
+  test "an onchain task selects the Web3 specialist (jasper) as the light" do
     result = ReviewerSelector.select(task_for(shape: "onchain"))
-    assert_includes slugs(result), "jasper"
-    assert_equal "primary", weight_of(result, "jasper")
+    assert_equal "carl", primary_slug(result)
+    assert_equal "jasper", light_slug(result), "the Web3 specialist is the domain light"
   end
 
-  test "a ui-only task selects the UI reviewer (shannon) as primary" do
+  test "a ui-only task selects the UI specialist (shannon) as the light" do
     result = ReviewerSelector.select(task_for(shape: "ui-only"))
-    assert_includes slugs(result), "shannon"
-    assert_equal "primary", weight_of(result, "shannon")
+    assert_equal "carl", primary_slug(result)
+    assert_equal "shannon", light_slug(result)
   end
 
-  test "a risk tag pulls its domain owner in even on a different shape" do
-    # A backend shape carrying a `solana` risk tag should pull the Web3 reviewer in.
-    result = ReviewerSelector.select(task_for(shape: "backend", risks: ["solana"]))
-    assert_includes slugs(result), "carl", "the backend shape owner still fits"
-    assert_includes slugs(result), "jasper", "the solana risk pulls the Web3 reviewer in"
-  end
-
-  test "an on-chain repo pulls the Web3 reviewer in even on a backend shape" do
-    # A backend-shaped change living in turf-vault still wants Jasper's eyes —
-    # the repo carries the Web3 signal the shape alone misses.
-    result = ReviewerSelector.select(task_for(shape: "backend", repos: ["turf-vault"]))
-    assert_includes slugs(result), "carl", "the backend shape owner still fits"
-    assert_includes slugs(result), "jasper", "the turf-vault repo pulls the Web3 reviewer in"
-  end
-
-  # --- the documentation seat is Alex (the orchestrator also wears the docs hat) ---
-
-  test "a docs change selects Alex as the documentation reviewer" do
-    # `docs` is the only needed domain → only Alex (the docs seat) fits → primary seat.
-    result = ReviewerSelector.select(task_for(shape: nil, risks: ["docs"]))
-    assert_includes slugs(result), "alex", "Alex holds the pool's documentation seat"
-    assert_equal "primary", weight_of(result, "alex"), "the docs-domain owner takes the primary seat"
-  end
-
-  test "a docs-SHAPED task routes the primary seat to Alex (the documentation seat)" do
-    # The gap this task closes: doc-only PRs used to be shaped `ui-only`/`backend`
-    # (there was no `docs` shape), so SHAPE_DOMAINS pointed the pick at the wrong
-    # domain owner and Avi had to override the intent to Alex by hand. With the
-    # `docs` shape mapped to the doc domain, needed_domains = [docs, documentation]
-    # → only Alex fits (fit 2) → he takes the deep/primary seat, no override.
+  test "a docs-shaped task selects Alex (the documentation seat) as the light" do
     result = ReviewerSelector.select(task_for(shape: "docs"))
-    assert_includes slugs(result), "alex", "the docs shape selects Alex"
-    assert_equal "primary", weight_of(result, "alex"), "and lands him the primary (deep) seat"
+    assert_equal "carl", primary_slug(result)
+    assert_equal "alex", light_slug(result), "the docs shape routes the light to Alex"
   end
 
-  test "the docs shape does not perturb a non-doc pick — a backend task still routes to Carl" do
-    # Guards the other half of the acceptance: adding a domain for the `docs`
-    # shape must leave every other shape's selection unchanged. A backend task
-    # keeps Carl in the primary seat and never promotes Alex to primary.
-    result = ReviewerSelector.select(task_for(shape: "backend"))
-    assert_equal "primary", weight_of(result, "carl"), "backend still routes to the backend owner"
-    refute_equal "primary", weight_of(result, "alex"), "Alex is never the primary on a non-doc shape"
+  test "a risk tag pulls its domain specialist into the light seat even on a backend shape" do
+    # A backend shape carrying a `solana` risk tag: Carl still owns the deep read,
+    # and the solana risk pulls the Web3 specialist into the light seat.
+    result = ReviewerSelector.select(task_for(shape: "backend", risks: ["solana"]))
+    assert_equal "carl", primary_slug(result)
+    assert_equal "jasper", light_slug(result), "the solana risk pulls the Web3 specialist into the light"
+  end
+
+  test "an on-chain repo pulls the Web3 specialist into the light seat even on a backend shape" do
+    result = ReviewerSelector.select(task_for(shape: "backend", repos: ["turf-vault"]))
+    assert_equal "carl", primary_slug(result)
+    assert_equal "jasper", light_slug(result), "the turf-vault repo pulls the Web3 specialist into the light"
   end
 
   # --- no self-gating: the QA owner (steffon) is never a reviewer ---
@@ -110,103 +102,120 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     end
   end
 
-  test "a custom qa_owner is the one excluded (the rule is 'whoever QAs this task')" do
+  test "a custom qa_owner is excluded from the light seat" do
+    result = ReviewerSelector.new(task_for(shape: "onchain"), qa_owner: "jasper").reviewers
+    assert_equal "carl", primary_slug(result), "Carl still owns the primary seat"
+    refute_includes slugs(result), "jasper", "the named QA owner is excluded from the light"
+  end
+
+  # --- no self-review: Carl yields the primary seat when HE built the task ---
+
+  test "when Carl built the task he reviews nothing and both seats are domain picks" do
+    result = ReviewerSelector.new(task_for(shape: "onchain"), builder: "carl").reviewers
+    refute_includes slugs(result), "carl", "the builder never reviews their own work — not even Carl"
+    assert_equal 2, result.size, "a primary+light pair still forms from the specialist pool"
+    assert_equal slugs(result).uniq, slugs(result), "two distinct specialists"
+    refute_includes slugs(result), "steffon", "the QA owner stays excluded"
+    # onchain needs web3 → jasper is the best fit and takes the (yielded) deep seat.
+    assert_equal "jasper", primary_slug(result), "the best-fit specialist takes the yielded deep seat"
+  end
+
+  test "when Carl is named qa_owner he yields the primary seat too" do
     result = ReviewerSelector.new(task_for(shape: "backend"), qa_owner: "carl").reviewers
-    refute_includes slugs(result), "carl", "the named QA owner is excluded instead"
+    refute_includes slugs(result), "carl", "the QA owner never reviews — not even Carl"
+    assert_equal 2, result.size
   end
 
-  # --- no self-reviewing: the builder is never a reviewer of their own work ---
+  # --- specialist builder is excluded from the light seat ---
 
-  # A selector whose pool is shrunk to three souls — lets the too-few-candidates
-  # fallback be exercised with the real logic, no frozen-constant mutation. With
-  # the QA owner out, two remain (a formable pair); dropping the builder too would
-  # leave one — so the fallback must KEEP the builder.
-  class TinyPoolSelector < ReviewerSelector
-    def pool = %w[carl shannon jasper]
+  test "an explicit specialist builder is excluded from the light seat" do
+    result = ReviewerSelector.new(task_for(shape: "ui-only"), builder: "shannon").reviewers
+    assert_equal "carl", primary_slug(result), "Carl is unaffected — he is the standing primary"
+    refute_includes slugs(result), "shannon", "the specialist builder never reviews their own work"
+    assert_equal 2, result.size
   end
 
-  test "an explicit builder is excluded from the candidate pool" do
-    result = ReviewerSelector.new(task_for(shape: "backend"), builder: "carl").reviewers
-    refute_includes slugs(result), "carl", "the builder never reviews their own work"
-    assert_equal 2, result.size, "a primary+light pair is still returned"
-  end
-
-  test "the builder recorded on devops.built_by is excluded" do
-    task = task_for(shape: "backend")
-    task.update!(metadata: task.metadata.deep_merge("devops" => { "built_by" => "carl" }))
+  test "the specialist builder recorded on devops.built_by is excluded from the light pool" do
+    task = task_for(shape: "ui-only")
+    task.update!(metadata: task.metadata.deep_merge("devops" => { "built_by" => "shannon" }))
 
     decision = ReviewerSelector.explain(task)
-    refute_includes decision["candidates"], "carl", "devops.built_by is read as the builder"
-    assert_equal "carl", decision["builder"]
-    assert_equal "carl", decision["excluded_builder"]
+    refute_includes decision["candidates"], "shannon", "devops.built_by is read as the builder"
+    assert_equal "shannon", decision["builder"]
+    assert_equal "shannon", decision["excluded_builder"]
+    assert_equal "carl", decision["standing_primary"], "Carl remains the standing primary"
   end
 
   test "the builder is derived from the latest building TaskEvent actor" do
-    # A task with NO devops.built_by but a building event whose actor is carl —
-    # the persisted-task fallback the model-path selection (stage_event_metadata)
-    # relies on. Build the event with the actor, then strip the stamped scalar so
-    # only the event-actor path can supply the builder.
+    # A task with NO devops.built_by but a building event whose actor is shannon —
+    # the persisted-task fallback the model-path selection relies on.
     task = nil
     begin
-      Current.task_event_actor = "carl"
+      Current.task_event_actor = "shannon"
       task = Task.create!(title: "builder via building event task", stage: "building",
-                          metadata: { "devops" => { "shape" => "backend" } })
+                          metadata: { "devops" => { "shape" => "ui-only" } })
     ensure
       Current.reset
     end
-    task.update_columns(metadata: { "devops" => { "shape" => "backend" } }) # drop the stamped built_by
+    task.update_columns(metadata: { "devops" => { "shape" => "ui-only" } }) # drop the stamped built_by
 
     decision = ReviewerSelector.explain(task)
-    assert_equal "carl", decision["builder"], "derived from the → building event actor"
-    refute_includes decision["candidates"], "carl"
+    assert_equal "shannon", decision["builder"], "derived from the → building event actor"
+    refute_includes decision["candidates"], "shannon"
   end
 
-  test "the QA owner and the builder are excluded together" do
-    decision = ReviewerSelector.new(task_for(shape: "backend"), qa_owner: "steffon", builder: "carl").decision
-    refute_includes decision["candidates"], "steffon", "the QA owner stays excluded"
-    refute_includes decision["candidates"], "carl", "and the builder is excluded too"
-    assert_equal 2, decision["reviewers"].map { |r| r["slug"] }.uniq.size
+  test "Carl-the-builder is excluded from the primary seat but reported as not-a-light-candidate" do
+    decision = ReviewerSelector.new(task_for(shape: "backend"), builder: "carl").decision
+    assert_equal "carl", decision["builder"], "Carl is identified as the builder"
+    assert_nil decision["excluded_builder"], "Carl isn't a light candidate, so nothing is excluded from the light pool"
+    assert_nil decision["standing_primary"], "Carl has yielded the standing primary seat"
+    refute_includes decision["candidates"], "carl", "Carl is never in the light pool"
+    refute_includes decision["reviewers"].map { |r| r["slug"] }, "carl"
   end
 
-  test "an unknown builder degrades to a domain-only pick (QA owner still excluded)" do
+  test "an unknown builder degrades to a domain-only light (QA owner still excluded)" do
     decision = ReviewerSelector.explain(task_for(shape: "backend"))
     assert_nil decision["builder"], "no builder known"
     assert_nil decision["excluded_builder"]
+    assert_equal "carl", decision["standing_primary"]
     refute_includes decision["candidates"], "steffon", "the QA-owner exclusion still applies"
-    assert_includes decision["candidates"], "carl", "the domain owner stays eligible when builder is unknown"
   end
 
-  test "a known builder outside the pool excludes nobody and isn't reported excluded" do
-    # `mack` is a real soul but NOT in the reviewer POOL — there's nothing to
-    # remove, so the audit must not claim an exclusion (the old bug reported
-    # excluded_builder for a non-candidate) and the candidate set is unchanged.
+  test "a known non-specialist builder excludes nobody from the light pool" do
+    # `mack` is a real soul but NOT a specialist — there's nothing to remove from
+    # the light pool, so the audit must not claim an exclusion.
     baseline = ReviewerSelector.explain(task_for(shape: "backend"))["candidates"]
     decision = ReviewerSelector.new(task_for(shape: "backend"), builder: "mack").decision
 
     assert_equal "mack", decision["builder"], "the builder is still identified"
-    assert_nil decision["excluded_builder"], "a non-pool builder excludes nobody — no false (excluded)"
-    assert_equal baseline.sort, decision["candidates"].sort, "the candidate set is unchanged"
+    assert_nil decision["excluded_builder"], "a non-specialist builder excludes nobody"
+    assert_equal baseline.sort, decision["candidates"].sort, "the light candidate set is unchanged"
   end
 
-  test "the builder is KEPT when excluding it would leave too few candidates" do
-    # Pool {carl, shannon, jasper}; qa_owner=jasper leaves {carl, shannon} (a
-    # formable pair); excluding builder carl too would leave only {shannon} — so
-    # the builder is kept and a primary+light pair is still returned.
-    selector = TinyPoolSelector.new(task_for(shape: "backend"), qa_owner: "jasper", builder: "carl")
-    decision = selector.decision
+  # A selector whose pool is shrunk so the too-few-candidates fallback is exercised
+  # with real logic (no frozen-constant mutation). Light pool = {shannon, jasper}.
+  class TinyPoolSelector < ReviewerSelector
+    def pool = %w[carl shannon jasper]
+  end
 
-    assert_includes decision["candidates"], "carl", "builder kept — excluding would leave too few"
-    assert_equal "carl", decision["builder"], "the builder is still identified"
+  test "a specialist builder is KEPT when excluding it would leave too few lights" do
+    # Carl is named qa_owner, so he yields the primary seat and BOTH seats are drawn
+    # from the light pool {shannon, jasper} — a floor of 2. Excluding builder shannon
+    # would leave only {jasper}, so the builder is KEPT and a pair still forms.
+    decision = TinyPoolSelector.new(task_for(shape: "backend"), qa_owner: "carl", builder: "shannon").decision
+
+    assert_includes decision["candidates"], "shannon", "builder kept — excluding would leave too few lights"
+    assert_equal "shannon", decision["builder"], "the builder is still identified"
     assert_nil decision["excluded_builder"], "but it was NOT excluded (degraded to keep)"
     assert_equal 2, decision["reviewers"].map { |r| r["slug"] }.uniq.size, "a pair is still returned"
+    refute_includes decision["reviewers"].map { |r| r["slug"] }, "carl", "carl (qa owner) reviews nothing"
   end
 
-  test "the audit log names the builder and its exclusion state" do
+  test "the audit log names a specialist builder and its exclusion state" do
     logger = CapturingLogger.new
-    ReviewerSelector.new(task_for(shape: "backend"), builder: "carl", logger: logger).reviewers
+    ReviewerSelector.new(task_for(shape: "ui-only"), builder: "shannon", logger: logger).reviewers
 
-    line = logger.lines.last
-    assert_match(/builder=carl\(excluded\)/, line, "the builder + its state is logged")
+    assert_match(/builder=shannon\(excluded\)/, logger.lines.last, "the builder + its state is logged")
   end
 
   test "the audit log shows builder=- when the builder is unknown" do
@@ -216,21 +225,30 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     assert_match(/builder=-/, logger.lines.last)
   end
 
-  test "the audit log marks a known non-pool builder as not-a-candidate" do
+  test "the audit log marks a known non-specialist builder as not-a-candidate" do
     logger = CapturingLogger.new
     ReviewerSelector.new(task_for(shape: "backend"), builder: "mack", logger: logger).reviewers
 
     assert_match(/builder=mack\(not-a-candidate\)/, logger.lines.last,
-      "a known builder outside the pool is flagged not-a-candidate, never kept:too-few")
+      "a known builder outside the specialist pool is flagged not-a-candidate")
   end
 
-  # --- busy exclusion: agents mid-build / mid-review on OTHER tasks ---
+  test "the audit log flags Carl-the-builder as not-a-candidate for the light pool" do
+    logger = CapturingLogger.new
+    ReviewerSelector.new(task_for(shape: "backend"), builder: "carl", logger: logger).reviewers
 
-  test "a busy agent passed to the selector is excluded from candidates" do
+    assert_match(/builder=carl\(not-a-candidate\)/, logger.lines.last,
+      "Carl the builder is out of the primary seat, but he was never a light candidate")
+  end
+
+  # --- busy exclusion: specialists mid-build / mid-review on OTHER tasks ---
+
+  test "a busy specialist passed to the selector is excluded from the light candidates" do
     decision = ReviewerSelector.new(task_for(shape: "backend"), busy: ["jasper"]).decision
-    refute_includes decision["candidates"], "jasper", "a busy soul is not a review candidate"
+    refute_includes decision["candidates"], "jasper", "a busy soul is not a light candidate"
     assert_equal ["jasper"], decision["excluded_busy"]
     refute_includes decision["reviewers"].map { |r| r["slug"] }, "jasper"
+    assert_equal "carl", decision["reviewers"].first["slug"], "Carl is unaffected by busy specialists"
   end
 
   test "the busy set is auto-excluded with no manual flag and reported in the audit" do
@@ -238,46 +256,47 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     %w[jasper alex].each { |slug| refute_includes decision["candidates"], slug }
     assert_equal %w[alex jasper], decision["excluded_busy"].sort
     assert_equal [], decision["kept_busy"]
-    assert_equal 2, decision["reviewers"].map { |r| r["slug"] }.uniq.size
+    assert_equal "carl", decision["reviewers"].first["slug"]
+    assert_equal "shannon", light_slug(decision["reviewers"]), "the one remaining specialist is the light"
   end
 
-  test "the busy filter keeps the least-bad busy back rather than starve the pool" do
-    # TinyPool {carl, shannon, jasper}; QA owner steffon isn't in it, so the base
-    # is all three. Marking ALL THREE busy can't drop the pool below a PRIMARY+LIGHT
-    # pair — the filter keeps MIN_CANDIDATES back (kept_busy), mirroring the
-    # builder keep-rather-than-starve rule.
-    decision = TinyPoolSelector.new(task_for(shape: "backend"), busy: %w[carl shannon jasper]).decision
+  test "the busy filter keeps the least-bad busy back rather than starve the light pool" do
+    # TinyPool lights {shannon, jasper}; Carl is the standing primary (min light = 1).
+    # Marking BOTH busy can't drop below one light — the filter keeps the least-bad
+    # one eligible so a carl + light pair still forms.
+    decision = TinyPoolSelector.new(task_for(shape: "backend"), busy: %w[shannon jasper]).decision
 
-    assert_equal 2, decision["candidates"].size, "a formable pair is always kept back"
+    assert_equal 1, decision["candidates"].size, "one light is always kept back"
     assert_equal 1, decision["excluded_busy"].size, "only the surplus busy soul is removed"
-    assert_equal 2, decision["kept_busy"].size, "the least-bad busy souls are kept eligible"
-    assert_equal 2, decision["reviewers"].map { |r| r["slug"] }.uniq.size, "a pair is still returned"
+    assert_equal 1, decision["kept_busy"].size, "the least-bad busy soul is kept eligible"
+    assert_equal 2, decision["reviewers"].map { |r| r["slug"] }.uniq.size, "carl + the kept light"
+    assert_equal "carl", decision["reviewers"].first["slug"]
   end
 
-  test "a busy soul that isn't a candidate excludes nobody and reports none" do
-    # `mack` isn't in the pool and `steffon` is the already-excluded QA owner —
+  test "a busy soul that isn't a light candidate excludes nobody" do
+    # `mack` isn't a specialist and `steffon` is the already-excluded QA owner —
     # neither is a removable candidate, so the busy filter is a no-op for them.
     baseline = ReviewerSelector.explain(task_for(shape: "backend"))["candidates"]
     decision = ReviewerSelector.new(task_for(shape: "backend"), busy: %w[mack steffon]).decision
 
     assert_equal [], decision["excluded_busy"], "a non-candidate busy soul removes nobody"
-    assert_equal baseline.sort, decision["candidates"].sort, "the candidate set is unchanged"
+    assert_equal baseline.sort, decision["candidates"].sort, "the light candidate set is unchanged"
   end
 
-  test "the builder, the QA owner, and a busy soul are all excluded together" do
-    # All three exclusion sources at once on the full pool — and a pair still forms.
-    decision = ReviewerSelector.new(task_for(shape: "backend"),
-                                    qa_owner: "steffon", builder: "carl", busy: ["jasper"]).decision
+  test "the builder, the QA owner, and a busy soul are all excluded from the light pool together" do
+    decision = ReviewerSelector.new(task_for(shape: "ui-only"),
+                                    qa_owner: "steffon", builder: "shannon", busy: ["jasper"]).decision
 
-    %w[steffon carl jasper].each do |slug|
-      refute_includes decision["candidates"], slug, "#{slug} is excluded"
+    %w[steffon shannon jasper].each do |slug|
+      refute_includes decision["candidates"], slug, "#{slug} is excluded from the light pool"
     end
-    assert_equal "carl", decision["excluded_builder"]
+    assert_equal "shannon", decision["excluded_builder"]
     assert_equal ["jasper"], decision["excluded_busy"]
-    assert_equal 2, decision["reviewers"].map { |r| r["slug"] }.uniq.size
+    assert_equal "carl", decision["reviewers"].first["slug"], "Carl is the standing primary"
+    assert_equal "alex", light_slug(decision["reviewers"]), "the last remaining specialist is the light"
   end
 
-  test "the busy set folds into the seed so a busy-aware pick is reproducible" do
+  test "the busy set folds into the seed so a busy-aware light pick is reproducible" do
     task = task_for(shape: "backend")
     a = ReviewerSelector.new(task, busy: ["jasper"]).reviewers
     b = ReviewerSelector.new(task, busy: ["jasper"]).reviewers
@@ -300,39 +319,49 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     assert_match(/busy=jasper/, logger.lines.last, "the excluded busy souls are logged")
   end
 
-  # Integration: the real build flow (move-to-building auto-stamps built_by from
-  # the assigned agent) feeding the selector with a busy set — end-to-end the pair
-  # omits BOTH the builder and the busy soul and still forms a PRIMARY+LIGHT pair.
-  test "the move-to-building builder and a busy soul are both omitted end-to-end" do
-    task = Task.create!(title: "build flow exclude integration", agent_slug: "carl",
-                        metadata: { "devops" => { "shape" => "backend" } })
-    task.build! # the real move-to-building path stamps devops.built_by = carl
+  # Integration: the real build flow (move-to-building auto-stamps built_by) feeding
+  # the selector with a busy set — end-to-end the light omits BOTH the builder and
+  # the busy soul, Carl owns the primary seat, and a pair still forms.
+  test "the move-to-building builder and a busy soul are both omitted from the light end-to-end" do
+    task = Task.create!(title: "build flow exclude integration", agent_slug: "shannon",
+                        metadata: { "devops" => { "shape" => "ui-only" } })
+    task.build! # the real move-to-building path stamps devops.built_by = shannon
 
-    assert_equal "carl", task.reload.devops_built_by, "built_by stamped through the build move"
+    assert_equal "shannon", task.reload.devops_built_by, "built_by stamped through the build move"
 
     decision = ReviewerSelector.explain(task, busy: ["jasper"])
-    assert_equal "carl", decision["excluded_builder"], "the assigned builder is excluded"
+    assert_equal "shannon", decision["excluded_builder"], "the assigned builder is excluded from the light"
     assert_equal ["jasper"], decision["excluded_busy"], "the busy soul is excluded"
-    %w[carl jasper steffon].each { |slug| refute_includes decision["candidates"], slug }
-    assert_equal 2, decision["reviewers"].map { |r| r["slug"] }.uniq.size, "a pair still forms"
+    %w[shannon jasper steffon].each { |slug| refute_includes decision["candidates"], slug }
+    assert_equal "carl", decision["reviewers"].first["slug"], "Carl is the standing primary"
+    assert_equal "alex", light_slug(decision["reviewers"]), "the last remaining specialist is the light"
   end
 
   # --- logged random tiebreak ---
 
-  test "the random tiebreak is logged (auditable review spread)" do
+  test "the random tiebreak is logged (auditable light spread)" do
     logger = CapturingLogger.new
     ReviewerSelector.new(task_for(shape: "backend"), logger: logger).reviewers
 
     line = logger.lines.last
     assert_match(/\[reviewer-selector\]/, line)
+    assert_match(/primary=carl/, line, "the standing primary is logged")
     assert_match(/rolls=/, line, "the per-candidate random rolls are logged")
-    assert_match(/chosen=/, line, "the chosen pair is logged")
+    assert_match(/chosen=carl\+/, line, "the chosen pair leads with Carl")
   end
 
-  test "a seeded random produces a deterministic, reproducible pair" do
+  test "the yield case logs the primary as a yielded specialist" do
+    logger = CapturingLogger.new
+    ReviewerSelector.new(task_for(shape: "onchain"), builder: "carl", logger: logger).reviewers
+
+    assert_match(/primary=jasper\(yield\)/, logger.lines.last,
+      "when Carl builds it, the best-fit specialist takes the yielded deep seat")
+  end
+
+  test "a seeded random produces a deterministic, reproducible light pick" do
     a = ReviewerSelector.new(task_for(shape: "backend"), random: Random.new(42)).reviewers
     b = ReviewerSelector.new(task_for(shape: "backend"), random: Random.new(42)).reviewers
-    assert_equal a, b, "same seed → same selection (the tiebreak is the only nondeterminism)"
+    assert_equal a, b, "same seed → same selection (the light tiebreak is the only nondeterminism)"
   end
 
   # --- graceful degradation: works without the reviewer Agent rows ---
@@ -343,88 +372,88 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     result = ReviewerSelector.select(task_for(shape: "backend"))
     assert_equal 2, result.size
     assert_equal slugs(result).uniq, slugs(result)
+    assert_equal "carl", primary_slug(result), "Carl is the standing primary even with no Agent rows"
     assert_equal %w[primary light].sort, result.map { |r| r["weight"] }.sort
     refute_includes slugs(result), "steffon"
   end
 
-  test "an unknown / blank shape still returns a valid primary+light pair" do
+  test "an unknown / blank shape still returns a valid Carl+light pair" do
     result = ReviewerSelector.select(Task.create!(title: "no shape sample task", stage: "submitted"))
     assert_equal 2, result.size
+    assert_equal "carl", primary_slug(result)
     assert_equal %w[primary light].sort, result.map { |r| r["weight"] }.sort
   end
 
-  # --- reads Agent.metadata domains + review_weight ---
+  # --- reads Agent.metadata domains + review_weight for the LIGHT seat ---
 
-  test "reads Agent.metadata domains for fit and review_weight for the primary seat" do
-    # Both reviewers are made to fit backend via metadata; the heavier review_weight
-    # takes the primary seat — proving both metadata keys drive the decision.
-    seed_agent("Carl", domains: ["backend"], review_weight: 9)
-    seed_agent("Shannon", domains: ["backend"], review_weight: 1)
+  test "reads Agent.metadata domains for fit and review_weight to break a light tie" do
+    # Two specialists made to fit backend equally via metadata; the heavier
+    # review_weight takes the single LIGHT seat — proving both metadata keys drive
+    # the light decision. Carl stays the standing primary. (Shannon + Jasper are
+    # used because neither is a test fixture, so seed_agent can create them fresh.)
+    seed_agent("Shannon", domains: ["backend"], review_weight: 9)
+    seed_agent("Jasper", domains: ["backend"], review_weight: 1)
 
     result = ReviewerSelector.select(task_for(shape: "backend"))
 
-    assert_equal %w[carl shannon], slugs(result).sort, "both metadata-fitted reviewers are picked"
-    assert_equal "primary", weight_of(result, "carl"), "higher review_weight → primary seat"
-    assert_equal "light", weight_of(result, "shannon")
+    assert_equal "carl", primary_slug(result)
+    assert_equal "shannon", light_slug(result), "higher review_weight → the light seat on a fit tie"
+  end
+
+  test "string review_weight labels break a light tie regardless of the roll" do
+    # Regression: prod seeds store review_weight as the STRING "heavy"/"light". A
+    # bare String#to_f silently zeroed every label, so the label never broke a tie.
+    # Both specialists fit backend equally here, so the weight LABEL is the only
+    # thing that can decide the single light seat — under EVERY tiebreak roll.
+    seed_agent("Jasper", domains: ["backend"], review_weight: "light")
+    seed_agent("Shannon", domains: ["backend"], review_weight: "heavy")
+    task = task_for(shape: "backend")
+
+    8.times do |seed|
+      result = ReviewerSelector.new(task, random: Random.new(seed)).reviewers
+      assert_equal "carl", primary_slug(result), "Carl is the standing primary (seed=#{seed})"
+      assert_equal "shannon", light_slug(result), "the 'heavy' review_weight label wins the light seat (seed=#{seed})"
+    end
   end
 
   # --- explain: the auditable decision the CLI (bin/reviewer-select) prints ---
 
   test "explain returns the chosen pair, their matched domains, and the excluded QA owner" do
-    decision = ReviewerSelector.explain(task_for(shape: "backend"))
+    decision = ReviewerSelector.explain(task_for(shape: "onchain"))
 
     assert_equal %w[primary light], decision["reviewers"].map { |r| r["weight"] }, "one primary + one light, primary first"
     primary = decision["reviewers"].first
-    assert_equal "carl", primary["slug"], "the backend owner takes the primary seat"
-    assert_includes primary["matched"], "backend", "the seat shows which needed domains it covers"
+    assert_equal "carl", primary["slug"], "Carl takes the primary seat"
+    light = decision["reviewers"].last
+    assert_equal "jasper", light["slug"], "the Web3 specialist is the light"
+    assert_includes light["matched"], "web3", "the light seat shows which needed domains it covers"
     assert_equal "steffon", decision["excluded_qa_owner"]
-    refute_includes decision["candidates"], "steffon", "the QA owner is not a candidate (no self-gating)"
+    refute_includes decision["candidates"], "steffon", "the QA owner is not a light candidate (no self-gating)"
+    refute_includes decision["candidates"], "carl", "Carl is the standing primary, never a light candidate"
   end
 
-  test "explain's ranked list is the auditable tiebreak — every candidate with its roll" do
+  test "explain's ranked list is the auditable light tiebreak — every candidate with its roll" do
     decision = ReviewerSelector.explain(task_for(shape: "backend"))
 
     assert_equal decision["candidates"].sort, decision["ranked"].map { |c| c["slug"] }.sort,
-      "every candidate appears in the ranking"
+      "every light candidate appears in the ranking"
     assert(decision["ranked"].all? { |c| c["roll"].is_a?(Numeric) }, "each candidate carries a logged roll")
-    assert_equal 2, decision["reviewers"].map { |r| r["slug"] }.uniq.size, "two distinct seniors"
+    assert_equal 2, decision["reviewers"].map { |r| r["slug"] }.uniq.size, "two distinct reviewers"
   end
 
-  test "explain is deterministic under a seeded random (the tiebreak is the only nondeterminism)" do
+  test "explain is deterministic under a seeded random (the light tiebreak is the only nondeterminism)" do
     task = task_for(shape: "backend")
     a = ReviewerSelector.new(task, random: Random.new(7)).decision
     b = ReviewerSelector.new(task, random: Random.new(7)).decision
     assert_equal a, b
   end
 
-  # --- weight + roll follow-ups (PR #123 review: reviewer-select-weight-followups) ---
-
-  test "string review_weight labels drive the primary seat regardless of the roll" do
-    # Regression: prod seeds (db/seeds/02_agents.rb) store review_weight as the
-    # STRING "heavy"/"light". A bare String#to_f silently zeroed every label
-    # (-> 0.0), so the label never drove the deep seat — fit (then the roll)
-    # broke the tie instead. Both reviewers fit backend equally here, so the
-    # weight LABEL is the only thing that can decide who reviews deep — and it
-    # must win under EVERY tiebreak roll, not just some.
-    seed_agent("Carl", domains: ["backend"], review_weight: "light")
-    seed_agent("Shannon", domains: ["backend"], review_weight: "heavy")
-    task = task_for(shape: "backend")
-
-    8.times do |seed|
-      result = ReviewerSelector.new(task, random: Random.new(seed)).reviewers
-      assert_equal %w[carl shannon], slugs(result).sort, "both backend-fitted reviewers are picked"
-      assert_equal "primary", weight_of(result, "shannon"), "the 'heavy' review_weight label must drive the primary (deep) seat (seed=#{seed})"
-      assert_equal "light", weight_of(result, "carl")
-    end
-  end
+  # --- reproducibility across the two independent passes (CLI vs recorder) ---
 
   test "the CLI decision and the recorded pick never diverge on a genuine tie" do
-    # Regression: bin/reviewer-select prints .decision while Task records .select —
-    # two INDEPENDENT passes. On a genuine tie (no shape/risk/repo -> every
-    # candidate fit 0 and equal weight) a fresh process RNG let them diverge: Avi
-    # could spawn one pair while the timeline records another. The default
-    # tiebreak RNG is now seeded from the task identity, so independent passes
-    # roll identically and the CLI preview always matches the recorded pick.
+    # A genuine tie (no shape/risk/repo → every light fit 0, equal weight) means the
+    # seeded tiebreak is the ONLY thing deciding the light. bin/reviewer-select prints
+    # .decision while Task records .select — two INDEPENDENT passes that must agree.
     task = Task.create!(title: "genuine tie sample task", stage: "submitted")
 
     cli_pair = ReviewerSelector.explain(task)["reviewers"].map { |r| r["slug"] }
@@ -434,26 +463,24 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
       "independent passes must pick one stable pair (no process-random divergence)"
     assert_equal cli_pair, recorded.first,
       "the CLI .decision preview must match the recorded .select pick (primary/light order included)"
+    assert_equal "carl", cli_pair.first, "Carl is the standing primary even on a genuine tie"
   end
 
-  test "the CLI preview and recorded pick agree on a tie WITH a builder excluded" do
+  test "the CLI preview and recorded pick agree on a tie WITH a specialist builder excluded" do
     # The seed folds in the EXCLUDED builder, so two passes that exclude the same
-    # builder roll over the SAME post-exclusion pool — they must still agree. A
-    # genuine tie (no shape/risk/repo) means the seeded tiebreak is the ONLY thing
-    # deciding the pair, and the excluded builder (carl, via devops.built_by) is
-    # really out of both passes.
+    # builder roll over the SAME post-exclusion light pool — they must still agree.
     task = Task.create!(title: "tie with builder excluded task", stage: "submitted",
-                        metadata: { "devops" => { "built_by" => "carl" } })
+                        metadata: { "devops" => { "built_by" => "shannon" } })
 
     decision = ReviewerSelector.explain(task)
-    assert_equal "carl", decision["excluded_builder"], "the builder is excluded from both passes"
-    refute_includes decision["candidates"], "carl", "carl is out of the candidate pool"
+    assert_equal "shannon", decision["excluded_builder"], "the builder is excluded from both passes"
+    refute_includes decision["candidates"], "shannon", "shannon is out of the light pool"
 
     cli_pair = decision["reviewers"].map { |r| r["slug"] }
     recorded = Array.new(8) { ReviewerSelector.select(task).map { |r| r["slug"] } }
 
-    assert_equal 1, recorded.uniq.size, "the seeded tiebreak gives one stable pair over the carl-excluded pool"
-    refute_includes recorded.first, "carl", "the excluded builder is never in the recorded pair"
+    assert_equal 1, recorded.uniq.size, "the seeded tiebreak gives one stable pair over the shannon-excluded pool"
+    refute_includes recorded.first, "shannon", "the excluded builder is never in the recorded pair"
     assert_equal cli_pair, recorded.first,
       "CLI preview == recorded pick even with a builder folded into the seed"
   end

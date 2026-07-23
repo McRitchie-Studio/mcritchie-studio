@@ -257,6 +257,27 @@
     </div>
   <% end %>
 
+  <%# Per-application RELEASE INCLUSION marker — reviewed stage only. Makes Avi's
+      qa-release disposition (which applications ride the next candidate) visible ON the
+      board: a green "IN RELEASE" bar for the default (every reviewed task ships) or an
+      amber "HELD FROM RELEASE" bar for a member Avi held out (included_in_release:false)
+      when order-of-operations matters. Names the release app so the per-app decision
+      reads at a glance. %>
+  <% if task.stage == "reviewed" %>
+    <% release_app = task.release_repo.presence %>
+    <% included = task.included_in_release? %>
+    <div class="mb-1.5" data-test="release-inclusion-marker" data-included="<%= included %>" data-app="<%= release_app %>">
+      <%= render "components/card_status_bar",
+            scheme: (included ? :mint : :amber),
+            label: ["#{included ? 'IN RELEASE' : 'HELD FROM RELEASE'}", release_app].compact.join(" · "),
+            icon: (included ? "🚀" : "⏸️"),
+            test_id: (included ? "release-inclusion-in" : "release-inclusion-held"),
+            title: (included ?
+              "Rides the next release candidate (Avi's default: ship all reviewed). Mark included_in_release:false to hold #{release_app || 'this app'} back." :
+              "Held from the next release candidate by Avi's disposition (included_in_release:false) — enforced via bin/release prepare --task / bin/release eject.") %>
+    </div>
+  <% end %>
+
   <%# CI progress meter — a symbolic row (few checks) or the numeric "X / Y" bar for
       this PR's GitHub CI run, and a LINK that opens the PR in a new tab. Wrapped in
       the stable-id components/_ci_progress_slot so a live workflow_job webhook can
