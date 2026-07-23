@@ -116,8 +116,14 @@ Two cases to handle deliberately:
 **For the reviewer:** steps 1-4 are also how you re-review a resubmission. Re-read
 your blocker's summary + details, then read the *new* diff and the builder's
 `--resolves-feedback` handoff. If the named gap is closed, proceed with review.
-If not, hand it back with a fresh, specific two-part block (see step 5's
-`bin/task block` shape) — never a vague "still not right."
+If not, hand it back with a fresh, specific two-part block — never a vague "still
+not right":
+
+```bash
+bin/task block <slug> --kind <environment|rework|dependency> \
+  --summary "4-6 word headline" \
+  --feedback "<what failed, where, and what 'resolved' looks like>"
+```
 
 ## Step 5 — Modify and resubmit
 

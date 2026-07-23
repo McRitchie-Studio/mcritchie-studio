@@ -104,8 +104,13 @@ Surface every task sitting **blocked** so the warm context can clear one before 
 goes cold, or so the operator plainly sees what's owed. A live block is a
 `building` task carrying an open `qa_feedback` and a red card — list them, don't
 pass by silently.
-- Find them: `bin/task list --stage building`, then `bin/task show <slug> -v` on
-  each — a blocked one shows an `unresolved_feedback:` line and a `block_kind`.
+- Find them: `bin/task list --stage building`, then read each with `--json` — a
+  blocked one has a non-null top-level `.block_kind` and an open
+  `.unresolved_feedback`. Pull both report fields in one shot:
+
+  ```bash
+  bin/task show <slug> --json | jq '{summary: .unresolved_feedback.metadata.summary, kind: .block_kind}'
+  ```
 - Report each as three **4-6 word** lines:
   - **what** — the blocker's own 4-6 word summary (its headline);
   - **why** — the misalignment class from `block_kind`: `rework` = diff needs
