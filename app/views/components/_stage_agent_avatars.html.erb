@@ -1,4 +1,4 @@
-<%# locals: (task:, agents:, variant: :stack, events: nil, mascot: nil, board: :deploy) %>
+<%# locals: (task:, agents:, variant: :stack, events: nil, mascot: nil, board: :deploy, review_in_progress: nil) %>
 <%#
   The line above is a Rails strict-locals signature, so Rails itself supplies every
   default — `variant` is :stack, `events`/`mascot` are nil, and `board` is :deploy —
@@ -79,7 +79,7 @@
       a `designed`/unclaimed card shows its mascot with no ticker. The detail page
       (:detailed) still shows every stage per-usual.
     %>
-    <% columns = crew_columns(task, entries, board: board, mascot: mascot, agents: agents, events: events) %>
+    <% columns = crew_columns(task, entries, board: board, mascot: mascot, agents: agents, events: events, review_live: review_in_progress) %>
     <%# Crew avatars are one large size on both boards (md = w-14 face, -space-x-10 =
         40px overlap → 16px peek) so they fill the 3-slot grid instead of floating in
         empty space. Uniform size means a 3-slot and a 4-slot card keep the same avatar

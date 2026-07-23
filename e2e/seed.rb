@@ -268,7 +268,8 @@ end
 # Cleared-block re-review demo: a task that was QA-blocked (a qa_feedback Activity),
 # had the block resolved (a resolves_feedback handoff), and is back in `submitted`
 # awaiting a re-review — Task#block_state => :cleared, so the card wears the amber
-# tone + RE-REVIEW badge (distinct from red UNRESOLVED and plain never-blocked).
+# tone (the RE-REVIEW badge was dropped; the tone carries it), distinct from red
+# UNRESOLVED and plain never-blocked.
 cleared_block_task = Task.create!(
   title: "Cleared block re-review demo",
   slug: "e2e-cleared-block-demo",
@@ -280,10 +281,10 @@ cleared_block_task = Task.create!(
 )
 
 # --- Per-application RELEASE INCLUSION markers (Avi's qa-release disposition) ----
-# Two REVIEWED cards on the Deploy board carry the inclusion marker: the default
-# ships (green IN RELEASE), and an app Avi held back for order-of-operations wears
-# the amber HELD FROM RELEASE marker (included_in_release:false). Read-only against
-# these fixtures on /deployments.
+# Two REVIEWED cards on the Deploy board: the default ships and carries NO marker
+# (shipping every reviewed task is the default), while an app Avi held back for
+# order-of-operations wears the amber HELD FROM RELEASE marker (included_in_release:
+# false). Read-only against these fixtures on /deployments.
 Task.create!(
   title: "Release inclusion IN demo",
   slug: "e2e-release-inclusion-in-demo",

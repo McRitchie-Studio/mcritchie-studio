@@ -1,0 +1,27 @@
+<%# locals: (body:, class_extra: nil, link_class_extra: nil, style: nil, href: nil, new_tab: true, click_stop: true, test_id: nil, title: nil, aria_label: nil, link_data: {}) %>
+<%#
+  THE single card-width bar shell for the board task card. EVERY bar stacked on a
+  card renders through this one shell:
+    · the WAITING APPROVAL CTA + the blocker-summary bar (via components/_card_status_bar)
+    · the CI progress meter                              (via components/_ci_progress_slot)
+  so all three are identical in width, radius, border and inset
+  (application_helper#card_bar_base_classes) and read as one evenly-stacked set —
+  the geometry lives HERE, once, instead of three near-copies that can drift.
+
+  The caller passes only its own look + content: `class_extra` (tone / layout, both
+  branches), `link_class_extra` (classes for the LINK variant only — hover ladders,
+  cursor), an optional inline `style`, and the inner `body`. This shell owns the
+  card_bar_base_classes geometry and the link-vs-div wrapper (an href makes the whole
+  bar a new-tab link with @click.stop so it never fires the card's own open-click).
+%>
+<% if href.present? %>
+  <% klass = [card_bar_base_classes, class_extra, link_class_extra].compact.join(" ").squish %>
+  <%= link_to href, class: klass, style: style,
+        target: (new_tab ? "_blank" : nil), rel: (new_tab ? "noopener" : nil),
+        "@click.stop": (click_stop ? true : nil), title: title, "aria-label": aria_label,
+        data: { test: test_id }.compact.merge(link_data || {}) do %><%= body %><% end %>
+<% else %>
+  <% klass = [card_bar_base_classes, class_extra].compact.join(" ").squish %>
+  <%= tag.div class: klass, style: style, title: title, "aria-label": aria_label,
+        data: ({ test: test_id } if test_id.present?) do %><%= body %><% end %>
+<% end %>

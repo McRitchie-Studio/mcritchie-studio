@@ -183,6 +183,11 @@ Rails.application.routes.draw do
       # Stages move through PATCH update (one path shared by the board drag-drop,
       # bin/task, and the API). `comment` posts task-conversation activities.
       get :review_events
+      # The board's WAITING APPROVAL CTA. Admin-only: mints a FRESH single-use
+      # magic link (Studio::Link) to the task's local page and redirects to the
+      # /l/<token> interstitial, so the operator lands signed-in on the local demo.
+      # Minted per click because a single-use link goes stale after one use.
+      get :local_review
       post :comment
       # Block/unblock are `building` ATTRIBUTE toggles (not stage moves) — the
       # show-page Block/Resume controls, routed through Task#block!/#unblock!.

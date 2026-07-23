@@ -62,6 +62,7 @@ required execution path. Do not follow a Background reference to run an SOP.
 | `share-insights` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/share-insights.md` |
 | `Alex Heartbeat` | Alex | `mcritchie-studio/docs/agents/agents/alex/HEARTBEAT.md` |
 | `address-blocker` | Shared | `mcritchie-studio/docs/agents/modules/address-blocker.md` |
+| `building-sop` | Shared | `mcritchie-studio/docs/agents/modules/building-sop.md` |
 
 For `pr-review`, read Carl's `pr-review.md` and run the bounded review it
 describes. A review session (a Pokémon orchestrator) spins one Carl per PR;
@@ -456,6 +457,7 @@ Do not merge or deploy unless I explicitly assigned that lane.
 | Parallel DevOps and QA graduation | `mcritchie-studio/docs/agents/modules/parallel-agent-devops.md` |
 | Modular PR review SOP | `mcritchie-studio/docs/agents/modules/pr-review-sop.md` |
 | Zap protocol (small mid-cycle fixes, no new task) | `mcritchie-studio/docs/agents/modules/zap-protocol.md` |
+| Building SOP (feature-agent build flow + local-review decision) | `mcritchie-studio/docs/agents/modules/building-sop.md` |
 | Heartbeats (three soul launchers) | `mcritchie-studio/docs/agents/modules/heartbeats.md` |
 | Carl heartbeat launcher | `mcritchie-studio/docs/agents/agents/carl/HEARTBEAT.md` |
 | Carl PR review SOP (orchestrator) | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review.md` |
@@ -532,6 +534,7 @@ depend on the heartbeat.
 | `full-cycle` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/full-cycle.md` |
 | `clean-up` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/clean-up.md` |
 | `address-blocker` | Shared | `mcritchie-studio/docs/agents/modules/address-blocker.md` |
+| `building-sop` | Shared | `mcritchie-studio/docs/agents/modules/building-sop.md` |
 
 ## Repos
 

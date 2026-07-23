@@ -1,4 +1,4 @@
-<%# locals: (scheme:, label:, action_label: nil, href: nil, new_tab: true, flashing: false, test_id: nil, title: nil, icon: nil) %>
+<%# locals: (scheme:, label:, action_label: nil, href: nil, new_tab: true, flashing: false, test_id: nil, title: nil, icon: nil, link_data: {}) %>
 <%#
   Full-length card status bar — one reusable, card-width notice/CTA used on the
   board task card. When `href` is present the whole bar is a link (@click.stop so
@@ -17,16 +17,14 @@
      mint:   "bg-mint-500 text-black border-mint-300 shadow-sm shadow-mint-400/40 hover:bg-mint-400",
    } %>
 <% tone = schemes.fetch(scheme.to_sym, schemes[:amber]) %>
-<%# Shares card_bar_base_classes (w-full rounded border px-2 py-1) with the CI
-    progress meter so the two stack as one coherent set; the tone + centering + type
-    are this bar's own. %>
-<% bar_class = "#{card_bar_base_classes} flex items-center justify-center gap-1.5 text-[10px] font-bold leading-tight #{tone} #{'motion-safe:animate-pulse' if flashing}" %>
+<%# The label-CTA VARIANT of the shared components/_card_bar shell: centered, bold,
+    tiny type, plus this bar's tone. The shell owns the card_bar_base_classes geometry
+    (width/radius/border/inset) so this bar, the blocker-summary bar, and the CI meter
+    all read as one evenly-stacked set. `flashing` adds the seeded out-of-phase pulse. %>
+<% content_classes = "flex items-center justify-center gap-1.5 text-[10px] font-bold leading-tight #{tone} #{'motion-safe:animate-pulse' if flashing}" %>
 <% pulse_style = ("animation-delay: var(--task-pulse-delay, 0s); animation-duration: var(--task-pulse-duration, 2s);" if flashing) %>
 <% bar_body = capture do %><% if icon %><span aria-hidden="true"><%= icon %></span><% end %><span><%= label %></span><% if action_label %><span class="opacity-60">·</span><span class="font-semibold"><%= action_label %></span><span aria-hidden="true">→</span><% end %><% end %>
-<% if href %>
-  <%= link_to href, class: "#{bar_class} transition cursor-pointer",
-        target: (new_tab ? "_blank" : nil), rel: (new_tab ? "noopener" : nil),
-        "@click.stop": true, title: title, data: { test: test_id }, style: pulse_style do %><%= bar_body %><% end %>
-<% else %>
-  <div class="<%= bar_class %>" title="<%= title %>" data-test="<%= test_id %>" style="<%= pulse_style %>"><%= bar_body %></div>
-<% end %>
+<%= render "components/card_bar",
+      body: bar_body, class_extra: content_classes, link_class_extra: "transition cursor-pointer",
+      style: pulse_style, href: href, new_tab: new_tab,
+      test_id: test_id, title: title, link_data: link_data %>

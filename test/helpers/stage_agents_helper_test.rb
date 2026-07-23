@@ -795,6 +795,63 @@ class StageAgentsHelperTest < ActionView::TestCase
     assert_empty review.stacked, "no agents passed → no live cluster, exactly as before"
   end
 
+  # --- (C) the review lane is LIVE-only on a submitted card ---------------------
+  # A task reviewed once, QA-blocked, and resubmitted still carries a HISTORICAL
+  # →reviewed event, so its review cluster survives into the resubmitted `submitted`
+  # card. That lingering prior-round face would read as an in-flight review and
+  # break the board's "avatar absent = waiting, present = started" glance — the very
+  # divergence the removed WAITING REVIEW / REVIEW STARTED flags papered over. The
+  # gate drops it unless review is LIVE.
+  test "crew_columns hides a submitted card's historical reviewer face when review is not live" do
+    task = Task.create!(title: "resubmitted no live review", stage: "submitted")
+    task.task_events.delete_all
+    # A completed prior-round review (historical →reviewed event), then a QA block
+    # bounced it back to `submitted` — with NO fresh review intent open yet.
+    TaskEvent.create!(task_slug: task.slug, from_stage: "submitted", to_stage: "reviewed",
+                      occurred_at: 3.hours.ago, seconds_in_from: 21.minutes,
+                      metadata: { "reviewers" => REVIEWERS })
+    TaskEvent.create!(task_slug: task.slug, from_stage: "assembled", to_stage: "submitted",
+                      occurred_at: 30.minutes.ago, seconds_in_from: 15.minutes)
+    task.reload
+
+    entries = stage_agent_groups(task, @agents)
+    # Pre-gate, the historical review cluster exists — this is the lingering
+    # prior-round face the gate must drop.
+    assert_includes crew_clusters(task, entries).map(&:lane), :review,
+                    "sanity: the historical reviewed event still forms a review cluster"
+    refute task.review_in_progress?, "sanity: no open review intent → review is not live"
+
+    review = crew_columns(task, entries, board: :deploy, agents: @agents).find { |c| c.lane == :review }
+    assert_not_nil review, "the review lane slot is still reserved"
+    assert_empty review.stacked, "but shows NO reviewer face while review is not live"
+    assert_nil review.live_since
+  end
+
+  test "crew_columns keeps a reviewed card's reviewer faces (the gate is submitted-only)" do
+    task = deploy_task(stage: "reviewed", reviewers: REVIEWERS)
+    review = crew_columns(task, stage_agent_groups(task, @agents), board: :deploy, agents: @agents)
+             .find { |c| c.lane == :review }
+    assert review.stacked.any?, "past submitted, the completed review is a real part of the journey — keep it"
+  end
+
+  test "crew_columns respects the passed review_live flag instead of self-querying" do
+    task = Task.create!(title: "board passed review-live task", stage: "submitted")
+    task.task_events.delete_all
+    TaskEvent.create!(task_slug: task.slug, from_stage: "submitted", to_stage: "reviewed",
+                      occurred_at: 2.hours.ago, seconds_in_from: 21.minutes,
+                      metadata: { "reviewers" => REVIEWERS })
+    task.reload
+    entries = stage_agent_groups(task, @agents)
+
+    kept = crew_columns(task, entries, board: :deploy, agents: @agents, review_live: true)
+           .find { |c| c.lane == :review }
+    dropped = crew_columns(task, entries, board: :deploy, agents: @agents, review_live: false)
+              .find { |c| c.lane == :review }
+
+    assert kept.stacked.any?, "review_live:true keeps the review lane (the board's preloaded truth wins)"
+    assert_empty dropped.stacked, "review_live:false drops it with no self-query"
+  end
+
   # --- stage_crew_renderable? (a fresh designed card shows its mascot) ----------
 
   test "stage_crew_renderable? shows the build-lane mascot even with no crew entries" do
