@@ -5,7 +5,7 @@
 G3 Candidate is the third branded testing gate: the **release-grain**
 certification (GateRun key `g3_candidate`, subject = the release slug) that the
 assembled candidate on `origin/release` is **deployable and QA-green**. It is
-produced by Steffon's `qa-release` act — `bin/release prepare` opens it, runs
+produced by Avi's `qa-release` act — `bin/release prepare` opens it, runs
 everything inside its window, and closes it with the verdict.
 
 The four gates in order: [G1 Cert](g1-cert.md) → [G2 Review](g2-review.md) →
@@ -99,9 +99,9 @@ run inside it rides the close:
 
 ## Who runs it
 
-**Steffon**, via the `qa-release` SOP
+**Avi**, via the `qa-release` SOP
 ([`../../agents/avi/sops/qa-release.md`](../../agents/avi/sops/qa-release.md)).
-The gate writes are conductor-owned (actor `steffon`, source `conductor`) —
+The gate writes are conductor-owned (actor `avi`, source `conductor`) —
 you never post G3 markers by hand on the happy path.
 
 ## Procedure
@@ -115,7 +115,7 @@ bin/release prepare --yes
 
 The conductor records the gate for you:
 
-1. **Open** — `g3_candidate` opens on the release (actor `steffon`) right
+1. **Open** — `g3_candidate` opens on the release (actor `avi`) right
    before the pre-QA gate, so the window covers every verification prepare
    runs. Attempt-aware: a re-run after a failed attempt opens attempt n+1; an
    interrupted-but-still-open attempt is re-entered.

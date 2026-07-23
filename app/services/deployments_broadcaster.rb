@@ -122,6 +122,8 @@ class DeploymentsBroadcaster
         repo, progress = slot
         broadcast_ci_slot("release-ci-progress-#{repo}", progress,
                           label: ApplicationController.helpers.release_ci_track_label(repo),
+                          href: reader.release_ci_run_url(release, repo),
+                          link_title: "Open #{repo} G3 CI run on GitHub",
                           test_id: "release-ci-progress-#{repo}",
                           wrapper_class: "mt-2", inner_test_id: "release-card-ci-progress-#{repo}")
       end

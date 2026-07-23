@@ -12,7 +12,7 @@ commands with finite names and stable files. If Mr. McRitchie's prompt names an
 SOP or heartbeat act such as `pr-review`, `qa-release`, `production-deploy`,
 `archive-shipped`, `deploy-with-task`, `clean-up`, or `full-cycle`, resolve that phrase
 through the SOP registry, read the mapped SOP, then execute it. For example, `pr-review` means read
-`mcritchie-studio/docs/agents/agents/avi/sops/pr-review.md` first and run that
+`mcritchie-studio/docs/agents/agents/carl/sops/pr-review.md` first and run that
 review-only SOP; do not start with `bin/pr-review --help`, `bin/qa-intake`,
 or GitHub PR discovery.
 
@@ -98,10 +98,10 @@ repo keeps persistent `accepted` and `release` branches, and feature PRs target
 the feat PR into `accepted`**, stamps `merged: "accepted"`, then moves the task
 `reviewed` (invariant: `reviewed` ⟺ code-on-`accepted`; a merge failure leaves it
 `submitted`). Review is still review-only in that it never touches `release`/
-`main` and never deploys. Steffon's self-healing `qa-release` sweep (`bin/release
+`main` and never deploys. Avi's self-healing `qa-release` sweep (`bin/release
 prepare`) then **promotes ALL of `accepted` onto `release` via ONE batch PR per
 repo** (not N per-task merges), records membership (re-stamping `merged:
-"release"`), deploys QA, and flips members `assembled` only on QA-green; Avi's
+"release"`), deploys QA, and flips members `assembled` only on QA-green; Steffon's
 `production-deploy` (`bin/release ship`) fast-forwards `release → main` (stamping
 `merged: "main"`). `blocked` = needs attention; `archived` = terminal.
 Full spec: `mcritchie-studio/docs/agents/system/devops-cycle-design.md`.

@@ -160,10 +160,11 @@ module ApplicationHelper
 
   # The face a phase tile wears so the operator sees who drove it: the task's
   # Pokémon mascot owns the machine phases its session ran (Build, Local
-  # Certification, CI); Avi — the review supervisor — owns Review. `mascot_face`
-  # is a MascotAgent (StageAgentsHelper#task_mascot_face) and `avi` is Avi's
-  # Agent; both quack for #phase_face_avatar_tag. Returns the face, or nil when
-  # the phase has no owner or the owner didn't resolve (the tile shows no face).
+  # Certification, CI); the Review phase wears the review-owner face passed in as
+  # `avi:` (the caller resolves it from `review_avi`). `mascot_face` is a
+  # MascotAgent (StageAgentsHelper#task_mascot_face); both quack for
+  # #phase_face_avatar_tag. Returns the face, or nil when the phase has no owner or
+  # the owner didn't resolve (the tile shows no face).
   PHASE_MASCOT_TILE_KEYS = %w[build local_certification ci].freeze
 
   def phase_tile_face(phase_key, mascot_face:, avi:)
@@ -483,11 +484,22 @@ module ApplicationHelper
     ci_progress_reader.for_release(release)
   end
 
-  # The label for one repo's release-CI track — "G3 CI" plus the repo's app emoji so
-  # the per-repo tracks read apart at a glance. Shared by the release card render and
-  # the live DeploymentsBroadcaster morph so the two never drift.
+  # The label for one repo's release-CI track — the app emoji, then the app (repo)
+  # slug, then "G3 tests", so each per-repo track LEADS with its app and reads apart
+  # at a glance ("🐊 turf-monster G3 tests"). An unmapped repo drops the nil emoji and
+  # leads with the slug. Shared by the release card render and the live
+  # DeploymentsBroadcaster morph so the two never drift.
   def release_ci_track_label(repo)
-    ["G3 CI", app_emoji(repo)].compact.join(" ")
+    [app_emoji(repo), repo, "G3 tests"].compact.join(" ")
+  end
+
+  # The GitHub Actions run URL for one repo's release-CI track, or nil — the html_url
+  # the Next Release card's G3 track links to (opened in a new tab). Resolved through
+  # the same reader as release_ci_progress, so the link points at the EXACT run whose
+  # progress that track charts. nil (no ingested run) -> the track renders unlinked,
+  # never a broken href. Shared by the release card render and the live morph.
+  def release_ci_run_url(release, repo)
+    ci_progress_reader.release_ci_run_url(release, repo)
   end
 
   # One reader per request, so a page of cards shares its Github::Client + cache.
@@ -558,7 +570,8 @@ module ApplicationHelper
   # reached, active while `starts` is reached but `completes` is not, pending
   # otherwise. Because a node lights yellow ONLY on its own start stamp, a
   # finished stage leaves the NEXT node dark until its owner posts their start —
-  # the explicit Steffon→Avi handoff gap between Live on QA and Confirming.
+  # the explicit Avi→Steffon handoff gap between Live on QA and Confirming
+  # (Avi owns stages 1-3 via qa-release; Steffon owns 4-5 via production-deploy).
   RELEASE_TRACKER_STAGES = [
     { key: "testing", active_label: "Testing", complete_label: "Tested",
       starts: "testing", completes: "assembling" },
@@ -909,8 +922,9 @@ module ApplicationHelper
   #
   # The four legacy release-wide meta-trigger chips (Avi Heartbeat Slow/Fast,
   # Build and Deploy QA Release, Merge Assemble Deploy) were retired in favor of
-  # the soul heartbeat launchers in +heartbeat_launchers+ (Avi gains pr-review-slow;
-  # Alex gains the full-cycle act that carries the former Merge/Assemble/Deploy).
+  # the soul heartbeat launchers in +heartbeat_launchers+ (Carl owns pr-review +
+  # pr-review-slow; Alex gains the full-cycle act that carries the former
+  # Merge/Assemble/Deploy).
   def devops_kickoffs
     {
       "submitted" => "Review submitted PRs",
@@ -920,16 +934,17 @@ module ApplicationHelper
     }
   end
 
-  # The three soul-avatar heartbeat launchers shown on the standalone Heartbeats
+  # The four soul-avatar heartbeat launchers shown on the standalone Heartbeats
   # card (tasks/_heartbeats_card on /deployments, one tasks/_heartbeat_launcher
   # per soul): a soul face (linking to /agents/<slug>) over a
   # PROMPT-LIKE row 1 plus one or more copyable atom acts. Every row is an
   # INDEPENDENTLY-copyable valid launch
   # prompt. +heartbeat+ (row 1) is the prompt-like soul heartbeat phrase — one per
-  # soul ("Avi Heartbeat" / "Steffon Heartbeat" / "Alex Heartbeat"); +actions+ are
-  # the launcher acts that scope that heartbeat's work (Avi: production-deploy +
-  # pr-review + pr-review-slow; Steffon: archive-shipped + qa-release; Alex:
-  # grade-events + share-insights + full-cycle). +agent_slug+
+  # soul ("Carl Heartbeat" / "Avi Heartbeat" / "Steffon Heartbeat" / "Alex
+  # Heartbeat"); +actions+ are the launcher acts that scope that heartbeat's work
+  # (Carl: pr-review + pr-review-slow; Avi: qa-release + deploy-with-task; Steffon:
+  # production-deploy + archive-shipped; Alex: grade-events + share-insights +
+  # full-cycle). +agent_slug+
   # resolves the soul avatar (reused from the heartbeat Agent column + stage
   # timeline) AND its /agents/<slug> link; +label+ is the small purpose caption;
   # +title+ is the hover tooltip. Every row (the heartbeat prompt and each act) is
@@ -937,8 +952,9 @@ module ApplicationHelper
   # docs/agents/modules/heartbeats.md + the per-agent HEARTBEAT.md launchers.
   def heartbeat_launchers
     [
-      { agent_slug: "avi",     heartbeat: "Avi Heartbeat",     actions: ["production-deploy", "pr-review", "pr-review-slow", "deploy-with-task"], label: "Ship + review", title: "Avi — ship a ready release, then review new PRs" },
-      { agent_slug: "steffon", heartbeat: "Steffon Heartbeat", actions: ["archive-shipped", "qa-release"],                  label: "Archive + QA",  title: "Steffon — archive shipped work, then QA the release" },
+      { agent_slug: "carl",    heartbeat: "Carl Heartbeat",    actions: ["pr-review", "pr-review-slow"],                   label: "Review",        title: "Carl — review submitted PRs, one Carl per PR (review-only)" },
+      { agent_slug: "avi",     heartbeat: "Avi Heartbeat",     actions: ["qa-release", "deploy-with-task"],                label: "Assemble + QA", title: "Avi — sweep reviewed work onto release, then QA the candidate" },
+      { agent_slug: "steffon", heartbeat: "Steffon Heartbeat", actions: ["production-deploy", "archive-shipped"],          label: "Ship + archive", title: "Steffon — ship a QA-green release, then archive shipped work" },
       { agent_slug: "alex",    heartbeat: "Alex Heartbeat",    actions: ["grade-events", "share-insights", "full-cycle"], label: "Learn + ship",  title: "Alex — grade, share insights, + full DevOps cycle heartbeat" }
     ]
   end
@@ -949,7 +965,7 @@ module ApplicationHelper
   # copyable phrase with the work it launches — one caption per act registered in
   # +heartbeat_launchers+.
   ACTION_DESCRIPTIONS = {
-    "pr-review"         => "Review all submitted PRs (review-only — Steffon sweeps)",
+    "pr-review"         => "Review all submitted PRs (review-only — Avi sweeps)",
     "pr-review-slow"    => "Review submitted PRs one at a time",
     "production-deploy" => "Ship a QA-ready release to production",
     "qa-release"        => "Prepare + deploy the QA release",
@@ -965,8 +981,8 @@ module ApplicationHelper
   end
 
   # Leading icon for each heartbeat launcher act. The four ORDERED release-pipeline
-  # acts get a 1→4 keycap so the buttons read as a sequence across the souls (Avi
-  # pr-review 1 → Steffon qa-release 2 → Avi production-deploy 3 → Steffon
+  # acts get a 1→4 keycap so the buttons read as a sequence across the souls (Carl
+  # pr-review 1 → Avi qa-release 2 → Steffon production-deploy 3 → Steffon
   # archive-shipped 4); the off-sequence acts get a themed glyph (🐢 slow review,
   # 🧑🏻‍🏫 grading, 🌎 the whole cycle, ⚡ the single-task expedite). The heartbeat row
   # itself gets a ❤️ in the view.
@@ -1012,28 +1028,28 @@ module ApplicationHelper
       ],
       "Deploy" => [
         { stage: "submitted", kick: devops_kickoffs["submitted"],
-          what: "The intake queue — submitted PRs waiting for review. Avi is a THIN delegation gate: he confirms product-acceptance, then picks the two senior reviewers (1 PRIMARY + 1 LIGHT) from {Shannon · Carl · Jasper · Steffon · Alex} via reviewer-select and hands the lane to the PRIMARY — who runs the deep technical review, spawns the LIGHT as its own sub-agent, and owns the rest of the lane.",
-          who: "Avi (thin delegate) → PRIMARY reviewer (owns the lane) → LIGHT",
-          tests: "Base tier — unit + component. Each senior confirms green, plus code standards, smell, scalability, and acceptance.",
-          gate: "Two senior approvals (PRIMARY = Opus on migration / payment / solana / auth). One complete qa_feedback on a fail.",
-          nxt: "Two approvals, no blocker → the PRIMARY drives to reviewed; one block → rework" },
+          what: "The intake queue — submitted PRs waiting for review. The review session spins ONE Carl per PR: the standing primary AND owner (there is no Avi supervisor). Carl runs the deep technical review, owns the gates, summons a domain LIGHT at his discretion from {Shannon · Jasper · Steffon · Alex} via reviewer-select, drives the verdict, and merges the feat PR into accepted.",
+          who: "Carl (standing primary + owner) → domain LIGHT",
+          tests: "Base tier — unit + component. Carl + the light confirm green, plus code standards, smell, scalability, and acceptance.",
+          gate: "A merge-ready verdict (Carl = Opus on migration / payment / solana / auth). One complete qa_feedback on a fail.",
+          nxt: "Merge-ready, no blocker → Carl merges into accepted + drives reviewed; one block → rework" },
         { stage: "reviewed",  kick: devops_kickoffs["reviewed"],
-          what: "Approved by both reviewers and ready for Steffon's self-healing qa-release sweep, which merges reviewed PRs onto the persistent release branch and flips members only after QA-green.",
-          who: "Steffon (Platform Engineer)",
+          what: "Merged onto accepted and ready for Avi's self-healing qa-release sweep, which promotes the accepted → release batch PR and flips members only after QA-green.",
+          who: "Avi (Product Owner)",
           tests: "Integration + an e2e smoke on origin/release before QA deploy; review's green base tests carry forward.",
           gate: "Deterministic sweep honoring dependencies + lanes; conflicts surface at PR-merge and block only the affected task.",
-          nxt: "Steffon runs bin/release prepare → QA deploy → assembled on QA-green" },
+          nxt: "Avi runs bin/release prepare → QA deploy → assembled on QA-green" },
         { stage: "assembled", kick: devops_kickoffs["assembled"],
-          what: "Every member PR is merged and the release candidate is built; Steffon QAs it and deploys origin/release to QA.",
-          who: "Steffon (Platform Engineer)",
+          what: "The accepted → release batch PR is merged and the release candidate is built; Avi QAs it and deploys origin/release to QA.",
+          who: "Avi (Product Owner)",
           tests: "Integration + an e2e smoke on origin/release (the next tier up from review).",
           gate: "Deterministic suite — a regression blocks the task. No human approval at this step.",
           nxt: "Green → bin/release prepare deploys to QA + a Discord note. The ship decision is at ship, not here" },
         { stage: "shipped",   kick: devops_kickoffs["shipped"],
           what: "Live in production and shown as the board's Last Release; release notes are posted as part of Run Deployment.",
-          who: "Avi (tests the frozen SHA) → operator gate or autonomous deploy trigger",
+          who: "Steffon (tests the frozen SHA) → operator gate or autonomous deploy trigger",
           tests: "Full e2e + highest tier on the FROZEN ship SHA (the exact prod code — fixes 'shipped ≠ tested').",
-          gate: "🔒 Steffon's qa-release stops for the operator at QA; Avi's production-deploy (or the Alex full-cycle) grants ship authority after the same gates pass.",
+          gate: "🔒 Avi's qa-release stops for the operator at QA; Steffon's production-deploy (or the Alex full-cycle) grants ship authority after the same gates pass.",
           nxt: "On explicit ship authority: bin/release ship ff's release → main, deploys prod → shipped, then Archive completed tasks" }
       ]
     }

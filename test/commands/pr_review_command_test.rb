@@ -710,10 +710,10 @@ class PrReviewCommandTest < Minitest::Test
     primary = prompts.fetch("carl")
     light = prompts.fetch("shannon")
     assert_includes primary, "as carl, a pr-review primary reviewer"
-    assert_includes primary, "docs/agents/agents/avi/sops/pr-review-primary.md"
+    assert_includes primary, "docs/agents/agents/carl/sops/pr-review-primary.md"
     refute_includes primary, "pr-review-light.md"
     assert_includes light, "as shannon, a pr-review light reviewer"
-    assert_includes light, "docs/agents/agents/avi/sops/pr-review-light.md"
+    assert_includes light, "docs/agents/agents/carl/sops/pr-review-light.md"
     refute_includes light, "pr-review-primary.md"
 
     # Both prompts frame Avi as a thin supervisor that never reviews — no #417 "summon"/"nests" framing.
@@ -761,9 +761,9 @@ class PrReviewCommandTest < Minitest::Test
     prompts = prompt_files_by_reviewer
     assert_equal %w[jasper steffon], prompts.keys.sort, "the reviewer-select pick is who executes"
     assert_includes prompts.fetch("jasper"), "as jasper, a pr-review primary reviewer"
-    assert_includes prompts.fetch("jasper"), "docs/agents/agents/avi/sops/pr-review-primary.md"
+    assert_includes prompts.fetch("jasper"), "docs/agents/agents/carl/sops/pr-review-primary.md"
     assert_includes prompts.fetch("steffon"), "as steffon, a pr-review light reviewer"
-    assert_includes prompts.fetch("steffon"), "docs/agents/agents/avi/sops/pr-review-light.md"
+    assert_includes prompts.fetch("steffon"), "docs/agents/agents/carl/sops/pr-review-light.md"
 
     # Each spawned reviewer narrates its Verify activity attributed to its own soul.
     narrations = json_lines(@narration_log).to_h { |reviewer, _slug, lines| [reviewer, lines] }

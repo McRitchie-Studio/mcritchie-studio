@@ -1,20 +1,25 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# pr-review — the supervisor behind Avi's pr-review / pr-review-slow acts.
-# (Formerly bin/avi-heartbeat; that name remains as a thin shim.)
+# pr-review — the script-assisted review loop behind Carl's pr-review /
+# pr-review-slow acts (Carl owns PR review — the standing primary + owner; the role
+# SOPs live in carl/sops/). (Formerly bin/avi-heartbeat; that name remains as a
+# thin shim.)
 #
 # The script composes the existing DevOps tools:
 #   * bin/devops-cycle --json --decisions --scout-reports
 #   * bin/reviewer-select <task> --json
 #   * codex exec for each selected reviewer
-#   * bin/task move|block|note for Avi's final handoff
+#   * bin/task move|block|note for the review owner's final handoff
 #
-# This is the SUPERVISOR: it selects the primary+light pair (bin/reviewer-select)
-# and spawns BOTH role reviewers IN PARALLEL as sibling children — the primary
-# runs pr-review-primary.md, the light runs pr-review-light.md — then collects
-# both verdicts and gates. It NEVER performs a review itself (Avi is a thin gate,
-# not a reviewer).
+# LEGACY MECHANICS NOTE: this script still drives the pre-2026-07-22 orchestration —
+# it selects a primary+light pair (bin/reviewer-select) and spawns BOTH role
+# reviewers as codex sub-processes running carl/sops/pr-review-{primary,light}.md,
+# then collects both verdicts and gates. The native-Claude model that superseded it
+# (carl/sops/pr-review.md) is "one Carl per PR — the standing primary + owner, who
+# summons his own domain light; there is no Avi supervisor." Repointing this
+# script's role-SOP paths + fully porting it to the native model is a follow-up; the
+# interactive SOP path is the canonical native-Claude flow today.
 #
 # CI gate-zero (ci-gate-review-handoff): the builder submits WITHOUT waiting for
 # CI, so the CI check is this supervisor's OPENING ACT. Before selecting or
@@ -309,7 +314,7 @@ def reviewer_prompt(task, reviewer, role, reviewers)
   reviewer_slug = reviewer.fetch("slug")
   peer_text = reviewers.map { |r| "#{r["slug"]} (#{r["weight"] || "reviewer"})" }.join(" + ")
 
-  role_sop = "mcritchie-studio/docs/agents/agents/avi/sops/pr-review-#{role}.md"
+  role_sop = "mcritchie-studio/docs/agents/agents/carl/sops/pr-review-#{role}.md"
   role_blurb = role == "primary" ? "the deep primary review" : "the focused light second read"
   role_responsibility =
     if role == "primary"

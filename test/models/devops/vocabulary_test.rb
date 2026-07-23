@@ -55,19 +55,19 @@ class Devops::VocabularyTest < ActiveSupport::TestCase
                  "the selector role names ARE the vocabulary's reviewer_roles, in order"
   end
 
-  test "[unit] no step diverges — Release Branch is Steffon's sweep (2026-07-03), review is review-only" do
+  test "[unit] no step diverges — Release Branch is Avi's sweep (2026-07-22), review is review-only" do
     diverging = Devops::Vocabulary.lanes.flat_map { |lane| lane[:steps] }.select { |step| step[:diverges].present? }
     assert_empty diverging,
       "no step should carry a :diverges note — the implemented model now matches the SOP " \
       "(#{diverging.map { |step| step[:label] }.inspect} still diverge)"
 
-    # The Release Branch (merge) step lives in STEFFON'S Assemble lane now — his
-    # self-healing sweep owns the merge; the Review lane stops at Reviewed.
+    # The Release Branch (merge) step lives in AVI'S Assemble lane now — his
+    # self-healing sweep owns the accepted→release merge; the Review lane stops at Reviewed.
     review   = Devops::Vocabulary.lanes.find { |lane| lane[:lane] == "Review" }
     assemble = Devops::Vocabulary.lanes.find { |lane| lane[:lane] == "Assemble" }
 
     assert_nil review[:steps].find { |step| step[:label] == "Release Branch" },
-      "the Review lane must NOT carry the merge — review is review-only (Steffon sweeps)"
+      "the Review lane must NOT carry the merge — review is review-only (Avi sweeps accepted→release)"
     reviewed = review[:steps].find { |step| step[:stage] == "reviewed" }
     assert_match(/review-only/i, reviewed[:expectation], "the Reviewed close names the review-only contract")
 

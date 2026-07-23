@@ -44,6 +44,20 @@ test("the Next Release card shows the G3 candidate CI as symbols, per member rep
   );
   await expect(meter).toBeVisible();
   await expect(page.locator("#current-release [data-test='ci-check-symbol']")).toHaveCount(8);
+
+  // The track leads with the app emoji, then the app, then "G3 tests" (the relabel).
+  await expect(
+    page.locator("#current-release [data-test='release-ci-progress-mcritchie-studio-symbols']")
+  ).toContainText("mcritchie-studio G3 tests");
+
+  // The whole track is a link to that repo's G3 Actions run, opening in a new tab.
+  const g3Link = page.locator(
+    "#current-release a.ci-progress-card[data-test='release-card-ci-progress-mcritchie-studio']"
+  );
+  await expect(g3Link).toHaveAttribute("href", /\/actions\/runs\/\d+$/);
+  await expect(g3Link).toHaveAttribute("target", "_blank");
+  await expect(g3Link).toHaveAttribute("rel", "noopener");
+  await expect(g3Link).toHaveAttribute("aria-label", /G3 CI run/);
 });
 
 // v1.1 + v1.2 — the live path: this card's meter is folded from ingested CiCheckJob

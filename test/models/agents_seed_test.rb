@@ -29,21 +29,23 @@ class AgentsSeedTest < ActiveSupport::TestCase
       "an unchanged re-seed must not bump any updated_at"
   end
 
-  test "Steffon is the Platform Engineer and QA owner" do
+  test "Steffon is the Platform Engineer — ship gate + QA-owner exclusion" do
     run_seed
     steffon = Agent.find_by!(slug: "steffon")
     assert_equal "Platform Engineer", steffon.title
-    assert steffon.metadata["reviewer"], "Steffon reviews DevOps/Platform PRs"
-    assert steffon.metadata["qa_owner"], "Steffon owns the QA tier + QA deploy"
+    assert steffon.metadata["reviewer"], "Steffon is the DevOps/Platform light reviewer"
+    assert steffon.metadata["ship_gate"], "Steffon owns production-deploy (the ship gate)"
+    assert steffon.metadata["qa_owner"], "the reviewer-select QA-owner exclusion keys on Steffon"
     assert_includes Array(steffon.metadata["domains"]), "devops"
   end
 
-  test "Avi is the review delegator + ship gate, not a pool reviewer" do
+  test "Avi is the qa-release assembler, not a pool reviewer" do
     run_seed
     avi = Agent.find_by!(slug: "avi")
-    assert_equal "delegator", avi.metadata["review_role"]
-    assert avi.metadata["ship_gate"], "Avi owns the ship gate"
-    refute avi.metadata["reviewer"], "Avi delegates review; he is not one of the two seniors"
+    assert_nil avi.metadata["review_role"], "Avi no longer delegates review — Carl owns it"
+    assert avi.metadata["assembler"], "Avi owns the qa-release sweep + QA"
+    refute avi.metadata["ship_gate"], "Avi no longer owns the ship gate — Steffon ships"
+    refute avi.metadata["reviewer"], "Avi is not one of the pool reviewers"
   end
 
   test "Carl is the Lead Architect and standing primary review owner" do

@@ -1,7 +1,7 @@
-<%# Heartbeats card for /deployments — the three soul heartbeat launchers (Avi /
-    Steffon / Alex), each an avatar over its copyable heartbeat prompt + actions,
-    in an even 3-up grid. The release progress tracker stays in the Current Release
-    card. Locals:
+<%# Heartbeats card for /deployments — the four soul heartbeat launchers (Carl /
+    Avi / Steffon / Alex), each an avatar over its copyable heartbeat prompt +
+    actions, in an even 4-up grid. The release progress tracker stays in the
+    Current Release card. Locals:
       card_class  extra card classes for grid placement (optional) %>
 <% card_class = ["rounded-xl border border-subtle bg-surface p-4", local_assigns[:card_class]].compact.join(" ") %>
 <% launchers = heartbeat_launchers %>
@@ -20,11 +20,12 @@
       <p class="text-[11px] text-muted">Copy any phrase to launch that soul's heartbeat.</p>
     </div>
   </div>
-  <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
+  <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-4 sm:gap-4">
     <% launchers.each do |launcher| %>
       <% card_actions = case launcher[:agent_slug]
-                        when "avi" then ["pr-review", "production-deploy", "pr-review-slow", "deploy-with-task"]
-                        when "steffon" then ["qa-release", "archive-shipped"]
+                        when "carl" then ["pr-review", "pr-review-slow"]
+                        when "avi" then ["qa-release", "deploy-with-task"]
+                        when "steffon" then ["production-deploy", "archive-shipped"]
                         else launcher[:actions]
                         end %>
       <%= render "tasks/heartbeat_launcher",

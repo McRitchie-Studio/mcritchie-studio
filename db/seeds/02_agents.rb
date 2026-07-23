@@ -2,11 +2,11 @@
 #
 # Idempotent upsert: safe to run on every deploy (release → QA/prod). Each soul
 # carries the Deploy-flow redesign roles + the metadata the `ReviewerSelector`
-# reads when Avi delegates a review (see
+# reads when Carl summons a review light (see
 # docs/agents/system/devops-cycle-design.md §1.2):
 #
 #   metadata["reviewer"]       — true if in the senior review pool
-#   metadata["review_role"]    — "owner" | "delegator" | "reviewer" | "orchestrator"
+#   metadata["review_role"]    — "owner" | "reviewer" | "orchestrator" | nil
 #   metadata["domains"]        — areas/repos this soul reviews (domain-fit input)
 #   metadata["review_weight"]  — NUMERIC review weight (higher = wins the single
 #                                LIGHT seat when two specialists tie on domain fit).
@@ -46,14 +46,14 @@ agents_data = [
     status: "active",
     agent_type: "product",
     title: "Product Owner",
-    description: "Product Owner and Deploy-flow review delegator. Refines tickets, sets po_size, confirms product-acceptance, then selects the two senior reviewers (domain fit + a logged random tiebreak; 1 heavy + 1 light). Owns the ship gate — full e2e on the frozen ship SHA, then the operator gate before prod.",
+    description: "Product Owner and Deploy-flow assembler. Refines tickets, sets po_size, and owns the qa-release sweep: promote the accepted → release batch PR, run the pre-QA gate, deploy QA, and flip members assembled on QA-green. Review is Carl's; the ship is Steffon's.",
     avatar: "/agents/avi.png",
     position: 3,
     metadata: {
-      "review_role" => "delegator",
+      "review_role" => nil,
       "reviewer" => false,
-      "ship_gate" => true,
-      "responsibilities" => ["product-acceptance", "reviewer-selection", "ship-gate"]
+      "assembler" => true,
+      "responsibilities" => ["ticket-refinement", "sizing", "qa-release", "qa-deploy"]
     }
   },
   {
@@ -111,7 +111,7 @@ agents_data = [
     status: "active",
     agent_type: "specialist",
     title: "Platform Engineer",
-    description: "Platform Engineer (QA + Infrastructure). Owns the QA test tier (integration + an e2e smoke) and the QA deploy of origin/release, plus Heroku deploys, env vars, CI, observability, and the recovery protocol. Senior reviewer for DevOps/Platform PRs — but never reviews a PR he will then QA (no self-gating).",
+    description: "Platform Engineer (Ship + Infrastructure). Owns production-deploy — the frozen-SHA ship gate, then bin/release ship (ff release → main, deploy prod, smoke, release notes) — plus archive-shipped, Heroku deploys, env vars, CI, observability, and the recovery protocol. Domain light reviewer for DevOps/Platform PRs. The reviewer-select QA-owner exclusion still keys on him (no self-gating).",
     avatar: "/agents/steffon.png",
     position: 7,
     metadata: {
@@ -119,7 +119,8 @@ agents_data = [
       "reviewer" => true,
       "domains" => ["devops", "release", "infrastructure", "ci", "observability", "heroku"],
       "review_weight" => 2.0,
-      "qa_owner" => true
+      "qa_owner" => true,
+      "ship_gate" => true
     }
   },
   {

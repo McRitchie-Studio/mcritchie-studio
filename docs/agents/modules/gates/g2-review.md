@@ -5,8 +5,9 @@
 G2 Review is the second branded testing gate: the **2-senior review** of a
 submitted PR, recorded as **two task-grain lanes** — **G2a Primary** (GateRun
 key `g2a_primary`, the deep review that owns the gates and drives the verdict)
-and **G2b Light** (key `g2b_light`, the focused second read). The `pr-review`
-**supervisor** owns both lanes' open and close; the reviewers fill them.
+and **G2b Light** (key `g2b_light`, the focused second read). **Carl** (the
+`pr-review` owner — one Carl per PR) owns both lanes' open and close; the light
+fills its own.
 
 The gate flow order: [G1 Cert](g1-cert.md) → [DoR](dor.md) → **G2 Review**
 (this doc) → [G3 Candidate](g3-candidate.md) → [G4 Ship](g4-ship.md).
@@ -15,7 +16,7 @@ The gate flow order: [G1 Cert](g1-cert.md) → [DoR](dor.md) → **G2 Review**
 
 - **The live GitHub CI** — G2 owns the **authoritative CI verdict**
   (`ci-gate-review-handoff`: builders submit without waiting for CI). The
-  supervisor checks the PR's CI **before spawning the pair**: red bounces the
+  review session claims only green-CI PRs and Carl's gate-zero re-checks CI: red bounces the
   task back naming the failing checks (no reviewer tokens burned), a
   merge-conflicted PR (`mergeStateStatus DIRTY`) bounces back too with
   "merge the PR's base in and resolve" named (its CI is never coming — GitHub can't compute
@@ -36,17 +37,17 @@ Each lane's verdict comes from its reviewer's **scout report**:
 
 ## Who runs it
 
-- **The supervisor** (`bin/pr-review` — Avi's `pr-review` /
-  `pr-review-slow` acts) opens both lanes as it spawns the reviewer pair and
-  closes each lane from its own reviewer's scout report. Avi never reviews
-  code himself.
-- **The primary reviewer** runs the gate-zero
+- **Carl** (the review owner — `bin/pr-review` runs Carl's `pr-review` /
+  `pr-review-slow` acts) opens both lanes as the pair launches and
+  closes each lane from its own reviewer's scout report. There is no Avi
+  supervisor.
+- **Carl, the primary reviewer,** runs the gate-zero
   (`bin/dor-check <slug> --gate-role review`), which opens+closes the separate
   [`dor_review`](dor.md) gate.
 - A **hand-run review** (a conductor reviewing one PR manually) posts the same
   markers itself with `bin/gate` — see "Manual path" below.
 
-## Supervisor path (the default)
+## Review-session path (the default)
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio
@@ -54,14 +55,15 @@ bin/pr-review --run --fast --max-idle-cycles 1 \
   --codex-workdir /Users/alex/projects/mcritchie-studio
 ```
 
-What the supervisor records, per reviewed task:
+What the review session records, per reviewed task:
 
-0. **Pre-spawn CI check** — before selecting or spawning anyone, the
-   supervisor reads the PR's live CI (`bin/lib/ci_status.rb`):
+0. **Claim-time + gate-zero CI check** — the session only claims green-CI PRs
+   (`bin/task claim-next-review`), and Carl's gate-zero re-reads the PR's live CI
+   mid-review (`bin/lib/ci_status.rb`):
    - **red** → `bin/task block <slug> --kind rework` with the failing checks
      named, and the bounce recorded as a **failed `dor_review` (gate-zero)
-     attempt** with a `ci` SOP (`--meta outcome=ci-red`, actor `avi`) — not a
-     G2 review lane, since no reviewer ran. No reviewer tokens burned.
+     attempt** with a `ci` SOP (`--meta outcome=ci-red`, actor `carl`) — not a
+     G2 review lane. No further reviewer tokens burned.
    - **conflicted** (`mergeStateStatus DIRTY`) → the same block-back shape
      (`--meta outcome=ci-conflicted`), with "merge the PR's base in and resolve"
      named as the fix. A conflicted PR gets **no CI at all** — GitHub cannot compute the
@@ -87,8 +89,8 @@ What the supervisor records, per reviewed task:
    (attempt-aware; a still-open lane from a deferred wave is reused):
    `bin/gate open task <slug> g2a_primary --actor <primary-soul>` and
    `bin/gate open task <slug> g2b_light --actor <light-soul>`.
-2. **Gate-zero** — the supervisor opens the `dor_review` gate as it proceeds
-   past the CI check, and the primary's prompt instructs it to run
+2. **Gate-zero** — Carl opens the `dor_review` gate as he proceeds
+   past the CI check, and runs
 
    ```bash
    bin/dor-check <task-slug> --gate-role review
@@ -103,16 +105,16 @@ What the supervisor records, per reviewed task:
    metadata (`--meta outcome=<outcome>`). A reviewer with **no report leaves
    its lane in flight** — the next wave's open reuses the same attempt.
 
-The task-level outcome is separate from the lanes: two `merge-ready` reports →
-the supervisor **merges the feat PR into `accepted`** (the accepted-ladder's first
-rung), stamps `merged: "accepted"`, then moves the task `reviewed` (invariant:
-`reviewed` ⟺ code-on-`accepted`; a merge failure leaves it `submitted`); any
-`request-changes` → the task is blocked for rework (a `building` attribute —
-`bin/task block` stamps `blocked_at`/`block_kind` and lands it on `building`, not
-a `blocked` stage); `wait-for-ci` / `conductor-review` / a missing report →
-deferred and re-queried.
-See Avi's
-[`pr-review.md`](../../agents/avi/sops/pr-review.md) for the full verdict
+The task-level outcome is separate from the lanes: Carl's deep read + the light's
+merge-ready report → **Carl merges the feat PR into `accepted`** (the
+accepted-ladder's first rung), stamps `merged: "accepted"`, then moves the task
+`reviewed` (invariant: `reviewed` ⟺ code-on-`accepted`; a merge failure leaves it
+`submitted`); any `request-changes` → the task is blocked for rework (a `building`
+attribute — `bin/task block` stamps `blocked_at`/`block_kind` and lands it on
+`building`, not a `blocked` stage); `wait-for-ci` / `conductor-review` / a missing
+report → deferred and re-queried.
+See Carl's
+[`pr-review.md`](../../agents/carl/sops/pr-review.md) for the full verdict
 handling.
 
 ## Manual path (one PR by hand)
@@ -145,8 +147,8 @@ bin/gate close task <task-slug> g2b_light --failed --actor <light-soul> \
   other outcome; the specific outcome rides in `metadata.outcome`.
 - An **uncleared attempt is still an attempt**: a lane closed `failed` stays
   on the record; the re-review opens the next attempt.
-- A **pre-spawn CI bounce** records as a failed `dor_review` (gate-zero) attempt
-  (a `ci` SOP, `outcome=ci-red`, actor `avi`) — the round-trip is visible on the
+- A **gate-zero CI bounce** records as a failed `dor_review` (gate-zero) attempt
+  (a `ci` SOP, `outcome=ci-red`, actor `carl`) — the round-trip is visible on the
   gates card even though no reviewer ran, and it lands on the gate-zero gate, not
   a G2 review lane. A pre-spawn **defer** (CI pending) records nothing; nothing
   started.
@@ -176,15 +178,15 @@ bin/gate close task <task-slug> g2b_light --failed --actor <light-soul> \
 
 ## Related
 
-- [`../../agents/avi/sops/pr-review.md`](../../agents/avi/sops/pr-review.md) —
-  the supervisor SOP whose waves produce this gate's records.
-- [`../../agents/avi/sops/pr-review-primary.md`](../../agents/avi/sops/pr-review-primary.md)
-  / [`pr-review-light.md`](../../agents/avi/sops/pr-review-light.md) — the two
+- [`../../agents/carl/sops/pr-review.md`](../../agents/carl/sops/pr-review.md) —
+  Carl's review SOP whose waves produce this gate's records.
+- [`../../agents/carl/sops/pr-review-primary.md`](../../agents/carl/sops/pr-review-primary.md)
+  / [`pr-review-light.md`](../../agents/carl/sops/pr-review-light.md) — the two
   lane role SOPs.
 - [`../pr-review-sop.md`](../pr-review-sop.md) — the `review-one` primitive
   (the manual path above is its gate-record half).
 - [`dor.md`](dor.md) — the DoR gate; its `dor_review` half is this gate's
-  gate-zero (`bin/dor-check --gate-role review`), opened by the supervisor as it
+  gate-zero (`bin/dor-check --gate-role review`), opened by Carl as he
   proceeds past CI.
 - [`g1-cert.md`](g1-cert.md) — the builder cert gate that precedes DoR.
 - [`../task-board-api.md`](../task-board-api.md) — the `/api/v1/gates` write
