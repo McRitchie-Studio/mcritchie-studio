@@ -129,6 +129,22 @@
         <%= render "tasks/release_tracker", release: rel %>
       </div>
     <% end %>
+    <%# Conductor-owner faces (Next Release card only): two small Pokémon — the
+        SESSION running QA/assembly (assembler claim) and the SESSION running the
+        production deploy (deployer claim) — live as the release builds, each drawn
+        from its holder session's mascot via release_role_owner_face. A role with no
+        claim yet renders nothing, so the row hides when both are absent. The faces
+        refresh on the next Release stage stamp (this card's after_commit morph); a
+        claim acquire does not itself broadcast, acceptable for v1. Sits just above
+        the per-repo candidate-CI meters the operator already watches. %>
+    <% if current %>
+      <% owner_faces = %w[assembler deployer].filter_map { |claim_role| release_role_owner_face(rel, claim_role) } %>
+      <% if owner_faces.any? %>
+        <div class="mt-3 flex items-center gap-3" data-test="release-owner-faces" aria-label="Release conductors">
+          <%= safe_join(owner_faces) %>
+        </div>
+      <% end %>
+    <% end %>
     <%# G3 candidate suite CI meters (Next Release card only): ONE track PER MEMBER
         REPO — a release spanning turf-monster + mcritchie-studio shows two, plus a
         gem member a third. Each reads that repo's own release-candidate CI (app repos

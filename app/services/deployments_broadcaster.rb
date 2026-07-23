@@ -75,22 +75,6 @@ class DeploymentsBroadcaster
     end
   end
 
-  # Re-render the GitHub Actions panel to every /deployments viewer after a
-  # workflow run is upserted (GithubWorkflowRunIngestJob → GithubWorkflowRun
-  # after_commit), so CI / QA Deploy / Production Deploy status updates live with no
-  # reload. One REPLACE action targeting the stable #github-actions-panel slot;
-  # the panel is recomputed fresh from GithubWorkflowRun.latest_per_workflow.
-  # Guarded by safe_broadcast so a cable failure can NEVER break the run write.
-  def self.github_actions
-    Studio::Cable.safe_broadcast do
-      Turbo::StreamsChannel.broadcast_replace_to(
-        STREAM, target: "github-actions-panel",
-        partial: "tasks/github_actions_panel",
-        locals: { runs: GithubWorkflowRun.latest_per_workflow }
-      )
-    end
-  end
-
   # A CI check job was upserted (CiCheckJob after_commit) — push the refreshed CI
   # progress bar to the affected task card + the Next Release card so the board ticks
   # up with NO reload. Only the tiny bar SLOT swaps — a MORPH, so the fill width

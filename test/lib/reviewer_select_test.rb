@@ -57,7 +57,7 @@ class ReviewerSelectCliTest < Minitest::Test
 
     assert_equal %w[primary light], decision["reviewers"].map { |r| r["weight"] }, "one primary + one light"
     assert_equal 2, decision["reviewers"].map { |r| r["slug"] }.uniq.size, "two distinct seniors"
-    refute_includes decision["candidates"], "steffon", "the QA owner is excluded (no self-gating)"
+    refute_includes decision["candidates"], "avi", "the QA owner (avi) is excluded (no self-gating)"
     assert(decision["ranked"].all? { |c| c["roll"].is_a?(Numeric) }, "the tiebreak rolls are emitted (auditable)")
   end
 
@@ -66,7 +66,7 @@ class ReviewerSelectCliTest < Minitest::Test
     assert_equal 0, code, out
     assert_match(/PRIMARY\s+carl/, out, "Carl is the standing primary on every PR")
     assert_match(/LIGHT\s+jasper/, out, "an onchain shape puts the Web3 senior in the light seat")
-    assert_match(/excluded:\s+steffon/, out)
+    assert_match(/excluded:\s+avi/, out)
     assert_match(/tiebreak \(auditable/, out)
   end
 
@@ -87,7 +87,7 @@ class ReviewerSelectCliTest < Minitest::Test
   def test_human_output_names_the_excluded_builder
     out, code = select("shape" => "ui-only", "built_by" => "shannon")
     assert_equal 0, code, out
-    assert_match(/excluded:\s+steffon/, out, "the QA owner still leads the excluded line")
+    assert_match(/excluded:\s+avi/, out, "the QA owner still leads the excluded line")
     assert_match(/shannon \(builder/, out, "the specialist builder is named on the excluded line")
   end
 
@@ -117,7 +117,10 @@ class ReviewerSelectCliTest < Minitest::Test
     assert_equal ["jasper"], decision["excluded_busy"], "the --busy soul is excluded from the light"
     pair = decision["reviewers"].map { |r| r["slug"] }
     assert_equal 2, pair.uniq.size, "a pair still forms"
-    %w[shannon jasper steffon].each { |s| refute_includes pair, s, "#{s} is not the light reviewer" }
+    # shannon (builder) + jasper (busy) are out; steffon is eligible again (avi is the
+    # QA owner now), so the light is one of {steffon, alex}.
+    %w[shannon jasper].each { |s| refute_includes pair, s, "#{s} is not the light reviewer" }
+    assert_includes %w[steffon alex], pair.last, "the light is one of the remaining specialists"
   end
 
   def test_busy_filter_keeps_a_pair_rather_than_starve_the_pool
@@ -273,7 +276,7 @@ class ReviewerSelectCliTest < Minitest::Test
     body = JSON.parse(posts.first[:body])
     assert_equal "reviewed", body["to_stage"], "the intent targets the reviewed stage"
     assert_equal %w[primary light], body["reviewers"].map { |r| r["weight"] }, "one primary + one light"
-    refute_includes body["reviewers"].map { |r| r["slug"] }, "steffon", "the QA owner is never recorded"
+    refute_includes body["reviewers"].map { |r| r["slug"] }, "avi", "the QA owner (avi) is never recorded"
 
     decision = json_decision(out)
     assert_equal decision["reviewers"].map { |r| r["slug"] }, body["reviewers"].map { |r| r["slug"] },

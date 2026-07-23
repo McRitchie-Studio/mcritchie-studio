@@ -34,9 +34,6 @@ class TasksController < ApplicationController
     @current_release = Release.current
     @last_release = Release.last_shipped
     @release_duration_dashboard = Release.deployment_stage_averages
-    # Latest run per workflow (CI / QA Deploy / Production Deploy) for the live
-    # GitHub Actions panel — one DISTINCT ON query, no N+1 (see the model).
-    @github_actions_runs = GithubWorkflowRun.latest_per_workflow
   end
 
   # Row budget for /tasks/recent — enough to cover the active pipeline plus the

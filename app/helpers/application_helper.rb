@@ -410,61 +410,49 @@ module ApplicationHelper
     end
   end
 
-  # Collapses a run's (status, conclusion) into one outcome key for the Actions
-  # panel. A non-completed run is its raw status ("queued" / "in_progress"); a
-  # completed run is its conclusion, defaulting a rare blank to "neutral" so it
-  # never masquerades as a real result. Kept separate from the visual map so both
-  # the panel and any test can reason about the SAME six-plus-fallback vocabulary.
-  def github_run_outcome(run)
-    return run.status.to_s unless run.status == "completed"
+  # The conductor-owner FACE for one release role on the Next Release card — the
+  # Pokémon of the SESSION that currently holds this release's ReleaseConductorClaim
+  # for `role` ("assembler" = QA / bin/release prepare; "deployer" = production deploy
+  # / bin/release ship). Resolves the claim's holder session → its SessionMascot's
+  # Pokémon and renders the shared tasks/_release_owner_face partial (a small 24px
+  # sprite; live = full-colour with a ring, idle = dimmed; the name in title/aria).
+  # Returns nil — renders NOTHING — when no claim row exists yet, the claim has been
+  # released (no holder session), or the holder session has no mascot, so a role that
+  # has not been picked up shows no face. This is the ONE source both the initial
+  # /deployments render AND the DeploymentsBroadcaster live morph read (both render
+  # tasks/_release_summary), so the two paths never drift.
+  #
+  # STRICT READ: this runs on a GET render + a live morph, so it uses
+  # SessionMascot.find_by — NOT SessionMascot.for (which is find-or-CREATE-with-draw).
+  # A read must never MINT a mascot as a side effect; a holder session that never
+  # drew one resolves to nil and renders nothing (mirrors the conductor-mascot row
+  # just above, which reads rel.mascot without writing). The conductor's OWN session
+  # drew its mascot at session start, so the face is present for every real holder.
+  def release_role_owner_face(release, role)
+    return nil if release.blank?
 
-    run.conclusion.presence || "neutral"
+    info = ReleaseConductorClaim.status_for(release.slug, role)
+    session = info && info["session"].presence
+    return nil if session.blank?
+
+    session_mascot = SessionMascot.find_by(session_id: session)
+    pokemon = session_mascot&.pokemon
+    return nil if pokemon.blank?
+
+    render "tasks/release_owner_face",
+           role: role,
+           pokemon: pokemon,
+           name: pokemon.name,
+           label: release_owner_face_label(role, pokemon.name),
+           shiny: session_mascot.shiny,
+           live: info["live"] ? true : false
   end
 
-  # Maps a run's outcome to the /deployments Actions panel visual — six states the
-  # operator can tell apart at a glance, each a distinct pill + dot with light+dark
-  # parity built on the engine `.badge` utility:
-  #   queued      — hollow dashed amber, static (waiting, not yet started)
-  #   in_progress — filled amber, gently PULSING (running)
-  #   success     — green (passed)
-  #   failure     — red (failed)
-  #   cancelled   — muted grey (a cancel is not a failure)
-  #   timed_out   — orange (a distinct kind of failure)
-  # Any other terminal conclusion (neutral / skipped / stale / action_required / a
-  # blank) falls back to muted grey labelled by the raw conclusion. The POSITIVE
-  # invariant: green appears ONLY for an explicit "success". Class strings live here
-  # so Tailwind's helper scan compiles them (tailwind.config.js globs app/helpers).
-  def github_run_visual(run)
-    case github_run_outcome(run)
-    when "queued"
-      { state: "queued", label: "queued",
-        pill: "badge border-dashed border-amber-400 bg-transparent text-amber-700 dark:border-amber-500/50 dark:text-amber-300",
-        dot: "border border-amber-500 bg-transparent" }
-    when "in_progress"
-      { state: "running", label: "running",
-        pill: "badge animate-pulse border-amber-300 bg-amber-100 text-amber-700 dark:border-amber-500/40 dark:bg-amber-500/15 dark:text-amber-300",
-        dot: "bg-amber-500 animate-pulse" }
-    when "success"
-      { state: "passed", label: "passed",
-        pill: "badge border-green-300 bg-green-100 text-green-700 dark:border-green-500/40 dark:bg-green-500/15 dark:text-green-300",
-        dot: "bg-green-500" }
-    when "failure"
-      { state: "failed", label: "failed",
-        pill: "badge border-red-300 bg-red-100 text-red-700 dark:border-red-500/40 dark:bg-red-500/15 dark:text-red-300",
-        dot: "bg-red-500" }
-    when "cancelled"
-      { state: "cancelled", label: "cancelled",
-        pill: "badge border-gray-300 bg-gray-100 text-gray-600 dark:border-gray-600/50 dark:bg-gray-500/15 dark:text-gray-300",
-        dot: "bg-gray-400" }
-    when "timed_out"
-      { state: "timed_out", label: "timed out",
-        pill: "badge border-orange-300 bg-orange-100 text-orange-700 dark:border-orange-500/40 dark:bg-orange-500/15 dark:text-orange-300",
-        dot: "bg-orange-500" }
-    else
-      { state: "neutral", label: (run.conclusion.presence&.tr("_", " ") || "done"),
-        pill: "badge border-gray-300 bg-gray-100 text-gray-600 dark:border-gray-600/50 dark:bg-gray-500/15 dark:text-gray-300",
-        dot: "bg-gray-400" }
-    end
+  # The title/aria label for a conductor-owner face: which release ROLE this session
+  # runs, then its Pokémon name — "QA (assembler): Pikachu" / "Deploy (deployer): Onix".
+  def release_owner_face_label(role, name)
+    prefix = role.to_s == "deployer" ? "Deploy (deployer)" : "QA (assembler)"
+    "#{prefix}: #{name}"
   end
 
   # A task's PR-head CI progress (a Ci::CheckProgress) for the board card's

@@ -155,7 +155,7 @@ class TaskEventTest < ActiveSupport::TestCase
     assert_equal 2, reviewers.size, "two reviewers recorded for the avatars UI"
     assert_equal %w[primary light].sort, reviewers.map { |r| r["weight"] }.sort
     assert(reviewers.all? { |r| r["slug"].present? })
-    refute_includes reviewers.map { |r| r["slug"] }, "steffon", "the QA owner is never a reviewer"
+    refute_includes reviewers.map { |r| r["slug"] }, "avi", "the QA owner (avi) is never a reviewer"
   end
 
   test "reviewers ride alongside the primary actor, not replacing it" do
