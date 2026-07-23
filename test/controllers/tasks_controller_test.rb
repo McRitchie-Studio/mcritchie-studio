@@ -795,7 +795,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "[component] task cards carry unresolved feedback as the red block tone, independent of latest note" do
+  test "[component] task cards carry unresolved feedback as the red tone + blocker-summary bar, independent of latest note" do
     task = Task.create!(title: "unresolved feedback card", stage: "submitted")
     Activity.create!(task_slug: task.slug, activity_type: "qa_feedback", description: "Needs rework before merge.")
     Activity.create!(task_slug: task.slug, activity_type: "handoff", description: "Latest handoff context.")
@@ -803,10 +803,13 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     get tasks_path
 
     assert_response :success
-    # The UNRESOLVED QA bar was dropped; the red block card-tone carries the open
-    # feedback now, and the activity box still shows the latest note beneath it.
+    # The generic UNRESOLVED QA label was dropped; the red block card-tone carries the
+    # open feedback and the blocker's own summary rides a red bar linking to the detail.
+    # The activity box still shows the latest note beneath it.
     assert_select "#card-#{task.slug}[class*=bg-red-50]"
     assert_select "#card-#{task.slug} [data-test='unresolved-feedback']", count: 0
+    assert_select "#card-#{task.slug} a[data-test='blocker-summary'][href='#{task_path(task.slug)}']",
+                  text: "Needs rework before merge."
     assert_select "#card-#{task.slug} [data-test='activity-box']", text: /Handoff/
   end
 

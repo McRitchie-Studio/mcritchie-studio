@@ -491,8 +491,50 @@ class TaskCardTest < ActionView::TestCase
     assert_includes card["class"], "bg-red-50"
     assert_includes card["class"], "task-card-stage-glow-blocked"
     assert_not_includes card["class"], "studio-border-glow"
-    assert_select "[data-test='unresolved-feedback']", { count: 0 }, "the UNRESOLVED QA bar is dropped; the red tone carries the open block"
+    assert_select "[data-test='unresolved-feedback']", { count: 0 }, "the generic UNRESOLVED QA label is dropped"
     assert_select "[data-test='cleared-feedback']", count: 0
+    # …replaced by the blocker's OWN summary on a red bar linking to the detail page.
+    assert_select "a[data-test='blocker-summary'][href='#{task_path(task.slug)}']", text: "please fix it"
+  end
+
+  test "[component] a blocked card shows the blocker's summary on a red bar linking to the detail" do
+    task = Task.create!(title: "Blocker summary card", stage: "submitted")
+    feedback = Activity.create!(task_slug: task.slug, activity_type: "qa_feedback",
+                                description: "The stage transition bypasses the server guard; re-gate it before resubmit.",
+                                metadata: { "summary" => "Stage move skips server guard" })
+
+    render partial: "tasks/task_card",
+           locals: { task: task.reload, agents: @agents, crew_board: :deploy,
+                     unresolved_feedback: feedback, ever_blocked: true }
+
+    bar = css_select("a[data-test='blocker-summary']").first
+    assert bar, "an unresolved blocker renders the summary bar"
+    assert_equal task_path(task.slug), bar["href"], "the bar links to the detail page (the full ▼ Details live there)"
+    assert_includes bar.text, "Stage move skips server guard", "shows the stored 4-6 word summary, not a generic label"
+    refute_includes bar.text, "re-gate it before resubmit", "the full details stay on the detail page"
+    assert_includes bar["class"], "bg-red-500", "the blocker bar wears the red scheme"
+  end
+
+  test "[component] the approval CTA, blocker-summary and CI meter bars share the card_bar geometry" do
+    # application_helper#card_bar_base_classes — the ONE geometry all three bars ride.
+    base = %w[w-full rounded border px-2 py-1]
+
+    render partial: "components/card_status_bar",
+           locals: { scheme: :amber, label: "WAITING APPROVAL", href: "/x", test_id: "bar-cta" }
+    cta = css_select("[data-test='bar-cta']").first["class"].split
+
+    render partial: "components/card_status_bar",
+           locals: { scheme: :red, label: "boom", href: "/y", new_tab: false, test_id: "bar-blk" }
+    blk = css_select("[data-test='bar-blk']").first["class"].split
+
+    render partial: "components/ci_progress_slot",
+           locals: { dom_id: "ci-geo", progress: Ci::CheckProgress.new(passed: 3, failed: 0, pending: 1),
+                     compact: true, test_id: "ci-geo-t", inner_test_id: "ci-geo-card" }
+    ci = css_select("[data-test='ci-geo-card']").first["class"].split
+
+    { "approval CTA" => cta, "blocker-summary" => blk, "CI meter" => ci }.each do |name, tokens|
+      base.each { |t| assert_includes tokens, t, "the #{name} bar must carry the shared '#{t}' geometry" }
+    end
   end
 
   test "[component] a never-blocked submitted card stays plain" do

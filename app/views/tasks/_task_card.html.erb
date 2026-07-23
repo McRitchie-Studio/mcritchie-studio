@@ -213,21 +213,36 @@
       block-lifecycle card tone (Task#block_state) already carries blocked (red)
       and cleared/re-review (amber), and the review-lane crew avatar shows a
       reviewer face only while review is LIVE. %>
-  <% if waiting_for_approval %>
-    <%# mb-1 here matches the gap to the CI meter below so the CTA and the CI card
-        read as one evenly-stacked set of card-width bars. %>
+  <% if waiting_for_approval || unresolved_feedback %>
+    <%# gap-1 here + the same gap to the CI meter below (mb-1) so the approval CTA,
+        the blocker-summary bar and the CI card read as ONE evenly-stacked set of
+        card-width bars (all three build on the shared components/_card_bar shell). %>
     <div class="flex flex-col gap-1 mb-1">
-      <%# Thin, label-only bar. With a local URL the whole bar is the mint endpoint
-          (opens a fresh signed-in link to the local page); with none it stays a
-          static notice. The plain local_url rides along as a data-fallback handle. %>
-      <%= render "components/card_status_bar",
-            scheme: :amber, flashing: true,
-            label: "WAITING APPROVAL",
-            href: (local_url.present? ? local_review_task_path(task.slug) : nil),
-            link_data: (local_url.present? ? { "local-url" => local_url } : {}),
-            new_tab: true,
-            test_id: "operator-approval-waiting",
-            title: "Waiting for Mr. McRitchie's local demo approval — sign in and open it." %>
+      <% if waiting_for_approval %>
+        <%# Thin, label-only bar. With a local URL the whole bar is the mint endpoint
+            (opens a fresh signed-in link to the local page); with none it stays a
+            static notice. The plain local_url rides along as a data-fallback handle. %>
+        <%= render "components/card_status_bar",
+              scheme: :amber, flashing: true,
+              label: "WAITING APPROVAL",
+              href: (local_url.present? ? local_review_task_path(task.slug) : nil),
+              link_data: (local_url.present? ? { "local-url" => local_url } : {}),
+              new_tab: true,
+              test_id: "operator-approval-waiting",
+              title: "Waiting for Mr. McRitchie's local demo approval — sign in and open it." %>
+      <% end %>
+      <% if unresolved_feedback %>
+        <%# The blocker's OWN WORDS on the card — its 4-6 word summary
+            (Activity#block_summary), red, linking to the task detail where the full
+            ▼ Details body lives. Upgrades the dropped generic "UNRESOLVED QA" label to
+            the ACTUAL problem text; the red card tone already carries "blocked". %>
+        <%= render "components/card_status_bar",
+              scheme: :red,
+              label: unresolved_feedback.block_summary,
+              href: task_path(task.slug), new_tab: false,
+              test_id: "blocker-summary",
+              title: unresolved_feedback.block_summary %>
+      <% end %>
     </div>
   <% end %>
 
