@@ -94,12 +94,17 @@ class TasksController < ApplicationController
     local_url = @task.devops_url("local")
     return redirect_to(task_path(@task.slug), alert: "This task has no local demo URL yet.") if local_url.blank?
 
-    link = Studio::Link.create_magic_link(
-      email: current_user.email,
-      return_to: local_return_path(local_url),
-      ttl: 12.hours
-    )
-    redirect_to link_url(link.token), allow_other_host: false
+    # Minting a Studio::Link WRITES a record; wrap it like every other mutating
+    # action so a raise lands in ErrorLog (attributed to the task) and the global
+    # handler renders a friendly response, not an undiagnosable 500.
+    rescue_and_log(target: @task) do
+      link = Studio::Link.create_magic_link(
+        email: current_user.email,
+        return_to: local_return_path(local_url),
+        ttl: 12.hours
+      )
+      redirect_to link_url(link.token), allow_other_host: false
+    end
   end
 
   def review_events_hub

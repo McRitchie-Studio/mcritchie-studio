@@ -933,6 +933,33 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to root_path
   end
 
+  test "[unit] local_review neutralizes a hostile local_url — return_to never targets another host" do
+    log_in_as(@admin)
+    # The host/scheme are stripped (only the same-origin PATH survives), and a
+    # protocol-relative path is rejected by Studio::LinkToken.sanitize_path → nil.
+    # Either way the minted link can never redirect the operator off our own host.
+    {
+      "http://evil.com/pwn" => "/pwn",             # host discarded — only "/pwn" on OUR host survives
+      "http://localhost:3009//evil.com" => nil,    # protocol-relative "//" → sanitized to nil
+      "https://evil.com" => "/"                     # no path → falls back to root, never the host
+    }.each do |hostile, expected|
+      task = Task.create!(title: "hostile url #{SecureRandom.hex(2)}", stage: "building",
+                          metadata: { "devops" => { "local_url" => hostile } })
+
+      get local_review_task_path(task.slug)
+
+      link = Studio::Link.magic_links.order(:created_at).last
+      if expected.nil?
+        assert_nil link.return_to, "return_to for #{hostile.inspect} must be nil (protocol-relative rejected)"
+      else
+        assert_equal expected, link.return_to,
+                     "return_to for #{hostile.inspect} must be #{expected.inspect} (same-origin path)"
+      end
+      refute_includes link.return_to.to_s, "evil.com",
+                      "the minted link must never redirect to evil.com"
+    end
+  end
+
   test "[component] reactivated building tasks render above blocked cards" do
     blocked = Task.create!(title: "stale blocked sort task", stage: "building")
     blocked.block!(by: "avi", kind: "rework")
