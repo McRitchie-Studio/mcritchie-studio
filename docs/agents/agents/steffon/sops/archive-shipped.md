@@ -74,4 +74,4 @@ On a clean no-op, report "nothing to archive."
 
 ## Related
 
-- [`qa-release.md`](qa-release.md) - Steffon's release prepare SOP.
+- [`../../avi/sops/qa-release.md`](../../avi/sops/qa-release.md) - Avi's release prepare (assembler) SOP.

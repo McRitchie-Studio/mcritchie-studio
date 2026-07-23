@@ -2,7 +2,7 @@
 
 ## Status: Active
 
-This is Steffon's `qa-release` SOP. It is the self-healing release prepare sweep:
+This is Avi's `qa-release` SOP. It is the self-healing release prepare sweep:
 detect reviewed work and release stragglers, promote `accepted → release` via ONE
 batch PR per repo (review already merged each feat PR onto `accepted`), publish
 gem members + bump consumer locks (producer-first, before anything tests or
@@ -11,14 +11,16 @@ QA-green. `qa-deploy` is the legacy name for this same act.
 
 ## Scope
 
-Steffon owns release stages 1-3:
+Avi owns release stages 1-3 as the **assembler** (`ReleaseConductorClaim` role
+`assembler`):
 
 1. Testing
 2. Assembling
 3. Deploying QA / Live on QA
 
-This SOP stops at the Steffon -> Avi handoff: the release candidate is live on
-QA and ready for Avi's production-deploy act. It does not ship production.
+This SOP stops at the Avi -> Steffon handoff: the release candidate is live on
+QA and ready for Steffon's `production-deploy` (deployer) act. It does not ship
+production.
 
 ## Entry
 
@@ -68,11 +70,44 @@ There is work to prepare:
 If nothing is waiting and no candidate is in flight, report "nothing to prepare"
 and stop.
 
+## Disposition — which applications ride this candidate (Avi curates)
+
+**The default is to ship ALL reviewed work.** `bin/release prepare` sweeps EVERY
+`reviewed` task (+ any `assembled` straggler) across every application and opens
+ONE `accepted → release` batch PR per repo. On the happy path you take the whole
+reviewed queue and this step is a no-op — do not hold work back without a reason.
+
+**You (Avi, the assembler) decide which APPLICATIONS go in when order-of-operations
+matters.** Some releases must not carry every app at once: a gem has to publish
+before its consuming app can ride the bumped lock; an app depends on another app's
+release landing first; a risky app should wait a cycle. In those cases curate the
+candidate by APPLICATION:
+
+- **Make the decision board-visible first.** Mark the reviewed tasks of an app you
+  are holding back `included_in_release: false` (via the board, or `PATCH
+  /api/v1/tasks/<slug>` with `{ "devops": { "included_in_release": false } }`).
+  The reviewed-stage card then shows an amber **HELD FROM RELEASE · <app>** marker
+  instead of the green **IN RELEASE**, so the disposition is legible on
+  `/deployments` before anything merges. Leave the apps you ARE shipping at the
+  default (unset ⇒ included ⇒ green marker).
+- **Then sweep only the included apps.** Pass the tasks you ARE shipping to
+  prepare: `bin/release prepare --task <slug> [--task <slug> …] --yes` sweeps just
+  those (and lands ALL of `accepted` for their repos). Omit `--task` to sweep
+  everything (the default).
+- **Eject a member that must not ride after a candidate has formed** with
+  `bin/release eject <task> --feedback "<reason>"`, then re-run `bin/release
+  prepare --yes` so the rest of the candidate rides.
+
+The `included_in_release` flag is the RECORD of your disposition (it drives the
+board marker and `Task.reviewed_release_inclusion`); the `--task`/`eject` controls
+are what actually shape the sweep. Keep the two in sync so the board never says
+"shipping" for an app you ejected.
+
 ## Procedure
 
 **Direct-drive this act — do NOT delegate it to a subagent.** Run
 `bin/release prepare --yes` in the conductor session itself. Do NOT wrap it in an
-Agent-tool subagent (`subagent_type: steffon`) for sub-agent-tree visibility.
+Agent-tool subagent (`subagent_type: avi`) for sub-agent-tree visibility.
 
 - **The rule.** Any op that MUTATES shared state across many minutes —
   `qa-release`, `production-deploy`, `archive-shipped` — is DIRECT-DRIVEN by the
@@ -171,7 +206,8 @@ earlier.) You post nothing extra on the happy path.
 
 `prepare` records its test verdicts as the **G3 Candidate gate**
 ([`../../../modules/gates/g3-candidate.md`](../../../modules/gates/g3-candidate.md)):
-it opens the release's `g3_candidate` attempt (actor `steffon`) before the
+it opens the release's `g3_candidate` attempt (under the assembler actor
+`bin/release` records) before the
 pre-QA gate, collects every test SOP in the window (`pre_qa_gate` per app,
 `qa_up_smoke` boot polls, `qa_post_deploy` hooks), and closes it `success`
 beside the QA-green flip — or `failed` on a boot failure or any in-window
@@ -310,6 +346,9 @@ On a clean no-op, report "nothing to prepare."
 
 ## Related
 
-- [`archive-shipped.md`](archive-shipped.md) - prior Steffon closeout act.
+- [`../../steffon/sops/production-deploy.md`](../../steffon/sops/production-deploy.md)
+  - the Steffon deployer act this assembled candidate hands off to.
+- [`../../steffon/sops/archive-shipped.md`](../../steffon/sops/archive-shipped.md)
+  - Steffon's post-ship closeout act.
 - [`../../../modules/gates/g3-candidate.md`](../../../modules/gates/g3-candidate.md)
   - the G3 Candidate gate this act produces.

@@ -210,7 +210,7 @@ Do not do that: it **silently disarmed** this gate while printing "already green
 ## Who runs it
 
 **Avi**, via the `production-deploy` SOP
-([`../../agents/avi/sops/production-deploy.md`](../../agents/avi/sops/production-deploy.md))
+([`../../agents/steffon/sops/production-deploy.md`](../../agents/steffon/sops/production-deploy.md))
 — ship authority is granted per session by Mr. McRitchie. The gate writes are
 conductor-owned (actor = the ship's `--by`, defaulting to the operator's
 `$USER`; source `conductor`); you never post G4 markers by hand on the happy
@@ -271,7 +271,7 @@ The conductor records the gate for you:
 
 ## Related
 
-- [`../../agents/avi/sops/production-deploy.md`](../../agents/avi/sops/production-deploy.md)
+- [`../../agents/steffon/sops/production-deploy.md`](../../agents/steffon/sops/production-deploy.md)
   — the owning SOP; run that end-to-end, this doc explains the gate it
   produces.
 - [`g3-candidate.md`](g3-candidate.md) — the gate whose certified SHA +

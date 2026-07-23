@@ -2,12 +2,13 @@
 
 ## Status: Active
 
-This is Avi's `production-deploy` SOP. It ships an assembled, QA-green release to
-production when one is ready.
+This is Steffon's `production-deploy` SOP. It ships an assembled, QA-green release
+to production when one is ready.
 
 ## Scope
 
-Avi owns release stages 4-5:
+Steffon owns release stages 4-5 as the **deployer** (`ReleaseConductorClaim` role
+`deployer`):
 
 1. Confirming
 2. Deploying production
@@ -62,7 +63,7 @@ ghost claim can never strand the ship lane again. (Background — not needed to 
 
 ## Preconditions
 
-- Steffon's `qa-release` has produced a QA-green release.
+- Avi's `qa-release` has produced a QA-green release.
 - The active release is `assembled` and `qa_deployed_at` is stamped.
 - Members are `assembled` and `merged: release`.
 - The release candidate is live on QA.
@@ -75,7 +76,7 @@ If `release == main`, no release is active, the active release is still
 
 **Direct-drive this act — do NOT wrap it in a subagent.** Run `bin/release ship
 --yes` in the orchestrating session itself. Do NOT delegate it to a wrapper
-subagent (`subagent_type: avi`) for sub-agent-tree visibility.
+subagent (`subagent_type: steffon`) for sub-agent-tree visibility.
 
 - **The rule this follows.** Any op that MUTATES shared state across many minutes
   — `production-deploy`, `qa-release`, `archive-shipped` — is DIRECT-DRIVEN by the
@@ -132,7 +133,7 @@ If that command exits nonzero, the release is not ready for Avi. Do not stamp
 with the printed release state.
 
 **Announce the handoff only after that guard passes.** The QA-green release sits
-at three greens with Confirming dark — Steffon's finish line. The moment you
+at three greens with Confirming dark — Avi's assembler finish line. The moment you
 begin confirming, notify the release so the /deployments tracker lights stage 4
 yellow under your name (`docs/agents/modules/task-board-api.md`, "Release stage
 timeline"):
@@ -384,6 +385,9 @@ On a clean no-op, report "nothing to ship."
 
 ## Related
 
+- [`../../avi/sops/qa-release.md`](../../avi/sops/qa-release.md) - Avi's assembler
+  act that produced the QA-green release this ships.
+- [`archive-shipped.md`](archive-shipped.md) - Steffon's post-ship closeout act.
 - [`../../../modules/gates/g4-ship.md`](../../../modules/gates/g4-ship.md) -
   the G4 Ship gate this act produces.
 

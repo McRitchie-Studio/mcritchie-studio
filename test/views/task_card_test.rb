@@ -196,6 +196,53 @@ class TaskCardTest < ActionView::TestCase
     assert_not_includes card["style"], "0 0 118px color-mix(in srgb, var(--task-card-glow-color) 12%, transparent)"
   end
 
+  test "[component] a reviewed card shows the green IN RELEASE inclusion marker by default" do
+    task = Task.create!(title: "Reviewed inclusion default", stage: "reviewed",
+                        metadata: { "devops" => { "pr_url" => "https://github.com/amcritchie/turf-monster/pull/5" } })
+
+    render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :deploy }
+
+    marker = css_select("[data-test='release-inclusion-marker']").first
+    assert marker, "a reviewed card must carry the release-inclusion marker"
+    assert_equal "true", marker["data-included"]
+    assert_equal "turf-monster", marker["data-app"]
+    bar = css_select("[data-test='release-inclusion-in']").first
+    assert bar, "the default reviewed disposition renders the IN RELEASE bar"
+    assert_includes bar.text, "IN RELEASE"
+    assert_includes bar.text, "turf-monster", "the marker names the release app"
+    assert_includes bar["class"], "bg-mint-500", "the included marker wears the mint scheme"
+    assert_select "[data-test='release-inclusion-held']", count: 0
+  end
+
+  test "[component] a held-back reviewed card shows the amber HELD FROM RELEASE marker" do
+    task = Task.create!(title: "Reviewed held back", stage: "reviewed",
+                        metadata: { "devops" => {
+                          "pr_url" => "https://github.com/amcritchie/mcritchie-studio/pull/6",
+                          "included_in_release" => "false"
+                        } })
+
+    render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :deploy }
+
+    marker = css_select("[data-test='release-inclusion-marker']").first
+    assert_equal "false", marker["data-included"]
+    bar = css_select("[data-test='release-inclusion-held']").first
+    assert bar, "a held member renders the HELD FROM RELEASE bar"
+    assert_includes bar.text, "HELD FROM RELEASE"
+    assert_includes bar.text, "mcritchie-studio"
+    assert_includes bar["class"], "bg-amber-500", "the held marker wears the amber scheme"
+    assert_select "[data-test='release-inclusion-in']", count: 0
+  end
+
+  test "[component] the inclusion marker is reviewed-stage only" do
+    %w[submitted assembled building].each do |stage|
+      task = Task.create!(title: "No marker #{stage}", stage: stage,
+                          metadata: { "devops" => { "pr_url" => "https://github.com/amcritchie/turf-monster/pull/7" } })
+      render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :deploy }
+      assert_select "[data-test='release-inclusion-marker']", { count: 0 },
+                    "the inclusion marker must not render on the #{stage} stage"
+    end
+  end
+
   test "deploy attention cards step up from subtle to medium to pokemon-color border glows" do
     task = Task.create!(title: "Assembled glow task", stage: "assembled")
     mascot = Pokemon.create!(dex: 806, name: "Charizard", slug: "charizard", types: %w[fire flying],

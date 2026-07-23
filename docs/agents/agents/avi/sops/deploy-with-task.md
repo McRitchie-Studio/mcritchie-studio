@@ -129,9 +129,9 @@ refused with the pending work listed. Report:
 
 ## Background — not needed to execute
 
-- [`production-deploy.md`](production-deploy.md) - the batch ship act this SOP
+- [`../../steffon/sops/production-deploy.md`](../../steffon/sops/production-deploy.md) - the batch ship act this SOP
   borrows its gate semantics from.
-- [`../../steffon/sops/qa-release.md`](../../steffon/sops/qa-release.md) - the
+- [`../../avi/sops/qa-release.md`](../../avi/sops/qa-release.md) - the
   sweep act behind step 3.
 - [`../../../system/devops-cycle-design.md`](../../../system/devops-cycle-design.md)
   §1.4 - release atom model (architecture).

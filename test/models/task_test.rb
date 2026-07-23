@@ -998,6 +998,62 @@ class TaskTest < ActiveSupport::TestCase
     assert_equal :unknown, task.release_kind
   end
 
+  # --- Per-application release inclusion (Avi's qa-release disposition) ---
+
+  test "[unit] included_in_release? defaults true so a plain reviewed task ships" do
+    task = Task.create!(title: "default inclusion task", stage: "reviewed")
+    assert task.included_in_release?, "the default is to ship ALL reviewed work"
+  end
+
+  test "[unit] an explicit false holds a member out of the release" do
+    task = Task.create!(title: "held back task", stage: "reviewed",
+                        metadata: { "devops" => { "included_in_release" => "false" } })
+    assert_not task.included_in_release?, "an explicit false marks the member held from the release"
+  end
+
+  test "[unit] included_in_release survives normalize_devops_metadata as a client key" do
+    normalized = Task.normalize_devops_metadata("included_in_release" => "false")
+    assert_equal "false", normalized["included_in_release"],
+                 "the flag must be a permitted devops key so the API/board can write it"
+  end
+
+  test "[unit] reviewed_release_inclusion marks the reviewed app members, grouped by app" do
+    included = Task.create!(title: "turf app member in", stage: "reviewed",
+                            metadata: { "devops" => {
+                              "pr_url" => "https://github.com/amcritchie/turf-monster/pull/1"
+                            } })
+    held = Task.create!(title: "hub app member held", stage: "reviewed",
+                        metadata: { "devops" => {
+                          "pr_url" => "https://github.com/amcritchie/mcritchie-studio/pull/2",
+                          "included_in_release" => "false"
+                        } })
+    # A non-reviewed task must never appear in the reviewed disposition.
+    Task.create!(title: "submitted not reviewed", stage: "submitted",
+                 metadata: { "devops" => { "pr_url" => "https://github.com/amcritchie/turf-monster/pull/9" } })
+
+    inclusion = Task.reviewed_release_inclusion
+
+    assert_equal %w[mcritchie-studio turf-monster].sort, inclusion.keys.sort
+    assert inclusion["turf-monster"][:included], "the turf app rides by default (all members included)"
+    assert_includes inclusion["turf-monster"][:members], included
+    assert_not inclusion["mcritchie-studio"][:included], "one held member flags its whole app as held from release"
+    assert_includes inclusion["mcritchie-studio"][:members], held
+  end
+
+  test "[unit] an app is held only when EVERY reviewed member is held" do
+    Task.create!(title: "turf member shipping", stage: "reviewed",
+                 metadata: { "devops" => { "pr_url" => "https://github.com/amcritchie/turf-monster/pull/3" } })
+    Task.create!(title: "turf member held out", stage: "reviewed",
+                 metadata: { "devops" => {
+                   "pr_url" => "https://github.com/amcritchie/turf-monster/pull/4",
+                   "included_in_release" => "false"
+                 } })
+
+    inclusion = Task.reviewed_release_inclusion
+    assert_not inclusion["turf-monster"][:included],
+               "a single held member holds the whole app so the marker never says 'shipping' over an ejected member"
+  end
+
   # --- Naming discipline: terse title + acceptance, agent_context ---
 
   test "title must be 3-5 words on create" do
