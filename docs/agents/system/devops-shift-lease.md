@@ -34,6 +34,14 @@ covers only `clean-up`'s `avi` lane (a board sweep over shared worktrees) and th
 vestigial `alex`. The model and table are KEPT; only `steffon` left the default
 `DevopsShift::LANES` set.
 
+**These lane keys are historical identifiers, not current owners.** The `steffon`
+and `avi` lane keys above date from before the 2026-07-22 act reslot and do NOT track
+who owns the act today: qa-release is Avi's now, production-deploy is Steffon's. The
+keys were deliberately left as-is because `avi` is still a live code identifier
+(`bin/devops-shift acquire avi`, run by `clean-up`) and renaming it would break the
+lane. Read the keys as opaque lease names; take the act-owner from its SOP, not from
+the key.
+
 **Renewal belongs to the run, not to the UI** (fixed 2026-07-20). Renewal used to
 live only in `bin/statusline`, so it happened when Claude Code PAINTED A STATUS LINE.
 A headless holder — a background agent run, and critically the **autonomous

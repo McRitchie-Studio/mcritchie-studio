@@ -28,10 +28,12 @@
 # outranks the standing-primary policy.
 #
 # The specialist pool is {shannon=UI · jasper=Web3 · steffon=DevOps/Platform ·
-# alex=Documentation}. The QA owner (Steffon by default, who QAs the assembled RC
-# at the `assembled` step) is EXCLUDED as a LIGHT so one soul never both reviews
-# AND QAs the same change — "no self-gating". Pass a different `qa_owner:` when he
-# isn't the one QAing this task.
+# alex=Documentation}. The QA owner (Avi by default — after the 2026-07-22 reslot he
+# owns qa-release: the accepted→release sweep + the QA deploy that flips members
+# `assembled`) is EXCLUDED as a LIGHT so one soul never both reviews AND QAs the same
+# change — "no self-gating". Avi isn't in the specialist pool, so his default
+# exclusion is a formal safeguard; pass a different `qa_owner:` (e.g. a specialist)
+# and that soul is dropped from the light pool for this task.
 #
 # The BUILDER is excluded from the LIGHT seat too — a soul shouldn't review their
 # own work. Who built the task is read from devops.built_by (stamped from the
@@ -68,9 +70,12 @@ class ReviewerSelector
   # (deep review + owner), so he is never a light-pool pick.
   STANDING_PRIMARY = "carl"
 
-  # The soul who QAs the assembled RC at the `assembled` step — excluded from the
-  # light pool by default so a reviewer never gates their own QA (no self-gating).
-  DEFAULT_QA_OWNER = "steffon"
+  # The soul who runs qa-release — the accepted→release sweep + the QA deploy at the
+  # `assembled` step — excluded from the light pool by default so a reviewer never
+  # gates their own QA (no self-gating). After the 2026-07-22 reslot this is AVI (he
+  # owns qa-release); Steffon moved to production-deploy (the ship) and rejoined the
+  # light specialist pool as the DevOps/Platform second read.
+  DEFAULT_QA_OWNER = "avi"
 
   # The two reviewer-role NAMES, sourced from the single vocabulary
   # (config/devops_vocabulary.yml → reviewer_roles) so the role this selector

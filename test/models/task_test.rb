@@ -391,7 +391,7 @@ class TaskTest < ActiveSupport::TestCase
     assert_nil decision["excluded_builder"], "no soul is falsely excluded"
     assert_equal "carl", decision["standing_primary"], "with no builder, Carl is the standing primary"
     assert_includes decision["candidates"], "shannon", "the light pool (minus QA owner) stays eligible"
-    refute_includes decision["candidates"], "steffon", "the QA owner stays excluded from the light pool"
+    assert_includes decision["candidates"], "steffon", "steffon rejoins the light pool — avi is the QA owner now"
   ensure
     Current.reset
   end
