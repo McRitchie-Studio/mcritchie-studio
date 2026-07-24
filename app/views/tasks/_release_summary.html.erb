@@ -29,7 +29,21 @@
           seal exists — i.e. on a shipped release) sits left of the consolidated
           status badge. Plain server-rendered pills in a gap-2 flex (no Alpine
           x-show, no own margins) so they never fight LiveBoardFx or the grid. %>
-      <div class="flex shrink-0 items-center gap-2">
+      <div class="flex shrink-0 items-center gap-2" data-test="release-badge-cluster">
+        <%# Conductor-owner faces (Next Release only): the assembler (qa-release)
+            and deployer (production-deploy) session mascots, pinned just left of
+            the status badge so the operator sees who is driving the deploy at a
+            glance. Relocated here from below the tracker; a role with no claim
+            renders nothing, and the faces still refresh on this card's stage-stamp
+            morph. %>
+        <% if current %>
+          <% owner_faces = %w[assembler deployer].filter_map { |claim_role| release_role_owner_face(rel, claim_role) } %>
+          <% if owner_faces.any? %>
+            <span class="flex items-center gap-2" data-test="release-owner-faces" aria-label="Release conductors">
+              <%= safe_join(owner_faces) %>
+            </span>
+          <% end %>
+        <% end %>
         <% if (seal = rel.smoke_seal) %>
           <span class="shrink-0 px-2 py-0.5 rounded text-xs font-bold <%= release_smoke_seal_classes(seal) %>" data-test="release-smoke-seal-badge" data-seal-status="<%= seal.status %>" title="<%= release_smoke_seal_title(seal) %>"><%= seal.badge %> Seal</span>
         <% end %>
