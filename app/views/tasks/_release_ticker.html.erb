@@ -7,8 +7,8 @@
     It re-queries the DOM each tick, so a Turbo-Streamed card swap
     (DeploymentsBroadcaster → LiveBoardFx) is picked up automatically with no
     re-wiring. Installed once and survives Turbo navigations. fmt() MUST match
-    ApplicationHelper#format_elapsed_clock and agoFmt() MUST match
-    ApplicationHelper#release_ago_label so the server-rendered initial value and
+    ApplicationHelper#format_elapsed_clock, and agoFmt() renders the same
+    server-side "X ago" shape, so the server-rendered initial value and
     the first tick agree. %>
 <script>
   (function () {
@@ -43,7 +43,9 @@
           var remaining = average - secs;
           var overrun = remaining < 0;
           el.dataset.overrun = overrun ? "true" : "false";
-          el.textContent = (overrun ? "-" : "") + fmt(Math.abs(remaining));
+          // "~" marks the positive prediction as a forecast (time remaining), "-" the
+          // overrun.
+          el.textContent = (overrun ? "-" : "~") + fmt(Math.abs(remaining));
 
           var averageTitle = el.dataset.averageTitle || "Historical average";
           el.title = averageTitle + ": " + fmt(average) +

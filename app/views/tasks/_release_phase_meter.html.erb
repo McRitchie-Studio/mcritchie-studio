@@ -1,0 +1,34 @@
+<%# One phase meter inside a repo lane. Measured phases (Assembling / QA / Deploying)
+    show a fraction + fill (+ a check row for Assembling); Confirming is coarse — an
+    indeterminate lavender bar while running. A deploy meter links to its GitHub Actions
+    run. Locals: phase (a release_repo_lanes phase hash). %>
+<% phase = local_assigns.fetch(:phase) %>
+<% tone = release_meter_tone(phase) %>
+<% na = phase[:state].to_sym == :na %>
+<% live = phase[:state].to_sym == :running %>
+<div class="min-w-0" data-test="release-phase-meter" data-phase="<%= phase[:key] %>" data-state="<%= phase[:state] %>">
+  <div class="mb-1 flex items-baseline justify-between gap-1.5">
+    <span class="truncate text-[9px] font-bold uppercase tracking-wide <%= tone[:label] %>"><%= phase[:label] %></span>
+    <% if phase[:url].present? %>
+      <a href="<%= phase[:url] %>" target="_blank" rel="noopener"
+         class="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[10px] font-bold hover:underline <%= tone[:value] %>"
+         data-test="release-phase-link" title="Open the <%= phase[:label] %> GitHub Actions run">
+        <% if live %><span class="inline-block h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-current"></span><% end %><%= phase[:value] %><span aria-hidden="true" class="text-[8px] leading-none">↗</span>
+      </a>
+    <% else %>
+      <span class="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[10px] font-bold tabular-nums <%= tone[:value] %>">
+        <% if live %><span class="inline-block h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-current"></span><% end %><%= phase[:value] %>
+      </span>
+    <% end %>
+  </div>
+  <div class="h-2 overflow-hidden rounded border <%= na ? "border-dashed border-subtle bg-inset/40" : "border-subtle bg-inset" %>">
+    <% unless na %>
+      <div class="h-full rounded <%= tone[:fill] %> <%= "release-meter-indeterminate" if phase[:coarse] && live %>" style="width: <%= release_meter_width(phase) %>%"></div>
+    <% end %>
+  </div>
+  <% if phase[:checks] %>
+    <div class="mt-1 text-[10px] leading-none tracking-[0.12em] <%= tone[:value] %>" data-test="release-phase-checks"><%= release_meter_check_row(phase[:checks]) %></div>
+  <% else %>
+    <div class="mt-1 h-[11px]" aria-hidden="true"></div>
+  <% end %>
+</div>

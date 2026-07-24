@@ -154,6 +154,59 @@ module Ci
       latest_ci_run_url(nwo, branch, workflow)
     end
 
+    # The deploy workflow whose newest run each release PHASE resolves — keyed by the
+    # tracker phase ("qa" -> Deploying QA node, "prod" -> Deploying node) to the GitHub
+    # Actions workflow DISPLAY NAME (the run's `name`, what GithubWorkflowRun stores).
+    # config/release_repos.yml names the FILE (qa-deploy.yml / prod-deploy.yml); these
+    # are their `name:` headers. A repo that deploys some other way just has no matching
+    # run, so its node renders unlinked.
+    DEPLOY_RUN_WORKFLOWS = {
+      "qa"   => ["QA Deploy"].freeze,
+      "prod" => ["Production Deploy"].freeze
+    }.freeze
+
+    # The GitHub Actions DEPLOY-run URL for a release PHASE ("qa"/"prod"), or nil — the
+    # html_url the Next Release card's "Deploying QA" / "Deploying" tracker nodes link
+    # to. Unlike the G3 CI links (a push:release run keyed on branch+SHA), a deploy is a
+    # `workflow_dispatch` run whose head_branch/head_sha are the dispatch ref, NOT the
+    # release tip — so it is keyed on the workflow's DISPLAY NAME instead. Scoped to the
+    # release's member repos, newest run wins (the active release's deploy is the most
+    # recent). nil -> the node renders unlinked, never a broken href — the same graceful
+    # contract as release_ci_run_url, and safe from an already-ingested read (no network).
+    def release_deploy_run_url(release, phase)
+      return nil if release.blank?
+
+      workflow_names = DEPLOY_RUN_WORKFLOWS[phase.to_s]
+      return nil if workflow_names.blank?
+
+      nwos = member_repos(release).filter_map { |repo| nwo_for(repo).presence }.uniq
+      return nil if nwos.empty?
+
+      GithubWorkflowRun.where(repo: nwos, workflow_name: workflow_names)
+                       .order(Arel.sql(LATEST_RUN_ORDER))
+                       .limit(1).pick(:html_url).presence
+    end
+
+    # The newest DEPLOY run for ONE repo + phase, as { status:, conclusion:, url: } or
+    # nil — the per-lane signal the new per-repo tracker fills its QA / Deploying meters
+    # from (coarse: queued/in_progress/completed → pending/running/done). Same
+    # workflow-DISPLAY-name keying as release_deploy_run_url, but scoped to a single repo
+    # so each lane reads its own deploy, not the release-wide newest.
+    def release_deploy_run(release, repo, phase)
+      return nil if release.blank? || repo.to_s.strip.empty?
+
+      workflow_names = DEPLOY_RUN_WORKFLOWS[phase.to_s]
+      nwo = nwo_for(repo)
+      return nil if workflow_names.blank? || nwo.to_s.empty?
+
+      row = GithubWorkflowRun.where(repo: nwo, workflow_name: workflow_names)
+                             .order(Arel.sql(LATEST_RUN_ORDER))
+                             .limit(1).pick(:status, :conclusion, :html_url)
+      return nil if row.blank?
+
+      { status: row[0], conclusion: row[1], url: row[2].presence }
+    end
+
     # The core read: SHA -> Ci::CheckProgress. Live-first — a SHA the `workflow_job`
     # webhook has recorded folds straight from CiCheckJob rows (no network); only a
     # SHA with no ingested jobs falls back to the cached, budgeted GitHub API read.
