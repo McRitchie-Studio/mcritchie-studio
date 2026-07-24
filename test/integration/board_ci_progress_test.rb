@@ -61,7 +61,7 @@ class BoardCiProgressTest < ActionDispatch::IntegrationTest
     assert_select "#card-#{task.slug} [data-test='task-ci-progress-symbols']", 0, "12+ checks stay numeric"
   end
 
-  test "[integration] the Next Release card shows the G3 candidate CI meter, per member repo" do
+  test "[integration] the Next Release card shows each member repo's G3 CI in its Assembling meter" do
     rel = Release.open! # the active candidate -> Release.current -> the Next Release card
     rel.add(Task.create!(title: "Hub release CI member", stage: "reviewed",
                          metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } }))
@@ -70,19 +70,13 @@ class BoardCiProgressTest < ActionDispatch::IntegrationTest
     get deployments_path
     assert_response :success
 
-    # The track is per-repo now: the hub member's own #release-ci-progress-mcritchie-studio.
-    assert_select "#current-release [data-test='release-ci-progress-mcritchie-studio-symbols'][data-ci-state='green']", 1
-    assert_select "#current-release [data-test='ci-check-symbol']", 8
-    # The CI meter itself is not a link (no single PR); member pills legitimately are.
-    assert_select "#current-release a.ci-progress-card", 0, "the release meter has no single PR to link"
-
-    # Order (from #611): the per-repo G3 CI track renders BELOW the pizza tracker (not
-    # above the chips). `~` (general sibling) matches ONLY when the track FOLLOWS the
-    # tracker as a sibling; the negative pins that it no longer precedes it.
-    assert_select "#current-release [data-test='release-tracker'] ~ #release-ci-progress-mcritchie-studio", 1,
-      "the G3 CI track sits below the pizza tracker"
-    assert_select "#current-release #release-ci-progress-mcritchie-studio ~ [data-test='release-tracker']", 0,
-      "the G3 CI track no longer renders above the tracker"
+    # G3 CI is now the ASSEMBLING meter of the repo's lane: fully green (8/8) -> done,
+    # with the compact check row. The retired standalone "<repo> G3 tests" slot is gone.
+    hub = "#current-release [data-test='release-lane'][data-repo='mcritchie-studio']"
+    assert_select "#{hub} [data-phase='assembling'][data-state='done']", 1
+    assert_select "#{hub} [data-phase='assembling'] [data-test='release-phase-checks']", 1
+    assert_select "#current-release [data-test='release-card-ci-progress-mcritchie-studio']", 0,
+      "the standalone G3 slot no longer renders — CI lives in the Assembling meter"
   end
 
   test "[integration] a submitted card renders its meter from LIVE workflow_job rows (no fixture, no API)" do

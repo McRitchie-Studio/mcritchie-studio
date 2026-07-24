@@ -1,12 +1,13 @@
 require "test_helper"
 
-# [integration] The Next Release card renders ONE G3 CI track per member repo — a
-# release spanning turf-monster + mcritchie-studio shows two, each reading that
-# repo's own release-candidate CI (folded live from the ingested CiCheckJob rows,
-# so no network). Proves the board decomposition end to end: the per-repo slots,
-# their per-repo dom/test ids, and each track's own state.
+# [integration] The Next Release card shows each member repo's G3 CI — now as the
+# ASSEMBLING meter of that repo's lane (the standalone "<repo> G3 tests" bars were
+# retired; the same reader, release_ci_progress, feeds the meter). A release spanning
+# mcritchie-studio + turf-monster shows two lanes, each Assembling meter reading that
+# repo's own release-candidate CI (folded live from the ingested CiCheckJob rows) and
+# linking to its Actions run when there is one.
 class ReleaseSummaryCiTracksTest < ActionDispatch::IntegrationTest
-  test "[integration] the release card renders one G3 CI track per member repo" do
+  test "[integration] each member lane's Assembling meter reads that repo's G3 CI, linked to the run" do
     Release.delete_all
     GithubWorkflowRun.delete_all
     CiCheckJob.delete_all
@@ -26,34 +27,27 @@ class ReleaseSummaryCiTracksTest < ActionDispatch::IntegrationTest
     get deployments_path
     assert_response :success
 
-    # One slot per member repo, on its own per-repo stable id (the live morph target).
-    assert_select "#current-release #release-ci-progress-mcritchie-studio", 1
-    assert_select "#current-release #release-ci-progress-turf-monster", 1
-    # The single hub-only bar is gone — no bare id survives the decomposition.
-    assert_select "#release-ci-progress", 0
+    hub_lane  = "#current-release [data-test='release-lane'][data-repo='mcritchie-studio']"
+    turf_lane = "#current-release [data-test='release-lane'][data-repo='turf-monster']"
 
-    # Each track rendered its meter (present? true for both), on its own inner test id.
-    assert_select "#release-ci-progress-mcritchie-studio [data-test='release-card-ci-progress-mcritchie-studio']", 1
-    assert_select "#release-ci-progress-turf-monster [data-test='release-card-ci-progress-turf-monster']", 1
+    # One lane per member repo; the retired standalone G3 bars leave no slot behind.
+    assert_select hub_lane, 1
+    assert_select turf_lane, 1
+    assert_select "#current-release [data-test='release-card-ci-progress-mcritchie-studio']", 0,
+                  "the standalone G3 bars are gone — CI lives in the Assembling meter now"
 
-    # ASK 1 — the relabel: each track LEADS with the app emoji, then the app (repo)
-    # slug, then "G3 tests" (not the old "G3 CI 🐊").
-    assert_select "#release-ci-progress-mcritchie-studio span", text: /mcritchie-studio G3 tests/
-    assert_select "#release-ci-progress-turf-monster span", text: /turf-monster G3 tests/
-
-    # ASK 2 — clickable: the hub track's run carries an html_url, so its whole meter
-    # card is an anchor opening that Actions run in a NEW TAB (noopener), named for
-    # screen readers.
-    hub_link = "#release-ci-progress-mcritchie-studio a.ci-progress-card[data-test='release-card-ci-progress-mcritchie-studio']"
+    # The hub's Assembling meter is DONE (8/8) and links its label to that G3 Actions run
+    # in a new tab (noopener), named for screen readers.
+    assert_select "#{hub_lane} [data-phase='assembling'][data-state='done']", 1
+    hub_link = "#{hub_lane} [data-phase='assembling'] a[data-test='release-phase-link']"
     assert_select "#{hub_link}[href='https://github.com/amcritchie/mcritchie-studio/actions/runs/5100']", 1
-    assert_select "#{hub_link}[target='_blank'][rel='noopener']", 1
-    assert_select "#{hub_link}[aria-label]", 1, "the link has an accessible name"
+    assert_select "#{hub_link}[target='_blank'][rel='noopener'][title]", 1
 
-    # Graceful no-op: turf's run has NO html_url, so its track renders the meter but
-    # UNLINKED — a plain panel, and NEVER a broken href="#".
-    assert_select "#release-ci-progress-turf-monster div.ci-progress-card[data-test='release-card-ci-progress-turf-monster']", 1
-    assert_select "#release-ci-progress-turf-monster a", 0, "no run url -> no link"
-    assert_select "#current-release a[href='#']", 0, "never a broken href on any track"
+    # turf's Assembling meter is RUNNING (3 of 8) with NO run url, so it stays UNLINKED —
+    # a plain meter, never a broken href="#".
+    assert_select "#{turf_lane} [data-phase='assembling'][data-state='running']", 1
+    assert_select "#{turf_lane} [data-phase='assembling'] a", 0, "no run url -> no link"
+    assert_select "#current-release a[href='#']", 0, "never a broken href on any lane"
   end
 
   private
