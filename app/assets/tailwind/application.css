@@ -1,5 +1,9 @@
 @import 'tailwindcss';
 
+/* Heartbeat + activities component styles, de-inlined from the ERB partials so
+   they compile once instead of re-serializing on every response (epic item 4). */
+@import './heartbeat.css';
+
 @config '../../../config/tailwind.config.js';
 
 /*
