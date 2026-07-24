@@ -44,6 +44,21 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
     assert_includes streams.first.to_html, "crew-live", "the re-rendered card shows the in-progress ticker"
   end
 
+  test "[integration] approval_change REPLACES the card in place so the WAITING bar pops live" do
+    task = built_submitted_task
+    task.update!(stage: "building") # a live board card the operator can approve
+    md = task.metadata.deep_dup
+    (md["devops"] ||= {})["approval_status"] = "waiting"
+    task.update!(metadata: md)
+
+    streams = capture_turbo_stream_broadcasts("deployments") { DeploymentsBroadcaster.approval_change(task) }
+
+    assert_equal 1, streams.size
+    assert_equal "replace", streams.first["action"]
+    assert_equal "card-#{task.slug}", streams.first["target"]
+    assert_includes streams.first.to_html, "WAITING APPROVAL", "the re-rendered card carries the approval bar"
+  end
+
   test "a cross-column stage move REMOVES the old card and PREPENDS a fresh one" do
     task = built_submitted_task
     Current.task_event_reviewers = REVIEWERS
