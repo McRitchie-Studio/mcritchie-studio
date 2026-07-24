@@ -147,8 +147,18 @@ class DeploymentsBroadcaster
     end
   end
 
-  # `task:` covers event-less broadcasts (gate runs): the card render only needs
-  # the task, so those callers pass it directly and use #deliver_replace.
+  # An operator-approval flip (devops.approval_status → "waiting" / cleared) changed
+  # no stage column and wrote no TaskEvent, so neither spine fired — refresh the card
+  # in place so the WAITING APPROVAL bar appears (or drops) live, no reload. Same
+  # event-less REPLACE as .gate_run; a no-op if the card isn't on the board. Called
+  # from Task's after_update_commit and guarded so a cable failure never breaks the
+  # approval write (SEV-1 guard).
+  def self.approval_change(task)
+    Studio::Cable.safe_broadcast { new(nil, task: task).deliver_replace }
+  end
+
+  # `task:` covers event-less broadcasts (gate runs, approval flips): the card render
+  # only needs the task, so those callers pass it directly and use #deliver_replace.
   def initialize(event, task: nil)
     @event = event
     @task = task || event&.task
