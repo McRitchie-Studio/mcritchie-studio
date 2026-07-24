@@ -7,12 +7,25 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
-  test "landing page renders corrected hero and about copy" do
+  test "landing page renders acquisition-focused hero and about copy" do
     get root_path
 
     assert_response :success
-    assert_includes response.body, "supercharge your team"
-    assert_includes response.body, "Ten years' experience"
+    # Hero
+    assert_includes response.body, "Solutions For"
+    assert_includes response.body, "Families"
+    assert_includes response.body, "An acquisition entrepreneur partnering with owners"
+    # About
+    assert_includes response.body, "Acquisition Entrepreneur"
+    assert_includes response.body, "Over a decade of operational"
+    # Cards
+    assert_includes response.body, "Originating and scaling new business"
+    assert_includes response.body, "Technical Architecture"
+    assert_includes response.body, "Product and engineering design, development"
+    # the consultant-era copy must not return
+    assert_not_includes response.body, "supercharge your team"
+    assert_not_includes response.body, "Ten years' experience"
+    assert_not_includes response.body, "Technical Strategy"
   end
 
   test "get in touch section shows only the full-width video chat card" do
