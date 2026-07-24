@@ -36,6 +36,16 @@ class DeploymentsOwnerFacesTest < ActionDispatch::IntegrationTest
     assert_select "#current-release [data-test='release-owner-face'][data-role='assembler'] img[src='https://img.test/pikachu.png']"
     assert_select "#current-release [data-test='release-owner-face'][title=?]", "QA (assembler): Pikachu"
     assert_select "#current-release [data-test='release-owner-face'][title=?]", "Deploy (deployer): Onix"
+
+    # Placement: the faces sit in the top-right badge cluster alongside the status
+    # badge (moved up from below the tracker), so the operator sees who is driving
+    # the deploy right next to the "Assembling" pill.
+    assert_select "[data-test='release-badge-cluster'] [data-test='release-owner-faces']", 1
+    assert_select "[data-test='release-badge-cluster'] [data-test='release-state-badge']", 1
+    assert_select "[data-test='release-badge-cluster'] [data-test='release-owner-face']", 2
+
+    # Size: the avatars render a touch larger than the 24px conductor-mascot row.
+    assert_select "#current-release [data-test='release-owner-face'] img.w-7.h-7", 2
   end
 
   test "[integration] a role with no claim renders no face, and the row hides when both absent" do
