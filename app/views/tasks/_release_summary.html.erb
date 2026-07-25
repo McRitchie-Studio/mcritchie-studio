@@ -29,7 +29,21 @@
           seal exists — i.e. on a shipped release) sits left of the consolidated
           status badge. Plain server-rendered pills in a gap-2 flex (no Alpine
           x-show, no own margins) so they never fight LiveBoardFx or the grid. %>
-      <div class="flex shrink-0 items-center gap-2">
+      <div class="flex shrink-0 items-center gap-2" data-test="release-badge-cluster">
+        <%# Conductor-owner faces (Next Release only): the assembler (qa-release)
+            and deployer (production-deploy) session mascots, pinned just left of
+            the status badge so the operator sees who is driving the deploy at a
+            glance. Relocated here from below the tracker; a role with no claim
+            renders nothing, and the faces still refresh on this card's stage-stamp
+            morph. %>
+        <% if current %>
+          <% owner_faces = %w[assembler deployer].filter_map { |claim_role| release_role_owner_face(rel, claim_role) } %>
+          <% if owner_faces.any? %>
+            <span class="flex items-center gap-2" data-test="release-owner-faces" aria-label="Release conductors">
+              <%= safe_join(owner_faces) %>
+            </span>
+          <% end %>
+        <% end %>
         <% if (seal = rel.smoke_seal) %>
           <span class="shrink-0 px-2 py-0.5 rounded text-xs font-bold <%= release_smoke_seal_classes(seal) %>" data-test="release-smoke-seal-badge" data-seal-status="<%= seal.status %>" title="<%= release_smoke_seal_title(seal) %>"><%= seal.badge %> Seal</span>
         <% end %>
@@ -86,12 +100,12 @@
             <% summary[:highlights].each do |t| %>
               <% cost_label = release_member_cost_label(t) %>
               <%= link_to task_path(t.slug),
-                          class: [pill_class, "w-56 shrink-0 overflow-hidden"].join(" "),
+                          class: [pill_class, "w-64 shrink-0 overflow-hidden"].join(" "),
                           style: "",
                           data: { test: "release-member-pill", release_member: "highlight" },
                           title: t.title do %>
                 <%= app_emoji_badge(t.devops_repositories) %>
-                <span class="min-w-0 flex-1 overflow-hidden whitespace-nowrap" style="<%= right_fade_style(stop: 76) %>"><%= t.title %></span>
+                <span class="min-w-0 flex-1 overflow-hidden whitespace-nowrap" style="<%= right_fade_style(stop: 84) %>"><%= t.title %></span>
                 <% if cost_label.present? %>
                   <span class="ml-auto shrink-0 rounded-sm border border-subtle bg-surface/70 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-muted tabular-nums" data-test="release-member-cost" title="<%= release_member_cost_title(t) %>"><%= cost_label %></span>
                 <% end %>
@@ -126,43 +140,10 @@
     <% end %>
     <% if current %>
       <div class="mt-4 pt-3 border-t border-subtle/70" data-test="release-tracker" aria-label="Release progress">
-        <%= render "tasks/release_tracker", release: rel %>
+        <%= render "tasks/release_lanes", release: rel %>
       </div>
     <% end %>
-    <%# Conductor-owner faces (Next Release card only): two small Pokémon — the
-        SESSION running QA/assembly (assembler claim) and the SESSION running the
-        production deploy (deployer claim) — live as the release builds, each drawn
-        from its holder session's mascot via release_role_owner_face. A role with no
-        claim yet renders nothing, so the row hides when both are absent. The faces
-        refresh on the next Release stage stamp (this card's after_commit morph); a
-        claim acquire does not itself broadcast, acceptable for v1. Sits just above
-        the per-repo candidate-CI meters the operator already watches. %>
-    <% if current %>
-      <% owner_faces = %w[assembler deployer].filter_map { |claim_role| release_role_owner_face(rel, claim_role) } %>
-      <% if owner_faces.any? %>
-        <div class="mt-3 flex items-center gap-3" data-test="release-owner-faces" aria-label="Release conductors">
-          <%= safe_join(owner_faces) %>
-        </div>
-      <% end %>
-    <% end %>
-    <%# G3 candidate suite CI meters (Next Release card only): ONE track PER MEMBER
-        REPO — a release spanning turf-monster + mcritchie-studio shows two, plus a
-        gem member a third. Each reads that repo's own release-candidate CI (app repos
-        on the `release` tip, gem repos on their `main` suite). Each track is wrapped in
-        the stable-id components/_ci_progress_slot on a PER-REPO #dom_id
-        (release-ci-progress-<repo>) so a live workflow_job for that repo morphs JUST
-        its bar; a repo with no CI run yet renders an empty, zero-height slot the
-        broadcaster can fill in place. Sits directly below the pizza tracker so the
-        release-progress column reads top-down: member chips, then the stage tracker,
-        then its per-app candidate-suite CI. %>
-    <% if current %>
-      <% release_ci_progress(rel).each do |repo, progress| %>
-        <%= render "components/ci_progress_slot",
-              dom_id: "release-ci-progress-#{repo}",
-              progress: progress,
-              label: release_ci_track_label(repo), test_id: "release-ci-progress-#{repo}",
-              href: release_ci_run_url(rel, repo),
-              link_title: "Open #{repo} G3 CI run on GitHub",
-              wrapper_class: "mt-2", inner_test_id: "release-card-ci-progress-#{repo}" %>
-      <% end %>
-    <% end %>
+    <%# The per-repo G3 candidate-CI meters that used to sit here are now the
+        Assembling meter of each lane in tasks/_release_lanes (same reader,
+        release_ci_progress), linking to the same G3 run — so a standalone stack of
+        "<repo> G3 tests" bars below the tracker would duplicate them. %>

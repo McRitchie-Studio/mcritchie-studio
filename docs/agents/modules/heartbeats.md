@@ -122,8 +122,8 @@ The per-soul cheat sheet — say the row-1 prompt, then drive these commands:
 
 ## The release handoff seam — Avi owns stages 1–3, Steffon owns 4–5
 
-The current-release pizza-tracker (`ApplicationHelper::RELEASE_TRACKER_STAGES`) has
-five stages:
+The current-release stages (`Release::STAGES`, rendered on /deployments as the
+per-repo lanes tracker, `ApplicationHelper#release_repo_lanes`) are five:
 
 | # | Stage key | Active → complete label | Owner | Driven by |
 |---|---|---|---|---|

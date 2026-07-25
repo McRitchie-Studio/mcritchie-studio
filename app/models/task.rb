@@ -288,6 +288,14 @@ class Task < ApplicationRecord
   # size still blank. Enqueued async (AviSizingJob) so the sizing runs in PARALLEL
   # with the build, never blocking the create/move. See #enqueue_avi_sizing_if_designed_unsized.
   after_commit :enqueue_avi_sizing_if_designed_unsized, on: %i[create update]
+  # The operator-approval status lives INSIDE the metadata JSON, so flipping it to
+  # "waiting" (an agent requesting a demo review) or clearing it changes no stage
+  # column and writes no TaskEvent — the two spines the live /deployments board
+  # listens on. Without this the WAITING APPROVAL bar only appeared on a full
+  # reload. Broadcast an event-less in-place card replace whenever the DERIVED
+  # approval_status actually changes (a wholesale devops rewrite that echoes the
+  # same value is not a change, so `bin/task update --checks` never spams the board).
+  after_update_commit :broadcast_operator_approval_change, if: :saved_change_to_approval_status?
   # A destroy fires no TaskEvent, so the live /deployments board never hears about
   # it — broadcast the card removal explicitly so every viewer's board drops it.
   after_destroy_commit :broadcast_removal_to_deployments_board
@@ -1735,6 +1743,25 @@ class Task < ApplicationRecord
     approval = (merged["devops"] ||= {})
     approval["approval_approved_at"] ||= Time.current.iso8601
     self.metadata = merged
+  end
+
+  # True when the just-saved update actually CHANGED the derived approval_status.
+  # Rails' saved_change_to_* only tracks columns, not a scalar nested in the
+  # metadata JSON, so compare the before/after devops.approval_status ourselves.
+  # Gated on saved_change_to_metadata? first so a stage-only save short-circuits.
+  def saved_change_to_approval_status?
+    return false unless saved_change_to_metadata?
+
+    approval_status_before_last_save != approval_status
+  end
+
+  def approval_status_before_last_save
+    before, = saved_change_to_metadata
+    (before || {}).dig("devops", "approval_status").to_s.presence
+  end
+
+  def broadcast_operator_approval_change
+    DeploymentsBroadcaster.approval_change(self)
   end
 
   # devops.checks_run carries TWO namespaces. The AUTHOR owns the tier tags

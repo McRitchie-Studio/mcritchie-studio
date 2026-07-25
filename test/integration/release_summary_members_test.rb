@@ -22,7 +22,7 @@ class ReleaseSummaryMembersTest < ActionDispatch::IntegrationTest
     assert_select "#current-release a[href=?][data-release-member='highlight']", task_path(medium_studio.slug), text: /Medium studio work/
     assert_select "#current-release a[data-release-member='highlight']" do |links|
       links.each do |link|
-        assert_includes link["class"], "w-56"
+        assert_includes link["class"], "w-64"
         assert_includes link.to_html, "mask-image: linear-gradient(to right"
       end
     end

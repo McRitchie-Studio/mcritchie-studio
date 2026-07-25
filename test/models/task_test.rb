@@ -149,6 +149,66 @@ class TaskTest < ActiveSupport::TestCase
     assert task.waiting_for_operator_approval?
   end
 
+  # --- the WAITING APPROVAL badge must pop live over websockets ----------------
+  # An agent requests approval by flipping devops.approval_status to "waiting".
+  # That changes no stage column and writes no TaskEvent — the spine the live
+  # /deployments board listens on — so the badge used to appear only on a full
+  # reload. An after_update_commit refreshes the card in place off the DERIVED
+  # approval_status change instead (mirrors the event-less gate-run broadcast).
+
+  test "[unit] flipping approval_status to waiting refreshes the board card live" do
+    task = Task.create!(
+      title: "Approval Pop Waiting",
+      stage: "building",
+      metadata: { "devops" => { "local_url" => "http://localhost:3021/tasks" } }
+    )
+
+    calls = []
+    DeploymentsBroadcaster.stub(:approval_change, ->(t) { calls << t.slug }) do
+      md = task.metadata.deep_dup
+      md["devops"]["approval_status"] = "waiting"
+      task.update!(metadata: md)
+    end
+
+    assert_equal [task.slug], calls, "the waiting flip must refresh the card so the badge pops without a reload"
+  end
+
+  test "[unit] resolving a waiting approval also refreshes the card live" do
+    task = Task.create!(
+      title: "Approval Pop Clear",
+      stage: "building",
+      metadata: { "devops" => { "approval_status" => "waiting", "local_url" => "http://localhost:3021/tasks" } }
+    )
+
+    calls = []
+    DeploymentsBroadcaster.stub(:approval_change, ->(t) { calls << t.slug }) do
+      md = task.metadata.deep_dup
+      md["devops"]["approval_status"] = "changes_requested"
+      task.update!(metadata: md)
+    end
+
+    assert_equal [task.slug], calls, "clearing the request must also refresh the card so the amber bar drops"
+  end
+
+  test "[unit] a metadata write that leaves approval_status unchanged does not re-broadcast" do
+    # The board must not be spammed on every `bin/task update --checks` — a
+    # wholesale devops rewrite that echoes the same approval_status is not a change.
+    task = Task.create!(
+      title: "Approval Pop No Spam",
+      stage: "building",
+      metadata: { "devops" => { "approval_status" => "waiting", "local_url" => "http://localhost:3021/tasks" } }
+    )
+
+    calls = []
+    DeploymentsBroadcaster.stub(:approval_change, ->(t) { calls << t.slug }) do
+      md = task.metadata.deep_dup
+      md["devops"]["checks_run"] = ["[unit] unrelated check"]
+      task.update!(metadata: md)
+    end
+
+    assert_empty calls, "an unrelated metadata write must not broadcast an approval refresh"
+  end
+
   test "[unit] blocking a building task keeps approval open" do
     task = Task.create!(
       title: "Approval Still Blocked",
