@@ -35,6 +35,13 @@ class HeartbeatStylesDeinlinedTest < ActiveSupport::TestCase
       assert_match(/@keyframes\s+#{Regexp.escape(kf)}\b/, css,
         "heartbeat.css must define @keyframes #{kf} (carried over from the inline block)")
     end
+    # The action-count pulse definition — the 8s hold usage and the class the live-fx
+    # hook toggles. Moved here from agents_activities_test when these rules were
+    # de-inlined out of response.body (the integration test now asserts the JS hook).
+    assert_includes css, "aa-count-pulse 8s",
+      "heartbeat.css must keep the 8s count-pulse hold (animation: aa-count-pulse 8s ...)"
+    assert_match(/\.aa-count-pulse\b/, css,
+      "heartbeat.css must define the .aa-count-pulse selector the live-fx hook toggles")
     # It is a plain stylesheet now — no ERB, no <style> wrapper.
     assert_no_match(/<style\b|<%/, css, "heartbeat.css must be plain static CSS (no <style> tag, no ERB)")
   end
