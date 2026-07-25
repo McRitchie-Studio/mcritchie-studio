@@ -214,6 +214,105 @@ class Ci::ProgressReaderTest < ActiveSupport::TestCase
     assert_nil Ci::ProgressReader.new.release_ci_run_url(Release.new(state: "shipped"), "turf-monster")
   end
 
+  # ── release_deploy_run_url: the tracker's deploy-node link to the GH Actions run ──
+  # Keyed on the deploy workflow's DISPLAY name (QA Deploy / Production Deploy), NOT
+  # branch+SHA like the G3 links — a workflow_dispatch run's head_branch is the dispatch
+  # ref, not the release tip. Scoped to member repos, newest wins, nil -> unlinked.
+
+  test "[unit] release_deploy_run_url resolves the QA Deploy run for the qa phase" do
+    reader = Ci::ProgressReader.new
+    rel = release_with_members("mcritchie-studio")
+    seed_run(repo: "amcritchie/mcritchie-studio", branch: "main", sha: "tip", workflow: "QA Deploy",
+             html_url: "https://github.com/amcritchie/mcritchie-studio/actions/runs/9001")
+
+    assert_equal "https://github.com/amcritchie/mcritchie-studio/actions/runs/9001",
+                 reader.release_deploy_run_url(rel, "qa"),
+                 "the Deploying QA node links to the release's QA Deploy Actions run"
+  end
+
+  test "[unit] release_deploy_run_url resolves the Production Deploy run for the prod phase" do
+    reader = Ci::ProgressReader.new
+    rel = release_with_members("mcritchie-studio")
+    seed_run(repo: "amcritchie/mcritchie-studio", branch: "main", sha: "tip", workflow: "Production Deploy",
+             html_url: "https://github.com/amcritchie/mcritchie-studio/actions/runs/9002")
+
+    assert_equal "https://github.com/amcritchie/mcritchie-studio/actions/runs/9002",
+                 reader.release_deploy_run_url(rel, "prod"),
+                 "the Deploying node links to the release's Production Deploy Actions run"
+  end
+
+  test "[unit] release_deploy_run_url picks the NEWEST deploy run" do
+    reader = Ci::ProgressReader.new
+    rel = release_with_members("mcritchie-studio")
+    seed_run(repo: "amcritchie/mcritchie-studio", branch: "main", sha: "old", workflow: "QA Deploy",
+             started_at: 1.hour.ago, html_url: "https://github.com/amcritchie/mcritchie-studio/actions/runs/1")
+    seed_run(repo: "amcritchie/mcritchie-studio", branch: "main", sha: "new", workflow: "QA Deploy",
+             started_at: 1.minute.ago, html_url: "https://github.com/amcritchie/mcritchie-studio/actions/runs/2")
+
+    assert_equal "https://github.com/amcritchie/mcritchie-studio/actions/runs/2",
+                 reader.release_deploy_run_url(rel, "qa"),
+                 "the active release's deploy is the most recent QA Deploy run"
+  end
+
+  test "[unit] release_deploy_run_url ignores a deploy run in a NON-member repo" do
+    reader = Ci::ProgressReader.new
+    rel = release_with_members("mcritchie-studio")
+    seed_run(repo: "amcritchie/rolio", branch: "main", sha: "tip", workflow: "QA Deploy",
+             html_url: "https://github.com/amcritchie/rolio/actions/runs/9")
+
+    assert_nil reader.release_deploy_run_url(rel, "qa"),
+               "a QA Deploy run in a repo NOT in the release must not link the node"
+  end
+
+  test "[unit] release_deploy_run_url is nil with no matching run, and for an unmapped phase" do
+    reader = Ci::ProgressReader.new
+    rel = release_with_members("mcritchie-studio")
+    seed_run(repo: "amcritchie/mcritchie-studio", branch: "main", sha: "tip", workflow: "QA Deploy",
+             html_url: "https://github.com/amcritchie/mcritchie-studio/actions/runs/9003")
+
+    assert_nil reader.release_deploy_run_url(rel, "prod"), "no Production Deploy run yet -> unlinked node"
+    assert_nil reader.release_deploy_run_url(rel, "bogus"), "an unmapped phase never links"
+  end
+
+  test "[unit] release_deploy_run_url still resolves for a SHIPPED release (historical view)" do
+    reader = Ci::ProgressReader.new
+    rel = release_with_members("mcritchie-studio")
+    rel.update!(state: "shipped")
+    seed_run(repo: "amcritchie/mcritchie-studio", branch: "main", sha: "tip", workflow: "Production Deploy",
+             html_url: "https://github.com/amcritchie/mcritchie-studio/actions/runs/9004")
+
+    assert_equal "https://github.com/amcritchie/mcritchie-studio/actions/runs/9004",
+                 reader.release_deploy_run_url(rel, "prod"),
+                 "a shipped release's tracker still links its deploy runs (unlike the active?-gated CI links)"
+  end
+
+  # ── release_deploy_run: the per-repo, per-phase run a lane's QA/Deploy meter links to ──
+
+  test "[unit] release_deploy_run returns the newest matching run for that repo, as status+url" do
+    reader = Ci::ProgressReader.new
+    rel = release_with_members("mcritchie-studio", "turf-monster")
+    GithubWorkflowRun.create!(repo: "amcritchie/turf-monster", workflow_name: "QA Deploy", run_id: 71,
+                              status: "completed", conclusion: "success", head_branch: "main", head_sha: "t",
+                              run_started_at: Time.current, html_url: "https://github.com/amcritchie/turf-monster/actions/runs/71")
+
+    run = reader.release_deploy_run(rel, "turf-monster", "qa")
+    assert_equal "completed", run[:status]
+    assert_equal "success", run[:conclusion]
+    assert_equal "https://github.com/amcritchie/turf-monster/actions/runs/71", run[:url]
+  end
+
+  test "[unit] release_deploy_run is scoped to the repo + phase, nil when none" do
+    reader = Ci::ProgressReader.new
+    rel = release_with_members("mcritchie-studio")
+    GithubWorkflowRun.create!(repo: "amcritchie/turf-monster", workflow_name: "QA Deploy", run_id: 72,
+                              status: "in_progress", head_branch: "main", head_sha: "t",
+                              run_started_at: Time.current, html_url: "https://github.com/amcritchie/turf-monster/actions/runs/72")
+
+    assert_nil reader.release_deploy_run(rel, "mcritchie-studio", "qa"), "no QA Deploy run for this repo -> nil"
+    assert_nil reader.release_deploy_run(rel, "mcritchie-studio", "prod"), "no Production Deploy run -> nil"
+    assert_nil reader.release_deploy_run(rel, "mcritchie-studio", "bogus"), "an unmapped phase -> nil"
+  end
+
   # ── live-first: the workflow_job (CiCheckJob) path preferred over the API ──
 
   test "[unit] for_sha folds ingested CiCheckJob rows and never calls the API" do

@@ -44,6 +44,21 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
     assert_includes streams.first.to_html, "crew-live", "the re-rendered card shows the in-progress ticker"
   end
 
+  test "[integration] approval_change REPLACES the card in place so the WAITING bar pops live" do
+    task = built_submitted_task
+    task.update!(stage: "building") # a live board card the operator can approve
+    md = task.metadata.deep_dup
+    (md["devops"] ||= {})["approval_status"] = "waiting"
+    task.update!(metadata: md)
+
+    streams = capture_turbo_stream_broadcasts("deployments") { DeploymentsBroadcaster.approval_change(task) }
+
+    assert_equal 1, streams.size
+    assert_equal "replace", streams.first["action"]
+    assert_equal "card-#{task.slug}", streams.first["target"]
+    assert_includes streams.first.to_html, "WAITING APPROVAL", "the re-rendered card carries the approval bar"
+  end
+
   test "a cross-column stage move REMOVES the old card and PREPENDS a fresh one" do
     task = built_submitted_task
     Current.task_event_reviewers = REVIEWERS
@@ -208,24 +223,17 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
     assert_includes last.to_html, active.slug, "Last Release wears the just-shipped release"
   end
 
-  test "[integration] release_modules carries the active-stage countdown payload" do
-    now = Time.zone.parse("2026-07-06 12:00:00")
-    create_shipped_tracker_release(slug: "rel-countdown-one", shipped_at: now - 3.hours)
-    create_shipped_tracker_release(slug: "rel-countdown-two", shipped_at: now - 2.hours)
-    create_shipped_tracker_release(slug: "rel-countdown-three", shipped_at: now - 1.hour)
+  test "[integration] release_modules carries the per-repo lanes tracker for the active release" do
+    active = Release.open!
+    active.add(Task.create!(title: "Next release lane member", stage: "reviewed",
+                            metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } }))
 
-    travel_to now do
-      active = Release.open!(created_at: now - 5.minutes)
-      active.stamp_stage!("assembling", at: now - 4.minutes)
+    streams = capture_turbo_stream_broadcasts("deployments") { DeploymentsBroadcaster.release_modules }
+    current = streams.find { |s| s["target"] == "current-release" }
 
-      streams = capture_turbo_stream_broadcasts("deployments") { DeploymentsBroadcaster.release_modules }
-      current = streams.find { |s| s["target"] == "current-release" }
-
-      assert_includes current.to_html, %(data-mode="countdown")
-      assert_includes current.to_html, %(data-average-seconds="600")
-      assert_includes current.to_html, %(data-sample-count="3")
-      assert_includes current.to_html, "6m 00s"
-    end
+    assert current, "release_modules replaces the current-release slot"
+    assert_includes current.to_html, %(data-test="release-lanes"), "the morph carries the new per-repo lanes tracker"
+    assert_includes current.to_html, %(data-repo="mcritchie-studio"), "the member's own lane rides along"
   end
 
   test "[integration] Release wires the module broadcast on after_commit" do
@@ -314,7 +322,7 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
     assert_includes html, "target=\"_blank\""
   end
 
-  test "[integration] ci_progress morph-replaces a member repo's Next Release G3 track for its release-branch job" do
+  test "[integration] ci_progress refreshes the Next Release card for a member repo's release-branch job" do
     rel = Release.open! # the active candidate → Release.current
     rel.add(Task.create!(title: "Hub release CI member", stage: "reviewed",
                          metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } }))
@@ -322,16 +330,15 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
 
     streams = capture_turbo_stream_broadcasts("deployments") { DeploymentsBroadcaster.ci_progress(job) }
 
-    # The track is now PER-REPO: the hub member's job morphs its own #release-ci-progress-<repo>.
-    release_stream = streams.find { |s| s["target"] == "release-ci-progress-mcritchie-studio" }
-    assert release_stream, "the release-branch job pushes that member repo's G3 candidate track"
-    assert_equal "morph", release_stream["method"]
-    # 8 checks -> the symbolic row; the release meter has no single PR, so no link.
-    assert_includes release_stream.to_html, "release-ci-progress-mcritchie-studio-symbols"
-    assert_not_includes release_stream.to_html, "<a ", "the release meter is not clickable"
+    # The per-repo G3 slots are now each lane's Assembling meter, so a member's CI push
+    # refreshes the whole Next Release card (the lane updates in place).
+    current = streams.find { |s| s["target"] == "current-release" }
+    assert current, "the release-branch job refreshes the Next Release card"
+    assert_includes current.to_html, %(data-repo="mcritchie-studio"), "the member's lane is in the morphed card"
+    assert_includes current.to_html, %(data-phase="assembling"), "with its Assembling meter"
   end
 
-  test "[integration] ci_progress live-updates a GEM member's track on its own Engine CI job (main branch)" do
+  test "[integration] ci_progress live-updates the card for a GEM member's Engine CI job (main branch)" do
     rel = Release.open! # active candidate → Release.current
     rel.add(Task.create!(title: "Studio engine gem member", stage: "reviewed",
                          metadata: { "devops" => { "repositories" => ["studio-engine"] } }))
@@ -342,20 +349,19 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
 
     streams = capture_turbo_stream_broadcasts("deployments") { DeploymentsBroadcaster.ci_progress(job) }
 
-    gem_stream = streams.find { |s| s["target"] == "release-ci-progress-studio-engine" }
-    assert gem_stream, "a gem member's Engine CI job morphs its own #release-ci-progress-<repo> track"
-    assert_equal "morph", gem_stream["method"]
-    assert_includes gem_stream.to_html, "release-ci-progress-studio-engine-symbols"
+    current = streams.find { |s| s["target"] == "current-release" }
+    assert current, "a gem member's Engine CI job refreshes the Next Release card"
+    assert_includes current.to_html, %(data-repo="studio-engine"), "the gem's lane rides along"
   end
 
-  test "[integration] ci_progress does NOT push a release track for a non-member repo's release push" do
+  test "[integration] ci_progress does NOT refresh the release card for a non-member repo's release push" do
     Release.open! # active, but with NO members
     job = seed_ci(repo: "amcritchie/turf-monster", branch: Release::BRANCH, sha: "orphan-sha", passed: 4, pending: 0)
 
     streams = capture_turbo_stream_broadcasts("deployments") { DeploymentsBroadcaster.ci_progress(job) }
 
-    assert_empty streams.select { |s| s["target"].to_s.start_with?("release-ci-progress") },
-                 "a repo that is not a release member fires no G3 track"
+    assert_nil streams.find { |s| s["target"] == "current-release" },
+               "a repo that is not a release member fires no Next Release refresh"
   end
 
   test "[integration] ci_progress with no eligible task or release broadcasts nothing" do
@@ -379,30 +385,4 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
     end
   end
 
-  def create_shipped_tracker_release(slug:, shipped_at:)
-    testing_started_at = shipped_at - 24.minutes
-    assembling_started_at = testing_started_at + 2.minutes
-    assembled_at = assembling_started_at + 10.minutes
-    qa_deploy_started_at = assembled_at
-    qa_deployed_at = qa_deploy_started_at + 5.minutes
-    confirming_started_at = qa_deployed_at
-    confirmed_at = confirming_started_at + 3.minutes
-    prod_deploy_started_at = confirmed_at
-
-    Release.create!(slug: slug, branch: "release", state: "shipped").tap do |release|
-      release.update_columns( # rubocop:disable Rails/SkipsModelValidations
-        created_at: testing_started_at,
-        updated_at: shipped_at,
-        testing_started_at: testing_started_at,
-        assembling_started_at: assembling_started_at,
-        assembled_at: assembled_at,
-        qa_deploy_started_at: qa_deploy_started_at,
-        qa_deployed_at: qa_deployed_at,
-        confirming_started_at: confirming_started_at,
-        confirmed_at: confirmed_at,
-        prod_deploy_started_at: prod_deploy_started_at,
-        shipped_at: shipped_at
-      )
-    end
-  end
 end

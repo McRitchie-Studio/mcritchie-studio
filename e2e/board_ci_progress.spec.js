@@ -33,31 +33,25 @@ test("a submitted task card shows its CI checks as symbols, linked to the PR", a
   await expect(link).toHaveAttribute("rel", "noopener");
 });
 
-test("the Next Release card shows the G3 candidate CI as symbols, per member repo", async ({ page }) => {
+test("the Next Release card shows each member repo's G3 CI in its Assembling meter", async ({ page }) => {
   await page.goto("/deployments");
 
-  // The G3 meter is now ONE TRACK PER MEMBER REPO (release-ci-progress-<repo>). The
-  // seed's active release carries mcritchie-studio members and a mcritchie-studio
-  // release-branch CI run (e2e-rel-sha → 8 checks), so its hub track renders here.
-  const meter = page.locator(
-    "#current-release [data-test='release-ci-progress-mcritchie-studio-symbols']"
+  // G3 CI is now the ASSEMBLING meter of the repo's lane (the standalone "<repo> G3
+  // tests" bars were retired). The seed's active release carries mcritchie-studio
+  // members + a release-branch CI run (8 green), so the hub lane's Assembling meter is
+  // done and linked to its run.
+  const hubLane = page.locator(
+    "#current-release [data-test='release-lane'][data-repo='mcritchie-studio']"
   );
-  await expect(meter).toBeVisible();
-  await expect(page.locator("#current-release [data-test='ci-check-symbol']")).toHaveCount(8);
+  await expect(hubLane).toBeVisible();
+  const assembling = hubLane.locator("[data-phase='assembling']");
+  await expect(assembling).toHaveAttribute("data-state", "done");
 
-  // The track leads with the app emoji, then the app, then "G3 tests" (the relabel).
-  await expect(
-    page.locator("#current-release [data-test='release-ci-progress-mcritchie-studio-symbols']")
-  ).toContainText("mcritchie-studio G3 tests");
-
-  // The whole track is a link to that repo's G3 Actions run, opening in a new tab.
-  const g3Link = page.locator(
-    "#current-release a.ci-progress-card[data-test='release-card-ci-progress-mcritchie-studio']"
-  );
+  // Its label links to that repo's G3 Actions run, opening in a new tab.
+  const g3Link = assembling.locator("a[data-test='release-phase-link']");
   await expect(g3Link).toHaveAttribute("href", /\/actions\/runs\/\d+$/);
   await expect(g3Link).toHaveAttribute("target", "_blank");
   await expect(g3Link).toHaveAttribute("rel", "noopener");
-  await expect(g3Link).toHaveAttribute("aria-label", /G3 CI run/);
 });
 
 // v1.1 + v1.2 — the live path: this card's meter is folded from ingested CiCheckJob

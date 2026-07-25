@@ -70,9 +70,11 @@ Checks: [unit] geo_gate_test.rb · [integration] funding flow spec
 ## Review handoffs — hand a magic link
 
 When work waits on Mr. McRitchie's review, never hand him a URL that greets
-him with a login wall. Mint a **magic link** that signs him in AND lands on
-the exact page to review, and lead the handoff with it — one copy-paste from
-chat to reviewing.
+him with a login wall. He wants one click that **signs him in AND drops him on
+the exact page to evaluate — on the running local stack
+(`http://localhost:<port>/…`), never production.** Mint a **magic link** that
+does both, and lead the handoff with it — one copy-paste from chat to
+reviewing.
 
 ```bash
 # From the worktree, against the SAME database the demo server runs on:
@@ -91,11 +93,21 @@ Local Demo: http://localhost:<port>/<path>
 
 The mechanics that matter (`studio-engine/app/models/studio/link.rb:37`):
 
-- **The landing page is baked in at mint time.** `return_to:` must be a
-  same-origin absolute path (`/admin/theme`); appending `?return_to=` to the
-  click URL does nothing.
+- **Mint bakes in the PATH, not the host.** `return_to:` must be a same-origin
+  absolute path (`/admin/theme`); appending `?return_to=` to the click URL does
+  nothing. The host is never stored — the redirect inherits whatever host
+  served the `/l/<token>` click. So hand him the exact
+  `http://localhost:<port>/l/<token>` you minted on the stack; that host is what
+  lands him on the local page. (`TasksController#local_return_path` reads
+  `local_url` as a bare path and drops its host, so a `localhost:<port>` you
+  stored in `local_url` survives only if the link itself is served from there.)
 - **Mint in the stack's database.** A worktree stack serves from its own DB —
   load `.env.agent-stack` first or the server will not know the token.
+- **Skip the board's WAITING APPROVAL button for a LOCAL review.** That button
+  (`TasksController#local_review`) mints its own sign-in link, but served from
+  the production board it lands on the prod page, never `localhost:<port>`.
+  Trust it only on the local board; for a local evaluation, hand the minted
+  `http://localhost:<port>/l/<token>` above.
 - **Mint review links with `ttl: 12.hours`.** The 15-minute default is tuned
   for email login, not an async review.
 - **Links are single-use** (burned on the consume POST; the GET interstitial

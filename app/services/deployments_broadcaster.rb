@@ -97,19 +97,14 @@ class DeploymentsBroadcaster
                           wrapper_class: "mb-1.5", inner_test_id: "task-card-ci-progress")
       end
 
-      # Per-repo release-CI tracks: a job for a MEMBER repo on the branch that repo's
-      # track reads morphs JUST that repo's slot (app repos on `release`, gem members
-      # on `main`). release_ci_slot_for owns the member + branch match, so this fires
-      # for any member's release-CI push, not only the release branch.
+      # A CI push for a release MEMBER's candidate-CI track refreshes the whole Next
+      # Release card, so that lane's Assembling meter (the per-repo lanes tracker,
+      # Ci::ProgressReader#for_release) updates live. release_ci_slot_for owns the
+      # member + branch match, so this fires ONLY for a member's release-CI push — the
+      # per-repo "<repo> G3 tests" slots it used to morph are now those Assembling meters.
       if (release = Release.current) &&
-         (slot = reader.release_ci_slot_for(release, job.repo, job.head_branch))
-        repo, progress = slot
-        broadcast_ci_slot("release-ci-progress-#{repo}", progress,
-                          label: ApplicationController.helpers.release_ci_track_label(repo),
-                          href: reader.release_ci_run_url(release, repo),
-                          link_title: "Open #{repo} G3 CI run on GitHub",
-                          test_id: "release-ci-progress-#{repo}",
-                          wrapper_class: "mt-2", inner_test_id: "release-card-ci-progress-#{repo}")
+         reader.release_ci_slot_for(release, job.repo, job.head_branch)
+        release_modules
       end
     end
   end
@@ -147,8 +142,18 @@ class DeploymentsBroadcaster
     end
   end
 
-  # `task:` covers event-less broadcasts (gate runs): the card render only needs
-  # the task, so those callers pass it directly and use #deliver_replace.
+  # An operator-approval flip (devops.approval_status → "waiting" / cleared) changed
+  # no stage column and wrote no TaskEvent, so neither spine fired — refresh the card
+  # in place so the WAITING APPROVAL bar appears (or drops) live, no reload. Same
+  # event-less REPLACE as .gate_run; a no-op if the card isn't on the board. Called
+  # from Task's after_update_commit and guarded so a cable failure never breaks the
+  # approval write (SEV-1 guard).
+  def self.approval_change(task)
+    Studio::Cable.safe_broadcast { new(nil, task: task).deliver_replace }
+  end
+
+  # `task:` covers event-less broadcasts (gate runs, approval flips): the card render
+  # only needs the task, so those callers pass it directly and use #deliver_replace.
   def initialize(event, task: nil)
     @event = event
     @task = task || event&.task
