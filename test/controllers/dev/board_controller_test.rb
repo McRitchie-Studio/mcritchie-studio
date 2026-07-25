@@ -136,10 +136,26 @@ class Dev::BoardControllerTest < ActionDispatch::IntegrationTest
     fixture_releases.order(created_at: :desc).first
   end
 
-  # The live tracker reads the release's stage stamps — assert against the SAME
-  # model reads the view uses so the toy provably steps the tracker.
+  # The live tracker reads the release's stage stamps. Re-derive the same
+  # five-node state vector straight off the release's own stage machinery
+  # (stage_reached?), so the toy provably steps the tracker without depending on
+  # any view helper. Each node is :complete once its DONE stamp is reached,
+  # :active once its START stamp is reached, else :pending.
+  TRACKER_STAGE_BOUNDS = [
+    %w[testing assembling],
+    %w[assembling assembled],
+    %w[qa_deploying qa_deployed],
+    %w[confirming confirmed],
+    %w[prod_deploying shipped]
+  ].freeze
+
   def tracker_states(release)
-    ApplicationController.helpers.release_tracker_steps(release).map { |step| step[:state] }
+    TRACKER_STAGE_BOUNDS.map do |start_stage, done_stage|
+      if release.stage_reached?(done_stage) then :complete
+      elsif release.stage_reached?(start_stage) then :active
+      else :pending
+      end
+    end
   end
 
   test "[integration] open_release opens a clean fixture release with an untouched timeline" do

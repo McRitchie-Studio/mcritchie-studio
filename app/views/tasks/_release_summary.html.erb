@@ -100,12 +100,12 @@
             <% summary[:highlights].each do |t| %>
               <% cost_label = release_member_cost_label(t) %>
               <%= link_to task_path(t.slug),
-                          class: [pill_class, "w-56 shrink-0 overflow-hidden"].join(" "),
+                          class: [pill_class, "w-64 shrink-0 overflow-hidden"].join(" "),
                           style: "",
                           data: { test: "release-member-pill", release_member: "highlight" },
                           title: t.title do %>
                 <%= app_emoji_badge(t.devops_repositories) %>
-                <span class="min-w-0 flex-1 overflow-hidden whitespace-nowrap" style="<%= right_fade_style(stop: 76) %>"><%= t.title %></span>
+                <span class="min-w-0 flex-1 overflow-hidden whitespace-nowrap" style="<%= right_fade_style(stop: 84) %>"><%= t.title %></span>
                 <% if cost_label.present? %>
                   <span class="ml-auto shrink-0 rounded-sm border border-subtle bg-surface/70 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-muted tabular-nums" data-test="release-member-cost" title="<%= release_member_cost_title(t) %>"><%= cost_label %></span>
                 <% end %>
@@ -140,27 +140,10 @@
     <% end %>
     <% if current %>
       <div class="mt-4 pt-3 border-t border-subtle/70" data-test="release-tracker" aria-label="Release progress">
-        <%= render "tasks/release_tracker", release: rel %>
+        <%= render "tasks/release_lanes", release: rel %>
       </div>
     <% end %>
-    <%# G3 candidate suite CI meters (Next Release card only): ONE track PER MEMBER
-        REPO — a release spanning turf-monster + mcritchie-studio shows two, plus a
-        gem member a third. Each reads that repo's own release-candidate CI (app repos
-        on the `release` tip, gem repos on their `main` suite). Each track is wrapped in
-        the stable-id components/_ci_progress_slot on a PER-REPO #dom_id
-        (release-ci-progress-<repo>) so a live workflow_job for that repo morphs JUST
-        its bar; a repo with no CI run yet renders an empty, zero-height slot the
-        broadcaster can fill in place. Sits directly below the pizza tracker so the
-        release-progress column reads top-down: member chips, then the stage tracker,
-        then its per-app candidate-suite CI. %>
-    <% if current %>
-      <% release_ci_progress(rel).each do |repo, progress| %>
-        <%= render "components/ci_progress_slot",
-              dom_id: "release-ci-progress-#{repo}",
-              progress: progress,
-              label: release_ci_track_label(repo), test_id: "release-ci-progress-#{repo}",
-              href: release_ci_run_url(rel, repo),
-              link_title: "Open #{repo} G3 CI run on GitHub",
-              wrapper_class: "mt-2", inner_test_id: "release-card-ci-progress-#{repo}" %>
-      <% end %>
-    <% end %>
+    <%# The per-repo G3 candidate-CI meters that used to sit here are now the
+        Assembling meter of each lane in tasks/_release_lanes (same reader,
+        release_ci_progress), linking to the same G3 run — so a standalone stack of
+        "<repo> G3 tests" bars below the tracker would duplicate them. %>

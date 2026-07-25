@@ -97,19 +97,14 @@ class DeploymentsBroadcaster
                           wrapper_class: "mb-1.5", inner_test_id: "task-card-ci-progress")
       end
 
-      # Per-repo release-CI tracks: a job for a MEMBER repo on the branch that repo's
-      # track reads morphs JUST that repo's slot (app repos on `release`, gem members
-      # on `main`). release_ci_slot_for owns the member + branch match, so this fires
-      # for any member's release-CI push, not only the release branch.
+      # A CI push for a release MEMBER's candidate-CI track refreshes the whole Next
+      # Release card, so that lane's Assembling meter (the per-repo lanes tracker,
+      # Ci::ProgressReader#for_release) updates live. release_ci_slot_for owns the
+      # member + branch match, so this fires ONLY for a member's release-CI push — the
+      # per-repo "<repo> G3 tests" slots it used to morph are now those Assembling meters.
       if (release = Release.current) &&
-         (slot = reader.release_ci_slot_for(release, job.repo, job.head_branch))
-        repo, progress = slot
-        broadcast_ci_slot("release-ci-progress-#{repo}", progress,
-                          label: ApplicationController.helpers.release_ci_track_label(repo),
-                          href: reader.release_ci_run_url(release, repo),
-                          link_title: "Open #{repo} G3 CI run on GitHub",
-                          test_id: "release-ci-progress-#{repo}",
-                          wrapper_class: "mt-2", inner_test_id: "release-card-ci-progress-#{repo}")
+         reader.release_ci_slot_for(release, job.repo, job.head_branch)
+        release_modules
       end
     end
   end

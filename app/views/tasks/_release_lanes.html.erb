@@ -1,0 +1,36 @@
+<%# The per-repo release tracker: one lane per member repo (app or library), each with
+    four phase meters — Assembling · Deploying QA · Confirming · Deploying. Replaces the
+    five-node pizza tracker on the Next Release card. Data comes from
+    ApplicationHelper#release_repo_lanes; Confirming is the one coarse, release-grain
+    (shared) meter, drawn with an indeterminate barber-pole while it runs.
+    Locals: release (required). %>
+<% rel = local_assigns.fetch(:release) %>
+<% lanes = release_repo_lanes(rel) %>
+<style>
+  @keyframes release-meter-barberpole { to { background-position: 200% 0; } }
+  .release-meter-indeterminate {
+    background-image: repeating-linear-gradient(115deg,
+      color-mix(in srgb, var(--color-primary, #b57edc) 62%, transparent) 0 8px,
+      transparent 8px 18px);
+    background-size: 200% 100%;
+    animation: release-meter-barberpole 1.1s linear infinite;
+  }
+  @media (prefers-reduced-motion: reduce) { .release-meter-indeterminate { animation: none; } }
+</style>
+<div data-test="release-lanes">
+  <% lanes.each do |lane| %>
+    <div class="grid grid-cols-1 gap-x-4 gap-y-2 border-t border-subtle/50 py-3 first:border-t-0 sm:grid-cols-[176px_1fr] sm:items-center"
+         data-test="release-lane" data-repo="<%= lane[:repo] %>" data-kind="<%= lane[:kind] %>">
+      <div class="flex min-w-0 items-center gap-2">
+        <span class="grid h-6 w-6 shrink-0 place-items-center rounded-md border border-subtle bg-inset text-sm leading-none"><%= lane[:emoji] %></span>
+        <span class="truncate text-sm font-semibold text-heading"><%= lane[:repo] %></span>
+        <span class="shrink-0 rounded border border-subtle px-1 text-[10px] font-semibold uppercase tracking-wide text-muted"><%= lane[:kind] %></span>
+      </div>
+      <div class="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
+        <% lane[:phases].each do |phase| %>
+          <%= render "tasks/release_phase_meter", phase: phase %>
+        <% end %>
+      </div>
+    </div>
+  <% end %>
+</div>

@@ -472,15 +472,6 @@ module ApplicationHelper
     ci_progress_reader.for_release(release)
   end
 
-  # The label for one repo's release-CI track — the app emoji, then the app (repo)
-  # slug, then "G3 tests", so each per-repo track LEADS with its app and reads apart
-  # at a glance ("🐊 turf-monster G3 tests"). An unmapped repo drops the nil emoji and
-  # leads with the slug. Shared by the release card render and the live
-  # DeploymentsBroadcaster morph so the two never drift.
-  def release_ci_track_label(repo)
-    [app_emoji(repo), repo, "G3 tests"].compact.join(" ")
-  end
-
   # The GitHub Actions run URL for one repo's release-CI track, or nil — the html_url
   # the Next Release card's G3 track links to (opened in a new tab). Resolved through
   # the same reader as release_ci_progress, so the link points at the EXACT run whose
@@ -553,191 +544,155 @@ module ApplicationHelper
     "#{seal.verdict_line}#{when_text}"
   end
 
-  # The five tracker nodes. Each node derives complete/active/pending purely from
-  # the release's stage stamps (Release::STAGES): complete once `completes` is
-  # reached, active while `starts` is reached but `completes` is not, pending
-  # otherwise. Because a node lights yellow ONLY on its own start stamp, a
-  # finished stage leaves the NEXT node dark until its owner posts their start —
-  # the explicit Avi→Steffon handoff gap between Live on QA and Confirming
-  # (Avi owns stages 1-3 via qa-release; Steffon owns 4-5 via production-deploy).
-  RELEASE_TRACKER_STAGES = [
-    { key: "testing", active_label: "Testing", complete_label: "Tested",
-      starts: "testing", completes: "assembling" },
-    { key: "assembling", active_label: "Assembling", complete_label: "Assembled",
-      starts: "assembling", completes: "assembled" },
-    { key: "qa_deploying", active_label: "Deploying QA", complete_label: "Live on QA",
-      starts: "qa_deploying", completes: "qa_deployed" },
-    { key: "confirming", active_label: "Confirming", complete_label: "Confirmed",
-      starts: "confirming", completes: "confirmed" },
-    { key: "production_deploying", active_label: "Deploying", complete_label: "Deployed",
-      starts: "prod_deploying", completes: "shipped" }
-  ].freeze
+  # Thin view API over the reader (mirrors release_ci_run_url), so one reader + cache
+  # serves the whole card.
+  def release_deploy_run_url(release, phase)
+    ci_progress_reader.release_deploy_run_url(release, phase)
+  end
 
-  # Pizza-tracker progress for the active release card, read straight off the
-  # release's stage stamps (time-and-boolean columns — see Release::STAGES).
-  def release_tracker_steps(release, now: Time.current, average_seconds_by_stage: nil)
-    average_seconds_by_stage ||= release_tracker_average_seconds_by_stage
+  # ---- Per-repo release lanes (the /deployments tracker) ----------------------
+  # One lane per member repo, each with four phase meters — Assembling · Deploying QA ·
+  # Confirming · Deploying. Apps run all four; a library (gem) publishes at assembly, so
+  # its QA slot becomes a "Published" meter and its Confirming/Deploying read n/a.
+  # Assembling reuses the G3 CI reader; QA/Deploying read their per-repo deploy runs;
+  # Confirming is the ONE coarse, release-grain (shared) meter, off the stage stamps.
+  def release_repo_lanes(release)
+    return [] if release.blank?
 
-    RELEASE_TRACKER_STAGES.each_with_index.map do |stage, index|
-      state = release_tracker_state(release, stage)
-      stage.merge(
-        index: index + 1,
-        label: release_tracker_step_label(stage, state),
-        state: state,
-        connector_state: release_tracker_connector_state(release, index)
-      ).merge(
-        release_tracker_duration(
-          release,
-          stage,
-          state,
-          now: now,
-          average: average_seconds_by_stage[stage[:key]]
-        )
-      )
+    ci_by_repo = release_ci_progress(release)
+    release_lane_repos(release).map do |repo|
+      gem = Release::Repos.gem?(repo)
+      { repo: repo, emoji: app_emoji(repo), kind: gem ? "lib" : "app",
+        phases: release_lane_phases(release, repo, ci_by_repo[repo], gem) }
     end
   end
 
-  def release_tracker_state(release, stage)
-    return :complete if release.stage_reached?(stage[:completes])
-    return :active if release.stage_reached?(stage[:starts])
-
-    :pending
+  # Member repos, producer-first (gems before apps), one lane each.
+  def release_lane_repos(release)
+    release.ordered_members.filter_map { |task| task.release_repo.presence }.uniq
   end
 
-  # The connector after node `index` takes the state of the node it leads INTO —
-  # green behind a complete node, pulsing into the active one, dark into a pending
-  # one (including the handoff gap, where finished work meets an unclaimed stage).
-  # The terminal node has no outgoing edge (the partial never draws it): its value
-  # just mirrors done/not-done so an all-complete tracker reads all-complete.
-  def release_tracker_connector_state(release, index)
-    next_stage = RELEASE_TRACKER_STAGES[index + 1]
-    if next_stage.nil?
-      return release_tracker_state(release, RELEASE_TRACKER_STAGES.last) == :complete ? :complete : :pending
+  def release_lane_phases(release, repo, ci, gem)
+    [
+      release_meter_assembling(ci, url: release_ci_run_url(release, repo)),
+      gem ? release_meter_published(ci) : release_meter_deploy(release, repo, "qa", start_stage: "qa_deploying", done_stage: "qa_deployed", key: "qa_deploying", label: "Deploying QA", done: "live ✓"),
+      gem ? release_meter_na("Confirming") : release_meter_confirming(release),
+      gem ? release_meter_na("Deploying") : release_meter_deploy(release, repo, "prod", start_stage: "prod_deploying", done_stage: "shipped", key: "production_deploying", label: "Deploying", done: "shipped ✓")
+    ]
+  end
+
+  # Assembling = the repo's G3 CI, MEASURED (fraction + check row), linking to the same
+  # G3 run the retired standalone bars did.
+  def release_meter_assembling(ci, url: nil)
+    ci ||= Ci::CheckProgress.blank
+    state = if ci.blank? then :pending
+    elsif ci.red? then :failed
+    elsif ci.green? then :done
+    else :running
+    end
+    { key: "assembling", label: "Assembling", state: state, coarse: false,
+      value: (ci.present? ? (state == :done ? "#{ci.fraction_label} ✓" : ci.fraction_label) : "waiting"),
+      percent: ci.percent, checks: (ci.present? ? ci : nil), url: url.presence }
+  end
+
+  # QA / Deploying — state comes from THIS release's own stage stamps (the deploy events
+  # drive them: deploy_qa/deploy_prod started→running, completed→done), so a stale run
+  # for the repo can never light a phase the release has not entered. The GitHub Actions
+  # run is only read once the phase is REACHED — for the click-through link, and to flip
+  # a stuck stage to :failed when the run came back failed. COARSE (no fraction).
+  def release_meter_deploy(release, repo, phase, start_stage:, done_stage:, key:, label:, done:)
+    reached_start = release.stage_reached?(start_stage)
+    reached_done  = release.stage_reached?(done_stage)
+    run = reached_start ? ci_progress_reader.release_deploy_run(release, repo, phase) : nil
+
+    state = if reached_done then :done
+    elsif reached_start
+      (run && run[:status].to_s == "completed" && run[:conclusion].to_s != "success") ? :failed : :running
+    else :pending
     end
 
-    release_tracker_state(release, next_stage)
+    { key: key, label: label, state: state, coarse: false,
+      value: release_deploy_meter_value(state, done),
+      percent: (state == :done ? 100 : (state == :running ? 55 : 0)),
+      checks: nil, url: (run && run[:url]) }
   end
 
-  # Node timing off the stamps: every REACHED node (active or complete) shows how
-  # long ago that stage STARTED — release_ago_label(now → started_at), ticked
-  # client-side. started_at is the stage's own start stamp with a lower-bound
-  # fallback (stage_started_at_or_before), so a node whose own start event was
-  # never posted still reads a sensible "started X ago" instead of blanking. The
-  # stage's own span (started → completed) survives as duration_seconds for the
-  # tooltip's "took Xm", present only once the stage has finished. A pending node
-  # returns {} and renders no timing.
-  def release_tracker_duration(release, stage, state, now: Time.current, average: nil)
-    return {} if state.to_sym == :pending
-
-    started_at = release.stage_started_at_or_before(stage[:starts])
-    own_started_at = release.stage_stamp(stage[:starts])
-    completed_at = release.stage_stamp(stage[:completes])
-    ago_seconds = elapsed_seconds(started_at, now)
-    average_seconds = release_tracker_average_value(average, :average_seconds)
-    average_sample_count = release_tracker_average_value(average, :sample_count).to_i
-
-    duration = {
-      started_at: started_at,
-      ago_seconds: ago_seconds,
-      duration_live: state.to_sym == :active,
-      completed_at: completed_at,
-      # "took" is only real when the stage's OWN start stamp is known — never off
-      # the fallback anchor, which would overstate the span from release-open.
-      duration_seconds: own_started_at && completed_at ? elapsed_seconds(own_started_at, completed_at) : nil
-    }
-
-    if state.to_sym == :active && started_at && average_seconds.to_i.positive?
-      duration.merge!(
-        average_seconds: average_seconds.to_i,
-        average_sample_count: average_sample_count,
-        countdown_seconds: average_seconds.to_i - ago_seconds.to_i,
-        countdown_label: release_countdown_label(average_seconds: average_seconds, elapsed_seconds: ago_seconds)
-      )
-    end
-
-    duration
-  end
-
-  def release_tracker_average_seconds_by_stage(limit: 3)
-    releases = Release.where(state: "shipped")
-                      .order(Arel.sql("COALESCE(shipped_at, created_at) DESC"))
-                      .limit(limit)
-                      .to_a
-
-    RELEASE_TRACKER_STAGES.to_h do |stage|
-      values = releases.filter_map { |release| release_tracker_stage_span_seconds(release, stage) }
-      row = if values.any?
-        {
-          average_seconds: (values.sum.to_f / values.size).round,
-          sample_count: values.size
-        }
-      end
-      [stage[:key], row]
+  def release_deploy_meter_value(state, done_label)
+    case state
+    when :done then done_label
+    when :running then "deploying"
+    when :failed then "failed"
+    else "—"
     end
   end
 
-  def release_tracker_stage_span_seconds(release, stage)
-    started_at = release.stage_stamp(stage[:starts])
-    completed_at = release.stage_stamp(stage[:completes])
-    elapsed_seconds(started_at, completed_at) if started_at && completed_at
+  # Confirming = the ONE coarse, shared, release-grain human gate. No fraction: pending
+  # → running (indeterminate) → done, off the release's confirming/confirmed stamps.
+  def release_meter_confirming(release)
+    state = if release.stage_reached?("confirmed") then :done
+    elsif release.stage_reached?("confirming") then :running
+    else :pending
+    end
+    { key: "confirming", label: "Confirming", state: state, coarse: true,
+      value: { done: "confirmed ✓", running: "confirming", pending: "waiting" }.fetch(state),
+      percent: (state == :pending ? 0 : 100), checks: nil, url: nil }
   end
 
-  def release_tracker_average_value(row, key)
-    return nil unless row.is_a?(Hash)
-
-    row[key] || row[key.to_s]
+  # A gem publishes at assembly (producer-first) and has no server deploys — its QA slot
+  # shows "Published", done once its CI is green.
+  def release_meter_published(ci)
+    published = ci&.green? || false
+    { key: "published", label: "Published", state: (published ? :done : :pending), coarse: false,
+      value: (published ? "gem live ✓" : "—"), percent: (published ? 100 : 0), checks: nil, url: nil }
   end
 
-  def release_countdown_label(average_seconds:, elapsed_seconds:)
-    remaining = average_seconds.to_i - elapsed_seconds.to_i
-    prefix = remaining.negative? ? "-" : ""
-    "#{prefix}#{format_elapsed_clock(remaining.abs)}"
+  # A phase that does not apply to this repo (a gem's Confirming/Deploying).
+  def release_meter_na(label)
+    { key: label.downcase, label: label, state: :na, coarse: false, value: "n/a", percent: 0, checks: nil, url: nil }
   end
 
-  def release_tracker_average_source_label(sample_count)
-    count = sample_count.to_i
-    return "Historical average" unless count.positive?
-
-    "Last #{count} deployment#{'s' unless count == 1} avg"
-  end
-
-  def release_tracker_countdown_title(step)
-    remaining = step[:countdown_seconds].to_i
-    status = if remaining.negative?
-      "over by #{format_elapsed_clock(remaining.abs)}"
+  # Tailwind tones per meter state — fill colour + label/value text. Coarse (Confirming)
+  # uses the studio PRIMARY (lavender) to read as the shared human gate; measured phases
+  # use mint (done) / amber (running) / red (failed).
+  def release_meter_tone(phase)
+    coarse = phase[:coarse]
+    case phase[:state].to_sym
+    when :done
+      coarse ? { fill: "bg-primary", value: "text-primary", label: "text-primary/80" }
+             : { fill: "bg-mint-500", value: "text-mint-600 dark:text-mint-400", label: "text-muted" }
+    when :running
+      coarse ? { fill: "bg-primary/80", value: "text-primary", label: "text-primary/80" }
+             : { fill: "bg-amber-400", value: "text-amber-600 dark:text-amber-300", label: "text-muted" }
+    when :failed
+      { fill: "bg-red-500", value: "text-red-600 dark:text-red-400", label: "text-muted" }
+    when :na
+      { fill: "bg-transparent", value: "text-muted/60", label: "text-muted/50" }
     else
-      "#{format_elapsed_clock(remaining)} left"
+      { fill: "bg-transparent", value: "text-muted", label: "text-muted" }
     end
-
-    "#{release_tracker_average_source_label(step[:average_sample_count])}: " \
-      "#{format_elapsed_clock(step[:average_seconds])} · elapsed #{format_elapsed_clock(step[:ago_seconds])} · #{status}"
   end
 
-  def release_static_duration_label(seconds)
-    seconds = seconds.to_i
-    return "#{seconds}s" if seconds < 60
+  # Bar width: a coarse RUNNING meter fills fully (the barber-pole animates it); every
+  # other meter uses its measured percent (0 when pending).
+  def release_meter_width(phase)
+    return 100 if phase[:coarse] && phase[:state].to_sym == :running
 
-    "#{seconds / 60}m"
+    phase[:percent].to_i
   end
 
-  # Compact single-unit "X ago" label for a tracker node (time since the stage
-  # started). The ago fmt in _release_ticker.html.erb MUST mirror this so the
-  # server-rendered value and the first client tick agree.
-  def release_ago_label(seconds)
-    seconds = seconds.to_i
-    return "#{seconds}s ago" if seconds < 60
+  # A compact check row for a measured meter (Assembling): one glyph per CI check, capped
+  # so a big suite still fits — ✓ passed · ✗ failed · ◌ pending.
+  def release_meter_check_row(ci, cap: 10)
+    return "" if ci.blank?
 
-    minutes = seconds / 60
-    return "#{minutes}m ago" if minutes < 60
-
-    # Hourly labels use the standard Hh MMm shape, with seconds dropped.
-    hours, mins = minutes.divmod(60)
-    format("%dh %02dm ago", hours, mins)
+    glyphs = ci.checks.first(cap).map { |check| check.failed? ? "✗" : (check.pending? ? "◌" : "✓") }
+    glyphs << "…" if ci.total > cap
+    glyphs.join(" ")
   end
 
   # Compact single-unit "time ago" for the session filter — the smallest legible
   # unit (m/h/d/w, or "just now" under a minute) so a dense session list still reads
-  # recency at a glance. Unlike release_ago_label this keeps climbing past hours (d/w)
+  # recency at a glance. It keeps climbing past hours into days and weeks (d/w)
   # since a session can be idle for days. A blank time (a session with no timestamped
   # signal) → nil so the caller renders nothing; a sub-minute or future time reads
   # "just now" (never "0m ago", never a negative label).
@@ -751,44 +706,6 @@ module ApplicationHelper
     return "#{seconds / 86_400}d ago" if seconds < 604_800
 
     "#{seconds / 604_800}w ago"
-  end
-
-  # Tooltip for a node's started-ago label: the absolute start time, plus the
-  # stage's own span once it has finished ("took Xm") so a completed stage's
-  # duration is one hover away. An in-flight stage has no span yet, so the
-  # tooltip is just its start time.
-  def release_tracker_started_title(step)
-    started = step[:started_at].in_time_zone.strftime("%b %-d, %-I:%M %p")
-    base = "Started #{started}"
-    step[:duration_seconds] ? "#{base} · took #{release_static_duration_label(step[:duration_seconds])}" : base
-  end
-
-  def release_tracker_step_label(stage, state)
-    state.to_sym == :complete ? stage[:complete_label] : stage[:active_label]
-  end
-
-  def release_tracker_dot_classes(state)
-    case state.to_sym
-    when :complete then "bg-mint-500 border-mint-300 text-black shadow-sm shadow-mint-900/30"
-    when :active   then "bg-amber-300 border-amber-200 text-black ring-4 ring-amber-300/40 shadow-lg shadow-amber-500/40 animate-pulse"
-    else                "bg-inset border-subtle text-muted"
-    end
-  end
-
-  def release_tracker_label_classes(state)
-    case state.to_sym
-    when :complete then "text-heading"
-    when :active   then "text-amber-700 dark:text-amber-200"
-    else                "text-muted"
-    end
-  end
-
-  def release_tracker_connector_classes(state)
-    case state.to_sym
-    when :complete then "bg-mint-400"
-    when :active   then "bg-amber-200/60 dark:bg-amber-300/40 animate-pulse"
-    else                "bg-inset"
-    end
   end
 
   # Release-card status badge label. Folds the bare state and its relative time

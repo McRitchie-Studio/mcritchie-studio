@@ -6,8 +6,7 @@ const { test, expect } = require("@playwright/test");
 // fires a real DeploymentsBroadcaster Turbo Stream — the OPEN board (never
 // reloaded) glows the just-shipped release into the Last Release slot and resets
 // Next Release to its "none active" card. Plus: the in-progress timer ticks while
-// a release is active, and the active tracker stage counts down from the
-// last-three-deployment average.
+// a release is active.
 //
 // FRESHNESS IS A CLOSING WINDOW, NOT A STATE. data-fresh-deploy flips true at
 // ship and the client (LiveBoardFx) flips it back false when the glow window
@@ -45,18 +44,9 @@ test("a deploy animates Last Release in, resets Next Release, and the timer tick
   const after = await timing.textContent();
   expect(after).not.toEqual(before);
 
-  const stageTiming = page.locator(
-    "#current-release [data-test='release-tracker-step'][data-state='active'] " +
-      "[data-test='release-tracker-duration'][data-mode='countdown']"
-  );
-  await expect(stageTiming).toBeVisible();
-  await expect(stageTiming).toHaveAttribute("data-average-seconds", "600");
-  await expect(stageTiming).toHaveAttribute("data-sample-count", "3");
-  await expect(stageTiming).not.toContainText("ago");
-  const stageBefore = await stageTiming.textContent();
-  await page.waitForTimeout(1200);
-  const stageAfter = await stageTiming.textContent();
-  expect(stageAfter).not.toEqual(stageBefore);
+  // The Next Release card now shows the per-repo lanes tracker; the pizza-tracker
+  // active-stage countdown was retired in the lanes redesign.
+  await expect(page.locator("#current-release [data-test='release-lanes']")).toBeAttached();
 
   // Ship the active release (local-only dev trigger → real in-process broadcast).
   // The glow window opens HERE — everything fresh must be asserted well inside it.

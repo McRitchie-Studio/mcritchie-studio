@@ -729,9 +729,11 @@ live with the souls:
 | **Steffon** (`Steffon Heartbeat`) | `production-deploy` · `archive-shipped` | **downstream-first:** ship a QA-green release (`bin/release ship --yes`, stages 4–5, stamping `merged: "main"` at each ff) if one is ready; then archive shipped tasks (`bin/release archive --yes`) from the prior cycle | the ready release `shipped` (or no-op); then prior cycle `archived` |
 | **Alex** (`Alex Heartbeat`) | `grade-events` · `share-insights` · `full-cycle` | grade the 10 most recent resolved activities at `/alex/heartbeat`; share the `mcr`-confirmed insights out (regenerate the lessons doc + distribute); OR run the whole cycle review→assemble→QA→prod ship (`full-cycle`, full ship authority) | 10 graded + insights banked; confirmed insights shared out; or the whole release `shipped` |
 
-**The release handoff seam.** The pizza-tracker (`RELEASE_TRACKER_STAGES`) is five
-stages: 1 **Testing**, 2 **Assembling**, 3 **Deploying QA**, 4 **Confirming**, 5
-**Deploying** (prod). **Avi owns stages 1–3** (`qa-release` = `bin/release
+**The release handoff seam.** The release stages (`Release::STAGES`, rendered on
+/deployments as the per-repo lanes tracker, `ApplicationHelper#release_repo_lanes`)
+are five: 1 **Testing**, 2 **Assembling**, 3 **Deploying QA**, 4 **Confirming**, 5
+**Deploying** (prod) — the lanes fold Testing into Assembling (it finishes before a
+release exists), so they chart four. **Avi owns stages 1–3** (`qa-release` = `bin/release
 prepare`) and stops at **Live on QA**; **Steffon owns stages 4–5** (`production-deploy`
 = `bin/release ship`) and finishes at **Deployed**. The seam between them —
 **"deployed to QA."** — is the **Avi → Steffon handoff**: Avi's `qa-release`
