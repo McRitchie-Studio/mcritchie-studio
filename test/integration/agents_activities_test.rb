@@ -275,17 +275,19 @@ class AgentsActivitiesTest < ActionDispatch::IntegrationTest
     assert_select "[data-test=aa-active-filter]", text: /Snorlax/
   end
 
-  test "the live feed defines the action-count pulse and hooks it on a real count change" do
+  test "the live feed hooks the action-count pulse on a real count change" do
     activity(reason_slug: "a live activity")
 
     get activities_agents_path
 
     assert_response :success
-    # the CSS keyframe that holds the count bright ~4s then fades ~4s over an 8s run
-    assert_includes response.body, "@keyframes aa-count-pulse"
-    assert_includes response.body, "aa-count-pulse 8s"
-    # the live-fx hook only pulses .aa-count when its text actually changed (a new action)
-    assert_includes response.body, ".aa-count-pulse"
+    # The pulse ANIMATION is now defined in the compiled stylesheet (heartbeat.css,
+    # de-inlined from the old inline <style> — asserted by HeartbeatStylesDeinlinedTest),
+    # so it is no longer in response.body. What the page still ships inline is the
+    # live-fx HOOK: it adds .aa-count-pulse when a count actually changes (a new action)
+    # and holds it for the 8s (PULSE_MS) run the @keyframes expects.
+    assert_includes response.body, %q{node.classList.add("aa-count-pulse")}
+    assert_includes response.body, "PULSE_MS = 8000"
   end
 
   test "renders a friendly empty state when nothing is captured, and a filtered empty state" do

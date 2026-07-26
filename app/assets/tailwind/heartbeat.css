@@ -1,0 +1,536 @@
+/*
+  Heartbeat + activities component styles — de-inlined from
+  app/views/heartbeat/_styles.html.erb and app/views/agents/_activities_styles.html.erb
+  (Design System epic, item 4). Both blocks are 100% static and were being
+  re-serialized inline on every HTML response; compiling them once into
+  tailwind.css serves them from a cached stylesheet instead. Every rule is
+  #alex-heartbeat-scoped, so global inclusion is inert on other pages.
+  Imported from application.css. Keep this file static — the genuinely dynamic
+  style blocks (deployments_live_fx, lineup_graphics) stay inline by design.
+*/
+
+/* ===================== from heartbeat/_styles.html.erb ===================== */
+  #alex-heartbeat {
+    --hb-bg:#0d1117; --hb-panel:#161b22; --hb-panel2:#1c2330; --hb-line:#2a3240;
+    --hb-txt:#e6edf3; --hb-muted:#8b949e; --hb-faint:#5c6573; --hb-accent:#58a6ff;
+    --hb-mascot:#a78bfa; --hb-good:#3fb950; --hb-not:#f85149; --hb-bank:#fbbf24;
+    display:flex; flex-direction:column;
+    height:calc(100vh - var(--nav-h, 7rem));
+    background:var(--hb-bg); color:var(--hb-txt);
+    padding:18px 22px 22px; font-size:13px; line-height:1.5;
+  }
+  #alex-heartbeat .hb-head { flex:0 0 auto; }
+  #alex-heartbeat .hb-topbar { display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap; border-bottom:1px solid var(--hb-line); padding-bottom:14px; }
+  #alex-heartbeat .hb-title h1 { margin:0; font-size:19px; font-weight:700; }
+  #alex-heartbeat .hb-title p { margin:4px 0 0; color:var(--hb-muted); font-size:12.5px; max-width:64ch; }
+  #alex-heartbeat .hb-stats { display:flex; gap:8px; flex-wrap:wrap; }
+  #alex-heartbeat .hb-stat { background:var(--hb-panel); border:1px solid var(--hb-line); border-radius:9px; padding:7px 11px; text-align:center; min-width:62px; }
+  #alex-heartbeat .hb-stat b { display:block; font-size:16px; }
+  #alex-heartbeat .hb-stat span { font-size:10px; color:var(--hb-muted); text-transform:uppercase; letter-spacing:.4px; }
+  #alex-heartbeat .hb-toolbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:14px 0; }
+  #alex-heartbeat .hb-lab { font-size:11px; color:var(--hb-muted); text-transform:uppercase; letter-spacing:.5px; }
+  #alex-heartbeat .hb-sel { background:var(--hb-panel); color:var(--hb-txt); border:1px solid var(--hb-line); border-radius:8px; padding:6px 9px; font-size:12px; max-width:60vw; }
+  #alex-heartbeat .hb-legend { color:var(--hb-faint); font-size:11.5px; margin-left:auto; display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+  #alex-heartbeat .hb-legend b { color:var(--hb-muted); font-weight:600; }
+
+  #alex-heartbeat .hb-scroll { flex:1 1 auto; overflow:auto; border:1px solid var(--hb-line); border-radius:12px; }
+  #alex-heartbeat table.hb-tbl { border-collapse:collapse; width:100%; min-width:1320px; font-size:12.5px; }
+  #alex-heartbeat thead th { position:sticky; top:0; background:var(--hb-panel2); text-align:left; font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:var(--hb-muted); padding:9px 10px; border-bottom:1px solid var(--hb-line); white-space:nowrap; z-index:3; }
+  #alex-heartbeat tbody td { padding:9px 10px; border-bottom:1px solid var(--hb-line); vertical-align:top; }
+  #alex-heartbeat tr.hb-row { cursor:pointer; }
+  #alex-heartbeat tr.hb-row td:first-child { box-shadow:inset 3px 0 0 var(--hb-edge, transparent); }
+  #alex-heartbeat tr.hb-row:hover { background:var(--hb-panel2); }
+  #alex-heartbeat .hb-seq { color:var(--hb-faint); font-family:ui-monospace,monospace; white-space:nowrap; }
+  #alex-heartbeat .hb-slug { font-weight:600; }
+  #alex-heartbeat .hb-result { color:var(--hb-muted); }
+  #alex-heartbeat .hb-meta { color:var(--hb-muted); white-space:nowrap; }
+  #alex-heartbeat .hb-mono { font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:11.5px; }
+  #alex-heartbeat .hb-mascot { color:var(--hb-mascot); white-space:nowrap; }
+  #alex-heartbeat .hb-actor { font-size:10px; color:var(--hb-faint); text-transform:uppercase; letter-spacing:.4px; cursor:help; }
+  #alex-heartbeat .hb-stage-cell { cursor:help; }
+  #alex-heartbeat .hb-chip { font-size:10px; font-weight:700; border-radius:5px; padding:1px 7px; border:1px solid currentColor; text-transform:uppercase; letter-spacing:.4px; cursor:help; }
+  #alex-heartbeat .hb-outcome { font-size:8.5px; font-weight:700; letter-spacing:.4px; line-height:1; padding:2px 5px; border-radius:4px; border:1px solid currentColor; text-transform:uppercase; }
+
+  #alex-heartbeat tr.hb-grouphead td { background:var(--hb-panel); border-bottom:1px solid var(--hb-line); padding:8px 10px; cursor:pointer; position:sticky; top:31px; z-index:2; }
+  #alex-heartbeat tr.hb-grouphead:hover td { background:var(--hb-panel2); }
+  #alex-heartbeat .hb-groupinner { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  #alex-heartbeat .hb-groupcount { color:var(--hb-faint); font-size:11px; }
+  #alex-heartbeat .hb-groupsub { color:var(--hb-muted); font-size:11px; margin-left:auto; font-family:ui-monospace,monospace; }
+  #alex-heartbeat .hb-chev { display:inline-block; transition:transform .15s; color:var(--hb-faint); font-size:11px; }
+  #alex-heartbeat .hb-chev-open { transform:rotate(90deg); }
+
+  /* Activity table — activities are the primary rows; expanding one drills into its
+     attributed raw actions (read-only). Wider now: the activity rows carry the
+     mascot / measured Model / Tokens / Cost columns plus an activity-grade affordance. */
+  /* Narrower now: merging Model+Tokens into one column and stacking the narration /
+     avatars trims the table's minimum width the operator asked to reclaim. */
+  #alex-heartbeat table.hb-evt-tbl { min-width:980px; }
+  #alex-heartbeat .hb-evttime { font-size:10px; margin-top:2px; color:var(--hb-faint); }
+  /* Activity mini-card (the leading cell): three stacked rows — TOP the live elapsed
+     timer (open) or completed_at at second precision (closed) with the status badge
+     floated right; MIDDLE the created_at at second precision with the action count
+     (a spinner while open) on the right; BOTTOM the task slug. */
+  #alex-heartbeat .hb-evtcard { min-width:206px; }
+  #alex-heartbeat .hb-cardrow { display:flex; align-items:center; gap:8px; }
+  #alex-heartbeat .hb-cardmid, #alex-heartbeat .hb-cardbot { margin-top:3px; }
+  #alex-heartbeat .hb-timer { font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:13px; font-weight:700; color:var(--hb-accent); font-variant-numeric:tabular-nums; }
+  #alex-heartbeat .hb-completed { font-size:12px; font-weight:600; color:var(--hb-txt); }
+  #alex-heartbeat .hb-cardbadge { margin-left:auto; }
+  #alex-heartbeat .hb-created { font-size:11px; color:var(--hb-faint); }
+  #alex-heartbeat .hb-cardactions { margin-left:auto; display:inline-flex; align-items:center; gap:6px; }
+  #alex-heartbeat .hb-spinner { width:10px; height:10px; border-radius:50%; border:1.5px solid var(--hb-line); border-top-color:var(--hb-accent); animation:hb-spin .8s linear infinite; }
+  @keyframes hb-spin { to { transform:rotate(360deg); } }
+  #alex-heartbeat .hb-submascot { color:var(--hb-mascot); opacity:.85; }
+  /* Compact Agent cell — a tight vertical stack of "small avatar + NAME" rows (the
+     original 📋 Avi / ✦ Magikarp text layout, with the real avatar image in place of
+     the emoji). The acting SOUL rides ON TOP (bold, in its own tint via inline color)
+     over the base session mascot BENEATH it (the mascot's purple identity tint, dimmed
+     when a soul is present). A nil agent collapses to a SINGLE mascot row on one line.
+     Faces reuse components/agent_avatar at the compact "xxs" (24px) size; the name
+     rides inline beside each face so a glance reads WHO. */
+  /* Agent cell: an overlapping vertical AVATAR cluster (soul ON TOP of mascot) on the
+     left, a NAME column on the right — primary name over sub name, decoupled from the
+     avatars. */
+  #alex-heartbeat .hb-agentstack { display:flex; align-items:center; gap:8px; }
+  #alex-heartbeat .hb-avatars { display:flex; flex-direction:column; align-items:center; }
+  #alex-heartbeat .hb-ava { position:relative; display:inline-flex; }
+  #alex-heartbeat .hb-avatars .hb-soulava { z-index:3; }
+  #alex-heartbeat .hb-avatars .hb-supervisorava { z-index:2; }
+  #alex-heartbeat .hb-avatars .hb-mascotava { z-index:1; }
+  /* Overlap ONLY when stacked attribution exists — a solo mascot keeps normal alignment. */
+  #alex-heartbeat .hb-avatars .hb-ava + .hb-ava { margin-top:-14px; }
+  #alex-heartbeat .hb-soulava > .rounded-full { box-shadow:0 0 0 1.5px currentColor; border-radius:9999px; }
+  #alex-heartbeat .hb-supervisorava > .rounded-full { box-shadow:0 0 0 1.5px currentColor; border-radius:9999px; }
+  #alex-heartbeat .hb-mascotava > .rounded-full { box-shadow:0 0 0 1px var(--hb-line); border-radius:9999px; }
+  #alex-heartbeat .hb-names { display:flex; flex-direction:column; line-height:1.15; }
+  #alex-heartbeat .hb-nameprimary { font-weight:700; color:var(--hb-txt); font-size:12px; white-space:nowrap; }
+  #alex-heartbeat .hb-namesub { font-weight:400; color:var(--hb-muted); font-size:11px; white-space:nowrap; }
+  /* Center-justify the whole table — cells centered, flex cells centered too. */
+  #alex-heartbeat .hb-tbl th, #alex-heartbeat .hb-tbl td { text-align:left; vertical-align:middle; }
+  #alex-heartbeat .hb-avatars { align-items:center; }
+  #alex-heartbeat .hb-modeltok, #alex-heartbeat .hb-narr, #alex-heartbeat .hb-subnarr { align-items:flex-start; }
+  /* Agent cell stays LEFT-justified: cluster flush-left, name snug beside the avatar. */
+  #alex-heartbeat .hb-agentstack { justify-content:flex-start; }
+  #alex-heartbeat .hb-names { align-items:flex-start; }
+  /* Command / fallback status / task merged into one stacked cell to save horizontal space. */
+  #alex-heartbeat .hb-sat { display:flex; flex-direction:column; align-items:flex-start; gap:2px; }
+  #alex-heartbeat .hb-satline { display:flex; align-items:center; gap:6px; }
+  #alex-heartbeat .hb-satcmd { min-height:22px; max-width:340px; display:flex; align-items:center; }
+  #alex-heartbeat .hb-satcmd .hb-keycode { max-width:240px; }
+  #alex-heartbeat .hb-bullet { color:var(--hb-muted); font-size:10.5px; line-height:1; }
+  #alex-heartbeat .hb-outcome-badge { display:inline-flex; align-items:center; }
+  #alex-heartbeat .hb-outcome-badge .badge { font-size:8.5px; line-height:1; padding:2px 5px; border-radius:4px; }
+  #alex-heartbeat .hb-clickrow { cursor:pointer; }
+  #alex-heartbeat .hb-taskcell { color:var(--hb-muted); font-size:10.5px; }
+  #alex-heartbeat .hb-gradehint { color:var(--hb-faint); font-style:italic; font-size:10.5px; }
+  /* Two-line narration — the reason on line 1, the "-> outcome" beneath it, so the
+     activity cell stays narrow instead of running reason and outcome across one wide row. */
+  #alex-heartbeat .hb-narr { min-width:220px; }
+  #alex-heartbeat .hb-narrline { display:block; }
+  #alex-heartbeat .hb-span-title { display:flex; align-items:center; flex-wrap:wrap; gap:6px; width:fit-content; max-width:100%; cursor:pointer; }
+  #alex-heartbeat .hb-inline-actions { color:var(--hb-muted); font-family:ui-monospace,monospace; font-size:11px; white-space:nowrap; }
+  #alex-heartbeat .hb-inline-status { display:inline-flex; align-items:center; }
+  #alex-heartbeat .hb-narr-result { margin-top:2px; }
+  /* Merged Model / Tokens column — model on top, the compact in/out tokens beneath. */
+  #alex-heartbeat .hb-modeltok .hb-mt-model { display:block; }
+  #alex-heartbeat .hb-modeltok .hb-mt-tokens { display:block; margin-top:2px; color:var(--hb-faint); font-size:11px; }
+  /* Inline activity quick-grade — the good/not radios for both graders on the activity row,
+     laid out HORIZONTALLY side by side (A ● Good ● Not   M ● Good ● Not) on ONE row so
+     the Grade cell reads short-and-wide instead of tall, sitting above the "grade ▸"
+     button + markers. Reuses the .hb-rb radio chips; each grader group carries its
+     A / M lane letter. */
+  #alex-heartbeat .hb-evtquick { display:flex; flex-direction:row; flex-wrap:nowrap; align-items:center; gap:14px; margin-bottom:5px; }
+  #alex-heartbeat .hb-evtquick-form { display:inline-flex; align-items:center; gap:5px; margin:0; }
+  #alex-heartbeat .hb-evtquick-role { font-size:9px; font-weight:700; color:var(--hb-faint); letter-spacing:.4px; width:9px; }
+  /* A tokens/cost cell that INHERITS its turn's spend — a non-primary tool-call of
+     a shared source_turn_uuid. Faded (never recolored to an outcome hue) so it reads
+     as "same turn, already counted", not new spend; the value itself is unchanged. */
+  #alex-heartbeat td.hb-turn-shared { color:var(--hb-faint); opacity:.6; cursor:help; }
+  #alex-heartbeat tr.hb-evtrow { cursor:pointer; }
+  #alex-heartbeat tr.hb-evtrow td { background:var(--hb-panel); }
+  #alex-heartbeat tr.hb-evtrow:hover td { background:var(--hb-panel2); }
+  #alex-heartbeat tr.hb-evtrow td:first-child { box-shadow:inset 3px 0 0 var(--hb-edge, transparent); }
+  #alex-heartbeat .hb-catchip { cursor:help; }
+  #alex-heartbeat .hb-span .hb-slug { color:var(--hb-txt); }
+  #alex-heartbeat .hb-arrow { color:var(--hb-faint); margin:0 6px; }
+  #alex-heartbeat .hb-inprogress { color:var(--hb-muted); font-style:italic; }
+  #alex-heartbeat .hb-count { color:var(--hb-muted); font-family:ui-monospace,monospace; }
+
+  #alex-heartbeat tr.hb-subrow { cursor:pointer; }
+  #alex-heartbeat tr.hb-subrow td { background:var(--hb-bg); }
+  #alex-heartbeat tr.hb-subrow:hover td { background:var(--hb-panel2); }
+  #alex-heartbeat tr.hb-subrow td:first-child { box-shadow:inset 3px 0 0 var(--hb-edge, transparent); padding-left:24px; }
+  #alex-heartbeat tr.hb-subrow.hb-subempty { cursor:default; }
+  #alex-heartbeat tr.hb-subrow.hb-subempty td { color:var(--hb-faint); font-style:italic; }
+  #alex-heartbeat .hb-kind { color:var(--hb-txt); }
+  #alex-heartbeat .hb-kindline { display:flex; align-items:center; gap:8px; }
+  #alex-heartbeat .hb-subseq { color:var(--hb-faint); }
+  #alex-heartbeat tr.hb-subrow td.hb-subseq-gutter { padding-left:10px; }
+  #alex-heartbeat .hb-subnarr { display:flex; flex-direction:column; gap:3px; }
+  #alex-heartbeat .hb-subtitle { display:flex; align-items:center; flex-wrap:wrap; gap:6px; }
+  /* Action row: the created -> completed span leads the top line; the outcome badge
+     floats to the right edge of the action's narration cell (freed by the span). */
+  #alex-heartbeat .hb-action-span { color:var(--hb-faint); font-size:11px; }
+  #alex-heartbeat .hb-suboutcome { margin-left:auto; }
+  #alex-heartbeat .hb-subline2 { display:flex; align-items:center; flex-wrap:wrap; gap:6px; }
+  #alex-heartbeat .hb-subslug { color:var(--hb-txt); }
+  #alex-heartbeat .hb-subinput { color:var(--hb-faint); margin-left:0; }
+  #alex-heartbeat tbody.hb-unlabeled tr.hb-evtrow td { border-top:1px solid var(--hb-line); }
+
+  /* Key-method chip — [lang badge | code | copy]. The one load-bearing call of a
+     span/action, copyable. Lang badge tints by language; the chip never wraps —
+     long code ellipsizes with the full call on the title hover + the copy button. */
+  #alex-heartbeat .hb-keychip { display:inline-flex; align-items:stretch; max-width:100%; border:1px solid var(--hb-line); border-radius:6px; overflow:hidden; background:var(--hb-panel); vertical-align:middle; }
+  #alex-heartbeat .hb-keylang { display:inline-flex; align-items:center; padding:0 6px; font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; color:var(--hb-muted); background:var(--hb-panel2); border-right:1px solid var(--hb-line); }
+  #alex-heartbeat .hb-keychip[data-lang="bash"] .hb-keylang { color:var(--hb-good); }
+  #alex-heartbeat .hb-keychip[data-lang="ruby"] .hb-keylang { color:var(--hb-not); }
+  #alex-heartbeat .hb-keychip[data-lang="sql"]  .hb-keylang { color:var(--hb-accent); }
+  #alex-heartbeat .hb-keychip[data-lang="js"]   .hb-keylang { color:var(--hb-bank); }
+  #alex-heartbeat .hb-keycode { padding:1px 7px; font-size:10.5px; color:var(--hb-txt); max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #alex-heartbeat .hb-keycopy { border:0; border-left:1px solid var(--hb-line); background:transparent; color:var(--hb-muted); cursor:pointer; padding:0 7px; font-size:10.5px; line-height:1; }
+  #alex-heartbeat .hb-keycopy:hover { color:var(--hb-accent); background:var(--hb-panel2); }
+  /* An action's goal summary — shown under its command chip in the command/task cell. */
+  #alex-heartbeat .hb-action-summary { color:var(--hb-muted); font-size:11px; font-style:normal; }
+  #alex-heartbeat .hb-gradehint .hb-taskcell { color:var(--hb-muted); font-style:normal; }
+
+  #alex-heartbeat .hb-empty { flex:1 1 auto; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:8px; border:1px dashed var(--hb-line); border-radius:12px; color:var(--hb-muted); padding:40px 24px; }
+  #alex-heartbeat .hb-empty b { color:var(--hb-txt); font-size:15px; }
+  #alex-heartbeat .hb-empty a { color:var(--hb-accent); }
+
+  /* T5 feedback layer — buttons, inline radios, the per-action drawer, markers */
+  #alex-heartbeat .hb-btn { background:var(--hb-panel); color:var(--hb-txt); border:1px solid var(--hb-line); border-radius:8px; padding:7px 12px; cursor:pointer; font-size:12.5px; text-decoration:none; display:inline-flex; align-items:center; gap:6px; line-height:1; }
+  #alex-heartbeat .hb-btn:hover { border-color:var(--hb-accent); }
+  #alex-heartbeat .hb-btn.primary { background:var(--hb-accent); color:#06131f; border-color:var(--hb-accent); font-weight:600; }
+  #alex-heartbeat .hb-insightbtn { color:var(--hb-txt); }
+
+  /* All Spans pager — the newer/older page controls beneath the cross-session table. */
+  #alex-heartbeat .hb-pager { flex:0 0 auto; display:flex; align-items:center; justify-content:center; gap:12px; padding:12px 0 2px; }
+  #alex-heartbeat .hb-pager-at { color:var(--hb-muted); font-size:12px; font-family:ui-monospace,monospace; }
+  #alex-heartbeat .hb-pager-off { opacity:.4; cursor:default; }
+
+  #alex-heartbeat .hb-fbcell { min-width:196px; }
+  #alex-heartbeat .hb-fbinner { display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
+  #alex-heartbeat .hb-radioform { display:inline; margin:0; }
+  #alex-heartbeat .hb-radiogrp { display:inline-flex; gap:4px; }
+  #alex-heartbeat .hb-rb { display:inline-flex; align-items:center; gap:3px; font-size:9.5px; font-weight:700; letter-spacing:.3px; padding:2px 6px; border:1px solid var(--hb-line); border-radius:6px; color:var(--hb-muted); cursor:pointer; white-space:nowrap; }
+  #alex-heartbeat .hb-rb input { margin:0; width:11px; height:11px; cursor:pointer; accent-color:var(--hb-accent); }
+  #alex-heartbeat .hb-rb.on-good { color:var(--hb-good); border-color:var(--hb-good); }
+  #alex-heartbeat .hb-rb.on-good input { accent-color:var(--hb-good); }
+  #alex-heartbeat .hb-rb.on-not { color:var(--hb-not); border-color:var(--hb-not); }
+  #alex-heartbeat .hb-rb.on-not input { accent-color:var(--hb-not); }
+  #alex-heartbeat .hb-gradeclear { display:inline-flex; align-items:center; justify-content:center; width:14px; height:14px; flex:0 0 14px; padding:0; border:1px solid var(--hb-line); border-radius:50%; background:transparent; color:var(--hb-faint); font-size:10px; line-height:1; opacity:0; pointer-events:none; cursor:pointer; }
+  #alex-heartbeat .hb-gradeclear.is-visible { opacity:1; pointer-events:auto; }
+  #alex-heartbeat .hb-gradeclear.is-visible:hover { border-color:var(--hb-accent); color:var(--hb-txt); background:var(--hb-panel2); }
+  #alex-heartbeat .hb-fbslugwrap { display:inline-flex; align-items:center; gap:4px; flex-wrap:wrap; }
+  #alex-heartbeat .hb-fbslug { font-weight:600; font-size:12px; }
+  #alex-heartbeat .hb-addfb { color:var(--hb-faint); font-size:11.5px; font-style:italic; }
+  #alex-heartbeat .hb-longmark { font-size:11px; }
+  #alex-heartbeat .hb-bankmark { color:var(--hb-bank); }
+  #alex-heartbeat .hb-discardmark { color:var(--hb-faint); }
+
+  /* Span quick-grade affordance on the event row — each grader's live marker
+     (a disposition dot + slug) beside the row-level raw-action expand target. */
+  #alex-heartbeat .hb-evtfbcell { white-space:normal; min-width:150px; }
+  #alex-heartbeat .hb-evtfbstack { display:flex; flex-direction:column; align-items:flex-start; gap:4px; }
+  #alex-heartbeat .hb-gradebtn { padding:4px 9px; font-size:11px; }
+  #alex-heartbeat .hb-evtmarks { display:inline-flex; flex-direction:column; gap:3px; margin-top:5px; }
+  #alex-heartbeat .hb-evtmarkslot { display:flex; align-items:center; min-height:17px; max-width:100%; }
+  #alex-heartbeat .hb-evtmark { display:inline-flex; align-items:center; gap:5px; font-size:11px; }
+  #alex-heartbeat .hb-evtmark-role { font-size:9px; font-weight:700; color:var(--hb-faint); letter-spacing:.4px; width:9px; }
+  #alex-heartbeat .hb-evtdot { width:7px; height:7px; border-radius:50%; background:var(--hb-faint); flex:0 0 auto; }
+  #alex-heartbeat .hb-evtdot.is-good { background:var(--hb-good); }
+  #alex-heartbeat .hb-evtdot.is-not { background:var(--hb-not); }
+  #alex-heartbeat .hb-evtmark-slug { color:var(--hb-txt); font-weight:600; max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #alex-heartbeat .hb-evtsaved { color:var(--hb-good); font-size:11.5px; margin-top:8px; font-weight:600; }
+
+  /* Full-command view in the per-action drawer — the tool-call input + output in full
+     (pretty-printed JSON when parseable, raw otherwise), each pane scrollable so a long
+     bash body or file never blows out the drawer. */
+  #alex-heartbeat .hb-cmd { margin-bottom:16px; }
+  #alex-heartbeat .hb-cmdtoggle { padding:5px 10px; font-size:11.5px; margin-bottom:8px; }
+  #alex-heartbeat .hb-cmdlabel { font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:var(--hb-faint); margin:8px 0 4px; }
+  #alex-heartbeat .hb-pre { background:var(--hb-bg); border:1px solid var(--hb-line); border-radius:8px; padding:9px 11px; margin:0; font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:11.5px; line-height:1.45; color:var(--hb-txt); white-space:pre-wrap; word-break:break-word; max-height:420px; overflow:auto; }
+
+  #alex-heartbeat .hb-scrim { position:fixed; inset:0; background:rgba(0,0,0,.55); opacity:0; pointer-events:none; transition:opacity .15s; z-index:40; }
+  #alex-heartbeat .hb-scrim.hb-scrim-open { opacity:1; pointer-events:auto; }
+  #alex-heartbeat .hb-drawer { position:fixed; top:0; right:0; height:100%; width:min(1080px,92vw); background:var(--hb-panel); border-left:1px solid var(--hb-line); transform:translateX(100%); transition:transform .18s ease; z-index:50; overflow-y:auto; color:var(--hb-txt); }
+  #alex-heartbeat .hb-drawer.hb-drawer-open { transform:none; }
+  #alex-heartbeat .hb-dh { padding:16px 20px 14px; border-bottom:1px solid var(--hb-line); position:sticky; top:0; background:var(--hb-panel); z-index:1; }
+  #alex-heartbeat .hb-dclose { position:absolute; top:12px; right:14px; background:none; border:none; color:var(--hb-muted); font-size:22px; cursor:pointer; line-height:1; }
+  #alex-heartbeat .hb-dh h2 { margin:0; font-size:15px; padding-right:26px; }
+  #alex-heartbeat .hb-dsub { color:var(--hb-muted); font-size:12px; margin-top:4px; }
+  #alex-heartbeat .hb-db { padding:14px 20px 40px; }
+  #alex-heartbeat .hb-kv { display:grid; grid-template-columns:auto 1fr; gap:5px 12px; font-size:12px; margin-bottom:16px; }
+  #alex-heartbeat .hb-kv .hb-k { color:var(--hb-faint); }
+  #alex-heartbeat .hb-fbblock { border:1px solid var(--hb-line); border-radius:11px; padding:13px 14px; margin-bottom:14px; }
+  #alex-heartbeat .hb-fbblock h3 { margin:0 0 10px; font-size:13px; display:flex; align-items:center; gap:8px; }
+  #alex-heartbeat .hb-fbblock h3 .hb-who { font-size:10px; color:var(--hb-faint); text-transform:uppercase; letter-spacing:.6px; font-weight:600; }
+  #alex-heartbeat .hb-field { margin-bottom:11px; }
+  #alex-heartbeat .hb-field > label { display:block; font-size:10.5px; color:var(--hb-faint); text-transform:uppercase; letter-spacing:.5px; margin-bottom:4px; }
+  #alex-heartbeat .hb-input, #alex-heartbeat .hb-textarea { width:100%; background:var(--hb-bg); color:var(--hb-txt); border:1px solid var(--hb-line); border-radius:7px; padding:7px 9px; font:13px/1.4 inherit; }
+  #alex-heartbeat .hb-textarea { min-height:70px; resize:vertical; }
+  #alex-heartbeat .hb-wc { font-size:10.5px; margin-top:3px; }
+  #alex-heartbeat .hb-wc.ok { color:var(--hb-good); }
+  #alex-heartbeat .hb-wc.off { color:var(--hb-faint); }
+  #alex-heartbeat .hb-disptoggle { display:flex; gap:8px; }
+  #alex-heartbeat .hb-disptoggle button { flex:1; border:1px solid var(--hb-line); background:var(--hb-bg); color:var(--hb-muted); border-radius:7px; padding:7px; cursor:pointer; font-weight:600; font-size:12px; }
+  #alex-heartbeat .hb-disptoggle button.sel-good { background:var(--hb-good); color:#06140a; border-color:var(--hb-good); }
+  #alex-heartbeat .hb-disptoggle button.sel-not { background:var(--hb-not); color:#1a0606; border-color:var(--hb-not); }
+  #alex-heartbeat .hb-saverow { display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; }
+  #alex-heartbeat .hb-bank.is-on { border-color:var(--hb-bank); color:var(--hb-bank); }
+  #alex-heartbeat .hb-discard.is-on { border-color:var(--hb-not); color:var(--hb-not); }
+  #alex-heartbeat .hb-derror { color:var(--hb-not); padding:18px 20px; font-size:12.5px; }
+
+/* ================== from agents/_activities_styles.html.erb ================== */
+  #alex-heartbeat [x-cloak] { display:none !important; }
+  /* The page shell reuses #alex-heartbeat's dark shell but relaxes the fixed viewport
+     height so the sidebar overlay and pager sit naturally, and drops the huge min-width
+     so the 7-column grid can breathe on narrower desktops. */
+  #alex-heartbeat.aa-page { height:auto; min-height:calc(100vh - var(--nav-h, 7rem)); position:relative; }
+  #alex-heartbeat .aa-topbar { display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+  /* align-items:stretch so the Filter / Deployments buttons match the stat cards'
+     height — one uniform row instead of short pills beside tall boxes. */
+  #alex-heartbeat .aa-headactions { display:flex; align-items:stretch; gap:10px; flex-wrap:wrap; }
+  #alex-heartbeat .aa-headactions .hb-btn { align-items:center; }
+  #alex-heartbeat .aa-filtercount { display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:18px; padding:0 5px; border-radius:9px; background:var(--hb-accent); color:#06131f; font-size:10px; font-weight:800; }
+  /* Always occupies its own row (min-height) so adding/removing a filter never jumps
+     the table beneath it; doubles as the breathing room under the header. */
+  #alex-heartbeat .aa-activefilters { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:12px 0 8px; min-height:28px; }
+  #alex-heartbeat .aa-chipfilter { display:inline-flex; align-items:center; gap:6px; background:var(--hb-panel); border:1px solid var(--aa-type, var(--hb-line)); border-radius:999px; padding:3px 6px 3px 9px; font-size:11px; color:var(--hb-txt); text-decoration:none; }
+  #alex-heartbeat .aa-chipfilter:hover { border-color:var(--hb-accent); }
+  /* The chip's Pokémon primary-type colour dot (--aa-type set per chip). */
+  #alex-heartbeat .aa-chipdot { width:8px; height:8px; border-radius:50%; background:var(--aa-type, var(--hb-mascot)); flex:0 0 auto; }
+  #alex-heartbeat .aa-chipfilter .aa-x { display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px; border-radius:50%; background:var(--hb-panel2); color:var(--hb-muted); font-size:11px; line-height:1; }
+  #alex-heartbeat .aa-chipclear { color:var(--hb-muted); font-size:11px; text-decoration:underline; text-underline-offset:2px; }
+
+  /* ---- The grid table ---------------------------------------------------- */
+  /* table-layout:fixed pins every column to its declared width so the Cost / Details
+     columns DON'T re-measure (and jump the whole table) when an activity expands and
+     its actions bring differently-sized content. Activity is the one unsized column,
+     so it absorbs all the slack. Mobile switches back to auto (see the media block). */
+  /* Header rules are declared for TWO contexts: the table inside #alex-heartbeat
+     AND the engine sticky-header clone (.sticky-table-header-clone), which is
+     appended to document.body OUTSIDE the section — ID-scoped rules and the
+     section's --hb-* vars don't reach it. The vars rule below mirrors the three
+     header tokens from heartbeat/_styles.html.erb's #alex-heartbeat block. */
+  .sticky-table-header-clone table.aa-tbl { --hb-panel2:#1c2330; --hb-line:#2a3240; --hb-muted:#8b949e; }
+  #alex-heartbeat table.aa-tbl, .sticky-table-header-clone table.aa-tbl { border-collapse:collapse; width:100%; min-width:1140px; font-size:12.5px; table-layout:fixed; }
+  /* Pinning is owned by the engine's sticky-table-header enhancer (it clones the
+     thead and offsets by --nav-h); a computed position:sticky here would make the
+     enhancer's already-sticky guard skip the table. position:static neutralizes
+     the shared heartbeat/_styles rule (#alex-heartbeat thead th) that still
+     applies on this page. */
+  #alex-heartbeat table.aa-tbl thead th, .sticky-table-header-clone table.aa-tbl thead th { position:static; background:var(--hb-panel2); text-align:left; font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:var(--hb-muted); padding:9px 12px; border-bottom:1px solid var(--hb-line); white-space:nowrap; }
+  #alex-heartbeat table.aa-tbl tbody td { padding:9px 12px; border-bottom:1px solid var(--hb-line); vertical-align:top; }
+  #alex-heartbeat .aa-th-chev, .sticky-table-header-clone .aa-th-chev { width:26px; padding-left:10px !important; padding-right:0 !important; }
+  #alex-heartbeat .aa-th-agent, .sticky-table-header-clone .aa-th-agent { width:212px; }
+  #alex-heartbeat .aa-th-cost, .sticky-table-header-clone .aa-th-cost { width:118px; }
+  #alex-heartbeat .aa-th-details, .sticky-table-header-clone .aa-th-details { width:232px; }
+  #alex-heartbeat .aa-th-grade, .sticky-table-header-clone .aa-th-grade { width:150px; }
+
+  /* Activity (primary) rows sit on the panel; hover lifts to panel2; the category
+     accent rides the left edge. */
+  #alex-heartbeat tr.aa-arow { cursor:pointer; }
+  #alex-heartbeat tr.aa-arow > td { background:var(--hb-panel); }
+  #alex-heartbeat tr.aa-arow:hover > td { background:var(--hb-panel2); }
+  #alex-heartbeat tr.aa-arow > td.aa-chev { box-shadow:inset 3px 0 0 var(--hb-edge, transparent); }
+  #alex-heartbeat .aa-chev { color:var(--hb-faint); white-space:nowrap; width:26px; padding-left:10px !important; padding-right:0 !important; }
+  #alex-heartbeat .aa-chev .hb-chev { font-size:11px; }
+
+  /* Every 3-sub-row column is a vertical stack; each sub-row keeps a steady min-height
+     so the three stacks line up row-to-row across columns. */
+  #alex-heartbeat .aa-stack { display:flex; flex-direction:column; gap:3px; }
+  #alex-heartbeat .aa-r { display:flex; align-items:center; gap:6px; min-height:19px; }
+  #alex-heartbeat .aa-r.aa-r-wrap { flex-wrap:wrap; }
+  #alex-heartbeat .aa-rmuted { color:var(--hb-muted); }
+  #alex-heartbeat .aa-rfaint { color:var(--hb-faint); }
+  #alex-heartbeat .aa-empty-sub { color:var(--hb-faint); }
+
+  /* Agent column — the reused stacked avatar+name cell, kept snug. Activity (primary)
+     rows wear a bigger xs avatar + bolder name so they read as a higher altitude than
+     the drill-down action rows, which keep the compact xxs face. */
+  /* The agent cell centers its avatar+name block vertically in the row (the other
+     columns stay top-aligned as 3-sub-row stacks). */
+  #alex-heartbeat .aa-agent { min-width:132px; }
+  /* Center the avatar+name block in the row — needs td.aa-agent to outrank the base
+     `tbody td { vertical-align:top }`, otherwise a short SOLO mascot cell sits high. */
+  #alex-heartbeat table.aa-tbl tbody td.aa-agent { vertical-align:middle; }
+  #alex-heartbeat .aa-arow .aa-agent .hb-nameprimary { font-size:15px; }
+  #alex-heartbeat .aa-arow .aa-agent .hb-namesub { font-size:12.5px; }
+  #alex-heartbeat .aa-arow .aa-agent .hb-avatars .hb-soulava + .hb-mascotava { margin-top:-24px; }
+
+  /* Activity column: badge+goal / →result(fade) / key command. */
+  /* The Activity column is the one unsized column under table-layout:fixed, so it
+     already absorbs all the slack — the goal/result/command just need to FILL it (no
+     fixed-px caps) so more shows when the window is wide; they ellipsize/fade at the
+     real cell edge, and fixed layout clips them to the column so nothing overflows. */
+  #alex-heartbeat .aa-activity { min-width:290px; }
+  /* Goal line — the category chip holds its size while the goal fills the rest of the row
+     and fades at its overflowing edge (the same overflow_fade the result line uses), kept
+     to ONE line instead of wrapping under the chip. */
+  #alex-heartbeat .aa-goalline { flex-wrap:nowrap; }
+  #alex-heartbeat .aa-goalline .hb-chip { flex:0 0 auto; }
+  #alex-heartbeat .aa-goal { flex:1 1 auto; min-width:0; font-weight:600; color:var(--hb-txt); }
+  #alex-heartbeat .aa-resultline { color:var(--hb-muted); min-width:0; }
+  #alex-heartbeat .aa-resultline .aa-arrow { color:var(--hb-faint); flex:0 0 auto; }
+  #alex-heartbeat .aa-resultfade { flex:1 1 auto; min-width:0; }
+  #alex-heartbeat .aa-inprogress { color:var(--hb-muted); font-style:italic; }
+  #alex-heartbeat .aa-keycmd { min-width:0; }
+  #alex-heartbeat .aa-keycmd .hb-keycode { max-width:100%; }
+
+  /* Cost column: cost / model / tokens. */
+  #alex-heartbeat .aa-cost { min-width:104px; }
+  #alex-heartbeat .aa-cost-amt { color:var(--hb-txt); font-family:ui-monospace,monospace; font-size:12px; }
+  #alex-heartbeat .aa-cost-model { color:var(--hb-muted); font-family:ui-monospace,monospace; font-size:11px; }
+  #alex-heartbeat .aa-cost-tok { color:var(--hb-faint); font-family:ui-monospace,monospace; font-size:11px; }
+  #alex-heartbeat .aa-turn-shared { opacity:.55; }
+
+  /* Details column: time+status / task / action-count(+spinner). */
+  #alex-heartbeat .aa-details { min-width:150px; }
+  /* The head line (time+status, or #seq KIND + outcome) never wraps — it clips with a
+     soft right-edge fade instead of dropping a badge to a second line. Children keep
+     their size (flex:0 0 auto) so the badge overflows-and-fades rather than squishing. */
+  #alex-heartbeat .aa-detailhead { flex-wrap:nowrap; overflow:hidden; min-width:0;
+    -webkit-mask-image:linear-gradient(to right, #000 calc(100% - 16px), transparent);
+    mask-image:linear-gradient(to right, #000 calc(100% - 16px), transparent); }
+  #alex-heartbeat .aa-detailhead > * { flex:0 0 auto; }
+  #alex-heartbeat .aa-detailend > * { flex:0 0 auto; }
+  #alex-heartbeat .aa-time { color:var(--hb-muted); font-family:ui-monospace,monospace; font-size:11px; white-space:nowrap; }
+  /* The OPEN activity's live counter ticks up from start — accent it so it reads as running. */
+  #alex-heartbeat .aa-elapsed { color:var(--hb-accent); }
+  #alex-heartbeat .aa-task { color:var(--hb-muted); font-family:ui-monospace,monospace; font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:150px; }
+  #alex-heartbeat .aa-count { color:var(--hb-faint); font-family:ui-monospace,monospace; font-size:11px; }
+  /* Action-count pulse — when a live update lands a NEW action, agents/_activities_live_fx
+     toggles .aa-count-pulse on the count: it snaps bold+bright (accent + glow), holds ~4s,
+     then eases back to its faint resting state over the next ~4s. Only colour/text-shadow
+     animate (paint-only), so the count never reflows and nudges the spinner beside it. */
+  #alex-heartbeat .aa-count.aa-count-pulse { animation:aa-count-pulse 8s ease-out; }
+  @keyframes aa-count-pulse {
+    0%, 50% { color:var(--hb-accent); text-shadow:0 0 1px var(--hb-accent), 0 0 8px rgba(88,166,255,.55); }
+    100%    { color:var(--hb-faint); text-shadow:0 0 0 rgba(88,166,255,0); }
+  }
+  #alex-heartbeat .aa-spinner { display:inline-block; width:11px; height:11px; border:2px solid var(--hb-line); border-top-color:var(--hb-accent); border-radius:50%; animation:aa-spin .8s linear infinite; }
+  @keyframes aa-spin { to { transform:rotate(360deg); } }
+  /* Flash-on-update — a brief accent wash over the cells of a live-replaced activity
+     tbody / action tr (class toggled by agents/_activities_live_fx). box-shadow inset
+     overlays the cells without clobbering their base background. */
+  #alex-heartbeat .aa-flash > td,
+  #alex-heartbeat .aa-flash > tr > td { animation:aa-flash .9s ease-out; }
+  @keyframes aa-flash {
+    0%   { box-shadow:inset 0 0 0 9999px rgba(88,166,255,.24); }
+    100% { box-shadow:inset 0 0 0 9999px rgba(88,166,255,0); }
+  }
+
+  /* Grade columns — the two identical Alex / McRitchie cells: good/not radios + × on
+     top, the note (disposition dot + slug, then long-form) in the two sub-rows below. */
+  #alex-heartbeat td.aa-gradecell { width:150px; }
+  #alex-heartbeat .aa-gradebox { display:flex; flex-direction:column; gap:4px; }
+  #alex-heartbeat .aa-graderow { display:flex; align-items:center; gap:6px; margin:0; }
+  #alex-heartbeat .aa-graderole { font-size:9px; font-weight:800; color:var(--hb-faint); letter-spacing:.4px; width:10px; flex:0 0 auto; }
+  #alex-heartbeat .aa-radiogrp { display:inline-flex; gap:4px; }
+  #alex-heartbeat .aa-rb { display:inline-flex; align-items:center; gap:3px; font-size:10.5px; color:var(--hb-muted); border:1px solid var(--hb-line); border-radius:6px; padding:2px 7px; cursor:pointer; user-select:none; }
+  /* Visually hidden but STILL focusable + keyboard-operable (not display:none, which
+     drops the radio from the a11y tree). :focus-within rings the label. */
+  #alex-heartbeat .aa-rb input { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0; }
+  #alex-heartbeat .aa-rb:focus-within { outline:2px solid var(--hb-accent); outline-offset:1px; }
+  /* The expand affordance is a real button so keyboard users can open the drill-down. */
+  #alex-heartbeat .aa-chevbtn { background:transparent; border:0; margin:0; padding:2px 4px; cursor:pointer; color:inherit; display:inline-flex; align-items:center; border-radius:5px; }
+  #alex-heartbeat .aa-chevbtn:focus-visible { outline:2px solid var(--hb-accent); outline-offset:1px; }
+  #alex-heartbeat .aa-rb.on-good { border-color:var(--hb-good); color:var(--hb-good); }
+  #alex-heartbeat .aa-rb.on-not { border-color:var(--hb-not); color:var(--hb-not); }
+  #alex-heartbeat .aa-gradeclear { border:0; background:transparent; color:var(--hb-faint); cursor:pointer; font-size:13px; line-height:1; padding:0 2px; opacity:0; pointer-events:none; transition:opacity .12s; }
+  #alex-heartbeat .aa-gradeclear.is-visible { opacity:1; pointer-events:auto; }
+  #alex-heartbeat .aa-gradeclear:hover { color:var(--hb-not); }
+  #alex-heartbeat .aa-note { display:flex; align-items:center; gap:5px; min-height:16px; font-size:10.5px; color:var(--hb-muted); }
+  #alex-heartbeat .aa-notedot { width:7px; height:7px; border-radius:50%; background:var(--hb-faint); flex:0 0 auto; }
+  #alex-heartbeat .aa-notedot.is-good { background:var(--hb-good); }
+  #alex-heartbeat .aa-notedot.is-not { background:var(--hb-not); }
+  #alex-heartbeat .aa-noteslug { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:120px; }
+  #alex-heartbeat .aa-notelong { color:var(--hb-faint); font-size:10px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:130px; }
+  #alex-heartbeat .aa-bankmark { color:var(--hb-bank); }
+
+  /* Action (drill-down) rows — read on the base bg, indented, revealed on expand. */
+  #alex-heartbeat tr.aa-subrow > td { background:var(--hb-bg); }
+  #alex-heartbeat tr.aa-subrow:hover > td { background:var(--hb-panel2); }
+  #alex-heartbeat tr.aa-subrow > td.aa-chev { box-shadow:inset 3px 0 0 var(--hb-edge, transparent); }
+  #alex-heartbeat tr.aa-subrow.aa-emptyrow > td { color:var(--hb-faint); font-style:italic; }
+  #alex-heartbeat .aa-actionhead { display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
+  #alex-heartbeat .aa-seqbadge { font-family:ui-monospace,monospace; font-size:10px; color:var(--hb-muted); background:var(--hb-panel2); border:1px solid var(--hb-line); border-radius:5px; padding:1px 5px; white-space:nowrap; }
+  #alex-heartbeat .aa-kindbadge { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; color:var(--hb-muted); }
+  #alex-heartbeat .aa-action-summary { color:var(--hb-txt); font-weight:500; }
+  #alex-heartbeat .aa-outcome { font-size:8.5px; font-weight:700; letter-spacing:.4px; line-height:1; padding:2px 5px; border-radius:4px; border:1px solid currentColor; text-transform:uppercase; }
+  #alex-heartbeat .aa-json { color:var(--hb-faint); font-family:ui-monospace,monospace; font-size:10.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:220px; }
+
+  /* ---- The slide-in Pokémon filter sidebar ------------------------------- */
+  #alex-heartbeat .aa-filter-backdrop { position:fixed; inset:0; background:rgba(1,4,9,.55); z-index:60; }
+  #alex-heartbeat .aa-filter { position:fixed; top:0; right:0; bottom:0; width:340px; max-width:88vw; background:var(--hb-panel); border-left:1px solid var(--hb-line); z-index:61; display:flex; flex-direction:column; box-shadow:-12px 0 32px rgba(1,4,9,.5); }
+  /* The session list lazy-loads into this frame; it becomes the panel's flex column so the
+     head / list / foot lay out and the list scrolls exactly as before the frame existed. */
+  #alex-heartbeat #aa-filter-frame { display:flex; flex-direction:column; flex:1 1 auto; min-height:0; }
+  #alex-heartbeat .aa-filter-head { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:16px 16px 12px; border-bottom:1px solid var(--hb-line); }
+  #alex-heartbeat .aa-filter-head h2 { margin:0; font-size:14px; font-weight:700; }
+  #alex-heartbeat .aa-filter-head p { margin:2px 0 0; font-size:11px; color:var(--hb-muted); }
+  #alex-heartbeat .aa-filter-close { background:transparent; border:0; color:var(--hb-muted); font-size:20px; line-height:1; cursor:pointer; padding:2px 6px; }
+  #alex-heartbeat .aa-filter-close:hover { color:var(--hb-txt); }
+  #alex-heartbeat .aa-filter-list { flex:1 1 auto; overflow:auto; padding:8px 8px 18px; display:flex; flex-direction:column; gap:5px; }
+  /* live session-name filter — sticky so it stays put while the list scrolls under it */
+  #alex-heartbeat .aa-fs-search { position:sticky; top:0; z-index:2; width:100%; box-sizing:border-box; margin-bottom:1px; padding:7px 10px; font-size:12.5px; color:var(--hb-txt); background:var(--hb-panel2); border:1px solid var(--hb-line); border-radius:8px; outline:none; }
+  #alex-heartbeat .aa-fs-search::placeholder { color:var(--hb-faint); }
+  #alex-heartbeat .aa-fs-search:focus { border-color:var(--hb-accent); }
+  /* --aa-type is the session's Pokémon primary-type colour (set per row); it rides the
+     left accent bar and the sprite ring, falling back to neutral when absent. */
+  #alex-heartbeat .aa-filter-session { display:flex; align-items:center; gap:10px; padding:9px 10px; border:1px solid transparent; border-radius:10px; text-decoration:none; color:var(--hb-txt); box-shadow:inset 3px 0 0 var(--aa-type, transparent); }
+  #alex-heartbeat .aa-filter-session:hover { background:var(--hb-panel2); }
+  #alex-heartbeat .aa-filter-session.is-selected { border-color:var(--hb-accent); background:var(--hb-panel2); }
+  #alex-heartbeat .aa-fs-check { width:16px; height:16px; border-radius:5px; border:1px solid var(--hb-line); display:inline-flex; align-items:center; justify-content:center; font-size:11px; color:#06131f; flex:0 0 auto; }
+  #alex-heartbeat .aa-filter-session.is-selected .aa-fs-check { background:var(--hb-accent); border-color:var(--hb-accent); }
+  #alex-heartbeat .aa-fs-sprite { width:32px; height:32px; border-radius:50%; background:var(--hb-panel2); border:2px solid var(--aa-type, var(--hb-line)); object-fit:contain; flex:0 0 auto; image-rendering:pixelated; }
+  #alex-heartbeat .aa-fs-body { min-width:0; flex:1 1 auto; }
+  #alex-heartbeat .aa-fs-name { font-weight:600; font-size:12.5px; display:flex; align-items:center; gap:5px; }
+  #alex-heartbeat .aa-fs-shiny { color:var(--hb-bank); font-size:10px; }
+  #alex-heartbeat .aa-fs-meta { color:var(--hb-faint); font-family:ui-monospace,monospace; font-size:10.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  /* the last-active recency is the list's sort key, so lift it above the faint id/count */
+  #alex-heartbeat .aa-fs-ago { color:var(--hb-muted); }
+  #alex-heartbeat .aa-filter-foot { padding:10px 16px; border-top:1px solid var(--hb-line); display:flex; gap:8px; align-items:center; justify-content:space-between; }
+  #alex-heartbeat .aa-filter-empty { color:var(--hb-muted); text-align:center; padding:24px 12px; font-size:12px; }
+
+  /* ---- Mobile priority-columns ------------------------------------------- */
+  /* The per-row "more" toggle only exists on mobile. */
+  #alex-heartbeat .aa-mtoggle { display:none; }
+  #alex-heartbeat tr.aa-mobile-detail { display:none; }
+  #alex-heartbeat tr.aa-mobile-detail > td { background:var(--hb-panel); border-bottom:1px solid var(--hb-line); padding:6px 12px 12px 38px; }
+  #alex-heartbeat .aa-md-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px 16px; }
+  #alex-heartbeat .aa-md-block { min-width:0; }
+  #alex-heartbeat .aa-md-label { font-size:9px; text-transform:uppercase; letter-spacing:.5px; color:var(--hb-faint); margin-bottom:3px; }
+
+  @media (max-width:860px) {
+    #alex-heartbeat.aa-page { padding:14px 12px 18px; }
+    /* Auto layout on mobile: table-layout:fixed mis-reserves width for the display:none
+       columns and over-squeezes Activity; capping the wide cell children to vw fractions
+       keeps the auto table within the viewport (the goal ellipsizes) instead. */
+    #alex-heartbeat table.aa-tbl, .sticky-table-header-clone table.aa-tbl { min-width:0; width:100%; table-layout:auto; }
+    #alex-heartbeat .aa-keycmd .hb-keycode { max-width:42vw; }
+    /* Priority columns: keep Agent + Activity; collapse Cost/Details/grades.
+       Mirrored to the engine sticky clone so its header matches on mobile. */
+    #alex-heartbeat .aa-collapsible, .sticky-table-header-clone .aa-collapsible { display:none !important; }
+    /* The detail panel opens together with the raw actions on a row tap (x-show="open"),
+       no separate toggle — the operator asked for a single tap-to-open. On mobile the
+       row's shown display is table-row (x-show toggles the inline display:none). */
+    #alex-heartbeat tr.aa-mobile-detail { display:table-row; }
+    #alex-heartbeat tr.aa-mobile-detail > td { padding:4px 12px 12px 34px; }
+    /* Let Agent + Activity shrink to the viewport instead of forcing a scroll. */
+    #alex-heartbeat .aa-th-chev, #alex-heartbeat .aa-chev { width:18px; padding-left:8px !important; }
+    #alex-heartbeat .aa-agent { min-width:0; }
+    #alex-heartbeat .aa-agent .hb-nameprimary, #alex-heartbeat .aa-agent .hb-namesub { max-width:22vw; overflow:hidden; text-overflow:ellipsis; }
+    #alex-heartbeat .aa-activity { min-width:0; max-width:none; }
+    #alex-heartbeat .aa-goal { max-width:54vw; }
+    #alex-heartbeat .aa-resultfade { max-width:50vw; }
+  }
+  /* Turn-grouped drill-down tail: the reasoning/prose line (non-tool turns) + the
+     reconciling TOTAL, so a span's parts (tool-turns + reasoning) visibly add up to
+     the span's own tokens. */
+  #alex-heartbeat .aa-reasoning-label { font-size:11px; font-style:italic; color:var(--hb-muted); }
+  #alex-heartbeat .aa-reasoning-row .aa-cost-tok { font-style:italic; color:var(--hb-muted); }
+  #alex-heartbeat .aa-total-row td { border-top:1px solid var(--hb-line); }
+  #alex-heartbeat .aa-total-label { font-size:11px; font-weight:700; letter-spacing:.4px; color:var(--hb-txt); }
+  #alex-heartbeat .aa-total-tok { font-weight:700; color:var(--hb-txt); }
