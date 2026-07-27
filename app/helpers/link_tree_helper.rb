@@ -50,6 +50,7 @@ module LinkTreeHelper
         { label: "Dashboard", href: admin_dashboard_path, emoji: "📊", hover_emoji: "🔬", desc: "Users + request logs" },
         { label: "Deployments", href: deployments_path, emoji: "🚀", hover_emoji: "📦", desc: "Deploy lane board" },
         { label: "Theme", href: admin_theme_path, emoji: "🎨", hover_emoji: "🌓", desc: "Palette + dark mode" },
+        { label: "Design System", href: admin_design_system_path, emoji: "🎨", hover_emoji: "🧩", desc: "Component + motion specimens" },
         { label: "Schema", href: admin_schema_path, emoji: "🗂️", hover_emoji: "🔎", desc: "DB schema browser" },
         { label: "Email images", href: admin_email_images_path, emoji: "🖼️", hover_emoji: "✉️", desc: "Manage transactional email banners" },
       ] },
