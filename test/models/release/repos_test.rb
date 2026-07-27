@@ -46,6 +46,19 @@ class Release::ReposTest < ActiveSupport::TestCase
     assert_nil Release::Repos.gem_meta("nope")
   end
 
+  test "self_gated_gem? is true only for a gem carrying a non-empty release_check" do
+    # studio-engine declares release_check: bin/release-check → self-gated.
+    assert Release::Repos.self_gated_gem?("studio-engine")
+    # solana-studio has no release_check → not self-gated (still needs a consumer).
+    assert_not Release::Repos.self_gated_gem?("solana-studio")
+    # apps and unknowns are never self-gated gems.
+    assert_not Release::Repos.self_gated_gem?("mcritchie-studio")
+    assert_not Release::Repos.self_gated_gem?("turf-monster")
+    assert_not Release::Repos.self_gated_gem?("not-a-real-repo")
+    assert_not Release::Repos.self_gated_gem?(nil)
+    assert_not Release::Repos.self_gated_gem?("")
+  end
+
   test "extract_version parses a VERSION constant assignment" do
     assert_equal "0.7.0", Release::Repos.extract_version(%(module Studio\n  VERSION = "0.7.0"\nend\n))
   end

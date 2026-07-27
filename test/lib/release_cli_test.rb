@@ -757,7 +757,8 @@ class ReleaseCliTest < Minitest::Test
     refute_includes out, "LOCK-PUSH", "no lock bump on a failed preflight"
   end
 
-  # A gem-only candidate: the sweep carries the gem and NO app member.
+  # A SELF-GATED gem-only candidate: the sweep carries studio-engine (its
+  # registry `release_check` makes it self-gated) and NO app member.
   GEM_ONLY_CONDUCTOR = <<~'RUBY'
     def conductor(ruby, read_only: false)
       return { "tasks" => [], "release" => { "slug" => "rel-gemonly", "state" => "assembling" }, "screen" => {} } if ruby.include?("sweep_candidates")
@@ -768,19 +769,52 @@ class ReleaseCliTest < Minitest::Test
     end
   RUBY
 
-  # [integration] The gem-only bypass: with no app member there is no consumer
-  # lock bump, no app gate, and no QA deploy — the candidate would publish and
-  # assemble QA-green with QA never bundling the gem. Preflight must abort it
-  # BEFORE the irreversible publish, naming the enroll-a-consumer fix.
-  def test_prepare_gem_only_candidate_aborts_before_any_publish
-    out = run_cli(["--yes"], setup: gem_publish_stub + GEM_ONLY_CONDUCTOR,
+  # A NON-self-gated gem-only candidate: solana-studio has no `release_check`, so
+  # it cannot be its own release — it still needs a consuming app.
+  SOLANA_GEM_ONLY_CONDUCTOR = <<~'RUBY'
+    def conductor(ruby, read_only: false)
+      return { "tasks" => [], "release" => { "slug" => "rel-gemonly", "state" => "assembling" }, "screen" => {} } if ruby.include?("sweep_candidates")
+      return { "state" => "assembled" } if ruby.include?("qa_green!")
+      { "slug" => "rel-gemonly", "state" => "assembling", "branch" => "release", "repos" => [
+        { "repo" => "solana-studio", "kind" => "gem", "members" => [{ "slug" => "t-gem", "branch" => nil }] }
+      ] }
+    end
+  RUBY
+
+  # [integration] The SELF-GATED gem-only candidate IS ALLOWED (gem-only-deployments):
+  # a gem whose registry `release_check` is its own release-candidate verdict may be
+  # its OWN release — it publishes, gets a first-class G3 verdict on its OWN suite's
+  # CI (the self-gated-gem pass, resolved through the same tree-identical credit the
+  # apps use), and assembles QA-green with NO app QA deploy. This is the whole point
+  # of the change: a gem-only publish flows through the tracker instead of being
+  # hard-refused.
+  def test_prepare_self_gated_gem_only_candidate_is_allowed_and_gated_on_its_own_ci
+    out = run_cli(["--yes"], call: "prepare", setup: gem_publish_stub + GEM_ONLY_CONDUCTOR)
+
+    refute_includes out, "ABORTED", "a self-gated gem-only candidate must NOT be refused"
+    assert_includes out, "GEM-PUSH", "a self-gated gem-only candidate publishes"
+    assert_includes out, "pre-QA gate studio-engine (self-gated gem): GitHub CI GREEN",
+                    "the self-gated gem earns its own G3 verdict on its own suite's CI"
+    assert_includes out, "Assembled rel-gemonly", "the gem-only release assembles QA-green"
+    refute_includes out, "QA-DEPLOY", "a gem-only release has NO app QA deploy"
+  end
+
+  # [integration] The gem-only bypass still bites for a NON-self-gated gem: with no
+  # app member AND no `release_check` to gate itself, the candidate would publish and
+  # assemble QA-green with nothing ever exercising the gem. Preflight must abort it
+  # BEFORE the irreversible publish, naming BOTH the missing app and the
+  # not-self-gated reason, plus the enroll-a-consumer fix.
+  def test_prepare_non_self_gated_gem_only_candidate_aborts_before_any_publish
+    out = run_cli(["--yes"], setup: gem_publish_stub + SOLANA_GEM_ONLY_CONDUCTOR,
                   call: %{begin; prepare; puts("NO-ABORT"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
 
-    assert_includes out, "ABORTED", "a gem-only candidate must not publish + assemble unQA'd"
+    assert_includes out, "ABORTED", "a NON-self-gated gem-only candidate must not publish + assemble unQA'd"
     assert_includes out, "NO app member", "the abort names the gem-only condition"
+    assert_includes out, "not self-gated", "the abort names WHY solana-studio can't release alone"
+    assert_includes out, "solana-studio", "the abort names the offending gem"
     assert_includes out, "enroll the consuming app", "the abort hands over the fix"
     refute_includes out, "NO-ABORT"
-    refute_includes out, "GEM-PUSH", "nothing publishes on a gem-only candidate"
+    refute_includes out, "GEM-PUSH", "nothing publishes on a non-self-gated gem-only candidate"
     refute_includes out, "QA-DEPLOY"
   end
 
@@ -809,6 +843,21 @@ class ReleaseCliTest < Minitest::Test
     refute_includes out, "QA-DEPLOY"
   end
 
+  # A NON-self-gated gem (solana-studio) riding alongside an app whose Gemfile does
+  # NOT declare it — no swept consumer bundles it. (gem_publish_stub's app Gemfile
+  # declares studio-engine, never solana-studio, so solana has no consumer here.)
+  SOLANA_MIXED_CONDUCTOR = <<~'RUBY'
+    def conductor(ruby, read_only: false)
+      return { "tasks" => [], "release" => { "slug" => "rel-gempub", "state" => "assembling" }, "screen" => {} } if ruby.include?("sweep_candidates")
+      return { "state" => "assembled" } if ruby.include?("qa_green!")
+      { "slug" => "rel-gempub", "state" => "assembling", "branch" => "release", "repos" => [
+        { "repo" => "solana-studio", "kind" => "gem", "members" => [{ "slug" => "t-gem", "branch" => nil }] },
+        { "repo" => "mcritchie-studio", "kind" => "app", "release_branch" => "release",
+          "qa_app" => "mcritchie-studio", "members" => [{ "slug" => "t-studio", "branch" => "feat/s" }] }
+      ] }
+    end
+  RUBY
+
   # The swept app's origin/release Gemfile does not declare the gem.
   EMPTY_CONSUMER_GEMFILE = <<~'RUBY'
     alias git_capture_before_empty_gemfile git_capture
@@ -818,18 +867,32 @@ class ReleaseCliTest < Minitest::Test
     end
   RUBY
 
-  # [integration] The same bypass with apps present: a gem NO swept consumer
-  # bundles would still assemble QA-green untested. Preflight must catch the
-  # missing coverage before the publish.
-  def test_prepare_gem_with_no_swept_consumer_aborts_before_any_publish
-    out = run_cli(["--yes"], setup: gem_publish_stub + EMPTY_CONSUMER_GEMFILE,
+  # [integration] The no-consumer guard still bites for a NON-self-gated gem: a gem
+  # NO swept consumer bundles AND with no `release_check` to gate itself would still
+  # assemble QA-green untested. Preflight must catch the missing coverage before the
+  # publish. (solana-studio is not self-gated, so the per-gem consumer check applies.)
+  def test_prepare_non_self_gated_gem_with_no_swept_consumer_aborts_before_any_publish
+    out = run_cli(["--yes"], setup: gem_publish_stub + SOLANA_MIXED_CONDUCTOR,
                   call: %{begin; prepare; puts("NO-ABORT"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
 
-    assert_includes out, "ABORTED", "a gem with no swept consumer must not publish"
+    assert_includes out, "ABORTED", "a non-self-gated gem with no swept consumer must not publish"
     assert_includes out, "no consuming app in this sweep", "the abort names the missing coverage"
+    assert_includes out, "solana-studio", "the abort names the offending gem"
     refute_includes out, "NO-ABORT"
     refute_includes out, "GEM-PUSH", "nothing publishes without a consumer to QA it through"
     refute_includes out, "LOCK-PUSH"
+  end
+
+  # [integration] The relaxation's companion: a SELF-GATED gem (studio-engine)
+  # riding an app whose Gemfile does NOT declare it is ALLOWED to publish — a
+  # self-gated gem does not need a consumer to be QA'd (its own suite is its
+  # verdict), so the per-gem no-consumer guard is correctly skipped for it.
+  def test_prepare_self_gated_gem_with_no_swept_consumer_still_publishes
+    out = run_cli(["--yes"], call: "prepare", setup: gem_publish_stub + EMPTY_CONSUMER_GEMFILE)
+
+    refute_includes out, "ABORTED", "a self-gated gem needs no consumer — it must not be refused"
+    refute_includes out, "no consuming app in this sweep", "the no-consumer guard is skipped for a self-gated gem"
+    assert_includes out, "GEM-PUSH", "the self-gated gem publishes even with no consumer bundling it"
   end
 
   # A release with a registered app that has NO qa_environments.yml entry
@@ -1879,6 +1942,70 @@ class ReleaseCliTest < Minitest::Test
       assert_includes cert, "ok: false", "…as ok:false — an honest failed stamp, never a green one"
       assert_includes cert, %(cmd: "bin/suite"), "the cmd is recorded even on a red verdict"
       refute_includes out, "PASSED"
+    end
+  end
+
+  # [integration] The SELF-GATED-GEM pass records a first-class G3 verdict for a
+  # gem-only release (gem-only-deployments). With NO app member, pre_qa_gate's gem
+  # pass gates studio-engine (self-gated) on its OWN suite's CI — resolved through
+  # the same repo-generic credit the apps use — and records the certification via
+  # the SAME Release::Conductor.record_qa_gate primitive, with the gem's registry
+  # release_check as the recorded cmd. This is what makes a gem-only publish show as
+  # a first-class deployment instead of being invisible.
+  def test_pre_qa_gate_self_gated_gem_records_a_g3_verdict_on_its_own_ci
+    Dir.mktmpdir do |dir|
+      setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
+              %(ENV["RELEASE_CI_STATUS"] = "green"\n) +
+              %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
+        def conductor(ruby, read_only: false)
+          $stdout.puts("CERT-CALL " + ruby.gsub("\n", " "))
+          {}
+        end
+        def sh(*a, **k)
+          g = gate_git(a, k)
+          return g if g
+          ["", true]
+        end
+      RUBY
+      out = run_cli(["--yes"], setup: setup,
+                    call: %{pre_qa_gate([], "rel-cert", gem_groups: [{ "repo" => "studio-engine" }]); puts("PASSED")})
+
+      assert_includes out, "pre-QA gate studio-engine (self-gated gem): GitHub CI GREEN",
+                      "the self-gated gem is gated on its own CI: #{out}"
+      cert = out.lines.find { |l| l.start_with?("CERT-CALL") }
+      assert cert, "the self-gated gem must RECORD its G3 certification: #{out}"
+      assert_includes cert, "Release::Conductor.record_qa_gate", "the stamp rides the tested conductor primitive"
+      assert_includes cert, %(slug: "rel-cert")
+      assert_includes cert, %(repo: "studio-engine")
+      assert_includes cert, %(sha: "#{GATE_SHA}"), "it certifies the SHA CI gave a verdict on"
+      assert_includes cert, %(cmd: "bin/release-check"), "…and RECORDS the gem's own release_check as the gate cmd"
+      assert_includes cert, "ok: true"
+      assert_includes out, "PASSED"
+    end
+  end
+
+  # [integration] The gem pass is SCOPED to a gem-only release: a self-gated gem
+  # member alongside an APP member gets NO extra gem G3 gate — it is QA'd through
+  # its consumer, exactly as before. Proves the gem-riding-app path is untouched.
+  def test_pre_qa_gate_skips_the_gem_pass_when_an_app_rides_the_release
+    Dir.mktmpdir do |dir|
+      setup = %(ENV["MCR_PRIMARY_LOCK_DIR"] = #{dir.inspect}\n) +
+              %(ENV["RELEASE_CI_STATUS"] = "green"\n) +
+              %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
+        def qa_gate_cmd(_repo) = "bin/suite"
+        def conductor(ruby, read_only: false) = {}
+        def sh(*a, **k)
+          g = gate_git(a, k)
+          return g if g
+          ["", true]
+        end
+      RUBY
+      out = run_cli(["--yes"], setup: setup,
+                    call: %{pre_qa_gate([{ "repo" => "sibling-app" }], "rel-cert", gem_groups: [{ "repo" => "studio-engine" }]); puts("PASSED")})
+
+      assert_includes out, "pre-QA gate sibling-app: GitHub CI GREEN", "the app gate still runs"
+      refute_includes out, "self-gated gem", "no gem G3 pass fires when an app rides the release"
+      assert_includes out, "PASSED"
     end
   end
 

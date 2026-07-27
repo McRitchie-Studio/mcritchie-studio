@@ -2343,7 +2343,74 @@ def poll_ci_verdict(repo, sha, deadline: monotonic_s + ci_poll_timeout)
   end
 end
 
-def pre_qa_gate(app_groups, rel_slug = nil)
+# Resolve GitHub CI's verdict for `repo`'s origin/#{RELEASE_BRANCH} `sha`,
+# applying the G3 dedupe credits (fast-forward / tree-identical) and otherwise
+# polling — the repo-generic core the APP and SELF-GATED-GEM gate lanes share.
+# It is repo-generic BY DESIGN, which is exactly why a self-gated gem can reuse
+# it: both an app and a gem promote accepted→release via a batch PR, and that
+# promote PR is a `pull_request` event that BOTH ci.yml (hub) and engine-ci.yml
+# (gem) run — so the accepted head carries a green, and the tree-identical credit
+# certifies the identical release tree the same way for either kind (there is no
+# `push:[release]` CI run for either; the credit is the whole mechanism).
+# Returns [ci_hash, credited_bool] — the caller runs ci_pass? on ci and prints
+# `(credited)` from the flag. Behavior-identical to the block it was lifted from,
+# so the app gate is byte-for-byte the same verdict.
+def resolve_release_ci_verdict(repo, path, sha)
+  # ONE shared poll budget: the tree credit may spend part of it WAITING on the
+  # in-flight accepted run, and a wait that times out then falls through must not
+  # spend a SECOND full window polling the release SHA.
+  deadline = monotonic_s + ci_poll_timeout
+  credit = nil
+  diagnostic = nil
+  if fast_forward_promote?(path, sha)
+    credit = ci_credit_verdict(repo, sha)
+    if credit
+      credit[:credited] = "#{credit[:credited]}; fast-forward promote — " \
+                          "origin/#{RELEASE_BRANCH} is the #{ACCEPTED_BRANCH} head CI already built"
+    else
+      diagnostic = "origin/#{RELEASE_BRANCH} IS the #{ACCEPTED_BRANCH} head (fast-forward) but it carries no " \
+                   "completed green to credit yet — polling its own run"
+    end
+  elsif (promote = tree_identical_promote(path, sha))
+    # SAME-TREE: credit an accepted-head green, or WAIT on it while it is in flight —
+    # the round-3 fix (credit-waits-accepted-ci). Whatever the outcome, it LOGS why.
+    outcome = tree_identical_ci_outcome(repo, sha, promote, deadline: deadline)
+    credit = outcome[:credit]
+    diagnostic = outcome[:diagnostic]
+  else
+    # No credit is even possible: the release tip is neither the accepted head (fast-forward)
+    # nor a tree-identical promote of it (a diverged tree — e.g. a consumer lock-bump commit
+    # riding #{RELEASE_BRANCH}). Say so, rather than falling through silently — every non-credit
+    # now names its condition (a mismatch this gate used to leave to hand-forensics).
+    diagnostic = "#{short(sha)} shares neither SHA nor tree with the #{ACCEPTED_BRANCH} head — no credit " \
+                 "possible; polling its own run"
+  end
+  say("  #{repo}: #{diagnostic}") if diagnostic && !credit
+  if credit
+    say("  #{repo}: crediting the existing green conclusion for #{short(sha)} — no duplicate run awaited " \
+        "(#{credit[:credited]})")
+  end
+
+  # THE VERDICT: GitHub CI's conclusion for the SHA under test, POLLED until it
+  # concludes (poll_ci_verdict) and fail-CLOSED via ci_pass? — only :green certifies.
+  # A red (a regression riding origin/#{RELEASE_BRANCH}) or an :unreadable token fault
+  # aborts at once; a still-:pending/:none/:unverified verdict is HELD — a just-merged
+  # SHA's CI is still building — until it goes green, red, or the poll times out. This
+  # replaces the single read that aborted every sweep's first run on a pending CI. The
+  # poll shares the gate's deadline (see above) so the tree-credit wait + this poll
+  # never exceed one window together.
+  ci = credit || poll_ci_verdict(repo, sha, deadline: deadline)
+  [ci, !credit.nil?]
+end
+
+# The pre-QA gate (G3 candidate). `app_groups` gate on their registered
+# qa_test_cmd's CI; `gem_groups` (keyword — old positional callers keep the
+# (app_groups, rel_slug) arity) adds the SELF-GATED-GEM pass for a GEM-ONLY
+# release, so a gem publishing as its own candidate gets a first-class G3 verdict
+# on its own suite's CI. A gem RIDING an app (a consumer bundles it) is unchanged:
+# the gem pass runs ONLY when there is no app member, so that release is QA'd
+# through its consumer's bumped lock exactly as before.
+def pre_qa_gate(app_groups, rel_slug = nil, gem_groups: [])
   say("")
   # The banner names what THIS step does now (DevOps v2 Phase 3): it reads GitHub
   # CI's verdict for each app's origin/#{RELEASE_BRANCH} SHA. The local suite that
@@ -2379,72 +2446,16 @@ def pre_qa_gate(app_groups, rel_slug = nil)
     # GitHub CI's verdict for this exact origin/#{RELEASE_BRANCH} SHA IS the gate now
     # (poll_ci_verdict -> ci_pass?), so the whole local-cert flakiness class (a lazily-
     # autoloaded suite torn by a concurrent checkout) retired with it.
-
+    #
     # G3 DEDUPE (task dedupe-hub-release-suite): the hub registers the same full
     # suite at the accepted seam (the batch PR's pull_request run on the accepted
-    # head) and again on the release push (the promote's merge commit), so every
-    # sweep re-runs — and the poll below waits out — checks an IDENTICAL TREE
-    # already earned. Two credits, tried in order, both fail-closed into the poll:
-    #   1. SAME-SHA (fast_forward_promote?): origin/#{RELEASE_BRANCH} IS the
-    #      accepted head — its own completed greens cover the pending duplicates
-    #      (ci_credit_verdict). The true-FF shape; rare under the batch-PR merge.
-    #   2. SAME-TREE (tree_identical_promote): the LIVE shape — the batch-PR merge
-    #      minted a NEW SHA whose tree EQUALS the accepted head's, so the accepted
-    #      head's green vouches for the identical content — CREDITED when it is
-    #      already green, and WAITED ON when it is still in flight, because in a
-    #      fast pipeline accepted CI is essentially never settled at gate time
-    #      (tree_identical_ci_outcome; both SHAs + the shared tree recorded, and
-    #      every non-credit LOGS why). Shares the gate's poll deadline.
-    # NOTHING else weakens: a non-credit — red, a vanished/absent accepted run, a
-    # wait that times out, diverged trees (e.g. a consumer lock-bump commit riding
-    # #{RELEASE_BRANCH} — see tree_identical_promote) — falls through to the exact
-    # same poll below.
-    # ONE shared poll budget for the whole gate: the tree credit may spend part of it
-    # WAITING on the in-flight accepted run, and a wait that times out then falls through
-    # must not spend a SECOND full window polling the release SHA.
-    deadline = monotonic_s + ci_poll_timeout
-    credit = nil
-    diagnostic = nil
-    if fast_forward_promote?(path, sha)
-      credit = ci_credit_verdict(repo, sha)
-      if credit
-        credit[:credited] = "#{credit[:credited]}; fast-forward promote — " \
-                            "origin/#{RELEASE_BRANCH} is the #{ACCEPTED_BRANCH} head CI already built"
-      else
-        diagnostic = "origin/#{RELEASE_BRANCH} IS the #{ACCEPTED_BRANCH} head (fast-forward) but it carries no " \
-                     "completed green to credit yet — polling its own run"
-      end
-    elsif (promote = tree_identical_promote(path, sha))
-      # SAME-TREE: credit an accepted-head green, or WAIT on it while it is in flight —
-      # the round-3 fix (credit-waits-accepted-ci). Whatever the outcome, it LOGS why.
-      outcome = tree_identical_ci_outcome(repo, sha, promote, deadline: deadline)
-      credit = outcome[:credit]
-      diagnostic = outcome[:diagnostic]
-    else
-      # No credit is even possible: the release tip is neither the accepted head (fast-forward)
-      # nor a tree-identical promote of it (a diverged tree — e.g. a consumer lock-bump commit
-      # riding #{RELEASE_BRANCH}). Say so, rather than falling through silently — every non-credit
-      # now names its condition (a mismatch this gate used to leave to hand-forensics).
-      diagnostic = "#{short(sha)} shares neither SHA nor tree with the #{ACCEPTED_BRANCH} head — no credit " \
-                   "possible; polling its own run"
-    end
-    say("  #{repo}: #{diagnostic}") if diagnostic && !credit
-    if credit
-      say("  #{repo}: crediting the existing green conclusion for #{short(sha)} — no duplicate run awaited " \
-          "(#{credit[:credited]})")
-    end
-
-    # THE VERDICT: GitHub CI's conclusion for the SHA under test, POLLED until it
-    # concludes (poll_ci_verdict) and fail-CLOSED via ci_pass? — only :green certifies.
-    # A red (a regression riding origin/#{RELEASE_BRANCH}) or an :unreadable token fault
-    # aborts at once; a still-:pending/:none/:unverified verdict is HELD — a just-merged
-    # SHA's CI is still building — until it goes green, red, or the poll times out. This
-    # replaces the single read that aborted every sweep's first run on a pending CI. The
-    # poll shares the gate's deadline (see above) so the tree-credit wait + this poll
-    # never exceed one window together.
-    ci = credit || poll_ci_verdict(repo, sha, deadline: deadline)
+    # head) and again on the release push (the promote's merge commit), so the
+    # verdict resolution below credits the IDENTICAL TREE already earned instead of
+    # re-running it — fail-closed into the poll on any non-credit. Repo-generic; see
+    # resolve_release_ci_verdict.
+    ci, credited = resolve_release_ci_verdict(repo, path, sha)
     ok = ci_pass?(ci)
-    step("pre-QA gate #{repo}: GitHub CI #{ci[:state].to_s.upcase}#{credit ? ' (credited)' : ''} @ #{short(sha)} " \
+    step("pre-QA gate #{repo}: GitHub CI #{ci[:state].to_s.upcase}#{credited ? ' (credited)' : ''} @ #{short(sha)} " \
          "(#{cmd} recorded for the G4 drift check, not run here)")
 
     # Certify — the ONLY evidence G4 accepts for skipping its own gate. Recorded for
@@ -2454,6 +2465,53 @@ def pre_qa_gate(app_groups, rel_slug = nil)
     next if ok
 
     abort!(pre_qa_ci_abort(repo, sha, ci))
+  end
+
+  # SELF-GATED GEM pass — a GEM-ONLY release's own G3 verdict. A self-gated gem
+  # (registry `release_check`) publishing as its own candidate has no consuming
+  # app to gate it, so it gets a first-class G3 verdict here on its OWN suite's
+  # CI, resolved by the SAME repo-generic path the apps use
+  # (resolve_release_ci_verdict): the gem's accepted→release promote PR is a
+  # `pull_request` event engine-ci.yml runs, so the accepted-head green credits
+  # the identical release tree — there is no `push:[release]` CI run to poll.
+  #
+  # SCOPED TO app_groups.empty? — a GEM-ONLY release. A gem RIDING an app is
+  # QA'd through its consumer's bumped lock (the app gate above), and this pass
+  # must not add a new gate to that path, so the gem-riding-app release behaves
+  # exactly as before. Non-self-gated gems never reach here (a non-self-gated
+  # gem-only candidate already aborted at validate_gems_for_qa).
+  if app_groups.empty?
+    gem_groups.each do |group|
+      repo = group["repo"]
+      next unless self_gated_gem?(repo)
+
+      cmd = gem_meta_for(repo)["release_check"].to_s
+      # Validate the registry command the same way the app lane does (a malformed
+      # value aborts a preview); the gem's own suite ran it in CI already.
+      test_cmd_argv(cmd)
+      if DRY
+        say("  [dry-run] pre-QA gate #{repo} (self-gated gem): GitHub CI verdict for origin/#{RELEASE_BRANCH} " \
+            "(#{cmd} is the gem's own release gate — greened in its CI, recorded here)")
+        next
+      end
+
+      path = repo_path(repo)
+      abort!("gem repo not found at #{path} — clone it as a sibling at the projects root") unless Dir.exist?(path)
+      sh("git", "-C", path, "fetch", "origin", "--quiet")
+      out, ok = sh("git", "-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}", capture: true)
+      abort!("could not resolve origin/#{RELEASE_BRANCH} in #{repo} for the pre-QA gate — fetch, then re-run") unless ok
+      sha = out.strip
+
+      ci, credited = resolve_release_ci_verdict(repo, path, sha)
+      ok = ci_pass?(ci)
+      step("pre-QA gate #{repo} (self-gated gem): GitHub CI #{ci[:state].to_s.upcase}#{credited ? ' (credited)' : ''} " \
+           "@ #{short(sha)} (#{cmd} greened the gem in its own CI)")
+
+      record_qa_gate(rel_slug, repo, sha, cmd, ci, ok)
+      next if ok
+
+      abort!(pre_qa_ci_abort(repo, sha, ci))
+    end
   end
 end
 
@@ -2662,7 +2720,7 @@ def prepare
   #    failed by the SystemExit wrapper below when anything in the window aborts.
   record_gate_open(rel_slug, "g3_candidate", actor: "avi")
   g3_gate = :open
-  pre_qa_gate(app_groups, rel_slug)
+  pre_qa_gate(app_groups, rel_slug, gem_groups: gem_groups)
 
   # 5b. Record the Steffon assembled QA intent for every member so /deployments shows
   #     him QA-ing the RC live the moment the deploy half starts — the Deploy mirror
@@ -3104,6 +3162,14 @@ end
 
 def gem_meta_for(repo) = RELEASE_REPOS.dig("gems", repo) || {}
 def app_meta_for(repo) = RELEASE_REPOS.dig("apps", repo) || {}
+
+# A gem is SELF-GATED when the registry gives it its own pre-publish gate
+# (a non-empty `release_check`): its own suite IS the release-candidate verdict,
+# so it can be its OWN release candidate with no consuming app to QA it through.
+# Mirrors Release::Repos.self_gated_gem? on the RECORD side — bin/release reads
+# the registry through RELEASE_REPOS (no Rails), so it can't call the model. Keep
+# the two in step.
+def self_gated_gem?(repo) = !gem_meta_for(repo)["release_check"].to_s.strip.empty?
 
 # A gem's declared version AT a git ref — `git show <ref>:<version_file>`, parsed
 # the same way as the local read. This is the read that fixes the publish-skip:
@@ -3770,11 +3836,21 @@ def validate_gems_for_qa(gem_groups, app_groups)
   end
 
   failures = []
-  if app_groups.empty?
-    failures << "the sweep carries #{gem_groups.map { |g| g['repo'] }.join(', ')} but NO app member — " \
-                "a gem-only candidate would publish with no consumer lock bump, no pre-QA gate, and no " \
-                "QA deploy, then assemble QA-green untested; enroll the consuming app in the sweep " \
-                "(or eject the gem member)"
+  # GEM-ONLY candidate. A self-gated gem (its registry `release_check` is its own
+  # release-candidate verdict) MAY be its own release: it gates at G3 on its OWN
+  # suite's CI (pre_qa_gate's gem pass), and the RubyGems publish is its prod
+  # deploy — no consuming app is required. So skip this abort when EVERY swept gem
+  # is self-gated. A NON-self-gated gem-only sweep (e.g. solana-studio, no
+  # release_check) still aborts exactly as before: with no consumer it would
+  # publish and assemble QA-green with nothing ever exercising the gem.
+  if app_groups.empty? && !gem_groups.all? { |g| self_gated_gem?(g["repo"]) }
+    non_self_gated = gem_groups.reject { |g| self_gated_gem?(g["repo"]) }.map { |g| g["repo"] }
+    failures << "the sweep carries #{gem_groups.map { |g| g['repo'] }.join(', ')} but NO app member, and " \
+                "#{non_self_gated.join(', ')} #{non_self_gated.size == 1 ? 'is' : 'are'} not self-gated " \
+                "(no `release_check` in config/release_repos.yml) — a non-self-gated gem-only candidate would " \
+                "publish with no consumer lock bump, no pre-QA gate, and no QA deploy, then assemble QA-green " \
+                "untested; enroll the consuming app in the sweep (or eject the gem member). A self-gated gem " \
+                "may release alone."
   end
   consumers = validated_consumer_gemfiles(app_groups, failures)
 
@@ -3822,7 +3898,13 @@ def validate_gems_for_qa(gem_groups, app_groups)
       next
     end
 
-    if app_groups.any? && consumers.none? { |_, text| Release::ShipSequence.consumer_bump_action(text, repo, version) != :absent }
+    # Per-gem no-consumer guard. A self-gated gem does NOT need a consuming app to
+    # be QA'd — its own suite is its verdict (pre_qa_gate's gem pass) — so skip
+    # this check for it. A non-self-gated gem still requires a swept consumer that
+    # bundles it, or the published gem would assemble QA-green with QA never
+    # exercising it.
+    if app_groups.any? && !self_gated_gem?(repo) &&
+       consumers.none? { |_, text| Release::ShipSequence.consumer_bump_action(text, repo, version) != :absent }
       failures << "gem #{repo} #{version} has no consuming app in this sweep (checked: " \
                   "#{consumers.keys.join(', ')}) — the published gem would assemble QA-green with QA never " \
                   "bundling it; enroll the consuming app (or eject the gem member)"

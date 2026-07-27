@@ -47,6 +47,13 @@
         <% if (seal = rel.smoke_seal) %>
           <span class="shrink-0 px-2 py-0.5 rounded text-xs font-bold <%= release_smoke_seal_classes(seal) %>" data-test="release-smoke-seal-badge" data-seal-status="<%= seal.status %>" title="<%= release_smoke_seal_title(seal) %>"><%= seal.badge %> Seal</span>
         <% end %>
+        <%# GEM-ONLY pill: this release is its own gem candidate — published to
+            RubyGems, no app deploy. Sits just left of the state badge so the
+            operator reads "this is a gem publish" at a glance. Violet 💎 tone via
+            release_state_classes("gem_only") (a pill tone, not a state). %>
+        <% if rel.gem_only? %>
+          <span class="shrink-0 px-2 py-0.5 rounded text-xs font-bold <%= release_state_classes("gem_only") %>" data-test="release-gem-only-badge" title="Gem-only release — published to RubyGems, no app deploy">💎 Gem-only</span>
+        <% end %>
         <%# Consolidated status badge: one state-colored pill folding the bare state + its
             relative time into "Shipped 7 minutes ago" — replaces the former left-side
             state pill AND the separate muted "shipped X ago" line. %>
@@ -85,8 +92,18 @@
     <div class="mt-1 flex items-center gap-4 text-xs <%= meta_color %> flex-wrap">
         <span><%= members.size %> task<%= "s" unless members.size == 1 %></span>
         <% if rel.qa_url.present? %><%= link_to "QA ↗", rel.qa_url, target: "_blank", rel: "noopener", class: link_class %><% end %>
-        <% if rel.production_url.present? %><%= link_to "Prod ↗", rel.production_url, target: "_blank", rel: "noopener", class: link_class %><% end %>
-        <% if rel.deployed_sha.present? %><code class="text-muted" title="deployed SHA"><%= rel.deployed_sha.first(7) %></code><% end %>
+        <%# The deployment ARTIFACT. A gem-only release has no app deploy — its
+            artifact is the published gem — so it shows "💎 <gem> <version>"
+            instead of the Prod ↗ link + deployed SHA. Every other release keeps
+            the Prod link + deployed SHA unchanged. %>
+        <% if rel.gem_only? %>
+          <% rel.gem_release_artifacts.each do |gem_repo, gem_version| %>
+            <span class="flex items-center gap-1" data-test="release-gem-artifact" title="published gem"><%= app_emoji_badge([gem_repo]) %><code class="text-muted"><%= gem_repo %><%= " #{gem_version}" if gem_version.present? %></code></span>
+          <% end %>
+        <% else %>
+          <% if rel.production_url.present? %><%= link_to "Prod ↗", rel.production_url, target: "_blank", rel: "noopener", class: link_class %><% end %>
+          <% if rel.deployed_sha.present? %><code class="text-muted" title="deployed SHA"><%= rel.deployed_sha.first(7) %></code><% end %>
+        <% end %>
       </div>
     <% if members.any? || trailing %>
       <%# Member pills on the left; optional trailing chip (e.g. the kickoff chip)

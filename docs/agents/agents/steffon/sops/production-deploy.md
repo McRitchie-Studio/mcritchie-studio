@@ -171,6 +171,16 @@ ordering, deploy smoke, release notes, and partial-ship recovery all still run.
 **That local confirm is now the only human gate** — the ship no longer blocks on
 a GitHub approval (see below).
 
+**A GEM-ONLY release ships too** (gem-only-deployments). A release whose every
+member is a self-gated gem (no app member — `Release#gem_only?`) reaches you
+`assembled` just like any other, and `bin/release ship` handles it with no
+special-casing: it fast-forwards each gem repo's `release → main`, re-verifies
+the gem publish idempotently (already-live → skip), and stamps `merged: main` /
+`shipped`. There is no app deploy — the RubyGems publish (already done at
+qa-release step 4) IS the production deploy — so the /deployments board shows the
+release with a **GEM-ONLY** badge and `💎 <gem> <version>` as its artifact
+instead of a Prod/SHA link. Expect DIVERGED merges (the gem note below) as usual.
+
 **The ship-confirm is launching this SOP, not a second click.** The hub deploys
 through GitHub Actions: `bin/release ship` dispatches `prod-deploy.yml` (`gh
 workflow run prod-deploy.yml -f sha=<frozen>`) and watches the run. That workflow
