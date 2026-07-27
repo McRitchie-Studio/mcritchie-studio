@@ -162,9 +162,16 @@ bin/release prepare --yes
    **equal, backward, and unparseable versions all block**; a backward version
    would otherwise "skip as already live" and rewrite consumers DOWNWARD into a
    production downgrade with every gate green). The fix is a version bump past
-   the tag through the gem's own PR. Plus a
-   swept consuming app whose Gemfile declares the gem (a gem-only candidate,
-   or a gem no swept consumer bundles, would assemble QA-green untested). ANY
+   the tag through the gem's own PR. Plus a consumer-coverage check —
+   **unless the gem is self-gated** (gem-only-deployments): a gem carrying a
+   `release_check` in `config/release_repos.yml` (studio-engine) is its OWN
+   release candidate — its suite is the verdict and the RubyGems publish is its
+   prod deploy — so it may be published with **no consuming app** in the sweep,
+   and a **self-gated gem-only candidate is now allowed** (it gates at G3 on its
+   own CI, step 5). A **non-self-gated** gem (solana-studio, no `release_check`)
+   still requires a swept consuming app whose Gemfile declares it — a
+   non-self-gated gem-only candidate, or a non-self-gated gem no swept consumer
+   bundles, would assemble QA-green untested and still aborts. ANY
    failure aborts loudly with every finding named and **zero gems published**.
    Phase 2 then publishes each validated gem's `origin/release` version to
    RubyGems (skip-if-live, so re-runs are safe) and commits each consumer
@@ -187,12 +194,21 @@ bin/release prepare --yes
    nothing else — red, pending-evidence, and diverged trees (a gem sweep's
    lock-bump commit from step 4) poll exactly as always. On green it RECORDS
    what it certified (SHA + command + CI verdict), which is the only thing the
-   G4 ship gate will accept as grounds to skip its own gate. A red gate, and
+   G4 ship gate will accept as grounds to skip its own gate. The gate reads the
+   same CI the app path does for a **self-gated gem in a gem-only release**
+   (gem-only-deployments): its `accepted→release` promote PR is a `pull_request`
+   run engine-ci greened, so the gem's release SHA earns the identical-tree
+   credit exactly like an app, and the gate records the gem's `release_check` as
+   the certified command. (A gem RIDING an app gets no extra gem gate — it is
+   QA'd through its consumer.) A red gate, and
    what to do about it (hint: **do not** blank the registry's `qa_test_cmd` —
    that silently disarms the production gate):
    [`../../../modules/gates/g3-candidate.md`](../../../modules/gates/g3-candidate.md).
 6. Deploy QA and wait for boot (gem members are not QA-deployed — they were
-   published at step 4 and are QA'd through the consuming app's bumped lock).
+   published at step 4 and are QA'd through the consuming app's bumped lock; a
+   **gem-only release has no app QA deploy at all** — it assembles on its G3 CI
+   verdict, and the /deployments board shows a **GEM-ONLY** badge with the
+   published `💎 <gem> <version>` as the deployment artifact).
 7. Flip members from `reviewed` to `assembled` only after QA is green.
 
 `prepare` also narrates the release's **stage timeline** as it goes — its

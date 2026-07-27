@@ -6,6 +6,38 @@ class ReleaseTest < ActiveSupport::TestCase
     Task.create!(title: "reviewable #{label} demo task", stage: "reviewed")
   end
 
+  def member_task(repo, position:)
+    Task.create!(title: "member #{repo} #{SecureRandom.hex(2)}", stage: "reviewed", position: position,
+                 metadata: { "devops" => { "repositories" => [repo] } })
+  end
+
+  # --- gem_only? / gem_release_artifacts (gem-only-deployments) ----------------
+
+  test "[unit] gem_only? is true only when EVERY member ships as a gem" do
+    rel = Release.open!
+    # No members yet → NOT gem-only (guards the empty set so a fresh RC isn't mis-flagged).
+    assert_not rel.gem_only?, "an empty release is never gem-only"
+
+    rel.add(member_task("studio-engine", position: 10))
+    assert rel.reload.gem_only?, "a release whose only member is a gem is gem-only"
+
+    # A gem RIDING an app is NOT gem-only — it QAs through its consumer.
+    rel.add(member_task("mcritchie-studio", position: 20))
+    assert_not rel.reload.gem_only?, "a mixed gem+app release is not gem-only"
+  end
+
+  test "[unit] gem_release_artifacts lists the distinct published gems (version may be nil)" do
+    rel = Release.open!
+    rel.add(member_task("studio-engine", position: 10))
+
+    artifacts = rel.reload.gem_release_artifacts
+    assert_equal ["studio-engine"], artifacts.map(&:first), "names the gem repo the release publishes"
+    # The paired version is Release::Repos.gem_version — a String on a reachable
+    # sibling checkout, nil when the sibling isn't present (a prod box / a worktree).
+    version = artifacts.first.last
+    assert(version.nil? || version.is_a?(String), "the version is a String or nil, never a crash")
+  end
+
   test "open! creates an assembling release with a generated slug" do
     rel = Release.open!
     assert_equal "assembling", rel.state

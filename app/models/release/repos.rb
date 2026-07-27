@@ -50,6 +50,19 @@ class Release
       config.fetch("gems", {})[repo.to_s]
     end
 
+    # A gem is SELF-GATED when the registry gives it its own pre-publish gate
+    # (a non-empty `release_check`): its own suite IS the release-candidate
+    # verdict, so it can be its OWN release candidate — published to RubyGems
+    # with no consuming app to QA it through. studio-engine (release_check:
+    # bin/release-check) is self-gated; solana-studio (no release_check) is not,
+    # so a solana-studio-only sweep still requires a consuming app.
+    #
+    # bin/release mirrors this predicate standalone (it reads the registry
+    # through RELEASE_REPOS, never through Rails) — keep the two in step.
+    def self_gated_gem?(repo)
+      gem_meta(repo)&.fetch("release_check", nil).to_s.strip.present?
+    end
+
     # The app's registry metadata (prod_deploy adapter, optional qa_deploy, …) or
     # nil when the repo isn't a registered app.
     def app_meta(repo)

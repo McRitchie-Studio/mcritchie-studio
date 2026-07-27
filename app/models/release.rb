@@ -360,6 +360,27 @@ class Release < ApplicationRecord
     Release::Ordering.producer_first(tasks.to_a)
   end
 
+  # True when EVERY member of this release ships as a published gem — a gem-only
+  # release, its own candidate (published to RubyGems, no app deploy). Guards an
+  # empty member set to FALSE so a just-created release with no members yet is
+  # never mis-flagged. Drives the board's GEM-ONLY badge + 💎 artifact line: a
+  # gem-only release has no Deployed stage, so it shows the published gem instead
+  # of a Prod/SHA link.
+  def gem_only?
+    members = tasks.to_a
+    members.any? && members.all?(&:gem_release?)
+  end
+
+  # The distinct gem repos this release publishes, paired with the version each
+  # would publish (nil when the sibling checkout isn't reachable — e.g. on a prod
+  # box). Feeds the board's 💎 <gem> <version> artifact line for a gem_only?
+  # release. Reads Release::Repos.gem_version, the already-present registry read.
+  def gem_release_artifacts
+    tasks.to_a.filter_map { |t| t.release_repo if t.gem_release? }.uniq.map do |repo|
+      [repo, Release::Repos.gem_version(repo)]
+    end
+  end
+
   def shipped?
     state == "shipped"
   end
