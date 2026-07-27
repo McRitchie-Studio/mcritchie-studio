@@ -43,8 +43,8 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     refute links.any? { |link| link[:label] == "Activities" }
   end
 
-  # [component] The engine's admin/design_system page is reachable from the admin
-  # sidebar, and the engine-provided route resolves in this host app.
+  # [component] The engine's living style guide (/admin/style) is reachable from
+  # the admin sidebar, and the engine-provided route resolves in this host app.
   test "admin sidebar exposes the Design System page link" do
     self.admin_enabled = true
 
@@ -52,12 +52,13 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     design_system = links.find { |link| link[:label] == "Design System" }
 
     assert design_system, "expected a Design System link in the admin sidebar"
-    assert_equal admin_design_system_path, design_system.fetch(:href)
+    assert_equal admin_style_path, design_system.fetch(:href)
     assert_equal "🎨", design_system.fetch(:emoji)
     assert design_system.fetch(:hover_emoji).present?, "expected a hover_emoji on the Design System link"
 
-    # The route is bundled by studio-engine (0.17+) — confirm it resolves here.
-    assert_equal "/admin/design_system", Rails.application.routes.url_helpers.admin_design_system_path
+    # The canonical /admin/style route is bundled by studio-engine (0.18+) — confirm
+    # it resolves here. The legacy /admin/design_system route still 301-redirects.
+    assert_equal "/admin/style", Rails.application.routes.url_helpers.admin_style_path
   end
 
   test "admin sidebar links Deployments to the deploy lane board" do
@@ -135,6 +136,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   def deployments_path = "/deployments"
   def admin_dashboard_path = "/admin"
   def admin_theme_path = "/admin/theme"
+  def admin_style_path = "/admin/style"
   def admin_design_system_path = "/admin/design_system"
   def admin_schema_path = "/admin/schema"
   def admin_email_images_path = "/admin/email_images"
