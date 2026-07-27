@@ -406,6 +406,9 @@ module ApplicationHelper
     when "assembled"  then "bg-amber-900/50 text-amber-300"
     when "shipped"    then "bg-green-900/50 text-green-300"
     when "abandoned"  then "bg-surface-alt text-muted"
+    # Not a release STATE — the GEM-ONLY pill's tone (a violet 💎 gem accent),
+    # rendered beside the state badge for a gem_only? release on _release_summary.
+    when "gem_only"   then "bg-violet-900/50 text-violet-300"
     else "bg-surface-alt text-muted"
     end
   end
