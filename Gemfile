@@ -87,4 +87,4 @@ gem "tailwindcss-rails", "~> 4.5"
 gem "sentry-ruby"
 gem "sentry-rails"
 
-gem "studio-engine", "~> 0.13" # 0.13 ships engine component CSS + de-forked modal/user-nav primitives; 0.12 added the model-page protocol (Studio::ModelPage)
+gem "studio-engine", "~> 0.17" # 0.17 ships the admin/design_system page + engine.css (auto-bundled) + opt-in engine-motion.css; 0.13 ships engine component CSS + de-forked modal/user-nav primitives; 0.12 added the model-page protocol (Studio::ModelPage)
