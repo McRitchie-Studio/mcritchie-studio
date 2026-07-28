@@ -69,6 +69,49 @@ class ReleaseLanesTest < ActionView::TestCase
     assert_select "#{lib} [data-phase='deploying'][data-state='na']", 1
   end
 
+  test "[component] a pending check draws a spinner; passed/failed stay glyphs" do
+    rel = lane_release("mcritchie-studio")
+    # Distinct check NAMES: progress_rows keeps only the latest attempt per name, so
+    # same-named rows would fold into one glyph.
+    seed_ci("amcritchie/mcritchie-studio", "release", "CI", "mcr", 0)
+    seed_checks("amcritchie/mcritchie-studio", "release", "CI", "mcr", 2, "pass", status: "completed", conclusion: "success")
+    seed_checks("amcritchie/mcritchie-studio", "release", "CI", "mcr", 3, "run", status: "in_progress", conclusion: nil)
+    seed_checks("amcritchie/mcritchie-studio", "release", "CI", "mcr", 1, "bad", status: "completed", conclusion: "failure")
+
+    render partial: "tasks/release_lanes", locals: { release: rel.reload }
+
+    meter = "[data-repo='mcritchie-studio'] [data-phase='assembling']"
+    row = "#{meter} [data-test='release-phase-checks']"
+    assert_select "#{row} svg[data-test='release-check-spinner']", 3, "one spinner per pending check"
+    assert_select "#{row} svg[data-test='release-check-spinner'].animate-spin.motion-reduce\\:animate-none", 3,
+                  "the spinner animates, and holds still under prefers-reduced-motion"
+    assert_select "#{row} span", { text: "✓", count: 2 }, "a passed check stays a ✓ glyph"
+    assert_select "#{row} span", { text: "✗", count: 1 }, "a failed check stays a ✗ glyph"
+    assert_not_includes css_select(row).first.to_s, "◌", "no static pending circle survives"
+  end
+
+  test "[component] the marks ride INSIDE the bar, and the whole card is the link" do
+    rel = lane_release("mcritchie-studio")
+    seed_ci("amcritchie/mcritchie-studio", "release", "CI", "mcr", 0)
+    seed_checks("amcritchie/mcritchie-studio", "release", "CI", "mcr", 2, "pass", status: "completed", conclusion: "success")
+    seed_checks("amcritchie/mcritchie-studio", "release", "CI", "mcr", 1, "run", status: "in_progress", conclusion: nil)
+
+    render partial: "tasks/release_lanes", locals: { release: rel.reload }
+
+    meter = "[data-repo='mcritchie-studio'] [data-phase='assembling']"
+    assert_select "#{meter} a[data-test='release-phase-link'] [data-test='release-phase-checks']", 1,
+                  "the whole card links to the run, with the marks inside it"
+    assert_select "#{meter} a[data-test='release-phase-link'] .relative [data-test='release-phase-checks']", 1,
+                  "the marks sit inside the bar, not in a row under it"
+    assert_select "#{meter} [data-test='release-phase-value']", 0,
+                  "the fraction chip is gone — the marks carry the count"
+    assert_not_includes css_select(meter).first.text, "2 / 3", "no fraction is DRAWN (it survives only as the hover title)"
+    assert_includes css_select("#{meter} a").first["title"], "2 / 3", "the fraction stays available on hover"
+
+    # A phase with no per-check marks still says where it stands, inside the same bar.
+    assert_select "[data-repo='mcritchie-studio'] [data-phase='confirming'] [data-test='release-phase-value']", 1
+  end
+
   private
 
   def lane_release(*repos)
@@ -87,6 +130,15 @@ class ReleaseLanesTest < ActionView::TestCase
     passed.times do
       CiCheckJob.create!(repo: nwo, job_id: SecureRandom.random_number(10**12), head_sha: sha, head_branch: branch,
                          workflow_name: workflow, status: "completed", conclusion: "success", name: "check")
+    end
+  end
+
+  # Extra checks on the SAME run, in any state (the pending/failed rows seed_ci never
+  # makes), each with its own NAME so none folds into another attempt of the same check.
+  def seed_checks(nwo, branch, workflow, sha, count, name_prefix, status:, conclusion:)
+    count.times do |i|
+      CiCheckJob.create!(repo: nwo, job_id: SecureRandom.random_number(10**12), head_sha: sha, head_branch: branch,
+                         workflow_name: workflow, status: status, conclusion: conclusion, name: "#{name_prefix}-#{i}")
     end
   end
 

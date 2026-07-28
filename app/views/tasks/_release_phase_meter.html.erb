@@ -1,34 +1,69 @@
-<%# One phase meter inside a repo lane. Measured phases (Assembling / QA / Deploying)
-    show a fraction + fill (+ a check row for Assembling); Confirming is coarse — an
-    indeterminate lavender bar while running. A deploy meter links to its GitHub Actions
-    run. Locals: phase (a release_repo_lanes phase hash). %>
+<%# One phase meter inside a repo lane, drawn as a CLICKABLE CARD: a label, then one
+    TALL bar that carries the phase's own content INSIDE it — a mark per CI check for
+    Assembling (✓ passed · ✗ failed · a spinner while running), or the status word for the
+    coarse/deploy phases ("deploying", "live ✓", "n/a"). One bar instead of a bar plus a
+    separate fraction chip and check row: same information, half the vertical space.
+    The fill sits behind at low opacity so the marks stay legible over it; Confirming is
+    coarse and animates as an indeterminate lavender bar. Where the phase has a GitHub
+    Actions run, the WHOLE card is the link to it (the ↗ surfaces on hover) — click the
+    phase, land on the action in progress. Locals: phase (a release_repo_lanes phase hash). %>
 <% phase = local_assigns.fetch(:phase) %>
 <% tone = release_meter_tone(phase) %>
 <% na = phase[:state].to_sym == :na %>
 <% live = phase[:state].to_sym == :running %>
+<% marks = release_meter_check_marks(phase[:checks]) %>
+<% linked = phase[:url].present? %>
+<%# The card: an <a> when the phase has a run to open, a plain <div> otherwise — never a
+    dead link. -m-1/p-1 keeps the hover surface generous without shifting the grid. %>
+<% card_classes = ["group block min-w-0 -m-1 rounded-md p-1 transition-colors"] %>
+<% card_classes << "hover:bg-inset/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" if linked %>
+<% card_options = { class: card_classes.join(" ") } %>
+<% if linked %>
+  <% card_options.merge!(href: phase[:url], target: "_blank", rel: "noopener",
+                         title: "#{phase[:label]} — #{phase[:value]}. Open the GitHub Actions run.",
+                         data: { test: "release-phase-link" }) %>
+<% end %>
 <div class="min-w-0" data-test="release-phase-meter" data-phase="<%= phase[:key] %>" data-state="<%= phase[:state] %>">
-  <div class="mb-1 flex items-baseline justify-between gap-1.5">
-    <span class="truncate text-[9px] font-bold uppercase tracking-wide <%= tone[:label] %>"><%= phase[:label] %></span>
-    <% if phase[:url].present? %>
-      <a href="<%= phase[:url] %>" target="_blank" rel="noopener"
-         class="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[10px] font-bold hover:underline <%= tone[:value] %>"
-         data-test="release-phase-link" title="Open the <%= phase[:label] %> GitHub Actions run">
-        <% if live %><span class="inline-block h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-current"></span><% end %><%= phase[:value] %><span aria-hidden="true" class="text-[8px] leading-none">↗</span>
-      </a>
-    <% else %>
-      <span class="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[10px] font-bold tabular-nums <%= tone[:value] %>">
-        <% if live %><span class="inline-block h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-current"></span><% end %><%= phase[:value] %>
-      </span>
-    <% end %>
-  </div>
-  <div class="h-2 overflow-hidden rounded border <%= na ? "border-dashed border-subtle bg-inset/40" : "border-subtle bg-inset" %>">
-    <% unless na %>
-      <div class="h-full rounded <%= tone[:fill] %> <%= "release-meter-indeterminate" if phase[:coarse] && live %>" style="width: <%= release_meter_width(phase) %>%"></div>
-    <% end %>
-  </div>
-  <% if phase[:checks] %>
-    <div class="mt-1 text-[10px] leading-none tracking-[0.12em] <%= tone[:value] %>" data-test="release-phase-checks"><%= release_meter_check_row(phase[:checks]) %></div>
-  <% else %>
-    <div class="mt-1 h-[11px]" aria-hidden="true"></div>
+  <%= content_tag(linked ? "a" : "div", card_options) do %>
+    <div class="mb-1 flex items-center justify-between gap-1">
+      <span class="truncate text-[9px] font-bold uppercase tracking-wide <%= tone[:label] %>"><%= phase[:label] %></span>
+      <% if linked %>
+        <span aria-hidden="true" class="shrink-0 text-[8px] leading-none opacity-0 transition-opacity group-hover:opacity-100 <%= tone[:value] %>">↗</span>
+      <% end %>
+    </div>
+    <div class="relative h-[18px] overflow-hidden rounded border <%= na ? "border-dashed border-subtle bg-inset/40" : "border-subtle bg-inset" %>">
+      <% unless na %>
+        <%# The fill is a TINT, not a block of colour — the marks ride on top of it. %>
+        <div class="absolute inset-y-0 left-0 <%= tone[:fill] %> <%= phase[:coarse] && live ? "release-meter-indeterminate opacity-60" : "opacity-30" %>"
+             style="width: <%= release_meter_width(phase) %>%"></div>
+      <% end %>
+      <%# Marks read left-to-right like the CI run itself; a lone status word centres. %>
+      <div class="relative flex h-full min-w-0 items-center gap-1 px-1 <%= marks.any? ? "justify-start" : "justify-center" %> <%= tone[:value] %>">
+        <% if marks.any? %>
+          <%# One mark per CI check. A pending check SPINS (the house loader from
+              components/_ci_progress_symbols, sized down), so a running suite reads as
+              live instead of as a row of inert circles; ✓/✗ stay text glyphs. Everything
+              inherits the meter tone through currentColor. %>
+          <span class="flex min-w-0 items-center gap-1 text-[10px] leading-none" data-test="release-phase-checks">
+            <% marks.each do |mark| %>
+              <% if mark == :pending %>
+                <svg class="h-[9px] w-[9px] shrink-0 animate-spin motion-reduce:animate-none" viewBox="0 0 24 24" fill="none"
+                     data-test="release-check-spinner" role="img" aria-label="check running"><title>running</title>
+                  <circle class="opacity-25" cx="12" cy="12" r="9" stroke="currentColor" stroke-width="3"/>
+                  <path class="opacity-90" d="M12 3a9 9 0 0 1 9 9" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+                </svg>
+              <% else %>
+                <span class="leading-none" title="<%= { passed: "passed", failed: "failed", overflow: "more checks" }[mark] %>"><%= { passed: "✓", failed: "✗", overflow: "…" }[mark] %></span>
+              <% end %>
+            <% end %>
+          </span>
+        <% else %>
+          <%# No per-check marks (the deploy/coarse/n-a phases): the bar carries the status
+              word itself, so the header stays a bare label. %>
+          <% if live %><span class="inline-block h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-current"></span><% end %>
+          <span class="truncate text-[9px] font-bold tabular-nums" data-test="release-phase-value"><%= phase[:value] %></span>
+        <% end %>
+      </div>
+    </div>
   <% end %>
 </div>

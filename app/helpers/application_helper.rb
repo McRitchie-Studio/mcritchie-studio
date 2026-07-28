@@ -683,14 +683,17 @@ module ApplicationHelper
     phase[:percent].to_i
   end
 
-  # A compact check row for a measured meter (Assembling): one glyph per CI check, capped
-  # so a big suite still fits — ✓ passed · ✗ failed · ◌ pending.
-  def release_meter_check_row(ci, cap: 10)
-    return "" if ci.blank?
+  # The marks a measured meter's check row draws (Assembling): one per CI check, capped so
+  # a big suite still fits, plus a trailing :overflow sentinel when the suite runs past the
+  # cap. :passed/:failed draw as ✓/✗ glyphs; :pending draws as a SPINNER (the same house
+  # loader components/_ci_progress_symbols uses), so a running suite reads as live rather
+  # than as a row of inert circles. Rendered by tasks/_release_phase_meter.
+  def release_meter_check_marks(ci, cap: 10)
+    return [] if ci.blank?
 
-    glyphs = ci.checks.first(cap).map { |check| check.failed? ? "✗" : (check.pending? ? "◌" : "✓") }
-    glyphs << "…" if ci.total > cap
-    glyphs.join(" ")
+    marks = ci.checks.first(cap).map { |check| check.failed? ? :failed : (check.pending? ? :pending : :passed) }
+    marks << :overflow if ci.total > cap
+    marks
   end
 
   # Compact single-unit "time ago" for the session filter — the smallest legible
