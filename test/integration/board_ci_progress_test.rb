@@ -70,8 +70,9 @@ class BoardCiProgressTest < ActionDispatch::IntegrationTest
     get deployments_path
     assert_response :success
 
-    # G3 CI is now the ASSEMBLING meter of the repo's lane: fully green (8/8) -> done,
-    # with the compact check row. The retired standalone "<repo> G3 tests" slot is gone.
+    # G3 CI is now the ASSEMBLING meter of the repo's lane: fully green (8/8) -> done, with
+    # a mark per check drawn inside its bar. The retired standalone "<repo> G3 tests" slot
+    # is gone.
     hub = "#current-release [data-test='release-lane'][data-repo='mcritchie-studio']"
     assert_select "#{hub} [data-phase='assembling'][data-state='done']", 1
     assert_select "#{hub} [data-phase='assembling'] [data-test='release-phase-checks']", 1

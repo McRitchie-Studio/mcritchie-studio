@@ -584,8 +584,10 @@ module ApplicationHelper
     ]
   end
 
-  # Assembling = the repo's G3 CI, MEASURED (fraction + check row), linking to the same
-  # G3 run the retired standalone bars did.
+  # Assembling = the repo's G3 CI, MEASURED — one mark per check drawn INSIDE the meter's
+  # bar (tasks/_release_phase_meter), on a card that links to the same G3 run the retired
+  # standalone bars did. `value` is no longer drawn; it survives as the card's hover title
+  # and feeds its accessible name.
   def release_meter_assembling(ci, url: nil)
     ci ||= Ci::CheckProgress.blank
     state = if ci.blank? then :pending
@@ -657,17 +659,24 @@ module ApplicationHelper
   # Tailwind tones per meter state — fill colour + label/value text. Coarse (Confirming)
   # uses the studio PRIMARY (lavender) to read as the shared human gate; measured phases
   # use mint (done) / amber (running) / red (failed).
+  #
+  # `value` now paints marks that sit ON the fill, so the light-mode shades are DEEP (800/
+  # 900) where they used to be 600. Same-hue-on-same-hue is how this went wrong once: a
+  # mint-600 ✓ on a 30%-mint fill measured 1.73:1. Against the fill this meter actually
+  # draws (15% in light, 30% in dark — tasks/_release_phase_meter), the pairs below measure
+  # mint 5.77:1 · amber 5.38:1 · red 5.58:1 in light and 5.23 / 5.73 / 6.86 in dark, all
+  # past the 4.5:1 floor. Re-measure if the fill opacity or the palette moves.
   def release_meter_tone(phase)
     coarse = phase[:coarse]
     case phase[:state].to_sym
     when :done
-      coarse ? { fill: "bg-primary", value: "text-primary", label: "text-primary/80" }
-             : { fill: "bg-mint-500", value: "text-mint-600 dark:text-mint-400", label: "text-muted" }
+      coarse ? { fill: "bg-primary", value: "text-heading", label: "text-primary/80" }
+             : { fill: "bg-mint-500", value: "text-mint-900 dark:text-mint-400", label: "text-muted" }
     when :running
-      coarse ? { fill: "bg-primary/80", value: "text-primary", label: "text-primary/80" }
-             : { fill: "bg-amber-400", value: "text-amber-600 dark:text-amber-300", label: "text-muted" }
+      coarse ? { fill: "bg-primary/80", value: "text-heading", label: "text-primary/80" }
+             : { fill: "bg-amber-400", value: "text-amber-800 dark:text-amber-300", label: "text-muted" }
     when :failed
-      { fill: "bg-red-500", value: "text-red-600 dark:text-red-400", label: "text-muted" }
+      { fill: "bg-red-500", value: "text-red-800 dark:text-red-400", label: "text-muted" }
     when :na
       { fill: "bg-transparent", value: "text-muted/60", label: "text-muted/50" }
     else
@@ -683,15 +692,30 @@ module ApplicationHelper
     phase[:percent].to_i
   end
 
-  # The marks a measured meter's check row draws (Assembling): one per CI check, capped so
-  # a big suite still fits, plus a trailing :overflow sentinel when the suite runs past the
-  # cap. :passed/:failed draw as ✓/✗ glyphs; :pending draws as a SPINNER (the same house
-  # loader components/_ci_progress_symbols uses), so a running suite reads as live rather
-  # than as a row of inert circles. Rendered by tasks/_release_phase_meter.
-  def release_meter_check_marks(ci, cap: 10)
+  # How many marks fit INSIDE a meter's bar. Measured, not guessed: the meter column is
+  # ~113px at the dashboard's widest, leaving ~98px of bar interior; a mark is ~8.5px wide
+  # on a 2px gap, so 8 marks span ~82px and 8 + the overflow sentinel ~90px. Eight is also
+  # exactly mcritchie-studio's current CI suite, so today's suites draw whole. The view
+  # renders the sentinel OUTSIDE the clipping row, so growth past the cap degrades to
+  # "8 marks + …" rather than to silently swallowed glyphs.
+  RELEASE_METER_MARK_CAP = 8
+
+  # The marks a measured meter draws (Assembling): one per CI check, capped as above, plus
+  # a trailing :overflow sentinel when the suite runs past the cap. :passed/:failed draw as
+  # ✓/✗ glyphs; :pending draws as a SPINNER (the same house loader
+  # components/_ci_progress_symbols uses), so a running suite reads as live rather than as
+  # a row of inert circles. Rendered by tasks/_release_phase_meter.
+  #
+  # Sorted by check NAME because the source is not ordered: CiCheckJob.progress_rows plucks
+  # without an ORDER BY, so raw order is Postgres heap order and RESHUFFLES as rows are
+  # updated — and the card re-renders on every CI upsert, so unsorted marks would jitter
+  # during exactly the running suite this meter is for. Name order is stable across
+  # re-renders, and it fixes WHICH checks the cap keeps.
+  def release_meter_check_marks(ci, cap: RELEASE_METER_MARK_CAP)
     return [] if ci.blank?
 
-    marks = ci.checks.first(cap).map { |check| check.failed? ? :failed : (check.pending? ? :pending : :passed) }
+    ordered = ci.checks.sort_by { |check| check.name.to_s }
+    marks = ordered.first(cap).map { |check| check.failed? ? :failed : (check.pending? ? :pending : :passed) }
     marks << :overflow if ci.total > cap
     marks
   end
