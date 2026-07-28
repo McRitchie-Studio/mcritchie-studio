@@ -52,7 +52,7 @@ lanes:
       - type: stage_update
         label: Submitted
         stage: submitted
-        expectation: "Open the PR (base release) led by the task URL; record checks_run; move to submitted."
+        expectation: "Open the PR (base accepted) led by the task URL; record checks_run; move to submitted."
         gate: self-gate, then hands off to review
 
   - owner: Primary Reviewer

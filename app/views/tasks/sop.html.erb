@@ -40,7 +40,13 @@
       <div x-data="{ open: null }" class="rounded-2xl border border-subtle bg-surface p-4">
         <div class="flex items-start gap-4">
           <%# Owner badge. %>
-          <div class="flex flex-col items-center gap-1 flex-shrink-0 w-24 pt-2 text-center" title="<%= lane[:owner_note] %>">
+          <%# data-test/data-lane scope the owner badge to ITS lane so a test can assert the
+              pairing structurally. Asserting adjacent spans instead is not equivalent: any
+              benign sibling (a live dot, a ring) breaks the pair, and a negative assertion on
+              a pair that can no longer form silently becomes a no-op. %>
+          <div class="flex flex-col items-center gap-1 flex-shrink-0 w-24 pt-2 text-center"
+               data-test="sop-lane-owner" data-lane="<%= lane[:lane] %>"
+               title="<%= lane[:owner_note] %>">
             <div class="w-14 h-14 rounded-full border-2 border-primary/40 bg-primary/10 text-primary flex items-center justify-center text-lg font-bold">
               <%= lane[:owner].first %>
             </div>

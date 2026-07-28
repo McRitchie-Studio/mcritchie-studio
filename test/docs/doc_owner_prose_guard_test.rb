@@ -43,18 +43,28 @@ class DocOwnerProseGuardTest < ActiveSupport::TestCase
   # source of every prose pattern that follows.
   LANE_OWNERS = { "Assemble" => "Avi", "Ship" => "Steffon" }.freeze
 
-  # WRONG-owner ownership claims. `\s+` spans newlines because the scan reads
-  # whole-file text, so a phrase wrapped across a line break is still caught.
+  # An intervening clause must not hide an ownership claim. "Steffon's otherwise
+  # prod-stopping `qa-release` lane" is the same assertion as "Steffon's
+  # `qa-release`", and a whitespace-only gap could not see it — that phrasing sat
+  # four lines below a corrected sentence in deployment.md and this guard read the
+  # file as clean. GAP allows a short qualifying clause between the possessive and
+  # the act name; it is word-bounded and capped so it cannot leap a sentence
+  # boundary and pair two unrelated mentions.
+  GAP = /(?:\s+[\w-]+){0,4}\s+/
   WRONG_OWNER = [
-    [/(?:Steffon(?:'s|’s))\s+`?qa-release`?/i,
+    [/(?:Steffon(?:'s|’s))#{GAP}`?qa-release`?/i,
      "qa-release is Avi's now (G3 — the assembler) — not Steffon's"],
-    [/(?:Avi(?:'s|’s))\s+`?production-deploy`?/i,
+    [/(?:Avi(?:'s|’s))#{GAP}`?production-deploy`?/i,
      "production-deploy is Steffon's now (G4 — the deployer) — not Avi's"],
     [/Steffon\s*@\s*assemble/i,
      "the Assemble lane (G3) is Avi's — not Steffon's"],
     [/Avi\s*@\s*ship/i,
      "the Ship lane (G4) is Steffon's — not Avi's"],
-    [/Steffon(?:'s|’s)\s+(?:self-healing\s+)?sweep/i,
+    # Scoped to the accepted→release sweep ON PURPOSE. A bare "Steffon's sweep"
+    # would false-trip on `archive-shipped`, which genuinely IS Steffon's sweep —
+    # a guard that cries wolf on correct prose gets muted, and then it protects
+    # nothing.
+    [/Steffon(?:'s|’s)\s+(?:self-healing\s+)?sweep#{GAP}(?:promotes|merges|accepted)/i,
      "the accepted→release sweep is Avi's — not Steffon's"],
     [/Steffon(?:'s|’s)\s+QA\s+intent/i,
      "QA intent is recorded for Avi (G3) — not Steffon"],

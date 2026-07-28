@@ -167,7 +167,7 @@ production prompts; `pr-review` and Avi's `qa-release` sweep are not — they st
 before prod.
 Gem publishes specifically ride a release as
 first-class members and are published producer-first by **`bin/release prepare`
-at QA assembly** (see below) — the one irreversible act inside Steffon's
+at QA assembly** (see below) — the one irreversible act inside Avi's
 otherwise prod-stopping `qa-release` lane, taken only after a fail-closed
 preflight over every swept gem. `bin/release ship` re-verifies each gem
 idempotently (already-live → skip). Neither is a separate ad-hoc step.
