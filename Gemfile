@@ -87,4 +87,4 @@ gem "tailwindcss-rails", "~> 4.5"
 gem "sentry-ruby"
 gem "sentry-rails"
 
-gem "studio-engine", "~> 0.19" # 0.19 ships the dev-only /_studio/local_review mint endpoint (the local half of the board WAITING APPROVAL button); 0.18 ships the full /admin/style page (Theme·Modals·Tricks·Tasks) + engine-motion; 0.13 ships engine component CSS + de-forked modal/user-nav primitives; 0.12 added the model-page protocol (Studio::ModelPage)
+gem "studio-engine", "~> 0.22" # 0.22 ships the confetti/pulse Tricks (window.studioConfetti + .pulse-cta) + the leveling-activity modal primitives (change-username + quest; render leveling-OFF for MS); 0.19 ships the dev-only /_studio/local_review mint endpoint (the local half of the board WAITING APPROVAL button); 0.18 ships the full /admin/style page (Theme·Modals·Tricks·Tasks) + engine-motion; 0.13 ships engine component CSS + de-forked modal/user-nav primitives; 0.12 added the model-page protocol (Studio::ModelPage)
