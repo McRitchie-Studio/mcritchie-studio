@@ -487,3 +487,20 @@
     overflow-x: clip;
   }
 }
+
+/* ——— Smooth-load convention — engine-owned since studio-engine 0.24 ———
+   The metas render from layouts/studio/_smooth_load (Studio.smooth_load) and
+   the transition styling ships in the engine's engine.css, including the
+   .vt-pinned-header @utility. ONE rule stays app-side: engine 0.24.0's CSS
+   lacks the studio-header no-cross-fade fix (added here in PR #681's rework
+   after the engine shipped). Without it, the UA default runs a 250ms
+   plus-lighter blend between the header's two snapshots, and on any navigation
+   from a scrolled page (collapsed 100px header → expanded 132px at top) the
+   wordmark and buttons draw twice, ~16px apart. animation: none shows the
+   incoming header immediately while the group box still morphs its height.
+   Task engine-navbar-self-pins lifts this rule into the engine; delete this
+   block when the engine version that carries it lands. */
+::view-transition-old(studio-header),
+::view-transition-new(studio-header) {
+  animation: none;
+}

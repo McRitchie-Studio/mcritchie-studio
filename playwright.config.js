@@ -60,6 +60,10 @@ const config = {
   use: {
     baseURL,
     headless: true,
+    // The smooth-load convention animates every Turbo page swap; under
+    // prefers-reduced-motion Turbo never starts the view transition at all,
+    // so e2e gets instant swaps and clicks never land mid-animation.
+    reducedMotion: "reduce",
   },
   projects: [
     { name: "chromium", use: { browserName: "chromium" } },
