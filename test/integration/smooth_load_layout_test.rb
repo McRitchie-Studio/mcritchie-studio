@@ -10,5 +10,9 @@ class SmoothLoadLayoutTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "meta[name='view-transition'][content='same-origin']", count: 1
     assert_select "meta[name='turbo-cache-control'][content='no-preview']", count: 1
+
+    # The invariant the whole convention rests on: a duplicate
+    # view-transition-name silently disables every transition on the page.
+    assert_select "header.vt-pinned-header", count: 1
   end
 end

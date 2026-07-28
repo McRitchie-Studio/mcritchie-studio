@@ -511,6 +511,16 @@
   view-transition-name: studio-header;
 }
 
+/* The pinned header must not cross-fade. Without this, the UA default runs a
+   250ms plus-lighter blend between its two snapshots, and on any navigation
+   from a scrolled page (collapsed 100px header → expanded 132px at top) the
+   wordmark and buttons draw twice, ~16px apart. animation: none shows the
+   incoming header immediately while the group box still morphs its height. */
+::view-transition-old(studio-header),
+::view-transition-new(studio-header) {
+  animation: none;
+}
+
 @keyframes vt-page-out {
   to {
     opacity: 0;
