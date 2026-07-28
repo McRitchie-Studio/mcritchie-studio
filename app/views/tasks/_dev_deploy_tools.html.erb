@@ -1,15 +1,19 @@
 <% if Rails.env.local? %>
-  <div x-data="devDeployTools()" data-test="dev-deploy-tools" class="flex items-center gap-1.5 rounded-lg border border-amber-700/40 bg-amber-950/30 px-1.5 py-1">
+  <div x-data="devDeployTools()" data-test="dev-deploy-tools" class="flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50/80 dark:border-amber-700/40 dark:bg-amber-950/30 px-1.5 py-1">
     <%# Labelled RELEASE (its sibling is TASK) — it steps a fixture RELEASE through
         the tracker, not a task card. %>
-    <span class="text-[10px] font-bold uppercase tracking-wider text-amber-400/90"
+    <span class="text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400/90"
           title="Dev/test only — steps a fixture release through the tracker">Release</span>
     <button type="button" @click="post('open_release')" :disabled="busy"
             title="Open a fixture release at step 1 (Testing)"
             class="px-2 py-1 rounded-md text-xs font-medium bg-surface text-secondary border border-subtle hover:text-heading disabled:opacity-40 transition">Open</button>
     <button type="button" @click="post('advance_release')" :disabled="busy"
             title="Advance one tracker step: Testing, Assembling, Deploying QA, Confirming, Deploying"
-            class="px-2 py-1 rounded-md text-xs font-medium bg-surface text-secondary border border-subtle hover:text-amber-300 disabled:opacity-40 transition">Advance →</button>
+            class="px-2 py-1 rounded-md text-xs font-medium bg-surface text-secondary border border-subtle hover:text-amber-300 disabled:opacity-40 transition whitespace-nowrap">Advance →</button>
+    <%# Ship lives HERE, not in the TASK group: it ships the active RELEASE. %>
+    <button type="button" @click="post('ship_release')" :disabled="busy"
+            title="Ship the active release → Last Release bursts in, Next Release resets"
+            class="px-2 py-1 rounded-md text-xs font-medium bg-surface text-secondary border border-subtle hover:text-mint-300 disabled:opacity-40 transition">Ship</button>
     <button type="button" @click="post('reset_release')" :disabled="busy"
             title="Clear the fixture release"
             class="px-2 py-1 rounded-md text-xs font-medium bg-surface text-secondary border border-subtle hover:text-red-300 disabled:opacity-40 transition">Reset</button>

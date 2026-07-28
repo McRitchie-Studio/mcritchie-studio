@@ -69,6 +69,21 @@ class Dev::BoardControllerTest < ActionDispatch::IntegrationTest
            "without a local_url the bar renders as an inert notice, not the button being demoed"
   end
 
+  # The comment on request_fixture_approval claims the absolute local_url is
+  # load-bearing. Review caught an earlier version of that comment ASSERTING a
+  # guard instead of pointing at one, so it is pinned here in both directions:
+  # what the beat injects is accepted, and the bare path it could have used is not.
+  test "[unit] the injected local_url is one LocalReviewLink will actually accept" do
+    post dev_board_generate_path
+    2.times { post dev_board_move_path } # designed -> building -> waiting
+    injected = fixtures.first.reload.devops["local_url"]
+
+    assert LocalReviewLink.for(local_url: injected, email: "operator@example.com").present?,
+      "the demo bar is only clickable if the CTA can build a mint URL from this local_url"
+    assert_nil LocalReviewLink.for(local_url: "/tasks", email: "operator@example.com"),
+      "a bare path is refused — which is WHY the beat injects request.base_url, not \"/tasks\""
+  end
+
   test "[integration] the next beat submits and settles the request" do
     post dev_board_generate_path
     3.times { post dev_board_move_path } # designed -> building -> waiting -> submitted

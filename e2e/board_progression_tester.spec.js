@@ -23,8 +23,15 @@ test("Advance walks a fixture into WAITING APPROVAL, then settles it", async ({ 
   const advance = tester.getByRole("button", { name: "Advance →" });
 
   // Spawn a fixture, then walk it: designed → building.
+  //
+  // Pin the card by its OWN slug, resolved once. A `[id^=card-dev-fixture-].first()`
+  // locator re-resolves on every expect, so a fixture leaked by an earlier run (or a
+  // parallel one) could silently become the card under assertion.
   await tester.getByRole("button", { name: "Generate" }).click();
-  const card = page.locator('[id^="card-dev-fixture-"]').first();
+  const spawned = page.locator('[id^="card-dev-fixture-"]').first();
+  await expect(spawned).toBeVisible();
+  const slug = await spawned.getAttribute("data-slug");
+  const card = page.locator(`#card-${slug}`);
   await expect(card).toBeVisible();
   await advance.click();
   await expect(card).toHaveAttribute("data-stage", "building");
@@ -37,7 +44,7 @@ test("Advance walks a fixture into WAITING APPROVAL, then settles it", async ({ 
 
   // It is the real CTA, not a label: the whole bar is the hand-off link, which is
   // what makes the demo clickable at all.
-  await expect(waitingBar).toHaveAttribute("href", /\/tasks\/dev-fixture-.+\/local_review/);
+  await expect(waitingBar).toHaveAttribute("href", `/tasks/${slug}/local_review`);
 
   // And the payoff beat: submitting settles the request, so the bar drops.
   await advance.click();

@@ -206,8 +206,22 @@ module Dev
     #
     # A local_url rides along because the WAITING APPROVAL bar is only a LINK when
     # the task has one — without it the tester would render the inert notice
-    # variant and the button being demoed could not be clicked. It points at this
-    # very host (loopback in local?), which is what LocalReviewLink requires.
+    # variant and the button being demoed could not be clicked.
+    #
+    # It is an ABSOLUTE url on LOOPBACK, not the bare path "/tasks", and that is
+    # load-bearing rather than decorative: the CTA builds its hand-off through
+    # LocalReviewLink.for, which parses local_url and returns nil unless it is an
+    # HTTP(S) url on a loopback host (app/services/local_review_link.rb) — a bare
+    # path fails the URI::HTTP check and the click would bounce to the task page.
+    #
+    # The host is spelled `localhost` rather than taken from request.base_url,
+    # because base_url is whatever the BROWSER used to reach the board: hit this
+    # stack from a phone on the LAN (or from a request spec, where it is
+    # www.example.com) and a base_url-derived local_url is not loopback, so the
+    # very bar being demoed would render inert. Only the port needs to come from
+    # the request. Asserted, not claimed: the "LocalReviewLink will actually
+    # accept" test below pins both directions — and caught exactly this when the
+    # first version of this line used base_url.
     def request_fixture_approval(task)
       return nil unless task.stage == "building"
       return nil if task.waiting_for_operator_approval?
@@ -215,7 +229,7 @@ module Dev
       merged = task.metadata.deep_dup
       devops = (merged["devops"] ||= {})
       devops["approval_status"] = Task::OPERATOR_APPROVAL_WAITING
-      devops["local_url"] = "#{request.base_url}/tasks"
+      devops["local_url"] = "http://localhost#{":#{request.port}" unless request.port == 80}/tasks"
       task.update!(metadata: merged)
     end
   end
