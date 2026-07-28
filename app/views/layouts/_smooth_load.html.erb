@@ -1,0 +1,10 @@
+<%# Smooth-load convention — the next page materializes behind the current one,
+    then presents itself. Turbo 8 sees the view-transition meta and wraps its
+    body swap in document.startViewTransition; browsers without support get
+    today's instant swap. no-preview stops application visits from painting a
+    stale cache snapshot before the fresh response — the current page holds
+    until the new one is ready, so navigation renders exactly once. Restoration
+    visits (back/forward) still restore instantly from cache. Transition
+    styling: app/assets/tailwind/application.css, "Smooth-load convention". %>
+<meta name="view-transition" content="same-origin">
+<meta name="turbo-cache-control" content="no-preview">
