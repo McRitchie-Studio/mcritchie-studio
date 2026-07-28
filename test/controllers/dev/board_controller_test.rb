@@ -51,6 +51,47 @@ class Dev::BoardControllerTest < ActionDispatch::IntegrationTest
     assert_equal "building", task.reload.stage
   end
 
+  # The extra `building` beat — the WAITING APPROVAL state was previously
+  # unreachable from these buttons, so a demo could never show the bar the
+  # operator actually reviews with.
+  test "[integration] the beat after building flags approval WITHOUT moving the card" do
+    post dev_board_generate_path
+    post dev_board_move_path # designed -> building
+    task = fixtures.first
+    assert_equal "building", task.reload.stage
+
+    post dev_board_move_path
+
+    task.reload
+    assert_equal "building", task.stage, "the approval beat must not move the card"
+    assert task.waiting_for_operator_approval?, "it must raise the WAITING APPROVAL bar"
+    assert task.devops["local_url"].present?,
+           "without a local_url the bar renders as an inert notice, not the button being demoed"
+  end
+
+  test "[integration] the next beat submits and settles the request" do
+    post dev_board_generate_path
+    3.times { post dev_board_move_path } # designed -> building -> waiting -> submitted
+    task = fixtures.first.reload
+
+    assert_equal "submitted", task.stage
+    assert_equal "none", task.approval_status,
+      "submitting settles the request — the beat exists to demonstrate exactly that"
+    assert_not task.waiting_for_operator_approval?
+  end
+
+  test "[integration] the approval beat happens once per building visit, not every click" do
+    post dev_board_generate_path
+    6.times { post dev_board_move_path }
+    task = fixtures.first.reload
+
+    # building → waiting → submitted → reviewed → assembled → shipped: exactly ONE
+    # extra beat in the lap. If the approval beat re-fired on every click the
+    # fixture would still be parked on building.
+    assert_equal "shipped", task.stage
+    assert_not task.waiting_for_operator_approval?
+  end
+
   test "[integration] delete removes the latest fixture" do
     post dev_board_generate_path
     assert_difference -> { fixtures.count }, -1 do

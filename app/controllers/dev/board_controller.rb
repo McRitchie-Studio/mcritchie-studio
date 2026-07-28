@@ -41,11 +41,18 @@ module Dev
       head :no_content
     end
 
-    # Advance the newest fixture one deploy-stage (wrapping shipped → designed) →
-    # after_update transition TaskEvent → the broadcaster moves the card live.
+    # Advance the newest fixture ONE BEAT (wrapping shipped → designed) →
+    # after_update TaskEvent → the broadcaster moves the card live.
+    #
+    # A beat is usually a stage, but `building` gets TWO: the second flags the
+    # operator-approval request WITHOUT moving the card, so the tester can walk
+    # into the WAITING APPROVAL state — the one board state that was previously
+    # unreachable from these buttons. The beat after it is the payoff: submitting
+    # settles the request (Task#settle_operator_approval_past_submit), so one more
+    # click demonstrates the badge dropping the way it does in the real cycle.
     def move
       task = latest_fixture or return head(:no_content)
-      task.update!(stage: next_stage(task.stage))
+      request_fixture_approval(task) || task.update!(stage: next_stage(task.stage))
       head :no_content
     end
 
@@ -191,6 +198,25 @@ module Dev
     def next_stage(stage)
       zones = Task::DEPLOYMENTS_BOARD_STAGES
       zones[((zones.index(stage) || -1) + 1) % zones.size]
+    end
+
+    # The extra `building` beat: flag the operator-approval request in place.
+    # Returns nil (so the caller falls through to a normal stage move) unless the
+    # fixture is sitting on `building` with no open request.
+    #
+    # A local_url rides along because the WAITING APPROVAL bar is only a LINK when
+    # the task has one — without it the tester would render the inert notice
+    # variant and the button being demoed could not be clicked. It points at this
+    # very host (loopback in local?), which is what LocalReviewLink requires.
+    def request_fixture_approval(task)
+      return nil unless task.stage == "building"
+      return nil if task.waiting_for_operator_approval?
+
+      merged = task.metadata.deep_dup
+      devops = (merged["devops"] ||= {})
+      devops["approval_status"] = Task::OPERATOR_APPROVAL_WAITING
+      devops["local_url"] = "#{request.base_url}/tasks"
+      task.update!(metadata: merged)
     end
   end
 end

@@ -28,17 +28,31 @@ class BoardAppFilterTest < ActionDispatch::IntegrationTest
     # Chip content: select by the readable `:class` binding, then check label/emoji.
     doc   = Nokogiri::HTML(@response.body)
     filter_row = doc.at_css("[data-test='board-filter-row']")
-    assert filter_row, "deployments should render the shared app/demo filter row"
-    assert filter_row.at_css("[data-test='dev-board-tools']"),
-           "dev fixture controls should live beside app filters"
-    assert filter_row.at_css("[data-test='dev-deploy-tools']"),
-           "dev release controls should live beside app filters"
+    assert filter_row, "deployments should render the shared app filter row"
+
+    # Placement DELIBERATELY REVERSED (operator request, 2026-07-27): the local
+    # progression tester moved OUT of the app-filter row and UP beside the board's
+    # own actions (New Task / Links), so a demo is driven from one row instead of
+    # two. This assertion pair is the record of that decision, not a leftover.
     header_actions = doc.at_css("[data-test='board-header-actions']")
     assert header_actions, "the board header actions container should remain present"
-    assert_nil header_actions.at_css("[data-test='dev-board-tools']"),
-               "demo controls should not float in the deployments header controls"
-    assert_nil header_actions.at_css("[data-test='dev-deploy-tools']"),
-               "deploy controls should not float in the deployments header controls"
+    assert header_actions.at_css("[data-test='dev-board-tools']"),
+           "the TASK tester group belongs beside New Task / Links"
+    assert header_actions.at_css("[data-test='dev-deploy-tools']"),
+           "the RELEASE tester group belongs beside New Task / Links"
+    assert_nil filter_row.at_css("[data-test='dev-board-tools']"),
+               "the tester must not also render down in the app-filter row"
+    assert_nil filter_row.at_css("[data-test='dev-deploy-tools']"),
+               "the tester must not also render down in the app-filter row"
+
+    # The group chips name what they mutate: a fixture TASK vs a fixture RELEASE.
+    assert_equal "Task", header_actions.at_css("[data-test='dev-board-tools'] span").text.strip
+    assert_equal "Release", header_actions.at_css("[data-test='dev-deploy-tools'] span").text.strip
+
+    # Both groups now say Advance — one steps a card, one steps the tracker.
+    advance = header_actions.css("[data-test='dev-board-tools'] button").map { |b| b.text.strip }
+    assert_includes advance, "Advance →", "Move was renamed to Advance"
+    refute_includes advance, "Move"
 
     chips = doc.css("button").select { |b| b[":class"].to_s.include?("appHidden(") }
     apps  = chips.map { |b| b[":class"][/appHidden\('([^']+)'\)/, 1] }
