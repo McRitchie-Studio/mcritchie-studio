@@ -662,10 +662,24 @@ module ApplicationHelper
   #
   # `value` now paints marks that sit ON the fill, so the light-mode shades are DEEP (800/
   # 900) where they used to be 600. Same-hue-on-same-hue is how this went wrong once: a
-  # mint-600 ✓ on a 30%-mint fill measured 1.73:1. Against the fill this meter actually
-  # draws (15% in light, 30% in dark — tasks/_release_phase_meter), the pairs below measure
-  # mint 5.77:1 · amber 5.38:1 · red 5.58:1 in light and 5.23 / 5.73 / 6.86 in dark, all
-  # past the 4.5:1 floor. Re-measure if the fill opacity or the palette moves.
+  # mint-600 ✓ on a 30%-mint fill measured 1.73:1.
+  #
+  # EVERY pair below is MEASURED in a real browser against the bar it actually sits on
+  # (light / dark, getComputedStyle → WCAG), not derived on paper — an arithmetic pass on
+  # this table shipped two wrong figures once already:
+  #
+  #   done 5.76 / 5.25 · running 5.34 / 6.76 · failed 5.47 / 7.14 · pending 8.28 / 15.6 ·
+  #   n/a 9.22 / 14.79
+  #
+  # e2e/release_meter_fit.spec.js re-measures all of them on every run and fails under
+  # 4.5:1, so a shade change is caught rather than argued about. Every state must RENDER
+  # somewhere in the e2e seed for that to mean anything — a tone nothing draws is a tone
+  # nothing measures, which is exactly how a failing red pair survived a review.
+  #
+  # The `else` (pending) and `:na` rows carry no fill, so their text sits on bare bg-inset —
+  # `text-muted` there measured 2.05:1 light / 4.04:1 dark, which is why they read as body
+  # tone now. Those two branches are NOT decorative: pending is what every unstarted phase
+  # on /deployments shows.
   def release_meter_tone(phase)
     coarse = phase[:coarse]
     case phase[:state].to_sym
@@ -676,11 +690,11 @@ module ApplicationHelper
       coarse ? { fill: "bg-primary/80", value: "text-heading", label: "text-primary/80" }
              : { fill: "bg-amber-400", value: "text-amber-800 dark:text-amber-300", label: "text-muted" }
     when :failed
-      { fill: "bg-red-500", value: "text-red-800 dark:text-red-400", label: "text-muted" }
+      { fill: "bg-red-500", value: "text-red-800 dark:text-red-300", label: "text-muted" }
     when :na
-      { fill: "bg-transparent", value: "text-muted/60", label: "text-muted/50" }
+      { fill: "bg-transparent", value: "text-body", label: "text-muted/50" }
     else
-      { fill: "bg-transparent", value: "text-muted", label: "text-muted" }
+      { fill: "bg-transparent", value: "text-body", label: "text-muted" }
     end
   end
 
@@ -692,13 +706,21 @@ module ApplicationHelper
     phase[:percent].to_i
   end
 
-  # How many marks fit INSIDE a meter's bar. Measured, not guessed: the meter column is
-  # ~113px at the dashboard's widest, leaving ~98px of bar interior; a mark is ~8.5px wide
-  # on a 2px gap, so 8 marks span ~82px and 8 + the overflow sentinel ~90px. Eight is also
-  # exactly mcritchie-studio's current CI suite, so today's suites draw whole. The view
-  # renders the sentinel OUTSIDE the clipping row, so growth past the cap degrades to
-  # "8 marks + …" rather than to silently swallowed glyphs.
+  # How many marks fit INSIDE a meter's bar. A mark is a fixed 8px box on a 2px gap, so 8
+  # marks span 78px and 8 + the overflow mark 88px.
+  #
+  # The cap alone CANNOT keep the row inside the bar, and assuming it could is what shipped
+  # a silent clip: the bar is 174px wide at a 1024px viewport but only 80px at 1280px (the
+  # dashboard's `xl:grid-cols-2` halves the lane), so no fixed cap fits every width. The bar
+  # therefore hides the marks below 100px and shows the fraction instead
+  # (tasks/_release_phase_meter, a `@container` query on the bar's REAL width) — this cap
+  # only bounds the wide case. Widths measured in-browser at nine viewports; the assertion
+  # lives in e2e/board_ci_progress.spec.js, which is the tier that can see a clip at all.
   RELEASE_METER_MARK_CAP = 8
+
+  # Draw order for the marks: failures first, then still-running, then passes; ties broken
+  # by check NAME.
+  RELEASE_METER_MARK_RANK = { failed: 0, pending: 1, passed: 2 }.freeze
 
   # The marks a measured meter draws (Assembling): one per CI check, capped as above, plus
   # a trailing :overflow sentinel when the suite runs past the cap. :passed/:failed draw as
@@ -706,16 +728,21 @@ module ApplicationHelper
   # components/_ci_progress_symbols uses), so a running suite reads as live rather than as
   # a row of inert circles. Rendered by tasks/_release_phase_meter.
   #
-  # Sorted by check NAME because the source is not ordered: CiCheckJob.progress_rows plucks
-  # without an ORDER BY, so raw order is Postgres heap order and RESHUFFLES as rows are
-  # updated — and the card re-renders on every CI upsert, so unsorted marks would jitter
-  # during exactly the running suite this meter is for. Name order is stable across
-  # re-renders, and it fixes WHICH checks the cap keeps.
+  # Sorted, because the source is not: CiCheckJob.progress_rows plucks without an ORDER BY,
+  # so raw order is Postgres heap order and RESHUFFLES as rows are updated — and the card
+  # re-renders on every CI upsert, so unsorted marks would jitter during exactly the running
+  # suite this meter is for.
+  #
+  # Sorted by SEVERITY first (then name), because sorting by name alone let the cap decide
+  # by alphabet: a failing `zz-lint` fell outside a full row of passing `aa-*` checks, so a
+  # red meter drew nothing but ✓. Severity-first means the failures are the marks that
+  # survive the cap. Both orders are stable across re-renders; only this one is honest.
   def release_meter_check_marks(ci, cap: RELEASE_METER_MARK_CAP)
     return [] if ci.blank?
 
-    ordered = ci.checks.sort_by { |check| check.name.to_s }
-    marks = ordered.first(cap).map { |check| check.failed? ? :failed : (check.pending? ? :pending : :passed) }
+    marks = ci.checks.map { |check| [check.failed? ? :failed : (check.pending? ? :pending : :passed), check.name.to_s] }
+                     .sort_by { |mark, name| [RELEASE_METER_MARK_RANK.fetch(mark), name] }
+                     .first(cap).map(&:first)
     marks << :overflow if ci.total > cap
     marks
   end

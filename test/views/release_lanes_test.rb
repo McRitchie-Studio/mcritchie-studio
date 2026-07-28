@@ -106,8 +106,9 @@ class ReleaseLanesTest < ActionView::TestCase
     assert_select "#{meter} [data-test='release-phase-bar'] [data-test='release-phase-checks']", 1,
                   "the marks sit inside the BAR itself, not in a row under it"
     assert_select "#{meter} [data-test='release-phase-value']", 0,
-                  "the fraction chip is gone — the marks carry the count"
-    assert_not_includes css_select(meter).first.text, "2 / 3", "no fraction is DRAWN (it survives only as the hover title)"
+                  "the fraction chip is gone from the header — the marks carry the count"
+    assert_not_includes css_select("#{meter} .mb-1").first.text, "2 / 3",
+                        "the label row holds the label alone (the fraction lives in the bar's narrow fallback)"
     assert_includes css_select("#{meter} a").first["title"], "2 / 3", "the fraction stays available on hover"
     assert_equal "Assembling — 2 of 3 checks passed", css_select("#{meter} a").first["aria-label"],
                  "a link is named by its subtree, so the summary must be spelled out — glyph soup is not a name"
@@ -141,10 +142,45 @@ class ReleaseLanesTest < ActionView::TestCase
                   "the … sits OUTSIDE the clipping row — the one glyph that must never be clipped"
     assert_select "#{row} span[class*='shrink-0']", 8, "every glyph is shrink-0, or marks overlap before they clip"
 
-    # Name order, not heap order: the three aa-* failures sort ahead of the zz-* passes, so
-    # the capped row is deterministic across re-renders (the card redraws on every upsert).
+    # Severity then name — NOT heap order (progress_rows has no ORDER BY, and the card
+    # redraws on every upsert) and NOT name alone (see the next test).
     assert_equal "✗✗✗✓✓✓✓✓", css_select(row).first.text.gsub(/\s+/, ""),
-                 "marks are ordered by check name, so a running suite does not reshuffle"
+                 "marks are deterministically ordered, so a running suite does not reshuffle"
+  end
+
+  test "[component] a failure survives the cap even when its name sorts last" do
+    rel = lane_release("mcritchie-studio")
+    seed_ci("amcritchie/mcritchie-studio", "release", "CI", "mcr", 0)
+    # A full cap's worth of passes that sort FIRST, and the one failure sorting last: under
+    # a name-only sort the row drew eight ✓ on a red meter and the ✗ fell off the end.
+    seed_checks("amcritchie/mcritchie-studio", "release", "CI", "mcr", 8, "aa", status: "completed", conclusion: "success")
+    seed_checks("amcritchie/mcritchie-studio", "release", "CI", "mcr", 1, "zz", status: "completed", conclusion: "failure")
+
+    render partial: "tasks/release_lanes", locals: { release: rel.reload }
+
+    row = "[data-repo='mcritchie-studio'] [data-phase='assembling'] [data-test='release-phase-checks']"
+    assert_equal "✗✓✓✓✓✓✓✓", css_select(row).first.text.gsub(/\s+/, ""),
+                 "the failure is drawn first — a red meter must never show only ✓"
+  end
+
+  test "[component] a narrow bar falls back to the fraction instead of clipping the marks" do
+    rel = lane_release("mcritchie-studio")
+    seed_ci("amcritchie/mcritchie-studio", "release", "CI", "mcr", 0)
+    seed_checks("amcritchie/mcritchie-studio", "release", "CI", "mcr", 5, "pass", status: "completed", conclusion: "success")
+    seed_checks("amcritchie/mcritchie-studio", "release", "CI", "mcr", 3, "run", status: "in_progress", conclusion: nil)
+
+    render partial: "tasks/release_lanes", locals: { release: rel.reload }
+
+    meter = "[data-repo='mcritchie-studio'] [data-phase='assembling']"
+    # Both representations ship; the bar's own width picks one (@container, so it tracks the
+    # real column — the lane HALVES at xl, which no viewport-keyed rule would catch).
+    # Whether the right one shows is measured in e2e/release_meter_fit.spec.js; what a
+    # component test can pin is that the fallback exists and carries the count.
+    compact = css_select("#{meter} [data-test='release-phase-compact-value']").first
+    assert compact, "a narrow bar needs something to show instead of clipped marks"
+    assert_equal "5 / 8", compact.text.strip
+    assert_includes compact["class"], "@max-[99px]:inline"
+    assert_includes css_select("#{meter} [data-test='release-phase-checks']").first["class"], "@max-[99px]:hidden"
   end
 
   private

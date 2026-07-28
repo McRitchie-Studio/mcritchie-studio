@@ -6,17 +6,22 @@
     has a GitHub Actions run, the WHOLE card is the link to it (the ↗ surfaces on hover) —
     click the phase, land on the action in progress.
 
-    Two things here are load-bearing, both learned from a review that measured them:
+    Two things here are load-bearing, both learned from reviews that MEASURED them, and
+    both guarded by e2e/release_meter_fit.spec.js (the only tier that can see either):
 
-    · CONTRAST. The fill is a TINT, not a block of colour — 15% in light, 30% in dark —
-      and the marks on top use the deep light-mode shades from release_meter_tone. Marks
-      in the same hue as a heavier fill measured 1.73:1; the pairs drawn here measure
-      5.2:1 or better in both themes. Change one and re-measure the other.
-    · FIT. The meter column is ~113px at its widest, so marks are capped
-      (ApplicationHelper::RELEASE_METER_MARK_CAP) and each is shrink-0 — a shrinking box
-      would overlap its neighbour before anything clipped. The overflow "…" sits OUTSIDE
-      the clipping row, so a suite that outgrows the cap says so instead of losing the one
-      glyph whose job is to say it.
+    · FIT. This bar is not a fixed width and does not track the viewport: the lane grid
+      sits inside the dashboard's `xl:grid-cols-2`, so the bar measures 174px at a 1024px
+      viewport and 80px at 1280px. Eight marks need 78px. So the marks are capped
+      (ApplicationHelper::RELEASE_METER_MARK_CAP), each is a fixed 8px shrink-0 box, and
+      the bar asks its OWN width (`@container`) — under 100px it drops the marks and shows
+      the fraction instead. A cap alone cannot do this, and believing it could is what
+      shipped a silent clip: `overflow-hidden` ate the 8th mark with no error, and the
+      suite sitting exactly AT the cap draws no overflow "…" to hint at it.
+    · CONTRAST. The fill is a TINT, not a block of colour — 15% light, 30% dark — because
+      the marks ride on top of it. Same-hue marks on a heavier fill measured 1.73:1. The
+      pairs release_meter_tone draws here measure 5.3:1 or better in both themes.
+
+    Change either and re-measure; do not re-reason. The spec fails on both mutations.
 
     Locals: phase (a release_repo_lanes phase hash). %>
 <% phase = local_assigns.fetch(:phase) %>
@@ -52,17 +57,21 @@
         <span aria-hidden="true" class="shrink-0 text-[8px] leading-none opacity-0 transition-opacity group-hover:opacity-100 <%= tone[:label] %>">↗</span>
       <% end %>
     </div>
-    <div class="relative h-[18px] overflow-hidden rounded border <%= na ? "border-dashed border-subtle bg-inset/40" : "border-subtle bg-inset" %>"
+    <%# @container, not a media query: the meter's width is set by the lane grid INSIDE the
+        dashboard grid, so it does not track the viewport — crossing `xl` actually SHRINKS
+        it (measured: 174px bar at 1024px wide, 80px at 1280px). The marks show only when
+        this bar is genuinely wide enough for them. %>
+    <div class="@container relative h-[18px] overflow-hidden rounded border <%= na ? "border-dashed border-subtle bg-inset/40" : "border-subtle bg-inset" %>"
          data-test="release-phase-bar">
       <% unless na %>
         <div class="absolute inset-y-0 left-0 <%= tone[:fill] %> <%= phase[:coarse] && live ? "release-meter-indeterminate opacity-60" : "opacity-15 dark:opacity-30" %>"
              style="width: <%= release_meter_width(phase) %>%"></div>
       <% end %>
-      <div class="relative flex h-full min-w-0 items-center gap-[2px] px-1 <%= marks.any? ? "justify-start" : "justify-center" %> <%= tone[:value] %>">
+      <div class="relative flex h-full min-w-0 items-center gap-[2px] px-1 <%= marks.any? ? "justify-start @max-[99px]:justify-center" : "justify-center" %> <%= tone[:value] %>">
         <% if marks.any? %>
           <%# Decorative: the card's aria-label already says "5 of 8 checks passed", and a
               per-glyph title= would shadow the card's own tooltip on the biggest target. %>
-          <span class="flex min-w-0 items-center gap-[2px] overflow-hidden text-[9px] leading-none"
+          <span class="flex min-w-0 items-center gap-[2px] overflow-hidden text-[9px] leading-none @max-[99px]:hidden"
                 data-test="release-phase-checks" aria-hidden="true">
             <% marks.each do |mark| %>
               <% if mark == :pending %>
@@ -82,8 +91,13 @@
           </span>
           <% if overflowed %>
             <%# Outside the clipping row on purpose — this glyph must survive. %>
-            <span class="shrink-0 text-[9px] leading-none" data-test="release-phase-overflow" aria-hidden="true">…</span>
+            <span class="shrink-0 text-[9px] leading-none @max-[99px]:hidden" data-test="release-phase-overflow" aria-hidden="true">…</span>
           <% end %>
+          <%# Narrow bar: 8 marks need 78px and this bar has less, so the marks would clip
+              SILENTLY (a suite sitting exactly at the cap draws no overflow glyph). Below
+              100px the bar shows the fraction instead — the same count, in 28px. %>
+          <span class="hidden truncate text-[9px] font-bold tabular-nums @max-[99px]:inline"
+                data-test="release-phase-compact-value" aria-hidden="true"><%= phase[:value] %></span>
         <% else %>
           <%# No per-check marks (the deploy/coarse/n-a phases): the bar carries the status
               word itself, so the header stays a bare label. %>
