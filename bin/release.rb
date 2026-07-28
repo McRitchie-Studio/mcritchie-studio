@@ -79,7 +79,7 @@
 #     `bin/release prepare`.
 #
 #   bin/release ship [--by NAME] [--prod] [--dry-run]
-#     Avi's production-deploy: promotes the QA-green (assembled) RC to production:
+#     Steffon's production-deploy: promotes the QA-green (assembled) RC to production:
 #     ff main → release branch per repo, push origin (stamping each repo's members
 #     `merged: "main"` — assembled+main = prod-in-flight), deploy to Heroku, smoke
 #     /up, run any member's post_deploy_cmd on the PROD app (aborts on non-zero),
@@ -2722,7 +2722,7 @@ def prepare
   g3_gate = :open
   pre_qa_gate(app_groups, rel_slug, gem_groups: gem_groups)
 
-  # 5b. Record the Steffon assembled QA intent for every member so /deployments shows
+  # 5b. Record the Avi assembled QA intent for every member so /deployments shows
   #     him QA-ing the RC live the moment the deploy half starts — the Deploy mirror
   #     of bin/reviewer-select's review intent (no more hand-run `bin/task intent
   #     --to assembled --actor steffon`). Swept members are still `reviewed` (the
@@ -2736,7 +2736,7 @@ def prepare
   #     prod-board failure — it warns and continues.
   step("record: Avi assembled QA intent (live crew ticker)")
   record_deploy_intent(
-    "Steffon assembled QA intent",
+    "Avi assembled QA intent",
     "r = Release.current; n = Release::Conductor.record_deploy_intents!(r, to_stage: 'assembled', actor: 'avi'); " \
     "puts({ intent: 'assembled', actor: 'avi', members: n.size }.to_json)"
   )
@@ -4374,7 +4374,7 @@ def whats_live(repos, qa_shas)
   end
 end
 
-# Avi's ship gate: run each app's full local suite (registry `test_cmd` — the
+# Steffon's ship gate: run each app's full local suite (registry `test_cmd` — the
 # full-suite tier, Release::STEP_TEST_TIERS["ship"]) on the FROZEN ship SHA —
 # the exact code that ships — BEFORE the ship-authority gate, so approval can
 # never authorize untested code (§1.2 "fixes shipped ≠ tested"). A red gate
@@ -4393,7 +4393,7 @@ end
 # the entire machine exactly as it found it.
 def avi_ship_gate(app_groups, ship_sha, qa_gates)
   say("")
-  step("Avi ship gate: full suite (registry test_cmd) on the FROZEN ship SHA " \
+  step("Steffon ship gate: full suite (registry test_cmd) on the FROZEN ship SHA " \
        "(isolated workspace, before ship authority — nothing is mutated yet)")
   app_groups.each do |group|
     repo = group["repo"]
@@ -4915,11 +4915,11 @@ def ship
   # does not read it.
   ship_preflight(app_groups, gem_groups, ship_sha)
 
-  # 2. "What's already live" pre-flight, then Avi's ship gate, then explicit
+  # 2. "What's already live" pre-flight, then Steffon's ship gate, then explicit
   #    ship authority — turf included (its bin/deploy keeps its own smoke + rollback).
   whats_live(repos, qa_shas)
 
-  # 2a. Avi's ship gate (§1.2): run the FULL local suite (registry test_cmd) on
+  # 2a. Steffon's ship gate (§1.2): run the FULL local suite (registry test_cmd) on
   #     the FROZEN ship SHA — the exact prod code — BEFORE ship authority, so
   #     "shipped" can never mean "untested". A red gate scoped-aborts here,
   #     before the confirm and before any push, leaving origin untouched.

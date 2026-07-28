@@ -566,8 +566,8 @@ Steffon gates PRs with operational risk:
 - production incident fixes
 - UI flows where browser proof is the core acceptance criterion
 
-Low-risk docs or copy PRs can merge with Avi review alone. When in doubt, Avi
-asks Steffon for QA before merge.
+Low-risk docs or copy PRs can merge on Carl's review alone. When in doubt, Carl
+asks Avi for QA before merge.
 
 ## Release Conductor
 

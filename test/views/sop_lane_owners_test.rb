@@ -15,9 +15,15 @@ require "test_helper"
 # status ring — `_release_owner_face.html.erb` already adds one to owner badges)
 # breaks the pair, so the positive assertion is brittle; and once the pair can no
 # longer form, a `refute_includes` on it passes vacuously, so the negative
-# assertion protects nothing. Scoping to the container survives markup churn AND
-# keeps the negative meaningful — a wrong name inside a lane's own badge trips it
-# however the surrounding HTML is rearranged.
+# assertion protects nothing. Scoping to the container survives markup churn, and
+# a wrong name inside a lane's own badge trips it however the surrounding HTML is
+# rearranged.
+#
+# Scoping alone does NOT make the negative safe, though — a present-but-EMPTY
+# badge would satisfy `assert_not_nil` and leave `refute_includes` asserting
+# nothing. The non-empty check below closes that; without it this comment would be
+# claiming a property the test does not hold, which is the same defect that sent
+# this task back twice.
 class SopLaneOwnersTest < ActionView::TestCase
   # The post-reslot truth, as the operator reads it off the page.
   LANE_OWNERS = { "Assemble" => "Avi", "Ship" => "Steffon" }.freeze
@@ -45,17 +51,29 @@ class SopLaneOwnersTest < ActionView::TestCase
       badge = owner_badge(lane)
 
       assert_not_nil badge, "expected a rendered owner badge for the #{lane} lane"
+
+      # assert_not_nil closes the MISSING case; it does not close the EMPTY one.
+      # A present-but-textless badge would make the refute below pass while
+      # asserting nothing — the same vacuity, one layer in. Anchor it first.
+      refute_predicate badge.text.strip, :empty?,
+        "the #{lane} lane's owner badge rendered no text, so the check below would pass vacuously"
+
       refute_includes badge.text, wrong_owner,
         "/stages/sop is teaching the operator that #{wrong_owner} owns #{lane} — that is the " \
         "pre-reslot inversion (Avi assembles at G3, Steffon ships at G4)"
     end
   end
 
-  test "[component] every lane renders exactly one owner badge" do
+  test "[component] every lane renders exactly one owner badge, keyed by its own lane" do
     render template: "tasks/sop"
 
-    # Guards the scoping hook itself: if the data attributes are dropped or
-    # duplicated, the two tests above would silently stop finding anything.
-    assert_equal Devops::Vocabulary.lanes.size, css_select("[data-test='sop-lane-owner']").size
+    # Guards the scoping hook the two tests above depend on. Counting the TOTAL
+    # alone does not do that: dropping data-lane leaves the total unchanged, and
+    # two badges on Assemble with none on Ship also totals correctly. So assert
+    # per-lane — one badge for each lane the vocabulary declares.
+    Devops::Vocabulary.lanes.each do |lane|
+      assert_equal 1, css_select("[data-test='sop-lane-owner'][data-lane='#{lane[:lane]}']").size,
+        "expected exactly one owner badge keyed to the #{lane[:lane]} lane"
+    end
   end
 end

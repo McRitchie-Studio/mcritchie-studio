@@ -354,7 +354,7 @@ move at the sweep.** The per-task primitive is still **`bin/release merge <task>
 colliding files + suggested order + likely rebases, warning-only). A merge
 conflict surfaces **at this PR-merge step** (resolve on GitHub, or block the
 task for rework — prepare sweeps past it and keeps the rest) — `release` never
-force-pushes. Next comes Steffon's **pre-QA gate** — the registry `qa_test_cmd`
+force-pushes. Next comes Avi's **pre-QA gate** — the registry `qa_test_cmd`
 tier (integration + e2e-smoke) on `origin/release` BEFORE anything deploys; a
 regression **ejects the offender** (`bin/release eject <task>` → blocked +
 detached + merged cleared, pair with the merge-commit revert) and the REST of

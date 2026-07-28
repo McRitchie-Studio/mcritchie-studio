@@ -715,7 +715,7 @@ module StageAgentsHelper
   end
 
   # The avatar(s) for an OPEN intent: the senior pair (→reviewed) or the single
-  # owner (Steffon→assembled, Avi→shipped), canonical-owner backfilled like a
+  # owner (Avi→assembled, Steffon→shipped), canonical-owner backfilled like a
   # completed event so a bare intent still shows a face.
   def intent_stage_agents(intent, by_slug, target = intent.to_stage)
     if target == "reviewed"

@@ -43,6 +43,89 @@ class DocOwnerProseGuardTest < ActiveSupport::TestCase
   # source of every prose pattern that follows.
   LANE_OWNERS = { "Assemble" => "Avi", "Ship" => "Steffon" }.freeze
 
+  # ── The ownership PROPERTY ────────────────────────────────────────────────
+  #
+  # WRONG_OWNER below enumerates wrong SPELLINGS, and that is structurally a
+  # ratchet with no teeth: it only ever catches the phrasings already removed, so
+  # a corrected string can come straight back in a shape nobody listed. Round 2
+  # of this task's review fixed "Avi ship gate" in config/devops_test_suites.yml
+  # and added no pattern — round 3 proved that exact string could return with the
+  # guard green, alongside ten other realistic forms ("Steffon assembles",
+  # "Avi ships `release → main`", "| qa-release | Steffon |", …).
+  #
+  # So the load-bearing check is this table: each act has ONE canonical owner, and
+  # wherever prose names a soul in an ownership position next to that act, it must
+  # name THAT soul. Adding an act is one row; every phrasing shape below covers it
+  # automatically.
+  ACT_OWNER = {
+    "qa-release" => "Avi",
+    "production-deploy" => "Steffon",
+    "pre-QA gate" => "Avi",
+    "ship gate" => "Steffon"
+  }.freeze
+
+  ACTS = Regexp.union(ACT_OWNER.keys.map { |act| /#{Regexp.escape(act)}/i })
+
+  # The owner named just before the act, with the same capped word-bounded gap
+  # that lets a qualifying clause through ("Avi's otherwise prod-stopping
+  # qa-release lane") without leaping a sentence.
+  OWNER_BEFORE_ACT = /\b(Avi|Steffon)(?:'s|’s)?(?:\s+[\w-]+){0,2}\s+[`*]{0,3}(#{ACTS})/i
+
+  # A table row pairing an act with an owner: | qa-release | Steffon |
+  ACT_TABLE_ROW = /\|\s*[`*]{0,3}(#{ACTS})[`*]{0,3}\s*\|\s*(Avi|Steffon)\b/i
+
+  # The lane VERB, which names ownership without naming the act at all.
+  SOUL_VERB = /\b(Avi|Steffon)\s+(ships?|assembles?)\b/i
+  VERB_OWNER = { "ship" => "Steffon", "assemble" => "Avi" }.freeze
+
+  # The PASSIVE form reverses the order — "assembled by Steffon" — so a
+  # soul-before-verb shape reads straight past it.
+  ACT_BY_SOUL = /\b(assembled|shipped)\s+by\s+(Avi|Steffon)\b/i
+  PARTICIPLE_OWNER = { "assembled" => "Avi", "shipped" => "Steffon" }.freeze
+
+  def canonical_act(matched)
+    ACT_OWNER.keys.find { |act| act.casecmp?(matched.to_s.strip) }
+  end
+
+  # Every place the text names the WRONG soul for an act. Returns
+  # [line_no, why, matched_text].
+  def ownership_violations(text)
+    found = []
+
+    add = lambda do |match, soul, expected, subject|
+      return if expected.nil? || soul.casecmp?(expected)
+      found << [text[0, match.begin(0)].count("\n") + 1,
+                "#{subject} is #{expected}'s — not #{soul}'s",
+                match[0].gsub(/\s+/, " ").strip]
+    end
+
+    text.to_enum(:scan, OWNER_BEFORE_ACT).each do
+      match = Regexp.last_match
+      act = canonical_act(match[2])
+      add.call(match, match[1], ACT_OWNER[act], act)
+    end
+
+    text.to_enum(:scan, ACT_TABLE_ROW).each do
+      match = Regexp.last_match
+      act = canonical_act(match[1])
+      add.call(match, match[2], ACT_OWNER[act], act)
+    end
+
+    text.to_enum(:scan, SOUL_VERB).each do
+      match = Regexp.last_match
+      verb = match[2].downcase.sub(/s\z/, "")
+      add.call(match, match[1], VERB_OWNER[verb], "#{verb}ing")
+    end
+
+    text.to_enum(:scan, ACT_BY_SOUL).each do
+      match = Regexp.last_match
+      participle = match[1].downcase
+      add.call(match, match[2], PARTICIPLE_OWNER[participle], participle)
+    end
+
+    found
+  end
+
   # An intervening clause must not hide an ownership claim. "Steffon's otherwise
   # prod-stopping `qa-release` lane" is the same assertion as "Steffon's
   # `qa-release`", and a whitespace-only gap could not see it — that phrasing sat
@@ -126,6 +209,21 @@ class DocOwnerProseGuardTest < ActiveSupport::TestCase
         "renders as the badge tooltip and the expanded Owner detail, so this contradicts the " \
         "badge above it on the operator's screen"
     end
+  end
+
+  test "no live source pairs an act with the wrong owner" do
+    offenders = live_sources.flat_map do |path|
+      rel = Pathname.new(path).relative_path_from(Rails.root).to_s
+      ownership_violations(File.read(path)).map do |line_no, why, matched|
+        "#{rel}:#{line_no}  — #{why}\n      #{matched}"
+      end
+    end
+
+    assert_empty offenders,
+      "These LIVE sources pair an act with the WRONG soul. Canonical ownership after the " \
+      "2026-07-22 reslot: qa-release and the pre-QA gate are Avi's (G3, the assembler); " \
+      "production-deploy and the ship gate are Steffon's (G4, the deployer).\n" \
+      "#{offenders.join("\n")}"
   end
 
   test "no live agent doc or rendered config names the OLD lane owner" do
