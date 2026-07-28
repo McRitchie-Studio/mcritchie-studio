@@ -646,7 +646,8 @@ api PATCH /api/v1/tasks/task-XXXX '{
 
 # Preferred CLI path for the pre-PR operator validation gate:
 bin/task update task-XXXX --local-url http://localhost:3001/admin/users --approval waiting
-# Moving the task out of building/blocked auto-confirms an open approval.
+# `waiting` is legal only before the `submitted` seam: any save at `submitted` or
+# later settles an open request to `none` (settled — never a fabricated `approved`).
 
 # 4. Review/merge/QA progression uses the same update path:
 api PATCH /api/v1/tasks/task-XXXX '{"stage": "reviewed"}'

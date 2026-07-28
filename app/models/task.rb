@@ -145,6 +145,13 @@ class Task < ApplicationRecord
   REVIEW_STATUSES = %w[started completed failed info].freeze
   MIGRATION_LANE = "backend_migration".freeze
   OPERATOR_APPROVAL_WAITING = "waiting".freeze
+  # The only stages where a WAITING operator-approval request is meaningful: the
+  # ones whose owner can still act on the local demo. Past the `submitted` seam
+  # the PR review flow owns the work, so the request is settled on every save
+  # (#settle_operator_approval_past_submit). An ALLOW-list, so a stage added later
+  # settles by default. `blocked` is not a stage (Task#block! parks the task on
+  # `building`), so a QA-rework demo can re-request approval.
+  APPROVAL_REQUEST_STAGES = %w[designed building].freeze
   OPERATOR_APPROVAL_APPROVED = "approved".freeze
   OPERATOR_APPROVAL_CHANGES_REQUESTED = "changes_requested".freeze
   # The settled/moot resolution. An open "waiting" request is cleared to "none"
@@ -261,7 +268,10 @@ class Task < ApplicationRecord
   # the transition's snapshot bakes the EVOLVED form (older events keep theirs).
   before_save :evolve_stage_mascot, if: -> { will_save_change_to_stage? && Task::MASCOT_EVOLUTION_GATES.key?(stage) }
   before_save :sync_app_identity
-  before_save :settle_operator_approval_on_submit, if: -> { will_save_change_to_stage? }
+  # Unconditional: the settle is a stage INVARIANT re-asserted on every save, not
+  # a transition event. See #settle_operator_approval_past_submit for the three
+  # leaks the transition shape had.
+  before_save :settle_operator_approval_past_submit
   before_save :stamp_operator_approval_request
   before_save :stamp_operator_approval_approved
   # The cert evidence in devops.checks_run is MACHINE-owned and survives an
@@ -461,6 +471,30 @@ class Task < ApplicationRecord
   # (no per-row table re-scan), terminal stages are skipped, and a row that fails to
   # save is captured to ErrorLog (durable — rolling logs roll off) and skipped so
   # one bad task can't abort a prod run. Returns the count newly assigned.
+  # One-time sweep for the rows the OLD one-shot settle left behind (the
+  # transition callback fired on the single building→submitted save, so anything
+  # that rewrote devops afterwards restored "waiting" and nothing cleared it —
+  # the request rode to `shipped` and kept flashing WAITING APPROVAL on a
+  # finished card). #settle_operator_approval_past_submit now holds the invariant
+  # on every save, but a row nobody saves again never gets it.
+  #
+  # Idempotent: only ever "waiting" → "none", only past the seam. update_column
+  # skips callbacks so a historical row is not otherwise disturbed — no
+  # broadcasts, no timestamps, no stage churn. Returns the slugs it settled.
+  # Driver: `rake tasks:settle_stale_operator_approvals`.
+  def self.settle_stale_operator_approvals!
+    settled = []
+    where.not(stage: APPROVAL_REQUEST_STAGES).find_each do |task|
+      next unless task.devops["approval_status"] == OPERATOR_APPROVAL_WAITING
+
+      metadata = task.metadata.deep_dup
+      metadata["devops"]["approval_status"] = OPERATOR_APPROVAL_NONE
+      task.update_column(:metadata, metadata) # rubocop:disable Rails/SkipsModelValidations
+      settled << task.slug
+    end
+    settled
+  end
+
   def self.backfill_mascots!
     taken = active_mascots.to_set
     assigned = 0
@@ -1627,13 +1661,36 @@ class Task < ApplicationRecord
     self.position ||= (Task.where(stage: stage).maximum(:position) || 0) + 100
   end
 
-  # When a task moves INTO `submitted`, a still-open operator-approval REQUEST is
-  # settled: the PR review flow takes over, so the local-preview approval is moot
-  # and its WAITING APPROVAL treatment (the card_glow "approval" state and the
-  # operator-approval status bar, both keyed off #waiting_for_operator_approval?)
-  # must drop. We resolve it here, in the SAME save as the stage move (before_save
-  # → one UPDATE, one transaction), so a rollback can never strand a half-settled
-  # card.
+  # A still-open operator-approval REQUEST is settled once the task is past the
+  # `submitted` seam: the PR review flow takes over, so the local-preview approval
+  # is moot and its WAITING APPROVAL treatment (the card_glow "approval" state and
+  # the operator-approval status bar, both keyed off #waiting_for_operator_approval?)
+  # must drop. Settled in before_save, so it rides the SAME UPDATE as whatever
+  # write reached this stage — a rollback can never strand a half-settled card.
+  #
+  # An INVARIANT, not a transition event. It was a transition callback
+  # (`entering_submitted_stage?`, fired only on the one save that moved
+  # building → submitted) until 2026-07-27, and that shape leaked three ways —
+  # all three reproduced against the shipped code, all three now regression-tested
+  # below:
+  #
+  #   1. a LATER wholesale devops echo restores it. `bin/task update --checks`
+  #      PATCHes the entire devops hash, and a hash read before the move still
+  #      carries "waiting"; the stage does not change on that write, so the
+  #      transition callback never fired again.
+  #   2. flagging approval AFTER submitting sticks forever — there was no move
+  #      left to settle it.
+  #   3. neither did any LATER move: reviewed / assembled / shipped were not the
+  #      submitted transition, so a restored request rode all the way to SHIPPED.
+  #      That is what the operator saw: a shipped card still flashing WAITING
+  #      APPROVAL, with nothing left in the pipeline that could clear it.
+  #
+  # So the rule is now stated as a property of the STAGE, re-asserted on every
+  # save: a waiting request may exist only in the stages that can act on it.
+  # APPROVAL_REQUEST_STAGES is an ALLOW-list on purpose — a stage added later
+  # settles by default rather than quietly inheriting a badge nothing clears.
+  # (`blocked` is absent because a block is a `building` attribute — Task#block!
+  # parks the task on building — so a QA-rework demo can re-request approval.)
   #
   # Only "waiting" is settled — "changes_requested" and an already-"approved"
   # grant carry their own meaning into review and are left untouched. We resolve
@@ -1644,24 +1701,14 @@ class Task < ApplicationRecord
   # only on a flip TO "approved" or an approval_approved_at stamp) — this system
   # state-machine transition never trips the agent-write guard.
   #
-  # Fires only on a real transition into submitted on an EXISTING record, so a task
-  # created straight into `submitted` keeps its waiting request — the stage column
-  # defaults to "designed", so stage_was is never blank on create; #new_record? is
-  # the honest "did this move" signal, and the operator-approval guard fixtures rely
-  # on a directly-created submitted+waiting row surviving. Idempotent: once "none" it
-  # is a no-op, and a submitted→submitted re-save does not change stage, so the
-  # callback does not fire.
-  def settle_operator_approval_on_submit
-    return unless entering_submitted_stage?
+  # Idempotent by construction: once "none" every later save is a no-op.
+  def settle_operator_approval_past_submit
+    return if APPROVAL_REQUEST_STAGES.include?(stage)
     return unless approval_status == OPERATOR_APPROVAL_WAITING
 
     merged = metadata.deep_dup
     (merged["devops"] ||= {})["approval_status"] = OPERATOR_APPROVAL_NONE
     self.metadata = merged
-  end
-
-  def entering_submitted_stage?
-    !new_record? && stage == "submitted" && stage_was != "submitted"
   end
 
   def stamp_operator_approval_request
