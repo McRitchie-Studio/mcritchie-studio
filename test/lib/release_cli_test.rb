@@ -3542,27 +3542,27 @@ class ReleaseCliTest < Minitest::Test
     assert_operator hub_at, :<, sat_at, "the hub deploys before the satellites"
   end
 
-  # --- Avi ship gate: full e2e on the FROZEN SHA, THEN ship authority (§1.2) ---
+  # --- Steffon ship gate: full e2e on the FROZEN SHA, THEN ship authority (§1.2) ---
 
-  def test_ship_runs_the_avi_e2e_gate_before_ship_authority_and_any_deploy
+  def test_ship_runs_the_steffon_e2e_gate_before_ship_authority_and_any_deploy
     out = run_cli(["--dry-run"], call: "ship", setup: SHIP_STUB)
 
-    gate_at   = out.index("Avi ship gate")
+    gate_at   = out.index("Steffon ship gate")
     e2e_at    = out.index(HUB_GATE_CMD)                # the hub's highest-tier run on the frozen SHA
     ship_at   = out.index("confirming production deploy") # the ship-authority step (unique marker)
     deploy_at = out.index("push heroku bbbbbbb:refs/heads/main")
 
     assert gate_at && e2e_at && ship_at && deploy_at, "gate, e2e, ship authority, and a deploy must all appear"
-    assert_operator gate_at, :<, ship_at, "the Avi gate precedes ship authority"
+    assert_operator gate_at, :<, ship_at, "the Steffon gate precedes ship authority"
     assert_operator e2e_at, :<, ship_at, "the full suite runs on the frozen SHA BEFORE ship authority"
     assert_operator ship_at, :<, deploy_at, "ship authority precedes any deploy"
   end
 
-  def test_ship_avi_gate_reads_the_ci_verdict_for_the_frozen_sha
+  def test_ship_steffon_gate_reads_the_ci_verdict_for_the_frozen_sha
     out = run_cli(["--dry-run"], call: "ship", setup: SHIP_STUB)
     # DevOps v2 Phase 3: the gate reads GitHub CI's verdict for the frozen hub SHA
     # (the local suite is demoted); the plan still names that frozen SHA.
-    assert_includes out, "Avi ship gate"
+    assert_includes out, "Steffon ship gate"
     assert_includes out, "FROZEN ship SHA"
     assert_includes out, "bbbbbbb", "the gate is judged on the hub's QA-frozen SHA"
   end
