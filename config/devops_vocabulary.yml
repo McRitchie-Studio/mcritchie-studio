@@ -8,7 +8,7 @@
 # Each lane has ONE accountable OWNER (the "primary"): checks in at the start
 # (a Pulse = an intent event), runs the tests + steps in the middle, and updates
 # the status at the end. A Pulse is drawn ONLY where a real intent event fires
-# (build mascot · review pair · Steffon@assemble · Avi@ship) — not per sub-step.
+# (build mascot · review pair · Avi@assemble · Steffon@ship) — not per sub-step.
 
 owner_definition: >-
   Owner = the agent accountable for the whole lane: checks in at the start (intent
@@ -58,11 +58,11 @@ lanes:
   - owner: Primary Reviewer
     lane: Review
     end_stage: reviewed
-    owner_note: "the PRIMARY reviewer owns the whole lane: the deep-pass senior picked per task (most domain depth, usually the longest step) who spawns the LIGHT reviewer as its own sub-agent for a focused second pass, then on two approvals drives the task to Reviewed — review-only; the merge belongs to Steffon's sweep. Avi is a thin delegation pre-step: he confirms product-acceptance and picks the pair, then hands the lane to the primary."
+    owner_note: "the PRIMARY reviewer owns the whole lane: the deep-pass senior picked per task (most domain depth, usually the longest step) who spawns the LIGHT reviewer as its own sub-agent for a focused second pass, then on two approvals merges the PR into accepted and drives the task to Reviewed. Review-only means it never touches release or main and never deploys — the promotion of accepted onto release belongs to Avi's sweep. There is no supervisor pre-step: the review session spins one primary per PR."
     steps:
       - type: pulse
         label: Reviewers on it
-        expectation: "Live intent: reviewer-select records the primary + light pair the moment Avi kicks off review."
+        expectation: "Live intent: reviewer-select records the primary + light pair the moment the review session kicks off."
         gate: "—"
       - type: test
         label: PR Review
@@ -75,21 +75,21 @@ lanes:
       - type: stage_update
         label: Reviewed
         stage: reviewed
-        expectation: "The PRIMARY reviewer drives the status to Reviewed and stops — review-only; Steffon's self-healing sweep owns the merge."
+        expectation: "The PRIMARY reviewer merges the PR into accepted, stamps merged: accepted, then drives the status to Reviewed and stops — review-only: never release, never main, never a deploy. Avi's self-healing sweep promotes accepted onto release."
         gate: 2 approvals (primary + light)
 
-  - owner: Steffon
+  - owner: Avi
     lane: Assemble
     end_stage: assembled
-    owner_note: "Platform Engineer. Owns the whole middle from Reviewed: the self-healing sweep merges the reviewed queue (+ assembled stragglers) onto release, gates it, deploys QA, and flips members to Assembled on QA-green. This lane IS the execution of 'assembling' — idempotent, crash-recoverable via the merged column."
+    owner_note: "Product Owner. Owns the whole middle from Reviewed: the self-healing sweep promotes the accepted branch onto release, gates it, deploys QA, and flips members to Assembled on QA-green. This lane IS the execution of 'assembling' — idempotent, crash-recoverable via the merged column."
     steps:
       - type: pulse
-        label: Steffon on it
-        expectation: "Live intent: bin/release prepare records Steffon's QA intent over every release member."
+        label: Avi on it
+        expectation: "Live intent: bin/release prepare records Avi's QA intent over every release member."
         gate: "—"
       - type: merge
         label: Release Branch
-        expectation: "The self-healing sweep (bin/release prepare, looping the bin/release merge primitive) lands every reviewed task's PR in the persistent release branch and stamps merged: release — stages don't move: Reviewed members flip to Assembled at QA-green, assembled stragglers keep their stage. A task already merged: release/main skips the gh merge (crash recovery)."
+        expectation: "The self-healing sweep (bin/release prepare) promotes ALL of accepted onto release via ONE batch PR per repo — not N per-task merges — and re-stamps members merged: release. Stages don't move here: Reviewed members flip to Assembled at QA-green, assembled stragglers keep their stage. A task already merged: release/main skips the merge (crash recovery); a reviewed member with no merged stamp is a HELD anomaly and is left behind."
         gate: "review gate (only reviewed/assembled sweep); a conflict surfaces here — block-and-move, the rest ride"
       - type: test
         label: Pre-QA Gate
@@ -113,27 +113,27 @@ lanes:
         expectation: "QA-green flips the swept members Reviewed → Assembled (merged stays release) and the RC to Assembled; a QA failure flips nothing — the next run self-heals."
         gate: QA booted and suite green
 
-  - owner: Avi
+  - owner: Steffon
     lane: Ship
     end_stage: shipped
-    owner_note: "Owns the ship: runs the full suite on the frozen ship SHA (self-gated when G3 already certified that exact SHA), then either stops for the QA workflow's operator gate or continues under the autonomous production kickoff."
+    owner_note: "Platform Engineer. Owns the ship: runs the full suite on the frozen ship SHA (self-gated when G3 already certified that exact SHA), then either stops for the QA workflow's operator gate or continues under the autonomous production kickoff."
     steps:
       - type: pulse
-        label: Avi on it
-        expectation: "Live intent: bin/release ship records Avi's ship intent over every release member."
+        label: Steffon on it
+        expectation: "Live intent: bin/release ship records Steffon's ship intent over every release member."
         gate: "—"
       - type: test
         label: QA Acceptance
-        expectation: "Avi runs the full suite (registry test_cmd) on the FROZEN ship SHA (the exact prod commit) — skipped with a recorded gate SOP when G3 already certified that exact SHA + command."
+        expectation: "Steffon runs the full suite (registry test_cmd) on the FROZEN ship SHA (the exact prod commit) — skipped with a recorded gate SOP when G3 already certified that exact SHA + command."
         gate: avi_ship_gate aborts on any failure
       - type: review
         label: Visual
-        expectation: "Avi re-confirms the acceptance criteria on the frozen SHA (checked twice by design)."
+        expectation: "Steffon re-confirms the acceptance criteria on the frozen SHA (checked twice by design)."
         gate: "—"
       - type: deploy
         label: Prod
         expectation: "Fast-forward release to main per repo (stamping members merged: main as each ff lands), deploy, smoke /up, run post_deploy_cmd."
-        gate: "qa-release stops here at QA; production-deploy (or the Alex full-cycle) grants ship authority after Avi's tests"
+        gate: "qa-release stops here at QA; production-deploy (or the Alex full-cycle) grants ship authority after Steffon's tests"
       - type: stage_update
         label: Shipped
         stage: shipped

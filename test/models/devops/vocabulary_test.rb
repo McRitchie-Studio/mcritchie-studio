@@ -6,10 +6,18 @@ require "test_helper"
 # TRUTH the /stages/sop infographic + ApplicationHelper render from. These guard
 # the shape the views rely on (four lanes, symbol step types, one pulse per lane).
 class Devops::VocabularyTest < ActiveSupport::TestCase
-  test "[unit] loads the four accountability lanes in owner order" do
+  # This assertion PINNED THE INVERSION for three weeks: it asserted a bare owner
+  # sequence with no lane attached, so it stayed green while Assemble and Ship
+  # carried each other's owner. Assert the PAIRING — an owner is only correct
+  # relative to the lane it owns.
+  test "[unit] loads the four accountability lanes, each paired with its owner" do
     lanes = Devops::Vocabulary.lanes
     assert_equal 4, lanes.size
-    assert_equal ["Builder", "Primary Reviewer", "Steffon", "Avi"], lanes.map { |lane| lane[:owner] }
+    assert_equal(
+      [["Build", "Builder"], ["Review", "Primary Reviewer"], ["Assemble", "Avi"], ["Ship", "Steffon"]],
+      lanes.map { |lane| [lane[:lane], lane[:owner]] },
+      "post-2026-07-22 reslot: Avi assembles (G3), Steffon ships (G4)"
+    )
   end
 
   test "[unit] every step's :type is a Symbol (view compares step[:type] == :pulse)" do

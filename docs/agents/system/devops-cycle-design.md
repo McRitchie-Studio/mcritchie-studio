@@ -743,7 +743,7 @@ These are **operator-launched (copy-paste) today, schedule-ready tomorrow** — 
 act is idempotent, with an explicit precondition + a named exit seam, so a
 scheduler can fire it later without rework (see [`heartbeats.md`](../modules/heartbeats.md)).
 Note `pr-review` **merges the reviewed feat PR into `accepted`** and stops at
-`reviewed` (it never touches `release`/`main`, never deploys) — Steffon's
+`reviewed` (it never touches `release`/`main`, never deploys) — Avi's
 `qa-release` sweep then promotes `accepted → release` and flips members
 `assembled` on QA-green.
 
