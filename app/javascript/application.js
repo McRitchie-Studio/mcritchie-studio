@@ -23,10 +23,3 @@ Chart.defaults.font.family =
   "Montserrat, system-ui, sans-serif"
 
 Chartkick.use(Chart)
-
-// Smooth-load convention: the engine head boots the nav spinner with a 2500ms
-// minimum display; with view transitions presenting pages as soon as they
-// settle, a lingering spinner reads as slowness. 300ms still absorbs flicker.
-// This module is deferred, so the assignment lands after the engine's inline
-// default and wins for the rest of the session.
-window._navSpinnerMinMs = 300

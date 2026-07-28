@@ -2,6 +2,29 @@
 
 > **When to read this:** Adding/modifying JS modules, importmap entries, Alpine components, the chat UI, or the landing page.
 
+## Smooth-load convention (page transitions)
+
+Turbo page swaps materialize behind the current page and present with a view
+transition — one render per navigation, no stale-preview flash. Three pieces,
+all app-side for now (studio-engine 0.24 ships the same convention behind
+`Studio.smooth_load`; the adoption task deletes this local copy):
+
+- `app/views/layouts/_smooth_load.html.erb` — the `view-transition` meta
+  (Turbo 8 wraps swaps in `document.startViewTransition`) + `turbo-cache-control:
+  no-preview`. Rendered from the application layout head.
+- `app/assets/tailwind/application.css` ("Smooth-load convention" block) — root
+  fade-out/rise-in keyframes plus `.vt-pinned-header`, the header's named
+  transition group. **Exactly one `.vt-pinned-header` per page** — a duplicate
+  `view-transition-name` makes the browser silently skip the whole transition.
+- `test/integration/smooth_load_layout_test.rb` — request-level proof the layout
+  wires the metas (the component test alone can't see the render line dropped).
+
+Slow-load feedback is Turbo's built-in progress bar (default 500ms delay).
+Browsers without view-transition support get an instant swap; under
+`prefers-reduced-motion` Turbo skips the transition itself. e2e runs with
+`reducedMotion: "reduce"` (playwright.config.js) so clicks never land
+mid-animation.
+
 ## JS Modules (importmap)
 
 - `kanban_board` — drag-and-drop task board with optimistic DOM moves, API transitions, toast notifications. Race-condition guard (`_pendingMoves`) prevents concurrent API calls for same task. Attached to `window.kanbanBoard` for Alpine `x-data` access.

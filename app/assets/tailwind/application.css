@@ -502,8 +502,12 @@
 
 /* The sticky header gets its own named transition group, which lifts it out of
    the root snapshot: page content transitions beneath a navbar that stays put
-   (or smoothly morphs between its scrolled and expanded heights). */
-body > header {
+   (or smoothly morphs between its scrolled and expanded heights). Class hook,
+   not a structural selector: a second <header> rooted on <body> would duplicate
+   the view-transition-name and silently kill every transition on that page.
+   Same class name studio-engine 0.24 ships, so adoption deletes this block
+   with no layout edit. EXACTLY ONE element per page. */
+.vt-pinned-header {
   view-transition-name: studio-header;
 }
 
@@ -524,7 +528,9 @@ body > header {
   }
 }
 
-/* Reduced motion: keep the single-render swap, drop the choreography. */
+/* Reduced motion: defense-in-depth. Turbo already skips startViewTransition
+   entirely under prefers-reduced-motion, so for Turbo navigations these rules
+   never run; they guard any future non-Turbo same-document transition. */
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-group(*),
   ::view-transition-old(*),
