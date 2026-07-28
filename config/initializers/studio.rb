@@ -7,6 +7,15 @@ Studio.configure do |config|
   # guard upstreamed from this app's former local copy).
   config.sticky_table_headers = true
 
+  # Engine-owned smooth-load convention (0.24): layouts/studio/_smooth_load
+  # renders the view-transition + no-preview metas, engine.css ships the
+  # transition styling and the vt-pinned-header @utility. This replaced the
+  # app-local partial/CSS copy. Under no-preview the old page holds until the
+  # fresh response, so drop the nav spinner floor from the engine's 2500ms
+  # default to a fast-load 300ms.
+  config.smooth_load = true
+  config.nav_spinner_min_ms = 300
+
   # Passwordless: magic-link email + Google + Solana wallet. No :password —
   # has_secure_password stays on the model only as a dormant fallback.
   config.auth_methods = %i[magic_link google wallet]

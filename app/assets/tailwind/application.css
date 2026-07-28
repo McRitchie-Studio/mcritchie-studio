@@ -488,63 +488,19 @@
   }
 }
 
-/* ——— Smooth-load convention (view transitions) ———
-   Paired with layouts/_smooth_load.html.erb, which opts Turbo into
-   document.startViewTransition. The outgoing page fades while the incoming one
-   rises in underneath — quick enough to read as polish, not as a wait. */
-::view-transition-old(root) {
-  animation: vt-page-out 160ms cubic-bezier(0.4, 0, 1, 1) both;
-}
-
-::view-transition-new(root) {
-  animation: vt-page-in 220ms cubic-bezier(0, 0, 0.2, 1) both;
-}
-
-/* The sticky header gets its own named transition group, which lifts it out of
-   the root snapshot: page content transitions beneath a navbar that stays put
-   (or smoothly morphs between its scrolled and expanded heights). Class hook,
-   not a structural selector: a second <header> rooted on <body> would duplicate
-   the view-transition-name and silently kill every transition on that page.
-   Same class name studio-engine 0.24 ships, so adoption deletes this block
-   with no layout edit. EXACTLY ONE element per page. */
-.vt-pinned-header {
-  view-transition-name: studio-header;
-}
-
-/* The pinned header must not cross-fade. Without this, the UA default runs a
-   250ms plus-lighter blend between its two snapshots, and on any navigation
+/* ——— Smooth-load convention — engine-owned since studio-engine 0.24 ———
+   The metas render from layouts/studio/_smooth_load (Studio.smooth_load) and
+   the transition styling ships in the engine's engine.css, including the
+   .vt-pinned-header @utility. ONE rule stays app-side: engine 0.24.0's CSS
+   lacks the studio-header no-cross-fade fix (added here in PR #681's rework
+   after the engine shipped). Without it, the UA default runs a 250ms
+   plus-lighter blend between the header's two snapshots, and on any navigation
    from a scrolled page (collapsed 100px header → expanded 132px at top) the
    wordmark and buttons draw twice, ~16px apart. animation: none shows the
-   incoming header immediately while the group box still morphs its height. */
+   incoming header immediately while the group box still morphs its height.
+   Task engine-navbar-self-pins lifts this rule into the engine; delete this
+   block when the engine version that carries it lands. */
 ::view-transition-old(studio-header),
 ::view-transition-new(studio-header) {
   animation: none;
-}
-
-@keyframes vt-page-out {
-  to {
-    opacity: 0;
-  }
-}
-
-@keyframes vt-page-in {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-/* Reduced motion: defense-in-depth. Turbo already skips startViewTransition
-   entirely under prefers-reduced-motion, so for Turbo navigations these rules
-   never run; they guard any future non-Turbo same-document transition. */
-@media (prefers-reduced-motion: reduce) {
-  ::view-transition-group(*),
-  ::view-transition-old(*),
-  ::view-transition-new(*) {
-    animation: none !important;
-  }
 }
