@@ -693,7 +693,7 @@ bin/task show <slug>
 bin/task create --title T [--kind K] [--repo R ...] [--risk R ...] \
                 [--accept "..." ...] [--test "..." ...] [--agent A]
 bin/task update <slug> --local-url U --approval waiting   # request operator validation
-bin/task move <slug> submitted                            # auto-confirms an open approval
+bin/task move <slug> submitted                            # settles an open approval to none
 bin/task update <slug> --branch B --pr-url U              # merges into existing devops
 bin/task move <slug> <stage>                   # bare Claude/Codex moves auto-capture usage
 bin/task move <slug> submitted \               # optional per-transition usage →
