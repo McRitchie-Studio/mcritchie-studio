@@ -84,7 +84,7 @@ class Release
       app_meta(repo)&.fetch("test_cmd", nil)
     end
 
-    # Avi's pre-QA gate command (registry `qa_test_cmd`) — the integration
+    # Steffon's pre-QA gate command (registry `qa_test_cmd`) — the integration
     # tier `bin/release prepare` runs on origin/release BEFORE any QA deploy —
     # or nil when unset (the repo self-gates at ship / its own deploy; the gate
     # skips it). Registered apps carry the integration SUBSET, never the full
