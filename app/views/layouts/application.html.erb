@@ -3,6 +3,7 @@
   <head>
     <title><%= content_for(:title) || "McRitchie Studio" %></title>
     <%= csrf_meta_tags %>
+    <%= render "layouts/smooth_load" %>
     <%= render "layouts/studio/head" %>
   </head>
 
@@ -92,7 +93,7 @@
       })();
     </script>
     <header x-data="{ scrolled: false }" @scroll.window="scrolled = scrolled ? (window.scrollY > 5) : (window.scrollY > 60)"
-            class="sticky top-0 z-50 border-b bg-page/95 transition-shadow duration-300 supports-[backdrop-filter]:backdrop-blur"
+            class="vt-pinned-header sticky top-0 z-50 border-b bg-page/95 transition-shadow duration-300 supports-[backdrop-filter]:backdrop-blur"
             :class="scrolled ? 'shadow-lg border-subtle' : 'border-transparent'">
       <% if show_environment_banner? %>
         <% environment_actions = capture do %>
