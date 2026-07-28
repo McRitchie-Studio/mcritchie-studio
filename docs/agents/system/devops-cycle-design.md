@@ -262,12 +262,12 @@ ship. *Consolidation (decided):* the legacy `release_train` field has become
 
 **The integration branch is PERSISTENT.** Every repo keeps a single `release`
 branch — the *same* name in every repo (`Release::BRANCH = "release"`). Feature
-PRs target `release`, not `main`; `main` is always an ancestor of `release`.
-`bin/release init` creates the branch (= `main`) on every gem + app repo, once
-(idempotent). Membership records **at the sweep**: Steffon's `bin/release
-prepare` (or the per-task `bin/release merge <task>` primitive it loops) merges
-an approved PR into `release` and attaches the task to the active candidate —
-`release_slug` + `merged: "release"`, stage still `reviewed`. The member flips
+PRs target `accepted`, never `release` or `main`; `main` is always an ancestor
+of `release`. `bin/release init` creates the branch (= `main`) on every gem +
+app repo, once (idempotent). Membership records **at the sweep**: Avi's
+`bin/release prepare` promotes ALL of `accepted` onto `release` via ONE batch PR
+per repo — not N per-task merges — and attaches each task to the active
+candidate — `release_slug` + `merged: "release"`, stage still `reviewed`. The member flips
 `reviewed → assembled` only on **QA-green** (`Release::Conductor.qa_green!`,
 after `prepare` deploys `origin/release` to QA and it smokes green). `ship`
 fast-forwards each repo's `release → main` (stamping members `merged: "main"`)
@@ -926,9 +926,9 @@ ONE deterministic verb — **`bin/release prepare --yes [--task SLUG ...]
    `merged` cleared — then revert its merge commit on `release`) and re-run: the
    sweep self-heals and the REST of the RC rides on. Unset `qa_test_cmd` = the
    repo self-gates (skip).
-6. **Deploy QA.** Auto-records the Steffon QA intent for every member
+6. **Deploy QA.** Auto-records the Avi QA intent for every member
    (`Release::Conductor.record_deploy_intents!`, append-only + idempotent) so
-   /deployments shows Steffon QA-ing live; runs the per-app **merge-forward
+   /deployments shows Avi QA-ing live; runs the per-app **merge-forward
    guard** (keeps each repo's `release` ahead of `main`); then `bin/qa-server
    deploy <qa_app> origin/release` per **app** member — **gem members are
    skipped** (no app artifact; already published at step 4, QA'd via the

@@ -58,7 +58,7 @@ lanes:
   - owner: Primary Reviewer
     lane: Review
     end_stage: reviewed
-    owner_note: "the PRIMARY reviewer owns the whole lane: the deep-pass senior picked per task (most domain depth, usually the longest step) who spawns the LIGHT reviewer as its own sub-agent for a focused second pass, then on two approvals merges the PR into accepted and drives the task to Reviewed. Review-only means it never touches release or main and never deploys — the promotion of accepted onto release belongs to Avi's sweep. There is no supervisor pre-step: the review session spins one primary per PR."
+    owner_note: "the PRIMARY reviewer owns the whole lane: the deep-pass senior picked per task, who spawns the LIGHT reviewer as a sub-agent for a focused second pass, then on two approvals merges the PR into accepted and drives the task to Reviewed. Never release, never main, never a deploy — promoting accepted onto release belongs to the Assemble lane. No supervisor pre-step: the review session spins one primary per PR."
     steps:
       - type: pulse
         label: Reviewers on it
@@ -125,7 +125,7 @@ lanes:
       - type: test
         label: QA Acceptance
         expectation: "Steffon runs the full suite (registry test_cmd) on the FROZEN ship SHA (the exact prod commit) — skipped with a recorded gate SOP when G3 already certified that exact SHA + command."
-        gate: avi_ship_gate aborts on any failure
+        gate: ship_test_gate aborts on any failure
       - type: review
         label: Visual
         expectation: "Steffon re-confirms the acceptance criteria on the frozen SHA (checked twice by design)."

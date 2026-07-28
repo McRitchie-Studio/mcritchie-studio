@@ -66,9 +66,12 @@ class DocOwnerProseGuardTest < ActiveSupport::TestCase
     # nothing.
     [/Steffon(?:'s|’s)\s+(?:self-healing\s+)?sweep#{GAP}(?:promotes|merges|accepted)/i,
      "the accepted→release sweep is Avi's — not Steffon's"],
-    [/Steffon(?:'s|’s)\s+QA\s+intent/i,
+    # Possessive OPTIONAL: "the Steffon QA intent" is the same ownership claim as
+    # "Steffon's QA intent", and a possessive-only pattern read straight past it in
+    # devops-cycle-design.md's qa-release step list.
+    [/Steffon(?:'s|’s)?\s+QA\s+intent/i,
      "QA intent is recorded for Avi (G3) — not Steffon"],
-    [/Avi(?:'s|’s)\s+ship\s+intent/i,
+    [/Avi(?:'s|’s)?\s+ship\s+intent/i,
      "ship intent is recorded for Steffon (G4) — not Avi"]
   ].freeze
 
@@ -100,6 +103,28 @@ class DocOwnerProseGuardTest < ActiveSupport::TestCase
         "config/devops_vocabulary.yml renders /stages/sop — the #{lane} lane must be " \
         "owned by #{owner} after the 2026-07-22 reslot, but it says #{actual[lane].inspect}. " \
         "This is the claim prose patterns cannot see."
+    end
+  end
+
+  # A lane can carry the right owner in its `owner:` field and the WRONG one in its
+  # prose. owner_note renders at /stages/sop twice — as the badge's title= tooltip
+  # and again in the expanded Owner detail — so an inverted note is operator-facing
+  # text that contradicts the badge directly above it, while every field-level
+  # assertion stays green. Asserted as a PROPERTY (a lane's note must not name the
+  # other lane's owner) rather than as another pattern to out-spell.
+  #
+  # Scoped to Assemble/Ship deliberately: those two own each other's inverse. The
+  # Review lane may legitimately reference either soul when describing a handoff.
+  test "no lane's owner_note names the other lane's owner" do
+    notes = Devops::Vocabulary.lanes.to_h { |lane| [lane[:lane], lane[:owner_note].to_s] }
+
+    LANE_OWNERS.each do |lane, owner|
+      other = LANE_OWNERS.values.find { |candidate| candidate != owner }
+
+      refute_includes notes.fetch(lane), other,
+        "the #{lane} lane's owner_note names #{other}, but #{lane} is #{owner}'s — owner_note " \
+        "renders as the badge tooltip and the expanded Owner detail, so this contradicts the " \
+        "badge above it on the operator's screen"
     end
   end
 

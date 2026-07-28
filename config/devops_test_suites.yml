@@ -236,7 +236,7 @@ release_scopes:
     blocks: blocking
     mutates: true
   ship_test_gate:
-    description: Avi ship gate — per-app registry test_cmd on the FROZEN ship SHA before ship authority (release_repos.yml test_cmd)
+    description: Steffon ship gate — per-app registry test_cmd on the FROZEN ship SHA before ship authority (release_repos.yml test_cmd)
     phase: ship
     tier: full
     host: local
