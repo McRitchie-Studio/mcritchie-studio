@@ -646,7 +646,8 @@ api PATCH /api/v1/tasks/task-XXXX '{
 
 # Preferred CLI path for the pre-PR operator validation gate:
 bin/task update task-XXXX --local-url http://localhost:3001/admin/users --approval waiting
-# Moving the task out of building/blocked auto-confirms an open approval.
+# `waiting` is legal only before the `submitted` seam: any save at `submitted` or
+# later settles an open request to `none` (settled — never a fabricated `approved`).
 
 # 4. Review/merge/QA progression uses the same update path:
 api PATCH /api/v1/tasks/task-XXXX '{"stage": "reviewed"}'
@@ -692,7 +693,7 @@ bin/task show <slug>
 bin/task create --title T [--kind K] [--repo R ...] [--risk R ...] \
                 [--accept "..." ...] [--test "..." ...] [--agent A]
 bin/task update <slug> --local-url U --approval waiting   # request operator validation
-bin/task move <slug> submitted                            # auto-confirms an open approval
+bin/task move <slug> submitted                            # settles an open approval to none
 bin/task update <slug> --branch B --pr-url U              # merges into existing devops
 bin/task move <slug> <stage>                   # bare Claude/Codex moves auto-capture usage
 bin/task move <slug> submitted \               # optional per-transition usage →

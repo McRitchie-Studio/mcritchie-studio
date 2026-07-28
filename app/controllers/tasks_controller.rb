@@ -81,27 +81,34 @@ class TasksController < ApplicationController
     load_review_process_context
   end
 
-  # The board's WAITING APPROVAL CTA target. Admin-only (require_admin — this mints
-  # a sign-in link): create a FRESH single-use magic link for the current admin to
-  # the task's local page, then redirect to the /l/<token> interstitial, so a click
-  # lands Mr. McRitchie signed-in on the local demo. Minted per click because a
-  # single-use magic link is burned on first consume — a fixed embedded link would
-  # go stale after one use. The plain local_url stays the card's data-fallback.
+  # The board's WAITING APPROVAL CTA target. Admin-only (require_admin — it hands
+  # the operator's email to the local server): bounce the click to the LOCAL
+  # stack's own dev-only mint endpoint, which signs the operator in there and
+  # lands them on the page under review.
+  #
+  # It used to mint the magic link HERE and redirect to this app's /l/<token>.
+  # That could never work from the production board: a magic link signs you into
+  # the app that minted it, and return_to is sanitized to a same-origin PATH — so
+  # the operator arrived signed into PRODUCTION at the local page's path. Only
+  # the local server can create a local session, so only the local server can
+  # mint. See LocalReviewLink (loopback-only) and studio-engine's
+  # Studio::LocalReviewsController (the endpoint on the other end, >= 0.19).
+  #
+  # No write happens here anymore — nothing to wrap in rescue_and_log.
   def local_review
     local_url = @task.devops_url("local")
     return redirect_to(task_path(@task.slug), alert: "This task has no local demo URL yet.") if local_url.blank?
 
-    # Minting a Studio::Link WRITES a record; wrap it like every other mutating
-    # action so a raise lands in ErrorLog (attributed to the task) and the global
-    # handler renders a friendly response, not an undiagnosable 500.
-    rescue_and_log(target: @task) do
-      link = Studio::Link.create_magic_link(
-        email: current_user.email,
-        return_to: local_return_path(local_url),
-        ttl: 12.hours
-      )
-      redirect_to link_url(link.token), allow_other_host: false
+    target = LocalReviewLink.for(local_url: local_url, email: current_user.email)
+    if target.blank?
+      return redirect_to(task_path(@task.slug),
+                         alert: "This task's local demo URL is not a local server — open it yourself: #{local_url}")
     end
+
+    # allow_other_host: the whole point is to leave this host for localhost:<port>.
+    # LocalReviewLink refuses anything that is not loopback, so the set of hosts
+    # reachable here is exactly "a server on this machine".
+    redirect_to target, allow_other_host: true
   end
 
   def review_events_hub
@@ -227,14 +234,6 @@ class TasksController < ApplicationController
   # (e.g. "http://localhost:3009/demo?x=1" -> "/demo?x=1"). Studio::Link keeps only
   # a same-origin path as return_to (an absolute URL sanitizes to nil), so the path
   # is extracted here; anything unparseable falls back to root.
-  def local_return_path(local_url)
-    uri = URI.parse(local_url.to_s)
-    path = [uri.path.presence, uri.query.presence].compact.join("?")
-    path.start_with?("/") ? path : "/"
-  rescue URI::InvalidURIError
-    "/"
-  end
-
   def load_task_conversation
     @task_activities = @task.activities.includes(:agent).conversation_order
     @task_activity ||= @task.activities.build(activity_type: "comment")

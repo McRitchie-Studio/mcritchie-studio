@@ -141,9 +141,10 @@ When a new agent session starts actual implementation work:
    ```
 
    Waiting approval cards float to the top of their stage and pulse on the board.
-   After approval, move the task out of `building`/`blocked`; that transition
-   auto-confirms the open approval as `approved`. After requested changes, set
-   `--approval changes_requested` and keep building.
+   A `waiting` request is legal only before the `submitted` seam. Past it the PR
+   review flow owns the work, so any save at `submitted` or later settles an open
+   request to `none` — settled, never a fabricated `approved`. After requested
+   changes, set `--approval changes_requested` and keep building.
 11. Commit coherent work on the feature branch.
 12. Run `bin/agent-worktree finish <app> <task-slug>` to produce the PR/QA
    packet.

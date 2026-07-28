@@ -136,14 +136,125 @@ class TaskTest < ActiveSupport::TestCase
     Current.reset
   end
 
-  test "[unit] creating straight into submitted keeps a waiting request pending" do
-    # Not a transition INTO submitted — the operator-approval guard fixtures create
-    # submitted+waiting rows directly and rely on the request surviving.
+  test "[unit] creating straight into submitted settles the request too" do
+    # The settle is a stage INVARIANT, not a transition event, so it holds on
+    # create as well: a row born past the seam cannot carry a badge that nothing
+    # in the pipeline will clear.
     task = Task.create!(
       title: "Approval Born Submitted",
       stage: "submitted",
       metadata: { "devops" => { "approval_status" => "waiting", "local_url" => "http://localhost:3021/tasks" } }
     )
+
+    assert_equal "none", task.reload.approval_status
+    assert_not task.waiting_for_operator_approval?
+  end
+
+  # --- the three leaks the OLD one-shot transition callback had. Each was
+  # reproduced against the shipped code on 2026-07-27; the operator's report was
+  # a SHIPPED card still flashing WAITING APPROVAL. ---
+
+  test "[unit] a later wholesale devops echo cannot restore a settled request" do
+    # Leak 1, and the one that actually bit: `bin/task update --checks` PATCHes
+    # the WHOLE devops hash, and a hash read before the move still says "waiting".
+    # The stage does not change on that write, so a transition callback never
+    # fired again.
+    task = Task.create!(
+      title: "Approval Echo Restore",
+      stage: "building",
+      metadata: { "devops" => { "approval_status" => "waiting", "local_url" => "http://localhost:3021/tasks" } }
+    )
+    task.submit!
+    assert_equal "none", task.reload.approval_status
+
+    task.update!(metadata: { "devops" => { "approval_status" => "waiting", "local_url" => "http://localhost:3021/tasks" } })
+
+    assert_equal "none", task.reload.approval_status,
+      "a stale devops echo must not resurrect a request the seam already settled"
+    assert_not task.waiting_for_operator_approval?
+  end
+
+  test "[unit] flagging approval AFTER submitting settles immediately" do
+    # Leak 2: there was no move left to settle it, so it stuck forever.
+    task = Task.create!(title: "Approval Late Flag", stage: "building")
+    task.submit!
+
+    metadata = task.metadata.deep_dup
+    (metadata["devops"] ||= {})["approval_status"] = "waiting"
+    task.update!(metadata: metadata)
+
+    assert_equal "none", task.reload.approval_status
+    assert_not task.waiting_for_operator_approval?
+  end
+
+  test "[unit] a waiting request cannot ride a later stage move to shipped" do
+    # Leak 3: reviewed / assembled / shipped were not the submitted transition,
+    # so a restored request rode the whole pipeline. Force one in past the seam
+    # (update_column skips the invariant) and assert every later stage clears it.
+    task = Task.create!(title: "Approval Rides Pipeline", stage: "building")
+    task.submit!
+
+    %w[reviewed assembled shipped archived].each do |stage|
+      forced = task.metadata.deep_dup
+      (forced["devops"] ||= {})["approval_status"] = "waiting"
+      task.update_column(:metadata, forced)
+
+      task.update!(stage: stage)
+
+      assert_equal "none", task.reload.approval_status,
+        "moving to #{stage} must settle a stale waiting request, not carry it"
+    end
+  end
+
+  test "[unit] the backfill sweep settles the rows the old one-shot settle stranded" do
+    # 9 such rows were live in production when this was found — one of them a
+    # SHIPPED card still flashing WAITING APPROVAL. The invariant fixes the
+    # future; nothing saves these rows again, so they need the sweep.
+    stranded = %w[submitted reviewed assembled shipped archived].map do |stage|
+      task = Task.create!(title: "Stranded #{stage.capitalize} Badge", stage: stage)
+      forced = task.metadata.deep_dup
+      (forced["devops"] ||= {})["approval_status"] = "waiting"
+      task.update_column(:metadata, forced)
+      task
+    end
+    live = Task.create!(
+      title: "Live Waiting Request",
+      stage: "building",
+      metadata: { "devops" => { "approval_status" => "waiting" } }
+    )
+
+    settled = Task.settle_stale_operator_approvals!
+
+    assert_equal stranded.map(&:slug).sort, settled.sort
+    stranded.each { |task| assert_equal "none", task.reload.approval_status }
+    assert_equal "waiting", live.reload.approval_status,
+      "a request in a stage that can still act on it must survive the sweep"
+
+    assert_empty Task.settle_stale_operator_approvals!, "re-running the sweep is a no-op"
+  end
+
+  test "[unit] the backfill sweep leaves a granted approval alone" do
+    task = Task.create!(title: "Shipped With Grant", stage: "shipped")
+    forced = task.metadata.deep_dup
+    (forced["devops"] ||= {})["approval_status"] = "approved"
+    task.update_column(:metadata, forced)
+
+    Task.settle_stale_operator_approvals!
+
+    assert_equal "approved", task.reload.approval_status,
+      "the sweep clears stale REQUESTS, never a real operator grant"
+  end
+
+  test "[unit] a blocked task still shows its waiting request" do
+    # The counter-property: a block parks the task on `building`, where the
+    # operator CAN still act on the demo — so a rework re-request must survive.
+    task = Task.create!(
+      title: "Approval Blocked Survives",
+      stage: "building",
+      metadata: { "devops" => { "approval_status" => "waiting", "local_url" => "http://localhost:3021/tasks" } }
+    )
+
+    task.block!(by: "avi", kind: "rework")
 
     assert_equal "waiting", task.reload.approval_status
     assert task.waiting_for_operator_approval?
@@ -241,7 +352,7 @@ class TaskTest < ActiveSupport::TestCase
   test "[unit] agent api write cannot flip approval to approved" do
     task = Task.create!(
       title: "Approval Agent Flip",
-      stage: "submitted",
+      stage: "building", # a waiting request only lives pre-seam (the settle invariant)
       metadata: {
         "devops" => {
           "approval_status" => "waiting",
@@ -267,7 +378,7 @@ class TaskTest < ActiveSupport::TestCase
   test "[unit] operator web session can flip approval to approved" do
     task = Task.create!(
       title: "Approval Operator Flip",
-      stage: "submitted",
+      stage: "building", # a waiting request only lives pre-seam (the settle invariant)
       metadata: {
         "devops" => {
           "approval_status" => "waiting",
@@ -289,7 +400,7 @@ class TaskTest < ActiveSupport::TestCase
   test "[unit] internal write without request source can approve" do
     task = Task.create!(
       title: "Approval Console Flip",
-      stage: "submitted",
+      stage: "building", # a waiting request only lives pre-seam (the settle invariant)
       metadata: { "devops" => { "approval_status" => "waiting" } }
     )
 
@@ -336,7 +447,7 @@ class TaskTest < ActiveSupport::TestCase
   test "[unit] agent write cannot stamp approval_approved_at directly" do
     task = Task.create!(
       title: "Approval Timestamp Guard",
-      stage: "submitted",
+      stage: "building", # a waiting request only lives pre-seam (the settle invariant)
       metadata: { "devops" => { "approval_status" => "waiting" } }
     )
 
