@@ -2,6 +2,36 @@
 
 > **When to read this:** Adding/modifying JS modules, importmap entries, Alpine components, the chat UI, or the landing page.
 
+## Smooth-load convention (page transitions)
+
+Turbo page swaps materialize behind the current page and present with a view
+transition — one render per navigation, no stale-preview flash. Engine-owned
+since studio-engine 0.24 (the former app-local copy is deleted):
+
+- `config/initializers/studio.rb` — `config.smooth_load = true` opts in; the
+  engine head then renders `layouts/studio/_smooth_load` (the `view-transition`
+  meta Turbo 8 wraps swaps in `document.startViewTransition` +
+  `turbo-cache-control: no-preview`). `config.nav_spinner_min_ms = 300` drops
+  the nav spinner floor from the engine's 2500ms default.
+- Engine `engine.css` ("Smooth-load convention" block) — root fade-out/rise-in
+  keyframes plus the `.vt-pinned-header` @utility, the header's named
+  transition group (the class stays on the app layout's header). **Exactly one
+  `.vt-pinned-header` per page** — a duplicate `view-transition-name` makes the
+  browser silently skip the whole transition.
+- `app/assets/tailwind/application.css` — ONE rule remains app-side: the
+  `studio-header` no-cross-fade fix (`animation: none`), which engine 0.24.0's
+  CSS lacks. Task `engine-navbar-self-pins` lifts it into the engine.
+- `test/integration/smooth_load_layout_test.rb` — request-level proof the layout
+  wires the metas (the component test alone can't see the render line dropped);
+  `test/views/smooth_load_component_test.rb` proves the engine partial honors
+  the `Studio.smooth_load` toggle.
+
+Slow-load feedback is Turbo's built-in progress bar (default 500ms delay).
+Browsers without view-transition support get an instant swap; under
+`prefers-reduced-motion` Turbo skips the transition itself. e2e runs with
+`reducedMotion: "reduce"` (playwright.config.js) so clicks never land
+mid-animation.
+
 ## JS Modules (importmap)
 
 - `kanban_board` — drag-and-drop task board with optimistic DOM moves, API transitions, toast notifications. Race-condition guard (`_pendingMoves`) prevents concurrent API calls for same task. Attached to `window.kanbanBoard` for Alpine `x-data` access.

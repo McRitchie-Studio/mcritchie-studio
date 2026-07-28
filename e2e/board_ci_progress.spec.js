@@ -47,7 +47,7 @@ test("the Next Release card shows each member repo's G3 CI in its Assembling met
   const assembling = hubLane.locator("[data-phase='assembling']");
   await expect(assembling).toHaveAttribute("data-state", "done");
 
-  // Its label links to that repo's G3 Actions run, opening in a new tab.
+  // The whole meter card links to that repo's G3 Actions run, opening in a new tab.
   const g3Link = assembling.locator("a[data-test='release-phase-link']");
   await expect(g3Link).toHaveAttribute("href", /\/actions\/runs\/\d+$/);
   await expect(g3Link).toHaveAttribute("target", "_blank");

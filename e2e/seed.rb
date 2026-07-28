@@ -494,13 +494,13 @@ shiny_task.update_columns(metadata: shiny_task.metadata.deep_merge(
   "devops" => { "mascot" => "pikachu", "mascot_shiny" => true, "mascot_session" => "sess-shiny" }
 ))
 
-def release_member!(release, slug:, title:)
+def release_member!(release, slug:, title:, repo: "mcritchie-studio")
   task = Task.create!(
     title: title,
     slug: slug,
     stage: "reviewed",
     priority: 1,
-    metadata: { "devops" => { "kind" => "feature", "repositories" => ["mcritchie-studio"] } }
+    metadata: { "devops" => { "kind" => "feature", "repositories" => [repo] } }
   )
   release.add(task)
 end
@@ -596,11 +596,18 @@ GateRun.close!(subject_type: "release", subject_slug: shipped_release.slug, key:
 
 active_release = Release.open!
 active_release.update!(metadata: { "devops" => { "mascot" => "snorlax", "mascot_session" => "sess-active" } })
+# One member per REPO, so the Next Release card draws three lanes whose Assembling
+# meters land in three DIFFERENT states (done / running / failed — CI rows seeded
+# below). The meter draws its marks on top of a state-coloured fill, and a tone that
+# never renders is a tone nothing measures: e2e/release_meter_fit.spec.js checks every
+# meter's contrast, so each state has to be on screen somewhere. Member COUNT stays 3 —
+# deployments_live.spec.js pins the pill count, and the condensed summary switches
+# shape above three members.
 [
-  ["release-stack-current-a", "Current release readiness review"],
-  ["release-stack-current-b", "Current release QA verification"],
-  ["release-stack-current-c", "Current release deploy confirmation"]
-].each { |slug, title| release_member!(active_release, slug: slug, title: title) }
+  ["release-stack-current-a", "Current release readiness review", "mcritchie-studio"],
+  ["release-stack-current-b", "Current release QA verification", "turf-monster"],
+  ["release-stack-current-c", "Current release deploy confirmation", "rolio"]
+].each { |slug, title, repo| release_member!(active_release, slug: slug, title: title, repo: repo) }
 # Mid-assembly stage stamps (the tracker's time-and-boolean inputs): Tested ✓,
 # Assembling live — so the deployments e2e sees an active node with its ticking
 # countdown against the last-three-release average.
@@ -946,6 +953,40 @@ GithubWorkflowRun.create!(
   workflow_name: "CI", head_sha: "e2e-rel-sha", head_branch: "release",
   html_url: "https://github.com/amcritchie/mcritchie-studio/actions/runs/5000102", run_started_at: 30.minutes.ago
 )
+
+# The other two release lanes' G3 CI, as LIVE CiCheckJob rows (no fixture entry needed):
+# turf-monster still RUNNING (amber) and rolio FAILED (red). Those two states colour the
+# marks the Assembling meter draws, and e2e/release_meter_fit.spec.js measures the contrast
+# of whatever is on screen — so without these, two of the four tones ship unmeasured. That
+# is not hypothetical: the red pair was reverted to a failing shade during review and every
+# spec stayed green, because no red meter was ever rendered.
+[
+  ["turf-monster", "e2e-rel-tm-sha", 5_000_104, 5, 3, nil],
+  ["rolio", "e2e-rel-rolio-sha", 5_000_105, 6, 0, "failure"]
+].each do |repo, sha, run_id, passed, pending, failure|
+  GithubWorkflowRun.create!(
+    repo: "amcritchie/#{repo}", run_id: run_id, status: (pending.positive? ? "in_progress" : "completed"),
+    conclusion: (pending.positive? ? nil : "failure"),
+    workflow_name: "CI", head_sha: sha, head_branch: "release",
+    html_url: "https://github.com/amcritchie/#{repo}/actions/runs/#{run_id}", run_started_at: 30.minutes.ago
+  )
+  job_id = run_id * 10
+  passed.times do |i|
+    CiCheckJob.create!(repo: "amcritchie/#{repo}", job_id: job_id + i, run_id: run_id, head_sha: sha,
+                       head_branch: "release", workflow_name: "CI", name: "pass-#{i}",
+                       status: "completed", conclusion: "success")
+  end
+  pending.times do |i|
+    CiCheckJob.create!(repo: "amcritchie/#{repo}", job_id: job_id + 50 + i, run_id: run_id, head_sha: sha,
+                       head_branch: "release", workflow_name: "CI", name: "run-#{i}",
+                       status: "in_progress", conclusion: nil)
+  end
+  next if failure.blank?
+
+  CiCheckJob.create!(repo: "amcritchie/#{repo}", job_id: job_id + 90, run_id: run_id, head_sha: sha,
+                     head_branch: "release", workflow_name: "CI", name: "zz-failing-check",
+                     status: "completed", conclusion: failure)
+end
 
 # LIVE CI progress (feature: live-ci-progress-updates): a submitted task whose PR
 # CI is recorded per-check as CiCheckJob rows — the workflow_job webhook path, NOT

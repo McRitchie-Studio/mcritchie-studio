@@ -584,8 +584,10 @@ module ApplicationHelper
     ]
   end
 
-  # Assembling = the repo's G3 CI, MEASURED (fraction + check row), linking to the same
-  # G3 run the retired standalone bars did.
+  # Assembling = the repo's G3 CI, MEASURED — one mark per check drawn INSIDE the meter's
+  # bar (tasks/_release_phase_meter), on a card that links to the same G3 run the retired
+  # standalone bars did. `value` is no longer drawn; it survives as the card's hover title
+  # and feeds its accessible name.
   def release_meter_assembling(ci, url: nil)
     ci ||= Ci::CheckProgress.blank
     state = if ci.blank? then :pending
@@ -657,21 +659,46 @@ module ApplicationHelper
   # Tailwind tones per meter state — fill colour + label/value text. Coarse (Confirming)
   # uses the studio PRIMARY (lavender) to read as the shared human gate; measured phases
   # use mint (done) / amber (running) / red (failed).
+  #
+  # `value` now paints marks that sit ON the fill, so the light-mode shades are DEEP (800/
+  # 900) where they used to be 600. Same-hue-on-same-hue is how this went wrong once: a
+  # mint-600 ✓ on a 30%-mint fill measured 1.73:1.
+  #
+  # EVERY pair below is MEASURED in a real browser against the bar it actually sits on
+  # (light / dark, getComputedStyle → WCAG), not derived on paper — an arithmetic pass on
+  # this table shipped two wrong figures once already:
+  #
+  #   done 5.76 / 5.25 · running 5.34 / 6.76 · failed 5.47 / 7.14 · pending 8.28 / 15.6
+  #   n/a 9.48 / 11.75 — measured by hand, NOT by the spec (see below)
+  #
+  # e2e/release_meter_fit.spec.js re-measures the FOUR states its seed renders (done,
+  # running, failed, pending) on every run and fails under 4.5:1, so those shades are caught
+  # rather than argued about. It does NOT cover `:na` (no gem member in the seeded release —
+  # a fourth member would break deployments_live's pill-count assertion), nor the overflow
+  # mark, the indeterminate barber-pole, or the live pulse dot, none of which any seed draws.
+  # Those are hand-measured figures with no guard behind them: treat them as stale until
+  # re-measured. Saying "all of them" here when four states go unrendered would be the same
+  # overclaim that let a failing red pair through a review.
+  #
+  # The `else` (pending) and `:na` rows carry no fill, so their text sits on bare bg-inset —
+  # `text-muted` there measured 2.05:1 light / 4.04:1 dark, which is why they read as body
+  # tone now. Those two branches are NOT decorative: pending is what every unstarted phase
+  # on /deployments shows.
   def release_meter_tone(phase)
     coarse = phase[:coarse]
     case phase[:state].to_sym
     when :done
-      coarse ? { fill: "bg-primary", value: "text-primary", label: "text-primary/80" }
-             : { fill: "bg-mint-500", value: "text-mint-600 dark:text-mint-400", label: "text-muted" }
+      coarse ? { fill: "bg-primary", value: "text-heading", label: "text-primary/80" }
+             : { fill: "bg-mint-500", value: "text-mint-900 dark:text-mint-400", label: "text-muted" }
     when :running
-      coarse ? { fill: "bg-primary/80", value: "text-primary", label: "text-primary/80" }
-             : { fill: "bg-amber-400", value: "text-amber-600 dark:text-amber-300", label: "text-muted" }
+      coarse ? { fill: "bg-primary/80", value: "text-heading", label: "text-primary/80" }
+             : { fill: "bg-amber-400", value: "text-amber-800 dark:text-amber-300", label: "text-muted" }
     when :failed
-      { fill: "bg-red-500", value: "text-red-600 dark:text-red-400", label: "text-muted" }
+      { fill: "bg-red-500", value: "text-red-800 dark:text-red-300", label: "text-muted" }
     when :na
-      { fill: "bg-transparent", value: "text-muted/60", label: "text-muted/50" }
+      { fill: "bg-transparent", value: "text-body", label: "text-muted/50" }
     else
-      { fill: "bg-transparent", value: "text-muted", label: "text-muted" }
+      { fill: "bg-transparent", value: "text-body", label: "text-muted" }
     end
   end
 
@@ -683,14 +710,45 @@ module ApplicationHelper
     phase[:percent].to_i
   end
 
-  # A compact check row for a measured meter (Assembling): one glyph per CI check, capped
-  # so a big suite still fits — ✓ passed · ✗ failed · ◌ pending.
-  def release_meter_check_row(ci, cap: 10)
-    return "" if ci.blank?
+  # How many marks fit INSIDE a meter's bar. A mark is a fixed 8px box on a 2px gap, so 8
+  # marks span 78px and 8 + the overflow mark 88px.
+  #
+  # The cap alone CANNOT keep the row inside the bar, and assuming it could is what shipped
+  # a silent clip: the bar is 174px wide at a 1024px viewport but only 80px at 1280px (the
+  # dashboard's `xl:grid-cols-2` halves the lane), so no fixed cap fits every width. The bar
+  # therefore hides the marks below 99px and shows the fraction instead
+  # (tasks/_release_phase_meter, a `@container` query on the bar's REAL width) — this cap
+  # only bounds the wide case. Widths measured in-browser; the assertion lives in
+  # e2e/release_meter_fit.spec.js, the only tier that can see a clip at all.
+  RELEASE_METER_MARK_CAP = 8
 
-    glyphs = ci.checks.first(cap).map { |check| check.failed? ? "✗" : (check.pending? ? "◌" : "✓") }
-    glyphs << "…" if ci.total > cap
-    glyphs.join(" ")
+  # Draw order for the marks: failures first, then still-running, then passes; ties broken
+  # by check NAME.
+  RELEASE_METER_MARK_RANK = { failed: 0, pending: 1, passed: 2 }.freeze
+
+  # The marks a measured meter draws (Assembling): one per CI check, capped as above, plus
+  # a trailing :overflow sentinel when the suite runs past the cap. :passed/:failed draw as
+  # ✓/✗ glyphs; :pending draws as a SPINNER (the same house loader
+  # components/_ci_progress_symbols uses), so a running suite reads as live rather than as
+  # a row of inert circles. Rendered by tasks/_release_phase_meter.
+  #
+  # Sorted, because the source is not: CiCheckJob.progress_rows plucks without an ORDER BY,
+  # so raw order is Postgres heap order and RESHUFFLES as rows are updated — and the card
+  # re-renders on every CI upsert, so unsorted marks would jitter during exactly the running
+  # suite this meter is for.
+  #
+  # Sorted by SEVERITY first (then name), because sorting by name alone let the cap decide
+  # by alphabet: a failing `zz-lint` fell outside a full row of passing `aa-*` checks, so a
+  # red meter drew nothing but ✓. Severity-first means the failures are the marks that
+  # survive the cap. Both orders are stable across re-renders; only this one is honest.
+  def release_meter_check_marks(ci, cap: RELEASE_METER_MARK_CAP)
+    return [] if ci.blank?
+
+    marks = ci.checks.map { |check| [check.failed? ? :failed : (check.pending? ? :pending : :passed), check.name.to_s] }
+                     .sort_by { |mark, name| [RELEASE_METER_MARK_RANK.fetch(mark), name] }
+                     .first(cap).map(&:first)
+    marks << :overflow if ci.total > cap
+    marks
   end
 
   # Compact single-unit "time ago" for the session filter — the smallest legible
