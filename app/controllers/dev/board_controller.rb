@@ -41,11 +41,18 @@ module Dev
       head :no_content
     end
 
-    # Advance the newest fixture one deploy-stage (wrapping shipped → designed) →
-    # after_update transition TaskEvent → the broadcaster moves the card live.
+    # Advance the newest fixture ONE BEAT (wrapping shipped → designed) →
+    # after_update TaskEvent → the broadcaster moves the card live.
+    #
+    # A beat is usually a stage, but `building` gets TWO: the second flags the
+    # operator-approval request WITHOUT moving the card, so the tester can walk
+    # into the WAITING APPROVAL state — the one board state that was previously
+    # unreachable from these buttons. The beat after it is the payoff: submitting
+    # settles the request (Task#settle_operator_approval_past_submit), so one more
+    # click demonstrates the badge dropping the way it does in the real cycle.
     def move
       task = latest_fixture or return head(:no_content)
-      task.update!(stage: next_stage(task.stage))
+      request_fixture_approval(task) || task.update!(stage: next_stage(task.stage))
       head :no_content
     end
 
@@ -191,6 +198,39 @@ module Dev
     def next_stage(stage)
       zones = Task::DEPLOYMENTS_BOARD_STAGES
       zones[((zones.index(stage) || -1) + 1) % zones.size]
+    end
+
+    # The extra `building` beat: flag the operator-approval request in place.
+    # Returns nil (so the caller falls through to a normal stage move) unless the
+    # fixture is sitting on `building` with no open request.
+    #
+    # A local_url rides along because the WAITING APPROVAL bar is only a LINK when
+    # the task has one — without it the tester would render the inert notice
+    # variant and the button being demoed could not be clicked.
+    #
+    # It is an ABSOLUTE url on LOOPBACK, not the bare path "/tasks", and that is
+    # load-bearing rather than decorative: the CTA builds its hand-off through
+    # LocalReviewLink.for, which parses local_url and returns nil unless it is an
+    # HTTP(S) url on a loopback host (app/services/local_review_link.rb) — a bare
+    # path fails the URI::HTTP check and the click would bounce to the task page.
+    #
+    # The host is spelled `localhost` rather than taken from request.base_url,
+    # because base_url is whatever the BROWSER used to reach the board: hit this
+    # stack from a phone on the LAN (or from a request spec, where it is
+    # www.example.com) and a base_url-derived local_url is not loopback, so the
+    # very bar being demoed would render inert. Only the port needs to come from
+    # the request. Asserted, not claimed: the "LocalReviewLink will actually
+    # accept" test below pins both directions — and caught exactly this when the
+    # first version of this line used base_url.
+    def request_fixture_approval(task)
+      return nil unless task.stage == "building"
+      return nil if task.waiting_for_operator_approval?
+
+      merged = task.metadata.deep_dup
+      devops = (merged["devops"] ||= {})
+      devops["approval_status"] = Task::OPERATOR_APPROVAL_WAITING
+      devops["local_url"] = "http://localhost#{":#{request.port}" unless request.port == 80}/tasks"
+      task.update!(metadata: merged)
     end
   end
 end

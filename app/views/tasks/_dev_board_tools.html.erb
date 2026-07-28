@@ -1,21 +1,25 @@
-<%# LOCAL-ONLY board toys (development + test, NEVER production): Generate / Move /
+<%# LOCAL-ONLY board toys (development + test, NEVER production): Generate / Advance /
     Delete a throwaway "dev fixture" task. These just trigger REAL events on the live
     /deployments board — the cards animate via the shared LiveBoardFx (the same
     create/move/delete flourishes every viewer sees), so there's no bespoke animation
-    here. Hidden entirely outside Rails.env.local?. %>
+    here. Hidden entirely outside Rails.env.local?.
+
+    The group is labelled TASK (its sibling is RELEASE) because that is what it
+    mutates: a fixture TASK card, versus a fixture RELEASE on the tracker. %>
 <% if Rails.env.local? %>
-  <div x-data="devBoardTools()" data-test="dev-board-tools" class="flex items-center gap-1.5 rounded-lg border border-amber-700/40 bg-amber-950/30 px-1.5 py-1">
-    <span class="text-[10px] font-bold uppercase tracking-wider text-amber-400/90"
-          title="Dev/test only — never shipped to production">Dev</span>
+  <div x-data="devBoardTools()" data-test="dev-board-tools" class="flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50/80 dark:border-amber-700/40 dark:bg-amber-950/30 px-1.5 py-1">
+    <span class="text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400/90"
+          title="Dev/test only — steps a fixture task through the board">Task</span>
     <button type="button" @click="post('generate')" :disabled="busy"
             class="px-2 py-1 rounded-md text-xs font-medium bg-surface text-secondary border border-subtle hover:text-heading disabled:opacity-40 transition">Generate</button>
     <button type="button" @click="post('move')" :disabled="busy"
-            class="px-2 py-1 rounded-md text-xs font-medium bg-surface text-secondary border border-subtle hover:text-heading disabled:opacity-40 transition">Move</button>
+            title="Advance one board beat: Designed → Building → Building (waiting approval) → Submitted → … → Shipped"
+            class="px-2 py-1 rounded-md text-xs font-medium bg-surface text-secondary border border-subtle hover:text-heading disabled:opacity-40 transition whitespace-nowrap">Advance →</button>
     <button type="button" @click="post('delete')" :disabled="busy"
             class="px-2 py-1 rounded-md text-xs font-medium bg-surface text-secondary border border-subtle hover:text-red-300 disabled:opacity-40 transition">Delete</button>
-    <button type="button" @click="post('ship_release')" :disabled="busy"
-            title="Ship the active release → Last Release bursts in, Next Release resets"
-            class="px-2 py-1 rounded-md text-xs font-medium bg-surface text-secondary border border-subtle hover:text-mint-300 disabled:opacity-40 transition">Ship</button>
+    <%# Ship moved to the RELEASE group — it posts ship_release and mutates a
+        RELEASE, so leaving it here would have made this group's rename ("chips
+        name what they mutate") carry an exception on its first day. %>
   </div>
   <script>
     // x-data factory — defined inline before the deferred Alpine CDN runs.
