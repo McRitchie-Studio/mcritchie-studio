@@ -160,7 +160,7 @@ class DocOwnerProseGuardTest < ActiveSupport::TestCase
 
   # Live prose that an agent may act on: the agent docs plus the config files
   # that RENDER to an operator surface. Frozen records are excluded.
-  def live_sources
+  def guarded_sources
     (Dir.glob(AGENTS.join("**", "*.md")) + Dir.glob(CONFIG.join("**", "*.yml"))).reject do |p|
       p.include?("/audits/") || p.include?("/archive")
     end
@@ -198,6 +198,24 @@ class DocOwnerProseGuardTest < ActiveSupport::TestCase
   #
   # Scoped to Assemble/Ship deliberately: those two own each other's inverse. The
   # Review lane may legitimately reference either soul when describing a handoff.
+  # The pulse is each lane's FIRST rendered node and its label names the owner
+  # outright ("Avi on it"). Swapping the two labels while leaving `owner:` correct
+  # left the entire suite green — the same class as the owner_note hole below, on a
+  # different field.
+  test "no lane's pulse label names the other lane's owner" do
+    LANE_OWNERS.each do |lane_name, owner|
+      lane = Devops::Vocabulary.lanes.find { |candidate| candidate[:lane] == lane_name }
+      pulse = lane[:steps].find { |step| step[:type] == :pulse }
+      other = LANE_OWNERS.values.find { |candidate| candidate != owner }
+
+      assert_not_nil pulse, "the #{lane_name} lane must carry a pulse step (its live-intent marker)"
+      assert_includes pulse[:label].to_s, owner,
+        "the #{lane_name} lane's pulse label must name #{owner} — it renders as the lane's first node"
+      refute_includes pulse[:label].to_s, other,
+        "the #{lane_name} lane's pulse label names #{other}, contradicting its own owner: field"
+    end
+  end
+
   test "no lane's owner_note names the other lane's owner" do
     notes = Devops::Vocabulary.lanes.to_h { |lane| [lane[:lane], lane[:owner_note].to_s] }
 
@@ -211,8 +229,8 @@ class DocOwnerProseGuardTest < ActiveSupport::TestCase
     end
   end
 
-  test "no live source pairs an act with the wrong owner" do
-    offenders = live_sources.flat_map do |path|
+  test "no guarded agent doc or rendered config pairs an act with the wrong owner" do
+    offenders = guarded_sources.flat_map do |path|
       rel = Pathname.new(path).relative_path_from(Rails.root).to_s
       ownership_violations(File.read(path)).map do |line_no, why, matched|
         "#{rel}:#{line_no}  — #{why}\n      #{matched}"
@@ -220,14 +238,14 @@ class DocOwnerProseGuardTest < ActiveSupport::TestCase
     end
 
     assert_empty offenders,
-      "These LIVE sources pair an act with the WRONG soul. Canonical ownership after the " \
+      "These guarded sources pair an act with the WRONG soul. Canonical ownership after the " \
       "2026-07-22 reslot: qa-release and the pre-QA gate are Avi's (G3, the assembler); " \
       "production-deploy and the ship gate are Steffon's (G4, the deployer).\n" \
       "#{offenders.join("\n")}"
   end
 
   test "no live agent doc or rendered config names the OLD lane owner" do
-    offenders = live_sources.flat_map do |path|
+    offenders = guarded_sources.flat_map do |path|
       rel = Pathname.new(path).relative_path_from(Rails.root).to_s
       wrong_owner_hits(File.read(path)).map do |line_no, why, matched|
         "#{rel}:#{line_no}  — #{why}\n      #{matched}"
@@ -235,7 +253,7 @@ class DocOwnerProseGuardTest < ActiveSupport::TestCase
     end
 
     assert_empty offenders,
-      "These LIVE sources still name the OLD owner after the 2026-07-22 reslot " \
+      "These guarded sources still name the OLD owner after the 2026-07-22 reslot " \
       "(Avi owns qa-release and the Assemble lane; Steffon owns production-deploy " \
       "and the Ship lane). Flip the prose:\n#{offenders.join("\n")}"
   end

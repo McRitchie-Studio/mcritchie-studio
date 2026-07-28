@@ -64,6 +64,24 @@ class SopLaneOwnersTest < ActionView::TestCase
     end
   end
 
+  # The owner is operator-visible in THREE places on this page: the badge, the
+  # pulse label ("Avi on it"), and the expanded Owner detail row. Asserting only
+  # the badge leaves two surfaces free to contradict it — swapping the two pulse
+  # labels left the whole suite green.
+  test "[component] the expanded Owner detail names the same soul as the badge" do
+    render template: "tasks/sop"
+
+    LANE_OWNERS.each do |lane, owner|
+      detail = css_select("[data-test='sop-lane-owner-detail'][data-lane='#{lane}']").first
+      wrong = LANE_OWNERS.values.find { |candidate| candidate != owner }
+
+      assert_not_nil detail, "expected an Owner detail row for the #{lane} lane"
+      assert_includes detail.text, owner, "the #{lane} lane's Owner detail must name #{owner}"
+      refute_includes detail.text.split("(").first.to_s, wrong,
+        "the #{lane} lane's Owner detail names #{wrong} — it contradicts the badge above it"
+    end
+  end
+
   test "[component] every lane renders exactly one owner badge, keyed by its own lane" do
     render template: "tasks/sop"
 
