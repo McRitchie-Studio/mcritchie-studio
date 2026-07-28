@@ -144,14 +144,24 @@ locally, but before the PR is opened or moved to `submitted`.
    ```
 
 4. The board treats `devops.approval_status=waiting` as an attention state: the
-   card ranks above its stage peers, pulses, and renders the local URL as a
-   `Local Demo` button while the task is still in `building` or `blocked`.
-5. If Mr. McRitchie approves, finish DoR, commit, push, open the PR, and move
-   the task out of `building`/`blocked`; that stage move auto-confirms an open
-   approval as `approved`.
+   card ranks above its stage peers, pulses, and flashes a card-width **WAITING
+   APPROVAL** bar. Clicking that bar bounces to the LOCAL stack's dev-only mint
+   endpoint (`/_studio/local_review`, studio-engine >= 0.19), which signs Mr.
+   McRitchie in on THAT server and lands him on the page under review — the
+   board itself cannot mint a session for another server, which is why it hands
+   off instead of minting. It refuses any `local_url` that is not loopback.
+5. If Mr. McRitchie approves, finish DoR, commit, push, open the PR, and hand off.
 6. If changes are requested, set `--approval changes_requested` and keep the task
-   in `building` until the next validation packet is ready. If the task later
-   exits `building`/`blocked`, that open approval is auto-confirmed too.
+   in `building` until the next validation packet is ready.
+7. A `waiting` request is only legal BEFORE the `submitted` seam (`designed` /
+   `building`, and `blocked` — which parks the task on `building`). Past the
+   seam the PR review flow owns the work, so **any** save at `submitted` or
+   later settles an open request to `none` — settled, NOT `approved`: the
+   operator never granted anything, and faking a grant would misreport the
+   acceptance metric. This is an invariant re-asserted on every save, not a
+   one-shot transition: until 2026-07-27 it fired only on the building →
+   submitted save, so a later wholesale devops echo restored `waiting` and the
+   badge rode all the way to `shipped`.
 
 ## Task Conversation and QA Feedback
 
@@ -332,10 +342,10 @@ Supported fields:
 | `branch` | The feature branch (opened as a PR with base `release`). The shared integration branch is the persistent per-repo `release` (same name everywhere). |
 | `pr_url` | GitHub PR URL |
 | `local_url` | Worktree review URL, rendered as the `Local Demo` card button |
-| `approval_status` | Operator validation state: `waiting`, `approved`, `changes_requested`, or `none`; `waiting` floats and pulses the card while the task is in `building` or `blocked`; exiting those stages auto-confirms open approval as `approved` |
+| `approval_status` | Operator validation state: `waiting`, `approved`, `changes_requested`, or `none`. `waiting` floats and pulses the card, and is legal only before the `submitted` seam — any save at `submitted` or later settles it to `none` (settled, never a fabricated `approved`) |
 | `approval_requested_at` | Server-stamped ISO8601 timestamp when approval first enters `waiting` |
 | `approval_requested_by` | Optional agent/session label that requested operator validation |
-| `approval_approved_at` | Server-stamped ISO8601 timestamp when approval first enters `approved`, including auto-confirmation on build/blocked exit |
+| `approval_approved_at` | Server-stamped ISO8601 timestamp when approval first enters `approved` — only the operator lane can grant it (admin-gated board UI or a console write), never an agent |
 | `qa_url` | Stable QA URL or specific QA route |
 | `production_url` | Production URL or specific production route |
 | `release_slug` | Optional shared tag for tasks promoted together |

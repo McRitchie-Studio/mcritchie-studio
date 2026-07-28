@@ -157,7 +157,7 @@ module Api
       test "[integration] api update cannot self-approve operator approval" do
         task = Task.create!(
           title: "Approval Api Guard",
-          stage: "submitted",
+          stage: "building", # a waiting request only lives pre-seam (the settle invariant)
           metadata: { "devops" => { "approval_status" => "waiting" } }
         )
 
@@ -220,7 +220,7 @@ module Api
       test "[integration] api bearer cannot forge operator source to self-approve" do
         task = Task.create!(
           title: "Approval Source Forge",
-          stage: "submitted",
+          stage: "building", # a waiting request only lives pre-seam (the settle invariant)
           metadata: { "devops" => { "approval_status" => "waiting" } }
         )
 
@@ -243,7 +243,7 @@ module Api
       test "[integration] api bearer cannot stamp approval timestamp to close acceptance" do
         task = Task.create!(
           title: "Approval Timestamp Forge",
-          stage: "submitted",
+          stage: "building", # a waiting request only lives pre-seam (the settle invariant)
           metadata: { "devops" => { "approval_status" => "waiting" } }
         )
 

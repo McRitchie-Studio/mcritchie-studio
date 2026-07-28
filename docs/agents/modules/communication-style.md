@@ -98,16 +98,19 @@ The mechanics that matter (`studio-engine/app/models/studio/link.rb:37`):
   nothing. The host is never stored — the redirect inherits whatever host
   served the `/l/<token>` click. So hand him the exact
   `http://localhost:<port>/l/<token>` you minted on the stack; that host is what
-  lands him on the local page. (`TasksController#local_return_path` reads
-  `local_url` as a bare path and drops its host, so a `localhost:<port>` you
-  stored in `local_url` survives only if the link itself is served from there.)
+  lands him on the local page.
 - **Mint in the stack's database.** A worktree stack serves from its own DB —
-  load `.env.agent-stack` first or the server will not know the token.
-- **Skip the board's WAITING APPROVAL button for a LOCAL review.** That button
-  (`TasksController#local_review`) mints its own sign-in link, but served from
-  the production board it lands on the prod page, never `localhost:<port>`.
-  Trust it only on the local board; for a local evaluation, hand the minted
-  `http://localhost:<port>/l/<token>` above.
+  load `.env.agent-stack` first or the server will not know the token. This is
+  the same rule stated from the other side: a link is only good on the app that
+  minted it, which is why the board cannot mint one for your stack.
+- **The board's WAITING APPROVAL button now does this for him.** It no longer
+  mints on the board (which stranded him, signed in, on the PRODUCTION page —
+  right path, wrong server). It redirects to the local stack's own dev-only mint
+  endpoint, `/_studio/local_review?email=&return_to=` (studio-engine >= 0.19,
+  loopback-only, 404 in production), so one click signs him in THERE and lands
+  him on the page under review. Set `--local-url` accurately and the button is
+  the fastest path; the hand-minted link above stays the fallback (an older
+  engine on the stack, or a review with no task record).
 - **Mint review links with `ttl: 12.hours`.** The 15-minute default is tuned
   for email login, not an async review.
 - **Links are single-use** (burned on the consume POST; the GET interstitial

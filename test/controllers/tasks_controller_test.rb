@@ -875,9 +875,16 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "Open follow-up work before adding changes to this branch."
   end
 
-  # === local_review: the WAITING APPROVAL CTA's mint-on-click magic link ===
+  # === local_review: the WAITING APPROVAL CTA ===
+  #
+  # It used to mint the magic link HERE and redirect to this app's /l/<token>.
+  # From the production board that could only ever land the operator signed into
+  # PRODUCTION at the local page's path — a magic link signs you into the app
+  # that minted it. The board now HANDS OFF to the local server's own dev-only
+  # mint endpoint (studio-engine >= 0.19), which is the only server that can
+  # create a session on that stack.
 
-  test "[unit] local_review mints a magic link to the local page and redirects to the /l interstitial" do
+  test "[integration] local_review hands off to the local server's mint endpoint and mints nothing here" do
     log_in_as(@admin)
     task = Task.create!(
       title: "local review mint task",
@@ -885,44 +892,30 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
       metadata: { "devops" => { "approval_status" => "waiting", "local_url" => "http://localhost:3009/demo?x=1" } }
     )
 
-    assert_difference -> { Studio::Link.magic_links.count }, 1 do
-      get local_review_task_path(task.slug)
-    end
-
-    link = Studio::Link.magic_links.order(:created_at).last
-    assert_equal @admin.email, link.email, "the link signs in the current admin"
-    assert_equal "/demo?x=1", link.return_to, "return_to is the same-origin PATH extracted from local_url"
-    assert_operator link.expires_at, :>, 11.hours.from_now, "a 12-hour TTL"
-    assert_redirected_to link_url(link.token)
-  end
-
-  test "[unit] local_review mints a FRESH single-use link on every click (a fixed link would go stale)" do
-    log_in_as(@admin)
-    task = Task.create!(
-      title: "local review fresh task",
-      stage: "building",
-      metadata: { "devops" => { "local_url" => "http://localhost:3009/demo" } }
-    )
-
-    get local_review_task_path(task.slug)
-    first = Studio::Link.magic_links.order(:created_at).last.token
-    get local_review_task_path(task.slug)
-    second = Studio::Link.magic_links.order(:created_at).last.token
-
-    assert_not_equal first, second, "each click mints a new token — a single-use link is burned on first consume"
-  end
-
-  test "[unit] local_review with no local_url bounces to the task without minting" do
-    log_in_as(@admin)
-    task = Task.create!(title: "local review no url task", stage: "building")
-
     assert_no_difference -> { Studio::Link.count } do
       get local_review_task_path(task.slug)
     end
+
+    target = URI.parse(@response.redirect_url)
+    assert_equal "localhost", target.host
+    assert_equal 3009, target.port, "the operator must land on the DEMO's stack, not the board's host"
+    assert_equal "/_studio/local_review", target.path
+
+    query = Rack::Utils.parse_query(target.query)
+    assert_equal @admin.email, query["email"], "the local server signs in the current admin"
+    assert_equal "/demo?x=1", query["return_to"], "and lands them on the page under review"
+  end
+
+  test "[integration] local_review with no local_url bounces to the task" do
+    log_in_as(@admin)
+    task = Task.create!(title: "local review no url task", stage: "building")
+
+    get local_review_task_path(task.slug)
+
     assert_redirected_to task_path(task.slug)
   end
 
-  test "[unit] local_review is admin-gated — a non-admin cannot mint a sign-in link" do
+  test "[integration] local_review is admin-gated — a non-admin cannot hand out a sign-in link" do
     log_in_as(@viewer)
     task = Task.create!(
       title: "local review gated task",
@@ -930,36 +923,30 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
       metadata: { "devops" => { "local_url" => "http://localhost:3009/demo" } }
     )
 
-    assert_no_difference -> { Studio::Link.count } do
-      get local_review_task_path(task.slug)
-    end
+    get local_review_task_path(task.slug)
+
     assert_redirected_to root_path
   end
 
-  test "[unit] local_review neutralizes a hostile local_url — return_to never targets another host" do
+  test "[integration] local_review refuses to send the operator off-box" do
+    # The redirect carries the operator's email and is followed by an admin
+    # session, so a local_url that is not loopback — a QA host, a typo, a hostile
+    # value — must bounce to the task page, never off this machine.
     log_in_as(@admin)
-    # The host/scheme are stripped (only the same-origin PATH survives), and a
-    # protocol-relative path is rejected by Studio::LinkToken.sanitize_path → nil.
-    # Either way the minted link can never redirect the operator off our own host.
-    {
-      "http://evil.com/pwn" => "/pwn",             # host discarded — only "/pwn" on OUR host survives
-      "http://localhost:3009//evil.com" => nil,    # protocol-relative "//" → sanitized to nil
-      "https://evil.com" => "/"                     # no path → falls back to root, never the host
-    }.each do |hostile, expected|
+    [
+      "https://qa.mcritchie.studio/admin/style",
+      "http://evil.com/pwn",
+      "http://localhost.evil.com/pwn",
+      "//evil.com/pwn"
+    ].each do |hostile|
       task = Task.create!(title: "hostile url #{SecureRandom.hex(2)}", stage: "building",
                           metadata: { "devops" => { "local_url" => hostile } })
 
       get local_review_task_path(task.slug)
 
-      link = Studio::Link.magic_links.order(:created_at).last
-      if expected.nil?
-        assert_nil link.return_to, "return_to for #{hostile.inspect} must be nil (protocol-relative rejected)"
-      else
-        assert_equal expected, link.return_to,
-                     "return_to for #{hostile.inspect} must be #{expected.inspect} (same-origin path)"
-      end
-      refute_includes link.return_to.to_s, "evil.com",
-                      "the minted link must never redirect to evil.com"
+      assert_redirected_to task_path(task.slug)
+      refute_includes @response.redirect_url.to_s, "evil.com",
+                      "a non-loopback local_url must never become the redirect target"
     end
   end
 
