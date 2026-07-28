@@ -58,8 +58,15 @@ const MEASURE = () => {
     const strip = bar.lastElementChild;
     const fill = bar.querySelector("div[style*='width']");
 
-    let bg = paint(getComputedStyle(document.body).backgroundColor);
-    for (const el of [bar.parentElement, bar]) {
+    // Composite the WHOLE ancestor chain, outermost first. Naming two ancestors by hand
+    // skipped the card that actually paints the surface, which only shows up on a
+    // TRANSLUCENT bar (the n/a phase is bg-inset/40) — where the backdrop is precisely
+    // what the number depends on. An instrument that is right for opaque cases and quietly
+    // wrong for translucent ones is how a bogus figure gets recorded as "measured".
+    const chain = [];
+    for (let el = bar; el; el = el.parentElement) chain.push(el);
+    let bg = { r: 255, g: 255, b: 255, a: 1 };
+    for (const el of chain.reverse()) {
       const c = paint(getComputedStyle(el).backgroundColor);
       if (c.a > 0) bg = over(c, bg);
     }

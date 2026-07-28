@@ -13,15 +13,18 @@
       sits inside the dashboard's `xl:grid-cols-2`, so the bar measures 174px at a 1024px
       viewport and 80px at 1280px. Eight marks need 78px. So the marks are capped
       (ApplicationHelper::RELEASE_METER_MARK_CAP), each is a fixed 8px shrink-0 box, and
-      the bar asks its OWN width (`@container`) — under 100px it drops the marks and shows
+      the bar asks its OWN width (`@container`) — under 99px it drops the marks and shows
       the fraction instead. A cap alone cannot do this, and believing it could is what
       shipped a silent clip: `overflow-hidden` ate the 8th mark with no error, and the
       suite sitting exactly AT the cap draws no overflow "…" to hint at it.
     · CONTRAST. The fill is a TINT, not a block of colour — 15% light, 30% dark — because
       the marks ride on top of it. Same-hue marks on a heavier fill measured 1.73:1. The
-      pairs release_meter_tone draws here measure 5.3:1 or better in both themes.
+      pairs release_meter_tone draws here measure 5.3:1 or better in both themes; the spec
+      re-measures the four states the seed RENDERS (see release_meter_tone for the two it
+      cannot reach).
 
-    Change either and re-measure; do not re-reason. The spec fails on both mutations.
+    Change either and re-measure; do not re-reason. The spec goes red on a mutation of
+    either mechanism — that was checked, not assumed.
 
     Locals: phase (a release_repo_lanes phase hash). %>
 <% phase = local_assigns.fetch(:phase) %>
@@ -95,7 +98,8 @@
           <% end %>
           <%# Narrow bar: 8 marks need 78px and this bar has less, so the marks would clip
               SILENTLY (a suite sitting exactly at the cap draws no overflow glyph). Below
-              100px the bar shows the fraction instead — the same count, in 28px. %>
+              99px (the compiled query is `not (min-width:99px)`) the bar shows the fraction
+              instead — the same count, in 28px. %>
           <span class="hidden truncate text-[9px] font-bold tabular-nums @max-[99px]:inline"
                 data-test="release-phase-compact-value" aria-hidden="true"><%= phase[:value] %></span>
         <% else %>

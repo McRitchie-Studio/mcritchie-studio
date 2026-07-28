@@ -668,13 +668,17 @@ module ApplicationHelper
   # (light / dark, getComputedStyle → WCAG), not derived on paper — an arithmetic pass on
   # this table shipped two wrong figures once already:
   #
-  #   done 5.76 / 5.25 · running 5.34 / 6.76 · failed 5.47 / 7.14 · pending 8.28 / 15.6 ·
-  #   n/a 9.22 / 14.79
+  #   done 5.76 / 5.25 · running 5.34 / 6.76 · failed 5.47 / 7.14 · pending 8.28 / 15.6
+  #   n/a 9.48 / 11.75 — measured by hand, NOT by the spec (see below)
   #
-  # e2e/release_meter_fit.spec.js re-measures all of them on every run and fails under
-  # 4.5:1, so a shade change is caught rather than argued about. Every state must RENDER
-  # somewhere in the e2e seed for that to mean anything — a tone nothing draws is a tone
-  # nothing measures, which is exactly how a failing red pair survived a review.
+  # e2e/release_meter_fit.spec.js re-measures the FOUR states its seed renders (done,
+  # running, failed, pending) on every run and fails under 4.5:1, so those shades are caught
+  # rather than argued about. It does NOT cover `:na` (no gem member in the seeded release —
+  # a fourth member would break deployments_live's pill-count assertion), nor the overflow
+  # mark, the indeterminate barber-pole, or the live pulse dot, none of which any seed draws.
+  # Those are hand-measured figures with no guard behind them: treat them as stale until
+  # re-measured. Saying "all of them" here when four states go unrendered would be the same
+  # overclaim that let a failing red pair through a review.
   #
   # The `else` (pending) and `:na` rows carry no fill, so their text sits on bare bg-inset —
   # `text-muted` there measured 2.05:1 light / 4.04:1 dark, which is why they read as body
@@ -712,10 +716,10 @@ module ApplicationHelper
   # The cap alone CANNOT keep the row inside the bar, and assuming it could is what shipped
   # a silent clip: the bar is 174px wide at a 1024px viewport but only 80px at 1280px (the
   # dashboard's `xl:grid-cols-2` halves the lane), so no fixed cap fits every width. The bar
-  # therefore hides the marks below 100px and shows the fraction instead
+  # therefore hides the marks below 99px and shows the fraction instead
   # (tasks/_release_phase_meter, a `@container` query on the bar's REAL width) — this cap
-  # only bounds the wide case. Widths measured in-browser at nine viewports; the assertion
-  # lives in e2e/board_ci_progress.spec.js, which is the tier that can see a clip at all.
+  # only bounds the wide case. Widths measured in-browser; the assertion lives in
+  # e2e/release_meter_fit.spec.js, the only tier that can see a clip at all.
   RELEASE_METER_MARK_CAP = 8
 
   # Draw order for the marks: failures first, then still-running, then passes; ties broken
