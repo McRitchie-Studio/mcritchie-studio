@@ -60,6 +60,10 @@ const config = {
   use: {
     baseURL,
     headless: true,
+    // The smooth-load convention animates every Turbo page swap; under
+    // prefers-reduced-motion the app's CSS drops to instant swaps, so e2e
+    // clicks never land mid-animation.
+    reducedMotion: "reduce",
   },
   projects: [
     { name: "chromium", use: { browserName: "chromium" } },
