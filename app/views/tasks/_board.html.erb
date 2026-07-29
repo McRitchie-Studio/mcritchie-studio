@@ -70,10 +70,17 @@ function taskBoardChrome() {
       if (type === 'error' && typeof window.alert === 'function') window.alert(msg);
     },
     boardRefreshCounts() { const d = this.boardData(); if (d && d.updateCounts) d.updateCounts(); },
-    async boardExit(card, kind) { const d = this.boardData(); if (card && d && d.animateCardExit) await d.animateCardExit(card, kind); },
+    async boardExit(card, kind) {
+      // Mark WHICH exit is running (archive vs delete) as an observable data-attr,
+      // then defer the animation itself to the primitive's animateCardExit.
+      if (card) card.dataset.exitAction = kind;
+      const d = this.boardData();
+      if (card && d && d.animateCardExit) await d.animateCardExit(card, kind);
+    },
     resetCardExit(card) {
       if (!card) return;
       card.getAnimations({ subtree: false }).forEach((a) => a.cancel());
+      delete card.dataset.exitAction;
       card.style.opacity = ''; card.style.transform = ''; card.style.filter = ''; card.style.pointerEvents = '';
     },
     responseError(resp, fallback) {
@@ -149,6 +156,13 @@ function taskBoardChrome() {
       Alpine boots; :class then hands control to showArchived (no flash). The
       primitive column carries data-board-column="archived". %>
   <style>.tasks-board-hide-archived [data-board-column="archived"]{display:none}</style>
+
+  <%# TEST-ONLY board hook: hands the Playwright e2e suite a signed API token so a
+      spec can POST /api/v1/tasks and drive real board behavior. Gated to the test
+      env — never rendered in development or production. %>
+  <% if Rails.env.test? %>
+    <meta name="e2e-api-token" content="<%= Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth) %>">
+  <% end %>
 
   <!-- Header — Dashboard/Stages links above the title; the Tasks/Deployments
        toggle (page_nav) switches boards; New Task / Archived on the far right. -->

@@ -33,6 +33,10 @@ class TasksBoardPrimitiveTest < ActionDispatch::IntegrationTest
     card = css_select("#card-#{task.slug}").first
     assert_includes card["x-show"].to_s, "matchesFilter("
     assert_includes card["x-show"].to_s, "appVisible("
+
+    # The board provides the Playwright e2e API-token hook in the test env — several
+    # /tasks e2e specs read it to POST /api/v1/tasks and drive real board behavior.
+    assert_select "meta[name='e2e-api-token']", count: 1
   end
 
   test "[integration] a reorder POST restamps the 100-gap rank and reorders the board" do
