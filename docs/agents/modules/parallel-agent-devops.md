@@ -439,7 +439,7 @@ the scout lane as complete until coverage is explicit.
 Use `bin/devops-cycle --readiness` for the final Phase 3D conductor view. It
 groups work into ready-to-merge, needs-conductor-review, needs-changes, waiting,
 Ready To Assemble, Assembled Release, and scout-gap lanes. Readiness is still
-advisory: Avi owns review resolution and the production gate; Steffon's
+advisory: Avi owns review resolution; Steffon owns the production gate; Avi's
 `qa-release` sweep owns merge plus QA deploy.
 
 Scout sessions do **not** merge, deploy, publish gems, change providers, rotate

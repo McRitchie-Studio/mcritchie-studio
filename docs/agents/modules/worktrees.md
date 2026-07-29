@@ -415,7 +415,7 @@ repo's resolved base ref):
   so it is not lost.
 - Feature agents push their branch and open/prepare a PR into `accepted`.
   Review merges to `accepted`; Avi's `qa-release` promotes
-  `accepted → release`; Avi ships `release → main`.
+  `accepted → release`; Steffon ships `release → main`.
 - If the primary checkout is dirty, ahead, or moves while you are working, treat
   it as shared-floor drift. Do not fold those changes into your task silently.
   Report it and continue from the isolated worktree.

@@ -40,7 +40,13 @@
       <div x-data="{ open: null }" class="rounded-2xl border border-subtle bg-surface p-4">
         <div class="flex items-start gap-4">
           <%# Owner badge. %>
-          <div class="flex flex-col items-center gap-1 flex-shrink-0 w-24 pt-2 text-center" title="<%= lane[:owner_note] %>">
+          <%# data-test/data-lane scope the owner badge to ITS lane so a test can assert the
+              pairing structurally. Asserting adjacent spans instead is not equivalent: any
+              benign sibling (a live dot, a ring) breaks the pair, and a negative assertion on
+              a pair that can no longer form silently becomes a no-op. %>
+          <div class="flex flex-col items-center gap-1 flex-shrink-0 w-24 pt-2 text-center"
+               data-test="sop-lane-owner" data-lane="<%= lane[:lane] %>"
+               title="<%= lane[:owner_note] %>">
             <div class="w-14 h-14 rounded-full border-2 border-primary/40 bg-primary/10 text-primary flex items-center justify-center text-lg font-bold">
               <%= lane[:owner].first %>
             </div>
@@ -74,7 +80,7 @@
             </div>
             <dl class="grid grid-cols-[5.5rem_1fr] gap-x-3 gap-y-2 text-sm">
               <dt class="text-[11px] uppercase tracking-wide text-muted font-semibold pt-0.5">Owner</dt>
-              <dd class="text-body"><span class="font-semibold text-primary"><%= lane[:owner] %></span> <span class="text-muted">(<%= lane[:owner_note] %>)</span></dd>
+              <dd class="text-body" data-test="sop-lane-owner-detail" data-lane="<%= lane[:lane] %>"><span class="font-semibold text-primary"><%= lane[:owner] %></span> <span class="text-muted">(<%= lane[:owner_note] %>)</span></dd>
               <dt class="text-[11px] uppercase tracking-wide text-muted font-semibold pt-0.5">Expectation</dt>
               <dd class="text-body"><%= step[:expectation] %></dd>
               <dt class="text-[11px] uppercase tracking-wide text-muted font-semibold pt-0.5">Gate</dt>
