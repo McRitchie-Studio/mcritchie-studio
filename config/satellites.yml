@@ -82,3 +82,14 @@ satellites:
     description: "Solana environment control plane for localnet, QA, and future node operations"
     deploy_provider: "heroku"
     status: "planned"
+
+  - slug: mcritchie-industries
+    display_name: "McRitchie Industries"
+    emoji: "🏭"
+    port: 3500
+    heroku_app: "mcritchie-industries"
+    production_url: "https://www.mcritchie.industries"
+    role: "viewer"
+    description: "Business acquisitions — targets and deal pipeline; successor to the retired acquisition-studio prototype"
+    deploy_provider: "heroku"
+    status: "active"

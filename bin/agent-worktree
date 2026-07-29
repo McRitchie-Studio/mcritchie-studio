@@ -124,6 +124,13 @@ APP_OVERRIDES = {
     "session_env" => "TM_SESSION_KEY",
     "session_key" => "_turf_session",
     "sidekiq" => true
+  },
+  "mcritchie-industries" => {
+    # Ports a FOREIGN app squats inside this band — never hand them to a worktree
+    # even when the squatter is momentarily down (allocate_port's live-listener
+    # check can't see it then). The MSAA DBI dev server runs locally on 3510
+    # inside this app's 3500-3599 band; keep it excluded until MSAA moves.
+    "reserved_ports" => [3510]
   }
 }.freeze
 

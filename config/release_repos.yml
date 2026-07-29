@@ -298,6 +298,32 @@ apps:
       remote: https://git.heroku.com/rolio-prod.git
       branch: main
       smoke_url: https://rolio-prod-82e96784b462.herokuapp.com
+  mcritchie-industries:
+    # Managed studio-engine satellite (successor to the retired
+    # acquisition-studio prototype). Deploys via git_push_heroku, which has NO
+    # test step — so, per this file's header, the registered command IS the
+    # last gate before production and must be CI's FULL suite, VERBATIM, at
+    # BOTH gates.
+    #
+    # This repo has NO system tier yet — that is deliberate, not papered over:
+    # test/system holds only a .keep, its ci.yml runs plain
+    # `bin/rails db:test:prepare test` (Rails 8.1's `test:system` LoadErrors on
+    # a missing suite), and the repo's own test/lib/ci_workflow_test.rb pins
+    # that shape. When the first system test lands there, ci.yml grows
+    # `test:system` and BOTH commands here must grow it in the same pass
+    # (repos_test.rb asserts this entry matches the repo's ci.yml at
+    # origin/release, so drifting either side alone fails at the seam).
+    #
+    # Keep db:test:prepare FIRST (the rake-path trap — see the hub's entry),
+    # and keep test_cmd and qa_test_cmd the SAME STRING so G4's
+    # ship_gate_skip? can credit G3's certified run.
+    test_cmd: bin/rails db:test:prepare test
+    qa_test_cmd: bin/rails db:test:prepare test
+    prod_deploy:
+      strategy: git_push_heroku
+      remote: https://git.heroku.com/mcritchie-industries.git
+      branch: main
+      smoke_url: https://www.mcritchie.industries
   tax-studio:
     # Planned app, no sibling checkout yet — qa_test_cmd stays UNSET (the gate
     # aborts prepare if a registered command's repo is missing). Register the

@@ -80,6 +80,32 @@ qa_environments:
       - MANAGED_WALLET_ENCRYPTION_KEY
       - SOLANA_ADMIN_KEY
 
+  mcritchie-industries:
+    display_name: McRitchie Industries QA
+    repo: mcritchie-industries
+    heroku_app: mcritchie-industries-qa
+    heroku_domain: mcritchie-industries-qa-35b7dd935a08.herokuapp.com
+    qa_url: https://qa.mcritchie.industries
+    custom_domains:
+      - qa.mcritchie.industries
+    production_app: mcritchie-industries
+    production_url: https://www.mcritchie.industries
+    deploy_provider: heroku
+    addons:
+      - heroku-postgresql:essential-0
+    dynos:
+      web: 1
+    safety_profile: auth-gated-confidential-deal-data
+    required_config:
+      # production.rb defaults APP_HOST to www.mcritchie.industries — the QA
+      # app MUST override it or QA mints www links (unset as of 2026-07-29;
+      # set it before the canonical-host change deploys here).
+      APP_HOST: qa.mcritchie.industries
+      RESEND_MAILER_FROM: "McRitchie Studio <team@mcritchie.studio>"
+    required_secrets:
+      - RAILS_MASTER_KEY
+      - RESEND_API_KEY
+
   rolio:
     display_name: Rolio QA
     repo: rolio
