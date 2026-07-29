@@ -1,25 +1,15 @@
 class TasksController < ApplicationController
+  # The `reorder` action, its `slugs` guard, the 100-gap restamp (delegated to
+  # Task's Studio::Board::Rankable#reposition!), and the ErrorLog-logging + 422 net
+  # all come from the shared board primitive concern. The board POSTs
+  # `{ slugs: [...ids], zone: "<stage>" }`; the action reads only `slugs`.
+  include Studio::Board::Reorderable
+  board_reorderable model: Task, id_attr: :slug, param: :slugs
+
   skip_before_action :verify_authenticity_token, if: -> { request.format.json? }
   skip_before_action :require_authentication, only: [:index, :show, :recent, :review_events, :review_events_hub, :deployments, :stages, :sop]
   before_action :require_admin, except: [:index, :show, :recent, :review_events, :review_events_hub, :deployments, :stages, :sop]
   before_action :set_task, only: [:show, :review_events, :local_review, :edit, :update, :destroy, :comment, :block, :unblock]
-
-  def reorder
-    slugs = params[:slugs]
-    return render json: { error: "slugs required" }, status: :unprocessable_entity unless slugs.is_a?(Array)
-
-    rescue_and_log(target: nil) do
-      # `slugs` arrives top-to-bottom in DOM order. Under the `position DESC` sort
-      # the top card must hold the HIGHEST rank, so the first slug gets the largest
-      # value; 100-spacing leaves gaps for the next drag insert (News/Content scheme).
-      slugs.each_with_index do |slug, index|
-        Task.where(slug: slug).update_all(position: (slugs.length - index) * 100)
-      end
-      render json: { success: true }
-    end
-  rescue StandardError => e
-    render json: { error: e.message }, status: :unprocessable_entity
-  end
 
   # /tasks — Workflow 1 (Build, feature agent): designed → building → submitted
   # (a block is a `building` attribute, not a lane).

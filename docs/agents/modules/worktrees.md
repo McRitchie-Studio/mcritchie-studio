@@ -36,7 +36,12 @@ Run these in order. Each step names the command and the proof it worked.
    a satellite desk (Turf Monster, Rolio, …), the script does not exist in
    that repo — run the hub primary's copy pointed at the desk:
    `bin/session-preflight <task-slug> --root
-   /Users/alex/projects/<repo>/.worktrees/<task-slug>`. Read the output as
+   /Users/alex/projects/<repo>/.worktrees/<task-slug>`. Hub-owned helpers —
+   `bin/task` and `config/feature_shapes.yml` — resolve from the script's own
+   repo, never from `--root`, so a satellite desk needs no `--file` task-JSON
+   dump (`--file` remains a manual escape hatch, not the satellite path); only
+   the inspected-tree checks (drift, dirty tree, doc drift, stale scan) read
+   from `--root`. Read the output as
    signal, not a to-do list: drift, changed files, and PR overlap are measured
    against the same ladder base the desk was cut from — `origin/accepted`,
    falling back to `origin/release`, then `origin/main`, mirroring
