@@ -58,7 +58,7 @@ lanes:
   - owner: Primary Reviewer
     lane: Review
     end_stage: reviewed
-    owner_note: "the PRIMARY reviewer owns the whole lane: the deep-pass senior picked per task, who spawns the LIGHT reviewer as a sub-agent for a focused second pass, then on two approvals merges the PR into accepted and drives the task to Reviewed. Never release, never main, never a deploy — promoting accepted onto release belongs to the Assemble lane. No supervisor pre-step: the review session spins one primary per PR."
+    owner_note: "the PRIMARY reviewer owns the whole lane: the STANDING deep-pass senior on every PR, who spawns the LIGHT reviewer — the per-task DOMAIN pick — as a sub-agent for a focused second pass, then on two approvals merges the PR into accepted and drives the task to Reviewed. Never release, never main, never a deploy — promoting accepted onto release belongs to the Assemble lane. No supervisor pre-step: the review session spins one primary per PR."
     steps:
       - type: pulse
         label: Reviewers on it
