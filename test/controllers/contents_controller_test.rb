@@ -18,6 +18,38 @@ class ContentsControllerTest < ActionDispatch::IntegrationTest
     assert_select "h2", "Content Pipeline"
   end
 
+  test "index renders the studio board primitive with card and dropzone contract" do
+    get contents_path
+    assert_response :success
+    # Rendered by the engine board primitive (studio/board/_board), not a hand-roll.
+    assert_select "section[data-test='studio-board']"
+    # The ZONE half of the identity contract — one dropzone per stage.
+    assert_select "#dropzone-idea.kanban-dropzone[data-stage=?]", "idea"
+    # Per-column count chip (gap 2 count_class colours it).
+    assert_select "[data-board-count=?]", "idea"
+    # The CARD half — id=card-<slug>, .kanban-card, data-slug, data-stage.
+    card = css_select("#card-#{@idea_content.slug}.kanban-card").first
+    assert card, "expected the content card to render via the board primitive"
+    assert_equal @idea_content.slug, card["data-slug"]
+    assert_equal "idea", card["data-stage"]
+  end
+
+  test "reorder persists and the board renders cards in the new order" do
+    log_in_as(@admin)
+    a = Content.create!(title: "Order One", stage: "idea")
+    b = Content.create!(title: "Order Two", stage: "idea")
+
+    post reorder_contents_path(format: :json),
+         params: { slugs: [b.slug, a.slug] }, as: :json
+    assert_response :success
+    assert_operator b.reload.position, :>, a.reload.position
+
+    get contents_path
+    ids = css_select("#dropzone-idea .kanban-card").map { |el| el["id"] }
+    assert_operator ids.index("card-#{b.slug}"), :<, ids.index("card-#{a.slug}"),
+                    "expected the reordered card to render above its sibling"
+  end
+
   test "show renders content detail" do
     get content_path(@idea_content.slug)
     assert_response :success

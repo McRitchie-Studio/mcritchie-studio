@@ -6,6 +6,8 @@
 puts "Seeding test database for Playwright..."
 
 # Clear in dependency order
+Content.delete_all # references News (source_news_slug) + Team — clear before both
+News.delete_all
 ActionGrade.delete_all # FK child of atomic_actions — clear before the parent
 AtomicAction.delete_all
 AtomicEvent.delete_all # narrated spans; actions nullify their FK on delete
@@ -1020,4 +1022,14 @@ end
                      workflow_name: "CI", name: "pending-#{i}", status: "in_progress")
 end
 
-puts "Seeded: #{User.count} users, #{Agent.count} agents, #{Task.count} tasks, #{Activity.count} activities, #{Coach.count} coaches, #{Release.count} releases, #{AtomicAction.count} atomic actions, #{AtomicEvent.count} atomic events, #{GithubWorkflowRun.count} github runs"
+# News + Content pipeline boards (rebased onto the studio/board primitive). A few cards
+# per stage so the board e2e specs can assert the card/dropzone contract and drive a real
+# reorder (two-plus cards in one column). set_initial_position 100-spaces them per stage.
+3.times { |i| News.create!(title: "E2E News New #{i + 1}", stage: "new", author: "Wire") }
+News.create!(title: "E2E News Reviewed", stage: "reviewed")
+News.create!(title: "E2E News Archived", stage: "archived")
+
+3.times { |i| Content.create!(title: "E2E Content Idea #{i + 1}", stage: "idea", workflow: "video") }
+Content.create!(title: "E2E Content Hook", stage: "hook", workflow: "video")
+
+puts "Seeded: #{User.count} users, #{Agent.count} agents, #{Task.count} tasks, #{Activity.count} activities, #{Coach.count} coaches, #{Release.count} releases, #{AtomicAction.count} atomic actions, #{AtomicEvent.count} atomic events, #{GithubWorkflowRun.count} github runs, #{News.count} news, #{Content.count} content"

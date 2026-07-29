@@ -1,0 +1,61 @@
+<%# One news card, rendered per record by the studio/board primitive (card_partial).
+    The board identity contract (id="card-<slug>", .kanban-card, data-slug, data-stage)
+    is emitted by studio/board/card_shell; this partial owns only the card body. The
+    archive/delete @click resolve `archiveNews` / `deleteNews` from the newsBoardChrome
+    parent scope (Alpine nests scopes — the card sits inside the studioBoard scope,
+    which inherits the chrome scope). Bound as :news via card_as. %>
+<%= render layout: "studio/board/card_shell",
+      locals: {
+        id: news.slug,
+        zone: news.stage,
+        class: "bg-surface rounded-lg border border-subtle p-3 cursor-grab active:cursor-grabbing hover:border-primary/30 transition group relative"
+      } do %>
+  <span class="absolute top-1 right-1.5 text-[9px] text-muted font-mono"><%= news.position %></span>
+
+  <div class="flex items-center justify-between mb-1.5">
+    <a href="<%= news_path(news.slug) %>"
+       class="text-heading font-semibold text-sm truncate flex-1 hover:text-primary transition"
+       @click.stop>
+      <%= news.title_short.presence || news.title %>
+    </a>
+    <div class="flex items-center gap-1 ml-2 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+      <% if news.stage != "archived" %>
+        <button @click.stop="archiveNews('<%= news.slug %>')"
+                class="text-muted hover:text-yellow-400 transition p-0.5" title="Archive">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
+          </svg>
+        </button>
+      <% end %>
+      <button @click.stop="deleteNews('<%= news.slug %>')"
+              class="text-muted hover:text-red-400 transition p-0.5" title="Delete">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <%# Metadata %>
+  <div class="flex flex-wrap items-center gap-1.5 mb-1">
+    <% if news.author.present? %>
+      <span class="text-[10px] text-muted"><%= news.author %></span>
+    <% end %>
+    <% if news.primary_person.present? %>
+      <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-900/50 text-blue-300 border border-blue-700/50"><%= news.primary_person %></span>
+    <% end %>
+    <% if news.primary_team.present? %>
+      <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-900/50 text-green-300 border border-green-700/50"><%= news.primary_team %></span>
+    <% end %>
+  </div>
+
+  <% if news.feeling_emoji.present? %>
+    <span class="text-sm"><%= news.feeling_emoji %></span>
+  <% end %>
+
+  <% if news.primary_action.present? || news.what_happened.present? %>
+    <p class="text-[10px] text-secondary truncate"><%= news.what_happened.presence || news.primary_action %></p>
+  <% end %>
+
+  <p class="text-[10px] text-muted mt-1"><%= time_ago_in_words(news.created_at) %> ago</p>
+<% end %>
