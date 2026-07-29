@@ -5950,7 +5950,7 @@ class ReleaseCliTest < Minitest::Test
 
   # --- crew-ticker intents are BEST-EFFORT — never abort a deploy (PR #229 QA rework) ---
   #
-  # `prepare` (Steffon assembled QA intent) and `ship` (Avi shipped intent) auto-record
+  # `prepare` (Avi assembled QA intent) and `ship` (Steffon shipped intent) auto-record
   # a COSMETIC /deployments crew-ticker intent. conductor() abort!s (→ SystemExit) on ANY
   # non-zero heroku-run exit, so a transient prod-board outage — the documented 2026-06-25
   # essential-PG "too many connections" incidents — on this cosmetic write would otherwise

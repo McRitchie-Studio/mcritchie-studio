@@ -2722,7 +2722,7 @@ def prepare
   g3_gate = :open
   pre_qa_gate(app_groups, rel_slug, gem_groups: gem_groups)
 
-  # 5b. Record the Steffon assembled QA intent for every member so /deployments shows
+  # 5b. Record the Avi assembled QA intent for every member so /deployments shows
   #     him QA-ing the RC live the moment the deploy half starts — the Deploy mirror
   #     of bin/reviewer-select's review intent (no more hand-run `bin/task intent
   #     --to assembled --actor steffon`). Swept members are still `reviewed` (the
@@ -2736,7 +2736,7 @@ def prepare
   #     prod-board failure — it warns and continues.
   step("record: Avi assembled QA intent (live crew ticker)")
   record_deploy_intent(
-    "Steffon assembled QA intent",
+    "Avi assembled QA intent",
     "r = Release.current; n = Release::Conductor.record_deploy_intents!(r, to_stage: 'assembled', actor: 'avi'); " \
     "puts({ intent: 'assembled', actor: 'avi', members: n.size }.to_json)"
   )

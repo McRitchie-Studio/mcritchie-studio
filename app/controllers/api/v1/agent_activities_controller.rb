@@ -167,7 +167,7 @@ module Api
           :mascot,         # optional STABLE base session Pokémon slug
           :stage,          # optional coarse task stage at open time
           :agent,          # optional acting soul (AgentActivity::SOULS); unknown → nil
-          :supervisor,      # optional supervisor soul (Avi for pr-review)
+          :supervisor,      # optional supervisor soul (pr-review has none — Carl is primary AND owner)
           :supervisor_agent, # optional canonical supervisor field name
           :prior_outcome,  # optional — "what happened" on the auto-closed prior activity
           :prior_key_method,      # optional — the completed activity's load-bearing call

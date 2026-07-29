@@ -41,7 +41,7 @@ class Release
     #
     # Idempotent AND crash-safe: a member already stamped `merged` ("release" OR
     # "main") is left untouched — sweep! never regresses a `merged: "main"`
-    # member (an interrupted Avi ship) back to "release". That promise is
+    # member (an interrupted Steffon ship) back to "release". That promise is
     # absolute across releases: the short-circuit below covers CURRENT-release
     # members, and Release#add refuses the main→release downgrade when a LATER
     # release re-adopts a cross-release straggler. A member attached but
@@ -604,7 +604,7 @@ class Release
       end
     end
 
-    # The Steffon assembled-QA intent — the live "who's QA-ing the RC now" ticker that
+    # The Avi assembled-QA intent — the live "who's QA-ing the RC now" ticker that
     # `bin/release prepare` fires, per member stage:
     #   * still `reviewed` (THE standard flow: swept onto the RC, flip deferred to
     #     QA-green) → the plain toward-`assembled` intent renders, since

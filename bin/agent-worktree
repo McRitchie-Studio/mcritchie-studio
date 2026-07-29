@@ -2907,8 +2907,8 @@ def pr_body(record)
     #{bullet_lines(pr_verification_lines(task_metadata), "No checks_run recorded on the linked task yet.")}
 
     ## QA Notes
-    - Avi: verify scope/spec match and merge safety.
-    - Steffon: run QA/deploy checks when risk warrants.
+    - Carl: verify scope/spec match and merge safety.
+    - Avi: run QA checks when risk warrants.
     - Do not delete this branch/worktree until the PR is merged or intentionally abandoned.
   BODY
 end

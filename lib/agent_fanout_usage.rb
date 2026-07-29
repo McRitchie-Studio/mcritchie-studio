@@ -30,7 +30,7 @@ require_relative "usage_pricing"
 #
 # LANE resolution. A subagent narrates its activities with `--agent <soul>`, so its
 # child transcript's agentType maps to those soul-lane activities. A SUPERVISOR
-# subagent (e.g. Avi in pr-review) narrates the orchestration on the NIL lane, so
+# subagent (e.g. the orchestrating session of a review wave) narrates the orchestration on the NIL lane, so
 # its agentType has no matching soul-lane activity → it falls back to the nil lane,
 # alongside the true parent. That is deliberate: the nil-lane activities during the
 # supervisor's window carry the supervisor's real spend, and the pre/post-delegation

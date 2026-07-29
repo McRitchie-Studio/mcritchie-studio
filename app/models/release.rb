@@ -21,8 +21,8 @@ class Release < ApplicationRecord
   # stage maps to ONE timestamp column that acts as a time-AND-boolean: stamped =
   # the stage started (or landed), blank = not yet. The /deployments pizza-tracker
   # derives every node's complete/active/pending purely from these stamps, which
-  # is what makes the Steffon→Avi QA handoff explicit: `qa_deployed` (Live on QA,
-  # 3 green) does NOT imply `confirming` — stage 4 stays dark until Avi's
+  # is what makes the Avi→Steffon QA handoff explicit: `qa_deployed` (Live on QA,
+  # 3 green) does NOT imply `confirming` — stage 4 stays dark until Steffon's
   # confirming stamp lands (via the release events API).
   #
   # `current_stage` is MONOTONIC — the LATEST stamped stage wins — so late or
@@ -115,7 +115,7 @@ class Release < ApplicationRecord
   #             certification that lets G4 self-gate an unchanged SHA)
   #   ship    → full-suite (the registry test_cmd — the repo's highest LOCAL
   #             tier; it was never a browser e2e run, hence the honest relabel
-  #             from "e2e-full"), by Avi on the FROZEN ship SHA. SELF-GATED:
+  #             from "e2e-full"), by Steffon on the FROZEN ship SHA. SELF-GATED:
   #             skipped when G3 already certified that exact SHA with that
   #             exact command this run (bin/release test_gate), so the full
   #             suite runs once per release batch; a drifted/straggler SHA

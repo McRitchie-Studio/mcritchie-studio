@@ -624,7 +624,7 @@ end
 
 # The merge-ready verdict handoff — the accepted-ladder's first rung. Merge the
 # feat PR into `accepted`, stamp merged:"accepted", then move the task `reviewed`
-# and leave the Steffon-QA handoff note. ORDER is load-bearing:
+# and leave the Avi-QA handoff note. ORDER is load-bearing:
 #   1. Merge first. A merge FAILURE returns false WITHOUT stamping or moving, so a
 #      broken PR keeps the task `submitted` (invariant: reviewed ⟺ code-on-accepted).
 #   2. Stamp merged:"accepted" BEFORE the stage move — the two board writes aren't
@@ -645,7 +645,7 @@ def move_reviewed(slug, task, reviewers, reports, reviewed_head: nil, zap_head: 
   zap_line = zap_head ? "\n\nReviewer zap: the PR head advanced #{short(reviewed_head)} → #{short(zap_head)} " \
                         "during review; its post-zap CI was revalidated green before this merge." : ""
   note = "pr-review merged #{slug} into `#{ACCEPTED_BRANCH}` and moved it reviewed after " \
-         "#{reviewers.map { |r| r["slug"] }.join(" + ")} reported merge-ready. Left for Steffon QA " \
+         "#{reviewers.map { |r| r["slug"] }.join(" + ")} reported merge-ready. Left for Avi QA " \
          "(the sweep promotes accepted→release).#{zap_line}\n\n" \
          "Reports:\n#{reports.map { |r| "- #{report_summary(r)}" }.join("\n")}"
   ok && task_write(["note", slug, "--handoff", note, "--agent", "avi"])

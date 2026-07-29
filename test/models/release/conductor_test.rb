@@ -1316,7 +1316,7 @@ class Release::ConductorTest < ActiveSupport::TestCase
   end
 
   # --- record_deploy_intents! (the live Deploy-lane crew ticker) ----------------
-  # bin/release prepare auto-records the Steffon → assembled QA intent; bin/release
+  # bin/release prepare auto-records the Avi → assembled QA intent; bin/release
   # ship the Avi → shipped intent. The Deploy mirror of bin/reviewer-select's review
   # intent — so /deployments shows who's on it live with NO hand-run bin/task intent
   # (the 2026-06-25 unfilled-ship-slot incident).
