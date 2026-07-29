@@ -199,5 +199,12 @@
       // Hook for post-verify UX (e.g. flag a brand-new account). No-op for now.
       window.handleSolanaVerifySuccess = function (result) {};
     </script>
+
+    <%# window.studioBoard — the Alpine factory behind the studio/board primitive
+        (the tasks kanban board and, as more boards adopt it, news / content /
+        depth-chart). It MUST live at page level: a <script> inside the board
+        component template would be cloned by Alpine and never run. Vendored
+        SortableJS is already loaded globally by layouts/studio/_head. %>
+    <%= render "studio/board_assets" %>
   </body>
 </html>

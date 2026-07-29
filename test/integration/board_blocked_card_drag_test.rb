@@ -29,23 +29,29 @@ class BoardBlockedCardDragTest < ActionDispatch::IntegrationTest
     assert_response :success
     js = css_select("script").map(&:text).join("\n")
 
-    # Stage is sourced from the dropzones (evt.from / evt.to), never the card's
-    # data-stage.
-    assert_includes js, "const fromZone = evt.from;"
-    assert_includes js, "const toZone = evt.to;"
-    # A same-zone drop short-circuits BEFORE any PATCH: an in-place reorder cannot
-    # change a task's stage.
-    assert_includes js, "if (fromZone !== toZone) {"
-    # The stranding revert (look up dropzone-<oldStage>) is gone.
-    refute_includes js, "getElementById('dropzone-' + oldStage)"
+    # The board is rebased onto the studio/board primitive; its studioBoard factory
+    # (homed in the layout) sources the from/to from the DROPZONES (evt.from /
+    # evt.to), never the card's data-stage.
+    assert_includes js, "var fromZone = evt.from;"
+    assert_includes js, "var toZone = evt.to;"
+    # A same-zone drop is a pure reorder — `moved` is false, so no stage PATCH fires;
+    # only a cross-column drop moves the card. An in-place reorder cannot change stage.
+    assert_includes js, "var moved = fromZone !== toZone;"
+    assert_includes js, "if (moved) {"
+    # No stranding revert that looks up a card's own (old) stage dropzone.
+    refute_includes js, "dropzone-' + oldStage"
   end
 
   test "the Build board subscribes live so blocked transitions patch into Building" do
     get tasks_path
     assert_response :success
 
+    # The primitive renders exactly one turbo_stream_from(live_channel) and wires the
+    # studioBoard factory live, so a broadcast blocked-transition patches Building.
     assert_select "turbo-cable-stream-source", count: 1
-    assert_includes response.body, "kanbanBoard(true)"
+    board = css_select("[data-test='studio-board']").first
+    assert board, "the tasks board renders through the studio/board primitive"
+    assert_includes board["x-data"].to_s, %q("live":true), "the board is wired live"
   end
 
   test "the Building lane collapses on the narrow Deploy board behind All Stages" do
