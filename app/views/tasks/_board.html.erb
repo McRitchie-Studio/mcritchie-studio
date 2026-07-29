@@ -44,7 +44,46 @@ function taskBoardChrome() {
     init() {
       // $nextTick, not synchronous: x-init runs mid directive-walk, so the filter
       // chips' @click aren't bound yet here. The flag then means "interactive".
-      this.$nextTick(() => { this.$el.dataset.alpineReady = 'true'; });
+      // This parent inits before the inner studioBoard, so installing the archive
+      // exit-stream handler here claims the primitive's fallback flag first.
+      this.$nextTick(() => {
+        this.$el.dataset.alpineReady = 'true';
+        this.installArchiveExitStream();
+      });
+    },
+
+    // Own the archive exit STREAM. A stage→archived change broadcasts a Turbo
+    // `remove` for the card; the neutral primitive's fallback would DELETE it, but
+    // this board has an archived COLUMN, so an archived card must RE-PARENT there
+    // (visible under the Archived toggle). Claim the primitive's guard flag (parent
+    // inits first) so only this handler runs. A plain delete `remove` carries no
+    // exit-action and falls through to Turbo's default (gone for good).
+    installArchiveExitStream() {
+      if (window.__studioBoardExitFallback) return;
+      window.__studioBoardExitFallback = true;
+      const self = this;
+      document.addEventListener('turbo:before-stream-render', (event) => {
+        const stream = event.target;
+        if (stream.getAttribute('action') !== 'remove') return;
+        const target = stream.getAttribute('target') || '';
+        if (target.indexOf('card-') !== 0 || stream.dataset.exitAction !== 'archive') return;
+        const renderNow = event.detail.render;
+        event.detail.render = async (el) => {
+          const card = document.getElementById(target);
+          if (!card) { renderNow(el); return; }
+          await self.boardExit(card, 'archive');
+          const archivedZone = document.getElementById('dropzone-archived');
+          if (archivedZone) {
+            archivedZone.insertBefore(card, archivedZone.querySelector('.kanban-empty'));
+            card.dataset.stage = 'archived';
+            self.resetCardExit(card);
+            self.boardRefreshCounts();
+            return; // keep the card in the archived column — do NOT remove it
+          }
+          renderNow(el);
+          self.boardRefreshCounts();
+        };
+      });
     },
 
     // --- filters (card x-show resolves these from this parent scope) ----------
