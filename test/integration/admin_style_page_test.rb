@@ -65,6 +65,36 @@ class AdminStylePageTest < ActionDispatch::IntegrationTest
       "the removed -plain quest-activity demo must not resurface"
   end
 
+  # studio-engine 0.27.0 adds the Web3 Contest + Contest-entry specimen flows to
+  # the Modals section and renames two headings: "Web3" -> "Web3 Contest" and
+  # "Eligibility & entry" -> "Contest entry & eligibility". This pins MS's
+  # adoption: the renamed sections render (present-but-flagged even with :web3 /
+  # :age_gate off), and the walked on-chain entry flow specimen is openable.
+  test "admin/style renders the 0.27.0 Web3 Contest and Contest-entry sections" do
+    log_in_as users(:alex)
+
+    get admin_style_path
+    assert_response :success
+
+    # Renamed section headings (entity-decoded text match).
+    assert_select "h3", { text: "Web3 Contest" },
+      "expected the renamed Web3 Contest section heading"
+    assert_select "h3", { text: "Contest entry & eligibility" },
+      "expected the renamed Contest entry & eligibility section heading"
+
+    # The old heading names must not resurface.
+    assert_select "h3", { text: "Web3", count: 0 },
+      "the pre-0.27.0 bare Web3 heading must not resurface"
+    assert_select "h3", { text: "Eligibility & entry", count: 0 },
+      "the pre-0.27.0 Eligibility & entry heading must not resurface"
+
+    # The new walked on-chain entry flow specimen is present and openable.
+    assert_includes @response.body, "$store.dsModals.open('onchain-tx'",
+      "expected the Web3 Contest on-chain transaction flow specimen"
+    assert_includes @response.body, "$store.dsModals.open('entry-confirmed'",
+      "expected the Contest-entry confirmation flow specimen"
+  end
+
   test "the admin sidebar Design System link points at /admin/style" do
     log_in_as users(:alex)
 
