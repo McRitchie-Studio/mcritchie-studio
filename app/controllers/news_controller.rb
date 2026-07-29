@@ -1,4 +1,11 @@
 class NewsController < ApplicationController
+  # The `reorder` action, its `slugs` guard, the 100-gap restamp (delegated to News's
+  # Studio::Board::Rankable#reposition!), and the ErrorLog-logging + 422 net all come
+  # from the shared board primitive concern. The board POSTs { slugs: [...], zone:
+  # "<stage>" }; the action reads only `slugs`. require_admin still gates it (below).
+  include Studio::Board::Reorderable
+  board_reorderable model: News, id_attr: :slug, param: :slugs
+
   skip_before_action :verify_authenticity_token, if: -> { request.format.json? }
   skip_before_action :require_authentication, only: [:index, :show, :workflow]
   before_action :require_admin, except: [:index, :show, :workflow]
@@ -161,20 +168,6 @@ class NewsController < ApplicationController
     end
   rescue StandardError => e
     redirect_to news_path(@news.slug), alert: e.message
-  end
-
-  def reorder
-    slugs = params[:slugs]
-    return render json: { error: "slugs required" }, status: :unprocessable_entity unless slugs.is_a?(Array)
-
-    rescue_and_log(target: nil) do
-      slugs.each_with_index do |slug, index|
-        News.where(slug: slug).update_all(position: (slugs.length - index) * 100)
-      end
-      render json: { success: true }
-    end
-  rescue StandardError => e
-    render json: { error: e.message }, status: :unprocessable_entity
   end
 
   private

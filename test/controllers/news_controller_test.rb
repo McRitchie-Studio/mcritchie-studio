@@ -19,6 +19,39 @@ class NewsControllerTest < ActionDispatch::IntegrationTest
     assert_select "h2", "News Pipeline"
   end
 
+  test "index renders the studio board primitive with card and dropzone contract" do
+    get news_index_path
+    assert_response :success
+    # Rendered by the engine board primitive (studio/board/_board), not a hand-roll.
+    assert_select "section[data-test='studio-board']"
+    # The ZONE half of the identity contract — one dropzone per stage.
+    assert_select "#dropzone-new.kanban-dropzone[data-stage=?]", "new"
+    assert_select "#dropzone-archived.kanban-dropzone[data-stage=?]", "archived"
+    # Per-column count chip (gap 2 count_class colours it).
+    assert_select "[data-board-count=?]", "new"
+    # The CARD half — id=card-<slug>, .kanban-card, data-slug, data-stage.
+    card = css_select("#card-#{@new_article.slug}.kanban-card").first
+    assert card, "expected the news card to render via the board primitive"
+    assert_equal @new_article.slug, card["data-slug"]
+    assert_equal "new", card["data-stage"]
+  end
+
+  test "reorder persists and the board renders cards in the new order" do
+    log_in_as(@admin)
+    a = News.create!(title: "Order One", stage: "new")
+    b = News.create!(title: "Order Two", stage: "new")
+
+    post reorder_news_index_path(format: :json),
+         params: { slugs: [b.slug, a.slug] }, as: :json
+    assert_response :success
+    assert_operator b.reload.position, :>, a.reload.position
+
+    get news_index_path
+    ids = css_select("#dropzone-new .kanban-card").map { |el| el["id"] }
+    assert_operator ids.index("card-#{b.slug}"), :<, ids.index("card-#{a.slug}"),
+                    "expected the reordered card to render above its sibling"
+  end
+
   test "show renders news detail" do
     get news_path(@new_article.slug)
     assert_response :success
