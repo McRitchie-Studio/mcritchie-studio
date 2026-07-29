@@ -85,7 +85,7 @@ satellites:
 
   - slug: mcritchie-industries
     display_name: "McRitchie Industries"
-    emoji: "🏭"
+    emoji: "🔩"
     port: 3500
     heroku_app: "mcritchie-industries"
     production_url: "https://www.mcritchie.industries"
