@@ -415,6 +415,69 @@ class SessionPreflightTest < Minitest::Test
     assert_equal true, report.dig("shape", "exempt")
   end
 
+  # [unit] REGRESSION (task preflight-works-from-satellites): hub helpers —
+  # bin/task and config/feature_shapes.yml — resolve from the SCRIPT'S OWN repo,
+  # never from --root. A satellite/gem worktree ships neither, and the old
+  # --root-relative resolution ENOENT-died `bin/task show` on every satellite
+  # desk (turf-monster, twice on 2026-07-28), pushing builders to a --file
+  # task-JSON dump. Proven with ZERO env seams: the script runs from a copied
+  # "hub" whose bin/ carries a fake sibling task CLI and whose config carries a
+  # DISTINCT shapes policy, while the inspected --root carries neither.
+  def test_hub_helpers_resolve_from_script_root_not_inspected_root
+    hub = File.join(@sandbox, "hub")
+    FileUtils.mkdir_p(File.join(hub, "bin"))
+    FileUtils.mkdir_p(File.join(hub, "config"))
+    FileUtils.cp(SCRIPT, File.join(hub, "bin", "session-preflight"))
+    FileUtils.cp_r(File.join(ROOT, "bin", "lib"), File.join(hub, "bin", "lib"))
+    File.write(File.join(hub, "config", "feature_shapes.yml"), <<~YAML)
+      defaults:
+        required_metadata: [acceptance]
+      shapes:
+        backend:
+          description: Hub-owned backend shape, distinct tiers on purpose.
+          dor_tiers: [unit, hub-proof]
+    YAML
+    activity = {
+      "activity_type" => "comment",
+      "created_at" => "2026-07-28T09:00:00Z",
+      "description" => "Loaded through the hub sibling CLI."
+    }
+    hub_task = File.join(hub, "bin", "task")
+    File.write(hub_task, <<~RUBY)
+      #!/usr/bin/env ruby
+      if ARGV == ["show", "add-session-preflight", "--json"]
+        puts #{JSON.generate("data" => task_payload(latest_activity: activity)).inspect}
+      else
+        warn "unexpected task args: \#{ARGV.join(" ")}"
+        exit 1
+      end
+    RUBY
+    File.chmod(0o755, hub_task)
+    # Make the inspected root satellite-shaped: it never had a bin/task, and it
+    # must not carry the hub's shapes policy either. Commit the removal so the
+    # desk stays clean.
+    git("rm", "-q", "config/feature_shapes.yml")
+    git("commit", "-q", "-m", "satellite desks carry no hub config")
+
+    out, err, status = Open3.capture3(
+      SessionEnv.neutralized,
+      RbConfig.ruby, File.join(hub, "bin", "session-preflight"),
+      "add-session-preflight", "--root", @repo,
+      "--no-gh", "--no-install-docs", "--no-fetch", "--json",
+      chdir: @repo
+    )
+    assert status.success?, "#{out}\n#{err}"
+
+    report = JSON.parse(out)
+    assert_equal true, report.fetch("ok"), report.fetch("errors").inspect
+    assert_equal "Loaded through the hub sibling CLI.",
+                 report.dig("latest_feedback", "description"),
+                 "the task record must arrive through the hub's sibling bin/task"
+    assert_equal %w[unit hub-proof], report.fetch("shape").fetch("dor_tiers"),
+                 "the shape taxonomy must come from the HUB's config — --root has none"
+    assert_empty report.fetch("warnings").grep(/feature_shapes/), report.fetch("warnings").inspect
+  end
+
   def test_live_task_show_contract_reports_latest_feedback
     write_fake_task_cli(latest_activity: {
       "activity_type" => "qa_feedback",
@@ -485,8 +548,17 @@ class SessionPreflightTest < Minitest::Test
   private
 
   def run_preflight(*args, env: {})
+    # The hub-helper seams point the script back at the sandbox: production
+    # resolves bin/task and config/feature_shapes.yml from the script's OWN
+    # repo (the hub), which for a test would be the REAL board CLI and the REAL
+    # shapes policy. The zero-seam anchoring itself is proven separately in
+    # test_hub_helpers_resolve_from_script_root_not_inspected_root.
+    seams = {
+      "SESSION_PREFLIGHT_TASK_BIN" => File.join(@repo, "bin", "task"),
+      "SESSION_PREFLIGHT_SHAPES_PATH" => File.join(@repo, "config", "feature_shapes.yml")
+    }
     Open3.capture3(
-      SessionEnv.neutralized(env),
+      SessionEnv.neutralized(seams.merge(env)),
       RbConfig.ruby, SCRIPT, "--root", @repo, *args,
       chdir: @repo
     )
