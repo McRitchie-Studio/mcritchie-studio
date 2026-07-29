@@ -1,4 +1,10 @@
 class News < ApplicationRecord
+  # Board rank read-model (studio-engine board primitive). Supplies `reposition!`
+  # (used by the shared Studio::Board::Reorderable reorder action), `board_next_position`,
+  # the `board_ordered` scope, and the `set_initial_position` genesis seed wired below.
+  # `board_zone_attr` defaults to :stage — a card ranks within its own column, 100-spaced.
+  include Studio::Board::Rankable
+
   STAGES = %w[new reviewed processed refined concluded archived].freeze
 
   validates :title, presence: true
@@ -10,7 +16,8 @@ class News < ApplicationRecord
   before_save :set_stage_timestamp, if: :stage_changed?
 
   scope :by_stage, ->(stage) { where(stage: stage) }
-  scope :ordered, -> { order(Arel.sql("position DESC NULLS LAST, created_at DESC")) }
+  # Board order comes from the concern (position DESC NULLS LAST, created_at DESC).
+  scope :ordered, -> { board_ordered }
 
   def to_param
     slug
@@ -47,13 +54,10 @@ class News < ApplicationRecord
     when "concluded" then self.concluded_at = Time.current
     when "archived"  then self.archived_at = Time.current
     end
-    unless new_record?
-      self.position = (News.where(stage: stage).maximum(:position) || 0) + 100
-    end
-  end
-
-  def set_initial_position
-    self.position ||= (News.where(stage: stage).maximum(:position) || 0) + 100
+    # On a stage move, bump the card to the top of its new column (zone-max + 100),
+    # via the concern's shared 100-gap helper. set_initial_position (the genesis seed)
+    # comes from Studio::Board::Rankable; the create-time branch is guarded out here.
+    self.position = self.class.board_next_position(stage) unless new_record?
   end
 
   def generate_slug

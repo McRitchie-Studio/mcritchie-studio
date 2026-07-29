@@ -1,148 +1,72 @@
+<%# /contents — the Content pipeline kanban, rebased onto the studio/board ENGINE
+    PRIMITIVE (studio/board/board). The primitive's `studioBoard` factory
+    (studio/_board_assets, homed in the layout) owns drag / cross-column move (PATCH) /
+    reorder (POST) / counts / toasts, driving the VENDORED SortableJS (no CDN). This
+    wrapper owns only the per-card delete write; the single-column FOCUS/expand lives on
+    the primitive's chrome-state home (board_state → studioBoard.state). Cards render
+    INSIDE the studioBoard scope but resolve deleteContent from THIS parent scope
+    (Alpine nests). No archived column and no live channel — content has neither. %>
 <% stages = Content::STAGES %>
 <% stage_labels = { "idea" => "Idea", "hook" => "Hook", "script" => "Script", "assets" => "Assets", "assembly" => "Assembly", "posted" => "Posted", "reviewed" => "Reviewed" } %>
+<%# gap 2 — per-column count-chip colours (was an inline `case stage`). %>
+<% count_colors = {
+     "idea" => "bg-blue-900/50 text-blue-300",
+     "hook" => "bg-yellow-900/50 text-yellow-300",
+     "script" => "bg-mint-900/50 text-mint-300",
+     "assets" => "bg-green-900/50 text-green-300",
+     "assembly" => "bg-violet-900/50 text-violet-300",
+     "posted" => "bg-emerald-900/50 text-emerald-300",
+     "reviewed" => "bg-surface-alt text-muted"
+   } %>
 
-<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
-
+<%# contentBoardChrome — owns the per-card delete write the primitive stays neutral on,
+    delegating the shared toast + count refresh back to the inner studioBoard via
+    Alpine.$data. The FOCUS toggle is NOT here — it lives on the studioBoard chrome-state
+    home (board_state), reached by the column labels. %>
 <script>
-function contentBoard() {
+function contentBoardChrome() {
   return {
-    _pendingMoves: {},
-    focusedStage: null,
-    toasts: [],
+    _pending: {},
 
-    stageLabels: {
-      idea: 'Idea', hook: 'Hook', script: 'Script', assets: 'Assets',
-      assembly: 'Assembly', posted: 'Posted', reviewed: 'Reviewed'
+    boardData() {
+      const section = this.$el.querySelector('[data-test="studio-board"]');
+      return (section && window.Alpine && window.Alpine.$data) ? window.Alpine.$data(section) : null;
     },
-
-    init() {
-      this.$nextTick(() => this.initSortables());
+    boardToast(msg, type) {
+      const d = this.boardData();
+      if (d && d.toast) { d.toast(msg, type); return; }
+      if (type === 'error' && typeof window.alert === 'function') window.alert(msg);
     },
-
-    toggleFocus(stage) {
-      this.focusedStage = this.focusedStage === stage ? null : stage;
-      this.$nextTick(() => this.initSortables());
-    },
-
-    initSortables() {
-      document.querySelectorAll('.kanban-dropzone').forEach(zone => {
-        Sortable.create(zone, {
-          group: 'kanban',
-          animation: 150,
-          ghostClass: 'opacity-30',
-          draggable: '.kanban-card',
-          filter: '.kanban-empty',
-          onEnd: (evt) => this.handleSortEnd(evt)
-        });
-      });
-    },
-
-    async handleSortEnd(evt) {
-      const card = evt.item;
-      const slug = card.dataset.slug;
-      const oldStage = card.dataset.stage;
-      const newZone = evt.to;
-      const newStage = newZone.dataset.stage;
-      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
-
-      if (oldStage !== newStage) {
-        card.dataset.stage = newStage;
-        try {
-          const resp = await fetch('/contents/' + slug + '.json', {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
-            body: JSON.stringify({ content: { stage: newStage } }),
-            redirect: 'manual'
-          });
-          if (resp.type === 'opaqueredirect' || resp.status === 302) {
-            throw new Error('Login required');
-          }
-          if (!resp.ok) {
-            const err = await resp.json().catch(() => ({}));
-            throw new Error(err.error || 'Failed (' + resp.status + ')');
-          }
-          this.showToast('Moved to ' + this.stageLabels[newStage], 'success');
-        } catch (err) {
-          const oldZone = document.getElementById('dropzone-' + oldStage);
-          if (oldZone) {
-            oldZone.insertBefore(card, oldZone.querySelector('.kanban-empty'));
-            card.dataset.stage = oldStage;
-          }
-          card.classList.add('ring-2', 'ring-red-500');
-          setTimeout(() => card.classList.remove('ring-2', 'ring-red-500'), 1500);
-          this.showToast(err.message || 'Move failed', 'error');
-          this.updateCounts();
-          return;
-        }
-      }
-
-      const slugs = Array.from(newZone.querySelectorAll('.kanban-card')).map(c => c.dataset.slug);
-      try {
-        await fetch('/contents/reorder.json', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
-          body: JSON.stringify({ slugs: slugs }),
-          redirect: 'manual'
-        });
-      } catch (err) {}
-
-      this.updateCounts();
-    },
-
-    updateCounts() {
-      document.querySelectorAll('[data-stage-count]').forEach(badge => {
-        const stage = badge.dataset.stageCount;
-        const zone = document.getElementById('dropzone-' + stage);
-        if (zone) {
-          const count = zone.querySelectorAll('.kanban-card').length;
-          badge.textContent = count;
-          const empty = zone.querySelector('.kanban-empty');
-          if (empty) empty.style.display = count === 0 ? 'flex' : 'none';
-        }
-      });
+    boardRefreshCounts() { const d = this.boardData(); if (d && d.updateCounts) d.updateCounts(); },
+    responseError(resp, fallback) {
+      return resp.json().then((err) => new Error(err.error || fallback)).catch(() => new Error(fallback));
     },
 
     async deleteContent(slug) {
       if (!confirm('Delete this content?')) return;
-      if (this._pendingMoves[slug]) return;
-      this._pendingMoves[slug] = true;
-
+      if (this._pending[slug]) return;
+      this._pending[slug] = true;
       const card = document.getElementById('card-' + slug);
-
       try {
-        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+        const csrf = document.querySelector('meta[name="csrf-token"]')?.content;
         const resp = await fetch('/contents/' + slug + '.json', {
           method: 'DELETE',
-          headers: { 'X-CSRF-Token': csrfToken },
-          redirect: 'manual'
+          headers: { 'Accept': 'application/json', 'X-CSRF-Token': csrf }
         });
-        if (resp.type === 'opaqueredirect') throw new Error('Login required');
-        if (!resp.ok) throw new Error('Delete failed');
-        if (card) card.remove();
-        this.updateCounts();
-        this.showToast('Content deleted', 'success');
+        if (!resp.ok) throw await this.responseError(resp, 'Delete failed');
+        if (card) { card.remove(); this.boardRefreshCounts(); }
+        this.boardToast('Content deleted', 'success');
       } catch (err) {
-        this.showToast(err.message, 'error');
+        this.boardToast(err.message || 'Delete failed', 'error');
       } finally {
-        delete this._pendingMoves[slug];
+        delete this._pending[slug];
       }
-    },
-
-    showToast(message, type) {
-      const id = Date.now();
-      const toast = { id, message, type, visible: true };
-      this.toasts.push(toast);
-      setTimeout(() => {
-        const t = this.toasts.find(t => t.id === id);
-        if (t) t.visible = false;
-        setTimeout(() => { this.toasts = this.toasts.filter(t => t.id !== id); }, 300);
-      }, 3000);
     }
   }
 }
 </script>
 
-<section x-data="contentBoard()" class="min-h-screen">
+<section x-data="contentBoardChrome()" class="min-h-screen">
   <!-- Header -->
   <div class="flex items-center justify-between mb-6">
     <h2 class="text-2xl font-bold text-heading">Content Pipeline</h2>
@@ -154,106 +78,43 @@ function contentBoard() {
   <!-- Stage Progression -->
   <%= render "shared/pipeline_progression", highlight: "content" %>
 
-  <!-- Kanban Board -->
-  <div class="flex gap-4 overflow-x-auto pb-4">
-    <% stages.each do |stage| %>
-      <div class="min-w-[180px] transition-all duration-200"
-           :class="focusedStage === '<%= stage %>' ? 'flex-[3]' : 'flex-1'"
-           x-show="!focusedStage || focusedStage === '<%= stage %>'"
-           x-cloak>
-        <!-- Column Header -->
-        <div class="flex items-center justify-between mb-3 px-1 cursor-pointer" @click="toggleFocus('<%= stage %>')">
-          <div class="flex items-center gap-2">
-            <h3 class="text-sm font-bold text-heading uppercase tracking-wider hover:text-primary transition">
-              <%= stage_labels[stage] %>
-            </h3>
-            <span class="stage-count inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-xs font-bold
-              <%= case stage
-                  when 'idea'     then 'bg-blue-900/50 text-blue-300'
-                  when 'hook'     then 'bg-yellow-900/50 text-yellow-300'
-                  when 'script'   then 'bg-mint-900/50 text-mint-300'
-                  when 'assets'   then 'bg-green-900/50 text-green-300'
-                  when 'assembly' then 'bg-violet-900/50 text-violet-300'
-                  when 'posted'   then 'bg-emerald-900/50 text-emerald-300'
-                  when 'reviewed' then 'bg-surface-alt text-muted'
-                  end %>"
-              data-stage-count="<%= stage %>">
-              <%= (@contents_by_stage[stage] || []).size %>
-            </span>
-          </div>
-        </div>
+  <%
+    # gap 5 — a clickable column label toggles the single-column FOCUS on the
+    # studioBoard chrome-state home (state.focusedStage). Rendered raw inside the
+    # column <h3>, so `state` resolves against the studioBoard scope; when a column
+    # is focused the others' show_expr hides them, so the sole visible one fills the
+    # row (the old flex-[3] expand, achieved by hiding siblings).
+    focus_label = lambda do |stage, label|
+      %(<span class="cursor-pointer hover:text-primary transition" @click="state.focusedStage = state.focusedStage === '#{stage}' ? null : '#{stage}'">#{label}</span>).html_safe
+    end
+  %>
 
-        <!-- Drop Zone -->
-        <div id="dropzone-<%= stage %>"
-             data-stage="<%= stage %>"
-             class="kanban-dropzone rounded-xl border-2 border-dashed min-h-[calc(100vh-220px)] p-2 space-y-2 transition-colors duration-150 border-subtle">
-
-          <% (@contents_by_stage[stage] || []).each_with_index do |content, idx| %>
-            <div id="card-<%= content.slug %>"
-                 data-slug="<%= content.slug %>"
-                 data-stage="<%= stage %>"
-                 class="kanban-card bg-surface rounded-lg border border-subtle p-3 cursor-grab active:cursor-grabbing hover:border-primary/30 transition group relative">
-
-              <span class="absolute top-1 right-1.5 text-[9px] text-muted font-mono"><%= content.position %></span>
-
-              <div class="flex items-center justify-between mb-1.5">
-                <a href="<%= content_path(content.slug) %>"
-                   class="text-heading font-semibold text-sm truncate flex-1 hover:text-primary transition"
-                   @click.stop>
-                  <%= content.title %>
-                </a>
-                <div class="flex items-center gap-1 ml-2 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                  <button @click.stop="deleteContent('<%= content.slug %>')"
-                          class="text-muted hover:text-red-400 transition p-0.5" title="Delete">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                    </svg>
-                  </button>
-                </div>
-              </div>
-
-              <!-- Metadata -->
-              <div class="flex flex-wrap items-center gap-1.5 mb-1">
-                <% if content.source_type.present? %>
-                  <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-900/50 text-blue-300 border border-blue-700/50"><%= content.source_type %></span>
-                <% end %>
-                <% if content.content_type.present? %>
-                  <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-violet-900/50 text-violet-300 border border-violet-700/50"><%= content.content_type.humanize %></span>
-                <% end %>
-              </div>
-
-              <% if content.description.present? %>
-                <p class="text-[10px] text-secondary truncate"><%= content.description.truncate(60) %></p>
-              <% end %>
-
-              <p class="text-[10px] text-muted mt-1"><%= time_ago_in_words(content.created_at) %> ago</p>
-            </div>
-          <% end %>
-
-          <!-- Empty State -->
-          <div class="kanban-empty flex items-center justify-center h-24 text-muted text-sm"
-               <% if (@contents_by_stage[stage] || []).any? %>style="display: none"<% end %>>
-            Drop content here
-          </div>
-        </div>
-      </div>
-    <% end %>
-  </div>
-
-  <!-- Toasts -->
-  <div class="fixed top-4 right-4 z-50 space-y-2">
-    <template x-for="toast in toasts" :key="toast.id">
-      <div x-show="toast.visible"
-           x-transition:enter="transition ease-out duration-300"
-           x-transition:enter-start="opacity-0 translate-x-8"
-           x-transition:enter-end="opacity-100 translate-x-0"
-           x-transition:leave="transition ease-in duration-200"
-           x-transition:leave-start="opacity-100 translate-x-0"
-           x-transition:leave-end="opacity-0 translate-x-8"
-           :class="toast.type === 'success' ? 'bg-mint-900/90 border-mint-700 text-mint-300' : 'bg-red-900/90 border-red-700 text-red-300'"
-           class="px-4 py-2.5 rounded-lg border text-sm font-medium shadow-lg backdrop-blur-sm">
-        <span x-text="toast.message"></span>
-      </div>
-    </template>
-  </div>
+  <%# The board — rendered by the engine primitive. Columns are the stage keys; each
+      card is contents/_content_card, bound to :content. A cross-column drop PATCHes
+      { content: { stage } } (the update action); a reorder POSTs the DOM-ordered slugs
+      to the shared reorder action (Studio::Board::Reorderable). Static board. %>
+  <%= render "studio/board/board",
+        board_state: { focusedStage: nil },
+        columns: stages.map { |stage|
+          {
+            key: stage,
+            label: focus_label.call(stage, stage_labels[stage]),
+            cards: (@contents_by_stage[stage] || []),
+            count_class: count_colors[stage],
+            min_width: "sm:min-w-[180px]",
+            show_expr: "(!state.focusedStage || state.focusedStage === '#{stage}')"
+          }
+        },
+        card_partial: "contents/content_card",
+        card_as: :content,
+        reorder_url: reorder_contents_path(format: :json),
+        reorder_payload: :slugs,
+        move_url: "/contents/:id.json",
+        move_param: { resource: :content, attr: :stage },
+        group: "kanban",
+        id_attr: "slug",
+        zone_attr: "stage",
+        live_channel: nil,
+        toasts: true,
+        empty_label: "Drop content here" %>
 </section>
