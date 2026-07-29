@@ -1,0 +1,45 @@
+<%# One depth-chart entry, rendered per record by the studio/board primitive
+    (card_partial). The board identity contract — id="card-<id>", .kanban-card,
+    data-id, data-position, and .kanban-locked when pinned — is emitted by
+    studio/board/card_shell; this partial owns only the row body. Bound as :entry via
+    card_as; grade / starter_slot / id_attr / zone_attr arrive via card_locals. The
+    lock button calls window.depthChartLock (depth_chart.js) — the factory owns drag,
+    not locking. The depth number carries data-depth so depthChartRenumber can restamp
+    it after a reorder. %>
+<%
+  id_attr      = local_assigns.fetch(:id_attr, "id")
+  zone_attr    = local_assigns.fetch(:zone_attr, "position")
+  grade        = local_assigns.fetch(:grade, nil)
+  starter_slot = local_assigns.fetch(:starter_slot, nil)
+  person       = entry.person
+  athlete      = person.athlete_profile
+  small        = athlete&.headshot_url(width: 100)
+%>
+<%= render layout: "studio/board/card_shell",
+      locals: {
+        id: entry.id, zone: entry.position, id_attr: id_attr, zone_attr: zone_attr,
+        locked: entry.locked,
+        class: "dc-entry #{'dc-starter' if starter_slot} flex items-center gap-2 px-2 py-1.5 bg-surface rounded border border-subtle"
+      } do %>
+  <span class="dc-handle text-muted text-xs w-4 select-none">⋮⋮</span>
+  <span class="text-muted text-xs font-mono w-5" data-depth><%= entry.depth %></span>
+  <% if small %>
+    <img src="<%= small %>" alt="<%= person.full_name %>" loading="lazy"
+         class="w-7 h-7 rounded-full object-cover bg-surface-alt flex-shrink-0">
+  <% else %>
+    <div class="w-7 h-7 rounded-full bg-surface-alt flex-shrink-0"></div>
+  <% end %>
+  <span class="text-body text-sm flex-1 truncate"><%= person.full_name %></span>
+  <% if starter_slot %>
+    <span class="dc-starter-badge" title="Fills the <%= starter_slot %> slot in this team's starting 28"><%= starter_slot %></span>
+  <% end %>
+  <% if grade&.overall_grade_pff %>
+    <span class="text-xs font-mono text-secondary"><%= grade.overall_grade_pff %></span>
+  <% end %>
+  <button type="button"
+          @click="window.depthChartLock.toggle(<%= entry.id %>, $event.currentTarget)"
+          class="text-muted hover:text-primary text-base px-1"
+          title="<%= entry.locked ? 'Unlock' : 'Lock' %>">
+    <span data-label><%= entry.locked ? '🔒' : '🔓' %></span>
+  </button>
+<% end %>
