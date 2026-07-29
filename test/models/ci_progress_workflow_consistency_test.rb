@@ -25,4 +25,40 @@ class CiProgressWorkflowConsistencyTest < ActiveSupport::TestCase
   test "[unit] the app CI workflow is recorded" do
     assert_includes GithubWorkflowRun::CI_PROGRESS_WORKFLOWS, GithubWorkflowRun::CI_WORKFLOW
   end
+
+  # ── The property, not the spellings ───────────────────────────────────────────
+  #
+  # The two tests above compare two LISTS, which is exactly why they did not catch
+  # the real bug: Ci::ReviewGate was in neither list. It hard-coded the literal "CI"
+  # for every repo, so a studio-engine PR resolved zero runs, read :none, and was
+  # permanently unclaimable by pr-review — while both lists stayed perfectly in sync.
+  #
+  # So assert the PROPERTY instead: every repo the board can review must resolve to a
+  # workflow the ingest actually records. A new gem added to config/release_repos.yml
+  # without a workflow mapping fails here, at the registry, rather than silently
+  # stranding its PRs.
+  test "[unit] every registered repo resolves to a CI workflow the ingest records" do
+    repos = Release::Repos.gem_repos + Release::Repos.app_repos
+    refute_empty repos, "the repo registry is empty — this guard would be vacuous"
+
+    repos.each do |repo|
+      workflow = GithubWorkflowRun.ci_workflow_for(repo)
+      next if workflow.nil? && Release::Repos.gem?(repo) # documented: unmapped gem = any workflow
+
+      assert_includes GithubWorkflowRun::CI_PROGRESS_WORKFLOWS, workflow,
+                      "#{repo} resolves CI workflow #{workflow.inspect}, which the ingest never records — " \
+                      "its PRs would read :none and never be claimable for review"
+    end
+  end
+
+  test "[unit] a gem repo does not resolve the app CI workflow name" do
+    gems = Release::Repos.gem_repos.select { |r| GithubWorkflowRun::GEM_CI_WORKFLOWS.key?(r) }
+    refute_empty gems, "no mapped gem repos — this guard would be vacuous"
+
+    gems.each do |repo|
+      refute_equal GithubWorkflowRun::CI_WORKFLOW, GithubWorkflowRun.ci_workflow_for(repo),
+                   "#{repo} is a gem; resolving the app's plain #{GithubWorkflowRun::CI_WORKFLOW.inspect} " \
+                   "workflow is the exact defect that made every gem PR unclaimable"
+    end
+  end
 end

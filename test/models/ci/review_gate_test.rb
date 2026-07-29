@@ -80,23 +80,74 @@ module Ci
       assert_equal :pending, Ci::ReviewGate.verdict(task, injected: "pending")[:state]
     end
 
+    # ── Gem repos name their CI workflow differently ──────────────────────────
+    #
+    # A GEM repo does not run a workflow called "CI". studio-engine runs "Engine CI"
+    # (its own suite) and "Consumer CI" (the downstream apps'). The gate resolved the
+    # literal "CI" for every repo, so a gem PR's runs never matched, the sha came back
+    # blank, and the verdict was :none — NOT green, forever. claim_next_review then
+    # skipped it on every wave, which made every studio-engine PR permanently
+    # unclaimable by pr-review and forced a manual merge outside the gate.
+
+    test "[unit] green when a GEM repo's own suite workflow concluded success" do
+      task = submitted(branch: "feat/gem-green", pr: 8, repo: "studio-engine")
+      seed_run(branch: "feat/gem-green", sha: "sha-gem-green", status: "completed", conclusion: "success",
+               repo: "amcritchie/studio-engine", workflow: "Engine CI")
+
+      assert Ci::ReviewGate.green?(task),
+             "a gem PR whose own suite CI concluded success must be claimable — it was skipped as :none"
+      assert_equal :green, Ci::ReviewGate.verdict(task)[:state]
+      assert_equal "sha-gem-green", Ci::ReviewGate.verdict(task)[:sha]
+    end
+
+    test "[unit] a GEM repo's failing suite is red, not none" do
+      task = submitted(branch: "feat/gem-red", pr: 9, repo: "studio-engine")
+      seed_run(branch: "feat/gem-red", sha: "sha-gem-red", status: "completed", conclusion: "failure",
+               repo: "amcritchie/studio-engine", workflow: "Engine CI")
+
+      refute Ci::ReviewGate.green?(task)
+      assert_equal :red, Ci::ReviewGate.verdict(task)[:state],
+                   "a gem's failing suite must READ as red — :none would hide a real failure behind 'no CI'"
+    end
+
+    # The name filter is load-bearing in BOTH directions. studio-engine's downstream
+    # "Consumer CI" runs on the same commits but is not the gem's own verdict, so it
+    # must never satisfy the gate on its own.
+    test "[unit] a gem's sibling workflow does not satisfy the gate" do
+      task = submitted(branch: "feat/gem-sibling", pr: 10, repo: "studio-engine")
+      seed_run(branch: "feat/gem-sibling", sha: "sha-sibling", status: "completed", conclusion: "success",
+               repo: "amcritchie/studio-engine", workflow: "Consumer CI")
+
+      refute Ci::ReviewGate.green?(task),
+             "Consumer CI is the downstream apps' suite, not the gem's own verdict"
+      assert_equal :none, Ci::ReviewGate.verdict(task)[:state]
+    end
+
+    test "[unit] an APP repo is still resolved by the plain CI workflow" do
+      task = submitted(branch: "feat/app-still-works", pr: 11)
+      seed_run(branch: "feat/app-still-works", sha: "sha-app", status: "completed", conclusion: "success")
+
+      assert Ci::ReviewGate.green?(task), "the app path must be unchanged by gem awareness"
+    end
+
     private
 
-    def submitted(branch:, pr:)
+    def submitted(branch:, pr:, repo: "mcritchie-studio")
       Task.create!(
         title: "gate demo #{SecureRandom.hex(2)}",
         stage: "submitted",
         metadata: { "devops" => {
           "branch" => branch,
-          "repositories" => ["mcritchie-studio"],
-          "pr_url" => "https://github.com/amcritchie/mcritchie-studio/pull/#{pr}"
+          "repositories" => [repo],
+          "pr_url" => "https://github.com/amcritchie/#{repo}/pull/#{pr}"
         } }
       )
     end
 
-    def seed_run(branch:, sha:, status:, conclusion:, run_id: nil, started: Time.current)
+    def seed_run(branch:, sha:, status:, conclusion:, run_id: nil, started: Time.current,
+                 repo: REPO, workflow: "CI")
       GithubWorkflowRun.create!(
-        repo: REPO, workflow_name: "CI",
+        repo: repo, workflow_name: workflow,
         run_id: run_id || SecureRandom.random_number(10**12),
         status: status, conclusion: conclusion,
         head_branch: branch, head_sha: sha, run_started_at: started

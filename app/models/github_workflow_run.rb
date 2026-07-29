@@ -22,7 +22,34 @@ class GithubWorkflowRun < ApplicationRecord
   # slips in never blends into a gem's track. Kept in sync with
   # Ci::ProgressReader::GEM_CI_WORKFLOWS by
   # test/models/ci_progress_workflow_consistency_test.rb.
-  CI_PROGRESS_WORKFLOWS = [CI_WORKFLOW, "Engine CI"].freeze
+  # Which workflow carries a GEM repo's OWN suite verdict. A gem does not run a
+  # workflow called "CI": studio-engine runs "Engine CI" (its own suite) and
+  # "Consumer CI" (the downstream apps' suites against it). Only the former is the
+  # gem's verdict, so the name is load-bearing in both directions.
+  #
+  # THIS IS THE ONE PLACE a repo's CI workflow name is decided. Every reader —
+  # Ci::ReviewGate (the review pop) and Ci::ProgressReader (the release meters) —
+  # resolves through .ci_workflow_for rather than naming a workflow itself.
+  # Centralised deliberately: the gate previously hard-coded the literal CI_WORKFLOW,
+  # so every studio-engine PR resolved to no runs, read :none, and was permanently
+  # unclaimable by pr-review. Adding a second literal somewhere would leave the NEXT
+  # gem just as blind; asserting the property is what
+  # test/models/ci_progress_workflow_consistency_test.rb now does.
+  GEM_CI_WORKFLOWS = { "studio-engine" => "Engine CI" }.freeze
+
+  CI_PROGRESS_WORKFLOWS = ([CI_WORKFLOW] + GEM_CI_WORKFLOWS.values.compact).freeze
+
+  # The workflow name whose runs carry `repo`'s suite verdict. Accepts a bare slug
+  # ("studio-engine") or an owner-qualified name ("amcritchie/studio-engine").
+  # Returns nil for a gem that is registered but maps to no workflow — the caller
+  # then means "newest run of any workflow", matching Ci::ProgressReader's contract
+  # for an unmapped gem (solana-studio ships no suite → a blank, invisible track).
+  def self.ci_workflow_for(repo)
+    slug = repo.to_s.split("/").last.to_s
+    return GEM_CI_WORKFLOWS[slug] if Release::Repos.gem?(slug)
+
+    CI_WORKFLOW
+  end
 
   validates :repo, :run_id, :status, presence: true
   validates :run_id, uniqueness: true
