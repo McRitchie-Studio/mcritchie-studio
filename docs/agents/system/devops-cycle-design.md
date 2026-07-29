@@ -264,7 +264,7 @@ ship. *Consolidation (decided):* the legacy `release_train` field has become
 branch — the *same* name in every repo (`Release::BRANCH = "release"`). Feature
 PRs target `release`, not `main`; `main` is always an ancestor of `release`.
 `bin/release init` creates the branch (= `main`) on every gem + app repo, once
-(idempotent). Membership records **at the sweep**: Steffon's `bin/release
+(idempotent). Membership records **at the sweep**: Avi's `bin/release
 prepare` (or the per-task `bin/release merge <task>` primitive it loops) merges
 an approved PR into `release` and attaches the task to the active candidate —
 `release_slug` + `merged: "release"`, stage still `reviewed`. The member flips
@@ -354,7 +354,7 @@ move at the sweep.** The per-task primitive is still **`bin/release merge <task>
 colliding files + suggested order + likely rebases, warning-only). A merge
 conflict surfaces **at this PR-merge step** (resolve on GitHub, or block the
 task for rework — prepare sweeps past it and keeps the rest) — `release` never
-force-pushes. Next comes Steffon's **pre-QA gate** — the registry `qa_test_cmd`
+force-pushes. Next comes Avi's **pre-QA gate** — the registry `qa_test_cmd`
 tier (integration + e2e-smoke) on `origin/release` BEFORE anything deploys; a
 regression **ejects the offender** (`bin/release eject <task>` → blocked +
 detached + merged cleared, pair with the merge-commit revert) and the REST of
@@ -743,7 +743,7 @@ These are **operator-launched (copy-paste) today, schedule-ready tomorrow** — 
 act is idempotent, with an explicit precondition + a named exit seam, so a
 scheduler can fire it later without rework (see [`heartbeats.md`](../modules/heartbeats.md)).
 Note `pr-review` **merges the reviewed feat PR into `accepted`** and stops at
-`reviewed` (it never touches `release`/`main`, never deploys) — Steffon's
+`reviewed` (it never touches `release`/`main`, never deploys) — Avi's
 `qa-release` sweep then promotes `accepted → release` and flips members
 `assembled` on QA-green.
 
@@ -926,9 +926,9 @@ ONE deterministic verb — **`bin/release prepare --yes [--task SLUG ...]
    `merged` cleared — then revert its merge commit on `release`) and re-run: the
    sweep self-heals and the REST of the RC rides on. Unset `qa_test_cmd` = the
    repo self-gates (skip).
-6. **Deploy QA.** Auto-records the Steffon QA intent for every member
+6. **Deploy QA.** Auto-records the Avi QA intent for every member
    (`Release::Conductor.record_deploy_intents!`, append-only + idempotent) so
-   /deployments shows Steffon QA-ing live; runs the per-app **merge-forward
+   /deployments shows Avi QA-ing live; runs the per-app **merge-forward
    guard** (keeps each repo's `release` ahead of `main`); then `bin/qa-server
    deploy <qa_app> origin/release` per **app** member — **gem members are
    skipped** (no app artifact; already published at step 4, QA'd via the

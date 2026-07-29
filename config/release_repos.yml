@@ -4,7 +4,7 @@
 # The Deploy workflow ships a release PRODUCER-FIRST: a gem (a *producer*) is
 # published to RubyGems BEFORE the apps (its *consumers*) that depend on it
 # deploy, so a consuming app always builds against the just-published version.
-# `bin/release prepare` (Steffon's qa-release sweep) publishes every gem member
+# `bin/release prepare` (Avi's qa-release sweep) publishes every gem member
 # at QA assembly — after a fail-closed preflight over ALL swept gems, BEFORE
 # the pre-QA gate and any QA deploy — and commits each consumer's lock bump
 # onto origin/release. `bin/release ship` ("Run Deployment") re-verifies each
@@ -94,7 +94,7 @@
 # (the old skip rule compared registry strings against the DEPLOYED sha), which
 # silently disarmed the last gate before production.
 #
-# Optional per-app `qa_test_cmd` is Steffon's PRE-QA gate (G3 Candidate):
+# Optional per-app `qa_test_cmd` is Avi's PRE-QA gate (G3 Candidate):
 # `bin/release prepare` runs it BEFORE any QA deploy — the tier prepare owns
 # (Release::STEP_TEST_TIERS). A red gate aborts prepare with eject guidance while
 # every swept member is still `reviewed` (nothing flipped, nothing deployed).
