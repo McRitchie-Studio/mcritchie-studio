@@ -28,6 +28,19 @@ require_relative "lib/code_diff"
 require_relative "lib/task_board"
 
 DEFAULT_ROOT = File.expand_path("..", __dir__)
+# HUB HELPERS RESOLVE FROM THE SCRIPT, NEVER FROM --root (task
+# preflight-works-from-satellites). bin/task and config/feature_shapes.yml ship
+# in THIS script's repo (the hub); --root names the tree being INSPECTED, which
+# may be a satellite/gem worktree that carries neither — resolving them under
+# --root ENOENT-died `bin/task show` on every satellite desk (turf-monster,
+# twice on 2026-07-28; a --file task-JSON dump was the workaround). Branch
+# drift, dirty tree, installed-docs drift, and the stale scan still read from
+# --root. Mirrors bin/dor-check (DOR_CHECK_TASK_BIN + hub-anchored
+# CONFIG_PATH): the shape taxonomy is studio-owned, so preflight previews the
+# SAME config the merge gate enforces. The env overrides are the test seam,
+# exactly as in dor-check.
+TASK_BIN = ENV.fetch("SESSION_PREFLIGHT_TASK_BIN", File.expand_path("task", __dir__))
+SHAPES_PATH = ENV.fetch("SESSION_PREFLIGHT_SHAPES_PATH", File.join(DEFAULT_ROOT, "config", "feature_shapes.yml"))
 TASK_API_BASE = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
 TASK_CONVERSATION_TYPES = %w[comment qa_feedback handoff clarification].freeze
 CHECK_STATES = {
@@ -105,9 +118,11 @@ def normalize_task(raw)
 end
 
 # Degrades to "" when the secret is missing (the preflight renders a warning
-# instead of dying) — hence the .to_s over TaskBoard's nil.
-def agent_secret(root)
-  TaskBoard.agent_secret(File.join(root, ".env")).to_s
+# instead of dying) — hence the .to_s over TaskBoard's nil. The dotenv last
+# resort is the HUB's .env (ENV and 1Password are consulted first): the board
+# secret lives with the script's repo, not with the inspected --root.
+def agent_secret
+  TaskBoard.agent_secret(File.join(DEFAULT_ROOT, ".env")).to_s
 end
 
 def api_request(base_url, method, path, token: nil, body: nil)
@@ -123,8 +138,8 @@ def api_token(base_url, secret)
   api_request(base_url, :post, "/api/v1/auth", body: { secret: secret }).fetch("token")
 end
 
-def fetch_latest_task_activity(slug, options)
-  secret = agent_secret(options[:root])
+def fetch_latest_task_activity(slug)
+  secret = agent_secret
   return [nil, "AGENT_API_SECRET not found for activities fallback"] if secret.empty?
 
   token = api_token(TASK_API_BASE, secret)
@@ -144,8 +159,10 @@ def load_task(slug, options)
   else
     die!("usage: bin/session-preflight <task-slug>") if slug.to_s.strip.empty?
 
-    script = File.join(options[:root], "bin", "task")
-    ok, out, err = capture(script, "show", slug, "--json", chdir: options[:root])
+    # TASK_BIN, not File.join(options[:root], "bin", "task"): the board CLI is a
+    # hub tool (cwd-independent — it roots itself at its own __dir__), and a
+    # satellite --root has no copy of it.
+    ok, out, err = capture(TASK_BIN, "show", slug, "--json", chdir: DEFAULT_ROOT)
     die!("bin/task show failed: #{compact_lines([err, out].join("\n")).join("; ")}") unless ok
 
     normalize_task(JSON.parse(out))
@@ -160,13 +177,12 @@ def task_devops(task)
   task.dig("metadata", "devops") || task["devops"] || {}
 end
 
-def load_shapes(root)
-  path = File.join(root, "config", "feature_shapes.yml")
-  return [{}, "missing #{path}"] unless File.exist?(path)
+def load_shapes
+  return [{}, "missing #{SHAPES_PATH}"] unless File.exist?(SHAPES_PATH)
 
-  [YAML.load_file(path), nil]
+  [YAML.load_file(SHAPES_PATH), nil]
 rescue Psych::Exception => e
-  [{}, "could not parse #{path}: #{e.message}"]
+  [{}, "could not parse #{SHAPES_PATH}: #{e.message}"]
 end
 
 # The branch ladder is accepted → release → main: feature branches cut from and
@@ -417,8 +433,8 @@ def latest_feedback(task, fallback_activity: nil)
   }
 end
 
-def shape_report(root, task, warnings)
-  config, warning = load_shapes(root)
+def shape_report(task, warnings)
+  config, warning = load_shapes
   warnings << warning if warning
   devops = task_devops(task)
   shape = devops["shape"].to_s
@@ -596,7 +612,7 @@ changed = changed_files(options[:root], base)
 fallback_activity = nil
 if !options[:file] && activity_with_description(task["latest_activity"]).nil?
   activity_slug = task["slug"].to_s.empty? ? slug : task["slug"]
-  fallback_activity, warning = fetch_latest_task_activity(activity_slug, options)
+  fallback_activity, warning = fetch_latest_task_activity(activity_slug)
   warnings << "latest task activity fallback failed: #{warning}" if warning
 end
 
@@ -661,7 +677,7 @@ end
 stale_hits = stale_scan(options[:root], scan_files).first(40)
 errors << "stale terminology found in #{stale_hits.size} location(s)" unless stale_hits.empty?
 
-shape = shape_report(options[:root], task, warnings)
+shape = shape_report(task, warnings)
 # An EXEMPT kind (EXEMPT_KINDS) skips the shape/required-metadata gate only when
 # the OBSERVED diff ships no behavior — exactly as bin/dor-check gates it, via the
 # same CodeDiff classifier. The label alone never earns the skip. (Preflight runs
