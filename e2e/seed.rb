@@ -141,6 +141,26 @@ Coach.create!(
   sport: "football"
 )
 
+# The Bills depth chart — drives depth_chart_board.spec.js (the studio/board rebase:
+# DG3 two-level side->position grid, DG2 sequential 1..N reorder, DG4 pinned starters).
+# The QB starter is locked; the RB lane has no lock so the reorder spec can reverse it.
+bills_depth_chart = DepthChart.create!(team_slug: coach_team.slug, slug: "#{coach_team.slug}-depth")
+[
+  { first: "Josh",  last: "Allen",     pos: "QB",   side: "offense", depth: 1, locked: true },
+  { first: "Mitch", last: "Trubisky",  pos: "QB",   side: "offense", depth: 2 },
+  { first: "Mike",  last: "White",     pos: "QB",   side: "offense", depth: 3 },
+  { first: "James", last: "Cook",      pos: "RB",   side: "offense", depth: 1 },
+  { first: "Ray",   last: "Davis",     pos: "RB",   side: "offense", depth: 2 },
+  { first: "Greg",  last: "Rousseau",  pos: "EDGE", side: "defense", depth: 1 },
+  { first: "AJ",    last: "Epenesa",   pos: "EDGE", side: "defense", depth: 2 }
+].each do |row|
+  person = Person.create!(first_name: row[:first], last_name: row[:last], slug: "#{row[:first]}-#{row[:last]}".downcase)
+  DepthChartEntry.create!(
+    depth_chart_slug: bills_depth_chart.slug, person_slug: person.slug,
+    position: row[:pos], side: row[:side], depth: row[:depth], locked: row[:locked] || false
+  )
+end
+
 # Stage-change timeline demo: one task walked through a full lifecycle, carrying
 # the per-transition usage agents report. Drives the Stage Timeline section on
 # the task show page — durations are measured server-side, model/tokens/cost are
