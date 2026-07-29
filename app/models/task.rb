@@ -192,6 +192,16 @@ class Task < ApplicationRecord
   # config/feature_shapes.yml (the source of truth that bin/dor-check reads).
   SHAPES = %w[ui-only ui+db backend library onchain onchain-vertical docs].freeze
 
+  # Board rank read-model (studio-engine board primitive). Supplies `reposition!`
+  # (the shared reorder write, driven by Studio::Board::Reorderable in the
+  # controller), `board_next_position`, the `board_ordered` scope, and the
+  # `set_initial_position` genesis seed wired below. `board_zone_attr` defaults to
+  # `:stage`, so ranking is per-column exactly as this board always did. Task's own
+  # `ordered` scope (below) EXTENDS `board_ordered` with the operator-approval
+  # priority clause, and `set_stage_timestamp` re-ranks a card to the top of its new
+  # column on a stage move — both are Task-specific and stay here.
+  include Studio::Board::Rankable
+
   belongs_to :agent, foreign_key: :agent_slug, primary_key: :slug, optional: true
   belongs_to :release, foreign_key: :release_slug, primary_key: :slug, optional: true, inverse_of: :tasks
   has_many :activities, foreign_key: :task_slug, primary_key: :slug, dependent: :nullify
@@ -1655,11 +1665,10 @@ class Task < ApplicationRecord
     assigned.match?(SOUL_SLUG) ? assigned : nil
   end
 
-  def set_initial_position
-    # A new task lands at the TOP of its (designed) column: max + 100 under the
-    # `position DESC` sort. 100-spacing mirrors News/Content and leaves drag gaps.
-    self.position ||= (Task.where(stage: stage).maximum(:position) || 0) + 100
-  end
+  # `set_initial_position` (the `before_create` genesis seed above) now comes from
+  # Studio::Board::Rankable — a new task lands at the TOP of its column (zone max +
+  # 100 under the `position DESC` sort, 100-spaced to leave drag gaps). The concern's
+  # implementation is byte-for-byte what Task hand-rolled, so it was removed here.
 
   # A still-open operator-approval REQUEST is settled once the task is past the
   # `submitted` seam: the PR review flow takes over, so the local-preview approval

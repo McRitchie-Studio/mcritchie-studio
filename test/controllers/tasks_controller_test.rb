@@ -25,12 +25,17 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "button[data-test='task-card-archive']"
     assert_select "button[data-test='task-card-delete']"
+    # Archive/delete are the OUTER taskBoardChrome writes (the app half of the board
+    # primitive rebase), hitting the SHARED task JSON routes — no per-action archive
+    # endpoint: PATCH stage=archived, DELETE the task.
     assert_includes response.body, "fetch('/tasks/' + slug + '.json'"
     assert_includes response.body, "method: 'PATCH'"
-    assert_includes response.body, "const useLiveExit = !!window.LiveBoardFx"
-    assert_includes response.body, "if (card && !useLiveExit) await this.animateCardExit(card, 'archive')"
-    assert_includes response.body, "animateCardExit(card, 'archive')"
-    assert_includes response.body, "animateCardExit(card, 'delete')"
+    assert_includes response.body, "method: 'DELETE'"
+    # Distinct exit animations: the app passes a distinct kind to the studio/board
+    # primitive's animateCardExit, which branches archive vs delete.
+    assert_includes response.body, "this.boardExit(card, 'archive')"
+    assert_includes response.body, "this.boardExit(card, 'delete')"
+    assert_includes response.body, 'kind === "archive"'
     assert_not_includes response.body, "/tasks/' + slug + '/archive.json"
   end
 
