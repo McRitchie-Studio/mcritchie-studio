@@ -79,7 +79,7 @@ class Release::ReposTest < ActiveSupport::TestCase
   # --- apps as a hash: app_meta / prod_deploy / qa_app ---
 
   test "app_repos lists the registry's app hash keys" do
-    assert_equal %w[mcritchie-studio turf-monster rolio tax-studio chain-ops].sort,
+    assert_equal %w[mcritchie-studio turf-monster mcritchie-industries rolio tax-studio chain-ops].sort,
                  Release::Repos.app_repos.sort
   end
 
@@ -235,6 +235,43 @@ class Release::ReposTest < ActiveSupport::TestCase
                  "rolio's G3 gate must run rolio CI's full suite (base + system tiers), verbatim"
   end
 
+  # --- mcritchie-industries: git_push_heroku, so it gates like rolio ---
+
+  test "mcritchie-industries' prod_deploy is git_push_heroku onto the canonical host" do
+    adapter = Release::Repos.prod_deploy("mcritchie-industries")
+    assert_equal "git_push_heroku", adapter["strategy"]
+    assert_equal "https://git.heroku.com/mcritchie-industries.git", adapter["remote"]
+    assert_equal "main", adapter["branch"]
+    assert_equal "https://www.mcritchie.industries", adapter["smoke_url"]
+  end
+
+  test "mcritchie-industries registers CI's full suite at BOTH gates" do
+    # git_push_heroku has NO test step, so the registered command is the last
+    # gate before production and must be CI's full suite verbatim. This repo has
+    # NO system tier yet (test/system holds only a .keep; its own
+    # ci_workflow_test.rb pins the plain-`test` shape) — so, deliberately, no
+    # `test:system` here. Same string at both gates so G4 can self-gate on G3.
+    %w[test_cmd qa_test_cmd].each do |field|
+      assert_equal "bin/rails db:test:prepare test",
+                   Release::Repos.public_send(field, "mcritchie-industries"),
+                   "#{field} must be mcritchie-industries CI's full suite, verbatim"
+    end
+  end
+
+  test "mcritchie-industries' gate runs its CI test command verbatim" do
+    # THE DRIFT GUARD, rolio-style: asserted against the repo's OWN ci.yml at
+    # origin/release, so when its first system test lands and ci.yml grows
+    # `test:system`, this fails at the seam until the registry grows it too.
+    # Anchored on the suite step (db:test:prepare) because this repo's test job
+    # runs `bin/rails tailwindcss:build` BEFORE the suite — the bin/rails
+    # anchor would find the asset build, not the gate command.
+    ci = sibling_ci_test_command("mcritchie-industries", anchor: "db:test:prepare")
+    skip "mcritchie-industries checkout not present (hub CI runner) — shape guards above still bind" if ci.nil?
+
+    assert_equal ci, Release::Repos.qa_test_cmd("mcritchie-industries"),
+                 "mcritchie-industries' G3 gate must run its CI suite, verbatim"
+  end
+
   test "turf-monster has no system tests, so its integration subset is the right gate" do
     # Verified, not assumed: turf-monster's test/system holds only a .keep, so
     # there is no system tier to cover and bin/deploy's full suite is sufficient.
@@ -257,15 +294,16 @@ class Release::ReposTest < ActiveSupport::TestCase
     end
 
     # The single command a sibling repo's ci.yml `test` job runs. Located by content
-    # (`bin/rails`), not by step name, so renaming the step cannot silently blind the
-    # drift guard. nil when the sibling isn't checked out.
+    # (`bin/rails` by default; pass anchor: for a repo whose test job runs OTHER
+    # bin/rails steps before the suite), not by step name, so renaming the step
+    # cannot silently blind the drift guard. nil when the sibling isn't checked out.
     #
     # Read from `origin/release`, NOT the sibling's WORKING TREE. The working tree is
     # whatever branch that checkout happens to sit on — so an agent editing rolio's
     # ci.yml on a feature branch would turn THE HUB's gate red for a change that is
     # nowhere near the release. The registry gates the code that SHIPS, so it is held
     # against the branch that ships.
-    def sibling_ci_test_command(repo)
+    def sibling_ci_test_command(repo, anchor: "bin/rails")
       root = projects_root
       return nil if root.nil?
 
@@ -275,15 +313,15 @@ class Release::ReposTest < ActiveSupport::TestCase
 
       ci    = YAML.safe_load(raw, aliases: true)
       steps = ci.dig("jobs", "test", "steps") || []
-      run   = steps.filter_map { |s| s["run"] }.find { |c| c.include?("bin/rails") }
-      assert run.present?, "#{repo}'s ci.yml `test` job no longer has a bin/rails step — the guard is blind"
+      run   = steps.filter_map { |s| s["run"] }.find { |c| c.include?(anchor) }
+      assert run.present?, "#{repo}'s ci.yml `test` job no longer has a #{anchor} step — the guard is blind"
       run.strip
     end
 
   test "qa_test_cmd stays flag-style so the argv parse is unambiguous" do
     # Shellwords and String#split agree on these values (no quotes) — pins the
     # behavior-preserving half of the test_cmd_argv switch at the registry.
-    %w[mcritchie-studio turf-monster rolio].each do |repo|
+    %w[mcritchie-studio turf-monster mcritchie-industries rolio].each do |repo|
       cmd = Release::Repos.qa_test_cmd(repo)
       assert_equal cmd.split, Shellwords.split(cmd), "#{repo} qa_test_cmd must parse identically both ways"
     end

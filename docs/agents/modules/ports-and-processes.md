@@ -9,17 +9,19 @@ Local app ports are assigned in hundreds so each app has room for worktree and p
 | Tax Studio | 3200 | 3200-3299 |
 | Rolio | 3300 | 3300-3399 reserved |
 | Chain Ops | 3400 | 3400-3499 |
-| Acquisition Studio | 3500 | 3500-3599 |
+| McRitchie Industries | 3500 | 3500-3599 (3510 reserved) |
 
 The durable app registry decision surface is
 `mcritchie-studio/docs/agents/modules/app-registry.md`. Rolio's range is
 reserved, and its hosted QA/prod deploy targets are managed by the release
 registries. It is not managed by rebuild/nav automation. Chain Ops is planned for
-localnet/QA/node operations. Acquisition Studio is a local-only,
-confidential studio-engine satellite (not in `config/satellites.yml`; no
-deploy pipeline); the worktree launcher does not allocate in its range yet.
+localnet/QA/node operations. McRitchie Industries is a managed studio-engine
+satellite (active in `config/satellites.yml`) and the successor to the retired
+Acquisition Studio prototype, which previously held this range.
 Caution: the unmanaged MSAA client workspace informally parks a dev app on
-`3510` — avoid that port for Acquisition Studio side stacks until MSAA moves.
+`3510` inside this band — the worktree launcher excludes it
+(`reserved_ports` in `bin/agent-worktree`), and no McRitchie Industries side
+stack should sit on it until MSAA moves.
 
 ## Primary Ports
 
@@ -55,9 +57,9 @@ bin/agent-worktree up turf-monster task-slug
 
 Keep callback-heavy flows on the primary stack unless the external provider has been configured for the alternate port.
 
-For parallel work, primary ports (`3000`, `3100`, `3200`, `3300`, `3400`) are
-stable review and callback lanes. Worktree ports (`3001+`, `3101+`, `3201+`,
-`3301+`, `3401+`) are isolated desks
+For parallel work, primary ports (`3000`, `3100`, `3200`, `3300`, `3400`,
+`3500`) are stable review and callback lanes. Worktree ports (`3001+`, `3101+`,
+`3201+`, `3301+`, `3401+`, `3501+`) are isolated desks
 for agents to build, test, and hand back URLs without moving another agent's
 ground.
 
