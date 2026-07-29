@@ -262,12 +262,12 @@ ship. *Consolidation (decided):* the legacy `release_train` field has become
 
 **The integration branch is PERSISTENT.** Every repo keeps a single `release`
 branch — the *same* name in every repo (`Release::BRANCH = "release"`). Feature
-PRs target `accepted`, never `release` or `main`; `main` is always an ancestor
-of `release`. `bin/release init` creates the branch (= `main`) on every gem +
-app repo, once (idempotent). Membership records **at the sweep**: Avi's
-`bin/release prepare` promotes ALL of `accepted` onto `release` via ONE batch PR
-per repo — not N per-task merges — and attaches each task to the active
-candidate — `release_slug` + `merged: "release"`, stage still `reviewed`. The member flips
+PRs target `release`, not `main`; `main` is always an ancestor of `release`.
+`bin/release init` creates the branch (= `main`) on every gem + app repo, once
+(idempotent). Membership records **at the sweep**: Avi's `bin/release
+prepare` (or the per-task `bin/release merge <task>` primitive it loops) merges
+an approved PR into `release` and attaches the task to the active candidate —
+`release_slug` + `merged: "release"`, stage still `reviewed`. The member flips
 `reviewed → assembled` only on **QA-green** (`Release::Conductor.qa_green!`,
 after `prepare` deploys `origin/release` to QA and it smokes green). `ship`
 fast-forwards each repo's `release → main` (stamping members `merged: "main"`)

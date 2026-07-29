@@ -444,8 +444,8 @@ Avi's `qa-release` sweep owns the `accepted → release` promotion plus QA deplo
 
 Scout sessions do **not** merge, deploy, publish gems, change providers, rotate
 credentials, force-push, or take over the feature branch. Their job is to return
-a concise findings report and one recommendation to Avi: merge-ready,
-wait-for-CI, request-changes, or conductor-review. Avi keeps the final review
+a concise findings report and one recommendation to Carl: merge-ready,
+wait-for-CI, request-changes, or conductor-review. Carl keeps the final review
 decision; the release lane keeps integration and deployment decisions.
 
 After reviewing, the scout records the report on the task as a structured task
@@ -462,8 +462,8 @@ bin/devops-cycle --record-scout-report task-XXXX \
 
 Use `--dry-run` first, then remove it when the payload is correct. Valid
 outcomes are `merge-ready`, `wait-for-ci`, `request-changes`, and
-`conductor-review`. Scout reports are evidence for Avi. Scouts should not move
-task stages or convert findings into final `qa_feedback`; Avi does that after
+`conductor-review`. Scout reports are evidence for Carl. Scouts should not move
+task stages or convert findings into final `qa_feedback`; Carl does that after
 reviewing the report and PR context.
 
 Use `bin/devops-cycle --scout-reports` when you need the detailed reports under
@@ -567,7 +567,7 @@ Steffon gates PRs with operational risk:
 - UI flows where browser proof is the core acceptance criterion
 
 Low-risk docs or copy PRs can merge on Carl's review alone. When in doubt, Carl
-asks Avi for QA before merge.
+asks Steffon for the operational-risk review above before merge.
 
 ## Release Conductor
 
