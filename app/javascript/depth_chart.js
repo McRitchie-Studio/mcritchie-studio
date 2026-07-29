@@ -1,69 +1,55 @@
-// DepthChart manager — Alpine component for /teams/:slug/depth-chart
-// Wires SortableJS for drag-reorder within a position and POSTs reorder + lock toggles.
+// DepthChart — client helpers for the studio/board depth chart (studio-engine 0.29.0).
+//
+// The window.studioBoard factory now owns drag + within-lane reorder (it POSTs the
+// lane's DOM-ordered entry_ids to Studio::Board::Reorderable, which restamps depths
+// 1..N skipping locked entries). This module keeps only the two depth-chart-specific
+// bits the neutral factory does NOT own:
+//
+//   depthChartRenumber({ ids, zone })  — the board's on_drop_hook. After a reorder it
+//     restamps the VISIBLE depth column (the data-depth span) for that lane 1..N by DOM
+//     order. Because a locked card can't be dragged and no card may cross it (the
+//     factory's lockedSelector pin guard), a pinned card's DOM index never moves, so
+//     idx+1 stays consistent with the server's skip-locked depth.
+//
+//   depthChartLock.toggle(id, btn)     — the per-card lock button. POSTs toggle_lock,
+//     then flips .kanban-locked (which the factory filters from dragging) + the 🔒/🔓
+//     glyph on the card.
 
-function depthChart(reorderUrl) {
-  return {
-    csrf() {
-      return document.querySelector('meta[name="csrf-token"]')?.content;
-    },
+window.depthChartRenumber = function (detail) {
+  var zone = document.getElementById("dropzone-" + (detail && detail.zone));
+  if (!zone) return;
+  var cards = zone.querySelectorAll(".kanban-card");
+  for (var i = 0; i < cards.length; i++) {
+    var span = cards[i].querySelector("[data-depth]");
+    if (span) span.textContent = i + 1;
+  }
+};
 
-    init() {
-      this.$nextTick(() => this.initSortables());
-    },
+window.depthChartLock = {
+  csrf: function () {
+    return (document.querySelector('meta[name="csrf-token"]') || {}).content;
+  },
 
-    initSortables() {
-      document.querySelectorAll('.dc-zone').forEach(zone => {
-        Sortable.create(zone, {
-          animation: 150,
-          handle: '.dc-handle',
-          filter: '.dc-locked',
-          preventOnFilter: false,
-          onMove: (evt) => !evt.related.classList.contains('dc-locked'),
-          onEnd: (evt) => this.handleSort(evt)
-        });
-      });
-    },
-
-    async handleSort(evt) {
-      const zone = evt.to;
-      const position = zone.dataset.position;
-      const entry_ids = Array.from(zone.querySelectorAll('.dc-entry')).map(li => li.dataset.id);
-      try {
-        const resp = await fetch(reorderUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': this.csrf() },
-          body: JSON.stringify({ position, entry_ids })
-        });
-        if (!resp.ok) throw new Error('reorder failed');
-        zone.querySelectorAll('.dc-entry').forEach((li, i) => {
-          li.querySelector('.font-mono.w-5').textContent = i + 1;
-        });
-      } catch (e) {
-        console.error(e);
-        alert('Reorder failed — refresh and try again.');
+  toggle: function (id, btn) {
+    var self = this;
+    fetch("/depth_chart_entries/" + id + "/toggle_lock", {
+      method: "POST",
+      headers: { "X-CSRF-Token": self.csrf(), "Accept": "application/json" }
+    }).then(function (resp) {
+      if (!resp.ok) throw new Error("lock failed");
+      return resp.json();
+    }).then(function (data) {
+      var card = btn.closest(".kanban-card");
+      if (card) {
+        card.classList.toggle("kanban-locked", data.locked);
+        card.dataset.locked = data.locked;
       }
-    },
-
-    async toggleLock(id, btn) {
-      try {
-        const resp = await fetch('/depth_chart_entries/' + id + '/toggle_lock', {
-          method: 'POST',
-          headers: { 'X-CSRF-Token': this.csrf() }
-        });
-        if (!resp.ok) throw new Error('lock failed');
-        const data = await resp.json();
-        const li = btn.closest('.dc-entry');
-        li.classList.toggle('dc-locked', data.locked);
-        li.dataset.locked = data.locked;
-        const span = btn.querySelector('span');
-        span.dataset.label = data.locked ? '🔒' : '🔓';
-        span.textContent = data.locked ? '🔒' : '🔓';
-      } catch (e) {
-        console.error(e);
-        alert('Lock toggle failed.');
-      }
-    }
-  };
-}
-
-window.depthChart = depthChart;
+      var span = btn.querySelector("[data-label]");
+      if (span) span.textContent = data.locked ? "🔒" : "🔓";
+      btn.title = data.locked ? "Unlock" : "Lock";
+    }).catch(function (e) {
+      console.error(e);
+      alert("Lock toggle failed.");
+    });
+  }
+};

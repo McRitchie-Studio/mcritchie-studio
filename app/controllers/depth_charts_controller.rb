@@ -1,8 +1,18 @@
 class DepthChartsController < ApplicationController
   include LineupLabelsHelper
+  # Board primitive (studio-engine 0.29.0): the shared reorder + lock actions.
+  # `reorder` restamps a lane's entry_ids to sequential depths 1..N (DG2), skipping
+  # locked/pinned entries (DG4); `board_toggle_lock` flips a starter's `locked` flag
+  # — both with the ErrorLog write discipline the hand-rolled versions carried.
+  include Studio::Board::Reorderable
+  board_reorderable model: DepthChartEntry, id_attr: :id, param: :entry_ids,
+                    gap: 1, direction: :asc, skip_locked: true, rank_attr: :depth
+
+  # The route names it depth_charts#toggle_lock; the concern provides board_toggle_lock.
+  alias_method :toggle_lock, :board_toggle_lock
 
   skip_before_action :require_authentication, only: [:show]
-  before_action :set_team, only: [:show, :reorder]
+  before_action :set_team, only: [:show]
 
   POSITION_ORDER = {
     "offense" => %w[QB RB FB WR TE LT LG C RG RT OT OG T G],
@@ -55,40 +65,10 @@ class DepthChartsController < ApplicationController
     end
   end
 
-  def reorder
-    chart = @team.depth_chart
-    return render json: { error: "no chart" }, status: :not_found unless chart
-
-    rescue_and_log(target: chart) do
-      position = params.require(:position)
-      ids      = Array(params.require(:entry_ids))
-
-      ActiveRecord::Base.transaction do
-        ids.each_with_index do |id, idx|
-          entry = chart.depth_chart_entries.find(id)
-          next if entry.locked
-          entry.update!(depth: idx + 1)
-        end
-      end
-      render json: { ok: true, position: position }
-    end
-  rescue ActiveRecord::RecordNotFound
-    render json: { error: "entry not found" }, status: :not_found
-  rescue StandardError => e
-    render json: { error: e.message }, status: :unprocessable_entity
-  end
-
-  def toggle_lock
-    entry = DepthChartEntry.find(params[:id])
-    rescue_and_log(target: entry) do
-      entry.update!(locked: !entry.locked)
-      render json: { ok: true, locked: entry.locked }
-    end
-  rescue ActiveRecord::RecordNotFound
-    render json: { error: "entry not found" }, status: :not_found
-  rescue StandardError => e
-    render json: { error: e.message }, status: :unprocessable_entity
-  end
+  # reorder + toggle_lock are provided by Studio::Board::Reorderable (see the
+  # board_reorderable config above). `reorder` reads params[:entry_ids] and
+  # restamps depths 1..N skipping locked entries; `toggle_lock` (aliased to
+  # board_toggle_lock) flips the entry's `locked` flag.
 
   private
 
