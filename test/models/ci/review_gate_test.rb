@@ -123,6 +123,38 @@ module Ci
       assert_equal :none, Ci::ReviewGate.verdict(task)[:state]
     end
 
+    # ── Fail closed when the workflow cannot be resolved ──────────────────────
+    #
+    # solana-studio is a REGISTERED gem that ships no suite workflow, so
+    # ci_workflow_for returns nil. An earlier version dropped the workflow filter in
+    # that case, which meant "any run on the branch greens this PR". Two ways that
+    # authorised a merge it should not have — both are now :none.
+
+    test "[unit] an unresolved workflow reads :none, never green off an unrelated run" do
+      task = submitted(branch: "feat/no-suite", pr: 12, repo: "solana-studio")
+      seed_run(branch: "feat/no-suite", sha: "sha-unrelated", status: "completed", conclusion: "success",
+               repo: "amcritchie/solana-studio", workflow: "Publish Gem")
+
+      assert_nil GithubWorkflowRun.ci_workflow_for("solana-studio"),
+                 "precondition: solana-studio declares no suite workflow"
+      refute Ci::ReviewGate.green?(task),
+             "a repo with no declared suite must never green off an unrelated workflow"
+      assert_equal :none, Ci::ReviewGate.verdict(task)[:state]
+    end
+
+    test "[unit] a later unrelated PASS cannot mask an earlier real FAILURE" do
+      task = submitted(branch: "feat/masked", pr: 13, repo: "solana-studio")
+      # The real suite failed; a lint job on the SAME sha passed afterwards.
+      seed_run(branch: "feat/masked", sha: "sha-masked", status: "completed", conclusion: "failure",
+               repo: "amcritchie/solana-studio", workflow: "CI", run_id: 300, started: 2.minutes.ago)
+      seed_run(branch: "feat/masked", sha: "sha-masked", status: "completed", conclusion: "success",
+               repo: "amcritchie/solana-studio", workflow: "Lint", run_id: 400, started: 1.minute.ago)
+
+      refute Ci::ReviewGate.green?(task),
+             "the newest unrelated PASS must not mask the real FAILURE — this greened a red PR"
+      assert_equal :none, Ci::ReviewGate.verdict(task)[:state]
+    end
+
     test "[unit] an APP repo is still resolved by the plain CI workflow" do
       task = submitted(branch: "feat/app-still-works", pr: 11)
       seed_run(branch: "feat/app-still-works", sha: "sha-app", status: "completed", conclusion: "success")

@@ -62,6 +62,14 @@ module Ci
       # same commit blends into the verdict.
       workflow = GithubWorkflowRun.ci_workflow_for(repo)
 
+      # FAIL CLOSED on an unresolved workflow. A repo with no declared suite (or one
+      # missing from GEM_CI_WORKFLOWS) must read :none — NEVER "match any workflow on
+      # the branch". Dropping the filter here let unrelated runs authorise a merge:
+      # a FAILED `CI` run plus a later successful `Lint` run on the SAME head_sha
+      # folded to :green, because the newest unrelated pass masked the real failure.
+      # This gate authorises merges; a display reader may guess, this may not.
+      return { state: :none, sha: nil } if workflow.blank?
+
       sha = latest_ci_sha(nwo, branch, workflow)
       return { state: :none, sha: nil } if sha.blank?
 
@@ -70,12 +78,14 @@ module Ci
 
     # The newest ingested `CI` run's head_sha on this repo+branch — the PR tip we hold
     # CI data for (mirrors Ci::ProgressReader.latest_ci_sha). nil when none ingested.
+    # `workflow` is always present — #verdict returns :none before calling this when it
+    # cannot resolve one, so the filter is never silently dropped.
     def latest_ci_sha(nwo, branch, workflow = CI_WORKFLOW)
-      scope = GithubWorkflowRun.for_repo(nwo).where(head_branch: branch)
-      scope = scope.where(workflow_name: workflow) if workflow.present?
-      scope.order(Arel.sql(LATEST_RUN_ORDER))
-           .limit(1)
-           .pick(:head_sha)
+      GithubWorkflowRun.for_repo(nwo)
+                       .where(head_branch: branch, workflow_name: workflow)
+                       .order(Arel.sql(LATEST_RUN_ORDER))
+                       .limit(1)
+                       .pick(:head_sha)
     end
 
     # The ingested CI run for this head_sha, shaped as a check-runs payload for
@@ -84,9 +94,11 @@ module Ci
     # a stale failed run beside the fresh green one would (correctly, for CiStatus)
     # read :red — but the fresh run is the live verdict, so the superseded row drops.
     def check_runs_payload(nwo, sha, workflow = CI_WORKFLOW)
-      scope = GithubWorkflowRun.for_repo(nwo).for_sha(sha)
-      scope = scope.where(workflow_name: workflow) if workflow.present?
-      run = scope.order(Arel.sql(LATEST_RUN_ORDER)).first
+      run = GithubWorkflowRun.for_repo(nwo)
+                             .for_sha(sha)
+                             .where(workflow_name: workflow)
+                             .order(Arel.sql(LATEST_RUN_ORDER))
+                             .first
       runs = if run
                [{ "name" => run.workflow_name.to_s, "status" => run.status.to_s, "conclusion" => run.conclusion.to_s }]
              else

@@ -19,9 +19,11 @@ class GithubWorkflowRun < ApplicationRecord
   # these — a gem's downstream "Consumer CI" runs on the same `main` SHA but is NOT
   # a surfaced track, so it is never recorded. Ci::ProgressReader additionally
   # SCOPES each track's fold to its own workflow, so even a sibling workflow that
-  # slips in never blends into a gem's track. Kept in sync with
-  # Ci::ProgressReader::GEM_CI_WORKFLOWS by
-  # test/models/ci_progress_workflow_consistency_test.rb.
+  # slips in never blends into a gem's track. DERIVED from GEM_CI_WORKFLOWS below,
+  # which Ci::ProgressReader now aliases rather than duplicates — so the two can no
+  # longer drift apart. test/models/ci_progress_workflow_consistency_test.rb asserts
+  # the property rather than comparing two hand-written lists.
+  #
   # Which workflow carries a GEM repo's OWN suite verdict. A gem does not run a
   # workflow called "CI": studio-engine runs "Engine CI" (its own suite) and
   # "Consumer CI" (the downstream apps' suites against it). Only the former is the
@@ -35,7 +37,16 @@ class GithubWorkflowRun < ApplicationRecord
   # unclaimable by pr-review. Adding a second literal somewhere would leave the NEXT
   # gem just as blind; asserting the property is what
   # test/models/ci_progress_workflow_consistency_test.rb now does.
-  GEM_CI_WORKFLOWS = { "studio-engine" => "Engine CI" }.freeze
+  #
+  # EVERY registered gem must appear here — the consistency test enforces it. A nil
+  # value is an EXPLICIT declaration that the gem ships no suite workflow
+  # (solana-studio runs none), not an accident. The distinction matters because a
+  # reader cannot tell "unmapped by oversight" from "genuinely has no suite", and
+  # Ci::ReviewGate treats an unresolved workflow as NOT-GREEN rather than guessing.
+  GEM_CI_WORKFLOWS = {
+    "studio-engine" => "Engine CI",
+    "solana-studio" => nil # ships no suite workflow — declared, not overlooked
+  }.freeze
 
   CI_PROGRESS_WORKFLOWS = ([CI_WORKFLOW] + GEM_CI_WORKFLOWS.values.compact).freeze
 
@@ -48,6 +59,13 @@ class GithubWorkflowRun < ApplicationRecord
     slug = repo.to_s.split("/").last.to_s
     return GEM_CI_WORKFLOWS[slug] if Release::Repos.gem?(slug)
 
+    CI_WORKFLOW
+  rescue StandardError => e
+    # Release::Repos reads config/release_repos.yml. An unreadable/malformed registry
+    # must not 500 the claim-next-review pop, so degrade to the APP workflow: an app
+    # repo keeps working, and a gem then resolves "CI", matches nothing, and reads
+    # :none — not-green, which is the safe direction for a merge gate.
+    ErrorLog.capture!(e)
     CI_WORKFLOW
   end
 
