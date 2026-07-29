@@ -41,7 +41,11 @@ module Ci
     # apps' suites), which is NOT the gem's own verdict, so the name filter is
     # load-bearing. A gem absent from this map resolves the newest `main` run of any
     # workflow (solana-studio ships none → a blank, invisible track).
-    GEM_CI_WORKFLOWS = { "studio-engine" => "Engine CI" }.freeze
+    # Sourced from GithubWorkflowRun — the ONE place a repo's CI workflow name is
+    # decided — so the reader, the ingest, and Ci::ReviewGate can no longer drift
+    # apart. Kept as a named constant here because this is the release-track reader's
+    # documented vocabulary and callers/tests reference it.
+    GEM_CI_WORKFLOWS = GithubWorkflowRun::GEM_CI_WORKFLOWS
     GEM_CI_BRANCH = "main"
 
     # Only a submitted-onward task shows a CI bar — before the PR there is no run.

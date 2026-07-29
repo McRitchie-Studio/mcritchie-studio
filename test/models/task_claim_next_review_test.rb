@@ -126,4 +126,58 @@ class TaskClaimNextReviewTest < ActiveSupport::TestCase
   def all_green(*tasks)
     tasks.each_with_object({}) { |task, memo| memo[task.slug] = "green" }
   end
+
+  # ── The real DB fold, no injection seam ──────────────────────────────────────
+  #
+  # Every case above drives CI through `ci_status:`, which is precisely why none of
+  # them caught the gem bug: the injection short-circuits Ci::ReviewGate before it
+  # ever resolves a workflow name. These two run the ACTUAL fold against ingested
+  # GithubWorkflowRun rows, so a regression in workflow resolution fails here.
+
+  class GemRepoPopTest < ActiveSupport::TestCase
+    setup { GithubWorkflowRun.delete_all }
+
+    test "[integration] pops a GEM repo task whose own suite CI is green" do
+      task = gem_submitted("engine fix task", position: 100)
+      seed_engine_ci(branch: "feat/engine-fix-task", sha: "sha-engine", conclusion: "success")
+
+      result = Task.claim_next_review(session: "S", nonce: "n") # NO injection — real fold
+
+      assert result.claimed?, "a green gem PR must be claimable; it was skipped as no_green_ci"
+      assert_equal task.slug, result.task.slug
+    end
+
+    test "[integration] does NOT pop a gem task whose own suite CI failed" do
+      gem_submitted("engine broken task", position: 100)
+      seed_engine_ci(branch: "feat/engine-broken-task", sha: "sha-broken", conclusion: "failure")
+
+      result = Task.claim_next_review(session: "S", nonce: "n")
+
+      refute result.claimed?, "a red gem PR must never be claimed"
+      assert_equal "no_green_ci", result.reason
+    end
+
+    private
+
+    def gem_submitted(title, position:)
+      Task.create!(
+        title: title, stage: "submitted", position: position,
+        metadata: { "devops" => {
+          "branch" => "feat/#{title.parameterize}",
+          "repositories" => ["studio-engine"],
+          "pr_url" => "https://github.com/amcritchie/studio-engine/pull/#{position}"
+        } }
+      )
+    end
+
+    def seed_engine_ci(branch:, sha:, conclusion:)
+      GithubWorkflowRun.create!(
+        repo: "amcritchie/studio-engine",
+        workflow_name: GithubWorkflowRun::GEM_CI_WORKFLOWS.fetch("studio-engine"),
+        run_id: SecureRandom.random_number(10**12),
+        status: "completed", conclusion: conclusion,
+        head_branch: branch, head_sha: sha, run_started_at: Time.current
+      )
+    end
+  end
 end

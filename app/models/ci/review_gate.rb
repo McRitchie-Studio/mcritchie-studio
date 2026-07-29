@@ -22,6 +22,9 @@ module Ci
   # Only :green is eligible. :red / :pending / :none / :ci_less / :unverified are all
   # "not green", and the caller SKIPS them — a non-green PR is never claimed for review.
   module ReviewGate
+    # Resolved PER REPO — an app repo's runs are named "CI", a gem's are its own
+    # suite ("Engine CI"). Hard-coding the app literal here is what made every
+    # studio-engine PR unclaimable. See GithubWorkflowRun.ci_workflow_for.
     CI_WORKFLOW = GithubWorkflowRun::CI_WORKFLOW
     # Newest-run ordering, mirroring Ci::ProgressReader::LATEST_RUN_ORDER.
     LATEST_RUN_ORDER = "run_started_at DESC NULLS LAST, created_at DESC, run_id DESC"
@@ -48,21 +51,38 @@ module Ci
       token = injected.to_s.strip
       return { state: token.to_sym } if CiStatus::TOKENS.include?(token)
 
-      nwo = nwo_for(repo_for(task))
+      repo = repo_for(task)
+      nwo = nwo_for(repo)
       branch = branch_for(task)
       return { state: :no_pr } if nwo.empty? || branch.empty? || task.devops_url("pr").blank?
 
-      sha = latest_ci_sha(nwo, branch)
+      # Resolved from the REPO, not assumed: a gem's runs are named "Engine CI", an
+      # app's "CI". Both reads below scope to the same name — a sha resolved from one
+      # workflow must be folded from that same workflow, or a sibling workflow on the
+      # same commit blends into the verdict.
+      workflow = GithubWorkflowRun.ci_workflow_for(repo)
+
+      # FAIL CLOSED on an unresolved workflow. A repo with no declared suite (or one
+      # missing from GEM_CI_WORKFLOWS) must read :none — NEVER "match any workflow on
+      # the branch". Dropping the filter here let unrelated runs authorise a merge:
+      # a FAILED `CI` run plus a later successful `Lint` run on the SAME head_sha
+      # folded to :green, because the newest unrelated pass masked the real failure.
+      # This gate authorises merges; a display reader may guess, this may not.
+      return { state: :none, sha: nil } if workflow.blank?
+
+      sha = latest_ci_sha(nwo, branch, workflow)
       return { state: :none, sha: nil } if sha.blank?
 
-      CiStatus.for_sha(nwo, sha, check_runs_payload(nwo, sha)).merge(sha: sha)
+      CiStatus.for_sha(nwo, sha, check_runs_payload(nwo, sha, workflow)).merge(sha: sha)
     end
 
     # The newest ingested `CI` run's head_sha on this repo+branch — the PR tip we hold
     # CI data for (mirrors Ci::ProgressReader.latest_ci_sha). nil when none ingested.
-    def latest_ci_sha(nwo, branch)
+    # `workflow` is always present — #verdict returns :none before calling this when it
+    # cannot resolve one, so the filter is never silently dropped.
+    def latest_ci_sha(nwo, branch, workflow = CI_WORKFLOW)
       GithubWorkflowRun.for_repo(nwo)
-                       .where(head_branch: branch, workflow_name: CI_WORKFLOW)
+                       .where(head_branch: branch, workflow_name: workflow)
                        .order(Arel.sql(LATEST_RUN_ORDER))
                        .limit(1)
                        .pick(:head_sha)
@@ -73,10 +93,10 @@ module Ci
     # folded: a re-run makes a NEW workflow_run row (new run_id, same sha), and folding
     # a stale failed run beside the fresh green one would (correctly, for CiStatus)
     # read :red — but the fresh run is the live verdict, so the superseded row drops.
-    def check_runs_payload(nwo, sha)
+    def check_runs_payload(nwo, sha, workflow = CI_WORKFLOW)
       run = GithubWorkflowRun.for_repo(nwo)
                              .for_sha(sha)
-                             .where(workflow_name: CI_WORKFLOW)
+                             .where(workflow_name: workflow)
                              .order(Arel.sql(LATEST_RUN_ORDER))
                              .first
       runs = if run
