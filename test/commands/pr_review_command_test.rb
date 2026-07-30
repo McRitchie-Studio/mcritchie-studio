@@ -280,8 +280,10 @@ class PrReviewCommandTest < Minitest::Test
   def assert_narration_instructions(prompt, reviewer_slug, task_slug)
     assert_includes prompt,
                     "bin/agent-activity start --category Verify --agent #{reviewer_slug} " \
-                    "--supervisor avi --task #{task_slug} --reason \"review: #{task_slug}\"",
+                    "--task #{task_slug} --reason \"review: #{task_slug}\"",
                     "#{reviewer_slug} prompt must open a soul-attributed Verify activity"
+    refute_includes prompt, "--supervisor",
+                    "the no-Avi-supervisor contract emits no --supervisor flag on the narration line"
     assert_includes prompt, "bin/agent-activity end --outcome",
                     "#{reviewer_slug} prompt must close the activity with the verdict"
   end
@@ -580,7 +582,9 @@ class PrReviewCommandTest < Minitest::Test
       assert end_line, "#{reviewer_slug} stdin prompt missing bin/agent-activity end"
       assert_includes start_line, "--category Verify"
       assert_includes start_line, "--agent #{reviewer_slug}"
-      assert_includes start_line, "--supervisor avi"
+      assert_includes start_line, "--reason \"review: narrated-run\""
+      refute_includes start_line, "--supervisor",
+                      "the no-Avi-supervisor contract emits no --supervisor flag on the narration line"
       assert_includes start_line, "--task narrated-run"
       assert_includes end_line, "--outcome"
     end
@@ -716,9 +720,12 @@ class PrReviewCommandTest < Minitest::Test
     assert_includes light, "docs/agents/agents/carl/sops/pr-review-light.md"
     refute_includes light, "pr-review-primary.md"
 
-    # Both prompts frame Avi as a thin supervisor that never reviews — no #417 "summon"/"nests" framing.
+    # The no-Avi-supervisor contract: the prompt frames the lane as having NO
+    # supervisor, with Carl the deep/primary reviewer AND the review OWNER — no
+    # #417 "summon"/"nests" framing, no thin-supervisor-that-reviews framing.
     [primary, light].each do |prompt|
-      assert_match(/never reviews code/i, prompt, "the supervisor is framed as a thin gate that never reviews")
+      assert_match(/NO supervisor on this lane/i, prompt, "the prompt frames the lane as having no supervisor")
+      assert_match(/review\s+OWNER/i, prompt, "Carl is framed as the review OWNER, not a thin supervisor")
       refute_match(/summon/i, prompt)
       refute_match(/nests its reviewers/i, prompt)
     end
@@ -772,7 +779,9 @@ class PrReviewCommandTest < Minitest::Test
       start_line = lines.find { |line| line.include?("agent-activity start") }
       assert start_line, "#{soul} must open a soul-attributed activity"
       assert_includes start_line, "--agent #{soul}"
-      assert_includes start_line, "--supervisor avi"
+      assert_includes start_line, "--reason \"review: attr-pr\""
+      refute_includes start_line, "--supervisor",
+                      "the no-Avi-supervisor contract emits no --supervisor flag on the narration line"
       assert_includes start_line, "--task attr-pr"
     end
 
