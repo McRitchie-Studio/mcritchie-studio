@@ -259,7 +259,7 @@ apps:
     #
     # ⚠ PREREQUISITE — this gate is only safe once rolio carries a system-suite
     # WAIT BUDGET sized for THIS host (rolio task `size-rolio-system-wait-budget`,
-    # amcritchie/rolio#23). Rolio's suite ran on Capybara's 2s default, which is
+    # McRitchie-Studio/rolio#23). Rolio's suite ran on Capybara's 2s default, which is
     # calibrated for an IDLE CI runner; the gate host is a SHARED dev Mac where the
     # browser stack was measured ~18x slower under concurrent-agent load (4.6s idle
     # -> 85s loaded). At 2s the FIRST drive of this gate came back RED ON GREEN CODE

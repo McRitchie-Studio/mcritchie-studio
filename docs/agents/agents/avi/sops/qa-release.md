@@ -30,6 +30,12 @@ Run this SOP from the McRitchie Studio primary checkout:
 cd /Users/alex/projects/mcritchie-studio
 ```
 
+The sweep runs under the **default agent GitHub App identity**
+(`github.mcritchie-agent`, served by `bin/gh-app-git-credential`) — it opens and
+merges the batch promote PRs, which the deployer identity deliberately cannot.
+Do not export `GH_APP_ITEM` here; that override belongs to Steffon's
+`production-deploy` ship lane only.
+
 Use the production board by default. Do not add `--local`.
 
 ## Assembler claim — automatic, on the RELEASE record

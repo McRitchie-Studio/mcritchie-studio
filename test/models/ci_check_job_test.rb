@@ -7,7 +7,7 @@ require "test_helper"
 class CiCheckJobTest < ActiveSupport::TestCase
   def build_job(**overrides)
     CiCheckJob.new({
-      repo: "amcritchie/mcritchie-studio", job_id: 1, head_sha: "abc123",
+      repo: "McRitchie-Studio/mcritchie-studio", job_id: 1, head_sha: "abc123",
       head_branch: "feat/x", workflow_name: "CI", name: "lint", status: "completed",
       conclusion: "success"
     }.merge(overrides))
@@ -48,7 +48,7 @@ class CiCheckJobTest < ActiveSupport::TestCase
     build_job(job_id: 2, head_sha: "s1", name: "test", status: "in_progress", conclusion: nil).save!
     build_job(job_id: 3, head_sha: "OTHER", name: "lint", status: "completed", conclusion: "failure").save!
 
-    rows = CiCheckJob.progress_rows("amcritchie/mcritchie-studio", "s1")
+    rows = CiCheckJob.progress_rows("McRitchie-Studio/mcritchie-studio", "s1")
     assert_equal 2, rows.size, "only the two jobs for this repo+SHA"
     assert_includes rows, { "status" => "completed", "conclusion" => "success", "name" => "lint" }
     assert_includes rows, { "status" => "in_progress", "conclusion" => nil, "name" => "test" }
@@ -58,7 +58,7 @@ class CiCheckJobTest < ActiveSupport::TestCase
   end
 
   test "[unit] progress_rows is empty when no job has landed (reader then falls back)" do
-    assert_empty CiCheckJob.progress_rows("amcritchie/mcritchie-studio", "never-seen")
+    assert_empty CiCheckJob.progress_rows("McRitchie-Studio/mcritchie-studio", "never-seen")
   end
 
   # ── the reset/re-run duplication fix (v1.2): a re-run mints new job_ids for the
@@ -75,7 +75,7 @@ class CiCheckJobTest < ActiveSupport::TestCase
     build_job(job_id: 5, run_id: 101, head_sha: "sha", name: "test",  status: "in_progress", conclusion: nil).save!
     build_job(job_id: 6, run_id: 101, head_sha: "sha", name: "build", status: "in_progress", conclusion: nil).save!
 
-    rows = CiCheckJob.progress_rows("amcritchie/mcritchie-studio", "sha")
+    rows = CiCheckJob.progress_rows("McRitchie-Studio/mcritchie-studio", "sha")
 
     assert_equal 3, rows.size, "the re-run RESETS to 3 checks, never accumulates to 6"
     assert_equal %w[in_progress in_progress in_progress].sort, rows.map { |r| r["status"] }.sort,
@@ -89,7 +89,7 @@ class CiCheckJobTest < ActiveSupport::TestCase
     build_job(job_id: 11, run_id: 200, head_sha: "sha", name: "test", status: "completed", conclusion: "success").save!
     build_job(job_id: 12, run_id: 200, head_sha: "sha", name: "lint", status: "completed", conclusion: "success").save!
 
-    rows = CiCheckJob.progress_rows("amcritchie/mcritchie-studio", "sha")
+    rows = CiCheckJob.progress_rows("McRitchie-Studio/mcritchie-studio", "sha")
     assert_equal 2, rows.size, "two distinct checks — lint's retry replaces its first row"
     lint = rows.find { |r| r["name"] == "lint" }
     assert_equal "success", lint["conclusion"], "the newer (higher job_id) lint attempt wins"
@@ -100,7 +100,7 @@ class CiCheckJobTest < ActiveSupport::TestCase
     build_job(job_id: 20, head_sha: "sha", name: nil, status: "completed", conclusion: "success").save!
     build_job(job_id: 21, head_sha: "sha", name: nil, status: "completed", conclusion: "success").save!
 
-    rows = CiCheckJob.progress_rows("amcritchie/mcritchie-studio", "sha")
+    rows = CiCheckJob.progress_rows("McRitchie-Studio/mcritchie-studio", "sha")
     assert_equal 2, rows.size, "two nameless checks stay distinct, not folded into one"
   end
 

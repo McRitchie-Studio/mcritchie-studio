@@ -10,7 +10,7 @@ require "minitest/autorun"
 require_relative "../../bin/lib/merge_command"
 
 class MergeCommandTest < Minitest::Test
-  URL  = "https://github.com/amcritchie/mcritchie-studio/pull/1"
+  URL  = "https://github.com/McRitchie-Studio/mcritchie-studio/pull/1"
   HEAD = "abc1234def5678"
 
   # The PIN: a known revalidated head MUST become `--match-head-commit <head>`, so `gh pr merge`

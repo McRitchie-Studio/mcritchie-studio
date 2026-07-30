@@ -20,9 +20,9 @@ class ReleaseSummaryCiTracksTest < ActionDispatch::IntegrationTest
     # Each app repo's `release` branch tip has its own ingested CI run: the hub fully
     # green (8/8) WITH an Actions-run html_url, turf mid-flight (3 passed, 5 pending)
     # with NO html_url (the graceful-unlinked case below).
-    seed_release_ci("amcritchie/mcritchie-studio", "hub-rc",  passed: 8, pending: 0,
-                    html_url: "https://github.com/amcritchie/mcritchie-studio/actions/runs/5100")
-    seed_release_ci("amcritchie/turf-monster",     "turf-rc", passed: 3, pending: 5)
+    seed_release_ci("McRitchie-Studio/mcritchie-studio", "hub-rc",  passed: 8, pending: 0,
+                    html_url: "https://github.com/McRitchie-Studio/mcritchie-studio/actions/runs/5100")
+    seed_release_ci("McRitchie-Studio/turf-monster",     "turf-rc", passed: 3, pending: 5)
 
     get deployments_path
     assert_response :success
@@ -40,7 +40,7 @@ class ReleaseSummaryCiTracksTest < ActionDispatch::IntegrationTest
     # in a new tab (noopener), named for screen readers.
     assert_select "#{hub_lane} [data-phase='assembling'][data-state='done']", 1
     hub_link = "#{hub_lane} [data-phase='assembling'] a[data-test='release-phase-link']"
-    assert_select "#{hub_link}[href='https://github.com/amcritchie/mcritchie-studio/actions/runs/5100']", 1
+    assert_select "#{hub_link}[href='https://github.com/McRitchie-Studio/mcritchie-studio/actions/runs/5100']", 1
     assert_select "#{hub_link}[target='_blank'][rel='noopener'][title]", 1
 
     # turf's Assembling meter is RUNNING (3 of 8) with NO run url, so it stays UNLINKED —

@@ -934,10 +934,10 @@ class CiStatusTest < Minitest::Test
   end
 
   def test_name_with_owner_reads_every_github_remote_form
-    assert_equal "amcritchie/mcritchie-studio", CiStatus.name_with_owner("git@github.com:amcritchie/mcritchie-studio.git")
-    assert_equal "amcritchie/mcritchie-studio", CiStatus.name_with_owner("https://github.com/amcritchie/mcritchie-studio.git")
-    assert_equal "amcritchie/mcritchie-studio", CiStatus.name_with_owner("https://github.com/amcritchie/mcritchie-studio")
-    assert_equal "amcritchie/turf-monster", CiStatus.name_with_owner("ssh://git@github.com/amcritchie/turf-monster.git\n")
+    assert_equal "McRitchie-Studio/mcritchie-studio", CiStatus.name_with_owner("git@github.com:McRitchie-Studio/mcritchie-studio.git")
+    assert_equal "McRitchie-Studio/mcritchie-studio", CiStatus.name_with_owner("https://github.com/McRitchie-Studio/mcritchie-studio.git")
+    assert_equal "McRitchie-Studio/mcritchie-studio", CiStatus.name_with_owner("https://github.com/McRitchie-Studio/mcritchie-studio")
+    assert_equal "McRitchie-Studio/turf-monster", CiStatus.name_with_owner("ssh://git@github.com/McRitchie-Studio/turf-monster.git\n")
   end
 
   def test_name_with_owner_is_blank_for_a_non_github_remote
@@ -958,7 +958,7 @@ class CiStatusTest < Minitest::Test
   # :unreadable is NOT more lenient than :unverified — it blocks exactly the same
   # routes (notably it does NOT unlock the fast-cert credit). It is more HONEST.
 
-  # The VERBATIM body from `gh pr checks 23 --repo amcritchie/rolio` (2026-07-13):
+  # The VERBATIM body from `gh pr checks 23 --repo McRitchie-Studio/rolio` (2026-07-13):
   # rolio is a PRIVATE repo and the fine-grained PAT lacks Checks: Read on it, so
   # the statusCheckRollup nodes come back denied.
   ROLIO_GRAPHQL_403 = "GraphQL: Resource not accessible by personal access token " \
@@ -978,7 +978,7 @@ class CiStatusTest < Minitest::Test
   end
 
   def test_check_runs_a_403_is_unreadable_never_a_bare_unverified
-    # The VERBATIM body from `gh api repos/amcritchie/<repo>/branches/main/protection`
+    # The VERBATIM body from `gh api repos/McRitchie-Studio/<repo>/branches/main/protection`
     # and the check-runs endpoint on a repo the token cannot read: gh prints the JSON
     # error on stdout AND its own line on stderr, and we capture 2>&1 — so the raw
     # text is CONCATENATED and JSON.parse rejects it. Detection must read the RAW
@@ -1003,7 +1003,7 @@ class CiStatusTest < Minitest::Test
   end
 
   def test_unreadable_remedy_matches_the_actual_denial_cause
-    repo = "amcritchie/rolio"
+    repo = "McRitchie-Studio/rolio"
 
     permissions = CiStatus.parse("GraphQL: Resource not accessible by personal access token")
     assert_equal :permissions, permissions[:cause]
@@ -1030,11 +1030,11 @@ class CiStatusTest < Minitest::Test
 
   def test_gate_evidence_preserves_unreadable_state_cause_reason_and_repo
     verdict = CiStatus.parse("GraphQL: Resource not accessible by personal access token")
-    evidence = CiStatus.gate_evidence(verdict, repo: "amcritchie/rolio")
+    evidence = CiStatus.gate_evidence(verdict, repo: "McRitchie-Studio/rolio")
 
     assert_equal "unreadable", evidence["state"]
     assert_equal "permissions", evidence["cause"]
-    assert_equal "amcritchie/rolio", evidence["repo"]
+    assert_equal "McRitchie-Studio/rolio", evidence["repo"]
     assert_includes evidence["reason"], "not accessible"
   end
 

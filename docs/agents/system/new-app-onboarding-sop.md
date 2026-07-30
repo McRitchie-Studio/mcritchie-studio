@@ -32,7 +32,7 @@ deliberate decision, never a default.
 ## Phased checklist
 
 ### 1. Repo + versions
-- Create the GitHub repo (`gh repo create amcritchie/<slug>`).
+- Create the GitHub repo (`gh repo create McRitchie-Studio/<slug>`).
 - **Match the studio's Ruby/Rails versions** even for a standalone app, so a
   later promotion — or a shared agent session — doesn't fight a toolchain gap.
   Read the hub's `.ruby-version` / `Gemfile` and pin the same majors.

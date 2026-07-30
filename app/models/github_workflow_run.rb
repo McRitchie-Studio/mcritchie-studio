@@ -51,7 +51,7 @@ class GithubWorkflowRun < ApplicationRecord
   CI_PROGRESS_WORKFLOWS = ([CI_WORKFLOW] + GEM_CI_WORKFLOWS.values.compact).freeze
 
   # The workflow name whose runs carry `repo`'s suite verdict. Accepts a bare slug
-  # ("studio-engine") or an owner-qualified name ("amcritchie/studio-engine").
+  # ("studio-engine") or an owner-qualified name ("McRitchie-Studio/studio-engine").
   # Returns nil for a gem that is registered but maps to no workflow — the caller
   # then means "newest run of any workflow", matching Ci::ProgressReader's contract
   # for an unmapped gem (solana-studio ships no suite → a blank, invisible track).

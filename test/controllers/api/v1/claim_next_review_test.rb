@@ -10,7 +10,7 @@ module Api
     # highest-ranked reviewable GREEN-CI task and stamps the review lease, and an
     # empty pop is a normal 200 (claimed: null), not an error.
     class ClaimNextReviewTest < ActionDispatch::IntegrationTest
-      REPO = "amcritchie/mcritchie-studio"
+      REPO = "McRitchie-Studio/mcritchie-studio"
 
       setup do
         GithubWorkflowRun.delete_all
@@ -30,7 +30,7 @@ module Api
         body = response.parsed_body.fetch("data")
 
         assert_equal high.slug, body.dig("claimed", "slug"), "the top-ranked green task is popped"
-        assert_equal "https://github.com/amcritchie/mcritchie-studio/pull/2", body.dig("claimed", "pr_url")
+        assert_equal "https://github.com/McRitchie-Studio/mcritchie-studio/pull/2", body.dig("claimed", "pr_url")
         assert_equal "Gastly", body.dig("holder", "label")
 
         claim = TaskReviewClaim.find_by(task_slug: high.slug)
@@ -105,7 +105,7 @@ module Api
           metadata: { "devops" => {
             "branch" => branch,
             "repositories" => ["mcritchie-studio"],
-            "pr_url" => "https://github.com/amcritchie/mcritchie-studio/pull/#{pr}"
+            "pr_url" => "https://github.com/McRitchie-Studio/mcritchie-studio/pull/#{pr}"
           } }
         )
       end

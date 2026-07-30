@@ -387,7 +387,7 @@ module CiStatus
     { state: :unreadable, cause: unreadable_cause(raw), reason: reason[0, 140] }
   end
 
-  # PURE. "owner/repo" out of a PR URL (https://github.com/amcritchie/rolio/pull/23),
+  # PURE. "owner/repo" out of a PR URL (https://github.com/McRitchie-Studio/rolio/pull/23),
   # so a gate can NAME the repo whose CI it could not read. name_with_owner is
   # anchored at the end of the string and matches a REMOTE, not a PR URL.
   def self.repo_from_pr_url(pr_url)

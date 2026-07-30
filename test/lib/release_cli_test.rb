@@ -972,7 +972,7 @@ class ReleaseCliTest < Minitest::Test
       g = gate_git(a, k)
       return g if g
       return ["2", true] if a[0] == "git" && a.include?("rev-list")   # accepted ahead of release
-      return ["git@github.com:amcritchie/mcritchie-studio.git", true] if a[0] == "git" && a.include?("remote")
+      return ["git@github.com:McRitchie-Studio/mcritchie-studio.git", true] if a[0] == "git" && a.include?("remote")
       return ["", true] if a[0] == "gh" && a[1] == "pr" && a[2] == "list"   # no existing batch PR
       if a[0] == "gh" && a[1] == "pr" && a[2] == "create"
         $stdout.puts("GH-CREATE " + a.join(" "))
@@ -1079,7 +1079,7 @@ class ReleaseCliTest < Minitest::Test
       def sh(*a, **k)
         return ["", true] if a[0] == "git" && a.include?("fetch")
         return ["3", true] if a[0] == "git" && a.include?("rev-list")   # accepted 3 ahead
-        return ["git@github.com:amcritchie/mcritchie-studio.git", true] if a[0] == "git" && a.include?("remote")
+        return ["git@github.com:McRitchie-Studio/mcritchie-studio.git", true] if a[0] == "git" && a.include?("remote")
         return ["", true] if a[0] == "gh" && a[2] == "list"             # no existing batch PR
         if a[0] == "gh" && a[2] == "create"
           $stdout.puts("CREATE " + a.join(" "))
@@ -4230,7 +4230,7 @@ class ReleaseCliTest < Minitest::Test
     def sh(*a, **_k)
       return ["", true] if a[0] == "git" && a.include?("fetch")
       return ["2", true] if a[0] == "git" && a.include?("rev-list")
-      return ["git@github.com:amcritchie/mcritchie-studio.git", true] if a[0] == "git" && a.include?("remote")
+      return ["git@github.com:McRitchie-Studio/mcritchie-studio.git", true] if a[0] == "git" && a.include?("remote")
       return ["", true] if a[0] == "gh" && a[2] == "list"
       if a[0] == "gh" && a[2] == "create"
         $stdout.puts("PR-CREATE " + a.join(" "))
@@ -5407,7 +5407,7 @@ class ReleaseCliTest < Minitest::Test
     run_git(clone, "checkout", "-q", "release")
     run_git(clone, "merge", "-q", "--ff-only", "main")
     File.write(File.join(clone, "Gemfile"),
-               %(source "https://rubygems.org"\ngem "studio-engine", github: "amcritchie/studio-engine", branch: "feat/x"\n))
+               %(source "https://rubygems.org"\ngem "studio-engine", github: "McRitchie-Studio/studio-engine", branch: "feat/x"\n))
     run_git(clone, "add", "-A")
     run_git(clone, "commit", "-q", "-m", "release: branch-ref the gem under test")
     run_git(clone, "push", "-q", "origin", "release")
@@ -5471,7 +5471,7 @@ class ReleaseCliTest < Minitest::Test
       # A live session's floor: off main, and its Gemfile branch-refs the gem.
       run_git(clone, "checkout", "-q", "-b", "feat/live-session")
       File.write(File.join(clone, "Gemfile"),
-                 %(source "https://rubygems.org"\ngem "studio-engine", github: "amcritchie/studio-engine", branch: "wip"\n))
+                 %(source "https://rubygems.org"\ngem "studio-engine", github: "McRitchie-Studio/studio-engine", branch: "wip"\n))
 
       setup = %(def repo_path(_repo) = #{clone.inspect})
       out = run_cli(["--yes"], setup: setup,

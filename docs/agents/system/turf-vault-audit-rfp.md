@@ -10,7 +10,7 @@
 
 **Project**: turf-vault — Anchor escrow program for sports-pick'em contests on Solana.
 
-**Repo**: https://github.com/amcritchie/turf-vault
+**Repo**: https://github.com/McRitchie-Studio/turf-vault
 
 **Current status**: Deployed to devnet at `7Hy8GmJWPMdt6bx3VG4BLFnpNX9TBwkPt87W6bkHgr2J`. Pre-mainnet. v0.8.0.
 
@@ -110,7 +110,7 @@ Quick scope:
   - 2-of-3 multisig gates settlement, force-close, signer rotation
   - SPL Token CPIs for deposit/withdraw/transfer (USDC + USDT)
   - Two contest-entry modes (managed PDA + Phantom direct)
-  - Full repo: https://github.com/amcritchie/turf-vault
+  - Full repo: https://github.com/McRitchie-Studio/turf-vault
   - Detailed scope summary attached / link below
 
 We're particularly interested in your review of:

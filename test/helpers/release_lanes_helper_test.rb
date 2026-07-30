@@ -19,9 +19,9 @@ class ReleaseLanesHelperTest < ActionView::TestCase
   test "[unit] deploy meters are gated by the release's OWN stage, not a stray run" do
     rel = lane_release("mcritchie-studio")
     # A completed QA Deploy run exists for the repo, but the release has NOT entered QA.
-    GithubWorkflowRun.create!(repo: "amcritchie/mcritchie-studio", workflow_name: "QA Deploy", run_id: 8_100,
+    GithubWorkflowRun.create!(repo: "McRitchie-Studio/mcritchie-studio", workflow_name: "QA Deploy", run_id: 8_100,
                               status: "completed", conclusion: "success", head_branch: "main", head_sha: "z",
-                              run_started_at: Time.current, html_url: "https://github.com/amcritchie/mcritchie-studio/actions/runs/8100")
+                              run_started_at: Time.current, html_url: "https://github.com/McRitchie-Studio/mcritchie-studio/actions/runs/8100")
     states = ->(r) { release_repo_lanes(r).first[:phases].to_h { |p| [p[:key], p[:state]] } }
 
     s = states.call(rel)
@@ -45,13 +45,13 @@ class ReleaseLanesHelperTest < ActionView::TestCase
   test "[unit] a reached deploy meter carries the run link + flips to failed on a red run" do
     rel = lane_release("mcritchie-studio")
     rel.stamp_stage!("qa_deploying")
-    GithubWorkflowRun.create!(repo: "amcritchie/mcritchie-studio", workflow_name: "QA Deploy", run_id: 8_200,
+    GithubWorkflowRun.create!(repo: "McRitchie-Studio/mcritchie-studio", workflow_name: "QA Deploy", run_id: 8_200,
                               status: "completed", conclusion: "failure", head_branch: "main", head_sha: "z",
-                              run_started_at: Time.current, html_url: "https://github.com/amcritchie/mcritchie-studio/actions/runs/8200")
+                              run_started_at: Time.current, html_url: "https://github.com/McRitchie-Studio/mcritchie-studio/actions/runs/8200")
 
     qa = release_repo_lanes(rel.reload).first[:phases].find { |p| p[:key] == "qa_deploying" }
     assert_equal :failed, qa[:state], "a completed-but-failed run flips the reached QA meter to failed"
-    assert_equal "https://github.com/amcritchie/mcritchie-studio/actions/runs/8200", qa[:url]
+    assert_equal "https://github.com/McRitchie-Studio/mcritchie-studio/actions/runs/8200", qa[:url]
   end
 
   test "[unit] a library shows Published, then n/a for the server-deploy phases" do

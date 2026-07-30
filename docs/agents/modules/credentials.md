@@ -35,24 +35,36 @@ Default access is the `agents` vault. Additional vaults should be granted delibe
 
 ## GitHub (`gh` / `git`)
 
-`gh` and `git push` authenticate as `amcritchie` via a fine-grained PAT stored in
-1Password (`agent.github` in the `agents` vault). **If you hit a `403` /
-"Permission denied" on `git push`, a PR merge, or any `gh` write**, the keyring
-token is missing, stale, or read-only — re-wire it from 1Password (the token is
-piped, never printed):
+Since the 2026-07-29 org migration every repo lives under the **McRitchie-Studio**
+org and `git`/`gh` authenticate as one of **two GitHub Apps**, not a personal
+token. The credential helper `mcritchie-studio/bin/gh-app-git-credential` mints a
+fresh installation token per call (via `bin/gh-app-mint-token`), and the
+`GH_APP_ITEM` env var selects the identity:
+
+| Identity (1Password item) | Lane | Grants |
+|---------------------------|------|--------|
+| `github.mcritchie-agent` (**default**) | build / review | Contents + Pull requests + Checks read + Actions + Workflows |
+| `github.mcritchie-deployer` (`export GH_APP_ITEM=github.mcritchie-deployer`) | ship | Contents + Actions + Checks read + Secrets. **No pull-request scope** — the deployer cannot open or merge PRs by design |
+
+Wire it (global, one time):
 
 ```bash
-op read "op://agents/agent.github/personal-access-token-read-write-2026" \
-  | gh auth login -h github.com --with-token
-gh auth setup-git -h github.com   # make gh the git credential helper
+git config --global credential."https://github.com".helper \
+  "/Users/alex/projects/mcritchie-studio/bin/gh-app-git-credential"
 ```
 
-Confirm with a **real** read/write — not the repo permissions API, which reflects
-the *account's* access, not the *token's* grant (this once masked a read-only
-token): `gh pr list` for read, a throwaway branch `git push` for write. The PAT
-grants Contents / Pull requests / Workflows read+write + Actions / Commit
-statuses read. Rotate before its GitHub expiry: regenerate, replace the 1Password
-field, and re-run the command above.
+Each item carries fields `app-id` and `client-id`; the private key is the
+**`.pem` FILE attachment** on the item — the concealed `private key` field is
+NOT the key. Confirm access with a **real** read/write — not the repo
+permissions API, which reflects the *account's* access, not the *token's* grant
+(this once masked a read-only token): `gh pr list` for read, a throwaway branch
+`git push` for write.
+
+**Historical — the PAT era.** Until 2026-07-29 auth was a fine-grained PAT on
+the `amcritchie` personal account (`agent.github`, wired via `gh auth login
+--with-token` + `gh auth setup-git`). Fine-grained PATs cannot call the
+check-runs API at all — which the CI gates read — so the PAT wiring is retired;
+`agent.github` is deprecated pending deletion.
 
 ## Fresh Machine
 

@@ -26,9 +26,9 @@ module Ci
   # a slow/hung API, or any error -> Ci::CheckProgress.blank (the bar renders
   # nothing). Every rescue lands in ErrorLog (backend discipline).
   class ProgressReader
-    # The org every managed repo lives under (amcritchie/<repo>), overridable for a
-    # fork/test.
-    DEFAULT_OWNER = ENV.fetch("GITHUB_REPO_OWNER", "amcritchie").freeze
+    # The org every managed repo lives under (McRitchie-Studio/<repo>), overridable
+    # for a fork/test.
+    DEFAULT_OWNER = ENV.fetch("GITHUB_REPO_OWNER", "McRitchie-Studio").freeze
 
     # The repo whose `release` branch tip carries the G3 candidate suite CI run.
     # Retained for the task-card fallback repo; the release meter now reads EVERY

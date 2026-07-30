@@ -77,7 +77,7 @@ run inside it rides the close:
   **~18x slower** under concurrent-agent load (4.6s idle → 85s loaded). Rolio's
   gate is therefore safe only behind the wait-budget fix that sizes its suite
   for the slow host: rolio task `size-rolio-system-wait-budget`
-  (amcritchie/rolio#23) is a **sequenced prerequisite** — the sweep lands it
+  (McRitchie-Studio/rolio#23) is a **sequenced prerequisite** — the sweep lands it
   into rolio's `release` **first**, so this widened gate never drives a
   2s-budget suite. Widening a gate onto a suite you have not driven **here** is how
   a gate starts false-failing green code — and a red release gate hands out

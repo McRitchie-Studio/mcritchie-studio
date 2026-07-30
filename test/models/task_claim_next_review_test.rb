@@ -118,7 +118,7 @@ class TaskClaimNextReviewTest < ActiveSupport::TestCase
       metadata: { "devops" => {
         "branch" => "feat/#{title.parameterize}",
         "repositories" => ["mcritchie-studio"],
-        "pr_url" => "https://github.com/amcritchie/mcritchie-studio/pull/#{position}"
+        "pr_url" => "https://github.com/McRitchie-Studio/mcritchie-studio/pull/#{position}"
       } }
     )
   end
@@ -165,14 +165,14 @@ class TaskClaimNextReviewTest < ActiveSupport::TestCase
         metadata: { "devops" => {
           "branch" => "feat/#{title.parameterize}",
           "repositories" => ["studio-engine"],
-          "pr_url" => "https://github.com/amcritchie/studio-engine/pull/#{position}"
+          "pr_url" => "https://github.com/McRitchie-Studio/studio-engine/pull/#{position}"
         } }
       )
     end
 
     def seed_engine_ci(branch:, sha:, conclusion:)
       GithubWorkflowRun.create!(
-        repo: "amcritchie/studio-engine",
+        repo: "McRitchie-Studio/studio-engine",
         workflow_name: GithubWorkflowRun::GEM_CI_WORKFLOWS.fetch("studio-engine"),
         run_id: SecureRandom.random_number(10**12),
         status: "completed", conclusion: conclusion,

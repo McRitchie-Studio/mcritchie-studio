@@ -15,9 +15,9 @@ class ReleaseLanesTest < ActionView::TestCase
 
   test "[component] one lane per repo; Assembling shows CI + link; deploy meters gated pending" do
     rel = lane_release("mcritchie-studio", "turf-monster")
-    seed_ci("amcritchie/mcritchie-studio", "release", "CI", "mcr", 8)
+    seed_ci("McRitchie-Studio/mcritchie-studio", "release", "CI", "mcr", 8)
     # A completed QA Deploy run exists, but the release is still at Assembling — it must NOT light QA.
-    seed_deploy("amcritchie/mcritchie-studio", "QA Deploy", "completed", "success", 9001)
+    seed_deploy("McRitchie-Studio/mcritchie-studio", "QA Deploy", "completed", "success", 9001)
 
     render partial: "tasks/release_lanes", locals: { release: rel }
 
@@ -37,14 +37,14 @@ class ReleaseLanesTest < ActionView::TestCase
   test "[component] a reached QA meter runs and links to its deploy run" do
     rel = lane_release("mcritchie-studio")
     rel.stamp_stage!("qa_deploying")
-    seed_deploy("amcritchie/mcritchie-studio", "QA Deploy", "in_progress", nil, 9100,
-                url: "https://github.com/amcritchie/mcritchie-studio/actions/runs/9100")
+    seed_deploy("McRitchie-Studio/mcritchie-studio", "QA Deploy", "in_progress", nil, 9100,
+                url: "https://github.com/McRitchie-Studio/mcritchie-studio/actions/runs/9100")
 
     render partial: "tasks/release_lanes", locals: { release: rel.reload }
 
     qa = "[data-repo='mcritchie-studio'] [data-phase='qa_deploying']"
     assert_select "#{qa}[data-state='running']", 1
-    assert_select "#{qa} a[data-test='release-phase-link'][href='https://github.com/amcritchie/mcritchie-studio/actions/runs/9100']", 1
+    assert_select "#{qa} a[data-test='release-phase-link'][href='https://github.com/McRitchie-Studio/mcritchie-studio/actions/runs/9100']", 1
   end
 
   test "[component] the coarse Confirming meter runs as an indeterminate lavender bar" do
@@ -61,7 +61,7 @@ class ReleaseLanesTest < ActionView::TestCase
 
   test "[component] a library lane shows Published + n/a for the deploy phases" do
     rel = lane_release("studio-engine")
-    seed_ci("amcritchie/studio-engine", "main", "Engine CI", "eng", 5)
+    seed_ci("McRitchie-Studio/studio-engine", "main", "Engine CI", "eng", 5)
 
     render partial: "tasks/release_lanes", locals: { release: rel.reload }
 
@@ -75,10 +75,10 @@ class ReleaseLanesTest < ActionView::TestCase
     rel = lane_release("mcritchie-studio")
     # Distinct check NAMES: progress_rows keeps only the latest attempt per name, so
     # same-named rows would fold into one glyph.
-    seed_ci("amcritchie/mcritchie-studio", "release", "CI", "mcr", 0)
-    seed_checks("amcritchie/mcritchie-studio", "release", "CI", "mcr", 2, "pass", status: "completed", conclusion: "success")
-    seed_checks("amcritchie/mcritchie-studio", "release", "CI", "mcr", 3, "run", status: "in_progress", conclusion: nil)
-    seed_checks("amcritchie/mcritchie-studio", "release", "CI", "mcr", 1, "bad", status: "completed", conclusion: "failure")
+    seed_ci("McRitchie-Studio/mcritchie-studio", "release", "CI", "mcr", 0)
+    seed_checks("McRitchie-Studio/mcritchie-studio", "release", "CI", "mcr", 2, "pass", status: "completed", conclusion: "success")
+    seed_checks("McRitchie-Studio/mcritchie-studio", "release", "CI", "mcr", 3, "run", status: "in_progress", conclusion: nil)
+    seed_checks("McRitchie-Studio/mcritchie-studio", "release", "CI", "mcr", 1, "bad", status: "completed", conclusion: "failure")
 
     render partial: "tasks/release_lanes", locals: { release: rel.reload }
 
@@ -94,9 +94,9 @@ class ReleaseLanesTest < ActionView::TestCase
 
   test "[component] the marks ride INSIDE the bar, and the whole card is the link" do
     rel = lane_release("mcritchie-studio")
-    seed_ci("amcritchie/mcritchie-studio", "release", "CI", "mcr", 0)
-    seed_checks("amcritchie/mcritchie-studio", "release", "CI", "mcr", 2, "pass", status: "completed", conclusion: "success")
-    seed_checks("amcritchie/mcritchie-studio", "release", "CI", "mcr", 1, "run", status: "in_progress", conclusion: nil)
+    seed_ci("McRitchie-Studio/mcritchie-studio", "release", "CI", "mcr", 0)
+    seed_checks("McRitchie-Studio/mcritchie-studio", "release", "CI", "mcr", 2, "pass", status: "completed", conclusion: "success")
+    seed_checks("McRitchie-Studio/mcritchie-studio", "release", "CI", "mcr", 1, "run", status: "in_progress", conclusion: nil)
 
     render partial: "tasks/release_lanes", locals: { release: rel.reload }
 
@@ -126,10 +126,10 @@ class ReleaseLanesTest < ActionView::TestCase
 
   test "[component] marks are capped, ordered by name, and the overflow mark survives the clip" do
     rel = lane_release("mcritchie-studio")
-    seed_ci("amcritchie/mcritchie-studio", "release", "CI", "mcr", 0)
+    seed_ci("McRitchie-Studio/mcritchie-studio", "release", "CI", "mcr", 0)
     # 12 checks against a cap of 8 — and seeded so heap order is NOT name order.
-    seed_checks("amcritchie/mcritchie-studio", "release", "CI", "mcr", 9, "zz", status: "completed", conclusion: "success")
-    seed_checks("amcritchie/mcritchie-studio", "release", "CI", "mcr", 3, "aa", status: "completed", conclusion: "failure")
+    seed_checks("McRitchie-Studio/mcritchie-studio", "release", "CI", "mcr", 9, "zz", status: "completed", conclusion: "success")
+    seed_checks("McRitchie-Studio/mcritchie-studio", "release", "CI", "mcr", 3, "aa", status: "completed", conclusion: "failure")
 
     render partial: "tasks/release_lanes", locals: { release: rel.reload }
 
@@ -150,11 +150,11 @@ class ReleaseLanesTest < ActionView::TestCase
 
   test "[component] a failure survives the cap even when its name sorts last" do
     rel = lane_release("mcritchie-studio")
-    seed_ci("amcritchie/mcritchie-studio", "release", "CI", "mcr", 0)
+    seed_ci("McRitchie-Studio/mcritchie-studio", "release", "CI", "mcr", 0)
     # A full cap's worth of passes that sort FIRST, and the one failure sorting last: under
     # a name-only sort the row drew eight ✓ on a red meter and the ✗ fell off the end.
-    seed_checks("amcritchie/mcritchie-studio", "release", "CI", "mcr", 8, "aa", status: "completed", conclusion: "success")
-    seed_checks("amcritchie/mcritchie-studio", "release", "CI", "mcr", 1, "zz", status: "completed", conclusion: "failure")
+    seed_checks("McRitchie-Studio/mcritchie-studio", "release", "CI", "mcr", 8, "aa", status: "completed", conclusion: "success")
+    seed_checks("McRitchie-Studio/mcritchie-studio", "release", "CI", "mcr", 1, "zz", status: "completed", conclusion: "failure")
 
     render partial: "tasks/release_lanes", locals: { release: rel.reload }
 
@@ -165,9 +165,9 @@ class ReleaseLanesTest < ActionView::TestCase
 
   test "[component] a narrow bar falls back to the fraction instead of clipping the marks" do
     rel = lane_release("mcritchie-studio")
-    seed_ci("amcritchie/mcritchie-studio", "release", "CI", "mcr", 0)
-    seed_checks("amcritchie/mcritchie-studio", "release", "CI", "mcr", 5, "pass", status: "completed", conclusion: "success")
-    seed_checks("amcritchie/mcritchie-studio", "release", "CI", "mcr", 3, "run", status: "in_progress", conclusion: nil)
+    seed_ci("McRitchie-Studio/mcritchie-studio", "release", "CI", "mcr", 0)
+    seed_checks("McRitchie-Studio/mcritchie-studio", "release", "CI", "mcr", 5, "pass", status: "completed", conclusion: "success")
+    seed_checks("McRitchie-Studio/mcritchie-studio", "release", "CI", "mcr", 3, "run", status: "in_progress", conclusion: nil)
 
     render partial: "tasks/release_lanes", locals: { release: rel.reload }
 

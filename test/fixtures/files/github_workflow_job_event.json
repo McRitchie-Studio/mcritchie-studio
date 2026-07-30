@@ -11,12 +11,12 @@
     "conclusion": "success",
     "started_at": "2026-07-15T12:00:10Z",
     "completed_at": "2026-07-15T12:01:40Z",
-    "html_url": "https://github.com/amcritchie/mcritchie-studio/actions/runs/987654321/job/555123456"
+    "html_url": "https://github.com/McRitchie-Studio/mcritchie-studio/actions/runs/987654321/job/555123456"
   },
   "repository": {
     "id": 55512345,
     "name": "mcritchie-studio",
-    "full_name": "amcritchie/mcritchie-studio",
+    "full_name": "McRitchie-Studio/mcritchie-studio",
     "private": true
   },
   "sender": {

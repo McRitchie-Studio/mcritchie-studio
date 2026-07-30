@@ -19,11 +19,20 @@ session.
 
 ## Entry
 
-Run this SOP from the McRitchie Studio primary checkout:
+Run this SOP from the McRitchie Studio primary checkout, **under the deployer
+GitHub App identity**:
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio
+export GH_APP_ITEM=github.mcritchie-deployer
 ```
+
+`GH_APP_ITEM` points `bin/gh-app-git-credential` at the ship-lane GitHub App
+(`github.mcritchie-deployer`: contents + actions + checks-read + secrets) for
+every `git`/`gh` call this session makes. The deployer identity **cannot open or
+merge PRs by design** — that is the point, not a bug: PR writes belong to the
+build/review lanes' default `github.mcritchie-agent` identity. See
+`docs/agents/modules/credentials.md` → GitHub.
 
 Use the production board by default. Do not add `--local`.
 

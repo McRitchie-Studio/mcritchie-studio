@@ -695,7 +695,7 @@ class SessionPreflightTest < Minitest::Test
           puts JSON.generate(
             number: 5,
             title: "Add Session Preflight",
-            url: "https://github.com/amcritchie/mcritchie-studio/pull/5",
+            url: "https://github.com/McRitchie-Studio/mcritchie-studio/pull/5",
             headRefName: "feat/session-preflight",
             baseRefName: "accepted",
             mergeable: "#{mergeable}",

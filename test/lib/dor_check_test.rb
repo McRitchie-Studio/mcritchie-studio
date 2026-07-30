@@ -1469,7 +1469,7 @@ class DorCheckTest < Minitest::Test
   # Closes the report's #1 blocker class — a PR green LOCALLY but red on GitHub CI,
   # because the local cert doesn't run the browser test:system lane. DOR_CHECK_CI_STATUS
   # injects the verdict so these never shell out to gh (mirrors DOR_CHECK_SUITE_EVIDENCE).
-  CI_PR = BACKEND_CONTRACT.merge("pr_url" => "https://github.com/amcritchie/mcritchie-studio/pull/1").freeze
+  CI_PR = BACKEND_CONTRACT.merge("pr_url" => "https://github.com/McRitchie-Studio/mcritchie-studio/pull/1").freeze
 
   def ci_check(state, devops = CI_PR, *args)
     with_changed_files("app/models/agent.rb") do
@@ -1766,14 +1766,14 @@ class DorCheckTest < Minitest::Test
   # the PR" for a PR that was already open and already GREEN. The gate must instead
   # say: this is a CREDENTIAL fault, on THIS repo, fixed by THIS grant.
 
-  ROLIO_PR = BACKEND_CONTRACT.merge("pr_url" => "https://github.com/amcritchie/rolio/pull/23").freeze
+  ROLIO_PR = BACKEND_CONTRACT.merge("pr_url" => "https://github.com/McRitchie-Studio/rolio/pull/23").freeze
   ROLIO_CHECKS_403 = "GraphQL: Resource not accessible by personal access token".freeze
 
   def test_unreadable_ci_is_reported_as_a_credential_fault_naming_the_repo
     out, = ci_check(ROLIO_CHECKS_403, ROLIO_PR)
     assert_match(/UNREADABLE/, out, "the state is named, not collapsed into UNVERIFIED")
     assert_match(/CREDENTIAL fault/, out, "the CAUSE is named")
-    assert_match(%r{amcritchie/rolio}, out, "the REPO is named")
+    assert_match(%r{McRitchie-Studio/rolio}, out, "the REPO is named")
     assert_match(/Checks: Read/, out, "the exact GRANT is named")
     assert_match(/gh pr checks <pr> --repo/, out, "the VERIFY command is named")
   end

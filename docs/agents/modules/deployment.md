@@ -398,6 +398,6 @@ deliver is simply ignored by the ingest job — no approval handling remains.
 | Var | Purpose |
 |-----|---------|
 | `GITHUB_WEBHOOK_SECRET` | HMAC secret verifying webhook deliveries (fail-closed). |
-| `GITHUB_TOKEN` | Agent PAT `Github::Client` defaults to — used by `Ci::ProgressReader` for the check-runs API fallback. |
+| `GITHUB_TOKEN` | Token `Github::Client` defaults to — used by `Ci::ProgressReader` for the check-runs API fallback. Since the 2026-07-29 org migration this is the `github.mcritchie-agent` GitHub App identity (fine-grained PATs cannot call the check-runs API at all); mint installation tokens with `bin/gh-app-mint-token` — see `credentials.md` → GitHub. |
 
-Never commit the webhook secret or the PAT.
+Never commit the webhook secret or any GitHub token.

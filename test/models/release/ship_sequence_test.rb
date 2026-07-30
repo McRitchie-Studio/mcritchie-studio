@@ -246,7 +246,7 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
 
   BRANCH_GEMFILE = <<~GEMFILE
     source "https://rubygems.org"
-    gem "studio-engine", github: "amcritchie/studio-engine", branch: "feat/x"
+    gem "studio-engine", github: "McRitchie-Studio/studio-engine", branch: "feat/x"
     gem "solana-studio", "~> 0.4.7"
     gem "rails", "~> 7.2"
   GEMFILE
@@ -267,7 +267,7 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
   test "gems_to_repin handles multiple branch-ref'd gems" do
     text = <<~GEMFILE
       gem "studio-engine", branch: "feat/a"
-      gem "solana-studio", git: "https://github.com/amcritchie/solana-studio"
+      gem "solana-studio", git: "https://github.com/McRitchie-Studio/solana-studio"
     GEMFILE
     assert_equal %w[studio-engine solana-studio],
                  S.gems_to_repin(%w[studio-engine solana-studio], text)
@@ -953,7 +953,7 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
   end
 
   test "consumer_bump_action is :rewrite_source for a branch-ref'd line" do
-    text = %(gem "studio-engine", github: "amcritchie/studio-engine", branch: "feat/x"\n)
+    text = %(gem "studio-engine", github: "McRitchie-Studio/studio-engine", branch: "feat/x"\n)
     assert_equal :rewrite_source, S.consumer_bump_action(text, "studio-engine", "0.11.0")
   end
 
@@ -996,7 +996,7 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
     assert_equal pinned, S.bumped_gemfile(pinned, "studio-engine", "0.10.5")
     assert_equal pinned, S.bumped_gemfile(pinned, "studio-engine", "0.11.0")
     # source ref → re-pinned to the published version
-    branchy = %(gem "studio-engine", github: "amcritchie/studio-engine", branch: "feat/x"\n)
+    branchy = %(gem "studio-engine", github: "McRitchie-Studio/studio-engine", branch: "feat/x"\n)
     assert_equal %(gem "studio-engine", "~> 0.11"\n), S.bumped_gemfile(branchy, "studio-engine", "0.11.0")
     # absent → untouched
     other = %(gem "rails", "~> 7.2"\n)
