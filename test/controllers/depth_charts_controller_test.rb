@@ -83,4 +83,34 @@ class DepthChartsControllerTest < ActionDispatch::IntegrationTest
     post toggle_lock_depth_chart_entry_path(@e1.id), as: :json
     assert_not @e1.reload.locked, "a second toggle clears it"
   end
+
+  # --- auth-scoping: a reorder is confined to the team's OWN chart --------------
+
+  test "reorder rejects entry_ids from another team's chart (404, nothing restamped)" do
+    log_in_as(@admin)
+    other_team   = Team.create!(name: "Other Squad", sport: "football", league: "nfl", emoji: "🦅")
+    other_chart  = DepthChart.create!(team_slug: other_team.slug, slug: "#{other_team.slug}-depth")
+    other_person = Person.create!(first_name: "Foreign", last_name: "Player")
+    foreign = DepthChartEntry.create!(depth_chart_slug: other_chart.slug, person_slug: other_person.slug,
+                                      position: "QB", side: "offense", depth: 1)
+
+    # POST to OUR team's reorder endpoint, but sneak in the other team's entry id.
+    post reorder_depth_chart_path(@team.slug),
+         params: { entry_ids: [@e1.id, foreign.id] }, as: :json
+
+    assert_response :not_found
+    assert_equal 1, foreign.reload.depth, "the foreign entry is NOT restamped"
+    assert_equal 1, @e1.reload.depth,     "the guard halts BEFORE the restamp — our entries are untouched too"
+  end
+
+  test "reorder still restamps when every entry_id belongs to the team's chart" do
+    log_in_as(@admin)
+    post reorder_depth_chart_path(@team.slug),
+         params: { entry_ids: [@e3.id, @e2.id, @e1.id] }, as: :json
+
+    assert_response :success
+    assert_equal 1, @e3.reload.depth, "own-chart reorder passes the guard and restamps 1..N"
+    assert_equal 2, @e2.reload.depth
+    assert_equal 3, @e1.reload.depth
+  end
 end

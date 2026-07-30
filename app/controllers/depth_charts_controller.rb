@@ -12,7 +12,11 @@ class DepthChartsController < ApplicationController
   alias_method :toggle_lock, :board_toggle_lock
 
   skip_before_action :require_authentication, only: [:show]
-  before_action :set_team, only: [:show]
+  before_action :set_team, only: [:show, :reorder]
+  # The shared Studio::Board::Reorderable#reorder restamps whatever entry_ids are
+  # POSTed, by GLOBAL id — so scope it to THIS team's own chart before it runs, or a
+  # logged-in user could reorder another team's depth chart.
+  before_action :authorize_reorder_entries, only: [:reorder]
 
   POSITION_ORDER = {
     "offense" => %w[QB RB FB WR TE LT LG C RG RT OT OG T G],
@@ -75,5 +79,22 @@ class DepthChartsController < ApplicationController
   def set_team
     @team = Team.find_by(slug: params[:slug])
     redirect_to nfl_rosters_path, alert: "Team not found" unless @team
+  end
+
+  # Every POSTed entry_id must belong to THIS team's depth chart, else 404 — so the
+  # shared reorder (which restamps by global id) can't be pointed at another team's
+  # chart. Runs before the concern's #reorder; set_team has already resolved @team.
+  def authorize_reorder_entries
+    chart = @team&.depth_chart
+    return render(json: { error: "no depth chart for team" }, status: :not_found) unless chart
+
+    ids = Array(params[:entry_ids]).map(&:to_s)
+    return if ids.empty? # the concern's own param guard handles a missing/empty list
+
+    owned   = chart.depth_chart_entries.where(id: ids).pluck(:id).map(&:to_s)
+    foreign = ids - owned
+    return if foreign.empty?
+
+    render json: { error: "entries not in this team's chart" }, status: :not_found
   end
 end
