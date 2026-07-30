@@ -14,7 +14,7 @@
           "repositories": ["mcritchie-studio"],
           "risk_tags": ["ui", "navigation"],
           "branch": "feat/sidebar-recovery",
-          "pr_url": "https://github.com/amcritchie/mcritchie-studio/pull/123",
+          "pr_url": "https://github.com/McRitchie-Studio/mcritchie-studio/pull/123",
           "local_url": "http://localhost:3021/tasks",
           "acceptance": ["Sidebar opens after browser Back"],
           "test_plan": ["bin/rails test test/integration/links_hub_test.rb"],
@@ -36,7 +36,7 @@
           "repositories": ["studio-engine", "turf-monster"],
           "risk_tags": ["gem", "ui"],
           "branch": "feat/shared-engine-table-headers",
-          "pr_url": "https://github.com/amcritchie/studio-engine/pull/789",
+          "pr_url": "https://github.com/McRitchie-Studio/studio-engine/pull/789",
           "acceptance": ["Engine release can be adopted by Turf Monster"],
           "test_plan": ["bundle exec rake test", "consumer app smoke"],
           "checks_run": ["bundle exec rake test"]
@@ -57,7 +57,7 @@
           "repositories": ["mcritchie-studio"],
           "risk_tags": ["devops"],
           "branch": "feat/stale-worktree-handoff",
-          "pr_url": "https://github.com/amcritchie/mcritchie-studio/pull/1000",
+          "pr_url": "https://github.com/McRitchie-Studio/mcritchie-studio/pull/1000",
           "acceptance": ["Worktree handoff is current with main"],
           "test_plan": ["bin/qa-intake --refresh"],
           "checks_run": []
@@ -78,7 +78,7 @@
           "repositories": ["mcritchie-studio"],
           "risk_tags": ["devops"],
           "branch": "feat/focused-devops-helper",
-          "pr_url": "https://github.com/amcritchie/mcritchie-studio/pull/222",
+          "pr_url": "https://github.com/McRitchie-Studio/mcritchie-studio/pull/222",
           "acceptance": ["Helper output is deterministic"],
           "test_plan": ["bin/rails test test/commands/devops_cycle_command_test.rb"],
           "checks_run": ["bin/rails test test/commands/devops_cycle_command_test.rb"]
@@ -99,7 +99,7 @@
           "repositories": ["turf-monster"],
           "risk_tags": ["wallet", "qa"],
           "branch": "feat/contest-entry-flow",
-          "pr_url": "https://github.com/amcritchie/turf-monster/pull/456",
+          "pr_url": "https://github.com/McRitchie-Studio/turf-monster/pull/456",
           "qa_url": "https://qa.turfmonster.media/contests/test",
           "acceptance": ["Contest entry completes on QA"],
           "test_plan": ["bin/e2e-parallel"],
@@ -180,45 +180,45 @@
     "prs": [
       {
         "status": "avi-ready",
-        "repo": "amcritchie/studio-engine",
+        "repo": "McRitchie-Studio/studio-engine",
         "number": 789,
-        "url": "https://github.com/amcritchie/studio-engine/pull/789",
+        "url": "https://github.com/McRitchie-Studio/studio-engine/pull/789",
         "task_record_slug": "task-engine789",
         "task_url": "https://mcritchie.studio/tasks/task-engine789",
         "action": "Avi can review but coordinate release ordering"
       },
       {
         "status": "needs-agent",
-        "repo": "amcritchie/mcritchie-studio",
+        "repo": "McRitchie-Studio/mcritchie-studio",
         "number": 1000,
-        "url": "https://github.com/amcritchie/mcritchie-studio/pull/1000",
+        "url": "https://github.com/McRitchie-Studio/mcritchie-studio/pull/1000",
         "task_record_slug": "task-block000",
         "task_url": "https://mcritchie.studio/tasks/task-block000",
         "action": "return to the feature agent to resolve local blockers before Avi review"
       },
       {
         "status": "avi-ready",
-        "repo": "amcritchie/mcritchie-studio",
+        "repo": "McRitchie-Studio/mcritchie-studio",
         "number": 123,
-        "url": "https://github.com/amcritchie/mcritchie-studio/pull/123",
+        "url": "https://github.com/McRitchie-Studio/mcritchie-studio/pull/123",
         "task_record_slug": "task-pr123",
         "task_url": "https://mcritchie.studio/tasks/task-pr123",
         "action": "Avi can review for scope and merge safety"
       },
       {
         "status": "avi-ready",
-        "repo": "amcritchie/mcritchie-studio",
+        "repo": "McRitchie-Studio/mcritchie-studio",
         "number": 222,
-        "url": "https://github.com/amcritchie/mcritchie-studio/pull/222",
+        "url": "https://github.com/McRitchie-Studio/mcritchie-studio/pull/222",
         "task_record_slug": "task-ready222",
         "task_url": "https://mcritchie.studio/tasks/task-ready222",
         "action": "Avi can review for scope and merge safety"
       },
       {
         "status": "checks-review",
-        "repo": "amcritchie/turf-monster",
+        "repo": "McRitchie-Studio/turf-monster",
         "number": 456,
-        "url": "https://github.com/amcritchie/turf-monster/pull/456",
+        "url": "https://github.com/McRitchie-Studio/turf-monster/pull/456",
         "task_record_slug": "task-qa456",
         "task_url": "https://mcritchie.studio/tasks/task-qa456",
         "action": "inspect checks and wait for green"

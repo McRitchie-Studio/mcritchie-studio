@@ -185,7 +185,7 @@ class QaIntakeCommandTest < ActiveSupport::TestCase
     pr = JSON.parse(out).fetch("prs").first
 
     assert_equal "rolio", pr.fetch("app")
-    assert_equal "amcritchie/rolio", pr.fetch("repo")
+    assert_equal "McRitchie-Studio/rolio", pr.fetch("repo")
     assert_equal "missing-local-branch", pr.fetch("status")
   end
 
@@ -327,7 +327,7 @@ class QaIntakeCommandTest < ActiveSupport::TestCase
     repo_dir = File.join(@projects_dir, slug)
     FileUtils.mkdir_p(repo_dir)
     git(repo_dir, "init", "-q")
-    git(repo_dir, "remote", "add", "origin", "git@github.com:amcritchie/#{slug}.git")
+    git(repo_dir, "remote", "add", "origin", "git@github.com:McRitchie-Studio/#{slug}.git")
     repo_dir
   end
 
@@ -377,7 +377,7 @@ class QaIntakeCommandTest < ActiveSupport::TestCase
       if ARGV[0, 2] == ["pr", "list"]
         puts JSON.generate([{
           number: 124, title: "Clean behind-base PR",
-          url: "https://github.com/amcritchie/mcritchie-studio/pull/124",
+          url: "https://github.com/McRitchie-Studio/mcritchie-studio/pull/124",
           isDraft: false, headRefName: #{branch.inspect}, baseRefName: "release",
           mergeStateStatus: #{merge_state.inspect}, mergeable: "MERGEABLE",
           reviewDecision: "", updatedAt: "2026-06-23T00:00:00Z",

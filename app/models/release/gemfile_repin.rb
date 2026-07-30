@@ -9,7 +9,7 @@ class Release
   # stays trivially unit-testable.
   #
   # The real consumer shapes this handles:
-  #   gem "studio-engine", github: "amcritchie/studio-engine", branch: "feat/x"
+  #   gem "studio-engine", github: "McRitchie-Studio/studio-engine", branch: "feat/x"
   #     — a source ref; `rewrite` re-pins it to the published version.
   #   gem "studio-engine", "~> 0.8"
   #     — a plain version pin. `rewrite` leaves it untouched; the prepare-side

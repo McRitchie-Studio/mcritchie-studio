@@ -1178,7 +1178,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
           "shape" => "ui-only",
           "repositories" => ["mcritchie-studio"],
           "risk_tags" => ["review-workflow"],
-          "pr_url" => "https://github.com/amcritchie/mcritchie-studio/pull/999"
+          "pr_url" => "https://github.com/McRitchie-Studio/mcritchie-studio/pull/999"
         }
       }
     )
@@ -1196,7 +1196,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='review-followup-guard']"
     assert_select "[data-test='review-followup-guard']", text: /Do not interrupt/
     assert_select "[data-test='review-followup-reviewer'][data-role='primary']", text: /Guard Carl/
-    assert_select "a[href=?]", "https://github.com/amcritchie/mcritchie-studio/pull/999", text: /View PR/
+    assert_select "a[href=?]", "https://github.com/McRitchie-Studio/mcritchie-studio/pull/999", text: /View PR/
     assert_select "a[data-test='review-followup-create-link'][href=?]", new_task_path(followup_from: task.slug)
   end
 
@@ -1238,7 +1238,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
           "shape" => "ui-only",
           "repositories" => ["mcritchie-studio", "turf-monster"],
           "risk_tags" => ["review-workflow"],
-          "pr_url" => "https://github.com/amcritchie/mcritchie-studio/pull/998"
+          "pr_url" => "https://github.com/McRitchie-Studio/mcritchie-studio/pull/998"
         }
       }
     )
@@ -1590,7 +1590,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
             worktree_slug: "contest-flow",
             repositories: "turf-monster, turf-vault",
             branch: "feat/contest-flow",
-            pr_url: "https://github.com/amcritchie/turf-monster/pull/149",
+            pr_url: "https://github.com/McRitchie-Studio/turf-monster/pull/149",
             qa_url: "https://qa.turfmonster.media/contests",
             release_slug: "rel-2026-06-17-turf",
             requires_release_conductor: "1",

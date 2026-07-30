@@ -9,7 +9,7 @@ module Ci
   # joins the run(s) for that head_sha, and folds them through CiStatus's verdict
   # semantics — never a live `gh` call.
   class ReviewGateTest < ActiveSupport::TestCase
-    REPO = "amcritchie/mcritchie-studio"
+    REPO = "McRitchie-Studio/mcritchie-studio"
 
     setup { GithubWorkflowRun.delete_all }
 
@@ -92,7 +92,7 @@ module Ci
     test "[unit] green when a GEM repo's own suite workflow concluded success" do
       task = submitted(branch: "feat/gem-green", pr: 8, repo: "studio-engine")
       seed_run(branch: "feat/gem-green", sha: "sha-gem-green", status: "completed", conclusion: "success",
-               repo: "amcritchie/studio-engine", workflow: "Engine CI")
+               repo: "McRitchie-Studio/studio-engine", workflow: "Engine CI")
 
       assert Ci::ReviewGate.green?(task),
              "a gem PR whose own suite CI concluded success must be claimable — it was skipped as :none"
@@ -103,7 +103,7 @@ module Ci
     test "[unit] a GEM repo's failing suite is red, not none" do
       task = submitted(branch: "feat/gem-red", pr: 9, repo: "studio-engine")
       seed_run(branch: "feat/gem-red", sha: "sha-gem-red", status: "completed", conclusion: "failure",
-               repo: "amcritchie/studio-engine", workflow: "Engine CI")
+               repo: "McRitchie-Studio/studio-engine", workflow: "Engine CI")
 
       refute Ci::ReviewGate.green?(task)
       assert_equal :red, Ci::ReviewGate.verdict(task)[:state],
@@ -116,7 +116,7 @@ module Ci
     test "[unit] a gem's sibling workflow does not satisfy the gate" do
       task = submitted(branch: "feat/gem-sibling", pr: 10, repo: "studio-engine")
       seed_run(branch: "feat/gem-sibling", sha: "sha-sibling", status: "completed", conclusion: "success",
-               repo: "amcritchie/studio-engine", workflow: "Consumer CI")
+               repo: "McRitchie-Studio/studio-engine", workflow: "Consumer CI")
 
       refute Ci::ReviewGate.green?(task),
              "Consumer CI is the downstream apps' suite, not the gem's own verdict"
@@ -133,7 +133,7 @@ module Ci
     test "[unit] an unresolved workflow reads :none, never green off an unrelated run" do
       task = submitted(branch: "feat/no-suite", pr: 12, repo: "solana-studio")
       seed_run(branch: "feat/no-suite", sha: "sha-unrelated", status: "completed", conclusion: "success",
-               repo: "amcritchie/solana-studio", workflow: "Publish Gem")
+               repo: "McRitchie-Studio/solana-studio", workflow: "Publish Gem")
 
       assert_nil GithubWorkflowRun.ci_workflow_for("solana-studio"),
                  "precondition: solana-studio declares no suite workflow"
@@ -146,9 +146,9 @@ module Ci
       task = submitted(branch: "feat/masked", pr: 13, repo: "solana-studio")
       # The real suite failed; a lint job on the SAME sha passed afterwards.
       seed_run(branch: "feat/masked", sha: "sha-masked", status: "completed", conclusion: "failure",
-               repo: "amcritchie/solana-studio", workflow: "CI", run_id: 300, started: 2.minutes.ago)
+               repo: "McRitchie-Studio/solana-studio", workflow: "CI", run_id: 300, started: 2.minutes.ago)
       seed_run(branch: "feat/masked", sha: "sha-masked", status: "completed", conclusion: "success",
-               repo: "amcritchie/solana-studio", workflow: "Lint", run_id: 400, started: 1.minute.ago)
+               repo: "McRitchie-Studio/solana-studio", workflow: "Lint", run_id: 400, started: 1.minute.ago)
 
       refute Ci::ReviewGate.green?(task),
              "the newest unrelated PASS must not mask the real FAILURE — this greened a red PR"
@@ -171,7 +171,7 @@ module Ci
         metadata: { "devops" => {
           "branch" => branch,
           "repositories" => [repo],
-          "pr_url" => "https://github.com/amcritchie/#{repo}/pull/#{pr}"
+          "pr_url" => "https://github.com/McRitchie-Studio/#{repo}/pull/#{pr}"
         } }
       )
     end

@@ -61,7 +61,7 @@ class DeploymentsOwnerFacesTest < ActionDispatch::IntegrationTest
   test "[integration] the GitHub Actions panel is gone from /deployments" do
     Release.open!(branch: "release/panel-gone")
     # Even with an ingested workflow run present, the panel no longer renders.
-    GithubWorkflowRun.create!(repo: "amcritchie/mcritchie-studio", workflow_name: "CI",
+    GithubWorkflowRun.create!(repo: "McRitchie-Studio/mcritchie-studio", workflow_name: "CI",
                               run_id: 9001, status: "in_progress",
                               head_sha: "a" * 40, head_branch: "release",
                               html_url: "https://github.com/x/actions/runs/9001",

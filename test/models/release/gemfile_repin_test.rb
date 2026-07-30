@@ -17,7 +17,7 @@ class Release::GemfileRepinTest < ActiveSupport::TestCase
   # --- references_branch? ---
 
   test "references_branch? is true for a github source line" do
-    text = %(gem "studio-engine", github: "amcritchie/studio-engine", branch: "feat/standard-link-model"\n)
+    text = %(gem "studio-engine", github: "McRitchie-Studio/studio-engine", branch: "feat/standard-link-model"\n)
     assert Release::GemfileRepin.references_branch?(text, "studio-engine")
   end
 
@@ -47,13 +47,13 @@ class Release::GemfileRepinTest < ActiveSupport::TestCase
   # --- rewrite: github -> ~> ---
 
   test "rewrite replaces a github/branch line with a pessimistic pin" do
-    text = %(gem "studio-engine", github: "amcritchie/studio-engine", branch: "feat/standard-link-model"\n)
+    text = %(gem "studio-engine", github: "McRitchie-Studio/studio-engine", branch: "feat/standard-link-model"\n)
     out = Release::GemfileRepin.rewrite(text, "studio-engine", "0.9.3")
     assert_equal %(gem "studio-engine", "~> 0.9"\n), out
   end
 
   test "rewrite handles the real solana-studio-style git line" do
-    text = %(gem "solana-studio", git: "https://github.com/amcritchie/solana-studio", branch: "main"\n)
+    text = %(gem "solana-studio", git: "https://github.com/McRitchie-Studio/solana-studio", branch: "main"\n)
     out = Release::GemfileRepin.rewrite(text, "solana-studio", "0.4.7")
     assert_equal %(gem "solana-studio", "~> 0.4"\n), out
   end
@@ -71,7 +71,7 @@ class Release::GemfileRepinTest < ActiveSupport::TestCase
   end
 
   test "rewrite running twice equals running once" do
-    text = %(gem "studio-engine", github: "amcritchie/studio-engine", branch: "feat/x"\n)
+    text = %(gem "studio-engine", github: "McRitchie-Studio/studio-engine", branch: "feat/x"\n)
     once = Release::GemfileRepin.rewrite(text, "studio-engine", "0.9.3")
     twice = Release::GemfileRepin.rewrite(once, "studio-engine", "0.9.3")
     assert_equal once, twice
@@ -80,13 +80,13 @@ class Release::GemfileRepinTest < ActiveSupport::TestCase
   # --- rewrite: formatting preserved ---
 
   test "rewrite preserves leading indentation" do
-    text = %(  gem "studio-engine", github: "amcritchie/studio-engine", branch: "feat/x"\n)
+    text = %(  gem "studio-engine", github: "McRitchie-Studio/studio-engine", branch: "feat/x"\n)
     out = Release::GemfileRepin.rewrite(text, "studio-engine", "0.9.3")
     assert_equal %(  gem "studio-engine", "~> 0.9"\n), out
   end
 
   test "rewrite preserves a trailing comment" do
-    text = %(gem "studio-engine", github: "amcritchie/studio-engine", branch: "feat/x" # repin after ship\n)
+    text = %(gem "studio-engine", github: "McRitchie-Studio/studio-engine", branch: "feat/x" # repin after ship\n)
     out = Release::GemfileRepin.rewrite(text, "studio-engine", "0.9.3")
     assert_equal %(gem "studio-engine", "~> 0.9" # repin after ship\n), out
   end
@@ -96,7 +96,7 @@ class Release::GemfileRepinTest < ActiveSupport::TestCase
       source "https://rubygems.org"
 
       gem "rails", "~> 7.2"
-      gem "studio-engine", github: "amcritchie/studio-engine", branch: "feat/x"
+      gem "studio-engine", github: "McRitchie-Studio/studio-engine", branch: "feat/x"
       gem "solana-studio", "~> 0.4"
     GEMFILE
 
@@ -119,7 +119,7 @@ class Release::GemfileRepinTest < ActiveSupport::TestCase
   end
 
   test "rewrite preserves a final line without a trailing newline" do
-    text = %(gem "studio-engine", github: "amcritchie/studio-engine", branch: "feat/x")
+    text = %(gem "studio-engine", github: "McRitchie-Studio/studio-engine", branch: "feat/x")
     out = Release::GemfileRepin.rewrite(text, "studio-engine", "0.9.3")
     assert_equal %(gem "studio-engine", "~> 0.9"), out
   end
@@ -145,7 +145,7 @@ class Release::GemfileRepinTest < ActiveSupport::TestCase
     assert_empty Release::GemfileRepin.version_requirements(%(gem "studio-engine"\n), "studio-engine")
     assert_empty Release::GemfileRepin.version_requirements(%(gem "rails"\n), "studio-engine")
     assert_empty Release::GemfileRepin.version_requirements(
-      %(gem "studio-engine", github: "amcritchie/studio-engine", branch: "feat/x"\n), "studio-engine"
+      %(gem "studio-engine", github: "McRitchie-Studio/studio-engine", branch: "feat/x"\n), "studio-engine"
     )
   end
 
@@ -196,7 +196,7 @@ class Release::GemfileRepinTest < ActiveSupport::TestCase
   end
 
   test "rewrite_pin leaves a source-ref line for rewrite" do
-    text = %(gem "studio-engine", github: "amcritchie/studio-engine", branch: "feat/x"\n)
+    text = %(gem "studio-engine", github: "McRitchie-Studio/studio-engine", branch: "feat/x"\n)
     assert_equal text, Release::GemfileRepin.rewrite_pin(text, "studio-engine", "0.11.0")
   end
 

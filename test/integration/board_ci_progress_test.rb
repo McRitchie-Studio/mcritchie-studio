@@ -38,7 +38,7 @@ class BoardCiProgressTest < ActionDispatch::IntegrationTest
 
     # A distinct bordered panel within the task card, AND the PR link.
     card = "#card-#{task.slug} a.ci-progress-card.border[data-test='task-card-ci-progress']"
-    assert_select "#{card}[href='https://github.com/amcritchie/mcritchie-studio/pull/42'][target='_blank'][rel='noopener']", 1
+    assert_select "#{card}[href='https://github.com/McRitchie-Studio/mcritchie-studio/pull/42'][target='_blank'][rel='noopener']", 1
     # Icons, one per check…
     assert_select "#card-#{task.slug} [data-test='task-ci-progress-symbols']", 1
     assert_select "#card-#{task.slug} [data-test='ci-check-symbol']", 8, "one icon per check"
@@ -146,14 +146,14 @@ class BoardCiProgressTest < ActionDispatch::IntegrationTest
       metadata: { "devops" => {
         "branch" => branch,
         "repositories" => ["mcritchie-studio"],
-        "pr_url" => "https://github.com/amcritchie/mcritchie-studio/pull/#{pr}"
+        "pr_url" => "https://github.com/McRitchie-Studio/mcritchie-studio/pull/#{pr}"
       } }
     )
   end
 
   def seed_run(branch:, sha:)
     GithubWorkflowRun.create!(
-      repo: "amcritchie/mcritchie-studio", workflow_name: "CI",
+      repo: "McRitchie-Studio/mcritchie-studio", workflow_name: "CI",
       run_id: SecureRandom.random_number(10**12), status: "in_progress",
       head_branch: branch, head_sha: sha, run_started_at: Time.current
     )
@@ -161,15 +161,15 @@ class BoardCiProgressTest < ActionDispatch::IntegrationTest
 
   def seed_jobs(sha:, branch:, passed:, pending:)
     id = SecureRandom.random_number(10**12)
-    passed.times  { |i| CiCheckJob.create!(repo: "amcritchie/mcritchie-studio", job_id: (id += 1), head_sha: sha, head_branch: branch, workflow_name: "CI", name: "pass-#{i}", status: "completed", conclusion: "success") }
-    pending.times { |i| CiCheckJob.create!(repo: "amcritchie/mcritchie-studio", job_id: (id += 1), head_sha: sha, head_branch: branch, workflow_name: "CI", name: "wait-#{i}", status: "in_progress") }
+    passed.times  { |i| CiCheckJob.create!(repo: "McRitchie-Studio/mcritchie-studio", job_id: (id += 1), head_sha: sha, head_branch: branch, workflow_name: "CI", name: "pass-#{i}", status: "completed", conclusion: "success") }
+    pending.times { |i| CiCheckJob.create!(repo: "McRitchie-Studio/mcritchie-studio", job_id: (id += 1), head_sha: sha, head_branch: branch, workflow_name: "CI", name: "wait-#{i}", status: "in_progress") }
   end
 
   # One attempt of eight distinctly-named checks — the re-run mints a second with
   # the SAME names but new job_ids + run_id.
   def seed_attempt(sha:, branch:, run_id:, first_job_id:, status:, conclusion:)
     8.times do |i|
-      CiCheckJob.create!(repo: "amcritchie/mcritchie-studio", job_id: first_job_id + i, run_id: run_id,
+      CiCheckJob.create!(repo: "McRitchie-Studio/mcritchie-studio", job_id: first_job_id + i, run_id: run_id,
                          head_sha: sha, head_branch: branch, workflow_name: "CI",
                          name: "check-#{i}", status: status, conclusion: conclusion)
     end

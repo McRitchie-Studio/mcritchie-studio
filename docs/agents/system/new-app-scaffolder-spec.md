@@ -66,7 +66,7 @@ After prompts, confirm summary and proceed.
    - Adds `_navbar.html.erb` override pointing back at the hub
    - Adds `gem "solana-studio"` only if `--with-solana` flag is set
    - Runs `db:create db:migrate db:seed`
-   - Creates the GitHub repo via `gh repo create amcritchie/<slug> --private`
+   - Creates the GitHub repo via `gh repo create McRitchie-Studio/<slug> --private`
    - Initial commit + push to main
 4. **Provision Heroku app**:
    ```bash

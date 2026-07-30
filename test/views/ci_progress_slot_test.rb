@@ -46,10 +46,10 @@ class CiProgressSlotTest < ActionView::TestCase
            locals: { dom_id: "ci-progress-linked",
                      progress: Ci::CheckProgress.new(passed: 3, failed: 0, pending: 5),
                      test_id: "task-ci-progress", inner_test_id: "task-card-ci-progress",
-                     href: "https://github.com/amcritchie/mcritchie-studio/pull/42" }
+                     href: "https://github.com/McRitchie-Studio/mcritchie-studio/pull/42" }
 
     link = "#ci-progress-linked a.ci-progress-card.border[data-test='task-card-ci-progress']"
-    assert_select "#{link}[href='https://github.com/amcritchie/mcritchie-studio/pull/42']", 1
+    assert_select "#{link}[href='https://github.com/McRitchie-Studio/mcritchie-studio/pull/42']", 1
     assert_select "#{link}[target='_blank'][rel='noopener']", 1
     # @click.stop (card-nav guard) is an Alpine attr Nokogiri's CSS can't target;
     # asserted at the integration/e2e tier where the browser evaluates it.
@@ -71,11 +71,11 @@ class CiProgressSlotTest < ActionView::TestCase
                      label: "🐊 turf-monster G3 tests",
                      test_id: "release-ci-progress-turf-monster",
                      inner_test_id: "release-card-ci-progress-turf-monster",
-                     href: "https://github.com/amcritchie/turf-monster/actions/runs/7788",
+                     href: "https://github.com/McRitchie-Studio/turf-monster/actions/runs/7788",
                      link_title: "Open turf-monster G3 CI run on GitHub" }
 
     link = "#release-ci-progress-turf-monster a.ci-progress-card[data-test='release-card-ci-progress-turf-monster']"
-    assert_select "#{link}[href='https://github.com/amcritchie/turf-monster/actions/runs/7788']", 1
+    assert_select "#{link}[href='https://github.com/McRitchie-Studio/turf-monster/actions/runs/7788']", 1
     assert_select "#{link}[target='_blank'][rel='noopener']", 1
     assert_select "#{link}[aria-label='Open turf-monster G3 CI run on GitHub']", 1, "the link carries an accessible name"
     assert_select "#{link}[title='Open turf-monster G3 CI run on GitHub']", 1
@@ -86,7 +86,7 @@ class CiProgressSlotTest < ActionView::TestCase
            locals: { dom_id: "ci-progress-default-title",
                      progress: Ci::CheckProgress.new(passed: 3, failed: 0, pending: 5),
                      inner_test_id: "task-card-ci-progress",
-                     href: "https://github.com/amcritchie/mcritchie-studio/pull/42" }
+                     href: "https://github.com/McRitchie-Studio/mcritchie-studio/pull/42" }
 
     assert_select "#ci-progress-default-title a[aria-label='Open the pull request on GitHub']", 1
     assert_select "#ci-progress-default-title a[title='Open the pull request on GitHub']", 1

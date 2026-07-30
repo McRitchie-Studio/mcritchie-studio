@@ -205,7 +205,7 @@ class PrReviewCommandTest < Minitest::Test
         "repositories" => ["mcritchie-studio"],
         "risk_tags" => ["devops"],
         "branch" => "feat/#{slug}",
-        "pr_url" => "https://github.com/amcritchie/mcritchie-studio/pull/#{slug.hash.abs % 10_000}",
+        "pr_url" => "https://github.com/McRitchie-Studio/mcritchie-studio/pull/#{slug.hash.abs % 10_000}",
         "acceptance" => ["Review works for #{slug}"],
         "test_plan" => ["bin/rails test"],
         "checks_run" => ["bin/rails test"]

@@ -7,7 +7,7 @@ Task management and orchestration hub for the McRitchie AI agent system. McRitch
 Legacy Rails host: https://app.mcritchie.studio. Previous Squarespace site:
 https://v1.mcritchie.studio.
 
-McRitchie Studio is the **flagship app** of the McRitchie ecosystem ([turf-monster](https://github.com/amcritchie/turf-monster), [chain-ops](https://github.com/amcritchie/chain-ops), [studio-engine](https://github.com/amcritchie/studio-engine), [solana-studio](https://github.com/amcritchie/solana-studio), [turf-vault](https://github.com/amcritchie/turf-vault), and future apps). Clone this repo first; it carries the scripts and agent-neutral docs that bootstrap everything else.
+McRitchie Studio is the **flagship app** of the McRitchie ecosystem ([turf-monster](https://github.com/McRitchie-Studio/turf-monster), [chain-ops](https://github.com/McRitchie-Studio/chain-ops), [studio-engine](https://github.com/McRitchie-Studio/studio-engine), [solana-studio](https://github.com/McRitchie-Studio/solana-studio), [turf-vault](https://github.com/McRitchie-Studio/turf-vault), and future apps). Clone this repo first; it carries the scripts and agent-neutral docs that bootstrap everything else.
 
 > **New here?** Read [`docs/ECOSYSTEM.md`](docs/ECOSYSTEM.md) first — it's the canonical 2-minute orientation surface for the ecosystem.
 
@@ -26,7 +26,7 @@ Use this when standing up a brand new machine, or anytime you want to confirm "e
 
 ```bash
 # 1. Clone the flagship — every other repo + script lives downstream of this one.
-git clone https://github.com/amcritchie/mcritchie-studio.git ~/projects/mcritchie-studio
+git clone https://github.com/McRitchie-Studio/mcritchie-studio.git ~/projects/mcritchie-studio
 cd ~/projects/mcritchie-studio
 
 # 2. First pass — installs every brew package (incl. 1Password CLI), Rust, Solana,
@@ -105,7 +105,7 @@ Chain Ops is planned at `3400-3499`. See
 If your machine already has Ruby 3.3.11, Postgres 14, and an `.env` in place:
 
 ```bash
-git clone https://github.com/amcritchie/mcritchie-studio.git
+git clone https://github.com/McRitchie-Studio/mcritchie-studio.git
 cd mcritchie-studio
 bundle install
 bin/rails db:create db:migrate db:seed
@@ -157,7 +157,7 @@ scaled so Solid Queue can process durable mail/auth jobs. Required env vars:
 ## Architecture
 
 - Rails 8.1 with ERB views, Tailwind CSS, Alpine.js
-- Shared [Studio engine](https://github.com/amcritchie/studio-engine) for auth, error handling, and theme system
+- Shared [Studio engine](https://github.com/McRitchie-Studio/studio-engine) for auth, error handling, and theme system
 - Slug-based foreign keys throughout (not integer IDs)
 - All monetary values stored in cents, displayed in dollars
 

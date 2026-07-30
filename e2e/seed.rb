@@ -315,7 +315,7 @@ Task.create!(
   priority: 1,
   agent_slug: "carl",
   metadata: { "devops" => { "kind" => "feature", "repositories" => ["turf-monster"],
-                            "pr_url" => "https://github.com/amcritchie/turf-monster/pull/8501" } }
+                            "pr_url" => "https://github.com/McRitchie-Studio/turf-monster/pull/8501" } }
 )
 Task.create!(
   title: "Release inclusion HELD demo",
@@ -325,7 +325,7 @@ Task.create!(
   priority: 1,
   agent_slug: "carl",
   metadata: { "devops" => { "kind" => "feature", "repositories" => ["mcritchie-studio"],
-                            "pr_url" => "https://github.com/amcritchie/mcritchie-studio/pull/8502",
+                            "pr_url" => "https://github.com/McRitchie-Studio/mcritchie-studio/pull/8502",
                             "included_in_release" => "false" } }
 )
 
@@ -951,7 +951,7 @@ GithubWorkflowRun.create!(
 # CI progress bars (feature: visual-ci-progress-bars): a submitted task whose PR has
 # a live GitHub CI run, plus a CI run on the release-branch tip, so the board e2e can
 # assert the task-card "X / Y checks" meter and the Next Release G3 bar. Ci::ProgressReader
-# resolves the SHA from these rows (owner amcritchie, the reader's DEFAULT_OWNER — the
+# resolves the SHA from these rows (owner McRitchie-Studio, the reader's DEFAULT_OWNER — the
 # panel rows above use a legacy owner and are repo-scoped away), then folds the counts
 # from CI_PROGRESS_FIXTURES (playwright webServer env) keyed by these SHAs — no network.
 # run_started_at is OLDER than the panel runs above so latest_per_workflow (global, one
@@ -962,18 +962,18 @@ Task.create!(
   metadata: { "devops" => {
     "branch" => "feat/ci-progress-e2e",
     "repositories" => ["mcritchie-studio"],
-    "pr_url" => "https://github.com/amcritchie/mcritchie-studio/pull/900"
+    "pr_url" => "https://github.com/McRitchie-Studio/mcritchie-studio/pull/900"
   } }
 )
 GithubWorkflowRun.create!(
-  repo: "amcritchie/mcritchie-studio", run_id: 5_000_101, status: "in_progress",
+  repo: "McRitchie-Studio/mcritchie-studio", run_id: 5_000_101, status: "in_progress",
   workflow_name: "CI", head_sha: "e2e-task-sha", head_branch: "feat/ci-progress-e2e",
-  html_url: "https://github.com/amcritchie/mcritchie-studio/actions/runs/5000101", run_started_at: 30.minutes.ago
+  html_url: "https://github.com/McRitchie-Studio/mcritchie-studio/actions/runs/5000101", run_started_at: 30.minutes.ago
 )
 GithubWorkflowRun.create!(
-  repo: "amcritchie/mcritchie-studio", run_id: 5_000_102, status: "completed", conclusion: "success",
+  repo: "McRitchie-Studio/mcritchie-studio", run_id: 5_000_102, status: "completed", conclusion: "success",
   workflow_name: "CI", head_sha: "e2e-rel-sha", head_branch: "release",
-  html_url: "https://github.com/amcritchie/mcritchie-studio/actions/runs/5000102", run_started_at: 30.minutes.ago
+  html_url: "https://github.com/McRitchie-Studio/mcritchie-studio/actions/runs/5000102", run_started_at: 30.minutes.ago
 )
 
 # The other two release lanes' G3 CI, as LIVE CiCheckJob rows (no fixture entry needed):
@@ -987,25 +987,25 @@ GithubWorkflowRun.create!(
   ["rolio", "e2e-rel-rolio-sha", 5_000_105, 6, 0, "failure"]
 ].each do |repo, sha, run_id, passed, pending, failure|
   GithubWorkflowRun.create!(
-    repo: "amcritchie/#{repo}", run_id: run_id, status: (pending.positive? ? "in_progress" : "completed"),
+    repo: "McRitchie-Studio/#{repo}", run_id: run_id, status: (pending.positive? ? "in_progress" : "completed"),
     conclusion: (pending.positive? ? nil : "failure"),
     workflow_name: "CI", head_sha: sha, head_branch: "release",
-    html_url: "https://github.com/amcritchie/#{repo}/actions/runs/#{run_id}", run_started_at: 30.minutes.ago
+    html_url: "https://github.com/McRitchie-Studio/#{repo}/actions/runs/#{run_id}", run_started_at: 30.minutes.ago
   )
   job_id = run_id * 10
   passed.times do |i|
-    CiCheckJob.create!(repo: "amcritchie/#{repo}", job_id: job_id + i, run_id: run_id, head_sha: sha,
+    CiCheckJob.create!(repo: "McRitchie-Studio/#{repo}", job_id: job_id + i, run_id: run_id, head_sha: sha,
                        head_branch: "release", workflow_name: "CI", name: "pass-#{i}",
                        status: "completed", conclusion: "success")
   end
   pending.times do |i|
-    CiCheckJob.create!(repo: "amcritchie/#{repo}", job_id: job_id + 50 + i, run_id: run_id, head_sha: sha,
+    CiCheckJob.create!(repo: "McRitchie-Studio/#{repo}", job_id: job_id + 50 + i, run_id: run_id, head_sha: sha,
                        head_branch: "release", workflow_name: "CI", name: "run-#{i}",
                        status: "in_progress", conclusion: nil)
   end
   next if failure.blank?
 
-  CiCheckJob.create!(repo: "amcritchie/#{repo}", job_id: job_id + 90, run_id: run_id, head_sha: sha,
+  CiCheckJob.create!(repo: "McRitchie-Studio/#{repo}", job_id: job_id + 90, run_id: run_id, head_sha: sha,
                      head_branch: "release", workflow_name: "CI", name: "zz-failing-check",
                      status: "completed", conclusion: failure)
 end
@@ -1022,22 +1022,22 @@ Task.create!(
   metadata: { "devops" => {
     "branch" => "feat/ci-progress-live-e2e",
     "repositories" => ["mcritchie-studio"],
-    "pr_url" => "https://github.com/amcritchie/mcritchie-studio/pull/901"
+    "pr_url" => "https://github.com/McRitchie-Studio/mcritchie-studio/pull/901"
   } }
 )
 GithubWorkflowRun.create!(
-  repo: "amcritchie/mcritchie-studio", run_id: 5_000_103, status: "in_progress",
+  repo: "McRitchie-Studio/mcritchie-studio", run_id: 5_000_103, status: "in_progress",
   workflow_name: "CI", head_sha: "e2e-live-task-sha", head_branch: "feat/ci-progress-live-e2e",
-  html_url: "https://github.com/amcritchie/mcritchie-studio/actions/runs/5000103", run_started_at: 25.minutes.ago
+  html_url: "https://github.com/McRitchie-Studio/mcritchie-studio/actions/runs/5000103", run_started_at: 25.minutes.ago
 )
 e2e_live_job_id = 5_100_000
 5.times do |i|
-  CiCheckJob.create!(repo: "amcritchie/mcritchie-studio", job_id: e2e_live_job_id + i, run_id: 5_000_103,
+  CiCheckJob.create!(repo: "McRitchie-Studio/mcritchie-studio", job_id: e2e_live_job_id + i, run_id: 5_000_103,
                      head_sha: "e2e-live-task-sha", head_branch: "feat/ci-progress-live-e2e",
                      workflow_name: "CI", name: "check-#{i}", status: "completed", conclusion: "success")
 end
 3.times do |i|
-  CiCheckJob.create!(repo: "amcritchie/mcritchie-studio", job_id: e2e_live_job_id + 5 + i, run_id: 5_000_103,
+  CiCheckJob.create!(repo: "McRitchie-Studio/mcritchie-studio", job_id: e2e_live_job_id + 5 + i, run_id: 5_000_103,
                      head_sha: "e2e-live-task-sha", head_branch: "feat/ci-progress-live-e2e",
                      workflow_name: "CI", name: "pending-#{i}", status: "in_progress")
 end

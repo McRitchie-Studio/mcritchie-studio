@@ -398,6 +398,6 @@ deliver is simply ignored by the ingest job — no approval handling remains.
 | Var | Purpose |
 |-----|---------|
 | `GITHUB_WEBHOOK_SECRET` | HMAC secret verifying webhook deliveries (fail-closed). |
-| `GITHUB_TOKEN` | Agent PAT `Github::Client` defaults to — used by `Ci::ProgressReader` for the check-runs API fallback. |
+| `GITHUB_TOKEN` | Token `Github::Client` defaults to — used by `Ci::ProgressReader` for the check-runs API fallback. **Current truth (2026-07-30): this static config var still holds the legacy `amcritchie` fine-grained PAT**, which post-migration can read public-repo data only — private-repo reads (mcritchie-industries) fail server-side. A 1-hour App installation token cannot live in a static config var; the fix is server-side minting (store the agent App's `app-id` + private key as config vars and mint in `Github::Client`) — tracked as task `board-mints-github-app-tokens`. |
 
-Never commit the webhook secret or the PAT.
+Never commit the webhook secret or any GitHub token.

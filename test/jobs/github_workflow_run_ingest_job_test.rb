@@ -144,7 +144,7 @@ class GithubWorkflowRunIngestJobTest < ActiveJob::TestCase
         "started_at" => "2026-07-15T12:00:10Z",
         "completed_at" => (status == "completed" ? "2026-07-15T12:01:40Z" : nil)
       }.merge(overrides),
-      "repository" => { "full_name" => "amcritchie/mcritchie-studio" }
+      "repository" => { "full_name" => "McRitchie-Studio/mcritchie-studio" }
     }
   end
 
@@ -158,7 +158,7 @@ class GithubWorkflowRunIngestJobTest < ActiveJob::TestCase
     end
 
     job = CiCheckJob.find_by(job_id: JOB_ID)
-    assert_equal "amcritchie/mcritchie-studio", job.repo
+    assert_equal "McRitchie-Studio/mcritchie-studio", job.repo
     assert_equal 987_654_321, job.run_id
     assert_equal "CI", job.workflow_name
     assert_equal "lint", job.name
@@ -243,19 +243,19 @@ class GithubWorkflowRunIngestJobTest < ActiveJob::TestCase
 
   test "[unit] eight completed CI jobs for a SHA fold into a full 8/8 bar" do
     8.times { |i| ingest_job(status: "completed", conclusion: "success", job_id: 700 + i, name: "check-#{i}") }
-    rows = CiCheckJob.progress_rows("amcritchie/mcritchie-studio", JOB_SHA)
+    rows = CiCheckJob.progress_rows("McRitchie-Studio/mcritchie-studio", JOB_SHA)
     assert_equal "8 / 8", Ci::CheckProgress.from_check_runs(rows).fraction_label
   end
 
   test "[integration] a re-run does not duplicate the live count — the fold resets fresh" do
     # Attempt 1: four distinct checks complete green under run 111.
     4.times { |i| ingest_job(status: "completed", conclusion: "success", job_id: 800 + i, name: "check-#{i}", run_id: 111) }
-    rows = CiCheckJob.progress_rows("amcritchie/mcritchie-studio", JOB_SHA)
+    rows = CiCheckJob.progress_rows("McRitchie-Studio/mcritchie-studio", JOB_SHA)
     assert_equal "4 / 4", Ci::CheckProgress.from_check_runs(rows).fraction_label
 
     # A re-run (new workflow_run 222) re-queues the SAME four checks with NEW job_ids.
     4.times { |i| ingest_job(status: "in_progress", job_id: 900 + i, name: "check-#{i}", run_id: 222) }
-    rows = CiCheckJob.progress_rows("amcritchie/mcritchie-studio", JOB_SHA)
+    rows = CiCheckJob.progress_rows("McRitchie-Studio/mcritchie-studio", JOB_SHA)
 
     assert_equal 8, CiCheckJob.where(head_sha: JOB_SHA).count, "both attempts' rows persist in the table"
     assert_equal "0 / 4", Ci::CheckProgress.from_check_runs(rows).fraction_label,

@@ -21,7 +21,7 @@ class DevopsCycleCommandTest < ActiveSupport::TestCase
     assert_includes out, "Assembled (1)"
     assert_includes out, "Ship sidebar recovery (task-pr123)"
     assert_includes out, "https://www.mcritchie.studio/tasks/task-pr123"
-    assert_includes out, "qa-intake: avi-ready amcritchie/mcritchie-studio#123"
+    assert_includes out, "qa-intake: avi-ready McRitchie-Studio/mcritchie-studio#123"
     assert_includes out, "latest qa_feedback: Needs one more navbar regression test before merge."
   end
 
@@ -95,7 +95,7 @@ class DevopsCycleCommandTest < ActiveSupport::TestCase
 
     parallel = snapshot.fetch("scout_packets").find { |packet| packet.fetch("packet_id") == "scout-task-pr123" }
     assert_equal "parallel_scout", parallel.fetch("mode")
-    assert_equal "https://github.com/amcritchie/mcritchie-studio/pull/123", parallel.dig("devops", "pr_url")
+    assert_equal "https://github.com/McRitchie-Studio/mcritchie-studio/pull/123", parallel.dig("devops", "pr_url")
     assert_includes parallel.fetch("guardrails"), "Do not merge PRs."
     assert_includes parallel.fetch("prompt"), "Work from /Users/alex/projects as an Avi review scout for task-pr123."
     assert_includes parallel.fetch("prompt"), "Return a concise scout report with file/line references where applicable."

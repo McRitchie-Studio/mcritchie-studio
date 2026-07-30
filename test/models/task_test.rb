@@ -1124,7 +1124,7 @@ class TaskTest < ActiveSupport::TestCase
 
   test "release_repo parses the repo from a github PR url" do
     task = Task.create!(title: "engine version bump task", stage: "reviewed",
-                        metadata: { "devops" => { "pr_url" => "https://github.com/amcritchie/studio-engine/pull/9" } })
+                        metadata: { "devops" => { "pr_url" => "https://github.com/McRitchie-Studio/studio-engine/pull/9" } })
     assert_equal "studio-engine", task.release_repo
     assert task.gem_release?
     assert_equal :gem, task.release_kind
@@ -1133,7 +1133,7 @@ class TaskTest < ActiveSupport::TestCase
   test "release_repo prefers the PR url over the declared repositories" do
     task = Task.create!(title: "mixed repo source task", stage: "reviewed",
                         metadata: { "devops" => {
-                          "pr_url" => "https://github.com/amcritchie/solana-studio/pull/3",
+                          "pr_url" => "https://github.com/McRitchie-Studio/solana-studio/pull/3",
                           "repositories" => ["turf-monster"]
                         } })
     assert_equal "solana-studio", task.release_repo
@@ -1160,7 +1160,7 @@ class TaskTest < ActiveSupport::TestCase
                         metadata: { "devops" => {
                           "shape" => "backend",
                           "repositories" => ["mcritchie-studio"],
-                          "pr_url" => "https://github.com/amcritchie/mcritchie-studio/pull/77"
+                          "pr_url" => "https://github.com/McRitchie-Studio/mcritchie-studio/pull/77"
                         } })
     assert_equal "mcritchie-studio", task.release_repo
     assert_not task.gem_release?
@@ -1196,16 +1196,16 @@ class TaskTest < ActiveSupport::TestCase
   test "[unit] reviewed_release_inclusion marks the reviewed app members, grouped by app" do
     included = Task.create!(title: "turf app member in", stage: "reviewed",
                             metadata: { "devops" => {
-                              "pr_url" => "https://github.com/amcritchie/turf-monster/pull/1"
+                              "pr_url" => "https://github.com/McRitchie-Studio/turf-monster/pull/1"
                             } })
     held = Task.create!(title: "hub app member held", stage: "reviewed",
                         metadata: { "devops" => {
-                          "pr_url" => "https://github.com/amcritchie/mcritchie-studio/pull/2",
+                          "pr_url" => "https://github.com/McRitchie-Studio/mcritchie-studio/pull/2",
                           "included_in_release" => "false"
                         } })
     # A non-reviewed task must never appear in the reviewed disposition.
     Task.create!(title: "submitted not reviewed", stage: "submitted",
-                 metadata: { "devops" => { "pr_url" => "https://github.com/amcritchie/turf-monster/pull/9" } })
+                 metadata: { "devops" => { "pr_url" => "https://github.com/McRitchie-Studio/turf-monster/pull/9" } })
 
     inclusion = Task.reviewed_release_inclusion
 
@@ -1218,10 +1218,10 @@ class TaskTest < ActiveSupport::TestCase
 
   test "[unit] an app is held only when EVERY reviewed member is held" do
     Task.create!(title: "turf member shipping", stage: "reviewed",
-                 metadata: { "devops" => { "pr_url" => "https://github.com/amcritchie/turf-monster/pull/3" } })
+                 metadata: { "devops" => { "pr_url" => "https://github.com/McRitchie-Studio/turf-monster/pull/3" } })
     Task.create!(title: "turf member held out", stage: "reviewed",
                  metadata: { "devops" => {
-                   "pr_url" => "https://github.com/amcritchie/turf-monster/pull/4",
+                   "pr_url" => "https://github.com/McRitchie-Studio/turf-monster/pull/4",
                    "included_in_release" => "false"
                  } })
 

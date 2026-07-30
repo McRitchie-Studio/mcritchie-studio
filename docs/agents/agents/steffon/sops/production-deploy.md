@@ -19,11 +19,33 @@ session.
 
 ## Entry
 
-Run this SOP from the McRitchie Studio primary checkout:
+Run this SOP from the McRitchie Studio primary checkout, **under the deployer
+GitHub App identity**:
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio
+export GH_APP_ITEM=github.mcritchie-deployer
+export GH_TOKEN="$(GH_APP_ID="$(op read 'op://agents/github.mcritchie-deployer/app-id')" \
+  GH_APP_PEM="$(op read 'op://agents/github.mcritchie-deployer/mcritchie-deployer.2026-07-29.private-key.pem')" \
+  bin/gh-app-mint-token)"
 ```
+
+The two exports cover the two auth legs — they are NOT interchangeable:
+
+- **`GH_APP_ITEM`** governs **git https pushes only** (the `release`/`main`
+  fast-forwards): the global git credential helper
+  (`bin/gh-app-git-credential`) reads it and mints per-push tokens for the
+  ship-lane App (`github.mcritchie-deployer`: contents + actions + checks-read
+  + secrets). **`gh` never consults git credential helpers.**
+- **`GH_TOKEN`** is what the session's `gh` calls (`gh workflow run`,
+  `gh run watch`, API reads) authenticate with — a minted installation token.
+  It expires in **1 hour**: on a mid-ship 403, re-run the export to re-mint
+  and re-run the failed step. Never print the token.
+
+The deployer identity **cannot open or merge PRs by design** — that is the
+point, not a bug: PR writes belong to the build/review lanes' default
+`github.mcritchie-agent` identity. See
+`docs/agents/modules/credentials.md` → GitHub.
 
 Use the production board by default. Do not add `--local`.
 

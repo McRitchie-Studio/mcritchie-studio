@@ -652,16 +652,16 @@ class AgentWorktreeTest < Minitest::Test
 
   def test_pr_url_from_output_extracts_the_created_pr_url
     out = run_in_script(<<~RUBY)
-      noisy = "Warning: 1 uncommitted change\\nhttps://github.com/amcritchie/mcritchie-studio/pull/999\\n"
+      noisy = "Warning: 1 uncommitted change\\nhttps://github.com/McRitchie-Studio/mcritchie-studio/pull/999\\n"
       print [pr_url_from_output(noisy), pr_url_from_output("no url here")].inspect
     RUBY
-    assert_equal '["https://github.com/amcritchie/mcritchie-studio/pull/999", nil]', out
+    assert_equal '["https://github.com/McRitchie-Studio/mcritchie-studio/pull/999", nil]', out
   end
 
   def test_open_draft_pr_stamps_the_created_pr_url_on_the_bound_task
     out = run_in_script(<<~RUBY)
       def capture_status(*_cmd, chdir: nil, env: {})
-        [true, "https://github.com/amcritchie/mcritchie-studio/pull/999\\n", ""]
+        [true, "https://github.com/McRitchie-Studio/mcritchie-studio/pull/999\\n", ""]
       end
       def human_title(_task); "Finish stamps PR url"; end
       def pr_body(_record); "body"; end
@@ -673,7 +673,7 @@ class AgentWorktreeTest < Minitest::Test
       print "STAMPED=" + STAMPS.inspect
     RUBY
     assert_match(
-      'STAMPED=[["finish-stamps-pr-url", "https://github.com/amcritchie/mcritchie-studio/pull/999"]]',
+      'STAMPED=[["finish-stamps-pr-url", "https://github.com/McRitchie-Studio/mcritchie-studio/pull/999"]]',
       out,
       "the created PR URL must be stamped on the bound task record"
     )
