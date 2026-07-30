@@ -1094,6 +1094,39 @@ if gate != "build" && shape_def && !dor_tiers.empty?
     # primary checkout and was never hashed at all.
     review_branch_ref = review_role ? review_branch(devops, task["slug"] || slug) : nil
     review_fp = review_branch_ref ? review_fingerprint(diff_root, review_branch_ref) : nil
+
+    # CROSS-REPO rooting. The same-repo fix roots the fingerprint at the branch tree,
+    # which works when the reviewer stands in the TASK'S repo. But `pr-review` directs
+    # reviewers to run from the mcritchie-studio primary while most PRs live in
+    # turf-monster / studio-engine — and a satellite branch resolves in NEITHER this
+    # repo's refs nor its remotes. review_fingerprint then returns nil and the gate
+    # falls back to hashing the HUB's working tree, which can never equal a
+    # satellite's certified tree: a perfectly fresh cert reads STALE. (Observed
+    # 2026-07-28; it burned a gate attempt and left a real dor_review FAILED row.)
+    #
+    # So resolve the task's OWN tree with the same worktree glob the builder lane's
+    # CertRootGuard uses, and fingerprint there. Only the FINGERPRINT re-roots — the
+    # diff still comes from the PR's own file list, which is already repo-correct.
+    # Announced on stderr, never silent: a gate that quietly hashes a different tree
+    # than the one you are standing in is how you argue with a verdict instead of
+    # reading it.
+    if review_role && review_branch_ref && review_fp.nil?
+      # The RESOLVED slug, not the positional one — in the --file seam the positional
+      # is empty, and CertRootGuard.assess returns nil on a blank slug.
+      cross_repo = CertRootGuard.assess(
+        task_bin: TASK_BIN, slug: task["slug"] || slug, root: diff_root,
+        devops: devops, projects_dir: PROJECTS_DIR
+      )
+      alt_root = cross_repo && cross_repo[:resolved_root]
+      if alt_root && (alt_fp = review_fingerprint(alt_root, review_branch_ref))
+        review_fp = alt_fp
+        warn!("⚠ dor-check: CROSS-REPO ROOTING. Branch #{review_branch_ref.inspect} does not resolve in " \
+              "#{diff_root} (the checkout you are standing in), so the suite fingerprint was rooted at the " \
+              "task's own tree instead: #{alt_root}. Without this the gate would have hashed THIS repo's " \
+              "working tree and called a fresh cert STALE. The verdict below describes the task's tree.")
+      end
+    end
+
     override = review_fp || task_fingerprint_override
     suite_eval = FullSuiteGate.evaluate(
       checks: checks,
