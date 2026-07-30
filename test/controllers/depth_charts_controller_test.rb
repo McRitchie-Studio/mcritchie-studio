@@ -7,7 +7,8 @@ require "test_helper"
 # inline (no depth-chart fixtures) — the same shape the news/content board tests use.
 class DepthChartsControllerTest < ActionDispatch::IntegrationTest
   setup do
-    @admin = users(:alex)
+    @admin  = users(:alex)
+    @viewer = users(:viewer) # authenticated but NOT admin
     @team  = Team.create!(name: "Test Gridiron", sport: "football", league: "nfl", emoji: "🏈")
     @chart = DepthChart.create!(team_slug: @team.slug, slug: "#{@team.slug}-depth")
     @p1 = Person.create!(first_name: "Aaron", last_name: "Starter")
@@ -82,5 +83,63 @@ class DepthChartsControllerTest < ActionDispatch::IntegrationTest
 
     post toggle_lock_depth_chart_entry_path(@e1.id), as: :json
     assert_not @e1.reload.locked, "a second toggle clears it"
+  end
+
+  # --- auth-scoping: a reorder is confined to the team's OWN chart --------------
+
+  test "reorder rejects entry_ids from another team's chart (404, nothing restamped)" do
+    log_in_as(@admin)
+    other_team   = Team.create!(name: "Other Squad", sport: "football", league: "nfl", emoji: "🦅")
+    other_chart  = DepthChart.create!(team_slug: other_team.slug, slug: "#{other_team.slug}-depth")
+    other_person = Person.create!(first_name: "Foreign", last_name: "Player")
+    foreign = DepthChartEntry.create!(depth_chart_slug: other_chart.slug, person_slug: other_person.slug,
+                                      position: "QB", side: "offense", depth: 1)
+
+    # POST to OUR team's reorder endpoint, but sneak in the other team's entry id.
+    post reorder_depth_chart_path(@team.slug),
+         params: { entry_ids: [@e1.id, foreign.id] }, as: :json
+
+    assert_response :not_found
+    assert_equal 1, foreign.reload.depth, "the foreign entry is NOT restamped"
+    assert_equal 1, @e1.reload.depth,     "the guard halts BEFORE the restamp — our entries are untouched too"
+  end
+
+  # --- admin gate: reorder + toggle_lock mutate a GLOBAL editorial resource ------
+  # Teams have no owner, so a per-record check can't guard these — only admin can.
+  # Matches the sibling news/contents boards. Without the gate a signed-in NON-admin
+  # gets 200 and mutates the chart; with it they're bounced like the sibling boards.
+
+  test "reorder rejects a NON-admin authenticated user (redirect, nothing restamped)" do
+    log_in_as(@viewer) # a real, logged-in, NON-admin user
+    post reorder_depth_chart_path(@team.slug),
+         params: { entry_ids: [@e3.id, @e1.id, @e2.id] }, as: :json
+
+    # require_admin bounces with a redirect (not the 200 the restamp would return) —
+    # the same verdict the news/contents boards produce for a non-admin reorder.
+    assert_response :redirect
+    assert_equal 1, @e1.reload.depth, "the non-admin's reorder restamped nothing"
+    assert_equal 2, @e2.reload.depth
+    assert_equal 3, @e3.reload.depth
+  end
+
+  test "toggle_lock rejects a NON-admin authenticated user (redirect, lock untouched)" do
+    log_in_as(@viewer)
+    assert_not @e1.locked
+
+    post toggle_lock_depth_chart_entry_path(@e1.id), as: :json
+
+    assert_response :redirect
+    assert_not @e1.reload.locked, "the non-admin could not flip the lock flag"
+  end
+
+  test "reorder still restamps when every entry_id belongs to the team's chart" do
+    log_in_as(@admin)
+    post reorder_depth_chart_path(@team.slug),
+         params: { entry_ids: [@e3.id, @e2.id, @e1.id] }, as: :json
+
+    assert_response :success
+    assert_equal 1, @e3.reload.depth, "own-chart reorder passes the guard and restamps 1..N"
+    assert_equal 2, @e2.reload.depth
+    assert_equal 3, @e1.reload.depth
   end
 end

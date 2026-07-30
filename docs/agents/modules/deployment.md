@@ -398,6 +398,26 @@ deliver is simply ignored by the ingest job — no approval handling remains.
 | Var | Purpose |
 |-----|---------|
 | `GITHUB_WEBHOOK_SECRET` | HMAC secret verifying webhook deliveries (fail-closed). |
-| `GITHUB_TOKEN` | Token `Github::Client` defaults to — used by `Ci::ProgressReader` for the check-runs API fallback. **Current truth (2026-07-30): this static config var still holds the legacy `amcritchie` fine-grained PAT**, which post-migration can read public-repo data only — private-repo reads (mcritchie-industries) fail server-side. A 1-hour App installation token cannot live in a static config var; the fix is server-side minting (store the agent App's `app-id` + private key as config vars and mint in `Github::Client`) — tracked as task `board-mints-github-app-tokens`. |
+| `GITHUB_APP_ID` | Numeric id of the agent GitHub App (`github.mcritchie-agent`). Set this + `GITHUB_APP_PRIVATE_KEY` and the board mints its own tokens. |
+| `GITHUB_APP_PRIVATE_KEY` | The App's RSA private key as PEM text (the `.pem` file contents, multi-line). Paired with `GITHUB_APP_ID` above. |
+| `GITHUB_APP_INSTALLATION_ID` | *(optional)* Installation id to mint for. When blank, `Github::AppToken` discovers it from `/app/installations` by the match below. |
+| `GITHUB_APP_INSTALLATION_MATCH` | *(optional)* Substring the installation account login must contain during discovery (default `mcritchie`). |
+| `GITHUB_TOKEN` | Static fallback token — used by `Github::Client` / `Ci::ProgressReader` only when the App creds above are **absent** (dev/CI/local, or if a mint fails). Still holds the legacy `amcritchie` PAT, which post-migration reads public repos only. |
+
+**GitHub App token minting (2026-07-30, task `board-mints-github-app-tokens`).**
+The static `GITHUB_TOKEN` PAT can read public repos only after the 2026-07-29 org
+migration, so private-repo reads (e.g. `mcritchie-industries`) fail server-side.
+`Github::AppToken.resolve` now mints a GitHub App **installation** token (RS256
+JWT → `POST /app/installations/{id}/access_tokens`, the same flow as
+`bin/gh-app-mint-token`) and caches it in `Rails.cache` (~50 min, refreshed 10
+min before GitHub's 1 h expiry). `Github::Client` defaults its `token:` to that
+resolver. **This code ships inert until the ship lane provisions the config
+vars** — with `GITHUB_APP_ID` + `GITHUB_APP_PRIVATE_KEY` unset it falls straight
+back to `GITHUB_TOKEN`, so dev/CI/local are unchanged. To close the private-repo
+acceptance, set these Heroku config vars on the board app:
+
+- `GITHUB_APP_ID` — the agent App's numeric id (1Password `github.mcritchie-agent` → `app-id`).
+- `GITHUB_APP_PRIVATE_KEY` — the App's `.pem` private key contents (1Password `github.mcritchie-agent` → the `.pem` file attachment).
+- `GITHUB_APP_INSTALLATION_ID` and `GITHUB_APP_INSTALLATION_MATCH` are optional; leave them unset to auto-discover the `mcritchie` installation.
 
 Never commit the webhook secret or any GitHub token.
