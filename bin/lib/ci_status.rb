@@ -403,9 +403,10 @@ module CiStatus
     where = repo.to_s.strip.empty? ? "this repo" : repo.to_s.strip
     fix = case cause&.to_sym
           when :permissions
-            "The GitHub token cannot read check runs on #{where}. Fix: grant the token `Checks: Read` on " \
-              "#{where} (fine-grained PAT → Repository permissions → Checks → Read-only; the repo must also " \
-              "be in the token's selected repositories). Verify: gh pr checks <pr> --repo #{where}."
+            "The GitHub token cannot read check runs on #{where}. Fix: grant the `mcritchie-agent` GitHub App " \
+              "`Checks: Read` (App settings → Permissions & events), approve the updated permissions on the " \
+              "McRitchie-Studio installation, and confirm the installation covers #{where}. " \
+              "Verify: gh pr checks <pr> --repo #{where}."
           when :credentials
             "GitHub rejected the active credential for #{where}. Fix: run `gh auth status --hostname " \
               "github.com`, then refresh or replace the expired/revoked credential and retry the exact check read."
