@@ -27,7 +27,8 @@ class AgentsController < ApplicationController
 
     # Drill-down actions, DISPLAYED newest-first under each activity (the operator's
     # sort). One query, grouped in Ruby, so the whole page adds no per-row query.
-    actions_by_activity = AgentAction.where(agent_activity_id: @activities.map(&:id))
+    actions_by_activity = AgentAction.for_activity_feed
+                                     .where(agent_activity_id: @activities.map(&:id))
                                      .order(occurred_at: :desc, seq: :desc, id: :desc)
                                      .to_a.group_by(&:agent_activity_id)
     @activity_rows = @activities.map { |activity| [activity, actions_by_activity[activity.id] || []] }

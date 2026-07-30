@@ -97,6 +97,31 @@ class AgentsActivitiesTest < ActionDispatch::IntegrationTest
     assert_operator body.index("the newer action"), :<, body.index("the older action")
   end
 
+  # [integration] Performance guard: the feed loads its per-action drill-down through
+  # AgentAction.for_activity_feed, which drops the wide `output` blob (the captured
+  # tool RESULT the page never renders). The rendered rows must be identical — the
+  # action's input still surfaces (preview + tooltip) — while the output never rides
+  # along in the payload. This is the query-shape optimization behind the heaviest
+  # PROD page (p95 ~1779ms), asserted at the behaviour boundary.
+  test "renders the action input but never loads the heavy output blob into the feed" do
+    ev = activity(reason_slug: "an activity carrying a heavy action")
+    output_sentinel = "HEAVY-OUTPUT-BLOB-#{'z' * 4000}"
+    action(ev, event_slug: "a heavy action", kind: "read",
+           input: '{"path":"THE-INPUT-SENTINEL"}', output: output_sentinel)
+
+    get activities_agents_path
+
+    assert_response :success
+    # The rendered output is unchanged: the action's turn row and its input preview
+    # (the tooltip carries the full input) both still render.
+    assert_select "tr[data-test=aa-turn]"
+    assert_select "[data-test=aa-turn-input]"
+    assert_includes response.body, "THE-INPUT-SENTINEL", "the feed still renders the action input"
+    # The wide output blob is never selected, so it never reaches the page.
+    assert_not_includes response.body, output_sentinel,
+                        "the feed must not load or render the action's output column"
+  end
+
   test "shows the empty-actions placeholder for an activity with no actions" do
     activity(reason_slug: "a lonely activity")
 

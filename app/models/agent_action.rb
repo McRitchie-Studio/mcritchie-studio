@@ -103,6 +103,19 @@ class AgentAction < ApplicationRecord
   scope :anchors,       -> { where(feedback_anchor: true) }
   scope :errored,       -> { where(outcome: ERROR) }
 
+  # The wide text blobs the /agents/activities feed NEVER renders. `output` is the
+  # captured tool RESULT (a full file read, a command's stdout, a transcript dump —
+  # by far the heaviest column) and only the drill-down DRAWER on /alex/heartbeat
+  # (heartbeat/_drawer) reads it; the cross-session feed shows `input` (a preview +
+  # tooltip) but no `output`. Leaving it out of that page's per-action drill-down
+  # SELECT keeps the wide payload off the ecosystem's heaviest render.
+  FEED_OMITTED_COLUMNS = %w[output].freeze
+
+  # The narrowed column set the /agents/activities drill-down loads — every column
+  # EXCEPT the wide, unrendered blobs above. Every scalar the feed reads stays
+  # present (no MissingAttributeError surprise), only the heavy `output` is dropped.
+  scope :for_activity_feed, -> { select(column_names - FEED_OMITTED_COLUMNS) }
+
   # Best-effort forward write of ONE action record. Returns the persisted
   # AgentAction, or nil if anything went wrong (already logged). Accepts string
   # OR symbol keys so harness, service, and in-process callers all work.
