@@ -12,7 +12,7 @@
 #                 `private key` field is NOT the key.
 # Optional:
 #   GH_APP_INSTALLATION_MATCH — substring the installation account login must
-#                 contain (default "mcritchie"); override for a fork/test org.
+#                 contain (default "mcritchie-studio"); override for a fork/test org.
 #
 # WHY GitHub Apps (2026-07-29 org migration): every repo moved from the
 # `amcritchie` personal account to the `McRitchie-Studio` org, and auth moved
