@@ -77,7 +77,7 @@ def gh(path, auth, method: :get)
   body
 end
 
-match = ENV.fetch("GH_APP_INSTALLATION_MATCH", "mcritchie").downcase
+match = ENV.fetch("GH_APP_INSTALLATION_MATCH", "mcritchie-studio").downcase
 installations = gh("/app/installations", jwt)
 die("expected an installation list, got #{installations.class}") unless installations.is_a?(Array)
 installation = installations.find { |i| i.dig("account", "login").to_s.downcase.include?(match) }

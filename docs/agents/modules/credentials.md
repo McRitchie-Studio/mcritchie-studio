@@ -37,9 +37,26 @@ Default access is the `agents` vault. Additional vaults should be granted delibe
 
 Since the 2026-07-29 org migration every repo lives under the **McRitchie-Studio**
 org and `git`/`gh` authenticate as one of **two GitHub Apps**, not a personal
-token. The credential helper `mcritchie-studio/bin/gh-app-git-credential` mints a
-fresh installation token per call (via `bin/gh-app-mint-token`), and the
-`GH_APP_ITEM` env var selects the identity:
+token — but the two tools take **different wiring** (`gh` never consults git
+credential helpers):
+
+- **`git` (https push/fetch)** — the global credential helper
+  `mcritchie-studio/bin/gh-app-git-credential` mints a fresh installation token
+  per call (via `bin/gh-app-mint-token`); the `GH_APP_ITEM` env var selects the
+  identity.
+- **`gh` (and any GitHub API caller)** — export a minted token per session:
+
+  ```bash
+  export GH_TOKEN="$(GH_APP_ID="$(op read 'op://agents/github.mcritchie-agent/app-id')" \
+    GH_APP_PEM="$(op read 'op://agents/github.mcritchie-agent/mcritchie-agent.2026-07-29.private-key.pem')" \
+    bin/gh-app-mint-token)"
+  ```
+
+  Swap both `op://` paths to the deployer item for ship lanes. Installation
+  tokens expire in **1 hour** — a 403 mid-session means re-mint, not broken
+  wiring. Never print the token.
+
+The identities:
 
 | Identity (1Password item) | Lane | Grants |
 |---------------------------|------|--------|

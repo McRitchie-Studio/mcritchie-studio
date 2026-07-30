@@ -4,7 +4,7 @@
 
 ## Studio Engine Integration
 
-Shared code lives in the [studio engine](https://github.com/amcritchie/studio-engine). This app includes it via `config/initializers/studio.rb`:
+Shared code lives in the [studio engine](https://github.com/McRitchie-Studio/studio-engine). This app includes it via `config/initializers/studio.rb`:
 
 ```ruby
 Studio.configure do |config|

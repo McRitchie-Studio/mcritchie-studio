@@ -61,7 +61,7 @@ if (gem = Task.find_by(title: "Review Turf Monster Tailwind PR")) &&
     "devops" => {
       "shape" => "library", "repositories" => ["studio-engine"],
       "local_url" => "http://localhost:3000/tasks",
-      "pr_url" => "https://github.com/amcritchie/studio-engine/pull/1"
+      "pr_url" => "https://github.com/McRitchie-Studio/studio-engine/pull/1"
     }
   ))
 end
