@@ -72,6 +72,45 @@ class DorCheckReviewFingerprintTest < Minitest::Test
     end
   end
 
+  # Two SEPARATE repos, mirroring the real review world: a `hub` the reviewer stands
+  # in (mcritchie-studio primary, on its base branch, with NO feat/x anywhere), and a
+  # satellite whose task worktree lives at <projects>/satellite-app/.worktrees/<slug>
+  # and carries the builder's certified tree on feat/x. Yields
+  # [hub_dir, projects_dir, branch_tree].
+  def with_cross_repo_world
+    Dir.mktmpdir do |raw|
+      projects = File.realpath(raw)
+
+      # The hub — the reviewer's standing checkout. Deliberately has no feat/x.
+      hub = File.join(projects, "mcritchie-studio")
+      FileUtils.mkdir_p(hub)
+      git!(hub, "init", "-q")
+      git!(hub, "config", "user.email", "t@t.co")
+      git!(hub, "config", "user.name", "T")
+      write(hub, "README.md", "hub\n")
+      git!(hub, "add", "-A")
+      git!(hub, "commit", "-qm", "hub init")
+
+      # The satellite's task worktree — a real repo at the path the worktree glob finds.
+      wt = File.join(projects, "satellite-app", ".worktrees", "root-reviewer-dor-check-fingerprint")
+      FileUtils.mkdir_p(wt)
+      git!(wt, "init", "-q")
+      git!(wt, "config", "user.email", "t@t.co")
+      git!(wt, "config", "user.name", "T")
+      write(wt, "README.md", "satellite\n")
+      git!(wt, "add", "-A")
+      git!(wt, "commit", "-qm", "init")
+      git!(wt, "checkout", "-q", "-b", "feat/x")
+      write(wt, "app/services/widget.rb", "class Widget; end\n")
+      git!(wt, "add", "-A")
+      git!(wt, "commit", "-qm", "feat")
+      branch_tree = git_out(wt, "rev-parse", "feat/x^{tree}")
+      git!(wt, "update-ref", "refs/remotes/origin/feat/x", "feat/x")
+
+      yield hub, projects, branch_tree
+    end
+  end
+
   # ── env + runner ───────────────────────────────────────────────────────────
 
   def with_env(vars)
@@ -111,12 +150,13 @@ class DorCheckReviewFingerprintTest < Minitest::Test
   # Shell bin/dor-check --file with the given git root + env, returning the parsed
   # --json verdict. DOR_CHECK_SUITE_EVIDENCE is forced OFF so the REAL fingerprint
   # path runs; the diff root is the temp repo; CI is injected green.
-  def review_check(task, root, *args, ci: "green")
+  def review_check(task, root, *args, ci: "green", projects_dir: nil)
     Dir.mktmpdir do |d|
       path = File.join(d, "task.json")
       File.write(path, JSON.generate(task))
       env = {
         "DOR_CHECK_DIFF_ROOT" => root,
+        "DOR_CHECK_PROJECTS_DIR" => projects_dir,
         "DOR_CHECK_SUITE_EVIDENCE" => nil,
         "DOR_CHECK_CHANGED_FILES" => nil,
         "DOR_CHECK_DIFF_BASE" => nil,
@@ -172,6 +212,38 @@ class DorCheckReviewFingerprintTest < Minitest::Test
                    "review role must fingerprint the TASK BRANCH tree"
       refute_equal primary_tree, verdict.dig("full_suite", "fingerprint"),
                    "review role must NOT fingerprint the reviewer's primary working tree"
+    end
+  end
+
+  # ── CROSS-REPO: the reviewer stands in a DIFFERENT repo than the task ──────
+  #
+  # The 2026-07-09 fix above solved the SAME-REPO case: a reviewer on release/main
+  # in the task's own repo now roots the fingerprint at the branch tree. It does not
+  # reach the cross-repo case, which is the NORMAL one — Carl's pr-review SOP says to
+  # run review FROM the mcritchie-studio primary checkout, while most PRs are in
+  # turf-monster or studio-engine. There, `origin/feat/x` does not resolve in the
+  # standing repo at all, review_fingerprint returns nil, and the gate falls back to
+  # hashing the HUB's working tree — which can never equal a satellite's certified
+  # tree, so a perfectly fresh cert reads STALE. Observed 2026-07-28: it burned a
+  # gate attempt and left a real dor_review #1 FAILED row on a turf-monster task.
+  def test_integration_review_role_roots_at_the_tasks_own_repo_across_repos
+    with_cross_repo_world do |hub_dir, projects_dir, branch_tree|
+      hub_tree = FullSuiteGate.fingerprint(hub_dir)
+      task = task_json(branch_tree)
+      task["metadata"]["devops"]["repositories"] = ["satellite-app"]
+      task["metadata"]["devops"]["worktree_slug"] = "root-reviewer-dor-check-fingerprint"
+
+      verdict, code = review_check(task, hub_dir, "--gate-role", "review",
+                                   projects_dir: projects_dir)
+
+      assert_equal 0, code,
+                   "a fresh cert on a SATELLITE task must not read STALE just because the reviewer " \
+                   "stands in the hub: #{verdict['errors']}"
+      assert verdict["ready"], "expected ready=true, got errors: #{verdict['errors']}"
+      assert_equal branch_tree, verdict.dig("full_suite", "fingerprint"),
+                   "must fingerprint the TASK's tree in its own repo"
+      refute_equal hub_tree, verdict.dig("full_suite", "fingerprint"),
+                   "must NOT fingerprint the reviewer's hub working tree"
     end
   end
 
