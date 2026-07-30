@@ -2975,7 +2975,7 @@ class ReleaseCliTest < Minitest::Test
   # the suite moved to the isolated gate workspace at the frozen SHA, so that ff fed
   # nothing and only flipped a shared checkout. With it gone, a red gate or a
   # declined ship-authority confirm leaves the machine exactly as it found it.
-  def test_avi_ship_gate_mutates_nothing_before_ship_authority
+  def test_run_ship_gate_mutates_nothing_before_ship_authority
     Dir.mktmpdir do |dir|
       setup = %(ENV["RELEASE_CI_STATUS"] = "green"\n) +
               %(def repo_path(_repo) = #{dir.inspect}\n) + GATE_GIT_STUB + <<~'RUBY'
@@ -2995,7 +2995,7 @@ class ReleaseCliTest < Minitest::Test
         end
       RUBY
       out = run_cli(["--yes"], setup: setup,
-                    call: %{avi_ship_gate([{ "repo" => "x" }], { "x" => #{GATE_SHA.inspect} }, {}); puts("PASSED")})
+                    call: %{run_ship_gate([{ "repo" => "x" }], { "x" => #{GATE_SHA.inspect} }, {}); puts("PASSED")})
 
       # DevOps v2 Phase 3: the gate READS GitHub CI's verdict for the frozen SHA — the
       # local suite is demoted — but the invariant this test pins is unchanged: the gate
@@ -3534,7 +3534,7 @@ class ReleaseCliTest < Minitest::Test
     out = run_cli(["--dry-run"], call: "ship", setup: SHIP_STUB)
 
     gem_at = out.index("gem studio-engine") # gem publish
-    hub_at = out.index("push heroku bbbbbbb:refs/heads/main")  # hub DEPLOY (the test gate runs up front, in avi_ship_gate)
+    hub_at = out.index("push heroku bbbbbbb:refs/heads/main")  # hub DEPLOY (the test gate runs up front, in run_ship_gate)
     sat_at = out.index("bin/deploy --yes")  # satellite's deploy
 
     assert gem_at && hub_at && sat_at, "all three phases must appear"
@@ -3542,27 +3542,27 @@ class ReleaseCliTest < Minitest::Test
     assert_operator hub_at, :<, sat_at, "the hub deploys before the satellites"
   end
 
-  # --- Avi ship gate: full e2e on the FROZEN SHA, THEN ship authority (§1.2) ---
+  # --- Steffon ship gate: full e2e on the FROZEN SHA, THEN ship authority (§1.2) ---
 
-  def test_ship_runs_the_avi_e2e_gate_before_ship_authority_and_any_deploy
+  def test_ship_runs_the_steffon_e2e_gate_before_ship_authority_and_any_deploy
     out = run_cli(["--dry-run"], call: "ship", setup: SHIP_STUB)
 
-    gate_at   = out.index("Avi ship gate")
+    gate_at   = out.index("Steffon ship gate")
     e2e_at    = out.index(HUB_GATE_CMD)                # the hub's highest-tier run on the frozen SHA
     ship_at   = out.index("confirming production deploy") # the ship-authority step (unique marker)
     deploy_at = out.index("push heroku bbbbbbb:refs/heads/main")
 
     assert gate_at && e2e_at && ship_at && deploy_at, "gate, e2e, ship authority, and a deploy must all appear"
-    assert_operator gate_at, :<, ship_at, "the Avi gate precedes ship authority"
+    assert_operator gate_at, :<, ship_at, "the Steffon gate precedes ship authority"
     assert_operator e2e_at, :<, ship_at, "the full suite runs on the frozen SHA BEFORE ship authority"
     assert_operator ship_at, :<, deploy_at, "ship authority precedes any deploy"
   end
 
-  def test_ship_avi_gate_reads_the_ci_verdict_for_the_frozen_sha
+  def test_ship_steffon_gate_reads_the_ci_verdict_for_the_frozen_sha
     out = run_cli(["--dry-run"], call: "ship", setup: SHIP_STUB)
     # DevOps v2 Phase 3: the gate reads GitHub CI's verdict for the frozen hub SHA
     # (the local suite is demoted); the plan still names that frozen SHA.
-    assert_includes out, "Avi ship gate"
+    assert_includes out, "Steffon ship gate"
     assert_includes out, "FROZEN ship SHA"
     assert_includes out, "bbbbbbb", "the gate is judged on the hub's QA-frozen SHA"
   end
@@ -5950,7 +5950,7 @@ class ReleaseCliTest < Minitest::Test
 
   # --- crew-ticker intents are BEST-EFFORT — never abort a deploy (PR #229 QA rework) ---
   #
-  # `prepare` (Steffon assembled QA intent) and `ship` (Avi shipped intent) auto-record
+  # `prepare` (Avi assembled QA intent) and `ship` (Steffon shipped intent) auto-record
   # a COSMETIC /deployments crew-ticker intent. conductor() abort!s (→ SystemExit) on ANY
   # non-zero heroku-run exit, so a transient prod-board outage — the documented 2026-06-25
   # essential-PG "too many connections" incidents — on this cosmetic write would otherwise

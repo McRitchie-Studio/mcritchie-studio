@@ -847,7 +847,7 @@ class Task < ApplicationRecord
   # that will produce `to_stage`, the moment that work begins — so the board and
   # the task timeline can show WHO is on it with a live ticker before the
   # transition lands. Appends a TaskEvent(kind: intent) FROM the current stage TO
-  # to_stage, carrying `actor` (a single owner — Steffon at QA, Avi at ship)
+  # to_stage, carrying `actor` (a single owner — Avi at QA, Steffon at ship)
   # and/or `reviewers` metadata (the primary/light pair at review). Append-only +
   # current-cycle scoped: only the current stage's immediate next target is
   # recordable; an identical open intent (same target + same crew) is returned
@@ -861,10 +861,10 @@ class Task < ApplicationRecord
   # event instead: the intent SEEDS the per-session usage baseline (bin/task
   # intent / bin/reviewer-select), and the later move/flip records the delta.
   #
-  # `qa: true` marks the Steffon assembled-QA intent (see
+  # `qa: true` marks the Avi assembled-QA intent (see
   # Release::Conductor#record_qa_intent): in the standard flow the merge already
   # flipped the member to `assembled`, so the QA intent rides toward `shipped`
-  # (superseded by the SHIP, not the merge) and is distinguished from Avi's ship
+  # (superseded by the SHIP, not the merge) and is distinguished from Steffon's ship
   # intent — same target — by this marker. Idempotency therefore matches on the
   # FULL identity (target + actor + reviewers + qa), not merely the last intent for
   # the target, so two distinct open intents toward the same stage never collide.

@@ -623,15 +623,15 @@ module StageAgentsHelper
   # nil when the task is idle (designed/unclaimed, shipped/blocked/archived, or
   # awaiting a not-yet-recorded intent). The build lane is live only while
   # `building` (mascot + entry time); deploy stages read the OPEN intent (review
-  # pair / Steffon QA / Avi ship).
+  # pair / Avi QA / Steffon ship).
   #
   # The result serves TWO different views, which is why it carries two crews:
   #   * BOARD (crew_columns) reads `lane` + `agents` — the re-homed LANE and the
-  #     soul physically working it (Steffon QA-ing the assembled lane).
+  #     soul physically working it (Avi QA-ing the assembled lane).
   #   * TIMELINE (stage_timeline) reads `to_stage` + `timeline_agents` — the real
   #     pipeline TRANSITION this work produces (the next stage) and that stage's
   #     crew. They coincide for every lane EXCEPT the re-homed QA intent, where the
-  #     board says "assembled · Steffon" but the timeline says "shipped · Avi".
+  #     board says "assembled · Avi" but the timeline says "shipped · Steffon".
   # Shape: { to_stage:, lane:, agents: [StageAgent], timeline_agents: [StageAgent], live_since: Time }.
   def in_progress_work(task, by_slug, mascot_agent, intents)
     stage = task.stage
@@ -641,8 +641,8 @@ module StageAgentsHelper
     # Only `building` is "still building" — an active claim (mascot + entry time).
     # A `designed` task is filed but UNCLAIMED, so it is NOT live build work (no
     # green ticker on the timeline). Once submitted the build is done and the
-    # in-progress work is the DEPLOY lane — the review pair, then Steffon's QA,
-    # then Avi's ship — read off the open intent.
+    # in-progress work is the DEPLOY lane — the review pair, then Avi's QA,
+    # then Steffon's ship — read off the open intent.
     if stage == "building"
       return nil unless mascot_agent
 
@@ -665,9 +665,9 @@ module StageAgentsHelper
   # pipeline transition (→ `target`, the next stage). For every lane whose live
   # intent already rides toward that next stage (the review pair → reviewed, the
   # reviewed→assembled half-state, Avi's own ship intent) this is exactly the board
-  # crew. The one exception is the re-homed Steffon QA intent: it lives in the
+  # crew. The one exception is the re-homed Avi QA intent: it lives in the
   # assembled LANE but rides toward `shipped`, so the timeline attributes its card to
-  # the ship owner (Avi) by role — NOT the QA actor — matching the eventual ship card.
+  # the ship owner (Steffon) by role — NOT the QA actor — matching the eventual ship card.
   def deploy_timeline_agents(intent, render_stage, target, by_slug)
     return intent_stage_agents(intent, by_slug, target) if render_stage == target
 
@@ -675,7 +675,7 @@ module StageAgentsHelper
     owner ? [StageAgent.new(stage: target, label: owner.slug, agent: owner)] : []
   end
 
-  # True for the Steffon assembled-QA intent — recorded toward `shipped` (so the SHIP
+  # True for the Avi assembled-QA intent — recorded toward `shipped` (so the SHIP
   # supersedes it) but marked `qa` so the board renders it in the ASSEMBLED lane, not
   # the ship lane. See Release::Conductor#record_qa_intent + Task#record_intent_event.
   def qa_intent?(event)
@@ -685,11 +685,11 @@ module StageAgentsHelper
   # The open deploy-lane intent driving the live ticker for a non-build `stage`, plus
   # the stage it RENDERS as (its lane + avatar role). Returns [intent_or_nil, stage]:
   #   submitted → the review pair, toward `reviewed`.
-  #   reviewed  → Steffon's QA, toward `assembled` — the rare half-state (a member
+  #   reviewed  → Avi's QA, toward `assembled` — the rare half-state (a member
   #               attached for QA before its merge has flipped it to assembled).
   #   assembled → Avi's SHIP if a (non-QA) ship intent is open — he's actively
   #               shipping, so that outranks QA and renders in the SHIPPED lane; else
-  #               Steffon's QA intent (marked, toward `shipped`) rendered in the
+  #               Avi's QA intent (marked, toward `shipped`) rendered in the
   #               ASSEMBLED lane. This is THE standard flow: by prepare time the merge
   #               already landed the assembled transition, so the QA intent can't ride
   #               toward `assembled` (it would no-op + read off the wrong stage) — it
@@ -715,7 +715,7 @@ module StageAgentsHelper
   end
 
   # The avatar(s) for an OPEN intent: the senior pair (→reviewed) or the single
-  # owner (Steffon→assembled, Avi→shipped), canonical-owner backfilled like a
+  # owner (Avi→assembled, Steffon→shipped), canonical-owner backfilled like a
   # completed event so a bare intent still shows a face.
   def intent_stage_agents(intent, by_slug, target = intent.to_stage)
     if target == "reviewed"

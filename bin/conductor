@@ -84,7 +84,7 @@ ALL_STAGES = (DEPLOY_STAGES + CONTEXT_STAGES).freeze
 
 STAGE_BLURB = {
   "submitted" => "review intake (Build → Deploy seam)",
-  "reviewed"  => "sweep queue — approved; Steffon's qa-deploy sweeps + merges them",
+  "reviewed"  => "sweep queue — approved; Avi's qa-deploy sweeps + merges them",
   "assembled" => "QA-green release candidate (RC) members awaiting Avi",
   "building"  => "Build half — in-flight builds",
   # `blocked` is a derived view (building tasks carrying a live block), printed as
@@ -323,7 +323,7 @@ def plan(reviewers: false, health: true)
   end
   puts
 
-  # reviewed → the SWEEP (Steffon's qa-deploy merges PRs onto release; stages
+  # reviewed → the SWEEP (Avi's qa-deploy merges PRs onto release; stages
   # flip assembled only on QA-green — bin/release prepare owns the whole middle).
   rev_pipeline, rev_other = partition_pipeline(lists["reviewed"])
   non_pipeline.concat(rev_other)
