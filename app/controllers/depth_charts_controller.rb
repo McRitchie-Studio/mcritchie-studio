@@ -12,6 +12,14 @@ class DepthChartsController < ApplicationController
   alias_method :toggle_lock, :board_toggle_lock
 
   skip_before_action :require_authentication, only: [:show]
+  # reorder + toggle_lock mutate a GLOBAL editorial resource: a depth chart hangs
+  # off a Team, and Teams have no owner — so there is no per-record authorization to
+  # fall back on. Gate both behind admin, matching the sibling news/contents boards
+  # (news_controller.rb / contents_controller.rb both `before_action :require_admin`).
+  # Without this, any signed-in user could reorder/lock ANY team's chart by POSTing
+  # that team's own entry_ids (the scoping guard below passes — they're genuinely the
+  # team's entries). The entry-scoping guard stays as defense-in-depth.
+  before_action :require_admin, only: [:reorder, :toggle_lock]
   before_action :set_team, only: [:show, :reorder]
   # The shared Studio::Board::Reorderable#reorder restamps whatever entry_ids are
   # POSTed, by GLOBAL id — so scope it to THIS team's own chart before it runs, or a
