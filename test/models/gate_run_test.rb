@@ -99,13 +99,13 @@ class GateRunTest < ActiveSupport::TestCase
     run = GateRun.append_sop!(subject_type: "task", subject_slug: @task.slug, key: "dor_review",
                               sop: { "sop" => "ci", "result" => "unverified", "state" => "unreadable",
                                      "cause" => "permissions", "reason" => "access denied",
-                                     "repo" => "amcritchie/rolio" })
+                                     "repo" => "McRitchie-Studio/rolio" })
 
     entry = run.sops.first
     assert_equal "unreadable", entry["state"]
     assert_equal "permissions", entry["cause"]
     assert_equal "access denied", entry["reason"]
-    assert_equal "amcritchie/rolio", entry["repo"]
+    assert_equal "McRitchie-Studio/rolio", entry["repo"]
   end
 
   test "[unit] GATES include the two DoR gates in flow order between g1_cert and g2a" do

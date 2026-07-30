@@ -1,0 +1,88 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# gh-app-mint-token — prints ONLY a fresh GitHub App INSTALLATION token for the
+# app whose credentials arrive in ENV. stdout is the bare token (so callers can
+# command-substitute it); every failure aborts loudly on stderr instead.
+#
+# Env contract (both REQUIRED):
+#   GH_APP_ID   — the GitHub App's numeric app id (1Password field `app-id`).
+#   GH_APP_PEM  — the app's RSA private key as PEM text. In 1Password the key is
+#                 the `.pem` FILE ATTACHMENT on the item — the concealed
+#                 `private key` field is NOT the key.
+# Optional:
+#   GH_APP_INSTALLATION_MATCH — substring the installation account login must
+#                 contain (default "mcritchie-studio"); override for a fork/test org.
+#
+# WHY GitHub Apps (2026-07-29 org migration): every repo moved from the
+# `amcritchie` personal account to the `McRitchie-Studio` org, and auth moved
+# with it — fine-grained PATs died because they cannot call the check-runs API
+# at all, which the CI gates read. Two app identities exist:
+#   github.mcritchie-agent    — build/review lanes: contents + pull-requests +
+#                               checks-read + actions + workflows. The DEFAULT.
+#   github.mcritchie-deployer — ship lane: contents + actions + checks-read +
+#                               secrets. NO pull-request scope — the deployer
+#                               cannot open or merge PRs by design.
+# bin/gh-app-git-credential resolves either item from 1Password and feeds this
+# script; GH_APP_ITEM selects the identity there. GitHub Actions mints the same
+# way via actions/create-github-app-token instead of this script.
+
+require "openssl"
+require "base64"
+require "json"
+require "net/http"
+require "uri"
+
+def die(message)
+  abort("gh-app-mint-token: #{message}")
+end
+
+app_id = ENV["GH_APP_ID"].to_s.strip
+die("GH_APP_ID is required (the app's numeric id — 1Password field `app-id`)") if app_id.empty?
+die("GH_APP_ID must be numeric, got #{app_id.inspect}") unless app_id.match?(/\A\d+\z/)
+
+pem = ENV["GH_APP_PEM"].to_s
+if pem.strip.empty?
+  die("GH_APP_PEM is required (the app's private key — the `.pem` FILE attachment on the 1Password item)")
+end
+
+key = begin
+  OpenSSL::PKey::RSA.new(pem)
+rescue OpenSSL::OpenSSLError => e
+  die("GH_APP_PEM is not a valid RSA private key (#{e.message}) — export the `.pem` FILE attachment, not the concealed `private key` field")
+end
+
+b64 = ->(hash) { Base64.urlsafe_encode64(JSON.generate(hash), padding: false) }
+now = Time.now.to_i
+header  = b64.call({ alg: "RS256", typ: "JWT" })
+payload = b64.call({ iat: now - 60, exp: now + 540, iss: app_id })
+signature = Base64.urlsafe_encode64(key.sign(OpenSSL::Digest::SHA256.new, "#{header}.#{payload}"), padding: false)
+jwt = "#{header}.#{payload}.#{signature}"
+
+def gh(path, auth, method: :get)
+  uri = URI("https://api.github.com#{path}")
+  req = (method == :post ? Net::HTTP::Post : Net::HTTP::Get).new(uri)
+  req["Authorization"] = "Bearer #{auth}"
+  req["Accept"] = "application/vnd.github+json"
+  res = Net::HTTP.start(uri.host, uri.port, use_ssl: true) { |h| h.request(req) }
+  body = begin
+    JSON.parse(res.body)
+  rescue JSON::ParserError
+    nil
+  end
+  unless res.is_a?(Net::HTTPSuccess)
+    reason = body.is_a?(Hash) ? body["message"] : res.body.to_s.lines.first
+    die("GitHub #{method.to_s.upcase} #{path} failed (HTTP #{res.code}): #{reason.to_s.strip[0, 140]}")
+  end
+  body
+end
+
+match = ENV.fetch("GH_APP_INSTALLATION_MATCH", "mcritchie-studio").downcase
+installations = gh("/app/installations", jwt)
+die("expected an installation list, got #{installations.class}") unless installations.is_a?(Array)
+installation = installations.find { |i| i.dig("account", "login").to_s.downcase.include?(match) }
+unless installation
+  die("no installation whose account matches #{match.inspect} (app #{app_id} has #{installations.size} installation(s))")
+end
+
+puts gh("/app/installations/#{installation["id"]}/access_tokens", jwt, method: :post).fetch("token")

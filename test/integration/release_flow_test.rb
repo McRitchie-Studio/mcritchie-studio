@@ -73,7 +73,7 @@ class ReleaseFlowTest < ActionDispatch::IntegrationTest
                        metadata: { "devops" => {
                          "shape" => "backend", "repositories" => ["turf-monster"],
                          "branch" => "feat/consume-engine",
-                         "pr_url" => "https://github.com/amcritchie/turf-monster/pull/200"
+                         "pr_url" => "https://github.com/McRitchie-Studio/turf-monster/pull/200"
                        } })
 
     # Pass the consumer first — ordering must still come out producer-first.
@@ -111,7 +111,7 @@ class ReleaseFlowTest < ActionDispatch::IntegrationTest
                        metadata: { "devops" => {
                          "shape" => "backend", "repositories" => ["mcritchie-studio"],
                          "branch" => "feat/consume-engine-09",
-                         "pr_url" => "https://github.com/amcritchie/mcritchie-studio/pull/300"
+                         "pr_url" => "https://github.com/McRitchie-Studio/mcritchie-studio/pull/300"
                        } })
 
     rel = Release::Conductor.prepare!(task_slugs: [gem.slug, app.slug], slug: "rel-gem-freeze")
@@ -143,7 +143,7 @@ class ReleaseFlowTest < ActionDispatch::IntegrationTest
                        metadata: { "devops" => {
                          "shape" => "backend", "repositories" => ["mcritchie-studio"],
                          "branch" => "feat/consume-engine-10",
-                         "pr_url" => "https://github.com/amcritchie/mcritchie-studio/pull/400"
+                         "pr_url" => "https://github.com/McRitchie-Studio/mcritchie-studio/pull/400"
                        } })
 
     rel = Release::Conductor.prepare!(task_slugs: [gem.slug, app.slug], slug: "rel-freeze-guard")

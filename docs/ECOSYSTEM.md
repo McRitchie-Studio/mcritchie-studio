@@ -6,13 +6,13 @@ Single orientation surface for the McRitchie stack. Fresh contributors, fresh ag
 
 | Repo | Role | Stack | Port |
 |------|------|-------|------|
-| [`mcritchie-studio`](https://github.com/amcritchie/mcritchie-studio) | Flagship hub. Task/News/Content pipelines, NFL data, auth-capable Studio app, and ecosystem recovery scripts. | Rails 8.1 / Postgres | 3000 |
-| [`turf-monster`](https://github.com/amcritchie/turf-monster) | Sports pick'em (World Cup 2026). Solana onchain via turf-vault. | Rails 8.1 / Postgres / Redis / Sidekiq | 3100 |
-| [`rolio`](https://github.com/amcritchie/rolio) | Relationship operating workspace. Release-managed standalone app with hosted QA/prod Heroku lanes. **Dormant** since the 2026-07-03 audit. | Rails 8 / SQLite demo runtime | 3300 |
-| [`chain-ops`](https://github.com/amcritchie/chain-ops) | Planned Solana environment control plane. Starts with localnet validator support. | Rails 8.1 / Postgres | 3400 |
-| [`studio-engine`](https://github.com/amcritchie/studio-engine) | Shared Rails engine: passwordless auth, error logging, theme, modals, ImageCache. | Ruby gem | — |
-| [`solana-studio`](https://github.com/amcritchie/solana-studio) | Ruby Solana client: RPC, ed25519, borsh, tx builder. | Ruby gem | — |
-| [`turf-vault`](https://github.com/amcritchie/turf-vault) | Onchain escrow vault. 2-of-3 multisig. Consumed by turf-monster. | Anchor / Rust / Solana | — |
+| [`mcritchie-studio`](https://github.com/McRitchie-Studio/mcritchie-studio) | Flagship hub. Task/News/Content pipelines, NFL data, auth-capable Studio app, and ecosystem recovery scripts. | Rails 8.1 / Postgres | 3000 |
+| [`turf-monster`](https://github.com/McRitchie-Studio/turf-monster) | Sports pick'em (World Cup 2026). Solana onchain via turf-vault. | Rails 8.1 / Postgres / Redis / Sidekiq | 3100 |
+| [`rolio`](https://github.com/McRitchie-Studio/rolio) | Relationship operating workspace. Release-managed standalone app with hosted QA/prod Heroku lanes. **Dormant** since the 2026-07-03 audit. | Rails 8 / SQLite demo runtime | 3300 |
+| [`chain-ops`](https://github.com/McRitchie-Studio/chain-ops) | Planned Solana environment control plane. Starts with localnet validator support. | Rails 8.1 / Postgres | 3400 |
+| [`studio-engine`](https://github.com/McRitchie-Studio/studio-engine) | Shared Rails engine: passwordless auth, error logging, theme, modals, ImageCache. | Ruby gem | — |
+| [`solana-studio`](https://github.com/McRitchie-Studio/solana-studio) | Ruby Solana client: RPC, ed25519, borsh, tx builder. | Ruby gem | — |
+| [`turf-vault`](https://github.com/McRitchie-Studio/turf-vault) | Onchain escrow vault. 2-of-3 multisig. Consumed by turf-monster. | Anchor / Rust / Solana | — |
 
 📇 `rolio` is **release-managed standalone with reserved satellite range**:
 hosted QA/prod deploys ride `config/release_repos.yml` and
@@ -73,7 +73,7 @@ The Rails apps consume `studio-engine` and `solana-studio` from RubyGems. Local 
 On a fresh Mac with Homebrew installed:
 
 ```bash
-git clone https://github.com/amcritchie/mcritchie-studio.git ~/projects/mcritchie-studio
+git clone https://github.com/McRitchie-Studio/mcritchie-studio.git ~/projects/mcritchie-studio
 cd ~/projects/mcritchie-studio
 bin/ecosystem-build       # Phase 1-3: installs toolchain, bails at Phase 4 needing 1P token
 bin/setup-1pass-token     # paste 1P token to clipboard first

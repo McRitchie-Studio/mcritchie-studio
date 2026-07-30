@@ -30,6 +30,22 @@ Run this SOP from the McRitchie Studio primary checkout:
 cd /Users/alex/projects/mcritchie-studio
 ```
 
+The sweep runs under the **default agent GitHub App identity**
+(`github.mcritchie-agent`) — it opens and merges the batch promote PRs, which
+the deployer identity deliberately cannot. Two auth legs, and they are not
+interchangeable: git pushes ride the global credential helper
+(`bin/gh-app-git-credential`); the sweep's `gh` calls (`gh pr create`/`merge`)
+ride a per-session minted token — before the sweep, export:
+
+```bash
+export GH_TOKEN="$(GH_APP_ID="$(op read 'op://agents/github.mcritchie-agent/app-id')" \
+  GH_APP_PEM="$(op read 'op://agents/github.mcritchie-agent/mcritchie-agent.2026-07-29.private-key.pem')" \
+  bin/gh-app-mint-token)"
+```
+
+(1-hour TTL — re-mint on a 403; never print it.) Do not export `GH_APP_ITEM`
+here; that override belongs to Steffon's `production-deploy` ship lane only.
+
 Use the production board by default. Do not add `--local`.
 
 ## Assembler claim — automatic, on the RELEASE record

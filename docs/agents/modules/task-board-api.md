@@ -402,7 +402,7 @@ Payload:
     "source": "agent",
     "message": "Routes, controller, and persistence diff scanned.",
     "idempotency_key": "task-slug:primary:diff",
-    "metadata": { "pr": "https://github.com/amcritchie/mcritchie-studio/pull/123" }
+    "metadata": { "pr": "https://github.com/McRitchie-Studio/mcritchie-studio/pull/123" }
   }
 }
 ```
@@ -637,7 +637,7 @@ api PATCH /api/v1/tasks/task-XXXX '{
     "repositories": ["mcritchie-studio"],
     "risk_tags": ["ui"],
     "branch": "feat/admin-users-sticky-header",
-    "pr_url": "https://github.com/amcritchie/mcritchie-studio/pull/123",
+    "pr_url": "https://github.com/McRitchie-Studio/mcritchie-studio/pull/123",
     "acceptance": ["Header stays pinned while the table scrolls"],
     "test_plan": ["bin/rails test"],
     "checks_run": ["bin/rails test test/controllers/tasks_controller_test.rb"]

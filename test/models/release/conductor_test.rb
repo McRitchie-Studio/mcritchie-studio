@@ -749,7 +749,7 @@ class Release::ConductorTest < ActiveSupport::TestCase
     Task.create!(title: "app #{label} release task", stage: "reviewed", dependencies: deps,
                  metadata: { "devops" => {
                    "shape" => "backend", "repositories" => [repo], "branch" => branch,
-                   "pr_url" => "https://github.com/amcritchie/#{repo}/pull/1"
+                   "pr_url" => "https://github.com/McRitchie-Studio/#{repo}/pull/1"
                  } })
   end
 
@@ -789,7 +789,7 @@ class Release::ConductorTest < ActiveSupport::TestCase
     with_cmd = Task.create!(title: "backfill mascots release task", stage: "reviewed",
                             metadata: { "devops" => {
                               "shape" => "backend", "repositories" => ["turf-monster"], "branch" => "feat/x",
-                              "pr_url" => "https://github.com/amcritchie/turf-monster/pull/1",
+                              "pr_url" => "https://github.com/McRitchie-Studio/turf-monster/pull/1",
                               "post_deploy_cmd" => "rake pokemon:backfill_mascots"
                             } })
     without = app_task("plain", repo: "mcritchie-studio", branch: "feat/plain")

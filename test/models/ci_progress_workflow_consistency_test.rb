@@ -80,7 +80,7 @@ class CiProgressWorkflowConsistencyTest < ActiveSupport::TestCase
   # M3: the docstring promises an owner-qualified name works. Untested until now.
   test "[unit] ci_workflow_for accepts an owner-qualified repo name" do
     assert_equal GithubWorkflowRun.ci_workflow_for("studio-engine"),
-                 GithubWorkflowRun.ci_workflow_for("amcritchie/studio-engine"),
+                 GithubWorkflowRun.ci_workflow_for("McRitchie-Studio/studio-engine"),
                  "an owner-qualified name must resolve identically — the ReviewGate passes bare slugs " \
                  "today, but the method documents both forms"
   end

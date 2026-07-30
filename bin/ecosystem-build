@@ -35,7 +35,7 @@ SOLANA_PREFIX=$HOME/.local/share/solana/install/active_release
 CARGO_PREFIX=$HOME/.cargo
 MISE_SHIMS=$HOME/.local/share/mise/shims
 PROJECTS_DIR=${PROJECTS_DIR:-$HOME/projects}
-GH_OWNER=amcritchie
+GH_OWNER=McRitchie-Studio
 
 # Hub + non-Rails sibling repos are hardcoded. Rails satellite apps come from
 # config/satellites.yml via load_satellites (populated below). Adding a new

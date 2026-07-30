@@ -301,10 +301,10 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
   end
 
   test "[integration] ci_progress morph-replaces the affected task's bar slot with fresh counts" do
-    repo = "amcritchie/mcritchie-studio"
+    repo = "McRitchie-Studio/mcritchie-studio"
     task = Task.create!(title: "Live CI bar task", stage: "submitted",
                         metadata: { "devops" => { "branch" => "feat/live-bar", "repositories" => ["mcritchie-studio"],
-                                                  "pr_url" => "https://github.com/amcritchie/mcritchie-studio/pull/5" } })
+                                                  "pr_url" => "https://github.com/McRitchie-Studio/mcritchie-studio/pull/5" } })
     job = seed_ci(repo: repo, branch: "feat/live-bar", sha: "live-bar-sha", passed: 5, pending: 3)
 
     streams = capture_turbo_stream_broadcasts("deployments") { DeploymentsBroadcaster.ci_progress(job) }
@@ -318,7 +318,7 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
     html = streams.first.to_html
     assert_includes html, "task-ci-progress-symbols", "the slot re-renders the live symbolic row"
     assert_equal 8, html.scan("data-test=\"ci-check-symbol\"").size
-    assert_includes html, "href=\"https://github.com/amcritchie/mcritchie-studio/pull/5\""
+    assert_includes html, "href=\"https://github.com/McRitchie-Studio/mcritchie-studio/pull/5\""
     assert_includes html, "target=\"_blank\""
   end
 
@@ -326,7 +326,7 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
     rel = Release.open! # the active candidate → Release.current
     rel.add(Task.create!(title: "Hub release CI member", stage: "reviewed",
                          metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } }))
-    job = seed_ci(repo: "amcritchie/mcritchie-studio", branch: Release::BRANCH, sha: "rel-live-sha", passed: 8, pending: 0)
+    job = seed_ci(repo: "McRitchie-Studio/mcritchie-studio", branch: Release::BRANCH, sha: "rel-live-sha", passed: 8, pending: 0)
 
     streams = capture_turbo_stream_broadcasts("deployments") { DeploymentsBroadcaster.ci_progress(job) }
 
@@ -344,7 +344,7 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
                          metadata: { "devops" => { "repositories" => ["studio-engine"] } }))
     # A gem's verdict is Engine CI on MAIN — the fan-out must reach it there, not only
     # on the `release` branch app repos use.
-    job = seed_ci(repo: "amcritchie/studio-engine", branch: "main", sha: "engine-live-sha",
+    job = seed_ci(repo: "McRitchie-Studio/studio-engine", branch: "main", sha: "engine-live-sha",
                   passed: 1, pending: 0, workflow: "Engine CI")
 
     streams = capture_turbo_stream_broadcasts("deployments") { DeploymentsBroadcaster.ci_progress(job) }
@@ -356,7 +356,7 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
 
   test "[integration] ci_progress does NOT refresh the release card for a non-member repo's release push" do
     Release.open! # active, but with NO members
-    job = seed_ci(repo: "amcritchie/turf-monster", branch: Release::BRANCH, sha: "orphan-sha", passed: 4, pending: 0)
+    job = seed_ci(repo: "McRitchie-Studio/turf-monster", branch: Release::BRANCH, sha: "orphan-sha", passed: 4, pending: 0)
 
     streams = capture_turbo_stream_broadcasts("deployments") { DeploymentsBroadcaster.ci_progress(job) }
 
@@ -365,7 +365,7 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
   end
 
   test "[integration] ci_progress with no eligible task or release broadcasts nothing" do
-    job = CiCheckJob.new(repo: "amcritchie/mcritchie-studio", job_id: 1, head_sha: "orphan-sha",
+    job = CiCheckJob.new(repo: "McRitchie-Studio/mcritchie-studio", job_id: 1, head_sha: "orphan-sha",
                          head_branch: "feat/nobody", workflow_name: "CI", status: "queued")
     streams = capture_turbo_stream_broadcasts("deployments") { DeploymentsBroadcaster.ci_progress(job) }
     assert_empty streams
@@ -377,7 +377,7 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
   end
 
   test "[unit] ci_progress is guarded — a dead cable can't break the ingest write" do
-    job = CiCheckJob.new(repo: "amcritchie/mcritchie-studio", job_id: 1, head_sha: "s",
+    job = CiCheckJob.new(repo: "McRitchie-Studio/mcritchie-studio", job_id: 1, head_sha: "s",
                          head_branch: Release::BRANCH, workflow_name: "CI", status: "queued")
     Release.open!
     Turbo::StreamsChannel.stub(:broadcast_stream_to, ->(*_a, **_k) { raise Gem::LoadError, "redis not in bundle" }) do

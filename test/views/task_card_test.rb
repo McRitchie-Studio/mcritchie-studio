@@ -197,7 +197,7 @@ class TaskCardTest < ActionView::TestCase
 
   test "[component] a reviewed card with the default inclusion shows NO release marker (only the held exception does)" do
     task = Task.create!(title: "Reviewed inclusion default", stage: "reviewed",
-                        metadata: { "devops" => { "pr_url" => "https://github.com/amcritchie/turf-monster/pull/5" } })
+                        metadata: { "devops" => { "pr_url" => "https://github.com/McRitchie-Studio/turf-monster/pull/5" } })
 
     render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :deploy }
 
@@ -211,7 +211,7 @@ class TaskCardTest < ActionView::TestCase
   test "[component] a held-back reviewed card shows the amber HELD FROM RELEASE marker" do
     task = Task.create!(title: "Reviewed held back", stage: "reviewed",
                         metadata: { "devops" => {
-                          "pr_url" => "https://github.com/amcritchie/mcritchie-studio/pull/6",
+                          "pr_url" => "https://github.com/McRitchie-Studio/mcritchie-studio/pull/6",
                           "included_in_release" => "false"
                         } })
 
@@ -230,7 +230,7 @@ class TaskCardTest < ActionView::TestCase
   test "[component] the inclusion marker is reviewed-stage only" do
     %w[submitted assembled building].each do |stage|
       task = Task.create!(title: "No marker #{stage}", stage: stage,
-                          metadata: { "devops" => { "pr_url" => "https://github.com/amcritchie/turf-monster/pull/7" } })
+                          metadata: { "devops" => { "pr_url" => "https://github.com/McRitchie-Studio/turf-monster/pull/7" } })
       render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :deploy }
       assert_select "[data-test='release-inclusion-marker']", { count: 0 },
                     "the inclusion marker must not render on the #{stage} stage"

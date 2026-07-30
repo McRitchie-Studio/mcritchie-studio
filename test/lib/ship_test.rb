@@ -27,7 +27,7 @@ class ShipTest < Minitest::Test
   SLUG = "fast-lane-demo"
   BRANCH = "feat/#{SLUG}"
   TASK_URL = "https://mcritchie.studio/tasks/#{SLUG}"
-  PR_URL = "https://github.com/amcritchie/mcritchie-studio/pull/999"
+  PR_URL = "https://github.com/McRitchie-Studio/mcritchie-studio/pull/999"
 
   # A throwaway repo on the task branch with a bare `origin` carrying an
   # `accepted` base — so push runs against a real remote, no network. Yields
@@ -396,7 +396,7 @@ class ShipTest < Minitest::Test
       # The --pr-url write silently fails while a STALE pr_url (a different PR)
       # sits on the board: the read-back must pin the EXACT URL this run
       # recorded — any non-empty value must not pass as persistence.
-      stale = "https://github.com/amcritchie/mcritchie-studio/pull/111"
+      stale = "https://github.com/McRitchie-Studio/mcritchie-studio/pull/111"
       out, err, status, lines = run_ship(
         dir,
         show_json: task_record(stage: "building", pr_url: stale),

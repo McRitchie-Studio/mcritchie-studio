@@ -1391,11 +1391,11 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     File.write(File.join(@hub_dir, ".gitignore"), ".env.agent-stack\n.agent-context.json\n/.worktrees/\n")
     git!(@hub_dir, "add", ".gitignore")
     git!(@hub_dir, "commit", "-m", "Ignore agent stack files")
-    # SSH-form origin so github_repo_slug still resolves "amcritchie/mcritchie-studio",
+    # SSH-form origin so github_repo_slug still resolves "McRitchie-Studio/mcritchie-studio",
     # while run_remove's `git fetch origin` can be forced offline+instant in the
     # removal tests via GIT_SSH_COMMAND=/usr/bin/false (the fetch is allow_fail and
     # base resolution only needs the local refs/remotes/origin/main set below).
-    git!(@hub_dir, "remote", "add", "origin", "git@github.com:amcritchie/mcritchie-studio.git")
+    git!(@hub_dir, "remote", "add", "origin", "git@github.com:McRitchie-Studio/mcritchie-studio.git")
     git!(@hub_dir, "update-ref", "refs/remotes/origin/main", "HEAD")
     git!(@hub_dir, "worktree", "add", @worktree_dir, "-b", "feat/terminal-context")
     git!(@worktree_dir, "config", "user.email", "agent-test@example.com")
@@ -1644,7 +1644,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
           {
             number: 41,
             title: "Terminal context marker",
-            url: "https://github.com/amcritchie/mcritchie-studio/pull/41",
+            url: "https://github.com/McRitchie-Studio/mcritchie-studio/pull/41",
             isDraft: false,
             headRefName: "feat/terminal-context",
             baseRefName: "main",

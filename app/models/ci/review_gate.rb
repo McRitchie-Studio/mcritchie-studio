@@ -28,9 +28,9 @@ module Ci
     CI_WORKFLOW = GithubWorkflowRun::CI_WORKFLOW
     # Newest-run ordering, mirroring Ci::ProgressReader::LATEST_RUN_ORDER.
     LATEST_RUN_ORDER = "run_started_at DESC NULLS LAST, created_at DESC, run_id DESC"
-    # The org every managed repo lives under (amcritchie/<repo>), overridable for a
-    # fork/test — matches Ci::ProgressReader::DEFAULT_OWNER.
-    DEFAULT_OWNER = ENV.fetch("GITHUB_REPO_OWNER", "amcritchie").freeze
+    # The org every managed repo lives under (McRitchie-Studio/<repo>), overridable
+    # for a fork/test — matches Ci::ProgressReader::DEFAULT_OWNER.
+    DEFAULT_OWNER = ENV.fetch("GITHUB_REPO_OWNER", "McRitchie-Studio").freeze
 
     module_function
 

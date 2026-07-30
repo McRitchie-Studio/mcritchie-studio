@@ -21,7 +21,7 @@ class Ci::ProgressReaderTest < ActiveSupport::TestCase
       { "status" => "in_progress" }
     ]))
 
-    progress = reader.for_sha("amcritchie/mcritchie-studio", "sha1")
+    progress = reader.for_sha("McRitchie-Studio/mcritchie-studio", "sha1")
     assert_equal 1, progress.passed
     assert_equal 1, progress.pending
     assert_equal :pending, progress.state
@@ -97,8 +97,8 @@ class Ci::ProgressReaderTest < ActiveSupport::TestCase
       "turf-rc" => { "passed" => 3, "failed" => 0, "pending" => 5 }
     }, &ok([]))
     rel = release_with_members("mcritchie-studio", "turf-monster")
-    seed_run(repo: "amcritchie/mcritchie-studio", branch: Release::BRANCH, sha: "hub-rc")
-    seed_run(repo: "amcritchie/turf-monster",     branch: Release::BRANCH, sha: "turf-rc")
+    seed_run(repo: "McRitchie-Studio/mcritchie-studio", branch: Release::BRANCH, sha: "hub-rc")
+    seed_run(repo: "McRitchie-Studio/turf-monster",     branch: Release::BRANCH, sha: "turf-rc")
 
     progress = reader.for_release(rel)
     assert_equal %w[mcritchie-studio turf-monster], progress.keys.sort
@@ -116,10 +116,10 @@ class Ci::ProgressReaderTest < ActiveSupport::TestCase
     reader = build_reader(fixtures: { "engine-rc" => { "passed" => 6, "failed" => 0, "pending" => 0 } }, &ok([]))
     rel = release_with_members("studio-engine")
     # The gem's OWN suite (Engine CI on main) IS the RC verdict...
-    seed_run(repo: "amcritchie/studio-engine", branch: "main", sha: "engine-rc", workflow: "Engine CI")
+    seed_run(repo: "McRitchie-Studio/studio-engine", branch: "main", sha: "engine-rc", workflow: "Engine CI")
     # ...NOT the downstream Consumer CI that also runs on main — and it is NEWER, so a
     # missing workflow-name filter would wrongly pick it.
-    seed_run(repo: "amcritchie/studio-engine", branch: "main", sha: "consumer-rc",
+    seed_run(repo: "McRitchie-Studio/studio-engine", branch: "main", sha: "consumer-rc",
              workflow: "Consumer CI", started_at: 1.minute.from_now)
 
     progress = reader.for_release(rel)
@@ -140,10 +140,10 @@ class Ci::ProgressReaderTest < ActiveSupport::TestCase
       FakeResponse.new("500", "the blind check-runs API must NOT be consulted for a gem", {})
     end
     rel = release_with_members("studio-engine")
-    seed_run(repo: "amcritchie/studio-engine", branch: "main", sha: "engine-mix-sha", workflow: "Engine CI")
-    seed_check_job(repo: "amcritchie/studio-engine", sha: "engine-mix-sha", workflow: "Engine CI", conclusion: "success")
-    seed_check_job(repo: "amcritchie/studio-engine", sha: "engine-mix-sha", workflow: "Engine CI", conclusion: "success")
-    seed_check_job(repo: "amcritchie/studio-engine", sha: "engine-mix-sha", workflow: "Consumer CI", conclusion: "failure")
+    seed_run(repo: "McRitchie-Studio/studio-engine", branch: "main", sha: "engine-mix-sha", workflow: "Engine CI")
+    seed_check_job(repo: "McRitchie-Studio/studio-engine", sha: "engine-mix-sha", workflow: "Engine CI", conclusion: "success")
+    seed_check_job(repo: "McRitchie-Studio/studio-engine", sha: "engine-mix-sha", workflow: "Engine CI", conclusion: "success")
+    seed_check_job(repo: "McRitchie-Studio/studio-engine", sha: "engine-mix-sha", workflow: "Consumer CI", conclusion: "failure")
 
     progress = reader.for_release(rel)["studio-engine"]
     assert_equal :green, progress.state,
@@ -164,15 +164,15 @@ class Ci::ProgressReaderTest < ActiveSupport::TestCase
   test "[unit] release_ci_slot_for morphs only a member repo on its own release-CI branch" do
     reader = build_reader(fixtures: { "turf-rc" => { "passed" => 2, "failed" => 0, "pending" => 6 } }, &ok([]))
     rel = release_with_members("turf-monster")
-    seed_run(repo: "amcritchie/turf-monster", branch: Release::BRANCH, sha: "turf-rc")
+    seed_run(repo: "McRitchie-Studio/turf-monster", branch: Release::BRANCH, sha: "turf-rc")
 
-    repo, progress = reader.release_ci_slot_for(rel, "amcritchie/turf-monster", Release::BRANCH)
+    repo, progress = reader.release_ci_slot_for(rel, "McRitchie-Studio/turf-monster", Release::BRANCH)
     assert_equal "turf-monster", repo
     assert_equal "2 / 8", progress.fraction_label
 
-    assert_nil reader.release_ci_slot_for(rel, "amcritchie/turf-monster", "main"),
+    assert_nil reader.release_ci_slot_for(rel, "McRitchie-Studio/turf-monster", "main"),
                "an app repo push on the WRONG branch does not fire its release track"
-    assert_nil reader.release_ci_slot_for(rel, "amcritchie/rolio", Release::BRANCH),
+    assert_nil reader.release_ci_slot_for(rel, "McRitchie-Studio/rolio", Release::BRANCH),
                "a NON-member repo never fires a release track"
   end
 
@@ -181,10 +181,10 @@ class Ci::ProgressReaderTest < ActiveSupport::TestCase
   test "[unit] release_ci_run_url resolves a track's ingested Actions run html_url" do
     reader = Ci::ProgressReader.new
     rel = release_with_members("turf-monster")
-    seed_run(repo: "amcritchie/turf-monster", branch: Release::BRANCH, sha: "turf-rc",
-             html_url: "https://github.com/amcritchie/turf-monster/actions/runs/7788")
+    seed_run(repo: "McRitchie-Studio/turf-monster", branch: Release::BRANCH, sha: "turf-rc",
+             html_url: "https://github.com/McRitchie-Studio/turf-monster/actions/runs/7788")
 
-    assert_equal "https://github.com/amcritchie/turf-monster/actions/runs/7788",
+    assert_equal "https://github.com/McRitchie-Studio/turf-monster/actions/runs/7788",
                  reader.release_ci_run_url(rel, "turf-monster"),
                  "the track links to that repo's release-branch CI run"
   end
@@ -192,12 +192,12 @@ class Ci::ProgressReaderTest < ActiveSupport::TestCase
   test "[unit] release_ci_run_url picks the NEWEST run, matching latest_ci_sha" do
     reader = Ci::ProgressReader.new
     rel = release_with_members("turf-monster")
-    seed_run(repo: "amcritchie/turf-monster", branch: Release::BRANCH, sha: "old-rc",
-             started_at: 1.hour.ago, html_url: "https://github.com/amcritchie/turf-monster/actions/runs/1")
-    seed_run(repo: "amcritchie/turf-monster", branch: Release::BRANCH, sha: "new-rc",
-             started_at: 1.minute.ago, html_url: "https://github.com/amcritchie/turf-monster/actions/runs/2")
+    seed_run(repo: "McRitchie-Studio/turf-monster", branch: Release::BRANCH, sha: "old-rc",
+             started_at: 1.hour.ago, html_url: "https://github.com/McRitchie-Studio/turf-monster/actions/runs/1")
+    seed_run(repo: "McRitchie-Studio/turf-monster", branch: Release::BRANCH, sha: "new-rc",
+             started_at: 1.minute.ago, html_url: "https://github.com/McRitchie-Studio/turf-monster/actions/runs/2")
 
-    assert_equal "https://github.com/amcritchie/turf-monster/actions/runs/2",
+    assert_equal "https://github.com/McRitchie-Studio/turf-monster/actions/runs/2",
                  reader.release_ci_run_url(rel, "turf-monster"),
                  "the URL points at the same newest run whose SHA drives the progress"
   end
@@ -222,10 +222,10 @@ class Ci::ProgressReaderTest < ActiveSupport::TestCase
   test "[unit] release_deploy_run_url resolves the QA Deploy run for the qa phase" do
     reader = Ci::ProgressReader.new
     rel = release_with_members("mcritchie-studio")
-    seed_run(repo: "amcritchie/mcritchie-studio", branch: "main", sha: "tip", workflow: "QA Deploy",
-             html_url: "https://github.com/amcritchie/mcritchie-studio/actions/runs/9001")
+    seed_run(repo: "McRitchie-Studio/mcritchie-studio", branch: "main", sha: "tip", workflow: "QA Deploy",
+             html_url: "https://github.com/McRitchie-Studio/mcritchie-studio/actions/runs/9001")
 
-    assert_equal "https://github.com/amcritchie/mcritchie-studio/actions/runs/9001",
+    assert_equal "https://github.com/McRitchie-Studio/mcritchie-studio/actions/runs/9001",
                  reader.release_deploy_run_url(rel, "qa"),
                  "the Deploying QA node links to the release's QA Deploy Actions run"
   end
@@ -233,10 +233,10 @@ class Ci::ProgressReaderTest < ActiveSupport::TestCase
   test "[unit] release_deploy_run_url resolves the Production Deploy run for the prod phase" do
     reader = Ci::ProgressReader.new
     rel = release_with_members("mcritchie-studio")
-    seed_run(repo: "amcritchie/mcritchie-studio", branch: "main", sha: "tip", workflow: "Production Deploy",
-             html_url: "https://github.com/amcritchie/mcritchie-studio/actions/runs/9002")
+    seed_run(repo: "McRitchie-Studio/mcritchie-studio", branch: "main", sha: "tip", workflow: "Production Deploy",
+             html_url: "https://github.com/McRitchie-Studio/mcritchie-studio/actions/runs/9002")
 
-    assert_equal "https://github.com/amcritchie/mcritchie-studio/actions/runs/9002",
+    assert_equal "https://github.com/McRitchie-Studio/mcritchie-studio/actions/runs/9002",
                  reader.release_deploy_run_url(rel, "prod"),
                  "the Deploying node links to the release's Production Deploy Actions run"
   end
@@ -244,12 +244,12 @@ class Ci::ProgressReaderTest < ActiveSupport::TestCase
   test "[unit] release_deploy_run_url picks the NEWEST deploy run" do
     reader = Ci::ProgressReader.new
     rel = release_with_members("mcritchie-studio")
-    seed_run(repo: "amcritchie/mcritchie-studio", branch: "main", sha: "old", workflow: "QA Deploy",
-             started_at: 1.hour.ago, html_url: "https://github.com/amcritchie/mcritchie-studio/actions/runs/1")
-    seed_run(repo: "amcritchie/mcritchie-studio", branch: "main", sha: "new", workflow: "QA Deploy",
-             started_at: 1.minute.ago, html_url: "https://github.com/amcritchie/mcritchie-studio/actions/runs/2")
+    seed_run(repo: "McRitchie-Studio/mcritchie-studio", branch: "main", sha: "old", workflow: "QA Deploy",
+             started_at: 1.hour.ago, html_url: "https://github.com/McRitchie-Studio/mcritchie-studio/actions/runs/1")
+    seed_run(repo: "McRitchie-Studio/mcritchie-studio", branch: "main", sha: "new", workflow: "QA Deploy",
+             started_at: 1.minute.ago, html_url: "https://github.com/McRitchie-Studio/mcritchie-studio/actions/runs/2")
 
-    assert_equal "https://github.com/amcritchie/mcritchie-studio/actions/runs/2",
+    assert_equal "https://github.com/McRitchie-Studio/mcritchie-studio/actions/runs/2",
                  reader.release_deploy_run_url(rel, "qa"),
                  "the active release's deploy is the most recent QA Deploy run"
   end
@@ -257,8 +257,8 @@ class Ci::ProgressReaderTest < ActiveSupport::TestCase
   test "[unit] release_deploy_run_url ignores a deploy run in a NON-member repo" do
     reader = Ci::ProgressReader.new
     rel = release_with_members("mcritchie-studio")
-    seed_run(repo: "amcritchie/rolio", branch: "main", sha: "tip", workflow: "QA Deploy",
-             html_url: "https://github.com/amcritchie/rolio/actions/runs/9")
+    seed_run(repo: "McRitchie-Studio/rolio", branch: "main", sha: "tip", workflow: "QA Deploy",
+             html_url: "https://github.com/McRitchie-Studio/rolio/actions/runs/9")
 
     assert_nil reader.release_deploy_run_url(rel, "qa"),
                "a QA Deploy run in a repo NOT in the release must not link the node"
@@ -267,8 +267,8 @@ class Ci::ProgressReaderTest < ActiveSupport::TestCase
   test "[unit] release_deploy_run_url is nil with no matching run, and for an unmapped phase" do
     reader = Ci::ProgressReader.new
     rel = release_with_members("mcritchie-studio")
-    seed_run(repo: "amcritchie/mcritchie-studio", branch: "main", sha: "tip", workflow: "QA Deploy",
-             html_url: "https://github.com/amcritchie/mcritchie-studio/actions/runs/9003")
+    seed_run(repo: "McRitchie-Studio/mcritchie-studio", branch: "main", sha: "tip", workflow: "QA Deploy",
+             html_url: "https://github.com/McRitchie-Studio/mcritchie-studio/actions/runs/9003")
 
     assert_nil reader.release_deploy_run_url(rel, "prod"), "no Production Deploy run yet -> unlinked node"
     assert_nil reader.release_deploy_run_url(rel, "bogus"), "an unmapped phase never links"
@@ -278,10 +278,10 @@ class Ci::ProgressReaderTest < ActiveSupport::TestCase
     reader = Ci::ProgressReader.new
     rel = release_with_members("mcritchie-studio")
     rel.update!(state: "shipped")
-    seed_run(repo: "amcritchie/mcritchie-studio", branch: "main", sha: "tip", workflow: "Production Deploy",
-             html_url: "https://github.com/amcritchie/mcritchie-studio/actions/runs/9004")
+    seed_run(repo: "McRitchie-Studio/mcritchie-studio", branch: "main", sha: "tip", workflow: "Production Deploy",
+             html_url: "https://github.com/McRitchie-Studio/mcritchie-studio/actions/runs/9004")
 
-    assert_equal "https://github.com/amcritchie/mcritchie-studio/actions/runs/9004",
+    assert_equal "https://github.com/McRitchie-Studio/mcritchie-studio/actions/runs/9004",
                  reader.release_deploy_run_url(rel, "prod"),
                  "a shipped release's tracker still links its deploy runs (unlike the active?-gated CI links)"
   end
@@ -291,22 +291,22 @@ class Ci::ProgressReaderTest < ActiveSupport::TestCase
   test "[unit] release_deploy_run returns the newest matching run for that repo, as status+url" do
     reader = Ci::ProgressReader.new
     rel = release_with_members("mcritchie-studio", "turf-monster")
-    GithubWorkflowRun.create!(repo: "amcritchie/turf-monster", workflow_name: "QA Deploy", run_id: 71,
+    GithubWorkflowRun.create!(repo: "McRitchie-Studio/turf-monster", workflow_name: "QA Deploy", run_id: 71,
                               status: "completed", conclusion: "success", head_branch: "main", head_sha: "t",
-                              run_started_at: Time.current, html_url: "https://github.com/amcritchie/turf-monster/actions/runs/71")
+                              run_started_at: Time.current, html_url: "https://github.com/McRitchie-Studio/turf-monster/actions/runs/71")
 
     run = reader.release_deploy_run(rel, "turf-monster", "qa")
     assert_equal "completed", run[:status]
     assert_equal "success", run[:conclusion]
-    assert_equal "https://github.com/amcritchie/turf-monster/actions/runs/71", run[:url]
+    assert_equal "https://github.com/McRitchie-Studio/turf-monster/actions/runs/71", run[:url]
   end
 
   test "[unit] release_deploy_run is scoped to the repo + phase, nil when none" do
     reader = Ci::ProgressReader.new
     rel = release_with_members("mcritchie-studio")
-    GithubWorkflowRun.create!(repo: "amcritchie/turf-monster", workflow_name: "QA Deploy", run_id: 72,
+    GithubWorkflowRun.create!(repo: "McRitchie-Studio/turf-monster", workflow_name: "QA Deploy", run_id: 72,
                               status: "in_progress", head_branch: "main", head_sha: "t",
-                              run_started_at: Time.current, html_url: "https://github.com/amcritchie/turf-monster/actions/runs/72")
+                              run_started_at: Time.current, html_url: "https://github.com/McRitchie-Studio/turf-monster/actions/runs/72")
 
     assert_nil reader.release_deploy_run(rel, "mcritchie-studio", "qa"), "no QA Deploy run for this repo -> nil"
     assert_nil reader.release_deploy_run(rel, "mcritchie-studio", "prod"), "no Production Deploy run -> nil"
@@ -340,7 +340,7 @@ class Ci::ProgressReaderTest < ActiveSupport::TestCase
     reader = build_reader { |_uri, _req| FakeResponse.new("500", "API must not be hit", {}) }
     task = make_task(stage: "submitted", pr_url: pr_url, branch: "feat/live")
     seed_run(branch: "feat/live", sha: "task-live-sha")
-    seed_jobs("amcritchie/mcritchie-studio", "task-live-sha", passed: 7, pending: 1)
+    seed_jobs("McRitchie-Studio/mcritchie-studio", "task-live-sha", passed: 7, pending: 1)
 
     assert_equal "7 / 8", reader.for_task(task).fraction_label
   end
@@ -351,7 +351,7 @@ class Ci::ProgressReaderTest < ActiveSupport::TestCase
     make_task(stage: "building", pr_url: nil, branch: "feat/match")   # no PR → ineligible
     make_task(stage: "submitted", pr_url: pr_url, branch: "feat/other") # wrong branch
 
-    slugs = Ci::ProgressReader.new.eligible_tasks_for("amcritchie/mcritchie-studio", "feat/match").map(&:slug)
+    slugs = Ci::ProgressReader.new.eligible_tasks_for("McRitchie-Studio/mcritchie-studio", "feat/match").map(&:slug)
     assert_equal [submitted.slug, reviewed.slug].sort, slugs.sort
   end
 
@@ -381,7 +381,7 @@ class Ci::ProgressReaderTest < ActiveSupport::TestCase
   end
 
   def pr_url
-    "https://github.com/amcritchie/mcritchie-studio/pull/9"
+    "https://github.com/McRitchie-Studio/mcritchie-studio/pull/9"
   end
 
   def build_reader(fixtures: nil, &executor)
@@ -411,7 +411,7 @@ class Ci::ProgressReaderTest < ActiveSupport::TestCase
                        name: "#{workflow} #{SecureRandom.hex(3)}")
   end
 
-  def seed_run(branch:, sha:, repo: "amcritchie/mcritchie-studio", workflow: "CI", started_at: Time.current, html_url: nil)
+  def seed_run(branch:, sha:, repo: "McRitchie-Studio/mcritchie-studio", workflow: "CI", started_at: Time.current, html_url: nil)
     GithubWorkflowRun.create!(
       repo: repo, workflow_name: workflow,
       run_id: SecureRandom.random_number(10**12), status: "in_progress",

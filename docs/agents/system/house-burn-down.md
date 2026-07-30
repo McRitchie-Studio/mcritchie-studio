@@ -8,12 +8,12 @@ How to rebuild the McRitchie dev environment from a freshly-reset Mac. This is t
 
 | Repo | Role | Stack | Port |
 |------|------|-------|------|
-| [`mcritchie-studio`](https://github.com/amcritchie/mcritchie-studio) | Flagship hub. Task/News/Content pipelines, NFL data, agent docs, recovery scripts | Rails 8.1 / Postgres | 3000 |
-| [`turf-monster`](https://github.com/amcritchie/turf-monster) | Sports pick'em (World Cup 2026). Solana onchain | Rails 8.1 / Postgres / Redis / Sidekiq | 3100 |
-| [`chain-ops`](https://github.com/amcritchie/chain-ops) | Planned Solana environment control plane | Rails 8.1 / Postgres | 3400 |
-| [`studio-engine`](https://github.com/amcritchie/studio-engine) | Shared Rails engine: passwordless auth, error logging, theme, modals, ImageCache | Ruby gem | — |
-| [`solana-studio`](https://github.com/amcritchie/solana-studio) | Ruby Solana client (RPC, ed25519, borsh, txns) | Ruby gem | — |
-| [`turf-vault`](https://github.com/amcritchie/turf-vault) | Onchain escrow vault. 2-of-3 multisig. Consumed by Turf Monster | Anchor / Rust / Solana | — |
+| [`mcritchie-studio`](https://github.com/McRitchie-Studio/mcritchie-studio) | Flagship hub. Task/News/Content pipelines, NFL data, agent docs, recovery scripts | Rails 8.1 / Postgres | 3000 |
+| [`turf-monster`](https://github.com/McRitchie-Studio/turf-monster) | Sports pick'em (World Cup 2026). Solana onchain | Rails 8.1 / Postgres / Redis / Sidekiq | 3100 |
+| [`chain-ops`](https://github.com/McRitchie-Studio/chain-ops) | Planned Solana environment control plane | Rails 8.1 / Postgres | 3400 |
+| [`studio-engine`](https://github.com/McRitchie-Studio/studio-engine) | Shared Rails engine: passwordless auth, error logging, theme, modals, ImageCache | Ruby gem | — |
+| [`solana-studio`](https://github.com/McRitchie-Studio/solana-studio) | Ruby Solana client (RPC, ed25519, borsh, txns) | Ruby gem | — |
+| [`turf-vault`](https://github.com/McRitchie-Studio/turf-vault) | Onchain escrow vault. 2-of-3 multisig. Consumed by Turf Monster | Anchor / Rust / Solana | — |
 
 **Dependency graph (build order):**
 
@@ -35,7 +35,7 @@ On a fresh Mac with Homebrew already installed:
 
 ```bash
 # 1. Clone the flagship — every other repo + script lives downstream of this one
-git clone https://github.com/amcritchie/mcritchie-studio.git ~/projects/mcritchie-studio
+git clone https://github.com/McRitchie-Studio/mcritchie-studio.git ~/projects/mcritchie-studio
 cd ~/projects/mcritchie-studio
 
 # 2. First pass — installs all brew packages (incl. 1Password CLI), Rust, Solana,
@@ -207,11 +207,11 @@ This is a **local dev keypair**, NOT one of the agent vault wallets. The agent w
 
 ```bash
 mkdir -p ~/projects && cd ~/projects
-gh repo clone amcritchie/mcritchie-studio
-gh repo clone amcritchie/turf-monster
-gh repo clone amcritchie/studio-engine
-gh repo clone amcritchie/solana-studio
-gh repo clone amcritchie/turf-vault
+gh repo clone McRitchie-Studio/mcritchie-studio
+gh repo clone McRitchie-Studio/turf-monster
+gh repo clone McRitchie-Studio/studio-engine
+gh repo clone McRitchie-Studio/solana-studio
+gh repo clone McRitchie-Studio/turf-vault
 ```
 
 (`gh auth login` first if not authenticated.)
