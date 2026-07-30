@@ -2526,7 +2526,7 @@ def prepare
   # under --yes (hands-off) and --dry-run (previews nothing-executed).
   return unless confirm("Prepare the current release — sweep reviewed work onto `#{RELEASE_BRANCH}` + deploy QA?")
 
-  # Deploy-lane narration: Steffon owns the whole middle — sweep, QA deploy, and
+  # Deploy-lane narration: Avi owns the whole middle — sweep, QA deploy, and
   # the QA-green flip. Open a role activity so the heartbeat attributes this phase to
   # him (matching the board's stage timeline). Best-effort — see the narrate
   # helpers. `avi_span` gates the close in the rescue so an abort BEFORE this
@@ -2725,7 +2725,7 @@ def prepare
   # 5b. Record the Avi assembled QA intent for every member so /deployments shows
   #     him QA-ing the RC live the moment the deploy half starts — the Deploy mirror
   #     of bin/reviewer-select's review intent (no more hand-run `bin/task intent
-  #     --to assembled --actor steffon`). Swept members are still `reviewed` (the
+  #     --to assembled --actor avi`). Swept members are still `reviewed` (the
   #     flip waits for QA-green), so record_deploy_intents! records the plain
   #     toward-`assembled` intent, superseded when qa_green! lands the flip; an
   #     already-`assembled` member (straggler/re-run) gets the qa-marked
@@ -5069,7 +5069,7 @@ rescue SystemExit => e
   # TTL — lets the release free sooner if this session is genuinely done. A stand-down
   # abort never acquired, so this is a no-op there.
   release_conductor_claim!
-  # Close the Avi activity on a partial-ship abort too (best-effort) so the
+  # Close the Steffon activity on a partial-ship abort too (best-effort) so the
   # heartbeat activity resolves instead of hanging open. Gated by steffon_span so an
   # abort BEFORE the activity opened (e.g. no active release) never emits a stray
   # `end`.

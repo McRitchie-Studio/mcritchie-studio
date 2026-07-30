@@ -631,7 +631,7 @@ module StageAgentsHelper
   #   * TIMELINE (stage_timeline) reads `to_stage` + `timeline_agents` — the real
   #     pipeline TRANSITION this work produces (the next stage) and that stage's
   #     crew. They coincide for every lane EXCEPT the re-homed QA intent, where the
-  #     board says "assembled · Steffon" but the timeline says "shipped · Avi".
+  #     board says "assembled · Avi" but the timeline says "shipped · Steffon".
   # Shape: { to_stage:, lane:, agents: [StageAgent], timeline_agents: [StageAgent], live_since: Time }.
   def in_progress_work(task, by_slug, mascot_agent, intents)
     stage = task.stage
@@ -667,7 +667,7 @@ module StageAgentsHelper
   # reviewed→assembled half-state, Avi's own ship intent) this is exactly the board
   # crew. The one exception is the re-homed Avi QA intent: it lives in the
   # assembled LANE but rides toward `shipped`, so the timeline attributes its card to
-  # the ship owner (Avi) by role — NOT the QA actor — matching the eventual ship card.
+  # the ship owner (Steffon) by role — NOT the QA actor — matching the eventual ship card.
   def deploy_timeline_agents(intent, render_stage, target, by_slug)
     return intent_stage_agents(intent, by_slug, target) if render_stage == target
 
@@ -685,7 +685,7 @@ module StageAgentsHelper
   # The open deploy-lane intent driving the live ticker for a non-build `stage`, plus
   # the stage it RENDERS as (its lane + avatar role). Returns [intent_or_nil, stage]:
   #   submitted → the review pair, toward `reviewed`.
-  #   reviewed  → Steffon's QA, toward `assembled` — the rare half-state (a member
+  #   reviewed  → Avi's QA, toward `assembled` — the rare half-state (a member
   #               attached for QA before its merge has flipped it to assembled).
   #   assembled → Avi's SHIP if a (non-QA) ship intent is open — he's actively
   #               shipping, so that outranks QA and renders in the SHIPPED lane; else
@@ -715,7 +715,7 @@ module StageAgentsHelper
   end
 
   # The avatar(s) for an OPEN intent: the senior pair (→reviewed) or the single
-  # owner (Steffon→assembled, Avi→shipped), canonical-owner backfilled like a
+  # owner (Avi→assembled, Steffon→shipped), canonical-owner backfilled like a
   # completed event so a bare intent still shows a face.
   def intent_stage_agents(intent, by_slug, target = intent.to_stage)
     if target == "reviewed"

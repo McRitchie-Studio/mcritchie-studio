@@ -774,7 +774,7 @@ composition write-ups that lived here — `Avi Heartbeat Slow`/`Fast`,
 > - **`merge`** does not prompt today; `--yes` is harmless future-proofing.
 >
 > `--yes` bypasses the **human confirm only** — it never skips a test gate
-> (`avi_ship_gate` runs and can still abort the ship). `--prod` is already the
+> (`run_ship_gate` runs and can still abort the ship). `--prod` is already the
 > default (the board is prod) — don't add it redundantly.
 
 The per-stage commands below are the building blocks the compositions above

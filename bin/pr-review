@@ -336,9 +336,9 @@ def reviewer_prompt(task, reviewer, role, reviewers)
 
     #{role_responsibility}
 
-    Avi is the review SUPERVISOR — a thin gate who never reviews code himself. He confirmed
-    product-acceptance, ran bin/reviewer-select to pick this primary+light pair, and spawned you
-    and your peer IN PARALLEL as sibling reviewers (#{OPTIONS.fetch(:mode)} mode). You are the #{role}:
+    There is NO supervisor on this lane — Carl is the deep/primary reviewer AND the review
+    OWNER. bin/reviewer-select picked this primary+light pair, and you and your peer were
+    spawned IN PARALLEL as sibling reviewers (#{OPTIONS.fetch(:mode)} mode). You are the #{role}:
     #{peer_text}
 
     Task: #{task.fetch("task_url")}
@@ -361,7 +361,7 @@ def reviewer_prompt(task, reviewer, role, reviewers)
 
     Narrate your review as your own soul so the heartbeat attributes it to you.
     Open your activity BEFORE any review work:
-    bin/agent-activity start --category Verify --agent #{reviewer_slug} --supervisor avi --task #{task.fetch("slug")} --reason "review: #{task.fetch("slug")}"
+    bin/agent-activity start --category Verify --agent #{reviewer_slug} --task #{task.fetch("slug")} --reason "review: #{task.fetch("slug")}"
 
     Close it with your verdict when the review is done:
     bin/agent-activity end --outcome "<verdict>: <one-line reason>"
