@@ -43,7 +43,11 @@ module Github
 
     attr_reader :request_count
 
-    def initialize(token: ENV["GITHUB_TOKEN"], base_url: DEFAULT_BASE_URL, logger: Rails.logger,
+    # token: defaults to Github::AppToken.resolve — a minted + cached GitHub App
+    # installation token when App creds are configured (the prod board), else the
+    # static GITHUB_TOKEN fallback (dev/CI/local). Pass an explicit token to
+    # bypass resolution (e.g. the JWT the AppToken mint itself uses).
+    def initialize(token: Github::AppToken.resolve, base_url: DEFAULT_BASE_URL, logger: Rails.logger,
       executor: nil, sleeper: ->(seconds) { sleep(seconds) }, max_retries: 2,
       request_pause_seconds: ENV.fetch("GITHUB_REQUEST_PAUSE_SECONDS", 0).to_f,
       rate_limit_pause_seconds: ENV.fetch("GITHUB_RATE_LIMIT_PAUSE_SECONDS", 60).to_f,
