@@ -46,7 +46,7 @@
 #     task's audit spine (the same spine `bin/task move` writes) — never silent.
 #
 #   bin/release prepare [--task SLUG ...] [--slug rel-YYYY-MM-DD-name] [--prod] [--dry-run]
-#     Steffon's SELF-HEALING qa-deploy — the whole middle of the pipeline:
+#     Avi's SELF-HEALING qa-deploy — the whole middle of the pipeline:
 #       1. DETECT the work: every `reviewed` task + any `assembled` straggler not
 #          riding the current RC (nothing + no active release → idempotent no-op).
 #       2. Ensure a candidate exists (Release.current_or_open!).
@@ -79,7 +79,7 @@
 #     `bin/release prepare`.
 #
 #   bin/release ship [--by NAME] [--prod] [--dry-run]
-#     Avi's production-deploy: promotes the QA-green (assembled) RC to production:
+#     Steffon's production-deploy: promotes the QA-green (assembled) RC to production:
 #     ff main → release branch per repo, push origin (stamping each repo's members
 #     `merged: "main"` — assembled+main = prod-in-flight), deploy to Heroku, smoke
 #     /up, run any member's post_deploy_cmd on the PROD app (aborts on non-zero),
@@ -1470,7 +1470,7 @@ def merge
   end
 end
 
-# --- prepare (Steffon's self-healing qa-deploy) ------------------------------
+# --- prepare (Avi's self-healing qa-deploy) ------------------------------
 
 # The one-shot DETECTION read: every `reviewed` task + any `assembled` straggler
 # off the current RC — each with its PR url, repo, and `merged` git-location —
@@ -2526,7 +2526,7 @@ def prepare
   # under --yes (hands-off) and --dry-run (previews nothing-executed).
   return unless confirm("Prepare the current release — sweep reviewed work onto `#{RELEASE_BRANCH}` + deploy QA?")
 
-  # Deploy-lane narration: Steffon owns the whole middle — sweep, QA deploy, and
+  # Deploy-lane narration: Avi owns the whole middle — sweep, QA deploy, and
   # the QA-green flip. Open a role activity so the heartbeat attributes this phase to
   # him (matching the board's stage timeline). Best-effort — see the narrate
   # helpers. `avi_span` gates the close in the rescue so an abort BEFORE this
@@ -2722,10 +2722,10 @@ def prepare
   g3_gate = :open
   pre_qa_gate(app_groups, rel_slug, gem_groups: gem_groups)
 
-  # 5b. Record the Steffon assembled QA intent for every member so /deployments shows
+  # 5b. Record the Avi assembled QA intent for every member so /deployments shows
   #     him QA-ing the RC live the moment the deploy half starts — the Deploy mirror
   #     of bin/reviewer-select's review intent (no more hand-run `bin/task intent
-  #     --to assembled --actor steffon`). Swept members are still `reviewed` (the
+  #     --to assembled --actor avi`). Swept members are still `reviewed` (the
   #     flip waits for QA-green), so record_deploy_intents! records the plain
   #     toward-`assembled` intent, superseded when qa_green! lands the flip; an
   #     already-`assembled` member (straggler/re-run) gets the qa-marked
@@ -2736,7 +2736,7 @@ def prepare
   #     prod-board failure — it warns and continues.
   step("record: Avi assembled QA intent (live crew ticker)")
   record_deploy_intent(
-    "Steffon assembled QA intent",
+    "Avi assembled QA intent",
     "r = Release.current; n = Release::Conductor.record_deploy_intents!(r, to_stage: 'assembled', actor: 'avi'); " \
     "puts({ intent: 'assembled', actor: 'avi', members: n.size }.to_json)"
   )
@@ -4374,7 +4374,7 @@ def whats_live(repos, qa_shas)
   end
 end
 
-# Avi's ship gate: run each app's full local suite (registry `test_cmd` — the
+# Steffon's ship gate: run each app's full local suite (registry `test_cmd` — the
 # full-suite tier, Release::STEP_TEST_TIERS["ship"]) on the FROZEN ship SHA —
 # the exact code that ships — BEFORE the ship-authority gate, so approval can
 # never authorize untested code (§1.2 "fixes shipped ≠ tested"). A red gate
@@ -4391,9 +4391,9 @@ end
 # Dropping it means NOTHING in the ship — not a ref, not a checkout, not a lock —
 # is touched before ship authority. A red gate or a declined confirm now leaves
 # the entire machine exactly as it found it.
-def avi_ship_gate(app_groups, ship_sha, qa_gates)
+def run_ship_gate(app_groups, ship_sha, qa_gates)
   say("")
-  step("Avi ship gate: full suite (registry test_cmd) on the FROZEN ship SHA " \
+  step("Steffon ship gate: full suite (registry test_cmd) on the FROZEN ship SHA " \
        "(isolated workspace, before ship authority — nothing is mutated yet)")
   app_groups.each do |group|
     repo = group["repo"]
@@ -4404,7 +4404,7 @@ end
 
 # Deploy one app to prod via its registry adapter. Common prelude: advance
 # origin/main to the frozen SHA (a ref push — the test gate already ran in
-# avi_ship_gate, before ship authority). Then the strategy-specific mechanic +
+# run_ship_gate, before ship authority). Then the strategy-specific mechanic +
 # smoke policy.
 #
 # NOTHING HERE READS THE PRIMARY'S WORKING TREE. That is the whole point of this
@@ -4915,11 +4915,11 @@ def ship
   # does not read it.
   ship_preflight(app_groups, gem_groups, ship_sha)
 
-  # 2. "What's already live" pre-flight, then Avi's ship gate, then explicit
+  # 2. "What's already live" pre-flight, then Steffon's ship gate, then explicit
   #    ship authority — turf included (its bin/deploy keeps its own smoke + rollback).
   whats_live(repos, qa_shas)
 
-  # 2a. Avi's ship gate (§1.2): run the FULL local suite (registry test_cmd) on
+  # 2a. Steffon's ship gate (§1.2): run the FULL local suite (registry test_cmd) on
   #     the FROZEN ship SHA — the exact prod code — BEFORE ship authority, so
   #     "shipped" can never mean "untested". A red gate scoped-aborts here,
   #     before the confirm and before any push, leaving origin untouched.
@@ -4934,7 +4934,7 @@ def ship
   record_release_event(rel_slug, "ship_gate", "started", actor: by)
   record_gate_open(rel_slug, "g4_ship", actor: by)
   g4_gate = :open
-  avi_ship_gate(app_groups, ship_sha, qa_gates)
+  run_ship_gate(app_groups, ship_sha, qa_gates)
   record_release_event(rel_slug, "ship_gate", "completed", actor: by)
 
   # 2b. The ship-authority gate — explicit, AFTER Steffon's test confirmation and
@@ -5069,7 +5069,7 @@ rescue SystemExit => e
   # TTL — lets the release free sooner if this session is genuinely done. A stand-down
   # abort never acquired, so this is a no-op there.
   release_conductor_claim!
-  # Close the Avi activity on a partial-ship abort too (best-effort) so the
+  # Close the Steffon activity on a partial-ship abort too (best-effort) so the
   # heartbeat activity resolves instead of hanging open. Gated by steffon_span so an
   # abort BEFORE the activity opened (e.g. no active release) never emits a stray
   # `end`.

@@ -336,9 +336,9 @@ def reviewer_prompt(task, reviewer, role, reviewers)
 
     #{role_responsibility}
 
-    Avi is the review SUPERVISOR — a thin gate who never reviews code himself. He confirmed
-    product-acceptance, ran bin/reviewer-select to pick this primary+light pair, and spawned you
-    and your peer IN PARALLEL as sibling reviewers (#{OPTIONS.fetch(:mode)} mode). You are the #{role}:
+    There is NO supervisor on this lane — Carl is the deep/primary reviewer AND the review
+    OWNER. bin/reviewer-select picked this primary+light pair, and you and your peer were
+    spawned IN PARALLEL as sibling reviewers (#{OPTIONS.fetch(:mode)} mode). You are the #{role}:
     #{peer_text}
 
     Task: #{task.fetch("task_url")}
@@ -361,7 +361,7 @@ def reviewer_prompt(task, reviewer, role, reviewers)
 
     Narrate your review as your own soul so the heartbeat attributes it to you.
     Open your activity BEFORE any review work:
-    bin/agent-activity start --category Verify --agent #{reviewer_slug} --supervisor avi --task #{task.fetch("slug")} --reason "review: #{task.fetch("slug")}"
+    bin/agent-activity start --category Verify --agent #{reviewer_slug} --task #{task.fetch("slug")} --reason "review: #{task.fetch("slug")}"
 
     Close it with your verdict when the review is done:
     bin/agent-activity end --outcome "<verdict>: <one-line reason>"
@@ -624,7 +624,7 @@ end
 
 # The merge-ready verdict handoff — the accepted-ladder's first rung. Merge the
 # feat PR into `accepted`, stamp merged:"accepted", then move the task `reviewed`
-# and leave the Steffon-QA handoff note. ORDER is load-bearing:
+# and leave the Avi-QA handoff note. ORDER is load-bearing:
 #   1. Merge first. A merge FAILURE returns false WITHOUT stamping or moving, so a
 #      broken PR keeps the task `submitted` (invariant: reviewed ⟺ code-on-accepted).
 #   2. Stamp merged:"accepted" BEFORE the stage move — the two board writes aren't
@@ -645,7 +645,7 @@ def move_reviewed(slug, task, reviewers, reports, reviewed_head: nil, zap_head: 
   zap_line = zap_head ? "\n\nReviewer zap: the PR head advanced #{short(reviewed_head)} → #{short(zap_head)} " \
                         "during review; its post-zap CI was revalidated green before this merge." : ""
   note = "pr-review merged #{slug} into `#{ACCEPTED_BRANCH}` and moved it reviewed after " \
-         "#{reviewers.map { |r| r["slug"] }.join(" + ")} reported merge-ready. Left for Steffon QA " \
+         "#{reviewers.map { |r| r["slug"] }.join(" + ")} reported merge-ready. Left for Avi QA " \
          "(the sweep promotes accepted→release).#{zap_line}\n\n" \
          "Reports:\n#{reports.map { |r| "- #{report_summary(r)}" }.join("\n")}"
   ok && task_write(["note", slug, "--handoff", note, "--agent", "avi"])

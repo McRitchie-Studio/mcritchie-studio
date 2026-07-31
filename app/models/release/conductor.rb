@@ -6,7 +6,7 @@ class Release
   module Conductor
     module_function
 
-    # --- the sweep (Steffon's self-healing qa-deploy, steps 1–3) --------------
+    # --- the sweep (Avi's self-healing qa-deploy, steps 1–3) --------------
 
     # DETECT the work a qa-deploy run should sweep onto the next release: every
     # `reviewed` task (whether or not its PR is merged yet — `merged` says which)
@@ -41,7 +41,7 @@ class Release
     #
     # Idempotent AND crash-safe: a member already stamped `merged` ("release" OR
     # "main") is left untouched — sweep! never regresses a `merged: "main"`
-    # member (an interrupted Avi ship) back to "release". That promise is
+    # member (an interrupted Steffon ship) back to "release". That promise is
     # absolute across releases: the short-circuit below covers CURRENT-release
     # members, and Release#add refuses the main→release downgrade when a LATER
     # release re-adopts a cross-release straggler. A member attached but
@@ -92,7 +92,7 @@ class Release
       release.reload
     end
 
-    # The QA-GREEN flip (Steffon's qa-deploy, step 6): QA booted + smoked green,
+    # The QA-GREEN flip (Avi's qa-deploy, step 6): QA booted + smoked green,
     # so every swept `reviewed` member flips to `assembled` (merged stays
     # "release" — matrix: assembled+release = QA-green, waiting on Avi) and the
     # release itself assembles. On a QA-deploy FAILURE this is simply never
@@ -155,7 +155,7 @@ class Release
       release.reload
     end
 
-    # BLOCK-ON-REGRESSION (Steffon's pre-QA gate): the tier tests on
+    # BLOCK-ON-REGRESSION (Avi's pre-QA gate): the tier tests on
     # origin/release caught a regression, so the offending task is EJECTED from
     # the candidate — detached (release_slug + `merged` cleared) and blocked for
     # rework with the feedback as a qa_feedback Activity — while the REST of the
@@ -604,7 +604,7 @@ class Release
       end
     end
 
-    # The Steffon assembled-QA intent — the live "who's QA-ing the RC now" ticker that
+    # The Avi assembled-QA intent — the live "who's QA-ing the RC now" ticker that
     # `bin/release prepare` fires, per member stage:
     #   * still `reviewed` (THE standard flow: swept onto the RC, flip deferred to
     #     QA-green) → the plain toward-`assembled` intent renders, since

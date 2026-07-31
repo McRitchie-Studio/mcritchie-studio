@@ -20,7 +20,7 @@ class Release
   # It reads TWO independent signals and is FAIL-CLOSED — either one showing
   # pending work makes the release dirty:
   #   * board — tasks riding `release` pending ship: `assembled` (QA-green) plus
-  #     `reviewed` with merged:"release" (swept by Steffon, QA in flight).
+  #     `reviewed` with merged:"release" (swept by Avi, QA in flight).
   #   * git   — commits `origin/release` is ahead of `origin/main`, per repo.
   # Two signals catch each other's blind spots: a task stuck on the release with
   # no commits still trips the board signal; a stray commit pushed straight to
