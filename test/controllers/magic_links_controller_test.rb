@@ -1,5 +1,14 @@
 require "test_helper"
 
+# REQUESTING a magic link — POST /magic_link, the front door of the passwordless
+# flow. That is all this controller does now.
+#
+# The token-bearing half used to live here too (GET/POST /magic_link/:token,
+# against the stateless MessageVerifier store). This app has minted Studio::Link
+# rows at /l/<token> for a while, so those tests were exercising a door no real
+# visitor used — and studio-engine 0.30 removes it outright. The consume side is
+# covered end to end, against the door this app actually serves, in
+# test/integration/studio_link_test.rb.
 class MagicLinksControllerTest < ActionDispatch::IntegrationTest
   include ActiveJob::TestHelper
 
@@ -25,58 +34,5 @@ class MagicLinksControllerTest < ActionDispatch::IntegrationTest
       end
     end
     assert_redirected_to login_path
-  end
-
-  test "confirming a valid token renders without signing in" do
-    token = MagicLink.generate(email: users(:alex).email)
-    get magic_link_path(token)
-    assert_response :success
-    assert_select "form[action=?][method=post]", magic_link_consume_path(token: token)
-    assert_nil session[Studio.session_key]
-  end
-
-  test "confirming a garbage token is still inert and friendly" do
-    get magic_link_path("garbage")
-    assert_response :success
-    assert_select "form[action=?][method=post]", magic_link_consume_path(token: "garbage")
-  end
-
-  test "scanner prefetch does not burn the token before human consume" do
-    token = MagicLink.generate(email: users(:alex).email)
-    get magic_link_path(token)
-    assert_response :success
-
-    post magic_link_consume_path(token: token)
-    assert_redirected_to root_path
-  end
-
-  test "consuming a valid token signs an existing user in" do
-    token = MagicLink.generate(email: users(:alex).email)
-    post magic_link_consume_path(token: token)
-    assert_redirected_to root_path
-  end
-
-  test "consuming a valid token stores solana address for sso awareness" do
-    user = users(:alex)
-    user.update!(solana_address: "Wa11etAddressBase58Example1111111111111111")
-
-    token = MagicLink.generate(email: user.email)
-    post magic_link_consume_path(token: token)
-
-    assert_equal user.solana_address, session[:sso_wallet]
-  end
-
-  test "consuming a valid token for a new email creates the account" do
-    assert_difference "User.count", 1 do
-      token = MagicLink.generate(email: "brandnew@example.com")
-      post magic_link_consume_path(token: token)
-    end
-    assert User.find_by(email: "brandnew@example.com").email_verified_at.present?
-  end
-
-  test "an invalid token is rejected" do
-    post magic_link_consume_path(token: "garbage")
-    assert_redirected_to login_path
-    assert_match(/invalid or has expired/i, flash[:alert])
   end
 end
