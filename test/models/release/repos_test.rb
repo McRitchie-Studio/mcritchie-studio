@@ -247,12 +247,11 @@ class Release::ReposTest < ActiveSupport::TestCase
 
   test "mcritchie-industries registers CI's full suite at BOTH gates" do
     # git_push_heroku has NO test step, so the registered command is the last
-    # gate before production and must be CI's full suite verbatim. This repo has
-    # NO system tier yet (test/system holds only a .keep; its own
-    # ci_workflow_test.rb pins the plain-`test` shape) — so, deliberately, no
-    # `test:system` here. Same string at both gates so G4 can self-gate on G3.
+    # gate before production and must be CI's full suite verbatim — which for
+    # this repo is `test test:system`. Same string at both gates so G4 can
+    # self-gate on G3.
     %w[test_cmd qa_test_cmd].each do |field|
-      assert_equal "bin/rails db:test:prepare test",
+      assert_equal "bin/rails db:test:prepare test test:system",
                    Release::Repos.public_send(field, "mcritchie-industries"),
                    "#{field} must be mcritchie-industries CI's full suite, verbatim"
     end
