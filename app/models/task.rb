@@ -258,6 +258,9 @@ class Task < ApplicationRecord
   # stamp the agent's name/color/emoji as the mascot and skip the Pokémon entirely.
   before_validation :sync_persona_identity, on: :create
   before_validation :sync_session_mascot, on: :create
+  # The mascot's DERIVED stamps (shiny/color/emoji) — server-owned, so they must
+  # be re-asserted on every save. See #sync_mascot_display.
+  before_validation :sync_mascot_display, on: :create
   # Stamp the app's status-line tint (App#color) from the first repository, so
   # bin/statusline can color the app slug without DB access. Cheap, idempotent.
   before_validation :sync_app_identity, on: :create
@@ -270,12 +273,26 @@ class Task < ApplicationRecord
   before_save :clear_block_on_forward_move, if: -> { will_save_change_to_stage? && stage != "building" }
   # Per-session mascot: re-derive on each build-phase transition (designed/building/
   # submitted) so a task picked up by a DIFFERENT agent swaps to that session's Pokémon.
+  # FIRST of the mascot callbacks: put the handle back before anything reads it.
+  # sync_session_mascot's redraw guard fires on a blank mascot, so a PATCH that
+  # simply didn't mention the mascot would otherwise swap the task's Pokémon.
+  # See #restore_mascot_identity.
+  before_save :restore_mascot_identity
   before_save :sync_persona_identity
   before_save :sync_session_mascot, if: -> { will_save_change_to_stage? && Task::BUILD_STAGES.include?(stage) }
   # Evolution AFTER the session sync: a handoff-resubmit first swaps to the new
   # session's base Pokémon, then evolves it — so the gate always evolves the
   # mascot that owns the transition. Runs before the after_update TaskEvent, so
   # the transition's snapshot bakes the EVOLVED form (older events keep theirs).
+  # Unconditional, and BEFORE the evolution gate: the mascot's shiny/color/emoji
+  # and its consumed gate are server-owned, so the API's wholesale devops replace
+  # deletes them on every client PATCH. Re-asserting them here — the same
+  # self-healing shape as sync_app_identity below — means the gate check reads a
+  # restored mascot_stage (a wiped one re-opens a spent gate and double-evolves)
+  # and evolve_stage_mascot's own emoji stamp reads a restored mascot_shiny. The
+  # evolved form's color/emoji then belong to evolve_stage_mascot, which stamps
+  # them for the slug it lands on. See #sync_mascot_display.
+  before_save :sync_mascot_display
   before_save :evolve_stage_mascot, if: -> { will_save_change_to_stage? && Task::MASCOT_EVOLUTION_GATES.key?(stage) }
   before_save :sync_app_identity
   # Unconditional: the settle is a stage INVARIANT re-asserted on every save, not
@@ -1935,6 +1952,103 @@ class Task < ApplicationRecord
     devops["mascot_emoji"] = pokemon&.status_emoji(shiny: shiny)
     # A fresh draw starts a fresh line — the new Pokémon hasn't earned any gates.
     devops.delete("mascot_stage")
+  end
+
+  # Carry the mascot HANDLE across a client write that never mentioned it. `mascot`
+  # and `mascot_session` ARE client keys, but Api::V1::TasksController#task_params
+  # assigns metadata WHOLESALE, which turns every omission into a deletion — and
+  # normalize_devops_metadata already SKIPS blank values, so no client can express
+  # "clear the mascot" through this path anyway. A client that sends a real slug
+  # (the --mascot override) still wins; only silence is undone. Without this a bare
+  # `{"devops":{"worktree_slug":"…"}}` PATCH emptied the mascot, and the next
+  # build-stage save redrew a different Pokémon mid-task.
+  def restore_mascot_identity
+    return if new_record?
+    self.metadata ||= {}
+    devops = (metadata["devops"] ||= {})
+
+    %w[mascot mascot_session].each do |key|
+      next if devops[key].present? || prior_devops[key].blank?
+
+      devops[key] = prior_devops[key]
+    end
+  end
+
+  # Re-derive the mascot's DISPLAY stamps — shiny, signature color, type emoji(s) —
+  # plus carry its consumed evolution gate forward. These four are server-owned
+  # (deliberately absent from DEVOPS_KEYS), and Api::V1::TasksController#task_params
+  # assigns metadata WHOLESALE as {"devops" => <whitelisted client keys>}, so every
+  # client PATCH deletes them. sync_session_mascot cannot restore them: it runs only
+  # on a build-stage change, and its own `needs` guard short-circuits while `mascot`
+  # (a client key) survives the replace. So they are re-asserted here on EVERY save
+  # — the same shape as sync_app_identity's app_color, which is why app_color never
+  # suffered this. Without it the stamps died on the first bind-task PATCH: the
+  # →designed event snapshot baked the shiny face and every later one baked the
+  # normal sprite, so the board card's second crew slot lost its ✨.
+  #
+  # Shiny is a property of the DRAW, and SessionMascot is that draw's durable home,
+  # so a session-bound task re-derives from it (find_by, never SessionMascot.for —
+  # `for` would CREATE a row and roll a fresh shiny for an unknown session). A
+  # session-less task drew task-locally with nowhere durable to re-read, so its
+  # stamp is carried forward from the pre-save record instead. Non-fatal: a mascot
+  # is decoration, and no task save may die for it.
+  def sync_mascot_display
+    return unless Pokemon.table_exists?
+    self.metadata ||= {}
+    devops = (metadata["devops"] ||= {})
+    # A persona (acting as a soul) owns the mascot fields — its name/color/emoji
+    # are an Agent's, not a Pokémon's. sync_persona_identity is authoritative.
+    return if devops["persona"].to_s.strip.present?
+    return if devops["mascot"].blank?
+
+    # The consumed evolution gate has no derivable source — only the prior record.
+    # Losing it re-opens a spent gate, so a blocked→resubmitted loop evolves twice.
+    # Restored BEFORE evolve_stage_mascot reads it (see the callback order above),
+    # and only for the SAME Pokémon: a handoff redraw deliberately clears the gate
+    # so the new mascot starts a fresh line, and carrying the old one forward would
+    # rob it of its submit evolution.
+    if devops["mascot_stage"].nil? && same_mascot_as_prior?(devops) && prior_devops["mascot_stage"]
+      devops["mascot_stage"] = prior_devops["mascot_stage"]
+    end
+    shiny = mascot_shiny_source(devops)
+    devops["mascot_shiny"] = shiny
+    pokemon = Pokemon.find_by(slug: devops["mascot"])
+    return unless pokemon # unseeded deck: keep the color/emoji we already carry
+
+    devops["mascot_color"] = pokemon.signature_color
+    devops["mascot_emoji"] = pokemon.status_emoji(shiny: shiny)
+  rescue StandardError => e
+    Rails.logger.warn("[mascot-display] stamp skipped (non-fatal): #{e.class}: #{e.message}")
+  end
+
+  # Whether this task's mascot is a shiny draw, cheapest source first: the stamp
+  # already on the record (present unless a client PATCH just wiped it), else the
+  # session's SessionMascot row, else the pre-save record. The SessionMascot read
+  # therefore costs one query only on the saves that follow a wipe.
+  def mascot_shiny_source(devops)
+    return self.class.shiny_value?(devops["mascot_shiny"]) unless devops["mascot_shiny"].nil?
+
+    sid = devops["mascot_session"].to_s.strip
+    if sid.present? && SessionMascot.table_exists? &&
+       (session_mascot = SessionMascot.find_by(session_id: sid))
+      return session_mascot.shiny?
+    end
+
+    same_mascot_as_prior?(devops) && self.class.shiny_value?(prior_devops["mascot_shiny"])
+  end
+
+  # The devops hash as it stands in the DB — what a wholesale in-memory replace
+  # has not touched. Empty on create.
+  def prior_devops
+    (metadata_was || {})["devops"] || {}
+  end
+
+  # Whether this save keeps the mascot the DB already holds. False on create and on
+  # a handoff redraw — the two cases where the prior record describes a DIFFERENT
+  # Pokémon and so must not be carried forward.
+  def same_mascot_as_prior?(devops)
+    prior = prior_devops["mascot"]
+    prior.present? && prior == devops["mascot"]
   end
 
   # Evolve the TASK's copy of its mascot at a pipeline gate (submitted/reviewed).
