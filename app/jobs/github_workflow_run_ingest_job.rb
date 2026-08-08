@@ -16,8 +16,9 @@
 #     the same row, never a duplicate (the DB unique index is the backstop);
 #   * only ever ADVANCES status along GithubWorkflowRun::STATUS_ORDER — a late
 #     `in_progress` re-delivery that arrives after `completed` is dropped whole;
-#   * treats a completed run's conclusion as FIRST-WRITE-WINS, so a re-delivered
-#     non-terminal event can never wipe it back to nil.
+#   * records a conclusion once and then only lets a LATER run_attempt correct it,
+#     so a re-run's real verdict lands while a re-delivered older/non-terminal
+#     event can never wipe it back to nil (see #upsert_run!).
 #
 # Backend discipline: the body is rescued into ErrorLog and deliberately NOT
 # re-raised for non-transient failures — GitHub (or a backfill) will re-deliver,
@@ -61,6 +62,9 @@ class GithubWorkflowRunIngestJob < ApplicationJob
     with_insert_retry do
       record = GithubWorkflowRun.find_or_initialize_by(run_id: run_id)
       incoming = run["status"].to_s
+      # nil when the payload omits it (older deliveries) — treated as attempt 1,
+      # which is what an un-re-run workflow is.
+      incoming_attempt = run["run_attempt"].presence&.to_i
 
       # MONOTONIC guard: drop a status that ranks BELOW what we already stored
       # (a late / out-of-order re-delivery) without touching the row.
@@ -69,11 +73,35 @@ class GithubWorkflowRunIngestJob < ApplicationJob
       apply_descriptive_fields(record, run, repo)
       record.status = incoming if incoming.present?
 
-      # FIRST-WRITE-WINS on conclusion — never overwrite a recorded conclusion.
-      record.conclusion = run["conclusion"] if run["conclusion"].present? && record.conclusion.blank?
+      # CONCLUSION: fill a blank, or let a NEWER ATTEMPT's terminal verdict correct
+      # a recorded one. GitHub re-runs a failed run under the SAME run_id (bumping
+      # run_attempt), so the old blanket first-write-wins pinned the row at
+      # `failure` for good — and Ci::ReviewGate reads these rows and nothing else,
+      # so `bin/task claim-next-review` could never pop a PR whose flake a re-run
+      # had already fixed: green on GitHub, unclaimable on the board, permanently.
+      #
+      # Gated on the ATTEMPT, not merely on `completed`, because deliveries arrive
+      # out of order: a late replay of attempt 1's `completed` must never overwrite
+      # attempt 2's verdict. That direction matters — this row AUTHORISES A MERGE,
+      # so a stale attempt landing a green over a real red is the unsafe case. A
+      # non-terminal delivery still can't wipe a conclusion back to nil.
+      if run["conclusion"].present? && (record.conclusion.blank? || newer_attempt?(record, incoming_attempt))
+        record.conclusion = run["conclusion"]
+      end
+      record.run_attempt = incoming_attempt if incoming_attempt && incoming_attempt >= record.run_attempt.to_i
 
       record.save!
     end
+  end
+
+  # Does this delivery describe a LATER run attempt than the one whose conclusion
+  # we already stored? Consulted ONLY when a conclusion is recorded (the caller
+  # fills a blank outright). A missing run_attempt — an older payload, or a row
+  # ingested before the column existed — reads as 0, so the first re-run (attempt
+  # 2) correctly supersedes a legacy row, an at-least-once re-delivery of the same
+  # attempt is a no-op, and a late replay of an EARLIER attempt is refused.
+  def newer_attempt?(record, incoming_attempt)
+    incoming_attempt.to_i > record.run_attempt.to_i
   end
 
   # ── workflow_job lifecycle (per-check LIVE progress) ──────────────────────

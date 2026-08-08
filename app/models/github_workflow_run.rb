@@ -7,6 +7,9 @@ class GithubWorkflowRun < ApplicationRecord
   # uses these ranks to advance a run monotonically and never regress it (a late
   # `in_progress` re-delivery must not clobber a `completed` row).
   STATUS_ORDER = { "queued" => 0, "in_progress" => 1, "completed" => 2 }.freeze
+  # The terminal status. A delivery carrying it is authoritative about the run's
+  # conclusion — including a re-run's, which arrives under the SAME run_id.
+  COMPLETED = "completed".freeze
 
   # The one workflow whose per-job progress feeds the board's CI bars — the single
   # source both the ingest (which CiCheckJob rows to record) and Ci::ProgressReader
@@ -83,6 +86,6 @@ class GithubWorkflowRun < ApplicationRecord
   end
 
   def terminal?
-    status == "completed"
+    status == COMPLETED
   end
 end
