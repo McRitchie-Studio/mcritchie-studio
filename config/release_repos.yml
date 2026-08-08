@@ -305,20 +305,17 @@ apps:
     # last gate before production and must be CI's FULL suite, VERBATIM, at
     # BOTH gates.
     #
-    # This repo has NO system tier yet — that is deliberate, not papered over:
-    # test/system holds only a .keep, its ci.yml runs plain
-    # `bin/rails db:test:prepare test` (Rails 8.1's `test:system` LoadErrors on
-    # a missing suite), and the repo's own test/lib/ci_workflow_test.rb pins
-    # that shape. When the first system test lands there, ci.yml grows
-    # `test:system` and BOTH commands here must grow it in the same pass
-    # (repos_test.rb asserts this entry matches the repo's ci.yml at
-    # origin/release, so drifting either side alone fails at the seam).
+    # This repo's ci.yml runs `bin/rails db:test:prepare test test:system`, so
+    # both gate commands do too — repos_test.rb asserts this entry matches the
+    # repo's ci.yml at origin/release, and drifting either side alone fails at
+    # the seam (which is how this drift surfaced: ci.yml grew `test:system`
+    # while these two strings stayed on plain `test`).
     #
     # Keep db:test:prepare FIRST (the rake-path trap — see the hub's entry),
     # and keep test_cmd and qa_test_cmd the SAME STRING so G4's
     # ship_gate_skip? can credit G3's certified run.
-    test_cmd: bin/rails db:test:prepare test
-    qa_test_cmd: bin/rails db:test:prepare test
+    test_cmd: bin/rails db:test:prepare test test:system
+    qa_test_cmd: bin/rails db:test:prepare test test:system
     prod_deploy:
       strategy: git_push_heroku
       remote: https://git.heroku.com/mcritchie-industries.git

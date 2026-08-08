@@ -119,10 +119,11 @@ end
 
 class ActionDispatch::IntegrationTest
   # Passwordless: mint + consume a magic-link token (create-or-login). The user
-  # must have an email. In test the cache is :null_store, so MagicLink skips
-  # single-use enforcement and the token consumes cleanly.
+  # must have an email. The token is a Studio::Link row consumed at /l/<token>
+  # — the same door a real visitor comes through, and the only one the engine
+  # still draws.
   def log_in_as(user)
-    token = MagicLink.generate(email: user.email)
-    post magic_link_consume_path(token: token)
+    token = Studio::Link.create_magic_link(email: user.email).token
+    post link_consume_path(token: token)
   end
 end

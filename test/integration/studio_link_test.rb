@@ -8,6 +8,19 @@ class StudioLinkTest < ActionDispatch::IntegrationTest
   include ActiveJob::TestHelper
   setup { ActiveJob::Base.queue_adapter = :test }
 
+  # --- the harness itself ---------------------------------------------------
+
+  # log_in_as is what the rest of the suite stands on, and it now rides /l. A
+  # helper that silently stopped establishing a session would not fail loudly —
+  # it would leave every authenticated test quietly asserting against a signed-
+  # OUT app and still passing. So the helper gets its own assertion.
+  test "log_in_as really establishes a session" do
+    log_in_as(users(:alex))
+
+    assert_equal users(:alex).id, session[Studio.session_key],
+                 "the shared sign-in helper must leave a real session behind"
+  end
+
   # --- magic link via /l ---------------------------------------------------
 
   test "request mints a short Studio::Link magic link (database store)" do
@@ -48,12 +61,31 @@ class StudioLinkTest < ActionDispatch::IntegrationTest
     assert_equal user.id, session[Studio.session_key]
   end
 
-  test "replay of a consumed magic link is rejected" do
+  # Replayed from a FRESH session, deliberately. A replay by the visitor who
+  # already consumed it is a different case with a different right answer —
+  # engine 0.30 turns that one into a silent redirect, because bouncing a
+  # signed-in visitor to the login page is what made a second click read as
+  # being logged out. What must never work is a spent token letting a
+  # STRANGER in, and that is what this pins.
+  test "replay of a consumed magic link by a fresh visitor is rejected" do
     link = Studio::Link.create_magic_link(email: users(:alex).email)
     post link_consume_path(token: link.token)
+    reset!
+
     post link_consume_path(token: link.token)
+
     assert_redirected_to login_path
-    assert_match(/invalid or has expired/i, flash[:alert])
+    assert_match(/expired|already used/i, flash[:alert])
+    assert_nil session[Studio.session_key]
+  end
+
+  test "consuming a magic link stores the solana address for sso awareness" do
+    user = users(:alex)
+    user.update!(solana_address: "Wa11etAddressBase58Example1111111111111111")
+
+    post link_consume_path(token: Studio::Link.create_magic_link(email: user.email).token)
+
+    assert_equal user.solana_address, session[:sso_wallet]
   end
 
   test "garbage token is friendly + inert on both verbs" do
@@ -88,7 +120,7 @@ class StudioLinkTest < ActionDispatch::IntegrationTest
       post link_consume_path(token: link.token)
     end
     assert_redirected_to login_path
-    assert_match(/invalid or has expired/i, flash[:alert])
+    assert_match(/expired/i, flash[:alert])
     assert_nil session[Studio.session_key]
   end
 end
