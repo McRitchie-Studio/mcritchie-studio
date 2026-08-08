@@ -45,10 +45,18 @@ Every engine-consuming app must install the engine's migrations, and re-install
 after an engine upgrade:
 
 ```bash
-bin/rails studio:install:migrations   # copies db/migrate/*.studio.rb
+bin/rails studio_engine:install:migrations   # copies db/migrate/*.studio_engine.rb
+ls db/migrate/*.studio_engine.rb             # REVIEW before migrating — see below
 bin/rails db:migrate
 bin/rails runner 'puts Studio::EmailDelivery.available?'   # => true
 ```
+
+**Review what it copied before migrating.** The task copies every engine
+*reference* migration, not just the outbox, and they are not all safe
+everywhere: `allow_null_image_cache_owner` runs `change_column_null
+:image_caches` and **fails outright on an app with no `image_caches` table**.
+Keep the outbox, keep whatever else your app actually uses, and delete the rest
+(moms-app kept one of four).
 
 **Skipping this fails silently.** `Studio::Email.deliver` records a row only when
 `studio_email_deliveries` EXISTS; without it, delivery falls through to a plain
@@ -295,7 +303,7 @@ cause that actually bit us, and the only one that fails **silently**:
 
 1. **Is the outbox table installed?** `bin/rails runner 'puts
    Studio::EmailDelivery.available?'`. `false` means the app never ran
-   `bin/rails studio:install:migrations`, so `Studio::Email.deliver` has been
+   `bin/rails studio_engine:install:migrations`, so `Studio::Email.deliver` has been
    falling through to a plain `deliver_later` — no row, no error, empty inbox.
    (mcritchie-industries, 2026-08-08.)
 2. **Is capture on?** `LOCAL_EMAIL_CAPTURE` or `AGENT_WORKTREE` truthy — and

@@ -111,10 +111,17 @@ A satellite consumes the engine's *runtime*, and two pieces of that runtime are
 easy to skip and fail quietly when you do. Both belong in the scaffold, not in a
 later cleanup task.
 
-- **Install the engine migrations.** `bin/rails studio:install:migrations` then
-  `bin/rails db:migrate`, and **re-run it after every engine upgrade**. It copies
-  the engine's own tables (the email outbox, `Studio::Link`, `Studio::Enumeral`)
-  in as `*.studio.rb` with a provenance comment. Verify rather than assume:
+- **Install the engine migrations.** `bin/rails studio_engine:install:migrations`
+  (note `studio_engine:`, not `studio:`), and **re-run it after every engine
+  upgrade**. It copies the engine's *reference* migrations — the email outbox,
+  `Studio::Link`, `Studio::Enumeral`, an `image_caches` relaxation — in as
+  `*.studio_engine.rb` with a provenance comment.
+
+  **Review what it copied before you migrate.** They are not all safe
+  everywhere: `allow_null_image_cache_owner` runs `change_column_null
+  :image_caches` and fails outright on an app with no such table. Keep the
+  outbox, keep whatever else the app uses, delete the rest — then
+  `bin/rails db:migrate`. Verify rather than assume:
   `bin/rails runner 'puts Studio::EmailDelivery.available?'` must print `true`.
 
   Skipping it is **silent**. `Studio::Email.deliver` records a row only when
