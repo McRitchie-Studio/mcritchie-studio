@@ -55,4 +55,74 @@ class TaskMascotShinyTest < ActiveSupport::TestCase
     assert_equal "normal-crop.png", snapshot["avatar"]
     assert_not snapshot.key?("shiny")
   end
+
+  # The wipe these guard: mascot_shiny/color/emoji/stage are server-owned (absent
+  # from DEVOPS_KEYS), and the API assigns metadata WHOLESALE, so a client PATCH
+  # writes a devops hash carrying only whitelisted keys. Before sync_mascot_display
+  # the stamps died there and every later event snapshot baked the NON-shiny face —
+  # the board card's second crew slot lost its sprite and its ✨.
+  def client_patch(task, devops)
+    task.update!(metadata: { "devops" => Task.normalize_devops_metadata(task.devops.merge(devops)) })
+    task.reload
+  end
+
+  test "a client devops write cannot wipe the shiny stamp" do
+    Pokemon.stub(:roll_shiny?, true) { SessionMascot.for("sess-shiny-wipe") }
+    task = Task.create!(title: "Survives the devops wipe",
+                        metadata: { "devops" => { "session_id" => "sess-shiny-wipe" } })
+
+    client_patch(task, "branch" => "feat/survives-the-devops-wipe")
+
+    assert_predicate task, :mascot_shiny?
+    assert_equal "🔶✨", task.devops["mascot_emoji"]
+    assert_equal "#A8A77A", task.devops["mascot_color"]
+    assert_equal "feat/survives-the-devops-wipe", task.devops["branch"]
+  end
+
+  test "the snapshot baked after a client write keeps the shiny face" do
+    Pokemon.stub(:roll_shiny?, true) { SessionMascot.for("sess-shiny-late-snapshot") }
+    task = Task.create!(title: "Late snapshot stays shiny",
+                        metadata: { "devops" => { "session_id" => "sess-shiny-late-snapshot" } })
+    client_patch(task, "branch" => "feat/late-snapshot-stays-shiny")
+
+    task.update!(stage: "building")
+    snapshot = task.task_events.find_by(to_stage: "building").mascot_snapshot
+
+    assert_equal "shiny-crop.png", snapshot["avatar"]
+    assert snapshot["shiny"]
+  end
+
+  test "a wiped record heals from its session on the next save" do
+    Pokemon.stub(:roll_shiny?, true) { SessionMascot.for("sess-shiny-heal") }
+    task = Task.create!(title: "Heals a wiped shiny stamp",
+                        metadata: { "devops" => { "session_id" => "sess-shiny-heal" } })
+    # The damage 12 production tasks already carry: stamps gone, mascot intact.
+    wiped = task.devops.except("mascot_shiny", "mascot_color", "mascot_emoji")
+    task.update_column(:metadata, { "devops" => wiped }) # rubocop:disable Rails/SkipsModelValidations
+    assert_not task.reload.mascot_shiny?
+
+    task.update!(priority: 2) # any save at all, not a mascot-shaped one
+
+    assert_predicate task.reload, :mascot_shiny?
+    assert_equal "🔶✨", task.devops["mascot_emoji"]
+  end
+
+  test "a session-less task's own roll survives a client write" do
+    task = Pokemon.stub(:roll_shiny?, true) { Task.create!(title: "Session less roll survives") }
+
+    client_patch(task, "branch" => "feat/session-less-roll-survives")
+
+    assert_predicate task, :mascot_shiny?
+  end
+
+  test "an ordinary mascot stays non-shiny through a client write" do
+    Pokemon.stub(:roll_shiny?, false) { SessionMascot.for("sess-plain-wipe") }
+    task = Task.create!(title: "Plain mascot stays plain",
+                        metadata: { "devops" => { "session_id" => "sess-plain-wipe" } })
+
+    client_patch(task, "branch" => "feat/plain-mascot-stays-plain")
+
+    assert_not task.mascot_shiny?
+    assert_no_match(/✨/, task.devops["mascot_emoji"].to_s)
+  end
 end

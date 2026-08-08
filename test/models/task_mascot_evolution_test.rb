@@ -208,4 +208,38 @@ class TaskMascotEvolutionTest < ActiveSupport::TestCase
     assert_equal "missingno", task.devops["mascot"]
     assert_nil task.devops["mascot_stage"]
   end
+
+  # mascot_stage is server-owned, so the API's wholesale devops replace deletes it
+  # on any client PATCH. A spent gate that reads back as unspent re-opens, and the
+  # blocked→resubmit loop above evolves a SECOND time. sync_mascot_display carries
+  # it forward for the same Pokémon, which is why this survives the wipe.
+  test "a spent gate survives a client devops write" do
+    seed_charmander_line!
+    task = make_task(mascot: "charmander")
+    task.submit!
+    assert_equal "charmeleon", task.devops["mascot"]
+
+    # bin/task's read-modify-write: whitelisted client keys only, gate dropped.
+    task.update!(metadata: { "devops" => Task.normalize_devops_metadata(task.devops) })
+    assert_equal 1, task.reload.devops["mascot_stage"], "the spent submit gate is restored"
+
+    task.block!(kind: "rework")
+    task.build!
+    task.submit!
+
+    assert_equal "charmeleon", task.reload.devops["mascot"], "a wiped gate must not re-evolve"
+  end
+
+  # The same wipe, seen from the handle: a PATCH that never mentions the mascot
+  # must not hand the task a different Pokémon on its next build-stage move.
+  test "a client write that omits the mascot keeps the task's Pokemon" do
+    seed_charmander_line!
+    task = make_task(mascot: "charmander", stage: "designed")
+
+    task.update!(metadata: { "devops" => { "worktree_slug" => "evolution-gate-probe-task" } })
+    task.build!
+
+    assert_equal "charmander", task.reload.devops["mascot"]
+    assert_equal "sess-evo", task.devops["mascot_session"]
+  end
 end
