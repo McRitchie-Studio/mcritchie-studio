@@ -105,6 +105,50 @@ deliberate decision, never a default.
   provider behind an env key. The app boots, tests, and demos with zero external
   credentials; flipping one env var swaps in the real provider.
 
+**Managed-satellite-specific — the engine standards, from day one:**
+
+A satellite consumes the engine's *runtime*, and two pieces of that runtime are
+easy to skip and fail quietly when you do. Both belong in the scaffold, not in a
+later cleanup task.
+
+- **Install the engine migrations.** `bin/rails studio:install:migrations` then
+  `bin/rails db:migrate`, and **re-run it after every engine upgrade**. It copies
+  the engine's own tables (the email outbox, `Studio::Link`, `Studio::Enumeral`)
+  in as `*.studio.rb` with a provenance comment. Verify rather than assume:
+  `bin/rails runner 'puts Studio::EmailDelivery.available?'` must print `true`.
+
+  Skipping it is **silent**. `Studio::Email.deliver` records a row only when
+  `studio_email_deliveries` exists and otherwise falls through to a plain async
+  `deliver_later` — no error, no record. The app drops every captured email and
+  `/_studio/local_emails` is always empty. mcritchie-industries shipped with
+  exactly this hole (fixed 2026-08-08).
+
+- **Render the shared environment banner, don't write one.**
+
+  ```erb
+  <body ...>
+    <%= render "studio/banners/environment" %>
+    <%= render "layouts/navbar" %>
+  ```
+
+  One call, no conditional around it (studio-engine >= 0.30 — the partial is
+  merged and publishes with the next release sweep; until then a new app keeps
+  its own strip and adopts on the upgrade). The partial decides
+  for itself whether to appear (every environment except real production; a QA app
+  is Rails-production but a review target, so `QA_ENV=true` re-opens it), what to
+  say, and whether the Local Inbox is linkable — it links the inbox only where the
+  viewer actually resolves and degrades to an inert status chip otherwise, so it
+  can never advertise a dead link.
+
+  Do **not** hand-roll a yellow `<div>`. Earlier versions of
+  `studio-engine/docs/NEW_APP_SETUP.md` § 9 pasted one to copy, and every app that
+  copied it drifted — different show rules, different labels, no inbox link.
+
+  The inbox is a **developer-desk** tool: it 404s on QA and in production, and
+  `LOCAL_EMAIL_CAPTURE=1` on a QA dyno does nothing. Both gates hard-close under
+  `Rails.env.production?` on purpose. See
+  [`../modules/email-operations.md`](../modules/email-operations.md).
+
 **Standalone-specific:**
 - No `studio-engine`, no hub SSO — the app owns its auth, UI, and infra.
 - App-owned feature PRs target **`main`**; release-managed standalone PRs target
