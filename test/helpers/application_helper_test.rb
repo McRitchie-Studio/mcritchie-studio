@@ -138,34 +138,11 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_includes right_fade_style(stop: 70), "#000 70%, transparent", "stop is configurable"
   end
 
-  test "environment banner shows in non-production rails environments" do
-    assert show_environment_banner?(
-      qa_environment: false,
-      rails_env: ActiveSupport::StringInquirer.new("development")
-    )
-  end
-
-  test "environment banner shows in QA even when Rails runs in production mode" do
-    assert show_environment_banner?(
-      qa_environment: true,
-      rails_env: ActiveSupport::StringInquirer.new("production")
-    )
-  end
-
-  test "environment banner hides in production when not QA" do
-    assert_not show_environment_banner?(
-      qa_environment: false,
-      rails_env: ActiveSupport::StringInquirer.new("production")
-    )
-  end
-
-  test "environment banner message calls out QA as non-production" do
-    assert_equal "QA Environment · Non-production",
-                 environment_banner_message(
-                   qa_environment: true,
-                   rails_env: ActiveSupport::StringInquirer.new("production")
-                 )
-  end
+  # The four environment-banner cases these helpers used to cover now live in
+  # studio-engine (test/lib/studio/environment_banner_test.rb — same four rules,
+  # asserted against the shipped module). The hub's own coverage of the seam is
+  # test/views/environment_banner_adoption_test.rb: that the layout renders the
+  # shared partial and carries no fork of its own.
 
   test "devops_stage_guide covers both workflows with the right stages" do
     guide = devops_stage_guide
