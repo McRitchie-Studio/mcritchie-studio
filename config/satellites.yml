@@ -90,6 +90,6 @@ satellites:
     heroku_app: "mcritchie-industries"
     production_url: "https://www.mcritchie.industries"
     role: "viewer"
-    description: "Business acquisitions — targets and deal pipeline; successor to the retired acquisition-studio prototype"
+    description: "Central business knowledge base — acquisitions (flagship), companies, financials, clients; version-controlled business-data/ files plus the app DB. Successor to the retired acquisition-studio prototype"
     deploy_provider: "heroku"
     status: "active"
