@@ -23,13 +23,55 @@ here.
 | App | Production app | Local URL | Local inbox | Transactional sender | Marketing sender | Durable outbox |
 |-----|----------------|-----------|-------------|----------------------|------------------|----------------|
 | McRitchie Studio | `mcritchie-studio` | `http://localhost:3000` | `http://localhost:3000/_studio/local_emails` | `McRitchie Studio <team@mcritchie.studio>` | `Alex McRitchie <alex@mcritchie.studio>` | `studio_email_deliveries` / `Studio::EmailDelivery` |
-| Turf Monster | `turf-monster-mainnet` | `http://localhost:3100` | `http://localhost:3100/_studio/local_emails` | `Turf Monster <team@turfmonster.media>` | `Alex from Turf Monster <alex@turfmonster.media>` | `email_deliveries` / `EmailDelivery` |
-| Future apps | TBD | reserve the app's hundred-block | `http://localhost:<port>/_studio/local_emails` | `App Name <team@app-domain>` | `Alex McRitchie <alex@app-domain>` or app-owned marketer | prefer `studio_email_deliveries` |
+| Turf Monster | `turf-monster-mainnet` | `http://localhost:3100` | `http://localhost:3100/_studio/local_emails` | `Turf Monster <team@turfmonster.media>` | `Alex from Turf Monster <alex@turfmonster.media>` | `email_deliveries` / `EmailDelivery` (legacy, see below) |
+| McRitchie Industries | `mcritchie-industries` | `http://localhost:3500` | `http://localhost:3500/_studio/local_emails` | `McRitchie Industries <team@mcritchie.studio>` | n/a | `studio_email_deliveries` / `Studio::EmailDelivery` |
+| Moms App | `obscure-plains-6405` | `http://localhost:3000` (unallocated — `bin/dev` defaults to 3000 and collides with the hub) | `http://localhost:<port>/_studio/local_emails` | `Moms App <team@mcritchie.studio>` | n/a | `studio_email_deliveries` / `Studio::EmailDelivery` |
+| Future apps | TBD | reserve the app's hundred-block | `http://localhost:<port>/_studio/local_emails` | `App Name <team@app-domain>` | `Alex McRitchie <alex@app-domain>` or app-owned marketer | `studio_email_deliveries` — install it, see below |
 
 Transactional auth/security/account emails should use the `team@` convention.
 Marketing, newsletter, or broadcast emails should use an `alex@` sender when the
 copy is intended to feel personal. Do not add a future app to real provider
 delivery until its sender domain is recorded in this matrix.
+
+**Turf Monster's `email_deliveries` is legacy, not drift.** `Studio::Email.deliver`
+checks for a top-level `EmailDelivery` constant FIRST and hands off to it, so an
+app that predates the engine outbox keeps its own table and its inbox works
+normally. Leave it — converting is a data migration with no user-visible payoff
+(operator call, 2026-08-08). Every other app uses the engine table.
+
+### The outbox is a standard — install it
+
+Every engine-consuming app must install the engine's migrations, and re-install
+after an engine upgrade:
+
+```bash
+bin/rails studio:install:migrations   # copies db/migrate/*.studio.rb
+bin/rails db:migrate
+bin/rails runner 'puts Studio::EmailDelivery.available?'   # => true
+```
+
+**Skipping this fails silently.** `Studio::Email.deliver` records a row only when
+`studio_email_deliveries` EXISTS; without it, delivery falls through to a plain
+async `deliver_later` with no error and no record — the app drops every captured
+email and `/_studio/local_emails` is always empty. That was a real bug in
+mcritchie-industries, found and fixed 2026-08-08.
+
+### Reaching the inbox — dev only, by design
+
+The local inbox is a **developer-desk** tool, not a QA one.
+`Studio.local_tool_enabled?` closes the viewer whenever `Rails.env.production?`
+**and** for any request that did not come from the loopback interface. QA apps
+run `RAILS_ENV=production` and serve remote requests, so `/_studio/local_emails`
+answers **404 on QA** — and `Studio.local_email_capture?` carries the same
+production hard-close, so **setting `LOCAL_EMAIL_CAPTURE=1` on a QA dyno does
+nothing**. QA sends real mail through the real transport.
+
+This is deliberate: both gates hand out sign-in material without authenticating
+anyone. The shared environment banner
+(`studio/banners/environment`, studio-engine >= 0.30 — publishing with the next
+release sweep) is built around the same
+fact — it links the inbox only where the viewer resolves, and degrades to an
+inert status chip on QA rather than advertising a dead link.
 
 ## Credential Map
 
@@ -248,8 +290,20 @@ Turf Monster:
 bin/rails runner 'EmailDelivery.resend_unsent!'
 ```
 
-If local capture looks empty, check `LOCAL_EMAIL_CAPTURE`, the app's route for
-`/_studio/local_emails`, and whether the code path uses `Studio::Email.deliver`.
+If local capture looks empty, check these in order — the first one is the
+cause that actually bit us, and the only one that fails **silently**:
+
+1. **Is the outbox table installed?** `bin/rails runner 'puts
+   Studio::EmailDelivery.available?'`. `false` means the app never ran
+   `bin/rails studio:install:migrations`, so `Studio::Email.deliver` has been
+   falling through to a plain `deliver_later` — no row, no error, empty inbox.
+   (mcritchie-industries, 2026-08-08.)
+2. **Is capture on?** `LOCAL_EMAIL_CAPTURE` or `AGENT_WORKTREE` truthy — and
+   remember both are ignored under `Rails.env.production?`.
+3. **Is the route drawn?** `/_studio/local_emails`, and the request must come
+   from loopback (the page 404s otherwise).
+4. **Does the code path use `Studio::Email.deliver`?** A mailer called directly
+   with `deliver_later` bypasses the outbox by design.
 
 ## Rollback And Decommission
 
