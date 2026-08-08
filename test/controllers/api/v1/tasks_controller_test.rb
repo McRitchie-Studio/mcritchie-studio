@@ -648,6 +648,43 @@ module Api
         assert AgentActivity.exists?(session_id: "sess-int-9", agent: "avi", task_slug: slug),
                "sizing must surface in the creator's heartbeat as an agent=avi event"
       end
+
+      # The regression this file owns: task_params assigns metadata WHOLESALE as
+      # {"devops" => <whitelisted client keys>}, so a PATCH that never mentions the
+      # mascot still rewrites its hash. mascot_shiny/color/emoji are server-owned
+      # (absent from DEVOPS_KEYS) and used to vanish on the first such write — the
+      # `bin/task begin` bind — leaving every later stage-event snapshot to bake the
+      # NON-shiny sprite. This walks the real fast-lane order: create, bind, claim.
+      test "a devops PATCH cannot wipe the server-owned mascot stamps" do
+        Pokemon.create!(dex: 302, name: "Snorlax", slug: "snorlax", types: %w[normal], generation: 1,
+                        avatar_url: "normal-crop.png", sprite_url: "normal-sprite.png",
+                        shiny_avatar_url: "shiny-crop.png", shiny_sprite_url: "shiny-sprite.png")
+        Pokemon.stub(:roll_shiny?, true) { SessionMascot.for("sess-shiny-patch") }
+
+        post api_v1_tasks_path,
+             params: { title: "Keeps its shiny stamps", devops: { session_id: "sess-shiny-patch" } },
+             headers: @headers, as: :json
+        assert_response :created
+        slug = JSON.parse(response.body).dig("data", "slug")
+        assert_predicate Task.find_by!(slug: slug), :mascot_shiny?
+
+        # The bind PATCH — worktree_slug only, exactly what bin/agent-worktree sends.
+        patch api_v1_task_path(slug), params: { devops: { worktree_slug: slug } },
+              headers: @headers, as: :json
+        assert_response :success
+        task = Task.find_by!(slug: slug)
+        assert_predicate task, :mascot_shiny?, "the bind PATCH must not wipe the shiny stamp"
+        assert_equal "snorlax", task.devops["mascot"], "…nor the mascot handle it never mentioned"
+        assert_equal slug, task.devops["worktree_slug"]
+
+        # …and the snapshot the NEXT stage move bakes still wears the shiny face,
+        # which is what the board card's later crew slots render.
+        patch api_v1_task_path(slug), params: { stage: "building" }, headers: @headers, as: :json
+        assert_response :success
+        snapshot = Task.find_by!(slug: slug).task_events.find_by(to_stage: "building").mascot_snapshot
+        assert_equal "shiny-crop.png", snapshot["avatar"]
+        assert snapshot["shiny"]
+      end
     end
   end
 end
