@@ -103,6 +103,24 @@ DOT="${D} · ${X}"
 
 link() { printf '\033]8;;%s\033\\%s\033]8;;\033\\' "$1" "$2"; }   # OSC 8 hyperlink
 
+# --- Portable mtime (the throttles' clock) ---------------------------------
+# `stat -f %m` is BSD/macOS. GNU/Linux spells it `stat -c %Y` — and does something
+# far nastier than fail with the BSD spelling: `-f` is "filesystem status" there, so
+# an unknown directive prints ITSELF ("%m") and exits 0. That junk then reaches
+# `$(( now - mtime ))`, and an arithmetic syntax error is a FATAL expansion error in
+# a non-interactive bash: the whole status line dies mid-render, silently. It only
+# ever fired on Linux, so the operator's Mac never saw it — but every throttle test
+# on CI was passing because the script CRASHED into the expected call count, which
+# is the worst way for a gate to be green. Take the first NUMERIC answer; treat
+# anything else as unknown (0 ⇒ "old enough", so a heal/renew proceeds).
+file_mtime() {  # path -> epoch seconds, 0 when unknown
+  local m
+  m=$(stat -f %m "$1" 2>/dev/null)                                    # BSD/macOS
+  case "$m" in ''|*[!0-9]*) m=$(stat -c %Y "$1" 2>/dev/null) ;; esac  # GNU/Linux
+  case "$m" in ''|*[!0-9]*) m=0 ;; esac
+  printf '%s' "$m"
+}
+
 # --- Build-claim heartbeat (best-effort lease renewal) ---------------------
 # A live terminal renews its build claim each render, so a crashed/closed session
 # stops renewing and its lease lapses (TTL) — making the task reclaimable by the
@@ -137,7 +155,7 @@ heartbeat_claim() {  # slug stage is_desk
   local throttle="${STATUSLINE_HEARTBEAT_THROTTLE:-45}"
   if [ -f "$marker" ]; then
     local mtime age
-    mtime=$(stat -f %m "$marker" 2>/dev/null || echo 0)
+    mtime=$(file_mtime "$marker")
     age=$(( $(date +%s) - mtime ))
     [ "$age" -lt "$throttle" ] && return 0
   fi
@@ -182,7 +200,7 @@ heartbeat_shift() {
   local throttle="${STATUSLINE_HEARTBEAT_THROTTLE:-45}"
   if [ -f "$throttle_marker" ]; then
     local mtime age
-    mtime=$(stat -f %m "$throttle_marker" 2>/dev/null || echo 0)
+    mtime=$(file_mtime "$throttle_marker")
     age=$(( $(date +%s) - mtime ))
     [ "$age" -lt "$throttle" ] && return 0
   fi
@@ -230,7 +248,7 @@ heal_session_mascot() {  # mascot is_desk
   local throttle="${STATUSLINE_MASCOT_HEAL_THROTTLE:-45}"
   if [ -f "$throttle_marker" ]; then
     local mtime age
-    mtime=$(stat -f %m "$throttle_marker" 2>/dev/null || echo 0)
+    mtime=$(file_mtime "$throttle_marker")
     age=$(( $(date +%s) - mtime ))
     [ "$age" -lt "$throttle" ] && return 0
   fi

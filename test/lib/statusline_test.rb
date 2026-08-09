@@ -333,7 +333,28 @@ class StatuslineTest < Minitest::Test
   # case); `desk: true` also drops a worktree .agent-context.json in the cwd. The
   # fixtures deliberately carry NO task slug, so heartbeat_claim returns early and
   # every recorded call belongs to the heal.
-  def mascot_heal_calls(marker: nil, desk: false, session: SESSION, runs: 1, throttle: nil)
+  # A `stat` that behaves like GNU coreutils, for running the macOS-only throttle
+  # clock on the platform CI actually uses. The BSD `-f %m` spelling is "filesystem
+  # status" there, so the unknown directive prints ITSELF and exits 0 — junk that
+  # reaches $(( )) as a fatal expansion error. Returns the dir to prepend to PATH.
+  def gnu_stat_shim(dir)
+    bin = File.join(dir, "shim")
+    FileUtils.mkdir_p(bin)
+    shim = File.join(bin, "stat")
+    File.write(shim, <<~SH)
+      #!/bin/bash
+      [ "$1" = "-f" ] && { echo "%m"; exit 0; }
+      if [ "$1" = "-c" ] && [ "$2" = "%Y" ]; then
+        /usr/bin/stat -c %Y "$3" 2>/dev/null || /usr/bin/stat -f %m "$3"
+        exit $?
+      fi
+      exec /usr/bin/stat "$@"
+    SH
+    FileUtils.chmod(0o755, shim)
+    bin
+  end
+
+  def mascot_heal_calls(marker: nil, desk: false, session: SESSION, runs: 1, throttle: nil, gnu_stat: false)
     Dir.mktmpdir do |dir|
       projects = File.join(dir, "projects")
       FileUtils.mkdir_p(File.join(projects, ".agents", "sessions"))
@@ -355,7 +376,8 @@ class StatuslineTest < Minitest::Test
         "TASK_BIN" => stub,
         "STATUSLINE_HEARTBEAT_FG" => "1",
         "CLAUDE_PROJECTS_DIR" => projects,
-        "STATUSLINE_MASCOT_HEAL_THROTTLE" => throttle
+        "STATUSLINE_MASCOT_HEAL_THROTTLE" => throttle,
+        "PATH" => (gnu_stat ? "#{gnu_stat_shim(dir)}:#{ENV.fetch('PATH')}" : ENV.fetch("PATH"))
       )
       stdin = JSON.generate("workspace" => { "current_dir" => cwd })
       runs.times { Open3.capture2(env, "/bin/bash", BIN, stdin_data: stdin, err: File::NULL) }
@@ -410,6 +432,22 @@ class StatuslineTest < Minitest::Test
   def test_statusline_retries_a_failed_heal_once_the_window_expires
     assert_equal 3, mascot_heal_calls(runs: 3, throttle: "0").size,
                  "a heal that wrote no mascot must try again — one shot is not a heal"
+  end
+
+  # The throttle clock was macOS-only (`stat -f %m`), and its Linux failure was not
+  # "the throttle misbehaves" — the junk GNU prints for that spelling reaches
+  # $(( )) as a FATAL expansion error, so the whole render dies. On CI the heal
+  # therefore fired exactly once (the first render, before any throttle marker
+  # existed) and every later render was killed before reaching it: PR #734's `test`
+  # job, expected 3, got 1.
+  #
+  # Note what this means for the throttle tests ABOVE: a crashed render produces the
+  # same call count as a working throttle, so they stayed green on Linux for three
+  # weeks while the script was aborting. Counting calls cannot tell those apart —
+  # only forcing the window OPEN can, because then the count and the crash disagree.
+  def test_heal_survives_a_gnu_stat_and_still_retries
+    assert_equal 3, mascot_heal_calls(runs: 3, throttle: "0", gnu_stat: true).size,
+                 "the throttle clock must read an mtime on GNU too — not kill the render"
   end
 
   # --- Self-heal across its I/O boundary (integration) -------------------------
