@@ -111,10 +111,19 @@ A satellite consumes the engine's *runtime*, and two pieces of that runtime are
 easy to skip and fail quietly when you do. Both belong in the scaffold, not in a
 later cleanup task.
 
-- **Install the engine migrations.** `bin/rails studio:install:migrations` then
-  `bin/rails db:migrate`, and **re-run it after every engine upgrade**. It copies
-  the engine's own tables (the email outbox, `Studio::Link`, `Studio::Enumeral`)
-  in as `*.studio.rb` with a provenance comment. Verify rather than assume:
+- **Install the engine migrations.** `bin/rails studio_engine:install:migrations`
+  (note `studio_engine:`, not `studio:`), and **re-run it after every engine
+  upgrade**. It copies the engine's *reference* migrations — the email outbox,
+  `Studio::Link`, `Studio::Enumeral`, an `image_caches` relaxation — in as
+  `*.studio_engine.rb` with a provenance comment.
+
+  **Install all of them, then `bin/rails db:migrate`.** Every engine migration is
+  safe on every app: the ones that create tables add a table you may not use yet,
+  and `allow_null_image_cache_owner` — which ALTERS the app-owned `image_caches`
+  — no-ops when that table is absent (studio-engine >= 0.30.1). Do **not** delete
+  copies you think you don't need: `install:migrations` builds its skip-list from
+  the files present, so a deleted copy returns with a fresh timestamp on the next
+  upgrade. Verify rather than assume:
   `bin/rails runner 'puts Studio::EmailDelivery.available?'` must print `true`.
 
   Skipping it is **silent**. `Studio::Email.deliver` records a row only when
@@ -131,9 +140,7 @@ later cleanup task.
     <%= render "layouts/navbar" %>
   ```
 
-  One call, no conditional around it (studio-engine >= 0.30 — the partial is
-  merged and publishes with the next release sweep; until then a new app keeps
-  its own strip and adopts on the upgrade). The partial decides
+  One call, no conditional around it (studio-engine >= 0.30, published). The partial decides
   for itself whether to appear (every environment except real production; a QA app
   is Rails-production but a review target, so `QA_ENV=true` re-opens it), what to
   say, and whether the Local Inbox is linkable — it links the inbox only where the
