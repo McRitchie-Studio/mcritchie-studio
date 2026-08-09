@@ -243,6 +243,72 @@ class DorCheckReviewDiffRootingTest < Minitest::Test
     assert_equal "turf-monster", CertRootGuard.app_of("/p/turf-monster/.worktrees/task-x")
   end
 
+  # ── [unit] the DESTINATION axes ────────────────────────────────────────────
+
+  # A candidate worktree under <app>, on <branch>, optionally with an origin remote.
+  def with_candidate(app: "myapp", branch: "feat/#{SLUG}", remote: nil)
+    Dir.mktmpdir do |raw|
+      projects = File.realpath(raw)
+      path = init_repo(File.join(projects, app, ".worktrees", SLUG))
+      git!(path, "remote", "add", "origin", remote) if remote
+      git!(path, "checkout", "-q", "-b", branch)
+      yield projects, path
+    end
+  end
+
+  def test_unit_a_matching_worktree_has_no_mismatch
+    with_candidate do |_projects, path|
+      assert_nil CertRootGuard.worktree_mismatch(path, expected_branch: "feat/#{SLUG}", prefer_repo: "myapp")
+    end
+  end
+
+  def test_unit_the_branch_axis_rejects_a_desk_that_never_carried_the_branch
+    # B2 at unit grain.
+    with_candidate(branch: "release") do |_projects, path|
+      why = CertRootGuard.worktree_mismatch(path, expected_branch: "feat/#{SLUG}", prefer_repo: "myapp")
+      assert_includes why.to_s, "release"
+      assert_includes why.to_s, "feat/#{SLUG}", "a reason that doesn't name the expectation isn't actionable"
+    end
+  end
+
+  def test_unit_the_repo_axis_rejects_another_repos_worktree
+    # B1 at unit grain — and note the branch is RIGHT here, which is why the branch
+    # axis alone cannot catch it.
+    with_candidate(app: "otherapp") do |_projects, path|
+      why = CertRootGuard.worktree_mismatch(path, expected_branch: "feat/#{SLUG}", prefer_repo: "myapp")
+      assert_includes why.to_s, "otherapp"
+      assert_includes why.to_s, "myapp"
+    end
+  end
+
+  def test_unit_origin_rescues_a_repo_whose_directory_name_differs
+    # The false-REFUSAL risk the repo axis introduces: a repo cloned into a folder
+    # named differently from its GitHub repo is a naming mismatch nobody chose, and
+    # refusing it would turn a working review into a dead end. `origin` is the
+    # authoritative answer, so it wins over the folder.
+    with_candidate(app: "locally-renamed", remote: "https://github.com/McRitchie-Studio/myapp.git") do |_p, path|
+      assert_includes CertRootGuard.repo_names(path), "myapp"
+      assert_nil CertRootGuard.worktree_mismatch(path, expected_branch: "feat/#{SLUG}", prefer_repo: "myapp")
+    end
+  end
+
+  def test_unit_remote_repo_name_parses_https_and_ssh
+    assert_equal "turf-monster", CertRootGuard.remote_repo_name_from("git@github.com:McRitchie-Studio/turf-monster.git")
+    assert_equal "mcritchie-studio",
+                 CertRootGuard.remote_repo_name_from("https://github.com/McRitchie-Studio/mcritchie-studio.git")
+    assert_equal "rolio", CertRootGuard.remote_repo_name_from("https://github.com/McRitchie-Studio/rolio")
+  end
+
+  def test_unit_no_repo_preference_leaves_the_branch_axis_in_charge
+    # The builder's pre-PR run has no PR and therefore no repo to compare against.
+    # Each axis is enforced when it is DETERMINABLE; an absent one must not become a
+    # blanket refusal, or every legitimate pre-PR re-root dies.
+    with_candidate(app: "otherapp") do |_projects, path|
+      assert_nil CertRootGuard.worktree_mismatch(path, expected_branch: "feat/#{SLUG}", prefer_repo: "")
+      refute_nil CertRootGuard.worktree_mismatch(path, expected_branch: "release", prefer_repo: "")
+    end
+  end
+
   # ── [integration] THE FALSE PASS ───────────────────────────────────────────
 
   def test_integration_a_dirty_primary_cannot_pass_a_code_pr_off_as_doc_only_in_review
@@ -437,6 +503,117 @@ class DorCheckReviewDiffRootingTest < Minitest::Test
       assert_includes stderr, "AMBIGUOUS", "the refusal to guess must be announced"
       assert_includes stderr, "aaa-app", "naming every candidate is what makes the refusal actionable"
       assert_includes stderr, "zzz-app"
+    end
+  end
+
+  # ── [integration] the DESTINATION is validated too, on BOTH axes ──────────
+  #
+  # Found in review of this very fix (2026-08-09). The first cut asked two questions
+  # of the checkout you were STANDING in (`CertRootGuard.assess`: is its branch the
+  # task's? is it the task's worktree dir?) and ZERO questions of the checkout it
+  # JUMPED TO — while announcing "Re-rooted at the task's worktree: <path>" as fact.
+  # A destination was trusted for having the right DIRECTORY NAME.
+  #
+  # That reopened the same false pass one hop downstream, twice and independently:
+  # B1 has the right branch in the wrong repo, B2 the right repo on the wrong branch.
+  # Either alone is enough, so validating "either axis" is not a fix — the
+  # destination must satisfy BOTH.
+
+  def test_integration_refuses_a_lone_worktree_that_belongs_to_another_repo
+    # B1. The multi-repo repo check was gated behind `candidates.size > 1`, so a
+    # SINGLE candidate was trusted without ever being asked which repo it was in.
+    # The PR is in myapp; the only worktree on disk is otherapp's, on the right
+    # branch, carrying prose — so the gate re-rooted into a different product's
+    # checkout and handed the exemption out on ITS files.
+    #
+    # This one is doubly damning: the refusal was already PROMISED, by the
+    # AMBIGUOUS banner and by docs/agents/modules/gates/dor.md, for exactly this
+    # input. The documentation was more protective than the code.
+    Dir.mktmpdir do |raw|
+      projects = File.realpath(raw)
+      primary = init_repo(File.join(projects, "myapp"))
+      git!(primary, "checkout", "-q", "-b", "release")
+      write(primary, PRIMARY_DIRT, "unrelated local scratch\n")
+      # Right slug, right branch — wrong PRODUCT.
+      foreign = build_task_tree(File.join(projects, "otherapp", ".worktrees", SLUG),
+                                files: ["docs/notes.md"])
+
+      verdict, code, stderr = dor_check(chore_task(repo: "myapp"), primary, projects,
+                                        "--gate-role", "review")
+
+      refute verdict["exempt"], "B1: a worktree in another repo must not earn this PR's exemption"
+      assert_equal 1, code
+      refute_equal foreign, verdict["code_root"], "it must not re-root into another repo's checkout"
+      refute_includes stderr, "Re-rooted at the task's worktree",
+                      "announcing a re-root it must not perform is how the bug reads as correct"
+    end
+  end
+
+  def test_integration_refuses_a_stale_desk_that_never_carried_the_branch
+    # B2. Candidates were globbed by DIRECTORY NAME only. A leftover desk at
+    # myapp/.worktrees/task-x — right repo, right path, but sitting on `release` and
+    # never having carried feat/task-x — passed as "the task's worktree", and its one
+    # untracked file was read as the PR's entire diff.
+    Dir.mktmpdir do |raw|
+      projects = File.realpath(raw)
+      primary = init_repo(File.join(projects, "myapp"))
+      git!(primary, "checkout", "-q", "-b", "release")
+      write(primary, PRIMARY_DIRT, "unrelated local scratch\n")
+      # Right repo, right directory name — never carried the task's branch.
+      stale = init_repo(File.join(projects, "myapp", ".worktrees", SLUG))
+      git!(stale, "checkout", "-q", "-b", "release")
+      write(stale, "docs/leftover.md", "someone else's abandoned scratch\n")
+
+      verdict, code, stderr = dor_check(chore_task(repo: "myapp"), primary, projects,
+                                        "--gate-role", "review")
+
+      refute verdict["exempt"], "B2: a desk that never carried the branch is not the task's tree"
+      assert_equal 1, code
+      refute_includes Array(verdict["changed_files"]), "docs/leftover.md",
+                      "a stale desk's leftovers are not this PR's diff"
+      refute_includes stderr, "Re-rooted at the task's worktree"
+    end
+  end
+
+  def test_integration_the_refusal_names_which_axis_the_destination_failed
+    # A refusal you cannot act on gets worked around. Both axes must say which one
+    # broke and what was expected, or the reader's only move is to re-run.
+    Dir.mktmpdir do |raw|
+      projects = File.realpath(raw)
+      primary = init_repo(File.join(projects, "myapp"))
+      git!(primary, "checkout", "-q", "-b", "release")
+      stale = init_repo(File.join(projects, "myapp", ".worktrees", SLUG))
+      git!(stale, "checkout", "-q", "-b", "release")
+
+      verdict, _code, stderr = dor_check(chore_task(repo: "myapp"), primary, projects,
+                                         "--gate-role", "review")
+
+      blame = "#{verdict['errors'].join(' ')} #{stderr}"
+      assert_includes blame, stale, "name the candidate it rejected"
+      assert_includes blame, "feat/#{SLUG}", "and the branch that would have made it the task's tree"
+    end
+  end
+
+  # ── [integration] the pairing is checkable on the path that matters ────────
+
+  def test_integration_exempt_payloads_carry_the_root_they_were_read_from
+    # dor.md calls (code_root, diff_source) "the checkable invariant", but the
+    # exempt-kind payloads omitted code_root — so the one verdict shape the 08-08
+    # false pass actually took was the one a monitor could not check. Both exempt
+    # payloads (the pass and the fail-closed) must carry it.
+    with_world(files: ["docs/agents/modules/heartbeats.md"], dirt: []) do |projects, primary, tree|
+      passing, code, = dor_check(chore_task, primary, projects, "--gate-role", "review")
+      assert_equal 0, code
+      assert passing["exempt"]
+      assert_equal tree, passing["code_root"], "the doc-only PASS must name the tree it read"
+      assert_equal "git", passing["diff_source"]
+    end
+
+    with_world(worktree: false, dirt: []) do |projects, primary, _none|
+      closed, code, = dor_check(chore_task, primary, projects, "--gate-role", "review")
+      assert_equal 1, code
+      assert_equal "indeterminate", closed["diff_source"]
+      assert_equal primary, closed["code_root"], "the fail-closed payload must name where it stood"
     end
   end
 

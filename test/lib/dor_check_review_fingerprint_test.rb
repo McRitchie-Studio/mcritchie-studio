@@ -100,6 +100,12 @@ class DorCheckReviewFingerprintTest < Minitest::Test
       write(wt, "README.md", "satellite\n")
       git!(wt, "add", "-A")
       git!(wt, "commit", "-qm", "init")
+      # The `origin` a real clone has, pointing at the SAME repo as the task's
+      # pr_url (github.com/x/y). Since 2026-08-09 the rooting validates a candidate
+      # worktree's REPO as well as its branch, and it asks `origin` first — so a
+      # fixture with no remote at all was describing a world where the PR lives in
+      # one repo and the task's tree belongs to no repo, which cannot happen.
+      git!(wt, "remote", "add", "origin", "https://github.com/x/y.git")
       git!(wt, "checkout", "-q", "-b", "feat/x")
       write(wt, "app/services/widget.rb", "class Widget; end\n")
       git!(wt, "add", "-A")

@@ -119,7 +119,7 @@ the same guard `bin/fast-check` and `bin/full-suite-check` already required;
 dor-check was the one command in the family that never did) in **both gate
 roles**. When the root is not the task's tree it resolves in this order:
 
-1. the task's **worktree** is on disk and unambiguous → re-root the whole gate
+1. a **validated** worktree is on disk and unambiguous → re-root the whole gate
    there — **diff and fingerprint** — and **announce it on stderr** (naming both
    roots: where you stood, where it went);
 2. else its **branch** resolves in this repo → root the *fingerprint* at that
@@ -130,12 +130,30 @@ roles**. When the root is not the task's tree it resolves in this order:
    The cert half refuses in the suite-gate block; the diff half resolves
    **`:indeterminate`**, which the exempt-kind gate already fails closed on.
 
+**The destination is validated too — on BOTH axes.** A candidate is the task's tree
+only if it passes *repo* **and** *branch*; a matching directory NAME proves neither.
+The first cut of this fix checked the checkout you were **standing in** twice and the
+one it **jumped to** zero times, while announcing "Re-rooted at the task's worktree"
+as fact — which reopened the false pass one hop downstream, twice
+(review, 2026-08-09): a worktree with the right branch in the **wrong repo**, and a
+**stale desk** in the right repo that never carried the branch. Either alone gets
+through an either-axis check, so both are required:
+
+| axis | source of truth | when enforced |
+|---|---|---|
+| repo | the candidate's `origin` remote, else its app directory name — it must answer to one of them | only when `devops.pr_url` names a repo (a pre-PR builder run has none) |
+| branch | `git rev-parse --abbrev-ref HEAD` in the candidate | always; a detached `HEAD` is refused |
+
+Failing candidates are **named with the axis they failed** — "no worktree here" would
+be a lie when one is sitting on disk under exactly that name, and a reader who
+believes it points the gate straight back at the desk that was just rejected.
+
 **Ambiguity is also a refusal.** The worktree glob spans every app, so a
 **multi-repo** task matches once per repo (live today: `repair-moms-app-ci` exists
 under both `moms-app` and `studio-engine`). Picking the alphabetical first answers
 "which repo is this?" with a coin flip. `devops.pr_url` names the repo actually
-under gate and breaks the tie; when it can't, the gate prints `AMBIGUOUS TASK
-TREE`, lists the candidates, and refuses to guess. Nothing assumes one repo or one
+under gate and breaks the tie; when more than one candidate still validates, the gate
+prints `AMBIGUOUS TASK TREE`, lists them, and refuses to guess. Nothing assumes one repo or one
 rung — the diff base stays the per-root release-aware default, so a repo with no
 `accepted` (moms-app) still resolves its own base.
 

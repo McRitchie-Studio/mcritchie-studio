@@ -75,13 +75,18 @@ module CertRootGuard
   # remedy from (see THE TWO REMEDIES above):
   #
   #   :message         — the refusal text (what #refusal returns).
-  #   :resolved_root   — the task's tree ON DISK (…/<app>/.worktrees/<worktree_slug>),
-  #                      or nil when no such worktree exists here. The RESOLVE half:
-  #                      a READER re-roots at this instead of refusing.
-  #   :candidate_roots — EVERY such tree on disk, because a MULTI-REPO task has one
-  #                      per repo and :resolved_root is then a PICK, not a fact. A
-  #                      caller that cannot afford a wrong guess (bin/dor-check's
-  #                      diff) checks this before trusting the pick.
+  #   :resolved_root   — the task's tree ON DISK, VALIDATED on both axes
+  #                      (#worktree_mismatch), and unambiguous: nil unless exactly
+  #                      one candidate qualifies. The RESOLVE half — a READER
+  #                      re-roots at this instead of refusing. It is a FACT about the
+  #                      destination, never a guess from its directory name.
+  #   :candidate_roots — EVERY directory-name match on disk, qualified or not. What
+  #                      the refusal enumerates.
+  #   :eligible_roots  — the subset that passed both axes. More than one means a
+  #                      MULTI-REPO task nothing could disambiguate; the caller
+  #                      refuses rather than picking.
+  #   :rejected_roots  — [[path, why], …] for the candidates that failed, so a
+  #                      refusal can name which axis broke instead of just saying no.
   #   :expected_branch — the branch that IS the task's tree (board, else feat/<slug>).
   #   :actual_branch   — what `root` has checked out ("HEAD" when detached, nil when
   #                      `root` isn't a git tree at all).
@@ -100,10 +105,23 @@ module CertRootGuard
     return nil if actual_branch == expected_branch
     return nil if worktree_dir?(root, worktree_slug)
 
+    candidates = worktree_candidates(worktree_slug, projects_dir)
+    rejected = candidates.filter_map do |path|
+      why = worktree_mismatch(path, expected_branch: expected_branch, prefer_repo: prefer_repo)
+      [path, why] if why
+    end
+    eligible = candidates - rejected.map(&:first)
+    resolved = (eligible.first if eligible.size == 1)
+
     {
-      message: refusal_message(slug, root, actual_branch, expected_branch, worktree_slug, projects_dir),
-      resolved_root: worktree_hint(worktree_slug, projects_dir, prefer_repo: prefer_repo),
-      candidate_roots: worktree_candidates(worktree_slug, projects_dir),
+      message: refusal_message(slug, root, actual_branch, expected_branch, worktree_slug, projects_dir,
+                               resolved: resolved),
+      # Exactly one VALIDATED tree, or nothing. Not "the best of the candidates" —
+      # a destination nobody checked is how B1/B2 turned a re-root into a false pass.
+      resolved_root: resolved,
+      candidate_roots: candidates,
+      eligible_roots: eligible,
+      rejected_roots: rejected,
       expected_branch: expected_branch,
       actual_branch: actual_branch,
       worktree_slug: worktree_slug
@@ -112,11 +130,18 @@ module CertRootGuard
 
   # The cert writers' refusal text: where you ARE, where the task's tree IS, and the
   # concrete `cd` that fixes it when the worktree is on disk.
-  def refusal_message(slug, root, actual_branch, expected_branch, worktree_slug, projects_dir = nil)
+  #
+  # `resolved` is the VALIDATED destination when the caller already computed one. It
+  # matters because the `cd` line is advice someone will follow: pointing it at a
+  # directory that merely carries the task's NAME — a stale desk on `release`, or
+  # another repo's worktree — sends the reader to certify the wrong tree. Without a
+  # validated tree the advice stays generic rather than confidently wrong.
+  def refusal_message(slug, root, actual_branch, expected_branch, worktree_slug, projects_dir = nil,
+                      resolved: nil)
     message = "this run roots at #{root} (branch #{actual_branch || 'unknown'}), " \
               "which is not #{slug}'s tree — refusing to certify it.\n" \
               "Expected branch #{expected_branch} or the task worktree .worktrees/#{worktree_slug}."
-    hint = worktree_hint(worktree_slug, projects_dir)
+    hint = resolved || eligible_worktrees(worktree_slug, expected_branch, projects_dir: projects_dir).first
     message += "\nRun the cert from the task worktree: cd #{hint}" if hint
     message
   end
@@ -169,6 +194,77 @@ module CertRootGuard
   # The app a worktree belongs to: …/<app>/.worktrees/<slug> → "<app>".
   def app_of(worktree_path)
     File.basename(File.expand_path("../..", worktree_path.to_s))
+  end
+
+  # WHY `path` is not the task's tree — or nil when it IS. The DESTINATION check,
+  # and the reason it exists: #assess interrogates the root you are STANDING in on
+  # two axes, and the first cut of the re-root asked the root it JUMPED TO nothing
+  # at all. A candidate qualified by having the right DIRECTORY NAME, while the
+  # caller announced "Re-rooted at the task's worktree" as established fact. Two
+  # independent false passes came straight back through that door (review of
+  # 2026-08-09): a worktree with the right branch in the WRONG REPO, and a stale desk
+  # in the right repo that never carried the branch. Either axis alone would have
+  # missed one of them, so BOTH are asked here, and the answer names which failed.
+  #
+  #   repo   — checked only when `prefer_repo` is known (devops.pr_url names it). A
+  #            builder's pre-PR run has no repo to compare against; demanding one
+  #            would refuse every legitimate pre-PR re-root. Each axis is enforced
+  #            whenever it is determinable.
+  #   branch — always. A tree that is not on the task's branch cannot be the tree the
+  #            builder certified, whatever it is called on disk. A detached HEAD reads
+  #            as "HEAD" and is refused too: fail closed on the destination, and let
+  #            the caller declare an explicit root if they really mean it.
+  def worktree_mismatch(path, expected_branch:, prefer_repo: nil)
+    wanted = prefer_repo.to_s.strip
+    names = repo_names(path)
+    return "answers to repo #{names.join(' / ')}, not #{wanted}" if !wanted.empty? && !names.include?(wanted)
+
+    actual = current_branch(path)
+    return "is on branch #{actual || 'unknown'}, not #{expected_branch}" if actual != expected_branch
+
+    nil
+  end
+
+  # The repo names a checkout can honestly answer to: its `origin` remote's repo —
+  # authoritative, since that IS the GitHub repo this checkout pushes to — and its
+  # app DIRECTORY name, the ecosystem convention the worktree glob is built on.
+  #
+  # Both, because neither alone is safe. Directory name alone would refuse a
+  # perfectly good worktree whenever a repo's GitHub name differs from the folder
+  # someone cloned it into — a naming mismatch nobody chose, turning a working review
+  # into a refusal. Remote alone would refuse a checkout with no `origin` at all. So
+  # the axis rejects only when the checkout answers to NEITHER: a positive
+  # contradiction, never an absence of information.
+  def repo_names(path)
+    [remote_repo_name(path), app_of(path)].map { |n| n.to_s.strip }.reject(&:empty?).uniq
+  end
+
+  # The repo half of `origin` — `…/McRitchie-Studio/turf-monster.git` → "turf-monster"
+  # (https or ssh). nil when there is no origin, which is normal in test fixtures and
+  # in a freshly `git init`ed tree.
+  def remote_repo_name(dir)
+    url = IO.popen(["git", "-C", dir.to_s, "remote", "get-url", "origin"], err: File::NULL, &:read)
+    remote_repo_name_from(url)
+  rescue StandardError
+    nil
+  end
+
+  # The parsing half, kept pure so it is testable without a git fixture:
+  # "git@github.com:Owner/turf-monster.git" and
+  # "https://github.com/Owner/turf-monster" both → "turf-monster".
+  def remote_repo_name_from(url)
+    text = url.to_s.strip
+    return nil if text.empty?
+
+    text[%r{[:/]([^/:]+?)(?:\.git)?/?\z}, 1]
+  end
+
+  # The candidates that survive #worktree_mismatch — the trees that really are this
+  # task's, as opposed to the ones merely NAMED after it.
+  def eligible_worktrees(worktree_slug, expected_branch, projects_dir: nil, prefer_repo: nil)
+    worktree_candidates(worktree_slug, projects_dir).reject do |path|
+      worktree_mismatch(path, expected_branch: expected_branch, prefer_repo: prefer_repo)
+    end
   end
 
   # The task's tree ON DISK. Doubles as the refusal's `cd` hint and the reader's

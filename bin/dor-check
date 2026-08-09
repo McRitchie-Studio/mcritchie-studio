@@ -938,12 +938,18 @@ if foreign_root
   # recorded whichever way this goes.
   @task_branch = foreign_root[:expected_branch]
   candidates = Array(foreign_root[:candidate_roots])
+  rejected = Array(foreign_root[:rejected_roots])
+  eligible = Array(foreign_root[:eligible_roots])
+  # VALIDATED on both axes by the guard (repo when known, branch always), and nil
+  # unless exactly one candidate qualified. The first cut of this fix trusted a
+  # candidate for its DIRECTORY NAME and only asked about the repo when there were
+  # two of them — which let a lone worktree from another repo (B1) and a stale desk
+  # that never carried the branch (B2) each re-open the false pass one hop
+  # downstream. `picked` is now a fact about the destination, not a guess.
   picked = foreign_root[:resolved_root]
-  # A pick among several worktrees is only trustworthy when the PR's repo confirmed
-  # it. One candidate = no ambiguity to resolve.
-  ambiguous = candidates.size > 1 && CertRootGuard.app_of(picked) != pr_repo_name(@pr_url)
+  ambiguous = eligible.size > 1
 
-  if picked && !ambiguous
+  if picked
     warn!("⚠ dor-check: RE-ROOTING. You are standing in #{standing} (branch #{standing_branch}), which is " \
           "NOT #{slug}'s tree — every check below would have described the wrong code. The DIFF would have " \
           "been THIS checkout's working tree, so one unrelated dirty .md here can hand a multi-file code PR a " \
@@ -958,20 +964,37 @@ if foreign_root
     # here on — that is the false-PASS vector, and it is closed by construction
     # rather than by every downstream reader remembering to ask.
     @untrusted_root = true
+    # Kept for the fail-closed verdict text: `errors` is the machine-readable
+    # channel, and a --json consumer never sees the stderr banners below.
+    @rejected_roots = rejected
     task_fingerprint_override = review_fingerprint(diff_root, foreign_root[:expected_branch])
     if ambiguous
-      warn!("⚠ dor-check: AMBIGUOUS TASK TREE — refusing to guess. #{candidates.size} worktrees named " \
-            "#{foreign_root[:worktree_slug]} exist (#{candidates.join(', ')}), which is what a MULTI-REPO task " \
-            "looks like on disk, and nothing here says which one this verdict is about: devops.pr_url " \
+      warn!("⚠ dor-check: AMBIGUOUS TASK TREE — refusing to guess. #{eligible.size} worktrees named " \
+            "#{foreign_root[:worktree_slug]} are genuinely on #{foreign_root[:expected_branch]} " \
+            "(#{eligible.join(', ')}), which is what a MULTI-REPO task looks like on disk, and nothing here " \
+            "says which one this verdict is about: devops.pr_url " \
             "#{@pr_url.to_s.strip.empty? ? "is blank" : "names #{pr_repo_name(@pr_url)}, matching none of them"}. " \
             "Picking the first would re-create the wrong-tree bug one repo over, so this checkout's working " \
             "tree is NOT read as the diff. Declare the one you mean: " \
             "DOR_CHECK_DIFF_ROOT=<path to the right checkout>.")
+    elsif rejected.any?
+      # B1/B2: candidates existed and every one FAILED validation. Saying only "no
+      # worktree exists here" would be false — they are right there on disk, which is
+      # exactly why the first cut trusted them. Name each one and the axis it failed,
+      # or the reader's conclusion is "the tool can't find my worktree" and their fix
+      # is to point it at the very desk that was just rejected.
+      warn!("⚠ dor-check: TASK TREE NOT FOUND — #{rejected.size} directory match(es) named " \
+            "#{foreign_root[:worktree_slug]} exist here, but none IS #{slug}'s tree: " \
+            "#{rejected.map { |path, why| "#{path} #{why}" }.join('; ')}. A directory NAME is not identity — " \
+            "a stale desk or another repo's worktree would have been read as this PR's entire diff. This " \
+            "checkout's working tree is NOT read as the diff. Fix it: check out " \
+            "#{foreign_root[:expected_branch]} in the right worktree, or declare the tree explicitly with " \
+            "DOR_CHECK_DIFF_ROOT=<path>.")
     end
     if task_fingerprint_override
       warn!("⚠ dor-check: RE-ROOTING the cert fingerprint. You are standing in #{standing} (branch " \
-            "#{standing_branch}), which is NOT #{slug}'s tree#{ambiguous ? "" : ", and no worktree " \
-            ".worktrees/#{foreign_root[:worktree_slug]} exists here"} — so the cert is graded against branch " \
+            "#{standing_branch}), which is NOT #{slug}'s tree#{ambiguous || rejected.any? ? "" : ", and no " \
+            "worktree .worktrees/#{foreign_root[:worktree_slug]} exists here"} — so the cert is graded against branch " \
             "#{foreign_root[:expected_branch]}'s committed tree — #{task_fingerprint_override[:ref]} " \
             "= @#{task_fingerprint_override[:fingerprint][0, 12]} — not against this checkout's, and the diff " \
             "comes from that branch's committed history for the same reason. Announced, " \
@@ -1012,10 +1035,16 @@ if EXEMPT_KINDS.include?(kind)
       # The false-PASS case, refused instead of granted. This is the state the old
       # code turned into "✓ n/a — doc-only diff": it stood in a checkout that is not
       # the task's, read that checkout's dirt, and called it the PR.
+      # Name the rejected candidates INSIDE the error when there were any: "no
+      # worktree here" would be false when one is sitting on disk under exactly that
+      # name, and a reader who believes it will point the gate straight back at it.
+      near_misses = Array(@rejected_roots).map { |path, why| "#{path} #{why}" }.join("; ")
       "kind: #{kind} could not be proven doc-only — this run stands in #{diff_root}, which is NOT " \
         "#{task["slug"] || slug}'s tree, so its working tree was REFUSED as a diff source (reading it is how " \
         "one unrelated dirty file grants a multi-file code PR a doc-only exemption), and neither the PR's " \
-        "file list nor branch #{@task_branch} could be read here. The shape/test-tier gate is ENFORCED " \
+        "file list nor branch #{@task_branch} could be read here" \
+        "#{near_misses.empty? ? "" : " (and no directory named #{task["slug"] || slug} here IS the task's " \
+          "tree: #{near_misses})"}. The shape/test-tier gate is ENFORCED " \
         "rather than skipped (fail-closed). Fix it: run dor-check from the task's worktree; or fetch its " \
         "branch (git fetch origin #{@task_branch}); or declare the checkout with " \
         "DOR_CHECK_DIFF_ROOT=<path to the task's tree>"
@@ -1035,6 +1064,11 @@ if EXEMPT_KINDS.include?(kind)
         ready: false,
         exempt: false,
         diff_source: "indeterminate",
+        # The pairing (code_root, diff_source) is what dor.md calls the checkable
+        # invariant — and the exempt-kind payloads were the ONE verdict shape that
+        # omitted the root. That is the shape the 08-08 false pass actually took, so
+        # a monitor could check the invariant everywhere except where it mattered.
+        code_root: diff_root,
         code_files: [],
         note: errors_preamble,
         errors: [errors_preamble],
@@ -1068,6 +1102,10 @@ if EXEMPT_KINDS.include?(kind)
         ready: true,
         exempt: true,
         diff_source: diff_source.to_s,
+        # The doc-only PASS — the exact verdict shape the 08-08 false pass wore. It
+        # must say which tree it read, or the exemption cannot be audited after the
+        # fact from the JSON alone.
+        code_root: diff_root,
         code_files: [],
         changed_files: observed,
         note: note,
@@ -1247,11 +1285,16 @@ if gate != "build" && shape_def && !dor_tiers.empty?
     # Refuse, and say which of the three fixes to reach for. This is a TRUTHFUL exit
     # 1 replacing a LYING one — the old code exited 1 here too, just with "STALE".
     unreachable_tree =
-      if Array(foreign_root[:candidate_roots]).size > 1
-        # The multi-repo tie the PR could not break — several worktrees carry this
-        # slug and none of them is provably the one this PR is about.
-        "#{Array(foreign_root[:candidate_roots]).size} worktrees named " \
-          "#{foreign_root[:worktree_slug]} exist and none is provably this PR's"
+      if Array(foreign_root[:eligible_roots]).size > 1
+        # The multi-repo tie the PR could not break — several worktrees really are on
+        # the task's branch and nothing says which one this PR is about.
+        "#{Array(foreign_root[:eligible_roots]).size} worktrees named " \
+          "#{foreign_root[:worktree_slug]} are on #{foreign_root[:expected_branch]} and none is provably this PR's"
+      elsif Array(foreign_root[:rejected_roots]).any?
+        # B1/B2: they exist on disk and none of them IS the task's tree.
+        "the director#{Array(foreign_root[:rejected_roots]).size == 1 ? 'y' : 'ies'} named " \
+          "#{foreign_root[:worktree_slug]} here " \
+          "#{Array(foreign_root[:rejected_roots]).map { |path, why| "#{path} #{why}" }.join('; ')}"
       else
         "its worktree (.worktrees/#{foreign_root[:worktree_slug]}) is not on disk"
       end

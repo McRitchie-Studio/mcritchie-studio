@@ -95,12 +95,17 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
      You are standing in the studio primary (the Entry above), which is not the
      task's checkout, so `dor-check` resolves the task's own worktree/branch and
      says so on stderr (`⚠ dor-check: RE-ROOTING …`, naming both trees). That
-     banner is the gate working, not a warning about your setup. Two of its
-     refusals need YOUR judgment rather than a re-run: `AMBIGUOUS TASK TREE`
-     (a multi-repo task has a worktree per repo and `devops.pr_url` didn't name
-     one of them — re-run with `DOR_CHECK_DIFF_ROOT=<the right checkout>`) and
+     banner is the gate working, not a warning about your setup. It re-roots only
+     onto a checkout it has VALIDATED on both axes — right repo, right branch — so
+     three of its refusals need YOUR judgment rather than a re-run:
+     `AMBIGUOUS TASK TREE` (a multi-repo task has a worktree per repo and
+     `devops.pr_url` didn't name one of them — re-run with
+     `DOR_CHECK_DIFF_ROOT=<the right checkout>`), `TASK TREE NOT FOUND` (a directory
+     carrying the task's name is on disk but is on the wrong branch or in the wrong
+     repo — the message names which; check the task's branch out there, or declare
+     the right tree) and
      `root guard: … NO tree here can grade its cert` (fetch the branch, or point
-     `DOR_CHECK_DIFF_ROOT` at the task's checkout). Never "fix" either by
+     `DOR_CHECK_DIFF_ROOT` at the task's checkout). Never "fix" any of them by
      re-running from a tree you happen to have handy: until 2026-08-08 this gate
      read whatever checkout you stood in, and one unrelated dirty `.md` on the
      primary was enough for it to call a multi-file code PR "doc-only" and wave
