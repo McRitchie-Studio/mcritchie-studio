@@ -130,8 +130,9 @@ roles**. When the root is not the task's tree it resolves in this order:
    The cert half refuses in the suite-gate block; the diff half resolves
    **`:indeterminate`**, which the exempt-kind gate already fails closed on.
 
-**The destination is validated too — on BOTH axes.** A candidate is the task's tree
-only if it passes *repo* **and** *branch*; a matching directory NAME proves neither.
+**Every tree is validated — the one it jumps to AND the one you stand in, on BOTH
+axes.** A checkout is the task's tree only if it passes *repo* **and** *branch*; a
+matching directory NAME proves neither.
 The first cut of this fix checked the checkout you were **standing in** twice and the
 one it **jumped to** zero times, while announcing "Re-rooted at the task's worktree"
 as fact — which reopened the false pass one hop downstream, twice
@@ -141,12 +142,23 @@ through an either-axis check, so both are required:
 
 | axis | source of truth | when enforced |
 |---|---|---|
-| repo | the candidate's `origin` remote, else its app directory name — it must answer to one of them | only when `devops.pr_url` names a repo (a pre-PR builder run has none) |
-| branch | `git rev-parse --abbrev-ref HEAD` in the candidate | always; a detached `HEAD` is refused |
+| repo | the checkout's `origin` remote (**owner-qualified**, so a fork does not validate), falling back to its app directory name only when there is no origin | only when `devops.pr_url` names a repo (a pre-PR builder run has none) |
+| branch | `git rev-parse --abbrev-ref HEAD` in the checkout | always; a detached `HEAD` is refused |
 
-Failing candidates are **named with the axis they failed** — "no worktree here" would
+Failing checkouts are **named with the axis they failed** — "no worktree here" would
 be a lie when one is sitting on disk under exactly that name, and a reader who
 believes it points the gate straight back at the desk that was just rejected.
+
+**The one asymmetry, and it is deliberate.** Standing physically at the task's desk
+(`…/.worktrees/<slug>`) still vouches for a cert **writer** — `bin/fast-check`,
+`bin/full-suite-check` — even mid-rebase on a detached `HEAD`: the operator is working
+there, and a cert is content-addressed, so a transient tree can only later read
+`STALE`, which is loud and self-correcting. It does **not** vouch for the **reader**:
+a detached `HEAD` is not the PR's state, and a diff read from it is graded as though it
+were — silently, and passing. Same fact, opposite correct answers, so `assess` reports
+it (`standing_in_task_desk`) and each caller decides. That vouch is deliberately
+repo-blind: making it repo-strict would need a repo-per-PR mapping the task record does
+not have (see the single-`pr_url` gap below), and would refuse honest multi-repo builds.
 
 **Ambiguity is also a refusal.** The worktree glob spans every app, so a
 **multi-repo** task matches once per repo (live today: `repair-moms-app-ci` exists

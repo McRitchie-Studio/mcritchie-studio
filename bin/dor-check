@@ -554,15 +554,19 @@ def review_fingerprint(root, branch)
   FullSuiteGate.fingerprint_of_first_ref(root, "origin/#{branch}", branch)
 end
 
-# The REPO the PR under gate lives in ("turf-monster"), from devops.pr_url — the one
-# fact on the task that says which repo a verdict is about. A multi-repo task has a
-# worktree per repo under the same slug, so this is what turns "some worktree named
-# <slug>" into "the task's tree for THIS PR". "" when there is no PR yet (the
+# The REPO the PR under gate lives in, OWNER-QUALIFIED ("McRitchie-Studio/turf-monster")
+# — the one fact on the task that says which repo a verdict is about. A multi-repo task
+# has a worktree per repo under the same slug, so this is what turns "some worktree
+# named <slug>" into "the task's tree for THIS PR". "" when there is no PR yet (the
 # builder's pre-PR run) or the URL isn't a GitHub PR; the caller then refuses to pick
-# rather than inventing one. Repo names match the app directory names the worktree
-# glob spans (github.com/McRitchie-Studio/mcritchie-studio → mcritchie-studio).
+# rather than inventing one.
+#
+# The OWNER rides along deliberately: CertRootGuard compares it against a checkout's
+# `origin`, and a bare repo name would let a FORK — someone else's account, same repo
+# name — validate as this PR's tree. Where only a directory name is available the guard
+# degrades to the bare name on its own; that choice belongs to the guard, not here.
 def pr_repo_name(pr_url)
-  CiStatus.repo_from_pr_url(pr_url).split("/").last.to_s
+  CiStatus.repo_from_pr_url(pr_url).to_s
 end
 
 # The subset of changed files that ships BEHAVIOR (CodeDiff's type-only rule:

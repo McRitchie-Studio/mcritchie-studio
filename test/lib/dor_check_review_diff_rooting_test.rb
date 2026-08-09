@@ -287,16 +287,38 @@ class DorCheckReviewDiffRootingTest < Minitest::Test
     # refusing it would turn a working review into a dead end. `origin` is the
     # authoritative answer, so it wins over the folder.
     with_candidate(app: "locally-renamed", remote: "https://github.com/McRitchie-Studio/myapp.git") do |_p, path|
-      assert_includes CertRootGuard.repo_names(path), "myapp"
-      assert_nil CertRootGuard.worktree_mismatch(path, expected_branch: "feat/#{SLUG}", prefer_repo: "myapp")
+      assert_equal "McRitchie-Studio/myapp", CertRootGuard.remote_slug(path)
+      assert_nil CertRootGuard.worktree_mismatch(path, expected_branch: "feat/#{SLUG}",
+                                                 prefer_repo: "McRitchie-Studio/myapp")
     end
   end
 
-  def test_unit_remote_repo_name_parses_https_and_ssh
-    assert_equal "turf-monster", CertRootGuard.remote_repo_name_from("git@github.com:McRitchie-Studio/turf-monster.git")
-    assert_equal "mcritchie-studio",
-                 CertRootGuard.remote_repo_name_from("https://github.com/McRitchie-Studio/mcritchie-studio.git")
-    assert_equal "rolio", CertRootGuard.remote_repo_name_from("https://github.com/McRitchie-Studio/rolio")
+  def test_unit_the_repo_axis_is_owner_aware_so_a_fork_does_not_validate
+    # Same repo NAME, someone else's account. `origin` carries the owner, so this is a
+    # positive contradiction rather than a match — a bare-name comparison would have
+    # accepted a fork's checkout as the tree behind this PR.
+    with_candidate(app: "myapp", remote: "https://github.com/someone-else/myapp.git") do |_p, path|
+      why = CertRootGuard.repo_mismatch(path, "McRitchie-Studio/myapp")
+      assert_includes why.to_s, "someone-else/myapp"
+      assert_includes why.to_s, "McRitchie-Studio/myapp"
+    end
+  end
+
+  def test_unit_remote_slug_parses_https_and_ssh_with_the_owner
+    assert_equal "McRitchie-Studio/turf-monster",
+                 CertRootGuard.remote_slug_from("git@github.com:McRitchie-Studio/turf-monster.git")
+    assert_equal "McRitchie-Studio/mcritchie-studio",
+                 CertRootGuard.remote_slug_from("https://github.com/McRitchie-Studio/mcritchie-studio.git")
+    assert_equal "McRitchie-Studio/rolio", CertRootGuard.remote_slug_from("https://github.com/McRitchie-Studio/rolio")
+    assert_nil CertRootGuard.remote_slug_from("")
+  end
+
+  def test_unit_slugs_match_compares_owners_only_when_both_have_one
+    # A directory name cannot vouch for an owner. Comparing it AS an owner would
+    # either refuse everything or wave forks through, depending which way we guessed.
+    assert CertRootGuard.slugs_match?("McRitchie-Studio/myapp", "mcritchie-studio/MYAPP"), "GitHub is case-insensitive"
+    refute CertRootGuard.slugs_match?("someone-else/myapp", "McRitchie-Studio/myapp")
+    assert CertRootGuard.slugs_match?("myapp", "McRitchie-Studio/myapp"), "bare name falls back to the repo half"
   end
 
   def test_unit_no_repo_preference_leaves_the_branch_axis_in_charge
@@ -591,6 +613,128 @@ class DorCheckReviewDiffRootingTest < Minitest::Test
       blame = "#{verdict['errors'].join(' ')} #{stderr}"
       assert_includes blame, stale, "name the candidate it rejected"
       assert_includes blame, "feat/#{SLUG}", "and the branch that would have made it the task's tree"
+    end
+  end
+
+  # ── [integration] the tree you STAND in is validated too ──────────────────
+  #
+  # Round 4, and the mirror of the round-3 finding: having fixed the tree the gate
+  # JUMPS TO, it still trusted the tree it STANDS IN. `assess` short-circuited on a
+  # branch-only check (the repo axis was never asked of the standing root) backed by a
+  # pure STRING match on `.worktrees/<slug>` — so these three walked straight through
+  # with `exempt: true`, exit 0, and no stderr banner at all.
+  #
+  # No banner is the tell. Every other wrong-tree path at least announces itself; this
+  # one produced a verdict that looked completely ordinary.
+
+  # Stand INSIDE `desk` (a checkout named like the task's worktree) and gate a chore
+  # whose PR is a multi-file code change in `repo`.
+  def standing_in_desk_verdict(desk_branch: nil, detach: false, desk_repo: "myapp", pr_repo: "myapp")
+    Dir.mktmpdir do |raw|
+      projects = File.realpath(raw)
+      desk = init_repo(File.join(projects, desk_repo, ".worktrees", SLUG))
+      git!(desk, "checkout", "-q", "-b", desk_branch) if desk_branch
+      if detach
+        git!(desk, "checkout", "-q", "-b", "feat/#{SLUG}")
+        write(desk, "app/services/real.rb", "# real work\n")
+        git!(desk, "add", "-A")
+        git!(desk, "commit", "-qm", "feat")
+        git!(desk, "checkout", "-q", "--detach", "HEAD~1") # mid-rebase-looking state
+      end
+      # The desk's only visible change is PROSE — the bait. Read from here, it earns
+      # the doc-only exemption; it is not what the PR ships.
+      write(desk, "docs/desk-scratch.md", "scratch\n")
+      yield projects, desk if block_given?
+      dor_check(chore_task(repo: pr_repo), desk, projects, "--gate-role", "review")
+    end
+  end
+
+  def test_integration_standing_in_a_stale_desk_is_not_standing_in_the_task_tree
+    # Vector 1: the desk is named right and sits in the right repo, but is on
+    # `release` and never carried the task's branch.
+    verdict, code, stderr = standing_in_desk_verdict(desk_branch: "release")
+
+    refute verdict["exempt"], "a stale desk's scratch file must not earn this PR's exemption"
+    assert_equal 1, code
+    refute_empty stderr, "silence is the tell — this path used to emit no banner at all"
+    assert_includes stderr, "feat/#{SLUG}", "name the branch that would have made it the task's tree"
+  end
+
+  def test_integration_a_detached_head_in_the_right_desk_is_not_the_prs_state
+    # Vector 2: physically the task's desk, but HEAD is detached — mid-rebase, or
+    # parked on an older commit. Whatever the working tree shows, it is not the state
+    # the PR would merge, and the `worktree_dir?` string match vouched for it anyway.
+    verdict, code, stderr = standing_in_desk_verdict(detach: true)
+
+    refute verdict["exempt"], "a detached HEAD is not the PR's state"
+    assert_equal 1, code
+    refute_empty stderr
+  end
+
+  def test_integration_standing_in_another_repos_desk_grades_the_prs_repo
+    # Vector 3, and this shape is live on disk today — `repair-moms-app-ci` has desks
+    # under BOTH moms-app and studio-engine. Standing in the wrong one, on the right
+    # branch, the repo axis was never asked: the gate silently graded the wrong repo.
+    Dir.mktmpdir do |raw|
+      projects = File.realpath(raw)
+      # Where the PR actually lives, carrying real code.
+      right = build_task_tree(File.join(projects, "moms-app", ".worktrees", SLUG), files: PR_CODE)
+      # The desk the operator happens to be standing in — same slug, same branch,
+      # different product, and nothing but prose to show.
+      wrong = build_task_tree(File.join(projects, "studio-engine", ".worktrees", SLUG),
+                              files: ["docs/engine-note.md"])
+
+      verdict, code, = dor_check(chore_task(repo: "moms-app"), wrong, projects, "--gate-role", "review")
+
+      refute verdict["exempt"], "the wrong repo's desk must not earn this PR's exemption"
+      assert_equal 1, code
+      refute_equal wrong, verdict["code_root"], "it silently graded the wrong repo"
+      assert_equal right, verdict["code_root"], "devops.pr_url says which repo this verdict is about"
+    end
+  end
+
+  # ── [unit] the writer/reader split on the physical desk ───────────────────
+
+  def test_unit_the_physical_desk_vouches_for_a_WRITER_but_is_only_a_fact_to_the_READER
+    # These two must never be "simplified" into agreement. A cert stamped from a
+    # detached desk is content-addressed, so it can only later read STALE — loud and
+    # self-correcting. A DIFF read from the same desk is graded as though it were the
+    # PR, and passes silently. Same fact, opposite correct answers.
+    Dir.mktmpdir do |raw|
+      projects = File.realpath(raw)
+      desk = init_repo(File.join(projects, "myapp", ".worktrees", SLUG))
+      git!(desk, "checkout", "-q", "--detach", "HEAD")
+      stub = File.join(projects, "task-stub")
+      File.write(stub, "#!/bin/sh\necho '{}'\n")
+      FileUtils.chmod(0o755, stub)
+
+      assert_nil CertRootGuard.refusal(task_bin: stub, slug: SLUG, root: desk),
+                 "the WRITER still certifies from the task's own desk"
+
+      found = CertRootGuard.assess(task_bin: stub, slug: SLUG, root: desk)
+      refute_nil found, "the READER must still receive the assessment, not a silent nil"
+      assert found[:standing_in_task_desk], "reported as a FACT the reader can decline"
+      assert_includes found[:standing_mismatch].to_s, "feat/#{SLUG}"
+    end
+  end
+
+  # ── [unit] the cd hint the cert writers die! with ─────────────────────────
+
+  def test_unit_the_cd_hint_respects_the_repo_preference
+    # bin/ship, bin/fast-check and bin/full-suite-check all die! with this text, so a
+    # hint that ignores prefer_repo is wrong in four places at once — and it is advice
+    # someone FOLLOWS, straight to another repo's desk.
+    Dir.mktmpdir do |raw|
+      projects = File.realpath(raw)
+      # Both are genuinely the task's tree on the branch axis; only the repo axis
+      # separates them, which is exactly what the hint was dropping.
+      a = build_task_tree(File.join(projects, "aaa-app", ".worktrees", SLUG), files: ["docs/a.md"])
+      b = build_task_tree(File.join(projects, "zzz-app", ".worktrees", SLUG), files: ["docs/b.md"])
+
+      message = CertRootGuard.refusal_message(SLUG, "/somewhere/else", "release", "feat/#{SLUG}", SLUG,
+                                              projects, prefer_repo: "zzz-app")
+      assert_includes message, b, "the hint must point at the repo under gate"
+      refute_includes message, a, "alphabetical order is not an answer to which repo"
     end
   end
 
