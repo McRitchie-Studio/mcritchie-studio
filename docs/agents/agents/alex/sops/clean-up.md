@@ -422,6 +422,51 @@ bin/agent-worktree cleanup --reclaim --yes   # full teardown + Redis band shrink
   So the gate stands you down (`withheld … a ship is live (deployer claim held)`) rather
   than relying on you to remember — re-run once the ship completes.
 
+### Stale unmerged desks — the reclaim can NEVER take these; triage them yourself
+
+The reclaim's safety gate only takes **clean + merged** desks. A clean desk on an
+**unmerged** branch is invisible to it forever — and these accumulate until they
+pin the Redis band wide (2026-08-08: **14 of 27** surviving slots were exactly
+this). `remove --force` does not help either: it clears the content guard **only
+for the merged-PR case**, by design. So unmerged desks are a hand-triage:
+
+1. **Inventory** — for each unmerged desk, three facts decide everything:
+
+   ```bash
+   git -C <wt> branch --show-current                     # its branch
+   git -C <wt> rev-list --count origin/<branch>..HEAD    # unpushed commits (error = never pushed)
+   bin/task show <slug>                                  # board stage
+   ```
+
+2. **Preserve before removing** — three cases:
+   - **Pushed + task archived (or no task)** — nothing owed; origin holds the code.
+   - **Never pushed** — push it: `git -C <wt> push -u origin feat/<slug>`. A pushed
+     feature branch preserves code; `main` is not backup.
+   - **Diverged (ahead AND behind origin)** — **never force-push an archived
+     task's branch**; preserve the local HEAD as a tag instead:
+     `git -C <wt> tag archive/<slug>-local $(git -C <wt> rev-parse HEAD) &&
+     git -C <wt> push origin refs/tags/archive/<slug>-local`.
+
+3. **The orphaned-fix check applies to BRANCHES, not just PRs.** A desk with
+   substantial unlanded commits is where fixes go to die. Before writing it off,
+   diff its ideas against the current `release` and ask: did this land, or did we
+   re-suffer it? Record the verdict (or the debt) in
+   [`../../../maintenance/parking-lot.md`](../../../maintenance/parking-lot.md).
+
+4. **Remove manually** (the launcher refuses, correctly — you are overriding a
+   guard whose concern you have satisfied, so record it in the ledger):
+
+   ```bash
+   redis-cli -n <db> flushdb                              # the desk's band slot
+   git -C /Users/alex/projects/<app> worktree remove --force .worktrees/<slug>
+   git -C /Users/alex/projects/<app> branch -D feat/<slug>   # safe: pushed or tagged above
+   git -C /Users/alex/projects/<app> worktree prune
+   ```
+
+   Then refresh the registry once for the batch: `bin/agent-worktree snapshot
+   --write` and read `bin/agent-worktree scale status` — the freed slots return to
+   the band, and the band contracts from the top as its highest DBs clear.
+
 > ### ⛔ The reclaim gate refuses a desk whose commits live nowhere else — LISTEN to it
 > `bin/agent-worktree remove` will refuse with *"branch content is not represented on
 > origin/release"*. That is not a nuisance; it is the gate catching **a detached-HEAD

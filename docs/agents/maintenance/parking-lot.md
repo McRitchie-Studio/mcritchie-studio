@@ -158,3 +158,12 @@ concurrent CI/CD session.
 **The decision they wait on is not technical:** either fund a devnet bot key so the
 lane is real, or delete the workflow so its absence is honest. That is Mr.
 McRitchie's call, and it costs money either way.
+
+## release-gate-orphans-its-suite — 9 unlanded local commits (2026-08-08)
+
+The archived task's desk held nine commits that diverged from its pushed branch
+and never landed anywhere. Preserved as tag `archive/release-gate-orphans-its-suite-local`
+(`f32687e`) during the stale-desk sweep. **Orphaned-fix review still owed:** diff
+the tag's ideas against current `release` and either point at the code that
+superseded them or land what didn't. See the clean-up SOP's "stale unmerged
+desks" protocol.
