@@ -198,6 +198,15 @@ bin/release prepare --yes
    exact tree QA tested. Note: a publish is irreversible — a QA bounce can
    orphan a published version; the fix bumps past it (a dead number on
    RubyGems is harmless).
+4e. **Merge `main` forward into `release`** in every app, so the branch about to
+   be gated CONTAINS what is already live in production. A hotfix pushed straight
+   to `main` outside the cycle would otherwise be REVERTED by the next ship. The
+   merge runs in a detached workspace (a dirty primary is irrelevant to it),
+   every step is checked, and containment is read back afterwards — a conflict or
+   a push that did not take **aborts** the sweep with nothing deployed. It runs
+   BEFORE the gate so the SHA the gate certifies is the SHA that deploys. On a
+   conflict: resolve it on a branch off `origin/release`, merge `origin/main`
+   into it, push to `release`, then re-run `bin/release prepare` — it resumes.
 5. Run the pre-QA gate on `origin/release`. **GitHub CI's conclusion for that
    exact SHA IS the verdict** (DevOps v2 Phase 3 — the local isolated-workspace
    suite is deleted at this gate; nothing runs on your machine): the gate reads

@@ -61,11 +61,16 @@
 #          ANY failure aborts with ZERO gems published), THEN publish each to
 #          RubyGems + commit each consumer's lock bump onto origin/release —
 #          BEFORE the gate and QA (ship's publish stays the idempotent verify).
+#       4d. MERGE-FORWARD: make origin/release CONTAIN origin/main in every app
+#          (a hotfix pushed straight to main must never be reverted by the
+#          release). Merged in a detached workspace, never the primary, and
+#          BEFORE the gate — so the SHA the gate certifies is the SHA that
+#          deploys. Aborts loudly on a conflict or a push that did not take.
 #       5. PRE-QA GATE: run each app's registry `qa_test_cmd` (the integration +
 #          e2e-smoke tier) on origin/release BEFORE deploying; a regression aborts
 #          with eject guidance (`bin/release eject` the offender, keep the rest).
-#       6. Deploy origin/release to QA (merge-forward guard → qa-server deploy →
-#          wait-for-boot /up smoke → post_deploy hooks).
+#       6. Deploy origin/release to QA (qa-server deploy → wait-for-boot /up
+#          smoke → post_deploy hooks).
 #       7. QA-GREEN → flip the swept members `reviewed → assembled`
 #          (Release::Conductor.qa_green!; merged stays "release") + assemble the
 #          RC. A QA failure leaves them `reviewed` — the next run self-heals.
@@ -2721,6 +2726,15 @@ def prepare
   gem_plan = validate_gems_for_qa(gem_groups, app_groups)
   bump_consumer_locks_for_qa(app_groups, publish_gems_for_qa(gem_plan))
 
+  # 4d. MERGE-FORWARD — `release` must contain `main` BEFORE the gate reads it.
+  #     This used to live inside the QA-deploy loop (step 6), which put it AFTER
+  #     the gate: when it did land it moved origin/release PAST the SHA the gate
+  #     had just certified, so QA deployed a tree G3 never verified and ship's
+  #     frozen SHA was one the gate never saw. Running it here means the gate,
+  #     QA, and prod all read the same post-merge tree — the same reason 4c sits
+  #     above the gate.
+  merge_forward_release_branches(app_groups)
+
   # 5. PRE-QA GATE — the prepare-owned test tier on origin/release, BEFORE any
   #    QA deploy. A regression aborts with eject guidance while every member is
   #    still `reviewed`; the rest of the RC rides on the re-run.
@@ -2755,11 +2769,12 @@ def prepare
     "puts({ intent: 'assembled', actor: 'avi', members: n.size }.to_json)"
   )
 
-  # 6. Per-app: keep the persistent `release` branch ahead of main (merge-forward
-  #    guard), then deploy origin/release to that app's QA. The branch is
-  #    populated by PR merges, so there's NO branch-cut/member-merge here. Gems
-  #    are NOT deployed — they ride the release as a record, already published
-  #    at 4c above (ship re-verifies idempotently).
+  # 6. Per-app: deploy origin/release to that app's QA. The branch is populated
+  #    by PR merges, so there's NO branch-cut/member-merge here — and no
+  #    merge-forward either: that moved to step 4d, above the gate, so this loop
+  #    deploys exactly the tree the gate certified. Gems are NOT deployed — they
+  #    ride the release as a record, already published at 4c above (ship
+  #    re-verifies idempotently).
   deployed = [] # [{repo, qa_app, qa_url, sha, ok}]
   qa_shas = {}  # { repo => sha } deployed to QA
   qa_smoke_started = false
@@ -2808,27 +2823,11 @@ def prepare
     step("repo #{repo} → #{RELEASE_BRANCH} · #{members.size} member(s) · QA #{qa_app}")
     abort!("app repo not found at #{path} — clone it as a sibling at the projects root") unless DRY || Dir.exist?(path)
 
-    # a. fetch the repo's origin.
+    # a. fetch the repo's origin. (The merge-forward guard that used to sit here
+    #    ran AFTER the pre-QA gate and inside the primary checkout; it now runs
+    #    at step 4d, before the gate, in a detached workspace —
+    #    merge_forward_release_branches.)
     sh("git", "-C", path, "fetch", "origin", "--quiet")
-
-    # b. merge-forward guard: `release` must always have main as an ancestor. If
-    #    main has moved ahead (e.g. a hotfix landed on main), merge it forward so
-    #    release never lags — abort with guidance on conflict.
-    if DRY
-      step("merge-forward guard: if origin/main isn't an ancestor of origin/release, merge origin/main → release in #{repo}")
-    else
-      _, in_sync = sh("git", "-C", path, "merge-base", "--is-ancestor", "origin/main", "origin/release", capture: true)
-      unless in_sync
-        step("merge-forward: origin/main → #{RELEASE_BRANCH} in #{repo} (main moved ahead)")
-        sh("git", "-C", path, "checkout", RELEASE_BRANCH)
-        _, fwd = sh("git", "-C", path, "merge", "origin/main", capture: true)
-        unless fwd
-          abort!("merge-forward conflict in #{repo}: origin/main → #{RELEASE_BRANCH}. Resolve by hand in #{path} " \
-                 "(or `git -C #{path} merge --abort` to back out), commit, push, then re-run `bin/release prepare`.")
-        end
-        sh("git", "-C", path, "push", "origin", RELEASE_BRANCH)
-      end
-    end
 
     # c. deploy origin/release to the repo's own QA app. The github_actions apps
     #    (the hub — DevOps v2 Phase 2) dispatch ONE qa-deploy.yml run at the swept
@@ -4028,6 +4027,104 @@ end
 # never-touch-the-primary mechanics as ship's repin_consumers), pushed by ref
 # fast-forward-checked. Idempotent: a lock already at the published versions
 # commits nothing; a consumer whose Gemfile never declares the gems is skipped.
+# MERGE-FORWARD: every app's `release` must CONTAIN `main` before the gate reads
+# it. `main` moves outside the cycle — an emergency hotfix pushed straight to it —
+# and a `release` that lags is a release that would REVERT that hotfix.
+#
+# THE INCIDENT THIS REWRITES (rel-20260809-3b8f3d, 2026-08-09). The old guard sat
+# inside the QA-deploy loop and did its merge in the SHARED PRIMARY CHECKOUT:
+#
+#     sh("git", "-C", path, "checkout", RELEASE_BRANCH)     # result DISCARDED
+#     _, fwd = sh("git", "-C", path, "merge", "origin/main", capture: true)
+#
+# Three defects compounded:
+#   1. THE PRIMARY. The hub primary had an uncommitted delete-later.md (the ledger
+#      bin/agent-worktree remove appends to), so git refused the checkout outright.
+#   2. THE UNCHECKED CHECKOUT. Only the MERGE's result was tested. With the
+#      checkout failed the primary was still on `main`, so `git merge origin/main`
+#      ran against main and succeeded as "Already up to date" — a green no-op on
+#      the WRONG BRANCH — and the push then sent the stale LOCAL release branch,
+#      which origin rejected as non-fast-forward. The step was non-fatal, so the
+#      sweep carried on and assembled a candidate whose release branch was MISSING
+#      a hotfix already live in production.
+#   3. THE PLACEMENT (fixed at the call site, step 4d). Running after the pre-QA
+#      gate meant a merge that DID land moved origin/release past the certified SHA.
+#
+# So: merge in a DETACHED WORKSPACE (the primary is never touched and its dirt is
+# irrelevant), CHECK EVERY STEP, and ABORT rather than continue non-fatally. A
+# guard that cannot fail loudly is not a guard.
+def merge_forward_release_branches(app_groups)
+  return if app_groups.empty?
+
+  step("merge-forward guard: origin/#{RELEASE_BRANCH} must CONTAIN origin/main in every app " \
+       "(before the pre-QA gate certifies a SHA)")
+  app_groups.each do |group|
+    repo = group["repo"]
+
+    if DRY
+      step("  #{repo}: if origin/main isn't an ancestor of origin/#{RELEASE_BRANCH}, merge it forward " \
+           "in a detached workspace → push origin #{RELEASE_BRANCH} (no-op when already contained)")
+      next
+    end
+
+    path = repo_path(repo)
+    unless Dir.exist?(path)
+      abort!("app repo not found at #{path} — clone it as a sibling at the projects root")
+    end
+
+    # Fail closed on the fetch: a stale origin/main would make the containment
+    # check answer from a ref that no longer describes production.
+    _, fetched = sh("git", "-C", path, "fetch", "origin", "--quiet")
+    abort!("git fetch failed in #{repo} — refusing to judge merge-forward against a possibly-stale " \
+           "origin/main (fail closed); fix the remote, then re-run `bin/release prepare`") unless fetched
+
+    _, in_sync = sh("git", "-C", path, "merge-base", "--is-ancestor", "origin/main", "origin/#{RELEASE_BRANCH}",
+                    capture: true)
+    next if in_sync
+
+    tip, ok = git_capture("-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}")
+    abort!("could not resolve origin/#{RELEASE_BRANCH} in #{repo} for the merge-forward") unless ok
+    tip = tip.strip
+
+    step("  merge-forward: origin/main → #{RELEASE_BRANCH} in #{repo} (main moved ahead)")
+
+    with_ship_workspace(repo) do
+      workspace = ship_workspace!(repo, tip)
+
+      _, merged = sh("git", "-C", workspace, "merge", "origin/main", "-m",
+                     "Merge main into #{RELEASE_BRANCH} (merge-forward)", capture: true)
+      unless merged
+        # Leave no half-merged workspace behind for the next run to trip over.
+        sh("git", "-C", workspace, "merge", "--abort", capture: true)
+        abort!("merge-forward CONFLICT in #{repo}: origin/main → #{RELEASE_BRANCH}. Nothing was pushed and " \
+               "the primary checkout was never touched. Resolve it on a branch off origin/#{RELEASE_BRANCH}, " \
+               "merge origin/main into it, push to #{RELEASE_BRANCH}, then re-run `bin/release prepare` — " \
+               "it resumes.")
+      end
+
+      # Fast-forward-checked ref push (no --force): a release branch that moved
+      # under us fails closed here rather than clobbering it.
+      _, pushed = sh("git", "-C", workspace, "push", "origin", "HEAD:refs/heads/#{RELEASE_BRANCH}", capture: true)
+      abort!("could not push the merge-forward to origin/#{RELEASE_BRANCH} in #{repo} (did #{RELEASE_BRANCH} " \
+             "move?) — re-run `bin/release prepare`, it resumes") unless pushed
+    end
+
+    # READ BACK the property we came for. The push reported success; that is not
+    # the same as containment holding, and the whole point of this rewrite is to
+    # stop trusting a step's exit status in place of its effect.
+    sh("git", "-C", path, "fetch", "origin", "--quiet")
+    _, contained = sh("git", "-C", path, "merge-base", "--is-ancestor", "origin/main",
+                      "origin/#{RELEASE_BRANCH}", capture: true)
+    unless contained
+      abort!("merge-forward did NOT take in #{repo}: origin/main is still not contained in " \
+             "origin/#{RELEASE_BRANCH} after the push. Refusing to gate or deploy a release branch that " \
+             "would revert what is live on main.")
+    end
+
+    step("  #{repo}: origin/#{RELEASE_BRANCH} now contains origin/main — the gate + QA read the merged tree")
+  end
+end
+
 def bump_consumer_locks_for_qa(app_groups, published_gems)
   return if published_gems.empty?
 

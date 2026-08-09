@@ -483,6 +483,27 @@ class ReleaseCliTest < Minitest::Test
                      "prepare must keep `release` ahead of main"
   end
 
+  # [integration] THE PLACEMENT FIX (rel-20260809-3b8f3d, 2026-08-09). The guard
+  # used to run inside the QA-deploy loop, i.e. AFTER the pre-QA gate — so a merge
+  # that landed moved origin/release PAST the SHA the gate had just certified, and
+  # QA deployed (and ship froze) a tree G3 never verified. It now runs above the
+  # gate, and this pins that order in the real emitted plan, not just in the source.
+  def test_prepare_dry_run_merge_forward_precedes_the_gate_and_the_qa_deploy
+    out = run_cli(["--dry-run"], call: "prepare", setup: STUB_CONDUCTOR)
+
+    # Anchor on each phase's OWN step line. Plain "pre-QA gate" also appears in
+    # the lock-bump message ("…the pre-QA gate, QA, and prod must all build this
+    # SAME committed lock"), which sits earlier and would make this pass on prose.
+    merge  = out.index("merge-forward guard: origin/release must CONTAIN")
+    gate   = out.index("pre-QA gate: GitHub CI")
+    deploy = out.index("bin/qa-server deploy")
+
+    assert merge && gate && deploy, "the plan must show all three phases: #{out}"
+    assert_operator merge, :<, gate,
+                    "merge-forward comes BEFORE the gate, so the gate certifies the tree that deploys"
+    assert_operator gate, :<, deploy, "the gate still precedes the QA deploy"
+  end
+
   # A deploy plan where the hub carries the github_actions adapter (as the real
   # registry now does) alongside a repo_script app, so prepare's QA path dispatches
   # qa-deploy.yml for the hub while the non-Actions app keeps the qa-server push.
@@ -5459,6 +5480,107 @@ class ReleaseCliTest < Minitest::Test
   # decide "re-pin needed", find nothing to rewrite in the frozen tree, stage
   # nothing, and abort at the commit — AFTER THE GEMS PUBLISHED. The frozen tree
   # says "already pinned", so the ship correctly does nothing.
+  # --- merge-forward guard: real repos, real merges -------------------------
+  #
+  # rel-20260809-3b8f3d, 2026-08-09. `main` carried an emergency hotfix pushed
+  # outside the cycle; `release` did not contain it. The guard merged in the SHARED
+  # PRIMARY, whose uncommitted ledger file made `git checkout release` refuse — and
+  # the checkout's result was discarded, so the following `git merge origin/main`
+  # ran against `main`, said "Already up to date", and the push sent a stale local
+  # branch that origin rejected. Non-fatal, so the sweep assembled a candidate whose
+  # release branch would have REVERTED a live production fix.
+
+  # main one commit ahead of release, and the primary parked on a dirty feature
+  # branch — the exact floor that defeated the old guard.
+  def build_merge_forward_fixture(dir, conflicting: false)
+    clone = build_sibling_fixture(dir)
+    File.write(File.join(clone, "HOTFIX"), "auth-gate the feed\n")
+    run_git(clone, "add", "-A")
+    run_git(clone, "commit", "-q", "-m", "hotfix straight to main")
+    run_git(clone, "push", "-q", "origin", "main")
+
+    if conflicting
+      run_git(clone, "checkout", "-q", "release")
+      File.write(File.join(clone, "HOTFIX"), "a DIFFERENT edit to the same file\n")
+      run_git(clone, "add", "-A")
+      run_git(clone, "commit", "-q", "-m", "release edits the same file")
+      run_git(clone, "push", "-q", "origin", "release")
+    end
+
+    # The primary is left off-branch and DIRTY, as a live session's desk would be.
+    run_git(clone, "checkout", "-q", "-b", "feat/live-session")
+    File.write(File.join(clone, "README"), "uncommitted work from another session\n")
+    clone
+  end
+
+  def merge_forward_call
+    %{begin; merge_forward_release_branches([{ "repo" => "sibling" }]); puts("PASSED"); } +
+      %{rescue SystemExit => e; puts("ABORTED: " + e.message); end}
+  end
+
+  # [integration] THE regression: a dirty primary must NOT stop the merge-forward,
+  # and the merge must actually land on origin/release.
+  def test_merge_forward_lands_despite_a_dirty_primary_checkout
+    Dir.mktmpdir do |dir|
+      clone  = build_merge_forward_fixture(dir)
+      origin = File.join(dir, "origin.git")
+      refute_equal git_out(origin, "rev-parse", "main"), git_out(origin, "rev-parse", "release"),
+                   "precondition: release must be BEHIND main"
+
+      out = run_cli(["--yes"], setup: %(def repo_path(_repo) = #{clone.inspect}), call: merge_forward_call)
+
+      assert_includes out, "PASSED", "a dirty primary must not defeat the guard: #{out}"
+      assert system("git", "-C", origin, "merge-base", "--is-ancestor",
+                    git_out(origin, "rev-parse", "main"), "release",
+                    out: File::NULL, err: File::NULL),
+             "origin/release must CONTAIN origin/main after the guard runs"
+
+      # The primary is untouched: same branch, and the uncommitted work survives.
+      assert_equal "feat/live-session", git_out(clone, "rev-parse", "--abbrev-ref", "HEAD"),
+                   "the guard must never flip the primary's HEAD"
+      assert_equal "uncommitted work from another session\n", File.read(File.join(clone, "README")),
+                   "another session's uncommitted work must survive the merge-forward"
+    end
+  end
+
+  # [integration] Already contained → a clean no-op that pushes nothing.
+  def test_merge_forward_is_a_no_op_when_release_already_contains_main
+    Dir.mktmpdir do |dir|
+      clone  = build_sibling_fixture(dir) # main == release out of the box
+      origin = File.join(dir, "origin.git")
+      before = git_out(origin, "rev-parse", "release")
+
+      out = run_cli(["--yes"], setup: %(def repo_path(_repo) = #{clone.inspect}), call: merge_forward_call)
+
+      assert_includes out, "PASSED"
+      assert_equal before, git_out(origin, "rev-parse", "release"),
+                   "nothing may be pushed when main is already contained"
+      refute_includes out, "main moved ahead"
+    end
+  end
+
+  # [integration] A CONFLICT must abort loudly, push nothing, and leave the
+  # primary alone — the old guard's failure was continuing non-fatally.
+  def test_merge_forward_aborts_on_a_conflict_and_pushes_nothing
+    Dir.mktmpdir do |dir|
+      clone  = build_merge_forward_fixture(dir, conflicting: true)
+      origin = File.join(dir, "origin.git")
+      before = git_out(origin, "rev-parse", "release")
+
+      out = run_cli(["--yes"], setup: %(def repo_path(_repo) = #{clone.inspect}), call: merge_forward_call)
+
+      assert_includes out, "ABORTED", "a conflicted merge-forward must abort, never continue: #{out}"
+      assert_includes out, "merge-forward CONFLICT"
+      assert_includes out, "the primary checkout was never touched"
+      refute_includes out, "PASSED"
+
+      assert_equal before, git_out(origin, "rev-parse", "release"),
+                   "a conflicted merge must push NOTHING"
+      assert_equal "feat/live-session", git_out(clone, "rev-parse", "--abbrev-ref", "HEAD"),
+                   "the primary stays where the operator left it"
+    end
+  end
+
   def test_a_dirty_primary_cannot_force_a_repin_the_frozen_tree_does_not_need
     Dir.mktmpdir do |dir|
       clone = build_sibling_fixture(dir)
