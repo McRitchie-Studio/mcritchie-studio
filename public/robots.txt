@@ -1,1 +1,11 @@
 # See https://www.robotstxt.org/robotstxt.html for documentation on how to use the robots.txt file
+
+# The agent activity feed is an internal operator surface behind sign-in. Its
+# ?sessions= filter spans a combinatorial URL space (any subset of every captured
+# session x page), so a crawler that follows those links walks an effectively
+# unbounded set of addresses. Auth already refuses them; this keeps well-behaved
+# crawlers from spending the request at all, and drops the paths from the index.
+User-agent: *
+Disallow: /agents/activities
+Disallow: /alex/heartbeat
+Disallow: /*?*sessions=

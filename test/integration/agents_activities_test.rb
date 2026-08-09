@@ -4,8 +4,14 @@ require "test_helper"
 # Every narrated AgentActivity across ALL sessions, newest-first, with its raw actions
 # (also newest-first) drilled down underneath and inline Alex/McRitchie grade cells on
 # BOTH. An optional ?sessions= (comma list) narrows to a multi-select of sessions. A
-# read-only meta surface (no auth), grading through the existing heartbeat endpoints.
+# read-only meta surface BEHIND SIGN-IN, grading through the existing heartbeat endpoints.
 class AgentsActivitiesTest < ActionDispatch::IntegrationTest
+  # The feed is internal operator telemetry, not a public page — its ?sessions= filter
+  # spans a combinatorial URL space that a scraper swarm once used to take the hub down
+  # (see AgentsController). Every render case below therefore runs signed in; the
+  # anonymous path is asserted on its own, below.
+  setup { log_in_as(users(:alex)) }
+
   def activity(session: "sess-A", at: Time.current, **attrs)
     AgentActivity.create!({ session_id: session, category: "Explore", reason_slug: "find issue with api",
                             opened_at: at, seq: attrs.fetch(:seq, 0) }.merge(attrs))
@@ -22,7 +28,24 @@ class AgentsActivitiesTest < ActionDispatch::IntegrationTest
     assert_routing "/agents/activities", controller: "agents", action: "activities"
   end
 
-  test "renders activities from every session, newest-first, without auth" do
+  test "sends an anonymous visitor to login instead of rendering the feed" do
+    activity(session: "sess-A", reason_slug: "should not be rendered")
+    reset!  # drop the signed-in session this class sets up
+
+    get activities_agents_path
+
+    assert_redirected_to "/login"
+  end
+
+  test "sends an anonymous visitor to login for the lazy filter frame too" do
+    reset!
+
+    get activities_filter_agents_path
+
+    assert_redirected_to "/login"
+  end
+
+  test "renders activities from every session, newest-first, for a signed-in operator" do
     activity(session: "sess-A", reason_slug: "older activity here", at: 5.minutes.ago)
     activity(session: "sess-B", reason_slug: "newer activity here", at: 1.minute.ago)
 
