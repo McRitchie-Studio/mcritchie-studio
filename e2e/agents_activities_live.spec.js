@@ -1,15 +1,21 @@
 const { test, expect } = require("@playwright/test");
+const { loginWithMagicLink } = require("./helpers");
 
 // /agents/activities live websocket updates (ActivitiesBroadcaster). The page subscribes
 // via turbo_stream_from "agents_activities"; an activity/action created or updated through
 // the API fires a REAL ActionCable broadcast (async adapter under Playwright) that patches
 // the already-open table with NO page reload. Additive — new rows just appear.
+//
+// The feed REQUIRES a session: #activities/#activities_filter were auth-gated to close the
+// combinatorial ?sessions= crawl trap. Unauthenticated, the goto lands on the login page and
+// meta[name='e2e-api-token'] never renders, so every test here signs in first.
 
 test("a new activity streams into the feed live, then a close updates it in place", async ({ page }) => {
   const pageErrors = [];
   page.on("pageerror", (err) => pageErrors.push(String(err)));
   page.on("console", (msg) => { if (msg.type() === "error") pageErrors.push(msg.text()); });
 
+  await loginWithMagicLink(page, "alex@test.com");
   await page.goto("/agents/activities");
   const token = await page.getAttribute("meta[name='e2e-api-token']", "content");
   const session = `e2e-live-${Date.now()}`;
@@ -46,6 +52,7 @@ test("a new action streams into its activity's drill-down live @quarantine", asy
   page.on("pageerror", (err) => pageErrors.push(String(err)));
   page.on("console", (msg) => { if (msg.type() === "error") pageErrors.push(msg.text()); });
 
+  await loginWithMagicLink(page, "alex@test.com");
   await page.goto("/agents/activities");
   const token = await page.getAttribute("meta[name='e2e-api-token']", "content");
   const session = `e2e-action-${Date.now()}`;
@@ -97,6 +104,7 @@ test("a new action streams into its activity's drill-down live @quarantine", asy
 });
 
 test("activity rows render measured close-diff usage instead of parent action fallback", async ({ page }) => {
+  await loginWithMagicLink(page, "alex@test.com");
   await page.goto("/agents/activities");
   const token = await page.getAttribute("meta[name='e2e-api-token']", "content");
   const session = `e2e-activity-usage-${Date.now()}`;
