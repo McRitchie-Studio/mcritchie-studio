@@ -103,6 +103,29 @@ DOT="${D} · ${X}"
 
 link() { printf '\033]8;;%s\033\\%s\033]8;;\033\\' "$1" "$2"; }   # OSC 8 hyperlink
 
+# --- Portable mtime (the throttles' clock) ---------------------------------
+# `stat -f %m` is BSD/macOS. GNU/Linux spells it `stat -c %Y`, and the BSD form there
+# does something far nastier than fail cleanly: GNU reads `-f` as `--file-system`, so
+# `%m` is not a format at all — it is parsed as a second FILE OPERAND. GNU errors on
+# that bogus operand (stderr, nonzero exit) while still printing a MULTI-LINE
+# filesystem block for the real path on stdout. So `2>/dev/null || echo 0` captures
+# that block, and it reaches `$(( now - mtime ))` as junk — where an arithmetic
+# syntax error is a FATAL expansion error in a non-interactive bash: the whole status
+# line dies mid-render, silently. It only ever fired on Linux, so the operator's Mac
+# never saw it — but every throttle test on CI was passing because the script CRASHED
+# into the expected call count, which is the worst way for a gate to be green.
+#
+# Hence: take the first NUMERIC answer, and never trust an exit code to tell you the
+# spelling was wrong. Anything non-numeric is unknown (0 ⇒ "old enough", so a
+# heal/renew proceeds rather than wedging).
+file_mtime() {  # path -> epoch seconds, 0 when unknown
+  local m
+  m=$(stat -f %m "$1" 2>/dev/null)                                    # BSD/macOS
+  case "$m" in ''|*[!0-9]*) m=$(stat -c %Y "$1" 2>/dev/null) ;; esac  # GNU/Linux
+  case "$m" in ''|*[!0-9]*) m=0 ;; esac
+  printf '%s' "$m"
+}
+
 # --- Build-claim heartbeat (best-effort lease renewal) ---------------------
 # A live terminal renews its build claim each render, so a crashed/closed session
 # stops renewing and its lease lapses (TTL) — making the task reclaimable by the
@@ -137,7 +160,7 @@ heartbeat_claim() {  # slug stage is_desk
   local throttle="${STATUSLINE_HEARTBEAT_THROTTLE:-45}"
   if [ -f "$marker" ]; then
     local mtime age
-    mtime=$(stat -f %m "$marker" 2>/dev/null || echo 0)
+    mtime=$(file_mtime "$marker")
     age=$(( $(date +%s) - mtime ))
     [ "$age" -lt "$throttle" ] && return 0
   fi
@@ -182,7 +205,7 @@ heartbeat_shift() {
   local throttle="${STATUSLINE_HEARTBEAT_THROTTLE:-45}"
   if [ -f "$throttle_marker" ]; then
     local mtime age
-    mtime=$(stat -f %m "$throttle_marker" 2>/dev/null || echo 0)
+    mtime=$(file_mtime "$throttle_marker")
     age=$(( $(date +%s) - mtime ))
     [ "$age" -lt "$throttle" ] && return 0
   fi
@@ -196,6 +219,53 @@ heartbeat_shift() {
     "$SHIFT_BIN" renew "$lane" >/dev/null 2>&1
   else
     ( "$SHIFT_BIN" renew "$lane" >/dev/null 2>&1 & ) >/dev/null 2>&1
+  fi
+}
+
+# --- Session-mascot self-heal (best-effort redraw) -------------------------
+# The SessionStart hook draws this session's mascot by POSTing the board, and
+# `bin/task session-mascot` swallows every error to keep that promise ("best-effort:
+# never disrupt session start"). The price of the promise is SILENCE: a board that
+# is briefly unreachable writes no marker, logs nothing, and drops the status line
+# to its repo/branch fallback — so the only detector left in the loop is a human
+# noticing their Pokémon is missing (2026-08-08, session 8e103d83). This render
+# already knows whether a mascot painted, and runs constantly, so it is the natural
+# place to notice and redraw. Same throttle + detach + fail-closed posture as the
+# two heartbeats above.
+#
+# SCOPED TO THE SESSION MARKER, deliberately. A worktree desk paints from its own
+# .agent-context.json while the draw writes sessions/<sid>.json — healing a desk
+# would never change what renders, so it would just re-fire every window forever.
+# Desks resolve their mascot through bin/agent-worktree's own fallback chain.
+heal_session_mascot() {  # mascot is_desk
+  local mascot="$1" is_desk="$2"
+  [ -n "$mascot" ] && return 0        # already drawn: the common path, and it costs two string tests
+  [ "$is_desk" = "1" ] && return 0
+  local sid
+  sid=$(agent_session_id)
+  [ -z "$sid" ] && return 0
+  [ -x "$TASK_BIN" ] || return 0
+  local mdir="$PROJECTS/.agents/sessions"
+  # Its OWN throttle marker, so it never contends with the two heartbeats. The
+  # failure being healed is a DOWN board; retrying once per render would turn one
+  # outage into a request flood.
+  local throttle_marker="$mdir/${sid}.mascot-heal"
+  local throttle="${STATUSLINE_MASCOT_HEAL_THROTTLE:-45}"
+  if [ -f "$throttle_marker" ]; then
+    local mtime age
+    mtime=$(file_mtime "$throttle_marker")
+    age=$(( $(date +%s) - mtime ))
+    [ "$age" -lt "$throttle" ] && return 0
+  fi
+  # Fail closed, and LAST — see heartbeat_claim for why the refusal belongs here
+  # and not above the early returns.
+  marker_write_refused && return 0
+  mkdir -p "$mdir" 2>/dev/null
+  : > "$throttle_marker"
+  if [ "$STATUSLINE_HEARTBEAT_FG" = "1" ]; then
+    "$TASK_BIN" session-mascot >/dev/null 2>&1
+  else
+    ( "$TASK_BIN" session-mascot >/dev/null 2>&1 & ) >/dev/null 2>&1
   fi
 }
 
@@ -364,3 +434,9 @@ else
     printf '%s' "${D}${repo} · ${model}${X}"
   fi
 fi
+
+# AFTER the render, and outside the branch, on purpose. The no-source `else` above
+# IS the failure mode being healed (no session marker → no mascot → repo/branch
+# fallback), so a heal wired inside the `if` would never fire for it. `$mascot` is
+# unset on that path and expands empty, which is exactly the trigger.
+heal_session_mascot "$mascot" "$src_is_desk"

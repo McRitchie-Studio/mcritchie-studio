@@ -161,6 +161,18 @@ McRitchie's call, and it costs money either way.
 
 ---
 
+## release-gate-orphans-its-suite — 9 unlanded local commits (2026-08-08)
+
+The archived task's desk held nine commits diverged from its pushed branch,
+preserved as tag `archive/release-gate-orphans-its-suite-local` (`f32687e4`)
+during the stale-desk sweep. **Six of the nine already landed on `release`;
+three are absent:** `f32687e4`, `bf36425e`, `58eda198`. **Orphaned-fix review
+owed on those three:** diff their ideas against current `release` and either
+point at the code that superseded them or land what didn't. See the clean-up
+SOP's "stale unmerged desks" protocol.
+
+---
+
 ## Parked — the `.studio-team-glow` specimen demos a card effect at chip scale
 
 Parked by Mr. McRitchie on 2026-08-08, found while building

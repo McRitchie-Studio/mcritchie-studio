@@ -13,10 +13,12 @@ require "json"
 require "open3"
 require "tmpdir"
 require "fileutils"
+require "socket"
 require_relative "../support/session_env"
 
 class StatuslineTest < Minitest::Test
   BIN = File.expand_path("../../bin/statusline", __dir__)
+  TASK_CLI = File.expand_path("../../bin/task", __dir__) # the real CLI, for the boundary test
   SESSION = "2aa216f6-7565-4bf4-bd01-70793c8ba617" # last 4 = a617
 
   # The env var that names a session for `provider`. Pair it with
@@ -286,7 +288,12 @@ class StatuslineTest < Minitest::Test
       )
       stdin = JSON.generate("workspace" => { "current_dir" => cwd })
       Open3.capture2(env, "/bin/bash", BIN, stdin_data: stdin, err: File::NULL)
-      File.exist?(calls) ? File.read(calls).lines.map(&:strip) : []
+      # HEARTBEAT calls only — the helper's name is its contract. These fixtures
+      # carry no mascot, so every render here also (correctly) fires the mascot
+      # self-heal; asserting "no calls at all" would make these gates fail on an
+      # unrelated, working feature. Assert the heartbeat, not the quiet.
+      raw = File.exist?(calls) ? File.read(calls).lines.map(&:strip) : []
+      raw.grep(/\Aheartbeat\b/)
     end
   end
 
@@ -310,6 +317,224 @@ class StatuslineTest < Minitest::Test
   def test_statusline_heartbeats_a_building_session_marker
     assert_equal ["heartbeat skip-self-claim-demo"], session_marker_heartbeat_calls(stage: "building"),
                  "a real move→building claim still renews from the per-session marker"
+  end
+
+  # --- Session-mascot self-heal ------------------------------------------------
+
+  # The SessionStart hook draws the mascot by POSTing the board, and bin/task wraps
+  # that draw in `rescue SystemExit, StandardError` so a session never fails to
+  # start. A board that is briefly unreachable therefore writes NO marker, logs
+  # nothing, and leaves the status line on its repo/branch fallback — the operator
+  # is the only detector. The render heals it: no mascot yet → redraw, throttled and
+  # detached exactly like the two heartbeats above.
+  #
+  # Run statusline with a stub `task` and return the recorded invocations. `marker:`
+  # is the sessions/<id>.json payload (nil writes none at all — the hook-failed
+  # case); `desk: true` also drops a worktree .agent-context.json in the cwd. The
+  # fixtures deliberately carry NO task slug, so heartbeat_claim returns early and
+  # every recorded call belongs to the heal.
+  # A `stat` that behaves like GNU coreutils, so the macOS-only throttle clock can be
+  # exercised here on the shape CI actually runs. GNU reads `-f` as `--file-system`,
+  # so `%m` is not a format — it is a second FILE OPERAND. GNU errors on it (stderr,
+  # nonzero exit) and still prints a MULTI-LINE filesystem block for the real path on
+  # stdout, which is the junk that reaches $(( )) as a fatal expansion error.
+  # Returns the dir to prepend to PATH.
+  def gnu_stat_shim(dir)
+    bin = File.join(dir, "shim")
+    FileUtils.mkdir_p(bin)
+    File.write(File.join(bin, "stat"), <<~SH)
+      #!/bin/bash
+      if [ "$1" = "-f" ]; then
+        shift
+        for arg in "$@"; do
+          if [ "$arg" = "%m" ]; then
+            echo "stat: cannot read file system information for '%m': No such file or directory" >&2
+          else
+            printf '  File: "%s"\\n    ID: 0 Namelen: 255 Type: ext2/ext3\\nBlock size: 4096\\n' "$arg"
+          fi
+        done
+        exit 1
+      fi
+      if [ "$1" = "-c" ] && [ "$2" = "%Y" ]; then
+        /usr/bin/stat -c %Y "$3" 2>/dev/null || /usr/bin/stat -f %m "$3"
+        exit $?
+      fi
+      exec /usr/bin/stat "$@"
+    SH
+    FileUtils.chmod(0o755, File.join(bin, "stat"))
+    bin
+  end
+
+  def mascot_heal_calls(marker: nil, desk: false, session: SESSION, runs: 1, throttle: nil, gnu_stat: false)
+    Dir.mktmpdir do |dir|
+      projects = File.join(dir, "projects")
+      FileUtils.mkdir_p(File.join(projects, ".agents", "sessions"))
+      File.write(File.join(projects, ".agents", "sessions", "#{session}.json"), JSON.generate(marker)) if marker
+      cwd = File.join(dir, "cwd")
+      FileUtils.mkdir_p(cwd)
+      if desk
+        File.write(File.join(cwd, ".agent-context.json"), JSON.generate(
+          "app" => "mcritchie-studio", "worktree_slug" => "desk-fixture", "stage" => ""
+        ))
+      end
+      calls = File.join(dir, "calls.log")
+      stub = File.join(dir, "task")
+      File.write(stub, "#!/bin/bash\necho \"$@\" >> #{calls.inspect}\n")
+      File.chmod(0o755, stub)
+
+      env = SessionEnv.neutralized(
+        "CLAUDE_CODE_SESSION_ID" => session,
+        "TASK_BIN" => stub,
+        "STATUSLINE_HEARTBEAT_FG" => "1",
+        "CLAUDE_PROJECTS_DIR" => projects,
+        "STATUSLINE_MASCOT_HEAL_THROTTLE" => throttle,
+        "PATH" => (gnu_stat ? "#{gnu_stat_shim(dir)}:#{ENV.fetch('PATH')}" : ENV.fetch("PATH"))
+      )
+      stdin = JSON.generate("workspace" => { "current_dir" => cwd })
+      runs.times { Open3.capture2(env, "/bin/bash", BIN, stdin_data: stdin, err: File::NULL) }
+      File.exist?(calls) ? File.read(calls).lines.map(&:strip) : []
+    end
+  end
+
+  def test_statusline_heals_a_missing_session_mascot
+    assert_equal ["session-mascot"], mascot_heal_calls,
+                 "no marker at all (the hook's silent failure) must redraw the session mascot"
+  end
+
+  # Same hole, different shape: `bin/task create` wrote the marker but the board
+  # served no mascot with it. The heal MERGES into the existing marker, so this
+  # converges rather than looping.
+  def test_statusline_heals_a_session_marker_carrying_no_mascot
+    assert_equal ["session-mascot"],
+                 mascot_heal_calls(marker: { "app" => "mcritchie-studio" }),
+                 "a marker written without a mascot is the same hole — redraw it"
+  end
+
+  def test_statusline_does_not_heal_an_already_drawn_mascot
+    assert_empty mascot_heal_calls(marker: { "app" => "mcritchie-studio", "mascot" => "entei" }),
+                 "the healthy path must stay free — a drawn mascot never redraws"
+  end
+
+  # A worktree desk paints from .agent-context.json, but the heal writes the
+  # SESSION marker — healing here would never change what renders, so it would
+  # re-fire every throttle window forever. Scope it out.
+  def test_statusline_does_not_heal_on_a_worktree_desk
+    assert_empty mascot_heal_calls(desk: true),
+                 "a desk renders its own context; healing the session marker would never converge"
+  end
+
+  def test_statusline_does_not_heal_without_a_session
+    assert_empty mascot_heal_calls(session: nil),
+                 "no session id → no session to draw a mascot for"
+  end
+
+  # The failure this heals is a DOWN board. Retrying once per render would turn one
+  # outage into a request flood.
+  def test_statusline_throttles_the_mascot_heal
+    assert_equal 1, mascot_heal_calls(runs: 3).size,
+                 "a board that stays down must not be hammered once per render"
+  end
+
+  # The throttle marker is stamped BEFORE the attempt, so a heal that FAILS still
+  # burns its window — deliberate (that is what rate-limits a down board), but it
+  # makes the retry the load-bearing half: the stub here never writes a mascot, so
+  # every run is a failed heal. Observed live on 2026-08-08 — the first heal hit a
+  # board hiccup and wrote nothing, and only the retry put the mascot back.
+  def test_statusline_retries_a_failed_heal_once_the_window_expires
+    assert_equal 3, mascot_heal_calls(runs: 3, throttle: "0").size,
+                 "a heal that wrote no mascot must try again — one shot is not a heal"
+  end
+
+  # The throttle clock was macOS-only (`stat -f %m`), and its Linux failure was not
+  # "the throttle misbehaves" — the junk GNU prints for that spelling reaches
+  # $(( )) as a FATAL expansion error, so the whole render dies. On CI the heal
+  # therefore fired exactly once (the first render, before any throttle marker
+  # existed) and every later render was killed before reaching it: PR #734's `test`
+  # job, expected 3, got 1.
+  #
+  # Note what this means for the throttle tests ABOVE: a crashed render produces the
+  # same call count as a working throttle, so they stayed green on Linux for three
+  # weeks while the script was aborting. Counting calls cannot tell those apart —
+  # only forcing the window OPEN can, because then the count and the crash disagree.
+  def test_heal_survives_a_gnu_stat_and_still_retries
+    assert_equal 3, mascot_heal_calls(runs: 3, throttle: "0", gnu_stat: true).size,
+                 "the throttle clock must read an mtime on GNU too — not kill the render"
+  end
+
+  # --- Self-heal across its I/O boundary (integration) -------------------------
+
+  # The cases above stub TASK_BIN, so they prove the RENDER's decision to heal but
+  # not that a heal lands anything. This one drives the REAL bin/task against a fake
+  # board (the external edge, mocked) and asserts what the operator actually sees:
+  # the marker gains a mascot, and the NEXT render paints it — which is also the
+  # convergence proof, since a heal that never satisfies its own trigger would loop.
+  def test_heal_draws_the_mascot_through_the_real_cli
+    server = TCPServer.new("127.0.0.1", 0)
+    port = server.addr[1]
+    seen = []
+    thread = Thread.new do
+      begin
+        loop do
+          client = server.accept
+          line = client.gets
+          (client.close; next) if line.nil?
+          method, path, = line.split(" ")
+          headers = {}
+          while (h = client.gets) && h != "\r\n"
+            k, v = h.split(":", 2)
+            headers[k.strip.downcase] = v.strip if v
+          end
+          client.read(headers["content-length"].to_i) if headers["content-length"]
+          seen << "#{method} #{path}"
+          payload = if path == "/api/v1/auth"
+                      JSON.generate("token" => "stub-token")
+                    else
+                      JSON.generate("data" => { "mascot" => "entei", "mascot_color" => "#EE8130",
+                                                "mascot_emoji" => "🔥", "app" => "mcritchie-studio" })
+                    end
+          client.write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n" \
+                       "Content-Length: #{payload.bytesize}\r\nConnection: close\r\n\r\n#{payload}")
+          client.close
+        end
+      rescue IOError, Errno::EBADF, Errno::ECONNRESET
+        nil
+      end
+    end
+
+    Dir.mktmpdir do |dir|
+      # child_env pins CLAUDE_PROJECTS_DIR (and HOME, and the cost store) at <dir>/projects
+      # — the same pin the heal's marker write is sandbox-gated on.
+      pins = TaskUsageSandboxEnv.child_env(dir)
+      marker = File.join(pins.fetch("CLAUDE_PROJECTS_DIR"), ".agents", "sessions", "#{SESSION}.json")
+      cwd = File.join(dir, "cwd")
+      FileUtils.mkdir_p(cwd) # no .agent-context.json → not a desk
+      refute_path_exists marker, "precondition: the SessionStart hook left no mascot behind"
+
+      env = SessionEnv.neutralized(pins.merge(
+        "CLAUDE_CODE_SESSION_ID" => SESSION,
+        "TASK_BIN" => TASK_CLI,
+        "STATUSLINE_HEARTBEAT_FG" => "1",
+        "TASK_API_BASE" => "http://127.0.0.1:#{port}",
+        "AGENT_API_SECRET" => "test-secret"
+      ))
+      stdin = JSON.generate("workspace" => { "current_dir" => cwd })
+
+      first, = Open3.capture2(env, "/bin/bash", BIN, stdin_data: stdin, err: File::NULL)
+      refute_includes first, "Entei", "the render that DISCOVERS the hole still paints the fallback"
+
+      assert_includes seen, "POST /api/v1/sessions/#{SESSION}/mascot",
+                      "the heal must reach the board's session-mascot endpoint"
+      assert_path_exists marker, "the heal must write the marker the status line reads"
+      assert_equal "entei", JSON.parse(File.read(marker))["mascot"]
+
+      second, = Open3.capture2(env, "/bin/bash", BIN, stdin_data: stdin, err: File::NULL)
+      assert_includes second, "Entei", "the next render paints the healed mascot"
+      assert_equal 1, seen.count { |r| r.start_with?("POST /api/v1/sessions") },
+                   "and does not redraw it — one heal, then quiet"
+    end
+  ensure
+    server&.close
+    thread&.join(1)
   end
 
   # --- App slug tint: each app wears its App#color (MS lavender, TM green, …) ----

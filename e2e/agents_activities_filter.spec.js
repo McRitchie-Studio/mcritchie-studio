@@ -1,13 +1,19 @@
 const { test, expect } = require("@playwright/test");
+const { loginWithMagicLink } = require("./helpers");
 
 // /agents/activities filter refresh — clicking a session in the sidebar fetches the
 // filtered feed through the turbo-frame (background), NOT a full page reload: the sidebar
 // stays open, the URL advances, and the frame swaps in place.
+//
+// The feed REQUIRES a session: #activities/#activities_filter were auth-gated to close the
+// combinatorial ?sessions= crawl trap. Unauthenticated, the goto lands on the login page and
+// meta[name='e2e-api-token'] never renders, so sign in first.
 test("clicking a session filter refreshes the feed in the background, no full reload", async ({ page }) => {
   const pageErrors = [];
   page.on("pageerror", (err) => pageErrors.push(String(err)));
   page.on("console", (msg) => { if (msg.type() === "error") pageErrors.push(msg.text()); });
 
+  await loginWithMagicLink(page, "alex@test.com");
   await page.goto("/agents/activities");
   const token = await page.getAttribute("meta[name='e2e-api-token']", "content");
   const session = `e2e-filter-${Date.now()}`;

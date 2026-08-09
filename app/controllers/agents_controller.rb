@@ -1,5 +1,14 @@
 class AgentsController < ApplicationController
-  skip_before_action :require_authentication
+  # #index and #show stay public (cheap, bounded reads). #activities and
+  # #activities_filter DO NOT: the feed is an internal operator telemetry surface whose
+  # ?sessions= filter spans a combinatorial URL space (any subset of every captured
+  # session x page), each address rendering an uncacheable ~1.8 MB page. Left public it
+  # is an unbounded crawl trap — on 2026-08-09 a distributed scraper swarm (2,258 unique
+  # IPs, one request each, so per-IP throttling could not touch it) walked that space and
+  # saturated all 3 Puma threads, taking the whole hub down with 2,270 H12 timeouts in
+  # under three minutes: the board, the API, the GitHub webhook, and /up all queued out.
+  # Requiring a session turns each of those hits into a cheap login redirect.
+  skip_before_action :require_authentication, only: %i[index show]
 
   # The shared activity-feed read layer (session lists, pokemon/soul/grade/transition
   # bulk lookups) — the same queries the /alex/heartbeat surface uses.
@@ -14,7 +23,8 @@ class AgentsController < ApplicationController
   # or array) narrows to a multi-select of Pokémon sessions (blank = every session);
   # @active_session_chips feeds the top active-filter row (selected sessions only), while
   # the full session list the sidebar shows lazy-loads via #activities_filter. Read-only —
-  # grading POSTs to the existing heartbeat grade endpoints.
+  # grading POSTs to the existing heartbeat grade endpoints. Sign-in required (see the
+  # skip_before_action note above): anonymous callers get a login redirect, not a render.
   def activities
     @session_ids = parse_session_ids(params[:sessions])
     @page  = [params[:page].to_i, 1].max

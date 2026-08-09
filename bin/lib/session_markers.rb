@@ -16,6 +16,8 @@ require_relative "../../lib/task_usage_sandbox"
 #   <projects>/.agents/sessions/<id>.task-review-claim-<slug>          a held per-task review claim (bin/task review-claim)
 #   <projects>/.agents/sessions/<id>.task-review-claim-renewer-<slug>  its detached renewer's pid (ditto)
 #   <projects>/.agents/sessions/<id>.heartbeat            statusline's claim throttle (bash)
+#   <projects>/.agents/sessions/<id>.shift-heartbeat      statusline's shift-renew throttle (bash)
+#   <projects>/.agents/sessions/<id>.mascot-heal          statusline's mascot self-heal throttle (bash)
 #
 # It began as the shared READS bin/atomic-event and bin/atomic-capture-hook each
 # carried a byte-for-byte copy of. It now owns the WRITES too, because the copies
@@ -77,9 +79,13 @@ require_relative "../../lib/task_usage_sandbox"
 #                      load-time constant off ENV) but guards it at the SAME
 #                      TaskUsageSandbox seam (bin/task:631, :1139), so it is
 #                      fail-closed already.
-#   bin/statusline     WRITES the .heartbeat/.shift-heartbeat throttles. Bash, so
-#                      it cannot call this module; it enforces rule 1 inline and
-#                      leans on the Ruby CLIs it shells for rule 2 (see its header).
+#   bin/statusline     WRITES the .heartbeat/.shift-heartbeat/.mascot-heal
+#                      throttles. Bash, so it cannot call this module; it enforces
+#                      rule 1 inline and leans on the Ruby CLIs it shells for rule 2
+#                      (see its header). Each throttle needs its OWN LAYER 3 fixture:
+#                      the guard sits after each writer's early returns, so a fixture
+#                      whose cwd shape returns early proves nothing about that writer
+#                      (the mascot heal shipped uncovered exactly that way).
 #   bin/agent-marker,  READ-only. Unguarded on purpose: a read cannot pollute — so
 #   bin/atomic-capture-hook  agent-marker resolving its own read path by hand is
 #                      allowed. Each such method is named, with its reason, in the

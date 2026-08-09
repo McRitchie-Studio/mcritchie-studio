@@ -45,10 +45,21 @@ Every engine-consuming app must install the engine's migrations, and re-install
 after an engine upgrade:
 
 ```bash
-bin/rails studio:install:migrations   # copies db/migrate/*.studio.rb
+bin/rails studio_engine:install:migrations   # copies db/migrate/*.studio_engine.rb
 bin/rails db:migrate
 bin/rails runner 'puts Studio::EmailDelivery.available?'   # => true
 ```
+
+**Install all of them.** The task copies every engine *reference* migration, not
+just the outbox, and all of them are safe on any app: the ones that create tables
+add a table you may not use yet, and the one that ALTERS an app-owned table
+(`allow_null_image_cache_owner`) no-ops when that table is absent
+(studio-engine >= 0.30.1 — before that it raised and failed the whole run).
+
+Do **not** slim the set by deleting copies you think you don't need.
+`install:migrations` builds its skip-list from the files **present**, so a
+deleted copy comes back with a fresh timestamp on the next upgrade. Deletion is
+not durable, which is why the guard lives in the migration instead.
 
 **Skipping this fails silently.** `Studio::Email.deliver` records a row only when
 `studio_email_deliveries` EXISTS; without it, delivery falls through to a plain
@@ -68,8 +79,7 @@ nothing**. QA sends real mail through the real transport.
 
 This is deliberate: both gates hand out sign-in material without authenticating
 anyone. The shared environment banner
-(`studio/banners/environment`, studio-engine >= 0.30 — publishing with the next
-release sweep) is built around the same
+(`studio/banners/environment`, studio-engine >= 0.30) is built around the same
 fact — it links the inbox only where the viewer resolves, and degrades to an
 inert status chip on QA rather than advertising a dead link.
 
@@ -295,7 +305,7 @@ cause that actually bit us, and the only one that fails **silently**:
 
 1. **Is the outbox table installed?** `bin/rails runner 'puts
    Studio::EmailDelivery.available?'`. `false` means the app never ran
-   `bin/rails studio:install:migrations`, so `Studio::Email.deliver` has been
+   `bin/rails studio_engine:install:migrations`, so `Studio::Email.deliver` has been
    falling through to a plain `deliver_later` — no row, no error, empty inbox.
    (mcritchie-industries, 2026-08-08.)
 2. **Is capture on?** `LOCAL_EMAIL_CAPTURE` or `AGENT_WORKTREE` truthy — and
