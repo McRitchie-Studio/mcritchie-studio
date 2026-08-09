@@ -1,11 +1,15 @@
 # frozen_string_literal: true
 
 namespace :ci do
-  # Thin wrapper — the logic and its tests live in Ci::RunReconciler, because this
-  # runs on every deploy as the ingest fix's post_deploy_cmd and a heal nobody can
-  # test is a heal nobody should trust.
+  # Thin wrapper — the logic and its tests live in Ci::RunReconciler, because a
+  # heal nobody can test is a heal nobody should trust.
   #
-  #   DAYS=30   how far back to look (bounds the API calls)
+  # OPERATOR-RUN ONE-TIME HEAL, not a post_deploy_cmd: the ingest fix is
+  # forward-only, so run this once by hand after it ships to repair rows already
+  # stored against the wrong attempt.
+  #
+  #   DAYS=30   how far back to look (bounds the API calls; note the oldest row
+  #             is 2026-07-16, so any bound above ~30 means "the whole table")
   #   DRY_RUN=1 report what would change without writing
   desc "Reconcile ingested CI conclusions against the GitHub Actions API (heals re-run rows)"
   task reconcile_workflow_runs: :environment do

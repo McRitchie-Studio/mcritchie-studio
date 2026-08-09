@@ -10,7 +10,13 @@ module Ci
   # board while GitHub reported green: `bin/task claim-next-review` could not pop
   # them, permanently. That fix is FORWARD-ONLY — GitHub has already delivered
   # both attempts and will not re-deliver — so rows corrupted before it shipped
-  # need this pass. It is the task's post_deploy_cmd.
+  # need this pass.
+  #
+  # This is an OPERATOR-RUN ONE-TIME HEAL, deliberately NOT a post_deploy_cmd.
+  # The corruption is one-time and bounded; running this on every deploy would
+  # spend ~1030 API calls (~6 min, measured at 339ms/call) inside every release,
+  # forever, to correct 20 rows once. Run it by hand after the ingest fix ships:
+  #   bin/rails ci:reconcile_workflow_runs DRY_RUN=1   # then again without
   #
   # GitHub is authoritative: this NEVER invents a verdict, it copies one, and only
   # when the remote run has actually concluded. Idempotent by construction — a
