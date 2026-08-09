@@ -489,6 +489,7 @@ Do not merge or deploy unless I explicitly assigned that lane.
 | G3 Candidate gate (pre-QA + QA deploy) | `mcritchie-studio/docs/agents/modules/gates/g3-candidate.md` |
 | G4 Ship gate (frozen-SHA + prod deploy) | `mcritchie-studio/docs/agents/modules/gates/g4-ship.md` |
 | Deploys | `mcritchie-studio/docs/agents/modules/deployment.md` |
+| CDN rollout (edge + origin lockdown) | `mcritchie-studio/docs/agents/system/cdn-rollout.md` |
 | Keeping docs clean | `mcritchie-studio/docs/agents/modules/docs-maintenance.md` |
 | Memory maintenance | `mcritchie-studio/docs/agents/modules/memory-maintenance.md` |
 | Result distillation (findings not raw ops) | `mcritchie-studio/docs/agents/modules/result-distillation.md` |
