@@ -7,6 +7,7 @@
       • archive (remove)                 → card dissolves into mist
       • delete (remove)                  → distinct fadeout, column reclaims the gap
       • replace (intent / in-place)      → a subtle glow pulse, no bubbles
+      • Next Release, a meter moved     → a 2s ring on THAT meter alone, card held still
     Event type is read from the Turbo Stream action itself (no buttons). Glow colour
     comes from the card's data-glow (its mascot's primary type colour). Only rendered
     on the deploy board (where the live socket is). %>
@@ -118,6 +119,38 @@
     100% { box-shadow: 0 0 0 0 rgb(45 212 191 / 0); border-color: rgb(45 212 191 / 0); }
   }
 
+  /* A single phase meter ticked (a test finished): ring THAT meter's BAR, don't flash the
+     whole Next Release card. The engine's .studio-team-glow does the ring; this class only
+     shrinks it to meter scale.
+
+     The host is tasks/_release_phase_meter's `release-phase-glow-host` — a bare wrapper
+     the exact size of the bar. Two hosts were tried and rejected, both for reasons the
+     primitive states outright (engine-motion.css §9b):
+
+     · the BAR itself — overflow-hidden (it clips the check marks), so it eats its own ring;
+     · the METER WRAPPER — that boxes the label in with the bar, and at this scale the
+       ring plus its bloom read as a lit blob rather than a border. Measured on screen,
+       not reasoned about: it is what the first cut shipped and what the operator caught.
+
+     Sized for an 18px bar: the engine's 4px/10px defaults are drawn for a card, and at
+     meter scale the bloom is most of what you see. 2px of ring and 4px of bloom keep the
+     effect on the bar.
+
+     The bloom STAYS, chosen on screen against the alternative. The primitive's ::after is
+     a blurred twin pinned at `inset: -(thickness + 4px)`, so it always reaches past the
+     ring — the halo is soft-edged and does bleed toward the ASSEMBLING label. A ring-only
+     cut (`::after { content: none }`) was built and viewed side by side; the haloed one is
+     the one that reads. Do not "fix" the bleed by dropping ::after again — that trade was
+     already made deliberately.
+
+     No background here: the ring's ::before sits at z-index -1, and the bar's own opaque
+     fill covers the host's whole interior, so only the 2px margin around it shows. */
+  .release-meter-glow {
+    --studio-team-glow-thickness: 2px;   /* engine default 4px */
+    --studio-team-glow-bloom: 4px;       /* engine default 10px */
+    --studio-team-glow-speed: 2s;        /* one full sweep across the 2s window */
+  }
+
   /* Keep cards above active confetti. Particles render below this z-layer, so
      they peek out around the sides instead of covering card text. */
   .lbfx-confetti-active .kanban-card { position: relative; z-index: 30; }
@@ -150,6 +183,27 @@
     // stream handler: a FRESH_DEPLOY_MS fresh-deploy glow on the just-shipped
     // Last Release, a subtle glow on the Next Release reset.
     const RELEASE_FX = { "last-release": "fresh-deploy", "current-release": "glow" };
+
+    // Next Release, per-meter. Every CI upsert on a member repo REPLACES the whole
+    // #current-release slot (DeploymentsBroadcaster.ci_progress → .release_modules), so
+    // one finished test used to flash the entire card. It now flashes only what MOVED,
+    // decided by two kinds of signature snapshotted before the swap and re-read after:
+    // the meters' data-signature, and the card's own data-card-signature.
+    //
+    // THREE branches, because there are three cases and the middle one is not the
+    // complement of the first:
+    //   a meter moved                        → ring those meters
+    //   no meter moved, card signature moved → flash the card (new release, stage
+    //                                          advance, mascot stamp, member joined)
+    //   neither moved                        → DO NOTHING
+    // The third is the common one, and collapsing it into the second is the bug this
+    // branch was rewritten to fix: the ingest upserts a CiCheckJob row on queued AND
+    // in_progress AND completed, and bucket_for folds both pre-completion states to
+    // :pending, so a queued→in_progress delivery re-renders this card byte-identically.
+    // Branching on "no meter moved" flashed the whole card on every one of them.
+    const METER_SELECTOR = "[data-test='release-phase-meter']";
+    const METER_GLOW_MS = 2000;
+    const METER_FADE_MS = 400;   // the .studio-team-glow opacity transition (engine-motion.css)
 
     // Per-card coordination between the `remove` stream (intercepted) and the
     // `prepend` that follows it on a MOVE.
@@ -192,6 +246,89 @@
         card.classList.remove("lbfx-glow", "lbfx-glow-stage");
         card.style.removeProperty("--lbfx-glow");
       }, 850);
+    }
+
+    // repo + phase, the meter's identity across a card swap. The phase key alone is not
+    // unique — every lane draws an "assembling".
+    function meterKey(meter) {
+      const lane = meter.closest("[data-test='release-lane']");
+      return ((lane && lane.dataset.repo) || "?") + "/" + (meter.dataset.phase || "?");
+    }
+
+    function meterSignatures(root) {
+      const map = new Map();
+      if (root) root.querySelectorAll(METER_SELECTOR).forEach((m) => map.set(meterKey(m), m.dataset.signature || ""));
+      return map;
+    }
+
+    // Everything the fx needs to remember about the slot BEFORE Turbo replaces it. Taken
+    // in one call so the meter and card readings can never come from different renders.
+    function releaseSnapshot(root) {
+      return { meters: meterSignatures(root), card: root ? (root.dataset.cardSignature || "") : "" };
+    }
+
+    // Which meters MOVED across the swap. A changed lane-up (a member added, a repo
+    // dropped, the empty state) is not a meter tick at all — the keys themselves differ,
+    // so it returns null and the caller falls back to the card-wide glow.
+    function changedMeters(root, before) {
+      const after = Array.from(root.querySelectorAll(METER_SELECTOR));
+      if (!before || before.size !== after.length) return null;
+      const moved = [];
+      for (const meter of after) {
+        const key = meterKey(meter);
+        if (!before.has(key)) return null;
+        if (before.get(key) !== (meter.dataset.signature || "")) moved.push(meter);
+      }
+      return moved;
+    }
+
+    // A 2s ring around one meter's BAR: the engine's .studio-team-glow on the meter's
+    // glow host (the wrapper sized to the bar — see .release-meter-glow above), tinted
+    // with the meter's OWN tone by reading its fill's computed background-colour (mint
+    // done / amber running / red failed), so the ring can never disagree with the bar it
+    // traces. A fill that is absent or transparent (pending / n-a) leaves the knob unset
+    // and the primitive's default CTA colour stands. The last 400ms ride the class's own
+    // opacity transition, so the ring fades out instead of snapping off.
+    //
+    // 2s is the CEILING, not a promise. Every release stream is a wholesale replace, so
+    // the next CI upsert DESTROYS this node mid-ring and the glow is cut short — on a busy
+    // suite the operator usually sees less. That is inherent to the replace and is not a
+    // stale-timer bug: the timers below close over THIS render's node, so a newer glow on
+    // the replacement node is never touched by an older node's cleanup (measured).
+    // Is this computed colour actually paintable, whatever colour space it arrived in?
+    // Normalize through a canvas fillStyle — the browser's own parser, which always hands
+    // back "#rrggbb" or "rgba(r, g, b, a)" — and read the alpha off THAT.
+    //
+    // Testing the raw string was a SPELLING assertion, and it passed only by luck: the
+    // tone-less meters happen to use `bg-transparent`, a legacy sRGB colour, and CSS Color
+    // 4 forces legacy colours to serialize as rgba() — so /rgba\(.*, 0\)/ matched. Respell
+    // release_meter_tone's colourless states as `bg-mint-500/0` or a color-mix and the
+    // regex silently stops matching, the knob takes a fully transparent colour, and the
+    // ring goes INVISIBLE with no error and no failing test. A colour space the canvas
+    // cannot parse leaves fillStyle untouched, which reads as opaque — the safe way to be
+    // wrong, since the worst case is a ring in the primitive's default colour.
+    function paintableColor(value) {
+      if (!value) return null;
+      const ctx = paintableColor.ctx || (paintableColor.ctx = document.createElement("canvas").getContext("2d"));
+      ctx.fillStyle = "#000000";
+      ctx.fillStyle = value;
+      const alpha = /^rgba\([^)]*,\s*([0-9.]+)\)$/.exec(ctx.fillStyle);
+      return alpha && parseFloat(alpha[1]) === 0 ? null : value;
+    }
+
+    function meterGlow(meter) {
+      const host = meter.querySelector("[data-test='release-phase-glow-host']") || meter;
+      const fill = meter.querySelector("[data-test='release-phase-fill']");
+      const color = paintableColor(fill ? getComputedStyle(fill).backgroundColor : "");
+      if (color) host.style.setProperty("--studio-team-glow-color", color);
+      host.classList.add("studio-team-glow", "release-meter-glow");
+      setTimeout(() => host.style.setProperty("--studio-team-glow-opacity", "0"), METER_GLOW_MS - METER_FADE_MS);
+      setTimeout(() => {
+        host.classList.remove("studio-team-glow", "release-meter-glow");
+        host.style.removeProperty("--studio-team-glow-color");
+        host.style.removeProperty("--studio-team-glow-opacity");
+        if (!host.getAttribute("style")) host.removeAttribute("style");
+      }, METER_GLOW_MS);
     }
 
     function freshDeployGlow(card) {
@@ -520,7 +657,10 @@
       // Release-module swap (#current-release / #last-release): let Turbo replace
       // the slot, then flash the FRESH element. burst = a deploy just landed in Last;
       // glow = the Next slot reset. data-glow on the card tints the flash colour.
+      // The meter signatures are read HERE, before renderNow() destroys the old node —
+      // after the swap the previous values are gone, so there is nothing left to diff.
       if (RELEASE_FX[target] && (action === "replace" || action === "update")) {
+        const before = RELEASE_FX[target] === "glow" ? releaseSnapshot(document.getElementById(target)) : null;
         const renderNow = event.detail.render;
         event.detail.render = (el) => {
           renderNow(el);
@@ -530,7 +670,12 @@
               if (RELEASE_FX[target] === "fresh-deploy") {
                 if (!freshDeployGlow(fresh)) burst(fresh, true);
               } else {
-                glow(fresh);
+                // Three branches — a meter moved, else the CARD moved, else nothing did.
+                // The last one must stay a no-op: it is the byte-identical re-render, and
+                // treating it as a card change is what flashed the card at nothing.
+                const moved = changedMeters(fresh, before && before.meters);
+                if (moved && moved.length) moved.forEach(meterGlow);
+                else if (!before || (fresh.dataset.cardSignature || "") !== before.card) glow(fresh);
               }
             });
           }

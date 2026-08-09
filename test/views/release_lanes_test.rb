@@ -183,7 +183,58 @@ class ReleaseLanesTest < ActionView::TestCase
     assert_includes css_select("#{meter} [data-test='release-phase-checks']").first["class"], "@max-[99px]:hidden"
   end
 
+  test "[component] every meter ships the glow's two handles: a signature and a fill" do
+    rel = lane_release("mcritchie-studio")
+    seed_ci("McRitchie-Studio/mcritchie-studio", "release", "CI", "mcr", 0)
+    seed_checks("McRitchie-Studio/mcritchie-studio", "release", "CI", "mcr", 2, "pass", status: "completed", conclusion: "success")
+    seed_checks("McRitchie-Studio/mcritchie-studio", "release", "CI", "mcr", 1, "run", status: "in_progress", conclusion: nil)
+
+    render partial: "tasks/release_lanes", locals: { release: rel.reload }
+
+    assert_select "[data-test='release-phase-meter'][data-signature]", 4,
+                  "every meter carries a signature — LiveBoardFx diffs these across the card swap"
+    meter = "[data-repo='mcritchie-studio'] [data-phase='assembling']"
+    assert_select "#{meter} [data-test='release-phase-bar'] [data-test='release-phase-fill']", 1,
+                  "and a tagged fill — the ring reads its colour off the bar it traces"
+    # The ring hangs on a wrapper sized to the BAR, so it travels the bar's border. The bar
+    # itself cannot host it (overflow-hidden eats the ring) and the meter wrapper boxes the
+    # label in with it — so the host must sit strictly between the two.
+    assert_select "#{meter} [data-test='release-phase-glow-host'] > [data-test='release-phase-bar']", 1,
+                  "the glow host wraps the bar alone"
+    assert_select "#{meter} [data-test='release-phase-bar'] [data-test='release-phase-glow-host']", 0,
+                  "and sits OUTSIDE the bar's overflow-hidden clip, or there is no ring to see"
+  end
+
+  test "[component] a finished test moves ONLY its own meter's signature" do
+    rel = lane_release("mcritchie-studio", "turf-monster")
+    seed_ci("McRitchie-Studio/mcritchie-studio", "release", "CI", "mcr", 0)
+    seed_checks("McRitchie-Studio/mcritchie-studio", "release", "CI", "mcr", 2, "pass", status: "completed", conclusion: "success")
+    seed_checks("McRitchie-Studio/mcritchie-studio", "release", "CI", "mcr", 1, "run", status: "in_progress", conclusion: nil)
+    seed_ci("McRitchie-Studio/turf-monster", "release", "CI", "tm", 3)
+
+    render partial: "tasks/release_lanes", locals: { release: rel.reload }
+    before = meter_signatures
+
+    # The one running check finishes — the exact event that used to flash the whole card.
+    CiCheckJob.find_by(name: "run-0").update!(status: "completed", conclusion: "success")
+    render partial: "tasks/release_lanes", locals: { release: rel.reload }
+    after = meter_signatures
+
+    moved = before.keys.reject { |key| before[key] == after[key] }
+    assert_equal ["mcritchie-studio/assembling"], moved,
+                 "one finished test moves one meter — every other meter must hold, or the board rings them all"
+  end
+
   private
+
+  # repo/phase => signature, the same key LiveBoardFx builds in the browser.
+  def meter_signatures
+    css_select("[data-test='release-lane']").flat_map { |lane|
+      lane.css("[data-test='release-phase-meter']").map do |meter|
+        ["#{lane['data-repo']}/#{meter['data-phase']}", meter["data-signature"]]
+      end
+    }.to_h
+  end
 
   def lane_release(*repos)
     rel = Release.open!

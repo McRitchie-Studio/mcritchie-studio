@@ -471,21 +471,9 @@
 
 @layer utilities {
   /* Theme CSS custom properties are now engine-generated via studio_theme_css_tag */
-  [x-cloak] {
-    display: none !important;
-  }
-
-  .studio-link-sidebar-layer {
-    z-index: 10000;
-  }
-
-  /* The link sidebar slides in from off-screen right (translate-x-full <-> -x-0).
-     Clip horizontal overflow so the off-canvas start/end frame never flashes a
-     scrollbar during the slide. `clip` (not `hidden`) does not create a scroll
-     container, so the sticky header keeps working. */
-  html {
-    overflow-x: clip;
-  }
+  /* [x-cloak], .studio-link-sidebar-layer, and the html overflow-x clip slide
+     guard are engine-owned since studio-engine 0.30 (engine.css + the
+     link-sidebar partial); the app-side copies are retired. */
 }
 
 /* ——— Smooth-load convention — engine-owned since studio-engine 0.24 ———
