@@ -137,6 +137,39 @@ class GithubWorkflowRunIngestJobTest < ActiveJob::TestCase
     assert_equal "success", GithubWorkflowRun.find_by(run_id: RUN_ID).conclusion
   end
 
+  # THE UNCOVERED VECTOR (caught in review of this very change). A NON-TERMINAL
+  # delivery can advance the stored attempt while the conclusion is still blank —
+  # and a blank conclusion used to be filled by ANY delivery, including a stale
+  # one. That let an older attempt's verdict land, after which the real attempt
+  # was refused as "not newer". Both orders are reproduced below; the guard drops
+  # an older attempt's delivery WHOLE, mirroring the monotonic status guard.
+  test "[unit] a stale attempt cannot land a GREEN over a run that really failed" do
+    ingest(status: "in_progress", "run_attempt" => 2) # advances the stored attempt
+    ingest(status: "completed", conclusion: "success", "run_attempt" => 1) # late replay
+    ingest(status: "completed", conclusion: "failure", "run_attempt" => 2) # the truth
+
+    assert_equal "failure", GithubWorkflowRun.find_by(run_id: RUN_ID).conclusion,
+                 "a stale attempt must never authorise a merge on a red run"
+  end
+
+  test "[unit] a stale attempt cannot pin the row RED after the re-run went green" do
+    ingest(status: "in_progress", "run_attempt" => 2)
+    ingest(status: "completed", conclusion: "failure", "run_attempt" => 1) # late replay
+    ingest(status: "completed", conclusion: "success", "run_attempt" => 2) # the truth
+
+    assert_equal "success", GithubWorkflowRun.find_by(run_id: RUN_ID).conclusion,
+                 "this is the stuck-red bug the task exists to fix — it must not survive"
+  end
+
+  test "[unit] an older attempt's delivery is dropped whole, not partially applied" do
+    ingest(status: "completed", conclusion: "success", "run_attempt" => 3)
+    ingest(status: "completed", conclusion: "failure", "run_attempt" => 2)
+
+    record = GithubWorkflowRun.find_by(run_id: RUN_ID)
+    assert_equal "success", record.conclusion
+    assert_equal 3, record.run_attempt, "the stored attempt must not regress either"
+  end
+
   test "[unit] an unhandled event is ignored gracefully (no run, no check job)" do
     assert_no_difference ["GithubWorkflowRun.count", "CiCheckJob.count"] do
       GithubWorkflowRunIngestJob.perform_now("push", event(status: "queued"))

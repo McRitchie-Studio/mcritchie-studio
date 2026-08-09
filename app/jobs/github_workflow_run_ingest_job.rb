@@ -70,6 +70,15 @@ class GithubWorkflowRunIngestJob < ApplicationJob
       # (a late / out-of-order re-delivery) without touching the row.
       return if record.persisted? && GithubWorkflowRun.status_rank(incoming) < GithubWorkflowRun.status_rank(record.status)
 
+      # MONOTONIC guard, attempt edition — same shape, same reason. An older
+      # attempt's delivery is dropped WHOLE rather than partially applied. Applying
+      # it in part is what made the first cut of this fix wrong: a non-terminal
+      # attempt-2 delivery advanced run_attempt while the conclusion was still
+      # blank, a late attempt-1 `completed` then filled that blank, and attempt 2's
+      # real verdict was refused as "not newer" — landing a stale GREEN on a run
+      # that failed, or pinning the row RED after a re-run went green.
+      return if record.persisted? && incoming_attempt && incoming_attempt < record.run_attempt.to_i
+
       apply_descriptive_fields(record, run, repo)
       record.status = incoming if incoming.present?
 

@@ -7,9 +7,14 @@ class GithubWorkflowRun < ApplicationRecord
   # uses these ranks to advance a run monotonically and never regress it (a late
   # `in_progress` re-delivery must not clobber a `completed` row).
   STATUS_ORDER = { "queued" => 0, "in_progress" => 1, "completed" => 2 }.freeze
-  # The terminal status. A delivery carrying it is authoritative about the run's
-  # conclusion — including a re-run's, which arrives under the SAME run_id.
-  COMPLETED = "completed".freeze
+  # COLUMN `run_attempt` — which ATTEMPT the stored `conclusion` belongs to, NOT
+  # merely the newest attempt seen. GitHub re-runs a workflow under the SAME
+  # run_id and bumps run_attempt, so this is what separates a newer verdict (which
+  # must win) from a late replay of an older one (which must not). nil on rows
+  # ingested before the column existed — read as 0, which is what an un-re-run
+  # workflow effectively was. GithubWorkflowRunIngestJob#upsert_run! is the only
+  # writer, and it advances the column and the conclusion TOGETHER: letting them
+  # drift apart is precisely the defect that made this column necessary.
 
   # The one workflow whose per-job progress feeds the board's CI bars — the single
   # source both the ingest (which CiCheckJob rows to record) and Ci::ProgressReader
@@ -86,6 +91,6 @@ class GithubWorkflowRun < ApplicationRecord
   end
 
   def terminal?
-    status == COMPLETED
+    status == "completed"
   end
 end
