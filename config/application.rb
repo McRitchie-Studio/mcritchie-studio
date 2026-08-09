@@ -14,7 +14,10 @@ module McritchieStudio
     # Please, add to the `ignore` list any other `lib` subdirectories that do
     # not contain `.rb` files, or that should not be reloaded or eager loaded.
     # Common ones are `templates`, `generators`, or `middleware`, for example.
-    config.autoload_lib(ignore: %w[assets tasks])
+    # `middleware` is ignored because config/initializers/edge_guard.rb requires it
+    # explicitly to build the stack — a Zeitwerk-managed constant referenced at boot
+    # would be loaded twice, once by the require and once by the autoloader.
+    config.autoload_lib(ignore: %w[assets tasks middleware])
 
     # Configuration for the application, engines, and railties goes here.
     #
