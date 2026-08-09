@@ -47,9 +47,33 @@ function taskBoardChrome() {
       // This parent inits before the inner studioBoard, so installing the archive
       // exit-stream handler here claims the primitive's fallback flag first.
       this.$nextTick(() => {
-        this.$el.dataset.alpineReady = 'true';
         this.installArchiveExitStream();
+        this.markReadyWhenBoardLive();
       });
+    },
+
+    // The ready flag must mean the WHOLE composition is interactive, not just this
+    // chrome. The CARDS live inside the inner studio/board primitive, and (per the
+    // note above) this parent inits BEFORE it — so a flag stamped on our own
+    // $nextTick can read true while a card's
+    // x-show="matchesFilter(...) && appVisible(...)" has not been bound yet. A
+    // click landing in that window mutates hiddenApps with nothing listening and
+    // the card never hides. That is a CI-only race — a fast machine clicks inside
+    // the window, a slower one never sees it — and it failed the board-filter e2e
+    // three times across two unrelated PRs while passing every local run.
+    //
+    // So hold the flag until Alpine.$data resolves on the inner section, then give
+    // the walk one more frame: $data appears when the primitive's component is set
+    // up, which is the START of its init, not the end of its child walk.
+    markReadyWhenBoardLive(attempt = 0) {
+      // Bail out rather than never stamping: a chrome rendered without the inner
+      // primitive still has to become "ready", or everything gating on the flag
+      // waits forever. ~100 frames is far longer than a real init.
+      if (!this.boardData() && attempt < 100) {
+        requestAnimationFrame(() => this.markReadyWhenBoardLive(attempt + 1));
+        return;
+      }
+      this.$nextTick(() => { this.$el.dataset.alpineReady = 'true'; });
     },
 
     // Own the archive exit STREAM. A stage→archived change broadcasts a Turbo
