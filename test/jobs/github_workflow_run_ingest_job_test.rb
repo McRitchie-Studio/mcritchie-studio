@@ -80,12 +80,94 @@ class GithubWorkflowRunIngestJobTest < ActiveJob::TestCase
     assert_equal "failure", run.conclusion
   end
 
-  test "[unit] a re-delivered completed event does not overwrite the conclusion" do
+  test "[unit] a re-delivered completed event of the SAME attempt does not overwrite the conclusion" do
     ingest(status: "completed", conclusion: "success")
-    # An impossible-but-possible re-delivery carrying a different conclusion.
+    # An at-least-once re-delivery carrying a different conclusion for the attempt
+    # already recorded — refused, exactly as before run_attempt existed.
     ingest(status: "completed", conclusion: "failure")
 
     assert_equal "success", GithubWorkflowRun.find_by(run_id: RUN_ID).conclusion
+  end
+
+  # The regression this file now owns. GitHub re-runs a failed workflow under the
+  # SAME run_id (bumping run_attempt), so a blanket first-write-wins pinned the row
+  # at `failure` forever. Ci::ReviewGate reads these rows and nothing else, so
+  # `bin/task claim-next-review` could never pop a PR whose flake a re-run had
+  # already fixed — green on GitHub, permanently unclaimable on the board.
+  test "[unit] a re-run's completed success supersedes the failed attempt" do
+    ingest(status: "completed", conclusion: "failure", "run_attempt" => 1)
+    # The re-run: same run_id, attempt 2 — GitHub replays in_progress first.
+    ingest(status: "in_progress", "run_attempt" => 2)
+    ingest(status: "completed", conclusion: "success", "run_attempt" => 2)
+
+    record = GithubWorkflowRun.find_by(run_id: RUN_ID)
+    assert_equal "success", record.conclusion, "the re-run's verdict must win"
+    assert_equal 2, record.run_attempt
+  end
+
+  # Out-of-order is the norm, and this row AUTHORISES A MERGE — a stale attempt
+  # landing a green over a real red is the unsafe direction, so the guard is the
+  # attempt number, not merely "the delivery said completed".
+  test "[unit] a late replay of an EARLIER attempt never overwrites a newer verdict" do
+    ingest(status: "completed", conclusion: "failure", "run_attempt" => 2)
+    ingest(status: "completed", conclusion: "success", "run_attempt" => 1)
+
+    assert_equal "failure", GithubWorkflowRun.find_by(run_id: RUN_ID).conclusion,
+                 "attempt 1 arriving late must not green a row attempt 2 failed"
+    assert_equal 2, GithubWorkflowRun.find_by(run_id: RUN_ID).run_attempt
+  end
+
+  # Rows ingested before the column existed carry run_attempt nil. They were
+  # attempt 1, so the first re-run must still be able to correct them.
+  test "[unit] a re-run supersedes a legacy row that carries no run_attempt" do
+    ingest(status: "completed", conclusion: "failure")
+    assert_nil GithubWorkflowRun.find_by(run_id: RUN_ID).run_attempt
+
+    ingest(status: "completed", conclusion: "success", "run_attempt" => 2)
+
+    assert_equal "success", GithubWorkflowRun.find_by(run_id: RUN_ID).conclusion
+  end
+
+  # The property the old first-write-wins guard was actually written for — it must
+  # survive the change.
+  test "[unit] a non-terminal re-delivery still cannot wipe a conclusion back to nil" do
+    ingest(status: "completed", conclusion: "success", "run_attempt" => 1)
+    ingest(status: "in_progress", conclusion: nil, "run_attempt" => 1)
+
+    assert_equal "success", GithubWorkflowRun.find_by(run_id: RUN_ID).conclusion
+  end
+
+  # THE UNCOVERED VECTOR (caught in review of this very change). A NON-TERMINAL
+  # delivery can advance the stored attempt while the conclusion is still blank —
+  # and a blank conclusion used to be filled by ANY delivery, including a stale
+  # one. That let an older attempt's verdict land, after which the real attempt
+  # was refused as "not newer". Both orders are reproduced below; the guard drops
+  # an older attempt's delivery WHOLE, mirroring the monotonic status guard.
+  test "[unit] a stale attempt cannot land a GREEN over a run that really failed" do
+    ingest(status: "in_progress", "run_attempt" => 2) # advances the stored attempt
+    ingest(status: "completed", conclusion: "success", "run_attempt" => 1) # late replay
+    ingest(status: "completed", conclusion: "failure", "run_attempt" => 2) # the truth
+
+    assert_equal "failure", GithubWorkflowRun.find_by(run_id: RUN_ID).conclusion,
+                 "a stale attempt must never authorise a merge on a red run"
+  end
+
+  test "[unit] a stale attempt cannot pin the row RED after the re-run went green" do
+    ingest(status: "in_progress", "run_attempt" => 2)
+    ingest(status: "completed", conclusion: "failure", "run_attempt" => 1) # late replay
+    ingest(status: "completed", conclusion: "success", "run_attempt" => 2) # the truth
+
+    assert_equal "success", GithubWorkflowRun.find_by(run_id: RUN_ID).conclusion,
+                 "this is the stuck-red bug the task exists to fix — it must not survive"
+  end
+
+  test "[unit] an older attempt's delivery is dropped whole, not partially applied" do
+    ingest(status: "completed", conclusion: "success", "run_attempt" => 3)
+    ingest(status: "completed", conclusion: "failure", "run_attempt" => 2)
+
+    record = GithubWorkflowRun.find_by(run_id: RUN_ID)
+    assert_equal "success", record.conclusion
+    assert_equal 3, record.run_attempt, "the stored attempt must not regress either"
   end
 
   test "[unit] an unhandled event is ignored gracefully (no run, no check job)" do
