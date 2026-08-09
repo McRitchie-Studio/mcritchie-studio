@@ -43,6 +43,15 @@ require_relative "projects_root"
 #     SILENTLY, which leaves the tool and the operator believing different things
 #     about which code was judged.
 #
+#     The reader roots its DIFF here too, not just its fingerprint — and that half
+#     fails in the opposite, worse direction. A foreign fingerprint can only read
+#     STALE (a false REFUSAL, loud). A foreign DIFF reads as a real diff: run the
+#     review gate-zero from a primary checkout carrying one unrelated dirty .md and
+#     the gate observes a doc-only change, grants the `kind: chore` exemption, and
+#     waves through a multi-file code PR. Same wrong tree, but a false PASS in the
+#     gate whose whole job is refusing under-tested work (observed 2026-08-08,
+#     task dor-check-review-rooting).
+#
 # The guard applies only to the IMPLICIT root (cwd-resolved). An EXPLICIT override
 # (FULL_SUITE_ROOT / FAST_CHECK_ROOT / DOR_CHECK_DIFF_ROOT) bypasses it at the call
 # site: the caller declared that root deliberately (the CI/test seam).
@@ -69,14 +78,19 @@ module CertRootGuard
   #   :resolved_root   — the task's tree ON DISK (…/<app>/.worktrees/<worktree_slug>),
   #                      or nil when no such worktree exists here. The RESOLVE half:
   #                      a READER re-roots at this instead of refusing.
+  #   :candidate_roots — EVERY such tree on disk, because a MULTI-REPO task has one
+  #                      per repo and :resolved_root is then a PICK, not a fact. A
+  #                      caller that cannot afford a wrong guess (bin/dor-check's
+  #                      diff) checks this before trusting the pick.
   #   :expected_branch — the branch that IS the task's tree (board, else feat/<slug>).
   #   :actual_branch   — what `root` has checked out ("HEAD" when detached, nil when
   #                      `root` isn't a git tree at all).
   #   :worktree_slug   — the task's worktree slug.
   #
   # `devops` short-circuits the board read for a caller that already holds the task;
-  # `projects_dir` overrides where the worktree glob looks (the test seam).
-  def assess(task_bin:, slug:, root:, devops: nil, projects_dir: nil)
+  # `projects_dir` overrides where the worktree glob looks (the test seam);
+  # `prefer_repo` breaks a multi-repo tie (see #worktree_hint).
+  def assess(task_bin:, slug:, root:, devops: nil, projects_dir: nil, prefer_repo: nil)
     return nil if slug.to_s.strip.empty?
 
     devops ||= task_devops(task_bin, slug)
@@ -88,7 +102,8 @@ module CertRootGuard
 
     {
       message: refusal_message(slug, root, actual_branch, expected_branch, worktree_slug, projects_dir),
-      resolved_root: worktree_hint(worktree_slug, projects_dir),
+      resolved_root: worktree_hint(worktree_slug, projects_dir, prefer_repo: prefer_repo),
+      candidate_roots: worktree_candidates(worktree_slug, projects_dir),
       expected_branch: expected_branch,
       actual_branch: actual_branch,
       worktree_slug: worktree_slug
@@ -133,17 +148,39 @@ module CertRootGuard
       File.basename(File.dirname(dir.to_s)) == ".worktrees"
   end
 
-  # The task's tree ON DISK: any app's .worktrees/<worktree_slug> under the projects
-  # root. Doubles as the refusal's `cd` hint and the reader's :resolved_root. The
-  # glob spans every app because a SATELLITE task (turf-monster, rolio) runs the
+  # EVERY …/<app>/.worktrees/<worktree_slug> on disk under the projects root, sorted.
+  # The glob spans every app because a SATELLITE task (turf-monster, rolio) runs the
   # hub's gate scripts — its worktree lives under the satellite, not the hub.
-  # `projects_dir` overrides the search root (the test seam). Best-effort: nil when
-  # no such worktree exists here.
-  def worktree_hint(worktree_slug, projects_dir = nil)
+  #
+  # It returns the whole SET, not the first hit, because a MULTI-REPO task
+  # legitimately has one worktree per repo under the SAME slug — live on this machine
+  # today, e.g. `repair-moms-app-ci` exists under both moms-app and studio-engine. The
+  # glob is alphabetical, so a first-hit pick silently answers "which repo is this
+  # task's tree?" with "whichever sorts first", which is how a gate ends up grading
+  # moms-app's tree for a studio-engine PR. `projects_dir` overrides the search root
+  # (the test seam). Best-effort: [] on any failure.
+  def worktree_candidates(worktree_slug, projects_dir = nil)
     base = projects_dir.to_s.strip.empty? ? ProjectsRoot.default_projects_dir : projects_dir.to_s
-    Dir.glob(File.join(base, "*", ".worktrees", worktree_slug)).find { |path| File.directory?(path) }
+    Dir.glob(File.join(base, "*", ".worktrees", worktree_slug)).select { |path| File.directory?(path) }.sort
   rescue StandardError
-    nil
+    []
+  end
+
+  # The app a worktree belongs to: …/<app>/.worktrees/<slug> → "<app>".
+  def app_of(worktree_path)
+    File.basename(File.expand_path("../..", worktree_path.to_s))
+  end
+
+  # The task's tree ON DISK. Doubles as the refusal's `cd` hint and the reader's
+  # :resolved_root. `prefer_repo` — the app the work under gate belongs to, e.g. the
+  # repo named by the task's PR URL — breaks a multi-repo tie; with no preference (or
+  # no match) this falls back to the first candidate, and the caller decides from
+  # :candidate_roots whether that guess is safe to act on. nil when nothing matches.
+  def worktree_hint(worktree_slug, projects_dir = nil, prefer_repo: nil)
+    candidates = worktree_candidates(worktree_slug, projects_dir)
+    wanted = prefer_repo.to_s.strip
+    preferred = wanted.empty? ? nil : candidates.find { |path| app_of(path) == wanted }
+    preferred || candidates.first
   end
 
   # The first argument whose string form isn't blank (nil when all are).
