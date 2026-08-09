@@ -103,6 +103,55 @@ class DeploymentsLiveFxTest < ActionView::TestCase
     assert_includes rendered, "reviewedBurst(card, pop)"
   end
 
+  test "a ticked meter rings itself instead of flashing the whole Next Release card" do
+    render partial: "tasks/deployments_live_fx"
+
+    # ORDER is the load-bearing part: the old signatures are read BEFORE renderNow()
+    # replaces the slot. Read them after and the previous values are already gone —
+    # every meter would look unchanged and the card would flash on every CI tick.
+    assert_match(/const before = RELEASE_FX\[target\][\s\S]{0,200}const renderNow = event\.detail\.render;/, rendered,
+                 "the signature snapshot must be taken before the render is invoked")
+    assert_includes rendered, "const moved = changedMeters(fresh, before && before.meters);"
+    assert_includes rendered, "if (moved && moved.length) moved.forEach(meterGlow);"
+    # THREE branches. The card flash is earned by the CARD's own signature moving — never
+    # by the mere absence of a meter change, whose complement includes "nothing changed",
+    # the byte-identical queued→in_progress re-render that flashed the card at nothing.
+    assert_includes rendered,
+                    "else if (!before || (fresh.dataset.cardSignature || \"\") !== before.card) glow(fresh);"
+    assert_not_includes rendered, "else glow(fresh);",
+                        "an unconditional else is the defective two-way branch — the card needs a reason"
+    assert_includes rendered, "card: root ? (root.dataset.cardSignature || \"\") : \"\""
+    # A changed lane-UP (a member added/dropped) is not a tick — it falls back to the card.
+    assert_includes rendered, "if (!before || before.size !== after.length) return null;"
+
+    # The ring itself: the engine's primitive on the BAR-sized glow host (not the meter
+    # wrapper — that boxed the label in and read as a blob), tinted from the bar's OWN
+    # fill so it can never disagree with the tone it traces, and gone in 2s.
+    assert_includes rendered, ".release-meter-glow"
+    assert_includes rendered, "meter.querySelector(\"[data-test='release-phase-glow-host']\") || meter"
+    assert_includes rendered, "meter.querySelector(\"[data-test='release-phase-fill']\")"
+    assert_includes rendered, "host.style.setProperty(\"--studio-team-glow-color\", color)"
+    # The transparent-fill guard reads the browser's OWN normalization, not a spelling. The
+    # old /rgba\(.*, 0\)/ passed only because bg-transparent is a legacy sRGB colour that
+    # CSS Color 4 forces to serialize as rgba(); respell the tone and the ring goes
+    # invisible with no error. Canvas fillStyle always answers #rrggbb or rgba(r,g,b,a).
+    assert_includes rendered, "document.createElement(\"canvas\").getContext(\"2d\")"
+    assert_includes rendered, "const color = paintableColor("
+    assert_not_includes rendered, "/^rgba\\(.*,\\s*0\\)$/",
+                        "a regex over the raw computed string asserts a spelling, not the alpha"
+    assert_includes rendered, "host.classList.add(\"studio-team-glow\", \"release-meter-glow\")"
+    assert_includes rendered, "host.classList.remove(\"studio-team-glow\", \"release-meter-glow\")"
+    assert_includes rendered, "const METER_GLOW_MS = 2000"
+    assert_includes rendered, "METER_GLOW_MS - METER_FADE_MS"
+    # Meter scale, not card scale: the engine's 4px/10px defaults are drawn for a card and
+    # swamp an 18px bar. The bloom is KEPT — a ring-only cut was built and compared on
+    # screen, and this is the one that reads.
+    assert_includes rendered, "--studio-team-glow-thickness: 2px"
+    assert_includes rendered, "--studio-team-glow-bloom: 4px"
+    assert_not_includes rendered, ".release-meter-glow::after { content: none; }",
+                        "the bloom is a deliberate choice, not an oversight — don't re-drop ::after"
+  end
+
   test "archive removals can dissolve through the mist exit" do
     render partial: "tasks/deployments_live_fx"
 

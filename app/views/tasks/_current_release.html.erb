@@ -13,9 +13,14 @@
   <% release_glow_style = release_rainbow_glow_style if release_confirming_glow %>
   <% release_card_class = [card_class, ("studio-border-glow release-confirming-glow" if release_confirming_glow)].compact.join(" ") %>
   <%# data-glow tints the live-update flash (LiveBoardFx) with the conductor mascot's
-      type colour; blank → the fx falls back to its default warm-orange pulse. %>
+      type colour; blank → the fx falls back to its default warm-orange pulse.
+      data-card-signature is what earns that flash: LiveBoardFx only flashes the card when
+      THIS string moved. Without it the fx branched on "no meter moved", which also fires
+      when nothing moved at all — and a queued→in_progress CI delivery re-renders this card
+      byte-identically. See ApplicationHelper#release_card_signature. %>
   <div id="current-release"
        data-glow="<%= release_glow_color %>"
+       data-card-signature="<%= release_card_signature(rel) %>"
        <% if release_confirming_glow %>data-stage-glow="confirming"<% end %>
        <% if release_glow_style %>style="<%= release_glow_style %>"<% end %>
        class="<%= release_card_class %>">
