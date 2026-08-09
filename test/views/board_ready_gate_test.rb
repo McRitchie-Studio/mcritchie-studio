@@ -1,18 +1,16 @@
 require "test_helper"
 
-# [component] The /tasks board's readiness gate. `taskBoardChrome` stamps
-# data-alpine-ready on itself only once the INNER studio/board primitive is live,
-# because the cards — and their x-show filter bindings — live in that inner
-# component, which initialises AFTER this chrome. Everything that waits on the
-# flag (the board-filter e2e, any future one) is really waiting for the cards to
-# be interactive, so the flag must not outrun them.
+# [component] The /tasks board's readiness signals. The board is TWO Alpine
+# components — the chrome (filter chips, archive/delete) wrapping the engine's
+# studio/board primitive (the cards). Each stamps data-alpine-ready on its own $el
+# after its own directive walk, and the chrome initialises FIRST, so the two flags
+# are genuinely different moments. An e2e that waits only for the chrome can click
+# a filter chip while the cards' x-show bindings are still cold.
 #
-# This pins the STRUCTURAL invariant the gate stands on: the chrome reaches the
-# primitive with `this.$el.querySelector('[data-test="studio-board"]')`, so the
-# inner section must render INSIDE the chrome element. Move it out — a sibling, a
-# teleport, its own frame — and boardData() silently returns null forever: the
-# flag would then only ever appear via the bail-out, and the race it exists to
-# close comes straight back, invisibly.
+# What this pins is what makes waiting on those flags MEAN anything:
+# neither may be present in the server-rendered markup. A hardcoded
+# data-alpine-ready would satisfy every waiting selector before a line of JS ran,
+# turning each gate vacuous and re-arming the race invisibly.
 class BoardReadyGateTest < ActionView::TestCase
   setup do
     @tasks_by_stage = { "building" => [] }
@@ -34,27 +32,28 @@ class BoardReadyGateTest < ActionView::TestCase
            locals: { tasks_by_stage: @tasks_by_stage, agents: [], crew_board: false }
   end
 
-  test "[component] the inner board renders INSIDE the chrome that gates on it" do
+  test "[component] neither board component ships a server-rendered ready flag" do
     render_board
 
-    chrome = css_select("[data-test='kanban-board']").first
-    assert chrome, "the chrome element must render"
-    assert_equal "taskBoardChrome()", chrome["x-data"],
-                 "the gate lives on this component — boardData() resolves from its $el"
-
-    inner = css_select("[data-test='kanban-board'] [data-test='studio-board']")
-    assert_equal 1, inner.size,
-                 "the primitive must be a DESCENDANT of the chrome, or " \
-                 "this.$el.querySelector('[data-test=\"studio-board\"]') returns null " \
-                 "and the ready flag stops meaning the cards are interactive"
+    %w[kanban-board studio-board].each do |component|
+      element = css_select("[data-test='#{component}']").first
+      assert element, "#{component} must render"
+      assert_nil element["data-alpine-ready"],
+                 "#{component}'s ready flag is EARNED at runtime after its directive walk; " \
+                 "a server-rendered one is true before any JS runs, so every selector " \
+                 "waiting on it passes instantly and the init race comes back unseen"
+    end
   end
 
-  test "[component] the chrome does not stamp the ready flag server-side" do
+  # The chrome reaches the primitive with
+  # `this.$el.querySelector('[data-test="studio-board"]')` (boardData → the shared
+  # toast host, count refresh, and card exit animation). Move the primitive out —
+  # a sibling, a teleport, its own frame — and that lookup silently returns null.
+  test "[component] the primitive renders INSIDE the chrome that reaches into it" do
     render_board
 
-    chrome = css_select("[data-test='kanban-board']").first
-    assert_nil chrome["data-alpine-ready"],
-               "the flag is earned at runtime once the inner board is live — " \
-               "a server-rendered one would be true before any JS ran"
+    assert_equal 1, css_select("[data-test='kanban-board'] [data-test='studio-board']").size,
+                 "the primitive must stay a descendant of the chrome, or boardData() " \
+                 "returns null and the chrome's delegation silently no-ops"
   end
 end

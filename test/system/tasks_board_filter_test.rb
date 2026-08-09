@@ -18,9 +18,18 @@ class TasksBoardFilterSystemTest < ApplicationSystemTestCase
     )
 
     visit tasks_path
-    # The outer chrome is interactive AND the primitive board rendered.
+    # BOTH components must be interactive before the click, and they are separate
+    # signals. The chrome owns the filter chips (@click="toggleApp"); the CARDS —
+    # and their x-show="matchesFilter(...) && appVisible(...)" — live inside the
+    # inner studio/board primitive, which initialises AFTER the chrome. Waiting on
+    # the chrome alone let a click land while the card bindings were still cold:
+    # toggleApp mutated hiddenApps with nothing listening, and the card never hid.
+    # That failed this test three times in CI (never once locally) across two
+    # unrelated PRs. Each component stamps data-alpine-ready on its own $el AFTER
+    # its directive walk — the engine's at studio/_board_assets.html.erb — so gate
+    # on the INNER one too rather than on mere markup presence.
     assert_selector "[data-test='kanban-board'][data-alpine-ready='true']"
-    assert_selector "[data-test='studio-board']"
+    assert_selector "[data-test='studio-board'][data-alpine-ready='true']"
 
     # Both cards start visible — the nested scope resolves matchesFilter/appVisible.
     assert_selector "#card-#{rolio.slug}", visible: true
