@@ -39,6 +39,29 @@ class TasksBoardPrimitiveTest < ActionDispatch::IntegrationTest
     assert_select "meta[name='e2e-api-token']", count: 1
   end
 
+  # The app-filter contract, against REAL markup: the chip the board-filter e2e
+  # clicks must toggle the SAME app string the card's appVisible() reads. They are
+  # produced by different code paths — board_apps folds devops_repositories across
+  # the board, the card joins its own — so a divergence would leave the chip
+  # toggling an app no card is filed under, and the click would silently do
+  # nothing. Asserted here rather than in a view test because the chips only
+  # render for a board that HAS cards.
+  test "[integration] a filter chip toggles the same app string the card reads" do
+    Task.create!(title: "filter chip probe", stage: "designed",
+                 metadata: { "devops" => { "repositories" => ["rolio"] } })
+
+    get tasks_path
+    assert_response :success
+
+    chip = css_select("[data-test='board-filter-row'] button").find { |b| b.text.include?("rolio") }
+    assert chip, "a board carrying a rolio task renders a rolio chip"
+    assert_equal "toggleApp('rolio')", chip["@click"]
+
+    card = css_select("[data-test='studio-board'] .kanban-card").first
+    assert_includes card["x-show"].to_s, "appVisible('rolio')",
+                    "the card must gate on the exact string the chip toggles"
+  end
+
   test "[integration] a reorder POST restamps the 100-gap rank and reorders the board" do
     log_in_as(@admin)
     a = Task.create!(title: "primitive reorder card a", stage: "designed")

@@ -1,26 +1,26 @@
 require "test_helper"
 
-# [component] The /tasks board's readiness signals. The board is TWO Alpine
-# components — the chrome (filter chips, archive/delete) wrapping the engine's
-# studio/board primitive (the cards). Each stamps data-alpine-ready on its own $el
-# after its own directive walk, and the chrome initialises FIRST, so the two flags
-# are genuinely different moments. An e2e that waits only for the chrome can click
-# a filter chip while the cards' x-show bindings are still cold.
+# [component] The /tasks board's readiness signals and the filter row that waits
+# on them. The board is TWO Alpine components — the chrome (filter chips,
+# archive/delete) wrapping the engine's studio/board primitive (the cards) — and
+# each stamps data-alpine-ready on its own $el after its directive walk.
 #
-# What this pins is what makes waiting on those flags MEAN anything:
-# neither may be present in the server-rendered markup. A hardcoded
-# data-alpine-ready would satisfy every waiting selector before a line of JS ran,
-# turning each gate vacuous and re-arming the race invisibly.
+# What this pins is what makes waiting on either flag MEAN anything: neither may
+# appear in the server-rendered markup. A hardcoded data-alpine-ready satisfies
+# every waiting selector before a line of JS runs, so any gate built on it is
+# vacuous.
+#
+# SCOPE, stated plainly: it renders an EMPTY board, so it pins the two container
+# sections and nothing else. The filter chips the e2e actually clicks need a real
+# card (and the controller's activity ivars) to render, so they are asserted in
+# TasksBoardPrimitiveTest against a real GET instead of scaffolded here.
 class BoardReadyGateTest < ActionView::TestCase
   setup do
     @tasks_by_stage = { "building" => [] }
-    # The board partial reads session/authorisation context the controller supplies
-    # in production. Stubbed to the LEAST-privileged reader, so the structure this
-    # pins is the one every visitor gets.
-    def view.pokemon_by_slug = {}
+    # Authorisation context the controller supplies in production, stubbed to the
+    # LEAST-privileged reader.
     def view.admin? = false
     def view.logged_in? = false
-    def view.current_user = nil
   end
 
   def render_board
@@ -41,7 +41,7 @@ class BoardReadyGateTest < ActionView::TestCase
       assert_nil element["data-alpine-ready"],
                  "#{component}'s ready flag is EARNED at runtime after its directive walk; " \
                  "a server-rendered one is true before any JS runs, so every selector " \
-                 "waiting on it passes instantly and the init race comes back unseen"
+                 "waiting on it passes instantly and the gate is vacuous"
     end
   end
 

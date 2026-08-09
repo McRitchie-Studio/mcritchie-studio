@@ -18,16 +18,27 @@ class TasksBoardFilterSystemTest < ApplicationSystemTestCase
     )
 
     visit tasks_path
-    # BOTH components must be interactive before the click, and they are separate
-    # signals. The chrome owns the filter chips (@click="toggleApp"); the CARDS —
-    # and their x-show="matchesFilter(...) && appVisible(...)" — live inside the
-    # inner studio/board primitive, which initialises AFTER the chrome. Waiting on
-    # the chrome alone let a click land while the card bindings were still cold:
-    # toggleApp mutated hiddenApps with nothing listening, and the card never hid.
-    # That failed this test three times in CI (never once locally) across two
-    # unrelated PRs. Each component stamps data-alpine-ready on its own $el AFTER
-    # its directive walk — the engine's at studio/_board_assets.html.erb — so gate
-    # on the INNER one too rather than on mere markup presence.
+    # The board is TWO Alpine components — this chrome wrapping the engine's
+    # studio/board primitive — and each stamps data-alpine-ready on its own $el
+    # after its directive walk. Waiting on BOTH is strictly stricter than waiting
+    # on the chrome alone and costs nothing, so it stays.
+    #
+    # It is NOT known to fix anything. THE FLAKE THIS TEST SUFFERS IS STILL OPEN:
+    # it failed in CI three times across PRs #727 and #729 and has never once
+    # reproduced locally (single file, full lane, CI seeds, clean db:test:prepare,
+    # and CI's exact merge ref). An init-race explanation was proposed and then
+    # REFUTED in review: the chrome and the primitive render inline in one
+    # document, so Alpine performs a single initTree walk whose deferHandlingDirectives
+    # flush binds the cards' x-show BEFORE either flag is stamped — there is no
+    # window between the two flags to close. A cold binding would also self-heal,
+    # since an effect's first evaluation reads the already-mutated hiddenApps.
+    # A better untested suspect: the chip's width depends on app_emoji(app), and
+    # headless CI renders emoji at different widths, so a layout shift between
+    # locating the chip below and dispatching the click fits "3x in CI, never
+    # locally" far better than any init race.
+    #
+    # If this test fails again, the cause is still unfound — do not read these two
+    # assertions as having handled it.
     assert_selector "[data-test='kanban-board'][data-alpine-ready='true']"
     assert_selector "[data-test='studio-board'][data-alpine-ready='true']"
 
