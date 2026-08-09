@@ -19,7 +19,7 @@ Engine satellite; Rolio is the current reference case.
 | Repo | own repo, inside the managed ecosystem | own repo, outside shared automation |
 | Registry | `config/satellites.yml` via `bin/register-satellite` | app-owned: unmanaged candidate; release-managed: `release_repos.yml` + `qa_environments.yml`; optional `status: reserved` row only |
 | Runtime | `studio-engine` (auth, theme, `ErrorLog`, SSO) | standalone — **no `studio-engine`**; owns auth/UI/infra |
-| Branch model | persistent `release` branch; feature PRs target `release` | app-owned: PRs target **`main`**; release-managed: PRs target **`release`** |
+| Branch model | three-rung ladder `accepted` → `release` → `main`; feature PRs target **`accepted`** | app-owned: PRs target **`main`**; release-managed: the same three-rung ladder |
 | DoR | full `bin/dor-check` (shape-tiered) | app-owned: **lite** — task + tests + error-logging; release-managed: release conductor gates apply |
 | Deploy owner | studio DevOps (Steffon); operator-gated ship | app-owned deploy or release-managed Heroku deploy |
 | QA / handoff | Avi QA → RC → operator ship | app-owned handoff or QA Heroku → operator ship |
@@ -48,7 +48,8 @@ deliberate decision, never a default.
   *unmanaged candidate*: app-specific docs live in its own repo, and it is
   excluded from `bin/ecosystem-build` and the hub navbar. If the studio owns
   QA/prod hosting, add it to `config/release_repos.yml` and
-  `config/qa_environments.yml` as a **release-managed standalone** app. Record
+  `config/qa_environments.yml` as a **release-managed standalone** app — with a
+  `ladder:` declaration, and run `bin/release init` (see section 4). Record
   the decision in
   [`../modules/app-registry.md`](../modules/app-registry.md) so the next agent
   doesn't re-litigate it.
@@ -61,16 +62,41 @@ deliberate decision, never a default.
 | DB | Postgres | **SQLite is fine for a demo**; Postgres when it matters |
 | External adapters (AI, payments, …) | mock-first behind a swappable adapter | same — mock-first behind a swappable adapter |
 
-### 4. Branch model
-- Managed → `bin/release init` gives the repo its persistent `release` branch;
-  feature PRs target `release`.
-- App-owned standalone → **no release branch.** Feature PRs target **`main`**;
-  the app team merges its own PRs. (`bin/agent-worktree` already falls back to
-  `origin/main` as the base for any repo without a `release` branch.)
-- Release-managed standalone → run `bin/release init` after adding the app to
-  `config/release_repos.yml`; feature PRs target **`release`**, QA deploys via
-  `bin/release prepare`, and production ships through the operator-gated
-  `bin/release ship`.
+### 4. Branch model — a managed app is BORN laddered
+
+The pipeline walks three rungs — **`accepted` → `release` → `main`**. A repo
+missing either persistent branch cannot ride it: feature PRs land on
+`accepted`, the sweep promotes `accepted` onto `release`, and the ship
+fast-forwards `release` onto `main`. **Create both rungs as part of onboarding,
+not later.** An app that skips this reopens the question of where its PR should
+go on every single change — moms-app was created with `main` alone and did
+exactly that for months.
+
+- **Managed satellite / release-managed standalone** → add the app to
+  `config/release_repos.yml` **with a `ladder:` declaration** (below), then run
+  `bin/release init`, which creates **both** `accepted` and `release` off
+  `main`. Feature PRs target **`accepted`**. QA deploys via `bin/release
+  prepare`; production ships through the operator-gated `bin/release ship`.
+- **App-owned standalone** → **no ladder.** Feature PRs target **`main`** and
+  the app team merges its own. (`bin/agent-worktree` falls back to
+  `origin/main` as the base for any repo without the branches.) Such an app is
+  not in `release_repos.yml` at all, so nothing sweeps it.
+
+Every entry in `config/release_repos.yml` declares its shape, and the
+declaration is CHECKED against the real repos by
+`test/models/release/repos_test.rb` — an omitted or stale one fails the suite
+rather than sitting quietly:
+
+| `ladder:` | Meaning | What the guard asserts |
+|---|---|---|
+| `three-rung` | the normal state | `origin/accepted` and `origin/release` both exist |
+| `planned` | the repo does not exist yet | there is still **no checkout** — so the exemption expires the day one appears |
+| `dormant` | registered for history, deliberately not shipped | excluded from the sweep |
+| `blocked` | exists and wanted, but automation cannot reach it (not org-owned, or the App is not installed) | excluded from the sweep; **this is unfinished work, not a decision** |
+
+Only `three-rung` repos are swept. That exclusion is the point — reaching for a
+repo the conductor cannot fetch is how a stray failure lands in the middle of an
+unrelated `bin/release status`.
 
 ### 5. Seed the task board
 - Even a standalone app uses the studio task board. Create a **foundation task**
@@ -152,16 +178,17 @@ later cleanup task.
 **Standalone-specific:**
 - No `studio-engine`, no hub SSO — the app owns its auth, UI, and infra.
 - App-owned feature PRs target **`main`**; release-managed standalone PRs target
-  **`release`**.
+  **`accepted`** (the ladder's first rung).
 - Match the studio's Ruby/Rails versions. App-owned standalone apps own their
   Heroku app / pipeline / env vars; release-managed standalone apps declare
   those targets in `config/release_repos.yml` and `config/qa_environments.yml`.
 - **SQLite is fine for a demo**; move to Postgres when persistence matters.
 
 ### 8. Handoff
-- Managed → standard PR-into-`release` → Avi QA → RC → operator ship.
+- Managed → standard PR-into-`accepted` → review merges → Avi's sweep promotes
+  `accepted` onto `release` → QA → operator ship.
 - App-owned standalone → PR-into-`main`; the **app team / client owns merge +
-  deploy.** Release-managed standalone → PR-into-`release`, QA Heroku via
+  deploy.** Release-managed standalone → PR-into-`accepted`, QA Heroku via
   `bin/release prepare`, and operator-gated `bin/release ship`. When the
   engagement ends, **hand the repo off to the client** with its own README, env
   contract, and deploy runbook — it must stand alone without the studio.
