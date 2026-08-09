@@ -139,6 +139,12 @@ TREE`, lists the candidates, and refuses to guess. Nothing assumes one repo or o
 rung — the diff base stays the per-root release-aware default, so a repo with no
 `accepted` (moms-app) still resolves its own base.
 
+**Known gap, stated so nobody assumes otherwise:** `devops.pr_url` is a *single*
+value, so on a multi-repo task this gate validates **one** PR and is blind to the
+other. The rooting above keeps it from grading the *wrong* repo silently; it does
+not make it grade *both*. Reviewing a multi-repo task still means checking the
+second PR yourself.
+
 **The local working tree is never a fallback from a foreign root.** This is the
 rule that closes the 08-08 hole by construction rather than by every reader
 remembering to ask. The old reasoning — recorded in this file, and wrong — was
