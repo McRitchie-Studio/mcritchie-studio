@@ -186,11 +186,21 @@
 
     // Next Release, per-meter. Every CI upsert on a member repo REPLACES the whole
     // #current-release slot (DeploymentsBroadcaster.ci_progress → .release_modules), so
-    // one finished test used to flash the entire card. It now flashes the meter that
-    // MOVED: the meters' data-signature values are snapshotted before the swap and
-    // re-read after, and only the ones whose signature changed get a 2s ring. The
-    // card-wide glow survives for card-level changes (a new release, a stage advance,
-    // a mascot stamp) — the case where no meter signature moved at all.
+    // one finished test used to flash the entire card. It now flashes only what MOVED,
+    // decided by two kinds of signature snapshotted before the swap and re-read after:
+    // the meters' data-signature, and the card's own data-card-signature.
+    //
+    // THREE branches, because there are three cases and the middle one is not the
+    // complement of the first:
+    //   a meter moved                        → ring those meters
+    //   no meter moved, card signature moved → flash the card (new release, stage
+    //                                          advance, mascot stamp, member joined)
+    //   neither moved                        → DO NOTHING
+    // The third is the common one, and collapsing it into the second is the bug this
+    // branch was rewritten to fix: the ingest upserts a CiCheckJob row on queued AND
+    // in_progress AND completed, and bucket_for folds both pre-completion states to
+    // :pending, so a queued→in_progress delivery re-renders this card byte-identically.
+    // Branching on "no meter moved" flashed the whole card on every one of them.
     const METER_SELECTOR = "[data-test='release-phase-meter']";
     const METER_GLOW_MS = 2000;
     const METER_FADE_MS = 400;   // the .studio-team-glow opacity transition (engine-motion.css)
@@ -251,6 +261,12 @@
       return map;
     }
 
+    // Everything the fx needs to remember about the slot BEFORE Turbo replaces it. Taken
+    // in one call so the meter and card readings can never come from different renders.
+    function releaseSnapshot(root) {
+      return { meters: meterSignatures(root), card: root ? (root.dataset.cardSignature || "") : "" };
+    }
+
     // Which meters MOVED across the swap. A changed lane-up (a member added, a repo
     // dropped, the empty state) is not a meter tick at all — the keys themselves differ,
     // so it returns null and the caller falls back to the card-wide glow.
@@ -273,11 +289,38 @@
     // traces. A fill that is absent or transparent (pending / n-a) leaves the knob unset
     // and the primitive's default CTA colour stands. The last 400ms ride the class's own
     // opacity transition, so the ring fades out instead of snapping off.
+    //
+    // 2s is the CEILING, not a promise. Every release stream is a wholesale replace, so
+    // the next CI upsert DESTROYS this node mid-ring and the glow is cut short — on a busy
+    // suite the operator usually sees less. That is inherent to the replace and is not a
+    // stale-timer bug: the timers below close over THIS render's node, so a newer glow on
+    // the replacement node is never touched by an older node's cleanup (measured).
+    // Is this computed colour actually paintable, whatever colour space it arrived in?
+    // Normalize through a canvas fillStyle — the browser's own parser, which always hands
+    // back "#rrggbb" or "rgba(r, g, b, a)" — and read the alpha off THAT.
+    //
+    // Testing the raw string was a SPELLING assertion, and it passed only by luck: the
+    // tone-less meters happen to use `bg-transparent`, a legacy sRGB colour, and CSS Color
+    // 4 forces legacy colours to serialize as rgba() — so /rgba\(.*, 0\)/ matched. Respell
+    // release_meter_tone's colourless states as `bg-mint-500/0` or a color-mix and the
+    // regex silently stops matching, the knob takes a fully transparent colour, and the
+    // ring goes INVISIBLE with no error and no failing test. A colour space the canvas
+    // cannot parse leaves fillStyle untouched, which reads as opaque — the safe way to be
+    // wrong, since the worst case is a ring in the primitive's default colour.
+    function paintableColor(value) {
+      if (!value) return null;
+      const ctx = paintableColor.ctx || (paintableColor.ctx = document.createElement("canvas").getContext("2d"));
+      ctx.fillStyle = "#000000";
+      ctx.fillStyle = value;
+      const alpha = /^rgba\([^)]*,\s*([0-9.]+)\)$/.exec(ctx.fillStyle);
+      return alpha && parseFloat(alpha[1]) === 0 ? null : value;
+    }
+
     function meterGlow(meter) {
       const host = meter.querySelector("[data-test='release-phase-glow-host']") || meter;
       const fill = meter.querySelector("[data-test='release-phase-fill']");
-      const color = fill ? getComputedStyle(fill).backgroundColor : "";
-      if (color && !/^rgba\(.*,\s*0\)$/.test(color)) host.style.setProperty("--studio-team-glow-color", color);
+      const color = paintableColor(fill ? getComputedStyle(fill).backgroundColor : "");
+      if (color) host.style.setProperty("--studio-team-glow-color", color);
       host.classList.add("studio-team-glow", "release-meter-glow");
       setTimeout(() => host.style.setProperty("--studio-team-glow-opacity", "0"), METER_GLOW_MS - METER_FADE_MS);
       setTimeout(() => {
@@ -617,7 +660,7 @@
       // The meter signatures are read HERE, before renderNow() destroys the old node —
       // after the swap the previous values are gone, so there is nothing left to diff.
       if (RELEASE_FX[target] && (action === "replace" || action === "update")) {
-        const before = RELEASE_FX[target] === "glow" ? meterSignatures(document.getElementById(target)) : null;
+        const before = RELEASE_FX[target] === "glow" ? releaseSnapshot(document.getElementById(target)) : null;
         const renderNow = event.detail.render;
         event.detail.render = (el) => {
           renderNow(el);
@@ -627,11 +670,12 @@
               if (RELEASE_FX[target] === "fresh-deploy") {
                 if (!freshDeployGlow(fresh)) burst(fresh, true);
               } else {
-                // A meter moved → ring those meters and hold the card still. Nothing
-                // moved (or the lane-up itself changed) → the card-wide glow stands.
-                const moved = changedMeters(fresh, before);
+                // Three branches — a meter moved, else the CARD moved, else nothing did.
+                // The last one must stay a no-op: it is the byte-identical re-render, and
+                // treating it as a card change is what flashed the card at nothing.
+                const moved = changedMeters(fresh, before && before.meters);
                 if (moved && moved.length) moved.forEach(meterGlow);
-                else glow(fresh);
+                else if (!before || (fresh.dataset.cardSignature || "") !== before.card) glow(fresh);
               }
             });
           }

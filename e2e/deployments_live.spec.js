@@ -311,3 +311,83 @@ test("the tasks board updates a blocked card live in the Building column @quaran
 
   expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
 });
+
+// ── Next Release live FX: only what MOVED lights up ──────────────────────────
+// The board replaces the WHOLE #current-release slot on every CI upsert, and the
+// ingest upserts a CiCheckJob row on queued, in_progress AND completed while
+// Ci::CheckProgress.bucket_for folds both pre-completion states to :pending — so a
+// queued→in_progress delivery re-renders this card BYTE-IDENTICALLY, ~8 times per
+// run. The fx must stay silent for those and still flash for a real card change.
+//
+// This is the only tier that can see it: the live-fx tests in test/views are
+// source-string assertions, and a two-way branch that flashed on every identical
+// re-render passed all of them. The replay below is byte-identical to what the
+// server sends in that case and runs through the real turbo:before-stream-render
+// handler, so the branch is exercised, not described.
+async function replayCurrentRelease(page, mutate) {
+  return page.evaluate(async (mutation) => {
+    const seen = { card: 0, meters: [] };
+    const observer = new MutationObserver((records) => {
+      for (const record of records) {
+        const el = record.target;
+        if (!el.matches) continue;
+        if (el.id === "current-release" && el.classList.contains("lbfx-glow")) seen.card += 1;
+        if (el.matches("[data-test='release-phase-glow-host'].studio-team-glow")) {
+          const meter = el.closest("[data-test='release-phase-meter']");
+          if (meter) seen.meters.push(meter.dataset.phase);
+        }
+      }
+    });
+    observer.observe(document.body, { subtree: true, attributes: true, attributeFilter: ["class"] });
+
+    let markup = document.getElementById("current-release").outerHTML;
+    if (mutation) markup = markup.replace(/data-card-signature="[^"]*"/, `data-card-signature="${mutation}"`);
+
+    const stream = document.createElement("turbo-stream");
+    stream.setAttribute("action", "replace");
+    stream.setAttribute("target", "current-release");
+    const template = document.createElement("template");
+    template.innerHTML = markup;
+    stream.appendChild(template);
+    document.body.appendChild(stream);
+
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    observer.disconnect();
+    stream.remove();
+    return seen;
+  }, mutate || null);
+}
+
+test("a byte-identical Next Release re-render flashes nothing", async ({ page }) => {
+  const pageErrors = [];
+  page.on("pageerror", (err) => pageErrors.push(String(err)));
+
+  await page.goto("/deployments");
+  await expect(page.locator("#current-release")).toBeVisible();
+  await expect(page.locator("#current-release [data-test='release-phase-meter']").first()).toBeVisible();
+  // The card must carry its own signature, or the fx has nothing to branch on and
+  // silently falls back to flashing every re-render.
+  await expect(page.locator("#current-release")).toHaveAttribute("data-card-signature", /.+/);
+
+  const seen = await replayCurrentRelease(page, null);
+
+  expect(seen.card, "an unchanged card must not flash").toBe(0);
+  expect(seen.meters, "and no meter may ring when no meter moved").toEqual([]);
+  expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
+});
+
+test("a Next Release card whose own signature moved still flashes", async ({ page }) => {
+  const pageErrors = [];
+  page.on("pageerror", (err) => pageErrors.push(String(err)));
+
+  await page.goto("/deployments");
+  await expect(page.locator("#current-release")).toBeVisible();
+
+  // The other half of the property: silence must come from "nothing moved", not from a
+  // dead branch. A moved card signature — a new release, a stage advance, a member
+  // joining — still earns the card-wide flash.
+  const seen = await replayCurrentRelease(page, "moved-card-signature");
+
+  expect(seen.card, "a genuinely changed card must still flash").toBeGreaterThan(0);
+  expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
+});

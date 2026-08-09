@@ -111,9 +111,16 @@ class DeploymentsLiveFxTest < ActionView::TestCase
     # every meter would look unchanged and the card would flash on every CI tick.
     assert_match(/const before = RELEASE_FX\[target\][\s\S]{0,200}const renderNow = event\.detail\.render;/, rendered,
                  "the signature snapshot must be taken before the render is invoked")
-    assert_includes rendered, "const moved = changedMeters(fresh, before);"
+    assert_includes rendered, "const moved = changedMeters(fresh, before && before.meters);"
     assert_includes rendered, "if (moved && moved.length) moved.forEach(meterGlow);"
-    assert_includes rendered, "else glow(fresh);"
+    # THREE branches. The card flash is earned by the CARD's own signature moving — never
+    # by the mere absence of a meter change, whose complement includes "nothing changed",
+    # the byte-identical queued→in_progress re-render that flashed the card at nothing.
+    assert_includes rendered,
+                    "else if (!before || (fresh.dataset.cardSignature || \"\") !== before.card) glow(fresh);"
+    assert_not_includes rendered, "else glow(fresh);",
+                        "an unconditional else is the defective two-way branch — the card needs a reason"
+    assert_includes rendered, "card: root ? (root.dataset.cardSignature || \"\") : \"\""
     # A changed lane-UP (a member added/dropped) is not a tick — it falls back to the card.
     assert_includes rendered, "if (!before || before.size !== after.length) return null;"
 
@@ -124,6 +131,14 @@ class DeploymentsLiveFxTest < ActionView::TestCase
     assert_includes rendered, "meter.querySelector(\"[data-test='release-phase-glow-host']\") || meter"
     assert_includes rendered, "meter.querySelector(\"[data-test='release-phase-fill']\")"
     assert_includes rendered, "host.style.setProperty(\"--studio-team-glow-color\", color)"
+    # The transparent-fill guard reads the browser's OWN normalization, not a spelling. The
+    # old /rgba\(.*, 0\)/ passed only because bg-transparent is a legacy sRGB colour that
+    # CSS Color 4 forces to serialize as rgba(); respell the tone and the ring goes
+    # invisible with no error. Canvas fillStyle always answers #rrggbb or rgba(r,g,b,a).
+    assert_includes rendered, "document.createElement(\"canvas\").getContext(\"2d\")"
+    assert_includes rendered, "const color = paintableColor("
+    assert_not_includes rendered, "/^rgba\\(.*,\\s*0\\)$/",
+                        "a regex over the raw computed string asserts a spelling, not the alpha"
     assert_includes rendered, "host.classList.add(\"studio-team-glow\", \"release-meter-glow\")"
     assert_includes rendered, "host.classList.remove(\"studio-team-glow\", \"release-meter-glow\")"
     assert_includes rendered, "const METER_GLOW_MS = 2000"

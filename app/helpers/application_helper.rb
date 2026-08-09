@@ -770,6 +770,36 @@ module ApplicationHelper
     [phase[:state], phase[:value], release_meter_check_marks(phase[:checks]).join("-")].join("|")
   end
 
+  # The live-fx fingerprint of the Next Release CARD ITSELF — everything it draws that is
+  # NOT a phase meter. Stamped as `data-card-signature` on #current-release and diffed by
+  # LiveBoardFx alongside the per-meter signatures.
+  #
+  # WHY IT EXISTS — the defect it closes. "No meter moved" and "the card changed" are
+  # DIFFERENT PREDICATES, and the gap between them is "nothing changed at all". That gap is
+  # not theoretical: CiCheckJob broadcasts `on: %i[create update]`, the ingest upserts a row
+  # on queued AND in_progress AND completed, and Ci::CheckProgress.bucket_for folds
+  # everything short of `completed` to :pending — so a queued→in_progress delivery
+  # re-renders this card BYTE-IDENTICALLY. Branching on the absence of a meter change
+  # therefore flashed the whole card ~8 times per CI run, on a card where not one pixel
+  # moved. This signature is what makes the third branch — do nothing — possible.
+  #
+  # DELIBERATELY OMITTED: the elapsed-time clock (`data-release-ticker`, "in progress ·
+  # 2h 53m"). It advances every minute on its own and is animated client-side, so folding
+  # it in would re-open the exact defect this closes — a flash with no visible cause. The
+  # trade is stated rather than hidden: a card fact left out of this string is a flash NOT
+  # fired, which is the quiet failure; a fact wrongly folded in is a flash fired at nothing,
+  # which is the loud one that came back from review.
+  def release_card_signature(release)
+    return "none" if release.blank?
+
+    [
+      release.slug, release.state,
+      release.stage_reached?("confirming"), release.stage_reached?("shipped"),
+      release.mascot&.signature_color, release.qa_url, release.production_url, release.deployed_sha,
+      release.tasks.order(:position).pluck(:slug, :stage)
+    ].flatten.join("|")
+  end
+
   # Compact single-unit "time ago" for the session filter — the smallest legible
   # unit (m/h/d/w, or "just now" under a minute) so a dense session list still reads
   # recency at a glance. It keeps climbing past hours into days and weeks (d/w)
