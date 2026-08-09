@@ -198,17 +198,20 @@
 
 gems:
   studio-engine:
+    ladder: three-rung
     version_file: lib/studio/version.rb
     gemspec: studio-engine.gemspec
     release_check: bin/release-check
     build_cmd: bin/release-check --build
   solana-studio:
+    ladder: three-rung
     version_file: solana-studio.gemspec
     gemspec: solana-studio.gemspec
     build_cmd: gem build solana-studio.gemspec
 
 apps:
   mcritchie-studio:
+    ladder: three-rung
     # Hub: github_actions deploys via a workflow that runs NO test step (just the
     # Heroku push + /up smoke), so gate prod on the suite here — same as the old
     # git_push_heroku mechanic did.
@@ -232,6 +235,7 @@ apps:
       workflow: prod-deploy.yml
       smoke_url: https://mcritchie.studio
   turf-monster:
+    ladder: three-rung
     # Self-gates at SHIP (bin/deploy runs the full suite pre-prod) — but nothing
     # gated the QA deploy, so the prepare-owned integration tier runs here.
     qa_test_cmd: bin/rails test test/integration
@@ -240,6 +244,12 @@ apps:
       command: bin/deploy
       args: ["--yes"]
   rolio:
+    # DORMANT — parked 2026-07 (satellites.yml carries status: reserved) and its
+    # GitHub remote no longer resolves for the agent identity, so a sweep that
+    # reached it would fail on the fetch. `dormant` EXCLUDES it from the
+    # conductor's repo list rather than leaving that failure to surface inside an
+    # unrelated `bin/release status`. It also has no `accepted` rung.
+    ladder: dormant
     # Release-managed standalone app: Rails/SQLite demo runtime, no Studio Engine.
     #
     # ROLIO GATES LIKE THE HUB, NOT LIKE TURF-MONSTER — read this before narrowing
@@ -299,6 +309,7 @@ apps:
       branch: main
       smoke_url: https://rolio-prod-82e96784b462.herokuapp.com
   mcritchie-industries:
+    ladder: three-rung
     # Managed studio-engine satellite (successor to the retired
     # acquisition-studio prototype). Deploys via git_push_heroku, which has NO
     # test step — so, per this file's header, the registered command IS the
@@ -322,6 +333,9 @@ apps:
       branch: main
       smoke_url: https://www.mcritchie.industries
   tax-studio:
+    # PLANNED — no repo yet. The guard asserts no checkout exists, so this
+    # exemption expires the day one does.
+    ladder: planned
     # Planned app, no sibling checkout yet — qa_test_cmd stays UNSET (the gate
     # aborts prepare if a registered command's repo is missing). Register the
     # integration tier when the repo lands.
@@ -330,6 +344,15 @@ apps:
       command: bin/deploy
       args: ["--yes"]
   chain-ops:
+    # BLOCKED — the repo exists (it was declared `planned` while it already did;
+    # the ladder guard's first catch), but its remote still points at the
+    # PERSONAL amcritchie/ account. It never moved in the 2026-07-29 org
+    # migration, so the mcritchie-agent App is not installed on it and
+    # `bin/release init` gets a 403 pushing the rung. It carries `release` but
+    # NOT `accepted` — created by the two-rung init this task retires, which is
+    # the bug in evidence. Resolve by migrating it to McRitchie-Studio (or
+    # installing the App), then `bin/release init` and flip this to three-rung.
+    ladder: blocked
     # Planned app; test/integration is still empty — qa_test_cmd stays UNSET
     # until it has a real integration tier to run.
     prod_deploy:
