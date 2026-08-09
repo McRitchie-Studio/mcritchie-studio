@@ -14,6 +14,10 @@ Studio.configure do |config|
   # fresh response, so drop the nav spinner floor from the engine's 2500ms
   # default to a fast-load 300ms.
   config.smooth_load = true
+  # Out-of-the-box navigation (engine 0.30): the sidebar data stays in the
+  # hub's LinkTreeHelper; the engine renders it. The lambda hands the view
+  # context over so the helper keeps its route helpers and admin? wall.
+  config.sidebar_sections = ->(view) { view.sidebar_link_sections }
   config.nav_spinner_min_ms = 300
 
   # Passwordless: magic-link email + Google + Solana wallet. No :password —
