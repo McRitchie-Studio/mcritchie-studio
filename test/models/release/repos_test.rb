@@ -283,6 +283,72 @@ class Release::ReposTest < ActiveSupport::TestCase
                  "same gap this file closes for rolio"
   end
 
+  # --- the branch ladder ------------------------------------------------------
+  #
+  # The conductor's rungs are accepted → release → main, and a repo it sweeps
+  # needs both persistent branches. moms-app was created with `main` alone, so
+  # every change to it reopened the question of where its PR should go — and
+  # `bin/release init` could not have fixed that, because it built `release`
+  # only. These assert the DECLARATION exists and MATCHES reality, so the gap
+  # cannot recur by silence the way it did the first time.
+
+  test "every registered repo declares a ladder" do
+    undeclared = Release::Ladder.all(Release::Repos.config).reject do |repo|
+      Release::Ladder.valid?(Release::Ladder.ladder(Release::Repos.config, repo))
+    end
+
+    assert_empty undeclared,
+                 "these registry entries declare no valid `ladder:` " \
+                 "(#{Release::Ladder::LADDERS.join(' | ')}): #{undeclared.join(', ')}. " \
+                 "An omitted ladder is exactly the silence that let a repo ship without one."
+  end
+
+  # The declaration checked against the actual repos. Local refs only — no
+  # network — so this runs the same offline everywhere, and reads `origin/*`
+  # rather than local branches because the ladder lives on the remote.
+  test "every three-rung repo really has both rungs" do
+    root = projects_root
+    skip "sibling checkouts not present (hub CI runner)" if root.nil?
+
+    missing = Release::Ladder.sweepable(Release::Repos.config).flat_map do |repo|
+      path = root.join(repo)
+      next [] unless path.join(".git").exist?
+
+      Release::Ladder::RUNGS.reject { |rung| remote_ref?(path, rung) }
+                            .map { |rung| "#{repo} has no origin/#{rung}" }
+    end
+
+    assert_empty missing,
+                 "a swept repo is missing a rung, so a feature PR has nowhere to land: " \
+                 "#{missing.join('; ')}. Run `bin/release init` (it creates both)."
+  end
+
+  # The expiring exemption. `planned` means the repo does not exist yet; the day
+  # it does, this fails and forces the declaration to be revisited — otherwise
+  # `planned` quietly becomes a permanent hole, which is the failure mode the
+  # whole guard exists to prevent.
+  test "a planned repo has not quietly been created" do
+    root = projects_root
+    skip "sibling checkouts not present (hub CI runner)" if root.nil?
+
+    config  = Release::Repos.config
+    arrived = Release::Ladder.parked(config)
+                             .select { |_repo, ladder| ladder == Release::Ladder::PLANNED }
+                             .keys
+                             .select { |repo| root.join(repo, ".git").exist? }
+
+    assert_empty arrived,
+                 "these repos are declared `planned` but are checked out now: #{arrived.join(', ')}. " \
+                 "Onboard them (bin/release init) and flip the declaration to three-rung."
+  end
+
+  # Guards the guard: if the registry ever parsed to nothing, every assertion
+  # above would pass over an empty list — green while checking nothing.
+  test "the ladder guard actually has repos to check" do
+    assert_operator Release::Ladder.sweepable(Release::Repos.config).length, :>=, 3,
+                    "expected the sweepable set to hold the live repos"
+  end
+
   private
     # The projects root holding the sibling checkouts. Resolved by ASCENDING from
     # Rails.root until a directory containing the sibling repos appears, so it works
@@ -290,6 +356,15 @@ class Release::ReposTest < ActiveSupport::TestCase
     # (.worktrees/_gate), which sit at different depths. nil when absent (hub CI).
     def projects_root
       Rails.root.ascend.find { |dir| dir.join("rolio", ".git").exist? }
+    end
+
+    # Does this checkout know a remote-tracking ref for `branch`? A LOCAL read
+    # (rev-parse against origin/*), never a network call, so the ladder guard
+    # behaves identically on a dev Mac and in CI.
+    def remote_ref?(path, branch)
+      _out, status = Open3.capture2e("git", "-C", path.to_s,
+                                     "rev-parse", "--verify", "--quiet", "origin/#{branch}")
+      status.success?
     end
 
     # The single command a sibling repo's ci.yml `test` job runs. Located by content

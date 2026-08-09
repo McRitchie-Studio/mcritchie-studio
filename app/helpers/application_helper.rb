@@ -1,17 +1,7 @@
 module ApplicationHelper
-  def qa_environment?
-    ENV["QA_ENV"].to_s.strip.downcase == "true"
-  end
-
-  def show_environment_banner?(qa_environment: qa_environment?, rails_env: Rails.env)
-    !rails_env.production? || qa_environment
-  end
-
-  def environment_banner_message(qa_environment: qa_environment?, rails_env: Rails.env)
-    return "QA Environment · Non-production" if qa_environment
-
-    "#{rails_env.to_s.capitalize} Environment"
-  end
+  # qa_environment? / show_environment_banner? / environment_banner_message
+  # moved into studio-engine 0.30 (Studio.qa_environment? and friends, rendered
+  # by studio/banners/_environment). The layout renders that one partial now.
 
   def stage_scheme(stage)
     case stage.to_s

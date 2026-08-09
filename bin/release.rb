@@ -137,6 +137,7 @@ require "fileutils" # primary_checkout_lock_path mkdir_p's the fixed lock dir
 # the shell. GemfileRepin first: ShipSequence references it at call time.
 # Release::Cli holds the pure ARGV-parsing helpers (also Rails-free) the flag
 # handling below routes through.
+require_relative "../app/models/release/ladder"
 require_relative "../app/models/release/gemfile_repin"
 require_relative "../app/models/release/ship_sequence"
 require_relative "../app/models/release/post_deploy"
@@ -258,7 +259,7 @@ end
 # Every registered ecosystem repo — gems AND apps — from the release registry.
 # The set `init` seeds the persistent `release` branch in.
 def release_repo_slugs
-  (RELEASE_REPOS.fetch("gems", {}).keys + RELEASE_REPOS.fetch("apps", {}).keys)
+  Release::Ladder.sweepable(RELEASE_REPOS)
 end
 
 # A gem's declared version, read locally from its version_file. The authoritative
@@ -1160,7 +1161,7 @@ end
 # in every gem + app repo that doesn't already have one. Re-runnable — a repo
 # that already has origin/release is skipped.
 def init
-  say("Init persistent `release` branches#{DRY ? ' — DRY RUN' : ''}")
+  say("Init the persistent ladder branches — #{Release::Ladder::RUNGS.join(' + ')}#{DRY ? ' — DRY RUN' : ''}")
   release_repo_slugs.each do |repo|
     path = repo_path(repo)
     unless DRY || Dir.exist?(path)
@@ -1170,22 +1171,35 @@ def init
 
     sh("git", "-C", path, "fetch", "origin", "--quiet")
 
-    # Existence is a read — check it for real outside dry-run; in dry-run we
-    # always PREVIEW the push so the plan is visible.
-    unless DRY
-      _, exists = sh("git", "-C", path, "rev-parse", "--verify", "--quiet", "origin/release", capture: true)
-      if exists
-        say("  - #{repo}: origin/release already exists — skip")
-        next
+    # BOTH rungs, not just `release`. This used to create `release` alone, which
+    # is the two-rung model the ladder replaced — and it is why an app could be
+    # "initialized" and still have nowhere for a feature PR to land (feature PRs
+    # target `accepted`). moms-app is the case that surfaced it.
+    Release::Ladder::RUNGS.each do |rung|
+      # Existence is a read — check it for real outside dry-run; in dry-run we
+      # always PREVIEW the push so the plan is visible.
+      unless DRY
+        _, exists = sh("git", "-C", path, "rev-parse", "--verify", "--quiet", "origin/#{rung}", capture: true)
+        if exists
+          say("  - #{repo}: origin/#{rung} already exists — skip")
+          next
+        end
       end
-    end
 
-    step("push release branch in #{repo}: origin/main → origin/release")
-    _, pushed = sh("git", "-C", path, "push", "origin", "origin/main:refs/heads/release")
-    say("  - #{repo}: created origin/release from origin/main") if pushed || DRY
+      step("push #{rung} branch in #{repo}: origin/main → origin/#{rung}")
+      _, pushed = sh("git", "-C", path, "push", "origin", "origin/main:refs/heads/#{rung}")
+      say("  - #{repo}: created origin/#{rung} from origin/main") if pushed || DRY
+    end
   end
+
+  # Say what was NOT touched and why. A silently short list is how a repo that
+  # needed the ladder got skipped without anyone noticing.
+  Release::Ladder.parked(RELEASE_REPOS).each do |repo, ladder|
+    say("  - #{repo}: not swept (ladder: #{ladder})")
+  end
+
   say("")
-  say("✓ Persistent `release` branches ready#{DRY ? ' (DRY RUN — nothing executed)' : ''}.")
+  say("✓ Ladder branches ready#{DRY ? ' (DRY RUN — nothing executed)' : ''}.")
 end
 
 # --- merge -----------------------------------------------------------------

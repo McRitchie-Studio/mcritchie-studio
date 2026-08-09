@@ -94,17 +94,10 @@
     <header x-data="{ scrolled: false }" @scroll.window="scrolled = scrolled ? (window.scrollY > 5) : (window.scrollY > 60)"
             class="vt-pinned-header sticky top-0 z-50 border-b bg-page/95 transition-shadow duration-300 supports-[backdrop-filter]:backdrop-blur"
             :class="scrolled ? 'shadow-lg border-subtle' : 'border-transparent'">
-      <% if show_environment_banner? %>
-        <% environment_actions = capture do %>
-          <%= render "shared/dev_mode_button" %>
-          <%= render "shared/email_status_button" %>
-        <% end %>
-        <%= render "studio/banners/app_banner",
-                   tone: :environment,
-                   density: :normal,
-                   message: environment_banner_message,
-                   actions: environment_actions %>
-      <% end %>
+      <%# Self-gating (studio-engine >= 0.30): the partial decides whether to
+          appear, what to say, and whether the inbox is linkable. No conditional
+          here, and no host copies of the buttons. %>
+      <%= render "studio/banners/environment" %>
       <div class="max-w-7xl mx-auto px-4 transition-all duration-300"
            :class="scrolled ? 'py-2' : 'py-6'">
         <div class="flex items-center justify-between gap-4 min-w-0">
