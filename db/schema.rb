@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_21_004500) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_08_221937) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -684,6 +684,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_21_004500) do
     t.string "pending_environment"
     t.datetime "pending_since"
     t.string "repo", null: false
+    t.integer "run_attempt"
     t.bigint "run_id", null: false
     t.datetime "run_started_at"
     t.string "status", null: false

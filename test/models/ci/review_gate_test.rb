@@ -162,6 +162,39 @@ module Ci
       assert Ci::ReviewGate.green?(task), "the app path must be unchanged by gem awareness"
     end
 
+    # [integration] The end-to-end recovery: a flake fails CI, the operator re-runs
+    # it, and the gate must go green so claim-next-review can pop the task. This is
+    # driven through the real webhook ingest — a re-run reuses the run_id, so before
+    # the ingest fix the row stayed `failure` and the PR was green on GitHub yet
+    # permanently unclaimable on the board.
+    test "[integration] a re-run's green delivery flips the gate from red to green" do
+      task = submitted(branch: "feat/rerun-recovery", pr: 12)
+      run_id = 31_276_835_993
+      deliver = lambda do |status, conclusion, attempt|
+        GithubWorkflowRunIngestJob.perform_now("workflow_run", {
+          "workflow_run" => {
+            "id" => run_id, "name" => "CI", "status" => status, "conclusion" => conclusion,
+            "run_attempt" => attempt, "head_sha" => "sha-rerun",
+            "head_branch" => "feat/rerun-recovery", "run_started_at" => "2026-08-08T20:00:00Z"
+          },
+          "repository" => { "full_name" => REPO }
+        })
+      end
+
+      deliver.call("completed", "failure", 1)
+      assert_equal :red, Ci::ReviewGate.verdict(task)[:state]
+      refute Ci::ReviewGate.green?(task)
+
+      deliver.call("in_progress", nil, 2)
+      deliver.call("completed", "success", 2)
+
+      assert_equal :green, Ci::ReviewGate.verdict(task)[:state],
+                   "the board must see what GitHub sees after a re-run"
+      assert Ci::ReviewGate.green?(task)
+      assert_equal 1, GithubWorkflowRun.where(run_id: run_id).count,
+                   "a re-run reuses the run_id — it must not fork a second row"
+    end
+
     private
 
     def submitted(branch:, pr:, repo: "mcritchie-studio")

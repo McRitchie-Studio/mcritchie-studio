@@ -102,6 +102,15 @@ cd /Users/alex/projects/mcritchie-studio
 bin/session-kickoff
 ```
 
+You should rarely need it. A `SessionStart` hook draws the mascot, and because
+`bin/task session-mascot` swallows every error to keep a session from ever
+failing to start, a board that is briefly unreachable used to leave the session
+with no mascot at all — silently, until a human noticed. `bin/statusline` now
+heals that: a render with no mascot and no worktree desk redraws it, throttled to
+once per `STATUSLINE_MASCOT_HEAL_THROTTLE` seconds (default 45) and detached, so
+a down board is retried rather than hammered. A failed heal still burns its
+window, so the mascot can take one throttle period to appear.
+
 To "act as" a soul instead of the session's Pokémon, set a **persona**:
 `bin/task create --persona jasper` (also on `update`). The server stamps the
 agent's name + glyph + tint (`Agent#emoji` / `Agent#status_color`, seeded in

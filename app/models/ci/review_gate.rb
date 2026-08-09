@@ -90,9 +90,17 @@ module Ci
 
     # The ingested CI run for this head_sha, shaped as a check-runs payload for
     # CiStatus.for_sha — the head_sha → runs JOIN. Only the NEWEST run per SHA is
-    # folded: a re-run makes a NEW workflow_run row (new run_id, same sha), and folding
-    # a stale failed run beside the fresh green one would (correctly, for CiStatus)
-    # read :red — but the fresh run is the live verdict, so the superseded row drops.
+    # folded, because a SHA can carry several DISTINCT runs (a re-triggered
+    # workflow, a push that re-ran the suite): folding a stale failed run beside
+    # the fresh green one would (correctly, for CiStatus) read :red, so the
+    # superseded row drops.
+    #
+    # A RE-RUN is not one of those cases and never was: GitHub re-runs under the
+    # SAME run_id, bumping `run_attempt` on the one row. This comment used to claim
+    # a re-run minted a new row, and that false belief is exactly what let
+    # GithubWorkflowRunIngestJob pin a re-run row at its first conclusion — leaving
+    # PRs green on GitHub and permanently unclaimable here. The ingest now advances
+    # the row's conclusion with its attempt, so this fold sees the live verdict.
     def check_runs_payload(nwo, sha, workflow = CI_WORKFLOW)
       run = GithubWorkflowRun.for_repo(nwo)
                              .for_sha(sha)
