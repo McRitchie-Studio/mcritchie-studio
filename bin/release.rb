@@ -4072,9 +4072,42 @@ def bump_consumer_locks_for_qa(app_groups, published_gems)
       File.write(ws_gemfile, expected) if expected != text
       touched.each { |gem_name| bundle_lock(workspace, gem_name, conservative: true) }
 
+      # ASSERT THE LOCK, DO NOT INFER IT FROM THE DIFF. `bundle lock --update`
+      # exits 0 whether or not it could SEE the version we just published, so its
+      # exit status proves nothing about which version landed. Read the lock back
+      # and require the asked-for version before either branch below.
+      #
+      # THE BUG (rel-20260809-3b8f3d, 2026-08-09): the unchanged-tree check below
+      # used to run FIRST and report "lock already at <gem> <version>" — a version
+      # it had never read. RubyGems had not propagated in the seconds since our own
+      # `gem push`, the resolver kept the OLD version, the tree therefore did not
+      # change, and the sweep announced 0.31.0 over a 0.30.0 lock. turf-monster
+      # then rode QA on the old engine while the release record asserted the new
+      # one, and — because its tree was unchanged — the pre-QA gate CREDITED its
+      # identical-tree green, so no CI run contradicted it either. Nothing
+      # downstream could catch it: a stale lock and a genuine no-op are identical
+      # in the diff and trivially different in the lockfile.
+      lockfile = File.join(workspace, "Gemfile.lock")
+      stale = touched.reject do |gem_name|
+        Release::ShipSequence.lock_bump_landed?(File.read(lockfile), gem_name, published_gems[gem_name])
+      end
+      if stale.any?
+        detail = stale.map do |g|
+          resolved = Release::ShipSequence.locked_version(File.read(lockfile), g) || "unresolved"
+          "#{g}: wanted #{published_gems[g]}, lock resolves #{resolved}"
+        end
+        abort!("consumer lock bump did NOT land in #{repo} — #{detail.join('; ')}. `bundle lock --update` " \
+               "succeeded but resolved a different version, which almost always means the RubyGems index " \
+               "has not propagated the just-published gem yet. NOTHING was committed. Wait for " \
+               "https://rubygems.org/gems/#{stale.first} to list the version, then re-run " \
+               "`bin/release prepare` — it resumes.")
+      end
+
       status, = git_capture("-C", workspace, "status", "--porcelain", "--", "Gemfile", "Gemfile.lock")
       if status.to_s.strip.empty?
-        say("  #{repo}: lock already at #{touched.map { |g| "#{g} #{published_gems[g]}" }.join(', ')} — nothing to commit (idempotent re-run)")
+        # Now this claim is EARNED: the lock was read back above and genuinely
+        # resolves the published version, so an unchanged tree really is a no-op.
+        say("  #{repo}: lock verified at #{touched.map { |g| "#{g} #{published_gems[g]}" }.join(', ')} — nothing to commit (idempotent re-run)")
         next
       end
 
@@ -4335,6 +4368,25 @@ def repin_consumers(app_groups, published_gems, ship_sha)
       File.write(ws_gemfile, expected)
       text = expected
       pending.each { |gem| bundle_lock(workspace, gem) }
+
+      # Same read-back the prepare-side bump does, for the same reason: a
+      # `bundle lock --update` that cannot see the version resolves the old one
+      # and still exits 0. Propagation lag is far less likely here (these gems
+      # published back at prepare, not seconds ago), but "less likely" is not a
+      # guarantee, and this commit is the last thing between the frozen SHA and a
+      # production deploy — so assert rather than assume.
+      repin_lock = File.join(workspace, "Gemfile.lock")
+      unlanded = pending.reject do |gem|
+        Release::ShipSequence.lock_bump_landed?(File.read(repin_lock), gem, published_gems[gem])
+      end
+      if unlanded.any?
+        detail = unlanded.map do |g|
+          resolved = Release::ShipSequence.locked_version(File.read(repin_lock), g) || "unresolved"
+          "#{g}: wanted #{published_gems[g]}, lock resolves #{resolved}"
+        end
+        abort!("re-pin lock did NOT land in #{repo} — #{detail.join('; ')}. NOTHING was committed or " \
+               "deployed. Confirm the version is live on RubyGems, then re-run `bin/release ship` — it resumes.")
+      end
 
       pins = pending.map { |gem| "#{gem} #{Release::GemfileRepin.pessimistic_constraint(published_gems[gem])}" }
       sh("git", "-C", workspace, "add", "Gemfile", "Gemfile.lock")

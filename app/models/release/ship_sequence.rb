@@ -271,6 +271,52 @@ class Release
       end
     end
 
+    # The version `gem_name` RESOLVES TO in a Gemfile.lock, or nil when the lock
+    # does not resolve it at all. This is the READ-BACK behind
+    # `lock_bump_landed?` — the shell asserts the version it just asked for
+    # instead of inferring it.
+    #
+    # ONLY the GEM/specs resolution line counts, which is why the 4-space indent
+    # is anchored. A Gemfile.lock names a gem at three different depths and only
+    # one of them is a resolved version:
+    #   * 4 spaces — `    studio-engine (0.31.0)`   the SPEC. What we want.
+    #   * 6 spaces — `      studio-engine (~> 0.30)` another spec's REQUIREMENT.
+    #   * 2 spaces — `  studio-engine (~> 0.30)`     the DEPENDENCIES section.
+    # A requirement also carries an operator and a space (`~> 0.30`), so
+    # `[^()\s]+` refuses it even if the indent ever moved — the property is
+    # asserted twice rather than resting on one spelling.
+    def locked_version(lockfile_text, gem_name)
+      match = lockfile_text.to_s[/^ {4}#{Regexp.escape(gem_name.to_s)} \(([^()\s]+)\)$/, 1]
+      match&.strip
+    end
+
+    # TRUE when a `bundle lock --update <gem>` actually landed `version` in the
+    # lock. FALSE is the case this exists for.
+    #
+    # WHY THIS IS NOT "did the working tree change" (the bug it closes,
+    # rel-20260809-3b8f3d): bin/release used to read `git status --porcelain` after
+    # the bundle and, seeing NO diff, report "lock already at <gem> <version> —
+    # nothing to commit (idempotent re-run)". An unchanged lock means only that the
+    # resolver produced the same lock as before, and that is equally true when
+    #   (a) the lock really was already at the new version, and
+    #   (b) the resolver COULD NOT SEE the new version — the RubyGems index had not
+    #       propagated in the seconds since our own `gem push`.
+    # Case (b) reported success while leaving the consumer on the OLD gem. Turf
+    # rode QA on studio-engine 0.30.0 while the release record asserted 0.31.0, and
+    # because its tree never changed the pre-QA gate CREDITED its identical-tree
+    # green, so no CI run ever contradicted it either. The two states are
+    # indistinguishable from the diff and trivially distinguishable from the lock —
+    # so read the lock.
+    def lock_bump_landed?(lockfile_text, gem_name, version)
+      resolved = locked_version(lockfile_text, gem_name)
+      return false if resolved.nil? || version.to_s.strip.empty?
+
+      Gem::Version.new(resolved) == Gem::Version.new(version.to_s.strip)
+    rescue ArgumentError
+      # An unparseable version on either side is not a match we can vouch for.
+      false
+    end
+
     # --- prepare-side STRANDED-WORK guard: commits past the tag, version unbumped
     #
     # THE SILENT-SKIP HAZARD this closes: a gem repo's origin/release can carry

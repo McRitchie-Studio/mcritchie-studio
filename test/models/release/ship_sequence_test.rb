@@ -1109,4 +1109,94 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
     assert_not_includes msg, "already live",
                         "the skip wording belongs to the equal-version case, not the backward one"
   end
+
+  # --- locked_version / lock_bump_landed? -------------------------------------
+  #
+  # The regression these pin (rel-20260809-3b8f3d, 2026-08-09): bin/release read
+  # `git status --porcelain` after `bundle lock --update` and treated an UNCHANGED
+  # tree as proof the lock already carried the new version. A RubyGems index that
+  # had not yet propagated produces exactly that same unchanged tree while leaving
+  # the OLD version resolved — so the sweep announced 0.31.0 over a 0.30.0 lock.
+
+  # A realistic lock naming the gem at all THREE depths at once. If the parser
+  # anchored on the name alone it would happily return "~>" or the wrong line.
+  LOCKFILE = <<~LOCK.freeze
+    GEM
+      remote: https://rubygems.org/
+      specs:
+        rails (7.2.1)
+        studio-engine (0.30.0)
+        turbo-rails (2.0.6)
+          rails (>= 7.0.0)
+          studio-engine (~> 0.30)
+
+    PLATFORMS
+      arm64-darwin-24
+
+    DEPENDENCIES
+      rails (~> 7.2)
+      studio-engine (~> 0.30)
+  LOCK
+
+  test "locked_version reads the resolved spec, not a requirement at another depth" do
+    assert_equal "0.30.0", S.locked_version(LOCKFILE, "studio-engine"),
+                 "the 4-space GEM/specs line is the only resolved version in the file"
+    assert_equal "7.2.1", S.locked_version(LOCKFILE, "rails")
+  end
+
+  # The INDENT ANCHOR carries this one on its own. Every requirement Bundler
+  # actually writes contains an operator and a space (`~> 0.30`), which the
+  # `[^()\s]+` capture already refuses — so without this case the anchor is
+  # decoration that a later edit could drop with the suite still green (found by
+  # mutating the anchor to `^\s*` and watching nothing fail). Here the deeper line
+  # is bare-versioned, so ONLY the depth distinguishes it, and it is deliberately
+  # ordered BEFORE the real spec so an unanchored parser returns the wrong value
+  # rather than merely a lucky one.
+  test "locked_version ignores a bare-versioned line at a deeper indent" do
+    lock = <<~LOCK
+      GEM
+        specs:
+          some-other-gem (1.0.0)
+            studio-engine (0.9.9)
+          studio-engine (0.31.0)
+    LOCK
+    assert_equal "0.31.0", S.locked_version(lock, "studio-engine"),
+                 "a 6-space line is another spec's dependency, never the resolution"
+  end
+
+  test "locked_version is nil when the lock does not resolve the gem" do
+    assert_nil S.locked_version(LOCKFILE, "solana-studio")
+    assert_nil S.locked_version("", "studio-engine")
+  end
+
+  # The exact live failure: bundle resolved the OLD version because RubyGems had
+  # not propagated, the tree therefore did not change, and the old code called
+  # that success.
+  test "lock_bump_landed? is FALSE when propagation lag left the old version resolved" do
+    assert_not S.lock_bump_landed?(LOCKFILE, "studio-engine", "0.31.0"),
+               "a lock still resolving 0.30.0 has NOT landed 0.31.0, however clean the diff looks"
+  end
+
+  test "lock_bump_landed? is TRUE only when the lock actually resolves the asked-for version" do
+    landed = LOCKFILE.sub("studio-engine (0.30.0)", "studio-engine (0.31.0)")
+    assert S.lock_bump_landed?(landed, "studio-engine", "0.31.0")
+  end
+
+  # A genuine idempotent re-run: the lock was already at the target. This is the
+  # case the old message CLAIMED to describe, and it must stay a clean no-op.
+  test "lock_bump_landed? is TRUE for a real idempotent re-run" do
+    assert S.lock_bump_landed?(LOCKFILE, "studio-engine", "0.30.0")
+  end
+
+  test "lock_bump_landed? compares versions semantically, not as strings" do
+    padded = LOCKFILE.sub("studio-engine (0.30.0)", "studio-engine (0.30)")
+    assert S.lock_bump_landed?(padded, "studio-engine", "0.30.0"),
+           "0.30 and 0.30.0 are the same version; Gem::Version owns that judgement"
+  end
+
+  test "lock_bump_landed? is FALSE when the gem is absent or the version is blank/garbage" do
+    assert_not S.lock_bump_landed?(LOCKFILE, "solana-studio", "0.4.7")
+    assert_not S.lock_bump_landed?(LOCKFILE, "studio-engine", "")
+    assert_not S.lock_bump_landed?(LOCKFILE, "studio-engine", "not-a-version")
+  end
 end
