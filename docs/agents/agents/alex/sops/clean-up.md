@@ -406,8 +406,9 @@ bin/agent-worktree cleanup                   # dry run — read it
 bin/agent-worktree cleanup --reclaim         # dry run: what is SAFE (clean + merged)
 bin/agent-worktree cleanup --reclaim --yes   # full teardown + Redis band shrink
 ```
-- Reclaim only takes **clean + merged** desks; live PR worktrees are never
-  candidates. Check the list against your carve-out anyway.
+- Reclaim only takes **clean + merged (or base-equivalent, e.g. squash-merged)**
+  desks; live PR worktrees are never candidates. Check the list against your
+  carve-out anyway.
 - **Trust the safety gate over the description.** If Mr. McRitchie says "three
   worktrees" and the dry run finds seventeen, surface the discrepancy — and believe
   the gate.
@@ -431,11 +432,23 @@ invisible to it — and these accumulate until they pin the Redis band wide
 does not help either: it clears the content guard **only for the merged-PR
 case**, by design. So unmerged desks are a hand-triage:
 
-0. **Enumerate the population** — `bin/agent-worktree list` prints `clean
-   unmerged` per desk, plus two numbers you will need later: `redis=<n>` (the
-   band slot) and `+N/-M` (ahead/behind **the BASE branch** — this is NOT the
-   unpushed count; step 1 measures that against the desk's own remote branch,
-   and the two routinely disagree).
+0. **Enumerate SUBTRACTIVELY — "unmerged" is necessary, not sufficient.**
+   `bin/agent-worktree list` prints `clean unmerged` per desk, plus two numbers
+   you will need later: `redis=<n>` (the band slot) and `+N/-M` (ahead/behind
+   **the BASE branch** — this is NOT the unpushed count; step 1 measures that
+   against the desk's own remote branch, and the two routinely disagree).
+   Throughout this section, `<wt>` = `/Users/alex/projects/<app>/.worktrees/<slug>`.
+
+   The stale population is what **survives these exclusions** — each names a
+   desk this protocol must never reach:
+   - **task in any OPEN stage** (designed/building/submitted/reviewed/assembled)
+     — that is a live lane, not a stale desk, however clean and pushed it looks
+     (an in-flight PR's desk is clean + zero-unpushed the moment it pushes);
+   - **stack `up`, or a live builder claim** — someone is working there;
+   - **`_ship` / `_gate`** — deployer infrastructure, never desks. They are
+     detached by design, so they even LOOK like step-1's detached case — they
+     are not; they are excluded before step 1 sees them;
+   - **anything in this run's Phase 0 carve-out.**
 
 1. **Inventory** — four facts decide everything, and the first is a gate:
 
@@ -446,7 +459,8 @@ case**, by design. So unmerged desks are a hand-triage:
                                                          # a teardown candidate.
    git -C <wt> branch --show-current                     # EMPTY = detached HEAD → NOT this protocol;
                                                          # route to the "commits live nowhere else"
-                                                         # block below.
+                                                         # block below. (_ship/_gate are detached by
+                                                         # design and were excluded at step 0.)
    git -C <wt> rev-list --count origin/<branch>..HEAD    # UNPUSHED commits, measured against the
                                                          # desk's OWN remote branch (error = branch
                                                          # absent from origin)
@@ -455,6 +469,8 @@ case**, by design. So unmerged desks are a hand-triage:
 
 2. **Preserve before removing** — route on the measured count, then on the push
    outcome (no case falls through to deletion):
+   - **Task in an open stage — STOP.** Not stale; it belongs to its lane. Step 0
+     should have excluded it; this bullet is the belt to that suspender.
    - **Zero unpushed + task archived (or no task)** — nothing owed; origin holds
      the code.
    - **Unpushed commits (count > 0, or branch absent from origin)** — push it:
@@ -468,23 +484,30 @@ case**, by design. So unmerged desks are a hand-triage:
 
 3. **The orphaned-fix check applies to BRANCHES, not just PRs.** A desk with
    unlanded commits — any, not just "substantial" ones — is where fixes go to
-   die. Before writing it off, diff its ideas against the current `release` and
+   die. Before writing it off, diff its ideas against the desk's **base branch**
+   (step 0's `+N/-M` names it; not every repo has a `release`) and
    ask: did this land, or did we re-suffer it? A branch is superseded only if you
    can **point at the code that supersedes it**. Record the verdict (or the debt)
    in [`../../../maintenance/parking-lot.md`](../../../maintenance/parking-lot.md)
    — that file holds unlanded-WORK debt; the removal batch itself is recorded in
    `delete-later.md` at step 4.
 
-4. **Tear down manually, in the launcher's own order** (the launcher refuses,
-   correctly — you are overriding a guard whose concern steps 1-2 satisfied, so
-   record the override by hand: **hand-edit
-   `docs/agents/maintenance/delete-later.md`** — no CLI path writes an unmerged
-   desk there):
+4. **Tear down manually, in the launcher's own order.** This hand-path drives
+   raw git, so it bypasses the launcher's builder-claim check and the
+   `_ship`/`_gate` deployer-claim withholding described above — **re-assert the
+   Phase 0 carve-out and every step-0 exclusion immediately before this block**;
+   nothing downstream re-checks them for you. The launcher's refusal is correct
+   — you are overriding a guard whose concern steps 1-2 satisfied, so record the
+   override by hand: **hand-edit `docs/agents/maintenance/delete-later.md`** —
+   no CLI path writes an unmerged desk there.
 
    ```bash
    bin/agent-worktree down <app> <slug>       # STOP THE STACK FIRST — a live stack repopulates
-                                              # a flushed DB and then loses its cwd
-   [ -z "$(git -C <wt> status --porcelain)" ] || echo "DIRTY — STOP"   # re-assert at teardown time
+                                              # a flushed DB and then loses its cwd. SKIP when
+                                              # step 0's list row says missing-env: `down`
+                                              # aborts on a desk with no stack env.
+   [ -z "$(git -C <wt> status --porcelain)" ] || { echo "DIRTY — STOP"; exit 1; }   # re-assert;
+                                              # a pasted block must actually stop here
    redis-cli -n <db> flushdb                  # <db> from step 0's list row; SKIP when blank
    git -C /Users/alex/projects/<app> worktree remove .worktrees/<slug>   # UN-forced — its refusal
                                               # on a dirty desk is the last guard, keep it
@@ -493,14 +516,20 @@ case**, by design. So unmerged desks are a hand-triage:
    git -C /Users/alex/projects/<app> worktree prune
    ```
 
-5. **Refresh the registry and contract the band** — once for the batch:
+5. **Refresh the registry and contract the band:**
 
    ```bash
    bin/agent-worktree snapshot --write        # registry only — it does NOT touch the band
-   bin/agent-worktree scale in                # THIS is what contracts the band (from the top,
-                                              # only past freed slots)
+   bin/agent-worktree scale in                # contracts ONE 10-slot step per call — repeat
+                                              # until `scale status` stops moving
    bin/agent-worktree scale status            # read the result
    ```
+
+   `scale in` **refuses the whole step if ANY allocated DB sits above the
+   target** — a single high desk (a live session near the top of the band)
+   blocks the entire contraction, so free the highest desks first and expect
+   the band to stay wide until they close. A full 55→20 contraction is four
+   calls, not one.
 
 > ### ⛔ The reclaim gate refuses a desk whose commits live nowhere else — LISTEN to it
 > `bin/agent-worktree remove` will refuse with *"branch content is not represented on
