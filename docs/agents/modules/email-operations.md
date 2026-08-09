@@ -46,17 +46,20 @@ after an engine upgrade:
 
 ```bash
 bin/rails studio_engine:install:migrations   # copies db/migrate/*.studio_engine.rb
-ls db/migrate/*.studio_engine.rb             # REVIEW before migrating — see below
 bin/rails db:migrate
 bin/rails runner 'puts Studio::EmailDelivery.available?'   # => true
 ```
 
-**Review what it copied before migrating.** The task copies every engine
-*reference* migration, not just the outbox, and they are not all safe
-everywhere: `allow_null_image_cache_owner` runs `change_column_null
-:image_caches` and **fails outright on an app with no `image_caches` table**.
-Keep the outbox, keep whatever else your app actually uses, and delete the rest
-(moms-app kept one of four).
+**Install all of them.** The task copies every engine *reference* migration, not
+just the outbox, and all of them are safe on any app: the ones that create tables
+add a table you may not use yet, and the one that ALTERS an app-owned table
+(`allow_null_image_cache_owner`) no-ops when that table is absent
+(studio-engine >= 0.30.1 — before that it raised and failed the whole run).
+
+Do **not** slim the set by deleting copies you think you don't need.
+`install:migrations` builds its skip-list from the files **present**, so a
+deleted copy comes back with a fresh timestamp on the next upgrade. Deletion is
+not durable, which is why the guard lives in the migration instead.
 
 **Skipping this fails silently.** `Studio::Email.deliver` records a row only when
 `studio_email_deliveries` EXISTS; without it, delivery falls through to a plain
