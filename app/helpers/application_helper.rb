@@ -751,6 +751,25 @@ module ApplicationHelper
     marks
   end
 
+  # The live-fx FINGERPRINT of one phase meter, stamped as `data-signature` by
+  # tasks/_release_phase_meter. LiveBoardFx snapshots every meter's signature before a
+  # #current-release stream renders and re-reads them after, so a CI tick glows ONLY the
+  # meter that actually moved instead of flashing the whole Next Release card. The card is
+  # REPLACED wholesale on every CI upsert, so the DOM cannot be diffed by identity — this
+  # string is the diff.
+  #
+  # It carries the three things the meter DRAWS, and it needs all three:
+  #   · state  — the tone (running → failed) can flip with the fraction standing still.
+  #   · value  — the fraction ("5 / 8"), which is what a finished test actually moves.
+  #   · marks  — a check flipping pending→failed inside an ALREADY-failed suite moves
+  #              neither of the above (passed does not climb, state is already :failed),
+  #              and that is precisely the tick the operator most wants to see.
+  # Anything not drawn stays out: the signature must not change when the pixels do not,
+  # or every unrelated re-render lights a meter that did nothing.
+  def release_meter_signature(phase)
+    [phase[:state], phase[:value], release_meter_check_marks(phase[:checks]).join("-")].join("|")
+  end
+
   # Compact single-unit "time ago" for the session filter — the smallest legible
   # unit (m/h/d/w, or "just now" under a minute) so a dense session list still reads
   # recency at a glance. It keeps climbing past hours into days and weeks (d/w)

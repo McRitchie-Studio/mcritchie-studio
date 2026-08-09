@@ -158,3 +158,41 @@ concurrent CI/CD session.
 **The decision they wait on is not technical:** either fund a devnet bot key so the
 lane is real, or delete the workflow so its absence is honest. That is Mr.
 McRitchie's call, and it costs money either way.
+
+---
+
+## Parked — the `.studio-team-glow` specimen demos a card effect at chip scale
+
+Parked by Mr. McRitchie on 2026-08-08, found while building
+[`glow-changed-release-meter`](https://mcritchie.studio/tasks/glow-changed-release-meter).
+**Repo: `studio-engine`** (`app/views/style/_tricks.html.erb`), shape `library`.
+
+**Not a CSS bug — a teaching bug.** `.studio-team-glow` computes exactly what
+`engine-motion.css` §9b declares; measured live on `/admin/style`:
+
+| | Measured |
+|---|---|
+| `Selected` / `Ravens` chips | 105×54px and 94×54px |
+| ring (`::before`) | inset −4px, z −1, opacity 1 |
+| bloom (`::after`) | inset −8px, `blur(10px) saturate(1.35)`, z −2 |
+| host background | `rgb(60, 56, 83)` — opaque, correct |
+
+The primitive was ported from Turf Monster's selected **team card**, and its own
+usage line demos `p-5` — a real card, where 4px/10px is proportionate. On a 54px
+chip the halo spreads ~18px in every direction, and a blur bleeds INWARD as well
+as out, so the chip's face washes solid purple/red and its `bg-surface` never
+shows. The style guide therefore teaches the effect at the one scale it does not
+work at.
+
+**The knobs cannot fully solve the small-host case, and that is the thing worth
+writing down:** `::after` is pinned at `inset: -(thickness + 4px)` in the engine,
+so the bloom always reaches ≥4px past the ring no matter how small
+`--studio-team-glow-bloom` goes. A small host wants the ring alone
+(`::after { content: none }`) or a host large enough to carry the halo.
+
+**Resurrect as:** a `studio-engine` task that makes the specimen teach BOTH
+scales — keep a card-sized example showing the effect as designed, add a
+small-host example with scaled knobs — so the next person sizing it down reads
+the answer instead of rediscovering it. `mcritchie-studio`'s
+`tasks/_deployments_live_fx` already carries a worked small-host override
+(2px ring, 4px bloom, on a wrapper sized to the bar) to copy from.

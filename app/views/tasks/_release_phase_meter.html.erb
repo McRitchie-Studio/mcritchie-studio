@@ -52,7 +52,13 @@
   <%# A bare <div> would drop its aria-label on the floor; role=img makes the name count. %>
   <% card_options[:role] = "img" %>
 <% end %>
-<div class="min-w-0" data-test="release-phase-meter" data-phase="<%= phase[:key] %>" data-state="<%= phase[:state] %>">
+<%# data-signature is the live-fx diff (ApplicationHelper#release_meter_signature): the Next
+    Release card is REPLACED wholesale on every CI upsert, so LiveBoardFx compares these
+    strings across the swap and glows only the meter that moved. It is the GLOW HOST too —
+    .studio-team-glow rides this wrapper, which is why the ring is not clipped (the bar
+    below is overflow-hidden; its own ::before would be eaten). %>
+<div class="min-w-0" data-test="release-phase-meter" data-phase="<%= phase[:key] %>" data-state="<%= phase[:state] %>"
+     data-signature="<%= release_meter_signature(phase) %>">
   <%= content_tag(linked ? "a" : "div", card_options) do %>
     <div class="mb-1 flex items-center justify-between gap-1">
       <span class="truncate text-[9px] font-bold uppercase tracking-wide <%= tone[:label] %>"><%= phase[:label] %></span>
@@ -64,11 +70,22 @@
         dashboard grid, so it does not track the viewport — crossing `xl` actually SHRINKS
         it (measured: 174px bar at 1024px wide, 80px at 1280px). The marks show only when
         this bar is genuinely wide enough for them. %>
+    <%# The live-fx glow HOST — a bare wrapper the exact size of the bar, so the ring travels
+        the BAR's border rather than boxing the label in with it. It cannot be the bar itself
+        (overflow-hidden, which clips the check marks, would eat the ring) and it cannot be
+        the meter wrapper (that draws a box around the label too — measured, and it read as a
+        blob). The ring's ::before sits at z-index -1, so the bar's own opaque fill covers the
+        interior and only the 2px margin shows: a border ring, not a wash. %>
+    <div class="rounded" data-test="release-phase-glow-host">
     <div class="@container relative h-[18px] overflow-hidden rounded border <%= na ? "border-dashed border-subtle bg-inset/40" : "border-subtle bg-inset" %>"
          data-test="release-phase-bar">
       <% unless na %>
+        <%# data-test doubles as the live-fx handle: the glow reads this element's COMPUTED
+            background-color for --studio-team-glow-color, so the ring is always the meter's
+            own tone (mint done / amber running / red failed) with no second colour table to
+            drift from release_meter_tone. %>
         <div class="absolute inset-y-0 left-0 <%= tone[:fill] %> <%= phase[:coarse] && live ? "release-meter-indeterminate opacity-60" : "opacity-15 dark:opacity-30" %>"
-             style="width: <%= release_meter_width(phase) %>%"></div>
+             style="width: <%= release_meter_width(phase) %>%" data-test="release-phase-fill"></div>
       <% end %>
       <div class="relative flex h-full min-w-0 items-center gap-[2px] px-1 <%= marks.any? ? "justify-start @max-[99px]:justify-center" : "justify-center" %> <%= tone[:value] %>">
         <% if marks.any? %>
@@ -110,5 +127,6 @@
         <% end %>
       </div>
     </div>
+    </div><%# /release-phase-glow-host %>
   <% end %>
 </div>
