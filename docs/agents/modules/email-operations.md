@@ -79,8 +79,7 @@ nothing**. QA sends real mail through the real transport.
 
 This is deliberate: both gates hand out sign-in material without authenticating
 anyone. The shared environment banner
-(`studio/banners/environment`, studio-engine >= 0.30 — publishing with the next
-release sweep) is built around the same
+(`studio/banners/environment`, studio-engine >= 0.30) is built around the same
 fact — it links the inbox only where the viewer resolves, and degrades to an
 inert status chip on QA rather than advertising a dead link.
 

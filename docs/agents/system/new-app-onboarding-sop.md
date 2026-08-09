@@ -140,9 +140,7 @@ later cleanup task.
     <%= render "layouts/navbar" %>
   ```
 
-  One call, no conditional around it (studio-engine >= 0.30 — the partial is
-  merged and publishes with the next release sweep; until then a new app keeps
-  its own strip and adopts on the upgrade). The partial decides
+  One call, no conditional around it (studio-engine >= 0.30, published). The partial decides
   for itself whether to appear (every environment except real production; a QA app
   is Rails-production but a review target, so `QA_ENV=true` re-opens it), what to
   say, and whether the Local Inbox is linkable — it links the inbox only where the
