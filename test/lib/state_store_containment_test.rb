@@ -645,6 +645,60 @@ class StateStoreContainmentTest < Minitest::Test
                  "the child reached the operator's real state dir"
   end
 
+  # The SAME lane, on the cwd shape the fixture above cannot reach.
+  #
+  # bin/statusline has three throttle writers, and each one's sandbox check sits AFTER
+  # its own early returns. The sibling above puts a .agent-context.json in the cwd, so
+  # src_is_desk=1 and heal_session_mascot returns at its desk guard long before the
+  # check — delete the heal's marker_write_refused line and that fixture still passes.
+  # A desk is also the ONE shape the heal never runs in, so the only cwd that reaches
+  # its write is this one: no desk context, no session marker, nothing to render from.
+  #
+  # The lesson generalizes past this writer: registering a bash file in WRITERS buys
+  # coverage of the code paths a fixture's cwd actually walks, not of the file.
+  def test_integration_bash_statusline_mascot_heal_cannot_touch_the_marker_store_when_unpinned
+    id = "containment-heal-#{SecureRandom.uuid}"
+
+    Dir.mktmpdir do |dir|
+      home = File.join(dir, "home")
+      root = File.join(home, "projects", ".agents") # where an UNPINNED statusline falls back to
+      FileUtils.mkdir_p(File.join(root, "sessions"))
+
+      # Decoys, so a DELETE is observable too — same reasoning as the fixture above.
+      File.write(File.join(root, "sessions", "#{id}.heartbeat"), "decoy")
+      File.write(File.join(root, "sessions", "someone-else.json"), "decoy")
+
+      # NO .agent-context.json anywhere: this is the whole point of the second case.
+      cwd = File.join(dir, "cwd")
+      FileUtils.mkdir_p(cwd)
+
+      before = fingerprint(root)
+
+      env = SessionEnv.neutralized(
+        "CLAUDE_CODE_SESSION_ID" => id, # the child runs as THIS id, never the operator's
+        "TASK_USAGE_SANDBOX" => "1",    # armed
+        "CLAUDE_PROJECTS_DIR" => nil,   # UNPINNED — the exact leak this family exists to close
+        "HOME" => home,
+        "STATUSLINE_HEARTBEAT_FG" => "1", # inline, so the assertion cannot race a detached write
+        "TASK_BIN" => "/usr/bin/true",    # never reach the real board, whatever happens
+        "SHIFT_BIN" => "/usr/bin/true"
+      )
+      payload = %({"session_id":"#{id}","workspace":{"current_dir":"#{cwd}"}})
+      out, _err, _status = Open3.capture3(env, File.join(ROOT, "bin", "statusline"), stdin_data: payload)
+
+      refute_empty out.strip, "the status line must still RENDER when it refuses to heal — a refusal that " \
+                              "also breaks the agent's prompt would just get the guard reverted"
+
+      assert_equal before, fingerprint(root),
+                   "the mascot self-heal MUTATED the marker store while sandboxed and unpinned. Its throttle " \
+                   "marker (<id>.mascot-heal) is a THIRD bash writer into this store, and it is only ever " \
+                   "reached from a cwd with no worktree desk — which is why it needs its own fixture."
+    end
+
+    assert_empty Dir.glob(File.join(TaskUsageSandbox.real_state_dir, "**", "*#{id}*"), File::FNM_DOTMATCH),
+                 "the child reached the operator's real state dir"
+  end
+
   # Every file under +root+, by content. The receipt LAYER 3 compares.
   def fingerprint(root)
     Dir.glob(File.join(root, "**", "*"), File::FNM_DOTMATCH)

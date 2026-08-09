@@ -333,24 +333,35 @@ class StatuslineTest < Minitest::Test
   # case); `desk: true` also drops a worktree .agent-context.json in the cwd. The
   # fixtures deliberately carry NO task slug, so heartbeat_claim returns early and
   # every recorded call belongs to the heal.
-  # A `stat` that behaves like GNU coreutils, for running the macOS-only throttle
-  # clock on the platform CI actually uses. The BSD `-f %m` spelling is "filesystem
-  # status" there, so the unknown directive prints ITSELF and exits 0 — junk that
-  # reaches $(( )) as a fatal expansion error. Returns the dir to prepend to PATH.
+  # A `stat` that behaves like GNU coreutils, so the macOS-only throttle clock can be
+  # exercised here on the shape CI actually runs. GNU reads `-f` as `--file-system`,
+  # so `%m` is not a format — it is a second FILE OPERAND. GNU errors on it (stderr,
+  # nonzero exit) and still prints a MULTI-LINE filesystem block for the real path on
+  # stdout, which is the junk that reaches $(( )) as a fatal expansion error.
+  # Returns the dir to prepend to PATH.
   def gnu_stat_shim(dir)
     bin = File.join(dir, "shim")
     FileUtils.mkdir_p(bin)
-    shim = File.join(bin, "stat")
-    File.write(shim, <<~SH)
+    File.write(File.join(bin, "stat"), <<~SH)
       #!/bin/bash
-      [ "$1" = "-f" ] && { echo "%m"; exit 0; }
+      if [ "$1" = "-f" ]; then
+        shift
+        for arg in "$@"; do
+          if [ "$arg" = "%m" ]; then
+            echo "stat: cannot read file system information for '%m': No such file or directory" >&2
+          else
+            printf '  File: "%s"\\n    ID: 0 Namelen: 255 Type: ext2/ext3\\nBlock size: 4096\\n' "$arg"
+          fi
+        done
+        exit 1
+      fi
       if [ "$1" = "-c" ] && [ "$2" = "%Y" ]; then
         /usr/bin/stat -c %Y "$3" 2>/dev/null || /usr/bin/stat -f %m "$3"
         exit $?
       fi
       exec /usr/bin/stat "$@"
     SH
-    FileUtils.chmod(0o755, shim)
+    FileUtils.chmod(0o755, File.join(bin, "stat"))
     bin
   end
 

@@ -104,15 +104,20 @@ DOT="${D} · ${X}"
 link() { printf '\033]8;;%s\033\\%s\033]8;;\033\\' "$1" "$2"; }   # OSC 8 hyperlink
 
 # --- Portable mtime (the throttles' clock) ---------------------------------
-# `stat -f %m` is BSD/macOS. GNU/Linux spells it `stat -c %Y` — and does something
-# far nastier than fail with the BSD spelling: `-f` is "filesystem status" there, so
-# an unknown directive prints ITSELF ("%m") and exits 0. That junk then reaches
-# `$(( now - mtime ))`, and an arithmetic syntax error is a FATAL expansion error in
-# a non-interactive bash: the whole status line dies mid-render, silently. It only
-# ever fired on Linux, so the operator's Mac never saw it — but every throttle test
-# on CI was passing because the script CRASHED into the expected call count, which
-# is the worst way for a gate to be green. Take the first NUMERIC answer; treat
-# anything else as unknown (0 ⇒ "old enough", so a heal/renew proceeds).
+# `stat -f %m` is BSD/macOS. GNU/Linux spells it `stat -c %Y`, and the BSD form there
+# does something far nastier than fail cleanly: GNU reads `-f` as `--file-system`, so
+# `%m` is not a format at all — it is parsed as a second FILE OPERAND. GNU errors on
+# that bogus operand (stderr, nonzero exit) while still printing a MULTI-LINE
+# filesystem block for the real path on stdout. So `2>/dev/null || echo 0` captures
+# that block, and it reaches `$(( now - mtime ))` as junk — where an arithmetic
+# syntax error is a FATAL expansion error in a non-interactive bash: the whole status
+# line dies mid-render, silently. It only ever fired on Linux, so the operator's Mac
+# never saw it — but every throttle test on CI was passing because the script CRASHED
+# into the expected call count, which is the worst way for a gate to be green.
+#
+# Hence: take the first NUMERIC answer, and never trust an exit code to tell you the
+# spelling was wrong. Anything non-numeric is unknown (0 ⇒ "old enough", so a
+# heal/renew proceeds rather than wedging).
 file_mtime() {  # path -> epoch seconds, 0 when unknown
   local m
   m=$(stat -f %m "$1" 2>/dev/null)                                    # BSD/macOS
