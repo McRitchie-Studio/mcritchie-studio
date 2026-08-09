@@ -547,13 +547,24 @@ class ReleaseCliTest < Minitest::Test
   #   version 1.0.0/0.11.0 → bumped (healthy publish); 0.10.0 → STRANDED (guard).
   # `live` is the RubyGems listing; `lock_dirty` is whether the bundle-lock run
   # left the workspace lock changed (false = already-bumped idempotent re-run).
-  def gem_publish_stub(version: "1.0.0", live: [], lock_dirty: true)
+  #
+  # `lock_lands` models what `bundle lock --update` DID TO THE LOCKFILE, which is
+  # the thing prepare now asserts:
+  #   true  — bundler saw the published gem and resolved it (the healthy case).
+  #   false — the RubyGems index had NOT propagated, so bundler exited 0 and left
+  #           the OLD version resolved. This is the live rel-20260809-3b8f3d bug,
+  #           and the double has to be able to express it or the guard is untested:
+  #           a `bundle_lock` that writes nothing at all cannot tell the two apart.
+  def gem_publish_stub(version: "1.0.0", live: [], lock_dirty: true, lock_lands: true)
     GATE_GIT_STUB +
       %(ENV["RELEASE_CI_STATUS"] = "green"\n) +
       %(def repo_path(_repo) = #{self.class.stub_repo.inspect}\n) +
       %(def gem_version_from_ref(_repo, _ref) = #{version.inspect}\n) +
       %(def rubygems_versions(_gem) = #{live.inspect}\n) +
-      %(LOCK_DIRTY = #{lock_dirty.inspect}\n) + <<~'RUBY'
+      %(LOCK_DIRTY = #{lock_dirty.inspect}\n) +
+      %(PUBLISHED_VERSION = #{version.inspect}\n) +
+      %(LOCK_LANDS = #{lock_lands.inspect}\n) +
+      %(STALE_LOCK_VERSION = "0.10.0"\n) + <<~'RUBY'
         def conductor(ruby, read_only: false)
           return { "tasks" => [], "release" => { "slug" => "rel-gempub", "state" => "assembling" }, "screen" => {} } if ruby.include?("sweep_candidates")
           return { "state" => "assembled" } if ruby.include?("qa_green!")
@@ -575,14 +586,33 @@ class ReleaseCliTest < Minitest::Test
           ["", true]
         end
         def with_ship_workspace(_repo) = yield
+        # The workspace starts with a Gemfile.lock resolving the OLD version —
+        # what a consumer checkout really looks like before the bump.
         def ship_workspace!(repo, _sha)
           dir = File.join(Dir.tmpdir, "prep-ws-#{Process.pid}-#{repo}")
           FileUtils.mkdir_p(dir)
           File.write(File.join(dir, "Gemfile"), %(gem "studio-engine", "~> 0.10"\n))
+          File.write(File.join(dir, "Gemfile.lock"), <<~LOCK)
+            GEM
+              remote: https://rubygems.org/
+              specs:
+                studio-engine (#{STALE_LOCK_VERSION})
+
+            DEPENDENCIES
+              studio-engine (~> 0.10)
+          LOCK
           dir
         end
-        def bundle_lock(_path, gem, attempts: 3, conservative: false)
+        # Model bundler's REAL effect on the lockfile, not just its exit status:
+        # it rewrites the resolved version when it can see the gem, and silently
+        # leaves the old one when the index has not propagated. Both exit 0.
+        def bundle_lock(path, gem, attempts: 3, conservative: false)
           $stdout.puts("BUNDLE-LOCK #{gem} conservative=#{conservative}")
+          return unless LOCK_LANDS
+
+          lock = File.join(path, "Gemfile.lock")
+          File.write(lock, File.read(lock).sub(/^    #{Regexp.escape(gem)} \([^)]+\)$/,
+                                               "    #{gem} (#{PUBLISHED_VERSION})"))
         end
         def sh(*a, **k)
           g = gate_git(a, k)
@@ -662,6 +692,40 @@ class ReleaseCliTest < Minitest::Test
     refute_includes out, "GEM-PUSH", "nothing publishes past the guard"
     refute_includes out, "LOCK-PUSH", "no lock bump past the guard"
     refute_includes out, "QA-DEPLOY", "no QA deploy past the guard"
+  end
+
+  # [integration] THE PROPAGATION-LAG GUARD (rel-20260809-3b8f3d, 2026-08-09).
+  #
+  # `bundle lock --update` exits 0 whether or not it could SEE the version we
+  # published seconds earlier. When the RubyGems index has not propagated it
+  # resolves the OLD version and leaves the tree unchanged — which is byte-for-byte
+  # what a genuine already-bumped re-run looks like. prepare used to read that
+  # unchanged tree and announce "lock already at studio-engine 1.0.0", a version it
+  # had never read. turf-monster rode QA on the old engine while the release record
+  # asserted the new one, and the pre-QA gate CREDITED its identical-tree green, so
+  # no CI run contradicted it either.
+  #
+  # `lock_dirty: false` here is the point: the tree is CLEAN, exactly as in the old
+  # false-success path. Only reading the lock back can tell the two apart.
+  def test_prepare_aborts_when_the_consumer_lock_bump_did_not_actually_land
+    out = run_cli(["--yes"], setup: gem_publish_stub(version: "1.0.0", live: ["1.0.0"],
+                                                     lock_dirty: false, lock_lands: false),
+                  call: %{begin; prepare; puts("NO-ABORT"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+    assert_includes out, "ABORTED", "a lock that did not land must abort, never report success"
+    assert_includes out, "consumer lock bump did NOT land"
+    assert_includes out, "wanted 1.0.0, lock resolves 0.10.0",
+                    "the abort names BOTH versions so the operator can see the lag for what it is"
+    assert_includes out, "propagated", "the abort explains the usual cause"
+    assert_includes out, "re-run", "and hands over the fix"
+    refute_includes out, "NO-ABORT"
+
+    # The old wording was the lie itself — it must not survive anywhere.
+    refute_includes out, "lock already at",
+                     "prepare must never claim a version it has not read out of the lockfile"
+    # Nothing may proceed on an unverified lock.
+    refute_includes out, "LOCK-PUSH", "no bump commit is pushed when the lock did not land"
+    refute_includes out, "QA-DEPLOY", "no QA deploy on a consumer that still bundles the OLD gem"
   end
 
   # [integration] The self-healing re-run: version already live + lock already
@@ -5426,11 +5490,7 @@ class ReleaseCliTest < Minitest::Test
       assert_match(/~> 0\.8/, File.read(File.join(clone, "Gemfile")),
                    "the primary's main must look ALREADY PINNED — that is the lie the old code believed")
 
-      setup = %(def repo_path(_repo) = #{clone.inspect}\n) + <<~'RUBY'
-        def bundle_lock(path, gem)
-          File.write(File.join(path, "Gemfile.lock"), "GEM\n  #{gem} (0.9.0)\n")
-        end
-      RUBY
+      setup = %(def repo_path(_repo) = #{clone.inspect}\n) + REPIN_LOCK_STUB
       out = run_cli(["--yes"], setup: setup,
                     call: %{@ship_live = []; sha = { "sibling" => #{frozen.inspect} }; } +
                           %{repin_consumers([{ "repo" => "sibling" }], { "studio-engine" => "0.9.0" }, sha); } +
@@ -5521,9 +5581,16 @@ class ReleaseCliTest < Minitest::Test
     [clone, frozen, repin1]
   end
 
+  # The lock this writes must have BUNDLER'S REAL SHAPE, not a suggestive
+  # approximation: the re-pin now reads the resolved version back out of it
+  # (Release::ShipSequence.lock_bump_landed?) before committing, and a resolution
+  # lives at a 4-space indent under `specs:`. The old two-space sketch parsed as
+  # nothing at all, so a stub that kept it would have made the guard look broken
+  # while the shipping code was correct.
   REPIN_LOCK_STUB = <<~'RUBY'
-    def bundle_lock(path, gem)
-      File.write(File.join(path, "Gemfile.lock"), "GEM\n  #{gem} (0.9.0)\n")
+    def bundle_lock(path, gem, attempts: 3, conservative: false)
+      File.write(File.join(path, "Gemfile.lock"),
+                 "GEM\n  remote: https://rubygems.org/\n  specs:\n    #{gem} (0.9.0)\n")
     end
   RUBY
 
