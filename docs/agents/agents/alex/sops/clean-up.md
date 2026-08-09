@@ -424,48 +424,83 @@ bin/agent-worktree cleanup --reclaim --yes   # full teardown + Redis band shrink
 
 ### Stale unmerged desks — the reclaim can NEVER take these; triage them yourself
 
-The reclaim's safety gate only takes **clean + merged** desks. A clean desk on an
-**unmerged** branch is invisible to it forever — and these accumulate until they
-pin the Redis band wide (2026-08-08: **14 of 27** surviving slots were exactly
-this). `remove --force` does not help either: it clears the content guard **only
-for the merged-PR case**, by design. So unmerged desks are a hand-triage:
+The reclaim's safety gate only takes **clean + merged (or base-equivalent, e.g.
+squash-merged)** desks. A clean desk on a genuinely **unmerged** branch is
+invisible to it — and these accumulate until they pin the Redis band wide
+(2026-08-08: **14 of 27** surviving slots were exactly this). `remove --force`
+does not help either: it clears the content guard **only for the merged-PR
+case**, by design. So unmerged desks are a hand-triage:
 
-1. **Inventory** — for each unmerged desk, three facts decide everything:
+0. **Enumerate the population** — `bin/agent-worktree list` prints `clean
+   unmerged` per desk, plus two numbers you will need later: `redis=<n>` (the
+   band slot) and `+N/-M` (ahead/behind **the BASE branch** — this is NOT the
+   unpushed count; step 1 measures that against the desk's own remote branch,
+   and the two routinely disagree).
+
+1. **Inventory** — four facts decide everything, and the first is a gate:
 
    ```bash
-   git -C <wt> branch --show-current                     # its branch
-   git -C <wt> rev-list --count origin/<branch>..HEAD    # unpushed commits (error = never pushed)
+   git -C <wt> status --porcelain                        # MUST be empty. A dirty desk EXITS this
+                                                         # protocol — it is Phase 3b's patient
+                                                         # (possible unlanded finished work), never
+                                                         # a teardown candidate.
+   git -C <wt> branch --show-current                     # EMPTY = detached HEAD → NOT this protocol;
+                                                         # route to the "commits live nowhere else"
+                                                         # block below.
+   git -C <wt> rev-list --count origin/<branch>..HEAD    # UNPUSHED commits, measured against the
+                                                         # desk's OWN remote branch (error = branch
+                                                         # absent from origin)
    bin/task show <slug>                                  # board stage
    ```
 
-2. **Preserve before removing** — three cases:
-   - **Pushed + task archived (or no task)** — nothing owed; origin holds the code.
-   - **Never pushed** — push it: `git -C <wt> push -u origin feat/<slug>`. A pushed
-     feature branch preserves code; `main` is not backup.
-   - **Diverged (ahead AND behind origin)** — **never force-push an archived
-     task's branch**; preserve the local HEAD as a tag instead:
+2. **Preserve before removing** — route on the measured count, then on the push
+   outcome (no case falls through to deletion):
+   - **Zero unpushed + task archived (or no task)** — nothing owed; origin holds
+     the code.
+   - **Unpushed commits (count > 0, or branch absent from origin)** — push it:
+     `git -C <wt> push -u origin feat/<slug>`. A pushed feature branch preserves
+     code; `main` is not backup. This handles fresh branches and fast-forwards
+     alike.
+   - **Push refused as non-fast-forward (truly diverged)** — **never force-push
+     an archived task's branch**; preserve the local HEAD as a tag instead:
      `git -C <wt> tag archive/<slug>-local $(git -C <wt> rev-parse HEAD) &&
      git -C <wt> push origin refs/tags/archive/<slug>-local`.
 
 3. **The orphaned-fix check applies to BRANCHES, not just PRs.** A desk with
-   substantial unlanded commits is where fixes go to die. Before writing it off,
-   diff its ideas against the current `release` and ask: did this land, or did we
-   re-suffer it? Record the verdict (or the debt) in
-   [`../../../maintenance/parking-lot.md`](../../../maintenance/parking-lot.md).
+   unlanded commits — any, not just "substantial" ones — is where fixes go to
+   die. Before writing it off, diff its ideas against the current `release` and
+   ask: did this land, or did we re-suffer it? A branch is superseded only if you
+   can **point at the code that supersedes it**. Record the verdict (or the debt)
+   in [`../../../maintenance/parking-lot.md`](../../../maintenance/parking-lot.md)
+   — that file holds unlanded-WORK debt; the removal batch itself is recorded in
+   `delete-later.md` at step 4.
 
-4. **Remove manually** (the launcher refuses, correctly — you are overriding a
-   guard whose concern you have satisfied, so record it in the ledger):
+4. **Tear down manually, in the launcher's own order** (the launcher refuses,
+   correctly — you are overriding a guard whose concern steps 1-2 satisfied, so
+   record the override by hand: **hand-edit
+   `docs/agents/maintenance/delete-later.md`** — no CLI path writes an unmerged
+   desk there):
 
    ```bash
-   redis-cli -n <db> flushdb                              # the desk's band slot
-   git -C /Users/alex/projects/<app> worktree remove --force .worktrees/<slug>
-   git -C /Users/alex/projects/<app> branch -D feat/<slug>   # safe: pushed or tagged above
+   bin/agent-worktree down <app> <slug>       # STOP THE STACK FIRST — a live stack repopulates
+                                              # a flushed DB and then loses its cwd
+   [ -z "$(git -C <wt> status --porcelain)" ] || echo "DIRTY — STOP"   # re-assert at teardown time
+   redis-cli -n <db> flushdb                  # <db> from step 0's list row; SKIP when blank
+   git -C /Users/alex/projects/<app> worktree remove .worktrees/<slug>   # UN-forced — its refusal
+                                              # on a dirty desk is the last guard, keep it
+   git -C /Users/alex/projects/<app> branch -D feat/<slug>   # only AFTER step 2 proved the tip
+                                              # lives on origin (branch or archive tag)
    git -C /Users/alex/projects/<app> worktree prune
    ```
 
-   Then refresh the registry once for the batch: `bin/agent-worktree snapshot
-   --write` and read `bin/agent-worktree scale status` — the freed slots return to
-   the band, and the band contracts from the top as its highest DBs clear.
+5. **Refresh the registry and contract the band** — once for the batch:
+
+   ```bash
+   bin/agent-worktree snapshot --write        # registry only — it does NOT touch the band
+   bin/agent-worktree scale in                # THIS is what contracts the band (from the top,
+                                              # only past freed slots)
+   bin/agent-worktree scale status            # read the result
+   ```
 
 > ### ⛔ The reclaim gate refuses a desk whose commits live nowhere else — LISTEN to it
 > `bin/agent-worktree remove` will refuse with *"branch content is not represented on

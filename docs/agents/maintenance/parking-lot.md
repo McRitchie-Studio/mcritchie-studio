@@ -161,9 +161,10 @@ McRitchie's call, and it costs money either way.
 
 ## release-gate-orphans-its-suite — 9 unlanded local commits (2026-08-08)
 
-The archived task's desk held nine commits that diverged from its pushed branch
-and never landed anywhere. Preserved as tag `archive/release-gate-orphans-its-suite-local`
-(`f32687e`) during the stale-desk sweep. **Orphaned-fix review still owed:** diff
-the tag's ideas against current `release` and either point at the code that
-superseded them or land what didn't. See the clean-up SOP's "stale unmerged
-desks" protocol.
+The archived task's desk held nine commits diverged from its pushed branch,
+preserved as tag `archive/release-gate-orphans-its-suite-local` (`f32687e4`)
+during the stale-desk sweep. **Six of the nine already landed on `release`;
+three are absent:** `f32687e4`, `bf36425e`, `58eda198`. **Orphaned-fix review
+owed on those three:** diff their ideas against current `release` and either
+point at the code that superseded them or land what didn't. See the clean-up
+SOP's "stale unmerged desks" protocol.
