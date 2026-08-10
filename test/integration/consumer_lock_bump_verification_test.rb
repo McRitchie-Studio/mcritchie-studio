@@ -7,8 +7,9 @@ require "test_helper"
 # before the ship's re-pin). Its unit tests use a handcrafted lockfile, which
 # proves the parser against the shape we IMAGINED Bundler emits. This tier runs
 # it against the shape Bundler ACTUALLY emits — this repo's own committed
-# Gemfile.lock — with `Bundler.locked_gems` as the oracle and EVERY spec in the
-# file as the population, so a future Bundler that changes indentation,
+# Gemfile.lock — with `Bundler.locked_gems` as the oracle and EVERY gem-sourced
+# spec in the file as the population (PATH/GIT specs sit outside the parser's
+# GEM-section contract), so a future Bundler that changes indentation,
 # ordering, or the spec layout turns this red instead of silently making the
 # guard unable to find a version (which would abort every gem release).
 #
@@ -32,6 +33,26 @@ class ConsumerLockBumpVerificationTest < ActionDispatch::IntegrationTest
     spec&.version&.to_s
   end
 
+  # The specs the parser CONTRACTUALLY covers: `locked_version` is deliberately
+  # anchored to GEM sections (a version a gem RESOLVES TO from rubygems), so a
+  # PATH-sourced spec is outside its contract and returns nil BY DESIGN. That is
+  # not hypothetical here: studio-engine's consumer-ci.yml rewrites this repo's
+  # Gemfile to `path: ../studio`, so under that lane our own lockfile carries
+  # studio-engine as a PATH spec — an oracle population that includes it fails
+  # every engine PR on a disagreement the contract explicitly excludes.
+  def gem_sourced_specs
+    Bundler.locked_gems.specs.reject { |s| s.source.is_a?(Bundler::Source::Path) }
+  end
+
+  # The subject gem for the lock_bump_landed? cases: studio-engine when it is
+  # gem-sourced (the shipped shape the guard exists for), else a gem that is
+  # always rubygems-sourced — the guard's semantics are gem-agnostic, and under
+  # the consumer-CI path rewrite studio-engine has no GEM resolution to assert.
+  def lock_bump_subject
+    engine = Bundler.locked_gems.specs.find { |s| s.name == "studio-engine" }
+    engine && !engine.source.is_a?(Bundler::Source::Path) ? "studio-engine" : "rails"
+  end
+
   # THE WHOLE LOCKFILE, not a flattering sample. An earlier version of this test
   # asserted two hand-picked pure-Ruby gems and claimed to prove the parser
   # against "the shape Bundler ACTUALLY emits". Generalising the oracle to every
@@ -40,8 +61,8 @@ class ConsumerLockBumpVerificationTest < ActionDispatch::IntegrationTest
   # — so the parser was returning the platform suffix as part of the version and
   # disagreeing with Bundler on 4 gems (ffi, nokogiri, pg, tailwindcss-ruby)
   # across 12 rows. Sampling hid it; the population found it.
-  test "[integration] locked_version agrees with Bundler on EVERY spec in the real lockfile" do
-    specs = Bundler.locked_gems.specs
+  test "[integration] locked_version agrees with Bundler on EVERY gem-sourced spec in the real lockfile" do
+    specs = gem_sourced_specs
     assert_operator specs.size, :>, 100, "precondition: a real, fully populated lockfile"
 
     disagreements = specs.filter_map do |spec|
@@ -76,19 +97,49 @@ class ConsumerLockBumpVerificationTest < ActionDispatch::IntegrationTest
   end
 
   test "[integration] lock_bump_landed? accepts the version really in the lock" do
-    live = bundler_resolved_version("studio-engine")
-    assert Release::ShipSequence.lock_bump_landed?(lock_text, "studio-engine", live)
+    subject = lock_bump_subject
+    live = bundler_resolved_version(subject)
+    assert Release::ShipSequence.lock_bump_landed?(lock_text, subject, live)
   end
 
   # The live failure, reproduced against real output: ask for a version the lock
   # does NOT carry and the guard must refuse, no matter how clean the tree is.
   test "[integration] lock_bump_landed? REFUSES a version the real lock does not resolve" do
-    live = Gem::Version.new(bundler_resolved_version("studio-engine"))
+    subject = lock_bump_subject
+    live = Gem::Version.new(bundler_resolved_version(subject))
     unpublished = "#{live.segments[0]}.#{live.segments[1].to_i + 99}.0"
 
-    assert_not Release::ShipSequence.lock_bump_landed?(lock_text, "studio-engine", unpublished),
+    assert_not Release::ShipSequence.lock_bump_landed?(lock_text, subject, unpublished),
                "this is the propagation-lag case: bundle exits 0, the tree is clean, " \
                "and the lock still resolves the OLD version — the guard must say NO"
+  end
+
+  # The consumer-CI shape, pinned as a CONTRACT rather than an accident: a
+  # PATH-sourced spec has no GEM resolution, so the parser answers nil and the
+  # guard fails closed — it never invents a version for a gem the lock resolves
+  # from disk. (A handcrafted lockfile: the live one only carries a PATH section
+  # under the consumer-CI rewrite, and this must hold in BOTH environments.)
+  test "[integration] locked_version answers nil for a PATH-sourced spec" do
+    path_lock = <<~LOCK
+      PATH
+        remote: ../studio
+        specs:
+          studio-engine (0.32.3)
+
+      GEM
+        remote: https://rubygems.org/
+        specs:
+          rake (13.2.1)
+
+      DEPENDENCIES
+        rake
+        studio-engine!
+    LOCK
+
+    assert_nil Release::ShipSequence.locked_version(path_lock, "studio-engine")
+    assert_not Release::ShipSequence.lock_bump_landed?(path_lock, "studio-engine", "0.32.3")
+    assert_equal "13.2.1", Release::ShipSequence.locked_version(path_lock, "rake"),
+                 "the GEM section beside a PATH section still parses"
   end
 
   test "[integration] lock_bump_landed? refuses a gem the lock does not carry at all" do
