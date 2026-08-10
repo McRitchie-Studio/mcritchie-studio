@@ -1109,4 +1109,169 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
     assert_not_includes msg, "already live",
                         "the skip wording belongs to the equal-version case, not the backward one"
   end
+
+  # --- locked_version / lock_bump_landed? -------------------------------------
+  #
+  # The regression these pin (rel-20260809-3b8f3d, 2026-08-09): bin/release read
+  # `git status --porcelain` after `bundle lock --update` and treated an UNCHANGED
+  # tree as proof the lock already carried the new version. A RubyGems index that
+  # had not yet propagated produces exactly that same unchanged tree while leaving
+  # the OLD version resolved — so the sweep announced 0.31.0 over a 0.30.0 lock.
+
+  # A realistic lock naming the gem at all THREE depths at once. If the parser
+  # anchored on the name alone it would happily return "~>" or the wrong line.
+  LOCKFILE = <<~LOCK.freeze
+    GEM
+      remote: https://rubygems.org/
+      specs:
+        rails (7.2.1)
+        studio-engine (0.30.0)
+        turbo-rails (2.0.6)
+          rails (>= 7.0.0)
+          studio-engine (~> 0.30)
+
+    PLATFORMS
+      arm64-darwin-24
+
+    DEPENDENCIES
+      rails (~> 7.2)
+      studio-engine (~> 0.30)
+  LOCK
+
+  test "locked_version reads the resolved spec, not a requirement at another depth" do
+    assert_equal "0.30.0", S.locked_version(LOCKFILE, "studio-engine"),
+                 "the 4-space GEM/specs line is the only resolved version in the file"
+    assert_equal "7.2.1", S.locked_version(LOCKFILE, "rails")
+  end
+
+  # The INDENT ANCHOR carries this one on its own. Every requirement Bundler
+  # actually writes contains an operator and a space (`~> 0.30`), which the
+  # `[^()\s]+` capture already refuses — so without this case the anchor is
+  # decoration that a later edit could drop with the suite still green (found by
+  # mutating the anchor to `^\s*` and watching nothing fail). Here the deeper line
+  # is bare-versioned, so ONLY the depth distinguishes it, and it is deliberately
+  # ordered BEFORE the real spec so an unanchored parser returns the wrong value
+  # rather than merely a lucky one.
+  test "locked_version ignores a bare-versioned line at a deeper indent" do
+    lock = <<~LOCK
+      GEM
+        specs:
+          some-other-gem (1.0.0)
+            studio-engine (0.9.9)
+          studio-engine (0.31.0)
+    LOCK
+    assert_equal "0.31.0", S.locked_version(lock, "studio-engine"),
+                 "a 6-space line is another spec's dependency, never the resolution"
+  end
+
+  test "locked_version is nil when the lock does not resolve the gem" do
+    assert_nil S.locked_version(LOCKFILE, "solana-studio")
+    assert_nil S.locked_version("", "studio-engine")
+  end
+
+  # The exact live failure: bundle resolved the OLD version because RubyGems had
+  # not propagated, the tree therefore did not change, and the old code called
+  # that success.
+  test "lock_bump_landed? is FALSE when propagation lag left the old version resolved" do
+    assert_not S.lock_bump_landed?(LOCKFILE, "studio-engine", "0.31.0"),
+               "a lock still resolving 0.30.0 has NOT landed 0.31.0, however clean the diff looks"
+  end
+
+  test "lock_bump_landed? is TRUE only when the lock actually resolves the asked-for version" do
+    landed = LOCKFILE.sub("studio-engine (0.30.0)", "studio-engine (0.31.0)")
+    assert S.lock_bump_landed?(landed, "studio-engine", "0.31.0")
+  end
+
+  # A genuine idempotent re-run: the lock was already at the target. This is the
+  # case the old message CLAIMED to describe, and it must stay a clean no-op.
+  test "lock_bump_landed? is TRUE for a real idempotent re-run" do
+    assert S.lock_bump_landed?(LOCKFILE, "studio-engine", "0.30.0")
+  end
+
+  test "lock_bump_landed? compares versions semantically, not as strings" do
+    padded = LOCKFILE.sub("studio-engine (0.30.0)", "studio-engine (0.30)")
+    assert S.lock_bump_landed?(padded, "studio-engine", "0.30.0"),
+           "0.30 and 0.30.0 are the same version; Gem::Version owns that judgement"
+  end
+
+  test "lock_bump_landed? is FALSE when the gem is absent or the version is blank/garbage" do
+    assert_not S.lock_bump_landed?(LOCKFILE, "solana-studio", "0.4.7")
+    assert_not S.lock_bump_landed?(LOCKFILE, "studio-engine", "")
+    assert_not S.lock_bump_landed?(LOCKFILE, "studio-engine", "not-a-version")
+  end
+
+  # --- PLATFORM ROWS ---------------------------------------------------------
+  #
+  # A native gem gets one spec row PER PLATFORM with the platform inside the
+  # parens. The version is everything before the first hyphen — Bundler's own
+  # grammar. This was a live defect: the parser returned
+  # "1.17.4-aarch64-linux-gnu" and so disagreed with Bundler on 4 gems in this
+  # repo's real lockfile. Note `Gem::Version.correct?` cannot police it — it
+  # ACCEPTS the suffixed string, reading the hyphen as `.pre.`.
+  PLATFORM_LOCK = <<~LOCK.freeze
+    GEM
+      remote: https://rubygems.org/
+      specs:
+        ffi (1.17.4)
+        ffi (1.17.4-aarch64-linux-gnu)
+        ffi (1.17.4-x86_64-darwin)
+
+    DEPENDENCIES
+      ffi
+  LOCK
+
+  test "locked_version strips the platform suffix from a native gem's spec rows" do
+    assert_equal "1.17.4", S.locked_version(PLATFORM_LOCK, "ffi"),
+                 "the version is everything before the first hyphen (Bundler's own lockfile grammar)"
+    assert S.lock_bump_landed?(PLATFORM_LOCK, "ffi", "1.17.4")
+  end
+
+  test "locked_version fails CLOSED when platform rows disagree on the version" do
+    conflicting = PLATFORM_LOCK.sub("ffi (1.17.4-x86_64-darwin)", "ffi (1.18.0-x86_64-darwin)")
+    assert_nil S.locked_version(conflicting, "ffi"),
+               "rows that disagree are not a resolution we can vouch for"
+    assert_not S.lock_bump_landed?(conflicting, "ffi", "1.17.4")
+  end
+
+  # --- SECTION ANCHORING -----------------------------------------------------
+  #
+  # PATH and GIT blocks carry their OWN `specs:` at the same four-space indent as
+  # GEM's, so indent alone cannot tell a published gem from a path/git-sourced
+  # one. The guard's question is "did the version we published TO RUBYGEMS land
+  # here?", so a path- or git-sourced consumer must NOT satisfy it. This matters
+  # most in repin_consumers, whose whole job is branch-referencing Gemfiles.
+  PATH_SOURCED_LOCK = <<~LOCK.freeze
+    PATH
+      remote: ../studio
+      specs:
+        studio-engine (0.31.0)
+
+    GEM
+      remote: https://rubygems.org/
+      specs:
+        rails (7.2.1)
+
+    DEPENDENCIES
+      studio-engine!
+  LOCK
+
+  test "locked_version ignores a PATH-sourced spec — it did not come from RubyGems" do
+    assert_nil S.locked_version(PATH_SOURCED_LOCK, "studio-engine"),
+               "a path: consumer must not look like a published-gem resolution"
+    assert_not S.lock_bump_landed?(PATH_SOURCED_LOCK, "studio-engine", "0.31.0"),
+               "the guard asks whether the PUBLISHED version landed; a local path never answers yes"
+    assert_equal "7.2.1", S.locked_version(PATH_SOURCED_LOCK, "rails"),
+                 "the GEM section in the same file still resolves normally"
+  end
+
+  test "locked_version ignores a GIT-sourced spec" do
+    git_lock = PATH_SOURCED_LOCK.sub("PATH\n  remote: ../studio", "GIT\n  remote: https://github.com/x/y.git")
+    assert_nil S.locked_version(git_lock, "studio-engine")
+  end
+
+  test "gem_sections keeps only GEM bodies" do
+    kept = S.gem_sections(PATH_SOURCED_LOCK)
+    assert_includes kept, "rails (7.2.1)"
+    assert_not_includes kept, "studio-engine (0.31.0)"
+  end
 end

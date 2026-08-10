@@ -547,13 +547,23 @@ class ReleaseCliTest < Minitest::Test
   #   version 1.0.0/0.11.0 → bumped (healthy publish); 0.10.0 → STRANDED (guard).
   # `live` is the RubyGems listing; `lock_dirty` is whether the bundle-lock run
   # left the workspace lock changed (false = already-bumped idempotent re-run).
+  #
+  # This double models bundler's EFFECT ON THE LOCKFILE, not just its exit status:
+  # it rewrites the resolved version, because prepare now reads that version back.
+  # The propagation-lag case (exit 0, OLD version still resolved) is deliberately
+  # NOT expressible here — this stub REPLACES bundle_lock, so simulating the
+  # failure would only assert the double. That case is driven against the live
+  # implementation by stubbing `sh` instead; see
+  # test_bundle_lock_retries_a_stale_resolution_then_aborts_naming_the_api.
   def gem_publish_stub(version: "1.0.0", live: [], lock_dirty: true)
     GATE_GIT_STUB +
       %(ENV["RELEASE_CI_STATUS"] = "green"\n) +
       %(def repo_path(_repo) = #{self.class.stub_repo.inspect}\n) +
       %(def gem_version_from_ref(_repo, _ref) = #{version.inspect}\n) +
       %(def rubygems_versions(_gem) = #{live.inspect}\n) +
-      %(LOCK_DIRTY = #{lock_dirty.inspect}\n) + <<~'RUBY'
+      %(LOCK_DIRTY = #{lock_dirty.inspect}\n) +
+      %(PUBLISHED_VERSION = #{version.inspect}\n) +
+      %(STALE_LOCK_VERSION = "0.10.0"\n) + <<~'RUBY'
         def conductor(ruby, read_only: false)
           return { "tasks" => [], "release" => { "slug" => "rel-gempub", "state" => "assembling" }, "screen" => {} } if ruby.include?("sweep_candidates")
           return { "state" => "assembled" } if ruby.include?("qa_green!")
@@ -575,14 +585,37 @@ class ReleaseCliTest < Minitest::Test
           ["", true]
         end
         def with_ship_workspace(_repo) = yield
+        # The workspace starts with a Gemfile.lock resolving the OLD version —
+        # what a consumer checkout really looks like before the bump.
         def ship_workspace!(repo, _sha)
           dir = File.join(Dir.tmpdir, "prep-ws-#{Process.pid}-#{repo}")
           FileUtils.mkdir_p(dir)
           File.write(File.join(dir, "Gemfile"), %(gem "studio-engine", "~> 0.10"\n))
+          File.write(File.join(dir, "Gemfile.lock"), <<~LOCK)
+            GEM
+              remote: https://rubygems.org/
+              specs:
+                studio-engine (#{STALE_LOCK_VERSION})
+
+            DEPENDENCIES
+              studio-engine (~> 0.10)
+          LOCK
           dir
         end
-        def bundle_lock(_path, gem, attempts: 3, conservative: false)
-          $stdout.puts("BUNDLE-LOCK #{gem} conservative=#{conservative}")
+        # Model bundler's REAL effect on the lockfile, not just its exit status:
+        # it rewrites the resolved version when it can see the gem, and silently
+        # leaves the old one when the index has not propagated. Both exit 0.
+        #
+        # This stands in for the `bundle` INVOCATION, so it keeps bundle_lock's
+        # full signature (including `expect:`); the LADDER itself — retry on a
+        # stale resolution, then abort — is driven for real in
+        # test_prepare_retries_then_aborts_when_the_lock_never_lands, which stubs
+        # `sh` instead of this.
+        def bundle_lock(path, gem, attempts: 3, conservative: false, expect: nil)
+          $stdout.puts("BUNDLE-LOCK #{gem} conservative=#{conservative} expect=#{expect}")
+          lock = File.join(path, "Gemfile.lock")
+          File.write(lock, File.read(lock).sub(/^    #{Regexp.escape(gem)} \([^)]+\)$/,
+                                               "    #{gem} (#{PUBLISHED_VERSION})"))
         end
         def sh(*a, **k)
           g = gate_git(a, k)
@@ -626,7 +659,7 @@ class ReleaseCliTest < Minitest::Test
     assert_operator publish, :<, bump,   "gems publish before any consumer lock bump (producer-first)"
     assert_operator bump, :<, gate,      "the lock bump commits BEFORE the pre-QA gate reads origin/release"
     assert_operator gate, :<, deploy,    "the gate still precedes the QA deploy"
-    assert_includes out, "BUNDLE-LOCK studio-engine conservative=true",
+    assert_includes out, "BUNDLE-LOCK studio-engine conservative=true expect=1.0.0",
                     "a single-gem bump uses conservative lock semantics"
     assert_includes out, "committed studio-engine 1.0.0",
                     "the bump commit narrates what landed on origin/release"
@@ -643,7 +676,7 @@ class ReleaseCliTest < Minitest::Test
     held = run_cli(["--yes"], call: "prepare", setup: gem_publish_stub(version: "0.11.0"))
     assert_includes held, %(GEMFILE-AFTER gem "studio-engine", "~> 0.10"),
                     "a minor bump is WITHIN `~> 0.10` — lock-only, the pin stays"
-    assert_includes held, "BUNDLE-LOCK studio-engine conservative=true"
+    assert_includes held, "BUNDLE-LOCK studio-engine conservative=true expect=0.11.0"
   end
 
   # [integration] The STRANDED-WORK guard: origin/release ahead of the last
@@ -662,6 +695,124 @@ class ReleaseCliTest < Minitest::Test
     refute_includes out, "GEM-PUSH", "nothing publishes past the guard"
     refute_includes out, "LOCK-PUSH", "no lock bump past the guard"
     refute_includes out, "QA-DEPLOY", "no QA deploy past the guard"
+  end
+
+  # [integration] THE PROPAGATION-LAG GUARD (rel-20260809-3b8f3d, 2026-08-09).
+  #
+  # `bundle lock --update` exits 0 whether or not it could SEE the version we
+  # published seconds earlier. When the RubyGems index has not propagated it
+  # resolves the OLD version and leaves the tree unchanged — which is byte-for-byte
+  # what a genuine already-bumped re-run looks like. prepare used to read that
+  # unchanged tree and announce "lock already at studio-engine 1.0.0", a version it
+  # had never read. turf-monster rode QA on the old engine while the release record
+  # asserted the new one, and the pre-QA gate CREDITED its identical-tree green, so
+  # no CI run contradicted it either.
+  #
+  # [integration] THE CALLER'S HALF of the guarantee: prepare hands every touched
+  # gem's PUBLISHED version to bundle_lock as `expect:`, so the read-back+ladder
+  # can run at all. Without this wiring the guard is inert no matter how correct
+  # bundle_lock is.
+  #
+  # (The abort itself is NOT asserted here on purpose. This harness stubs
+  # bundle_lock wholesale, so an abort in this test would come from the stub, not
+  # the code — it would assert the double. The real refusal and its retry ladder
+  # are driven against the live implementation in
+  # test_bundle_lock_retries_a_stale_resolution_then_aborts_naming_the_api.)
+  def test_prepare_passes_the_published_version_to_bundle_lock_as_expect
+    out = run_cli(["--yes"], call: "prepare",
+                  setup: gem_publish_stub(version: "1.0.0", live: ["1.0.0"], lock_dirty: false))
+
+    assert_includes out, "BUNDLE-LOCK studio-engine conservative=true expect=1.0.0",
+                    "prepare must tell bundle_lock which version has to land: #{out}"
+
+    # The old wording was the lie itself — a version claimed but never read. It
+    # must not survive anywhere, even on the genuine no-op path.
+    refute_includes out, "lock already at",
+                     "prepare must never claim a version it has not read out of the lockfile"
+    assert_includes out, "lock verified at studio-engine 1.0.0",
+                    "the no-op message is now EARNED — bundle_lock proved the version before returning"
+  end
+
+  # [integration] THE LADDER, driven for real. The stub above replaces
+  # bundle_lock wholesale, so it proves the CALLER refuses a stale lock but says
+  # nothing about the retry. Here `sh` is stubbed instead: `bundle lock` "succeeds"
+  # every time while the lockfile stays stale, so the REAL bundle_lock runs its
+  # propagation ladder — retry, retry, then abort.
+  #
+  # This is review finding (1): the ladder already existed but only ever retried a
+  # NON-ZERO exit, and this bug's signature is exit 0 with the old version still
+  # resolved. Aborting on first observation would turn an ordinary, self-curing
+  # index delay into a manual stop moments after an IRREVERSIBLE gem push.
+  def test_bundle_lock_retries_a_stale_resolution_then_aborts_naming_the_api
+    Dir.mktmpdir do |dir|
+      File.write(File.join(dir, "Gemfile.lock"), <<~LOCK)
+        GEM
+          remote: https://rubygems.org/
+          specs:
+            studio-engine (0.10.0)
+      LOCK
+
+      setup = %(ENV["RELEASE_BUNDLE_LOCK_BACKOFF"] = "0"\n) + <<~'RUBY'
+        # `bundle` always succeeds; the lockfile never changes — the propagation case.
+        def sh(*a, **k)
+          $stdout.puts("BUNDLE-RAN") if a[0] == "bundle"
+          ["", true]
+        end
+      RUBY
+
+      out = run_cli(["--yes"], setup: setup,
+                    call: %{begin; bundle_lock(#{dir.inspect}, "studio-engine", expect: "1.0.0"); } +
+                          %{puts("NO-ABORT"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+      assert_equal 3, out.scan("BUNDLE-RAN").size,
+                   "the stale resolution must ride the SAME 3-attempt ladder a non-zero exit does: #{out}"
+      assert_includes out, "resolves 0.10.0, wanted 1.0.0",
+                      "each retry names what it actually saw"
+      assert_includes out, "ABORTED", "and it aborts once the ladder is exhausted"
+      refute_includes out, "NO-ABORT"
+
+      # Review finding (2): point at the surface the code READS. already_live comes
+      # from rubygems_versions → the versions JSON API; the HTML gem page does not
+      # propagate in lockstep with it, and an operator who waits on the page while
+      # the API is stale re-enters the publish branch, gets `gem push` refused, and
+      # is then advised to bump the version — burning a number for nothing.
+      assert_includes out, "https://rubygems.org/api/v1/versions/studio-engine.json",
+                      "the abort names the JSON API this run actually reads"
+      refute_includes out, "https://rubygems.org/gems/studio-engine",
+                       "never send the operator to the HTML page — it lags the API"
+    end
+  end
+
+  # [integration] A lock that DOES land mid-ladder stops retrying and returns.
+  def test_bundle_lock_stops_as_soon_as_the_version_lands
+    Dir.mktmpdir do |dir|
+      lock = File.join(dir, "Gemfile.lock")
+      File.write(lock, "GEM\n  remote: https://rubygems.org/\n  specs:\n    studio-engine (0.10.0)\n")
+
+      setup = %(ENV["RELEASE_BUNDLE_LOCK_BACKOFF"] = "0"\n) +
+              %(LOCKFILE = #{lock.inspect}\n) + <<~'RUBY'
+                # Propagation arrives on the SECOND attempt.
+                $attempt = 0
+                def sh(*a, **k)
+                  if a[0] == "bundle"
+                    $attempt += 1
+                    $stdout.puts("BUNDLE-RAN #{$attempt}")
+                    if $attempt >= 2
+                      File.write(LOCKFILE, File.read(LOCKFILE).sub("(0.10.0)", "(1.0.0)"))
+                    end
+                  end
+                  ["", true]
+                end
+              RUBY
+
+      out = run_cli(["--yes"], setup: setup,
+                    call: %{begin; bundle_lock(#{dir.inspect}, "studio-engine", expect: "1.0.0"); } +
+                          %{puts("LANDED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+      assert_includes out, "LANDED", "a version that arrives mid-ladder must succeed: #{out}"
+      assert_equal 2, out.scan(/BUNDLE-RAN \d/).size, "and stop retrying the moment it lands"
+      refute_includes out, "ABORTED"
+    end
   end
 
   # [integration] The self-healing re-run: version already live + lock already
@@ -5426,11 +5577,7 @@ class ReleaseCliTest < Minitest::Test
       assert_match(/~> 0\.8/, File.read(File.join(clone, "Gemfile")),
                    "the primary's main must look ALREADY PINNED — that is the lie the old code believed")
 
-      setup = %(def repo_path(_repo) = #{clone.inspect}\n) + <<~'RUBY'
-        def bundle_lock(path, gem)
-          File.write(File.join(path, "Gemfile.lock"), "GEM\n  #{gem} (0.9.0)\n")
-        end
-      RUBY
+      setup = %(def repo_path(_repo) = #{clone.inspect}\n) + REPIN_LOCK_STUB
       out = run_cli(["--yes"], setup: setup,
                     call: %{@ship_live = []; sha = { "sibling" => #{frozen.inspect} }; } +
                           %{repin_consumers([{ "repo" => "sibling" }], { "studio-engine" => "0.9.0" }, sha); } +
@@ -5521,9 +5668,16 @@ class ReleaseCliTest < Minitest::Test
     [clone, frozen, repin1]
   end
 
+  # The lock this writes must have BUNDLER'S REAL SHAPE, not a suggestive
+  # approximation: the re-pin now reads the resolved version back out of it
+  # (Release::ShipSequence.lock_bump_landed?) before committing, and a resolution
+  # lives at a 4-space indent under `specs:`. The old two-space sketch parsed as
+  # nothing at all, so a stub that kept it would have made the guard look broken
+  # while the shipping code was correct.
   REPIN_LOCK_STUB = <<~'RUBY'
-    def bundle_lock(path, gem)
-      File.write(File.join(path, "Gemfile.lock"), "GEM\n  #{gem} (0.9.0)\n")
+    def bundle_lock(path, gem, attempts: 3, conservative: false, expect: nil)
+      File.write(File.join(path, "Gemfile.lock"),
+                 "GEM\n  remote: https://rubygems.org/\n  specs:\n    #{gem} (0.9.0)\n")
     end
   RUBY
 
