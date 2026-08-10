@@ -5571,13 +5571,93 @@ class ReleaseCliTest < Minitest::Test
 
       assert_includes out, "ABORTED", "a conflicted merge-forward must abort, never continue: #{out}"
       assert_includes out, "merge-forward CONFLICT"
-      assert_includes out, "the primary checkout was never touched"
+      assert_includes out, "no primary checkout was touched"
+      # …and the claim is SCOPED: it speaks for this repo, not the whole sweep.
+      assert_includes out, "Nothing was pushed FOR sibling",
+                      "the abort must not claim the sweep left nothing behind"
       refute_includes out, "PASSED"
 
       assert_equal before, git_out(origin, "rev-parse", "release"),
                    "a conflicted merge must push NOTHING"
       assert_equal "feat/live-session", git_out(clone, "rev-parse", "--abbrev-ref", "HEAD"),
                    "the primary stays where the operator left it"
+    end
+  end
+
+  # [integration] A FAILED FETCH must fail CLOSED, not judge containment from a
+  # stale ref. This is the clause guarding the very incident class: origin/main is
+  # how we learn what production carries, so a fetch that did not run means the
+  # answer describes an older world.
+  def test_merge_forward_fails_closed_when_the_pre_check_fetch_fails
+    Dir.mktmpdir do |dir|
+      clone = build_merge_forward_fixture(dir)
+      # Point origin at nothing: the fetch cannot succeed.
+      run_git(clone, "remote", "set-url", "origin", File.join(dir, "no-such-origin.git"))
+
+      out = run_cli(["--yes"], setup: %(def repo_path(_repo) = #{clone.inspect}), call: merge_forward_call)
+
+      assert_includes out, "ABORTED", "a failed fetch must abort, not proceed on a stale ref: #{out}"
+      assert_includes out, "refusing to judge merge-forward"
+      refute_includes out, "PASSED"
+    end
+  end
+
+  # [integration] A FAILED PUSH must abort. The merge succeeded locally, but the
+  # branch never moved — proceeding would gate and deploy a tree that still lacks
+  # the hotfix.
+  def test_merge_forward_aborts_when_the_push_is_refused
+    Dir.mktmpdir do |dir|
+      clone  = build_merge_forward_fixture(dir)
+      origin = File.join(dir, "origin.git")
+      before = git_out(origin, "rev-parse", "release")
+      # Refuse every push into the bare origin.
+      hook = File.join(origin, "hooks", "pre-receive")
+      FileUtils.mkdir_p(File.dirname(hook))
+      File.write(hook, "#!/bin/sh\nexit 1\n")
+      File.chmod(0o755, hook)
+
+      out = run_cli(["--yes"], setup: %(def repo_path(_repo) = #{clone.inspect}), call: merge_forward_call)
+
+      assert_includes out, "ABORTED", "a refused push must abort: #{out}"
+      assert_includes out, "could not push the merge-forward"
+      refute_includes out, "PASSED"
+      assert_equal before, git_out(origin, "rev-parse", "release"), "release must not have moved"
+    end
+  end
+
+  # [integration] MULTI-REPO: the guard runs per app, and one repo's success must
+  # not mask another's failure. The second repo conflicts; the first has already
+  # merged and pushed — which is exactly why the abort text must not claim
+  # "nothing was pushed" at sweep grain.
+  def test_merge_forward_across_two_repos_aborts_on_the_second_and_says_what_landed
+    Dir.mktmpdir do |dir_a|
+      Dir.mktmpdir do |dir_b|
+        clone_a = build_merge_forward_fixture(dir_a)
+        clone_b = build_merge_forward_fixture(dir_b, conflicting: true)
+        origin_a = File.join(dir_a, "origin.git")
+
+        setup = <<~RUBY
+          PATHS = { "a" => #{clone_a.inspect}, "b" => #{clone_b.inspect} }
+          def repo_path(repo) = PATHS.fetch(repo)
+        RUBY
+        out = run_cli(["--yes"], setup: setup,
+                      call: %{begin; merge_forward_release_branches([{ "repo" => "a" }, { "repo" => "b" }]); } +
+                            %{puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+        assert_includes out, "ABORTED", "the second repo's conflict must abort the sweep: #{out}"
+        assert_includes out, "merge-forward CONFLICT in b"
+        refute_includes out, "PASSED"
+
+        # Repo A really did land, so the message must not imply a clean slate.
+        assert system("git", "-C", origin_a, "merge-base", "--is-ancestor",
+                      git_out(origin_a, "rev-parse", "main"), "release",
+                      out: File::NULL, err: File::NULL),
+               "repo a's merge-forward landed before b failed"
+        assert_includes out, "earlier repo's merge-forward or lock bump",
+                        "the abort must warn that earlier work already landed"
+        assert_includes out, "Do NOT `reset`",
+                        "and must steer the operator off the destructive cleanup"
+      end
     end
   end
 

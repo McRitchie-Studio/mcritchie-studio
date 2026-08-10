@@ -922,7 +922,11 @@ ONE deterministic verb — **`bin/release prepare --yes [--task SLUG ...]
 4d. **Merge-forward guard** (`merge_forward_release_branches`). Every app's
    `origin/release` must **CONTAIN** `origin/main` before the gate reads it —
    `main` moves outside the cycle (an emergency hotfix pushed straight to it),
-   and a `release` that lags would REVERT that hotfix on the next ship. The
+   and a `release` that lags **cannot ship**: `push_frozen_main` pushes
+   `main` without `--force`, so git refuses the non-fast-forward. The hotfix is
+   never reverted — the cost is a candidate gated, QA'd, and assembled without
+   a fix already live in production, and a ship that dead-ends at the last
+   gate. The
    merge runs in a **detached ship workspace, never the primary**, every step
    is result-checked, and containment is **read back** after the push; a
    conflict, a failed push, or a push that did not take all **abort**. It sits

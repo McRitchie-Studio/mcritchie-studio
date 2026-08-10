@@ -4027,104 +4027,6 @@ end
 # never-touch-the-primary mechanics as ship's repin_consumers), pushed by ref
 # fast-forward-checked. Idempotent: a lock already at the published versions
 # commits nothing; a consumer whose Gemfile never declares the gems is skipped.
-# MERGE-FORWARD: every app's `release` must CONTAIN `main` before the gate reads
-# it. `main` moves outside the cycle — an emergency hotfix pushed straight to it —
-# and a `release` that lags is a release that would REVERT that hotfix.
-#
-# THE INCIDENT THIS REWRITES (rel-20260809-3b8f3d, 2026-08-09). The old guard sat
-# inside the QA-deploy loop and did its merge in the SHARED PRIMARY CHECKOUT:
-#
-#     sh("git", "-C", path, "checkout", RELEASE_BRANCH)     # result DISCARDED
-#     _, fwd = sh("git", "-C", path, "merge", "origin/main", capture: true)
-#
-# Three defects compounded:
-#   1. THE PRIMARY. The hub primary had an uncommitted delete-later.md (the ledger
-#      bin/agent-worktree remove appends to), so git refused the checkout outright.
-#   2. THE UNCHECKED CHECKOUT. Only the MERGE's result was tested. With the
-#      checkout failed the primary was still on `main`, so `git merge origin/main`
-#      ran against main and succeeded as "Already up to date" — a green no-op on
-#      the WRONG BRANCH — and the push then sent the stale LOCAL release branch,
-#      which origin rejected as non-fast-forward. The step was non-fatal, so the
-#      sweep carried on and assembled a candidate whose release branch was MISSING
-#      a hotfix already live in production.
-#   3. THE PLACEMENT (fixed at the call site, step 4d). Running after the pre-QA
-#      gate meant a merge that DID land moved origin/release past the certified SHA.
-#
-# So: merge in a DETACHED WORKSPACE (the primary is never touched and its dirt is
-# irrelevant), CHECK EVERY STEP, and ABORT rather than continue non-fatally. A
-# guard that cannot fail loudly is not a guard.
-def merge_forward_release_branches(app_groups)
-  return if app_groups.empty?
-
-  step("merge-forward guard: origin/#{RELEASE_BRANCH} must CONTAIN origin/main in every app " \
-       "(before the pre-QA gate certifies a SHA)")
-  app_groups.each do |group|
-    repo = group["repo"]
-
-    if DRY
-      step("  #{repo}: if origin/main isn't an ancestor of origin/#{RELEASE_BRANCH}, merge it forward " \
-           "in a detached workspace → push origin #{RELEASE_BRANCH} (no-op when already contained)")
-      next
-    end
-
-    path = repo_path(repo)
-    unless Dir.exist?(path)
-      abort!("app repo not found at #{path} — clone it as a sibling at the projects root")
-    end
-
-    # Fail closed on the fetch: a stale origin/main would make the containment
-    # check answer from a ref that no longer describes production.
-    _, fetched = sh("git", "-C", path, "fetch", "origin", "--quiet")
-    abort!("git fetch failed in #{repo} — refusing to judge merge-forward against a possibly-stale " \
-           "origin/main (fail closed); fix the remote, then re-run `bin/release prepare`") unless fetched
-
-    _, in_sync = sh("git", "-C", path, "merge-base", "--is-ancestor", "origin/main", "origin/#{RELEASE_BRANCH}",
-                    capture: true)
-    next if in_sync
-
-    tip, ok = git_capture("-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}")
-    abort!("could not resolve origin/#{RELEASE_BRANCH} in #{repo} for the merge-forward") unless ok
-    tip = tip.strip
-
-    step("  merge-forward: origin/main → #{RELEASE_BRANCH} in #{repo} (main moved ahead)")
-
-    with_ship_workspace(repo) do
-      workspace = ship_workspace!(repo, tip)
-
-      _, merged = sh("git", "-C", workspace, "merge", "origin/main", "-m",
-                     "Merge main into #{RELEASE_BRANCH} (merge-forward)", capture: true)
-      unless merged
-        # Leave no half-merged workspace behind for the next run to trip over.
-        sh("git", "-C", workspace, "merge", "--abort", capture: true)
-        abort!("merge-forward CONFLICT in #{repo}: origin/main → #{RELEASE_BRANCH}. Nothing was pushed and " \
-               "the primary checkout was never touched. Resolve it on a branch off origin/#{RELEASE_BRANCH}, " \
-               "merge origin/main into it, push to #{RELEASE_BRANCH}, then re-run `bin/release prepare` — " \
-               "it resumes.")
-      end
-
-      # Fast-forward-checked ref push (no --force): a release branch that moved
-      # under us fails closed here rather than clobbering it.
-      _, pushed = sh("git", "-C", workspace, "push", "origin", "HEAD:refs/heads/#{RELEASE_BRANCH}", capture: true)
-      abort!("could not push the merge-forward to origin/#{RELEASE_BRANCH} in #{repo} (did #{RELEASE_BRANCH} " \
-             "move?) — re-run `bin/release prepare`, it resumes") unless pushed
-    end
-
-    # READ BACK the property we came for. The push reported success; that is not
-    # the same as containment holding, and the whole point of this rewrite is to
-    # stop trusting a step's exit status in place of its effect.
-    sh("git", "-C", path, "fetch", "origin", "--quiet")
-    _, contained = sh("git", "-C", path, "merge-base", "--is-ancestor", "origin/main",
-                      "origin/#{RELEASE_BRANCH}", capture: true)
-    unless contained
-      abort!("merge-forward did NOT take in #{repo}: origin/main is still not contained in " \
-             "origin/#{RELEASE_BRANCH} after the push. Refusing to gate or deploy a release branch that " \
-             "would revert what is live on main.")
-    end
-
-    step("  #{repo}: origin/#{RELEASE_BRANCH} now contains origin/main — the gate + QA read the merged tree")
-  end
-end
-
 def bump_consumer_locks_for_qa(app_groups, published_gems)
   return if published_gems.empty?
 
@@ -4189,6 +4091,147 @@ def bump_consumer_locks_for_qa(app_groups, published_gems)
       step("  #{repo}: committed #{bumps.join(', ')} onto origin/#{RELEASE_BRANCH} — " \
            "the pre-QA gate + QA deploy now read the post-bump SHA")
     end
+  end
+end
+
+# MERGE-FORWARD: every app's `release` must CONTAIN `main` before the gate reads
+# it. `main` moves outside the cycle — an emergency hotfix pushed straight to it —
+# and a `release` that lags cannot ship.
+#
+# WHAT ACTUALLY GOES WRONG (stated precisely, because this paragraph is the
+# operator's mental model): a lagging `release` does NOT revert the hotfix.
+# push_frozen_main pushes `<sha>:refs/heads/main` WITHOUT --force, so git refuses
+# the non-fast-forward and the SHIP IS BLOCKED. The cost is the whole cycle
+# upstream of that refusal: a candidate gated, QA'd, and assembled without a fix
+# that is already live in production, and a ship that dead-ends at the last gate.
+# (Only a forced push could revert it, and nothing here forces.)
+#
+# THE INCIDENT THIS REWRITES (rel-20260809-3b8f3d, 2026-08-09). The old guard sat
+# inside the QA-deploy loop and did its merge in the SHARED PRIMARY CHECKOUT:
+#
+#     sh("git", "-C", path, "checkout", RELEASE_BRANCH)     # result DISCARDED
+#     _, fwd = sh("git", "-C", path, "merge", "origin/main", capture: true)
+#
+# Three defects compounded:
+#   1. THE PRIMARY. The hub primary had an uncommitted delete-later.md (the ledger
+#      bin/agent-worktree remove appends to), so git refused the checkout outright.
+#   2. THE UNCHECKED CHECKOUT. Only the MERGE's result was tested. With the
+#      checkout failed the primary was still on `main`, so `git merge origin/main`
+#      ran against main and succeeded as "Already up to date" — a green no-op on
+#      the WRONG BRANCH — and the push then sent the stale LOCAL release branch,
+#      which origin rejected as non-fast-forward. The step was non-fatal, so the
+#      sweep carried on and assembled a candidate whose release branch was MISSING
+#      a hotfix already live in production.
+#   3. THE PLACEMENT (fixed at the call site, step 4d). Running after the pre-QA
+#      gate meant a merge that DID land moved origin/release past the certified SHA.
+#
+# So: merge in a DETACHED WORKSPACE (the primary is never touched and its dirt is
+# irrelevant), CHECK EVERY STEP, and ABORT rather than continue non-fatally. A
+# guard that cannot fail loudly is not a guard.
+def merge_forward_release_branches(app_groups)
+  return if app_groups.empty?
+
+  step("merge-forward guard: origin/#{RELEASE_BRANCH} must CONTAIN origin/main in every app " \
+       "(before the pre-QA gate certifies a SHA)")
+  app_groups.each do |group|
+    repo = group["repo"]
+
+    if DRY
+      step("  #{repo}: if origin/main isn't an ancestor of origin/#{RELEASE_BRANCH}, merge it forward " \
+           "in a detached workspace → push origin #{RELEASE_BRANCH} (no-op when already contained)")
+      next
+    end
+
+    path = repo_path(repo)
+    unless Dir.exist?(path)
+      abort!("app repo not found at #{path} — clone it as a sibling at the projects root")
+    end
+
+    # Fail closed on the fetch: a stale origin/main would make the containment
+    # check answer from a ref that no longer describes production.
+    _, fetched = sh("git", "-C", path, "fetch", "origin", "--quiet")
+    abort!("git fetch failed in #{repo} — refusing to judge merge-forward against a possibly-stale " \
+           "origin/main (fail closed); fix the remote, then re-run `bin/release prepare`") unless fetched
+
+    # PROVE origin/main EXISTS before asking whether it is contained.
+    # `merge-base --is-ancestor` exits 1 for "not an ancestor" but 128 for "no
+    # such ref", and both are merely non-zero here — so a missing or renamed
+    # origin/main would fall through to the merge path and the operator would be
+    # told to hand-resolve a conflict that does not exist. `--verify --quiet`
+    # answers the existence question on its own.
+    _, main_ok = sh("git", "-C", path, "rev-parse", "--verify", "--quiet", "origin/main", capture: true)
+    abort!("could not resolve origin/main in #{repo} — the merge-forward cannot judge containment " \
+           "without it (does the branch exist on the remote?)") unless main_ok
+
+    _, in_sync = sh("git", "-C", path, "merge-base", "--is-ancestor", "origin/main", "origin/#{RELEASE_BRANCH}",
+                    capture: true)
+    next if in_sync
+
+    tip, ok = git_capture("-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}")
+    abort!("could not resolve origin/#{RELEASE_BRANCH} in #{repo} for the merge-forward") unless ok
+    tip = tip.strip
+
+    step("  merge-forward: origin/main → #{RELEASE_BRANCH} in #{repo} (main moved ahead)")
+
+    with_ship_workspace(repo) do
+      workspace = ship_workspace!(repo, tip)
+
+      _, merged = sh("git", "-C", workspace, "merge", "origin/main", "-m",
+                     "Merge main into #{RELEASE_BRANCH} (merge-forward)", capture: true)
+      unless merged
+        # Leave no half-merged workspace behind for the next run to trip over.
+        sh("git", "-C", workspace, "merge", "--abort", capture: true)
+        # SCOPE THE CLAIM TO THIS REPO. "Nothing was pushed" is false at sweep
+        # grain and dangerously so: by the time this runs the batch
+        # accepted→release PRs have merged, gems may be PUBLISHED to RubyGems
+        # (unrepeatable), earlier repos in THIS loop may already have merged and
+        # pushed, and consumer lock bumps are already on origin/release. An
+        # operator told "nothing was pushed" may reach for a `reset release`
+        # cleanup that would drop the batch merge and strand a published gem.
+        # prepare's rescue arm prints the full already-done ledger; this message
+        # only speaks for the repo it failed in.
+        abort!("merge-forward CONFLICT in #{repo}: origin/main → #{RELEASE_BRANCH}. Nothing was pushed " \
+               "FOR #{repo} and no primary checkout was touched. This is mid-sweep, though, so earlier " \
+               "steps HAVE already landed and are NOT undone by this abort — the accepted→release batch " \
+               "merges, any gem publish (a RubyGems version can never be un-pushed), and any earlier " \
+               "repo's merge-forward or lock bump. Do NOT `reset` #{RELEASE_BRANCH} to 'clean up': that " \
+               "would drop the batch merge and strand a published gem. Resolve the conflict on a branch " \
+               "off origin/#{RELEASE_BRANCH}, merge origin/main into it, push to #{RELEASE_BRANCH}, then " \
+               "re-run `bin/release prepare` — it resumes.")
+      end
+
+      # Fast-forward-checked ref push (no --force): a release branch that moved
+      # under us fails closed here rather than clobbering it.
+      _, pushed = sh("git", "-C", workspace, "push", "origin", "HEAD:refs/heads/#{RELEASE_BRANCH}", capture: true)
+      abort!("could not push the merge-forward to origin/#{RELEASE_BRANCH} in #{repo} (did #{RELEASE_BRANCH} " \
+             "move?) — re-run `bin/release prepare`, it resumes") unless pushed
+    end
+
+    # READ BACK the property we came for. The push reported success; that is not
+    # the same as containment holding, and the whole point of this rewrite is to
+    # stop trusting a step's exit status in place of its effect.
+    #
+    # THE FETCH MUST BE CHECKED, or the read-back is a TAUTOLOGY. The push came
+    # from a worktree that SHARES this repo's .git, so it already advanced the
+    # local `refs/remotes/origin/<release>` ref. If this fetch silently fails
+    # (network, auth), the containment check below reads the ref OUR OWN PUSH just
+    # wrote — and it holds by construction, because we merged origin/main into it
+    # moments ago. The assertion would degrade into exactly the "trust the exit
+    # status" it exists to replace.
+    _, refetched = sh("git", "-C", path, "fetch", "origin", "--quiet")
+    abort!("could not re-fetch origin in #{repo} to VERIFY the merge-forward landed. The push reported " \
+           "success, but the local origin/#{RELEASE_BRANCH} ref was written by that push, so checking it " \
+           "now would prove nothing (fail closed). Fix the remote, then re-run `bin/release prepare`.") unless refetched
+
+    _, contained = sh("git", "-C", path, "merge-base", "--is-ancestor", "origin/main",
+                      "origin/#{RELEASE_BRANCH}", capture: true)
+    unless contained
+      abort!("merge-forward did NOT take in #{repo}: origin/main is still not contained in " \
+             "origin/#{RELEASE_BRANCH} after the push. Refusing to gate or deploy a release branch that " \
+             "would leave production's own commits out of the candidate.")
+    end
+
+    step("  #{repo}: origin/#{RELEASE_BRANCH} now contains origin/main — the gate + QA read the merged tree")
   end
 end
 

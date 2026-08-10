@@ -77,19 +77,35 @@ class ReleaseMergeForwardTest < ActiveSupport::TestCase
   # INVARIANT 3 — every step is CHECKED. The original discarded the checkout's
   # result and only tested the merge, which is how a no-op on the wrong branch read
   # as success. Each fallible step must feed an abort.
-  test "the merge-forward aborts rather than continuing non-fatally" do
-    %w[fetch merge push].each do |verb|
-      assert_includes guard_body, verb, "the guard still performs the #{verb}"
+  #
+  # This asserts the CLAUSES BY NAME, not a count. It used to assert
+  # `scan(/abort!/).size >= 4` against 6 present clauses — two of slack, so the
+  # fetch and push aborts could BOTH be deleted with the suite still green. A
+  # count is a proxy; the clauses are the property. (Behavioural coverage for the
+  # fetch/push failures lives in release_cli_test.rb, driven against real repos.)
+  test "every fallible step in the merge-forward is captured and feeds an abort" do
+    # A `sh` whose result is thrown away is the bug this PR exists to fix.
+    {
+      "_, fetched = sh"   => "the pre-check fetch",
+      "_, merged = sh"    => "the merge",
+      "_, pushed = sh"    => "the push",
+      "_, refetched = sh" => "the fetch before the containment read-back"
+    }.each do |capture, what|
+      assert_includes guard_body, capture, "#{what} result must be captured, never discarded"
     end
 
-    # A `sh` whose result is thrown away is the bug. Every one of these must be
-    # captured into a variable the code then acts on.
-    assert_includes guard_body, "_, fetched = sh", "the fetch result is captured"
-    assert_includes guard_body, "_, merged = sh",  "the merge result is captured"
-    assert_includes guard_body, "_, pushed = sh",  "the push result is captured"
-
-    assert_operator guard_body.scan(/abort!/).size, :>=, 4,
-                    "missing repo, failed fetch, conflict, failed push, and a failed read-back all abort"
+    # And each named failure mode must have its own abort.
+    {
+      /app repo not found/                     => "a missing sibling checkout",
+      /refusing to judge merge-forward/        => "a failed pre-check fetch",
+      /could not resolve origin\/main/         => "an unresolvable origin/main",
+      /merge-forward CONFLICT/                 => "a conflicted merge",
+      /could not push the merge-forward/       => "a failed push",
+      /could not re-fetch origin/              => "a failed verification fetch",
+      /merge-forward did NOT take/             => "containment that does not hold after the push"
+    }.each do |pattern, what|
+      assert_match pattern, guard_body, "#{what} must abort"
+    end
   end
 
   # INVARIANT 4 — the guard asserts its EFFECT, not the push's exit status. A
