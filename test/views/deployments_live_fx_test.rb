@@ -131,14 +131,24 @@ class DeploymentsLiveFxTest < ActionView::TestCase
     assert_includes rendered, "meter.querySelector(\"[data-test='release-phase-glow-host']\") || meter"
     assert_includes rendered, "meter.querySelector(\"[data-test='release-phase-fill']\")"
     assert_includes rendered, "host.style.setProperty(\"--studio-team-glow-color\", color)"
-    # The transparent-fill guard reads the browser's OWN normalization, not a spelling. The
-    # old /rgba\(.*, 0\)/ passed only because bg-transparent is a legacy sRGB colour that
-    # CSS Color 4 forces to serialize as rgba(); respell the tone and the ring goes
-    # invisible with no error. Canvas fillStyle always answers #rrggbb or rgba(r,g,b,a).
-    assert_includes rendered, "document.createElement(\"canvas\").getContext(\"2d\")"
+    # The transparent-fill guard PAINTS the colour and reads the pixel's alpha.
+    #
+    # This tier can only assert the SHAPE of the source — it cannot run the JS, so it cannot
+    # hold the property. Read the previous version of these lines as a warning: they forbade
+    # ONE spelling of the rgba regex and asserted the canvas was constructed, and a guard
+    # that still matched a differently-spelled rgba regex passed all of them while writing a
+    # fully transparent colour to the knob. Enumerating spellings is not a guard.
+    #
+    # The property lives in e2e/deployments_live.spec.js ("a transparent modern-syntax tone
+    # leaves the ring its default colour" / "an opaque modern-syntax tone still tints the
+    # ring"), which drives a real oklch tone through this function in a browser and reads
+    # the knob. Chromium serializes a computed colour back in the space it was authored in,
+    # so an oklch or color-mix transparent tone never looks like rgba(..., 0).
+    assert_includes rendered, "document.createElement(\"canvas\").getContext(\"2d\", { willReadFrequently: true })"
+    assert_includes rendered, "ctx.getImageData(0, 0, 1, 1).data[3] === 0 ? null : value"
     assert_includes rendered, "const color = paintableColor("
-    assert_not_includes rendered, "/^rgba\\(.*,\\s*0\\)$/",
-                        "a regex over the raw computed string asserts a spelling, not the alpha"
+    assert_no_match(/exec\(ctx\.fillStyle\)/, rendered,
+                    "matching the serialized fillStyle asserts a spelling, not the alpha")
     assert_includes rendered, "host.classList.add(\"studio-team-glow\", \"release-meter-glow\")"
     assert_includes rendered, "host.classList.remove(\"studio-team-glow\", \"release-meter-glow\")"
     assert_includes rendered, "const METER_GLOW_MS = 2000"

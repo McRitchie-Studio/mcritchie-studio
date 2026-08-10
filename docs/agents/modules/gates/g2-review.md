@@ -112,7 +112,11 @@ accepted-ladder's first rung), stamps `merged: "accepted"`, then moves the task
 `submitted`); any `request-changes` → the task is blocked for rework (a `building`
 attribute — `bin/task block` stamps `blocked_at`/`block_kind` and lands it on
 `building`, not a `blocked` stage); `wait-for-ci` / `conductor-review` / a missing
-report → deferred and re-queried.
+report → deferred and re-queried. A `request-changes` is spent only on a
+**reachable regression** (correctness / security / data-loss / acceptance miss);
+zap-scale findings are fixed forward, advisory findings ride as notes, and a
+second rework block escalates to the operator as `--kind dependency` instead of
+re-bouncing — the full rubric lives in the review SOPs.
 See Carl's
 [`pr-review.md`](../../agents/carl/sops/pr-review.md) for the full verdict
 handling.

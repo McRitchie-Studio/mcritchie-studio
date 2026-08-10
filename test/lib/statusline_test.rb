@@ -81,7 +81,14 @@ class StatuslineTest < Minitest::Test
         "mascot_color" => "#EE8130",
         "mascot_emoji" => "🔥"
       }.merge(extra)))
-      env = SessionEnv.neutralized(session_key(provider) => session, "CLAUDE_PROJECTS_DIR" => projects)
+      # TASK_BIN stubbed exactly like render_in's, and for the same reason (the
+      # header above). A marker carrying a task slug AND stage "building" makes
+      # heartbeat_claim shell out; the CLAUDE_PROJECTS_DIR pin contains the marker
+      # WRITE but NOT the board REQUEST, so the pin alone is one brace of the two
+      # this file requires. Any fixture here may set stage — keep the stub.
+      env = SessionEnv.neutralized(session_key(provider) => session,
+                                   "CLAUDE_PROJECTS_DIR" => projects,
+                                   "TASK_BIN" => "/usr/bin/true")
       stdin = JSON.generate("workspace" => { "current_dir" => projects })
       out, = Open3.capture2(env, "/bin/bash", BIN, stdin_data: stdin, err: File::NULL)
       out
@@ -106,6 +113,41 @@ class StatuslineTest < Minitest::Test
     assert_includes out, "Arcanine"
     assert_includes out, "mcritchie-studio"
     assert_includes out, "…a617", "Codex thread id gets the same last-4 suffix"
+  end
+
+  # --- Genesis bearing: the session's write-once first task leads the feature --
+
+  # A session that has moved on to a different task shows BOTH: the genesis it was
+  # spun up for, then the task it is touching — "why I exist ▸ what I'm touching".
+  def test_session_marker_shows_genesis_beside_a_different_current_task
+    out = render_session_marker_in(session: SESSION, extra: {
+      "worktree_slug" => "current-fixture-fix", "task_slug" => "current-fixture-fix",
+      "stage" => "building",
+      "genesis_slug" => "origin-fixture-task", "genesis_feature" => "origin-fixture-task"
+    })
+    assert_includes out, "origin-fixture-task ▸ current-fixture-fix",
+                    "the genesis leads the feature segment"
+  end
+
+  # Same task → the segment renders exactly as before, no arrow.
+  def test_genesis_is_silent_when_it_is_the_current_task
+    out = render_session_marker_in(session: SESSION, extra: {
+      "worktree_slug" => "origin-fixture-task", "task_slug" => "origin-fixture-task",
+      "stage" => "building",
+      "genesis_slug" => "origin-fixture-task", "genesis_feature" => "origin-fixture-task"
+    })
+    assert_includes out, "origin-fixture-task"
+    refute_includes out, "▸", "no arrow when the session is still on its genesis task"
+  end
+
+  # A marker with no genesis fields (every marker written before this feature,
+  # and every worktree desk context) renders exactly as before.
+  def test_no_genesis_fields_render_unchanged
+    out = render_session_marker_in(session: SESSION, extra: {
+      "worktree_slug" => "current-fixture-fix", "task_slug" => "current-fixture-fix"
+    })
+    assert_includes out, "current-fixture-fix"
+    refute_includes out, "▸"
   end
 
   # --- Mascot tint: the <mascot> name wears its least-common type color --------

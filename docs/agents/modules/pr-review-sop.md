@@ -168,13 +168,27 @@ light swimlane) — see [`parallel-agent-devops.md`](parallel-agent-devops.md#pi
 
 ## Step 3 — Any reviewer can BLOCK
 
-If a reviewer finds something wrong, **any** reviewer marks the task blocked —
-one complete send-back, then the session moves on (block-and-move: one block
-never holds back the PRs that passed):
+**A block is spent only on a REACHABLE regression** — a correctness, security,
+or data-loss defect someone can actually hit, or an acceptance criterion the
+diff does not meet — named with its trigger. A zap-scale finding is **fixed
+forward** on the PR branch instead ([`zap-protocol.md`](zap-protocol.md)
+reviewer seam, verdict stays merge-ready); scope/style/hardening ideas ride as
+`bin/task note --comment` entries; metadata gaps the reviewer repairs with
+`bin/task update` and proceeds. If a block is earned, **any** reviewer marks
+the task blocked — one complete send-back, then the session moves on
+(block-and-move: one block never holds back the PRs that passed):
 
 ```bash
 bin/task block <task> --kind rework --summary "<4-6 word headline>" --feedback "<what is wrong + why>"
 ```
+
+**Two-bounce circuit breaker:** a task whose activity history already carries a
+prior send-back (`GET /api/v1/activities?task_slug=<task>&activity_type=qa_feedback`
+— one row per bounce; never probe the live block columns, which a compliant
+resubmission wipes) is never re-blocked to the
+builder — escalate instead (`bin/task block <task> --kind dependency --summary
+"Escalated: <disagreement>" --feedback "<both positions>"`) and flag it
+**⚠ Escalated** in the run handoff; a review deadlock is the operator's call.
 
 `--summary` is the short headline the task header shows; `--feedback` carries
 the full detail the builder fixes from. Omit `--summary` and the header derives
