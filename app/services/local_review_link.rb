@@ -14,28 +14,36 @@
 # stack. So the board stops minting and hands off: it builds the local server's
 # own mint URL (studio-engine's dev-only Studio::LocalReviewsController) from the
 # task's local_url, and redirects there. That endpoint mints in ITS database and
-# lands the operator signed-in on the page under review.
+# lands the reviewer signed-in on the page under review.
+#
+# The URL it builds carries ONE parameter — the return path. It names no user:
+# the CTA is a public, sign-in-free redirect, so an email here would be an
+# address published on a public page. The local desk knows its own operator
+# (Studio.local_review_email, else its first admin — studio-engine >= 0.33.0).
 class LocalReviewLink
   MINT_PATH = "/_studio/local_review"
 
-  # Loopback only. The board hands this URL the operator's email, and it is
-  # reached by GET from an admin session — so the destination must be a server on
-  # this machine, never wherever a local_url happens to point. A local_url that
-  # is not loopback (a QA host, a typo, anything public) yields nil and the
-  # caller falls back to the task page rather than redirecting an admin off-box.
+  # Loopback only. This URL is reached by an UNAUTHENTICATED public GET (the
+  # board's WAITING APPROVAL CTA), so the destination must be a server on this
+  # machine, never wherever a local_url happens to point. A local_url that is not
+  # loopback (a QA host, a typo, anything public) yields nil and the caller falls
+  # back to the task page rather than bouncing a visitor off-box.
   LOOPBACK_HOSTS = %w[localhost 127.0.0.1 0.0.0.0 ::1 [::1]].freeze
 
   class << self
     # nil when local_url is blank, unparseable, or not a loopback host.
-    def for(local_url:, email:)
+    #
+    # No email rides along, by design. The CTA is public, so an address here
+    # would be published on a public page; and there is no signed-in user to
+    # read one from. The LOCAL stack names its own reviewer instead
+    # (Studio.local_review_email, else its first admin — studio-engine >= 0.33.0).
+    def for(local_url:)
       uri = parse(local_url)
       return nil if uri.nil?
 
       mint = uri.dup
       mint.path = MINT_PATH
-      mint.query = URI.encode_www_form(
-        { email: email.to_s.strip, return_to: return_path(uri) }.compact_blank
-      )
+      mint.query = URI.encode_www_form({ return_to: return_path(uri) }.compact_blank)
       mint.fragment = nil
       mint.to_s
     end

@@ -7,8 +7,15 @@ class TasksController < ApplicationController
   board_reorderable model: Task, id_attr: :slug, param: :slugs
 
   skip_before_action :verify_authenticity_token, if: -> { request.format.json? }
-  skip_before_action :require_authentication, only: [:index, :show, :recent, :review_events, :review_events_hub, :deployments, :stages, :sop]
-  before_action :require_admin, except: [:index, :show, :recent, :review_events, :review_events_hub, :deployments, :stages, :sop]
+  # `local_review` joins the public read actions deliberately — see the action.
+  # It is the board's WAITING APPROVAL CTA, and gating it on a board session is
+  # what broke one-click review: a logged-out click 302'd to /login, and
+  # require_authentication keeps no return_to, so the click was thrown away.
+  PUBLIC_ACTIONS = [:index, :show, :recent, :review_events, :review_events_hub,
+                    :deployments, :stages, :sop, :local_review].freeze
+
+  skip_before_action :require_authentication, only: PUBLIC_ACTIONS
+  before_action :require_admin, except: PUBLIC_ACTIONS
   before_action :set_task, only: [:show, :review_events, :local_review, :edit, :update, :destroy, :comment, :block, :unblock]
 
   # /tasks — Workflow 1 (Build, feature agent): designed → building → submitted
@@ -71,10 +78,25 @@ class TasksController < ApplicationController
     load_review_process_context
   end
 
-  # The board's WAITING APPROVAL CTA target. Admin-only (require_admin — it hands
-  # the operator's email to the local server): bounce the click to the LOCAL
-  # stack's own dev-only mint endpoint, which signs the operator in there and
-  # lands them on the page under review.
+  # The board's WAITING APPROVAL CTA target: bounce the click to the LOCAL
+  # stack's own dev-only mint endpoint, which signs the reviewer in there and
+  # lands them on the page under review. One click, from a cold browser.
+  #
+  # PUBLIC, and no email travels with it. Both were once true the other way, and
+  # both broke the one thing this button is for:
+  #
+  #   * It required an admin BOARD session. A logged-out click 302'd to /login,
+  #     and require_authentication keeps no return_to — so the click was thrown
+  #     away and signing in dropped you nowhere near the review. "One click"
+  #     became "sign in, navigate back, click again".
+  #   * It passed current_user.email. With no sign-in there is no current_user,
+  #     and putting an address in this redirect would publish the operator's
+  #     email on a public page for anyone to read.
+  #
+  # So the local stack answers "who is sitting at this desk?" itself
+  # (Studio.local_review_email, else its first admin — studio-engine >= 0.33.0).
+  # Opening this up grants nothing: every destination is loopback, so the only
+  # server a stranger's click can reach is their OWN machine.
   #
   # It used to mint the magic link HERE and redirect to this app's /l/<token>.
   # That could never work from the production board: a magic link signs you into
@@ -89,7 +111,7 @@ class TasksController < ApplicationController
     local_url = @task.devops_url("local")
     return redirect_to(task_path(@task.slug), alert: "This task has no local demo URL yet.") if local_url.blank?
 
-    target = LocalReviewLink.for(local_url: local_url, email: current_user.email)
+    target = LocalReviewLink.for(local_url: local_url)
     if target.blank?
       return redirect_to(task_path(@task.slug),
                          alert: "This task's local demo URL is not a local server — open it yourself: #{local_url}")
