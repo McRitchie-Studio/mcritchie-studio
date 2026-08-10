@@ -6,10 +6,10 @@
 # adversarial about the two directions that hurt: inventing a version when there is
 # nothing to publish, and silently under- or over-bumping.
 #
-#   ruby -Itest test/lib/release/gem_version_test.rb
+#   ruby -Itest test/models/release/gem_version_test.rb
 
 require "minitest/autorun"
-require_relative "../../../lib/release/gem_version"
+require_relative "../../../app/models/release/gem_version"
 
 class ReleaseGemVersionTest < Minitest::Test
   GV = Release::GemVersion

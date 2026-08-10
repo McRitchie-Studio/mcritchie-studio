@@ -2,7 +2,7 @@
 
 require "rubygems"
 
-module Release
+class Release
   # GemVersion — THE RELEASE OWNS THE VERSION.
   #
   # A version is a property of the RELEASE, not of any PR. N pull requests riding
