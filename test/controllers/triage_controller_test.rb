@@ -67,4 +67,14 @@ class TriageControllerTest < ActionDispatch::IntegrationTest
     post dismiss_triage_finding_path(@finding.slug)
     assert_equal "dismissed", @finding.reload.status
   end
+
+  test "[integration] promote refuses an already-resolved finding" do
+    log_in_as(@admin)
+    @finding.dismiss!
+    assert_no_difference "Task.count" do
+      post promote_triage_finding_path(@finding.slug), params: { title: "Raise Hub Web Concurrency" }
+    end
+    assert_equal "dismissed", @finding.reload.status
+    assert_nil @finding.promoted_task_slug
+  end
 end
