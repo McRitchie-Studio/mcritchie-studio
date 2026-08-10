@@ -729,3 +729,43 @@ What ships instead is honest and quiet about its limits:
   healthy window may ever render quiet), never the literal;
 - **nothing is destructive.** Quiet reclaims no desk, blocks no move, and never
   touches the lease. A quiet desk is still a HELD desk.
+
+## The release owns the gem version — builders never write one
+
+**Do not edit `lib/studio/version.rb`, a gemspec's version, or `CHANGELOG.md` in a
+feature PR.** `bin/dor-check` refuses a PR that does, and the refusal names the
+remedy. This is not a style preference; it is arithmetic.
+
+A version is a property of the **release**, not of any PR. N pull requests riding
+one candidate publish exactly **one** version, so no individual PR can know the
+right answer at the moment it is written. On 2026-08-10 four open `studio-engine`
+PRs each chose independently — `0.33.0` (already published), `0.34.0`, `0.35.0`,
+against an `accepted` at `0.33.0`. A PR carrying an already-published version leaves
+`origin/release` ahead of the last tag without advancing past it, which is the
+stranded-work guard's exact trigger — and that guard aborts the sweep for **every
+repo**, not just the gem. The obvious remedy for the first PR collided with the
+second, so the naive fix just moves the collision one PR to the right.
+
+So `bin/release prepare` allocates the number instead, at the first moment the full
+membership is known, from metadata your task already carries:
+
+| The candidate contains | Bump |
+|---|---|
+| any member risk-tagged `breaking` | major |
+| any member with `kind: feature` | minor |
+| otherwise (`bug`, `chore`) | patch |
+
+`next = last published tag + max(bump across members)`. It is written onto
+`release` and committed **before** the publish and **before** the pre-QA gate, so
+the SHA that gets gated is the SHA that gets published.
+
+**Your only lever, and you rarely need it:** when the derived bump is wrong — most
+often a `chore` that is genuinely breaking —
+
+```bash
+bin/task update <task-slug> --gem-bump major   # patch | minor | major
+```
+
+It is an override, never a requirement. Leave it unset and the release derives the
+bump from the task's `kind`.
+

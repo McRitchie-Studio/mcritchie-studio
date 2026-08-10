@@ -138,6 +138,48 @@ class DorCheckTest < Minitest::Test
   # root stayed pinned to the hub, the gate would fingerprint the hub tree — a false
   # certification. With no DOR_CHECK_DIFF_ROOT override the root must follow cwd.
 
+
+  # --- the release owns the gem version ---------------------------------------
+  # A version is a property of the RELEASE, not of any PR: N PRs riding one candidate
+  # publish ONE version, so no PR can know the answer when it is written. Measured
+  # 2026-08-10 — four open engine PRs each chose independently, one re-claiming an
+  # ALREADY-PUBLISHED version, which hard-aborts the sweep for every repo. This gate
+  # is what makes "the builder never touches a version file" a rule rather than a
+  # discipline. It REFUSES, because the hunk is trivially removable at this point.
+
+  def test_integration_refuses_a_pr_that_edits_the_gem_version_file
+    devops = { "kind" => "chore", "shape" => "library", "repositories" => ["studio-engine"],
+               "acceptance" => ["Something is done well here"], "test_plan" => ["[unit] x"],
+               "checks_run" => ["[unit] x"], "pr_url" => "https://github.com/McRitchie-Studio/studio-engine/pull/1" }
+    out, status = with_changed_files("lib/studio/version.rb\napp/models/thing.rb") { check(devops) }
+
+    refute_equal 0, status, "a version edit must REFUSE, not warn"
+    assert_match(/RELEASE-OWNED/, out)
+    assert_match(%r{lib/studio/version\.rb}, out)
+    assert_match(/--gem-bump major/, out, "and must name the remedy for a genuinely breaking change")
+  end
+
+  def test_integration_refuses_a_pr_that_edits_the_changelog
+    devops = { "kind" => "chore", "shape" => "library", "repositories" => ["studio-engine"],
+               "acceptance" => ["Something is done well here"], "test_plan" => ["[unit] x"],
+               "checks_run" => ["[unit] x"], "pr_url" => "https://github.com/McRitchie-Studio/studio-engine/pull/1" }
+    out, status = with_changed_files("CHANGELOG.md") { check(devops) }
+
+    refute_equal 0, status
+    assert_match(/CHANGELOG\.md/, out)
+  end
+
+  # The gate must not fire on ordinary code — an advisory that cries wolf gets
+  # ignored, and this one blocks.
+  def test_integration_ordinary_diff_is_untouched_by_the_version_gate
+    devops = { "kind" => "chore", "shape" => "library", "repositories" => ["studio-engine"],
+               "acceptance" => ["Something is done well here"], "test_plan" => ["[unit] x"],
+               "checks_run" => ["[unit] x"], "pr_url" => "https://github.com/McRitchie-Studio/studio-engine/pull/1" }
+    out, = with_changed_files("app/models/thing.rb\ntest/models/thing_test.rb") { check(devops) }
+
+    refute_match(/RELEASE-OWNED/, out)
+  end
+
   def test_integration_diff_root_defaults_to_the_cwd_worktree
     with_git_repo(staged: ["app/x.rb"]) do |repo_a|
       with_git_repo(staged: ["app/y.rb"]) do |repo_b|

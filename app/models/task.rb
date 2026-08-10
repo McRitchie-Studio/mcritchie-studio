@@ -173,7 +173,7 @@ class Task < ApplicationRecord
   DEVOPS_SCALAR_KEYS = %w[
     kind shape worktree_slug branch pr_url local_url qa_url production_url release_slug
     requires_release_conductor included_in_release agent_context session_id session_provider mascot
-    mascot_session claimed_session claim_nonce claim_expires_at post_deploy_cmd built_by
+    mascot_session claimed_session claim_nonce claim_expires_at post_deploy_cmd built_by gem_bump
     persona approval_status approval_requested_at approval_requested_by approval_approved_at
   ].freeze
   LEGACY_DEVOPS_KEY_ALIASES = { "release_train" => "release_slug" }.freeze

@@ -130,6 +130,7 @@
 # first.
 
 require "json"
+require_relative "../lib/release/gem_version"
 require "base64"
 require "open3"
 require "yaml"
@@ -2742,6 +2743,7 @@ def prepare
   #     the CI verdict targets the post-bump SHA, QA bundles the new lock, and
   #     prod ships the exact tree QA tested. Ship's publish stays as the
   #     idempotent verify (already-live → skip).
+  allocate_gem_versions_for_qa(gem_groups)
   gem_plan = validate_gems_for_qa(gem_groups, app_groups)
   bump_consumer_locks_for_qa(app_groups, publish_gems_for_qa(gem_plan))
 
@@ -4102,6 +4104,106 @@ end
 # never-touch-the-primary mechanics as ship's repin_consumers), pushed by ref
 # fast-forward-checked. Idempotent: a lock already at the published versions
 # commits nothing; a consumer whose Gemfile never declares the gems is skipped.
+# THE RELEASE ALLOCATES THE GEM VERSION — the builder never writes one.
+#
+# A version is a property of the RELEASE, not of any PR: N pull requests riding one
+# candidate publish exactly ONE version, so no single PR can know the answer when it
+# is written. Measured 2026-08-10: four open studio-engine PRs each chose
+# independently, one of them re-claiming an ALREADY-PUBLISHED version — the
+# stranded-work guard's exact trigger, which hard-aborts the sweep for EVERY repo.
+# The obvious remedy for the first collided with the second.
+#
+# So the number is computed HERE, at the first moment the full membership is known,
+# from metadata every task already carries (Release::GemVersion: breaking tag →
+# major, kind=feature → minor, else patch; devops.gem_bump overrides). bin/dor-check
+# REFUSES a PR that edits a version_file or CHANGELOG, which is what keeps builders
+# out of version-control hell entirely.
+#
+# ORDERING IS LOAD-BEARING, exactly as it is for the consumer lock bumps below: this
+# commits onto origin/release BEFORE validate/publish reads the version and BEFORE
+# the pre-QA gate resolves a SHA — so the gate certifies, QA tests, and prod ships
+# the very tree whose version got published.
+#
+# FAIL-CLOSED: a version it cannot compute (unreadable last tag, no members) ABORTS
+# rather than guessing. A wrong number cannot be un-pushed from RubyGems.
+def allocate_gem_versions_for_qa(gem_groups)
+  return if gem_groups.empty?
+
+  say("")
+  step("gem version allocation (the RELEASE owns it; builders never edit version_file)")
+
+  gem_groups.each do |group|
+    repo = group["repo"]
+    meta = gem_meta_for(repo)
+    version_file = meta["version_file"].to_s
+    next if version_file.empty?
+
+    members = Array(group["tasks"] || group["members"]).map { |t| gem_member_descriptor(t) }
+    last = last_published_gem_version(repo)
+    nxt = Release::GemVersion.next_version(last, members)
+
+    if nxt.nil?
+      abort!("cannot compute a version for #{repo}: last published #{last.inspect}, #{members.size} member(s). " \
+             "Refusing to guess — a published version can never be un-pushed. Check the repo's tags.")
+    end
+
+    say("  #{repo}: #{Release::GemVersion.explain(last, members)}")
+
+    if DRY
+      step("  #{repo}: would write #{version_file} = #{nxt} and commit onto origin/#{RELEASE_BRANCH}")
+      next
+    end
+
+    _, out = sh("git", "-C", repo_path(repo), "rev-parse", "origin/#{RELEASE_BRANCH}", capture: true)
+    tip = out.strip
+    with_ship_workspace(repo) do
+      workspace = ship_workspace!(repo, tip)
+      path = File.join(workspace, version_file)
+      unless File.exist?(path)
+        abort!("#{repo}: #{version_file} missing at origin/#{RELEASE_BRANCH} — the registry names a file that is not there")
+      end
+
+      text = File.read(path)
+      rewritten = text.sub(/(VERSION\s*=\s*")[^"]+(")/) { "#{Regexp.last_match(1)}#{nxt}#{Regexp.last_match(2)}" }
+      if rewritten == text && !text.include?(%(VERSION = "#{nxt}"))
+        abort!("#{repo}: could not set the version in #{version_file} — no VERSION = \"...\" assignment matched")
+      end
+
+      if rewritten == text
+        say("  #{repo}: already at #{nxt} — nothing to commit (idempotent re-run)")
+        next
+      end
+
+      File.write(path, rewritten)
+      _, staged = sh("git", "-C", workspace, "add", version_file, capture: true)
+      abort!("#{repo}: could not stage #{version_file}") unless staged
+      _, committed = sh("git", "-C", workspace, "commit", "-m", "release: #{repo} #{nxt}", capture: true)
+      abort!("#{repo}: could not commit the allocated version") unless committed
+      _, pushed = sh("git", "-C", workspace, "push", "origin", "HEAD:refs/heads/#{RELEASE_BRANCH}", capture: true)
+      abort!("#{repo}: could not push #{nxt} to origin/#{RELEASE_BRANCH} (did #{RELEASE_BRANCH} move?)") unless pushed
+
+      step("  #{repo}: allocated #{nxt} onto origin/#{RELEASE_BRANCH} — publish + gate now read it")
+      (@prepare_live ||= []) << "#{repo}: version #{nxt} allocated + pushed to origin/#{RELEASE_BRANCH}"
+    end
+  end
+end
+
+# One member, shaped for Release::GemVersion. Reads only what the board already
+# records — no new builder burden is the whole point.
+def gem_member_descriptor(task)
+  devops = (task["metadata"] || {})["devops"] || task["devops"] || {}
+  { "slug" => task["slug"], "kind" => devops["kind"],
+    "risk_tags" => devops["risk_tags"], "gem_bump" => devops["gem_bump"] }
+end
+
+# The last version actually PUBLISHED for this gem, read from its git tags (the
+# same source the stranded-work guard trusts). "" when there is none, which
+# Release::GemVersion refuses to advance from rather than inventing 0.0.1.
+def last_published_gem_version(repo)
+  _, out = sh("git", "-C", repo_path(repo), "tag", "--list", "v*", "--sort=-v:refname", capture: true)
+  out.to_s.lines.map(&:strip).find { |t| /\Av\d+\.\d+\.\d+\z/.match?(t) }.to_s.sub(/\Av/, "")
+end
+
 def bump_consumer_locks_for_qa(app_groups, published_gems)
   return if published_gems.empty?
 
