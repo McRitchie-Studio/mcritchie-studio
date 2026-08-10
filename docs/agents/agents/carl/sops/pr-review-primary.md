@@ -125,7 +125,13 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
      doc updates in the same PR.
 
 4. **Collect the light's report** and classify all findings (yours + the light's)
-   as blockers, non-blockers, or questions.
+   as blockers, non-blockers, or questions. **A blocker is a REACHABLE
+   regression** — correctness, security, data loss, or an acceptance criterion
+   the diff does not meet — named with its trigger. A zap-scale finding (within
+   [`../../../modules/zap-protocol.md`](../../../modules/zap-protocol.md) bounds)
+   is not a blocker: fix it forward on the PR branch and stay merge-ready.
+   Scope, style, and hardening ideas are non-blockers: record them with
+   `bin/task note <task-slug> --comment "..." --agent carl`.
 
 5. **Record your scout report on the task** (drop `--dry-run` once the payload
    looks right):
@@ -163,12 +169,22 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
      `--match-head-commit` pin refuses a head that advances again after you
      revalidate.
 
-   - **request-changes → block it back to the builder:**
+   - **request-changes → block it back to the builder** (only for a reachable
+     regression per step 4 — never for a finding you could zap or note):
 
      ```bash
      bin/task block <task-slug> --kind rework --summary "<4-6 word headline>" \
        --feedback "<one complete send-back>" --agent carl
      ```
+
+     **Two-bounce circuit breaker:** if the task's activity history already
+     carries a prior send-back (`GET /api/v1/activities?task_slug=<task-slug>
+     &activity_type=qa_feedback` — one row per bounce; never probe the live
+     block columns, which a compliant resubmission wipes), do not
+     re-block to the builder — escalate the deadlock to the operator instead:
+     `bin/task block <task-slug> --kind dependency --summary "Escalated: <4-6
+     word disagreement>" --feedback "<both positions, in brief>" --agent carl`,
+     and flag it **⚠ Escalated** in your final report.
 
 7. **Release the review claim on your verdict** (the orchestrator that claimed it
    releases it; release it yourself if you claimed it directly):

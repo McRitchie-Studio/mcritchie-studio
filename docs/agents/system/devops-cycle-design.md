@@ -901,41 +901,47 @@ ONE deterministic verb — **`bin/release prepare --yes [--task SLUG ...]
    semantics; `--override` = the audited `review_bypassed` bypass). The sweep
    records the reviewed→assembled intent, so assembly duration caches measure
    from the sweep to the QA-green flip.
-4. **Publish gem members + bump consumer locks (producer-first, BEFORE the
-   gate — validate ALL, then publish).** Phase 1 preflights EVERY swept **gem**
-   member before the first irreversible push: fail-closed `origin/release`
-   fetch (a stale ref must never drive a publish), the `version_file` parses,
-   the **stranded-work guard** (`origin/release` ahead of the last `v*` tag
-   with an unbumped `version_file` → BLOCK, naming the commits), build gated
-   on tracked-dirty gem primaries exactly like ship's preflight, and a swept
-   consuming app whose `origin/release` Gemfile declares the gem (a gem-only
-   candidate would otherwise assemble QA-green untested). ANY failure aborts
-   with ZERO gems published. Phase 2 publishes each validated gem's
-   `origin/release` version to RubyGems (skip-if-live), then for each consumer
-   app: `bundle lock --update <gem> --conservative` in the ship workspace at
-   the release tip — rewriting the Gemfile pin only when the version escapes
-   it — and **commit + push the bump onto `origin/release`**,
-   fast-forward-checked behind its own fail-closed fetch. The lock commit
-   lands BEFORE the gate resolves `origin/release`, so the CI verdict targets
-   the post-bump SHA and QA tests the real published gem
+4c. **Merge-forward guard** (`merge_forward_release_branches`). Every app **and
+   gem** repo's `origin/release` must **CONTAIN** `origin/main` before the gate
+   reads it — `main` moves outside the cycle (an emergency hotfix pushed
+   straight to it), and a `release` that lags **cannot ship**:
+   `push_frozen_main` pushes `main` without `--force` in apps and gems alike,
+   so git refuses the non-fast-forward. The hotfix is never reverted — the
+   cost is a candidate gated, QA'd, and assembled without a fix already live
+   in production, and a ship that dead-ends at the last gate. The merge runs
+   in a **detached ship workspace, never the primary**, every step is
+   result-checked, and containment is **read back** after the push; a
+   conflict, a failed push, or a push after which containment still does not
+   hold all **abort** — and each landed push feeds the `@prepare_live`
+   already-done ledger the abort path prints. It sits ABOVE the gate because a
+   merge that lands moves `origin/release`, so running it later would move the
+   branch past the SHA the gate just certified and QA would deploy a tree G3
+   never verified; and ABOVE the gem publish (4d) because a publish is
+   irreversible — a gem published from a pre-merge tree would lack a `main`
+   hotfix forever (ship's publish skips an already-live version), while this
+   order aborts a conflict with ZERO gems published. (It lived inside step 6
+   until 2026-08-09, where a dirty primary made its `git checkout` refuse, its
+   discarded result let a no-op on the wrong branch read as success, and the
+   sweep assembled a candidate missing a live production hotfix.)
+4d. **Publish gem members + bump consumer locks (producer-first, AFTER the
+   merge-forward (4c) so every gem publishes the post-merge tree, and BEFORE
+   the gate — validate ALL, then publish).** Phase 1 preflights EVERY swept
+   **gem** member before the first irreversible push: fail-closed
+   `origin/release` fetch (a stale ref must never drive a publish), the
+   `version_file` parses, the **stranded-work guard** (`origin/release` ahead
+   of the last `v*` tag with an unbumped `version_file` → BLOCK, naming the
+   commits), build gated on tracked-dirty gem primaries exactly like ship's
+   preflight, and a swept consuming app whose `origin/release` Gemfile
+   declares the gem (a gem-only candidate would otherwise assemble QA-green
+   untested). ANY failure aborts with ZERO gems published. Phase 2 publishes
+   each validated gem's `origin/release` version to RubyGems (skip-if-live),
+   then for each consumer app: `bundle lock --update <gem> --conservative` in
+   the ship workspace at the release tip — rewriting the Gemfile pin only when
+   the version escapes it — and **commit + push the bump onto
+   `origin/release`**, fast-forward-checked behind its own fail-closed fetch.
+   The lock commit lands BEFORE the gate resolves `origin/release`, so the CI
+   verdict targets the post-bump SHA and QA tests the real published gem
    (`validate_gems_for_qa` / `publish_gems_for_qa` / `bump_consumer_locks_for_qa`).
-4d. **Merge-forward guard** (`merge_forward_release_branches`). Every app's
-   `origin/release` must **CONTAIN** `origin/main` before the gate reads it —
-   `main` moves outside the cycle (an emergency hotfix pushed straight to it),
-   and a `release` that lags **cannot ship**: `push_frozen_main` pushes
-   `main` without `--force`, so git refuses the non-fast-forward. The hotfix is
-   never reverted — the cost is a candidate gated, QA'd, and assembled without
-   a fix already live in production, and a ship that dead-ends at the last
-   gate. The
-   merge runs in a **detached ship workspace, never the primary**, every step
-   is result-checked, and containment is **read back** after the push; a
-   conflict, a failed push, or a push that did not take all **abort**. It sits
-   ABOVE the gate for the same reason 4c does: a merge that lands moves
-   `origin/release`, so running it later would move the branch past the SHA the
-   gate just certified and QA would deploy a tree G3 never verified. (It lived
-   inside step 6 until 2026-08-09, where a dirty primary made its `git checkout`
-   refuse, its discarded result let a no-op on the wrong branch read as success,
-   and the sweep assembled a candidate missing a live production hotfix.)
 5. **Pre-QA gate.** Each app's registry **`qa_test_cmd`** (the integration +
    e2e-smoke tier `prepare` owns — `Release::STEP_TEST_TIERS`) runs on
    `origin/release` BEFORE anything deploys. A regression → **eject the
@@ -947,7 +953,7 @@ ONE deterministic verb — **`bin/release prepare --yes [--task SLUG ...]
    (`Release::Conductor.record_deploy_intents!`, append-only + idempotent) so
    /deployments shows Avi QA-ing live; then `bin/qa-server
    deploy <qa_app> origin/release` per **app** member — **gem members are
-   skipped** (no app artifact; already published at step 4, QA'd via the
+   skipped** (no app artifact; already published at step 4d, QA'd via the
    consuming app's bumped lock). Records `release.qa_url` + per-repo QA SHAs,
    waits for boot
    (`wait_for_boot` polls `/up`), then runs each member's declared

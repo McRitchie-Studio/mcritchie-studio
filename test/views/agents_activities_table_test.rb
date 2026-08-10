@@ -5,8 +5,10 @@ require "test_helper"
 # goal / →result-with-fade / key command), Cost (cost / model / tokens), Details
 # (start+status / end-or-live-counter+action-count / issue slug), and the Alex + McRitchie inline grade
 # cells. Expanding drills into the raw actions (2-sub-row: #seq KIND + summary / key
-# method; cost / tokens; #seq KIND + outcome + raw JSON) which carry their OWN inline
-# grade cells.
+# method; cost / tokens; #seq KIND + outcome) which carry their OWN inline grade cells.
+# The wide input/output blobs never render here — the feed loads through
+# AgentAction.for_activity_drilldown (capped, blob-free); only /alex/heartbeat's
+# drawer shows them.
 class AgentsActivitiesTableTest < ActionView::TestCase
   def activity(**attrs)
     AgentActivity.create!({ session_id: "s", category: "Explore", reason_slug: "find issue with api",
@@ -176,7 +178,7 @@ class AgentsActivitiesTableTest < ActionView::TestCase
     assert_select "tr.aa-emptyrow"
   end
 
-  test "[component] a drilled-down action row shows #seq KIND + summary, key method, cost, and raw JSON" do
+  test "[component] a drilled-down action row shows #seq KIND + summary, key method, cost — never the input blob" do
     ev = activity(closed_at: Time.current, outcome_slug: "done")
     act = action(agent_activity_id: ev.id, seq: 3, kind: "bash", outcome: "ok",
                  summary: "search deployments view for wrap classes",
@@ -192,8 +194,36 @@ class AgentsActivitiesTableTest < ActionView::TestCase
     assert_select "#{row} [data-test=aa-turn-keymethod] [data-test=key-method-chip][data-lang=bash]"
     assert_select "#{row} [data-test=aa-turn-cost]", text: "$0.0630"
     assert_select "#{row} [data-test=aa-turn-outcome]", text: "ok"
-    assert_select "#{row} [data-test=aa-turn-input]"
-    assert_includes rendered, "grep -rniE wrap app/views"
+    # The raw input JSON is a wide blob the feed no longer ships — even when the
+    # record carries it (a full-record render path), the row must not print it.
+    assert_select "#{row} [data-test=aa-turn-input]", false
+    assert_not_includes rendered, "grep -rniE wrap app/views"
+  end
+
+  test "[component] an over-cap activity names its omitted tail and reports the TRUE count" do
+    ev = activity(closed_at: Time.current, outcome_slug: "done",
+                  model: "claude-opus-4-8", tokens_in: 9500, tokens_out: 610, cost: 0.25)
+    shown = [action(agent_activity_id: ev.id, seq: 1338, summary: "the newest step")]
+
+    render_table [[ev, shown]], action_counts: { ev.id => 1339 }
+
+    # The count line reads the true total, not the capped page's size …
+    assert_select "[data-test=aa-activity-count]", text: "1339 actions"
+    # … the tail is named rather than rendered …
+    assert_select "tr#aa-omitted-#{ev.id} [data-test=aa-omitted-label]", text: "1338 more actions omitted"
+    # … and the reasoning/TOTAL reconciliation is skipped (the visible parts cannot
+    # sum to the span while rows are omitted).
+    assert_select "tr[data-test=aa-reasoning]", false
+    assert_select "tr[data-test=aa-total]", false
+  end
+
+  test "[component] an under-cap activity renders no omitted row" do
+    ev = activity(closed_at: Time.current, outcome_slug: "done")
+    act = action(agent_activity_id: ev.id, seq: 0)
+
+    render_table [[ev, [act]]], action_counts: { ev.id => 1 }
+
+    assert_select "tr.aa-omitted-row", false
   end
 
   test "[component] action rows carry their own Alex + McRitchie grade cells posting to the action endpoint" do

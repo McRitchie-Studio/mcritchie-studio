@@ -1,0 +1,84 @@
+<% content_for :title, "Triage · McRitchie Studio" %>
+
+<section class="space-y-6">
+  <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+    <div>
+      <p class="text-sm font-semibold text-primary uppercase tracking-wider">Findings Inbox</p>
+      <h2 class="text-3xl font-bold text-heading mt-1">Triage</h2>
+      <p class="text-secondary mt-2 max-w-3xl">
+        Agent-discovered follow-ups land here instead of becoming tasks.
+        A finding costs nothing sitting in this inbox; a task costs a worktree, a
+        review, and a release slot. Promote what deserves one.
+      </p>
+    </div>
+    <div class="flex flex-col gap-2 md:items-end">
+      <%= render "tasks/page_nav", current: "triage" %>
+      <p class="text-sm text-muted md:text-right"><%= pluralize(@findings.size, "open finding") %></p>
+    </div>
+  </div>
+
+  <section class="card overflow-hidden">
+    <div class="p-5 border-b border-subtle">
+      <h3 class="text-lg font-bold text-heading">Open</h3>
+      <p class="text-sm text-secondary">Newest first. Promote mints a real task; dismiss retires the finding.</p>
+    </div>
+    <% if @findings.empty? %>
+      <p class="p-5 text-sm text-muted">Inbox zero — nothing waiting on a call.</p>
+    <% else %>
+      <ul class="divide-y divide-subtle">
+        <% @findings.each do |finding| %>
+          <li class="p-5 space-y-2">
+            <div class="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+              <div class="min-w-0">
+                <p class="font-semibold text-heading"><%= finding.title %></p>
+                <p class="text-xs text-muted mt-0.5">
+                  <span class="font-mono"><%= finding.slug %></span>
+                  · <%= finding.source.presence || "unknown source" %>
+                  <% if finding.repo.present? %> · <%= finding.repo %><% end %>
+                  · <%= time_ago_in_words(finding.created_at) %> ago
+                </p>
+                <% if finding.body.present? %>
+                  <p class="text-sm text-secondary mt-2 whitespace-pre-line"><%= finding.body %></p>
+                <% end %>
+              </div>
+              <% if admin? %>
+                <div class="flex flex-col gap-2 shrink-0 md:items-end">
+                  <%= form_with url: promote_triage_finding_path(finding.slug), method: :post, class: "flex flex-wrap items-center gap-2" do |f| %>
+                    <%= f.text_field :title, value: finding.title.split(/\s+/).first(5).join(" "),
+                                     class: "input-field text-sm w-56", required: true,
+                                     title: "Task title (3-5 words)" %>
+                    <%= f.select :kind, %w[chore bug feature], {}, class: "input-field text-sm" %>
+                    <%= f.submit "Promote", class: "btn btn-primary btn-sm" %>
+                  <% end %>
+                  <%= button_to "Dismiss", dismiss_triage_finding_path(finding.slug), method: :post,
+                                class: "btn btn-outline btn-sm" %>
+                </div>
+              <% end %>
+            </div>
+          </li>
+        <% end %>
+      </ul>
+    <% end %>
+  </section>
+
+  <% if @resolved.any? %>
+    <section class="card overflow-hidden">
+      <div class="p-5 border-b border-subtle">
+        <h3 class="text-lg font-bold text-heading">Recently resolved</h3>
+      </div>
+      <ul class="divide-y divide-subtle">
+        <% @resolved.each do |finding| %>
+          <li class="p-5 flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+            <div class="min-w-0">
+              <p class="text-sm text-secondary"><%= finding.title %></p>
+              <p class="text-xs text-muted"><span class="font-mono"><%= finding.slug %></span> · <%= finding.status %></p>
+            </div>
+            <% if finding.promoted_task_slug.present? %>
+              <%= link_to finding.promoted_task_slug, task_path(finding.promoted_task_slug), class: "text-sm font-mono text-primary" %>
+            <% end %>
+          </li>
+        <% end %>
+      </ul>
+    </section>
+  <% end %>
+</section>

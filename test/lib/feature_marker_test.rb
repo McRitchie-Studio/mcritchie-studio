@@ -43,4 +43,49 @@ class FeatureMarkerTest < Minitest::Test
     assert_equal "eevee", FeatureMarker.mascot("", -> { "eevee" })
     assert_equal "zubat", FeatureMarker.mascot("", -> { "" }, -> { "zubat" })
   end
+
+  # --- genesis: the write-once first-task fields -----------------------------
+
+  SEED = {
+    "genesis_slug" => "second-task", "genesis_feature" => "second-task",
+    "genesis_url" => "https://mcritchie.studio/tasks/second-task",
+    "genesis_at" => "2026-08-09T12:00:00Z"
+  }.freeze
+
+  def test_genesis_seeds_from_the_first_task_bearing_write
+    assert_equal SEED, FeatureMarker.genesis(nil, SEED)
+    assert_equal SEED, FeatureMarker.genesis({ "slug" => "second-task" }, SEED)
+  end
+
+  # Write-once: an on-disk genesis is carried forward VERBATIM — a later task's
+  # seed never repoints it. This is the whole guarantee.
+  def test_on_disk_genesis_wins_over_a_later_seed
+    disk = {
+      "slug" => "second-task", # the ACTIVE context has moved on…
+      "genesis_slug" => "first-task", "genesis_feature" => "first-task",
+      "genesis_url" => "https://mcritchie.studio/tasks/first-task",
+      "genesis_at" => "2026-08-09T09:00:00Z"
+    }
+    kept = FeatureMarker.genesis(disk, SEED)
+    assert_equal "first-task", kept["genesis_slug"], "…but the genesis never does"
+    assert_equal "first-task", kept["genesis_feature"]
+    assert_equal "https://mcritchie.studio/tasks/first-task", kept["genesis_url"]
+    assert_equal "2026-08-09T09:00:00Z", kept["genesis_at"]
+  end
+
+  def test_genesis_returns_only_genesis_keys
+    disk = { "slug" => "x", "mascot" => "snorlax", "genesis_slug" => "first-task" }
+    assert_equal({ "genesis_slug" => "first-task" }, FeatureMarker.genesis(disk, SEED),
+                 "non-genesis marker fields never ride along")
+  end
+
+  def test_blank_disk_genesis_does_not_block_the_seed
+    disk = { "genesis_slug" => "  " }
+    assert_equal SEED, FeatureMarker.genesis(disk, SEED)
+  end
+
+  def test_blank_seed_values_are_dropped
+    seeded = FeatureMarker.genesis(nil, SEED.merge("genesis_url" => "", "genesis_at" => nil))
+    assert_equal %w[genesis_slug genesis_feature], seeded.keys
+  end
 end

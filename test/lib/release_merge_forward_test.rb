@@ -62,6 +62,34 @@ class ReleaseMergeForwardTest < ActiveSupport::TestCase
     assert_operator merge_at, :<, deploy_at
   end
 
+  # INVARIANT 1b — ORDER, the gem half. The gem publish is IRREVERSIBLE (a
+  # RubyGems version can never be re-pushed, and ship's publish is an idempotent
+  # verify that skips an already-live version), so a gem published from a
+  # PRE-merge release tree would lack a main hotfix FOREVER. The merge-forward
+  # must run first — which also means a merge conflict in ANY repo aborts with
+  # zero gems published.
+  test "prepare runs the merge-forward BEFORE the irreversible gem publish" do
+    merge_at   = prepare_body.index("merge_forward_release_branches(")
+    publish_at = prepare_body.index("validate_gems_for_qa(")
+
+    assert publish_at, "prepare must run the gem-publish preflight"
+    assert_operator merge_at, :<, publish_at,
+                    "the merge-forward must precede the gem publish — a gem published from a pre-merge " \
+                    "release tree can never be re-published under the same version, so main's hotfix " \
+                    "would be missing from the live artifact forever"
+  end
+
+  # INVARIANT 1c — COVERAGE. Gem repos keep the same release branch and ship
+  # workspace as apps, and ship fast-forwards their main via the same non-forced
+  # ref push — so a gem main hotfix not merged forward dead-ends the ship at G4
+  # exactly like an app's. The guard must be handed the gem groups, not only the
+  # apps.
+  test "prepare passes the GEM groups to the merge-forward guard" do
+    assert_includes prepare_body, "merge_forward_release_branches(app_groups, gem_groups: gem_groups)",
+                    "the guard must ride app AND gem groups — an app-only call leaves a gem main " \
+                    "hotfix to dead-end `bin/release ship`'s non-forced main push"
+  end
+
   # INVARIANT 2 — WORKING TREE. The merge runs in a detached workspace. A checkout
   # in the shared primary is what a dirty ledger file was able to refuse, and the
   # primary belongs to whatever else the operator is doing.
@@ -96,13 +124,13 @@ class ReleaseMergeForwardTest < ActiveSupport::TestCase
 
     # And each named failure mode must have its own abort.
     {
-      /app repo not found/                     => "a missing sibling checkout",
+      /repo not found/                         => "a missing sibling checkout",
       /refusing to judge merge-forward/        => "a failed pre-check fetch",
       /could not resolve origin\/main/         => "an unresolvable origin/main",
       /merge-forward CONFLICT/                 => "a conflicted merge",
       /could not push the merge-forward/       => "a failed push",
       /could not re-fetch origin/              => "a failed verification fetch",
-      /merge-forward did NOT take/             => "containment that does not hold after the push"
+      /containment STILL does not hold/        => "containment that does not hold after the push"
     }.each do |pattern, what|
       assert_match pattern, guard_body, "#{what} must abort"
     end
@@ -115,8 +143,9 @@ class ReleaseMergeForwardTest < ActiveSupport::TestCase
     readback   = guard_body.index("--is-ancestor", push_at.to_i)
     assert push_at, "the guard pushes by ref"
     assert readback, "after pushing, the guard re-reads containment instead of trusting the push"
-    assert_includes guard_body, "did NOT take",
-                    "a push that reported success but left main uncontained must still abort"
+    assert_includes guard_body, "STILL does not hold",
+                    "a push that reported success but left main uncontained must still abort — and the " \
+                    "message stays honest that origin/main may simply have moved again mid-sweep"
   end
 
   # A conflict must leave nothing half-merged for the next run to trip over.

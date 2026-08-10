@@ -3,9 +3,12 @@
     is ONE row whose tokens count once (vs the old per-action rows that repeated the
     turn's spend and never summed to the span). Mirrors the activity row's 7 columns:
     the turn's tool KINDS are tagged inline, the load-bearing key_method leads, and the
-    primary (first) action of the turn carries the outcome, input, and the (merged)
-    action-level grade cells. Locals: turn_row, activity, agents_by_slug,
-    pokemon_by_slug, action_grades. %>
+    primary (first) action of the turn carries the outcome and the (merged)
+    action-level grade cells. The wide input/output blobs never render here — the feed
+    loads via AgentAction.for_activity_feed, which omits them (the full-input title
+    tooltip this row once carried is what made the page weigh megabytes); the
+    /alex/heartbeat drawer remains the full-record surface. Locals: turn_row, activity,
+    agents_by_slug, pokemon_by_slug, action_grades. %>
 <% primary = turn_row[:primary] %>
 <% outcome = heartbeat_outcome_meta(primary.outcome) %>
 <% turn_pokemon = pokemon_by_slug[primary.mascot] %>
@@ -57,13 +60,6 @@
       <div class="aa-r aa-detailhead">
         <% turn_row[:kinds].each do |k| %><span class="aa-kindbadge"><%= k %></span><% end %>
         <span class="aa-outcome" data-test="aa-turn-outcome" style="color: <%= outcome[:color] %>"><%= outcome[:label] %></span>
-      </div>
-      <div class="aa-r">
-        <% if primary.input.present? %>
-          <span class="aa-json" data-test="aa-turn-input" title="<%= primary.input %>"><%= heartbeat_input_preview(primary.input) %></span>
-        <% else %>
-          <span class="aa-empty-sub">—</span>
-        <% end %>
       </div>
     </div>
   </td>

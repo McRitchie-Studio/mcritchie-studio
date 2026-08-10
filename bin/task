@@ -727,6 +727,15 @@ def write_feature_marker(task)
     "app_color" => dv["app_color"]  # the app's status-line tint (App#color, stamped server-side by Task#sync_app_identity)
   }.reject { |_, v| v.nil? || v.to_s.strip.empty? }
 
+  # Write-once genesis: the first task this session claims is why the session
+  # exists. A later create/move/block repoints the ACTIVE fields above; the
+  # on-disk genesis is carried forward verbatim (FeatureMarker.genesis).
+  marker.merge!(FeatureMarker.genesis(existing_marker(path),
+                                      "genesis_slug" => slug,
+                                      "genesis_feature" => dv["worktree_slug"] || slug,
+                                      "genesis_url" => "#{BASE_URL}/tasks/#{slug}",
+                                      "genesis_at" => Time.now.utc.strftime("%Y-%m-%dT%H:%M:%SZ")))
+
   FileUtils.mkdir_p(File.dirname(path))
   File.write(path, "#{JSON.pretty_generate(marker)}\n")
   refresh_codex_session_title
