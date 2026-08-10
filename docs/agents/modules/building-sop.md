@@ -142,9 +142,20 @@ NEXT=$(curl -s -c $JAR -b $JAR -o /dev/null -w '%{redirect_url}' -X POST "$MINT"
 curl -s -c $JAR -b $JAR -L -o /dev/null -w '%{url_effective} %{http_code}\n' "$NEXT"
 ```
 
-Mint for a **seeded admin** — one of `User::PARKED_IDENTITIES`, all
-`@mcritchie.studio`. Any other address signs up a brand-new `viewer`, and the
-hop then fails on a page that is perfectly healthy.
+Mint for an address that is an **admin in THIS app**. The identity list differs
+per repo — the hub's `User::PARKED_IDENTITIES` are all `@mcritchie.studio`, but
+turf-monster carries some of those same people at `role: "user"`, and other
+satellites define no such constant at all. Reading the hub's list as universal
+sends you to a non-admin and reproduces the very failure this step exists to
+catch. Any non-admin address signs in fine and lands on a page that is perfectly
+healthy, which is the quiet failure below.
+
+**Above studio-engine 0.36.0 you usually pass no address at all.** The board CTA
+is public and sends none: the engine resolves the reviewer itself —
+`params[:email]`, else `Studio.local_review_email`, else the seeded admin
+(`Studio::LocalReviewsController`). Pinning `?email=` in this recipe short-
+circuits that chain, so you would verify a URL shape the operator never actually
+receives. Drop the parameter to exercise the real path.
 
 Landing on `/` means the sign-in **succeeded** and the account is not an admin —
 the quiet failure, not a broken link. Follow the POST by hand as above; do not
