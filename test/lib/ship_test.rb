@@ -136,7 +136,11 @@ class ShipTest < Minitest::Test
       out, err, status, lines = run_ship(dir)
 
       assert status.success?, "expected green ship, got:\n#{err}\n#{out}"
-      assert_equal ["TASK show", "FAST #{SLUG}", "GH pr", "GH pr", "TASK update", "DOR #{SLUG}",
+      # Three GH calls, not two: `pr list` (is one already open?), `pr create`, then
+      # the same-file OVERLAP ADVISORY's own `pr list` — asked after the PR exists so
+      # it can exclude this one, and before the DoR verdict so the builder reads it
+      # while a deliberate choice is still cheap. See bin/lib/pr_overlap.rb.
+      assert_equal ["TASK show", "FAST #{SLUG}", "GH pr", "GH pr", "GH pr", "TASK update", "DOR #{SLUG}",
                     "TASK move", "TASK show"], markers(lines),
                    "steps must run in the handoff order (commit + push are real git, not stubs)"
 
