@@ -1608,6 +1608,37 @@ if gate != "build"
     errors << "the PR is #{ci[:state].to_s.upcase}, not an OPEN review target — `gh pr checks` returns the head " \
       "commit's HISTORICAL checks even on a closed/merged PR, so a green here is NOT a live pass. Reconcile " \
       "devops.pr_url (a stale or already-merged PR?) before advancing to review."
+  when :unreadable, :unverified, :none
+    # REVIEW ROLE FAILS CLOSED ON A VERDICT IT NEVER READ.
+    #
+    # These three are "no verdict" and stay non-blocking submit-side, exactly as
+    # bin/lib/ci_status.rb documents — that reasoning is about the BUILD role and it
+    # stands. The review role is different in kind: :pending ALREADY errors here
+    # because "the review gate-zero is the authoritative CI verdict". An UNREAD
+    # verdict is strictly LESS informative than a pending one, so it cannot pass
+    # where pending fails.
+    #
+    # Not hypothetical: on 2026-08-09 the agent App token expired mid-cycle and four
+    # reviewers in a row got `ready` alongside a skimmable "CI UNVERIFIED" note. One
+    # wrote it up as "a reviewer who didn't notice that line would have merged on an
+    # unread CI verdict". The distinction WAS printed; the verdict line still said
+    # advance. Honesty in the suggestion is not the same as failing closed.
+    #
+    # The remedies stay DIFFERENT because the fixes are (the rolio lesson): a token
+    # needs a credential and re-running is futile; :none/:unverified need waiting.
+    if review_role
+      errors << if ci[:state] == :unreadable
+                  "GitHub CI is UNREADABLE (#{ci[:reason]}) — the review gate-zero IS the authoritative CI " \
+                    "verdict, and it cannot be authoritative about a CI it could not read. This is a CREDENTIAL " \
+                    "fault, NOT a missing CI: re-running will never clear it. " +
+                    CiStatus.unreadable_remedy(CiStatus.repo_from_pr_url(devops["pr_url"]), cause: ci[:cause])
+                else
+                  "GitHub CI has produced no verdict yet (#{ci[:state]}) — the review gate-zero IS the " \
+                    "authoritative CI verdict, so it must not advance on a CI it has not read. Defer this review " \
+                    "until checks appear and settle (the supervisor's defer machinery re-queries); a red finish " \
+                    "bounces the task back."
+                end
+    end
   end
 end
 

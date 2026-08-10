@@ -324,6 +324,16 @@ attempt n+1.
     collapsing the attempt to generic `unverified`. See `gates/g3-candidate.md`.
 - The reviewer's gate-zero **opens then closes `dor_review`** with the same
   evidence shape, under the strict CI semantics.
+  - **Strict means it fails closed on a verdict it never read.** In
+    `--gate-role review`, `pending`, `none`, `unverified` and `unreadable` are all
+    **errors** — the review gate-zero *is* the authoritative CI verdict, and it
+    cannot be authoritative about a CI it did not read. Submit-side these stay
+    non-blocking (see the state table above); the asymmetry is deliberate and is
+    asserted in both directions in `test/lib/dor_check_test.rb`.
+  - The **remedies stay distinct**, because the fixes are: `unreadable` names the
+    credential and says re-running is futile; `none` / `unverified` say to wait for
+    checks to appear and settle. Telling a builder to re-push over a token fault is
+    the rolio bug this file already warns about.
 - The supervisor's **pre-spawn CI-red bounce** opens then closes `dor_review`
   `--failed` with a `ci` SOP (`--meta outcome=ci-red`, actor `avi`) — no reviewer
   runs, but the round-trip is visible on the gates card.

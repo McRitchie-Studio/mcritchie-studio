@@ -1559,6 +1559,55 @@ class DorCheckTest < Minitest::Test
     end
   end
 
+  # --- review role fails closed on a verdict it never read ---------------------
+  # The review gate-zero IS the authoritative CI verdict, so it must not advance on
+  # a CI it could not read. :pending already errored here; :unreadable/:unverified/
+  # :none fell through with NO case at all, so `ready` stayed true while a skimmable
+  # suggestion carried the only warning. Four reviewers hit this live on 2026-08-09
+  # when the agent App token expired mid-cycle.
+  #
+  # Submit-side these stay non-blocking (bin/lib/ci_status.rb's documented reasoning
+  # for the BUILD role) — both directions are asserted so the split cannot collapse.
+
+  def test_review_role_refuses_an_unreadable_ci
+    out, code = ci_check("unreadable", CI_PR, "--gate-role", "review")
+
+    assert_equal 1, code, out
+    assert_match(/UNREADABLE/, out)
+    assert_match(/not ready to advance/, out)
+    # The rolio lesson: name the CREDENTIAL, never send them at a re-run.
+    assert_match(/CREDENTIAL fault/, out)
+    refute_match(/push the branch and open the PR/, out)
+  end
+
+  def test_review_role_refuses_an_unverified_ci
+    out, code = ci_check("unverified", CI_PR, "--gate-role", "review")
+
+    assert_equal 1, code, out
+    assert_match(/no verdict yet/, out)
+    assert_match(/not ready to advance/, out)
+  end
+
+  def test_review_role_refuses_when_no_checks_have_appeared
+    out, code = ci_check("none", CI_PR, "--gate-role", "review")
+
+    assert_equal 1, code, out
+    assert_match(/no verdict yet/, out)
+  end
+
+  # The other half of the split: the builder's provisional handoff is untouched.
+  # If this reddens, the fix has been over-applied and every submit now blocks on a
+  # flaky read — trading a flaky CI lane for a flaky gate, which ci_status.rb warns
+  # against by name.
+  def test_submit_role_still_hands_off_on_an_unread_ci
+    %w[unreadable unverified none].each do |state|
+      out, code = ci_check(state)
+
+      assert_equal 0, code, "submit-side #{state} must not block: #{out}"
+      assert_match(/ready to advance/, out)
+    end
+  end
+
   def test_merge_gate_fails_when_github_ci_is_red
     out, code = ci_check("red")
     assert_equal 1, code, out

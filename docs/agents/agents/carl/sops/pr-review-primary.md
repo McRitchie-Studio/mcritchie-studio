@@ -91,6 +91,11 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
      keeps the **strict CI semantics**: the claim popped a green PR, but CI can
      flip mid-review, so YOUR run is the authoritative in-review CI verdict — red
      and still-running both block, and fast-cert evidence needs the settled green.
+     **An UNREAD verdict blocks too.** `unreadable` (the token was refused),
+     `unverified` and `none` are errors in this role, because a gate cannot be the
+     authoritative CI verdict for a CI it could not read. `unreadable` in
+     particular is a CREDENTIAL fault — re-run the mint from the auth step above;
+     re-running `dor-check` will never clear it.
 
      **Run it from wherever you are — the gate validates every tree it touches.**
      You are standing in the studio primary (the Entry above), which is not the
