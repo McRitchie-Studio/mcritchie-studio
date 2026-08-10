@@ -1,77 +1,223 @@
-#!/usr/bin/env bash
-#
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
 # clean-artifacts — reclaim disk from regenerable build/runtime artifacts across
-# the McRitchie ecosystem repos, and REPORT anything that needs a decision.
+# EVERY managed Rails repo and EVERY worktree under them, and report any app
+# whose local logs are still allowed to grow unbounded.
 #
-# Safe by design: it only touches gitignored, regenerable paths:
-#   log/*.log, log/*.log.<n>, tmp/cache, coverage/.
-# It truncates live logs in place and deletes rotated logs + cache output. It
-# does not touch tmp/pids, tmp/sockets, tmp/storage, db/, storage/, .env, or
-# tracked files.
+#   bin/clean-artifacts             # sweep + report
+#   bin/clean-artifacts --dry-run   # report only, change nothing
+#   bin/clean-artifacts --skip-audit    # sweep only, boot no apps (fast)
+#   bin/clean-artifacts --audit-envs development,test
+#   bin/clean-artifacts --verbose   # also list untracked files per repo
+#   bin/clean-artifacts --json      # machine summary only
 #
-# Stray root files and extra git worktrees are only listed. They may be open PR
-# worktrees or real docs.
+# `bin/release archive` drives this: `--dry-run` in its preview, the real sweep
+# after the confirm. That is the ONLY scheduled caller, and it is the point —
+# the previous version of this script was correct and nothing ever ran it, which
+# is how 1.2 GB of logs and 913 MB of tmp accumulated unnoticed.
 #
-#   bin/clean-artifacts            # clean + report
-#   bin/clean-artifacts --dry-run  # report only, change nothing
+# SAFE BY DESIGN. It touches only gitignored, regenerable paths: log/*.log
+# (truncated in place, so a running server keeps its handle), log/*.log.<n>,
+# tmp/cache, tmp/brakeman.json, coverage/. It never touches tmp/pids,
+# tmp/sockets, tmp/storage, db/, storage/, .env, or any tracked file. Scratch
+# validator ledgers and stray root files are REPORTED, never deleted — removing
+# a whole data directory is a different risk class from truncating a log.
+
+require "fileutils"
+require "json"
+require "open3"
+require "timeout"
+require_relative "lib/artifact_sweep"
+require_relative "lib/projects_root"
+
+DRY        = ARGV.include?("--dry-run")
+JSON_ONLY  = ARGV.include?("--json")
+SKIP_AUDIT = ARGV.include?("--skip-audit")
+VERBOSE    = ARGV.include?("--verbose")
+ROOT       = (ARGV.grep(/\A--root=/).first&.split("=", 2)&.last) ||
+             ENV["PROJECTS_DIR"] ||
+             ProjectsRoot.default_projects_dir
+AUDIT_ENVS = ((ARGV.grep(/\A--audit-envs=/).first&.split("=", 2)&.last) || "development").split(",").map(&:strip).reject(&:empty?)
+AUDIT_TIMEOUT = Integer(ENV.fetch("CLEAN_ARTIFACTS_AUDIT_TIMEOUT", "90"))
+AUDIT_CONCURRENCY = 4
+
+def say(message = "")
+  puts(message) unless JSON_ONLY
+end
+
+# Boot ONE app and ask its live logger what it is. Behavioral by construction:
+# a config file that sets the cap at the wrong point in the boot reads correct
+# and behaves broken, so nothing here reads a config file.
 #
-# No `set -e`: this is a best-effort sweep over paths that may or may not exist.
-set -u
+# The child gets a scrubbed environment — this script runs under the hub's
+# bundler, and leaking BUNDLE_GEMFILE/RUBYOPT into another app's boot makes it
+# load the wrong gems and fail in a way that looks like a missing cap.
+# Name WHY an app would not boot, so "inconclusive" is actionable rather than a
+# shrug. A dormant repo with uninstalled gems and a genuinely broken app must not
+# read the same, and neither may be mistaken for "no rotation".
+def boot_failure_reason(output, status)
+  line = output.to_s.lines.find { |l| l.match?(/Could not find|Bundler::|Error|cannot|No such file|not found/i) }
+  line = output.to_s.lines.reverse.find { |l| !l.strip.empty? } if line.nil?
+  reason = line.to_s.strip.split(" (").first.to_s
+  reason = reason[0, 110] + "…" if reason.length > 110
+  reason.empty? ? "boot failed (exit #{status&.exitstatus})" : reason
+end
 
-ROOT="${PROJECTS_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
-DRY=false
-[[ "${1:-}" == "--dry-run" ]] && DRY=true
+def audit_app(repo, env)
+  rails = File.join(repo, "bin", "rails")
+  return { verdict: :unknown, reason: "no bin/rails" } unless File.executable?(rails)
 
-RAILS_REPOS=(turf-monster mcritchie-studio)
+  child_env = {
+    "RAILS_ENV" => env,
+    "BUNDLE_GEMFILE" => nil, "BUNDLE_PATH" => nil, "BUNDLE_APP_CONFIG" => nil,
+    "RUBYOPT" => nil, "RUBYLIB" => nil, "BUNDLER_VERSION" => nil,
+    "DISABLE_SPRING" => "1"
+  }
 
-human() { [[ -e "$1" ]] && du -sh "$1" 2>/dev/null | cut -f1 || echo 0; }
-run()   { if $DRY; then echo "    [dry-run] $*"; else eval "$@"; fi; }
+  output = nil
+  status = nil
+  Timeout.timeout(AUDIT_TIMEOUT) do
+    output, status = Open3.capture2e(child_env, rails, "runner", ArtifactSweep::AUDIT_SNIPPET, chdir: repo)
+  end
 
-label=""; $DRY && label=" (dry-run)"
-echo "==> Cleaning regenerable artifacts${label}"
-for repo in "${RAILS_REPOS[@]}"; do
-  dir="$ROOT/$repo"
-  [[ -d "$dir" ]] || continue
-  echo "-- $repo"
+  unless status&.success?
+    return { verdict: :unknown, reason: boot_failure_reason(output, status) }
+  end
 
-  if compgen -G "$dir/log/*.log" > /dev/null; then
-    for f in "$dir"/log/*.log; do run ": > '$f'"; done
-  fi
-  run "find '$dir/log' -type f -name '*.log.[0-9]*' -delete 2>/dev/null || true"
+  payload = ArtifactSweep.parse_audit_output(output)
+  return { verdict: :unknown, reason: "app booted but reported no logger" } unless payload
 
-  [[ -d "$dir/tmp/cache" ]] && run "rm -rf '$dir/tmp/cache'/* 2>/dev/null || true"
-  [[ -f "$dir/tmp/brakeman.json" ]] && run "rm -f '$dir/tmp/brakeman.json'"
-  [[ -d "$dir/coverage" ]] && run "rm -rf '$dir/coverage'"
+  {
+    verdict: ArtifactSweep.rotation_verdict(cap: payload[:cap], shift_age: payload[:shift_age]),
+    cap: payload[:cap],
+    shift_age: payload[:shift_age]
+  }
+rescue Timeout::Error
+  { verdict: :unknown, reason: "boot timed out after #{AUDIT_TIMEOUT}s" }
+rescue StandardError => e
+  { verdict: :unknown, reason: "#{e.class}: #{e.message}" }
+end
 
-  echo "   log=$(human "$dir/log")  tmp=$(human "$dir/tmp")  coverage=$(human "$dir/coverage")"
-done
+# --- sweep -------------------------------------------------------------------
 
-echo
-echo "==> Needs your decision (reported, not touched):"
+plan = ArtifactSweep.plan(ROOT)
 
-strays=$(find "$ROOT" -maxdepth 1 -type f ! -name '.*' ! -name 'AGENTS.md' 2>/dev/null)
-if [[ -n "$strays" ]]; then
-  echo "-- stray files at projects root:"
-  echo "$strays" | sed 's/^/     /'
-  echo "     (move into a repo's docs/ to version, or delete if one-off)"
-else
-  echo "-- no stray root files."
-fi
+say("==> Reclaiming regenerable artifacts#{DRY ? ' (dry-run — nothing will change)' : ''}")
+say("    root: #{ROOT}")
+say("    #{plan[:repos].size} managed Rails repo(s), #{plan[:worktree_count]} worktree(s)")
+say
 
-echo "-- git worktrees (extra ones may be open-PR or unfinished work):"
-for repo in mcritchie-studio turf-monster turf-vault; do
-  [[ -d "$ROOT/$repo/.git" || -f "$ROOT/$repo/.git" ]] || continue
-  echo "     [$repo]"
-  git -C "$ROOT/$repo" worktree list 2>/dev/null | sed 's/^/       /' || true
-done
-echo "     prune a finished one with: git -C <repo> worktree remove <path>"
+plan[:repos].each do |repo|
+  checkouts = ArtifactSweep.checkouts_for(repo).select { |c| plan[:by_checkout].key?(c) }
+  next if checkouts.empty?
 
-echo "-- untracked files in tracked repos (commit or delete intentionally):"
-for repo in turf-monster turf-vault studio-engine solana-studio mcritchie-studio rolio; do
-  d="$ROOT/$repo"; [[ -d "$d/.git" || -f "$d/.git" ]] || continue
-  u=$(git -C "$d" ls-files --others --exclude-standard 2>/dev/null)
-  [[ -n "$u" ]] && echo "$u" | sed "s#^#     $repo/#"
-done
+  repo_bytes = checkouts.sum { |c| plan[:by_checkout][c].sum(&:bytes) }
+  say("-- #{File.basename(repo)}  #{ArtifactSweep.human_bytes(repo_bytes)}")
+  checkouts.each do |checkout|
+    targets = plan[:by_checkout][checkout]
+    label = checkout == repo ? "(primary)" : ".worktrees/#{File.basename(checkout)}"
+    say(format("     %-46s %10s  %d item(s)", label, ArtifactSweep.human_bytes(targets.sum(&:bytes)), targets.size))
+  end
+end
 
-echo
-echo "Done."
+reclaimed =
+  if DRY
+    plan[:bytes]
+  else
+    ArtifactSweep.apply!(plan[:by_checkout].values.flatten)
+  end
+
+# --- rotation audit ----------------------------------------------------------
+
+audits = {}
+unless SKIP_AUDIT
+  say
+  say("==> Local logger audit (#{AUDIT_ENVS.join(', ')}) — is a real rotation cap installed?")
+  say("    Behavioral: each app is BOOTED and its live logger read. A config file")
+  say("    set at the wrong point in the boot reads correct and behaves broken.")
+
+  queue = plan[:repos].product(AUDIT_ENVS)
+  mutex = Mutex.new
+  workers = Array.new([AUDIT_CONCURRENCY, queue.size].min.clamp(1, AUDIT_CONCURRENCY)) do
+    Thread.new do
+      loop do
+        repo, env = mutex.synchronize { queue.shift }
+        break unless repo
+
+        result = audit_app(repo, env)
+        mutex.synchronize { audits[[File.basename(repo), env]] = result }
+      end
+    end
+  end
+  workers.each(&:join)
+
+  audits.sort.each do |(app, env), result|
+    mark = { ok: "OK  ", loose: "LOOSE", none: "NONE", unknown: "?   " }[result[:verdict]]
+    detail =
+      case result[:verdict]
+      when :ok      then "#{ArtifactSweep.human_bytes(result[:cap])} cap"
+      when :loose   then "#{ArtifactSweep.human_bytes(result[:cap])} cap — Rails' own default; the studio-engine cap is NOT installed"
+      when :none    then "no rotation at all — this log grows without limit"
+      else               result[:reason].to_s
+      end
+    say(format("     %-5s %-24s %-13s %s", mark, app, env, detail))
+  end
+end
+
+missing = audits.select { |_k, v| %i[loose none].include?(v[:verdict]) }.keys.map(&:first).uniq.sort
+unknown = audits.select { |_k, v| v[:verdict] == :unknown }.keys.map(&:first).uniq.sort
+
+# --- reported, not touched ---------------------------------------------------
+
+ledgers = Dir.glob(File.join(ROOT, "*", "test-ledger")).select { |p| File.directory?(p) }.sort
+# AGENTS.md and CLAUDE.md are the GENERATED agent adapters — they belong at the
+# projects root and bin/session-preflight checks them. Anything else at the root
+# is a one-off someone left behind.
+GENERATED_ROOT_DOCS = %w[AGENTS.md CLAUDE.md].freeze
+strays = Dir.glob(File.join(ROOT, "*"))
+            .select { |p| File.file?(p) && !GENERATED_ROOT_DOCS.include?(File.basename(p)) }.sort
+
+if ledgers.any? || strays.any? || VERBOSE
+  say
+  say("==> Needs your decision (reported, never touched)")
+end
+
+ledgers.each do |ledger|
+  say(format("     %-46s %10s  scratch validator ledger; rebuilt by `solana-test-validator --reset`",
+             ledger.sub("#{ROOT}/", ""), ArtifactSweep.human_bytes(ArtifactSweep.size_of(ledger))))
+  say("       remove deliberately with: rm -rf #{ledger}")
+end
+
+strays.each { |stray| say("     stray root file: #{stray.sub("#{ROOT}/", '')}") }
+
+if VERBOSE
+  plan[:repos].each do |repo|
+    untracked, = Open3.capture2e("git", "-C", repo, "ls-files", "--others", "--exclude-standard")
+    next if untracked.strip.empty?
+
+    say("     [#{File.basename(repo)}] untracked:")
+    untracked.lines.first(20).each { |line| say("       #{line.strip}") }
+  end
+end
+
+# --- summary -----------------------------------------------------------------
+
+say
+say("==> #{DRY ? 'Would reclaim' : 'Reclaimed'} #{ArtifactSweep.human_bytes(reclaimed)} " \
+    "across #{plan[:repos].size} repo(s) and #{plan[:worktree_count]} worktree(s)")
+if missing.any?
+  say("==> MISSING ROTATION: #{missing.join(', ')} — these apps have not adopted the studio-engine cap")
+end
+say("==> logger audit inconclusive for: #{unknown.join(', ')}") if unknown.any?
+
+puts ArtifactSweep.summary_line(
+  dry_run: DRY,
+  reclaimed_bytes: reclaimed,
+  reclaimed_human: ArtifactSweep.human_bytes(reclaimed),
+  repos: plan[:repos].size,
+  worktrees: plan[:worktree_count],
+  rotation_missing: missing,
+  rotation_unknown: unknown,
+  audited_envs: SKIP_AUDIT ? [] : AUDIT_ENVS
+)

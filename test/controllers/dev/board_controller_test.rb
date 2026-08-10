@@ -78,9 +78,9 @@ class Dev::BoardControllerTest < ActionDispatch::IntegrationTest
     2.times { post dev_board_move_path } # designed -> building -> waiting
     injected = fixtures.first.reload.devops["local_url"]
 
-    assert LocalReviewLink.for(local_url: injected, email: "operator@example.com").present?,
+    assert LocalReviewLink.for(local_url: injected).present?,
       "the demo bar is only clickable if the CTA can build a mint URL from this local_url"
-    assert_nil LocalReviewLink.for(local_url: "/tasks", email: "operator@example.com"),
+    assert_nil LocalReviewLink.for(local_url: "/tasks"),
       "a bare path is refused — which is WHY the beat injects request.base_url, not \"/tasks\""
   end
 

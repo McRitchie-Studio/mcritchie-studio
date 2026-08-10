@@ -112,6 +112,57 @@ that direction.
 
 ---
 
+## Parked — the /tasks board-filter flake (two theories already refuted)
+
+Task `gate-board-ready-on-inner` was dropped by Mr. McRitchie on 2026-08-09; PR
+#737 closed unmerged, task archived, desk reclaimed by hand (the branch tip is
+preserved on `origin/feat/gate-board-ready-on-inner`). Nothing in the repo
+references the slug.
+
+**The gap.** `TasksBoardFilterSystemTest#[e2e] an app chip toggle hides then
+restores a card` fails **only in CI** — 3 times across PRs #727 and #729, never in
+5 local reproductions (single file, full system lane, CI seeds 21908/21460, clean
+`db:test:prepare`, and CI's exact `pull/N/merge` ref). The main suite is always
+green; only the system lane fails, which is why `bin/fast-check` never catches it.
+`playwright (3)` / `task_card_actions.spec.js` shows the same shape and has gone
+red on `accepted` itself.
+
+**What is already DISPROVED — do not re-derive these.**
+
+1. *"The e2e waits on the chrome's `data-alpine-ready`, but the cards live in the
+   inner primitive which inits later, so the click lands before the card bindings
+   exist."* The chrome and the primitive render inline in ONE document, so Alpine
+   performs a single `initTree` walk whose `deferHandlingDirectives` flush binds
+   the cards' `x-show` **before either flag is stamped** — there is no window
+   between the two flags. The inner primitive also already publishes its own flag
+   (`studio-engine app/views/studio/_board_assets.html.erb`).
+2. *"`toggleApp` mutated `hiddenApps` with nothing listening, so the card never
+   hid."* Independently false: a cold effect's FIRST evaluation reads the
+   already-mutated array and renders hidden. Alpine proxy tracking does not
+   produce a ran-but-missed-its-dependency effect.
+
+**Still-open suspects, untested.** The chip's width depends on `app_emoji(app)`
+and headless CI renders emoji at different widths, so a layout shift between
+locating the chip and dispatching the click fits "3× in CI, never locally" far
+better than any init race. Separately, `layouts/studio/_head.html.erb` loads
+Alpine from jsDelivr on a **floating `3.x.x`** range in the system-test path,
+while SortableJS and confetti in that same file are deliberately vendored.
+
+**Why parked, not built.** Both PRs it was meant to unblock
+(`preserve-shiny-mascot-stamps`, `ingest-rerun-conclusion-updates`) shipped
+without it, so it blocks nothing. The change that was written is inert against
+the flake by its own author's admission.
+
+**The lesson worth more than the fix:** one green CI run **cannot** retire an
+intermittent failure. A single green run is equally consistent with "fixed" and
+"got lucky", so it is not evidence — demand a mechanism you can point at in the
+source, or say the cause is still unknown.
+
+**Resurrect when:** the flake blocks something real again, or someone tests either
+open suspect. Start from the emoji-width hypothesis, not the init race.
+
+---
+
 ## Parked — commit the silence corpus probe
 
 Filed and archived 2026-07-14 (task `commit-silence-corpus-probe`). Flagged

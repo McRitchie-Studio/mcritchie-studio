@@ -903,12 +903,69 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
 
     target = URI.parse(@response.redirect_url)
     assert_equal "localhost", target.host
-    assert_equal 3009, target.port, "the operator must land on the DEMO's stack, not the board's host"
+    assert_equal 3009, target.port, "the reviewer must land on the DEMO's stack, not the board's host"
     assert_equal "/_studio/local_review", target.path
 
     query = Rack::Utils.parse_query(target.query)
-    assert_equal @admin.email, query["email"], "the local server signs in the current admin"
     assert_equal "/demo?x=1", query["return_to"], "and lands them on the page under review"
+  end
+
+  # The CTA is ONE CLICK from a cold browser. It used to sit behind
+  # require_authentication, so a logged-out click 302'd to /login — and
+  # require_authentication keeps no return_to, so the click was thrown away
+  # entirely. Caught on the operator's real click in the production log.
+  test "[integration] a LOGGED-OUT click reaches the local mint instead of the login page" do
+    task = Task.create!(
+      title: "local review logged out task",
+      stage: "building",
+      metadata: { "devops" => { "approval_status" => "waiting", "local_url" => "http://localhost:3009/admin/style" } }
+    )
+
+    get local_review_task_path(task.slug)
+
+    target = URI.parse(@response.redirect_url)
+    assert_equal "localhost", target.host, "a logged-out click must not be sent to /login"
+    assert_equal 3009, target.port
+    assert_equal "/_studio/local_review", target.path
+    assert_equal "/admin/style", Rack::Utils.parse_query(target.query)["return_to"]
+  end
+
+  # No signed-in user means no email to send — and this URL is public, so an
+  # address in it would be published. Asserted as a property (nothing that looks
+  # like an address), not as "the email key is missing", so renaming the
+  # parameter cannot quietly restore the leak.
+  test "[integration] the public redirect carries no email address" do
+    task = Task.create!(
+      title: "local review no email task",
+      stage: "building",
+      metadata: { "devops" => { "local_url" => "http://localhost:3009/admin/style" } }
+    )
+
+    [nil, @admin].each do |viewer|
+      viewer ? log_in_as(viewer) : reset!
+
+      get local_review_task_path(task.slug)
+
+      refute_includes @response.redirect_url.to_s, "@",
+        "the operator's address must never ride a public redirect, signed in or not"
+      assert_equal ["return_to"], Rack::Utils.parse_query(URI.parse(@response.redirect_url).query).keys
+    end
+  end
+
+  # A non-admin used to be bounced to root here. That gate is gone ON PURPOSE:
+  # the destination is always loopback, so the only server a stranger's click can
+  # reach is their OWN machine, and the board hands out nothing.
+  test "[integration] a non-admin gets the same handoff, not a bounce to root" do
+    log_in_as(@viewer)
+    task = Task.create!(
+      title: "local review non admin task",
+      stage: "building",
+      metadata: { "devops" => { "local_url" => "http://localhost:3009/demo" } }
+    )
+
+    get local_review_task_path(task.slug)
+
+    assert_equal "/_studio/local_review", URI.parse(@response.redirect_url).path
   end
 
   test "[integration] local_review with no local_url bounces to the task" do
@@ -920,24 +977,12 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to task_path(task.slug)
   end
 
-  test "[integration] local_review is admin-gated — a non-admin cannot hand out a sign-in link" do
-    log_in_as(@viewer)
-    task = Task.create!(
-      title: "local review gated task",
-      stage: "building",
-      metadata: { "devops" => { "local_url" => "http://localhost:3009/demo" } }
-    )
-
-    get local_review_task_path(task.slug)
-
-    assert_redirected_to root_path
-  end
-
-  test "[integration] local_review refuses to send the operator off-box" do
-    # The redirect carries the operator's email and is followed by an admin
-    # session, so a local_url that is not loopback — a QA host, a typo, a hostile
-    # value — must bounce to the task page, never off this machine.
-    log_in_as(@admin)
+  test "[integration] local_review refuses to send a visitor off-box" do
+    # With the CTA public and unauthenticated, loopback is the ONLY thing
+    # standing between a hostile local_url and a stranger's browser — so a
+    # local_url that is not loopback (a QA host, a typo, a hostile value) must
+    # bounce to the task page, never off this machine. Asserted logged OUT,
+    # because that is now the weakest caller.
     [
       "https://qa.mcritchie.studio/admin/style",
       "http://evil.com/pwn",

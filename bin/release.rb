@@ -190,6 +190,12 @@ require_relative "../lib/agent_session_usage"
 require_relative "../lib/task_usage_baseline"
 require_relative "../lib/task_usage_sandbox"
 require_relative "lib/session_identity"
+# The regenerable-artifact sweep's summary contract — `archive` drives
+# bin/clean-artifacts as a step and parses its tagged JSON line for the Exit Seam.
+require_relative "lib/artifact_sweep"
+# The frozen-doc retirement's summary contract — `archive` drives
+# bin/archive-docs as a step and parses its tagged JSON line for the Exit Seam.
+require_relative "lib/docs_archive"
 # The per-RELEASE conductor claim (release-conductor-claims) — the assembler
 # (prepare) and deployer (ship) locks, on the release record now, spoken over the
 # fast HTTP AgentApi. Loaded for its exit-code constants (STOOD_DOWN/OK); the CLI's
@@ -4356,14 +4362,19 @@ end
 #   - SKIP (doc stays uncommitted) when another invocation holds the primary
 #     checkout — never flip HEAD under a running pre-QA gate suite
 #     (with_primary_checkout, wait: false).
+# `abs_path` takes one path OR many — many for the archive beat's docs sweep,
+# which retires a batch of frozen snapshots and rewrites the ledger as ONE
+# logical change. All of them must be named here, or the safety check reads the
+# rest as unrelated work and strands the batch as dirt on the primary.
 def commit_artifact_to_release(repo, abs_path, message)
   return if DRY
 
   path = repo_path(repo)
-  rel  = abs_path.to_s.delete_prefix("#{path}/")
+  rels = Array(abs_path).map { |p| p.to_s.delete_prefix("#{path}/") }
+  rel  = rels.length == 1 ? rels.first : "#{rels.length} doc(s)"
 
   status, ok = git_capture("-C", path, "status", "--porcelain")
-  unless ok && Release::ArtifactCommit.safe_to_commit?(status, rel)
+  unless ok && Release::ArtifactCommit.safe_to_commit?(status, rels)
     step("left #{rel} uncommitted (#{ok ? 'other changes present' : 'git status failed'}) — commit it via a docs PR")
     return
   end
@@ -4381,7 +4392,7 @@ def commit_artifact_to_release(repo, abs_path, message)
     if co
       _, ff = sh("git", "-C", path, "merge", "--ff-only", "origin/#{RELEASE_BRANCH}", capture: true)
       if ff
-        sh("git", "-C", path, "add", "--", rel, capture: true)
+        sh("git", "-C", path, "add", "--all", "--", *rels, capture: true)
         _, committed = sh("git", "-C", path, "commit", "-m", message, capture: true)
         _, done = sh("git", "-C", path, "push", "origin", RELEASE_BRANCH, capture: true) if committed
       end
@@ -5613,6 +5624,58 @@ def reclaimed_count(out)
   out.to_s[/reclaimed (\d+) worktree/, 1].to_i
 end
 
+# The regenerable-artifact sweep, run exactly like the worktree reclaim above:
+# apply: false is the tool's own --dry-run (report only, mutates nothing, so it
+# runs for real even under bin/release --dry-run); apply: true performs it.
+#
+# It sweeps EVERY managed Rails repo and EVERY worktree under them, and boots
+# each app to check whether a real log rotation cap is installed. That audit is
+# the self-healing half: add a satellite that never inherits studio-engine's cap
+# and the next archive run NAMES it, instead of it surfacing at 400 MB in six
+# months.
+#
+# MACHINE-LOCAL. Unlike everything else in archive, this reads and writes THIS
+# machine's disk — never the board. A fresh Mac's first archive sweeps almost
+# nothing, and that is correct, not an anomaly.
+def sweep_artifacts(apply:)
+  cmd = ["bin/clean-artifacts"]
+  cmd << "--dry-run" unless apply
+  out, status = Open3.capture2e(*cmd)
+  print(out)
+  [out, status.success?]
+end
+
+# Pull the sweep's tagged JSON summary out of its output. Returns an empty hash
+# when the line is absent, so a sweep hiccup degrades the archive's summary
+# rather than aborting a run whose board work already succeeded.
+def sweep_summary(out)
+  ArtifactSweep.parse_summary(out) || {}
+end
+
+# The DOC sweep, driven the same way as the log sweep: apply: false is the tool's
+# own --dry-run. It `git mv`s frozen snapshots — dated audits, release retros,
+# misfiled dated designs — out of the LIVE doc tree into docs/agents/archive/,
+# and rolls the delete-later ledger's resolved rows over.
+#
+# NOTHING IS EVER DELETED, and a snapshot something still cites is left exactly
+# where it is and NAMED in the report: a referenced snapshot is someone's live
+# citation, and the referrer gets fixed first, deliberately.
+#
+# Unlike the log sweep this touches TRACKED files, so its output is staged and
+# then committed to `release` with the ledger, in one artifact commit — leaving
+# the primary checkout clean rather than carrying a dozen staged renames as dirt.
+def sweep_docs(apply:)
+  cmd = ["bin/archive-docs", "--repo=#{repo_path('mcritchie-studio')}"]
+  cmd << "--dry-run" unless apply
+  out, status = Open3.capture2e(*cmd)
+  print(out)
+  [out, status.success?]
+end
+
+def docs_summary(out)
+  DocsArchive.parse_summary(out) || {}
+end
+
 # "Archive completed tasks": the conclusion of the Deploy lane. Archive every
 # shipped task that ISN'T carried by the last shipped release (those stay as the
 # board's "Last Release"), then reclaim the merged/shipped feature worktrees.
@@ -5646,17 +5709,35 @@ def archive
   step("worktree reclaim preview: bin/agent-worktree cleanup --reclaim")
   reclaim_worktrees(apply: false)
 
-  # 3. --dry-run stops here: the plan + reclaim preview are shown, nothing mutated.
+  # 3. Artifact-sweep PREVIEW — the sweep tool's own --dry-run, same contract as
+  #    the reclaim above: it reports reclaimable bytes and names any app missing
+  #    a log rotation cap, mutating nothing.
+  say("")
+  step("artifact sweep preview: bin/clean-artifacts --dry-run")
+  sweep_preview = sweep_summary(sweep_artifacts(apply: false).first)
+
+  # 4. Frozen-doc retirement PREVIEW — same contract again: it lists what would
+  #    move out of the live doc tree and names anything a live citation pins.
+  say("")
+  step("docs archive preview: bin/archive-docs --dry-run")
+  docs_preview = docs_summary(sweep_docs(apply: false).first)
+
+  # 5. --dry-run stops here: the plan + all three previews are shown, nothing mutated.
   if DRY
     say("")
-    say("✓ Archive plan previewed (DRY RUN — nothing executed). Re-run without --dry-run to archive + reclaim.")
+    say("✓ Archive plan previewed (DRY RUN — nothing executed). Re-run without --dry-run to archive + reclaim + sweep.")
+    say("  would reclaim #{sweep_preview[:reclaimed_human]} of regenerable artifacts") if sweep_preview[:reclaimed_human]
+    if docs_preview[:moved]
+      say("  would retire #{docs_preview[:moved]} frozen doc(s) and roll #{docs_preview[:ledger_rolled]} ledger row(s)")
+    end
     return
   end
 
-  # 4. ONE confirm authorizes the board write + the worktree teardown (--yes skips).
-  abort!("aborted — archive not confirmed") unless confirm("Archive #{archivable.size} shipped tasks + reclaim worktrees?")
+  # 6. ONE confirm authorizes the board write, the worktree teardown, the
+  #    artifact sweep, and the doc retirement (--yes skips).
+  abort!("aborted — archive not confirmed") unless confirm("Archive #{archivable.size} shipped tasks + reclaim worktrees + sweep artifacts + retire #{docs_preview[:moved] || 0} frozen doc(s)?")
 
-  # 5. Archive on the board (shipped → archived). A board WRITE.
+  # 7. Archive on the board (shipped → archived). A board WRITE.
   step("record: Release::Conductor.archive_completed!")
   result = conductor(
     "r = Release::Conductor.archive_completed!; " \
@@ -5665,7 +5746,7 @@ def archive
   archived_count = result["count"] || (result["archived"] || []).size
   kept_count     = (result["kept"] || kept).size
 
-  # 6. Reclaim the merged/shipped feature worktrees (--yes = real teardown,
+  # 8. Reclaim the merged/shipped feature worktrees (--yes = real teardown,
   #    squash-merged legacy worktrees included). The board archive already
   #    succeeded, so a reclaim hiccup just means fewer worktrees freed this run.
   say("")
@@ -5673,17 +5754,54 @@ def archive
   reclaim_out, = reclaim_worktrees(apply: true)
   reclaimed = reclaimed_count(reclaim_out)
 
-  # The reclaim appended to the delete-later ledger — commit it to `release` so it
-  # rides the next ship instead of becoming ship-preflight dirt (best-effort).
+  # 9. Sweep the regenerable artifacts — AFTER the reclaim, so the worktrees that
+  #    just went away are not swept first and counted twice. Machine-local, and
+  #    best-effort for the same reason as the reclaim: the board write is done.
+  say("")
+  step("artifact sweep: bin/clean-artifacts")
+  sweep = sweep_summary(sweep_artifacts(apply: true).first)
+
+  # 10. Retire the frozen docs + roll the ledger. This STAGES tracked changes
+  #     (git mv + the ledger rewrite), which the commit below then carries to
+  #     `release` as ONE artifact commit.
+  say("")
+  step("docs archive: bin/archive-docs")
+  docs = docs_summary(sweep_docs(apply: true).first)
+
+  # The reclaim appended to the delete-later ledger, and the doc retirement moved
+  # frozen snapshots + rolled the ledger's resolved rows — commit ALL of it to
+  # `release` so it rides the next ship instead of becoming ship-preflight dirt
+  # (best-effort). Every path must be named: the safety check refuses when
+  # anything ELSE is dirty, so omitting the retirements would strand them.
+  hub = repo_path("mcritchie-studio")
+  artifact_paths = [File.join(hub, DocsArchive::LEDGER), File.join(hub, DocsArchive::LEDGER_ARCHIVE)]
+  artifact_paths += docs[:moved_paths].to_a.map { |rel| File.join(hub, DocsArchive.archive_path_for(rel)) }
   commit_artifact_to_release(
     "mcritchie-studio",
-    File.join(repo_path("mcritchie-studio"), "docs/agents/maintenance/delete-later.md"),
-    "ledger: delete-later after archive (#{archived_count} archived, #{reclaimed} reclaimed)"
+    artifact_paths,
+    "ledger: delete-later after archive (#{archived_count} archived, #{reclaimed} reclaimed, " \
+    "#{docs[:moved] || 0} doc(s) retired)"
   )
 
-  # 7. Summary.
+  # 11. Summary. The disk numbers are MACHINE-LOCAL, not board state — say so in
+  #     the Exit Seam report rather than filing them as pipeline facts.
   say("")
   say("✓ Archived #{archived_count} tasks; reclaimed #{reclaimed} worktrees; SHIPPED → #{kept_count}")
+  say("✓ Swept #{sweep[:reclaimed_human] || '0 B'} of regenerable artifacts " \
+      "across #{sweep[:repos]} repo(s) / #{sweep[:worktrees]} worktree(s) (this machine only)")
+  if sweep[:rotation_missing].to_a.any?
+    say("⚠ MISSING LOG ROTATION: #{sweep[:rotation_missing].join(', ')} — " \
+        "these apps have not adopted the studio-engine cap; their local logs grow to Rails' 100 MB default")
+  end
+  if sweep[:rotation_unknown].to_a.any?
+    say("⚠ Logger audit inconclusive (could not boot): #{sweep[:rotation_unknown].join(', ')}")
+  end
+  say("✓ Retired #{docs[:moved] || 0} frozen doc(s) into #{DocsArchive::ARCHIVE_DIR}/ " \
+      "and rolled #{docs[:ledger_rolled] || 0} ledger row(s) — moved, never deleted")
+  if docs[:skipped].to_a.any?
+    say("⚠ Left in place, still referenced (fix the referrer first, then they retire on the next run):")
+    docs[:skipped].each { |s| say("    #{s[:path]} — cited by #{s[:referrers].join(', ')}") }
+  end
 end
 
 # --- retro -----------------------------------------------------------------
