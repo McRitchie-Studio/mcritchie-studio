@@ -57,9 +57,14 @@ class CleanArtifactsCliTest < Minitest::Test
     path
   end
 
+  # stdout and stderr are kept APART on purpose. The `--json` contract is about
+  # STDOUT; when this suite runs under `bin/rails test` the child ruby inherits
+  # RUBYOPT=-rbundler/setup and prints a dozen "already initialized constant
+  # Gem::Platform::JAVA" warnings to STDERR, which a combined capture would fold
+  # into the output and read as a broken machine contract.
   def run_cli(root, *flags, env: {})
-    out, status = Open3.capture2e(env, RbConfig.ruby, CLI, "--root=#{root}", *flags)
-    assert status.success?, "bin/clean-artifacts failed:\n#{out}"
+    out, err, status = Open3.capture3(env, RbConfig.ruby, CLI, "--root=#{root}", *flags)
+    assert status.success?, "bin/clean-artifacts failed:\n#{out}\n#{err}"
     [out, ArtifactSweep.parse_summary(out)]
   end
 
@@ -201,7 +206,8 @@ class CleanArtifactsCliTest < Minitest::Test
       out, = run_cli(root, "--dry-run", "--skip-audit", "--json")
 
       assert_equal 1, out.lines.count { |l| l.include?(ArtifactSweep::SUMMARY_TAG) }
-      assert_equal 1, out.lines.reject { |l| l.strip.empty? }.size, "--json is for machines: one line"
+      assert_equal 1, out.lines.reject { |l| l.strip.empty? }.size,
+                   "--json is for machines: stdout is one line and nothing else"
     end
   end
 end
