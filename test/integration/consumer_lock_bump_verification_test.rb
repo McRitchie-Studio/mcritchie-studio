@@ -7,9 +7,10 @@ require "test_helper"
 # before the ship's re-pin). Its unit tests use a handcrafted lockfile, which
 # proves the parser against the shape we IMAGINED Bundler emits. This tier runs
 # it against the shape Bundler ACTUALLY emits — this repo's own committed
-# Gemfile.lock — so a future Bundler that changes indentation, ordering, or the
-# spec/dependency layout turns this red instead of silently making the guard
-# unable to find any version (which would abort every gem release).
+# Gemfile.lock — with `Bundler.locked_gems` as the oracle and EVERY spec in the
+# file as the population, so a future Bundler that changes indentation,
+# ordering, or the spec layout turns this red instead of silently making the
+# guard unable to find a version (which would abort every gem release).
 #
 # THE REGRESSION BEHIND IT (rel-20260809-3b8f3d, 2026-08-09): bin/release
 # inferred "the lock is already at the published version" from an UNCHANGED
@@ -31,13 +32,36 @@ class ConsumerLockBumpVerificationTest < ActionDispatch::IntegrationTest
     spec&.version&.to_s
   end
 
-  test "[integration] locked_version matches Bundler's own resolution of studio-engine" do
-    expected = bundler_resolved_version("studio-engine")
-    assert expected.present?,
-           "this repo consumes studio-engine; if that changed, repoint this test at another real gem"
+  # THE WHOLE LOCKFILE, not a flattering sample. An earlier version of this test
+  # asserted two hand-picked pure-Ruby gems and claimed to prove the parser
+  # against "the shape Bundler ACTUALLY emits". Generalising the oracle to every
+  # spec is what surfaced the real defect: native gems get ONE SPEC ROW PER
+  # PLATFORM with the platform inside the parens — `ffi (1.17.4-aarch64-linux-gnu)`
+  # — so the parser was returning the platform suffix as part of the version and
+  # disagreeing with Bundler on 4 gems (ffi, nokogiri, pg, tailwindcss-ruby)
+  # across 12 rows. Sampling hid it; the population found it.
+  test "[integration] locked_version agrees with Bundler on EVERY spec in the real lockfile" do
+    specs = Bundler.locked_gems.specs
+    assert_operator specs.size, :>, 100, "precondition: a real, fully populated lockfile"
 
-    assert_equal expected, Release::ShipSequence.locked_version(lock_text, "studio-engine"),
-                 "the parser must agree with Bundler on the resolved version in real lockfile output"
+    disagreements = specs.filter_map do |spec|
+      mine = Release::ShipSequence.locked_version(lock_text, spec.name)
+      next if mine == spec.version.to_s
+
+      "#{spec.name}: bundler=#{spec.version} parser=#{mine.inspect}"
+    end.uniq
+
+    assert_empty disagreements,
+                 "the parser must agree with Bundler for every resolved gem, including " \
+                 "platform-specific rows:\n  #{disagreements.join("\n  ")}"
+  end
+
+  # The population test above would still pass if the lockfile happened to carry
+  # no native gems, so pin that this repo really does exercise the suffix path.
+  test "[integration] the lockfile really does contain platform-suffixed spec rows" do
+    assert_match(/^ {4}\S+ \([^()]*-[a-z0-9_]+-[a-z]+/, lock_text,
+                 "precondition: at least one native gem row carries a platform suffix, " \
+                 "otherwise the agreement test above proves nothing about them")
   end
 
   # rails is nested as a dependency of several other specs AND listed in

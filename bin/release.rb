@@ -3010,6 +3010,21 @@ rescue SystemExit
   # (best-effort) before re-raising, so the heartbeat activity resolves instead of
   # hanging open.
   close_role_span("prepare aborted before QA-green") if avi_span
+  # WHAT IS ALREADY IRREVERSIBLE — the prepare-side twin of the ship's
+  # "Already live this run" (@ship_live). By the time a mid-sweep abort fires, the
+  # batch accepted→release PRs may be merged, gems may be PUBLISHED to RubyGems
+  # (which can never be un-pushed), and earlier repos in the loop may already have
+  # committed their lock bump onto origin/release. Without this the abort message
+  # is the operator's last word, and a message that says "nothing was committed"
+  # invites a "just reset release" cleanup that would drop the batch merge and
+  # strand a published gem. Ship prints this and prepare did not; now both do.
+  if @prepare_live&.any?
+    warn("")
+    warn("✗ Prepare ABORTED partway — these are ALREADY DONE and are NOT undone by the abort:")
+    @prepare_live.each { |line| warn("    ✓ #{line}") }
+    warn("  Re-run `bin/release prepare` to resume: published gems skip, merges are idempotent,")
+    warn("  and an already-correct lock commits nothing. Do NOT reset `release` to undo them.")
+  end
   raise
 ensure
   # A raw StandardError (not a SystemExit) raised after the assembler claim was
@@ -3767,21 +3782,66 @@ end
 # `conservative:` adds bundler's --conservative so a SINGLE-gem bump can't float
 # the rest of the dependency graph — the prepare-side consumer bump passes it
 # (the lock lands on `release` and ships; only the published gem may move).
-def bundle_lock(path, gem, attempts: 3, conservative: false)
+# `bundle lock --update <gem>`, with ONE propagation ladder covering BOTH ways it
+# can fail to land.
+#
+# `expect:` is the version the caller just published and requires to be resolved.
+# Pass it and a run that EXITS ZERO WITH THE OLD VERSION STILL RESOLVED is treated
+# as retryable, exactly like a non-zero exit.
+#
+# WHY (rel-20260809-3b8f3d, 2026-08-09): this ladder already existed, but it only
+# ever retried on a non-zero exit — and the propagation bug's entire signature is
+# exit 0 with the old version resolved, because the RubyGems index had not caught
+# up in the seconds since our own `gem push`. So the ladder was structurally blind
+# to the one condition it was written for, and the caller's read-back would abort
+# on FIRST observation with zero waiting, moments after an IRREVERSIBLE push. That
+# turns an ordinary, self-curing delay into a manual stop on a sweep whose whole
+# posture is self-healing. One ladder, both conditions, abort only when it is
+# exhausted.
+def bundle_lock(path, gem, attempts: 3, conservative: false, expect: nil)
   args = ["bundle", "lock", "--update", gem]
   args << "--conservative" if conservative
-  delay = 5
+  lockfile = File.join(path, "Gemfile.lock")
+  # The propagation backoff's base, in seconds. Overridable ONLY so the tests can
+  # drive the real ladder (including its exhaustion abort) without sleeping 15s;
+  # nothing in the pipeline sets it, so every real run gets 5s → 10s.
+  delay = Integer(ENV.fetch("RELEASE_BUNDLE_LOCK_BACKOFF", "5"))
+  reason = nil
+
   attempts.times do |i|
     step("#{args.join(' ')} (cd #{path}) [#{i + 1}/#{attempts}]")
     _, ok = sh(*args, chdir: path)
-    return if ok
+
+    if !ok
+      reason = "bundle exited non-zero"
+    elsif expect.nil?
+      return
+    else
+      # File.read can raise if bundler never wrote a lock; treat a missing lock as
+      # "not landed" so it rides the ladder instead of escaping as a backtrace.
+      text     = File.exist?(lockfile) ? File.read(lockfile) : ""
+      resolved = Release::ShipSequence.locked_version(text, gem)
+      return if Release::ShipSequence.lock_bump_landed?(text, gem, expect)
+
+      reason = "bundle succeeded but the lock resolves #{resolved || 'nothing'}, wanted #{expect}"
+    end
+
     break if i == attempts - 1
 
-    say("  bundle lock failed — RubyGems may not have propagated #{gem} yet; retrying in #{delay}s")
+    say("  #{reason} — RubyGems may not have propagated #{gem} #{expect} yet; retrying in #{delay}s")
     sleep(delay)
     delay *= 2
   end
-  abort!("#{args.join(' ')} failed in #{path} after #{attempts} tries — re-run once RubyGems has propagated")
+
+  # Name the API the code ACTUALLY reads (rubygems_versions → the versions JSON),
+  # never the HTML gem page: the two do not propagate in lockstep, and an operator
+  # who waits on the page while the API is still stale re-enters the publish
+  # branch, gets `gem push` refused, and is then advised to bump the version —
+  # which would burn a version number for nothing.
+  abort!("#{args.join(' ')} did not land in #{path} after #{attempts} tries (#{reason}). " \
+         "This is normally RubyGems index propagation. Wait until " \
+         "https://rubygems.org/api/v1/versions/#{gem}.json lists #{expect || 'the published version'} " \
+         "— that JSON API is the surface this run reads — then re-run; it resumes.")
 end
 
 # --- prepare-side gem publish (producer-first, BEFORE the pre-QA gate + QA) ----
@@ -3982,6 +4042,10 @@ def publish_gems_for_qa(gem_plan)
       checkout_detached(repo, gem["tip"]) # build from the exact release tree
       publish_gem(repo, gem["version"])   # reused: release-check → build → push → tag
       restore_gem_primary(repo)
+      # IRREVERSIBLE: a RubyGems version can never be re-pushed. Record it so a
+      # later abort can tell the operator what is already live (see prepare's
+      # rescue arm) instead of implying the run left nothing behind.
+      (@prepare_live ||= []) << "gem #{repo} #{gem['version']} PUBLISHED to RubyGems (cannot be un-pushed)"
     end
     published[repo] = gem["version"]
   end
@@ -4070,12 +4134,12 @@ def bump_consumer_locks_for_qa(app_groups, published_gems)
       expected = text.dup
       touched.each { |gem_name| expected = Release::ShipSequence.bumped_gemfile(expected, gem_name, published_gems[gem_name]) }
       File.write(ws_gemfile, expected) if expected != text
-      touched.each { |gem_name| bundle_lock(workspace, gem_name, conservative: true) }
-
-      # ASSERT THE LOCK, DO NOT INFER IT FROM THE DIFF. `bundle lock --update`
-      # exits 0 whether or not it could SEE the version we just published, so its
-      # exit status proves nothing about which version landed. Read the lock back
-      # and require the asked-for version before either branch below.
+      # ASSERT THE LOCK, DO NOT INFER IT FROM THE DIFF — and RIDE THE LADDER while
+      # doing it. `bundle lock --update` exits 0 whether or not it could SEE the
+      # version we just published, so its exit status proves nothing about which
+      # version landed. `expect:` makes bundle_lock re-read the lock and retry the
+      # whole command on a stale resolution, aborting only once its propagation
+      # backoff is exhausted (see bundle_lock).
       #
       # THE BUG (rel-20260809-3b8f3d, 2026-08-09): the unchanged-tree check below
       # used to run FIRST and report "lock already at <gem> <version>" — a version
@@ -4087,20 +4151,8 @@ def bump_consumer_locks_for_qa(app_groups, published_gems)
       # identical-tree green, so no CI run contradicted it either. Nothing
       # downstream could catch it: a stale lock and a genuine no-op are identical
       # in the diff and trivially different in the lockfile.
-      lockfile = File.join(workspace, "Gemfile.lock")
-      stale = touched.reject do |gem_name|
-        Release::ShipSequence.lock_bump_landed?(File.read(lockfile), gem_name, published_gems[gem_name])
-      end
-      if stale.any?
-        detail = stale.map do |g|
-          resolved = Release::ShipSequence.locked_version(File.read(lockfile), g) || "unresolved"
-          "#{g}: wanted #{published_gems[g]}, lock resolves #{resolved}"
-        end
-        abort!("consumer lock bump did NOT land in #{repo} — #{detail.join('; ')}. `bundle lock --update` " \
-               "succeeded but resolved a different version, which almost always means the RubyGems index " \
-               "has not propagated the just-published gem yet. NOTHING was committed. Wait for " \
-               "https://rubygems.org/gems/#{stale.first} to list the version, then re-run " \
-               "`bin/release prepare` — it resumes.")
+      touched.each do |gem_name|
+        bundle_lock(workspace, gem_name, conservative: true, expect: published_gems[gem_name])
       end
 
       status, = git_capture("-C", workspace, "status", "--porcelain", "--", "Gemfile", "Gemfile.lock")
@@ -4124,6 +4176,9 @@ def bump_consumer_locks_for_qa(app_groups, published_gems)
 
       step("  #{repo}: committed #{bumps.join(', ')} onto origin/#{RELEASE_BRANCH} — " \
            "the pre-QA gate + QA deploy now read the post-bump SHA")
+      # PUSHED to a shared branch. A later repo's abort must not imply this was
+      # rolled back — it wasn't (see prepare's rescue arm).
+      (@prepare_live ||= []) << "#{repo}: lock bump #{bumps.join(', ')} committed + pushed to origin/#{RELEASE_BRANCH}"
     end
   end
 end
@@ -4367,26 +4422,15 @@ def repin_consumers(app_groups, published_gems, ship_sha)
 
       File.write(ws_gemfile, expected)
       text = expected
-      pending.each { |gem| bundle_lock(workspace, gem) }
-
       # Same read-back the prepare-side bump does, for the same reason: a
       # `bundle lock --update` that cannot see the version resolves the old one
-      # and still exits 0. Propagation lag is far less likely here (these gems
-      # published back at prepare, not seconds ago), but "less likely" is not a
-      # guarantee, and this commit is the last thing between the frozen SHA and a
-      # production deploy — so assert rather than assume.
-      repin_lock = File.join(workspace, "Gemfile.lock")
-      unlanded = pending.reject do |gem|
-        Release::ShipSequence.lock_bump_landed?(File.read(repin_lock), gem, published_gems[gem])
-      end
-      if unlanded.any?
-        detail = unlanded.map do |g|
-          resolved = Release::ShipSequence.locked_version(File.read(repin_lock), g) || "unresolved"
-          "#{g}: wanted #{published_gems[g]}, lock resolves #{resolved}"
-        end
-        abort!("re-pin lock did NOT land in #{repo} — #{detail.join('; ')}. NOTHING was committed or " \
-               "deployed. Confirm the version is live on RubyGems, then re-run `bin/release ship` — it resumes.")
-      end
+      # and still exits 0. `expect:` puts that check INSIDE bundle_lock's
+      # propagation ladder, so a slow index is waited out rather than aborting a
+      # ship that has already published gems and fast-forwarded mains. Propagation
+      # lag is far less likely here (these gems published back at prepare, not
+      # seconds ago), but "less likely" is not a guarantee, and this commit is the
+      # last thing between the frozen SHA and a production deploy.
+      pending.each { |gem| bundle_lock(workspace, gem, expect: published_gems[gem]) }
 
       pins = pending.map { |gem| "#{gem} #{Release::GemfileRepin.pessimistic_constraint(published_gems[gem])}" }
       sh("git", "-C", workspace, "add", "Gemfile", "Gemfile.lock")

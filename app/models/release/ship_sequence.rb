@@ -271,23 +271,60 @@ class Release
       end
     end
 
-    # The version `gem_name` RESOLVES TO in a Gemfile.lock, or nil when the lock
-    # does not resolve it at all. This is the READ-BACK behind
+    # The body of a Gemfile.lock's `GEM` sections — the RubyGems-sourced
+    # resolutions only.
+    #
+    # A lockfile's top-level blocks (`GEM`, `PATH`, `GIT`, `PLATFORMS`,
+    # `DEPENDENCIES`, `CHECKSUMS`, `BUNDLED WITH`) all start at column 0, and
+    # `PATH`/`GIT` carry their OWN `specs:` list at the very same four-space
+    # indent as `GEM`'s. So indent alone cannot tell a published gem from a
+    # path- or git-sourced one — which matters most in `repin_consumers`, whose
+    # whole job is Gemfiles that reference a branch. Sectioning first means a
+    # `path:`/`git:` consumer can never satisfy a guard whose question is
+    # "did the version we PUBLISHED TO RUBYGEMS land here?".
+    def gem_sections(lockfile_text)
+      in_gem = false
+      lockfile_text.to_s.lines.each_with_object([]) do |line, kept|
+        if line.match?(/^\S/)
+          in_gem = line.start_with?("GEM")
+          next
+        end
+        kept << line if in_gem
+      end.join
+    end
+
+    # The version `gem_name` RESOLVES TO in a Gemfile.lock's GEM section, or nil
+    # when it does not resolve there at all. This is the READ-BACK behind
     # `lock_bump_landed?` — the shell asserts the version it just asked for
     # instead of inferring it.
     #
-    # ONLY the GEM/specs resolution line counts, which is why the 4-space indent
-    # is anchored. A Gemfile.lock names a gem at three different depths and only
-    # one of them is a resolved version:
+    # WHICH LINE. Within a GEM section a gem is named at three depths and only
+    # one is a resolution:
     #   * 4 spaces — `    studio-engine (0.31.0)`   the SPEC. What we want.
     #   * 6 spaces — `      studio-engine (~> 0.30)` another spec's REQUIREMENT.
     #   * 2 spaces — `  studio-engine (~> 0.30)`     the DEPENDENCIES section.
-    # A requirement also carries an operator and a space (`~> 0.30`), so
-    # `[^()\s]+` refuses it even if the indent ever moved — the property is
-    # asserted twice rather than resting on one spelling.
+    #
+    # PLATFORM SUFFIXES. A native gem gets ONE SPEC ROW PER PLATFORM, and the
+    # platform rides inside the parens: `ffi (1.17.4-aarch64-linux-gnu)`. The
+    # version is everything BEFORE THE FIRST HYPHEN — that is not a guess, it is
+    # Bundler's own lockfile grammar (LockfileParser::NAME_VERSION splits on
+    # exactly that), so this agrees with Bundler by construction rather than by
+    # resemblance. `Gem::Version.correct?` cannot be used to tell the two apart:
+    # it ACCEPTS "1.17.4-aarch64-linux-gnu" (a hyphen reads as `.pre.`).
+    #
+    # The rows must AGREE. Every platform row of one gem carries the same
+    # version; if they ever disagree the lock is not something we should be
+    # asserting against, so return nil and let the caller fail closed.
     def locked_version(lockfile_text, gem_name)
-      match = lockfile_text.to_s[/^ {4}#{Regexp.escape(gem_name.to_s)} \(([^()\s]+)\)$/, 1]
-      match&.strip
+      raws = gem_sections(lockfile_text)
+             .scan(/^ {4}#{Regexp.escape(gem_name.to_s)} \(([^()]+)\)$/)
+             .flatten
+      # Plain Ruby only — bin/release requires this file with no Rails loaded,
+      # so no `presence`/`blank?` here.
+      versions = raws.map { |raw| raw.strip.split("-", 2).first.to_s.strip }
+                     .reject(&:empty?)
+                     .uniq
+      versions.size == 1 ? versions.first : nil
     end
 
     # TRUE when a `bundle lock --update <gem>` actually landed `version` in the
