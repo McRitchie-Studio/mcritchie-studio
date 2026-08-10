@@ -19,7 +19,7 @@
 # The URL it builds carries ONE parameter — the return path. It names no user:
 # the CTA is a public, sign-in-free redirect, so an email here would be an
 # address published on a public page. The local desk knows its own operator
-# (Studio.local_review_email, else its first admin — studio-engine >= 0.33.0).
+# (Studio.local_review_email, else its first admin — studio-engine >= 0.36.0).
 class LocalReviewLink
   MINT_PATH = "/_studio/local_review"
 
@@ -36,7 +36,7 @@ class LocalReviewLink
     # No email rides along, by design. The CTA is public, so an address here
     # would be published on a public page; and there is no signed-in user to
     # read one from. The LOCAL stack names its own reviewer instead
-    # (Studio.local_review_email, else its first admin — studio-engine >= 0.33.0).
+    # (Studio.local_review_email, else its first admin — studio-engine >= 0.36.0).
     def for(local_url:)
       uri = parse(local_url)
       return nil if uri.nil?

@@ -94,7 +94,7 @@ class TasksController < ApplicationController
   #     email on a public page for anyone to read.
   #
   # So the local stack answers "who is sitting at this desk?" itself
-  # (Studio.local_review_email, else its first admin — studio-engine >= 0.33.0).
+  # (Studio.local_review_email, else its first admin — studio-engine >= 0.36.0).
   # Opening this up grants nothing: every destination is loopback, so the only
   # server a stranger's click can reach is their OWN machine.
   #

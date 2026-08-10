@@ -12,7 +12,7 @@ require "test_helper"
 # It must also carry NO user. The CTA is a public, sign-in-free redirect, so an
 # email in this URL would be an address published on a public page — and with no
 # signed-in visitor there is none to read anyway. The local desk names its own
-# reviewer (studio-engine's Studio::LocalReviewsController, >= 0.33.0).
+# reviewer (studio-engine's Studio::LocalReviewsController, >= 0.36.0).
 class LocalReviewLinkTest < ActiveSupport::TestCase
   test "[unit] builds the local server's own mint URL, port and all" do
     url = LocalReviewLink.for(local_url: "http://localhost:3111/admin/style")
