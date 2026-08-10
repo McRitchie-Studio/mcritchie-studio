@@ -1,0 +1,92 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# archive-docs — retire frozen doc snapshots out of the live tree, and roll over
+# the delete-later ledger.
+#
+#   bin/archive-docs                        # perform it
+#   bin/archive-docs --dry-run              # report only, change nothing
+#   bin/archive-docs --ledger-cutoff=2026-08-09
+#   bin/archive-docs --json                 # machine summary only
+#
+# `bin/release archive` drives this beside the log sweep, same contract:
+# --dry-run previews, the confirm authorizes it. Nothing is ever deleted; every
+# retirement is a `git mv` into docs/agents/archive/. Files are left in place and
+# NAMED in the report whenever something still-live cites them — a referenced
+# snapshot is someone's live citation, and the referrer gets fixed first,
+# deliberately, rather than being silently orphaned.
+#
+# Moves are STAGED, not committed: bin/release archive already commits the
+# ledger artifact, and a standalone run leaves a reviewable `git status`.
+
+require "fileutils"
+require "json"
+require_relative "lib/docs_archive"
+require_relative "lib/repo_root"
+
+DRY       = ARGV.include?("--dry-run")
+JSON_ONLY = ARGV.include?("--json")
+# The repo whose docs are swept: an explicit --repo, else the checkout this
+# script ships in (a worktree ships its own bin/, so it sweeps its own tree).
+REPO      = (ARGV.grep(/\A--repo=/).first&.split("=", 2)&.last) ||
+            RepoRoot.git_toplevel(__dir__) ||
+            File.expand_path("..", __dir__)
+CUTOFF    = ARGV.grep(/\A--ledger-cutoff=/).first&.split("=", 2)&.last
+
+def say(message = "")
+  puts(message) unless JSON_ONLY
+end
+
+# --- the doc sweep -----------------------------------------------------------
+# Ledger FIRST, on purpose. Rows in delete-later.md cite dated docs, so a row
+# that rolls over stops pinning the doc it named — and that doc becomes
+# archivable in the SAME run instead of waiting for the next one.
+ledger = DocsArchive.roll_ledger!(REPO, cutoff: CUTOFF, apply: !DRY)
+
+plan = DocsArchive.plan(REPO)
+
+say("==> Archiving frozen doc snapshots#{DRY ? ' (dry-run — nothing will change)' : ''}")
+say("    repo: #{REPO}")
+say("    → #{DocsArchive::ARCHIVE_DIR}/ (git mv; nothing is ever deleted)")
+say
+
+if plan[:moves].empty?
+  say("-- nothing to retire; the live tree carries no unreferenced snapshots.")
+else
+  say("-- retiring #{plan[:moves].size} frozen snapshot(s):")
+  plan[:moves].each { |move| say(format("     %-58s → %s", move[:from], move[:to])) }
+end
+
+if plan[:skipped].any?
+  say
+  say("==> SKIPPED — still referenced by the live tree (fix the referrer first):")
+  plan[:skipped].each do |entry|
+    say(format("     %-58s cited by: %s", entry[:path], entry[:referrers].join(", ")))
+  end
+end
+
+moved = DRY ? plan[:moves].size : DocsArchive.apply_moves!(REPO, plan[:moves])
+
+# --- the ledger --------------------------------------------------------------
+
+say
+if ledger[:rolled].positive?
+  say("==> Ledger rollover: #{DRY ? 'would roll' : 'rolled'} #{ledger[:rolled]} resolved row(s) " \
+      "older than #{ledger[:cutoff]} → #{DocsArchive::LEDGER_ARCHIVE}")
+  say("    Undated rows (\"pending approval\", \"reference only\") are UNRESOLVED and always stay.")
+else
+  say("==> Ledger rollover: nothing older than #{ledger[:cutoff] || 'n/a'} to roll.")
+end
+
+say
+say("==> #{DRY ? 'Would retire' : 'Retired'} #{moved} doc(s); " \
+    "#{plan[:skipped].size} left in place as still-referenced")
+
+puts DocsArchive.summary_line(
+  dry_run: DRY,
+  moved: moved,
+  moved_paths: plan[:moves].map { |m| m[:from] },
+  skipped: plan[:skipped].map { |s| { path: s[:path], referrers: s[:referrers] } },
+  ledger_rolled: ledger[:rolled],
+  ledger_cutoff: ledger[:cutoff]
+)
