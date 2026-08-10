@@ -193,11 +193,33 @@ bin/release prepare --yes
    RubyGems (skip-if-live, so re-runs are safe) and commits each consumer
    app's `Gemfile.lock` bump (`bundle lock --update <gem> --conservative`; the
    Gemfile pin is rewritten only when the new version escapes it) onto the
-   consumer's `origin/release`. The pre-QA gate and the QA deploy then read
+   consumer's `origin/release`. **The bump is VERIFIED, not assumed**: `bundle
+   lock` exits 0 whether or not it could see the version we just pushed, so the
+   sweep reads the version back out of the lockfile and only commits once it
+   matches. A stale resolution — the RubyGems index not yet propagated — is
+   RETRIED on the same 3-attempt backoff a failed bundle gets, and aborts only
+   once that ladder is exhausted. (Before this, an unchanged working tree was
+   read as "already at the new version" and turf-monster rode QA on the OLD
+   engine while the release record asserted the new one — rel-20260809-3b8f3d.)
+   The pre-QA gate and the QA deploy then read
    the post-bump SHA, so QA tests the real published gem and prod ships the
    exact tree QA tested. Note: a publish is irreversible — a QA bounce can
    orphan a published version; the fix bumps past it (a dead number on
    RubyGems is harmless).
+4d. **Merge `main` forward into `release`** in every app, so the branch about to
+   be gated CONTAINS what is already live in production. Without it a hotfix
+   pushed straight to `main` **blocks the ship**: `bin/release ship` advances
+   `main` with a non-forced ref push, so git refuses the non-fast-forward. (It is
+   never reverted — the cost is a whole candidate gated, QA'd, and assembled
+   without a fix that is already in production, then a ship that dead-ends.) The
+   merge runs in a detached workspace (a dirty primary is irrelevant to it),
+   every step is checked, and containment is re-fetched and read back afterwards —
+   a conflict, a failed push, or a push that did not take all **abort**. It runs
+   BEFORE the gate so the SHA the gate certifies is the SHA that deploys. On a
+   conflict: resolve it on a branch off `origin/release`, merge `origin/main`
+   into it, push to `release`, then re-run `bin/release prepare` — it resumes.
+   **Do not `reset` `release` to "clean up" an aborted sweep** — the batch
+   `accepted → release` merges and any gem publish have already landed.
 5. Run the pre-QA gate on `origin/release`. **GitHub CI's conclusion for that
    exact SHA IS the verdict** (DevOps v2 Phase 3 — the local isolated-workspace
    suite is deleted at this gate; nothing runs on your machine): the gate reads
@@ -314,6 +336,7 @@ must not reflexively re-run. Each abort names its own case and its own fix:
 | **QA deploy / boot FAILED** | Fix the boot failure (the summary prints the `bin/qa-server deploy …` retry); eject the member if it is the cause | re-run `prepare` **once QA boots** |
 | **`accepted → release` promote failed** (a conflict on the batch PR) | Resolve the conflict on the batch PR (or `bin/task block` the offending member) | re-run `prepare` |
 | **Member left `reviewed` with `merged: ""`** (review never landed its feat PR on `accepted`) | Re-review the task so `pr-review` merges it onto `accepted` | re-run `prepare` |
+| **CONSUMER LOCK BUMP did not land** (`bundle lock … did not land in <repo> … resolves <old>, wanted <new>`) | **Nothing to fix in the code — WAIT.** The gem published fine; the RubyGems INDEX has not propagated it, so the resolver still cannot see it. The abort already retried on a 5s→10s backoff. Watch the surface the sweep actually reads — `https://rubygems.org/api/v1/versions/<gem>.json` — until it lists the version. Do **not** wait on the HTML gem page (it lags the API), and do **not** bump the version: the gem is already published, and a bump would burn a number for nothing | re-run `prepare`; the publish skips as already-live and the bump lands |
 
 `prepare` never force-ships a red candidate. The only ways past a real regression
 are to eject it or to fix it forward — never to re-run harder.

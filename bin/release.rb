@@ -61,11 +61,16 @@
 #          ANY failure aborts with ZERO gems published), THEN publish each to
 #          RubyGems + commit each consumer's lock bump onto origin/release —
 #          BEFORE the gate and QA (ship's publish stays the idempotent verify).
+#       4d. MERGE-FORWARD: make origin/release CONTAIN origin/main in every app
+#          (a hotfix pushed straight to main must never be reverted by the
+#          release). Merged in a detached workspace, never the primary, and
+#          BEFORE the gate — so the SHA the gate certifies is the SHA that
+#          deploys. Aborts loudly on a conflict or a push that did not take.
 #       5. PRE-QA GATE: run each app's registry `qa_test_cmd` (the integration +
 #          e2e-smoke tier) on origin/release BEFORE deploying; a regression aborts
 #          with eject guidance (`bin/release eject` the offender, keep the rest).
-#       6. Deploy origin/release to QA (merge-forward guard → qa-server deploy →
-#          wait-for-boot /up smoke → post_deploy hooks).
+#       6. Deploy origin/release to QA (qa-server deploy → wait-for-boot /up
+#          smoke → post_deploy hooks).
 #       7. QA-GREEN → flip the swept members `reviewed → assembled`
 #          (Release::Conductor.qa_green!; merged stays "release") + assemble the
 #          RC. A QA failure leaves them `reviewed` — the next run self-heals.
@@ -2721,6 +2726,15 @@ def prepare
   gem_plan = validate_gems_for_qa(gem_groups, app_groups)
   bump_consumer_locks_for_qa(app_groups, publish_gems_for_qa(gem_plan))
 
+  # 4d. MERGE-FORWARD — `release` must contain `main` BEFORE the gate reads it.
+  #     This used to live inside the QA-deploy loop (step 6), which put it AFTER
+  #     the gate: when it did land it moved origin/release PAST the SHA the gate
+  #     had just certified, so QA deployed a tree G3 never verified and ship's
+  #     frozen SHA was one the gate never saw. Running it here means the gate,
+  #     QA, and prod all read the same post-merge tree — the same reason 4c sits
+  #     above the gate.
+  merge_forward_release_branches(app_groups)
+
   # 5. PRE-QA GATE — the prepare-owned test tier on origin/release, BEFORE any
   #    QA deploy. A regression aborts with eject guidance while every member is
   #    still `reviewed`; the rest of the RC rides on the re-run.
@@ -2755,11 +2769,12 @@ def prepare
     "puts({ intent: 'assembled', actor: 'avi', members: n.size }.to_json)"
   )
 
-  # 6. Per-app: keep the persistent `release` branch ahead of main (merge-forward
-  #    guard), then deploy origin/release to that app's QA. The branch is
-  #    populated by PR merges, so there's NO branch-cut/member-merge here. Gems
-  #    are NOT deployed — they ride the release as a record, already published
-  #    at 4c above (ship re-verifies idempotently).
+  # 6. Per-app: deploy origin/release to that app's QA. The branch is populated
+  #    by PR merges, so there's NO branch-cut/member-merge here — and no
+  #    merge-forward either: that moved to step 4d, above the gate, so this loop
+  #    deploys exactly the tree the gate certified. Gems are NOT deployed — they
+  #    ride the release as a record, already published at 4c above (ship
+  #    re-verifies idempotently).
   deployed = [] # [{repo, qa_app, qa_url, sha, ok}]
   qa_shas = {}  # { repo => sha } deployed to QA
   qa_smoke_started = false
@@ -2808,27 +2823,11 @@ def prepare
     step("repo #{repo} → #{RELEASE_BRANCH} · #{members.size} member(s) · QA #{qa_app}")
     abort!("app repo not found at #{path} — clone it as a sibling at the projects root") unless DRY || Dir.exist?(path)
 
-    # a. fetch the repo's origin.
+    # a. fetch the repo's origin. (The merge-forward guard that used to sit here
+    #    ran AFTER the pre-QA gate and inside the primary checkout; it now runs
+    #    at step 4d, before the gate, in a detached workspace —
+    #    merge_forward_release_branches.)
     sh("git", "-C", path, "fetch", "origin", "--quiet")
-
-    # b. merge-forward guard: `release` must always have main as an ancestor. If
-    #    main has moved ahead (e.g. a hotfix landed on main), merge it forward so
-    #    release never lags — abort with guidance on conflict.
-    if DRY
-      step("merge-forward guard: if origin/main isn't an ancestor of origin/release, merge origin/main → release in #{repo}")
-    else
-      _, in_sync = sh("git", "-C", path, "merge-base", "--is-ancestor", "origin/main", "origin/release", capture: true)
-      unless in_sync
-        step("merge-forward: origin/main → #{RELEASE_BRANCH} in #{repo} (main moved ahead)")
-        sh("git", "-C", path, "checkout", RELEASE_BRANCH)
-        _, fwd = sh("git", "-C", path, "merge", "origin/main", capture: true)
-        unless fwd
-          abort!("merge-forward conflict in #{repo}: origin/main → #{RELEASE_BRANCH}. Resolve by hand in #{path} " \
-                 "(or `git -C #{path} merge --abort` to back out), commit, push, then re-run `bin/release prepare`.")
-        end
-        sh("git", "-C", path, "push", "origin", RELEASE_BRANCH)
-      end
-    end
 
     # c. deploy origin/release to the repo's own QA app. The github_actions apps
     #    (the hub — DevOps v2 Phase 2) dispatch ONE qa-deploy.yml run at the swept
@@ -3010,6 +3009,21 @@ rescue SystemExit
   # (best-effort) before re-raising, so the heartbeat activity resolves instead of
   # hanging open.
   close_role_span("prepare aborted before QA-green") if avi_span
+  # WHAT IS ALREADY IRREVERSIBLE — the prepare-side twin of the ship's
+  # "Already live this run" (@ship_live). By the time a mid-sweep abort fires, the
+  # batch accepted→release PRs may be merged, gems may be PUBLISHED to RubyGems
+  # (which can never be un-pushed), and earlier repos in the loop may already have
+  # committed their lock bump onto origin/release. Without this the abort message
+  # is the operator's last word, and a message that says "nothing was committed"
+  # invites a "just reset release" cleanup that would drop the batch merge and
+  # strand a published gem. Ship prints this and prepare did not; now both do.
+  if @prepare_live&.any?
+    warn("")
+    warn("✗ Prepare ABORTED partway — these are ALREADY DONE and are NOT undone by the abort:")
+    @prepare_live.each { |line| warn("    ✓ #{line}") }
+    warn("  Re-run `bin/release prepare` to resume: published gems skip, merges are idempotent,")
+    warn("  and an already-correct lock commits nothing. Do NOT reset `release` to undo them.")
+  end
   raise
 ensure
   # A raw StandardError (not a SystemExit) raised after the assembler claim was
@@ -3767,21 +3781,66 @@ end
 # `conservative:` adds bundler's --conservative so a SINGLE-gem bump can't float
 # the rest of the dependency graph — the prepare-side consumer bump passes it
 # (the lock lands on `release` and ships; only the published gem may move).
-def bundle_lock(path, gem, attempts: 3, conservative: false)
+# `bundle lock --update <gem>`, with ONE propagation ladder covering BOTH ways it
+# can fail to land.
+#
+# `expect:` is the version the caller just published and requires to be resolved.
+# Pass it and a run that EXITS ZERO WITH THE OLD VERSION STILL RESOLVED is treated
+# as retryable, exactly like a non-zero exit.
+#
+# WHY (rel-20260809-3b8f3d, 2026-08-09): this ladder already existed, but it only
+# ever retried on a non-zero exit — and the propagation bug's entire signature is
+# exit 0 with the old version resolved, because the RubyGems index had not caught
+# up in the seconds since our own `gem push`. So the ladder was structurally blind
+# to the one condition it was written for, and the caller's read-back would abort
+# on FIRST observation with zero waiting, moments after an IRREVERSIBLE push. That
+# turns an ordinary, self-curing delay into a manual stop on a sweep whose whole
+# posture is self-healing. One ladder, both conditions, abort only when it is
+# exhausted.
+def bundle_lock(path, gem, attempts: 3, conservative: false, expect: nil)
   args = ["bundle", "lock", "--update", gem]
   args << "--conservative" if conservative
-  delay = 5
+  lockfile = File.join(path, "Gemfile.lock")
+  # The propagation backoff's base, in seconds. Overridable ONLY so the tests can
+  # drive the real ladder (including its exhaustion abort) without sleeping 15s;
+  # nothing in the pipeline sets it, so every real run gets 5s → 10s.
+  delay = Integer(ENV.fetch("RELEASE_BUNDLE_LOCK_BACKOFF", "5"))
+  reason = nil
+
   attempts.times do |i|
     step("#{args.join(' ')} (cd #{path}) [#{i + 1}/#{attempts}]")
     _, ok = sh(*args, chdir: path)
-    return if ok
+
+    if !ok
+      reason = "bundle exited non-zero"
+    elsif expect.nil?
+      return
+    else
+      # File.read can raise if bundler never wrote a lock; treat a missing lock as
+      # "not landed" so it rides the ladder instead of escaping as a backtrace.
+      text     = File.exist?(lockfile) ? File.read(lockfile) : ""
+      resolved = Release::ShipSequence.locked_version(text, gem)
+      return if Release::ShipSequence.lock_bump_landed?(text, gem, expect)
+
+      reason = "bundle succeeded but the lock resolves #{resolved || 'nothing'}, wanted #{expect}"
+    end
+
     break if i == attempts - 1
 
-    say("  bundle lock failed — RubyGems may not have propagated #{gem} yet; retrying in #{delay}s")
+    say("  #{reason} — RubyGems may not have propagated #{gem} #{expect} yet; retrying in #{delay}s")
     sleep(delay)
     delay *= 2
   end
-  abort!("#{args.join(' ')} failed in #{path} after #{attempts} tries — re-run once RubyGems has propagated")
+
+  # Name the API the code ACTUALLY reads (rubygems_versions → the versions JSON),
+  # never the HTML gem page: the two do not propagate in lockstep, and an operator
+  # who waits on the page while the API is still stale re-enters the publish
+  # branch, gets `gem push` refused, and is then advised to bump the version —
+  # which would burn a version number for nothing.
+  abort!("#{args.join(' ')} did not land in #{path} after #{attempts} tries (#{reason}). " \
+         "This is normally RubyGems index propagation. Wait until " \
+         "https://rubygems.org/api/v1/versions/#{gem}.json lists #{expect || 'the published version'} " \
+         "— that JSON API is the surface this run reads — then re-run; it resumes.")
 end
 
 # --- prepare-side gem publish (producer-first, BEFORE the pre-QA gate + QA) ----
@@ -3982,6 +4041,10 @@ def publish_gems_for_qa(gem_plan)
       checkout_detached(repo, gem["tip"]) # build from the exact release tree
       publish_gem(repo, gem["version"])   # reused: release-check → build → push → tag
       restore_gem_primary(repo)
+      # IRREVERSIBLE: a RubyGems version can never be re-pushed. Record it so a
+      # later abort can tell the operator what is already live (see prepare's
+      # rescue arm) instead of implying the run left nothing behind.
+      (@prepare_live ||= []) << "gem #{repo} #{gem['version']} PUBLISHED to RubyGems (cannot be un-pushed)"
     end
     published[repo] = gem["version"]
   end
@@ -4070,11 +4133,32 @@ def bump_consumer_locks_for_qa(app_groups, published_gems)
       expected = text.dup
       touched.each { |gem_name| expected = Release::ShipSequence.bumped_gemfile(expected, gem_name, published_gems[gem_name]) }
       File.write(ws_gemfile, expected) if expected != text
-      touched.each { |gem_name| bundle_lock(workspace, gem_name, conservative: true) }
+      # ASSERT THE LOCK, DO NOT INFER IT FROM THE DIFF — and RIDE THE LADDER while
+      # doing it. `bundle lock --update` exits 0 whether or not it could SEE the
+      # version we just published, so its exit status proves nothing about which
+      # version landed. `expect:` makes bundle_lock re-read the lock and retry the
+      # whole command on a stale resolution, aborting only once its propagation
+      # backoff is exhausted (see bundle_lock).
+      #
+      # THE BUG (rel-20260809-3b8f3d, 2026-08-09): the unchanged-tree check below
+      # used to run FIRST and report "lock already at <gem> <version>" — a version
+      # it had never read. RubyGems had not propagated in the seconds since our own
+      # `gem push`, the resolver kept the OLD version, the tree therefore did not
+      # change, and the sweep announced 0.31.0 over a 0.30.0 lock. turf-monster
+      # then rode QA on the old engine while the release record asserted the new
+      # one, and — because its tree was unchanged — the pre-QA gate CREDITED its
+      # identical-tree green, so no CI run contradicted it either. Nothing
+      # downstream could catch it: a stale lock and a genuine no-op are identical
+      # in the diff and trivially different in the lockfile.
+      touched.each do |gem_name|
+        bundle_lock(workspace, gem_name, conservative: true, expect: published_gems[gem_name])
+      end
 
       status, = git_capture("-C", workspace, "status", "--porcelain", "--", "Gemfile", "Gemfile.lock")
       if status.to_s.strip.empty?
-        say("  #{repo}: lock already at #{touched.map { |g| "#{g} #{published_gems[g]}" }.join(', ')} — nothing to commit (idempotent re-run)")
+        # Now this claim is EARNED: the lock was read back above and genuinely
+        # resolves the published version, so an unchanged tree really is a no-op.
+        say("  #{repo}: lock verified at #{touched.map { |g| "#{g} #{published_gems[g]}" }.join(', ')} — nothing to commit (idempotent re-run)")
         next
       end
 
@@ -4091,7 +4175,151 @@ def bump_consumer_locks_for_qa(app_groups, published_gems)
 
       step("  #{repo}: committed #{bumps.join(', ')} onto origin/#{RELEASE_BRANCH} — " \
            "the pre-QA gate + QA deploy now read the post-bump SHA")
+      # PUSHED to a shared branch. A later repo's abort must not imply this was
+      # rolled back — it wasn't (see prepare's rescue arm).
+      (@prepare_live ||= []) << "#{repo}: lock bump #{bumps.join(', ')} committed + pushed to origin/#{RELEASE_BRANCH}"
     end
+  end
+end
+
+# MERGE-FORWARD: every app's `release` must CONTAIN `main` before the gate reads
+# it. `main` moves outside the cycle — an emergency hotfix pushed straight to it —
+# and a `release` that lags cannot ship.
+#
+# WHAT ACTUALLY GOES WRONG (stated precisely, because this paragraph is the
+# operator's mental model): a lagging `release` does NOT revert the hotfix.
+# push_frozen_main pushes `<sha>:refs/heads/main` WITHOUT --force, so git refuses
+# the non-fast-forward and the SHIP IS BLOCKED. The cost is the whole cycle
+# upstream of that refusal: a candidate gated, QA'd, and assembled without a fix
+# that is already live in production, and a ship that dead-ends at the last gate.
+# (Only a forced push could revert it, and nothing here forces.)
+#
+# THE INCIDENT THIS REWRITES (rel-20260809-3b8f3d, 2026-08-09). The old guard sat
+# inside the QA-deploy loop and did its merge in the SHARED PRIMARY CHECKOUT:
+#
+#     sh("git", "-C", path, "checkout", RELEASE_BRANCH)     # result DISCARDED
+#     _, fwd = sh("git", "-C", path, "merge", "origin/main", capture: true)
+#
+# Three defects compounded:
+#   1. THE PRIMARY. The hub primary had an uncommitted delete-later.md (the ledger
+#      bin/agent-worktree remove appends to), so git refused the checkout outright.
+#   2. THE UNCHECKED CHECKOUT. Only the MERGE's result was tested. With the
+#      checkout failed the primary was still on `main`, so `git merge origin/main`
+#      ran against main and succeeded as "Already up to date" — a green no-op on
+#      the WRONG BRANCH — and the push then sent the stale LOCAL release branch,
+#      which origin rejected as non-fast-forward. The step was non-fatal, so the
+#      sweep carried on and assembled a candidate whose release branch was MISSING
+#      a hotfix already live in production.
+#   3. THE PLACEMENT (fixed at the call site, step 4d). Running after the pre-QA
+#      gate meant a merge that DID land moved origin/release past the certified SHA.
+#
+# So: merge in a DETACHED WORKSPACE (the primary is never touched and its dirt is
+# irrelevant), CHECK EVERY STEP, and ABORT rather than continue non-fatally. A
+# guard that cannot fail loudly is not a guard.
+def merge_forward_release_branches(app_groups)
+  return if app_groups.empty?
+
+  step("merge-forward guard: origin/#{RELEASE_BRANCH} must CONTAIN origin/main in every app " \
+       "(before the pre-QA gate certifies a SHA)")
+  app_groups.each do |group|
+    repo = group["repo"]
+
+    if DRY
+      step("  #{repo}: if origin/main isn't an ancestor of origin/#{RELEASE_BRANCH}, merge it forward " \
+           "in a detached workspace → push origin #{RELEASE_BRANCH} (no-op when already contained)")
+      next
+    end
+
+    path = repo_path(repo)
+    unless Dir.exist?(path)
+      abort!("app repo not found at #{path} — clone it as a sibling at the projects root")
+    end
+
+    # Fail closed on the fetch: a stale origin/main would make the containment
+    # check answer from a ref that no longer describes production.
+    _, fetched = sh("git", "-C", path, "fetch", "origin", "--quiet")
+    abort!("git fetch failed in #{repo} — refusing to judge merge-forward against a possibly-stale " \
+           "origin/main (fail closed); fix the remote, then re-run `bin/release prepare`") unless fetched
+
+    # PROVE origin/main EXISTS before asking whether it is contained.
+    # `merge-base --is-ancestor` exits 1 for "not an ancestor" but 128 for "no
+    # such ref", and both are merely non-zero here — so a missing or renamed
+    # origin/main would fall through to the merge path and the operator would be
+    # told to hand-resolve a conflict that does not exist. `--verify --quiet`
+    # answers the existence question on its own.
+    _, main_ok = sh("git", "-C", path, "rev-parse", "--verify", "--quiet", "origin/main", capture: true)
+    abort!("could not resolve origin/main in #{repo} — the merge-forward cannot judge containment " \
+           "without it (does the branch exist on the remote?)") unless main_ok
+
+    _, in_sync = sh("git", "-C", path, "merge-base", "--is-ancestor", "origin/main", "origin/#{RELEASE_BRANCH}",
+                    capture: true)
+    next if in_sync
+
+    tip, ok = git_capture("-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}")
+    abort!("could not resolve origin/#{RELEASE_BRANCH} in #{repo} for the merge-forward") unless ok
+    tip = tip.strip
+
+    step("  merge-forward: origin/main → #{RELEASE_BRANCH} in #{repo} (main moved ahead)")
+
+    with_ship_workspace(repo) do
+      workspace = ship_workspace!(repo, tip)
+
+      _, merged = sh("git", "-C", workspace, "merge", "origin/main", "-m",
+                     "Merge main into #{RELEASE_BRANCH} (merge-forward)", capture: true)
+      unless merged
+        # Leave no half-merged workspace behind for the next run to trip over.
+        sh("git", "-C", workspace, "merge", "--abort", capture: true)
+        # SCOPE THE CLAIM TO THIS REPO. "Nothing was pushed" is false at sweep
+        # grain and dangerously so: by the time this runs the batch
+        # accepted→release PRs have merged, gems may be PUBLISHED to RubyGems
+        # (unrepeatable), earlier repos in THIS loop may already have merged and
+        # pushed, and consumer lock bumps are already on origin/release. An
+        # operator told "nothing was pushed" may reach for a `reset release`
+        # cleanup that would drop the batch merge and strand a published gem.
+        # prepare's rescue arm prints the full already-done ledger; this message
+        # only speaks for the repo it failed in.
+        abort!("merge-forward CONFLICT in #{repo}: origin/main → #{RELEASE_BRANCH}. Nothing was pushed " \
+               "FOR #{repo} and no primary checkout was touched. This is mid-sweep, though, so earlier " \
+               "steps HAVE already landed and are NOT undone by this abort — the accepted→release batch " \
+               "merges, any gem publish (a RubyGems version can never be un-pushed), and any earlier " \
+               "repo's merge-forward or lock bump. Do NOT `reset` #{RELEASE_BRANCH} to 'clean up': that " \
+               "would drop the batch merge and strand a published gem. Resolve the conflict on a branch " \
+               "off origin/#{RELEASE_BRANCH}, merge origin/main into it, push to #{RELEASE_BRANCH}, then " \
+               "re-run `bin/release prepare` — it resumes.")
+      end
+
+      # Fast-forward-checked ref push (no --force): a release branch that moved
+      # under us fails closed here rather than clobbering it.
+      _, pushed = sh("git", "-C", workspace, "push", "origin", "HEAD:refs/heads/#{RELEASE_BRANCH}", capture: true)
+      abort!("could not push the merge-forward to origin/#{RELEASE_BRANCH} in #{repo} (did #{RELEASE_BRANCH} " \
+             "move?) — re-run `bin/release prepare`, it resumes") unless pushed
+    end
+
+    # READ BACK the property we came for. The push reported success; that is not
+    # the same as containment holding, and the whole point of this rewrite is to
+    # stop trusting a step's exit status in place of its effect.
+    #
+    # THE FETCH MUST BE CHECKED, or the read-back is a TAUTOLOGY. The push came
+    # from a worktree that SHARES this repo's .git, so it already advanced the
+    # local `refs/remotes/origin/<release>` ref. If this fetch silently fails
+    # (network, auth), the containment check below reads the ref OUR OWN PUSH just
+    # wrote — and it holds by construction, because we merged origin/main into it
+    # moments ago. The assertion would degrade into exactly the "trust the exit
+    # status" it exists to replace.
+    _, refetched = sh("git", "-C", path, "fetch", "origin", "--quiet")
+    abort!("could not re-fetch origin in #{repo} to VERIFY the merge-forward landed. The push reported " \
+           "success, but the local origin/#{RELEASE_BRANCH} ref was written by that push, so checking it " \
+           "now would prove nothing (fail closed). Fix the remote, then re-run `bin/release prepare`.") unless refetched
+
+    _, contained = sh("git", "-C", path, "merge-base", "--is-ancestor", "origin/main",
+                      "origin/#{RELEASE_BRANCH}", capture: true)
+    unless contained
+      abort!("merge-forward did NOT take in #{repo}: origin/main is still not contained in " \
+             "origin/#{RELEASE_BRANCH} after the push. Refusing to gate or deploy a release branch that " \
+             "would leave production's own commits out of the candidate.")
+    end
+
+    step("  #{repo}: origin/#{RELEASE_BRANCH} now contains origin/main — the gate + QA read the merged tree")
   end
 end
 
@@ -4334,7 +4562,15 @@ def repin_consumers(app_groups, published_gems, ship_sha)
 
       File.write(ws_gemfile, expected)
       text = expected
-      pending.each { |gem| bundle_lock(workspace, gem) }
+      # Same read-back the prepare-side bump does, for the same reason: a
+      # `bundle lock --update` that cannot see the version resolves the old one
+      # and still exits 0. `expect:` puts that check INSIDE bundle_lock's
+      # propagation ladder, so a slow index is waited out rather than aborting a
+      # ship that has already published gems and fast-forwarded mains. Propagation
+      # lag is far less likely here (these gems published back at prepare, not
+      # seconds ago), but "less likely" is not a guarantee, and this commit is the
+      # last thing between the frozen SHA and a production deploy.
+      pending.each { |gem| bundle_lock(workspace, gem, expect: published_gems[gem]) }
 
       pins = pending.map { |gem| "#{gem} #{Release::GemfileRepin.pessimistic_constraint(published_gems[gem])}" }
       sh("git", "-C", workspace, "add", "Gemfile", "Gemfile.lock")

@@ -271,6 +271,89 @@ class Release
       end
     end
 
+    # The body of a Gemfile.lock's `GEM` sections — the RubyGems-sourced
+    # resolutions only.
+    #
+    # A lockfile's top-level blocks (`GEM`, `PATH`, `GIT`, `PLATFORMS`,
+    # `DEPENDENCIES`, `CHECKSUMS`, `BUNDLED WITH`) all start at column 0, and
+    # `PATH`/`GIT` carry their OWN `specs:` list at the very same four-space
+    # indent as `GEM`'s. So indent alone cannot tell a published gem from a
+    # path- or git-sourced one — which matters most in `repin_consumers`, whose
+    # whole job is Gemfiles that reference a branch. Sectioning first means a
+    # `path:`/`git:` consumer can never satisfy a guard whose question is
+    # "did the version we PUBLISHED TO RUBYGEMS land here?".
+    def gem_sections(lockfile_text)
+      in_gem = false
+      lockfile_text.to_s.lines.each_with_object([]) do |line, kept|
+        if line.match?(/^\S/)
+          in_gem = line.start_with?("GEM")
+          next
+        end
+        kept << line if in_gem
+      end.join
+    end
+
+    # The version `gem_name` RESOLVES TO in a Gemfile.lock's GEM section, or nil
+    # when it does not resolve there at all. This is the READ-BACK behind
+    # `lock_bump_landed?` — the shell asserts the version it just asked for
+    # instead of inferring it.
+    #
+    # WHICH LINE. Within a GEM section a gem is named at three depths and only
+    # one is a resolution:
+    #   * 4 spaces — `    studio-engine (0.31.0)`   the SPEC. What we want.
+    #   * 6 spaces — `      studio-engine (~> 0.30)` another spec's REQUIREMENT.
+    #   * 2 spaces — `  studio-engine (~> 0.30)`     the DEPENDENCIES section.
+    #
+    # PLATFORM SUFFIXES. A native gem gets ONE SPEC ROW PER PLATFORM, and the
+    # platform rides inside the parens: `ffi (1.17.4-aarch64-linux-gnu)`. The
+    # version is everything BEFORE THE FIRST HYPHEN — that is not a guess, it is
+    # Bundler's own lockfile grammar (LockfileParser::NAME_VERSION splits on
+    # exactly that), so this agrees with Bundler by construction rather than by
+    # resemblance. `Gem::Version.correct?` cannot be used to tell the two apart:
+    # it ACCEPTS "1.17.4-aarch64-linux-gnu" (a hyphen reads as `.pre.`).
+    #
+    # The rows must AGREE. Every platform row of one gem carries the same
+    # version; if they ever disagree the lock is not something we should be
+    # asserting against, so return nil and let the caller fail closed.
+    def locked_version(lockfile_text, gem_name)
+      raws = gem_sections(lockfile_text)
+             .scan(/^ {4}#{Regexp.escape(gem_name.to_s)} \(([^()]+)\)$/)
+             .flatten
+      # Plain Ruby only — bin/release requires this file with no Rails loaded,
+      # so no `presence`/`blank?` here.
+      versions = raws.map { |raw| raw.strip.split("-", 2).first.to_s.strip }
+                     .reject(&:empty?)
+                     .uniq
+      versions.size == 1 ? versions.first : nil
+    end
+
+    # TRUE when a `bundle lock --update <gem>` actually landed `version` in the
+    # lock. FALSE is the case this exists for.
+    #
+    # WHY THIS IS NOT "did the working tree change" (the bug it closes,
+    # rel-20260809-3b8f3d): bin/release used to read `git status --porcelain` after
+    # the bundle and, seeing NO diff, report "lock already at <gem> <version> —
+    # nothing to commit (idempotent re-run)". An unchanged lock means only that the
+    # resolver produced the same lock as before, and that is equally true when
+    #   (a) the lock really was already at the new version, and
+    #   (b) the resolver COULD NOT SEE the new version — the RubyGems index had not
+    #       propagated in the seconds since our own `gem push`.
+    # Case (b) reported success while leaving the consumer on the OLD gem. Turf
+    # rode QA on studio-engine 0.30.0 while the release record asserted 0.31.0, and
+    # because its tree never changed the pre-QA gate CREDITED its identical-tree
+    # green, so no CI run ever contradicted it either. The two states are
+    # indistinguishable from the diff and trivially distinguishable from the lock —
+    # so read the lock.
+    def lock_bump_landed?(lockfile_text, gem_name, version)
+      resolved = locked_version(lockfile_text, gem_name)
+      return false if resolved.nil? || version.to_s.strip.empty?
+
+      Gem::Version.new(resolved) == Gem::Version.new(version.to_s.strip)
+    rescue ArgumentError
+      # An unparseable version on either side is not a match we can vouch for.
+      false
+    end
+
     # --- prepare-side STRANDED-WORK guard: commits past the tag, version unbumped
     #
     # THE SILENT-SKIP HAZARD this closes: a gem repo's origin/release can carry

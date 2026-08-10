@@ -919,6 +919,23 @@ ONE deterministic verb — **`bin/release prepare --yes [--task SLUG ...]
    lands BEFORE the gate resolves `origin/release`, so the CI verdict targets
    the post-bump SHA and QA tests the real published gem
    (`validate_gems_for_qa` / `publish_gems_for_qa` / `bump_consumer_locks_for_qa`).
+4d. **Merge-forward guard** (`merge_forward_release_branches`). Every app's
+   `origin/release` must **CONTAIN** `origin/main` before the gate reads it —
+   `main` moves outside the cycle (an emergency hotfix pushed straight to it),
+   and a `release` that lags **cannot ship**: `push_frozen_main` pushes
+   `main` without `--force`, so git refuses the non-fast-forward. The hotfix is
+   never reverted — the cost is a candidate gated, QA'd, and assembled without
+   a fix already live in production, and a ship that dead-ends at the last
+   gate. The
+   merge runs in a **detached ship workspace, never the primary**, every step
+   is result-checked, and containment is **read back** after the push; a
+   conflict, a failed push, or a push that did not take all **abort**. It sits
+   ABOVE the gate for the same reason 4c does: a merge that lands moves
+   `origin/release`, so running it later would move the branch past the SHA the
+   gate just certified and QA would deploy a tree G3 never verified. (It lived
+   inside step 6 until 2026-08-09, where a dirty primary made its `git checkout`
+   refuse, its discarded result let a no-op on the wrong branch read as success,
+   and the sweep assembled a candidate missing a live production hotfix.)
 5. **Pre-QA gate.** Each app's registry **`qa_test_cmd`** (the integration +
    e2e-smoke tier `prepare` owns — `Release::STEP_TEST_TIERS`) runs on
    `origin/release` BEFORE anything deploys. A regression → **eject the
@@ -928,8 +945,7 @@ ONE deterministic verb — **`bin/release prepare --yes [--task SLUG ...]
    repo self-gates (skip).
 6. **Deploy QA.** Auto-records the Avi QA intent for every member
    (`Release::Conductor.record_deploy_intents!`, append-only + idempotent) so
-   /deployments shows Avi QA-ing live; runs the per-app **merge-forward
-   guard** (keeps each repo's `release` ahead of `main`); then `bin/qa-server
+   /deployments shows Avi QA-ing live; then `bin/qa-server
    deploy <qa_app> origin/release` per **app** member — **gem members are
    skipped** (no app artifact; already published at step 4, QA'd via the
    consuming app's bumped lock). Records `release.qa_url` + per-repo QA SHAs,
