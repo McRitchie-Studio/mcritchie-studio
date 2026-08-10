@@ -3,10 +3,12 @@
 **Why this exists.** On 2026-08-09 a distributed scraper swarm took `mcritchie.studio`
 down for minutes at a time. It used **2,258 unique IPs, 2,241 of them making exactly one
 request**, so the per-IP throttles in `config/initializers/rack_attack.rb` were
-structurally blind to it. Production serves **3 concurrent requests** (one Basic dyno,
-Puma's default 3 threads, no workers), so three expensive renders is the whole site:
-2,293 router timeouts in 2m47s, taking the board, `/api/v1/*`, the GitHub webhook, and
-the `/up` health check with them.
+structurally blind to it. At the time production served **3 concurrent requests** (one
+Basic dyno, Puma's default 3 threads, no workers), so three expensive renders was the
+whole site: 2,293 router timeouts in 2m47s, taking the board, `/api/v1/*`, the GitHub
+webhook, and the `/up` health check with them. (`config/puma.rb` has since raised the
+web dyno to 2 workers × 3 threads = 6 — see the connection budget beside its `workers`
+line.)
 
 An edge in front is the durable answer to that shape of traffic, and it gives Mr.
 McRitchie a lever he can pull mid-incident without a deploy.
