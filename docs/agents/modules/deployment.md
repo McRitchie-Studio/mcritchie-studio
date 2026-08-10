@@ -13,6 +13,19 @@ git push heroku main
 heroku run bin/rails db:migrate --app mcritchie-studio
 ```
 
+### Web Concurrency and the Connection Budget
+
+`config/puma.rb` runs cluster mode in production: `WEB_CONCURRENCY` defaults to
+2 workers × 3 threads (`RAILS_MAX_THREADS`) = 6 concurrent requests on the one
+Basic web dyno (raised from 3 after the 2026-08-09 H12 outage). The sizing
+authority is the worst-case connection budget beside the `workers` line in
+`config/puma.rb`: the board Postgres is essential-0 with a hard 20-connection
+limit shared by web, the Solid Queue dyno, and agent CLI sessions — budgeted
+6 + 7 + 5 = 18 of 20. `test/lib/puma_config_contract_test.rb` re-derives that
+budget from the parsed configs and fails the suite if it reaches the ceiling.
+Re-prove the math there before raising `WEB_CONCURRENCY`, `RAILS_MAX_THREADS`,
+or `JOB_CONCURRENCY` on Heroku.
+
 ### Root-Domain Launch
 
 `mcritchie.studio` is the canonical McRitchie Studio app host. The previous

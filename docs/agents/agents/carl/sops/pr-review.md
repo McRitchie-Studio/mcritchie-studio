@@ -218,14 +218,33 @@ doc).
   `reviewed`) — resolve the conflict/checks on GitHub, then re-review. A mis-based
   feat PR (base ≠ `accepted`) self-heals: retarget it to `accepted`, then merge.
 
-  A reviewer who finds a zappable defect may **apply a bounded zap** — lease-push a
-  `zap:` commit to the PR branch — and leave the verdict merge-ready; Carl's head
-  revalidation gates it on the post-zap CI. Otherwise the reviewer **names** it and
-  it lands afterward as a conductor zap on `accepted`. Bounds, timing, and
-  recording: [`../../../modules/zap-protocol.md`](../../../modules/zap-protocol.md).
+  A reviewer who finds a zappable defect **fixes it forward** — lease-push a
+  bounded `zap:` commit to the PR branch — and leaves the verdict merge-ready;
+  Carl's head revalidation gates it on the post-zap CI. Fix-forward is the
+  **default** for a zap-scale finding (see the bounce rubric below); a reviewer
+  who cannot zap it mid-review **names** it and it lands afterward as a conductor
+  zap on `accepted`. Bounds, timing, and recording:
+  [`../../../modules/zap-protocol.md`](../../../modules/zap-protocol.md).
 
-- **Request changes, missing metadata, red CI, merge risk, or acceptance
-  mismatch** — Carl blocks it back to the builder:
+- **Request changes — a bounce is spent only on a REACHABLE regression.** A
+  block costs the builder a full lap (rework → resubmit → new CI → new claim,
+  an hour or more), so it is reserved for a defect someone can actually hit: a
+  correctness bug, a security hole, a data-loss path, an acceptance criterion
+  the diff does not meet — or the one mechanical blocker, red CI. (A FAILED
+  `gh pr merge` is NOT a bounce — the merge-ready bullet above self-heals it:
+  leave the task `submitted`, resolve on GitHub, re-review.)
+  The feedback names the regression **with its trigger** ("X input → Y wrong
+  behavior"), not a preference. Every other finding is handled without a bounce:
+
+  - **Zap-scale defect (within zap bounds)** → the reviewer fixes it forward on
+    the PR branch and stays merge-ready, as above. Bouncing a zappable finding
+    trades minutes of reviewer work for the builder's full lap.
+  - **Scope, style, and hardening ideas** → ride as notes
+    (`bin/task note <task> --comment "..." --agent carl`), never as blocks.
+  - **Missing or wrong task metadata** → the reviewer repairs it
+    (`bin/task update <task> …`), notes the repair, and proceeds.
+
+  When a block IS earned:
 
   ```bash
   bin/task block <task> --kind rework --summary "<4-6 word headline>" \
@@ -238,6 +257,31 @@ doc).
   reaches a claim — `claim-next-review` only pops green-CI tasks — but a CI that
   flips red mid-review is caught by Carl's `--gate-role review` gate-zero and
   blocked back here.)
+
+  **Two-bounce circuit breaker.** Before blocking, count the task's prior
+  send-backs in its ACTIVITY history — never in the live block columns: a
+  compliant resubmission resolves the open feedback and the forward move wipes
+  `blocked_at`/`block_kind`, so `bin/task show --verbose` reads EMPTY exactly
+  when the breaker must fire. The durable trail is the task's `qa_feedback`
+  activities — read it with the same bearer auth as every board call (the task
+  page timeline renders the same rows for a human check):
+
+  ```text
+  GET /api/v1/activities?task_slug=<task>&activity_type=qa_feedback
+  ```
+
+  Each returned activity is one prior send-back. If one or more exist — this
+  would be the **second** rework block — do not
+  re-block to the builder — a repeat bounce is a review deadlock, and a deadlock
+  is the operator's call, never a ping-pong (the record: one task bounced 5×
+  before this rule). Instead:
+
+  ```bash
+  bin/task block <task> --kind dependency --summary "Escalated: <4-6 word disagreement>" \
+    --feedback "<builder's position vs review's position, in brief>" --agent carl
+  ```
+
+  and surface it to Mr. McRitchie in the wave report as an **⚠ Escalated** line.
 
 - **Wait-for-CI or low-confidence** — a CI that flips to pending mid-review defers:
   release the claim and re-query on a later wave. On low confidence, Carl routes to

@@ -37,10 +37,15 @@ class AgentsController < ApplicationController
 
     # Drill-down actions, DISPLAYED newest-first under each activity (the operator's
     # sort). One query, grouped in Ruby, so the whole page adds no per-row query.
-    actions_by_activity = AgentAction.for_activity_feed
-                                     .where(agent_activity_id: @activities.map(&:id))
-                                     .order(occurred_at: :desc, seq: :desc, id: :desc)
+    # Capped at FEED_ACTIONS_PER_ACTIVITY newest rows per activity and narrowed to
+    # the feed columns (no input/output blobs) — the two bounds that keep this page,
+    # once measured at 1.8-5.4 MB, well under a megabyte. @action_counts carries each
+    # activity's TRUE total so the view can label the rows the cap left out.
+    activity_ids = @activities.map(&:id)
+    actions_by_activity = AgentAction.for_activity_drilldown(activity_ids)
                                      .to_a.group_by(&:agent_activity_id)
+    @action_counts = AgentAction.where(agent_activity_id: activity_ids)
+                                .group(:agent_activity_id).count
     @activity_rows = @activities.map { |activity| [activity, actions_by_activity[activity.id] || []] }
     page_actions = actions_by_activity.values.flatten
 

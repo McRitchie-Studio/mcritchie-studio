@@ -1298,6 +1298,55 @@ class TaskCliTest < Minitest::Test
     assert_equal "building", marker["stage"], "the conductor's real build-claim context is preserved"
   end
 
+  # --- genesis: the session's write-once first task ---------------------------
+
+  # The session's FIRST task-bearing marker write seeds genesis_* — the durable
+  # "why was this session spun up" the status line keeps its bearing on.
+  def test_first_marker_write_seeds_the_genesis_fields
+    marker, status = run_with_marker(
+      ["create", "--title", "A fresh fixture task", "--kind", "feature"],
+      stub_devops: { "kind" => "feature", "worktree_slug" => "fixture-feature" },
+      stub_stage: "designed"
+    )
+    assert status.success?
+    assert_equal "demo-task", marker["genesis_slug"], "the first task IS the genesis"
+    assert_equal "fixture-feature", marker["genesis_feature"]
+    assert_includes marker["genesis_url"].to_s, "/tasks/demo-task"
+    refute_nil marker["genesis_at"]
+  end
+
+  # The guarantee under test: a later create/move repoints the ACTIVE context
+  # (slug/app/feature/stage) but the genesis is carried forward verbatim.
+  def test_later_writes_repoint_the_active_context_but_never_the_genesis
+    origin = {
+      "slug" => "origin-task", "task_slug" => "origin-task", "stage" => "building",
+      "genesis_slug" => "origin-task", "genesis_feature" => "origin-task",
+      "genesis_url" => "https://mcritchie.studio/tasks/origin-task",
+      "genesis_at" => "2026-08-09T09:00:00Z"
+    }
+    marker, status = run_with_marker(
+      ["move", "demo-task", "building"],
+      stub_devops: { "kind" => "feature" },
+      pre_marker: origin
+    )
+    assert status.success?
+    assert_equal "demo-task", marker["slug"], "the active context repoints to the moved task"
+    assert_equal "origin-task", marker["genesis_slug"], "the genesis never repoints"
+    assert_equal "2026-08-09T09:00:00Z", marker["genesis_at"], "carried forward verbatim, not re-stamped"
+  end
+
+  # A pre-genesis marker (mascot-only, written by session-mascot before any task)
+  # is NOT a genesis: the first TASK-bearing write still seeds it.
+  def test_a_task_less_marker_does_not_preempt_the_genesis
+    marker, = run_with_marker(
+      ["move", "demo-task", "building"],
+      stub_devops: { "kind" => "feature" },
+      pre_marker: { "mascot" => "eevee", "app" => "mcritchie-studio" }
+    )
+    assert_equal "demo-task", marker["genesis_slug"],
+                 "the first task-bearing write seeds genesis even after a mascot-only marker"
+  end
+
   # The bug: a move whose API response carries NO mascot must NOT blank an
   # already-known mascot out of the marker — that flip-flops bin/statusline off
   # its ⊙<mascot> handle to the bare task-link fallback. The last-good on-disk

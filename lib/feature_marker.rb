@@ -30,4 +30,20 @@ module FeatureMarker
   def present?(value)
     !value.nil? && !value.to_s.strip.empty?
   end
+
+  # The session's GENESIS task — the reason the session was spun up. Write-once:
+  # the session's first task-bearing marker write seeds these fields, and every
+  # later write carries the on-disk values forward VERBATIM. Same no-downgrade
+  # posture as the mascot above: a later create/move/block repoints the ACTIVE
+  # context, never the genesis, so the status line keeps its bearing on why the
+  # session exists.
+  GENESIS_KEYS = %w[genesis_slug genesis_feature genesis_url genesis_at].freeze
+
+  # disk: the existing on-disk marker hash (or nil). seed: the genesis fields the
+  # current write WOULD stamp. Returns the genesis fields the new marker carries.
+  def genesis(disk, seed)
+    return disk.slice(*GENESIS_KEYS) if disk.is_a?(Hash) && present?(disk["genesis_slug"])
+
+    seed.select { |k, v| GENESIS_KEYS.include?(k) && present?(v) }
+  end
 end

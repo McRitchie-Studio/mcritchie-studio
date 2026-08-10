@@ -105,16 +105,38 @@ class AgentAction < ApplicationRecord
 
   # The wide text blobs the /agents/activities feed NEVER renders. `output` is the
   # captured tool RESULT (a full file read, a command's stdout, a transcript dump —
-  # by far the heaviest column) and only the drill-down DRAWER on /alex/heartbeat
-  # (heartbeat/_drawer) reads it; the cross-session feed shows `input` (a preview +
-  # tooltip) but no `output`. Leaving it out of that page's per-action drill-down
-  # SELECT keeps the wide payload off the ecosystem's heaviest render.
-  FEED_OMITTED_COLUMNS = %w[output].freeze
+  # by far the heaviest column); `input` is the raw tool-call payload, which once
+  # rode the feed as a full-text title tooltip and made the page weigh megabytes
+  # (the 2026-08-09 outage page measured 1.8-5.4 MB). The feed's turn rows lead
+  # with `summary` + `key_method` instead; only the drill-down DRAWER on
+  # /alex/heartbeat (heartbeat/_drawer, a full-record load) reads input/output.
+  FEED_OMITTED_COLUMNS = %w[input output].freeze
 
   # The narrowed column set the /agents/activities drill-down loads — every column
   # EXCEPT the wide, unrendered blobs above. Every scalar the feed reads stays
-  # present (no MissingAttributeError surprise), only the heavy `output` is dropped.
+  # present (no MissingAttributeError surprise), only the heavy blobs are dropped.
   scope :for_activity_feed, -> { select(column_names - FEED_OMITTED_COLUMNS) }
+
+  # Most actions the feed will drill into under ONE activity. 25 activities ×
+  # unbounded actions is how the 2026-08-09 page reached 2958 kB for a single
+  # 1339-action activity; 50 newest rows keeps the drill-down useful while the
+  # view's "N more actions omitted" row owns the remainder.
+  FEED_ACTIONS_PER_ACTIVITY = 50
+
+  # The capped drill-down load behind /agents/activities — the newest
+  # FEED_ACTIONS_PER_ACTIVITY actions PER activity (not per page), on the feed's
+  # narrowed columns, in the feed's newest-first display order. One statement: a
+  # window-ranked subquery picks each activity's newest ids so an over-cap
+  # activity never ships (or even loads) its long tail. Both render paths — the
+  # controller's page load and ActivitiesBroadcaster's tbody re-render — MUST load
+  # through this seam so the dual-render markup stays identical.
+  def self.for_activity_drilldown(activity_ids, per_activity: FEED_ACTIONS_PER_ACTIVITY)
+    ranked = where(agent_activity_id: activity_ids)
+             .select("id, ROW_NUMBER() OVER (PARTITION BY agent_activity_id " \
+                     "ORDER BY occurred_at DESC, seq DESC, id DESC) AS feed_rank")
+    newest = from(ranked, :ranked).select("ranked.id").where("ranked.feed_rank <= ?", per_activity.to_i)
+    for_activity_feed.where(id: newest).order(occurred_at: :desc, seq: :desc, id: :desc)
+  end
 
   # Best-effort forward write of ONE action record. Returns the persisted
   # AgentAction, or nil if anything went wrong (already logged). Accepts string

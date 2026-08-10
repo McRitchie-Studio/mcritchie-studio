@@ -5690,6 +5690,30 @@ class ReleaseCliTest < Minitest::Test
     end
   end
 
+  # [integration] GEM repos ride the guard. A gem keeps the same release branch
+  # and ship workspace as an app, and `bin/release ship` fast-forwards its main
+  # via the same non-forced ref push — so a gem main hotfix left unmerged
+  # dead-ends the ship at G4 exactly like an app's. A gem group ALONE must drive
+  # the merge (the guard takes gem_groups alongside app_groups).
+  def test_merge_forward_covers_gem_repos
+    Dir.mktmpdir do |dir|
+      clone  = build_merge_forward_fixture(dir)
+      origin = File.join(dir, "origin.git")
+      refute_equal git_out(origin, "rev-parse", "main"), git_out(origin, "rev-parse", "release"),
+                   "precondition: the gem's release must be BEHIND its main"
+
+      call = %{begin; merge_forward_release_branches([], gem_groups: [{ "repo" => "sibling" }]); } +
+             %{puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end}
+      out = run_cli(["--yes"], setup: %(def repo_path(_repo) = #{clone.inspect}), call: call)
+
+      assert_includes out, "PASSED", "a gem group alone must drive the guard: #{out}"
+      assert system("git", "-C", origin, "merge-base", "--is-ancestor",
+                    git_out(origin, "rev-parse", "main"), "release",
+                    out: File::NULL, err: File::NULL),
+             "the GEM repo's origin/release must CONTAIN origin/main after the guard runs"
+    end
+  end
+
   # [integration] Already contained → a clean no-op that pushes nothing.
   def test_merge_forward_is_a_no_op_when_release_already_contains_main
     Dir.mktmpdir do |dir|
@@ -5800,7 +5824,7 @@ class ReleaseCliTest < Minitest::Test
                       git_out(origin_a, "rev-parse", "main"), "release",
                       out: File::NULL, err: File::NULL),
                "repo a's merge-forward landed before b failed"
-        assert_includes out, "earlier repo's merge-forward or lock bump",
+        assert_includes out, "earlier repo's merge-forward",
                         "the abort must warn that earlier work already landed"
         assert_includes out, "Do NOT `reset`",
                         "and must steer the operator off the destructive cleanup"

@@ -121,28 +121,62 @@ class AgentsActivitiesTest < ActionDispatch::IntegrationTest
   end
 
   # [integration] Performance guard: the feed loads its per-action drill-down through
-  # AgentAction.for_activity_feed, which drops the wide `output` blob (the captured
-  # tool RESULT the page never renders). The rendered rows must be identical — the
-  # action's input still surfaces (preview + tooltip) — while the output never rides
-  # along in the payload. This is the query-shape optimization behind the heaviest
-  # PROD page (p95 ~1779ms), asserted at the behaviour boundary.
-  test "renders the action input but never loads the heavy output blob into the feed" do
+  # AgentAction.for_activity_drilldown, which drops BOTH wide blobs — `output` (the
+  # captured tool RESULT the page never renders) and `input` (the raw tool-call
+  # payload that once rode along as a full-text title tooltip and put the page at
+  # 1.8-5.4 MB). The turn row still renders and leads with summary + key_method;
+  # neither blob ever reaches the payload. Asserted at the behaviour boundary.
+  test "renders the turn row but never loads the heavy input or output blobs into the feed" do
     ev = activity(reason_slug: "an activity carrying a heavy action")
     output_sentinel = "HEAVY-OUTPUT-BLOB-#{'z' * 4000}"
-    action(ev, event_slug: "a heavy action", kind: "read",
+    action(ev, event_slug: "a heavy action", kind: "read", summary: "read the config file",
            input: '{"path":"THE-INPUT-SENTINEL"}', output: output_sentinel)
 
     get activities_agents_path
 
     assert_response :success
-    # The rendered output is unchanged: the action's turn row and its input preview
-    # (the tooltip carries the full input) both still render.
+    # The turn row still renders, led by the action's summary.
     assert_select "tr[data-test=aa-turn]"
-    assert_select "[data-test=aa-turn-input]"
-    assert_includes response.body, "THE-INPUT-SENTINEL", "the feed still renders the action input"
-    # The wide output blob is never selected, so it never reaches the page.
+    assert_select "[data-test=aa-turn-summary]", text: /read the config file/
+    # Neither wide blob is selected, so neither reaches the page.
+    assert_not_includes response.body, "THE-INPUT-SENTINEL",
+                        "the feed must not load or render the action's input column"
     assert_not_includes response.body, output_sentinel,
                         "the feed must not load or render the action's output column"
+  end
+
+  # [integration] The outage shape, reproduced: one activity with 1339 captured
+  # actions (each carrying a fat input) once rendered EVERY action and weighed
+  # 2958 kB on its own. The drill-down now caps at FEED_ACTIONS_PER_ACTIVITY
+  # newest rows per activity, names the omitted tail, keeps the TRUE action count
+  # on the activity row, and the whole response stays well under one megabyte.
+  test "caps the drill-down per activity and keeps the feed response bounded" do
+    ev = activity(reason_slug: "the runaway 1339-action activity")
+    now = Time.current
+    fat = "x" * 2_000
+    AgentAction.insert_all(
+      1339.times.map do |i|
+        { session_id: ev.session_id, agent_activity_id: ev.id, kind: "bash",
+          outcome: "ok", actor: "agent", seq: i, summary: "step #{i}",
+          input: %({"command":"#{fat}-#{i}"}), output: "out #{i}",
+          occurred_at: now - 1339 + i, created_at: now, updated_at: now }
+      end
+    )
+
+    get activities_agents_path
+
+    assert_response :success
+    cap = AgentAction::FEED_ACTIONS_PER_ACTIVITY
+    # Only the cap's worth of turn rows render (each action is its own solo turn) …
+    assert_select "tr[data-test=aa-turn]", cap
+    # … the newest first, the tail named rather than rendered …
+    assert_select "[data-test=aa-turn-summary]", text: "step 1338"
+    assert_select "tr#aa-omitted-#{ev.id} [data-test=aa-omitted-label]",
+                  text: "#{1339 - cap} more actions omitted"
+    # … while the activity row still reports the TRUE count.
+    assert_select "[data-test=aa-activity-count]", text: "1339 actions"
+    assert_operator response.body.bytesize, :<, 1.megabyte,
+                    "the outage-shaped feed page must stay well under one megabyte"
   end
 
   test "shows the empty-actions placeholder for an activity with no actions" do

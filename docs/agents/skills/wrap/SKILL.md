@@ -114,7 +114,9 @@ pass by silently.
 - Report each as three **4-6 word** lines:
   - **what** — the blocker's own 4-6 word summary (its headline);
   - **why** — the misalignment class from `block_kind`: `rework` = diff needs
-    changes · `environment` = desk/QA/creds · `dependency` = waiting on upstream;
+    changes · `environment` = desk/QA/creds · `dependency` = waiting on upstream
+    (but a `dependency` summary leading `Escalated:` is the OPERATOR's — a
+    review-deadlock parked for Mr. McRitchie; report it, never clear it);
   - **fix** — the narrowest next move.
 - To clear one while warm, follow `modules/address-blocker.md`: read summary →
   details → PR/task context → recontextualize to the gap → fix → resubmit.

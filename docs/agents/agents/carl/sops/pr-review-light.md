@@ -76,8 +76,13 @@ note it as a finding — do not guess.
    ```
 
    - **merge-ready** — no blockers from your read.
-   - **request-changes** — you found a defect; Carl will `block` it back (a light
-     reviewer's block counts — any reviewer can stop a PR).
+   - **request-changes** — you found a **reachable regression** (correctness /
+     security / data-loss / acceptance miss, named with its trigger); Carl will
+     `block` it back (a light reviewer's block counts — any reviewer can stop a
+     PR). A zap-scale defect is not a request-changes: fix it forward on the PR
+     branch ([`../../../modules/zap-protocol.md`](../../../modules/zap-protocol.md)
+     reviewer seam) or name it for Carl to zap; scope/style/hardening ideas go in
+     your findings as notes, not the outcome.
    - **wait-for-ci** — CI is still running; Carl defers and re-queries.
    - **conductor-review** — low confidence (the humility valve); route to a human.
 
