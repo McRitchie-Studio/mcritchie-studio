@@ -190,6 +190,9 @@ require_relative "../lib/agent_session_usage"
 require_relative "../lib/task_usage_baseline"
 require_relative "../lib/task_usage_sandbox"
 require_relative "lib/session_identity"
+# The regenerable-artifact sweep's summary contract — `archive` drives
+# bin/clean-artifacts as a step and parses its tagged JSON line for the Exit Seam.
+require_relative "lib/artifact_sweep"
 # The per-RELEASE conductor claim (release-conductor-claims) — the assembler
 # (prepare) and deployer (ship) locks, on the release record now, spoken over the
 # fast HTTP AgentApi. Loaded for its exit-code constants (STOOD_DOWN/OK); the CLI's
@@ -5613,6 +5616,34 @@ def reclaimed_count(out)
   out.to_s[/reclaimed (\d+) worktree/, 1].to_i
 end
 
+# The regenerable-artifact sweep, run exactly like the worktree reclaim above:
+# apply: false is the tool's own --dry-run (report only, mutates nothing, so it
+# runs for real even under bin/release --dry-run); apply: true performs it.
+#
+# It sweeps EVERY managed Rails repo and EVERY worktree under them, and boots
+# each app to check whether a real log rotation cap is installed. That audit is
+# the self-healing half: add a satellite that never inherits studio-engine's cap
+# and the next archive run NAMES it, instead of it surfacing at 400 MB in six
+# months.
+#
+# MACHINE-LOCAL. Unlike everything else in archive, this reads and writes THIS
+# machine's disk — never the board. A fresh Mac's first archive sweeps almost
+# nothing, and that is correct, not an anomaly.
+def sweep_artifacts(apply:)
+  cmd = ["bin/clean-artifacts"]
+  cmd << "--dry-run" unless apply
+  out, status = Open3.capture2e(*cmd)
+  print(out)
+  [out, status.success?]
+end
+
+# Pull the sweep's tagged JSON summary out of its output. Returns an empty hash
+# when the line is absent, so a sweep hiccup degrades the archive's summary
+# rather than aborting a run whose board work already succeeded.
+def sweep_summary(out)
+  ArtifactSweep.parse_summary(out) || {}
+end
+
 # "Archive completed tasks": the conclusion of the Deploy lane. Archive every
 # shipped task that ISN'T carried by the last shipped release (those stay as the
 # board's "Last Release"), then reclaim the merged/shipped feature worktrees.
@@ -5646,17 +5677,26 @@ def archive
   step("worktree reclaim preview: bin/agent-worktree cleanup --reclaim")
   reclaim_worktrees(apply: false)
 
-  # 3. --dry-run stops here: the plan + reclaim preview are shown, nothing mutated.
+  # 3. Artifact-sweep PREVIEW — the sweep tool's own --dry-run, same contract as
+  #    the reclaim above: it reports reclaimable bytes and names any app missing
+  #    a log rotation cap, mutating nothing.
+  say("")
+  step("artifact sweep preview: bin/clean-artifacts --dry-run")
+  sweep_preview = sweep_summary(sweep_artifacts(apply: false).first)
+
+  # 4. --dry-run stops here: the plan + both previews are shown, nothing mutated.
   if DRY
     say("")
-    say("✓ Archive plan previewed (DRY RUN — nothing executed). Re-run without --dry-run to archive + reclaim.")
+    say("✓ Archive plan previewed (DRY RUN — nothing executed). Re-run without --dry-run to archive + reclaim + sweep.")
+    say("  would reclaim #{sweep_preview[:reclaimed_human]} of regenerable artifacts") if sweep_preview[:reclaimed_human]
     return
   end
 
-  # 4. ONE confirm authorizes the board write + the worktree teardown (--yes skips).
-  abort!("aborted — archive not confirmed") unless confirm("Archive #{archivable.size} shipped tasks + reclaim worktrees?")
+  # 5. ONE confirm authorizes the board write, the worktree teardown, and the
+  #    artifact sweep (--yes skips).
+  abort!("aborted — archive not confirmed") unless confirm("Archive #{archivable.size} shipped tasks + reclaim worktrees + sweep artifacts?")
 
-  # 5. Archive on the board (shipped → archived). A board WRITE.
+  # 6. Archive on the board (shipped → archived). A board WRITE.
   step("record: Release::Conductor.archive_completed!")
   result = conductor(
     "r = Release::Conductor.archive_completed!; " \
@@ -5665,13 +5705,20 @@ def archive
   archived_count = result["count"] || (result["archived"] || []).size
   kept_count     = (result["kept"] || kept).size
 
-  # 6. Reclaim the merged/shipped feature worktrees (--yes = real teardown,
+  # 7. Reclaim the merged/shipped feature worktrees (--yes = real teardown,
   #    squash-merged legacy worktrees included). The board archive already
   #    succeeded, so a reclaim hiccup just means fewer worktrees freed this run.
   say("")
   step("worktree reclaim: bin/agent-worktree cleanup --reclaim --yes")
   reclaim_out, = reclaim_worktrees(apply: true)
   reclaimed = reclaimed_count(reclaim_out)
+
+  # 8. Sweep the regenerable artifacts — AFTER the reclaim, so the worktrees that
+  #    just went away are not swept first and counted twice. Machine-local, and
+  #    best-effort for the same reason as the reclaim: the board write is done.
+  say("")
+  step("artifact sweep: bin/clean-artifacts")
+  sweep = sweep_summary(sweep_artifacts(apply: true).first)
 
   # The reclaim appended to the delete-later ledger — commit it to `release` so it
   # rides the next ship instead of becoming ship-preflight dirt (best-effort).
@@ -5681,9 +5728,19 @@ def archive
     "ledger: delete-later after archive (#{archived_count} archived, #{reclaimed} reclaimed)"
   )
 
-  # 7. Summary.
+  # 9. Summary. The disk numbers are MACHINE-LOCAL, not board state — say so in
+  #    the Exit Seam report rather than filing them as pipeline facts.
   say("")
   say("✓ Archived #{archived_count} tasks; reclaimed #{reclaimed} worktrees; SHIPPED → #{kept_count}")
+  say("✓ Swept #{sweep[:reclaimed_human] || '0 B'} of regenerable artifacts " \
+      "across #{sweep[:repos]} repo(s) / #{sweep[:worktrees]} worktree(s) (this machine only)")
+  if sweep[:rotation_missing].to_a.any?
+    say("⚠ MISSING LOG ROTATION: #{sweep[:rotation_missing].join(', ')} — " \
+        "these apps have not adopted the studio-engine cap; their local logs grow to Rails' 100 MB default")
+  end
+  if sweep[:rotation_unknown].to_a.any?
+    say("⚠ Logger audit inconclusive (could not boot): #{sweep[:rotation_unknown].join(', ')}")
+  end
 end
 
 # --- retro -----------------------------------------------------------------
