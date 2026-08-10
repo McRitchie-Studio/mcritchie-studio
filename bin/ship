@@ -62,10 +62,13 @@
 # failed (fix what it printed, then re-run — ship resumes).
 
 require "json"
+require "open3"
 require "optparse"
 require_relative "lib/repo_root"
 require_relative "lib/cert_root_guard"
 require_relative "lib/fast_lane"
+require_relative "lib/gh_auth_retry"
+require_relative "lib/pr_overlap"
 require_relative "lib/full_suite_gate"
 require_relative "lib/session_identity"
 require_relative "../lib/claim_lease"
@@ -75,6 +78,9 @@ TASK_BIN = ENV.fetch("SHIP_TASK_BIN", File.expand_path("task", __dir__))
 FAST_CHECK_BIN = ENV.fetch("SHIP_FAST_CHECK_BIN", File.expand_path("fast-check", __dir__))
 DOR_CHECK_BIN = ENV.fetch("SHIP_DOR_CHECK_BIN", File.expand_path("dor-check", __dir__))
 GH_BIN = ENV.fetch("SHIP_GH_BIN", "gh")
+# A minted App installation token, populated only if a gh write refuses on
+# credentials (see gh_capture). Held for THIS run so one mint covers the rest of it.
+@gh_token = nil
 BASE_BRANCH = ENV.fetch("SHIP_BASE_BRANCH", "accepted")
 BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
 # The narration CLI (fast-lane-narrates-activities): ship CLOSES the cycle's
@@ -82,6 +88,12 @@ BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
 ACTIVITY_BIN = ENV.fetch("SHIP_ACTIVITY_BIN", File.expand_path("agent-activity", __dir__))
 # Stages past the seam ship hands off at — ship must never regress one of these.
 PAST_SUBMITTED = %w[reviewed assembled shipped archived].freeze
+# How many open PRs the overlap advisory inspects. Truncation is REPORTED, never
+# silent — an advisory that quietly checked half the queue would be worse than none.
+OVERLAP_PR_LIMIT = 50
+# Ladder branches whose PRs overlap everything by construction (the release train's
+# batch promote), excluded so the advisory stays signal.
+RELEASE_BATCH_HEADS = %w[accepted release].freeze
 
 def die!(msg)
   warn "ship: #{msg}"
@@ -299,14 +311,50 @@ end
 
 # --- 4/7 PR (non-draft, base #{BASE_BRANCH}) ---------------------------------
 
+# One `gh` call, with a single mint-and-retry when it fails on CREDENTIALS.
+#
+# PATs were retired in the 2026-07-29 org migration, so the ambient `gh` login reads
+# fine and then refuses the one write that matters ("Resource not accessible by
+# personal access token"). Recovering that by hand cost every ship and every reviewer
+# merge on 2026-08-10. Now ship mints an App installation token itself and retries
+# ONCE — the token rides the retried child's env and is never printed.
+#
+# The retry is narrow on purpose: a failure that is not an auth failure returns
+# untouched (a merge conflict re-run with a fresh token just fails again), and a mint
+# that cannot happen returns gh's ORIGINAL error rather than a confusing one about
+# credentials.
+def gh_run(root, args)
+  env = @gh_token ? { "GH_TOKEN" => @gh_token } : {}
+  out, err, status = Open3.capture3(env, GH_BIN, *args, chdir: root)
+  [out.to_s, err.to_s, status.success?]
+end
+
 def gh_capture(root, *args)
-  out = IO.popen([GH_BIN, *args], chdir: root, &:read)
-  [out.to_s, $?.success?]
+  out, err, ok = gh_run(root, args)
+  return [out, true] if ok
+
+  # gh reports failures on STDERR. Classify on both streams but hand the caller
+  # STDOUT — `pr list --json` parses stdout, and folding stderr into it would feed
+  # warnings to JSON.parse. (The first version of this read only stdout, so the
+  # classifier saw "" and never retried; ship's own error line printed empty, which
+  # is what gave it away.)
+  failure = [out, err].join("\n").strip
+  return [failure, false] if @gh_token || !GhAuthRetry.auth_failure?(failure)
+
+  say "auth — gh refused on credentials; minting a GitHub App token and retrying once."
+  @gh_token = GhAuthRetry.mint(root: root)
+  unless @gh_token
+    say "auth — could not mint an App token (1Password unavailable?); reporting gh's original error."
+    return [failure, false]
+  end
+
+  out2, err2, ok2 = gh_run(root, args)
+  [ok2 ? out2 : [out2, err2].join("\n").strip, ok2]
 end
 
 list_json, listed = gh_capture(root, "pr", "list", "--head", branch, "--state", "open",
                                "--json", "number,url,isDraft,baseRefName")
-die!("gh pr list failed — is gh authenticated?") unless listed
+die!("gh pr list failed:\n#{list_json.strip}") unless listed
 
 existing = FastLane.open_pr(list_json)
 if existing
@@ -317,13 +365,13 @@ if existing
     # The known trap this wrapper exists to close: a DRAFT PR defers reviewers
     # and the qa-release sweep skips it — the task strands. Mark it ready.
     say "4/7 pr — PR ##{number} is a DRAFT; marking it ready for review."
-    _, ready = gh_capture(root, "pr", "ready", number)
-    die!("gh pr ready #{number} failed") unless ready
+    ready_out, ready = gh_capture(root, "pr", "ready", number)
+    die!("gh pr ready #{number} failed:\n#{ready_out.strip}") unless ready
   end
   if existing["baseRefName"] != BASE_BRANCH
     say "4/7 pr — PR ##{number} is based on #{existing["baseRefName"].inspect}; retargeting to #{BASE_BRANCH}."
-    _, retargeted = gh_capture(root, "pr", "edit", number, "--base", BASE_BRANCH)
-    die!("gh pr edit #{number} --base #{BASE_BRANCH} failed") unless retargeted
+    retarget_out, retargeted = gh_capture(root, "pr", "edit", number, "--base", BASE_BRANCH)
+    die!("gh pr edit #{number} --base #{BASE_BRANCH} failed:\n#{retarget_out.strip}") unless retargeted
   end
 else
   say "4/7 pr — opening a non-draft PR into #{BASE_BRANCH}"
@@ -335,6 +383,46 @@ else
   pr_url = out[%r{https://\S+/pull/\d+}].to_s
   die!("gh pr create succeeded but printed no PR URL:\n#{out}") if pr_url.empty?
 end
+
+# --- same-file overlap with other open PRs (ADVISORY) ------------------------
+# Asked HERE because here is where it can be answered: the diff is final and the
+# sibling PRs are open. bin/session-preflight asks the same question inside
+# `bin/task begin`, where the branch has no commits yet — so it can only ever
+# answer "none". See bin/lib/pr_overlap.rb for what that blind spot cost.
+#
+# Never fatal: every failure path (no gh, unreadable PR, bad JSON) simply skips.
+def overlap_advisory(root, branch, self_pr_url)
+  base_ref = "origin/#{BASE_BRANCH}"
+  mine = IO.popen(["git", "-C", root, "diff", "--name-only", "#{base_ref}...HEAD"], &:read).to_s.split("\n")
+  return if mine.empty?
+
+  # ONE call, files included. The first version fetched `pr view --json files` per
+  # open PR, which cost ~11s on EVERY ship for advice — a price no advisory should
+  # charge. `pr list` carries `files` directly.
+  limit = OVERLAP_PR_LIMIT
+  list_json, ok = gh_capture(root, "pr", "list", "--state", "open", "--limit", limit.to_s,
+                             "--json", "number,title,url,headRefName,files")
+  return unless ok
+
+  prs = JSON.parse(list_json)
+  say "overlap — more than #{limit} open PRs; checked the #{limit} most recent." if prs.size >= limit
+  prs = prs.reject { |pr|
+    head = pr["headRefName"].to_s
+    head == branch || pr["url"].to_s == self_pr_url.to_s ||
+      # The release train's own `accepted → release` batch PR overlaps EVERYTHING by
+      # construction (it carries every merged file). Naming it as a collision would
+      # make the advisory noise on every ship during a release window.
+      RELEASE_BATCH_HEADS.include?(head)
+  }
+  prs.each { |pr| pr["files"] = Array(pr["files"]).map { |f| f["path"] } }
+
+  items = PrOverlap.report(mine, prs)
+  PrOverlap.lines(items).each { |line| say line }
+rescue StandardError
+  nil # advice is never worth failing a ship over
+end
+
+overlap_advisory(root, branch, pr_url)
 
 # --- 5/7 record pr_url -------------------------------------------------------
 

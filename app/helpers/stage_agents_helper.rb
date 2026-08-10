@@ -653,6 +653,18 @@ module StageAgentsHelper
       intent, render_stage = open_deploy_intent(task, stage, intents)
       return nil if intent.nil?
 
+      # THE FACE ITSELF asks whether the review is still alive — not just the
+      # `review_in_progress?` predicate the caller consulted. An open intent only
+      # closes when →reviewed LANDS, so a crashed reviewer keeps one open forever;
+      # without this gate crew_columns deletes the historical review cluster on the
+      # predicate and then this method immediately rebuilds it as a NEW live one, so
+      # the seat ticks for a reviewer who died. (That is precisely how the first
+      # version of this change shipped a hardened predicate and an unchanged face.)
+      # Gating here covers every surface at once: the board card, the task-detail
+      # timeline, and the deployments broadcaster all read this one method.
+      return nil if render_stage == "reviewed" && task.respond_to?(:review_claim_alive?) &&
+                    !task.review_claim_alive?
+
       agents = intent_stage_agents(intent, by_slug, render_stage)
       return nil if agents.empty?
 
