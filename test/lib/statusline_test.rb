@@ -81,7 +81,14 @@ class StatuslineTest < Minitest::Test
         "mascot_color" => "#EE8130",
         "mascot_emoji" => "🔥"
       }.merge(extra)))
-      env = SessionEnv.neutralized(session_key(provider) => session, "CLAUDE_PROJECTS_DIR" => projects)
+      # TASK_BIN stubbed exactly like render_in's, and for the same reason (the
+      # header above). A marker carrying a task slug AND stage "building" makes
+      # heartbeat_claim shell out; the CLAUDE_PROJECTS_DIR pin contains the marker
+      # WRITE but NOT the board REQUEST, so the pin alone is one brace of the two
+      # this file requires. Any fixture here may set stage — keep the stub.
+      env = SessionEnv.neutralized(session_key(provider) => session,
+                                   "CLAUDE_PROJECTS_DIR" => projects,
+                                   "TASK_BIN" => "/usr/bin/true")
       stdin = JSON.generate("workspace" => { "current_dir" => projects })
       out, = Open3.capture2(env, "/bin/bash", BIN, stdin_data: stdin, err: File::NULL)
       out
