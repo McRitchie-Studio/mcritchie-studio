@@ -146,7 +146,13 @@ class ShipTest < Minitest::Test
 
       out, err, status, = run_ship(dir, extra_env: {
         "SHIP_GH_BIN" => refusing_gh,
-        "GH_AUTH_MINT_BIN" => "/nonexistent/mint" # the mint cannot run → the failure branch
+        # The BROKER cannot run → the failure branch. This must name the seam
+        # GhAuthRetry actually reads (GH_AUTH_TOKEN_BIN): acquisition moved into
+        # bin/gh-token, so the old GH_AUTH_MINT_BIN pin steered nothing and this
+        # test fell through to the REAL broker — reaching the operator's live
+        # 1Password for the App private key (proven with an `op` recorder), and
+        # still passing green. A dead seam in a credential test is invisible.
+        "GH_AUTH_TOKEN_BIN" => "/nonexistent/gh-token"
       })
 
       combined = "#{err}\n#{out}"
