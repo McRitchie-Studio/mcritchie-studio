@@ -441,12 +441,22 @@ class ShipTest < Minitest::Test
   # ── the ROOT-GUARD lane ────────────────────────────────────────────────────
   #
   # Every test above pins SHIP_ROOT, which short-circuits the root guard entirely —
-  # so ship's guard branch had NO coverage at all, and a change to
-  # CertRootGuard#assess broke this lane silently on 2026-08-09: a detached HEAD at
-  # the task's own desk started dying with "refusing to certify", telling the builder
-  # to `cd` to where they were already standing. A false REFUSAL that blocks an
-  # honest handoff is its own outage, and it slipped precisely because bin/ship is a
-  # CONSUMER of the guard that no guard test exercises.
+  # so ship's guard branch had NO coverage at all. That gap is the reason a wrong
+  # claim about this lane survived a round of review: with nothing exercising it,
+  # "it still ships" could be asserted without ever being observed.
+  #
+  # WHAT IS ACTUALLY TRUE, measured (2026-08-09): ship REFUSES a detached HEAD at the
+  # task's own desk, and always has. It dies at the branch guard in bin/ship — which
+  # is PRE-EXISTING, live on `main`, and untouched by this PR — because a detached
+  # HEAD is not the task branch. There was never a regression here to restore, and
+  # these tests assert the refusal, not a lane that does not exist.
+  #
+  # What the root-guard line in bin/ship does change is WHICH refusal you get. Without
+  # it the root guard speaks first and says the desk "is not <slug>'s tree", which is
+  # false — it IS the task's desk; only HEAD is detached — and it sends the builder
+  # somewhere else. With it, ship falls through to the branch guard, which names the
+  # real problem and the real fix (finish the rebase). Same exit code, same steps run,
+  # better diagnosis. That is the whole of its effect, and it is what these tests pin.
 
   # Run ship from `cwd` with NO SHIP_ROOT, so the real root guard runs.
   def run_ship_from(cwd, dir, projects)
@@ -485,18 +495,27 @@ class ShipTest < Minitest::Test
     end
   end
 
-  def test_a_detached_head_at_the_tasks_own_desk_still_ships
-    # THE REGRESSION. Physically at the task's desk, HEAD detached (mid-rebase is the
-    # ordinary way to get here). ship is a WRITER and takes the same physical-desk
-    # vouch bin/fast-check does, so the guard must not stop it.
+  def test_a_detached_head_at_the_tasks_own_desk_is_refused_by_the_branch_guard
+    # Physically at the task's desk, HEAD detached (mid-rebase is the ordinary way to
+    # get here). ship refuses — it always has, at the pre-existing branch guard — and
+    # this asserts that refusal POSITIVELY, including which guard produced it. The
+    # earlier version of this test asserted only negatives under the name
+    # "still_ships", which described a behavior that does not occur.
     with_task_desk do |projects, desk|
       assert system("git -C #{desk} checkout -q --detach HEAD")
-      _out, err, _status = run_ship_from(desk, desk, projects)
+      out, err, status = run_ship_from(desk, desk, projects)
+      blame = out + err
 
-      refute_includes err, "refusing to certify",
-                       "the guard must not refuse the builder at the task's own desk"
-      refute_includes err, "Run the cert from the task worktree: cd #{desk}",
-                       "telling the builder to cd where they already are is the tell"
+      refute status.success?, "a detached HEAD is not the task branch; ship refuses"
+      assert_includes blame, "not the task branch", "the BRANCH guard is what refuses"
+      assert_includes blame, "finish the rebase", "and it names the fix that actually applies"
+
+      # The root guard must NOT be the one speaking: the desk IS the task's tree, so
+      # "not <slug>'s tree" would be a false diagnosis pointing the builder elsewhere.
+      # This is the one thing the bin/ship root-guard line changes, so it is asserted
+      # positively rather than as a bare refute of a string that may never appear.
+      refute_includes blame, "is not fast-lane-demo's tree",
+                      "the root guard must defer to the branch guard at the task's own desk"
     end
   end
 

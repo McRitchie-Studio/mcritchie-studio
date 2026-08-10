@@ -754,6 +754,15 @@ class DorCheckReviewDiffRootingTest < Minitest::Test
       assert_equal 1, code
       refute_includes Array(verdict["changed_files"]), "docs/hub-note.md"
       refute_equal "branch", verdict["diff_source"], "the branch source must not fire outside the PR's repo"
+
+      # The REMEDY has to match the diagnosis. `git fetch origin feat/<slug>` is
+      # useless here — the branch is already present, it just belongs to another
+      # project — and a refusal whose fix cannot work teaches the reader to route
+      # around it. The two refusals that say this share one source so they cannot
+      # drift apart again.
+      blame = verdict["errors"].join(" ")
+      refute_includes blame, "git fetch origin", "fetching cannot fix standing in the wrong repo"
+      assert_includes blame, "not the PR's repo"
     end
   end
 

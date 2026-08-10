@@ -357,6 +357,30 @@ def standing_repo_ok?
   @standing_repo_ok.nil? ? true : @standing_repo_ok
 end
 
+# WHY this checkout cannot answer for the task's branch, and the fix — as
+# [reason, remedy]. Repo-aware, because the two cases are different problems with
+# different answers, and only one of them is curable by fetching:
+#
+#   right repo, branch absent → "not in this repo"; `git fetch origin <branch>` fixes it.
+#   WRONG repo               → the branch may well be sitting right here, and fetching
+#                              is useless: a same-named branch in another repo is a
+#                              different project's work. The fix is to go to the PR's repo.
+#
+# Shared, because the two refusals that say this had DRIFTED: the suite gate's
+# remedy-3 flatly asserted "its branch <b> is not in this repo" and offered the fetch
+# — both false on the wrong-repo path — while its sibling in the exempt gate had
+# already been taught the difference. One source, so they cannot disagree again.
+def branch_unavailable(branch)
+  if standing_repo_ok?
+    ["its branch #{branch} is not in this repo",
+     "fetch its branch (git fetch origin #{branch})"]
+  else
+    ["this checkout is not the PR's repo at all, so a #{branch} branch here would be a different " \
+     "project's work that merely shares the name — fetching cannot help",
+     "re-run it from the PR's own repo"]
+  end
+end
+
 def changed_files
   branch_diff.first
 end
@@ -1070,17 +1094,15 @@ if EXEMPT_KINDS.include?(kind)
       # worktree here" would be false when one is sitting on disk under exactly that
       # name, and a reader who believes it will point the gate straight back at it.
       near_misses = Array(@rejected_roots).map { |path, why| "#{path} #{why}" }.join("; ")
+      branch_reason, branch_remedy = branch_unavailable(@task_branch)
       "kind: #{kind} could not be proven doc-only — this run stands in #{diff_root}, which is NOT " \
         "#{task["slug"] || slug}'s tree, so its working tree was REFUSED as a diff source (reading it is how " \
-        "one unrelated dirty file grants a multi-file code PR a doc-only exemption), and neither the PR's " \
-        "file list nor branch #{@task_branch} could be read here" \
-        "#{standing_repo_ok? ? "" : " (this checkout is not the PR's repo, so a #{@task_branch} branch here " \
-          "would be a different project's work that merely shares the name — it is NOT read either)"}" \
+        "one unrelated dirty file grants a multi-file code PR a doc-only exemption), and the PR's " \
+        "file list could not be read here either — and #{branch_reason}" \
         "#{near_misses.empty? ? "" : " (and no directory named #{task["slug"] || slug} here IS the task's " \
           "tree: #{near_misses})"}. The shape/test-tier gate is ENFORCED " \
-        "rather than skipped (fail-closed). Fix it: run dor-check from the task's worktree; or fetch its " \
-        "branch (git fetch origin #{@task_branch}); or declare the checkout with " \
-        "DOR_CHECK_DIFF_ROOT=<path to the task's tree>"
+        "rather than skipped (fail-closed). Fix it: run dor-check from the task's worktree; or " \
+        "#{branch_remedy}; or declare the checkout with DOR_CHECK_DIFF_ROOT=<path to the task's tree>"
     else
       "kind: #{kind} could not be proven doc-only — no diff could be observed " \
         "(no PR files readable, and the git tree at #{diff_root} is clean or unreadable), " \
@@ -1331,15 +1353,14 @@ if gate != "build" && shape_def && !dor_tiers.empty?
       else
         "its worktree (.worktrees/#{foreign_root[:worktree_slug]}) is not on disk"
       end
+    branch_reason, branch_remedy = branch_unavailable(foreign_root[:expected_branch])
     errors << "root guard: this run roots at #{diff_root} (branch " \
       "#{foreign_root[:actual_branch] || 'unknown'}), which is NOT #{task["slug"] || slug}'s tree — " \
-      "#{unreachable_tree} and its branch " \
-      "#{foreign_root[:expected_branch]} is not in this repo, so NO tree here can grade its cert. The cert " \
+      "#{unreachable_tree} and #{branch_reason}, so NO tree here can grade its cert. The cert " \
       "fingerprint is a git TREE hash: grading the checkout you are standing in would report a perfectly " \
       "FRESH cert as STALE (the false STALE that stranded six tasks on 2026-07-14), so this refuses instead " \
-      "of lying. Fix it one of three ways: run dor-check from the task's worktree; or fetch its branch " \
-      "(git fetch origin #{foreign_root[:expected_branch]}); or declare the root explicitly with " \
-      "DOR_CHECK_DIFF_ROOT=<path to the task's checkout>."
+      "of lying. Fix it one of three ways: run dor-check from the task's worktree; or #{branch_remedy}; " \
+      "or declare the root explicitly with DOR_CHECK_DIFF_ROOT=<path to the task's checkout>."
   else
     # Root the suite fingerprint at the TASK's tree, not at whatever checkout the
     # caller stands in. Two overrides feed the same seam:
