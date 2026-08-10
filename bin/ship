@@ -189,6 +189,15 @@ if root.empty?
   root = RepoRoot.git_toplevel(Dir.pwd) || Dir.pwd
   assessment = CertRootGuard.assess(task_bin: TASK_BIN, slug: slug, root: root, devops: devops,
                                     projects_dir: ENV["SHIP_PROJECTS_DIR"])
+  # standing_in_task_desk — you are physically AT …/.worktrees/<slug>, even if HEAD is
+  # detached mid-rebase. ship is a WRITER (it commits), so it takes the same vouch
+  # bin/fast-check and bin/full-suite-check take through CertRootGuard#refusal. Without
+  # this, a detached HEAD at the task's own desk dies telling the builder to `cd` to
+  # where they are already standing — a false REFUSAL that blocks an honest handoff,
+  # which is its own outage. ship reads `assess` directly rather than `#refusal`
+  # (it wants :resolved_root), so it has to honor the vouch explicitly; it had been
+  # getting it for free from a short-circuit inside assess until 2026-08-09.
+  assessment = nil if assessment && assessment[:standing_in_task_desk]
   if assessment
     resolved = assessment[:resolved_root]
     die!(assessment[:message]) unless resolved
