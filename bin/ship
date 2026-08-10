@@ -62,6 +62,7 @@
 # failed (fix what it printed, then re-run — ship resumes).
 
 require "json"
+require "open3"
 require "optparse"
 require_relative "lib/repo_root"
 require_relative "lib/cert_root_guard"
@@ -316,13 +317,23 @@ end
 # untouched (a merge conflict re-run with a fresh token just fails again), and a mint
 # that cannot happen returns gh's ORIGINAL error rather than a confusing one about
 # credentials.
-def gh_capture(root, *args)
+def gh_run(root, args)
   env = @gh_token ? { "GH_TOKEN" => @gh_token } : {}
-  out = IO.popen(env, [GH_BIN, *args], chdir: root, &:read)
-  return [out.to_s, true] if $?.success?
+  out, err, status = Open3.capture3(env, GH_BIN, *args, chdir: root)
+  [out.to_s, err.to_s, status.success?]
+end
 
-  first = out.to_s
-  return [first, false] if @gh_token || !GhAuthRetry.auth_failure?(first)
+def gh_capture(root, *args)
+  out, err, ok = gh_run(root, args)
+  return [out, true] if ok
+
+  # gh reports failures on STDERR. Classify on both streams but hand the caller
+  # STDOUT — `pr list --json` parses stdout, and folding stderr into it would feed
+  # warnings to JSON.parse. (The first version of this read only stdout, so the
+  # classifier saw "" and never retried; ship's own error line printed empty, which
+  # is what gave it away.)
+  failure = [out, err].join("\n").strip
+  return [failure, false] if @gh_token || !GhAuthRetry.auth_failure?(failure)
 
   say "auth — gh refused on credentials; minting a GitHub App token and retrying once."
   @gh_token = GhAuthRetry.mint(root: root)
@@ -331,8 +342,8 @@ def gh_capture(root, *args)
     return [first, false]
   end
 
-  retried = IO.popen({ "GH_TOKEN" => @gh_token }, [GH_BIN, *args], chdir: root, &:read)
-  [retried.to_s, $?.success?]
+  out2, err2, ok2 = gh_run(root, args)
+  [ok2 ? out2 : [out2, err2].join("\n").strip, ok2]
 end
 
 list_json, listed = gh_capture(root, "pr", "list", "--head", branch, "--state", "open",
