@@ -29,6 +29,11 @@
             title="<%= building_count %> building"><%= building_count %></span>
     <% end %>
   <% end %>
+  <% unless current == "triage" %>
+    <%= link_to triage_path, class: btn do %>
+      <span>Triage</span>
+    <% end %>
+  <% end %>
   <% unless current == "deployments" %>
     <%= link_to deployments_path, class: btn do %>
       <span>Deployments</span>

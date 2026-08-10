@@ -1,0 +1,76 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/triage — file and list TRIAGE FINDINGS, the inbox where agent-discovered
+# follow-ups land INSTEAD of becoming board tasks. A finding costs nothing
+# sitting in the inbox; a task costs a worktree, a review, and a release slot —
+# so the default destination for "we should also…" is HERE, and only an operator
+# promote (admin-gated on /triage) mints a task.
+#
+#   bin/triage file --title "Short finding title" [--body "..."] [--source <who>] [--repo <app>]
+#   bin/triage list [--status open|promoted|dismissed]
+#
+# Auth: AGENT_API_SECRET from ENV, else 1Password, else the repo .env — the same
+# resolution as bin/task (TaskBoard.agent_secret). Base URL via TASK_API_BASE.
+
+require_relative "lib/task_board"
+
+BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
+
+def die!(message, code: 1)
+  warn("triage: #{message}")
+  exit(code)
+end
+
+def agent_secret
+  dotenv = File.join(__dir__, "..", ".env")
+  TaskBoard.agent_secret(dotenv) ||
+    die!("AGENT_API_SECRET not found (checked ENV, 1Password, #{dotenv})")
+end
+
+def token
+  @token ||= api(:post, "/api/v1/auth", { secret: agent_secret }, auth: false).fetch("token")
+end
+
+def api(method, path, body = nil, opts = {})
+  auth = opts.fetch(:auth, true)
+  res = TaskBoard.request(method, path, base_url: BASE_URL, token: (auth ? token : nil), body: body)
+  parsed = TaskBoard.parse_body(res)
+  die!("#{method.upcase} #{path} -> #{res.code}: #{parsed["error"] || res.body}") unless res.code.to_i.between?(200, 299)
+  parsed
+end
+
+def take_value(argv, flag)
+  idx = argv.index(flag)
+  return nil unless idx
+
+  value = argv[idx + 1] || die!("#{flag} needs a value")
+  argv.slice!(idx, 2)
+  value
+end
+
+def usage!
+  warn(File.read(__FILE__).lines.grep(/^#( |$)/).map { |l| l.sub(/^# ?/, "") }.join)
+  exit(1)
+end
+
+cmd = ARGV.shift
+case cmd
+when "file"
+  title = take_value(ARGV, "--title") || die!("--title is required")
+  body = take_value(ARGV, "--body")
+  source = take_value(ARGV, "--source")
+  repo = take_value(ARGV, "--repo")
+  die!("unknown argument(s): #{ARGV.join(' ')}") unless ARGV.empty?
+  finding = api(:post, "/api/v1/triage_findings",
+                { title: title, body: body, source: source, repo: repo }.compact)["data"]
+  puts("filed #{finding["slug"]}  #{finding["title"]}")
+when "list"
+  status = take_value(ARGV, "--status") || "open"
+  die!("unknown argument(s): #{ARGV.join(' ')}") unless ARGV.empty?
+  rows = api(:get, "/api/v1/triage_findings?status=#{status}&per_page=100")["data"]
+  rows.each { |f| puts("#{f["slug"]}  [#{f["status"]}]  #{f["title"]}") }
+  puts("(#{rows.size} finding(s))")
+else
+  usage!
+end
