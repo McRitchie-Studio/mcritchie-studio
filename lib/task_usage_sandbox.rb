@@ -91,6 +91,10 @@ module TaskUsageSandbox
     "task-usage" => %w[TASK_USAGE_DIR],            # lib/task_usage_baseline.rb, bin/task, bin/release.rb, bin/reviewer-select
     "session-marker" => %w[CLAUDE_PROJECTS_DIR],   # bin/lib/session_markers.rb (the choke point), bin/task
     "agent-token" => %w[CLAUDE_PROJECTS_DIR],      # bin/lib/agent_api.rb — the token cache
+    # bin/gh-token — the GitHub App installation-token cache. It holds a LIVE
+    # credential, so an unpinned sandboxed run must abort rather than deposit one in
+    # the operator's real .agents.
+    "github-token" => %w[CLAUDE_PROJECTS_DIR],
     "agent-locks" => %w[MCR_PRIMARY_LOCK_DIR],     # bin/release.rb — the conductor flocks
     "worktree-registry" => %w[AGENT_WORKTREE_REGISTRY PROJECTS_DIR], # bin/agent-worktree — the registry snapshot
     "worktree-lock" => %w[AGENT_WORKTREE_LOCK PROJECTS_DIR],         # bin/agent-worktree — the DB-allocation flock

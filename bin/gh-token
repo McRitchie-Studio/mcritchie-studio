@@ -52,6 +52,7 @@
 require "json"
 require "fileutils"
 require "time"
+require_relative "../lib/task_usage_sandbox"
 
 IDENTITIES = {
   "agent" => { item: "github.mcritchie-agent", pem: "mcritchie-agent.2026-07-29.private-key.pem" },
@@ -67,7 +68,16 @@ REFRESH_AFTER_SECONDS = 3000
 OP_BIN = ENV["GH_TOKEN_OP_BIN"].to_s.strip.empty? ? "/opt/homebrew/bin/op" : ENV["GH_TOKEN_OP_BIN"]
 MINT_BIN = ENV["GH_TOKEN_MINT_BIN"].to_s.strip.empty? ? File.expand_path("gh-app-mint-token", __dir__) : ENV["GH_TOKEN_MINT_BIN"]
 PROJECTS = ENV["CLAUDE_PROJECTS_DIR"].to_s.strip.empty? ? File.expand_path("~/projects") : ENV["CLAUDE_PROJECTS_DIR"]
-STORE = File.join(PROJECTS, ".agents", "github-tokens.json")
+
+# THE CACHE HOLDS A LIVE CREDENTIAL, so it is laundered through the same fail-closed
+# guard as every other state store under <projects>/.agents. Under TASK_USAGE_SANDBOX
+# an unpinned CLAUDE_PROJECTS_DIR ABORTS rather than falling back to the operator's
+# real directory — which for this file means a test run can never deposit a real
+# GitHub token in it. That is not a formality: this command printed a live token to a
+# terminal once already (see --status), and the blast radius of a cached one is worse.
+def store_path
+  TaskUsageSandbox.enforce!(File.join(PROJECTS, ".agents", "github-tokens.json"), store: "github-token")
+end
 
 def die!(message)
   warn("gh-token: #{message}")
@@ -75,21 +85,21 @@ def die!(message)
 end
 
 def read_store
-  return {} unless File.exist?(STORE)
+  return {} unless File.exist?(store_path)
 
-  JSON.parse(File.read(STORE))
+  JSON.parse(File.read(store_path))
 rescue StandardError
   {} # a corrupt cache is a cache miss, never a failure — we can always mint
 end
 
 def write_store(store)
-  FileUtils.mkdir_p(File.dirname(STORE))
+  FileUtils.mkdir_p(File.dirname(store_path))
   # Write-then-rename so a reader never sees a half-written cache, and 0600 BEFORE
   # the secret lands in it.
-  tmp = "#{STORE}.#{Process.pid}.tmp"
+  tmp = "#{store_path}.#{Process.pid}.tmp"
   File.open(tmp, File::CREAT | File::WRONLY | File::TRUNC, 0o600) { |f| f.write("#{JSON.pretty_generate(store)}\n") }
-  File.rename(tmp, STORE)
-  File.chmod(0o600, STORE)
+  File.rename(tmp, store_path)
+  File.chmod(0o600, store_path)
 rescue StandardError => e
   warn("gh-token: could not persist the cache (#{e.class}) — continuing with a fresh mint each call")
 end
@@ -165,7 +175,7 @@ end
 def status
   store = read_store
   if store.empty?
-    puts "gh-token: no cache yet (#{STORE})"
+    puts "gh-token: no cache yet (#{store_path})"
     return
   end
 
