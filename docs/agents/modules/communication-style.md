@@ -106,11 +106,13 @@ The mechanics that matter (`studio-engine/app/models/studio/link.rb:37`):
 - **The board's WAITING APPROVAL button now does this for him.** It no longer
   mints on the board (which stranded him, signed in, on the PRODUCTION page —
   right path, wrong server). It redirects to the local stack's own dev-only mint
-  endpoint, `/_studio/local_review?email=&return_to=` (studio-engine >= 0.19,
-  loopback-only, 404 in production), so one click signs him in THERE and lands
-  him on the page under review. Set `--local-url` accurately and the button is
-  the fastest path; the hand-minted link above stays the fallback (an older
-  engine on the stack, or a review with no task record).
+  endpoint, `/_studio/local_review?return_to=` (loopback-only, 404 in
+  production), so one click signs him in THERE and lands him on the page under
+  review. The button is public and carries NO address: the local desk names its
+  own reviewer (`Studio.local_review_email`, else its first admin), which needs
+  **studio-engine >= 0.36.0** — an older engine answers "Add ?email=…" instead.
+  Set `--local-url` accurately and the button is the fastest path; the
+  hand-minted link above stays the fallback.
 - **Mint review links with `ttl: 12.hours`.** The 15-minute default is tuned
   for email login, not an async review.
 - **Links are single-use** (burned on the consume POST; the GET interstitial
