@@ -70,7 +70,17 @@ module GhAuthRetry
     bin = token_bin(env: env)
     return nil unless File.executable?(bin)
 
-    out, err, status = Open3.capture3(env.to_h, bin, "--identity", identity, chdir: (root || Dir.pwd))
+    # --force, ALWAYS. This method is only ever reached because gh just REFUSED a
+    # credential, so the cache is the one place a usable token cannot be assumed to
+    # be. Without it the broker happily returns the very token that was refused
+    # whenever that token is still inside its 50-minute freshness window — a revoked
+    # installation, a permissions change, or a future-dated created_at then wedges
+    # EVERY ship and EVERY reviewer merge until the window elapses, which is exactly
+    # the outage this module exists to end. Forcing also self-heals the cache: the
+    # fresh token lands in the inactive slot and wins the newest-by-created_at read
+    # for every later process. The cost is one mint on a recovery that would have
+    # been served from cache — seconds, by the broker's own stated economics.
+    out, err, status = Open3.capture3(env.to_h, bin, "--identity", identity, "--force", chdir: (root || Dir.pwd))
     token = out.to_s.strip
     unless status.success? && !token.empty?
       # DO NOT swallow this. A misconfigured PEM or a lapsed 1Password session

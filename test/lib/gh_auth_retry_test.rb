@@ -99,6 +99,22 @@ class GhAuthRetryTest < Minitest::Test
     end
   end
 
+  # THE RECOVERY PATH MUST NOT BE HANDED BACK THE TOKEN THAT WAS JUST REFUSED.
+  # mint is only reached after gh refused a credential, so a cached token is the one
+  # thing that cannot be assumed usable. Asking the broker WITHOUT --force returns the
+  # refused token unchanged for as long as it is under the 50-minute freshness window
+  # — recovery dead, across processes, for bin/ship as well as bin/pr-review.
+  def test_the_retry_forces_a_fresh_mint_rather_than_reusing_the_refused_cache
+    Dir.mktmpdir do |dir|
+      broker = File.join(dir, "gh-token-argv")
+      File.write(broker, "#!/bin/sh\necho \"$*\"\n") # echoes the WHOLE argv
+      File.chmod(0o755, broker)
+
+      assert_includes GhAuthRetry.mint(env: { "GH_AUTH_TOKEN_BIN" => broker }), "--force",
+                      "the recovery path must bypass the broker's cache, not re-read it"
+    end
+  end
+
   # The build/review lane identity — deliberately NOT the deployer App, which cannot
   # open or merge PRs by design. A regression here would silently swap lanes.
   def test_defaults_to_the_agent_identity_not_the_deployer
