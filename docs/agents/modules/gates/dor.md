@@ -83,39 +83,116 @@ shipped `.github/workflows/ci.yml` and DoR printed "n/a → ready to advance".
 
 ## The gate grades the TASK's tree — never the one you stand in
 
-A cert's fingerprint is a git **TREE hash** (content-addressed), so a checkout
-that is not the task's tree can **never** match a recorded cert. That does not
-surface as "wrong root" — it surfaces as **`STALE`**, which reads as "you edited
-since certifying" and sends you off to re-certify code that was already green.
+**Two** things root here — the suite **fingerprint** and the code **diff** — and
+they fail in opposite directions, which is why they were fixed a month apart.
 
-Both lanes have been bitten:
+**The fingerprint: a false REFUSAL.** A cert's fingerprint is a git **TREE hash**
+(content-addressed), so a checkout that is not the task's tree can **never** match
+a recorded cert. That does not surface as "wrong root" — it surfaces as
+**`STALE`**, which reads as "you edited since certifying" and sends you off to
+re-certify code that was already green. Both lanes were bitten: **review** runs
+from the primary by design (cured 2026-07-09 by rooting at the task branch's
+committed tree, `origin/feat/<slug>^{tree}`), and **builder** had no such cure and
+false-read `STALE` for **6 of 6 tasks on 2026-07-14**, including certs 90 seconds
+old. An agent that hits an unexplainable STALE *stops*, so the false STALE
+stranded finished tasks in `building` behind green PRs.
 
-- **Review** — reviewers run from the **primary** checkout by design, so
-  `--gate-role review` roots the suite fingerprint at the **task branch's
-  committed tree** (`origin/feat/<slug>^{tree}`).
-- **Builder** — a builder-lane run from the wrong checkout had **no** such cure
-  and false-read `STALE` for **6 of 6 tasks on 2026-07-14**, including certs 90
-  seconds old. An agent that hits an unexplainable STALE *stops*, so the false
-  STALE stranded finished tasks in `building` behind green PRs.
+**The diff: a false PASS — the dangerous direction.** The diff decides the
+`chore`/`cleanup`/`docs` exemption, i.e. whether the test gate applies at all.
+Read from a foreign checkout it does not refuse, it **agrees**, with someone
+else's files. On **2026-08-08** the review gate-zero, run from the studio primary
+exactly as [`pr-review-primary.md`](../../agents/carl/sops/pr-review-primary.md)
+instructs, printed this over a multi-file code PR:
 
-`bin/dor-check` now consults the **task-root guard**
-(`bin/lib/cert_root_guard.rb` — the same guard `bin/fast-check` and
-`bin/full-suite-check` already required; dor-check was the one command in the
-family that never did). When the root is not the task's tree it resolves in this
-order:
+```text
+✓ DoR-to-Merge n/a … doc-only diff (kind: chore): 1 file(s), none behavioral —
+  docs/agents/maintenance/delete-later.md [source: git working tree]
+  → ready to advance submitted → reviewed
+```
 
-1. the task's **worktree** is on disk → re-root the whole gate there, and
-   **announce it on stderr** (naming both roots: where you stood, where it went);
+One unrelated dirty file on the primary's `main`, read as the PR's entire diff.
+Unlike a false STALE this is indistinguishable from a real verdict, nobody
+re-runs it, and **the dirtier the checkout the more confidently it lies**.
+
+`bin/dor-check` consults the **task-root guard** (`bin/lib/cert_root_guard.rb` —
+the same guard `bin/fast-check` and `bin/full-suite-check` already required;
+dor-check was the one command in the family that never did) in **both gate
+roles**. When the root is not the task's tree it resolves in this order:
+
+1. a **validated** worktree is on disk and unambiguous → re-root the whole gate
+   there — **diff and fingerprint** — and **announce it on stderr** (naming both
+   roots: where you stood, where it went);
 2. else its **branch** resolves in this repo → root the *fingerprint* at that
-   branch's committed tree, and **announce that on stderr** too;
-3. else → **refuse**, naming the problem, instead of grading a foreign tree and
-   calling a fresh cert stale. The refusal is an `errors` entry (so it prints in
-   the verdict, not as an stderr banner) and it lives in the **suite-gate** block
-   — so a kind that is EXEMPT from the suite gate (chore/cleanup/docs) never
-   reaches it and passes without a root complaint. That is not a fail-open: the
-   diff those kinds are graded on comes from the **PR**, which is
-   root-independent; they need no cert; and a task with no PR still fails closed
-   as indeterminate.
+   branch's committed tree and the *diff* at that branch's committed diff
+   (`<base>...origin/feat/<slug>`), and **announce that on stderr** too. Both are
+   content-addressed, so neither depends on what your checkout is carrying;
+3. else → **refuse**, naming the problem, instead of describing a foreign tree.
+   The cert half refuses in the suite-gate block; the diff half resolves
+   **`:indeterminate`**, which the exempt-kind gate already fails closed on.
+
+Remedy 2 carries its own repo condition, because **a branch name is not
+repo-scoped**. Reading `<base>...origin/feat/<slug>` out of a checkout that merely
+*has* a same-named branch grades a different project's work as this PR — and there
+are **21 real hub↔satellite collisions on disk today**. So remedy 2 fires only when
+the standing checkout is the PR's own repo (`standing_repo_mismatch` is nil); a
+branch-only mismatch still qualifies, which is exactly the reclaimed-worktree case it
+exists for. The same condition gates the branch-tree *fingerprint*: presenting a
+foreign repo's tree hash as this task's cert is the confidently-wrong-root failure
+this file spends a section warning about.
+
+**Every tree is validated — the one it jumps to AND the one you stand in, on BOTH
+axes.** A checkout is the task's tree only if it passes *repo* **and** *branch*; a
+matching directory NAME proves neither.
+The first cut of this fix checked the checkout you were **standing in** twice and the
+one it **jumped to** zero times, while announcing "Re-rooted at the task's worktree"
+as fact — which reopened the false pass one hop downstream, twice
+(review, 2026-08-09): a worktree with the right branch in the **wrong repo**, and a
+**stale desk** in the right repo that never carried the branch. Either alone gets
+through an either-axis check, so both are required:
+
+| axis | source of truth | when enforced |
+|---|---|---|
+| repo | the checkout's `origin` remote (**owner-qualified**, so a fork does not validate), falling back to its app directory name only when there is no origin | only when `devops.pr_url` names a repo (a pre-PR builder run has none) |
+| branch | `git rev-parse --abbrev-ref HEAD` in the checkout | always; a detached `HEAD` is refused |
+
+Failing checkouts are **named with the axis they failed** — "no worktree here" would
+be a lie when one is sitting on disk under exactly that name, and a reader who
+believes it points the gate straight back at the desk that was just rejected.
+
+**The one asymmetry, and it is deliberate.** Standing physically at the task's desk
+(`…/.worktrees/<slug>`) still vouches for a cert **writer** — `bin/fast-check`,
+`bin/full-suite-check` — even mid-rebase on a detached `HEAD`: the operator is working
+there, and a cert is content-addressed, so a transient tree can only later read
+`STALE`, which is loud and self-correcting. It does **not** vouch for the **reader**:
+a detached `HEAD` is not the PR's state, and a diff read from it is graded as though it
+were — silently, and passing. Same fact, opposite correct answers, so `assess` reports
+it (`standing_in_task_desk`) and each caller decides. That vouch is deliberately
+repo-blind: making it repo-strict would need a repo-per-PR mapping the task record does
+not have (see the single-`pr_url` gap below), and would refuse honest multi-repo builds.
+
+**Ambiguity is also a refusal.** The worktree glob spans every app, so a
+**multi-repo** task matches once per repo (live today: `repair-moms-app-ci` exists
+under both `moms-app` and `studio-engine`). Picking the alphabetical first answers
+"which repo is this?" with a coin flip. `devops.pr_url` names the repo actually
+under gate and breaks the tie; when more than one candidate still validates, the gate
+prints `AMBIGUOUS TASK TREE`, lists them, and refuses to guess. Nothing assumes one repo or one
+rung — the diff base stays the per-root release-aware default, so a repo with no
+`accepted` (moms-app) still resolves its own base.
+
+**Known gap, stated so nobody assumes otherwise:** `devops.pr_url` is a *single*
+value, so on a multi-repo task this gate validates **one** PR and is blind to the
+other. The rooting above keeps it from grading the *wrong* repo silently; it does
+not make it grade *both*. Reviewing a multi-repo task still means checking the
+second PR yourself.
+
+**The local working tree is never a fallback from a foreign root.** This is the
+rule that closes the 08-08 hole by construction rather than by every reader
+remembering to ask. The old reasoning — recorded in this file, and wrong — was
+that exempt kinds are safe because "the diff comes from the PR, which is
+root-independent". True only while `gh` can read the PR: when it can't (a token
+fault, a blank `pr_url`), the resolver fell through to the local view and the
+nearest dirty checkout answered. An observation of the **wrong tree** is not
+evidence, even when it is non-empty and all prose.
 
 **Resolve, not refuse — and never silently.** The cert *writers* refuse a wrong
 root, and must: they **stamp** evidence about the tree they stand in, so a chdir
@@ -147,10 +224,14 @@ deliberately **not** called `HEAD`: `git rev-parse HEAD^{tree}` will not
 reproduce it.
 
 `--json` carries the same facts machine-readably: `code_root` (the checkout the
-**diff** was read from) plus `full_suite.fingerprint`, `.fingerprint_root`,
-`.fingerprint_repo`, `.fingerprint_source` (`working-tree` | `branch-tree`), and
-`.recorded`. `code_root` is *not* the fingerprint's root under an override —
-that is precisely why the provenance travels with the fingerprint instead.
+**diff** was read from) and `diff_source` (`pr` | `git` | `branch` | `injected` |
+`indeterminate`) plus `changed_files`, then `full_suite.fingerprint`,
+`.fingerprint_root`, `.fingerprint_repo`, `.fingerprint_source` (`working-tree` |
+`branch-tree`), and `.recorded`. `code_root` is *not* the fingerprint's root under
+an override — that is precisely why the provenance travels with the fingerprint
+instead. **The checkable invariant is the PAIRING**: `diff_source: "git"` is a
+correct answer only when `code_root` is the task's own tree; the same pair read
+from anywhere else is the 08-08 false pass.
 
 `DOR_CHECK_DIFF_ROOT=<path>` bypasses the guard: that is the caller **declaring**
 a root (the CI/test seam), exactly as `FAST_CHECK_ROOT` / `FULL_SUITE_ROOT` do

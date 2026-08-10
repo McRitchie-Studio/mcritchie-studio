@@ -437,4 +437,104 @@ class ShipTest < Minitest::Test
       refute_equal "", `git -C #{dir} status --porcelain`.strip, "no commit may land from the wrong branch"
     end
   end
+
+  # ── the ROOT-GUARD lane ────────────────────────────────────────────────────
+  #
+  # Every test above pins SHIP_ROOT, which short-circuits the root guard entirely —
+  # so ship's guard branch had NO coverage at all. That gap is the reason a wrong
+  # claim about this lane survived a round of review: with nothing exercising it,
+  # "it still ships" could be asserted without ever being observed.
+  #
+  # WHAT IS ACTUALLY TRUE, measured (2026-08-09): ship REFUSES a detached HEAD at the
+  # task's own desk, and always has. It dies at the branch guard in bin/ship — which
+  # is PRE-EXISTING, live on `main`, and untouched by this PR — because a detached
+  # HEAD is not the task branch. There was never a regression here to restore, and
+  # these tests assert the refusal, not a lane that does not exist.
+  #
+  # What the root-guard line in bin/ship does change is WHICH refusal you get. Without
+  # it the root guard speaks first and says the desk "is not <slug>'s tree", which is
+  # false — it IS the task's desk; only HEAD is detached — and it sends the builder
+  # somewhere else. With it, ship falls through to the branch guard, which names the
+  # real problem and the real fix (finish the rebase). Same exit code, same steps run,
+  # better diagnosis. That is the whole of its effect, and it is what these tests pin.
+
+  # Run ship from `cwd` with NO SHIP_ROOT, so the real root guard runs.
+  def run_ship_from(cwd, dir, projects)
+    log = File.join(dir, "stub.log")
+    env = SessionEnv.neutralized(
+      "SHIP_ROOT" => nil,
+      "SHIP_PROJECTS_DIR" => projects,
+      "SHIP_TASK_BIN" => write_stub(dir, "task-stub", "TASK"),
+      "SHIP_FAST_CHECK_BIN" => write_stub(dir, "fast-stub", "FAST"),
+      "SHIP_DOR_CHECK_BIN" => write_stub(dir, "dor-stub", "DOR"),
+      "SHIP_GH_BIN" => write_stub(dir, "gh-stub", "GH"),
+      "SHIP_ACTIVITY_BIN" => write_stub(dir, "activity-stub", "ACTIVITY"),
+      "STUB_LOG" => log,
+      "TASK_SHOW_JSON" => task_record,
+      "TASK_SHOW_JSON_MOVED" => task_record(stage: "submitted", pr_url: PR_URL)
+    )
+    out, err, status = Open3.capture3(env, RbConfig.ruby, BIN, SLUG, chdir: cwd)
+    [out, err, status]
+  end
+
+  # The task's own desk at <projects>/<app>/.worktrees/<slug>, on the task branch.
+  def with_task_desk
+    Dir.mktmpdir do |root|
+      projects = File.realpath(root)
+      desk = File.join(projects, "myapp", ".worktrees", SLUG)
+      FileUtils.mkdir_p(desk)
+      g = ->(args) { assert(system("git -C #{desk} #{args} >/dev/null 2>&1"), "git #{args}") }
+      File.write(File.join(desk, ".gitignore"), "stub.log\n*-stub\n")
+      File.write(File.join(desk, "app.rb"), "puts :v1\n")
+      g.call("init -q -b #{BRANCH}")
+      g.call("config user.email tester@example.com")
+      g.call("config user.name tester")
+      g.call("add -A")
+      g.call("commit -q -m init")
+      yield projects, desk
+    end
+  end
+
+  def test_a_detached_head_at_the_tasks_own_desk_is_refused_by_the_branch_guard
+    # Physically at the task's desk, HEAD detached (mid-rebase is the ordinary way to
+    # get here). ship refuses — it always has, at the pre-existing branch guard — and
+    # this asserts that refusal POSITIVELY, including which guard produced it. The
+    # earlier version of this test asserted only negatives under the name
+    # "still_ships", which described a behavior that does not occur.
+    with_task_desk do |projects, desk|
+      assert system("git -C #{desk} checkout -q --detach HEAD")
+      out, err, status = run_ship_from(desk, desk, projects)
+      blame = out + err
+
+      refute status.success?, "a detached HEAD is not the task branch; ship refuses"
+      assert_includes blame, "not the task branch", "the BRANCH guard is what refuses"
+      assert_includes blame, "finish the rebase", "and it names the fix that actually applies"
+
+      # The root guard must NOT be the one speaking: the desk IS the task's tree, so
+      # "not <slug>'s tree" would be a false diagnosis pointing the builder elsewhere.
+      # This is the one thing the bin/ship root-guard line changes, so it is asserted
+      # positively rather than as a bare refute of a string that may never appear.
+      refute_includes blame, "is not fast-lane-demo's tree",
+                      "the root guard must defer to the branch guard at the task's own desk"
+    end
+  end
+
+  def test_a_foreign_checkout_is_still_refused_or_re_rooted
+    # The other direction, so the fix above cannot become a blanket bypass: standing
+    # somewhere that is NOT the task's desk must still be caught.
+    with_task_desk do |projects, _desk|
+      stranger = File.join(projects, "myapp")
+      FileUtils.mkdir_p(stranger)
+      assert system("git -C #{stranger} init -q -b release")
+      assert system("git -C #{stranger} config user.email t@t.co")
+      assert system("git -C #{stranger} config user.name t")
+      File.write(File.join(stranger, "README.md"), "hub\n")
+      assert system("git -C #{stranger} add -A && git -C #{stranger} commit -q -m init")
+
+      _out, err, status = run_ship_from(stranger, stranger, projects)
+
+      refute status.success?, "a foreign checkout must not ship silently"
+      assert_includes err, SLUG
+    end
+  end
 end

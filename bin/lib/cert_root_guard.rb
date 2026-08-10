@@ -43,6 +43,15 @@ require_relative "projects_root"
 #     SILENTLY, which leaves the tool and the operator believing different things
 #     about which code was judged.
 #
+#     The reader roots its DIFF here too, not just its fingerprint — and that half
+#     fails in the opposite, worse direction. A foreign fingerprint can only read
+#     STALE (a false REFUSAL, loud). A foreign DIFF reads as a real diff: run the
+#     review gate-zero from a primary checkout carrying one unrelated dirty .md and
+#     the gate observes a doc-only change, grants the `kind: chore` exemption, and
+#     waves through a multi-file code PR. Same wrong tree, but a false PASS in the
+#     gate whose whole job is refusing under-tested work (observed 2026-08-08,
+#     task dor-check-review-rooting).
+#
 # The guard applies only to the IMPLICIT root (cwd-resolved). An EXPLICIT override
 # (FULL_SUITE_ROOT / FAST_CHECK_ROOT / DOR_CHECK_DIFF_ROOT) bypasses it at the call
 # site: the caller declared that root deliberately (the CI/test seam).
@@ -56,9 +65,16 @@ module CertRootGuard
   # nil when `root` is `slug`'s tree (the cert may proceed); else the refusal
   # message. A blank slug (standalone --print / hook runs) never refuses —
   # there is no task to root at. The cert WRITERS' entry point.
-  def refusal(task_bin:, slug:, root:, devops: nil, projects_dir: nil)
-    assess(task_bin: task_bin, slug: slug, root: root, devops: devops, projects_dir: projects_dir)
-      &.fetch(:message)
+  def refusal(task_bin:, slug:, root:, devops: nil, projects_dir: nil, prefer_repo: nil)
+    found = assess(task_bin: task_bin, slug: slug, root: root, devops: devops,
+                   projects_dir: projects_dir, prefer_repo: prefer_repo)
+    return nil if found.nil?
+    # The WRITER's half of the desk vouch (see #assess): standing physically at the
+    # task's desk in the right repo still certifies, detached HEAD and all. The READER
+    # deliberately does not honor this — same fact, opposite correct answer.
+    return nil if found[:standing_in_task_desk]
+
+    found[:message]
   end
 
   # The full assessment of `root` against the task. nil when `root` IS the task's
@@ -66,29 +82,103 @@ module CertRootGuard
   # remedy from (see THE TWO REMEDIES above):
   #
   #   :message         — the refusal text (what #refusal returns).
-  #   :resolved_root   — the task's tree ON DISK (…/<app>/.worktrees/<worktree_slug>),
-  #                      or nil when no such worktree exists here. The RESOLVE half:
-  #                      a READER re-roots at this instead of refusing.
+  #   :resolved_root   — the task's tree ON DISK, VALIDATED on both axes
+  #                      (#worktree_mismatch), and unambiguous: nil unless exactly
+  #                      one candidate qualifies. The RESOLVE half — a READER
+  #                      re-roots at this instead of refusing. It is a FACT about the
+  #                      destination, never a guess from its directory name.
+  #   :candidate_roots — EVERY directory-name match on disk, qualified or not. What
+  #                      the refusal enumerates.
+  #   :eligible_roots  — the subset that passed both axes. More than one means a
+  #                      MULTI-REPO task nothing could disambiguate; the caller
+  #                      refuses rather than picking.
+  #   :rejected_roots  — [[path, why], …] for the candidates that failed, so a
+  #                      refusal can name which axis broke instead of just saying no.
   #   :expected_branch — the branch that IS the task's tree (board, else feat/<slug>).
   #   :actual_branch   — what `root` has checked out ("HEAD" when detached, nil when
   #                      `root` isn't a git tree at all).
   #   :worktree_slug   — the task's worktree slug.
   #
   # `devops` short-circuits the board read for a caller that already holds the task;
-  # `projects_dir` overrides where the worktree glob looks (the test seam).
-  def assess(task_bin:, slug:, root:, devops: nil, projects_dir: nil)
+  # `projects_dir` overrides where the worktree glob looks (the test seam);
+  # `prefer_repo` breaks a multi-repo tie (see #worktree_hint).
+  def assess(task_bin:, slug:, root:, devops: nil, projects_dir: nil, prefer_repo: nil)
     return nil if slug.to_s.strip.empty?
 
     devops ||= task_devops(task_bin, slug)
     expected_branch = first_present(devops["branch"], "feat/#{slug}")
     worktree_slug = first_present(devops["worktree_slug"], slug)
     actual_branch = current_branch(root)
-    return nil if actual_branch == expected_branch
-    return nil if worktree_dir?(root, worktree_slug)
+
+    # SYMMETRY. The root you are STANDING in faces exactly the two axes any candidate
+    # destination faces. It did not used to: this line was branch-only (the repo axis
+    # was never asked of it) and was backed by a `worktree_dir?` STRING match, so a
+    # stale desk on `release`, a detached HEAD in the right desk, and — live on disk
+    # today — standing in studio-engine's `repair-moms-app-ci` desk while the PR is
+    # moms-app's, all short-circuited to "you are the task's tree" and were graded
+    # with no validation and no banner. Validating the destination while trusting the
+    # source, inside one guard, is the same defect this guard exists to close, just
+    # pointing the other way (review round 4).
+    # Reported per AXIS, not just as a first-failure string. A caller that wants to
+    # read something OUT of the standing root needs to know WHICH axis failed: a repo
+    # mismatch invalidates everything the checkout could tell you, while a branch-only
+    # mismatch still leaves its refs trustworthy (right repo, wrong branch checked
+    # out). dor-check's branch-diff fallback turns on exactly that distinction.
+    standing_repo_mismatch = repo_mismatch(root, prefer_repo)
+    standing_branch_mismatch = branch_mismatch(root, expected_branch)
+    standing_mismatch = standing_repo_mismatch || standing_branch_mismatch
+    return nil if standing_mismatch.nil?
+
+    # The PHYSICAL desk vouch — …/.worktrees/<worktree_slug>, in the right repo. It
+    # survives the branch axis but NOT the repo axis, and it is now a REPORTED FACT
+    # rather than a short-circuit, because the two consumers want opposite answers
+    # (the REFUSE-vs-RESOLVE split at the top of this file):
+    #
+    #   a WRITER (bin/fast-check, bin/full-suite-check) accepts it — the operator is
+    #     physically working at the task's desk, and a cert stamped mid-rebase is
+    #     content-addressed, so it can only later read STALE: loud and self-correcting.
+    #   the READER (bin/dor-check) must NOT: a detached HEAD is not the PR's state, and
+    #     a diff read from it is graded as though it were. That direction fails SILENT
+    #     and passing, which is the whole subject of this task.
+    #
+    # #refusal honors it; dor-check ignores it deliberately.
+    #
+    # Branch-forgiving and deliberately REPO-BLIND. The first cut also required the
+    # repo axis here, which mutation-testing exposed as dead code: only #refusal reads
+    # this, and the cert writers pass no `prefer_repo`. The fix is NOT to feed them one
+    # — `devops.pr_url` is a SINGLE value (the known gap in gates/dor.md), so on a
+    # multi-repo task it names one repo while the builder may legitimately be
+    # certifying in another. Enforcing it here would refuse honest work, which is the
+    # one thing a cert writer must not do casually. The wrong-repo desk is closed for
+    # the READER by `standing_mismatch` above, where failing closed is safe.
+    standing_in_task_desk = worktree_dir?(root, worktree_slug)
+
+    candidates = worktree_candidates(worktree_slug, projects_dir)
+    rejected = candidates.filter_map do |path|
+      why = worktree_mismatch(path, expected_branch: expected_branch, prefer_repo: prefer_repo)
+      [path, why] if why
+    end
+    eligible = candidates - rejected.map(&:first)
+    resolved = (eligible.first if eligible.size == 1)
 
     {
-      message: refusal_message(slug, root, actual_branch, expected_branch, worktree_slug, projects_dir),
-      resolved_root: worktree_hint(worktree_slug, projects_dir),
+      message: refusal_message(slug, root, actual_branch, expected_branch, worktree_slug, projects_dir,
+                               resolved: resolved, prefer_repo: prefer_repo),
+      # Why the STANDING root is not the task's tree ("is on branch release, not
+      # feat/x" / "answers to repo …"), so a caller can say which axis failed without
+      # re-deriving it.
+      standing_mismatch: standing_mismatch,
+      # Per-axis, so a caller can ask "is this even the right REPO?" without parsing
+      # the message. nil = that axis passed (or was not determinable).
+      standing_repo_mismatch: standing_repo_mismatch,
+      standing_branch_mismatch: standing_branch_mismatch,
+      standing_in_task_desk: standing_in_task_desk,
+      # Exactly one VALIDATED tree, or nothing. Not "the best of the candidates" —
+      # a destination nobody checked is how B1/B2 turned a re-root into a false pass.
+      resolved_root: resolved,
+      candidate_roots: candidates,
+      eligible_roots: eligible,
+      rejected_roots: rejected,
       expected_branch: expected_branch,
       actual_branch: actual_branch,
       worktree_slug: worktree_slug
@@ -97,11 +187,23 @@ module CertRootGuard
 
   # The cert writers' refusal text: where you ARE, where the task's tree IS, and the
   # concrete `cd` that fixes it when the worktree is on disk.
-  def refusal_message(slug, root, actual_branch, expected_branch, worktree_slug, projects_dir = nil)
+  #
+  # `resolved` is the VALIDATED destination when the caller already computed one. It
+  # matters because the `cd` line is advice someone will follow: pointing it at a
+  # directory that merely carries the task's NAME — a stale desk on `release`, or
+  # another repo's worktree — sends the reader to certify the wrong tree. Without a
+  # validated tree the advice stays generic rather than confidently wrong.
+  def refusal_message(slug, root, actual_branch, expected_branch, worktree_slug, projects_dir = nil,
+                      resolved: nil, prefer_repo: nil)
     message = "this run roots at #{root} (branch #{actual_branch || 'unknown'}), " \
               "which is not #{slug}'s tree — refusing to certify it.\n" \
               "Expected branch #{expected_branch} or the task worktree .worktrees/#{worktree_slug}."
-    hint = worktree_hint(worktree_slug, projects_dir)
+    # `prefer_repo` threads through because this `cd` line is advice someone FOLLOWS,
+    # and it is the text bin/ship, bin/fast-check and bin/full-suite-check all die!
+    # with — so dropping the repo filter here sent four callers to a validated-but-
+    # wrong-repo desk while the comment above claimed the tie was broken.
+    hint = resolved || eligible_worktrees(worktree_slug, expected_branch, projects_dir: projects_dir,
+                                          prefer_repo: prefer_repo).first
     message += "\nRun the cert from the task worktree: cd #{hint}" if hint
     message
   end
@@ -133,17 +235,149 @@ module CertRootGuard
       File.basename(File.dirname(dir.to_s)) == ".worktrees"
   end
 
-  # The task's tree ON DISK: any app's .worktrees/<worktree_slug> under the projects
-  # root. Doubles as the refusal's `cd` hint and the reader's :resolved_root. The
-  # glob spans every app because a SATELLITE task (turf-monster, rolio) runs the
+  # EVERY …/<app>/.worktrees/<worktree_slug> on disk under the projects root, sorted.
+  # The glob spans every app because a SATELLITE task (turf-monster, rolio) runs the
   # hub's gate scripts — its worktree lives under the satellite, not the hub.
-  # `projects_dir` overrides the search root (the test seam). Best-effort: nil when
-  # no such worktree exists here.
-  def worktree_hint(worktree_slug, projects_dir = nil)
+  #
+  # It returns the whole SET, not the first hit, because a MULTI-REPO task
+  # legitimately has one worktree per repo under the SAME slug — live on this machine
+  # today, e.g. `repair-moms-app-ci` exists under both moms-app and studio-engine. The
+  # glob is alphabetical, so a first-hit pick silently answers "which repo is this
+  # task's tree?" with "whichever sorts first", which is how a gate ends up grading
+  # moms-app's tree for a studio-engine PR. `projects_dir` overrides the search root
+  # (the test seam). Best-effort: [] on any failure.
+  def worktree_candidates(worktree_slug, projects_dir = nil)
     base = projects_dir.to_s.strip.empty? ? ProjectsRoot.default_projects_dir : projects_dir.to_s
-    Dir.glob(File.join(base, "*", ".worktrees", worktree_slug)).find { |path| File.directory?(path) }
+    Dir.glob(File.join(base, "*", ".worktrees", worktree_slug)).select { |path| File.directory?(path) }.sort
+  rescue StandardError
+    []
+  end
+
+  # The app a checkout belongs to, for BOTH shapes the guard is handed:
+  #   …/<app>/.worktrees/<slug> → "<app>"   (a task desk)
+  #   …/<app>                   → "<app>"   (a primary checkout)
+  # The unconditional two-level climb this replaces was written for desks only, so on
+  # a primary it returned the PROJECTS directory's name — which is nobody's repo. It
+  # went unnoticed because `origin` normally answers first; it only surfaced when
+  # mutation-testing nulled the remote and the directory fallback took over.
+  def app_of(path)
+    dir = path.to_s.chomp("/")
+    return File.basename(File.expand_path("../..", dir)) if File.basename(File.dirname(dir)) == ".worktrees"
+
+    File.basename(dir)
+  end
+
+  # WHY `path` is not the task's tree — or nil when it IS. The DESTINATION check,
+  # and the reason it exists: #assess interrogates the root you are STANDING in on
+  # two axes, and the first cut of the re-root asked the root it JUMPED TO nothing
+  # at all. A candidate qualified by having the right DIRECTORY NAME, while the
+  # caller announced "Re-rooted at the task's worktree" as established fact. Two
+  # independent false passes came straight back through that door (review of
+  # 2026-08-09): a worktree with the right branch in the WRONG REPO, and a stale desk
+  # in the right repo that never carried the branch. Either axis alone would have
+  # missed one of them, so BOTH are asked here, and the answer names which failed.
+  #
+  #   repo   — checked only when `prefer_repo` is known (devops.pr_url names it). A
+  #            builder's pre-PR run has no repo to compare against; demanding one
+  #            would refuse every legitimate pre-PR re-root. Each axis is enforced
+  #            whenever it is determinable.
+  #   branch — always. A tree that is not on the task's branch cannot be the tree the
+  #            builder certified, whatever it is called on disk. A detached HEAD reads
+  #            as "HEAD" and is refused too: fail closed on the destination, and let
+  #            the caller declare an explicit root if they really mean it.
+  def worktree_mismatch(path, expected_branch:, prefer_repo: nil)
+    repo_mismatch(path, prefer_repo) || branch_mismatch(path, expected_branch)
+  end
+
+  # The REPO axis, alone — split out because the physical-desk vouch below needs it
+  # WITHOUT the branch axis. nil when the checkout answers to `prefer_repo`, or when
+  # there is no preference to check against.
+  #
+  # OWNER-AWARE when it can be. `origin` is authoritative — it IS the GitHub repo this
+  # checkout pushes to — and it carries the owner, so a FORK (same repo name, someone
+  # else's account) is a positive contradiction rather than a match. Only when there is
+  # no origin at all does this fall back to the app DIRECTORY name, which cannot know
+  # an owner; a bare-name comparison is weaker, but it is the convention the worktree
+  # glob is built on and it beats having no answer.
+  #
+  # Falling back matters in the other direction too: directory name ALONE would refuse a
+  # perfectly good worktree whenever a repo's GitHub name differs from the folder someone
+  # cloned it into — a naming mismatch nobody chose, turning a working review into a dead
+  # end. So the axis rejects only on a positive contradiction, never on absent information.
+  def repo_mismatch(path, prefer_repo)
+    wanted = prefer_repo.to_s.strip
+    return nil if wanted.empty?
+
+    remote = remote_slug(path)
+    if remote
+      return nil if slugs_match?(remote, wanted)
+
+      return "answers to repo #{remote}, not #{wanted}"
+    end
+
+    dir = app_of(path)
+    return nil if dir.casecmp?(wanted.split("/").last.to_s)
+
+    "answers to repo #{dir}, not #{wanted.split('/').last}"
+  end
+
+  # The BRANCH axis, alone. A detached HEAD reads as "HEAD" and never matches.
+  def branch_mismatch(path, expected_branch)
+    actual = current_branch(path)
+    return nil if actual == expected_branch
+
+    "is on branch #{actual || 'unknown'}, not #{expected_branch}"
+  end
+
+  # "Owner/repo" from `origin`, or nil when there is no origin (normal in a freshly
+  # `git init`ed tree and in test fixtures).
+  def remote_slug(dir)
+    url = IO.popen(["git", "-C", dir.to_s, "remote", "get-url", "origin"], err: File::NULL, &:read)
+    remote_slug_from(url)
   rescue StandardError
     nil
+  end
+
+  # The parsing half, kept pure so it is testable without a git fixture:
+  # "git@github.com:Owner/turf-monster.git" and
+  # "https://github.com/Owner/turf-monster" both → "Owner/turf-monster".
+  def remote_slug_from(url)
+    text = url.to_s.strip
+    return nil if text.empty?
+
+    text[%r{[:/]([^/:]+/[^/:]+?)(?:\.git)?/?\z}, 1]
+  end
+
+  # Two repo references name the same repo. Compared case-insensitively (GitHub is),
+  # and owner-to-owner ONLY when both sides carry an owner — a bare "turf-monster"
+  # from a directory name cannot vouch for an owner, and pretending it can would
+  # either refuse everything or wave forks through depending on which way we guessed.
+  def slugs_match?(a, b)
+    left = a.to_s.split("/")
+    right = b.to_s.split("/")
+    return left.last.to_s.casecmp?(right.last.to_s) if left.size < 2 || right.size < 2
+
+    left.last(2).join("/").casecmp?(right.last(2).join("/"))
+  end
+
+  # The candidates that survive #worktree_mismatch — the trees that really are this
+  # task's, as opposed to the ones merely NAMED after it.
+  def eligible_worktrees(worktree_slug, expected_branch, projects_dir: nil, prefer_repo: nil)
+    worktree_candidates(worktree_slug, projects_dir).reject do |path|
+      worktree_mismatch(path, expected_branch: expected_branch, prefer_repo: prefer_repo)
+    end
+  end
+
+  # The task's tree ON DISK. Doubles as the refusal's `cd` hint and the reader's
+  # :resolved_root. `prefer_repo` — the app the work under gate belongs to, e.g. the
+  # repo named by the task's PR URL — breaks a multi-repo tie; with no preference (or
+  # no match) this falls back to the first candidate, and the caller decides from
+  # :candidate_roots whether that guess is safe to act on. nil when nothing matches.
+  def worktree_hint(worktree_slug, projects_dir = nil, prefer_repo: nil)
+    candidates = worktree_candidates(worktree_slug, projects_dir)
+    wanted = prefer_repo.to_s.strip
+    preferred = wanted.empty? ? nil : candidates.find { |path| app_of(path) == wanted }
+    preferred || candidates.first
   end
 
   # The first argument whose string form isn't blank (nil when all are).

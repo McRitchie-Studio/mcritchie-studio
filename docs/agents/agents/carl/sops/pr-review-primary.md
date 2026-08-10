@@ -90,6 +90,28 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
      keeps the **strict CI semantics**: the claim popped a green PR, but CI can
      flip mid-review, so YOUR run is the authoritative in-review CI verdict — red
      and still-running both block, and fast-cert evidence needs the settled green.
+
+     **Run it from wherever you are — the gate validates every tree it touches.**
+     You are standing in the studio primary (the Entry above), which is not the
+     task's checkout, so `dor-check` resolves the task's own worktree/branch and
+     says so on stderr (`⚠ dor-check: RE-ROOTING …`, naming both trees). That
+     banner is the gate working, not a warning about your setup. It checks the same
+     two axes — right repo, right branch — on the checkout it JUMPS TO *and* on the
+     one you are STANDING in, so a stale desk, a detached `HEAD`, or another repo's
+     worktree of the same name is refused rather than quietly graded. Hence
+     three of its refusals need YOUR judgment rather than a re-run:
+     `AMBIGUOUS TASK TREE` (a multi-repo task has a worktree per repo and
+     `devops.pr_url` didn't name one of them — re-run with
+     `DOR_CHECK_DIFF_ROOT=<the right checkout>`), `TASK TREE NOT FOUND` (a directory
+     carrying the task's name is on disk but is on the wrong branch or in the wrong
+     repo — the message names which; check the task's branch out there, or declare
+     the right tree) and
+     `root guard: … NO tree here can grade its cert` (fetch the branch, or point
+     `DOR_CHECK_DIFF_ROOT` at the task's checkout). Never "fix" any of them by
+     re-running from a tree you happen to have handy: until 2026-08-08 this gate
+     read whatever checkout you stood in, and one unrelated dirty `.md` on the
+     primary was enough for it to call a multi-file code PR "doc-only" and wave
+     it through.
    - **your domain checklist** — walk Carl's REVIEW CHECKLIST (in
      [`../role.md`](../role.md)) against the diff for the hard-won backend gotchas:
      N+1s, transaction boundaries, `rescue_and_log` on every write path, migration

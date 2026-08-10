@@ -47,10 +47,27 @@
 # before spawning reviewers, and the primary's gate-zero (--gate-role review)
 # keeps the strict semantics (red AND pending both block; fast evidence needs
 # the settled green). Format + fingerprint live in bin/lib/full_suite_gate.rb.
-# Fingerprint ROOTING — the gate must grade the TASK's tree, not the checkout the
-# caller happens to stand in. The fingerprint is a git TREE hash, so a foreign root
-# can NEVER match a recorded cert; it doesn't read as "wrong root", it reads as
-# "STALE". Both lanes have now been bitten by that:
+# ROOTING — the gate must judge the TASK's tree, not the checkout the caller happens
+# to stand in. TWO things root: the suite FINGERPRINT and the code DIFF. Both have
+# been bitten, and they fail in OPPOSITE directions, which is why the diff took a
+# second fix.
+#
+# DIFF rooting (2026-08-08, task dor-check-review-rooting). The diff decides the
+# `kind: chore/cleanup/docs` exemption, i.e. whether the test gate applies at all.
+# Read from a foreign checkout it does not refuse — it AGREES, with someone else's
+# files: the review gate-zero, run from the hub PRIMARY exactly as
+# pr-review-primary.md instructs, saw that primary's ONE unrelated dirty .md and
+# printed "✓ DoR-to-Merge n/a … doc-only diff … → ready to advance" over a
+# multi-file code PR. A FALSE PASS in the gate whose entire job is refusing
+# under-tested work, and the dirtier the checkout the more confidently it lies. So
+# the task-root guard now runs in BOTH gate roles and re-roots the DIFF as well as
+# the fingerprint; where it cannot, the local working tree is refused as a diff
+# source outright (untrusted_root?) and the gate falls back to the task BRANCH's
+# committed diff, else to :indeterminate → fail closed.
+#
+# Fingerprint rooting — the same wrong tree, the opposite symptom. The fingerprint
+# is a git TREE hash, so a foreign root can NEVER match a recorded cert; it doesn't
+# read as "wrong root", it reads as "STALE". Both lanes were bitten by that:
 #   * REVIEW — reviewers run --gate-role review from the PRIMARY checkout (on
 #     release/main) by design, so it roots the suite fingerprint at the TASK
 #     BRANCH's committed tree (origin/feat/<slug>'s ^{tree}, content-addressed ==
@@ -290,7 +307,12 @@ end
 #               the verdict correct from anywhere.
 #   :git      — the local working tree + committed view (union of staged, unstaged,
 #               untracked, and base...HEAD). This is the BUILDER's view: it fires
-#               pre-commit and pre-PR, before a PR exists to read.
+#               pre-commit and pre-PR, before a PR exists to read. Read ONLY from a
+#               root that IS the task's tree — see untrusted_root? below.
+#   :branch   — the task BRANCH's committed diff (base...origin/<branch>), read when
+#               the caller stands in a foreign checkout that still carries the branch.
+#               The diff-side twin of the branch-tree FINGERPRINT rooting: same repo,
+#               same content-addressed honesty, no dependence on the cwd's dirt.
 #   :indeterminate — nothing could be read. NEVER an exemption (see below).
 #
 # FAIL-CLOSED. "We couldn't see a code diff" is not "there is no code diff." The
@@ -298,8 +320,65 @@ end
 # bought a full exemption — the gate defaulted to OFF whenever it couldn't see.
 # Now the exemption demands positive proof (a non-empty, observed, all-prose
 # diff); anything else enforces the tiers.
+#
+# AND A NON-EMPTY OBSERVATION OF THE WRONG TREE IS NOT PROOF EITHER. That is the
+# hole the fail-closed rule above left open, and the one that actually fired: the
+# review gate-zero runs from the hub PRIMARY by SOP (pr-review-primary.md's Entry
+# says `cd /Users/alex/projects/mcritchie-studio`), the PR file list was unreadable,
+# and the git fallback dutifully reported the primary's ONE dirty unrelated file —
+# docs/agents/maintenance/delete-later.md. Non-empty, observed, all prose: the
+# `kind: chore` exemption was EARNED by evidence, and a multi-file code PR was waved
+# through with "✓ DoR-to-Merge n/a … doc-only diff … → ready to advance". The
+# fingerprint half of this same mistake can only ever produce a false REFUSAL
+# (STALE, loud, self-correcting); the diff half produces a false PASS in the gate
+# whose whole job is refusing under-tested work, and the dirtier the primary the
+# more confidently it lies. So the trust question is now asked BEFORE the answer is
+# used: the local view is a valid source only from the task's own tree.
 def branch_diff
   @branch_diff ||= resolve_branch_diff
+end
+
+# True when diff_root is NOT the task's tree AND could not be re-rooted onto it —
+# so its working tree describes SOMEBODY ELSE'S code and must never be read as this
+# task's diff. Set by the task-root guard block below (which runs before the first
+# changed_files call, so the memoized resolution below always sees the final answer);
+# false on every path where the root was never in question — an explicit
+# DOR_CHECK_DIFF_ROOT, the build gate, an offline --file run, or a root the guard
+# confirmed IS the task's tree.
+def untrusted_root?
+  @untrusted_root ? true : false
+end
+
+# True when the checkout we are standing in is at least the PR's own REPO — so its
+# REFS (not its working tree) can still answer for this task. False only on a
+# positive repo contradiction from the guard. Defaults true for every path where the
+# root was never in question, so it can never make a previously-fine run stricter.
+def standing_repo_ok?
+  @standing_repo_ok.nil? ? true : @standing_repo_ok
+end
+
+# WHY this checkout cannot answer for the task's branch, and the fix — as
+# [reason, remedy]. Repo-aware, because the two cases are different problems with
+# different answers, and only one of them is curable by fetching:
+#
+#   right repo, branch absent → "not in this repo"; `git fetch origin <branch>` fixes it.
+#   WRONG repo               → the branch may well be sitting right here, and fetching
+#                              is useless: a same-named branch in another repo is a
+#                              different project's work. The fix is to go to the PR's repo.
+#
+# Shared, because the two refusals that say this had DRIFTED: the suite gate's
+# remedy-3 flatly asserted "its branch <b> is not in this repo" and offered the fetch
+# — both false on the wrong-repo path — while its sibling in the exempt gate had
+# already been taught the difference. One source, so they cannot disagree again.
+def branch_unavailable(branch)
+  if standing_repo_ok?
+    ["its branch #{branch} is not in this repo",
+     "fetch its branch (git fetch origin #{branch})"]
+  else
+    ["this checkout is not the PR's repo at all, so a #{branch} branch here would be a different " \
+     "project's work that merely shares the name — fetching cannot help",
+     "re-run it from the PR's own repo"]
+  end
 end
 
 def changed_files
@@ -318,12 +397,54 @@ def resolve_branch_diff
   pr = pr_changed_files
   return [pr, :pr] if pr.is_a?(Array) && pr.any?
 
+  if untrusted_root?
+    # The local working tree belongs to someone else's code (the guard could not
+    # re-root onto the task's own tree). Reading it is the false-PASS bug, so the
+    # only remaining honest local source is the task BRANCH's committed diff — and
+    # ONLY when this checkout is the PR's own REPO. A branch name is not repo-scoped:
+    # `feat/<slug>` in some other repo is a different project's work that merely
+    # shares a name (21 such hub↔satellite collisions exist on disk today), and
+    # grading it is the same false pass one door further out. Otherwise: nothing
+    # observed, and the gate fails closed.
+    branch = (branch_committed_files(diff_root, @task_branch) if standing_repo_ok?)
+    return [branch, :branch] if branch.is_a?(Array) && branch.any?
+
+    return [[], :indeterminate]
+  end
+
   git = git_changed_files
   return [git, :git] if git.is_a?(Array) && git.any?
 
   # Nothing observed anywhere. A genuinely clean tree and a blind/unreadable
   # checkout are INDISTINGUISHABLE from here, so both fail closed.
   [[], :indeterminate]
+end
+
+# The files the task BRANCH changed, read from its COMMITTED history rather than
+# from any working tree — the honest diff when the caller stands in a foreign
+# checkout that still carries the branch (the root guard's remedy 2, applied to the
+# diff instead of the fingerprint). Prefers origin/<branch> (what CI graded) over a
+# local <branch>, exactly like review_fingerprint. Returns nil when neither ref
+# resolves here, or when the branch is even with its base — the caller then falls
+# through to :indeterminate and the gate fails closed, which is the correct answer
+# to "this checkout cannot show me the task's diff".
+def branch_committed_files(root, branch)
+  return nil if branch.to_s.strip.empty?
+
+  base = diff_base(root)
+  ["origin/#{branch}", branch].each do |ref|
+    IO.popen(["git", "-C", root, "rev-parse", "--verify", "#{ref}^{commit}"], err: File::NULL, &:read)
+    next unless $?.success?
+
+    out = IO.popen(["git", "-C", root, "diff", "--name-status", "-M", "#{base}...#{ref}"], err: File::NULL, &:read)
+    next unless $?.success?
+
+    files = CodeDiff.paths_from_name_status(out).map(&:strip).reject(&:empty?).uniq
+    return files unless files.empty?
+  end
+  nil
+rescue SystemCallError
+  nil
 end
 
 # The PR's changed files (merge gate's source of truth). DOR_CHECK_PR_FILES is the
@@ -469,6 +590,21 @@ def review_fingerprint(root, branch)
   FullSuiteGate.fingerprint_of_first_ref(root, "origin/#{branch}", branch)
 end
 
+# The REPO the PR under gate lives in, OWNER-QUALIFIED ("McRitchie-Studio/turf-monster")
+# — the one fact on the task that says which repo a verdict is about. A multi-repo task
+# has a worktree per repo under the same slug, so this is what turns "some worktree
+# named <slug>" into "the task's tree for THIS PR". "" when there is no PR yet (the
+# builder's pre-PR run) or the URL isn't a GitHub PR; the caller then refuses to pick
+# rather than inventing one.
+#
+# The OWNER rides along deliberately: CertRootGuard compares it against a checkout's
+# `origin`, and a bare repo name would let a FORK — someone else's account, same repo
+# name — validate as this PR's tree. Where only a directory name is available the guard
+# degrades to the bare name on its own; that choice belongs to the guard, not here.
+def pr_repo_name(pr_url)
+  CiStatus.repo_from_pr_url(pr_url).to_s
+end
+
 # The subset of changed files that ships BEHAVIOR (CodeDiff's type-only rule:
 # everything that isn't provably prose or inert media). Empty == doc-only.
 def code_changed_files
@@ -502,8 +638,19 @@ end
 # comparison of two unrelated trees — it can never fire truthfully, and could fire
 # on the REVIEWER's dirty Gemfile. The builder's submit run is unaffected: their
 # worktree IS the branch's tree, so the local view sees the Gemfile.
+#
+# An UNTRUSTED root closes the same door from the other side: there the local view
+# is a foreign checkout's, so its Gemfile/Gemfile.lock pair is not this task's at
+# all — comparing them could only ever report someone else's mid-bump state as this
+# task's blocker. No local view, no trigger.
 def local_diff_files
-  @local_diff_files ||= diff_source == :injected ? changed_files : (git_changed_files || [])
+  @local_diff_files ||= if diff_source == :injected
+    changed_files
+  elsif untrusted_root?
+    []
+  else
+    git_changed_files || []
+  end
 end
 
 def gem_constraint_violations
@@ -737,8 +884,8 @@ review_role = options[:gate_role] == "review"
 
 # --- task-root guard (bin/lib/cert_root_guard.rb) -----------------------------
 #
-# The suite gate grades a cert's fingerprint — a git TREE hash — against the code at
-# diff_root, so diff_root MUST BE the task's tree. It wasn't, and nothing checked:
+# EVERY check below describes SOME tree. diff_root decides which one, so diff_root
+# MUST BE the task's tree. It wasn't, and nothing checked:
 # run `bin/dor-check <task>` from the hub PRIMARY for a task whose code lives in a
 # worktree and it fingerprints the PRIMARY's tree, which is CONTENT-ADDRESSED and
 # therefore can never equal the tree the builder certified. A perfectly fresh cert
@@ -748,6 +895,28 @@ review_role = options[:gate_role] == "review"
 # green PRs nobody handed off. The guard already EXISTED for exactly this: both cert
 # runners require it (bin/fast-check, bin/full-suite-check). dor-check — the one
 # command in the family that READS the evidence — never consulted it.
+#
+# THE SECOND HALF, 2026-08-08 (task dor-check-review-rooting). The 07-14 fix rooted
+# the FINGERPRINT and stopped at the builder lane, on the reasoning quoted below
+# that review "already roots at the branch tree … it is not the broken lane". That
+# was true of the fingerprint and false of the DIFF, which never re-rooted at all —
+# and the SOP walks reviewers straight into it: pr-review-primary.md's Entry says
+# `cd /Users/alex/projects/mcritchie-studio`, a later step says run this gate, and
+# nothing pins either to the task's tree. Observed verbatim, on a multi-file code PR:
+#
+#   ✓ DoR-to-Merge n/a … doc-only diff (kind: chore): 1 file(s), none behavioral —
+#     docs/agents/maintenance/delete-later.md [source: git working tree]
+#     → ready to advance submitted → reviewed
+#
+# One unrelated dirty file on the PRIMARY's `main`, read as the PR's entire diff,
+# earning the chore exemption on evidence. Note the direction: a foreign FINGERPRINT
+# can only produce a false STALE — loud, and it self-corrects because nobody accepts
+# an unexplained refusal. A foreign DIFF produces a false PASS in the gate whose
+# entire job is refusing under-tested work, it looks exactly like a real verdict, and
+# the dirtier the checkout the more confidently it lies. Every reviewer in that
+# night's cycle had to be told by hand to pass DOR_CHECK_DIFF_ROOT — which is the
+# tell that the tool, not the reviewer, was wrong. So the guard now runs in BOTH
+# roles and roots the DIFF as well as the fingerprint.
 #
 # REFUSE vs RESOLVE. The cert writers REFUSE, and must: they stamp evidence about
 # the tree they stand in, so a chdir could green-cert a stale worktree while the
@@ -760,19 +929,30 @@ review_role = options[:gate_role] == "review"
 # below therefore ANNOUNCES itself on stderr, naming both roots.
 #
 # Remedies, in order, once the root is found foreign:
-#   1. the task's worktree is ON DISK → re-root the whole gate there. Its working
-#      tree is exactly what the builder certified (uncommitted edits included).
+#   1. the task's worktree is ON DISK and UNAMBIGUOUS → re-root the whole gate there
+#      (diff AND fingerprint). Its working tree is exactly what the builder
+#      certified, uncommitted edits included.
 #   2. else its BRANCH resolves in this repo → root the FINGERPRINT at that branch's
-#      committed tree. Content-addressed, so it equals the certified tree. This is
-#      the same mechanism --gate-role review has used since the reviewers hit this
-#      from the other side; the builder lane simply never got it.
-#   3. else → no tree here can honestly grade this cert. REFUSE (below, at the suite
-#      gate) rather than grade a foreign tree and call a fresh cert STALE.
+#      committed tree, and the DIFF at that branch's committed diff. Both are
+#      content-addressed, so neither depends on what the caller's checkout happens
+#      to be carrying. This is the mechanism --gate-role review has used for the
+#      fingerprint since the reviewers hit this from the other side.
+#   3. else → no tree here can honestly show this task's code. Refuse: the suite gate
+#      refuses to grade a cert (below), and the diff resolves :indeterminate, which
+#      the exempt-kind gate already treats as fail-closed. NEVER read the local tree.
 #
-# Scope — the BUILDER lane at the MERGE gate, with a positional slug and an IMPLICIT
-# root. Deliberately NOT:
-#   * --gate-role review — it already roots at the branch tree and runs from a
-#     primary checkout BY DESIGN. It is not the broken lane; leave it alone.
+# AMBIGUITY IS ALSO A REFUSAL. The worktree glob spans every app, so a MULTI-REPO
+# task matches once per repo (live today: repair-moms-app-ci under BOTH moms-app and
+# studio-engine). Picking the alphabetical first answers "which repo is this?" with a
+# coin flip, and re-rooting onto the wrong repo re-creates the exact bug one door
+# over. devops.pr_url names the repo actually under gate, so it breaks the tie; when
+# it can't — a blank pr_url, or one naming a repo with no worktree here — this
+# refuses to guess rather than picking. (A task can carry several repos and several
+# rungs: nothing here assumes one repo, and the diff base stays the per-root,
+# release-aware default, so a repo with no `accepted` still resolves its own base.)
+#
+# Scope — the MERGE gate, BOTH roles, with a positional slug and an IMPLICIT root.
+# Deliberately NOT:
 #   * --gate build — the task is at `designed`. No code, no branch, no worktree yet;
 #     there is no tree to root at, and nothing that reads one.
 #   * DOR_CHECK_DIFF_ROOT — an EXPLICIT declaration by the caller (the CI/test seam,
@@ -782,34 +962,97 @@ review_role = options[:gate_role] == "review"
 #     on-disk tree relationship to assert (no production caller passes --file).
 foreign_root = nil
 task_fingerprint_override = nil
-if gate != "build" && !review_role && !slug.to_s.strip.empty? &&
+if gate != "build" && !slug.to_s.strip.empty? &&
    ENV["DOR_CHECK_DIFF_ROOT"].to_s.strip.empty? &&
    (options[:file].nil? || !PROJECTS_DIR.to_s.strip.empty?)
   foreign_root = CertRootGuard.assess(
-    task_bin: TASK_BIN, slug: slug, root: diff_root, devops: devops, projects_dir: PROJECTS_DIR
+    task_bin: TASK_BIN, slug: task["slug"] || slug, root: diff_root, devops: devops,
+    projects_dir: PROJECTS_DIR, prefer_repo: pr_repo_name(@pr_url)
   )
 end
 
 if foreign_root
   standing = diff_root
   standing_branch = foreign_root[:actual_branch] || "unknown"
-  if foreign_root[:resolved_root]
+  # The branch is what remedies 2/3 read, and what the refusals must name, so it is
+  # recorded whichever way this goes.
+  @task_branch = foreign_root[:expected_branch]
+  candidates = Array(foreign_root[:candidate_roots])
+  rejected = Array(foreign_root[:rejected_roots])
+  eligible = Array(foreign_root[:eligible_roots])
+  # VALIDATED on both axes by the guard (repo when known, branch always), and nil
+  # unless exactly one candidate qualified. The first cut of this fix trusted a
+  # candidate for its DIRECTORY NAME and only asked about the repo when there were
+  # two of them — which let a lone worktree from another repo (B1) and a stale desk
+  # that never carried the branch (B2) each re-open the false pass one hop
+  # downstream. `picked` is now a fact about the destination, not a guess.
+  picked = foreign_root[:resolved_root]
+  ambiguous = eligible.size > 1
+
+  if picked
     warn!("⚠ dor-check: RE-ROOTING. You are standing in #{standing} (branch #{standing_branch}), which is " \
-          "NOT #{slug}'s tree — every check below would have graded the wrong code, and the cert would have " \
-          "read STALE no matter how fresh it is (the fingerprint is a git TREE hash; a foreign checkout can " \
-          "never match one). Re-rooted at the task's worktree: #{foreign_root[:resolved_root]}. dor-check " \
-          "READS evidence and never writes a cert, so it re-roots rather than refusing — but it will not do " \
-          "it silently: the verdict below is about THAT tree, not the one you are in.")
-    @diff_root = foreign_root[:resolved_root]
+          "NOT #{slug}'s tree — every check below would have described the wrong code. The DIFF would have " \
+          "been THIS checkout's working tree, so one unrelated dirty .md here can hand a multi-file code PR a " \
+          "doc-only exemption; and the cert would have read STALE no matter how fresh it is (the fingerprint " \
+          "is a git TREE hash; a foreign checkout can never match one). Re-rooted at the task's worktree: " \
+          "#{picked}. dor-check READS evidence and never writes a cert, so it re-roots rather than refusing — " \
+          "but it will not do it silently: the verdict below is about THAT tree, not the one you are in.")
+    @diff_root = picked
     foreign_root = nil # the root IS the task's tree now
   else
-    task_fingerprint_override = review_fingerprint(diff_root, foreign_root[:expected_branch])
+    # Remedies 2/3. The local working tree stays OFF LIMITS as a diff source from
+    # here on — that is the false-PASS vector, and it is closed by construction
+    # rather than by every downstream reader remembering to ask.
+    @untrusted_root = true
+    # Kept for the fail-closed verdict text: `errors` is the machine-readable
+    # channel, and a --json consumer never sees the stderr banners below.
+    @rejected_roots = rejected
+    # Can this checkout's REFS vouch for anything? Only if it is the right repo.
+    #
+    # Remedy 2 reads `<base>...origin/feat/<slug>` out of the standing root — its
+    # branch, not its working tree — and a branch name is NOT repo-scoped. So a repo
+    # that merely HAS a same-named feat/ branch was graded as this PR's diff: a
+    # satellite code PR, reviewed from the hub primary, took the hub branch's doc-only
+    # diff and passed. Worse, with the hub's own desk on disk the gate printed
+    # "TASK TREE NOT FOUND … working tree is NOT read as the diff" and then read that
+    # same repo's BRANCH and granted the exemption anyway — the refusal fired and the
+    # verdict passed regardless. 21 real hub↔satellite branch-name collisions exist on
+    # disk today, so this is a live vector, not a hypothetical one (review round 5).
+    #
+    # A BRANCH-only mismatch is still fine: right repo, wrong branch checked out, refs
+    # intact — which is precisely the reclaimed-worktree case remedy 2 exists for.
+    @standing_repo_ok = foreign_root[:standing_repo_mismatch].nil?
+    task_fingerprint_override = (review_fingerprint(diff_root, foreign_root[:expected_branch]) if @standing_repo_ok)
+    if ambiguous
+      warn!("⚠ dor-check: AMBIGUOUS TASK TREE — refusing to guess. #{eligible.size} worktrees named " \
+            "#{foreign_root[:worktree_slug]} are genuinely on #{foreign_root[:expected_branch]} " \
+            "(#{eligible.join(', ')}), which is what a MULTI-REPO task looks like on disk, and nothing here " \
+            "says which one this verdict is about: devops.pr_url " \
+            "#{@pr_url.to_s.strip.empty? ? "is blank" : "names #{pr_repo_name(@pr_url)}, matching none of them"}. " \
+            "Picking the first would re-create the wrong-tree bug one repo over, so this checkout's working " \
+            "tree is NOT read as the diff. Declare the one you mean: " \
+            "DOR_CHECK_DIFF_ROOT=<path to the right checkout>.")
+    elsif rejected.any?
+      # B1/B2: candidates existed and every one FAILED validation. Saying only "no
+      # worktree exists here" would be false — they are right there on disk, which is
+      # exactly why the first cut trusted them. Name each one and the axis it failed,
+      # or the reader's conclusion is "the tool can't find my worktree" and their fix
+      # is to point it at the very desk that was just rejected.
+      warn!("⚠ dor-check: TASK TREE NOT FOUND — #{rejected.size} directory match(es) named " \
+            "#{foreign_root[:worktree_slug]} exist here, but none IS #{slug}'s tree: " \
+            "#{rejected.map { |path, why| "#{path} #{why}" }.join('; ')}. A directory NAME is not identity — " \
+            "a stale desk or another repo's worktree would have been read as this PR's entire diff. This " \
+            "checkout's working tree is NOT read as the diff. Fix it: check out " \
+            "#{foreign_root[:expected_branch]} in the right worktree, or declare the tree explicitly with " \
+            "DOR_CHECK_DIFF_ROOT=<path>.")
+    end
     if task_fingerprint_override
       warn!("⚠ dor-check: RE-ROOTING the cert fingerprint. You are standing in #{standing} (branch " \
-            "#{standing_branch}), which is NOT #{slug}'s tree, and no worktree " \
-            ".worktrees/#{foreign_root[:worktree_slug]} exists here — so the cert is graded against branch " \
+            "#{standing_branch}), which is NOT #{slug}'s tree#{ambiguous || rejected.any? ? "" : ", and no " \
+            "worktree .worktrees/#{foreign_root[:worktree_slug]} exists here"} — so the cert is graded against branch " \
             "#{foreign_root[:expected_branch]}'s committed tree — #{task_fingerprint_override[:ref]} " \
-            "= @#{task_fingerprint_override[:fingerprint][0, 12]} — not against this checkout's. Announced, " \
+            "= @#{task_fingerprint_override[:fingerprint][0, 12]} — not against this checkout's, and the diff " \
+            "comes from that branch's committed history for the same reason. Announced, " \
             "not silent, and NAMED so you can recompute it: the verdict below is about the BRANCH's code.")
     end
   end
@@ -843,11 +1086,30 @@ if EXEMPT_KINDS.include?(kind)
   if gated_code_files.any?
     # fall through to the full shape/test-tier gate below.
   elsif indeterminate
-    errors_preamble = "kind: #{kind} could not be proven doc-only — no diff could be observed " \
-                      "(no PR files readable, and the git tree at #{diff_root} is clean or unreadable), " \
-                      "so the shape/test-tier gate is ENFORCED rather than skipped (fail-closed). Re-run " \
-                      "this from the task's worktree, or set devops.pr_url, so the gate can see the diff " \
-                      "it is meant to judge"
+    errors_preamble = if untrusted_root?
+      # The false-PASS case, refused instead of granted. This is the state the old
+      # code turned into "✓ n/a — doc-only diff": it stood in a checkout that is not
+      # the task's, read that checkout's dirt, and called it the PR.
+      # Name the rejected candidates INSIDE the error when there were any: "no
+      # worktree here" would be false when one is sitting on disk under exactly that
+      # name, and a reader who believes it will point the gate straight back at it.
+      near_misses = Array(@rejected_roots).map { |path, why| "#{path} #{why}" }.join("; ")
+      branch_reason, branch_remedy = branch_unavailable(@task_branch)
+      "kind: #{kind} could not be proven doc-only — this run stands in #{diff_root}, which is NOT " \
+        "#{task["slug"] || slug}'s tree, so its working tree was REFUSED as a diff source (reading it is how " \
+        "one unrelated dirty file grants a multi-file code PR a doc-only exemption), and the PR's " \
+        "file list could not be read here either — and #{branch_reason}" \
+        "#{near_misses.empty? ? "" : " (and no directory named #{task["slug"] || slug} here IS the task's " \
+          "tree: #{near_misses})"}. The shape/test-tier gate is ENFORCED " \
+        "rather than skipped (fail-closed). Fix it: run dor-check from the task's worktree; or " \
+        "#{branch_remedy}; or declare the checkout with DOR_CHECK_DIFF_ROOT=<path to the task's tree>"
+    else
+      "kind: #{kind} could not be proven doc-only — no diff could be observed " \
+        "(no PR files readable, and the git tree at #{diff_root} is clean or unreadable), " \
+        "so the shape/test-tier gate is ENFORCED rather than skipped (fail-closed). Re-run " \
+        "this from the task's worktree, or set devops.pr_url, so the gate can see the diff " \
+        "it is meant to judge"
+    end
     if options[:json]
       puts JSON.pretty_generate(
         task: task["slug"] || slug,
@@ -857,6 +1119,11 @@ if EXEMPT_KINDS.include?(kind)
         ready: false,
         exempt: false,
         diff_source: "indeterminate",
+        # The pairing (code_root, diff_source) is what dor.md calls the checkable
+        # invariant — and the exempt-kind payloads were the ONE verdict shape that
+        # omitted the root. That is the shape the 08-08 false pass actually took, so
+        # a monitor could check the invariant everywhere except where it mattered.
+        code_root: diff_root,
         code_files: [],
         note: errors_preamble,
         errors: [errors_preamble],
@@ -871,7 +1138,8 @@ if EXEMPT_KINDS.include?(kind)
     end
     exit 1
   else
-    source_label = { injected: "injected diff", pr: "PR files", git: "git working tree" }
+    source_label = { injected: "injected diff", pr: "PR files", git: "git working tree",
+                     branch: "task branch tree" }
       .fetch(diff_source, diff_source.to_s)
     sample = observed.first(3).join(", ") + (observed.size > 3 ? ", …" : "")
     note = if observed.empty?
@@ -889,6 +1157,10 @@ if EXEMPT_KINDS.include?(kind)
         ready: true,
         exempt: true,
         diff_source: diff_source.to_s,
+        # The doc-only PASS — the exact verdict shape the 08-08 false pass wore. It
+        # must say which tree it read, or the exemption cannot be audited after the
+        # fact from the JSON alone.
+        code_root: diff_root,
         code_files: [],
         changed_files: observed,
         note: note,
@@ -1067,15 +1339,28 @@ if gate != "build" && shape_def && !dor_tiers.empty?
     # happen to stand in is precisely the bug: it would report a FRESH cert as STALE.
     # Refuse, and say which of the three fixes to reach for. This is a TRUTHFUL exit
     # 1 replacing a LYING one — the old code exited 1 here too, just with "STALE".
+    unreachable_tree =
+      if Array(foreign_root[:eligible_roots]).size > 1
+        # The multi-repo tie the PR could not break — several worktrees really are on
+        # the task's branch and nothing says which one this PR is about.
+        "#{Array(foreign_root[:eligible_roots]).size} worktrees named " \
+          "#{foreign_root[:worktree_slug]} are on #{foreign_root[:expected_branch]} and none is provably this PR's"
+      elsif Array(foreign_root[:rejected_roots]).any?
+        # B1/B2: they exist on disk and none of them IS the task's tree.
+        "the director#{Array(foreign_root[:rejected_roots]).size == 1 ? 'y' : 'ies'} named " \
+          "#{foreign_root[:worktree_slug]} here " \
+          "#{Array(foreign_root[:rejected_roots]).map { |path, why| "#{path} #{why}" }.join('; ')}"
+      else
+        "its worktree (.worktrees/#{foreign_root[:worktree_slug]}) is not on disk"
+      end
+    branch_reason, branch_remedy = branch_unavailable(foreign_root[:expected_branch])
     errors << "root guard: this run roots at #{diff_root} (branch " \
-      "#{foreign_root[:actual_branch] || 'unknown'}), which is NOT #{task["slug"] || slug}'s tree — its " \
-      "worktree (.worktrees/#{foreign_root[:worktree_slug]}) is not on disk and its branch " \
-      "#{foreign_root[:expected_branch]} is not in this repo, so NO tree here can grade its cert. The cert " \
+      "#{foreign_root[:actual_branch] || 'unknown'}), which is NOT #{task["slug"] || slug}'s tree — " \
+      "#{unreachable_tree} and #{branch_reason}, so NO tree here can grade its cert. The cert " \
       "fingerprint is a git TREE hash: grading the checkout you are standing in would report a perfectly " \
       "FRESH cert as STALE (the false STALE that stranded six tasks on 2026-07-14), so this refuses instead " \
-      "of lying. Fix it one of three ways: run dor-check from the task's worktree; or fetch its branch " \
-      "(git fetch origin #{foreign_root[:expected_branch]}); or declare the root explicitly with " \
-      "DOR_CHECK_DIFF_ROOT=<path to the task's checkout>."
+      "of lying. Fix it one of three ways: run dor-check from the task's worktree; or #{branch_remedy}; " \
+      "or declare the root explicitly with DOR_CHECK_DIFF_ROOT=<path to the task's checkout>."
   else
     # Root the suite fingerprint at the TASK's tree, not at whatever checkout the
     # caller stands in. Two overrides feed the same seam:
@@ -1104,18 +1389,23 @@ if gate != "build" && shape_def && !dor_tiers.empty?
     # satellite's certified tree: a perfectly fresh cert reads STALE. (Observed
     # 2026-07-28; it burned a gate attempt and left a real dor_review FAILED row.)
     #
-    # So resolve the task's OWN tree with the same worktree glob the builder lane's
-    # CertRootGuard uses, and fingerprint there. Only the FINGERPRINT re-roots — the
-    # diff still comes from the PR's own file list, which is already repo-correct.
-    # Announced on stderr, never silent: a gate that quietly hashes a different tree
-    # than the one you are standing in is how you argue with a verdict instead of
-    # reading it.
+    # So resolve the task's OWN tree with the same worktree glob CertRootGuard uses,
+    # and fingerprint there. Announced on stderr, never silent: a gate that quietly
+    # hashes a different tree than the one you are standing in is how you argue with
+    # a verdict instead of reading it.
+    #
+    # SECOND-LINE now, not first: since 2026-08-08 the task-root guard above runs in
+    # BOTH roles and re-roots diff_root itself, so an implicit-root review run has
+    # normally already landed on the task's tree before reaching here. What still
+    # arrives is the EXPLICIT-root case (DOR_CHECK_DIFF_ROOT declared at a checkout
+    # that isn't the task's) — the caller declared a root, so the guard stood down,
+    # but the fingerprint can still be rooted honestly.
     if review_role && review_branch_ref && review_fp.nil?
       # The RESOLVED slug, not the positional one — in the --file seam the positional
       # is empty, and CertRootGuard.assess returns nil on a blank slug.
       cross_repo = CertRootGuard.assess(
         task_bin: TASK_BIN, slug: task["slug"] || slug, root: diff_root,
-        devops: devops, projects_dir: PROJECTS_DIR
+        devops: devops, projects_dir: PROJECTS_DIR, prefer_repo: pr_repo_name(@pr_url)
       )
       alt_root = cross_repo && cross_repo[:resolved_root]
       if alt_root && (alt_fp = review_fingerprint(alt_root, review_branch_ref))
@@ -1270,6 +1560,13 @@ if options[:json]
     # wrong root label gets born. The fingerprint's own provenance therefore travels
     # WITH the fingerprint, in full_suite below.
     code_root: diff_root,
+    # WHICH TREE the diff above was actually read from — the fact that made the
+    # 2026-08-08 false pass invisible while it was happening. "git working tree" from
+    # a root that is not the task's is precisely the bug, so a monitor can now assert
+    # the pairing (code_root + diff_source) instead of trusting the verdict. nil at
+    # the build gate, which resolves no diff (and must not shell `gh` to make one).
+    diff_source: gate == "build" ? nil : diff_source.to_s,
+    changed_files: gate == "build" ? nil : changed_files,
     ci: ci && { state: ci[:state], cause: ci[:cause], reason: ci[:reason], failing: ci[:failing],
                 pending: ci[:pending], count: ci[:count] }.compact,
     full_suite: suite_eval && {

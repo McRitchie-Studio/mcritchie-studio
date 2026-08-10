@@ -1239,9 +1239,13 @@ A task **may not advance `submitted → reviewed`** unless, for its shape:
   **current worktree** (the cwd's git toplevel), so a **satellite** task (turf-monster,
   rolio) certifies its OWN repo even though it runs the hub's gate script — while the
   shape config (`feature_shapes.yml`) stays resolved from the studio. Run
-  `bin/full-suite-check` and `bin/dor-check` **from the worktree** (the `FULL_SUITE_ROOT`
-  / `DOR_CHECK_DIFF_ROOT` envs override the root; they are a CI/test seam, not for
-  routine use). Escape hatch — a *record*, exactly like `post_deploy_cmd: none`: a
+  `bin/full-suite-check` **from the worktree** — a cert *writer* refuses a foreign
+  root outright, because it stamps evidence about the tree it stands in.
+  `bin/dor-check` **self-roots** at the task's tree from anywhere (it only *reads*
+  evidence) and announces the re-root on stderr; see
+  [the DoR gate](../modules/gates/dor.md#the-gate-grades-the-tasks-tree--never-the-one-you-stand-in).
+  (The `FULL_SUITE_ROOT` / `DOR_CHECK_DIFF_ROOT` envs override the root; they are a
+  CI/test seam, not for routine use.) Escape hatch — a *record*, exactly like `post_deploy_cmd: none`: a
   reasoned `[full-suite-bypass] <why>` `checks_run` line passes the gate but is
   flagged **loudly** in the verdict (use it for a pre-existing, unrelated red
   tracked elsewhere — never to wave through your own break).
