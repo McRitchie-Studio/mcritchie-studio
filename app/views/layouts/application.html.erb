@@ -10,13 +10,16 @@
     <%= render "layouts/studio/flash" %>
     <%# Link-sidebar store bridge: engine-owned since studio-engine 0.30 —
         components/_link_sidebar carries it. %>
+    <%# The bar stack is the header's SIBLING, not its child (studio-engine 0.33):
+        bars compose independently of the navbar, and the header offsets itself by
+        however many rendered. The stack MEASURES its own height and publishes
+        --studio-bars-h, so a taller bar — or a second one, like impersonation —
+        moves the header with no change here. %>
+    <%= render "studio/banners/stack" %>
     <header x-data="{ scrolled: false }" @scroll.window="scrolled = scrolled ? (window.scrollY > 5) : (window.scrollY > 60)"
-            class="vt-pinned-header sticky top-0 z-50 border-b bg-page/95 transition-shadow duration-300 supports-[backdrop-filter]:backdrop-blur"
+            style="top:var(--studio-bars-h, 0px);"
+            class="vt-pinned-header sticky z-50 border-b bg-page/95 transition-shadow duration-300 supports-[backdrop-filter]:backdrop-blur"
             :class="scrolled ? 'shadow-lg border-subtle' : 'border-transparent'">
-      <%# Self-gating (studio-engine >= 0.30): the partial decides whether to
-          appear, what to say, and whether the inbox is linkable. No conditional
-          here, and no host copies of the buttons. %>
-      <%= render "studio/banners/environment" %>
       <div class="max-w-7xl mx-auto px-4 transition-all duration-300"
            :class="scrolled ? 'py-2' : 'py-6'">
         <div class="flex items-center justify-between gap-4 min-w-0">
