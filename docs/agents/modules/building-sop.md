@@ -136,11 +136,15 @@ follow) and assert the final `url_effective` **is the review path** and answered
 ```bash
 JAR=$(mktemp)
 MINT=$(curl -s -c $JAR -b $JAR -o /dev/null -w '%{redirect_url}' \
-  "http://localhost:<port>/_studio/local_review?email=amcritchie%40gmail.com&return_to=%2F<path>")
+  "http://localhost:<port>/_studio/local_review?email=alex%40mcritchie.studio&return_to=%2F<path>")
 TOK=$(curl -s -c $JAR -b $JAR "$MINT" | ruby -e 'print $stdin.read[/name="authenticity_token"[^>]*value="([^"]+)"/,1]')
 NEXT=$(curl -s -c $JAR -b $JAR -o /dev/null -w '%{redirect_url}' -X POST "$MINT" --data-urlencode "authenticity_token=$TOK")
 curl -s -c $JAR -b $JAR -L -o /dev/null -w '%{url_effective} %{http_code}\n' "$NEXT"
 ```
+
+Mint for a **seeded admin** — one of `User::PARKED_IDENTITIES`, all
+`@mcritchie.studio`. Any other address signs up a brand-new `viewer`, and the
+hop then fails on a page that is perfectly healthy.
 
 Landing on `/` means the sign-in **succeeded** and the reviewer lacks rights —
 the quiet failure, not a broken link. Follow the POST by hand as above: `curl -L`
