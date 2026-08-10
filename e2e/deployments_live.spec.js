@@ -391,3 +391,104 @@ test("a Next Release card whose own signature moved still flashes", async ({ pag
   expect(seen.card, "a genuinely changed card must still flash").toBeGreaterThan(0);
   expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
 });
+
+// The ring is tinted from the bar's OWN computed background-colour, so the only question
+// that matters is "will this colour actually paint". Answering it by PATTERN-MATCHING the
+// serialized string is a spelling assertion wearing a guard's clothes: Chromium serializes
+// a computed colour back in the colour space it was authored in, so a modern-syntax
+// transparent tone — `oklch(... / 0)`, or Tailwind v4's `color-mix(... 0%, transparent)` —
+// never looks like `rgba(..., 0)`. It sails through, a fully transparent colour is written
+// to --studio-team-glow-color, and the ring runs its full 2s painting NOTHING: no error, no
+// red test, no visible glow.
+//
+// Only a browser can answer it, so this is the lowest tier that can hold the property. The
+// two tests are a pair on purpose: the first forbids painting an invisible tone, the second
+// forbids "fixing" it by never tinting at all.
+async function ringKnobForFill(page, fillColor) {
+  return page.evaluate(async (color) => {
+    const root = document.getElementById("current-release");
+    const liveFill = root.querySelector("[data-test='release-phase-fill']");
+    if (!liveFill) return { error: "no meter in the Next Release card renders a fill to read a tone from" };
+
+    // Record what the browser ACTUALLY reports for this tone, so a failure names the
+    // serialization that defeated the guard instead of only saying the knob was set.
+    liveFill.style.backgroundColor = color;
+    const computed = getComputedStyle(liveFill).backgroundColor;
+
+    // Replace the slot with a copy in which exactly ONE meter's signature moved, so exactly
+    // one meter rings and the reading below is unambiguous.
+    const clone = root.cloneNode(true);
+    const cloneFill = clone.querySelectorAll("[data-test='release-phase-fill']")[0];
+    cloneFill.style.backgroundColor = color;
+    cloneFill.closest("[data-test='release-phase-meter']").dataset.signature = "e2e-colour-space-probe";
+
+    const stream = document.createElement("turbo-stream");
+    stream.setAttribute("action", "replace");
+    stream.setAttribute("target", "current-release");
+    const template = document.createElement("template");
+    template.innerHTML = clone.outerHTML;
+    stream.appendChild(template);
+    document.body.appendChild(stream);
+
+    // Read inside the 2s ring, before the class and the knob are cleaned up.
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    stream.remove();
+
+    const rung = Array.from(
+      document.getElementById("current-release")
+        .querySelectorAll("[data-test='release-phase-glow-host'].studio-team-glow")
+    );
+    return {
+      computed,
+      rung: rung.length,
+      knob: rung.length ? rung[0].style.getPropertyValue("--studio-team-glow-color").trim() : "",
+    };
+  }, fillColor);
+}
+
+test("a transparent modern-syntax tone leaves the ring its default colour", async ({ page }) => {
+  const pageErrors = [];
+  page.on("pageerror", (err) => pageErrors.push(String(err)));
+
+  await page.goto("/deployments");
+  await expect(page.locator("#current-release")).toBeVisible();
+  await expect(page.locator("#current-release [data-test='release-phase-fill']").first()).toBeAttached();
+
+  // Both modern spellings a tone could plausibly be rewritten in. Neither serializes to
+  // rgba(), which is exactly why a string-shaped guard misses them.
+  for (const tone of [
+    "oklch(0.7 0.15 160 / 0)",
+    "color-mix(in oklch, oklch(0.7 0.15 160) 0%, transparent)",
+  ]) {
+    const seen = await ringKnobForFill(page, tone);
+
+    expect(seen.error, seen.error || "").toBeUndefined();
+    expect(seen.rung, `the meter whose signature moved must still ring (${tone})`).toBe(1);
+    expect(
+      seen.knob,
+      `an invisible tone must leave the knob unset so the primitive's own colour paints — ${tone} was reported by the browser as "${seen.computed}"`
+    ).toBe("");
+  }
+  expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
+});
+
+test("an opaque modern-syntax tone still tints the ring", async ({ page }) => {
+  const pageErrors = [];
+  page.on("pageerror", (err) => pageErrors.push(String(err)));
+
+  await page.goto("/deployments");
+  await expect(page.locator("#current-release")).toBeVisible();
+  await expect(page.locator("#current-release [data-test='release-phase-fill']").first()).toBeAttached();
+
+  // The other half: refusing every non-sRGB tone would pass the test above and quietly
+  // strip the ring of its meaning, since the tint is what ties it to the bar it traces.
+  const seen = await ringKnobForFill(page, "oklch(0.7 0.15 160)");
+
+  expect(seen.error, seen.error || "").toBeUndefined();
+  expect(seen.rung, "the meter whose signature moved must still ring").toBe(1);
+  expect(
+    seen.knob,
+    `a visible tone must tint the ring — the browser reported this fill as "${seen.computed}"`
+  ).not.toBe("");
+  expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
+});
