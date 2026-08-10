@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_10_054500) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_10_131500) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1229,6 +1229,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_10_054500) do
     t.string "claim_nonce"
     t.string "claimed_session"
     t.datetime "created_at", null: false
+    t.string "holder_agent"
     t.string "holder_label"
     t.string "task_slug", null: false
     t.datetime "updated_at", null: false

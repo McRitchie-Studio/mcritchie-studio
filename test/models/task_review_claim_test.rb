@@ -17,8 +17,15 @@ class TaskReviewClaimTest < ActiveSupport::TestCase
   B = { session: "sess-B", nonce: "inst-B" }.freeze
   RESUME_A2 = { session: "sess-A", nonce: "inst-A2" }.freeze # same session, second terminal
 
-  def acquire(task_slug: SLUG, now: Time.current, label: nil, **who)
-    TaskReviewClaim.acquire(task_slug: task_slug, session: who[:session], nonce: who[:nonce], label: label, now: now)
+  def acquire(task_slug: SLUG, now: Time.current, label: nil, reviewer: nil, **who)
+    TaskReviewClaim.acquire(task_slug: task_slug, session: who[:session], nonce: who[:nonce], label: label,
+                            reviewer: reviewer, now: now)
+  end
+
+  # A real `submitted` task, so the intent write inside acquire has something to
+  # record against (record_intent_event no-ops on any other stage, by design).
+  def submitted_task(slug: SLUG)
+    Task.create!(title: "Review Me Please", slug: slug, stage: "submitted")
   end
 
   test "a free task is claimed for review by the first instance" do
@@ -207,5 +214,95 @@ class TaskReviewClaimTest < ActiveSupport::TestCase
     assert info["live"]
     assert_equal "Gastly", info["label"]
     assert_equal 5, info["heartbeat_age"]
+  end
+end
+
+class TaskReviewClaimCrewSeatTest < ActiveSupport::TestCase
+  SLUG = "task-crew-seat"
+  A = { session: "sess-A", nonce: "inst-A" }.freeze
+
+  def acquire(reviewer: nil, now: Time.current, **who)
+    TaskReviewClaim.acquire(task_slug: SLUG, session: who.fetch(:session, A[:session]),
+                            nonce: who.fetch(:nonce, A[:nonce]), reviewer: reviewer, now: now)
+  end
+
+  def task!
+    Task.create!(title: "Crew Seat Fixture", slug: SLUG, stage: "submitted")
+  end
+
+  # THE POINT OF THE CHANGE: claiming a review fills the crew seat, with no separate
+  # bin/reviewer-select call. Every review path funnels through acquire, so the seat
+  # can no longer be forgotten by a launcher that skips the announcement step.
+  test "[unit] acquiring a review records the reviewer intent and fills the seat" do
+    task = task!
+    refute task.review_in_progress?, "precondition: no review recorded yet"
+
+    assert_difference "TaskEvent.where(kind: TaskEvent::INTENT).count", 1 do
+      assert acquire(reviewer: "carl").acquired
+    end
+
+    assert_equal "carl", TaskReviewClaim.find_by(task_slug: SLUG).holder_agent
+    assert task.reload.review_in_progress?, "the crew seat reads live the moment the claim lands"
+    intent = task.task_events.where(kind: TaskEvent::INTENT, to_stage: "reviewed").last
+    assert_equal [{ "slug" => "carl", "weight" => "primary" }], intent.metadata["reviewers"]
+  end
+
+  # Renewals must not stack intent rows — the renewer fires every ~30s for a
+  # review's whole life.
+  test "[unit] re-acquiring the same review records the intent only once" do
+    task!
+    acquire(reviewer: "carl")
+    assert_no_difference "TaskEvent.where(kind: TaskEvent::INTENT).count" do
+      3.times { acquire(reviewer: "carl") }
+    end
+  end
+
+  # The self-clearing half: an intent alone cannot say a reviewer is still ALIVE (it
+  # only closes when →reviewed lands), so a crashed reviewer used to leave a face
+  # asserting a live review forever. Liveness now defers to the claim's TTL.
+  test "[integration] a lapsed claim empties the crew seat again" do
+    task = task!
+    acquire(reviewer: "carl")
+    assert task.reload.review_in_progress?, "precondition: the seat filled on the claim"
+
+    # The reviewer dies: no more heartbeats, so the lease simply runs out. Time
+    # moves, nothing else — exactly what a crashed reviewer leaves behind.
+    travel(ClaimLease::DEFAULT_TTL_SECONDS + 60) do
+      refute TaskReviewClaim.find_by(task_slug: SLUG).live?
+      refute task.reload.review_in_progress?, "a dead reviewer must not hold the seat"
+    end
+  end
+
+  # A clean release ends the review immediately — the seat empties without waiting
+  # out the TTL (a deferred / wait-for-ci verdict, not a merge).
+  test "[integration] releasing the claim empties the seat immediately" do
+    task = task!
+    acquire(reviewer: "carl")
+    assert task.reload.review_in_progress?
+
+    TaskReviewClaim.release(task_slug: SLUG, session: A[:session], nonce: A[:nonce])
+    refute task.reload.review_in_progress?
+  end
+
+  # NO REGRESSION for the orchestrator path: bin/reviewer-select records the pair
+  # BEFORE any reviewer claims, and a hand-run review may never claim at all. Absent
+  # evidence of death is not evidence of death.
+  test "[integration] an intent with no claim row still reads live" do
+    task = task!
+    task.record_intent_event(to_stage: "reviewed",
+                             reviewers: [{ "slug" => "carl", "weight" => "primary" }])
+
+    assert_nil TaskReviewClaim.find_by(task_slug: SLUG)
+    assert task.reload.review_in_progress?, "no claim row means no evidence of death"
+  end
+
+  # A claim with no reviewer named still gates the lane (mutual exclusion is the
+  # claim's first job); it simply paints no face.
+  test "[unit] a claim without a reviewer records no intent" do
+    task = task!
+    assert_no_difference "TaskEvent.where(kind: TaskEvent::INTENT).count" do
+      assert acquire.acquired
+    end
+    refute task.reload.review_in_progress?
   end
 end
