@@ -146,11 +146,11 @@ Mint for a **seeded admin** — one of `User::PARKED_IDENTITIES`, all
 `@mcritchie.studio`. Any other address signs up a brand-new `viewer`, and the
 hop then fails on a page that is perfectly healthy.
 
-Landing on `/` means the sign-in **succeeded** and the reviewer lacks rights —
-the quiet failure, not a broken link. Follow the POST by hand as above: `curl -L`
-replays the POST across the redirect and 404s on the review path, which looks
-like a different bug. (`curl` is the fallback; drive the real browser when you
-have one.)
+Landing on `/` means the sign-in **succeeded** and the account is not an admin —
+the quiet failure, not a broken link. Follow the POST by hand as above; do not
+fold it into one `curl -L -X POST`, because the forced method replays across the
+redirect and 404s on the review path, which looks like a different bug. (`curl`
+is the fallback; drive the real browser when you have one.)
 
 What this buys you on the board: a `--local-url` + `--approval waiting` task
 floats to the top of its stage, pulses, and grows a card-width **WAITING
