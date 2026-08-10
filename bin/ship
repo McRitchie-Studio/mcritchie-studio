@@ -66,6 +66,8 @@ require "optparse"
 require_relative "lib/repo_root"
 require_relative "lib/cert_root_guard"
 require_relative "lib/fast_lane"
+require_relative "lib/gh_auth_retry"
+require_relative "lib/pr_overlap"
 require_relative "lib/full_suite_gate"
 require_relative "lib/session_identity"
 require_relative "../lib/claim_lease"
@@ -75,6 +77,9 @@ TASK_BIN = ENV.fetch("SHIP_TASK_BIN", File.expand_path("task", __dir__))
 FAST_CHECK_BIN = ENV.fetch("SHIP_FAST_CHECK_BIN", File.expand_path("fast-check", __dir__))
 DOR_CHECK_BIN = ENV.fetch("SHIP_DOR_CHECK_BIN", File.expand_path("dor-check", __dir__))
 GH_BIN = ENV.fetch("SHIP_GH_BIN", "gh")
+# A minted App installation token, populated only if a gh write refuses on
+# credentials (see gh_capture). Held for THIS run so one mint covers the rest of it.
+@gh_token = nil
 BASE_BRANCH = ENV.fetch("SHIP_BASE_BRANCH", "accepted")
 BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
 # The narration CLI (fast-lane-narrates-activities): ship CLOSES the cycle's
@@ -299,9 +304,35 @@ end
 
 # --- 4/7 PR (non-draft, base #{BASE_BRANCH}) ---------------------------------
 
+# One `gh` call, with a single mint-and-retry when it fails on CREDENTIALS.
+#
+# PATs were retired in the 2026-07-29 org migration, so the ambient `gh` login reads
+# fine and then refuses the one write that matters ("Resource not accessible by
+# personal access token"). Recovering that by hand cost every ship and every reviewer
+# merge on 2026-08-10. Now ship mints an App installation token itself and retries
+# ONCE — the token rides the retried child's env and is never printed.
+#
+# The retry is narrow on purpose: a failure that is not an auth failure returns
+# untouched (a merge conflict re-run with a fresh token just fails again), and a mint
+# that cannot happen returns gh's ORIGINAL error rather than a confusing one about
+# credentials.
 def gh_capture(root, *args)
-  out = IO.popen([GH_BIN, *args], chdir: root, &:read)
-  [out.to_s, $?.success?]
+  env = @gh_token ? { "GH_TOKEN" => @gh_token } : {}
+  out = IO.popen(env, [GH_BIN, *args], chdir: root, &:read)
+  return [out.to_s, true] if $?.success?
+
+  first = out.to_s
+  return [first, false] if @gh_token || !GhAuthRetry.auth_failure?(first)
+
+  say "auth — gh refused on credentials; minting a GitHub App token and retrying once."
+  @gh_token = GhAuthRetry.mint(root: root)
+  unless @gh_token
+    say "auth — could not mint an App token (1Password unavailable?); reporting gh's original error."
+    return [first, false]
+  end
+
+  retried = IO.popen({ "GH_TOKEN" => @gh_token }, [GH_BIN, *args], chdir: root, &:read)
+  [retried.to_s, $?.success?]
 end
 
 list_json, listed = gh_capture(root, "pr", "list", "--head", branch, "--state", "open",
@@ -335,6 +366,37 @@ else
   pr_url = out[%r{https://\S+/pull/\d+}].to_s
   die!("gh pr create succeeded but printed no PR URL:\n#{out}") if pr_url.empty?
 end
+
+# --- same-file overlap with other open PRs (ADVISORY) ------------------------
+# Asked HERE because here is where it can be answered: the diff is final and the
+# sibling PRs are open. bin/session-preflight asks the same question inside
+# `bin/task begin`, where the branch has no commits yet — so it can only ever
+# answer "none". See bin/lib/pr_overlap.rb for what that blind spot cost.
+#
+# Never fatal: every failure path (no gh, unreadable PR, bad JSON) simply skips.
+def overlap_advisory(root, branch, self_pr_url)
+  base_ref = "origin/#{BASE_BRANCH}"
+  mine = IO.popen(["git", "-C", root, "diff", "--name-only", "#{base_ref}...HEAD"], &:read).to_s.split("\n")
+  return if mine.empty?
+
+  list_json, ok = gh_capture(root, "pr", "list", "--state", "open", "--limit", "30",
+                             "--json", "number,title,url,headRefName")
+  return unless ok
+
+  prs = JSON.parse(list_json)
+  prs = prs.reject { |pr| pr["headRefName"].to_s == branch || pr["url"].to_s == self_pr_url.to_s }
+  prs.each do |pr|
+    files_json, got = gh_capture(root, "pr", "view", pr["number"].to_s, "--json", "files")
+    pr["files"] = got ? (JSON.parse(files_json)["files"] || []).map { |f| f["path"] } : []
+  end
+
+  items = PrOverlap.report(mine, prs)
+  PrOverlap.lines(items).each { |line| say line }
+rescue StandardError
+  nil # advice is never worth failing a ship over
+end
+
+overlap_advisory(root, branch, pr_url)
 
 # --- 5/7 record pr_url -------------------------------------------------------
 
