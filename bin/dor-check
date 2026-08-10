@@ -349,6 +349,14 @@ def untrusted_root?
   @untrusted_root ? true : false
 end
 
+# True when the checkout we are standing in is at least the PR's own REPO — so its
+# REFS (not its working tree) can still answer for this task. False only on a
+# positive repo contradiction from the guard. Defaults true for every path where the
+# root was never in question, so it can never make a previously-fine run stricter.
+def standing_repo_ok?
+  @standing_repo_ok.nil? ? true : @standing_repo_ok
+end
+
 def changed_files
   branch_diff.first
 end
@@ -368,9 +376,13 @@ def resolve_branch_diff
   if untrusted_root?
     # The local working tree belongs to someone else's code (the guard could not
     # re-root onto the task's own tree). Reading it is the false-PASS bug, so the
-    # only remaining honest local source is the task BRANCH's committed diff —
-    # if this repo happens to carry the branch. Otherwise: nothing observed.
-    branch = branch_committed_files(diff_root, @task_branch)
+    # only remaining honest local source is the task BRANCH's committed diff — and
+    # ONLY when this checkout is the PR's own REPO. A branch name is not repo-scoped:
+    # `feat/<slug>` in some other repo is a different project's work that merely
+    # shares a name (21 such hub↔satellite collisions exist on disk today), and
+    # grading it is the same false pass one door further out. Otherwise: nothing
+    # observed, and the gate fails closed.
+    branch = (branch_committed_files(diff_root, @task_branch) if standing_repo_ok?)
     return [branch, :branch] if branch.is_a?(Array) && branch.any?
 
     return [[], :indeterminate]
@@ -971,7 +983,22 @@ if foreign_root
     # Kept for the fail-closed verdict text: `errors` is the machine-readable
     # channel, and a --json consumer never sees the stderr banners below.
     @rejected_roots = rejected
-    task_fingerprint_override = review_fingerprint(diff_root, foreign_root[:expected_branch])
+    # Can this checkout's REFS vouch for anything? Only if it is the right repo.
+    #
+    # Remedy 2 reads `<base>...origin/feat/<slug>` out of the standing root — its
+    # branch, not its working tree — and a branch name is NOT repo-scoped. So a repo
+    # that merely HAS a same-named feat/ branch was graded as this PR's diff: a
+    # satellite code PR, reviewed from the hub primary, took the hub branch's doc-only
+    # diff and passed. Worse, with the hub's own desk on disk the gate printed
+    # "TASK TREE NOT FOUND … working tree is NOT read as the diff" and then read that
+    # same repo's BRANCH and granted the exemption anyway — the refusal fired and the
+    # verdict passed regardless. 21 real hub↔satellite branch-name collisions exist on
+    # disk today, so this is a live vector, not a hypothetical one (review round 5).
+    #
+    # A BRANCH-only mismatch is still fine: right repo, wrong branch checked out, refs
+    # intact — which is precisely the reclaimed-worktree case remedy 2 exists for.
+    @standing_repo_ok = foreign_root[:standing_repo_mismatch].nil?
+    task_fingerprint_override = (review_fingerprint(diff_root, foreign_root[:expected_branch]) if @standing_repo_ok)
     if ambiguous
       warn!("⚠ dor-check: AMBIGUOUS TASK TREE — refusing to guess. #{eligible.size} worktrees named " \
             "#{foreign_root[:worktree_slug]} are genuinely on #{foreign_root[:expected_branch]} " \
@@ -1047,6 +1074,8 @@ if EXEMPT_KINDS.include?(kind)
         "#{task["slug"] || slug}'s tree, so its working tree was REFUSED as a diff source (reading it is how " \
         "one unrelated dirty file grants a multi-file code PR a doc-only exemption), and neither the PR's " \
         "file list nor branch #{@task_branch} could be read here" \
+        "#{standing_repo_ok? ? "" : " (this checkout is not the PR's repo, so a #{@task_branch} branch here " \
+          "would be a different project's work that merely shares the name — it is NOT read either)"}" \
         "#{near_misses.empty? ? "" : " (and no directory named #{task["slug"] || slug} here IS the task's " \
           "tree: #{near_misses})"}. The shape/test-tier gate is ENFORCED " \
         "rather than skipped (fail-closed). Fix it: run dor-check from the task's worktree; or fetch its " \

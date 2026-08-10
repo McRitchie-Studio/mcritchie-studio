@@ -130,6 +130,16 @@ roles**. When the root is not the task's tree it resolves in this order:
    The cert half refuses in the suite-gate block; the diff half resolves
    **`:indeterminate`**, which the exempt-kind gate already fails closed on.
 
+Remedy 2 carries its own repo condition, because **a branch name is not
+repo-scoped**. Reading `<base>...origin/feat/<slug>` out of a checkout that merely
+*has* a same-named branch grades a different project's work as this PR — and there
+are **21 real hub↔satellite collisions on disk today**. So remedy 2 fires only when
+the standing checkout is the PR's own repo (`standing_repo_mismatch` is nil); a
+branch-only mismatch still qualifies, which is exactly the reclaimed-worktree case it
+exists for. The same condition gates the branch-tree *fingerprint*: presenting a
+foreign repo's tree hash as this task's cert is the confidently-wrong-root failure
+this file spends a section warning about.
+
 **Every tree is validated — the one it jumps to AND the one you stand in, on BOTH
 axes.** A checkout is the task's tree only if it passes *repo* **and** *branch*; a
 matching directory NAME proves neither.

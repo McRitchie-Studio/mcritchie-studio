@@ -119,7 +119,14 @@ module CertRootGuard
     # with no validation and no banner. Validating the destination while trusting the
     # source, inside one guard, is the same defect this guard exists to close, just
     # pointing the other way (review round 4).
-    standing_mismatch = worktree_mismatch(root, expected_branch: expected_branch, prefer_repo: prefer_repo)
+    # Reported per AXIS, not just as a first-failure string. A caller that wants to
+    # read something OUT of the standing root needs to know WHICH axis failed: a repo
+    # mismatch invalidates everything the checkout could tell you, while a branch-only
+    # mismatch still leaves its refs trustworthy (right repo, wrong branch checked
+    # out). dor-check's branch-diff fallback turns on exactly that distinction.
+    standing_repo_mismatch = repo_mismatch(root, prefer_repo)
+    standing_branch_mismatch = branch_mismatch(root, expected_branch)
+    standing_mismatch = standing_repo_mismatch || standing_branch_mismatch
     return nil if standing_mismatch.nil?
 
     # The PHYSICAL desk vouch — …/.worktrees/<worktree_slug>, in the right repo. It
@@ -161,6 +168,10 @@ module CertRootGuard
       # feat/x" / "answers to repo …"), so a caller can say which axis failed without
       # re-deriving it.
       standing_mismatch: standing_mismatch,
+      # Per-axis, so a caller can ask "is this even the right REPO?" without parsing
+      # the message. nil = that axis passed (or was not determinable).
+      standing_repo_mismatch: standing_repo_mismatch,
+      standing_branch_mismatch: standing_branch_mismatch,
       standing_in_task_desk: standing_in_task_desk,
       # Exactly one VALIDATED tree, or nothing. Not "the best of the candidates" —
       # a destination nobody checked is how B1/B2 turned a re-root into a false pass.
@@ -242,9 +253,18 @@ module CertRootGuard
     []
   end
 
-  # The app a worktree belongs to: …/<app>/.worktrees/<slug> → "<app>".
-  def app_of(worktree_path)
-    File.basename(File.expand_path("../..", worktree_path.to_s))
+  # The app a checkout belongs to, for BOTH shapes the guard is handed:
+  #   …/<app>/.worktrees/<slug> → "<app>"   (a task desk)
+  #   …/<app>                   → "<app>"   (a primary checkout)
+  # The unconditional two-level climb this replaces was written for desks only, so on
+  # a primary it returned the PROJECTS directory's name — which is nobody's repo. It
+  # went unnoticed because `origin` normally answers first; it only surfaced when
+  # mutation-testing nulled the remote and the directory fallback took over.
+  def app_of(path)
+    dir = path.to_s.chomp("/")
+    return File.basename(File.expand_path("../..", dir)) if File.basename(File.dirname(dir)) == ".worktrees"
+
+    File.basename(dir)
   end
 
   # WHY `path` is not the task's tree — or nil when it IS. The DESTINATION check,

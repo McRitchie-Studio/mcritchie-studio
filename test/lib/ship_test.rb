@@ -437,4 +437,85 @@ class ShipTest < Minitest::Test
       refute_equal "", `git -C #{dir} status --porcelain`.strip, "no commit may land from the wrong branch"
     end
   end
+
+  # ── the ROOT-GUARD lane ────────────────────────────────────────────────────
+  #
+  # Every test above pins SHIP_ROOT, which short-circuits the root guard entirely —
+  # so ship's guard branch had NO coverage at all, and a change to
+  # CertRootGuard#assess broke this lane silently on 2026-08-09: a detached HEAD at
+  # the task's own desk started dying with "refusing to certify", telling the builder
+  # to `cd` to where they were already standing. A false REFUSAL that blocks an
+  # honest handoff is its own outage, and it slipped precisely because bin/ship is a
+  # CONSUMER of the guard that no guard test exercises.
+
+  # Run ship from `cwd` with NO SHIP_ROOT, so the real root guard runs.
+  def run_ship_from(cwd, dir, projects)
+    log = File.join(dir, "stub.log")
+    env = SessionEnv.neutralized(
+      "SHIP_ROOT" => nil,
+      "SHIP_PROJECTS_DIR" => projects,
+      "SHIP_TASK_BIN" => write_stub(dir, "task-stub", "TASK"),
+      "SHIP_FAST_CHECK_BIN" => write_stub(dir, "fast-stub", "FAST"),
+      "SHIP_DOR_CHECK_BIN" => write_stub(dir, "dor-stub", "DOR"),
+      "SHIP_GH_BIN" => write_stub(dir, "gh-stub", "GH"),
+      "SHIP_ACTIVITY_BIN" => write_stub(dir, "activity-stub", "ACTIVITY"),
+      "STUB_LOG" => log,
+      "TASK_SHOW_JSON" => task_record,
+      "TASK_SHOW_JSON_MOVED" => task_record(stage: "submitted", pr_url: PR_URL)
+    )
+    out, err, status = Open3.capture3(env, RbConfig.ruby, BIN, SLUG, chdir: cwd)
+    [out, err, status]
+  end
+
+  # The task's own desk at <projects>/<app>/.worktrees/<slug>, on the task branch.
+  def with_task_desk
+    Dir.mktmpdir do |root|
+      projects = File.realpath(root)
+      desk = File.join(projects, "myapp", ".worktrees", SLUG)
+      FileUtils.mkdir_p(desk)
+      g = ->(args) { assert(system("git -C #{desk} #{args} >/dev/null 2>&1"), "git #{args}") }
+      File.write(File.join(desk, ".gitignore"), "stub.log\n*-stub\n")
+      File.write(File.join(desk, "app.rb"), "puts :v1\n")
+      g.call("init -q -b #{BRANCH}")
+      g.call("config user.email tester@example.com")
+      g.call("config user.name tester")
+      g.call("add -A")
+      g.call("commit -q -m init")
+      yield projects, desk
+    end
+  end
+
+  def test_a_detached_head_at_the_tasks_own_desk_still_ships
+    # THE REGRESSION. Physically at the task's desk, HEAD detached (mid-rebase is the
+    # ordinary way to get here). ship is a WRITER and takes the same physical-desk
+    # vouch bin/fast-check does, so the guard must not stop it.
+    with_task_desk do |projects, desk|
+      assert system("git -C #{desk} checkout -q --detach HEAD")
+      _out, err, _status = run_ship_from(desk, desk, projects)
+
+      refute_includes err, "refusing to certify",
+                       "the guard must not refuse the builder at the task's own desk"
+      refute_includes err, "Run the cert from the task worktree: cd #{desk}",
+                       "telling the builder to cd where they already are is the tell"
+    end
+  end
+
+  def test_a_foreign_checkout_is_still_refused_or_re_rooted
+    # The other direction, so the fix above cannot become a blanket bypass: standing
+    # somewhere that is NOT the task's desk must still be caught.
+    with_task_desk do |projects, _desk|
+      stranger = File.join(projects, "myapp")
+      FileUtils.mkdir_p(stranger)
+      assert system("git -C #{stranger} init -q -b release")
+      assert system("git -C #{stranger} config user.email t@t.co")
+      assert system("git -C #{stranger} config user.name t")
+      File.write(File.join(stranger, "README.md"), "hub\n")
+      assert system("git -C #{stranger} add -A && git -C #{stranger} commit -q -m init")
+
+      _out, err, status = run_ship_from(stranger, stranger, projects)
+
+      refute status.success?, "a foreign checkout must not ship silently"
+      assert_includes err, SLUG
+    end
+  end
 end

@@ -83,11 +83,24 @@ class DorCheckReviewDiffRootingTest < Minitest::Test
     git!(real, "init", "-q")
     git!(real, "config", "user.email", "t@t.co")
     git!(real, "config", "user.name", "T")
+    # The `origin` every real clone has. NOT decoration: the repo axis asks origin
+    # FIRST and only falls back to the directory name when there is none, so fixtures
+    # without a remote quietly exercised the FALLBACK — the weaker, owner-blind path
+    # this round set out to stop trusting. Nulling remote_slug used to leave every
+    # integration test green, i.e. the suite was green for a reason that would have
+    # survived deleting the mechanism (review round 5).
+    git!(real, "remote", "add", "origin", origin_url_for(real))
     write(real, "README.md", "base\n")
     write(real, ".gitignore", "/.worktrees/\n")
     git!(real, "add", "-A")
     git!(real, "commit", "-qm", "init")
     real
+  end
+
+  # …/<app> and …/<app>/.worktrees/<slug> both belong to <app>.
+  def origin_url_for(dir)
+    app = File.basename(File.dirname(dir)) == ".worktrees" ? CertRootGuard.app_of(dir) : File.basename(dir)
+    "https://github.com/McRitchie-Studio/#{app}.git"
   end
 
   # A task tree: the base rung recorded as a remote ref, then the feature committed
@@ -239,8 +252,13 @@ class DorCheckReviewDiffRootingTest < Minitest::Test
     end
   end
 
-  def test_unit_app_of_names_the_repo_a_worktree_belongs_to
+  def test_unit_app_of_names_the_repo_for_a_desk_and_for_a_primary
     assert_equal "turf-monster", CertRootGuard.app_of("/p/turf-monster/.worktrees/task-x")
+    # A PRIMARY checkout is the other shape the guard is handed. The old
+    # unconditional two-level climb returned "p" here — the projects directory, which
+    # is nobody's repo — so the directory fallback silently compared garbage.
+    assert_equal "turf-monster", CertRootGuard.app_of("/p/turf-monster")
+    assert_equal "turf-monster", CertRootGuard.app_of("/p/turf-monster/")
   end
 
   # ── [unit] the DESTINATION axes ────────────────────────────────────────────
@@ -250,7 +268,9 @@ class DorCheckReviewDiffRootingTest < Minitest::Test
     Dir.mktmpdir do |raw|
       projects = File.realpath(raw)
       path = init_repo(File.join(projects, app, ".worktrees", SLUG))
-      git!(path, "remote", "add", "origin", remote) if remote
+      # init_repo already wired the conventional origin; override it when the case
+      # under test is about a DIFFERENT one (a fork, or a renamed local folder).
+      git!(path, "remote", "set-url", "origin", remote) if remote
       git!(path, "checkout", "-q", "-b", branch)
       yield projects, path
     end
@@ -690,6 +710,123 @@ class DorCheckReviewDiffRootingTest < Minitest::Test
       assert_equal 1, code
       refute_equal wrong, verdict["code_root"], "it silently graded the wrong repo"
       assert_equal right, verdict["code_root"], "devops.pr_url says which repo this verdict is about"
+    end
+  end
+
+  # ── [integration] the tree it READS is validated too ──────────────────────
+  #
+  # Round 5, the same family one door out: the gate validated the tree it STANDS in
+  # and the tree it JUMPS to, then read a BRANCH out of a checkout it had already
+  # declared foreign. Branch names are not repo-scoped, so any repo that merely HAS a
+  # `feat/<slug>` was graded as this PR's diff — 21 real hub↔satellite collisions
+  # exist on disk today.
+
+  # The reviewer's world: a satellite carries the real code PR; the hub the reviewer
+  # stands in has a same-named branch that only touches prose.
+  def with_branch_name_collision
+    Dir.mktmpdir do |raw|
+      projects = File.realpath(raw)
+      hub = init_repo(File.join(projects, "mcritchie-studio"))
+      git!(hub, "update-ref", "refs/remotes/origin/accepted", "HEAD")
+      git!(hub, "checkout", "-q", "-b", "feat/#{SLUG}")
+      write(hub, "docs/hub-note.md", "unrelated work that happens to share a branch name\n")
+      git!(hub, "add", "-A")
+      git!(hub, "commit", "-qm", "hub prose")
+      git!(hub, "update-ref", "refs/remotes/origin/feat/#{SLUG}", "feat/#{SLUG}")
+      git!(hub, "checkout", "-q", "master") if git_branch_exists?(hub, "master")
+      git!(hub, "checkout", "-q", "-B", "release", "origin/accepted")
+      yield projects, hub
+    end
+  end
+
+  def git_branch_exists?(dir, branch)
+    system("git", "-C", dir, "rev-parse", "--verify", branch, out: File::NULL, err: File::NULL)
+  end
+
+  def test_integration_a_same_named_branch_in_another_repo_is_not_this_prs_diff
+    # The satellite's worktree is NOT on disk, so the branch fallback is the only
+    # local source left — and the hub happens to carry `feat/<slug>`. Pre-fix that
+    # branch's doc-only diff earned the exemption for a satellite CODE PR.
+    with_branch_name_collision do |projects, hub|
+      verdict, code, = dor_check(chore_task(repo: "turf-monster"), hub, projects, "--gate-role", "review")
+
+      refute verdict["exempt"], "another repo's same-named branch is not this PR's diff"
+      assert_equal 1, code
+      refute_includes Array(verdict["changed_files"]), "docs/hub-note.md"
+      refute_equal "branch", verdict["diff_source"], "the branch source must not fire outside the PR's repo"
+    end
+  end
+
+  def test_integration_the_refusal_and_the_verdict_cannot_disagree
+    # THE WORST FORM, and the one to fix against: with the hub's OWN desk on disk the
+    # gate printed "TASK TREE NOT FOUND … working tree is NOT read as the diff" and
+    # then read that same repo's BRANCH and passed anyway. A gate whose refusal fires
+    # while its verdict advances is worse than one that simply misses — the banner
+    # becomes evidence that it was checked.
+    with_branch_name_collision do |projects, hub|
+      stale = init_repo(File.join(projects, "mcritchie-studio", ".worktrees", SLUG))
+      git!(stale, "checkout", "-q", "-b", "release")
+
+      verdict, code, stderr = dor_check(chore_task(repo: "turf-monster"), hub, projects,
+                                        "--gate-role", "review")
+
+      assert_includes stderr, "NOT read as the diff", "the refusal must actually fire in this fixture"
+      refute verdict["exempt"], "the gate refused on stderr and then granted the exemption anyway"
+      refute verdict["ready"], "a banner the verdict contradicts is worse than no banner"
+      assert_equal 1, code
+    end
+  end
+
+  # A SHAPED code task, so the suite gate actually runs — the exempt-kind fixtures
+  # above short-circuit before it and cannot see the cert fingerprint at all.
+  def backend_task(repo:, fp:)
+    task = chore_task(repo: repo)
+    task["metadata"]["devops"].merge!(
+      "kind" => "bug", "shape" => "backend",
+      "checks_run" => ["[unit] u", "[integration] i",
+                       "[full-suite@#{fp}] bin/rails test", "[rubocop@#{fp}] bin/rubocop"]
+    )
+    task
+  end
+
+  def test_integration_a_foreign_repos_branch_tree_is_never_offered_as_this_certs_fingerprint
+    # The fingerprint twin of the branch-diff vector. Reading a same-named branch out
+    # of the WRONG repo produces a precise, confident, wrong hash — and this file's own
+    # provenance invariant says that is worse than an opaque refusal, because it sends
+    # the reader to a tree that graded nothing. The wrong direction is survivable here
+    # (a false STALE is loud); being confidently wrong about WHICH tree is not.
+    with_branch_name_collision do |projects, hub|
+      hub_branch_tree = IO.popen(["git", "-C", hub, "rev-parse", "feat/#{SLUG}^{tree}"], &:read).strip
+      refute_empty hub_branch_tree
+
+      verdict, code, = dor_check(backend_task(repo: "turf-monster", fp: "a" * 40), hub, projects,
+                                 "--gate-role", "review")
+
+      assert_equal 1, code
+      blame = "#{verdict['errors'].join(' ')} #{verdict.dig('full_suite', 'fingerprint')}"
+      refute_includes blame, hub_branch_tree[0, 12],
+                      "the hub's branch tree graded nothing and must not appear as this task's fingerprint"
+      assert_match(/root guard/i, verdict["errors"].join(" "),
+                   "with no honest tree available it must refuse, not grade a foreign one")
+    end
+  end
+
+  def test_integration_the_branch_source_still_works_inside_the_prs_own_repo
+    # The other direction: remedy 2 must keep working where it is honest. Right repo,
+    # wrong branch checked out, worktree reclaimed — the branch's committed diff is
+    # exactly the PR's, and refusing here would strand reviewers.
+    with_world(worktree: false) do |projects, primary, _none|
+      git!(primary, "update-ref", "refs/remotes/origin/accepted", "release")
+      git!(primary, "checkout", "-q", "-b", "feat/#{SLUG}")
+      PR_CODE.each { |rel| write(primary, rel, "# #{rel}\n") }
+      git!(primary, "add", *PR_CODE)
+      git!(primary, "commit", "-qm", "feat")
+      git!(primary, "checkout", "-q", "release")
+
+      verdict, code, = dor_check(chore_task(repo: "myapp"), primary, projects, "--gate-role", "review")
+
+      assert_saw_the_prs_code(verdict, code)
+      assert_equal "branch", verdict["diff_source"], "the PR's own repo may still answer with its branch"
     end
   end
 
