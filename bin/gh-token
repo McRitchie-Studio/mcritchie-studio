@@ -87,7 +87,14 @@ end
 def read_store
   return {} unless File.exist?(store_path)
 
-  JSON.parse(File.read(store_path))
+  parsed = JSON.parse(File.read(store_path))
+  # WELL-FORMED JSON IS NOT A WELL-SHAPED CACHE. `{not json` raises and is caught
+  # below, but `[]`, `null` and `"scalar"` parse CLEANLY and then blow up downstream
+  # with a TypeError/NoMethodError/IndexError — an unhandled stack trace on the one
+  # command every `gh` call depends on, wedging every agent until a human deletes the
+  # file. Shape-check here so the promise on the next line is true for every corrupt
+  # cache, not just the unparseable spelling.
+  parsed.is_a?(Hash) ? parsed : {}
 rescue StandardError
   {} # a corrupt cache is a cache miss, never a failure — we can always mint
 end
@@ -160,7 +167,10 @@ def refresh(identity)
   # rather than clobbered — not for exclusion (there is none), just so both agents'
   # tokens survive in the two slots and the newest still wins on read.
   store = read_store
-  entry = store[identity] || {}
+  # Same shape rule one level down: read_store now guarantees a Hash, but an ENTRY
+  # can still be a scalar ({"agent":"oops"}), and String#[]= raises IndexError.
+  entry = store[identity]
+  entry = {} unless entry.is_a?(Hash)
   target = entry["active"] == "a" ? "b" : "a"
   entry[target] = { "token" => token, "created_at" => Time.now.utc.iso8601 }
   entry["active"] = target

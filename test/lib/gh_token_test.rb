@@ -183,15 +183,35 @@ class GhTokenTest < Minitest::Test
   end
 
   # A corrupt cache is a cache MISS, never a failure — we can always mint again.
-  def test_a_corrupt_cache_degrades_to_a_fresh_mint
-    Dir.mktmpdir do |dir|
-      env = with_env(dir)
-      FileUtils.mkdir_p(File.dirname(store_path(dir)))
-      File.write(store_path(dir), "{not json")
+  #
+  # ASSERTED AS A PROPERTY, NOT A SPELLING. This case used to pin only `{not json`,
+  # which raises inside JSON.parse and so exercised only the rescue. Every OTHER
+  # corruption below parses CLEANLY and then blew up downstream — `[]` with a
+  # TypeError, `null` with a NoMethodError, a scalar entry with an IndexError — so
+  # the command that every `gh` call depends on died on an unhandled stack trace and
+  # wedged every agent until a human deleted the file. One spelling green while four
+  # shapes crashed is exactly the gap a property closes.
+  CORRUPT_CACHES = {
+    "unparseable" => "{not json",
+    "a JSON array" => "[]",
+    "JSON null" => "null",
+    "a bare scalar" => '"scalar"',
+    "a scalar identity entry" => '{"agent":"oops"}',
+    "a slot that is not an object" => '{"agent":{"active":"a","a":"nope"}}'
+  }.freeze
 
-      out, _err, status = run_token(env)
-      assert status.success?
-      assert_equal "ghs_sTuBtOkEn", out.strip
+  def test_every_corrupt_cache_shape_degrades_to_a_fresh_mint
+    CORRUPT_CACHES.each do |label, payload|
+      Dir.mktmpdir do |dir|
+        env = with_env(dir)
+        FileUtils.mkdir_p(File.dirname(store_path(dir)))
+        File.write(store_path(dir), payload)
+
+        out, err, status = run_token(env)
+        assert status.success?, "#{label} must degrade to a mint, not crash — got: #{err}"
+        assert_equal "ghs_sTuBtOkEn", out.strip, "#{label} must serve a freshly minted token"
+        refute_match(/Error\b|backtrace|\.rb:\d+:in/, err, "#{label} must not surface a Ruby stack trace")
+      end
     end
   end
 end
