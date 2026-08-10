@@ -191,12 +191,17 @@ if root.empty?
                                     projects_dir: ENV["SHIP_PROJECTS_DIR"])
   # standing_in_task_desk — you are physically AT …/.worktrees/<slug>, even if HEAD is
   # detached mid-rebase. ship is a WRITER (it commits), so it takes the same vouch
-  # bin/fast-check and bin/full-suite-check take through CertRootGuard#refusal. Without
-  # this, a detached HEAD at the task's own desk dies telling the builder to `cd` to
-  # where they are already standing — a false REFUSAL that blocks an honest handoff,
-  # which is its own outage. ship reads `assess` directly rather than `#refusal`
-  # (it wants :resolved_root), so it has to honor the vouch explicitly; it had been
-  # getting it for free from a short-circuit inside assess until 2026-08-09.
+  # bin/fast-check and bin/full-suite-check take through CertRootGuard#refusal. ship
+  # reads `assess` directly rather than `#refusal` (it wants :resolved_root), so it
+  # has to honor the vouch explicitly; it had been getting it for free from a
+  # short-circuit inside assess until 2026-08-09.
+  #
+  # What this line does NOT do, measured: it does not restore a lane. A detached HEAD
+  # at the task's own desk still exits 1 either way, at the pre-existing branch guard
+  # below. What it changes is WHICH refusal speaks — without it the root guard goes
+  # first and calls the task's own desk "not <slug>'s tree", which is false (it IS the
+  # desk; only HEAD is detached) and sends the builder somewhere else. The branch
+  # guard's message names the rebase, which is the true one.
   assessment = nil if assessment && assessment[:standing_in_task_desk]
   if assessment
     resolved = assessment[:resolved_root]
