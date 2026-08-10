@@ -16,6 +16,8 @@ class TriageControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_match @finding.title, response.body
     assert_match @finding.slug, response.body
+    # The board nav renders here too — /triage must not strand the visitor.
+    assert_select "a[href=?]", deployments_path
   end
 
   test "[component] promote controls render only for an admin" do

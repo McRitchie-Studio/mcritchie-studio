@@ -11,8 +11,9 @@
         review, and a release slot. Promote what deserves one.
       </p>
     </div>
-    <div class="text-sm text-muted md:text-right">
-      <p><%= pluralize(@findings.size, "open finding") %></p>
+    <div class="flex flex-col gap-2 md:items-end">
+      <%= render "tasks/page_nav", current: "triage" %>
+      <p class="text-sm text-muted md:text-right"><%= pluralize(@findings.size, "open finding") %></p>
     </div>
   </div>
 
@@ -44,9 +45,9 @@
                 <div class="flex flex-col gap-2 shrink-0 md:items-end">
                   <%= form_with url: promote_triage_finding_path(finding.slug), method: :post, class: "flex flex-wrap items-center gap-2" do |f| %>
                     <%= f.text_field :title, value: finding.title.split(/\s+/).first(5).join(" "),
-                                     class: "input input-sm w-56", required: true,
+                                     class: "input-field text-sm w-56", required: true,
                                      title: "Task title (3-5 words)" %>
-                    <%= f.select :kind, %w[chore bug feature], {}, class: "input input-sm" %>
+                    <%= f.select :kind, %w[chore bug feature], {}, class: "input-field text-sm" %>
                     <%= f.submit "Promote", class: "btn btn-primary btn-sm" %>
                   <% end %>
                   <%= button_to "Dismiss", dismiss_triage_finding_path(finding.slug), method: :post,
