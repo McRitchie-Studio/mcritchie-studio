@@ -17,25 +17,32 @@ class Release
   module ArtifactCommit
     module_function
 
-    # The working-tree paths dirty OTHER than `doc_rel`, parsed from
+    # The working-tree paths dirty OTHER than the expected one(s), parsed from
     # `git status --porcelain`. Each line is "XY <path>" (or "XY <old> -> <new>"
-    # for a rename — the NEW path is the live one). The doc itself (committed to
-    # `release` on purpose) and blank lines are excluded.
-    def other_dirty_paths(porcelain, doc_rel)
+    # for a rename — the NEW path is the live one). The expected docs (committed
+    # to `release` on purpose) and blank lines are excluded.
+    #
+    # `expected` takes one path OR many. Many exists for the archive beat's docs
+    # sweep, which retires a whole batch of frozen snapshots in one `git mv` pass
+    # plus rewrites the ledger — one logical change across N paths. Passing only
+    # the ledger there would read the retirements as "unrelated work", refuse the
+    # commit, and strand a dozen staged renames as dirt on the primary checkout.
+    def other_dirty_paths(porcelain, expected)
+      allowed = Array(expected)
       porcelain.to_s.lines.filter_map do |line|
         path = line[3..].to_s.strip
         next if path.empty?
 
         path = path.split(" -> ").last if path.include?(" -> ")
-        path unless path == doc_rel
+        path unless allowed.include?(path)
       end
     end
 
-    # True when the doc is the ONLY thing dirty in the working tree — the
-    # precondition for committing it to `release`. Anything else dirty → false →
-    # leave the doc uncommitted (non-fatal: it blocks nothing, it just doesn't ship).
-    def safe_to_commit?(porcelain, doc_rel)
-      other_dirty_paths(porcelain, doc_rel).empty?
+    # True when the expected doc(s) are the ONLY things dirty in the working tree
+    # — the precondition for committing to `release`. Anything else dirty → false
+    # → leave it uncommitted (non-fatal: it blocks nothing, it just doesn't ship).
+    def safe_to_commit?(porcelain, expected)
+      other_dirty_paths(porcelain, expected).empty?
     end
   end
 end
