@@ -66,7 +66,13 @@ class TaskReviewClaim < ApplicationRecord
         # the same pair) and self-guarding (it no-ops unless the task is `submitted`),
         # so renewals never stack rows. Best-effort: a telemetry write must never
         # break the mutual-exclusion gate the pipeline depends on.
-        record_review_intent(row.task_slug, reviewer)
+        # `requires_new` makes the isolation STRUCTURAL rather than accidental: the
+        # intent write gets its own savepoint, so a failure there rolls back only
+        # itself and can never take the claim's compare-and-set with it. Today
+        # `task_events` carries no unique index, FK, or check constraint, so no
+        # DB-level raise is reachable and the rescue below suffices — but the review
+        # lane's mutual exclusion is too load-bearing to rest on that staying true.
+        ActiveRecord::Base.transaction(requires_new: true) { record_review_intent(row.task_slug, reviewer) }
         outcome = Outcome.new(true, disposition, row)
       end
     end

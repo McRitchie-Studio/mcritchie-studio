@@ -845,18 +845,28 @@ class Task < ApplicationRecord
   end
 
   def review_in_progress?
-    return false unless stage == "submitted" && open_intent_for("reviewed").present?
+    stage == "submitted" && open_intent_for("reviewed").present? && review_claim_alive?
+  end
 
-    # An open intent says a review STARTED; it cannot say the reviewer is still
-    # alive, because an intent only closes when the →reviewed transition lands. A
-    # crashed reviewer therefore left a face on the board asserting a live review
-    # forever. The review CLAIM is the liveness primitive — a TTL lease its holder
-    # heartbeats — so when a claim row exists, defer to it: the seat empties within
-    # the TTL of the reviewer dying, and immediately on a clean release.
-    #
-    # Claim-less intents still read live, deliberately: `bin/reviewer-select` records
-    # the pair before any reviewer claims, and a hand-run review may never claim at
-    # all. Absent evidence of death is not evidence of death.
+  # Is the review lane's face still TRUE? An open intent says a review STARTED; it
+  # cannot say the reviewer is still alive, because an intent only closes when the
+  # →reviewed transition lands. A crashed reviewer therefore left a face on the board
+  # asserting a live review forever. The review CLAIM is the liveness primitive — a
+  # TTL lease its holder heartbeats — so when a claim row exists, defer to it: the
+  # seat empties within the TTL of the reviewer dying, and immediately on a clean
+  # release.
+  #
+  # Claim-less intents still read live, deliberately: `bin/reviewer-select` records
+  # the pair before any reviewer claims, and a hand-run review may never claim at
+  # all. Absent evidence of death is not evidence of death.
+  #
+  # THIS IS THE ONE RULE, and it lives here because there are TWO readers and a
+  # first version of this change hardened only one of them. `review_in_progress?`
+  # is a PREDICATE the board asks; `StageAgentsHelper#in_progress_work` is what
+  # actually DRAWS the face, and it rebuilt the review lane straight from the open
+  # intent — so the seat kept ticking for a dead reviewer even though the predicate
+  # said otherwise. Both now ask this method; a third reader must ask it too.
+  def review_claim_alive?
     claim = TaskReviewClaim.find_by(task_slug: slug)
     claim.nil? || claim.live?
   end

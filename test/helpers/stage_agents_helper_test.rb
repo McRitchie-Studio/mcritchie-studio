@@ -384,6 +384,67 @@ class StageAgentsHelperTest < ActionView::TestCase
     assert_equal 600, shipped.seconds, "Avi's ship time stands alone"
   end
 
+
+  # --- the review seat rides the CLAIM (crew-face-on-claim) --------------------
+  # These assert the RENDERED COLUMNS — the data the card partial draws — not the
+  # `review_in_progress?` predicate. The first version of this change hardened the
+  # predicate alone and left the face untouched, because in_progress_work rebuilt
+  # the review lane straight from the open intent; a proxy assertion could not see
+  # that. Assert the effect.
+
+  def submitted_with_live_review(reviewer: "carl")
+    task = Task.create!(title: "crew seat live review", stage: "submitted")
+    task.task_events.delete_all
+    TaskReviewClaim.acquire(task_slug: task.slug, session: "sess-x", nonce: "inst-x", reviewer: reviewer)
+    task.reload
+  end
+
+  def review_lane(task)
+    crew_columns(task, stage_agent_groups(task, @agents), board: :deploy,
+                 agents: @agents, events: task.task_events.to_a).find { |c| c.lane == :review }
+  end
+
+  test "[component] claiming a review DRAWS the reviewer into the review seat" do
+    task = submitted_with_live_review(reviewer: "carl")
+
+    lane = review_lane(task)
+    assert lane.stacked.any?, "the claim must fill the review seat"
+    assert_includes lane.stacked.map { |a| a.agent.slug }, "carl"
+    assert lane.live_since, "and it ticks live while the claim is held"
+  end
+
+  test "[component] a LAPSED claim empties the review seat and stops the ticker" do
+    task = submitted_with_live_review(reviewer: "carl")
+    assert review_lane(task).stacked.any?, "precondition: the seat filled"
+
+    # The reviewer dies: no heartbeat, the lease runs out. Nothing else changes —
+    # the intent is still open, exactly as a crashed review leaves it.
+    travel(ClaimLease::DEFAULT_TTL_SECONDS + 60) do
+      lane = review_lane(task.reload)
+      assert_empty lane.stacked, "a dead reviewer must not keep the seat"
+      assert_nil lane.live_since, "and must not keep ticking as if still reviewing"
+    end
+  end
+
+  test "[component] releasing the claim empties the review seat immediately" do
+    task = submitted_with_live_review(reviewer: "carl")
+    TaskReviewClaim.release(task_slug: task.slug, session: "sess-x", nonce: "inst-x")
+
+    assert_empty review_lane(task.reload).stacked, "a released review frees the seat at once"
+  end
+
+  # NO REGRESSION: bin/reviewer-select records the pair BEFORE anyone claims, and a
+  # hand-run review may never claim. Absent evidence of death is not evidence of death.
+  test "[component] an intent with no claim row still draws the pair" do
+    task = Task.create!(title: "crew seat orchestrator path", stage: "submitted")
+    task.task_events.delete_all
+    task.record_intent_event(to_stage: "reviewed",
+                             reviewers: [{ "slug" => "carl", "weight" => "primary" }])
+
+    assert_nil TaskReviewClaim.find_by(task_slug: task.slug)
+    assert review_lane(task.reload).stacked.any?, "the orchestrator path must keep working"
+  end
+
   # --- crew_columns (board-aware: Build splits, Deploy collapses; 3 vs 4 cols) -
 
   test "crew_columns on the Build board splits into three build steps, no QA spots" do

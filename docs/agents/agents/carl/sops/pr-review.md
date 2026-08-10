@@ -134,8 +134,10 @@ flat wall of background shells.
 
 The orchestrator's loop, per wave:
 
-1. **Claim** the next reviewable PR: `slug=$(bin/task claim-next-review)`. Stop
-   the wave when it returns `none`.
+1. **Claim** the next reviewable PR — naming the soul that will review it, which
+   is what fills the card's crew seat:
+   `slug=$(bin/task claim-next-review --agent carl)`. Stop the wave when it
+   returns `none`.
 2. **Record the PR head** BEFORE spawning Carl — a provable lower bound on what
    the review reads (it anchors the merge guard below):
 
