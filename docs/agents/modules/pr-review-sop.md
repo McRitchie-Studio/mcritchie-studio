@@ -182,8 +182,10 @@ the task blocked — one complete send-back, then the session moves on
 bin/task block <task> --kind rework --summary "<4-6 word headline>" --feedback "<what is wrong + why>"
 ```
 
-**Two-bounce circuit breaker:** a task already carrying a prior rework block
-(`qa_feedback` on `bin/task show <task> --verbose`) is never re-blocked to the
+**Two-bounce circuit breaker:** a task whose activity history already carries a
+prior send-back (`GET /api/v1/activities?task_slug=<task>&activity_type=qa_feedback`
+— one row per bounce; never probe the live block columns, which a compliant
+resubmission wipes) is never re-blocked to the
 builder — escalate instead (`bin/task block <task> --kind dependency --summary
 "Escalated: <disagreement>" --feedback "<both positions>"`) and flag it
 **⚠ Escalated** in the run handoff; a review deadlock is the operator's call.

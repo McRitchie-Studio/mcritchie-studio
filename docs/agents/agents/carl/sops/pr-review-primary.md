@@ -177,8 +177,10 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
        --feedback "<one complete send-back>" --agent carl
      ```
 
-     **Two-bounce circuit breaker:** if the task already carries a prior rework
-     block (`qa_feedback` on `bin/task show <task-slug> --verbose`), do not
+     **Two-bounce circuit breaker:** if the task's activity history already
+     carries a prior send-back (`GET /api/v1/activities?task_slug=<task-slug>
+     &activity_type=qa_feedback` — one row per bounce; never probe the live
+     block columns, which a compliant resubmission wipes), do not
      re-block to the builder — escalate the deadlock to the operator instead:
      `bin/task block <task-slug> --kind dependency --summary "Escalated: <4-6
      word disagreement>" --feedback "<both positions, in brief>" --agent carl`,

@@ -230,7 +230,9 @@ doc).
   block costs the builder a full lap (rework → resubmit → new CI → new claim,
   an hour or more), so it is reserved for a defect someone can actually hit: a
   correctness bug, a security hole, a data-loss path, an acceptance criterion
-  the diff does not meet — or the mechanical blockers (red CI, merge failure).
+  the diff does not meet — or the one mechanical blocker, red CI. (A FAILED
+  `gh pr merge` is NOT a bounce — the merge-ready bullet above self-heals it:
+  leave the task `submitted`, resolve on GitHub, re-review.)
   The feedback names the regression **with its trigger** ("X input → Y wrong
   behavior"), not a preference. Every other finding is handled without a bounce:
 
@@ -256,9 +258,20 @@ doc).
   flips red mid-review is caught by Carl's `--gate-role review` gate-zero and
   blocked back here.)
 
-  **Two-bounce circuit breaker.** Before blocking, count the task's prior rework
-  blocks (the `qa_feedback` entries on `bin/task show <task> --verbose` / the
-  task page timeline). If this would be the **second** rework block, do not
+  **Two-bounce circuit breaker.** Before blocking, count the task's prior
+  send-backs in its ACTIVITY history — never in the live block columns: a
+  compliant resubmission resolves the open feedback and the forward move wipes
+  `blocked_at`/`block_kind`, so `bin/task show --verbose` reads EMPTY exactly
+  when the breaker must fire. The durable trail is the task's `qa_feedback`
+  activities — read it with the same bearer auth as every board call (the task
+  page timeline renders the same rows for a human check):
+
+  ```text
+  GET /api/v1/activities?task_slug=<task>&activity_type=qa_feedback
+  ```
+
+  Each returned activity is one prior send-back. If one or more exist — this
+  would be the **second** rework block — do not
   re-block to the builder — a repeat bounce is a review deadlock, and a deadlock
   is the operator's call, never a ping-pong (the record: one task bounced 5×
   before this rule). Instead:
