@@ -186,6 +186,21 @@ function taskBoardChrome() {
     }
   }
 }
+
+// Strip the runtime ready flag before Turbo snapshots the page. init's $nextTick
+// (above) sets it to mean "this chrome's directives are bound and interactive" —
+// true only of the LIVE page. Left in place it rides into Turbo's cached snapshot,
+// and a restoration visit paints a preview claiming readiness before Alpine
+// re-initialises: any selector gating on the flag passes against unwired chrome.
+// Same idiom as the modal-host / dropping-text before-cache cleanups; the delete
+// is idempotent, so re-registration on each Turbo visit is harmless. (The INNER
+// studio-board primitive's flag is the engine half — owned by the gem's
+// studio/_board_assets, not reached into from here.)
+document.addEventListener('turbo:before-cache', function() {
+  document.querySelectorAll("[data-test='kanban-board'][data-alpine-ready]").forEach(function(el) {
+    delete el.dataset.alpineReady;
+  });
+});
 </script>
 
 <section x-data="taskBoardChrome()" data-test="kanban-board"
