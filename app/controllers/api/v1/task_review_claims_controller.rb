@@ -16,7 +16,7 @@ module Api
         render_data({ "holder" => TaskReviewClaim.status_for(params[:slug]) })
       end
 
-      # POST /api/v1/tasks/:slug/review_claim { session, nonce, label }
+      # POST /api/v1/tasks/:slug/review_claim { session, nonce, label, reviewer }
       #
       # Atomic take-or-skip. Always 200 with { acquired, disposition, holder } —
       # `acquired:false` (a live reviewer) is a normal outcome, not an error; the
@@ -26,7 +26,8 @@ module Api
           task_slug: params[:slug],
           session:   claim_params[:session],
           nonce:     claim_params[:nonce],
-          label:     claim_params[:label]
+          label:     claim_params[:label],
+          reviewer:  claim_params[:reviewer]
         )
         render_data({
           "acquired"    => outcome.acquired,
@@ -52,9 +53,10 @@ module Api
         result = nil
         rescue_and_log do
           result = Task.claim_next_review(
-            session: claim_params[:session],
-            nonce:   claim_params[:nonce],
-            label:   claim_params[:label]
+            session:  claim_params[:session],
+            nonce:    claim_params[:nonce],
+            label:    claim_params[:label],
+            reviewer: claim_params[:reviewer]
           )
         end
 
@@ -104,7 +106,7 @@ module Api
       end
 
       def claim_params
-        params.permit(:slug, :session, :nonce, :label)
+        params.permit(:slug, :session, :nonce, :label, :reviewer)
       end
     end
   end

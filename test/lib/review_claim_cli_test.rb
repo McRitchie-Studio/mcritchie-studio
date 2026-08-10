@@ -117,6 +117,39 @@ class ReviewClaimCliTest < Minitest::Test
     end
   end
 
+  # The crew seat rides the CLAIM: acquire must SEND the reviewing soul, so the board
+  # can paint the face the instant a review starts. Explicit --agent wins; otherwise
+  # the session's sticky .acting-agent (what every narration call already attributes
+  # to) supplies it, so a reviewer narrating as itself needs no extra flag.
+  def test_unit_acquire_sends_the_explicit_reviewer_soul
+    Dir.mktmpdir do |dir|
+      c = cli(projects_dir: dir, data: { "acquired" => true })
+      assert_equal 0, c.run(["acquire", SLUG, "--agent", "carl"])
+      body = c.instance_variable_get(:@api).posts.last[:body]
+      assert_equal "carl", body["reviewer"], "the claim carries the reviewing soul"
+    end
+  end
+
+  def test_unit_acquire_falls_back_to_the_sessions_acting_agent
+    Dir.mktmpdir do |dir|
+      FileUtils.mkdir_p(File.join(dir, ".agents", "sessions"))
+      File.write(File.join(dir, ".agents", "sessions", "#{SESSION}.acting-agent"), "shannon\n")
+
+      c = cli(projects_dir: dir, data: { "acquired" => true })
+      assert_equal 0, c.run(["acquire", SLUG])
+      assert_equal "shannon", c.instance_variable_get(:@api).posts.last[:body]["reviewer"]
+    end
+  end
+
+  def test_unit_acquire_without_any_soul_sends_a_blank_reviewer
+    Dir.mktmpdir do |dir|
+      c = cli(projects_dir: dir, data: { "acquired" => true })
+      assert_equal 0, c.run(["acquire", SLUG])
+      assert_equal "", c.instance_variable_get(:@api).posts.last[:body]["reviewer"],
+                   "no soul resolved: claim the lane, paint no face (never guess a reviewer)"
+    end
+  end
+
   def test_acquire_when_under_review_exits_skipped_and_names_the_reviewer
     Dir.mktmpdir do |proj|
       code = cli(projects_dir: proj,

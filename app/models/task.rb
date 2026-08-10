@@ -408,7 +408,7 @@ class Task < ApplicationRecord
   # `{ slug => token }` (or a bare token for the whole wave) applied AS each task's CI
   # verdict, so a rank/skip unit test drives green vs. not-green per slug without
   # ingesting GithubWorkflowRun rows. Production passes nil — the real DB fold runs.
-  def self.claim_next_review(session:, nonce:, label: nil, now: Time.current, ci_status: nil)
+  def self.claim_next_review(session:, nonce:, label: nil, reviewer: nil, now: Time.current, ci_status: nil)
     ordered_slugs = reviewable(now: now).ordered.pluck(:slug)
     return ClaimNextResult.new(task: nil, outcome: nil, reason: "none_reviewable") if ordered_slugs.empty?
 
@@ -423,7 +423,8 @@ class Task < ApplicationRecord
           next nil # red / pending / ci-less / none — never claim a non-green PR
         end
 
-        outcome = TaskReviewClaim.acquire(task_slug: slug, session: session, nonce: nonce, label: label, now: now)
+        outcome = TaskReviewClaim.acquire(task_slug: slug, session: session, nonce: nonce, label: label,
+                                          reviewer: reviewer, now: now)
         next nil unless outcome.acquired # claim held by a racer — skip to the next
 
         ClaimNextResult.new(task: task, outcome: outcome, reason: "claimed")
@@ -844,7 +845,20 @@ class Task < ApplicationRecord
   end
 
   def review_in_progress?
-    stage == "submitted" && open_intent_for("reviewed").present?
+    return false unless stage == "submitted" && open_intent_for("reviewed").present?
+
+    # An open intent says a review STARTED; it cannot say the reviewer is still
+    # alive, because an intent only closes when the →reviewed transition lands. A
+    # crashed reviewer therefore left a face on the board asserting a live review
+    # forever. The review CLAIM is the liveness primitive — a TTL lease its holder
+    # heartbeats — so when a claim row exists, defer to it: the seat empties within
+    # the TTL of the reviewer dying, and immediately on a clean release.
+    #
+    # Claim-less intents still read live, deliberately: `bin/reviewer-select` records
+    # the pair before any reviewer claims, and a hand-run review may never claim at
+    # all. Absent evidence of death is not evidence of death.
+    claim = TaskReviewClaim.find_by(task_slug: slug)
+    claim.nil? || claim.live?
   end
 
   # The two senior reviewers Avi assigned for the `submitted` review (the Deploy

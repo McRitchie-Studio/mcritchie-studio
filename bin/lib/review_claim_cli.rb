@@ -8,8 +8,8 @@
 # bin/devops-shift's ROLE lease one granularity down (lane → task), reusing the very
 # same live-instance identity + TTL + detached-renewer machinery.
 #
-#   bin/task review-claim acquire <slug> [--label <text>]   # take the review, or skip
-#   bin/task claim-next-review    [--label <text>]           # ATOMIC server pop: claim the
+#   bin/task review-claim acquire <slug> [--label <text>] [--agent <soul>]  # take it, or skip
+#   bin/task claim-next-review    [--label <text>] [--agent <soul>]  # ATOMIC server pop: claim the
 #                                                            # next reviewable GREEN-CI task
 #   bin/task review-claim renew   <slug>                     # one heartbeat (internal)
 #   bin/task review-claim release <slug>                     # clean drop when the review lands
@@ -82,8 +82,8 @@ class ReviewClaimCli
     when "release"    then release(slug)
     when "status"     then status(slug)
     else
-      @err.puts("usage: bin/task review-claim acquire <slug> [--label <text>] | renew <slug> | " \
-                "release <slug> | status <slug>")
+      @err.puts("usage: bin/task review-claim acquire <slug> [--label <text>] [--agent <soul>] | " \
+                "renew <slug> | release <slug> | status <slug>")
       CANT_RUN
     end
   rescue StandardError => e
@@ -101,7 +101,13 @@ class ReviewClaimCli
 
     label = flags["label"].to_s.strip
     label = session_mascot(sid) if label.empty?
-    res = post("#{base(slug)}/review_claim", { "session" => sid, "nonce" => nonce, "label" => label })
+    # The reviewing SOUL — what the board paints in the crew seat. Explicit --agent
+    # wins; otherwise the session's acting agent (the reviewer subagent narrates as
+    # itself), else nothing and the seat waits for reviewer-select as before.
+    reviewer = flags["agent"].to_s.strip
+    reviewer = acting_agent(sid).to_s.strip if reviewer.empty?
+    res = post("#{base(slug)}/review_claim",
+               { "session" => sid, "nonce" => nonce, "label" => label, "reviewer" => reviewer })
     return cant_run("no response from the board — proceeding without a review claim") unless ok?(res)
 
     data = parse_data(res)
@@ -128,7 +134,10 @@ class ReviewClaimCli
 
     label = flags["label"].to_s.strip
     label = session_mascot(sid) if label.empty?
-    res = post("/api/v1/tasks/claim_next_review", { "session" => sid, "nonce" => nonce, "label" => label })
+    reviewer = flags["agent"].to_s.strip
+    reviewer = acting_agent(sid).to_s.strip if reviewer.empty?
+    res = post("/api/v1/tasks/claim_next_review",
+               { "session" => sid, "nonce" => nonce, "label" => label, "reviewer" => reviewer })
     return cant_run("no response from the board — could not claim a review") unless ok?(res)
 
     data = parse_data(res)
@@ -386,6 +395,20 @@ class ReviewClaimCli
 
   def nonce
     SessionIdentity.nonce(@env)
+  end
+
+  # The reviewing SOUL for the crew seat, or "". Reads the session's sticky
+  # acting-agent — the same `.acting-agent` marker `bin/atomic-event heartbeat`
+  # writes and every narration call already attributes to — so a reviewer that
+  # narrates as itself (`--agent carl`) paints the right face with no extra flag.
+  # Deliberately NOT the mascot: the mascot is the SESSION's identity, while the
+  # crew seat asks who is REVIEWING.
+  ACTING_AGENT_SUFFIX = ".acting-agent"
+
+  def acting_agent(sid)
+    SessionMarkers.read(sid, @api.projects_dir, ACTING_AGENT_SUFFIX).to_s.strip
+  rescue StandardError
+    ""
   end
 
   # The session's stable base mascot (for the skip message), or "".

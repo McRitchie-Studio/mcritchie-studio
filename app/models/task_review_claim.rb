@@ -30,7 +30,8 @@ class TaskReviewClaim < ApplicationRecord
   # same-instance → acquired; a DIFFERENT live instance holds it → not acquired
   # (the caller skips this task and moves to the next). Atomic under a row lock.
   # Returns an Outcome.
-  def self.acquire(task_slug:, session:, nonce:, label: nil, now: Time.current, ttl: ClaimLease::DEFAULT_TTL_SECONDS)
+  def self.acquire(task_slug:, session:, nonce:, label: nil, reviewer: nil, now: Time.current,
+                   ttl: ClaimLease::DEFAULT_TTL_SECONDS)
     row = claim_row(task_slug)
     outcome = nil
     row.with_lock do
@@ -46,14 +47,45 @@ class TaskReviewClaim < ApplicationRecord
           # unclaimed) do NOT inherit the PRIOR holder's label — reset to the new
           # holder's label, or nil, exactly as acquired_at resets below.
           holder_label:     label.to_s.strip.presence || (disposition == :same_instance ? row.holder_label : nil),
+          holder_agent:     reviewer.to_s.strip.presence || (disposition == :same_instance ? row.holder_agent : nil),
           # keep the original acquired_at across a same-instance renewal; stamp it
           # fresh only when the review genuinely changes hands.
           acquired_at:      (disposition == :same_instance ? (row.acquired_at || now) : now)
         )
+        # THE BOARD FACE RIDES THE CLAIM. Claiming IS the atomic "I am reviewing this
+        # now" act every review path already performs (`bin/task review-claim acquire`
+        # and the server-side `claim_next_review` pop both funnel here), so recording
+        # the review intent HERE makes the crew seat a property of REVIEWING rather
+        # than of one launcher remembering to call `bin/reviewer-select`. A review
+        # spawned off the orchestrator path — a hand-spawn, a resumed reviewer, a
+        # future autopilot sweeper — used to run completely invisible: agents
+        # reviewed, reported, and merged while the card showed dashed empty seats.
+        #
+        # Inside the lock, so the seat and the lease can never disagree. The write is
+        # idempotent (Task#record_intent_event returns the existing open intent for
+        # the same pair) and self-guarding (it no-ops unless the task is `submitted`),
+        # so renewals never stack rows. Best-effort: a telemetry write must never
+        # break the mutual-exclusion gate the pipeline depends on.
+        record_review_intent(row.task_slug, reviewer)
         outcome = Outcome.new(true, disposition, row)
       end
     end
     outcome
+  end
+
+  # The intent write behind the crew seat. TaskEvent broadcasts on create-commit, so
+  # the board paints the reviewer live — no refresh, no polling.
+  def self.record_review_intent(task_slug, reviewer)
+    slug = reviewer.to_s.strip
+    return if slug.empty?
+
+    task = Task.find_by(slug: task_slug)
+    return unless task
+
+    task.record_intent_event(to_stage: "reviewed", reviewers: [{ "slug" => slug, "weight" => "primary" }])
+  rescue StandardError => e
+    Rails.logger.warn("[review-claim] intent record failed for #{task_slug}: #{e.class}: #{e.message}")
+    nil
   end
 
   # Extend the lease — but ONLY for the instance that already holds it (renew never

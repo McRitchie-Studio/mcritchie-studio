@@ -67,8 +67,16 @@ selects the highest-ranked reviewable **green-CI** task and claims it in one
 step:
 
 ```bash
-slug=$(bin/task claim-next-review) || true   # prints the claimed slug (exit 0), or "none" (exit 4)
+slug=$(bin/task claim-next-review --agent carl) || true   # prints the claimed slug (exit 0), or "none" (exit 4)
 ```
+
+**`--agent <soul>` is what the board paints.** The claim is the atomic "I am
+reviewing this now" act, so the reviewing soul rides it and the task card fills its
+crew seat the instant the claim lands — before the reviewer reads a line, with no
+separate `bin/reviewer-select` call and no way for a launcher to forget. Omit it and
+the session's sticky `.acting-agent` supplies it; with neither, the lane is still
+claimed but the seat stays empty (the board never guesses a reviewer). The seat
+empties again on release, or within the claim's TTL if the reviewer dies.
 
 `bin/task claim-next-review` (`POST /api/v1/tasks/claim_next_review`) folds three
 reads into one atomic server-side pop: it ranks the reviewable queue, skips any

@@ -42,7 +42,8 @@ README / runbook / topic docs for the change surface before reviewing.
 The orchestrator handed you a task slug, its PR (base `accepted`), branch, repos,
 risk tags, acceptance criteria, the **recorded PR head** (captured before you were
 spawned — the merge guard's lower bound), and the checks already reported. The PR
-was claimed via `bin/task claim-next-review`, which only pops **green-CI** tasks,
+was claimed via `bin/task claim-next-review --agent <your-soul>` (the soul fills the
+board's crew seat the moment the claim lands), which only pops **green-CI** tasks,
 so its CI was green at claim time. If any of that is missing, note it as a finding
 — do not guess.
 

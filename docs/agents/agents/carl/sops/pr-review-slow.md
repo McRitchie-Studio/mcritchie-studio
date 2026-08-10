@@ -36,7 +36,7 @@ Carl at a time (never a wave):
 1. **Claim** the next reviewable green-CI PR (the atomic server pop):
 
    ```bash
-   slug=$(bin/task claim-next-review) || true   # the claimed slug, or "none" (exit 4)
+   slug=$(bin/task claim-next-review --agent carl) || true   # the claimed slug, or "none" (exit 4)
    ```
 
    Stop when it returns `none`.
