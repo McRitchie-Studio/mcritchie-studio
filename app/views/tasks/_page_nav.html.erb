@@ -9,7 +9,8 @@
     hidden above 1400px — the complement of the board's lane collapse.
     Below that the upstream lanes fold away, so the link reappears (the only way
     back to them). /stages has no board, so its Tasks link is never hidden.
-    Local: current ("tasks" | "deployments" | "stages"). %>
+    Triage is a plain link (no badge), shown everywhere but /triage itself.
+    Local: current ("tasks" | "deployments" | "stages" | "triage"). %>
 <% current = local_assigns.fetch(:current, nil) %>
 <% by_stage = @tasks_by_stage || {} %>
 <% building_count  = (by_stage["building"]  || []).size %>
@@ -27,6 +28,11 @@
       <span>Tasks</span>
       <span class="<%= badge %> <%= building_count > 0 ? task_stage_count_classes('building') : muted %>"
             title="<%= building_count %> building"><%= building_count %></span>
+    <% end %>
+  <% end %>
+  <% unless current == "triage" %>
+    <%= link_to triage_path, class: btn do %>
+      <span>Triage</span>
     <% end %>
   <% end %>
   <% unless current == "deployments" %>

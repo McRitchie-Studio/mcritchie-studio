@@ -1069,4 +1069,10 @@ News.create!(title: "E2E News Archived", stage: "archived")
 3.times { |i| Content.create!(title: "E2E Content Idea #{i + 1}", stage: "idea", workflow: "video") }
 Content.create!(title: "E2E Content Hook", stage: "hook", workflow: "video")
 
+# Triage inbox: one open finding for the promote flow (triage_promote.spec.js
+# promotes it — a MUTATING spec, so it must never carry @qa-readonly).
+TriageFinding.delete_all
+TriageFinding.create!(title: "E2E Promotable Finding", body: "A follow-up worth a task.",
+                      source: "e2e-seed", repo: "mcritchie-studio")
+
 puts "Seeded: #{User.count} users, #{Agent.count} agents, #{Task.count} tasks, #{Activity.count} activities, #{Coach.count} coaches, #{Release.count} releases, #{AtomicAction.count} atomic actions, #{AtomicEvent.count} atomic events, #{GithubWorkflowRun.count} github runs, #{News.count} news, #{Content.count} content"

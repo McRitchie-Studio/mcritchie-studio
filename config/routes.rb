@@ -37,6 +37,12 @@ Rails.application.routes.draw do
   # Board split: /tasks is the Build lane, /deployments is the Deploy lane (+ the
   # current-release module), /stages is the two-workflow stage guide. All three
   # are public-read like /tasks (mutations stay admin-gated in TasksController).
+  # The findings TRIAGE inbox — agent follow-ups wait here for an operator call.
+  # Reading is open like the boards; promote/dismiss are admin-gated (promote
+  # MINTS a task — the operator's lane, mirrored by the API's file/list-only split).
+  get "triage", to: "triage#index", as: :triage
+  post "triage/:slug/promote", to: "triage#promote", as: :promote_triage_finding
+  post "triage/:slug/dismiss", to: "triage#dismiss", as: :dismiss_triage_finding
   get "deployments", to: "tasks#deployments", as: :deployments
   get "deployments/all", to: "releases#index", as: :all_deployments
   get "deployments/:slug", to: "releases#show", as: :deployment
@@ -301,6 +307,9 @@ Rails.application.routes.draw do
       # not an agent — GithubWebhooksController skips bearer auth and gates ONLY
       # on the HMAC signature. DevOps v2: agents read CI status off the board.
       post "github/webhook", to: "github_webhooks#create"
+      # Triage findings: agents FILE and LIST; promotion to a task is deliberately
+      # web-only (TriageController#promote, admin-gated) — the operator's lane.
+      resources :triage_findings, only: [:index, :create]
       resources :agents, only: [:index, :show, :update], param: :slug
       # Stages move via PATCH update (task: { stage: ... }); no named-transition
       # endpoints — one path for the CLI, the board, and external callers.

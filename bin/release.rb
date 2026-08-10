@@ -108,9 +108,11 @@
 #     and PROMPTS a few judgment questions (what worked / what caused friction /
 #     follow-ups). --worked/--friction/--followup (repeatable) supply answers from
 #     args; --yes runs fully non-interactive (no TTY). WRITES a durable doc at
-#     docs/agents/audits/retro-<slug>.md. --file-tasks files each follow-up via
-#     `bin/task create`. Writes NO agent-memory store — the doc (+ tasks) is the
-#     record. --dry-run previews the gathered record + doc path, writing nothing.
+#     docs/agents/audits/retro-<slug>.md. Follow-ups file into the TRIAGE INBOX
+#     by default (`bin/triage file`, promoted to tasks only by the operator on
+#     /triage); --file-tasks opens board tasks directly instead (explicit opt-in).
+#     Writes NO agent-memory store — the doc (+ findings) is the record.
+#     --dry-run previews the gathered record + doc path, writing nothing.
 #
 # Targets:
 #   default        record ops run on PRODUCTION via `heroku run rails runner`
@@ -5784,22 +5786,34 @@ def retro
   # ship-preflight dirt (best-effort, non-fatal; see commit_artifact_to_release).
   commit_artifact_to_release("mcritchie-studio", path, "retro: #{resolved}")
 
-  # 3. Optionally file the follow-ups as tasks (gated by --file-tasks). The doc is
-  #    already written, so a `bin/task create` hiccup just means fewer tasks filed.
-  if file_tasks && followups.any?
+  # 3. File the follow-ups. DEFAULT: the TRIAGE inbox (bin/triage) — a finding
+  #    costs nothing sitting there, and only an operator promote mints a task
+  #    (the slop-damping rule: retro discoveries are not board tasks by default).
+  #    --file-tasks keeps the old behavior as an explicit opt-in. The doc is
+  #    already written, so a filing hiccup just means fewer entries filed.
+  if followups.any?
     say("")
-    step("file #{followups.size} follow-up task(s) via bin/task create")
-    task_bin = File.expand_path("../bin/task", __dir__)
-    followups.each do |f|
-      title = f.split(/\s+/).first(5).join(" ")
-      # --no-claim: filing a retro follow-up must not repoint the conductor's
-      # active-feature marker (and its live build-claim) onto each fresh task.
-      _, ok = sh(task_bin, "create", "--no-claim", "--title", title, "--kind", "chore",
-                 "--agent-context", "Retro follow-up from #{resolved}: #{f}", capture: true)
-      say("  - #{ok ? '✓' : '✗'} #{title}")
+    if file_tasks
+      step("file #{followups.size} follow-up task(s) via bin/task create (--file-tasks)")
+      task_bin = File.expand_path("../bin/task", __dir__)
+      followups.each do |f|
+        title = f.split(/\s+/).first(5).join(" ")
+        # --no-claim: filing a retro follow-up must not repoint the conductor's
+        # active-feature marker (and its live build-claim) onto each fresh task.
+        _, ok = sh(task_bin, "create", "--no-claim", "--title", title, "--kind", "chore",
+                   "--agent-context", "Retro follow-up from #{resolved}: #{f}", capture: true)
+        say("  - #{ok ? '✓' : '✗'} #{title}")
+      end
+    else
+      step("file #{followups.size} follow-up finding(s) into the triage inbox (default; --file-tasks opens tasks instead)")
+      triage_bin = File.expand_path("../bin/triage", __dir__)
+      followups.each do |f|
+        title = f.split(/\s+/).first(8).join(" ")
+        _, ok = sh(triage_bin, "file", "--title", title, "--source", "release-retro",
+                   "--body", "Retro follow-up from #{resolved}: #{f}", capture: true)
+        say("  - #{ok ? '✓' : '✗'} #{title}")
+      end
     end
-  elsif followups.any?
-    say("  (#{followups.size} follow-up(s) recorded in the doc; re-run with --file-tasks to open them as tasks)")
   end
 
   say("")

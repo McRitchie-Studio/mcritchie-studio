@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_08_221937) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_10_054500) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1375,6 +1375,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_08_221937) do
     t.datetime "updated_at", null: false
     t.index ["cohort", "active"], name: "index_tracked_github_builders_on_cohort_and_active"
     t.index ["github_login"], name: "index_tracked_github_builders_on_github_login", unique: true
+  end
+
+  create_table "triage_findings", force: :cascade do |t|
+    t.text "body"
+    t.datetime "created_at", null: false
+    t.string "promoted_task_slug"
+    t.string "repo"
+    t.datetime "resolved_at"
+    t.string "slug", null: false
+    t.string "source"
+    t.string "status", default: "open", null: false
+    t.string "title", null: false
+    t.datetime "updated_at", null: false
+    t.index ["slug"], name: "index_triage_findings_on_slug", unique: true
+    t.index ["status"], name: "index_triage_findings_on_status"
   end
 
   create_table "usages", force: :cascade do |t|
