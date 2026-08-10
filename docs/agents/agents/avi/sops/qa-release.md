@@ -168,7 +168,27 @@ bin/release prepare --yes
    with no `merged` stamp (`merged: ""`) is a HELD anomaly — review never landed
    its feat PR on `accepted` — so it is warned and left `reviewed` (re-review to
    heal), never swept onto the RC.
-4. **Publish gem members + bump consumer locks — BEFORE the gate and QA**
+4c. **Merge `main` forward into `release`** in every app **and gem repo**, so the
+   branch about to be gated CONTAINS what is already live in production. Without
+   it a hotfix pushed straight to `main` **blocks the ship**: `bin/release ship`
+   advances `main` with a non-forced ref push, so git refuses the
+   non-fast-forward. (It is never reverted — the cost is a whole candidate
+   gated, QA'd, and assembled without a fix that is already in production, then
+   a ship that dead-ends.) The merge runs in a detached workspace (a dirty
+   primary is irrelevant to it), every step is checked, and containment is
+   re-fetched and read back afterwards — a conflict, a failed push, or a push
+   after which containment still does not hold all **abort**. It runs BEFORE the
+   gate so the SHA the gate certifies is the SHA that deploys, and BEFORE the
+   gem publish (step 4d) so a conflict aborts with zero gems published and every
+   gem publishes the post-merge tree — a gem published from a pre-merge tree
+   would lack a main hotfix forever, because a RubyGems version can never be
+   re-pushed and ship's publish skips an already-live version. On a conflict:
+   resolve it on a branch off `origin/release`, merge `origin/main` into it,
+   push to `release`, then re-run `bin/release prepare` — it resumes.
+   **Do not `reset` `release` to "clean up" an aborted sweep** — the batch
+   `accepted → release` merges, any earlier repo's merge-forward, and (on a
+   resumed sweep) a prior run's gem publish have already landed.
+4d. **Publish gem members + bump consumer locks — BEFORE the gate and QA**
    (producer-first, in two phases — a RubyGems push can never be re-pushed).
    Phase 1 **preflights EVERY swept gem before the first push**: a fail-closed
    fetch of `origin/release` (a stale ref must never drive an irreversible
@@ -206,20 +226,6 @@ bin/release prepare --yes
    exact tree QA tested. Note: a publish is irreversible — a QA bounce can
    orphan a published version; the fix bumps past it (a dead number on
    RubyGems is harmless).
-4d. **Merge `main` forward into `release`** in every app, so the branch about to
-   be gated CONTAINS what is already live in production. Without it a hotfix
-   pushed straight to `main` **blocks the ship**: `bin/release ship` advances
-   `main` with a non-forced ref push, so git refuses the non-fast-forward. (It is
-   never reverted — the cost is a whole candidate gated, QA'd, and assembled
-   without a fix that is already in production, then a ship that dead-ends.) The
-   merge runs in a detached workspace (a dirty primary is irrelevant to it),
-   every step is checked, and containment is re-fetched and read back afterwards —
-   a conflict, a failed push, or a push that did not take all **abort**. It runs
-   BEFORE the gate so the SHA the gate certifies is the SHA that deploys. On a
-   conflict: resolve it on a branch off `origin/release`, merge `origin/main`
-   into it, push to `release`, then re-run `bin/release prepare` — it resumes.
-   **Do not `reset` `release` to "clean up" an aborted sweep** — the batch
-   `accepted → release` merges and any gem publish have already landed.
 5. Run the pre-QA gate on `origin/release`. **GitHub CI's conclusion for that
    exact SHA IS the verdict** (DevOps v2 Phase 3 — the local isolated-workspace
    suite is deleted at this gate; nothing runs on your machine): the gate reads
@@ -230,7 +236,7 @@ bin/release prepare --yes
    tree** (the live batch-PR merge re-runs a tree the accepted seam already
    greened); a credited pass names its source in the gate note and changes
    nothing else — red, pending-evidence, and diverged trees (a gem sweep's
-   lock-bump commit from step 4) poll exactly as always. On green it RECORDS
+   lock-bump commit from step 4d) poll exactly as always. On green it RECORDS
    what it certified (SHA + command + CI verdict), which is the only thing the
    G4 ship gate will accept as grounds to skip its own gate. The gate reads the
    same CI the app path does for a **self-gated gem in a gem-only release**
@@ -243,7 +249,7 @@ bin/release prepare --yes
    that silently disarms the production gate):
    [`../../../modules/gates/g3-candidate.md`](../../../modules/gates/g3-candidate.md).
 6. Deploy QA and wait for boot (gem members are not QA-deployed — they were
-   published at step 4 and are QA'd through the consuming app's bumped lock; a
+   published at step 4d and are QA'd through the consuming app's bumped lock; a
    **gem-only release has no app QA deploy at all** — it assembles on its G3 CI
    verdict, and the /deployments board shows a **GEM-ONLY** badge with the
    published `💎 <gem> <version>` as the deployment artifact).
