@@ -828,6 +828,23 @@ hb_spans.each do |span|
                            closed_at: hb_base + (hb_i * 30).seconds + 5.seconds)
 end
 
+# Over-cap drilldown fixture: ONE AgentActivity holding 55 actions, 5 past the
+# FEED_ACTIONS_PER_ACTIVITY cap — the drilldown e2e asserts the feed shows the
+# 50 newest plus a "5 more actions omitted" tail row with the true count.
+# (/agents/activities reads AgentActivity/AgentAction, NOT the AtomicEvent spans.)
+cap_activity = AgentActivity.create!(
+  session_id: "e2e-drilldown-cap-0001", category: "Verify",
+  reason_slug: "sweep the full suite", opened_at: 20.minutes.ago, seq: 0
+)
+55.times do |i|
+  AgentAction.create!(
+    session_id: "e2e-drilldown-cap-0001", agent_activity_id: cap_activity.id,
+    kind: "run-test", outcome: "ok", actor: "agent", seq: i + 1,
+    event_slug: "Run suite slice #{i + 1}", result_slug: "Slice #{i + 1} green",
+    input: "bin/rails test slice #{i + 1}", occurred_at: 20.minutes.ago + (i * 5).seconds
+  )
+end
+
 # Stage-change status badge: one kind:"transition" TaskEvent inside the Explore span's
 # window (that span opened at hb_base+30s, closed at +65s) so the heartbeat status
 # column badges that span with the stage its task moved TO — the "building" board pill
