@@ -127,6 +127,27 @@ bin/task update <slug> \
 Flagging waiting-approval only counts once a **live candidate** actually answers
 at that URL — do not mark it waiting against a stack that is not up.
 
+**Verify the whole HOP, not the page.** A plain `curl /admin/<page>` returning
+`302` proves only that the logged-out gate works — it is **not** evidence the
+button lands. Walk what the CTA actually does (mint → confirm → POST consume →
+follow) and assert the final `url_effective` **is the review path** and answered
+`200`:
+
+```bash
+JAR=$(mktemp)
+MINT=$(curl -s -c $JAR -b $JAR -o /dev/null -w '%{redirect_url}' \
+  "http://localhost:<port>/_studio/local_review?email=amcritchie%40gmail.com&return_to=%2F<path>")
+TOK=$(curl -s -c $JAR -b $JAR "$MINT" | ruby -e 'print $stdin.read[/name="authenticity_token"[^>]*value="([^"]+)"/,1]')
+NEXT=$(curl -s -c $JAR -b $JAR -o /dev/null -w '%{redirect_url}' -X POST "$MINT" --data-urlencode "authenticity_token=$TOK")
+curl -s -c $JAR -b $JAR -L -o /dev/null -w '%{url_effective} %{http_code}\n' "$NEXT"
+```
+
+Landing on `/` means the sign-in **succeeded** and the reviewer lacks rights —
+the quiet failure, not a broken link. Follow the POST by hand as above: `curl -L`
+replays the POST across the redirect and 404s on the review path, which looks
+like a different bug. (`curl` is the fallback; drive the real browser when you
+have one.)
+
 What this buys you on the board: a `--local-url` + `--approval waiting` task
 floats to the top of its stage, pulses, and grows a card-width **WAITING
 APPROVAL** CTA. That CTA is a **mint-on-click magic link** — each click mints a
