@@ -206,6 +206,20 @@ bin/release prepare --yes
    exact tree QA tested. Note: a publish is irreversible — a QA bounce can
    orphan a published version; the fix bumps past it (a dead number on
    RubyGems is harmless).
+4d. **Merge `main` forward into `release`** in every app, so the branch about to
+   be gated CONTAINS what is already live in production. Without it a hotfix
+   pushed straight to `main` **blocks the ship**: `bin/release ship` advances
+   `main` with a non-forced ref push, so git refuses the non-fast-forward. (It is
+   never reverted — the cost is a whole candidate gated, QA'd, and assembled
+   without a fix that is already in production, then a ship that dead-ends.) The
+   merge runs in a detached workspace (a dirty primary is irrelevant to it),
+   every step is checked, and containment is re-fetched and read back afterwards —
+   a conflict, a failed push, or a push that did not take all **abort**. It runs
+   BEFORE the gate so the SHA the gate certifies is the SHA that deploys. On a
+   conflict: resolve it on a branch off `origin/release`, merge `origin/main`
+   into it, push to `release`, then re-run `bin/release prepare` — it resumes.
+   **Do not `reset` `release` to "clean up" an aborted sweep** — the batch
+   `accepted → release` merges and any gem publish have already landed.
 5. Run the pre-QA gate on `origin/release`. **GitHub CI's conclusion for that
    exact SHA IS the verdict** (DevOps v2 Phase 3 — the local isolated-workspace
    suite is deleted at this gate; nothing runs on your machine): the gate reads
