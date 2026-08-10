@@ -170,13 +170,17 @@ module ActivityFeed
 
   # The full locals to render ONE agents/_activity_row partial (a single activity tbody).
   # Used by ActivitiesBroadcaster so a live broadcast renders the SAME markup the table
-  # loop does (the dual-render-path discipline). Actions default to the activity's own,
-  # newest-first — matching AgentsController#activities' ordering.
+  # loop does (the dual-render-path discipline). Actions default through the SAME capped,
+  # feed-column drill-down load AgentsController#activities uses — a broadcast tbody
+  # re-render fires on EVERY captured action, so an uncapped load here would re-ship an
+  # over-cap activity's whole tail (input/output blobs included) on each tool call.
+  # action_counts carries the TRUE total for the view's "N more actions omitted" row.
   def activity_row_locals(activity, actions = nil)
-    actions ||= activity.agent_actions.order(occurred_at: :desc, seq: :desc, id: :desc).to_a
+    actions ||= AgentAction.for_activity_drilldown([activity.id]).to_a
     {
       activity: activity,
       actions: actions,
+      action_counts: { activity.id => activity.agent_actions.count },
       pokemon_by_slug: pokemon_lookup(actions, [activity]),
       agents_by_slug: agent_soul_lookup([activity]),
       activity_grades: activity_grade_lookup([activity]),

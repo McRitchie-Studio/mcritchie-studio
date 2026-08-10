@@ -82,7 +82,8 @@
     <%= render "agents/activities_table", activity_rows: @activity_rows,
           pokemon_by_slug: @pokemon_by_slug, agents_by_slug: @agents_by_slug,
           activity_grades: @activity_grades, action_grades: @action_grades,
-          shared_turn_ids: @shared_turn_ids, stage_transitions: @stage_transitions %>
+          shared_turn_ids: @shared_turn_ids, stage_transitions: @stage_transitions,
+          action_counts: @action_counts %>
 
     <nav class="hb-pager" data-test="aa-pager" aria-label="Activity pages">
       <% if @has_prev %>
