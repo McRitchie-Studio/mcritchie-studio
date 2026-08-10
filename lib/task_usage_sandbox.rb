@@ -8,6 +8,7 @@ require_relative "../bin/lib/projects_root"
 #   <projects>/.agents/task-usage/<session>.json     the usage/cost baselines
 #   <projects>/.agents/sessions/<session>.*          the narration markers
 #   <projects>/.agents/atomic-capture/token.json     the agent-API token cache
+#   <projects>/.agents/github-tokens.json            the GitHub App token cache
 #   <projects>/.agents/locks/*.lock                  the conductor's flocks
 #   <projects>/.agents/worktree-registry.json        the worktree registry
 #   <projects>/.agents/agent-worktree.lock           the DB-allocation flock
@@ -20,10 +21,11 @@ require_relative "../bin/lib/projects_root"
 # the remaining three were found by the review that caught the second, and are
 # closed here rather than left in a PR body. A PR body is not a backlog.
 #
-# The seven store names below are the WHOLE family, and
+# The store names in STORES below are the WHOLE family, and
 # test/lib/state_store_containment_test.rb re-derives that family FROM THE SOURCE on
-# every run: an EIGHTH store added later without a guard fails the suite. The list
-# cannot rot into a lie quietly.
+# every run: ANOTHER store added later without a guard fails the suite. The list
+# cannot rot into a lie quietly. (Stated without a count on purpose — the prose said
+# "seven" while STORES held eight, which is exactly the quiet rot it warns about.)
 #
 # WHY THIS EXISTS (a live production leak, not a hypothetical). Both stores are
 # resolved by FALLBACK — TASK_USAGE_DIR else <projects>/.agents/task-usage;
