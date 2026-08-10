@@ -296,24 +296,37 @@
     // stale-timer bug: the timers below close over THIS render's node, so a newer glow on
     // the replacement node is never touched by an older node's cleanup (measured).
     // Is this computed colour actually paintable, whatever colour space it arrived in?
-    // Normalize through a canvas fillStyle — the browser's own parser, which always hands
-    // back "#rrggbb" or "rgba(r, g, b, a)" — and read the alpha off THAT.
+    // PAINT it on a 1x1 canvas and read the alpha out of the pixel. That is the only
+    // question the ring cares about, and the pixel answers it directly.
     //
-    // Testing the raw string was a SPELLING assertion, and it passed only by luck: the
-    // tone-less meters happen to use `bg-transparent`, a legacy sRGB colour, and CSS Color
-    // 4 forces legacy colours to serialize as rgba() — so /rgba\(.*, 0\)/ matched. Respell
-    // release_meter_tone's colourless states as `bg-mint-500/0` or a color-mix and the
-    // regex silently stops matching, the knob takes a fully transparent colour, and the
-    // ring goes INVISIBLE with no error and no failing test. A colour space the canvas
-    // cannot parse leaves fillStyle untouched, which reads as opaque — the safe way to be
-    // wrong, since the worst case is a ring in the primitive's default colour.
+    // Do NOT go back to matching the serialized string, in any spelling. Canvas fillStyle
+    // does NOT normalize to "#rrggbb" / "rgba(r, g, b, a)" — Chromium serializes a colour
+    // back in the space it was authored in, so `oklch(0.7 0.15 160 / 0)` stays spelled
+    // `oklch(...)` and every rgba()-shaped test misses it. Measured, not reasoned: the e2e
+    // pair in deployments_live.spec.js drives a real oklch tone through this function and
+    // reads the knob, and it fails against the old regex with the browser's own
+    // serialization quoted back. The regex passed only by luck — the tone-less meters use
+    // `bg-transparent`, a legacy sRGB colour, and CSS Color 4 forces legacy colours to
+    // serialize as rgba(). Respell release_meter_tone's colourless states as
+    // `bg-mint-500/0` or a color-mix and the ring would have gone INVISIBLE with no error
+    // and no failing test.
+    //
+    // Every computed background-colour Chromium/WebKit/Firefox can emit today is also
+    // parseable by their canvas fillStyle — measured across rgba/hsl/hwb/lab/lch/oklab/
+    // oklch/color()/color-mix/relative-colour, so the unparseable branch is unreachable.
+    // If a future colour space ever outruns the canvas parser, fillStyle stays on the
+    // opaque sentinel and this returns the value: the knob takes a VALID CSS colour that
+    // may be transparent, and the ring goes invisible again. That is a re-run of this
+    // bug, not a safe fallback — re-measure here before trusting a new colour space.
     function paintableColor(value) {
       if (!value) return null;
-      const ctx = paintableColor.ctx || (paintableColor.ctx = document.createElement("canvas").getContext("2d"));
+      const ctx = paintableColor.ctx ||
+        (paintableColor.ctx = document.createElement("canvas").getContext("2d", { willReadFrequently: true }));
       ctx.fillStyle = "#000000";
       ctx.fillStyle = value;
-      const alpha = /^rgba\([^)]*,\s*([0-9.]+)\)$/.exec(ctx.fillStyle);
-      return alpha && parseFloat(alpha[1]) === 0 ? null : value;
+      ctx.clearRect(0, 0, 1, 1);
+      ctx.fillRect(0, 0, 1, 1);
+      return ctx.getImageData(0, 0, 1, 1).data[3] === 0 ? null : value;
     }
 
     function meterGlow(meter) {
