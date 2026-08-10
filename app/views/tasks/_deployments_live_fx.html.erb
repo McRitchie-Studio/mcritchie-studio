@@ -311,9 +311,13 @@
     // `bg-mint-500/0` or a color-mix and the ring would have gone INVISIBLE with no error
     // and no failing test.
     //
-    // A value the canvas cannot parse leaves fillStyle on the opaque sentinel, so it reads
-    // opaque and the caller paints it; CSS then rejects the invalid value and the
-    // primitive's own colour stands. Wrong in the harmless direction, on purpose.
+    // Every computed background-colour Chromium/WebKit/Firefox can emit today is also
+    // parseable by their canvas fillStyle — measured across rgba/hsl/hwb/lab/lch/oklab/
+    // oklch/color()/color-mix/relative-colour, so the unparseable branch is unreachable.
+    // If a future colour space ever outruns the canvas parser, fillStyle stays on the
+    // opaque sentinel and this returns the value: the knob takes a VALID CSS colour that
+    // may be transparent, and the ring goes invisible again. That is a re-run of this
+    // bug, not a safe fallback — re-measure here before trusting a new colour space.
     function paintableColor(value) {
       if (!value) return null;
       const ctx = paintableColor.ctx ||

@@ -450,16 +450,23 @@ test("a transparent modern-syntax tone leaves the ring its default colour", asyn
   const pageErrors = [];
   page.on("pageerror", (err) => pageErrors.push(String(err)));
 
-  await page.goto("/deployments");
-  await expect(page.locator("#current-release")).toBeVisible();
-  await expect(page.locator("#current-release [data-test='release-phase-fill']").first()).toBeAttached();
-
   // Both modern spellings a tone could plausibly be rewritten in. Neither serializes to
   // rgba(), which is exactly why a string-shaped guard misses them.
+  //
+  // Each tone gets a server-fresh page. The probe replaces #current-release with a clone
+  // of the CURRENT DOM, so without the goto, iteration 2 clones iteration 1's aftermath:
+  // the glow class and knob ride along, and the probe signature is already
+  // "e2e-colour-space-probe" so nothing moves and meterGlow never even fires — the
+  // assertions then read iteration 1's stale state and pass regardless of the tone.
+  // Measured: an opaque tone in second position slipped through before this reset.
   for (const tone of [
     "oklch(0.7 0.15 160 / 0)",
     "color-mix(in oklch, oklch(0.7 0.15 160) 0%, transparent)",
   ]) {
+    await page.goto("/deployments");
+    await expect(page.locator("#current-release")).toBeVisible();
+    await expect(page.locator("#current-release [data-test='release-phase-fill']").first()).toBeAttached();
+
     const seen = await ringKnobForFill(page, tone);
 
     expect(seen.error, seen.error || "").toBeUndefined();
