@@ -1,0 +1,220 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/gh-token — THE one place a GitHub token comes from.
+#
+#   token="$(bin/gh-token)"                  # the agent identity (opens/merges PRs)
+#   token="$(bin/gh-token --identity deployer)"   # the ship identity (pushes main, deploys)
+#   bin/gh-token --status                    # human-readable cache state; prints NO token
+#
+# WHY THIS EXISTS. The 2026-07-29 org migration retired personal access tokens:
+# every `gh` write now authenticates as a GitHub App INSTALLATION token that lives
+# about an hour. Before this, each script solved that alone — bin/ship grew its own
+# mint-and-retry, bin/pr-review never did, and every reviewer merge on 2026-08-10
+# stopped so a human could mint by hand. N scripts meant N chances to forget, and a
+# script written next year starts out broken the same way. So acquisition lives HERE
+# and callers just ask.
+#
+# THE CACHE, and why it is a file. Agents run as separate processes, so an exported
+# environment variable is invisible to a sibling — the shared state has to be on
+# disk. `<projects>/.agents/github-tokens.json`, mode 0600, holding two SLOTS per
+# identity:
+#
+#   { "agent": { "active": "a",
+#                "a": { "token": "…", "created_at": "…" },
+#                "b": { "token": "…", "created_at": "…" } },
+#     "deployer": { … } }
+#
+# TWO SLOTS, TOGGLED (the operator's design, and it earns its keep): a GitHub App
+# token stays valid until it expires EVEN AFTER a newer one is minted. So a fresh
+# mint writes to the slot that is NOT active and then flips — which means an agent
+# holding the previous token mid-operation never has the rug pulled, and there is
+# always one prior token to compare against when something looks wrong. The read
+# rule is simply "return the newest token that is still fresh", so the toggle can
+# never hand back something older than what it replaced.
+#
+# KEYED BY IDENTITY, deliberately. `agent` opens and merges PRs; `deployer` pushes
+# main and deploys and CANNOT merge, by design. One shared slot pair would hand a
+# merge call a deployer token and fail in a way nobody would read correctly.
+#
+# NO LOCK, DELIBERATELY. Five agents hitting expiry at the same moment will mint
+# five tokens, and that is FINE: a mint takes seconds, every minted token is
+# independently valid, and last-write-wins on the cache costs nothing because the
+# read rule takes the newest anyway. Operator's call, and the right one — locking
+# buys tidiness and pays for it with a whole class of wedge (a stale lockfile, a
+# crashed holder, a hung wait) in the path that every GitHub call depends on. Be
+# resilient rather than exclusive.
+#
+# SECRET HYGIENE: the file is 0600, the token is printed ONLY on the bare success
+# path (so `$(bin/gh-token)` works), and `--status` deliberately prints ages and
+# never a token. Nothing here logs it.
+
+require "json"
+require "fileutils"
+require "time"
+
+IDENTITIES = {
+  "agent" => { item: "github.mcritchie-agent", pem: "mcritchie-agent.2026-07-29.private-key.pem" },
+  "deployer" => { item: "github.mcritchie-deployer", pem: "mcritchie-deployer.2026-07-29.private-key.pem" }
+}.freeze
+
+# Installation tokens live ~60 minutes. Refresh at 50 so a token handed out now
+# survives the operation it was fetched for — a caller that starts a 6-minute merge
+# with 90 seconds left is the failure this margin exists to prevent.
+LIFETIME_SECONDS = 3600
+REFRESH_AFTER_SECONDS = 3000
+
+OP_BIN = ENV["GH_TOKEN_OP_BIN"].to_s.strip.empty? ? "/opt/homebrew/bin/op" : ENV["GH_TOKEN_OP_BIN"]
+MINT_BIN = ENV["GH_TOKEN_MINT_BIN"].to_s.strip.empty? ? File.expand_path("gh-app-mint-token", __dir__) : ENV["GH_TOKEN_MINT_BIN"]
+PROJECTS = ENV["CLAUDE_PROJECTS_DIR"].to_s.strip.empty? ? File.expand_path("~/projects") : ENV["CLAUDE_PROJECTS_DIR"]
+STORE = File.join(PROJECTS, ".agents", "github-tokens.json")
+
+def die!(message)
+  warn("gh-token: #{message}")
+  exit 1
+end
+
+def read_store
+  return {} unless File.exist?(STORE)
+
+  JSON.parse(File.read(STORE))
+rescue StandardError
+  {} # a corrupt cache is a cache miss, never a failure — we can always mint
+end
+
+def write_store(store)
+  FileUtils.mkdir_p(File.dirname(STORE))
+  # Write-then-rename so a reader never sees a half-written cache, and 0600 BEFORE
+  # the secret lands in it.
+  tmp = "#{STORE}.#{Process.pid}.tmp"
+  File.open(tmp, File::CREAT | File::WRONLY | File::TRUNC, 0o600) { |f| f.write("#{JSON.pretty_generate(store)}\n") }
+  File.rename(tmp, STORE)
+  File.chmod(0o600, STORE)
+rescue StandardError => e
+  warn("gh-token: could not persist the cache (#{e.class}) — continuing with a fresh mint each call")
+end
+
+def age_of(slot)
+  created = slot.is_a?(Hash) ? slot["created_at"] : nil
+  return nil if created.to_s.strip.empty?
+
+  Time.now.utc - Time.parse(created).utc
+rescue StandardError
+  nil
+end
+
+# The freshest USABLE token for this identity, or nil. "Freshest" is by created_at,
+# never by which slot is flagged active — so a toggle can never serve something
+# older than what it replaced.
+def usable_token(entry)
+  %w[a b].filter_map { |key|
+    slot = entry[key]
+    next unless slot.is_a?(Hash) && !slot["token"].to_s.strip.empty?
+
+    age = age_of(slot)
+    next if age.nil? || age >= REFRESH_AFTER_SECONDS
+
+    [age, slot["token"]]
+  }.min_by(&:first)&.last
+end
+
+def read_secret(ref)
+  return "" unless File.executable?(OP_BIN)
+
+  out = IO.popen([OP_BIN, "read", ref], err: File::NULL, &:read).to_s
+  $?.success? ? out : ""
+rescue StandardError
+  ""
+end
+
+def mint(identity)
+  meta = IDENTITIES.fetch(identity)
+  app_id = read_secret("op://agents/#{meta[:item]}/app-id").strip
+  pem = read_secret("op://agents/#{meta[:item]}/#{meta[:pem]}")
+  if app_id.empty? || pem.strip.empty?
+    die!("could not read the #{identity} App credentials from 1Password (is `op` signed in?)")
+  end
+
+  token = IO.popen({ "GH_APP_ID" => app_id, "GH_APP_PEM" => pem }, [MINT_BIN], &:read).to_s.strip
+  die!("the mint script produced no token for #{identity}") unless $?.success? && !token.empty?
+
+  token
+end
+
+# Mint into the INACTIVE slot and flip. The previous token stays intact and valid,
+# so an agent already using it is never interrupted.
+def refresh(identity)
+  token = mint(identity)
+
+  # Re-read immediately before writing so a concurrent minter's slot is preserved
+  # rather than clobbered — not for exclusion (there is none), just so both agents'
+  # tokens survive in the two slots and the newest still wins on read.
+  store = read_store
+  entry = store[identity] || {}
+  target = entry["active"] == "a" ? "b" : "a"
+  entry[target] = { "token" => token, "created_at" => Time.now.utc.iso8601 }
+  entry["active"] = target
+  store[identity] = entry
+  write_store(store)
+
+  # The token is returned from memory, never re-read from the cache: a failed
+  # persist must not fail the CALL. Worst case we mint again next time.
+  token
+end
+
+def status
+  store = read_store
+  if store.empty?
+    puts "gh-token: no cache yet (#{STORE})"
+    return
+  end
+
+  store.each do |identity, entry|
+    puts "#{identity}: active=#{entry['active'] || '-'}"
+    %w[a b].each do |key|
+      slot = entry[key]
+      unless slot.is_a?(Hash) && slot["token"]
+        puts "  #{key}: empty"
+        next
+      end
+
+      age = age_of(slot)
+      state = age.nil? ? "unreadable" : (age >= REFRESH_AFTER_SECONDS ? "STALE" : "fresh")
+      mins = age ? (age / 60).round : "?"
+      puts "  #{key}: #{state}, minted #{mins}m ago#{entry['active'] == key ? ' (active)' : ''}"
+    end
+  end
+end
+
+identity = "agent"
+force = false
+args = ARGV.dup
+while (arg = args.shift)
+  case arg
+  when "--identity" then identity = args.shift.to_s.strip
+  when "--force" then force = true
+  when "--status"
+    # NOT `status and exit 0`: `status` returns nil, the `and` short-circuits, the
+    # exit never runs, and execution falls through to the bare token print — which
+    # is exactly how this command leaked a live token to a terminal on 2026-08-10.
+    # A flag whose whole purpose is "show state WITHOUT the secret" must exit
+    # unconditionally.
+    status
+    exit 0
+  when "-h", "--help"
+    warn(File.read(__FILE__).lines.grep(/^#( |$)/).map { |l| l.sub(/^# ?/, "") }.join)
+    exit 0
+  else die!("unknown argument #{arg.inspect}")
+  end
+end
+die!("unknown identity #{identity.inspect} (expected: #{IDENTITIES.keys.join(', ')})") unless IDENTITIES.key?(identity)
+
+unless force
+  cached = usable_token(read_store[identity] || {})
+  if cached
+    puts cached
+    exit 0
+  end
+end
+
+puts refresh(identity)

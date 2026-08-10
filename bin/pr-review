@@ -64,6 +64,7 @@ require "optparse"
 require "shellwords"
 require "time"
 require_relative "lib/ci_status"
+require_relative "lib/gh_auth_retry"
 require_relative "lib/bin_helpers"
 require_relative "lib/projects_root"
 require_relative "lib/zap_revalidation"
@@ -543,8 +544,45 @@ end
 # The gh READ seam (PR base, merge state) — routed through GH_BIN so the command
 # tests inject a fake instead of shelling to a live PR. Returns [stdout, ok].
 def gh_capture(*args)
-  out, _err, status = run_capture(managed_command(GH_BIN, *args))
-  [out.to_s.strip, !!(status&.success?)]
+  out, ok = gh_with_auth_retry(args)
+  [out.to_s.strip, ok]
+end
+
+# ONE mint-and-retry for a gh call that failed on CREDENTIALS, shared by every gh
+# read and write in this script.
+#
+# PATs were retired in the 2026-07-29 org migration, so the ambient login reads fine
+# and then refuses the one write that matters — and on 2026-08-10 that stopped EVERY
+# reviewer merge so a human could mint by hand. Acquisition itself lives in
+# bin/gh-token (one cache, two toggled slots per identity, newest wins); this only
+# decides WHEN to ask, which is why fixing the third caller was wiring rather than a
+# third copy of the same code.
+#
+# Narrow on purpose: a non-auth failure returns untouched, because re-running a merge
+# conflict with a fresh token just fails again and buries the real cause. Returns
+# [output, ok] where output is stdout on success and both streams on failure — gh
+# reports failures on stderr, and a caller handed only stdout sees an empty error.
+def gh_with_auth_retry(args)
+  out, err, status = run_capture(managed_command(GH_BIN, *args))
+  return [out.to_s, true] if status&.success?
+
+  failure = [out, err].compact.map(&:to_s).join("\n").strip
+  return [failure, false] if @gh_token || !GhAuthRetry.auth_failure?(failure)
+
+  puts "  auth: gh refused on credentials — fetching a token and retrying once."
+  @gh_token = GhAuthRetry.mint
+  unless @gh_token
+    reason = GhAuthRetry.last_error
+    puts "  auth: could not obtain a token#{reason.empty? ? '' : " (#{reason})"}; reporting gh's original error."
+    return [failure, false]
+  end
+
+  # Process-local, and never printed. The retried child inherits it.
+  ENV["GH_TOKEN"] = @gh_token
+  r_out, r_err, r_status = run_capture(managed_command(GH_BIN, *args))
+  return [r_out.to_s, true] if r_status&.success?
+
+  [[r_out, r_err].compact.map(&:to_s).join("\n").strip, false]
 end
 
 # A gh WRITE (pr merge / pr edit). No-ops under dry-run (prints what it WOULD run),
@@ -557,10 +595,16 @@ def gh_write(*args)
     return true
   end
 
-  out, err, status = run_capture(cmd)
-  puts out unless out.strip.empty?
-  warn err unless err.strip.empty?
-  !!(status&.success?)
+  # THE MERGE PATH — the one that stopped every reviewer on 2026-08-10. Routed
+  # through the same single retry as the reads, so an expired token costs a mint
+  # instead of a human.
+  out, ok = gh_with_auth_retry(args)
+  if ok
+    puts out unless out.to_s.strip.empty?
+  else
+    warn out unless out.to_s.strip.empty?
+  end
+  ok
 end
 
 # The PR's live merge state — the crash-recovery read: a gh merge that fails
