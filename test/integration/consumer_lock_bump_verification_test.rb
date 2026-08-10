@@ -7,8 +7,9 @@ require "test_helper"
 # before the ship's re-pin). Its unit tests use a handcrafted lockfile, which
 # proves the parser against the shape we IMAGINED Bundler emits. This tier runs
 # it against the shape Bundler ACTUALLY emits — this repo's own committed
-# Gemfile.lock — with `Bundler.locked_gems` as the oracle and EVERY spec in the
-# file as the population, so a future Bundler that changes indentation,
+# Gemfile.lock — with `Bundler.locked_gems` as the oracle and EVERY gem-sourced
+# spec in the file as the population (PATH/GIT specs sit outside the parser's
+# GEM-section contract), so a future Bundler that changes indentation,
 # ordering, or the spec layout turns this red instead of silently making the
 # guard unable to find a version (which would abort every gem release).
 #
