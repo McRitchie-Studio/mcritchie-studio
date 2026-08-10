@@ -4,16 +4,18 @@
     mobile the four aa-collapsible columns hide behind a per-row detail panel. The thead
     carries an id so a live broadcast can insert a new activity right after it (top of the
     feed). Activity usage comes from measured AgentActivity fields when present; raw
-    actions remain controller-loaded for drill-downs (no per-row query). Locals:
+    actions remain controller-loaded for drill-downs (no per-row query), capped at
+    AgentAction::FEED_ACTIONS_PER_ACTIVITY newest per activity. Locals:
     activity_rows (Array of [AgentActivity, [AgentAction,...]]),
     pokemon_by_slug, agents_by_slug, activity_grades, action_grades, shared_turn_ids,
-    stage_transitions. %>
+    stage_transitions, action_counts ({ activity_id => true action total }). %>
 <% pokemon_by_slug ||= {} %>
 <% agents_by_slug ||= {} %>
 <% activity_grades ||= {} %>
 <% action_grades ||= {} %>
 <% stage_transitions ||= {} %>
 <% shared_turn_ids ||= Set.new %>
+<% action_counts ||= {} %>
 <div class="hb-scroll aa-scroll">
   <table class="aa-tbl" data-test="agents-activities-table">
     <thead id="aa-activities-head">
@@ -32,7 +34,8 @@
       <%= render "agents/activity_row", activity: activity, actions: actions,
             pokemon_by_slug: pokemon_by_slug, agents_by_slug: agents_by_slug,
             activity_grades: activity_grades, action_grades: action_grades,
-            shared_turn_ids: shared_turn_ids, stage_transitions: stage_transitions %>
+            shared_turn_ids: shared_turn_ids, stage_transitions: stage_transitions,
+            action_counts: action_counts %>
     <% end %>
   </table>
 </div>

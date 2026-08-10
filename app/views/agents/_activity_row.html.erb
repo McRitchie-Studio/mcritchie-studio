@@ -2,9 +2,12 @@
     so it renders IDENTICALLY from both the table loop AND a live Turbo Stream broadcast
     (the dual-render-path discipline). Carries id="aa-activity-<id>" so a broadcast can
     replace it (activity updated) or append an action row into it (action created). All
-    lookups default so a broadcast can render one activity in isolation. Locals: activity,
-    actions, pokemon_by_slug, agents_by_slug, activity_grades, action_grades,
-    shared_turn_ids, stage_transitions. %>
+    lookups default so a broadcast can render one activity in isolation. `actions` arrive
+    capped at AgentAction::FEED_ACTIONS_PER_ACTIVITY newest; action_counts maps
+    activity_id => the TRUE total, so the count line and the "N more actions omitted" row
+    stay honest for an over-cap activity. Locals: activity, actions, pokemon_by_slug,
+    agents_by_slug, activity_grades, action_grades, shared_turn_ids, stage_transitions,
+    action_counts. %>
 <% actions ||= [] %>
 <% pokemon_by_slug ||= {} %>
 <% agents_by_slug ||= {} %>
@@ -12,6 +15,8 @@
 <% action_grades ||= {} %>
 <% stage_transitions ||= {} %>
 <% shared_turn_ids ||= Set.new %>
+<% action_counts ||= {} %>
+<% total_actions = [action_counts[activity.id].to_i, actions.size].max %>
 <% cat = heartbeat_category_meta(activity.category) %>
 <% totals = heartbeat_activity_totals(activity, actions) %>
 <% status = heartbeat_activity_status_meta(activity, stage_transitions) %>
@@ -95,7 +100,7 @@
                   x-init="aaLocalTime($el, '<%= activity.closed_at&.iso8601 %>', 'clock')"><%= heartbeat_minute(activity.closed_at) %></span>
           <% end %>
           <span class="hb-bullet" aria-hidden="true">&middot;</span>
-          <span class="aa-count" data-test="aa-activity-count"><%= pluralize(actions.size, "action") %></span>
+          <span class="aa-count" data-test="aa-activity-count"><%= pluralize(total_actions, "action") %></span>
           <% if activity.open? %><span class="aa-spinner" title="activity still open"></span><% end %>
         </div>
         <%# ISSUE — the task / issue slug this activity belongs to. %>
@@ -128,7 +133,7 @@
           <% else %>
             <div class="aa-time" x-init="aaLocalTime($el, '<%= activity.closed_at&.iso8601 %>', 'clock')"><%= heartbeat_minute(activity.closed_at) %></div>
           <% end %>
-          <div class="aa-count"><%= pluralize(actions.size, "action") %></div>
+          <div class="aa-count"><%= pluralize(total_actions, "action") %></div>
           <div class="aa-task"><%= activity.task_slug.presence || "—" %></div>
         </div>
         <div class="aa-md-block">
@@ -150,6 +155,25 @@
     <%= render partial: "agents/activity_turn_row", collection: turn_rows, as: :turn_row,
           locals: { activity: activity, agents_by_slug: agents_by_slug, pokemon_by_slug: pokemon_by_slug,
                     action_grades: action_grades } %>
+    <% if total_actions > actions.size %>
+      <%# CAPPED — the drill-down shows only the newest FEED_ACTIONS_PER_ACTIVITY rows,
+          so name the tail instead of rendering it (the reasoning/TOTAL reconciliation
+          below is skipped: with rows omitted, the parts cannot sum to the span). %>
+      <tr class="aa-subrow aa-omitted-row" id="aa-omitted-<%= activity.id %>" data-test="aa-omitted" x-show="open">
+        <td class="aa-chev" aria-hidden="true"></td>
+        <td class="aa-agent"></td>
+        <td class="aa-activity">
+          <div class="aa-r aa-actionhead">
+            <span class="aa-empty-sub" data-test="aa-omitted-label"><%= total_actions - actions.size %> more actions omitted</span>
+            <span class="aa-empty-sub">showing the newest <%= actions.size %></span>
+          </div>
+        </td>
+        <td class="aa-cost aa-collapsible"></td>
+        <td class="aa-details aa-collapsible"></td>
+        <td class="aa-grade" aria-hidden="true"></td>
+        <td class="aa-grade" aria-hidden="true"></td>
+      </tr>
+    <% else %>
     <%# reasoning + prose — the non-tool turns (thinking + narration) so the parts reconcile to the span %>
     <% remainder = heartbeat_reasoning_remainder(activity, turn_rows) %>
     <% if remainder[:tokens_in].positive? || remainder[:tokens_out].positive? %>
@@ -188,6 +212,7 @@
         <td class="aa-grade" aria-hidden="true"></td>
         <td class="aa-grade" aria-hidden="true"></td>
       </tr>
+    <% end %>
     <% end %>
   <% end %>
   <tr class="aa-subrow aa-emptyrow" id="aa-empty-<%= activity.id %>" x-show="open && <%= actions.empty? %>" <%= raw(actions.any? ? 'style="display:none"' : "") %>>
