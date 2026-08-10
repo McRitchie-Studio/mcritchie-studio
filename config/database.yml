@@ -17,6 +17,14 @@ default: &default
   encoding: unicode
   # For details on connection pooling, see Rails configuration guide
   # https://guides.rubyonrails.org/configuring.html#database-pooling
+  #
+  # The pool follows RAILS_MAX_THREADS (same env var that sets Puma's threads in
+  # config/puma.rb). The fallback is 5, deliberately ABOVE Puma's 3-thread
+  # default: the Solid Queue worker process needs 3 job threads + 1 poller +
+  # heartbeat from ONE pool, so do not "tidy" it down to 3. The pool is a
+  # per-process CAP, not a reservation — the shared essential-0 Postgres budget
+  # (20 connections) is derived beside the `workers` line in config/puma.rb and
+  # enforced by test/lib/puma_config_contract_test.rb.
   pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
 
 
