@@ -88,6 +88,12 @@ BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
 ACTIVITY_BIN = ENV.fetch("SHIP_ACTIVITY_BIN", File.expand_path("agent-activity", __dir__))
 # Stages past the seam ship hands off at — ship must never regress one of these.
 PAST_SUBMITTED = %w[reviewed assembled shipped archived].freeze
+# How many open PRs the overlap advisory inspects. Truncation is REPORTED, never
+# silent — an advisory that quietly checked half the queue would be worse than none.
+OVERLAP_PR_LIMIT = 50
+# Ladder branches whose PRs overlap everything by construction (the release train's
+# batch promote), excluded so the advisory stays signal.
+RELEASE_BATCH_HEADS = %w[accepted release].freeze
 
 def die!(msg)
   warn "ship: #{msg}"
@@ -339,7 +345,7 @@ def gh_capture(root, *args)
   @gh_token = GhAuthRetry.mint(root: root)
   unless @gh_token
     say "auth — could not mint an App token (1Password unavailable?); reporting gh's original error."
-    return [first, false]
+    return [failure, false]
   end
 
   out2, err2, ok2 = gh_run(root, args)
@@ -348,7 +354,7 @@ end
 
 list_json, listed = gh_capture(root, "pr", "list", "--head", branch, "--state", "open",
                                "--json", "number,url,isDraft,baseRefName")
-die!("gh pr list failed — is gh authenticated?") unless listed
+die!("gh pr list failed:\n#{list_json.strip}") unless listed
 
 existing = FastLane.open_pr(list_json)
 if existing
@@ -359,13 +365,13 @@ if existing
     # The known trap this wrapper exists to close: a DRAFT PR defers reviewers
     # and the qa-release sweep skips it — the task strands. Mark it ready.
     say "4/7 pr — PR ##{number} is a DRAFT; marking it ready for review."
-    _, ready = gh_capture(root, "pr", "ready", number)
-    die!("gh pr ready #{number} failed") unless ready
+    ready_out, ready = gh_capture(root, "pr", "ready", number)
+    die!("gh pr ready #{number} failed:\n#{ready_out.strip}") unless ready
   end
   if existing["baseRefName"] != BASE_BRANCH
     say "4/7 pr — PR ##{number} is based on #{existing["baseRefName"].inspect}; retargeting to #{BASE_BRANCH}."
-    _, retargeted = gh_capture(root, "pr", "edit", number, "--base", BASE_BRANCH)
-    die!("gh pr edit #{number} --base #{BASE_BRANCH} failed") unless retargeted
+    retarget_out, retargeted = gh_capture(root, "pr", "edit", number, "--base", BASE_BRANCH)
+    die!("gh pr edit #{number} --base #{BASE_BRANCH} failed:\n#{retarget_out.strip}") unless retargeted
   end
 else
   say "4/7 pr — opening a non-draft PR into #{BASE_BRANCH}"
@@ -390,16 +396,25 @@ def overlap_advisory(root, branch, self_pr_url)
   mine = IO.popen(["git", "-C", root, "diff", "--name-only", "#{base_ref}...HEAD"], &:read).to_s.split("\n")
   return if mine.empty?
 
-  list_json, ok = gh_capture(root, "pr", "list", "--state", "open", "--limit", "30",
-                             "--json", "number,title,url,headRefName")
+  # ONE call, files included. The first version fetched `pr view --json files` per
+  # open PR, which cost ~11s on EVERY ship for advice — a price no advisory should
+  # charge. `pr list` carries `files` directly.
+  limit = OVERLAP_PR_LIMIT
+  list_json, ok = gh_capture(root, "pr", "list", "--state", "open", "--limit", limit.to_s,
+                             "--json", "number,title,url,headRefName,files")
   return unless ok
 
   prs = JSON.parse(list_json)
-  prs = prs.reject { |pr| pr["headRefName"].to_s == branch || pr["url"].to_s == self_pr_url.to_s }
-  prs.each do |pr|
-    files_json, got = gh_capture(root, "pr", "view", pr["number"].to_s, "--json", "files")
-    pr["files"] = got ? (JSON.parse(files_json)["files"] || []).map { |f| f["path"] } : []
-  end
+  say "overlap — more than #{limit} open PRs; checked the #{limit} most recent." if prs.size >= limit
+  prs = prs.reject { |pr|
+    head = pr["headRefName"].to_s
+    head == branch || pr["url"].to_s == self_pr_url.to_s ||
+      # The release train's own `accepted → release` batch PR overlaps EVERYTHING by
+      # construction (it carries every merged file). Naming it as a collision would
+      # make the advisory noise on every ship during a release window.
+      RELEASE_BATCH_HEADS.include?(head)
+  }
+  prs.each { |pr| pr["files"] = Array(pr["files"]).map { |f| f["path"] } }
 
   items = PrOverlap.report(mine, prs)
   PrOverlap.lines(items).each { |line| say line }

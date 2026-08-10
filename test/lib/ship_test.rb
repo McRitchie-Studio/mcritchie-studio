@@ -129,6 +129,36 @@ class ShipTest < Minitest::Test
     lines.map { |l| l[0, 2].join(" ") }
   end
 
+
+  # THE REGRESSION CARL CAUGHT. `gh_capture`'s mint-FAILURE branch returned an
+  # undefined local (`first` after a rename to `failure`) — valid Ruby, a NameError
+  # at runtime, on the exact path that promises to report gh's original error. It
+  # survived because bin/ship is rubocop-excluded and nothing executed the branch.
+  # This drives a real ship whose gh ALWAYS refuses on credentials and whose mint
+  # ALWAYS fails, so the branch runs: ship must fail with gh's REAL error, not a
+  # NameError, and must never hang or mint anything real.
+  def test_mint_failure_reports_ghs_original_error_and_never_raises
+    with_repo do |dir|
+      refusing_gh = File.join(dir, "gh-refuse")
+      File.write(refusing_gh, "#!/bin/sh\necho 'GraphQL: Resource not accessible by " \
+                              "personal access token (createPullRequest)' >&2\nexit 1\n")
+      File.chmod(0o755, refusing_gh)
+
+      out, err, status, = run_ship(dir, extra_env: {
+        "SHIP_GH_BIN" => refusing_gh,
+        "GH_AUTH_MINT_BIN" => "/nonexistent/mint" # the mint cannot run → the failure branch
+      })
+
+      combined = "#{err}\n#{out}"
+      refute status.success?, "a gh that always refuses must fail the ship"
+      refute_match(/NameError|undefined local variable|undefined method .first./, combined,
+                   "the mint-failure branch must not crash — that was the shipped bug")
+      assert_match(/not accessible by personal access token/, combined,
+                   "and must surface gh's ORIGINAL error, which is the whole promise of that branch")
+      assert_match(/minting a GitHub App token/, combined, "the retry was attempted")
+    end
+  end
+
   # --- the green path ----------------------------------------------------------
 
   def test_green_path_runs_every_step_in_order_and_verifies
