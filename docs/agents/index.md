@@ -350,7 +350,11 @@ actual) powers the sizing intelligence dashboard.
 everything: the worktree (bound by slug), the task URL
 (`https://mcritchie.studio/tasks/<slug>`), and the terminal feature indicator —
 `bin/task` writes the active-feature marker the status line reads (a worktree
-session overrides it via its own `.agent-context.json`). **Announce it every
+session overrides it via its own `.agent-context.json`). The marker also keeps a
+**write-once genesis**: the first task a session claims is stamped as
+`genesis_*` and never repointed, so after later creates/moves the status line
+reads `<genesis-slug> ▸ <current-slug>` — the session keeps its bearing on why
+it was spun up. **Announce it every
 session, not on request:** open with one line — `<app-slug> · <feature-slug> ·
 <task URL>` — so the active feature is visible in any tool (Claude's status bar,
 Codex's output; the terminal auto-links the URL), and restate the task URL at

@@ -284,7 +284,7 @@ read_ctx() {  # path -> US-separated: app feature task url stage mascot mascot_c
   # Joined with the unit separator (U+001F), NOT a tab: a tab is IFS-whitespace,
   # so an empty middle field (e.g. a missing task_url) would collapse and shift
   # every later field left. US is non-whitespace, so empty fields are preserved.
-  "$JQ" -r '[(.app // ""), (.worktree_slug // .feature // ""), (.task_record_slug // .task_slug // ""), (.task_url // ""), (.stage // ""), (.mascot // ""), (.mascot_color // ""), (.mascot_emoji // ""), (if (.mascot_shiny == true or .mascot_shiny == "true" or .mascot_shiny == "1") then "true" elif (.mascot_shiny == false or .mascot_shiny == "false" or .mascot_shiny == "0") then "false" else "" end), (.app_color // "")] | join("")' "$1" 2>/dev/null
+  "$JQ" -r '[(.app // ""), (.worktree_slug // .feature // ""), (.task_record_slug // .task_slug // ""), (.task_url // ""), (.stage // ""), (.mascot // ""), (.mascot_color // ""), (.mascot_emoji // ""), (if (.mascot_shiny == true or .mascot_shiny == "true" or .mascot_shiny == "1") then "true" elif (.mascot_shiny == false or .mascot_shiny == "false" or .mascot_shiny == "0") then "false" else "" end), (.app_color // ""), (.genesis_feature // .genesis_slug // ""), (.genesis_slug // "")] | join("")' "$1" 2>/dev/null
 }
 
 # Nearest xterm-256 cube index (16..231) for an r,g,b triple. We use 256-color,
@@ -420,7 +420,14 @@ if [ -z "$src" ] && [ -n "$sid" ]; then
 fi
 
 if [ -n "$src" ]; then
-  IFS=$'\x1f' read -r app feat task url stage mascot mascot_color mascot_emoji mascot_shiny app_color < <(read_ctx "$src")
+  IFS=$'\x1f' read -r app feat task url stage mascot mascot_color mascot_emoji mascot_shiny app_color genesis_feat genesis_slug < <(read_ctx "$src")
+  # Genesis bearing: the session's write-once first task (bin/task's sticky
+  # genesis_* marker fields) leads the feature segment when the session has since
+  # moved on to a different task — "why I exist ▸ what I'm touching". Same task
+  # (or no genesis, e.g. a worktree desk context) renders exactly as before.
+  if [ -n "$genesis_slug" ] && [ -n "$feat" ] && [ "$genesis_slug" != "${task:-$feat}" ] && [ "$genesis_feat" != "$feat" ]; then
+    feat="${genesis_feat} ▸ ${feat}"
+  fi
   render "$app" "$feat" "$task" "$url" "$stage" "$mascot" "$mascot_color" "$mascot_emoji" "$mascot_shiny" "$app_color"
   heartbeat_claim "$task" "$stage" "$src_is_desk"   # renew this terminal's build-claim lease (desk-aware)
   heartbeat_shift                                    # renew this terminal's devops SHIFT lease (if one is held)
