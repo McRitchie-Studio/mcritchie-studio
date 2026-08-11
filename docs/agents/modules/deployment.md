@@ -228,20 +228,24 @@ How a gem rides a release:
    know the answer. The **release** owns the number (step 2). Editing
    `CHANGELOG.md` is *not* refused. Otherwise it is reviewed → `reviewed` like
    any other task.
-2. **The release conductor sets the version — by hand, today.** The bump is
+2. **`bin/release prepare` allocates the version — you do not.** The bump is
    derived from the candidate's membership: any member risk-tagged `breaking` →
    major, else any `kind: feature` → minor, else patch; `next = last published
-   tag + that bump`. `Release::GemVersion`
-   (`app/models/release/gem_version.rb`) encodes those rules and is unit-tested,
-   but **nothing calls it yet** — `bin/release prepare` does not allocate the
-   version (finding-d0621629719b). So until that lands the conductor computes
-   the number and commits the `version_file` **directly onto the gem repo's
-   `accepted`** (no gem rung is branch-protected, and the batch promote PR
-   carries it to `release` without passing a `dor-check`), then runs
-   `bin/release prepare`. Skip this and the stranded-work guard aborts the sweep
-   for **every** repo. When the derived bump is wrong — most often a `chore`
-   that is genuinely breaking — the override is
-   `bin/task update <task-slug> --gem-bump major`.
+   version + that bump`, where "last published" is the higher of the last `v*`
+   tag and the highest version live on RubyGems (so a lagging tag can never
+   re-tread a spent number). `Release::GemVersion`
+   (`app/models/release/gem_version.rb`) encodes those rules, and prepare's step
+   4d calls it, writes the `version_file` **together with its `Gemfile.lock`** in
+   one commit onto `origin/release`, and does it BEFORE the publish
+   (finding-d0621629719b, now closed). There is nothing for you to run.
+   Allocation is idempotent — a re-run reads a version already past the last
+   published one and skips — and it **refuses rather than guesses**: an
+   unreadable `--gem-bump`, an unparseable last version, a `version_file` that
+   declares its version twice, or a `bundle lock` that did not land the new
+   number all abort the sweep with **nothing published**. The stranded-work guard
+   stays armed behind it, so a skipped or wrong allocation still aborts loudly.
+   When the derived bump is wrong — most often a `chore` that is genuinely
+   breaking — the override is `bin/task update <task-slug> --gem-bump major`.
 3. **Prepare preflights EVERY swept gem, then publishes — before the gate and
    QA.** `bin/release prepare` adds the gem to the release record without
    merging a branch for it (it has none here), then runs the two-phase
@@ -405,6 +409,20 @@ jobs are ingested folds straight from `CiCheckJob` (no network), and a SHA with 
 Each `CiCheckJob` upsert then morph-broadcasts the refreshed bar to the task card +
 the Next Release G3 slot over Turbo Streams, so the board's CI progress bars **tick
 up live with no reload** as each check passes.
+
+**The review autopilot rides this same ingest.** After every `workflow_run` upsert
+that carries a CONCLUSION, the job calls `ReviewPendingAction.trigger_for_head`
+(repo + head_sha), which enqueues `ReviewPendingActionExecutionJob` for any ARMED
+MERGE pinned to that exact tree — a reviewer's already-recorded merge-ready verdict,
+waiting on CI. The trigger deliberately fires on ANY conclusion and judges none of
+them: `Ci::ReviewGate` stays the single place that decides what green means, and
+`Review::PendingActionExecutor` owns every guard. The trigger is best-effort and
+rescued, so it can never break CI ingestion; a missed delivery is picked up by the
+action's own recheck chain within minutes. Reviewer-facing docs:
+`docs/agents/agents/carl/sops/pr-review-primary.md` step 6; CLI `bin/review-autopilot`.
+Note the wiring dependency — only repos whose Actions webhook reaches this endpoint
+can ever trigger it; an unwired repo's armed merge reads CI as `:none` forever and
+expires unexecuted, which is the correct fail-closed outcome, not a silent pass.
 
 **Prod-deploy approval gate — REMOVED 2026-07-20 (task `remove-prod-deploy-approval`).**
 The `production` GitHub Environment's required-reviewer rule was deleted (a GitHub

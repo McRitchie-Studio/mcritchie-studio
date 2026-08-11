@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_10_131500) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_11_004900) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -914,6 +914,35 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_10_131500) do
     t.datetime "updated_at", null: false
     t.index "(1)", name: "index_releases_single_active", unique: true, where: "((state)::text = ANY (ARRAY[('assembling'::character varying)::text, ('assembled'::character varying)::text]))"
     t.index ["slug"], name: "index_releases_on_slug", unique: true
+  end
+
+  create_table "review_pending_actions", force: :cascade do |t|
+    t.string "action", default: "merge_to_accepted", null: false
+    t.integer "attempts", default: 0, null: false
+    t.string "authorized_by"
+    t.string "base_branch", default: "accepted", null: false
+    t.datetime "created_at", null: false
+    t.datetime "executed_at"
+    t.datetime "expires_at", null: false
+    t.string "head_sha", null: false
+    t.datetime "last_attempted_at"
+    t.string "merge_method", default: "merge", null: false
+    t.string "merge_sha"
+    t.jsonb "metadata", default: {}, null: false
+    t.text "outcome_reason"
+    t.integer "pr_number", null: false
+    t.string "pr_url"
+    t.string "repo", null: false
+    t.string "state", default: "pending", null: false
+    t.string "task_slug", null: false
+    t.datetime "updated_at", null: false
+    t.string "verdict", null: false
+    t.bigint "verdict_activity_id"
+    t.datetime "verdict_recorded_at"
+    t.index ["repo", "head_sha"], name: "index_review_pending_actions_on_repo_and_head_sha"
+    t.index ["state", "expires_at"], name: "index_review_pending_actions_on_state_and_expires_at"
+    t.index ["task_slug"], name: "index_review_pending_actions_on_live_task_slug", unique: true, where: "((state)::text = 'pending'::text)"
+    t.index ["task_slug"], name: "index_review_pending_actions_on_task_slug"
   end
 
   create_table "roster_spots", force: :cascade do |t|

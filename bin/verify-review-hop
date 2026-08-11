@@ -1,0 +1,229 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/verify-review-hop <task-slug> — walk the ENTIRE local review hop the way
+# Mr. McRitchie's WAITING APPROVAL button walks it, and assert every leg.
+#
+# Usage:
+#   bin/verify-review-hop <task-slug>
+#   bin/verify-review-hop <task-slug> --json
+#   bin/verify-review-hop --local-url http://localhost:3016/admin/style   # leg 1 SKIPPED
+#
+# The five legs, each asserted before the next runs:
+#
+#   1. CTA      GET  <board>/tasks/<slug>/local_review  -> 302 to a LOOPBACK /_studio/local_review
+#   2. mint     GET  that URL, NO ?email=               -> 302 to /l/<token>
+#   3. confirm  GET  /l/<token>                         -> 200 carrying a CSRF token
+#   4. consume  POST /l/<token>                         -> 302 to the review path
+#   5. landing  GET  that path                          -> 200 ON the review path
+#
+# This exists because the hand-written curl version of it drifted from the code
+# it verifies inside a single fix-forward cycle, and because every leg's failure
+# mode is success-shaped — see bin/lib/review_hop.rb for what each one returns
+# when it breaks. Chaining the legs with no assertions between them (what the
+# recipe used to do) lets a leg-2 failure degrade quietly into scraping and
+# POSTing the sign-in page, and still report 200 at the end.
+#
+# It starts at the CTA on purpose. A recipe that starts at the local mint proves
+# the local server works and says NOTHING about the button, which is the half
+# that historically broke.
+#
+# Running this does NOT burn Mr. McRitchie's link: the CTA mints a fresh
+# single-use token per click, so the token consumed here is the one this run
+# minted. A `Magic Link:` you minted BY HAND for chat is a different token and
+# IS single-use — never verify that one, hand it over unclicked.
+
+require "json"
+require "net/http"
+require "optparse"
+require "uri"
+
+require_relative "lib/review_hop"
+
+ROOT = File.expand_path("..", __dir__)
+BOARD_URL = ENV.fetch("VERIFY_REVIEW_HOP_BOARD", ENV.fetch("TASK_API_BASE", "https://mcritchie.studio"))
+MAX_REDIRECTS = 5
+
+def warn!(msg) = $stderr.puts(msg)
+
+def die!(msg)
+  warn!("error: #{msg}")
+  exit 1
+end
+
+options = { json: false, board: BOARD_URL, local_url: nil, email: nil }
+parser = OptionParser.new do |o|
+  o.banner = "Usage: bin/verify-review-hop <task-slug> [--json] | bin/verify-review-hop --local-url <url>"
+  o.on("--json", "Machine-readable verdict") { options[:json] = true }
+  o.on("--board URL", "Board base URL (default: #{BOARD_URL})") { |v| options[:board] = v }
+  o.on("--local-url URL", "Verify from an explicit local URL; SKIPS the CTA leg") { |v| options[:local_url] = v }
+  o.on("--email ADDRESS", "Mint for ADDRESS. ONLY for apps on studio-engine < 0.36.0, " \
+                          "which has no reviewer fallback; the live CTA sends no address") do |v|
+    options[:email] = v
+  end
+  o.on("-h", "--help") do
+    puts o
+    exit 0
+  end
+end
+parser.parse!
+
+slug = ARGV.shift
+die!("give a task slug, or --local-url <url>\n#{parser}") if slug.nil? && options[:local_url].nil?
+
+# A cookie jar that lives in memory for exactly this process. The shell version
+# kept one in a `mktemp` file, unquoted, and left it on disk holding a live
+# session cookie for the app under review.
+class Jar
+  def initialize = @cookies = {}
+
+  def store(response)
+    Array(response.get_fields("set-cookie")).each do |raw|
+      name, value = raw.split(";", 2).first.to_s.split("=", 2)
+      @cookies[name] = value if name && value
+    end
+  end
+
+  def header = @cookies.map { |k, v| "#{k}=#{v}" }.join("; ")
+  def empty? = @cookies.empty?
+end
+
+JAR = Jar.new
+
+def http_for(uri)
+  http = Net::HTTP.new(uri.host, uri.port)
+  http.use_ssl = uri.scheme == "https"
+  http.open_timeout = 10
+  http.read_timeout = 20
+  http
+end
+
+def request(method, url, form: nil)
+  uri = URI.parse(url)
+  req = method == :post ? Net::HTTP::Post.new(uri) : Net::HTTP::Get.new(uri)
+  req["Cookie"] = JAR.header unless JAR.empty?
+  req["User-Agent"] = "verify-review-hop"
+  req.set_form_data(form) if form
+  res = http_for(uri).request(req)
+  JAR.store(res)
+  res
+rescue StandardError => e
+  die!("#{method.to_s.upcase} #{url} failed: #{e.class}: #{e.message}")
+end
+
+# Follow redirects by hand, one at a time, so the final URL is a fact we hold
+# rather than something curl reports after the fact.
+def follow(url)
+  current = url
+  MAX_REDIRECTS.times do
+    res = request(:get, current)
+    return [res, current] unless ReviewHop.redirect?(res.code) && res["location"]
+
+    current = URI.join(current, res["location"]).to_s
+  end
+  die!("more than #{MAX_REDIRECTS} redirects chasing #{url}")
+end
+
+legs = []
+record = lambda do |name, verdict|
+  legs << { "leg" => name, "ok" => verdict.ok?, "code" => verdict.code.to_s, "detail" => verdict.detail }
+  verdict
+end
+
+# ---- LEG 1 — the board CTA ------------------------------------------------
+mint_url = nil
+if options[:local_url]
+  legs << { "leg" => "cta", "ok" => nil, "code" => "skipped",
+            "detail" => "--local-url given: the board CTA was NOT exercised" }
+  uri = ReviewHop.parse(options[:local_url])
+  die!("--local-url is not an http(s) URL: #{options[:local_url]}") if uri.nil?
+  die!("--local-url is not a loopback host: #{uri.host}") unless ReviewHop.loopback?(uri.host)
+
+  path = uri.path.to_s.empty? ? "/" : uri.path
+  return_to = uri.query.to_s.empty? ? path : "#{path}?#{uri.query}"
+  mint = uri.dup
+  mint.path = ReviewHop::MINT_PATH
+  mint.query = URI.encode_www_form({ return_to: return_to })
+  mint.fragment = nil
+  mint_url = mint.to_s
+else
+  cta_url = "#{options[:board].chomp("/")}/tasks/#{slug}/local_review"
+  res = request(:get, cta_url)
+  verdict = record.call("cta", ReviewHop.cta(status: res.code, location: res["location"]))
+  mint_url = res["location"] if verdict.ok?
+end
+
+# ---- LEG 2 — the local mint, with NO email --------------------------------
+#
+# --email is a DEVIATION from what the button does, not a normal option: the
+# live CTA carries no address. It exists for an app still on studio-engine
+# < 0.36.0, which has no reviewer fallback at all and answers MISSING_EMAIL —
+# turf-monster is on 0.31.0 today. It is reported as a deviation so a run that
+# used it never reads as a clean verification of the real path.
+token_url = nil
+if mint_url
+  request_url = mint_url
+  if options[:email]
+    uri = URI.parse(mint_url)
+    uri.query = URI.encode_www_form(URI.decode_www_form(uri.query.to_s) + [["email", options[:email]]])
+    request_url = uri.to_s
+  end
+
+  res = request(:get, request_url)
+  verdict = record.call("mint", ReviewHop.mint(status: res.code, location: res["location"]))
+  token_url = URI.join(request_url, res["location"]).to_s if verdict.ok?
+end
+
+# ---- LEG 3 — the confirm page ---------------------------------------------
+csrf = nil
+if token_url
+  res = request(:get, token_url)
+  verdict = record.call("confirm", ReviewHop.confirm(status: res.code, body: res.body))
+  csrf = ReviewHop.csrf_token(res.body) if verdict.ok?
+end
+
+# ---- LEG 4 — the consume POST ---------------------------------------------
+next_url = nil
+if csrf
+  res = request(:post, token_url, form: { "authenticity_token" => csrf })
+  verdict = record.call("consume", ReviewHop.consume(status: res.code, location: res["location"]))
+  next_url = URI.join(token_url, res["location"]).to_s if verdict.ok?
+end
+
+# ---- LEG 5 — the landing ---------------------------------------------------
+if next_url
+  res, final_url = follow(next_url)
+  expected = ReviewHop.expected_return_path(mint_url) || "/"
+  record.call("landing", ReviewHop.landing(status: res.code, url: final_url, expected_path: expected))
+end
+
+executed = legs.reject { |l| l["code"] == "skipped" }
+ok = !executed.empty? && executed.all? { |l| l["ok"] }
+report = {
+  "ok" => ok,
+  "task" => slug,
+  "board" => options[:local_url] ? nil : options[:board],
+  "mint_url" => mint_url,
+  "email_override" => options[:email],
+  "legs" => legs
+}.compact
+
+if options[:json]
+  puts JSON.pretty_generate(report)
+else
+  label = slug ? %("#{slug}") : options[:local_url]
+  puts(ok ? "✓ review hop verified for #{label}" : "✗ review hop BROKEN for #{label}")
+  legs.each do |leg|
+    glyph = leg["ok"].nil? ? "⚠" : (leg["ok"] ? "✓" : "✗")
+    puts "  #{glyph} #{leg["leg"]}: #{leg["detail"]}"
+  end
+  if options[:email]
+    puts "  ⚠ minted for --email #{options[:email]} — the live CTA sends NO address. " \
+         "This verifies the sub-0.36.0 path, not the button's own."
+  end
+  unless ok
+    puts "  → the WAITING APPROVAL button does NOT land the operator on the page under review"
+  end
+end
+
+exit(ok ? 0 : 1)

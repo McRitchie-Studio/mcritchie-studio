@@ -2749,6 +2749,16 @@ def prepare
   #     the CI verdict targets the post-bump SHA, QA bundles the new lock, and
   #     prod ships the exact tree QA tested. Ship's publish stays as the
   #     idempotent verify (already-live → skip).
+  #
+  #     PHASE 0 leads: ALLOCATE each swept gem's version from its members and
+  #     commit it (with its Gemfile.lock) onto origin/release. It runs above
+  #     phase 1 because phase 1's stranded-work guard is the BACKSTOP for
+  #     allocation not happening — the guard stays armed and still aborts when
+  #     the version has not advanced, it just has nothing left to catch on the
+  #     happy path. Ordering is the same fail-closed rule as everything else
+  #     here: the version must be settled and pushed BEFORE the first
+  #     irreversible `gem push`, never after.
+  allocate_gem_versions!(gem_groups)
   gem_plan = validate_gems_for_qa(gem_groups, app_groups)
   bump_consumer_locks_for_qa(app_groups, publish_gems_for_qa(gem_plan))
 
@@ -3889,6 +3899,246 @@ end
 # prepared before this change. Everything here is idempotent for the
 # self-healing re-run: already-live versions skip, an already-bumped lock
 # commits nothing.
+
+# PHASE 0 — ALLOCATE THE VERSION. The release owns the version, so THIS is where
+# it gets written; every phase below only reads it.
+#
+# WHY IT RUNS FIRST, above phase 1's stranded-work guard: that guard exists
+# BECAUSE nothing allocated. Until this landed, the conductor hand-edited
+# `lib/studio/version.rb`, hand-ran `bundle lock`, and hand-committed both onto
+# the gem's `accepted` before re-running prepare — the recipe qa-release.md's
+# STRANDED GEM WORK row spells out, run in full for rel-20260811-573804. The
+# guard was the net for the times he forgot.
+#
+# THE GUARD STAYS ARMED. This does not replace it and must not: allocation is
+# skippable (--dry-run), refusable (below), and — like anything new — capable of
+# being wrong. Phase 1 still independently re-reads the version at
+# origin/release and still aborts when it has not advanced past the last tag. On
+# the happy path the guard now finds nothing, which is the point; the moment
+# allocation does not happen, it fires exactly as before.
+#
+# REFUSING IS THE FEATURE. A RubyGems number can NEVER be re-pushed, so every
+# ambiguity here aborts the sweep with ZERO gems published rather than guessing:
+# an unreadable `gem_bump` override, an unparseable last version, a version_file
+# that declares its version twice, a `bundle lock` that did not land the number
+# we just wrote. A refusal costs a re-run; a wrong allocation costs the number
+# forever. The decision itself is pure and unit-tested (Release::GemVersion
+# .allocation) — the shell here only supplies the git + RubyGems reads.
+def allocate_gem_versions!(gem_groups)
+  return if gem_groups.empty?
+
+  say("")
+  step("gem version allocation (the RELEASE owns the version, not any PR): derive each swept gem's next version " \
+       "from its members, commit it WITH its Gemfile.lock onto origin/#{RELEASE_BRANCH} — before the publish")
+
+  if DRY
+    gem_groups.each do |group|
+      step("  gem #{group['repo']}: last published (last v* tag ∪ RubyGems) + the members' bump → rewrite " \
+           "#{gem_meta_for(group['repo'])['version_file']} → `bundle lock` → ONE commit of both onto " \
+           "origin/#{RELEASE_BRANCH} (skips when already advanced; REFUSES rather than guess)")
+    end
+    return
+  end
+
+  # TWO PHASES, for the same reason phase 1 below has two: DECIDE for every swept
+  # gem before WRITING to any of them. Deciding is a pure read; writing pushes a
+  # commit onto origin/release. Interleaving them would let gem A's version land
+  # while gem B's decision is still unknown — the "mutate before validate"
+  # objection that got allocation descoped when the module first shipped
+  # (finding-d0621629719b). Splitting the loop answers it: a refusal anywhere
+  # aborts with NOTHING written anywhere.
+  #
+  # And the residual risk is bounded by design. What phase 0 writes is a git
+  # commit, which is REVERSIBLE; the irreversible act — `gem push` — still
+  # happens only after phase 1 has validated every gem. A write-phase failure on
+  # a later gem therefore leaves an earlier gem's version commit on `release`,
+  # and that is self-healing rather than stranded: the next run reads it as
+  # "already advanced", skips it, and publishes it once the sweep completes.
+  failures = []
+  plan = gem_groups.filter_map { |group| gem_allocation_plan(group, failures) }
+  abort_allocation!(failures)
+
+  plan.each { |entry| commit_gem_version!(entry["repo"], entry["tip"], entry["decision"], failures) }
+  abort_allocation!(failures)
+end
+
+def abort_allocation!(failures)
+  return if failures.empty?
+
+  abort!("gem version allocation FAILED — NOTHING was published or deployed (a RubyGems version can never be " \
+         "re-pushed, so allocation refuses rather than guesses):\n  - " + failures.join("\n  - "))
+end
+
+# PHASE 0a — DECIDE, WRITE NOTHING. One gem's git + RubyGems reads and the pure
+# decision they feed. Returns the write plan for an `allocate`, nil for a `skip`
+# or a `refuse`. Appends to `failures` instead of aborting so every swept gem is
+# judged before the run stops.
+def gem_allocation_plan(group, failures)
+  repo = group["repo"]
+  path = repo_path(repo)
+  unless Dir.exist?(path)
+    failures << "gem repo not found at #{path} — clone it as a sibling at the projects root"
+    return
+  end
+
+  # FAIL-CLOSED FETCH, and `--tags` is load-bearing here in a way it is not for a
+  # plain read: the last v* tag is half the baseline this version is derived from,
+  # so a stale tag list would allocate a number that is already published.
+  _, fetched = sh("git", "-C", path, "fetch", "origin", "--tags", "--quiet")
+  unless fetched
+    failures << "git fetch failed in gem #{repo} — a stale origin/#{RELEASE_BRANCH} or tag list must never drive " \
+                "an irreversible version allocation (fail closed); fix the remote, then re-run `bin/release prepare`"
+    return
+  end
+
+  out, ok = git_capture("-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}")
+  unless ok
+    failures << "could not resolve origin/#{RELEASE_BRANCH} in #{repo} for the version allocation — fetch, then re-run"
+    return
+  end
+  tip = out.strip
+
+  tag_out, tag_ok = git_capture("-C", path, "describe", "--tags", "--abbrev=0", "--match", "v*", tip)
+  tag = tag_ok ? tag_out.strip : nil
+
+  # The same range the stranded-work guard reads, capped: allocation only needs to
+  # know whether ANY work sits past the last tag, not to list it. With no tag yet
+  # the range is the whole history, and the decision falls through to its
+  # first-publish skip.
+  ahead_out, ahead_ok = git_capture("-C", path, "log", "--oneline", "--max-count=20", tag ? "#{tag}..#{tip}" : tip)
+  unless ahead_ok
+    failures << "could not read #{repo} #{tag ? "#{tag}..origin/#{RELEASE_BRANCH}" : RELEASE_BRANCH} for the " \
+                "version allocation — fetch, then re-run `bin/release prepare`"
+    return
+  end
+
+  decision = Release::GemVersion.allocation(
+    current: gem_version_from_ref(repo, tip),
+    tag_version: tag&.delete_prefix("v"),
+    live_versions: rubygems_versions(repo),
+    ahead_commits: ahead_out.lines.map(&:chomp).reject { |l| l.strip.empty? },
+    members: gem_version_members(group)
+  )
+
+  if decision.refuse?
+    failures << "gem #{repo}: REFUSING to allocate a version — #{decision.reason}. Fix what that names, then " \
+                "re-run `bin/release prepare`; it resumes"
+    return nil
+  end
+
+  unless decision.allocate?
+    say("  gem #{repo}: #{decision.reason} — nothing allocated")
+    return nil
+  end
+
+  { "repo" => repo, "tip" => tip, "decision" => decision }
+end
+
+# The member descriptors Release::GemVersion derives the bump from. The repo plan
+# carries `task_kind` (feature/bug/chore) beside its own `kind` (gem/app); this
+# renames it to the key the module reads, so the two kinds can never be confused
+# at the point a version is computed from one of them.
+def gem_version_members(group)
+  (group["members"] || []).map do |m|
+    { "slug" => m["slug"], "kind" => m["task_kind"], "risk_tags" => m["risk_tags"], "gem_bump" => m["gem_bump"] }
+  end
+end
+
+# PHASE 0b — THE WRITE. version_file + Gemfile.lock in ONE commit, pushed onto
+# origin/release by ref, fast-forward-checked. Built in the gem's ship workspace
+# pinned at the release tip — the same never-touch-the-primary mechanics as the
+# consumer lock bump below, which matters more than usual for a gem, because the
+# artifact `gem build` packages is read from that primary checkout.
+def commit_gem_version!(repo, tip, decision, failures)
+  version      = decision.version
+  version_file = gem_meta_for(repo)["version_file"].to_s
+
+  with_ship_workspace(repo) do
+    workspace  = ship_workspace!(repo, tip)
+    ws_version = File.join(workspace, version_file)
+    unless File.exist?(ws_version)
+      failures << "gem #{repo}: #{version_file} is missing at origin/#{RELEASE_BRANCH} — check its `version_file` " \
+                  "in config/release_repos.yml"
+      next
+    end
+
+    rewritten = Release::GemVersion.rewrite_version(File.read(ws_version), version)
+    if rewritten.nil?
+      failures << "gem #{repo}: #{version_file} does not declare EXACTLY ONE version literal — refusing to " \
+                  "rewrite it blind; set it to #{version} by hand and commit it onto #{RELEASE_BRANCH}, then re-run"
+      next
+    end
+    File.write(ws_version, rewritten)
+
+    next unless relock_gem_workspace!(repo, workspace, version, failures)
+
+    sh("git", "-C", workspace, "add", "--", *[version_file, lock_tracked?(workspace) ? "Gemfile.lock" : nil].compact)
+    _, committed = sh("git", "-C", workspace, "commit", "-m", "Release #{version}", capture: true)
+    unless committed
+      failures << "gem #{repo}: could not commit #{version} in the ship workspace"
+      next
+    end
+
+    # Fast-forward-checked (no --force): a release branch that moved under us
+    # fails closed HERE, before anything is published against a version this
+    # commit is not part of.
+    _, pushed = sh("git", "-C", workspace, "push", "origin", "HEAD:refs/heads/#{RELEASE_BRANCH}", capture: true)
+    unless pushed
+      failures << "gem #{repo}: could not push #{version} to origin/#{RELEASE_BRANCH} (did #{RELEASE_BRANCH} move?)"
+      next
+    end
+
+    step("  gem #{repo}: allocated #{version} — #{decision.reason}; committed with its lockfile onto " \
+         "origin/#{RELEASE_BRANCH}")
+  end
+end
+
+# TRAP, and the reason the lock is not optional: studio-engine bundles ITSELF as
+# a path gem, so its OWN Gemfile.lock names its OWN version (`PATH / remote: . /
+# studio-engine (0.38.0)`), and CI installs FROZEN (`bundler-cache: true`). A
+# version commit whose lockfile stayed behind therefore dies in `bundle install`
+# before a single test runs — and it is INVISIBLE locally, because a local
+# `bundle install` quietly regenerates the lock and hides the omission.
+#
+# So the lock is regenerated and READ BACK in the same breath. Plain `bundle
+# lock` (not `--update <gem>`): bundler re-reads a path gemspec on every resolve,
+# so this rewrites the PATH spec and nothing else — MEASURED on studio-engine
+# 0.38.0 → 0.39.0, a one-line diff.
+#
+# ASSERT, DO NOT INFER — the lesson `bundle_lock` above was rewritten for. Note
+# WHICH read: `locked_version` scans GEM sections ONLY and answers nil for a gem
+# in its own lock, so asserting through it would have looked like a guard and
+# checked nothing. `path_locked_version` reads the PATH spec; both are tried so
+# this also covers a gem that does not self-bundle.
+#
+# Returns true when the lock is settled (including "this repo tracks no lock" —
+# solana-studio does not), false when it failed and the reason is recorded.
+def relock_gem_workspace!(repo, workspace, version, failures)
+  return true unless lock_tracked?(workspace)
+
+  _, locked = sh("bundle", "lock", chdir: workspace)
+  unless locked
+    failures << "gem #{repo}: `bundle lock` failed after writing #{version} — the version commit must carry its " \
+                "Gemfile.lock (CI installs frozen), so nothing was committed"
+    return false
+  end
+
+  text     = File.read(File.join(workspace, "Gemfile.lock"))
+  resolved = Release::ShipSequence.path_locked_version(text, repo) ||
+             Release::ShipSequence.locked_version(text, repo)
+  return true if resolved == version
+
+  failures << "gem #{repo}: `bundle lock` left Gemfile.lock resolving #{resolved.inspect}, wanted #{version} — " \
+              "refusing to commit a version its own lockfile contradicts (CI installs frozen and would fail " \
+              "before running a test)"
+  false
+end
+
+def lock_tracked?(workspace)
+  _, ok = sh("git", "-C", workspace, "ls-files", "--error-unmatch", "--", "Gemfile.lock", capture: true)
+  ok
+end
+
 # PHASE 1 — VALIDATE EVERY GEM, PUBLISH NOTHING. A RubyGems push can never be
 # re-pushed, so every check THIS PHASE OWNS runs for EVERY swept gem BEFORE the
 # first push: repo cloned, buildable primary (the artifact builds from disk),

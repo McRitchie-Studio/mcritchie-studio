@@ -381,6 +381,14 @@ class Release
           # slug trickle-down, so null it here rather than rely on it being unset.)
           branch: kind == :gem ? nil : task.devops_field("branch"),
           kind: kind.to_s,
+          # The THREE fields Release::GemVersion derives a bump from, carried so
+          # `bin/release prepare` can allocate the gem version at step 4d instead
+          # of the conductor typing it into the version_file by hand. Distinct
+          # from `kind` above, which is the RELEASE kind (gem/app); this is the
+          # TASK kind (feature/bug/chore) the bump table is keyed on.
+          task_kind: task.devops_field("kind").to_s,
+          risk_tags: Array(task.devops_field("risk_tags")).map(&:to_s),
+          gem_bump: task.devops_field("gem_bump").to_s,
           repo: task.release_repo,
           version: kind == :gem ? Release::Repos.gem_version(task.release_repo) : nil,
           post_deploy_cmd: task.devops_field("post_deploy_cmd"),

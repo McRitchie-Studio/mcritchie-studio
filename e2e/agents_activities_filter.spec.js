@@ -1,5 +1,5 @@
 const { test, expect } = require("@playwright/test");
-const { loginWithMagicLink } = require("./helpers");
+const { loginWithMagicLink, watchPageErrors } = require("./helpers");
 
 // /agents/activities filter refresh — clicking a session in the sidebar fetches the
 // filtered feed through the turbo-frame (background), NOT a full page reload: the sidebar
@@ -9,9 +9,7 @@ const { loginWithMagicLink } = require("./helpers");
 // combinatorial ?sessions= crawl trap. Unauthenticated, the goto lands on the login page and
 // meta[name='e2e-api-token'] never renders, so sign in first.
 test("clicking a session filter refreshes the feed in the background, no full reload", async ({ page }) => {
-  const pageErrors = [];
-  page.on("pageerror", (err) => pageErrors.push(String(err)));
-  page.on("console", (msg) => { if (msg.type() === "error") pageErrors.push(msg.text()); });
+  const { pageErrors, report } = watchPageErrors(page);
 
   await loginWithMagicLink(page, "alex@test.com");
   await page.goto("/agents/activities");
@@ -47,5 +45,5 @@ test("clicking a session filter refreshes the feed in the background, no full re
   // …and it was a BACKGROUND swap, not a full reload (the window marker survived).
   expect(await page.evaluate(() => window.__noFullReload)).toBe("kept");
 
-  expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
+  expect(pageErrors, report()).toHaveLength(0);
 });

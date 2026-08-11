@@ -283,13 +283,42 @@ class Release
     # `path:`/`git:` consumer can never satisfy a guard whose question is
     # "did the version we PUBLISHED TO RUBYGEMS land here?".
     def gem_sections(lockfile_text)
-      in_gem = false
+      lockfile_sections(lockfile_text, "GEM")
+    end
+
+    # The body of a Gemfile.lock's `PATH` sections — the exact complement of
+    # `gem_sections`, and the one place a gem's OWN version shows up in its OWN
+    # lockfile.
+    #
+    # WHY THIS EXISTS (the trap it closes): studio-engine bundles ITSELF as a path
+    # gem, so its lock opens `PATH / remote: . / specs: / studio-engine (0.38.0)`
+    # and the name never appears in a `GEM` section at all. `locked_version` is
+    # deliberately GEM-only, so it answers nil for studio-engine in studio-engine
+    # — correct for its own question ("did the version we PUBLISHED land here?"),
+    # useless for this one ("did the version we just WROTE land here?"). Asserting
+    # the version-bump commit's lockfile through the GEM-only read would have
+    # looked like a working guard and asserted nothing.
+    def path_sections(lockfile_text)
+      lockfile_sections(lockfile_text, "PATH")
+    end
+
+    # The version `gem_name` resolves to in the lock's PATH sections, or nil.
+    # Same spec-row grammar as `locked_version` — see its notes on indent depth,
+    # platform suffixes, and why disagreeing rows return nil.
+    def path_locked_version(lockfile_text, gem_name)
+      spec_version(path_sections(lockfile_text), gem_name)
+    end
+
+    # Shared section walker. A lockfile's top-level blocks all start at column 0,
+    # so a header line opens a section and the next column-0 line closes it.
+    def lockfile_sections(lockfile_text, header)
+      inside = false
       lockfile_text.to_s.lines.each_with_object([]) do |line, kept|
         if line.match?(/^\S/)
-          in_gem = line.start_with?("GEM")
+          inside = line.start_with?(header)
           next
         end
-        kept << line if in_gem
+        kept << line if inside
       end.join
     end
 
@@ -316,7 +345,14 @@ class Release
     # version; if they ever disagree the lock is not something we should be
     # asserting against, so return nil and let the caller fail closed.
     def locked_version(lockfile_text, gem_name)
-      raws = gem_sections(lockfile_text)
+      spec_version(gem_sections(lockfile_text), gem_name)
+    end
+
+    # The spec-row read shared by `locked_version` (GEM) and `path_locked_version`
+    # (PATH): 4-space spec rows only, platform suffix stripped, nil unless every
+    # row agrees.
+    def spec_version(section_text, gem_name)
+      raws = section_text
              .scan(/^ {4}#{Regexp.escape(gem_name.to_s)} \(([^()]+)\)$/)
              .flatten
       # Plain Ruby only — bin/release requires this file with no Rails loaded,

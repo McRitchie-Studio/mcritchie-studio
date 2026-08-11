@@ -52,7 +52,7 @@ module LinkTreeHelper
         { label: "Theme", href: admin_theme_path, emoji: "🎨", hover_emoji: "🌓", desc: "Palette + dark mode" },
         { label: "Design System", href: admin_style_path, emoji: "🎨", hover_emoji: "🧩", desc: "Theme · Modals · Tricks · Tasks" },
         { label: "Schema", href: admin_schema_path, emoji: "🗂️", hover_emoji: "🔎", desc: "DB schema browser" },
-        { label: "Email images", href: admin_email_images_path, emoji: "🖼️", hover_emoji: "✉️", desc: "Manage transactional email banners" },
+        { label: "Emails", href: admin_emails_path, emoji: "✉️", hover_emoji: "🖼️", desc: "Transactional emails + their banners" },
       ] },
       { title: "Ops", links: [
         { label: "Error logs", href: "/error_logs", emoji: "🚨", hover_emoji: "🔍", desc: "Captured errors" },

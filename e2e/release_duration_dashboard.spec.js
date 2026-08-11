@@ -1,4 +1,5 @@
 const { test, expect } = require("@playwright/test");
+const { watchPageErrors } = require("./helpers");
 
 // Pagination fixture (the 26 rel-e2e-page-* shipped releases) lives in e2e/seed.rb
 // with every other spec's data. It USED to be seeded right here via a synchronous
@@ -6,9 +7,7 @@ const { test, expect } = require("@playwright/test");
 // 17-26s of it and starving the clicks below of retry headroom under load
 // (run 29707557195, shard 2). Never seed inside the test clock.
 test("deployments analytics card navigates to release history and detail", async ({ page }) => {
-  const pageErrors = [];
-  page.on("pageerror", (err) => pageErrors.push(String(err)));
-  page.on("console", (msg) => { if (msg.type() === "error") pageErrors.push(msg.text()); });
+  const { pageErrors, report } = watchPageErrors(page);
 
   await page.goto("/deployments");
 
@@ -52,5 +51,5 @@ test("deployments analytics card navigates to release history and detail", async
   await expect(page.getByRole("heading", { name: "Member Tasks" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Release Steps" })).toBeVisible();
 
-  expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
+  expect(pageErrors, report()).toHaveLength(0);
 });

@@ -762,20 +762,43 @@ and unit-tested), from metadata your task already carries:
 | any member with `kind: feature` | minor |
 | otherwise (`bug`, `chore`) | patch |
 
-`next = last published tag + max(bump across members)`.
+`next = last published + max(bump across members)`, where **last published** is the
+higher of the last `v*` tag and the highest version live on RubyGems — a tag that
+lags a publish can never re-tread a spent number.
 
-**`bin/release prepare` does NOT allocate it yet — the release conductor sets it by
-hand.** Wiring allocation into `prepare` would push a version onto `origin/release`
-BEFORE `validate_gems_for_qa`'s fail-closed preflight — mutate before validate — so
-that half was deliberately descoped (finding-d0621629719b). Until it lands: compute
-the number from the table, commit the `version_file` **directly onto the gem repo's
-`accepted`** (no gem rung is branch-protected, and the batch promote PR carries it to
-`release` without passing through a `dor-check`), then run `bin/release prepare`.
-Skip that step and the stranded-work guard aborts the sweep for **every** repo —
-loudly, with nothing published and nothing deployed.
+**`bin/release prepare` allocates it at step 4d — nobody sets it by hand**
+(finding-d0621629719b, now closed). Prepare derives the number from the table above,
+writes the `version_file` **with its `Gemfile.lock` in the same commit** onto
+`origin/release`, and does it before the publish. The lockfile is not optional:
+studio-engine bundles itself as a path gem, so its own lock names its own version,
+and CI installs frozen — a version commit without its lock fails `bundle install`
+before a single test runs.
+
+The "mutate before validate" concern that descoped this originally is answered by
+running allocation in two phases of its own: it DECIDES for every swept gem before
+WRITING to any of them, so a refusal anywhere leaves every release branch untouched.
+What it writes is a git commit (reversible); the irreversible `gem push` still
+happens only after `validate_gems_for_qa` has preflighted every gem.
+
+**It refuses rather than guesses.** An unreadable `--gem-bump`, an unparseable last
+version, a `version_file` declaring its version twice, or a `bundle lock` that did
+not land the new number each abort the sweep with nothing published — a refusal
+costs a re-run, a wrong allocation costs the RubyGems number forever. Allocation is
+idempotent, so a re-run skips a version already past the last published one. The
+stranded-work guard stays armed behind all of it as the backstop: if allocation is
+ever skipped or wrong, the sweep still aborts for **every** repo, loudly, with
+nothing published and nothing deployed.
+
+**The derived bump is a floor for routine work, not a judgment about public
+surface.** The table reads a task's `kind`; it cannot know that a `bug` also
+removed documented API. MEASURED, 2026-08-11: studio-engine 0.38.0 → 0.39.0 rode
+a `kind: bug` member that dropped `--studio-bars-h`, a documented public
+contract. The derived bump scores that a **patch** (0.38.1); the conductor
+correctly called it a **minor**. When a change touches public surface, say so —
+`--gem-bump minor`, or a `breaking` risk tag when it deserves a major.
 
 **Your only lever, and you rarely need it:** when the derived bump is wrong — most
-often a `chore` that is genuinely breaking —
+often a `chore` that is genuinely breaking, or a `bug` that removes public API —
 
 ```bash
 bin/task update <task-slug> --gem-bump major   # patch | minor | major

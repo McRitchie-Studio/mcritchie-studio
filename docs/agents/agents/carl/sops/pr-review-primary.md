@@ -143,9 +143,16 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
      --summary "..." --finding "..." --check "..." --dry-run
    ```
 
-   - **merge-ready** — no blockers; proceed to the merge (step 6).
+   - **merge-ready** — no blockers; proceed to the merge (step 6). Record this
+     **whenever your review found no blockers**, including when a CI lane is still
+     running — your verdict is about the diff, and step 6 has a path that merges it
+     for you once CI settles. It is also the ONLY outcome that can arm that path.
    - **request-changes** — a defect; block it back to the builder (step 6).
-   - **wait-for-ci** — CI flipped to pending mid-review; defer and re-query later.
+   - **wait-for-ci** — record this only when you are genuinely undecided pending
+     the CI result (a flaky lane you want to read yourself). If your review is
+     clean and you are only waiting on the clock, record **merge-ready** and arm
+     the merge in step 6 instead — an unarmed `wait-for-ci` is the outcome that
+     stranded seven correct verdicts on the night of 2026-08-10/11.
    - **conductor-review** — low confidence (the humility valve); route to a human.
 
 6. **Drive the verdict — you own this.**
@@ -169,6 +176,32 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
      [`../../../modules/zap-protocol.md`](../../../modules/zap-protocol.md)); the
      `--match-head-commit` pin refuses a head that advances again after you
      revalidate.
+
+   - **merge-ready but CI has NOT settled → ARM the merge and stop waiting.**
+     Do not idle on a running lane hoping to outlive it. Hand your already-made
+     decision to the board and end cleanly:
+
+     ```bash
+     bin/review-autopilot arm <task-slug> --agent carl   # --head <sha> if `gh` is unavailable
+     ```
+
+     The board pins the PR's current head, and merges into `accepted` + stamps
+     `merged: accepted` + moves the task `reviewed` — exactly the sequence above —
+     the moment CI concludes GREEN **for that exact tree**. Then it stops.
+
+     This does not review anything and cannot: arming is REFUSED unless your
+     `merge-ready` scout report from step 5 is already on the record, and every
+     guard fails closed. Red, pending, cancelled and **absent** check-runs all do
+     nothing (absence is the signature of a CONFLICTING PR, never a pass); a head
+     that moved off the pin is refused rather than merged, because your verdict
+     described a different tree; and an action nobody could execute inside its
+     window expires instead of running late. It also stands down entirely while a
+     live review claim is held — it is for the reviewer that is GONE, not a
+     second reviewer racing you.
+
+     Check or undo it any time — `bin/review-autopilot list`, `run <task>` (execute
+     now), `disarm <task>`. Then release your claim (step 7) and close out; the
+     merge lands without you.
 
    - **request-changes → block it back to the builder** (only for a reachable
      regression per step 4 — never for a finding you could zap or note):
@@ -194,6 +227,11 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
    bin/task review-claim release <task-slug>
    ```
 
+   **On an ARMED merge this release is load-bearing, not housekeeping.** The
+   autopilot stands down while a live review claim is held, so an armed merge
+   waits until your claim is released or its lease lapses. Release it and the
+   merge can land in seconds; forget, and it idles out the TTL first.
+
 8. **Close the activity with your verdict:**
 
    ```bash
@@ -205,9 +243,12 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
 
 ## Exit Seam
 
-Your scout report is recorded, the task is `reviewed` (merged into `accepted`) or
-`blocked`, the review claim is released, and your activity is closed with a
-verdict.
+Your scout report is recorded, the review claim is released, and your activity is
+closed with a verdict. The task is `reviewed` (merged into `accepted`), `blocked`,
+or **still `submitted` with its merge ARMED** — a recorded decision that lands on
+its own when CI concludes green for the head you pinned. Ending here is a clean
+exit, not an unfinished review: the point of arming is that nothing needs you
+awake to finish it.
 
 ## Related
 

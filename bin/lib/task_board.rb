@@ -30,7 +30,8 @@ module TaskBoard
   # `read_timeout: nil` leaves Net::HTTP's default (devops-cycle's posture).
   def request(method, path_or_uri, base_url: nil, token: nil, body: nil, read_timeout: 30)
     uri = path_or_uri.is_a?(URI::Generic) ? path_or_uri : URI.join(base_url, path_or_uri)
-    klass = { get: Net::HTTP::Get, post: Net::HTTP::Post, patch: Net::HTTP::Patch }.fetch(method)
+    klass = { get: Net::HTTP::Get, post: Net::HTTP::Post, patch: Net::HTTP::Patch,
+              delete: Net::HTTP::Delete }.fetch(method)
     req = klass.new(uri)
     req["Authorization"] = "Bearer #{token}" if token
     if body
