@@ -613,27 +613,27 @@ end
 # Returns [] for a non-gem repo (an app's version file, if it had one, is nobody's
 # publish input) and [] when the registry cannot be read — a gate that cannot read
 # its own config must not invent a refusal.
-# The repo's OWN changelog, at the ROOT — not "any file named CHANGELOG.md".
+# THE VERSION ONLY — the changelog is deliberately NOT here yet.
 #
-# Basename matching looked equivalent and was not: CI vendors dependencies into the
-# working tree, so `vendor/bundle/**/CHANGELOG.md` matched SIXTY-ODD third-party gem
-# changelogs and this gate refused unrelated PRs. It passed locally only because a
-# dev tree carries no vendor/bundle — an environment difference CI caught.
+# An earlier pass refused root `CHANGELOG.md` too, on the strength of a message
+# promising "the release assembles the changelog from its members". A reviewer
+# grepped for that assembler and there ISN'T ONE. The version has a working manual
+# path (the conductor commits it onto the gem's `accepted`, which the promote
+# carries) — the changelog would have had NO writer and NO documented manual path,
+# so the file becomes permanently un-editable through the cycle. Refusing an edit to
+# a file nothing else maintains is not ownership, it is a dead end.
 #
-# The exact-path comparison is the WHOLE fix, and deliberately the only one: a first
-# pass also excluded vendor/node_modules/tmp explicitly, but mutation testing showed
-# removing that exclusion changed nothing — an exact match already rejects every
-# nested path. An untested defense is worse than no defense, so it went.
-RELEASE_OWNED_CHANGELOG = "CHANGELOG.md"
-
+# The changelog half re-enters WITH its assembler, not before (finding-d0621629719b).
+#
+# Exact registered paths only. Basename matching looked equivalent and was not: CI
+# vendors dependencies into the tree, so `vendor/bundle/**/CHANGELOG.md` matched
+# sixty-odd third-party changelogs and refused unrelated PRs — it passed locally
+# because a dev tree has no vendor/bundle.
 def release_owned_gem_files(files)
   owned = gem_version_files
   return [] if owned.empty?
 
-  Array(files).select { |f|
-    path = f.to_s
-    owned.include?(path) || path == RELEASE_OWNED_CHANGELOG
-  }.uniq
+  Array(files).select { |f| owned.include?(f.to_s) }.uniq
 end
 
 # Every registered gem's `version_file`, from config/release_repos.yml.
@@ -1153,9 +1153,10 @@ end
 release_owned_edits = gate == "build" ? [] : release_owned_gem_files(changed_files)
 unless release_owned_edits.empty?
   puts "✗ #{gate_label} NOT met for #{(task["title"] || slug).inspect}"
-  puts "  - diff edits a RELEASE-OWNED gem file (#{release_owned_edits.join(', ')}) — the release computes the " \
-       "version and assembles the changelog from its members, so a PR that sets one either re-claims a published " \
-       "version (which hard-aborts the sweep for every repo) or collides with a sibling PR."
+  puts "  - diff edits a RELEASE-OWNED gem version file (#{release_owned_edits.join(', ')}) — a version belongs " \
+       "to the RELEASE, not to any one PR: N pull requests riding one candidate publish exactly ONE version, so a " \
+       "PR that sets one either re-claims a published version (which hard-aborts the sweep for every repo) or " \
+       "collides with a sibling PR. The release conductor sets it during the sweep."
   puts "  - drop the hunk: git checkout origin/#{ENV.fetch('DOR_BASE_BRANCH', 'accepted')} -- #{release_owned_edits.first}"
   puts "  - if this change is BREAKING, declare it instead of versioning it: " \
        "bin/task update #{task["slug"] || slug} --gem-bump major"
