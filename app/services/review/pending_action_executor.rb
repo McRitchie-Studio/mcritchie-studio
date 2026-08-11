@@ -13,25 +13,34 @@ module Review
   #   1. still pending            — a settled action never runs twice
   #   2. not expired              — a stale order is DROPPED, never executed late
   #   3. task still exists        — nothing to merge into otherwise
-  #   4. verdict still recorded   — a withdrawn decision stops authorising
-  #   5. task still `submitted`   — someone else already moved it
-  #   6. no LIVE reviewer         — if a reviewer is awake, it does its own merge
-  #   7. CI concluded GREEN       — red / pending / cancelled / ABSENT all do nothing
-  #   8. that green is FOR THE PIN— the CI we hold must describe the reviewed tree
-  #   9. live PR head == the pin  — the tree must still BE the reviewed tree
-  #  10. PR open and mergeable    — a CONFLICTING PR is refused, not merged
-  #  11. GitHub re-checks the pin — `sha:` on the merge API; 409 if it moved
+  #   4. verdict still recorded   — a WITHDRAWN decision stops authorising
+  #   5. verdict not superseded   — a REVISED decision stops authorising
+  #   6. destination is authorised— this action type merges to `accepted`, only
+  #   7. task still `submitted`   — someone else already moved it
+  #   8. no LIVE reviewer         — if a reviewer is awake, it does its own merge
+  #   9. CI concluded GREEN       — red / pending / cancelled / ABSENT all do nothing
+  #  10. that green is FOR THE PIN— the CI we hold must describe the reviewed tree
+  #  11. live PR head == the pin  — the tree must still BE the reviewed tree
+  #  12. PR open, based right, and mergeable — a CONFLICTING PR is refused
+  #  13. GitHub re-checks the pin — `sha:` on the merge API; 409 if it moved
   #
-  # Guards 7 and 8 are why "no checks reported" cannot slip through. A CONFLICTING
+  # Guards 9 and 10 are why "no checks reported" cannot slip through. A CONFLICTING
   # PR stops GitHub Actions firing ENTIRELY rather than going red, so its checks
   # read as absent; Ci::ReviewGate folds absent check-runs to :none, and :none is
-  # not :green. Guard 10 then names the real cause instead of letting it look like
+  # not :green. Guard 12 then names the real cause instead of letting it look like
   # a slow lane.
   #
-  # Guards 8, 9 and 11 are three independent readings of ONE rule — the verdict
+  # Guards 10, 11 and 13 are three independent readings of ONE rule — the verdict
   # described a specific tree. They can disagree (CI can lag a push; a push can
   # land between our read and our write), and the disagreement is the point: any
   # one of them dissenting stops the merge.
+  #
+  # Guard 5 is the MIRROR of that rule and belongs beside it: the tree pin exists
+  # because the TREE may have changed since the verdict; guard 5 exists because the
+  # VERDICT may have changed since the tree. Both are re-read HERE, at fire time,
+  # rather than enforced when the world changes — a guard in the executor cannot be
+  # bypassed by some future path that writes a scout report (or pushes a commit)
+  # without knowing an armed merge exists.
   class PendingActionExecutor
     # :executed — merged, stamped, and moved to `reviewed`
     # :waiting  — nothing is wrong yet; conditions are not met. Stays pending.
@@ -63,7 +72,7 @@ module Review
       # below: at forty concurrent tasks, forty jobs each pinning a Postgres
       # connection through a multi-second GitHub round trip would exhaust the
       # board's 20-connection pool. Correctness does not rest on this lock —
-      # GitHub's own `sha` pin (guard 11) makes a double merge impossible, and a
+      # GitHub's own `sha` pin (guard 13) makes a double merge impossible, and a
       # duplicate attempt reads the PR as already merged and settles as a no-op.
       claimed = @action.with_lock do
         next false unless @action.pending?
@@ -107,13 +116,38 @@ module Review
         )
       end
 
-      # 5. The order was given at the `submitted` seam. Anywhere else, someone has
+      # 5. NEVER EXECUTE A REVISED VERDICT. The report that authorised this merge
+      # must still be the task's STANDING decision. A reviewer who changed their
+      # mind records `request-changes`; they do not disarm the robot, and the
+      # autopilot must follow the decision rather than the moment it was armed.
+      superseding = action.superseding_scout_report
+      if superseding
+        return settle_refused(
+          "the recorded verdict was revised to " \
+          "#{ReviewPendingAction.scout_outcome(superseding).presence || "an unlabelled outcome"} by " \
+          "#{superseding.agent_slug.presence || "an agent"} at #{superseding.created_at.utc.iso8601} — " \
+          "the standing decision is no longer #{ReviewPendingAction::AUTHORISING_VERDICT}"
+        )
+      end
+
+      # 6. THE DESTINATION IS THE ACTION TYPE'S, NOT THE ROW'S. Re-read here and not
+      # left to the model validation because rows written BEFORE that validation
+      # existed are still in the table, and this is the executor's last chance to
+      # notice one. An armed merge's blast radius is `accepted` by construction.
+      unless action.base_branch_authorised?
+        return settle_refused(
+          "this action merges to #{action.base_branch.inspect}, but #{action.action} may only merge " \
+          "into #{action.required_base_branch}"
+        )
+      end
+
+      # 7. The order was given at the `submitted` seam. Anywhere else, someone has
       # already acted — merged it, blocked it, or sent it back.
       unless task.stage == AUTHORISED_FROM_STAGE
         return settle_refused("task is #{task.stage}, not #{AUTHORISED_FROM_STAGE} — already acted on")
       end
 
-      # 6. A LIVE reviewer does its own merging. This is the whole premise stated
+      # 8. A LIVE reviewer does its own merging. This is the whole premise stated
       # as a guard: the autopilot exists for the reviewer that is GONE. Waiting
       # (not refusing) is deliberate — when the lease lapses, the retry acts.
       claim = TaskReviewClaim.find_by(task_slug: task.slug)
@@ -129,7 +163,7 @@ module Review
       merge!(task, pr)
     end
 
-    # 7 + 8. CI must be concluded GREEN, and that green must describe THE PIN.
+    # 9 + 10. CI must be concluded GREEN, and that green must describe THE PIN.
     # Ci::ReviewGate is DB-native (ingested GithubWorkflowRun rows), so an unwired
     # repo reads :none forever and its actions expire unexecuted — the correct
     # fail-closed outcome, not a silent pass.
@@ -155,7 +189,7 @@ module Review
       client.get("/repos/#{action.repo_nwo}/pulls/#{action.pr_number}")
     end
 
-    # 9 + 10. The live PR must still be the tree the verdict described, and must
+    # 11 + 12. The live PR must still be the tree the verdict described, and must
     # still be mergeable.
     def gate_pull_request(pr)
       # Someone (a revived reviewer, a human) already merged it. Not a failure —
@@ -175,6 +209,9 @@ module Review
         )
       end
 
+      # The LIVE PR's base must equal the action's, and guard 6 has already fixed
+      # the action's to `accepted` — so the two together are what makes "an armed
+      # merge lands on accepted" a fact about the code rather than a convention.
       base_ref = pr.dig("base", "ref").to_s
       if base_ref != action.base_branch
         return settle_refused("PR base is #{base_ref}, not the authorised #{action.base_branch}")
@@ -195,10 +232,10 @@ module Review
       nil
     end
 
-    # 11. `sha:` is GitHub's own head pin — the API refuses with 409 if the head
+    # 13. `sha:` is GitHub's own head pin — the API refuses with 409 if the head
     # has moved since our read. It is the server-side twin of the merge SOP's
     # `gh pr merge --match-head-commit`, and it closes the last race: a push that
-    # lands between guard 9 and this call.
+    # lands between guard 11 and this call.
     def merge!(task, _pr)
       response = client.put_response(
         "/repos/#{action.repo_nwo}/pulls/#{action.pr_number}/merge",
@@ -226,6 +263,15 @@ module Review
     # error recorded — the merge is real, and re-running must not re-merge.
     def finish_merge(task, merge_sha)
       task.update!(merged: Task::MERGED_ACCEPTED)
+      # ATTRIBUTE THE MACHINE MOVE. This is the one stage transition in the pipeline
+      # that no human, CLI, or web form drives, so it was landing on the TaskEvent
+      # spine with a blank source and actor — the only anonymous row on the trail,
+      # on precisely the transition an audit of this feature asks about first.
+      # `autopilot` names the lane; the actor stays the reviewer whose recorded
+      # verdict authorised it, because the authority is theirs and only the
+      # execution is ours.
+      Current.task_event_source = TaskEvent::AUTOPILOT_SOURCE
+      Current.task_event_actor  = action.authorized_by.presence
       task.update!(stage: "reviewed")
       settle(:executed, ReviewPendingAction::EXECUTED,
              "merged #{action.head_sha[0, 7]} into #{action.base_branch} on the recorded " \

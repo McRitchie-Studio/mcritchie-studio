@@ -125,4 +125,93 @@ class ReviewPendingActionTest < ActiveSupport::TestCase
     verdict.destroy!
     assert_not action.verdict_recorded?, "a withdrawn decision must stop authorising"
   end
+
+  # ── ARMING FOLLOWS THE LATEST VERDICT ───────────────────────────────────────
+  # The rule is "the task's CURRENT decision is merge-ready", NOT "a merge-ready
+  # report exists somewhere in the history". Reading past a revision to find an
+  # outcome we like is the "never invent a verdict" rule broken from the far end.
+
+  ["request-changes", "wait-for-ci", "conductor-review"].each do |outcome|
+    test "arming is refused when a later #{outcome} report has revised the decision" do
+      record_verdict
+      record_verdict(outcome: outcome, agent: "avi")
+
+      error = assert_raises(ReviewPendingAction::Unauthorised) { arm }
+      assert_match(/latest scout report/, error.message)
+      assert_match(/#{outcome}/, error.message)
+      assert_equal 0, ReviewPendingAction.count, "a revised decision must arm nothing at all"
+    end
+  end
+
+  # The guard must not be over-broad. Two reviewers each record their own scout
+  # report on one PR; the light reviewer agreeing AFTER the primary is a
+  # re-affirmation, not a revision, and refusing it would break the normal path.
+  test "a later merge-ready report re-affirms rather than revises — arming still works" do
+    record_verdict
+    newest = record_verdict(agent: "avi")
+
+    action = arm
+    assert_equal newest.id, action.verdict_activity_id
+    assert_equal "avi", action.authorized_by
+  end
+
+  test "the refusal names the report that is actually standing" do
+    record_verdict
+    record_verdict(outcome: "request-changes", agent: "avi")
+
+    error = assert_raises(ReviewPendingAction::Unauthorised) { arm }
+    assert_match(/avi/, error.message, "an operator must learn WHOSE revision is in the way")
+  end
+
+  # ── THE DESTINATION IS THE ACTION TYPE'S, NOT THE CALLER'S ──────────────────
+  # `MERGE_TO_ACCEPTED` names its destination; before this the column was
+  # free-form, so the name was a label on data that could say anything. The whole
+  # argument for merging unattended is that the blast radius is `accepted`.
+
+  test "arming refuses a destination this action type may not merge into" do
+    record_verdict
+
+    error = assert_raises(ReviewPendingAction::Unauthorised) { arm(base_branch: "main") }
+    assert_match(/may only merge into accepted/, error.message)
+    assert_equal 0, ReviewPendingAction.count
+  end
+
+  test "arming with no base branch defaults to the action type's own destination" do
+    record_verdict
+    assert_equal "accepted", arm(base_branch: nil).base_branch
+  end
+
+  # The structural floor: arm! is the ONE creation path today, but the validation
+  # is what makes that true tomorrow — a console create! or a second caller cannot
+  # record a merge order pointing somewhere this action may not go.
+  test "the validation refuses a wrong destination on any writer, not just arm!" do
+    record_verdict
+    action = arm
+
+    action.base_branch = "main"
+    assert_not action.valid?
+    assert_match(/may only target accepted/, action.errors.full_messages.join(" "))
+
+    assert_raises(ActiveRecord::RecordInvalid) do
+      ReviewPendingAction.create!(
+        task_slug: SLUG, action: ReviewPendingAction::MERGE_TO_ACCEPTED, repo: REPO,
+        pr_number: 78, head_sha: "c" * 40, verdict: ReviewPendingAction::AUTHORISING_VERDICT,
+        base_branch: "main", state: ReviewPendingAction::PENDING, expires_at: 1.hour.from_now
+      )
+    end
+  end
+
+  # ── superseding_scout_report ────────────────────────────────────────────────
+
+  test "superseding_scout_report names a revision and stays quiet otherwise" do
+    record_verdict
+    action = arm
+    assert_nil action.superseding_scout_report, "an unrevised decision is not superseded"
+
+    record_verdict(agent: "avi")
+    assert_nil action.superseding_scout_report, "a second merge-ready is a re-affirmation"
+
+    revision = record_verdict(outcome: "request-changes", agent: "avi")
+    assert_equal revision.id, action.superseding_scout_report&.id
+  end
 end

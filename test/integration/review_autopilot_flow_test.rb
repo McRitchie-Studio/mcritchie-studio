@@ -140,6 +140,28 @@ class ReviewAutopilotFlowTest < ActionDispatch::IntegrationTest
     assert_nil @task.merged
   end
 
+  # THE SAME HOP, WITH THE REVIEWER HAVING CHANGED THEIR MIND. Nobody is awake,
+  # the webhook lands green on the pinned tree — and the merge must NOT happen,
+  # because the task's standing decision is now `request-changes`. The untouchable
+  # client is the assertion that matters: not a count of merge calls, but a GitHub
+  # that fails the test if the executor so much as reads it.
+  test "the hop refuses when the verdict was REVISED after arming" do
+    action = arm!
+    record_verdict(outcome: "request-changes")
+
+    untouchable_github(why: "a decision the reviewer had already revised") do
+      perform_enqueued_jobs do
+        deliver_workflow_run(sha: PINNED, conclusion: "success")
+      end
+    end
+
+    assert_equal ReviewPendingAction::REFUSED, action.reload.state
+    assert_match(/revised to request-changes/, action.outcome_reason)
+    @task.reload
+    assert_equal "submitted", @task.stage
+    assert_nil @task.merged
+  end
+
   # ── the arm endpoint ────────────────────────────────────────────────────────
 
   test "the API refuses to arm without a recorded merge-ready verdict" do
@@ -147,6 +169,35 @@ class ReviewAutopilotFlowTest < ActionDispatch::IntegrationTest
          params: { head_sha: PINNED }, headers: auth_headers
     assert_response :unprocessable_entity
     assert_match(/no recorded merge-ready scout report/, JSON.parse(response.body)["error"])
+    assert_equal 0, ReviewPendingAction.count
+  end
+
+  # Two refusals that need DIFFERENT fixes, so they must not share a message: "no
+  # verdict recorded" is answered by recording one; "the verdict was revised" is
+  # answered by re-reviewing. Telling an operator the first when the second is true
+  # sends them to write a verdict that already exists.
+  test "the API refuses to arm when the standing verdict has been revised" do
+    record_verdict
+    record_verdict(outcome: "request-changes")
+
+    post "/api/v1/tasks/#{SLUG}/review_pending_action",
+         params: { head_sha: PINNED }, headers: auth_headers
+
+    assert_response :unprocessable_entity
+    error = JSON.parse(response.body)["error"]
+    assert_match(/latest scout report/, error)
+    assert_match(/request-changes/, error)
+    assert_equal 0, ReviewPendingAction.count
+  end
+
+  test "the API refuses to arm a merge pointed at a branch it may not touch" do
+    record_verdict
+
+    post "/api/v1/tasks/#{SLUG}/review_pending_action",
+         params: { head_sha: PINNED, base_branch: "main" }, headers: auth_headers
+
+    assert_response :unprocessable_entity
+    assert_match(/may only merge into accepted/, JSON.parse(response.body)["error"])
     assert_equal 0, ReviewPendingAction.count
   end
 
@@ -203,12 +254,13 @@ class ReviewAutopilotFlowTest < ActionDispatch::IntegrationTest
 
   # A GitHub that fails the test if it is touched at all. The strongest way to
   # assert "this never reached GitHub": not a count of calls, but a client that
-  # cannot be called.
-  def untouchable_github(&block)
+  # cannot be called. `why` names the refusal under test so a failure reads as the
+  # guard that leaked rather than a generic "GitHub was called".
+  def untouchable_github(why: "a lane that is not green", &block)
     test_case = self
     forbidden = Class.new do
-      define_method(:get) { |*| test_case.flunk("the executor read GitHub for a lane that is not green") }
-      define_method(:put_response) { |*, **| test_case.flunk("the executor tried to MERGE a lane that is not green") }
+      define_method(:get) { |*| test_case.flunk("the executor read GitHub for #{why}") }
+      define_method(:put_response) { |*, **| test_case.flunk("the executor tried to MERGE #{why}") }
     end.new
 
     Github::Client.stub(:new, forbidden, &block)
