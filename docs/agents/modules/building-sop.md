@@ -137,9 +137,15 @@ It walks the five legs the WAITING APPROVAL button walks and asserts each one
 before running the next: the board CTA → the local mint → the confirm page →
 the consume POST → the landing. Exit `0` means the button lands Mr. McRitchie
 **on the page under review**, signed in. Add `--json` for a machine-readable
-verdict; `--board http://localhost:<port>` to check against a local board
-instead of production. It mints its own fresh token, so running it does **not**
-burn anything you are about to hand over.
+verdict. It mints its own fresh token, so running it does **not** burn anything
+you are about to hand over.
+
+It reads the CTA from the **production** board by default, and that is
+deliberate: the task record lives there, not in your worktree's database. Point
+the check at `http://localhost:<port>` (via `--board`) and it dead-ends on a
+task that stack has never heard of. Use `--local-url <url>` instead when the
+task is not on the board yet — that skips the CTA leg and says so, and a skipped
+leg is not a passed one.
 
 Run it, and read the verdict. A green run is the evidence; do not mark a task
 waiting-for-approval without one.
