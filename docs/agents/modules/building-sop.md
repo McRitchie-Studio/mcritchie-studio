@@ -127,47 +127,61 @@ bin/task update <slug> \
 Flagging waiting-approval only counts once a **live candidate** actually answers
 at that URL — do not mark it waiting against a stack that is not up.
 
-**Verify the whole HOP, not the page.** A plain `curl /admin/<page>` returning
-`302` proves only that the logged-out gate works — it is **not** evidence the
-button lands. Walk what the CTA actually does (mint → confirm → POST consume →
-follow) and assert the final `url_effective` **is the review path** and answered
-`200`:
+**Verify the whole HOP, not the page** — with one command, from the hub:
 
 ```bash
-JAR=$(mktemp)
-MINT=$(curl -s -c $JAR -b $JAR -o /dev/null -w '%{redirect_url}' \
-  "http://localhost:<port>/_studio/local_review?email=alex%40mcritchie.studio&return_to=%2F<path>")
-TOK=$(curl -s -c $JAR -b $JAR "$MINT" | ruby -e 'print $stdin.read[/name="authenticity_token"[^>]*value="([^"]+)"/,1]')
-NEXT=$(curl -s -c $JAR -b $JAR -o /dev/null -w '%{redirect_url}' -X POST "$MINT" --data-urlencode "authenticity_token=$TOK")
-curl -s -c $JAR -b $JAR -L -o /dev/null -w '%{url_effective} %{http_code}\n' "$NEXT"
+bin/verify-review-hop <slug>
 ```
 
-Mint for an address that is an **admin in THIS app**. The identity list differs
-per repo — the hub's `User::PARKED_IDENTITIES` are all `@mcritchie.studio`, but
-turf-monster carries some of those same people at `role: "user"`, and other
-satellites define no such constant at all. Reading the hub's list as universal
-sends you to a non-admin and reproduces the very failure this step exists to
-catch. Any non-admin address signs in fine and lands on a page that is perfectly
-healthy, which is the quiet failure below.
+It walks the five legs the WAITING APPROVAL button walks and asserts each one
+before running the next: the board CTA → the local mint → the confirm page →
+the consume POST → the landing. Exit `0` means the button lands Mr. McRitchie
+**on the page under review**, signed in. Add `--json` for a machine-readable
+verdict; `--board http://localhost:<port>` to check against a local board
+instead of production. It mints its own fresh token, so running it does **not**
+burn anything you are about to hand over.
 
-**Above studio-engine 0.36.0 you usually pass no address at all.** The board CTA
-is public and sends none: the engine resolves the reviewer itself —
-`params[:email]`, else `Studio.local_review_email`, else the seeded admin
-(`Studio::LocalReviewsController`). Pinning `?email=` in this recipe short-
-circuits that chain, so you would verify a URL shape the operator never actually
-receives. Drop the parameter to exercise the real path.
+Run it, and read the verdict. A green run is the evidence; do not mark a task
+waiting-for-approval without one.
 
-Landing on `/` means the sign-in **succeeded** and the account is not an admin —
-the quiet failure, not a broken link. Follow the POST by hand as above; do not
-fold it into one `curl -L -X POST`, because the forced method replays across the
-redirect and 404s on the review path, which looks like a different bug. (`curl`
-is the fallback; drive the real browser when you have one.)
+Why a command and not a curl recipe you retype: **every leg fails
+success-shaped**, so the two checks reflex reaches for — "did it `302`?" and
+"did it end `200`?" — are both blind. Measured against a live stack:
+
+| What is actually broken | What a status-only check sees |
+|---|---|
+| `local_url` blank, a QA host, or the wrong port | CTA `302` (back to the task page), then `200` |
+| The desk resolves no reviewer at all | mint `302` → `/login`, run ends `/signin 200` |
+| Reviewer signed in but not an admin | consume `302`, landing `/` **`200`** |
+
+The first row is the leg that historically broke, and it is the one a recipe
+starting at the local mint never touches. `bin/verify-review-hop` starts at the
+CTA (`GET /tasks/<slug>/local_review` — **underscore**; the hyphen spelling is a
+404) and reads the redirect *destination*, which is the only thing that
+separates these from a working hop.
+
+Two rules the command encodes, worth knowing when you read its output:
+
+- **No `?email=`.** The live CTA sends none — it is a public URL, so an address
+  there would be published. The desk names its own reviewer:
+  `params[:email]`, else `Studio.local_review_email`, else the first admin by id
+  (`Studio::LocalReviewsController`). Pinning an email short-circuits that chain
+  at priority 1 and verifies a URL the operator never receives, as a user the
+  button would never pick.
+- **You no longer pick an admin address.** studio-engine ≥ 0.36.0 find-or-creates
+  the reviewer at `Studio.local_review_role` (default `admin`) *before* minting,
+  and promotes an existing non-admin, so no identity list applies — in any repo.
+  But provisioning is **best-effort**: it rescues, logs a warning, and mints
+  anyway, so a host with an extra `User` validation still lands on `/`. That is
+  why the landing assertion, not the engine version, is the gate.
+
+(The command is the check; drive the real browser too when you have one.)
 
 What this buys you on the board: a `--local-url` + `--approval waiting` task
 floats to the top of its stage, pulses, and grows a card-width **WAITING
 APPROVAL** CTA. That CTA is a **mint-on-click magic link** — each click mints a
 FRESH single-use `Studio::Link` to the local page and lands Mr. McRitchie
-signed-in on it (`GET /tasks/:slug/local-review`). Minted per click on purpose: a
+signed-in on it (`GET /tasks/:slug/local_review`). Minted per click on purpose: a
 single-use link is burned on first consume, so a fixed embedded one would go
 stale. The plain `local_url` rides along as the card's `data-local-url` fallback.
 
@@ -187,6 +201,11 @@ Mint the `Magic Link:` yourself so it lands on the page under review:
 bin/rails runner 'l = Studio::Link.create_magic_link(email: "alex@mcritchie.studio",
   return_to: "/<path>", ttl: 12.hours); puts "http://localhost:#{ENV.fetch("PORT")}/l/#{l.token}"'
 ```
+
+**Never click the link you are about to hand over.** This one is a fixed
+single-use token — consuming it to "check that it works" burns it, and Mr.
+McRitchie receives a dead link. `bin/verify-review-hop` is the check, and it is
+safe precisely because the CTA mints a fresh token per click.
 
 For email/auth flows, also return `Local Inbox:
 http://localhost:<port>/_studio/local_emails` (worktree stacks default to
