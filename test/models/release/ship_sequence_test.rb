@@ -1269,6 +1269,49 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
     assert_nil S.locked_version(git_lock, "studio-engine")
   end
 
+  # --- path_locked_version: the SELF-BUNDLING read ------------------------------
+  #
+  # A gem that bundles ITSELF (studio-engine: `PATH / remote: .`) carries its own
+  # version in its OWN lockfile and NEVER appears in a GEM section there. That is
+  # why the version-allocation commit cannot assert its lockfile through
+  # locked_version — it answers nil for the gem it is asking about, so the
+  # assertion would pass vacuously and ship a version whose lock contradicts it
+  # (fatal under CI's frozen `bundler-cache: true` install).
+  SELF_BUNDLED_LOCK = <<~LOCK.freeze
+    PATH
+      remote: .
+      specs:
+        studio-engine (0.38.0)
+          rails (>= 7.2)
+
+    GEM
+      remote: https://rubygems.org/
+      specs:
+        rails (7.2.1)
+
+    DEPENDENCIES
+      studio-engine!
+  LOCK
+
+  test "path_locked_version reads the self-bundled spec locked_version cannot see" do
+    assert_nil S.locked_version(SELF_BUNDLED_LOCK, "studio-engine"),
+               "the GEM-only read is blind here — that blindness is what path_locked_version exists for"
+    assert_equal "0.38.0", S.path_locked_version(SELF_BUNDLED_LOCK, "studio-engine")
+  end
+
+  test "path_locked_version reads only PATH sections" do
+    assert_nil S.path_locked_version(SELF_BUNDLED_LOCK, "rails"),
+               "a RubyGems-sourced gem must not answer the path read"
+    assert_nil S.path_locked_version("", "studio-engine")
+  end
+
+  # The two reads are complements, and the allocation guard tries both so it also
+  # covers a gem that does NOT self-bundle.
+  test "path_locked_version and locked_version never both answer for one gem" do
+    assert_nil S.path_locked_version(LOCKFILE, "studio-engine")
+    assert_equal "0.30.0", S.locked_version(LOCKFILE, "studio-engine")
+  end
+
   test "gem_sections keeps only GEM bodies" do
     kept = S.gem_sections(PATH_SOURCED_LOCK)
     assert_includes kept, "rails (7.2.1)"

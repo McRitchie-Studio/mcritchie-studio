@@ -455,12 +455,16 @@ Gems and apps are handled differently at both ends of the Deploy workflow:
   gate is exempt, and `CHANGELOG.md` is deliberately **not** refused. The bump is
   derived from the candidate's membership — `breaking` risk tag → major, else a
   `feature` member → minor, else patch — by `Release::GemVersion`
-  (`app/models/release/gem_version.rb`), pure and unit-tested. **That module has
-  no caller yet: `bin/release prepare` does NOT allocate the version**
-  (finding-d0621629719b). Today the release conductor computes the number and
-  commits the `version_file` straight onto the gem repo's `accepted`, which the
-  batch promote carries to `release`; `member_plan` then *reads* it for the
-  publish + the board's `💎 gem` badge. Per-task override:
+  (`app/models/release/gem_version.rb`), pure and unit-tested. **`bin/release
+  prepare` allocates it at step 4d**: it derives the number from the membership,
+  writes the `version_file` **with its `Gemfile.lock`** in one commit onto
+  `origin/release`, and does that BEFORE the publish. The conductor sets no
+  version by hand on the happy path (finding-d0621629719b, now closed);
+  `member_plan` then *reads* it for the publish + the board's `💎 gem` badge.
+  Allocation refuses rather than guesses — an unreadable `--gem-bump`, an
+  unparseable last version, or a lockfile that did not move aborts the sweep with
+  nothing published — and the stranded-work guard stays armed behind it as the
+  backstop for the times allocation is skipped or wrong. Per-task override:
   `bin/task update <task-slug> --gem-bump major`. See
   `docs/agents/modules/deployment.md` → "Releasing a gem (producer-first)" for
   the operator runbook.

@@ -4,10 +4,11 @@
 
 This is Avi's `qa-release` SOP. It is the self-healing release prepare sweep:
 detect reviewed work and release stragglers, promote `accepted → release` via ONE
-batch PR per repo (review already merged each feat PR onto `accepted`), publish
-gem members + bump consumer locks (producer-first, before anything tests or
-deploys), run the pre-QA gate, deploy QA, and flip members to `assembled` only on
-QA-green. `qa-deploy` is the legacy name for this same act.
+batch PR per repo (review already merged each feat PR onto `accepted`), allocate
+each gem member's version + publish it + bump consumer locks (producer-first,
+before anything tests or deploys), run the pre-QA gate, deploy QA, and flip
+members to `assembled` only on QA-green. `qa-deploy` is the legacy name for this
+same act.
 
 ## Scope
 
@@ -188,8 +189,25 @@ bin/release prepare --yes
    **Do not `reset` `release` to "clean up" an aborted sweep** — the batch
    `accepted → release` merges, any earlier repo's merge-forward, and (on a
    resumed sweep) a prior run's gem publish have already landed.
-4d. **Publish gem members + bump consumer locks — BEFORE the gate and QA**
-   (producer-first, in two phases — a RubyGems push can never be re-pushed).
+4d. **Allocate gem versions, publish gem members, bump consumer locks — BEFORE
+   the gate and QA** (producer-first — a RubyGems push can never be re-pushed).
+
+   **Phase 0 ALLOCATES the version, so you never type one.** For each swept gem
+   prepare derives the bump from the candidate's membership (`breaking` risk tag
+   → major, else a `feature` member → minor, else patch; a member's `gem_bump`
+   overrides), advances the **last published** version — the higher of the last
+   `v*` tag and the highest version live on RubyGems — and commits the
+   `version_file` **together with its `Gemfile.lock`** onto `origin/release`.
+   The lockfile rides in the same commit because studio-engine bundles itself as
+   a path gem and CI installs frozen: a version commit without its lock fails
+   `bundle install` before a single test runs. Phase 0 decides for EVERY gem
+   before writing to ANY of them, and it **refuses rather than guesses** — an
+   unreadable `gem_bump`, an unparseable last version, a `version_file`
+   declaring its version twice, or a `bundle lock` that did not land the number
+   all abort with nothing written and nothing published (see the GEM VERSION
+   ALLOCATION REFUSED row below). It is idempotent: a version already past the
+   last published one is left alone, so re-runs never burn a second number.
+
    Phase 1 **preflights EVERY swept gem before the first push**: a fail-closed
    fetch of `origin/release` (a stale ref must never drive an irreversible
    decision), the `version_file` parses, the **stranded-work guard** —
@@ -197,11 +215,10 @@ bin/release prepare --yes
    NOT advance past that tag (compared with `Gem::Version` semantics, so
    **equal, backward, and unparseable versions all block**; a backward version
    would otherwise "skip as already live" and rewrite consumers DOWNWARD into a
-   production downgrade with every gate green). **You** fix it, as the
-   conductor: commit the advanced `version_file` directly onto the gem repo's
-   `accepted` and re-run `prepare` — never through a feature PR, which
-   `bin/dor-check` refuses (see the STRANDED GEM WORK row in the abort table
-   below for the number to write). Plus a consumer-coverage check —
+   production downgrade with every gate green). Phase 0 normally leaves this
+   guard nothing to catch — it stays armed as the **backstop** for allocation
+   being skipped or wrong, and if it fires, see the STRANDED GEM WORK row in the
+   abort table below. Plus a consumer-coverage check —
    **unless the gem is self-gated** (gem-only-deployments): a gem carrying a
    `release_check` in `config/release_repos.yml` (studio-engine) is its OWN
    release candidate — its suite is the verdict and the RubyGems publish is its
@@ -340,7 +357,8 @@ must not reflexively re-run. Each abort names its own case and its own fix:
 
 | Abort | Fix FIRST | Then |
 |---|---|---|
-| **STRANDED GEM WORK** (gem `origin/release` ahead of its last `v*` tag, version not advanced past it — unbumped, BACKWARD, or unparseable) | **You set the version, by hand — not a PR.** `bin/dor-check` refuses any PR that edits a registered `version_file`, so there is no builder to bounce this to. Compute `next = <the tag the abort names> + bump`, where bump is **major** if any member of this candidate is risk-tagged `breaking`, else **minor** if any member has `kind: feature`, else **patch** (a member's `gem_bump` overrides). Then commit it straight onto the gem repo's `accepted` — no gem rung is branch-protected, and the batch promote PR carries it to `release` without a `dor-check`:<br>`cd /Users/alex/projects/<gem-repo> && git checkout accepted && git pull`<br>edit the `version_file` (`lib/studio/version.rb` for studio-engine, `solana-studio.gemspec` for solana-studio)<br>`git commit -am "Release <next>" && git push origin accepted`<br>A **backward** version — the abort says `DOWNGRADE` — means a version conflict was resolved the wrong way on a merge into `release`; fix the version file forward, don't force it through | re-run `prepare`; nothing was published or deployed |
+| **GEM VERSION ALLOCATION REFUSED** (step 4d phase 0 — "REFUSING to allocate a version") | **Do not set a version by hand to route around this.** The refusal names its own cause and each has a one-line fix: an unreadable override → `bin/task update <task> --gem-bump patch\|minor\|major` (or clear it); an unparseable last published version → fix the gem's `v*` tag or its `version_file` by hand; a `version_file` declaring its version twice → make it declare one; `bundle lock` failed or left the lock on the old version → fix the bundle in the gem repo (a stale resolution is usually RubyGems propagation — wait, as in the CONSUMER LOCK BUMP row below). Nothing was written to any release branch, so there is nothing to undo | re-run `prepare`; allocation resumes |
+| **STRANDED GEM WORK** (gem `origin/release` ahead of its last `v*` tag, version not advanced past it — unbumped, BACKWARD, or unparseable) | **Rare now — step 4d allocates the version, so reaching this guard means allocation did not run or was wrong.** Check the run's phase-0 output first: if it *refused*, fix that (row above) rather than the version. If you must set the number yourself, compute `next = <the tag the abort names> + bump`, where bump is **major** if any member of this candidate is risk-tagged `breaking`, else **minor** if any member has `kind: feature`, else **patch** (a member's `gem_bump` overrides). Commit it straight onto the gem repo's `accepted` — not a PR, which `bin/dor-check` refuses; no gem rung is branch-protected, and the batch promote carries it to `release`:<br>`cd /Users/alex/projects/<gem-repo> && git checkout accepted && git pull`<br>edit the `version_file` (`lib/studio/version.rb` for studio-engine, `solana-studio.gemspec` for solana-studio)<br>`bundle lock` **← REQUIRED when the repo tracks a `Gemfile.lock`**: studio-engine bundles itself as a path gem, so its lock names its own version and CI installs frozen — a version commit without its lock fails `bundle install` before running a test, and it is invisible locally because a plain `bundle install` regenerates it<br>`git commit -am "Release <next>" && git push origin accepted`<br>A **backward** version — the abort says `DOWNGRADE` — means a version conflict was resolved the wrong way on a merge into `release`; fix the version file forward, don't force it through | re-run `prepare`; nothing was published or deployed |
 | **Pre-QA gate red — a member REGRESSION** | `bin/release eject <task> --feedback "<failing evidence>"`, then revert its merge commit on `release` (the abort prints the guidance) — as the eject step above says | re-run `prepare`; the rest of the RC rides |
 | **Pre-QA gate red — ENV/toolchain** (unsatisfied bundle, Postgres down, Ruby divergence) | **Nothing to eject or revert.** Fix the environment exactly as the abort names it | re-run `prepare` |
 | **QA deploy / boot FAILED** | Fix the boot failure (the summary prints the `bin/qa-server deploy …` retry); eject the member if it is the cause | re-run `prepare` **once QA boots** |

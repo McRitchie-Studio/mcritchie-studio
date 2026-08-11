@@ -228,20 +228,24 @@ How a gem rides a release:
    know the answer. The **release** owns the number (step 2). Editing
    `CHANGELOG.md` is *not* refused. Otherwise it is reviewed → `reviewed` like
    any other task.
-2. **The release conductor sets the version — by hand, today.** The bump is
+2. **`bin/release prepare` allocates the version — you do not.** The bump is
    derived from the candidate's membership: any member risk-tagged `breaking` →
    major, else any `kind: feature` → minor, else patch; `next = last published
-   tag + that bump`. `Release::GemVersion`
-   (`app/models/release/gem_version.rb`) encodes those rules and is unit-tested,
-   but **nothing calls it yet** — `bin/release prepare` does not allocate the
-   version (finding-d0621629719b). So until that lands the conductor computes
-   the number and commits the `version_file` **directly onto the gem repo's
-   `accepted`** (no gem rung is branch-protected, and the batch promote PR
-   carries it to `release` without passing a `dor-check`), then runs
-   `bin/release prepare`. Skip this and the stranded-work guard aborts the sweep
-   for **every** repo. When the derived bump is wrong — most often a `chore`
-   that is genuinely breaking — the override is
-   `bin/task update <task-slug> --gem-bump major`.
+   version + that bump`, where "last published" is the higher of the last `v*`
+   tag and the highest version live on RubyGems (so a lagging tag can never
+   re-tread a spent number). `Release::GemVersion`
+   (`app/models/release/gem_version.rb`) encodes those rules, and prepare's step
+   4d calls it, writes the `version_file` **together with its `Gemfile.lock`** in
+   one commit onto `origin/release`, and does it BEFORE the publish
+   (finding-d0621629719b, now closed). There is nothing for you to run.
+   Allocation is idempotent — a re-run reads a version already past the last
+   published one and skips — and it **refuses rather than guesses**: an
+   unreadable `--gem-bump`, an unparseable last version, a `version_file` that
+   declares its version twice, or a `bundle lock` that did not land the new
+   number all abort the sweep with **nothing published**. The stranded-work guard
+   stays armed behind it, so a skipped or wrong allocation still aborts loudly.
+   When the derived bump is wrong — most often a `chore` that is genuinely
+   breaking — the override is `bin/task update <task-slug> --gem-bump major`.
 3. **Prepare preflights EVERY swept gem, then publishes — before the gate and
    QA.** `bin/release prepare` adds the gem to the release record without
    merging a branch for it (it has none here), then runs the two-phase
