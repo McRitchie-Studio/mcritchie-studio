@@ -25,7 +25,10 @@
 class TaskEvent < ApplicationRecord
   # How the event arrived. Free-form (not validated) so a new caller can never
   # make a real stage change fail by recording an unrecognized source.
-  SOURCES = %w[cli api web conductor system].freeze
+  # `autopilot` is the armed-merge executor (Review::PendingActionExecutor) —
+  # the one lane with no human, CLI, or form behind the transition.
+  AUTOPILOT_SOURCE = "autopilot"
+  SOURCES = %w[cli api web conductor system].push(AUTOPILOT_SOURCE).freeze
 
   # The two kinds of row on the spine (see class doc). Existing rows are all
   # transitions (the column default backfills them).
