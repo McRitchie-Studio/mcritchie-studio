@@ -613,6 +613,17 @@ end
 # Returns [] for a non-gem repo (an app's version file, if it had one, is nobody's
 # publish input) and [] when the registry cannot be read — a gate that cannot read
 # its own config must not invent a refusal.
+# The repo's OWN changelog, at the ROOT — not "any file named CHANGELOG.md".
+#
+# Basename matching looked equivalent and was not: CI vendors dependencies into the
+# working tree, so `vendor/bundle/**/CHANGELOG.md` matched SIXTY-ODD third-party gem
+# changelogs and this gate refused unrelated PRs. It passed locally only because a
+# dev tree carries no vendor/bundle — an environment difference CI caught.
+#
+# The exact-path comparison is the WHOLE fix, and deliberately the only one: a first
+# pass also excluded vendor/node_modules/tmp explicitly, but mutation testing showed
+# removing that exclusion changed nothing — an exact match already rejects every
+# nested path. An untested defense is worse than no defense, so it went.
 RELEASE_OWNED_CHANGELOG = "CHANGELOG.md"
 
 def release_owned_gem_files(files)
@@ -621,7 +632,7 @@ def release_owned_gem_files(files)
 
   Array(files).select { |f|
     path = f.to_s
-    owned.include?(path) || File.basename(path) == RELEASE_OWNED_CHANGELOG
+    owned.include?(path) || path == RELEASE_OWNED_CHANGELOG
   }.uniq
 end
 

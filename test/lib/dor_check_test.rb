@@ -171,6 +171,37 @@ class DorCheckTest < Minitest::Test
 
   # The gate must not fire on ordinary code — an advisory that cries wolf gets
   # ignored, and this one blocks.
+
+  # CI VENDORS DEPENDENCIES INTO THE TREE, and the first version of this gate matched
+  # CHANGELOG.md by BASENAME — so it fired on sixty-odd third-party gem changelogs
+  # under vendor/bundle and refused unrelated PRs. It passed locally because a dev
+  # tree has no vendor/bundle; only CI had the shape that broke it. Pin both halves:
+  # a vendored path is never ours, and only the ROOT changelog is release-owned.
+  def test_integration_vendored_changelogs_do_not_trip_the_version_gate
+    devops = { "kind" => "chore", "shape" => "library", "repositories" => ["studio-engine"],
+               "acceptance" => ["Something is done well here"], "test_plan" => ["[unit] x"],
+               "checks_run" => ["[unit] x"], "pr_url" => "https://github.com/McRitchie-Studio/studio-engine/pull/1" }
+    vendored = "vendor/bundle/ruby/3.3.0/gems/actioncable-8.1.3/CHANGELOG.md\n" \
+               "vendor/bundle/ruby/3.3.0/gems/studio-engine-0.32.1/CHANGELOG.md\n" \
+               "node_modules/foo/CHANGELOG.md\napp/models/thing.rb"
+
+    out, = with_changed_files(vendored) { check(devops) }
+    refute_match(/RELEASE-OWNED/, out, "a vendored dependency's changelog is not ours to own")
+  end
+
+  def test_integration_only_the_root_changelog_is_release_owned
+    devops = { "kind" => "chore", "shape" => "library", "repositories" => ["studio-engine"],
+               "acceptance" => ["Something is done well here"], "test_plan" => ["[unit] x"],
+               "checks_run" => ["[unit] x"], "pr_url" => "https://github.com/McRitchie-Studio/studio-engine/pull/1" }
+
+    out, = with_changed_files("docs/notes/CHANGELOG.md") { check(devops) }
+    refute_match(/RELEASE-OWNED/, out, "a nested changelog is not the repo's release changelog")
+
+    out, status = with_changed_files("CHANGELOG.md") { check(devops) }
+    refute_equal 0, status, "…but the ROOT changelog still refuses"
+    assert_match(/RELEASE-OWNED/, out)
+  end
+
   def test_integration_ordinary_diff_is_untouched_by_the_version_gate
     devops = { "kind" => "chore", "shape" => "library", "repositories" => ["studio-engine"],
                "acceptance" => ["Something is done well here"], "test_plan" => ["[unit] x"],
