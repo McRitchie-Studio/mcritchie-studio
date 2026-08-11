@@ -156,7 +156,7 @@ module Api
         true
       end
 
-      # Drain an optional `event` payload into Current so Task#record_stage_event
+      # Drain an optional `event` payload into Current so Task#write_stage_event
       # can annotate the transition it's about to write with the agent-reported,
       # per-transition usage. The deterministic from/to/duration spine is recorded
       # regardless; this only adds model/tokens/cost when the caller supplies them.
@@ -186,11 +186,12 @@ module Api
       # (default) or "cli" (bin/task). It must NEVER claim an OPERATOR source
       # (Task::OPERATOR_APPROVAL_GRANT_SOURCES, e.g. "web") via the request body —
       # "web" is stamped only server-side by the admin-gated TasksController#update,
-      # behind require_admin. Without this clamp a bearer PATCH carrying
-      # {"event":{"source":"web"},"devops":{"approval_status":"approved"}} would
-      # FORGE operator attribution and self-approve, since Task's approval guard
-      # trusts Current.task_event_source. Clamp a forged operator source back to
-      # "api" so the operator lane is derived from the AUTHENTICATED channel, not
+      # behind require_admin. This is ATTRIBUTION, not authorization: the source
+      # rides onto every TaskEvent the write records (Task#write_stage_event and
+      # #record_intent_event both read Current.task_event_source), so a PATCH carrying
+      # {"event":{"source":"web"}} would otherwise write agent activity into the
+      # trail wearing the operator's name. Clamp a caller-supplied operator source
+      # back to "api" so the lane is derived from the AUTHENTICATED channel, not
       # from caller-supplied data. Legitimate agent sources pass through.
       def sanitized_task_event_source(event)
         source = (event && event[:source].presence) || "api"

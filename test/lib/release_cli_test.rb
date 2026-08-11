@@ -575,7 +575,7 @@ class ReleaseCliTest < Minitest::Test
   # NOT expressible here — this stub REPLACES bundle_lock, so simulating the
   # failure would only assert the double. That case is driven against the live
   # implementation by stubbing `sh` instead; see
-  # test_bundle_lock_retries_a_stale_resolution_then_aborts_naming_the_api.
+  # test_bundle_lock_retries_a_stale_resolution_then_aborts_naming_the_compact_index.
   def gem_publish_stub(version: "1.0.0", live: [], lock_dirty: true)
     GATE_GIT_STUB +
       %(ENV["RELEASE_CI_STATUS"] = "green"\n) +
@@ -738,7 +738,7 @@ class ReleaseCliTest < Minitest::Test
   # bundle_lock wholesale, so an abort in this test would come from the stub, not
   # the code — it would assert the double. The real refusal and its retry ladder
   # are driven against the live implementation in
-  # test_bundle_lock_retries_a_stale_resolution_then_aborts_naming_the_api.)
+  # test_bundle_lock_retries_a_stale_resolution_then_aborts_naming_the_compact_index.)
   def test_prepare_passes_the_published_version_to_bundle_lock_as_expect
     out = run_cli(["--yes"], call: "prepare",
                   setup: gem_publish_stub(version: "1.0.0", live: ["1.0.0"], lock_dirty: false))
@@ -764,7 +764,7 @@ class ReleaseCliTest < Minitest::Test
   # NON-ZERO exit, and this bug's signature is exit 0 with the old version still
   # resolved. Aborting on first observation would turn an ordinary, self-curing
   # index delay into a manual stop moments after an IRREVERSIBLE gem push.
-  def test_bundle_lock_retries_a_stale_resolution_then_aborts_naming_the_api
+  def test_bundle_lock_retries_a_stale_resolution_then_aborts_naming_the_compact_index
     Dir.mktmpdir do |dir|
       File.write(File.join(dir, "Gemfile.lock"), <<~LOCK)
         GEM
@@ -792,15 +792,19 @@ class ReleaseCliTest < Minitest::Test
       assert_includes out, "ABORTED", "and it aborts once the ladder is exhausted"
       refute_includes out, "NO-ABORT"
 
-      # Review finding (2): point at the surface the code READS. already_live comes
-      # from rubygems_versions → the versions JSON API; the HTML gem page does not
-      # propagate in lockstep with it, and an operator who waits on the page while
-      # the API is stale re-enters the publish branch, gets `gem push` refused, and
-      # is then advised to bump the version — burning a number for nothing.
-      assert_includes out, "https://rubygems.org/api/v1/versions/studio-engine.json",
-                      "the abort names the JSON API this run actually reads"
+      # Point at the surface BUNDLER reads. What failed is `bundle lock`, and
+      # bundler resolves through the COMPACT INDEX. The versions JSON API (what
+      # rubygems_versions reads, for publish idempotency only) and the HTML gem
+      # page are separate services with their own CDN caching, so a version
+      # visible on either is not proof bundler can resolve it — and an operator
+      # who waits on one re-enters the publish branch, gets `gem push` refused as
+      # already-live, and is then advised to bump — burning a number for nothing.
+      assert_includes out, "https://index.rubygems.org/info/studio-engine",
+                      "the abort names the compact index bundler resolves through"
+      refute_includes out, "https://rubygems.org/api/v1/versions/studio-engine.json",
+                       "never send the operator to the versions JSON API — bundler does not read it"
       refute_includes out, "https://rubygems.org/gems/studio-engine",
-                       "never send the operator to the HTML page — it lags the API"
+                       "never send the operator to the HTML gem page either"
     end
   end
 

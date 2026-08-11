@@ -149,14 +149,15 @@ module Api
         assert_includes task.devops_checks_run, "[unit] bin/rails test test/models"
       end
 
-      # --- Operator approval lane (regression: a builder PATCHed
-      # approval_status=approved right after submitting — self-approving its own
-      # demo). Approving belongs to the admin-gated board UI; API bearer writes
-      # may only request approval. ---
+      # --- Operator approval (2026-08-09): the bearer API records the grant. The
+      # operator approves in words on a live preview and the agent that heard him
+      # writes it down, so the board stops pulsing WAITING on a question he already
+      # answered. `bin/task update <task> --approval approved` is exactly this
+      # PATCH — the end-to-end path the removal had to reopen. ---
 
-      test "[integration] api update cannot self-approve operator approval" do
+      test "[integration] api update can record operator approval" do
         task = Task.create!(
-          title: "Approval Api Guard",
+          title: "Approval Api Grant",
           stage: "building", # a waiting request only lives pre-seam (the settle invariant)
           metadata: { "devops" => { "approval_status" => "waiting" } }
         )
@@ -166,12 +167,11 @@ module Api
               headers: @headers,
               as: :json
 
-        assert_response :unprocessable_entity
-        body = JSON.parse(response.body)
-        assert_match(/operator/i, body["error"])
+        assert_response :success
         task.reload
-        assert_equal "waiting", task.approval_status
-        assert_nil task.devops["approval_approved_at"]
+        assert_equal "approved", task.approval_status
+        assert task.devops["approval_approved_at"].present?,
+               "the server-side approval stamp must still land on a bearer grant"
       end
 
       test "[integration] api update keeps approval waiting writable" do
@@ -212,53 +212,27 @@ module Api
         assert_equal "https://github.com/x/y/pull/2", task.devops["pr_url"]
       end
 
-      # Rework regression (Carl primary request-changes): the bearer API sets
-      # Current.task_event_source from the request body, so a forged
-      # event.source="web" would let an agent claim the operator lane and
-      # self-approve in one PATCH. The controller now clamps a forged operator
-      # source back to "api", so the model guard still rejects the flip.
-      test "[integration] api bearer cannot forge operator source to self-approve" do
-        task = Task.create!(
-          title: "Approval Source Forge",
-          stage: "building", # a waiting request only lives pre-seam (the settle invariant)
-          metadata: { "devops" => { "approval_status" => "waiting" } }
-        )
+      # The source clamp OUTLIVED the approval guard it was built beside. It is now
+      # purely about attribution: the source rides onto the TaskEvent spine, so a
+      # bearer PATCH claiming event.source="web" would file agent activity under the
+      # operator's name. The clamp normalizes it back to "api". Asserted on a stage
+      # move, since that is the write that records a transition event.
+      test "[integration] api bearer cannot forge an operator source onto its events" do
+        task = Task.create!(title: "Approval Source Forge", stage: "designed")
 
         patch api_v1_task_path(task.slug),
-              params: { event: { source: "web" }, devops: { approval_status: "approved" } },
+              params: { event: { source: "web" }, stage: "building" },
               headers: @headers,
               as: :json
 
-        assert_response :unprocessable_entity
-        assert_match(/operator/i, JSON.parse(response.body)["error"])
-        task.reload
-        assert_equal "waiting", task.approval_status
-        assert_nil task.devops["approval_approved_at"]
+        assert_response :success
+        assert_equal "building", task.reload.stage
+        event = task.task_events.order(:occurred_at).last
+        assert_equal "api", event.source, "a forged operator source must clamp back to the agent lane"
       end
 
-      # Second bypass vector: approval_approved_at is an agent-writable devops
-      # scalar and TestingPhases#acceptance_phase trusts it, so stamping it
-      # directly would close the acceptance phase without ever touching
-      # approval_status. A forged operator source must not enable that either.
-      test "[integration] api bearer cannot stamp approval timestamp to close acceptance" do
-        task = Task.create!(
-          title: "Approval Timestamp Forge",
-          stage: "building", # a waiting request only lives pre-seam (the settle invariant)
-          metadata: { "devops" => { "approval_status" => "waiting" } }
-        )
-
-        patch api_v1_task_path(task.slug),
-              params: { event: { source: "web" }, devops: { approval_approved_at: Time.current.iso8601 } },
-              headers: @headers,
-              as: :json
-
-        assert_response :unprocessable_entity
-        assert_match(/operator/i, JSON.parse(response.body)["error"])
-        assert_nil task.reload.devops["approval_approved_at"]
-      end
-
-      # The clamp targets ONLY the operator claim — a forged source with a benign
-      # agent-writable status must still succeed (source normalized to "api").
+      # The clamp rewrites only the source label — a forged source must not otherwise
+      # change the outcome of the write.
       test "[integration] forged operator source still allows waiting request" do
         task = Task.create!(
           title: "Approval Forge Waiting",

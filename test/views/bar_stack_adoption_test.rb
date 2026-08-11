@@ -3,8 +3,8 @@
 require "test_helper"
 
 # [component] The hub renders the engine's bar STACK as its header's sibling
-# (studio-engine >= 0.33), and offsets the header by the height the stack
-# publishes.
+# (studio-engine >= 0.33), and offsets the header by var(--studio-bars-h, 0px) —
+# the height the stack publishes when it publishes one, and 0px when it does not.
 #
 # The stack's own behaviour is the engine's to test, and is tested there. What
 # only this repo can assert is the adoption seam: that the banner is no longer
@@ -57,12 +57,11 @@ class BarStackAdoptionTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_includes response.body, "studio-bar-stack"
-    # The PUBLICATION, not the reference. The header's own style attribute puts
-    # "--studio-bars-h" in every response unconditionally, so matching the bare
-    # name passes even when the stack renders nothing at all.
-    assert_includes response.body, ":root{--studio-bars-h:",
-                    "the stack must publish the height on :root, not merely be referenced"
-
+    # Deliberately silent on whether the page publishes --studio-bars-h on :root.
+    # Engine 0.37.0 publishes it; the next engine line drops it, because painting
+    # the header at a server estimate and then moving it when the measurement
+    # landed was the defect. This seam has to pass on BOTH lines, so it asserts
+    # neither. Once the pin clears 0.37.0, assert the absence here.
     header = css_select("header.vt-pinned-header").first
     assert_not_nil header
     # The property, not one spelling of it: re-adding top-0 further along the class

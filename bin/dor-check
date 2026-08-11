@@ -1142,11 +1142,16 @@ end
 # stranded-work guard's exact trigger, which hard-aborts the sweep for EVERY repo.
 # The obvious remedy for the first collided with the second.
 #
-# `bin/release prepare` now allocates the version from the candidate's membership
-# (Release::GemVersion) and commits it before publish. This gate is what makes that
-# safe: it turns "don't guess a version" from a discipline every builder must
-# remember into a rule they cannot break — the requirement was, verbatim, "I don't
-# want my builder to get caught up in version control hell."
+# Where the version DOES come from: `Release::GemVersion` derives the bump from the
+# candidate's membership (breaking → major, feature → minor, else patch). NOTE it has
+# NO production caller yet — `bin/release prepare` does NOT allocate the version
+# (finding-d0621629719b); wiring it in would push a version onto origin/release BEFORE
+# validate_gems_for_qa's fail-closed preflight. Until that lands the release conductor
+# computes the number and commits the version_file directly onto the gem repo's
+# `accepted`, which the batch promote carries to `release` without passing a dor-check.
+# This gate is what makes that safe: it turns "don't guess a version" from a discipline
+# every builder must remember into a rule they cannot break — the requirement was,
+# verbatim, "I don't want my builder to get caught up in version control hell."
 #
 # REFUSES rather than warns: a version hunk that reaches `accepted` is the thing that
 # wedges a release, and it is trivially removable at this point.
