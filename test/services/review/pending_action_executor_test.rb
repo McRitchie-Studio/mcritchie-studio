@@ -379,6 +379,39 @@ class Review::PendingActionExecutorTest < ActiveSupport::TestCase
                  "a transient blip must not burn an authorised merge"
   end
 
+  # THE CREDENTIAL-ROT PATH — the one that fires at 3am with nobody watching.
+  # Github::AppToken.resolve DEGRADES rather than raising: with no App creds and no
+  # fallback it returns nil, the request goes out unauthenticated, and GitHub
+  # answers 401. "Cannot authenticate" must land exactly where "red CI" lands — no
+  # merge — rather than escaping as an unhandled crash from the component whose
+  # whole job is to act unattended.
+  test "REFUSES to merge when GitHub authentication fails — a rotten credential is not a green light" do
+    ingest_ci
+    action = arm
+    unauthorized = Object.new
+    def unauthorized.get(*)
+      raise(Github::Client::HttpError, %(GitHub API HTTP 401: {"message":"Bad credentials"}))
+    end
+    def unauthorized.put_response(*, **) = raise("the executor tried to MERGE without valid credentials")
+
+    assert_difference -> { ErrorLog.count }, 1 do
+      result = Review::PendingActionExecutor.call(action, client: unauthorized)
+      assert_equal :error, result.status
+      assert_match(/401/, result.reason)
+    end
+
+    assert_equal ReviewPendingAction::PENDING, action.reload.state,
+                 "an auth failure must leave the order standing, not burn or execute it"
+    @task.reload
+    assert_equal "submitted", @task.stage
+    assert_nil @task.merged
+  end
+
+  # The token resolver itself must never be the thing that raises into a caller.
+  test "AppToken degrades to nil rather than raising when no credential can be obtained" do
+    assert_nil Github::AppToken.new(app_id: nil, private_key_pem: nil, fallback_token: nil).resolve
+  end
+
   test "a re-arm supersedes the live action rather than stacking a second merge order" do
     first = arm(head_sha: PINNED)
     second = arm(head_sha: MOVED)

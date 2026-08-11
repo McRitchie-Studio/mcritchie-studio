@@ -214,14 +214,18 @@ class ReviewAutopilotFlowTest < ActionDispatch::IntegrationTest
     Github::Client.stub(:new, forbidden, &block)
   end
 
+  # Mint the bearer DIRECTLY, exactly as every other api/v1 test does. The first
+  # cut of this helper POSTed to /api/v1/auth with
+  # `ENV.fetch("AGENT_API_SECRET", "test-agent-secret")` — which passed locally
+  # only because this machine carries the real secret, and raised
+  # `KeyError: key not found: "token"` on CI, where the fallback secret is refused
+  # and the 401 body has no token. A test must not read its credentials from the
+  # operator's environment; see docs/agents/modules/testing.md.
   def auth_headers
     { "Authorization" => "Bearer #{api_token}" }
   end
 
   def api_token
-    @api_token ||= begin
-      post "/api/v1/auth", params: { secret: ENV.fetch("AGENT_API_SECRET", "test-agent-secret") }
-      JSON.parse(response.body).fetch("token")
-    end
+    @api_token ||= Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth)
   end
 end

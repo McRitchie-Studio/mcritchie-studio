@@ -68,7 +68,12 @@ def token
     res = TaskBoard.request(:post, "/api/v1/auth", base_url: BASE_URL, body: { secret: secret })
     die("auth failed -> HTTP #{res.code}") unless res.is_a?(Net::HTTPSuccess)
 
-    TaskBoard.parse_body(res).fetch("token")
+    # Never `fetch` a key out of a response body: a 200 whose shape surprises us
+    # must die with something a human can act on, not a bare KeyError.
+    value = TaskBoard.parse_body(res)["token"]
+    die("auth succeeded but returned no token") if value.to_s.empty?
+
+    value
   end
 end
 
