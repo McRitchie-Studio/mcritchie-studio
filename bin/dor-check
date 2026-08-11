@@ -1143,12 +1143,13 @@ end
 # The obvious remedy for the first collided with the second.
 #
 # Where the version DOES come from: `Release::GemVersion` derives the bump from the
-# candidate's membership (breaking → major, feature → minor, else patch). NOTE it has
-# NO production caller yet — `bin/release prepare` does NOT allocate the version
-# (finding-d0621629719b); wiring it in would push a version onto origin/release BEFORE
-# validate_gems_for_qa's fail-closed preflight. Until that lands the release conductor
-# computes the number and commits the version_file directly onto the gem repo's
-# `accepted`, which the batch promote carries to `release` without passing a dor-check.
+# candidate's membership (breaking → major, feature → minor, else patch), and
+# `bin/release prepare` ALLOCATES it at step 4d — writing the version_file and its
+# Gemfile.lock onto origin/release in one commit, before the publish. (It was
+# unwired when this gate shipped, so the conductor set the number by hand;
+# finding-d0621629719b recorded that gap and it is now closed.) The conductor no
+# longer touches a version_file on the happy path, and the stranded-work guard
+# stays armed behind allocation as the backstop.
 # This gate is what makes that safe: it turns "don't guess a version" from a discipline
 # every builder must remember into a rule they cannot break — the requirement was,
 # verbatim, "I don't want my builder to get caught up in version control hell."

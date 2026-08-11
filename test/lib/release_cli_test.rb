@@ -576,8 +576,15 @@ class ReleaseCliTest < Minitest::Test
   # failure would only assert the double. That case is driven against the live
   # implementation by stubbing `sh` instead; see
   # test_bundle_lock_retries_a_stale_resolution_then_aborts_naming_the_compact_index.
-  def gem_publish_stub(version: "1.0.0", live: [], lock_dirty: true)
+  # `allocate: false` stubs step 4d's PHASE 0 (`allocate_gem_versions!`) to a
+  # no-op. Prepare normally allocates each swept gem's version before phase 1
+  # reads it, which means the stranded-work guard has nothing left to catch on
+  # the happy path — so the two guard tests below drive the state the guard
+  # actually exists for: allocation skipped, refused, or wrong. Allocation's own
+  # behaviour is driven against REAL git in test/lib/release_gem_allocation_test.rb.
+  def gem_publish_stub(version: "1.0.0", live: [], lock_dirty: true, allocate: true)
     GATE_GIT_STUB +
+      (allocate ? "" : %(def allocate_gem_versions!(_groups) = nil\n)) +
       %(ENV["RELEASE_CI_STATUS"] = "green"\n) +
       %(def repo_path(_repo) = #{self.class.stub_repo.inspect}\n) +
       %(def gem_version_from_ref(_repo, _ref) = #{version.inspect}\n) +
@@ -703,8 +710,14 @@ class ReleaseCliTest < Minitest::Test
   # [integration] The STRANDED-WORK guard: origin/release ahead of the last
   # published tag with an UNBUMPED version_file must BLOCK loudly BEFORE anything
   # publishes or deploys — the silent publish-skip that stranded engine commits.
-  def test_prepare_blocks_loudly_on_stranded_gem_work
-    out = run_cli(["--yes"], setup: gem_publish_stub(version: "0.10.0"),
+  #
+  # THE GUARD IS NOW A BACKSTOP, and this drives it as one. Step 4d's phase 0
+  # allocates the version, so on the happy path prepare fixes this state before
+  # the guard ever sees it — which is exactly why the guard must keep firing when
+  # allocation does NOT happen (skipped, refused, or wrong). `allocate: false`
+  # models that, and the guard has to behave precisely as it always did.
+  def test_prepare_blocks_loudly_on_stranded_gem_work_when_allocation_did_not_run
+    out = run_cli(["--yes"], setup: gem_publish_stub(version: "0.10.0", allocate: false),
                   call: %{begin; prepare; puts("NO-ABORT"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
 
     assert_includes out, "ABORTED", "stranded gem work must abort prepare, never silently skip"
@@ -1002,8 +1015,15 @@ class ReleaseCliTest < Minitest::Test
   # rewritten DOWNWARD to `~> 0.9` and committed to origin/release. Now it must
   # abort in phase 1: zero publishes, and — the assertion that matters most —
   # NO downward pin rewrite ever reaches a commit.
+  #
+  # Driven with allocation OFF (`allocate: false`) for the same reason as the
+  # stranded test above: phase 0 now allocates forward over this backward version
+  # (0.10.1 for these inputs — the last tag v0.10.0 plus the patch an untyped
+  # member earns) before phase 1 reads it, so the DOWNGRADE branch is reachable
+  # only when allocation did not run. It must still fail closed there.
   def test_prepare_backward_gem_version_aborts_and_never_downgrades_a_consumer
-    out = run_cli(["--yes"], setup: gem_publish_stub(version: "0.9.0", live: [{ "number" => "0.9.0" }]),
+    out = run_cli(["--yes"], setup: gem_publish_stub(version: "0.9.0", live: [{ "number" => "0.9.0" }],
+                                                    allocate: false),
                   call: %{begin; prepare; puts("NO-ABORT"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
 
     assert_includes out, "ABORTED", "a backward version must BLOCK, never publish or skip"
