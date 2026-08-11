@@ -479,10 +479,112 @@ class Review::PendingActionExecutorTest < ActiveSupport::TestCase
     assert_equal :executed, first.status
 
     second, github = run_executor(action.reload)
-    assert_equal :refused, second.status
+    # NOT :refused. `:refused` means "this run SETTLED the action refused"; a run
+    # that wrote nothing must not report the same status as one that did, on the
+    # very record an incident review reads to find out what the machine decided.
+    assert_equal :already_settled, second.status
     assert_equal 0, github.merge_calls
     assert_equal ReviewPendingAction::EXECUTED, action.reload.state,
                  "the re-run must not overwrite the real outcome with its own bookkeeping"
+  end
+
+  # ── TWO EXECUTIONS OF ONE ARMED MERGE ───────────────────────────────────────
+  #
+  # The claim lock is released before the GitHub round trip ON PURPOSE (holding it
+  # would pin one Postgres connection per in-flight merge against a 20-connection
+  # pool), so TWO jobs can both pass `pending?` and both reach the settle. That is
+  # the whole premise of this section: neither test below is the sequential
+  # "second run finds it settled" case above — in both, the second execution has
+  # ALREADY CLAIMED a pending row before the first one writes.
+  #
+  # The merge was never the risk: GitHub's `sha` pin makes a double merge
+  # impossible. The ACCOUNTING was. These assert the record.
+  #
+  # MUTATION PROOF: drop `.where(state: PENDING)` from ReviewPendingAction#settle!
+  # and both tests fail — the row ends up naming the loser's outcome.
+
+  test "[unit] both executions claim, the MERGER loses the settle, and its real sha still lands" do
+    ingest_ci
+    action = arm
+
+    # The sibling is a SECOND, INDEPENDENT execution of the same row, run at the
+    # exact moment the merge is in flight. The row is still pending, so it claims
+    # legitimately; it reads a PR GitHub already reports as merged but with no
+    # merge_commit_sha yet, and that is the SHORTER path — no PUT — so it reaches
+    # the settle first and records a truthful `executed` that names no sha.
+    sibling_action = ReviewPendingAction.find(action.id)
+    sibling_client = FakeGithub.new(pr: open_pr(state: "closed", merged: true, mergeable: nil))
+    sibling_result = nil
+
+    merger = FakeGithub.new(pr: open_pr, merge_body: { "sha" => "realmergesha000" })
+    merger.define_singleton_method(:put_response) do |path, body: nil|
+      sibling_result = Review::PendingActionExecutor.call(sibling_action, client: sibling_client)
+      super(path, body: body)
+    end
+
+    result, = run_executor(action, github: merger)
+
+    assert_equal :executed, sibling_result.status, "the sibling settled first, on a pending row"
+    assert_equal :already_settled, result.status, "the merger must not overwrite the settled row"
+    assert_match(/supplied the missing merge sha/, result.reason)
+    assert_match(/would have written executed/, result.reason)
+
+    action.reload
+    assert_equal ReviewPendingAction::EXECUTED, action.state
+    assert_equal "realmergesha000", action.merge_sha,
+                 "the sha of the merge that actually happened is the one fact the row must not lose"
+    assert_equal 2, action.attempts, "a double execution is COUNTED, never silently swallowed"
+  end
+
+  test "[unit] a claimed sibling that refuses LATE writes nothing over an EXECUTED row" do
+    ingest_ci
+    action = arm
+
+    # This executor claims a pending row, then the world moves under it: the other
+    # job merges, stamps, and settles while this one is still reading GitHub. Its
+    # own reading is then a refusal ("head moved") — and that opinion must never
+    # become the record of a merge that happened.
+    real_sha = "realmergesha000"
+    winner_row = ReviewPendingAction.find(action.id)
+    winning_task = @task
+
+    late = FakeGithub.new(pr: open_pr(sha: MOVED))
+    late.define_singleton_method(:get) do |path|
+      # What the OTHER job's finish_merge does, landing while this one is mid-read.
+      winner_row.settle!(state: ReviewPendingAction::EXECUTED,
+                         reason: "merged a1b2c3d into accepted on the recorded merge-ready verdict by carl",
+                         merge_sha: real_sha)
+      winning_task.update!(merged: "accepted", stage: "reviewed")
+      super(path)
+    end
+
+    result, = run_executor(action, github: late)
+
+    assert_equal :already_settled, result.status
+    assert_match(/already settled executed by a concurrent execution/, result.reason)
+    assert_match(/would have written refused: head moved/, result.reason,
+                 "the discarded opinion is RECORDED in the log line, just never in the row")
+
+    action.reload
+    assert_equal ReviewPendingAction::EXECUTED, action.state,
+                 "a merge that happened must never read as refused"
+    assert_equal real_sha, action.merge_sha, "a recorded merge sha is never nulled by a retry"
+    assert_equal "reviewed", @task.reload.stage
+  end
+
+  # THE ANTI-TRAP. The guard must not trap its own subject — the prior art is the
+  # blanket base_branch validation that also rejected the executor's own settle!,
+  # so the one row it existed to catch could never settle and retried as pending
+  # forever. A FIRST attempt on a genuinely pending row must still settle.
+  test "[unit] a genuinely pending row still settles REFUSED on its first attempt" do
+    ingest_ci
+    action = arm
+    result, = run_executor(action, github: FakeGithub.new(pr: open_pr(sha: MOVED)))
+
+    assert_equal :refused, result.status, "a first refusal WRITES — it is not a lost race"
+    assert_equal ReviewPendingAction::REFUSED, action.reload.state
+    assert_match(/head moved/, action.outcome_reason)
+    refute action.pending?, "a refused action must never be left pending to retry forever"
   end
 
   test "a PR already merged by someone else settles as executed without merging again" do

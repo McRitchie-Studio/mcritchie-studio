@@ -99,11 +99,19 @@ module Api
         action = live_action
         return render_error("no armed merge for #{params[:slug]}", status: :not_found) unless action
 
+        # `settle!` is conditional, so this is a real race and not a formality: the
+        # autopilot can settle the action between the lookup above and this write.
+        # A disarm that reported success over a merge that already happened would
+        # be the same lie as the one the executor guards against, handed straight
+        # to an operator — so report what actually stands.
+        disarmed = false
         rescue_and_log(target: action) do
-          action.settle!(state: ReviewPendingAction::DISARMED,
-                         reason: disarm_reason)
+          disarmed = action.settle!(state: ReviewPendingAction::DISARMED,
+                                    reason: disarm_reason)
         end
-        render_data(action_json(action))
+        render_data(action_json(action).merge(
+                      "result" => disarmed ? "disarmed" : "already_#{action.state}"
+                    ))
       end
 
       private
