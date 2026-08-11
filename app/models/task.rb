@@ -193,7 +193,7 @@ class Task < ApplicationRecord
   DEVOPS_KEYS = (DEVOPS_SCALAR_KEYS + DEVOPS_LIST_KEYS).freeze
   # The change shape selects its DoR test contract. Keep in sync with
   # config/feature_shapes.yml (the source of truth that bin/dor-check reads).
-  SHAPES = %w[ui-only ui+db backend library onchain onchain-vertical docs].freeze
+  SHAPES = %w[ui-only ui+db backend library onchain onchain-vertical docs test-only].freeze
 
   # Board rank read-model (studio-engine board primitive). Supplies `reposition!`
   # (the shared reorder write, driven by Studio::Board::Reorderable in the

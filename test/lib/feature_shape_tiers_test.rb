@@ -306,6 +306,45 @@ class FeatureShapeTiersTest < Minitest::Test
   end
   # ====================================================================================
 
+  # ==== A ZERO-TIER SHAPE MUST CHOOSE ITS SUITE GATE ON PURPOSE =======================
+  # The near-miss this pins, found 2026-08-11 while adding `test-only`. bin/dor-check
+  # used to decide whether to demand FULL-suite + rubocop evidence by asking
+  # `!dor_tiers.empty?`. That was right for the only zero-tier shape that existed —
+  # `docs` ships prose, there is no suite to certify — and it silently welded two
+  # unrelated questions together: "which tiers do you owe" and "must your code be
+  # certified at all".
+  #
+  # `test-only` is the shape that breaks the weld. It has NO tiers (a diff with no
+  # behavior has nothing for a tier to be evidence of) and it ships EXECUTABLE CODE.
+  # Under the inference it would have inherited a full-suite exemption nobody chose,
+  # invisible in the diff, on the change most able to break the suite quietly — a
+  # zero-tier shape with no executed evidence of any kind, which is precisely the
+  # "shape every under-tested change claims" this taxonomy must never grow.
+  #
+  # So the key is explicit and DEFAULTS TO TRUE (fail-closed), and a shape with no
+  # tiers has to say which it is. The assertion is deliberately about the SHAPES
+  # THAT COULD INHERIT THE BUG — not a hardcoded list of today's two — so the next
+  # zero-tier shape is caught the day it is written.
+  def test_integration_a_shape_with_no_tiers_declares_its_full_suite_gate
+    shapes = YAML.safe_load(File.read(FEATURE_SHAPES)).fetch("shapes")
+    tierless = shapes.reject { |_name, shape| Array(shape["dor_tiers"]).any? }
+
+    refute_empty tierless,
+                 "no zero-tier shape exists any more — if that is deliberate, delete this guard; do NOT " \
+                 "delete the principle that a suite exemption is chosen, never inherited."
+
+    tierless.each do |name, shape|
+      assert shape.key?("full_suite_gate"),
+             "shape #{name.inspect} demands NO tiers and does not declare `full_suite_gate`. " \
+             "bin/dor-check defaults it to TRUE, so nothing is broken right now — but the choice would " \
+             "be invisible, and it used to be INFERRED from the empty tier list, which is how a shape " \
+             "that ships executable code could inherit a full-suite exemption nobody picked. Declare it: " \
+             "`full_suite_gate: false` if this shape ships no code to certify (see `docs`), `true` if it " \
+             "does (see `test-only`)."
+    end
+  end
+  # ====================================================================================
+
   def test_integration_no_shape_demands_a_structurally_unrunnable_tier
     # Defense in depth behind the primary guard, and a louder error for the specific case
     # we KNOW recurs: a tier that cannot be a lane at all. The primary guard would catch

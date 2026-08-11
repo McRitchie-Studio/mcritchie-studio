@@ -48,7 +48,14 @@ bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> \
   `--agent-context "…"` (free-form, agent-to-agent).
 - **Classify the shape** — it selects the tests you must write
   (`config/feature_shapes.yml`): `ui-only` · `ui+db` · `backend` · `library` ·
-  `onchain` · `onchain-vertical`.
+  `onchain` · `onchain-vertical` · `docs` · `test-only`.
+- **`test-only`** is for a change whose entire content is test code — a deleted
+  assertion, a fixed flake, a new diagnostic. It has no tiers because there is no
+  behavior for a tier to be evidence of, but it is **not** the easy option: it is
+  claimable only on a diff `bin/dor-check` OBSERVES to be 100% `test/`, `tests/`
+  or `e2e/` (one non-test file and the claim is refused), it still owes the
+  full-suite cert, and it owes a `[control]` line in `checks_run` naming a file
+  from the diff — the evidence that the changed test **still bites**.
 
 `begin` prints the **worktree path, port, and task URL**. Announce the task line
 every session — `<app-slug> · <feature-slug> · <task URL>` — so the active

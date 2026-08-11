@@ -62,7 +62,10 @@ way, do **not** start editing files until you have:
    **Each `--accept` bullet = 5-12 words.** Put any verbose detail/reasoning in
    `--agent-context "…"` (free-form, for agent-to-agent communication). Classify
    the **shape** (it selects the tests you must write, per `config/feature_shapes.yml`):
-   `ui-only` · `ui+db` · `backend` · `library` · `onchain` · `onchain-vertical`.
+   `ui-only` · `ui+db` · `backend` · `library` · `onchain` · `onchain-vertical` ·
+   `docs` · `test-only`. The last two carry no tiers; `test-only` is claimable
+   ONLY on a diff dor-check observes to be 100% test code, and still owes the
+   full-suite cert plus a `[control]` line naming a file in the diff.
 2. **Allocated an isolated worktree** — `bin/agent-worktree new <app> <task>` —
    and worked there on an allocated port. Never edit a primary checkout.
 
