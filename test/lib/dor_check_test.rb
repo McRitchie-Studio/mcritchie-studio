@@ -138,6 +138,88 @@ class DorCheckTest < Minitest::Test
   # root stayed pinned to the hub, the gate would fingerprint the hub tree — a false
   # certification. With no DOR_CHECK_DIFF_ROOT override the root must follow cwd.
 
+
+  # --- the release owns the gem version ---------------------------------------
+  # A version is a property of the RELEASE, not of any PR: N PRs riding one candidate
+  # publish ONE version, so no PR can know the answer when it is written. Measured
+  # 2026-08-10 — four open engine PRs each chose independently, one re-claiming an
+  # ALREADY-PUBLISHED version, which hard-aborts the sweep for every repo. This gate
+  # is what makes "the builder never touches a version file" a rule rather than a
+  # discipline. It REFUSES, because the hunk is trivially removable at this point.
+
+  def test_integration_refuses_a_pr_that_edits_the_gem_version_file
+    devops = { "kind" => "chore", "shape" => "library", "repositories" => ["studio-engine"],
+               "acceptance" => ["Something is done well here"], "test_plan" => ["[unit] x"],
+               "checks_run" => ["[unit] x"], "pr_url" => "https://github.com/McRitchie-Studio/studio-engine/pull/1" }
+    out, status = with_changed_files("lib/studio/version.rb\napp/models/thing.rb") { check(devops) }
+
+    refute_equal 0, status, "a version edit must REFUSE, not warn"
+    assert_match(/RELEASE-OWNED/, out)
+    assert_match(%r{lib/studio/version\.rb}, out)
+    assert_match(/--gem-bump major/, out, "and must name the remedy for a genuinely breaking change")
+  end
+
+  # THE CHANGELOG IS DELIBERATELY NOT GATED, and this pins that.
+  #
+  # An earlier pass refused it, on the strength of a message promising the release
+  # "assembles the changelog from its members". A reviewer grepped for that assembler
+  # and found NONE — three CHANGELOG hits across bin/ app/ lib/ config/, not one of
+  # them a writer. The version has a working manual path (the conductor commits it
+  # onto the gem's `accepted`, which the promote carries); the changelog would have
+  # had no writer AND no documented manual path, leaving the file permanently
+  # un-editable through the cycle. Refusing edits to a file nothing maintains is a
+  # dead end, not ownership. It re-enters WITH its assembler (finding-d0621629719b).
+  def test_integration_the_changelog_is_not_gated_until_an_assembler_exists
+    devops = { "kind" => "chore", "shape" => "library", "repositories" => ["studio-engine"],
+               "acceptance" => ["Something is done well here"], "test_plan" => ["[unit] x"],
+               "checks_run" => ["[unit] x"], "pr_url" => "https://github.com/McRitchie-Studio/studio-engine/pull/1" }
+    out, status = with_changed_files("CHANGELOG.md") { check(devops) }
+
+    assert_equal 0, status, "a changelog edit must NOT be refused while nothing assembles one"
+    refute_match(/RELEASE-OWNED/, out)
+  end
+
+  # The gate must not fire on ordinary code — an advisory that cries wolf gets
+  # ignored, and this one blocks.
+
+  # CI VENDORS DEPENDENCIES INTO THE TREE, and the first version of this gate matched
+  # CHANGELOG.md by BASENAME — so it fired on sixty-odd third-party gem changelogs
+  # under vendor/bundle and refused unrelated PRs. It passed locally because a dev
+  # tree has no vendor/bundle; only CI had the shape that broke it. Pin both halves:
+  # a vendored path is never ours, and only the ROOT changelog is release-owned.
+  def test_integration_vendored_changelogs_do_not_trip_the_version_gate
+    devops = { "kind" => "chore", "shape" => "library", "repositories" => ["studio-engine"],
+               "acceptance" => ["Something is done well here"], "test_plan" => ["[unit] x"],
+               "checks_run" => ["[unit] x"], "pr_url" => "https://github.com/McRitchie-Studio/studio-engine/pull/1" }
+    vendored = "vendor/bundle/ruby/3.3.0/gems/actioncable-8.1.3/CHANGELOG.md\n" \
+               "vendor/bundle/ruby/3.3.0/gems/studio-engine-0.32.1/CHANGELOG.md\n" \
+               "node_modules/foo/CHANGELOG.md\napp/models/thing.rb"
+
+    out, = with_changed_files(vendored) { check(devops) }
+    refute_match(/RELEASE-OWNED/, out, "a vendored dependency's changelog is not ours to own")
+  end
+
+  def test_integration_no_changelog_path_is_release_owned
+    devops = { "kind" => "chore", "shape" => "library", "repositories" => ["studio-engine"],
+               "acceptance" => ["Something is done well here"], "test_plan" => ["[unit] x"],
+               "checks_run" => ["[unit] x"], "pr_url" => "https://github.com/McRitchie-Studio/studio-engine/pull/1" }
+
+    out, = with_changed_files("docs/notes/CHANGELOG.md") { check(devops) }
+    refute_match(/RELEASE-OWNED/, out, "a nested changelog is not release-owned")
+
+    out, = with_changed_files("CHANGELOG.md") { check(devops) }
+    refute_match(/RELEASE-OWNED/, out, "and neither is the root one, until an assembler writes it")
+  end
+
+  def test_integration_ordinary_diff_is_untouched_by_the_version_gate
+    devops = { "kind" => "chore", "shape" => "library", "repositories" => ["studio-engine"],
+               "acceptance" => ["Something is done well here"], "test_plan" => ["[unit] x"],
+               "checks_run" => ["[unit] x"], "pr_url" => "https://github.com/McRitchie-Studio/studio-engine/pull/1" }
+    out, = with_changed_files("app/models/thing.rb\ntest/models/thing_test.rb") { check(devops) }
+
+    refute_match(/RELEASE-OWNED/, out)
+  end
+
   def test_integration_diff_root_defaults_to_the_cwd_worktree
     with_git_repo(staged: ["app/x.rb"]) do |repo_a|
       with_git_repo(staged: ["app/y.rb"]) do |repo_b|

@@ -729,3 +729,58 @@ What ships instead is honest and quiet about its limits:
   healthy window may ever render quiet), never the literal;
 - **nothing is destructive.** Quiet reclaims no desk, blocks no move, and never
   touches the lease. A quiet desk is still a HELD desk.
+
+## The release owns the gem version — builders never write one
+
+**Do not set a gem's version in a feature PR** — `lib/studio/version.rb`, or the
+version line of a gemspec. `bin/dor-check` refuses a PR that does, and the refusal
+names the remedy. This is not a style preference; it is arithmetic.
+
+**`CHANGELOG.md` is NOT gated** — deliberately, for now. The version is safe to
+refuse because it has a working manual path: the release conductor commits it onto
+the gem's `accepted` during the sweep. Nothing yet assembles a changelog from a
+release's members, so refusing changelog edits would leave the file un-editable with
+no writer and no manual path. It becomes release-owned when its assembler ships.
+
+A version is a property of the **release**, not of any PR. N pull requests riding
+one candidate publish exactly **one** version, so no individual PR can know the
+right answer at the moment it is written. On 2026-08-10 four open `studio-engine`
+PRs each chose independently — `0.33.0` (already published), `0.34.0`, `0.35.0`,
+against an `accepted` at `0.33.0`. A PR carrying an already-published version leaves
+`origin/release` ahead of the last tag without advancing past it, which is the
+stranded-work guard's exact trigger — and that guard aborts the sweep for **every
+repo**, not just the gem. The obvious remedy for the first PR collided with the
+second, so the naive fix just moves the collision one PR to the right.
+
+So the number is derived from the candidate's **membership** — the first moment it
+is knowable — by `Release::GemVersion` (`app/models/release/gem_version.rb`, pure
+and unit-tested), from metadata your task already carries:
+
+| The candidate contains | Bump |
+|---|---|
+| any member risk-tagged `breaking` | major |
+| any member with `kind: feature` | minor |
+| otherwise (`bug`, `chore`) | patch |
+
+`next = last published tag + max(bump across members)`.
+
+**`bin/release prepare` does NOT allocate it yet — the release conductor sets it by
+hand.** Wiring allocation into `prepare` would push a version onto `origin/release`
+BEFORE `validate_gems_for_qa`'s fail-closed preflight — mutate before validate — so
+that half was deliberately descoped (finding-d0621629719b). Until it lands: compute
+the number from the table, commit the `version_file` **directly onto the gem repo's
+`accepted`** (no gem rung is branch-protected, and the batch promote PR carries it to
+`release` without passing through a `dor-check`), then run `bin/release prepare`.
+Skip that step and the stranded-work guard aborts the sweep for **every** repo —
+loudly, with nothing published and nothing deployed.
+
+**Your only lever, and you rarely need it:** when the derived bump is wrong — most
+often a `chore` that is genuinely breaking —
+
+```bash
+bin/task update <task-slug> --gem-bump major   # patch | minor | major
+```
+
+It is an override, never a requirement. Leave it unset and the release derives the
+bump from the task's `kind`.
+

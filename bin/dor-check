@@ -605,6 +605,62 @@ def pr_repo_name(pr_url)
   CiStatus.repo_from_pr_url(pr_url).to_s
 end
 
+# The files a RELEASE owns and a PR must never edit, drawn from the gem registry so
+# a newly-onboarded gem is covered the day it is registered rather than whenever
+# someone remembers to update a hardcoded list. Matched on the registry's own
+# `version_file` path plus the changelog beside it.
+#
+# Returns [] for a non-gem repo (an app's version file, if it had one, is nobody's
+# publish input) and [] when the registry cannot be read — a gate that cannot read
+# its own config must not invent a refusal.
+# THE VERSION ONLY — the changelog is deliberately NOT here yet.
+#
+# An earlier pass refused root `CHANGELOG.md` too, on the strength of a message
+# promising "the release assembles the changelog from its members". A reviewer
+# grepped for that assembler and there ISN'T ONE. The version has a working manual
+# path (the conductor commits it onto the gem's `accepted`, which the promote
+# carries) — the changelog would have had NO writer and NO documented manual path,
+# so the file becomes permanently un-editable through the cycle. Refusing an edit to
+# a file nothing else maintains is not ownership, it is a dead end.
+#
+# The changelog half re-enters WITH its assembler, not before (finding-d0621629719b).
+#
+# Exact registered paths only. Basename matching looked equivalent and was not: CI
+# vendors dependencies into the tree, so `vendor/bundle/**/CHANGELOG.md` matched
+# sixty-odd third-party changelogs and refused unrelated PRs — it passed locally
+# because a dev tree has no vendor/bundle.
+def release_owned_gem_files(files)
+  owned = gem_version_files
+  return [] if owned.empty?
+
+  Array(files).select { |f| owned.include?(f.to_s) }.uniq
+end
+
+# Every registered gem's `version_file`, from config/release_repos.yml.
+def gem_version_files
+  return @gem_version_files if defined?(@gem_version_files)
+
+  @gem_version_files = begin
+    require "yaml"
+    path = File.expand_path("../config/release_repos.yml", __dir__)
+    doc = File.exist?(path) ? (YAML.safe_load_file(path) || {}) : {}
+    repos = doc["repos"] || doc["gems"] || doc
+    values = []
+    walk = lambda do |node|
+      case node
+      when Hash
+        values << node["version_file"].to_s if node["version_file"]
+        node.each_value { |v| walk.call(v) }
+      when Array then node.each { |v| walk.call(v) }
+      end
+    end
+    walk.call(repos)
+    values.reject(&:empty?).uniq
+  rescue StandardError
+    []
+  end
+end
+
 # The subset of changed files that ships BEHAVIOR (CodeDiff's type-only rule:
 # everything that isn't provably prose or inert media). Empty == doc-only.
 def code_changed_files
@@ -1073,6 +1129,41 @@ end
 #                        exists yet, that empty diff is the expected state, and
 #                        the build gate enforces no tiers anyway — so leniency
 #                        there cannot disarm the test gate. The merge gate can.
+# THE RELEASE OWNS THE GEM VERSION — so a builder must never edit one, and this is
+# asked BEFORE the doc-only exemption below. A CHANGELOG-only PR is "doc-only" by
+# every content rule, so leaving this check downstream let exactly the file that
+# caused this morning's duplicate-section reconcile walk straight through the
+# exemption. The gate has to sit above the short-circuit to mean anything.
+#
+# A version is a property of the RELEASE, not of any PR: N pull requests riding one
+# candidate publish exactly ONE version, so no individual PR can know the answer when
+# it is written. Measured 2026-08-10 (finding-dabd51ca9675): four open studio-engine
+# PRs each chose independently — one re-claiming an ALREADY-PUBLISHED version, the
+# stranded-work guard's exact trigger, which hard-aborts the sweep for EVERY repo.
+# The obvious remedy for the first collided with the second.
+#
+# `bin/release prepare` now allocates the version from the candidate's membership
+# (Release::GemVersion) and commits it before publish. This gate is what makes that
+# safe: it turns "don't guess a version" from a discipline every builder must
+# remember into a rule they cannot break — the requirement was, verbatim, "I don't
+# want my builder to get caught up in version control hell."
+#
+# REFUSES rather than warns: a version hunk that reaches `accepted` is the thing that
+# wedges a release, and it is trivially removable at this point.
+release_owned_edits = gate == "build" ? [] : release_owned_gem_files(changed_files)
+unless release_owned_edits.empty?
+  puts "✗ #{gate_label} NOT met for #{(task["title"] || slug).inspect}"
+  puts "  - diff edits a RELEASE-OWNED gem version file (#{release_owned_edits.join(', ')}) — a version belongs " \
+       "to the RELEASE, not to any one PR: N pull requests riding one candidate publish exactly ONE version, so a " \
+       "PR that sets one either re-claims a published version (which hard-aborts the sweep for every repo) or " \
+       "collides with a sibling PR. The release conductor sets it during the sweep."
+  puts "  - drop the hunk: git checkout origin/#{ENV.fetch('DOR_BASE_BRANCH', 'accepted')} -- #{release_owned_edits.first}"
+  puts "  - if this change is BREAKING, declare it instead of versioning it: " \
+       "bin/task update #{task["slug"] || slug} --gem-bump major"
+  puts "  → not ready to advance #{boundary}; resolve the above"
+  exit 1
+end
+
 gated_code_files = []
 if EXEMPT_KINDS.include?(kind)
   gated_code_files = code_changed_files
