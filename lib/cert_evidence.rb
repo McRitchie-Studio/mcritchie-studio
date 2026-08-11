@@ -60,12 +60,24 @@ module CertEvidence
   TEST_LANE = "full-suite"
   RUBOCOP_LANE = "rubocop"
   FAST_LANE = "fast-cert"
+  # The `test-only` shape's EXECUTED control (bin/control-check): the pre-change
+  # version of the changed test files, replayed against current production code.
+  # Fingerprint-bound like the certs, and machine-owned for the same reason —
+  # a `[control@<fp>]` stamp an author `--checks` update could wipe would send the
+  # builder back to re-run it, which is how the cert-wipe bug of 2026-07-12 taught
+  # people to hand-write evidence. NOT a lane the full cert waits on (see LANES).
+  CONTROL_LANE = "control"
   # The FULL-cert lanes (what "certified" means: full suite + full rubocop, both
   # fresh). The fast lane is separate — it only satisfies the gate paired with a
-  # green GitHub CI, which is bin/dor-check's call.
+  # green GitHub CI, which is bin/dor-check's call. The control lane is separate
+  # too, and for a sharper reason: it is required only by the shapes whose
+  # `required_evidence` asks for it, so folding it in here would silently demand a
+  # control of EVERY shape — including the ones that have no test-only diff to
+  # replay. Membership of EVIDENCE_LANES buys the namespace protection and the
+  # fingerprint grading; membership of LANES would buy a universal requirement.
   LANES = [TEST_LANE, RUBOCOP_LANE].freeze
   # Every fingerprint-bound lane — the whole machine-owned namespace.
-  EVIDENCE_LANES = (LANES + [FAST_LANE]).freeze
+  EVIDENCE_LANES = (LANES + [FAST_LANE, CONTROL_LANE]).freeze
 
   module_function
 

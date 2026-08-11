@@ -24,6 +24,12 @@
 # ignores the `[full-suite@…]` / `[rubocop@…]` stamps below:
 #   [control] pre-change test/integration/hub_test.rb at HEAD → 1 failure, line 42
 # It must name a path that is in the diff, so it is about the change in hand.
+# Its EXECUTED form is stamped by `bin/control-check <task>` and lives in the
+# machine-owned namespace beside the certs (the `@<fp>` is the tell):
+#   [control@<git-tree-hash>] NECESSARY — replayed test/models/x_test.rb …
+# Where the diff has a replayable file, that stamp is REQUIRED and the prose form
+# no longer suffices; where it does not, the prose form is still the whole of it.
+# See the `test-only` shape's notes below for which files fall in which half.
 #
 # EVERY TIER HERE IS RUN BY A LANE **IN THIS REPO** — enforced, not promised.
 # test/lib/feature_shape_tiers_test.rb asserts that every tier any shape below demands
@@ -245,18 +251,52 @@ shapes:
       case that removes safety, so the control is where a reviewer should spend
       their attention — name the file, the command, and the failure you observed.
 
-      HONEST ABOUT (3), because this file's standard is to claim only what it
-      proves: the control is CHECKED FOR STRUCTURE, not executed by a lane.
-      dor-check verifies it exists and is about a file in this diff; it cannot
-      verify the run happened. That is not an oversight to be papered over with a
-      fake lane — a test-only diff leaves NO automatic mutation target (production
-      code is unchanged, so there is no before/after to run), which puts the
-      control in the same category this file already carves out for `manual` and
-      devnet verification: real, required, and a REVIEW-checked act rather than a
-      self-certified pre-submit tier. Deliberately NOT registered as a
-      `dor_tiers` entry for that reason — test/lib/feature_shape_tiers_test.rb
-      would (correctly) refuse a tier no runner runs. Executing the control's
-      necessary half — replay the pre-change test files against current
-      production code and require the verdict to differ — IS mechanizable for the
-      modified-file case, and it is filed as its own task rather than half-built
-      here: /tasks/execute-test-only-control.
+      THE CONTROL IS NOW EXECUTED FOR THE HALF THAT CAN BE (2026-08-11,
+      /tasks/execute-test-only-control). `bin/control-check <task>` replays the
+      PRE-CHANGE version of the changed test files against CURRENT production
+      code and records a fingerprint-bound `[control@<fp>]` line that dor-check
+      re-grades, exactly as the certs do. This is sound only because of (1): a
+      100%-test diff means production code at the base is byte-identical to
+      production code at HEAD, so restoring the test files reproduces the parent
+      state without a parent checkout. The claimability allowlist is not a
+      nicety here — it is the precondition that makes the replay mean anything.
+
+      WHICH HALF IS EXECUTED, AND WHICH IS STILL YOURS — the split is mechanical,
+      and bin/control-check names each file it puts in each bucket:
+
+        EXECUTED — a changed file that has a pre-change version AND a runner
+        here, i.e. a Ruby minitest file under `test/`. Measured against this
+        repo's own history (86 test-only commits, 2026-08-11): 79% of them carry
+        at least one. For these, dor-check now REFUSES a hand-written control:
+        prose alone no longer satisfies, because a machine can check.
+
+        STILL A REVIEWER PROMPT — two populations, for two different reasons.
+        An ADDED file has no pre-change version at all (3% of that history):
+        nothing to replay, ever, so the builder-supplied mutation stays the
+        evidence. And `e2e/` (Playwright) + `tests/` (Anchor) files are
+        replayable in PRINCIPLE but need a booted server or a funded validator
+        (17%) — the same "it cannot be a cert lane" argument that removed
+        `e2e_onchain` above. No stamp is invented for either; bin/control-check
+        writes NOTHING when it replayed nothing, so the gate falls back to the
+        `[control]` line rather than crediting a run that did not happen.
+
+      THE VERDICT NEVER REFUSES, and this is the part to read before "hardening"
+      it. A replay says one of two things. `old RED` means the change was
+      NECESSARY — real signal. `old GREEN` means NO SIGNAL, and the cause is not
+      recoverable from the run: a rename, a move, a CONSOLIDATION (the case that
+      motivated this shape — a flake diagnostic collapsing twelve duplicated
+      listener blocks into one helper), a readability refactor, and coverage that
+      was quietly DELETED all look identical. One observation, five explanations.
+      So the gate reports NO-SIGNAL and asks the AUTHOR for the sentence that
+      disambiguates it, rather than refusing. A false refusal here would land on
+      legitimate work, and the reliable consequence of a gate that refuses
+      correct work is that people stop claiming the shape — taking its real
+      checks (the allowlist, the suite cert) with them. Fail-closed is right for
+      a SAFETY gate; this is an EVIDENCE gate.
+
+      STILL deliberately NOT a `dor_tiers` entry: the tier list is per-shape and
+      universal, while the control is executed only where a replay exists, so
+      test/lib/feature_shape_tiers_test.rb would (correctly) refuse it as a tier
+      no runner runs for every shape. It is `required_evidence`, graded through
+      its own lane (CertEvidence::CONTROL_LANE) — machine-owned, so an author's
+      `--checks` update cannot wipe it and send the builder back to re-run.

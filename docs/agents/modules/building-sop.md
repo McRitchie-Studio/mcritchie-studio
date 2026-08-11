@@ -54,8 +54,14 @@ bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> \
   behavior for a tier to be evidence of, but it is **not** the easy option: it is
   claimable only on a diff `bin/dor-check` OBSERVES to be 100% `test/`, `tests/`
   or `e2e/` (one non-test file and the claim is refused), it still owes the
-  full-suite cert, and it owes a `[control]` line in `checks_run` naming a file
-  from the diff — the evidence that the changed test **still bites**.
+  full-suite cert, and it owes a **control** — the evidence that the changed test
+  **still bites**. Run `bin/control-check <task>`: it replays the pre-change
+  version of the changed test files against current production code and stamps
+  the evidence. Where a changed file has no pre-change version (an added test) or
+  no runner here (`e2e/`, `tests/`), it stamps nothing and says so — that half is
+  yours, as a `[control]` line in `checks_run` naming a file from the diff. A
+  `NO-SIGNAL` verdict is **not** a refusal: it means the replay could not tell a
+  rename from a deleted assertion, and it asks you for the sentence that can.
 
 `begin` prints the **worktree path, port, and task URL**. Announce the task line
 every session — `<app-slug> · <feature-slug> · <task URL>` — so the active
