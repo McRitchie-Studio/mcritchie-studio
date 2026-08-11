@@ -673,9 +673,10 @@ see "The three soul heartbeat launchers" below):
 - **`full-cycle`** (`Alex Heartbeat` act; full ship authority) — the whole
   release, review → assemble → QA → prod ship.
 - **`deploy-with-task`** (`Avi Heartbeat` act; ship authority for ONE task) —
-  expedite ONE task to prod. Guarded on a clean release (`release == main`); on
-  a dirty release it refuses and points at the full release pipeline
-  (`full-cycle`) instead. Launched bare it asks "What task?".
+  expedite ONE task to prod. Guarded on a clean LADDER — `accepted == release ==
+  main`, both rungs, because the sweep promotes all of `accepted` and the ff
+  ships all of `release`; on a dirty ladder it refuses and points at the full
+  release pipeline (`full-cycle`) instead. Launched bare it asks "What task?".
 
 #### The composable launcher set — atoms + compositions
 
@@ -712,9 +713,13 @@ or the `review-one` SOP; none is a new command to build):
 > merge lives in Avi's self-healing `qa-release` sweep.) The `bin/pr-review` review-only
 > loop still exists but is no longer a card chip.
 
-The only NEW code this set required is the clean-release **GUARD** that
-`deploy-with-task` runs first (`bin/release status --clean-only`, backed by the
-unit-tested `Release::CleanCheck`); everything else is the atoms recombined.
+The only NEW code this set required is the clean-ladder **GUARD** that
+`deploy-with-task` runs first (`bin/release status --clean-only --task <task>`,
+backed by the unit-tested `Release::CleanCheck`) and re-runs at the promote
+(`bin/release prepare --expedite`); everything else is the atoms recombined. The
+guard covers BOTH rungs the expedite walks — work parked on `accepted` (which
+the sweep promotes) as well as work riding `release` (which the ff ships) — and
+reads a board signal and a git signal on each, refusing when they disagree.
 
 #### The three soul heartbeat launchers — the Heartbeats card
 
@@ -784,8 +789,11 @@ composition write-ups that lived here — `Avi Heartbeat Slow`/`Fast`,
 >   (`production-deploy`, `full-cycle`, `deploy-with-task`) or Mr. McRitchie
 >   explicitly gives the production ship go in this session.
 > - **`status`** is a read-only report (no confirm); `--clean-only` makes it a
->   GATE that exits non-zero on a dirty release. It never deploys, so it needs no
->   ship authority.
+>   GATE that exits non-zero when the `accepted → release → main` ladder is
+>   dirty on EITHER rung, and `--task <slug>` excuses the expedited task from its
+>   own guard. It never deploys, so it needs no ship authority. `prepare
+>   --expedite --task <slug>` re-runs the same verdict immediately before the
+>   promote, which is the placement that survives the review window.
 > - **`archive`** can use `--yes` after the shipped release is verified and the
 >   operator has approved cleanup.
 > - **`merge`** does not prompt today; `--yes` is harmless future-proofing.
