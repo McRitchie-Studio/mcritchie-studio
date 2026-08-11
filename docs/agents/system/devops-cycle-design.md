@@ -1269,15 +1269,30 @@ enforced by `bin/dor-check`:
 |---|---|
 | the diff is **100% test code** (`test/`, `tests/`, `e2e/`) | **verified from the observed diff**, never from the label — an unrecognized file *blocks* the claim, and so does a diff the gate cannot observe (`bin/lib/test_only_diff.rb`, an allowlist) |
 | the **full-suite + rubocop** cert, exactly as a feature | the existing fingerprint-bound `[full-suite@<fp>]` / `[rubocop@<fp>]` evidence — test code is code, and this shape is the one most able to break the suite quietly, so `full_suite_gate: true` |
-| a **`[control]`** line in `checks_run` | present, and it must **name a file that is in the diff** — a control that could have been written before the change was made is a sentence, not a result |
+| a **control** | **EXECUTED** where the diff has a replayable file — `bin/control-check <task>` replays the pre-change test files against current production code and stamps a fingerprint-bound `[control@<fp>]` line the gate re-grades. Where it does not, a `[control]` prose line that **names a file in the diff** — a control that could have been written before the change was made is a sentence, not a result |
 
 The control is the artifact both builders produced unprompted: run the pre-change
 test against current production code and show it failing at the line you touched,
-or force the failure your new diagnostic is for and show it firing. Checked for
-structure, **not executed by a lane** — a test-only diff leaves no automatic
-mutation target, which puts it in the same category as devnet: real, required, and
-review-checked rather than self-certified. That is why `control` is deliberately
-**not** a `dor_tiers` entry.
+or force the failure your new diagnostic is for and show it firing.
+
+Since 2026-08-11 the first of those is **run by a lane**. `bin/control-check`
+restores the pre-change content of the changed test files and runs them — sound
+only because the diff is 100% test code, so production code at the base is
+identical to production code at HEAD. Two populations, and the runner names which
+files fall in each: a **Ruby minitest file with a pre-change version** is replayed
+(~79% of this repo's test-only history), while an **added** file (no pre-change
+version at all) and **`e2e/` / `tests/`** files (no runner here — a booted server
+or a funded validator, the `e2e_onchain` argument) stay the reviewer's prompt. The
+runner stamps **nothing** when it replayed nothing, so the gate never credits a
+run that did not happen.
+
+The **verdict never refuses**. `old RED` is a NECESSARY change; `old GREEN` is
+NO-SIGNAL — and a rename, a move, a consolidation and a silently deleted assertion
+all look identical from there. The gate reports it and asks the author for the
+sentence that disambiguates it, because a false refusal would land on legitimate
+work and teach people to stop claiming the shape. `control` is still deliberately
+**not** a `dor_tiers` entry: it is `required_evidence` with its own machine-owned
+lane, executed only where a replay exists.
 
 The matrix is the single source of "how much testing is enough" — it removes
 the per-task judgment call that currently lets thin PRs through.
