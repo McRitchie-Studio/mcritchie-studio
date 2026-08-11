@@ -49,6 +49,12 @@ Studio.configure do |config|
     { file: "logo-icon.svg",    title: "Navbar Logo" },
     { file: "studio-logo.svg",  title: "SSO Logo" },
   ]
+  # Draw the engine's standard email page at /admin/emails (Studio::EmailsController
+  # over Studio::EmailCatalog). Opt-in because turf-monster's own routes.rb already
+  # claims that path and the admin_emails_path helper; this app claims neither, so
+  # it takes the shared page instead of keeping a fork. Retires /admin/email_images.
+  config.draw_admin_emails_routes = true
+
   # S3 (Studio::S3 — upload/url/delete against "<prefix>-<dev|production>").
   # Engine default is nil, so set it explicitly. Region defaults to us-east-2.
   config.s3_bucket_prefix = "mcritchie-studio"
