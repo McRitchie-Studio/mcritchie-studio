@@ -81,6 +81,16 @@ class ReleaseGemVersionTest < Minitest::Test
     assert_equal "1.0.0",  GV.next_version("0.33.0", [member(kind: "chore", risk: ["breaking"])])
   end
 
+  # THE MUTANT THAT SURVIVED this suite at review: every minor/major case above
+  # starts from a `.0` patch, so `"#{major}.#{minor + 1}.#{patch}"` passed all of
+  # them. Real tags carry a nonzero patch (0.32.1 shipped), and a minor bump must
+  # ZERO the lower segments rather than carry them forward — 0.33.7 + minor is
+  # 0.34.0, never 0.34.7.
+  def test_a_minor_or_major_bump_zeroes_the_lower_segments
+    assert_equal "0.34.0", GV.next_version("0.33.7", [member(kind: "feature")])
+    assert_equal "1.0.0", GV.next_version("0.33.7", [member(kind: "chore", risk: ["breaking"])])
+  end
+
   def test_a_leading_v_is_tolerated_because_tags_carry_one
     assert_equal "0.34.0", GV.next_version("v0.33.0", [member(kind: "feature")])
   end
