@@ -9,7 +9,7 @@ two independent act SOPs:
   queue onto `release`, pre-QA gate, deploy QA, flip members `assembled` on
   QA-green.
 - [`deploy-with-task`](sops/deploy-with-task.md) - expedite ONE named task to
-  production behind the clean-release guard (interactive: it asks "What task?").
+  production behind the clean-ladder guard (interactive: it asks "What task?").
 
 Use this file when Mr. McRitchie invokes `Avi Heartbeat`. When he invokes a
 single Avi act directly, read that act's SOP file.

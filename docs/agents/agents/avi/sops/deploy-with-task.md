@@ -50,50 +50,54 @@ Use the production board by default. Do not add `--local`.
   `release`. If you find one, **retarget it to `accepted`** — that is a
   mis-based PR, not grounds to bounce the task.
 - **Both rungs beneath the ship are clean**: `release == main` AND `accepted ==
-  release`. Step 1 proves both — and it takes two reads, because one command
-  does not cover both.
+  release`. Step 1 proves both in one command, and **step 3 re-proves them** at
+  the moment it matters.
 
 ## Procedure
 
-1. **GUARD — are both rungs clean?** The expedite is only safe when the one
-   named task is the ONLY thing between `accepted` and production. Under the
-   three-rung ladder that is two separate questions, so run both reads.
-
-   **1a. Is `release` clean (`release == main`)?**
+1. **GUARD — is the ladder clean?** The expedite is only safe when the one
+   named task is the ONLY thing between `accepted` and production, and under the
+   three-rung ladder that spans two rungs. One command covers both:
 
    ```bash
-   bin/release status --clean-only
+   bin/release status --clean-only --task <task>
    ```
 
-   It reads the tasks already riding `release` — `assembled`, plus `reviewed`
-   stamped `merged: "release"` — and each repo's
-   `origin/release`-ahead-of-`origin/main` count.
+   It reads FOUR signals — a board read and a git read on each rung:
 
-   - **Clean** (exit 0) → continue to 1b.
-   - **Dirty** (exit non-zero) → **STOP**. Fast-forwarding `release → main`
-     ships **everything** on `release`, so expediting one task past pending
-     work would drag along whatever is `assembled` but unshipped. Report the
-     pending work the guard printed and recommend: *"Ship the WHOLE release
-     instead: run the `full-cycle` launcher."* Never force past the guard.
+   | Rung | Board | Git |
+   |---|---|---|
+   | `release` | `assembled`, plus `reviewed` stamped `merged: "release"` | `origin/release` ahead of `origin/main` |
+   | `accepted` | `reviewed` stamped `merged: "accepted"` | `origin/accepted` ahead of `origin/release` |
 
-   **1b. Is `accepted` clean (nothing riding it but your task)?** ⚠️
-   `--clean-only` does **not** answer this. It counts only work already on
-   `release`, so it is blind to a task sitting `reviewed` with `merged:
-   "accepted"`. That matters because step 3's sweep promotes **all of
-   `accepted`** onto `release` in one batch PR — so anything parked on
-   `accepted` rides to production with your expedite. Read it yourself:
+   Both reads on a rung matter, and neither covers the other's set. The board
+   read is UNSCOPED by repo, so it sees another repo's parked work that a
+   single-repo `git rev-list` would miss entirely — and a bare `bin/release
+   prepare` sweeps every `reviewed` task, so that work is genuinely in the blast
+   radius. The git read sees commits with no board record at all: a zap, a gem
+   version bump committed straight onto `accepted`, an abandoned branch. When
+   the two disagree the guard says so and refuses — the disagreement names which
+   record to go fix.
 
-   ```bash
-   bin/task list --stage reviewed          # board: any OTHER reviewed task?
-   git -C <repo> fetch origin --quiet
-   git -C <repo> rev-list --count origin/release..origin/accepted   # git: 0 before review merges yours
-   ```
+   `--task <task>` names the expedited task so the guard does not refuse on your
+   OWN work when you re-run the act after review already merged it onto
+   `accepted`. It excludes that one slug from the board read, and tolerates the
+   commits on `accepted` only while the board agrees that task is the rung's sole
+   occupant — the pass says so out loud rather than swallowing the count.
 
-   - **Clean** — no `reviewed` task other than the expedited one, and the count
-     is 0 before step 2 merges yours → continue.
-   - **Dirty** — another task is parked on `accepted` → **STOP** and make the
-     same `full-cycle` recommendation as 1a. Expediting now would ship that
-     task too, un-expedited and unasked. Never force past it.
+   - **Clean** (exit 0) → continue.
+   - **Dirty** (exit non-zero) → **STOP**. The ship fast-forwards `release →
+     main` and step 3's sweep promotes **all of `accepted`** onto `release`, so
+     anything parked on either rung rides to production with your expedite,
+     un-expedited and unasked. Report the pending work the guard printed and
+     recommend: *"Ship the WHOLE release instead: run the `full-cycle`
+     launcher."* Never force past the guard.
+
+   > **This step used to be two reads, one of them by hand** (`bin/task list
+   > --stage reviewed` plus a manual `git rev-list origin/release..origin/accepted`),
+   > because `--clean-only` was blind to the `accepted` rung. **The code performs
+   > that check now** — `Release::CleanCheck` reads both rungs and both signals —
+   > so the manual step is gone, not skipped. Do not reintroduce it.
 
 2. **Review the one task.** Run the `review-one` atom from the registered
    review primitive
@@ -134,19 +138,34 @@ them in THIS session, with a terminal attached.
   reached a verdict and refused — do not force past it; record the blocker and hand
   it off.)
 
-3. **Sweep it onto release and QA it.**
+3. **Sweep it onto release and QA it.** Pass `--expedite` — it is not optional
+   on this lane.
 
    ```bash
-   bin/release prepare --yes
+   bin/release prepare --task <task> --expedite --yes
    curl -fsS https://qa.mcritchie.studio/up
    ```
 
    Review already merged the task's PR onto `accepted` in step 2, so the sweep
    promotes **all of `accepted`** onto `release` via ONE batch PR per repo
-   (`--base release --head accepted`) — which step 1b proved is your task and
-   nothing else. It then runs the **G3 pre-QA gate** (GitHub CI's verdict for
-   each app's `origin/release` SHA), deploys QA, and flips the member
-   `assembled` only on QA-green.
+   (`--base release --head accepted`). `--task` curates which tasks are RECORDED
+   as members; it does **not** narrow which COMMITS ride along. It then runs the
+   **G3 pre-QA gate** (GitHub CI's verdict for each app's `origin/release` SHA),
+   deploys QA, and flips the member `assembled` only on QA-green.
+
+   **`--expedite` re-runs step 1's guard here, immediately before the promote,
+   and refuses if the ladder is no longer clean.** Step 1's verdict has gone
+   stale by now: review plus two CI payments put 15-25 minutes between them, and
+   `bin/review-autopilot` runs in production and can merge another task onto
+   `accepted` inside that window. A point-in-time answer taken before the window
+   cannot describe the world after it, so the promote — the irreversible moment,
+   the one that puts other people's work on the release — proves it again. A
+   refusal here promotes, records, and deploys **nothing**; make the same
+   `full-cycle` recommendation as step 1.
+
+   `--expedite` requires exactly one `--task`, and it is opt-in: a bare
+   `bin/release prepare` (the normal full-queue sweep, where promoting all of
+   `accepted` is precisely the intent) is unaffected.
 
 4. **Ship it.** From the primary checkout (not a worktree):
 
@@ -159,11 +178,13 @@ them in THIS session, with a terminal attached.
    release notes, and partial-ship recovery all still run and can abort. If a
    gate aborts, do not force past it; record the blocker and hand it off.
 
-Because step 1 proved **both** rungs clean — `release == main` (1a) and nothing
-else parked on `accepted` (1b) — the fast-forward carries only the expedited
-task to `main`. Step 1a alone would not be enough: the sweep in step 3 promotes
-everything on `accepted`, so a task parked there rides along however clean
-`release` looked.
+Because the guard proved **both** rungs clean — `release == main` and nothing
+else parked on `accepted` — the fast-forward carries only the expedited task to
+`main`. The `release` rung alone would not be enough: the sweep in step 3
+promotes everything on `accepted`, so a task parked there rides along however
+clean `release` looked. And the claim holds only because step 3 re-proved it
+**at the promote**; the step-1 verdict alone is a statement about a world 15-25
+minutes gone, which the autopilot can change underneath you.
 
 ## What the express lane costs — measured, 2026-08-11
 
@@ -198,8 +219,8 @@ legitimate follow-up is recorded in the task record: extend the same
 tree-identical credit to the accepted seam, so a feat PR already green at
 payment #1 is not re-certified at payment #2 when the merge produced an
 identical tree. That is a real change to a gate's semantics — it needs its own
-task, and it is sound only while `accepted` carries exactly one task, which is
-precisely the express lane's own precondition (step 1b).
+task, and it is sound only while `accepted` carries exactly one task — which is
+precisely what this lane's guard proves, at step 1 and again at step 3.
 
 ## Exit Seam
 
