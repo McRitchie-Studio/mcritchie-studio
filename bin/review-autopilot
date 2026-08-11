@@ -1,0 +1,156 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# review-autopilot — ARM a merge a reviewer has already decided on, so it
+# finishes executing after that reviewer's process is gone.
+#
+# THE FAILURE THIS EXISTS FOR, measured seven times on the night of 2026-08-10/11:
+# a reviewer completes its review, records a correct merge-ready verdict, waits on
+# a CI lane, and its process ends before it can merge. The DECISION survived — it
+# was already on the task record — and only the EXECUTION was lost. A human merged
+# all seven by hand. One reviewer stopped with 3 of 4 lanes green; the fourth
+# settled eighty seconds later.
+#
+#   bin/review-autopilot arm <task> [--head <sha>] [--agent carl] [--ttl <hours>]
+#   bin/review-autopilot list [--all]          # what is armed, pinned to what
+#   bin/review-autopilot run <task>            # the MANUAL executor: run it now
+#   bin/review-autopilot disarm <task> [--reason "..."]
+#
+# `arm` is the one a reviewer runs. It is REFUSED unless a `merge-ready` scout
+# report is already on the task — this tool cannot create a verdict, only carry
+# one out. `--head` defaults to the PR's live head via `gh`; pass it explicitly if
+# `gh` is unavailable.
+#
+# NOTHING HERE DECIDES ANYTHING. Every guard — green-only CI, the pinned head, the
+# expiry window, the recorded verdict — lives server-side in
+# Review::PendingActionExecutor, so the webhook path and this CLI cannot drift.
+# `run` is the same executor the webhook runs, invoked on demand.
+#
+# EXIT CODES:
+#   0 — done (armed / listed / executed / disarmed)
+#   2 — refused (no recorded merge-ready verdict, no armed action, bad usage)
+#   1 — could not run (no board, no secret, no session)
+
+require "json"
+require "optparse"
+require_relative "lib/task_board"
+
+BASE_URL = ENV.fetch("TASK_BOARD_URL", "https://www.mcritchie.studio")
+DOTENV = File.expand_path("../.env", __dir__)
+
+options = { agent: ENV["AGENT_SLUG"], all: false }
+parser = OptionParser.new do |opts|
+  opts.banner = "usage: bin/review-autopilot <arm|list|run|disarm> [task-slug] [options]"
+  opts.on("--head SHA", "the head sha the verdict was formed against (default: the PR's live head)") { |v| options[:head] = v }
+  opts.on("--agent SLUG", "the reviewing soul arming this merge") { |v| options[:agent] = v }
+  opts.on("--ttl HOURS", Float, "how long the armed merge stays executable (default 6, max 24)") { |v| options[:ttl] = v }
+  opts.on("--reason TEXT", "why it is being disarmed") { |v| options[:reason] = v }
+  opts.on("--repo NWO", "override the repo (default: the task's first repo)") { |v| options[:repo] = v }
+  opts.on("--pr NUMBER", Integer, "override the PR number (default: parsed from the task's pr_url)") { |v| options[:pr] = v }
+  opts.on("--all", "list settled actions too") { options[:all] = true }
+  opts.on("-h", "--help") { puts opts; exit 0 }
+end
+parser.parse!
+
+command = ARGV.shift
+slug = ARGV.shift
+
+def die(message, code = 1)
+  warn("review-autopilot: #{message}")
+  exit code
+end
+
+def token
+  @token ||= begin
+    secret = TaskBoard.agent_secret(DOTENV)
+    die("no AGENT_API_SECRET (env, 1Password, or .env)") if secret.to_s.empty?
+
+    res = TaskBoard.request(:post, "/api/v1/auth", base_url: BASE_URL, body: { secret: secret })
+    die("auth failed -> HTTP #{res.code}") unless res.is_a?(Net::HTTPSuccess)
+
+    TaskBoard.parse_body(res).fetch("token")
+  end
+end
+
+def api(method, path, body: nil)
+  res = TaskBoard.request(method, path, base_url: BASE_URL, token: token, body: body)
+  [res, TaskBoard.parse_body(res)]
+end
+
+# The PR's live head, read where `gh` auth lives. Explicit `--head` always wins:
+# the pin must be the sha the REVIEWER read, and only the reviewer knows that for
+# certain if it applied a zap mid-review.
+def live_head(pr_url)
+  return nil if pr_url.to_s.empty?
+
+  out = IO.popen(["gh", "pr", "view", pr_url, "--json", "headRefOid", "--jq", ".headRefOid"],
+                 err: File::NULL, &:read).to_s.strip
+  out.empty? ? nil : out
+rescue SystemCallError
+  nil
+end
+
+def render(action)
+  puts format("%-38s %-9s %-12s %s", action["task_slug"], action["state"],
+              action["head_sha"].to_s[0, 10], action["reason"] || "pr ##{action["pr_number"]}")
+end
+
+case command
+when "arm"
+  die("usage: bin/review-autopilot arm <task-slug> [--head <sha>]", 2) if slug.to_s.empty?
+
+  _, task_body = api(:get, "/api/v1/tasks/#{slug}")
+  task = task_body["data"] || {}
+  devops = task.dig("metadata", "devops") || {}
+  head = options[:head] || live_head(devops["pr_url"])
+  die("could not resolve a head sha — pass --head <sha>", 2) if head.to_s.empty?
+
+  payload = { head_sha: head, agent: options[:agent] }.compact
+  payload[:repo] = options[:repo] if options[:repo]
+  payload[:pr_number] = options[:pr] if options[:pr]
+  payload[:ttl_hours] = options[:ttl] if options[:ttl]
+
+  res, body = api(:post, "/api/v1/tasks/#{slug}/review_pending_action", body: payload)
+  unless res.is_a?(Net::HTTPSuccess)
+    # The "never invent a verdict" refusal is the expected 422 here, not a crash.
+    die(body["error"] || "arm refused -> HTTP #{res.code}", 2)
+  end
+
+  action = body["data"]
+  puts "armed: #{action["task_slug"]} pr ##{action["pr_number"]} @ #{action["head_sha"][0, 10]}"
+  puts "       merges into #{action["base_branch"]} on the recorded #{action["verdict"]} verdict"
+  puts "       expires #{action["expires_at"]} — green CI on this exact tree executes it"
+
+when "list"
+  path = "/api/v1/review_pending_actions"
+  path += "?state=all" if options[:all]
+  res, body = api(:get, path)
+  die("list failed -> HTTP #{res.code}") unless res.is_a?(Net::HTTPSuccess)
+
+  actions = body["data"] || []
+  puts(actions.empty? ? "nothing armed" : format("%-38s %-9s %-12s %s", "TASK", "STATE", "HEAD", "NOTE"))
+  actions.each { |action| render(action) }
+
+when "run"
+  die("usage: bin/review-autopilot run <task-slug>", 2) if slug.to_s.empty?
+
+  res, body = api(:post, "/api/v1/tasks/#{slug}/review_pending_action/execute")
+  die(body["error"] || "run failed -> HTTP #{res.code}", 2) unless res.is_a?(Net::HTTPSuccess)
+
+  action = body["data"]
+  puts "#{action["result"]}: #{action["reason"]}"
+  exit(action["result"] == "executed" ? 0 : 2)
+
+when "disarm"
+  die("usage: bin/review-autopilot disarm <task-slug>", 2) if slug.to_s.empty?
+
+  res, body = api(:delete, "/api/v1/tasks/#{slug}/review_pending_action",
+                  body: { reason: options[:reason] }.compact)
+  die(body["error"] || "disarm failed -> HTTP #{res.code}", 2) unless res.is_a?(Net::HTTPSuccess)
+
+  puts "disarmed: #{slug}"
+
+else
+  puts parser
+  exit 2
+end

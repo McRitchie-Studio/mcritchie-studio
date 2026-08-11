@@ -309,6 +309,9 @@ Rails.application.routes.draw do
       # Triage findings: agents FILE and LIST; promotion to a task is deliberately
       # web-only (TriageController#promote, admin-gated) — the operator's lane.
       resources :triage_findings, only: [:index, :create]
+      # The armed-merge roster — "what is armed right now, pinned to what,
+      # expiring when". Read-only; arming is per-task (member routes below).
+      resources :review_pending_actions, only: [:index]
       resources :agents, only: [:index, :show, :update], param: :slug
       # Stages move via PATCH update (task: { stage: ... }); no named-transition
       # endpoints — one path for the CLI, the board, and external callers.
@@ -336,6 +339,15 @@ Rails.application.routes.draw do
           # take-or-skip; `renew` the detached renewer's heartbeat; `release` the
           # clean review-end drop. Mirrors the role-lease (devops_shifts) one level
           # down. The submitted-and-unclaimed query is GET /tasks?reviewable=1.
+          # The ARMED MERGE (autopilot-review-seam-execution) — a reviewer writes
+          # down the merge-ready verdict it ALREADY recorded, so the merge finishes
+          # executing after that reviewer's process ends. `create` arms (and is
+          # refused unless a merge-ready scout report is on the record), `execute`
+          # is the manual "run it now", `destroy` disarms. CLI: bin/review-autopilot.
+          post   "review_pending_action", to: "review_pending_actions#create", as: :review_pending_action
+          delete "review_pending_action", to: "review_pending_actions#destroy"
+          post   "review_pending_action/execute", to: "review_pending_actions#execute",
+                 as: :review_pending_action_execute
           get  "review_claim", to: "task_review_claims#show", as: :review_claim_status
           post "review_claim", to: "task_review_claims#acquire", as: :review_claim
           post "review_claim/renew", to: "task_review_claims#renew", as: :review_claim_renew

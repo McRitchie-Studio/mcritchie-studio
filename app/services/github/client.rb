@@ -87,6 +87,24 @@ module Github
       )
     end
 
+    # A JSON PUT that RETURNS its non-2xx responses instead of raising, because
+    # for some endpoints the refusal IS the answer. The PR merge API is the case
+    # this exists for: 409 means "head moved off the `sha` you pinned" and 405
+    # means "not mergeable" — both are correct, expected outcomes that a caller
+    # must read and act on, not exceptions. Transient 5xx retries and rate-limit
+    # handling still apply; only the final raise is suppressed.
+    def put_response(path, body: nil, params: {}, headers: {})
+      response = request(path, params: params, headers: headers, method: :put, body: body,
+                               raise_on_error: false)
+      Response.new(
+        url: build_uri(path, params).to_s,
+        status: response.code.to_i,
+        headers: inspectable_headers(response),
+        body: parse_json(response.body),
+        raw_body: response.body
+      )
+    end
+
     def paginate(path, params: {}, headers: {})
       records = []
       next_path = path
@@ -109,7 +127,7 @@ module Github
 
     private
 
-    def request(path, params:, headers:, method: :get, body: nil)
+    def request(path, params:, headers:, method: :get, body: nil, raise_on_error: true)
       uri = build_uri(path, params)
       req = build_request(uri, method, headers, body)
 
@@ -145,7 +163,7 @@ module Github
             next
           end
 
-          unless status.between?(200, 299)
+          if !status.between?(200, 299) && raise_on_error
             raise HttpError, "GitHub API HTTP #{status}: #{response.body}"
           end
 
@@ -166,10 +184,16 @@ module Github
     end
 
     # Build the Net::HTTP request for the verb, applying default + caller headers.
-    # A POST body is JSON-encoded (Hash) or passed through (String) with the
+    # A POST/PUT body is JSON-encoded (Hash) or passed through (String) with the
     # matching Content-Type.
+    REQUEST_CLASSES = {
+      get:  Net::HTTP::Get,
+      post: Net::HTTP::Post,
+      put:  Net::HTTP::Put
+    }.freeze
+
     def build_request(uri, method, headers, body)
-      req = method == :post ? Net::HTTP::Post.new(uri) : Net::HTTP::Get.new(uri)
+      req = REQUEST_CLASSES.fetch(method, Net::HTTP::Get).new(uri)
       default_headers.merge(headers).each { |key, value| req[key] = value }
       if body
         req["Content-Type"] = "application/json"
