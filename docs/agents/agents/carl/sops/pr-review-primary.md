@@ -189,9 +189,9 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
      `merged: accepted` + moves the task `reviewed` — exactly the sequence above —
      the moment CI concludes GREEN **for that exact tree**. Then it stops.
 
-     This does not review anything and cannot: arming is REFUSED unless your
-     `merge-ready` scout report from step 5 is the task's **latest** scout report,
-     and every guard fails closed. Red, pending, cancelled and **absent** check-runs
+     This does not review anything and cannot: arming is REFUSED unless the task's
+     **latest** scout report is `merge-ready` — yours from step 5, or a later
+     re-affirmation — and every guard fails closed. Red, pending, cancelled and **absent** check-runs
      all do nothing (absence is the signature of a CONFLICTING PR, never a pass); a
      head that moved off the pin is refused rather than merged, because your verdict
      described a different tree; and an action nobody could execute inside its

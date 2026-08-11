@@ -72,7 +72,7 @@ module Review
       # below: at forty concurrent tasks, forty jobs each pinning a Postgres
       # connection through a multi-second GitHub round trip would exhaust the
       # board's 20-connection pool. Correctness does not rest on this lock —
-      # GitHub's own `sha` pin (guard 11) makes a double merge impossible, and a
+      # GitHub's own `sha` pin (guard 13) makes a double merge impossible, and a
       # duplicate attempt reads the PR as already merged and settles as a no-op.
       claimed = @action.with_lock do
         next false unless @action.pending?
@@ -235,7 +235,7 @@ module Review
     # 13. `sha:` is GitHub's own head pin — the API refuses with 409 if the head
     # has moved since our read. It is the server-side twin of the merge SOP's
     # `gh pr merge --match-head-commit`, and it closes the last race: a push that
-    # lands between guard 9 and this call.
+    # lands between guard 11 and this call.
     def merge!(task, _pr)
       response = client.put_response(
         "/repos/#{action.repo_nwo}/pulls/#{action.pr_number}/merge",
