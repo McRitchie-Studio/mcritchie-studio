@@ -174,12 +174,30 @@ Two rules the command encodes, worth knowing when you read its output:
   (`Studio::LocalReviewsController`). Pinning an email short-circuits that chain
   at priority 1 and verifies a URL the operator never receives, as a user the
   button would never pick.
-- **You no longer pick an admin address.** studio-engine ≥ 0.36.0 find-or-creates
-  the reviewer at `Studio.local_review_role` (default `admin`) *before* minting,
-  and promotes an existing non-admin, so no identity list applies — in any repo.
-  But provisioning is **best-effort**: it rescues, logs a warning, and mints
-  anyway, so a host with an extra `User` validation still lands on `/`. That is
-  why the landing assertion, not the engine version, is the gate.
+- **On studio-engine ≥ 0.36.0 you no longer pick an admin address.** The engine
+  find-or-creates the reviewer at `Studio.local_review_role` (default `admin`)
+  *before* minting, and promotes an existing non-admin, so no identity list
+  applies. But provisioning is **best-effort**: it rescues, logs a warning, and
+  mints anyway, so a host with an extra `User` validation still lands on `/`.
+  That is why the landing assertion, not the engine version, is the gate.
+
+**Check your app's engine floor before you read a green run.** Below 0.36.0
+there is no reviewer fallback and no provisioning: the mint answers
+`MISSING_EMAIL` unless you pass an address, and that address must already be an
+admin **in that app**. `bin/verify-review-hop` says so by name when it hits it,
+and takes `--email <address>` for that case — it flags the run as a deviation,
+because it is verifying the sub-floor path rather than the button's own. Read
+the floor from the app's own `Gemfile.lock`, never from another repo's:
+
+```bash
+grep -m1 'studio-engine (' Gemfile.lock
+```
+
+As of 2026-08-11 the hub is on 0.38.0 and **turf-monster is on 0.31.0** — so on
+turf-monster today this is the sub-floor path, `--email` and all. Do not carry
+one repo's identity list to another to choose that address: the same person can
+be an admin in the hub and `role: "user"` one repo over. Confirm the address is
+an admin in the app you are verifying.
 
 (The command is the check; drive the real browser too when you have one.)
 

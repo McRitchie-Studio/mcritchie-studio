@@ -66,6 +66,10 @@ class ReviewHopTest < Minitest::Test
 
       refute v.ok?, "#{path} should not count as a mint"
       assert_equal :mint_no_reviewer, v.code
+      # The commonest cause in THIS ecosystem is an app below the engine floor
+      # (turf-monster is on 0.31.0), so the verdict must name it and the way out.
+      assert_match(/0\.36\.0/, v.detail)
+      assert_match(/--email/, v.detail)
     end
   end
 

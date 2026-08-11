@@ -94,7 +94,9 @@ module ReviewHop
       elsif SIGN_IN_PATHS.include?(uri.path)
         fail(:mint_no_reviewer,
              "mint redirected to #{uri.path} — this desk resolved NO reviewer " \
-             "(studio-engine's MISSING_EMAIL). Set Studio.local_review_email or seed an admin")
+             "(studio-engine's MISSING_EMAIL). Either this app is on studio-engine < 0.36.0, " \
+             "which has no reviewer fallback and REQUIRES an address (re-run with " \
+             "--email <an admin in THIS app>), or set Studio.local_review_email / seed an admin")
       else
         fail(:mint_unexpected, "mint redirected to #{uri.path}, expected /l/<token>")
       end

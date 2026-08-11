@@ -51,12 +51,16 @@ def die!(msg)
   exit 1
 end
 
-options = { json: false, board: BOARD_URL, local_url: nil }
+options = { json: false, board: BOARD_URL, local_url: nil, email: nil }
 parser = OptionParser.new do |o|
   o.banner = "Usage: bin/verify-review-hop <task-slug> [--json] | bin/verify-review-hop --local-url <url>"
   o.on("--json", "Machine-readable verdict") { options[:json] = true }
   o.on("--board URL", "Board base URL (default: #{BOARD_URL})") { |v| options[:board] = v }
   o.on("--local-url URL", "Verify from an explicit local URL; SKIPS the CTA leg") { |v| options[:local_url] = v }
+  o.on("--email ADDRESS", "Mint for ADDRESS. ONLY for apps on studio-engine < 0.36.0, " \
+                          "which has no reviewer fallback; the live CTA sends no address") do |v|
+    options[:email] = v
+  end
   o.on("-h", "--help") do
     puts o
     exit 0
@@ -150,11 +154,24 @@ else
 end
 
 # ---- LEG 2 — the local mint, with NO email --------------------------------
+#
+# --email is a DEVIATION from what the button does, not a normal option: the
+# live CTA carries no address. It exists for an app still on studio-engine
+# < 0.36.0, which has no reviewer fallback at all and answers MISSING_EMAIL —
+# turf-monster is on 0.31.0 today. It is reported as a deviation so a run that
+# used it never reads as a clean verification of the real path.
 token_url = nil
 if mint_url
-  res = request(:get, mint_url)
+  request_url = mint_url
+  if options[:email]
+    uri = URI.parse(mint_url)
+    uri.query = URI.encode_www_form(URI.decode_www_form(uri.query.to_s) + [["email", options[:email]]])
+    request_url = uri.to_s
+  end
+
+  res = request(:get, request_url)
   verdict = record.call("mint", ReviewHop.mint(status: res.code, location: res["location"]))
-  token_url = URI.join(mint_url, res["location"]).to_s if verdict.ok?
+  token_url = URI.join(request_url, res["location"]).to_s if verdict.ok?
 end
 
 # ---- LEG 3 — the confirm page ---------------------------------------------
@@ -187,6 +204,7 @@ report = {
   "task" => slug,
   "board" => options[:local_url] ? nil : options[:board],
   "mint_url" => mint_url,
+  "email_override" => options[:email],
   "legs" => legs
 }.compact
 
@@ -198,6 +216,10 @@ else
   legs.each do |leg|
     glyph = leg["ok"].nil? ? "⚠" : (leg["ok"] ? "✓" : "✗")
     puts "  #{glyph} #{leg["leg"]}: #{leg["detail"]}"
+  end
+  if options[:email]
+    puts "  ⚠ minted for --email #{options[:email]} — the live CTA sends NO address. " \
+         "This verifies the sub-0.36.0 path, not the button's own."
   end
   unless ok
     puts "  → the WAITING APPROVAL button does NOT land the operator on the page under review"

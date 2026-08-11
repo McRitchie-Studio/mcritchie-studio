@@ -107,9 +107,16 @@ class VerifyReviewHopTest < Minitest::Test
     end
 
     def mint_response(target)
-      # The live CTA sends NO email. If one ever appears here the recipe has
-      # regressed to verifying a path the button does not take.
-      return "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n" if target.include?("email=")
+      has_email = target.include?("email=")
+
+      # studio-engine < 0.36.0: no reviewer fallback, so an address is REQUIRED.
+      if @scenario == :sub_floor
+        return has_email ? redirect("#{base}/l/tok-1") : redirect("#{base}/login")
+      end
+
+      # At/above the floor the live CTA sends NO email. If one ever appears here
+      # the recipe has regressed to verifying a path the button does not take.
+      return "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n" if has_email
 
       @scenario == :no_reviewer ? redirect("#{base}/login") : redirect("#{base}/l/tok-1")
     end
@@ -180,6 +187,34 @@ class VerifyReviewHopTest < Minitest::Test
     refute status.success?
     assert leg(report, "consume")["ok"], "the consume itself succeeds — that is why this is quiet"
     assert_equal "landing_not_authorized", leg(report, "landing")["code"]
+  end
+
+  # [integration] an app below the 0.36.0 floor (turf-monster is on 0.31.0) has no
+  # reviewer fallback: the address-free mint the button uses cannot work there,
+  # and the failure must name the floor rather than blaming the desk's seeds
+  def test_sub_floor_app_fails_without_an_address_and_names_the_floor
+    report, status = run_hop(scenario: :sub_floor)
+
+    refute status.success?
+    assert_equal "mint_no_reviewer", leg(report, "mint")["code"]
+    assert_match(/0\.36\.0/, leg(report, "mint")["detail"])
+    assert_match(/--email/, leg(report, "mint")["detail"])
+  end
+
+  # [integration] --email rescues the sub-floor app, and the run is STAMPED as a
+  # deviation so it never reads as a clean check of the button's own path
+  def test_sub_floor_app_passes_with_email_and_records_the_deviation
+    server = HopServer.new(scenario: :sub_floor)
+    out, _err, status = Open3.capture3(SessionEnv.neutralized, RbConfig.ruby, SCRIPT,
+                                       SLUG, "--board", server.base,
+                                       "--email", "someone@example.com", "--json")
+    report = JSON.parse(out)
+
+    assert status.success?, out
+    assert report["ok"]
+    assert_equal "someone@example.com", report["email_override"]
+  ensure
+    server&.close
   end
 
   # [integration] --local-url skips the CTA leg and says so; a skipped leg must
