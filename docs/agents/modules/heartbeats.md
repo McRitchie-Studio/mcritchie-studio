@@ -426,7 +426,7 @@ read-only `bin/devops-cycle` snapshot tool.
 > — run it only when the operator launched it (the `Alex Heartbeat` / `full-cycle`
 > phrase) or otherwise granted ship authority in-session. It uses the SAME
 > deterministic gates as `production-deploy`; `--yes` answers only the human
-> confirm. For expediting ONE task on a clean release, use Avi's
+> confirm. For expediting ONE task on a clean ladder, use Avi's
 > [`deploy-with-task`](../agents/avi/sops/deploy-with-task.md) act instead.
 
 ---

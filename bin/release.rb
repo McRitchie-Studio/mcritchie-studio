@@ -157,10 +157,11 @@ require_relative "../app/models/release/merge_plan"
 require_relative "../app/models/release/sweep_plan"
 require_relative "../app/models/release/artifact_commit"
 require_relative "../app/models/release/cli"
-# CleanCheck is the pure verdict behind the `deploy-with-task` clean-release GUARD
-# (`bin/release status --clean-only`): given the pending assembled tasks (board)
-# and the per-repo release-ahead-of-main counts (git), it decides clean vs dirty
-# and builds the refusal + `full-cycle` offer. Rails-free → unit-tested.
+# CleanCheck is the pure verdict behind the `deploy-with-task` clean-LADDER GUARD
+# (`bin/release status --clean-only`): given BOTH rungs the expedite walks — work
+# riding `release` (board + release-ahead-of-main git count) and work parked on
+# `accepted` (board + accepted-ahead-of-release git count) — it decides clean vs
+# dirty and builds the refusal + `full-cycle` offer. Rails-free → unit-tested.
 require_relative "../app/models/release/clean_check"
 # SmokeSeal builds the post-ship 🟢/🔴 verdict + the EXACT rollback guidance the
 # red-seal alert prints (step 5c). Rails-free, so the alert comes from the SAME
@@ -2547,6 +2548,21 @@ end
 def prepare
   task_slugs = opt_values("--task")
   slug = opt_value("--slug")
+  # `--expedite` is `deploy-with-task`'s promote-time GUARD (step 3), and it is
+  # the one that actually protects production. `status --clean-only` answers "is
+  # it safe to START?" 15-25 minutes earlier, before review and CI; by the time
+  # the promote runs, `bin/review-autopilot` may have merged another task onto
+  # `accepted`. The promote is the irreversible moment — it lands ALL of
+  # `accepted` on `release`, whatever `--task` curation says about MEMBERSHIP —
+  # so the ladder has to be re-proven clean HERE, seconds before it, in the same
+  # command that does the promoting. Opt-in: a bare `prepare` (the normal
+  # full-queue sweep, where promoting all of `accepted` is exactly the intent) is
+  # completely unaffected.
+  expedite = Release::Cli.take_flag(ARGV, "--expedite")
+  if expedite && task_slugs.size != 1
+    abort!("--expedite guards a SINGLE expedited task — pass exactly one `--task <slug>` " \
+           "(got #{task_slugs.size}). Nothing was merged or deployed.")
+  end
 
   say("Prepare release — Avi qa-deploy (self-healing)#{PROD ? ' (PROD board)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
   warn_local!
@@ -2651,6 +2667,28 @@ def prepare
   #    irreversible step); the record write follows. Idempotent + fail-closed:
   #    accepted level with release → skip the PR but still record + deploy; a promote
   #    conflict / missing checkout ABORTS (members stay `reviewed` for a clean re-run).
+  # 4a. EXPEDITE GUARD (opt-in, `deploy-with-task` step 3). The promote below
+  #     lands the WHOLE `accepted` branch on `release` — `--task` curates which
+  #     tasks are RECORDED as members, never which COMMITS ride along — so an
+  #     expedite is only safe if `accepted` still carries nothing but the
+  #     expedited task. Re-derive the same verdict `status --clean-only` printed
+  #     at step 1, now, immediately before the irreversible git op: that is the
+  #     only placement that survives the review window, during which
+  #     `bin/review-autopilot` can merge another task onto `accepted`. Fail-closed
+  #     and BEFORE the promote, so a refusal leaves members `reviewed` and the
+  #     branches untouched.
+  if expedite
+    step("guard: re-prove the `accepted → release → main` ladder carries only #{task_slugs.first}")
+    guard = ladder_clean_verdict(expedited: task_slugs.first)
+    say("")
+    say(guard["message"])
+    unless guard["clean"] || DRY
+      abort!("--expedite refused: the ladder no longer carries only `#{task_slugs.first}` — " \
+             "promoting now would ship the work listed above. NOTHING was promoted, recorded, or " \
+             "deployed. Ship the whole release instead: run the `Alex Heartbeat` `full-cycle` launcher.")
+    end
+  end
+
   promote_repos = cands.select { |c| c["merged"].to_s == ACCEPTED_MERGED }
                        .map { |c| c["repo"].to_s }.reject(&:empty?).uniq
   promote_accepted_to_release!(promote_repos, label: slug) if promote_repos.any?
@@ -3136,74 +3174,149 @@ end
 # bin/release does only git/gh/gem/bundle I/O here; the string/version/ordering
 # DECISIONS live in the unit-tested Release::ShipSequence (+ GemfileRepin).
 
-# --- the clean-release GUARD (`deploy-with-task` runs this FIRST) -----------
-# `bin/release status` reports whether `release == main` — i.e. whether the only
-# thing a `release → main` fast-forward would ship is ONE freshly-merged task, or
-# whether OTHER assembled-but-unshipped work is already riding `release`. Avi's
-# `deploy-with-task` act runs `bin/release status --clean-only`
-# BEFORE it merges the expedited task; `--clean-only` turns the report into a
-# GATE — it exits nonzero (aborting the expedite) on a dirty release, after
-# printing the refusal + the `full-cycle` offer. The pure verdict +
-# message live in Release::CleanCheck; this owns only the two live reads.
+# --- the clean-LADDER GUARD (`deploy-with-task` runs this FIRST) ------------
+# `bin/release status` reports whether the whole `accepted → release → main`
+# ladder is clean — i.e. whether the only thing an expedite would carry to prod
+# is ONE named task, or whether OTHER work is already parked on a rung beneath
+# it. Avi's `deploy-with-task` act runs `bin/release status --clean-only --task
+# <slug>`; `--clean-only` turns the report into a GATE — it exits nonzero
+# (aborting the expedite) on a dirty ladder, after printing the refusal + the
+# `full-cycle` offer. `--task` names the expedited task so the guard does not
+# refuse on the operator's OWN work when the act is re-run after review already
+# merged it onto `accepted`.
+#
+# BOTH rungs, because the expedite walks both: the sweep promotes ALL of
+# `accepted` onto `release`, and the ship fast-forwards `release → main`.
+# Reading only the release rung is what let a reviewed-but-unswept task ride to
+# production with the guard fully green. The pure verdict + message live in
+# Release::CleanCheck; this owns only the live reads.
 def status
   clean_only = Release::Cli.take_flag(ARGV, "--clean-only")
+  expedited  = opt_value("--task").to_s.strip
 
   say("Release status#{PROD ? ' (PROD board)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
   warn_local!
 
-  # 1. Board signal (read-only, runs even in --dry-run): every task whose code is
-  #    already ON `release` but not yet shipped — `assembled` (QA-green, waiting
-  #    on Avi) PLUS `reviewed` with merged:"release" (swept, QA in flight) — and
-  #    the current release for context. A read mutates nothing, so it's safe
-  #    under --dry-run.
-  step("read (read-only): tasks riding `release` pending ship + Release.current")
-  board = conductor(
-    "pending = Task.where(stage: 'assembled').or(Task.where(stage: 'reviewed', merged: 'release'))" \
-    ".order(:position).map { |t| { slug: t.slug, title: t.title } }; " \
-    "r = Release.current; " \
-    "puts({ pending: pending, release: (r ? { slug: r.slug, state: r.state } : nil) }.to_json)",
-    read_only: true
-  )
-  pending = board["pending"] || []
-  rel = board["release"]
-  say("  current release: #{rel ? "#{rel['slug']} (#{rel['state']})" : 'none active'}") if rel || !DRY
-
-  # 2. Git signal: per release repo, how far origin/release is AHEAD of
-  #    origin/main. Skipped under --dry-run (fetches touch the network); the
-  #    board signal alone drives the previewed verdict then.
-  repo_states = release_ahead_states
-
-  verdict = Release::CleanCheck.evaluate(pending_tasks: pending, repo_states: repo_states)
+  verdict = ladder_clean_verdict(expedited: expedited, report_release: true)
   say("")
   say(verdict["message"])
 
-  # --clean-only is the GATE: a dirty release aborts the expedite (non-zero exit)
+  # --clean-only is the GATE: a dirty ladder aborts the expedite (non-zero exit)
   # so `deploy-with-task` refuses instead of dragging the pending work to prod.
   # A --dry-run previews the verdict without aborting (nothing is executed).
   if clean_only && !verdict["clean"] && !DRY
-    abort!("release is not clean — `deploy-with-task` refused (ship the whole release with the `full-cycle` launcher)")
+    abort!("the `accepted → release → main` ladder is not clean — `deploy-with-task` refused " \
+           "(ship the whole release with the `full-cycle` launcher)")
   end
 end
 
-# The git signal for the clean check: per release repo, the number of commits
-# origin/release is AHEAD of origin/main (0 ⇒ that repo's release == main). This
-# is the I/O seam (fetch + rev-list) `status` calls, split out so the tests stub
-# it the way they stub `conductor`. Returns [] under --dry-run (a preview runs no
-# git — the board read alone drives the previewed verdict) and skips any repo not
-# cloned as a sibling.
-def release_ahead_states
-  return [] if DRY
+# Gather BOTH clean-ladder signals on BOTH rungs and return the CleanCheck
+# verdict. Split out of `status` because it is consulted at TWO moments, and the
+# second one is the one that actually protects production:
+#   * `status --clean-only` at the START of `deploy-with-task` (is it safe to
+#     begin?), and
+#   * `prepare --expedite` immediately BEFORE the promote (is it STILL safe?).
+# The gap between them is 15-25 minutes of review and CI, and `bin/review-autopilot`
+# can land another task on `accepted` inside it. A guard consulted only at the
+# start would be answering a question about a world that has since changed, so
+# the same verdict has to be re-derivable in one call at the mutating seam.
+#
+# `expedited` is the slug the act is expediting (from `--task`), excluded from
+# the accepted rung's board signal — see Release::CleanCheck for what that
+# exclusion does and does not prove.
+def ladder_clean_verdict(expedited: nil, report_release: false)
+  # 1. Board signal, BOTH rungs, in ONE conductor call (read-only, runs even in
+  #    --dry-run; a read mutates nothing, and one call keeps the prod board's
+  #    connection budget intact):
+  #      pending  — code already ON `release`, not shipped: `assembled` (QA-green,
+  #                 waiting on Avi) plus `reviewed` with merged:"release" (swept,
+  #                 QA in flight). The ff to `main` would carry these.
+  #      accepted — `reviewed` with merged:"accepted": code on `accepted`, not yet
+  #                 swept. The PROMOTE would carry these onto `release`, and the
+  #                 ff from there to `main`. This is the rung the guard used to be
+  #                 blind to.
+  #    Deliberately UNSCOPED by repo: `prepare` run bare sweeps every `reviewed`
+  #    task and derives its promote repos from them, so other-REPO parked work
+  #    rides out too — a per-repo git read alone would never see it.
+  step("read (read-only): tasks riding `release` + tasks parked on `accepted` + Release.current")
+  board = conductor(
+    "pending = Task.where(stage: 'assembled').or(Task.where(stage: 'reviewed', merged: 'release'))" \
+    ".order(:position).map { |t| { slug: t.slug, title: t.title } }; " \
+    "accepted = Task.where(stage: 'reviewed', merged: 'accepted')" \
+    ".order(:position).map { |t| { slug: t.slug, title: t.title } }; " \
+    "r = Release.current; " \
+    "puts({ pending: pending, accepted: accepted, " \
+    "release: (r ? { slug: r.slug, state: r.state } : nil) }.to_json)",
+    read_only: true
+  )
+  pending  = board["pending"] || []
+  accepted = board["accepted"] || []
+  if report_release
+    rel = board["release"]
+    say("  current release: #{rel ? "#{rel['slug']} (#{rel['state']})" : 'none active'}") if rel || !DRY
+  end
 
-  release_repo_slugs.filter_map do |repo|
+  # 2. Git signal, BOTH rungs, from ONE fetch per repo. Skipped under --dry-run
+  #    (fetches touch the network); the board signal alone drives the previewed
+  #    verdict then.
+  git = ladder_ahead_states
+
+  Release::CleanCheck.evaluate(
+    pending_tasks: pending,
+    repo_states: git["release"],
+    accepted_tasks: accepted,
+    accepted_states: git["accepted"],
+    unreadable_repos: git["unreadable"],
+    expedited: expedited
+  )
+end
+
+# The git signal for the clean check, BOTH rungs, from ONE fetch per repo:
+#   "release"  — commits origin/release is ahead of origin/main (0 ⇒ release == main)
+#   "accepted" — commits origin/accepted is ahead of origin/release (0 ⇒ accepted == release)
+#   "unreadable" — [{ "repo" =>, "rung" => }] for a count that could NOT be read
+# ONE fetch is load-bearing, not just cheaper: both rungs are then measured
+# against the SAME remote snapshot, so a disagreement between the board and git
+# signals is real rather than an artifact of two fetches straddling a push.
+#
+# Every repo is reported at ahead == 0 too, because an EMPTY list is how the
+# caller learns the read did not run at all (--dry-run) — filtering to the
+# positive counts happens in Release::CleanCheck. A failed rev-list is recorded
+# as unreadable rather than skipped: a read that failed is not a read that came
+# back clean, and silently dropping the repo is the same shape of bug as never
+# reading the rung. Repos not cloned as siblings are skipped (nothing local to
+# measure); `release_repo_slugs` is already three-rung-only, so every repo it
+# yields is declared to HAVE both branches.
+# This is the I/O seam the tests stub, the way they stub `conductor`.
+def ladder_ahead_states
+  return { "release" => [], "accepted" => [], "unreadable" => [] } if DRY
+
+  release_states = []
+  accepted_states = []
+  unreadable = []
+
+  release_repo_slugs.each do |repo|
     path = repo_path(repo)
     next unless Dir.exist?(path)
 
     sh("git", "-C", path, "fetch", "origin", "--quiet")
-    out, ok = sh("git", "-C", path, "rev-list", "--count", "origin/main..origin/#{RELEASE_BRANCH}", capture: true)
-    next unless ok
-
-    { "repo" => repo, "ahead" => out.strip.to_i }
+    rel = rung_ahead(path, "origin/main", "origin/#{RELEASE_BRANCH}")
+    acc = rung_ahead(path, "origin/#{RELEASE_BRANCH}", "origin/#{ACCEPTED_BRANCH}")
+    rel.nil? ? unreadable << { "repo" => repo, "rung" => RELEASE_BRANCH }
+             : release_states << { "repo" => repo, "ahead" => rel }
+    acc.nil? ? unreadable << { "repo" => repo, "rung" => ACCEPTED_BRANCH }
+             : accepted_states << { "repo" => repo, "ahead" => acc }
   end
+
+  { "release" => release_states, "accepted" => accepted_states, "unreadable" => unreadable }
+end
+
+# Commits `head` is ahead of `base` in a checkout, or nil when the count could
+# not be read (a missing ref, a failed rev-list). nil is the FAILURE signal the
+# caller records as unreadable — never a 0.
+def rung_ahead(path, base, head)
+  out, ok = sh("git", "-C", path, "rev-list", "--count", "#{base}..#{head}", capture: true)
+  ok ? out.strip.to_i : nil
 end
 
 SHORT = 7
@@ -6208,7 +6321,7 @@ if __FILE__ == $PROGRAM_NAME
   when "retro"    then retro
   else
     warn "usage: bin/release {init|merge <task-slug> [<task-slug>...]|prepare|eject <task-slug>|ship [--finalize-only [<release>]]|finalize [<release>]|status|archive|retro} " \
-         "[--task SLUG ...] [--slug REL] [--by NAME] [--feedback …] [--clean-only] " \
+         "[--task SLUG ...] [--slug REL] [--by NAME] [--feedback …] [--clean-only] [--expedite] " \
          "[--worked …] [--friction …] [--followup …] [--file-tasks] [--local] [--dry-run] [--yes]"
     exit 1
   end

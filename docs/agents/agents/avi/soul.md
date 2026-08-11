@@ -76,7 +76,7 @@ My accuracy is *my* number — I own it. PM and Dev sizes are calibration data, 
   reviewed queue onto `release`, pre-QA gate, deploy QA, flip members `assembled`
   on QA-green
 - [`sops/deploy-with-task.md`](sops/deploy-with-task.md) — expedite ONE task to
-  production behind the clean-release guard
+  production behind the clean-ladder guard
 - [`git-protocol.md`](../../system/git-protocol.md) — branch naming, PR table, send-back template, ethics
 - [`sizing-rubric.md`](../../system/sizing-rubric.md) — sealed-bid sizing, accuracy as my primary KPI
 - [`exclusive-lanes.md`](../../system/exclusive-lanes.md) — when to confer with Carl about the migration lane

@@ -1333,6 +1333,92 @@ class ReleaseCliTest < Minitest::Test
     refute_includes out, "not sweepable", "no loud fail when every named slug survived"
   end
 
+  # --- `prepare --expedite`: the PROMOTE-TIME clean-ladder guard -----------------
+  # `status --clean-only` answers "is it safe to START?" at the top of
+  # `deploy-with-task`. The promote runs 15-25 minutes later — review plus two CI
+  # payments — and `bin/review-autopilot` can merge another task onto `accepted`
+  # inside that window. Since the promote lands the WHOLE `accepted` branch on
+  # `release` (`--task` curates MEMBERSHIP, never which COMMITS ride), a guard
+  # consulted only at the start is answering about a world that has since changed.
+  # `--expedite` re-derives the same verdict in the same command that promotes.
+
+  # Layer a ladder-guard board read + git seam over the normal sweep flow. The
+  # sweep's own `conductor` branches still answer through the alias, so the
+  # promote/record/QA path is unchanged.
+  def expedite_stub(accepted:, accepted_ahead: [{ "repo" => "mcritchie-studio", "ahead" => 2 }])
+    SWEEP_FLOW_STUB + <<~RUBY
+      alias sweep_conductor conductor
+      def conductor(ruby, read_only: false)
+        return sweep_conductor(ruby, read_only: read_only) unless ruby.include?("Task.where(stage: 'assembled')")
+
+        { "pending" => [], "accepted" => #{accepted.inspect}, "release" => nil }
+      end
+      def ladder_ahead_states
+        { "release" => [{ "repo" => "mcritchie-studio", "ahead" => 0 }],
+          "accepted" => #{accepted_ahead.inspect}, "unreadable" => [] }
+      end
+    RUBY
+  end
+
+  def test_prepare_expedite_promotes_when_accepted_still_carries_only_that_task
+    out = run_cli(["--yes", "--task", "task-accepted", "--expedite"], call: "prepare",
+                  setup: expedite_stub(accepted: [{ "slug" => "task-accepted", "title" => "The one task" }]))
+
+    assert_includes out, "re-prove the `accepted → release → main` ladder", "the guard runs at the promote"
+    assert_includes out, "attributed to the expedited task `task-accepted`"
+    assert_includes out, "GH-MERGE https://gh/pr/accepted-release", "a clean ladder still PROMOTES — the lane stays usable"
+    assert_includes out, "SWEEP-CALL", "…and still records"
+  end
+
+  def test_prepare_expedite_refuses_a_task_the_autopilot_landed_mid_review
+    out = run_cli(["--yes", "--task", "task-accepted", "--expedite"],
+                  setup: expedite_stub(accepted: [{ "slug" => "task-accepted", "title" => "" },
+                                                  { "slug" => "autopilot-landed", "title" => "Merged mid-review" }]),
+                  call: %{begin; prepare; puts("NO-ABORT"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+    assert_includes out, "ABORTED", "the promote-time guard is what actually protects production"
+    assert_includes out, "autopilot-landed", "the refusal names the work that would have ridden along"
+    assert_includes out, "full-cycle", "it offers shipping the whole release instead"
+    assert_includes out, "NOTHING was promoted, recorded, or deployed"
+    refute_includes out, "NO-ABORT"
+    refute_includes out, "GH-MERGE", "fail-closed BEFORE the irreversible promote"
+    refute_includes out, "SWEEP-CALL", "nothing recorded"
+    refute_includes out, "QA-GREEN-CALL", "nothing flipped"
+  end
+
+  def test_prepare_expedite_refuses_unstamped_commits_on_accepted
+    out = run_cli(["--yes", "--task", "task-accepted", "--expedite"],
+                  setup: expedite_stub(accepted: []),
+                  call: %{begin; prepare; puts("NO-ABORT"); rescue SystemExit; puts("ABORTED"); end})
+
+    assert_includes out, "ABORTED", "commits on `accepted` with no stamped owner are never attributed away"
+    assert_includes out, "DISAGREE", "the board/git disagreement is named, not swallowed"
+    refute_includes out, "GH-MERGE"
+    refute_includes out, "NO-ABORT"
+  end
+
+  def test_prepare_expedite_requires_exactly_one_named_task
+    out = run_cli(["--yes", "--expedite"], setup: SWEEP_FLOW_STUB,
+                  call: %{begin; prepare; puts("NO-ABORT"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+    assert_includes out, "ABORTED", "an expedite with no named task has nothing to attribute to"
+    assert_includes out, "exactly one `--task <slug>`"
+    refute_includes out, "NO-ABORT"
+    refute_includes out, "GH-MERGE"
+  end
+
+  # A bare `prepare` — the normal full-queue sweep, where promoting ALL of
+  # `accepted` is exactly the intent — must be completely unaffected by the
+  # opt-in guard. Otherwise the fix breaks the pipeline it was meant to protect.
+  def test_prepare_without_expedite_never_runs_the_ladder_guard
+    out = run_cli(["--yes"], call: "prepare",
+                  setup: expedite_stub(accepted: [{ "slug" => "someone-else", "title" => "Parked" }]))
+
+    refute_includes out, "re-prove the `accepted → release → main` ladder", "the guard is opt-in"
+    assert_includes out, "GH-MERGE https://gh/pr/accepted-release", "the normal sweep promotes as before"
+    assert_includes out, "SWEEP-CALL"
+  end
+
   # --- the Steffon handoff line: printed on QA-green ONLY ------------------------
 
   def test_prepare_prints_the_steffon_handoff_only_on_qa_green
@@ -3588,35 +3674,43 @@ class ReleaseCliTest < Minitest::Test
     refute_includes out, "MERGED-CALL", "a dry run stamps nothing"
   end
 
-  # --- status / the clean-release GUARD (`deploy-with-task`'s first step) ---
-  # `status` gathers two signals — the board's assembled-but-unshipped tasks (via
-  # `conductor`) and per-repo release-ahead-of-main (via `release_ahead_states`) —
-  # then Release::CleanCheck decides clean vs dirty. Both reads are stubbed here so
-  # the guard is exercised with no Rails/DB/git. `--clean-only` turns a dirty
-  # verdict into a non-zero abort (rescued in-band so run_ruby sees a clean exit).
+  # --- status / the clean-LADDER GUARD (`deploy-with-task`'s first step) ----
+  # `status` gathers FOUR signals — a board read and a git read on EACH rung of
+  # the `accepted → release → main` ladder (the board via `conductor`, both git
+  # counts via `ladder_ahead_states`) — then Release::CleanCheck decides clean vs
+  # dirty. All reads are stubbed here so the guard is exercised with no
+  # Rails/DB/git. `--clean-only` turns a dirty verdict into a non-zero abort
+  # (rescued in-band so run_ruby sees a clean exit).
 
-  # Stub the board read + git seam. `pending` = assembled-task hashes, `ahead` =
-  # per-repo release-ahead counts.
-  def status_stub(pending:, ahead:)
+  # Stub the board read + git seam. `pending` = tasks riding `release`, `ahead` =
+  # per-repo release-ahead-of-main counts, `accepted` = tasks parked on
+  # `accepted`, `accepted_ahead` = per-repo accepted-ahead-of-release counts
+  # (defaults to a measured-and-level mcritchie-studio, the normal state).
+  def status_stub(pending:, ahead:, accepted: [],
+                  accepted_ahead: [{ "repo" => "mcritchie-studio", "ahead" => 0 }],
+                  unreadable: [])
     <<~RUBY
       def conductor(ruby, read_only: false)
-        { "pending" => #{pending.inspect}, "release" => { "slug" => "rel-cli", "state" => "assembling" } }
+        { "pending" => #{pending.inspect}, "accepted" => #{accepted.inspect},
+          "release" => { "slug" => "rel-cli", "state" => "assembling" } }
       end
-      def release_ahead_states
-        #{ahead.inspect}
+      def ladder_ahead_states
+        { "release" => #{ahead.inspect}, "accepted" => #{accepted_ahead.inspect},
+          "unreadable" => #{unreadable.inspect} }
       end
     RUBY
   end
 
-  def test_status_clean_release_reports_release_equals_main
+  def test_status_clean_ladder_reports_both_rungs_level
     out = run_cli(["status", "--clean-only"],
                   setup: status_stub(pending: [], ahead: [{ "repo" => "mcritchie-studio", "ahead" => 0 }]),
                   call: "status")
 
-    assert_includes out, "release == main", "a clean release reports release == main"
+    assert_includes out, "release == main", "a clean ladder reports release == main"
+    assert_includes out, "accepted == release", "…and the rung beneath it"
     assert_includes out, "safe to expedite one task"
     assert_includes out, "deploy-with-task", "the hint names the registered launcher phrase"
-    refute_includes out, "refused", "a clean release is not refused"
+    refute_includes out, "refused", "a genuinely clean ladder is NOT refused — the lane stays usable"
   end
 
   def test_status_clean_only_refuses_a_dirty_release_and_offers_the_composition
@@ -3649,6 +3743,78 @@ class ReleaseCliTest < Minitest::Test
 
     assert_includes out, "other-work", "plain status still reports the dirty state"
     assert_includes out, "DONE-NO-ABORT", "plain status is informational — it reports but never aborts"
+  end
+
+  # --- the ACCEPTED rung, end to end through the CLI -----------------------
+  # The hole: `status` read only the tasks riding `release`, so a task sitting
+  # `reviewed` with merged:"accepted" was invisible — and the sweep promotes ALL
+  # of `accepted`, so it rode to production alongside an expedite with the guard
+  # GREEN. These prove the CLI now aborts on that state, and (the other half)
+  # that a genuinely clean ladder still exits 0.
+
+  def test_status_clean_only_refuses_a_task_parked_on_accepted
+    out = run_cli(["status", "--clean-only"],
+                  setup: status_stub(pending: [], ahead: [{ "repo" => "mcritchie-studio", "ahead" => 0 }],
+                                     accepted: [{ "slug" => "parked-work", "title" => "Reviewed, not swept" }],
+                                     accepted_ahead: [{ "repo" => "mcritchie-studio", "ahead" => 3 }]),
+                  call: "begin; status; puts('NO-ABORT'); rescue SystemExit; puts('ABORTED'); end")
+
+    assert_includes out, "parked on `accepted`", "the guard now SEES the accepted rung"
+    assert_includes out, "parked-work"
+    assert_includes out, "full-cycle"
+    assert_includes out, "ABORTED", "a task parked on `accepted` aborts the expedite"
+    refute_includes out, "NO-ABORT", "the expedite must not fall through past the guard"
+  end
+
+  def test_status_clean_only_refuses_when_accepted_is_ahead_with_no_stamp
+    out = run_cli(["status", "--clean-only"],
+                  setup: status_stub(pending: [], ahead: [{ "repo" => "mcritchie-studio", "ahead" => 0 }],
+                                     accepted_ahead: [{ "repo" => "mcritchie-studio", "ahead" => 2 }]),
+                  call: "begin; status; puts('NO-ABORT'); rescue SystemExit; puts('ABORTED'); end")
+
+    assert_includes out, "mcritchie-studio (+2)", "git is PRIMARY on this rung — a missing stamp cannot pass"
+    assert_includes out, "DISAGREE", "the board/git disagreement is itself reported"
+    assert_includes out, "ABORTED"
+    refute_includes out, "NO-ABORT"
+  end
+
+  def test_status_clean_only_does_not_refuse_on_the_expedited_task_itself
+    out = run_cli(["status", "--clean-only", "--task", "my-expedite"],
+                  setup: status_stub(pending: [], ahead: [{ "repo" => "mcritchie-studio", "ahead" => 0 }],
+                                     accepted: [{ "slug" => "my-expedite", "title" => "The one task" }],
+                                     accepted_ahead: [{ "repo" => "mcritchie-studio", "ahead" => 4 }]),
+                  call: "status; puts('NO-ABORT')")
+
+    assert_includes out, "NO-ABORT", "re-running the act after review merged YOUR task must still pass"
+    assert_includes out, "attributed to the expedited task `my-expedite`",
+                    "the tolerated count is stated, never silently swallowed"
+    refute_includes out, "refused"
+  end
+
+  def test_status_clean_only_refuses_a_second_task_landed_beside_the_expedite
+    out = run_cli(["status", "--clean-only", "--task", "my-expedite"],
+                  setup: status_stub(pending: [], ahead: [{ "repo" => "mcritchie-studio", "ahead" => 0 }],
+                                     accepted: [{ "slug" => "my-expedite", "title" => "" },
+                                                { "slug" => "autopilot-landed", "title" => "Merged mid-review" }],
+                                     accepted_ahead: [{ "repo" => "mcritchie-studio", "ahead" => 6 }]),
+                  call: "begin; status; puts('NO-ABORT'); rescue SystemExit; puts('ABORTED'); end")
+
+    assert_includes out, "autopilot-landed", "the autopilot race is named"
+    refute_includes out, "my-expedite —", "the operator's own task is not listed against them"
+    assert_includes out, "ABORTED"
+    refute_includes out, "NO-ABORT"
+  end
+
+  def test_status_clean_only_refuses_an_unreadable_rung
+    out = run_cli(["status", "--clean-only"],
+                  setup: status_stub(pending: [], ahead: [{ "repo" => "mcritchie-studio", "ahead" => 0 }],
+                                     unreadable: [{ "repo" => "turf-monster", "rung" => "accepted" }]),
+                  call: "begin; status; puts('NO-ABORT'); rescue SystemExit; puts('ABORTED'); end")
+
+    assert_includes out, "could NOT be read", "a failed read is not a read that came back clean"
+    assert_includes out, "turf-monster/accepted"
+    assert_includes out, "ABORTED"
+    refute_includes out, "NO-ABORT"
   end
 
   # --- ship --dry-run: multi-repo, producer-first, hub-before-satellites ---
