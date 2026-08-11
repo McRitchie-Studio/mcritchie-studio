@@ -214,4 +214,117 @@ class ReviewPendingActionTest < ActiveSupport::TestCase
     revision = record_verdict(outcome: "request-changes", agent: "avi")
     assert_equal revision.id, action.superseding_scout_report&.id
   end
+
+  # ── A SETTLED ACTION IS NEVER RE-SETTLED ────────────────────────────────────
+  #
+  # The row IS the audit trail for a machine that merges unattended, so the tests
+  # below are about the RECORD, not the merge (the merge was never at risk —
+  # GitHub's sha pin makes a double merge impossible). Each one takes a settled
+  # row and tries to move it, the way a late second execution does.
+  #
+  # MUTATION PROOF: drop `.where(state: PENDING)` from #settle!'s conditional
+  # UPDATE and every test in this section fails.
+
+  test "[unit] a settled EXECUTED action cannot be flipped to REFUSED — its merge sha survives" do
+    record_verdict
+    action = arm
+
+    assert action.settle!(state: ReviewPendingAction::EXECUTED, reason: "merged", merge_sha: "cafe1234"),
+           "the first settle on a pending row wins"
+
+    refute action.settle!(state: ReviewPendingAction::REFUSED, reason: "task is reviewed, not submitted"),
+           "a settled row must report the write as refused, not silently accept it"
+
+    action.reload
+    assert_equal ReviewPendingAction::EXECUTED, action.state,
+                 "a merge that happened must never read as refused"
+    assert_equal "cafe1234", action.merge_sha, "the recorded merge sha is never nulled by a retry"
+    assert_equal "merged", action.outcome_reason
+    assert action.executed_at.present?
+  end
+
+  # Every terminal state, not just the one that was reported: a guard written for
+  # the observed shape only is a guard for the NEXT shape's absence.
+  test "[unit] no terminal state can be moved to any other terminal state" do
+    ReviewPendingAction::TERMINAL_STATES.each do |settled_state|
+      record_verdict
+      action = arm(head_sha: SecureRandom.hex(20))
+      assert action.settle!(state: settled_state, reason: "first"), "#{settled_state} must settle from pending"
+
+      (ReviewPendingAction::TERMINAL_STATES - [settled_state]).each do |attempted|
+        refute action.settle!(state: attempted, reason: "second"),
+               "#{settled_state} must not be movable to #{attempted}"
+        assert_equal settled_state, action.reload.state
+        assert_equal "first", action.outcome_reason, "the first settlement's reason stands"
+      end
+
+      action.destroy!
+    end
+  end
+
+  # The in-memory copy must not keep telling the losing caller's story: the loser
+  # REPORTS what stands, and it reads it off this object.
+  test "[unit] a losing settle leaves the instance reading what the table says" do
+    record_verdict
+    action = arm
+    action.settle!(state: ReviewPendingAction::EXECUTED, reason: "merged", merge_sha: "cafe1234")
+
+    same_row = ReviewPendingAction.find(action.id)
+    refute same_row.settle!(state: ReviewPendingAction::REFUSED, reason: "already acted on")
+    assert_equal ReviewPendingAction::EXECUTED, same_row.state, "no reload needed — the loser is told the truth"
+    assert_equal "cafe1234", same_row.merge_sha
+  end
+
+  test "[unit] settle! refuses a non-terminal state — settling is what it is for" do
+    record_verdict
+    action = arm
+
+    assert_raises(ArgumentError) { action.settle!(state: ReviewPendingAction::PENDING, reason: "nope") }
+    assert_raises(ArgumentError) { action.settle!(state: "wat", reason: "nope") }
+    assert_equal ReviewPendingAction::PENDING, action.reload.state
+  end
+
+  # ── THE ONE WRITE A SETTLED ROW STILL ACCEPTS ───────────────────────────────
+  # Narrow by construction: fill in a MISSING sha on an EXECUTED row, nothing else.
+
+  test "[unit] a missing merge sha can be supplied, but a recorded one is never replaced" do
+    record_verdict
+    action = arm
+    action.settle!(state: ReviewPendingAction::EXECUTED, reason: "already merged before this action ran")
+    assert_nil action.merge_sha
+
+    assert action.record_merge_sha!("realsha00"), "an EXECUTED row with no sha accepts the real one"
+    assert_equal "realsha00", action.reload.merge_sha
+
+    refute action.record_merge_sha!("otherssha"), "a recorded sha is never replaced"
+    assert_equal "realsha00", action.reload.merge_sha
+    refute action.record_merge_sha!(nil), "nothing to supply is not a write"
+    assert_equal ReviewPendingAction::EXECUTED, action.reload.state, "the backfill never touches state"
+  end
+
+  test "[unit] a merge sha cannot be backfilled onto a row that is not EXECUTED" do
+    record_verdict
+    action = arm
+    refute action.record_merge_sha!("realsha00"), "a pending row records no merge"
+    assert_nil action.reload.merge_sha
+
+    action.settle!(state: ReviewPendingAction::REFUSED, reason: "head moved")
+    refute action.record_merge_sha!("realsha00"), "a REFUSED row must never grow a merge sha"
+    assert_nil action.reload.merge_sha
+  end
+
+  # The same clobber through a different door: `arm!` disarms the live action it
+  # supersedes, and that write is a read-then-update too.
+  test "[unit] a re-arm cannot disarm an action that settled while it was arming" do
+    record_verdict
+    first = arm
+    first.settle!(state: ReviewPendingAction::EXECUTED, reason: "merged", merge_sha: "cafe1234")
+
+    second = arm(head_sha: "b" * 40)
+
+    assert_equal ReviewPendingAction::EXECUTED, first.reload.state,
+                 "a re-arm must not rewrite a merge that already happened as disarmed"
+    assert_equal "cafe1234", first.merge_sha
+    assert_equal ReviewPendingAction::PENDING, second.reload.state, "the re-arm still lands"
+  end
 end

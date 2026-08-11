@@ -2222,4 +2222,178 @@ class DorCheckTest < Minitest::Test
       assert_match(%r{app/models/thing\.rb}, out)
     end
   end
+
+  # ==== [integration] the EXECUTED control ==========================================
+  #
+  # Until 2026-08-11 the `[control]` line was checked for STRUCTURE only: dor-check
+  # confirmed it existed and named a file in the diff, which is a DECLARATION.
+  # bin/control-check now replays the pre-change version of the changed test files
+  # against current production code and stamps a fingerprint-bound
+  # `[control@<fp>]` line, and these tests pin the GATE half of that contract.
+  #
+  # The contract has two populations and the tests below cover both, because the
+  # ONE thing that must not happen is the gate getting stricter where the builder
+  # cannot comply:
+  #   * replayable → the executed stamp is required (prose alone stops working)
+  #   * not replayable → the author's prose line stays the requirement, unchanged
+  # and one thing that must not happen either way: refusing on the VERDICT.
+
+  # A temp repo whose BASE commit carries `test/models/a_test.rb`, so the path is
+  # genuinely replayable (it has a pre-change version) rather than merely named.
+  def with_control_repo(base_files: ["test/models/a_test.rb"])
+    Dir.mktmpdir do |dir|
+      git = ->(args) { assert(system("git -C #{dir} #{args} >/dev/null 2>&1"), "git #{args}") }
+      git.call("init -q")
+      git.call("config user.email tester@example.com")
+      git.call("config user.name tester")
+      base_files.each do |rel|
+        full = File.join(dir, rel)
+        FileUtils.mkdir_p(File.dirname(full))
+        File.write(full, "base\n")
+      end
+      git.call("add -A")
+      git.call("commit -q --allow-empty -m base")
+      git.call("branch base-ref")
+      yield dir
+    end
+  end
+
+  # Run the gate against that repo with a deterministic observed diff.
+  def control_check(devops, dir, changed: "test/models/a_test.rb", env: {})
+    with_env({ "DOR_CHECK_DIFF_ROOT" => dir, "DOR_CHECK_DIFF_BASE" => "base-ref",
+               "DOR_CHECK_CHANGED_FILES" => changed }.merge(env)) do
+      check(devops)
+    end
+  end
+
+  def test_integration_a_replayable_diff_now_demands_the_executed_control
+    # THE POINT OF THE WHOLE CHANGE. A structurally-valid control nobody ran used
+    # to pass here; the file is replayable, so prose alone must no longer satisfy.
+    with_control_repo do |dir|
+      out, code = control_check(TEST_ONLY_CONTRACT.merge(
+        "checks_run" => ["[control] pre-change a_test.rb → I promise it failed"]
+      ), dir)
+
+      refute_equal 0, code, out
+      assert_match(/requires an EXECUTED control/, out)
+      # The remedy must be the exact command, not a concept.
+      assert_match(%r{bin/control-check}, out)
+    end
+  end
+
+  def test_integration_a_fresh_executed_control_satisfies_the_gate
+    # No author prose at all: a machine-executed, fingerprint-bound NECESSARY is
+    # STRICTLY stronger evidence than the sentence it replaces, so it stands alone.
+    # (A prose line that names some OTHER task's file is still refused — see
+    # test_integration_test_only_refuses_a_control_that_names_no_file_from_the_diff;
+    # a fresh stamp does not license carrying a stale sentence along beside it.)
+    with_control_repo do |dir|
+      out, code = control_check(TEST_ONLY_CONTRACT.merge("checks_run" => []), dir,
+                                env: { "DOR_CHECK_CONTROL_EVIDENCE" => "fresh:NECESSARY" })
+
+      assert_equal 0, code, out
+      assert_match(/DoR-to-Merge met/, out)
+    end
+  end
+
+  def test_integration_a_stale_executed_control_is_refused
+    # Stale = it was run, against DIFFERENT code. The whole value of binding the
+    # stamp to a fingerprint is that editing after the replay invalidates it.
+    with_control_repo do |dir|
+      out, code = control_check(TEST_ONLY_CONTRACT, dir,
+                                env: { "DOR_CHECK_CONTROL_EVIDENCE" => "stale" })
+
+      refute_equal 0, code, out
+      assert_match(/STALE/, out)
+    end
+  end
+
+  def test_integration_a_real_fingerprint_bound_stamp_grades_fresh
+    # The injection seam above is a convenience; this is the real path — a stamp
+    # carrying the tree's ACTUAL fingerprint must grade fresh, or bin/control-check
+    # would write evidence the gate cannot read.
+    with_control_repo do |dir|
+      fingerprint = suite_fingerprint(dir)
+      refute_empty fingerprint.to_s, "could not compute the repo fingerprint"
+      devops = TEST_ONLY_CONTRACT.merge(
+        "checks_run" => ["[control@#{fingerprint}] NECESSARY — replayed test/models/a_test.rb"]
+      )
+      out, code = control_check(devops, dir, env: { "DOR_CHECK_SUITE_EVIDENCE" => "ok" })
+
+      assert_equal 0, code, out
+    end
+  end
+
+  def test_integration_a_no_signal_control_asks_for_the_sentence_not_a_refusal_of_the_change
+    # NO-SIGNAL is what a rename, a move, a consolidation AND a quietly deleted
+    # assertion all look like. The gate must not refuse the CHANGE for it — it asks
+    # the author for the one thing the machine cannot supply.
+    with_control_repo do |dir|
+      out, code = control_check(TEST_ONLY_CONTRACT.merge("checks_run" => []), dir,
+                                env: { "DOR_CHECK_CONTROL_EVIDENCE" => "fresh:NO-SIGNAL" })
+
+      refute_equal 0, code, out
+      assert_match(/NO-SIGNAL/, out)
+      assert_match(/rename/, out)
+      # The remedy is a sentence, not a re-run and not a different shape.
+      assert_match(/Add the sentence/, out)
+    end
+  end
+
+  def test_integration_a_no_signal_control_passes_once_the_author_explains
+    with_control_repo do |dir|
+      devops = TEST_ONLY_CONTRACT.merge(
+        "checks_run" => ["[control] a_test.rb was renamed from b_test.rb; coverage identical"]
+      )
+      out, code = control_check(devops, dir, env: { "DOR_CHECK_CONTROL_EVIDENCE" => "fresh:NO-SIGNAL" })
+
+      assert_equal 0, code, out
+    end
+  end
+
+  def test_integration_an_unreplayable_diff_still_passes_on_the_authors_line_alone
+    # THE FLOOR NEVER RISES. An added file has no pre-change version and e2e/ has
+    # no runner here, so demanding a stamp would refuse work the builder cannot
+    # possibly produce one for — and a gate that refuses correct work is how a
+    # shape gets routed around.
+    with_control_repo(base_files: []) do |dir|
+      devops = TEST_ONLY_CONTRACT.merge(
+        "checks_run" => ["[control] added test/models/new_test.rb; forced a 404 and watched it fail"]
+      )
+      out, code = control_check(devops, dir, changed: "test/models/new_test.rb\ne2e/upload.spec.js")
+
+      assert_equal 0, code, out
+    end
+  end
+
+  def test_integration_an_unreplayable_diff_with_no_control_line_still_refuses
+    with_control_repo(base_files: []) do |dir|
+      out, code = control_check(TEST_ONLY_CONTRACT.merge("checks_run" => []), dir,
+                                changed: "test/models/new_test.rb")
+
+      refute_equal 0, code, out
+      assert_match(/requires a \[control\] line/, out)
+      # It must say WHY no machine did this for them, or the refusal reads as a bug.
+      assert_match(/Nothing in this diff is automatically replayable/, out)
+    end
+  end
+
+  def test_integration_a_full_suite_bypass_does_not_fabricate_an_executed_control
+    # REGRESSION, found while wiring this gate. FullSuiteGate#verdict DEFAULTS every
+    # evidence lane to :fresh when it short-circuits — which it does on a recorded
+    # `[full-suite-bypass]`. Reading the control's freshness off suite_eval[:lanes]
+    # therefore reported a control as EXECUTED that nothing ran: a gate synthesizing
+    # the exact fact it exists to establish. The control is graded against a real
+    # fingerprint or not at all.
+    with_control_repo do |dir|
+      devops = TEST_ONLY_CONTRACT.merge(
+        "checks_run" => ["[full-suite-bypass] CI outage, ran locally",
+                         "[control] pre-change a_test.rb → trust me"]
+      )
+      out, code = control_check(devops, dir, env: { "DOR_CHECK_SUITE_EVIDENCE" => nil })
+
+      refute_equal 0, code, out
+      assert_match(/requires an EXECUTED control/, out)
+    end
+  end
 end

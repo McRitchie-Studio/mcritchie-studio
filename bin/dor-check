@@ -139,6 +139,7 @@ require_relative "lib/repo_root"
 require_relative "lib/ci_status"
 require_relative "lib/code_diff"
 require_relative "lib/test_only_diff"
+require_relative "lib/control_replay"
 require_relative "lib/task_board"
 require_relative "lib/cert_root_guard"
 
@@ -291,6 +292,78 @@ def control_names_a_changed_file?(line, observed)
 
     text.include?(file) || text.include?(File.basename(file))
   end
+end
+
+# Which observed paths bin/control-check CAN replay: a runnable Ruby test file
+# that EXISTS at the diff base, so there is a pre-change version to run against
+# current production code. A rename shows up here through its OLD path (the
+# `--name-only` diff lists both sides), a deletion through the deleted path, and an
+# ADDED file not at all — which is correct, since an added file has no pre-change
+# version and never will.
+#
+# FAIL-OPEN — [] when the question cannot be answered (no git, an unresolvable
+# base, an unobserved diff). That is the opposite of this file's usual instinct and
+# it is deliberate, because the two failure modes are not symmetric here. The
+# fail-CLOSED rule elsewhere protects a gate whose job is refusing under-tested
+# CODE; this predicate decides whether to demand a MACHINE RUN of a control, and
+# guessing "yes" from a blind checkout would refuse a correct change for evidence
+# the builder cannot produce from where they stand. The floor never drops: when
+# this returns [], the author's `[control]` line is still required, exactly as
+# before this runner existed. The strictness is ADDED where the replay is provably
+# possible, never subtracted where it isn't.
+# Freshness of the EXECUTED control stamp, plus the verdict it recorded, as
+# [lane_status, verdict_token].
+#
+# Graded from the REAL fingerprint rather than read off suite_eval[:lanes], and
+# that is not a stylistic preference — it is the whole integrity of this gate.
+# FullSuiteGate#verdict DEFAULTS its lane hash to "every evidence lane :fresh"
+# whenever it short-circuits, which it does on three paths: an injected
+# DOR_CHECK_SUITE_EVIDENCE token (a test seam), an unverifiable tree, and — the one
+# that matters in production — a recorded `[full-suite-bypass]`. For the suite
+# lanes that default is the point. For the control it would SYNTHESIZE the exact
+# fact this gate exists to establish: a builder who recorded a suite bypass would
+# be told their control was executed when nothing ran it. That is a gate reporting
+# a declaration as verified evidence — the disease this whole cycle is about,
+# reproduced inside its own cure. So the control is graded against a fingerprint or
+# not graded at all.
+#
+# DOR_CHECK_CONTROL_EVIDENCE is this lane's OWN injection seam (fresh:<VERDICT> |
+# stale | missing), deliberately separate from the suite's for the same reason.
+def control_evidence_status(checks, suite_eval)
+  injected = ENV["DOR_CHECK_CONTROL_EVIDENCE"].to_s.strip
+  unless injected.empty?
+    lane = if injected.start_with?("fresh") then :fresh
+           elsif injected.start_with?("stale") then :stale
+           else :missing
+           end
+    return [lane, ControlReplay::VERDICTS.find { |token| injected.include?(token) }]
+  end
+
+  fingerprint = (suite_eval && suite_eval[:fingerprint]) || FullSuiteGate.fingerprint(diff_root)
+  return [:missing, nil] if fingerprint.nil?
+
+  lane = FullSuiteGate.lane_status(checks, ControlReplay::LANE, fingerprint)
+  stamp = checks.find { |line| FullSuiteGate.extract_fingerprint(line, ControlReplay::LANE) == fingerprint }
+  [lane, stamp && ControlReplay.verdict_of(stamp)]
+end
+
+def control_replayable_files(observed)
+  return [] if observed.nil? || observed.empty?
+
+  root = diff_root
+  base = diff_base(root).to_s.strip
+  return [] if base.empty?
+  return [] unless system("git", "-C", root.to_s, "rev-parse", "--verify", base,
+                          out: File::NULL, err: File::NULL)
+
+  observed.select do |path|
+    next false unless ControlReplay.runnable?(path)
+
+    system("git", "-C", root.to_s, "cat-file", "-e", "#{base}:#{path}",
+           out: File::NULL, err: File::NULL)
+  end
+rescue StandardError
+  []
 end
 
 # Files changed on this branch — the FULL working-tree diff, so the code-diff
@@ -1383,47 +1456,6 @@ if shape_def && shape_def["claimable_when"] == "test_only_diff"
   end
 end
 
-# ==== `required_evidence: [control]` — the question a tier list cannot ask ======
-#
-# For a test-only change the reviewer's real question is not "which tiers did you
-# run" but "DOES THE CHANGED TEST STILL BITE?" — and both builders who hit this gap
-# answered it unprompted, one with a control (the pre-change file against the fixed
-# engine: exactly 1 failure, at exactly the deleted line) and one with a mutation
-# (force a 404, watch the new diagnostic print the URL).
-#
-# WHAT THIS CHECK PROVES, AND WHAT IT DOES NOT — stated plainly, because a gate
-# that oversells itself is the subject of this file's own header. It proves the
-# control EXISTS and is ABOUT THIS CHANGE: the line must name a path that is
-# actually in the observed diff, so a generic string carried between tasks does not
-# satisfy it and the reviewer gets a re-runnable handle. It does NOT prove the run
-# happened — no lane can, because a test-only diff leaves no automatic mutation
-# target (production code is unchanged, so there is no before/after to execute).
-# That is why `control` is NOT a dor_tier: test/lib/feature_shape_tiers_test.rb
-# would refuse a tier no runner runs, and rightly. Executing the necessary half is
-# filed as /tasks/execute-test-only-control.
-#
-# Build gate exempt: the control is a BUILD artifact, unknowable at design time —
-# the same reason local_url and the tiers are not asked for there.
-if gate != "build" && Array(shape_def && shape_def["required_evidence"]).include?("control")
-  control_lines = checks.select { |line| line.to_s =~ /\A\s*\[\s*control\s*[\]:]/i }
-  observed = changed_files
-
-  if control_lines.empty?
-    errors << "shape #{shape.inspect} requires a [control] line in checks_run — the evidence that answers " \
-      "\"does the changed test still bite?\", which is the question a tier list cannot ask about a diff " \
-      "with no behavior in it. Run the control and record what you SAW, e.g. bin/task update " \
-      "#{task["slug"] || slug} --checks '[control] pre-change test/integration/hub_test.rb at HEAD → " \
-      "1 failure at line 42 (the assertion I deleted); post-change green' — or, for added coverage, the " \
-      "mutation you forced and the failure it produced"
-  elsif observed.any? && control_lines.none? { |line| control_names_a_changed_file?(line, observed) }
-    sample = observed.first(3).join(", ") + (observed.size > 3 ? ", …" : "")
-    errors << "the [control] line names no file from this diff, so it is not evidence ABOUT this change — " \
-      "a control that could have been written before the change was made is a sentence, not a result. " \
-      "Name the test file you controlled (one of: #{sample}) along with the command you ran and the " \
-      "failure you observed"
-  end
-end
-
 # Post-deploy nudge (merge gate only). A diff that adds or edits a seed or a
 # data-migration should declare devops.post_deploy_cmd so the conductor runs it
 # on ship (bin/release) instead of someone running the rake by hand afterward.
@@ -1672,6 +1704,99 @@ if gate != "build" && shape_def && shape_def.fetch("full_suite_gate", true)
     else
       errors << suite_evidence_error(suite_eval, task["slug"] || slug, ci, review_role)
     end
+  end
+end
+
+# ==== `required_evidence: [control]` — the question a tier list cannot ask ======
+#
+# For a test-only change the reviewer's real question is not "which tiers did you
+# run" but "DOES THE CHANGED TEST STILL BITE?" — and both builders who hit this gap
+# answered it unprompted, one with a control (the pre-change file against the fixed
+# engine: exactly 1 failure, at exactly the deleted line) and one with a mutation
+# (force a 404, watch the new diagnostic print the URL).
+#
+# THE CONTROL IS NOW EXECUTED FOR THE HALF THAT CAN BE — and that half is the one
+# the shape's own claimability rule makes sound. Because `claimable_when:
+# test_only_diff` refuses the shape unless EVERY changed path is provably test
+# content, production code at the base is byte-identical to production code at
+# HEAD. So the pre-change version of a changed test file can be replayed against
+# current production code, and bin/control-check does exactly that, stamping a
+# fingerprint-bound `[control@<fp>]` line this gate re-grades (bin/lib/
+# control_replay.rb owns the partition and the verdict tokens).
+#
+# TWO POPULATIONS, TWO CONTRACTS — the config says which is which, and so does the
+# refusal text below, because the builder's next action differs:
+#
+#   REPLAYABLE (a pre-change version + a runner here — measured at ~79% of this
+#   repo's test-only history): an EXECUTED, fresh stamp is required. Prose alone no
+#   longer satisfies, which is the whole point of this gate change: a
+#   structurally-valid control nobody ran is a declaration, and declarations
+#   standing in for evidence is the disease this file's header is about.
+#
+#   NOT REPLAYABLE (added files, which have no pre-change version at all; e2e/ and
+#   tests/, which need a booted server or a funded validator): the author's
+#   `[control]` line stays the requirement, unchanged. No stamp is invented for
+#   them — the e2e_onchain removal in config/feature_shapes.yml is the standing
+#   lesson on what a lane that runs nothing costs.
+#
+# THE VERDICT NEVER REFUSES. `old GREEN` (NO-SIGNAL) means the replay distinguished
+# nothing — and a rename, a move, a consolidation and a quietly deleted assertion
+# ALL look like that. Refusing there would land on legitimate work, and a gate that
+# refuses correct work teaches people to stop claiming the shape (taking its real
+# checks with it). So NO-SIGNAL asks the author for the one thing the machine
+# cannot supply: the sentence saying which of those it is. A sentence is a cheap
+# ask; a false refusal is not. This is an evidence gate, not a safety gate.
+#
+# Build gate exempt: the control is a BUILD artifact, unknowable at design time —
+# the same reason local_url and the tiers are not asked for there.
+if gate != "build" && Array(shape_def && shape_def["required_evidence"]).include?("control")
+  control_lines = checks.select { |line| line.to_s =~ /\A\s*\[\s*control\s*[\]:]/i }
+  observed = changed_files
+  # The machine's stamp, graded by the SAME fingerprint machinery as the certs —
+  # so in the review lane it grades against the branch tree, not the reviewer's
+  # checkout (FullSuiteGate's override seam), for free. Never read off
+  # suite_eval[:lanes]: see control_evidence_status for why a recorded suite bypass
+  # would otherwise fabricate a control nobody ran.
+  control_lane, verdict = control_evidence_status(checks, suite_eval)
+  replayable = control_replayable_files(observed)
+
+  if replayable.any? && control_lane != :fresh
+    stale = control_lane == :stale
+    errors << "shape #{shape.inspect} requires an EXECUTED control, and #{replayable.size} changed file(s) " \
+      "CAN be replayed (#{replayable.first(3).join(', ')}#{replayable.size > 3 ? ', …' : ''}) — " \
+      "#{stale ? 'the recorded control is STALE (it was run against different code)' : 'none is recorded'}. " \
+      "Run `bin/control-check #{task["slug"] || slug}` — it replays those files' PRE-CHANGE content against " \
+      "current production code (sound because this diff is 100% test code) and records a fingerprint-bound " \
+      "[control@<fp>] line. It does not refuse on the result; it records what it saw"
+  elsif control_lines.empty? && control_lane != :fresh
+    errors << "shape #{shape.inspect} requires a [control] line in checks_run — the evidence that answers " \
+      "\"does the changed test still bite?\", which is the question a tier list cannot ask about a diff " \
+      "with no behavior in it. Nothing in this diff is automatically replayable (an added file has no " \
+      "pre-change version; e2e/ and tests/ have no runner here), so this half is yours: run the control and " \
+      "record what you SAW, e.g. bin/task update #{task["slug"] || slug} --checks '[control] pre-change " \
+      "test/integration/hub_test.rb at HEAD → 1 failure at line 42 (the assertion I deleted); post-change " \
+      "green' — or, for added coverage, the mutation you forced and the failure it produced"
+  elsif control_lines.any? && observed.any? &&
+        control_lines.none? { |line| control_names_a_changed_file?(line, observed) }
+    sample = observed.first(3).join(", ") + (observed.size > 3 ? ", …" : "")
+    errors << "the [control] line names no file from this diff, so it is not evidence ABOUT this change — " \
+      "a control that could have been written before the change was made is a sentence, not a result. " \
+      "Name the test file you controlled (one of: #{sample}) along with the command you ran and the " \
+      "failure you observed"
+  end
+
+  # A NO-SIGNAL replay is the dangerous-looking case, and it is ALSO what a rename
+  # or a consolidation produces. The machine cannot tell them apart, so it does not
+  # try to — it hands the reviewer a machine-observed fact and asks the author for
+  # the sentence that disambiguates it. Refusal here is for the MISSING sentence,
+  # never for the verdict.
+  if control_lane == :fresh && verdict == ControlReplay::NO_SIGNAL && control_lines.empty?
+    errors << "the executed control came back NO-SIGNAL: the pre-change test PASSED against current " \
+      "production code, so the replay proves nothing about whether this change was needed. That is what a " \
+      "rename, a move, a consolidation AND a silently-deleted assertion all look like — the machine cannot " \
+      "tell them apart, and it is not refusing your change for it. Add the sentence that can: bin/task " \
+      "update #{task["slug"] || slug} --checks '[control] <file> → renamed/consolidated/… , coverage " \
+      "preserved because …'"
   end
 end
 

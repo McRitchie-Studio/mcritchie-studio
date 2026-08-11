@@ -87,7 +87,27 @@ gem "tailwindcss-rails", "~> 4.5"
 gem "sentry-ruby"
 gem "sentry-rails"
 
-gem "studio-engine", "~> 0.33" # 0.33.0 makes the environment banner the navbar's SIBLING rather than its child: the layout renders studio/banners/stack immediately before the header, the stack measures its own height with a ResizeObserver and publishes --studio-bars-h, and the header offsets by that instead of hardcoding top-0. This app's layout depends on that partial existing, so 0.33 is the FLOOR. Bars also brand off --color-warning / --color-danger now, so the banner follows this app's theme.
+# 0.33.0 made the environment banner the navbar's SIBLING rather than its child:
+# the layout renders studio/banners/stack immediately before the header. 0.39.0
+# changed how the header clears those bars, and THAT is why this floor is 0.39
+# and not 0.33. Through 0.38 the stack was sticky and measured itself with a
+# ResizeObserver, publishing --studio-bars-h for the header to offset by; the
+# header therefore painted at the server's guess and JUMPED when the measurement
+# landed. 0.39.0 deleted the property and put the bars in normal flow, so they
+# reserve their own space and the header pins at a plain, static top-0.
+#
+# The floor is LOAD-BEARING, not cosmetic. The render call this layout makes
+# works on 0.33+, so a lower floor still resolves, still boots, and still looks
+# correct at the top of the page — which is exactly what makes it dangerous.
+# MEASURED here against 0.38.0 with this layout: the stack is sticky at z-60 and
+# our static top-0 header is sticky at z-50, so the two collide ONLY ONCE
+# SCROLLED. At scroll 0 they do not overlap at all; at scrollY 600 the bars
+# covered 47px of the header's 53px — the navbar is underneath the bars, and a
+# check run at the top of the page reports it healthy. Lower this floor and that
+# comes back, invisibly to any scroll-0 or markup-level test.
+#
+# Bars brand off --color-warning / --color-danger, so they follow this app's theme.
+gem "studio-engine", "~> 0.39"
 
 # Pin the majors this app already runs so an engine bump cannot carry a new one
 # in silently. studio-engine declares `redis >= 4.0.1` with NO upper bound — the

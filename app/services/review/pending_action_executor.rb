@@ -10,7 +10,9 @@ module Review
   # trigger (a CI run settling on some unrelated branch) costs a couple of indexed
   # reads and no network at all:
   #
-  #   1. still pending            — a settled action never runs twice
+  #   1. still pending            — a settled action never runs twice, and (at the
+  #                                 write, where a race can actually be settled)
+  #                                 never has its outcome overwritten
   #   2. not expired              — a stale order is DROPPED, never executed late
   #   3. task still exists        — nothing to merge into otherwise
   #   4. verdict still recorded   — a WITHDRAWN decision stops authorising
@@ -42,11 +44,16 @@ module Review
   # bypassed by some future path that writes a scout report (or pushes a commit)
   # without knowing an armed merge exists.
   class PendingActionExecutor
-    # :executed — merged, stamped, and moved to `reviewed`
-    # :waiting  — nothing is wrong yet; conditions are not met. Stays pending.
-    # :refused  — this action can never be right. Settled, terminal.
-    # :expired  — its window closed. Settled, terminal.
-    # :error    — an unexpected failure. Stays pending so a retry can succeed.
+    # :executed        — merged, stamped, and moved to `reviewed`
+    # :waiting         — nothing is wrong yet; conditions are not met. Stays pending.
+    # :refused         — this action can never be right. Settled, terminal.
+    # :expired         — its window closed. Settled, terminal.
+    # :error           — an unexpected failure. Stays pending so a retry can succeed.
+    # :already_settled — a sibling execution settled this row; this run WROTE
+    #                    NOTHING and says what it would have written.
+    #
+    # The last one is a status of its own precisely because it wrote nothing: the
+    # four above are claims about what the record now says.
     Result = Struct.new(:status, :reason, :action, keyword_init: true) do
       def executed? = status == :executed
       def waiting?  = status == :waiting
@@ -74,13 +81,22 @@ module Review
       # board's 20-connection pool. Correctness does not rest on this lock —
       # GitHub's own `sha` pin (guard 13) makes a double merge impossible, and a
       # duplicate attempt reads the PR as already merged and settles as a no-op.
+      #
+      # SO THIS GATE IS NOT THE GUARD, and must not be mistaken for one: two jobs
+      # can both pass `pending?` here before either settles. The rule that a
+      # settled action is never re-settled lives at the WRITE, where the database
+      # can arbitrate it in one statement — ReviewPendingAction#settle!. Do not
+      # "fix" a double-settle by widening this lock across the merge; that trades a
+      # rare accounting defect for a connection-pool outage.
       claimed = @action.with_lock do
         next false unless @action.pending?
 
         @action.record_attempt!(now: @now)
         true
       end
-      return refuse_without_settling("action is #{@action.state}, not pending") unless claimed
+      unless claimed
+        return already_settled("action is #{@action.state}, not pending — an earlier execution settled it")
+      end
 
       execute
     rescue Github::Client::HttpError => e
@@ -294,19 +310,50 @@ module Review
       @client ||= Github::Client.new
     end
 
+    # `settle!` is CONDITIONAL — it writes only to a row that is still pending, and
+    # tells us whether it did. Losing that race is ordinary (see #already_settled),
+    # so the only rule here is that a run which wrote nothing never reports the
+    # status of a run that wrote something.
     def settle(status, state, reason, merge_sha: nil)
-      action.settle!(state: state, reason: reason, merge_sha: merge_sha, now: now)
-      result(status, reason)
+      return result(status, reason) if action.settle!(state: state, reason: reason, merge_sha: merge_sha, now: now)
+
+      lost_the_settle(state, reason, merge_sha)
     end
 
     def settle_refused(reason)
       settle(:refused, ReviewPendingAction::REFUSED, reason)
     end
 
-    # The one refusal that must NOT write: the action is already settled, so
-    # re-stamping it would overwrite the real outcome with this bookkeeping one.
-    def refuse_without_settling(reason)
-      result(:refused, reason)
+    # A SECOND EXECUTION THAT ARRIVED LATE. It claimed a pending row, did the work,
+    # and found the row settled by the time it went to write. Nothing is wrong: two
+    # triggers for one armed merge is the normal shape (the CI webhook fires and
+    # the arm's own recheck chain is running), and the merge itself was never at
+    # risk — GitHub's `sha` pin makes a double merge impossible.
+    #
+    # IT RECORDS RATHER THAN VANISHES. A silently swallowed double-attempt is its
+    # own blindness: `attempts` (bumped under the claim lock, so it never
+    # under-counts) says a second job ran, and this reason names what that job
+    # would have written beside what actually stands. An operator reading a row
+    # that says EXECUTED can see that a sibling was about to call it REFUSED, and
+    # why — without that opinion ever having become the record.
+    def lost_the_settle(state, discarded_reason, merge_sha)
+      # The one thing worth salvaging from the loser: a merge sha the winner did
+      # not have. Narrow by construction — see ReviewPendingAction#record_merge_sha!.
+      backfilled = action.record_merge_sha!(merge_sha)
+
+      already_settled(
+        "already settled #{action.state} by a concurrent execution" \
+        "#{" (this attempt supplied the missing merge sha #{action.merge_sha})" if backfilled} — " \
+        "this attempt would have written #{state}: #{discarded_reason}"
+      )
+    end
+
+    # The two paths that must NOT write, reported as one status. `:refused` means
+    # "this run SETTLED the action refused"; a run that wrote nothing must never be
+    # indistinguishable from one that did, on the very record an incident review
+    # reads to find out what the machine decided.
+    def already_settled(reason)
+      result(:already_settled, reason)
     end
 
     def result(status, reason)
