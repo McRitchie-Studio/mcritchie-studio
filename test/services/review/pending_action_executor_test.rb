@@ -129,6 +129,20 @@ class Review::PendingActionExecutorTest < ActiveSupport::TestCase
     assert_equal "reviewed", @task.stage
   end
 
+  # The unattended move is the one transition on the whole spine with no human,
+  # CLI, or form behind it — so it was landing ANONYMOUS, on precisely the row an
+  # audit of this feature reads first. `autopilot` names the lane; the actor stays
+  # the reviewer, because the authority is theirs and only the execution is ours.
+  test "the unattended stage move is ATTRIBUTED, not anonymous" do
+    ingest_ci
+    run_executor(arm)
+
+    event = TaskEvent.where(task_slug: SLUG, to_stage: "reviewed").transitions.chronological.last
+    assert event, "the merge must land a submitted → reviewed transition"
+    assert_equal "autopilot", event.source
+    assert_equal "carl", event.actor, "the reviewer whose recorded verdict authorised the merge"
+  end
+
   # ── MUTATION 1: GREEN → EVERY OTHER CI STATE ────────────────────────────────
   # "Act ONLY on green." Each of these is the control with the CI conclusion (or
   # the row itself) changed, and NONE of them may reach the merge endpoint.
@@ -299,6 +313,125 @@ class Review::PendingActionExecutorTest < ActiveSupport::TestCase
     assert_match(/no longer on the record/, result.reason)
     assert_equal 0, github.merge_calls
     assert_equal "submitted", @task.reload.stage
+  end
+
+  # ── MUTATION 4b: THE VERDICT WAS REVISED ────────────────────────────────────
+  #
+  # THE DEFECT THIS CLOSES, and it is the probe that found it: arm on a
+  # merge-ready verdict, record a `request-changes` afterwards, settle CI green on
+  # the pin — and the merge fired anyway, while the task's record read
+  # `request-changes`. Every other guard held; a wrong merge was never possible.
+  # What broke is the ONE invariant the feature rests on — the autopilot carries
+  # out an ALREADY-MADE decision, and a decision since revised is not that
+  # decision.
+  #
+  # This is the exact mirror of the head-SHA pin. That pin is re-read at fire time
+  # because the TREE may have changed since the verdict; this is re-read at fire
+  # time because the VERDICT may have changed since the tree.
+  #
+  # An explicit disarm always worked. It is not what people DO: a reviewer who
+  # changes their mind records `request-changes`; nobody thinks "I must disarm the
+  # robot". The guard has to cover the action that is actually taken.
+
+  test "REFUSES when the verdict was REVISED after arming — the probe that found this" do
+    ingest_ci
+    action = arm
+    revision = record_merge_ready_verdict(outcome: "request-changes")
+
+    result, github = run_executor(action)
+
+    assert_equal :refused, result.status
+    assert_equal 0, github.merge_calls,
+                 "a revised decision must never reach the merge endpoint"
+    assert_match(/revised to request-changes/, result.reason)
+    assert_match(/#{revision.created_at.utc.iso8601}/, result.reason,
+                 "the refusal must name WHEN the decision changed")
+    assert_equal ReviewPendingAction::REFUSED, action.reload.state
+
+    @task.reload
+    assert_equal "submitted", @task.stage
+    assert_nil @task.merged, "the task must not read merged while its record reads request-changes"
+  end
+
+  # Every non-authorising outcome revises the decision, not just the blocking one:
+  # `wait-for-ci` is a reviewer stepping BACK from merge-ready, and `conductor-review`
+  # is an escalation to a human. Neither is consent to merge now.
+  ["wait-for-ci", "conductor-review"].each do |outcome|
+    test "REFUSES when the verdict was revised to #{outcome} after arming" do
+      ingest_ci
+      action = arm
+      record_merge_ready_verdict(outcome: outcome)
+
+      result, github = run_executor(action)
+
+      assert_equal :refused, result.status
+      assert_equal 0, github.merge_calls
+      assert_match(/revised to #{outcome}/, result.reason)
+      assert_equal "submitted", @task.reload.stage
+    end
+  end
+
+  # THE OVER-BROAD CHECK, ruled out. A guard that refuses everything is as wrong as
+  # one that refuses nothing, and it would fail exactly where the real pipeline
+  # lives: the primary and the light reviewer each record their own scout report,
+  # so a second merge-ready lands routinely AFTER the arm. That is a re-affirmation
+  # and must still merge.
+  test "a later merge-ready report re-affirms the decision and STILL merges" do
+    ingest_ci
+    action = arm
+    record_merge_ready_verdict
+
+    result, github = run_executor(action)
+
+    assert_equal :executed, result.status, result.reason
+    assert_equal 1, github.merge_calls
+    assert_equal "reviewed", @task.reload.stage
+  end
+
+  # Ordering, not existence: the SAME two reports in the other order must merge.
+  # If this passed while the refusal above also passed by accident, the guard would
+  # be reading "a request-changes exists anywhere" rather than "the LATEST report".
+  test "a request-changes that came BEFORE the authorising verdict does not block" do
+    ingest_ci
+    record_merge_ready_verdict(outcome: "request-changes")
+    @verdict = record_merge_ready_verdict
+    action = arm
+
+    result, github = run_executor(action)
+
+    assert_equal :executed, result.status, result.reason
+    assert_equal 1, github.merge_calls
+  end
+
+  # ── MUTATION 4c: THE DESTINATION ────────────────────────────────────────────
+  # `MERGE_TO_ACCEPTED` may only merge to `accepted`. The fire-time half exists
+  # because rows written BEFORE the validation are still in the table, so the
+  # probe here writes one the same way the world would: straight past validation.
+
+  test "REFUSES a row whose destination is not the one its action type names" do
+    ingest_ci
+    action = arm
+    action.update_column(:base_branch, "main") # rubocop:disable Rails/SkipsModelValidations
+
+    github = FakeGithub.new(pr: open_pr(base: "main"))
+    result, = run_executor(action.reload, github: github)
+
+    assert_equal :refused, result.status
+    assert_match(/may only merge into accepted/, result.reason)
+    assert_equal 0, github.merge_calls,
+                 "an armed merge must never reach the merge endpoint for a branch it may not touch"
+    assert_equal ReviewPendingAction::REFUSED, action.reload.state
+    assert_equal "submitted", @task.reload.stage
+    assert_nil @task.merged
+  end
+
+  test "cannot be ARMED against a destination this action type may not merge into" do
+    error = assert_raises(ReviewPendingAction::Unauthorised) do
+      ReviewPendingAction.arm!(task: @task.reload, repo: REPO, pr_number: 4242,
+                               head_sha: PINNED, base_branch: "main", authorized_by: "carl")
+    end
+    assert_match(/may only merge into accepted/, error.message)
+    assert_equal 0, ReviewPendingAction.count
   end
 
   # ── MUTATION 5: THE WORLD MOVED ON ──────────────────────────────────────────

@@ -44,14 +44,12 @@ module Api
         end
 
         # THE "never invent a verdict" REFUSAL, answered before the write path so a
-        # routine unauthorised arm is a clean 422 and not an ErrorLog entry.
-        unless ReviewPendingAction.authorising_verdict_for(task)
-          return render_error(
-            "no recorded #{ReviewPendingAction::AUTHORISING_VERDICT} scout report on #{task.slug} — " \
-            "record the review verdict before arming its merge",
-            status: :unprocessable_entity
-          )
-        end
+        # routine unauthorised arm is a clean 422 and not an ErrorLog entry. The
+        # model owns the rule AND the wording, so a caller blocked by a REVISED
+        # verdict is told which report is standing rather than the misleading
+        # "no verdict found" — the two refusals need different fixes.
+        refusal = ReviewPendingAction.arm_refusal_reason(task)
+        return render_error(refusal, status: :unprocessable_entity) if refusal
 
         action = nil
         rescue_and_log(target: task) do

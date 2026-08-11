@@ -189,15 +189,22 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
      `merged: accepted` + moves the task `reviewed` — exactly the sequence above —
      the moment CI concludes GREEN **for that exact tree**. Then it stops.
 
-     This does not review anything and cannot: arming is REFUSED unless your
-     `merge-ready` scout report from step 5 is already on the record, and every
-     guard fails closed. Red, pending, cancelled and **absent** check-runs all do
-     nothing (absence is the signature of a CONFLICTING PR, never a pass); a head
-     that moved off the pin is refused rather than merged, because your verdict
+     This does not review anything and cannot: arming is REFUSED unless the task's
+     **latest** scout report is `merge-ready` — yours from step 5, or a later
+     re-affirmation — and every guard fails closed. Red, pending, cancelled and **absent** check-runs
+     all do nothing (absence is the signature of a CONFLICTING PR, never a pass); a
+     head that moved off the pin is refused rather than merged, because your verdict
      described a different tree; and an action nobody could execute inside its
      window expires instead of running late. It also stands down entirely while a
      live review claim is held — it is for the reviewer that is GONE, not a
      second reviewer racing you.
+
+     **Changing your mind is enough — you do not have to disarm.** Record a later
+     scout report (`request-changes`, `wait-for-ci`, `conductor-review`) and the
+     armed merge refuses at fire time, because the autopilot follows your STANDING
+     decision rather than the one that happened to be current when you armed. A
+     later `merge-ready` from the light reviewer is a re-affirmation, not a
+     revision, so it still merges.
 
      Check or undo it any time — `bin/review-autopilot list`, `run <task>` (execute
      now), `disarm <task>`. Then release your claim (step 7) and close out; the

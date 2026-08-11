@@ -19,6 +19,12 @@
 #
 # Known tiers: unit, component, integration, e2e
 #
+# `[control]` is NOT a tier and is not credited as one — it is the `test-only`
+# shape's required evidence, and the tier-tag parser ignores it exactly as it
+# ignores the `[full-suite@…]` / `[rubocop@…]` stamps below:
+#   [control] pre-change test/integration/hub_test.rb at HEAD → 1 failure, line 42
+# It must name a path that is in the diff, so it is about the change in hand.
+#
 # EVERY TIER HERE IS RUN BY A LANE **IN THIS REPO** — enforced, not promised.
 # test/lib/feature_shape_tiers_test.rb asserts that every tier any shape below demands
 # is EXECUTED by a real runner (.github/workflows/ci.yml, bin/fast-check,
@@ -86,6 +92,28 @@
 # bin/lib/ci_test_command.rb), so the CI-independent cert can never test LESS than
 # CI; it used to run `bin/rails test`, which SKIPS the system tier.
 #
+# THE OTHER TWO CONTRACT KEYS — `dor_tiers` is not the only thing a shape can ask
+# for, and two shapes now ask for something a tier list cannot express:
+#
+#   claimable_when: test_only_diff
+#     The shape may be claimed ONLY on a diff bin/dor-check OBSERVES to be 100%
+#     test files (bin/lib/test_only_diff.rb, an allowlist — an unrecognized file
+#     blocks the claim). This is checked against the diff, never against the label.
+#     A shape whose lighter contract is unlocked by TYPING its name is the
+#     declaration-over-evidence disease this whole file exists to kill, one level
+#     up: `kind: chore` was that bug, and PR #512 is what it cost.
+#
+#   full_suite_gate: true|false
+#     Whether the merge gate demands fingerprint-bound FULL-suite + rubocop
+#     evidence (see the block below). Until 2026-08-11 this was INFERRED from
+#     `dor_tiers` being empty, so the only zero-tier shape (`docs`) silently
+#     skipped the suite gate too — correct for prose, and a trap for any future
+#     zero-tier shape, which would have inherited a suite-gate exemption nobody
+#     chose. `test-only` is exactly that shape. The key is now explicit and
+#     DEFAULTS TO TRUE (fail-closed), and test/lib/feature_shape_tiers_test.rb
+#     requires any shape with no tiers to declare it, so the choice is made on
+#     purpose and reviewed, rather than inherited from an unrelated field.
+#
 # This file is the single source of "how much testing is enough" per change
 # shape. Tune it here; bin/dor-check and the heartbeat agent pick it up with no
 # code change.
@@ -149,11 +177,86 @@ shapes:
   docs:
     description: Documentation-only change — SOP, runbook, agent-operating-model, or README. No code, no persistence.
     dor_tiers: []
+    full_suite_gate: false
     required_metadata: [acceptance, repositories, risk_tags]
     notes: >-
       No code tiers: a doc change certifies by REVIEW, not a test lane — so
       dor_tiers is empty (nothing to fabricate) and the full-suite merge gate is
-      skipped. It routes to the documentation seat (Alex) in ReviewerSelector's
-      SHAPE_DOMAINS. test_plan is dropped from required_metadata for the same
-      reason there is nothing to plan; prose acceptance is the reviewer's and the
-      operator's at the QA stop, not a pre-submit tier.
+      skipped. `full_suite_gate: false` says that OUT LOUD; it used to be
+      inferred from the empty tier list, which quietly made "no tiers" mean "no
+      suite either" for every future shape. It routes to the documentation seat
+      (Alex) in ReviewerSelector's SHAPE_DOMAINS. test_plan is dropped from
+      required_metadata for the same reason there is nothing to plan; prose
+      acceptance is the reviewer's and the operator's at the QA stop, not a
+      pre-submit tier.
+
+  test-only:
+    description: A change whose entire content is test code — a fixed, deleted, added, or re-diagnosed test. No production diff.
+    dor_tiers: []
+    full_suite_gate: true
+    claimable_when: test_only_diff
+    required_evidence: [control]
+    required_metadata: [acceptance, repositories, risk_tags, test_plan]
+    notes: >-
+      READ THIS BEFORE READING `dor_tiers: []` AS A DISCOUNT. It is not one, and
+      the empty list is the smallest part of this shape's contract.
+
+      WHY NO TIERS. Every other shape's tiers are evidence FOR a behavioral
+      change. A test-only diff HAS no behavioral change, so the tier requirement
+      has no subject — and demanding one anyway does not produce evidence, it
+      produces theatre. Measured, 2026-08-10: a builder deleting ONE assertion
+      from an integration test ran the hub's ENTIRE unit tier (4,103 runs, 20,827
+      assertions) purely to have something truthful to tag. He was right to
+      refuse to relabel a component test, and the tier he ran said nothing
+      whatsoever about his change. A second builder the same night, on an
+      e2e-helpers-only diff, recorded plainly that she had nothing to justify her
+      shape with. Two agents, one night, independently.
+
+      WHAT IT DEMANDS INSTEAD — strictly MORE than `backend` asked of those two
+      changes, in three parts:
+
+      (1) CLAIMABILITY IS VERIFIED, NOT DECLARED. `claimable_when:
+      test_only_diff` — bin/dor-check reads the OBSERVED diff (PR files, else the
+      task's git tree) and refuses this shape if ANY changed path is not provably
+      test content, and refuses it again if no diff can be observed at all. The
+      classifier is an allowlist (bin/lib/test_only_diff.rb): test/, tests/, e2e/
+      and nothing else, so an unrecognized file BLOCKS the claim. This is the
+      whole safety of the shape. Without it, a zero-tier shape is simply the
+      shape every under-tested change claims, and this file's entire subject is
+      what happens when a gate accepts a self-declaration.
+
+      (2) THE FULL-SUITE MERGE GATE STILL APPLIES (`full_suite_gate: true`,
+      unlike `docs`). Test code IS code: it runs, it can be broken, and a
+      test-only diff is the change most able to break the suite silently. So the
+      fingerprint-bound full-suite + rubocop evidence is required exactly as for
+      a feature. That is this shape's EXECUTED evidence, and it is the reason the
+      empty tier list costs nothing.
+
+      (3) A CONTROL. `required_evidence: [control]` — record ONE
+      `[control] ...` line in checks_run that answers the question a tier list
+      cannot: DOES THE CHANGED TEST STILL BITE? dor-check requires the line to
+      name a path that is actually in the observed diff, so it is about THIS
+      change and re-runnable by the reviewer. Both motivating builders produced
+      one unprompted, which is how we know it is the natural artifact: one ran
+      the PRE-CHANGE file against the fixed engine and got exactly 1 failure at
+      exactly the line he deleted (proving the deletion necessary AND sufficient,
+      and that it masked no second break); the other forced a 404 and showed her
+      new diagnostic printing the URL. Deleting or weakening an assertion is the
+      case that removes safety, so the control is where a reviewer should spend
+      their attention — name the file, the command, and the failure you observed.
+
+      HONEST ABOUT (3), because this file's standard is to claim only what it
+      proves: the control is CHECKED FOR STRUCTURE, not executed by a lane.
+      dor-check verifies it exists and is about a file in this diff; it cannot
+      verify the run happened. That is not an oversight to be papered over with a
+      fake lane — a test-only diff leaves NO automatic mutation target (production
+      code is unchanged, so there is no before/after to run), which puts the
+      control in the same category this file already carves out for `manual` and
+      devnet verification: real, required, and a REVIEW-checked act rather than a
+      self-certified pre-submit tier. Deliberately NOT registered as a
+      `dor_tiers` entry for that reason — test/lib/feature_shape_tiers_test.rb
+      would (correctly) refuse a tier no runner runs. Executing the control's
+      necessary half — replay the pre-change test files against current
+      production code and require the verdict to differ — IS mechanizable for the
+      modified-file case, and it is filed as its own task rather than half-built
+      here: /tasks/execute-test-only-control.

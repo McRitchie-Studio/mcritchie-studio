@@ -16,19 +16,23 @@
 #   bin/review-autopilot run <task>            # the MANUAL executor: run it now
 #   bin/review-autopilot disarm <task> [--reason "..."]
 #
-# `arm` is the one a reviewer runs. It is REFUSED unless a `merge-ready` scout
-# report is already on the task — this tool cannot create a verdict, only carry
-# one out. `--head` defaults to the PR's live head via `gh`; pass it explicitly if
+# `arm` is the one a reviewer runs. It is REFUSED unless the task's LATEST scout
+# report is `merge-ready` — this tool cannot create a verdict, only carry one out,
+# and it follows the STANDING decision rather than any merge-ready verdict it can
+# find in the history. So a reviewer who changes their mind just records
+# `request-changes`; disarming by hand is not required. (A later `merge-ready`
+# from the light reviewer is a re-affirmation, not a revision, and still arms.)
+# `--head` defaults to the PR's live head via `gh`; pass it explicitly if
 # `gh` is unavailable.
 #
 # NOTHING HERE DECIDES ANYTHING. Every guard — green-only CI, the pinned head, the
-# expiry window, the recorded verdict — lives server-side in
+# expiry window, the standing verdict — lives server-side in
 # Review::PendingActionExecutor, so the webhook path and this CLI cannot drift.
 # `run` is the same executor the webhook runs, invoked on demand.
 #
 # EXIT CODES:
 #   0 — done (armed / listed / executed / disarmed)
-#   2 — refused (no recorded merge-ready verdict, no armed action, bad usage)
+#   2 — refused (the standing verdict is not merge-ready, no armed action, bad usage)
 #   1 — could not run (no board, no secret, no session)
 
 require "json"
