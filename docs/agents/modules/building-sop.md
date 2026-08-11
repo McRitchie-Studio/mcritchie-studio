@@ -129,33 +129,36 @@ at that URL — do not mark it waiting against a stack that is not up.
 
 **Verify the whole HOP, not the page.** A plain `curl /admin/<page>` returning
 `302` proves only that the logged-out gate works — it is **not** evidence the
-button lands. Walk what the CTA actually does (mint → confirm → POST consume →
-follow) and assert the final `url_effective` **is the review path** and answered
-`200`:
+button lands. Start where the operator starts — the CTA itself — walk what it
+actually does (CTA → mint → confirm → POST consume → follow), and assert the
+final `url_effective` **is the review path** and answered `200`:
 
 ```bash
 JAR=$(mktemp)
-MINT=$(curl -s -c $JAR -b $JAR -o /dev/null -w '%{redirect_url}' \
-  "http://localhost:<port>/_studio/local_review?email=alex%40mcritchie.studio&return_to=%2F<path>")
+STEP1=$(curl -s -c $JAR -b $JAR -o /dev/null -w '%{redirect_url}' \
+  "http://localhost:<port>/tasks/<slug>/local_review")                        # the CTA
+MINT=$(curl -s -c $JAR -b $JAR -o /dev/null -w '%{redirect_url}' "$STEP1")    # the mint
 TOK=$(curl -s -c $JAR -b $JAR "$MINT" | ruby -e 'print $stdin.read[/name="authenticity_token"[^>]*value="([^"]+)"/,1]')
 NEXT=$(curl -s -c $JAR -b $JAR -o /dev/null -w '%{redirect_url}' -X POST "$MINT" --data-urlencode "authenticity_token=$TOK")
 curl -s -c $JAR -b $JAR -L -o /dev/null -w '%{url_effective} %{http_code}\n' "$NEXT"
 ```
 
-Mint for an address that is an **admin in THIS app**. The identity list differs
-per repo — the hub's `User::PARKED_IDENTITIES` are all `@mcritchie.studio`, but
-turf-monster carries some of those same people at `role: "user"`, and other
-satellites define no such constant at all. Reading the hub's list as universal
-sends you to a non-admin and reproduces the very failure this step exists to
-catch. Any non-admin address signs in fine and lands on a page that is perfectly
-healthy, which is the quiet failure below.
+**Above studio-engine 0.36.0 you pass no address at all**, as the recipe above
+does. The board CTA is public and sends none: the engine resolves the reviewer
+itself — `params[:email]`, else `Studio.local_review_email`, else the seeded
+admin (`Studio::LocalReviewsController`) — and **provisions and promotes**
+whatever it resolves to `Studio.local_review_role` before minting. Pinning
+`?email=` short-circuits that chain, so you would verify a URL shape the operator
+never actually receives.
 
-**Above studio-engine 0.36.0 you usually pass no address at all.** The board CTA
-is public and sends none: the engine resolves the reviewer itself —
-`params[:email]`, else `Studio.local_review_email`, else the seeded admin
-(`Studio::LocalReviewsController`). Pinning `?email=` in this recipe short-
-circuits that chain, so you would verify a URL shape the operator never actually
-receives. Drop the parameter to exercise the real path.
+**Below that floor** `?email=` is required, and it must name an address that is
+an **admin in THIS app**. The identity list differs per repo — the hub's
+`User::PARKED_IDENTITIES` are all `@mcritchie.studio`, but turf-monster carries
+some of those same people at `role: "user"`, and other satellites define no such
+constant at all. Reading the hub's list as universal sends you to a non-admin and
+reproduces the very failure this step exists to catch: on such a stack a
+non-admin address signs in fine and lands on a page that is perfectly healthy,
+which is the quiet failure below.
 
 Landing on `/` means the sign-in **succeeded** and the account is not an admin —
 the quiet failure, not a broken link. Follow the POST by hand as above; do not
@@ -167,7 +170,7 @@ What this buys you on the board: a `--local-url` + `--approval waiting` task
 floats to the top of its stage, pulses, and grows a card-width **WAITING
 APPROVAL** CTA. That CTA is a **mint-on-click magic link** — each click mints a
 FRESH single-use `Studio::Link` to the local page and lands Mr. McRitchie
-signed-in on it (`GET /tasks/:slug/local-review`). Minted per click on purpose: a
+signed-in on it (`GET /tasks/:slug/local_review`). Minted per click on purpose: a
 single-use link is burned on first consume, so a fixed embedded one would go
 stale. The plain `local_url` rides along as the card's `data-local-url` fallback.
 
