@@ -152,8 +152,13 @@ class ReviewPendingAction < ApplicationRecord
     verdict = authorising_verdict_for(task)
 
     transaction do
+      # Through `settle!`, so the supersede cannot falsify a row that settled
+      # between the `pending` read above and this write — an action that MERGED
+      # while we were arming its replacement keeps its executed record, and the
+      # re-arm proceeds because that row is no longer pending (which is also what
+      # the partial unique index on live actions is measuring).
       pending.where(task_slug: task.slug).find_each do |live|
-        live.update!(state: DISARMED, outcome_reason: "superseded by a re-arm at #{head_sha}")
+        live.settle!(state: DISARMED, reason: "superseded by a re-arm at #{head_sha}")
       end
 
       create!(
@@ -318,13 +323,102 @@ class ReviewPendingAction < ApplicationRecord
     "#{default_owner}/#{value}"
   end
 
+  # THE SETTLE — the one write that moves an action out of `pending`, and the only
+  # place a terminal state becomes terminal. Returns true when THIS call settled
+  # the row, false when it arrived at a row someone else had already settled.
+  #
+  # WHY A SETTLED ROW IS SACRED. This is the component that merges code when
+  # nobody is watching, so its row is not a status field — it is the whole audit
+  # trail, and the only account of what the machine did. A row that reads REFUSED
+  # with no merge sha, for a merge that actually happened, is worse than a crash:
+  # it will be read later as "the autopilot declined", and someone will re-arm or
+  # merge by hand against a branch that has already moved.
+  #
+  # WHY A CONDITIONAL UPDATE AND NOT `return false unless pending?`. The executor
+  # DELIBERATELY releases its claim lock before the GitHub round trip — holding it
+  # would pin one Postgres connection per in-flight merge against a 20-connection
+  # pool, the limit this ecosystem has already hit once (the board 500'd on
+  # `FATAL: too many connections`). That trade is correct and stays. Its
+  # consequence is that two jobs can both pass `pending?` and both arrive HERE, so
+  # an in-Ruby re-check would only move the same race a few microseconds later.
+  # `UPDATE … WHERE state = 'pending'` makes the test and the write ONE statement,
+  # and the database arbitrates it inside the row lock: exactly one caller gets
+  # rows-affected 1, every other caller gets 0 — including a future writer that
+  # never read this comment.
+  #
+  # WHY NOT A TRIGGER. A Postgres trigger rejecting any UPDATE that moves a row
+  # out of a terminal state would also cover a raw `UPDATE` typed at a console,
+  # which this does not. It was rejected on evidence, not taste: this app keeps
+  # `db/schema.rb` (there is no `structure.sql`), so a trigger would not survive
+  # `db:schema:load` — it would exist in production and in NO test database,
+  # making the strongest guard in the system the one guard nothing can prove. A
+  # guard that cannot be tested is a guard that quietly rots. The conditional
+  # UPDATE is enforced by the same database, on every path that goes through this
+  # model, and every test can see it work.
+  #
+  # LOSING IS NOT AN ERROR — it is the ordinary outcome of two triggers for one
+  # merge (the CI webhook and the arm's own recheck chain both fire), so this
+  # returns false rather than raising. The caller's job is to REPORT the loss.
+  #
+  # WHAT FIRST-WRITE-WINS DOES NOT COVER, stated because a boundary nobody wrote
+  # down is a boundary the next reader assumes away. If a sibling that is going to
+  # REFUSE wins the race against the sibling that actually merged, the row reads
+  # refused for a merge that happened — the same class of lie, from the other end.
+  # It is much narrower than the defect this closes (the refusing paths are all
+  # DB-only reads, and the one that reads the post-merge PR settles EXECUTED by
+  # #gate_pull_request, not refused), and it is NOT closed by ranking the states:
+  # "executed may overwrite refused" would put a second writer back on a settled
+  # row, which is the whole thing being removed. It closes at the READING instead
+  # — an executor whose merge is rejected 405/409 should re-read the PR before
+  # concluding the head moved, because "already merged" and "head moved" are the
+  # same HTTP answer. That is a separate defect in the refusal path, and it wants
+  # its own test.
   def settle!(state:, reason: nil, merge_sha: nil, now: Time.current)
-    update!(
+    unless TERMINAL_STATES.include?(state)
+      raise ArgumentError,
+            "settle! moves an action to a TERMINAL state; #{state.inspect} is not one of " \
+            "#{TERMINAL_STATES.join(", ")}"
+    end
+
+    attributes = {
       state:          state,
       outcome_reason: reason.presence,
       merge_sha:      merge_sha.presence,
-      executed_at:    (state == EXECUTED ? now : executed_at)
-    )
+      updated_at:     now
+    }
+    attributes[:executed_at] = now if state == EXECUTED
+
+    settled = self.class.where(id: id, state: PENDING).update_all(attributes) == 1
+    # Whether we won or lost, this instance must now read what the TABLE says —
+    # the loser's caller reports the standing outcome, and reporting it from a
+    # stale in-memory copy would reintroduce the fiction in the log line.
+    reload
+    settled
+  end
+
+  # THE ONE WRITE A SETTLED ROW STILL ACCEPTS, and deliberately the narrowest one
+  # that can exist: supply a MISSING merge sha on a row that already reads
+  # EXECUTED. It never changes state, never replaces a sha already recorded, and
+  # cannot touch a row in any other state — all three enforced in the WHERE clause
+  # rather than in Ruby, for the same reason `settle!` is.
+  #
+  # It exists for a real interleave, not a hypothetical one. Two jobs run one
+  # armed merge: the job that MERGES holds the sha GitHub returned, while the job
+  # that merely READS the PR can legitimately see `merged: true` with
+  # `merge_commit_sha` still absent — and the reader has the shorter path, so it
+  # can reach the settle first. Winner-takes-all alone would then record a
+  # truthful EXECUTED naming no sha, and the merge commit — the single most useful
+  # fact on the row — would be lost to a scheduling accident.
+  #
+  # Returns true when this call supplied the sha.
+  def record_merge_sha!(merge_sha, now: Time.current)
+    sha = merge_sha.to_s.strip.presence
+    return false if sha.blank?
+
+    recorded = self.class.where(id: id, state: EXECUTED, merge_sha: nil)
+                   .update_all(merge_sha: sha, updated_at: now) == 1
+    reload
+    recorded
   end
 
   def record_attempt!(now: Time.current)
