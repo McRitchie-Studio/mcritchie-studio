@@ -345,7 +345,7 @@ Supported fields:
 | `approval_status` | Operator validation state: `waiting`, `approved`, `changes_requested`, or `none`. `waiting` floats and pulses the card, and is legal only before the `submitted` seam — any save at `submitted` or later settles it to `none` (settled, never a fabricated `approved`) |
 | `approval_requested_at` | Server-stamped ISO8601 timestamp when approval first enters `waiting` |
 | `approval_requested_by` | Optional agent/session label that requested operator validation |
-| `approval_approved_at` | Server-stamped ISO8601 timestamp when approval first enters `approved` — only the operator lane can grant it (admin-gated board UI or a console write), never an agent |
+| `approval_approved_at` | Server-stamped ISO8601 timestamp when approval first enters `approved`. Any lane may record the grant — the board UI, or an agent writing down an approval the operator gave in words (`bin/task update <task> --approval approved`) |
 | `qa_url` | Stable QA URL or specific QA route |
 | `production_url` | Production URL or specific production route |
 | `release_slug` | Optional shared tag for tasks promoted together |

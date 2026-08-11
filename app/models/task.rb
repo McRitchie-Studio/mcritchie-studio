@@ -157,16 +157,19 @@ class Task < ApplicationRecord
   # The settled/moot resolution. An open "waiting" request is cleared to "none"
   # the moment a task moves into `submitted` — the PR review flow takes over, so
   # the local-preview approval is no longer pending. See
-  # #settle_operator_approval_on_submit. "none" is an ordinary agent-writable
-  # status (unlike "approved"), so this settle never trips the operator-lane guard.
+  # #settle_operator_approval_past_submit. The settle resolves to "none" and never
+  # to "approved" — nobody granted approval, and fabricating a grant would
+  # misreport the acceptance metric.
   OPERATOR_APPROVAL_NONE = "none".freeze
-  # Request-layer sources allowed to GRANT approval (flip approval_status to
-  # "approved"). "web" is stamped only by the admin-gated TasksController#update
-  # — the board UI operator lane. A BLANK source is an internal/console write
-  # (conductor, rails runner, model callbacks). Every API bearer write stamps a
-  # source via Api::V1::TasksController#capture_task_event_context ("api"
-  # default, "cli" from bin/task) — that's the agent lane, which may set
-  # "waiting"/"changes_requested"/"none" but never "approved".
+  # Request-layer sources that mean the OPERATOR lane rather than the agent lane.
+  # "web" is stamped only by the admin-gated TasksController#update — the board UI.
+  # A BLANK source is an internal/console write (conductor, rails runner, model
+  # callbacks). Every API bearer write stamps its own source via
+  # Api::V1::TasksController#capture_task_event_context ("api" default, "cli" from
+  # bin/task), and that controller clamps a caller-supplied "web" back to "api".
+  # This is ATTRIBUTION only — it keeps a bearer write from labelling itself an
+  # operator action in the TaskEvent trail. It gates no value: every
+  # approval_status, "approved" included, is writable from either lane.
   OPERATOR_APPROVAL_GRANT_SOURCES = %w[web].freeze
   # block_kind is NOT here anymore — it's promoted to the tasks.block_kind column
   # (a block is a `building` attribute, not devops metadata). See #block_kind.
@@ -239,11 +242,6 @@ class Task < ApplicationRecord
   # existing tasks that don't touch these fields stay grandfathered.
   validate :title_within_word_range, if: :title_changed?
   validate :acceptance_bullets_within_word_range, if: :acceptance_changed?
-  # GRANTING operator approval is the operator's lane — agent bearer writes may
-  # request it ("waiting") but never flip it to "approved". See
-  # #approval_flip_requires_operator (next to the stamp_operator_approval_*
-  # callbacks) for the source-attribution rule.
-  validate :approval_flip_requires_operator, if: :will_save_change_to_metadata?
   validates :priority, inclusion: { in: [0, 1, 2] }
   validates :pm_size,     inclusion: { in: SIZES }, allow_nil: true
   validates :po_size,     inclusion: { in: SIZES }, allow_nil: true
@@ -1745,11 +1743,11 @@ class Task < ApplicationRecord
   # Only "waiting" is settled — "changes_requested" and an already-"approved"
   # grant carry their own meaning into review and are left untouched. We resolve
   # to "none" (a settled, no-badge status), NOT "approved": the operator never
-  # granted approval, so faking a grant would misreport the acceptance metric and
-  # self-approve the operator's lane. "none" is an ordinary agent-writable status,
-  # so it sidesteps #approval_flip_requires_operator entirely (that guard fires
-  # only on a flip TO "approved" or an approval_approved_at stamp) — this system
-  # state-machine transition never trips the agent-write guard.
+  # granted approval, so faking a grant would misreport the acceptance metric.
+  # That reason stands on its own. It is a property of THIS transition — a
+  # state-machine settle must not invent an outcome nobody chose — not a rule
+  # about who may write "approved". Since 2026-08-09 any lane may record a grant
+  # the operator gave in words; this settle still never fabricates one.
   #
   # Idempotent by construction: once "none" every later save is a no-op.
   def settle_operator_approval_past_submit
@@ -1770,60 +1768,6 @@ class Task < ApplicationRecord
     approval = (merged["devops"] ||= {})
     approval["approval_requested_at"] ||= Time.current.iso8601
     self.metadata = merged
-  end
-
-  # Regression guard (2026-07-09): a builder flipped devops.approval_status to
-  # "approved" one second after moving submitted — self-approving its own demo.
-  # GRANTING approval requires operator attribution: an admin-gated web session
-  # (source "web", stamped server-side at TasksController#update behind
-  # require_admin — never from the request body) or an internal/console write
-  # (blank source). Every bearer API write is source-stamped by
-  # Api::V1::TasksController ("api"/"cli"), and that controller now CLAMPS a
-  # caller-supplied operator source out of the grant set, so a bearer PATCH can
-  # never claim "web" — the model guard and the controller clamp are the two
-  # halves of the same rule.
-  #
-  # "Granting" is BOTH ways the Operator Acceptance phase (Task::TestingPhases
-  # #acceptance_phase) can be closed: flipping approval_status → "approved" OR
-  # stamping the approval_approved_at timestamp (both are agent-writable devops
-  # scalars). A non-operator write that CHANGES either from its prior value is
-  # rejected. Non-changes pass: "waiting"/"changes_requested"/"none" stay
-  # agent-writable, and a wholesale devops replace that ECHOES the existing
-  # approval (bin/task update rewrites the full hash) isn't a change. The
-  # submit-time settle (#settle_operator_approval_on_submit, waiting → "none")
-  # and the approval_approved_at stamp both run in before_save, AFTER validation;
-  # the settle resolves to the agent-writable "none" so it never grants approval,
-  # and either way this guard runs before them and never blocks them.
-  def approval_flip_requires_operator
-    return if operator_attributed_write?
-    return unless agent_granting_operator_approval?
-
-    errors.add(:base, "operator approval is the operator's lane (board UI / admin " \
-                      "session) — agents request approval with approval_status " \
-                      "\"waiting\" and never set \"approved\" or approval_approved_at")
-  end
-
-  # An agent-sourced write closes the acceptance phase iff it CHANGES the status
-  # to "approved" or stamps/changes the approval_approved_at timestamp. Echoes of
-  # the operator's earlier grant (unchanged values) are not a grant.
-  def agent_granting_operator_approval?
-    approval_status_flipped_to_approved? || approval_timestamp_changed?
-  end
-
-  def approval_status_flipped_to_approved?
-    devops["approval_status"] == OPERATOR_APPROVAL_APPROVED &&
-      (metadata_was || {}).dig("devops", "approval_status") != OPERATOR_APPROVAL_APPROVED
-  end
-
-  def approval_timestamp_changed?
-    now = devops["approval_approved_at"].presence
-    was = (metadata_was || {}).dig("devops", "approval_approved_at").presence
-    now.present? && now != was
-  end
-
-  def operator_attributed_write?
-    source = Current.task_event_source.to_s
-    source.blank? || OPERATOR_APPROVAL_GRANT_SOURCES.include?(source)
   end
 
   # The durable close of the operator-acceptance approval window — stamped the

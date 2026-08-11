@@ -587,15 +587,16 @@ keys survive (`Task::DEVOPS_KEYS`):
    under `metadata` directly instead of `devops`.
 4. **`slug` is auto-generated**, not settable — don't expect a human-readable
    task slug from the API.
-5. **Granting operator approval is NOT an agent lane — it returns `422`.** A
-   bearer-API write (any `event.source`, including a forged `"web"`, which the
-   controller clamps back to `"api"`) that flips `approval_status` to `"approved"`
-   **or** stamps/changes `approval_approved_at` is rejected
-   `422 VALIDATION_FAILED` with a message naming the operator lane. Agents
-   **request** approval with `approval_status: "waiting"` (and may set
-   `changes_requested`/`none`); the operator grants it via the admin-gated board
-   UI. Echoing an already-granted approval unchanged in a wholesale devops replace
-   is fine (it's not a change).
+5. **`event.source` is clamped to the authenticated lane.** A bearer write that
+   sends `event.source: "web"` is recorded as `"api"` — `"web"` is stamped only
+   server-side by the admin-gated board UI, so the TaskEvent trail always names
+   the channel the write actually came through. This is attribution only; it
+   changes nothing about which fields you may write. **`approval_status` is fully
+   agent-writable, `"approved"` included** (since 2026-08-09): when the operator
+   approves a live preview in words, the agent that heard him records it with
+   `bin/task update <task> --approval approved`, and the board stops pulsing
+   WAITING. `approval_approved_at` is still server-stamped the first time approval
+   enters `"approved"`, so you do not need to send it.
 
 ## Worked example
 
