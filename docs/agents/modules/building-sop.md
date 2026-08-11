@@ -168,8 +168,9 @@ separates these from a working hop.
 
 Two rules the command encodes, worth knowing when you read its output:
 
-- **No `?email=`.** The live CTA sends none — it is a public URL, so an address
-  there would be published. The desk names its own reviewer:
+- **No `?email=`** (at or above the engine floor — see below). The live CTA
+  sends none: it is a public URL, so an address there would be published on a
+  public page. The desk names its own reviewer:
   `params[:email]`, else `Studio.local_review_email`, else the first admin by id
   (`Studio::LocalReviewsController`). Pinning an email short-circuits that chain
   at priority 1 and verifies a URL the operator never receives, as a user the
