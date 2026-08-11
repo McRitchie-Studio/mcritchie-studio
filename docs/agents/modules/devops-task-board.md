@@ -746,8 +746,9 @@ stranded-work guard's exact trigger — and that guard aborts the sweep for **ev
 repo**, not just the gem. The obvious remedy for the first PR collided with the
 second, so the naive fix just moves the collision one PR to the right.
 
-So `bin/release prepare` allocates the number instead, at the first moment the full
-membership is known, from metadata your task already carries:
+So the number is derived from the candidate's **membership** — the first moment it
+is knowable — by `Release::GemVersion` (`app/models/release/gem_version.rb`, pure
+and unit-tested), from metadata your task already carries:
 
 | The candidate contains | Bump |
 |---|---|
@@ -755,9 +756,17 @@ membership is known, from metadata your task already carries:
 | any member with `kind: feature` | minor |
 | otherwise (`bug`, `chore`) | patch |
 
-`next = last published tag + max(bump across members)`. It is written onto
-`release` and committed **before** the publish and **before** the pre-QA gate, so
-the SHA that gets gated is the SHA that gets published.
+`next = last published tag + max(bump across members)`.
+
+**`bin/release prepare` does NOT allocate it yet — the release conductor sets it by
+hand.** Wiring allocation into `prepare` would push a version onto `origin/release`
+BEFORE `validate_gems_for_qa`'s fail-closed preflight — mutate before validate — so
+that half was deliberately descoped (finding-d0621629719b). Until it lands: compute
+the number from the table, commit the `version_file` **directly onto the gem repo's
+`accepted`** (no gem rung is branch-protected, and the batch promote PR carries it to
+`release` without passing through a `dor-check`), then run `bin/release prepare`.
+Skip that step and the stranded-work guard aborts the sweep for **every** repo —
+loudly, with nothing published and nothing deployed.
 
 **Your only lever, and you rarely need it:** when the derived bump is wrong — most
 often a `chore` that is genuinely breaking —

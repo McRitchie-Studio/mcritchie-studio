@@ -423,8 +423,9 @@ class Release
                 end
       "#{repo} origin/release carries #{commits.size} commit(s) past the last published tag " \
         "v#{tag} while #{verdict}, STRANDING these commits:\n#{sample}#{more}\n" \
-        "  Bump the version in #{repo}/#{version_file} PAST #{tag} (the bump rides the gem's own PR " \
-        "through the cycle), land it on origin/release, then re-run `bin/release prepare`."
+        "  Bump the version in #{repo}/#{version_file} PAST #{tag} — the RELEASE owns this number, NOT a " \
+        "PR (bin/dor-check refuses a PR that edits #{version_file}), so commit it directly onto the gem " \
+        "repo's accepted/release yourself, then re-run `bin/release prepare`."
     end
 
     # --- resuming a PARTIAL ship: the re-pin must be idempotent BY IDENTITY -----
