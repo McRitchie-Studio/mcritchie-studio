@@ -133,32 +133,48 @@ button lands. Walk what the CTA actually does (mint → confirm → POST consume
 follow) and assert the final `url_effective` **is the review path** and answered
 `200`:
 
+Start where the operator starts — the CTA itself. It is a **public** redirect, so
+no board sign-in is needed and no `?email=` rides along; the local stack names
+its own reviewer and provisions them as an admin:
+
 ```bash
 JAR=$(mktemp)
-MINT=$(curl -s -c $JAR -b $JAR -o /dev/null -w '%{redirect_url}' \
-  "http://localhost:<port>/_studio/local_review?email=alex%40mcritchie.studio&return_to=%2F<path>")
-TOK=$(curl -s -c $JAR -b $JAR "$MINT" | ruby -e 'print $stdin.read[/name="authenticity_token"[^>]*value="([^"]+)"/,1]')
-NEXT=$(curl -s -c $JAR -b $JAR -o /dev/null -w '%{redirect_url}' -X POST "$MINT" --data-urlencode "authenticity_token=$TOK")
+STEP1=$(curl -s -c $JAR -b $JAR -o /dev/null -w '%{redirect_url}' \
+  "http://localhost:<port>/tasks/<slug>/local_review")          # the CTA
+STEP2=$(curl -s -c $JAR -b $JAR -o /dev/null -w '%{redirect_url}' "$STEP1")  # mint
+TOK=$(curl -s -c $JAR -b $JAR "$STEP2" | ruby -e 'print $stdin.read[/name="authenticity_token"[^>]*value="([^"]+)"/,1]')
+NEXT=$(curl -s -c $JAR -b $JAR -o /dev/null -w '%{redirect_url}' -X POST "$STEP2" --data-urlencode "authenticity_token=$TOK")
 curl -s -c $JAR -b $JAR -L -o /dev/null -w '%{url_effective} %{http_code}\n' "$NEXT"
 ```
 
-Mint for a **seeded admin** — one of `User::PARKED_IDENTITIES`, all
-`@mcritchie.studio`. Any other address signs up a brand-new `viewer`, and the
-hop then fails on a page that is perfectly healthy.
+Passing `?email=<address>` to `/_studio/local_review` still works and still wins
+— useful for testing the mint alone. Any address is fine: the endpoint
+provisions it at `Studio.local_review_role` (default `admin`) **before** minting,
+so an address the desk has never seen no longer signs up as a `viewer`. Requires
+**studio-engine >= 0.33.0**; on an older stack the mint needs an explicit
+`?email=` naming a seeded admin (`User::PARKED_IDENTITIES`, all
+`@mcritchie.studio`), or the hop fails on a page that is perfectly healthy.
 
 Landing on `/` means the sign-in **succeeded** and the account is not an admin —
-the quiet failure, not a broken link. Follow the POST by hand as above; do not
-fold it into one `curl -L -X POST`, because the forced method replays across the
-redirect and 404s on the review path, which looks like a different bug. (`curl`
-is the fallback; drive the real browser when you have one.)
+the quiet failure, not a broken link. Landing on `/login` means the mint had no
+reviewer to name at all. Follow the POST by hand as above; do not fold it into
+one `curl -L -X POST`, because the forced method replays across the redirect and
+404s on the review path, which looks like a different bug. (`curl` is the
+fallback; drive the real browser when you have one.)
 
 What this buys you on the board: a `--local-url` + `--approval waiting` task
 floats to the top of its stage, pulses, and grows a card-width **WAITING
 APPROVAL** CTA. That CTA is a **mint-on-click magic link** — each click mints a
 FRESH single-use `Studio::Link` to the local page and lands Mr. McRitchie
-signed-in on it (`GET /tasks/:slug/local-review`). Minted per click on purpose: a
+signed-in on it (`GET /tasks/:slug/local_review`). Minted per click on purpose: a
 single-use link is burned on first consume, so a fixed embedded one would go
 stale. The plain `local_url` rides along as the card's `data-local-url` fallback.
+
+The CTA takes **no board sign-in** — it is one click from a cold browser, which
+is the entire point of it. Requiring an admin session there used to bounce a
+logged-out click to `/login`, and nothing carries the click back, so signing in
+landed nowhere near the review. Opening it grants nothing: the redirect only ever
+targets loopback, so the only server a stranger's click can reach is their own.
 
 In chat, return the review handoff with exact top-level labels so Mr. McRitchie
 never hunts through prose (full recipe:
