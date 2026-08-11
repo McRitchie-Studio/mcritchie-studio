@@ -166,14 +166,29 @@ later cleanup task.
     <%= render "layouts/navbar" %>
   ```
 
-  One call, no conditional around it (studio-engine >= 0.33, published). The stack
-  is the navbar's **sibling**, never its child. It renders whichever pinned bars
-  apply — the environment banner, impersonation, whatever comes next — measures
-  itself, and publishes that height on `:root` as `--studio-bars-h`. The engine
-  navbar offsets by that variable, so a new bar never edits the navbar, and an app
-  with no bars falls back to `0px` and pins exactly as it did before. An app with a
-  hand-written navbar offsets itself the same way: `style="top:var(--studio-bars-h,
-  0px);"` on the header, and no `top-0` class to fight it.
+  One call, no conditional around it (studio-engine >= 0.39, published). It renders
+  whichever bars apply — the environment banner, impersonation, whatever comes
+  next — in one block.
+
+  Two rules, and they are the whole layout contract:
+
+  | Rule | Why |
+  |---|---|
+  | The stack goes **before** the navbar, as a **sibling** — never nested inside it | Bars compose. There is already a second one, and nesting meant every new bar edited the navbar. |
+  | The bars sit in **normal flow**; the navbar is the only pinned chrome (`sticky top-0`) | The bars reserve their space by taking it, so the navbar has no offset to compute and a new bar never edits it. |
+
+  An app with a hand-written navbar follows the same two rules: `sticky top-0`, a
+  **static** value, never one read from a custom property. Give either element an
+  offset published at runtime and the header moves after first paint — that was the
+  `--studio-bars-h` jump introduced in 0.33 and removed in 0.39. Two pinned siblings
+  of unknown height cannot stack in CSS alone; one has to measure the other, and
+  that measurement *is* the defect. An already-adopted navbar still spelling
+  `top:var(--studio-bars-h, 0px)` needs no edit — the property is gone, so it
+  resolves to its `0px` fallback, which is where the new layout wants it.
+
+  The bars therefore scroll away with the page, and only the navbar stays. An
+  overlay that must clear the chrome positions off `--nav-bottom` (published by
+  `layouts/studio/head`), which reports the header's live bottom edge.
 
   Name `studio/banners/environment` directly and you get that one bar, mounted
   where you put it, and a second bar later has nowhere to go — the seam
