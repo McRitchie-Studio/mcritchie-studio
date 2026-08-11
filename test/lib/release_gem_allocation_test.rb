@@ -139,21 +139,29 @@ class ReleaseGemAllocationTest < Minitest::Test
   #   :stale   — succeed and change NOTHING (RubyGems-propagation-shaped: the
   #              exact failure `bundle lock` reports success for).
   #   :fail    — exit non-zero.
+  #
+  # WRITTEN IN RUBY, not shell, and that is not a style choice. The first version
+  # of this stub used `sed -i '' …`, which is BSD syntax: on macOS it edits in
+  # place, on GNU sed (Linux CI) the empty `''` is consumed as the SCRIPT and the
+  # real script becomes a filename ("sed: can't read s/^    studio-engine…").
+  # The stub then silently did nothing, the lock genuinely never moved, and the
+  # read-back guard correctly refused — so five tests went red on CI and green on
+  # macOS. The guard was right; the harness was lying. Ruby has one dialect.
   def install_bundle_stub(root, mode: :real)
     dir = File.join(root, "stub-bin")
     FileUtils.mkdir_p(dir)
     body =
       case mode
       when :real
-        <<~SH
-          v=$(sed -n 's/.*VERSION = "\\([^"]*\\)".*/\\1/p' lib/studio/version.rb)
-          sed -i '' "s/^    studio-engine (.*)$/    studio-engine ($v)/" Gemfile.lock
-          exit 0
-        SH
-      when :stale then "exit 0\n"
-      when :fail  then "echo 'Could not resolve dependencies' >&2\nexit 1\n"
+        <<~RUBY
+          version = File.read("lib/studio/version.rb")[/VERSION = "([^"]+)"/, 1]
+          lock = "Gemfile.lock"
+          File.write(lock, File.read(lock).sub(/^    studio-engine \\(.*\\)$/, "    studio-engine (\#{version})"))
+        RUBY
+      when :stale then "# succeed, change nothing\n"
+      when :fail  then %($stderr.puts("Could not resolve dependencies")\nexit 1\n)
       end
-    File.write(File.join(dir, "bundle"), "#!/bin/sh\n#{body}")
+    File.write(File.join(dir, "bundle"), "#!/usr/bin/env ruby\n#{body}")
     FileUtils.chmod(0o755, File.join(dir, "bundle"))
     dir
   end
@@ -186,6 +194,33 @@ class ReleaseGemAllocationTest < Minitest::Test
 
   def with_root
     Dir.mktmpdir("gem-alloc") { |root| yield root }
+  end
+
+  # --- the harness proves itself first -----------------------------------------
+  #
+  # A stub that silently does nothing turns every guard test below into a test of
+  # the stub's failure instead of the guard's success — which is exactly what the
+  # BSD `sed -i ''` version did on CI, in the direction that LOOKED like the
+  # production code was broken. So the stub's effect is asserted directly, and a
+  # future portability break fails HERE, loudly, instead of five tests down.
+  def test_the_bundle_stub_reproduces_the_measured_bundle_lock_behaviour
+    with_root do |root|
+      _, repo = build_projects_root(root)
+      File.write(File.join(repo, "lib", "studio", "version.rb"), %(module Studio\n  VERSION = "9.9.9"\nend\n))
+
+      real = install_bundle_stub(root, mode: :real)
+      _, status = Open3.capture2e({ "PATH" => "#{real}:#{ENV.fetch('PATH')}" }, "bundle", "lock", chdir: repo)
+
+      assert status.success?, "the :real stub must exit 0"
+      assert_includes File.read(File.join(repo, "Gemfile.lock")), "studio-engine (9.9.9)",
+                      "the :real stub must rewrite the PATH spec — if it does not, every guard test below is vacuous"
+
+      stale = install_bundle_stub(root, mode: :stale)
+      Open3.capture2e({ "PATH" => "#{stale}:#{ENV.fetch('PATH')}" }, "bundle", "lock", chdir: repo)
+
+      assert_includes File.read(File.join(repo, "Gemfile.lock")), "studio-engine (9.9.9)",
+                      "the :stale stub must leave the lock exactly as it found it"
+    end
   end
 
   # --- the happy path ----------------------------------------------------------

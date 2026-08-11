@@ -789,8 +789,16 @@ stranded-work guard stays armed behind all of it as the backstop: if allocation 
 ever skipped or wrong, the sweep still aborts for **every** repo, loudly, with
 nothing published and nothing deployed.
 
+**The derived bump is a floor for routine work, not a judgment about public
+surface.** The table reads a task's `kind`; it cannot know that a `bug` also
+removed documented API. MEASURED, 2026-08-11: studio-engine 0.38.0 → 0.39.0 rode
+a `kind: bug` member that dropped `--studio-bars-h`, a documented public
+contract. The derived bump scores that a **patch** (0.38.1); the conductor
+correctly called it a **minor**. When a change touches public surface, say so —
+`--gem-bump minor`, or a `breaking` risk tag when it deserves a major.
+
 **Your only lever, and you rarely need it:** when the derived bump is wrong — most
-often a `chore` that is genuinely breaking —
+often a `chore` that is genuinely breaking, or a `bug` that removes public API —
 
 ```bash
 bin/task update <task-slug> --gem-bump major   # patch | minor | major

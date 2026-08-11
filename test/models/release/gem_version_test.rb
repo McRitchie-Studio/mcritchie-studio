@@ -256,6 +256,39 @@ class ReleaseGemVersionTest < Minitest::Test
     assert_equal "1.0.0", allocation(members: [member(kind: "chore", bump: "major")]).version
   end
 
+  # MEASURED, 2026-08-11: studio-engine 0.38.0 → 0.39.0, allocated by hand while
+  # this was in review. The member was `kind: bug`, but the release REMOVED
+  # `--studio-bars-h`, a documented public contract, so the conductor chose minor
+  # over the patch the kind scores.
+  #
+  # This test pins all three answers, because the honest reading matters more than
+  # a green tick: the DERIVED bump would have shipped 0.38.1, which was the wrong
+  # call. KIND_BUMPS is a floor for routine work, not a judgment about public
+  # surface — so removing documented API needs a human to say so, and `gem_bump`
+  # is how they say it. The `breaking` risk tag is the other lever, and it reads
+  # this change as a major.
+  def test_the_studio_engine_0_39_0_call_is_expressible
+    engine = { current: "0.38.0", tag: "0.38.0", live: ["0.38.0"] }
+    bug    = member(kind: "bug", slug: "drop-studio-bars-h")
+
+    assert_equal "0.38.1", allocation(**engine, members: [bug]).version,
+                 "the derived bump alone would have UNDER-called a public-contract removal"
+    assert_equal "0.39.0", allocation(**engine, members: [member(kind: "bug", bump: "minor")]).version,
+                 "--gem-bump minor expresses the conductor's judgment exactly"
+    assert_equal "1.0.0", allocation(**engine, members: [member(kind: "bug", risk: ["breaking"])]).version,
+                 "a breaking risk tag reads the same change as a major"
+  end
+
+  # And the override fails LOUDLY when mistyped, which matters most precisely
+  # here: a silent degrade would hand back the 0.38.1 the human was overriding.
+  def test_a_mistyped_override_refuses_rather_than_reverting_to_the_derived_bump
+    decision = allocation(current: "0.38.0", tag: "0.38.0", live: ["0.38.0"],
+                          members: [member(kind: "bug", bump: "mnior")])
+
+    assert_equal GV::REFUSE, decision.action
+    refute_equal "0.38.1", decision.version
+  end
+
   def test_refuses_when_the_last_published_version_cannot_be_parsed
     decision = allocation(tag: "0.4", live: ["0.4"])
 
