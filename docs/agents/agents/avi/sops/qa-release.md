@@ -197,8 +197,11 @@ bin/release prepare --yes
    NOT advance past that tag (compared with `Gem::Version` semantics, so
    **equal, backward, and unparseable versions all block**; a backward version
    would otherwise "skip as already live" and rewrite consumers DOWNWARD into a
-   production downgrade with every gate green). The fix is a version bump past
-   the tag through the gem's own PR. Plus a consumer-coverage check —
+   production downgrade with every gate green). **You** fix it, as the
+   conductor: commit the advanced `version_file` directly onto the gem repo's
+   `accepted` and re-run `prepare` — never through a feature PR, which
+   `bin/dor-check` refuses (see the STRANDED GEM WORK row in the abort table
+   below for the number to write). Plus a consumer-coverage check —
    **unless the gem is self-gated** (gem-only-deployments): a gem carrying a
    `release_check` in `config/release_repos.yml` (studio-engine) is its OWN
    release candidate — its suite is the verdict and the RubyGems publish is its
@@ -336,7 +339,7 @@ must not reflexively re-run. Each abort names its own case and its own fix:
 
 | Abort | Fix FIRST | Then |
 |---|---|---|
-| **STRANDED GEM WORK** (gem `origin/release` ahead of its last `v*` tag, version not advanced past it — unbumped, BACKWARD, or unparseable) | Bump the gem's version through its own PR PAST the tag the abort names (it also names the stranded commits). A **backward** version — the abort says `DOWNGRADE` — means a version conflict was resolved the wrong way on a merge into `release`; fix the version file, don't force it through | re-run `prepare`; nothing was published or deployed |
+| **STRANDED GEM WORK** (gem `origin/release` ahead of its last `v*` tag, version not advanced past it — unbumped, BACKWARD, or unparseable) | **You set the version, by hand — not a PR.** `bin/dor-check` refuses any PR that edits a registered `version_file`, so there is no builder to bounce this to. Compute `next = <the tag the abort names> + bump`, where bump is **major** if any member of this candidate is risk-tagged `breaking`, else **minor** if any member has `kind: feature`, else **patch** (a member's `gem_bump` overrides). Then commit it straight onto the gem repo's `accepted` — no gem rung is branch-protected, and the batch promote PR carries it to `release` without a `dor-check`:<br>`cd /Users/alex/projects/<gem-repo> && git checkout accepted && git pull`<br>edit the `version_file` (`lib/studio/version.rb` for studio-engine, `solana-studio.gemspec` for solana-studio)<br>`git commit -am "Release <next>" && git push origin accepted`<br>A **backward** version — the abort says `DOWNGRADE` — means a version conflict was resolved the wrong way on a merge into `release`; fix the version file forward, don't force it through | re-run `prepare`; nothing was published or deployed |
 | **Pre-QA gate red — a member REGRESSION** | `bin/release eject <task> --feedback "<failing evidence>"`, then revert its merge commit on `release` (the abort prints the guidance) — as the eject step above says | re-run `prepare`; the rest of the RC rides |
 | **Pre-QA gate red — ENV/toolchain** (unsatisfied bundle, Postgres down, Ruby divergence) | **Nothing to eject or revert.** Fix the environment exactly as the abort names it | re-run `prepare` |
 | **QA deploy / boot FAILED** | Fix the boot failure (the summary prints the `bin/qa-server deploy …` retry); eject the member if it is the cause | re-run `prepare` **once QA boots** |

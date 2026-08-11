@@ -219,11 +219,29 @@ builds against the just-published version. The classification is the registry at
 
 How a gem rides a release:
 
-1. **The gem task is a normal task.** Its PR/branch lives in the gem's *own*
-   repo (e.g. `studio-engine`), not in `mcritchie-studio`. Shape `library`, and
-   the **version bump lives in that PR** — `lib/studio/version.rb` for
-   studio-engine, the `.gemspec` for solana-studio (the registry's
-   `version_file`). It is reviewed → `reviewed` like any other task.
+1. **The gem task is a normal task — and it carries NO version.** Its PR/branch
+   lives in the gem's *own* repo (e.g. `studio-engine`), not in
+   `mcritchie-studio`. Shape `library`. The PR must **not** touch the registry's
+   `version_file` (`lib/studio/version.rb` for studio-engine, the `.gemspec` for
+   solana-studio): `bin/dor-check` **refuses** a diff that edits one, because N
+   PRs riding one candidate publish exactly **one** version, so no single PR can
+   know the answer. The **release** owns the number (step 1b). Editing
+   `CHANGELOG.md` is *not* refused. Otherwise it is reviewed → `reviewed` like
+   any other task.
+1b. **The release conductor sets the version — by hand, today.** The bump is
+   derived from the candidate's membership: any member risk-tagged `breaking` →
+   major, else any `kind: feature` → minor, else patch; `next = last published
+   tag + that bump`. `Release::GemVersion`
+   (`app/models/release/gem_version.rb`) encodes those rules and is unit-tested,
+   but **nothing calls it yet** — `bin/release prepare` does not allocate the
+   version (finding-d0621629719b). So until that lands the conductor computes
+   the number and commits the `version_file` **directly onto the gem repo's
+   `accepted`** (no gem rung is branch-protected, and the batch promote PR
+   carries it to `release` without passing a `dor-check`), then runs
+   `bin/release prepare`. Skip this and the stranded-work guard aborts the sweep
+   for **every** repo. When the derived bump is wrong — most often a `chore`
+   that is genuinely breaking — the override is
+   `bin/task update <task-slug> --gem-bump major`.
 2. **Prepare preflights EVERY swept gem, then publishes — before the gate and
    QA.** `bin/release prepare` adds the gem to the release record without
    merging a branch for it (it has none here), then runs the two-phase
@@ -254,8 +272,10 @@ Operational notes:
   repos are resolved as siblings of `mcritchie-studio` at the projects root
   (`/Users/alex/projects/<repo>`).
 - `gem push` requires a logged-in RubyGems credential (`gem signin`). A
-  "version already published" error means the gem PR didn't bump its
-  `version_file` — fix the version, don't re-push.
+  "version already published" error means the conductor's version commit (step
+  1b) never landed on the gem's `accepted`, or did not advance past the last
+  published tag — commit the advanced version and re-run `prepare`, don't
+  re-push. Never resolve it by editing a feature PR: `dor-check` refuses that.
 - The manual gem build remains documented in `studio-engine/docs/RELEASE.md`;
   `bin/release prepare` automates that path (preflight → build → push → tag) as
   the release conductor's producer-first step, and `bin/release ship` re-runs

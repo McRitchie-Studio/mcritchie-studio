@@ -422,8 +422,9 @@ Gems and apps are handled differently at both ends of the Deploy workflow:
 - **The stranded-work guard — an ORDERING invariant.** For each swept gem repo,
   if `origin/release` is ahead of the last published `v*` tag while the version
   did **not advance past that tag**, prepare **BLOCKS loudly**, naming the
-  stranded commits and the fix (bump the version past the tag through the gem's
-  own PR, re-run prepare). The comparison is `Gem::Version` semantics, not
+  stranded commits and the fix (the conductor commits the advanced version onto
+  the gem repo's `accepted`, then re-runs prepare — *not* through a feature PR,
+  which `dor-check` refuses). The comparison is `Gem::Version` semantics, not
   string equality, so **three** vectors block together: an EQUAL version (the
   publish silently self-skips "already live" and the commits ride nowhere — the
   failure mode that once stranded 9 engine commits behind an all-green
@@ -446,11 +447,23 @@ Gems and apps are handled differently at both ends of the Deploy workflow:
   from prepare (skip + `release → main` collapse), and it remains the real
   publish backstop for a release prepared before this change. If a gem fails to
   publish, the ship aborts before any app deploys.
-- **The version lives in the gem's PR.** The version bump (`lib/studio/version.rb`
-  for studio-engine, the `.gemspec` for solana-studio) is part of the gem task's
-  own PR; `member_plan` reads it for the publish + the board's `💎 gem` badge.
-  See `docs/agents/modules/deployment.md` → "Releasing a gem (producer-first)"
-  for the operator runbook.
+- **The version belongs to the RELEASE, never to a PR.** N pull requests riding
+  one candidate publish exactly **one** version, so no individual PR can know the
+  right answer when it is written. `bin/dor-check` therefore **refuses** any diff
+  touching a registered `version_file` (`lib/studio/version.rb` for
+  studio-engine, the `.gemspec` for solana-studio) at the merge gate; the `build`
+  gate is exempt, and `CHANGELOG.md` is deliberately **not** refused. The bump is
+  derived from the candidate's membership — `breaking` risk tag → major, else a
+  `feature` member → minor, else patch — by `Release::GemVersion`
+  (`app/models/release/gem_version.rb`), pure and unit-tested. **That module has
+  no caller yet: `bin/release prepare` does NOT allocate the version**
+  (finding-d0621629719b). Today the release conductor computes the number and
+  commits the `version_file` straight onto the gem repo's `accepted`, which the
+  batch promote carries to `release`; `member_plan` then *reads* it for the
+  publish + the board's `💎 gem` badge. Per-task override:
+  `bin/task update <task-slug> --gem-bump major`. See
+  `docs/agents/modules/deployment.md` → "Releasing a gem (producer-first)" for
+  the operator runbook.
 
 This is the ordered `release_slug` from §4.2 ("gem publish → consumer lockfile
 bump → app deploy"), now expressed as first-class release membership rather than

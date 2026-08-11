@@ -1161,7 +1161,7 @@ def publish_gem(repo, version)
   # 3. Push to RubyGems.
   step("gem push: #{artifact}")
   _, pushed = sh("gem", "push", artifact)
-  abort!("gem push failed for #{repo} #{version} — already published? bump #{meta['version_file']} (its PR owns the version) or check `gem signin`. Nothing downstream deployed.") unless pushed || DRY
+  abort!("gem push failed for #{repo} #{version} — already published? The RELEASE owns the version, not any PR: commit an advanced #{meta['version_file']} directly onto #{repo}'s `accepted` (a PR editing it is refused by bin/dor-check), then re-run prepare. Or check `gem signin`. Nothing downstream deployed.") unless pushed || DRY
 
   # 4. Tag the gem repo so the published version is reproducible from git.
   tag = "v#{version}"
