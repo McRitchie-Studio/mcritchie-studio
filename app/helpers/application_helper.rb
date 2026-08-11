@@ -1,7 +1,9 @@
 module ApplicationHelper
   # qa_environment? / show_environment_banner? / environment_banner_message
   # moved into studio-engine 0.30 (Studio.qa_environment? and friends, rendered
-  # by studio/banners/_environment). The layout renders that one partial now.
+  # by studio/banners/_environment). Since 0.33 the layout does not name that
+  # partial at all: it renders studio/banners/stack as the header's sibling, and
+  # the stack decides which bars — environment, impersonation — belong on the page.
 
   def stage_scheme(stage)
     case stage.to_s

@@ -89,11 +89,17 @@ gem "sentry-rails"
 
 gem "studio-engine", "~> 0.33" # 0.33.0 makes the environment banner the navbar's SIBLING rather than its child: the layout renders studio/banners/stack immediately before the header, the stack measures its own height with a ResizeObserver and publishes --studio-bars-h, and the header offsets by that instead of hardcoding top-0. This app's layout depends on that partial existing, so 0.33 is the FLOOR. Bars also brand off --color-warning / --color-danger now, so the banner follows this app's theme.
 
-# Pinned to the majors this app already runs, so an engine bump cannot silently
-# carry them. studio-engine declares `redis >= 4.0.1` and `resend ~> 1.1`
-# open-ended (rubygems warns about this at build time), so bundler re-resolves
-# them to newest on every engine version change — `--conservative` and
-# `--strict` both still floated redis 5.4.1 -> 6.0.0, a MAJOR, inside a banner
-# change. Lift these deliberately, in their own task, with the suite behind it.
+# Pin the majors this app already runs so an engine bump cannot carry a new one
+# in silently. studio-engine declares `redis >= 4.0.1` with NO upper bound — the
+# unbounded dependency rubygems warns about at build time — so bundler re-resolves
+# it on every engine version change; `--conservative` and `--strict` both still
+# floated redis 5.4.1 -> 6.0.0, a MAJOR, inside a banner change. `~> 5.4` is the
+# guard that stopped it.
+#
+# `resend ~> 1.6` raises the FLOOR, it does not add a ceiling: the engine already
+# caps resend at `~> 1.1` (< 2.0). Do not copy it as the template for guarding a
+# major — that needs a bound tighter than the gemspec's.
+#
+# Lift either one deliberately, in its own task, with the suite behind it.
 gem "redis", "~> 5.4"
 gem "resend", "~> 1.6"

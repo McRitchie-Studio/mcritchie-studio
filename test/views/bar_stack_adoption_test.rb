@@ -30,17 +30,19 @@ class BarStackAdoptionTest < ActionDispatch::IntegrationTest
   end
 
   test "the header offsets by the published height instead of hardcoding top-0" do
-    layout = LAYOUT.read
-
-    assert_includes layout, "top:var(--studio-bars-h, 0px)"
-    assert_not_includes layout, "vt-pinned-header sticky top-0",
-                        "top-0 would pin the header under the bars"
+    assert_includes LAYOUT.read, "top:var(--studio-bars-h, 0px)"
   end
 
-  # A duplicate view-transition-name silently disables EVERY transition on the
-  # page, so this is asserted rather than hoped.
+  # Counted on the RENDERED page, not on this app's layout file. The second pinned
+  # header would arrive from the ENGINE — studio-engine's layouts/_navbar emits
+  # vt-pinned-header whenever pin_header is set — so scanning this file could never
+  # see it, and the assertion would stay green through the exact regression it
+  # names. A duplicate view-transition-name silently disables EVERY transition on
+  # the page, so this is asserted rather than hoped.
   test "exactly one pinned header survives the change" do
-    assert_equal 1, LAYOUT.read.scan("vt-pinned-header").length
+    get root_path
+
+    assert_equal 1, response.body.scan("vt-pinned-header").length
   end
 
   test "the engine supplies the stack partial this layout now depends on" do
@@ -55,7 +57,19 @@ class BarStackAdoptionTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_includes response.body, "studio-bar-stack"
-    assert_includes response.body, "--studio-bars-h"
+    # The PUBLICATION, not the reference. The header's own style attribute puts
+    # "--studio-bars-h" in every response unconditionally, so matching the bare
+    # name passes even when the stack renders nothing at all.
+    assert_includes response.body, ":root{--studio-bars-h:",
+                    "the stack must publish the height on :root, not merely be referenced"
+
+    header = css_select("header.vt-pinned-header").first
+    assert_not_nil header
+    # The property, not one spelling of it: re-adding top-0 further along the class
+    # list, or reordering the classes, both slip past a substring refutation.
+    assert_no_match(/\btop-\S/, header["class"].to_s,
+                    "a top-* utility would fight the offset the stack publishes")
+    assert_includes header["style"].to_s, "top:var(--studio-bars-h, 0px)"
     assert_select "a[href='/_studio/local_emails']", minimum: 1
   end
 end
