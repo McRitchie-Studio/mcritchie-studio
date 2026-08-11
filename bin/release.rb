@@ -3850,15 +3850,20 @@ def bundle_lock(path, gem, attempts: 3, conservative: false, expect: nil)
     delay *= 2
   end
 
-  # Name the API the code ACTUALLY reads (rubygems_versions → the versions JSON),
-  # never the HTML gem page: the two do not propagate in lockstep, and an operator
-  # who waits on the page while the API is still stale re-enters the publish
-  # branch, gets `gem push` refused, and is then advised to bump the version —
-  # which would burn a version number for nothing.
+  # WAIT ON THE SURFACE BUNDLER READS — not the one this script's idempotency
+  # check reads. What just failed is `bundle lock`, a BUNDLER resolution, and
+  # bundler resolves through the COMPACT INDEX at index.rubygems.org/info/<gem>.
+  # The versions JSON API (rubygems_versions, which answers only "already
+  # published, so skip the push?") and the HTML gem page are separate services
+  # with their own CDN caching: a version visible on either is not proof bundler
+  # can resolve it. Send the operator to either and the false green sends them
+  # back into the publish branch, where `gem push` is refused as already-live and
+  # the advice becomes "bump the version" — burning a number for nothing.
   abort!("#{args.join(' ')} did not land in #{path} after #{attempts} tries (#{reason}). " \
          "This is normally RubyGems index propagation. Wait until " \
-         "https://rubygems.org/api/v1/versions/#{gem}.json lists #{expect || 'the published version'} " \
-         "— that JSON API is the surface this run reads — then re-run; it resumes.")
+         "`curl -sS https://index.rubygems.org/info/#{gem} | tail -5` shows " \
+         "#{expect || 'the published version'} — that compact index is what bundler " \
+         "resolves through — then re-run; it resumes.")
 end
 
 # --- prepare-side gem publish (producer-first, BEFORE the pre-QA gate + QA) ----
