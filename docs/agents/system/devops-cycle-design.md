@@ -1103,15 +1103,42 @@ friction / follow-ups — `--worked`/`--friction`/`--followup` supply them from 
 `docs/agents/audits/retro-<slug>.md`, then **commits that doc to `release`**
 (best-effort, non-fatal, only when the doc is the *sole* uncommitted change —
 `Release::ArtifactCommit`) so the generated retro ships next round rather than
-piling up as uncommitted dirt. `--file-tasks` opens each follow-up via
-`bin/task create`. The gather + render rule is the pure, unit-tested
+piling up as uncommitted dirt.
+
+**Where follow-ups land, and how they stay de-duplicated.** By default each
+`--followup` is filed as a **triage finding** (`bin/triage file`) — a finding costs
+nothing sitting in the inbox, while a task costs a worktree, a review, and a
+release slot. `--file-tasks` opts back into opening each one via `bin/task create`.
+Filing is **idempotent on the finding path**: retro reads the OPEN inbox first
+(`bin/triage list --json`) and **skips a follow-up whose title AND body already
+match VERBATIM**, byte-for-byte. The match is deliberately never fuzzy — a fuzzy
+match would silently swallow a genuinely distinct finding, which is worse than a
+duplicate, because a duplicate is visible at `/triage` and a swallowed finding is
+not. Two follow-ups that merely share their first eight words therefore both file.
+A follow-up too short to identify itself (under `RETRO_FOLLOWUP_MIN_WORDS` words —
+"fix flake") **warns and is still filed**, tagged with its release slug in the
+title so two real occurrences from different releases stay distinguishable while
+one occurrence refiled twice does not. Refusing was considered and rejected: it
+would discard text the operator just typed at the end of a ship, and the retro's
+whole contract is non-blocking. The `--file-tasks` titles are NOT slug-tagged —
+`Task::TITLE_WORD_RANGE` caps titles at 3-5 words, so a `(rel-…)` suffix would
+422 the create; the release rides in `agent_context` there instead.
+
+The gather + render rule is the pure, unit-tested
 `Release::Retro` (`.gather` / `.render` / `.write_doc`); the CLI reaches it through
 the same read-only `conductor` runner and writes the returned markdown to the local
-tree. It writes **no** agent-memory store — the doc (+ any filed tasks) is the only
-record. **Retro is decoupled from the pipeline by design:** `archive` does not
-depend on, trigger, or wait for it, so the loop closes whether or not a retro was
-run. Unlike `ship`/`archive`, retro never deploys or mutates the board, so it does
-not gate on `--yes`.
+tree. It writes **no** agent-memory store — the doc (+ any filed findings/tasks) is
+the only record. **Retro is decoupled from the pipeline by design:** `archive` does
+not depend on, trigger, or wait for it, so the loop closes whether or not a retro
+was run. Retro never DEPLOYS, which is why it does not gate on `--yes` — but note
+it **does write to the board** when it has follow-ups to file. (This page used to
+claim retro "never … mutates the board". That sentence was false, and its being
+false is why nobody expected a *test* exercising `--followup` to reach production:
+`test_retro_collects_repeated_answer_flags_into_the_runner_payload` shelled out to
+the real `bin/triage` on every suite run and filed 39 live "fix flake" findings —
+45% of the open inbox. The test now stubs the seam, and `release_cli_test.rb` pins
+`TASK_API_BASE` at an unroutable loopback base so no test in that file can reach
+the live board again.)
 
 ---
 

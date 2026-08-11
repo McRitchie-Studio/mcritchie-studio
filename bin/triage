@@ -8,11 +8,16 @@
 # promote (admin-gated on /triage) mints a task.
 #
 #   bin/triage file --title "Short finding title" [--body "..."] [--source <who>] [--repo <app>]
-#   bin/triage list [--status open|promoted|dismissed]
+#   bin/triage list [--status open|promoted|dismissed] [--json]
+#
+# --json prints the full finding rows (BODY included) as one JSON array, which is
+# what a caller needs to tell two findings apart — the human line shows only the
+# title, and `bin/release retro` matches title AND body verbatim before filing.
 #
 # Auth: AGENT_API_SECRET from ENV, else 1Password, else the repo .env — the same
 # resolution as bin/task (TaskBoard.agent_secret). Base URL via TASK_API_BASE.
 
+require "json"
 require_relative "lib/task_board"
 
 BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
@@ -38,6 +43,29 @@ def api(method, path, body = nil, opts = {})
   parsed = TaskBoard.parse_body(res)
   die!("#{method.upcase} #{path} -> #{res.code}: #{parsed["error"] || res.body}") unless res.code.to_i.between?(200, 299)
   parsed
+end
+
+def take_flag(argv, flag)
+  !argv.delete(flag).nil?
+end
+
+# EVERY page, not just the first. Api::Paginatable caps per_page at 100 and the
+# open inbox is already at 84 — a single-page read would go blind past the cap
+# with no error, which is exactly how a duplicate guard stops guarding without
+# anyone noticing. Ordering is created_at DESC (TriageFinding.recent).
+def all_findings(status)
+  rows = []
+  page = 1
+  loop do
+    payload = api(:get, "/api/v1/triage_findings?status=#{status}&per_page=100&page=#{page}")
+    batch = payload["data"] || []
+    rows.concat(batch)
+    total_pages = payload.dig("meta", "total_pages").to_i
+    break if batch.empty? || page >= total_pages
+
+    page += 1
+  end
+  rows
 end
 
 def take_value(argv, flag)
@@ -67,10 +95,15 @@ when "file"
   puts("filed #{finding["slug"]}  #{finding["title"]}")
 when "list"
   status = take_value(ARGV, "--status") || "open"
+  as_json = take_flag(ARGV, "--json")
   die!("unknown argument(s): #{ARGV.join(' ')}") unless ARGV.empty?
-  rows = api(:get, "/api/v1/triage_findings?status=#{status}&per_page=100")["data"]
-  rows.each { |f| puts("#{f["slug"]}  [#{f["status"]}]  #{f["title"]}") }
-  puts("(#{rows.size} finding(s))")
+  rows = all_findings(status)
+  if as_json
+    puts(JSON.generate(rows))
+  else
+    rows.each { |f| puts("#{f["slug"]}  [#{f["status"]}]  #{f["title"]}") }
+    puts("(#{rows.size} finding(s))")
+  end
 else
   usage!
 end
