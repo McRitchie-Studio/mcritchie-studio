@@ -6183,6 +6183,73 @@ def retro_docs_dir
   File.expand_path("../docs/agents/audits", __dir__)
 end
 
+# --- retro follow-up identity + idempotency ---------------------------------
+# Two compounding defects put 38 byte-identical "fix flake" findings (45% of the
+# open inbox) in front of the operator, and fixing either alone leaves the noise:
+#
+#   1. NO IDEMPOTENCY — every run filed every follow-up again, so re-running a
+#      retro, or running one per release, refiled the same text indefinitely.
+#   2. TITLE COLLAPSE — the title was literally the follow-up's first 8 words, so
+#      every short/generic follow-up ("fix flake") collapsed to the SAME title.
+#
+# The guard below matches VERBATIM (title AND body, byte-for-byte) and never
+# fuzzily. A fuzzy match would silently swallow genuinely distinct findings —
+# strictly worse than a duplicate, because a duplicate is VISIBLE at /triage and
+# a swallowed finding is not. Nothing here dismisses or dedupes what is already
+# filed: dismissal is the operator's admin-gated lane (TriageController), and the
+# existing 38 stay theirs to clear. This stops the bleeding, not the wound.
+
+# Words below which a follow-up cannot identify itself. "fix flake" (2) is the
+# measured floor case; five words is roughly "verb + object + where".
+RETRO_FOLLOWUP_MIN_WORDS = 5
+# How many leading words become the finding title (the board path uses 5 — see
+# retro's --file-tasks branch — because Task titles validate to 3-5 words).
+RETRO_FOLLOWUP_TITLE_WORDS = 8
+
+def retro_followup_words(text) = text.to_s.split(/\s+/).reject(&:empty?)
+
+# A follow-up too short to identify itself. It is still FILED (see retro) — this
+# only decides whether it gets warned about and slug-tagged.
+def retro_followup_vague?(text) = retro_followup_words(text).size < RETRO_FOLLOWUP_MIN_WORDS
+
+# The finding title for a follow-up. A vague one carries its RELEASE SLUG so it
+# is self-identifying: two real "fix flake" occurrences from different releases
+# stay distinguishable, while one occurrence refiled twice stays byte-identical
+# and is caught by the verbatim guard. A long one is truncated with an ellipsis
+# so the operator can SEE that the title is a prefix, not the whole finding.
+def retro_followup_title(text, release_slug, words: RETRO_FOLLOWUP_TITLE_WORDS)
+  parts = retro_followup_words(text)
+  return "#{parts.join(' ')} (#{release_slug})" if retro_followup_vague?(text)
+
+  parts.size > words ? "#{parts.first(words).join(' ')}…" : parts.join(" ")
+end
+
+# The finding body. Unchanged wording — an existing open finding filed by the old
+# code still matches verbatim, so this fix does not orphan what is already there.
+def retro_followup_body(text, release_slug) = "Retro follow-up from #{release_slug}: #{text}"
+
+# VERBATIM duplicate test — title AND body, byte-for-byte, over OPEN findings
+# only. Deliberately not fuzzy, not title-only: two different long follow-ups can
+# share their first 8 words (identical titles, different bodies) and both are
+# real, so the body is what keeps them.
+def retro_finding_open?(rows, title, body)
+  rows.any? { |r| r["title"].to_s == title && r["body"].to_s == body }
+end
+
+# Read the OPEN inbox through bin/triage (no new API — index already exists).
+# Returns [rows, ok?]. Fails OPEN: on a read failure the caller files anyway and
+# says so, because the retro is non-blocking by contract and a duplicate finding
+# is cheaper than a lost one.
+def retro_open_findings(triage_bin)
+  out, ok = sh(triage_bin, "list", "--status", "open", "--json", capture: true)
+  return [[], false] unless ok
+
+  parsed = JSON.parse(out)
+  parsed.is_a?(Array) ? [parsed, true] : [[], false]
+rescue JSON::ParserError
+  [[], false]
+end
+
 # Prompt for a repeatable free-text answer: read lines until a blank one, return
 # the collected non-blank entries. Used for the interactive judgment questions.
 def prompt_list(question)
@@ -6280,25 +6347,54 @@ def retro
   #    already written, so a filing hiccup just means fewer entries filed.
   if followups.any?
     say("")
+    # WARN, never refuse, on a follow-up too short to identify itself — and warn
+    # BEFORE the branch, because the defect is in the INPUT and both destinations
+    # inherit it. Refusing would discard text the operator just typed at the end
+    # of a ship, turning a low-value finding into a LOST one and handing the
+    # retro a failure mode its own contract disclaims ("NON-BLOCKING"). A warning
+    # puts the pressure on the person who can still fix it, right when they can.
+    followups.select { |f| retro_followup_vague?(f) }.each do |f|
+      say("  ⚠ vague follow-up #{f.inspect} — under #{RETRO_FOLLOWUP_MIN_WORDS} words, so it cannot identify " \
+          "itself. Filing it anyway, tagged with #{resolved}; re-run with a fuller sentence for a better record.")
+    end
+
     if file_tasks
       step("file #{followups.size} follow-up task(s) via bin/task create (--file-tasks)")
       task_bin = File.expand_path("../bin/task", __dir__)
       followups.each do |f|
+        # NOT slug-tagged like the triage title: Task titles validate to 3-5
+        # words (Task::TITLE_WORD_RANGE), so a "(rel-…)" suffix would push every
+        # title out of range and the create would 422. The release stays in
+        # agent_context below, which is where task detail belongs anyway. A vague
+        # follow-up is REJECTED here by that same validation — loudly, by the
+        # board, which is the right place for it; the warning above says why.
         title = f.split(/\s+/).first(5).join(" ")
         # --no-claim: filing a retro follow-up must not repoint the conductor's
         # active-feature marker (and its live build-claim) onto each fresh task.
         _, ok = sh(task_bin, "create", "--no-claim", "--title", title, "--kind", "chore",
-                   "--agent-context", "Retro follow-up from #{resolved}: #{f}", capture: true)
+                   "--agent-context", retro_followup_body(f, resolved), capture: true)
         say("  - #{ok ? '✓' : '✗'} #{title}")
       end
     else
       step("file #{followups.size} follow-up finding(s) into the triage inbox (default; --file-tasks opens tasks instead)")
       triage_bin = File.expand_path("../bin/triage", __dir__)
+      open_findings, read_ok = retro_open_findings(triage_bin)
+      say("  ⚠ could not read the open inbox — filing without the duplicate check (a duplicate beats a lost finding)") unless read_ok
+
       followups.each do |f|
-        title = f.split(/\s+/).first(8).join(" ")
+        title = retro_followup_title(f, resolved)
+        body  = retro_followup_body(f, resolved)
+        if retro_finding_open?(open_findings, title, body)
+          say("  - ↻ #{title} (already open — skipped)")
+          next
+        end
+
         _, ok = sh(triage_bin, "file", "--title", title, "--source", "release-retro",
-                   "--body", "Retro follow-up from #{resolved}: #{f}", capture: true)
+                   "--body", body, capture: true)
         say("  - #{ok ? '✓' : '✗'} #{title}")
+        # Count it as open for the REST of this run too, so the same follow-up
+        # passed twice in one invocation files once, not twice.
+        open_findings << { "title" => title, "body" => body } if ok
       end
     end
   end
