@@ -406,6 +406,20 @@ Each `CiCheckJob` upsert then morph-broadcasts the refreshed bar to the task car
 the Next Release G3 slot over Turbo Streams, so the board's CI progress bars **tick
 up live with no reload** as each check passes.
 
+**The review autopilot rides this same ingest.** After every `workflow_run` upsert
+that carries a CONCLUSION, the job calls `ReviewPendingAction.trigger_for_head`
+(repo + head_sha), which enqueues `ReviewPendingActionExecutionJob` for any ARMED
+MERGE pinned to that exact tree — a reviewer's already-recorded merge-ready verdict,
+waiting on CI. The trigger deliberately fires on ANY conclusion and judges none of
+them: `Ci::ReviewGate` stays the single place that decides what green means, and
+`Review::PendingActionExecutor` owns every guard. The trigger is best-effort and
+rescued, so it can never break CI ingestion; a missed delivery is picked up by the
+action's own recheck chain within minutes. Reviewer-facing docs:
+`docs/agents/agents/carl/sops/pr-review-primary.md` step 6; CLI `bin/review-autopilot`.
+Note the wiring dependency — only repos whose Actions webhook reaches this endpoint
+can ever trigger it; an unwired repo's armed merge reads CI as `:none` forever and
+expires unexecuted, which is the correct fail-closed outcome, not a silent pass.
+
 **Prod-deploy approval gate — REMOVED 2026-07-20 (task `remove-prod-deploy-approval`).**
 The `production` GitHub Environment's required-reviewer rule was deleted (a GitHub
 setting), so a dispatched prod-deploy run now deploys straight through — it never

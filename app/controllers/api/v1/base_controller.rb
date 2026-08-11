@@ -64,13 +64,18 @@ module Api
         raise e
       rescue StandardError => e
         error_log = create_error_log(e)
+        # Guarded exactly as the engine's Studio::ErrorHandling#rescue_and_log
+        # guards it. Unguarded, a slug-less target (a join row, a claim, an armed
+        # action) raised NoMethodError from INSIDE the rescue — replacing the real
+        # exception with a useless one and losing the ErrorLog that was the whole
+        # point of the call.
         if target
           error_log.target = target
-          error_log.target_name = target.slug
+          error_log.target_name = target.slug if target.respond_to?(:slug)
         end
         if parent
           error_log.parent = parent
-          error_log.parent_name = parent.slug
+          error_log.parent_name = parent.slug if parent.respond_to?(:slug)
         end
         error_log.save!
         @_error_logged = true

@@ -100,7 +100,27 @@ class GithubWorkflowRunIngestJob < ApplicationJob
       record.run_attempt = incoming_attempt if incoming_attempt && incoming_attempt >= record.run_attempt.to_i
 
       record.save!
+
+      # THE AUTOPILOT TRIGGER. A settled run is the moment an armed merge becomes
+      # executable, and this row is the board's only news of it — Ci::ReviewGate
+      # reads these rows and nothing else. Fire only on a CONCLUSION: a queued or
+      # in_progress delivery can never make a merge eligible, and re-checking on
+      # it would just burn a job.
+      #
+      # Best-effort by design: the autopilot is a convenience over an already
+      # durable record, so a trigger failure must never break CI ingestion. A
+      # missed trigger is picked up by the action's own recheck chain
+      # (ReviewPendingActionExecutionJob) within minutes.
+      trigger_review_autopilot(record) if record.conclusion.present?
     end
+  end
+
+  def trigger_review_autopilot(record)
+    ReviewPendingAction.trigger_for_head(repo: record.repo, head_sha: record.head_sha)
+  rescue StandardError => e
+    Rails.logger.warn("[GithubWorkflowRunIngestJob] autopilot trigger failed for run #{record.run_id}: " \
+                      "#{e.class}: #{e.message}")
+    nil
   end
 
   # Does this delivery describe a LATER run attempt than the one whose conclusion
