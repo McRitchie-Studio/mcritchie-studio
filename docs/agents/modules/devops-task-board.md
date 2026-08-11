@@ -732,9 +732,15 @@ What ships instead is honest and quiet about its limits:
 
 ## The release owns the gem version — builders never write one
 
-**Do not edit `lib/studio/version.rb`, a gemspec's version, or `CHANGELOG.md` in a
-feature PR.** `bin/dor-check` refuses a PR that does, and the refusal names the
-remedy. This is not a style preference; it is arithmetic.
+**Do not set a gem's version in a feature PR** — `lib/studio/version.rb`, or the
+version line of a gemspec. `bin/dor-check` refuses a PR that does, and the refusal
+names the remedy. This is not a style preference; it is arithmetic.
+
+**`CHANGELOG.md` is NOT gated** — deliberately, for now. The version is safe to
+refuse because it has a working manual path: the release conductor commits it onto
+the gem's `accepted` during the sweep. Nothing yet assembles a changelog from a
+release's members, so refusing changelog edits would leave the file un-editable with
+no writer and no manual path. It becomes release-owned when its assembler ships.
 
 A version is a property of the **release**, not of any PR. N pull requests riding
 one candidate publish exactly **one** version, so no individual PR can know the

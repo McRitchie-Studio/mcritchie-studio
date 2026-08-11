@@ -159,14 +159,24 @@ class DorCheckTest < Minitest::Test
     assert_match(/--gem-bump major/, out, "and must name the remedy for a genuinely breaking change")
   end
 
-  def test_integration_refuses_a_pr_that_edits_the_changelog
+  # THE CHANGELOG IS DELIBERATELY NOT GATED, and this pins that.
+  #
+  # An earlier pass refused it, on the strength of a message promising the release
+  # "assembles the changelog from its members". A reviewer grepped for that assembler
+  # and found NONE — three CHANGELOG hits across bin/ app/ lib/ config/, not one of
+  # them a writer. The version has a working manual path (the conductor commits it
+  # onto the gem's `accepted`, which the promote carries); the changelog would have
+  # had no writer AND no documented manual path, leaving the file permanently
+  # un-editable through the cycle. Refusing edits to a file nothing maintains is a
+  # dead end, not ownership. It re-enters WITH its assembler (finding-d0621629719b).
+  def test_integration_the_changelog_is_not_gated_until_an_assembler_exists
     devops = { "kind" => "chore", "shape" => "library", "repositories" => ["studio-engine"],
                "acceptance" => ["Something is done well here"], "test_plan" => ["[unit] x"],
                "checks_run" => ["[unit] x"], "pr_url" => "https://github.com/McRitchie-Studio/studio-engine/pull/1" }
     out, status = with_changed_files("CHANGELOG.md") { check(devops) }
 
-    refute_equal 0, status
-    assert_match(/CHANGELOG\.md/, out)
+    assert_equal 0, status, "a changelog edit must NOT be refused while nothing assembles one"
+    refute_match(/RELEASE-OWNED/, out)
   end
 
   # The gate must not fire on ordinary code — an advisory that cries wolf gets
@@ -189,17 +199,16 @@ class DorCheckTest < Minitest::Test
     refute_match(/RELEASE-OWNED/, out, "a vendored dependency's changelog is not ours to own")
   end
 
-  def test_integration_only_the_root_changelog_is_release_owned
+  def test_integration_no_changelog_path_is_release_owned
     devops = { "kind" => "chore", "shape" => "library", "repositories" => ["studio-engine"],
                "acceptance" => ["Something is done well here"], "test_plan" => ["[unit] x"],
                "checks_run" => ["[unit] x"], "pr_url" => "https://github.com/McRitchie-Studio/studio-engine/pull/1" }
 
     out, = with_changed_files("docs/notes/CHANGELOG.md") { check(devops) }
-    refute_match(/RELEASE-OWNED/, out, "a nested changelog is not the repo's release changelog")
+    refute_match(/RELEASE-OWNED/, out, "a nested changelog is not release-owned")
 
-    out, status = with_changed_files("CHANGELOG.md") { check(devops) }
-    refute_equal 0, status, "…but the ROOT changelog still refuses"
-    assert_match(/RELEASE-OWNED/, out)
+    out, = with_changed_files("CHANGELOG.md") { check(devops) }
+    refute_match(/RELEASE-OWNED/, out, "and neither is the root one, until an assembler writes it")
   end
 
   def test_integration_ordinary_diff_is_untouched_by_the_version_gate
