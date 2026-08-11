@@ -1,4 +1,5 @@
 const { test, expect } = require("@playwright/test");
+const { watchPageErrors } = require("./helpers");
 
 async function releaseMemberMetrics(locator) {
   return locator.evaluateAll((els) => els.map((el) => {
@@ -46,9 +47,7 @@ async function assertLastReleaseStack(page) {
 test("the deployments board updates a card live when an intent is recorded @quarantine", async ({ page }) => {
   // The original miss was an UNCAUGHT TypeError in the broadcast handler (a wrong
   // method name) that fired after the DOM mutation — guard against any such throw.
-  const pageErrors = [];
-  page.on("pageerror", (err) => pageErrors.push(String(err)));
-  page.on("console", (msg) => { if (msg.type() === "error") pageErrors.push(msg.text()); });
+  const { pageErrors, report } = watchPageErrors(page);
 
   await page.goto("/deployments");
 
@@ -73,7 +72,7 @@ test("the deployments board updates a card live when an intent is recorded @quar
   await expect(page.locator("#dropzone-submitted #card-live-cable-demo")).toBeVisible();
 
   // …with no uncaught error from the broadcast handler.
-  expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
+  expect(pageErrors, report()).toHaveLength(0);
 });
 
 // Re-review live updates: a resubmitted task already has a historical completed
@@ -81,9 +80,7 @@ test("the deployments board updates a card live when an intent is recorded @quar
 // that same review lane into the current live ticker, not leave the old static
 // duration badge in place.
 test("a resubmitted card replaces the old review duration with a live review ticker @quarantine", async ({ page }) => {
-  const pageErrors = [];
-  page.on("pageerror", (err) => pageErrors.push(String(err)));
-  page.on("console", (msg) => { if (msg.type() === "error") pageErrors.push(msg.text()); });
+  const { pageErrors, report } = watchPageErrors(page);
 
   await page.goto("/deployments");
 
@@ -108,13 +105,11 @@ test("a resubmitted card replaces the old review duration with a live review tic
   await expect(reviewLane.locator("[data-test='crew-duration']")).toHaveCount(0);
   await expect(page.locator("#dropzone-submitted #card-live-rereview-demo")).toBeVisible();
 
-  expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
+  expect(pageErrors, report()).toHaveLength(0);
 });
 
 test("a direct-blocked card ignores stale review intent until a fresh one starts @quarantine", async ({ page }) => {
-  const pageErrors = [];
-  page.on("pageerror", (err) => pageErrors.push(String(err)));
-  page.on("console", (msg) => { if (msg.type() === "error") pageErrors.push(msg.text()); });
+  const { pageErrors, report } = watchPageErrors(page);
 
   await page.goto("/deployments");
 
@@ -137,7 +132,7 @@ test("a direct-blocked card ignores stale review intent until a fresh one starts
   await expect(reviewLive).toHaveCount(1, { timeout: 10_000 });
   await expect(page.locator("#dropzone-submitted #card-live-direct-block-demo")).toBeVisible();
 
-  expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
+  expect(pageErrors, report()).toHaveLength(0);
 });
 
 test("Last Release stacks member pills while Current Release keeps readable wrapping", async ({ page }) => {
@@ -170,9 +165,7 @@ test("Last Release stacks member pills while Current Release keeps readable wrap
 // the card IN PLACE and the reserved deploy slot fills with Avi + a live ticker — the
 // Deploy mirror of the build-lane live counter, with NO page reload.
 test("an assembled card fills its reserved deploy slot live when a ship intent is recorded", async ({ page }) => {
-  const pageErrors = [];
-  page.on("pageerror", (err) => pageErrors.push(String(err)));
-  page.on("console", (msg) => { if (msg.type() === "error") pageErrors.push(msg.text()); });
+  const { pageErrors, report } = watchPageErrors(page);
 
   await page.goto("/deployments");
 
@@ -199,7 +192,7 @@ test("an assembled card fills its reserved deploy slot live when a ship intent i
   await expect(card.locator("[data-test='crew-empty'][data-lane='shipped']")).toHaveCount(0);
 
   // …with no uncaught error from the broadcast handler.
-  expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
+  expect(pageErrors, report()).toHaveLength(0);
 });
 
 // A live STAGE CHANGE moves the card to its new column AND updates the per-column
@@ -233,9 +226,7 @@ test("a live stage change FLIPs the card to its new column and updates the count
 // stale visible card first to match the bug: a page reload would show it, but a
 // replace-only websocket update leaves the open board empty.
 test("a live block transition inserts a missing card into the Building column @quarantine", async ({ page }) => {
-  const pageErrors = [];
-  page.on("pageerror", (err) => pageErrors.push(String(err)));
-  page.on("console", (msg) => { if (msg.type() === "error") pageErrors.push(msg.text()); });
+  const { pageErrors, report } = watchPageErrors(page);
 
   await page.goto("/deployments");
 
@@ -256,13 +247,11 @@ test("a live block transition inserts a missing card into the Building column @q
   await expect(blockedCard).toHaveAttribute("data-stage", "blocked");
   await expect(blockedCard).toHaveAttribute("class", /bg-red/);
 
-  expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
+  expect(pageErrors, report()).toHaveLength(0);
 });
 
 test("a live block transition keeps an already-visible Building card visible @quarantine", async ({ page }) => {
-  const pageErrors = [];
-  page.on("pageerror", (err) => pageErrors.push(String(err)));
-  page.on("console", (msg) => { if (msg.type() === "error") pageErrors.push(msg.text()); });
+  const { pageErrors, report } = watchPageErrors(page);
 
   await page.goto("/deployments");
 
@@ -282,13 +271,11 @@ test("a live block transition keeps an already-visible Building card visible @qu
   await page.waitForTimeout(1_500);
   await expect(card).toBeVisible();
 
-  expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
+  expect(pageErrors, report()).toHaveLength(0);
 });
 
 test("the tasks board updates a blocked card live in the Building column @quarantine", async ({ page }) => {
-  const pageErrors = [];
-  page.on("pageerror", (err) => pageErrors.push(String(err)));
-  page.on("console", (msg) => { if (msg.type() === "error") pageErrors.push(msg.text()); });
+  const { pageErrors, report } = watchPageErrors(page);
 
   await page.goto("/tasks");
 
@@ -309,7 +296,7 @@ test("the tasks board updates a blocked card live in the Building column @quaran
   await expect(blockedCard).toHaveAttribute("data-stage", "blocked");
   await expect(blockedCard).toHaveAttribute("class", /bg-red/);
 
-  expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
+  expect(pageErrors, report()).toHaveLength(0);
 });
 
 // ── Next Release live FX: only what MOVED lights up ──────────────────────────

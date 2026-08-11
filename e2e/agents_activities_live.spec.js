@@ -1,5 +1,5 @@
 const { test, expect } = require("@playwright/test");
-const { loginWithMagicLink } = require("./helpers");
+const { loginWithMagicLink, watchPageErrors } = require("./helpers");
 
 // /agents/activities live websocket updates (ActivitiesBroadcaster). The page subscribes
 // via turbo_stream_from "agents_activities"; an activity/action created or updated through
@@ -11,9 +11,7 @@ const { loginWithMagicLink } = require("./helpers");
 // meta[name='e2e-api-token'] never renders, so every test here signs in first.
 
 test("a new activity streams into the feed live, then a close updates it in place", async ({ page }) => {
-  const pageErrors = [];
-  page.on("pageerror", (err) => pageErrors.push(String(err)));
-  page.on("console", (msg) => { if (msg.type() === "error") pageErrors.push(msg.text()); });
+  const { pageErrors, report } = watchPageErrors(page);
 
   await loginWithMagicLink(page, "alex@test.com");
   await page.goto("/agents/activities");
@@ -44,13 +42,11 @@ test("a new activity streams into the feed live, then a close updates it in plac
   ).toBeVisible({ timeout: 10_000 });
 
   // …with no uncaught error from the live-stream / flash handler.
-  expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
+  expect(pageErrors, report()).toHaveLength(0);
 });
 
 test("a new action streams into its activity's drill-down live @quarantine", async ({ page }) => {
-  const pageErrors = [];
-  page.on("pageerror", (err) => pageErrors.push(String(err)));
-  page.on("console", (msg) => { if (msg.type() === "error") pageErrors.push(msg.text()); });
+  const { pageErrors, report } = watchPageErrors(page);
 
   await loginWithMagicLink(page, "alex@test.com");
   await page.goto("/agents/activities");
@@ -100,7 +96,7 @@ test("a new action streams into its activity's drill-down live @quarantine", asy
   expect(olderIdx).toBeGreaterThanOrEqual(0);
   expect(newerIdx).toBeLessThan(olderIdx);
 
-  expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
+  expect(pageErrors, report()).toHaveLength(0);
 });
 
 test("activity rows render measured close-diff usage instead of parent action fallback", async ({ page }) => {

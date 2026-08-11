@@ -1,4 +1,5 @@
 const { test, expect } = require("@playwright/test");
+const { watchPageErrors } = require("./helpers");
 
 // A deploy, live. Seeded (e2e/seed.rb): an ACTIVE Next Release (Snorlax, in
 // progress) and a prior SHIPPED Last Release (Dragonite, shipped minutes ago so
@@ -23,9 +24,7 @@ test("a deploy animates Last Release in, resets Next Release, and the timer tick
   // The back half deliberately rides out the FULL widened glow window
   // (~20s + the pre-ship ticks), so the ceiling is 60s, not the default 30s.
   test.setTimeout(60_000);
-  const pageErrors = [];
-  page.on("pageerror", (err) => pageErrors.push(String(err)));
-  page.on("console", (msg) => { if (msg.type() === "error") pageErrors.push(msg.text()); });
+  const { pageErrors, report } = watchPageErrors(page);
 
   await page.goto("/deployments");
 
@@ -104,5 +103,5 @@ test("a deploy animates Last Release in, resets Next Release, and the timer tick
   expect(shippedCardIds.indexOf("card-release-stack-current-b")).toBeLessThan(shippedCardIds.indexOf("card-release-stack-current-a"));
 
   // No uncaught error from the broadcast/animation handlers.
-  expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
+  expect(pageErrors, report()).toHaveLength(0);
 });
