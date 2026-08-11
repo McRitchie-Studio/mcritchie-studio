@@ -342,35 +342,51 @@ class TaskTest < ActiveSupport::TestCase
     assert_nil task.devops["approval_approved_at"]
   end
 
-  # --- Operator approval lane (regression: a builder self-approved its own demo
-  # via `bin/task update --approval approved` one second after moving submitted).
-  # Approving is the operator's lane: the admin-gated board UI (source "web") or
-  # an internal/console write (no request source). Agent bearer writes (source
-  # "api"/"cli"/anything else the API stamps) may request approval but never
-  # grant it. ---
+  # --- Operator approval (2026-08-09): approval_status is writable from EVERY
+  # lane. The operator approves in words on a live preview; the agent that heard
+  # him records it with `bin/task update --approval approved`. The old guard that
+  # made "approved" operator-attributed-writes-only is gone: its practical effect
+  # was a board pulsing WAITING until the operator clicked a button he had already
+  # answered — a chore handed back to him. The source lane survives only as
+  # TaskEvent attribution (OPERATOR_APPROVAL_GRANT_SOURCES + the bearer clamp). ---
 
-  test "[unit] agent api write cannot flip approval to approved" do
-    task = Task.create!(
-      title: "Approval Agent Flip",
-      stage: "building", # a waiting request only lives pre-seam (the settle invariant)
-      metadata: {
-        "devops" => {
-          "approval_status" => "waiting",
-          "local_url" => "http://localhost:3021/tasks"
-        }
-      }
-    )
-
+  test "[unit] agent api write can flip approval to approved" do
     %w[api cli].each do |source|
+      task = Task.create!(
+        title: "Approval Agent Flip",
+        stage: "building", # a waiting request only lives pre-seam (the settle invariant)
+        metadata: {
+          "devops" => {
+            "approval_status" => "waiting",
+            "local_url" => "http://localhost:3021/tasks"
+          }
+        }
+      )
+
       Current.task_event_source = source
-      error = assert_raises(ActiveRecord::RecordInvalid, "source #{source} must not approve") do
-        task.update!(metadata: { "devops" => task.devops.merge("approval_status" => "approved") })
-      end
-      assert_match(/operator/i, error.message)
+      task.update!(metadata: { "devops" => task.devops.merge("approval_status" => "approved") })
+
       task.reload
-      assert_equal "waiting", task.approval_status
-      assert_nil task.devops["approval_approved_at"]
+      assert_equal "approved", task.approval_status, "source #{source} must record the grant"
+      assert task.devops["approval_approved_at"].present?,
+             "source #{source} must still get the server-side approval stamp"
     end
+  ensure
+    Current.reset
+  end
+
+  test "[unit] agent write can stamp approval_approved_at directly" do
+    task = Task.create!(
+      title: "Approval Agent Stamp",
+      stage: "building", # a waiting request only lives pre-seam (the settle invariant)
+      metadata: { "devops" => { "approval_status" => "waiting" } }
+    )
+    stamped = 2.hours.ago.iso8601
+
+    Current.task_event_source = "api"
+    task.update!(metadata: { "devops" => task.devops.merge("approval_approved_at" => stamped) })
+
+    assert_equal stamped, task.reload.devops["approval_approved_at"]
   ensure
     Current.reset
   end
@@ -433,30 +449,13 @@ class TaskTest < ActiveSupport::TestCase
     )
 
     # bin/task update REPLACES the whole devops hash, echoing the operator's
-    # earlier approval back — a non-flip echo must not 422 the agent's update.
+    # earlier approval back — the echo must not clobber the recorded grant.
     Current.task_event_source = "cli"
     task.update!(metadata: { "devops" => task.devops.merge("pr_url" => "https://github.com/x/y/pull/1") })
 
     task.reload
     assert_equal "approved", task.approval_status
     assert_equal "https://github.com/x/y/pull/1", task.devops["pr_url"]
-  ensure
-    Current.reset
-  end
-
-  test "[unit] agent write cannot stamp approval_approved_at directly" do
-    task = Task.create!(
-      title: "Approval Timestamp Guard",
-      stage: "building", # a waiting request only lives pre-seam (the settle invariant)
-      metadata: { "devops" => { "approval_status" => "waiting" } }
-    )
-
-    Current.task_event_source = "api"
-    error = assert_raises(ActiveRecord::RecordInvalid) do
-      task.update!(metadata: { "devops" => task.devops.merge("approval_approved_at" => Time.current.iso8601) })
-    end
-    assert_match(/operator/i, error.message)
-    assert_nil task.reload.devops["approval_approved_at"]
   ensure
     Current.reset
   end
