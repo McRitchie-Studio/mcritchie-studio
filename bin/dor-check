@@ -10,6 +10,16 @@
 #       Requires the shape's full required_metadata, its dor_tiers green (tagged
 #       in devops.checks_run, e.g. "[unit] ..."), AND — for a shaped code feature
 #       — FRESH full-suite + full-rubocop evidence (the FULL-suite gate below).
+#       Two shapes ask for something a tier list cannot express, and both are
+#       checked against the OBSERVED DIFF rather than the label:
+#         claimable_when: test_only_diff — `test-only` is refused unless every
+#           changed path is provably test code, and refused again when no diff
+#           can be observed at all. A shape whose lighter contract is unlocked by
+#           TYPING its name is `kind: chore`'s bug moved into the taxonomy.
+#         required_evidence: [control] — `test-only` must record a "[control]"
+#           line in checks_run that NAMES A FILE FROM THE DIFF: the evidence that
+#           the changed test still bites, which is the only question a diff with
+#           no behavior in it can be asked.
 #   --gate build           — DoR-to-Build, at designed → building.
 #       Lighter: the spec must be complete (shape + acceptance + repositories +
 #       risk_tags + test_plan). No test tiers yet — there's no code to test.
@@ -128,6 +138,7 @@ require_relative "lib/full_suite_gate"
 require_relative "lib/repo_root"
 require_relative "lib/ci_status"
 require_relative "lib/code_diff"
+require_relative "lib/test_only_diff"
 require_relative "lib/task_board"
 require_relative "lib/cert_root_guard"
 
@@ -260,6 +271,26 @@ end
 # A tier is satisfied when a checks_run line is tagged "[tier]" at its start.
 def tier_satisfied?(checks, tier)
   checks.any? { |line| line.to_s =~ /\A\s*\[\s*#{Regexp.escape(tier)}\s*[\]:]/i }
+end
+
+# Does this [control] line name a file that is actually in the diff? The one
+# mechanical claim the control gate makes (see the block at the shape checks): it
+# separates a control ABOUT THIS CHANGE from a sentence that could have been
+# written before the change existed.
+#
+# Full path OR basename, because a builder writing the line by hand reasonably
+# types `hub_test.rb` rather than `test/integration/hub_test.rb`, and refusing the
+# short form would only teach people to paste the long one without running
+# anything. The basename still has to belong to a file in THIS diff, which is the
+# property being asserted; the spelling is not.
+def control_names_a_changed_file?(line, observed)
+  text = line.to_s
+  observed.any? do |path|
+    file = path.to_s.strip
+    next false if file.empty?
+
+    text.include?(file) || text.include?(File.basename(file))
+  end
 end
 
 # Files changed on this branch — the FULL working-tree diff, so the code-diff
@@ -1304,6 +1335,95 @@ missing_meta = required_meta.reject { |field| present?(devops[field]) }
 checks = Array(devops["checks_run"])
 missing_tiers = dor_tiers.reject { |tier| tier_satisfied?(checks, tier) }
 
+# ==== `claimable_when: test_only_diff` — the shape is EARNED FROM THE DIFF ======
+#
+# `test-only` carries no tiers, because a diff made entirely of test code has no
+# behavior for a tier to be evidence of. That trade is only safe while the shape
+# cannot be claimed by a change that DOES ship behavior — otherwise the lightest
+# contract in the file is unlocked by typing its name, which is `kind: chore`'s
+# bug (PR #512) rebuilt one level up, in the taxonomy this time.
+#
+# So the claim is checked against the OBSERVED diff, exactly like the doc-only
+# exemption above and with the same fail-closed rule: an unrecognized file blocks
+# the claim (TestOnlyDiff is an ALLOWLIST — see its header on the mirrored
+# polarity), and an UNOBSERVABLE diff blocks it too. "We saw nothing" is not
+# "there is nothing but tests"; reading silence as proof is how a blind checkout
+# would hand out the discount.
+#
+# The BUILD gate stays lenient on an empty observation for the reason it always
+# has: at design time no code exists yet, so an empty diff is the expected state.
+# It cannot disarm anything, because the build gate enforces no tiers either way.
+# A build-gate diff that IS observable and DOES carry a non-test file still errors
+# here — the earlier the shape is corrected, the less work is thrown away.
+if shape_def && shape_def["claimable_when"] == "test_only_diff"
+  observed = changed_files
+  offenders = TestOnlyDiff.non_test_files(observed)
+
+  # THE VERDICT IS TestOnlyDiff.test_only?, NOT A SECOND COPY OF ITS RULES. An
+  # earlier cut re-derived "empty means refuse" here, next to the module that
+  # already documents it at length — two copies of one truth, which is the drift
+  # this repo's guards exist to catch. A mutation harness caught it as a DEAD
+  # PATH: flipping the module's empty case to `true` changed nothing, because
+  # nothing called it. `non_test_files` is used only to NAME the offenders, so a
+  # refusal can say which file disqualified the claim.
+  if offenders.any?
+    sample = offenders.first(3).join(", ") + (offenders.size > 3 ? ", …" : "")
+    errors << "shape #{shape.inspect} may only be claimed on a diff that is ENTIRELY test code, and the " \
+      "observed diff ships #{offenders.size} file(s) that are not: #{sample} [source: #{diff_source}]. " \
+      "Test content means test/, tests/ or e2e/ — a workflow, a Gemfile, a playwright.config.js or an " \
+      "app/ file is a behavioral change whose tests are evidence FOR it, which is what the other shapes " \
+      "are for. Re-shape it (#{(shapes.keys - [shape]).join(', ')}) and record that shape's tiers, or " \
+      "split the test-only work into its own task"
+  elsif !TestOnlyDiff.test_only?(observed) && gate != "build"
+    errors << "shape #{shape.inspect} could not be proven test-only — NO diff could be observed " \
+      "(no PR files readable, and the git tree at #{diff_root} is clean or unreadable), so the claim is " \
+      "REFUSED rather than granted (fail-closed). An empty observation is the absence of evidence, not " \
+      "evidence of a test-only diff. Re-run this from the task's worktree, or set devops.pr_url, so the " \
+      "gate can see the diff it is meant to judge"
+  end
+end
+
+# ==== `required_evidence: [control]` — the question a tier list cannot ask ======
+#
+# For a test-only change the reviewer's real question is not "which tiers did you
+# run" but "DOES THE CHANGED TEST STILL BITE?" — and both builders who hit this gap
+# answered it unprompted, one with a control (the pre-change file against the fixed
+# engine: exactly 1 failure, at exactly the deleted line) and one with a mutation
+# (force a 404, watch the new diagnostic print the URL).
+#
+# WHAT THIS CHECK PROVES, AND WHAT IT DOES NOT — stated plainly, because a gate
+# that oversells itself is the subject of this file's own header. It proves the
+# control EXISTS and is ABOUT THIS CHANGE: the line must name a path that is
+# actually in the observed diff, so a generic string carried between tasks does not
+# satisfy it and the reviewer gets a re-runnable handle. It does NOT prove the run
+# happened — no lane can, because a test-only diff leaves no automatic mutation
+# target (production code is unchanged, so there is no before/after to execute).
+# That is why `control` is NOT a dor_tier: test/lib/feature_shape_tiers_test.rb
+# would refuse a tier no runner runs, and rightly. Executing the necessary half is
+# filed as /tasks/execute-test-only-control.
+#
+# Build gate exempt: the control is a BUILD artifact, unknowable at design time —
+# the same reason local_url and the tiers are not asked for there.
+if gate != "build" && Array(shape_def && shape_def["required_evidence"]).include?("control")
+  control_lines = checks.select { |line| line.to_s =~ /\A\s*\[\s*control\s*[\]:]/i }
+  observed = changed_files
+
+  if control_lines.empty?
+    errors << "shape #{shape.inspect} requires a [control] line in checks_run — the evidence that answers " \
+      "\"does the changed test still bite?\", which is the question a tier list cannot ask about a diff " \
+      "with no behavior in it. Run the control and record what you SAW, e.g. bin/task update " \
+      "#{task["slug"] || slug} --checks '[control] pre-change test/integration/hub_test.rb at HEAD → " \
+      "1 failure at line 42 (the assertion I deleted); post-change green' — or, for added coverage, the " \
+      "mutation you forced and the failure it produced"
+  elsif observed.any? && control_lines.none? { |line| control_names_a_changed_file?(line, observed) }
+    sample = observed.first(3).join(", ") + (observed.size > 3 ? ", …" : "")
+    errors << "the [control] line names no file from this diff, so it is not evidence ABOUT this change — " \
+      "a control that could have been written before the change was made is a sentence, not a result. " \
+      "Name the test file you controlled (one of: #{sample}) along with the command you ran and the " \
+      "failure you observed"
+  end
+end
+
 # Post-deploy nudge (merge gate only). A diff that adds or edits a seed or a
 # data-migration should declare devops.post_deploy_cmd so the conductor runs it
 # on ship (bin/release) instead of someone running the rake by hand afterward.
@@ -1426,9 +1546,21 @@ end
 # The "[full-suite-bypass] <reason>" hatch keeps working (loudly flagged).
 # Skips the build gate (no code yet) and unshaped tasks (already errored above).
 # DOR_CHECK_SUITE_EVIDENCE injects the verdict for tests (see the script header).
+#
+# WHICH SHAPES THIS GATE APPLIES TO is now the shape's OWN declaration
+# (`full_suite_gate`, default TRUE), not an inference from `dor_tiers` being empty.
+# The inference was correct for the one zero-tier shape that existed — `docs`
+# ships prose, so there is no suite to certify — but it silently coupled two
+# unrelated questions, and the coupling was a trap for the NEXT zero-tier shape:
+# `test-only` has no tiers and ships executable code, and would have inherited a
+# suite-gate exemption nobody chose and no reviewer would have seen in the diff.
+# Test code is the change most able to break the suite quietly, so it is exactly
+# the shape that must not skip it. Default-true keeps every existing shape's
+# behavior identical and fails closed for shapes not yet written;
+# test/lib/feature_shape_tiers_test.rb makes a zero-tier shape declare the key.
 suite_eval = nil
 suite_route = nil # "full" | "fast" | "fast-provisional" | "bypass" when satisfied
-if gate != "build" && shape_def && !dor_tiers.empty?
+if gate != "build" && shape_def && shape_def.fetch("full_suite_gate", true)
   if foreign_root && task_fingerprint_override.nil?
     # Root guard, remedy 3 (see the guard block above). The root is NOT the task's
     # tree, its worktree isn't on disk, and its branch isn't in this repo — so there

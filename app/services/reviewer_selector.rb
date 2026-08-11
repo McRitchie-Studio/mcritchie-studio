@@ -133,7 +133,16 @@ class ReviewerSelector
     # and `documentation`. Both tokens map here so a doc-shaped task fits Alex
     # (fit 2) and nobody else (fit 0), landing him the LIGHT seat. Read by BOTH the
     # CLI preview (.decision) and the recorder (.select), so they stay reproducible.
-    "docs"             => %w[docs documentation]
+    "docs"             => %w[docs documentation],
+    # A test-only change (test/, tests/, e2e/ and nothing else) is reviewed as
+    # BACKEND work, the same call `library` makes: its subject is test
+    # infrastructure and the suite's own correctness, which is Carl's deep read
+    # either way. The shape alone cannot tell a UI spec from a job test, so it
+    # claims no ui/web3 domain here and lets the ADDITIVE signals do it — a
+    # `ui` risk tag pulls Shannon in, a turf-vault/solana-studio repo pulls
+    # Jasper in (RISK_DOMAINS / REPO_DOMAINS below). Claiming ui+backend from
+    # the shape would fit every specialist equally and pick the light by tiebreak.
+    "test-only"        => %w[backend]
   }.freeze
 
   # A risk tag → the domain whose specialist should weigh in as the light (deepens

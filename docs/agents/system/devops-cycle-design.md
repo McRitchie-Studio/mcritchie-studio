@@ -1235,6 +1235,7 @@ tiers that must be green by the time the task is `submitted` for review:
 | **onchain** | new turf-vault instruction | `unit` `integration` — Anchor unit, Anchor lifecycle, Ruby decoder unit |
 | **onchain-vertical** | new workflow w/ wallet + DB + UI + program | `unit` `component` `integration` `e2e` — almost always its own `release` |
 | **docs** | SOP / runbook / README edit | none — no code tiers; routes to the documentation seat (Alex) and certifies by review, not a test lane |
+| **test-only** | delete a stale assertion; fix a flaky spec | none — a diff with no behavior has nothing for a tier to be evidence of; it owes a **control** instead (below), and still owes the full-suite cert |
 
 **The backticked tier names are load-bearing, not formatting.** They are the
 canonical `dor_tiers` from `config/feature_shapes.yml`, and
@@ -1254,6 +1255,29 @@ a tier here that no runner runs is a RED test, not a documentation opinion.
 
 Devnet verification of on-chain work is real and still expected — as an
 **operator/QA stop**, not as a DoR tier a builder can satisfy by typing.
+
+**`test-only` is the one shape whose contract is not a tier list, and reading its
+empty column as a discount gets it exactly backwards.** A diff made entirely of
+test code has no behavior for a tier to be evidence *of* — measured, 2026-08-10: a
+builder who deleted **one assertion** from an integration test ran the hub's whole
+unit tier (4,103 runs) purely to have something truthful to tag, and it said
+nothing about his change. So the shape swaps the question. Not *which tiers did
+you run* but **does the changed test still bite?** Its contract, all three parts
+enforced by `bin/dor-check`:
+
+| It requires | How it is checked |
+|---|---|
+| the diff is **100% test code** (`test/`, `tests/`, `e2e/`) | **verified from the observed diff**, never from the label — an unrecognized file *blocks* the claim, and so does a diff the gate cannot observe (`bin/lib/test_only_diff.rb`, an allowlist) |
+| the **full-suite + rubocop** cert, exactly as a feature | the existing fingerprint-bound `[full-suite@<fp>]` / `[rubocop@<fp>]` evidence — test code is code, and this shape is the one most able to break the suite quietly, so `full_suite_gate: true` |
+| a **`[control]`** line in `checks_run` | present, and it must **name a file that is in the diff** — a control that could have been written before the change was made is a sentence, not a result |
+
+The control is the artifact both builders produced unprompted: run the pre-change
+test against current production code and show it failing at the line you touched,
+or force the failure your new diagnostic is for and show it firing. Checked for
+structure, **not executed by a lane** — a test-only diff leaves no automatic
+mutation target, which puts it in the same category as devnet: real, required, and
+review-checked rather than self-certified. That is why `control` is deliberately
+**not** a `dor_tiers` entry.
 
 The matrix is the single source of "how much testing is enough" — it removes
 the per-task judgment call that currently lets thin PRs through.

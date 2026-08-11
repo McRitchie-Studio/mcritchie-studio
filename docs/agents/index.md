@@ -264,7 +264,13 @@ Before editing a single file:
    the tests you must write (`config/feature_shapes.yml`): `ui-only`
    (copy/styling) · `ui+db` (UI that persists) · `backend` (job/service, no UI)
    · `library` (studio-engine / solana-studio) · `onchain` (turf-vault /
-   `Solana::*`) · `onchain-vertical` (wallet+DB+UI+program).
+   `Solana::*`) · `onchain-vertical` (wallet+DB+UI+program) · `docs`
+   (prose only) · `test-only` (the diff is 100% `test/`, `tests/`, `e2e/`).
+   The last two carry **no tiers** — and `test-only` is not a lighter contract:
+   it is claimable **only** on a diff dor-check OBSERVES to be all test code, it
+   still owes the full-suite cert, and it owes a `[control]` line naming a file
+   in the diff, because the question a test-only change must answer is *does the
+   changed test still bite?*
 2. **Allocate an isolated worktree** (`bin/agent-worktree new <app> <task>`) on
    an allocated port. Do not edit on a primary checkout.
 3. **Run `bin/session-preflight <task>`** from the worktree before editing. Fix
@@ -426,7 +432,7 @@ and the feature. A good prompt is:
 ```text
 Work from /Users/alex/projects. Build this feature in <app>: <feature>.
 Use the fast lane: bin/task begin --title "Three To Five Words" --repo <app>
---kind feature --shape (ui-only|ui+db|backend|library|onchain|onchain-vertical)
+--kind feature --shape (ui-only|ui+db|backend|library|onchain|onchain-vertical|docs|test-only)
 --risk <tags> --accept "<criterion>" --test "<tier>". It creates the task,
 allocates the isolated worktree on an allocated port, claims the task, and
 preflights (pinning the worktree via --root). Read the preflight output and fix

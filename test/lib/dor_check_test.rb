@@ -2027,4 +2027,199 @@ class DorCheckTest < Minitest::Test
       assert_match(/fast-cert evidence is FRESH/, out)
     end
   end
+
+  # ==== [integration] the `test-only` shape ==========================================
+  #
+  # `test-only` is the only shape that carries NO dor_tiers and still ships
+  # executable code, so it is the only shape whose lighter contract could become
+  # the default answer for a change nobody tested. Everything below exists to pin
+  # that it cannot be — at the GATE, not just in the classifier's unit tier, since
+  # the classifier being right is worth nothing if dor-check never consults it.
+  #
+  # See bin/lib/test_only_diff.rb for why the classifier is an allowlist, and
+  # config/feature_shapes.yml for the shape's full three-part contract.
+
+  # A complete, honest `test-only` submission: all-test diff, a control naming a
+  # file from that diff, everything else the shape asks for.
+  TEST_ONLY_CONTRACT = {
+    "shape" => "test-only", "repositories" => ["mcritchie-studio"],
+    "risk_tags" => ["tests"], "acceptance" => ["Stale assertion no longer misleads"],
+    "test_plan" => ["control"], "post_deploy_cmd" => "none",
+    "checks_run" => ["[control] pre-change test/integration/hub_test.rb at HEAD → 1 failure at line 42"]
+  }.freeze
+
+  TEST_ONLY_DIFF = "test/integration/hub_test.rb\ntest/test_helper.rb\ne2e/helpers.js"
+
+  def test_integration_test_only_passes_on_an_all_test_diff_with_a_control
+    out, code = with_changed_files(TEST_ONLY_DIFF) { check(TEST_ONLY_CONTRACT) }
+
+    assert_equal 0, code, out
+    assert_match(/DoR-to-Merge met/, out)
+  end
+
+  # ==== THE SAFETY GUARD, AT THE GATE =================================================
+  # One production file injected into an otherwise-legitimate test-only diff must
+  # REFUSE, every time, and must NAME the file. This is the gate-level half of the
+  # mutation proof in test/lib/test_only_diff_test.rb: that one proves the
+  # classifier says no, this one proves dor-check ASKS it and acts on the answer.
+  # A green classifier wired to nothing is the failure mode worth more than either.
+  def test_integration_test_only_is_refused_when_the_diff_carries_a_production_file
+    {
+      "app/models/task.rb" => "a production model",
+      "bin/dor-check" => "the gate itself",
+      ".github/workflows/ci.yml" => "how CI runs on every repo",
+      "Gemfile" => "the resolved gem graph",
+      "playwright.config.js" => "the e2e runner's config",
+      "db/migrate/20260811_add_thing.rb" => "a migration"
+    }.each do |intruder, why|
+      out, code = with_changed_files("#{TEST_ONLY_DIFF}\n#{intruder}") { check(TEST_ONLY_CONTRACT) }
+
+      refute_equal 0, code,
+                   "#{intruder} (#{why}) rode a test-only claim through the GATE. The shape demands no " \
+                   "tiers, so this diff just shipped behavior with no tier evidence and nothing for a " \
+                   "reviewer to notice missing.\n#{out}"
+      assert_match(/ENTIRELY test code/, out)
+      assert_match(/#{Regexp.escape(intruder)}/, out,
+                   "the refusal must NAME the disqualifying file, or the builder has to guess\n#{out}")
+    end
+  end
+  # ====================================================================================
+
+  def test_integration_test_only_is_refused_when_no_diff_can_be_observed
+    # Fail-closed, the same rule the doc-only exemption follows: "we saw nothing"
+    # is the absence of evidence, not evidence of a test-only diff. Without this a
+    # gate run from the wrong checkout — the 08-08 false-pass shape — would hand
+    # out the shape's contract on no observation at all.
+    out, code = with_changed_files("") { check(TEST_ONLY_CONTRACT) }
+
+    refute_equal 0, code, out
+    assert_match(/could not be proven test-only/, out)
+    assert_match(/fail-closed/, out)
+  end
+
+  def test_integration_test_only_requires_a_control_line
+    devops = TEST_ONLY_CONTRACT.merge("checks_run" => ["[unit] I ran the whole unit tier"])
+    out, code = with_changed_files(TEST_ONLY_DIFF) { check(devops) }
+
+    refute_equal 0, code, out
+    assert_match(/requires a \[control\] line/, out)
+    # And the message must teach the artifact, not just name the field — this is
+    # the one gate whose remedy an agent will not already know.
+    assert_match(/does the changed test still bite/, out)
+  end
+
+  def test_integration_test_only_refuses_a_control_that_names_no_file_from_the_diff
+    # A control that could have been written before the change was made is a
+    # sentence, not a result. This is the one mechanical claim the control gate
+    # makes, so it has to actually bite.
+    devops = TEST_ONLY_CONTRACT.merge(
+      "checks_run" => ["[control] I ran a control and it failed, honest"]
+    )
+    out, code = with_changed_files(TEST_ONLY_DIFF) { check(devops) }
+
+    refute_equal 0, code, out
+    assert_match(/names no file from this diff/, out)
+  end
+
+  def test_integration_a_control_may_name_the_file_by_basename
+    # The short spelling a human actually types must satisfy it — refusing it would
+    # only teach people to paste the long path without running anything. The
+    # property (a file from THIS diff) is asserted; the spelling is not.
+    devops = TEST_ONLY_CONTRACT.merge(
+      "checks_run" => ["[control] reverted helpers.js, forced a 404, watched the URL print"]
+    )
+    out, code = with_changed_files(TEST_ONLY_DIFF) { check(devops) }
+
+    assert_equal 0, code, out
+  end
+
+  # ==== the zero-tier shape still owes the FULL-SUITE cert ============================
+  # THE HOLE THIS CLOSES, and the reason `full_suite_gate` is now an explicit shape
+  # key instead of an inference. The suite gate used to fire on `!dor_tiers.empty?`,
+  # which was correct for the only zero-tier shape that existed (`docs` ships prose)
+  # and silently coupled two unrelated questions. `test-only` has no tiers and ships
+  # EXECUTABLE CODE: under the old condition it would have inherited a full-suite
+  # exemption nobody chose, no reviewer would have seen it in the diff, and the
+  # shape would have shipped with no executed evidence whatsoever. Test code is the
+  # change most able to break the suite quietly, so this is exactly backwards.
+  def test_integration_test_only_still_owes_the_full_suite_cert
+    out, code = with_changed_files(TEST_ONLY_DIFF) do
+      check_suite(TEST_ONLY_CONTRACT, "missing")
+    end
+
+    refute_equal 0, code,
+                 "a zero-tier shape skipped the full-suite gate. `test-only` ships executable code and " \
+                 "must certify it exactly like a feature — see full_suite_gate in " \
+                 "config/feature_shapes.yml.\n#{out}"
+    assert_match(/full/i, out)
+  end
+
+  def test_integration_docs_shape_still_skips_the_full_suite_cert
+    # The other side of the same change: `docs` declares `full_suite_gate: false`
+    # explicitly now, and its behavior must be IDENTICAL to what the inference gave
+    # it. A prose diff has no suite to certify, and making the key explicit was not
+    # licence to start demanding one.
+    devops = { "shape" => "docs", "repositories" => ["mcritchie-studio"], "risk_tags" => ["docs"],
+               "acceptance" => ["Runbook explains the new gate"], "post_deploy_cmd" => "none",
+               "checks_run" => [] }
+    out, code = with_changed_files("docs/agents/modules/testing.md") do
+      check_suite(devops, "missing")
+    end
+
+    assert_equal 0, code, "the docs shape must still certify by review, not by a suite lane\n#{out}"
+  end
+
+  def test_integration_test_only_at_the_build_gate_survives_an_empty_diff
+    # At `designed → building` no code exists yet, so an empty diff is the EXPECTED
+    # state and must not refuse the shape — the same leniency the doc-only
+    # exemption takes at the build gate. It cannot disarm anything: the build gate
+    # enforces no tiers and no control either way.
+    devops = TEST_ONLY_CONTRACT.merge("checks_run" => [])
+    out, code = with_changed_files("") { check(devops, "--gate", "build") }
+
+    assert_equal 0, code, out
+    assert_match(/DoR-to-Build met/, out)
+  end
+
+  def test_integration_test_only_at_the_build_gate_still_refuses_an_observed_code_diff
+    # Lenient about an EMPTY observation is not lenient about a WRONG one. If code
+    # is already visible at the build gate, saying so early is the cheapest moment
+    # to re-shape the task — before the work is done against the wrong contract.
+    out, code = with_changed_files("app/models/task.rb") do
+      check(TEST_ONLY_CONTRACT.merge("checks_run" => []), "--gate", "build")
+    end
+
+    refute_equal 0, code, out
+    assert_match(/ENTIRELY test code/, out)
+  end
+
+  # ==== against a REAL git tree, not the injection seam ================================
+  # DOR_CHECK_CHANGED_FILES is a test seam, and a guard proven only through its own
+  # seam is proven against a proxy. These two run dor-check over an actual working
+  # tree so the claim covers the path production takes: git → CodeDiff's name-status
+  # parse → TestOnlyDiff. If the wiring between them ever breaks, the seam tests
+  # above would all still pass.
+  def test_integration_test_only_reads_a_real_all_test_working_tree
+    with_git_repo(untracked: ["test/models/thing_test.rb", "e2e/flow.spec.js"]) do |dir|
+      devops = TEST_ONLY_CONTRACT.merge(
+        "checks_run" => ["[control] pre-change thing_test.rb at HEAD → 1 failure at the deleted assert"]
+      )
+      out, code = check_against(dir, devops)
+
+      assert_equal 0, code, out
+    end
+  end
+
+  def test_integration_test_only_is_refused_by_a_real_tree_carrying_production_code
+    with_git_repo(untracked: ["test/models/thing_test.rb"], unstaged: ["app/models/thing.rb"]) do |dir|
+      out, code = check_against(dir, TEST_ONLY_CONTRACT.merge(
+        "checks_run" => ["[control] pre-change thing_test.rb at HEAD → 1 failure"]
+      ))
+
+      refute_equal 0, code,
+                   "a REAL working tree carrying app/models/thing.rb claimed the test-only shape — the " \
+                   "seam tests pass but the production path does not consult the classifier\n#{out}"
+      assert_match(%r{app/models/thing\.rb}, out)
+    end
+  end
 end

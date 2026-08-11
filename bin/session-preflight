@@ -449,6 +449,13 @@ def shape_report(task, warnings)
     "required_metadata" => required,
     "missing_metadata" => required.reject { |field| present?(devops[field]) },
     "dor_tiers" => tiers,
+    # A shape's contract is not always a tier list. `test-only` carries none —
+    # a diff with no behavior has nothing for a tier to be evidence of — and owes
+    # a control instead, plus a claimability rule checked against the diff. Report
+    # BOTH, or the preflight tells a test-only builder "Required tiers: none" and
+    # they read the strictest shape in the file as the free one.
+    "required_evidence" => Array(shape_def["required_evidence"]),
+    "claimable_when" => shape_def["claimable_when"],
     "checks_run" => Array(devops["checks_run"])
   }
 end
@@ -514,7 +521,16 @@ def print_human(report)
          "matching bin/dor-check. Ship code — including .github/, Gemfile, config, or tests — and the " \
          "shape/tier gate applies like any feature."
   else
-    puts "Required tiers: #{shape["shape"] || "none"} => #{shape["dor_tiers"].join(", ")}"
+    tiers = shape["dor_tiers"]
+    evidence = Array(shape["required_evidence"])
+    # "none" would be a lie for a shape that owes a control, so say what it owes.
+    owed = tiers.empty? && evidence.any? ? "no tiers; evidence: #{evidence.join(', ')}" : tiers.join(", ")
+    puts "Required tiers: #{shape["shape"] || "none"} => #{owed}"
+    if shape["claimable_when"] == "test_only_diff"
+      puts "  claimable ONLY on a diff dor-check OBSERVES to be 100% test code (test/, tests/, e2e/) — " \
+           "one non-test file and the claim is refused; it still owes the full-suite cert, and the " \
+           "[control] line must name a file from the diff (does the changed test still bite?)"
+    end
     unless shape["required_metadata"].empty?
       puts "Required metadata: #{shape["required_metadata"].join(", ")}"
     end
