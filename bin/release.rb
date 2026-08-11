@@ -130,6 +130,7 @@
 # first.
 
 require "json"
+require_relative "../app/models/release/gem_version"
 require "base64"
 require "open3"
 require "yaml"

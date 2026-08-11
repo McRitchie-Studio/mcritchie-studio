@@ -135,6 +135,9 @@ class StateStoreContainmentTest < Minitest::Test
     "bin/agent-marker" => [:ruby, "READ-ONLY resolver — prints/reads the marker, mutates nothing"],
     "bin/atomic-capture-hook" => [:ruby, "READ-ONLY — finds the open-activity marker, mutates nothing"],
     "bin/qa-intake" => [:ruby, "READ-ONLY — reads the worktree registry; the WRITER is bin/agent-worktree"],
+    "bin/gh-token" => [:ruby, "GitHub token cache: store_path is the ONE seam and it enforce!s — " \
+                              "the cache holds a live credential, so a sandboxed run must abort rather " \
+                              "than write one into the operator's real .agents"],
     "bin/statusline" => [:bash, "BASH heartbeat throttles — LAYER 2 cannot read it; LAYER 3 executes it"]
   }.freeze
 
@@ -188,7 +191,11 @@ class StateStoreContainmentTest < Minitest::Test
     # Nothing to exempt: both hold their store path in an INERT top-level form (a
     # constant, a hash value) and launder at every seam that acts on it.
     "bin/reviewer-select" => {},
-    "bin/qa-intake" => {}
+    "bin/qa-intake" => {},
+    # EMPTY, and that is the point: bin/gh-token holds no raw store path anywhere.
+    # `store_path` returns the ENFORCED path and every reader/writer calls it, so
+    # there is nothing to exempt — the strongest answer this table accepts.
+    "bin/gh-token" => {}
   }.freeze
 
   # NAMING the store — in ANY spelling. This is the precondition of every mutation, so

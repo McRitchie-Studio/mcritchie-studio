@@ -330,6 +330,10 @@ SCALAR_FLAGS = {
   "--local-url" => "local_url", "--qa-url" => "qa_url", "--prod-url" => "production_url",
   "--release-slug" => "release_slug", "--release-train" => "release_slug",
   "--agent-context" => "agent_context", "--post-deploy-cmd" => "post_deploy_cmd",
+  # The gem bump OVERRIDE. Never required: bin/release computes the version from the
+  # candidate's members (Release::GemVersion). Set it only when the derived bump is
+  # wrong — most often a `chore` that is actually breaking.
+  "--gem-bump" => "gem_bump",
   "--approval" => "approval_status", "--approval-status" => "approval_status",
   # "act as <soul>": the status-line mascot becomes that agent (name + glyph + tint)
   # in place of the session's Pokémon. The server stamps the identity (Task#sync_
@@ -466,6 +470,15 @@ def validate_size!(flag, value)
   die!("#{flag} must be one of: #{SIZES.join(", ")} (got #{value.inspect})")
 end
 
+# The gem bump override (patch|minor|major). Never required — bin/release derives the
+# bump from the candidate's members; this only overrides it.
+def validate_gem_bump!(flag, value)
+  return if %w[patch minor major].include?(value.to_s.strip.downcase)
+
+  die!("#{flag} must be one of: patch, minor, major (got #{value.inspect}) — " \
+       "leave it unset to let the release derive the bump from the task's kind")
+end
+
 def normalize_approval_status!(flag, value)
   normalized = APPROVAL_STATUS_ALIASES.fetch(value.to_s.strip.downcase, value.to_s.strip.downcase)
   return normalized if APPROVAL_STATUSES.include?(normalized)
@@ -526,6 +539,9 @@ def parse_flags(argv, context: nil)
       key = SCALAR_FLAGS[arg]
       value = argv[i + 1] || die!("#{arg} needs a value")
       value = normalize_approval_status!(arg, value) if key == "approval_status"
+      # A typo here would silently degrade to the DERIVED bump and publish the wrong
+      # number — irreversibly. Reject it where a human can still fix it.
+      validate_gem_bump!(arg, value) if key == "gem_bump"
       scalars[key] = value; i += 2
     elsif LIST_FLAGS.key?(arg)
       lists[LIST_FLAGS[arg]] << (argv[i + 1] || die!("#{arg} needs a value")); i += 2

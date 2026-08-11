@@ -463,6 +463,8 @@ DEPENDENCIES
   rack-attack
   rails (~> 8.1)
   redcarpet
+  redis (~> 5.4)
+  resend (~> 1.6)
   rubocop-rails-omakase
   selenium-webdriver
   sentry-rails
@@ -471,7 +473,7 @@ DEPENDENCIES
   solid_queue (~> 1.4)
   sprockets-rails
   stimulus-rails
-  studio-engine (~> 0.30)
+  studio-engine (~> 0.33)
   tailwindcss-rails (~> 4.5)
   turbo-rails
   tzinfo-data
