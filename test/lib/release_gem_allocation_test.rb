@@ -27,9 +27,53 @@ require "open3"
 require "tmpdir"
 require "fileutils"
 require "json"
+require_relative "../support/session_env"
 
 class ReleaseGemAllocationTest < Minitest::Test
   BIN = File.expand_path("../../bin/release.rb", __dir__)
+
+  # The child takes the ship-workspace flock, so it must never reach the
+  # operator's real agent-locks store — under `bin/rails test` the task-usage
+  # sandbox REFUSES that outright (the failure reads "MCR_PRIMARY_LOCK_DIR is
+  # unset"), and by hand it would contend with a live `bin/release`. Memoized so
+  # each forked worker gets its own, removed after the run. Same discipline as
+  # ReleaseCliTest.lock_dir.
+  def self.lock_dir
+    @lock_dir ||= begin
+      dir = Dir.mktmpdir("gem-alloc-locks")
+      Minitest.after_run do
+        FileUtils.remove_entry(dir)
+      rescue StandardError
+        nil
+      end
+      dir
+    end
+  end
+
+  # Every child env is built HERE, through SessionEnv, so an ambient agent
+  # session can never leak into a subprocess that runs real git.
+  #
+  # BUNDLER IS SCRUBBED TOO, and that one is not optional. Under `bin/rails test`
+  # the parent exports `RUBYOPT=-rbundler/setup` + `BUNDLE_GEMFILE`, so the child
+  # loads Bundler at startup — and Bundler PREPENDS ITS OWN BIN DIR TO `PATH`,
+  # which shadowed the `bundle` stub below with the real one. The real `bundle
+  # lock` then ran against THIS WORKTREE'S Gemfile (it printed "Writing lockfile
+  # to …/wire-gem-version-allocation/Gemfile.lock") and every stubbed-misbehaviour
+  # test silently exercised a healthy bundler instead. Running the child outside
+  # the suite's bundler context is also simply correct: `bin/release` runs as a
+  # plain CLI in production, not inside a test's bundle.
+  BUNDLER_ENV_KEYS = %w[RUBYOPT RUBYLIB BUNDLE_GEMFILE BUNDLE_BIN_PATH BUNDLER_VERSION BUNDLER_SETUP].freeze
+
+  def child_env(root, stub_bin)
+    scrubbed = BUNDLER_ENV_KEYS.to_h { |key| [key, nil] }
+    SessionEnv.neutralized(
+      scrubbed.merge(
+        "PATH" => "#{stub_bin}:#{ENV.fetch('PATH')}",
+        "PROJECTS_DIR" => root,
+        "MCR_PRIMARY_LOCK_DIR" => self.class.lock_dir
+      )
+    )
+  end
 
   # A self-bundling gem's lockfile: studio-engine's real shape, where the gem's
   # OWN version lives in a PATH section and never in a GEM one. This is the trap
@@ -126,8 +170,7 @@ class ReleaseGemAllocationTest < Minitest::Test
       def rubygems_versions(_gem) = JSON.parse(#{live.to_json.inspect})
       allocate_gem_versions!([{ "repo" => "studio-engine", "members" => #{members.inspect} }])
     RUBY
-    env = { "PATH" => "#{stub_bin}:#{ENV.fetch('PATH')}", "PROJECTS_DIR" => root }
-    out, status = Open3.capture2e(env, RbConfig.ruby, "-W0", "-e", script)
+    out, status = Open3.capture2e(child_env(root, stub_bin), RbConfig.ruby, "-W0", "-e", script)
     [out, status.success?]
   end
 
@@ -336,8 +379,7 @@ class ReleaseGemAllocationTest < Minitest::Test
         { "repo" => "solana-studio", "members" => #{solana.inspect} }
       ])
     RUBY
-    env = { "PATH" => "#{stub_bin}:#{ENV.fetch('PATH')}", "PROJECTS_DIR" => root }
-    out, status = Open3.capture2e(env, RbConfig.ruby, "-W0", "-e", script)
+    out, status = Open3.capture2e(child_env(root, stub_bin), RbConfig.ruby, "-W0", "-e", script)
     [out, status.success?]
   end
 
