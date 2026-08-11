@@ -158,18 +158,29 @@ later cleanup task.
   `/_studio/local_emails` is always empty. mcritchie-industries shipped with
   exactly this hole (fixed 2026-08-08).
 
-- **Render the shared environment banner, don't write one.**
+- **Render the shared bar stack, don't write your own banner.**
 
   ```erb
   <body ...>
-    <%= render "studio/banners/environment" %>
+    <%= render "studio/banners/stack" %>
     <%= render "layouts/navbar" %>
   ```
 
-  One call, no conditional around it (studio-engine >= 0.30, published). The partial decides
-  for itself whether to appear (every environment except real production; a QA app
-  is Rails-production but a review target, so `QA_ENV=true` re-opens it), what to
-  say, and whether the Local Inbox is linkable — it links the inbox only where the
+  One call, no conditional around it (studio-engine >= 0.33, published). The stack
+  is the navbar's **sibling**, never its child. It renders whichever pinned bars
+  apply — the environment banner, impersonation, whatever comes next — measures
+  itself, and publishes that height on `:root` as `--studio-bars-h`. The engine
+  navbar offsets by that variable, so a new bar never edits the navbar, and an app
+  with no bars falls back to `0px` and pins exactly as it did before. An app with a
+  hand-written navbar offsets itself the same way: `style="top:var(--studio-bars-h,
+  0px);"` on the header, and no `top-0` class to fight it.
+
+  Name `studio/banners/environment` directly and you get that one bar, mounted
+  where you put it, and a second bar later has nowhere to go — the seam
+  mcritchie-studio retired on 2026-08-10. The environment bar itself still decides
+  whether to appear (every environment except real production; a QA app is
+  Rails-production but a review target, so `QA_ENV=true` re-opens it), what to say,
+  and whether the Local Inbox is linkable — it links the inbox only where the
   viewer actually resolves and degrades to an inert status chip otherwise, so it
   can never advertise a dead link.
 

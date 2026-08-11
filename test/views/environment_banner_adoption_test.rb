@@ -12,8 +12,18 @@ require "test_helper"
 class EnvironmentBannerAdoptionTest < ActionDispatch::IntegrationTest
   LAYOUT = Rails.root.join("app/views/layouts/application.html.erb")
 
-  test "the layout renders the shared engine partial" do
-    assert_includes LAYOUT.read, %(render "studio/banners/environment")
+  # The adoption seam MOVED, and the assertion moved with it. This task replaces the
+  # single environment banner with the engine's bar STACK: bars compose independently
+  # and the header offsets itself by however many render, so the layout now delegates
+  # to `studio/banners/stack` (which renders the environment bar among them) instead
+  # of naming that one bar directly. Asserting the old partial would now demand the
+  # hub keep a seam this task deliberately retired.
+  test "the layout renders the shared engine bar stack" do
+    layout = LAYOUT.read
+    assert_includes layout, %(render "studio/banners/stack"),
+      "the layout delegates to the engine's bar stack"
+    refute_includes layout, %(render "studio/banners/environment"),
+      "and no longer names a single bar — the stack owns which bars render"
   end
 
   # The deleted fork is the point of the task: two hand-maintained copies of
