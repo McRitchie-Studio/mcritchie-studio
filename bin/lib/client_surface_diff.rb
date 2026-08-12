@@ -53,27 +53,35 @@
 # way OUT. Here each pattern is a way IN, so the list is safe to grow and safe to
 # be incomplete. What it must never do is guess.
 #
-# GRANULARITY — PRESENCE IS PER-FILE, ADDITION IS PER-HUNK, AND THEY DIFFER
+# GRANULARITY — WHOLE FILE VERSIONS, NOT HUNKS. THIS WAS LEARNED THE HARD WAY.
 #
 # CodeDiff's header refuses to decide "this hunk is only comments", because that
 # inference is one the gate can be talked out of, and settles on the FILE as the
-# honest granularity. That reasoning holds here for PRESENCE and this module
-# follows it: a partial that carries an inline <script> is a browser program no
-# matter which of its lines you edited, and defect (3) is the proof — an ERB
-# COMMENT edit killed the script.
+# honest granularity. This module ignored that for its BLOCKING half — it read the
+# lines a hunk added — and review sent it back, because the hunk simply does not
+# carry enough context to tell a `<script>` TAG from the WORD `<script>` in prose:
 #
-# But the same file granularity applied to the REQUIREMENT would block a copy fix
-# in a script-bearing partial, which is the over-refusal this gate exists to avoid.
-# So the two facts are separated and carry different weights:
+#   <%# A data-only node … The page's MutationObserver reads these data-* attrs …
+#       the node. NO <script> here — Turbo doesn't execute scripts inside broadcast
+#       <template>s. … %>
 #
-#   ADDED construct  (a hunk introduces something the browser runs)  -> BLOCKS
-#   PRESENT construct (the changed file runs something, diff didn't
-#                      add it)                                       -> REPORTS
+# (live at turf-monster/app/views/contests/_goal_feed_item.html.erb:3). The line
+# holding the word carries no `<%#` at all; the comment opened two lines earlier.
+# No per-line rule and no per-hunk rule can see that, because the disqualifying
+# context is OUTSIDE the hunk. Only whole file versions can answer it.
 #
-# The blocking half needs no inference about intent: a line that did not exist and
-# now does, and the browser executes it, is new browser behavior with no browser
-# observation. The reporting half is the honest statement of a risk the machine
-# cannot size.
+# So both halves now read whole files, masked (see mask_comments), and the BLOCKING
+# half compares HEAD against BASE:
+#
+#   ADDED     a script block that did not exist in base, or any touch of a
+#             browser-served .js                                        -> BLOCKS
+#   REWRITTEN an existing script's body changed                         -> REPORTS
+#   PRESENT   the changed file runs something this diff did not add     -> REPORTS
+#
+# The added/rewritten line is measured, not asserted — blocking rewrites took hub
+# firing from 2.8% to 12.1% and the corpus from 9.3% to 20.6% while catching none
+# of the three motivating defects. Re-measure with bin/measure-client-surface
+# before moving it.
 #
 # DELIBERATELY NOT DETECTED — each considered and refused:
 #   * CSS. Defect (1) was ultimately a PAINT bug, and a pure-CSS `position: sticky`
@@ -130,8 +138,15 @@ module ClientSurfaceDiff
   # is actually served from excludes all of them at once, and excludes the next one
   # nobody has thought of. If a path is not somewhere this app SERVES from, it is not
   # this app's browser surface, whatever its extension says.
+  # `vendor/javascript/` is a NAMED SERVED ENTRY, not a hole in a denylist. importmap
+  # pins vendored ES modules there and Propshaft serves them, so vendor/javascript/
+  # chart.js.js reaches a browser exactly as app/javascript/application.js does —
+  # while vendor/bundle/ (gem source, never served) stays excluded by the same rule
+  # that excludes everything else outside these roots. Two directories under one
+  # parent with opposite answers is precisely why the anchor is a ROOT list and not
+  # a `vendor/` prefix judgment in either direction.
   SERVED_ROOTS = %w[
-    app/javascript/ app/assets/ app/views/ app/components/ public/
+    app/javascript/ app/assets/ app/views/ app/components/ public/ vendor/javascript/
   ].freeze
 
   # THERE IS DELIBERATELY NO TEST_ROOTS EXCLUSION HERE, AND ITS ABSENCE IS THE PROOF
@@ -171,9 +186,9 @@ module ClientSurfaceDiff
   # TWO TIERS, SPLIT ON A REAL PROPERTY — MEASURED, NOT GUESSED
   #
   # The first cut of this module treated every browser-executed construct alike and
-  # was measured against 406 merged feature units across the hub, studio-engine and
-  # turf-monster. It fired on 90 of them and would have REFUSED 65 — with 164 of its
-  # 268 detections being a bare Alpine directive. A gate that demands a Playwright
+  # was measured against 407 merged feature units across the hub, studio-engine and
+  # turf-monster. Bare Alpine directives are 148 of the 248 detections in that
+  # corpus — the single most common thing a UI diff adds. A gate that demands a Playwright
   # spec for adding `x-show` to a dropdown is the blanket browser requirement this
   # design exists to reject, wearing a detector's clothes. The measurement caught it;
   # the split below is the correction.
@@ -259,26 +274,142 @@ module ClientSurfaceDiff
     nil
   end
 
-  # Surfaces this diff ADDS. `added_lines` maps path => [line, ...] for the lines a
-  # hunk introduced. These BLOCK: new browser behavior, no browser observation.
+  # ---- A TAG, NOT THE WORD -----------------------------------------------------
   #
-  # A served .js/.ts file counts as added-surface whenever the diff touches it at
-  # all: the whole file is the program, so there is no "present but not added"
-  # reading of a changed line in it.
-  def self.added_surfaces(files, added_lines = {})
+  # THE DEFECT THIS EXISTS FOR. The first cut matched the TEXT `<script` anywhere on
+  # an added line, so this — live at turf-monster/app/views/contests/
+  # _goal_feed_item.html.erb:3 — exited 1 with "this diff ADDS browser code":
+  #
+  #   <%# … the node. NO <script> here — Turbo doesn't execute scripts inside
+  #       broadcast <template>s. … %>
+  #
+  # Editing a comment that says there is NO script would have demanded a Playwright
+  # spec. Prose comment blocks are this ecosystem's highest-churn edit shape, so it
+  # would have fired early and often and trained people straight onto
+  # [browser-bypass] — the credibility loss the whole design exists to avoid. It
+  # also contradicts this module's own polarity: strictly-positive detection means
+  # firing only on what it can HONESTLY judge, and it could not judge this.
+  #
+  # AND THE MASK MUST NOT BE NAIVE, BECAUSE DEFECT 3 IS THE OPPOSITE MISTAKE. That
+  # bug was an ERB comment that TERMINATED EARLY; the leaked prose contained a
+  # literal script tag which opened a phantom element that swallowed the real
+  # script. So "it looked like a comment" is not proof it was one — a mask that
+  # trusts the OPENER would hide the exact defect this gate was built for.
+  #
+  # The resolution is to mask the way ERB actually parses: NON-GREEDY, closing at
+  # the FIRST `%>`. What survives the mask is what the browser really receives, so
+  # an early-terminating comment leaks its `<script>` into the scanned text and
+  # still fires — while an ordinary well-formed comment does not. The mask is not a
+  # heuristic about intent; it is a cheap model of the renderer.
+  #
+  # Newlines are preserved so masking cannot move line numbers or merge lines.
+  def self.mask_comments(text)
+    text.to_s
+        .gsub(/<%#.*?%>/m) { |m| m.gsub(/[^\n]/, " ") }
+        .gsub(/<!--.*?-->/m) { |m| m.gsub(/[^\n]/, " ") }
+  end
+
+  # Every construct-bearing line of `content`, AFTER masking, as
+  # [normalized_text, reason, tier, raw_line]. The identity used to diff two
+  # versions of a file is the normalized line text. Used for the BINDING tier.
+  def self.construct_lines(content)
+    mask_comments(content).each_line.filter_map do |line|
+      found = construct_in(line)
+      found && [line.strip.gsub(/\s+/, " "), found[0], found[1], line]
+    end
+  end
+
+  # An executable <script> and its BODY, from opening tag to `</script>` (or to
+  # end-of-file when unclosed — an unclosed script still runs everything after it).
+  SCRIPT_BLOCK = %r{<script\b([^>]*)>(.*?)(?:</script>|\z)}mi
+
+  # The whole PROGRAM tier's identity: each executable script block, masked and
+  # whitespace-normalized.
+  #
+  # WHY BLOCKS AND NOT LINES. A line-set diff sees a new `<script>` OPENING TAG but
+  # not a rewritten BODY — `var a = 1;` becoming `var a = compute(window.tz);` adds
+  # no construct line, so the gate stayed silent on a total rewrite of a browser
+  # program. That was a live under-fire in the first version and this test suite
+  # caught it. Rewriting a script is exactly as unobservable to a String assertion
+  # as adding one, so the block's CONTENT is the thing to compare.
+  def self.script_blocks(content)
+    mask_comments(content).scan(SCRIPT_BLOCK).filter_map do |attrs, body|
+      next if INERT_SCRIPT_TYPES.any? { |t| attrs.to_s.match?(/type\s*=\s*["']#{Regexp.escape(t)}["']/i) }
+
+      "<script#{attrs}>#{body}".gsub(/\s+/, " ").strip
+    end
+  end
+
+  # Surfaces this diff ADDS — the BLOCKING half. Compares the file's HEAD content
+  # against its BASE content and reports only constructs that are NEW.
+  #
+  # WHY VERSIONS RATHER THAN HUNK LINES. The over-fire above is multi-line: the
+  # offending line carries no `<%#` at all, because it is the THIRD line of a
+  # comment that opened two lines earlier. A per-line rule cannot see that, and a
+  # per-hunk rule cannot either — the context that makes the line prose is outside
+  # the hunk. Only the whole file can answer it, so both versions are masked and
+  # compared.
+  #
+  # This also stopped an under-fire nobody had named: a diff that REWRITES the body
+  # of an existing inline script adds no `<script` line, so a "did a hunk add the
+  # opening tag" rule saw nothing. Under version comparison the changed body lines
+  # are new, and it blocks — which is right, since rewriting a script is exactly as
+  # unobservable as adding one.
+  #
+  # `head_contents` / `base_contents` map path => content. A file absent from
+  # base_contents is treated as newly added (base = ""). A TEMPLATE absent from
+  # head_contents is NOT classified — we cannot mask what we cannot read, and
+  # guessing is what the polarity forbids.
+  def self.added_surfaces(files, head_contents = {}, base_contents = {})
     Array(files).map { |f| normalize(f) }.reject(&:empty?).uniq.flat_map do |path|
       if script_asset?(path)
+        # The whole file is the program; any touch is a change to browser code.
         [Surface.new(path: path, reason: "a browser-served script", line: nil,
                      added: true, tier: :program)]
       elsif template?(path)
-        # Report the strongest tier this file added, not merely the first hit: a
-        # partial that adds both an Alpine attribute and a <script> is a program.
-        hits = Array(added_lines[path]).filter_map do |line|
-          found = construct_in(line)
-          found && Surface.new(path: path, reason: found[0], line: line.to_s.strip[0, 120],
-                               added: true, tier: found[1])
+        head = head_contents[path]
+        next [] if head.nil?
+
+        base = base_contents[path].to_s
+
+        # PROGRAM tier — a script block that did not exist before.
+        #
+        # ADDED vs REWRITTEN, AND WHY THE LINE IS HERE. An earlier cut blocked on any
+        # block whose CONTENT differed from base, which also caught rewriting an
+        # existing script's body. That is defensible in principle — a rewritten
+        # script is exactly as unobservable as a new one — and it was MEASURED to
+        # cost far too much: hub blocking went 2.8% -> 12.1%, turf 17.5% -> 30.0%,
+        # the whole corpus 9.3% -> 20.6% of 407 merged units, because roughly one
+        # hub PR in eight legitimately edits an inline board/live-FX script.
+        #
+        # All THREE motivating defects are caught without it — each introduced a
+        # NEW script — so the extra 11 points bought no motivating case and doubled
+        # the refusal rate. This module's whole credibility rests on being targeted,
+        # so the rewrite goes to the REPORT tier instead. That is not a fudge to hit
+        # a number: it is the SAME add-vs-carry line the program/binding split
+        # already draws, applied one level down. A new block is something the diff
+        # ADDED; a changed body is something it CARRIED and touched.
+        #
+        # Counting is deliberately by block COUNT, not by content identity: delete
+        # one script and add another in the same diff and the count holds, so it
+        # reports rather than blocks. That is the chosen under-fire direction.
+        if script_blocks(head).size > script_blocks(base).size
+          fresh = script_blocks(head) - script_blocks(base)
+          next [Surface.new(path: path, reason: "an inline <script>",
+                            line: (fresh.first || script_blocks(head).first).to_s[0, 120],
+                            added: true, tier: :program)]
         end
-        [hits.find(&:program?) || hits.first].compact
+
+        # BINDING tier — line identity is enough; a binding IS its line.
+        seen_lines = construct_lines(base).reject { |_, _, tier, _| tier == :program }
+                                          .map(&:first).tally
+        fresh = construct_lines(head).reject do |key, _, tier, _|
+          tier == :program || (seen_lines[key].to_i.positive? && seen_lines[key] -= 1)
+        end
+        next [] if fresh.empty?
+
+        [Surface.new(path: path, reason: fresh.first[1], line: fresh.first[3].to_s.strip[0, 120],
+                     added: true, tier: fresh.first[2])]
       else
         []
       end
@@ -286,29 +417,32 @@ module ClientSurfaceDiff
   end
 
   # The blocking subset — added IMPERATIVE browser code.
-  def self.added_programs(files, added_lines = {})
-    added_surfaces(files, added_lines).select(&:program?)
+  def self.added_programs(files, head_contents = {}, base_contents = {})
+    added_surfaces(files, head_contents, base_contents).select(&:program?)
   end
 
   # Surfaces the changed files CARRY but this diff did not add. These REPORT.
-  # `file_contents` maps path => current content; a path absent from it is simply
-  # not classified (deleted, unreadable, or not fetched) rather than guessed at.
-  def self.present_surfaces(files, file_contents = {}, added_lines = {})
-    added = added_surfaces(files, added_lines).map(&:path).to_set
+  # A path absent from `head_contents` is simply not classified (deleted,
+  # unreadable, or not fetched) rather than guessed at.
+  def self.present_surfaces(files, head_contents = {}, base_contents = {})
+    added = added_surfaces(files, head_contents, base_contents).map(&:path).to_set
 
     Array(files).map { |f| normalize(f) }.reject(&:empty?).uniq.filter_map do |path|
       next if added.include?(path)
       next unless template?(path)
 
-      content = file_contents[path]
+      content = head_contents[path]
       next if content.nil?
 
-      hits = content.to_s.each_line.filter_map { |l| (r = construct_in(l)) && [r[0], r[1], l] }
-      hit = hits.find { |h| h[1] == :program } || hits.first
+      block = script_blocks(content).first
+      next Surface.new(path: path, reason: "an inline <script>", line: block.to_s[0, 120],
+                       added: false, tier: :program) if block
+
+      hit = construct_lines(content).reject { |_, _, tier, _| tier == :program }.first
       next unless hit
 
-      Surface.new(path: path, reason: hit[0], line: hit[2].to_s.strip[0, 120],
-                  added: false, tier: hit[1])
+      Surface.new(path: path, reason: hit[1], line: hit[3].to_s.strip[0, 120],
+                  added: false, tier: hit[2])
     end
   end
 

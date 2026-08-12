@@ -116,20 +116,33 @@ script" was itself an instance of the disease it named. So:
 > a post-interaction DOM state, a `page.evaluate` result. A token appearing in
 > markup is not evidence, in a Rails test *or* in a Playwright spec.
 
-**It is targeted, not blanket, and the split is measured.** Across **406 merged
-feature units** (hub, studio-engine, turf-monster) the gate fires at blocking tier
-on **10.1%**; in this repo it is **3.2%** (8 of 247). An earlier cut that treated
-every browser-executed construct alike fired on 90 units and would have refused 65,
-with **157 of 268 detections being a bare Alpine directive**. That is the blanket
-browser requirement wearing a detector's clothes, and it was measured and rejected.
+**It is targeted, not blanket, and every number here is reproducible** — run
+`bin/measure-client-surface` (`--json` for machine-readable). Across **407 merged
+feature units** (hub, studio-engine, turf-monster) it fires at blocking tier on
+**9.3%**; in this repo it is **2.8%** (7 of 247), of which 3 would have been
+refused. Two earlier cuts were measured and rejected: treating every
+browser-executed construct alike made a bare Alpine directive **148 of 248
+detections**, and blocking a rewritten script *body* took this repo from 2.8% to
+**12.1%** and the corpus to 20.6% while catching none of the three motivating
+defects. Both are the blanket rule wearing a detector's clothes.
 
 | The diff | Verdict |
 |---|---|
-| Adds an inline `<script>` or a served `.js`, **repo has a lane**, no spec | **BLOCKS** |
+| Adds a **new** inline `<script>` block or touches a served `.js`, **repo has a lane**, no spec | **BLOCKS** |
+| **Rewrites the body** of a script that already existed | reports |
 | Adds a declarative binding (`x-data`, `data-controller`, `onclick=`) | reports |
 | Changes a file that **carries** a script without adding one | reports |
 | Adds a program in a repo with **no browser lane** (studio-engine) | reports, loudly |
+| Mentions the word `<script>` **inside a comment** | **silent** |
 | Server-only, or a template with no client construct | **silent** |
+
+**It reads whole file versions, not hunks** — masked for comments, HEAD compared to
+BASE. A hunk cannot tell a `<script>` tag from the word `<script>` in prose: the
+disqualifying context (a `<%#` two lines earlier) sits outside it. Comments are
+masked **non-greedily**, closing at the first `%>`, exactly as ERB itself parses —
+so an ordinary comment is ignored while a comment that *terminates early* leaks its
+script back into view and still fires. That second half is not hypothetical: it is
+defect 3.
 
 Programs block because they are arbitrary imperative code whose failure — a throw,
 a wrong branch, a swallowed file — renders perfectly and does nothing. Bindings

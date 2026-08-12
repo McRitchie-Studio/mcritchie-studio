@@ -37,7 +37,7 @@ class ClientSurfaceDiffTest < Minitest::Test
   def test_unit_defect_one_navbar_resize_observer_is_a_program
     surfaces = ClientSurfaceDiff.added_programs(
       ["app/views/studio/banners/_stack.html.erb"],
-      { "app/views/studio/banners/_stack.html.erb" => NAVBAR_JUMP.lines }
+      { "app/views/studio/banners/_stack.html.erb" => NAVBAR_JUMP }
     )
     assert_equal 1, surfaces.size,
                  "defect 1's introducing diff added a ResizeObserver that republished " \
@@ -49,7 +49,7 @@ class ClientSurfaceDiffTest < Minitest::Test
   def test_unit_defect_two_and_three_at_time_script_partial_is_a_program
     ["app/views/shared/_at_time_script.html.erb",
      "app/views/studio/_at_time_script.html.erb"].each do |path|
-      surfaces = ClientSurfaceDiff.added_programs([path], { path => AT_TIME_SCRIPT.lines })
+      surfaces = ClientSurfaceDiff.added_programs([path], { path => AT_TIME_SCRIPT })
       assert_equal 1, surfaces.size, "#{path} is 200+ lines of browser program"
       assert surfaces.first.program?
     end
@@ -126,18 +126,37 @@ class ClientSurfaceDiffTest < Minitest::Test
     tmp/cache/assets/sprite.js
   ].freeze
 
+  # NOT vendored-and-excluded: importmap pins these and Propshaft serves them, so
+  # they reach a browser exactly as app/javascript/ does. Two directories under one
+  # `vendor/` parent with opposite answers — which is why the anchor is a ROOT list
+  # rather than a judgment about the word "vendor".
+  VENDOR_SERVED = %w[
+    vendor/javascript/chart.js.js vendor/javascript/chartkick.esm.js
+  ].freeze
+
+  def test_unit_importmap_served_vendor_javascript_is_a_surface
+    VENDOR_SERVED.each do |path|
+      assert ClientSurfaceDiff.served?(path), "#{path} is pinned by importmap and served"
+      assert_equal 1, ClientSurfaceDiff.added_programs([path], {}, {}).size,
+                   "#{path} reaches a browser; missing it is a silent hole, and it sits one "                    "directory from vendor/bundle/ which must stay excluded"
+    end
+    assert_empty ClientSurfaceDiff.added_surfaces(
+      ["vendor/bundle/ruby/3.3.0/gems/actiontext-8.1.3/app/assets/javascripts/actiontext.js"], {}, {}
+    ), "vendor/bundle stays excluded by the same root rule that includes vendor/javascript"
+  end
+
   def test_unit_vendored_dependency_source_is_never_a_surface
     VENDORED.each do |path|
       refute ClientSurfaceDiff.served?(path),
              "#{path} is dependency source, not a path THIS app serves"
       refute ClientSurfaceDiff.template?(path), path
       refute ClientSurfaceDiff.script_asset?(path), path
-      assert_empty ClientSurfaceDiff.added_surfaces([path], { path => ["<script>boom()</script>"] }),
+      assert_empty ClientSurfaceDiff.added_surfaces([path], { path => "<script>boom()</script>" }),
                    "#{path} fired the gate. CI vendors dependencies into the tree, so this turns a " \
-                   "measured 3.2% blocking rate into 'any diff on a machine with a vendored bundle' " \
+                   "measured 2.8% blocking rate into 'any diff on a machine with a vendored bundle' " \
                    "— green locally, red in CI, which is the exact signature of the CHANGELOG " \
                    "basename bite this gate's own file already suffered."
-      assert_empty ClientSurfaceDiff.added_programs([path], { path => ["<script>boom()</script>"] }), path
+      assert_empty ClientSurfaceDiff.added_programs([path], { path => "<script>boom()</script>" }), path
     end
   end
 
@@ -164,12 +183,131 @@ class ClientSurfaceDiffTest < Minitest::Test
       assert ClientSurfaceDiff.served?(path), "#{path} IS served by this app"
       if kind == :template
         assert ClientSurfaceDiff.template?(path), path
-        assert_equal 1, ClientSurfaceDiff.added_programs([path], { path => ["<script>go()</script>"] }).size,
+        assert_equal 1, ClientSurfaceDiff.added_programs([path], { path => "<script>go()</script>" }).size,
                      "#{path}: the vendor fix must not stop the gate seeing OUR templates"
       else
         assert_equal 1, ClientSurfaceDiff.added_programs([path], {}).size, path
       end
     end
+  end
+
+  # ==== A TAG, NOT THE WORD =========================================================
+  #
+  # THE THIRD VECTOR NOBODY IMAGINED — after vendored paths and vendor/javascript/.
+  # The detector matched the TEXT `<script` anywhere, so an ERB comment SAYING there
+  # is no script demanded a Playwright spec. Every one of these is LIVE in the
+  # ecosystem today, and the first is multi-line: the offending line carries no
+  # `<%#` at all, because the comment opened two lines earlier. That is why the
+  # classifier compares masked FILE VERSIONS and not hunk lines — no per-line or
+  # per-hunk rule can see context that sits outside the hunk.
+  TURF_GOAL_FEED = <<~ERB
+    <%# A data-only node appended to the hidden goal feed on the live page. The
+        page's MutationObserver reads these data-* attrs, fires a toast, then removes
+        the node. NO <script> here — Turbo doesn't execute scripts inside broadcast
+        <template>s. Locals: event ("goal"|"final"), team (Team|nil). %>
+    <div data-event="<%= event %>"></div>
+  ERB
+
+  HUB_BOARD_COMMENT = <<~ERB
+    <%# window.studioBoard — the Alpine factory behind the studio/board primitive.
+        It MUST live at page level: a <script> inside the board component template
+        would be cloned by Alpine and never run. %>
+    <%= render "studio/board_assets" %>
+  ERB
+
+  HTML_COMMENT = <<~ERB
+    <!-- do NOT put a <script> tag in here; the layout owns it -->
+    <div class="card"></div>
+  ERB
+
+  def test_unit_the_word_script_inside_a_comment_is_not_a_program
+    {
+      "app/views/contests/_goal_feed_item.html.erb" => TURF_GOAL_FEED,
+      "app/views/layouts/application.html.erb" => HUB_BOARD_COMMENT,
+      "app/views/shared/_card.html.erb" => HTML_COMMENT
+    }.each do |path, body|
+      assert_empty ClientSurfaceDiff.added_programs([path], { path => body }, { path => "" }),
+                   "#{path}: the WORD <script> inside a comment is not a script TAG. Blocking here " \
+                   "means editing a comment that says there is no script demands a Playwright " \
+                   "spec — prose comment blocks are this ecosystem's highest-churn edit shape, so " \
+                   "it fires early, often, and trains people straight onto [browser-bypass]."
+      assert_empty ClientSurfaceDiff.added_surfaces([path], { path => body }, { path => "" }), path
+    end
+  end
+
+  # THE OPPOSITE MISTAKE, AND THE ONE THAT MATTERS MORE. Defect 3 was an ERB comment
+  # that TERMINATED EARLY; the leaked prose carried a literal script tag that opened
+  # a phantom element and swallowed the real script. A mask that trusted the OPENER
+  # would hide exactly the defect this gate exists for. Masking non-greedily — the
+  # way ERB itself closes at the first %> — leaks it back into view.
+  def test_unit_a_comment_that_terminates_early_still_leaks_its_script
+    path = "app/views/studio/_at_time_script.html.erb"
+    # TWO `%>` are load-bearing. With only one, a greedy mask and an ERB-accurate
+    # non-greedy mask behave identically and the test proves nothing — a mutation
+    # run caught exactly that and this fixture is the repair. Greedy swallows from
+    # the FIRST `<%#` to the LAST `%>`, hiding the script between them; ERB (and
+    # this module) close at the first.
+    leaky = <<~ERB
+      <%# this comment ends early %> and then <script>window.__atTimeFmt = f;</script>
+      <%# a second, entirely ordinary comment %>
+      <div></div>
+    ERB
+    programs = ClientSurfaceDiff.added_programs([path], { path => leaky }, { path => "" })
+    assert_equal 1, programs.size,
+                 "a comment closing at the FIRST %> leaks the rest as live markup — that IS defect " \
+                 "3. If the mask swallows it, the gate is blind to its own motivating case."
+    refute_empty ClientSurfaceDiff.script_blocks(leaky),
+                 "the leaked script must survive masking"
+  end
+
+  def test_unit_a_real_script_next_to_a_comment_still_fires
+    path = "app/views/x.html.erb"
+    body = "<%# no script here %>\n<script>go()</script>\n"
+    assert_equal 1, ClientSurfaceDiff.added_programs([path], { path => body }, { path => "" }).size,
+                 "masking the comment must not mask the tag beside it"
+  end
+
+  # ==== VERSION COMPARISON, NOT HUNK LINES ==========================================
+  def test_unit_editing_a_comment_in_a_script_bearing_file_does_not_block
+    path = "app/views/studio/_at_time_script.html.erb"
+    base = "<%# old note %>\n<script>go()</script>\n"
+    head = "<%# a completely rewritten note mentioning <script> %>\n<script>go()</script>\n"
+    assert_empty ClientSurfaceDiff.added_programs([path], { path => head }, { path => base }),
+                 "the script is UNCHANGED; only prose moved. Blocking a copy fix in a " \
+                 "script-bearing partial is the over-refusal this design rejects."
+  end
+
+  # Rewriting an existing script's BODY: REPORTED, not blocked — and the boundary is
+  # measured, not asserted. Blocking it took hub firing from 2.8% to 12.1% and the
+  # whole 407-unit corpus from 9.3% to 20.6%, because roughly one hub PR in eight
+  # legitimately edits an inline board/live-FX script — while catching none of the
+  # three motivating defects, each of which introduced a NEW script.
+  # Re-measure with `bin/measure-client-surface` before moving this line.
+  def test_unit_rewriting_an_existing_script_body_reports_but_does_not_block
+    path = "app/views/x.html.erb"
+    base = "<script>\n  var a = 1;\n</script>\n"
+    head = "<script>\n  var a = compute(window.tz);\n</script>\n"
+
+    assert_empty ClientSurfaceDiff.added_programs([path], { path => head }, { path => base }),
+                 "blocking every inline-script body edit is the blanket rule arriving one level " \
+                 "down; measured at 4x the hub's firing rate for no motivating case"
+    present = ClientSurfaceDiff.present_surfaces([path], { path => head }, { path => base })
+    assert_equal 1, present.size, "but it must still be SAID — the script did change"
+    assert present.first.program?
+  end
+
+  def test_unit_adding_a_second_script_to_an_existing_file_blocks
+    path = "app/views/x.html.erb"
+    base = "<script>go()</script>\n"
+    head = "<script>go()</script>\n<script>alsoGo()</script>\n"
+    assert_equal 1, ClientSurfaceDiff.added_programs([path], { path => head }, { path => base }).size,
+                 "a NEW block in an existing file is an addition, not a rewrite"
+  end
+
+  def test_unit_an_unchanged_file_adds_nothing
+    path = "app/views/x.html.erb"
+    body = "<script>go()</script>\n"
+    assert_empty ClientSurfaceDiff.added_programs([path], { path => body }, { path => body })
   end
 
   # ==== THE PROGRAM / BINDING SPLIT =================================================
@@ -182,13 +320,14 @@ class ClientSurfaceDiffTest < Minitest::Test
       "<a onclick=\"go()\">" => "an inline DOM event handler"
     }.each do |line, reason|
       path = "app/views/x.html.erb"
-      all = ClientSurfaceDiff.added_surfaces([path], { path => [line] })
+      all = ClientSurfaceDiff.added_surfaces([path], { path => line })
       assert_equal 1, all.size, "#{line} should be DETECTED"
       assert_equal reason, all.first.reason
       refute all.first.program?,
-             "#{line.inspect} must not BLOCK. Alpine directives were 157 of 268 detections across " \
-             "406 measured units; blocking them makes the cheapest shape the most expensive."
-      assert_empty ClientSurfaceDiff.added_programs([path], { path => [line] })
+             "#{line.inspect} must not BLOCK. Alpine directives are 148 of 248 detections across " \
+             "407 measured units (bin/measure-client-surface); blocking them makes the cheapest " \
+             "shape the most expensive."
+      assert_empty ClientSurfaceDiff.added_programs([path], { path => line })
     end
   end
 
@@ -234,7 +373,7 @@ class ClientSurfaceDiffTest < Minitest::Test
     ["e2e/at_time_flag.spec.js", "e2e/helpers.js", "test/views/bar_stack_test.rb",
      "test/dummy/app/views/x.html.erb", "test/dummy/app/assets/javascripts/x.js",
      "tests/turf_vault.ts", "spec/views/x.html.erb"].each do |path|
-      assert_empty ClientSurfaceDiff.added_surfaces([path], { path => ["<script>x()</script>"] }),
+      assert_empty ClientSurfaceDiff.added_surfaces([path], { path => "<script>x()</script>" }),
                    "#{path} is under a test root — it is evidence or a fixture, never a shipped surface"
     end
   end
@@ -257,7 +396,7 @@ class ClientSurfaceDiffTest < Minitest::Test
     path = "app/views/x.html.erb"
     ['<script type="application/ld+json">', "<script type='text/template'>",
      '<script type="text/x-template">'].each do |line|
-      assert_empty ClientSurfaceDiff.added_programs([path], { path => [line] }),
+      assert_empty ClientSurfaceDiff.added_programs([path], { path => line }),
                    "#{line} is parsed as data; the browser runs nothing"
     end
   end
@@ -266,7 +405,7 @@ class ClientSurfaceDiffTest < Minitest::Test
     path = "app/views/x.html.erb"
     ["<script>", '<script type="text/javascript">', '<script defer nonce="<%= nonce %>">',
      '<script type="module">'].each do |line|
-      assert_equal 1, ClientSurfaceDiff.added_programs([path], { path => [line] }).size,
+      assert_equal 1, ClientSurfaceDiff.added_programs([path], { path => line }).size,
                    "#{line} executes"
     end
   end
@@ -277,12 +416,12 @@ class ClientSurfaceDiffTest < Minitest::Test
   # script-bearing partial is refused.
   def test_unit_a_carried_script_is_present_but_not_added
     path = "app/views/studio/_at_time_script.html.erb"
-    contents = { path => AT_TIME_SCRIPT }
-    added = { path => ["<%# a comment that is all this diff changed %>"] }
+    base = "<%# an old note %>\n" + AT_TIME_SCRIPT
+    head = "<%# a note this diff rewrote %>\n" + AT_TIME_SCRIPT
 
-    assert_empty ClientSurfaceDiff.added_programs([path], added),
+    assert_empty ClientSurfaceDiff.added_programs([path], { path => head }, { path => base }),
                  "the diff added no script, so it must not BLOCK"
-    present = ClientSurfaceDiff.present_surfaces([path], contents, added)
+    present = ClientSurfaceDiff.present_surfaces([path], { path => head }, { path => base })
     assert_equal 1, present.size,
                  "the file still CARRIES a script — an ERB comment that terminates early can kill " \
                  "it, which is exactly defect 3"
@@ -291,8 +430,7 @@ class ClientSurfaceDiffTest < Minitest::Test
 
   def test_unit_present_does_not_double_report_an_added_surface
     path = "app/views/x.html.erb"
-    added = { path => ["<script>go()</script>"] }
-    assert_empty ClientSurfaceDiff.present_surfaces([path], { path => "<script>go()</script>" }, added),
+    assert_empty ClientSurfaceDiff.present_surfaces([path], { path => "<script>go()</script>" }, { path => "" }),
                  "a surface the diff ADDED is reported by added_surfaces; reporting it twice would " \
                  "print a blocking finding and a suggestion for one line"
   end

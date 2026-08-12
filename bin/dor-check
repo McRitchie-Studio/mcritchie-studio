@@ -799,32 +799,19 @@ end
 # block correct work for an infrastructure fact. The present-surface REPORT still
 # fires off the path list, so the finding never disappears — it only loses its
 # teeth, which is the same shape as control_replayable_files' fail-open.
-def client_added_lines(paths)
+def client_base_contents(paths)
   root = diff_root
   base = diff_base(root)
   templates = Array(paths).select { |p| ClientSurfaceDiff.template?(p) }
   return {} if templates.empty?
 
   templates.each_with_object({}) do |path, acc|
-    lines = []
-    # Committed (base...HEAD) and working-tree (HEAD) views, unioned — the same
-    # both-views rule compute_git_changed_files uses, so a pre-commit run and a
-    # post-commit run see the same surfaces.
-    [["#{base}...HEAD", path], ["HEAD", path]].each do |ref, file|
-      out = IO.popen(["git", "-C", root, "diff", "-U0", ref, "--", file], err: File::NULL, &:read)
-      next unless $?.success?
-
-      lines.concat(out.to_s.split("\n").select { |l| l.start_with?("+") && !l.start_with?("+++") }
-                      .map { |l| l[1..].to_s })
-    end
-    # An UNTRACKED file has no diff at all; the whole file is an addition.
-    full = File.join(root.to_s, path)
-    if lines.empty? && File.file?(full)
-      tracked = system("git", "-C", root.to_s, "ls-files", "--error-unmatch", path,
-                       out: File::NULL, err: File::NULL)
-      lines.concat(File.read(full).split("\n")) unless tracked
-    end
-    acc[path] = lines.uniq unless lines.empty?
+    out = IO.popen(["git", "-C", root, "show", "#{base}:#{path}"], err: File::NULL, &:read)
+    # A file with no version at `base` is NEW; "" is the correct base content for
+    # it, and it is also the fail-open answer when git cannot show us the old side
+    # — an unreadable base makes every construct look new, which REPORTS a surface
+    # rather than inventing a clean one.
+    acc[path] = $?.success? ? out.to_s : ""
   end
 rescue SystemCallError, IOError
   {}
@@ -1906,8 +1893,9 @@ end
 # reviewable line gets routed around ON PURPOSE, in front of a reviewer.
 if gate != "build"
   observed_client = changed_files
-  added_lines = client_added_lines(observed_client)
-  added_all = ClientSurfaceDiff.added_surfaces(observed_client, added_lines)
+  head_contents = client_file_contents(observed_client) { |p| ClientSurfaceDiff.template?(p) }
+  base_contents = client_base_contents(observed_client)
+  added_all = ClientSurfaceDiff.added_surfaces(observed_client, head_contents, base_contents)
   programs = added_all.select(&:program?)
   bindings = added_all.reject(&:program?)
 
@@ -1958,9 +1946,7 @@ if gate != "build"
   end
 
   present = ClientSurfaceDiff.present_surfaces(
-    observed_client,
-    client_file_contents(observed_client) { |p| ClientSurfaceDiff.template?(p) },
-    added_lines
+    observed_client, head_contents, base_contents
   ).select(&:program?)
 
   if present.any? && programs.empty? && browser_evidence.empty?

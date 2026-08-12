@@ -68,13 +68,26 @@ class DorCheckBrowserEvidenceTest < Minitest::Test
   # dor-check's REAL git path (client_added_lines) sees them as ADDED lines.
   # `lane:` controls whether the repo has a browser lane at all — the studio-engine
   # case is exactly `lane: false`.
-  def with_client_repo(files, lane: true)
+  # `base:` seeds files into the BASE commit, before `base-ref` is cut — the only
+  # way to exercise "this file already existed and the diff changed part of it",
+  # which is the whole point of comparing versions rather than hunk lines.
+  def with_client_repo(files, lane: true, base: {})
     Dir.mktmpdir do |dir|
       git = ->(a) { assert(system("git -C #{dir} #{a} >/dev/null 2>&1"), "git #{a}") }
+      write = lambda do |rel, body|
+        full = File.join(dir, rel)
+        FileUtils.mkdir_p(File.dirname(full))
+        File.write(full, body)
+      end
       git.call("init -q")
       git.call("config user.email tester@example.com")
       git.call("config user.name tester")
       git.call("commit -q --allow-empty -m base")
+      unless base.empty?
+        base.each { |rel, body| write.call(rel, body) }
+        git.call("add -A")
+        git.call("commit -q -m baseline")
+      end
       git.call("branch base-ref")
 
       if lane
@@ -291,6 +304,54 @@ class DorCheckBrowserEvidenceTest < Minitest::Test
     end
   end
 
+  # ==== A COMMENT SAYING "NO SCRIPT" MUST NOT DEMAND A PLAYWRIGHT SPEC =============
+  #
+  # The defect that sent PR #801 back as rework, replayed END TO END at the gate
+  # rather than at the classifier — because the classifier being right is not the
+  # claim; the claim is that `bin/dor-check` exits 0. This exact text is live at
+  # turf-monster/app/views/contests/_goal_feed_item.html.erb:3, and turf HAS an e2e
+  # lane, so before the fix editing this comment demanded a browser spec.
+  #
+  # Note it is MULTI-LINE: the line carrying the word `<script>` has no `<%#` on it
+  # at all. Any per-line or per-hunk rule is blind here by construction.
+  GOAL_FEED_COMMENT = <<~ERB
+    <%# A data-only node appended to the hidden goal feed on the live page. The
+        page's MutationObserver reads these data-* attrs, fires a toast, then removes
+        the node. NO <script> here — Turbo doesn't execute scripts inside broadcast
+        <template>s. Locals: event ("goal"|"final"), team (Team|nil). %>
+    <div data-event="<%= event %>" data-team="<%= team&.name %>"></div>
+  ERB
+
+  def test_integration_a_comment_saying_there_is_no_script_does_not_block
+    path = "app/views/contests/_goal_feed_item.html.erb"
+    with_client_repo({ path => GOAL_FEED_COMMENT }) do |dir|
+      out, code = check_in(dir, contract, path)
+
+      assert_equal 0, code,
+                   "editing a comment that SAYS there is no script demanded a Playwright spec. " \
+                   "Prose comment blocks are this ecosystem's highest-churn edit shape, so this " \
+                   "fires early and often and trains people straight onto [browser-bypass] — the " \
+                   "credibility loss the whole design exists to avoid. It also fails acceptance " \
+                   "criterion 2 verbatim: the gate refuses only what it can honestly judge.\n#{out}"
+      refute_match(/ADDS browser code/, out, out)
+      refute_match(/browser evidence/i, out, "not even a suggestion — there is no surface here\n#{out}")
+    end
+  end
+
+  # The same file, one comment word changed, with a REAL script alongside it. The
+  # script is untouched, so the diff still must not block.
+  def test_integration_editing_prose_beside_an_untouched_script_does_not_block
+    path = "app/views/studio/_at_time_script.html.erb"
+    base = "<%# an old note %>\n<script>window.__atTimeFmt = f;</script>\n"
+    head = "<%# a rewritten note that mentions <script> tags %>\n<script>window.__atTimeFmt = f;</script>\n"
+    with_client_repo({ path => head }, base: { path => base }) do |dir|
+      out, code = check_in(dir, contract, path)
+
+      assert_equal 0, code, "the script is byte-identical; only prose moved\n#{out}"
+      refute_match(/ADDS browser code/, out, out)
+    end
+  end
+
   # ==== THE MUTATION PROOF: A SERVER-ONLY DIFF IS NOT MOLESTED ======================
   # If ANY of these blocks, the gate has become the blanket browser requirement, and
   # the cheapest change in the repo just became the most expensive.
@@ -333,7 +394,8 @@ class DorCheckBrowserEvidenceTest < Minitest::Test
       out, code = check_in(dir, contract, path)
 
       assert_equal 0, code,
-                   "Alpine directives were 157 of 268 detections across 406 measured units. " \
+                   "Alpine directives are 148 of 248 detections across 407 measured units " \
+                   "(bin/measure-client-surface). " \
                    "Blocking them IS the blanket rule.\n#{out}"
       assert_match(/suggestion/, out, "but it must still be SAID — silence teaches nothing\n#{out}")
       assert_match(/client binding/, out, out)
