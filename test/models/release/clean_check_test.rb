@@ -175,17 +175,41 @@ class Release::CleanCheckTest < ActiveSupport::TestCase
     assert_nil v["signal_conflict"], "a signal never taken can neither agree nor disagree"
   end
 
-  test "both rungs dirty names both in the headline" do
+  # Both rungs are named — each by the signal that was actually measured. This
+  # setup takes NO git read on the release rung (no repo_states), so the headline
+  # reports that rung's BOARD count; asserting `release ≠ main` here is what the
+  # old headline did, and it was claiming a tree relation nobody had read.
+  test "both rungs dirty names both in the headline, by measured signal" do
     v = clean_ladder(
       pending_tasks: [{ "slug" => "riding-release", "title" => "" }],
       accepted_tasks: [{ "slug" => "parked", "title" => "" }],
       accepted_states: [{ "repo" => "mcritchie-studio", "ahead" => 1 }]
     )
+    headline = v["message"].lines.first
+
     refute v["clean"]
-    assert_includes v["message"], "accepted ≠ release"
-    assert_includes v["message"], "release ≠ main"
+    assert_includes headline, "accepted ≠ release", "the accepted rung's git signal WAS measured"
+    assert_includes headline, %(1 task(s) stamped merged:"accepted")
+    assert_includes headline, "1 task(s) still recorded as riding `release`"
+    refute_includes headline, "release ≠ main", "that rung's git signal was never read"
     assert_includes v["message"], "riding-release"
     assert_includes v["message"], "parked"
+  end
+
+  # The same both-rungs case WITH both git reads taken: every signal is named.
+  test "both rungs dirty on both signals names all four" do
+    v = C.evaluate(
+      pending_tasks: [{ "slug" => "riding-release" }],
+      repo_states: [{ "repo" => "mcritchie-studio", "ahead" => 4 }],
+      accepted_tasks: [{ "slug" => "parked" }],
+      accepted_states: [{ "repo" => "mcritchie-studio", "ahead" => 1 }]
+    )
+    headline = v["message"].lines.first
+
+    assert_includes headline, %(1 task(s) stamped merged:"accepted")
+    assert_includes headline, "accepted ≠ release"
+    assert_includes headline, "1 task(s) still recorded as riding `release`"
+    assert_includes headline, "release ≠ main"
   end
 
   # --- the expedited task itself must not trip its own guard ---------------
@@ -268,5 +292,96 @@ class Release::CleanCheckTest < ActiveSupport::TestCase
       unreadable_repos: [{ "repo" => "q", "rung" => "release" }]
     )
     assert_equal v, JSON.parse(v.to_json)
+  end
+
+  # --- the headline names the SIGNAL MEASURED, not a tree relation ---------
+  #
+  # Each rung is judged by TWO signals (board + git). The headline used to OR them
+  # and label the result with the GIT relation, so a rung dirty on the BOARD signal
+  # alone asserted a tree relation nobody read. During rel-20260812-3f1f9b it
+  # asserted one that was FALSE: `git ls-remote` had every repo identical across
+  # all three rungs while three tasks were still recorded as riding `release`.
+
+  # THE INCIDENT. Board dirty, git clean — the line must not claim release ≠ main.
+  test "board-only dirt on the release rung reports the board count, NOT `release ≠ main`" do
+    v = C.evaluate(
+      pending_tasks: [{ "slug" => "a" }, { "slug" => "b" }, { "slug" => "c" }],
+      repo_states: [{ "repo" => "mcritchie-studio", "ahead" => 0 },
+                    { "repo" => "studio-engine", "ahead" => 0 }]
+    )
+    headline = v["message"].lines.first
+
+    refute v["clean"]
+    assert_includes headline, "3 task(s) still recorded as riding `release`"
+    refute_includes headline, "release ≠ main",
+                    "git said the trees are IDENTICAL — the headline must not assert otherwise"
+  end
+
+  test "git-only dirt on the release rung still reports the tree relation" do
+    v = C.evaluate(repo_states: [{ "repo" => "mcritchie-studio", "ahead" => 2 }])
+    headline = v["message"].lines.first
+
+    assert_includes headline, "release ≠ main"
+    refute_includes headline, "recorded as riding", "no task was on the board to report"
+  end
+
+  # Both signals dirty is the NORMAL case — both are named, separately.
+  test "both release signals dirty reports both, separately" do
+    v = C.evaluate(pending_tasks: [{ "slug" => "a" }],
+                   repo_states: [{ "repo" => "mcritchie-studio", "ahead" => 2 }])
+    headline = v["message"].lines.first
+
+    assert_includes headline, "1 task(s) still recorded as riding `release`"
+    assert_includes headline, "release ≠ main"
+  end
+
+  test "board-only dirt on the accepted rung reports the stamp count, NOT `accepted ≠ release`" do
+    v = C.evaluate(accepted_tasks: [{ "slug" => "parked" }],
+                   accepted_states: [{ "repo" => "mcritchie-studio", "ahead" => 0 }])
+    headline = v["message"].lines.first
+
+    assert_includes headline, %(1 task(s) stamped merged:"accepted")
+    refute_includes headline, "accepted ≠ release"
+  end
+
+  test "git-only dirt on the accepted rung still reports the tree relation" do
+    v = C.evaluate(accepted_states: [{ "repo" => "mcritchie-studio", "ahead" => 3 }])
+    assert_includes v["message"].lines.first, "accepted ≠ release"
+  end
+
+  # --- the release rung's signal conflict = an INTERRUPTED SHIP ------------
+
+  test "board-dirty + git-clean on the release rung names the interrupted ship" do
+    v = C.evaluate(
+      pending_tasks: [{ "slug" => "a" }, { "slug" => "b" }, { "slug" => "c" }],
+      repo_states: [{ "repo" => "mcritchie-studio", "ahead" => 0 }]
+    )
+    conflict = v["release_signal_conflict"]
+
+    refute_nil conflict, "the disagreement IS the signal — it must be reported"
+    assert_includes conflict, "INTERRUPTED SHIP"
+    assert_includes conflict, "ALREADY BE IN PRODUCTION",
+                    "this is the one moment the operator needs to know the code is out"
+    assert_includes conflict, "git ls-remote", "and how to confirm it in one command"
+    assert_includes v["message"], conflict, "it reaches the operator-facing message"
+  end
+
+  test "no release conflict when both signals agree that the rung is dirty" do
+    v = C.evaluate(pending_tasks: [{ "slug" => "a" }],
+                   repo_states: [{ "repo" => "mcritchie-studio", "ahead" => 2 }])
+    assert_nil v["release_signal_conflict"], "board and git agree — there is no disagreement to name"
+  end
+
+  # An unmeasured signal can neither corroborate nor contradict — same rule the
+  # accepted rung already follows (--dry-run takes no git read at all).
+  test "no release conflict when the git read did not run" do
+    v = C.evaluate(pending_tasks: [{ "slug" => "a" }], repo_states: [])
+    assert_nil v["release_signal_conflict"]
+  end
+
+  test "a clean ladder reports no release conflict" do
+    v = C.evaluate(repo_states: [{ "repo" => "mcritchie-studio", "ahead" => 0 }])
+    assert v["clean"]
+    assert_nil v["release_signal_conflict"]
   end
 end

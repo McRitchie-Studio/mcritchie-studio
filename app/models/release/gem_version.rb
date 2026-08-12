@@ -305,5 +305,41 @@ class Release
     def live_numbers(entries)
       Array(entries).map { |e| (e.is_a?(Hash) ? (e["number"] || e[:number]) : e).to_s.strip }.reject(&:empty?)
     end
+
+    # HOW A GEM MEMBER'S VERSION IS NAMED in the release log — the provenance line
+    # where someone later answers "what version did this task ship in?".
+    #
+    # THE DEFECT THIS REPLACES: prepare printed that line from the version read out
+    # of the PRIMARY CHECKOUT, which sits on `main`. Since version allocation
+    # landed, `main` is ONE RELEASE BEHIND BY CONSTRUCTION at that point — the
+    # allocator commits the bump to origin/release and nothing fast-forwards `main`
+    # until `bin/release ship`. So the line was not occasionally wrong, it was
+    # GUARANTEED wrong on every gem-bearing release: rel-20260812-3f1f9b printed
+    # "studio-engine 0.40.0" a few lines after printing "allocated 0.41.0" and
+    # "Successfully registered gem: studio-engine (0.41.0)".
+    #
+    # The honest source is the PUBLISH map — what `publish_gems_for_qa` actually
+    # pushed (or found already live) — keyed by repo. Everything else is a
+    # fallback and SAYS SO, because a labelled guess is recoverable and an
+    # unlabelled one is what caused this.
+    #
+    #   published: { repo => version } from publish_gems_for_qa; "" for a
+    #     --dry-run entry, and the repo is absent entirely if it never reached the
+    #     publish plan.
+    #   local: the version read from the local checkout — a fallback ONLY, and
+    #     rendered with its provenance attached.
+    def reported_version(published, repo, local = "")
+      map = published.is_a?(Hash) ? published : {}
+      from_publish = map[repo].to_s.strip
+      return from_publish unless from_publish.empty?
+
+      # The repo IS in the map but carries no version: the --dry-run entry, where
+      # nothing was allocated and nothing published. Naming any number there would
+      # be inventing one.
+      return "version pending (dry run)" if map.key?(repo)
+
+      text = local.to_s.strip
+      text.empty? ? "version unknown" : "#{text} (local checkout — NOT the published version)"
+    end
   end
 end

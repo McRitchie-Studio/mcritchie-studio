@@ -50,7 +50,13 @@ class Release
   # stale `merged` stamp, or a commit that landed on `accepted` with no task. The
   # guard already refuses either way (fail-closed); naming the disagreement tells
   # the operator WHICH record to go fix instead of trusting whichever one happens
-  # to look clean.
+  # to look clean. The release rung reports its disagreement the same way
+  # (`release_signal_conflict`), where board-dirty + git-clean is the signature of
+  # an INTERRUPTED SHIP — code already fast-forwarded to `main`, board unstamped.
+  #
+  # AND THE VERDICT NAMES THE SIGNAL IT MEASURED. Every line here reports which of
+  # the four reads fired; it never renders a board conclusion as a tree relation.
+  # See dirty_headline for the defect that rule was written for.
   #
   # A read that FAILED is not a read that came back clean. A rung whose count
   # could not be measured (`unreadable_repos`) is dirty too — silently skipping an
@@ -94,6 +100,10 @@ class Release
     #   "unreadable_repos"     => rung reads that failed (empty when clean)
     #   "signal_conflict"      => nil, or a sentence naming a board-vs-git
     #                             disagreement on the accepted rung
+    #   "release_signal_conflict" => nil, or a sentence naming the release rung's
+    #                             board-vs-git disagreement — tasks still recorded
+    #                             as riding `release` with release == main, i.e. an
+    #                             INTERRUPTED SHIP whose code is already in prod
     #   "message"              => the operator-facing verdict line(s): a short OK
     #                             when clean, or the REFUSAL + `Alex Heartbeat`
     #                             full-cycle OFFER (listing the pending work and any
@@ -127,6 +137,9 @@ class Release
       # was never taken.
       git_measured = Array(accepted_states).any?
       conflict = accepted_signal_conflict(accepted, measured_ahead, git_measured, attributed)
+      # The same read-did-not-run rule on the release rung, measured against ITS
+      # own git signal (repo_states) rather than the accepted rung's.
+      release_conflict = release_signal_conflict(pending, ahead, Array(repo_states).any?)
 
       clean = pending.empty? && ahead.empty? && accepted.empty? &&
               accepted_ahead.empty? && unreadable.empty?
@@ -139,8 +152,9 @@ class Release
         "attributed_ahead_repos" => attributed_ahead,
         "unreadable_repos" => unreadable,
         "signal_conflict" => conflict,
+        "release_signal_conflict" => release_conflict,
         "message" => clean ? clean_message(slug, attributed_ahead) : dirty_message(
-          pending, ahead, accepted, accepted_ahead, unreadable, conflict
+          pending, ahead, accepted, accepted_ahead, unreadable, conflict, release_conflict
         )
       }
     end
@@ -161,10 +175,9 @@ class Release
     # The refusal + the offer. Never silently drags the pending work to prod: it
     # names WHAT is pending, on WHICH rung, and points at the composition that
     # ships it properly.
-    def dirty_message(pending, ahead, accepted, accepted_ahead, unreadable = [], conflict = nil)
-      lines = [dirty_headline(pending.any? || ahead.any?,
-                              accepted.any? || accepted_ahead.any?,
-                              unreadable.any?)]
+    def dirty_message(pending, ahead, accepted, accepted_ahead, unreadable = [], conflict = nil,
+                      release_conflict = nil)
+      lines = [dirty_headline(pending, ahead, accepted, accepted_ahead, unreadable)]
       if pending.any?
         lines << "  #{pending.size} task(s) already riding `release` (swept or QA-green), pending ship:"
         lines.concat(task_lines(pending))
@@ -185,6 +198,7 @@ class Release
                  "#{unreadable.map { |u| "#{u['repo']}/#{u['rung']}" }.join(', ')}"
         lines << "  Fetch those repos (or fix the missing branch), then re-run the guard."
       end
+      lines << "  ⚠ #{release_conflict}" if release_conflict
       lines << "  ⚠ #{conflict}" if conflict
       lines << "  Expediting one task now would DRAG that pending work to production."
       lines << "  → Ship the WHOLE release instead: run the `Alex Heartbeat` `full-cycle` launcher."
@@ -193,12 +207,44 @@ class Release
 
     # Name the rung(s) that are dirty, so the operator knows where to look
     # instead of re-deriving it from the list below.
-    def dirty_headline(release_dirty, accepted_dirty, unreadable = false)
+    #
+    # REPORT THE SIGNAL THAT WAS MEASURED, never a relation that was not read.
+    # Each rung is judged by TWO signals (board + git), and this line used to
+    # collapse them with an `||` and then label the result with the GIT relation
+    # — `release ≠ main`, `accepted ≠ release`. So a rung that was dirty on the
+    # BOARD signal alone asserted a TREE relation nobody had measured, and during
+    # rel-20260812-3f1f9b it asserted one that was FALSE: all three rungs were
+    # identical (`git ls-remote` had every repo at one SHA) while three tasks were
+    # still recorded as riding `release`. The operator re-fetched, learned
+    # nothing, and had to go to `git ls-remote` to find out the line was wrong.
+    #
+    # So each rung names its signals separately (joined by "; "). The two agree in
+    # the normal case and read the same; when they DISAGREE that is itself the
+    # finding — see release_signal_conflict — and the headline now shows it
+    # instead of hiding it behind a relation.
+    def dirty_headline(pending, ahead, accepted, accepted_ahead, unreadable = [])
       rungs = []
-      rungs << "accepted ≠ release" if accepted_dirty
-      rungs << "release ≠ main" if release_dirty
-      rungs << "a rung could not be read" if unreadable
+      rungs << accepted_rung_reason(accepted, accepted_ahead) if accepted.any? || accepted_ahead.any?
+      rungs << release_rung_reason(pending, ahead) if pending.any? || ahead.any?
+      rungs << "a rung could not be read" if unreadable.any?
       "✗ deploy-with-task refused: the `accepted → release → main` ladder is NOT clean (#{rungs.join(', ')})."
+    end
+
+    # The `accepted` rung's reason, by measured signal: the board count, the git
+    # relation, or both.
+    def accepted_rung_reason(accepted, accepted_ahead)
+      parts = []
+      parts << "#{accepted.size} task(s) stamped merged:\"accepted\"" if accepted.any?
+      parts << "accepted ≠ release" if accepted_ahead.any?
+      parts.join("; ")
+    end
+
+    # The `release` rung's reason, by measured signal.
+    def release_rung_reason(pending, ahead)
+      parts = []
+      parts << "#{pending.size} task(s) still recorded as riding `release`" if pending.any?
+      parts << "release ≠ main" if ahead.any?
+      parts.join("; ")
     end
 
     # The accepted rung's two signals should agree; when they do not, say which
@@ -220,6 +266,32 @@ class Release
           "Either the sweep already promoted them and the stamp is stale, or the stamp names " \
           "the wrong rung. Reconcile the board before expediting."
       end
+    end
+
+    # The release rung's two signals, like the accepted rung's — but the
+    # disagreement that matters here points the OTHER way, and it is the most
+    # consequential state this guard can observe.
+    #
+    # BOARD-DIRTY + GIT-CLEAN means tasks are still recorded as riding `release`
+    # while `release` and `main` are IDENTICAL. That is what an INTERRUPTED SHIP
+    # looks like: the fast-forward to `main` already landed — THE CODE IS ALREADY
+    # IN PRODUCTION — and the board was never stamped. It is exactly the moment an
+    # operator most needs to be told the code is out, and exactly the moment the
+    # old headline said `release ≠ main` and sent them to re-fetch a tree that was
+    # never behind (rel-20260812-3f1f9b).
+    #
+    # The guard still REFUSES either way (fail-closed, unchanged) — the board says
+    # work is unaccounted for, and that is reason enough not to expedite. This only
+    # explains WHICH record to go fix, the same job accepted_signal_conflict does.
+    def release_signal_conflict(pending, ahead, git_measured)
+      return nil unless git_measured
+      return nil unless pending.any? && ahead.empty?
+
+      "the two `release` signals DISAGREE: #{pending.size} task(s) are still recorded as riding " \
+        "`release`, but NO repo's `release` is ahead of `main` — the trees are identical. That is " \
+        "what an INTERRUPTED SHIP looks like: the fast-forward to `main` already landed, so this " \
+        "code may ALREADY BE IN PRODUCTION and only the board stamp is missing. Confirm with " \
+        "`git ls-remote --heads origin main release`, then reconcile the board before expediting."
     end
 
     def normalize_tasks(tasks)
