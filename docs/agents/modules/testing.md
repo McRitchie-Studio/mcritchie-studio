@@ -24,7 +24,7 @@ checks to `checks_run` as each stage completes.
 |---|---|---:|---:|---|---|
 | PR review gate | Local repo or CI | Usually no | Yes | G1 Cert (builder cert + dor verdict) · G2 Review (the review wave) | Every PR with code changes; includes lint, security scans, Rails tests, and focused browser checks for touched UI |
 | E2E (Playwright) | CI, sharded 3× (own server + PG per shard) | Test DB only | **Yes** | G2 Review (the authoritative CI verdict) | Every PR and every push to `main`/`release` — the `playwright` job in `ci.yml`. Collects the **`e2e` tier** (shapes `ui+db`, `onchain-vertical`) |
-| E2E executed-set | CI, reads each shard's JSON receipt | No | **Yes** | G2 Review | The `e2e_executed_set` job, after the shards. Asserts the lane **ran the 51 specs it claims to** — the one thing the `playwright` job cannot verify about itself |
+| E2E executed-set | CI, reads each shard's JSON receipt | No | **Yes** | G2 Review | The `e2e_executed_set` job, after the shards. Asserts the lane **ran the 77 specs it claims to** — the one thing the `playwright` job cannot verify about itself |
 | Local proof | Worktree URL | Local DB only | Usually yes | G1 Cert (builder evidence) | UI, auth, task, contest, navigation, email capture, Redis, or worker changes |
 | QA acceptance | Stable QA URL | QA/devnet only when named | No; blocks production promotion | G3 Candidate | After every QA deploy; runs task acceptance criteria against the merged result |
 | Production smoke | Production URL | No by default | N/A | G4 Ship (the seal — non-blocking) | After approved production deploy; verifies health and key read-only routes |
@@ -54,12 +54,12 @@ therefore checks out with `fetch-depth: 0`, and the ratchet fails **closed** —
 why — if it cannot resolve the baseline.)
 
 **What stops a spec from quietly leaving the lane.** Two guards, and only one of them
-generalizes. Both read the same contract, `config/e2e_lane.yml` — **70 committed − 18
-quarantined == 52 executed** — so they can never certify two different suites.
+generalizes. Both read the same contract, `config/e2e_lane.yml` — **95 committed − 18
+quarantined == 77 executed** — so they can never certify two different suites.
 
 1. **The receipt (`bin/e2e-executed-set-check`, the `e2e_executed_set` CI job).** Each
    shard emits a JSON report; this job reads them and asserts what the lane **actually
-   ran**: 52 executed, 0 skipped, every shard's report present. This is the durable
+   ran**: 77 executed, 0 skipped, every shard's report present. This is the durable
    guard. A spec that leaves the lane by *any* route lands on one line of arithmetic,
    whatever syntax arranged it — a runtime skip, a widened `--grep-invert`, an
    `--only-changed`, a narrowed `testDir`, a deleted file, a dropped shard, or next
@@ -91,6 +91,98 @@ Assert what the system *did*, not what its source *looks like*.
 `playwright.config.js` also sets `forbidOnly` under CI as a cheap hard stop at the lane
 itself. So there are two honest moves for a red spec and no third: **fix it**, or
 `@quarantine` it — which the ratchet makes you account for — and **block on it**.
+
+## The Browser-Evidence Gate — When A Diff Ships Code No Tier Can See
+
+**The rule.** If your diff ADDS an imperative browser program — an inline
+`<script>` body, or a `.js`/`.ts` file under a served root — `bin/dor-check`
+requires that a Playwright spec under `e2e/` changed with it. Nothing else in this
+repo runs a browser, so nothing else can see that code work.
+
+**Why it exists.** Three defects in 24 hours passed every automated gate and were
+caught by a human or a reviewer opening a browser: a paint-time navbar jump
+(`fix-navbar-offset-jump`), a timezone flag wrong in Chrome and Safari but not
+Firefox (`local-at-time-format`), and a script swallowed by a phantom element so it
+never ran in any browser (`propagate-at-format-gem`). Every tier the shapes demand
+renders to a **String**.
+
+**The sharpest lesson, and the one that sets what counts as evidence.** The guard
+test for the third defect was `assert_includes html, "__atTimeFmt"` — and it
+**passed on the broken page**, because the token survived inside the text the
+phantom element swallowed. A test written to catch "stamps without a working
+script" was itself an instance of the disease it named. So:
+
+> **Browser evidence must observe the browser DOING something** — a computed style,
+> a post-interaction DOM state, a `page.evaluate` result. A token appearing in
+> markup is not evidence, in a Rails test *or* in a Playwright spec.
+
+**It is targeted, not blanket, and every number here is reproducible** — run
+`bin/measure-client-surface` (`--json` for machine-readable). Across **407 merged
+feature units** (hub, studio-engine, turf-monster) it fires at blocking tier on
+**9.3%**; in this repo it is **2.8%** (7 of 247), of which 3 would have been
+refused. Two earlier cuts were measured and rejected: treating every
+browser-executed construct alike made a bare Alpine directive **148 of 248
+detections**, and blocking a rewritten script *body* took this repo from 2.8% to
+**12.1%** and the corpus to 20.6% while catching none of the three motivating
+defects. Both are the blanket rule wearing a detector's clothes.
+
+| The diff | Verdict |
+|---|---|
+| Adds a **new** inline `<script>` block or touches a served `.js`, **repo has a lane**, no spec | **BLOCKS** |
+| **Rewrites the body** of a script that already existed | reports |
+| Adds a declarative binding (`x-data`, `data-controller`, `onclick=`) | reports |
+| Changes a file that **carries** a script without adding one | reports |
+| Adds a program in a repo with **no browser lane** (studio-engine) | reports, loudly |
+| Mentions the word `<script>` **inside a comment** | **silent** |
+| Server-only, or a template with no client construct | **silent** |
+
+**It reads whole file versions, not hunks** — masked for comments, HEAD compared to
+BASE. A hunk cannot tell a `<script>` tag from the word `<script>` in prose: the
+disqualifying context (a `<%#` two lines earlier) sits outside it. Comments are
+masked **non-greedily**, closing at the first `%>`, exactly as ERB itself parses —
+so an ordinary comment is ignored while a comment that *terminates early* leaks its
+script back into view and still fires. That second half is not hypothetical: it is
+defect 3.
+
+Programs block because they are arbitrary imperative code whose failure — a throw,
+a wrong branch, a swallowed file — renders perfectly and does nothing. Bindings
+report because their arguments are visible to the markup assertions already
+written, and blocking the most common thing a UI diff adds would make the cheapest
+shape the most expensive. The line is imperative-vs-declarative, not
+important-vs-unimportant.
+
+**"No evidence" and "no surface" are different answers.** The detector is strictly
+positive: it fires only when it can point at the construct and print the file and
+the line. If it cannot point, it says nothing — it never demands a spec it cannot
+give a reason for.
+
+**It is anchored on the roots this app SERVES from** (`app/views/`, `app/assets/`,
+`app/javascript/`, `app/components/`, `public/`) — not on file extension. That is
+load-bearing, not tidiness: `vendor/` is not in `.gitignore`, so in CI
+`git ls-files --others` reports the entire vendored bundle as untracked, and a
+vendored gem's `rescues/*.html.erb` is a real ERB template carrying a real
+`<script>`. Shipped with the extension-only rule, the gate blocked three
+previously-green `DorCheckTest` cases — **green locally, red in CI**, the same
+signature as the `CHANGELOG.md` basename bite the release-owned-version gate
+suffered in this same file. There is deliberately **no vendor denylist**: a denylist
+needs a new entry for every packaging convention anyone invents, while the served
+root excludes `vendor/`, `node_modules/`, `tmp/` and the next one nobody thought of,
+all at once. If you widen `SERVED_ROOTS`, run the mutation harness — the explicit
+test-root exclusion was already removed once it became provably dead code.
+
+**studio-engine has no browser lane** — no `e2e/`, and `engine-ci.yml` installs node
+but runs no browser (`consumer-ci.yml` runs consumers' `rails test` without
+`test:system`). Two of the three motivating defects were there. Blocking would be a
+refusal with no remedy, so the engine gets a loud named hole instead
+(`/tasks/stand-up-engine-browser-lane`).
+
+**The escape hatch is a record**, like `[full-suite-bypass]`:
+`bin/task update <task> --checks "[browser-bypass] <reason>"` is honored and flagged
+loudly, so the gate is routed around on purpose, in front of a reviewer.
+
+Owned by `bin/lib/client_surface_diff.rb`; proven by
+`test/lib/client_surface_diff_test.rb` (classifier) and
+`test/lib/dor_check_browser_evidence_test.rb` (the gate actually asks it).
 
 The Gate column names the branded testing gate whose attempt records that
 lane's verdicts — attempt-aware GateRun rows with per-SOP results, rendered on
@@ -295,6 +387,64 @@ passes, and the purge stomps the shared dev DB. Comparing a value against a conf
 same ENV var just rewrote is comparing a moved value **to itself**. The `database.yml`
 literal does not move — anchor there. (`test/lib/test_database_purge_test.rb` pins this:
 swap the anchor back to `configs_for` and the "placebo case" goes red.)
+
+### …and it STAYS empty: the mid-run leak guard
+
+**A boot purge is a starting condition, not an invariant.** It cannot see a leak
+that happens *after* it runs, and the run is full of moments that can leak: a test
+with `use_transactional_tests = false` (its writes are really committed), or a
+subprocess committing to the same database. Rails will not clean those rows —
+fixture loading only truncates the ~28 tables it has fixtures for — so every later
+test in that process sees them.
+
+**The victim is never the polluter, and that is what makes it expensive.** The one
+test that notices is the standing invariant
+(`test/integration/test_database_hermeticity_test.rb`), which belongs to whoever's
+diff happens to be in flight. It went red as `task_events: 1 row(s)` in three
+unrelated tasks, and only *sometimes*: minitest shuffles the runnable classes, so
+the same SHA re-ran green. It reads exactly like flake, and it cost three sessions
+— one of them an hour of infrastructure time on a confident wrong hypothesis.
+
+**So the rule is enforced where the blame belongs: a test may not leave rows in an
+un-fixtured table.** `test/support/test_database_leak_guard.rb` checks after EVERY
+test and fails the test that dirtied the database, naming the table, the count, and
+the usual cause. Two details make it cheap and correct:
+
+- It runs **after Rails' rollback** — installed on `ActiveSupport::TestCase`, which
+  sits ahead of `ActiveRecord::TestFixtures` in the ancestor chain, so `super`
+  returns only once the test transaction is gone. An ordinary transactional test's
+  own writes have already vanished by then, so anything still standing was really
+  committed. (A second hook on `Minitest::Test` covers the bare `test/lib` /
+  `test/commands` files when the sweep loads them alongside Rails.)
+- It asks with **one round trip** — `TestDatabasePurge.nonempty_tables` is a single
+  `UNION ALL` of `EXISTS` probes (~0.24 ms measured), not a `COUNT(*)` per table
+  (~3.4 ms). Counts are computed only on the failure path, where they are the report.
+
+It also **truncates what leaked** before returning. That is containment, not the
+fix: one leaky test can no longer poison the rest of the run, which is what removes
+the ordering lottery from the invariant above.
+
+**Writing a non-transactional test: clean up what the CALLBACKS wrote, not just
+what you wrote.** The bug this guard was built on is the whole lesson —
+`ReviewPendingActionSettleRaceTest` created a Task (whose `after_create
+:record_genesis_event` writes a TaskEvent) and cleaned up with `Task.where(slug:
+…).delete_all`. `delete_all` skips callbacks **and** `dependent: :destroy`, so the
+event outlived its parent, once per test. CI distributes test *methods* across
+workers, which is why a worker that drew one of the file's two tests ended with
+exactly the one row the CI log named. Delete the children explicitly, or destroy
+the parent.
+
+**Fixtured tables are deliberately outside its reach.** Truncating them would empty
+the world the rest of the process depends on, and it is unnecessary: the
+non-transactional branch of `setup_fixtures` calls `invalidate_already_loaded_fixtures`,
+so the harness re-loads fixtures itself. Only the un-fixtured tables have no owner —
+which is the same blast radius the boot purge and the standing invariant use.
+
+`test/integration/test_database_leak_guard_test.rb` pins it by RUNNING a real
+non-transactional test case in-process and reading its result: the leaky shape must
+FAIL with the table named, the same case with a complete cleanup must PASS, and the
+database must be empty afterwards either way. Ordering is not left to the suite —
+the polluter and the check are one call apart.
 
 ### Stranded per-run cert test databases are reaped
 

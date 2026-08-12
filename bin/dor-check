@@ -139,6 +139,7 @@ require_relative "lib/repo_root"
 require_relative "lib/ci_status"
 require_relative "lib/code_diff"
 require_relative "lib/test_only_diff"
+require_relative "lib/client_surface_diff"
 require_relative "lib/control_replay"
 require_relative "lib/task_board"
 require_relative "lib/cert_root_guard"
@@ -776,6 +777,56 @@ end
 # the conductor runs it on ship instead of someone running the rake by hand.
 def data_changed_files
   changed_files.select { |f| DATA_CHANGE_PREFIXES.any? { |prefix| f.start_with?(prefix) } }
+end
+
+# ==== The browser-evidence gate's inputs ======================================
+#
+# ClientSurfaceDiff needs more than a path list: the BLOCKING half asks whether a
+# hunk INTRODUCED something the browser runs, which is a question about lines. The
+# path-only views above cannot answer it, so this reads the diff text.
+#
+# WHY THE LINE GRANULARITY HERE, HAVING BEEN REFUSED IN CodeDiff. CodeDiff settles
+# on the FILE because it is deciding whether a change may SKIP the gate, and a
+# hunk-level "this is only comments" inference is one an author can talk it out of.
+# This helper feeds the opposite decision — whether to demand MORE — where the
+# file granularity is what over-refuses (it would block a copy fix in any partial
+# that happens to carry a <script>). The asymmetry is the same one that sets this
+# module's polarity: a wrong "yes" here costs an honest builder a false refusal.
+#
+# UNREADABLE => {} => the added-surface set is EMPTY => the gate REPORTS instead of
+# blocking. That is the deliberate direction. A checkout that cannot show us its
+# hunks has not shown us new browser code, and refusing on a read failure would
+# block correct work for an infrastructure fact. The present-surface REPORT still
+# fires off the path list, so the finding never disappears — it only loses its
+# teeth, which is the same shape as control_replayable_files' fail-open.
+def client_base_contents(paths)
+  root = diff_root
+  base = diff_base(root)
+  templates = Array(paths).select { |p| ClientSurfaceDiff.template?(p) }
+  return {} if templates.empty?
+
+  templates.each_with_object({}) do |path, acc|
+    out = IO.popen(["git", "-C", root, "show", "#{base}:#{path}"], err: File::NULL, &:read)
+    # A file with no version at `base` is NEW; "" is the correct base content for
+    # it, and it is also the fail-open answer when git cannot show us the old side
+    # — an unreadable base makes every construct look new, which REPORTS a surface
+    # rather than inventing a clean one.
+    acc[path] = $?.success? ? out.to_s : ""
+  end
+rescue SystemCallError, IOError
+  {}
+end
+
+# Current content of the changed paths matching `filter`, read from the task's own
+# tree. Feeds the PRESENT-surface report and the quarantine read on changed specs.
+def client_file_contents(paths, &filter)
+  root = diff_root
+  Array(paths).select(&filter).each_with_object({}) do |path, acc|
+    full = File.join(root.to_s, path)
+    acc[path] = File.read(full) if File.file?(full)
+  end
+rescue SystemCallError, IOError
+  {}
 end
 
 # The gem-publish seam (merge gate). When this branch touched the Gemfile, every
@@ -1797,6 +1848,114 @@ if gate != "build" && Array(shape_def && shape_def["required_evidence"]).include
       "tell them apart, and it is not refusing your change for it. Add the sentence that can: bin/task " \
       "update #{task["slug"] || slug} --checks '[control] <file> → renamed/consolidated/… , coverage " \
       "preserved because …'"
+  end
+end
+
+# ==== BROWSER EVIDENCE — did a browser ever SEE the browser code? ==============
+#
+# Three defects in 24 hours passed every gate in this file and were caught by a
+# human or a reviewer opening a browser: a paint-time navbar jump, a timezone flag
+# wrong in Chrome and Safari but not Firefox, and a script that never ran in any
+# browser. bin/lib/client_surface_diff.rb's header carries all three. The common
+# fact: every tier this repo demands renders to a String, and none of them runs a
+# browser, so none of them could have seen any of it.
+#
+# THIS BLOCK IS DRIVEN BY THE DIFF, NOT BY THE SHAPE — deliberately, and unlike its
+# two neighbours. `claimable_when` and `required_evidence` hang off shape_def
+# because they qualify a shape the author CLAIMED. Browser code is not a shape: it
+# arrives under `ui-only`, under `backend` (a job's status partial), under
+# `library`. Keying this on a shape key would mean the author selects whether the
+# gate applies, which is the `kind: chore` bug this file's header opens with —
+# a check you satisfy by DECLARING a label is not a check.
+#
+# THREE OUTCOMES, AND THE LINE BETWEEN THEM IS WHAT THE MACHINE CAN PROVE:
+#
+#   BLOCK   the diff ADDS an imperative browser program (an inline <script> body,
+#           a served .js) and no browser spec changed with it, IN A REPO THAT HAS
+#           A LANE. New arbitrary code, zero browser observation, and a remedy the
+#           author can actually reach.
+#   REPORT  everything else it can see: an added declarative BINDING (Alpine,
+#           Stimulus, an on* handler); a changed file that CARRIES a program the
+#           diff did not add (defect 3 proves a mere ERB comment edit can kill a
+#           script); or an added program in a repo with NO browser lane, where
+#           blocking would be a refusal with no remedy.
+#   SILENT  the detector can point at nothing. Not "probably fine" — nothing was
+#           OBSERVED, and dor-check already fails closed on an unobservable diff
+#           upstream (resolve_branch_diff → :indeterminate), so this block does not
+#           re-refuse what that gate already holds.
+#
+# That three-way split IS the answer to "can it tell no-evidence from no-surface".
+# It never demands a spec it cannot name a reason for, and the reason is printed.
+#
+# THE ESCAPE HATCH IS A RECORD, exactly like [full-suite-bypass]: a
+# "[browser-bypass] <reason>" line in checks_run is honored and flagged loudly. A
+# gate with no hatch gets routed around silently; a gate whose hatch is a visible,
+# reviewable line gets routed around ON PURPOSE, in front of a reviewer.
+if gate != "build"
+  observed_client = changed_files
+  head_contents = client_file_contents(observed_client) { |p| ClientSurfaceDiff.template?(p) }
+  base_contents = client_base_contents(observed_client)
+  added_all = ClientSurfaceDiff.added_surfaces(observed_client, head_contents, base_contents)
+  programs = added_all.select(&:program?)
+  bindings = added_all.reject(&:program?)
+
+  spec_contents = client_file_contents(observed_client) { |p| ClientSurfaceDiff.browser_spec?(p) }
+  browser_evidence = ClientSurfaceDiff.evidence_specs(observed_client, spec_contents)
+  bypass = checks.find { |line| line.to_s =~ /\A\s*\[\s*browser-bypass\s*[\]:]/i }
+  lane = ClientSurfaceDiff.lane_present?(diff_root)
+
+  if programs.any? && browser_evidence.empty?
+    sample = programs.first(3).map { |s| "#{s.reason} in #{s.path}" }.join("; ")
+    more = programs.size > 3 ? ", …" : ""
+
+    if bypass
+      suggestions << "⚠ BROWSER-EVIDENCE GATE BYPASSED: #{bypass.to_s.strip}. This diff adds " \
+        "#{programs.size} browser program(s) (#{sample}#{more}) with no e2e spec. The bypass is honored " \
+        "and recorded; a reviewer can see it."
+    elsif lane
+      errors << "this diff ADDS browser code and no browser ever saw it run: #{sample}#{more} " \
+        "[source: #{diff_source}]. Every tier this shape demands renders to a String — which is how a " \
+        "paint-time navbar jump, a timezone flag wrong in two engines, and a script swallowed by a " \
+        "phantom element all shipped green in one 24-hour window. The sharpest of the three had a guard " \
+        "test, `assert_includes html, \"__atTimeFmt\"`, that PASSED on the broken page because the token " \
+        "survived inside the text the phantom element ate; a String assertion cannot observe a script " \
+        "RUNNING. Add or extend a Playwright spec under e2e/ that drives this surface and asserts " \
+        "something only a live browser can produce (a computed style, a post-interaction DOM state, a " \
+        "page.evaluate result) — NOT that a token appears in the markup. The lane's runtime executed-set " \
+        "gate (config/e2e_lane.yml) then proves it actually ran. If a browser genuinely cannot reach " \
+        "this code, record why: bin/task update #{task["slug"] || slug} --checks '[browser-bypass] " \
+        "<reason>'"
+    else
+      suggestions << "BROWSER-EVIDENCE HOLE (reported, not blocking): this diff adds #{programs.size} " \
+        "browser program(s) — #{sample}#{more} — and THIS REPO HAS NO BROWSER LANE (no e2e/, and its CI " \
+        "runs no browser), so there is no evidence to demand and refusing would be a refusal with no " \
+        "remedy. Two of the three defects that motivated this gate were exactly here. Standing the lane " \
+        "up is tracked at /tasks/stand-up-engine-browser-lane; until it exists, a reviewer opening a " \
+        "browser is the only thing between this code and production."
+    end
+  end
+
+  if bindings.any? && browser_evidence.empty?
+    sample = bindings.first(2).map { |s| "#{s.reason} in #{s.path}" }.join("; ")
+    suggestions << "browser evidence (suggestion only): this diff adds #{bindings.size} client " \
+      "binding(s) — #{sample}#{bindings.size > 2 ? ", …" : ""}. Declarative bindings are NOT blocked " \
+      "here: they are the most common thing a UI diff adds, their arguments are visible to the markup " \
+      "assertions this repo already writes, and blocking them would make the cheapest shape the most " \
+      "expensive. If this binding carries real interaction logic, an e2e spec is still the only tier " \
+      "that will ever see it work."
+  end
+
+  present = ClientSurfaceDiff.present_surfaces(
+    observed_client, head_contents, base_contents
+  ).select(&:program?)
+
+  if present.any? && programs.empty? && browser_evidence.empty?
+    sample = present.first(2).map(&:path).join(", ")
+    suggestions << "browser evidence (suggestion only): this diff changes #{present.size} file(s) that " \
+      "CARRY an inline <script> without adding one — #{sample}#{present.size > 2 ? ", …" : ""}. Worth a " \
+      "look because an edit that adds no script can still kill one: the propagate-at-format-gem defect " \
+      "was an ERB COMMENT that terminated early, leaking prose whose literal script tag opened a phantom " \
+      "element that swallowed the real script in every browser."
   end
 end
 

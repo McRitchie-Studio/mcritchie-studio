@@ -271,8 +271,10 @@ doc).
   **Two-bounce circuit breaker.** Before blocking, count the task's prior
   send-backs in its ACTIVITY history — never in the live block columns: a
   compliant resubmission resolves the open feedback and the forward move wipes
-  `blocked_at`/`block_kind`, so `bin/task show --verbose` reads EMPTY exactly
-  when the breaker must fire. The durable trail is the task's `qa_feedback`
+  `blocked_at`/`block_kind`, so the live block state is CLEAR exactly when the
+  breaker must fire. `bin/task show --verbose` does not surface those columns at
+  all, so its silence is not evidence either way — do not read it as "never
+  blocked". The durable trail is the task's `qa_feedback`
   activities — read it with the same bearer auth as every board call (the task
   page timeline renders the same rows for a human check):
 

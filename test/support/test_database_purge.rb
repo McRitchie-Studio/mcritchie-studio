@@ -232,5 +232,25 @@ module TestDatabasePurge
         counts[table] = count if count.positive?
       end
     end
+
+    # The subset of `tables` holding at least one row, in ONE round trip.
+    #
+    # WHY THIS EXISTS NEXT TO row_counts: row_counts issues a COUNT(*) PER TABLE
+    # — 51 queries, ~3.4 ms measured on this schema — which is fine once at boot
+    # and far too expensive after every test. This asks the same question as one
+    # UNION ALL of EXISTS probes (~0.24 ms measured, 14x cheaper), because EXISTS
+    # stops at the first row and the whole thing is a single statement. So:
+    # EMPTINESS is the hot path (TestDatabaseLeakGuard, after every test), COUNTS
+    # are the report (only on the failure path, where 3 ms is free).
+    def nonempty_tables(tables, connection = ActiveRecord::Base.connection)
+      return [] if tables.empty?
+
+      sql = tables.map do |table|
+        "SELECT #{connection.quote(table)} AS table_name " \
+          "WHERE EXISTS (SELECT 1 FROM #{connection.quote_table_name(table)})"
+      end.join(" UNION ALL ")
+
+      connection.select_values(sql)
+    end
   end
 end
