@@ -24,7 +24,7 @@ checks to `checks_run` as each stage completes.
 |---|---|---:|---:|---|---|
 | PR review gate | Local repo or CI | Usually no | Yes | G1 Cert (builder cert + dor verdict) · G2 Review (the review wave) | Every PR with code changes; includes lint, security scans, Rails tests, and focused browser checks for touched UI |
 | E2E (Playwright) | CI, sharded 3× (own server + PG per shard) | Test DB only | **Yes** | G2 Review (the authoritative CI verdict) | Every PR and every push to `main`/`release` — the `playwright` job in `ci.yml`. Collects the **`e2e` tier** (shapes `ui+db`, `onchain-vertical`) |
-| E2E executed-set | CI, reads each shard's JSON receipt | No | **Yes** | G2 Review | The `e2e_executed_set` job, after the shards. Asserts the lane **ran the 51 specs it claims to** — the one thing the `playwright` job cannot verify about itself |
+| E2E executed-set | CI, reads each shard's JSON receipt | No | **Yes** | G2 Review | The `e2e_executed_set` job, after the shards. Asserts the lane **ran the 77 specs it claims to** — the one thing the `playwright` job cannot verify about itself |
 | Local proof | Worktree URL | Local DB only | Usually yes | G1 Cert (builder evidence) | UI, auth, task, contest, navigation, email capture, Redis, or worker changes |
 | QA acceptance | Stable QA URL | QA/devnet only when named | No; blocks production promotion | G3 Candidate | After every QA deploy; runs task acceptance criteria against the merged result |
 | Production smoke | Production URL | No by default | N/A | G4 Ship (the seal — non-blocking) | After approved production deploy; verifies health and key read-only routes |
@@ -54,12 +54,12 @@ therefore checks out with `fetch-depth: 0`, and the ratchet fails **closed** —
 why — if it cannot resolve the baseline.)
 
 **What stops a spec from quietly leaving the lane.** Two guards, and only one of them
-generalizes. Both read the same contract, `config/e2e_lane.yml` — **70 committed − 18
-quarantined == 52 executed** — so they can never certify two different suites.
+generalizes. Both read the same contract, `config/e2e_lane.yml` — **95 committed − 18
+quarantined == 77 executed** — so they can never certify two different suites.
 
 1. **The receipt (`bin/e2e-executed-set-check`, the `e2e_executed_set` CI job).** Each
    shard emits a JSON report; this job reads them and asserts what the lane **actually
-   ran**: 52 executed, 0 skipped, every shard's report present. This is the durable
+   ran**: 77 executed, 0 skipped, every shard's report present. This is the durable
    guard. A spec that leaves the lane by *any* route lands on one line of arithmetic,
    whatever syntax arranged it — a runtime skip, a widened `--grep-invert`, an
    `--only-changed`, a narrowed `testDir`, a deleted file, a dropped shard, or next
@@ -91,6 +91,71 @@ Assert what the system *did*, not what its source *looks like*.
 `playwright.config.js` also sets `forbidOnly` under CI as a cheap hard stop at the lane
 itself. So there are two honest moves for a red spec and no third: **fix it**, or
 `@quarantine` it — which the ratchet makes you account for — and **block on it**.
+
+## The Browser-Evidence Gate — When A Diff Ships Code No Tier Can See
+
+**The rule.** If your diff ADDS an imperative browser program — an inline
+`<script>` body, or a `.js`/`.ts` file under a served root — `bin/dor-check`
+requires that a Playwright spec under `e2e/` changed with it. Nothing else in this
+repo runs a browser, so nothing else can see that code work.
+
+**Why it exists.** Three defects in 24 hours passed every automated gate and were
+caught by a human or a reviewer opening a browser: a paint-time navbar jump
+(`fix-navbar-offset-jump`), a timezone flag wrong in Chrome and Safari but not
+Firefox (`local-at-time-format`), and a script swallowed by a phantom element so it
+never ran in any browser (`propagate-at-format-gem`). Every tier the shapes demand
+renders to a **String**.
+
+**The sharpest lesson, and the one that sets what counts as evidence.** The guard
+test for the third defect was `assert_includes html, "__atTimeFmt"` — and it
+**passed on the broken page**, because the token survived inside the text the
+phantom element swallowed. A test written to catch "stamps without a working
+script" was itself an instance of the disease it named. So:
+
+> **Browser evidence must observe the browser DOING something** — a computed style,
+> a post-interaction DOM state, a `page.evaluate` result. A token appearing in
+> markup is not evidence, in a Rails test *or* in a Playwright spec.
+
+**It is targeted, not blanket, and the split is measured.** Across **406 merged
+feature units** (hub, studio-engine, turf-monster) the gate fires at blocking tier
+on **10.1%**; in this repo it is **3.2%** (8 of 247). An earlier cut that treated
+every browser-executed construct alike fired on 90 units and would have refused 65,
+with **157 of 268 detections being a bare Alpine directive**. That is the blanket
+browser requirement wearing a detector's clothes, and it was measured and rejected.
+
+| The diff | Verdict |
+|---|---|
+| Adds an inline `<script>` or a served `.js`, **repo has a lane**, no spec | **BLOCKS** |
+| Adds a declarative binding (`x-data`, `data-controller`, `onclick=`) | reports |
+| Changes a file that **carries** a script without adding one | reports |
+| Adds a program in a repo with **no browser lane** (studio-engine) | reports, loudly |
+| Server-only, or a template with no client construct | **silent** |
+
+Programs block because they are arbitrary imperative code whose failure — a throw,
+a wrong branch, a swallowed file — renders perfectly and does nothing. Bindings
+report because their arguments are visible to the markup assertions already
+written, and blocking the most common thing a UI diff adds would make the cheapest
+shape the most expensive. The line is imperative-vs-declarative, not
+important-vs-unimportant.
+
+**"No evidence" and "no surface" are different answers.** The detector is strictly
+positive: it fires only when it can point at the construct and print the file and
+the line. If it cannot point, it says nothing — it never demands a spec it cannot
+give a reason for.
+
+**studio-engine has no browser lane** — no `e2e/`, and `engine-ci.yml` installs node
+but runs no browser (`consumer-ci.yml` runs consumers' `rails test` without
+`test:system`). Two of the three motivating defects were there. Blocking would be a
+refusal with no remedy, so the engine gets a loud named hole instead
+(`/tasks/stand-up-engine-browser-lane`).
+
+**The escape hatch is a record**, like `[full-suite-bypass]`:
+`bin/task update <task> --checks "[browser-bypass] <reason>"` is honored and flagged
+loudly, so the gate is routed around on purpose, in front of a reviewer.
+
+Owned by `bin/lib/client_surface_diff.rb`; proven by
+`test/lib/client_surface_diff_test.rb` (classifier) and
+`test/lib/dor_check_browser_evidence_test.rb` (the gate actually asks it).
 
 The Gate column names the branded testing gate whose attempt records that
 lane's verdicts — attempt-aware GateRun rows with per-SOP results, rendered on
