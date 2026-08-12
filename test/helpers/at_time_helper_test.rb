@@ -4,8 +4,12 @@ require "test_helper"
 # the date joins it, and the markup contract the client half re-stamps through
 # (shared/_at_time_script). The flag itself is deliberately absent from every
 # assertion here: the server cannot know the reader's timezone, so it must never
-# assert one. That half is proven in the browser, in
-# e2e/at_time_flag.spec.js.
+# assert one.
+#
+# The flag half is covered in a real browser by e2e/at_time_flag.spec.js, which
+# drives the installed script across US and non-US zones. The two halves meet at
+# the markup contract asserted below — the epoch, the text slot, and the hidden
+# ml-2 flag slot — so a change here needs the matching change there.
 class AtTimeHelperTest < ActionView::TestCase
   # A fixed "now" in the app zone; every case below is positioned against it, so
   # the today/not-today boundary is tested rather than whatever day CI runs on.
@@ -78,6 +82,29 @@ class AtTimeHelperTest < ActionView::TestCase
     node = Nokogiri::HTML.fragment(at_time_tag(7.minutes.ago, now: Time.current)).at_css("time")
     assert_match(/7 minutes ago ·/, node["title"],
                  "the relative read this format replaced is demoted, not deleted")
+  end
+
+  test "at_time_tag folds every spelling of 'no prefix' to the same thing on both halves" do
+    time = Time.utc(2026, 8, 11, 15, 53, 0)
+
+    [nil, "", false].each do |blank|
+      node = Nokogiri::HTML.fragment(at_time_tag(time, prefix: blank, now: NOW)).at_css("time")
+
+      assert_equal "3:53p", node.at_css("[data-at-text]").text, "prefix #{blank.inspect} renders bare"
+      # The client REBUILDS the label from this attribute, so a stringified value
+      # here hydrates to a visible "false 3:53p" the server never showed.
+      refute node.key?("data-at-prefix"),
+             "prefix #{blank.inspect} must omit the attribute, not stringify it"
+    end
+  end
+
+  test "at_time_tag measures the hover title against the injected now, not the wall clock" do
+    time = Time.utc(2026, 8, 11, 15, 53, 0) # 4h 7m before NOW
+    node = Nokogiri::HTML.fragment(at_time_tag(time, now: NOW)).at_css("time")
+
+    assert_match(/\Aabout 4 hours ago ·/, node["title"],
+                 "an injected now must reach the title too, or it describes a different moment " \
+                 "than the label beside it")
   end
 
   test "at_time_tag is nil for a blank time so callers need no guard" do

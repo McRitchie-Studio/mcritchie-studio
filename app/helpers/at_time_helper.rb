@@ -70,11 +70,15 @@ module AtTimeHelper
   # The hover title: the relative phrase this format replaced, then the full local
   # stamp with its zone. Server-side that zone is the app's; the script rewrites
   # the whole title in the viewer's.
-  def at_stamp_title(time)
+  #
+  # `now` is measured against, not decoration: time_ago_in_words reads the real
+  # clock, so a caller that injected `now` used to get a title from a DIFFERENT
+  # moment than the label right beside it.
+  def at_stamp_title(time, now: Time.current)
     return nil if time.blank?
 
     local = time.in_time_zone
-    "#{time_ago_in_words(local)} ago · #{local.strftime('%a, %b %-d, %Y, %-l:%M %p %Z')}"
+    "#{distance_of_time_in_words(local, now)} ago · #{local.strftime('%a, %b %-d, %Y, %-l:%M %p %Z')}"
   end
 
   # The primitive itself. Renders a <time> carrying the epoch the script re-stamps
@@ -87,14 +91,19 @@ module AtTimeHelper
   def at_time_tag(time, prefix: "at", now: Time.current, css_class: nil)
     return nil if time.blank?
 
+    # One reading of "no prefix" for BOTH halves. `.presence` folds nil, "" and
+    # false to nil, and the data attribute is then omitted rather than carrying a
+    # stringified value — `prefix: false` used to render bare server-side and
+    # hydrate to "false 3:53p", because the client trusts the attribute it is given.
+    prefix = prefix.presence
     local = time.in_time_zone
     text = at_stamp_text(local, now: now)
-    text = "#{prefix} #{text}" if prefix.present?
+    text = "#{prefix} #{text}" if prefix
 
     tag.time(datetime: local.iso8601,
-             title: at_stamp_title(local),
+             title: at_stamp_title(local, now: now),
              class: ["whitespace-nowrap", css_class].compact.join(" "),
-             data: { at_stamp: "", at_epoch: local.to_i, at_prefix: prefix.to_s }) do
+             data: { at_stamp: "", at_epoch: local.to_i, at_prefix: prefix }) do
       # No whitespace between the two slots: the gap is `ml-2` on the flag, which
       # collapses with the flag itself when the reader is inside the US.
       safe_join([

@@ -20,15 +20,33 @@
 
     // Zones inside the United States — the 50 states, DC, and the territories.
     // Membership here means NO FLAG: the flag is a signal, and one that fired on
-    // every stamp would carry none. Sub-zone families (America/Indiana/*, and the
-    // legacy US/* aliases) are matched by prefix in zoneCountry() below.
+    // every stamp would carry none.
+    //
+    // BOTH SPELLINGS OF INDIANA AND KENTUCKY ARE MEMBERS, AND THAT IS NOT
+    // REDUNDANCY. A browser does not hand back the tzdb id it was given — it hands
+    // back the CLDR-canonical one, and the engines DISAGREE about which that is:
+    // Chromium and WebKit report America/Indianapolis and America/Louisville, while
+    // Firefox reports America/Indiana/Indianapolis and America/Kentucky/Louisville.
+    // The short forms match no US_PREFIXES entry and carry only two path segments,
+    // so the parent fallback in zoneFlag() never fires for them either — which is
+    // how Chrome and Safari readers in Indianapolis and Louisville were shown the
+    // Americas globe while Firefox readers beside them saw the correct bare clock.
+    // Delete either spelling and one engine's readers break. (Reached through
+    // US/East-Indiana and America/Fort_Wayne too; both canonicalize to
+    // America/Indianapolis.)
     var US_ZONES = ("America/New_York America/Detroit America/Chicago America/Menominee " +
       "America/Denver America/Boise America/Phoenix America/Los_Angeles America/Anchorage " +
       "America/Juneau America/Sitka America/Metlakatla America/Yakutat America/Nome " +
       "America/Adak Pacific/Honolulu America/Puerto_Rico America/St_Thomas Pacific/Guam " +
-      "Pacific/Saipan Pacific/Pago_Pago").split(" ");
+      "Pacific/Saipan Pacific/Pago_Pago Pacific/Midway " +
+      "America/Indianapolis America/Louisville").split(" ");
 
-    // Zone families that resolve to the US without listing every member.
+    // Zone families that resolve to the US without listing every member. The
+    // Indiana/Kentucky entries are what Firefox needs; the short aliases above are
+    // what Chromium and WebKit need. `US/` matches nothing in any engine shipping
+    // today (every US/* id canonicalizes away before it is reported) — it is kept
+    // as a cheap floor for an engine that does not canonicalize, not because it is
+    // known to fire.
     var US_PREFIXES = ["US/", "America/Indiana/", "America/Kentucky/", "America/North_Dakota/"];
 
     // IANA zone → ISO 3166-1 alpha-2, grouped by country so the table reads. Not
@@ -147,6 +165,11 @@
       return d.getFullYear() === now.getFullYear() ? label : label + " " + d.getFullYear();
     }
 
+    // Mirrors time_ago_in_words closely enough that hydration does not visibly
+    // rewrite the hover title. It must keep climbing past months into YEARS:
+    // time_ago_in_words does, so capping here made a year-old stamp read "about 12
+    // months ago" on the server and something else after hydration — visible on the
+    // style guide's own 1.year.ago specimen.
     function relative(secs) {
       if (secs < 60) return "less than a minute ago";
       var m = Math.floor(secs / 60);
@@ -156,7 +179,9 @@
       var days = Math.floor(h / 24);
       if (days < 30) return days === 1 ? "1 day ago" : days + " days ago";
       var months = Math.floor(days / 30);
-      return months === 1 ? "about 1 month ago" : "about " + months + " months ago";
+      if (months < 12) return months === 1 ? "about 1 month ago" : "about " + months + " months ago";
+      var years = Math.floor(days / 365);
+      return years === 1 ? "about 1 year ago" : "about " + years + " years ago";
     }
 
     function fullStamp(d) {
