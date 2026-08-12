@@ -127,7 +127,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "#current-release"
     assert_select "#current-release", text: /#{Regexp.escape(rel.slug)}/
-    assert_select "#current-release [data-test='release-state-badge']", text: /\AAssembled .+ ago\z/ # consolidated state + time badge
+    assert_select "#current-release [data-test='release-state-badge']", text: /\AAssembled at .+\z/ # consolidated state + "at" stamp
     assert_select "#current-release a[href=?]", task_path(@new_task.slug) # member chip
     # "when present" fields render
     assert_select "#current-release a[href=?]", "https://qa.example/tasks" # QA link
@@ -619,7 +619,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "#last-release"
     assert_select "#last-release", text: /Last Release/
     assert_select "#last-release", text: /#{Regexp.escape(shipped.slug)}/
-    assert_select "#last-release [data-test='release-state-badge']", text: /\AShipped .+ ago\z/ # consolidated state + time badge
+    assert_select "#last-release [data-test='release-state-badge']", text: /\AShipped at .+\z/ # consolidated state + "at" stamp
     assert_select "#last-release a[href=?]", task_path(@new_task.slug) # member chip
     assert_select "#last-release a[href=?]", "https://qa.example/last" # QA link
     assert_includes response.body, "9999abc" # deployed SHA (7-char)
@@ -628,8 +628,9 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
   test "deployments folds the release state + shipped time into one top-right badge" do
     # ui-only consolidation: the card used to carry BOTH a bare "shipped" state pill
     # (left, beside the slug) AND a separate muted "shipped X ago" line (right). They
-    # are now ONE state-colored badge reading "Shipped <time> ago" in the header — no
-    # duplicate state, no redundant timestamp line.
+    # are now ONE state-colored badge reading "Shipped at <clock>" in the header — no
+    # duplicate state, no redundant timestamp line. The relative read the badge used
+    # to show lives in its hover title.
     Release.delete_all
     shipped = Release.open!(branch: "release/badge-consolidation")
     @new_task.update!(stage: "reviewed")
@@ -640,10 +641,13 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     get deployments_path
     assert_response :success
 
-    # exactly one status badge, folding state + relative time together
+    # exactly one status badge, folding state + the "at" stamp together
     assert_select "#last-release [data-test='release-state-badge']", count: 1 do |els|
-      assert_match(/\AShipped .+ ago\z/, els.first.text.strip)
+      assert_match(/\AShipped at \d{1,2}:\d{2}[ap]\z/, els.first.text.strip)
     end
+    # the badge's stamp is the shared "at" primitive, carrying the epoch the client
+    # re-stamps to the viewer's clock — not a server-frozen string.
+    assert_select "#last-release [data-test='release-state-badge'] time[data-at-stamp][data-at-epoch]", count: 1
     # the badge keeps the shipped (green) state color
     assert_select "#last-release [data-test='release-state-badge'].bg-green-900\\/50", count: 1
     # the separate muted "shipped X ago" line is gone (was the only text-muted "ago" span)
