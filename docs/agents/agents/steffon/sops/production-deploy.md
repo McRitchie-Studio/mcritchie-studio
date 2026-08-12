@@ -25,10 +25,13 @@ GitHub App identity**:
 ```bash
 cd /Users/alex/projects/mcritchie-studio
 export GH_APP_ITEM=github.mcritchie-deployer
-export GH_TOKEN="$(GH_APP_ID="$(op read 'op://agents/github.mcritchie-deployer/app-id')" \
-  GH_APP_PEM="$(op read 'op://agents/github.mcritchie-deployer/mcritchie-deployer.2026-07-29.private-key.pem')" \
-  bin/gh-app-mint-token)"
+export GH_TOKEN=$(printf 'protocol=https\nhost=github.com\n\n' | \
+  /Users/alex/projects/mcritchie-studio/bin/gh-app-git-credential get | \
+  sed -n 's/^password=//p')
 ```
+
+Order matters: the helper reads `GH_APP_ITEM`, so the first export is what makes
+the second one mint the **deployer** token rather than the default agent one.
 
 The two exports cover the two auth legs — they are NOT interchangeable:
 
@@ -39,8 +42,11 @@ The two exports cover the two auth legs — they are NOT interchangeable:
   + secrets). **`gh` never consults git credential helpers.**
 - **`GH_TOKEN`** is what the session's `gh` calls (`gh workflow run`,
   `gh run watch`, API reads) authenticate with — a minted installation token.
-  It expires in **1 hour**: on a mid-ship 403, re-run the export to re-mint
-  and re-run the failed step. Never print the token.
+  It expires in **1 hour**, and the expiry reads as **401 `Bad credentials`**,
+  not a 403: the token is sent and rejected. Re-run the export to re-mint, then
+  re-run the failed step. (A **403 `not accessible by personal access token`**
+  is the other fault — `GH_TOKEN` unset or empty, so `gh` never sent it and fell
+  back to the stored PAT. Same remedy.) Never print the token.
 
 The deployer identity **cannot open or merge PRs by design** — that is the
 point, not a bug: PR writes belong to the build/review lanes' default

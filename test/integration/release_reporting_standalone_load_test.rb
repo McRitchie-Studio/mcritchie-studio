@@ -91,4 +91,86 @@ class ReleaseReportingStandaloneLoadTest < ActiveSupport::TestCase
     assert status.success?, out
     assert_equal "0.41.0", out
   end
+
+  # A PARTIAL git read must not become a confident claim about production. This
+  # runs through the bare path because that is where the operator meets it: the
+  # sentence is printed by bin/release, which has no Rails, and the completeness
+  # rule uses Array/Hash operations that would be tempting to write with `blank?`.
+  test "[integration] a partial release read prints no interrupted-ship claim" do
+    out, status = run_bare(<<~RUBY)
+      v = Release::CleanCheck.evaluate(
+        pending_tasks: [{ "slug" => "a" }],
+        repo_states: [{ "repo" => "mcritchie-studio", "ahead" => 0 }],
+        unreadable_repos: [{ "repo" => "turf-monster", "rung" => "release" }]
+      )
+      print v["message"]
+    RUBY
+
+    assert status.success?, out
+    refute_includes out, "ALREADY BE IN PRODUCTION",
+                    "turf-monster's release rung was never read — the claim is unearned"
+    refute_includes out, "the trees are identical"
+    assert_includes out, "could NOT be read", "the real finding still reaches the operator"
+  end
+
+  # The remedies, composed through the real load path. Each names a DIFFERENT fix,
+  # and the middle one contradicts the default on purpose.
+  test "[integration] each credential shape gets its own remedy, bare-loaded" do
+    out, status = run_bare(<<~RUBY)
+      shapes = {
+        "unset"     => "GraphQL: Resource not accessible by personal access token (createPullRequest)",
+        "scope"     => "GraphQL: Resource not accessible by integration (createPullRequest)",
+        "masked404" => "GraphQL: Could not resolve to a Repository with the name 'x/y'. (repository)"
+      }
+      shapes.each do |label, text|
+        print "===\#{label}===\\n" + Release::GhFailure.abort_message(
+          headline: "boom", output: text, fallback: "Open it by hand."
+        ) + "\\n"
+      end
+    RUBY
+
+    assert status.success?, out
+    # The remedies are MULTI-LINE, so the sections are split on their markers
+    # rather than read a line at a time.
+    sections = out.split(/^===(\w+)===\n/).drop(1).each_slice(2).to_h
+    assert_equal %w[unset scope masked404], sections.keys
+
+    # Three shapes, three DIFFERENT remedies — one shared remedy collapses them.
+    assert_includes sections["unset"], "Re-mint the GitHub App installation token"
+    assert_includes sections["scope"], "unset GH_APP_ITEM"
+    assert_includes sections["masked404"], "gh repo view"
+    refute_includes sections["unset"], "unset GH_APP_ITEM",
+                    "the identity remedy must not leak onto the shape a re-mint DOES fix"
+    refute_includes sections["scope"], "Open it by hand", "all three still classify as credential"
+  end
+
+  # The absolute helper path is computed from __dir__, which is the construct most
+  # likely to differ between a Rails-loaded and a bare-loaded file. Assert it
+  # resolves the same either way, and to a file that exists.
+  test "[integration] the re-mint remedy names an absolute helper that exists" do
+    out, status = run_bare(<<~RUBY)
+      print Release::GhFailure::GH_CREDENTIAL_HELPER
+    RUBY
+
+    assert status.success?, out
+    assert_equal Release::GhFailure::GH_CREDENTIAL_HELPER, out,
+                 "the bare load must resolve the same helper path as the Rails load"
+    assert out.start_with?("/"), "a relative remedy depends on the cwd bin/release was launched from"
+    assert File.executable?(out), "the remedy names #{out}, which is not an executable file"
+  end
+
+  # The recovery text, through the bare path — bin/release prints this one from a
+  # branch that only runs on an interrupted prior run.
+  test "[integration] the interrupted-run recovery quotes gh, bare-loaded" do
+    out, status = run_bare(<<~RUBY)
+      print Release::GhFailure.recovery_message(
+        headline: "  ↷ https://example/811 already merged (interrupted prior run)",
+        output: "failed to merge: Pull request #811 is already merged"
+      )
+    RUBY
+
+    assert status.success?, out
+    assert_includes out, "gh said:"
+    assert_includes out, "Pull request #811 is already merged"
+  end
 end

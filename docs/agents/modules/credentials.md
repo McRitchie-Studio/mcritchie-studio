@@ -44,24 +44,45 @@ credential helpers):
   `mcritchie-studio/bin/gh-app-git-credential` mints a fresh installation token
   per call (via `bin/gh-app-mint-token`); the `GH_APP_ITEM` env var selects the
   identity.
-- **`gh` (and any GitHub API caller)** — export a minted token per session:
+- **`gh` (and any GitHub API caller)** — export a minted token per session, by
+  asking that same helper for one:
 
   ```bash
-  export GH_TOKEN="$(GH_APP_ID="$(op read 'op://agents/github.mcritchie-agent/app-id')" \
-    GH_APP_PEM="$(op read 'op://agents/github.mcritchie-agent/mcritchie-agent.2026-07-29.private-key.pem')" \
-    bin/gh-app-mint-token)"
+  export GH_TOKEN=$(printf 'protocol=https\nhost=github.com\n\n' | \
+    /Users/alex/projects/mcritchie-studio/bin/gh-app-git-credential get | \
+    sed -n 's/^password=//p')
   ```
 
-  Swap both `op://` paths to the deployer item for ship lanes. Installation
-  tokens expire in **1 hour** — a 403 mid-session means re-mint, not broken
-  wiring. Never print the token.
+  **One recipe, both legs.** This is the canonical form, and it is the string
+  `bin/release` prints when a `gh` call fails on credentials
+  (`Release::GhFailure`) — so the tool's advice and this doc cannot drift. It
+  beats calling `bin/gh-app-mint-token` by hand on three counts: it selects the
+  identity through **`GH_APP_ITEM`**, exactly as `git` does, so the two legs can
+  never disagree; it finds the `.pem` attachment **by suffix**, so no key
+  filename is baked in to rot at the next rotation; and the absolute path works
+  from any directory. For a ship lane, `export GH_APP_ITEM=github.mcritchie-deployer`
+  **first** — the same export already governs `git`. Never print the token.
+
+  Installation tokens live **1 hour**, and the two credential faults look
+  different — same remedy, different mechanism:
+
+  | Symptom | Mechanism | Fix |
+  |---------|-----------|-----|
+  | **401 `Bad credentials`** | `GH_TOKEN` is set but **expired** — it is sent and rejected | Re-mint (above) |
+  | **403 `not accessible by personal access token`** | `GH_TOKEN` is **unset or empty**, so `gh` never sends it and falls back to the stored PAT, which lacks the scope | Re-mint (above) |
+  | **403 `not accessible by integration`** | The token is **live**; the App installation lacks the grant | **`unset GH_APP_ITEM`**, then re-mint — a fresh token for the same identity fails identically |
+  | **404 `Could not resolve to a Repository`** | GitHub reports a repo the token may not **see** as one that does not **exist** | Confirm the name (`gh repo view <owner>/<name>`), then re-mint |
 
 The identities:
 
 | Identity (1Password item) | Lane | Grants |
 |---------------------------|------|--------|
-| `github.mcritchie-agent` (**default**) | build / review | Contents + Pull requests + Checks read + Actions + Workflows |
-| `github.mcritchie-deployer` (`export GH_APP_ITEM=github.mcritchie-deployer`) | ship | Contents + Actions + Checks read + Secrets. **No pull-request scope** — the deployer cannot open or merge PRs by design |
+| `github.mcritchie-agent` (**default**) | build / review | Contents write + **Pull requests write** + Checks read + Actions write + Workflows write + Administration write + Metadata/Statuses read |
+| `github.mcritchie-deployer` (`export GH_APP_ITEM=github.mcritchie-deployer`) | ship | Contents write + Actions write + Checks read + Secrets write + Administration write + Metadata/Statuses read. **No `pull_requests` grant at all** — the deployer cannot open or merge PRs by design |
+
+Grants above are the installations' live permission sets, read 2026-08-12 from
+`GET /app/installations`. Re-read them there rather than trusting this table if a
+`not accessible by integration` ever disagrees with it.
 
 Wire it (global, one time):
 
