@@ -1,6 +1,10 @@
 require "test_helper"
 
 class ApplicationHelperTest < ActionView::TestCase
+  # ActionView::TestCase mixes in only the helper its class name names; the app
+  # mixes in all of them. release_state_label reaches for the "at" primitive.
+  include AtTimeHelper
+
   test "compact_time_ago renders the smallest legible unit and guards blank/future times" do
     now = Time.utc(2026, 7, 7, 12, 0, 0)
 
@@ -440,14 +444,28 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_match(/full-cycle/i, deploy["shipped"][:gate])
   end
 
-  test "release_state_label folds a shipped release into 'Shipped <time> ago'" do
-    rel = Release.new(state: "shipped", shipped_at: 7.minutes.ago)
-    assert_match(/\AShipped .+ ago\z/, release_state_label(rel))
+  test "release_state_label folds a shipped release into 'Shipped at <clock>'" do
+    shipped_at = Time.current.change(hour: 15, min: 53)
+    rel = Release.new(state: "shipped", shipped_at: shipped_at)
+
+    assert_equal "Shipped at 3:53p", Nokogiri::HTML.fragment(release_state_label(rel)).text
+    assert_equal shipped_at.to_i.to_s,
+                 Nokogiri::HTML.fragment(release_state_label(rel)).at_css("time")["data-at-epoch"],
+                 "the badge carries the epoch so the client can re-stamp it to the viewer's clock"
   end
 
-  test "release_state_label shows 'Assembled <time> ago' for an assembled current release" do
-    rel = Release.new(state: "assembled", assembled_at: 2.hours.ago)
-    assert_match(/\AAssembled .+ ago\z/, release_state_label(rel, current: true))
+  test "release_state_label demotes the relative phrase to the badge's hover title" do
+    rel = Release.new(state: "shipped", shipped_at: 7.minutes.ago)
+    title = Nokogiri::HTML.fragment(release_state_label(rel)).at_css("time")["title"]
+
+    assert_match(/7 minutes ago/, title)
+  end
+
+  test "release_state_label shows 'Assembled at <clock>' for an assembled current release" do
+    rel = Release.new(state: "assembled", assembled_at: Time.current.change(hour: 14, min: 11))
+
+    assert_equal "Assembled at 2:11p",
+                 Nokogiri::HTML.fragment(release_state_label(rel, current: true)).text
   end
 
   test "release_state_label falls back to the capitalized state when no timestamp applies" do

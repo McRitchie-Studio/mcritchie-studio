@@ -810,19 +810,27 @@ module ApplicationHelper
     "#{seconds / 604_800}w ago"
   end
 
-  # Release-card status badge label. Folds the bare state and its relative time
-  # into one pill ("Shipped 7 minutes ago" / "Assembled 2 hours ago") so the card
-  # no longer repeats the state and a separate "shipped X ago" line. Falls back to
-  # the capitalized state when no timestamp applies (e.g. an in-progress
-  # "Assembling" release, or a shipped release with no recorded shipped_at).
+  # Release-card status badge label. Folds the bare state and the moment it
+  # happened into one pill — "Shipped at 3:53p", "Assembled at Aug 10, 2:11p" —
+  # so the card neither repeats the state nor carries a separate "shipped X ago"
+  # line. The stamp is the "at" primitive (AtTimeHelper), so the clock is the
+  # READER's: a viewer outside the US also gets the country flag trailing it, and
+  # the relative phrase this label used to show moves into the hover title.
+  # Returns HTML. Falls back to the bare capitalized state when no timestamp
+  # applies (an in-progress "Assembling" release, or a shipped release with no
+  # recorded shipped_at).
   def release_state_label(release, current: false)
     if release.shipped_at
-      "Shipped #{time_ago_in_words(release.shipped_at)} ago"
+      release_state_at_label("Shipped", release.shipped_at)
     elsif current && release.assembled_at
-      "Assembled #{time_ago_in_words(release.assembled_at)} ago"
+      release_state_at_label("Assembled", release.assembled_at)
     else
       release.state.to_s.capitalize
     end
+  end
+
+  def release_state_at_label(word, time)
+    safe_join([word, at_time_tag(time)], " ")
   end
 
   # The single timing line shown next to a release's conductor mascot: how long an

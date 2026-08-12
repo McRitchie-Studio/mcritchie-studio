@@ -7,8 +7,22 @@
 # so the default destination for "we should also…" is HERE, and only an operator
 # promote (admin-gated on /triage) mints a task.
 #
-#   bin/triage file --title "Short finding title" [--body "..."] [--source <who>] [--repo <app>]
+#   bin/triage file --title "Short finding title" [--body "..."]
+#                   [--prior-art none|"<what was already there>"]
+#                   [--source <who>] [--repo <app>]
 #   bin/triage list [--status open|promoted|dismissed] [--json]
+#
+# --prior-art answers "did this surface already exist, and under what controls?"
+# It has THREE states, and the default is the point:
+#
+#   (omitted)              -> unknown  "nobody looked" — recorded, not implied
+#   --prior-art none       -> none     "I looked; this surface is new here"
+#   --prior-art "<text>"   -> found    "I looked; here is what was already there"
+#
+# Omitting it is fine and costs nothing — it just says so out loud, because a
+# BLANK prior art gets read as "none found" and that read is how a long-standing
+# defect gets reported as a fresh one (finding-6a5fdcd157b3: the consuming app's
+# deleted view had carried the identical unsandboxed iframe all along).
 #
 # --json prints the full finding rows (BODY included) as one JSON array, which is
 # what a caller needs to tell two findings apart — the human line shows only the
@@ -68,13 +82,77 @@ def all_findings(status)
   rows
 end
 
+# Underscores included on purpose: `--prior_art` is a near-miss worth naming, and
+# a pattern that did not match it would drop that spelling into the generic
+# "unexpected argument(s)" branch with no suggestion attached.
+FLAG_SHAPED = /\A--[a-z][a-z0-9_-]*\z/
+
 def take_value(argv, flag)
   idx = argv.index(flag)
   return nil unless idx
 
-  value = argv[idx + 1] || die!("#{flag} needs a value")
+  value = argv[idx + 1] || die!("#{flag} needs a value — nothing was filed")
+  # `--title --body "x"` must not file a finding titled "--body". A value that
+  # is itself flag-shaped is a MISSING value, not a value.
+  die!("#{flag} needs a value, got the flag #{value} — nothing was filed") if value.match?(FLAG_SHAPED)
   argv.slice!(idx, 2)
   value
+end
+
+# The flags each subcommand accepts, and the near-misses worth naming.
+KNOWN_FLAGS = {
+  "file" => %w[--title --body --prior-art --source --repo],
+  "list" => %w[--status --json]
+}.freeze
+
+NEAR_MISS = {
+  "--detail" => "--body", "--details" => "--body", "--description" => "--body",
+  "--desc" => "--body", "--note" => "--body", "--notes" => "--body",
+  "--text" => "--body", "--message" => "--body", "--content" => "--body",
+  "--name" => "--title", "--summary" => "--title",
+  "--app" => "--repo", "--repository" => "--repo", "--project" => "--repo",
+  "--agent" => "--source", "--who" => "--source", "--from" => "--source",
+  "--prior_art" => "--prior-art", "--priorart" => "--prior-art", "--prior" => "--prior-art"
+}.freeze
+
+# REFUSE loudly. This guard already existed and already exited 1 — but it said
+#   triage: unknown argument(s): --detail <the entire body you just typed>
+# which reads like the command ECHOING your text back, not like a refusal. On
+# 2026-08-11 `--detail` was typed seven times, seven findings were reported as
+# filed, and NONE existed. Same disease as the finding this whole change is
+# about: a tool reporting success it did not achieve. So the refusal now leads
+# with the CONSEQUENCE, names the FLAG rather than the value tail, and points at
+# the near-miss.
+def refuse_unknown_args!(argv, cmd, consequence)
+  return if argv.empty?
+
+  flags = argv.grep(FLAG_SHAPED)
+  warn("triage: REFUSED — #{consequence}.")
+  if flags.empty?
+    warn("triage:   unexpected argument(s): #{argv.join(' ')}")
+  else
+    flags.each do |flag|
+      hint = NEAR_MISS[flag]
+      warn("triage:   unrecognized flag #{flag}#{hint ? " — did you mean #{hint}?" : ''}")
+    end
+  end
+  warn("triage:   #{cmd} accepts: #{KNOWN_FLAGS.fetch(cmd).join(' ')}")
+  exit(1)
+end
+
+# Map the one --prior-art flag onto the model's [state, note] pair. One flag
+# keeps filing cheap; the literal words `none` and `unknown` are the two
+# reserved values and ANYTHING else is read as the evidence itself. The
+# confirmation line echoes the RESOLVED state, so a value that lands in a state
+# you did not mean is visible the moment you file.
+def prior_art_pair(value)
+  return ["unknown", nil] if value.nil?
+
+  case value.strip.downcase
+  when "none", "no", "n/a" then ["none", nil]
+  when "unknown", "?" then ["unknown", nil]
+  else ["found", value.strip]
+  end
 end
 
 def usage!
@@ -85,23 +163,45 @@ end
 cmd = ARGV.shift
 case cmd
 when "file"
-  title = take_value(ARGV, "--title") || die!("--title is required")
+  title = take_value(ARGV, "--title") || die!("--title is required — nothing was filed")
   body = take_value(ARGV, "--body")
   source = take_value(ARGV, "--source")
   repo = take_value(ARGV, "--repo")
-  die!("unknown argument(s): #{ARGV.join(' ')}") unless ARGV.empty?
+  prior_art, prior_art_note = prior_art_pair(take_value(ARGV, "--prior-art"))
+  refuse_unknown_args!(ARGV, "file", "nothing was filed")
   finding = api(:post, "/api/v1/triage_findings",
-                { title: title, body: body, source: source, repo: repo }.compact)["data"]
+                { title: title, body: body, source: source, repo: repo,
+                  prior_art: prior_art, prior_art_note: prior_art_note }.compact)["data"]
   puts("filed #{finding["slug"]}  #{finding["title"]}")
+  # Echoed in all three states, and ONE line in each. The uninvestigated line is
+  # a nudge, not a gate: requiring prior art would make the cheapest path "don't
+  # file it", and this inbox exists because filing must stay free. It is one line
+  # because `bin/release retro` files follow-ups in bulk through this same path —
+  # a paragraph per finding would train everyone to scroll past it. The teaching
+  # lives in the usage header and in modules/pr-review-sop.md.
+  if finding["prior_art"] == "unknown"
+    warn("  prior art: NOT INVESTIGATED — recorded as such, not as \"none\". " \
+         "Checked what was already there? Refile with --prior-art.")
+  else
+    puts("  prior art: #{finding['prior_art']}#{finding['prior_art_note'] ? " — #{finding['prior_art_note']}" : ''}")
+  end
 when "list"
   status = take_value(ARGV, "--status") || "open"
   as_json = take_flag(ARGV, "--json")
-  die!("unknown argument(s): #{ARGV.join(' ')}") unless ARGV.empty?
+  refuse_unknown_args!(ARGV, "list", "nothing was listed")
   rows = all_findings(status)
   if as_json
     puts(JSON.generate(rows))
   else
-    rows.each { |f| puts("#{f["slug"]}  [#{f["status"]}]  #{f["title"]}") }
+    # The human line stays a SCAN line. Marking all ~90 legacy rows "unknown"
+    # would be noise everyone tunes out within a day, so only an INVESTIGATED
+    # finding earns a marker — the list rewards the check instead of nagging
+    # about its absence. The loud unknown lives where the finding is actually
+    # acted on: the file confirmation, the /triage card, and the promoted brief.
+    rows.each do |f|
+      mark = f["prior_art"] && f["prior_art"] != "unknown" ? "  [prior art: #{f['prior_art']}]" : ""
+      puts("#{f["slug"]}  [#{f["status"]}]#{mark}  #{f["title"]}")
+    end
     puts("(#{rows.size} finding(s))")
   end
 else
