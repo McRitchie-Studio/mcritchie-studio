@@ -469,7 +469,7 @@ Gems and apps are handled differently at both ends of the Deploy workflow:
   `docs/agents/modules/deployment.md` → "Releasing a gem (producer-first)" for
   the operator runbook.
 
-This is the ordered `release_slug` from §4.2 ("gem publish → consumer lockfile
+This is the ordered `release_conductor` lane from §4.2 ("gem publish → consumer lockfile
 bump → app deploy"), now expressed as first-class release membership rather than
 a separate lane: the gem and its consumers can be members of the same release,
 sequenced by kind + `dependencies`.
