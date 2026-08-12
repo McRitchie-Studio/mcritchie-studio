@@ -23,8 +23,15 @@ module Api
 
       private
 
+      # `prior_art` is permitted but never defaulted here — the column's NOT NULL
+      # default ("unknown") owns that, so a caller that omits the field records
+      # "nobody looked" rather than silently inheriting a friendlier state. An
+      # out-of-range value 422s (model inclusion) instead of being coerced: a
+      # prior-art claim the board could not parse must not become a claim it
+      # invented. The lane split is untouched — file and list only; promote and
+      # dismiss stay admin-gated on the web side.
       def finding_params
-        params.permit(:title, :body, :source, :repo)
+        params.permit(:title, :body, :source, :repo, :prior_art, :prior_art_note)
       end
     end
   end

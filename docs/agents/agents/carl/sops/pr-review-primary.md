@@ -124,6 +124,17 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
      agent's in-flight work.
    - **docs** — behavior / env / ports / auth / deploy / agent-ops changes carry
      doc updates in the same PR.
+   - **prior art** — before writing that the diff *introduces*, *exposes*, or
+     *first makes reachable* anything, check whether the surface was ALREADY
+     there. Read what the diff replaced, deleted files included (`git show
+     origin/accepted:<path>`, `git diff --diff-filter=D --name-only origin/accepted...HEAD`), compare route + CSP +
+     auth + data, and state the delta in one line ("net exposure change: zero"
+     is a complete answer). If you did not look, write `prior art: not
+     investigated` — an omission reads as "none", and a reader will act on it.
+     This is not hypothetical: an advisory that skipped it produced
+     `finding-6a5fdcd157b3`, which called turf-monster "the first consumer where
+     the iframe actually renders" when TM's *deleted* view had carried the
+     identical unsandboxed iframe, same URL, same CSP, all along.
 
 4. **Collect the light's report** and classify all findings (yours + the light's)
    as blockers, non-blockers, or questions. **A blocker is a REACHABLE
@@ -166,6 +177,15 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
      bin/task merged <task-slug> accepted     # stamp the git-location BEFORE the stage move
      bin/task move <task-slug> reviewed
      bin/task note <task-slug> --handoff "Carl review approved; merged into accepted; ready for Avi's qa-release sweep." --agent carl
+     ```
+
+     `bin/task merged` verifies its own write, so a silent success IS the stamp.
+     If you double-check it anyway, read the **top-level** field — `merged` is a
+     Task column, so `.metadata.devops.merged` is `null` on every task, stamped
+     or not, and reads as a dropped write when nothing dropped:
+
+     ```bash
+     bin/task show <task-slug> --verbose | grep merged   # or: bin/task field <task-slug> merged
      ```
 
      Order matters: merge → stamp → move, so the task is `reviewed` **iff** its

@@ -78,6 +78,26 @@ class TestDatabasePurgeTest < ActiveSupport::TestCase
     assert_not_includes counts.keys, "releases", "empty tables must not be reported as polluted"
   end
 
+  test "nonempty_tables answers the same question as row_counts, in one round trip" do
+    # The cheap probe (one UNION ALL of EXISTS) is what makes TestDatabaseLeakGuard
+    # affordable after EVERY test — but only while it agrees with the authoritative
+    # COUNT(*). Asserted as that PROPERTY, over the whole un-fixtured surface,
+    # rather than against a remembered pair of table names.
+    Pokemon.create!(dex: 143, name: "Snorlax", slug: "probe-snorlax", generation: 1)
+    Task.create!(title: "Row Count Probe Subject", slug: "probe-subject", stage: "designed")
+    tables = TestDatabasePurge.unfixtured_tables
+
+    assert_equal TestDatabasePurge.row_counts(tables).keys.sort,
+                 TestDatabasePurge.nonempty_tables(tables).sort
+  end
+
+  test "nonempty_tables is empty on an empty set, and never invents a query" do
+    # The degenerate case has a real caller: a schema whose tables are ALL fixtured
+    # would hand this an empty list, and building SQL from it would be a syntax error
+    # at the worst moment (every test's teardown).
+    assert_empty TestDatabasePurge.nonempty_tables([])
+  end
+
   # ---------------------------------------------------------------------------
   # THE GUARD. purge! empties EVERY table of whatever database the connection
   # holds, so it must PROVE that database is the test database before it fires.

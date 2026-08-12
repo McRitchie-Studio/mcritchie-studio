@@ -169,6 +169,25 @@ bin/release prepare --yes
    with no `merged` stamp (`merged: ""`) is a HELD anomaly — review never landed
    its feat PR on `accepted` — so it is warned and left `reviewed` (re-review to
    heal), never swept onto the RC.
+3b. **VERIFY the promote reached the candidate** — the stale-tree gate, and the
+   first thing the deploy half does. For every three-rung repo in the deploy
+   plan it re-reads `origin/release..origin/accepted` and REFUSES unless
+   `release` already carries `accepted`. This is not a second copy of step 3's
+   read; it asserts step 3's EFFECT. Step 3 chooses which repos to promote from
+   BOARD STAMPS (candidates stamped `merged: "accepted"`), so a commit that
+   reached `accepted` with **no task behind it** — a conductor zap onto the
+   sanctioned seam, a hand-merge, a review whose stamp never landed — is
+   invisible to it, the promote is skipped, and every step below used to succeed
+   on the OLD tree and print `✓ Assembled`. That happened live on 2026-08-11:
+   `accepted` at `ed4d16a`, `release` at `b032e58`, one commit stranded, QA
+   serving the previous tree, and both sentences prepare printed were true of a
+   tree that did not contain the fix.
+   It **refuses rather than promoting**, even on an `assembled` candidate, and
+   the refusal prints the stranded SHAs plus the exact recovery (see the
+   **STALE TREE** row in the abort table below). A rung it could not read counts
+   as stale — a failed read is not a clean read. A dry run takes no fetch, so
+   the gate runs live only, and a normal sweep just promoted, so it measures
+   level and rides straight through.
 4c. **Merge `main` forward into `release`** in every app **and gem repo**, so the
    branch about to be gated CONTAINS what is already live in production. Without
    it a hotfix pushed straight to `main` **blocks the ship**: `bin/release ship`
@@ -348,6 +367,11 @@ double-merge. It will not:
 - **A re-run resumes the candidate**; it does not open a second one.
 - **Stage stamps are first-write-wins**, so re-posted timeline boundaries are safe
   no-ops (see the backfill note above).
+- **A re-run resumes; it does not paper over.** The one case where a re-run
+  REFUSES instead of finishing is a stale tree (step 3b): work reached `accepted`
+  that the promote could not carry, so finishing would deploy — and report ✓ over
+  — a tree missing it. That refusal is the gate working; take the **STALE TREE**
+  row in the abort table below, then re-run.
 
 ### ABORT — fix the cause, THEN re-run
 
@@ -362,6 +386,8 @@ must not reflexively re-run. Each abort names its own case and its own fix:
 | **Pre-QA gate red — a member REGRESSION** | `bin/release eject <task> --feedback "<failing evidence>"`, then revert its merge commit on `release` (the abort prints the guidance) — as the eject step above says | re-run `prepare`; the rest of the RC rides |
 | **Pre-QA gate red — ENV/toolchain** (unsatisfied bundle, Postgres down, Ruby divergence) | **Nothing to eject or revert.** Fix the environment exactly as the abort names it | re-run `prepare` |
 | **QA deploy / boot FAILED** | Fix the boot failure (the summary prints the `bin/qa-server deploy …` retry); eject the member if it is the cause | re-run `prepare` **once QA boots** |
+| **STALE TREE** (step 3b — "prepare refused: … would deploy a tree that does NOT contain `accepted`") | **This is the good outcome — the sweep caught itself about to report success over an old tree.** The abort prints the repo, the stranded SHAs with their subjects, and the two commands to run, filled in. Land the stranded work on `release` by hand: `gh pr create --repo <owner/name> --base release --head accepted …`, **watch that PR's CI to green**, then `gh pr merge <pr-url> --merge --match-head-commit <the accepted head the abort names>`. Do **not** hand-move `release` with a push or a reset, and do **not** go looking for a flag to make prepare promote it for you — there isn't one, deliberately: on an `assembled` candidate a silent promote would leave the recorded QA verdict describing a tree nobody tested. The commits are stranded because they reached `accepted` with **no task behind them** (a conductor zap, a hand-merge, or a review whose `merged` stamp never landed) — if a task DOES own them, the real fix is its missing stamp, so re-review it instead | re-run `prepare`; it promotes nothing new, re-gates, and re-deploys QA over the tree that now carries the work |
+| **STALE TREE — rung could NOT be read** (step 3b — "a failed read is not a clean read") | The gate could not measure `origin/release..origin/accepted` for a repo it was about to deploy: a missing sibling checkout, an unfetched branch, a failed `rev-list`. Unverified is treated as stale on purpose. Clone the repo as a sibling (or `git fetch origin` in it) so the rung can be read | re-run `prepare` |
 | **`accepted → release` promote failed** (a conflict on the batch PR) | Resolve the conflict on the batch PR (or `bin/task block` the offending member) | re-run `prepare` |
 | **Member left `reviewed` with `merged: ""`** (review never landed its feat PR on `accepted`) | Re-review the task so `pr-review` merges it onto `accepted` | re-run `prepare` |
 | **CONSUMER LOCK BUMP did not land** (`bundle lock … did not land in <repo> … resolves <old>, wanted <new>`) | **Nothing to fix in the code — WAIT.** The gem published fine; the resolver just cannot see it yet. The abort already retried on a 5s→10s backoff. Watch the surface **bundler** resolves through — the compact index: `curl -sS https://index.rubygems.org/info/<gem> \| tail -5` — until the version appears THERE. Do **not** wait on `https://rubygems.org/api/v1/versions/<gem>.json` or the HTML gem page: both are separate services with their own CDN caching, so a version showing on either is not proof bundler can resolve it. Do **not** bump the version: the gem is already published, and a bump would burn a number for nothing | re-run `prepare`; the publish skips as already-live and the bump lands |

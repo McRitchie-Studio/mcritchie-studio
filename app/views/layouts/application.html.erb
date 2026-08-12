@@ -122,5 +122,11 @@
         would be cloned by Alpine and never run. Vendored SortableJS is already
         loaded globally by layouts/studio/_head. %>
     <%= render "studio/board_assets" %>
+
+    <%# The "at" format's re-stamper (AtTimeHelper). Installed page-level for the
+        whole app, not per-view: any page may render an at_time_tag, and every one
+        of them needs the viewer's clock and flag. Self-guarded, so a second render
+        is a no-op. %>
+    <%= render "shared/at_time_script" %>
   </body>
 </html>

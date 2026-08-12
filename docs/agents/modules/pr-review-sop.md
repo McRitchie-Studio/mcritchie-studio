@@ -162,6 +162,44 @@ Each reviewer goes through the review cycle and **responds with concise notes**:
   second read.
 - **docs** — behavior/env/ports/auth/deploy changes carry doc updates.
 
+### The prior-art obligation — before you say a change EXPOSES anything
+
+**Whoever asserts that a diff introduces, exposes, or widens a risk owes the
+prior-art check first.** Not "is this bad?" — *was it already there?* Answer
+three things before the words "introduces", "first consumer", "now user-visible",
+or "makes it reachable" go into a finding, a block, or an advisory:
+
+1. **Did this surface already exist here?** Read what the diff REPLACED, deleted
+   files included — `git show origin/accepted:<path>` and `git diff --diff-filter=D --name-only origin/accepted...HEAD`.
+   A moved or adopted view is not a new view.
+2. **Under what controls?** Same route, same CSP, same auth, same data — or different?
+3. **What actually CHANGED?** State the delta in one line. "Net exposure change:
+   zero" is a complete and valuable answer.
+
+If you did not look, **say so in those words** — `prior art: not investigated`.
+A finding that omits prior art does not read as silent; it reads as *"none"*, and
+the reader will act on that. When you file the finding, record the answer:
+
+```bash
+bin/triage file --title "…" --body "…" --repo <app> --source <soul> \
+  --prior-art none                       # I looked; the surface is new here
+bin/triage file --title "…" --prior-art "TM's deleted preview view carried the identical iframe since 2025-11"
+# omit --prior-art entirely -> recorded as "unknown" (nobody looked), and it says so
+```
+
+**Why this is a rule and not a nicety.** `finding-84205478cca3` correctly flagged
+an unsandboxed engine preview iframe and correctly noted the hub was safe (zero
+registered preview builders). It travelled without the prior-art question. The
+next reviewer inherited that framing and filed `finding-6a5fdcd157b3` — "the
+first consumer where the iframe actually renders", "the adoption PR makes it
+user-visible". **Both false.** turf-monster's *deleted* view had carried the
+identical unsandboxed iframe, at the identical URL, over the same 8 previews,
+under the same production CSP. Net exposure change: zero (corrected as
+`finding-8b29dc565d28`). The error direction is what makes it a rule: it
+inflated urgency on a long-standing defect while implicating a same-day ship,
+and it was caught only because a deletion-parity check forced someone to read
+code that no longer exists.
+
 Reviewers may also broadcast in-app progress with
 `POST /api/v1/tasks/:slug/review_events` (primary = `primary` swimlane, light =
 light swimlane) — see [`parallel-agent-devops.md`](parallel-agent-devops.md#picking-the-domain-light-binreviewer-select).
