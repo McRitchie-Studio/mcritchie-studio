@@ -18,6 +18,7 @@ require "minitest/autorun"
 require "json"
 require "tmpdir"
 require "fileutils"
+require "socket"
 require_relative "../support/session_env"
 
 class DorCheckBrowserEvidenceTest < Minitest::Test
@@ -93,13 +94,42 @@ class DorCheckBrowserEvidenceTest < Minitest::Test
     end
   end
 
+  # WHERE THIS SUBPROCESS'S BOARD WRITES GO, AND WHY IT IS PINNED.
+  #
+  # bin/dor-check defaults BASE_URL to ENV.fetch("TASK_API_BASE",
+  # "https://mcritchie.studio") — PRODUCTION — and a real merge-gate verdict shells
+  # bin/gate to open+close a durable GateRun, which is a board write. This suite is
+  # safe from that today only because every invocation passes --file, and the emit
+  # is gated `options[:file].nil?`.
+  #
+  # THAT IS A GUARD INSIDE THE CODE UNDER TEST, which is the wrong place for this
+  # suite's containment to live: delete that one condition in bin/dor-check and this
+  # file starts writing GateRuns to the production board, silently, with every
+  # assertion still green. The retro leak we closed had exactly that shape — a test
+  # shelling a CLI whose write was invisible from the test's own assertions.
+  #
+  # So containment is pinned HERE, on the path, not inferred from the callee's
+  # behaviour: TASK_API_BASE points at a local sink this test owns. Proven to
+  # intercept rather than assumed — see
+  # test_integration_the_board_pin_actually_intercepts, which drives the DANGEROUS
+  # shape (no --file, so the emit DOES fire) and asserts the sink RECEIVED the
+  # request. A positive receipt, not the absence of one.
+  SINK_HOST = "127.0.0.1"
+
+  def board_pinned_env(extra = {})
+    SessionEnv.neutralized.merge(
+      "TASK_API_BASE" => "http://#{SINK_HOST}:#{@sink_port || 9}",
+      "ATOMIC_CAPTURE_URL" => "http://#{SINK_HOST}:#{@sink_port || 9}"
+    ).merge(extra)
+  end
+
   def check_in(dir, devops, changed)
     Dir.mktmpdir do |tmp|
       path = File.join(tmp, "task.json")
       File.write(path, JSON.generate(
         "slug" => "task-test", "title" => "T", "metadata" => { "devops" => devops }
       ))
-      env = SessionEnv.neutralized.merge(
+      env = board_pinned_env(
         "DOR_CHECK_SUITE_EVIDENCE" => "ok",
         "DOR_CHECK_DIFF_ROOT" => dir,
         "DOR_CHECK_DIFF_BASE" => "base-ref",
@@ -108,6 +138,52 @@ class DorCheckBrowserEvidenceTest < Minitest::Test
       out = IO.popen(env, "#{BIN} --file #{path} 2>/dev/null", &:read)
       [out, $?.exitstatus]
     end
+  end
+
+  # THE HARNESS SELF-TEST. A pin nobody proved is advice.
+  #
+  # Drives bin/dor-check in the shape that DOES emit a board write — a real slug,
+  # no --file — with TASK_API_BASE aimed at a sink socket this test owns, and
+  # asserts the sink saw traffic. If a future change to bin/dor-check, bin/gate or
+  # the env plumbing routes board calls somewhere this pin cannot reach, this test
+  # fails and NAMES the portability break, instead of the suite quietly resuming
+  # writes to production.
+  def test_integration_the_board_pin_actually_intercepts
+    server = TCPServer.new(SINK_HOST, 0)
+    port = server.addr[1]
+    received = []
+    accepter = Thread.new do
+      while (client = server.accept)
+        line = client.gets
+        received << line.to_s
+        client.write("HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n")
+        client.close
+      end
+    rescue IOError, Errno::EBADF
+      nil
+    end
+
+    env = SessionEnv.neutralized.merge(
+      "TASK_API_BASE" => "http://#{SINK_HOST}:#{port}",
+      "ATOMIC_CAPTURE_URL" => "http://#{SINK_HOST}:#{port}"
+    )
+    # No --file: this is the shape whose verdict emits a durable GateRun.
+    IO.popen(env, "#{BIN} some-slug-that-does-not-exist 2>/dev/null", &:read)
+
+    deadline = Time.now + 15
+    sleep 0.05 while received.empty? && Time.now < deadline
+
+    refute_empty received,
+                 "the board pin did NOT intercept: bin/dor-check made no request to the pinned " \
+                 "TASK_API_BASE. Either it reached a DIFFERENT host — production is its default — " \
+                 "or the env plumbing changed. Containment for this suite lives on this pin; if " \
+                 "the pin is not on the path, the suite is one deleted `options[:file].nil?` away " \
+                 "from writing GateRuns to the live board."
+    assert_match(%r{^(GET|POST|PATCH|PUT) }, received.first,
+                 "expected an HTTP request line at the sink, got #{received.first.inspect}")
+  ensure
+    accepter&.kill
+    server&.close
   end
 
   PARTIAL = "app/views/studio/banners/_stack.html.erb"
