@@ -1,0 +1,149 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/measure-client-surface — how often would the browser-evidence gate FIRE?
+#
+# WHY THIS IS IN THE TREE. The gate's central claim is that it is TARGETED rather
+# than blanket, and that claim is a NUMBER. The first version of this harness lived
+# in a scratch directory, which cost twice: a reviewer could not re-run it to check
+# the claim after finding a detector bug, and three different copies of the
+# "detections" count (this module's header, docs/agents/modules/testing.md, and two
+# test files) drifted apart with nothing able to reconcile them. A measurement that
+# only its author can reproduce is a claim, not evidence.
+#
+#   bin/measure-client-surface                       # default repo set
+#   bin/measure-client-surface --repos ../turf-monster --limit 100
+#   bin/measure-client-surface --json                # machine-readable
+#
+# It walks each repo's merged feature units (first-parent merge commits), and for
+# each one asks ClientSurfaceDiff the same question bin/dor-check asks: comparing
+# the merge's BASE tree to its HEAD tree, did this unit add browser code?
+
+require "json"
+require "optparse"
+require "set"
+require_relative "lib/client_surface_diff"
+require_relative "lib/code_diff"
+
+DEFAULT_REPOS = %w[
+  /Users/alex/projects/mcritchie-studio
+  /Users/alex/projects/studio-engine
+  /Users/alex/projects/turf-monster
+].freeze
+
+options = { repos: nil, limit: 250, json: false }
+OptionParser.new do |o|
+  o.banner = "Usage: bin/measure-client-surface [--repos a,b] [--limit N] [--json]"
+  o.on("--repos LIST", "Comma-separated repo paths") { |v| options[:repos] = v.split(",").map(&:strip) }
+  o.on("--limit N", Integer, "Merge commits to scan per repo (default 250)") { |v| options[:limit] = v }
+  o.on("--json", "Emit JSON") { options[:json] = true }
+end.parse!
+
+def git(root, *args)
+  out = IO.popen(["git", "-C", root, *args], err: File::NULL, &:read)
+  $?.success? ? out : nil
+end
+
+# One shipped unit of work = one first-parent merge of a feature branch.
+def feature_merges(root, limit)
+  raw = git(root, "log", "--merges", "--first-parent", "-n", limit.to_s, "--format=%H\t%s", "origin/main") ||
+        git(root, "log", "--merges", "--first-parent", "-n", limit.to_s, "--format=%H\t%s", "HEAD")
+  return [] unless raw
+
+  raw.split("\n").filter_map do |line|
+    sha, subject = line.split("\t", 2)
+    next unless subject.to_s.match?(%r{from [\w-]+/})
+
+    [sha, subject]
+  end
+end
+
+Unit = Struct.new(:repo, :sha, :subject, :programs, :bindings, :present, :evidence, keyword_init: true)
+
+units = []
+(options[:repos] || DEFAULT_REPOS).each do |root|
+  next unless File.directory?(File.join(root, ".git"))
+
+  name = File.basename(root)
+  feature_merges(root, options[:limit]).each do |sha, subject|
+    parents = git(root, "rev-list", "--parents", "-n", "1", sha).to_s.split
+    next if parents.size < 3
+
+    base, head = parents[1], parents[2]
+    names = git(root, "diff", "--name-status", "-M", "#{base}...#{head}")
+    next unless names
+
+    files = CodeDiff.paths_from_name_status(names).uniq
+    next if files.empty?
+
+    # The SAME inputs bin/dor-check builds: full head + base content per template.
+    head_contents = {}
+    base_contents = {}
+    files.each do |path|
+      next unless ClientSurfaceDiff.template?(path)
+
+      head_contents[path] = git(root, "show", "#{head}:#{path}") || next
+      base_contents[path] = git(root, "show", "#{base}:#{path}") || ""
+    end
+    spec_contents = files.select { |f| ClientSurfaceDiff.browser_spec?(f) }
+                         .to_h { |f| [f, git(root, "show", "#{head}:#{f}").to_s] }
+
+    added = ClientSurfaceDiff.added_surfaces(files, head_contents, base_contents)
+    units << Unit.new(
+      repo: name, sha: sha[0, 8], subject: subject.to_s[0, 68],
+      programs: added.select(&:program?), bindings: added.reject(&:program?),
+      present: ClientSurfaceDiff.present_surfaces(files, head_contents, base_contents),
+      evidence: ClientSurfaceDiff.evidence_specs(files, spec_contents)
+    )
+  end
+end
+
+by_repo = units.group_by(&:repo).transform_values do |rows|
+  fires = rows.select { |r| r.programs.any? }
+  {
+    units: rows.size,
+    blocking: fires.size,
+    blocking_pct: rows.empty? ? 0.0 : (100.0 * fires.size / rows.size).round(1),
+    with_evidence: fires.count { |r| r.evidence.any? },
+    would_refuse: fires.count { |r| r.evidence.empty? },
+    reporting: rows.count { |r| r.programs.empty? && (r.bindings.any? || r.present.any?) },
+    silent: rows.count { |r| r.programs.empty? && r.bindings.empty? && r.present.empty? }
+  }
+end
+
+detections = units.flat_map { |u| u.programs + u.bindings }
+histogram = detections.group_by { |s| "#{s.tier}: #{s.reason}" }.transform_values(&:size)
+totals = {
+  units: units.size,
+  detections: detections.size,
+  blocking: units.count { |u| u.programs.any? },
+  would_refuse: units.count { |u| u.programs.any? && u.evidence.empty? }
+}
+
+if options[:json]
+  puts JSON.pretty_generate(totals: totals, by_repo: by_repo, histogram: histogram)
+  exit 0
+end
+
+puts "=" * 74
+puts "CLIENT-SURFACE CENSUS — #{totals[:units]} merged feature units, #{by_repo.size} repos"
+puts "=" * 74
+by_repo.each do |repo, s|
+  puts
+  puts "#{repo}: #{s[:units]} units"
+  puts "  BLOCKING (diff adds a browser PROGRAM): #{s[:blocking]} (#{s[:blocking_pct]}%)"
+  puts "    carried browser evidence:             #{s[:with_evidence]}"
+  puts "    would have been REFUSED:              #{s[:would_refuse]}"
+  puts "  REPORTING (bindings / carried scripts): #{s[:reporting]}"
+  puts "  SILENT (no client surface at all):      #{s[:silent]}"
+end
+puts
+puts "=" * 74
+puts "DETECTIONS BY KIND — #{totals[:detections]} total"
+puts "=" * 74
+histogram.sort_by { |_, v| -v }.each { |reason, n| puts format("  %-34s %4d", reason, n) }
+puts
+puts format("TOTAL: %d units, %d blocking (%.1f%%), %d would refuse",
+            totals[:units], totals[:blocking],
+            totals[:units].zero? ? 0 : 100.0 * totals[:blocking] / totals[:units],
+            totals[:would_refuse])
