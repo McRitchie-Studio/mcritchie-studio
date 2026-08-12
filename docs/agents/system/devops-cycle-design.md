@@ -1124,6 +1124,38 @@ whole contract is non-blocking. The `--file-tasks` titles are NOT slug-tagged �
 `Task::TITLE_WORD_RANGE` caps titles at 3-5 words, so a `(rel-…)` suffix would
 422 the create; the release rides in `agent_context` there instead.
 
+**PRIOR ART — the three-state field every finding carries.** A finding records
+whether anyone checked what was ALREADY on the surface it describes, because a
+blank gets read as "nothing was there":
+
+| State | Means | How to record it |
+|-------|-------|------------------|
+| `unknown` | **Nobody looked.** The default — an answer, not an absence. | omit `--prior-art` |
+| `none` | Somebody looked; the surface is new here. | `--prior-art none` |
+| `found` | Somebody looked; `prior_art_note` says what was there. | `--prior-art "<evidence>"` |
+
+The column is `NOT NULL DEFAULT 'unknown'`, so "nobody looked" is stored as a
+statement rather than a NULL; `found` without a note is rejected (a claimed check
+with no evidence is the same blank in a badge). It is **never required** — filing
+must stay free, and a requirement would only make the cheapest path "don't file
+it", which is the behaviour this inbox exists to prevent. It is instead made
+**loud** at the three points where a finding is acted on: `bin/triage file` warns
+on stderr when it files an uninvestigated one, the `/triage` card renders
+**⚠ Prior art: NOT INVESTIGATED**, and **promotion injects it into the new task's
+`agent_context`** with the instruction to establish what was there before assuming
+the change introduced it. `bin/triage list` marks only the *investigated* rows —
+~90 rows all reading "unknown" is noise everyone tunes out, and a signal nobody
+reads is worse than none.
+
+The cost of not having it, measured once: `finding-84205478cca3` correctly flagged
+an unsandboxed engine preview iframe, but travelled without the prior-art question.
+The next reviewer inherited the framing and filed `finding-6a5fdcd157b3` — "the
+first consumer where the iframe actually renders", "the adoption PR makes it
+user-visible". Both false; turf-monster's *deleted* view had carried the identical
+iframe, same URL, same 8 previews, same production CSP. Net exposure change: zero
+(`finding-8b29dc565d28`). The reviewer's side of this is an obligation, not a
+field — see [`../modules/pr-review-sop.md`](../modules/pr-review-sop.md#the-prior-art-obligation--before-you-say-a-change-exposes-anything).
+
 The gather + render rule is the pure, unit-tested
 `Release::Retro` (`.gather` / `.render` / `.write_doc`); the CLI reaches it through
 the same read-only `conductor` runner and writes the returned markdown to the local
