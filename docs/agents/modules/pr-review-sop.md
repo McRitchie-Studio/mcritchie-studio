@@ -170,7 +170,7 @@ three things before the words "introduces", "first consumer", "now user-visible"
 or "makes it reachable" go into a finding, a block, or an advisory:
 
 1. **Did this surface already exist here?** Read what the diff REPLACED, deleted
-   files included — `git show origin/accepted:<path>` and `git diff --diff-filter=D`.
+   files included — `git show origin/accepted:<path>` and `git diff --diff-filter=D --name-only origin/accepted...HEAD`.
    A moved or adopted view is not a new view.
 2. **Under what controls?** Same route, same CSP, same auth, same data — or different?
 3. **What actually CHANGED?** State the delta in one line. "Net exposure change:

@@ -127,7 +127,7 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
    - **prior art** — before writing that the diff *introduces*, *exposes*, or
      *first makes reachable* anything, check whether the surface was ALREADY
      there. Read what the diff replaced, deleted files included (`git show
-     origin/accepted:<path>`, `git diff --diff-filter=D`), compare route + CSP +
+     origin/accepted:<path>`, `git diff --diff-filter=D --name-only origin/accepted...HEAD`), compare route + CSP +
      auth + data, and state the delta in one line ("net exposure change: zero"
      is a complete answer). If you did not look, write `prior art: not
      investigated` — an omission reads as "none", and a reader will act on it.

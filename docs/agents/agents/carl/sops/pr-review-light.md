@@ -67,7 +67,7 @@ note it as a finding — do not guess.
 3. **Classify findings** as blockers, non-blockers, or questions. Before any
    finding claims the diff *introduces*, *exposes*, or *first makes reachable*
    something, check the **prior art**: read what the diff replaced, deleted files
-   included (`git show origin/accepted:<path>`, `git diff --diff-filter=D`), and
+   included (`git show origin/accepted:<path>`, `git diff --diff-filter=D --name-only origin/accepted...HEAD`), and
    say what actually changed. "Net exposure change: zero" is a complete answer.
    If you did not look, write `prior art: not investigated` — an omission gets
    read as "none", and Carl will carry that read into his verdict.
