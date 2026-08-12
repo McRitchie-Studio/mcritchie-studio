@@ -1181,10 +1181,17 @@ class ReleaseCliTest < Minitest::Test
         {}
       end
     end
+    # PROMOTE-AWARE, because prepare now VERIFIES the promote's effect (step 3b's
+    # stale-tree gate) instead of trusting that it ran. A stub that answered
+    # "accepted is 2 ahead" both before AND after `gh pr merge` would be
+    # describing a promote that did nothing, and the gate would rightly refuse it.
+    # So the batch merge flips $promoted and the rung goes level — exactly what
+    # landing accepted on release does to the real rev-list.
+    $promoted = false
     def sh(*a, **k)
       g = gate_git(a, k)
       return g if g
-      return ["2", true] if a[0] == "git" && a.include?("rev-list")   # accepted ahead of release
+      return [($promoted ? "0" : "2"), true] if a[0] == "git" && a.include?("rev-list") # accepted ahead of release
       return ["git@github.com:McRitchie-Studio/mcritchie-studio.git", true] if a[0] == "git" && a.include?("remote")
       return ["", true] if a[0] == "gh" && a[1] == "pr" && a[2] == "list"   # no existing batch PR
       if a[0] == "gh" && a[1] == "pr" && a[2] == "create"
@@ -1193,12 +1200,154 @@ class ReleaseCliTest < Minitest::Test
       end
       if a[0] == "gh" && a.include?("merge")
         $stdout.puts("GH-MERGE " + a.find { |x| x.to_s.start_with?("https") }.to_s)
+        $promoted = true
         return ["", true]
       end
       return ["200", true] if a.join(" ").include?("curl")
       ["", true]
     end
   RUBY
+
+  # --- prepare step 3b: the STALE-TREE GATE ------------------------------------
+  #
+  # THE INCIDENT, reproduced (measured live 2026-08-11): a fix was committed to
+  # `accepted` AFTER a candidate reached `assembled`. It had no task behind it (a
+  # conductor zap onto a sanctioned seam), so it was not a sweep candidate, so no
+  # repo carried a merged:"accepted" stamp, so `promote_repos` was EMPTY and the
+  # promote never ran. prepare then re-recorded, re-deployed the SAME SHA, and
+  # printed `✓ Assembled`. Both sentences were true — of a tree missing the fix.
+  # `accepted` ed4d16a, `release` b032e58, one commit stranded, QA on the old tree.
+  #
+  # The stub drives the REAL git reads (fetch / rev-list / log / remote) through
+  # `sh`, so these exercise the whole wiring — the repos: scope, require_checkout:,
+  # the commit parse, the remote lookup — not just the pure verdict.
+  def stale_tree_stub(ahead: 1, state: "assembled", rev_list_ok: true)
+    GATE_GIT_STUB +
+      %(ENV["RELEASE_CI_STATUS"] = "green"\n) +
+      %(def repo_path(_repo) = #{self.class.stub_repo.inspect}\n) +
+      %(ACCEPTED_AHEAD = #{ahead}\n) +
+      %(REV_LIST_OK = #{rev_list_ok.inspect}\n) +
+      %(RC_STATE = #{state.inspect}\n) + <<~'RUBY'
+        def conductor(ruby, read_only: false)
+          # Nothing to sweep — the stranded commit has NO task behind it — but a
+          # candidate IS in flight. That is prepare's self-healing re-run shape.
+          if ruby.include?("sweep_candidates")
+            return { "tasks" => [], "release" => { "slug" => "rel-strand", "state" => RC_STATE }, "screen" => {} }
+          end
+          return { "state" => "assembled" } if ruby.include?("qa_green!")
+          { "slug" => "rel-strand", "state" => RC_STATE, "branch" => "release", "repos" => [
+            { "repo" => "mcritchie-studio", "kind" => "app", "release_branch" => "release",
+              "qa_app" => "mcritchie-studio", "members" => [{ "slug" => "t-shipped", "branch" => "feat/s" }] }
+          ] }
+        end
+        def sh(*a, **k)
+          g = gate_git(a, k)
+          return g if g
+          range = a.last.to_s
+          if a[0] == "git" && a.include?("rev-list")
+            return ["", false] unless REV_LIST_OK
+            # accepted-ahead-of-release is the rung under test; release-ahead-of-main is level.
+            return [(range.include?("origin/accepted") ? ACCEPTED_AHEAD.to_s : "0"), true]
+          end
+          if a[0] == "git" && a.include?("log") && range.include?("origin/accepted")
+            return ["ed4d16a Correct the public price claim\n", true]
+          end
+          return ["git@github.com:McRitchie-Studio/mcritchie-studio.git", true] if a[0] == "git" && a.include?("remote")
+          $stdout.puts("QA-DEPLOY") if a[0] == "bin/qa-server"
+          return ["200", true] if a.join(" ").include?("curl")
+          ["", true]
+        end
+      RUBY
+  end
+
+  # [integration] MUTATION DIRECTION 1 — the stranded commit is CAUGHT, and the
+  # run does not reach the deploy at all.
+  def test_prepare_refuses_when_a_commit_is_stranded_on_accepted
+    out = run_cli(["--yes"], call: %{begin; prepare; puts("NO-ABORT"); rescue SystemExit => e; puts("ABORTED: " + e.message); end},
+                  setup: stale_tree_stub)
+
+    assert_includes out, "ABORTED", "a stale tree must abort, never fall through"
+    refute_includes out, "NO-ABORT"
+    # THE WHOLE DEFECT: the sweep must never print success over a stale tree.
+    refute_includes out, "✓ Assembled rel-strand", "prepare must NOT report the candidate assembled"
+    refute_includes out, "QA-DEPLOY", "…and must not deploy the old tree to QA first"
+  end
+
+  # [integration] The refusal has to be ACTIONABLE: the repo, the stranded SHA,
+  # and the recovery with both filled in. A refusal that does not name its remedy
+  # just moves the confusion.
+  def test_prepare_stale_tree_refusal_names_the_commits_and_the_recovery
+    out = run_cli(["--yes"], call: %{begin; prepare; rescue SystemExit => e; puts("ABORTED: " + e.message); end},
+                  setup: stale_tree_stub)
+
+    assert_includes out, "1 commit stranded on `accepted`"
+    assert_includes out, "ed4d16a Correct the public price claim", "the SHA and subject, read from git log"
+    assert_includes out, "gh pr create --repo McRitchie-Studio/mcritchie-studio --base release --head accepted",
+                     "the recovery names the repo it resolved from the remote"
+    assert_includes out, "--match-head-commit ed4d16a", "the recovery merge is pinned at the accepted head"
+    assert_includes out, "bin/release prepare", "…and the re-run that finishes it"
+    assert_includes out, "NOTHING was published, gated, or deployed"
+  end
+
+  # [integration] WHY it refuses rather than quietly promoting onto a QA-green
+  # candidate — the judgment call, printed where the operator will read it.
+  def test_prepare_stale_tree_refusal_explains_why_it_will_not_re_promote
+    out = run_cli(["--yes"], call: %{begin; prepare; rescue SystemExit; end}, setup: stale_tree_stub)
+
+    assert_includes out, "already `assembled` (QA-green)"
+    assert_includes out, "will NOT silently promote onto it"
+    assert_includes out, "BOARD STAMPS", "and why the promote missed it in the first place"
+  end
+
+  # [integration] MUTATION DIRECTION 2 — the one people skip. A genuinely
+  # up-to-date assembled candidate must still PASS. Interrupted sweeps are common
+  # (a foreground shell timeout kills one mid-run); if re-runs started refusing,
+  # every one of them would become a manual repair and the lane would be unusable.
+  def test_prepare_still_re_runs_a_genuinely_current_assembled_candidate
+    out = run_cli(["--yes"], call: "prepare", setup: stale_tree_stub(ahead: 0))
+
+    refute_includes out, "prepare refused", "a level ladder must not refuse — resumability depends on it"
+    assert_includes out, "carries every `accepted` commit (mcritchie-studio)", "the gate says what it verified"
+    assert_includes out, "QA-DEPLOY", "the re-run still deploys QA"
+    assert_includes out, "Assembled rel-strand", "…and still reports the candidate assembled"
+  end
+
+  # [integration] A failed read is not a clean read. An unreadable rung on a repo
+  # the candidate is about to DEPLOY is unverified, and unverified is stale.
+  def test_prepare_refuses_when_the_accepted_rung_cannot_be_read
+    out = run_cli(["--yes"], call: %{begin; prepare; puts("NO-ABORT"); rescue SystemExit => e; puts("ABORTED: " + e.message); end},
+                  setup: stale_tree_stub(rev_list_ok: false))
+
+    assert_includes out, "ABORTED"
+    assert_includes out, "could NOT be read"
+    assert_includes out, "a failed read is not a clean read"
+    refute_includes out, "QA-DEPLOY", "an unmeasurable rung must not be deployed over"
+    refute_includes out, "NO-ABORT"
+  end
+
+  # [integration] The gate is a LIVE-run gate: a dry run takes no fetch, so it
+  # says so rather than passing on an unmeasured signal it never took.
+  def test_prepare_dry_run_says_the_stale_tree_gate_runs_live_only
+    out = run_cli(["--dry-run"], call: "prepare", setup: stale_tree_stub)
+
+    assert_includes out, "a dry run takes no fetch"
+    refute_includes out, "prepare refused", "a preview must not manufacture a refusal from an unmeasured rung"
+  end
+
+  # [integration] The gate runs BEFORE the deploy half's irreversible work. This
+  # is what makes a refusal free: no gem is on RubyGems, no QA app has moved, and
+  # member stages are untouched, so the re-run after the hand-landed batch PR is
+  # a clean resume rather than a repair.
+  def test_prepare_stale_tree_gate_precedes_the_merge_forward_gate_and_deploy
+    out = run_cli(["--yes"], call: %{begin; prepare; rescue SystemExit; end}, setup: stale_tree_stub)
+
+    verify = out.index("verify: `release` carries `accepted`")
+    refute_nil verify, "the gate must announce itself: #{out}"
+    ["merge-forward", "pre-QA gate", "QA-DEPLOY"].each do |later|
+      idx = out.index(later)
+      assert(idx.nil? || idx > verify, "#{later} must not run before the stale-tree gate")
+    end
+  end
 
   def test_prepare_promotes_accepted_to_release_and_records_the_members
     out = run_cli(["--yes"], call: "prepare", setup: SWEEP_FLOW_STUB)
@@ -1370,9 +1519,16 @@ class ReleaseCliTest < Minitest::Test
 
         { "pending" => [], "accepted" => #{accepted.inspect}, "release" => nil }
       end
-      def ladder_ahead_states
+      # Keyword-compatible with the real reader, and PROMOTE-AWARE: prepare's
+      # stale-tree gate (step 3b) calls this a second time AFTER the promote, and
+      # a stub still reporting `accepted` ahead there would be describing a batch
+      # merge that landed nothing. $promoted is flipped by SWEEP_FLOW_STUB's
+      # `gh pr merge`, so the expedite guard sees the pre-promote rung and the
+      # stale-tree gate sees the post-promote one — from the same stub.
+      def ladder_ahead_states(repos: nil, require_checkout: false)
         { "release" => [{ "repo" => "mcritchie-studio", "ahead" => 0 }],
-          "accepted" => #{accepted_ahead.inspect}, "unreadable" => [] }
+          "accepted" => ($promoted ? [{ "repo" => "mcritchie-studio", "ahead" => 0 }] : #{accepted_ahead.inspect}),
+          "unreadable" => [] }
       end
     RUBY
   end

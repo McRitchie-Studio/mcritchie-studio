@@ -163,6 +163,13 @@ require_relative "../app/models/release/cli"
 # `accepted` (board + accepted-ahead-of-release git count) — it decides clean vs
 # dirty and builds the refusal + `full-cycle` offer. Rails-free → unit-tested.
 require_relative "../app/models/release/clean_check"
+# StaleTreeCheck is the pure verdict behind prepare's STALE-TREE GATE (step 3b):
+# AFTER the accepted→release promote it asserts that every three-rung repo in the
+# candidate's deploy plan has `release` carrying `accepted`, and builds the
+# refusal + the filled-in recovery when one does not. It reuses CleanCheck's rung
+# comparison (so the two guards can never disagree about "which repos are ahead"),
+# so it loads AFTER it. Rails-free → unit-tested.
+require_relative "../app/models/release/stale_tree_check"
 # SmokeSeal builds the post-ship 🟢/🔴 verdict + the EXACT rollback guidance the
 # red-seal alert prints (step 5c). Rails-free, so the alert comes from the SAME
 # source the notes/board read on prod.
@@ -2758,6 +2765,20 @@ def prepare
   gem_groups = repos.select { |g| g["kind"] == "gem" }
   say("  release #{rel_slug} (#{result['state']}) · #{repos.size} repo(s): #{app_groups.size} app, #{gem_groups.size} gem")
 
+  # 3b. STALE-TREE GATE — the deploy half's entry condition, and the one check
+  #     that makes this command's own `✓ Assembled` a true sentence. The promote
+  #     at step 4 is driven by BOARD STAMPS, so a commit that reached `accepted`
+  #     with no task behind it is invisible to it and the promote is skipped;
+  #     everything below then succeeds on the OLD tree and prints ✓ over it
+  #     (measured live 2026-08-11 — see verify_release_carries_accepted!).
+  #     So ASSERT THE EFFECT here, from git, over exactly the repos about to be
+  #     deployed: `release` must already carry `accepted`. Placed FIRST in the
+  #     deploy half on purpose — above the merge-forward, above the IRREVERSIBLE
+  #     gem publish, above the gate and every QA deploy — so a refusal costs
+  #     nothing and leaves member stages untouched for a clean re-run. A normal
+  #     sweep just promoted, so it measures level and rides straight through.
+  verify_release_carries_accepted!(repos, rel_slug, result["state"])
+
   record_release_event(rel_slug, "assemble_release", "started")
 
   # 4c. MERGE-FORWARD — `release` must contain `main` BEFORE the gate reads it,
@@ -3284,20 +3305,37 @@ end
 # positive counts happens in Release::CleanCheck. A failed rev-list is recorded
 # as unreadable rather than skipped: a read that failed is not a read that came
 # back clean, and silently dropping the repo is the same shape of bug as never
-# reading the rung. Repos not cloned as siblings are skipped (nothing local to
-# measure); `release_repo_slugs` is already three-rung-only, so every repo it
-# yields is declared to HAVE both branches.
+# reading the rung. `release_repo_slugs` is already three-rung-only, so every
+# repo it yields is declared to HAVE both branches.
+#
+# TWO CALLERS, one implementation — deliberately. The clean-ladder guard reads
+# the WHOLE ecosystem ("is it safe to expedite?"); prepare's stale-tree gate
+# reads ONE candidate's deploy plan ("does the tree I am about to deploy carry
+# `accepted`?"). Same rungs, same fail-closed rule, so they share this reader
+# instead of each growing their own rev-list — a second implementation of the
+# same comparison is how the two would drift.
+#   repos:            which repos to measure (default: every three-rung repo).
+#   require_checkout: what a MISSING sibling checkout means. The ecosystem guard
+#     SKIPS one (false) — a repo nobody cloned is not evidence of pending work.
+#     The deploy-plan gate cannot afford that (true): a repo it is about to
+#     DEPLOY whose rung it could not measure is unverified, and unverified is
+#     stale, so it lands in `unreadable` and refuses.
 # This is the I/O seam the tests stub, the way they stub `conductor`.
-def ladder_ahead_states
+def ladder_ahead_states(repos: release_repo_slugs, require_checkout: false)
   return { "release" => [], "accepted" => [], "unreadable" => [] } if DRY
 
   release_states = []
   accepted_states = []
   unreadable = []
 
-  release_repo_slugs.each do |repo|
+  repos.each do |repo|
     path = repo_path(repo)
-    next unless Dir.exist?(path)
+    unless Dir.exist?(path)
+      next unless require_checkout
+
+      unreadable << { "repo" => repo, "rung" => "#{ACCEPTED_BRANCH} (no checkout at #{path})" }
+      next
+    end
 
     sh("git", "-C", path, "fetch", "origin", "--quiet")
     rel = rung_ahead(path, "origin/main", "origin/#{RELEASE_BRANCH}")
@@ -3317,6 +3355,103 @@ end
 def rung_ahead(path, base, head)
   out, ok = sh("git", "-C", path, "rev-list", "--count", "#{base}..#{head}", capture: true)
   ok ? out.strip.to_i : nil
+end
+
+# The COMMITS behind a positive `rung_ahead` — newest first — for the stale-tree
+# refusal. `rung_ahead` answers "how many", which is enough to REFUSE but not
+# enough to ACT on: a refusal that says "1 commit behind" makes the operator go
+# look it up, and the tool already knows. Only ever called on the failure path
+# (a repo the gate is about to refuse), so the happy path pays nothing.
+# A failed read degrades to [] — the refusal still stands and simply prints the
+# `git log` to run by hand; it must never turn a refusal into a crash.
+def rung_stranded_commits(path, base, head, limit: 20)
+  out, ok = sh("git", "-C", path, "log", "--format=%h %s", "-n", limit.to_s,
+               "#{base}..#{head}", capture: true)
+  return [] unless ok
+
+  out.to_s.lines.filter_map do |line|
+    sha, subject = line.strip.split(" ", 2)
+    next if sha.to_s.empty?
+
+    { "sha" => sha, "subject" => subject.to_s }
+  end
+end
+
+# prepare's STALE-TREE GATE (step 3b) — the check that makes prepare's own `✓
+# Assembled` a true sentence. Runs AFTER the promote and BEFORE the merge-forward,
+# the irreversible gem publish, the pre-QA gate, and any QA deploy.
+#
+# THE DEFECT IT CLOSES: `promote_repos` is derived from BOARD STAMPS (candidates
+# stamped merged:"accepted"), so a commit that reached `accepted` with no task
+# behind it — a conductor zap, a hand-merge, a review whose stamp never landed —
+# is invisible to the promote, which is then SKIPPED for that repo. Every step
+# after it still succeeds on the OLD tree and prepare prints `✓ Assembled`.
+# Measured live on 2026-08-11: `accepted` ed4d16a, `release` b032e58, one commit
+# stranded, QA serving the previous tree, both printed sentences true of a tree
+# that did not contain the fix.
+#
+# WHY IT SITS AFTER THE PROMOTE, NOT BEFORE. Before, it could only re-derive the
+# promote's own decision — the proxy. After, it measures what actually LANDED, so
+# one check covers every cause at once: a repo the promote never considered, a
+# `gh pr merge` that reported success without landing, a stamp nobody wrote, an
+# assembled candidate no promote was attempted for. It is also why a normal sweep
+# is unaffected: the promote runs first, `accepted` goes level, the gate passes.
+# THAT is the resumability half — a genuinely up-to-date candidate (the common
+# re-run after an interrupted sweep) measures 0 ahead and rides straight through.
+#
+# It REFUSES rather than promoting; Release::StaleTreeCheck carries the argument
+# and the operator-facing recovery. Fail-closed at a seam where a refusal costs
+# nothing: nothing has been published, gated, or deployed, member stages have not
+# moved, and a re-run after the hand-landed batch PR resumes cleanly.
+def verify_release_carries_accepted!(repo_groups, rel_slug, rel_state)
+  plan_repos = Array(repo_groups).map { |g| g["repo"].to_s }.reject(&:empty?).uniq
+  # Only a THREE-RUNG repo has an `accepted` rung it can fall behind. A registry-
+  # parked two-rung repo in the plan is out of scope by construction (there is no
+  # `accepted` branch to compare), not silently skipped.
+  scope = plan_repos & release_repo_slugs
+  if scope.empty?
+    step("verify: no three-rung repo in the deploy plan — no `#{ACCEPTED_BRANCH}` rung to fall behind")
+    return
+  end
+  if DRY
+    step("verify: would check `#{RELEASE_BRANCH}` carries `#{ACCEPTED_BRANCH}` in #{scope.join(', ')} — " \
+         "a dry run takes no fetch, so the gate runs live only")
+    return
+  end
+
+  step("verify: `#{RELEASE_BRANCH}` carries `#{ACCEPTED_BRANCH}` in #{scope.join(', ')} (post-promote) — " \
+       "the candidate must deploy the tree its record describes")
+  git   = ladder_ahead_states(repos: scope, require_checkout: true)
+  stale = Release::CleanCheck.ahead_repos(git["accepted"])
+
+  # Enrich ONLY the repos already known stale: the commit list and the remote
+  # name are for the refusal text, so the happy path never pays for them.
+  stranded = stale.to_h do |s|
+    [s["repo"], rung_stranded_commits(repo_path(s["repo"]),
+                                      "origin/#{RELEASE_BRANCH}", "origin/#{ACCEPTED_BRANCH}")]
+  end
+  nwo = stale.to_h { |s| [s["repo"], repo_name_with_owner(s["repo"])] }
+
+  verdict = Release::StaleTreeCheck.evaluate(
+    accepted_states: git["accepted"],
+    unreadable_repos: git["unreadable"],
+    stranded_commits: stranded,
+    repo_nwo: nwo,
+    release_slug: rel_slug,
+    release_state: rel_state
+  )
+  if verdict["fresh"]
+    say(verdict["message"])
+    return
+  end
+
+  say("")
+  say(verdict["message"])
+  behind = (verdict["stale_repos"].map { |s| s["repo"] } +
+            verdict["unreadable_repos"].map { |u| u["repo"] }).uniq.join(", ")
+  abort!("stale tree: `#{RELEASE_BRANCH}` does not carry `#{ACCEPTED_BRANCH}` in #{behind} — prepare REFUSED " \
+         "rather than deploying and reporting `✓ Assembled` over a tree missing that work. Nothing was " \
+         "published, gated, or deployed. Land the stranded work as shown above, then re-run `bin/release prepare`.")
 end
 
 SHORT = 7
