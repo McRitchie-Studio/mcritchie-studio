@@ -3,12 +3,20 @@
     the reader is sitting; this re-stamps each one to the VIEWER's local clock and
     appends the country flag when that viewer's IANA zone is outside the US.
 
-    Installed once, page level (a <script> cloned into an Alpine template or a
-    morphed card would re-run or never run). It re-queries the DOM on every pass —
-    on load, after Turbo navigations and stream renders, and on a slow interval —
-    so a card swapped in by DeploymentsBroadcaster/LiveBoardFx is picked up with no
-    re-wiring, and the relative phrase in the hover title never goes stale in a tab
-    left open.
+    Installed once, page level: cloning it into an Alpine template or a morphed
+    card would re-run it or never run it. It is self-guarded, so a second render is
+    a no-op. It re-queries the DOM on every pass — on load, after Turbo navigations
+    and stream renders, and on a slow interval — so a card swapped in by
+    DeploymentsBroadcaster/LiveBoardFx is picked up with no re-wiring, and the
+    relative phrase in the hover title never goes stale in a tab left open.
+
+    KEEP THIS COMMENT FREE OF CLOSE-TAG CHARACTERS AND OF TAG NAMES SPELLED INSIDE
+    ANGLE BRACKETS. An ERB comment ends at the first close-tag whatever it sits
+    inside. The engine's copy of this partial once carried a render snippet here,
+    so the comment terminated mid-sentence and the remaining prose rendered as page
+    text — and because that prose named a script tag inside angle brackets, the
+    browser opened a phantom element that swallowed the real one. The re-stamper
+    never executed, and the bytes were all still on the page.
 
     clock() and dateLabel() MUST render the same strings as AtTimeHelper#at_clock
     and #at_date, or the value visibly flickers when hydration overwrites the

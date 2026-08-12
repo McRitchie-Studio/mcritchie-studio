@@ -54,9 +54,11 @@
         <% if rel.gem_only? %>
           <span class="shrink-0 px-2 py-0.5 rounded text-xs font-bold <%= release_state_classes("gem_only") %>" data-test="release-gem-only-badge" title="Gem-only release — published to RubyGems, no app deploy">💎 Gem-only</span>
         <% end %>
-        <%# Consolidated status badge: one state-colored pill folding the bare state + its
-            relative time into "Shipped 7 minutes ago" — replaces the former left-side
-            state pill AND the separate muted "shipped X ago" line. %>
+        <%# Consolidated status badge: one state-colored pill folding the bare state + the
+            moment it happened into "Shipped at 3:53p" — replaces the former left-side
+            state pill AND the separate muted "shipped X ago" line. The stamp is the "at"
+            primitive, so the clock is the READER's and the relative phrase this pill used
+            to show now lives in the hover title. %>
         <span class="px-2 py-0.5 rounded text-xs font-bold <%= release_state_classes(rel.state) %>" data-test="release-state-badge"><%= release_state_label(rel, current: current) %></span>
       </div>
     </div>
