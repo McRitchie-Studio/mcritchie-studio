@@ -79,6 +79,18 @@ Use the production board by default. Do not add `--local`.
    the two disagree the guard says so and refuses — the disagreement names which
    record to go fix.
 
+   **The verdict names the signal it measured**, never a tree relation it did not
+   read. A rung dirty on the BOARD read alone is reported as a count (`3 task(s)
+   still recorded as riding "release"`), not as `release ≠ main` — so do not
+   re-fetch on that line expecting to find commits.
+
+   On the `release` rung, **board-dirty + git-clean is the signature of an
+   INTERRUPTED SHIP**: tasks still recorded as riding `release` while `release`
+   and `main` are identical means the fast-forward already landed and only the
+   board stamp is missing — **the code is already in production**. The guard says
+   so and still refuses (the work is unaccounted for). Confirm with `git ls-remote
+   --heads origin main release`, reconcile the board, then re-run.
+
    `--task <task>` names the expedited task so the guard does not refuse on your
    OWN work when you re-run the act after review already merged it onto
    `accepted`. It excludes that one slug from the board read, and tolerates the
