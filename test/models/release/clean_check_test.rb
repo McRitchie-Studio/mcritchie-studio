@@ -175,10 +175,13 @@ class Release::CleanCheckTest < ActiveSupport::TestCase
     assert_nil v["signal_conflict"], "a signal never taken can neither agree nor disagree"
   end
 
-  # Both rungs are named — each by the signal that was actually measured. This
-  # setup takes NO git read on the release rung (no repo_states), so the headline
-  # reports that rung's BOARD count; asserting `release ≠ main` here is what the
-  # old headline did, and it was claiming a tree relation nobody had read.
+  # Both rungs are named — each by the signal that was actually measured. The
+  # release rung's git read IS taken here (clean_ladder passes repo_states) and
+  # comes back LEVEL, so the headline reports that rung's BOARD count and must not
+  # claim `release ≠ main` — git said the opposite. (An earlier version of this
+  # comment said the read was never taken, which the shared `clean_ladder` fixture
+  # flatly contradicts; the assertion was right for the wrong stated reason, and a
+  # wrong reason is what a later reader edits the code against.)
   test "both rungs dirty names both in the headline, by measured signal" do
     v = clean_ladder(
       pending_tasks: [{ "slug" => "riding-release", "title" => "" }],
@@ -191,7 +194,8 @@ class Release::CleanCheckTest < ActiveSupport::TestCase
     assert_includes headline, "accepted ≠ release", "the accepted rung's git signal WAS measured"
     assert_includes headline, %(1 task(s) stamped merged:"accepted")
     assert_includes headline, "1 task(s) still recorded as riding `release`"
-    refute_includes headline, "release ≠ main", "that rung's git signal was never read"
+    refute_includes headline, "release ≠ main",
+                    "that rung's git read came back LEVEL — the headline must not assert otherwise"
     assert_includes v["message"], "riding-release"
     assert_includes v["message"], "parked"
   end
@@ -383,5 +387,115 @@ class Release::CleanCheckTest < ActiveSupport::TestCase
     v = C.evaluate(repo_states: [{ "repo" => "mcritchie-studio", "ahead" => 0 }])
     assert v["clean"]
     assert_nil v["release_signal_conflict"]
+  end
+
+  # --- a PARTIAL read may not speak for the rung ---------------------------
+  #
+  # THE DEFECT. Both conflict checks gated on `states.any?`, so ONE readable repo
+  # made the read look complete while another sat in `unreadable_repos`. The
+  # release rung then asserted "NO repo's `release` is ahead of `main` — the trees
+  # are identical" and concluded the code "may ALREADY BE IN PRODUCTION", having
+  # never looked at the repo that could have been ahead. That is the most
+  # dangerous output this module can produce: specific, confident, and wrong, at
+  # the exact moment the operator is deciding whether to ship.
+  #
+  # The guard's REFUSAL never depended on the sentence (an unreadable repo is
+  # dirty on its own), so withholding it costs nothing and asserting it cost the
+  # truth.
+
+  test "[unit] a PARTIAL release read never claims the trees are identical" do
+    v = C.evaluate(
+      pending_tasks: [{ "slug" => "riding-release" }],
+      repo_states: [{ "repo" => "mcritchie-studio", "ahead" => 0 }],
+      unreadable_repos: [{ "repo" => "turf-monster", "rung" => "release" }]
+    )
+
+    refute v["clean"], "an unreadable rung is dirty regardless — that part never changed"
+    assert_nil v["release_signal_conflict"],
+               "turf-monster's `release` was never read, so `the trees are identical` is unearned"
+    refute_includes v["message"], "the trees are identical"
+    refute_includes v["message"], "INTERRUPTED SHIP"
+    refute_includes v["message"], "ALREADY BE IN PRODUCTION",
+                    "telling an operator their code is live on an unread repo is the worst case"
+    assert_includes v["message"], "could NOT be read", "the real finding still reaches them"
+  end
+
+  test "[unit] a PARTIAL accepted read never claims the stamp is stale" do
+    v = C.evaluate(
+      accepted_tasks: [{ "slug" => "parked" }],
+      accepted_states: [{ "repo" => "mcritchie-studio", "ahead" => 0 }],
+      unreadable_repos: [{ "repo" => "turf-monster", "rung" => "accepted" }]
+    )
+
+    refute v["clean"]
+    assert_nil v["signal_conflict"],
+               "`no repo's accepted is ahead` is a claim about EVERY repo, and one went unread"
+  end
+
+  # The other DIRECTION survives a partial read, and must: "git says `accepted`
+  # carries commits" names repos that were measured, and a repo nobody could read
+  # cannot falsify a count that came back positive. Suppressing this one too would
+  # be fail-closed theatre that throws away a true finding.
+  test "[unit] a PARTIAL accepted read still names the git-side disagreement" do
+    v = C.evaluate(
+      accepted_tasks: [],
+      accepted_states: [{ "repo" => "mcritchie-studio", "ahead" => 3 }],
+      unreadable_repos: [{ "repo" => "turf-monster", "rung" => "accepted" }]
+    )
+
+    refute_nil v["signal_conflict"], "a positive count is still a positive count"
+    assert_includes v["signal_conflict"], "NO task is stamped"
+    assert_includes v["signal_conflict"], "mcritchie-studio (+3)"
+  end
+
+  # PRECISION, not blanket suppression: completeness is per RUNG, derived from the
+  # repo sets. turf-monster's ACCEPTED read failed while its RELEASE read landed,
+  # so the release rung is complete and keeps its sentence. A coarse "any
+  # unreadable repo mutes everything" rule passes every test above and fails this
+  # one.
+  test "[unit] a failure on ONE rung does not mute the other rung's conflict" do
+    v = C.evaluate(
+      pending_tasks: [{ "slug" => "riding-release" }],
+      repo_states: [{ "repo" => "mcritchie-studio", "ahead" => 0 },
+                    { "repo" => "turf-monster", "ahead" => 0 }],
+      accepted_states: [{ "repo" => "mcritchie-studio", "ahead" => 0 }],
+      unreadable_repos: [{ "repo" => "turf-monster", "rung" => "accepted" }]
+    )
+
+    refute_nil v["release_signal_conflict"],
+               "every repo reported a RELEASE count — that rung's read is complete"
+    assert_includes v["release_signal_conflict"], "INTERRUPTED SHIP"
+  end
+
+  # And completeness reads the REPO SETS, never the `rung` label. bin/release
+  # records a missing checkout as ONE row labelled `accepted (no checkout at …)`
+  # though NEITHER rung was read there, so a label match would call the release
+  # rung complete and re-open the same hole through a string compare.
+  test "[unit] a repo with no reading on either rung makes BOTH rungs partial" do
+    v = C.evaluate(
+      pending_tasks: [{ "slug" => "riding-release" }],
+      repo_states: [{ "repo" => "mcritchie-studio", "ahead" => 0 }],
+      accepted_tasks: [{ "slug" => "parked" }],
+      accepted_states: [{ "repo" => "mcritchie-studio", "ahead" => 0 }],
+      unreadable_repos: [{ "repo" => "turf-monster", "rung" => "accepted (no checkout at /x)" }]
+    )
+
+    assert_nil v["release_signal_conflict"], "the label says `accepted`; the RELEASE read is missing too"
+    assert_nil v["signal_conflict"]
+  end
+
+  # The read-state classifier itself, at its three boundaries.
+  test "[unit] rung_read distinguishes unmeasured, partial and complete" do
+    assert_equal :unmeasured, C.rung_read([], []), "a --dry-run takes no fetch at all"
+    assert_equal :partial, C.rung_read([], [{ "repo" => "a", "rung" => "release" }]),
+                 "every repo failing is a partial read, not an absent one"
+    assert_equal :partial,
+                 C.rung_read([{ "repo" => "a", "ahead" => 0 }], [{ "repo" => "b", "rung" => "release" }])
+    assert_equal :complete,
+                 C.rung_read([{ "repo" => "a", "ahead" => 0 }], []),
+                 "every repo reported"
+    assert_equal :complete,
+                 C.rung_read([{ "repo" => "a", "ahead" => 0 }], [{ "repo" => "a", "rung" => "accepted" }]),
+                 "`a` failed on the OTHER rung but still reported here"
   end
 end

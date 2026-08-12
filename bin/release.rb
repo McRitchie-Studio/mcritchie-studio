@@ -1385,10 +1385,19 @@ def promote_accepted_to_release!(repos, label: nil)
     # stopped to ask now fails with a message we print, instead of hanging a
     # release on a prompt nobody is watching.
     merge_out, ok = sh("gh", "pr", "merge", pr_url, "--merge", capture: true)
-    say(merge_out.strip) if ok && !merge_out.strip.empty?
+    # The echo of gh's words is decided AFTER the recovery, never before it. It
+    # used to sit above this branch gated on `ok` — still false while the fallback
+    # was deciding — so the interrupted-run path printed NOTHING, and that is the
+    # path where gh's line ("… is already merged") is the EVIDENCE for continuing.
+    # The two arms are exclusive, so the ordering trap cannot come back.
     if !ok && pr_merged?(pr_url)
-      say("  ↷ #{pr_url} already merged (interrupted prior run) — continuing to the record step")
+      say(Release::GhFailure.recovery_message(
+            headline: "  ↷ #{pr_url} already merged (interrupted prior run) — continuing to the record step",
+            output: merge_out
+          ))
       ok = true
+    elsif ok && !merge_out.strip.empty?
+      say(merge_out.strip)
     end
     unless ok
       abort!(Release::GhFailure.abort_message(
