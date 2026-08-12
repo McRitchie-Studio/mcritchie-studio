@@ -179,6 +179,15 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
      bin/task note <task-slug> --handoff "Carl review approved; merged into accepted; ready for Avi's qa-release sweep." --agent carl
      ```
 
+     `bin/task merged` verifies its own write, so a silent success IS the stamp.
+     If you double-check it anyway, read the **top-level** field — `merged` is a
+     Task column, so `.metadata.devops.merged` is `null` on every task, stamped
+     or not, and reads as a dropped write when nothing dropped:
+
+     ```bash
+     bin/task show <task-slug> --verbose | grep merged   # or: bin/task field <task-slug> merged
+     ```
+
      Order matters: merge → stamp → move, so the task is `reviewed` **iff** its
      code is on `accepted`. If the `gh pr merge` FAILS, leave the task `submitted`
      and UNSTAMPED — resolve the conflict/checks on GitHub, then re-review. A

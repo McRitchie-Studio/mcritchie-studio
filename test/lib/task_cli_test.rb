@@ -44,9 +44,18 @@ class TaskCliTest < Minitest::Test
   # the test never depends on a real ambient session).
   def run_task(args, env: {}, stub_devops: { "kind" => "feature" }, stub_stage: "building", chdir: nil, fail_get: nil,
                fail_get_body: nil, stub_persist: true, fail_patch: nil, stub_progress: nil,
+               stub_columns: {}, stub_omit_columns: [],
                stub_session_mascot: { "mascot" => "snorlax", "mascot_color" => "#A8A77A", "mascot_emoji" => "🔶",
                                       "app" => "mcritchie-studio", "app_color" => "#B57EDC" },
                stub_agent: { "name" => "Jasper", "status_color" => "#22D3EE", "emoji" => "🧪" })
+    # Extra TOP-LEVEL columns on the served record — the fields that are NOT
+    # under metadata.devops. The base record mirrors the real API, which renders
+    # `task.as_json` and therefore always carries EVERY column key (null when
+    # unset); stub_omit_columns removes a key ENTIRELY, which is a genuinely
+    # different state from a null one and the only way to exercise the UNREPORTED
+    # rendering (an older board, a trimmed serializer).
+    @stub_columns = stub_columns
+    @stub_omit_columns = Array(stub_omit_columns).map(&:to_s)
     # The GET response the stub serves — lets a test seed an existing claim so the
     # move-to-building gate (and the heartbeat) read a real claim state.
     @stub_devops = stub_devops
@@ -216,10 +225,13 @@ class TaskCliTest < Minitest::Test
   # #task_json), so the claim gate can tell a second agent what the holder has actually
   # PRODUCED — not merely that its terminal is painting. @stub_progress seeds it.
   def task_response(stage)
-    JSON.generate("data" => {
+    data = {
       "slug" => "demo-task", "stage" => stage, "merged" => @persisted_merged,
+      "release_slug" => nil,
       "metadata" => { "devops" => @stub_devops }
-    }.merge(@stub_progress || {}))
+    }.merge(@stub_columns || {})
+    Array(@stub_omit_columns).each { |key| data.delete(key) }
+    JSON.generate("data" => data.merge(@stub_progress || {}))
   end
 
   def devops_of(request)
@@ -1142,6 +1154,126 @@ class TaskCliTest < Minitest::Test
     assert status.success?
     assert_match(/acceptance: 1 item/, out)
     refute_match(/- only bullet/, out)
+  end
+
+  # --- the top-level columns in --verbose (merged / release_slug) -------------
+  #
+  # `merged` is the stamp the release sweep reads to decide whether a `reviewed`
+  # task rides the candidate, so it is read back constantly — and --verbose used
+  # to print every devops neighbour around it and not the field itself. Agents
+  # looked in `metadata.devops.merged`, found null (nothing writes there, ever),
+  # and read that as a dropped write; three did inside 24 hours. These cases pin
+  # the three states apart THROUGH THE REAL CLI, so the fix cannot regress into
+  # "prints something" while losing the distinction that is the actual fix.
+
+  def test_show_verbose_prints_the_merged_stamp_from_the_top_level_column
+    _requests, out, _err, status = run_task(
+      ["show", "demo-task", "--verbose"],
+      stub_columns: { "merged" => "accepted" }
+    )
+    assert status.success?
+    assert_match(/merged: accepted/, out)
+  end
+
+  # An empty column reads as a definite negative IN WORDS. The bare "-" this
+  # output uses for empty devops fields is exactly the glyph that read as
+  # "nothing to tell you", so it must not appear as the merged value.
+  def test_show_verbose_states_an_unstamped_task_as_not_merged
+    _requests, out, _err, status = run_task(["show", "demo-task", "--verbose"])
+    assert status.success?
+    assert_match(/merged: not merged/, out)
+    refute_match(/merged: -/, out)
+  end
+
+  # The state that had no rendering at all before: the board returns no `merged`
+  # key. That is NOT "not merged" — it is "this tool cannot tell you" — and the
+  # two must not read alike.
+  def test_show_verbose_marks_an_unreported_merged_field_as_unreported
+    _requests, unreported_out, _err, status = run_task(
+      ["show", "demo-task", "--verbose"], stub_omit_columns: ["merged"]
+    )
+    assert status.success?
+    assert_match(/merged: UNREPORTED/, unreported_out)
+
+    _requests, unset_out, = run_task(["show", "demo-task", "--verbose"])
+    merged_line = ->(out) { out.lines.find { |l| l.include?("merged:") }.to_s.strip }
+    refute_equal merged_line.call(unset_out), merged_line.call(unreported_out),
+                 "an empty column and an unreported one must not render alike"
+  end
+
+  # The line is UNCONDITIONAL. A field printed only when set is the defect in a
+  # new costume: its absence still reads as "this tool does not report it".
+  def test_show_verbose_always_prints_the_column_line_and_says_where_it_lives
+    %w[accepted release main].each do |stamp|
+      _requests, out, = run_task(["show", "demo-task", "--verbose"], stub_columns: { "merged" => stamp })
+      assert_match(/merged: #{stamp}/, out)
+      assert_match(/top-level Task columns/, out, "the locator must print even when the value is set")
+      assert_match(/metadata\.devops/, out)
+    end
+  end
+
+  # release_slug is the SAME trap: a top-level column with a same-named devops
+  # key that nothing reads (bin/task's own --release-slug flag writes the shadow).
+  # --verbose must read the column, so a stale shadow can never be mistaken for
+  # release membership.
+  def test_show_verbose_reads_release_slug_from_the_column_not_the_devops_shadow
+    _requests, out, _err, status = run_task(
+      ["show", "demo-task", "--verbose"],
+      stub_devops: { "kind" => "feature", "release_slug" => "shadow-never-read" },
+      stub_columns: { "release_slug" => "rel-2026-08-11-hub" }
+    )
+    assert status.success?
+    assert_match(/release_slug: rel-2026-08-11-hub/, out)
+    refute_match(/shadow-never-read/, out)
+  end
+
+  def test_show_verbose_states_an_unreleased_task_as_not_on_a_release
+    _requests, out, = run_task(["show", "demo-task", "--verbose"])
+    assert_match(/release_slug: not on a release/, out)
+  end
+
+  # The terse view is unchanged — the columns are a --verbose expansion.
+  def test_show_default_does_not_print_the_column_line
+    _requests, out, = run_task(["show", "demo-task"], stub_columns: { "merged" => "accepted" })
+    refute_match(/merged:/, out)
+  end
+
+  # --- `bin/task field` reaches the columns too --------------------------------
+  #
+  # The machine-readable half of the same trap: `field` did a devops-only lookup,
+  # so `field <slug> merged` printed NOTHING and exited 0 — indistinguishable
+  # from an unstamped task, in the surface scripts capture from.
+
+  def test_field_reads_a_top_level_column
+    _requests, out, _err, status = run_task(
+      ["field", "demo-task", "merged"], stub_columns: { "merged" => "accepted" }
+    )
+    assert status.success?
+    assert_equal "accepted", out.strip
+  end
+
+  def test_field_reads_release_slug_from_the_column
+    _requests, out, = run_task(
+      ["field", "demo-task", "release_slug"], stub_columns: { "release_slug" => "rel-2026-08-11-hub" }
+    )
+    assert_equal "rel-2026-08-11-hub", out.strip
+  end
+
+  # devops STILL WINS — the column lookup is a fallback, so no existing caller
+  # (bin/task field <slug> mascot, branch, worktree_slug, …) changes behavior.
+  def test_field_still_prefers_the_devops_key_over_a_same_named_column
+    _requests, out, = run_task(
+      ["field", "demo-task", "release_slug"],
+      stub_devops: { "release_slug" => "from-devops" },
+      stub_columns: { "release_slug" => "from-column" }
+    )
+    assert_equal "from-devops", out.strip
+  end
+
+  def test_field_stays_silent_for_a_key_in_neither_place
+    _requests, out, _err, status = run_task(["field", "demo-task", "nope"])
+    assert status.success?
+    assert_equal "", out.strip
   end
 
   # --- stale (the stale war) --------------------------------------------------
