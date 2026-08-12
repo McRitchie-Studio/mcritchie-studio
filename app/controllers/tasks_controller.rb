@@ -375,6 +375,14 @@ class TasksController < ApplicationController
         :local_url,
         :qa_url,
         :production_url,
+        # Permitted ONLY so Task::DEVOPS_COLUMN_KEYS can refuse them out loud.
+        # Release membership is the top-level column the sweep writes; neither name
+        # is storable devops metadata, and the board form no longer offers a field.
+        # But dropping them from this list would make strong params strip them
+        # SILENTLY, which is the very defect being closed here — a caller hand-
+        # posting to this endpoint would get a 200 for a write that reached nothing.
+        # Letting them through to the normalizer turns that into a 422 that names
+        # the column. Do not "tidy" these away.
         :release_slug,
         :release_train,
         :requires_release_conductor,

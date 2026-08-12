@@ -552,9 +552,12 @@ Send `devops` as a top-level key; it is normalized
 keys survive (`Task::DEVOPS_KEYS`):
 
 - **Scalars:** `kind`, `worktree_slug`, `branch`, `pr_url`, `local_url`, `qa_url`,
-  `production_url`, `release_slug` (⚠️ a DISPLAY note, not release membership —
-  footgun 5), `requires_release_conductor`, `approval_status`,
+  `production_url`, `requires_release_conductor`, `approval_status`,
   `approval_requested_at`, `approval_requested_by`, `approval_approved_at`
+
+`release_slug`, `release_train`, and `block_kind` are **not** in this list and are
+not silently ignored either — `Task::DEVOPS_COLUMN_KEYS` refuses them with a 422
+naming the column each one actually lives in (footgun 5).
 - **Lists:** `repositories`, `risk_tags`, `acceptance`, `test_plan`,
   `checks_run`
 
@@ -608,18 +611,20 @@ See footgun 4 for the full set of fields that live outside `devops`.
    incident. `bin/task show --verbose` now always prints `merged` and
    `release_slug` and distinguishes an empty column (`not merged`) from a payload
    that carries no such key (`UNREPORTED`), and `bin/task field <slug> merged`
-   falls back to the column — but a raw `jq` on `.metadata.devops` still lies.
+   reads the column — but a raw `jq` on `.metadata.devops` still lies.
 
-5. **`release_slug` exists in BOTH places, and they are disjoint.** It is the one
-   name that is both a top-level column and an accepted `devops` key. The column
-   is release membership: `Release#record_members` writes it beside the `merged`
-   stamp, and `bin/conductor` reads `task["release_slug"]`. The devops key is
-   whatever a human typed — `bin/task --release-slug` and the board's edit form
-   write it, and it feeds only the task page's "Release Slug" card. The column is
-   **not writable through any API** (it is absent from both permit lists), so a
-   value showing on the task page can mean nothing to the sweep. Trust the
-   column; treat the devops key as a display note. Tracked:
-   `/tasks/release-slug-two-universes`.
+5. **`release_slug` is a COLUMN ONLY — a `devops` write to it is refused (422).**
+   It used to exist in both places, disjoint: the column carried real release
+   membership (`Release#record_members` writes it beside the `merged` stamp;
+   `bin/conductor` reads `task["release_slug"]`) while a same-named `devops` key
+   carried whatever a human typed and fed only the task page's card. A slug typed
+   into the board form persisted, displayed, and meant nothing to the sweep.
+   Resolved (`/tasks/release-slug-two-universes`): membership is attached by the
+   sweep and by nothing else. `Task::DEVOPS_COLUMN_KEYS` now rejects a `devops`
+   write to `release_slug`, `release_train`, or `block_kind` with a 422 naming the
+   real column, a `before_save` sheds any stored shadow, the `--release-slug` flag
+   and the board form field are gone, and the task page renders the column. Read
+   it from the top level (`bin/task field <slug> release_slug`, or `--verbose`).
 
 6. **`slug` IS settable — but only on create.** Pass `slug` in the create body
    (or `bin/task create --slug <readable-handle>`) for a readable `/tasks/<slug>`;
