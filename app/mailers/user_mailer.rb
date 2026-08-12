@@ -14,32 +14,37 @@ class UserMailer < ApplicationMailer
     @email     = email
     @magic_url = magic_link_url_for(token)
 
-    # The greeting is derived from an EXISTING account only. A magic link may be
-    # the first thing a stranger ever receives from us — addressing them by a
-    # name we do not have would be worse than not addressing them at all.
-    @greeting = greeting_for(email)
-    @banner_alt = [@greeting, "your #{@app_name} sign-in link"].compact.join(" — ")
-
-    # LAYERED banner: the engine renders the artwork with this greeting on top.
-    # Nothing is generated at send time — the background is a static asset the
-    # app inherits from the catalogue, and only the words change per recipient.
-    @banner = Studio::Banner.for(:magic_link, header: @greeting,
-                                 subtext: "your sign-in link is below")
+    # The NAME, from an EXISTING account only. A magic link may be the first
+    # thing a stranger ever receives from us — addressing them by a name we do
+    # not have would be worse than not addressing them at all.
+    #
+    # The name is all this mailer supplies. What the banner SAYS about it — the
+    # greeting, the sub-text, whether it uses the name at all — is the
+    # operator's, editable on /admin/emails. Passing a finished header here
+    # would leave those fields accepting edits that never reach an inbox.
+    @banner = Studio::Banner.for(:magic_link, name: name_for(email))
+    @banner_alt = [@banner&.header, "your #{@app_name} sign-in link"].compact.join(" — ")
 
     # Kept as the floor: if no layered artwork is registered, the layout falls
     # back to the flat <img> exactly as it did before.
     @banner_url = Studio::EmailCatalog.resolved_url(:magic_link)
 
-    mail(to: email, subject: "Your #{@app_name} sign-in link")
+    # The operator's subject when one is saved on /admin/emails, else the
+    # hard-coded line. Same division as the banner: the mailer supplies the
+    # recipient, the operator supplies the words.
+    # The name goes to the SUBJECT too, not just the banner — otherwise a
+    # subject template containing {name} reaches the inbox with the raw token in
+    # it, which is the most visible way this can fail.
+    subject = Studio::EmailCatalog.subject_for(:magic_link, name: name_for(email)) ||
+              "Your #{@app_name} sign-in link"
+    mail(to: email, subject: subject)
   end
 
   private
 
-  # "Welcome Mason!" for someone we know, "Your Magic Link" for someone we do
-  # not. Both are real headers; neither guesses.
-  def greeting_for(email)
-    user = User.find_by(email: email.to_s.strip.downcase)
-    name = user&.display_name.presence
-    name ? "Welcome #{name.split.first}!" : "Your Magic Link"
+  # The recipient's name when we already hold an account for them, else nil —
+  # which is what makes the banner fall back to its name-free header.
+  def name_for(email)
+    User.find_by(email: email.to_s.strip.downcase)&.display_name.presence
   end
 end

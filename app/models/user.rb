@@ -8,7 +8,14 @@ class User < ApplicationRecord
     { email: "team@mcritchie.studio",  name: "McRitchie Studio Team", role: "admin", wallet: "8K81w4e6UcB7TiANhM9N8sAgijJvTxxybRi8AENRaRYd" },
     { email: "mason@mcritchie.studio", name: "Mason McRitchie",       role: "admin", wallet: "CytJS23p1zCM2wvUUngiDePtbMB484ebD7bK4nDqWjrR" },
     { email: "mack@mcritchie.studio",  name: "Mack McRitchie",        role: "admin" },
-    { email: "turf@mcritchie.studio",  name: "Turf Monster",          role: "admin" }
+    { email: "turf@mcritchie.studio",  name: "Turf Monster",          role: "admin" },
+    # A NON-ADMIN, on purpose. Every other parked identity is an admin, which
+    # meant nothing in this app could be previewed or tested as an ordinary
+    # member — including /admin/emails, where the banner's name-free fallback
+    # header only shows up for someone with no name on file. Deliberately kept
+    # nameless for that reason: it is the account that reveals what a stranger
+    # receives.
+    { email: "member@mcritchie.studio", name: nil,                     role: "viewer" }
   ].freeze
 
   # Passwordless app: email auth is magic-link only, plus Google + Solana wallet.
