@@ -140,22 +140,36 @@ class DorCheckBrowserEvidenceTest < Minitest::Test
     end
   end
 
-  # THE HARNESS SELF-TEST. A pin nobody proved is advice.
+  GATE_BIN = File.expand_path("../../bin/gate", __dir__)
+
+  # A fake secret so the child gets FAR ENOUGH to make a board call.
   #
-  # Drives bin/dor-check in the shape that DOES emit a board write — a real slug,
-  # no --file — with TASK_API_BASE aimed at a sink socket this test owns, and
-  # asserts the sink saw traffic. If a future change to bin/dor-check, bin/gate or
-  # the env plumbing routes board calls somewhere this pin cannot reach, this test
-  # fails and NAMES the portability break, instead of the suite quietly resuming
-  # writes to production.
-  def test_integration_the_board_pin_actually_intercepts
+  # The first version of this self-test passed locally and failed in CI, and the
+  # cause is worth recording because it is the same ambient-coupling family
+  # SessionEnv exists for, running the other way. bin/dor-check resolves
+  # AGENT_API_SECRET from ENV, then 1Password, then the repo's .env, and `die!`s if
+  # all three miss. A dev worktree HAS a .env, so the child reached the auth POST
+  # and the sink saw it. CI has none of the three — .env is gitignored,
+  # AGENT_API_SECRET appears nowhere in ci.yml, and TaskBoard::OP is the hardcoded
+  # macOS path /opt/homebrew/bin/op on an Ubuntu runner — so the child exited at
+  # agent_secret BEFORE opening a socket. The sink saw nothing, and the receipt
+  # correctly refused.
+  #
+  # So the fix is to stop depending on the machine having a real credential, NOT to
+  # weaken the receipt. The value is fake and can only ever be offered to a
+  # localhost sink, because TASK_API_BASE is pinned in the same env hash.
+  PIN_PROOF_SECRET = "pin-proof-not-a-real-secret"
+
+  # Run `cmd` with the board pinned at a sink this test owns; return the HTTP
+  # request lines the sink received.
+  def sink_requests(cmd)
     server = TCPServer.new(SINK_HOST, 0)
     port = server.addr[1]
+    base = "http://#{SINK_HOST}:#{port}"
     received = []
     accepter = Thread.new do
       while (client = server.accept)
-        line = client.gets
-        received << line.to_s
+        received << client.gets.to_s
         client.write("HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n")
         client.close
       end
@@ -164,26 +178,56 @@ class DorCheckBrowserEvidenceTest < Minitest::Test
     end
 
     env = SessionEnv.neutralized.merge(
-      "TASK_API_BASE" => "http://#{SINK_HOST}:#{port}",
-      "ATOMIC_CAPTURE_URL" => "http://#{SINK_HOST}:#{port}"
+      "TASK_API_BASE" => base, "ATOMIC_CAPTURE_URL" => base,
+      "AGENT_API_SECRET" => PIN_PROOF_SECRET
     )
-    # No --file: this is the shape whose verdict emits a durable GateRun.
-    IO.popen(env, "#{BIN} some-slug-that-does-not-exist 2>/dev/null", &:read)
+    IO.popen(env, "#{cmd} 2>/dev/null", &:read)
 
-    deadline = Time.now + 15
+    deadline = Time.now + 20
     sleep 0.05 while received.empty? && Time.now < deadline
-
-    refute_empty received,
-                 "the board pin did NOT intercept: bin/dor-check made no request to the pinned " \
-                 "TASK_API_BASE. Either it reached a DIFFERENT host — production is its default — " \
-                 "or the env plumbing changed. Containment for this suite lives on this pin; if " \
-                 "the pin is not on the path, the suite is one deleted `options[:file].nil?` away " \
-                 "from writing GateRuns to the live board."
-    assert_match(%r{^(GET|POST|PATCH|PUT) }, received.first,
-                 "expected an HTTP request line at the sink, got #{received.first.inspect}")
+    received
   ensure
     accepter&.kill
     server&.close
+  end
+
+  # THE HARNESS SELF-TEST. A pin nobody proved is advice.
+  #
+  # Covers BOTH binaries that can write to the board, each driven directly, because
+  # they are separate processes with separate env reads:
+  #
+  #   bin/dor-check — in the shape that DOES emit (a real slug, no --file).
+  #   bin/gate      — the binary that actually writes the durable GateRun. Driving
+  #                   it directly is deliberate: reaching it THROUGH dor-check would
+  #                   need the sink to impersonate a whole board (auth token, task
+  #                   JSON, a complete verdict), and a fake that elaborate fails for
+  #                   its own reasons and stops testing the pin.
+  #
+  # If a future change routes either one's board calls somewhere this pin cannot
+  # reach, this fails and NAMES the portability break, instead of the suite quietly
+  # resuming writes to production.
+  def test_integration_the_board_pin_actually_intercepts
+    dor = sink_requests("#{BIN} some-slug-that-does-not-exist")
+    refute_empty dor,
+                 "the board pin did NOT intercept bin/dor-check: it made no request to the pinned " \
+                 "TASK_API_BASE. Either it reached a DIFFERENT host — production is its default — " \
+                 "or it died before opening a socket (that is what a missing AGENT_API_SECRET does; " \
+                 "see PIN_PROOF_SECRET). Containment for this suite lives on this pin; if the pin " \
+                 "is not on the path, the suite is one deleted `options[:file].nil?` away from " \
+                 "writing GateRuns to the live board."
+    assert_match(%r{^(GET|POST|PATCH|PUT) }, dor.first,
+                 "expected an HTTP request line at the sink, got #{dor.first.inspect}")
+  end
+
+  def test_integration_the_gate_writer_is_pinned_too
+    gate = sink_requests("#{GATE_BIN} open task some-slug-that-does-not-exist dor")
+    refute_empty gate,
+                 "bin/gate — the binary that WRITES the durable GateRun — reached no pinned host. " \
+                 "dor-check spawns it fire-and-forget with the caller's env, so if it resolves a " \
+                 "different base URL than TASK_API_BASE, pinning dor-check buys nothing and the " \
+                 "GateRun lands on the live board."
+    assert_match(%r{^(GET|POST|PATCH|PUT) }, gate.first,
+                 "expected an HTTP request line at the sink, got #{gate.first.inspect}")
   end
 
   PARTIAL = "app/views/studio/banners/_stack.html.erb"
