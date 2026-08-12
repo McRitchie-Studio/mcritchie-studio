@@ -103,6 +103,75 @@ class ClientSurfaceDiffTest < Minitest::Test
                  "a plain ERB view is not a browser surface; firing here is the blanket rule"
   end
 
+  # ==== VENDORED DEPENDENCY SOURCE IS NOT THIS APP'S BROWSER SURFACE ================
+  #
+  # THE VECTOR THIS SUITE DID NOT IMAGINE. The first cut of these tests killed 16 of
+  # 16 mutations and was still wrong, because every fixture path was one WE would
+  # write. CI supplied the one we would not: `vendor/` is not in .gitignore, so
+  # `git ls-files --others` reports the whole vendored bundle as untracked, and a
+  # vendored gem's rescues/*.html.erb is a real ERB template carrying a real
+  # <script>. Three previously-green DorCheckTest cases went red (PR #801).
+  #
+  # The gate was proven correct on the inputs its author imagined. So the fixtures
+  # now contain the input he did not — and this test is the reason the next person
+  # cannot quietly re-anchor template? on extension alone.
+  VENDORED = %w[
+    vendor/bundle/ruby/3.3.0/gems/actionpack-8.1.3/lib/action_dispatch/middleware/templates/rescues/diagnostics.html.erb
+    vendor/bundle/ruby/3.3.0/gems/actionpack-8.1.3/lib/action_dispatch/middleware/templates/rescues/_source.html.erb
+    vendor/bundle/ruby/3.3.0/gems/actiontext-8.1.3/app/assets/javascripts/actiontext.js
+    vendor/bundle/ruby/3.3.0/gems/actioncable-8.1.3/app/assets/javascripts/actioncable.js
+    vendor/bundle/ruby/3.3.0/gems/railties-8.1.3/lib/rails/templates/rails/welcome/index.html.erb
+    node_modules/@playwright/test/index.html
+    .bundle/gems/foo-1.0/app/views/foo/_widget.html.erb
+    tmp/cache/assets/sprite.js
+  ].freeze
+
+  def test_unit_vendored_dependency_source_is_never_a_surface
+    VENDORED.each do |path|
+      refute ClientSurfaceDiff.served?(path),
+             "#{path} is dependency source, not a path THIS app serves"
+      refute ClientSurfaceDiff.template?(path), path
+      refute ClientSurfaceDiff.script_asset?(path), path
+      assert_empty ClientSurfaceDiff.added_surfaces([path], { path => ["<script>boom()</script>"] }),
+                   "#{path} fired the gate. CI vendors dependencies into the tree, so this turns a " \
+                   "measured 3.2% blocking rate into 'any diff on a machine with a vendored bundle' " \
+                   "— green locally, red in CI, which is the exact signature of the CHANGELOG " \
+                   "basename bite this gate's own file already suffered."
+      assert_empty ClientSurfaceDiff.added_programs([path], { path => ["<script>boom()</script>"] }), path
+    end
+  end
+
+  # Coordinator check 2: the REPORT path must not over-fire either. Sixty vendored
+  # suggestions is not a blocker, but it is noise that trains people to skip the
+  # section — which costs the gate its only channel in a repo with no lane.
+  def test_unit_vendored_paths_do_not_reach_the_report_path_either
+    contents = VENDORED.to_h { |p| [p, "<script>boom()</script>"] }
+    assert_empty ClientSurfaceDiff.present_surfaces(VENDORED, contents, {}),
+                 "a report on sixty vendored files trains people to ignore the section"
+  end
+
+  # The anchor must not be so tight it stops seeing OUR templates. This is the
+  # both-directions half: the fix is only correct if it still fires on real work.
+  def test_unit_our_own_served_paths_are_still_surfaces
+    {
+      "app/views/studio/banners/_stack.html.erb" => :template,
+      "app/views/layouts/application.html.erb" => :template,
+      "app/components/chart_component.html.erb" => :template,
+      "app/javascript/application.js" => :script,
+      "app/assets/javascripts/studio/sortable.js" => :script,
+      "public/widget.js" => :script
+    }.each do |path, kind|
+      assert ClientSurfaceDiff.served?(path), "#{path} IS served by this app"
+      if kind == :template
+        assert ClientSurfaceDiff.template?(path), path
+        assert_equal 1, ClientSurfaceDiff.added_programs([path], { path => ["<script>go()</script>"] }).size,
+                     "#{path}: the vendor fix must not stop the gate seeing OUR templates"
+      else
+        assert_equal 1, ClientSurfaceDiff.added_programs([path], {}).size, path
+      end
+    end
+  end
+
   # ==== THE PROGRAM / BINDING SPLIT =================================================
   def test_unit_declarative_bindings_report_but_do_not_block
     {
@@ -155,11 +224,31 @@ class ClientSurfaceDiffTest < Minitest::Test
 
   # A spec is the EVIDENCE. Counting it as a surface would make adding a Playwright
   # spec trigger the demand for a Playwright spec.
+  #
+  # This pins the OUTCOME, not the mechanism. The module used to carry an explicit
+  # TEST_ROOTS exclusion; once both predicates were anchored on SERVED_ROOTS a
+  # mutation proved that exclusion unkillable — dead code — and it was removed. The
+  # property survives it, which is the point: widen SERVED_ROOTS to reach a test
+  # root and this test goes red, whatever the module calls the rule that day.
   def test_unit_test_roots_are_never_a_surface
     ["e2e/at_time_flag.spec.js", "e2e/helpers.js", "test/views/bar_stack_test.rb",
-     "test/dummy/app/views/x.html.erb", "tests/turf_vault.ts"].each do |path|
+     "test/dummy/app/views/x.html.erb", "test/dummy/app/assets/javascripts/x.js",
+     "tests/turf_vault.ts", "spec/views/x.html.erb"].each do |path|
       assert_empty ClientSurfaceDiff.added_surfaces([path], { path => ["<script>x()</script>"] }),
                    "#{path} is under a test root — it is evidence or a fixture, never a shipped surface"
+    end
+  end
+
+  # The structural fact the removal of TEST_ROOTS rests on. If someone widens
+  # SERVED_ROOTS to overlap a test root, the exclusion that used to be explicit is
+  # gone and this says so directly, rather than leaving the test above to fail with
+  # a puzzling message.
+  def test_unit_served_roots_stay_disjoint_from_every_test_root
+    %w[test/ tests/ e2e/ spec/].each do |root|
+      assert ClientSurfaceDiff.disjoint_from_served?(root),
+             "SERVED_ROOTS now overlaps #{root}. The explicit TEST_ROOTS exclusion was removed as " \
+             "dead code precisely because these lists were disjoint; overlapping them re-opens " \
+             "'adding a Playwright spec demands a Playwright spec' with nothing left to stop it."
     end
   end
 

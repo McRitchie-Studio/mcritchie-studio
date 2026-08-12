@@ -98,20 +98,66 @@ module ClientSurfaceDiff
   # Files that ARE browser programs by construction.
   SCRIPT_EXTENSIONS = %w[.js .mjs .jsx .ts .tsx].freeze
 
-  # Roots the browser is SERVED from. This is a location rule and needs the same
-  # justification TestOnlyDiff gave its TEST_ROOTS: these are not filing
-  # conventions, they are DELIVERY paths. Propshaft/Sprockets publish app/assets
-  # and app/javascript; the view layer renders app/views and app/components; public/
-  # is served verbatim. A .js file under any of them reaches a browser by
-  # construction. A .js file under config/ or bin/ does not, which is why the rule
-  # is a root list and not a bare extension test.
+  # Roots the browser is SERVED from — THE ONE ROOT LIST, and it governs BOTH
+  # halves of this classifier (script_asset? and template?). This is a location rule
+  # and needs the same justification TestOnlyDiff gave its TEST_ROOTS: these are not
+  # filing conventions, they are DELIVERY paths. Propshaft/Sprockets publish
+  # app/assets and app/javascript; the view layer renders app/views and
+  # app/components; public/ is served verbatim. A file under any of them reaches a
+  # browser by construction. One under config/, bin/ or vendor/ does not, which is
+  # why the rule is a ROOT-RELATIVE list and not a bare extension test.
+  #
+  # THIS EXACT TRAP HAS BITTEN THIS GATE'S FILE BEFORE, AND IT BIT THIS MODULE TOO.
+  # The release-owned-version gate matched CHANGELOG.md by BASENAME, and CI vendors
+  # dependencies into the tree, so `vendor/bundle/**/CHANGELOG.md` matched sixty-odd
+  # third-party changelogs and refused unrelated PRs. It passed locally because a dev
+  # tree has no vendor/bundle. Its fix was exact root-relative matching, and a later
+  # mutation showed the explicit vendor exclusion had become DEAD CODE once the path
+  # match was right.
+  #
+  # This module shipped with script_asset? root-anchored and template? NOT, and that
+  # asymmetry alone re-opened the bug: `vendor/bundle/ruby/3.3.0/gems/actionpack-*/
+  # lib/action_dispatch/middleware/templates/rescues/*.html.erb` are real ERB
+  # templates carrying real <script> tags. `vendor/` is not in .gitignore, so in CI
+  # `git ls-files --others` reports the whole bundle as untracked, client_added_lines
+  # reads each untracked file as 100% added lines, and the gate blocked three
+  # previously-green DorCheckTest cases (PR #801, run 31565777238). Measured: green
+  # locally, red in CI — the same signature as the changelog bite, one gate over.
+  #
+  # SO THERE IS DELIBERATELY NO VENDOR DENYLIST HERE. A denylist is the shape that
+  # rots: it needs a new entry for every packaging convention anyone invents
+  # (vendor/, node_modules/, .bundle/, tmp/gems/). Anchoring on the roots the browser
+  # is actually served from excludes all of them at once, and excludes the next one
+  # nobody has thought of. If a path is not somewhere this app SERVES from, it is not
+  # this app's browser surface, whatever its extension says.
   SERVED_ROOTS = %w[
     app/javascript/ app/assets/ app/views/ app/components/ public/
   ].freeze
 
-  # Roots excluded from every production load path — see TestOnlyDiff::TEST_ROOTS.
-  # A script here is evidence or a fixture, never a shipped surface.
-  TEST_ROOTS = %w[test/ tests/ e2e/ spec/].freeze
+  # THERE IS DELIBERATELY NO TEST_ROOTS EXCLUSION HERE, AND ITS ABSENCE IS THE PROOF
+  # THE ROOT ANCHOR IS RIGHT.
+  #
+  # This module shipped with one (`test/ tests/ e2e/ spec/`, mirroring
+  # TestOnlyDiff::TEST_ROOTS) so that a Playwright spec could never be mistaken for a
+  # shipped surface — otherwise adding a spec would trigger the demand for a spec.
+  # Once template? and script_asset? were both anchored on SERVED_ROOTS, a mutation
+  # run proved that exclusion UNKILLABLE: emptying it changed no test, because no
+  # test root can prefix-satisfy any served root (the two lists are provably
+  # disjoint, asserted below). It had become dead code.
+  #
+  # That is the same thing that happened to the changelog gate's explicit vendor
+  # exclusion once ITS path match was made exact, and it means the same thing here:
+  # when the positive rule is precise, the negative rules it needed stop firing. A
+  # dead guard is not free — it reads as load-bearing to the next person, and it
+  # cannot be verified, so it silently rots into a lie about what protects what.
+  #
+  # The PROPERTY it guarded is still asserted, at the right granularity — see
+  # test/lib/client_surface_diff_test.rb#test_unit_test_roots_are_never_a_surface,
+  # which pins the OUTCOME (a spec is never a surface) rather than the spelling of
+  # the mechanism. Widen SERVED_ROOTS to reach a test root and that test goes red.
+  def self.disjoint_from_served?(prefix)
+    SERVED_ROOTS.none? { |root| prefix.start_with?(root) || root.start_with?(prefix) }
+  end
 
   # Template types that can EMBED a browser program.
   TEMPLATE_EXTENSIONS = %w[.erb .html .htm .haml .slim .rhtml].freeze
@@ -175,28 +221,32 @@ module ClientSurfaceDiff
     path.to_s.strip.delete_prefix("./")
   end
 
-  def self.test_path?(path)
+  # Is this path somewhere THIS APP serves the browser from? The single anchor both
+  # predicates below share, so they can never disagree about which tree is real —
+  # and the one place vendored dependency source, node_modules, tmp/ and every test
+  # root are excluded, without naming any of them.
+  def self.served?(path)
     file = normalize(path)
-    TEST_ROOTS.any? { |root| file.start_with?(root) }
+    return false if file.empty?
+
+    SERVED_ROOTS.any? { |root| file.start_with?(root) }
   end
 
   # A .js/.ts file the browser is served. Extension alone is not enough — see
   # SERVED_ROOTS.
   def self.script_asset?(path)
-    file = normalize(path)
-    return false if file.empty? || test_path?(file)
-    return false unless SCRIPT_EXTENSIONS.include?(File.extname(file).downcase)
-
-    SERVED_ROOTS.any? { |root| file.start_with?(root) }
+    served?(path) && SCRIPT_EXTENSIONS.include?(File.extname(normalize(path)).downcase)
   end
 
   # A template that could embed a browser program. Whether it DOES is a content
   # question, answered by construct_in.
+  #
+  # ROOT-ANCHORED, exactly like script_asset?. It was not, and that asymmetry is the
+  # whole of the vendor bite documented on SERVED_ROOTS: a vendored gem's
+  # rescues/*.html.erb is a real ERB template with a real <script> in it, and only
+  # the root anchor distinguishes it from one of ours.
   def self.template?(path)
-    file = normalize(path)
-    return false if file.empty? || test_path?(file)
-
-    TEMPLATE_EXTENSIONS.include?(File.extname(file).downcase)
+    served?(path) && TEMPLATE_EXTENSIONS.include?(File.extname(normalize(path)).downcase)
   end
 
   # The first executable construct on `line` as [reason, tier], or nil. The unit of

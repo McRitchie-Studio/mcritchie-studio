@@ -143,6 +143,20 @@ positive: it fires only when it can point at the construct and print the file an
 the line. If it cannot point, it says nothing — it never demands a spec it cannot
 give a reason for.
 
+**It is anchored on the roots this app SERVES from** (`app/views/`, `app/assets/`,
+`app/javascript/`, `app/components/`, `public/`) — not on file extension. That is
+load-bearing, not tidiness: `vendor/` is not in `.gitignore`, so in CI
+`git ls-files --others` reports the entire vendored bundle as untracked, and a
+vendored gem's `rescues/*.html.erb` is a real ERB template carrying a real
+`<script>`. Shipped with the extension-only rule, the gate blocked three
+previously-green `DorCheckTest` cases — **green locally, red in CI**, the same
+signature as the `CHANGELOG.md` basename bite the release-owned-version gate
+suffered in this same file. There is deliberately **no vendor denylist**: a denylist
+needs a new entry for every packaging convention anyone invents, while the served
+root excludes `vendor/`, `node_modules/`, `tmp/` and the next one nobody thought of,
+all at once. If you widen `SERVED_ROOTS`, run the mutation harness — the explicit
+test-root exclusion was already removed once it became provably dead code.
+
 **studio-engine has no browser lane** — no `e2e/`, and `engine-ci.yml` installs node
 but runs no browser (`consumer-ci.yml` runs consumers' `rails test` without
 `test:system`). Two of the three motivating defects were there. Blocking would be a
