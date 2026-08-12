@@ -338,4 +338,51 @@ class ReleaseGemVersionTest < Minitest::Test
     assert_nil GV.rewrite_version("no version declared here", "1.1.0")
     assert_nil GV.rewrite_version(%(VERSION = "1.0.0"\n), "not-a-version")
   end
+
+  # --- reported_version: the member-provenance line -------------------------
+  #
+  # The line that answers "what version did this task ship in?". It used to read
+  # the LOCAL checkout, which sits on `main` — one release behind by construction
+  # once the allocator commits the bump to origin/release. These pin it to the
+  # version that was actually published.
+
+  # THE INCIDENT (rel-20260812-3f1f9b), with its real numbers: publish pushed
+  # 0.41.0 while the primary checkout still declared 0.40.0, and the line printed
+  # 0.40.0. The published map must win.
+  def test_reported_version_names_the_published_version_not_the_local_one
+    published = { "studio-engine" => "0.41.0" }
+
+    assert_equal "0.41.0", GV.reported_version(published, "studio-engine", "0.40.0")
+    refute_includes GV.reported_version(published, "studio-engine", "0.40.0"), "0.40.0"
+  end
+
+  # The local read is a FALLBACK only, and it says so — an unlabelled guess is
+  # exactly what made the original defect invisible.
+  def test_reported_version_labels_a_local_fallback_when_the_repo_never_published
+    out = GV.reported_version({}, "studio-engine", "0.40.0")
+
+    assert_includes out, "0.40.0"
+    assert_includes out, "local checkout"
+    assert_includes out, "NOT the published version"
+  end
+
+  # A --dry-run plan entry carries no version. Naming a number there would be
+  # inventing one, so it reports the absence instead.
+  def test_reported_version_reports_a_dry_run_entry_as_pending
+    out = GV.reported_version({ "studio-engine" => "" }, "studio-engine", "0.40.0")
+
+    assert_includes out, "dry run"
+    refute_includes out, "0.40.0", "a dry run published nothing — it must not borrow the local number"
+  end
+
+  def test_reported_version_says_unknown_when_there_is_nothing_to_read
+    assert_equal "version unknown", GV.reported_version({}, "studio-engine", "")
+    assert_equal "version unknown", GV.reported_version({}, "studio-engine", nil)
+  end
+
+  # A gem that was already live (idempotent re-run) still records its version in
+  # the publish map, so the member line names it like any other.
+  def test_reported_version_uses_the_map_for_an_already_live_gem
+    assert_equal "0.41.0", GV.reported_version({ "studio-engine" => "0.41.0" }, "studio-engine", "")
+  end
 end
