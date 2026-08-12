@@ -138,7 +138,10 @@ class Release
       end
       lines << "  Deploying now would print `✓ Assembled` over a tree missing that work — the exact " \
                "false success this gate exists to stop."
-      lines << "  NOTHING was published, gated, or deployed; members keep their stage and the candidate is untouched."
+      lines << "  NOTHING was published, gated, or deployed; members keep their stage."
+      lines << "  The candidate is NOT untouched, though: membership was already recorded (sweep! runs before " \
+               "this gate), and in a multi-repo release a partial batch promote may already have landed. " \
+               "Re-running after the recovery below re-uses that record rather than double-recording."
       lines.concat(why_lines)
       lines.concat(assembled_lines) if release_state.to_s == "assembled"
       lines.concat(recovery_lines(stale, stranded_commits, repo_nwo, release_slug))
