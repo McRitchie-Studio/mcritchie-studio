@@ -24,22 +24,23 @@
 #       test_plan, checks_run, claim state, pr_url/local_url, and the top-level
 #       `merged` + `release_slug` columns for a human read. )
 #     ( `merged` and `release_slug` are TOP-LEVEL Task columns, NOT devops keys:
-#       `.metadata.devops.merged` is null on every task, stamped or not. --verbose
-#       always prints both, and distinguishes empty ("not merged") from a payload
-#       that carries no such key at all ("UNREPORTED"). )
+#       `.metadata.devops.<either>` is null on every task, stamped or not — the
+#       server refuses a devops write to both names (Task::DEVOPS_COLUMN_KEYS).
+#       --verbose always prints both, and distinguishes empty ("not merged") from a
+#       payload that carries no such key at all ("UNREPORTED"). )
 #   bin/task stale [<slug>]
 #     ( flags a task whose work is already on origin/main (fixed out-of-band) while
 #       the task isn't shipped/archived. Resolves the branch (devops.branch or
 #       feat/<slug>), git-fetches, and reports if origin/<branch> is an ancestor of
 #       origin/main. With NO slug it scans every open task and lists the stale ones. )
 #   bin/task field <slug> <key>              # machine-readable single value (e.g. mascot)
-#     ( devops key first, then the top-level column — so `field <slug> merged`
-#       reads the column instead of silently printing nothing. )
+#     ( `merged` and `release_slug` resolve from the COLUMN only — same store as
+#       --verbose. Every other key is devops-first with a column fallback. )
 #   bin/task create --title T [--slug readable-handle] [--kind K] [--shape S] [--worktree-slug W] [--priority N] [--agent A] \
 #   ( --slug sets a readable, immutable Task.slug → /tasks/<slug>; it also seeds
 #     worktree_slug + branch (feat/<slug>). Omit it for an opaque task-<hex>. )
 #                   [--repo R ...] [--risk R ...] [--accept "..." ...] [--test "..." ...] \
-#                   [--checks "..." ...] [--branch B] [--pr-url U] [--local-url U] [--approval waiting|approved|changes_requested|none] [--release-slug T] \
+#                   [--checks "..." ...] [--branch B] [--pr-url U] [--local-url U] [--approval waiting|approved|changes_requested|none] \
 #                   [--po-size S] [--dev-size S] [--pm-size S] [--post-deploy-cmd "rake foo:bar"] [--no-claim]
 #   ( --shape feeds bin/dor-check: one of the keys in config/feature_shapes.yml )
 #   ( --no-claim files the task WITHOUT repointing this session's active-feature
@@ -336,20 +337,17 @@ SCALAR_FLAGS = {
   "--kind" => "kind", "--shape" => "shape", "--worktree-slug" => "worktree_slug",
   "--branch" => "branch", "--pr-url" => "pr_url",
   "--local-url" => "local_url", "--qa-url" => "qa_url", "--prod-url" => "production_url",
-  # ⚠️ SHADOW KEY — `release_slug` is the ecosystem's one name that exists BOTH in
-  # metadata.devops AND as a top-level Task column, and the two are disjoint.
-  # These flags write the DEVOPS key. Actual release membership is the COLUMN, set
-  # by Release#record_members (app/models/release.rb) beside the `merged` stamp
-  # and read by bin/conductor as `task["release_slug"]`. The API permits
-  # `release_slug` at neither top level (Api::V1::TasksController#task_params) nor
-  # the board's own update path, so this flag CANNOT reach the field the release
-  # lane reads. The devops key is not dead — Task#devops_release_slug feeds the
-  # task page's "Release Slug" card and the board edit form — which is the trap:
-  # a value can show on the page and mean nothing to the sweep.
-  # Left in place rather than silently re-pointed, because release membership is
-  # the release lane's to change. `show --verbose` now prints the REAL column, so
-  # the shadow can no longer be mistaken for it. Tracked: /tasks/release-slug-two-universes.
-  "--release-slug" => "release_slug", "--release-train" => "release_slug",
+  # NO --release-slug / --release-train, deliberately. `release_slug` was the
+  # ecosystem's one name that existed in BOTH stores at once: a top-level Task
+  # column AND a devops key, disjoint. These flags wrote the devops key, which no
+  # release code ever read — the sweep writes the column (Release#record_members)
+  # and bin/conductor reads the column — so the flag could not reach the field the
+  # release lane uses, while the value it did write rendered on the task page.
+  # Retired rather than re-pointed: release membership is a fact the sweep
+  # establishes when a PR lands on the release branch, not an intention anyone
+  # types. Nothing sets it by hand, so no flag is the correct surface.
+  # Read it with `bin/task field <slug> release_slug` or `show --verbose`; the
+  # server refuses a devops write (Task::DEVOPS_COLUMN_KEYS).
   "--agent-context" => "agent_context", "--post-deploy-cmd" => "post_deploy_cmd",
   # The gem bump OVERRIDE. Never required: bin/release computes the version from the
   # candidate's members (Release::GemVersion). Set it only when the derived bump is
@@ -646,12 +644,15 @@ end
 # one field --verbose did not print, while printing every devops neighbour around
 # it. Agents therefore looked in `metadata.devops.merged`, found `null` (nothing
 # writes there, on any task), and concluded the stamp had dropped. Three of them
-# did, inside 24 hours. `release_slug` rides along because it is the SAME trap
-# one step worse: the one name that exists in both universes at once — a
+# did, inside 24 hours. `release_slug` rides along because it WAS the same trap
+# one step worse: the one name that existed in both universes at once — a
 # top-level column (what the release sweep and bin/conductor read) and a
-# same-named devops key (what bin/task's own --release-slug flag writes, and what
-# the task page's "Release Slug" card displays). Printing the COLUMN here is what
-# makes the two tellable apart.
+# same-named devops key (written by this CLI's own --release-slug flag and by the
+# board edit form, displayed on the task page, read by no release code). That
+# shadow is now retired at the server (Task::DEVOPS_COLUMN_KEYS refuses the write
+# and sheds any stored value), the flag is gone, and the task page renders the
+# column — so printing the COLUMN here agrees with every other surface rather
+# than merely making the two tellable apart.
 #
 # Two properties make that inference impossible now, and both are load-bearing:
 #   1. The line is ALWAYS emitted, so a missing value can never be mistaken for a
@@ -1115,18 +1116,31 @@ when "field"
   # just the value (no decoration) so scripts can capture it; silent + exit 0
   # when unset, so callers can treat it as optional.
   #
-  # devops FIRST, then the top-level column. `merged` and `release_slug` are
-  # top-level Task COLUMNS, so the devops-only lookup this used to be returned
-  # NOTHING for them — silently, exit 0 — which is the machine-readable half of
-  # the same false "the write dropped" read that --verbose caused (see
-  # print_column_fields). The fallback is a strict superset: devops still wins,
-  # so no existing caller changes behavior.
+  # Resolution order, and why it is not uniform:
+  #
+  #   • TaskColumnFields::COLUMN_NAMES (`merged`, `release_slug`) resolve from the
+  #     COLUMN, full stop — never from devops. These names are column-backed, and a
+  #     devops-first lookup on them is the machine-readable half of the two-universe
+  #     bug: `show --verbose` would print the column while `field` printed a stale
+  #     shadow for the same task, in the surface scripts capture from. One store per
+  #     name, and the same store as --verbose.
+  #   • Everything else keeps devops-first with a column fallback, so ordinary
+  #     callers (`field <slug> mascot|branch|worktree_slug`) are untouched.
+  #
+  # The shadow is unwritable server-side now (Task::DEVOPS_COLUMN_KEYS), so this is
+  # belt-and-braces — but it is the belt that makes the CLI honest against a row
+  # written before that landed.
   usage = "usage: bin/task field <slug> <devops-key-or-column>"
   slug = positional!(ARGV.shift || die!(usage), usage)
   key  = positional!(ARGV.shift || die!(usage), usage)
   record = api(:get, "/api/v1/tasks/#{slug}")["data"] || {}
-  value = record.dig("metadata", "devops", key)
-  value = record[key] if value.nil?
+  value =
+    if TaskColumnFields::COLUMN_NAMES.include?(key)
+      record[key]
+    else
+      devops_value = record.dig("metadata", "devops", key)
+      devops_value.nil? ? record[key] : devops_value
+    end
   print value unless value.nil? || value.is_a?(Enumerable)
 when "stale"
   # Flag work that's already on origin/main while its task lags behind (fixed

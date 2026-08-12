@@ -171,15 +171,36 @@ class Task < ApplicationRecord
   # operator action in the TaskEvent trail. It gates no value: every
   # approval_status, "approved" included, is writable from either lane.
   OPERATOR_APPROVAL_GRANT_SOURCES = %w[web].freeze
-  # block_kind is NOT here anymore — it's promoted to the tasks.block_kind column
-  # (a block is a `building` attribute, not devops metadata). See #block_kind.
+  # Names that live in a TOP-LEVEL COLUMN and are therefore NOT writable devops
+  # metadata. Each value is the sentence the writer gets back, naming the real home.
+  #
+  # Deleting a name from DEVOPS_SCALAR_KEYS is HALF a retirement: the write stops
+  # landing, but normalize_devops_metadata's `next unless DEVOPS_KEYS.include?`
+  # skips it in silence, so the caller gets a 200 for a write that evaporated.
+  # `release_slug` is what that costs. It stayed a live devops key after the column
+  # arrived, so the two names diverged into disjoint stores — the sweep wrote the
+  # column (Release#record_members), the board form wrote the key, the task page
+  # rendered the key, and bin/conductor read the column. The visible one was inert.
+  # So a retired name RAISES here instead: one decider, and a wrong write is loud.
+  # Both API paths (Api::V1::TasksController#update, TasksController#update) rescue
+  # StandardError into a 422 carrying this message.
+  #
+  # A blank value is still skipped silently — it asserts nothing, so there is
+  # nothing to lose or to correct.
+  DEVOPS_COLUMN_KEYS = {
+    "release_slug" => "the tasks.release_slug column — release membership is recorded by the sweep " \
+                      "(Release#record_members), never set by hand",
+    "release_train" => "the tasks.release_slug column — release membership is recorded by the sweep " \
+                       "(Release#record_members), never set by hand",
+    "block_kind" => "the tasks.block_kind column — stamped server-side by Task#block! " \
+                    "(POST /api/v1/tasks/:slug/block)"
+  }.freeze
   DEVOPS_SCALAR_KEYS = %w[
-    kind shape worktree_slug branch pr_url local_url qa_url production_url release_slug
+    kind shape worktree_slug branch pr_url local_url qa_url production_url
     requires_release_conductor included_in_release agent_context session_id session_provider mascot
     mascot_session claimed_session claim_nonce claim_expires_at post_deploy_cmd built_by gem_bump
     persona approval_status approval_requested_at approval_requested_by approval_approved_at
   ].freeze
-  LEGACY_DEVOPS_KEY_ALIASES = { "release_train" => "release_slug" }.freeze
   # Provider → resume-command template (one %s, the session id).
   RESUME_COMMANDS = {
     "claude" => "claude --resume %s",
@@ -275,6 +296,10 @@ class Task < ApplicationRecord
   # sync_session_mascot's redraw guard fires on a blank mascot, so a PATCH that
   # simply didn't mention the mascot would otherwise swap the task's Pokémon.
   # See #restore_mascot_identity.
+  # The invariant behind DEVOPS_COLUMN_KEYS, enforced at the LAST gate rather than
+  # only at the door: no task stores a devops key that shadows a column. See
+  # #shed_column_shadow_keys for why the normalizer's raise is not sufficient.
+  before_save :shed_column_shadow_keys
   before_save :restore_mascot_identity
   before_save :sync_persona_identity
   before_save :sync_session_mascot, if: -> { will_save_change_to_stage? && Task::BUILD_STAGES.include?(stage) }
@@ -618,13 +643,11 @@ class Task < ApplicationRecord
     devops.fetch("shape", "").presence
   end
 
-  def devops_release_slug
-    devops.fetch("release_slug", "").presence || devops.fetch("release_train", "").presence
-  end
-
-  def devops_release_train
-    devops_release_slug
-  end
+  # NOTE: there is deliberately no `devops_release_slug`. Release membership is the
+  # `release_slug` COLUMN (the `belongs_to :release` FK, written by the sweep) —
+  # read `task.release_slug`, or `task.release` for the record itself. A
+  # `devops_`-prefixed reader existed here, read a same-named devops key, and fed
+  # the task page a value the release lane never saw. See DEVOPS_COLUMN_KEYS.
 
   def devops_worktree_slug
     devops.fetch("worktree_slug", "").presence
@@ -1176,14 +1199,17 @@ class Task < ApplicationRecord
     return {} if raw.blank?
 
     raw.to_h.each_with_object({}) do |(key, value), normalized|
-      raw_key = key.to_s
-      key = LEGACY_DEVOPS_KEY_ALIASES.fetch(raw_key, raw_key)
-      next unless DEVOPS_KEYS.include?(key)
-
+      key = key.to_s
       normalized_value = DEVOPS_LIST_KEYS.include?(key) ? normalize_devops_list(value) : value.to_s.strip
       next if normalized_value.blank?
 
-      next if normalized.key?(key) && LEGACY_DEVOPS_KEY_ALIASES.key?(raw_key)
+      # Column-backed name: refuse LOUDLY and say where it lives. Checked after the
+      # blank guard (a blank asserts nothing) and BEFORE the whitelist, so it can
+      # never decay back into the silent skip this exists to prevent.
+      if (home = DEVOPS_COLUMN_KEYS[key])
+        raise ArgumentError, "devops.#{key} is not writable — it lives in #{home}"
+      end
+      next unless DEVOPS_KEYS.include?(key)
 
       normalized[key] = normalized_value
     end
@@ -1920,6 +1946,31 @@ class Task < ApplicationRecord
     devops["mascot_emoji"] = pokemon&.status_emoji(shiny: shiny)
     # A fresh draw starts a fresh line — the new Pokémon hasn't earned any gates.
     devops.delete("mascot_stage")
+  end
+
+  # Strip any devops key that shadows a top-level column, on EVERY save. The
+  # normalizer's raise covers the front door (`devops:` params), but two paths walk
+  # around it: `Api::V1::TasksController#task_params` permits `metadata: {}` and
+  # only overrides it when `params[:devops]` is present, so a raw
+  # `{"metadata":{"devops":{"release_slug":"…"}}}` PATCH lands unnormalized; and
+  # rows written BEFORE the retirement already carry the stale value.
+  #
+  # So the rule is enforced twice, deliberately, with different manners:
+  #   • normalize_devops_metadata RAISES — the caller named the wrong home and can
+  #     be told so, which is the whole point of retiring the key loudly.
+  #   • this callback SHEDS in silence — it also runs on saves that never mentioned
+  #     the key (a stage move on a legacy row), and raising there would brick every
+  #     task already carrying the shadow. The value is a fiction either way; the
+  #     invariant is what matters, and this makes the store self-healing.
+  # Net effect: `metadata.devops.release_slug` is unreachable by any path, so the
+  # column is the only place the name can live. Do not "simplify" this to one site.
+  def shed_column_shadow_keys
+    return if metadata.blank?
+
+    devops = metadata["devops"]
+    return unless devops.is_a?(Hash)
+
+    DEVOPS_COLUMN_KEYS.each_key { |key| devops.delete(key) }
   end
 
   # Carry the mascot HANDLE across a client write that never mentioned it. `mascot`

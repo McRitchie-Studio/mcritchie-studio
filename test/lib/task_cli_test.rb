@@ -264,15 +264,30 @@ class TaskCliTest < Minitest::Test
     assert_equal "feature", devops["kind"]
   end
 
-  def test_create_sends_release_slug_metadata
-    requests, = run_task(
+  # --release-slug is RETIRED (release-slug-two-universes). It wrote a devops key
+  # that no release code read, while the sweep wrote the same-named column — so the
+  # flag could persist a value that looked like release membership and meant
+  # nothing. Membership is attached by Release#record_members, never typed.
+  # The failure must be at the FLAG (exit nonzero, before any request), not a
+  # request the server then rejects: the CLI should not offer the wrong door.
+  def test_create_rejects_the_retired_release_slug_flag
+    requests, _out, err, status = run_task(
       ["create", "--title", "Release slug task", "--release-slug", "rel-2026-06-27-docs"]
     )
-    create = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/tasks" }
-    refute_nil create, "expected a POST /api/v1/tasks"
-    devops = devops_of(create)
-    assert_equal "rel-2026-06-27-docs", devops["release_slug"]
-    refute devops.key?("release_train")
+
+    refute status.success?, "a retired flag must exit nonzero, not quietly write a shadow"
+    assert_match(/unknown flag "--release-slug"/, err)
+    assert_empty requests.select { |r| r[:method] == "POST" },
+                 "nothing should be created from a rejected flag"
+  end
+
+  def test_create_rejects_the_retired_release_train_flag
+    _requests, _out, err, status = run_task(
+      ["create", "--title", "Release train task", "--release-train", "rel-2026-06-27-docs"]
+    )
+
+    refute status.success?
+    assert_match(/unknown flag "--release-train"/, err)
   end
 
   def test_move_to_building_stamps_session_and_preserves_devops
@@ -1212,10 +1227,11 @@ class TaskCliTest < Minitest::Test
     end
   end
 
-  # release_slug is the SAME trap: a top-level column with a same-named devops
-  # key that nothing reads (bin/task's own --release-slug flag writes the shadow).
-  # --verbose must read the column, so a stale shadow can never be mistaken for
-  # release membership.
+  # release_slug WAS the same trap, one worse: a top-level column with a same-named
+  # devops key that the board form and this CLI's own --release-slug flag wrote and
+  # no release code read. The shadow is retired now (Task::DEVOPS_COLUMN_KEYS), so
+  # this case guards the read against a row written before that landed — --verbose
+  # must resolve from the column, exactly like `field`.
   def test_show_verbose_reads_release_slug_from_the_column_not_the_devops_shadow
     _requests, out, _err, status = run_task(
       ["show", "demo-task", "--verbose"],
@@ -1259,13 +1275,31 @@ class TaskCliTest < Minitest::Test
     assert_equal "rel-2026-08-11-hub", out.strip
   end
 
-  # devops STILL WINS — the column lookup is a fallback, so no existing caller
-  # (bin/task field <slug> mascot, branch, worktree_slug, …) changes behavior.
-  def test_field_still_prefers_the_devops_key_over_a_same_named_column
+  # THE MUTATION PROOF for the machine-readable surface. `field` used to resolve
+  # devops-first for every key, so a task carrying a devops release_slug shadow
+  # printed the shadow here while `show --verbose` printed the column — the same
+  # task, two answers, and the wrong one in the surface scripts capture from.
+  # Column-backed names now resolve from the column, full stop. A reader that
+  # reinstates the devops-first fallback prints "from-devops" and fails here.
+  def test_field_reads_a_column_backed_name_from_the_column_never_the_devops_shadow
+    %w[release_slug merged].each do |key|
+      _requests, out, = run_task(
+        ["field", "demo-task", key],
+        stub_devops: { key => "from-devops" },
+        stub_columns: { key => "from-column" }
+      )
+      assert_equal "from-column", out.strip, "#{key} is column-backed — devops must never win"
+    end
+  end
+
+  # …and the general rule is UNCHANGED for every other key, so ordinary callers
+  # (`field <slug> mascot|branch|worktree_slug`) keep devops-first resolution.
+  # This is the guard against "fix it by making the column always win".
+  def test_field_still_prefers_devops_for_a_key_that_is_not_column_backed
     _requests, out, = run_task(
-      ["field", "demo-task", "release_slug"],
-      stub_devops: { "release_slug" => "from-devops" },
-      stub_columns: { "release_slug" => "from-column" }
+      ["field", "demo-task", "worktree_slug"],
+      stub_devops: { "worktree_slug" => "from-devops" },
+      stub_columns: { "worktree_slug" => "from-column" }
     )
     assert_equal "from-devops", out.strip
   end

@@ -1641,7 +1641,6 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
             branch: "feat/contest-flow",
             pr_url: "https://github.com/McRitchie-Studio/turf-monster/pull/149",
             qa_url: "https://qa.turfmonster.media/contests",
-            release_slug: "rel-2026-06-17-turf",
             requires_release_conductor: "1",
             acceptance: "Contest creates on QA without errors\nEntry submits successfully on QA devnet",
             test_plan: "bin/rails test\nQA devnet mutating smoke",
@@ -1660,6 +1659,89 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_equal ["Contest creates on QA without errors", "Entry submits successfully on QA devnet"], task.devops_acceptance
     assert_equal ["bin/rails test test/controllers/tasks_controller_test.rb"], task.devops_checks_run
     assert_equal "https://qa.turfmonster.media/contests", task.devops_url(:qa)
+  end
+
+  # === Release membership is the column, on the operator's surfaces too ===
+  #
+  # (release-slug-two-universes) The board edit form used to carry a "Release Slug"
+  # text field writing metadata.devops.release_slug, and the task page rendered
+  # that key. An operator could type a slug, watch it persist on the page, and
+  # still have bin/conductor report no candidate — the visible value was the inert
+  # one. The form field is gone and the card reads the column.
+
+  test "[integration] the task page renders release membership from the column" do
+    log_in_as(@admin)
+    Release.delete_all
+    release = Release.open!(branch: "release/card-proof")
+    @new_task.update!(release_slug: release.slug, metadata: { "devops" => { "kind" => "feature" } })
+
+    get task_path(@new_task.slug)
+
+    assert_response :success
+    # Linked to the release it actually rides, so the card is checkable, not just true.
+    assert_select "a[href=?]", deployment_path(release.slug), text: release.slug
+  end
+
+  # THE MUTATION PROOF for the operator-facing half. The row carries a devops
+  # shadow planted through update_columns (skipping every callback — the one way a
+  # value can still exist there), and the column says something different. The page
+  # must render the COLUMN. A reader that falls back to devops renders
+  # "rel-typed-by-hand" and fails here.
+  test "[integration] the task page never renders a devops release_slug shadow" do
+    log_in_as(@admin)
+    Release.delete_all
+    release = Release.open!(branch: "release/shadow-proof")
+    @new_task.update!(release_slug: release.slug)
+    @new_task.update_columns( # rubocop:disable Rails/SkipsModelValidations
+      metadata: @new_task.metadata.deep_merge("devops" => { "release_slug" => "rel-typed-by-hand" })
+    )
+
+    get task_path(@new_task.slug)
+
+    assert_response :success
+    assert_no_match(/rel-typed-by-hand/, response.body,
+                    "the page must never assert a release the pipeline does not know about")
+    assert_select "a[href=?]", deployment_path(release.slug), text: release.slug
+  end
+
+  # NOTE: the card sits inside the `@task.devops?` panel, so the task needs devops
+  # metadata for it to render at all — every task that reaches a release has some
+  # (bin/task stamps kind/shape at creation).
+  test "[integration] an unreleased task says so in the same words as bin/task" do
+    log_in_as(@admin)
+    @new_task.update!(release_slug: nil, metadata: { "devops" => { "kind" => "feature" } })
+
+    get task_path(@new_task.slug)
+
+    assert_response :success
+    # Same wording as TaskColumnFields::UNSET_READS, so the page and the CLI
+    # describe the same task identically.
+    assert_match(/not on a release/, response.body)
+  end
+
+  test "[integration] the board edit form offers no release slug field" do
+    log_in_as(@admin)
+
+    get edit_task_path(@new_task.slug)
+
+    assert_response :success
+    assert_select "input[name=?]", "task[devops][release_slug]", false,
+                  "membership is attached by the sweep, never typed into a form"
+  end
+
+  test "[integration] a board devops release_slug write is refused, not silently dropped" do
+    log_in_as(@admin)
+    @new_task.update!(release_slug: "rel-2026-08-12-real")
+
+    patch task_path(@new_task.slug),
+          params: { task: { devops: { kind: "feature", release_slug: "rel-typed-by-hand" } } },
+          as: :json
+
+    assert_response :unprocessable_entity
+    assert_match(/tasks\.release_slug column/, response.parsed_body["error"].to_s)
+    @new_task.reload
+    assert_equal "rel-2026-08-12-real", @new_task.release_slug
+    assert_not @new_task.devops.key?("release_slug")
   end
 
   test "update stores devops shape from html params" do

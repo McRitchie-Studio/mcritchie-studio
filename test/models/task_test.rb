@@ -960,9 +960,35 @@ class TaskTest < ActiveSupport::TestCase
     assert_equal ["auth", "deploy"], metadata["risk_tags"]
   end
 
-  test "block_kind is dropped from devops metadata (it is a column now)" do
-    metadata = Task.normalize_devops_metadata("block_kind" => "environment")
-    assert_nil metadata["block_kind"], "block_kind was promoted to the tasks.block_kind column"
+  # Retiring a key from DEVOPS_KEYS used to mean the write vanished behind a 200.
+  # That silence is the defect: `release_slug` diverged into two stores precisely
+  # because a wrong write looked like a successful one. Every column-backed name
+  # now REFUSES the write and names its real home.
+  test "[unit] a devops write to a column-backed name raises and names the column" do
+    Task::DEVOPS_COLUMN_KEYS.each_key do |key|
+      error = assert_raises(ArgumentError, "devops.#{key} must be refused, not dropped") do
+        Task.normalize_devops_metadata(key => "some-value")
+      end
+      assert_match(/devops\.#{Regexp.escape(key)} is not writable/, error.message)
+      assert_match(/column/, error.message, "the message must name where the field actually lives")
+    end
+  end
+
+  test "[unit] block_kind is refused from devops metadata (it is a column now)" do
+    error = assert_raises(ArgumentError) { Task.normalize_devops_metadata("block_kind" => "environment") }
+    assert_match(/tasks\.block_kind column/, error.message)
+    assert_match(/Task#block!/, error.message, "the message must point at the endpoint that does work")
+  end
+
+  # A blank asserts nothing, so there is nothing to correct — and raising on it
+  # would break callers that build a devops hash with empty placeholders.
+  test "[unit] a blank column-backed devops value is skipped, not raised" do
+    metadata = nil
+    assert_nothing_raised do
+      metadata = Task.normalize_devops_metadata("release_slug" => "  ", "kind" => "bug")
+    end
+    assert_equal "bug", metadata["kind"]
+    assert_not metadata.key?("release_slug")
   end
 
   test "[unit] approval status normalizes and stamps request time" do
@@ -987,7 +1013,6 @@ class TaskTest < ActiveSupport::TestCase
           "kind" => "bug",
           "worktree_slug" => "qa-contest-flow",
           "repositories" => ["turf-monster"],
-          "release_slug" => "rel-2026-06-17-turf",
           "qa_url" => "https://qa.turfmonster.media/contests",
           "requires_release_conductor" => "1",
           "test_plan" => ["bin/rails test"],
@@ -1001,21 +1026,54 @@ class TaskTest < ActiveSupport::TestCase
     assert_equal "bug", task.devops_kind
     assert_equal "qa-contest-flow", task.devops_worktree_slug
     assert_equal ["turf-monster"], task.devops_repositories
-    assert_equal "rel-2026-06-17-turf", task.devops_release_slug
-    assert_equal "rel-2026-06-17-turf", task.devops_release_train
     assert_equal "https://qa.turfmonster.media/contests", task.devops_url(:qa)
     assert_equal ["bin/rails test"], task.devops_test_plan
     assert_equal ["bin/rails test test/models/task_test.rb"], task.devops_checks_run
   end
 
-  test "legacy release_train normalizes to release_slug" do
-    metadata = Task.normalize_devops_metadata(
-      "release_train" => "2026-06-17-turf",
-      "kind" => "feature"
-    )
+  # `release_train` used to normalize INTO the devops release_slug shadow. Both
+  # names now point at the column, so the legacy spelling is refused with the same
+  # sentence as the modern one — a caller using the old name gets told where the
+  # field went, not a quiet success on a store nothing reads.
+  test "[unit] legacy release_train is refused and points at the release_slug column" do
+    error = assert_raises(ArgumentError) do
+      Task.normalize_devops_metadata("release_train" => "2026-06-17-turf", "kind" => "feature")
+    end
 
-    assert_equal "2026-06-17-turf", metadata["release_slug"]
-    assert_not metadata.key?("release_train")
+    assert_match(/devops\.release_train is not writable/, error.message)
+    assert_match(/tasks\.release_slug column/, error.message)
+    assert_match(/Release#record_members/, error.message)
+  end
+
+  # THE INVARIANT, proved against the path that walks around the normalizer:
+  # Api::V1::TasksController#task_params permits `metadata: {}` wholesale, so a raw
+  # PATCH can plant devops.release_slug without ever calling normalize. It must not
+  # survive the save, and it must not touch the column. Without the
+  # shed_column_shadow_keys callback this stores the fiction and the task page
+  # renders it — which is the original bug, reachable by a second door.
+  test "[unit] a raw metadata write cannot plant a release_slug shadow" do
+    task = Task.create!(title: "Shadow proof task", release_slug: "rel-2026-08-12-real")
+
+    task.update!(metadata: { "devops" => { "kind" => "bug", "release_slug" => "rel-typed-by-hand" } })
+    task.reload
+
+    assert_not task.devops.key?("release_slug"),
+               "a column-backed name must never persist under metadata.devops"
+    assert_equal "rel-2026-08-12-real", task.release_slug,
+                 "the column is the one store, and a shadow write must not disturb it"
+    assert_equal "bug", task.devops["kind"], "shedding must not damage its devops neighbours"
+  end
+
+  # The reader half. There is no devops_release_slug any more — the name resolves
+  # to the column and to the belongs_to it backs.
+  test "[unit] release membership reads from the column and its release record" do
+    release = Release.open!
+    task = Task.create!(title: "Column reader task", release_slug: release.slug)
+
+    assert_equal release.slug, task.release_slug
+    assert_equal release, task.release
+    assert_not task.respond_to?(:devops_release_slug),
+               "a devops_-prefixed reader would reintroduce the second universe"
   end
 
   # --- Build claim lease (V2) ---

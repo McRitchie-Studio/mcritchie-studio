@@ -99,7 +99,6 @@ module Api
                   repositories: "mcritchie-studio",
                   local_url: "http://localhost:3004/tasks",
                   qa_url: "https://qa.mcritchie.studio/tasks",
-                  release_slug: "rel-2026-06-17-studio",
                   requires_release_conductor: "true",
                   acceptance: ["Task card shows the devops metadata", "QA URL opens the QA board"],
                   test_plan: "bin/rails test",
@@ -118,6 +117,71 @@ module Api
         assert_equal ["Task card shows the devops metadata", "QA URL opens the QA board"], @task.devops_acceptance
         assert_equal ["bin/rails test test/controllers/api/v1/tasks_controller_test.rb"], @task.devops_checks_run
         assert @task.requires_release_conductor?
+      end
+
+      # --- Column-backed names are not devops metadata (release-slug-two-universes) ---
+      #
+      # The bug this closes: `release_slug` was BOTH a column and a devops key, and
+      # a write to the key returned 200 while reaching nothing the release lane
+      # reads. A refusal that returns 200 is the defect, so these assert the STATUS
+      # as hard as the storage — a silent success is the failure mode.
+
+      test "[integration] a devops release_slug write is refused, not silently dropped" do
+        @task.update!(release_slug: "rel-2026-08-12-real")
+
+        patch api_v1_task_path(@task.slug),
+              params: { devops: { kind: "bug", release_slug: "rel-typed-by-hand" } },
+              headers: @headers, as: :json
+
+        assert_response :unprocessable_entity, "a write to a column-backed name must fail loudly"
+        body = response.parsed_body
+        assert_match(/devops\.release_slug is not writable/, body["error"].to_s)
+        assert_match(/tasks\.release_slug column/, body["error"].to_s,
+                     "the error must tell the caller where the field actually lives")
+
+        @task.reload
+        assert_equal "rel-2026-08-12-real", @task.release_slug, "the column is untouched by a refused write"
+        assert_not @task.devops.key?("release_slug")
+      end
+
+      test "[integration] a devops block_kind write is refused and names the block endpoint" do
+        patch api_v1_task_path(@task.slug),
+              params: { devops: { block_kind: "environment" } },
+              headers: @headers, as: :json
+
+        assert_response :unprocessable_entity
+        assert_match(/tasks\.block_kind column/, response.parsed_body["error"].to_s)
+        assert_nil @task.reload.block_kind, "the column stays server-stamped via the block endpoint"
+      end
+
+      # `metadata: {}` is permitted wholesale and only overridden when `devops:` is
+      # present, so this payload never reaches the normalizer. The model's
+      # before_save shed is what keeps the invariant total across BOTH doors.
+      test "[integration] a raw metadata devops write cannot plant a release_slug shadow" do
+        @task.update!(release_slug: "rel-2026-08-12-real")
+
+        patch api_v1_task_path(@task.slug),
+              params: { metadata: { devops: { kind: "bug", release_slug: "rel-typed-by-hand" } } },
+              headers: @headers, as: :json
+
+        assert_response :success
+        @task.reload
+        assert_not @task.devops.key?("release_slug"),
+                   "the raw metadata door must not reintroduce the shadow store"
+        assert_equal "rel-2026-08-12-real", @task.release_slug
+      end
+
+      # The read side agrees: the API serves the COLUMN at top level, which is what
+      # bin/conductor and `bin/task field` consume.
+      test "[integration] the api serves release_slug as a top-level column" do
+        @task.update!(release_slug: "rel-2026-08-12-real")
+
+        get api_v1_task_path(@task.slug), headers: @headers
+
+        assert_response :success
+        body = response.parsed_body["data"]
+        assert_equal "rel-2026-08-12-real", body["release_slug"]
+        assert_nil body.dig("metadata", "devops", "release_slug")
       end
 
       # --- Cert evidence is a MACHINE-OWNED namespace (regression: an agent that
