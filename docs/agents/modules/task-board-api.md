@@ -552,11 +552,14 @@ Send `devops` as a top-level key; it is normalized
 keys survive (`Task::DEVOPS_KEYS`):
 
 - **Scalars:** `kind`, `worktree_slug`, `branch`, `pr_url`, `local_url`, `qa_url`,
-  `production_url`, `release_slug`, `requires_release_conductor`,
-  `approval_status`, `approval_requested_at`, `approval_requested_by`,
-  `approval_approved_at`
+  `production_url`, `release_slug` (⚠️ a DISPLAY note, not release membership —
+  footgun 5), `requires_release_conductor`, `approval_status`,
+  `approval_requested_at`, `approval_requested_by`, `approval_approved_at`
 - **Lists:** `repositories`, `risk_tags`, `acceptance`, `test_plan`,
   `checks_run`
+
+`merged` is **not** in this list and never will be — it is a top-level column.
+See footgun 4 for the full set of fields that live outside `devops`.
 
 ## Footguns (verified, will bite you)
 
@@ -585,9 +588,45 @@ keys survive (`Task::DEVOPS_KEYS`):
 3. **Unsupported `devops` keys are silently dropped.** Anything not in
    `DEVOPS_KEYS` is discarded by the normalizer. To stash extra data, write it
    under `metadata` directly instead of `devops`.
-4. **`slug` is auto-generated**, not settable — don't expect a human-readable
-   task slug from the API.
-5. **`event.source` is clamped to the authenticated lane.** A bearer write that
+4. **Some load-bearing fields are TOP-LEVEL COLUMNS, not `devops` keys — and
+   `metadata.devops.<name>` reads `null` for them on every task, stamped or
+   not.** The set: `merged`, `stage`, `agent_slug`, `priority`, `required_skills`,
+   and the size trio `po_size` / `dev_size` / `pm_size` / `actual_size`. Send them
+   at the top level of the PATCH body, and **read them back from the top level**:
+
+   ```bash
+   bin/task show <slug> --json | jq '{stage, merged, release_slug}'   # top level
+   bin/task show <slug> --verbose | grep merged                        # prints all three states
+   ```
+
+   This is the single most expensive misread on the board. `merged` is the stamp
+   the release sweep uses to decide whether a `reviewed` task rides the
+   candidate, so it gets verified constantly — and an agent checking
+   `.metadata.devops.merged` gets `null` whether the write landed or not, which
+   reads as a dropped write. Three agents lost time to exactly that inference in
+   24 hours on 2026-08-11/12, one of them nearly filing a false persistence
+   incident. `bin/task show --verbose` now always prints `merged` and
+   `release_slug` and distinguishes an empty column (`not merged`) from a payload
+   that carries no such key (`UNREPORTED`), and `bin/task field <slug> merged`
+   falls back to the column — but a raw `jq` on `.metadata.devops` still lies.
+
+5. **`release_slug` exists in BOTH places, and they are disjoint.** It is the one
+   name that is both a top-level column and an accepted `devops` key. The column
+   is release membership: `Release#record_members` writes it beside the `merged`
+   stamp, and `bin/conductor` reads `task["release_slug"]`. The devops key is
+   whatever a human typed — `bin/task --release-slug` and the board's edit form
+   write it, and it feeds only the task page's "Release Slug" card. The column is
+   **not writable through any API** (it is absent from both permit lists), so a
+   value showing on the task page can mean nothing to the sweep. Trust the
+   column; treat the devops key as a display note. Tracked:
+   `/tasks/release-slug-two-universes`.
+
+6. **`slug` IS settable — but only on create.** Pass `slug` in the create body
+   (or `bin/task create --slug <readable-handle>`) for a readable `/tasks/<slug>`;
+   it also seeds `worktree_slug` and the `feat/<slug>` branch. Omit it and you get
+   an opaque `task-<hex>`. The model marks it `attr_readonly`, so an update that
+   sends `slug` is ignored — the URL id wins.
+7. **`event.source` is clamped to the authenticated lane.** A bearer write that
    sends `event.source: "web"` is recorded as `"api"` — `"web"` is stamped only
    server-side by the admin-gated board UI, so the TaskEvent trail always names
    the channel the write actually came through. This is attribution only; it
