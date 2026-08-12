@@ -57,6 +57,23 @@ require_relative "support/session_env"
 require_relative "support/test_database_purge"
 TestDatabasePurge.purge!
 
+# TestDatabaseLeakGuard — keep it empty DURING the run, and NAME the test that
+# dirtied it. The boot purge above is a starting condition, not an invariant: a
+# test whose writes are never rolled back (use_transactional_tests = false, or a
+# subprocess committing to this same DB) leaves rows behind mid-run, and the
+# innocent test that runs next is the one that goes red — non-deterministically,
+# since minitest shuffles the runnable classes. This checks the same invariant
+# after EVERY test, once Rails has rolled that test's transaction back, and fails
+# the test that actually did it. See test/support/test_database_leak_guard.rb.
+#
+# Two hooks, on purpose: ActiveSupport::TestCase sits AHEAD of
+# ActiveRecord::TestFixtures in the ancestor chain, so RailsHook's `super` returns
+# only after the rollback; Minitest::Test catches the bare test/lib + test/commands
+# files that never inherit from it (they skip the Rails hook to avoid a double check).
+require_relative "support/test_database_leak_guard"
+ActiveSupport::TestCase.prepend(TestDatabaseLeakGuard::RailsHook)
+Minitest::Test.prepend(TestDatabaseLeakGuard::BareHook)
+
 # CertDatabaseReaper — sweep the per-run cert test databases a hard-killed prior
 # run stranded. The DB-provisioning probe (test/commands/agent_worktree_test.rb)
 # mints a UNIQUE Postgres DB per run and drops it in an `ensure`; a SIGKILL runs no

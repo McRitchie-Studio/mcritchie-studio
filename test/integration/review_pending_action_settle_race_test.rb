@@ -42,9 +42,19 @@ class ReviewPendingActionSettleRaceTest < ActiveSupport::TestCase
     cleanup!
   end
 
+  # CLEAN UP EVERYTHING, INCLUDING WHAT THE CALLBACKS WROTE. Transactional fixtures
+  # are off here, so every row below is really COMMITTED and this method is the only
+  # thing that removes it. `Task.create!` fires `after_create :record_genesis_event`,
+  # which writes a TaskEvent — and `delete_all` skips callbacks AND `dependent:
+  # :destroy`, so deleting the task ORPHANS that event rather than taking it along.
+  # `task_events` has no fixture, so nothing else in the harness ever cleans it: the
+  # orphan survived into every later test in the process and eventually reddened
+  # test/integration/test_database_hermeticity_test.rb, on the orderings that put it
+  # last. That cost three sessions. The children go first, explicitly.
   def cleanup!
     ReviewPendingAction.where(task_slug: SLUG).delete_all
     Activity.where(task_slug: SLUG).delete_all
+    TaskEvent.where(task_slug: SLUG).delete_all
     Task.where(slug: SLUG).delete_all
   end
 
