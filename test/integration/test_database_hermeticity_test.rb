@@ -31,10 +31,15 @@ class TestDatabaseHermeticityTest < ActionDispatch::IntegrationTest
       against this same database under RAILS_ENV=test — but ANY process that
       commits here does the same damage.
 
-      test/test_helper.rb purges the database at boot to prevent exactly this. If
-      this test is failing, that purge is not running (or no longer covers these
-      tables). Do not "fix" it by adding a fixture for the table above; that closes
-      one hole and leaves the rest of the schema open.
+      Two things upstream of this message exist to prevent exactly that:
+      test/test_helper.rb purges the database at boot, and TestDatabaseLeakGuard
+      (test/support/test_database_leak_guard.rb) fails any TEST that leaves rows
+      behind, at its own teardown, before this one ever runs. So if you are reading
+      this, either the polluter is a process OUTSIDE this one (the e2e lane above),
+      or one of those two is no longer running.
+
+      Do not "fix" it by adding a fixture for the table above; that closes one hole
+      and leaves the rest of the schema open.
     MESSAGE
   end
 

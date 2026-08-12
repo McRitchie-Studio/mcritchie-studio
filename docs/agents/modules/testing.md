@@ -296,6 +296,64 @@ same ENV var just rewrote is comparing a moved value **to itself**. The `databas
 literal does not move — anchor there. (`test/lib/test_database_purge_test.rb` pins this:
 swap the anchor back to `configs_for` and the "placebo case" goes red.)
 
+### …and it STAYS empty: the mid-run leak guard
+
+**A boot purge is a starting condition, not an invariant.** It cannot see a leak
+that happens *after* it runs, and the run is full of moments that can leak: a test
+with `use_transactional_tests = false` (its writes are really committed), or a
+subprocess committing to the same database. Rails will not clean those rows —
+fixture loading only truncates the ~28 tables it has fixtures for — so every later
+test in that process sees them.
+
+**The victim is never the polluter, and that is what makes it expensive.** The one
+test that notices is the standing invariant
+(`test/integration/test_database_hermeticity_test.rb`), which belongs to whoever's
+diff happens to be in flight. It went red as `task_events: 1 row(s)` in three
+unrelated tasks, and only *sometimes*: minitest shuffles the runnable classes, so
+the same SHA re-ran green. It reads exactly like flake, and it cost three sessions
+— one of them an hour of infrastructure time on a confident wrong hypothesis.
+
+**So the rule is enforced where the blame belongs: a test may not leave rows in an
+un-fixtured table.** `test/support/test_database_leak_guard.rb` checks after EVERY
+test and fails the test that dirtied the database, naming the table, the count, and
+the usual cause. Two details make it cheap and correct:
+
+- It runs **after Rails' rollback** — installed on `ActiveSupport::TestCase`, which
+  sits ahead of `ActiveRecord::TestFixtures` in the ancestor chain, so `super`
+  returns only once the test transaction is gone. An ordinary transactional test's
+  own writes have already vanished by then, so anything still standing was really
+  committed. (A second hook on `Minitest::Test` covers the bare `test/lib` /
+  `test/commands` files when the sweep loads them alongside Rails.)
+- It asks with **one round trip** — `TestDatabasePurge.nonempty_tables` is a single
+  `UNION ALL` of `EXISTS` probes (~0.24 ms measured), not a `COUNT(*)` per table
+  (~3.4 ms). Counts are computed only on the failure path, where they are the report.
+
+It also **truncates what leaked** before returning. That is containment, not the
+fix: one leaky test can no longer poison the rest of the run, which is what removes
+the ordering lottery from the invariant above.
+
+**Writing a non-transactional test: clean up what the CALLBACKS wrote, not just
+what you wrote.** The bug this guard was built on is the whole lesson —
+`ReviewPendingActionSettleRaceTest` created a Task (whose `after_create
+:record_genesis_event` writes a TaskEvent) and cleaned up with `Task.where(slug:
+…).delete_all`. `delete_all` skips callbacks **and** `dependent: :destroy`, so the
+event outlived its parent, once per test. CI distributes test *methods* across
+workers, which is why a worker that drew one of the file's two tests ended with
+exactly the one row the CI log named. Delete the children explicitly, or destroy
+the parent.
+
+**Fixtured tables are deliberately outside its reach.** Truncating them would empty
+the world the rest of the process depends on, and it is unnecessary: the
+non-transactional branch of `setup_fixtures` calls `invalidate_already_loaded_fixtures`,
+so the harness re-loads fixtures itself. Only the un-fixtured tables have no owner —
+which is the same blast radius the boot purge and the standing invariant use.
+
+`test/integration/test_database_leak_guard_test.rb` pins it by RUNNING a real
+non-transactional test case in-process and reading its result: the leaky shape must
+FAIL with the table named, the same case with a complete cleanup must PASS, and the
+database must be empty afterwards either way. Ordering is not left to the suite —
+the polluter and the check are one call apart.
+
 ### Stranded per-run cert test databases are reaped
 
 One test provisions a **real** Postgres database to exercise db provisioning end to
