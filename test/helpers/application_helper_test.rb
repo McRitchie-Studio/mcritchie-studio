@@ -2,8 +2,10 @@ require "test_helper"
 
 class ApplicationHelperTest < ActionView::TestCase
   # ActionView::TestCase mixes in only the helper its class name names; the app
-  # mixes in all of them. release_state_label reaches for the "at" primitive.
-  include AtTimeHelper
+  # mixes in all of them. release_state_label reaches for the "at" primitive,
+  # which the GEM owns — the hub's fork is retired. Named explicitly here so a
+  # broken gem-side rename fails on this line instead of somewhere downstream.
+  include Studio::AtTimeHelper
 
   test "compact_time_ago renders the smallest legible unit and guards blank/future times" do
     now = Time.utc(2026, 7, 7, 12, 0, 0)
