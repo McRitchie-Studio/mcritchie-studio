@@ -13,11 +13,12 @@ token, endpoints, writable fields, and the normalizer footguns — see
 ## Flat Tasks First
 
 Do not create parent/child task trees by default. Deliver increments of work as
-flat tasks. Big features can use the same `release_slug` value across several
-tasks when they need to be promoted together.
+flat tasks. Tasks that must ship together do so by riding the same release
+candidate — the sweep promotes everything on `accepted` in one batch, so
+"promoted together" is the default, not something you tag for.
 
-Use parent/child modeling only after flat tasks and release-slug tags prove too
-weak in real operations.
+Use parent/child modeling only after flat tasks prove too weak in real
+operations.
 
 ## Required Task-Tracking Rule
 
@@ -62,8 +63,8 @@ handoff state.
 
 Use one task per independently reviewable increment. For a vertical feature
 that touches multiple repos and ships together, either use one task with all
-repos listed in `repositories`, or separate flat tasks that share the same
-`release_slug` when the increments can be reviewed or promoted separately.
+repos listed in `repositories`, or separate flat tasks whose ordering you record
+in `dependencies` when one must ship before another.
 
 Minimum task setup before implementation:
 
@@ -79,8 +80,6 @@ Minimum task setup before implementation:
   `payment`, `migration`, `ui`, `provider`, `docs`, or `deploy`.
 - `test_plan` records the checks the agent expects to run.
 - `checks_run` records the checks actually completed before handoff.
-- `release_slug` groups related tasks that should move through QA/release
-  together. Leave it blank for a small independent task.
 - `requires_release_conductor` is `true` when production deploy, gem publish,
   provider config, env vars, data correction, credentials, or migration/backfill
   handling may be needed.
@@ -348,7 +347,6 @@ Supported fields:
 | `approval_approved_at` | Server-stamped ISO8601 timestamp when approval first enters `approved`. Any lane may record the grant — the board UI, or an agent writing down an approval the operator gave in words (`bin/task update <task> --approval approved`) |
 | `qa_url` | Stable QA URL or specific QA route |
 | `production_url` | Production URL or specific production route |
-| `release_slug` | Optional shared tag for tasks promoted together |
 | `requires_release_conductor` | `true` when production deploy, gem publish, provider config, or env change is involved |
 | `risk_tags` | Short tags such as `auth`, `email`, `solana`, `payment`, `migration`, `ui`, `provider` |
 | `acceptance` | Acceptance criteria, one item per line |
@@ -580,20 +578,31 @@ the exact blocker, expected owner action, and any PR/CI link needed to reproduce
 the issue. Also leave a GitHub PR comment when the blocker is code-review
 specific or should be visible on the PR.
 
-## Release Slug Tags
+## Release Slug — read-only, attached by the sweep
 
-Use `release_slug` as a grouping label, not a hierarchy. A conductor can filter
-tasks by one release slug and promote those accepted tasks together. Leave it
-blank for independent fixes that can be reviewed, QAed, released, and cleaned up
-alone.
+`release_slug` is a **top-level Task column, not a field you set.** It is the
+`belongs_to :release` FK, and only `Release#record_members` writes it — at the
+sweep, when the task's PR actually lands on the `release` branch. It means "this
+task rides release X", which is a fact about where the code is, not an intention
+about where it should go.
 
-Good release-slug examples:
+So there is nothing to tag. Do not look for a `--release-slug` flag or a form
+field; both were removed. A `devops` write to the name is refused with a 422
+naming the column (`Task::DEVOPS_COLUMN_KEYS`), because it previously succeeded
+against a shadow store that no release code read — the value showed on the task
+page while `bin/conductor` reported no candidate.
 
-- `rel-2026-06-17-turf-admin-identity`
-- `rel-studio-engine-0.11-adoption`
-- `rel-qa-banner-rollout`
+Read it, never write it:
 
-Each task still owns its own PR, acceptance criteria, and URLs.
+```bash
+bin/task field <slug> release_slug      # the column, machine-readable
+bin/task show <slug> --verbose          # "release_slug: rel-…" or "not on a release"
+```
+
+To order work that must ship in sequence, use `dependencies` (enforced by
+`Release::Ordering`); to flag work needing an exclusive rollout lane, use
+`requires_release_conductor`. Each task still owns its own PR, acceptance
+criteria, and URLs.
 
 ## Cleanup Tasks
 

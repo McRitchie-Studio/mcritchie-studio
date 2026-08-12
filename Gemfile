@@ -107,7 +107,14 @@ gem "sentry-rails"
 # comes back, invisibly to any scroll-0 or markup-level test.
 #
 # Bars brand off --color-warning / --color-danger, so they follow this app's theme.
-gem "studio-engine", "~> 0.39"
+#
+# 0.40.0 RAISED THE FLOOR AGAIN, and this one is not a rendering nicety — it is a
+# missing file. 0.40.0 is the first version to ship `studio/_at_time_script`, and
+# the layout now renders it after deleting the hub's fork. On 0.39.x that render
+# raises ActionView::MissingTemplate on EVERY page, so the failure is at least
+# loud. The quieter half is the helper: Studio::AtTimeHelper also arrives in
+# 0.40.0, and release_state_label calls at_time_tag.
+gem "studio-engine", "~> 0.40"
 
 # Pin the majors this app already runs so an engine bump cannot carry a new one
 # in silently. studio-engine declares `redis >= 4.0.1` with NO upper bound — the

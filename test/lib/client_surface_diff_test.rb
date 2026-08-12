@@ -46,6 +46,12 @@ class ClientSurfaceDiffTest < Minitest::Test
     assert_equal "an inline <script>", surfaces.first.reason
   end
 
+  # Both paths stay fixtures on purpose. The hub's `shared/` copy is RETIRED —
+  # /tasks/adopt-at-format-from-gem collapsed the hub onto the gem's `studio/`
+  # partial — but the classifier reads a path and its content, never the disk, and
+  # the next host to fork a re-stamper into its own `shared/` will spell it exactly
+  # this way. Dropping the retired path would narrow the detector to the one
+  # location we happen to use today.
   def test_unit_defect_two_and_three_at_time_script_partial_is_a_program
     ["app/views/shared/_at_time_script.html.erb",
      "app/views/studio/_at_time_script.html.erb"].each do |path|

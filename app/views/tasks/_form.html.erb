@@ -69,12 +69,14 @@
         </div>
       </div>
 
-      <div class="grid md:grid-cols-3 gap-4 mb-4">
-        <div>
-          <label class="block text-sm text-secondary mb-2 font-medium">Release Slug</label>
-          <%= text_field_tag "task[devops][release_slug]", task.devops_release_slug,
-                class: "input-field", placeholder: "rel-2026-06-18-devops-tooling" %>
-        </div>
+      <%# No Release Slug field, deliberately. Release membership is the
+          release_slug COLUMN, attached by the sweep (Release#record_members) when a
+          task's PR actually lands on the release branch — it is a belongs_to FK,
+          not an intention. This form used to write a same-named devops key that no
+          release code read, so a slug typed here persisted, displayed on the task
+          page, and left bin/conductor still reporting no candidate. The task page
+          now renders the real column (read-only). See Task::DEVOPS_COLUMN_KEYS. %>
+      <div class="grid md:grid-cols-2 gap-4 mb-4">
         <div>
           <label class="block text-sm text-secondary mb-2 font-medium">Branch</label>
           <%= text_field_tag "task[devops][branch]", task.devops_field("branch"),

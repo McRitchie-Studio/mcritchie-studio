@@ -162,9 +162,25 @@
         </div>
 
         <div class="grid md:grid-cols-3 gap-3 mb-3">
+          <%# Release membership is the release_slug COLUMN — the belongs_to FK the
+              sweep writes (Release#record_members). This card used to render a
+              same-named devops key an operator could type into, which nothing in
+              the release lane ever read: a value that looked like membership and
+              meant nothing. The empty wording matches TaskColumnFields::UNSET_READS
+              word for word, so this page and `bin/task show --verbose` say the same
+              thing about the same task. %>
           <div class="bg-surface rounded p-2">
             <p class="text-[10px] text-muted uppercase tracking-wide">Release Slug</p>
-            <p class="text-heading text-sm mt-0.5"><%= @task.devops_release_slug || "—" %></p>
+            <% if (task_release = @task.release) %>
+              <p class="text-sm mt-0.5 break-all">
+                <%= link_to task_release.slug, deployment_path(task_release.slug),
+                      class: "text-primary hover:underline" %>
+              </p>
+            <% elsif @task.release_slug.present? %>
+              <p class="text-heading text-sm font-mono mt-0.5 break-all"><%= @task.release_slug %></p>
+            <% else %>
+              <p class="text-heading text-sm mt-0.5">not on a release</p>
+            <% end %>
           </div>
           <div class="bg-surface rounded p-2">
             <p class="text-[10px] text-muted uppercase tracking-wide">Branch</p>
