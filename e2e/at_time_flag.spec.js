@@ -19,6 +19,20 @@ const { test, expect } = require("@playwright/test");
 // installed script, and the browser's own Intl are all in the loop, and a break in
 // the markup contract between them fails here rather than passing on a fixture
 // that agrees with itself.
+//
+// WHOSE SCRIPT THIS EXERCISES: studio-engine's. The hub's local fork was retired by
+// /tasks/adopt-at-format-from-gem, so the layout renders `studio/at_time_script`
+// and this is now the only browser-level coverage the primitive has in EITHER
+// repo — the engine has no browser lane, and its consumer-CI runs this repo's Ruby
+// suite only.
+//
+// AND WHAT IT STILL CANNOT SEE. playwright.config.js runs ONE project, Chromium.
+// Every long-form id below canonicalizes to a short one before isUS() is handed
+// anything, so the US_PREFIXES entries Firefox depends on are NEVER exercised here:
+// delete them and this spec stays green. The Ruby backstop that does bite is
+// test/integration/at_time_gem_adoption_test.rb, which asserts the membership
+// property directly against the gem's list and runs in the engine's consumer-CI.
+// Do not thin either one on the belief that the other covers it.
 const BADGE = "#last-release [data-test='release-state-badge'] time[data-at-stamp]";
 
 // Membership is the assertion: "" means the reader is inside the US and must see

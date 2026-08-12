@@ -123,10 +123,19 @@
         loaded globally by layouts/studio/_head. %>
     <%= render "studio/board_assets" %>
 
-    <%# The "at" format's re-stamper (AtTimeHelper). Installed page-level for the
-        whole app, not per-view: any page may render an at_time_tag, and every one
-        of them needs the viewer's clock and flag. Self-guarded, so a second render
-        is a no-op. %>
-    <%= render "shared/at_time_script" %>
+    <%# The "at" format's re-stamper, owned by studio-engine (Studio::AtTimeHelper).
+        The hub's local fork is retired: the two copies were kept byte-identical BY
+        HAND, and the Indiana/Louisville zone-alias bug had to be fixed twice. One
+        copy, in the gem, is the whole point of this render.
+
+        Installed page-level for the whole app, not per-view: any page may render an
+        at_time_tag, and every one of them needs the viewer's clock and flag.
+        Self-guarded, so a second render is a no-op.
+
+        LAST in the body, deliberately. Its first pass runs synchronously as the
+        script parses, so moving it into head finds zero stamps on that pass and
+        leaves every one of them showing the app-timezone fallback until the next
+        sweep. Guarded by test/integration/at_time_gem_adoption_test.rb. %>
+    <%= render "studio/at_time_script" %>
   </body>
 </html>

@@ -813,9 +813,10 @@ module ApplicationHelper
   # Release-card status badge label. Folds the bare state and the moment it
   # happened into one pill — "Shipped at 3:53p", "Assembled at Aug 10, 2:11p" —
   # so the card neither repeats the state nor carries a separate "shipped X ago"
-  # line. The stamp is the "at" primitive (AtTimeHelper), so the clock is the
-  # READER's: a viewer outside the US also gets the country flag trailing it, and
-  # the relative phrase this label used to show moves into the hover title.
+  # line. The stamp is the "at" primitive — Studio::AtTimeHelper, owned by the
+  # gem; the hub's fork is retired — so the clock is the READER's: a viewer
+  # outside the US also gets the country flag trailing it, and the relative
+  # phrase this label used to show moves into the hover title.
   # Returns HTML. Falls back to the bare capitalized state when no timestamp
   # applies (an in-progress "Assembling" release, or a shipped release with no
   # recorded shipped_at).
