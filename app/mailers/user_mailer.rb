@@ -20,11 +20,15 @@ class UserMailer < ApplicationMailer
     @greeting = greeting_for(email)
     @banner_alt = [@greeting, "your #{@app_name} sign-in link"].compact.join(" — ")
 
-    # Composed banner first, static catalogue banner if anything at all went
-    # wrong composing it. EmailBanner returns nil rather than raising precisely
-    # so that a font, a bucket or a background cannot stop a sign-in link.
-    @banner_url = EmailBanner.url_for(header: @greeting, subtext: "your sign-in link is below") ||
-                  Studio::EmailCatalog.resolved_url(:magic_link)
+    # LAYERED banner: the engine renders the artwork with this greeting on top.
+    # Nothing is generated at send time — the background is a static asset the
+    # app inherits from the catalogue, and only the words change per recipient.
+    @banner = Studio::Banner.for(:magic_link, header: @greeting,
+                                 subtext: "your sign-in link is below")
+
+    # Kept as the floor: if no layered artwork is registered, the layout falls
+    # back to the flat <img> exactly as it did before.
+    @banner_url = Studio::EmailCatalog.resolved_url(:magic_link)
 
     mail(to: email, subject: "Your #{@app_name} sign-in link")
   end
