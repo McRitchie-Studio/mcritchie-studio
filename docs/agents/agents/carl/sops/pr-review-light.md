@@ -64,7 +64,13 @@ note it as a finding — do not guess.
      or missing docs Carl may have missed. Depth and the gates are Carl's job;
      your job is a sharp second set of eyes through your domain.
 
-3. **Classify findings** as blockers, non-blockers, or questions.
+3. **Classify findings** as blockers, non-blockers, or questions. Before any
+   finding claims the diff *introduces*, *exposes*, or *first makes reachable*
+   something, check the **prior art**: read what the diff replaced, deleted files
+   included (`git show origin/accepted:<path>`, `git diff --diff-filter=D`), and
+   say what actually changed. "Net exposure change: zero" is a complete answer.
+   If you did not look, write `prior art: not investigated` — an omission gets
+   read as "none", and Carl will carry that read into his verdict.
 
 4. **Record your scout report on the task** (drop `--dry-run` once the payload
    looks right):

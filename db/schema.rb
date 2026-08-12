@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_11_004900) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_11_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1410,6 +1410,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_11_004900) do
   create_table "triage_findings", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
+    t.string "prior_art", default: "unknown", null: false
+    t.text "prior_art_note"
     t.string "promoted_task_slug"
     t.string "repo"
     t.datetime "resolved_at"

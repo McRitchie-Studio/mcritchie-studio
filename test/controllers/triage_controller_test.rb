@@ -70,6 +70,51 @@ class TriageControllerTest < ActionDispatch::IntegrationTest
     assert_equal "dismissed", @finding.reload.status
   end
 
+  # PROMOTION is where a finding stops being a note and becomes the brief someone
+  # WORKS from — the exact hop where the false framing in finding-6a5fdcd157b3
+  # propagated ("I inherited that framing"). An uninvestigated finding must hand
+  # its builder the caveat and the instruction, not a clean slate.
+  test "[integration] promoting an uninvestigated finding carries the caveat into agent_context" do
+    log_in_as(@admin)
+    post promote_triage_finding_path(@finding.slug),
+         params: { title: "Raise Hub Web Concurrency", kind: "chore" }
+
+    context = Task.order(:created_at).last.metadata.dig("devops", "agent_context").to_s
+    assert_includes context, "PRIOR ART: NOT INVESTIGATED"
+    assert_includes context, "BEFORE assuming this change introduced it"
+    assert_includes context, @finding.body, "the discovery still rides through verbatim"
+  end
+
+  test "[integration] promoting an investigated finding carries the answer, not a nag" do
+    log_in_as(@admin)
+    note = "TM's deleted preview view carried the identical iframe since 2025-11"
+    @finding.update!(prior_art: "found", prior_art_note: note)
+    post promote_triage_finding_path(@finding.slug),
+         params: { title: "Raise Hub Web Concurrency", kind: "chore" }
+
+    context = Task.order(:created_at).last.metadata.dig("devops", "agent_context").to_s
+    assert_includes context, "PRIOR ART: checked — #{note}"
+    refute_includes context, "NOT INVESTIGATED"
+  end
+
+  # [component] the inbox card states prior art for EVERY finding. Rendering only
+  # the answered ones would put "nobody looked" back into a blank, which is the
+  # read this whole change exists to remove.
+  test "[component] the inbox card renders the uninvestigated warning" do
+    get triage_path
+    assert_response :success
+    assert_match(/⚠ Prior art/, response.body)
+    assert_match(/NOT INVESTIGATED/, response.body)
+  end
+
+  test "[component] an investigated finding renders its answer instead of the warning" do
+    @finding.update!(prior_art: "none")
+    get triage_path
+    assert_response :success
+    assert_match(/none found/i, response.body)
+    refute_match(/⚠ Prior art: NOT INVESTIGATED/, response.body)
+  end
+
   test "[integration] promote refuses an already-resolved finding" do
     log_in_as(@admin)
     @finding.dismiss!
