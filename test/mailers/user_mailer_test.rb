@@ -55,4 +55,22 @@ class UserMailerTest < ActionMailer::TestCase
     assert_includes html, "token-for-test-1234", "the sign-in link is the point of the email"
     assert_equal [users(:alex).email], message.to
   end
+
+  # A transient failure looking the name up must degrade to the name-free
+  # banner, never cost the send — the floor the engine's own mailer holds.
+  test "a failing name lookup still sends the email, name-free" do
+    # Resolved BEFORE the stub: the fixture accessor itself calls User.find_by!,
+    # so reading it inside the block would raise from the harness and pass this
+    # test for the wrong reason.
+    recipient = users(:alex).email
+    raiser = ->(*_args, **_kwargs) { raise ActiveRecord::StatementInvalid, "connection lost" }
+
+    User.stub(:find_by, raiser) do
+      html, message = html_for(recipient)
+
+      assert_equal "Your Magic Link", banner_header(html)
+      assert_includes html, "token-for-test-1234", "the sign-in link must still ship"
+      assert_equal [recipient], message.to
+    end
+  end
 end

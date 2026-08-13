@@ -44,7 +44,13 @@ class UserMailer < ApplicationMailer
 
   # The recipient's name when we already hold an account for them, else nil —
   # which is what makes the banner fall back to its name-free header.
+  #
+  # RESCUED like the engine's recipient_name this class overrides. The greeting
+  # is a nicety; the link is how someone gets back into their account, so a
+  # transient lookup failure must cost the name and never the send.
   def name_for(email)
     User.find_by(email: email.to_s.strip.downcase)&.display_name.presence
+  rescue StandardError
+    nil
   end
 end
