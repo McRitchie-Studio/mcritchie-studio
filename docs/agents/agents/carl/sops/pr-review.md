@@ -306,9 +306,11 @@ doc).
   the rows, and every hand-rolled copy counted them on the **unparsed
   `Net::HTTPResponse`** — where `response["data"]` reads an HTTP *header*, returns
   nil, and yields **0 prior bounces for every task on earth**, silently. The
-  breaker looked like it was working for as long as it existed. Two more reads
-  scored zero the same way: an expired token (401) and a non-JSON error page.
-  `bin/task bounces` refuses all three instead of answering.
+  breaker looked like it was working for as long as it existed. Three more reads
+  scored zero the same way: an expired token (401), a non-JSON error page, and a
+  **slug that does not exist** — the activities endpoint filters by `task_slug`
+  and answers `200` with an empty list, so a typo read CLEAR. `bin/task bounces`
+  refuses all four instead of answering.
 
   What it reads, and what it never reads: the durable trail is the task's
   `qa_feedback` **activities**, one row per bounce, classified by the `kind`

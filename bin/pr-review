@@ -10,6 +10,8 @@
 #   * bin/devops-cycle --json --decisions --scout-reports
 #   * bin/reviewer-select <task> --json
 #   * codex exec for each selected reviewer
+#   * bin/task bounces <task> — the two-bounce circuit breaker's read, before any
+#     rework block (a repeat send-back escalates to the operator instead)
 #   * bin/task move|block|note for the review owner's final handoff
 #
 # LEGACY MECHANICS NOTE: this script still drives the pre-2026-07-22 orchestration —
@@ -705,9 +707,43 @@ def move_reviewed(slug, task, reviewers, reports, reviewed_head: nil, zap_head: 
   ok && task_write(["note", slug, "--handoff", note, "--agent", "avi"])
 end
 
+# TRUE when the two-bounce circuit breaker refuses another send-back on this task
+# (`bin/task bounces` exits 10 = TRIPPED). Every other exit — 0 CLEAR, or any
+# failure — answers false, because only an affirmative TRIPPED should divert the
+# supervisor onto the escalation path; an unreadable ledger must not silently
+# convert an ordinary rework into an operator escalation. The rework block runs the
+# same check itself and refuses (exit 10) either way, so the failure mode of this
+# read is a recorded tool failure, never a bounce that quietly lands.
+def breaker_tripped?(slug)
+  return false unless OPTIONS.fetch(:run)
+
+  _out, _err, status = run_capture(managed_command(TASK_BIN, "bounces", slug))
+  status&.exitstatus == 10
+end
+
+# Returns :blocked, :escalated, or false.
+#
+# THE TWO-BOUNCE CIRCUIT BREAKER, at the automated review path's block seam. A
+# repeat send-back is a review DEADLOCK, and a deadlock is the operator's call,
+# never a ping-pong — the same rule Carl follows by hand (pr-review-sop.md Step 3).
+# Without this the supervisor would keep bouncing a task forever, which is exactly
+# the loop the breaker exists to break.
 def block_for_rework(slug, reports)
-  feedback = "pr-review blocked review: #{reports.map { |r| report_summary(r) }.join("; ")}"
-  task_write(["block", slug, "--kind", "rework", "--feedback", feedback, "--agent", "avi"])
+  summary = reports.map { |r| report_summary(r) }.join("; ")
+  unless breaker_tripped?(slug)
+    return task_write(["block", slug, "--kind", "rework",
+                       "--feedback", "pr-review blocked review: #{summary}",
+                       "--agent", "avi"]) ? :blocked : false
+  end
+
+  feedback = "Escalated by the two-bounce circuit breaker: this task has already been sent " \
+             "back at least once, and review would be bouncing it again. Review's position: " \
+             "#{summary}. The builder's position is on the task's earlier qa_feedback and handoff " \
+             "notes. A repeat bounce is a review deadlock and needs Mr. McRitchie's call, not " \
+             "another lap. Read the full trail with: bin/task bounces #{slug}"
+  task_write(["block", slug, "--kind", "dependency",
+              "--summary", "Escalated: repeat review bounce",
+              "--feedback", feedback, "--agent", "avi"]) ? :escalated : false
 end
 
 def note_deferred(slug, outcome, reports)
@@ -973,7 +1009,13 @@ def finish_review(review, events, handled, deferred_until)
                "--meta", "outcome=ci-red")
     feedback = "pr-review CI gate: GitHub CI is RED for the PR (#{failing}) — blocked back before spawning " \
                "reviewers. Fix the failing checks, push, and resubmit; the supervisor re-checks CI at the next wave."
-    ok = task_write(["block", slug, "--kind", "rework", "--feedback", feedback, "--agent", "avi"])
+    # MECHANICAL, so it carries a breaker acknowledgment: a red pipe is not a
+    # review disagreement, and there is nothing here for the operator to arbitrate.
+    # Without the ack the two-bounce breaker would refuse this bounce on a task that
+    # had already been sent back once, and gate-zero would record a tool failure
+    # instead of returning a broken build to its builder.
+    ok = task_write(["block", slug, "--kind", "rework", "--feedback", feedback, "--agent", "avi",
+                     "--breaker-ack", "red CI, mechanical"])
     events << { slug: slug, status: ok ? :blocked : :tool_failure, category: "ci-red",
                 reason: "GitHub CI red: #{failing}", reviewers: [] }
     handled[slug] = true
@@ -989,7 +1031,8 @@ def finish_review(review, events, handled, deferred_until)
                "--meta", "outcome=ci-conflicted")
     feedback = "pr-review CI gate — deferring a conflicted PR would strand this task in submitted. " +
                CiStatus.conflicted_remedy(review[:ci_conflicted])
-    ok = task_write(["block", slug, "--kind", "rework", "--feedback", feedback, "--agent", "avi"])
+    ok = task_write(["block", slug, "--kind", "rework", "--feedback", feedback, "--agent", "avi",
+                     "--breaker-ack", "merge conflict, mechanical"])
     events << { slug: slug, status: ok ? :blocked : :tool_failure, category: "ci-conflicted",
                 reason: "PR merge-conflicted against base (mergeStateStatus DIRTY)", reviewers: [] }
     handled[slug] = true
@@ -1008,7 +1051,8 @@ def finish_review(review, events, handled, deferred_until)
     # in the no-base case the remedy DECLINES to give a command, which an appended one
     # would contradict. Add only the workflow step the remedy does not cover.
     feedback = "pr-review CI gate: #{CiStatus.ci_less_remedy(ci)} Then resubmit the task for review."
-    ok = task_write(["block", slug, "--kind", "rework", "--feedback", feedback, "--agent", "avi"])
+    ok = task_write(["block", slug, "--kind", "rework", "--feedback", feedback, "--agent", "avi",
+                     "--breaker-ack", "stale base, no CI, mechanical"])
     events << { slug: slug, status: ok ? :blocked : :tool_failure, category: "ci-less",
                 reason: "PR will never get CI (stale base; zero check-runs)", reviewers: [] }
     handled[slug] = true
@@ -1086,10 +1130,18 @@ def finish_review(review, events, handled, deferred_until)
     handled[slug] = true
     ok
   when "request-changes"
-    ok = block_for_rework(slug, reports)
-    events << { slug: slug, status: ok ? :blocked : :tool_failure, category: "request-changes", reason: reports.map { |r| report_summary(r) }.join("; "), reviewers: reviewer_slugs }
+    result = block_for_rework(slug, reports)
+    reason = reports.map { |r| report_summary(r) }.join("; ")
+    # An escalation still COMPLETES the review (the task left the queue with a
+    # recorded verdict), so it rides the blocked counter — but under its own
+    # category, so the wave report shows it as the operator's call and the
+    # commonality counts do not read it as one more ordinary rework.
+    reason = "⚠ Escalated (two-bounce breaker) — #{reason}" if result == :escalated
+    events << { slug: slug, status: result ? :blocked : :tool_failure,
+                category: result == :escalated ? "escalated" : "request-changes",
+                reason: reason, reviewers: reviewer_slugs }
     handled[slug] = true
-    ok
+    !!result
   when "wait-for-ci", "conductor-review", "incomplete"
     category = outcome == "incomplete" ? "missing-scout-report" : outcome
     reason = reports.empty? ? "missing required reviewer reports" : reports.map { |r| report_summary(r) }.join("; ")
