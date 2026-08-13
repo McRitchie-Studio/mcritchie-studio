@@ -98,4 +98,29 @@ class UserMailerTest < ActionMailer::TestCase
     assert_includes html, "token-for-test-1234", "the link is the point of the email"
     assert_equal [ users(:alex).email ], message.to
   end
+
+  # The subject is the most visible place a {name} can leak. It SAVES a subject
+  # containing {name}: against the registry default (none) this passes on broken code.
+  test "the subject resolves the recipient and leaks no placeholder" do
+    Studio::EmailSetting.find_or_initialize_by(email_key: "magic_link").update!(subject: "Your {app} link, {name}")
+    Studio::EmailSetting.forget!
+    _, message = render_email(users(:alex).email)
+    assert_includes message.subject, "Alex"
+    refute_includes message.subject, "{name}"
+  end
+
+  # A transient lookup failure must cost the NAME, never the SEND — a raise escaping
+  # name_for locks the recipient out of their own account.
+  test "a failing name lookup still sends the email, name-free" do
+    recipient = users(:alex).email # resolved BEFORE the stub; the accessor calls find_by!
+    raiser = ->(*_args, **_kwargs) { raise ActiveRecord::StatementInvalid, "connection lost" }
+
+    User.stub(:find_by, raiser) do
+      html, message = render_email(recipient)
+
+      assert_equal "Your Magic Link", banner_header(html)
+      assert_includes html, "token-for-test-1234", "the sign-in link must still ship"
+      assert_equal [ recipient ], message.to
+    end
+  end
 end
