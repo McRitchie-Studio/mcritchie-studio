@@ -299,6 +299,32 @@ class BounceCheckCliTest < Minitest::Test
     assert_nil posted_activity(requests)
   end
 
+  # THE SILENT ZERO FROM THE WRITE SIDE. A rework block with no --feedback used to
+  # post no activity at all, and the block COLUMNS are wiped the moment the builder
+  # resubmits — so that bounce vanished from every durable store and the breaker
+  # counted it as never having happened.
+  def test_a_rework_block_without_feedback_still_leaves_a_countable_row
+    _out, err, status, requests = run_task(["block", SLUG, "--kind", "rework"],
+                                           activities: [200, activities_payload([])])
+
+    assert_predicate status, :success?, err
+    activity = posted_activity(requests)
+    refute_nil activity, "a bounce with no prose is still a bounce — it must be countable"
+    assert_equal "rework", activity.dig("metadata", "kind")
+    assert_match(/no --feedback/i, err, "and the caller should hear that they left the builder nothing")
+  end
+
+  # …but a NON-rework block with no feedback keeps its old silence: an environment
+  # blocker is not a send-back, and inventing a qa_feedback row for one would feed
+  # the breaker a bounce that never happened.
+  def test_a_feedbackless_environment_block_still_posts_nothing
+    _out, _err, status, requests = run_task(["block", SLUG, "--kind", "environment"],
+                                            activities: [200, activities_payload([])])
+
+    assert_predicate status, :success?
+    assert_nil posted_activity(requests)
+  end
+
   def test_breaker_ack_is_rejected_on_a_non_rework_block
     _out, err, status = run_task(["block", SLUG, "--kind", "environment", "--feedback", "x", "--breaker-ack", "y"],
                                  activities: [200, activities_payload([])])

@@ -117,7 +117,10 @@
 #   bin/task block <slug> [--kind environment|rework|dependency] [--feedback "..."] [--agent A] [--breaker-ack "reason"]
 #     ( marks a `building` ATTRIBUTE: stamps blocked_at/blocked_from/blocked_by/
 #       block_kind (no →blocked stage) + posts a qa_feedback activity stamped with
-#       the kind, so the bounce ledger stays classifiable after the columns clear )
+#       the kind, so the bounce ledger stays classifiable after the columns clear.
+#       A --kind rework block with NO --feedback still posts one (with a placeholder
+#       body + a warning): the columns are wiped on resubmit, so a prose-less bounce
+#       would otherwise vanish from every durable store and never be counted. )
 #     ( --kind rework RUNS `bounces` FIRST and REFUSES (exit 10) when the breaker is
 #       tripped, naming the escalation. --breaker-ack "reason" proceeds anyway for a
 #       MECHANICAL bounce (red CI, merge conflict — nothing to arbitrate); the reason
@@ -1923,6 +1926,18 @@ when "block"
   body["by"] = blocker unless blocker.empty?
   body["kind"] = kind if kind
   task = api(:patch, "/api/v1/tasks/#{slug}/block", body)["data"]
+  # A REWORK BOUNCE MUST LEAVE A ROW EVEN WHEN THE CALLER LEFT NO PROSE. The
+  # block COLUMNS are wiped by the builder's compliant resubmission, so a
+  # feedback-less rework block used to vanish completely — invisible to the
+  # circuit breaker forever, which is the same silent-zero this task is about,
+  # arriving from the write side instead of the read side. The placeholder is
+  # deliberately unflattering: a send-back with no send-back in it is
+  # malpractice per the review SOP, and the ledger should say so.
+  if kind == "rework" && feedback.to_s.strip.empty?
+    warn!("warning: a rework block with no --feedback gives the builder nothing to fix from.")
+    feedback = "Blocked for rework with NO send-back recorded — the blocking agent left no --feedback. " \
+               "This row exists so the bounce is countable by the two-bounce circuit breaker."
+  end
   if feedback
     note = { "task_slug" => slug, "activity_type" => "qa_feedback", "description" => feedback }
     note["agent_slug"] = blocker unless blocker.empty?
