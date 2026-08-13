@@ -14,10 +14,21 @@
     <span class="hb-disp <%= grade.good? ? "good" : "not" %>"><%= grade.disposition.upcase %></span>
     <span class="hb-grader"><%= grade.alex? ? "Alex" : "McR → Alex" %></span>
   </div>
+  <%# The separator is LITERAL template markup, so the browser gets the entity while
+      each interpolated value rides ERB's automatic output escaping. Both values are
+      untrusted — `insight_label` falls back to an action's unvalidated `event_slug`/
+      `kind`, and `task_slug` derives from operator- and agent-written titles (neither
+      column has a format validation). The earlier spelling built ONE string and marked
+      it whole with `.html_safe`, which switched escaping off exactly where the
+      untrusted value landed and let markup render as live DOM (Brakeman: High XSS x2).
+      Do not "simplify" this back into an interpolated `.html_safe` string. Equally,
+      do not fold the separator into the Ruby expression — a bare "&middot;" inside an
+      output tag is escaped and renders as the literal text on the page. %>
   <div class="hb-imeta">
     <% if source %>
-      from <%= grade.activity_grade? ? "activity " : "" %>#<%= source.seq %><%= " &middot; #{grade.insight_label}".html_safe if grade.insight_label.present? %>
-      <%= " &middot; #{source.task_slug}".html_safe if source.task_slug.present? %>
+      from <%= grade.activity_grade? ? "activity " : "" %>#<%= source.seq %>
+      <% if grade.insight_label.present? %> &middot; <%= grade.insight_label %><% end %>
+      <% if source.task_slug.present? %> &middot; <%= source.task_slug %><% end %>
     <% else %>
       source since removed
     <% end %>
