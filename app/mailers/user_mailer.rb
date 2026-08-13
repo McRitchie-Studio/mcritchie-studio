@@ -56,6 +56,46 @@ class UserMailer < ApplicationMailer
     mail(to: email, subject: subject)
   end
 
+  # --- what /admin/emails previews ------------------------------------------
+  #
+  # THE PREVIEW IS THE MAILER, not a second rendering of the same idea. It calls
+  # the action above with a real address and lets it resolve everything itself,
+  # so the picture on the manager cannot drift from the email that ships. Passing
+  # a pre-baked name or building a Mail by hand here would create exactly the
+  # preview-vs-send gap this surface has produced defects from before.
+  #
+  # Registered from config/initializers/studio_emails.rb; the engine calls it
+  # ONLY on /admin/emails and never on a delivery path, and it wraps the call, so
+  # a failure here shows up as a message on the page rather than a 500.
+  # ActionMailer returns a lazy MessageDelivery, so nothing is delivered — the
+  # engine forces it to a Mail and reads the body.
+
+  # A DEAD TOKEN, on purpose. The preview is rendered for an admin looking at the
+  # page, and minting a live one would put a working sign-in credential for
+  # somebody else's account into an admin screenshot. This resolves to a real URL
+  # shape that answers "invalid or expired link" when clicked.
+  PREVIEW_TOKEN = "preview-not-a-live-sign-in-link".freeze
+
+  # WHO the preview is addressed to — the same person the page's recipient picker
+  # defaults to, so the two agree on first load.
+  #
+  # An ADDRESS, never a name: handing the mailer an address is what makes the
+  # preview take the identical path a send takes, including how the name is
+  # resolved. Studio::EmailPreviewTarget.resolve always answers (it falls back to
+  # a sample admin when this app has no admin row), so there is no nil branch
+  # here to leave untested.
+  #
+  # NOTE the engine passes the builder no arguments, so the preview cannot follow
+  # the page's recipient dropdown — one recipient is previewed however the picker
+  # is set. That is an engine limitation, recorded here rather than worked around.
+  def self.preview_recipient
+    Studio::EmailPreviewTarget.resolve(nil).email
+  end
+
+  def self.preview
+    magic_link(preview_recipient, PREVIEW_TOKEN)
+  end
+
   private
 
   # The recipient's name when we already hold an account for them, else nil —

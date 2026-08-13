@@ -6,13 +6,24 @@ require "minitest/mock"
 # `config.draw_admin_emails_routes = true`). Replaces the retired
 # /admin/email_images fork this file used to cover.
 #
-# This app REGISTERS NOTHING: both emails are inherited from the engine's
-# EmailCatalog::STANDARD seed. The tests below assert that inheritance rather
+# This app DECLARES NO EMAIL OF ITS OWN: both are inherited from the engine's
+# EmailCatalog::STANDARD seed, and the tests below assert that inheritance rather
 # than any local declaration.
+#
+# It does contribute exactly ONE thing, from config/initializers/studio_emails.rb:
+# a `preview:` builder attached to the inherited magic_link entry. Re-registering
+# a key updates it in place, so that adds no entry and moves nothing — the
+# inheritance claim above still holds, and the test named for it is what keeps
+# that true.
 #
 # S3 is stubbed so no network or credentials are touched; Studio::S3.url stays
 # real (a pure string), so the mailer assertion exercises the true public-URL path.
 class StudioEmailsPageTest < ActionDispatch::IntegrationTest
+  # The saved-copy cache is memoised in the process and does NOT roll back with
+  # the transaction, so a test that writes an EmailSetting has to drop it or the
+  # next test reads copy it never saved.
+  teardown { Studio::EmailSetting.forget! }
+
   test "the page is admin-only" do
     get admin_emails_path
     assert_redirected_to login_path # unauthenticated
@@ -108,5 +119,78 @@ class StudioEmailsPageTest < ActionDispatch::IntegrationTest
     log_in_as(users(:alex))
     patch admin_email_path("nonsense")
     assert_response :not_found
+  end
+
+  # --- the preview ------------------------------------------------------------
+  #
+  # Registering a preview builder is what turns the copy fields on this page from
+  # text boxes into something an operator can check. It also creates a SECOND
+  # rendering of the sign-in email, and a second rendering is a thing that can
+  # disagree with the first. These assert it does not.
+
+  test "the magic-link email is previewable at all" do
+    assert Studio::EmailCatalog.previewable?(:magic_link),
+      "config/initializers/studio_emails.rb registers the builder; without it the " \
+      "page shows 'No preview is registered' and the copy fields cannot be checked"
+
+    log_in_as(users(:alex))
+    get admin_email_path("magic_link")
+    assert_response :success
+    assert_select "iframe[src=?]", admin_email_raw_path("magic_link")
+    assert_select "p", { text: /No preview is registered/, count: 0 },
+      "the page must not still be offering the empty state"
+  end
+
+  # THE PROPERTY THIS SURFACE KEEPS BREAKING: the manager showing something the
+  # inbox never receives.
+  #
+  # Asserted as WHOLE-DOCUMENT equality rather than by spot-checking a phrase.
+  # Every prior defect here was a page answering from the field it happened to
+  # read instead of from what ships, and any assertion narrow enough to name a
+  # phrase is narrow enough to miss the next one. The preview is fetched through
+  # the REAL route the iframe loads, so it exercises the registration too — a
+  # builder pointed at some other mail fails here.
+  test "the preview iframe renders the very document the recipient receives" do
+    log_in_as(users(:alex))
+    get admin_email_raw_path("magic_link")
+    assert_response :success
+
+    assert_nil Studio::EmailCatalog.preview_error("magic_link"),
+      "the builder raised; the page would be showing an error card instead of the email"
+
+    sent = UserMailer.magic_link(UserMailer.preview_recipient, UserMailer::PREVIEW_TOKEN)
+    sent_html = (sent.html_part&.body || sent.body).to_s
+
+    assert sent_html.present?, "the control is the real send — it must have rendered"
+    assert_equal sent_html, response.body,
+      "what /admin/emails draws and what the mailer sends have diverged"
+  end
+
+  # The operator-facing half: the point of the preview is seeing copy RESOLVED.
+  # A preview that renders "Hi {name}," is the raw template with extra steps.
+  #
+  # Reads the name back out of the banner rather than restating that the mailer
+  # derives it from display_name — the banner has always carried it, so it is the
+  # control, and an assertion that re-implements the derivation would pass even if
+  # both halves drifted together.
+  test "the preview resolves the operator's placeholders instead of showing them" do
+    Studio::EmailSetting.find_or_initialize_by(email_key: "magic_link")
+                        .update!(body: "Hi {name}, tap the button to sign in to {app}.",
+                                 cta_text: "Sign in, {name}")
+    Studio::EmailSetting.forget!
+
+    log_in_as(users(:alex))
+    get admin_email_raw_path("magic_link")
+    assert_response :success
+
+    greeted = response.body[/font-weight:700;color:#ffffff;">\s*Welcome ([^<!]+)!/, 1]&.strip
+    assert greeted.present?, "the banner carries the name — it is the control for this test"
+
+    assert_includes response.body, "Hi #{greeted}, tap the button",
+      "the body must show the operator's copy with the name filled in"
+    assert_includes response.body, "Sign in, #{greeted}",
+      "the button must show it too — it is edited on the same page"
+    refute_includes response.body, "{name}"
+    refute_includes response.body, "{app}"
   end
 end
