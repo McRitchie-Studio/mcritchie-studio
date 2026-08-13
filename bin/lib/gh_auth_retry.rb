@@ -1,6 +1,12 @@
 # frozen_string_literal: true
 
-# GhAuthRetry — mint-once-and-retry for a `gh` write that failed on authentication.
+# GhAuthRetry — mint-once-and-retry for a `gh` call that failed on authentication.
+#
+# WRITES ARE NOT THE ONLY VICTIM. This module was born for `gh pr create`/`pr merge`,
+# but the same expiry blinds READS: bin/lib/ci_status.rb read CI through the ambient
+# credential and reported :unreadable — withholding the fast cert and, worse, taking
+# the REVIEW gate's authoritative CI verdict offline where nobody re-reads it. Reads
+# fail QUIETER than writes, which is what let it run for weeks.
 #
 # WHY THIS EXISTS. The 2026-07-29 org migration RETIRED personal access tokens:
 # every repo now lives under McRitchie-Studio and `gh` writes authenticate as a
