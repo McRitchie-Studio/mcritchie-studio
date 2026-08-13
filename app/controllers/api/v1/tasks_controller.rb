@@ -123,7 +123,29 @@ module Api
           "last_progress_at" => task.last_progress_at,
           "last_progress_label" => task.last_progress_label,
           "progress_seconds_ago" => task.progress_seconds_ago,
-          "progress_quiet" => task.claim_progress_quiet?
+          "progress_quiet" => task.claim_progress_quiet?,
+          # WHOSE progress, and specifically the HOLDER's. The fields above say
+          # what landed on the task; they cannot say whether the holder is the one
+          # who landed it, and the claim gate used to assume it was — quoting a
+          # challenger's own cert back to it as proof the holder was alive. nil in
+          # any of these three means UNKNOWN and is rendered as unknown.
+          "last_progress_actor" => task.last_progress_actor,
+          "holder_progress_label" => task.holder_progress_label,
+          "holder_progress_seconds_ago" => task.holder_progress_seconds_ago,
+          # A cert writes nothing into its desk while it runs (measured g1_cert p99:
+          # 94 minutes), so a long green cert has to be tellable from a walked-away
+          # terminal. The TASK-WIDE answer, kept for two readers: a human reading the
+          # card, and an older bin/task that predates the holder-scoped field below
+          # and falls back to this one (which can only keep a desk, never free one).
+          "gate_in_flight" => task.gate_in_flight?,
+          # The two facts the LEASE decision reads. Their task-wide twins above
+          # describe the task; only these describe the HOLDER, and a challenger
+          # that certifies a held slug moves the task-wide pair while saying
+          # nothing about whether the holder is still there. An artifact counts
+          # here unless it is demonstrably another session's, so every unknown
+          # still keeps the desk.
+          "holder_liveness_seconds_ago" => task.holder_liveness_seconds_ago,
+          "holder_gate_in_flight" => task.holder_gate_in_flight?
         )
       end
 

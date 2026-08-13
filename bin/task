@@ -155,6 +155,7 @@ require_relative "../lib/task_usage_baseline"
 require_relative "../lib/task_usage_sandbox"
 require_relative "../lib/task_usage_audit"
 require_relative "../lib/claim_lease"
+require_relative "../lib/desk_activity"
 require_relative "../lib/cert_evidence"
 require_relative "../lib/stale_check"
 require_relative "../lib/feature_marker"
@@ -326,7 +327,7 @@ def enforce_claim_gate!(slug, devops, mover_session, steal:, task: nil, steal_hi
   # The heartbeat above only proves a TERMINAL IS PAINTING — it says nothing about
   # whether the holder is advancing. Name the progress fact too, so the decision to
   # --steal is made on evidence instead of on a green dot.
-  warn!("     #{progress_line(task)}") if task
+  warn!("     #{progress_line(task, challenger: mover_session)}") if task
   warn!("   Another terminal looks active on this task. To take it over anyway, re-run with --steal:")
   # The hint names the caller's OWN command (`begin` passes its resume form) so
   # the operator re-runs the path they were on, not a different one.
@@ -336,16 +337,99 @@ end
 
 # "last durable progress ~28m ago (cert failed)" — or an honest "unknown" when the
 # task has produced no artifact yet. Never dress an absence of evidence as trouble.
-def progress_line(task)
+#
+# AND NEVER CREDIT THE HOLDER WITH WORK IT DID NOT DO. This line is the evidence a
+# second agent decides `--steal` on, and on 2026-08-13 it manufactured that
+# evidence: the refused agent had just run `bin/full-suite-check`, its cert landed
+# a g1_cert row on the task, and this line reported "last durable progress ~2m ago
+# (g1_cert passed)" as the holder's. The gate credited the challenger's own work to
+# the holder and cited it as grounds to keep the challenger out — a claim that
+# generates its own justification, which is unfalsifiable rather than merely wrong.
+#
+# So progress is reported HOLDER-SCOPED, and the unattributed remainder is named
+# as what it is. `challenger` is the session asking, so the one reading that it
+# cannot use its own cert as proof of someone else's liveness is the session that
+# ran it.
+def progress_line(task, challenger: nil)
+  holder_seconds = task["holder_progress_seconds_ago"]
+  return holder_progress_line(task, holder_seconds) unless holder_seconds.nil?
+
   seconds = task["progress_seconds_ago"]
   return "last durable progress: none recorded yet (no cert, gate, or stage move)" if seconds.nil?
 
-  label = task["last_progress_label"].to_s
+  # Something landed, but not the holder's. Say whose, and say plainly that it is
+  # not evidence about the holder.
+  actor = task["last_progress_actor"].to_s
+  detail = task["last_progress_label"].to_s.empty? ? "" : " (#{task['last_progress_label']})"
+  whose =
+    if !actor.empty? && actor == challenger.to_s
+      "is THIS session's own work"
+    elsif actor.empty?
+      "has no recorded owner"
+    else
+      "belongs to …#{actor[-4..] || actor}"
+    end
+
+  "the holder has landed nothing attributable to it — the newest artifact " \
+    "(~#{ClaimLease.humanize_age(seconds)} ago#{detail}) #{whose}, so it says nothing about the holder"
+end
+
+# A holder-scoped liveness fact, falling back to its task-wide twin when the board
+# does not publish one. A MISSING key means an older board, which is an unknown —
+# and the fallback is the conservative direction, because the task-wide signals are
+# strictly more protective (they count everyone's work, so they can only keep a
+# desk, never free one). A key that is present and nil is a real answer and is
+# passed through as one.
+def holder_scoped(task, holder_key, task_wide_key)
+  task.key?(holder_key) ? task[holder_key] : task[task_wide_key]
+end
+
+# Has the holder walked away? Gathers the four independent channels ClaimLease
+# .abandoned? weighs and hands them over — the arithmetic stays in the shared
+# module (so the unit tier can exercise every combination), the I/O stays here.
+#
+# The desk is asked FIRST and its unknown answer decides alone, because the desk
+# is the only channel that can see an agent editing code without touching the
+# board — the exact holder this gate must never evict. `desk_root` refuses any
+# directory not bound to this task, so a heartbeat fired from a primary checkout
+# (whose mtimes belong to every agent on the machine, and so are always fresh)
+# resolves nil and the claim is kept rather than judged on someone else's work.
+#
+# THE BOARD CHANNELS ARE HOLDER-SCOPED, and that is the difference between fixing
+# this and half-fixing it. Both remaining channels used to read the TASK-WIDE fact,
+# so a queued challenger running `bin/full-suite-check` on the held slug landed a
+# checkpoint and opened a g1_cert on someone else's task — and the abandoned holder
+# renewed for another 1h29m on the strength of the challenger's own work. That is
+# the incident this gate exists to end, one indirection over from where it was
+# fixed in the refusal message.
+#
+# The gate_in_flight channel is FILTERED, never dropped: a cert writes nothing into
+# the desk for up to 94 measured minutes, so a holder mid-cert still needs it. A
+# gate opened BY the holder protects the holder; one opened by a challenger does
+# not; one nobody signed is an unknown and still protects.
+def heartbeat_abandoned?(slug, task, devops, desk_hint)
+  root = DeskActivity.desk_root(desk_hint || Dir.pwd, slug)
+  touched = root.nil? ? nil : DeskActivity.touched_since?(root, Time.now - ClaimLease::DESK_IDLE_SECONDS)
+
+  ClaimLease.abandoned?(
+    desk_touched: touched,
+    progress_age: holder_scoped(task, "holder_liveness_seconds_ago", "progress_seconds_ago"),
+    gate_in_flight: holder_scoped(task, "holder_gate_in_flight", "gate_in_flight") ? true : false,
+    awaiting_approval: devops["approval_status"].to_s.strip == "waiting"
+  )
+rescue StandardError
+  # A liveness check that blew up has told us NOTHING, and nothing must never
+  # free a desk. Best-effort like the rest of the heartbeat.
+  false
+end
+
+def holder_progress_line(task, seconds)
+  label = task["holder_progress_label"].to_s
   detail = label.empty? ? "" : " (#{label})"
   quiet = task["progress_quiet"] ? "  ← held, but nothing has landed in a long time" : ""
   # ClaimLease owns the formatter (required above): the gate and the board card
   # state the same fact, so they render it through the same code.
-  "last durable progress ~#{ClaimLease.humanize_age(seconds)} ago#{detail}#{quiet}"
+  "last durable progress by the holder ~#{ClaimLease.humanize_age(seconds)} ago#{detail}#{quiet}"
 end
 
 SCALAR_FLAGS = {
@@ -1511,6 +1595,14 @@ when "checkpoint"
   die!("--status must be started or completed") unless %w[started completed].include?(status)
   event = { "source" => source }
   event["message"] = message if message
+  # WHOSE checkpoint this is. A cert emits two artifacts — this event and a
+  # g1_cert GateRun — and until 2026-08-13 neither carried an owner, so the claim
+  # gate credited a challenger's own cert to the holder it was refusing the
+  # challenger on behalf of. Stamped in metadata (not `actor`, which souls use) and
+  # omitted entirely in a plain shell / CI run: unattributed must stay honestly
+  # unattributed. See Task#progress_evidence.
+  checkpoint_session = session_identity.first
+  event["metadata"] = { "session" => checkpoint_session } unless checkpoint_session.nil?
   api(:post, "/api/v1/tasks/#{slug}/events/#{name}/#{status == "started" ? "start" : "complete"}", { "event" => event })
   puts "checkpoint #{name} #{status} on #{slug}"
 when "heartbeat"
@@ -1520,8 +1612,20 @@ when "heartbeat"
   # unclaimed/expired one); NEVER steals a live foreign claim. Fully best-effort:
   # no session, no slug, or any API error → silent no-op (a heartbeat must never
   # disrupt the status line). Prints nothing on success.
-  usage = "usage: bin/task heartbeat <slug>"
+  usage = "usage: bin/task heartbeat <slug> [--desk PATH]"
   slug = positional!(ARGV.shift || die!(usage), usage)
+  # The desk whose file mtimes decide whether this claim is still being WORKED.
+  # bin/statusline passes its cwd when that cwd is a bound worktree; absent, we
+  # try cwd anyway. Either way DeskActivity.desk_root refuses any directory not
+  # bound to THIS task, so a heartbeat fired from a primary checkout resolves no
+  # desk and falls back to renewing — see the abandonment check below.
+  heartbeat_desk = nil
+  while ARGV.any?
+    case (flag = ARGV.shift)
+    when "--desk" then heartbeat_desk = ARGV.shift || die!("--desk needs a path")
+    else unknown_flag!(flag, valid: %w[--desk], context: "heartbeat")
+    end
+  end
   begin
     session = session_identity.first
     unless session.nil?
@@ -1537,7 +1641,20 @@ when "heartbeat"
       if current["stage"] == "building"
         devops = current.dig("metadata", "devops") || {}
         decision = ClaimLease.evaluate(ClaimLease.from_devops(devops), session: session, nonce: claim_nonce)
-        unless decision == :held_by_other # don't steal a live foreign claim via a heartbeat
+        # Don't steal a live foreign claim via a heartbeat — and don't renew a claim
+        # this session has ABANDONED. bin/statusline fires this every ~45s from a
+        # painting terminal, so without the second guard an open terminal renews a
+        # build claim forever whether or not anyone is working: the 2026-08-13 stall,
+        # where a lease ticked 16:05:16Z → 16:06:46Z with three agents queued behind
+        # it and several `claude` processes on this machine days old.
+        #
+        # Declining is the WHOLE mechanism. Nothing is reclaimed, blocked, or
+        # deleted here; the lease simply stops being renewed and lapses on the
+        # ordinary TTL, after which the ordinary gate admits the next claimant. If
+        # this call is wrong, the holder's very next heartbeat re-claims the task —
+        # the mistake heals itself, which is why declining is safe and expiring
+        # eagerly would not be.
+        if decision != :held_by_other && !heartbeat_abandoned?(slug, current, devops, heartbeat_desk)
           merged = devops.merge(ClaimLease.renewed(session: session, nonce: claim_nonce, prior: devops))
           api(:patch, "/api/v1/tasks/#{slug}", { "devops" => merged })
         end
