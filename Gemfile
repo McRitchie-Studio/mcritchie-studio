@@ -114,7 +114,32 @@ gem "sentry-rails"
 # raises ActionView::MissingTemplate on EVERY page, so the failure is at least
 # loud. The quieter half is the helper: Studio::AtTimeHelper also arrives in
 # 0.40.0, and release_state_label calls at_time_tag.
-gem "studio-engine", "~> 0.43" # 0.42 is the real floor: this app's UserMailer calls Studio::Banner.for(name:) and EmailCatalog.subject_for, and /admin/emails needs Studio::EmailSetting + EmailPreviewTarget — all of which arrived in 0.42.
+#
+# 0.42.0 raised it again, for the email side rather than the layout: this app's
+# UserMailer calls Studio::Banner.for(name:) and EmailCatalog.subject_for, and
+# /admin/emails is drawn from Studio::EmailSetting + Studio::EmailPreviewTarget.
+#
+# 0.43.0 IS THE FLOOR THIS APP ACTUALLY RUNS ON, and it fails the same way
+# 0.40.0 did — the API is simply not there, so it is a NoMethodError rather than
+# a cosmetic regression. user_mailer.rb:44-46 reads the operator's body copy and
+# button straight off the catalog: EmailCatalog.body, .cta_text, .cta_color and
+# .cta_enabled?. MEASURED against the installed 0.42.0 sources, none of those
+# four methods exists, its Entry struct declares no :body / :cta_text /
+# :cta_color / :cta_enabled / :supports_cta members, and its
+# user_mailer/magic_link.html.erb never reads @body or @cta_text at all.
+#
+# The schema half moves with the same version: studio_email_settings gains body,
+# cta_text, cta_color, cta_enabled and discord_url from 0.43's
+# add_body_cta_footer_to_studio_email_settings migration. So a host resolved
+# below 0.43 has neither the methods nor the columns behind them, and the
+# operator's copy on /admin/emails has nowhere to be stored and nothing to read
+# it.
+#
+# THE PIN STRING IS NOT THE FLOOR. `~> 0.43` permits anything below 1.0, so it
+# constrains nothing downward on its own — test/lib/engine_pin_contract_test.rb
+# is what asserts the resolved version and the columns, and it is where a
+# `bundle update` that walked backwards fails.
+gem "studio-engine", "~> 0.43"
 
 # Pin the majors this app already runs so an engine bump cannot carry a new one
 # in silently. studio-engine declares `redis >= 4.0.1` with NO upper bound — the

@@ -18,8 +18,20 @@ require "test_helper"
 class UserMailerTest < ActionMailer::TestCase
   BODY = "Hi {name}, tap the button to sign in to {app}.".freeze
 
+  # THE CTA TEMPLATE CARRIES {name} TOO, and saving it here is what gives the CTA
+  # guard below something that can fail.
+  #
+  # It did not, and the guard was decorative as a direct result. The registry
+  # default is "Sign in to {app}" — no {name} anywhere — so the old assertion
+  # ("Sign" appears, "{name}" does not) held whether or not the mailer passed the
+  # recipient through. MEASURED: dropping `name:` from @cta_text left the whole
+  # file green. A guard for an unresolved placeholder needs a placeholder to
+  # resolve, and only the setup can put one there.
+  CTA = "Sign in, {name}".freeze
+
   setup do
-    Studio::EmailSetting.find_or_initialize_by(email_key: "magic_link").update!(body: BODY)
+    Studio::EmailSetting.find_or_initialize_by(email_key: "magic_link")
+                        .update!(body: BODY, cta_text: CTA)
     Studio::EmailSetting.forget!
   end
 
@@ -79,14 +91,37 @@ class UserMailerTest < ActionMailer::TestCase
     assert_includes html, "Hi, tap the button"
     refute_includes html, "{name}"
     refute_includes html, "Hi ,"
+
+    # The BUTTON has to survive the same treatment, and it is the harder case: a
+    # header has a second field to fall back to and a button label does not, so
+    # the placeholder and the punctuation holding it both have to go. "Sign in,
+    # {name}" reads "Sign in" — never "Sign in," with the comma left hanging.
+    assert_includes html, "Sign in", "the stranger still needs a button to press"
+    refute_includes html, "Sign in,"
   end
 
   # --- the CTA ---------------------------------------------------------------
 
-  test "the CTA label ships and is not a placeholder" do
+  # THE BUTTON IS THE SECOND HALF OF THE SAME DEFECT. @body and @cta_text are set
+  # on adjacent lines from the same name_for(email), so the copy can lose the
+  # recipient in the button while the paragraph above it keeps him.
+  #
+  # Reads the name back OUT of the banner, exactly as the body test does, rather
+  # than restating that the mailer derives it from display_name. The banner is the
+  # control: it has carried the name since before any of this, so if it is missing
+  # the test says so instead of quietly passing.
+  #
+  # The expected label is built from CTA rather than typed out, so the setup and
+  # the assertion cannot drift apart.
+  test "the CTA label resolves the recipient's name" do
     html, = render_email(users(:alex).email)
 
-    assert_includes html, Studio::EmailCatalog.cta_text(:magic_link).to_s.split(" ").first
+    greeted = banner_header(html).to_s[/Welcome (.+)!/, 1]
+    assert greeted.present?,
+      "the banner has always carried the name — it is the control for this test"
+
+    assert_includes html, CTA.sub("{name}", greeted),
+      "the button must resolve the same name the banner just used"
     refute_includes html, "{name}"
   end
 
