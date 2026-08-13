@@ -44,8 +44,14 @@ credential helpers):
   `mcritchie-studio/bin/gh-app-git-credential` mints a fresh installation token
   per call (via `bin/gh-app-mint-token`); the `GH_APP_ITEM` env var selects the
   identity.
-- **`gh` (and any GitHub API caller)** — export a minted token per session, by
-  asking that same helper for one:
+- **`gh` (and any GitHub API caller)** — export a minted token per session. The
+  short form, which also refreshes `gh`'s keyring and reports what it installed:
+
+  ```bash
+  eval "$(bin/gh-auth-refresh --export)"
+  ```
+
+  The explicit form, asking the git credential helper for the same token:
 
   ```bash
   export GH_TOKEN=$(printf 'protocol=https\nhost=github.com\n\n' | \
@@ -62,6 +68,22 @@ credential helpers):
   filename is baked in to rot at the next rotation; and the absolute path works
   from any directory. For a ship lane, `export GH_APP_ITEM=github.mcritchie-deployer`
   **first** — the same export already governs `git`. Never print the token.
+
+  **Redacting a token: `.` and `-` are part of it.** An installation token is a
+  **dotted JWT** — `ghs_<base64>.<base64>.<signature>`, ~380 characters. The
+  obvious pattern `ghs_[A-Za-z0-9_]*` stops at the **first dot** and passes the
+  rest straight through, so a "redacted" line can still carry the whole
+  credential. Redact with `gh[psou]_[A-Za-z0-9_.-]+` (and the same class for
+  `github_pat_`), or better, never route a token through a filter at all: print
+  a **SHA-256 prefix** instead, which is what `bin/gh-auth-refresh` reports.
+  Verify a token by **length and 4-character type prefix** only. `gh auth
+  status` is NOT safe to paste — it prints a leading token fragment by default.
+
+  If a token does reach a transcript, it is compromised: revoke it immediately
+  with `curl -X DELETE https://api.github.com/installation/token -H
+  "Authorization: Bearer $TOKEN"` (HTTP 204), then re-mint with
+  `bin/gh-auth-refresh --force`. A revoked token still reads as "fresh" in the
+  broker cache, which is age-based — `--force` is what bypasses it.
 
   Installation tokens live **1 hour**, and the two credential faults look
   different — same remedy, different mechanism:
@@ -81,25 +103,45 @@ credential helpers):
   cannot exist. `gh api rate_limit` answers for every identity, so it is the
   probe that can actually tell live from stale.
 
-  **Two stores — and nothing refreshes the second one.** `bin/gh-token`'s cache
-  (`<projects>/.agents/github-tokens.json`) and **`gh`'s own keyring** are
-  SEPARATE. Minting refreshes the cache; the keyring is left where it was. So an
-  interactive `gh` goes stale roughly hourly *while the cache is fresh*, and any
-  tool reading GitHub through the ambient credential starts reporting a
-  credential fault on a repo it read fine an hour ago. Refresh the keyring from
-  the same broker (never print the token):
+  **Three stores, and they rank.** `bin/gh-token`'s cache
+  (`<projects>/.agents/github-tokens.json`), **`gh`'s own keyring**, and an
+  exported **`GH_TOKEN`** are SEPARATE, and `gh` prefers them in reverse order:
+  **`GH_TOKEN` beats the keyring, and nothing automatically refreshes either.**
+  Minting refreshes only the cache. So an interactive `gh` goes stale roughly
+  hourly *while the cache is fresh*, and any tool reading GitHub through the
+  ambient credential starts reporting a credential fault on a repo it read fine
+  an hour ago. Refresh with:
 
   ```bash
-  bin/gh-token | gh auth login -h github.com --with-token
+  eval "$(bin/gh-auth-refresh --export)"
   ```
+
+  That resolves **this session's lane** (`agent`, or `deployer` when
+  `GH_APP_ITEM` says so), refreshes the keyring *and* this shell's `GH_TOKEN`,
+  verifies the result by reading the credential back, and reports the identity
+  and a SHA-256 prefix — never the token. Drop `--export` to refresh only the
+  keyring; it then exits **3** if a set `GH_TOKEN` still shadows the result,
+  because for that session nothing was actually fixed.
+
+  > **Do not pipe the broker into `gh auth login`.** The old advice here was
+  > `bin/gh-token | gh auth login -h github.com --with-token`, and it is broken
+  > in exactly the configuration these docs create. With `GH_TOKEN` set `gh`
+  > refuses to store anything — *"The value of the GH_TOKEN environment variable
+  > is being used for authentication"*, exit 1, keyring untouched (measured on
+  > gh 2.92.0). Worse, it refreshed only the keyring, which `GH_TOKEN` outranks,
+  > and it ignored `GH_APP_ITEM` — so a **ship** session recovering this way
+  > installed the **agent** App and handed itself the `pull_requests: write`
+  > grant the deployer is denied on purpose.
 
   **Tools should not need that.** `bin/lib/gh_auth_retry.rb` classifies the
   refusal and `bin/gh-token` supplies the replacement, giving any caller one
   mint-and-retry; `bin/ship`, `bin/pr-review`, and `bin/lib/ci_status.rb` (every
-  CI read the gates make) all route through it. The manual refresh above is for
-  an interactive `gh` in a terminal — if a *tool* ever needs it, that tool is
-  missing the wiring, which is the bug task `standardize-ci-read-auth` fixed for
-  the CI reads.
+  CI read the gates make) all route through it, and each recovers **as its own
+  lane** — `GhAuthRetry.mint` resolves the identity through
+  `bin/lib/gh_identity.rb` rather than assuming `agent`. The manual refresh above
+  is for an interactive `gh` in a terminal — if a *tool* ever needs it, that tool
+  is missing the wiring, which is the bug task `standardize-ci-read-auth` fixed
+  for the CI reads.
 
 The identities:
 

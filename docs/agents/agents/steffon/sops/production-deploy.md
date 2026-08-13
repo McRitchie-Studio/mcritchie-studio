@@ -35,11 +35,15 @@ the second one mint the **deployer** token rather than the default agent one.
 
 The two exports cover the two auth legs — they are NOT interchangeable:
 
-- **`GH_APP_ITEM`** governs **git https pushes only** (the `release`/`main`
-  fast-forwards): the global git credential helper
+- **`GH_APP_ITEM`** declares **the lane**. The global git credential helper
   (`bin/gh-app-git-credential`) reads it and mints per-push tokens for the
   ship-lane App (`github.mcritchie-deployer`: contents + actions + checks-read
-  + secrets). **`gh` never consults git credential helpers.**
+  + secrets) for the `release`/`main` fast-forwards. `bin/gh-token`,
+  `bin/gh-auth-refresh`, and every gate's automatic mint-and-retry
+  (`GhAuthRetry`) read it too, so a ship session's `gh` recovery stays on the
+  deployer App instead of silently re-authenticating as the agent. **`gh` still
+  never consults git credential helpers** — that is why the second export
+  exists.
 - **`GH_TOKEN`** is what the session's `gh` calls (`gh workflow run`,
   `gh run watch`, API reads) authenticate with — a minted installation token.
   It expires in **1 hour**, and the expiry reads as **401 `Bad credentials`**,

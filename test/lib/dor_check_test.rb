@@ -1890,9 +1890,13 @@ class DorCheckTest < Minitest::Test
 
   def test_unreadable_ci_does_not_prescribe_checks_scope_for_bad_credentials
     out, = ci_check("gh: Bad credentials (HTTP 401)", ROLIO_PR)
-    # Post-migration the remedy names the recovery that works — refreshing the `gh`
-    # KEYRING from bin/gh-token — not the PAT-era `gh auth login` with nothing to type.
-    assert_match(%r{bin/gh-token \| gh auth login}, out)
+    # The remedy must name a recovery that RUNS. This assertion previously demanded
+    # `bin/gh-token | gh auth login`, which `gh` refuses outright whenever GH_TOKEN is
+    # set — so the gate confidently handed blocked agents an instruction that could
+    # not work, and this test kept it green. Both sides are asserted now.
+    assert_match(%r{bin/gh-auth-refresh}, out)
+    refute_match(/\|\s*gh auth login/, out,
+                 "gh refuses a piped `auth login` while GH_TOKEN is set")
     refute_match(/Checks: Read/, out)
   end
 

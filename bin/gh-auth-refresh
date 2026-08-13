@@ -1,0 +1,195 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/gh-auth-refresh — refresh the credential `gh` ACTUALLY uses, in this lane,
+# and report what changed. Replaces the advice line that used to be printed at
+# blocked agents:
+#
+#     bin/gh-token | gh auth login -h github.com --with-token     # DO NOT
+#
+# WHY THAT LINE HAD TO BECOME A COMMAND. It was printed by the CI gates and by
+# docs/agents/modules/credentials.md as the recovery step for a stale credential,
+# and it failed in two ways at once — both of them only in the configuration the
+# rest of the docs tell agents to create.
+#
+#   1. IT CANNOT RUN WHEN GH_TOKEN IS SET. `gh` refuses to store a credential while
+#      GH_TOKEN is in the environment: "The value of the GH_TOKEN environment
+#      variable is being used for authentication. To have GitHub CLI store
+#      credentials instead, first clear the value from the environment." (measured
+#      on gh 2.92.0: exit 1, message on stderr, keyring untouched). So the one
+#      instruction a blocked agent is handed is refused outright, and no amount of
+#      re-running it helps.
+#   2. EVEN WHEN IT RUNS, IT FIXES THE WRONG STORE. GH_TOKEN OUTRANKS the keyring.
+#      A session whose exported GH_TOKEN has expired keeps sending that expired
+#      token no matter how fresh the keyring becomes — so "refresh the keyring" is
+#      not a recovery for the case that actually happens hourly here.
+#   3. IT CROSSED A PRIVILEGE BOUNDARY. bin/gh-token used to ignore GH_APP_ITEM, so
+#      a SHIP session following the advice installed the AGENT App — the one holding
+#      `pull_requests: write`, which the deployer is denied on purpose. The error
+#      message defeated the boundary it was reporting on.
+#
+# WHAT THIS DOES INSTEAD. It resolves the lane's identity (--identity > GH_APP_ITEM
+# > agent, via bin/lib/gh_identity.rb), asks the broker for that identity's token,
+# installs it into `gh`'s keyring with GH_TOKEN/GITHUB_TOKEN REMOVED FROM THE CHILD
+# ENVIRONMENT so the refusal above cannot happen, then VERIFIES by reading the
+# credential back and comparing digests. It never assumes; it checks, and it says
+# which identity landed where.
+#
+#   bin/gh-auth-refresh                 # refresh this lane's keyring credential
+#   eval "$(bin/gh-auth-refresh --export)"   # ALSO refresh this shell's GH_TOKEN
+#   bin/gh-auth-refresh --identity deployer  # force the ship identity
+#   bin/gh-auth-refresh --force              # bypass the broker cache
+#
+# THE GH_TOKEN RULE, and why the default exits non-zero. When GH_TOKEN is set, this
+# command still refreshes the keyring, but the keyring is NOT what gh will use — so
+# reporting success would be the same lie the old advice told. Without --export it
+# therefore exits 3 and names the fix. With --export it prints an `export GH_TOKEN=`
+# line on stdout for `eval`, which genuinely repairs the running shell, and exits 0.
+#
+# SECRET HYGIENE. The token is written to exactly two places: `gh`'s stdin, and —
+# only under --export — stdout, which is the documented eval contract that
+# bin/gh-token already established. Every human-readable line goes to stderr and
+# carries at most a 12-hex-character SHA-256 PREFIX, which identifies a token
+# without revealing one. Nothing here logs it.
+
+require "open3"
+require "digest"
+require_relative "lib/gh_identity"
+
+HOST = "github.com"
+
+# Test seams. The install path shells out to the real `gh` and the real broker, and
+# on this workstation `gh auth login` writes the operator's macOS KEYCHAIN — which
+# GH_CONFIG_DIR does NOT isolate. An unseamed test here would overwrite a live
+# credential, so both binaries are swappable and every test uses stubs.
+def token_bin
+  override = ENV["GH_AUTH_REFRESH_TOKEN_BIN"].to_s.strip
+  override.empty? ? File.expand_path("gh-token", __dir__) : override
+end
+
+def gh_bin
+  override = ENV["GH_AUTH_REFRESH_GH_BIN"].to_s.strip
+  override.empty? ? "gh" : override
+end
+
+def die!(message)
+  warn("gh-auth-refresh: #{message}")
+  exit 1
+end
+
+def say(message)
+  warn("gh-auth-refresh: #{message}") unless @quiet
+end
+
+# A token's identity WITHOUT its value: enough to prove two reads saw the same
+# credential, useless to anyone who intercepts the line.
+def digest(token)
+  return "-" if token.to_s.empty?
+
+  Digest::SHA256.hexdigest(token)[0, 12]
+end
+
+# `gh` reads GH_TOKEN/GITHUB_TOKEN ahead of its keyring and REFUSES to write while
+# either is set. Unsetting them for the CHILD (never the parent) is the whole fix for
+# defect 1 — it lets the documented recovery actually store something, in the very
+# configuration the docs create.
+#
+# THE nil IS THE POINT, and it is easy to get backwards. Open3/Process.spawn MERGE
+# this hash into the inherited environment, so omitting a key inherits it; only an
+# explicit nil VALUE removes it. Building this as `ENV.to_h.merge(...).compact`
+# looks tidier and silently strips the very nils that do the unsetting — turning
+# this whole fix back into the no-op it replaces.
+CHILD_ENV_WITHOUT_AMBIENT_TOKEN = { "GH_TOKEN" => nil, "GITHUB_TOKEN" => nil }.freeze
+
+identity = nil
+force = false
+export = false
+@quiet = false
+
+args = ARGV.dup
+while (arg = args.shift)
+  case arg
+  when "--identity" then identity = args.shift.to_s.strip
+  when "--force" then force = true
+  when "--export" then export = true
+  when "--quiet" then @quiet = true
+  when "-h", "--help"
+    warn(File.read(__FILE__).lines.grep(/^#( |$)/).map { |l| l.sub(/^# ?/, "") }.join)
+    exit 0
+  else die!("unknown argument #{arg.inspect}")
+  end
+end
+
+identity = GhIdentity.resolve(identity) || die!(GhIdentity.unknown_item_message)
+die!("unknown identity #{identity.inspect} (expected: #{GhIdentity::IDENTITIES.keys.join(', ')})") unless GhIdentity.known?(identity)
+
+lane_source = if ARGV.include?("--identity")
+                "--identity"
+              elsif !ENV["GH_APP_ITEM"].to_s.strip.empty?
+                "GH_APP_ITEM"
+              else
+                "default"
+              end
+say("identity #{identity} (#{GhIdentity.item_for(identity)}) via #{lane_source}")
+
+# --- 1. get the lane's token ------------------------------------------------
+broker_args = [token_bin, "--identity", identity]
+broker_args << "--force" if force
+out, err, status = Open3.capture3(ENV.to_h, *broker_args)
+token = out.to_s.strip
+if !status.success? || token.empty?
+  reason = err.to_s.strip
+  die!("the broker produced no #{identity} token#{reason.empty? ? '' : " — #{reason}"}")
+end
+say("minted/read #{identity} token sha256:#{digest(token)}")
+
+# --- 2. install it into gh's keyring ----------------------------------------
+# `gh auth login --with-token` reads the token from stdin. With the ambient token
+# scrubbed above, gh stores instead of refusing.
+login_out, login_err, login_status = Open3.capture3(
+  CHILD_ENV_WITHOUT_AMBIENT_TOKEN,
+  gh_bin, "auth", "login", "-h", HOST, "--with-token",
+  stdin_data: token
+)
+installed = login_status.success?
+unless installed
+  detail = [login_err.to_s.strip, login_out.to_s.strip].reject(&:empty?).join(" / ")
+  say("WARNING: gh refused the keyring write#{detail.empty? ? '' : " — #{detail}"}")
+end
+
+# --- 3. VERIFY, rather than assume ------------------------------------------
+# The old advice's cardinal sin was reporting an outcome it never checked. Read the
+# credential back through the same scrubbed environment and compare digests: equal
+# means the keyring genuinely holds what we just installed.
+verified = false
+if installed
+  readback, = Open3.capture3(CHILD_ENV_WITHOUT_AMBIENT_TOKEN, gh_bin, "auth", "token", "-h", HOST)
+  verified = !readback.to_s.strip.empty? && digest(readback.to_s.strip) == digest(token)
+  if verified
+    say("keyring now holds #{identity} sha256:#{digest(token)} (verified by read-back)")
+  else
+    say("WARNING: keyring read-back did NOT match the token just installed")
+  end
+end
+
+# --- 4. the store that actually wins ----------------------------------------
+ambient = ENV["GH_TOKEN"].to_s.strip
+if export
+  # stdout is the eval contract and carries ONLY this line.
+  puts "export GH_TOKEN='#{token}'"
+  say("emitted an export line — `eval` it and this shell's GH_TOKEN is #{identity} sha256:#{digest(token)}")
+  exit 0
+end
+
+unless ambient.empty?
+  if digest(ambient) == digest(token)
+    say("GH_TOKEN already holds this exact token — nothing shadows the refresh")
+    exit 0
+  end
+  warn("gh-auth-refresh: GH_TOKEN is set (sha256:#{digest(ambient)}) and OUTRANKS the keyring, so this " \
+       "session still sends the old credential. The keyring was refreshed; THIS SHELL WAS NOT. Fix it with:")
+  warn("    eval \"$(bin/gh-auth-refresh#{force ? ' --force' : ''} --export)\"")
+  exit 3
+end
+
+exit(verified ? 0 : 1)

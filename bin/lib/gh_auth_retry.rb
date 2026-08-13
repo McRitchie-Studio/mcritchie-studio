@@ -28,12 +28,17 @@
 # echoed, logged, or written to disk. `mint` reads the App credentials through the
 # operator's 1Password CLI exactly as docs/agents/modules/credentials.md prescribes.
 require "open3"
+require_relative "gh_identity"
 
 module GhAuthRetry
-  # The App identity the BUILD/REVIEW lanes use. Deliberately NOT the deployer
-  # identity (which cannot open or merge PRs by design — that separation is the
-  # point, not a bug; see docs/agents/modules/credentials.md → GitHub).
-  ITEM = "github.mcritchie-agent"
+  # The identity is NOT hardcoded here. It used to be (`ITEM = "github.mcritchie-agent"`,
+  # plus an `identity: "agent"` default that every caller took), which meant a SHIP
+  # session's recovery re-authenticated as the BUILD/REVIEW App. No 403 ever resulted
+  # — both Apps hold `checks: read` and the ship lane only reads check-runs — so the
+  # behaviour looked fine while the AUDIT TRAIL quietly crossed lanes: the deployer's
+  # reads were attributed to mcritchie-agent[bot]. Lane resolution now lives in
+  # bin/lib/gh_identity.rb and is shared with bin/gh-token and bin/gh-auth-refresh,
+  # so all three agree on which App speaks for this session.
 
   # gh's wording for "your credential cannot do this write". Matched on the SHAPE of
   # the refusal rather than one exact sentence, because gh phrases it differently per
@@ -72,9 +77,22 @@ module GhAuthRetry
 
   # A usable token for `identity`, or nil. nil is a normal outcome: the caller then
   # reports gh's ORIGINAL error, which is the honest thing to show.
-  def mint(root: nil, env: ENV, identity: "agent")
+  #
+  # `identity` defaults to THIS SESSION'S LANE rather than to "agent": a ship session
+  # (GH_APP_ITEM=github.mcritchie-deployer) recovers as the deployer, a build/review
+  # session as the agent. A caller that genuinely requires one specific App still
+  # names it and wins.
+  def mint(root: nil, env: ENV, identity: nil)
     bin = token_bin(env: env)
     return nil unless File.executable?(bin)
+
+    identity = GhIdentity.resolve(identity, env: env)
+    if identity.nil?
+      # An unreadable GH_APP_ITEM must not silently become `agent` — that fallback IS
+      # the privilege-boundary bug. Report it and let the caller show gh's own error.
+      @last_error = GhIdentity.unknown_item_message(env: env)
+      return nil
+    end
 
     # --force, ALWAYS. This method is only ever reached because gh just REFUSED a
     # credential, so the cache is the one place a usable token cannot be assumed to

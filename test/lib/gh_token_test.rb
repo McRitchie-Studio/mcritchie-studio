@@ -214,4 +214,56 @@ class GhTokenTest < Minitest::Test
       end
     end
   end
+
+  # --- the lane, and the cache slot it must land in ---------------------------
+  # This broker used to read ONLY --identity and ignore GH_APP_ITEM, so a ship
+  # session (which exports the deployer ITEM, exactly as `git` requires) was handed
+  # the AGENT App — the one holding `pull_requests: write`, which the deployer is
+  # denied by design. The cache slot is the observable proof of which App was asked
+  # for, so assert there rather than on a flag having been forwarded.
+  def test_gh_app_item_selects_the_deployer_lane
+    Dir.mktmpdir do |dir|
+      env = with_env(dir).merge("GH_APP_ITEM" => "github.mcritchie-deployer")
+      out, err, status = run_token(env)
+
+      assert status.success?, err
+      assert_equal "ghs_sTuBtOkEn", out.strip
+      refute_nil store(dir)["deployer"], "the ship lane's token must be cached as `deployer`"
+      assert_nil store(dir)["agent"], "and NOTHING may land in the agent slot"
+    end
+  end
+
+  def test_an_explicit_identity_outranks_gh_app_item
+    Dir.mktmpdir do |dir|
+      env = with_env(dir).merge("GH_APP_ITEM" => "github.mcritchie-deployer")
+      _out, err, status = run_token(env, "--identity", "agent")
+
+      assert status.success?, err
+      refute_nil store(dir)["agent"], "a caller naming its lane outright still wins"
+      assert_nil store(dir)["deployer"]
+    end
+  end
+
+  def test_no_lane_export_still_defaults_to_the_agent
+    Dir.mktmpdir do |dir|
+      _out, _err, status = run_token(with_env(dir))
+
+      assert status.success?
+      refute_nil store(dir)["agent"]
+    end
+  end
+
+  # A typo must ABORT. Falling back to `agent` on an unreadable instruction is the
+  # precise shape of the original privilege-boundary bug.
+  def test_an_unknown_gh_app_item_aborts_instead_of_defaulting_to_agent
+    Dir.mktmpdir do |dir|
+      env = with_env(dir).merge("GH_APP_ITEM" => "github.mcritchie-typo")
+      out, err, status = run_token(env)
+
+      refute status.success?, "an unreadable lane must not silently mint the privileged App"
+      assert_match(/github\.mcritchie-typo/, err)
+      refute_match(TOKEN_SHAPED, out, "and it must not print a token on the way out")
+      refute File.exist?(store_path(dir)), "nothing was minted, so nothing was cached"
+    end
+  end
 end

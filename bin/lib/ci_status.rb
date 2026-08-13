@@ -418,15 +418,18 @@ module CiStatus
             "GitHub rejected the active credential for #{where}, and the automatic App-token retry could not " \
               "replace it. Installation tokens live ~1h, and `gh`'s keyring is a SEPARATE store from " \
               "bin/gh-token's cache — nothing refreshes it, so the ambient login goes stale mid-session. Fix: " \
-              "confirm 1Password is unlocked (`op whoami`), then refresh the ambient login with " \
-              "`bin/gh-token | gh auth login -h github.com --with-token` (never print the token) and retry the " \
-              "exact check read. Verify with `gh api rate_limit` — NOT `gh api user`, which an App installation " \
-              "token cannot call at all, so a 403 there CONFIRMS App auth rather than diagnosing it."
+              "confirm 1Password is unlocked (`op whoami`), then run `eval \"$(bin/gh-auth-refresh --export)\"` " \
+              "and retry the exact check read. That command refreshes BOTH stores for THIS session's lane " \
+              "(agent, or deployer when GH_APP_ITEM says so) and reports the identity it installed; do NOT pipe " \
+              "bin/gh-token into `gh auth login`, which `gh` refuses outright whenever GH_TOKEN is set. Verify " \
+              "with `gh api rate_limit` — NOT `gh api user`, which an App installation token cannot call at " \
+              "all, so a 403 there CONFIRMS App auth rather than diagnosing it."
           when :authentication
             "No accepted GitHub credential reached #{where}, and no App token could be minted to replace it. " \
-              "Fix: confirm 1Password is unlocked (`op whoami`), then " \
-              "`bin/gh-token | gh auth login -h github.com --with-token` (never print the token) and retry the " \
-              "exact check read. Verify with `gh api rate_limit`."
+              "Fix: confirm 1Password is unlocked (`op whoami`), then run " \
+              "`eval \"$(bin/gh-auth-refresh --export)\"` (it refreshes this session's lane identity and prints " \
+              "what it installed, never the token) and retry the exact check read. Verify with " \
+              "`gh api rate_limit`."
           when :rate_limit
             "GitHub refused the read because its API rate limit was exhausted. Fix: inspect `gh api rate_limit`, " \
               "wait for the named reset or use an authorized credential with remaining quota, then retry."
