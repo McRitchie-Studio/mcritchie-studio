@@ -114,7 +114,7 @@ gem "sentry-rails"
 # raises ActionView::MissingTemplate on EVERY page, so the failure is at least
 # loud. The quieter half is the helper: Studio::AtTimeHelper also arrives in
 # 0.40.0, and release_state_label calls at_time_tag.
-gem "studio-engine", "~> 0.40"
+gem "studio-engine", "~> 0.42" # 0.42 is the real floor: this app's UserMailer calls Studio::Banner.for(name:) and EmailCatalog.subject_for, and /admin/emails needs Studio::EmailSetting + EmailPreviewTarget — all of which arrived in 0.42.
 
 # Pin the majors this app already runs so an engine bump cannot carry a new one
 # in silently. studio-engine declares `redis >= 4.0.1` with NO upper bound — the
