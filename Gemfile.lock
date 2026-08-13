@@ -466,6 +466,7 @@ DEPENDENCIES
   redis (~> 5.4)
   resend (~> 1.6)
   rubocop-rails-omakase
+  ruby-vips (>= 2.2.1, < 3)
   selenium-webdriver
   sentry-rails
   sentry-ruby
