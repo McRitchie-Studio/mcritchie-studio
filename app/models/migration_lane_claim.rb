@@ -25,6 +25,8 @@
 # here blocks a migration file from being written (see the gate finding in the
 # PR body).
 class MigrationLaneClaim < ApplicationRecord
+  include RaceTolerantCreate
+
   # The acquire verdict: whether THIS instance now holds the lane, the ClaimLease
   # disposition it was in, and the (updated) row for the refusal message.
   Outcome = Struct.new(:acquired, :disposition, :claim, keyword_init: false)
@@ -107,13 +109,14 @@ class MigrationLaneClaim < ApplicationRecord
   end
 
   # Find (or create) the singleton row for a lane, tolerating the create race —
-  # two first-acquirers hit the unique index; the loser re-reads the winner's row
-  # and then contends for it under the row lock like everyone else.
+  # two first-acquirers collide on the lane's uniqueness; the loser re-reads the
+  # winner's row and then contends for it under the row lock like everyone else.
+  # RaceTolerantCreate covers BOTH halves of that window (the validator's
+  # RecordInvalid as well as the index's RecordNotUnique) — see the concern for
+  # why rescuing only the latter let a losing first-acquirer RAISE out of
+  # `acquire` instead of being refused.
   def self.claim_row(lane)
-    key = lane.to_s.strip
-    find_or_create_by!(lane: key)
-  rescue ActiveRecord::RecordNotUnique
-    find_by!(lane: key)
+    find_or_create_tolerating_race!(lane: lane.to_s.strip)
   end
 
   # The ClaimLease-shaped view of this row (string keys, ISO8601 expiry) so the
