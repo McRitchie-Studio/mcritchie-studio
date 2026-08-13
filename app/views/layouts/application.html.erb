@@ -71,6 +71,40 @@
       <template x-if="$store.modals.current().id === 'check-inbox'">
         <%= render "modals/check_inbox" %>
       </template>
+      <%# The shared first-name step (engine primitive). Rendered from the gem so
+          this app and turf-monster ask the same question the same way; the
+          endpoints behind it come from config.draw_onboarding_routes. %>
+      <template x-if="$store.modals.current().id === 'onboarding-first-name'">
+        <%= render "studio/modals/onboarding/first_name",
+                   subtext: "Just your first name — we use it to address you in emails." %>
+      </template>
+    <% end %>
+
+    <%# Ask a freshly signed-in account for a first name, once. The SERVER decides
+        whether it is still outstanding (blank field, not skipped this session);
+        the client only opens what it was told to.
+        Armed on two events because either can be the one that happens: a full page
+        load fires alpine:initialized, while a Turbo visit does not — Alpine is
+        already up, so turbo:load is the only signal there. Both are guarded
+        against double-pushing the same modal onto the stack. %>
+    <% if logged_in? && Studio.first_name_outstanding?(current_user, session) %>
+      <script>
+        (function () {
+          function askFirstName() {
+            if (!window.Alpine || !Alpine.store) return;
+            var store = Alpine.store('modals');
+            if (!store || typeof store.open !== 'function') return;
+            var already = (store.stack || []).some(function (entry) {
+              return entry && entry.id === 'onboarding-first-name';
+            });
+            if (already) return;
+            store.open('onboarding-first-name');
+          }
+
+          document.addEventListener('alpine:initialized', askFirstName);
+          document.addEventListener('turbo:load', askFirstName);
+        })();
+      </script>
     <% end %>
 
     <%# Shared Solana sign-in + magic-link request. Inline so they're always
