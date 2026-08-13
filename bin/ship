@@ -342,9 +342,21 @@ def gh_capture(root, *args)
   return [failure, false] if @gh_token || !GhAuthRetry.auth_failure?(failure)
 
   say "auth — gh refused on credentials; minting a GitHub App token and retrying once."
-  @gh_token = GhAuthRetry.mint(root: root)
+  # identity: "agent" IS THE ESCAPE HATCH, used deliberately. GhAuthRetry now defaults to
+  # the session's lane (GH_APP_ITEM), and this command WRITES pull requests — a grant the
+  # deployer App is denied by design. A stray `export GH_APP_ITEM=github.mcritchie-deployer`
+  # leaking into a build session is documented, not theoretical (see
+  # docs/agents/agents/avi/sops/qa-release.md), and under it an unnamed recovery would mint
+  # the one App that CANNOT open the PR this line exists to open. bin/lib/gh_identity.rb
+  # cites exactly this call site as why explicit outranks the environment.
+  @gh_token = GhAuthRetry.mint(root: root, identity: "agent")
   unless @gh_token
-    say "auth — could not mint an App token (1Password unavailable?); reporting gh's original error."
+    # Report the reason the mint ACTUALLY gave. This used to hardcode "1Password
+    # unavailable?", which became wrong the moment an unreadable GH_APP_ITEM grew its own
+    # nil path — the operator was sent to 1Password for a typo in their own export.
+    reason = GhAuthRetry.last_error
+    say "auth — could not mint an App token#{reason.empty? ? ' (1Password unavailable?)' : " (#{reason})"}; " \
+        "reporting gh's original error."
     return [failure, false]
   end
 

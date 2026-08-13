@@ -35,11 +35,24 @@ the second one mint the **deployer** token rather than the default agent one.
 
 The two exports cover the two auth legs — they are NOT interchangeable:
 
-- **`GH_APP_ITEM`** governs **git https pushes only** (the `release`/`main`
-  fast-forwards): the global git credential helper
+- **`GH_APP_ITEM`** declares **the lane**. The global git credential helper
   (`bin/gh-app-git-credential`) reads it and mints per-push tokens for the
   ship-lane App (`github.mcritchie-deployer`: contents + actions + checks-read
-  + secrets). **`gh` never consults git credential helpers.**
+  + secrets) for the `release`/`main` fast-forwards. `bin/gh-token`,
+  `bin/gh-auth-refresh`, and the gates' automatic mint-and-retry (`GhAuthRetry`,
+  reached from this lane only through `bin/lib/ci_status.rb`'s check-run reads)
+  read it too, so a ship session's `gh` recovery stays on the deployer App
+  instead of silently re-authenticating as the agent. **The two PR-WRITING
+  commands are the deliberate exception**: `bin/ship` and `bin/pr-review` pin
+  `identity: "agent"`, because the deployer App holds no `pull_requests` grant
+  and a recovery that followed a stray lane export would mint the one App that
+  cannot do the write it is recovering. Neither runs in this SOP. **`gh` still
+  never consults git credential helpers** — that is why the second export
+  exists.
+
+  An `--identity` passed with an **empty** value (`--identity "$VAR"` with `VAR`
+  unset) aborts rather than falling back to `agent`; omitting the flag entirely
+  still resolves through `GH_APP_ITEM`.
 - **`GH_TOKEN`** is what the session's `gh` calls (`gh workflow run`,
   `gh run watch`, API reads) authenticate with — a minted installation token.
   It expires in **1 hour**, and the expiry reads as **401 `Bad credentials`**,

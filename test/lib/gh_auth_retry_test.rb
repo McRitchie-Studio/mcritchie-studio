@@ -115,18 +115,74 @@ class GhAuthRetryTest < Minitest::Test
     end
   end
 
-  # The build/review lane identity — deliberately NOT the deployer App, which cannot
-  # open or merge PRs by design. A regression here would silently swap lanes.
-  def test_defaults_to_the_agent_identity_not_the_deployer
-    assert_equal "github.mcritchie-agent", GhAuthRetry::ITEM
+  # --- the lane the recovery re-authenticates as ------------------------------
+  # This used to be a hardcoded `identity: "agent"` default that all three callers
+  # (bin/ship, bin/pr-review, bin/lib/ci_status.rb) took. No 403 ever resulted — both
+  # Apps hold `checks: read` and the ship lane only reads check-runs — so the
+  # BEHAVIOUR looked correct while the AUDIT TRAIL crossed lanes: a deployer session's
+  # recovered reads were attributed to mcritchie-agent[bot]. The recovery now follows
+  # the session's lane.
+  def echoing_broker(dir)
+    broker = File.join(dir, "gh-token-echo")
+    File.write(broker, "#!/bin/sh\necho \"$2\"\n") # echoes the --identity value
+    File.chmod(0o755, broker)
+    broker
+  end
 
+  def test_a_ship_lane_recovers_as_the_deployer_not_the_agent
     Dir.mktmpdir do |dir|
-      broker = File.join(dir, "gh-token-echo")
-      File.write(broker, "#!/bin/sh\necho \"$2\"\n") # echoes the --identity value
-      File.chmod(0o755, broker)
+      broker = echoing_broker(dir)
+      env = { "GH_AUTH_TOKEN_BIN" => broker, "GH_APP_ITEM" => "github.mcritchie-deployer" }
+
+      assert_equal "deployer", GhAuthRetry.mint(env: env),
+                   "a ship session's recovery must not re-authenticate as the PR-writing App"
+    end
+  end
+
+  def test_a_build_lane_still_recovers_as_the_agent
+    Dir.mktmpdir do |dir|
+      broker = echoing_broker(dir)
 
       assert_equal "agent", GhAuthRetry.mint(env: { "GH_AUTH_TOKEN_BIN" => broker })
-      assert_equal "deployer", GhAuthRetry.mint(env: { "GH_AUTH_TOKEN_BIN" => broker }, identity: "deployer")
+      assert_equal "agent", GhAuthRetry.mint(env: { "GH_AUTH_TOKEN_BIN" => broker, "GH_APP_ITEM" => "" })
+    end
+  end
+
+  def test_an_explicit_identity_still_outranks_the_lane_export
+    Dir.mktmpdir do |dir|
+      broker = echoing_broker(dir)
+      env = { "GH_AUTH_TOKEN_BIN" => broker, "GH_APP_ITEM" => "github.mcritchie-deployer" }
+
+      assert_equal "agent", GhAuthRetry.mint(env: env, identity: "agent"),
+                   "a caller that genuinely needs the PR-writing App names it and wins"
+    end
+  end
+
+  # The Ruby-caller spelling of the same hole the CLIs had: an identity NAMED but empty
+  # (`mint(identity: some_nil_config)`) must refuse rather than fall through to the lane
+  # export or the default. All three callers of the resolver now share this refusal.
+  def test_an_explicit_but_empty_identity_mints_nothing_and_explains
+    Dir.mktmpdir do |dir|
+      broker = echoing_broker(dir)
+      env = { "GH_AUTH_TOKEN_BIN" => broker, "GH_APP_ITEM" => "github.mcritchie-deployer" }
+
+      assert_nil GhAuthRetry.mint(env: env, identity: ""),
+                 "an empty identity must not inherit the lane export"
+      assert_match(/empty/i, GhAuthRetry.last_error, "and the reason must name the ARGUMENT")
+      assert_nil GhAuthRetry.mint(env: { "GH_AUTH_TOKEN_BIN" => broker }, identity: "  "),
+                 "nor fall through to the privileged default"
+    end
+  end
+
+  # An unreadable lane returns nil (the caller then shows gh's ORIGINAL error) rather
+  # than quietly minting the most privileged identity.
+  def test_an_unknown_lane_export_mints_nothing_and_explains
+    Dir.mktmpdir do |dir|
+      broker = echoing_broker(dir)
+      env = { "GH_AUTH_TOKEN_BIN" => broker, "GH_APP_ITEM" => "github.mcritchie-typo" }
+
+      assert_nil GhAuthRetry.mint(env: env)
+      assert_includes GhAuthRetry.last_error, "github.mcritchie-typo"
     end
   end
 end
