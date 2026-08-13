@@ -79,6 +79,30 @@ Use the production board by default. Do not add `--local`.
    the two disagree the guard says so and refuses — the disagreement names which
    record to go fix.
 
+   **The verdict names the signal it measured**, never a tree relation it did not
+   read. A rung dirty on the BOARD read alone is reported as a count (`3 task(s)
+   still recorded as riding "release"`), not as `release ≠ main` — so do not
+   re-fetch on that line expecting to find commits.
+
+   On the `release` rung, **board-dirty + git-clean is the signature of an
+   INTERRUPTED SHIP**: tasks still recorded as riding `release` while `release`
+   and `main` are identical means the fast-forward already landed and only the
+   board stamp is missing — **the code is already in production**. The guard says
+   so and still refuses (the work is unaccounted for). Confirm with `git ls-remote
+   --heads origin main release`, reconcile the board, then re-run.
+
+   **The git read covers the repos you have cloned**, and it says which ones it
+   did not. A three-rung repo with no local checkout is skipped — an uncloned
+   sibling is not evidence of pending work, so it never refuses the lane — but the
+   guard will not speak for it either. It names the gap (`NOT verified: rolio`)
+   and withholds every CONFLICT sentence that ranges over ALL repos, the
+   interrupted-ship sentence above included. **So the absence of that sentence is
+   not evidence the ship completed**; only a read that covered every repo can say
+   the trees are identical. The `✓` headline itself still prints — an uncloned
+   sibling is not evidence of pending work, so the lane stays usable — with the
+   repos it does NOT speak for named beneath it. Clone the named repo and re-run
+   when you need the whole ladder verified.
+
    `--task <task>` names the expedited task so the guard does not refuse on your
    OWN work when you re-run the act after review already merged it onto
    `accepted`. It excludes that one slug from the board read, and tolerates the

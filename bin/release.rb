@@ -163,6 +163,7 @@ require_relative "../app/models/release/cli"
 # `accepted` (board + accepted-ahead-of-release git count) — it decides clean vs
 # dirty and builds the refusal + `full-cycle` offer. Rails-free → unit-tested.
 require_relative "../app/models/release/clean_check"
+require_relative "../app/models/release/gh_failure"
 # StaleTreeCheck is the pure verdict behind prepare's STALE-TREE GATE (step 3b):
 # AFTER the accepted→release promote it asserts that every three-rung repo in the
 # candidate's deploy plan has `release` carrying `accepted`, and builds the
@@ -1372,13 +1373,41 @@ def promote_accepted_to_release!(repos, label: nil)
     pr_url = accepted_release_pr_url(repo, label: label)
     step("gh pr merge #{pr_url} --merge — promote #{ACCEPTED_BRANCH} → #{RELEASE_BRANCH} in #{repo} " \
          "(#{ahead} commit#{ahead == 1 ? '' : 's'})")
-    _, ok = sh("gh", "pr", "merge", pr_url, "--merge", capture: false)
+    # capture: true so a FAILURE can quote gh. Unlike the sibling `gh pr create`
+    # above — which already captured and merely discarded the text — this call had
+    # NOTHING to quote: it streamed to the terminal and kept none of it, so the
+    # abort below could only ever guess.
+    #
+    # TWO CONSEQUENCES, both wanted here. The live stream is replaced by an echo on
+    # success, so the run log keeps what it used to show. And gh's stdout is now a
+    # pipe rather than a TTY, which puts gh in non-interactive mode — for an
+    # automated conductor that is the correct posture: a `gh` that would have
+    # stopped to ask now fails with a message we print, instead of hanging a
+    # release on a prompt nobody is watching.
+    merge_out, ok = sh("gh", "pr", "merge", pr_url, "--merge", capture: true)
+    # The echo of gh's words is decided AFTER the recovery, never before it. It
+    # used to sit above this branch gated on `ok` — still false while the fallback
+    # was deciding — so the interrupted-run path printed NOTHING, and that is the
+    # path where gh's line ("… is already merged") is the EVIDENCE for continuing.
+    # The two arms are exclusive, so the ordering trap cannot come back.
     if !ok && pr_merged?(pr_url)
-      say("  ↷ #{pr_url} already merged (interrupted prior run) — continuing to the record step")
+      say(Release::GhFailure.recovery_message(
+            headline: "  ↷ #{pr_url} already merged (interrupted prior run) — continuing to the record step",
+            output: merge_out
+          ))
       ok = true
+    elsif ok && !merge_out.strip.empty?
+      say(merge_out.strip)
     end
-    abort!("gh pr merge failed for the #{ACCEPTED_BRANCH}→#{RELEASE_BRANCH} batch PR in #{repo} (#{pr_url}) — " \
-           "resolve it on GitHub (conflicts/checks), then re-run `bin/release prepare`.") unless ok
+    unless ok
+      abort!(Release::GhFailure.abort_message(
+               headline: "gh pr merge failed for the #{ACCEPTED_BRANCH}→#{RELEASE_BRANCH} batch PR " \
+                         "in #{repo} (#{pr_url}).",
+               output: merge_out,
+               fallback: "Resolve it on GitHub (conflicts/checks), then re-run " \
+                         "`bin/release prepare`; it resumes."
+             ))
+    end
   end
 end
 
@@ -1400,8 +1429,18 @@ def accepted_release_pr_url(repo, label: nil)
          "`#{ACCEPTED_BRANCH}` onto `#{RELEASE_BRANCH}` for QA. Opened by `bin/release prepare`."
   out, created = sh("gh", "pr", "create", *repo_args, "--base", RELEASE_BRANCH, "--head", ACCEPTED_BRANCH,
                     "--title", title, "--body", body, capture: true)
-  abort!("could not open the #{ACCEPTED_BRANCH}→#{RELEASE_BRANCH} batch PR in #{repo} (`gh pr create` failed) — " \
-         "open it by hand (`gh pr create --base #{RELEASE_BRANCH} --head #{ACCEPTED_BRANCH}`), then re-run.") unless created
+  # `out` already carries gh's stderr (sh → Open3.capture2e), so the reason this
+  # failed is in hand — QUOTE IT rather than replacing it with a guess. See
+  # Release::GhFailure for the recovery this cost during rel-20260812-3f1f9b.
+  unless created
+    abort!(Release::GhFailure.abort_message(
+             headline: "could not open the #{ACCEPTED_BRANCH}→#{RELEASE_BRANCH} batch PR in #{repo} " \
+                       "(`gh pr create` failed) — nothing was promoted.",
+             output: out,
+             fallback: "Open it by hand (`gh pr create --base #{RELEASE_BRANCH} " \
+                       "--head #{ACCEPTED_BRANCH}`), then re-run `bin/release prepare`; it resumes."
+           ))
+  end
   out.strip
 end
 
@@ -2819,7 +2858,13 @@ def prepare
   #     irreversible `gem push`, never after.
   allocate_gem_versions!(gem_groups)
   gem_plan = validate_gems_for_qa(gem_groups, app_groups)
-  bump_consumer_locks_for_qa(app_groups, publish_gems_for_qa(gem_plan))
+  # BIND the publish map. It is the authoritative record of what each gem actually
+  # published (or was already live at), and the member-provenance line below needs
+  # it — that line used to re-derive the version from the primary checkout, which
+  # sits on `main` and is a release behind by construction. See
+  # Release::GemVersion.reported_version.
+  published_gems = publish_gems_for_qa(gem_plan)
+  bump_consumer_locks_for_qa(app_groups, published_gems)
 
   # 5. PRE-QA GATE — the prepare-owned test tier on origin/release, BEFORE any
   #    QA deploy. A regression aborts with eject guidance while every member is
@@ -2871,7 +2916,8 @@ def prepare
 
     if group["kind"] == "gem"
       members.each do |m|
-        step("gem member #{m['slug']} (#{repo} #{gem_version_local(repo)}) — rides the release; published BEFORE this QA deploy (step 4d), QA'd via its consuming app's bumped lock")
+        member_version = Release::GemVersion.reported_version(published_gems, repo, gem_version_local(repo))
+        step("gem member #{m['slug']} (#{repo} #{member_version}) — rides the release; published BEFORE this QA deploy (step 4d), QA'd via its consuming app's bumped lock")
       end
       # Freeze the gem's origin/release HEAD into qa_shas, exactly like apps do at
       # the bottom of this loop. Without an entry the gem gets NO frozen SHA, so
@@ -3288,6 +3334,9 @@ def ladder_clean_verdict(expedited: nil, report_release: false)
     accepted_tasks: accepted,
     accepted_states: git["accepted"],
     unreadable_repos: git["unreadable"],
+    # The scope the git read was asked to cover. Without it the verdict can only
+    # see absences something recorded, and a skipped repo records none.
+    expected_repos: git["expected"],
     expedited: expedited
   )
 end
@@ -3320,9 +3369,21 @@ end
 #     The deploy-plan gate cannot afford that (true): a repo it is about to
 #     DEPLOY whose rung it could not measure is unverified, and unverified is
 #     stale, so it lands in `unreadable` and refuses.
+#
+# AND IT REPORTS ITS OWN SCOPE back as "expected". A SKIPPED repo (the `false`
+# case above) leaves NO trace: no state row on either rung and no `unreadable`
+# row, so a reader comparing those two lists cannot tell a repo that came back
+# level from a repo nobody opened. Release::CleanCheck graded that silence
+# `:complete` and went on to state that the operator's code "may ALREADY BE IN
+# PRODUCTION" over a ladder holding an unread repo. Handing back the list this
+# loop actually iterated is what lets the verdict measure what it covered
+# against what it was asked to cover — and it is derived HERE, from the same
+# `repos`, so the scope and the reading cannot drift apart.
 # This is the I/O seam the tests stub, the way they stub `conductor`.
 def ladder_ahead_states(repos: release_repo_slugs, require_checkout: false)
-  return { "release" => [], "accepted" => [], "unreadable" => [] } if DRY
+  # --dry-run takes no fetch, so nothing was expected OR read: an empty scope is
+  # what keeps CleanCheck grading it `:unmeasured` rather than partial.
+  return { "release" => [], "accepted" => [], "unreadable" => [], "expected" => [] } if DRY
 
   release_states = []
   accepted_states = []
@@ -3346,7 +3407,8 @@ def ladder_ahead_states(repos: release_repo_slugs, require_checkout: false)
              : accepted_states << { "repo" => repo, "ahead" => acc }
   end
 
-  { "release" => release_states, "accepted" => accepted_states, "unreadable" => unreadable }
+  { "release" => release_states, "accepted" => accepted_states, "unreadable" => unreadable,
+    "expected" => Array(repos).map(&:to_s) }
 end
 
 # Commits `head` is ahead of `base` in a checkout, or nil when the count could

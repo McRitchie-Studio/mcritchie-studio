@@ -362,6 +362,14 @@ Rails.application.routes.draw do
       # `_ship`/`_gate` reclaim guard asks `?role=deployer`: a live deployer claim means a
       # ship is in progress, so those fixed-path workspaces must not be reclaimed mid-ship.
       get "release_conductor_claims/live", to: "release_conductor_claims#live", as: :release_conductor_claims_live
+      # The `backend_migration` exclusive lane (exclusive-lanes.md) — a SINGLETON,
+      # not nested under a task: the lane is global and the holding task is a
+      # property of the claim. CLI: `bin/task migration-lane acquire|release|status`.
+      # These routes are the whole reason the lane is operable at all — it shipped
+      # as a session advisory lock that no agent could reach (see MigrationLaneClaim).
+      get  "migration_lane", to: "migration_lane_claims#show", as: :migration_lane
+      post "migration_lane", to: "migration_lane_claims#acquire", as: :migration_lane_acquire
+      post "migration_lane/release", to: "migration_lane_claims#release", as: :migration_lane_release
       resources :releases, only: [], param: :slug do
         member do
           post "events/:step/start", to: "release_events#start", as: :event_start

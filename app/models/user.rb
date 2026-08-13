@@ -7,7 +7,21 @@ class User < ApplicationRecord
     { email: "alex@mcritchie.studio",  name: "Alex McRitchie",        role: "admin", wallet: "7ZDJp7FUHhuceAqcW9CHe81hCiaMTjgWAXfprBM59Tcr" },
     { email: "team@mcritchie.studio",  name: "McRitchie Studio Team", role: "admin", wallet: "8K81w4e6UcB7TiANhM9N8sAgijJvTxxybRi8AENRaRYd" },
     { email: "mason@mcritchie.studio", name: "Mason McRitchie",       role: "admin", wallet: "CytJS23p1zCM2wvUUngiDePtbMB484ebD7bK4nDqWjrR" },
-    { email: "mack@mcritchie.studio",  name: "Mack McRitchie",        role: "admin" },
+    # THE NON-ADMIN. Every other parked identity is an admin, so nothing in this
+    # app could be looked at or tested as an ordinary member — admin-only pages,
+    # member-facing copy and anything branching on a role each had exactly one
+    # answer available locally.
+    #
+    # Mack rather than an invented account: he is already the non-admin in
+    # turf-monster, so one person means the same thing in both apps instead of
+    # each growing its own stand-in. (The role VALUES differ — this app has no
+    # "user" role; its default is "viewer" — so only the meaning is shared.)
+    #
+    # He keeps his name. An earlier draft of this task wanted a NAMELESS member
+    # so the email manager could preview what someone with no name on file
+    # receives; stripping a real person's name to serve a preview is the wrong
+    # trade, and that preview is now a sample recipient in the engine instead.
+    { email: "mack@mcritchie.studio",  name: "Mack McRitchie",        role: "viewer" },
     { email: "turf@mcritchie.studio",  name: "Turf Monster",          role: "admin" }
   ].freeze
 
