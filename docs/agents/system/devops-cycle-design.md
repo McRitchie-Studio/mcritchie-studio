@@ -76,7 +76,7 @@ This design answers seven goals:
 | Task state machine — Build `designed→building→submitted→reviewed`, Deploy `reviewed→assembled→shipped`, plus `blocked`/`archived` | `Task` model, `devops-task-board.md` | The spine. Everything routes through the task. |
 | `kind` (feature/bug/chore/qa/release/cleanup), `metadata["devops"]` contract | `devops-task-board.md` | SOP routing key + handoff record. |
 | Activity log: `comment` / `clarification` / `qa_feedback` / `handoff` + scout reports | `Activity`, task-board API | The durable QA↔feature-agent channel. |
-| Sealed-bid sizing, `backend_migration` advisory-lock lane, `release_conductor` lane | `sizing-rubric.md`, `exclusive-lanes.md` | Order-of-operations machinery. |
+| Sealed-bid sizing, `backend_migration` claim lane, `release_conductor` lane | `sizing-rubric.md`, `exclusive-lanes.md` | Order-of-operations machinery. |
 | Test lanes (pr_review_gate / local_proof / qa_acceptance / production_smoke / nightly_deep / quarantine) + `config/devops_test_suites.yml` + `bin/devops-tests` | `testing.md` | The *when/where* axis of the pyramid. |
 | `bin/qa-intake`, `bin/devops-cycle` (scout packets/decisions/readiness), `bin/agent-worktree`, `bin/qa-server`, `bin/deploy` | `parallel-agent-devops.md` | The conductor toolchain the heartbeat agent drives. |
 | Discord `POST /api/v1/release_notes` (dry-run, grouped-by-app, standardized) | release notes service | The standardized visibility primitive. |
@@ -1573,13 +1573,14 @@ The heartbeat agent will not merge-race conflicting work:
   the docs don't conflict on `release` *after* passing review. Warning-only (it
   never blocks); the conductor reads it to choose order / rebase the loser.
 - **Migrations:** two tasks touching `db/schema.rb` or migrations → serialize
-  via the existing `backend_migration` advisory lock; second one holds with a
-  note.
+  via the `backend_migration` lane (`bin/task migration-lane acquire
+  <task-slug>`, a durable unique-indexed claim — see `exclusive-lanes.md`); the
+  second one holds with a note.
 - **studio-engine + consumers:** gem publish → consumer lockfile bump → app
   deploy is one ordered `release_conductor` lane; the agent promotes the
   train in order, never a consumer ahead of its gem.
 - **turf-vault program:** **new rule** — at most one in-flight task may change
-  the Anchor program (same advisory-lock pattern as migrations). A vault change
+  the Anchor program (same single-flight lane pattern as migrations). A vault change
   and its turf-monster IDL re-pin form a `release_conductor` lane deployed *in order*
   (Squads program upgrade first, then app IDL re-pin via `bin/deploy`'s
   allow-list dance). The agent refuses to deploy two program upgrades
@@ -1639,7 +1640,7 @@ surfaces.
 |---|---|---|---|
 | DoR gate, metadata presence | deterministic | `bin/dor-check` | none |
 | Run test suites | deterministic | CI / `bin/devops-tests` | none |
-| Conflict / lane check | deterministic | `bin/` + advisory locks | none |
+| Conflict / lane check | deterministic | `bin/` + durable lane claims | none |
 | Classify a check failure (real / flaky / stale) | light judgment | small model | Haiku |
 | QA acceptance evaluation | suite + light judgment | suite + small model | Haiku |
 | PR diff vs acceptance review | judgment | capable model | **Sonnet**, **Opus** if `solana`/`payment`/`migration`/`auth` |
