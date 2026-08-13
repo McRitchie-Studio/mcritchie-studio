@@ -57,6 +57,10 @@
 #     certify; both orders are safe. See lib/cert_evidence.rb. )
 #   ( --post-deploy-cmd: the release pipeline runs it on the deployed app after
 #     boot — QA on `bin/release prepare`, prod on `ship`. Must be idempotent. )
+#   ( --requires-migration / --no-requires-migration: the `backend_migration`
+#     exclusive-lane flag, a top-level Task column. SELF-FLAG it the moment you
+#     discover the task needs a schema change, then take the lane with
+#     `bin/task migration-lane acquire <slug>`. See exclusive-lanes.md. )
 #   bin/task begin --title T [--repo APP] [--steal] [same flags as create]
 #   bin/task begin <slug> [--steal]                  # resume a partial begin
 #     ( the fast-lane SESSION-START wrapper: create + agent-worktree new +
@@ -116,6 +120,17 @@
 #       task could burn. Those rows price into measured $cost, which derives
 #       actual_size and the reviewer-select baselines. Reports only — purging is the
 #       operator's call. Exit 2 when suspects are found. )
+#   bin/task migration-lane <acquire|release|status> [<task-slug>] [--label L] [--agent A]
+#     ( The `backend_migration` EXCLUSIVE LANE — one Dev writes a migration at a time
+#       (docs/agents/system/exclusive-lanes.md). Acquire BEFORE `bin/rails g migration`,
+#       before creating a file in db/migrate/, before touching db/schema.rb; release on
+#       the way out. The lane is global, so the optional <task-slug> only RECORDS which
+#       task holds it, so a refused Dev knows whom to ask for an ETA.
+#       Pair it with `--requires-migration` on create/update: the flag says this task
+#       needs a schema change, the lane serializes the work.
+#       `status` is a plain read and needs no agent session; acquire/release do.
+#       Exit: 0 acquired/reported · 10 REFUSED (a live holder — queue, don't retry-storm)
+#       · 1 error. )
 #   bin/task <cmd> --help | -h                        # print this usage from any position
 #
 # Unknown flags are rejected (exit 1) with a nearest-flag suggestion; a dashed
@@ -376,9 +391,21 @@ SIZES = %w[small medium large xl].freeze
 SIZE_FLAGS = { "--pm-size" => "pm_size", "--po-size" => "po_size", "--dev-size" => "dev_size" }.freeze
 # Top-level Task columns parse_flags accepts alongside the devops flags.
 TOP_FLAGS = %w[--slug --title --description --agent --priority --stage].freeze
+# VALUELESS top-level boolean columns. `requires_migration` is the
+# `backend_migration` exclusive-lane flag (docs/agents/system/exclusive-lanes.md):
+# the SOP tells a backend Dev to SELF-FLAG the moment they discover they need a
+# migration, and until this flag existed there was no way to do it — the column
+# was writable only through the admin-gated /sizing editor, so the instruction
+# named a behaviour no agent could perform. Both polarities are explicit because
+# un-flagging matters too (a task that turns out NOT to need a migration should
+# hand the lane back and say so).
+BOOL_FLAGS = {
+  "--requires-migration"    => ["requires_migration", true],
+  "--no-requires-migration" => ["requires_migration", false]
+}.freeze
 # Everything parse_flags (list/create/update) understands — the dictionary an
 # unknown flag is rejected against (and suggestion-matched, --pr → --pr-url).
-PARSE_FLAG_NAMES = (SCALAR_FLAGS.keys + LIST_FLAGS.keys + SIZE_FLAGS.keys + TOP_FLAGS).freeze
+PARSE_FLAG_NAMES = (SCALAR_FLAGS.keys + LIST_FLAGS.keys + SIZE_FLAGS.keys + TOP_FLAGS + BOOL_FLAGS.keys).freeze
 HELP_FLAGS = %w[--help -h].freeze
 # Two-workflow status model. Stages move via PATCH stage (no named-transition
 # endpoints) so the CLI, the board drag-drop, and the API share one path.
@@ -570,6 +597,12 @@ def parse_flags(argv, context: nil)
       top[SIZE_FLAGS[arg]] = value; i += 2
     elsif TOP_FLAGS.include?(arg)
       top[arg.delete_prefix("--")] = argv[i + 1] || die!("#{arg} needs a value"); i += 2
+    elsif BOOL_FLAGS.key?(arg)
+      # Valueless — consumes ONE token. Storing the boolean (including `false`)
+      # means top_body must ask `key?`, never truthiness, or --no-requires-migration
+      # would silently vanish.
+      column, value = BOOL_FLAGS[arg]
+      top[column] = value; i += 1
     else
       # A dashed token here is an unrecognized flag. The old whitelist-and-skip
       # loop dropped it (and its value) into these ignored positionals and
@@ -613,6 +646,9 @@ def top_body(top)
   body["stage"] = top["stage"] if top["stage"]
   # The size trio (top-level Task columns) — already validated in parse_flags.
   SIZE_FLAGS.each_value { |col| body[col] = top[col] if top[col] }
+  # Boolean columns: presence-tested, NOT truth-tested — `false` is a value the
+  # caller asked for (--no-requires-migration), not an absent flag.
+  BOOL_FLAGS.each_value { |(col, _)| body[col] = top[col] if top.key?(col) }
   body
 end
 
@@ -1696,6 +1732,78 @@ when "claim-next-review"
   # subcommand is already shifted off).
   require_relative "lib/review_claim_cli"
   exit(ReviewClaimCli.new.run(["claim-next", *ARGV]))
+when "migration-lane"
+  # The `backend_migration` exclusive lane (docs/agents/system/exclusive-lanes.md).
+  # Before `bin/rails g migration`, before creating a file in db/migrate/, before
+  # touching db/schema.rb — acquire. If the lane is held, queue and chat the holder.
+  #
+  # The lane is GLOBAL, so `acquire`/`release` take no slug of their own; the
+  # optional <task-slug> only RECORDS which task holds it, so a refused Dev is told
+  # who to ask. Exit codes: 0 acquired / lane reported · 10 refused (a live holder)
+  # · 1 error. 10 is distinct from 1 because "someone else is migrating" is a normal
+  # outcome a script should branch on, not a failure.
+  usage = "usage: bin/task migration-lane <acquire|release|status> [<task-slug>] [--label L] [--agent A]"
+  sub = positional!(ARGV.shift || die!(usage), usage)
+  die!(usage) unless %w[acquire release status].include?(sub)
+
+  lane_task = nil
+  lane_label = nil
+  lane_agent = nil
+  until ARGV.empty?
+    arg = ARGV.shift
+    case arg
+    when "--label" then lane_label = ARGV.shift || die!("--label needs a value")
+    when "--agent" then lane_agent = ARGV.shift || die!("--agent needs a value")
+    else
+      unknown_flag!(arg, valid: %w[--label --agent], context: "migration-lane") if arg.start_with?("-")
+      lane_task = arg
+    end
+  end
+
+  # `status` is a pure read, so it must work from a plain shell with no agent
+  # session. acquire/release cannot: a lease with no identity could never be
+  # renewed or released by its owner, and a lane holder nobody can name is exactly
+  # the wedged lane this build exists to prevent.
+  if sub == "status"
+    holder = api(:get, "/api/v1/migration_lane")["data"]["holder"]
+    if holder.nil? || !holder["live"]
+      puts "migration lane: FREE"
+      exit 0
+    end
+    puts "migration lane: HELD"
+    puts "  task:    #{holder["task_slug"] || "-"}"
+    puts "  agent:   #{holder["agent"] || "-"}"
+    puts "  label:   #{holder["label"] || "-"}"
+    puts "  since:   #{holder["acquired_at"] || "-"}"
+    puts "  expires: #{holder["expires_at"] || "-"}"
+    exit 0
+  end
+
+  session, = session_identity
+  die!("migration-lane #{sub} needs an agent session (CLAUDE_CODE_SESSION_ID / CODEX_THREAD_ID); `status` works without one") if session.nil?
+  nonce = claim_nonce
+
+  if sub == "acquire"
+    data = api(:post, "/api/v1/migration_lane", {
+      session: session, nonce: nonce, task_slug: lane_task, agent: lane_agent, label: lane_label
+    })["data"]
+    holder = data["holder"] || {}
+    if data["acquired"]
+      puts "migration lane ACQUIRED#{lane_task ? " for #{lane_task}" : ""} (expires #{holder["expires_at"]})"
+      puts "release it with: bin/task migration-lane release"
+      exit 0
+    end
+    warn "migration lane HELD by #{holder["agent"] || holder["label"] || holder["session"] || "another session"}" \
+         "#{holder["task_slug"] ? " (task #{holder["task_slug"]})" : ""} since #{holder["acquired_at"]}"
+    warn "queue: pick up a non-migration task and ask the holder for an ETA."
+    exit 10
+  end
+
+  data = api(:post, "/api/v1/migration_lane/release", { session: session, nonce: nonce })["data"]
+  # Releasing something you never held is a harmless no-op, not an error — the
+  # SOP's belt-and-suspenders release fires on every exit path.
+  puts data["released"] ? "migration lane RELEASED" : "migration lane not held by this session (no-op)"
+  exit 0
 else
   print_usage!
   exit(cmd == "help" || HELP_FLAGS.include?(cmd) ? 0 : 1)

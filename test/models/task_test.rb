@@ -919,13 +919,25 @@ class TaskTest < ActiveSupport::TestCase
     assert_equal false, task.requires_migration
   end
 
-  # --- Migration lane (advisory lock) ---
+  # --- Migration lane ---
+  #
+  # Task once carried `try_acquire_migration_lane` / `release_migration_lane`
+  # (session advisory locks), "covered" here by a test that asserted only
+  # `assert_includes [true, false], acquired` — a tautology no implementation could
+  # fail, including the broken one it was guarding. Both helpers are gone; the lane
+  # is claimed through MigrationLaneClaim, whose exclusivity is proved against real
+  # concurrent connections in test/integration/migration_lane_exclusion_race_test.rb.
+  # Task keeps only the lane KEY.
 
-  test "migration lane helpers return booleans and execute cleanly" do
-    acquired = Task.try_acquire_migration_lane
-    assert_includes [true, false], acquired
-    released = Task.release_migration_lane
-    assert_includes [true, false], released
+  test "[unit] the migration lane key is the one MigrationLaneClaim claims" do
+    assert_equal "backend_migration", Task::MIGRATION_LANE
+    assert_equal Task::MIGRATION_LANE, MigrationLaneClaim.new(lane: Task::MIGRATION_LANE).lane
+  end
+
+  test "[unit] the retired advisory-lock helpers are gone" do
+    refute Task.respond_to?(:try_acquire_migration_lane),
+           "a session advisory lock cannot back a lane bin/task reaches over HTTP"
+    refute Task.respond_to?(:release_migration_lane)
   end
 
   # --- DevOps metadata ---

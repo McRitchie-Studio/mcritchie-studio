@@ -15,6 +15,10 @@ Lanes are about *correctness*, not resource limits.
 | `backend_migration` | `tasks.requires_migration = true` | Any task that adds/modifies/removes a Rails migration, or modifies `db/schema.rb` | One Dev at a time |
 | `release_conductor` | `tasks.metadata["devops"]["requires_release_conductor"] = true` | Gem publish, consumer lockfile adoption, production deploy, provider config, or env-var rollout | One conductor at a time per affected repo/app set |
 
+Flag the `backend_migration` lane with `bin/task update <task-slug>
+--requires-migration` and claim it with `bin/task migration-lane acquire
+<task-slug>`. The `release_conductor` lane is claimed per-release by `bin/release`.
+
 Don't add lanes pre-emptively. Add a lane only after a class of conflict has
 bitten twice, or when an action has irreversible production/provider effects.
 
@@ -28,36 +32,78 @@ There are two paths into the lane.
 
 ### Pre-flagging (when known at sizing time)
 
-Avi sets `requires_migration: true` during refinement if the spec obviously needs a schema change. The Dev acquires the lane at task start.
+Avi flags it during refinement if the spec obviously needs a schema change —
+`bin/task create … --requires-migration`, or `bin/task update <task-slug>
+--requires-migration` on an existing ticket. The Dev then takes the lane at task
+start with `bin/task migration-lane acquire <task-slug>`.
 
 ### Self-flagging (the common case)
 
 Avi often *can't* know up front. **Carl (and any backend Dev) is responsible for self-recognizing the moment.**
 
-> **Stop rule:** before running `bin/rails g migration`, before creating a file in `db/migrate/`, before modifying `db/schema.rb` — stop. Check the lane. Acquire or queue.
+> **Stop rule:** before running `bin/rails g migration`, before creating a file in `db/migrate/`, before modifying `db/schema.rb` — stop. Run `bin/task migration-lane acquire <task-slug>`. Exit 0 = proceed; exit 10 = queue behind the holder it names.
 
-If you started a task tagged `requires_migration: false` and discover you need one: update the flag, acquire the lane, *then* write the migration file. Never smuggle a migration in unflagged.
+If you started a task tagged `requires_migration: false` and discover you need one:
+
+```bash
+bin/task update <task-slug> --requires-migration   # self-flag
+bin/task migration-lane acquire <task-slug>        # then take the lane
+```
+
+*Then* write the migration file. Never smuggle a migration in unflagged.
 
 Self-flagging is not a failure — it's the system working. Avi can't see every implementation detail. The Dev who's closest to the code catches what refinement missed.
 
 ### Acquiring the lane
 
-```ruby
-ApplicationRecord.connection.execute(
-  "SELECT pg_try_advisory_lock(hashtext('backend_migration'))"
-)
+```bash
+bin/task migration-lane status                     # who holds it, if anyone
+bin/task migration-lane acquire <task-slug>        # take it
+bin/task migration-lane release                    # hand it back
 ```
 
-If the query returns `true`: proceed.
+`acquire` exits **0** when the lane is yours — proceed and write the migration.
 
-If `false`: the lane is held. Your task transitions to `lane_queued` status. Chat the current holder asking ETA. Pick up a non-migration task in the meantime.
+It exits **10** when the lane is held. That is a normal answer, not an error: the
+refusal names the holding agent and task, so chat them for an ETA and pick up a
+non-migration task in the meantime. Do not loop on it. There is no `lane_queued`
+task status (an earlier cut of this doc claimed one; `Task::STAGES` has never had
+it) — your task simply stays where it is while you wait.
+
+The optional `<task-slug>` records *which* task holds the lane, which is what
+lets a refused Dev know whom to ask. `status` is a plain read and works from any
+shell; `acquire`/`release` need an agent session, because a lease nobody can
+name is a lane nobody can free.
 
 ### Releasing
 
-On task `shipped`/`blocked`/`archived`, advisory locks release automatically when
-the session closes. Belt-and-suspenders: also call
-`pg_advisory_unlock(hashtext('backend_migration'))` explicitly on the transition
-out.
+Release explicitly on the way out — `bin/task migration-lane release` — on task
+`shipped`/`blocked`/`archived` alike. Releasing a lane you never took is a
+harmless no-op, so the call is safe on every exit path, and only the holder can
+free it (a queued Dev cannot yank it out from under live work).
+
+A claim you never release lapses on its own after **4 hours**, so a crashed
+holder frees the lane the same working day instead of wedging it forever. The
+lease is the backstop; the explicit release is the manners.
+
+### What backs the lane
+
+A row in `migration_lane_claims` — one per lane, under a unique index, taken with
+`SELECT … FOR UPDATE` — claimed through `MigrationLaneClaim` and served by
+`/api/v1/migration_lane`.
+
+This doc used to prescribe `pg_try_advisory_lock(hashtext('backend_migration'))`
+directly, and that recipe never worked for an agent. `bin/task` is an HTTP client
+with no database connection, so there was no session to hold a session-scoped
+lock; run over the API instead, the lock rides a **pooled** connection past the
+response and is re-entrant on it, meaning two acquires served by one connection
+would **both** be granted. A lane that grants twice is worse than no lane, so the
+claim is durable state and the exclusion is proved against real concurrent
+connections in `test/integration/migration_lane_exclusion_race_test.rb`.
+
+Enforcement is **cooperative**, like the rest of the studio: the lane refuses the
+second acquirer, but nothing blocks a migration file from being written by
+someone who never asked. `bin/dor-check` does not verify lane ownership.
 
 ## Carl's captaincy
 

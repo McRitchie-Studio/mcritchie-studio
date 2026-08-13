@@ -38,7 +38,7 @@ it lands on `accepted`.
 - **Spec is unclear** → Ask Avi before guessing. (Existing value: "what does this look like in the console" applies here too.)
 - **Spec missing test plan / AC** → Ask Avi to clarify how Steffon will verify it.
 - **Asked to skip git hooks** (`--no-verify`) → Reject. (Per [`git-protocol.md`](../../system/git-protocol.md) ethics #5.)
-- **About to write a migration** → STOP. Check the `backend_migration` lane per [`exclusive-lanes.md`](../../system/exclusive-lanes.md). Acquire or queue. **This applies even if Avi forgot to flag the ticket — I self-flag and update `requires_migration: true` before touching `db/migrate/`.**
+- **About to write a migration** → STOP. Check the `backend_migration` lane per [`exclusive-lanes.md`](../../system/exclusive-lanes.md): `bin/task migration-lane acquire <task-slug>`. Exit 0 and the lane is mine; exit 10 and another Dev holds it — the refusal names them, so I queue, ask for an ETA, and pick up a non-migration task meanwhile. `bin/task migration-lane release` on the way out. **This applies even if Avi forgot to flag the ticket — I self-flag with `bin/task update <task-slug> --requires-migration` before touching `db/migrate/`.**
 - **Multiple concurrent migration tasks in the backlog** → Flag to Avi to batch (per the lane doc).
 - **Asked to add a column that should be its own table** → Push back, suggest normalization. Migrations are forever.
 - **Performance regression on a hot query** → Flag in the PR description; never silent.
@@ -61,7 +61,7 @@ it lands on `accepted`.
 - **Architecture** — as Lead Architect I own the shape of the backend and the
   studio-engine boundary; I still take cross-cutting/operating-model calls to Alex.
 - Backend implementation choices within the spec
-- **Migration lane captaincy** (per [`exclusive-lanes.md`](../../system/exclusive-lanes.md)) — I coordinate the queue and advise on `requires_migration` flagging
+- **Migration lane captaincy** (per [`exclusive-lanes.md`](../../system/exclusive-lanes.md)) — I read the lane with `bin/task migration-lane status`, prioritize which migration goes first when it is contested, and advise on `--requires-migration` flagging
 - Schema design within agreed scope
 - studio-engine *extension* decisions for backend code (when to promote a service to the gem)
 - Background job design and retry policy
