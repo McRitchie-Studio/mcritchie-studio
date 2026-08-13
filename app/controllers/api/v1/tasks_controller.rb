@@ -123,7 +123,20 @@ module Api
           "last_progress_at" => task.last_progress_at,
           "last_progress_label" => task.last_progress_label,
           "progress_seconds_ago" => task.progress_seconds_ago,
-          "progress_quiet" => task.claim_progress_quiet?
+          "progress_quiet" => task.claim_progress_quiet?,
+          # WHOSE progress, and specifically the HOLDER's. The fields above say
+          # what landed on the task; they cannot say whether the holder is the one
+          # who landed it, and the claim gate used to assume it was — quoting a
+          # challenger's own cert back to it as proof the holder was alive. nil in
+          # any of these three means UNKNOWN and is rendered as unknown.
+          "last_progress_actor" => task.last_progress_actor,
+          "holder_progress_label" => task.holder_progress_label,
+          "holder_progress_seconds_ago" => task.holder_progress_seconds_ago,
+          # A cert writes nothing into its desk while it runs (measured g1_cert p99:
+          # 94 minutes), so the heartbeat needs this channel to tell a long green
+          # cert apart from a walked-away terminal. Already computed for
+          # progress_quiet; published so the lease decision can read it too.
+          "gate_in_flight" => task.gate_in_flight?
         )
       end
 

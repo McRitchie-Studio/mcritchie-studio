@@ -172,10 +172,20 @@ heartbeat_claim() {  # slug stage is_desk
   marker_write_refused && return 0
   mkdir -p "$mdir" 2>/dev/null
   : > "$marker"
+  # Hand the heartbeat the DESK, so the lease is renewed on evidence of work
+  # rather than on evidence that this status line is painting. Only a bound
+  # worktree is passed: bin/task verifies the .agent-context.json names this very
+  # task, and a session with no desk resolves none and keeps renewing as before.
+  # Passed explicitly rather than relying on the child's cwd, since the detached
+  # form below inherits whatever directory the render happened to run in.
+  # Built with `set --` rather than a string: bash 3.2 is the shell here, and an
+  # unquoted "$desk_args" would word-split a desk path containing a space.
+  set -- "$slug"
+  [ "$is_desk" = "1" ] && set -- "$@" --desk "$cwd"
   if [ "$STATUSLINE_HEARTBEAT_FG" = "1" ]; then
-    "$TASK_BIN" heartbeat "$slug" >/dev/null 2>&1
+    "$TASK_BIN" heartbeat "$@" >/dev/null 2>&1
   else
-    ( "$TASK_BIN" heartbeat "$slug" >/dev/null 2>&1 & ) >/dev/null 2>&1
+    ( "$TASK_BIN" heartbeat "$@" >/dev/null 2>&1 & ) >/dev/null 2>&1
   fi
 }
 

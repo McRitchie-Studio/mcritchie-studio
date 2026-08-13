@@ -364,4 +364,118 @@ class ClaimLeaseTest < Minitest::Test
     assert_equal "28m", ClaimLease.humanize_age(28 * 60)
     assert_equal "2.1h", ClaimLease.humanize_age(7_500)
   end
+
+  # --- Abandonment: the one predicate that can cost a holder its desk --------
+  #
+  # `quiet?` above only reports. THESE decide, so they are written as the two
+  # errors the predicate can make, and they are not symmetric: freeing a desk too
+  # late costs waiting, freeing it too early costs the work.
+
+  # THE ERROR THAT MUST NEVER HAPPEN. The holder is editing files in its desk and
+  # writing nothing at all to the board — the exact 2026-08-13 session, which a
+  # board-keyed liveness rule would have declared dead mid-edit. Desk evidence
+  # alone keeps the claim, with every other channel silent and the board age far
+  # past the threshold.
+  def test_a_holder_writing_its_desk_is_never_abandoned_however_quiet_the_board
+    refute ClaimLease.abandoned?(desk_touched: true,
+                                 progress_age: 100 * ClaimLease::DESK_IDLE_SECONDS,
+                                 gate_in_flight: false,
+                                 awaiting_approval: false),
+           "a session actively writing its worktree is WORKING — stealing its desk costs the work itself"
+  end
+
+  # The bug this task exists to fix: a terminal left open renewing forever. Every
+  # channel silent, and only then does the claim let go.
+  def test_a_holder_with_no_desk_activity_and_no_board_activity_is_abandoned
+    assert ClaimLease.abandoned?(desk_touched: false,
+                                 progress_age: ClaimLease::DESK_IDLE_SECONDS + 60,
+                                 gate_in_flight: false,
+                                 awaiting_approval: false)
+  end
+
+  # A claim taken and immediately walked away from produces NO durable artifact
+  # ever. Silence on both channels is still silence — this is the one place a nil
+  # progress fact corroborates rather than excuses.
+  def test_a_holder_that_never_produced_anything_and_never_touched_its_desk_is_abandoned
+    assert ClaimLease.abandoned?(desk_touched: false, progress_age: nil)
+  end
+
+  # --- Every unknown, and every positive signal, keeps the desk -------------
+
+  # The load-bearing third answer. nil is "we could not tell" — no desk bound to
+  # the task, an unreadable root, a walk out of budget — and it must short-circuit
+  # BEFORE any other channel is consulted, so a task with no board activity at all
+  # still cannot be declared abandoned on an unread desk.
+  def test_an_unreadable_desk_is_never_abandoned
+    refute ClaimLease.abandoned?(desk_touched: nil, progress_age: nil),
+           "no evidence is not evidence of absence — an unknown desk must never free a claim"
+    refute ClaimLease.abandoned?(desk_touched: nil,
+                                 progress_age: 100 * ClaimLease::DESK_IDLE_SECONDS),
+           "an unknown desk outranks even a very old board fact"
+  end
+
+  # A cert writes nothing into the desk while it runs, and the measured g1_cert
+  # p99 is 94 minutes. Without this channel a long green cert is indistinguishable
+  # from a walked-away terminal.
+  def test_a_gate_in_flight_keeps_the_desk_through_a_silent_cert
+    refute ClaimLease.abandoned?(desk_touched: false, progress_age: nil, gate_in_flight: true)
+  end
+
+  # Parked on the operator is not abandoned. The agent is right to be doing
+  # nothing, and the task record says so.
+  def test_a_task_awaiting_operator_approval_is_never_abandoned
+    refute ClaimLease.abandoned?(desk_touched: false, progress_age: nil, awaiting_approval: true)
+  end
+
+  # The board channel still counts on its own — a holder working through the API
+  # rather than the filesystem reads as alive.
+  def test_recent_board_progress_keeps_the_desk_even_with_a_quiet_desk
+    refute ClaimLease.abandoned?(desk_touched: false,
+                                 progress_age: ClaimLease::DESK_IDLE_SECONDS - 1)
+  end
+
+  def test_the_idle_window_is_tunable_per_call
+    assert ClaimLease.abandoned?(desk_touched: false, progress_age: 700, idle_after: 600)
+    refute ClaimLease.abandoned?(desk_touched: false, progress_age: 500, idle_after: 600)
+  end
+
+  # --- The threshold, asserted as a PROPERTY against its own corpus ---------
+  #
+  # Same discipline as the quiet threshold above, and for the same reason: a test
+  # that pins the literal cannot see the constant drift out from under its
+  # evidence. This one is TWO-SIDED, because a desk-idle threshold can fail in
+  # both directions — too low steals from live workers, too high is inert.
+
+  # No measured WORKING gap may ever be read as abandonment. Drift the constant
+  # below the corpus and this goes red, whatever number it drifts to.
+  def test_no_measured_working_gap_is_ever_read_as_abandonment
+    %i[working_p50 working_p90 working_p95 working_p99 working_max].each do |percentile|
+      gap = ClaimLease::MEASURED_DESK_GAP_SECONDS.fetch(percentile)
+
+      refute ClaimLease.abandoned?(desk_touched: false, progress_age: gap),
+             "#{percentile} (#{gap}s) is a MEASURED WORKING gap, but the idle threshold " \
+             "(#{ClaimLease::DESK_IDLE_SECONDS}s) calls it abandoned — that steals a desk from a live worker"
+    end
+  end
+
+  def test_the_threshold_clears_the_worst_measured_working_gap_by_its_stated_margin
+    worst = ClaimLease::MEASURED_DESK_GAP_SECONDS.fetch(:working_max)
+
+    assert_operator ClaimLease::DESK_IDLE_SECONDS, :>, worst,
+                    "the threshold must exceed the worst measured WORKING gap it claims to clear"
+    assert_operator ClaimLease::DESK_IDLE_SECONDS, :>=, worst * ClaimLease::DESK_IDLE_SAFETY_FACTOR,
+                    "the threshold must honour the safety factor its own comment derives it from"
+  end
+
+  # ...and it must still BITE, or "clear the working band" is satisfied by making
+  # it enormous and nothing is ever freed. The bound is stated against the
+  # evidence: the TYPICAL walked-away desk (the abandoned band's median) has to be
+  # caught, or this whole change is decoration.
+  def test_the_typical_abandoned_desk_is_still_caught
+    typical = ClaimLease::MEASURED_DESK_GAP_SECONDS.fetch(:abandoned_p50)
+
+    assert_operator ClaimLease::DESK_IDLE_SECONDS, :<, typical,
+                    "a threshold above the median abandoned gap frees nothing — the lease outlives the session again"
+    assert ClaimLease.abandoned?(desk_touched: false, progress_age: typical)
+  end
 end

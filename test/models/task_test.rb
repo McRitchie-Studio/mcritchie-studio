@@ -1101,10 +1101,15 @@ class TaskTest < ActiveSupport::TestCase
     assert_equal "2026-06-23T12:02:00Z", metadata["claim_expires_at"]
   end
 
+  # `building`, explicitly: the build claim is a BUILD-STAGE lease, and
+  # Task#enforce_build_claim_invariant sheds the keys from any other stage (a
+  # claim on a `designed` task is the phantom the heartbeat already refuses to
+  # forge). The stage was incidental to this case before that invariant existed.
   test "claim_live? and heartbeat age reflect a non-expired lease" do
     now = Time.utc(2026, 6, 23, 12, 0, 0)
     task = Task.create!(
       title: "Claimed build task",
+      stage: "building",
       metadata: { "devops" => {
         "claimed_session" => "sess-1", "claim_nonce" => "inst-A",
         "claim_expires_at" => (now + 90).utc.iso8601

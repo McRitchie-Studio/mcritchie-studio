@@ -337,6 +337,11 @@ class Task < ApplicationRecord
   # board UI form, a raw API call, the console — lands here, so the guard is on
   # the model rather than in any one caller. See #preserve_cert_evidence.
   before_save :preserve_cert_evidence
+  # The build claim is a BUILD-STAGE lease, re-asserted as an INVARIANT on every
+  # save rather than handled at any one transition. It both RELEASES the claim
+  # once the task leaves `building` and DEFENDS it from the wholesale devops
+  # replace while it is there. See #enforce_build_claim_invariant.
+  before_save :enforce_build_claim_invariant
   # One TaskEvent per save that lands a stage: the genesis on create (the default
   # "designed" stage isn't a dirty change, so this is guard-free) and one per real
   # transition on update.
@@ -779,11 +784,51 @@ class Task < ApplicationRecord
   # What the last durable artifact WAS ("cert started", "moved to building") —
   # the difference between "no progress in 40m" and a reader who can act on it.
   def last_progress_label
-    last_progress_event&.last
+    last_progress_event&.at(1)
   end
 
   def progress_seconds_ago(now: Time.current)
     ClaimLease.progress_age(last_progress_at, now: now)
+  end
+
+  # --- Attribution: progress belongs to whoever PRODUCED it ------------------
+  #
+  # The fields above answer "what has landed on this task". They do NOT answer
+  # "is the holder alive", and on 2026-08-13 the claim gate treated them as if
+  # they did: a challenger ran `bin/full-suite-check`, the cert landed a g1_cert
+  # gate row on the task, and the gate refused that same challenger with "last
+  # durable progress ~2m ago (g1_cert passed)" — the challenger's OWN work, quoted
+  # back as proof the holder was working. Unowned progress gets credited to
+  # whoever happens to hold the claim, which is how a lease manufactures its own
+  # evidence.
+  #
+  # So the holder's liveness is asked of the holder's OWN artifacts, and the
+  # newest artifact's owner is published beside it so no reader has to assume.
+
+  # Who produced the newest artifact — nil when the row names nobody (an older
+  # row, a plain-shell run). nil is UNKNOWN and must never be read as "the holder".
+  def last_progress_actor
+    last_progress_event&.at(2)
+  end
+
+  def holder_progress_event
+    @holder_progress_event ||= progress_evidence_by(claimed_session_id).max_by(&:first)
+  end
+
+  def holder_progress_at
+    holder_progress_event&.first
+  end
+
+  def holder_progress_label
+    holder_progress_event&.at(1)
+  end
+
+  # Seconds since the CLAIM HOLDER last produced something durable. nil means the
+  # holder has produced nothing we can attribute to it — which is a genuinely
+  # different statement from "nothing has happened here", and the claim gate says
+  # so rather than borrowing someone else's work to fill the gap.
+  def holder_progress_seconds_ago(now: Time.current)
+    ClaimLease.progress_age(holder_progress_at, now: now)
   end
 
   # A gate is demonstrably running right now (opened, never closed, and recently
@@ -801,9 +846,16 @@ class Task < ApplicationRecord
 
   # Held by a live session, yet nothing durable has landed in a long time.
   # Informational only — it reclaims nothing and blocks nothing.
+  #
+  # Measured against the HOLDER's own artifacts whenever the holder has any, for
+  # the same reason the claim gate's refusal is: a chip that counts anyone's work
+  # as the holder's says "healthy" the moment a second agent runs a cert on the
+  # task, which is precisely when a reader most needs the truth. Falls back to the
+  # task-wide fact when nothing is attributable, so an older row (no session on
+  # its events) keeps the signal it has rather than going blind.
   def claim_progress_quiet?(now: Time.current)
     ClaimLease.quiet?(devops,
-                      last_progress_at: last_progress_at,
+                      last_progress_at: holder_progress_at || last_progress_at,
                       in_flight: gate_in_flight?(now: now),
                       now: now)
   end
@@ -1384,10 +1436,36 @@ class Task < ApplicationRecord
     evidence = []
 
     event = task_events.max_by(&:occurred_at)
-    evidence << [event.occurred_at, progress_event_label(event)] if event&.occurred_at
+    evidence << [event.occurred_at, progress_event_label(event), progress_actor(event)] if event&.occurred_at
 
     gate = gate_runs.max_by(&:updated_at)
-    evidence << [gate.updated_at, progress_gate_label(gate)] if gate&.updated_at
+    evidence << [gate.updated_at, progress_gate_label(gate), progress_actor(gate)] if gate&.updated_at
+
+    evidence
+  end
+
+  # WHO produced a durable artifact, as the record itself names them — the
+  # session stamped in metadata (bin/task checkpoint, bin/gate) first, then
+  # `actor`, which a CLI stage move already fills with the mover's session id and
+  # a block fills with a soul slug. nil when the row names nobody, and nil must
+  # stay nil: a guessed owner is exactly the failure this exists to end.
+  def progress_actor(row)
+    row.metadata.to_h["session"].presence || row.actor.presence
+  end
+
+  # The newest artifact produced BY a given session. Filtered in Ruby over the
+  # same loaded associations progress_evidence reads, so a card that preloaded
+  # :task_events and :gate_runs pays nothing extra.
+  def progress_evidence_by(session)
+    return [] if session.blank?
+
+    evidence = []
+
+    event = task_events.select { |row| row.occurred_at && progress_actor(row) == session }.max_by(&:occurred_at)
+    evidence << [event.occurred_at, progress_event_label(event), session] if event
+
+    gate = gate_runs.select { |row| row.updated_at && progress_actor(row) == session }.max_by(&:updated_at)
+    evidence << [gate.updated_at, progress_gate_label(gate), session] if gate
 
     evidence
   end
@@ -1864,6 +1942,60 @@ class Task < ApplicationRecord
     merged = metadata.deep_dup
     merged["devops"]["checks_run"] = preserved
     self.metadata = merged
+  end
+
+  # The build claim exists only while the task is BUILDING, and while it is
+  # building it survives a client PATCH that forgot to mention it. One invariant,
+  # two failures it retires.
+  #
+  # RELEASE. Every other lease in this codebase has an explicit release that nils
+  # its columns — DevopsShift, TaskReviewClaim, ReleaseConductorClaim,
+  # MigrationLaneClaim all do. The devops build claim was the one lease with NO
+  # release path at all: `bin/task move <slug> submitted` sends no devops, nothing
+  # server-side cleared the keys, and the normalizer silently drops blanks
+  # (`next if normalized_value.blank?`) so a client could not clear them even on
+  # purpose. Sessions therefore stopped heartbeating and walked away, leaving a
+  # stale holder on the row forever. Stating it as an invariant rather than
+  # hanging it off the submitted transition means it also heals the rows already
+  # carrying a dead claim, and it cannot be escaped by a path that moves the stage
+  # some other way.
+  #
+  # PRESERVE. Api::V1::TasksController#task_params assigns metadata WHOLESALE, so
+  # every PATCH carrying `devops` REPLACES the subhash and deletes any key the
+  # client did not echo. The board's own edit form permits no claim keys at all
+  # (app/controllers/tasks_controller.rb), so opening a task on the board and
+  # saving it silently destroyed a LIVE claim — and a destroyed claim reads as
+  # unclaimed, which lets a second agent take a desk someone is working at. That
+  # is also why `bin/task show --json` and `bin/task begin` disagreed about the
+  # same lease 20 seconds apart: not two readers of one fact, but one fact being
+  # erased and rewritten underneath them. This is the same self-healing shape as
+  # #restore_mascot_identity and #preserve_cert_evidence, applied to the keys that
+  # decide who owns a desk.
+  #
+  # Note what is NOT here: nothing expires a lease. Expiry stays where it belongs,
+  # on the TTL clock in ClaimLease — restoring an omitted key preserves a lease
+  # that is still lapsing on its own schedule, it does not extend it.
+  def enforce_build_claim_invariant
+    devops = metadata.is_a?(Hash) ? metadata["devops"] : nil
+    # An explicit devops teardown (the whole hash removed) is left alone — this
+    # guard defends the claim namespace, not the existence of devops.
+    return unless devops.is_a?(Hash)
+
+    updated = devops.dup
+    if stage == "building"
+      return if new_record?
+
+      ClaimLease::CLAIM_KEYS.each do |key|
+        next if updated[key].present? || prior_devops[key].blank?
+
+        updated[key] = prior_devops[key]
+      end
+    else
+      ClaimLease::CLAIM_KEYS.each { |key| updated.delete(key) }
+    end
+    return if updated == devops
+
+    self.metadata = metadata.merge("devops" => updated)
   end
 
   # The slug is the readable, immutable handle set at creation — it drives the

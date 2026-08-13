@@ -240,8 +240,14 @@ class StatuslineTest < Minitest::Test
   # Run statusline with a stub `task` binary (records its args) wired in via
   # TASK_BIN, in foreground heartbeat mode so the call is observable. Returns the
   # recorded invocations (one per line, e.g. "heartbeat <slug>").
+  # @heartbeat_desk records the directory the render ran in, so a case can assert
+  # that the desk handed to `bin/task heartbeat` is THAT directory and not some
+  # other checkout — the distinction the whole desk-keyed lease rests on.
+  attr_reader :heartbeat_desk
+
   def heartbeat_calls(stage:, runs: 1, session: SESSION, slug: "session-claim-lease-gate")
     Dir.mktmpdir do |dir|
+      @heartbeat_desk = dir
       File.write(File.join(dir, ".agent-context.json"), JSON.generate(
         "app" => "mcritchie-studio",
         "worktree_slug" => "session-claim-lease-gate",
@@ -267,10 +273,15 @@ class StatuslineTest < Minitest::Test
     end
   end
 
+  # The status line renews the claim — and, since 2026-08-13, hands over the DESK
+  # it is rendering in so the renewal is decided on evidence of work rather than on
+  # evidence that this status line is painting. Without the desk, an open terminal
+  # renews a build claim forever (bin/task falls back to "unknown", which never
+  # frees a claim), which is exactly the stall this fix exists to end.
   def test_statusline_fires_the_heartbeat_for_the_active_building_task
     calls = heartbeat_calls(stage: "building")
-    assert_equal ["heartbeat session-claim-lease-gate"], calls,
-                 "a building task's status line should renew its claim via `task heartbeat <slug>`"
+    assert_equal ["heartbeat session-claim-lease-gate --desk #{heartbeat_desk}"], calls,
+                 "a building task's status line should renew its claim via `task heartbeat <slug> --desk <desk>`"
   end
 
   def test_statusline_throttles_repeated_heartbeats
@@ -292,7 +303,9 @@ class StatuslineTest < Minitest::Test
   # written with stage:nil → ""). Its claim must STILL renew — the empty-stage
   # renew is load-bearing for worktrees and must not regress.
   def test_statusline_still_heartbeats_an_empty_stage_worktree_desk
-    assert_equal ["heartbeat session-claim-lease-gate"], heartbeat_calls(stage: ""),
+    calls = heartbeat_calls(stage: "")
+
+    assert_equal ["heartbeat session-claim-lease-gate --desk #{heartbeat_desk}"], calls,
                  "an empty-stage worktree desk is a real build — its claim renews"
   end
 
@@ -717,7 +730,9 @@ class StatuslineTest < Minitest::Test
   # marker and renews normally. A guard that fails closed on the happy path is
   # worse than the bug — the six heartbeat_calls tests above ride on this.
   def test_integration_a_sandboxed_but_pinned_statusline_still_heartbeats
-    assert_equal ["heartbeat session-claim-lease-gate"], heartbeat_calls(stage: "building"),
+    calls = heartbeat_calls(stage: "building")
+
+    assert_equal ["heartbeat session-claim-lease-gate --desk #{heartbeat_desk}"], calls,
                  "pinned at a tmpdir, the destination is provable — narration works normally under test"
   end
 end
