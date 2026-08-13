@@ -243,6 +243,8 @@ module CiTestCommand
   # Both fail in the SAFE direction for their grain. Adding a new action to a repo's
   # ci.yml therefore costs one line HERE, on purpose: a human decides "does this
   # action run tests?" once, instead of the cert assuming "no" forever.
+  # astral-sh/setup-uv@v10 installs uv, configures its environment, and restores its
+  # cache; its action source does not invoke the repository's test suite.
   KNOWN_INERT_ACTIONS = %w[
     actions/checkout
     actions/cache
@@ -250,6 +252,7 @@ module CiTestCommand
     actions/setup-python
     actions/upload-artifact
     actions/download-artifact
+    astral-sh/setup-uv
     ruby/setup-ruby
     browser-actions/setup-chrome
   ].freeze
