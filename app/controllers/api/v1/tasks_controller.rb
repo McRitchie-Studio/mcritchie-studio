@@ -136,7 +136,15 @@ module Api
           # 94 minutes), so the heartbeat needs this channel to tell a long green
           # cert apart from a walked-away terminal. Already computed for
           # progress_quiet; published so the lease decision can read it too.
-          "gate_in_flight" => task.gate_in_flight?
+          "gate_in_flight" => task.gate_in_flight?,
+          # The two facts the LEASE decision reads. Their task-wide twins above
+          # describe the task; only these describe the HOLDER, and a challenger
+          # that certifies a held slug moves the task-wide pair while saying
+          # nothing about whether the holder is still there. An artifact counts
+          # here unless it is demonstrably another session's, so every unknown
+          # still keeps the desk.
+          "holder_liveness_seconds_ago" => task.holder_liveness_seconds_ago,
+          "holder_gate_in_flight" => task.holder_gate_in_flight?
         )
       end
 

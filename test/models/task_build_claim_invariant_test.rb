@@ -195,4 +195,90 @@ class TaskBuildClaimInvariantTest < ActiveSupport::TestCase
     assert @task.claim_progress_quiet?(now: @now),
            "the holder has been silent for longer than the threshold — a stranger's cert does not revive it"
   end
+
+  # --- REAPING: the same rule, pointed the other way -------------------------
+  #
+  # The attribution above is strict: an unowned row is never claimed AS the
+  # holder's, because the refusal message must not invent evidence that the holder
+  # is alive. These invert on exactly one point, and only that one: the reaping
+  # decision must not invent evidence that the holder is GONE, so an unowned row
+  # protects here. Only a row DEMONSTRABLY another session's stops counting.
+
+  def open_gate!(session:, at:, key: "g1_cert")
+    metadata = session ? { "session" => session } : {}
+    GateRun.create!(subject_type: "task", subject_slug: @task.slug, key: key, attempt: 1,
+                    started_at: at, finished_at: nil, success: nil, metadata: metadata,
+                    created_at: at, updated_at: at)
+  end
+
+  # The decision bin/task actually makes, composed from the two facts it reads. The
+  # CLI tier (test/lib/task_cli_test.rb) proves bin/task feeds these in; this proves
+  # the model derives them from real TaskEvent/GateRun rows. Neither alone shows
+  # the incident is closed.
+  def reaps?(now: @now)
+    ClaimLease.abandoned?(desk_touched: false,
+                          progress_age: @task.holder_liveness_seconds_ago(now: now),
+                          gate_in_flight: @task.holder_gate_in_flight?(now: now),
+                          awaiting_approval: false)
+  end
+
+  # THE REGRESSION. The holder is long gone; a queued challenger runs its own
+  # full-suite-check on the held slug, landing a checkpoint AND opening a g1_cert.
+  # Task-wide both signals now say "busy", and reading them renewed the dead lease
+  # for another 1h29m. The lease must still reap.
+  test "a challengers own cert does not revive an abandoned lease" do
+    checkpoint!(session: "sess-holder", at: @now - (ClaimLease::DESK_IDLE_SECONDS + 10.minutes))
+    checkpoint!(session: "sess-challenger", at: @now - 2.minutes)
+    open_gate!(session: "sess-challenger", at: @now - 2.minutes)
+
+    assert @task.gate_in_flight?(now: @now), "precondition: task-wide, a gate IS running"
+    assert_in_delta 120, @task.progress_seconds_ago(now: @now), 5, "precondition: task-wide, progress IS recent"
+
+    refute @task.holder_gate_in_flight?(now: @now), "the running gate is the challenger's, not the holder's"
+    assert reaps?, "a challenger's own cert must not renew the lease it is queued behind"
+  end
+
+  # The converse, and the reason the channel is FILTERED rather than dropped: a
+  # cert writes nothing into the desk for up to the measured 94-minute p99, so a
+  # holder mid-cert looks identical to a walked-away terminal from the desk alone.
+  test "a holder mid cert with a silent desk is not reaped" do
+    checkpoint!(session: "sess-holder", at: @now - (ClaimLease::DESK_IDLE_SECONDS + 10.minutes))
+    open_gate!(session: "sess-holder", at: @now - 20.minutes)
+
+    assert @task.holder_gate_in_flight?(now: @now), "the holder's own cert is running"
+    refute reaps?, "reaping a holder mid-certification is the expensive error, and this is it"
+  end
+
+  # UNKNOWN KEEPS THE DESK. A gate run written before bin/gate stamped its session
+  # names nobody. Nobody is not "somebody else", and reading a missing field as
+  # proof of absence would evict a live worker on a schema gap.
+  test "an unsigned gate in flight still protects the holder" do
+    checkpoint!(session: "sess-holder", at: @now - (ClaimLease::DESK_IDLE_SECONDS + 10.minutes))
+    open_gate!(session: nil, at: @now - 20.minutes)
+
+    assert @task.holder_gate_in_flight?(now: @now), "an unattributed gate is an unknown, and unknowns protect"
+    refute reaps?
+  end
+
+  # The same rule on the progress channel. Split from its converse below rather
+  # than sequenced in one case: holder_liveness_seconds_ago memoizes its evidence
+  # per instance (as holder_progress_* does), and `reload` does not clear a plain
+  # ivar — so a second scenario in the same test would silently assert against the
+  # first one's cached answer.
+  test "an unsigned artifact keeps the holders liveness clock warm" do
+    checkpoint!(session: "sess-holder", at: @now - (ClaimLease::DESK_IDLE_SECONDS + 10.minutes))
+    checkpoint!(session: nil, at: @now - 3.minutes)
+
+    assert_in_delta 180, @task.holder_liveness_seconds_ago(now: @now), 5, "nobody's work might be the holder's"
+    refute reaps?, "an unknown owner may never be the reason a desk is freed"
+  end
+
+  test "a challengers artifact does not keep the holders liveness clock warm" do
+    checkpoint!(session: "sess-holder", at: @now - (ClaimLease::DESK_IDLE_SECONDS + 10.minutes))
+    checkpoint!(session: "sess-challenger", at: @now - 3.minutes)
+
+    assert_operator @task.holder_liveness_seconds_ago(now: @now), :>, ClaimLease::DESK_IDLE_SECONDS,
+                    "a named stranger's work is demonstrably not the holder's"
+    assert reaps?
+  end
 end

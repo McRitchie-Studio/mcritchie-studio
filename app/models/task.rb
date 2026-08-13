@@ -844,6 +844,51 @@ class Task < ApplicationRecord
     gate_runs.any? { |gate| gate.finished_at.nil? && gate.started_at.present? && window.cover?(gate.started_at) }
   end
 
+  # --- Reaping: the same rule, pointed the other way -------------------------
+  #
+  # holder_progress_* above answers "what has the holder DEMONSTRABLY produced",
+  # and it is strict on purpose: the refusal MESSAGE may never claim an
+  # unattributed artifact as the holder's, because inventing that owner is the
+  # manufactured evidence this whole family exists to end.
+  #
+  # The REAPING decision obeys the same master rule — never invent evidence —
+  # but it is asserting the OPPOSITE proposition. The message argues the holder
+  # is ALIVE; the heartbeat argues it is GONE. So an unsigned row has to fall on
+  # the opposite side of each: it is not proof the holder worked (the message
+  # must not cite it) and equally not proof the holder didn't (the heartbeat must
+  # not reap on it). A gate run written before bin/gate stamped its session is
+  # exactly such a row, and reading its silence as "not the holder" would evict a
+  # live worker on the strength of a missing field.
+  #
+  # So here an artifact counts as the holder's unless it is DEMONSTRABLY someone
+  # else's. That is what closes the incident: a queued challenger's checkpoint and
+  # g1_cert are stamped with the CHALLENGER's session, so they are demonstrably
+  # not the holder's, and they stop propping up an abandoned lease — while every
+  # unknown still keeps the desk.
+
+  # Seconds since the newest artifact not demonstrably someone else's. nil when
+  # the task has none at all (known-absent, not unknown — nothing has ever landed
+  # here, by anyone).
+  def holder_liveness_seconds_ago(now: Time.current)
+    ClaimLease.progress_age(undisowned_progress_event&.first, now: now)
+  end
+
+  # A gate that could be the holder's is running right now. Same bounded window as
+  # gate_in_flight?, minus the runs another session signed — the challenger's cert
+  # that renewed an abandoned lease for another 1h29m.
+  #
+  # The channel itself stays: a cert writes NOTHING into the desk for up to the
+  # measured 94-minute p99, so dropping it would reap a holder mid-cert. Filtering
+  # it by actor keeps that protection for the holder and denies it to everyone else.
+  def holder_gate_in_flight?(now: Time.current)
+    window = (now - PROGRESS_IN_FLIGHT_BUDGET)..now
+
+    gate_runs.any? do |gate|
+      gate.finished_at.nil? && gate.started_at.present? && window.cover?(gate.started_at) &&
+        !disowned?(gate)
+    end
+  end
+
   # Held by a live session, yet nothing durable has landed in a long time.
   # Informational only — it reclaims nothing and blocks nothing.
   #
@@ -856,7 +901,7 @@ class Task < ApplicationRecord
   def claim_progress_quiet?(now: Time.current)
     ClaimLease.quiet?(devops,
                       last_progress_at: holder_progress_at || last_progress_at,
-                      in_flight: gate_in_flight?(now: now),
+                      in_flight: holder_gate_in_flight?(now: now),
                       now: now)
   end
 
@@ -1468,6 +1513,32 @@ class Task < ApplicationRecord
     evidence << [gate.updated_at, progress_gate_label(gate), session] if gate
 
     evidence
+  end
+
+  # Is this row DEMONSTRABLY not the holder's? True only when the row names an
+  # owner AND that owner is a different session. An unsigned row answers false —
+  # unknown, which protects the holder (see the reaping note above). With no
+  # holder on the claim nothing is disowned, so the answer degrades to "keep".
+  def disowned?(row)
+    actor = progress_actor(row)
+    actor.present? && claimed_session_id.present? && actor != claimed_session_id
+  end
+
+  # The newest artifact not demonstrably someone else's — the reaping counterpart
+  # to progress_evidence_by, over the same loaded associations, so a preloaded
+  # card still pays nothing extra.
+  def undisowned_progress_event
+    @undisowned_progress_event ||= begin
+      evidence = []
+
+      event = task_events.select { |row| row.occurred_at && !disowned?(row) }.max_by(&:occurred_at)
+      evidence << [event.occurred_at, progress_event_label(event), progress_actor(event)] if event
+
+      gate = gate_runs.select { |row| row.updated_at && !disowned?(row) }.max_by(&:updated_at)
+      evidence << [gate.updated_at, progress_gate_label(gate), progress_actor(gate)] if gate
+
+      evidence.max_by(&:first)
+    end
   end
 
   def progress_event_label(event)

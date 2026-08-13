@@ -374,6 +374,16 @@ def progress_line(task, challenger: nil)
     "(~#{ClaimLease.humanize_age(seconds)} ago#{detail}) #{whose}, so it says nothing about the holder"
 end
 
+# A holder-scoped liveness fact, falling back to its task-wide twin when the board
+# does not publish one. A MISSING key means an older board, which is an unknown —
+# and the fallback is the conservative direction, because the task-wide signals are
+# strictly more protective (they count everyone's work, so they can only keep a
+# desk, never free one). A key that is present and nil is a real answer and is
+# passed through as one.
+def holder_scoped(task, holder_key, task_wide_key)
+  task.key?(holder_key) ? task[holder_key] : task[task_wide_key]
+end
+
 # Has the holder walked away? Gathers the four independent channels ClaimLease
 # .abandoned? weighs and hands them over — the arithmetic stays in the shared
 # module (so the unit tier can exercise every combination), the I/O stays here.
@@ -384,14 +394,27 @@ end
 # directory not bound to this task, so a heartbeat fired from a primary checkout
 # (whose mtimes belong to every agent on the machine, and so are always fresh)
 # resolves nil and the claim is kept rather than judged on someone else's work.
+#
+# THE BOARD CHANNELS ARE HOLDER-SCOPED, and that is the difference between fixing
+# this and half-fixing it. Both remaining channels used to read the TASK-WIDE fact,
+# so a queued challenger running `bin/full-suite-check` on the held slug landed a
+# checkpoint and opened a g1_cert on someone else's task — and the abandoned holder
+# renewed for another 1h29m on the strength of the challenger's own work. That is
+# the incident this gate exists to end, one indirection over from where it was
+# fixed in the refusal message.
+#
+# The gate_in_flight channel is FILTERED, never dropped: a cert writes nothing into
+# the desk for up to 94 measured minutes, so a holder mid-cert still needs it. A
+# gate opened BY the holder protects the holder; one opened by a challenger does
+# not; one nobody signed is an unknown and still protects.
 def heartbeat_abandoned?(slug, task, devops, desk_hint)
   root = DeskActivity.desk_root(desk_hint || Dir.pwd, slug)
   touched = root.nil? ? nil : DeskActivity.touched_since?(root, Time.now - ClaimLease::DESK_IDLE_SECONDS)
 
   ClaimLease.abandoned?(
     desk_touched: touched,
-    progress_age: task["progress_seconds_ago"],
-    gate_in_flight: task["gate_in_flight"] ? true : false,
+    progress_age: holder_scoped(task, "holder_liveness_seconds_ago", "progress_seconds_ago"),
+    gate_in_flight: holder_scoped(task, "holder_gate_in_flight", "gate_in_flight") ? true : false,
     awaiting_approval: devops["approval_status"].to_s.strip == "waiting"
   )
 rescue StandardError

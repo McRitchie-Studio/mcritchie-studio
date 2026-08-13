@@ -780,12 +780,32 @@ heartbeat renews only when it cannot show the holder has gone; it declines when
 - **operator approval** — a task parked on Mr. McRitchie is not abandoned.
 - **durable board progress** — a holder working through the API still reads alive.
 
+**The two board channels are holder-scoped**, and that is the difference between
+fixing this and half-fixing it. Both once read the *task-wide* fact, so a queued
+challenger running `bin/full-suite-check` on a held slug landed a checkpoint and
+opened a `g1_cert` on someone else's task — and the abandoned holder renewed for
+another 1h29m on the strength of the challenger's own work. The heartbeat reads
+`holder_liveness_seconds_ago` and `holder_gate_in_flight` instead. The gate
+channel is **filtered, never dropped**: a holder mid-cert still needs it, so a
+gate opened *by the holder* protects the holder and one opened by a challenger
+does not.
+
 **Every unknown keeps the desk.** No desk bound to the task, an unreadable root, a
-walk over budget, or an exception all resolve to "not abandoned", because freeing
-a desk too late costs waiting while freeing it too early costs the work. The desk
-must be bound to *this* task (`.agent-context.json`); a primary checkout is
-written by every agent on the machine, so judging a claim there would renew it
-forever — the same bug one indirection out.
+walk over budget, an exception, an artifact **nobody signed**, or a board too old
+to publish the holder-scoped field all resolve to "not abandoned", because freeing
+a desk too late costs waiting while freeing it too early costs the work. So an
+unsigned gate run still protects its holder — nobody is not "somebody else", and
+reading a missing field as proof of absence would evict a live worker on a schema
+gap. The desk must be bound to *this* task (`.agent-context.json`); a primary
+checkout is written by every agent on the machine, so judging a claim there would
+renew it forever — the same bug one indirection out.
+
+The same rule runs in **both directions**, which is why the refusal message and
+the reaping decision disagree about an unsigned row on purpose. The message
+argues the holder is *alive*, so it may never cite a row nobody signed
+(`holder_progress_*`, strict). The heartbeat argues the holder is *gone*, so it
+may never reap on one (`holder_liveness_*`, permissive). Both refuse to invent
+evidence; they are asserting opposite propositions.
 
 `DESK_IDLE_SECONDS` is **derived, not chosen**: 341 desk-edit gaps measured across
 37 real worktrees split into a working band and an abandoned (left-overnight) one,

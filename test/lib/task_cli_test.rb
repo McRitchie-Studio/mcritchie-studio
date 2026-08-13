@@ -1217,6 +1217,64 @@ class TaskCliTest < Minitest::Test
     refute_nil patch_devops(requests), "a cert in flight is work — the desk is quiet because certs are quiet"
   end
 
+  # THE INCIDENT, VERBATIM — and the reason "the gate prints an honest message" was
+  # only half the fix. The holder walked away. A QUEUED CHALLENGER then ran
+  # `bin/full-suite-check` on the held slug, which lands a checkpoint AND opens a
+  # g1_cert on a task it does not hold. Task-wide the board now looks busy — recent
+  # progress, a gate in flight — and reading those two task-wide facts renewed the
+  # abandoned lease for another 1h29m, which is the stall this task exists to end.
+  # Holder-scoped, both facts say what is actually true: the holder has produced
+  # nothing in far longer than the window, and the running gate is not its own.
+  def test_heartbeat_declines_when_only_a_challengers_cert_is_moving_the_task
+    requests, _out, _err, status = run_task(
+      ["heartbeat", "demo-task", "--desk", desk(age: ClaimLease::DESK_IDLE_SECONDS + 600)],
+      env: heartbeat_env,
+      stub_devops: claim_devops(session: SESSION, nonce: "inst-A", expires_in: 30),
+      stub_progress: { "progress_seconds_ago" => 120, "gate_in_flight" => true,
+                       "holder_liveness_seconds_ago" => ClaimLease::DESK_IDLE_SECONDS + 600,
+                       "holder_gate_in_flight" => false }
+    )
+    assert status.success?, "the heartbeat stays best-effort and silent"
+    assert_nil patch_of(requests),
+               "a challenger's own cert is not evidence the holder is alive — the lease must still lapse"
+  end
+
+  # THE CONVERSE, which is what the actor filter has to buy without losing. The
+  # HOLDER is mid-cert: a cert writes nothing into the desk for up to the measured
+  # 94-minute p99, so the desk is legitimately silent and this channel is the only
+  # thing between a working agent and eviction. Filtering the channel by actor
+  # keeps it for the holder — dropping it would have reaped exactly this session.
+  def test_heartbeat_renews_a_silent_desk_while_the_holders_own_gate_is_in_flight
+    requests, _out, _err, status = run_task(
+      ["heartbeat", "demo-task", "--desk", desk(age: ClaimLease::DESK_IDLE_SECONDS + 600)],
+      env: heartbeat_env,
+      stub_devops: claim_devops(session: SESSION, nonce: "inst-A", expires_in: 30),
+      stub_progress: { "progress_seconds_ago" => ClaimLease::DESK_IDLE_SECONDS + 600,
+                       "gate_in_flight" => true,
+                       "holder_liveness_seconds_ago" => ClaimLease::DESK_IDLE_SECONDS + 600,
+                       "holder_gate_in_flight" => true }
+    )
+    assert status.success?
+    refute_nil patch_devops(requests),
+               "the holder's own cert is the one thing that proves it is still there — never reap mid-cert"
+  end
+
+  # A board that does not publish the holder-scoped fact at all (an older
+  # deployment, a trimmed serializer) is an UNKNOWN, and an unknown may never free
+  # a desk. The fallback is the task-wide twin, which is strictly more protective
+  # because it counts everyone's work. Without it a missing key would read as "the
+  # holder has produced nothing, ever" and reap a live holder on a schema gap.
+  def test_heartbeat_falls_back_to_the_task_wide_progress_when_the_board_omits_the_holder_scoped_one
+    requests, _out, _err, status = run_task(
+      ["heartbeat", "demo-task", "--desk", desk(age: ClaimLease::DESK_IDLE_SECONDS + 600)],
+      env: heartbeat_env,
+      stub_devops: claim_devops(session: SESSION, nonce: "inst-A", expires_in: 30),
+      stub_progress: { "progress_seconds_ago" => 120, "gate_in_flight" => false }
+    )
+    assert status.success?
+    refute_nil patch_devops(requests), "a board that cannot answer the question has not answered it 'no'"
+  end
+
   # Parked on the operator is not abandoned: the agent is right to be doing
   # nothing, and the task record says so.
   def test_heartbeat_renews_a_quiet_desk_awaiting_operator_approval

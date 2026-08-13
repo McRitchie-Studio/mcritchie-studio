@@ -19,11 +19,26 @@ require "json"
 require "socket"
 require "open3"
 require "rbconfig"
+require "tmpdir"
+require "fileutils"
 require_relative "../support/session_env"
 
 class GateCliTest < Minitest::Test
   BIN = File.expand_path("../../bin/gate", __dir__)
   SESSION = "7c1f9a22-4d3e-4f0a-9b21-8a5c6d7e0f13"
+
+  # A FRESH sandbox root per test, so the agent-token cache is COLD in every case
+  # and each one walks the same mint-then-write path CI walks. Sharing one root
+  # across the file would let whichever test ran first warm the cache and the rest
+  # skip the mint — order-dependence under a random seed, which is the flake this
+  # file already paid for once.
+  def setup
+    @sandbox_root = Dir.mktmpdir("gate-cli-sandbox")
+  end
+
+  def teardown
+    FileUtils.remove_entry(@sandbox_root) if @sandbox_root && File.directory?(@sandbox_root)
+  end
 
   # Run bin/gate against a one-shot stub server; returns [recorded_requests, status].
   def run_gate(args, env: {})
@@ -35,12 +50,33 @@ class GateCliTest < Minitest::Test
     # SessionEnv.neutralized: bin/gate resolves SessionIdentity, so the child must
     # name NO session unless a case opts one in — otherwise this file reads the
     # LIVE agent session and goes red inside an agent run.
+    #
+    # TaskUsageSandboxEnv.child_env: PIN THE WRITE ROOT, and this file is why the
+    # pin is not optional. bin/gate mints an agent token and CACHES it under
+    # <CLAUDE_PROJECTS_DIR>/.agents; requiring session_env arms TASK_USAGE_SANDBOX
+    # for this process and every child, so an UNPINNED bin/gate hits
+    # TaskUsageSandbox.enforce! and — by design — `abort`s. That is a SystemExit,
+    # not a StandardError, so AgentApi#write_cached_token's rescue does not catch
+    # it and the CLI dies right after POSTing /api/v1/auth, before it ever reaches
+    # the gate endpoint this file asserts on.
+    #
+    # It passed on a desk anyway, which is the part worth remembering: the
+    # operator's real projects root already holds a WARM token.json, so
+    # read_cached_token short-circuited and the write seam was never reached. CI
+    # starts cold, mints, writes, and aborts. Pinning a FRESH tmpdir per test makes
+    # both worlds cold, so the desk now walks the same mint-then-write path CI does
+    # instead of a shorter one that hid the abort.
     base = SessionEnv.neutralized({
       "TASK_API_BASE" => "http://127.0.0.1:#{port}",
       "AGENT_API_SECRET" => "test-secret"
-    }.merge(env))
+    }.merge(TaskUsageSandboxEnv.child_env(@sandbox_root)).merge(env))
 
-    _out, _err, status = Open3.capture3(base, RbConfig.ruby, BIN, *args)
+    _out, err, status = Open3.capture3(base, RbConfig.ruby, BIN, *args)
+    # The child's stderr rides the failure message. bin/gate reports every refusal
+    # there and exits 1; discarding it turns a named cause ("CLAUDE_PROJECTS_DIR is
+    # unset") into a bare "Expected false to be truthy", which is what made this
+    # file's CI failure unreadable from the log alone.
+    @gate_stderr = err
     [requests, status]
   ensure
     server&.close
@@ -79,7 +115,8 @@ class GateCliTest < Minitest::Test
 
   def gate_body(requests, path_suffix)
     request = requests.find { |r| r[:method] == "POST" && r[:path].end_with?(path_suffix) }
-    refute_nil request, "expected a POST ending in #{path_suffix}; saw #{requests.map { |r| r[:path] }.inspect}"
+    refute_nil request, "expected a POST ending in #{path_suffix}; saw " \
+                        "#{requests.map { |r| r[:path] }.inspect}. bin/gate stderr: #{@gate_stderr}"
     JSON.parse(request[:body]).fetch("gate", {})
   end
 
@@ -88,7 +125,7 @@ class GateCliTest < Minitest::Test
     requests, status = run_gate(%w[open task demo-task g1_cert],
                                 env: { "CLAUDE_CODE_SESSION_ID" => SESSION })
 
-    assert status.success?
+    assert status.success?, "bin/gate exited #{status.exitstatus}: #{@gate_stderr}"
     assert_equal SESSION, gate_body(requests, "/g1_cert/open").dig("metadata", "session"),
                  "an unsigned gate run gets credited to whoever holds the claim"
   end
@@ -97,7 +134,7 @@ class GateCliTest < Minitest::Test
     requests, status = run_gate(%w[close task demo-task g1_cert --success],
                                 env: { "CLAUDE_CODE_SESSION_ID" => SESSION })
 
-    assert status.success?
+    assert status.success?, "bin/gate exited #{status.exitstatus}: #{@gate_stderr}"
     assert_equal SESSION, gate_body(requests, "/g1_cert/close").dig("metadata", "session")
   end
 
@@ -114,7 +151,7 @@ class GateCliTest < Minitest::Test
   def test_open_without_a_session_stamps_nobody
     requests, status = run_gate(%w[open task demo-task g1_cert])
 
-    assert status.success?
+    assert status.success?, "bin/gate exited #{status.exitstatus}: #{@gate_stderr}"
     assert_nil gate_body(requests, "/g1_cert/open")["metadata"], "no session means no owner, never a guessed one"
   end
 
