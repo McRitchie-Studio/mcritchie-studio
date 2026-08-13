@@ -135,10 +135,11 @@ gem "sentry-rails"
 # operator's copy on /admin/emails has nowhere to be stored and nothing to read
 # it.
 #
-# THE PIN STRING IS NOT THE FLOOR. `~> 0.43` permits anything below 1.0, so it
-# constrains nothing downward on its own — test/lib/engine_pin_contract_test.rb
-# is what asserts the resolved version and the columns, and it is where a
-# `bundle update` that walked backwards fails.
+# THE PIN DOES FLOOR — `~> 0.43` is `>= 0.43, < 1.0`, so a plain `bundle update`
+# cannot walk this app backwards. What a pin string cannot do is speak for the
+# version that RESOLVED: a pin loosened later, a `path:`/`git:` override, a
+# hand-edited lockfile, or an unmigrated database all get past it.
+# test/lib/engine_pin_contract_test.rb asserts the resolved version and columns.
 gem "studio-engine", "~> 0.43"
 
 # Pin the majors this app already runs so an engine bump cannot carry a new one

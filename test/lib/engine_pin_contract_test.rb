@@ -2,12 +2,13 @@ require "test_helper"
 
 # Contract for the studio-engine pin.
 #
-# The Gemfile pin is `~> 0.43`, which permits ANYTHING below 1.0 — so the pin
-# string is not the floor and never was. Reading it as one is how "turf is on
-# 0.31" got believed while that app's lockfile said 0.39. These assert the floor
-# this app actually depends on, so a `bundle update` that walks the resolved
-# version backwards fails HERE, in one obvious place, instead of as a
-# NoMethodError inside a sign-in email that nobody is watching.
+# The Gemfile pin is `~> 0.43` — that is `>= 0.43, < 1.0`, so it DOES floor this
+# app, and a plain `bundle update` cannot walk the resolved version backwards.
+# What a pin string cannot do is speak for what RESOLVED; reading one as the
+# other is how "turf is on 0.31" got believed while that app's lockfile said
+# 0.39. These assert what this app actually runs, so a loosened pin, a `path:`
+# override, or an unmigrated database fails HERE instead of as a NoMethodError
+# inside a sign-in email that nobody is watching.
 #
 # Modelled on turf-monster's test/lib/engine_pin_contract_test.rb, which is the
 # reference shape. It carries one test that app does not — see WHY THREE, below.
@@ -37,7 +38,8 @@ class EnginePinContractTest < ActiveSupport::TestCase
 
   # What app/mailers/user_mailer.rb reads off the catalog. Named as the methods
   # rather than as a version number, because this is the thing that actually
-  # breaks: on 0.42.0 none of these five exists.
+  # breaks: on 0.42.0 four of these five are missing — subject_for arrived in 0.42,
+  # the other four in 0.43. MEASURED by resolving 0.42.0 and running this file.
   MAILER_COPY_API = %i[body cta_text cta_color cta_enabled? subject_for].freeze
 
   # The engine tables this app's mounted pages and mailers read.
