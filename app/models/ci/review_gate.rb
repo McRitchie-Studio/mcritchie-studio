@@ -57,9 +57,16 @@ module Ci
       return { state: :no_pr } if nwo.empty? || branch.empty? || task.devops_url("pr").blank?
 
       # Resolved from the REPO, not assumed: a gem's runs are named "Engine CI", an
-      # app's "CI". Both reads below scope to the same name — a sha resolved from one
-      # workflow must be folded from that same workflow, or a sibling workflow on the
-      # same commit blends into the verdict.
+      # app's "CI".
+      #
+      # IT SCOPES THE TREE, NOT THE VERDICT — the two are different questions, and
+      # answering both with this one name is the defect task
+      # autopilot-merges-on-pending fixed. WHICH TREE do we hold CI for is the suite
+      # workflow's to answer (latest_ci_sha): a downstream "Consumer CI" run alone
+      # resolves no tree, which is why a gem PR carrying only that reads :none. WHICH
+      # RUNS get a vote on that tree is a question about the COMMIT, and every run
+      # GitHub started on it answers (check_runs_payload) — a lane silently dropped
+      # from the fold is how a merge fired against a still-running consumer suite.
       workflow = GithubWorkflowRun.ci_workflow_for(repo)
 
       # FAIL CLOSED on an unresolved workflow. A repo with no declared suite (or one
@@ -73,7 +80,7 @@ module Ci
       sha = latest_ci_sha(nwo, branch, workflow)
       return { state: :none, sha: nil } if sha.blank?
 
-      CiStatus.for_sha(nwo, sha, check_runs_payload(nwo, sha, workflow)).merge(sha: sha)
+      CiStatus.for_sha(nwo, sha, check_runs_payload(nwo, sha)).merge(sha: sha)
     end
 
     # The newest ingested `CI` run's head_sha on this repo+branch — the PR tip we hold
@@ -88,30 +95,61 @@ module Ci
                        .pick(:head_sha)
     end
 
-    # The ingested CI run for this head_sha, shaped as a check-runs payload for
-    # CiStatus.for_sha — the head_sha → runs JOIN. Only the NEWEST run per SHA is
-    # folded, because a SHA can carry several DISTINCT runs (a re-triggered
-    # workflow, a push that re-ran the suite): folding a stale failed run beside
-    # the fresh green one would (correctly, for CiStatus) read :red, so the
-    # superseded row drops.
+    # EVERY ingested run for this head_sha, shaped as a check-runs payload for
+    # CiStatus.for_sha — the head_sha → runs JOIN. One vote per WORKFLOW, and the
+    # vote is that workflow's NEWEST run.
     #
-    # A RE-RUN is not one of those cases and never was: GitHub re-runs under the
-    # SAME run_id, bumping `run_attempt` on the one row. This comment used to claim
-    # a re-run minted a new row, and that false belief is exactly what let
-    # GithubWorkflowRunIngestJob pin a re-run row at its first conclusion — leaving
-    # PRs green on GitHub and permanently unclaimable here. The ingest now advances
-    # the row's conclusion with its attempt, so this fold sees the live verdict.
-    def check_runs_payload(nwo, sha, workflow = CI_WORKFLOW)
-      run = GithubWorkflowRun.for_repo(nwo)
-                             .for_sha(sha)
-                             .where(workflow_name: workflow)
-                             .order(Arel.sql(LATEST_RUN_ORDER))
-                             .first
-      runs = if run
-               [{ "name" => run.workflow_name.to_s, "status" => run.status.to_s, "conclusion" => run.conclusion.to_s }]
-             else
-               []
-             end
+    # THIS READ IS SHA-SCOPED, NOT WORKFLOW-SCOPED, and the distinction is the whole
+    # of task autopilot-merges-on-pending. It used to return exactly ONE row — the
+    # newest run whose workflow_name matched the repo's resolved suite — so any OTHER
+    # lane GitHub ran on the same tree was dropped before CiStatus ever saw it.
+    #
+    # MEASURED (studio-engine PR #111, 2026-08-13). GitHub queued two runs on head
+    # 2d50675 at 21:02:07Z: `Engine CI` concluded success at 21:03:47Z, `Consumer CI`
+    # at 21:09:36Z. An armed merge fired at 21:06:02Z, between the two. The gate was
+    # not wrong about what it read; it was handed one completed success and asked
+    # whether THAT was green. A dropped lane is not a pending lane — it is a lane
+    # with no vote, and the verdict came back green about a question it never asked.
+    # `count: 1` on a six-lane tree was the standing tell.
+    #
+    # WHAT WAS ALREADY RIGHT, so the fix does not touch it: CiStatus.fold is
+    # positively framed (:green iff EVERY run affirmatively passed or skipped) and
+    # CiStatus.check_run_bucket fail-safes any status short of `completed` — and any
+    # conclusion it does not recognise — to `pending`. Feed those two the whole set
+    # and "red, pending, cancelled all do nothing" holds on its own.
+    #
+    # NEWEST PER WORKFLOW, not newest overall and not every row. A SHA can carry
+    # several DISTINCT runs of the SAME workflow (a re-triggered suite), and folding
+    # a stale failed attempt beside its fresh green one would read :red forever. A
+    # RE-RUN is not one of those cases: GitHub re-runs under the SAME run_id, bumping
+    # `run_attempt` on the one row, and the ingest advances that row's conclusion with
+    # its attempt — so this fold sees the live verdict.
+    #
+    # AN UNRELATED LANE NOW BLOCKS rather than being ignored, and that is the intended
+    # direction. This gate authorises an UNATTENDED merge, so a run we cannot account
+    # for must cost a delayed merge (the action stays pending and retries until its
+    # TTL), never an unverified one. Narrowing it again needs GitHub's required-check
+    # set, which the board does not ingest — a guess about which lanes matter is how
+    # the dropped lane got dropped.
+    #
+    # STILL NOT COVERED, stated so nobody reads more into this than it does: a lane
+    # that has produced NO ROW AT ALL is invisible here, because absence of a row and
+    # absence of a workflow are the same thing in this table. The exposure is small in
+    # practice — GitHub delivers `workflow_run` at QUEUE time (STATUS_ORDER's
+    # "queued"), and in the incident above both runs were queued in the same second —
+    # but it is real, and it is why guards 10-13 in Review::PendingActionExecutor
+    # re-read the tree from GitHub itself rather than trusting this table alone.
+    def check_runs_payload(nwo, sha)
+      runs = GithubWorkflowRun.for_repo(nwo)
+                              .for_sha(sha)
+                              .order(Arel.sql(LATEST_RUN_ORDER))
+                              .to_a
+                              .group_by { |run| run.workflow_name.to_s }
+                              .map { |_name, group| group.first }
+                              .map do |run|
+                                { "name" => run.workflow_name.to_s, "status" => run.status.to_s,
+                                  "conclusion" => run.conclusion.to_s }
+                              end
       { "total_count" => runs.size, "check_runs" => runs }.to_json
     end
 
