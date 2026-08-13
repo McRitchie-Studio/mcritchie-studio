@@ -1,0 +1,68 @@
+{
+  "$id": "https://mcritchie.studio/schemas/island-background/job-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "inputs": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "manifest": {
+          "const": "inputs/manifest.json"
+        }
+      },
+      "required": [
+        "count",
+        "manifest"
+      ],
+      "type": "object"
+    },
+    "job": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "static_master": {
+      "additionalProperties": false,
+      "properties": {
+        "approval_path": {
+          "const": "state/approvals/static-master.json"
+        },
+        "approved_path": {
+          "const": "static/approved/master.png"
+        },
+        "candidates_directory": {
+          "const": "static/candidates"
+        }
+      },
+      "required": [
+        "candidates_directory",
+        "approved_path",
+        "approval_path"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "schema_version",
+    "job",
+    "inputs",
+    "static_master"
+  ],
+  "title": "Island Background Job Configuration v1",
+  "type": "object"
+}

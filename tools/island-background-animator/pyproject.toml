@@ -1,0 +1,46 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "island-background-animator"
+version = "0.1.0"
+description = "Deterministic job tooling for McRitchie Studio island backgrounds"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "jsonschema>=4.23,<5",
+  "Pillow>=11,<13",
+]
+
+[project.scripts]
+island-background = "island_background_animator.cli:main"
+
+[dependency-groups]
+dev = [
+  "mypy>=1.15,<2",
+  "pytest>=8.3,<9",
+  "ruff>=0.11,<1",
+  "types-jsonschema>=4.23",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/island_background_animator"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_configs = true
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "SIM", "UP"]
+
+[tool.uv]
+default-groups = ["dev"]

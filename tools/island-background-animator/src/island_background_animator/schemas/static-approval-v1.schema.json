@@ -1,0 +1,47 @@
+{
+  "$id": "https://mcritchie.studio/schemas/island-background/static-approval-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "approved_at": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "approved_by": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "candidate_path": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "sha256": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "state": {
+      "const": "pending"
+    }
+  },
+  "required": [
+    "schema_version",
+    "state",
+    "candidate_path",
+    "sha256",
+    "approved_by",
+    "approved_at"
+  ],
+  "title": "Island Background Static Approval Placeholder v1",
+  "type": "object"
+}

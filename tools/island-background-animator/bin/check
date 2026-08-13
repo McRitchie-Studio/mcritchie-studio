@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+tool_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$tool_root"
+
+uv sync --locked
+uv run --locked ruff check .
+uv run --locked ruff format --check .
+uv run --locked mypy src tests
+uv run --locked pytest
