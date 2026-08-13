@@ -217,9 +217,10 @@ class Release
       one = unread.size == 1
       ["  NOT verified: #{unread.join(', ')} — #{one ? 'that repo' : 'those repos'} produced no reading, " \
        "so nothing above speaks for #{one ? 'it' : 'them'} (in the ecosystem guard a repo with no local " \
-       "checkout is skipped this way). An expedite still promotes and ships whatever sits on " \
-       "#{one ? 'its' : 'their'} `accepted` rung. Clone or fetch #{one ? 'it' : 'them'} and re-run to " \
-       "cover the whole ladder."]
+       "checkout is skipped this way). The gap is in what this verdict can SAY, not in what an expedite " \
+       "will touch: the promote is derived from board stamps, so an uncloned repo is not in its scope — " \
+       "and a repo that IS a member aborts the promote asking you to clone it rather than moving it. " \
+       "Clone or fetch #{one ? 'it' : 'them'} and re-run to cover the whole ladder."]
     end
 
     # The refusal + the offer. Never silently drags the pending work to prod: it
