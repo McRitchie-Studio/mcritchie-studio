@@ -59,6 +59,19 @@ class ReleaseLanesTest < ActionView::TestCase
     assert_select "#{conf} .release-meter-indeterminate", 1, "the coarse gate animates as an indeterminate bar"
   end
 
+  test "[component] every lane badge carries its repo's glyph, never an empty box" do
+    rel = lane_release("mcritchie-industries", "turf-monster")
+
+    render partial: "tasks/release_lanes", locals: { release: rel.reload }
+
+    badges = css_select("[data-test='release-lane'] [data-test='release-lane-emoji']")
+    assert_equal 2, badges.size, "one identity badge per lane"
+    assert_empty badges.select { |b| b.text.strip.empty? },
+                 "an unmapped repo draws an empty square where its identity belongs"
+    industries = css_select("[data-repo='mcritchie-industries'] [data-test='release-lane-emoji']").first
+    assert_equal "📐", industries.text.strip
+  end
+
   test "[component] a library lane shows Published + n/a for the deploy phases" do
     rel = lane_release("studio-engine")
     seed_ci("McRitchie-Studio/studio-engine", "main", "Engine CI", "eng", 5)
