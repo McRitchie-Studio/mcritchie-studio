@@ -89,6 +89,51 @@ module Api
         assert_equal false, body["progress_quiet"], "absence of evidence must never read as trouble"
       end
 
+      # [integration] THE CONTRACT ACROSS THE SEAM, and it needs its own test because
+      # both sides pass without it: the model computes these two facts (task_build_
+      # claim_invariant_test) and bin/task reads them off stubbed JSON (task_cli_test),
+      # and neither notices if the server never SENDS them under these names.
+      #
+      # A miss here would fail SILENTLY and in the worst direction. bin/task treats a
+      # missing holder-scoped key as "an older board" and falls back to the task-wide
+      # twin — deliberately, so a schema gap can never reap a live holder. But that
+      # same fallback means a renamed key, a trimmed serializer, or a typo restores
+      # the exact task-wide reads this task exists to remove, with the whole suite
+      # green. So the spelling is asserted here, on the wire, together with the
+      # semantics that make it worth sending.
+      test "show publishes the holder-scoped liveness facts the lease decision reads" do
+        now = Time.current
+        task = tasks(:in_progress_task)
+        task.update!(metadata: { "devops" => ClaimLease.renewed(session: "sess-holder", nonce: "inst-A", now: now) })
+        TaskEvent.where(task_slug: task.slug).delete_all
+        GateRun.where(subject_slug: task.slug).delete_all
+        # The holder's last sign of life is older than the idle window.
+        TaskEvent.create!(task_slug: task.slug, kind: TaskEvent::CHECKPOINT,
+                          occurred_at: now - (ClaimLease::DESK_IDLE_SECONDS + 10.minutes),
+                          from_stage: "building", to_stage: "cert",
+                          metadata: { "status" => "passed", "session" => "sess-holder" })
+        # A queued CHALLENGER certifies the held slug: a checkpoint and an open gate.
+        TaskEvent.create!(task_slug: task.slug, kind: TaskEvent::CHECKPOINT, occurred_at: now - 2.minutes,
+                          from_stage: "building", to_stage: "cert",
+                          metadata: { "status" => "started", "session" => "sess-challenger" })
+        GateRun.create!(subject_type: "task", subject_slug: task.slug, key: "g1_cert", attempt: 1,
+                        started_at: now - 2.minutes, finished_at: nil,
+                        metadata: { "session" => "sess-challenger" })
+
+        get api_v1_task_path(task.slug), headers: @headers
+
+        assert_response :success
+        body = response.parsed_body["data"]
+
+        assert_equal true, body["gate_in_flight"], "task-wide, a gate really is running"
+        assert_operator body["progress_seconds_ago"], :<, 300, "task-wide, progress really is recent"
+
+        assert_equal false, body["holder_gate_in_flight"],
+                     "the running gate is the challenger's — sending true here renews an abandoned lease"
+        assert_operator body["holder_liveness_seconds_ago"], :>, ClaimLease::DESK_IDLE_SECONDS,
+                        "the holder's own last artifact is older than the idle window"
+      end
+
       test "update stores devops metadata" do
         patch api_v1_task_path(@task.slug),
               params: {
