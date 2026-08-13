@@ -133,9 +133,10 @@ module Api
           "holder_progress_label" => task.holder_progress_label,
           "holder_progress_seconds_ago" => task.holder_progress_seconds_ago,
           # A cert writes nothing into its desk while it runs (measured g1_cert p99:
-          # 94 minutes), so the heartbeat needs this channel to tell a long green
-          # cert apart from a walked-away terminal. Already computed for
-          # progress_quiet; published so the lease decision can read it too.
+          # 94 minutes), so a long green cert has to be tellable from a walked-away
+          # terminal. The TASK-WIDE answer, kept for two readers: a human reading the
+          # card, and an older bin/task that predates the holder-scoped field below
+          # and falls back to this one (which can only keep a desk, never free one).
           "gate_in_flight" => task.gate_in_flight?,
           # The two facts the LEASE decision reads. Their task-wide twins above
           # describe the task; only these describe the HOLDER, and a challenger
