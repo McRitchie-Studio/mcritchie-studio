@@ -166,4 +166,37 @@ class UserTest < ActiveSupport::TestCase
     user = User.create!(email: "tokened@example.com")
     assert user.session_token.present?
   end
+  # --- the parked identities ------------------------------------------------
+
+  # WHY THIS IS ASSERTED. Every parked identity was an admin, so an ordinary
+  # member could not be signed in as locally at all — admin-only pages, member
+  # copy and anything branching on a role each had exactly one answer available.
+  test "a non-admin identity is parked alongside the admins" do
+    members = User::PARKED_IDENTITIES.reject { |identity| identity[:role] == "admin" }
+
+    refute_empty members, "with every identity an admin, nothing can be tested as a member"
+  end
+
+  # Mack specifically, because he is already the non-admin in turf-monster —
+  # one person meaning the same thing in both apps rather than each app growing
+  # its own stand-in.
+  test "mack is the parked member, and reads as one" do
+    mack = User::PARKED_IDENTITIES.find { |identity| identity[:email] == "mack@mcritchie.studio" }
+
+    refute_nil mack, "the shared non-admin identity should stay parked"
+    assert_equal "viewer", mack[:role]
+    refute User.new(email: mack[:email], name: mack[:name], role: mack[:role]).admin?
+  end
+
+  # The seed is the durable source of truth for who is an admin: 01_users.rb
+  # re-applies the role on every run, so an account promoted by hand is put back.
+  test "the seed can demote an account that was created as an admin" do
+    user = User.create!(email: "mack@mcritchie.studio", name: "Mack McRitchie", role: "admin")
+    parked = User::PARKED_IDENTITIES.find { |identity| identity[:email] == user.email }
+
+    user.update!(role: parked[:role])
+
+    refute user.reload.admin?, "a re-seed must be able to take admin away, not only grant it"
+  end
+
 end

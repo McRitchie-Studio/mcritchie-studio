@@ -7,7 +7,15 @@ class User < ApplicationRecord
     { email: "alex@mcritchie.studio",  name: "Alex McRitchie",        role: "admin", wallet: "7ZDJp7FUHhuceAqcW9CHe81hCiaMTjgWAXfprBM59Tcr" },
     { email: "team@mcritchie.studio",  name: "McRitchie Studio Team", role: "admin", wallet: "8K81w4e6UcB7TiANhM9N8sAgijJvTxxybRi8AENRaRYd" },
     { email: "mason@mcritchie.studio", name: "Mason McRitchie",       role: "admin", wallet: "CytJS23p1zCM2wvUUngiDePtbMB484ebD7bK4nDqWjrR" },
-    { email: "mack@mcritchie.studio",  name: "Mack McRitchie",        role: "admin" },
+    # THE NON-ADMIN. Every other parked identity is an admin, so nothing in this
+    # app could be looked at or tested as an ordinary member — admin-only pages,
+    # member-facing copy and anything branching on a role each had exactly one
+    # answer available locally.
+    #
+    # Mack rather than an invented account, and he is already `role: "user"` in
+    # turf-monster, so one person means the same thing in both apps instead of
+    # each growing its own stand-in.
+    { email: "mack@mcritchie.studio",  name: "Mack McRitchie",        role: "viewer" },
     { email: "turf@mcritchie.studio",  name: "Turf Monster",          role: "admin" }
   ].freeze
 
