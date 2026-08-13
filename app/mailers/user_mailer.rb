@@ -22,7 +22,14 @@ class UserMailer < ApplicationMailer
     # greeting, the sub-text, whether it uses the name at all — is the
     # operator's, editable on /admin/emails. Passing a finished header here
     # would leave those fields accepting edits that never reach an inbox.
-    @banner = Studio::Banner.for(:magic_link, name: name_for(email))
+    name = name_for(email)
+    @banner = Studio::Banner.for(:magic_link, name: name)
+    # The same name goes to the BODY and the BUTTON, not just the banner — the
+    # engine's view falls back to a name-free rendering when a mailer omits it,
+    # which is correct for a host that has no name and wrong for one that does.
+    @body      = Studio::EmailCatalog.body(:magic_link, name: name)
+    @cta_text  = Studio::EmailCatalog.cta_text(:magic_link, name: name) if Studio::EmailCatalog.cta_enabled?(:magic_link)
+    @cta_color = Studio::EmailCatalog.cta_color(:magic_link)
     @banner_alt = [@banner&.header, "your #{@app_name} sign-in link"].compact.join(" — ")
 
     # Kept as the floor: if no layered artwork is registered, the layout falls
