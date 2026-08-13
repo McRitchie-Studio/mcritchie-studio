@@ -18,6 +18,8 @@
 # exactly one wins — no split-brain. Enforcement is cooperative (the SOP tells the
 # loser to stand down), matching the studio's honor-system posture.
 class DevopsShift < ApplicationRecord
+  include RaceTolerantCreate
+
   # The known role lanes. NOT an inclusion validation — a new role/lane may appear
   # before this list is updated; the constant is documentation + the CLI's default set.
   #
@@ -102,12 +104,11 @@ class DevopsShift < ApplicationRecord
   end
 
   # Find (or create) the singleton row for a lane, tolerating the create race — two
-  # first-acquirers hit the unique index; the loser re-reads the winner's row.
+  # first-acquirers collide on the lane's uniqueness; the loser re-reads the
+  # winner's row. RaceTolerantCreate covers BOTH halves of that window (the
+  # validator's RecordInvalid as well as the index's RecordNotUnique).
   def self.lane_row(lane)
-    key = lane.to_s.strip.downcase
-    find_or_create_by!(lane: key)
-  rescue ActiveRecord::RecordNotUnique
-    find_by!(lane: key)
+    find_or_create_tolerating_race!(lane: lane.to_s.strip.downcase)
   end
 
   # The ClaimLease-shaped view of this row (string keys, ISO8601 expiry) so the pure

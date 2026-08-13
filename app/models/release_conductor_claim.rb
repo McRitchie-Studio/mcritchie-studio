@@ -26,6 +26,8 @@
 # one release never contend. Enforcement is cooperative (the SOP / bin/release tells
 # the loser to stand down), matching the studio's honor-system posture.
 class ReleaseConductorClaim < ApplicationRecord
+  include RaceTolerantCreate
+
   # The two release-lifecycle roles. assembler = prepare/qa-release; deployer =
   # ship/production-deploy. A closed set (unlike DevopsShift::LANES) — a claim role
   # is one of exactly these two, so it IS an inclusion validation.
@@ -169,14 +171,13 @@ class ReleaseConductorClaim < ApplicationRecord
   end
 
   # Find (or create) the singleton row for a (release, role), tolerating the create
-  # race — two first-acquirers hit the composite unique index; the loser re-reads the
-  # winner's row.
+  # race — two first-acquirers collide on the role's scoped uniqueness; the loser
+  # re-reads the winner's row. RaceTolerantCreate covers BOTH halves of that window
+  # (the validator's RecordInvalid as well as the index's RecordNotUnique); the
+  # `inclusion:` failure on `role` keeps raising, as it must.
   def self.claim_row(release_slug, role)
-    slug = release_slug.to_s.strip
-    key  = role.to_s.strip.downcase
-    find_or_create_by!(release_slug: slug, role: key)
-  rescue ActiveRecord::RecordNotUnique
-    find_by!(release_slug: slug, role: key)
+    find_or_create_tolerating_race!(release_slug: release_slug.to_s.strip,
+                                    role: role.to_s.strip.downcase)
   end
 
   # The ClaimLease-shaped view of this row (string keys, ISO8601 expiry) so the pure

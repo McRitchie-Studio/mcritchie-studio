@@ -161,8 +161,80 @@ class MigrationLaneExclusionRaceTest < ActiveSupport::TestCase
     end
   end
 
+  # ── THE CREATE RACE, PINNED TO THE HALF THAT USED TO RAISE ─────────────────
+  #
+  # The unscheduled create race below reaches this bug only by luck — which is
+  # exactly how it shipped, and how it then reddened an unrelated PR's CI at
+  # random. `find_or_create_by!` issues three statements, and a rival's commit can
+  # land in either gap:
+  #
+  #   1. SELECT … WHERE lane = ?           ← find_or_create_by!'s lookup, misses
+  #      ─ gap A ─                           rival commits HERE → step 2 sees it
+  #   2. SELECT 1 … WHERE lane = ? LIMIT 1 ← the uniqueness VALIDATOR's read
+  #      ─ gap B ─                           rival commits HERE → step 3 collides
+  #   3. INSERT …                          ← the unique index fires
+  #
+  # Gap B raises RecordNotUnique; gap A raises RecordInvalid from the validator.
+  # The original rescue named only the former, so a loser that arrived through gap
+  # A RAISED out of `acquire` — from the one method whose entire job is to answer
+  # "someone else holds it". This test pins gap A instead of waiting for it: a
+  # before_validation hook is the only seam between statements 1 and 2, so the
+  # rival commits there, on its own connection, every single run.
+
+  # Run the rival's FULL acquire inside the loser's gap A, and join it, so the
+  # loser's validator provably reads a COMMITTED rival claim. The latch matters:
+  # the rival's own create! re-enters this same callback, and a per-thread flag
+  # would let it recurse until the connection pool drained.
+  def with_rival_committing_in_gap_a(session:, task_slug:, agent:)
+    latch = Mutex.new
+    fired = false
+    # ActiveSupport instance_execs a proc callback against the RECORD, so `self`
+    # inside the hook is a MigrationLaneClaim, not this test. Hold the test case.
+    test_case = self
+    hook = lambda do |record|
+      next unless record.new_record?
+      next unless latch.synchronize { fired ? false : (fired = true) }
+
+      rival = test_case.on_own_connection do
+        MigrationLaneClaim.acquire(session: session, nonce: session.downcase, task_slug: task_slug, agent: agent)
+      end
+      rival.join(15) || test_case.flunk("the rival never committed its claim inside gap A")
+    end
+    MigrationLaneClaim.set_callback(:validation, :before, hook)
+    yield
+  ensure
+    MigrationLaneClaim.skip_callback(:validation, :before, hook, raise: false)
+  end
+
+  test "[integration] a first-acquirer that loses the create race is REFUSED, not raised" do
+    assert_equal 0, MigrationLaneClaim.count, "gap A only exists when no row is there yet"
+
+    outcome = with_rival_committing_in_gap_a(session: "A", task_slug: "add-widgets-table", agent: "carl") do
+      MigrationLaneClaim.acquire(session: "B", nonce: "b", task_slug: "add-gizmos-table", agent: "jasper")
+    end
+
+    refute outcome.acquired, "the loser of the CREATE race must be refused, not granted the lane"
+    assert_equal :held_by_other, outcome.disposition,
+                 "the loser must be told the lane is held — that verdict is the whole feature"
+
+    assert_equal 1, MigrationLaneClaim.where(lane: LANE).count, "the lane stays a singleton"
+    row = MigrationLaneClaim.find_by!(lane: LANE)
+    assert_equal "A", row.claimed_session, "the lane belongs to the rival that committed first"
+    assert_equal "add-widgets-table", row.task_slug, "the loser's task never overwrites the holder's"
+  end
+
+  # The guard must be narrow. A validation failure that is NOT the uniqueness
+  # collision has to keep raising — otherwise the fix trades a loud bug for a
+  # silent one, handing back a row the caller never asked for.
+  test "[integration] an unrelated validation failure on the lane still raises" do
+    error = assert_raises(ActiveRecord::RecordInvalid) { MigrationLaneClaim.claim_row("   ") }
+    assert_equal [:blank], error.record.errors.details[:lane].map { |detail| detail[:error] },
+                 "a blank lane is a caller bug, not a create race"
+    assert_equal 0, MigrationLaneClaim.count, "nothing may be created for an invalid lane"
+  end
+
   # The lane is a SINGLETON. Racing the very first acquire (no row yet) must not
-  # produce two rows — `claim_row` rescues the unique-index violation and the
+  # produce two rows — `claim_row` tolerates the uniqueness collision and the
   # loser re-reads the winner's row, so the unique index is load-bearing here.
   test "[integration] racing the FIRST acquire creates exactly one lane row" do
     10.times do |round|
