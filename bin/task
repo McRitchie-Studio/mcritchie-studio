@@ -1871,17 +1871,20 @@ when "block"
   end
   die!("--kind must be one of: #{BLOCK_KINDS.join(", ")}") if kind && !BLOCK_KINDS.include?(kind)
   die!("--breaker-ack only applies to --kind rework") if breaker_ack && kind != "rework"
+  # This read doubles as the existence check the breaker would otherwise repeat —
+  # an unknown slug die!s here with EXIT_TASK_NOT_FOUND before anything else runs.
+  current = api(:get, "/api/v1/tasks/#{slug}")["data"]
   # THE BREAKER FIRES HERE, before the block lands — a warning printed after the
   # bounce is recorded is a receipt, not a safety mechanism. Only `rework` is
   # gated: `dependency` IS the escalation this refusal routes you to, and
   # `environment` is a blocked desk, not a send-back.
   if kind == "rework"
     begin
-      breaker = bounce_verdict(slug)
+      breaker = bounce_verdict(slug, verify_task: false)
     rescue BounceLedger::UnreadableResponse => e
       # No silent pass. This costs nothing a caller did not already owe: the block
-      # itself needs the same token and the same board, so an unreadable ledger
-      # means the PATCH two lines below was going to fail anyway.
+      # needs the same token and the same board, so an unreadable ledger means the
+      # block's own writes were going to fail too.
       die!("could not read the bounce ledger for #{slug}, so the two-bounce circuit " \
            "breaker cannot be evaluated: #{e.message}")
     end
@@ -1900,8 +1903,14 @@ when "block"
       warn!("    bin/task block #{slug} --kind rework ... --breaker-ack \"red CI, mechanical\"")
       exit EXIT_BREAKER_TRIPPED
     end
+    # An override that only shows up in the database is not an override anyone will
+    # notice. Say it in the run output too, where the operator reading the wave
+    # report can see the breaker was overruled and on what grounds.
+    if breaker.tripped?
+      warn!("BREAKER: OVERRIDDEN — #{breaker.count} prior send-back(s) on #{slug}; " \
+            "proceeding as MECHANICAL: #{breaker_ack.strip}")
+    end
   end
-  current = api(:get, "/api/v1/tasks/#{slug}")["data"]
   event = { "source" => "cli" }
   blocker = resolved_block_actor(agent, current, kind: kind)
   event["actor"] = blocker unless blocker.empty?

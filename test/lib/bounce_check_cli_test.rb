@@ -249,6 +249,8 @@ class BounceCheckCliTest < Minitest::Test
     refute_nil activity, "the bounce must land"
     assert_equal "red CI, mechanical", activity.dig("metadata", "breaker_ack"),
                  "an override must leave EVIDENCE on the record, or it is just a bypass"
+    assert_match(/BREAKER: OVERRIDDEN/, err,
+                 "an override only visible in the database is not one anybody will notice")
   end
 
   # An escalation is not a re-block, so the breaker must never stand in its way —
