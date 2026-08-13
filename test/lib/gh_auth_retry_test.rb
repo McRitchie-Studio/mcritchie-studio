@@ -158,6 +158,22 @@ class GhAuthRetryTest < Minitest::Test
     end
   end
 
+  # The Ruby-caller spelling of the same hole the CLIs had: an identity NAMED but empty
+  # (`mint(identity: some_nil_config)`) must refuse rather than fall through to the lane
+  # export or the default. All three callers of the resolver now share this refusal.
+  def test_an_explicit_but_empty_identity_mints_nothing_and_explains
+    Dir.mktmpdir do |dir|
+      broker = echoing_broker(dir)
+      env = { "GH_AUTH_TOKEN_BIN" => broker, "GH_APP_ITEM" => "github.mcritchie-deployer" }
+
+      assert_nil GhAuthRetry.mint(env: env, identity: ""),
+                 "an empty identity must not inherit the lane export"
+      assert_match(/empty/i, GhAuthRetry.last_error, "and the reason must name the ARGUMENT")
+      assert_nil GhAuthRetry.mint(env: { "GH_AUTH_TOKEN_BIN" => broker }, identity: "  "),
+                 "nor fall through to the privileged default"
+    end
+  end
+
   # An unreadable lane returns nil (the caller then shows gh's ORIGINAL error) rather
   # than quietly minting the most privileged identity.
   def test_an_unknown_lane_export_mints_nothing_and_explains

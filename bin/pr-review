@@ -570,7 +570,11 @@ def gh_with_auth_retry(args)
   return [failure, false] if @gh_token || !GhAuthRetry.auth_failure?(failure)
 
   puts "  auth: gh refused on credentials — fetching a token and retrying once."
-  @gh_token = GhAuthRetry.mint
+  # identity: "agent" IS THE ESCAPE HATCH, used deliberately. GhAuthRetry now defaults to
+  # the session's lane (GH_APP_ITEM), and review WRITES pull requests — it comments and
+  # merges — which the deployer App is denied by design. Under a stray deployer export
+  # this recovery would mint the one App that cannot do the write it is recovering.
+  @gh_token = GhAuthRetry.mint(identity: "agent")
   unless @gh_token
     reason = GhAuthRetry.last_error
     puts "  auth: could not obtain a token#{reason.empty? ? '' : " (#{reason})"}; reporting gh's original error."

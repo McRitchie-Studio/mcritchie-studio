@@ -121,7 +121,23 @@ credential helpers):
   verifies the result by reading the credential back, and reports the identity
   and a SHA-256 prefix — never the token. Drop `--export` to refresh only the
   keyring; it then exits **3** if a set `GH_TOKEN` still shadows the result,
-  because for that session nothing was actually fixed.
+  because for that session nothing was actually fixed. The exit-3 message prints
+  the follow-up command with **`--identity <lane>` already filled in** — run it
+  verbatim, including in a fresh shell, and the same identity lands.
+
+  **`eval` hides the exit code — read stderr.** `eval "$(…)"` reports the
+  `export` builtin's status, not the command's, so the 0/1/3 contract above is
+  invisible in the very form these docs prescribe. If nothing was exported, it
+  failed: `eval` of an empty string succeeds silently and leaves the stale token
+  in place. The command says what happened on **stderr** either way, so read it
+  rather than trusting `$?`.
+
+  **`--identity` with an empty value is refused, never defaulted.** `--identity
+  "$VAR"` with `VAR` unset used to fall through to `agent` — the App holding
+  `pull_requests: write`. A named-but-empty identity now aborts (exit 1, nothing
+  on stdout) in `bin/gh-token`, `bin/gh-auth-refresh`, and `GhAuthRetry.mint`.
+  **Omitting** the flag still resolves through `GH_APP_ITEM` and the default;
+  the refusal is only for a lane that was named and lost.
 
   > **Do not pipe the broker into `gh auth login`.** The old advice here was
   > `bin/gh-token | gh auth login -h github.com --with-token`, and it is broken

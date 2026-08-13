@@ -37,8 +37,54 @@ class GhIdentityTest < Minitest::Test
 
   def test_no_signal_at_all_is_the_build_identity
     assert_equal "agent", GhIdentity.resolve(nil, env: {})
-    assert_equal "agent", GhIdentity.resolve("", env: { "GH_APP_ITEM" => "" })
+    assert_equal "agent", GhIdentity.resolve(nil, env: { "GH_APP_ITEM" => "" })
     assert_equal "agent", GhIdentity.resolve(nil, env: { "GH_APP_ITEM" => "   " })
+  end
+
+  # AN OMISSION AND A CALLER ERROR ARE DIFFERENT INSTRUCTIONS, and this module is the
+  # only place that can tell them apart. `nil` means the caller said nothing about its
+  # lane, so the env and the default answer for it — that is the case above. An empty
+  # STRING means the caller reached for a lane and handed over nothing: `bin/gh-token
+  # --identity "$VAR"` with VAR unset, which is ordinary shell and requires no mistake
+  # beyond a typo'd variable name.
+  #
+  # This case used to be pinned the other way — `resolve("", env: {"GH_APP_ITEM" => ""})`
+  # asserted "agent" — and that pin is what let the CLIs regress: they turn a missing
+  # flag value into "" via `.to_s.strip`, the empty string read as "no explicit", and a
+  # command that used to abort with `unknown identity ""` began silently minting the App
+  # that holds `pull_requests: write`. An unreadable instruction resolving to the MOST
+  # privileged identity is the exact failure this module exists to end, and an empty
+  # explicit value is unreadable in precisely the way a typo'd GH_APP_ITEM is. So it
+  # takes the same contract: nil, and every caller aborts.
+  def test_an_explicit_but_empty_identity_refuses_rather_than_defaulting
+    assert_nil GhIdentity.resolve("", env: {}),
+               "an empty --identity is a caller error, not an omission"
+    assert_nil GhIdentity.resolve("   ", env: {}), "whitespace is just as empty"
+    assert_nil GhIdentity.resolve("", env: { "GH_APP_ITEM" => AGENT_ITEM }),
+               "a caller that named its lane and lost the value must not silently inherit the env's"
+    assert_nil GhIdentity.resolve("", env: { "GH_APP_ITEM" => DEPLOYER_ITEM })
+  end
+
+  # Stated as the privilege property rather than as `assert_nil`, so a future refactor
+  # that returns some other falsy-ish default still fails here.
+  def test_an_empty_identity_never_yields_the_pr_writing_app
+    [{}, { "GH_APP_ITEM" => "" }, { "GH_APP_ITEM" => DEPLOYER_ITEM }].each do |env|
+      refute_equal "agent", GhIdentity.resolve("", env: env),
+                   "an empty identity must never resolve to the App holding pull_requests: write"
+    end
+  end
+
+  # Two DIFFERENT causes reach the same nil, and the operator gets one line to act on.
+  # Reporting "GH_APP_ITEM names no known identity" to someone who never set GH_APP_ITEM
+  # sends them to the wrong knob.
+  def test_the_unresolved_reason_names_the_actual_cause
+    empty = GhIdentity.unresolved_reason("", env: { "GH_APP_ITEM" => "" })
+    assert_match(/empty/i, empty)
+    refute_match(/GH_APP_ITEM/, empty, "the caller's flag is at fault here, not the environment")
+
+    unknown = GhIdentity.unresolved_reason(nil, env: { "GH_APP_ITEM" => "github.mcritchie-typo" })
+    assert_includes unknown, "github.mcritchie-typo"
+    assert_includes unknown, "GH_APP_ITEM"
   end
 
   # An UNREADABLE instruction must not quietly become the most privileged answer.

@@ -33,6 +33,7 @@ class GhAuthRefreshTest < Minitest::Test
   # redaction into a leak while this task was being built.
   TOKEN_SHAPED = /gh[psou]_[A-Za-z0-9_.-]{8,}|github_pat_[A-Za-z0-9_.-]{8,}/
   DEPLOYER_ITEM = "github.mcritchie-deployer"
+  AGENT_ITEM = "github.mcritchie-agent"
 
   # A token with the real modern SHAPE, used to prove the guards above bite on the
   # form that actually ships rather than only on a tidy stub.
@@ -194,6 +195,144 @@ class GhAuthRefreshTest < Minitest::Test
     refute_equal 0, status.exitstatus
     assert_nil keyring, "nothing installed — silently choosing `agent` here IS the bug"
     assert_match(/github\.mcritchie-typo/, err)
+  end
+
+  # A lane named with the value MISSING is the same unreadable instruction as a typo'd
+  # item, arriving through a more ordinary door: `--identity "$VAR"` with VAR unset.
+  # Falling through to the default here hands the caller the App holding
+  # `pull_requests: write` — the one outcome this command exists to prevent.
+  def test_an_empty_identity_value_aborts_without_installing_anything
+    [["--identity"], ["--identity", ""], ["--identity", "   "]].each do |argv|
+      _out, err, status = run_refresh({}, *argv)
+
+      refute_equal 0, status.exitstatus, "#{argv.inspect} must abort, not resolve to the default"
+      assert_nil keyring, "#{argv.inspect} must install nothing"
+      assert_match(/empty/i, err, "#{argv.inspect} must name the ARGUMENT as the fault")
+    end
+  end
+
+  def test_an_empty_identity_aborts_even_when_the_environment_would_answer
+    [{ "GH_APP_ITEM" => DEPLOYER_ITEM }, { "GH_APP_ITEM" => AGENT_ITEM }].each do |env|
+      out, _err, status = run_refresh(env, "--identity")
+
+      refute_equal 0, status.exitstatus,
+                   "a caller that named its lane and lost the value must not inherit the env's"
+      assert_nil keyring
+      assert_equal 0, out.bytesize, "an error path emits nothing on stdout — that is the eval channel"
+    end
+  end
+
+  # === THE REMEDY ROUND-TRIP =================================================
+  # THE PROPERTY, and it is the one this whole command is for: EVERY remedy this file
+  # prints must round-trip. Run it verbatim, in the lane that printed it, and the SAME
+  # identity must end up installed.
+  #
+  # The defect it exists to catch: the exit-3 remedy forwarded --force but not
+  # --identity. A ship session ran `--identity deployer`, got exit 3 with the keyring
+  # CORRECTLY on deployer, followed the printed line, and ended with keyring = agent and
+  # GH_TOKEN = agent — the very lane crossing named as defect 3 in this file's own
+  # header, reproduced inside its replacement. Advice only ever runs when someone is
+  # already stuck, so the only honest test of it is to EXECUTE it; asserting that the
+  # line contains "--identity" would pass on a line that names the wrong one.
+  #
+  # It is written as a sweep over lanes rather than one case so the NEXT remedy added to
+  # this file inherits the guard instead of needing its own.
+  ROOT = File.expand_path("../..", __dir__)
+
+  # Every runnable remedy in the command's report, found the way a copying operator
+  # finds one: a line that IS an invocation of this command.
+  def printed_remedies(stderr)
+    stderr.lines.filter_map do |line|
+      text = line.strip.sub(/\Agh-auth-refresh:\s*/, "")
+      text if text.match?(%r{\A(?:eval\s+"\$\()?bin/gh-auth-refresh\b})
+    end
+  end
+
+  # Run a remedy EXACTLY as printed, then report what this shell's GH_TOKEN became.
+  def follow(env, remedy)
+    out, _err, _status = Open3.capture3(
+      @env.merge(env), "sh", "-c", %(#{remedy}; printf '%s' "${GH_TOKEN:-}"), chdir: ROOT
+    )
+    out
+  end
+
+  # lane env + args => the identity that lane resolves to.
+  REMEDY_LANES = {
+    "an explicit ship lane" => [{}, ["--identity", "deployer"], "deployer"],
+    "a ship lane from the environment" => [{ "GH_APP_ITEM" => DEPLOYER_ITEM }, [], "deployer"],
+    # THE HOSTILE CASE, and the reason the remedy must carry its identity rather than
+    # trust the shell: an explicit lane whose ambient export says the OTHER App. A
+    # remedy that relies on the environment surviving the copy-paste lands `agent` here.
+    "an explicit lane contradicted by the export" => [{ "GH_APP_ITEM" => AGENT_ITEM }, ["--identity", "deployer"], "deployer"],
+    "the default build lane" => [{}, [], "agent"]
+  }.freeze
+
+  def test_every_printed_remedy_installs_the_lane_that_printed_it
+    REMEDY_LANES.each do |label, (env, args, expected)|
+      lane_env = env.merge("GH_TOKEN" => "ghs_STALEambient")
+      _out, err, status = run_refresh(lane_env, *args)
+
+      assert_equal 3, status.exitstatus, "#{label}: expected the GH_TOKEN-shadowed exit"
+      assert_equal "ghs_stub_#{expected}", keyring, "#{label}: the printing run itself must be correct"
+
+      remedies = printed_remedies(err)
+      refute_empty remedies, "#{label}: no runnable remedy was printed, so this guard proves nothing"
+
+      remedies.each do |remedy|
+        File.delete(@keyring) if File.exist?(@keyring)
+        exported = follow(lane_env, remedy)
+
+        assert_equal "ghs_stub_#{expected}", keyring,
+                     "#{label}: following the printed remedy verbatim installed the WRONG identity " \
+                     "in the keyring"
+        next unless remedy.include?("--export")
+
+        assert_equal "ghs_stub_#{expected}", exported,
+                     "#{label}: the remedy repaired this shell with the WRONG identity"
+        refute_equal "ghs_STALEambient", exported, "#{label}: the remedy left the stale token in place"
+      end
+    end
+  end
+
+  # SAYING WHICH IDENTITY LANDED WHERE, BY WHICH ROUTE, is this command's stated
+  # deliverable, so a route label that can be wrong is a defect in the product. It was
+  # derived from `ARGV.include?("--identity")` — the presence of a flag rather than the
+  # resolution that actually happened — and reported "via --identity" for a GH_APP_ITEM
+  # or default lane whenever the flag's value was lost.
+  #
+  # WHAT THIS CASE DOES AND DOES NOT PROVE, stated plainly rather than implied. It pins
+  # that each of the three routes is reported as itself: a wrong MAPPING (swap two
+  # branches) fails here, measured. It does NOT discriminate against the old
+  # `ARGV.include?` spelling, because the only input on which the two expressions differ
+  # — `--identity` with an empty value — now aborts upstream, so that spelling is
+  # unreachable-wrong rather than wrong. The derived form is kept because it cannot
+  # start lying again if the empty-value refusal is ever relaxed or a second
+  # value-taking flag is added; that is correctness by construction, not by this test.
+  def test_the_reported_lane_source_matches_the_route_actually_taken
+    {
+      "--identity" => [{ "GH_APP_ITEM" => AGENT_ITEM }, ["--identity", "deployer"]],
+      "GH_APP_ITEM" => [{ "GH_APP_ITEM" => DEPLOYER_ITEM }, []],
+      "default" => [{}, []]
+    }.each do |expected, (env, args)|
+      _out, err, = run_refresh(env, *args)
+
+      assert_match(/via #{Regexp.escape(expected)}\b/, err, "the lane came from #{expected}")
+    end
+  end
+
+  # The control for the extractor: if `printed_remedies` silently found nothing, every
+  # assertion in the sweep above would be vacuous. Prove it finds the line that exists,
+  # and that it does not mistake the command's ordinary report for a remedy.
+  def test_the_remedy_extractor_finds_commands_and_only_commands
+    _out, err, = run_refresh({ "GH_TOKEN" => "ghs_STALEambient" })
+    found = printed_remedies(err)
+
+    assert_equal 1, found.length, "exactly one runnable remedy is printed on the exit-3 path"
+    assert_includes found.first, "bin/gh-auth-refresh"
+    refute_empty err.lines.reject { |l| found.include?(l.strip) },
+                 "the report also contains prose, which must NOT be mistaken for a command"
+    assert_empty printed_remedies("gh-auth-refresh: identity agent (github.mcritchie-agent) via default\n"),
+                 "a status line that merely names the command is not a remedy"
   end
 
   # === HYGIENE ===============================================================

@@ -101,7 +101,24 @@ end
 # this whole fix back into the no-op it replaces.
 CHILD_ENV_WITHOUT_AMBIENT_TOKEN = { "GH_TOKEN" => nil, "GITHUB_TOKEN" => nil }.freeze
 
-identity = nil
+# EVERY REMEDY THIS COMMAND PRINTS MUST ROUND-TRIP: run it verbatim, in the lane that
+# printed it, and the SAME identity must be installed. The first version of the exit-3
+# advice forwarded --force but not --identity, so a ship session that named `deployer`,
+# got exit 3 with the keyring CORRECTLY on deployer, and followed the printed line
+# verbatim ended up holding the AGENT App — defect 3 of this file's own header,
+# reproduced inside its replacement. The lane is therefore PINNED INTO the remedy rather
+# than left to whatever shell the operator pastes it into; a fresh terminal with a stale
+# export is exactly where a remedy gets followed. Build every future remedy through here
+# so it inherits that, and test/commands/gh_auth_refresh_test.rb executes whatever this
+# returns and asserts the identity that lands.
+def remedy(identity, force:, export: true)
+  argv = ["bin/gh-auth-refresh", "--identity", identity]
+  argv << "--force" if force
+  argv << "--export" if export
+  export ? %(eval "$(#{argv.join(' ')})") : argv.join(" ")
+end
+
+stated_identity = nil
 force = false
 export = false
 @quiet = false
@@ -109,7 +126,7 @@ export = false
 args = ARGV.dup
 while (arg = args.shift)
   case arg
-  when "--identity" then identity = args.shift.to_s.strip
+  when "--identity" then stated_identity = args.shift.to_s.strip
   when "--force" then force = true
   when "--export" then export = true
   when "--quiet" then @quiet = true
@@ -120,10 +137,19 @@ while (arg = args.shift)
   end
 end
 
-identity = GhIdentity.resolve(identity) || die!(GhIdentity.unknown_item_message)
+# An empty --identity aborts here rather than falling through to GH_APP_ITEM or the
+# default: `--identity "$VAR"` with VAR unset is a caller error, and defaulting on it
+# hands out the App that holds `pull_requests: write`. The rule itself lives in
+# bin/lib/gh_identity.rb so all three callers share one answer.
+identity = GhIdentity.resolve(stated_identity) || die!(GhIdentity.unresolved_reason(stated_identity))
 die!("unknown identity #{identity.inspect} (expected: #{GhIdentity::IDENTITIES.keys.join(', ')})") unless GhIdentity.known?(identity)
 
-lane_source = if ARGV.include?("--identity")
+# WHERE THE LANE ACTUALLY CAME FROM, not merely where a flag appeared. This read
+# ARGV.include?("--identity"), which reported "via --identity" for a lane that came from
+# GH_APP_ITEM or the default whenever the flag's value was lost. Saying which identity
+# landed where, by which route, is this command's stated deliverable (see the header), so
+# a source string that can be wrong is a defect in the product, not a cosmetic one.
+lane_source = if stated_identity
                 "--identity"
               elsif !ENV["GH_APP_ITEM"].to_s.strip.empty?
                 "GH_APP_ITEM"
@@ -153,8 +179,12 @@ login_out, login_err, login_status = Open3.capture3(
 )
 installed = login_status.success?
 unless installed
+  # warn, NOT say: a FAILURE must not be silenceable. Under `--export --quiet` this went
+  # through say and the command was completely silent about a keyring it never wrote —
+  # the same "reported an outcome it never checked" sin the header calls the old advice's
+  # cardinal error. Progress is quietable; failure is not.
   detail = [login_err.to_s.strip, login_out.to_s.strip].reject(&:empty?).join(" / ")
-  say("WARNING: gh refused the keyring write#{detail.empty? ? '' : " — #{detail}"}")
+  warn("gh-auth-refresh: WARNING: gh refused the keyring write#{detail.empty? ? '' : " — #{detail}"}")
 end
 
 # --- 3. VERIFY, rather than assume ------------------------------------------
@@ -168,7 +198,7 @@ if installed
   if verified
     say("keyring now holds #{identity} sha256:#{digest(token)} (verified by read-back)")
   else
-    say("WARNING: keyring read-back did NOT match the token just installed")
+    warn("gh-auth-refresh: WARNING: keyring read-back did NOT match the token just installed")
   end
 end
 
@@ -178,6 +208,14 @@ if export
   # stdout is the eval contract and carries ONLY this line.
   puts "export GH_TOKEN='#{token}'"
   say("emitted an export line — `eval` it and this shell's GH_TOKEN is #{identity} sha256:#{digest(token)}")
+  # Exit 0 is right even when the keyring leg failed: with --export the store that
+  # actually WINS (GH_TOKEN) is genuinely repaired for this session. But this path used
+  # to exit without ever consulting `verified`, so it reported a whole outcome it had
+  # only half checked. Say which half.
+  unless verified
+    warn("gh-auth-refresh: NOTE: this shell is repaired, but the keyring was NOT verified — " \
+         "other processes in this session still read the old credential")
+  end
   exit 0
 end
 
@@ -187,8 +225,9 @@ unless ambient.empty?
     exit 0
   end
   warn("gh-auth-refresh: GH_TOKEN is set (sha256:#{digest(ambient)}) and OUTRANKS the keyring, so this " \
-       "session still sends the old credential. The keyring was refreshed; THIS SHELL WAS NOT. Fix it with:")
-  warn("    eval \"$(bin/gh-auth-refresh#{force ? ' --force' : ''} --export)\"")
+       "session still sends the old credential. The keyring was refreshed as #{identity}; THIS SHELL WAS " \
+       "NOT. Fix it with:")
+  warn("    #{remedy(identity, force: force)}")
   exit 3
 end
 

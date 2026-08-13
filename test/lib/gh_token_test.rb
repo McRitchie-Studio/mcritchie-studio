@@ -20,7 +20,26 @@ class GhTokenTest < Minitest::Test
   BIN = File.expand_path("../../bin/gh-token", __dir__)
   # Anything shaped like a GitHub credential. The leak this file exists to prevent
   # was a token printed by a flag whose entire job is NOT printing one.
-  TOKEN_SHAPED = /ghs_[A-Za-z0-9_]+|ghp_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+/
+  #
+  # THE CHARACTER CLASS INCLUDES `.` AND `-` ON PURPOSE. It used to be `[A-Za-z0-9_]+`,
+  # which is safe in the `refute_match` DETECTOR role this file uses it in — a dotted
+  # installation token still trips it on the prefix — but it is the shape
+  # docs/agents/modules/credentials.md now warns against, because a modern token is a
+  # dotted JWT (`ghs_<base64>.<base64>.<sig>`) and the same class used for REDACTION
+  # stops at the first dot and passes the signature through. That is not hypothetical:
+  # it turned a redaction into a leak on 2026-08-13. Aligned here so nobody copies the
+  # narrow version out of a test file into a context where it has to be right.
+  TOKEN_SHAPED = /gh[psou]_[A-Za-z0-9_.-]{8,}|github_pat_[A-Za-z0-9_.-]{8,}/
+  DOTTED_TOKEN = "ghs_16C7e42F292c6912E7710c838347Ae178B4a.eyJhbGciOiJIUzI1NiJ9.q-3sT_signature"
+
+  # The control for every refute_match in this file: a guard that matches nothing
+  # proves nothing.
+  def test_the_leak_guard_matches_the_token_shapes_it_must_catch
+    assert_match TOKEN_SHAPED, DOTTED_TOKEN, "the shape GitHub actually issues"
+    assert_match TOKEN_SHAPED, "ghs_sTuBtOkEn", "the shape this file's stubs issue"
+    refute_match TOKEN_SHAPED, "agent: active=a", "cache state is not a token"
+    refute_match TOKEN_SHAPED, "sha256:bcdf2f7e20ce", "a digest is not a token"
+  end
 
   def with_env(dir, mint_output: "ghs_sTuBtOkEn", mint_status: 0)
     mint = File.join(dir, "mint-stub")
@@ -126,6 +145,55 @@ class GhTokenTest < Minitest::Test
       _out, err, status = run_token(with_env(dir), "--identity", "nobody")
       refute status.success?
       assert_match(/unknown identity/, err)
+    end
+  end
+
+  # THE REGRESSION, pinned at the command's own boundary. `--identity` with the value
+  # eaten — `bin/gh-token --identity "$VAR"` with VAR unset, or `--identity` as the last
+  # argument — used to abort. It briefly did not: the arg loop turned the missing value
+  # into "" via `.to_s.strip`, the resolver read "" as "the caller said nothing", and the
+  # command minted and cached the AGENT App, which holds `pull_requests: write`.
+  #
+  # BOTH SPELLINGS, because they arrive by different routes and only one of them looks
+  # like a mistake: a trailing flag is a typo, an empty shell variable is a Tuesday.
+  EMPTY_IDENTITY_ARGV = {
+    "a trailing --identity" => ["--identity"],
+    "an empty value" => ["--identity", ""],
+    "a whitespace value" => ["--identity", "   "]
+  }.freeze
+
+  def test_an_empty_identity_value_aborts_without_minting_or_printing_a_token
+    EMPTY_IDENTITY_ARGV.each do |label, argv|
+      Dir.mktmpdir do |dir|
+        out, err, status = run_token(with_env(dir), *argv)
+
+        refute status.success?, "#{label} must abort — silently minting `agent` here IS the bug"
+        assert_equal 0, out.bytesize,
+                     "#{label} put #{out.bytesize} bytes on stdout; an error path must emit NOTHING, " \
+                     "because stdout is this command's token channel"
+        refute_match TOKEN_SHAPED, out
+        refute_match TOKEN_SHAPED, err
+        assert_match(/empty/i, err, "#{label} must say what was wrong with the ARGUMENT")
+        refute File.exist?(store_path(dir)), "#{label} minted nothing, so it may cache nothing"
+      end
+    end
+  end
+
+  # The privilege reading of the same case, stated separately: whatever the abort
+  # message says, the observable outcome must never be an agent-slot token.
+  def test_an_empty_identity_never_lands_a_token_in_the_privileged_slot
+    Dir.mktmpdir do |dir|
+      run_token(with_env(dir), "--identity")
+
+      refute File.exist?(store_path(dir)), "no cache file at all"
+    end
+
+    Dir.mktmpdir do |dir|
+      env = with_env(dir).merge("GH_APP_ITEM" => "github.mcritchie-deployer")
+      _out, _err, status = run_token(env, "--identity")
+
+      refute status.success?, "a lost --identity must not fall through to the ambient lane either"
+      refute File.exist?(store_path(dir))
     end
   end
 

@@ -86,11 +86,13 @@ module GhAuthRetry
     bin = token_bin(env: env)
     return nil unless File.executable?(bin)
 
-    identity = GhIdentity.resolve(identity, env: env)
-    if identity.nil?
-      # An unreadable GH_APP_ITEM must not silently become `agent` — that fallback IS
-      # the privilege-boundary bug. Report it and let the caller show gh's own error.
-      @last_error = GhIdentity.unknown_item_message(env: env)
+    resolved = GhIdentity.resolve(identity, env: env)
+    if resolved.nil?
+      # An unreadable instruction must not silently become `agent` — that fallback IS the
+      # privilege-boundary bug. Two things land here (an unknown GH_APP_ITEM, and a caller
+      # that named an identity and passed an empty one) and they are fixed at different
+      # knobs, so the reason is derived from what this call actually passed.
+      @last_error = GhIdentity.unresolved_reason(identity, env: env)
       return nil
     end
 
@@ -104,7 +106,7 @@ module GhAuthRetry
     # fresh token lands in the inactive slot and wins the newest-by-created_at read
     # for every later process. The cost is one mint on a recovery that would have
     # been served from cache — seconds, by the broker's own stated economics.
-    out, err, status = Open3.capture3(env.to_h, bin, "--identity", identity, "--force", chdir: (root || Dir.pwd))
+    out, err, status = Open3.capture3(env.to_h, bin, "--identity", resolved, "--force", chdir: (root || Dir.pwd))
     token = out.to_s.strip
     unless status.success? && !token.empty?
       # DO NOT swallow this. A misconfigured PEM or a lapsed 1Password session

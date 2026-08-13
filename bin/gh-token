@@ -80,8 +80,11 @@ IDENTITIES = {
 # falling back to `agent`: falling back is precisely the bug this resolver exists to
 # kill, and a typo'd item silently handing back the PR-writing App is the worst
 # possible reading of an unclear instruction.
+# Two things reach nil here and they are fixed at different knobs — an unreadable
+# GH_APP_ITEM, and `--identity` handed an empty value — so the reason is derived from
+# what this call actually passed rather than assumed to be the env's fault.
 def resolve_identity(explicit)
-  GhIdentity.resolve(explicit) || die!(GhIdentity.unknown_item_message)
+  GhIdentity.resolve(explicit) || die!(GhIdentity.unresolved_reason(explicit))
 end
 
 # Installation tokens live ~60 minutes. Refresh at 50 so a token handed out now
