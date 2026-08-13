@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+tool_root="$repo_root/tools/island-background-animator"
+
+if ! command -v uv >/dev/null 2>&1; then
+  echo "error: uv is required; run: brew bundle --file=$tool_root/Brewfile" >&2
+  exit 127
+fi
+
+exec uv run --project "$tool_root" --locked island-background "$@"

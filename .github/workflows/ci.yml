@@ -66,6 +66,32 @@ jobs:
       - name: Lint code for consistent style
         run: bin/rubocop -f github
 
+  island_animator:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.0.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: tools/island-background-animator/uv.lock
+
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y ffmpeg
+
+      - name: Check Island Background Animator
+        run: tools/island-background-animator/bin/check
+
+      - name: Check media dependencies
+        run: bin/island-background doctor
+
   # THE `e2e` TIER'S LANE. Until 2026-07-13 this job did not exist, and `e2e` — demanded
   # by config/feature_shapes.yml of the `ui+db` and `onchain-vertical` shapes — was run
   # by NOTHING: not this workflow, not bin/fast-check, not bin/full-suite-check, not the
