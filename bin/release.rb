@@ -3334,6 +3334,9 @@ def ladder_clean_verdict(expedited: nil, report_release: false)
     accepted_tasks: accepted,
     accepted_states: git["accepted"],
     unreadable_repos: git["unreadable"],
+    # The scope the git read was asked to cover. Without it the verdict can only
+    # see absences something recorded, and a skipped repo records none.
+    expected_repos: git["expected"],
     expedited: expedited
   )
 end
@@ -3366,9 +3369,21 @@ end
 #     The deploy-plan gate cannot afford that (true): a repo it is about to
 #     DEPLOY whose rung it could not measure is unverified, and unverified is
 #     stale, so it lands in `unreadable` and refuses.
+#
+# AND IT REPORTS ITS OWN SCOPE back as "expected". A SKIPPED repo (the `false`
+# case above) leaves NO trace: no state row on either rung and no `unreadable`
+# row, so a reader comparing those two lists cannot tell a repo that came back
+# level from a repo nobody opened. Release::CleanCheck graded that silence
+# `:complete` and went on to state that the operator's code "may ALREADY BE IN
+# PRODUCTION" over a ladder holding an unread repo. Handing back the list this
+# loop actually iterated is what lets the verdict measure what it covered
+# against what it was asked to cover — and it is derived HERE, from the same
+# `repos`, so the scope and the reading cannot drift apart.
 # This is the I/O seam the tests stub, the way they stub `conductor`.
 def ladder_ahead_states(repos: release_repo_slugs, require_checkout: false)
-  return { "release" => [], "accepted" => [], "unreadable" => [] } if DRY
+  # --dry-run takes no fetch, so nothing was expected OR read: an empty scope is
+  # what keeps CleanCheck grading it `:unmeasured` rather than partial.
+  return { "release" => [], "accepted" => [], "unreadable" => [], "expected" => [] } if DRY
 
   release_states = []
   accepted_states = []
@@ -3392,7 +3407,8 @@ def ladder_ahead_states(repos: release_repo_slugs, require_checkout: false)
              : accepted_states << { "repo" => repo, "ahead" => acc }
   end
 
-  { "release" => release_states, "accepted" => accepted_states, "unreadable" => unreadable }
+  { "release" => release_states, "accepted" => accepted_states, "unreadable" => unreadable,
+    "expected" => Array(repos).map(&:to_s) }
 end
 
 # Commits `head` is ahead of `base` in a checkout, or nil when the count could

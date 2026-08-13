@@ -87,6 +87,20 @@ class Release
     #   could not be read at all (missing branch, failed rev-list). Always dirty —
     #   AND they mark the rung's read PARTIAL, which is how a conflict sentence
     #   knows not to speak for repos nobody looked at (see `rung_read`).
+    # expected_repos:   ["<repo>", …] — every repo the git read was SUPPOSED to
+    #   cover. This is what makes a SILENT absence visible. A repo that produced no
+    #   state row AND no `unreadable` row is invisible to both lists above, and
+    #   `ladder_ahead_states(require_checkout: false)` — the ecosystem guard's
+    #   default — drops one exactly that way when its local checkout is missing.
+    #   Measuring completeness against THIS set is what makes a repo unread whether
+    #   or not anything remembered to record why.
+    #   IT GOVERNS COMPLETENESS ONLY, NEVER `clean`. A repo nobody cloned is not
+    #   evidence of pending work — that is precisely why the ecosystem guard skips
+    #   it — so routing it into `unreadable_repos` instead would refuse the lane on
+    #   every workstation that has not cloned all the siblings. The gap must stop
+    #   the guard from SPEAKING for that repo, not stop the operator from working.
+    #   Omitted (the pure-unit default), the module can still only see the absences
+    #   something recorded; bin/release passes the very list its loop iterated.
     # expedited:        the slug `deploy-with-task` is expediting, when the caller
     #   passed `--task`. It is EXCLUDED from the accepted rung's board signal —
     #   the SOP allows re-running the act on a task review already merged onto
@@ -105,6 +119,9 @@ class Release
     #                             attributed to the expedited task (informational;
     #                             the message always says so out loud)
     #   "unreadable_repos"     => rung reads that failed (empty when clean)
+    #   "unread_repos"         => repos from expected_repos that produced NO reading
+    #                             on either rung and no `unreadable` row either —
+    #                             named in the message, never counted as dirty
     #   "signal_conflict"      => nil, or a sentence naming a board-vs-git
     #                             disagreement on the accepted rung
     #   "release_signal_conflict" => nil, or a sentence naming the release rung's
@@ -116,7 +133,8 @@ class Release
     #                             full-cycle OFFER (listing the pending work and any
     #                             signal conflict) when dirty.
     def evaluate(pending_tasks: [], repo_states: [], accepted_tasks: [],
-                 accepted_states: [], unreadable_repos: [], expedited: nil)
+                 accepted_states: [], unreadable_repos: [], expected_repos: [],
+                 expedited: nil)
       pending = normalize_tasks(pending_tasks)
       ahead   = ahead_repos(repo_states)
 
@@ -138,14 +156,22 @@ class Release
       attributed_ahead = attributed ? measured_ahead : []
 
       unreadable = normalize_unreadable(unreadable_repos)
+      # Repos the read was supposed to cover that left NO trace at all. Reported,
+      # never counted against `clean` — see the expected_repos note above.
+      unread = unread_repos(expected_repos, repo_states, accepted_states, unreadable)
       # How much of each rung's git read actually landed — :unmeasured, :partial or
       # :complete. An unmeasured signal can neither corroborate nor contradict the
       # stamp, and a PARTIAL one cannot carry a universal claim about the trees.
       # See rung_read and the two conflict methods.
       conflict = accepted_signal_conflict(accepted, measured_ahead,
-                                          rung_read(accepted_states, unreadable), attributed)
-      release_conflict = release_signal_conflict(pending, ahead, rung_read(repo_states, unreadable))
+                                          rung_read(accepted_states, unreadable, expected_repos),
+                                          attributed)
+      release_conflict = release_signal_conflict(
+        pending, ahead, rung_read(repo_states, unreadable, expected_repos)
+      )
 
+      # `unread` is deliberately ABSENT from this conjunction. It is a limit on
+      # what the verdict may SAY, not a reason to refuse.
       clean = pending.empty? && ahead.empty? && accepted.empty? &&
               accepted_ahead.empty? && unreadable.empty?
       {
@@ -156,10 +182,11 @@ class Release
         "accepted_ahead_repos" => accepted_ahead,
         "attributed_ahead_repos" => attributed_ahead,
         "unreadable_repos" => unreadable,
+        "unread_repos" => unread,
         "signal_conflict" => conflict,
         "release_signal_conflict" => release_conflict,
-        "message" => clean ? clean_message(slug, attributed_ahead) : dirty_message(
-          pending, ahead, accepted, accepted_ahead, unreadable, conflict, release_conflict
+        "message" => clean ? clean_message(slug, attributed_ahead, unread) : dirty_message(
+          pending, ahead, accepted, accepted_ahead, unreadable, conflict, release_conflict, unread
         )
       }
     end
@@ -167,21 +194,40 @@ class Release
     # The OK line. When a positive accepted-ahead count was attributed to the
     # expedited task, say so on its own line — the operator should never learn
     # from a silent pass that the guard tolerated commits.
-    def clean_message(slug = nil, attributed_ahead = [])
+    def clean_message(slug = nil, attributed_ahead = [], unread = [])
       lines = ["✓ the ladder is clean (accepted == release == main) — " \
                "safe to expedite one task with the `deploy-with-task` act."]
       if attributed_ahead.any?
         lines << "  `accepted` carries #{repo_summary(attributed_ahead)}, attributed to the expedited " \
                  "task `#{slug}` (stamped merged:\"accepted\"); the board shows no other task on that rung."
       end
+      lines.concat(unread_lines(unread))
       lines.join("\n")
+    end
+
+    # NAME THE SCOPE A PASS COVERS. `accepted == release == main` is a claim about
+    # every repo, so a ✓ printed over a repo that produced no reading is the same
+    # over-claim the conflict sentences were just taught to withhold — one line up
+    # the page and on the happy path, where it is least likely to be questioned.
+    # The guard still passes (an uncloned sibling is not pending work), but the
+    # operator gets the handle: WHICH repo the ✓ does not speak for.
+    def unread_lines(unread)
+      return [] if Array(unread).empty?
+
+      one = unread.size == 1
+      ["  NOT verified: #{unread.join(', ')} — #{one ? 'that repo' : 'those repos'} produced no reading, " \
+       "so nothing above speaks for #{one ? 'it' : 'them'} (in the ecosystem guard a repo with no local " \
+       "checkout is skipped this way). The gap is in what this verdict can SAY, not in what an expedite " \
+       "will touch: the promote is derived from board stamps, so an uncloned repo is not in its scope — " \
+       "and a repo that IS a member aborts the promote asking you to clone it rather than moving it. " \
+       "Clone or fetch #{one ? 'it' : 'them'} and re-run to cover the whole ladder."]
     end
 
     # The refusal + the offer. Never silently drags the pending work to prod: it
     # names WHAT is pending, on WHICH rung, and points at the composition that
     # ships it properly.
     def dirty_message(pending, ahead, accepted, accepted_ahead, unreadable = [], conflict = nil,
-                      release_conflict = nil)
+                      release_conflict = nil, unread = [])
       lines = [dirty_headline(pending, ahead, accepted, accepted_ahead, unreadable)]
       if pending.any?
         lines << "  #{pending.size} task(s) already riding `release` (swept or QA-green), pending ship:"
@@ -203,6 +249,10 @@ class Release
                  "#{unreadable.map { |u| "#{u['repo']}/#{u['rung']}" }.join(', ')}"
         lines << "  Fetch those repos (or fix the missing branch), then re-run the guard."
       end
+      # Before the conflict sentences, because it EXPLAINS THEIR SILENCE: when a
+      # rung's read is partial the explanation is withheld, and an operator who is
+      # not told why just sees a refusal with no reason attached.
+      lines.concat(unread_lines(unread))
       lines << "  ⚠ #{release_conflict}" if release_conflict
       lines << "  ⚠ #{conflict}" if conflict
       lines << "  Expediting one task now would DRAG that pending work to production."
@@ -268,12 +318,50 @@ class Release
     # a single row labelled `accepted (no checkout at …)` though neither rung was
     # read — so matching on the label would rebuild this very bug on a string
     # compare, and it keeps a failure on one rung from muting the other.
-    def rung_read(states, unreadable)
-      measured = Array(states).map { |s| value(s, "repo").to_s }
-      return :partial if Array(unreadable).any? { |u| !measured.include?(value(u, "repo").to_s) }
+    #
+    # AND IT IS MEASURED AGAINST THE SCOPE, NOT AGAINST THE RECORDED ABSENCES.
+    # Comparing `states` to `unreadable` alone can only see a repo whose absence
+    # something REMEMBERED TO WRITE DOWN, and the ecosystem guard's default path
+    # writes nothing: `ladder_ahead_states(require_checkout: false)` skips a repo
+    # with no local checkout before either rung is read, so it lands in neither
+    # list. The two sets then agreed, this graded `:complete`, and
+    # release_signal_conflict told the operator their code "may ALREADY BE IN
+    # PRODUCTION" over a ladder holding a repo nobody had looked at. Trusting the
+    # absence of a marker as evidence of a read is the same disease as trusting a
+    # declaration instead of observing the property — so `expected` (the repos the
+    # read was SUPPOSED to cover) closes both halves under ONE rule: a repo that
+    # produced no reading HERE is unread, recorded or not.
+    #
+    # `expected` is UNIONED with the unreadable repos rather than replacing them,
+    # so a caller that passes no scope keeps exactly the recorded-absence
+    # detection it had, and a caller that reports a failure for a repo outside the
+    # scope is still believed. Both are the same sentence: everything KNOWN to
+    # this read must have produced a reading here.
+    def rung_read(states, unreadable, expected = [])
+      measured = repo_names(states)
+      known    = repo_names(expected) | repo_names(unreadable)
+      return :partial if (known - measured).any?
       return :unmeasured if measured.empty?
 
       :complete
+    end
+
+    # Repos the read was supposed to cover that produced NO reading on EITHER rung
+    # and no `unreadable` row either — the silent drop, which is invisible to every
+    # other list in the verdict. Reported so the message can name it; never counted
+    # as dirty (see evaluate).
+    def unread_repos(expected, repo_states, accepted_states, unreadable)
+      seen = repo_names(repo_states) | repo_names(accepted_states) | repo_names(unreadable)
+      repo_names(expected) - seen
+    end
+
+    # Repo slugs out of any of the shapes this module is handed: bare strings (the
+    # expected scope), or `{"repo" => …}` rows (states and unreadable), with the
+    # same string-or-symbol tolerance `value` gives everything else.
+    def repo_names(entries)
+      Array(entries).map { |e|
+        e.is_a?(String) || e.is_a?(Symbol) ? e.to_s : value(e, "repo").to_s
+      }.reject(&:empty?).uniq
     end
 
     # The accepted rung's two signals should agree; when they do not, say which

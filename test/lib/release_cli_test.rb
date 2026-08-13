@@ -3918,6 +3918,61 @@ class ReleaseCliTest < Minitest::Test
     assert_includes out, "DONE-NO-ABORT", "plain status is informational — it reports but never aborts"
   end
 
+  # --- the SILENT drop: a repo with no local checkout -----------------------
+  #
+  # `ladder_ahead_states(require_checkout: false)` — the ecosystem guard's DEFAULT
+  # — skips a repo whose checkout is missing, recording no state row on either
+  # rung and NO `unreadable` row. Completeness derived from those two lists alone
+  # therefore could not see it: the sets AGREED, the read graded `:complete`, and
+  # the guard asserted an INTERRUPTED SHIP — "this code may ALREADY BE IN
+  # PRODUCTION" — over a ladder holding a repo it had never opened.
+  #
+  # These drive the REAL `ladder_ahead_states` (only the git `sh` and the checkout
+  # path are stubbed), so they cover the WIRING — the scope the reader hands back
+  # and the verdict measuring against it — not just the pure rule.
+  def uncloned_repo_stub(clone_rolio: false)
+    <<~RUBY
+      REAL_REPO = #{self.class.stub_repo.inspect}
+      CLONE_ROLIO = #{clone_rolio.inspect}
+      def release_repo_slugs
+        ["mcritchie-studio", "rolio"]
+      end
+      def repo_path(repo)
+        return REAL_REPO if repo == "mcritchie-studio" || CLONE_ROLIO
+        File.join(REAL_REPO, "definitely-not-cloned")
+      end
+      def conductor(ruby, read_only: false)
+        { "pending" => [{ "slug" => "riding-release", "title" => "Swept, QA in flight" }],
+          "accepted" => [], "release" => { "slug" => "rel-cli", "state" => "assembling" } }
+      end
+      def sh(*a, **k)
+        # Every rung level: release == main AND accepted == release. Board-dirty
+        # + git-clean is exactly the interrupted-ship shape.
+        return ["0", true] if a[0] == "git" && a.include?("rev-list")
+        ["", true]
+      end
+    RUBY
+  end
+
+  def test_status_withholds_the_production_claim_when_a_repo_has_no_checkout
+    out = run_cli(["status"], setup: uncloned_repo_stub, call: "status")
+
+    refute_includes out, "ALREADY BE IN PRODUCTION",
+                    "rolio produced no reading — the guard must not speak for the whole ladder"
+    assert_includes out, "NOT verified: rolio", "…and it must name the repo it never opened"
+  end
+
+  # DIRECTION 2 — the one people skip. With every repo readable the sentence must
+  # STILL fire. A fix that merely suppressed the claim, or that keyed off the
+  # presence of a scope rather than a gap in it, passes the test above and quietly
+  # destroys the most consequential finding this guard can report.
+  def test_status_still_reports_the_interrupted_ship_when_every_repo_is_read
+    out = run_cli(["status"], setup: uncloned_repo_stub(clone_rolio: true), call: "status")
+
+    assert_includes out, "ALREADY BE IN PRODUCTION", "a COMPLETE read keeps its explanation"
+    refute_includes out, "NOT verified", "nothing went unread, so nothing is disclaimed"
+  end
+
   # --- the ACCEPTED rung, end to end through the CLI -----------------------
   # The hole: `status` read only the tasks riding `release`, so a task sitting
   # `reviewed` with merged:"accepted" was invisible — and the sweep promotes ALL

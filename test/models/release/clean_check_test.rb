@@ -484,6 +484,85 @@ class Release::CleanCheckTest < ActiveSupport::TestCase
     assert_nil v["signal_conflict"]
   end
 
+  # --- the residual half: a repo that produced NO reading and NO row ---------
+  #
+  # Deriving completeness from the repo sets (rather than the `rung` label) closed
+  # every absence that was WRITTEN DOWN. This is the other half, and it is the
+  # ecosystem guard's DEFAULT path: `ladder_ahead_states(require_checkout: false)`
+  # SKIPS a repo with no local checkout — `next unless require_checkout` — leaving
+  # no state row on either rung and NO `unreadable_repos` row either. With nothing
+  # recorded, the sets AGREED, the read graded `:complete`, and the guard told the
+  # operator their code "may ALREADY BE IN PRODUCTION" about a ladder holding a
+  # repo it had never looked at.
+  #
+  # The rule that closes both halves at once: completeness is measured against the
+  # repos the read was SUPPOSED to cover. A repo that produced no reading is unread
+  # whether or not anything remembered to record why. Absence of a marker is not
+  # evidence of a read — the same disease as trusting a declaration over a
+  # measurement, one layer down.
+  test "[unit] a repo absent from the reading makes the rung partial with NO marker of any kind" do
+    measured = [{ "repo" => "mcritchie-studio", "ahead" => 0 }]
+
+    assert_equal :partial, C.rung_read(measured, [], %w[mcritchie-studio rolio]),
+                 "`rolio` was in scope and produced no reading — nothing recorded why, and it is still unread"
+    # PRECISION, not blanket suppression: the same call over a scope it fully
+    # covered is still complete. A rule that just downgraded everything to
+    # :partial would pass the assertion above and destroy every true sentence.
+    assert_equal :complete, C.rung_read(measured, [], %w[mcritchie-studio]),
+                 "a read that covered its whole scope is complete"
+  end
+
+  # The consequential one, end to end. This is the exact state the ecosystem guard
+  # produces with a sibling repo uncloned, and the sentence it must NOT say.
+  test "[unit] the interrupted-ship claim is withheld when a repo went unread and unrecorded" do
+    v = C.evaluate(
+      pending_tasks: [{ "slug" => "riding-release", "title" => "Swept, QA in flight" }],
+      repo_states: [{ "repo" => "mcritchie-studio", "ahead" => 0 }],
+      accepted_states: [{ "repo" => "mcritchie-studio", "ahead" => 0 }],
+      unreadable_repos: [],
+      expected_repos: %w[mcritchie-studio rolio]
+    )
+
+    assert_nil v["release_signal_conflict"],
+               "`the trees are identical` is a claim about EVERY repo, and rolio was never read"
+    assert_equal ["rolio"], v["unread_repos"], "the verdict names what it did not read"
+  end
+
+  # The accepted rung's UNIVERSAL branch needs the same complete read. Its
+  # existential twin is asserted below.
+  test "[unit] the accepted rung's universal claim is withheld on a silently dropped repo" do
+    v = C.evaluate(
+      accepted_tasks: [{ "slug" => "parked" }],
+      accepted_states: [{ "repo" => "mcritchie-studio", "ahead" => 0 }],
+      expected_repos: %w[mcritchie-studio rolio]
+    )
+
+    assert_nil v["signal_conflict"],
+               "`no repo's accepted is ahead` cannot be said over a repo that produced no count"
+  end
+
+  # DIRECTION 2 — the one people skip. An unread repo must NOT flip the verdict to
+  # dirty. `require_checkout: false` exists precisely so a repo nobody cloned does
+  # not refuse the lane ("not evidence of pending work"), and most operators do not
+  # clone every sibling. Routing the drop into `unreadable_repos` — the naive fix —
+  # would make the guard refuse on every partial workstation and is why this is a
+  # SEPARATE signal: it governs COMPLETENESS only, never DIRTINESS.
+  test "[unit] an unread repo reports its gap without making the ladder dirty" do
+    v = C.evaluate(
+      pending_tasks: [],
+      repo_states: [{ "repo" => "mcritchie-studio", "ahead" => 0 }],
+      accepted_states: [{ "repo" => "mcritchie-studio", "ahead" => 0 }],
+      expected_repos: %w[mcritchie-studio rolio]
+    )
+
+    assert v["clean"], "an uncloned sibling is not evidence of pending work — the lane stays usable"
+    assert_empty v["unreadable_repos"], "and it is NOT laundered into the failed-read list"
+    # But the ✓ must stop over-claiming: it says `accepted == release == main`,
+    # which is a claim about every repo. Name the ones it never measured.
+    assert_includes v["message"], "rolio", "the pass names the repo it did not verify"
+    assert_includes v["message"], "NOT verified"
+  end
+
   # The read-state classifier itself, at its three boundaries.
   test "[unit] rung_read distinguishes unmeasured, partial and complete" do
     assert_equal :unmeasured, C.rung_read([], []), "a --dry-run takes no fetch at all"
