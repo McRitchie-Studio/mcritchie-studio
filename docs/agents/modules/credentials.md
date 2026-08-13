@@ -70,8 +70,36 @@ credential helpers):
   |---------|-----------|-----|
   | **401 `Bad credentials`** | `GH_TOKEN` is set but **expired** — it is sent and rejected | Re-mint (above) |
   | **403 `not accessible by personal access token`** | `GH_TOKEN` is **unset or empty**, so `gh` never sends it and falls back to the stored PAT, which lacks the scope | Re-mint (above) |
-  | **403 `not accessible by integration`** | The token is **live**; the App installation lacks the grant | **`unset GH_APP_ITEM`**, then re-mint — a fresh token for the same identity fails identically |
+  | **403 `not accessible by integration`** | The token is **live**; the App installation lacks the grant — **unless the endpoint is closed to Apps entirely** (see the probe note below) | **`unset GH_APP_ITEM`**, then re-mint — a fresh token for the same identity fails identically |
   | **404 `Could not resolve to a Repository`** | GitHub reports a repo the token may not **see** as one that does not **exist** | Confirm the name (`gh repo view <owner>/<name>`), then re-mint |
+
+  **The liveness probe is `gh api rate_limit`, NOT `gh api user`.** An App
+  installation token cannot call `/user` **at all** — Apps are forbidden from it
+  by design — so a perfectly healthy token answers `403 Resource not accessible
+  by integration` there. A 403 on `/user` therefore **CONFIRMS** App auth; it
+  does not diagnose a fault, and reading it as one sends you chasing a grant that
+  cannot exist. `gh api rate_limit` answers for every identity, so it is the
+  probe that can actually tell live from stale.
+
+  **Two stores — and nothing refreshes the second one.** `bin/gh-token`'s cache
+  (`<projects>/.agents/github-tokens.json`) and **`gh`'s own keyring** are
+  SEPARATE. Minting refreshes the cache; the keyring is left where it was. So an
+  interactive `gh` goes stale roughly hourly *while the cache is fresh*, and any
+  tool reading GitHub through the ambient credential starts reporting a
+  credential fault on a repo it read fine an hour ago. Refresh the keyring from
+  the same broker (never print the token):
+
+  ```bash
+  bin/gh-token | gh auth login -h github.com --with-token
+  ```
+
+  **Tools should not need that.** `bin/lib/gh_auth_retry.rb` classifies the
+  refusal and `bin/gh-token` supplies the replacement, giving any caller one
+  mint-and-retry; `bin/ship`, `bin/pr-review`, and `bin/lib/ci_status.rb` (every
+  CI read the gates make) all route through it. The manual refresh above is for
+  an interactive `gh` in a terminal — if a *tool* ever needs it, that tool is
+  missing the wiring, which is the bug task `standardize-ci-read-auth` fixed for
+  the CI reads.
 
 The identities:
 

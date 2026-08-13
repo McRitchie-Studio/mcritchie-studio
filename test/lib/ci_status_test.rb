@@ -1012,7 +1012,13 @@ class CiStatusTest < Minitest::Test
     credentials = CiStatus.parse("gh: Bad credentials (HTTP 401)")
     assert_equal :credentials, credentials[:cause]
     credential_remedy = CiStatus.unreadable_remedy(repo, cause: credentials[:cause])
-    assert_includes credential_remedy, "gh auth status"
+    # The remedy must name the recovery that WORKS post-migration. `gh auth login
+    # --with-token` fed from bin/gh-token refreshes the KEYRING, which is a separate
+    # store from the token cache and is what goes stale mid-session. The bare
+    # `gh auth login` this used to imply is a PAT-era instruction with nothing to type.
+    assert_includes credential_remedy, "bin/gh-token | gh auth login -h github.com --with-token"
+    # And the liveness probe must be one an App token can actually answer.
+    assert_includes credential_remedy, "gh api rate_limit"
     refute_includes credential_remedy, "Checks: Read"
 
     rate_limit = CiStatus.parse("gh: API rate limit exceeded (HTTP 403)")
@@ -1024,7 +1030,7 @@ class CiStatusTest < Minitest::Test
     forbidden = CiStatus.parse("gh: Forbidden (HTTP 403)")
     assert_equal :forbidden, forbidden[:cause]
     forbidden_remedy = CiStatus.unreadable_remedy(repo, cause: forbidden[:cause])
-    assert_includes forbidden_remedy, "gh auth status"
+    assert_includes forbidden_remedy, "gh api rate_limit"
     refute_includes forbidden_remedy, "Checks: Read"
   end
 
@@ -1067,5 +1073,201 @@ class CiStatusTest < Minitest::Test
     # read, it fails there and must already name the cause rather than degrade.
     v = CiStatus.view_verdict("gh: Resource not accessible by personal access token (HTTP 403)")
     assert_equal :unreadable, v[:state]
+  end
+
+  # --- THE STALE-CREDENTIAL RETRY ---------------------------------------------
+  #
+  # These are the only tests in this file that RUN the gh reads instead of feeding
+  # `parse` a payload, and that is the point: the bug being fixed was a branch that
+  # no test could reach, so a test that stubs the verdict proves nothing about it.
+  # Both seams are stubs — CI_STATUS_GH_BIN for gh, GH_AUTH_TOKEN_BIN for the token
+  # broker — so no network, no real token, and no 1Password session is involved.
+  #
+  # The stub gh REFUSES exactly as GitHub does on an expired installation token
+  # ("Bad credentials (HTTP 401)" on stderr, exit 1) unless it finds the minted token
+  # in its OWN environment. Passing therefore requires the whole chain: classify the
+  # refusal → mint once → hand the token to the RETRIED CHILD → re-read.
+
+  MINTED = "stub-minted-token"
+
+  def test_a_stale_ambient_credential_is_recovered_and_returns_a_REAL_verdict
+    # THE REGRESSION. Before this wiring, an expired ambient credential made every
+    # CI read :unreadable — withholding the fast cert from the builder and, worse,
+    # blinding the REVIEW gate's authoritative verdict where nobody re-reads it.
+    with_gh_stubs(mode: "auth") do |calls, mints|
+      v = CiStatus.evaluate("https://github.com/McRitchie-Studio/rolio/pull/23")
+
+      assert_equal :green, v[:state],
+                   "a stale ambient credential must be recovered into a REAL verdict, not :unreadable"
+      assert_equal 1, File.readlines(mints).size, "exactly ONE mint"
+      # view refused → retried; checks then rode the memoized token on its FIRST try.
+      assert_equal 3, File.readlines(calls).size, "view (refused) + view (retried) + checks"
+    end
+  end
+
+  def test_the_pre_fix_behaviour_is_what_this_test_would_otherwise_see
+    # THE CONTROL, and the reason the test above is credible: with the broker
+    # unavailable the retry cannot complete, and the SAME stub reproduces the exact
+    # failure this task was filed for. If the wiring above were deleted, the test
+    # above would produce THIS. gh's ORIGINAL refusal survives — untranslated.
+    with_gh_stubs(mode: "auth", broker: :broken) do |_calls, mints|
+      v = CiStatus.evaluate("https://github.com/McRitchie-Studio/rolio/pull/23")
+
+      assert_equal :unreadable, v[:state]
+      assert_equal :credentials, v[:cause]
+      assert_includes v[:reason], "Bad credentials"
+      assert_equal 1, File.readlines(mints).size, "it TRIED once, then reported gh's own error"
+    end
+  end
+
+  def test_a_RED_ci_never_mints_even_though_gh_exits_non_zero
+    # THE NARROWNESS, and the trap a naive "retry on failure" falls into: `gh pr
+    # checks` exits NON-ZERO on a red or pending PR while printing perfectly good
+    # JSON. Retrying on exit STATUS would mint a token for every red PR in the fleet
+    # and hide the failure behind a credential story. Only the SHAPE of the refusal
+    # may trigger a mint.
+    with_gh_stubs(mode: "red") do |_calls, mints|
+      v = CiStatus.evaluate("https://github.com/McRitchie-Studio/rolio/pull/23")
+
+      assert_equal :red, v[:state]
+      assert_equal ["CI"], v[:failing]
+      assert_equal 0, File.size(mints), "a red CI is not a credential fault — no mint"
+    end
+  end
+
+  def test_a_non_auth_error_is_returned_untouched
+    # A 404 re-read with a fresh token just 404s again, slower — and the caller must
+    # still see GitHub's real words rather than a manufactured credential story.
+    with_gh_stubs(mode: "notfound") do |_calls, mints|
+      v = CiStatus.evaluate("https://github.com/McRitchie-Studio/rolio/pull/23")
+
+      assert_equal :unverified, v[:state]
+      assert_includes v[:reason], "Could not resolve to a PullRequest"
+      assert_equal 0, File.size(mints), "not an auth failure — no mint"
+    end
+  end
+
+  def test_the_sha_addressed_release_read_shares_the_same_recovery
+    # for_sha serves the G3 release gate, whose subject (a release tip) belongs to no
+    # PR — the read LEAST likely to have a human watching when the credential lapses.
+    # It was the third unwired call site, and is wired through the same seam.
+    with_gh_stubs(mode: "auth") do |_calls, mints|
+      v = CiStatus.for_sha("McRitchie-Studio/rolio", "abc123")
+
+      assert_equal :green, v[:state]
+      assert_equal 1, File.readlines(mints).size
+    end
+  end
+
+  def test_the_minted_token_never_appears_in_the_returned_body
+    # It rides the child's ENVIRONMENT. A token that leaks into a verdict reaches the
+    # task record, the gate output, and the transcript.
+    with_gh_stubs(mode: "auth") do |_calls, _mints|
+      v = CiStatus.evaluate("https://github.com/McRitchie-Studio/rolio/pull/23")
+      refute_includes v.inspect, MINTED
+    end
+  end
+
+  def test_one_mint_per_process_not_one_per_call
+    with_gh_stubs(mode: "auth") do |_calls, mints|
+      3.times { CiStatus.evaluate("https://github.com/McRitchie-Studio/rolio/pull/23") }
+      assert_equal 1, File.readlines(mints).size, "the memo holds across calls"
+    end
+  end
+
+  def test_a_missing_gh_is_unverified_and_never_a_mint
+    # ENOENT is not a refusal. It must stay the :unverified it has always been —
+    # `gh: command not found` never meant "your token is stale".
+    with_gh_stubs(mode: "auth", gh: "/nonexistent/gh-does-not-exist") do |_calls, mints|
+      assert_equal :unverified, CiStatus.evaluate("https://github.com/McRitchie-Studio/rolio/pull/23")[:state]
+      assert_equal 0, File.size(mints)
+    end
+  end
+
+  private
+
+  # Stubs both seams and runs the block with (gh-call-log, mint-call-log). Restores
+  # ENV and the memoized token afterwards — module state outlives one example, and a
+  # leaked token would silently green the next test.
+  def with_gh_stubs(mode:, broker: :working, gh: nil)
+    Dir.mktmpdir do |dir|
+      calls = File.join(dir, "gh-calls.log")
+      mints = File.join(dir, "mint-calls.log")
+      [calls, mints].each { |f| File.write(f, "") }
+
+      gh_stub = write_script(dir, "gh-stub", <<~SH)
+        #!/bin/sh
+        echo "gh $*" >> "$GH_STUB_CALLS"
+        if [ "$GH_STUB_MODE" = "notfound" ]; then
+          echo 'gh: Could not resolve to a PullRequest with the number of 23. (HTTP 404)' >&2
+          exit 1
+        fi
+        if [ "$GH_STUB_MODE" = "red" ]; then
+          # `gh pr checks` prints valid JSON and exits NON-ZERO when a check failed.
+          if [ "$2" = "checks" ]; then
+            echo '[{"name":"CI","state":"FAILURE","bucket":"fail"}]'
+            exit 1
+          fi
+        elif [ "$GH_TOKEN" != "$GH_STUB_TOKEN" ]; then
+          echo 'gh: Bad credentials (HTTP 401)' >&2
+          exit 1
+        fi
+        case "$2" in
+          view) echo '{"state":"OPEN","mergeStateStatus":"CLEAN","mergeable":"MERGEABLE","baseRefName":"accepted"}' ;;
+          checks) echo '[{"name":"CI","state":"SUCCESS","bucket":"pass"}]' ;;
+          *) echo '{"total_count":1,"check_runs":[{"name":"CI","status":"completed","conclusion":"success"}]}' ;;
+        esac
+        exit 0
+      SH
+
+      broker_stub = if broker == :broken
+                      write_script(dir, "broker-stub", <<~SH)
+                        #!/bin/sh
+                        echo "mint $*" >> "$GH_MINT_CALLS"
+                        echo 'no 1Password session' >&2
+                        exit 1
+                      SH
+                    else
+                      write_script(dir, "broker-stub", <<~SH)
+                        #!/bin/sh
+                        echo "mint $*" >> "$GH_MINT_CALLS"
+                        printf '%s' "$GH_STUB_TOKEN"
+                      SH
+                    end
+
+      with_env(
+        "CI_STATUS_GH_BIN" => gh || gh_stub,
+        "GH_AUTH_TOKEN_BIN" => broker_stub,
+        "GH_STUB_CALLS" => calls,
+        "GH_MINT_CALLS" => mints,
+        "GH_STUB_MODE" => mode,
+        "GH_STUB_TOKEN" => MINTED,
+        # The stale ambient credential itself — set explicitly so the test does not
+        # depend on whatever the developer's shell happens to be carrying.
+        "GH_TOKEN" => "stale-ambient-token"
+      ) do
+        CiStatus.reset_gh_auth!
+        begin
+          yield(calls, mints)
+        ensure
+          CiStatus.reset_gh_auth!
+        end
+      end
+    end
+  end
+
+  def write_script(dir, name, body)
+    path = File.join(dir, name)
+    File.write(path, body)
+    File.chmod(0o755, path)
+    path
+  end
+
+  def with_env(vars)
+    previous = vars.keys.to_h { |k| [k, ENV[k]] }
+    vars.each { |k, v| ENV[k] = v }
+    yield
+  ensure
+    previous.each { |k, v| v.nil? ? ENV.delete(k) : ENV[k] = v }
   end
 end
