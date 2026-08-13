@@ -887,15 +887,22 @@ module ApplicationHelper
   # ReleaseNotes::Formatter::APP_GROUPS (kept independent so views don't reach
   # into the service); keep the two in sync if an app is added or its glyph
   # changes.
+  #
+  # It must cover EVERY repo in the release registry (config/release_repos.yml):
+  # the /deployments lane badge renders this glyph raw, so an unmapped member
+  # repo draws an empty box instead of an identity. Pinned by
+  # ApplicationHelperTest ("every release-registry repo has a glyph").
   APP_EMOJIS = {
-    "mcritchie-studio" => "🪎",
-    "turf-monster"     => "🐊",
-    "studio-engine"    => "💎",
-    "turf-vault"       => "🏛️",
-    "vault"            => "🏛️",
-    "solana-studio"    => "🧱",
-    "chain-ops"        => "⛓️",
-    "rolio"            => "📇"
+    "mcritchie-studio"     => "🪎",
+    "mcritchie-industries" => "📐",
+    "turf-monster"         => "🐊",
+    "studio-engine"        => "💎",
+    "turf-vault"           => "🏛️",
+    "vault"                => "🏛️",
+    "solana-studio"        => "🧱",
+    "chain-ops"            => "⛓️",
+    "tax-studio"           => "📊",
+    "rolio"                => "📇"
   }.freeze
 
   # Emoji for a single repo/app slug, or nil when the slug is unmapped/blank.
