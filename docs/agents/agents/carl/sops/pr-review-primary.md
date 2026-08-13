@@ -259,14 +259,27 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
        --feedback "<one complete send-back>" --agent carl
      ```
 
-     **Two-bounce circuit breaker:** if the task's activity history already
-     carries a prior send-back (`GET /api/v1/activities?task_slug=<task-slug>
-     &activity_type=qa_feedback` — one row per bounce; never probe the live
-     block columns, which a compliant resubmission wipes), do not
-     re-block to the builder — escalate the deadlock to the operator instead:
-     `bin/task block <task-slug> --kind dependency --summary "Escalated: <4-6
-     word disagreement>" --feedback "<both positions, in brief>" --agent carl`,
-     and flag it **⚠ Escalated** in your final report.
+     **Two-bounce circuit breaker:** read it before you compose the block —
+
+     ```bash
+     bin/task bounces <task-slug>
+     ```
+
+     **Exit 0 = CLEAR is the only exit that authorizes a re-block**; 10 = TRIPPED
+     (escalate); any other non-zero = a FAILED read or an unknown slug, which is
+     never to be read as zero. The block command runs the same
+     check and REFUSES a second bounce, so a TRIPPED task cannot be re-blocked by
+     accident. It counts the task's `qa_feedback` activity rows, one per bounce,
+     classified by the kind stamped on each; never probe the live block columns,
+     which a compliant resubmission wipes exactly when the breaker must fire.
+
+     On TRIPPED, do not re-block to the builder — escalate the deadlock to the
+     operator instead: `bin/task block <task-slug> --kind dependency --summary
+     "Escalated: <4-6 word disagreement>" --feedback "<both positions, in brief>"
+     --agent carl`, and flag it **⚠ Escalated** in your final report. For a
+     MECHANICAL bounce (red CI, merge conflict — nothing to arbitrate), add
+     `--breaker-ack "red CI, mechanical"` and the rework block proceeds with the
+     reason recorded.
 
 7. **Release the review claim on your verdict** (the orchestrator that claimed it
    releases it; release it yourself if you claimed it directly):

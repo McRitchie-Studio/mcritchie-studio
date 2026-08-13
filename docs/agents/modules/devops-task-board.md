@@ -231,6 +231,15 @@ Post payloads should include `task_slug`, `activity_type`, `description`,
 optional `agent_slug`, and optional `metadata`. API calls require the app's API
 bearer token. The HTML task page remains the operator-friendly source of truth.
 
+⚠️ **PARSE THE BODY.** A hand-rolled read of this endpoint is a documented trap:
+`TaskBoard.request` returns a `Net::HTTPResponse`, and `Net::HTTPResponse#[]` is
+the HTTP **header** reader — so `response["data"]` is `nil`, `Array(nil)` is
+`[]`, and a row count comes out **0 with no error raised**. It cost the two-bounce
+circuit breaker its entire working life (`/tasks/circuit-breaker-check-always-zero`).
+Use `JSON.parse(response.body)`, check the status (a 401 has no rows either), and
+prefer an existing command over a fresh hand-roll: **`bin/task bounces <slug>`**
+counts prior send-backs and refuses to answer a read it could not make.
+
 ## Stage Flow
 
 > **Canonical stages (two-workflow model).** The live board runs **Build**

@@ -104,9 +104,24 @@
 #       --actor for a single owner (Avi QA → assembled, Steffon ship → shipped);
 #       repeat --reviewer for the senior pair (the review pair is normally recorded
 #       automatically by bin/reviewer-select, which records by default). )
-#   bin/task block <slug> [--kind environment|rework|dependency] [--feedback "..."] [--agent A]
+#   bin/task bounces <slug>
+#     ( THE TWO-BOUNCE CIRCUIT BREAKER's read — run it BEFORE a rework block.
+#       Counts the task's prior send-backs from its durable qa_feedback activity
+#       trail (never the live block columns: a compliant resubmission wipes those,
+#       so they read CLEAR exactly when the breaker must fire).
+#       Exit: 0 CLEAR — the ONLY exit that authorizes a re-block · 10 TRIPPED
+#       (escalate) · any other non-zero = a FAILED read (1) or an unknown slug (4),
+#       never a zero. It never prints a count it could not read; the recipe this
+#       replaced answered "0" for every task on earth, because it counted rows on
+#       an unparsed Net::HTTPResponse, whose #[] reads HTTP HEADERS. )
+#   bin/task block <slug> [--kind environment|rework|dependency] [--feedback "..."] [--agent A] [--breaker-ack "reason"]
 #     ( marks a `building` ATTRIBUTE: stamps blocked_at/blocked_from/blocked_by/
-#       block_kind (no →blocked stage) + posts a qa_feedback activity )
+#       block_kind (no →blocked stage) + posts a qa_feedback activity stamped with
+#       the kind, so the bounce ledger stays classifiable after the columns clear )
+#     ( --kind rework RUNS `bounces` FIRST and REFUSES (exit 10) when the breaker is
+#       tripped, naming the escalation. --breaker-ack "reason" proceeds anyway for a
+#       MECHANICAL bounce (red CI, merge conflict — nothing to arbitrate); the reason
+#       is recorded on the activity, so an override is evidence, not a bypass. )
 #   bin/task note <slug> --handoff "..." | --qa-feedback "..." | --clarification "..." | --comment "..." [--agent A] [--resolves-feedback]
 #     ( posts a task activity via POST /api/v1/activities; flags map to
 #       activity_type handoff/qa_feedback/clarification/comment. Repeatable +
@@ -143,6 +158,10 @@
 #      task" (HTTP 404 + the API's own "task not found" body). Never fired on a
 #      failed read: a Heroku router 404, a route-level 404, a 5xx, or a rejected
 #      flag all stay on 1, because the guard FREES a worktree on this code.
+#  10  REFUSED — a live holder refused `migration-lane acquire`, or the two-bounce
+#      circuit breaker refused `bounces` / `block --kind rework` (escalate, do not
+#      retry). Distinct from 1 so "the breaker says escalate" is never confused
+#      with "the read failed".
 #   1  everything else — transport/API failures, usage errors, rejected flags.
 
 require "net/http"
@@ -160,6 +179,7 @@ require_relative "../lib/cert_evidence"
 require_relative "../lib/stale_check"
 require_relative "../lib/feature_marker"
 require_relative "lib/task_board"
+require_relative "lib/bounce_ledger"
 require_relative "lib/task_column_fields"
 require_relative "lib/session_identity"
 require_relative "lib/projects_root"
@@ -523,6 +543,12 @@ end
 # contract in the header. Mirrored by bin/agent-worktree's TASK_NOT_FOUND_EXIT
 # (its fetch_task_record frees a desk on this code); keep the two in lockstep.
 EXIT_TASK_NOT_FOUND = 4
+
+# The two-bounce circuit breaker REFUSED this rework block (`bounces` reports the
+# same code when the breaker is tripped). Same "refused, do not retry-storm"
+# meaning `migration-lane` gives 10; distinct from 1 so a caller can tell "the
+# breaker says escalate" from "the read failed".
+EXIT_BREAKER_TRIPPED = 10
 
 def die!(msg, code: 1)
   warn!("error: #{msg}")
@@ -987,6 +1013,77 @@ def default_block_actor(task, kind)
   return "avi" if kind.to_s == "rework" && task.is_a?(Hash) && task["stage"].to_s == "submitted"
 
   nil
+end
+
+# ---------------------------------------------------------------------------
+# Two-bounce circuit breaker — the READ (bin/lib/bounce_ledger.rb owns the rules).
+#
+# This used to be prose in three SOPs telling each agent to GET the activities
+# endpoint and count the rows, and the hand-rolled form answered ZERO for every
+# task on the planet because Net::HTTPResponse#[] reads HTTP headers. Nobody
+# hand-rolls it now: the read lives here, and every failure raises instead of
+# counting.
+# ---------------------------------------------------------------------------
+
+# Pages the task's qa_feedback activities and returns a BounceLedger::Verdict.
+# Raises BounceLedger::UnreadableResponse on ANY answer it cannot trust. It does
+# NOT go through `api` on purpose: `api` uses TaskBoard.parse_body, whose lenient
+# `rescue {}` turns a non-JSON body into an empty hash — the exact "quietly answer
+# zero" shape this command exists to refuse.
+BOUNCE_PAGE_SIZE = 100
+BOUNCE_MAX_PAGES = 10
+
+def bounce_verdict(slug, verify_task: true)
+  # A TASK THAT DOES NOT EXIST MUST NOT READ AS CLEAR. The activities endpoint
+  # filters by task_slug and answers a 200 with an EMPTY data array for a slug
+  # nobody has ever heard of — so a typo, a renamed slug, or a stale handle scores
+  # zero bounces and green-lights the block. That is the same defect this whole
+  # command exists to kill, one layer out, and it is not hypothetical: the first
+  # smoke test of this command hit it. `api` die!s with EXIT_TASK_NOT_FOUND when
+  # the board POSITIVELY answers "no such task", so an unknown slug is refused
+  # rather than cleared. (`verify_task: false` exists for a caller that has already
+  # fetched the task and would only be paying for the round trip twice.)
+  api(:get, "/api/v1/tasks/#{slug}") if verify_task
+
+  rows = []
+  page = 1
+  loop do
+    query = URI.encode_www_form(task_slug: slug, activity_type: "qa_feedback",
+                                per_page: BOUNCE_PAGE_SIZE, page: page)
+    res = TaskBoard.request(:get, "/api/v1/activities?#{query}", base_url: BASE_URL, token: token)
+    payload = BounceLedger.payload_from(res)
+    rows.concat(BounceLedger.from_payload(payload).rows)
+
+    break unless BounceLedger.truncated?(payload)
+    break if (page += 1) > BOUNCE_MAX_PAGES
+  end
+  BounceLedger::Verdict.new(rows: rows)
+end
+
+def escalation_recipe(slug)
+  "bin/task block #{slug} --kind dependency \\\n" \
+  "    --summary \"Escalated: <4-6 word disagreement>\" \\\n" \
+  "    --feedback \"<builder's position vs review's position, in brief>\""
+end
+
+def print_bounce_verdict(slug, verdict)
+  if verdict.tripped?
+    puts "BREAKER: TRIPPED — #{verdict.count} prior send-back(s) on #{slug}"
+  else
+    puts "BREAKER: CLEAR — no prior send-back on #{slug} " \
+         "(#{verdict.rows.size} qa_feedback row(s) read, none countable)"
+  end
+  verdict.rows.each_with_index do |row, i|
+    mark = row.countable? ? "counts" : "not a bounce"
+    puts "  #{i + 1}. #{row.created_at} [#{row.kind}] #{row.summary} (#{mark})"
+  end
+  puts "  by kind: #{verdict.by_kind.map { |k, n| "#{k} #{n}" }.join(", ")}" unless verdict.rows.empty?
+  return unless verdict.tripped?
+
+  puts ""
+  puts "  A repeat bounce is a review DEADLOCK, and a deadlock is the operator's call."
+  puts "  Do NOT re-block to the builder. Escalate instead:"
+  puts "    #{escalation_recipe(slug)}"
 end
 
 def resolved_block_actor(explicit_agent, task, kind: nil)
@@ -1735,10 +1832,26 @@ when "session-mascot"
   rescue SystemExit, StandardError
     nil # best-effort: never disrupt session start
   end
-when "block"
-  usage = "usage: bin/task block <slug> [--kind environment|rework|dependency] [--summary \"4-6 words\"] [--feedback \"...\"] [--agent A]"
+when "bounces"
+  usage = "usage: bin/task bounces <slug>"
   slug = positional!(ARGV.shift || die!(usage), usage)
-  kind = feedback = summary = agent = nil
+  unknown_flag!(ARGV[0], valid: [], context: "bounces") unless ARGV.empty?
+  begin
+    verdict = bounce_verdict(slug)
+  rescue BounceLedger::UnreadableResponse => e
+    # UNKNOWN is NOT clear. This is the whole point of the command: the failure
+    # mode it replaces answered "0 prior bounces" here and let the review proceed.
+    warn!("BREAKER: UNKNOWN — could not read the bounce ledger for #{slug}")
+    warn!("  #{e.message}")
+    warn!("  Treat UNKNOWN as NOT CLEAR: fix the read, or escalate. Never proceed as if it were zero.")
+    exit 1
+  end
+  print_bounce_verdict(slug, verdict)
+  exit(verdict.tripped? ? EXIT_BREAKER_TRIPPED : 0)
+when "block"
+  usage = "usage: bin/task block <slug> [--kind environment|rework|dependency] [--summary \"4-6 words\"] [--feedback \"...\"] [--agent A] [--breaker-ack \"reason\"]"
+  slug = positional!(ARGV.shift || die!(usage), usage)
+  kind = feedback = summary = agent = breaker_ack = nil
   i = 0
   while i < ARGV.length
     case ARGV[i]
@@ -1747,10 +1860,42 @@ when "block"
     # --feedback is the details body; --details is an alias for it.
     when "--feedback", "--details" then feedback = ARGV[i + 1] || die!("#{ARGV[i]} needs a value"); i += 2
     when "--agent"                 then agent = ARGV[i + 1] || die!("--agent needs a value"); i += 2
-    else unknown_flag!(ARGV[i], valid: %w[--kind --summary --feedback --details --agent], context: "block")
+    when "--breaker-ack"           then breaker_ack = ARGV[i + 1] || die!("--breaker-ack needs a value"); i += 2
+    else unknown_flag!(ARGV[i], valid: %w[--kind --summary --feedback --details --agent --breaker-ack], context: "block")
     end
   end
   die!("--kind must be one of: #{BLOCK_KINDS.join(", ")}") if kind && !BLOCK_KINDS.include?(kind)
+  die!("--breaker-ack only applies to --kind rework") if breaker_ack && kind != "rework"
+  # THE BREAKER FIRES HERE, before the block lands — a warning printed after the
+  # bounce is recorded is a receipt, not a safety mechanism. Only `rework` is
+  # gated: `dependency` IS the escalation this refusal routes you to, and
+  # `environment` is a blocked desk, not a send-back.
+  if kind == "rework"
+    begin
+      breaker = bounce_verdict(slug)
+    rescue BounceLedger::UnreadableResponse => e
+      # No silent pass. This costs nothing a caller did not already owe: the block
+      # itself needs the same token and the same board, so an unreadable ledger
+      # means the PATCH two lines below was going to fail anyway.
+      die!("could not read the bounce ledger for #{slug}, so the two-bounce circuit " \
+           "breaker cannot be evaluated: #{e.message}")
+    end
+    if breaker.tripped? && breaker_ack.to_s.strip.empty?
+      warn!("BREAKER: TRIPPED — #{breaker.count} prior send-back(s) on #{slug}; this block would be the next one.")
+      breaker.rows.each_with_index do |row, n|
+        warn!("  #{n + 1}. #{row.created_at} [#{row.kind}] #{row.summary}#{row.countable? ? "" : " (not a bounce)"}")
+      end
+      warn!("")
+      warn!("  A repeat bounce is a review DEADLOCK, and a deadlock is the operator's call, never a ping-pong.")
+      warn!("  Escalate instead:")
+      warn!("    #{escalation_recipe(slug)}")
+      warn!("")
+      warn!("  If this bounce is MECHANICAL and not a disagreement (red CI, a merge conflict, a")
+      warn!("  dirty base — nothing for the operator to arbitrate), say so and it proceeds:")
+      warn!("    bin/task block #{slug} --kind rework ... --breaker-ack \"red CI, mechanical\"")
+      exit EXIT_BREAKER_TRIPPED
+    end
+  end
   current = api(:get, "/api/v1/tasks/#{slug}")["data"]
   event = { "source" => "cli" }
   blocker = resolved_block_actor(agent, current, kind: kind)
@@ -1770,7 +1915,17 @@ when "block"
     # The 4-6 word summary rides in the activity's metadata (no column, no
     # migration). The details stay in `description`; Activity#block_summary reads
     # this back and falls back to a derived headline for legacy blocks.
-    note["metadata"] = { "summary" => summary.strip } if summary && !summary.strip.empty?
+    metadata = {}
+    metadata["summary"] = summary.strip if summary && !summary.strip.empty?
+    # STAMP THE KIND. The block COLUMNS (block_kind) are wiped by a compliant
+    # resubmission, so this row is the only durable record of what kind of block
+    # this was — and without it the circuit breaker cannot tell a send-back from
+    # an environment blocker or from its own escalation, and counts all three the
+    # same. bin/lib/bounce_ledger.rb reads it back; rows written before this
+    # classify as `unknown` and still count (fail safe).
+    metadata["kind"] = kind if kind
+    metadata["breaker_ack"] = breaker_ack.strip if breaker_ack && !breaker_ack.strip.empty?
+    note["metadata"] = metadata unless metadata.empty?
     api(:post, "/api/v1/activities", note)
     puts "noted [qa_feedback] on #{slug}"
   end

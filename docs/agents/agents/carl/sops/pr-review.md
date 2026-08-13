@@ -273,25 +273,22 @@ doc).
   flips red mid-review is caught by Carl's `--gate-role review` gate-zero and
   blocked back here.)
 
-  **Two-bounce circuit breaker.** Before blocking, count the task's prior
-  send-backs in its ACTIVITY history — never in the live block columns: a
-  compliant resubmission resolves the open feedback and the forward move wipes
-  `blocked_at`/`block_kind`, so the live block state is CLEAR exactly when the
-  breaker must fire. `bin/task show --verbose` does not surface those columns at
-  all, so its silence is not evidence either way — do not read it as "never
-  blocked". The durable trail is the task's `qa_feedback`
-  activities — read it with the same bearer auth as every board call (the task
-  page timeline renders the same rows for a human check):
+  **Two-bounce circuit breaker.** A repeat bounce is a review deadlock, and a
+  deadlock is the operator's call, never a ping-pong (the record: one task
+  bounced 5× before this rule). `bin/task block --kind rework` therefore runs the
+  breaker itself and **REFUSES** the second bounce. Read it yourself before you
+  compose the block:
 
-  ```text
-  GET /api/v1/activities?task_slug=<task>&activity_type=qa_feedback
+  ```bash
+  bin/task bounces <task>
   ```
 
-  Each returned activity is one prior send-back. If one or more exist — this
-  would be the **second** rework block — do not
-  re-block to the builder — a repeat bounce is a review deadlock, and a deadlock
-  is the operator's call, never a ping-pong (the record: one task bounced 5×
-  before this rule). Instead:
+  **Exit 0 = CLEAR is the only exit that authorizes a re-block.** 10 = TRIPPED
+  (escalate). Any other non-zero = the read FAILED (bad token, board error) or the
+  slug is unknown — **not** a clear, and never to be treated as zero. That is the
+  exact defect this command replaced (see the note below).
+
+  On **TRIPPED**, escalate rather than re-blocking:
 
   ```bash
   bin/task block <task> --kind dependency --summary "Escalated: <4-6 word disagreement>" \
@@ -299,6 +296,28 @@ doc).
   ```
 
   and surface it to Mr. McRitchie in the wave report as an **⚠ Escalated** line.
+
+  If the bounce is **mechanical** — red CI, a merge conflict, a dirty base;
+  nothing for the operator to arbitrate — say so and the block proceeds, with the
+  reason recorded on the row: `--breaker-ack "red CI, mechanical"`.
+
+  **Why it is a command and not a recipe.** It used to be four lines of prose
+  telling you to `GET /api/v1/activities?...&activity_type=qa_feedback` and count
+  the rows, and every hand-rolled copy counted them on the **unparsed
+  `Net::HTTPResponse`** — where `response["data"]` reads an HTTP *header*, returns
+  nil, and yields **0 prior bounces for every task on earth**, silently. The
+  breaker looked like it was working for as long as it existed. Two more reads
+  scored zero the same way: an expired token (401) and a non-JSON error page.
+  `bin/task bounces` refuses all three instead of answering.
+
+  What it reads, and what it never reads: the durable trail is the task's
+  `qa_feedback` **activities**, one row per bounce, classified by the `kind`
+  stamped on each row. Never probe the live block columns — a compliant
+  resubmission resolves the open feedback and the forward move wipes
+  `blocked_at`/`block_kind`, so the live block state is CLEAR exactly when the
+  breaker must fire. `bin/task show --verbose` does not surface those columns at
+  all, so its silence is not evidence either way. The task page timeline renders
+  the same rows for a human check.
 
 - **Wait-for-CI or low-confidence** — a CI that flips to pending mid-review defers:
   release the claim and re-query on a later wave. On low confidence, Carl routes to
