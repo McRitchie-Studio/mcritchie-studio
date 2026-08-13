@@ -104,21 +104,26 @@ module Api
       test "show publishes the holder-scoped liveness facts the lease decision reads" do
         now = Time.current
         task = tasks(:in_progress_task)
-        task.update!(metadata: { "devops" => ClaimLease.renewed(session: "sess-holder", nonce: "inst-A", now: now) })
+        # UUID-shaped on purpose: Task#disowned? reads an actor matching
+        # Task::SOUL_SLUG as an unknown owner, so a soul-shaped stand-in like
+        # "sess-challenger" would take that branch and stop testing this one.
+        holder = "s1d0f2a3-4b5c-4d6e-8f90-a1b2c3d4e5f6"
+        challenger = "s3f2a4c5-6d7e-4f80-9b12-c3d4e5f6a7b8"
+        task.update!(metadata: { "devops" => ClaimLease.renewed(session: holder, nonce: "inst-A", now: now) })
         TaskEvent.where(task_slug: task.slug).delete_all
         GateRun.where(subject_slug: task.slug).delete_all
         # The holder's last sign of life is older than the idle window.
         TaskEvent.create!(task_slug: task.slug, kind: TaskEvent::CHECKPOINT,
                           occurred_at: now - (ClaimLease::DESK_IDLE_SECONDS + 10.minutes),
                           from_stage: "building", to_stage: "cert",
-                          metadata: { "status" => "passed", "session" => "sess-holder" })
+                          metadata: { "status" => "passed", "session" => holder })
         # A queued CHALLENGER certifies the held slug: a checkpoint and an open gate.
         TaskEvent.create!(task_slug: task.slug, kind: TaskEvent::CHECKPOINT, occurred_at: now - 2.minutes,
                           from_stage: "building", to_stage: "cert",
-                          metadata: { "status" => "started", "session" => "sess-challenger" })
+                          metadata: { "status" => "started", "session" => challenger })
         GateRun.create!(subject_type: "task", subject_slug: task.slug, key: "g1_cert", attempt: 1,
                         started_at: now - 2.minutes, finished_at: nil,
-                        metadata: { "session" => "sess-challenger" })
+                        metadata: { "session" => challenger })
 
         get api_v1_task_path(task.slug), headers: @headers
 

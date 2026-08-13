@@ -1515,13 +1515,28 @@ class Task < ApplicationRecord
     evidence
   end
 
-  # Is this row DEMONSTRABLY not the holder's? True only when the row names an
-  # owner AND that owner is a different session. An unsigned row answers false —
-  # unknown, which protects the holder (see the reaping note above). With no
-  # holder on the claim nothing is disowned, so the answer degrades to "keep".
+  # Is this row DEMONSTRABLY not the holder's? True only when the row names a
+  # DIFFERENT SESSION. Everything else answers false — unknown, which protects the
+  # holder (see the reaping note above). With no holder on the claim nothing is
+  # disowned, so the answer degrades to "keep".
+  #
+  # A SOUL SLUG IS NOT A SESSION, and this is the trap worth naming: progress_actor
+  # falls back to `actor`, which a block fills with a soul ("carl") and
+  # bin/pr-review passes soul slugs through. A soul and a session id live in
+  # different namespaces, so `"carl" != "8d632410-…"` is true for a reason that has
+  # nothing to do with WHO acted — comparing them would mark every soul-attributed
+  # row as a stranger's and reap a holder on it. A soul name cannot establish that a
+  # row belongs to a different session, which makes it an unknown like any other.
+  #
+  # The incident is untouched by this: bin/gate and bin/task checkpoint stamp
+  # metadata["session"] with a session id, and progress_actor prefers it, so a
+  # challenger's cert is still demonstrably the challenger's.
   def disowned?(row)
     actor = progress_actor(row)
-    actor.present? && claimed_session_id.present? && actor != claimed_session_id
+    return false if actor.blank? || claimed_session_id.blank?
+    return false if actor.match?(SOUL_SLUG)
+
+    actor != claimed_session_id
   end
 
   # The newest artifact not demonstrably someone else's — the reaping counterpart

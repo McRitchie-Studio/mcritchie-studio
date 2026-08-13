@@ -18,10 +18,18 @@
 require "test_helper"
 
 class TaskBuildClaimInvariantTest < ActiveSupport::TestCase
+  # Session ids are UUIDs, and that SHAPE is load-bearing: Task#disowned? treats an
+  # actor matching Task::SOUL_SLUG (carl, shannon — what a block and bin/pr-review
+  # write) as an unknown owner rather than a stranger. A soul-shaped stand-in like
+  # "sess-holder" would take that branch and quietly stop testing the real one.
+  HOLDER = "s1d0f2a3-4b5c-4d6e-8f90-a1b2c3d4e5f6"
+  STEALER = "s2e1f3b4-5c6d-4e7f-9a01-b2c3d4e5f6a7"
+  CHALLENGER = "s3f2a4c5-6d7e-4f80-9b12-c3d4e5f6a7b8"
+
   setup do
     @now = Time.current
     @task = tasks(:in_progress_task) # stage: building
-    @claim = ClaimLease.renewed(session: "sess-holder", nonce: "inst-A", now: @now)
+    @claim = ClaimLease.renewed(session: HOLDER, nonce: "inst-A", now: @now)
     @task.update!(metadata: { "devops" => { "kind" => "feature" }.merge(@claim) })
     TaskEvent.where(task_slug: @task.slug).delete_all
     GateRun.where(subject_slug: @task.slug).delete_all
@@ -46,7 +54,7 @@ class TaskBuildClaimInvariantTest < ActiveSupport::TestCase
   # Preserving is not extending. The lease keeps lapsing on its own TTL clock —
   # restoring an omitted key must never push the expiry out.
   test "preserving an omitted claim does not renew its lease" do
-    lapsed = ClaimLease.renewed(session: "sess-holder", nonce: "inst-A", now: @now - 10.minutes)
+    lapsed = ClaimLease.renewed(session: HOLDER, nonce: "inst-A", now: @now - 10.minutes)
     @task.update!(metadata: { "devops" => { "kind" => "feature" }.merge(lapsed) })
 
     @task.update!(metadata: { "devops" => { "kind" => "feature" } })
@@ -58,10 +66,10 @@ class TaskBuildClaimInvariantTest < ActiveSupport::TestCase
 
   # An explicit re-claim still wins — preservation only fills what was omitted.
   test "an incoming claim overwrites the stored one" do
-    fresh = ClaimLease.renewed(session: "sess-stealer", nonce: "inst-B", now: @now)
+    fresh = ClaimLease.renewed(session: STEALER, nonce: "inst-B", now: @now)
     @task.update!(metadata: { "devops" => { "kind" => "feature" }.merge(fresh) })
 
-    assert_equal "sess-stealer", claim_keys["claimed_session"]
+    assert_equal STEALER, claim_keys["claimed_session"]
     assert_equal "inst-B", claim_keys["claim_nonce"]
   end
 
@@ -73,10 +81,10 @@ class TaskBuildClaimInvariantTest < ActiveSupport::TestCase
   # and the two-terminals guard would then be comparing one agent's identity
   # against another's.
   test "a claim naming a different session never inherits the previous holders nonce" do
-    stolen = { "claimed_session" => "sess-stealer", "claim_expires_at" => (@now + 120).utc.iso8601 }
+    stolen = { "claimed_session" => STEALER, "claim_expires_at" => (@now + 120).utc.iso8601 }
     @task.update!(metadata: { "devops" => { "kind" => "feature" }.merge(stolen) })
 
-    assert_equal "sess-stealer", claim_keys["claimed_session"]
+    assert_equal STEALER, claim_keys["claimed_session"]
     assert_nil claim_keys["claim_nonce"], "one instance's token must never ride another instance's claim"
     assert_equal stolen["claim_expires_at"], claim_keys["claim_expires_at"],
                  "and the stealer's own lease stands, not the previous holder's"
@@ -109,7 +117,7 @@ class TaskBuildClaimInvariantTest < ActiveSupport::TestCase
   # stage to move: a save of any kind re-asserts it.
   test "a non-building task sheds a stale claim on any save" do
     @task.update_columns(stage: "submitted") # bypass callbacks: seed the bad row
-    assert_equal "sess-holder", @task.reload.devops["claimed_session"], "precondition: the stale claim is on the row"
+    assert_equal HOLDER, @task.reload.devops["claimed_session"], "precondition: the stale claim is on the row"
 
     @task.update!(title: "Retitled Task Here")
 
@@ -142,9 +150,9 @@ class TaskBuildClaimInvariantTest < ActiveSupport::TestCase
   # a g1_cert on a task it does not hold; the holder has produced nothing. The
   # holder-scoped fact must stay EMPTY rather than absorb the challenger's work.
   test "a challengers cert is not counted as the holders progress" do
-    gate!(session: "sess-challenger", at: @now - 2.minutes)
+    gate!(session: CHALLENGER, at: @now - 2.minutes)
 
-    assert_equal "sess-challenger", @task.last_progress_actor
+    assert_equal CHALLENGER, @task.last_progress_actor
     assert_in_delta 120, @task.progress_seconds_ago(now: @now), 5, "the task did see an artifact"
     assert_nil @task.holder_progress_seconds_ago(now: @now),
                "the holder produced nothing — crediting it would manufacture the evidence for its own lease"
@@ -152,7 +160,7 @@ class TaskBuildClaimInvariantTest < ActiveSupport::TestCase
   end
 
   test "the holders own artifact is reported as the holders progress" do
-    checkpoint!(session: "sess-holder", at: @now - 30.minutes)
+    checkpoint!(session: HOLDER, at: @now - 30.minutes)
 
     assert_in_delta 1_800, @task.holder_progress_seconds_ago(now: @now), 5
     assert_equal "cert passed", @task.holder_progress_label
@@ -160,10 +168,10 @@ class TaskBuildClaimInvariantTest < ActiveSupport::TestCase
 
   # The holder's own progress is found even when someone else's artifact is newer.
   test "a newer foreign artifact does not hide the holders older one" do
-    checkpoint!(session: "sess-holder", at: @now - 30.minutes)
-    gate!(session: "sess-challenger", at: @now - 2.minutes)
+    checkpoint!(session: HOLDER, at: @now - 30.minutes)
+    gate!(session: CHALLENGER, at: @now - 2.minutes)
 
-    assert_equal "sess-challenger", @task.last_progress_actor, "the newest artifact is still reported as theirs"
+    assert_equal CHALLENGER, @task.last_progress_actor, "the newest artifact is still reported as theirs"
     assert_in_delta 1_800, @task.holder_progress_seconds_ago(now: @now), 5,
                     "the holder's own progress is its own, whatever landed after it"
   end
@@ -180,17 +188,17 @@ class TaskBuildClaimInvariantTest < ActiveSupport::TestCase
   # attribution works without any new plumbing on the oldest evidence path.
   test "a stage moves actor attributes it to the moving session" do
     TaskEvent.create!(task_slug: @task.slug, kind: TaskEvent::TRANSITION, occurred_at: @now - 5.minutes,
-                      from_stage: "designed", to_stage: "building", actor: "sess-holder")
+                      from_stage: "designed", to_stage: "building", actor: HOLDER)
 
-    assert_equal "sess-holder", @task.last_progress_actor
+    assert_equal HOLDER, @task.last_progress_actor
     assert_in_delta 300, @task.holder_progress_seconds_ago(now: @now), 5
   end
 
   # The board chip asks the same question the gate does, so it must not be
   # answerable with someone else's work either.
   test "a challengers cert does not make a quiet holder read as healthy" do
-    checkpoint!(session: "sess-holder", at: @now - (ClaimLease::PROGRESS_QUIET_SECONDS + 30.minutes))
-    gate!(session: "sess-challenger", at: @now - 2.minutes)
+    checkpoint!(session: HOLDER, at: @now - (ClaimLease::PROGRESS_QUIET_SECONDS + 30.minutes))
+    gate!(session: CHALLENGER, at: @now - 2.minutes)
 
     assert @task.claim_progress_quiet?(now: @now),
            "the holder has been silent for longer than the threshold — a stranger's cert does not revive it"
@@ -227,9 +235,9 @@ class TaskBuildClaimInvariantTest < ActiveSupport::TestCase
   # Task-wide both signals now say "busy", and reading them renewed the dead lease
   # for another 1h29m. The lease must still reap.
   test "a challengers own cert does not revive an abandoned lease" do
-    checkpoint!(session: "sess-holder", at: @now - (ClaimLease::DESK_IDLE_SECONDS + 10.minutes))
-    checkpoint!(session: "sess-challenger", at: @now - 2.minutes)
-    open_gate!(session: "sess-challenger", at: @now - 2.minutes)
+    checkpoint!(session: HOLDER, at: @now - (ClaimLease::DESK_IDLE_SECONDS + 10.minutes))
+    checkpoint!(session: CHALLENGER, at: @now - 2.minutes)
+    open_gate!(session: CHALLENGER, at: @now - 2.minutes)
 
     assert @task.gate_in_flight?(now: @now), "precondition: task-wide, a gate IS running"
     assert_in_delta 120, @task.progress_seconds_ago(now: @now), 5, "precondition: task-wide, progress IS recent"
@@ -242,8 +250,8 @@ class TaskBuildClaimInvariantTest < ActiveSupport::TestCase
   # cert writes nothing into the desk for up to the measured 94-minute p99, so a
   # holder mid-cert looks identical to a walked-away terminal from the desk alone.
   test "a holder mid cert with a silent desk is not reaped" do
-    checkpoint!(session: "sess-holder", at: @now - (ClaimLease::DESK_IDLE_SECONDS + 10.minutes))
-    open_gate!(session: "sess-holder", at: @now - 20.minutes)
+    checkpoint!(session: HOLDER, at: @now - (ClaimLease::DESK_IDLE_SECONDS + 10.minutes))
+    open_gate!(session: HOLDER, at: @now - 20.minutes)
 
     assert @task.holder_gate_in_flight?(now: @now), "the holder's own cert is running"
     refute reaps?, "reaping a holder mid-certification is the expensive error, and this is it"
@@ -253,7 +261,7 @@ class TaskBuildClaimInvariantTest < ActiveSupport::TestCase
   # names nobody. Nobody is not "somebody else", and reading a missing field as
   # proof of absence would evict a live worker on a schema gap.
   test "an unsigned gate in flight still protects the holder" do
-    checkpoint!(session: "sess-holder", at: @now - (ClaimLease::DESK_IDLE_SECONDS + 10.minutes))
+    checkpoint!(session: HOLDER, at: @now - (ClaimLease::DESK_IDLE_SECONDS + 10.minutes))
     open_gate!(session: nil, at: @now - 20.minutes)
 
     assert @task.holder_gate_in_flight?(now: @now), "an unattributed gate is an unknown, and unknowns protect"
@@ -266,16 +274,31 @@ class TaskBuildClaimInvariantTest < ActiveSupport::TestCase
   # ivar — so a second scenario in the same test would silently assert against the
   # first one's cached answer.
   test "an unsigned artifact keeps the holders liveness clock warm" do
-    checkpoint!(session: "sess-holder", at: @now - (ClaimLease::DESK_IDLE_SECONDS + 10.minutes))
+    checkpoint!(session: HOLDER, at: @now - (ClaimLease::DESK_IDLE_SECONDS + 10.minutes))
     checkpoint!(session: nil, at: @now - 3.minutes)
 
     assert_in_delta 180, @task.holder_liveness_seconds_ago(now: @now), 5, "nobody's work might be the holder's"
     refute reaps?, "an unknown owner may never be the reason a desk is freed"
   end
 
+  # A SOUL SLUG IS NOT A SESSION. `actor` carries a soul on a block and on
+  # bin/pr-review's gate rows, and "carl" differs from a session UUID for a reason
+  # that says nothing about who acted. Comparing the two namespaces would mark
+  # every soul-attributed row a stranger's and reap the holder on it — the same
+  # "unknown read as absence" this guard exists to refuse.
+  test "a soul attributed artifact is an unknown owner rather than a stranger" do
+    checkpoint!(session: HOLDER, at: @now - (ClaimLease::DESK_IDLE_SECONDS + 10.minutes))
+    TaskEvent.create!(task_slug: @task.slug, kind: TaskEvent::TRANSITION, occurred_at: @now - 3.minutes,
+                      from_stage: "building", to_stage: "building", actor: "carl")
+
+    assert_in_delta 180, @task.holder_liveness_seconds_ago(now: @now), 5,
+                    "a soul name cannot prove the row belongs to another session"
+    refute reaps?
+  end
+
   test "a challengers artifact does not keep the holders liveness clock warm" do
-    checkpoint!(session: "sess-holder", at: @now - (ClaimLease::DESK_IDLE_SECONDS + 10.minutes))
-    checkpoint!(session: "sess-challenger", at: @now - 3.minutes)
+    checkpoint!(session: HOLDER, at: @now - (ClaimLease::DESK_IDLE_SECONDS + 10.minutes))
+    checkpoint!(session: CHALLENGER, at: @now - 3.minutes)
 
     assert_operator @task.holder_liveness_seconds_ago(now: @now), :>, ClaimLease::DESK_IDLE_SECONDS,
                     "a named stranger's work is demonstrably not the holder's"
