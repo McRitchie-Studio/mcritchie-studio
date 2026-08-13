@@ -478,4 +478,70 @@ class ClaimLeaseTest < Minitest::Test
                     "a threshold above the median abandoned gap frees nothing — the lease outlives the session again"
     assert ClaimLease.abandoned?(desk_touched: false, progress_age: typical)
   end
+
+  # --- too_young_to_abandon?: a desk cannot be idle longer than it has existed ---
+  #
+  # The floor under the reclaim guard. A brand-new worktree is git-identical to a
+  # merged one — clean, nothing ahead of base — so `cleanup --reclaim`'s git test
+  # passes on it vacuously, and on 2026-08-13 a sweep destroyed a live desk on the
+  # strength of that pass. Age is the one channel that separates "nobody has written
+  # here YET" from "nobody will write here again".
+
+  def test_a_newborn_desk_is_too_young_to_call_abandoned
+    assert ClaimLease.too_young_to_abandon?(30),
+           "a desk half a minute old has not had time to be abandoned, however clean it looks"
+  end
+
+  def test_a_desk_older_than_the_idle_window_is_old_enough_to_judge
+    refute ClaimLease.too_young_to_abandon?(ClaimLease::DESK_IDLE_SECONDS + 1),
+           "past the idle window, age stops protecting and the other channels decide — " \
+           "a floor that never lifts is a guard that never frees anything"
+  end
+
+  # THE THRESHOLD IS THE SAME ONE, asserted as a property rather than a number.
+  # abandoned? means "silent for DESK_IDLE_SECONDS"; a desk younger than that has
+  # not existed long enough to have produced that silence. If these two ever drift
+  # apart, one of them is asserting more than the evidence carries.
+  def test_the_floor_is_exactly_the_idle_window_it_is_derived_from
+    boundary = ClaimLease::DESK_IDLE_SECONDS
+
+    assert ClaimLease.too_young_to_abandon?(boundary - 1)
+    refute ClaimLease.too_young_to_abandon?(boundary)
+  end
+
+  def test_an_undatable_desk_keeps_itself
+    assert ClaimLease.too_young_to_abandon?(nil),
+           "unknown age must resolve to KEEP, so a caller that forgets to check nil still fails safe"
+  end
+
+  # --- holder_scoped: one notion of 'is the holder working', two consumers ------
+  #
+  # bin/task's heartbeat and bin/agent-worktree's reclaim guard read the same board
+  # payload for the same fact. A MISSING key is an older board (an unknown), and the
+  # task-wide fallback is the conservative direction — it counts everyone's work, so
+  # it can only keep a desk, never free one.
+
+  def test_holder_scoped_prefers_the_holder_fact_when_the_board_publishes_one
+    task = { "holder_liveness_seconds_ago" => 30, "progress_seconds_ago" => 9_000 }
+
+    assert_equal 30, ClaimLease.holder_scoped(task, "holder_liveness_seconds_ago", "progress_seconds_ago")
+  end
+
+  def test_holder_scoped_falls_back_to_the_task_wide_twin_on_an_older_board
+    task = { "progress_seconds_ago" => 9_000 }
+
+    assert_equal 9_000, ClaimLease.holder_scoped(task, "holder_liveness_seconds_ago", "progress_seconds_ago")
+  end
+
+  # PRESENT-AND-NIL is a real answer ("nothing has ever landed here"), not a missing
+  # key, and must pass through as one rather than silently reaching for the twin.
+  def test_a_present_nil_holder_fact_is_an_answer_not_a_missing_key
+    task = { "holder_liveness_seconds_ago" => nil, "progress_seconds_ago" => 9_000 }
+
+    assert_nil ClaimLease.holder_scoped(task, "holder_liveness_seconds_ago", "progress_seconds_ago")
+  end
+
+  def test_holder_scoped_survives_a_nil_payload
+    assert_nil ClaimLease.holder_scoped(nil, "holder_gate_in_flight", "gate_in_flight")
+  end
 end

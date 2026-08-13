@@ -375,13 +375,12 @@ def progress_line(task, challenger: nil)
 end
 
 # A holder-scoped liveness fact, falling back to its task-wide twin when the board
-# does not publish one. A MISSING key means an older board, which is an unknown —
-# and the fallback is the conservative direction, because the task-wide signals are
-# strictly more protective (they count everyone's work, so they can only keep a
-# desk, never free one). A key that is present and nil is a real answer and is
-# passed through as one.
+# does not publish one — see ClaimLease.holder_scoped for why the fallback is the
+# conservative direction. It lives in the shared module because bin/agent-worktree's
+# reclaim guard asks the same question of the same payload about a DIRECTORY, and
+# two spellings of "is the holder working" is how those two answers drift apart.
 def holder_scoped(task, holder_key, task_wide_key)
-  task.key?(holder_key) ? task[holder_key] : task[task_wide_key]
+  ClaimLease.holder_scoped(task, holder_key, task_wide_key)
 end
 
 # Has the holder walked away? Gathers the four independent channels ClaimLease

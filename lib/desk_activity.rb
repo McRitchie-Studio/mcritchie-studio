@@ -22,14 +22,20 @@ require "json"
 #
 # The signal that actually tracked the truth was the FILESYSTEM. An agent that is
 # working writes files into its desk; an agent that has walked away does not. So
-# this module answers exactly one question, from mtimes:
+# this module answers questions about a desk from the filesystem alone:
 #
-#   DeskActivity.touched_since?(root, cutoff) → true | false | nil
+#   DeskActivity.touched_since?(root, cutoff) → true | false | nil   (is it being worked?)
+#   DeskActivity.age_seconds(root)            → Float | nil          (how old is it?)
 #
-# and the third answer is load-bearing. `nil` means WE COULD NOT TELL, and every
-# consumer must treat it as "assume the holder is alive". Absence of evidence is
+# and in both, the `nil` answer is load-bearing. `nil` means WE COULD NOT TELL, and
+# every consumer must treat it as "assume the holder is alive". Absence of evidence is
 # never evidence of absence — that is the rule this whole family of bugs keeps
 # breaking (see the phantom shift lease and the phantom BUILD claim before it).
+#
+# Age joined the module on 2026-08-13, when `cleanup --reclaim` destroyed a live desk
+# a builder had just created: a brand-new worktree is git-identical to a merged one
+# (clean, nothing ahead of base), so the git test that guards reclaim passes on it
+# VACUOUSLY. See age_seconds for why it is a separate channel from the mtimes.
 module DeskActivity
   # Directories whose mtimes are MACHINE churn, not agent work. Pruning these is
   # the difference between a liveness signal and a second status line.
@@ -107,6 +113,43 @@ module DeskActivity
     end
 
     false
+  end
+
+  # Seconds since this desk was CREATED, or nil when we cannot tell.
+  #
+  # WHY AGE IS A CHANNEL AT ALL, next to the mtimes above. `git worktree add` writes
+  # every file of the checkout, so a desk born minutes ago normally answers
+  # `touched_since? => true` on its own creation and needs no second signal. Age is the
+  # FLOOR under that answer: it needs no walk, no prune list, and no assumption about
+  # how the checkout got populated — a half-allocated desk (worktree created, stack and
+  # bind-task failed, which the Redis band ceiling produced repeatedly on 2026-08-13)
+  # may have almost nothing in it, and this still dates it.
+  #
+  # THE BIRTHDAY IS THE `.git` FILE. In a worktree, `.git` is a regular FILE holding
+  # `gitdir: …`, written once by `git worktree add` and not rewritten in ordinary use.
+  # `git worktree repair`/`move` do rewrite it, which makes the desk read YOUNGER than
+  # it is — the direction that KEEPS a desk, so the error is the safe one. (`.git` is
+  # on PRUNED_DIRS above for the mtime walk, and rightly so: bin/statusline runs git on
+  # every paint and touches the index. That prune is about the `.git` DIRECTORY's
+  # contents churning; this reads the pointer FILE's own mtime, which the status line
+  # never writes.)
+  #
+  # A `.git` DIRECTORY means a primary checkout rather than a worktree desk, and its
+  # mtime is not a birthday at all — that answers nil (unknown), never a guess.
+  def self.age_seconds(root, now: Time.now)
+    root = root.to_s
+    return nil if root.empty?
+
+    stat =
+      begin
+        File.lstat(File.join(root, ".git"))
+      rescue SystemCallError
+        return nil
+      end
+    return nil unless stat.file?
+
+    age = now - stat.mtime
+    age.negative? ? 0.0 : age # a clock skew reads as newborn, which KEEPS the desk
   end
 
   # Path-prefix prune, matched on the path RELATIVE to the desk root — so a desk

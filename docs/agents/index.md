@@ -696,10 +696,15 @@ to the delete-later ledger. Actual removal stays approval-gated and should use
 `bin/agent-worktree remove <app> <task-slug> --yes` so stack stop, ledger
 update, Git worktree removal, local branch deletion, and registry refresh happen
 together. `cleanup --reclaim` is the scale-down-on-close batch flow: the dry run
-lists every worktree SAFE to auto-release (clean + merged/main-equivalent, never
-the primary) with its Redis DB, and `cleanup --reclaim --yes` runs that same full
-`remove` teardown for each candidate, then shrinks the Redis band toward the
-floor. See `mcritchie-studio/docs/agents/modules/worktrees.md`.
+lists every worktree SAFE to auto-release (clean + merged/main-equivalent +
+unoccupied, never the primary) with its Redis DB, and `cleanup --reclaim --yes`
+runs that same full `remove` teardown for each candidate, then shrinks the Redis
+band toward the floor. Git eligibility alone is NOT the safety rule — a fresh
+desk is git-identical to a merged one, and reclaiming on that once destroyed a
+live builder's desk — so a desk younger than 1h29m, one being written to, or one
+whose holder has a gate in flight is withheld, and finished desks linger that
+long before the sweep takes them. See
+`mcritchie-studio/docs/agents/modules/worktrees.md`.
 
 The worktree launcher uses an elastic Redis band starting at DB `9`. The band
 idles at `20` slots, auto-grows by `10` (restart-free) when full while physical
