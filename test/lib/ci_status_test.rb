@@ -1012,14 +1012,24 @@ class CiStatusTest < Minitest::Test
     credentials = CiStatus.parse("gh: Bad credentials (HTTP 401)")
     assert_equal :credentials, credentials[:cause]
     credential_remedy = CiStatus.unreadable_remedy(repo, cause: credentials[:cause])
-    # The remedy must name the recovery that WORKS post-migration. `gh auth login
-    # --with-token` fed from bin/gh-token refreshes the KEYRING, which is a separate
-    # store from the token cache and is what goes stale mid-session. The bare
-    # `gh auth login` this used to imply is a PAT-era instruction with nothing to type.
-    assert_includes credential_remedy, "bin/gh-token | gh auth login -h github.com --with-token"
+    # The remedy must name a recovery that RUNS in the configuration the docs create.
+    # This assertion used to demand `bin/gh-token | gh auth login -h github.com
+    # --with-token`, and that is how a broken instruction survived: `gh` REFUSES that
+    # pipeline outright whenever GH_TOKEN is set ("The value of the GH_TOKEN
+    # environment variable is being used for authentication", exit 1, keyring
+    # untouched), and the docs tell every agent to export GH_TOKEN. A test that
+    # asserts a string is present cannot notice that the string does not work, so the
+    # guard below is now two-sided.
+    assert_includes credential_remedy, "bin/gh-auth-refresh"
+    refute_includes credential_remedy, "| gh auth login",
+                    "piping a token into `gh auth login` is refused whenever GH_TOKEN is set"
     # And the liveness probe must be one an App token can actually answer.
     assert_includes credential_remedy, "gh api rate_limit"
     refute_includes credential_remedy, "Checks: Read"
+
+    authentication = CiStatus.unreadable_remedy(repo, cause: :authentication)
+    assert_includes authentication, "bin/gh-auth-refresh"
+    refute_includes authentication, "| gh auth login"
 
     rate_limit = CiStatus.parse("gh: API rate limit exceeded (HTTP 403)")
     assert_equal :rate_limit, rate_limit[:cause]
@@ -1032,6 +1042,38 @@ class CiStatusTest < Minitest::Test
     forbidden_remedy = CiStatus.unreadable_remedy(repo, cause: forbidden[:cause])
     assert_includes forbidden_remedy, "gh api rate_limit"
     refute_includes forbidden_remedy, "Checks: Read"
+  end
+
+  # ADVICE IS A FAILURE-PATH ARTIFACT: this text is read ONLY by someone already
+  # blocked, so a command it names that does not exist (renamed, never written,
+  # typo'd) wastes the one instruction they get. Assert the PROPERTY across every
+  # cause, rather than spot-checking one spelling — spot-checking a spelling is how
+  # the previous, non-functional remedy stayed green for a week.
+  ALL_REMEDY_CAUSES = [:permissions, :credentials, :authentication, :rate_limit, :forbidden, nil].freeze
+
+  def test_every_command_the_remedy_names_actually_exists
+    root = File.expand_path("../..", __dir__)
+
+    ALL_REMEDY_CAUSES.each do |cause|
+      text = CiStatus.unreadable_remedy("McRitchie-Studio/rolio", cause: cause)
+
+      text.scan(%r{\bbin/[a-z0-9][a-z0-9._-]*}).uniq.each do |rel|
+        path = File.join(root, rel)
+        assert File.exist?(path), "remedy for #{cause.inspect} names #{rel}, which does not exist"
+        assert File.executable?(path), "remedy for #{cause.inspect} names #{rel}, which is not executable"
+      end
+    end
+  end
+
+  # The specific shape that failed: no remedy may tell a blocked agent to pipe a
+  # token into `gh auth login`, which `gh` refuses whenever GH_TOKEN is set.
+  def test_no_remedy_prescribes_a_command_gh_refuses
+    ALL_REMEDY_CAUSES.each do |cause|
+      text = CiStatus.unreadable_remedy("McRitchie-Studio/rolio", cause: cause)
+
+      refute_match(/\|\s*gh auth login/, text,
+                   "remedy for #{cause.inspect} prescribes a pipeline gh refuses under GH_TOKEN")
+    end
   end
 
   def test_gate_evidence_preserves_unreadable_state_cause_reason_and_repo

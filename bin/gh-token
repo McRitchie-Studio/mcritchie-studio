@@ -3,9 +3,13 @@
 
 # bin/gh-token — THE one place a GitHub token comes from.
 #
-#   token="$(bin/gh-token)"                  # the agent identity (opens/merges PRs)
+#   token="$(bin/gh-token)"                  # the lane's identity (agent unless GH_APP_ITEM says otherwise)
 #   token="$(bin/gh-token --identity deployer)"   # the ship identity (pushes main, deploys)
 #   bin/gh-token --status                    # human-readable cache state; prints NO token
+#
+# The identity comes from --identity, else GH_APP_ITEM, else `agent` (see LANE
+# below). To install the result into `gh`'s own keyring, use bin/gh-auth-refresh —
+# piping this command into `gh auth login` is REFUSED whenever GH_TOKEN is set.
 #
 # WHY THIS EXISTS. The 2026-07-29 org migration retired personal access tokens:
 # every `gh` write now authenticates as a GitHub App INSTALLATION token that lives
@@ -37,6 +41,17 @@
 # main and deploys and CANNOT merge, by design. One shared slot pair would hand a
 # merge call a deployer token and fail in a way nobody would read correctly.
 #
+# THE LANE PICKS THE IDENTITY, via GH_APP_ITEM. `git` (through
+# bin/gh-app-git-credential) and the SOPs already treat `export
+# GH_APP_ITEM=github.mcritchie-deployer` as "this session is a ship session". This
+# command used to read only --identity and IGNORE that export, so a ship session
+# that asked the broker for a token got the AGENT identity — the one App holding
+# `pull_requests: write`, which the deployer is denied ON PURPOSE. A privilege
+# boundary that any caller crosses by forgetting a flag is not a boundary, so the
+# env var is honoured here too and the two legs finally agree. Precedence is
+# --identity > GH_APP_ITEM > agent: an explicit flag is a caller stating its lane
+# outright (bin/ship genuinely needs the PR-writing App), which must still win.
+#
 # NO LOCK, DELIBERATELY. Five agents hitting expiry at the same moment will mint
 # five tokens, and that is FINE: a mint takes seconds, every minted token is
 # independently valid, and last-write-wins on the cache costs nothing because the
@@ -53,11 +68,24 @@ require "json"
 require "fileutils"
 require "time"
 require_relative "../lib/task_usage_sandbox"
+require_relative "lib/gh_identity"
 
 IDENTITIES = {
   "agent" => { item: "github.mcritchie-agent", pem: "mcritchie-agent.2026-07-29.private-key.pem" },
   "deployer" => { item: "github.mcritchie-deployer", pem: "mcritchie-deployer.2026-07-29.private-key.pem" }
 }.freeze
+
+# The lane this process belongs to, resolved by the shared map in bin/lib/gh_identity.rb
+# (--identity > GH_APP_ITEM > agent). An UNRECOGNISED GH_APP_ITEM aborts instead of
+# falling back to `agent`: falling back is precisely the bug this resolver exists to
+# kill, and a typo'd item silently handing back the PR-writing App is the worst
+# possible reading of an unclear instruction.
+# Two things reach nil here and they are fixed at different knobs — an unreadable
+# GH_APP_ITEM, and `--identity` handed an empty value — so the reason is derived from
+# what this call actually passed rather than assumed to be the env's fault.
+def resolve_identity(explicit)
+  GhIdentity.resolve(explicit) || die!(GhIdentity.unresolved_reason(explicit))
+end
 
 # Installation tokens live ~60 minutes. Refresh at 50 so a token handed out now
 # survives the operation it was fetched for — a caller that starts a 6-minute merge
@@ -206,7 +234,7 @@ def status
   end
 end
 
-identity = "agent"
+identity = nil
 force = false
 args = ARGV.dup
 while (arg = args.shift)
@@ -227,6 +255,7 @@ while (arg = args.shift)
   else die!("unknown argument #{arg.inspect}")
   end
 end
+identity = resolve_identity(identity)
 die!("unknown identity #{identity.inspect} (expected: #{IDENTITIES.keys.join(', ')})") unless IDENTITIES.key?(identity)
 
 unless force
