@@ -1559,6 +1559,211 @@ class DorCheckTest < Minitest::Test
     end
   end
 
+  # --- the review gate-zero is an ALLOW-LIST -----------------------------------
+  # :green advances. Every other state refuses. Only the no-verdict family
+  # (:none/:unreadable/:unverified) can be cleared, and only by a FULL local cert.
+  #
+  # THE CERT DIMENSION IS EXPLICIT IN EVERY TEST BELOW, and that is deliberate. The
+  # shared `check` helper injects DOR_CHECK_SUITE_EVIDENCE="ok" whenever a test does
+  # not set it, so the first version of these tests was already exercising the
+  # full-cert path — the single behaviour they most needed to pin — without ever
+  # saying so. Coverage that is accidental is one refactor away from silently
+  # vanishing, so `review_ci_check` takes `evidence:` with NO default and every
+  # caller states which world it is in.
+  #
+  # Submit-side is unchanged throughout (ci_status.rb's BUILD-role reasoning): the
+  # two controls at the bottom redden if the guard is over-applied.
+
+  FULL_CERT = "ok"              # bin/full-suite-check — ci.yml's own command, locally
+  FAST_CERT_ONLY = "fast_fresh" # bin/fast-check — diff-mapped, NOT a stand-in for CI
+
+  def review_ci_check(state, evidence:, devops: CI_PR)
+    with_env("DOR_CHECK_SUITE_EVIDENCE" => evidence) do
+      ci_check(state, devops, "--gate-role", "review")
+    end
+  end
+
+  def test_review_role_advances_on_a_green_ci
+    out, code = review_ci_check("green", evidence: FULL_CERT)
+
+    assert_equal 0, code, out
+    assert_match(/ready to advance/, out)
+  end
+
+  # The original defect. :pending already errored in this role because "the review
+  # gate-zero is the authoritative CI verdict"; :unreadable/:unverified/:none fell
+  # through with no case at all, so `ready` stayed true while a skimmable suggestion
+  # carried the only warning. Four reviewers hit this live on 2026-08-09 when the
+  # agent App token expired mid-cycle.
+  #
+  # ASSERT THE CI GATE'S OWN REFUSAL, by text unique to it. The exit code alone
+  # proves nothing here: with only a fast cert the SUITE gate refuses too, so a test
+  # that checks `1` passes with the CI allow-list ripped out entirely — which is
+  # exactly what the mutation run showed before these matchers were added. The two
+  # gates cannot be separated by construction (a cert good enough to silence the
+  # suite gate is a cert good enough to clear the CI one), so the text is the only
+  # honest discriminator.
+  def test_review_role_refuses_the_no_verdict_family_without_a_full_cert
+    {
+      "unreadable" => /cannot be authoritative about a CI it could not read/,
+      "unverified" => /GitHub CI has produced no verdict yet/,
+      "none" => /GitHub CI has produced no verdict yet/
+    }.each do |state, own_refusal|
+      out, code = review_ci_check(state, evidence: FAST_CERT_ONLY)
+
+      assert_equal 1, code, "#{state} must refuse without a full cert: #{out}"
+      assert_match own_refusal, out, "#{state} must carry the CI gate's OWN refusal, not just the suite gate's"
+      assert_match(/not ready to advance/, out)
+    end
+  end
+
+  # The rolio lesson, and the hedge that came with it: :rate_limit ALSO produces
+  # :unreadable, so "CREDENTIAL fault" alone sends a reader to rotate a credential
+  # that was fine. ci_status.rb calls unreadable_remedy THE ONE REMEDY STRING —
+  # re-writing its opening sentence here printed it twice and dropped "or API limit".
+  def test_the_unreadable_refusal_uses_the_one_remedy_string
+    out, = review_ci_check("unreadable", evidence: FAST_CERT_ONLY)
+
+    # The CI gate's own refusal, not the suite gate's — /UNREADABLE/ alone appears in
+    # both, so it cannot tell them apart.
+    assert_match(/cannot be authoritative about a CI it could not read/, out)
+    assert_match(/CREDENTIAL fault or API limit/, out)
+    refute_match(/CREDENTIAL fault, NOT a missing CI/, out)
+    refute_match(/push the branch and open the PR/, out)
+    # ONCE, not three times. The CI refusal, the suite-evidence error and the
+    # non-blocking note all reach for the same paragraph, and they all fire together
+    # in this role — a reader who is shown the same 500 characters repeatedly learns
+    # to skim exactly the text the gate most needs them to read.
+    assert_equal 1, out.scan(/re-running will never clear it/).size,
+                 "THE ONE REMEDY STRING must appear once per verdict:\n#{out}"
+  end
+
+  # A READY verdict beside an UNVERIFIED CI is the presentation this whole task is
+  # about — four reviewers read "ready" next to a skimmable CI note and would have
+  # merged on a verdict nobody read. It is legal ONLY because a full cert stood in,
+  # so the verdict must say so rather than leaving the reader to infer it.
+  def test_advancing_on_a_cert_says_the_cert_is_why
+    out, code = review_ci_check("unreadable", evidence: FULL_CERT)
+
+    assert_equal 0, code, out
+    assert_match(/advancing on the FULL local cert/, out)
+    assert_match(/CI itself was NOT read/, out)
+  end
+
+  # BLOCKER 2 as a PROPERTY, not a case: a gate must honour the remedy it prints.
+  # The refusal's own tail names bin/full-suite-check as the route — and before this
+  # the gate then refused that exact cert, which is worse than a plain no: it teaches
+  # people the gate is noise, and an ignored gate is how a genuinely RED CI ships.
+  def test_the_gate_honours_the_remedy_it_prints
+    refused, code = review_ci_check("unreadable", evidence: FAST_CERT_ONLY)
+    assert_equal 1, code, refused
+    assert_match(%r{bin/full-suite-check}, refused, "the refusal must name the route out")
+
+    out, code = review_ci_check("unreadable", evidence: FULL_CERT)
+    assert_equal 0, code, "the gate must honour the cert it just told the reader to run: #{out}"
+    assert_match(/ready to advance/, out)
+  end
+
+  # BLOCKER 1. solana-studio and turf-vault carry ZERO workflows on every branch, so
+  # a clean PR there resolves :none FOREVER — "defer until checks appear" is a wedge,
+  # not a remedy (the PR-#509 shape). A full cert is the only route, so it must work.
+  def test_a_full_cert_clears_the_no_verdict_family_for_a_repo_with_no_ci
+    %w[none unverified].each do |state|
+      out, code = review_ci_check(state, evidence: FULL_CERT)
+
+      assert_equal 0, code, "a full cert must clear #{state}: #{out}"
+      assert_match(/ready to advance/, out)
+    end
+  end
+
+  # A "[full-suite-bypass]" is a declared hatch, not evidence. Crediting it against a
+  # CI nobody could read would leave the merge unverified from BOTH sides at once.
+  def test_a_full_suite_bypass_does_not_stand_in_for_an_unread_ci
+    bypassed = CI_PR.merge("checks_run" => CI_PR["checks_run"] + ["[full-suite-bypass] deliberate"])
+    out, code = review_ci_check("unreadable", evidence: "", devops: bypassed)
+
+    assert_equal 1, code, "a bypass is not evidence: #{out}"
+    assert_match(/UNREADABLE/, out)
+  end
+
+  # BLOCKER 4, the root cause. A blank devops.pr_url resolves to :no_pr, which had no
+  # branch and no `else` — so --gate-role review exited 0 printing "ready to advance"
+  # with NO CI LINE AT ALL, strictly MORE silent than the bug this gate was written to
+  # close. A full cert does not clear it: what is missing is not the evidence, it is
+  # the PR — review's job is to merge one, and there is nothing to merge.
+  def test_review_role_refuses_a_blank_pr_url_even_with_a_full_cert
+    out, code = review_ci_check(nil, evidence: FULL_CERT, devops: BACKEND_CONTRACT)
+
+    assert_equal 1, code, out
+    assert_match(/pr_url is BLANK/, out)
+    assert_match(/not ready to advance/, out)
+  end
+
+  # THE ALLOW-LIST PROOF — the one test here that a LONGER DENY-LIST could not also
+  # pass. A state that does not exist and never has: if ci_status.rb grows one
+  # tomorrow and nobody teaches this gate about it, review must REFUSE rather than
+  # wave it through. That default IS the difference between the two shapes, and it is
+  # not hypothetical — :no_pr above is precisely what a deny-list's default did.
+  # A full cert does not clear it either: an unclassified state is not the no-verdict
+  # family, it is an unread gate.
+  def test_review_role_refuses_a_ci_state_it_does_not_classify
+    out, code = review_ci_check("state:quantum_flux", evidence: FULL_CERT)
+
+    assert_equal 1, code, out
+    assert_match(/QUANTUM_FLUX/, out)
+    assert_match(/does not classify/, out)
+    assert_match(/not ready to advance/, out)
+  end
+
+  # A FAILED dor_review must name CI as the failing SOP when CI is why it failed.
+  # The no-verdict family used to record a flat "unverified" — a NOTE — as the sole
+  # cause of a failed row, the same asymmetry :pending already avoids. "unverified"
+  # stays correct where CI genuinely only noted: a full cert standing in for it.
+  def test_the_gates_card_names_ci_as_the_cause_when_ci_is_the_cause
+    assert_equal "fail", ci_gate_result("unreadable", evidence: FAST_CERT_ONLY)
+    assert_equal "unverified", ci_gate_result("unreadable", evidence: FULL_CERT),
+                 "a full cert standing in for an unread verdict is a NOTE, not a CI failure"
+    assert_equal "fail", ci_gate_result("state:quantum_flux", evidence: FULL_CERT)
+    assert_equal "pass", ci_gate_result("green", evidence: FULL_CERT)
+    # Submit-side keeps the note: the builder's handoff is provisional by design.
+    assert_equal "unverified", ci_gate_result("unreadable", evidence: FULL_CERT, review: false)
+  end
+
+  # The gates-card row this run WOULD write, read out of --json rather than off the
+  # board: a probe that leaves a durable FAILED attempt on a real task is its own
+  # hazard (--json and --file both skip the board write).
+  def ci_gate_result(state, evidence:, review: true, devops: CI_PR)
+    args = ["--json"]
+    args += ["--gate-role", "review"] if review
+    out, = with_env("DOR_CHECK_SUITE_EVIDENCE" => evidence) { ci_check(state, devops, *args) }
+    JSON.parse(out)["ci_gate_result"]
+  end
+
+  # --- the split holds: submit-side is untouched -------------------------------
+  # If either control reddens, the fix has been over-applied and every submit now
+  # blocks on a flaky read — trading a flaky CI lane for a flaky gate, which
+  # ci_status.rb warns against by name.
+
+  def test_submit_role_still_hands_off_on_an_unread_ci
+    %w[unreadable unverified none].each do |state|
+      out, code = with_env("DOR_CHECK_SUITE_EVIDENCE" => FULL_CERT) { ci_check(state) }
+
+      assert_equal 0, code, "submit-side #{state} must not block: #{out}"
+      assert_match(/ready to advance/, out)
+    end
+  end
+
+  # The allow-list is REVIEW-ONLY. A blank pr_url stays silent submit-side (dor-check
+  # runs before the PR exists on the normal path), and an unclassified state must not
+  # block a builder either — the builder does not own ci_status.rb's vocabulary.
+  def test_submit_role_is_unchanged_by_the_allow_list
+    out, code = with_env("DOR_CHECK_SUITE_EVIDENCE" => FULL_CERT) { ci_check(nil, BACKEND_CONTRACT) }
+    assert_equal 0, code, "submit-side a blank pr_url must stay silent: #{out}"
+
+    out, code = with_env("DOR_CHECK_SUITE_EVIDENCE" => FULL_CERT) { ci_check("state:quantum_flux") }
+    assert_equal 0, code, "submit-side must not block on an unclassified state: #{out}"
+  end
+
   def test_merge_gate_fails_when_github_ci_is_red
     out, code = ci_check("red")
     assert_equal 1, code, out

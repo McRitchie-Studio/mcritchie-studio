@@ -91,8 +91,13 @@ nothing is eligible.
 Because the pop only ever returns a **green-CI** task, the orchestrator never
 needs a separate pre-spawn CI check — a red or pending PR simply isn't claimed.
 A task whose CI flips red or conflicts AFTER the claim is caught inside the
-review: Carl's gate-zero (`bin/dor-check <task> --gate-role review`, strict on
-red/pending) blocks it back.
+review: Carl's gate-zero (`bin/dor-check <task> --gate-role review`) blocks it
+back. That gate is an **allow-list** — `green` advances and every other state
+refuses, including a verdict it could not read (`unreadable` / `unverified` /
+`none`) and a blank `devops.pr_url`. The one escape is a fresh **full** cert
+(`bin/full-suite-check`, which runs `ci.yml`'s own command), which stands in for
+the unread verdict; a refusal with no such cert is a `conductor-review`, since the
+credential is not the builder's to fix. See `../../../modules/gates/dor.md`.
 
 Release the claim on the verdict (a crash frees it via the TTL):
 

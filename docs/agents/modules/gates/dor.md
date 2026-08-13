@@ -294,8 +294,10 @@ The CI **wait** belongs to the review handoff, not the builder's wall-clock
   coming, so a defer would strand it), a **ci-less** PR bounces back too
   (`outcome=ci-less`), pending defers the wave — and the
   primary's gate-zero
-  (`--gate-role review`) keeps the strict semantics: **red AND pending both
-  block**, and fast evidence needs the settled green.
+  (`--gate-role review`) keeps the strict semantics: it advances on **green and
+  nothing else** (red and pending both block, and so does a verdict it could not
+  read), and fast evidence needs the settled green. The single escape is a full
+  cert — see the allow-list bullets below.
 
 Net effect: nothing reaches a reviewer (or a merge) without a green CI, but the
 builder never idles watching checks. Expect the bounce round-trip if you hand
@@ -324,6 +326,40 @@ attempt n+1.
     collapsing the attempt to generic `unverified`. See `gates/g3-candidate.md`.
 - The reviewer's gate-zero **opens then closes `dor_review`** with the same
   evidence shape, under the strict CI semantics.
+  - **Strict means it is an ALLOW-LIST: `green` advances, everything else
+    refuses.** Not a list of bad states — a list of the ONE good one. A deny-list
+    defaults to *pass*, so every state added to `bin/lib/ci_status.rb` afterwards
+    joins the safe side silently; that is exactly how a blank `devops.pr_url`
+    (`no_pr`) once exited 0 printing "ready to advance" with **no CI line at all**.
+    An allow-list defaults to *refuse*, so a state nobody has classified blocks
+    review until somebody does. `test/lib/dor_check_test.rb` asserts this with a
+    state that does not exist — the one test a longer deny-list could not pass.
+  - **One escape, and only one: a FULL cert.** For the no-verdict family
+    (`none` / `unreadable` / `unverified`) a fresh `bin/full-suite-check` cert
+    stands in for the CI verdict, and the gate then says so on the ready line
+    (`advancing on the FULL local cert instead … CI itself was NOT read`). Two
+    reasons: the gate must **honour the remedy it prints** — `unreadable_remedy`
+    has always ended by naming that command — and the cert is no longer weaker
+    evidence, because `bin/full-suite-check` now runs `ci.yml`'s verbatim command,
+    `test:system` included. A **fast** cert is not enough, and a
+    `[full-suite-bypass]` is a declared hatch rather than evidence, so neither
+    clears it.
+  - **What a cert cannot clear**: `red`, `conflicted`, `ci_less`, `closed`,
+    `merged` (a verdict exists, or the PR is not a live review target); `pending`
+    (the verdict is genuinely coming — waiting is productive); `no_pr` (what is
+    missing is not the evidence but the PR: review's job is to merge one); and any
+    unclassified state.
+  - Submit-side **none of this applies** — the builder's provisional handoff is
+    untouched (see the state table above). The asymmetry is deliberate: the review
+    gate-zero *is* the authoritative CI verdict, while blocking every submit on a
+    flaky read would trade a flaky CI lane for a flaky gate. Both directions are
+    asserted, so the split cannot quietly collapse either way.
+  - The **remedies stay distinct**, because the fixes are: `unreadable` names the
+    credential and says re-running is futile (a `conductor-review`, not a
+    `request-changes` — the builder does not own the token); `none` / `unverified`
+    say to wait for checks to appear, *or* to certify in full where no check will
+    ever appear (`solana-studio` and `turf-vault` have zero workflows, so `none` is
+    permanent there and waiting is the PR-#509 stall).
 - The supervisor's **pre-spawn CI-red bounce** opens then closes `dor_review`
   `--failed` with a `ci` SOP (`--meta outcome=ci-red`, actor `avi`) — no reviewer
   runs, but the round-trip is visible on the gates card.
