@@ -9,8 +9,12 @@ require "time"
 #   claim_nonce      — a per-PROCESS-instance token (see bin/task#claim_nonce). Two
 #                      terminals running `claude --resume <same id>` share the
 #                      session id but are different OS processes → different nonce.
-#   claim_expires_at — an ISO8601 TTL lease, renewed by the heartbeat (bin/statusline).
-#                      No render for > TTL ⇒ the lease lapses ⇒ the task is reclaimable.
+#   claim_expires_at — an ISO8601 TTL lease, renewed by the heartbeat (bin/statusline)
+#                      ONLY while the holder can be shown to be working (see
+#                      `abandoned?` below). No renewal for > TTL ⇒ the lease lapses
+#                      ⇒ the task is reclaimable. The renewal used to be
+#                      unconditional, which meant an open terminal held a desk
+#                      forever whether or not an agent was on it.
 #
 # Why a nonce and not just the session id: the operator's terminal-A / terminal-B
 # case. `claude --resume X` in a second terminal forks the SAME transcript (same
@@ -226,6 +230,101 @@ module ClaimLease
     return false if age.nil?
 
     age > quiet_after
+  end
+
+  # --- Abandonment, which is NOT silence ------------------------------------
+  #
+  # `quiet?` above reports. THIS decides, and it is the only thing in this file
+  # that can cost a holder its desk — so read the argument before touching it.
+  #
+  # THE BUG. The lease is renewed by bin/statusline, which paints whether or not
+  # an agent is working. So an open terminal renews a build claim forever: on
+  # 2026-08-13 a claim ticked 16:05:16Z → 16:06:46Z while three agents stalled
+  # behind it, and this machine carries long-lived `claude` processes that have
+  # been open for days. A heartbeat proves a TERMINAL IS OPEN. Nothing more.
+  #
+  # THE OBVIOUS FIX IS THE DANGEROUS ONE. "Renew only on durable task writes"
+  # would have judged that same holder dead while it was WRITING TEST FILES INTO
+  # ITS DESK (09:40:58 and 09:41:37, both bespoke to the race it was fixing).
+  # Board silence is not idleness — an agent thinks, reads, and edits for long
+  # stretches without touching the board, and stealing a desk from a worker
+  # mid-edit costs the work itself, where a lingering lease only costs waiting.
+  # So the two errors are NOT symmetric, and this predicate is deliberately
+  # lopsided: EVERY channel must be silent before it says yes, and every unknown
+  # resolves to no.
+  #
+  # THE CHANNELS, and why each is here rather than alone:
+  #   desk_touched      — mtimes under the holder's own desk (DeskActivity). The
+  #                       signal that actually tracked the truth on 08-13. nil =
+  #                       could not tell, which short-circuits to "not abandoned".
+  #   gate_in_flight    — a cert writes NOTHING into the desk while it runs, and
+  #                       the measured g1_cert p99 is 94 minutes. Without this
+  #                       channel a long green cert would look exactly like a
+  #                       walked-away terminal.
+  #   awaiting_approval — a task parked on the operator (`--approval waiting`) is
+  #                       not abandoned; it is blocked on a human, deliberately,
+  #                       and its agent is right to be doing nothing.
+  #   progress_age      — durable board artifacts. Kept as a channel (never as
+  #                       THE criterion) so a holder working through the API
+  #                       rather than the filesystem still reads as alive.
+  #
+  # WHAT THIS IS NOT: it does not reclaim, block, or delete. It only makes the
+  # heartbeat DECLINE to renew, after which the ordinary TTL lapses the lease and
+  # the ordinary gate lets the next claimant in. A holder that wakes up re-claims
+  # on its own next heartbeat, so the mistake this can make is self-healing.
+
+  # Measured desk-edit gaps: 341 samples across 37 real worktree desks on
+  # 2026-08-13, taken as the consecutive differences of file mtimes under each
+  # desk (pruned of machine churn) after its checkout. The method OVERESTIMATES
+  # gaps — a file rewritten five times contributes only its final mtime — which
+  # is the conservative direction for an upper bound.
+  #
+  # THE TAIL OF THIS CORPUS IS THE BUG ITSELF, which is why it is split. Gaps
+  # divide into a working band and an abandoned band (a desk left overnight and
+  # picked up the next day), and deriving a threshold from the pooled p99 (6.4h)
+  # would be circular: it would learn "abandonment is normal" from abandonment
+  # data and ship a gate that never fires.
+  #
+  # The 1-hour separator between the bands is a JUDGMENT, stated here rather than
+  # hidden. Two things make it a defensible one. The bands do not overlap at it:
+  # the busiest working gap is 3556s and the quietest abandoned gap is 3895s, a
+  # 339-second gutter with no samples in it. And the derivation is stable if you
+  # move it — a 2-hour separator yields 7347s, the same posture one band wider.
+  MEASURED_DESK_GAP_SECONDS = {
+    working_p50: 36,      # 36s   — median gap between edits inside a working desk
+    working_p90: 729,     # 12m
+    working_p95: 1_182,   # 20m
+    working_p99: 2_397,   # 40m
+    working_max: 3_556,   # 59m   — the binding number: the quietest working desk
+    abandoned_min: 3_895, # 65m   — the busiest abandoned desk
+    abandoned_p50: 12_236 # 3.4h  — the typical walked-away desk
+  }.freeze
+
+  # Clear the worst measured WORKING gap by half again. The margin is doing real
+  # work: n=324 in that band, so its max is a point estimate on a noisy tail, and
+  # being EARLY here steals a desk from a live worker while being LATE only makes
+  # an abandoned desk linger a while longer. 1h29m, deliberately not a round
+  # number — a round threshold reads as chosen, and this one is derived.
+  DESK_IDLE_SAFETY_FACTOR = 1.5
+  DESK_IDLE_SECONDS = (MEASURED_DESK_GAP_SECONDS[:working_max] * DESK_IDLE_SAFETY_FACTOR).ceil # 5_334
+
+  # True only when EVERY channel is silent past `idle_after`. Any positive signal,
+  # and any unknown, returns false (the holder keeps its desk).
+  #
+  # desk_touched: true / false / nil — DeskActivity.touched_since?(desk, cutoff).
+  # progress_age: seconds since the last durable board artifact; nil = none ever.
+  def self.abandoned?(desk_touched:, progress_age: nil, gate_in_flight: false,
+                      awaiting_approval: false, idle_after: DESK_IDLE_SECONDS)
+    # UNKNOWN FIRST, and unconditionally. A desk we could not read (no desk bound
+    # to this task, an unreadable root, a walk that ran out of budget) is not a
+    # quiet desk — it is no evidence at all, and no evidence never frees a claim.
+    return false if desk_touched.nil?
+    return false if desk_touched
+    return false if gate_in_flight
+    return false if awaiting_approval
+    return false if !progress_age.nil? && progress_age <= idle_after
+
+    true
   end
 
   # The claim hash a fresh renewal writes — the holder's identity plus a lease
