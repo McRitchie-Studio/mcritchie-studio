@@ -91,11 +91,27 @@ so its CI was green at claim time. If any of that is missing, note it as a findi
      keeps the **strict CI semantics**: the claim popped a green PR, but CI can
      flip mid-review, so YOUR run is the authoritative in-review CI verdict — red
      and still-running both block, and fast-cert evidence needs the settled green.
-     **An UNREAD verdict blocks too.** `unreadable` (the token was refused),
-     `unverified` and `none` are errors in this role, because a gate cannot be the
-     authoritative CI verdict for a CI it could not read. `unreadable` in
-     particular is a CREDENTIAL fault — re-run the mint from the auth step above;
-     re-running `dor-check` will never clear it.
+     **The gate is an ALLOW-LIST: green advances, everything else refuses.** That
+     includes states it has never heard of, and it includes an UNREAD verdict —
+     `unreadable` (the token was refused), `unverified`, and `none` — because a
+     gate cannot be the authoritative CI verdict for a CI it could not read. It
+     also includes a blank `devops.pr_url`, which used to pass silently.
+
+     **One escape, and only one: a FULL cert.** `bin/full-suite-check <task-slug>`
+     runs `ci.yml`'s own command (`test:system` included), so it is not weaker
+     evidence than CI — it is the same suite, run locally. When the task carries a
+     fresh full cert, the gate advances on it and says so; a *fast* cert is not
+     enough, and neither is a `[full-suite-bypass]`. This is why the refusal names
+     that command: the gate honours the remedy it prints.
+
+     **When it refuses on an unread verdict, that is a `conductor-review`, not a
+     `request-changes`.** The builder does not own the credential, and
+     `wait-for-ci` is futile — CI already reported and this token cannot hear it.
+     For `unreadable`, mint a fresh App token with `bin/gh-app-mint-token` (never
+     print it) and retry the exact check read; re-running `dor-check` alone will
+     never clear it. For `none` in a repo with **no workflows at all**
+     (`solana-studio`, `turf-vault`), no check will ever appear — the full cert is
+     the only route, and waiting is the PR-#509 stall.
 
      **Run it from wherever you are — the gate validates every tree it touches.**
      You are standing in the studio primary (the Entry above), which is not the

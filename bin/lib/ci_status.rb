@@ -29,16 +29,25 @@ require_relative "gh_auth_retry"
 #   :closed/:merged — the PR is not OPEN                  → BLOCK (its green checks are
 #                     HISTORICAL, not a live review target — a stale/abandoned pr_url)
 #   :green          — every check passed/skipped         → pass
-#   :none           — the PR reports no checks yet        → note (non-blocking)
-#   :no_pr          — no pr_url yet                       → silent (gate re-runs after push)
-#   :unreadable     — the TOKEN cannot read CI (401/403)  → note, but NAMES the cause
-#                     and the repo. See the blindness section below.
-#   :unverified     — gh/network error                    → note (never a hard block;
-#                     don't trade a flaky CI lane for a flaky gate)
+#   :none           — the PR reports no checks yet        → note SUBMIT-side
+#   :no_pr          — no pr_url yet                       → silent SUBMIT-side
+#   :unreadable     — the TOKEN cannot read CI (401/403)  → note SUBMIT-side, and it
+#                     NAMES the cause and the repo. See the blindness section below.
+#   :unverified     — gh/network error                    → note SUBMIT-side (don't
+#                     trade a flaky CI lane for a flaky gate)
+#
+# THE LAST FOUR ARE SUBMIT-SIDE VERDICTS. Read this module as describing what the
+# BUILDER's gate does; the REVIEW role is a different question and answers it in
+# bin/dor-check, which allow-lists (:green advances, everything else refuses, and
+# only the no-verdict family can be cleared by a full local cert). That asymmetry is
+# deliberate — the review gate-zero IS the authoritative CI verdict, so it cannot be
+# authoritative about a CI nobody read — and it does NOT relax anything here: the
+# builder's provisional handoff is untouched, which is what keeps a flaky read from
+# blocking every submit.
 #
 # A BLIND GATE MUST SAY WHY IT IS BLIND (task dor-check-misses-rolio-ci, 2026-07-13).
-# :unreadable and :unverified are BOTH "no verdict", and neither hard-blocks — but
-# they are not the same fact, and collapsing them was a real bug:
+# :unreadable and :unverified are BOTH "no verdict", and neither hard-blocks the
+# builder — but they are not the same fact, and collapsing them was a real bug:
 #   * :none / :unverified say "CI has nothing to tell you YET" → the fix is to WAIT.
 #   * :unreadable says "CI has plenty to tell you and this TOKEN may not hear it" →
 #     waiting is futile; the fix is a CREDENTIAL, and no amount of re-running helps.
@@ -50,9 +59,9 @@ require_relative "gh_auth_retry"
 # not the fast-cert credit); it only tells the truth about why it cannot see.
 #
 # `injected` is dor-check's DOR_CHECK_CI_STATUS seam: a bare token
-# (green/red/pending/none/unreadable/unverified/no_pr) OR the raw `gh pr checks
-# --json` array — so the tests never shell out to gh (mirrors
-# DOR_CHECK_SUITE_EVIDENCE).
+# (green/red/pending/none/unreadable/unverified/no_pr), "state:<name>" for a state
+# that does not exist (see INJECTED_STATE_PREFIX), OR the raw `gh pr checks --json`
+# array — so the tests never shell out to gh (mirrors DOR_CHECK_SUITE_EVIDENCE).
 #
 # TWO SUBJECTS, ONE VOCABULARY. `evaluate` asks about a PR (the merge gate's
 # subject); `for_sha` asks about a COMMIT (the G3 release-gate's subject — the
@@ -60,6 +69,19 @@ require_relative "gh_auth_retry"
 # SHA-addressed section below.
 module CiStatus
   TOKENS = %w[green red pending none unverified unreadable no_pr closed merged conflicted ci_less].freeze
+
+  # THE SEAM'S ESCAPE HATCH: "state:<name>" injects an ARBITRARY verdict state,
+  # including one this module has never emitted and never will. It exists so a gate
+  # can be probed against the state that DOES NOT EXIST YET — which is the only way
+  # to prove a gate allow-lists (defaults to refuse) rather than deny-listing the
+  # spellings it happens to know. Testing only the real TOKENS can never distinguish
+  # those two shapes, and the difference is a live false-pass: bin/dor-check's review
+  # gate-zero passed a blank pr_url for exactly that reason.
+  #
+  # Deliberately OUTSIDE TOKENS, not an extension of it: TOKENS stays the vocabulary
+  # of real states, so a typo'd real token ("greeen") still falls through to the
+  # payload parser and fails loudly instead of quietly becoming a novel state.
+  INJECTED_STATE_PREFIX = "state:"
 
   # The `gh pr view` fields evaluate needs. `mergeable` and `baseRefName` joined
   # state+mergeStateStatus for the THIRD STATE below: mergeStateStatus alone cannot
@@ -533,6 +555,7 @@ module CiStatus
   def self.evaluate(pr_url, injected = nil)
     pr = pr_url.to_s.strip
     raw = injected.to_s.strip
+    return { state: raw.delete_prefix(INJECTED_STATE_PREFIX).to_sym } if raw.start_with?(INJECTED_STATE_PREFIX)
     return { state: raw.to_sym, failing: ["ci"], pending: ["ci"] } if TOKENS.include?(raw)
 
     if raw.empty?

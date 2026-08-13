@@ -38,8 +38,14 @@
 #   pending  → defer the task to a later wave (the existing defer machinery);
 #   :none    → same defer (an open PR whose checks haven't reported yet);
 #   green    → proceed to spawn the pair.
-#   unverified / no_pr / closed / merged → proceed; the primary's strict gate-zero
-#              (bin/dor-check --gate-role review) holds the authoritative verdict.
+#   unreadable / unverified → proceed, but say what the gate-zero will do: it
+#              REFUSES an unread CI verdict unless the task carries a FULL local
+#              cert (bin/full-suite-check runs ci.yml's own command), and there is
+#              no deferring past a credential fault. A refusal there is a
+#              conductor-review, never a request-changes — the builder does not own
+#              the token. See "the reviewer's first command" note at the CI gate.
+#   no_pr / closed / merged → the gate-zero REFUSES these outright: there is no live
+#              PR to read a verdict from or to merge. Reconcile devops.pr_url.
 # PR_REVIEW_CI_STATUS injects the verdict for tests — a bare CiStatus token, a
 # JSON object mapping slug → token, or a raw `gh pr checks --json` array.
 #
@@ -793,8 +799,14 @@ def start_review(task, review_number)
   # builder submitted without waiting for CI, so check the PR's LIVE CI before
   # burning any reviewer tokens. Red/conflicted → bounce back (actionable);
   # pending/none → defer the wave (CI genuinely still coming); green → spawn.
-  # Unverified/no_pr/closed/merged proceed — the primary's strict gate-zero
-  # (dor-check --gate-role review) is the authoritative verdict.
+  #
+  # THE REVIEWER'S FIRST COMMAND. Whatever this supervisor decides, the primary's
+  # opening act is `bin/dor-check <slug> --gate-role review`, and that gate is an
+  # ALLOW-LIST: :green advances, every other state refuses, and only the no-verdict
+  # family (:none/:unreadable/:unverified) can be cleared — by a FULL local cert.
+  # So this supervisor must never tell a reviewer to proceed as though the gate will
+  # let them: where it proceeds on an unread verdict it says what the gate will do
+  # and what to do when it refuses.
   ci = supervisor_ci_check(task)
   case ci[:state]
   when :red
@@ -828,10 +840,30 @@ def start_review(task, review_number)
     puts "  #{CiStatus.unreadable_remedy(CiStatus.repo_from_pr_url(task.dig("devops", "pr_url")),
                                         cause: ci[:cause])}"
     puts "  proceeding to review WITHOUT a CI verdict — review this PR as if CI were unchecked, because it is"
+    # And say what their FIRST command will do, because it is no longer "proceed".
+    # The gate-zero clears an unread verdict on a FULL cert and refuses on anything
+    # less; when it refuses, none of merge-ready / wait-for-ci / request-changes is
+    # honest — waiting is futile, and the builder does not own the token. Name the
+    # one that is, or the reviewer picks a wrong outcome under pressure.
+    puts "  their gate-zero (dor-check --gate-role review) CLEARS this only if the task carries a FULL cert " \
+         "(bin/full-suite-check runs ci.yml's own command); with a fast cert it REFUSES"
+    puts "  if it refuses: record conductor-review — NOT request-changes (a credential is not the builder's to " \
+         "fix) and NOT wait-for-ci (CI already reported; we cannot read it)"
   when :green
     puts "  ci=green#{ci[:count] ? " (#{ci[:count]} checks)" : ""}"
+  when :no_pr, :closed, :merged
+    # These reach the primary's gate-zero as a REFUSAL, not a note: there is no live
+    # PR to read a verdict from or to merge. Spawning a pair to discover that burns
+    # two reviewers on a metadata fault, so say it here.
+    puts "  ci=#{ci[:state].to_s.upcase} — no live PR to verify; the primary's gate-zero REFUSES this. " \
+         "Reconcile devops.pr_url before review"
   else
-    puts "  ci=#{ci[:state]}#{ci[:reason] ? " (#{ci[:reason]})" : ""} — proceeding; the primary's gate-zero verifies CI"
+    # :unverified and anything ci_status.rb grows later. Proceed — a flaky read must
+    # not stall a wave — but do not promise the gate-zero will agree: it allow-lists,
+    # so it clears an unread verdict only on a FULL cert and refuses a state it does
+    # not classify at all.
+    puts "  ci=#{ci[:state]}#{ci[:reason] ? " (#{ci[:reason]})" : ""} — proceeding; the primary's gate-zero holds " \
+         "the verdict and REFUSES anything but green (a FULL cert clears an unread one; conductor-review if not)"
   end
 
   # Gate-zero (dor_review) opens as the supervisor proceeds past CI — the primary

@@ -55,8 +55,10 @@
 # still blocks both roles. The AUTHORITATIVE CI
 # verdict is the review side: bin/pr-review's supervisor checks the live CI
 # before spawning reviewers, and the primary's gate-zero (--gate-role review)
-# keeps the strict semantics (red AND pending both block; fast evidence needs
-# the settled green). Format + fingerprint live in bin/lib/full_suite_gate.rb.
+# keeps the strict semantics — an ALLOW-LIST: green advances and every other state
+# refuses, including one it could not read, with a FULL cert the single stand-in
+# (see "THE REVIEW GATE-ZERO IS AN ALLOW-LIST" below); fast evidence needs the
+# settled green. Format + fingerprint live in bin/lib/full_suite_gate.rb.
 # ROOTING — the gate must judge the TASK's tree, not the checkout the caller happens
 # to stand in. TWO things root: the suite FINGERPRINT and the code DIFF. Both have
 # been bitten, and they fail in OPPOSITE directions, which is why the diff took a
@@ -982,6 +984,15 @@ def suite_evidence_error(eval, slug, ci, review_role)
         # A fast cert is credited against a GREEN CI, and here there is no CI to be
         # green — waiting for one is the exact trap this state exists to break.
         CiStatus.ci_less_remedy(ci)
+      elsif ci && ci[:state] == :unreadable && review_role
+        # In THIS role the two gates always fail together — the CI allow-list refuses
+        # an unreadable verdict unless a FULL cert clears it, and a full cert would
+        # have satisfied this gate before we ever got here. So the CI error beside
+        # this one already carries THE ONE REMEDY STRING in full; printing that
+        # ~500-character paragraph twice in a single verdict is precisely how a reader
+        # learns to skim the thing we most need them to read.
+        "the CI gate's error beside this one carries the credential remedy — the fast route cannot be credited " \
+          "while the check read is refused"
       elsif ci && ci[:state] == :unreadable
         # The rolio bug, verbatim: the OLD text below told a builder whose PR was
         # ALREADY open and ALREADY green to "push the branch and open the PR". They
@@ -1023,6 +1034,71 @@ def suite_evidence_error(eval, slug, ci, review_role)
     "route: `bin/fast-check #{slug}` (diff-mapped tests + core spine + rubocop on changed files, ~1 min), " \
     "accepted once the PR's GitHub CI is green. " \
     "Conscious, justified skip? Record a bypass: bin/task update #{slug} --checks \"[full-suite-bypass] <why>\"."
+end
+
+# The states that mean "CI HAS NO VERDICT TO GIVE" — as opposed to a verdict that is
+# bad (:red), settled-negative (:conflicted / :ci_less), still coming (:pending), or
+# not about a live review target (:closed / :merged). This is the ONLY family a full
+# local cert may stand in for, and membership is deliberately explicit: a state that
+# is not listed here cannot be excused by evidence, it can only be classified.
+CI_NO_VERDICT_STATES = %i[none unreadable unverified].freeze
+
+# The review role's refusal for a non-green CI → [message, cert_clears]. Never called
+# for :green (the allow-list's only pass) nor for a state the case above already
+# wrote a remedy for. `cert_clears` marks the no-verdict family, whose refusal a FULL
+# local cert clears — resolved after the suite gate, where suite_eval is known.
+def unread_ci_refusal(ci, pr_url, slug)
+  case ci[:state]
+  when :unreadable
+    # ONE remedy string, not one-and-a-half. unreadable_remedy ALREADY opens with
+    # "This is a CREDENTIAL fault or API limit, NOT a missing CI — re-running will
+    # never clear it", and ci_status.rb calls it THE ONE REMEDY STRING. Hand-writing
+    # that sentence here printed it twice AND dropped the deliberate "or API limit"
+    # hedge — which is not a nicety: :rate_limit also produces :unreadable, and a
+    # reader told "CREDENTIAL fault" goes and rotates a credential that was fine.
+    ["GitHub CI is UNREADABLE (#{ci[:reason]}) — the review gate-zero IS the authoritative CI verdict, and it " \
+     "cannot be authoritative about a CI it could not read. " +
+     CiStatus.unreadable_remedy(CiStatus.repo_from_pr_url(pr_url), cause: ci[:cause]), true]
+  when :none, :unverified
+    # "Wait for checks" is the right remedy in a repo that HAS workflows and a wedge
+    # in one that does not: solana-studio and turf-vault carry zero workflows on
+    # every branch, so a clean PR there resolves :none FOREVER. Name both routes.
+    ["GitHub CI has produced no verdict yet (#{ci[:state]}) — the review gate-zero IS the authoritative CI " \
+     "verdict, so it must not advance on a CI it has not read. Either defer this review until checks appear " \
+     "and settle (the supervisor's defer machinery re-queries; a red finish bounces the task back), or — if " \
+     "this repo has NO workflows at all, where no check will ever appear — certify in full instead: " \
+     "`bin/full-suite-check #{slug}`, which runs ci.yml's own command (test:system included) locally.", true]
+  when :no_pr
+    # NOT the no-verdict family, and a cert cannot stand in for it: the missing thing
+    # is not the evidence, it is the SUBJECT. Review's job is to merge a PR; with a
+    # blank pr_url there is nothing to read a verdict from and nothing to merge.
+    ["devops.pr_url is BLANK, so the review gate-zero has no PR to read a CI verdict from — and review has " \
+     "nothing to merge. Submit-side this is silent on purpose (the gate re-runs after the push); a REVIEW that " \
+     "cannot name its PR must not advance the task, which is why this refuses rather than passing quietly. " \
+     "Record it: `bin/task update #{slug} --pr-url <url>`.", false]
+  else
+    # THE POINT OF THE ALLOW-LIST. A state nobody has classified is not evidence of
+    # health; it is evidence that this gate is out of date with ci_status.rb.
+    ["GitHub CI reported #{ci[:state].to_s.upcase}, a state this gate does not classify — the review gate-zero " \
+     "advances on a GREEN CI and nothing else, so an unclassified verdict REFUSES rather than falling through " \
+     "to `ready`. Falling through is the bug this allow-list exists to prevent: a blank pr_url once exited 0 " \
+     "with no CI line at all. Classify #{ci[:state].inspect} in bin/dor-check's CI gate and in " \
+     "bin/lib/ci_status.rb's header, then re-run.", false]
+  end
+end
+
+# Does the task carry evidence that stands in for a CI verdict nobody could read?
+# Only for CI_NO_VERDICT_STATES; the caller owns that half.
+def full_cert_stands_in_for_ci?(suite_eval, shape_def)
+  # The shape declares it has NO suite to certify (`docs`: prose, no code). There is
+  # no cert to ask for, so demanding one would re-create the exact defect this change
+  # fixes — a gate whose only printed remedy it refuses to honour.
+  return true if shape_def && !shape_def.fetch("full_suite_gate", true)
+
+  # A REAL full cert, never a "[full-suite-bypass]". The bypass is a declared,
+  # loudly-flagged hatch, not evidence; pairing it with a CI nobody could read would
+  # leave the merge with no verification at all from either side.
+  !!(suite_eval && suite_eval[:ok] && !suite_eval[:bypass])
 end
 
 # The FRAGILE post_deploy_cmd shape: a rails runner that LOADs a seed file via
@@ -1568,34 +1644,47 @@ end
 # run downgrades it to a LOUD suggestion — the CI wait moved to the review handoff,
 # where bin/pr-review's supervisor checks the live verdict before spawning reviewers
 # — while the review gate-zero (--gate-role review) keeps the strict block (it IS
-# the authoritative CI verdict). A missing PR / no checks / gh error stays a
-# non-blocking note (the gate re-runs at review).
+# the authoritative CI verdict). Submit-side, a missing PR / no checks / gh error
+# stays a non-blocking note (the gate re-runs at review); REVIEW-side it does not —
+# see the allow-list below.
 # Evaluated BEFORE the suite gate because the suite gate's fast route depends on it.
 # Non-blocking SUGGESTIONS collect here too (never affect `ready`); more join below.
 suggestions = []
 ci = nil
+ci_error = nil            # the CI refusal, if any
+ci_error_cert_clears = false # ...and whether a FULL local cert stands in for it
+ci_review_refused = false # resolved after the suite gate; feeds the gates-card row
 if gate != "build"
   ci = CiStatus.evaluate(devops["pr_url"], ENV["DOR_CHECK_CI_STATUS"])
+
+  # THE CASE BELOW CHOOSES THE REMEDY. THE ALLOW-LIST AFTER IT CHOOSES THE VERDICT.
+  # Keep that split: it is the whole fix. This case used to do both, and a case that
+  # decides the verdict by naming bad states is a DENY-LIST — unbounded by
+  # construction, because every state added to bin/lib/ci_status.rb afterwards
+  # defaults to PASS, silently. That is not a hypothetical failure mode; it is how
+  # :no_pr got here (see the allow-list's note). So the case now only picks the most
+  # specific remedy text we have for a state, and `ready` is decided in exactly one
+  # place, by asking for GREEN.
   case ci[:state]
   when :red
-    errors << "GitHub CI is RED for the PR (#{Array(ci[:failing]).join(", ")}) — a red PR handed to review is the " \
+    ci_error = "GitHub CI is RED for the PR (#{Array(ci[:failing]).join(", ")}) — a red PR handed to review is the " \
       "#1 blocker class (the local cert doesn't run the browser test:system lane CI does). Fix, push, and re-run " \
       "dor-check once CI is green."
   when :conflicted
     # HARD blocker in BOTH roles, distinct from :pending/:none ("CI still coming",
     # genuinely deferrable): a conflicted PR's CI is never coming, so anything
     # softer strands the task in submitted forever (the PR-#509 stall).
-    errors << "review's gate-zero would defer this forever while the board looks healthy. " +
+    ci_error = "review's gate-zero would defer this forever while the board looks healthy. " +
       CiStatus.conflicted_remedy(ci)
   when :ci_less
     # The SAME hard-blocker shape as :conflicted, for the case that never reads DIRTY:
     # zero check-runs plus a merge GitHub will not confirm. Softer treatment strands
     # the task exactly like the PR-#509 stall — see the THIRD STATE section in
     # bin/lib/ci_status.rb.
-    errors << CiStatus.ci_less_remedy(ci)
+    ci_error = CiStatus.ci_less_remedy(ci)
   when :pending
     if review_role
-      errors << "GitHub CI is still RUNNING for the PR (#{Array(ci[:pending]).join(", ")}) — not green YET. The " \
+      ci_error = "GitHub CI is still RUNNING for the PR (#{Array(ci[:pending]).join(", ")}) — not green YET. The " \
         "review gate-zero is the authoritative CI verdict, so defer this review until CI settles (the supervisor's " \
         "defer machinery re-queries); a red finish bounces the task back."
     else
@@ -1605,40 +1694,48 @@ if gate != "build"
         "back with the failing checks named, so expect that round-trip if CI fails."
     end
   when :closed, :merged
-    errors << "the PR is #{ci[:state].to_s.upcase}, not an OPEN review target — `gh pr checks` returns the head " \
+    ci_error = "the PR is #{ci[:state].to_s.upcase}, not an OPEN review target — `gh pr checks` returns the head " \
       "commit's HISTORICAL checks even on a closed/merged PR, so a green here is NOT a live pass. Reconcile " \
       "devops.pr_url (a stale or already-merged PR?) before advancing to review."
-  when :unreadable, :unverified, :none
-    # REVIEW ROLE FAILS CLOSED ON A VERDICT IT NEVER READ.
-    #
-    # These three are "no verdict" and stay non-blocking submit-side, exactly as
-    # bin/lib/ci_status.rb documents — that reasoning is about the BUILD role and it
-    # stands. The review role is different in kind: :pending ALREADY errors here
-    # because "the review gate-zero is the authoritative CI verdict". An UNREAD
-    # verdict is strictly LESS informative than a pending one, so it cannot pass
-    # where pending fails.
-    #
-    # Not hypothetical: on 2026-08-09 the agent App token expired mid-cycle and four
-    # reviewers in a row got `ready` alongside a skimmable "CI UNVERIFIED" note. One
-    # wrote it up as "a reviewer who didn't notice that line would have merged on an
-    # unread CI verdict". The distinction WAS printed; the verdict line still said
-    # advance. Honesty in the suggestion is not the same as failing closed.
-    #
-    # The remedies stay DIFFERENT because the fixes are (the rolio lesson): a token
-    # needs a credential and re-running is futile; :none/:unverified need waiting.
-    if review_role
-      errors << if ci[:state] == :unreadable
-                  "GitHub CI is UNREADABLE (#{ci[:reason]}) — the review gate-zero IS the authoritative CI " \
-                    "verdict, and it cannot be authoritative about a CI it could not read. This is a CREDENTIAL " \
-                    "fault, NOT a missing CI: re-running will never clear it. " +
-                    CiStatus.unreadable_remedy(CiStatus.repo_from_pr_url(devops["pr_url"]), cause: ci[:cause])
-                else
-                  "GitHub CI has produced no verdict yet (#{ci[:state]}) — the review gate-zero IS the " \
-                    "authoritative CI verdict, so it must not advance on a CI it has not read. Defer this review " \
-                    "until checks appear and settle (the supervisor's defer machinery re-queries); a red finish " \
-                    "bounces the task back."
-                end
-    end
+  when :green
+    nil # THE ONLY PASS. Named explicitly so the allow-list below reads as exhaustive.
+  else
+    nil # Every remaining state — named or not — is the allow-list's to refuse.
+  end
+
+  # ==== THE REVIEW GATE-ZERO IS AN ALLOW-LIST =================================
+  #
+  # :green is the ONLY state that advances a review, and the no-verdict family is
+  # the ONLY state that a full local cert may stand in for. Everything else
+  # refuses — INCLUDING a state this gate has never heard of.
+  #
+  # WHY THE SHAPE AND NOT JUST THE STATES. The gate used to decide `ready` from a
+  # deny-list of spellings (:red, :conflicted, :ci_less, :pending, :closed,
+  # :merged) and let everything else fall through to a pass. A deny-list defaults
+  # to PASS, so it is unbounded: the reader cannot tell "this state was considered
+  # safe" from "nobody updated the list", and each new state silently joins the
+  # safe side. That is exactly how :no_pr got here — a blank devops.pr_url resolves
+  # to :no_pr, which had no branch and no `else`, so --gate-role review exited 0
+  # printing "ready to advance" with NO CI LINE AT ALL: more silent than the
+  # unread-verdict bug this gate was written to close. An allow-list defaults to
+  # REFUSE, which is what a gate is for; adding a state to ci_status.rb now blocks
+  # review until somebody classifies it deliberately.
+  #
+  # THE THREE TIERS:
+  #   1. :green                → advance.
+  #   2. CI_NO_VERDICT_STATES  → refuse, UNLESS the task carries a FULL cert.
+  #   3. everything else       → refuse, unconditionally.
+  if review_role && ci_error.nil? && ci[:state] != :green
+    ci_error, ci_error_cert_clears = unread_ci_refusal(ci, devops["pr_url"], task["slug"] || slug)
+  end
+
+  # A refusal a cert can clear is DEFERRED past the suite gate below, which is
+  # where suite_eval becomes known (this block runs first on purpose — the suite
+  # gate's fast route reads `ci`). Everything else lands now, so error ORDER is
+  # unchanged for every state that already blocked.
+  if ci_error && !ci_error_cert_clears
+    errors << ci_error
+    ci_review_refused = review_role
   end
 end
 
@@ -1788,6 +1885,54 @@ if gate != "build" && shape_def && shape_def.fetch("full_suite_gate", true)
     end
   end
 end
+
+# ==== A FULL CERT SATISFIES THE REVIEW GATE ON A CI THAT CANNOT SPEAK ==========
+#
+# Deferred from the CI gate above, because THIS is the first point where suite_eval
+# exists (that block runs first on purpose: the suite gate's fast route reads `ci`).
+#
+# The rule: for CI_NO_VERDICT_STATES only, a FULL local cert stands in for the CI
+# verdict. Two independent reasons, and either one alone would be enough:
+#
+#   * THE GATE MUST HONOUR ITS OWN REMEDY. unreadable_remedy has always ENDED by
+#     naming the full cert — "certify in full instead: bin/full-suite-check <task>" —
+#     and bin/full-suite-check calls itself the ONLY route available for a repo whose
+#     CI dor-check cannot read. Refusing that cert made the gate hand the reader an
+#     instruction it would then reject, which is worse than a plain no: it teaches
+#     people the gate is noise, and an ignored gate is how a genuinely RED CI ships.
+#
+#   * THE EVIDENCE IS NO LONGER WEAKER. The historical reason to prefer CI was that a
+#     local cert ran `bin/rails test` while CI also ran the browser test:system lane.
+#     bin/full-suite-check now runs ci.yml's VERBATIM command, test:system included —
+#     so a full cert is not a lesser substitute for CI, it is the same suite, run
+#     locally. A fast cert is still NOT enough (it is diff-mapped, not the full net),
+#     and the suite gate above independently refuses one without a green CI.
+#
+# This is not leniency: the refusal stands for every state that HAS a verdict, for a
+# missing PR, for a bypass hatch, and for any state this gate cannot classify.
+if ci_error && ci_error_cert_clears && !full_cert_stands_in_for_ci?(suite_eval, shape_def)
+  errors << ci_error
+  ci_review_refused = true
+end
+
+# The CI row the gates card shows, resolved ONCE here so the durable GateRun sop and
+# the --json payload cannot disagree — and so it is observable (and testable) without
+# a board write, which --json and --file both skip by design.
+ci_gate_result =
+  if ci
+    case ci[:state]
+    when :green then "pass"
+    when :pending then review_role ? "fail" : "pending"
+    when :red, :conflicted, :ci_less, :closed, :merged then "fail"
+    else
+      # A FAILED dor_review must name CI as the failing SOP when CI is why it failed.
+      # Leaving the no-verdict family on a flat "unverified" recorded the card's sole
+      # cause as a NOTE — the same asymmetry :pending avoids one line above.
+      # "unverified" stays right where CI genuinely only noted: any builder-side run,
+      # and a review run whose FULL cert stood in for the unread verdict.
+      ci_review_refused ? "fail" : "unverified"
+    end
+  end
 
 # ==== `required_evidence: [control]` — the question a tier list cannot ask ======
 #
@@ -2012,7 +2157,12 @@ end
 # says loudly that CI is unverified so the handoff isn't blind. A task with NO PR yet
 # is SILENT — dor-check runs before the PR exists on the normal path, so there's
 # nothing to verify and no note to make.
-case ci && ci[:state]
+#
+# SUPPRESSED when the review allow-list already REFUSED on this same state. The
+# refusal carries the same remedy, and ci_status.rb calls that THE ONE REMEDY STRING
+# — printing it twice in one run is how a reader learns to skim it, which is the
+# failure this whole gate is about.
+case ci_review_refused ? nil : ci && ci[:state]
 when :none
   suggestions << "CI gate: the PR reports no GitHub checks yet — CI is UNVERIFIED. Confirm the workflow triggered " \
     "before handing off."
@@ -2071,15 +2221,8 @@ if !options[:json] && options[:file].nil? && gate != "build" && !slug.to_s.empty
     # (provisional, never a fail), and the AUTHORITATIVE ci verdict lands on
     # `dor_review` via the review gate-zero. One verdict per gate; no DoR row
     # lingers in flight waiting on CI.
-    ci_result =
-      case ci[:state]
-      when :green then "pass"
-      when :pending then review_role ? "fail" : "pending"
-      when :red, :conflicted, :ci_less, :closed, :merged then "fail"
-      else "unverified"
-      end
     repo = CiStatus.repo_from_pr_url(devops["pr_url"])
-    gate_sops << { "sop" => "ci", "result" => ci_result }.merge(CiStatus.gate_evidence(ci, repo: repo))
+    gate_sops << { "sop" => "ci", "result" => ci_gate_result }.merge(CiStatus.gate_evidence(ci, repo: repo))
   end
   emit_gate_verdict(slug, ready, options[:gate_role], gate_sops)
 end
@@ -2113,6 +2256,10 @@ if options[:json]
     changed_files: gate == "build" ? nil : changed_files,
     ci: ci && { state: ci[:state], cause: ci[:cause], reason: ci[:reason], failing: ci[:failing],
                 pending: ci[:pending], count: ci[:count] }.compact,
+    # The gates-card row this run WOULD write (--json skips the board write). Exposed
+    # so "what the card will say" is inspectable and testable without a durable
+    # attempt row — a probe that leaves a FAILED row on a real task is its own hazard.
+    ci_gate_result: ci_gate_result,
     full_suite: suite_eval && {
       ok: suite_eval[:ok],
       route: suite_route,
@@ -2167,7 +2314,19 @@ if ready
     # Defensive, like :conflicted above — :ci_less always lands in `errors`.
     puts "  ⚠ NO CI WILL RUN (stale base) — rebase onto #{ci[:base].to_s.empty? ? "the base branch" : ci[:base]}"
   elsif ci && %i[none unverified unreadable].include?(ci[:state])
-    puts "  ⚠ GitHub CI UNVERIFIED (#{ci[:state]}) — see the suggestion below"
+    # A READY verdict beside an UNVERIFIED CI is the exact presentation this gate was
+    # written about: four reviewers read "ready" next to a skimmable CI note and
+    # would have merged on a verdict nobody read. So in the review role — where that
+    # pairing is only legal at all because a FULL cert stood in for the unread CI —
+    # name the evidence that is carrying the verdict, rather than leaving the reader
+    # to infer it from an absence. Submit-side the pairing is the documented
+    # provisional handoff, and its existing wording stays.
+    if review_role
+      puts "  ⚠ GitHub CI UNVERIFIED (#{ci[:state]}) — advancing on the FULL local cert instead, which runs " \
+           "ci.yml's own command (test:system included). CI itself was NOT read; see the suggestion below"
+    else
+      puts "  ⚠ GitHub CI UNVERIFIED (#{ci[:state]}) — see the suggestion below"
+    end
   end
   puts "  → ready to advance #{boundary}"
   print_suggestions.call
