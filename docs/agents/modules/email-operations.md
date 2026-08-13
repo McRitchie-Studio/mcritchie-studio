@@ -45,16 +45,26 @@ Every engine-consuming app must install the engine's migrations, and re-install
 after an engine upgrade:
 
 ```bash
+bundle update --conservative studio-engine   # resolve FIRST — see below
 bin/rails studio_engine:install:migrations   # copies db/migrate/*.studio_engine.rb
 bin/rails db:migrate
 bin/rails runner 'puts Studio::EmailDelivery.available?'   # => true
 ```
 
-**Install all of them.** The task copies every engine *reference* migration, not
-just the outbox, and all of them are safe on any app: the ones that create tables
-add a table you may not use yet, and the one that ALTERS an app-owned table
-(`allow_null_image_cache_owner`) no-ops when that table is absent
-(studio-engine >= 0.30.1 — before that it raised and failed the whole run).
+**Resolve before you copy.** `install:migrations` copies from the gem bundler
+RESOLVED. On a branch whose `Gemfile.lock` still pins the older version,
+`bundle install` HONOURS that lock and the task copies nothing — a silent no-op
+that leaves the suite green. `bundle update --conservative studio-engine` moves
+that one gem; read the lockfile diff and confirm nothing else moved.
+
+**Install all of them.** The task copies every engine migration, not just the
+outbox, and all of them are safe on any app: the ones that create tables add a
+table you may not use yet, and the two that ALTER app-owned tables guard
+themselves — `allow_null_image_cache_owner` no-ops when `image_caches` is absent
+(studio-engine >= 0.30.1 — before that it raised and failed the whole run), and
+`add_standard_user_profile_columns` (0.46+) returns early without a `users` table
+and adds every column `if_not_exists`, so an app that already has `first_name`
+keeps its own.
 
 Do **not** slim the set by deleting copies you think you don't need.
 `install:migrations` builds its skip-list from the files **present**, so a
