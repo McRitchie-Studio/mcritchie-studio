@@ -510,6 +510,23 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_equal [good.slug], rel.reload.tasks.pluck(:slug)
   end
 
+  # The bounce LEDGER's integrity, from the QA side. The block_kind COLUMN is wiped
+  # the moment the builder resubmits, so the qa_feedback row is the only durable
+  # record of what kind of block this was — and the two-bounce circuit breaker
+  # (bin/lib/bounce_ledger.rb) classifies on exactly this field. An ejection IS a
+  # send-back to the builder, so it must be stamped `rework` and countable; an
+  # unstamped row is merely counted as `unknown`, which is safe but imprecise.
+  test "[unit] eject! stamps the block kind on the qa_feedback row the breaker reads" do
+    bad = reviewed_task("kinded")
+    Release::Conductor.sweep!(bad)
+
+    Release::Conductor.eject!(bad, feedback: "integration regression on origin/release")
+
+    note = Activity.for_task(bad).by_type("qa_feedback").last
+    assert_equal "rework", note.metadata["kind"],
+                 "an ejection is a send-back — the breaker must be able to tell it from an environment blocker"
+  end
+
   test "[unit] eject! without feedback blocks with no qa_feedback note" do
     bad = reviewed_task("quiet")
     Release::Conductor.sweep!(bad)

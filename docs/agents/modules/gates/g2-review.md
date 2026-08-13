@@ -83,6 +83,12 @@ What the review session records, per reviewed task:
      toward wait; a wrong block would force-push a healthy branch.
    - **pending / no checks yet** → the task defers to a later wave (the
      defer machinery); no lane opens.
+
+   All three gate-zero bounces are **MECHANICAL** — a red pipe, not a
+   disagreement — so when the two-bounce circuit breaker refuses one on an
+   already-bounced task (`bin/task block --kind rework` exits **10**), re-run it
+   with `--breaker-ack "red CI, mechanical"`. Escalation is for review deadlocks;
+   a broken build is not one, and the acknowledgment is recorded on the row.
    - **green** → proceed. (An unverified gh read, or a missing/closed PR,
      also proceeds — the primary's strict gate-zero is the backstop.)
 1. **Open** — as the primary+light pair launches, it opens both lanes
