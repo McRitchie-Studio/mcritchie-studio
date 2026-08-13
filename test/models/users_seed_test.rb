@@ -1,15 +1,16 @@
 require "test_helper"
 
-# Exercises db/seeds/01_users.rb directly. It runs on every deploy, so the
-# properties that matter are that it lands the parked roster, that it is
-# idempotent, and — the reason this file exists — that it can take admin AWAY.
+# Exercises db/seeds/01_users.rb directly.
 #
-# The seed is the durable source of truth for who is an admin. Its
-# find_or_create_by! block only runs on CREATE, so a role change on an EXISTING
-# row depends entirely on the separate update! that follows. Without that line
-# the roster is write-once: mack was created an admin by an earlier seed, and
-# demoting him in PARKED_IDENTITIES would change nothing on any environment that
-# had already run.
+# It does NOT run on every deploy in this app: the Procfile release phase is
+# `bin/rails db:migrate` alone, and bin/dor-check refuses a bare `db:seed` as a
+# post-deploy command. So a roster change reaches a deployed environment through
+# `before_validation :assign_parked_identity` on the next save of that account,
+# not through this file. What the seed owns is a FRESH database and a local one.
+#
+# The write-once trap is still worth guarding: find_or_create_by!'s block runs
+# only on CREATE, so anything a roster change needs to alter on an EXISTING row
+# has to be re-applied explicitly. Role is, via the update! that follows.
 class UsersSeedTest < ActiveSupport::TestCase
   SEED = Rails.root.join("db/seeds/01_users.rb").to_s
 

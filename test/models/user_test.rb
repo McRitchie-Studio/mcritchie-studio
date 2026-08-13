@@ -188,15 +188,20 @@ class UserTest < ActiveSupport::TestCase
     refute User.new(email: mack[:email], name: mack[:name], role: mack[:role]).admin?
   end
 
-  # The seed is the durable source of truth for who is an admin: 01_users.rb
-  # re-applies the role on every run, so an account promoted by hand is put back.
-  test "the seed can demote an account that was created as an admin" do
-    user = User.create!(email: "mack@mcritchie.studio", name: "Mack McRitchie", role: "admin")
-    parked = User::PARKED_IDENTITIES.find { |identity| identity[:email] == user.email }
+  # NOT a seed test — the seed is never loaded here. The role is re-applied by
+  # `before_validation :assign_parked_identity`, so a parked account cannot be
+  # saved into a role the roster contradicts, and that is what this asserts.
+  #
+  # An earlier version of this called itself "the seed can demote an admin" and
+  # was tautological: the callback means the row is created a viewer, so setting
+  # role: "admin" was a no-op and the assertion could not fail.
+  test "a parked identity cannot be saved into a role the roster contradicts" do
+    mack = User.create!(email: "mack@mcritchie.studio", name: "Mack McRitchie", password: "password")
 
-    user.update!(role: parked[:role])
+    mack.update!(role: "admin")
 
-    refute user.reload.admin?, "a re-seed must be able to take admin away, not only grant it"
+    refute mack.reload.admin?,
+      "the roster must win over a hand-set role, or a demotion never reaches existing rows"
   end
 
 end
