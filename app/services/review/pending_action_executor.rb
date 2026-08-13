@@ -187,8 +187,15 @@ module Review
       verdict = Ci::ReviewGate.verdict(task)
       state = verdict[:state]
       unless state == :green
+        # NAME THE LANE THAT STOPPED US. "CI is pending" sends whoever reads this
+        # back to GitHub to work out WHICH of six lanes; the fold already knows, and
+        # this string is the whole account of a merge that did not happen (it is
+        # logged now, and recorded on the action if the window later closes). A red
+        # outranks a pending, so it is reported first — same precedence as the fold.
+        lanes = Array(verdict[:failing]).presence || Array(verdict[:pending]).presence
         return result(:waiting, "CI is #{state}, not green" \
-                                "#{" (absent check-runs are not a pass)" if state == :none}")
+                                "#{" (absent check-runs are not a pass)" if state == :none}" \
+                                "#{" — #{lanes.join(", ")}" if lanes}")
       end
 
       ci_sha = verdict[:sha].to_s
