@@ -166,4 +166,42 @@ class UserTest < ActiveSupport::TestCase
     user = User.create!(email: "tokened@example.com")
     assert user.session_token.present?
   end
+  # --- the parked identities ------------------------------------------------
+
+  # WHY THIS IS ASSERTED. Every parked identity was an admin, so an ordinary
+  # member could not be signed in as locally at all — admin-only pages, member
+  # copy and anything branching on a role each had exactly one answer available.
+  test "a non-admin identity is parked alongside the admins" do
+    members = User::PARKED_IDENTITIES.reject { |identity| identity[:role] == "admin" }
+
+    refute_empty members, "with every identity an admin, nothing can be tested as a member"
+  end
+
+  # Mack specifically, because he is already the non-admin in turf-monster —
+  # one person meaning the same thing in both apps rather than each app growing
+  # its own stand-in.
+  test "mack is the parked member, and reads as one" do
+    mack = User::PARKED_IDENTITIES.find { |identity| identity[:email] == "mack@mcritchie.studio" }
+
+    refute_nil mack, "the shared non-admin identity should stay parked"
+    assert_equal "viewer", mack[:role]
+    refute User.new(email: mack[:email], name: mack[:name], role: mack[:role]).admin?
+  end
+
+  # NOT a seed test — the seed is never loaded here. The role is re-applied by
+  # `before_validation :assign_parked_identity`, so a parked account cannot be
+  # saved into a role the roster contradicts, and that is what this asserts.
+  #
+  # An earlier version of this called itself "the seed can demote an admin" and
+  # was tautological: the callback means the row is created a viewer, so setting
+  # role: "admin" was a no-op and the assertion could not fail.
+  test "a parked identity cannot be saved into a role the roster contradicts" do
+    mack = User.create!(email: "mack@mcritchie.studio", name: "Mack McRitchie", password: "password")
+
+    mack.update!(role: "admin")
+
+    refute mack.reload.admin?,
+      "the roster must win over a hand-set role, or a demotion never reaches existing rows"
+  end
+
 end
