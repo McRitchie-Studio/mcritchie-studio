@@ -598,6 +598,41 @@ module Api
         assert_equal "small", @task.pm_size
       end
 
+      # THE SELF-FLAG PATH. exclusive-lanes.md (and Carl's + Avi's soul docs) tell a
+      # backend Dev to set requires_migration the moment they discover they need a
+      # schema change. Until this permit existed the column was writable ONLY through
+      # the admin-gated /sizing editor, so every one of those instructions named a
+      # behaviour no agent could perform. `bin/task update <slug> --requires-migration`
+      # rides this line.
+      test "[integration] update permits requires_migration so an agent can self-flag" do
+        patch api_v1_task_path(@task.slug), params: { requires_migration: true }, headers: @headers, as: :json
+
+        assert_response :success
+        assert @task.reload.requires_migration, "an agent must be able to flag its own task for the lane"
+      end
+
+      # Un-flagging matters too: a task that turns out NOT to need a migration hands
+      # the lane back and says so. `false` is a VALUE, not an absent parameter.
+      test "[integration] update permits clearing requires_migration" do
+        @task.update!(requires_migration: true)
+
+        patch api_v1_task_path(@task.slug), params: { requires_migration: false }, headers: @headers, as: :json
+
+        assert_response :success
+        refute @task.reload.requires_migration
+      end
+
+      test "[integration] create permits requires_migration for a pre-flagged task" do
+        post api_v1_tasks_path,
+             params: { title: "Pre flagged migration task", requires_migration: true,
+                       devops: { shape: "backend" } },
+             headers: @headers, as: :json
+
+        assert_response :success
+        slug = response.parsed_body.dig("data", "slug")
+        assert Task.find_by!(slug: slug).requires_migration, "Avi can pre-flag the lane at refinement"
+      end
+
       test "update rejects an out-of-range size with a 422" do
         patch api_v1_task_path(@task.slug), params: { po_size: "huge" }, headers: @headers, as: :json
 

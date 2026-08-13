@@ -143,6 +143,14 @@ class Task < ApplicationRecord
     }
   }.freeze
   REVIEW_STATUSES = %w[started completed failed info].freeze
+  # The `backend_migration` exclusive-lane key (docs/agents/system/exclusive-lanes.md).
+  # The lane is CLAIMED through MigrationLaneClaim, not here. Task once carried a
+  # `try_acquire_migration_lane` / `release_migration_lane` pair wrapping
+  # `pg_try_advisory_lock(hashtext(...))`; both are gone. A session advisory lock
+  # could not back this lane — bin/task is an HTTP client with no DB connection,
+  # and a lock taken in a web request rides the POOLED connection past the
+  # response, where it is re-entrant (two acquires on one pooled connection are
+  # BOTH granted). See MigrationLaneClaim for the durable, unique-indexed claim.
   MIGRATION_LANE = "backend_migration".freeze
   OPERATOR_APPROVAL_WAITING = "waiting".freeze
   # The only stages where a WAITING operator-approval request is meaningful: the
@@ -1274,17 +1282,6 @@ class Task < ApplicationRecord
     role = normalize_review_role(role)
     moment = normalize_review_moment(moment)
     REVIEW_MOMENT_LABELS.dig(role, moment).presence || moment.to_s.tr("_", " ").presence&.humanize || "Review update"
-  end
-
-  # Postgres advisory locks are session-scoped — try_acquire and release
-  # must run on the same DB connection. Designed for long-lived agent
-  # processes, not Rails request cycles. See exclusive-lanes.md.
-  def self.try_acquire_migration_lane
-    connection.select_value("SELECT pg_try_advisory_lock(hashtext('#{MIGRATION_LANE}'))")
-  end
-
-  def self.release_migration_lane
-    connection.select_value("SELECT pg_advisory_unlock(hashtext('#{MIGRATION_LANE}'))")
   end
 
   # --- Workflow 1: Build ---------------------------------------------------
