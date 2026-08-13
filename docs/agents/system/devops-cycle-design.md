@@ -860,12 +860,12 @@ board):
    promotes `accepted → release` and flips the member `assembled` on QA-green. Any
    reviewer blocks → **`bin/task block <task> --kind rework --feedback "…"`** (one
    complete send-back). That command runs the **two-bounce circuit breaker** first
-   (`bin/task bounces <task>` reads it standalone: exit 0 CLEAR · 10 TRIPPED · 1
-   UNKNOWN) and **refuses** a second send-back, routing the deadlock to the
-   operator as a `dependency` escalation instead; a mechanical bounce (red CI,
-   merge conflict) proceeds on a recorded `--breaker-ack "<reason>"`. Bias to
-   action: a clean merge-ready verdict = go (`release` reverts cleanly, and the
-   sweep follows promptly).
+   (`bin/task bounces <task>` reads it standalone: exit 0 CLEAR · 10 TRIPPED ·
+   any other non-zero UNKNOWN, which is never to be read as zero) and **refuses**
+   a second send-back, routing the deadlock to the operator as a `dependency`
+   escalation instead; a mechanical bounce (red CI, merge conflict) proceeds on a
+   recorded `--breaker-ack "<reason>"`. Bias to action: a clean merge-ready
+   verdict = go (`release` reverts cleanly, and the sweep follows promptly).
 
 **Agentic intent — the live "who's on it now".** Each event carries the agent
 that STARTED it, not only the one that completed it, so /deployments and the
