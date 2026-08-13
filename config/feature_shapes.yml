@@ -47,9 +47,23 @@
 # THIS FILE IS ECOSYSTEM-WIDE. `bin/dor-check` reads it for a task in ANY repo. But a LANE is
 # per-repo, and the guard runs in mcritchie-studio's CI, where no sibling repo is checked out.
 # So it proves the claim for THIS repo's runners and is structurally blind to the others.
-# Audited by hand, 2026-07-14 (do not re-derive; DO re-check when a repo is added):
+# Audited by hand, 2026-07-14; mcritchie-industries added 2026-08-13 (do not re-derive;
+# DO re-check when a repo is added — Industries proved that instruction is load-bearing:
+# it joined after the first audit and sat unlisted until a task in it demanded a tier it
+# cannot run):
 #   · mcritchie-studio — `playwright` job in ci.yml.                        e2e COLLECTED.
 #   · turf-monster     — `playwright` job in its own ci.yml.                e2e COLLECTED.
+#   · mcritchie-industries — NO playwright lane. NO e2e/ directory.         e2e **NOT COLLECTED**.
+#     Its ci.yml runs scan_ruby, scan_js, lint and test; the test job is
+#     `bin/rails db:test:prepare test test:system`. So unit, component and integration ARE
+#     collected, and so is a REAL browser lane — but a Capybara `test:system` one, which is
+#     not the `e2e` tier this file means (playwright, chromium-only, per the ui+db note).
+#     A `ui+db` task in Industries therefore demands `e2e`, dor-check credits whatever tag a
+#     builder types, and the honest builder has nowhere to go. Hit live on 2026-08-13 by
+#     /tasks/recover-industries-engine-adoption, which was reclassified to `backend` rather
+#     than fabricate the tag — a correct call for that diff (no first-party UI code), and NOT
+#     a general escape: the next genuinely ui+db change here has no such out.
+#     THIS REPO IS NOT DORMANT, which is what separates it from rolio below.
 #   · rolio            — NO playwright lane. NO e2e/ directory AT ALL.      e2e **NOT COLLECTED**.
 #     A `ui+db` task in rolio therefore demands the `e2e` tier that nothing in rolio runs, and
 #     bin/dor-check credits the `[e2e]` tag a builder types. That is THE ORIGINAL BUG of
