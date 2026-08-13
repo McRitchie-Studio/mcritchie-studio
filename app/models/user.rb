@@ -7,7 +7,7 @@ class User < ApplicationRecord
     { email: "alex@mcritchie.studio",  name: "Alex McRitchie",        role: "admin", wallet: "7ZDJp7FUHhuceAqcW9CHe81hCiaMTjgWAXfprBM59Tcr" },
     { email: "team@mcritchie.studio",  name: "McRitchie Studio Team", role: "admin", wallet: "8K81w4e6UcB7TiANhM9N8sAgijJvTxxybRi8AENRaRYd" },
     { email: "mason@mcritchie.studio", name: "Mason McRitchie",       role: "admin", wallet: "CytJS23p1zCM2wvUUngiDePtbMB484ebD7bK4nDqWjrR" },
-    { email: "mack@mcritchie.studio",  name: "Mack McRitchie",        role: "viewer" },
+    { email: "mack@mcritchie.studio",  name: "Mack McRitchie",        role: "admin" },
     { email: "turf@mcritchie.studio",  name: "Turf Monster",          role: "admin" }
   ].freeze
 
