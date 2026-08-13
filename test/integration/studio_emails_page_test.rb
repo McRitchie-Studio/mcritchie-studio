@@ -31,15 +31,22 @@ class StudioEmailsPageTest < ActionDispatch::IntegrationTest
 
     assert_select "h1", text: "Emails"
     assert_select "a[href=?]", admin_email_path("magic_link"), text: "Magic-link sign-in"
-    assert_select "a[href=?]", admin_email_path("email_change_confirmation"),
-                  text: "Email change confirmation"
-    assert_select "tbody tr", 2
+
+    # COUNTED BY LINK, not by "tbody tr". A list row renders the email's real
+    # layered banner, which is an email <table> with rows of its own — so a
+    # descendant row selector counts that markup as list rows. One name link per
+    # registered email holds on either engine.
+    assert_select "tbody a[href^=?]", "/admin/emails/", Studio::EmailCatalog.keys.size
   end
 
   # The registry is INHERITED, not redeclared here. Guards the scope decision:
   # this app contributes no catalog entries of its own.
   test "the app registers no email of its own" do
-    assert_equal %w[magic_link email_change_confirmation], Studio::EmailCatalog.keys
+    # Compared against the ENGINE's own list rather than a hard-coded pair: the
+    # standard set is the engine's to decide, and this app's claim is only that
+    # it adds nothing to it.
+    assert_equal Studio::EmailCatalog::STANDARD.map { |entry| entry[:key] },
+                 Studio::EmailCatalog.keys
   end
 
   # Acceptance: the admin sidebar points at the shared page.
@@ -91,7 +98,10 @@ class StudioEmailsPageTest < ActionDispatch::IntegrationTest
     patch admin_email_path("magic_link"),
           params: { image: fixture_file_upload("notes.txt", "text/plain") }
     assert_redirected_to admin_emails_path
-    assert_match(/png, jpg, or webp/i, flash[:alert])
+    # The formats the message names have grown (GIF joined them once animated
+    # banners could be uploaded whole), so assert the part that identifies the
+    # message rather than its full wording.
+    assert_match(/png, jpg/i, flash[:alert])
   end
 
   test "an unknown key 404s" do

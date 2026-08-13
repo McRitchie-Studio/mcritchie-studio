@@ -61,6 +61,11 @@ class Release
   # A read that FAILED is not a read that came back clean. A rung whose count
   # could not be measured (`unreadable_repos`) is dirty too — silently skipping an
   # unmeasurable repo is the same shape of bug as never measuring the rung at all.
+  # And a PARTIAL read cannot SPEAK for the rung: "the trees are identical" is a
+  # claim about every repo, so a conflict sentence that makes one is withheld
+  # unless every repo reported. See `rung_read` — a partial read passing as a full
+  # one is how the guard would state, with specifics, that the operator's code is
+  # already in production while it had not looked at half the repos.
   module CleanCheck
     module_function
 
@@ -79,7 +84,9 @@ class Release
     #   included: an empty array means the git read did not run (e.g. --dry-run),
     #   and that is what suppresses the conflict check rather than faking agreement.
     # unreadable_repos: [{ "repo" =>, "rung" => }, …] — repos whose rung count
-    #   could not be read at all (missing branch, failed rev-list). Always dirty.
+    #   could not be read at all (missing branch, failed rev-list). Always dirty —
+    #   AND they mark the rung's read PARTIAL, which is how a conflict sentence
+    #   knows not to speak for repos nobody looked at (see `rung_read`).
     # expedited:        the slug `deploy-with-task` is expediting, when the caller
     #   passed `--task`. It is EXCLUDED from the accepted rung's board signal —
     #   the SOP allows re-running the act on a task review already merged onto
@@ -131,15 +138,13 @@ class Release
       attributed_ahead = attributed ? measured_ahead : []
 
       unreadable = normalize_unreadable(unreadable_repos)
-      # An empty accepted_states means the git read did not run, and an unmeasured
-      # signal can neither corroborate nor contradict the stamp — so the conflict
-      # check stays silent rather than reporting a disagreement with a signal that
-      # was never taken.
-      git_measured = Array(accepted_states).any?
-      conflict = accepted_signal_conflict(accepted, measured_ahead, git_measured, attributed)
-      # The same read-did-not-run rule on the release rung, measured against ITS
-      # own git signal (repo_states) rather than the accepted rung's.
-      release_conflict = release_signal_conflict(pending, ahead, Array(repo_states).any?)
+      # How much of each rung's git read actually landed — :unmeasured, :partial or
+      # :complete. An unmeasured signal can neither corroborate nor contradict the
+      # stamp, and a PARTIAL one cannot carry a universal claim about the trees.
+      # See rung_read and the two conflict methods.
+      conflict = accepted_signal_conflict(accepted, measured_ahead,
+                                          rung_read(accepted_states, unreadable), attributed)
+      release_conflict = release_signal_conflict(pending, ahead, rung_read(repo_states, unreadable))
 
       clean = pending.empty? && ahead.empty? && accepted.empty? &&
               accepted_ahead.empty? && unreadable.empty?
@@ -247,20 +252,55 @@ class Release
       parts.join("; ")
     end
 
+    # HOW MUCH OF A RUNG'S GIT READ LANDED. A conflict sentence is only as sound
+    # as the read behind it, and the two failure modes are different:
+    #   :unmeasured — no repo was read at all (a --dry-run takes no fetch). A
+    #                 signal never taken can neither agree nor disagree.
+    #   :partial    — some repo could not be read (`unreadable_repos`). The read
+    #                 RAN, so a positive count it returned is real, but it cannot
+    #                 support a claim about every repo.
+    #   :complete   — every repo reported a count.
+    #
+    # COMPLETENESS IS DERIVED FROM THE REPO SETS, NOT FROM THE `rung` LABEL. A
+    # repo that failed SOME read is complete on THIS rung only if it still
+    # produced a reading HERE. That is label-free on purpose: one unreadable entry
+    # can stand for both rungs at once — bin/release records a missing checkout as
+    # a single row labelled `accepted (no checkout at …)` though neither rung was
+    # read — so matching on the label would rebuild this very bug on a string
+    # compare, and it keeps a failure on one rung from muting the other.
+    def rung_read(states, unreadable)
+      measured = Array(states).map { |s| value(s, "repo").to_s }
+      return :partial if Array(unreadable).any? { |u| !measured.include?(value(u, "repo").to_s) }
+      return :unmeasured if measured.empty?
+
+      :complete
+    end
+
     # The accepted rung's two signals should agree; when they do not, say which
     # way. Both directions still REFUSE (fail-closed) — this only explains the
     # disagreement, because "which record is wrong" is the actionable part.
-    def accepted_signal_conflict(accepted, accepted_ahead, git_measured, attributed = false)
+    #
+    # The two directions need DIFFERENT amounts of read behind them, so the
+    # completeness rule is applied per branch rather than at the top.
+    def accepted_signal_conflict(accepted, accepted_ahead, git_read, attributed = false)
       return nil if attributed
-      return nil unless git_measured
+      return nil if git_read == :unmeasured
       return nil if accepted.any? == accepted_ahead.any?
 
       if accepted_ahead.any?
+        # EXISTENTIAL over the git read — "git says `accepted` carries commits"
+        # names repos it actually measured, and a repo that went unread cannot
+        # falsify a count that came back positive. A partial read still earns this.
         "the two `accepted` signals DISAGREE: git says `accepted` carries commits " \
           "(#{repo_summary(accepted_ahead)}), but NO task is stamped merged:\"accepted\". " \
           "Either a review skipped the stamp, or something landed on `accepted` with no task " \
           "behind it. Trust the git read and reconcile the board before expediting."
       else
+        # UNIVERSAL over the git read — "NO repo's `accepted` is ahead" is a claim
+        # about EVERY repo, and a partial read cannot make it. See
+        # release_signal_conflict for what asserting it anyway costs.
+        return nil unless git_read == :complete
+
         "the two `accepted` signals DISAGREE: #{accepted.size} task(s) are stamped " \
           "merged:\"accepted\", but no repo's `accepted` is ahead of `release`. " \
           "Either the sweep already promoted them and the stamp is stale, or the stamp names " \
@@ -283,8 +323,17 @@ class Release
     # The guard still REFUSES either way (fail-closed, unchanged) — the board says
     # work is unaccounted for, and that is reason enough not to expedite. This only
     # explains WHICH record to go fix, the same job accepted_signal_conflict does.
-    def release_signal_conflict(pending, ahead, git_measured)
-      return nil unless git_measured
+    #
+    # AND IT DEMANDS A COMPLETE READ. "the trees are identical" is a claim about
+    # EVERY repo, so a PARTIAL read cannot make it — yet the check used to fire on
+    # `repo_states.any?`, which one readable repo satisfies while another sits in
+    # `unreadable_repos`. That produced the worst output this module can emit: a
+    # confident, specific, WRONG statement that the operator's code is already in
+    # production, at the exact moment they are deciding whether to ship. Withhold
+    # the explanation instead; the rung is dirty either way (an unreadable repo is
+    # dirty on its own), so nothing is lost but a sentence that was not earned.
+    def release_signal_conflict(pending, ahead, git_read)
+      return nil unless git_read == :complete
       return nil unless pending.any? && ahead.empty?
 
       "the two `release` signals DISAGREE: #{pending.size} task(s) are still recorded as riding " \

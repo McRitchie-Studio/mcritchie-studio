@@ -39,13 +39,24 @@ interchangeable: git pushes ride the global credential helper
 ride a per-session minted token — before the sweep, export:
 
 ```bash
-export GH_TOKEN="$(GH_APP_ID="$(op read 'op://agents/github.mcritchie-agent/app-id')" \
-  GH_APP_PEM="$(op read 'op://agents/github.mcritchie-agent/mcritchie-agent.2026-07-29.private-key.pem')" \
-  bin/gh-app-mint-token)"
+export GH_TOKEN=$(printf 'protocol=https\nhost=github.com\n\n' | \
+  /Users/alex/projects/mcritchie-studio/bin/gh-app-git-credential get | \
+  sed -n 's/^password=//p')
 ```
 
-(1-hour TTL — re-mint on a 403; never print it.) Do not export `GH_APP_ITEM`
-here; that override belongs to Steffon's `production-deploy` ship lane only.
+Do not export `GH_APP_ITEM` here; that override belongs to Steffon's
+`production-deploy` ship lane only — and it is not advice, it is the mechanism:
+the helper above reads `GH_APP_ITEM` and mints whatever identity it names, so a
+leftover ship-lane export makes this command hand the sweep the **deployer**
+token, which has **no `pull_requests` grant** and cannot open or merge the batch
+PR. If `gh pr create`/`merge` fails with `Resource not accessible by
+integration`, that is what happened: `unset GH_APP_ITEM`, re-run the export
+above, then re-run `bin/release prepare` — it resumes.
+
+(1-hour TTL. A mid-sweep **401 `Bad credentials`** means the token expired —
+re-mint. A **403 `not accessible by personal access token`** means `GH_TOKEN`
+is unset or empty and `gh` fell back to the stored PAT — re-mint. Never print
+it.)
 
 Use the production board by default. Do not add `--local`.
 
