@@ -195,6 +195,148 @@ module Ci
                    "a re-run reuses the run_id — it must not fork a second row"
     end
 
+    # ── EVERY LANE ON THE TREE COUNTS, not just the suite one ─────────────────
+    #
+    # THE INCIDENT (studio-engine PR #111, 2026-08-13). GitHub queued TWO workflow
+    # runs on head 2d50675 at 21:02:07Z: `Engine CI`, which concluded success at
+    # 21:03:47Z, and `Consumer CI`, which concluded success at 21:09:36Z. The armed
+    # merge fired at 21:06:02Z — in the window between them, while Consumer CI was
+    # still `in_progress`.
+    #
+    # It fired because the fold read ONE row: the newest run whose workflow_name
+    # equalled the repo's resolved suite. Consumer CI was not EXCLUDED as a failure
+    # or counted as pending — it was dropped from the payload before CiStatus ever
+    # saw it, so the fold was handed a single completed success and correctly called
+    # that green. The verdict was green about a QUESTION IT HAD NOT ASKED.
+    #
+    # `count: 1` was always the tell, and it is asserted below: a gate that reads one
+    # lane of six cannot honour "red, pending, cancelled and absent all do nothing".
+    #
+    # THE FIX IS QUERY SCOPE, NOT THE FOLD. CiStatus.fold is positively framed
+    # (:green iff EVERY run affirmatively passed/skipped) and check_run_bucket
+    # already fail-safes a non-`completed` status to pending — both were correct and
+    # are unchanged. Only the SET handed to them was wrong.
+    #
+    # SHA RESOLUTION STAYS SCOPED to the suite workflow (latest_ci_sha), which is why
+    # "a gem's sibling workflow does not satisfy the gate" above still reads :none:
+    # Consumer CI alone resolves no tree to have an opinion about. The widening is
+    # strictly about which runs ON AN ALREADY-RESOLVED TREE get a vote.
+
+    ENGINE = "McRitchie-Studio/studio-engine"
+    INCIDENT_SHA = "2d5067552c7401babda9d0777d398236194bd2b4"
+
+    # The arrangement the incident actually had, minus the one thing under test.
+    def seed_incident(branch:, sibling_status:, sibling_conclusion:, sha: INCIDENT_SHA)
+      seed_run(branch: branch, sha: sha, status: "completed", conclusion: "success",
+               repo: ENGINE, workflow: "Engine CI", run_id: 501, started: 3.minutes.ago)
+      seed_run(branch: branch, sha: sha, status: sibling_status, conclusion: sibling_conclusion,
+               repo: ENGINE, workflow: "Consumer CI", run_id: 502, started: 3.minutes.ago)
+    end
+
+    # THE GUARD AGAINST A VACUOUS TEST. If the lane under test were the repo's own
+    # suite workflow, every case below would pass on the UNFIXED code too — the old
+    # single-row read caught a pending SUITE perfectly well. The whole defect is that
+    # a lane the suite filter drops never reaches the fold, so each test asserts the
+    # lane it seeds is genuinely one the old query would have discarded.
+    def assert_lane_was_excluded_before(lane, repo: "studio-engine")
+      suite = GithubWorkflowRun.ci_workflow_for(repo)
+      assert_not_equal suite, lane,
+                       "precondition: #{lane} must NOT be #{repo}'s resolved suite (#{suite}), or this " \
+                       "test also passes against the bug it exists to catch"
+    end
+
+    test "[unit] a sibling lane still IN PROGRESS on the reviewed tree is pending, never green" do
+      task = submitted(branch: "feat/slow-consumer", pr: 111, repo: "studio-engine")
+      seed_incident(branch: "feat/slow-consumer", sibling_status: "in_progress", sibling_conclusion: nil)
+      assert_lane_was_excluded_before("Consumer CI")
+
+      verdict = Ci::ReviewGate.verdict(task)
+      refute Ci::ReviewGate.green?(task),
+             "the armed merge for PR #111 fired here: one lane green, one still running"
+      assert_equal :pending, verdict[:state]
+      assert_includes Array(verdict[:pending]), "Consumer CI",
+                      "the running lane must be NAMED as pending, not silently dropped"
+    end
+
+    test "[unit] a sibling lane still QUEUED is pending, never green" do
+      task = submitted(branch: "feat/queued-consumer", pr: 112, repo: "studio-engine")
+      seed_incident(branch: "feat/queued-consumer", sibling_status: "queued", sibling_conclusion: nil)
+      assert_lane_was_excluded_before("Consumer CI")
+
+      refute Ci::ReviewGate.green?(task), "a lane GitHub has queued but not started is not a pass"
+      assert_equal :pending, Ci::ReviewGate.verdict(task)[:state]
+    end
+
+    test "[unit] a sibling lane that FAILED is red, never green" do
+      task = submitted(branch: "feat/red-consumer", pr: 113, repo: "studio-engine")
+      seed_incident(branch: "feat/red-consumer", sibling_status: "completed", sibling_conclusion: "failure")
+      assert_lane_was_excluded_before("Consumer CI")
+
+      verdict = Ci::ReviewGate.verdict(task)
+      refute Ci::ReviewGate.green?(task),
+             "a gem's downstream consumer suite going red is exactly what it exists to catch"
+      assert_equal :red, verdict[:state]
+      assert_includes Array(verdict[:failing]), "Consumer CI"
+    end
+
+    test "[unit] a sibling lane that was CANCELLED is red, never green" do
+      task = submitted(branch: "feat/cancelled-consumer", pr: 114, repo: "studio-engine")
+      seed_incident(branch: "feat/cancelled-consumer", sibling_status: "completed", sibling_conclusion: "cancelled")
+      assert_lane_was_excluded_before("Consumer CI")
+
+      refute Ci::ReviewGate.green?(task), "a cancelled lane verified nothing"
+      assert_equal :red, Ci::ReviewGate.verdict(task)[:state]
+    end
+
+    # THE POSITIVE CONTROL. A guard that blocks everything is not a guard, and a
+    # merge gate that can never open would strand the autopilot it serves. `count`
+    # is asserted because it is the DIRECT reading of "all lanes voted": the same
+    # arrangement returned count: 1 before, which is what let one green lane speak
+    # for six.
+    test "[unit] green once EVERY lane on the tree has concluded success" do
+      task = submitted(branch: "feat/all-green", pr: 115, repo: "studio-engine")
+      seed_incident(branch: "feat/all-green", sibling_status: "completed", sibling_conclusion: "success")
+
+      verdict = Ci::ReviewGate.verdict(task)
+      assert Ci::ReviewGate.green?(task), "a fully concluded green tree must still merge"
+      assert_equal :green, verdict[:state]
+      assert_equal 2, verdict[:count],
+                   "both lanes must have voted — count: 1 is the signature of the single-row read"
+      assert_equal INCIDENT_SHA, verdict[:sha]
+    end
+
+    # The widening must not undo the re-run rule: a SUPERSEDED run of the same
+    # workflow still drops, so an old failed attempt cannot outvote its own re-run.
+    # Newest-per-workflow, not newest-overall and not all-rows.
+    test "[unit] a superseded run of the same workflow still drops when other lanes are folded" do
+      task = submitted(branch: "feat/rerun-plus-sibling", pr: 116, repo: "studio-engine")
+      seed_run(branch: "feat/rerun-plus-sibling", sha: INCIDENT_SHA, status: "completed", conclusion: "failure",
+               repo: ENGINE, workflow: "Engine CI", run_id: 601, started: 5.minutes.ago)
+      seed_run(branch: "feat/rerun-plus-sibling", sha: INCIDENT_SHA, status: "completed", conclusion: "success",
+               repo: ENGINE, workflow: "Engine CI", run_id: 602, started: 1.minute.ago)
+      seed_run(branch: "feat/rerun-plus-sibling", sha: INCIDENT_SHA, status: "completed", conclusion: "success",
+               repo: ENGINE, workflow: "Consumer CI", run_id: 603, started: 2.minutes.ago)
+
+      assert Ci::ReviewGate.green?(task),
+             "the re-run is the Engine CI verdict; folding its stale attempt too would pin the gate red"
+      assert_equal 2, Ci::ReviewGate.verdict(task)[:count], "one vote per workflow, the newest attempt"
+    end
+
+    # An APP repo has the same shape — the defect was never gem-specific. A second
+    # workflow on an app's PR head (a scheduled scan, a deploy preview) was dropped
+    # by the identical filter.
+    test "[unit] an APP repo's sibling workflow is folded too" do
+      task = submitted(branch: "feat/app-sibling", pr: 117)
+      seed_run(branch: "feat/app-sibling", sha: "sha-app-sibling", status: "completed", conclusion: "success",
+               workflow: "CI", run_id: 701)
+      seed_run(branch: "feat/app-sibling", sha: "sha-app-sibling", status: "in_progress", conclusion: nil,
+               workflow: "CodeQL", run_id: 702)
+      assert_lane_was_excluded_before("CodeQL", repo: "mcritchie-studio")
+
+      refute Ci::ReviewGate.green?(task), "an app's second lane still running is not a green tree"
+      assert_equal :pending, Ci::ReviewGate.verdict(task)[:state]
+    end
+
     private
 
     def submitted(branch:, pr:, repo: "mcritchie-studio")

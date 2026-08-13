@@ -181,6 +181,81 @@ class Review::PendingActionExecutorTest < ActiveSupport::TestCase
     assert_equal "submitted", @task.reload.stage
   end
 
+  # ── MUTATION 1b: A SECOND LANE ON THE SAME TREE ─────────────────────────────
+  #
+  # [integration] The armed merge of studio-engine PR #111 (2026-08-13) fired at
+  # 21:06:02Z while `Consumer CI` was still in_progress — it concluded at 21:09:36Z,
+  # three and a half minutes AFTER the merge. `Engine CI` had concluded green at
+  # 21:03:47Z, and that conclusion is what triggered the executor.
+  #
+  # The suite lane above already covered a pending SUITE. It could not have caught
+  # this: the fold was scoped to ONE workflow name, so the second lane never reached
+  # CiStatus at all. These tests seed a lane whose workflow differs from the repo's
+  # resolved suite — the exact shape the old query discarded — and drive the WHOLE
+  # executor, so what is proven is that no merge request leaves the building.
+  #
+  # This is the case the autopilot exists for, which is what makes the leak serious
+  # rather than academic: a reviewer arms and leaves precisely BECAUSE a slow
+  # consumer lane is outstanding.
+
+  # A lane on the same head that is NOT the repo's suite workflow.
+  def ingest_sibling(status: "in_progress", conclusion: nil, workflow: "Consumer CI", run_id: 900_002)
+    assert_not_equal GithubWorkflowRun.ci_workflow_for("mcritchie-studio"), workflow,
+                     "precondition: #{workflow} must not be the resolved suite, or the old single-workflow " \
+                     "read would have caught it and this test proves nothing"
+    GithubWorkflowRun.create!(
+      run_id: run_id, repo: REPO, workflow_name: workflow, head_branch: BRANCH,
+      head_sha: PINNED, status: status, conclusion: conclusion,
+      run_started_at: Time.current, run_attempt: 1
+    )
+  end
+
+  {
+    "still running" => { status: "in_progress", conclusion: nil },
+    "still queued"  => { status: "queued", conclusion: nil },
+    "failed"        => { status: "completed", conclusion: "failure" },
+    "cancelled"     => { status: "completed", conclusion: "cancelled" }
+  }.each do |label, attrs|
+    test "[integration] REFUSES to merge while a SECOND lane on the pinned tree is #{label}" do
+      ingest_ci # the suite lane, concluded green — the trigger that fired PR #111's merge
+      ingest_sibling(**attrs)
+      action = arm
+      result, github = run_executor(action)
+
+      assert_equal 0, github.merge_calls,
+                   "a lane that is #{label} must never reach the merge endpoint — PR #111 did"
+      assert_equal :waiting, result.status
+      assert_match(/Consumer CI/, result.reason,
+                   "the blocking lane must be NAMED — proof it reached the verdict rather than being dropped")
+      assert_equal ReviewPendingAction::PENDING, action.reload.state
+      assert_equal "submitted", @task.reload.stage
+      assert_nil @task.merged
+    end
+  end
+
+  # THE OTHER HALF, and the one that keeps the fix from being "block everything":
+  # the armed merge must still land once the slow lane concludes. Same action, same
+  # pin, driven twice — exactly how the webhook retriggers it.
+  test "[integration] the armed merge lands once the slow second lane concludes green" do
+    ingest_ci
+    sibling = ingest_sibling(status: "in_progress", conclusion: nil)
+    action = arm
+
+    waiting, blocked_github = run_executor(action)
+    assert_equal :waiting, waiting.status
+    assert_equal 0, blocked_github.merge_calls
+    assert_equal "submitted", @task.reload.stage
+
+    # The consumer suite finishes — the second trigger the ingest fires on a conclusion.
+    sibling.update!(status: "completed", conclusion: "success")
+
+    result, github = run_executor(action.reload)
+    assert_equal :executed, result.status, result.reason
+    assert_equal 1, github.merge_calls, "the merge must still happen — a gate that never opens is not a gate"
+    assert_equal "reviewed", @task.reload.stage
+    assert_equal Task::MERGED_ACCEPTED, @task.merged
+  end
+
   # The re-run-replays-an-old-SHA trap: a green run exists, but it describes a
   # DIFFERENT tree than the one the verdict was formed against.
   test "REFUSES a green run that concluded for a different sha than the pin" do
