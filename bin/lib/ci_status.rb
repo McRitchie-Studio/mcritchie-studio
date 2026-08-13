@@ -1,7 +1,9 @@
 # frozen_string_literal: true
 
 require "json"
+require "open3"
 require "shellwords"
+require_relative "gh_auth_retry"
 
 # The REAL GitHub CI state of a PR, reduced to one verdict so bin/dor-check's merge
 # gate can refuse to hand a red PR to review — the #1 blocker class (a PR green
@@ -408,17 +410,30 @@ module CiStatus
               "McRitchie-Studio installation, and confirm the installation covers #{where}. " \
               "Verify: gh pr checks <pr> --repo #{where}."
           when :credentials
-            "GitHub rejected the active credential for #{where}. Fix: run `gh auth status --hostname " \
-              "github.com`, then refresh or replace the expired/revoked credential and retry the exact check read."
+            # REACHING THIS MEANS THE AUTOMATIC RETRY ALREADY FAILED. gh_read mints a
+            # fresh App token and retries once on exactly this refusal, so by the time
+            # an operator reads this line, a re-mint has already been tried and the
+            # fault is upstream of the token — say that, instead of prescribing the
+            # step that just ran.
+            "GitHub rejected the active credential for #{where}, and the automatic App-token retry could not " \
+              "replace it. Installation tokens live ~1h, and `gh`'s keyring is a SEPARATE store from " \
+              "bin/gh-token's cache — nothing refreshes it, so the ambient login goes stale mid-session. Fix: " \
+              "confirm 1Password is unlocked (`op whoami`), then refresh the ambient login with " \
+              "`bin/gh-token | gh auth login -h github.com --with-token` (never print the token) and retry the " \
+              "exact check read. Verify with `gh api rate_limit` — NOT `gh api user`, which an App installation " \
+              "token cannot call at all, so a 403 there CONFIRMS App auth rather than diagnosing it."
           when :authentication
-            "No accepted GitHub credential reached #{where}. Fix: run `gh auth status --hostname github.com`, " \
-              "authenticate the CLI, then retry the exact check read."
+            "No accepted GitHub credential reached #{where}, and no App token could be minted to replace it. " \
+              "Fix: confirm 1Password is unlocked (`op whoami`), then " \
+              "`bin/gh-token | gh auth login -h github.com --with-token` (never print the token) and retry the " \
+              "exact check read. Verify with `gh api rate_limit`."
           when :rate_limit
             "GitHub refused the read because its API rate limit was exhausted. Fix: inspect `gh api rate_limit`, " \
               "wait for the named reset or use an authorized credential with remaining quota, then retry."
           else
             "GitHub returned a forbidden response for #{where} without identifying a missing permission. Do not " \
-              "guess a scope: run `gh auth status --hostname github.com`, reproduce the exact check read, and use " \
+              "guess a scope: confirm the credential is live with `gh api rate_limit` (`gh api user` cannot " \
+              "answer — App tokens are forbidden from it by design), reproduce the exact check read, and use " \
               "GitHub's response to choose the credential or permission fix."
           end
     "This is a CREDENTIAL fault or API limit, NOT a missing CI — re-running will never clear it. #{fix} " \
@@ -435,6 +450,84 @@ module CiStatus
       "reason" => verdict[:reason].to_s,
       "repo" => repo.to_s
     }
+  end
+
+  # --- THE ONE AUTHENTICATED GITHUB READ --------------------------------------
+  #
+  # EVERY gh read in this file goes through `gh_read`, for one reason: the ambient
+  # `gh` credential goes stale MID-SESSION. The 2026-07-29 org migration replaced
+  # PATs with GitHub App installation tokens that live ~1 hour, and `gh`'s KEYRING is
+  # a SEPARATE store from bin/gh-token's cache with nothing refreshing it — so a gate
+  # that read CI fine at 10:00 reports a CREDENTIAL fault at 11:05 on the same PR.
+  #
+  # That degradation is not cosmetic. :unreadable withholds the fast-cert credit from
+  # the builder, and — worse — it is the REVIEW gate's AUTHORITATIVE CI verdict going
+  # blind in the one place nobody re-reads. On 2026-08-13 it hit both review Carls in
+  # a single wave and every dor-check run that day.
+  #
+  # THE RECOVERY ALREADY EXISTED. bin/ship and bin/pr-review both mint-once-and-retry
+  # through GhAuthRetry; this file never opted in — the module's own warning ("N
+  # scripts meant N chances to forget") coming true — so the fix is WIRING, not a
+  # third copy. ACQUISITION STAYS IN bin/gh-token: one shared two-slot on-disk cache
+  # at <projects>/.agents/github-tokens.json, so sibling agent processes reuse one
+  # token instead of each minting its own.
+  #
+  # NARROW ON PURPOSE, in three ways the tests pin:
+  #   * A NON-AUTH FAILURE IS RETURNED UNTOUCHED. This is the load-bearing one here,
+  #     and it is why "retry on failure" would be wrong: `gh pr checks` exits
+  #     NON-ZERO on a RED or PENDING PR while printing perfectly good JSON. Retrying
+  #     on exit status alone would mint a token on every red PR in the fleet — and a
+  #     404 or a merge conflict re-run with a fresh token just fails again, slower.
+  #     Only the SHAPE of the refusal (GhAuthRetry.auth_failure?) may trigger a mint.
+  #   * ONE mint per process, memoized — not one per call.
+  #   * A mint that cannot happen returns gh's ORIGINAL refusal. The gate then prints
+  #     what GitHub actually said, which is the honest thing to show.
+  #
+  # THE TOKEN IS NEVER PRINTED. It rides the retried child's environment and is never
+  # echoed, logged, or written to disk by this file.
+  #
+  # A SHELL NO LONGER RUNS. These were backticks with `2>&1`; they are now argv-form
+  # subprocesses, so a PR URL or API path can no longer reach a shell at all.
+
+  # The `gh` binary. CI_STATUS_GH_BIN is the TEST SEAM: it points the reads at a stub
+  # so the stale-credential branch is reachable without a network, a real token, or a
+  # wall clock. That branch is exactly the kind that shipped unwired for weeks
+  # precisely because nothing safe could reach it.
+  def self.gh_bin
+    override = ENV["CI_STATUS_GH_BIN"].to_s.strip
+    override.empty? ? "gh" : override
+  end
+
+  # Forget any minted token. Test seam (module state outlives one example) and a
+  # deliberate hook for a long-lived process that wants to re-mint.
+  def self.reset_gh_auth!
+    @gh_token = nil
+  end
+
+  def self.gh_read(*args)
+    body, ok = gh_capture(args)
+    return body if ok || @gh_token || !GhAuthRetry.auth_failure?(body)
+
+    @gh_token = GhAuthRetry.mint
+    return body unless @gh_token
+
+    retried, = gh_capture(args)
+    retried
+  end
+
+  # BOTH STREAMS, joined — the contract the old `2>&1` backticks established and that
+  # every reader below depends on: `gh api` prints the JSON error body on STDOUT and
+  # its status line on STDERR, and unreadable_cause classifies against the pair.
+  # Handing back stdout alone would leave a 403 unclassifiable, turning a named
+  # credential fault back into an anonymous :unverified.
+  def self.gh_capture(args)
+    env = @gh_token ? { "GH_TOKEN" => @gh_token } : {}
+    out, err, status = Open3.capture3(env, gh_bin, *args)
+    [[out, err].map(&:to_s).reject { |s| s.strip.empty? }.join("\n").strip, status.success?]
+  rescue StandardError => e
+    # gh missing or not executable. NOT an auth failure, and it must not be made to
+    # look like one: it reaches the caller as the :unverified it has always been.
+    ["#{e.class}: #{e.message}", false]
   end
 
   def self.evaluate(pr_url, injected = nil)
@@ -455,11 +548,11 @@ module CiStatus
       #   * a PR whose base drifted past GitHub's merge computation gets no checks
       #     EITHER, without ever reading DIRTY — the ci-less third state, which needs
       #     `mergeable` + `baseRefName` from this same call to name its remedy.
-      view = `gh pr view #{Shellwords.escape(pr)} --json #{VIEW_FIELDS} 2>&1`.to_s.strip
+      view = gh_read("pr", "view", pr, "--json", VIEW_FIELDS)
       verdict = view_verdict(view)
       return verdict if verdict
 
-      raw = `gh pr checks #{Shellwords.escape(pr)} --json name,state,bucket 2>&1`.to_s.strip
+      raw = gh_read("pr", "checks", pr, "--json", "name,state,bucket")
       # combine, not parse: a bare :none here may be the THIRD STATE (no CI will ever
       # run), and only the view payload can tell the difference.
       return combine(view, raw)
@@ -613,7 +706,10 @@ module CiStatus
   # reports itself instead of folding a partial list into a false green.
   def self.check_runs_raw(repo, commit)
     path = "repos/#{repo}/commits/#{commit}/check-runs?per_page=100"
-    `gh api #{Shellwords.escape(path)} 2>&1`.to_s.strip
+    # Through the SAME authenticated seam as the PR reads. This one serves the G3
+    # release gate, which reads a release tip belonging to no PR — the read least
+    # likely to have a human watching when the credential goes stale.
+    gh_read("api", path)
   end
 
   # PURE. A check-runs API payload → verdict. Accepts the API's envelope
