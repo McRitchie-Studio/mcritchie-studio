@@ -83,29 +83,55 @@
     <%# Ask a freshly signed-in account for a first name, once. The SERVER decides
         whether it is still outstanding (blank field, not skipped this session);
         the client only opens what it was told to.
-        Armed on two events because either can be the one that happens: a full page
-        load fires alpine:initialized, while a Turbo visit does not — Alpine is
-        already up, so turbo:load is the only signal there. Both are guarded
-        against double-pushing the same modal onto the stack. %>
-    <% if logged_in? && Studio.first_name_outstanding?(current_user, session) %>
-      <script>
-        (function () {
-          function askFirstName() {
-            if (!window.Alpine || !Alpine.store) return;
-            var store = Alpine.store('modals');
-            if (!store || typeof store.open !== 'function') return;
-            var already = (store.stack || []).some(function (entry) {
-              return entry && entry.id === 'onboarding-first-name';
-            });
-            if (already) return;
-            store.open('onboarding-first-name');
-          }
 
-          document.addEventListener('alpine:initialized', askFirstName);
-          document.addEventListener('turbo:load', askFirstName);
-        })();
-      </script>
+        THE MARKER IS THE SIGNAL, NOT THE SCRIPT — and that distinction is the
+        whole fix for a real bug. Handlers live on `document`, which SURVIVES a
+        Turbo Drive body replacement; the emitted <script> does not. So an
+        earlier page's handler keeps firing on later pages whose server render
+        deliberately contains no arming block, and it re-asked a user who had
+        just answered — on every navigation, for the life of the tab. Guarding on
+        the modal stack could not stop it: close() splices the entry off `stack`
+        after the exit animation, so by the time the stale handler ran the stack
+        was empty and the guard waved it through.
+
+        So the handler reads the CURRENT document at fire time. The marker below
+        is rendered only while the ask is outstanding, and Turbo replaces the body
+        with it absent — a stale handler looks, finds nothing, and does nothing.
+
+        Armed on two events because either can be the one that happens: a full
+        load fires alpine:initialized, while a Turbo visit does not (Alpine is
+        already up), so turbo:load is the only signal there. Attached ONCE per
+        document — without the flag, every visit added another pair and they
+        accumulated for the life of the tab. %>
+    <% if logged_in? && Studio.first_name_outstanding?(current_user, session) %>
+      <div id="onboarding-ask-first-name" hidden></div>
     <% end %>
+    <script>
+      (function () {
+        if (window.__onboardingAskArmed) return;
+        window.__onboardingAskArmed = true;
+
+        function askFirstName() {
+          // Read the page we are on NOW, not the one this script shipped with.
+          if (!document.getElementById('onboarding-ask-first-name')) return;
+          if (!window.Alpine || !Alpine.store) return;
+          var store = Alpine.store('modals');
+          if (!store || typeof store.open !== 'function') return;
+          var already = (store.stack || []).some(function (entry) {
+            return entry && entry.id === 'onboarding-first-name';
+          });
+          if (already) return;
+          // dismissible: false — escape and click-outside would close this
+          // WITHOUT posting the skip, which silently abandons the ask the same
+          // way the partial's own × exists to prevent. Save and Skip both post;
+          // they are the only two ways out, and both settle the question.
+          store.open('onboarding-first-name', { dismissible: false });
+        }
+
+        document.addEventListener('alpine:initialized', askFirstName);
+        document.addEventListener('turbo:load', askFirstName);
+      })();
+    </script>
 
     <%# Shared Solana sign-in + magic-link request. Inline so they're always
         defined; window.walletProvider comes from the wallet_provider importmap

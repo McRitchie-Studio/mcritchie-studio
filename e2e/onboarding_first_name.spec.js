@@ -41,6 +41,44 @@ test("a new account is asked for a first name and can save it", async ({ page })
   expect(pageErrors, report()).toEqual([]);
 });
 
+// REGRESSION GUARD — the bug review caught, and the assertion my first pass got
+// wrong.
+//
+// Handlers attach to `document`, which SURVIVES a Turbo Drive body replacement;
+// the emitted script does not. So a handler from the page that armed the modal
+// kept firing on later pages whose server render contains no arming block, and
+// re-asked a user who had just answered — on every navigation, for the life of
+// the tab.
+//
+// WHY THIS NEEDS ITS OWN SPEC, AND WHY IT WAITS. The spec above reloads and
+// asserts toHaveCount(0) — which fires the instant reload() resolves on `load`,
+// while Alpine is a `defer` script that initializes AFTERWARDS. It therefore
+// passed whether the modal never opened OR opened 200ms later, which is exactly
+// the bug. So this one navigates the way a user does (an in-page Turbo link, not
+// a reload), waits for the store to EXIST — the point past which the buggy build
+// had already re-opened — and only then asserts absence.
+test("answering the ask survives a Turbo navigation", async ({ page }) => {
+  await loginWithMagicLink(page, "newcomer-turbo@test.com");
+
+  const field = page.locator("#onboarding-first-name");
+  await field.waitFor({ state: "visible" });
+  await field.fill("Alex");
+  await page.getByRole("button", { name: "Save and continue" }).click();
+  await field.waitFor({ state: "hidden" });
+
+  // A real in-page navigation, which is what leaves `document` handlers alive.
+  await page.getByRole("link", { name: "McRitchie Studio" }).first().click();
+
+  // Wait past the moment the buggy build re-opened it, rather than asserting
+  // into the gap before Alpine has run.
+  await page.waitForFunction(() => window.Alpine && Alpine.store && Alpine.store("modals"));
+  await page.waitForTimeout(600);
+
+  await expect(page.locator("#onboarding-first-name")).toHaveCount(0);
+  // The server must also agree the ask is over — the marker the handler reads.
+  await expect(page.locator("#onboarding-ask-first-name")).toHaveCount(0);
+});
+
 // Its OWN account: the spec above answers the ask, which mutates that user for
 // the rest of the run (the seed happens once, at webServer boot).
 test("a new account can skip, and is asked again in a later session", async ({ page, context }) => {

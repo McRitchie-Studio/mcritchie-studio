@@ -25,10 +25,16 @@ class OnboardingFirstNameTest < ActionDispatch::IntegrationTest
     @user.update_columns(first_name: nil)
   end
 
-  # The arming script the layout renders. Asserted as the literal call, because
-  # what matters is that the modal is OPENED — a page that merely registers the
-  # template shows nothing.
-  ARM = "store.open('onboarding-first-name')"
+  # The MARKER the layout renders while the ask is outstanding — not the script.
+  #
+  # The script is now emitted on every page and attaches once per document; what
+  # varies per page is this marker, which the handler reads at fire time. That is
+  # the fix for a real bug: handlers live on `document` and survive a Turbo body
+  # replacement, so keying "is the user asked?" on the SCRIPT's presence meant an
+  # earlier page's handler kept re-asking on later pages that render no arming
+  # block at all. Asserting the marker asserts the thing the browser actually
+  # consults.
+  ARM = %(id="onboarding-ask-first-name")
 
   # --- 1. the endpoints exist HERE --------------------------------------------
 
