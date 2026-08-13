@@ -1052,9 +1052,14 @@ def bounce_verdict(slug, verify_task: true)
                                 per_page: BOUNCE_PAGE_SIZE, page: page)
     res = TaskBoard.request(:get, "/api/v1/activities?#{query}", base_url: BASE_URL, token: token)
     payload = BounceLedger.payload_from(res)
-    rows.concat(BounceLedger.from_payload(payload).rows)
+    page_rows = BounceLedger.from_payload(payload).rows
+    rows.concat(page_rows)
 
-    break unless BounceLedger.truncated?(payload)
+    # Stop on the LAST page, not on "the server reported more than this page holds"
+    # — meta.total counts the whole filtered set, so comparing it to one page's
+    # size stays true forever and would walk empty pages to the cap.
+    break if page_rows.size < BOUNCE_PAGE_SIZE
+    break unless BounceLedger.truncated?(payload.merge("data" => rows))
     break if (page += 1) > BOUNCE_MAX_PAGES
   end
   BounceLedger::Verdict.new(rows: rows)
