@@ -695,13 +695,27 @@ deferred now ship. They live in `metadata.devops` and the math is `ClaimLease`
 - `claimed_session` — the agent session holding the desk
 - `claim_nonce` — a per-PROCESS token (two terminals resuming one session id are
   two instances)
-- `claim_expires_at` — a 120s TTL, renewed by the heartbeat in `bin/statusline`
+- `claim_expires_at` — a 120s TTL, renewed by the heartbeat in `bin/statusline`,
+  and **declined once the holder can be shown to have gone** (see "A lease is
+  renewed by work" below)
 
-**Read the lease for exactly what it attests: A TERMINAL IS PAINTING.** It is
-renewed by the ~5s status-line render, so it stays green through a wedged agent —
-on 2026-07-13 a session held a perfectly healthy-looking lease for 35 minutes
-while producing nothing, and the board's green dot was read as progress. It never
-meant that.
+**The lease attests that a terminal is painting, and that nothing has shown the
+holder to be gone.** It does NOT attest that someone is working — the rule is
+negative on purpose, because every unknown keeps the desk. The second half
+arrived on 2026-08-13; before it, the ~5s status-line
+render renewed the claim unconditionally, so the lease stayed green through a
+wedged agent — on 2026-07-13 a session held a perfectly healthy-looking lease for
+35 minutes while producing nothing, and the board's green dot was read as
+progress. It never meant that.
+
+**A claim is released when the task leaves `building`.** The build claim is a
+build-stage lease, re-asserted as an invariant on every save
+(`Task#enforce_build_claim_invariant`), so `submitted`/`blocked`/`reviewed`/… all
+drop the keys. The same invariant carries a live claim through a PATCH that omits
+it: the API replaces `metadata["devops"]` wholesale, and the board's own edit form
+permits no claim keys, so before this a board save silently destroyed a live
+claim — which then read as *unclaimed* and invited a second agent onto an occupied
+desk.
 
 So the board carries a **second, independent fact** beside it — the task's last
 **durable artifact**, derived (never declared) from evidence we already write:
@@ -738,6 +752,74 @@ What ships instead is honest and quiet about its limits:
   healthy window may ever render quiet), never the literal;
 - **nothing is destructive.** Quiet reclaims no desk, blocks no move, and never
   touches the lease. A quiet desk is still a HELD desk.
+
+### Progress belongs to whoever produced it
+
+A durable artifact records **who** made it — the session, stamped in
+`metadata["session"]` by `bin/task checkpoint` and `bin/gate`, or already carried
+in `task_events.actor` on a CLI stage move. Unattributed progress used to be
+credited to whoever held the claim, which let a lease manufacture its own
+evidence: on 2026-08-13 a challenger ran `bin/full-suite-check`, the cert landed a
+`g1_cert` row on a task it did **not** hold, and the claim gate refused that same
+challenger with *"last durable progress ~2m ago (g1_cert passed)"* — the
+challenger's own work, quoted back as proof the holder was alive.
+
+So the gate reports `holder_progress_*` (the newest artifact the **holder**
+produced) and names the remainder honestly — "THIS session's own work", "belongs
+to …abcd", or "has no recorded owner". An unowned row stays unowned; a guessed
+owner is the failure this exists to end.
+
+### A lease is renewed by work, not by a status line
+
+`bin/statusline` fires `bin/task heartbeat <slug> --desk <desk>` every ~45s. The
+heartbeat renews only when it cannot show the holder has gone; it declines when
+**every** channel has been silent past `ClaimLease::DESK_IDLE_SECONDS`:
+
+- **desk mtimes** (`DeskActivity`) — authored files under the holder's own desk,
+  pruned of machine churn (`.git`, `log`, `tmp`, `node_modules`, build output). A
+  running server or a `git status` from the status line is not a worker.
+- **a gate in flight** — a cert writes nothing into the desk for up to 94 minutes.
+- **operator approval** — a task parked on Mr. McRitchie is not abandoned.
+- **durable board progress** — a holder working through the API still reads alive.
+
+**The two board channels are holder-scoped**, and that is the difference between
+fixing this and half-fixing it. Both once read the *task-wide* fact, so a queued
+challenger running `bin/full-suite-check` on a held slug landed a checkpoint and
+opened a `g1_cert` on someone else's task — and the abandoned holder renewed for
+another 1h29m on the strength of the challenger's own work. The heartbeat reads
+`holder_liveness_seconds_ago` and `holder_gate_in_flight` instead. The gate
+channel is **filtered, never dropped**: a holder mid-cert still needs it, so a
+gate opened *by the holder* protects the holder and one opened by a challenger
+does not.
+
+**Every unknown keeps the desk.** No desk bound to the task, an unreadable root, a
+walk over budget, an exception, an artifact **nobody signed**, or a board too old
+to publish the holder-scoped field all resolve to "not abandoned", because freeing
+a desk too late costs waiting while freeing it too early costs the work. So an
+unsigned gate run still protects its holder — nobody is not "somebody else", and
+reading a missing field as proof of absence would evict a live worker on a schema
+gap. The desk must be bound to *this* task (`.agent-context.json`); a primary
+checkout is written by every agent on the machine, so judging a claim there would
+renew it forever — the same bug one indirection out.
+
+The same rule runs in **both directions**, which is why the refusal message and
+the reaping decision disagree about an unsigned row on purpose. The message
+argues the holder is *alive*, so it may never cite a row nobody signed
+(`holder_progress_*`, strict). The heartbeat argues the holder is *gone*, so it
+may never reap on one (`holder_liveness_*`, permissive). Both refuse to invent
+evidence; they are asserting opposite propositions.
+
+`DESK_IDLE_SECONDS` is **derived, not chosen**: 341 desk-edit gaps measured across
+37 real worktrees split into a working band and an abandoned (left-overnight) one,
+with no samples in the 3556s–3895s gutter between them. The threshold is the worst
+**working** gap × 1.5 = **1h29m**. Deriving it from the pooled p99 (6.4h) would be
+circular — that tail *is* the bug. The guard test asserts both sides: no measured
+working gap may read as abandoned, and the median abandoned gap must still be
+caught.
+
+Nothing here reclaims a desk. The heartbeat simply stops renewing, the TTL lapses,
+and the ordinary claim gate admits the next claimant — and if the call was wrong,
+the holder's next heartbeat re-claims the task, so the mistake heals itself.
 
 ## The release owns the gem version — builders never write one
 
