@@ -18,6 +18,8 @@
 # and exactly one wins — no two reviewers on one task. Enforcement is cooperative
 # (the SOP tells the loser to skip), matching the studio's honor-system posture.
 class TaskReviewClaim < ApplicationRecord
+  include RaceTolerantCreate
+
   # The acquire verdict: whether THIS instance now holds the review, the ClaimLease
   # disposition it was in, and the (updated) row for the skip/holder message.
   Outcome = Struct.new(:acquired, :disposition, :claim, keyword_init: false)
@@ -134,12 +136,11 @@ class TaskReviewClaim < ApplicationRecord
   end
 
   # Find (or create) the singleton row for a task, tolerating the create race — two
-  # first-acquirers hit the unique index; the loser re-reads the winner's row.
+  # first-acquirers collide on the task_slug's uniqueness; the loser re-reads the
+  # winner's row. RaceTolerantCreate covers BOTH halves of that window (the
+  # validator's RecordInvalid as well as the index's RecordNotUnique).
   def self.claim_row(task_slug)
-    key = task_slug.to_s.strip
-    find_or_create_by!(task_slug: key)
-  rescue ActiveRecord::RecordNotUnique
-    find_by!(task_slug: key)
+    find_or_create_tolerating_race!(task_slug: task_slug.to_s.strip)
   end
 
   # The ClaimLease-shaped view of this row (string keys, ISO8601 expiry) so the pure
