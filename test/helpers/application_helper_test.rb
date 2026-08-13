@@ -199,6 +199,26 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_equal "🧱", app_emoji("solana-studio")
     assert_equal "⛓️", app_emoji("chain-ops")
     assert_equal "📇", app_emoji("rolio")
+    assert_equal "📐", app_emoji("mcritchie-industries")
+  end
+
+  # The /deployments lane badge renders app_emoji raw, so an unmapped member repo
+  # draws an EMPTY box — which is how mcritchie-industries shipped a blank lane.
+  # Assert the property (every repo the conductor can release has an identity),
+  # not just the slugs that happen to be mapped today.
+  test "every release-registry repo has a glyph, so no lane draws a blank badge" do
+    repos = Release::Repos.gem_repos + Release::Repos.app_repos
+    unmapped = repos.reject { |repo| app_emoji(repo) }
+
+    assert_empty unmapped, "release-registry repos with no APP_EMOJIS glyph: #{unmapped.join(', ')}"
+  end
+
+  test "the industries glyph matches the one ReleaseNotes::Formatter ships" do
+    group = ReleaseNotes::Formatter::APP_GROUPS.find { |g| g[:aliases].include?("mcritchie-industries") }
+
+    assert group, "expected an APP_GROUPS entry aliased to mcritchie-industries"
+    assert_equal app_emoji("mcritchie-industries"), group[:emoji],
+                 "the board and the release notes must draw the same glyph"
   end
 
   test "app_emoji is blank-safe and case/whitespace tolerant, nil for unknown" do
