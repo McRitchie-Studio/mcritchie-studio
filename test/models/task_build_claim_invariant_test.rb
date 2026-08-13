@@ -65,6 +65,23 @@ class TaskBuildClaimInvariantTest < ActiveSupport::TestCase
     assert_equal "inst-B", claim_keys["claim_nonce"]
   end
 
+  # The preservation must not become inheritance ACROSS holders. A steal names a
+  # new session, SessionIdentity.nonce degrades to "" whenever the agent process
+  # cannot be resolved, and normalize_devops_metadata drops blanks — so a real
+  # steal arrives naming a new holder with NO nonce. Completing it from the old
+  # record would staple the previous instance's token to the new holder's claim,
+  # and the two-terminals guard would then be comparing one agent's identity
+  # against another's.
+  test "a claim naming a different session never inherits the previous holders nonce" do
+    stolen = { "claimed_session" => "sess-stealer", "claim_expires_at" => (@now + 120).utc.iso8601 }
+    @task.update!(metadata: { "devops" => { "kind" => "feature" }.merge(stolen) })
+
+    assert_equal "sess-stealer", claim_keys["claimed_session"]
+    assert_nil claim_keys["claim_nonce"], "one instance's token must never ride another instance's claim"
+    assert_equal stolen["claim_expires_at"], claim_keys["claim_expires_at"],
+                 "and the stealer's own lease stands, not the previous holder's"
+  end
+
   # --- RELEASE: the claim is a BUILD-stage lease ----------------------------
 
   test "moving out of building releases the claim" do

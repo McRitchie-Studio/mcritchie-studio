@@ -1985,6 +1985,24 @@ class Task < ApplicationRecord
     if stage == "building"
       return if new_record?
 
+      # Fill in ONLY for the holder already on the row. A payload naming a
+      # DIFFERENT session is a re-claim or a steal and stands entirely on its own:
+      # inheriting the previous holder's nonce would staple one instance's
+      # identity to another instance's claim — the rule ClaimLease.renewed states
+      # for itself as "a DIFFERENT session's nonce is never inherited".
+      #
+      # Reachable, not theoretical. SessionIdentity.nonce degrades to "" whenever
+      # the agent process cannot be resolved (the detached case), and
+      # normalize_devops_metadata drops blank values, so a real steal arrives
+      # naming a NEW claimed_session with NO claim_nonce at all — precisely the
+      # shape this guard has to refuse to complete from the old record.
+      #
+      # A payload naming NO session is not talking about the claim (the
+      # wholesale-replace case this method exists for), and there the stored claim
+      # is restored whole.
+      incoming_session = updated["claimed_session"].to_s
+      return unless incoming_session.empty? || incoming_session == prior_devops["claimed_session"].to_s
+
       ClaimLease::CLAIM_KEYS.each do |key|
         next if updated[key].present? || prior_devops[key].blank?
 
