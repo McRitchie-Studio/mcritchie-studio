@@ -696,11 +696,13 @@ deferred now ship. They live in `metadata.devops` and the math is `ClaimLease`
 - `claim_nonce` — a per-PROCESS token (two terminals resuming one session id are
   two instances)
 - `claim_expires_at` — a 120s TTL, renewed by the heartbeat in `bin/statusline`,
-  and **only while the holder can be shown to be working** (see "A lease is
+  and **declined once the holder can be shown to have gone** (see "A lease is
   renewed by work" below)
 
-**The lease attests that a terminal is painting AND that someone is working at the
-desk.** The second half arrived on 2026-08-13; before it, the ~5s status-line
+**The lease attests that a terminal is painting, and that nothing has shown the
+holder to be gone.** It does NOT attest that someone is working — the rule is
+negative on purpose, because every unknown keeps the desk. The second half
+arrived on 2026-08-13; before it, the ~5s status-line
 render renewed the claim unconditionally, so the lease stayed green through a
 wedged agent — on 2026-07-13 a session held a perfectly healthy-looking lease for
 35 minutes while producing nothing, and the board's green dot was read as
