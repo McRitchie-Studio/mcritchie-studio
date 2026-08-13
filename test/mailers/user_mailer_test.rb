@@ -1,76 +1,101 @@
 require "test_helper"
 
-# The sign-in email's LAYERED banner, at this app's own mailer.
+# The sign-in email's OPERATOR-AUTHORED COPY — the body paragraph and the CTA
+# label editable on /admin/emails.
 #
-# McRitchie Studio defines its own UserMailer, so the engine's is never loaded
-# here — this file is the only place that can prove this app layers. The
-# division of labour it protects: the mailer supplies WHO the recipient is, and
-# /admin/emails supplies what the banner says about them. A mailer that hands
-# over a finished header instead takes the wording away from the operator, and
-# the manager's fields then accept edits no inbox ever sees.
+# This app SHADOWS the engine's UserMailer but not its view: there is no
+# app/views/user_mailer/ here, so the engine's magic_link.html.erb renders. That
+# split is the whole reason these guards exist. The engine wired @body/@cta_text
+# with the recipient's name in 0.43, and none of it reached this app, because
+# the shadowing class never set them — so the view fell back to
+# EmailCatalog.body(:magic_link) with no name.
+#
+# Nothing raised and no placeholder leaked when it was broken: the registry
+# tidies an unfillable "{name}" out of the copy, so "Hi {name}," rendered as a
+# perfectly grammatical "Hi,". That is why these assert the RESOLVED name rather
+# than the absence of a placeholder — a test for a leaked "{name}" passes on the
+# broken code.
 class UserMailerTest < ActionMailer::TestCase
-  def html_for(email)
+  BODY = "Hi {name}, tap the button to sign in to {app}.".freeze
+
+  setup do
+    Studio::EmailSetting.find_or_initialize_by(email_key: "magic_link").update!(body: BODY)
+    Studio::EmailSetting.forget!
+  end
+
+  teardown { Studio::EmailSetting.forget! }
+
+  def render_email(email)
     message = UserMailer.magic_link(email, "token-for-test-1234")
-    [(message.html_part&.body || message.body).to_s, message]
+    [ (message.html_part&.body || message.body).to_s, message ]
   end
 
-  def banner_header(html) = html[/font-weight:700;color:#ffffff;">\s*([^<]+)/, 1]&.strip
-
-  test "a known recipient is greeted by name" do
-    html, = html_for(users(:alex).email)
-
-    assert_equal "Welcome Alex!", banner_header(html)
+  def banner_header(html)
+    html[/font-weight:700;color:#ffffff;">\s*([^<]+)/, 1]&.strip
   end
 
-  # A magic link is often the FIRST thing a stranger receives, so the name-free
-  # path is not a rare branch — and "Welcome !" is what it renders without the
-  # fallback header.
-  test "a stranger gets the name-free header, not an empty greeting" do
-    html, = html_for("nobody-here@example.test")
+  # --- the operator's copy actually ships ------------------------------------
 
-    assert_equal "Your Magic Link", banner_header(html)
-    refute_includes html, "Welcome !"
+  test "the operator's body copy reaches the inbox" do
+    html, = render_email(users(:alex).email)
+
+    assert_includes html, "tap the button to sign in to",
+      "the body saved on /admin/emails is what the email should say"
   end
 
-  test "the layered banner carries the artwork, not just text" do
-    html, = html_for(users(:alex).email)
+  # THE DEFECT THIS TASK FIXES, stated as the symptom that made it visible: the
+  # banner greeted the recipient by name while the paragraph directly under it
+  # opened "Hi,". One email, disagreeing with itself.
+  # Reads the name back OUT of the banner rather than restating how the mailer
+  # derives it (display_name, which is "Alex", not the fixture's "Alex
+  # McRitchie"). Asserting a re-implementation would pass even if both halves
+  # drifted together; this fails the moment they disagree, which is the defect.
+  test "the banner and the body greet the same recipient" do
+    html, = render_email(users(:alex).email)
 
-    assert_includes html, "background-size:cover", "the banner should render its background"
-    assert_includes html, "v:rect", "Outlook renders through Word and needs the VML block"
+    greeted = banner_header(html).to_s[/Welcome (.+)!/, 1]
+    assert greeted.present?,
+      "the banner has always carried the name — it is the control for this test"
+
+    assert_includes html, "Hi #{greeted},",
+      "the body must resolve the same name the banner just used"
   end
 
-  # The subject reads from the same catalogue as the banner, so an operator's
-  # edit reaches the inbox list too — and no raw placeholder may survive.
-  test "the subject resolves through the catalogue" do
-    _, message = html_for(users(:alex).email)
+  test "the app placeholder resolves too" do
+    html, = render_email(users(:alex).email)
 
-    assert_includes message.subject, Studio.app_name
-    refute_includes message.subject, "{app}"
-    refute_includes message.subject, "{name}"
+    assert_includes html, "sign in to #{Studio.app_name}"
+    refute_includes html, "{app}"
   end
 
-  test "the token still reaches the recipient" do
-    html, message = html_for(users(:alex).email)
+  # --- the stranger path ------------------------------------------------------
 
-    assert_includes html, "token-for-test-1234", "the sign-in link is the point of the email"
-    assert_equal [users(:alex).email], message.to
+  # A magic link is often the FIRST thing someone receives, so there is no
+  # account and no name. The copy must stay grammatical rather than rendering
+  # "Hi ," or a raw token.
+  test "a stranger gets grammatical copy with no name and no placeholder" do
+    html, = render_email("nobody-here@example.test")
+
+    assert_includes html, "Hi, tap the button"
+    refute_includes html, "{name}"
+    refute_includes html, "Hi ,"
   end
 
-  # A transient failure looking the name up must degrade to the name-free
-  # banner, never cost the send — the floor the engine's own mailer holds.
-  test "a failing name lookup still sends the email, name-free" do
-    # Resolved BEFORE the stub: the fixture accessor itself calls User.find_by!,
-    # so reading it inside the block would raise from the harness and pass this
-    # test for the wrong reason.
-    recipient = users(:alex).email
-    raiser = ->(*_args, **_kwargs) { raise ActiveRecord::StatementInvalid, "connection lost" }
+  # --- the CTA ---------------------------------------------------------------
 
-    User.stub(:find_by, raiser) do
-      html, message = html_for(recipient)
+  test "the CTA label ships and is not a placeholder" do
+    html, = render_email(users(:alex).email)
 
-      assert_equal "Your Magic Link", banner_header(html)
-      assert_includes html, "token-for-test-1234", "the sign-in link must still ship"
-      assert_equal [recipient], message.to
-    end
+    assert_includes html, Studio::EmailCatalog.cta_text(:magic_link).to_s.split(" ").first
+    refute_includes html, "{name}"
+  end
+
+  # --- still a sign-in email --------------------------------------------------
+
+  test "the link still reaches the recipient" do
+    html, message = render_email(users(:alex).email)
+
+    assert_includes html, "token-for-test-1234", "the link is the point of the email"
+    assert_equal [ users(:alex).email ], message.to
   end
 end

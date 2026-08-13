@@ -29,6 +29,22 @@ class UserMailer < ApplicationMailer
     # back to the flat <img> exactly as it did before.
     @banner_url = Studio::EmailCatalog.resolved_url(:magic_link)
 
+    # THE COPY BELOW THE BANNER, on the same terms as the banner's words. This
+    # class SHADOWS the engine's UserMailer, so the engine wiring these up in
+    # 0.43 did nothing here — but the engine's VIEW still renders (there is no
+    # app/views/user_mailer/ in this app), and it falls back to
+    # EmailCatalog.body(:magic_link) with NO name. The result was one email
+    # disagreeing with itself: the banner greeted "Welcome Alexander!" while the
+    # paragraph under it opened "Hi,".
+    #
+    # Nothing raised and no placeholder leaked — the registry tidies "{name}"
+    # out of copy it cannot fill — which is exactly why this needed measuring
+    # rather than reading. An operator writing "Hi {name}," on /admin/emails saw
+    # it silently flatten for every recipient we could actually have named.
+    @body      = Studio::EmailCatalog.body(:magic_link, name: name_for(email))
+    @cta_text  = Studio::EmailCatalog.cta_text(:magic_link, name: name_for(email)) if Studio::EmailCatalog.cta_enabled?(:magic_link)
+    @cta_color = Studio::EmailCatalog.cta_color(:magic_link)
+
     # The operator's subject when one is saved on /admin/emails, else the
     # hard-coded line. Same division as the banner: the mailer supplies the
     # recipient, the operator supplies the words.
