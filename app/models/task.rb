@@ -219,7 +219,22 @@ class Task < ApplicationRecord
   TITLE_WORD_RANGE = (3..5).freeze
   ACCEPTANCE_WORD_RANGE = (5..12).freeze
   DEVOPS_LIST_KEYS = %w[repositories risk_tags acceptance test_plan checks_run].freeze
-  DEVOPS_KEYS = (DEVOPS_SCALAR_KEYS + DEVOPS_LIST_KEYS).freeze
+  # Repo-keyed MAPS: { "<repo>" => "<value>" }. `pr_urls` is the per-repo PR url
+  # register — the multi-repo answer to the single-valued `pr_url`.
+  #
+  # WHY IT EXISTS. `pr_url` holds ONE url, and Task#release_repo parses that url
+  # for the repo a release plans against. So a task naming two repos had exactly
+  # one place to record a PR, and the repo it named won: on 2026-08-13
+  # `land-rails-security-patch` carried repositories [mcritchie-studio,
+  # turf-monster] with the HUB's PR url, turf's PR #305 had nowhere to live, and
+  # turf never existed as far as promote/QA/ship were concerned. The task was
+  # stamped shipped+main while turf production still ran the unpatched code.
+  # `pr_url` stays the PRIMARY (every existing reader keeps working); `pr_urls`
+  # is where the SECOND repo's PR finally has a home.
+  DEVOPS_MAP_KEYS = %w[pr_urls].freeze
+  DEVOPS_KEYS = (DEVOPS_SCALAR_KEYS + DEVOPS_LIST_KEYS + DEVOPS_MAP_KEYS).freeze
+  # github.com/<owner>/<repo>/pull/<n> → the repo segment.
+  PR_URL_REPO_PATTERN = %r{github\.com/[^/]+/([^/]+)/pull/}
   # The change shape selects its DoR test contract. Keep in sync with
   # config/feature_shapes.yml (the source of truth that bin/dor-check reads).
   SHAPES = %w[ui-only ui+db backend library onchain onchain-vertical docs test-only].freeze
@@ -1218,11 +1233,32 @@ class Task < ApplicationRecord
     ActiveModel::Type::Boolean.new.cast(devops.fetch("included_in_release", true))
   end
 
-  # The ecosystem repo this task's PR/branch lives in — the unit the Deploy
+  # EVERY ecosystem repo this task ships through — its full release identity, and
+  # the set the Deploy workflow must promote, QA and ship. Ordered: the PRIMARY
+  # repo first (#release_repo, unchanged), then any repo with a recorded PR url,
+  # then the rest of the declared `repositories`.
+  #
+  # THIS IS THE FIX for the 2026-08-13 half-ship. Every release stage read the
+  # SINGULAR #release_repo — the promote list (`bin/release` prepare step 4), the
+  # member plan, the repo plan, the pre-QA gate, the QA deploy and the ship — so a
+  # task's whole release identity collapsed to whichever repo its ONE `pr_url`
+  # named. `land-rails-security-patch` named [mcritchie-studio, turf-monster] with
+  # a hub PR url: turf was never promoted, never QA'd and never shipped, while the
+  # task was stamped shipped+main. Callers that plan work MUST use this; #release_repo
+  # remains only for the single "which repo is this task's home" answers (gem-vs-app
+  # kind, the board's app badge).
+  def release_repos
+    ([ release_repo ] + release_pr_urls.keys + devops_repositories).compact_blank.uniq
+  end
+
+  # The PRIMARY ecosystem repo this task's PR/branch lives in — the unit the Deploy
   # workflow classifies as a gem (producer) or an app (consumer). Prefer the
   # repo parsed from the PR url (github.com/<owner>/<repo>/pull/N), since that's
   # where the branch actually is; fall back to the declared repositories — for a
   # `library` shape the gem repo named there, otherwise the first entry.
+  #
+  # NOT the task's release identity when it names more than one repo — see
+  # #release_repos, and never re-derive a promote/deploy set from this.
   def release_repo
     repo_from_pr_url.presence ||
       if devops_shape == "library"
@@ -1230,6 +1266,28 @@ class Task < ApplicationRecord
       else
         devops_repositories.first
       end
+  end
+
+  # { "<repo>" => "<pr url>" } for every PR this task landed, the singular
+  # `pr_url` included (keyed by the repo it names). The per-repo register that
+  # gives a second repo's PR somewhere to live — see DEVOPS_MAP_KEYS. The
+  # singular is folded in LAST so an explicit `pr_urls` entry wins for its repo.
+  def release_pr_urls
+    map = devops.fetch("pr_urls", {})
+    map = map.is_a?(Hash) ? map.transform_keys(&:to_s).transform_values(&:to_s) : {}
+    primary = devops_url("pr").to_s
+    primary_repo = self.class.repo_from_pr_url(primary)
+    map = { primary_repo => primary }.merge(map) if primary_repo.present? && primary.present?
+    map.reject { |repo, url| repo.blank? || url.blank? }
+  end
+
+  # Repos this task NAMES but recorded no PR url for. A non-empty answer on a
+  # multi-repo task is the 2026-08-13 shape exactly: the work exists in a repo the
+  # pipeline has no evidence for, so nothing can prove its code reached `accepted`.
+  # Release::Conductor.validate_members! refuses to sweep such a task.
+  def repos_missing_pr_url
+    recorded = release_pr_urls.keys
+    devops_repositories.reject { |repo| recorded.include?(repo) }
   end
 
   # True when this task ships as a published gem rather than a deployed app — a
@@ -1305,7 +1363,14 @@ class Task < ApplicationRecord
 
     raw.to_h.each_with_object({}) do |(key, value), normalized|
       key = key.to_s
-      normalized_value = DEVOPS_LIST_KEYS.include?(key) ? normalize_devops_list(value) : value.to_s.strip
+      normalized_value =
+        if DEVOPS_MAP_KEYS.include?(key)
+          normalize_devops_map(value)
+        elsif DEVOPS_LIST_KEYS.include?(key)
+          normalize_devops_list(value)
+        else
+          value.to_s.strip
+        end
       next if normalized_value.blank?
 
       # Column-backed name: refuse LOUDLY and say where it lives. Checked after the
@@ -1318,6 +1383,44 @@ class Task < ApplicationRecord
 
       normalized[key] = normalized_value
     end
+  end
+
+  # Normalize a repo-keyed map (DEVOPS_MAP_KEYS) into { "<repo>" => "<value>" }.
+  # Two input shapes, because the two writers differ:
+  #   * a HASH ({ "turf-monster" => "https://github.com/.../pull/305" }) — the API
+  #     / bin/task --pr-url-for shape. Keys and values are stripped; blank pairs
+  #     drop (a blank asserts nothing).
+  #   * a LIST or newline/comma STRING of PR urls — the ergonomic shape. Each url
+  #     is KEYED BY THE REPO IT NAMES, so the caller can't file turf's PR under
+  #     the hub by typo.
+  # An unparseable url RAISES rather than dropping: a silently-skipped PR url is
+  # exactly the failure this key exists to close (see DEVOPS_MAP_KEYS), so a write
+  # that reaches nothing must be loud. Both API paths rescue it into a 422.
+  def self.normalize_devops_map(value)
+    pairs =
+      if value.is_a?(Hash)
+        value.to_h.map { |repo, url| [repo.to_s.strip, url.to_s.strip] }
+      else
+        normalize_devops_list(value).map do |url|
+          repo = repo_from_pr_url(url)
+          if repo.blank?
+            raise ArgumentError,
+                  "devops.pr_urls entry #{url.inspect} names no repo — expected a " \
+                  "github.com/<owner>/<repo>/pull/<n> url, or pass a { repo => url } map"
+          end
+
+          [repo, url]
+        end
+      end
+
+    pairs.reject { |repo, url| repo.blank? || url.blank? }.to_h
+  end
+
+  # The repo segment of a GitHub PR url, or nil. Class-level so the map
+  # normalizer (and any caller holding a bare url) shares ONE parser with
+  # Task#repo_from_pr_url.
+  def self.repo_from_pr_url(url)
+    url.to_s[PR_URL_REPO_PATTERN, 1]
   end
 
   def self.normalize_devops_list(value)

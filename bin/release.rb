@@ -1554,8 +1554,14 @@ end
 # `only_slugs` (from --task) narrows the sweep to the named tasks. A PURE read
 # (sweep_candidates + screen_merge write nothing), so it previews under
 # --dry-run. Emits ONE JSON line:
-#   { "tasks": [{slug, stage, merged, pr_url, repo}], "release": {slug,state}|null,
+#   { "tasks": [{slug, stage, merged, pr_url, repo, repos, pr_urls}], "release": …,
 #     "screen": { rows:[…], blocked:[…], … } }
+#
+# `repos`/`pr_urls` are the task's FULL release identity (Task#release_repos /
+# #release_pr_urls); `repo`/`pr_url` remain the primary, for the sweep line and
+# crash recovery. The plural pair is what the promote list and
+# Release::SweepPlan's coverage refusal read — deriving either from the singular
+# is what promoted one repo of a two-repo task and shipped the other blind.
 def sweep_detect_ruby(only_slugs)
   only = only_slugs.empty? ? "nil" : only_slugs.inspect
   "only = #{only}; " \
@@ -1563,7 +1569,8 @@ def sweep_detect_ruby(only_slugs)
   "tasks = c['reviewed'] + c['stragglers']; " \
   "tasks = tasks.select { |t| only.include?(t.slug) } if only; " \
   "rows = tasks.map { |t| { slug: t.slug, stage: t.stage, merged: t.merged.to_s, " \
-  "pr_url: t.devops_url('pr').to_s, repo: t.release_repo.to_s } }; " \
+  "pr_url: t.devops_url('pr').to_s, repo: t.release_repo.to_s, " \
+  "repos: t.release_repos, pr_urls: t.release_pr_urls } }; " \
   "screen = Release::Conductor.screen_merge(rows.map { |x| x[:slug] }); " \
   "r = Release.current; " \
   "puts({ tasks: rows, release: (r ? { slug: r.slug, state: r.state } : nil), screen: screen }.to_json)"
@@ -2697,6 +2704,25 @@ def prepare
   #    is WARNED + left `reviewed` (it self-heals on re-review) — the self-healing
   #    sweep never aborts on it.
   plan = Release::SweepPlan.compute(cands)
+
+  # 3a. MULTI-REPO COVERAGE REFUSAL — fail-closed, and the earliest seam that can
+  #     see it: nothing has been claimed, promoted, recorded or deployed yet. A
+  #     candidate naming several repos with a PR url for only some of them is the
+  #     2026-08-13 shape: the promote below derives its repos from the candidates,
+  #     so the repo with no PR simply never appears, and every stage after it —
+  #     pre-QA gate, QA deploy, ship — inherits the omission and stamps the task
+  #     shipped anyway. Refusing here is what turns that silent half-ship into a
+  #     stop, at the first prepare, with the repo named.
+  if plan["blocked"].any?
+    named = plan["blocked"].map { |row| "#{row['slug']} (names #{row['repos'].join(', ')}; no PR url for #{row['missing'].join(', ')})" }
+    abort!("sweep refused #{plan['blocked'].size} multi-repo task(s) with an incomplete PR record: " \
+           "#{named.join('; ')}. Promoting now would carry only the repo(s) with a PR and still stamp " \
+           "the task assembled/shipped for the rest — the 2026-08-13 half-ship. NOTHING was promoted, " \
+           "recorded or deployed. Record the missing PR " \
+           "(`bin/task update <slug> --pr-url-for <repo>=<url>`), or drop the repo from the task's " \
+           "devops.repositories if it carries no work, then re-run `bin/release prepare`.")
+  end
+
   held = plan["held"]
   held.each do |s|
     say("  ⚠ #{s}: `reviewed` but merged:\"\" — review never landed its feat PR on `#{ACCEPTED_BRANCH}`; " \
@@ -2735,8 +2761,57 @@ def prepare
     end
   end
 
+  # Promote EVERY repo each landed candidate names (`repos`), not just its primary.
+  # This one line is where turf-monster was lost on 2026-08-13: it read `c["repo"]`,
+  # the singular Task#release_repo, so a task carrying [mcritchie-studio,
+  # turf-monster] promoted the hub alone — and nothing downstream could tell the
+  # difference between "turf wasn't in this release" and "turf was silently dropped".
+  # NOTE: this file is Rails-FREE (it runs standalone, and only require_relative's
+  # the pure Release::* modules) — no ActiveSupport, so no `.presence`.
   promote_repos = cands.select { |c| c["merged"].to_s == ACCEPTED_MERGED }
-                       .map { |c| c["repo"].to_s }.reject(&:empty?).uniq
+                       .flat_map { |c| (c["repos"].is_a?(Array) && !c["repos"].empty?) ? c["repos"] : [ c["repo"] ] }
+                       .map(&:to_s).reject(&:empty?).uniq
+
+  # 4a-bis. ACCEPTED-COVERAGE HARD STOP — the git read gets a vote on the promote
+  #     list, immediately before the irreversible op.
+  #
+  #     `bin/release status` ALREADY knew about 2026-08-13. It printed, in plain
+  #     words: "the two `accepted` signals DISAGREE: git says `accepted` carries
+  #     commits (turf-monster (+2)) … Trust the git read and reconcile the board."
+  #     NO GATE CONSULTED IT — so three prepares ran straight past a repo whose work
+  #     sat on `accepted`, and the fourth still did not QA it.
+  #
+  #     The same measurement (Release::CleanCheck.ahead_repos, via
+  #     ladder_clean_verdict — one call, both rungs, no new mechanism) is consulted
+  #     HERE and compared against what this run is about to promote. A repo whose
+  #     `accepted` is ahead of `release` and is NOT in the promote list is a repo
+  #     this sweep leaves behind while stamping its tasks assembled and shipped.
+  #
+  #     PER-REPO rather than the coarse existential sentence `status` prints,
+  #     deliberately: the coarse form compares "any repo ahead" against "any task
+  #     stamped merged:accepted", so it goes quiet the moment ANY other task on the
+  #     board carries that stamp — which is most of the time, and was true during
+  #     the incident's later runs. This form names the repo, and fires every time.
+  #
+  #     Scoped to runs that actually promote: a self-healing re-run with nothing to
+  #     sweep carries nothing onto `release`, so it has no promote list to be wrong
+  #     about (and `bin/release status` remains the read for that state).
+  if promote_repos.any? && !DRY
+    step("guard: every repo whose `accepted` is ahead of `release` must ride this promote")
+    coverage = ladder_clean_verdict
+    ahead = (coverage["accepted_ahead_repos"] || []).map { |r| r["repo"].to_s }.reject(&:empty?)
+    uncovered = ahead - promote_repos
+    if uncovered.any?
+      abort!("prepare refused — git says `accepted` carries commits for #{uncovered.join(', ')}, but this " \
+             "sweep would promote only #{promote_repos.join(', ')}. Every repo whose `accepted` is ahead " \
+             "must ride, or its work stays on `accepted` while the tasks carrying it are stamped assembled " \
+             "and shipped — the 2026-08-13 half-ship, where turf-monster sat +2 and production ran the " \
+             "unpatched code. NOTHING was promoted, recorded or deployed. Either a candidate is missing " \
+             "#{uncovered.join(', ')} from its devops.repositories (fix the task and re-run), or the work " \
+             "on `accepted` has no task behind it (reconcile the board — `bin/release status`).")
+    end
+  end
+
   promote_accepted_to_release!(promote_repos, label: slug) if promote_repos.any?
 
   # 5. Record membership for every member whose code is on accepted/release/main
@@ -3654,9 +3729,24 @@ def push_frozen_main(repo, sha)
            "Reconcile main, re-run `bin/release prepare` to re-freeze, then re-run `bin/release ship`.")
   end
 
+  # THE PER-REPO SHIP EVIDENCE, recorded at the only chokepoint that can't lie
+  # about it: this repo's `main` now points at this SHA, because git just accepted
+  # the ref update. Collected here and written onto the release beside
+  # Conductor.ship! (step 6), where Release#ship! reads it to decide which members
+  # may be stamped `shipped`. Before it existed a run that ff'd three repos and
+  # skipped a fourth left the same record as one that shipped everything.
+  ship_evidence[repo] = sha
+
   # main is advanced — now re-baseline this repo's origin/accepted onto it
   # (guarded, idempotent, NON-FATAL). See advance_accepted.
   advance_accepted(repo, path, sha)
+end
+
+# { repo => sha } for every repo whose `main` this process has advanced (or, in
+# finalize, proven already live). Written to release.metadata["shipped_shas"] in
+# the same conductor call that ships the members.
+def ship_evidence
+  @ship_evidence ||= {}
 end
 
 # After push_frozen_main advances a repo's `main`, re-baseline that repo's
@@ -5871,8 +5961,13 @@ def ship
   # the conductor's LOCAL transcript (the flips run on prod, transcript-less).
   ship_usage = move_usage_map(repos.flat_map { |g| Array(g["members"]).map { |m| m["slug"] } }.compact.uniq)
   step("record: Release::Conductor.ship! + post_release_notes")
+  # record_shipped_shas FIRST, in the same call: it is what each repo's `main`
+  # actually landed, and Release#ship! refuses to stamp a member spanning a repo
+  # with no entry there (2026-08-13: turf's main never moved, the task said
+  # otherwise).
   shipped = conductor(
     "r = Release.find_by!(slug: #{rel_slug.inspect}); " \
+    "Release::Conductor.record_shipped_shas(release: r, shas: #{ship_evidence.inspect}); " \
     "Release::Conductor.ship!(release: r, deployed_sha: #{deployed_sha.inspect}, by: #{by.inspect}, production_url: #{PROD_URL.inspect}, usage_by_slug: #{ship_usage.inspect}, member_pause: 1); " \
     "Release::DurationCache.refresh_recent!(limit: 3); " \
     "notes = Release::Conductor.post_release_notes(release: r); " \
@@ -6049,6 +6144,14 @@ def finalize(slug = nil)
     else
       say("  ✓ #{app_groups.size} app(s) confirmed live on prod at the frozen SHA")
     end
+    # This guard is per-repo ship evidence, MEASURED against prod rather than
+    # remembered from a push — so record it, exactly as a live ship records what it
+    # pushed. Without it a resumed ship (whose push_frozen_main already ran, in a
+    # process that is gone) would find no shipped_shas and Release#ship! would
+    # correctly refuse to stamp its members — a jam where finalize already holds
+    # the stronger proof. Gem groups ride the same record; ship evidence exempts
+    # them, so a missing entry costs nothing.
+    (app_groups - not_live).each { |g| ship_evidence[g["repo"]] = ship_sha[g["repo"]].to_s }
 
     # 5. What did the killed ship skip? (pure, from the release's own state.)
     pending = Release::ShipSequence.finalize_pending?(state: state, sealed: sealed,
@@ -6080,8 +6183,11 @@ def finalize(slug = nil)
       deployed_sha = ship_sha[APP].to_s
       deployed_sha = git_capture("-C", repo_path(APP), "rev-parse", "origin/main").first.strip if deployed_sha.empty?
       step("record: Release::Conductor.ship! + DurationCache.refresh_recent!")
+      # The live-on-prod verdict above IS this run's per-repo ship evidence — record
+      # it before the member stamps read it (see the guard block).
       conductor(
         "r = Release.find_by!(slug: #{rel_slug.inspect}); " \
+        "Release::Conductor.record_shipped_shas(release: r, shas: #{ship_evidence.inspect}); " \
         "Release::Conductor.ship!(release: r, deployed_sha: #{deployed_sha.inspect}, by: #{by.inspect}, production_url: #{PROD_URL.inspect}, usage_by_slug: {}, member_pause: 1); " \
         "Release::DurationCache.refresh_recent!(limit: 3); " \
         "puts({slug: r.slug, state: r.reload.state, sha: r.deployed_sha.to_s[0,7]}.to_json)"

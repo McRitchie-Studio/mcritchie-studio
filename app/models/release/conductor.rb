@@ -127,7 +127,14 @@ class Release
         # the assembled column's positions land in the same order the conductor
         # publishes/deploys in — each stage flip stamps the member's board rank.
         pending = Release::Ordering.producer_first(release.tasks.where(stage: "reviewed").to_a)
-        pending.each do |task|
+        # PER-REPO EVIDENCE (Release::MemberEvidence): a member is stamped
+        # `assembled` only for a candidate that landed something for EVERY repo it
+        # names. A member spanning a repo this run never promoted or QA-deployed is
+        # HELD at `reviewed` — the state the sweep is already self-healing from — so
+        # the next run picks it up once its missing repo rides. Silent flips are what
+        # let 2026-08-13's task claim QA on a repo the candidate never touched.
+        held = release.unproven_members(pending, stamp: "assembled")
+        (pending - held).each do |task|
           Current.with_task_event_usage(usage_by_slug[task.slug]) { task.assemble! }
         end
         assemble!(release)
@@ -343,19 +350,72 @@ class Release
       release
     end
 
-    # Guard: every member must classify to a known release_kind (:gem or :app).
-    # An :unknown member means its repo is in neither registry section of
-    # config/release_repos.yml, so the conductor has no adapter to ship it.
-    # Raises ArgumentError naming the offending members so the operator can fix
-    # the task's repo or register it.
+    # Guard: every member must classify to a known release_kind (:gem or :app) in
+    # EVERY repo it names, and a multi-repo member must carry a PR url per repo.
+    # Raises ArgumentError naming the offending members, which rolls the whole
+    # curation back (curate! / the CLI's batch sweep both run it inside their
+    # transaction), so a refusal leaves the members `reviewed` and the RC unopened.
     def validate_members!(release)
-      unknown = release.ordered_members.select { |task| task.release_kind == :unknown }
-      return if unknown.none?
+      validate_member_repos_known!(release)
+      validate_member_pr_coverage!(release)
+    end
 
-      named = unknown.map { |task| "#{task.slug} (#{task.release_repo.presence || 'no repo'})" }
+    # An :unknown repo is in neither registry section of config/release_repos.yml,
+    # so the conductor has no adapter to ship it. Checked over EVERY repo a member
+    # names — a task whose SECOND repo is unregistered was previously waved through
+    # on the strength of its first.
+    def validate_member_repos_known!(release)
+      named = release.ordered_members.filter_map do |task|
+        unknown = member_unknown_repos(task)
+        "#{task.slug} (#{unknown.join(', ')})" if unknown.any?
+      end
+      return if named.none?
+
       raise ArgumentError,
             "release #{release.slug} can't deploy unknown repo(s): #{named.join(', ')} — " \
             "register the repo in config/release_repos.yml or fix the task's repo"
+    end
+
+    # The repos a member names that the registry can't classify. The member's PRIMARY
+    # repo is judged by Task#release_kind, exactly as before — a `library` shape
+    # vouches for its own repo even when the registry hasn't seen it — while every
+    # ADDITIONAL repo is judged by the registry directly. A member with no repo at
+    # all reads as one unknown ("no repo"), the pre-existing message.
+    def member_unknown_repos(task)
+      return [ "no repo" ] if task.release_repos.empty?
+
+      task.release_repos.select do |repo|
+        next false if repo == task.release_repo && task.release_kind != :unknown
+
+        Release::Repos.kind(repo) == :unknown
+      end
+    end
+
+    # THE SWEEP-TIME REFUSAL (Release::SweepPlan.repo_coverage_gap): a member naming
+    # more than one repo must have a recorded PR url for every repo it names.
+    # Without one there is no evidence the second repo's code ever reached
+    # `accepted`, and the pipeline has already proven it will not notice —
+    # 2026-08-13, where turf's PR had nowhere to live and the task shipped anyway.
+    #
+    # This is the BACKSTOP: `bin/release prepare` refuses these candidates before it
+    # promotes anything (the pure plan reaches the same verdict off the detect read).
+    # This copy catches the paths that sweep straight into the record — `bin/release
+    # merge`, Conductor.prepare!/curate! — where the CLI's pre-promote screen never ran.
+    def validate_member_pr_coverage!(release)
+      offenders = release.ordered_members.filter_map do |task|
+        missing = Release::SweepPlan.repo_coverage_gap(
+          repos: task.release_repos, pr_repos: task.release_pr_urls.keys
+        )
+        "#{task.slug} (no PR url for #{missing.join(', ')})" if missing.any?
+      end
+      return if offenders.none?
+
+      raise ArgumentError,
+            "release #{release.slug} refuses multi-repo member(s) with an incomplete PR record: " \
+            "#{offenders.join(', ')} — the sweep would promote only the repo(s) it can see and " \
+            "stamp the task shipped for the rest. Record the missing PR " \
+            "(`bin/task update <slug> --pr-url-for <repo>=<url>`), or drop the repo from the " \
+            "task's devops.repositories if it carries no work."
     end
 
     # The per-member release plan the CLI consumes, in producer-first order:
@@ -390,6 +450,12 @@ class Release
           risk_tags: Array(task.devops_field("risk_tags")).map(&:to_s),
           gem_bump: task.devops_field("gem_bump").to_s,
           repo: task.release_repo,
+          # EVERY repo the member ships through, and the PR that landed each one.
+          # `repo` above is only the PRIMARY (the gem-vs-app kind is derived from
+          # it); planning a promote/deploy set from it is what shipped a task while
+          # one of its repos never left `accepted` — see Task#release_repos.
+          repos: task.release_repos,
+          pr_urls: task.release_pr_urls,
           version: kind == :gem ? Release::Repos.gem_version(task.release_repo) : nil,
           post_deploy_cmd: task.devops_field("post_deploy_cmd"),
           merged: task.merged
@@ -398,10 +464,26 @@ class Release
     end
 
     # The per-REPO deploy plan the multi-repo conductor consumes: member_plan
-    # (already producer-first) collapsed into one entry per repo, in the same
-    # producer-first order (group_by preserves first-appearance, so gem repos —
-    # whose members lead member_plan — stay first). Each entry is
-    # { repo, kind, members, release_branch, qa_app, prod_deploy } where:
+    # (already producer-first) fanned out over EVERY repo each member names, then
+    # collapsed into one entry per repo, in the same producer-first order (group_by
+    # preserves first-appearance, so gem repos — whose members lead member_plan —
+    # stay first).
+    #
+    # THE FAN-OUT IS THE FIX. This used to `group_by { member[:repo] }` — the
+    # SINGULAR primary — so a two-repo member produced ONE group and the second repo
+    # was never in the plan at all. Nothing downstream could notice: the promote, the
+    # pre-QA gate, the QA deploy and the ship each faithfully processed the plan they
+    # were given (2026-08-13, turf-monster). A member that spans repos now appears
+    # in EACH of its repos' groups.
+    #
+    # Two per-member fields are re-derived FOR THE GROUP'S REPO rather than carried
+    # from the primary, because a fanned-out member is now read once per repo:
+    #   * `version` — the gem version to publish is the GROUP's gem's version
+    #     (gem_version_for reads it off the group's members), never the primary's.
+    #   * `post_deploy_cmd` — kept ONLY on the member's primary group. A declared
+    #     command is written for one app; running it once per repo the task happens
+    #     to name would fire a hub rake task at turf's dyno.
+    # Each entry is { repo, kind, members, release_branch, qa_app, prod_deploy } where:
     #   * GEM repos carry nil release_branch/qa_app/prod_deploy — a gem is
     #     published, not deployed, and rides the release as a record (no branch).
     #   * APP repos carry the persistent `release` branch (the same name in every
@@ -409,8 +491,18 @@ class Release
     #     config/release_repos.yml.
     # All keys are symbol-keyed and the values are JSON-serializable.
     def repo_plan(release)
-      member_plan(release).group_by { |member| member[:repo] }.map do |repo, members|
+      pairs = member_plan(release).flat_map do |member|
+        Array(member[:repos]).presence&.map { |repo| [ repo, member ] } || [ [ member[:repo], member ] ]
+      end
+
+      pairs.group_by(&:first).map do |repo, entries|
         gem = Release::Repos.gem?(repo)
+        members = entries.map do |(_repo, member)|
+          member.merge(
+            version: gem ? Release::Repos.gem_version(repo) : nil,
+            post_deploy_cmd: member[:repo] == repo ? member[:post_deploy_cmd] : nil
+          )
+        end
         {
           repo: repo,
           kind: Release::Repos.kind(repo),
@@ -514,6 +606,31 @@ class Release
         existing[repo.to_s] = sha unless sha.empty?
       end
       meta["qa_shas"] = existing
+      release.update!(metadata: meta)
+      release
+    end
+
+    # Persist the per-repo SHAs fast-forwarded onto `main` — the SHIP half of
+    # record_qa_shas, written by `bin/release ship` right after each repo's
+    # `release → main` push lands on origin (beside the `merged: "main"` stamp).
+    # `shas` is a { repo => sha } hash, MERGED into metadata["shipped_shas"] and
+    # non-clobbering exactly as record_qa_shas is (a blank value is ignored, never
+    # written over a good one).
+    #
+    # This is the release's ONLY durable per-repo record of what actually reached
+    # production, and Release#ship! now requires it before stamping a member
+    # `shipped`. Before it existed, ship's per-repo work left no trace on the record
+    # at all: `deployed_sha` is a single column, so a run that ff'd three repos and
+    # skipped a fourth looked identical to one that shipped everything — which is
+    # how a task was stamped shipped+main while turf's `main` never moved.
+    def record_shipped_shas(release:, shas:)
+      meta = release.metadata.deep_dup
+      existing = meta["shipped_shas"].is_a?(Hash) ? meta["shipped_shas"] : {}
+      shas.to_h.each do |repo, sha|
+        sha = sha.to_s
+        existing[repo.to_s] = sha unless sha.empty?
+      end
+      meta["shipped_shas"] = existing
       release.update!(metadata: meta)
       release
     end

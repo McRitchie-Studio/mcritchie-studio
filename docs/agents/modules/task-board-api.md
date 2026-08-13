@@ -560,6 +560,23 @@ not silently ignored either — `Task::DEVOPS_COLUMN_KEYS` refuses them with a 4
 naming the column each one actually lives in (footgun 5).
 - **Lists:** `repositories`, `risk_tags`, `acceptance`, `test_plan`,
   `checks_run`
+- **Maps** (`{ "<repo>": "<value>" }`): `pr_urls`
+
+`pr_urls` is the **per-repo PR register**, and a task naming more than one repo
+now needs one entry per repo. `pr_url` holds a single url and the release lane
+parses *that url* for the repo it plans against — so on 2026-08-13 a task naming
+`[mcritchie-studio, turf-monster]` with the hub's PR url promoted, QA'd and
+shipped the hub alone, and was still stamped `shipped` + `merged: "main"` while
+turf production ran the unpatched code. The sweep now **refuses** a multi-repo
+task whose PR record is incomplete (`Release::SweepPlan.repo_coverage_gap`) and
+names the repo with no PR. `pr_url` stays the primary and is folded into the map
+automatically (`Task#release_pr_urls`) — do not repeat it.
+
+It accepts either shape: a `{ repo => url }` object, or a plain list of PR urls,
+each **keyed by the repo it names** (so a url cannot be filed under the wrong
+repo). A url that names no repo is a 422, never a silent drop. The CLI writes one
+entry at a time, merging: `bin/task update <slug> --pr-url-for
+turf-monster=https://github.com/McRitchie-Studio/turf-monster/pull/305`.
 
 `merged` is **not** in this list and never will be — it is a top-level column.
 See footgun 4 for the full set of fields that live outside `devops`.

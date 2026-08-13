@@ -401,10 +401,25 @@ must not reflexively re-run. Each abort names its own case and its own fix:
 | **STALE TREE — rung could NOT be read** (step 3b — "a failed read is not a clean read") | The gate could not measure `origin/release..origin/accepted` for a repo it was about to deploy: a missing sibling checkout, an unfetched branch, a failed `rev-list`. Unverified is treated as stale on purpose. Clone the repo as a sibling (or `git fetch origin` in it) so the rung can be read | re-run `prepare` |
 | **`accepted → release` promote failed** (a conflict on the batch PR) | Resolve the conflict on the batch PR (or `bin/task block` the offending member) | re-run `prepare` |
 | **Member left `reviewed` with `merged: ""`** (review never landed its feat PR on `accepted`) | Re-review the task so `pr-review` merges it onto `accepted` | re-run `prepare` |
+| **MULTI-REPO PR RECORD INCOMPLETE** (step 3a — "sweep refused … multi-repo task(s) with an incomplete PR record") | The task names several repos but recorded a PR for only some of them, so the sweep can only promote the repos it can see — and used to stamp the task assembled and shipped for the rest (2026-08-13: turf-monster never left `accepted` while the board said the security patch was in production). The abort names the repo with no PR. Record it — `bin/task update <slug> --pr-url-for <repo>=<pr-url>` — or, if that repo carries no work, drop it from the task's `devops.repositories` (`bin/task update <slug> --repo …`, which REPLACES the list). Nothing was promoted, recorded or deployed | re-run `prepare`; the member sweeps with every repo it names |
+| **ACCEPTED NOT COVERED BY THE PROMOTE** (step 4a-bis — "git says `accepted` carries commits for X, but this sweep would promote only Y") | The git read and the promote list disagree: repo X has work on `accepted` that no candidate in this sweep names, so promoting now would leave X behind while stamping its tasks assembled and shipped. Either a candidate is missing X from its `devops.repositories` (fix the task) or the work on `accepted` has no task behind it — run `bin/release status`, read the ladder, and reconcile the board. This is the check `status` always printed and no gate consulted | re-run `prepare` once every ahead repo has a candidate naming it |
 | **CONSUMER LOCK BUMP did not land** (`bundle lock … did not land in <repo> … resolves <old>, wanted <new>`) | **Nothing to fix in the code — WAIT.** The gem published fine; the resolver just cannot see it yet. The abort already retried on a 5s→10s backoff. Watch the surface **bundler** resolves through — the compact index: `curl -sS https://index.rubygems.org/info/<gem> \| tail -5` — until the version appears THERE. Do **not** wait on `https://rubygems.org/api/v1/versions/<gem>.json` or the HTML gem page: both are separate services with their own CDN caching, so a version showing on either is not proof bundler can resolve it. Do **not** bump the version: the gem is already published, and a bump would burn a number for nothing | re-run `prepare`; the publish skips as already-live and the bump lands |
 
 `prepare` never force-ships a red candidate. The only ways past a real regression
 are to eject it or to fix it forward — never to re-run harder.
+
+**A member left `reviewed` on a GREEN QA run is not a bug — it is the per-repo
+evidence guard.** `qa_green!` stamps a member `assembled` only when the candidate
+recorded something for **every** repo that member names (a QA sha or a passing
+pre-QA gate; gem repos are exempt, since they publish rather than deploy). A
+member spanning a repo this candidate never promoted stays `reviewed` — swept,
+`merged: "release"`, and picked up by the next self-healing run once its missing
+repo rides — and the reason is logged as `[release-evidence] <release>: <slug>
+names N repo(s) … but this release landed nothing for <repo>`. The ship has the
+same guard against `metadata["shipped_shas"]`, so such a member stays `assembled`
+rather than being stamped `shipped` + `merged: "main"` for a repo whose `main`
+never moved. Fix it the same way as the aborts above: get the missing repo onto
+this candidate, or drop it from the task if it carries no work.
 
 ### Detecting an UNFINISHED release candidate
 

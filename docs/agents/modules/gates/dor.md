@@ -179,11 +179,22 @@ prints `AMBIGUOUS TASK TREE`, lists them, and refuses to guess. Nothing assumes 
 rung — the diff base stays the per-root release-aware default, so a repo with no
 `accepted` (moms-app) still resolves its own base.
 
-**Known gap, stated so nobody assumes otherwise:** `devops.pr_url` is a *single*
-value, so on a multi-repo task this gate validates **one** PR and is blind to the
-other. The rooting above keeps it from grading the *wrong* repo silently; it does
-not make it grade *both*. Reviewing a multi-repo task still means checking the
-second PR yourself.
+**Known gap, stated so nobody assumes otherwise:** this gate validates **one** PR
+per invocation and is blind to a multi-repo task's other PR. The rooting above
+keeps it from grading the *wrong* repo silently; it does not make it grade *both*.
+Reviewing a multi-repo task still means checking the second PR yourself.
+
+The *tie-break* half of that gap is now closable: `devops.pr_urls` (added
+2026-08-13 with the sweep's multi-repo fix) is a `{ repo => pr url }` map, so a
+task naming several repos finally records a PR for each — written with `bin/task
+update <slug> --pr-url-for <repo>=<url>`, read by `Task#release_pr_urls`. What is
+*not* yet closed is the **evidence** half, and it is the bigger one: `checks_run`
+is a flat lane-keyed list with no repo dimension, and the full-suite fingerprint
+is one git tree hash from one root — so exactly one repo's tree can ever grade
+`:fresh`, and this gate still emits one verdict per invocation from one
+`code_root`. Closing it needs repo-keyed cert lines, a repo-aware
+`CertEvidence.preserve`, and a dor-check that loops roots instead of picking one.
+Tracked as `cert-gate-loses-multi-repo`.
 
 **The local working tree is never a fallback from a foreign root.** This is the
 rule that closes the 08-08 hole by construction rather than by every reader

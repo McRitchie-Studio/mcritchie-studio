@@ -99,4 +99,70 @@ class Release::SweepPlanTest < ActiveSupport::TestCase
     assert_equal :proceed, Release::SweepPlan.base_action(" release ", "release")
     assert_equal :abort,   Release::SweepPlan.base_action("accepted\n", "release")
   end
+
+  # --- the multi-repo PR-coverage refusal (the 2026-08-13 half-ship) ---
+
+  test "[unit] repo_coverage_gap names the repo a multi-repo task recorded no PR for" do
+    assert_equal ["turf-monster"],
+                 Release::SweepPlan.repo_coverage_gap(
+                   repos: %w[mcritchie-studio turf-monster],
+                   pr_repos: ["mcritchie-studio"]
+                 )
+  end
+
+  test "[unit] repo_coverage_gap passes a multi-repo task with a PR per repo" do
+    assert_empty Release::SweepPlan.repo_coverage_gap(
+      repos: %w[mcritchie-studio turf-monster],
+      pr_repos: %w[turf-monster mcritchie-studio]
+    )
+  end
+
+  test "[unit] repo_coverage_gap never fires on a single-repo task, PR or no PR" do
+    # A single-repo task cannot lose a repo it never had a second of; its missing
+    # PR is the review lane's problem, not the sweep's.
+    assert_empty Release::SweepPlan.repo_coverage_gap(repos: ["mcritchie-studio"], pr_repos: [])
+    assert_empty Release::SweepPlan.repo_coverage_gap(repos: [], pr_repos: [])
+  end
+
+  test "[unit] compute BLOCKS the incident row and keeps it out of record/sweep" do
+    # THE regression: repositories [hub, turf] with only the hub's PR url. Before
+    # this, the row swept normally, the promote saw one repo, and the task was
+    # stamped assembled then shipped for a repo that never left `accepted`.
+    incident = row("land-rails-security-patch", merged: "accepted",
+                   pr_url: "https://github.com/McRitchie-Studio/mcritchie-studio/pull/836",
+                   repo: "mcritchie-studio")
+                 .merge("repos" => %w[mcritchie-studio turf-monster],
+                        "pr_urls" => { "mcritchie-studio" => "https://github.com/McRitchie-Studio/mcritchie-studio/pull/836" })
+
+    plan = Release::SweepPlan.compute([incident, row("healthy-single-repo-task")])
+
+    assert_equal ["land-rails-security-patch"], plan["blocked"].map { |b| b["slug"] }
+    assert_equal ["turf-monster"], plan["blocked"].first["missing"]
+    assert_equal ["healthy-single-repo-task"], plan["sweep"],
+                 "the blocked row must not ride, and must not take its neighbours with it"
+    refute_includes plan["record"].map { |r| r["slug"] }, "land-rails-security-patch"
+  end
+
+  test "[unit] compute clears the block once every repo has its PR recorded" do
+    healed = row("land-rails-security-patch", merged: "accepted")
+               .merge("repos" => %w[mcritchie-studio turf-monster],
+                      "pr_urls" => {
+                        "mcritchie-studio" => "https://github.com/McRitchie-Studio/mcritchie-studio/pull/836",
+                        "turf-monster" => "https://github.com/McRitchie-Studio/turf-monster/pull/305"
+                      })
+
+    plan = Release::SweepPlan.compute([healed])
+
+    assert_empty plan["blocked"]
+    assert_equal ["land-rails-security-patch"], plan["sweep"]
+  end
+
+  test "[unit] a row carrying only the singular repo/pr_url still normalizes and passes" do
+    # Back-compat: an older caller emitting {slug,stage,merged,pr_url,repo} has no
+    # plural pair, and must not be refused for lacking a field it never sent.
+    plan = Release::SweepPlan.compute([row("legacy-shaped-row")])
+
+    assert_empty plan["blocked"]
+    assert_equal ["legacy-shaped-row"], plan["sweep"]
+  end
 end

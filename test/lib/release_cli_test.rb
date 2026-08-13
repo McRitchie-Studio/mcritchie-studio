@@ -1206,7 +1206,98 @@ class ReleaseCliTest < Minitest::Test
       return ["200", true] if a.join(" ").include?("curl")
       ["", true]
     end
+    # REPO-AWARE, for prepare's accepted-COVERAGE guard (step 4a-bis): every repo
+    # whose `accepted` is ahead of `release` must be in the promote list, or the
+    # sweep would leave that repo's work behind while stamping its tasks shipped
+    # (the 2026-08-13 half-ship). The `sh` stub above answers "2 ahead" to ANY
+    # rev-list, which through the REAL reader would claim all five registered repos
+    # carry unpromoted work — a fixture artifact, not this flow's world: these
+    # candidates are hub tasks. So the reader names the repo, and stays
+    # $promoted-aware exactly as the sh stub is.
+    def ladder_ahead_states(repos: nil, require_checkout: false)
+      { "release" => [{ "repo" => "mcritchie-studio", "ahead" => 0 }],
+        "accepted" => [{ "repo" => "mcritchie-studio", "ahead" => ($promoted ? 0 : 2) }],
+        "unreadable" => [] }
+    end
   RUBY
+
+  # --- prepare: the MULTI-REPO member (the 2026-08-13 half-ship) ---------------
+  #
+  # `land-rails-security-patch` named [mcritchie-studio, turf-monster] and carried
+  # the hub's PR url. `promote_repos` read the SINGULAR `repo` off each candidate,
+  # so it promoted the hub alone; turf was never promoted, QA'd or shipped, and the
+  # task was still stamped shipped + merged:"main" while turf production ran the
+  # unpatched code. Two guards and one fix meet here at the pre-promote seam.
+  def multi_repo_stub(pr_urls:, ahead: [{ "repo" => "mcritchie-studio", "ahead" => 2 },
+                                        { "repo" => "turf-monster", "ahead" => 2 }])
+    SWEEP_FLOW_STUB + <<~RUBY
+      alias single_repo_conductor conductor
+      def conductor(ruby, read_only: false)
+        return single_repo_conductor(ruby, read_only: read_only) unless ruby.include?("sweep_candidates")
+
+        { "tasks" => [
+            { "slug" => "land-rails-security-patch", "stage" => "reviewed", "merged" => "accepted",
+              "pr_url" => "https://gh/pr/836", "repo" => "mcritchie-studio",
+              "repos" => ["mcritchie-studio", "turf-monster"], "pr_urls" => #{pr_urls.inspect} }
+          ],
+          "release" => nil,
+          "screen" => { "rows" => [], "blocked" => [], "overridden" => [], "missing" => [], "proceed" => true } }
+      end
+      def ladder_ahead_states(repos: nil, require_checkout: false)
+        { "release" => [], "accepted" => ($promoted ? [] : #{ahead.inspect}), "unreadable" => [] }
+      end
+    RUBY
+  end
+
+  def test_prepare_refuses_a_multi_repo_candidate_whose_pr_record_is_incomplete
+    out = run_cli(["--dry-run"], setup: multi_repo_stub(pr_urls: { "mcritchie-studio" => "https://gh/pr/836" }),
+                  call: %{begin; prepare; puts("NO-ABORT"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+    assert_includes out, "ABORTED", "a multi-repo task with one PR must not sweep"
+    assert_includes out, "turf-monster", "the refusal names the repo with no PR url"
+    assert_includes out, "NOTHING was promoted", "fail-closed BEFORE the promote"
+    refute_includes out, "NO-ABORT"
+    refute_includes out, "promote accepted → release", "nothing may be promoted"
+    refute_includes out, "SWEEP-CALL", "nothing may be recorded"
+  end
+
+  def test_prepare_promotes_EVERY_repo_a_multi_repo_candidate_names
+    out = run_cli(["--dry-run"], call: "prepare",
+                  setup: multi_repo_stub(pr_urls: { "mcritchie-studio" => "https://gh/pr/836",
+                                                    "turf-monster" => "https://gh/pr/305" }))
+
+    assert_includes out, "promote accepted → release in mcritchie-studio"
+    assert_includes out, "promote accepted → release in turf-monster",
+                     "THE fix: the promote list is every repo the task NAMES, not the one its pr_url parses to"
+  end
+
+  def test_prepare_refuses_when_a_repo_ahead_on_accepted_is_not_in_the_promote_list
+    # The check `bin/release status` already printed and no gate consulted: git says
+    # a repo's `accepted` carries commits, and this sweep would not carry it.
+    out = run_cli(["--yes"],
+                  setup: multi_repo_stub(pr_urls: { "mcritchie-studio" => "https://gh/pr/836",
+                                                    "turf-monster" => "https://gh/pr/305" },
+                                         ahead: [{ "repo" => "mcritchie-studio", "ahead" => 2 },
+                                                 { "repo" => "turf-monster", "ahead" => 2 },
+                                                 { "repo" => "mcritchie-industries", "ahead" => 2 }]),
+                  call: %{begin; prepare; puts("NO-ABORT"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+    assert_includes out, "ABORTED"
+    assert_includes out, "mcritchie-industries", "the refusal names the repo that would be left behind"
+    assert_includes out, "NOTHING was promoted, recorded or deployed"
+    refute_includes out, "NO-ABORT"
+    refute_includes out, "GH-MERGE", "fail-closed BEFORE the irreversible promote"
+    refute_includes out, "SWEEP-CALL"
+  end
+
+  def test_prepare_proceeds_when_every_accepted_ahead_repo_rides_the_promote
+    out = run_cli(["--yes"], call: "prepare",
+                  setup: multi_repo_stub(pr_urls: { "mcritchie-studio" => "https://gh/pr/836",
+                                                    "turf-monster" => "https://gh/pr/305" }))
+
+    assert_includes out, "GH-MERGE", "a fully-covered promote is not refused"
+    assert_includes out, "SWEEP-CALL", "…and still records"
+  end
 
   # --- prepare step 3b: the STALE-TREE GATE ------------------------------------
   #

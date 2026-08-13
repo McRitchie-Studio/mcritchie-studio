@@ -328,7 +328,9 @@ module Ci
     def member_repos(release)
       return [] unless release.respond_to?(:ordered_members)
 
-      release.ordered_members.filter_map { |task| task.release_repo.presence }.uniq
+      # EVERY repo each member names (Task#release_repos) — a member spanning two
+      # repos has CI in both, and the singular read showed only its primary.
+      release.ordered_members.flat_map(&:release_repos).uniq
     end
 
     # Where a repo's release-candidate CI lives: [nwo, branch, workflow_name]. App

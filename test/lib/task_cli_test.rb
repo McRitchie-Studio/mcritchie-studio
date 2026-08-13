@@ -2191,6 +2191,53 @@ class TaskCliTest < Minitest::Test
     assert_includes checks, fast
   end
 
+  # --- `--pr-url-for <repo>=<url>`: the per-repo PR register ------------------
+  # A task naming several repos had ONE PR slot, and the release lane parses that
+  # url for the repo it plans against — so on 2026-08-13 turf's PR had nowhere to
+  # live, turf was never promoted, and the task shipped anyway. The sweep now
+  # refuses a multi-repo task whose PR record is incomplete; this flag completes it.
+
+  def test_pr_url_for_records_a_per_repo_pr_url
+    requests, = run_task(["update", "demo-task", "--pr-url-for",
+                          "turf-monster=https://github.com/McRitchie-Studio/turf-monster/pull/305"])
+    patch = requests.find { |r| r[:method] == "PATCH" }
+    refute_nil patch
+    assert_equal({ "turf-monster" => "https://github.com/McRitchie-Studio/turf-monster/pull/305" },
+                 JSON.parse(patch[:body]).dig("devops", "pr_urls"))
+  end
+
+  def test_pr_url_for_MERGES_with_the_repos_already_recorded
+    # Completing a multi-repo PR record must not be a one-repo-at-a-time race the
+    # operator can lose: recording turf's PR may not wipe the hub's.
+    requests, = run_task(
+      ["update", "demo-task", "--pr-url-for",
+       "turf-monster=https://github.com/McRitchie-Studio/turf-monster/pull/305"],
+      stub_devops: { "kind" => "bug",
+                     "pr_urls" => { "mcritchie-studio" => "https://github.com/McRitchie-Studio/mcritchie-studio/pull/836" } }
+    )
+    patch = requests.find { |r| r[:method] == "PATCH" }
+    urls = JSON.parse(patch[:body]).dig("devops", "pr_urls")
+    assert_equal "https://github.com/McRitchie-Studio/mcritchie-studio/pull/836", urls["mcritchie-studio"]
+    assert_equal "https://github.com/McRitchie-Studio/turf-monster/pull/305", urls["turf-monster"]
+  end
+
+  def test_pr_url_for_is_repeatable_in_one_invocation
+    requests, = run_task(["update", "demo-task",
+                          "--pr-url-for", "mcritchie-studio=https://github.com/McRitchie-Studio/mcritchie-studio/pull/836",
+                          "--pr-url-for", "turf-monster=https://github.com/McRitchie-Studio/turf-monster/pull/305"])
+    patch = requests.find { |r| r[:method] == "PATCH" }
+    assert_equal %w[mcritchie-studio turf-monster],
+                 JSON.parse(patch[:body]).dig("devops", "pr_urls").keys.sort
+  end
+
+  def test_pr_url_for_rejects_a_malformed_pair_before_any_request
+    requests, _out, err, status = run_task(["update", "demo-task", "--pr-url-for", "just-a-repo"])
+    refute status.success?, "a half-written per-repo PR record must fail fast"
+    assert_match(/<repo>=<pr-url>/, err)
+    assert_nil requests.find { |r| r[:method] == "PATCH" },
+               "a malformed pair must not PATCH a partial record"
+  end
+
   def test_update_normalizes_dashed_approval_status
     requests, = run_task(["update", "demo-task", "--approval-status", "changes-requested"])
     patch = requests.find { |r| r[:method] == "PATCH" }
