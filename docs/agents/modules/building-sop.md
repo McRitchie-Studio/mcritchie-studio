@@ -46,6 +46,20 @@ bin/task begin --title "Three To Five Words" --repo <app> --kind <kind> \
   `feat/<slug>`. Pass `--slug` only to override.
 - **Each `--accept` bullet = 5-12 words.** Verbose detail/reasoning goes in
   `--agent-context "…"` (free-form, agent-to-agent).
+- **If you are a SOUL (Carl, Shannon, Jasper, Steffon, Alex), stamp yourself as
+  the builder** right after `begin`:
+
+  ```bash
+  bin/task move <slug> building --actor <your-soul>
+  ```
+
+  It writes `devops.built_by`, which is what keeps you off the review of your own
+  PR. It is safe to run on a task **already** at `building` — the stamp rides the
+  build CLAIM, not the transition — and re-running it is idempotent. Skip it and
+  `bin/reviewer-select` has no builder to exclude, so it **refuses to pick
+  reviewers at all** and the review stalls until someone states the fact by hand.
+  A delegated subagent runs under the PARENT session id, so this flag is the only
+  thing that records the soul who actually built the change.
 - **Classify the shape** — it selects the tests you must write
   (`config/feature_shapes.yml`): `ui-only` · `ui+db` · `backend` · `library` ·
   `onchain` · `onchain-vertical` · `docs` · `test-only`.

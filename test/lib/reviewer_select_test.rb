@@ -47,8 +47,62 @@ class ReviewerSelectCliTest < Minitest::Test
     end
   end
 
+  # Same as #select but KEEPS stderr, so the refusal text is assertable.
+  def select_verbose(devops, *args)
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "task.json")
+      File.write(path, JSON.generate(
+        "slug" => "cli-sample", "metadata" => { "devops" => devops }
+      ))
+      env = SessionEnv.neutralized("RAILS_ENV" => "test")
+      out = IO.popen(env, "#{BIN} --file #{path} #{args.join(" ")} 2>&1", &:read)
+      [out, $?.exitstatus]
+    end
+  end
+
+  # --- fail CLOSED on an unknown builder (builder-stamp-misses-reviewer-guard) ---
+
+  def test_refuses_to_select_when_the_builder_is_unknown
+    # THE DEFECT: a blank built_by used to mean "exclude nobody" and the tool
+    # rolled a reviewer anyway — once picking Carl to review Carl's own PR. An
+    # absent fact must refuse, not default to the permissive answer.
+    out, code = select_verbose("shape" => "backend")
+
+    refute_equal 0, code, "an unknown builder must NOT exit success:\n#{out}"
+    assert_match(/refus/i, out, "the refusal says so out loud")
+    assert_match(/--builder/, out, "and names the way to resolve it")
+    refute_match(/^PRIMARY\s/, out, "no pair is offered on a refusal")
+  end
+
+  def test_refusal_emits_no_decision_in_json_mode
+    out, code = select_verbose({ "shape" => "backend" }, "--json")
+
+    refute_equal 0, code
+    refute out.lines.any? { |l| l.strip.start_with?("{") && l.include?("\"reviewers\"") },
+      "a refusal emits no machine-readable pick a caller could act on:\n#{out}"
+  end
+
+  def test_a_known_builder_still_selects
+    out, code = select({ "shape" => "backend", "built_by" => "shannon" }, "--json")
+    assert_equal 0, code, out
+
+    decision = JSON.parse(out.lines.reverse.find { |l| l.strip.start_with?("{") })
+    assert_equal "shannon", decision["builder"]
+    refute_includes decision["candidates"], "shannon", "the known builder is excluded from the pool"
+  end
+
+  def test_an_explicit_no_builder_assertion_lifts_the_refusal
+    out, code = select({ "shape" => "backend" }, "--builder none --json")
+    assert_equal 0, code, out
+
+    decision = JSON.parse(out.lines.reverse.find { |l| l.strip.start_with?("{") })
+    assert_equal true, decision["builder_known"], "the caller ASSERTED no soul built this"
+    assert_nil decision["builder"]
+    assert_equal 2, decision["reviewers"].size
+  end
+
   def test_json_decision_is_machine_readable
-    out, code = select({ "shape" => "backend", "risk_tags" => ["solana"] }, "--json")
+    out, code = select({ "shape" => "backend", "risk_tags" => ["solana"] }, "--builder none --json")
     assert_equal 0, code, out
 
     line = out.lines.reverse.find { |l| l.strip.start_with?("{") }
@@ -62,7 +116,7 @@ class ReviewerSelectCliTest < Minitest::Test
   end
 
   def test_human_output_names_the_pair_and_the_excluded_qa_owner
-    out, code = select("shape" => "onchain")
+    out, code = select({ "shape" => "onchain" }, "--builder none")
     assert_equal 0, code, out
     assert_match(/PRIMARY\s+carl/, out, "Carl is the standing primary on every PR")
     assert_match(/LIGHT\s+jasper/, out, "an onchain shape puts the Web3 senior in the light seat")
@@ -137,7 +191,7 @@ class ReviewerSelectCliTest < Minitest::Test
   end
 
   def test_human_output_names_the_excluded_busy_souls
-    out, code = select({ "shape" => "backend" }, "--busy jasper")
+    out, code = select({ "shape" => "backend" }, "--busy jasper --builder none")
     assert_equal 0, code, out
     assert_match(/jasper \(busy/, out, "a busy soul is named on the excluded line")
   end
@@ -152,15 +206,15 @@ class ReviewerSelectCliTest < Minitest::Test
   end
 
   def test_file_mode_is_always_advisory_and_records_nothing
-    out, code = select({ "shape" => "backend" }, "--json")
+    out, code = select({ "shape" => "backend" }, "--builder none --json")
     assert_equal 0, code, out
     line = out.lines.reverse.find { |l| l.strip.start_with?("{") }
     refute JSON.parse(line)["intent_recorded"], "--file mode is offline → never records (even by default)"
   end
 
   def test_no_record_leaves_the_pick_and_tiebreak_output_unchanged
-    default, c1 = select("shape" => "backend")            # recording is the default
-    no_record, c2 = select({ "shape" => "backend" }, "--no-record")
+    default, c1 = select({ "shape" => "backend" }, "--builder none")   # recording is the default
+    no_record, c2 = select({ "shape" => "backend" }, "--builder none --no-record")
     assert_equal 0, c1, default
     assert_equal 0, c2, no_record
     refute_nil decision_block(default), "the tiebreak block is present"
@@ -171,7 +225,7 @@ class ReviewerSelectCliTest < Minitest::Test
   def test_recording_flags_all_parse_and_exit_zero_back_compat
     # --record is the legacy synonym (now the default), --no-record / --dry / --dry-run opt out.
     %w[--record --no-record --dry --dry-run].each do |flag|
-      out, code = select({ "shape" => "backend" }, flag)
+      out, code = select({ "shape" => "backend", "built_by" => "shannon" }, flag)
       assert_equal 0, code, "#{flag} should parse and exit 0:\n#{out}"
       assert_match(/PRIMARY/, out, "#{flag} still prints the pick")
     end
@@ -267,7 +321,7 @@ class ReviewerSelectCliTest < Minitest::Test
   end
 
   def test_default_board_run_records_exactly_one_review_intent
-    requests, out, status = run_board({ "shape" => "backend" }, "--json")
+    requests, out, status = run_board({ "shape" => "backend", "built_by" => "shannon" }, "--json")
     assert_equal 0, status.exitstatus, out
 
     posts = intent_posts(requests)
@@ -284,21 +338,31 @@ class ReviewerSelectCliTest < Minitest::Test
     assert decision["intent_recorded"], "the decision reports the intent was recorded"
   end
 
+  def test_a_refusal_records_no_review_intent
+    # The load-bearing half of failing closed: refusing must also refuse to WRITE.
+    # A recorded intent is what the board (and the next reviewer) reads as "these
+    # two are on it" — a blind pick must never reach it.
+    requests, out, status = run_board({ "shape" => "backend" }, "--json")
+
+    refute_equal 0, status.exitstatus, out
+    assert_equal 0, intent_posts(requests).size, "a refused selection records nothing"
+  end
+
   def test_no_record_suppresses_the_review_intent
-    requests, out, status = run_board({ "shape" => "backend" }, "--no-record", "--json")
+    requests, out, status = run_board({ "shape" => "backend", "built_by" => "shannon" }, "--no-record", "--json")
     assert_equal 0, status.exitstatus, out
     assert_equal 0, intent_posts(requests).size, "--no-record writes no intent"
     refute json_decision(out)["intent_recorded"], "--no-record reports no intent recorded"
   end
 
   def test_dry_run_suppresses_the_review_intent
-    requests, out, status = run_board({ "shape" => "backend" }, "--dry", "--json")
+    requests, out, status = run_board({ "shape" => "backend", "built_by" => "shannon" }, "--dry", "--json")
     assert_equal 0, status.exitstatus, out
     assert_equal 0, intent_posts(requests).size, "--dry is advisory only — writes nothing"
   end
 
   def test_record_flag_is_a_back_compat_synonym_for_the_default
-    requests, out, status = run_board({ "shape" => "backend" }, "--record", "--json")
+    requests, out, status = run_board({ "shape" => "backend", "built_by" => "shannon" }, "--record", "--json")
     assert_equal 0, status.exitstatus, out
     assert_equal 1, intent_posts(requests).size, "the legacy --record flag still records (now the default)"
   end

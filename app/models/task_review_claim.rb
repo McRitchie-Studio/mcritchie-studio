@@ -35,6 +35,19 @@ class TaskReviewClaim < ApplicationRecord
   def self.acquire(task_slug:, session:, nonce:, label: nil, reviewer: nil, now: Time.current,
                    ttl: ClaimLease::DEFAULT_TTL_SECONDS)
     row = claim_row(task_slug)
+    # THE SECOND LINE AGAINST SELF-REVIEW. `bin/reviewer-select` is the gate that
+    # keeps a builder out of the reviewer seats — but a gate at SELECTION time only
+    # helps when selection is the path taken, and it isn't always: a hand-spawned
+    # reviewer, a resumed session, or the server-side `claim_next_review` pop all
+    # reach the review through the CLAIM. Claiming is the one act every review path
+    # performs, so the rule is re-asserted here, where it cannot be walked around.
+    #
+    # It fires only when BOTH facts are known and equal. A claim carrying no
+    # reviewer slug is not a known self-review, and refusing those would wedge the
+    # review lane rather than protect it — the fail-closed-on-an-absent-fact half
+    # belongs to reviewer-select, which has somewhere to send the caller.
+    return Outcome.new(false, :self_review, row) if self_review?(task_slug, reviewer)
+
     outcome = nil
     row.with_lock do
       disposition = ClaimLease.evaluate(row.claim_hash, session: session, nonce: nonce, now: now)
@@ -79,6 +92,22 @@ class TaskReviewClaim < ApplicationRecord
       end
     end
     outcome
+  end
+
+  # True when this claim would put a soul on the review of a PR that soul BUILT —
+  # the one thing reviewer selection exists to prevent. Both sides must resolve: a
+  # blank reviewer or an unstamped task is not a known conflict (see .acquire).
+  # Any lookup failure answers false, so a telemetry-grade read can never wedge the
+  # review lane; reviewer-select remains the gate that refuses on the UNKNOWN.
+  def self.self_review?(task_slug, reviewer)
+    slug = reviewer.to_s.strip
+    return false if slug.empty?
+
+    built_by = Task.find_by(slug: task_slug.to_s.strip)&.devops_built_by.to_s.strip
+    !built_by.empty? && built_by == slug
+  rescue StandardError => e
+    Rails.logger.warn("[review-claim] self-review check failed for #{task_slug}: #{e.class}: #{e.message}")
+    false
   end
 
   # The intent write behind the crew seat. TaskEvent broadcasts on create-commit, so

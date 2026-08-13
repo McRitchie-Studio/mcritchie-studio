@@ -189,6 +189,74 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     assert_includes decision["candidates"], "steffon", "steffon is a light candidate again"
   end
 
+  # --- the builder fact is REPORTED, so a caller can fail closed on it ---
+  # (builder-stamp-misses-reviewer-guard). The list of excluded souls was always
+  # computed correctly; the defect was that it was EMPTY and nothing said so.
+
+  test "an unknown builder is REPORTED as unknown, not silently treated as none" do
+    decision = ReviewerSelector.explain(task_for(shape: "backend"))
+    assert_equal false, decision["builder_known"],
+      "an absent builder is an UNKNOWN fact — the caller must be able to refuse on it"
+  end
+
+  test "a stamped soul builder is reported as known" do
+    task = task_for(shape: "ui-only")
+    task.update!(metadata: task.metadata.deep_merge("devops" => { "built_by" => "shannon" }))
+
+    decision = ReviewerSelector.explain(task)
+    assert_equal true, decision["builder_known"]
+    assert_equal "shannon", decision["excluded_builder"], "and the exclusion actually fires"
+  end
+
+  test "a session-id building actor is NOT a known builder" do
+    # The fail-open one layer down: the TaskEvent fallback returned the raw actor,
+    # and a bare `bin/task move … building` writes the session UUID there. A
+    # presence check would have called that "builder known" while excluding nobody.
+    task = nil
+    begin
+      Current.task_event_actor = "942a9824-375f-4d13-b60e-85be79ee9880"
+      task = Task.create!(title: "uuid actor builder task", stage: "building",
+                          metadata: { "devops" => { "shape" => "backend" } })
+    ensure
+      Current.reset
+    end
+
+    decision = ReviewerSelector.explain(task)
+    assert_nil decision["builder"], "a session id is not a soul"
+    assert_equal false, decision["builder_known"], "an unresolvable actor leaves the builder UNKNOWN"
+  end
+
+  test "an explicit no-builder assertion makes the builder known with nobody excluded" do
+    # The escape hatch that keeps the guard usable: a caller who KNOWS no soul
+    # built the task states it, and the fact stops being absent.
+    decision = ReviewerSelector.new(task_for(shape: "backend"), builder: ReviewerSelector::NO_BUILDER).decision
+    assert_equal true, decision["builder_known"], "an asserted absence is a known fact"
+    assert_nil decision["builder"], "nobody is named as the builder"
+    assert_nil decision["excluded_builder"], "and nobody is excluded"
+    assert_equal "carl", decision["standing_primary"], "Carl keeps the primary seat"
+  end
+
+  test "NO soul in the pool is ever seated on a task it is recorded as building" do
+    # The PROPERTY, asserted over the whole pool and every shape rather than the
+    # one spelling that failed. The seats are what matter: a builder that survives
+    # into `reviewers` is a self-review no matter how the exclusion list reads.
+    ReviewerSelector::POOL.each do |soul|
+      Task::SHAPES.each do |shape|
+        task = task_for(shape: shape)
+        task.update!(metadata: task.metadata.deep_merge("devops" => { "built_by" => soul }))
+
+        seated = slugs(ReviewerSelector.select(task))
+        refute_includes seated, soul, "#{soul} was seated on a #{shape} task #{soul} built"
+        assert_equal 2, seated.uniq.size, "a full pair still forms on a #{shape} task"
+      end
+    end
+  end
+
+  test "a non-soul builder override leaves the builder unknown" do
+    decision = ReviewerSelector.new(task_for(shape: "backend"), builder: "session-42a9").decision
+    assert_equal false, decision["builder_known"], "a non-soul override names nobody"
+  end
+
   test "a known non-specialist builder excludes nobody from the light pool" do
     # `mack` is a real soul but NOT a specialist — there's nothing to remove from
     # the light pool, so the audit must not claim an exclusion.
@@ -226,11 +294,23 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     assert_match(/builder=shannon\(excluded\)/, logger.lines.last, "the builder + its state is logged")
   end
 
-  test "the audit log shows builder=- when the builder is unknown" do
+  test "the audit log shouts UNKNOWN when the builder is unknown" do
+    # It logged a bare `builder=-` until 2026-08-13, which is exactly why two
+    # blind picks went unnoticed in one day: a disabled safety check must not read
+    # like a tidy empty field.
     logger = CapturingLogger.new
     ReviewerSelector.new(task_for(shape: "backend"), logger: logger).reviewers
 
-    assert_match(/builder=-/, logger.lines.last)
+    assert_match(/builder=UNKNOWN\(no-exclusion\)/, logger.lines.last)
+  end
+
+  test "the audit log distinguishes an ASSERTED absence from an unknown builder" do
+    logger = CapturingLogger.new
+    ReviewerSelector.new(task_for(shape: "backend"), builder: ReviewerSelector::NO_BUILDER,
+                                                     logger: logger).reviewers
+
+    assert_match(/builder=none\(asserted\)/, logger.lines.last,
+      "a stated fact is auditable as a stated fact, not as a missing one")
   end
 
   test "the audit log marks a known non-specialist builder as not-a-candidate" do

@@ -41,8 +41,18 @@
 # Agent row (or no DB at all) falls back to ReviewerSelector's domain defaults.
 #
 # The BUILDER is auto-excluded from the LIGHT seat too (read from the task's
-# devops.built_by, stamped on the move to building) so a soul never reviews their
-# own work — no manual flag needed. BUSY souls (agents mid-build / mid-review on
+# devops.built_by, stamped on any build CLAIM — a re-claim of an already-`building`
+# task included) so a soul never reviews their own work — no manual flag needed.
+#
+# ⛔ AN UNKNOWN BUILDER REFUSES. If neither devops.built_by nor a `→ building`
+# event names a SOUL, this tool exits 2 and selects NOTHING (and records nothing).
+# An empty exclusion list is not the same answer as "nobody to exclude", and
+# conflating them is what let it pick Carl to review Carl's own PR on 2026-08-13.
+# State the fact to proceed: `--builder <soul>` names the builder, `--builder none`
+# asserts that no soul built it. Fix it durably upstream with
+# `bin/task move <slug> building --actor <soul>`.
+#
+# BUSY souls (agents mid-build / mid-review on
 # OTHER in-flight tasks) are excluded from the LIGHT seat via `--busy a,b,c` and/or
 # `--busy-auto` (which reads the board's stage=building tasks). Both the builder and
 # the busy drops YIELD rather than starve: if the exclusions would leave too few
@@ -56,11 +66,13 @@
 #   bin/reviewer-select <task-slug> --json          # machine-readable decision
 #   bin/reviewer-select <task-slug> --qa-owner carl # exclude a different QA owner
 #   bin/reviewer-select <task-slug> --builder carl  # override the recorded built_by
+#   bin/reviewer-select <task-slug> --builder none  # ASSERT no soul built it (lifts the refusal)
 #   bin/reviewer-select <task-slug> --busy a,b      # exclude busy souls (repeatable)
 #   bin/reviewer-select <task-slug> --busy-auto     # also exclude agents on stage=building tasks
 #   bin/reviewer-select --file task.json            # evaluate a local task JSON (advisory — never records)
 #
-# Exit code: 0 = a pair was selected, 1 = task not found / usage error.
+# Exit code: 0 = a pair was selected, 1 = task not found / usage error,
+#            2 = REFUSED — the builder is unknown (see the block above).
 
 # Activate the bundled gem versions first (Bundler.setup) — before requiring
 # `json` et al, so the pinned json (not the newer default gem) is the one loaded.
@@ -204,6 +216,9 @@ end
 def excluded_line(decision)
   parts = ["#{decision["excluded_qa_owner"]} (QA owner — never reviews a PR he then QAs)"]
   builder = decision["builder"].to_s
+  # A known-but-nameless builder is the `--builder none` assertion: nobody is
+  # excluded, and the audit line says WHY that is a fact rather than a blank.
+  parts << "(no builder — ASSERTED by the caller: no soul built this task)" if builder.empty? && decision["builder_known"]
   unless builder.empty?
     parts << if decision["excluded_builder"].to_s == builder
       "#{builder} (builder — a soul never reviews their own work)"
@@ -260,7 +275,10 @@ OptionParser.new do |o|
   end
   o.on("--dry", "--dry-run", "Advisory only — print the pick, record NOTHING (alias for --no-record)") { options[:record] = false }
   o.on("--qa-owner SLUG", "Exclude this slug instead of the default QA owner (avi)") { |v| options[:qa_owner] = v }
-  o.on("--builder SLUG", "Exclude this builder (overrides the task's recorded built_by)") { |v| options[:builder] = v }
+  o.on("--builder SLUG", "Exclude this builder (overrides the task's recorded built_by); " \
+                         "`none` ASSERTS that no soul built the task, lifting the unknown-builder refusal") do |v|
+    options[:builder] = v
+  end
   o.on("--busy LIST", "Exclude these busy souls — mid-build/review elsewhere (comma/space separated; repeatable)") do |v|
     options[:busy].concat(v.split(/[\s,]+/))
   end
@@ -302,6 +320,37 @@ end
 log = CaptureLogger.new
 decision = ReviewerSelector.new(task, qa_owner: qa_owner, builder: builder, busy: busy, logger: log).decision
 pr_url = devops["pr_url"].to_s.strip
+
+# FAIL CLOSED ON AN UNKNOWN BUILDER. Selection exists to keep a soul off the
+# review of their own PR; with no builder on record it cannot do that, and the
+# old behavior — print `builder=-` and roll a reviewer anyway — read like ordinary
+# output rather than a disabled safety check. On 2026-08-13 it picked Carl to
+# review Carl's own PR, and a human noticing was the only thing that stopped it.
+#
+# So an absent fact REFUSES rather than defaulting to the permissive answer, and
+# it refuses BEFORE the intent write — a blind pair must never reach the board.
+# Two ways out, both stating a fact rather than omitting one:
+#   --builder <soul>  name who built it (also the after-the-fact correction)
+#   --builder none    assert NO soul built it (a Pokémon session, an operator)
+# The durable fix is upstream: `bin/task move <slug> building --actor <soul>`
+# stamps devops.built_by on any build claim, re-claims included.
+unless decision["builder_known"]
+  # Prefer the positional slug, but fall back to the one the payload carries so
+  # --file mode prints a copy-pasteable remedy too.
+  named = slug.to_s.strip.empty? ? decision["task"].to_s.strip : slug.to_s.strip
+  named = "<task>" if named.empty?
+  warn!("reviewer-select REFUSED to select for task=#{decision["task"] || "-"} — the BUILDER IS UNKNOWN.")
+  warn!("  devops.built_by is blank and no `→ building` event names a soul, so the")
+  warn!("  no-self-review exclusion has nothing to exclude. Selecting anyway could")
+  warn!("  hand the PR to the soul who wrote it — refusing instead.")
+  warn!("")
+  warn!("  Resolve it by stating the fact:")
+  warn!("    bin/reviewer-select #{named} --builder <soul>   # who built it")
+  warn!("    bin/reviewer-select #{named} --builder none     # no soul built it")
+  warn!("  Durable fix (stamps built_by for next time, re-claims included):")
+  warn!("    bin/task move #{named} building --actor <soul>")
+  exit 2
+end
 
 # Record (the DEFAULT) the picked pair onto the task as a review INTENT (a board
 # write) so /deployments + the task timeline show the two seniors reviewing live,
