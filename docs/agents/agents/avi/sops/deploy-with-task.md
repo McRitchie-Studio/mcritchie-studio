@@ -91,6 +91,16 @@ Use the production board by default. Do not add `--local`.
    so and still refuses (the work is unaccounted for). Confirm with `git ls-remote
    --heads origin main release`, reconcile the board, then re-run.
 
+   **The git read covers the repos you have cloned**, and it says which ones it
+   did not. A three-rung repo with no local checkout is skipped — an uncloned
+   sibling is not evidence of pending work, so it never refuses the lane — but the
+   guard will not speak for it either. It names the gap (`NOT verified: rolio`)
+   and withholds every claim that ranges over ALL repos, the interrupted-ship
+   sentence above included. **So the absence of that sentence is not evidence the
+   ship completed**; only a read that covered every repo can say the trees are
+   identical. Clone the named repo and re-run when you need the whole ladder
+   verified.
+
    `--task <task>` names the expedited task so the guard does not refuse on your
    OWN work when you re-run the act after review already merged it onto
    `accepted`. It excludes that one slug from the board read, and tolerates the
