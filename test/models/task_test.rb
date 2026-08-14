@@ -1901,4 +1901,62 @@ class TaskTest < ActiveSupport::TestCase
     assert_equal "shipped", task.reload.stage
     assert_equal Task::MERGED_MAIN, task.merged
   end
+
+  # --- WIP (the DevOps card's tile) ---
+
+  # The operator's definition: designed + building + submitted + reviewed +
+  # assembled. Asserted one stage at a time from an EMPTY board, so the test names
+  # each stage's own contribution instead of trusting one lump total — a stage
+  # silently dropped from the count fails here with its own name.
+  test "[unit] wip_count counts each of the five in-flight stages" do
+    Task.delete_all
+
+    %w[designed building submitted reviewed assembled].each_with_index do |stage, i|
+      Task.create!(title: "wip #{stage} task", stage: stage)
+      assert_equal i + 1, Task.wip_count, "a #{stage} task must count toward WIP"
+    end
+  end
+
+  # The other half of the contract: the two terminal stages are DONE, not WIP.
+  # Advancing a counted task must DECREMENT the number (the advance, not just the
+  # end state) — a wip_count that ignored `stage` entirely would still pass a
+  # "shipped tasks are excluded" test that only ever checked a static board.
+  test "[unit] wip_count excludes the terminal stages, and shipping decrements it" do
+    Task.delete_all
+    task = Task.create!(title: "wip advancing task", stage: "assembled")
+    Task.create!(title: "wip resting task", stage: "shipped")
+    Task.create!(title: "wip filed task", stage: "archived")
+
+    assert_equal 1, Task.wip_count, "only the assembled task is in flight"
+
+    task.update!(stage: "shipped")
+    assert_equal 0, Task.wip_count, "shipping the last live task empties WIP"
+  end
+
+  # A blocked task is a `building` task carrying a block marker, not a stage of its
+  # own — so it is still open work and must stay in the count. This is the case an
+  # `stage NOT IN (shipped, archived)` count gets right and a hand-rolled
+  # "count the happy path" one gets wrong.
+  test "[unit] wip_count keeps blocked tasks — a block means more building to do" do
+    Task.delete_all
+    blocked = Task.create!(title: "wip blocked task", stage: "building",
+                           blocked_at: Time.current, blocked_from: "submitted",
+                           blocked_by: "avi", block_kind: "rework")
+
+    assert blocked.blocked?, "fixture guard: the task must actually read as blocked"
+    assert_equal 1, Task.wip_count
+  end
+
+  # WIP is the pipeline's number, so it must agree with `live` BY CONSTRUCTION —
+  # the card and the mascot deck read the same set. Pinned so a future edit that
+  # forks a second stage list here fails instead of quietly drifting.
+  test "[unit] wip_count is the live scope's count" do
+    Task.delete_all
+    %w[designed building submitted reviewed assembled shipped archived].each do |stage|
+      Task.create!(title: "wip parity #{stage} task", stage: stage)
+    end
+
+    assert_equal Task.live.count, Task.wip_count
+    assert_equal 5, Task.wip_count
+  end
 end

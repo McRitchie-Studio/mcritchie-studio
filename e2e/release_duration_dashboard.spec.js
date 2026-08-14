@@ -13,6 +13,8 @@ test("deployments analytics card navigates to release history and detail", async
 
   const card = page.locator("#release-duration-card");
   await expect(card).toBeVisible();
+  // Six tiles on the 3x2 grid: the WIP count plus the five duration averages.
+  await expect(card.locator("[data-test='release-duration-tile-grid'] > div")).toHaveCount(6);
   await expect(card.locator("[data-test='release-duration-stage']")).toHaveCount(5);
   await expect(
     card.locator("[data-test='release-duration-stage'][data-stage='deployed']"),
@@ -20,6 +22,16 @@ test("deployments analytics card navigates to release history and detail", async
   await expect(
     card.locator("[data-test='release-duration-stage'][data-stage='total']"),
   ).toContainText("Total");
+
+  // WIP is a LIVE count, so the seeded number is whatever the board holds — assert
+  // the structure that holds in every environment (prod smoke included, where the
+  // seed fixtures do not exist): the tile is there and its value is a real number,
+  // not the "—" the partial falls back to when no count reaches it. That dash is
+  // exactly the regression this catches — a broken controller-to-partial wire.
+  const wip = card.locator("[data-test='release-duration-wip']");
+  await expect(wip).toContainText("WIP");
+  await expect(wip).toContainText("tasks in flight");
+  await expect(wip.locator("p").nth(1)).toHaveText(/^\d+$/);
 
   // Navbar-safe click. The card sits at the bottom of the board under the app's
   // sticky top navbar (z-50, layouts/application.html.erb): Playwright's minimal

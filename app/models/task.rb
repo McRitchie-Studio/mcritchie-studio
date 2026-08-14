@@ -396,8 +396,11 @@ class Task < ApplicationRecord
     ))
   }
   scope :requires_migration, -> { where(requires_migration: true) }
-  # Tasks still in play — everything except the two terminal stages. A live task's
-  # mascot is "taken"; shipping or archiving returns its Pokémon to the deck.
+  # Tasks still in play — everything except the two terminal stages, i.e.
+  # designed + building + submitted + reviewed + assembled. A live task's mascot
+  # is "taken"; shipping or archiving returns its Pokémon to the deck. Also the
+  # WIP metric (see .wip_count) — one scope, so the deck and the card can never
+  # disagree about what counts as open work.
   scope :live, -> { where.not(stage: %w[shipped archived]) }
   # The load-bearing query of the per-task review claim: submitted PR tasks NOT
   # already under LIVE review. It's a proper SERVER-SIDE query (NOT EXISTS on
@@ -485,6 +488,16 @@ class Task < ApplicationRecord
   # separate "blocked" bucket — the stage grouping already carries them.
   def self.board_column_tasks(tasks_by_stage, stage)
     Array((tasks_by_stage || {})[stage.to_s])
+  end
+
+  # WIP — how much work is open right now, the DevOps card's sixth tile:
+  # designed + building + submitted + reviewed + assembled. That set IS `live`
+  # (everything but the two terminal stages), so this counts THROUGH the scope
+  # instead of restating the stage list where the two could drift apart.
+  # Deliberately independent of the board's agent/stage filter params: WIP is the
+  # pipeline's total, not the count of whatever the current view has narrowed to.
+  def self.wip_count
+    live.count
   end
 
   # Avi's per-APPLICATION release disposition over the `reviewed` queue — the read

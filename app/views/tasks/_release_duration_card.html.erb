@@ -1,6 +1,10 @@
 <% dashboard = local_assigns.fetch(:dashboard, nil) || {} %>
 <% stage_averages = dashboard["stages"] || {} %>
 <% sample_count = dashboard["sample_count"].to_i %>
+<%# WIP is the one LIVE number on this card (a count of open tasks, not an average
+    over shipped releases), so it arrives as its own local. nil — a caller that
+    renders the card without it — reads as "—", never as a wrong zero. %>
+<% wip_count = local_assigns.fetch(:wip_count, nil) %>
 <% card_class = ["rounded-xl border border-subtle bg-surface p-4", local_assigns[:card_class]].compact.join(" ") %>
 
 <div id="release-duration-card" class="<%= card_class %>" data-test="release-duration-card">
@@ -12,11 +16,23 @@
                 class: "shrink-0 rounded bg-inset px-2 py-1 text-xs font-semibold text-secondary border border-subtle hover:text-heading" %>
   </div>
 
-  <%# The five deployment stages (Assembled / G3 Candidate / G4 Ship / Deployed / Total),
-      averaged over the recent shipped releases — the same numbers the All Deployments
-      table columns show per release. Iterates the canonical stage list so all five
-      tiles render (as "—") even before any release has shipped. Wraps on narrow widths. %>
-  <div class="mt-4 grid grid-cols-2 sm:grid-cols-5 gap-2" data-test="release-duration-stage-grid">
+  <%# Six tiles on a 3×2 grid (2 columns on mobile): WIP leads, then the five
+      deployment stages (Assembled / G3 Candidate / G4 Ship / Deployed / Total)
+      averaged over the recent shipped releases — the same numbers the All
+      Deployments table columns show per release. The stage tiles iterate the
+      canonical stage list, so all five render (as "—") even before any release
+      has shipped. %>
+  <div class="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-2" data-test="release-duration-tile-grid">
+    <%# WIP — open work RIGHT NOW, the only live count among five shipped-release
+        averages. Carries its own data-test so the five duration tiles stay
+        countable as the five duration columns they mirror. %>
+    <div class="rounded-lg border border-subtle bg-inset px-3 py-2"
+         data-test="release-duration-wip" data-stage="wip"
+         title="Open tasks: Designed + Building + Submitted + Reviewed + Assembled">
+      <p class="text-[10px] uppercase tracking-wide text-muted font-semibold">WIP</p>
+      <p class="mt-1 font-mono text-lg font-bold text-heading tabular-nums"><%= wip_count.nil? ? "—" : wip_count %></p>
+      <p class="mt-1 text-[11px] text-muted">tasks in flight</p>
+    </div>
     <% (Release::DEPLOYMENT_STAGES.map { |stage| [stage[:key], stage[:label]] } + [["total", "Total"]]).each do |key, label| %>
       <% row = stage_averages[key] || {} %>
       <div class="rounded-lg border border-subtle bg-inset px-3 py-2" data-test="release-duration-stage" data-stage="<%= key %>">
