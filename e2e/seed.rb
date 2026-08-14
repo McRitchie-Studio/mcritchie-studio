@@ -37,6 +37,21 @@ admin = User.create!(
   role: "admin"
 )
 
+# Accounts that have never told us their name — the exact state the first-name
+# onboarding step exists to resolve. Deliberately NOT the admin above: User
+# derives first_name from name (set_name_parts), so every named account already
+# has one and is never asked.
+#
+# ONE PER SPEC, and that is not redundancy. Answering the ask MUTATES the account
+# (that is the whole point), and this seed runs once at webServer boot — so two
+# specs sharing an account means whichever runs second finds a user who no longer
+# owes a name and waits forever for a modal that will never open. Each spec that
+# consumes the ask gets its own.
+User.create!(email: "newcomer@test.com", role: "viewer")
+User.create!(email: "newcomer-skip@test.com", role: "viewer")
+User.create!(email: "newcomer-turbo@test.com", role: "viewer")
+User.create!(email: "newcomer-back@test.com", role: "viewer")
+
 # Agents
 alex = Agent.create!(
   name: "Alex",

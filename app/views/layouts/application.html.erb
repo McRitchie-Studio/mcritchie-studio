@@ -71,7 +71,101 @@
       <template x-if="$store.modals.current().id === 'check-inbox'">
         <%= render "modals/check_inbox" %>
       </template>
+      <%# The shared first-name step (engine primitive). Rendered from the gem so
+          this app and turf-monster ask the same question the same way; the
+          endpoints behind it come from config.draw_onboarding_routes. %>
+      <template x-if="$store.modals.current().id === 'onboarding-first-name'">
+        <%= render "studio/modals/onboarding/first_name",
+                   subtext: "Just your first name — we use it to address you in emails." %>
+      </template>
     <% end %>
+
+    <%# Ask a freshly signed-in account for a first name, once. The SERVER decides
+        whether it is still outstanding (blank field, not skipped this session);
+        the client only opens what it was told to.
+
+        THE MARKER IS THE SIGNAL, NOT THE SCRIPT — and that distinction is the
+        whole fix for a real bug. Handlers live on `document`, which SURVIVES a
+        Turbo Drive body replacement; the emitted <script> does not. So an
+        earlier page's handler keeps firing on later pages whose server render
+        deliberately contains no arming block, and it re-asked a user who had
+        just answered — on every navigation, for the life of the tab. Guarding on
+        the modal stack could not stop it: close() splices the entry off `stack`
+        after the exit animation, so by the time the stale handler ran the stack
+        was empty and the guard waved it through.
+
+        So the handler reads the CURRENT document at fire time. The marker below
+        is rendered only while the ask is outstanding, and Turbo replaces the body
+        with it absent — a stale handler looks, finds nothing, and does nothing.
+
+        Armed on two events because either can be the one that happens: a full
+        load fires alpine:initialized, while a Turbo visit does not (Alpine is
+        already up), so turbo:load is the only signal there. Attached ONCE per
+        document — without the flag, every visit added another pair and they
+        accumulated for the life of the tab. %>
+    <% if logged_in? && Studio.first_name_outstanding?(current_user, session) %>
+      <div id="onboarding-ask-first-name" hidden></div>
+    <% end %>
+    <script>
+      (function () {
+        if (window.__onboardingAskArmed) return;
+        window.__onboardingAskArmed = true;
+
+        function askFirstName() {
+          // Read the page we are on NOW, not the one this script shipped with.
+          if (!document.getElementById('onboarding-ask-first-name')) return;
+          if (!window.Alpine || !Alpine.store) return;
+          var store = Alpine.store('modals');
+          if (!store || typeof store.open !== 'function') return;
+          var already = (store.stack || []).some(function (entry) {
+            return entry && entry.id === 'onboarding-first-name';
+          });
+          if (already) return;
+          // dismissible: false — escape and click-outside would close this
+          // WITHOUT posting the skip, which silently abandons the ask the same
+          // way the partial's own × exists to prevent. Save and Skip both post;
+          // they are the only two ways out, and both settle the question.
+          store.open('onboarding-first-name', { dismissible: false });
+        }
+
+        // THE MARKER MUST NOT OUTLIVE THE ASK.
+        //
+        // Reading the current document fixed FORWARD navigation, because the
+        // server stops emitting the marker on the next render. It does NOT fix a
+        // Turbo RESTORATION visit: the back button replays a CACHED body, and the
+        // snapshot was taken while the marker was still sitting in the DOM — so
+        // the handler found it and re-asked someone who had already answered,
+        // with dismissible:false leaving them no way out but answering twice.
+        //
+        // The server cannot help here (a cached restore issues no request), so
+        // the client retires the marker the moment the ask is settled. The engine
+        // partial already announces that on BOTH paths — it dispatches
+        // onboarding-step-done after a successful save AND after a skip — so this
+        // listens rather than duplicating the rule.
+        window.addEventListener('onboarding-step-done', function () {
+          var marker = document.getElementById('onboarding-ask-first-name');
+          if (marker) marker.remove();
+        });
+
+        // And never let this modal be SNAPSHOTTED OPEN. dismissible:false is what
+        // stops escape/click-outside from abandoning the ask, but it also exempts
+        // this modal from the host's closeAllDismissible sweep on
+        // turbo:before-cache — so a back button pressed while it is open would
+        // restore a body with the modal already mounted, on top of the handler
+        // mounting it again. Close it ourselves before the snapshot is taken.
+        document.addEventListener('turbo:before-cache', function () {
+          var store = window.Alpine && Alpine.store && Alpine.store('modals');
+          if (!store || typeof store.close !== 'function') return;
+          var mounted = (store.stack || []).some(function (entry) {
+            return entry && entry.id === 'onboarding-first-name';
+          });
+          if (mounted) store.close();
+        });
+
+        document.addEventListener('alpine:initialized', askFirstName);
+        document.addEventListener('turbo:load', askFirstName);
+      })();
+    </script>
 
     <%# Shared Solana sign-in + magic-link request. Inline so they're always
         defined; window.walletProvider comes from the wallet_provider importmap
