@@ -406,6 +406,27 @@ must not reflexively re-run. Each abort names its own case and its own fix:
 `prepare` never force-ships a red candidate. The only ways past a real regression
 are to eject it or to fix it forward — never to re-run harder.
 
+**A member left `reviewed` on a GREEN QA run is not a bug — it is the per-repo
+evidence guard.** `qa_green!` stamps a member `assembled` only when the candidate
+recorded something for **every** repo that member names (a QA sha or a passing
+pre-QA gate; gem repos are exempt, since they publish rather than deploy). A
+member spanning a repo this candidate never promoted stays `reviewed` — swept,
+`merged: "release"`, and picked up by the next self-healing run once its missing
+repo rides — and the reason is logged as `[release-evidence] <release>: <slug>
+names N repo(s) … but this release landed nothing for <repo>`. The ship has the
+same guard against `metadata["shipped_shas"]`, so such a member stays `assembled`
+rather than being stamped `shipped` for a repo whose `main` never moved.
+
+**The `merged: "main"` stamp is NOT withheld with it** — say the half that still
+bites rather than imply a clean stop. `record_merged_main` fires per repo-group
+inside the deploy/publish path (`bin/release ship`), entirely outside
+`Release#ship!` and outside this guard, so a held member parks at `assembled` +
+`merged: "main"` — the registry's "prod-deploy in flight" badge — and keeps it.
+That stamp is pre-existing and per-repo; the evidence guard withholds the STAGE,
+not the git-location stamp. Fix a held member the same way as the aborts above:
+get the missing repo onto this candidate, or drop it from the task if it carries
+no work.
+
 ### Detecting an UNFINISHED release candidate
 
 An unfinished RC is a candidate whose members are **merged but never assembled** —

@@ -564,7 +564,10 @@ module ApplicationHelper
 
   # Member repos, producer-first (gems before apps), one lane each.
   def release_lane_repos(release)
-    release.ordered_members.filter_map { |task| task.release_repo.presence }.uniq
+    # EVERY repo each member names — a two-repo member earns a lane per repo. It
+    # read the singular #release_repo, so the /deployments tracker under-reported a
+    # multi-repo release exactly as the pipeline under-promoted it (2026-08-13).
+    release.ordered_members.flat_map(&:release_repos).uniq
   end
 
   def release_lane_phases(release, repo, ci, gem)
