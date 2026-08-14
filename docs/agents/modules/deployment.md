@@ -424,6 +424,50 @@ Note the wiring dependency — only repos whose Actions webhook reaches this end
 can ever trigger it; an unwired repo's armed merge reads CI as `:none` forever and
 expires unexecuted, which is the correct fail-closed outcome, not a silent pass.
 
+### Wiring a repo's Actions webhook (the per-repo step that is NOT code)
+
+Ingestion is **per repo**, and nothing in this app can create the delivery: the
+board only receives what GitHub sends it. A registered repo whose webhook was
+never added is permanently CI-invisible here — its PRs read `:none`, so
+`bin/task claim-next-review` (green-CI only) never pops them and they sit in
+`submitted` unreviewed. Measured on `mcritchie-industries` twice: PR #17
+(2026-08-08) and PR #36 (2026-08-13) were both 4/4 green on GitHub and unclaimable.
+
+Add the hook once per repo — GitHub → the repo → **Settings → Webhooks → Add
+webhook**:
+
+| Field | Value |
+|-------|-------|
+| Payload URL | `https://mcritchie.studio/api/v1/github/webhook` |
+| Content type | `application/json` |
+| Secret | the board's `GITHUB_WEBHOOK_SECRET` (`heroku config:get GITHUB_WEBHOOK_SECRET -a mcritchie-studio`) |
+| Events | *Let me select individual events* → **Workflow runs** + **Workflow jobs** |
+
+**This step needs a human (or a re-permissioned App).** The `mcritchie-agent`
+GitHub App does NOT carry the `repository_hooks` permission, so an agent asking
+`gh api repos/McRitchie-Studio/<repo>/hooks` gets `403 Resource not accessible by
+integration` — it can neither read nor create the hook. Two ways to make it an
+agent-runnable step in future: grant the App **Repository permissions → Webhooks:
+Read and write**, or point the **App's own webhook** at the same URL with those two
+events subscribed, which would deliver for every installed repo and retire this
+per-repo chore entirely.
+
+Verify from the board (never from the repo's Settings page — the question is what
+ARRIVED): `GithubWorkflowRun.distinct.pluck(:repo)` shows every repo that has ever
+delivered, legacy `amcritchie/*` names beside the current `McRitchie-Studio/*` ones.
+
+**The guard: `Ci::Ingestion`.** Absence of rows is exactly what no suite notices,
+so it is asked as a question. `Ci::Ingestion.unwired` names the registered
+three-rung repos (`config/release_repos.yml`) the board holds no run for — repo
+slugs, owner-agnostic, exempting only a repo that DECLARES no suite workflow via
+`GithubWorkflowRun.ci_workflow_for`. `Task.claim_next_review` runs it over the
+repos of the candidates it just skipped and returns them as `blind_repos`, which
+the API's empty pop carries and `bin/task claim-next-review` prints as a wiring
+warning — so an unwired repo is a NAMED failure at the moment it strands a PR
+instead of an indistinguishable `no_green_ci`. `test/models/ci/ingestion_test.rb`
+drives every registered repo in turn, so the next satellite onboarded is covered
+the day it lands.
+
 **Prod-deploy approval gate — REMOVED 2026-07-20 (task `remove-prod-deploy-approval`).**
 The `production` GitHub Environment's required-reviewer rule was deleted (a GitHub
 setting), so a dispatched prod-deploy run now deploys straight through — it never

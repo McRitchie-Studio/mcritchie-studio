@@ -355,6 +355,33 @@ class ReviewClaimCliTest < Minitest::Test
     end
   end
 
+  # THE WIRING WARNING is a failure-path ARTIFACT, so it is asserted like one. A
+  # repo the board ingests no CI for reads exactly like a red queue in a bare
+  # `no_green_ci`, which is how a 4/4-green mcritchie-industries PR sat unclaimed
+  # for days. The reviewer must be told WHICH repo is blind and that wiring — not
+  # a rebuild — is the fix.
+  def test_unit_claim_next_names_a_blind_repo_on_an_empty_pop
+    Dir.mktmpdir do |proj|
+      c = cli(projects_dir: proj,
+              data: { "claimed" => nil, "reason" => "no_green_ci",
+                      "blind_repos" => ["mcritchie-industries"] })
+      code = c.run(["claim-next"])
+
+      assert_equal ReviewClaimCli::NONE, code, "a blind repo is still an empty pop, not an error"
+      assert_match(/mcritchie-industries/, @err.string, "the blind repo is NAMED, not merely counted")
+      assert_match(/WIRING gap/i, @err.string, "it says wiring, so nobody re-runs a build that was never seen")
+    end
+  end
+
+  def test_unit_claim_next_stays_quiet_when_no_repo_is_blind
+    Dir.mktmpdir do |proj|
+      c = cli(projects_dir: proj, data: { "claimed" => nil, "reason" => "no_green_ci", "blind_repos" => [] })
+      c.run(["claim-next"])
+
+      refute_match(/WIRING gap/i, @err.string, "a red queue must not be dressed up as a wiring gap")
+    end
+  end
+
   def test_unit_claim_next_without_a_session_id_fails_open
     Dir.mktmpdir do |proj|
       code = cli(env: { "TASK_REVIEW_CLAIM_SESSION" => "" }, projects_dir: proj).run(["claim-next"])
