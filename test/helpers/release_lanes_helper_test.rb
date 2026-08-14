@@ -16,6 +16,21 @@ class ReleaseLanesHelperTest < ActionView::TestCase
     assert_equal 4, lanes.first[:phases].size, "four phase meters per lane"
   end
 
+  test "[unit] ONE member spanning two repos earns a lane in each" do
+    # The board's read side of the 2026-08-13 half-ship: the tracker listed lanes by
+    # the singular Task#release_repo, so a member carrying [mcritchie-studio,
+    # turf-monster] rendered ONE lane — the tracker under-reporting the release
+    # exactly as the pipeline under-promoted it. An operator watching /deployments
+    # saw a complete-looking board.
+    rel = Release.open!
+    Task.create!(title: "member spans two repos", stage: "reviewed", position: 10, release_slug: rel.slug,
+                 metadata: { "devops" => { "repositories" => %w[mcritchie-studio turf-monster] } })
+
+    lanes = release_repo_lanes(rel.reload)
+
+    assert_equal %w[mcritchie-studio turf-monster], lanes.map { |l| l[:repo] }.sort
+  end
+
   test "[unit] deploy meters are gated by the release's OWN stage, not a stray run" do
     rel = lane_release("mcritchie-studio")
     # A completed QA Deploy run exists for the repo, but the release has NOT entered QA.

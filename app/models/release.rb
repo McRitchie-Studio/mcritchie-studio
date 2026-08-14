@@ -385,6 +385,61 @@ class Release < ApplicationRecord
     state == "shipped"
   end
 
+  # --- per-repo evidence (Release::MemberEvidence) -----------------------------
+  #
+  # What this candidate can PROVE it landed, repo by repo. Both readers are unions
+  # of the records the real pipeline writes as it goes; neither is derivable from
+  # the member set, which is the whole point — a plan that lost a repo still reads
+  # as a complete plan, so the stamp has to be backed by what the RUN recorded, not
+  # by what it intended.
+
+  # Repos this candidate took through QA: a frozen QA sha (record_qa_shas) or a
+  # pre-QA gate verdict (record_qa_gate). Unioned because a repo can legitimately
+  # have one and not the other — a partial freeze skips the sha, an unregistered
+  # qa_test_cmd skips the gate.
+  # A gate entry counts only when it PASSED: record_qa_gate writes red verdicts
+  # too (`ok: false`), and a repo whose gate went red and never froze a sha did
+  # not go through QA — it aborted the run.
+  def qa_evidence_repos
+    gates = metadata["qa_gates"].is_a?(Hash) ? metadata["qa_gates"] : {}
+    passed = gates.select { |_repo, record| record.is_a?(Hash) && record["ok"] }.keys.map(&:to_s)
+    evidence_keys("qa_shas") | passed
+  end
+
+  # Repos this candidate fast-forwarded onto `main` (record_shipped_shas), written
+  # by `bin/release ship` as each push lands.
+  def ship_evidence_repos
+    evidence_keys("shipped_shas")
+  end
+
+  # The members of `tasks` that must NOT be stamped, because a repo they name has
+  # no landed record on this candidate. GEM repos are exempt: they publish rather
+  # than deploy, so they carry no QA sha and no ff'd `main`, and demanding one
+  # would hold every gem member forever. Logs each hold — a member left behind
+  # silently is the failure mode this whole guard exists to end.
+  def unproven_members(members, stamp: "assembled")
+    proven = stamp == "shipped" ? ship_evidence_repos : qa_evidence_repos
+    Array(members).select do |task|
+      repos = task.release_repos
+      exempt = repos.select { |repo| Release::Repos.gem?(repo) }
+      next false unless Release::MemberEvidence.hold?(repos: repos, proven: proven, exempt: exempt)
+
+      Rails.logger.warn(
+        "[release-evidence] #{slug}: " \
+        "#{Release::MemberEvidence.hold_reason(slug: task.slug, repos: repos, proven: proven,
+                                               exempt: exempt, stamp: stamp)}"
+      )
+      true
+    end
+  end
+
+  def evidence_keys(key)
+    value = metadata[key]
+    return [] unless value.is_a?(Hash)
+
+    value.reject { |_repo, recorded| recorded.blank? }.keys.map(&:to_s)
+  end
+
   # --- stage timeline reads/writes ---------------------------------------------
 
   # The stage's stamp (time-and-boolean): a Time when reached, nil when not.
@@ -584,11 +639,21 @@ class Release < ApplicationRecord
     end
 
     shipped_count = 0
+    # PER-REPO EVIDENCE (Release::MemberEvidence): `shipped` + `merged: "main"` is
+    # the most durable claim this system makes — that the member's code is live in
+    # production — and nothing downstream ever revisits it. So a member spanning a
+    # repo this release never fast-forwarded onto `main` (metadata["shipped_shas"])
+    # is LEFT BEHIND rather than stamped: it keeps its real stage, stays visible as
+    # unfinished work, and the operator sees the reason in the log. On 2026-08-13
+    # this loop stamped a security patch shipped+main while turf's `main` sat
+    # untouched at 0d63c7ebbb.
+    unshipped = unproven_members(tasks.to_a, stamp: "shipped").map(&:slug)
     # Each Task#ship! stamps position = target-column max + 100. Ship members in
     # stable oldest-first order so the newest task in a deployment batch receives
     # the freshest board rank, regardless of how the association was preloaded.
     tasks.order(:created_at, :id).to_a.each do |task|
       next if task.stage == "shipped"
+      next if unshipped.include?(task.slug)
 
       pause_between_member_shipments(member_pause) if member_pause.positive? && shipped_count.positive?
       Current.with_task_event_usage(usage_by_slug[task.slug]) { task.ship! }
