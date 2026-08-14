@@ -231,6 +231,15 @@ Post payloads should include `task_slug`, `activity_type`, `description`,
 optional `agent_slug`, and optional `metadata`. API calls require the app's API
 bearer token. The HTML task page remains the operator-friendly source of truth.
 
+⚠️ **PARSE THE BODY.** A hand-rolled read of this endpoint is a documented trap:
+`TaskBoard.request` returns a `Net::HTTPResponse`, and `Net::HTTPResponse#[]` is
+the HTTP **header** reader — so `response["data"]` is `nil`, `Array(nil)` is
+`[]`, and a row count comes out **0 with no error raised**. It cost the two-bounce
+circuit breaker its entire working life (`/tasks/circuit-breaker-check-always-zero`).
+Use `JSON.parse(response.body)`, check the status (a 401 has no rows either), and
+prefer an existing command over a fresh hand-roll: **`bin/task bounces <slug>`**
+counts prior send-backs and refuses to answer a read it could not make.
+
 ## Stage Flow
 
 > **Canonical stages (two-workflow model).** The live board runs **Build**
@@ -620,12 +629,15 @@ conductor records or completes a cleanup task with:
 For routine batch cleanup after a wave of PRs land, the conductor can use
 `bin/agent-worktree cleanup --reclaim` as the **scale-down-on-close normal
 flow**: the dry run lists every worktree that is SAFE to auto-release (clean +
-merged-to-`origin/main` or main-equivalent, primary checkout excluded) with its
-Redis DB, and `cleanup --reclaim --yes` runs the same full teardown as `remove`
-for each one, then shrinks the Redis band toward the floor. It never touches a
-dirty or unmerged worktree. Use targeted `remove <app> <task-slug> --yes` when
-recording a single named cleanup task; use `cleanup --reclaim` to reclaim all
-merged slots at once.
+merged-to-`origin/main` or main-equivalent + **unoccupied**, primary checkout
+excluded) with its Redis DB, and `cleanup --reclaim --yes` runs the same full
+teardown as `remove` for each one, then shrinks the Redis band toward the floor.
+It never touches a dirty or unmerged worktree, and never one somebody is working
+at — a fresh desk is git-identical to a merged one, so git eligibility alone once
+destroyed a live builder's desk. See
+[`worktrees.md`](worktrees.md) for the occupancy guard. Use targeted
+`remove <app> <task-slug> --yes` when recording a single named cleanup task; use
+`cleanup --reclaim` to reclaim all merged slots at once.
 
 Feature agents keep worktrees and branches until Avi or the release conductor
 confirms the PR was merged or intentionally abandoned.

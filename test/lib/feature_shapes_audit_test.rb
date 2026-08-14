@@ -41,6 +41,14 @@ class FeatureShapesAuditTest < ActiveSupport::TestCase
   # exist, so this returned [] and BOTH tests below passed vacuously. A guard
   # that cannot fail is the exact disease this file documents, so the empty case
   # is now an explicit failure rather than a silent pass.
+  # The LOOKBEHIND is what fixes this, not the case. /COLLECTED/i let
+  # "unCOLLECTED" through because the word sat inside another word; rejecting any
+  # letter immediately before it kills "uncollected", "recollected" and
+  # "precollected" whatever their case. So `i` stays — a verdict written in lower
+  # case is still a verdict, and failing it would be pedantry rather than a
+  # guard.
+  VERDICT = /(?<![A-Za-z])(NOT )?COLLECTED/i
+
   def registered_apps
     apps = YAML.load_file(REGISTRY).fetch("qa_environments", {}).keys
     refute_empty apps, "read no apps from #{REGISTRY} — this guard would pass vacuously"
@@ -66,10 +74,41 @@ class FeatureShapesAuditTest < ActiveSupport::TestCase
   # e2e of them, so there is nothing to collect — and forcing a COLLECTED verdict
   # onto it would be asserting a spelling rather than the property.
   test "every managed app's audit line carries an explicit collected-or-not verdict" do
-    undecided = registered_apps.reject { |app| audit_line_for(app)&.match?(/COLLECTED/i) }
+    # THE WORD, not the substring. /COLLECTED/i matched inside "unCOLLECTED", so a
+    # line reading "e2e uncollected, unverified." — which states the OPPOSITE of a
+    # verdict, or no verdict at all — satisfied the guard. Proven by mutation, not
+    # argued: that exact line passed with 0 failures.
+    #
+    # A spelling standing in for the property, which is the third time this file's
+    # guards have made that mistake (it first matched a repo name anywhere in the
+    # block, then read a registry key that did not exist and passed vacuously).
+    undecided = registered_apps.reject { |app| audit_line_for(app)&.match?(VERDICT) }
 
     assert_empty undecided,
       "#{undecided.join(', ')}: an audit line must say whether e2e is COLLECTED or " \
       "NOT COLLECTED. Naming a repo without a verdict reads as audited and is not."
+  end
+
+  # THE HOLE THIS TASK EXISTS TO CLOSE, exercised on the regex directly.
+  #
+  # Neither test above can tell /COLLECTED/i from the corrected pattern, because
+  # every line in the real file happens to carry a well-formed verdict — so the
+  # bug was invisible to them and stayed invisible through a full review. Carl
+  # found it by writing "e2e uncollected, unverified." into a line and watching
+  # the suite stay green.
+  #
+  # A verdict is the WORD. "uncollected" is not a verdict; it is the absence of
+  # one wearing the letters of one.
+  test "the verdict pattern matches the word, not a substring inside another" do
+    %w[COLLECTED collected].each do |verdict|
+      assert_match VERDICT, "e2e #{verdict}.", "a plain verdict must be accepted"
+    end
+    assert_match VERDICT, "e2e NOT COLLECTED.", "the negative verdict is still a verdict"
+
+    [ "e2e uncollected, unverified.", "e2e recollected later.", "e2e precollected." ].each do |line|
+      refute_match VERDICT, line,
+        "#{line.inspect} states no verdict — matching it is how a line that says the " \
+        "OPPOSITE of an answer passed for an answer"
+    end
   end
 end

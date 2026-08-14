@@ -174,6 +174,65 @@ class DeskActivityTest < Minitest::Test
     assert_nil DeskActivity.desk_root(@root, "my-task")
   end
 
+  # --- age_seconds: how old is this desk? -----------------------------------
+  #
+  # The channel the reclaim guard needs and the mtime walk cannot supply on its own.
+  # A fresh worktree and a merged one are git-identical, so `cleanup --reclaim` has
+  # no way to tell "nobody has written here YET" from "nobody will write here again"
+  # — until it asks how old the desk is.
+
+  # Stamp a worktree `.git` POINTER FILE (the `gitdir: …` regular file `git worktree
+  # add` writes) at `age` seconds old. `write` already does the utime work.
+  def write_worktree_marker(age:)
+    write(".git", age: age, content: "gitdir: /repo/.git/worktrees/desk\n")
+  end
+
+  def test_age_seconds_dates_a_desk_from_its_worktree_git_marker
+    write_worktree_marker(age: 7_200)
+
+    assert_in_delta 7_200, DeskActivity.age_seconds(@root), 5
+  end
+
+  def test_a_newborn_desk_reads_as_seconds_old_not_as_unknown
+    write_worktree_marker(age: 3)
+
+    age = DeskActivity.age_seconds(@root)
+    refute_nil age, "a desk created seconds ago must be DATED, not shrugged at"
+    assert_operator age, :<, 60
+  end
+
+  # A `.git` DIRECTORY is a primary checkout, not a worktree desk, and its mtime is
+  # not a birthday — every `git add` in it moves the directory. Answering a number
+  # here would be a guess, and this module never guesses.
+  def test_a_primary_checkout_git_directory_is_not_a_birthday
+    FileUtils.mkdir_p(File.join(@root, ".git"))
+
+    assert_nil DeskActivity.age_seconds(@root),
+               "a .git directory is a primary checkout; its mtime says nothing about a desk's age"
+  end
+
+  def test_a_directory_with_no_git_marker_at_all_is_unknown
+    assert_nil DeskActivity.age_seconds(@root),
+               "no marker means we could not date it — and unknown must never read as old"
+  end
+
+  def test_a_missing_or_blank_root_is_unknown
+    assert_nil DeskActivity.age_seconds(File.join(@root, "gone"))
+    assert_nil DeskActivity.age_seconds("")
+    assert_nil DeskActivity.age_seconds(nil)
+  end
+
+  # A marker stamped in the FUTURE (clock skew, a restored backup, a tarball with
+  # bad timestamps) must not read as a negative age that then compares as "older
+  # than the idle window" against every threshold. Newborn is the safe reading:
+  # it KEEPS the desk.
+  def test_a_future_dated_marker_reads_as_newborn_not_as_negative
+    write_worktree_marker(age: -3_600)
+
+    assert_equal 0.0, DeskActivity.age_seconds(@root),
+                 "clock skew must fail toward KEEPING the desk, never toward a stale-looking negative"
+  end
+
   def test_desk_root_accepts_any_of_the_context_slug_spellings
     %w[task_slug task worktree_slug feature].each do |key|
       File.write(File.join(@root, ".agent-context.json"), JSON.generate(key => "my-task"))

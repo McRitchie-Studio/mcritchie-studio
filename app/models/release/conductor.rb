@@ -168,8 +168,15 @@ class Release
         task.update!(release_slug: nil, merged: nil)
         task.block!(by: by, kind: "rework")
         if feedback.present?
+          # `kind` on the ACTIVITY, mirroring bin/task block. The block_kind COLUMN
+          # is wiped by the builder's compliant resubmission, so this row is the only
+          # durable record of what kind of block this was — and the two-bounce circuit
+          # breaker (bin/lib/bounce_ledger.rb) reads exactly this field to tell a
+          # send-back from an environment blocker or from an escalation. An ejection
+          # IS a send-back to the builder, so it counts.
           Activity.create!(task_slug: task.slug, activity_type: "qa_feedback",
-                           agent_slug: by.presence, description: feedback)
+                           agent_slug: by.presence, description: feedback,
+                           metadata: { "kind" => "rework" })
         end
       end
       task

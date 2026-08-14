@@ -48,7 +48,7 @@ class TaskCliTest < Minitest::Test
   # the test never depends on a real ambient session).
   def run_task(args, env: {}, stub_devops: { "kind" => "feature" }, stub_stage: "building", chdir: nil, fail_get: nil,
                fail_get_body: nil, stub_persist: true, fail_patch: nil, stub_progress: nil,
-               stub_columns: {}, stub_omit_columns: [],
+               stub_columns: {}, stub_omit_columns: [], stub_bounces: [],
                stub_session_mascot: { "mascot" => "snorlax", "mascot_color" => "#A8A77A", "mascot_emoji" => "🔶",
                                       "app" => "mcritchie-studio", "app_color" => "#B57EDC" },
                stub_agent: { "name" => "Jasper", "status_color" => "#22D3EE", "emoji" => "🧪" })
@@ -60,6 +60,10 @@ class TaskCliTest < Minitest::Test
     # rendering (an older board, a trimmed serializer).
     @stub_columns = stub_columns
     @stub_omit_columns = Array(stub_omit_columns).map(&:to_s)
+    # The qa_feedback rows GET /api/v1/activities serves — the bounce ledger the
+    # two-bounce circuit breaker counts before a rework block. Empty = a task with a
+    # clean record, which is what every pre-existing case in this file assumes.
+    @stub_bounces = Array(stub_bounces)
     # The GET response the stub serves — lets a test seed an existing claim so the
     # move-to-building gate (and the heartbeat) read a real claim state.
     @stub_devops = stub_devops
@@ -196,6 +200,19 @@ class TaskCliTest < Minitest::Test
     # this the fallback below returns one object and `list` would iterate a Hash.
     if method == "GET" && path =~ %r{\A/api/v1/tasks(\?.*)?\z}
       return ["200 OK", JSON.generate("data" => [])]
+    end
+
+    # The ACTIVITIES index — an ARRAY too, and `bin/task block --kind rework` reads
+    # it before every bounce (the two-bounce circuit breaker; bin/lib/bounce_ledger.rb).
+    # The catch-all below answers a single OBJECT, which the ledger correctly REFUSES
+    # as an unreadable answer rather than scoring it zero bounces — so without this
+    # branch every rework block in this file dies at the breaker instead of blocking.
+    # @stub_bounces lets a case seed prior send-backs and exercise the refusal.
+    if method == "GET" && path =~ %r{\A/api/v1/activities(\?.*)?\z}
+      rows = @stub_bounces || []
+      return ["200 OK", JSON.generate("data" => rows,
+                                      "meta" => { "page" => 1, "per_page" => 100,
+                                                  "total" => rows.size, "total_pages" => 1 })]
     end
 
     # The GET in the move read-merge returns an existing task carrying prior
@@ -480,12 +497,41 @@ class TaskCliTest < Minitest::Test
     assert_equal "Missing regression test", body.dig("metadata", "summary")
   end
 
-  def test_block_without_a_summary_omits_the_metadata_key
+  # SUPERSEDED PREMISE, deliberately rewritten rather than deleted. This used to
+  # assert that no --summary meant NO metadata key at all. That stopped being true
+  # when the block kind started riding in metadata (the two-bounce circuit breaker
+  # reads it back: the block_kind COLUMN is wiped by a compliant resubmission, so
+  # the activity row is the only durable record of what kind of block this was).
+  # The invariant that actually mattered is preserved and still asserted below —
+  # no --summary means no `summary` KEY, which is what makes Activity#block_summary
+  # derive a headline from the details for a legacy-shaped block.
+  def test_block_without_a_summary_omits_the_summary_key_but_still_stamps_the_kind
     requests, = run_task(["block", "demo-task", "--kind", "rework", "--feedback", "Needs rework.", "--agent", "shannon"])
 
     note = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/activities" }
     body = JSON.parse(note[:body])
-    refute body.key?("metadata"), "no --summary means no metadata payload (legacy shape preserved)"
+    refute body.dig("metadata").key?("summary"),
+           "no --summary means no summary key — Activity#block_summary derives one from the details"
+    assert_equal "rework", body.dig("metadata", "kind"),
+                 "the kind rides regardless: without it the bounce ledger cannot classify this row"
+  end
+
+  # THE TWO-BOUNCE CIRCUIT BREAKER, at the block command's own CLI contract. The
+  # deep coverage lives in test/lib/bounce_check_cli_test.rb; this is the seam
+  # assertion that belongs beside the other `block` cases — a second send-back is
+  # REFUSED before it lands, not warned about after.
+  def test_a_rework_block_is_refused_when_a_prior_send_back_exists
+    prior = { "created_at" => "2026-08-01T12:00:00Z", "description" => "First send-back",
+              "metadata" => { "kind" => "rework", "summary" => "Missing regression test" } }
+    requests, _out, err, status = run_task(
+      ["block", "demo-task", "--kind", "rework", "--feedback", "Again.", "--agent", "carl"],
+      stub_bounces: [prior]
+    )
+
+    assert_equal 10, status.exitstatus, "a tripped breaker REFUSES with exit 10: #{err}"
+    assert_match(/BREAKER: TRIPPED/, err)
+    refute requests.any? { |r| r[:method] == "POST" && r[:path] == "/api/v1/activities" },
+           "refused means the second bounce never lands"
   end
 
   def test_block_without_a_named_actor_does_not_stamp_the_raw_session

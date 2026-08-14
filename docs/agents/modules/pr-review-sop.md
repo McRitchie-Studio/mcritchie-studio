@@ -81,7 +81,10 @@ Avi supervisor. Carl:
    resolve" guidance (`outcome=ci-conflicted`); **pending** → defer to a later pass;
    **green** → continue. (A red or conflicted PR is never claimed in the first
    place — `claim-next-review` only pops green-CI tasks — so this is the mid-review
-   catch.)
+   catch.) Both gate-zero bounces are **MECHANICAL** — there is no disagreement for
+   the operator to arbitrate — so if the two-bounce breaker (Step 3) refuses one on
+   an already-bounced task, re-run it with `--breaker-ack "red CI, mechanical"`
+   (or `"merge conflict, mechanical"`); the reason is recorded on the row.
 2. Confirms **product-acceptance** — does the open PR (base `accepted`) meet the
    task's acceptance criteria?
 3. Determines the **domain LIGHT** by change surface (the table above), previewing
@@ -220,13 +223,19 @@ the task blocked — one complete send-back, then the session moves on
 bin/task block <task> --kind rework --summary "<4-6 word headline>" --feedback "<what is wrong + why>"
 ```
 
-**Two-bounce circuit breaker:** a task whose activity history already carries a
-prior send-back (`GET /api/v1/activities?task_slug=<task>&activity_type=qa_feedback`
-— one row per bounce; never probe the live block columns, which a compliant
-resubmission wipes) is never re-blocked to the
-builder — escalate instead (`bin/task block <task> --kind dependency --summary
+**Two-bounce circuit breaker:** a task that already carries a prior send-back is
+never re-blocked to the builder. Read it with `bin/task bounces <task>`: **exit 0
+= CLEAR is the only exit that authorizes a re-block**, 10 = TRIPPED, and any
+other non-zero is a FAILED read or an unknown slug — never a zero. `bin/task
+block --kind rework` runs the same check and refuses the
+second bounce on its own. It counts the task's `qa_feedback` activity rows, one
+per bounce, classified by the kind stamped on each; never probe the live block
+columns, which a compliant resubmission wipes exactly when the breaker must fire.
+On TRIPPED, escalate instead (`bin/task block <task> --kind dependency --summary
 "Escalated: <disagreement>" --feedback "<both positions>"`) and flag it
-**⚠ Escalated** in the run handoff; a review deadlock is the operator's call.
+**⚠ Escalated** in the run handoff; a review deadlock is the operator's call. A
+MECHANICAL bounce (red CI, merge conflict) proceeds on `--breaker-ack "<reason>"`,
+which records the reason on the row.
 
 `--summary` is the short headline the task header shows; `--feedback` carries
 the full detail the builder fixes from. Omit `--summary` and the header derives
