@@ -77,6 +77,17 @@
 # source outright (untrusted_root?) and the gate falls back to the task BRANCH's
 # committed diff, else to :indeterminate → fail closed.
 #
+# Diff rooting, round 2 (task harden-dor-check-file-read): the same false pass, one
+# door out. Rooting decides which LOCAL tree may stand in — it never asked whether the
+# PR read that should have PRE-EMPTED a local tree had actually WORKED. It often had
+# not: App installation tokens live ~1h, and pr_changed_files discarded stderr and
+# returned nil on any failure, so a lapsed credential was indistinguishable from a PR
+# with no files. The gate then graded the working tree while printing a verdict about
+# "the PR", and nothing said so. The read now shares bin/lib/ci_status.rb's
+# authenticated seam (gh_read_status — stderr preserved, one mint-and-retry) and a
+# refusal that survives it is CLASSIFIED: review REFUSES (:pr_unreadable), submit-side
+# degrades LOUDLY. See pr_file_read.
+#
 # Fingerprint rooting — the same wrong tree, the opposite symptom. The fingerprint
 # is a git TREE hash, so a foreign root can NEVER match a recorded cert; it doesn't
 # read as "wrong root", it reads as "STALE". Both lanes were bitten by that:
@@ -420,6 +431,10 @@ end
 #               the caller stands in a foreign checkout that still carries the branch.
 #               The diff-side twin of the branch-tree FINGERPRINT rooting: same repo,
 #               same content-addressed honesty, no dependence on the cwd's dirt.
+#   :pr_unreadable — the PR read was REFUSED on credentials, in the REVIEW role. Not a
+#               source at all: it is the refusal, carrying no files, so it fails closed
+#               like :indeterminate while naming the credential fault instead of
+#               claiming nothing was readable anywhere. See resolve_branch_diff.
 #   :indeterminate — nothing could be read. NEVER an exemption (see below).
 #
 # FAIL-CLOSED. "We couldn't see a code diff" is not "there is no code diff." The
@@ -504,6 +519,23 @@ def resolve_branch_diff
   pr = pr_changed_files
   return [pr, :pr] if pr.is_a?(Array) && pr.any?
 
+  # A CREDENTIAL-REFUSED PR read, in the REVIEW role, is not a fallback — it is a
+  # blind gate. The review gate-zero IS the authoritative verdict (the CI allow-list
+  # already refuses an unreadable CI here for exactly this reason), and it runs from a
+  # checkout that is deliberately NOT the task's tree, so "read the PR" is the whole
+  # mechanism by which it sees anything true. Standing in for the refused read with a
+  # local view is the 2026-08-08 false pass with a fresh coat of paint: an artifact
+  # nobody asked about, graded confidently. So the source is the REFUSAL itself, which
+  # carries no files and therefore fails closed downstream exactly like
+  # :indeterminate — but says WHY, in the payload and in the refusal text.
+  #
+  # SUBMIT-SIDE THE FALLBACK STAYS. The builder's run stands in the task's OWN
+  # worktree, where the local view is the honest near-twin of the PR, and their verdict
+  # is provisional by design (review re-runs it). Blocking every builder whose App
+  # token aged past an hour would buy no integrity and cost every handoff — so there
+  # the substitution is kept and NAMED (pr_read_alert), never silent.
+  return [[], :pr_unreadable] if @review_role && pr_file_read[:state] == :unreadable
+
   if untrusted_root?
     # The local working tree belongs to someone else's code (the guard could not
     # re-root onto the task's own tree). Reading it is the false-PASS bug, so the
@@ -554,20 +586,56 @@ rescue SystemCallError
   nil
 end
 
-# The PR's changed files (merge gate's source of truth). DOR_CHECK_PR_FILES is the
-# test seam (a file list, or the token "unverified" to simulate gh being down),
-# mirroring DOR_CHECK_CI_STATUS. Any failure → nil, and the caller falls back to
-# the local git view rather than failing closed on a diff it CAN still read.
+# The PR's changed files (merge gate's source of truth) — files, or nil when there
+# are none to hand back. WHY it was nil is the other half of the answer, and it lives
+# in pr_file_read below: "this PR has no files" and "GitHub refused our credential"
+# are different facts with opposite consequences, and collapsing them into one nil is
+# the defect this pair exists to close.
 def pr_changed_files
-  injected = ENV["DOR_CHECK_PR_FILES"]
-  if injected
-    return nil if injected.strip == "unverified"
+  pr_file_read[:files]
+end
 
-    return injected.split(/[\n,]/).map(&:strip).reject(&:empty?)
-  end
+# The PR file-list read, resolved ONCE as {files:, state:, cause:, reason:}:
+#
+#   :ok         — the PR's own file list. The only state that produces files.
+#   :no_pr      — no pr_url (or one no owner/repo/number can be parsed out of).
+#                 NOT a failure: the builder's pre-PR run lives here, and it must stay
+#                 as quiet as it has always been.
+#   :empty      — gh answered and the PR lists no files. Also not a failure.
+#   :unverified — the read failed for a reason that is NOT a credential refusal (gh
+#                 missing, a 404, a transport error). The local view still stands in,
+#                 but the substitution is NAMED (see pr_read_alert).
+#   :unreadable — GitHub REFUSED the credential (401/403/rate limit). This is the one
+#                 that used to be invisible: an installation token lives ~1h, and when
+#                 it lapsed mid-session this read failed, returned nil, and the gate
+#                 silently graded the LOCAL WORKING TREE — a different artifact — while
+#                 printing a verdict about "the PR". Shape tiers, the doc-only
+#                 exemption and migration detection all judged the wrong input, and
+#                 nothing in the output said so.
+#
+# THE STDERR IS THE EVIDENCE. The old call passed `err: File::NULL`, so gh's
+# "Bad credentials (HTTP 401)" line — which it prints on STDERR — was thrown away
+# before anything could classify it. There was then no text for
+# GhAuthRetry.auth_failure? or CiStatus.unreadable_cause to read, which is why an auth
+# failure could not even be NAMED, let alone recovered. The read now goes through
+# CiStatus.gh_read_status: it joins stdout+stderr, mints a fresh App token and retries
+# ONCE on exactly this refusal (bin/ship and bin/pr-review already did; this gate was
+# the last holdout), and hands back the exit status so a failed read is never mistaken
+# for an empty one.
+#
+# DOR_CHECK_PR_FILES is the test seam, mirroring DOR_CHECK_CI_STATUS: a file list, the
+# token "unverified" (gh down), or "unreadable[:<raw gh body>]" to drive the credential
+# path through the REAL classifier.
+def pr_file_read
+  @pr_file_read ||= compute_pr_file_read
+end
+
+def compute_pr_file_read
+  injected = ENV["DOR_CHECK_PR_FILES"]
+  return injected_pr_file_read(injected) if injected
 
   pr = @pr_url.to_s.strip
-  return nil if pr.empty?
+  return { files: nil, state: :no_pr } if pr.empty?
 
   # The REST files endpoint, NOT `gh pr view --json files` — that surface exposes
   # only {additions, changeType, deletions, path}, so a RENAME appears as its
@@ -577,19 +645,106 @@ def pr_changed_files
   # contract — if it ever does, the sentinel below has no prose extension, so it
   # classifies as behavioral and the diff GATES. Fail closed by construction.
   owner, repo, number = pr.match(%r{github\.com/([^/]+)/([^/]+)/pull/(\d+)})&.captures
-  return nil unless owner
+  return { files: nil, state: :no_pr } unless owner
 
-  raw = IO.popen(
-    ["gh", "api", "--paginate", "repos/#{owner}/#{repo}/pulls/#{number}/files", "--jq",
-     '.[] | .filename, (if .status == "renamed" then (.previous_filename // "unknown-rename-source") else empty end)'],
-    err: File::NULL, &:read
+  raw, ok = CiStatus.gh_read_status(
+    "api", "--paginate", "repos/#{owner}/#{repo}/pulls/#{number}/files", "--jq",
+    '.[] | .filename, (if .status == "renamed" then (.previous_filename // "unknown-rename-source") else empty end)'
   )
-  return nil unless $?.success?
+  return failed_pr_file_read(raw) unless ok
 
   files = raw.to_s.split("\n").map(&:strip).reject(&:empty?)
-  files.empty? ? nil : files
-rescue SystemCallError
-  nil
+  files.empty? ? { files: nil, state: :empty } : { files: files, state: :ok }
+end
+
+# A read that came back non-zero, classified. CiStatus.unreadable_cause is THE
+# classifier for "GitHub refused this token" (:credentials / :permissions /
+# :authentication / :rate_limit / :forbidden) and it is deliberately NARROW — a 404 or
+# a missing gh keeps the :unverified meaning it has always had, because prescribing a
+# credential fix for those would be its own species of lie.
+def failed_pr_file_read(raw)
+  cause = CiStatus.unreadable_cause(raw)
+  reason = pr_read_reason(raw)
+  return { files: nil, state: :unverified, reason: reason } unless cause
+
+  { files: nil, state: :unreadable, cause: cause, reason: reason }
+end
+
+# The SENTENCE out of a failed gh read — the part a human can act on.
+#
+# NOT `raw.lines.first`, which is what the first cut of this used and what measuring
+# it against the live API exposed as useless: `gh api` prints GitHub's JSON error body
+# on stdout, so the first line is a bare "{" and the verdict read "REFUSED on
+# credentials ({)". GitHub's own `message` is the sentence ("Bad credentials"), so
+# take it when it is there. The regex, not JSON.parse: we capture stdout and stderr
+# JOINED (that is the whole point — the status line lives on stderr), and a JSON body
+# with gh's plain-text line stapled to it does not parse.
+def pr_read_reason(raw)
+  text = raw.to_s
+  message = text[/"message"\s*:\s*"([^"]+)"/, 1]
+  return message[0, 140] if message
+
+  # Otherwise the first line with actual content in it — skipping the punctuation-only
+  # lines a pretty-printed JSON body opens with.
+  text.lines.map(&:strip).find { |line| line.length > 3 }.to_s[0, 140]
+end
+
+# The DOR_CHECK_PR_FILES seam. "unreadable" carries an optional raw body after a
+# colon so a test can drive the REAL classifier with gh's real wording rather than
+# assert against a hand-picked cause.
+def injected_pr_file_read(injected)
+  token = injected.strip
+  return { files: nil, state: :unverified, reason: "injected: unverified" } if token == "unverified"
+
+  if token == "unreadable" || token.start_with?("unreadable:")
+    body = token.split(":", 2)[1].to_s.strip
+    body = "gh: Bad credentials (HTTP 401)" if body.empty?
+    return failed_pr_file_read(body)
+  end
+
+  files = injected.split(/[\n,]/).map(&:strip).reject(&:empty?)
+  files.empty? ? { files: nil, state: :empty } : { files: files, state: :ok }
+end
+
+# WHY the PR file list is missing, when the reason is a FAILURE the reader must act
+# on — nil on :ok / :no_pr / :empty, which are not failures.
+#
+# A REFUSED READ IS NEVER SILENTLY REPLACED. The gate's subject at the merge boundary
+# is the PULL REQUEST; the local tree is a DIFFERENT artifact that merely tends to
+# resemble it. Substituting one for the other without a word is how a gate reasons
+# confidently about the wrong input.
+#
+# TWO LENGTHS, ONE FACT. The headline is what rides ON a verdict line that has its own
+# job to do; the full alert (headline + THE ONE remedy string) is what lands where the
+# reader has been sent to act. They are split because printing CiStatus's ~500-char
+# credential remedy twice in one verdict is how a reader learns to skim the paragraph
+# we most need them to read — ci_status.rb's own lesson, applied here.
+def pr_read_headline
+  read = pr_file_read
+  case read[:state]
+  when :unreadable
+    "the PR's file list was REFUSED on credentials (#{read[:reason]}), so this verdict did NOT read the PR"
+  when :unverified
+    "the PR's file list could not be read (#{read[:reason].to_s.empty? ? "gh failed" : read[:reason]}), " \
+      "so this verdict did NOT read the PR"
+  end
+end
+
+# The full alert: the headline, what it costs, and the remedy. The caller decides
+# whether it lands as an error (review) or a suggestion (submit-side).
+def pr_read_alert
+  headline = pr_read_headline
+  return nil unless headline
+
+  if pr_file_read[:state] == :unreadable
+    "#{headline}. The diff this gate judges (shape tiers, the doc-only exemption, migration detection) is the " \
+      "PULL REQUEST's file list, and a refused read must never be quietly replaced by whatever tree this run is " \
+      "standing in. " + CiStatus.unreadable_remedy(CiStatus.repo_from_pr_url(@pr_url), cause: pr_file_read[:cause])
+  else
+    "#{headline} — and this is NOT a credential refusal, so the LOCAL view was graded instead. That is a " \
+      "different artifact from the PR: if they differ, this verdict describes the wrong diff. Re-run once " \
+      "`gh` answers."
+  end
 end
 
 # The local view: uncommitted (staged/unstaged/untracked — base-independent, so it
@@ -1168,6 +1323,10 @@ review_role = options[:gate_role] == "review"
 # Feeds the :pr diff source (resolve_branch_diff). Set BEFORE the first
 # changed_files call below, which memoizes the resolution.
 @pr_url = devops["pr_url"]
+# ...and so does the ROLE: a credential-refused PR read fails closed in the review
+# role and degrades (loudly) submit-side, and resolve_branch_diff is a top-level def,
+# which cannot see the local above. Same reason, same place, same ordering rule.
+@review_role = review_role
 
 # --- task-root guard (bin/lib/cert_root_guard.rb) -----------------------------
 #
@@ -1414,7 +1573,13 @@ if EXEMPT_KINDS.include?(kind)
   if gated_code_files.any?
     # fall through to the full shape/test-tier gate below.
   elsif indeterminate
-    errors_preamble = if untrusted_root?
+    errors_preamble = if diff_source == :pr_unreadable
+      # The refusal has its own voice: this run did not fail to FIND a diff, it
+      # refused to accept a substitute for the one it was denied. Saying "no diff
+      # could be observed" here would send the reader to their worktree, which is
+      # exactly the wrong place — the fix is a credential.
+      "kind: #{kind} could not be proven doc-only — #{pr_read_alert}"
+    elsif untrusted_root?
       # The false-PASS case, refused instead of granted. This is the state the old
       # code turned into "✓ n/a — doc-only diff": it stood in a checkout that is not
       # the task's, read that checkout's dirt, and called it the PR.
@@ -1432,11 +1597,14 @@ if EXEMPT_KINDS.include?(kind)
         "rather than skipped (fail-closed). Fix it: run dor-check from the task's worktree; or " \
         "#{branch_remedy}; or declare the checkout with DOR_CHECK_DIFF_ROOT=<path to the task's tree>"
     else
+      # WHY the PR files were unreadable, when there is a why. "no PR files readable"
+      # was true and useless: it covers "there is no pr_url yet" and "GitHub refused
+      # the token" alike, and those have nothing in common except the empty result.
       "kind: #{kind} could not be proven doc-only — no diff could be observed " \
         "(no PR files readable, and the git tree at #{diff_root} is clean or unreadable), " \
         "so the shape/test-tier gate is ENFORCED rather than skipped (fail-closed). Re-run " \
         "this from the task's worktree, or set devops.pr_url, so the gate can see the diff " \
-        "it is meant to judge"
+        "it is meant to judge#{pr_read_alert ? ". The PR half of that: #{pr_read_alert}" : ""}"
     end
     if options[:json]
       puts JSON.pretty_generate(
@@ -1446,13 +1614,22 @@ if EXEMPT_KINDS.include?(kind)
         gate: gate,
         ready: false,
         exempt: false,
-        diff_source: "indeterminate",
+        # "indeterminate" is this branch's standing answer and stays it: whatever
+        # source was consulted, the OBSERVATION here is empty. The one addition is the
+        # refusal, which is a different fact ("the PR read was refused" vs "nothing
+        # was readable anywhere") with a different remedy, and the pairing
+        # (code_root, diff_source) is where a monitor can see it.
+        diff_source: diff_source == :pr_unreadable ? "pr_unreadable" : "indeterminate",
         # The pairing (code_root, diff_source) is what dor.md calls the checkable
         # invariant — and the exempt-kind payloads were the ONE verdict shape that
         # omitted the root. That is the shape the 08-08 false pass actually took, so
         # a monitor could check the invariant everywhere except where it mattered.
         code_root: diff_root,
         code_files: [],
+        # Same machine-readable read-outcome the main payload carries. The exempt
+        # shapes are precisely where the false pass lived, so a monitor must be able
+        # to ask "was the PR actually read?" HERE, not only on the other path.
+        pr_read: pr_read_alert ? pr_file_read.slice(:state, :cause, :reason).compact : nil,
         note: errors_preamble,
         errors: [errors_preamble],
         suggestions: [],
@@ -1470,11 +1647,20 @@ if EXEMPT_KINDS.include?(kind)
                      branch: "task branch tree" }
       .fetch(diff_source, diff_source.to_s)
     sample = observed.first(3).join(", ") + (observed.size > 3 ? ", …" : "")
+    # THE EXEMPTION IS A POSITIVE CLAIM, so it must name the artifact it was proven
+    # against. Submit-side we still grant it off the local view when the PR read
+    # failed — but "doc-only diff … [source: git working tree]" printed beside a
+    # SILENTLY refused PR read is the 08-08 false pass's exact presentation: a
+    # confident exemption whose evidence came from somewhere nobody asked about. The
+    # alert rides on the verdict itself, not only in a suggestion, because this line
+    # is the part that gets read.
+    exempt_alerts = [pr_read_alert].compact
     note = if observed.empty?
       "no code written yet (kind: #{kind}); DoR n/a"
     else
       "doc-only diff (kind: #{kind}): #{observed.size} file(s), none behavioral — #{sample} " \
-        "[source: #{source_label}]; DoR n/a"
+        "[source: #{source_label}]; DoR n/a" \
+        "#{exempt_alerts.empty? ? "" : " — ⚠ #{pr_read_headline} (see the suggestion below)"}"
     end
     if options[:json]
       puts JSON.pretty_generate(
@@ -1491,9 +1677,10 @@ if EXEMPT_KINDS.include?(kind)
         code_root: diff_root,
         code_files: [],
         changed_files: observed,
+        pr_read: exempt_alerts.empty? ? nil : pr_file_read.slice(:state, :cause, :reason).compact,
         note: note,
         errors: [],
-        suggestions: [],
+        suggestions: exempt_alerts,
         missing_metadata: [],
         missing_tiers: []
       )
@@ -1501,6 +1688,7 @@ if EXEMPT_KINDS.include?(kind)
       title = task["title"] || task["slug"] || slug || "(task)"
       puts "✓ #{gate_label} n/a for #{title.inspect} — #{note}"
       puts "  → ready to advance #{boundary} (shape/test-tier gate skipped: the OBSERVED diff ships no behavior)"
+      exempt_alerts.each { |a| puts "  ⓘ suggestion: #{a}" }
     end
     exit 0
   end
@@ -1650,6 +1838,25 @@ end
 # Evaluated BEFORE the suite gate because the suite gate's fast route depends on it.
 # Non-blocking SUGGESTIONS collect here too (never affect `ready`); more join below.
 suggestions = []
+
+# --- THE PR FILE LIST: a refused read is never a silent one -------------------
+#
+# The diff above may have come from the LOCAL tree because the PR's file list could
+# not be read. Role-split for the same reason the CI verdict is (see the block
+# below), and in the same direction:
+#   REVIEW  — an ERROR. This role's verdict is authoritative and it reads the PR
+#             precisely because its own checkout is not the task's tree; grading a
+#             substitute here is the false pass this gate exists to refuse. (The
+#             substitution was already refused upstream — diff_source :pr_unreadable —
+#             so this is the error that NAMES it, not a second policy.)
+#   SUBMIT  — a SUGGESTION. The builder stands in the task's own worktree, their
+#             verdict is provisional, and review re-reads it. Blocking every handoff
+#             on an hour-old App token would buy nothing.
+# Not evaluated at the build gate, which resolves no diff and must not shell `gh`.
+if gate != "build" && (alert = pr_read_alert)
+  review_role ? errors << alert : suggestions << alert
+end
+
 ci = nil
 ci_error = nil            # the CI refusal, if any
 ci_error_cert_clears = false # ...and whether a FULL local cert stands in for it
@@ -2254,6 +2461,11 @@ if options[:json]
     # the build gate, which resolves no diff (and must not shell `gh` to make one).
     diff_source: gate == "build" ? nil : diff_source.to_s,
     changed_files: gate == "build" ? nil : changed_files,
+    # HOW THE PR READ WENT — the machine-readable half of the alert above, and the
+    # field that makes "did this verdict grade the PR or a stand-in?" answerable from
+    # the JSON alone. Present only when the read FAILED (:unreadable / :unverified);
+    # :ok / :no_pr / :empty are the ordinary states and stay silent.
+    pr_read: gate == "build" || !pr_read_alert ? nil : pr_file_read.slice(:state, :cause, :reason).compact,
     ci: ci && { state: ci[:state], cause: ci[:cause], reason: ci[:reason], failing: ci[:failing],
                 pending: ci[:pending], count: ci[:count] }.compact,
     # The gates-card row this run WOULD write (--json skips the board write). Exposed

@@ -1217,6 +1217,46 @@ class CiStatusTest < Minitest::Test
     end
   end
 
+  # --- gh_read_status: the same read, with its OUTCOME ------------------------
+  # Every reader INSIDE this file classifies the body and never needs the exit
+  # status. bin/dor-check's PR file-list read does: its `--jq` output is a bare list
+  # of paths, so an empty body means "the PR changed nothing" on success and "the
+  # token was refused" on failure — indistinguishable without `ok`. That gate used to
+  # own a private gh call for exactly this reason and silently graded the local git
+  # diff whenever the read failed; these pin the seam it now shares.
+
+  def test_gh_read_status_reports_the_failure_gh_reported
+    with_gh_stubs(mode: "auth", broker: :broken) do |_calls, _mints|
+      body, ok = CiStatus.gh_read_status("api", "repos/o/r/pulls/1/files")
+
+      refute ok, "a refused read must be reported as a FAILED read, not an empty one"
+      assert_includes body, "Bad credentials", "stderr rides in the body, or nothing can classify it"
+      assert_equal :credentials, CiStatus.unreadable_cause(body)
+    end
+  end
+
+  def test_gh_read_status_reports_success_after_the_recovery_retry
+    # The retried read's OWN outcome is what comes back — not the refusal that
+    # triggered the mint. Returning the first attempt's `false` here would make a
+    # SUCCESSFUL recovery look like a failure to every caller that reads the status.
+    with_gh_stubs(mode: "auth") do |_calls, mints|
+      body, ok = CiStatus.gh_read_status("pr", "checks", "https://github.com/McRitchie-Studio/rolio/pull/23",
+                                         "--json", "name,state,bucket")
+
+      assert ok, "the recovered read succeeded; its status must say so"
+      assert_includes body, "bucket"
+      assert_equal 1, File.readlines(mints).size
+    end
+  end
+
+  def test_gh_read_still_returns_the_body_alone
+    # Its callers in this file are unchanged by the split — gh_read is now a
+    # projection of gh_read_status, and a String is what they parse.
+    with_gh_stubs(mode: "auth", broker: :broken) do |_calls, _mints|
+      assert_kind_of String, CiStatus.gh_read("api", "repos/o/r/pulls/1/files")
+    end
+  end
+
   def test_a_missing_gh_is_unverified_and_never_a_mint
     # ENOENT is not a refusal. It must stay the :unverified it has always been —
     # `gh: command not found` never meant "your token is stale".
