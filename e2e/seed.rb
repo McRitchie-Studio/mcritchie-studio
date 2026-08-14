@@ -50,6 +50,7 @@ admin = User.create!(
 User.create!(email: "newcomer@test.com", role: "viewer")
 User.create!(email: "newcomer-skip@test.com", role: "viewer")
 User.create!(email: "newcomer-turbo@test.com", role: "viewer")
+User.create!(email: "newcomer-back@test.com", role: "viewer")
 
 # Agents
 alex = Agent.create!(

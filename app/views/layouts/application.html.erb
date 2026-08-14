@@ -128,6 +128,40 @@
           store.open('onboarding-first-name', { dismissible: false });
         }
 
+        // THE MARKER MUST NOT OUTLIVE THE ASK.
+        //
+        // Reading the current document fixed FORWARD navigation, because the
+        // server stops emitting the marker on the next render. It does NOT fix a
+        // Turbo RESTORATION visit: the back button replays a CACHED body, and the
+        // snapshot was taken while the marker was still sitting in the DOM — so
+        // the handler found it and re-asked someone who had already answered,
+        // with dismissible:false leaving them no way out but answering twice.
+        //
+        // The server cannot help here (a cached restore issues no request), so
+        // the client retires the marker the moment the ask is settled. The engine
+        // partial already announces that on BOTH paths — it dispatches
+        // onboarding-step-done after a successful save AND after a skip — so this
+        // listens rather than duplicating the rule.
+        window.addEventListener('onboarding-step-done', function () {
+          var marker = document.getElementById('onboarding-ask-first-name');
+          if (marker) marker.remove();
+        });
+
+        // And never let this modal be SNAPSHOTTED OPEN. dismissible:false is what
+        // stops escape/click-outside from abandoning the ask, but it also exempts
+        // this modal from the host's closeAllDismissible sweep on
+        // turbo:before-cache — so a back button pressed while it is open would
+        // restore a body with the modal already mounted, on top of the handler
+        // mounting it again. Close it ourselves before the snapshot is taken.
+        document.addEventListener('turbo:before-cache', function () {
+          var store = window.Alpine && Alpine.store && Alpine.store('modals');
+          if (!store || typeof store.close !== 'function') return;
+          var mounted = (store.stack || []).some(function (entry) {
+            return entry && entry.id === 'onboarding-first-name';
+          });
+          if (mounted) store.close();
+        });
+
         document.addEventListener('alpine:initialized', askFirstName);
         document.addEventListener('turbo:load', askFirstName);
       })();

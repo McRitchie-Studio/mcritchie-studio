@@ -79,6 +79,48 @@ test("answering the ask survives a Turbo navigation", async ({ page }) => {
   await expect(page.locator("#onboarding-ask-first-name")).toHaveCount(0);
 });
 
+// REGRESSION GUARD #2 — the RESTORATION visit, which the forward-navigation
+// spec above cannot reach.
+//
+// Reading the current document fixed forward navigation because the server stops
+// emitting the marker on the next render. A back button issues no request at all:
+// Turbo replays a CACHED body, and that snapshot was taken while the marker was
+// still in the DOM. So the handler found it and re-asked a user who had already
+// answered — and `dismissible: false` meant no escape and no click-outside, so
+// their only way out was answering a second time.
+//
+// Driven through `Turbo.visit` rather than a link click ON PURPOSE: this app's
+// nav links live behind a collapsed menu, so a click-based spec is a test of the
+// menu, not of the restore. This asserts the thing under test directly.
+test("answering the ask survives the BACK button", async ({ page }) => {
+  await loginWithMagicLink(page, "newcomer-back@test.com");
+
+  const field = page.locator("#onboarding-first-name");
+  await field.waitFor({ state: "visible" });
+  await field.fill("Alex");
+  await page.getByRole("button", { name: "Save and continue" }).click();
+  await field.waitFor({ state: "hidden" });
+
+  // The ask is settled, so the marker must be gone from the LIVE DOM before this
+  // page is ever snapshotted. This is the assertion the fix turns on.
+  await expect(page.locator("#onboarding-ask-first-name")).toHaveCount(0);
+
+  await page.evaluate(() => window.Turbo.visit("/dashboard"));
+  await page.waitForURL("**/dashboard");
+
+  await page.goBack();
+
+  // Wait past the point the buggy build had already re-opened it, rather than
+  // asserting into the gap before Alpine has run.
+  await page.waitForFunction(() => window.Alpine && Alpine.store && Alpine.store("modals"));
+  await page.waitForTimeout(600);
+
+  await expect(page.locator("#onboarding-ask-first-name")).toHaveCount(0);
+  // One input or two: a modal snapshotted open would restore mounted AND be
+  // mounted again by the handler. Zero is the only correct answer here.
+  await expect(page.locator("#onboarding-first-name")).toHaveCount(0);
+});
+
 // Its OWN account: the spec above answers the ask, which mutates that user for
 // the rest of the run (the seed happens once, at webServer boot).
 test("a new account can skip, and is asked again in a later session", async ({ page, context }) => {
