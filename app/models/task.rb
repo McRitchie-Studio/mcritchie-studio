@@ -1446,6 +1446,51 @@ class Task < ApplicationRecord
     ACTUAL_SIZE_COST_THRESHOLDS.find { |_size, ceiling| cost < ceiling }&.first
   end
 
+  # Apply a PARTIAL devops write on top of what the task already carries.
+  #
+  # The board UI posts a SUBSET of devops — the fields `tasks/_form.html.erb`
+  # renders, narrowed again by TasksController#task_params' permit list.
+  # Everything else a task carries (`agent_context`, `built_by`, `gem_bump`,
+  # `pr_urls`, the mascot/session keys) is missing from that post because the
+  # form has no field for it, NOT because anyone asked for it to go. Writing the
+  # normalized post over `metadata["devops"]` wholesale — what TasksController
+  # used to do — therefore DELETED every one of them on any edit, silently, with
+  # a 200. `agent_context` is often the only place a task carries its reasoning.
+  #
+  # So the write merges, keyed on WHICH NAMES THE CALLER POSTED rather than on
+  # which values survived normalization:
+  #
+  #   * a name the post does not carry → UNCHANGED (the default is now preserve)
+  #   * a name the post does carry     → AUTHORITATIVE, blank included, so
+  #                                      emptying a field in the browser still
+  #                                      clears it
+  #
+  # KEYING ON THE POSTED NAMES IS WHAT KEEPS BOTH HALVES TRUE AT ONCE, and it is
+  # the whole trick — neither simpler shape works. Merging only the NORMALIZED
+  # hash would preserve everything, but `normalize_devops_metadata` drops blanks,
+  # so a field the operator cleared would read as "unchanged" and NO field could
+  # ever be emptied from the browser. Replacing wholesale destroys every unposted
+  # name. The posted-name set separates "absent" from "present and blank", which
+  # the normalized hash alone cannot express.
+  #
+  # This inverts the default from destroy-unless-listed to preserve-unless-posted,
+  # so a devops key added to the model later survives a board edit WITHOUT anyone
+  # remembering to touch the permit list. The permit list still governs what a
+  # form may WRITE; it no longer governs what survives.
+  #
+  # `& DEVOPS_KEYS` keeps a posted name that is not storable devops from deleting
+  # anything — the permit list carries DEVOPS_COLUMN_KEYS names only so the
+  # normalizer can refuse them out loud, and a refusal must not also be a delete.
+  #
+  # Pure: returns the merged hash and writes nothing. Raises whatever
+  # normalize_devops_metadata raises (both controllers turn that into a 422).
+  def self.merge_devops_metadata(existing, raw)
+    normalized = normalize_devops_metadata(raw)
+    posted = raw.to_h.keys.map(&:to_s) & DEVOPS_KEYS
+
+    (existing || {}).to_h.deep_dup.except(*posted).merge(normalized)
+  end
+
   def self.normalize_devops_metadata(raw)
     return {} if raw.blank?
 
