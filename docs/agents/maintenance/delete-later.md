@@ -727,3 +727,33 @@ merged-PR case, so these were removed manually AFTER preservation. All 14 tasks 
 
 <!-- agent-worktree remove 2026-08-13 -->
 | `/Users/alex/projects/turf-monster/.worktrees/turf-seed-house-admin` | worktree | Hidden worktree; branch `feat/turf-seed-house-admin` is clean and HEAD 48eaf3c is contained in origin/accepted; health down, Redis DB 35, database turf_monster_development_turf_seed_house_admin:missing. | Removed with `bin/agent-worktree remove turf-monster turf-seed-house-admin --yes` during approved lifecycle cleanup. | removed 2026-08-13 |
+
+<!-- agent-worktree remove 2026-08-13 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/dynamic-email-banner-text` | worktree | Hidden worktree; branch `feat/dynamic-email-banner-text` is clean and HEAD 60240e06 is contained in origin/accepted; health up, Redis DB 54, database mcritchie_studio_development_dynamic_email_banner_text:ok. | Removed with `bin/agent-worktree remove mcritchie-studio dynamic-email-banner-text --yes` during approved lifecycle cleanup. | removed 2026-08-13 |
+
+<!-- agent-worktree remove 2026-08-13 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/industries-app-emoji-glyph` | worktree | Hidden worktree; branch `feat/industries-app-emoji-glyph` is clean and HEAD 9b2696f4 is contained in origin/accepted; health up, Redis DB 19, database mcritchie_studio_development_industries_app_emoji_glyph:ok. | Removed with `bin/agent-worktree remove mcritchie-studio industries-app-emoji-glyph --yes` during approved lifecycle cleanup. | removed 2026-08-13 |
+
+<!-- agent-worktree remove 2026-08-13 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/local-at-time-format` | worktree | Hidden worktree; branch `feat/local-at-time-format` is clean and HEAD a4d40982 is contained in origin/accepted; health up, Redis DB 42, database mcritchie_studio_development_local_at_time_format:ok. | Removed with `bin/agent-worktree remove mcritchie-studio local-at-time-format --yes` during approved lifecycle cleanup. | removed 2026-08-13 |
+
+<!-- agent-worktree remove 2026-08-13 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/open-review-cta-publicly` | worktree | Hidden worktree; branch `feat/open-review-cta-publicly` is clean and HEAD b09217f9 is contained in origin/accepted; health up, Redis DB 13, database mcritchie_studio_development_open_review_cta_publicly:ok. | Removed with `bin/agent-worktree remove mcritchie-studio open-review-cta-publicly --yes` during approved lifecycle cleanup. | removed 2026-08-13 |
+
+<!-- agent-worktree remove 2026-08-13 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/resolve-email-copy-placeholders` | worktree | Hidden worktree; branch `feat/resolve-email-copy-placeholders` is clean and HEAD 5b3d06a3 is contained in origin/accepted; health up, Redis DB 24, database mcritchie_studio_development_resolve_email_copy_placeholders:ok. | Removed with `bin/agent-worktree remove mcritchie-studio resolve-email-copy-placeholders --yes` during approved lifecycle cleanup. | removed 2026-08-13 |
+
+<!-- agent-worktree remove 2026-08-13 -->
+| `/Users/alex/projects/turf-monster/.worktrees/adopt-shared-email-manager` | worktree | Hidden worktree; branch `feat/adopt-shared-email-manager` is clean and HEAD 6d3247c is contained in origin/accepted; health up, Redis DB 45, database turf_monster_development_adopt_shared_email_manager:ok. | Removed with `bin/agent-worktree remove turf-monster adopt-shared-email-manager --yes` during approved lifecycle cleanup. | removed 2026-08-13 |
+
+<!-- agent-worktree remove 2026-08-13 -->
+| `/Users/alex/projects/turf-monster/.worktrees/turf-layered-magic-link` | worktree | Hidden worktree; branch `feat/turf-layered-magic-link` is clean and HEAD 24fcbce is contained in origin/accepted; health up, Redis DB 10, database turf_monster_development_turf_layered_magic_link:ok. | Removed with `bin/agent-worktree remove turf-monster turf-layered-magic-link --yes` during approved lifecycle cleanup. | removed 2026-08-13 |
+
+<!-- agent-worktree remove 2026-08-13 -->
+| `/Users/alex/projects/mcritchie-industries/.worktrees/industries-mailer-port-options` | worktree | Hidden worktree; branch `feat/industries-mailer-port-options` is clean and HEAD 3d1f1c9 is contained in origin/accepted; health up, Redis DB 34, database mcritchie_industries_development_industries_mailer_port_options:ok. | Removed with `bin/agent-worktree remove mcritchie-industries industries-mailer-port-options --yes` during approved lifecycle cleanup. | removed 2026-08-13 |
+
+<!-- agent-worktree remove 2026-08-13 -->
+| `/Users/alex/projects/mcritchie-industries/.worktrees/pin-ruby-vips-explicitly` | worktree | Hidden worktree; branch `feat/pin-ruby-vips-explicitly` is clean and HEAD 4196e5e is contained in origin/accepted; health missing-env, Redis DB , database unknown. | Removed with `bin/agent-worktree remove mcritchie-industries pin-ruby-vips-explicitly --yes` during approved lifecycle cleanup. | removed 2026-08-13 |
+
+<!-- agent-worktree remove 2026-08-13 -->
+| `/Users/alex/projects/mcritchie-industries/.worktrees/recover-industries-engine-adoption` | worktree | Hidden worktree; branch `feat/recover-industries-engine-adoption` is clean and HEAD 7356004 is contained in origin/accepted; health up, Redis DB 37, database mcritchie_industries_development_recover_industries_en_8fb7d366:ok. | Removed with `bin/agent-worktree remove mcritchie-industries recover-industries-engine-adoption --yes` during approved lifecycle cleanup. | removed 2026-08-13 |
