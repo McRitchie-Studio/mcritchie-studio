@@ -253,4 +253,84 @@ class Release::MultiRepoMemberTest < ActiveSupport::TestCase
     assert_match(/unknown repo/, error.message)
     assert_match(/not-a-registered-repo/, error.message)
   end
+
+  # --- A GEM MEMBER: two different questions, two different sets ---
+  #
+  # Slice 1's review left this decision to this slice, so decide it explicitly.
+  # #pr_bearing_repositories deliberately UNDER-measures a gem task: an engine task
+  # names its consumers, but the work is ONE PR in the gem repo, so it is measured
+  # against the gem alone and no PR is ever demanded of a consumer. That under-
+  # measures a gem task that legitimately carries a consumer PR too (the breaking-
+  # change forward-compat shape).
+  #
+  # KEEPING IT, because the two sets answer different questions and #release_repos
+  # is the one that governs membership:
+  #   * #pr_bearing_repositories = "which repos did the BUILDER owe a PR in" — the
+  #     set slice 4's sweep-time refusal will measure. Widening it to the consumers
+  #     would re-create the exact inversion it exists to prevent: every legitimate
+  #     engine release would report both consumers "missing a PR", and once the
+  #     refusal is wired that would BLOCK every engine release for the absence of
+  #     work nobody is supposed to do.
+  #   * #release_repos = "which repos does this task SHIP through" — a deliberate
+  #     SUPERSET, built from the declared repositories regardless of PR coverage.
+  #     A consumer can therefore never fall out of the plan because no PR was
+  #     demanded of it, and it is still held to per-repo evidence.
+  # So the residual risk is bounded and visible: a gem task missing a consumer
+  # forward-compat PR is not refused at sweep time, but its consumer is still
+  # promoted, still deployed and still evidence-guarded — it fails at QA rather
+  # than shipping silently. These two tests pin exactly that.
+
+  ENGINE = "studio-engine"
+  ENGINE_PR = "https://github.com/McRitchie-Studio/studio-engine/pull/77"
+
+  def gem_task(label = "engine")
+    Task.create!(
+      title: "bump #{label} for consumers",
+      stage: "reviewed",
+      metadata: { "devops" => {
+        "shape" => "library",
+        "repositories" => [ ENGINE, HUB, TURF ],
+        "pr_url" => ENGINE_PR,
+        "pr_urls" => { ENGINE => ENGINE_PR }
+      } }
+    )
+  end
+
+  test "[unit] a gem task PLANS its consumers even though it owes them no PR" do
+    task = gem_task
+
+    assert_equal [ ENGINE ], task.pr_bearing_repositories,
+                 "the work is one PR in the gem repo — a consumer PR must never be demanded"
+    assert_empty task.repos_missing_pr_url,
+                 "a legitimate engine release must not report its consumers missing"
+    assert_equal [ ENGINE, HUB, TURF ], task.release_repos,
+                 "membership is a SUPERSET of PR coverage — the consumers still ship"
+    assert_operator (task.release_repos & task.pr_bearing_repositories).size, :==,
+                    task.pr_bearing_repositories.size,
+                    "release_repos must contain every pr_bearing repo — the invariant slice 4 relies on"
+  end
+
+  test "[integration] a gem member whose CONSUMER never got QA does NOT reach assembled" do
+    # The under-measured case, driven: no PR was ever demanded of turf, so nothing
+    # refused this member at sweep time. Evidence is what still catches it.
+    task = gem_task
+    release = Release::Conductor.sweep!(task)
+    qa_landed(release, HUB) # the mutation: the gem published, the hub deployed, turf did not
+
+    Release::Conductor.qa_green!(release.reload)
+
+    assert_equal "reviewed", task.reload.stage,
+                 "turf carried no QA record — the member must be HELD, not stamped assembled"
+  end
+
+  test "[integration] the gem member assembles once every consumer lands, gem exempt" do
+    task = gem_task
+    release = Release::Conductor.sweep!(task)
+    qa_landed(release, HUB, TURF) # both consumers deployed; the GEM is published, never deployed
+
+    Release::Conductor.qa_green!(release.reload)
+
+    assert_equal "assembled", task.reload.stage,
+                 "a gem repo carries no QA sha by design — demanding one would hold every gem forever"
+  end
 end
