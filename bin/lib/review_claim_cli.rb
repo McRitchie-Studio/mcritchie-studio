@@ -151,6 +151,7 @@ class ReviewClaimCli
     else
       reason = data["reason"].to_s
       @err.puts("claim-next-review: nothing eligible to review#{reason.empty? ? '' : " (#{reason})"}.")
+      report_blind_repos(data["blind_repos"])
       @out.puts("none")
       NONE
     end
@@ -305,6 +306,21 @@ class ReviewClaimCli
       @out.puts("review-claim: the board refused the #{slug} release (HTTP #{res.code}) — " \
                 "it will lapse within ~#{lease_ttl_seconds}s.")
     end
+  end
+
+  # THE WIRING GAP, told apart from a red build. `no_green_ci` is a WHOLE-QUEUE
+  # verdict, and a repo whose Actions webhook never reached the board reads
+  # exactly like one whose CI is still running — that ambiguity is how a 4/4-green
+  # mcritchie-industries PR sat unclaimed in `submitted` for days. When the board
+  # reports it holds NO ingested run for a skipped task's repo, say so plainly.
+  def report_blind_repos(repos)
+    repos = Array(repos).map(&:to_s).reject(&:empty?)
+    return if repos.empty?
+
+    @err.puts("claim-next-review: ⚠️  no CI is ingested for #{repos.join(', ')} — the board receives NO " \
+              "GitHub Actions deliveries for #{repos.length == 1 ? 'it' : 'them'}, so its PRs can never read " \
+              "green here however green GitHub is. This is a WIRING gap, not a red build: wire the repo's " \
+              "Actions webhook to POST /api/v1/github/webhook (docs/agents/modules/deployment.md).")
   end
 
   # The skip message: name the live reviewer so this session knows WHO has the task

@@ -67,7 +67,11 @@ module Api
             "holder"      => result.outcome.claim.holder_info
           })
         else
-          render_data({ "claimed" => nil, "reason" => result.reason.to_s })
+          # `blind_repos` rides the empty pop so the caller can tell a WIRING GAP
+          # from a red build: these repos deliver no Actions runs to the board at
+          # all, so their PRs can never read green here no matter what GitHub says.
+          render_data({ "claimed" => nil, "reason" => result.reason.to_s,
+                        "blind_repos" => result.blind_repo_list })
         end
       end
 

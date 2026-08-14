@@ -440,9 +440,21 @@ class Task < ApplicationRecord
 
   # The verdict of an atomic review pop. `task` is nil when nothing was claimed;
   # `reason` names why ("claimed" / "none_reviewable" / "no_green_ci").
-  ClaimNextResult = Struct.new(:task, :outcome, :reason, keyword_init: true) do
+  #
+  # `blind_repos` names the repos among the SKIPPED candidates that the board
+  # holds no ingested CI run for at all (Ci::Ingestion). It is a REPORTING field,
+  # never a gate: a blind repo is skipped for exactly the same reason as any
+  # other non-green PR. It exists because `no_green_ci` alone reads as "the
+  # queue is red or still running", which is how an unwired repo's task sat in
+  # `submitted` for days — the pop was right and unreadable at the same time.
+  ClaimNextResult = Struct.new(:task, :outcome, :reason, :blind_repos, keyword_init: true) do
     def claimed?
       task.present?
+    end
+
+    # Always an Array — callers built before this field passed no value at all.
+    def blind_repo_list
+      Array(blind_repos)
     end
   end
 
@@ -473,6 +485,7 @@ class Task < ApplicationRecord
     return ClaimNextResult.new(task: nil, outcome: nil, reason: "none_reviewable") if ordered_slugs.empty?
 
     skipped_ungreen = false
+    skipped_repos = []
     ordered_slugs.each do |slug|
       claimed = transaction do
         task = reviewable(now: now).where(slug: slug).lock("FOR UPDATE SKIP LOCKED").first
@@ -480,6 +493,7 @@ class Task < ApplicationRecord
 
         unless Ci::ReviewGate.green?(task, injected: ci_status_token(ci_status, slug))
           skipped_ungreen = true
+          skipped_repos << Ci::ReviewGate.repo_for(task) # for the blind-repo report below
           next nil # red / pending / ci-less / none — never claim a non-green PR
         end
 
@@ -492,7 +506,22 @@ class Task < ApplicationRecord
       return claimed if claimed
     end
 
-    ClaimNextResult.new(task: nil, outcome: nil, reason: skipped_ungreen ? "no_green_ci" : "none_reviewable")
+    ClaimNextResult.new(task: nil, outcome: nil, reason: skipped_ungreen ? "no_green_ci" : "none_reviewable",
+                        blind_repos: blind_repos_among(skipped_repos))
+  end
+
+  # Which of the just-skipped candidates' repos deliver NO CI to the board at all
+  # — the wiring gap, told apart from a red or still-running build. Reporting
+  # only: the pop's decision is already made, so this can never change what gets
+  # claimed, and a failure here degrades to "no blind repos" rather than taking
+  # the review pop down with it.
+  def self.blind_repos_among(repos)
+    return [] if repos.blank?
+
+    Ci::Ingestion.unwired(repos)
+  rescue StandardError => e
+    ErrorLog.capture!(e)
+    []
   end
 
   # The injected CI verdict for one slug (test seam) — a per-slug Hash lookup, a bare
