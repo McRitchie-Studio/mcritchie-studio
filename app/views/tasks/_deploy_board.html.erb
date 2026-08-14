@@ -15,6 +15,7 @@
 <% current_release = local_assigns.fetch(:current_release, nil) %>
 <% last_release = local_assigns.fetch(:last_release, nil) %>
 <% release_duration_dashboard = local_assigns.fetch(:release_duration_dashboard, nil) %>
+<% wip_task_count = local_assigns.fetch(:wip_task_count, nil) %>
 <% current_page = local_assigns[:current_page] %>
 <% show_release_modules = current_page == "deployments" || current_release || last_release || release_duration_dashboard %>
 <%# Blocked tasks are `building` tasks now (a block is a building attribute, not a
@@ -450,12 +451,12 @@ document.addEventListener('turbo:before-cache', function() {
   </div>
 
   <% if show_release_modules %>
-    <!-- Deployment dashboard: a 2×2 card grid — Next Release + Last Release on the top row, Heartbeats + DevOps (release durations) on the bottom row. -->
+    <!-- Deployment dashboard: a 2×2 card grid — Next Release + Last Release on the top row, Heartbeats + DevOps (WIP + release durations) on the bottom row. -->
     <div class="grid min-w-0 grid-cols-1 gap-4 mb-6 items-stretch xl:grid-cols-2" data-test="release-dashboard-grid">
       <%= render "current_release", release: current_release, card_class: "h-full min-w-0" %>
       <%= render "last_release", release: last_release, card_class: "h-full min-w-0" %>
       <%= render "heartbeats_card", card_class: "h-full min-w-0" %>
-      <%= render "release_duration_card", dashboard: release_duration_dashboard, card_class: "h-full min-w-0" %>
+      <%= render "release_duration_card", dashboard: release_duration_dashboard, wip_count: wip_task_count, card_class: "h-full min-w-0" %>
     </div>
   <% end %>
 

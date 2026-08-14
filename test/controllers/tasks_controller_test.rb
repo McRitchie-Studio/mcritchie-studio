@@ -530,6 +530,47 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
                   "the 'Sample: N shipped releases' footer must not render"
   end
 
+  # The WIP tile end to end: the number on the page is the board's real count of
+  # open tasks, and it MOVES with the board. Asserting the advance (ship one task,
+  # the tile drops by one) is what separates a live count from a hardcoded label —
+  # a static assertion would pass against a tile that never reads the database.
+  test "[integration] the DevOps card's WIP tile counts the open pipeline and tracks it" do
+    Task.delete_all
+    %w[designed building submitted reviewed assembled].each do |stage|
+      Task.create!(title: "wip page #{stage} task", stage: stage)
+    end
+    # Terminal work is not in flight — neither of these may reach the tile.
+    Task.create!(title: "wip page shipped task", stage: "shipped")
+    Task.create!(title: "wip page archived task", stage: "archived")
+
+    get deployments_path
+    assert_response :success
+    assert_select "[data-test='release-duration-wip']", text: /WIP/
+    assert_select "[data-test='release-duration-wip']", text: /5/
+    assert_select "#release-duration-card", text: /WIP/
+
+    # Ship one member: the pipeline shrinks and so must the tile.
+    Task.find_by!(title: "wip page assembled task").update!(stage: "shipped")
+
+    get deployments_path
+    assert_response :success
+    assert_select "[data-test='release-duration-wip']", text: /4/
+  end
+
+  # The tile is the PIPELINE's number, not the current view's. The board's agent
+  # filter narrows the columns; it must not narrow WIP, or a per-agent view would
+  # quietly under-report how much work is open.
+  test "[integration] the agent filter narrows the board columns but not the WIP tile" do
+    Task.delete_all
+    Task.create!(title: "wip filter alex task", stage: "building", agent_slug: "alex")
+    Task.create!(title: "wip filter other task", stage: "building", agent_slug: "avi")
+    Task.create!(title: "wip filter third task", stage: "submitted", agent_slug: "avi")
+
+    get deployments_path(agent_slug: "alex")
+    assert_response :success
+    assert_select "[data-test='release-duration-wip']", text: /3/
+  end
+
   test "[integration] deployments cards carry a data-glow attribute for the live glow" do
     # The live board tints each card's create/move glow from data-glow (the mascot's
     # type colour); it's present on every card (empty when the task has no mascot).

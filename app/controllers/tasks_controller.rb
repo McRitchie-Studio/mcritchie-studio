@@ -31,6 +31,10 @@ class TasksController < ApplicationController
     @current_release = Release.current
     @last_release = Release.last_shipped
     @release_duration_dashboard = Release.deployment_stage_averages
+    # The DevOps card's WIP tile. Its own query rather than a count over
+    # @tasks_by_stage: load_board narrows to the agent/stage filter params, and a
+    # filtered board must not silently shrink the pipeline-wide WIP number.
+    @wip_task_count = Task.wip_count
   end
 
   # Row budget for /tasks/recent — enough to cover the active pipeline plus the
