@@ -2237,6 +2237,186 @@ class TaskCliTest < Minitest::Test
     assert_includes checks, fast
   end
 
+  # --- `--pr-url-for <repo>=<url>`: the per-repo PR register ------------------
+  # A task naming several repos had ONE PR slot, and the release lane parses that
+  # url for the repo it plans against — so on 2026-08-13 turf's PR had nowhere to
+  # live, turf was never promoted, and the task shipped anyway. This flag is where
+  # the second repo's PR lives. RECORDING ONLY: nothing refuses an incomplete
+  # record yet (the sweep's refusal ships with merge-promotes-every-repo), so
+  # these cases pin the WRITE and the READ-BACK, which is all that exists.
+
+  def test_pr_url_for_records_a_per_repo_pr_url
+    requests, = run_task(["update", "demo-task", "--pr-url-for",
+                          "turf-monster=https://github.com/McRitchie-Studio/turf-monster/pull/305"])
+    patch = requests.find { |r| r[:method] == "PATCH" }
+    refute_nil patch
+    assert_equal({ "turf-monster" => "https://github.com/McRitchie-Studio/turf-monster/pull/305" },
+                 JSON.parse(patch[:body]).dig("devops", "pr_urls"))
+  end
+
+  def test_pr_url_for_MERGES_with_the_repos_already_recorded
+    # Completing a multi-repo PR record must not be a one-repo-at-a-time race the
+    # operator can lose: recording turf's PR may not wipe the hub's.
+    requests, = run_task(
+      ["update", "demo-task", "--pr-url-for",
+       "turf-monster=https://github.com/McRitchie-Studio/turf-monster/pull/305"],
+      stub_devops: { "kind" => "bug",
+                     "pr_urls" => { "mcritchie-studio" => "https://github.com/McRitchie-Studio/mcritchie-studio/pull/836" } }
+    )
+    patch = requests.find { |r| r[:method] == "PATCH" }
+    urls = JSON.parse(patch[:body]).dig("devops", "pr_urls")
+    assert_equal "https://github.com/McRitchie-Studio/mcritchie-studio/pull/836", urls["mcritchie-studio"]
+    assert_equal "https://github.com/McRitchie-Studio/turf-monster/pull/305", urls["turf-monster"]
+  end
+
+  def test_pr_url_for_is_repeatable_in_one_invocation
+    requests, = run_task(["update", "demo-task",
+                          "--pr-url-for", "mcritchie-studio=https://github.com/McRitchie-Studio/mcritchie-studio/pull/836",
+                          "--pr-url-for", "turf-monster=https://github.com/McRitchie-Studio/turf-monster/pull/305"])
+    patch = requests.find { |r| r[:method] == "PATCH" }
+    assert_equal %w[mcritchie-studio turf-monster],
+                 JSON.parse(patch[:body]).dig("devops", "pr_urls").keys.sort
+  end
+
+  def test_pr_url_for_rejects_a_malformed_pair_before_any_request
+    requests, _out, err, status = run_task(["update", "demo-task", "--pr-url-for", "just-a-repo"])
+    refute status.success?, "a half-written per-repo PR record must fail fast"
+    assert_match(/<repo>=<pr-url>/, err)
+    assert_nil requests.find { |r| r[:method] == "PATCH" },
+               "a malformed pair must not PATCH a partial record"
+  end
+
+  # --- REMOVING an entry: `--pr-url-for <repo>=none` --------------------------
+  # An entry had to become removable. build_devops only ever MERGES and the server
+  # drops an empty map, so before this a typo'd repo key was permanent — there was
+  # no value you could pass that unfiled it.
+
+  def test_pr_url_for_none_REMOVES_one_entry_and_leaves_the_others
+    requests, = run_task(
+      ["update", "demo-task", "--pr-url-for", "turf-monster=none"],
+      stub_devops: { "kind" => "bug",
+                     "pr_urls" => {
+                       "mcritchie-studio" => "https://github.com/McRitchie-Studio/mcritchie-studio/pull/836",
+                       "turf-monster" => "https://github.com/McRitchie-Studio/turf-monster/pull/305"
+                     } }
+    )
+    urls = JSON.parse(requests.find { |r| r[:method] == "PATCH" }[:body]).dig("devops", "pr_urls")
+    assert_equal({ "mcritchie-studio" => "https://github.com/McRitchie-Studio/mcritchie-studio/pull/836" }, urls,
+                 "clearing turf must remove ONLY turf")
+  end
+
+  def test_pr_url_for_none_on_the_last_entry_sends_an_empty_map
+    # The server drops an empty map, so the key disappears — which is the point.
+    requests, = run_task(
+      ["update", "demo-task", "--pr-url-for", "turf-monster=none"],
+      stub_devops: { "kind" => "bug",
+                     "pr_urls" => { "turf-monster" => "https://github.com/McRitchie-Studio/turf-monster/pull/305" } }
+    )
+    assert_equal({}, JSON.parse(requests.find { |r| r[:method] == "PATCH" }[:body]).dig("devops", "pr_urls"))
+  end
+
+  # A word sentinel, not an empty value: `--pr-url-for turf-monster=$URL` with URL
+  # unset must FAIL, never silently delete the entry it was meant to write.
+  def test_pr_url_for_an_empty_value_still_fails_rather_than_clearing
+    requests, _out, err, status = run_task(["update", "demo-task", "--pr-url-for", "turf-monster="])
+    refute status.success?
+    assert_match(/<repo>=<pr-url>/, err)
+    assert_nil requests.find { |r| r[:method] == "PATCH" }
+  end
+
+  # --- the `maps = scalars` ALIASING INVARIANT --------------------------------
+  # Map flags ride in the SAME hash as scalar flags so parse_flags' four-wide
+  # [positionals, scalars, lists, top] contract survives. The cost is one shared
+  # devops namespace: a future map flag whose devops key collides with a scalar
+  # flag's silently overwrites it, whichever came last in argv. The trick was
+  # documented at bin/task's `maps = scalars` and asserted nowhere.
+  #
+  # Asserted at the SOURCE because bin/task is a standalone script this process
+  # cannot load — it dispatches on ARGV at the top level the moment it is read.
+  def test_map_and_scalar_flags_never_share_a_devops_key
+    source = File.read(BIN)
+    scalar_literal = source[/^SCALAR_FLAGS = (\{.*?^\})\.freeze$/m, 1]
+    map_literal = source[/^MAP_FLAGS = (\{.*?\})\.freeze$/m, 1]
+    refute_nil scalar_literal, "SCALAR_FLAGS not found in bin/task — repair this test, do not delete it"
+    refute_nil map_literal, "MAP_FLAGS not found in bin/task — repair this test, do not delete it"
+
+    # Comment lines are stripped so prose inside the literal can never be read as
+    # a flag pair.
+    devops_keys = lambda do |literal|
+      literal.lines.reject { |line| line.strip.start_with?("#") }.join.scan(/=>\s*"([^"]+)"/).flatten
+    end
+    scalar_keys = devops_keys.call(scalar_literal)
+    map_keys = devops_keys.call(map_literal)
+
+    # Prove the extraction reached real content before trusting an empty overlap —
+    # a regex that silently matched nothing would "pass" forever.
+    assert_includes map_keys, "pr_urls"
+    assert_includes scalar_keys, "pr_url"
+    assert_empty (map_keys & scalar_keys),
+                 "a MAP flag and a SCALAR flag write the same devops key; parse_flags aliases " \
+                 "maps into scalars, so one silently overwrites the other"
+  end
+
+  # --- READ-BACK: show / show --verbose / field -------------------------------
+  # Recording without a read-back is half a feature in a house whose standing rule
+  # is that board writes get read back. `field` is the surface scripts capture
+  # from, and a Hash IS Enumerable — it used to fall through the "don't print
+  # collections" guard and print NOTHING at exit 0, indistinguishable from unset.
+
+  def test_field_prints_the_pr_urls_map_as_repo_equals_url_lines
+    _requests, out, _err, status = run_task(
+      ["field", "demo-task", "pr_urls"],
+      stub_devops: { "pr_urls" => {
+        "turf-monster" => "https://github.com/McRitchie-Studio/turf-monster/pull/305",
+        "mcritchie-studio" => "https://github.com/McRitchie-Studio/mcritchie-studio/pull/836"
+      } }
+    )
+    assert status.success?
+    # Sorted by repo, and in the SAME syntax --pr-url-for takes, so the read-back
+    # round-trips straight back into the write flag.
+    assert_equal ["mcritchie-studio=https://github.com/McRitchie-Studio/mcritchie-studio/pull/836",
+                  "turf-monster=https://github.com/McRitchie-Studio/turf-monster/pull/305"],
+                 out.split("\n")
+  end
+
+  def test_field_stays_silent_for_an_unrecorded_pr_urls_map
+    _requests, out, _err, status = run_task(["field", "demo-task", "pr_urls"])
+    assert status.success?
+    assert_equal "", out, "unset stays silent + exit 0, the documented optional-field contract"
+  end
+
+  def test_show_verbose_ALWAYS_prints_the_pr_urls_block_even_when_empty
+    # Same rule print_column_fields is built on: a line that vanishes when empty
+    # makes "nothing recorded" indistinguishable from "this CLI cannot show it".
+    _requests, out, _err, status = run_task(["show", "demo-task", "--verbose"])
+    assert status.success?
+    assert_match(/pr_urls: -/, out)
+  end
+
+  def test_show_verbose_prints_each_recorded_repo_url
+    _requests, out, _err, status = run_task(
+      ["show", "demo-task", "--verbose"],
+      stub_devops: { "pr_urls" => {
+        "turf-monster" => "https://github.com/McRitchie-Studio/turf-monster/pull/305"
+      } }
+    )
+    assert status.success?
+    assert_match(%r{- turf-monster=https://github\.com/McRitchie-Studio/turf-monster/pull/305}, out)
+  end
+
+  def test_show_terse_prints_the_map_only_when_there_is_one
+    _requests, with_map, = run_task(
+      ["show", "demo-task"],
+      stub_devops: { "pr_urls" => {
+        "turf-monster" => "https://github.com/McRitchie-Studio/turf-monster/pull/305"
+      } }
+    )
+    assert_match(/pr_urls: turf-monster=/, with_map)
+
+    _requests, without_map, = run_task(["show", "demo-task"])
+    refute_match(/pr_urls/, without_map, "the terse view stays terse for a single-repo task")
+  end
+
   def test_update_normalizes_dashed_approval_status
     requests, = run_task(["update", "demo-task", "--approval-status", "changes-requested"])
     patch = requests.find { |r| r[:method] == "PATCH" }

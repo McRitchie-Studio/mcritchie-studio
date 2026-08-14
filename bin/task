@@ -40,8 +40,16 @@
 #   ( --slug sets a readable, immutable Task.slug → /tasks/<slug>; it also seeds
 #     worktree_slug + branch (feat/<slug>). Omit it for an opaque task-<hex>. )
 #                   [--repo R ...] [--risk R ...] [--accept "..." ...] [--test "..." ...] \
-#                   [--checks "..." ...] [--branch B] [--pr-url U] [--local-url U] [--approval waiting|approved|changes_requested|none] \
+#                   [--checks "..." ...] [--branch B] [--pr-url U] [--pr-url-for repo=U ...] [--local-url U] \
+#                   [--approval waiting|approved|changes_requested|none] \
 #                   [--po-size S] [--dev-size S] [--pm-size S] [--post-deploy-cmd "rake foo:bar"] [--no-claim]
+#   ( --pr-url-for <repo>=<url> records the PR for ONE repo, repeatable, merging
+#     per repo — so a task naming SEVERAL repos can record one PR per repo instead
+#     of the single --pr-url slot that used to leave the second repo's PR nowhere
+#     to live. --pr-url stays the primary and is folded in automatically, winning
+#     for the repo it names. `--pr-url-for <repo>=none` removes one entry.
+#     RECORDING ONLY: nothing refuses an incomplete record yet — the sweep's
+#     refusal ships with /tasks/merge-promotes-every-repo. )
 #   ( --shape feeds bin/dor-check: one of the keys in config/feature_shapes.yml )
 #   ( --no-claim files the task WITHOUT repointing this session's active-feature
 #     marker at it — filing a task is not building it. Use it when a conductor /
@@ -482,6 +490,35 @@ SCALAR_FLAGS = {
   "--persona" => "persona"
 }.freeze
 LIST_FLAGS = { "--repo" => "repositories", "--risk" => "risk_tags", "--accept" => "acceptance", "--test" => "test_plan", "--checks" => "checks_run" }.freeze
+# REPEATABLE repo-keyed MAP flags: `--pr-url-for <repo>=<url>`, one per repo.
+#
+# `--pr-url` holds ONE url, and the release lane parses that url for the repo it
+# plans against — so a task naming two repos had exactly one place to record a PR,
+# and the repo it named won. On 2026-08-13 `land-rails-security-patch` named
+# [mcritchie-studio, turf-monster] with the hub's PR url: turf's PR #305 had
+# NOWHERE TO LIVE, turf was never promoted or deployed, and the task was still
+# stamped shipped + merged:"main" while turf production ran the unpatched code.
+# This flag is where the second repo's PR finally lives.
+#
+# THIS FLAG RECORDS; NOTHING REFUSES YET. Say it plainly rather than imply a
+# guard: no sweep, no gate and no CLI command reads the map today. Task
+# #repos_missing_pr_url is the query that will answer "which repo has no PR", and
+# it has no caller until /tasks/merge-promotes-every-repo ships the refusal. A
+# comment promising a guard that does not run is the exact defect this family
+# exists to stop — see app/models/task.rb#repos_missing_pr_url.
+#
+# MERGES per repo (read-merge-write, like every other `update` flag): recording
+# turf's PR leaves the hub's entry alone. SEQUENTIALLY — say the caveat rather
+# than write "never". The merge happens CLIENT-side against a server that replaces
+# metadata["devops"] wholesale with no optimistic lock, so a peer devops writer
+# that read the record first can still restore a devops without the entry. That is
+# true of every devops key and is not new here; the house's ≤5-concurrent-writers
+# norm is what keeps it theoretical, not a mechanism in this file.
+#
+# `--pr-url` stays the primary and is folded into the map automatically by
+# Task#release_pr_urls — you do not repeat it here, and it WINS for the repo it
+# names (one repo, one authoritative PR).
+MAP_FLAGS = { "--pr-url-for" => "pr_urls" }.freeze
 NOTE_FLAGS = {
   "--handoff" => "handoff",
   "--qa-feedback" => "qa_feedback",
@@ -511,7 +548,7 @@ BOOL_FLAGS = {
 }.freeze
 # Everything parse_flags (list/create/update) understands — the dictionary an
 # unknown flag is rejected against (and suggestion-matched, --pr → --pr-url).
-PARSE_FLAG_NAMES = (SCALAR_FLAGS.keys + LIST_FLAGS.keys + SIZE_FLAGS.keys + TOP_FLAGS + BOOL_FLAGS.keys).freeze
+PARSE_FLAG_NAMES = (SCALAR_FLAGS.keys + LIST_FLAGS.keys + MAP_FLAGS.keys + SIZE_FLAGS.keys + TOP_FLAGS + BOOL_FLAGS.keys).freeze
 HELP_FLAGS = %w[--help -h].freeze
 # Two-workflow status model. Stages move via PATCH stage (no named-transition
 # endpoints) so the CLI, the board drag-drop, and the API share one path.
@@ -529,6 +566,15 @@ LEGACY_STAGE_HINTS = {
 }.freeze
 BLOCK_KINDS = %w[environment rework dependency].freeze
 PERSONA_CLEAR = %w[none clear off -].freeze
+# REMOVING one entry from a repo-keyed map: `--pr-url-for <repo>=none`. Same
+# vocabulary as PERSONA_CLEAR so the CLI has ONE clear-token idiom, not two.
+#
+# An entry had to be removable. `build_devops` only ever merges, and the server
+# drops an empty map, so before this a typo'd repo key was permanent: there was
+# no value you could pass that unfiled it. A word sentinel rather than an empty
+# value is deliberate — `--pr-url-for turf-monster=$URL` with URL unset would
+# otherwise silently DELETE the entry it was meant to write.
+MAP_CLEAR_VALUES = PERSONA_CLEAR
 APPROVAL_STATUS_ALIASES = {
   "changes-requested" => "changes_requested",
   "change_requested" => "changes_requested",
@@ -689,6 +735,17 @@ def parse_flags(argv, context: nil)
   positionals = []
   scalars = {}
   lists = Hash.new { |h, k| h[k] = [] }
+  # Repo-keyed maps (MAP_FLAGS) ride in `scalars` so the [positionals, scalars,
+  # lists, top] contract every caller destructures stays exactly four wide; the
+  # value is a Hash rather than a String, which build_devops merges per key.
+  #
+  # THE COST OF THAT ALIASING: MAP_FLAGS and SCALAR_FLAGS now share ONE devops
+  # namespace, so a future map flag whose devops key collides with a scalar flag's
+  # would silently overwrite it — whichever came last in argv. The invariant is
+  # ASSERTED, not merely written here: test_map_and_scalar_flags_never_share_a_
+  # devops_key in test/lib/task_cli_test.rb reads both constants out of this file
+  # and fails on the collision.
+  maps = scalars
   top = {}
   i = 0
   while i < argv.length
@@ -703,6 +760,23 @@ def parse_flags(argv, context: nil)
       scalars[key] = value; i += 2
     elsif LIST_FLAGS.key?(arg)
       lists[LIST_FLAGS[arg]] << (argv[i + 1] || die!("#{arg} needs a value")); i += 2
+    elsif MAP_FLAGS.key?(arg)
+      # `<repo>=<url>`. Split on the FIRST `=` only — the url carries none, but a
+      # query string could. A malformed pair dies here rather than writing half a
+      # record: a silently-dropped entry would re-open the exact hole this map
+      # closes. The URL itself is validated SERVER-side (one parser, in
+      # Task::PR_URL_REPO_PATTERN — this CLI holds no Rails constants), so a
+      # nonsense url comes back a 422 and nothing is written.
+      #
+      # `<repo>=none` (MAP_CLEAR_VALUES) REMOVES the entry — carried as a nil
+      # value, which build_devops turns into a delete.
+      pair = argv[i + 1] || die!("#{arg} needs a value (<repo>=<pr-url>)")
+      repo, url = pair.split("=", 2)
+      repo = repo.to_s.strip
+      url = url.to_s.strip
+      die!("#{arg} expects <repo>=<pr-url>, got #{pair.inspect}") if repo.empty? || url.empty?
+      url = nil if MAP_CLEAR_VALUES.include?(url.downcase)
+      (maps[MAP_FLAGS[arg]] ||= {})[repo] = url; i += 2
     elsif SIZE_FLAGS.key?(arg)
       value = argv[i + 1] || die!("#{arg} needs a value")
       validate_size!(arg, value)
@@ -726,10 +800,27 @@ def parse_flags(argv, context: nil)
   [positionals, scalars, lists, top]
 end
 
+# Fold one map flag's entries into whatever the board already holds for that key.
+# A nil value is the TOMBSTONE `--pr-url-for <repo>=none` writes: it DELETES the
+# entry rather than storing a blank, so the PATCH body carries the map the
+# operator meant and the server's wholesale devops replace makes it stick. A map
+# left empty by the last delete is sent as `{}`, which the server drops — the key
+# disappears, which is the point.
+def merge_devops_map(prior, incoming)
+  merged = prior.is_a?(Hash) ? prior.dup : {}
+  incoming.each { |repo, value| value.nil? ? merged.delete(repo) : merged[repo] = value }
+  merged
+end
+
 def build_devops(base, scalars, lists)
   base = (base || {})
   devops = base.dup
-  scalars.each { |k, v| devops[k] = v }
+  scalars.each do |k, v|
+    # A MAP flag MERGES into the prior map (per-repo read-merge-write): recording
+    # turf's PR must not wipe the hub's, or completing a task's PR record would be
+    # a one-repo-at-a-time race the operator can lose.
+    devops[k] = v.is_a?(Hash) ? merge_devops_map(base[k], v) : v
+  end
   lists.each { |k, v| devops[k] = v unless v.empty? }
   # checks_run is TWO namespaces in one list. The author owns the tier tags
   # ("[unit] ...") and --checks REPLACES those, as documented. The cert writers
@@ -764,11 +855,32 @@ def top_body(top)
   body
 end
 
+# `<repo>=<url>` pairs for a repo-keyed devops map (pr_urls), sorted by repo and
+# with blanks dropped. Deliberately the SAME syntax `--pr-url-for` takes, so a
+# read-back round-trips straight back into the write flag.
+#
+# Renders what is STORED, not the effective register: Task#release_pr_urls folds
+# the singular `pr_url` in at read time, and folding it in here would show the
+# operator entries they never wrote — the opposite of what a read-back is for.
+# The singular is printed on its own line right beside this one.
+def map_pairs(value)
+  return [] unless value.is_a?(Hash)
+
+  value.reject { |repo, url| repo.to_s.strip.empty? || url.to_s.strip.empty? }
+       .sort_by { |repo, _url| repo.to_s }
+       .map { |repo, url| "#{repo}=#{url}" }
+end
+
 def print_task(task)
   dv = task.dig("metadata", "devops") || {}
   puts "#{task["slug"]}  [#{task["stage"]}]  #{task["title"]}"
   puts "  agent: #{task["agent_slug"] || "-"}  kind: #{dv["kind"] || "-"}  repos: #{Array(dv["repositories"]).join(", ")}"
   puts "  branch: #{dv["branch"] || "-"}  pr: #{dv["pr_url"] || "-"}"
+  # The per-repo register, only when there IS one — the terse view stays terse for
+  # the single-repo task that is most of the board, and a multi-repo task's extra
+  # PRs are visible without reaching for --verbose. --verbose prints it always.
+  pairs = map_pairs(dv["pr_urls"])
+  puts "  pr_urls: #{pairs.join("  ")}" if pairs.any?
   puts "  acceptance: #{Array(dv["acceptance"]).size} item(s)  risk: #{Array(dv["risk_tags"]).join(", ")}"
 end
 
@@ -831,6 +943,11 @@ def print_task_verbose(task)
   puts "  claim: session #{dv["claimed_session"] || "-"} · expires #{dv["claim_expires_at"] || "-"}"
   puts "  approval_status: #{dv["approval_status"] || "-"}"
   puts "  pr_url: #{dv["pr_url"] || "-"}   local_url: #{dv["local_url"] || "-"}"
+  # ALWAYS emitted, "-" when empty — the same rule print_column_fields is built
+  # on, for the same reason. This is the surface an operator confirms a
+  # --pr-url-for write on, and a line that vanishes when the map is empty makes
+  # "nothing recorded" indistinguishable from "this CLI cannot show it".
+  print_bullets("pr_urls", map_pairs(dv["pr_urls"]))
   print_column_fields(task)
   puts "  review_in_progress: #{task["review_in_progress"] ? "yes" : "no"}" if task.key?("review_in_progress")
   if task.key?("unresolved_feedback")
@@ -1338,7 +1455,8 @@ when "show"
 when "field"
   # Machine-readable single field — e.g. `bin/task field <slug> mascot`. Prints
   # just the value (no decoration) so scripts can capture it; silent + exit 0
-  # when unset, so callers can treat it as optional.
+  # when unset, so callers can treat it as optional. A repo-keyed MAP (`pr_urls`)
+  # prints one `<repo>=<url>` per line — see the Hash branch below.
   #
   # Resolution order, and why it is not uniform:
   #
@@ -1365,7 +1483,18 @@ when "field"
       devops_value = record.dig("metadata", "devops", key)
       devops_value.nil? ? record[key] : devops_value
     end
-  print value unless value.nil? || value.is_a?(Enumerable)
+  if value.is_a?(Hash)
+    # Repo-keyed MAP (pr_urls): one `<repo>=<url>` per line, which is what makes
+    # `field` a read-back at all for this key. It used to fall through the
+    # Enumerable guard below — a Hash IS Enumerable — and print NOTHING at exit 0,
+    # indistinguishable from unset, in the surface scripts capture from. An
+    # operator could write turf's PR url and have no way to confirm it landed.
+    # An empty map still prints nothing, and correctly so: the server drops an
+    # empty map, so empty and unset are the same state.
+    puts map_pairs(value)
+  else
+    print value unless value.nil? || value.is_a?(Enumerable)
+  end
 when "stale"
   # Flag work that's already on origin/main while its task lags behind (fixed
   # out-of-band). One `git fetch` then a local ancestry check. With a slug, check
