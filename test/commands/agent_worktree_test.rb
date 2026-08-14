@@ -1035,6 +1035,157 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     assert_match(/could not be read/, err, "the registry lane announces too — it does not give up in silence")
   end
 
+  # --- the 2026-08-14 sweep: three load-bearing desks nominated as "safe" -----
+  #
+  # A `cleanup --reclaim` listed 29 desks as "safe: merged on origin/accepted (clean)".
+  # Three were in use: one another live session was reviewing, and BOTH repos' `_ship`
+  # workspaces, which the release sweep running at that moment was building gem locks
+  # inside. Every one of them was genuinely clean and genuinely landed on the base — which
+  # is the lesson: git-cleanliness is not the safety property.
+  #
+  # These drive the WHOLE script over a staged fixture, through the real gh and
+  # release-claim seams, and each pairs its refusal with the control that frees the same
+  # desk — a guard that withheld everything would pass the refusals alone and wedge the
+  # sweep in silence.
+
+  test "[integration] reclaim dry-run WITHHOLDS a desk whose branch has an OPEN unmerged PR" do
+    mark_worktree_merged_to_origin_main
+    abandon_desk!
+    fake_bin = write_fake_gh_pr_state(open_pr: 41)
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio", "--reclaim",
+                                      env: removal_env("PATH" => "#{fake_bin}:#{ENV.fetch("PATH", "")}"))
+
+    combined = "#{out}\n#{err}"
+    assert status.success?, combined
+    assert_includes combined, "OPEN, unmerged pull request (#41)",
+                    "an open PR is live work; the sweep must refuse the desk and name the PR"
+    assert_no_match(/reclaim candidates:/, out,
+                    "a desk with an open PR must not even be PROPOSED — the dry run is what the " \
+                    "operator approves from")
+  end
+
+  test "[integration] reclaim --yes SPARES a desk whose branch has an OPEN unmerged PR" do
+    mark_worktree_merged_to_origin_main
+    abandon_desk!
+    fake_bin = write_fake_gh_pr_state(open_pr: 41)
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio", "--reclaim", "--yes",
+                                      env: removal_env("PATH" => "#{fake_bin}:#{ENV.fetch("PATH", "")}"))
+
+    combined = "#{out}\n#{err}"
+    assert status.success?, combined
+    assert Dir.exist?(@worktree_dir),
+           "the destroy path must spare it too — a dry run that refuses while --yes proceeds is " \
+           "the worst of both\n#{combined}"
+  end
+
+  # THE CONTROL, and the reason this pair exists: the SAME abandoned, merged desk with
+  # nothing open on it is still ordinary litter. Without this, a guard that always withheld
+  # would pass the two checks above while quietly ending all reclaim.
+  test "[integration] reclaim still nominates the same desk once no PR is open" do
+    mark_worktree_merged_to_origin_main
+    abandon_desk!
+    fake_bin = write_fake_gh_pr_state(open_pr: nil)
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio", "--reclaim",
+                                      env: removal_env("PATH" => "#{fake_bin}:#{ENV.fetch("PATH", "")}"))
+
+    combined = "#{out}\n#{err}"
+    assert status.success?, combined
+    assert_includes out, "reclaim candidates:"
+    assert_includes out, "mcritchie-studio/terminal-context"
+  end
+
+  # `_ship` IS NOT "the tree the deploy works in". `bin/release prepare` — the ASSEMBLER —
+  # merges release branches forward and runs `bundle lock` for every consumer inside it. The
+  # guard used to ask only about the `deployer` role, so during a live prepare it answered
+  # "no ship is live" and nominated both workspaces. Here the release-claim CLI answers LIVE
+  # for assembler and NOT-LIVE (exit 3) for deployer: a deployer-only guard sees :none.
+  test "[integration] reclaim never proposes _ship while a live PREPARE (assembler) holds the release" do
+    stage_ship_workspace!
+    write_fake_release_claim_cli(live_roles: %w[assembler])
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio", "--reclaim", env: removal_env)
+
+    combined = "#{out}\n#{err}"
+    assert status.success?, combined
+    assert_includes combined, "a release is live",
+                    "a live prepare pins _ship exactly as a ship does"
+    assert_no_match(/^  - mcritchie-studio\/_ship$/, out,
+                    "_ship must not be proposed while a release conductor holds a claim")
+  end
+
+  test "[integration] reclaim --yes SPARES _ship while a live PREPARE holds the release" do
+    stage_ship_workspace!
+    write_fake_release_claim_cli(live_roles: %w[assembler])
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio", "--reclaim", "--yes",
+                                      env: removal_env)
+
+    combined = "#{out}\n#{err}"
+    assert status.success?, combined
+    assert Dir.exist?(File.join(@hub_dir, ".worktrees", "_ship")),
+           "tearing down _ship mid-prepare breaks the release sweep that is writing in it\n#{combined}"
+  end
+
+  # THE CONTROL for the release channel: with every role free, the workspaces are ordinary
+  # litter and bin/release recreates them on demand.
+  test "[integration] reclaim proposes _ship when no release conductor holds a claim" do
+    stage_ship_workspace!
+    write_fake_release_claim_cli(live_roles: [])
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio", "--reclaim", env: removal_env)
+
+    combined = "#{out}\n#{err}"
+    assert status.success?, combined
+    assert_includes out, "mcritchie-studio/_ship",
+                    "no live release ⇒ _ship is a normal candidate, or the guard has wedged the sweep"
+  end
+
+  # "Every archive records its rationale." The dry run states what each channel asked and
+  # answered, and the ledger row — the archive record a reader lands on months later —
+  # carries the same sentence beside the git facts.
+  test "[integration] every nominated candidate explains itself, in the dry run and in the ledger" do
+    mark_worktree_merged_to_origin_main
+    abandon_desk!
+    fake_bin = write_fake_gh_pr_state(open_pr: nil)
+    env = command_env("PATH" => "#{fake_bin}:#{ENV.fetch("PATH", "")}")
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio", env: env)
+    assert status.success?, "#{out}\n#{err}"
+    assert_match(/rationale: .*no open PR for feat\/terminal-context \(GitHub asked\)/, out,
+                 "the dry run must say which questions were asked — `safe: merged (clean)` is a " \
+                 "git fact, and it was true of all three desks the 08-14 sweep should have kept")
+    assert_match(/rationale: .*desk idle/, out)
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio", "--write", env: env)
+    assert status.success?, "#{out}\n#{err}"
+    ledger = File.read(File.join(@hub_dir, "docs", "agents", "maintenance", "delete-later.md"))
+    assert_includes ledger, "Cleared:",
+                    "an archive row without a rationale is what made the 08-13 sweep ambiguous"
+    assert_includes ledger, "no open PR for feat/terminal-context"
+  end
+
+  # The conductor's front door prints a `remove … --yes` per candidate, so it carries the
+  # same rationale the sweep computed — one call, one decision, one explanation.
+  test "[integration] the registry carries the rationale for every desk it nominates" do
+    mark_worktree_merged_to_origin_main
+    abandon_desk!
+    fake_bin = write_fake_gh_pr_state(open_pr: nil)
+    registry = File.join(@projects_dir, "rationale-registry.json")
+
+    out, err, status = agent_worktree("snapshot", "mcritchie-studio", "--write",
+                                      env: { "AGENT_WORKTREE_REGISTRY" => registry,
+                                             "PATH" => "#{fake_bin}:#{ENV.fetch("PATH", "")}" })
+
+    assert status.success?, "#{out}\n#{err}"
+    worktree = JSON.parse(File.read(registry)).fetch("worktrees").find { |entry| entry["task"] == @task }
+    assert worktree.fetch("cleanup_candidate"), "premise: this desk is nominated"
+    assert_includes worktree.fetch("cleanup_rationale"), "no open PR for feat/terminal-context",
+                    "qa-intake recommends the teardown, so it must carry the evidence too"
+  end
+
   # --- remove --force (merge-verified) --------------------------------------
 
   # [unit] The pure decision force_clears_content_blocker? loaded as a library in
@@ -1445,6 +1596,53 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     { "AGENT_WORKTREE_REGISTRY" => File.join(@projects_dir, ".agents", "remove-registry.json") }.merge(extra)
   end
 
+  # A `gh` that answers the two PR lookups this script makes, and nothing else. `open_pr:`
+  # is the number an OPEN-state query returns, or nil for "nothing open". Planted FIRST on
+  # the child's PATH so it wins over the OutboundSeams refusal stub — the point is to drive
+  # the REAL `gh pr list` code path, argv and JSON parsing included, not to bypass it.
+  def write_fake_gh_pr_state(open_pr:)
+    dir = File.join(@projects_dir, "fake-bin-open-pr-#{open_pr || "none"}")
+    FileUtils.mkdir_p(dir)
+    path = File.join(dir, "gh")
+    File.write(path, <<~RUBY)
+      #!/usr/bin/env ruby
+      if ARGV[0, 2] == ["pr", "list"]
+        state = ARGV.include?("--state") ? ARGV[ARGV.index("--state") + 1] : nil
+        open_pr = #{open_pr.inspect}
+        puts(state == "open" && open_pr ? %([{"number":\#{open_pr}}]) : "[]")
+      else
+        warn "unexpected gh args: \#{ARGV.join(" ")}"
+        exit 1
+      end
+    RUBY
+    File.chmod(0o755, path)
+    dir
+  end
+
+  # The release-claim CLI the reclaim guard shells for "is a release conductor working?".
+  # Answers per ROLE, which is the whole point: exit 0 = a live claim, exit 3 = the board
+  # answered "none". Lives at the real path the script resolves inside the fixture hub.
+  def write_fake_release_claim_cli(live_roles:)
+    path = File.join(@hub_dir, "bin", "lib", "release_claim_cli.rb")
+    FileUtils.mkdir_p(File.dirname(path))
+    File.write(path, <<~RUBY)
+      # Fixture release-claim CLI: `any-live --role <role>` only.
+      role = ARGV.include?("--role") ? ARGV[ARGV.index("--role") + 1] : nil
+      exit(#{live_roles.inspect}.include?(role) ? 0 : 3)
+    RUBY
+    path
+  end
+
+  # A `_ship` workspace as bin/release makes one: a fixed-path, DETACHED checkout under
+  # .worktrees, carrying no branch and no bound task. Aged, so the desk channel does not
+  # withhold it for being young — the release-claim channel is what is under test.
+  def stage_ship_workspace!
+    dir = File.join(@hub_dir, ".worktrees", "_ship")
+    git!(@hub_dir, "worktree", "add", "--detach", dir, "main")
+    abandon_desk!(dir: dir)
+    dir
+  end
+
   def write_fake_gh_unmerged
     dir = File.join(@projects_dir, "fake-bin-unmerged")
     FileUtils.mkdir_p(dir)
@@ -1481,16 +1679,20 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
   # DeskActivity.age_seconds) and every file under it (the mtimes read by
   # DeskActivity.touched_since?). Call it LAST — anything written afterwards, a
   # `bind_task_slug` rewrite included, makes the desk read as live again.
-  def abandon_desk!(age_seconds: 3 * 24 * 60 * 60)
+  #
+  # `dir:` defaults to the fixture task desk; the release WORKSPACES (`_ship`/`_gate`) are
+  # staged as their own desks and need the same aging, or the desk channel withholds them
+  # for being newborn and the channel actually under test never speaks.
+  def abandon_desk!(age_seconds: 3 * 24 * 60 * 60, dir: @worktree_dir)
     at = Time.now - age_seconds
-    paths = Dir.glob(File.join(@worktree_dir, "**", "*"), File::FNM_DOTMATCH)
+    paths = Dir.glob(File.join(dir, "**", "*"), File::FNM_DOTMATCH)
                 .reject { |path| %w[. ..].include?(File.basename(path)) }
-    (paths + [@worktree_dir]).each do |path|
+    (paths + [dir]).each do |path|
       File.utime(at, at, path)
     rescue SystemCallError
       nil # a path that raced away is not the point of the fixture
     end
-    assert_operator Time.now - File.mtime(File.join(@worktree_dir, ".git")), :>,
+    assert_operator Time.now - File.mtime(File.join(dir, ".git")), :>,
                     ClaimLease::DESK_IDLE_SECONDS,
                     "premise: the desk must read as older than the idle window"
   end

@@ -4078,17 +4078,22 @@ def restore_gem_primary(repo)
   say("  ⚠ #{repo}: main not fast-forwarded to origin/main — `git -C #{path} pull` when free") unless ff
 end
 
-# The SHIP WORKSPACE: the private, detached checkout the deploy works in, pinned at
-# the QA-frozen SHA. Same primitive as the gate's (Release::GateWorkspace), a
+# The SHIP WORKSPACE: the private, detached checkout a release WRITES in, pinned at
+# the SHA the caller hands it. Same primitive as the gate's (Release::GateWorkspace), a
 # different role — so it is a different directory (.worktrees/_ship), a different
 # test DB (<app>_ship_test) and a different lock, and a prod deploy can never queue
 # behind, or reset the tree under, a concurrent conductor's G3 gate suite.
 #
-# Only two things in the ship genuinely need a working tree, and both use this one:
-#   * the auto-re-pin commit (repin_consumers — `bundle lock` writes Gemfile.lock),
-#   * a `repo_script` app's deploy (deploy_app — turf's bin/deploy runs its own
+# NOT the deploy's alone — BOTH conductors work here, and reading it as "the tree the
+# deploy works in" is what let a `cleanup --reclaim` reclaim both repos' `_ship` desks
+# mid-prepare on 2026-08-14 (bin/agent-worktree's guard asked only about the `deployer`
+# claim). The tree-needing steps, by conductor:
+#   * PREPARE (assembler): merge_forward_release_branches, and bump_consumer_locks_for_qa
+#     — `bundle lock --update <gem> --conservative` writes each consumer's Gemfile.lock;
+#   * SHIP (deployer): the auto-re-pin commit (repin_consumers — `bundle lock` again),
+#     and a `repo_script` app's deploy (deploy_app — turf's bin/deploy runs its own
 #     suite, reads config/*.idl.json, and pushes from the checkout it runs in).
-# Everything else the ship does to git is a ref push (push_frozen_main), which
+# Everything else either conductor does to git is a ref push (push_frozen_main), which
 # needs no tree at all.
 def ship_workspace!(repo, sha)
   gate_workspace!(repo, sha, role: "ship")

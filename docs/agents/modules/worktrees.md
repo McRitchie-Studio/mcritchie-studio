@@ -261,12 +261,15 @@ bin/agent-worktree scale status
   brand-new worktree off `release` and one whose work was **fast-forward merged**
   are **git-identical** — both clean, both `HEAD == base`, both 0-ahead — so
   `cleanup_ready?` provably cannot tell a desk someone just sat down at from
-  finished work. Two independent channels answer that question, and every
+  finished work. **Four** independent channels answer that question, and every
   destructive path, `doctor`, and the registry route through ONE decision
   (`reclaim_verdict` → `[reclaimable?, hold_reason]`), so the conductor's front door
   can never nominate a desk the sweep would refuse. A withheld desk is named with its
   reason, and **every branch that gives up on checking says so**, because a guard that
-  silently disables itself is worse than no guard.
+  silently disables itself is worse than no guard. A *nominated* desk is explained too:
+  the dry run prints a `rationale:` line and the ledger row carries the same
+  `Cleared: …` sentence, naming which questions were asked and what came back — see
+  **Every nomination explains itself** below.
   - **The CLAIM channel** asks the board who holds the task: the **live build-claim
     lease** (`ClaimLease`, renewed by the builder's status line under a 120s TTL). A
     confirmed hold names the builder's heartbeat age, so the hold is checkable. The
@@ -298,6 +301,37 @@ bin/agent-worktree scale status
     Every unknown holds the desk, the same rule the claim lease uses: an undatable
     desk or an unreadable walk is withheld, and the hold says "we could not check"
     rather than claiming a builder nobody confirmed.
+  - **The PR channel** (`pr_hold`) asks GitHub whether the branch's work actually
+    **landed**, because git-eligibility does not. A branch whose diff against the base
+    is empty — the base moved on, an equivalent change landed by another route — is
+    git-eligible while its pull request is still **open and unmerged**: litter to git,
+    live work to the pipeline. An open PR withholds the desk (reclaim deletes the local
+    branch). `gh` answering "none" frees it; `gh` **unreachable** falls back to the
+    board — a task carrying a `pr_url` with no `merged` stamp is unlanded work and is
+    withheld, while a merged stamp or no PR at all frees it. That fallback, rather than
+    a flat fail-closed, is deliberate: `gh` is optional tooling, and withholding every
+    desk on a machine without it would wedge the sweep permanently and silently.
+  - **The REVIEW channel** (`review_hold`) asks the board whether a **reviewer** is on
+    the task (`review_in_progress`). Review is a second lane with its own claim: a
+    reviewer works the builder's desk — reading it, running its suite, merging from
+    it — without ever taking the BUILD claim, and mostly READS, so the desk's mtimes
+    stay quiet. **2026-08-14: a sweep nominated a desk another live session was
+    reviewing.** Positive signal only, so an older board that cannot answer does not
+    re-decide the unreadable-board case the claim channel already owns.
+  - **The release WORKSPACES (`_ship`/`_gate`) are held by ANY live release claim, not
+    just a ship's.** They are fixed-path infrastructure `bin/release` recreates on
+    demand, so they carry no bound task and would otherwise fail open through the
+    unbound branch. `claim_hold` withholds them whenever a live `ReleaseConductorClaim`
+    exists in **either** role (`RELEASE_CLAIM_ROLES` = `assembler` + `deployer`), and
+    withholds on a can't-tell read. **2026-08-14: the guard asked about `deployer`
+    alone**, on the reading that `_ship` is "the tree the deploy works in". It is not —
+    `bin/release prepare` (the assembler, Avi's `qa-release` sweep) merges release
+    branches forward and runs `bundle lock` for every consumer **inside `_ship`**. So
+    during a live prepare the deployer claim was legitimately free, and a reclaim listed
+    both repos' `_ship` desks as "safe: merged on `origin/accepted` (clean)" while the
+    sweep was writing in them. A role added to `ReleaseConductorClaim::ROLES` must be
+    added to `RELEASE_CLAIM_ROLES` too: asking one role of a two-role lifecycle is not a
+    narrower guard, it is a guard that is absent half the time.
   - **A QUIET desk is still a HELD desk — quiet never makes it reclaimable.** The
     board also reports a task's last *durable* progress beside its liveness (see
     [`devops-task-board.md`](devops-task-board.md#the-build-claim-liveness-and-progress-are-two-facts)),
@@ -361,14 +395,27 @@ bin/agent-worktree scale status
     deliberately: disk and a slot are recoverable, a destroyed desk is not.
     `remove <app> <task> --yes` still tears one down on demand, so nothing is stuck —
     only nothing is automatic.
+  - **Every nomination explains itself.** `safe: merged on origin/accepted (clean,
+    +0/-0)` is a **git fact**, and it was true of all three load-bearing desks the
+    2026-08-14 sweep offered up. So a nominated candidate also prints
+    `rationale: <what each channel asked and answered>` in the dry run
+    (`reclaim_evidence` → `rationale`), and the `delete-later.md` row carries the same
+    sentence as `Cleared: …` beside the git facts. Read it as the approval packet: a
+    channel that could not be asked says so there (`GitHub unreachable`), which is how
+    you spot a sweep running with a blind guard **before** approving 29 teardowns. A
+    desk removed against a hold (the explicit `remove … --yes` override) files the
+    **hold** in that cell instead — an archive row never borrows the language of a
+    cleared candidate.
 - `cleanup --reclaim` is the **scale-down-on-close normal flow**: a merged
   worktree self-releases its Redis slot the same way a stack scales down when it
   closes. The dry run (no `--yes`) lists only the worktrees that are SAFE to
   auto-remove — clean, either contained in the base ref or base-equivalent, **and
-  unoccupied** (`reclaimable?`: no live build-claim, and a desk old enough, quiet
-  enough, and with no gate in flight to be called abandoned) — and prints the same
-  safety evidence and removal command as `cleanup`. It never lists a dirty, unmerged,
-  claimed, fresh, or actively-edited worktree, and the candidate set is sourced from
+  unoccupied** (`reclaimable?`: no live build-claim, no reviewer on the task, no open
+  unmerged PR on the branch, and a desk old enough, quiet enough, and with no gate in
+  flight to be called abandoned) — and prints the same safety evidence, rationale, and
+  removal command as `cleanup`. It never lists a dirty, unmerged, claimed, fresh, or
+  actively-edited worktree, never a desk whose PR is still open, and never `_ship`/
+  `_gate` while a release conductor holds a claim; the candidate set is sourced from
   `.worktrees/*` only, so the primary checkout is never a candidate.
 - `cleanup --reclaim --yes` runs the **same full teardown as `remove`** for each
   safe candidate (stop the stack, flush the stack's Redis DB, update the cleanup

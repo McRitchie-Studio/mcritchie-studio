@@ -461,121 +461,187 @@ class AgentWorktreeTest < Minitest::Test
   end
 
   # --- reclaim guard: the _ship/_gate SHIP-WORKSPACE exclusion (release-conductor-claims) ---
-  # `bin/release ship` moved OFF the shared `avi` shift and ONTO the per-release `deployer`
-  # ReleaseConductorClaim, so the shift no longer excludes clean-up from a live ship. These
-  # re-enforce "never reclaim _ship/_gate mid-ship" via that claim: withhold the fixed-path
-  # ship/cert workspaces while a live deployer claim exists (a ship in progress), reclaim
-  # them when none, and WITHHOLD on can't-tell (a destroy path — a ship MIGHT be live).
-  # deployer_claim_liveness is stubbed here; its board read is covered by the CLI +
-  # controller tests. Only _ship/_gate are guarded — a task desk ignores the ship claim.
+  # `bin/release` moved OFF the shared `avi` shift and ONTO the per-release
+  # ReleaseConductorClaim, so the shift no longer excludes clean-up from a live release.
+  # These re-enforce "never reclaim _ship/_gate while a release conductor is working" via
+  # that claim: withhold the fixed-path ship/cert workspaces while ANY role's claim is live,
+  # reclaim them when none, and WITHHOLD on can't-tell (a destroy path — a release MIGHT be
+  # live). release_claim_liveness is stubbed here; its board read is covered by the CLI +
+  # controller tests. Only _ship/_gate are guarded — a task desk ignores the release claim.
 
   def ship_hold(liveness, task)
     run_in_script(<<~RUBY)
-      def deployer_claim_liveness(fresh: false); #{liveness.inspect}; end
+      def release_claim_liveness(fresh: false); #{liveness.inspect}; end
       print claim_hold({ task: #{task.inspect}, dir: "/repo/.worktrees/#{task}", env: {} }).inspect
     RUBY
   end
 
-  def test_ship_workspace_withheld_while_a_deployer_claim_is_live
+  def test_ship_workspace_withheld_while_a_release_claim_is_live
     %w[_ship _gate].each do |ws|
       out = ship_hold(:live, ws)
-      refute_equal "nil", out, "#{ws} must be WITHHELD while a live deployer claim exists (a ship in progress)"
-      assert_match(/a ship is live/, out, "#{ws} names the reason: a ship is live")
-      assert_match(/deployer claim/, out)
+      refute_equal "nil", out, "#{ws} must be WITHHELD while a live release claim exists (a prepare or ship in progress)"
+      assert_match(/a release is live/, out, "#{ws} names the reason: a release conductor is live")
+      assert_match(/assembler\/deployer/, out, "the reason names BOTH roles it asked about")
     end
   end
 
-  def test_ship_workspace_reclaimable_when_no_deployer_claim_is_live
+  def test_ship_workspace_reclaimable_when_no_release_claim_is_live
     %w[_ship _gate].each do |ws|
       assert_equal "nil", ship_hold(:none, ws),
-                   "#{ws} is a normal reclaim candidate when the board says no ship is live"
+                   "#{ws} is a normal reclaim candidate when the board says no release conductor is live"
     end
   end
 
-  def test_ship_workspace_withheld_when_the_deployer_claim_read_fails
+  def test_ship_workspace_withheld_when_the_release_claim_read_fails
     out = ship_hold(:unknown, "_ship")
-    assert_match(/could not check for a live ship/, out,
-                 "an unreadable deployer-claim read WITHHOLDS _ship (fail-closed on a destroy path — a ship MIGHT be live)")
+    assert_match(/could not check for a live release/, out,
+                 "an unreadable release-claim read WITHHOLDS _ship (fail-closed on a destroy path — a release MIGHT be live)")
     assert_match(/withholding/, out)
   end
 
-  def test_a_task_desk_is_unaffected_by_the_ship_deployer_claim
-    # Only the fixed-path _ship/_gate are guarded by the deployer claim; a normal task desk
-    # must NOT consult it (that would wedge task reclaim on every live ship).
+  def test_a_task_desk_is_unaffected_by_the_release_claim
+    # Only the fixed-path _ship/_gate are guarded by the release claim; a normal task desk
+    # must NOT consult it (that would wedge task reclaim on every live release).
     out = run_in_script(<<~RUBY)
-      def deployer_claim_liveness(fresh: false); :live; end
+      def release_claim_liveness(fresh: false); :live; end
       def task_record_for_pr(_r, fresh: false); { "metadata" => { "devops" => {} } }; end
       print claim_hold({ task: "t", dir: "/repo/.worktrees/t", env: { "TASK_RECORD_SLUG" => "t" } }).inspect
     RUBY
-    assert_equal "nil", out, "a task desk is reclaimable regardless of a live ship — the guard is _ship/_gate only"
+    assert_equal "nil", out, "a task desk is reclaimable regardless of a live release — the guard is _ship/_gate only"
   end
 
-  def test_reclaim_verdict_withholds_ship_workspace_during_a_live_ship
+  def test_reclaim_verdict_withholds_ship_workspace_during_a_live_release
     out = run_in_script(<<~RUBY)
-      def deployer_claim_liveness(fresh: false); :live; end
+      def release_claim_liveness(fresh: false); :live; end
       record = { task: "_ship", dir: "/repo/.worktrees/_ship", dirty: false, merged: true,
                  equivalent_to_main: true, env: {} }
       print reclaim_verdict(record).inspect
     RUBY
-    assert_match(/\A\[false, ".*ship is live/, out,
-                 "a live ship withholds _ship from reclaim through the ONE decision every destroy path routes through")
+    assert_match(/\A\[false, ".*release is live/, out,
+                 "a live release withholds _ship from reclaim through the ONE decision every destroy path routes through")
   end
 
-  def test_reclaim_verdict_reclaims_ship_workspace_when_no_ship_is_live
+  def test_reclaim_verdict_reclaims_ship_workspace_when_no_release_is_live
     out = run_in_script(<<~RUBY)
       #{ABANDONED_DESK}
-      def deployer_claim_liveness(fresh: false); :none; end
+      def release_claim_liveness(fresh: false); :none; end
       record = { task: "_gate", dir: "/repo/.worktrees/_gate", dirty: false, merged: true,
                  equivalent_to_main: true, env: {} }
       print reclaim_verdict(record).inspect
     RUBY
-    assert_equal "[true, nil]", out, "with no live ship, _gate is a normal reclaim candidate (bin/release recreates it)"
+    assert_equal "[true, nil]", out, "with no live release, _gate is a normal reclaim candidate (bin/release recreates it)"
   end
 
-  # A `_gate` workspace mid-cert is a WORKING desk even with no deployer claim: the
+  # A `_gate` workspace mid-cert is a WORKING desk even with no release claim: the
   # cert checks out into it and then writes nothing for up to 94 minutes. The desk
   # channel covers that on the same evidence it covers a task desk with.
-  def test_a_ship_workspace_being_written_to_is_withheld_even_with_no_ship_claim
+  def test_a_ship_workspace_being_written_to_is_withheld_even_with_no_release_claim
     out = run_in_script(<<~RUBY)
       def desk_age_seconds(_r); ClaimLease::DESK_IDLE_SECONDS * 10; end
       def desk_touched_recently?(_r); true; end
-      def deployer_claim_liveness(fresh: false); :none; end
+      def release_claim_liveness(fresh: false); :none; end
       record = { task: "_gate", dir: "/repo/.worktrees/_gate", dirty: false, merged: true,
                  equivalent_to_main: true, env: {} }
       print reclaim_verdict(record).inspect
     RUBY
     assert_match(/\A\[false, "the desk was written to/, out,
-                 "a cert workspace being written into is in use, ship claim or no ship claim")
+                 "a cert workspace being written into is in use, release claim or no release claim")
   end
 
-  # --- reclaim TOCTOU: fresh: true RE-READS the deployer claim under-lock ---------------
+  # --- THE 2026-08-14 REGRESSION: the guard asked ONE role of a TWO-role lifecycle -------
   #
-  # deployer_claim_liveness memoizes @deployer_claim_liveness PROCESS-WIDE (one board read
-  # per command). The reclaim under-lock re-verify (reclaim_verdict → claim_hold, fresh:
-  # true) exists to catch a claim taken AFTER the candidate list was selected — but the
-  # ship-workspace path used to IGNORE `fresh:`, so a ship STARTING mid `cleanup --reclaim
-  # --yes` loop was read from the memoized stale :none and its `_ship`/`_gate` reclaimed,
-  # breaking the in-flight deploy. The build-claim guard already bypasses its own memo on the
-  # re-verify (task_record_for_pr fresh:); this pins the SAME parity for the deployer claim.
+  # `_ship` is not "the tree the deploy works in". `bin/release prepare` — the ASSEMBLER,
+  # Avi's qa-release sweep — merges release branches forward and runs `bundle lock` for
+  # every consumer inside the very same workspace. While that ran, the deployer claim was
+  # legitimately free, so a deployer-only check answered :none and a `cleanup --reclaim`
+  # listed BOTH repos' `_ship` desks as "safe: merged on origin/accepted (clean)".
+  #
+  # This drives the REAL compute_release_claim_liveness with only the ASSEMBLER role live
+  # (the CLI answers exit 0 for assembler, exit 3 — "no live claim" — for deployer). A guard
+  # that asks only about the deployer reads :none here and nominates the workspace.
+  def test_release_liveness_is_live_when_only_the_assembler_role_is_held
+    out = run_in_script(<<~RUBY)
+      def File.exist?(_p); true; end                       # the CLI is present
+      def capture_status(*args, **_kw)
+        role = args[args.index("--role") + 1]
+        [role == "assembler", "", "", role == "assembler" ? 0 : 3]
+      end
+      print compute_release_claim_liveness.inspect
+    RUBY
+    assert_equal ":live", out,
+                 "a live PREPARE pins _ship exactly as a live ship does; asking only the deployer " \
+                 "role is a guard that is absent half the time"
+  end
+
+  def test_release_liveness_is_live_when_only_the_deployer_role_is_held
+    out = run_in_script(<<~RUBY)
+      def File.exist?(_p); true; end
+      def capture_status(*args, **_kw)
+        role = args[args.index("--role") + 1]
+        [role == "deployer", "", "", role == "deployer" ? 0 : 3]
+      end
+      print compute_release_claim_liveness.inspect
+    RUBY
+    assert_equal ":live", out, "the original ship case must keep working"
+  end
+
+  # THE POSITIVE CONTROL for the role sweep: with every role answering "no live claim",
+  # the workspaces are ordinary candidates. Without this, a guard that simply returned
+  # :live would pass both checks above and wedge every release workspace forever.
+  def test_release_liveness_is_none_only_when_every_role_answers_none
+    out = run_in_script(<<~RUBY)
+      def File.exist?(_p); true; end
+      def capture_status(*_args, **_kw); [false, "", "", 3]; end
+      print compute_release_claim_liveness.inspect
+    RUBY
+    assert_equal ":none", out, "all roles free ⇒ _ship/_gate are reclaimable litter"
+  end
+
+  # PURE precedence, stated as a matrix so the safety order cannot drift into an
+  # arithmetic one: any live holds, any unknown holds, empty is unknown.
+  def test_combine_claim_liveness_precedence
+    out = run_in_script(<<~RUBY)
+      print [
+        combine_claim_liveness([:none, :live]),
+        combine_claim_liveness([:none, :unknown]),
+        combine_claim_liveness([:unknown, :live]),
+        combine_claim_liveness([:none, :none]),
+        combine_claim_liveness([])
+      ].inspect
+    RUBY
+    assert_equal "[:live, :unknown, :live, :none, :unknown]", out,
+                 "one live role withholds; one unreadable role withholds even beside a `none`; " \
+                 "only an all-none answer frees, and asking nothing is not an answer"
+  end
+
+  # --- reclaim TOCTOU: fresh: true RE-READS the release claim under-lock -----------------
+  #
+  # release_claim_liveness memoizes @release_claim_liveness PROCESS-WIDE (one board read per
+  # command). The reclaim under-lock re-verify (reclaim_verdict → claim_hold, fresh: true)
+  # exists to catch a claim taken AFTER the candidate list was selected — but the
+  # ship-workspace path used to IGNORE `fresh:`, so a release STARTING mid `cleanup
+  # --reclaim --yes` loop was read from the memoized stale :none and its `_ship`/`_gate`
+  # reclaimed, breaking the in-flight deploy. The build-claim guard already bypasses its own
+  # memo on the re-verify (task_record_for_pr fresh:); this pins the SAME parity here.
   #
   # The EFFECT under test — not a branch, not "a method was called": with the memo seeded
-  # :none and the LIVE state then changed to a held ship claim, a non-fresh re-check STILL
-  # reads the stale :none (reclaimable), while fresh: true RE-READS and returns the CURRENT
-  # held value (WITHHELD). compute_deployer_claim_liveness is stubbed to a mutable state so
-  # the memo/bypass distinction is observable through the REAL memoization logic.
-  def test_reclaim_toctou_fresh_reverify_rereads_the_live_deployer_claim
+  # :none and the LIVE state then changed to a held release claim, a non-fresh re-check
+  # STILL reads the stale :none (reclaimable), while fresh: true RE-READS and returns the
+  # CURRENT held value (WITHHELD). compute_release_claim_liveness is stubbed to a mutable
+  # state so the memo/bypass distinction is observable through the REAL memoization logic.
+  def test_reclaim_toctou_fresh_reverify_rereads_the_live_release_claim
     out = run_in_script(<<~RUBY)
       $live = :none
-      def compute_deployer_claim_liveness; $live; end
+      def compute_release_claim_liveness; $live; end
       rec = { task: "_ship", dir: "/repo/.worktrees/_ship", env: {} }
-      seeded = deployer_claim_liveness              # memoizes the stale :none from selection
-      $live  = :live                                # a ship STARTS after the list was picked
+      seeded = release_claim_liveness               # memoizes the stale :none from selection
+      $live  = :live                                # a release STARTS after the list was picked
       stale  = claim_hold(rec.dup)                  # non-fresh → memoized :none → reclaimable (nil)
       fresh  = claim_hold(rec.dup, fresh: true)     # under-lock re-verify → MUST re-read → :live → withhold
       print [seeded, stale.nil?, fresh].inspect
     RUBY
-    assert_match(/\A\[:none, true, ".*ship is live/, out,
-                 "fresh: true RE-READS the deployer claim and returns the CURRENT held-ship value (WITHHELD), " \
+    assert_match(/\A\[:none, true, ".*release is live/, out,
+                 "fresh: true RE-READS the release claim and returns the CURRENT held value (WITHHELD), " \
                  "even though the process-wide memo was seeded :none and a non-fresh re-check still reads that stale :none")
   end
 
@@ -602,6 +668,162 @@ class AgentWorktreeTest < Minitest::Test
                     "reads as an affirmation, which nominates an occupied desk for teardown"
     assert_includes held_line, "withheld from reclaim",
                     "the held-desk message must still say plainly that the desk is off-limits"
+  end
+
+  # --- reclaim guard: the PR channel (open, unmerged work is not litter) ------------------
+  #
+  # THE PROPERTY: a desk whose branch still carries an OPEN, UNMERGED pull request is
+  # withheld, however finished it looks to git. Git-eligibility asks whether the CONTENT is
+  # represented on the base; a branch whose diff against the base is empty (the base moved
+  # on, an equivalent change landed another way) satisfies that while its PR is still open
+  # and a reviewer is still working it.
+  #
+  # The checks below drive the PURE decision so every cell of the matrix is reachable —
+  # including the two that are not about GitHub at all: when gh cannot be asked, the BOARD
+  # decides, because a task carrying a pr_url with no merged stamp is unlanded work.
+
+  def pr_reason(gh_status, pr_ref: "41", board_pr_url: nil, board_merged: false)
+    run_in_script(<<~RUBY)
+      print pr_hold_reason(gh_status: #{gh_status.inspect}, pr_ref: #{pr_ref.inspect},
+                           branch: "feat/x", board_pr_url: #{board_pr_url.inspect},
+                           board_merged: #{board_merged.inspect}).inspect
+    RUBY
+  end
+
+  def test_an_open_unmerged_pr_withholds_the_desk
+    out = pr_reason(:open)
+
+    assert_match(/OPEN, unmerged pull request \(#41\)/, out,
+                 "an open PR is live work — the sweep must refuse the desk and name the PR")
+    assert_match(/deletes that local branch/, out, "the reason states what a teardown would cost")
+  end
+
+  # THE POSITIVE CONTROL. This guard's failure mode is bimodal: fail-open strands live
+  # review work, fail-closed wedges the sweep so nothing is ever reclaimed again. GitHub
+  # answering "no open PR" must free the desk.
+  def test_no_open_pr_frees_the_desk
+    assert_equal "nil", pr_reason(:none, pr_ref: nil),
+                 "gh answered: nothing is open on this branch — the desk is ordinary litter"
+  end
+
+  # gh missing/failing is not an answer, so the board is asked instead.
+  def test_an_unreachable_gh_withholds_a_desk_the_board_calls_unlanded
+    out = pr_reason(:unavailable, pr_ref: nil, board_pr_url: "https://github.com/x/y/pull/41")
+
+    assert_match(/could not ask GitHub/, out, "the hold says plainly that the check did not happen")
+    assert_match(/no merged stamp/, out, "and names the board evidence it fell back to")
+  end
+
+  def test_an_unreachable_gh_frees_a_desk_whose_task_landed
+    assert_equal "nil",
+                 pr_reason(:unavailable, pr_ref: nil, board_pr_url: "https://github.com/x/y/pull/41",
+                           board_merged: true),
+                 "a merged stamp is independent evidence the work landed — do not wedge on it"
+  end
+
+  def test_an_unreachable_gh_frees_a_desk_with_no_pr_at_all
+    assert_equal "nil", pr_reason(:unavailable, pr_ref: nil),
+                 "withholding every desk on a machine without gh would wedge the sweep permanently"
+  end
+
+  # THE WHOLE DECISION, end to end: the same abandoned, diff-empty desk every other control
+  # frees is WITHHELD once its branch carries an open PR — and freed again when it does not.
+  # Asserting both cells is the point: a guard that always withheld would pass the first.
+  def verdict_with_open_pr(pr_status)
+    run_in_script(<<~RUBY)
+      #{ABANDONED_DESK}
+      def open_pr_for_branch(_r); #{pr_status}; end
+      def task_record_for_pr(_r, fresh: false); { "metadata" => { "devops" => {} } }; end
+      record = { task: "t", dir: "/repo/.worktrees/t", branch: "feat/t", dirty: false,
+                 merged: false, equivalent_to_main: true, env: { "TASK_RECORD_SLUG" => "t" },
+                 base_ref: "origin/accepted" }
+      print reclaim_verdict(record).inspect
+    RUBY
+  end
+
+  def test_reclaim_verdict_withholds_an_abandoned_desk_whose_pr_is_still_open
+    assert_match(/\A\[false, "an OPEN, unmerged pull request/, verdict_with_open_pr("[:open, \"41\"]"),
+                 "clean + diff-empty + long abandoned is NOT enough: the PR is the work, and it is open")
+  end
+
+  def test_reclaim_verdict_frees_the_same_desk_once_nothing_is_open
+    assert_equal "[true, nil]", verdict_with_open_pr("[:none, nil]"),
+                 "the control: with no open PR the identical desk is still reclaimable litter"
+  end
+
+  # --- reclaim guard: the REVIEW channel (somebody else's session is AT this desk) --------
+  #
+  # A reviewer works the builder's desk without ever taking the BUILD claim, and mostly
+  # READS — so the claim channel sees nothing and the desk's mtimes stay quiet. On
+  # 2026-08-14 a sweep nominated a desk another live session was reviewing. The board
+  # publishes `review_in_progress`; positive-signal only, so an older board that cannot
+  # answer does not re-decide the unreadable-board case claim_hold already owns.
+  def verdict_with_review(task_json)
+    run_in_script(<<~RUBY)
+      #{ABANDONED_DESK}
+      def open_pr_for_branch(_r); [:none, nil]; end
+      def task_record_for_pr(_r, fresh: false); #{task_json}; end
+      record = { task: "t", dir: "/repo/.worktrees/t", branch: "feat/t", dirty: false,
+                 merged: true, equivalent_to_main: true, env: { "TASK_RECORD_SLUG" => "t" },
+                 base_ref: "origin/accepted" }
+      print reclaim_verdict(record).inspect
+    RUBY
+  end
+
+  def test_a_desk_under_live_review_is_withheld
+    out = verdict_with_review(%({ "review_in_progress" => true, "metadata" => { "devops" => {} } }))
+
+    assert_match(/\A\[false, "a review is in progress/, out,
+                 "a reviewer holds no build claim and writes nothing — the board is the only " \
+                 "channel that can see them")
+  end
+
+  def test_a_desk_whose_review_has_finished_is_freed
+    assert_equal "[true, nil]",
+                 verdict_with_review(%({ "review_in_progress" => false, "metadata" => { "devops" => {} } })),
+                 "the control: review over, desk quiet, nothing open — ordinary litter"
+  end
+
+  # --- the RATIONALE: every nomination explains itself ------------------------------------
+  #
+  # "safe: merged on origin/accepted (clean)" is a GIT fact, and it was true of all three
+  # load-bearing desks the 08-14 sweep nominated. The rationale states what each CHANNEL
+  # asked and answered, so a blind channel is legible in the dry run and in the ledger row
+  # months later.
+  def test_a_free_desk_carries_a_rationale_naming_every_channel
+    out = run_in_script(<<~RUBY)
+      #{ABANDONED_DESK}
+      def open_pr_for_branch(_r); [:none, nil]; end
+      def task_record_for_pr(_r, fresh: false); { "review_in_progress" => false, "metadata" => { "devops" => {} } }; end
+      record = { task: "t", dir: "/repo/.worktrees/t", branch: "feat/t", dirty: false,
+                 merged: true, equivalent_to_main: true, env: { "TASK_RECORD_SLUG" => "t" },
+                 base_ref: "origin/accepted" }
+      print reclaim_evidence(record)[:rationale]
+    RUBY
+
+    assert_match(/merged into origin\/accepted, tree clean/, out, "the git fact")
+    assert_match(/no open PR for feat\/t \(GitHub asked\)/, out, "the PR channel, and that it was actually asked")
+    assert_match(/no live build claim on t/, out, "the claim channel")
+    assert_match(/no review in progress/, out, "the review channel")
+    assert_match(/desk idle/, out, "the desk channel")
+  end
+
+  # A WITHHELD desk gets no rationale — it gets the hold. An explanation that survived the
+  # refusal would read as a clearance in the ledger.
+  def test_a_withheld_desk_has_no_rationale
+    out = run_in_script(<<~RUBY)
+      #{ABANDONED_DESK}
+      def open_pr_for_branch(_r); [:open, "7"]; end
+      def task_record_for_pr(_r, fresh: false); { "metadata" => { "devops" => {} } }; end
+      record = { task: "t", dir: "/repo/.worktrees/t", branch: "feat/t", dirty: false,
+                 merged: true, equivalent_to_main: true, env: { "TASK_RECORD_SLUG" => "t" },
+                 base_ref: "origin/accepted" }
+      e = reclaim_evidence(record)
+      print [e[:free], e[:rationale].nil?, e[:hold].to_s[0, 12]].inspect
+    RUBY
+
+    assert_equal %([false, true, "an OPEN, unm"]), out,
+                 "a refusal carries the reason, never a clearance"
   end
 
   # --- 404 classification: only the API's OWN "task not found" means the task is gone ------
