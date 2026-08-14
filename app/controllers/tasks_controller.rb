@@ -370,6 +370,15 @@ class TasksController < ApplicationController
       :priority,
       :agent_slug,
       :stage,
+      # WHAT THIS LIST DOES AND DOES NOT DECIDE. It governs which devops names a
+      # form POST may WRITE. It does NOT govern which names SURVIVE the write —
+      # Task.merge_devops_metadata merges the posted subset onto the stored hash,
+      # so a name absent from this list (and from the form) is left untouched
+      # rather than deleted. It used to decide both, which made every unlisted
+      # name — agent_context, built_by, gem_bump, pr_urls, the mascot/session
+      # keys — silently destructible by anyone editing an acceptance bullet in a
+      # browser, and made the list permanently one key behind the model.
+      # Adding a name here is now about letting the board EDIT it, nothing more.
       devops: [
         :kind,
         :shape,
@@ -409,13 +418,6 @@ class TasksController < ApplicationController
         # now has its write honored, and validated — the key used to be stripped
         # before Task.normalize_devops_map ran, so a hand-posted nonsense url got
         # a 200 for a write that landed nowhere. It 422s now, like the JSON API.
-        #
-        # What it does NOT fix, so nobody reads more into it: `_form.html.erb`
-        # renders no `pr_urls` field, and merged_metadata_with_devops replaces
-        # `base["devops"]` WHOLESALE — so a board-UI edit still drops the map,
-        # exactly as it already drops agent_context, built_by, gem_bump and the
-        # mascot/session keys this list also omits. That is one pre-existing bug
-        # about omitted keys, not five, and it wants its own change.
         { pr_urls: {} }
       ]
     )
@@ -426,11 +428,22 @@ class TasksController < ApplicationController
     attrs
   end
 
+  # Fold a form's PARTIAL devops post into the task's full metadata.
+  #
+  # The devops half is a MERGE, not a replacement — see
+  # Task.merge_devops_metadata for why an unposted name means "unchanged" and a
+  # posted-but-blank one still means "cleared". `#create` reaches here with
+  # @task nil, so the merge starts from an empty base and the result is exactly
+  # the normalized post.
+  #
+  # The `devops` key itself is dropped when the merge empties it, so a task with
+  # no devops data carries no empty hash — `Task#devops?` and the show page's
+  # handoff panel both key off presence.
   def merged_metadata_with_devops(raw_devops)
     base = (@task&.metadata || {}).deep_dup
-    normalized = Task.normalize_devops_metadata(raw_devops)
-    if normalized.any?
-      base["devops"] = normalized
+    merged = Task.merge_devops_metadata(base["devops"], raw_devops)
+    if merged.any?
+      base["devops"] = merged
     else
       base.delete("devops")
     end
