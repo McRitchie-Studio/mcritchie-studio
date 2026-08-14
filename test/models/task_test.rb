@@ -659,6 +659,77 @@ class TaskTest < ActiveSupport::TestCase
     refute_includes decision["reviewers"].map { |r| r["slug"] }, "carl", "carl never reviews the PR carl built"
   end
 
+  # --- the build claim stamps, even with no stage change (builder-stamp-misses-reviewer-guard) ---
+
+  test "a re-claim of a task ALREADY in building stamps the build actor" do
+    # THE DEFECT. The fast lane (`bin/task begin`) leaves the task at `building`,
+    # so the documented recovery — `bin/task move <slug> building --actor <soul>` —
+    # carried NO stage change, `set_stage_timestamp` never fired, and the stamp
+    # silently no-op'd at exit 0. The stamp is an INVARIANT of the build claim, not
+    # of the transition into it.
+    task = tasks(:new_task)
+    task.build!
+    assert_nil task.reload.devops_built_by, "guards the setup: the first claim named no soul"
+
+    Current.task_event_actor = "carl"
+    task.update!(metadata: task.metadata.deep_merge("devops" => {
+      "claimed_session" => "sess-reclaim", "claim_nonce" => "n1",
+      "claim_expires_at" => 10.minutes.from_now.iso8601
+    }))
+
+    assert_equal "carl", task.reload.devops_built_by,
+      "a re-claim while already building stamps the builder"
+  ensure
+    Current.reset
+  end
+
+  test "a soul persona backstops the stamp when no actor or assignee resolves" do
+    # A session ACTING AS a soul (devops.persona) already paints that soul's face
+    # on the card. The builder is then known, so the stamp records it rather than
+    # leaving the exclusion blind. A persona only SURVIVES on the record when it
+    # names a real Agent (sync_persona_identity drops a typo), so a stored persona
+    # is always a real soul.
+    task = Task.create!(title: "persona builder stamp",
+                        metadata: { "devops" => { "shape" => "backend", "persona" => "alex" } })
+    assert_equal "alex", task.devops["persona"], "guards the setup: the persona took"
+    task.build!
+
+    assert_equal "alex", task.reload.devops_built_by,
+      "the persona the card already shows is recorded as the builder"
+  end
+
+  test "a non-claim save while building never stamps a builder" do
+    # The guard against over-stamping: the invariant fires on the CLAIM, not on
+    # every save. A note/checks write that happens to carry a soul actor (a
+    # commenter, a blocker) must not be recorded as the builder.
+    task = tasks(:new_task)
+    task.build!
+    assert_nil task.reload.devops_built_by
+
+    Current.task_event_actor = "shannon"
+    task.update!(metadata: task.metadata.deep_merge("devops" => { "checks_run" => ["[unit] noop"] }))
+
+    assert_nil task.reload.devops_built_by,
+      "a non-claim save does not make its actor the builder"
+  ensure
+    Current.reset
+  end
+
+  test "a block that lands on building never stamps the blocker as the builder" do
+    # block! lands the task on `building` and carries the BLOCKER as the actor.
+    # The blocker is not the builder — and the invariant must not undo the
+    # exemption the transition path already had.
+    task = tasks(:new_task)
+    task.update!(stage: "submitted")
+    Current.task_event_actor = "avi"
+    task.block!(by: "avi", kind: "rework")
+
+    assert_equal "building", task.reload.stage
+    assert_nil task.reload.devops_built_by, "the blocker is never recorded as the builder"
+  ensure
+    Current.reset
+  end
+
   # --- Workflow 2: Deploy transitions ---
 
   test "reviewed task can be assembled" do

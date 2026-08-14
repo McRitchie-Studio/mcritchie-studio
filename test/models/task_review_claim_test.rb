@@ -28,6 +28,40 @@ class TaskReviewClaimTest < ActiveSupport::TestCase
     Task.create!(title: "Review Me Please", slug: slug, stage: "submitted")
   end
 
+  # --- the second line: a soul never claims the review of their own build ---
+  # (builder-stamp-misses-reviewer-guard). A guard at SELECTION time only helps if
+  # selection is the path taken; the claim is the act EVERY review path performs.
+
+  test "the builder is refused the review claim on their own task" do
+    task = submitted_task
+    task.update!(metadata: task.metadata.deep_merge("devops" => { "built_by" => "carl" }))
+
+    out = acquire(**A, reviewer: "carl")
+
+    refute out.acquired, "a soul never reviews their own work"
+    assert_equal :self_review, out.disposition
+    assert_nil out.claim.claimed_session, "the refusal takes no lease"
+  end
+
+  test "a different soul still claims the review of a built task" do
+    task = submitted_task
+    task.update!(metadata: task.metadata.deep_merge("devops" => { "built_by" => "carl" }))
+
+    out = acquire(**A, reviewer: "jasper")
+    assert out.acquired, "the guard fires on the builder only, never on the lane"
+    assert_equal "jasper", out.claim.holder_agent
+  end
+
+  test "an unnamed reviewer still claims a built task (the guard needs both facts)" do
+    # Deliberate: many review paths carry no reviewer slug. The claim guard is a
+    # BELT on a known conflict, not the primary gate — refusing every unnamed
+    # claim would wedge the review lane. The fail-closed gate is reviewer-select.
+    task = submitted_task
+    task.update!(metadata: task.metadata.deep_merge("devops" => { "built_by" => "carl" }))
+
+    assert acquire(**A).acquired, "an unnamed reviewer is not a known self-review"
+  end
+
   test "a free task is claimed for review by the first instance" do
     out = acquire(**A, label: "Gastly")
     assert out.acquired

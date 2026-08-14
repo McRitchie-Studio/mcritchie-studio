@@ -169,6 +169,52 @@ module Api
         assert @task.requires_release_conductor?
       end
 
+      # --- the builder stamp rides the real API path (builder-stamp-misses-reviewer-guard) ---
+      #
+      # The route that has to carry it is hostile to it: merged_metadata_with_devops
+      # does `base["devops"] = normalized`, a WHOLESALE replace, so anything not in
+      # the payload is dropped. The stamp is therefore a before_save invariant, and
+      # these drive the exact request `bin/task move <slug> building --actor <soul>`
+      # sends — the one that silently no-op'd at exit 0 and sent two tasks to review
+      # with no builder on record.
+
+      test "[integration] a re-claim PATCH on an already-building task stamps built_by" do
+        @task.update!(stage: "building")
+        assert_nil @task.reload.devops_built_by, "guards the setup: no builder yet"
+
+        patch api_v1_task_path(@task.slug),
+              params: {
+                stage: "building", # NOT a stage change — this is the no-op case
+                event: { source: "cli", actor: "carl" },
+                devops: { claimed_session: "sess-x", claim_nonce: "inst-x",
+                          claim_expires_at: 10.minutes.from_now.iso8601 }
+              },
+              headers: @headers, as: :json
+
+        assert_response :success
+        assert_equal "carl", @task.reload.devops_built_by,
+          "the re-claim stamps the builder even with no stage transition"
+      end
+
+      test "[integration] a later wholesale devops PATCH cannot drop built_by" do
+        @task.update!(stage: "building")
+        patch api_v1_task_path(@task.slug),
+              params: { stage: "building", event: { source: "cli", actor: "carl" },
+                        devops: { claimed_session: "sess-x", claim_nonce: "inst-x",
+                                  claim_expires_at: 10.minutes.from_now.iso8601 } },
+              headers: @headers, as: :json
+        assert_equal "carl", @task.reload.devops_built_by
+
+        # A partial client PATCH that never mentions built_by — the shape that
+        # wipes any devops key not defended by a before_save.
+        patch api_v1_task_path(@task.slug),
+              params: { devops: { kind: "bug" } }, headers: @headers, as: :json
+
+        assert_response :success
+        assert_equal "carl", @task.reload.devops_built_by,
+          "the builder survives the controller's wholesale devops replace"
+      end
+
       # --- Column-backed names are not devops metadata (release-slug-two-universes) ---
       #
       # The bug this closes: `release_slug` was BOTH a column and a devops key, and
