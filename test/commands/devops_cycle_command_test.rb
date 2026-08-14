@@ -20,7 +20,7 @@ class DevopsCycleCommandTest < ActiveSupport::TestCase
     assert_includes out, "Reviewed (1)"
     assert_includes out, "Assembled (1)"
     assert_includes out, "Ship sidebar recovery (task-pr123)"
-    assert_includes out, "https://www.mcritchie.studio/tasks/task-pr123"
+    assert_includes out, "#{FIXTURE_BOARD}/tasks/task-pr123"
     assert_includes out, "qa-intake: avi-ready McRitchie-Studio/mcritchie-studio#123"
     assert_includes out, "latest qa_feedback: Needs one more navbar regression test before merge."
   end
@@ -364,9 +364,20 @@ class DevopsCycleCommandTest < ActiveSupport::TestCase
 
   private
 
+  # The board this suite renders links against. PINNED, and the rendering assertion
+  # below names THIS constant rather than a host.
+  #
+  # It used to be unpinned, so bin/devops-cycle resolved its TASK_BOARD_URL default
+  # — https://www.mcritchie.studio — and the assertion asserted PRODUCTION by name.
+  # Nothing reached the network (every call here passes --offline-fixture), but the
+  # test was pinned to the live default: it would fail the day that default changed,
+  # and it stops any containment floor from pinning the board without a false red.
+  # A test that names production is a test that must be edited to seal production.
+  FIXTURE_BOARD = "https://board.test"
+
   def devops_cycle(*args)
     Open3.capture3(
-      SessionEnv.neutralized,
+      OutboundSeams.env("TASK_BOARD_URL" => FIXTURE_BOARD),
       RbConfig.ruby,
       @script,
       "--offline-fixture",

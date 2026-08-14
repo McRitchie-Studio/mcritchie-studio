@@ -258,6 +258,65 @@ absent from a spawned child. Add a key to **either** list alone and the suite go
 red — so add it to both. Each side's nil-means-unset semantics is covered by its
 own test (`SessionEnvTest`, `Release::GateEnvTest`).
 
+## A Test Whose Child Can Reach The World Must Be Sealed Too
+
+**The rule.** Nulling the session stops a child resolving the operator's
+*identity*. It does nothing about the child's *reach*. Any test that spawns a
+`bin/` command also builds its env through the outbound floor
+(`test/support/outbound_seams.rb`), in the harness's **shared** spawn helper:
+
+```ruby
+require_relative "../support/outbound_seams"
+
+def command_env(extra = {})           # ONE helper, every spawn in the file
+  OutboundSeams.env({ "PROJECTS_DIR" => @projects_dir }.merge(extra))
+end
+```
+
+`OutboundSeams.env` is `SessionEnv.neutralized` plus the floor: the three board
+URLs at an unroutable loopback port, a recording refusal first on `PATH` for
+`gh` / `op` / `heroku`, the named binary seams (`CI_STATUS_GH_BIN`,
+`GH_AUTH_TOKEN_BIN`), and `GIT_SSH_COMMAND` / `GIT_ASKPASS` for git's two reach
+paths. Your overrides merge **last**, so a test that plants its own fake or
+points at a stub server it owns still wins.
+
+**Why.** `bin/task` resolves `ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")`
+— **production is the default** — so an unpinned child authenticates against and
+**writes to the live board**. And a leaked `gh` call does not fail quietly: an
+auth-shaped refusal arms `GhAuthRetry.mint` → `bin/gh-token` → `op read` against
+live 1Password → a POST that mints a **real App installation token**. Measured
+2026-08-14: a plain `bin/rails test` could do both. Neither is a test failure —
+**both are silent successes**, which is exactly why they survived review.
+
+**The floor is armed process-wide, not opt-in.** Requiring
+`test/support/session_env.rb` (which every spawning test already does) pins
+`TASK_API_BASE`, `ATOMIC_CAPTURE_URL`, `TASK_BOARD_URL` and `GH_AUTH_TOKEN_BIN`
+for the test process, and every child inherits them. Adoption file-by-file would
+leave the floor missing in precisely the files nobody audited. Note the operator
+is a plain assignment, **not `||=`**: an agent shell exports
+`ATOMIC_CAPTURE_URL=https://mcritchie.studio`, so deferring to the ambient value
+would preserve production and arm nothing. Opt out of a deliberate live run with
+`OUTBOUND_SEAMS=off`.
+
+**Prove every pin with a positive receipt.** A pin nobody exercised is advice: it
+reads as containment, it is never on the path, and the leak continues underneath
+it. So each sealed stub **records** what it refused, and the harness asserts the
+receipt — drive the shape that reaches for production, then assert the sink or the
+stub *received* the call:
+
+```ruby
+OutboundSeams.reset!
+agent_worktree!("bind-task", "mcritchie-studio", @task, "seam-proof-task")
+refute_empty OutboundSeams.calls_to("task-cli")   # the seam IS on the path
+```
+
+The reference implementations are `OutboundSeamsTest`
+(`test/lib/outbound_seams_test.rb`), the harness self-tests in
+`test/commands/agent_worktree_test.rb` and `test/lib/dor_check_test.rb`, and the
+loopback-sink pattern in `test/lib/dor_check_browser_evidence_test.rb`. **Never
+assert the absence of a symptom instead** — every leak this floor closed was
+green before and after.
+
 **Pin a drift guard against the live constant, never a literal copy of the list.**
 A literal only pins the side it is written on, so the *other* side can grow a key
 while every check stays green — which is exactly the leak these helpers exist to

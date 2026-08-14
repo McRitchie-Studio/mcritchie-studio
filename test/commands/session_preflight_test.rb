@@ -578,6 +578,40 @@ class SessionPreflightTest < Minitest::Test
     assert_equal "Live board feedback should be visible.", report.dig("latest_feedback", "description")
   end
 
+  # THE HARNESS SELF-TEST — the board fallback, proven pinned.
+  #
+  # A fixture with NO latest_activity is the shape that FIRES the fallback, and the
+  # fallback is a direct Net::HTTP call to TASK_API_BASE, not a call through
+  # SESSION_PREFLIGHT_TASK_BIN. Before the floor, exactly two tests in this file
+  # pinned that base; every other one avoided the call only because its fixture
+  # happened to carry an activity with a description. Containment by fixture shape
+  # is one edit from gone, and the edit looks harmless.
+  #
+  # The receipt is POSITIVE: the run must report the fallback FAILING against the
+  # pinned loopback host. "No warning" would be the wrong assertion — that is also
+  # what a successful call to PRODUCTION looks like.
+  #
+  # AGENT_API_SECRET is supplied because the fallback returns early without one, and
+  # CI has none (no .env, no 1Password). Without it this would pass for a reason
+  # that has nothing to do with the pin. It can only ever be offered to loopback.
+  def test_the_board_fallback_is_pinned_at_the_floor_not_production
+    write_fake_task_cli
+
+    out, err, status = run_preflight("add-session-preflight", "--no-gh", "--no-fetch", "--json",
+                                     env: { "AGENT_API_SECRET" => "pin-proof-not-a-real-secret" })
+    assert status.success?, "#{out}\n#{err}"
+
+    warning = JSON.parse(out).fetch("warnings").grep(/latest task activity fallback failed/).first
+    refute_nil warning,
+               "the activities fallback did not run, so this proves nothing about the pin. It " \
+               "fires only when the record carries no latest_activity with a description — check " \
+               "the fixture still has that shape."
+    assert_includes warning, "127.0.0.1",
+                    "the fallback reached #{warning.inspect} instead of the pinned loopback base. " \
+                    "bin/session-preflight defaults TASK_API_BASE to https://mcritchie.studio, so " \
+                    "anything but 127.0.0.1 here is a live read of the production board."
+  end
+
   def test_live_task_show_falls_back_to_activities_api_for_latest_feedback
     write_fake_task_cli
     activity = {
@@ -638,12 +672,34 @@ class SessionPreflightTest < Minitest::Test
     # repo (the hub), which for a test would be the REAL board CLI and the REAL
     # shapes policy. The zero-seam anchoring itself is proven separately in
     # test_hub_helpers_resolve_from_script_root_not_inspected_root.
+    #
+    # THE TWO SEAMS ABOVE ARE NOT THE WHOLE REACH, and believing they were is what
+    # left this file seamed BY CONVENTION rather than by helper. Two things escaped
+    # them:
+    #
+    #   * THE BOARD FALLBACK. When a task record carries no latest_activity with a
+    #     description, bin/session-preflight calls the tasks API directly over
+    #     Net::HTTP (fetch_latest_task_activity), NOT through
+    #     SESSION_PREFLIGHT_TASK_BIN — and TASK_API_BASE defaults to
+    #     https://mcritchie.studio. Exactly two tests here pinned TASK_API_BASE;
+    #     every other test dodges the call only by FIXTURE SHAPE, because the
+    #     default fixture happens to supply an activity with a description. One
+    #     fixture edit re-opens it. That is not containment, that is luck with good
+    #     manners.
+    #   * gh AND git. Each gh-touching test plants its own fake on PATH or passes
+    #     --no-gh, and most (not all) pass --no-fetch. Same shape: correct in every
+    #     test that remembered.
+    #
+    # So the floor (test/support/outbound_seams.rb) is applied here, once, for
+    # every spawn: an unroutable board, a sealed gh/op/heroku on PATH, and a
+    # recording refusal for git's ssh and credential paths. `env` still merges LAST,
+    # so the tests that plant their own fake gh keep winning.
     seams = {
       "SESSION_PREFLIGHT_TASK_BIN" => File.join(@repo, "bin", "task"),
       "SESSION_PREFLIGHT_SHAPES_PATH" => File.join(@repo, "config", "feature_shapes.yml")
     }
     Open3.capture3(
-      SessionEnv.neutralized(seams.merge(env)),
+      OutboundSeams.env(seams.merge(env)),
       RbConfig.ruby, SCRIPT, "--root", @repo, *args,
       chdir: @repo
     )

@@ -17,6 +17,7 @@ require_relative "../../bin/lib/full_suite_gate"
 require_relative "../../bin/lib/ci_test_command"
 require_relative "../../bin/lib/system_test_browser"
 require_relative "../support/session_env"
+require_relative "../support/outbound_seams"
 
 class FullSuiteCheckTest < Minitest::Test
   BIN = File.expand_path("../../bin/full-suite-check", __dir__)
@@ -45,7 +46,7 @@ class FullSuiteCheckTest < Minitest::Test
   # file had THREE spawn helpers; the third was found only because the first two were
   # fixed and four tests stayed red.)
   def child_env(overrides = {})
-    SessionEnv.neutralized(NO_AMBIENT_DB.merge(overrides))
+    OutboundSeams.env(NO_AMBIENT_DB.merge(overrides))
   end
 
   def test_child_env_never_hands_the_child_our_database
