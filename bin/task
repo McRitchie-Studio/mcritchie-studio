@@ -40,8 +40,14 @@
 #   ( --slug sets a readable, immutable Task.slug → /tasks/<slug>; it also seeds
 #     worktree_slug + branch (feat/<slug>). Omit it for an opaque task-<hex>. )
 #                   [--repo R ...] [--risk R ...] [--accept "..." ...] [--test "..." ...] \
-#                   [--checks "..." ...] [--branch B] [--pr-url U] [--local-url U] [--approval waiting|approved|changes_requested|none] \
+#                   [--checks "..." ...] [--branch B] [--pr-url U] [--pr-url-for repo=U ...] [--local-url U] \
+#                   [--approval waiting|approved|changes_requested|none] \
 #                   [--po-size S] [--dev-size S] [--pm-size S] [--post-deploy-cmd "rake foo:bar"] [--no-claim]
+#   ( --pr-url-for <repo>=<url> records the PR for ONE repo, repeatable, merging
+#     per repo. A task naming SEVERAL repos needs one per repo: the sweep refuses a
+#     multi-repo task whose PR record is incomplete, because the release lane can
+#     only promote repos it has a PR for — and used to stamp the rest shipped
+#     anyway. --pr-url stays the primary and is folded in automatically. )
 #   ( --shape feeds bin/dor-check: one of the keys in config/feature_shapes.yml )
 #   ( --no-claim files the task WITHOUT repointing this session's active-feature
 #     marker at it — filing a task is not building it. Use it when a conductor /
@@ -482,6 +488,21 @@ SCALAR_FLAGS = {
   "--persona" => "persona"
 }.freeze
 LIST_FLAGS = { "--repo" => "repositories", "--risk" => "risk_tags", "--accept" => "acceptance", "--test" => "test_plan", "--checks" => "checks_run" }.freeze
+# REPEATABLE repo-keyed MAP flags: `--pr-url-for <repo>=<url>`, one per repo.
+#
+# `--pr-url` holds ONE url, and the release lane parses that url for the repo it
+# plans against — so a task naming two repos had exactly one place to record a PR,
+# and the repo it named won. On 2026-08-13 `land-rails-security-patch` named
+# [mcritchie-studio, turf-monster] with the hub's PR url: turf's PR #305 had
+# NOWHERE TO LIVE, turf was never promoted or deployed, and the task was still
+# stamped shipped + merged:"main" while turf production ran the unpatched code.
+# The sweep now REFUSES a multi-repo task whose PR record is incomplete
+# (Release::SweepPlan.repo_coverage_gap), and this flag is how you complete it.
+#
+# MERGES per repo (read-merge-write, like every other `update` flag): recording
+# turf's PR never disturbs the hub's. `--pr-url` stays the primary and is folded
+# into the map automatically by Task#release_pr_urls — you do not repeat it here.
+MAP_FLAGS = { "--pr-url-for" => "pr_urls" }.freeze
 NOTE_FLAGS = {
   "--handoff" => "handoff",
   "--qa-feedback" => "qa_feedback",
@@ -511,7 +532,7 @@ BOOL_FLAGS = {
 }.freeze
 # Everything parse_flags (list/create/update) understands — the dictionary an
 # unknown flag is rejected against (and suggestion-matched, --pr → --pr-url).
-PARSE_FLAG_NAMES = (SCALAR_FLAGS.keys + LIST_FLAGS.keys + SIZE_FLAGS.keys + TOP_FLAGS + BOOL_FLAGS.keys).freeze
+PARSE_FLAG_NAMES = (SCALAR_FLAGS.keys + LIST_FLAGS.keys + MAP_FLAGS.keys + SIZE_FLAGS.keys + TOP_FLAGS + BOOL_FLAGS.keys).freeze
 HELP_FLAGS = %w[--help -h].freeze
 # Two-workflow status model. Stages move via PATCH stage (no named-transition
 # endpoints) so the CLI, the board drag-drop, and the API share one path.
@@ -689,6 +710,10 @@ def parse_flags(argv, context: nil)
   positionals = []
   scalars = {}
   lists = Hash.new { |h, k| h[k] = [] }
+  # Repo-keyed maps (MAP_FLAGS) ride in `scalars` so the [positionals, scalars,
+  # lists, top] contract every caller destructures stays exactly four wide; the
+  # value is a Hash rather than a String, which build_devops merges per key.
+  maps = scalars
   top = {}
   i = 0
   while i < argv.length
@@ -703,6 +728,17 @@ def parse_flags(argv, context: nil)
       scalars[key] = value; i += 2
     elsif LIST_FLAGS.key?(arg)
       lists[LIST_FLAGS[arg]] << (argv[i + 1] || die!("#{arg} needs a value")); i += 2
+    elsif MAP_FLAGS.key?(arg)
+      # `<repo>=<url>`. Split on the FIRST `=` only — the url carries none, but a
+      # query string could. A malformed pair dies here rather than writing half a
+      # record: this map is what the sweep's multi-repo refusal is satisfied by, so
+      # a silently-dropped entry would re-open the exact hole it closes.
+      pair = argv[i + 1] || die!("#{arg} needs a value (<repo>=<pr-url>)")
+      repo, url = pair.split("=", 2)
+      repo = repo.to_s.strip
+      url = url.to_s.strip
+      die!("#{arg} expects <repo>=<pr-url>, got #{pair.inspect}") if repo.empty? || url.empty?
+      (maps[MAP_FLAGS[arg]] ||= {})[repo] = url; i += 2
     elsif SIZE_FLAGS.key?(arg)
       value = argv[i + 1] || die!("#{arg} needs a value")
       validate_size!(arg, value)
@@ -729,7 +765,12 @@ end
 def build_devops(base, scalars, lists)
   base = (base || {})
   devops = base.dup
-  scalars.each { |k, v| devops[k] = v }
+  scalars.each do |k, v|
+    # A MAP flag MERGES into the prior map (per-repo read-merge-write): recording
+    # turf's PR must not wipe the hub's, or completing a task's PR record would be
+    # a one-repo-at-a-time race the operator can lose.
+    devops[k] = v.is_a?(Hash) ? (base[k].is_a?(Hash) ? base[k].merge(v) : v) : v
+  end
   lists.each { |k, v| devops[k] = v unless v.empty? }
   # checks_run is TWO namespaces in one list. The author owns the tier tags
   # ("[unit] ...") and --checks REPLACES those, as documented. The cert writers
