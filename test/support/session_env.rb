@@ -59,7 +59,18 @@
 # They are kept in lockstep MECHANICALLY, not on trust: SessionEnvTest
 # (test/lib/session_env_test.rb) requires Release::GateEnv and asserts the two lists
 # are EQUAL, so growing either one alone fails the suite.
+# SECOND SIBLING, same reasoning one step further out: requiring this file also
+# arms the OUTBOUND FLOOR (test/support/outbound_seams.rb), which pins the two
+# board URLs and the GitHub token broker for this process so every child inherits
+# them. The session scrub stops a child resolving the operator's SESSION; the floor
+# stops it reaching the operator's WORLD — bin/task defaults TASK_API_BASE to
+# https://mcritchie.studio, so an unpinned child WRITES TO THE PRODUCTION BOARD,
+# and a leaked `gh` refusal mints a real credential through 1Password. Both were
+# measured, both were silent successes rather than failures, and both lived in
+# files whose authors believed them sealed. It rides here for the same reason the
+# sandbox does: this is the file they all already load.
 require_relative "task_usage_sandbox"
+require_relative "outbound_seams"
 
 module SessionEnv
   # The agent-session identity vars, exactly as Release::GateEnv::SESSION_KEYS names

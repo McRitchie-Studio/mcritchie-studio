@@ -32,6 +32,7 @@ require "json"
 require "tmpdir"
 require "fileutils"
 require_relative "../support/session_env"
+require_relative "../support/outbound_seams"
 
 load File.expand_path("../../bin/lib/full_suite_gate.rb", __dir__)
 
@@ -125,7 +126,7 @@ class DorCheckRootGuardTest < Minitest::Test
       path = File.join(d, "task.json")
       err = File.join(d, "stderr.txt")
       File.write(path, JSON.generate(task))
-      env = SessionEnv.neutralized(
+      env = OutboundSeams.env(
         "DOR_CHECK_DIFF_ROOT" => nil,        # implicit root: the whole point
         "DOR_CHECK_SUITE_EVIDENCE" => nil,   # real git fingerprint path
         "DOR_CHECK_CHANGED_FILES" => nil,
@@ -410,7 +411,7 @@ class DorCheckRootGuardTest < Minitest::Test
       Dir.mktmpdir do |d|
         path = File.join(d, "task.json")
         File.write(path, JSON.generate(task_json(cert_fp)))
-        env = SessionEnv.neutralized(
+        env = OutboundSeams.env(
           "DOR_CHECK_DIFF_ROOT" => tree, # declared: grade THIS tree
           "DOR_CHECK_SUITE_EVIDENCE" => nil, "DOR_CHECK_CHANGED_FILES" => nil,
           "DOR_CHECK_PR_FILES" => "app/services/widget.rb",

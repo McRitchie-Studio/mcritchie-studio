@@ -1429,7 +1429,7 @@ def record_mascot(record_slug)
   slug = compact_value(record_slug)
   return nil unless slug
 
-  mascot = `#{__dir__}/task field #{slug.shellescape} mascot 2>/dev/null`.to_s.strip
+  mascot = `#{task_cli_path.shellescape} field #{slug.shellescape} mascot 2>/dev/null`.to_s.strip
   mascot.empty? ? nil : mascot
 end
 
@@ -1492,7 +1492,7 @@ def record_mascot_field(record_slug, field)
   slug = compact_value(record_slug)
   return nil unless slug
 
-  value = `#{__dir__}/task field #{slug.shellescape} #{field.shellescape} 2>/dev/null`.to_s.strip
+  value = `#{task_cli_path.shellescape} field #{slug.shellescape} #{field.shellescape} 2>/dev/null`.to_s.strip
   value.empty? ? nil : value
 end
 
@@ -1658,9 +1658,9 @@ def run_bind_task(app, task, reference)
   # bin/task field reader hits the board API; any failure (offline / auth / no
   # mascot) just leaves it unset, so binding never depends on it.
   if record_slug =~ /\A[\w.-]+\z/
-    mascot = `#{__dir__}/task field #{record_slug} mascot 2>/dev/null`.to_s.strip
+    mascot = `#{task_cli_path.shellescape} field #{record_slug} mascot 2>/dev/null`.to_s.strip
     values["TASK_MASCOT"] = mascot unless mascot.empty?
-    shiny = `#{__dir__}/task field #{record_slug} mascot_shiny 2>/dev/null`.to_s.strip
+    shiny = `#{task_cli_path.shellescape} field #{record_slug} mascot_shiny 2>/dev/null`.to_s.strip
     case shiny_state(shiny)
     when true
       values["TASK_MASCOT_SHINY"] = "true"
@@ -3147,10 +3147,28 @@ def pr_url_from_output(output)
   output.to_s[%r{https://github\.com/\S+/pull/\d+}]
 end
 
-# The task CLI the handoff board writes go through. A seam so tests can point
-# the stamp at a fake executable without hitting the board.
+# The task CLI every HUB-side board call in this script goes through — the pr_url
+# stamp below, and the best-effort mascot reads (record_mascot,
+# record_mascot_field, run_bind_task).
+#
+# AGENT_WORKTREE_TASK_BIN IS THE SEAM, and it had to become a real one: this
+# comment used to promise "a seam so tests can point the stamp at a fake
+# executable" while the body hardcoded `File.join(__dir__, "task")` and the mascot
+# readers each spelled that path again in backticks. There was nothing to point.
+# The cost was not theoretical — bin/task defaults TASK_API_BASE to
+# https://mcritchie.studio, so every one of those calls from a test child
+# authenticated against the PRODUCTION board, silently (each read ends
+# `2>/dev/null`). test/commands/agent_worktree_test.rb spawns this script ~11 ways
+# and pinned neither the binary nor the base URL.
+#
+# NOT the same lookup as fetch_task_record, deliberately. That one reads the
+# INSPECTED repo's own bin/task (falling back to the hub's), because a sweep asks
+# each desk's checkout about its task; this is the HUB's CLI speaking for the
+# script itself. Sealing them together would break the planted-fake tests that
+# exercise the inspected-repo path.
 def task_cli_path
-  File.join(__dir__, "task")
+  override = ENV["AGENT_WORKTREE_TASK_BIN"].to_s.strip
+  override.empty? ? File.join(__dir__, "task") : override
 end
 
 # Best-effort devops.pr_url stamp on the bound task — the same `bin/task`

@@ -638,12 +638,34 @@ class SessionPreflightTest < Minitest::Test
     # repo (the hub), which for a test would be the REAL board CLI and the REAL
     # shapes policy. The zero-seam anchoring itself is proven separately in
     # test_hub_helpers_resolve_from_script_root_not_inspected_root.
+    #
+    # THE TWO SEAMS ABOVE ARE NOT THE WHOLE REACH, and believing they were is what
+    # left this file seamed BY CONVENTION rather than by helper. Two things escaped
+    # them:
+    #
+    #   * THE BOARD FALLBACK. When a task record carries no latest_activity with a
+    #     description, bin/session-preflight calls the tasks API directly over
+    #     Net::HTTP (fetch_latest_task_activity), NOT through
+    #     SESSION_PREFLIGHT_TASK_BIN — and TASK_API_BASE defaults to
+    #     https://mcritchie.studio. Exactly two tests here pinned TASK_API_BASE;
+    #     every other test dodges the call only by FIXTURE SHAPE, because the
+    #     default fixture happens to supply an activity with a description. One
+    #     fixture edit re-opens it. That is not containment, that is luck with good
+    #     manners.
+    #   * gh AND git. Each gh-touching test plants its own fake on PATH or passes
+    #     --no-gh, and most (not all) pass --no-fetch. Same shape: correct in every
+    #     test that remembered.
+    #
+    # So the floor (test/support/outbound_seams.rb) is applied here, once, for
+    # every spawn: an unroutable board, a sealed gh/op/heroku on PATH, and a
+    # recording refusal for git's ssh and credential paths. `env` still merges LAST,
+    # so the tests that plant their own fake gh keep winning.
     seams = {
       "SESSION_PREFLIGHT_TASK_BIN" => File.join(@repo, "bin", "task"),
       "SESSION_PREFLIGHT_SHAPES_PATH" => File.join(@repo, "config", "feature_shapes.yml")
     }
     Open3.capture3(
-      SessionEnv.neutralized(seams.merge(env)),
+      OutboundSeams.env(seams.merge(env)),
       RbConfig.ruby, SCRIPT, "--root", @repo, *args,
       chdir: @repo
     )

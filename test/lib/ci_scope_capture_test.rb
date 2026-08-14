@@ -20,6 +20,7 @@ require "fileutils"
 require "rbconfig"
 require "json"
 require_relative "../support/session_env"
+require_relative "../support/outbound_seams"
 
 class CiScopeCaptureTest < Minitest::Test
   BIN = File.expand_path("../../bin/ci-scope-capture", __dir__)
@@ -48,7 +49,7 @@ class CiScopeCaptureTest < Minitest::Test
     # and a shared log would accumulate and re-read the first call's lines.
     @log_seq = (@log_seq || 0) + 1
     log = File.join(dir, "emit-#{@log_seq}.log")
-    env = SessionEnv.neutralized(
+    env = OutboundSeams.env(
       "CI_SCOPE_CHECKS_JSON" => checks_json,
       "CI_SCOPE_HEAD_SHA" => head_sha,
       "CI_SCOPE_AGENT_ACTIVITY" => agent_activity,

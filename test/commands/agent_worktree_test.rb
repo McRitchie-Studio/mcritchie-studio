@@ -5,6 +5,7 @@ require "json"
 require "open3"
 require "rbconfig"
 require "securerandom"
+require "socket"
 require "tmpdir"
 require "uri"
 require "yaml"
@@ -293,10 +294,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
 
     out, err, status = agent_worktree(
       "finish", "mcritchie-studio", @task,
-      env: {
-        "AGENT_WORKTREE_TASK_JSON" => JSON.generate(task_json),
-        "GIT_SSH_COMMAND" => "/usr/bin/false"
-      }
+      env: { "AGENT_WORKTREE_TASK_JSON" => JSON.generate(task_json) }
     )
 
     assert status.success?, "#{out}\n#{err}"
@@ -1430,14 +1428,21 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     YAML
   end
 
-  # Env for run_remove tests: scratch registry + offline `git fetch origin`
-  # (GIT_SSH_COMMAND=/usr/bin/false makes the allow_fail fetch fail instantly with
-  # no network), plus any per-test overrides (merged-PR injection, fake-gh PATH).
+  # Env for run_remove tests: scratch registry, plus any per-test overrides
+  # (merged-PR injection, fake-gh PATH).
+  #
+  # GIT_SSH_COMMAND used to be pinned here, at "/usr/bin/false", and that pin is
+  # the reason this file's ssh containment was believed to be handled: it made the
+  # allow_fail `git fetch origin` fail instantly with no network — for the REMOVAL
+  # tests, and only for them. The `finish --push --pr` test three hundred lines up
+  # passed no env at all, against a fixture whose origin is a real
+  # git@github.com:McRitchie-Studio/... URL. So the pin now lives in the floor
+  # (OutboundSeams, via command_env), where it covers every spawn in the file, and
+  # what it points at is a RECORDING refusal rather than /usr/bin/false — same
+  # instant failure, but it leaves a receipt, so a test can prove the interception
+  # happened instead of inferring it from the absence of a hang.
   def removal_env(extra = {})
-    {
-      "AGENT_WORKTREE_REGISTRY" => File.join(@projects_dir, ".agents", "remove-registry.json"),
-      "GIT_SSH_COMMAND" => "/usr/bin/false"
-    }.merge(extra)
+    { "AGENT_WORKTREE_REGISTRY" => File.join(@projects_dir, ".agents", "remove-registry.json") }.merge(extra)
   end
 
   def write_fake_gh_unmerged
@@ -1562,9 +1567,11 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
   end
 
   # Force the ssh-form origin fetch to fail instantly offline (restore is then
-  # against the local origin/main ref), the same trick the removal tests use.
+  # against the local origin/main ref). command_env's floor already pins this for
+  # every spawn in the file; naming it at these call sites keeps the premise
+  # legible where the assertion depends on the fetch NOT succeeding.
   def offline_git
-    { "GIT_SSH_COMMAND" => "/usr/bin/false" }
+    { "GIT_SSH_COMMAND" => OutboundSeams.stub("ssh") }
   end
 
   def head_branch(dir)
@@ -1778,6 +1785,138 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     assert_path_exists registry_path, "a pinned snapshot must still write the registry"
   end
 
+  # ==== THE HARNESS SELF-TESTS ======================================================
+  #
+  # A pin nobody exercised is advice. Each test below drives the DANGEROUS shape —
+  # the one that reaches for production — and asserts a POSITIVE RECEIPT that the
+  # seam intercepted it. The absence of a symptom proves nothing here: every leak
+  # this file used to have was a silent SUCCESS, not a failure, so "the suite is
+  # green" was exactly the signal that hid it.
+  #
+  # If a future change routes one of these calls past its seam, the matching test
+  # fails and NAMES the break, instead of the suite quietly resuming production
+  # traffic.
+
+  SINK_HOST = "127.0.0.1"
+
+  # A fake secret, so the child gets FAR ENOUGH to open a socket. bin/task resolves
+  # AGENT_API_SECRET from ENV → 1Password → the repo .env and dies if all three
+  # miss; on CI all three DO miss, so without this the child would exit before the
+  # sink ever saw a connection and the receipt would refuse for the wrong reason.
+  # The value can only ever be offered to a localhost sink, because TASK_API_BASE
+  # is pinned in the same env hash.
+  PIN_PROOF_SECRET = "pin-proof-not-a-real-secret"
+
+  # Run the command with the board pinned at a sink this test owns; answer the HTTP
+  # request lines the sink received.
+  def sink_requests(*args, env: {})
+    server = TCPServer.new(SINK_HOST, 0)
+    base = "http://#{SINK_HOST}:#{server.addr[1]}"
+    received = []
+    accepter = Thread.new do
+      while (client = server.accept)
+        received << client.gets.to_s
+        client.write("HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n")
+        client.close
+      end
+    rescue IOError, Errno::EBADF
+      nil
+    end
+
+    agent_worktree(*args, env: { "TASK_API_BASE" => base, "ATOMIC_CAPTURE_URL" => base,
+                                "AGENT_API_SECRET" => PIN_PROOF_SECRET }.merge(env))
+
+    deadline = Time.now + 20
+    sleep 0.05 while received.empty? && Time.now < deadline
+    received
+  ensure
+    accepter&.kill
+    server&.close
+  end
+
+  # THE BOARD PIN, proven against the REAL bin/task — the binary that defaults to
+  # https://mcritchie.studio. The seam is deliberately pointed BACK at the real CLI
+  # here: pinning the binary is containment, but it is not proof that the BASE URL
+  # holds, and the base URL is the last line for every path that still reaches the
+  # genuine article (bin/agent-worktree's own fetch_task_record, a script added
+  # later, a test that overrides the binary seam).
+  test "[integration] the board pin intercepts the REAL bin/task this script shells" do
+    received = sink_requests("bind-task", "mcritchie-studio", @task, "pin-proof-task",
+                             env: { "AGENT_WORKTREE_TASK_BIN" => Rails.root.join("bin/task").to_s })
+
+    refute_empty received,
+                 "the board pin did NOT intercept: bin/agent-worktree shelled the real bin/task " \
+                 "and it made no request to the pinned TASK_API_BASE. Either it reached a " \
+                 "DIFFERENT host — production is bin/task's default — or it died before opening " \
+                 "a socket (a missing AGENT_API_SECRET does that; see PIN_PROOF_SECRET). This " \
+                 "suite's containment lives on this pin."
+    assert_match(%r{^(GET|POST|PATCH|PUT) }, received.first,
+                 "expected an HTTP request line at the sink, got #{received.first.inspect}")
+  end
+
+  # THE TASK-BINARY SEAM, proven on the path the script actually takes. Mutation
+  # check for this one: revert task_cli_path in bin/agent-worktree to
+  # File.join(__dir__, "task") and this goes red, because the recorded call
+  # disappears — the read went to the real CLI instead.
+  test "[integration] the task-binary seam is on the path bind-task actually takes" do
+    OutboundSeams.reset!
+
+    agent_worktree!("bind-task", "mcritchie-studio", @task, "seam-proof-task")
+
+    reads = OutboundSeams.calls_to("task-cli")
+    refute_empty reads,
+                 "bind-task made NO call through AGENT_WORKTREE_TASK_BIN. The seam is not on the " \
+                 "path: the mascot reads went to whatever `#{Rails.root.join("bin/task")}` is, " \
+                 "which authenticates against the production board by default."
+    assert(reads.any? { |line| line.include?("field seam-proof-task mascot") },
+           "expected the mascot field read through the seam, got #{reads.inspect}")
+  end
+
+  # THE SSH PIN. setup_repo gives the fixture a REAL origin
+  # (git@github.com:McRitchie-Studio/mcritchie-studio.git) so github_repo_slug can
+  # resolve, and run_finish fetches it before the blocker check this asserts on.
+  # That fetch used to leave the machine, because this call site passed no env at
+  # all while its siblings pinned GIT_SSH_COMMAND by hand.
+  test "[integration] the ssh pin intercepts the fixture's real github remote" do
+    OutboundSeams.reset!
+
+    out, err, status = agent_worktree("finish", "mcritchie-studio", @task, "--push", "--pr")
+
+    assert_not status.success?, "#{out}\n#{err}"
+    assert_includes "#{out}\n#{err}", "worktree is not bound to a production McRitchie Studio task"
+    attempts = OutboundSeams.calls_to("ssh")
+    refute_empty attempts,
+                 "`finish --push --pr` fetched origin and NOTHING intercepted it, so the fetch " \
+                 "used the machine's real ssh against #{"git@github.com:McRitchie-Studio/mcritchie-studio.git".inspect}. " \
+                 "GIT_SSH_COMMAND must be pinned by command_env, for every spawn, not per test."
+    assert(attempts.any? { |line| line.include?("github.com") },
+           "expected the intercepted ssh to name the fixture's remote host, got #{attempts.inspect}")
+  end
+
+  # THE gh SEAL. An unsealed gh here is worse than a stray read: the operator's
+  # keyring token is invalid, so gh refuses AUTH-shaped, which arms GhAuthRetry and
+  # mints a real App installation token through 1Password. The stub answers with an
+  # empty body precisely so that classifier cannot fire.
+  test "[integration] the sealed gh answers the merged-PR lookup, not the operator's gh" do
+    OutboundSeams.reset!
+
+    out, err, status = agent_worktree("remove", "mcritchie-studio", @task, "--force", "--yes",
+                                      env: removal_env)
+
+    combined = "#{out}\n#{err}"
+    assert_not status.success?, combined
+    assert_includes combined, "--force needs gh; not available",
+                    "the sealed gh refuses, so the merged-PR lookup must report UNAVAILABLE — " \
+                    "a different verdict here means something answered for it\n#{combined}"
+    refute_empty OutboundSeams.calls_to("gh"),
+                 "the merged-PR lookup ran `gh pr list` against the REAL github: nothing was " \
+                 "recorded by the sealed stub, so PATH resolved the operator's gh."
+    assert_empty OutboundSeams.calls_to("gh-token"),
+                 "a gh refusal armed the token mint. The seal answers with an EMPTY body for " \
+                 "exactly this reason — an auth-shaped refusal reaches 1Password and mints a " \
+                 "real production credential."
+  end
+
   # Content pre-seeded into the staged root's registry, so an unpinned write that
   # reached it is caught by CONTENT rather than by a timestamp.
   SENTINEL = "{\"sentinel\":\"must not be overwritten\"}\n"
@@ -1800,14 +1939,34 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     File.join(@hub_dir, "bin", "agent-worktree")
   end
 
-  # Child env for a spawned bin/ command: the sandbox pins, with the ambient
-  # agent-session vars unset (see test/support/session_env.rb).
+  # Child env for a spawned bin/ command: the sandbox pins, the ambient
+  # agent-session vars unset (test/support/session_env.rb), and the NETWORK FLOOR
+  # (test/support/outbound_seams.rb).
+  #
+  # THE FLOOR IS WHY THIS HELPER EXISTS RATHER THAN A HASH PER TEST. Every pin
+  # below was already here except the reach ones, and their absence was not a
+  # near miss: bin/agent-worktree shells the hub's bin/task on the mascot and
+  # bind paths, bin/task defaults TASK_API_BASE to https://mcritchie.studio, and
+  # the reads end `2>/dev/null` — so the ~11 spawn sites in this file
+  # authenticated against and read the PRODUCTION BOARD, silently, on every
+  # `bin/rails test`. The fixture repo also carries a real
+  # git@github.com:McRitchie-Studio/... origin (setup_repo), and the sibling
+  # removal tests pinned GIT_SSH_COMMAND while `finish --push --pr` did not.
+  #
+  # The file LOOKED sealed — several tests plant a fake bin/task in the staged hub
+  # (plant_task_bin_with_lapsed_claim and friends) — and that is the lesson worth
+  # keeping: those fakes seal the INSPECTED-repo read (fetch_task_record), which is
+  # a different resolution from the hub CLI this script speaks through. A seam
+  # spelled per test covers the tests that remember it. This one covers the file.
+  #
+  # OutboundSeams.env merges `extra` LAST, so a test that plants its own fake `gh`
+  # on PATH, or points AGENT_WORKTREE_TASK_BIN somewhere, still wins.
   def command_env(extra = {})
-    SessionEnv.neutralized({
+    OutboundSeams.env({
       "PROJECTS_DIR" => @projects_dir,
       "AGENT_REDIS_CAPACITY_FILE" => File.join(@projects_dir, ".agents", "redis-capacity.json"),
       "AGENT_WORKTREE_LOCK" => File.join(@projects_dir, ".agents", "agent-worktree.lock"),
-      "PATH" => ENV.fetch("PATH", "")
+      "AGENT_WORKTREE_TASK_BIN" => OutboundSeams.stub("task-cli")
     }.merge(extra))
   end
 

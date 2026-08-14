@@ -9,11 +9,36 @@ require "minitest/autorun"
 require "json"
 require "tmpdir"
 require "fileutils"
+require "socket"
 require_relative "../support/session_env"
+require_relative "../support/outbound_seams"
 require_relative "../../bin/lib/ci_status"
 
 class DorCheckTest < Minitest::Test
   BIN = File.expand_path("../../bin/dor-check", __dir__)
+
+  # THE CHILD ENV FOR EVERY SPAWN IN THIS FILE — the session scrub plus the
+  # network floor (test/support/outbound_seams.rb).
+  #
+  # WHAT THE FLOOR CLOSED, measured: this suite leaked 5 live `gh pr view` calls
+  # per run (CiStatus::VIEW_FIELDS, bin/lib/ci_status.rb) against fixture URLs that
+  # are nobody's PR — github.com/o/r/pull/1 and friends. The cost was never a wrong
+  # verdict: with a refusing shim all 265 runs still passed, because no test reads
+  # that outcome. THAT is why it stayed invisible for so long. The cost was that on
+  # this machine the operator's gh keyring token is invalid, so those refusals
+  # classify AUTH-shaped, which arms GhAuthRetry.mint → bin/gh-token → `op read`
+  # against live 1Password → a POST to api.github.com that mints a REAL App
+  # installation token. A plain `bin/rails test` minting production credentials is
+  # not a failure mode any assertion in this file could ever have caught.
+  #
+  # The sibling seams here — with_neutralized_pr_read, with_default_suite_evidence
+  # — are per-CONCERN defaults in this test's own process ENV, and they were the
+  # right shape for what they cover. The floor is the different thing: it seals the
+  # CHILD'S REACH, so a call site nobody thought about (a new gh read, a board
+  # write, an `op` shell-out) is contained before anyone notices it exists.
+  def dor_env(overrides = {})
+    OutboundSeams.env(overrides)
+  end
 
   # Runs dor-check against an in-memory devops payload, returns [output, exitcode].
   def check(devops, *args)
@@ -29,7 +54,7 @@ class DorCheckTest < Minitest::Test
       # corrupt the JSON parse. Discarding stderr keeps the verdict clean.
       with_default_suite_evidence do
         with_neutralized_pr_read do
-          out = IO.popen(SessionEnv.neutralized, "#{BIN} --file #{path} #{args.join(' ')} 2>/dev/null", &:read)
+          out = IO.popen(dor_env, "#{BIN} --file #{path} #{args.join(' ')} 2>/dev/null", &:read)
           [out, $?.exitstatus]
         end
       end
@@ -152,9 +177,95 @@ class DorCheckTest < Minitest::Test
   # override — the cwd-default path (the satellite fix). Contrast suite_fingerprint(dir),
   # which pins the root via the explicit override.
   def fingerprint_running_in(dir)
-    IO.popen(SessionEnv.neutralized("DOR_CHECK_DIFF_ROOT" => nil, "DOR_CHECK_SUITE_EVIDENCE" => nil,
-                                    "DOR_CHECK_CHANGED_FILES" => nil),
+    IO.popen(dor_env("DOR_CHECK_DIFF_ROOT" => nil, "DOR_CHECK_SUITE_EVIDENCE" => nil,
+                     "DOR_CHECK_CHANGED_FILES" => nil),
              [BIN, "--suite-fingerprint"], { chdir: dir, err: File::NULL }, &:read).to_s.strip
+  end
+
+  # ==== THE HARNESS SELF-TESTS ======================================================
+  #
+  # A pin nobody exercised is advice: it reads as containment, it is never on the
+  # path, and the leak continues underneath it. Both tests below drive the shape
+  # that REACHES for production and assert a positive receipt that the seam caught
+  # it. Neither leak they cover was ever a red test — the gh reads passed with a
+  # refusing shim and passed against live GitHub, identically — so an assertion
+  # about the VERDICT can never stand in for these.
+
+  SINK_HOST = "127.0.0.1"
+
+  # A fake secret so the child reaches a socket at all: bin/dor-check resolves
+  # AGENT_API_SECRET from ENV → 1Password → the repo .env and dies if all three
+  # miss, which is the CI shape. It can only ever be offered to a localhost sink,
+  # because TASK_API_BASE is pinned in the same hash.
+  PIN_PROOF_SECRET = "pin-proof-not-a-real-secret"
+
+  # THE gh SEAL, proven. A fixture pr_url with no DOR_CHECK_CI_STATUS token sends
+  # CiStatus down its real `gh pr view` path — the exact call that leaked 5 times a
+  # run. The receipt is that the SEALED stub answered it.
+  def test_integration_the_gh_seal_answers_the_ci_read
+    OutboundSeams.reset!
+
+    check("shape" => "backend", "repositories" => ["mcritchie-studio"], "risk_tags" => ["ci"],
+          "acceptance" => ["The gate reads CI from a sealed binary"],
+          "test_plan" => ["unit"], "post_deploy_cmd" => "none",
+          "pr_url" => "https://github.com/o/r/pull/1",
+          "checks_run" => ["[unit] bin/rails test test/lib/dor_check_test.rb"])
+
+    reads = OutboundSeams.calls_to("gh")
+    refute_empty reads,
+                 "dor-check's CI read reached the OPERATOR'S gh: nothing was recorded by the " \
+                 "sealed stub, so CI_STATUS_GH_BIN and the sealed PATH are both off the path " \
+                 "this child takes. That read goes to live github.com against a fixture URL " \
+                 "that is nobody's PR."
+    assert(reads.any? { |line| line.include?("pr view") },
+           "expected the intercepted `gh pr view`, got #{reads.inspect}")
+    assert_empty OutboundSeams.calls_to("gh-token"),
+                 "the refusal armed GhAuthRetry.mint — which shells `op read` against LIVE " \
+                 "1Password and POSTs api.github.com to mint a REAL App installation token. " \
+                 "The seal answers with an empty body precisely so the auth classifier cannot " \
+                 "fire; something is giving it auth-shaped output."
+  end
+
+  # THE BOARD PIN, proven. Driven WITHOUT --file, which is the shape that emits: a
+  # real merge-gate verdict shells bin/gate to open and close a durable GateRun,
+  # and bin/dor-check defaults TASK_API_BASE to https://mcritchie.studio. Every
+  # other test in this file passes --file, so the emit is gated off — meaning this
+  # suite's safety rests on a condition inside the CODE UNDER TEST. Delete that one
+  # condition and the file starts writing GateRuns to the live board with every
+  # assertion still green. So the containment is pinned on the PATH, here, and
+  # proven to intercept.
+  def test_integration_the_board_pin_intercepts
+    OutboundSeams.reset!
+    server = TCPServer.new(SINK_HOST, 0)
+    base = "http://#{SINK_HOST}:#{server.addr[1]}"
+    received = []
+    accepter = Thread.new do
+      while (client = server.accept)
+        received << client.gets.to_s
+        client.write("HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n")
+        client.close
+      end
+    rescue IOError, Errno::EBADF
+      nil
+    end
+
+    env = dor_env("TASK_API_BASE" => base, "ATOMIC_CAPTURE_URL" => base,
+                  "AGENT_API_SECRET" => PIN_PROOF_SECRET)
+    IO.popen(env, "#{BIN} some-slug-that-does-not-exist 2>/dev/null", &:read)
+
+    deadline = Time.now + 20
+    sleep 0.05 while received.empty? && Time.now < deadline
+
+    refute_empty received,
+                 "the board pin did NOT intercept: bin/dor-check made no request to the " \
+                 "TASK_API_BASE this harness pins. Either it reached a DIFFERENT host — " \
+                 "production is its default — or it died before opening a socket (that is what " \
+                 "a missing AGENT_API_SECRET does; see PIN_PROOF_SECRET)."
+    assert_match(%r{^(GET|POST|PATCH|PUT) }, received.first,
+                 "expected an HTTP request line at the sink, got #{received.first.inspect}")
+  ensure
+    accepter&.kill
+    server&.close
   end
 
   # ── [integration] the CODE root follows the agent's worktree (finding #2) ──
@@ -311,7 +422,7 @@ class DorCheckTest < Minitest::Test
   def resolved_base(dir, env = {})
     base = nil
     with_env({ "DOR_CHECK_DIFF_ROOT" => dir, "DOR_CHECK_DIFF_BASE" => nil, "DOR_CHECK_CHANGED_FILES" => nil }.merge(env)) do
-      base = IO.popen(SessionEnv.neutralized, "#{BIN} --diff-base 2>/dev/null", &:read).strip
+      base = IO.popen(dor_env, "#{BIN} --diff-base 2>/dev/null", &:read).strip
     end
     base
   end
@@ -1364,7 +1475,7 @@ class DorCheckTest < Minitest::Test
   def suite_fingerprint(dir)
     fp = nil
     with_env("DOR_CHECK_DIFF_ROOT" => dir, "DOR_CHECK_SUITE_EVIDENCE" => nil, "DOR_CHECK_CHANGED_FILES" => nil) do
-      fp = IO.popen(SessionEnv.neutralized, "#{BIN} --suite-fingerprint 2>/dev/null", &:read).strip
+      fp = IO.popen(dor_env, "#{BIN} --suite-fingerprint 2>/dev/null", &:read).strip
     end
     fp
   end
