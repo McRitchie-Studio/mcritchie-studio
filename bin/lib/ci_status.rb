@@ -513,6 +513,12 @@ module CiStatus
   #
   # A SHELL NO LONGER RUNS. These were backticks with `2>&1`; they are now argv-form
   # subprocesses, so a PR URL or API path can no longer reach a shell at all.
+  #
+  # AND THE SEAM IS SHARED, NOT COPIED. bin/dor-check's PR file-list read (the diff the
+  # merge gate reasons about) had its own `gh api ... err: File::NULL` call, so the
+  # SAME hourly expiry degraded it silently to the local git diff — the wrong artifact,
+  # graded with no signal that a substitution happened. It now calls gh_read_status
+  # below, which is why that variant exists.
 
   # The `gh` binary. CI_STATUS_GH_BIN is the TEST SEAM: it points the reads at a stub
   # so the stale-credential branch is reachable without a network, a real token, or a
@@ -529,15 +535,27 @@ module CiStatus
     @gh_token = nil
   end
 
-  def self.gh_read(*args)
+  # The authenticated read, WITH ITS OUTCOME: [body, ok].
+  #
+  # Every reader inside THIS file classifies the BODY (gh prints its JSON error body
+  # on stdout, so the payload itself says what went wrong) and never needs `ok` — but
+  # a caller OUTSIDE it can, and bin/dor-check's PR file list is the case that proves
+  # it. That read asks for `--jq '.[] | .filename'`, whose SUCCESSFUL output is a bare
+  # list of paths and whose FAILED output is empty: body alone cannot tell "the PR
+  # changed nothing" from "GitHub refused the token". Handing back the exit status is
+  # what lets that gate refuse instead of silently grading the local working tree.
+  def self.gh_read_status(*args)
     body, ok = gh_capture(args)
-    return body if ok || @gh_token || !GhAuthRetry.auth_failure?(body)
+    return [body, ok] if ok || @gh_token || !GhAuthRetry.auth_failure?(body)
 
     @gh_token = GhAuthRetry.mint
-    return body unless @gh_token
+    return [body, false] unless @gh_token
 
-    retried, = gh_capture(args)
-    retried
+    gh_capture(args)
+  end
+
+  def self.gh_read(*args)
+    gh_read_status(*args).first
   end
 
   # BOTH STREAMS, joined — the contract the old `2>&1` backticks established and that

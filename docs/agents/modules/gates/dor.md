@@ -225,13 +225,31 @@ reproduce it.
 
 `--json` carries the same facts machine-readably: `code_root` (the checkout the
 **diff** was read from) and `diff_source` (`pr` | `git` | `branch` | `injected` |
-`indeterminate`) plus `changed_files`, then `full_suite.fingerprint`,
+`pr_unreadable` | `indeterminate`) plus `changed_files`, then `full_suite.fingerprint`,
 `.fingerprint_root`, `.fingerprint_repo`, `.fingerprint_source` (`working-tree` |
 `branch-tree`), and `.recorded`. `code_root` is *not* the fingerprint's root under
 an override — that is precisely why the provenance travels with the fingerprint
 instead. **The checkable invariant is the PAIRING**: `diff_source: "git"` is a
 correct answer only when `code_root` is the task's own tree; the same pair read
 from anywhere else is the 08-08 false pass.
+
+**And a refused PR read is never a silent one.** Installation tokens live ~1h, so
+the `gh` call behind `diff_source: "pr"` can start failing mid-session. It used to
+fail invisibly — the gate fell back to the local git diff and went on judging a
+DIFFERENT artifact under a verdict that said "the PR". Now the read goes through
+`bin/lib/ci_status.rb`'s shared seam (`gh_read_status`: stderr preserved, one App-token
+mint-and-retry on an auth refusal), and a failure that survives that is classified and
+reported in a `pr_read` field (`state`: `unreadable` — GitHub refused the credential —
+or `unverified`; plus `cause` and `reason`). `pr_read` is absent whenever the read was
+fine, or there was no PR to read. What the gate then does is role-split, exactly like
+the CI verdict:
+
+| Role | On a credential-refused PR read |
+|------|----------------------------------|
+| `--gate-role review` | **Refuses.** `diff_source: "pr_unreadable"`, no files, and the error carries `CiStatus.unreadable_remedy`. This role's verdict is authoritative and it runs from a checkout that is *not* the task's tree, so a local stand-in here is the false pass with a fresh coat of paint. |
+| builder (submit-side) | **Degrades, loudly.** The local view is still graded — the builder stands in the task's own worktree and review re-reads them — but the verdict NAMES the refusal and carries the remedy as a suggestion. |
+
+The fix is one command: `eval "$(bin/gh-auth-refresh --export)"`, then re-run.
 
 `DOR_CHECK_DIFF_ROOT=<path>` bypasses the guard: that is the caller **declaring**
 a root (the CI/test seam), exactly as `FAST_CHECK_ROOT` / `FULL_SUITE_ROOT` do
