@@ -1,6 +1,9 @@
 require "test_helper"
+require_relative "../support/devops_key_spread"
 
 class TasksControllerTest < ActionDispatch::IntegrationTest
+  include DevopsKeySpread
+
   setup do
     @admin = users(:alex)
     @viewer = users(:viewer)
@@ -1415,6 +1418,77 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :unprocessable_entity
     assert_match(/wrong repo/, JSON.parse(response.body)["error"])
+  end
+
+  # === A board UI edit is a PARTIAL devops write ===
+  #
+  # The edit form renders a field for some devops keys and not others. That post
+  # used to be written over metadata.devops WHOLESALE, so every key the form
+  # omits — agent_context (often the only record of WHY a task exists), built_by,
+  # gem_bump, pr_urls, the mascot/session keys — was deleted by anyone editing an
+  # acceptance bullet in a browser. Silently, with a 200.
+  #
+  # Both tests below read the field set OFF THE RENDERED FORM rather than from a
+  # hand-written param list, and assert over Task::DEVOPS_KEYS rather than over
+  # today's spellings. That is deliberate: a test that added `pr_urls` to an
+  # expectation would pass while the next new key was still wiped.
+
+  # The devops field names the real edit form posts.
+  def rendered_devops_field_names(task)
+    get edit_task_path(task.slug)
+    assert_response :success
+    css_select("input[name], select[name], textarea[name]")
+      .filter_map { |node| node["name"][/\Atask\[devops\]\[([^\]]+)\]\z/, 1] }
+      .uniq
+  end
+
+  test "[component] the task edit form's devops fields are a storable subset of the model's keys" do
+    log_in_as(@admin)
+
+    names = rendered_devops_field_names(@new_task)
+
+    assert_includes names, "kind", "guard: the form really does render devops fields"
+    assert_empty names - Task::DEVOPS_KEYS,
+                 "the form renders a devops field normalize_devops_metadata does not store — that write reaches nothing"
+    assert_not_empty Task::DEVOPS_KEYS - names,
+                     "the form now covers every devops key, so the merge in " \
+                     "TasksController#merged_metadata_with_devops no longer has anything to protect — " \
+                     "read it before deleting anything"
+  end
+
+  test "[integration] a board UI edit leaves the devops keys its form omits intact" do
+    log_in_as(@admin)
+    @new_task.update!(metadata: { "devops" => devops_key_spread, "unrelated" => "kept" })
+    # Baseline = what the MODEL actually kept, not what the spread offered. A
+    # `designed` task legitimately carries no ClaimLease::CLAIM_KEYS (they live
+    # only on `building`), and asserting over the spread would fail on that
+    # invariant rather than on the behavior under test.
+    stored = @new_task.reload.devops
+    posted = rendered_devops_field_names(@new_task)
+    unposted = (Task::DEVOPS_KEYS & stored.keys) - posted
+
+    # Vacuity guards. The generic loop below is only meaningful if there really
+    # are stored keys the form never posts — and these four are the ones measured
+    # lost on the live board, so a fixture that stopped carrying them would make
+    # this test pass while saying nothing.
+    assert_not_empty unposted, "guard: the form must omit stored devops keys for this test to mean anything"
+    assert_empty %w[agent_context built_by gem_bump pr_urls] - unposted,
+                 "guard: the keys measured lost on the board must be in the covered set"
+    # The most destructive post a browser can make: every field the form offers,
+    # submitted empty. Anything that survives, survives because it was never
+    # posted — not because the value happened to be resent.
+    patch task_path(@new_task.slug), params: { task: { devops: posted.index_with("") } }
+    assert_redirected_to task_path(@new_task.slug)
+
+    devops = @new_task.reload.devops
+    unposted.each do |key|
+      assert_equal stored[key], devops[key],
+                   "devops.#{key} was destroyed by a board edit that renders no field for it"
+    end
+    posted.each do |key|
+      assert_not devops.key?(key), "devops.#{key} was posted blank, so the edit must clear it"
+    end
+    assert_equal "kept", @new_task.metadata["unrelated"], "the edit must not touch the rest of metadata"
   end
 
   # === Per-stage deploy-crew avatars (task-ui-stage-agents) ===

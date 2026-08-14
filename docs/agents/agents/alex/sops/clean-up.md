@@ -417,19 +417,36 @@ bin/agent-worktree cleanup --reclaim --yes   # full teardown + Redis band shrink
   desk for up to 94 minutes). Expect **finished desks to linger up to 1h29m** before
   the sweep will take them; that is the trade, and it is deliberate. Use
   `remove <app> <task-slug> --yes` when you need a specific one gone now.
+- **An OPEN, unmerged PR withholds the desk, and a live REVIEWER does too.** A branch
+  whose diff against the base is empty is git-eligible while its PR is still open —
+  litter to git, live work to the pipeline — and a reviewer works the builder's desk
+  without ever taking the build claim, mostly READING, so the desk stays quiet. Both
+  are now channels of the same gate (`gh pr list --state open`, and the board's
+  `review_in_progress`).
+- **READ THE `rationale:` LINE, not just `safe:`.** `safe: merged on origin/accepted
+  (clean)` is a git fact, and on 2026-08-14 it was true of all three load-bearing desks
+  a 29-candidate dry run offered up. Each candidate now prints what every channel asked
+  and answered; a channel that could not be asked says so (`GitHub unreachable`). That
+  line is the approval packet — if it shows a blind channel, fix that before approving
+  the batch.
 - **Trust the safety gate over the description.** If Mr. McRitchie says "three
   worktrees" and the dry run finds seventeen, surface the discrepancy — and believe
   the gate.
 - **`_gate` and `_ship` are infrastructure, not desks** — fixed-path workspaces for
-  the cert and the ship. They are safe to reclaim BETWEEN ships: `bin/release.rb`
-  re-creates them on demand with `git worktree add --detach`. Reclaiming them
-  **mid-ship** is now BLOCKED automatically — `bin/agent-worktree` withholds `_ship`/
-  `_gate` whenever a live `deployer` ReleaseConductorClaim exists (a ship is in
-  progress). This is the exclusion the retired shared `avi` shift used to provide (a
-  `bin/release ship` held `avi`, so `clean-up` — also `avi` — could not run against it);
-  ship now holds the per-release `deployer` claim instead, and the reclaim gate reads it.
-  So the gate stands you down (`withheld … a ship is live (deployer claim held)`) rather
-  than relying on you to remember — re-run once the ship completes.
+  the cert, the prepare and the ship. They are safe to reclaim BETWEEN releases:
+  `bin/release.rb` re-creates them on demand with `git worktree add --detach`.
+  Reclaiming them **mid-release** is now BLOCKED automatically — `bin/agent-worktree`
+  withholds `_ship`/`_gate` whenever a live `ReleaseConductorClaim` exists in **either**
+  role: `assembler` (a `bin/release prepare` / `qa-release` sweep) or `deployer` (a
+  `bin/release ship`). This is the exclusion the retired shared `avi` shift used to
+  provide (a `bin/release` run held `avi`, so `clean-up` — also `avi` — could not run
+  against it); the conductors hold per-release claims instead, and the reclaim gate
+  reads both. **`_ship` is not the ship's alone**: `prepare` merges release branches
+  forward and runs `bundle lock` for every consumer inside it, and on 2026-08-14 a
+  deployer-only check answered "no ship is live" and offered up both repos' `_ship`
+  desks mid-prepare. So the gate stands you down (`withheld … a release is live (an
+  assembler/deployer conductor claim is held)`) rather than relying on you to
+  remember — re-run once the release completes.
 
 ### Stale unmerged desks — the reclaim can NEVER take these; triage them yourself
 
@@ -570,10 +587,17 @@ For every PR with no board task, **read the diff before you close it.**
 > `release` lacks, and **the next production ship aborts.**
 >
 > Dependabot defaults to the repo's default branch, so it opens PRs against `main`
-> by default. **Retarget, never merge:**
+> unless the config says otherwise. Every repo's `.github/dependabot.yml` **must**
+> set `target-branch: accepted` on **every** `updates:` entry — it is per-entry,
+> not global. Two gaps survive that config, so this check still earns its place:
+> **security** updates always target the default branch and cannot be retargeted,
+> and a repo onboarded without the setting falls back to `main`.
+> **Retarget to the ladder's first rung, never merge:**
 > ```bash
-> gh pr edit <n> --base release
+> gh pr edit <n> --base accepted
 > ```
+> Retargeting to `release` is also wrong — it leaves `accepted` behind `release`
+> and reproduces the divergence this SOP exists to prevent.
 
 > ### ⛔ The orphaned-fix trap — the most expensive thing this SOP catches
 > A conflicting PR with no task is **where fixes go to die.** In the founding run,

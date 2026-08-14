@@ -114,7 +114,13 @@ successive waves — claim, spawn, collect, release, then claim the next wave.
 ## Preconditions
 
 At least one task is in `submitted` with green CI. If `bin/task claim-next-review`
-returns `none`, report "no reviewable PRs" and stop.
+returns `none`, report "no reviewable PRs" and stop — UNLESS it also prints a
+`no CI is ingested for <repo>` warning. That line is a WIRING gap, not a red
+queue: the board receives no Actions deliveries for that repo, so its PRs can
+never read green here however green GitHub is, and the task will sit in
+`submitted` until someone wires the webhook. Report the named repos to Mr.
+McRitchie (recipe: `../../../modules/deployment.md`, "Wiring a repo's Actions
+webhook") rather than closing the wave as "nothing to review".
 
 ## Procedure
 

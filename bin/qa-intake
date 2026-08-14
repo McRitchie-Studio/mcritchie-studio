@@ -525,6 +525,11 @@ def print_cleanup(worktrees)
   worktrees.each do |worktree|
     puts "#{worktree.fetch("label")} #{worktree.fetch("worktree")}"
     puts "  branch=#{worktree.fetch("branch")} head=#{worktree.fetch("head")}"
+    # The front door recommends a `remove … --yes`, so it owes the same account of WHY
+    # the sweep judged this desk free (bin/agent-worktree's reclaim_evidence rationale).
+    # Registries written before that field simply omit the line.
+    rationale = worktree["cleanup_rationale"].to_s.strip
+    puts "  rationale: #{rationale}" unless rationale.empty?
     puts "  action: #{worktree.fetch("action") { cleanup_action(worktree) }}"
   end
   puts

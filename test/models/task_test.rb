@@ -1,6 +1,9 @@
 require "test_helper"
+require_relative "../support/devops_key_spread"
 
 class TaskTest < ActiveSupport::TestCase
+  include DevopsKeySpread
+
   # --- Workflow 1: Build transitions ---
 
   test "designed task can start building" do
@@ -1488,6 +1491,57 @@ class TaskTest < ActiveSupport::TestCase
     assert_equal({ "turf-monster" => TURF_PR }, normalized["pr_urls"])
     assert_not Task.normalize_devops_metadata("pr_urls" => {}).key?("pr_urls"),
                "an empty map is dropped, so empty and unset are one state"
+  end
+
+  # === merge_devops_metadata — a PARTIAL post must not delete the rest ===
+  #
+  # The board UI posts only the fields its form renders. That post used to be
+  # written over metadata.devops WHOLESALE, so every key the form omits —
+  # agent_context, built_by, gem_bump, pr_urls, the mascot/session keys — was
+  # deleted, silently, by anyone editing an acceptance bullet in a browser.
+  #
+  # These tests assert the PROPERTY over Task::DEVOPS_KEYS rather than over
+  # today's spellings. Naming `pr_urls` (the key whose loss surfaced the bug)
+  # would keep passing while the NEXT key added to the model was still destroyed
+  # — the exact blacklist shape the fix exists to end. Add a key to DEVOPS_KEYS
+  # and it is covered here automatically.
+
+  test "[unit] merge_devops_metadata keeps every devops key the post omits" do
+    stored = devops_key_spread
+
+    merged = Task.merge_devops_metadata(stored, "kind" => "feature")
+
+    assert_equal "feature", merged["kind"], "the posted key is authoritative"
+    (Task::DEVOPS_KEYS - ["kind"]).each do |key|
+      assert_equal stored[key], merged[key],
+                   "devops.#{key} was destroyed by a post that never mentioned it"
+    end
+  end
+
+  # The other half of the contract, and why the merge keys on the POSTED NAMES
+  # rather than on the normalized hash: normalize drops blanks, so merging the
+  # normalized hash alone would make a cleared field read as "unchanged" and no
+  # field could ever be emptied from the browser.
+  test "[unit] merge_devops_metadata still clears a key the post carries blank" do
+    stored = { "branch" => "feat/old", "agent_context" => "why this task exists" }
+
+    merged = Task.merge_devops_metadata(stored, "branch" => "  ")
+
+    assert_not merged.key?("branch"), "a field emptied in the browser must still clear"
+    assert_equal "why this task exists", merged["agent_context"],
+                 "clearing one field must not clear an unposted one"
+  end
+
+  # A column key still RAISES (it is not storable devops), and the refusal must
+  # not double as a delete — the caller's other data is untouched, and the hash
+  # they handed in is never mutated in place.
+  test "[unit] merge_devops_metadata refuses a column key without deleting anything" do
+    stored = { "agent_context" => "why this task exists" }
+
+    assert_raises(ArgumentError) { Task.merge_devops_metadata(stored, "release_slug" => "rel-by-hand") }
+
+    assert_equal({ "agent_context" => "why this task exists" }, stored,
+                 "the stored hash must not be mutated in place")
   end
 
   test "[unit] Task.repo_from_pr_url is the one parser the instance method delegates to" do

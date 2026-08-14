@@ -11,6 +11,9 @@ module Api
     # empty pop is a normal 200 (claimed: null), not an error.
     class ClaimNextReviewTest < ActionDispatch::IntegrationTest
       REPO = "McRitchie-Studio/mcritchie-studio"
+      # A registered three-rung satellite OTHER than the hub — the wiring gap is
+      # about a repo the board does not host, and the hub can never exhibit it.
+      SATELLITE = "mcritchie-industries"
 
       setup do
         GithubWorkflowRun.delete_all
@@ -61,6 +64,45 @@ module Api
         body = response.parsed_body.fetch("data")
         assert_nil body["claimed"], "an empty pop is claimed: null, not an error"
         assert_equal "no_green_ci", body["reason"]
+        assert_empty body["blind_repos"],
+                     "a RED build is not a wiring gap — this repo delivers CI, the CI just failed"
+      end
+
+      # THE WIRE ITSELF. mcritchie-industries PRs were 4/4 green on GitHub and
+      # unpoppable here (PR #17, PR #36) for one reason: the board held ZERO
+      # ingested runs for the repo, so Ci::ReviewGate read :none. Nothing about the
+      # repo is special — once its Actions deliveries reach the board, the ordinary
+      # green-CI pop claims it. This pins that, so a future change to the gate's
+      # per-repo workflow resolution cannot re-blind a satellite in silence.
+      test "[integration] pops a satellite's PR once its runs are ingested" do
+        task = submitted("industries green task", position: 300, branch: "feat/industries",
+                         pr: 36, repo: SATELLITE)
+        seed_run(branch: "feat/industries", sha: "sha-industries", status: "completed",
+                 conclusion: "success", repo: Ci::ReviewGate.nwo_for(SATELLITE))
+
+        claim_next(session: "A", nonce: "a", label: "Gastly")
+        assert_response :ok
+
+        assert_equal task.slug, response.parsed_body.dig("data", "claimed", "slug"),
+                     "an ingested green run makes a satellite PR claimable by the ordinary pop"
+        assert_equal "A", TaskReviewClaim.find_by(task_slug: task.slug).claimed_session
+      end
+
+      # The SAME task with the SAME green GitHub build, before the wiring: not
+      # claimed (correct — the board cannot see the build), but now the empty pop
+      # SAYS SO instead of leaving "no_green_ci" to be read as a red queue.
+      test "[integration] an unwired repo is named as blind, not left as no_green_ci" do
+        submitted("industries stranded task", position: 300, branch: "feat/stranded",
+                  pr: 17, repo: SATELLITE)
+
+        claim_next(session: "A", nonce: "a")
+        assert_response :ok
+        body = response.parsed_body.fetch("data")
+
+        assert_nil body["claimed"], "with no ingested runs the PR is never claimed — the gate is right"
+        assert_equal "no_green_ci", body["reason"]
+        assert_equal [SATELLITE], body["blind_repos"],
+                     "the pop must name the repo it holds NO CI for; `no_green_ci` alone reads as a red queue"
       end
 
       test "[integration] claimed:null none_reviewable when the board has nothing submitted" do
@@ -99,13 +141,13 @@ module Api
              headers: @headers, as: :json
       end
 
-      def submitted(title, position:, branch:, pr:)
+      def submitted(title, position:, branch:, pr:, repo: "mcritchie-studio")
         Task.create!(
           title: title, stage: "submitted", position: position,
           metadata: { "devops" => {
             "branch" => branch,
-            "repositories" => ["mcritchie-studio"],
-            "pr_url" => "https://github.com/McRitchie-Studio/mcritchie-studio/pull/#{pr}"
+            "repositories" => [repo],
+            "pr_url" => "https://github.com/McRitchie-Studio/#{repo}/pull/#{pr}"
           } }
         )
       end
@@ -114,9 +156,9 @@ module Api
         seed_run(branch: branch, sha: sha, status: "completed", conclusion: "success")
       end
 
-      def seed_run(branch:, sha:, status:, conclusion:)
+      def seed_run(branch:, sha:, status:, conclusion:, repo: REPO)
         GithubWorkflowRun.create!(
-          repo: REPO, workflow_name: "CI", run_id: SecureRandom.random_number(10**12),
+          repo: repo, workflow_name: "CI", run_id: SecureRandom.random_number(10**12),
           status: status, conclusion: conclusion,
           head_branch: branch, head_sha: sha, run_started_at: Time.current
         )

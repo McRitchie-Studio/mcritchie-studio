@@ -344,6 +344,30 @@ Task.create!(
                             "included_in_release" => "false" } }
 )
 
+# --- A board edit must PRESERVE the devops keys its form never renders --------
+# The edit form posts only the fields it renders, and that post used to be written
+# over metadata.devops WHOLESALE — so agent_context (often the only record of WHY a
+# task exists), built_by, gem_bump and pr_urls were deleted by anyone editing a
+# field in a browser, silently, with a 200. This fixture carries an agent_context
+# the SHOW page renders and the EDIT form does not offer, so the spec can change a
+# field the form does offer and watch the unrendered key survive.
+Task.create!(
+  title: "Devops key preservation demo",
+  slug: "e2e-devops-key-preservation-demo",
+  description: "A board edit must not delete the devops keys its form never renders.",
+  stage: "designed",
+  priority: 1,
+  agent_slug: "carl",
+  metadata: { "devops" => {
+    "kind" => "bug",
+    "repositories" => ["mcritchie-studio"],
+    "branch" => "feat/before-the-edit",
+    "agent_context" => "AGENT-CONTEXT-SURVIVES-THE-EDIT",
+    "built_by" => "e2e-builder",
+    "pr_urls" => { "turf-monster" => "https://github.com/McRitchie-Studio/turf-monster/pull/8503" }
+  } }
+)
+
 # --- The claim chip: liveness and progress, never conflated -------------------
 # Two BUILDING desks, both holding a LIVE claim (a terminal is painting). They
 # differ only in what they have PRODUCED, which is the whole point of the chip:

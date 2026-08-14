@@ -440,9 +440,21 @@ class Task < ApplicationRecord
 
   # The verdict of an atomic review pop. `task` is nil when nothing was claimed;
   # `reason` names why ("claimed" / "none_reviewable" / "no_green_ci").
-  ClaimNextResult = Struct.new(:task, :outcome, :reason, keyword_init: true) do
+  #
+  # `blind_repos` names the repos among the SKIPPED candidates that the board
+  # holds no ingested CI run for at all (Ci::Ingestion). It is a REPORTING field,
+  # never a gate: a blind repo is skipped for exactly the same reason as any
+  # other non-green PR. It exists because `no_green_ci` alone reads as "the
+  # queue is red or still running", which is how an unwired repo's task sat in
+  # `submitted` for days — the pop was right and unreadable at the same time.
+  ClaimNextResult = Struct.new(:task, :outcome, :reason, :blind_repos, keyword_init: true) do
     def claimed?
       task.present?
+    end
+
+    # Always an Array — callers built before this field passed no value at all.
+    def blind_repo_list
+      Array(blind_repos)
     end
   end
 
@@ -473,6 +485,7 @@ class Task < ApplicationRecord
     return ClaimNextResult.new(task: nil, outcome: nil, reason: "none_reviewable") if ordered_slugs.empty?
 
     skipped_ungreen = false
+    skipped_repos = []
     ordered_slugs.each do |slug|
       claimed = transaction do
         task = reviewable(now: now).where(slug: slug).lock("FOR UPDATE SKIP LOCKED").first
@@ -480,6 +493,7 @@ class Task < ApplicationRecord
 
         unless Ci::ReviewGate.green?(task, injected: ci_status_token(ci_status, slug))
           skipped_ungreen = true
+          skipped_repos << Ci::ReviewGate.repo_for(task) # for the blind-repo report below
           next nil # red / pending / ci-less / none — never claim a non-green PR
         end
 
@@ -492,7 +506,22 @@ class Task < ApplicationRecord
       return claimed if claimed
     end
 
-    ClaimNextResult.new(task: nil, outcome: nil, reason: skipped_ungreen ? "no_green_ci" : "none_reviewable")
+    ClaimNextResult.new(task: nil, outcome: nil, reason: skipped_ungreen ? "no_green_ci" : "none_reviewable",
+                        blind_repos: blind_repos_among(skipped_repos))
+  end
+
+  # Which of the just-skipped candidates' repos deliver NO CI to the board at all
+  # — the wiring gap, told apart from a red or still-running build. Reporting
+  # only: the pop's decision is already made, so this can never change what gets
+  # claimed, and a failure here degrades to "no blind repos" rather than taking
+  # the review pop down with it.
+  def self.blind_repos_among(repos)
+    return [] if repos.blank?
+
+    Ci::Ingestion.unwired(repos)
+  rescue StandardError => e
+    ErrorLog.capture!(e)
+    []
   end
 
   # The injected CI verdict for one slug (test seam) — a per-slug Hash lookup, a bare
@@ -1444,6 +1473,51 @@ class Task < ApplicationRecord
     return nil if cost.nil? || cost.zero?
 
     ACTUAL_SIZE_COST_THRESHOLDS.find { |_size, ceiling| cost < ceiling }&.first
+  end
+
+  # Apply a PARTIAL devops write on top of what the task already carries.
+  #
+  # The board UI posts a SUBSET of devops — the fields `tasks/_form.html.erb`
+  # renders, narrowed again by TasksController#task_params' permit list.
+  # Everything else a task carries (`agent_context`, `built_by`, `gem_bump`,
+  # `pr_urls`, the mascot/session keys) is missing from that post because the
+  # form has no field for it, NOT because anyone asked for it to go. Writing the
+  # normalized post over `metadata["devops"]` wholesale — what TasksController
+  # used to do — therefore DELETED every one of them on any edit, silently, with
+  # a 200. `agent_context` is often the only place a task carries its reasoning.
+  #
+  # So the write merges, keyed on WHICH NAMES THE CALLER POSTED rather than on
+  # which values survived normalization:
+  #
+  #   * a name the post does not carry → UNCHANGED (the default is now preserve)
+  #   * a name the post does carry     → AUTHORITATIVE, blank included, so
+  #                                      emptying a field in the browser still
+  #                                      clears it
+  #
+  # KEYING ON THE POSTED NAMES IS WHAT KEEPS BOTH HALVES TRUE AT ONCE, and it is
+  # the whole trick — neither simpler shape works. Merging only the NORMALIZED
+  # hash would preserve everything, but `normalize_devops_metadata` drops blanks,
+  # so a field the operator cleared would read as "unchanged" and NO field could
+  # ever be emptied from the browser. Replacing wholesale destroys every unposted
+  # name. The posted-name set separates "absent" from "present and blank", which
+  # the normalized hash alone cannot express.
+  #
+  # This inverts the default from destroy-unless-listed to preserve-unless-posted,
+  # so a devops key added to the model later survives a board edit WITHOUT anyone
+  # remembering to touch the permit list. The permit list still governs what a
+  # form may WRITE; it no longer governs what survives.
+  #
+  # `& DEVOPS_KEYS` keeps a posted name that is not storable devops from deleting
+  # anything — the permit list carries DEVOPS_COLUMN_KEYS names only so the
+  # normalizer can refuse them out loud, and a refusal must not also be a delete.
+  #
+  # Pure: returns the merged hash and writes nothing. Raises whatever
+  # normalize_devops_metadata raises (both controllers turn that into a 422).
+  def self.merge_devops_metadata(existing, raw)
+    normalized = normalize_devops_metadata(raw)
+    posted = raw.to_h.keys.map(&:to_s) & DEVOPS_KEYS
+
+    (existing || {}).to_h.deep_dup.except(*posted).merge(normalized)
   end
 
   def self.normalize_devops_metadata(raw)

@@ -2048,7 +2048,13 @@ def stack_record_snapshot(record, issues_by_label)
   # nil when the desk is free. (A dirty worktree is already excluded by dirtiness, so it
   # carries no reason: the field answers "why is this not a candidate", not "is somebody
   # working here".)
-  candidate, withheld_reason = reclaim_verdict(record, announce: true)
+  # ONE call, so the nomination and its explanation can never describe different
+  # decisions: `cleanup_rationale` is the same `Cleared: …` evidence the dry run prints,
+  # carried to the conductor's front door — which prints a `remove … --yes` line per
+  # candidate and therefore owes the same account of why.
+  evidence = reclaim_evidence(record, announce: true)
+  candidate = evidence[:free]
+  withheld_reason = evidence[:hold]
 
   {
     "label" => label,
@@ -2087,6 +2093,7 @@ def stack_record_snapshot(record, issues_by_label)
     "sidekiq_pidfile_state" => record.fetch(:sidekiq_pidfile_state),
     "cleanup_candidate" => candidate,
     "withheld_reason" => withheld_reason,
+    "cleanup_rationale" => evidence[:rationale],
     "compare_url" => github_compare_url(record),
     "issues" => issues_by_label[label]
   }
@@ -2218,14 +2225,36 @@ def ledger_path
   File.join(HUB_DIR, "docs", "agents", "maintenance", "delete-later.md")
 end
 
+# The ledger row's reason — the archive record a reader lands on months later, when the
+# desk and its session are long gone.
+#
+# It carries the git facts AND the safety rationale, because the git facts alone are what
+# made the 2026-08-14 nominations look sound: "clean and contained in origin/accepted" is
+# true of a desk a release sweep is writing into right now. `cleared:` names the questions
+# that were actually asked (see reclaim_clearances) — so a row filed by a sweep whose PR or
+# review channel was blind is legible as such instead of reading like a considered decision.
 def cleanup_reason(record)
   base = record[:base_ref] || "origin/main"
   operational = "health #{stack_health(record)}, Redis DB #{record[:redis_db]}, database #{cleanup_database_summary(record)}"
-  if record[:merged]
-    "Hidden worktree; branch `#{record[:branch]}` is clean and HEAD #{record[:head]} is contained in #{base}; #{operational}."
-  else
-    "Hidden worktree; branch `#{record[:branch]}` is clean and its final diff against #{base} is empty, usually after a squash merge; #{operational}."
-  end
+  containment =
+    if record[:merged]
+      "clean and HEAD #{record[:head]} is contained in #{base}"
+    else
+      "clean and its final diff against #{base} is empty, usually after a squash merge"
+    end
+  "Hidden worktree; branch `#{record[:branch]}` is #{containment}; #{operational} " \
+    "#{cleanup_rationale_sentence(record)}"
+end
+
+# The rationale sentence for a ledger row. A desk that is NOT free still gets a row (the
+# explicit `remove … --yes` override files one), and it must never borrow the language of a
+# cleared candidate — so it states the hold instead.
+def cleanup_rationale_sentence(record)
+  evidence = reclaim_evidence(record)
+  return "Cleared: #{evidence[:rationale]}." if evidence[:free]
+  return "Removed against a hold — #{evidence[:hold]}." if evidence[:hold]
+
+  "No automatic clearance recorded (not a sweep candidate)."
 end
 
 def cleanup_database_summary(record)
@@ -2248,6 +2277,10 @@ def print_cleanup_candidate(record)
   puts "  - #{record[:app].fetch("slug")}/#{record[:task]}"
   puts "    worktree: #{record[:dir]}"
   puts "    safe: #{cleanup_safety_label(record)} on #{record[:base_ref]} (clean, +#{record[:ahead]}/-#{record[:behind]})"
+  # The `safe:` line above is a GIT fact. This is the safety argument — the questions each
+  # guard channel asked and the answers it got. A dry run that cannot explain a nomination
+  # is asking the operator to take 29 teardowns on faith.
+  puts "    rationale: #{reclaim_evidence(record)[:rationale]}"
   puts "    branch: #{record[:branch]} @ #{record[:head]}"
   puts "    stack: #{stack_health(record)} /up=#{record[:code]} pid=#{record[:pidfile_state]} redis=#{record[:redis_db]} db=#{cleanup_database_summary(record)}"
   puts "    remove: #{cleanup_command(record)}"
@@ -2511,7 +2544,7 @@ def run_remove(app, task, yes: false, force: false)
   # prints — a desk minutes old, a desk we could not date, a cert running. Asserting a
   # builder nobody confirmed is exactly the misattribution ClaimLease.corrupt_expiry? was
   # split out to prevent; the reason above already says what we actually found.
-  if (reason = claim_hold(record, fresh: true, announce: true) || desk_hold(record, announce: true))
+  if (reason = reclaim_hold(record, fresh: true, announce: true))
     warn "warning: #{worktree_label(record)}: #{reason}"
     warn "         the automatic guards do not treat this desk as free. `remove` is explicit, so this is not a block."
   end
@@ -2654,33 +2687,59 @@ def ship_workspace_record?(record)
   SHIP_WORKSPACE_TASKS.include?(record[:task].to_s)
 end
 
-# Is a production ship in progress? A live `deployer` ReleaseConductorClaim on ANY release
-# means `_ship`/`_gate` are pinned by a running `bin/release ship`. Returns :live / :none /
-# :unknown. Read over the SAME board this file's task reads hit, via the release-claim CLI's
-# `any-live` query (exit 0 live / 3 none / else can't-tell). Overridable for tests with
-# AGENT_WORKTREE_DEPLOYER_CLAIM=live|none|unknown. Memoized for the command (one board read).
+# The release-lifecycle claim roles, mirroring ReleaseConductorClaim::ROLES — BOTH of them,
+# and that is the whole point of this constant.
+#
+# THE 2026-08-14 INCIDENT. This guard used to ask about `deployer` alone, on the reading
+# that `_ship` is "the tree the DEPLOY works in". It is not: `bin/release prepare` — the
+# ASSEMBLER, Avi's qa-release sweep — does its two tree-needing steps in the very same
+# workspace (merge_forward_release_branches and bump_consumer_locks_for_qa, which runs
+# `bundle lock` there to write each consumer's Gemfile.lock). So during a live prepare the
+# deployer claim is legitimately free, this guard read :none, and a `cleanup --reclaim`
+# listed BOTH repos' `_ship` desks as "safe: merged on origin/accepted (clean)" while a
+# release sweep was building gem locks inside them. Asking one role of a two-role lifecycle
+# is not a narrower guard; it is a guard that is absent exactly half the time.
+#
+# So the question this file asks is the one the operator's rule states: does ANY release
+# hold ANY conductor claim right now? A new role added to ReleaseConductorClaim::ROLES must
+# be added here too — the closed set is the contract, and a role missing from it silently
+# re-opens this incident.
+RELEASE_CLAIM_ROLES = %w[assembler deployer].freeze
+
+# Is a release conductor working right now? A live ReleaseConductorClaim in EITHER role on
+# ANY release means `_ship`/`_gate` are pinned by a running `bin/release prepare` (assembler)
+# or `bin/release ship` (deployer). Returns :live / :none / :unknown. Read over the SAME
+# board this file's task reads hit, via the release-claim CLI's `any-live` query (exit 0
+# live / 3 none / else can't-tell), once per role. Overridable for tests with
+# AGENT_WORKTREE_RELEASE_CLAIM=live|none|unknown (the older AGENT_WORKTREE_DEPLOYER_CLAIM is
+# still honoured as an alias so pinned callers keep working). Memoized for the command.
 #
 # `fresh: true` BYPASSES that memo and re-reads the live board — EXACT parity with the
 # build-claim guard's task_record_for_pr(fresh:), for the SAME reason: the under-lock
 # re-verify (reclaim_verdict → claim_hold, fresh: true) exists precisely to catch a claim
 # taken AFTER the candidate list was selected, so a cached :none there would reintroduce
-# the very staleness it guards against — a ship STARTING mid `cleanup --reclaim --yes` loop
-# would read the memoized stale :none and reclaim its live `_ship`/`_gate`, breaking the
-# in-flight production deploy.
-def deployer_claim_liveness(fresh: false)
-  return @deployer_claim_liveness if !fresh && defined?(@deployer_claim_liveness)
+# the very staleness it guards against — a release STARTING mid `cleanup --reclaim --yes`
+# loop would read the memoized stale :none and reclaim its live `_ship`/`_gate`, breaking
+# the in-flight release.
+def release_claim_liveness(fresh: false)
+  return @release_claim_liveness if !fresh && defined?(@release_claim_liveness)
 
-  @deployer_claim_liveness = compute_deployer_claim_liveness
+  @release_claim_liveness = compute_release_claim_liveness
 end
 
-def compute_deployer_claim_liveness
-  override = ENV["AGENT_WORKTREE_DEPLOYER_CLAIM"].to_s.strip
+def compute_release_claim_liveness
+  override = ENV["AGENT_WORKTREE_RELEASE_CLAIM"].to_s.strip
+  override = ENV["AGENT_WORKTREE_DEPLOYER_CLAIM"].to_s.strip if override.empty?
   return %w[live none unknown].include?(override) ? override.to_sym : :unknown unless override.empty?
 
   cli = File.join(HUB_DIR, "bin", "lib", "release_claim_cli.rb")
   return :unknown unless File.exist?(cli) # no CLI to ask ⇒ can't tell (withhold on a destroy path)
 
-  _ok, _out, _err, code = capture_status(RbConfig.ruby, cli, "any-live", "--role", "deployer",
+  combine_claim_liveness(RELEASE_CLAIM_ROLES.map { |role| role_claim_liveness(cli, role) })
+end
+
+def role_claim_liveness(cli, role)
+  _ok, _out, _err, code = capture_status(RbConfig.ruby, cli, "any-live", "--role", role,
                                          timeout: TASK_READ_TIMEOUT)
   case code
   when 0 then :live
@@ -2689,27 +2748,45 @@ def compute_deployer_claim_liveness
   end
 end
 
-# The withhold reason for a `_ship`/`_gate` workspace while a ship may be live, or nil when
-# no ship is running (then they are ordinary reclaim candidates). Fail-CLOSED on can't-tell:
-# a ship MIGHT be running and reclaiming its workspace breaks a production deploy, so an
-# unreadable liveness read withholds — matching claim_hold's withhold-on-outage posture, and
-# cheap here because bin/release recreates the workspaces on demand.
+# Fold the per-role answers into one, PURE so the precedence is unit-testable.
 #
-# `fresh:` threads straight through to deployer_claim_liveness so the under-lock re-verify
+# The order is the safety order, not the arithmetic one: one live role is enough to hold
+# (a prepare and a ship pin the same trees), and one unreadable role is enough to hold even
+# when the other answered "none" — a partial read cannot rule out the role it failed on.
+# :none only when every role positively answered "none". An empty set is :unknown: asking
+# nothing is not the same as being told nothing is live.
+def combine_claim_liveness(states)
+  return :live if states.include?(:live)
+  return :unknown if states.empty? || states.include?(:unknown)
+
+  :none
+end
+
+# The withhold reason for a `_ship`/`_gate` workspace while a release may be live, or nil
+# when no conductor is running (then they are ordinary reclaim candidates). Fail-CLOSED on
+# can't-tell: a release MIGHT be running and reclaiming its workspace breaks a prepare or a
+# production deploy, so an unreadable liveness read withholds — matching claim_hold's
+# withhold-on-outage posture, and cheap here because bin/release recreates the workspaces on
+# demand.
+#
+# `fresh:` threads straight through to release_claim_liveness so the under-lock re-verify
 # (claim_hold fresh: true) re-reads the board here too — parity with the build-claim guard,
 # which already bypasses its own memo on the re-verify. Without it, a cached :none from the
-# selection pass would let a mid-loop ship's `_ship`/`_gate` be reclaimed.
+# selection pass would let a mid-loop release's `_ship`/`_gate` be reclaimed.
 def ship_workspace_hold(record, fresh: false, announce: false)
   ws = record[:task]
-  case deployer_claim_liveness(fresh: fresh)
+  roles = RELEASE_CLAIM_ROLES.join("/")
+  case release_claim_liveness(fresh: fresh)
   when :live
-    warn "note: #{worktree_label(record)}: a ship is live (deployer claim held) — withholding #{ws} from reclaim" if announce
-    "a ship is live (deployer claim held) — withholding #{ws} from reclaim; bin/release recreates it on demand"
+    warn "note: #{worktree_label(record)}: a release is live (#{roles} claim held) — withholding #{ws} from reclaim" if announce
+    "a release is live (a #{roles} conductor claim is held) — withholding #{ws} from reclaim; " \
+      "bin/release recreates it on demand"
   when :unknown
-    warn "warning: #{worktree_label(record)}: could not check for a live ship (deployer claim) — withholding #{ws}" if announce
-    "could not check for a live ship (deployer claim), so cannot rule out an in-flight ship; withholding #{ws} " \
-      "rather than reclaiming a workspace a live production deploy may be using (re-run once the board is reachable)"
-  else # :none — the board answered: no ship is live
+    warn "warning: #{worktree_label(record)}: could not check for a live release (#{roles} claim) — withholding #{ws}" if announce
+    "could not check for a live release (#{roles} conductor claim), so cannot rule out an in-flight " \
+      "prepare or ship; withholding #{ws} rather than reclaiming a workspace a live release may be " \
+      "using (re-run once the board is reachable)"
+  else # :none — the board answered: no release conductor is live
     nil
   end
 end
@@ -2952,6 +3029,219 @@ def desk_hold_reason(channels)
   "the desk could not be shown abandoned, and a desk we cannot prove abandoned is never destroyed"
 end
 
+# --- the PR channel: has this branch's work actually LANDED? ---------------------------
+#
+# THE HOLE THIS CLOSES. Git-eligibility asks whether the branch's CONTENT is represented on
+# the base. That is not the same question as whether the WORK is finished, and the two come
+# apart in exactly the case that hurts: a branch whose diff against the base is empty — the
+# base moved on, someone cherry-picked it, an equivalent change landed by another route —
+# while its pull request is still OPEN and UNMERGED. To git the desk is spent litter; to the
+# pipeline it is live work with a reviewer's name on it. The 2026-08-13 archive incident was
+# this same confusion one lane over: the ONE task in a 14-task sweep with an open, green,
+# unmerged PR was archived as a never-started idea, and archived is terminal.
+#
+# So the sweep asks GitHub, and an OPEN PR withholds the desk. `remove … --yes` still tears
+# it down on demand; only the AUTOMATIC paths refuse.
+#
+# Returns [status, reference]:
+#   [:open, "<n>"]      an OPEN pull request exists for this branch
+#   [:none, nil]        gh answered: no open PR for this branch
+#   [:unavailable, nil] gh is missing, there is no GitHub remote, or the call failed
+#
+# Memoized per branch: the rationale renderer re-reads this for a nominated desk, and a
+# second network round-trip per candidate would be pure cost for an answer we already have.
+# Overridable for tests with AGENT_WORKTREE_OPEN_PR=<number>|none|unavailable.
+def open_pr_for_branch(record)
+  branch = record[:branch].to_s
+  @open_pr_cache ||= {}
+  return @open_pr_cache[branch] if @open_pr_cache.key?(branch)
+
+  @open_pr_cache[branch] = compute_open_pr_for_branch(record, branch)
+end
+
+def compute_open_pr_for_branch(record, branch)
+  override = ENV["AGENT_WORKTREE_OPEN_PR"].to_s.strip
+  unless override.empty?
+    return [:none, nil] if override == "none"
+    return [:unavailable, nil] if override == "unavailable"
+
+    return [:open, override]
+  end
+
+  # No branch to ask about: a detached checkout (`_ship`/`_gate` live here) has no head
+  # branch, so no PR can point at it. That is an ANSWER, not a failed read.
+  return [:none, nil] if branch.empty? || branch == "?"
+  return [:unavailable, nil] unless command_available?("gh")
+
+  slug = github_repo_slug(record[:dir])
+  return [:unavailable, nil] unless slug
+
+  # `--state open` is GitHub's own answer to "is this PR still open". Do NOT reach for
+  # `mergeable`/`mergeStateStatus`: those go stale and misreport on a merged PR — state is
+  # the only field that tells the truth about a PR's lifecycle.
+  ok, out, = capture_status("gh", "pr", "list", "--repo", slug, "--head", branch, "--state", "open",
+                            "--json", "number")
+  return [:unavailable, nil] unless ok
+
+  prs =
+    begin
+      JSON.parse(out)
+    rescue JSON::ParserError
+      return [:unavailable, nil] # a body we cannot parse is a read we did not make
+    end
+  first = prs.is_a?(Array) ? prs.first : nil
+  number = first.is_a?(Hash) ? first["number"] : nil
+  number ? [:open, number.to_s] : [:none, nil]
+end
+
+# PURE: the withhold reason for the PR channel, or nil when the branch carries no open work.
+# Split out from the I/O so the precedence is unit-testable — and the precedence IS the
+# guard.
+#
+#   :open        → withhold. GitHub is authoritative and it says the PR is still open.
+#   :none        → free. GitHub answered; there is nothing open on this branch.
+#   :unavailable → we could not ask. Fall back to the BOARD, which is the other thing that
+#                  knows: a task with a `pr_url` and no `merged` stamp is unlanded work, so
+#                  withhold; a merged stamp (or no PR at all) is an independent reason to
+#                  believe nothing is open, so free.
+#
+# Why the fallback is not simply fail-closed like the claim channel's: gh is optional
+# tooling, not the board. Withholding every desk on a machine without `gh` would wedge the
+# sweep permanently and silently — and a wedged sweep is how this file's guards get ripped
+# out. Withholding only the desks the BOARD also calls unlanded keeps the refusal aimed at
+# the dangerous case.
+def pr_hold_reason(gh_status:, pr_ref:, branch:, board_pr_url:, board_merged:)
+  case gh_status
+  when :open
+    "an OPEN, unmerged pull request (##{pr_ref}) is still on branch #{branch}; reclaiming " \
+      "deletes that local branch and the desk behind live review work — merge, close, or " \
+      "`remove … --yes` it deliberately"
+  when :unavailable
+    return nil if board_merged || board_pr_url.nil?
+
+    "could not ask GitHub whether #{branch} has an open PR, and the bound task still carries " \
+      "#{board_pr_url} with no merged stamp; withholding rather than reclaiming a desk whose " \
+      "work may never have landed (re-run once `gh` can reach GitHub)"
+  end
+end
+
+# The reason this desk is withheld because its PR is still open, or nil. Reads the board
+# record claim_hold has already memoized, so the fallback costs nothing extra.
+def pr_hold(record, announce: false)
+  status, pr_ref = open_pr_for_branch(record)
+  task_record = task_record_for_pr(record)
+  reason = pr_hold_reason(
+    gh_status: status,
+    pr_ref: pr_ref,
+    branch: record[:branch].to_s,
+    board_pr_url: compact_value(task_devops_for_pr(task_record)["pr_url"]),
+    board_merged: !compact_value(task_record.is_a?(Hash) ? task_record["merged"] : nil).nil?
+  )
+  warn "note: #{worktree_label(record)}: #{reason}" if reason && announce
+  reason
+end
+
+# --- the REVIEW channel: is somebody else's session AT this desk right now? -------------
+#
+# The build claim answers "who is BUILDING here". Review is a second lane with its own
+# claim (bin/task review-claim), and a reviewer works the builder's desk — reading it,
+# running its suite, merging from it — without ever taking the build claim and often
+# without WRITING a file, so the desk's mtimes stay quiet. On 2026-08-14 a sweep nominated
+# exactly such a desk while another live session was reviewing it.
+#
+# The board already publishes the answer as a top-level `review_in_progress` column, so
+# this costs nothing on top of the read claim_hold just made. Positive-signal only: TRUE
+# withholds. An absent key means an older board that cannot answer, and the unreadable-board
+# case is already withheld by claim_hold — this channel must not re-decide it.
+def review_hold(record)
+  task_record = task_record_for_pr(record)
+  return nil unless task_record.is_a?(Hash) && task_record["review_in_progress"] == true
+
+  slug = task_record_slug(record[:env] || {}) || record[:task]
+  "a review is in progress on task #{slug} — a reviewer is working this desk (reading it, " \
+    "running its suite, merging from it) without holding the BUILD claim, and a quiet desk " \
+    "under review is a working one"
+end
+
+# --- the rationale: why a nominated desk was judged free --------------------------------
+#
+# "Every archive records its rationale." A dry run that prints `safe: merged on
+# origin/accepted (clean)` states one git fact and implies a safety conclusion the git fact
+# does not support — which is precisely how 29 desks, three of them load-bearing, read as
+# safe. These render what EACH channel actually observed, so the operator reading the dry
+# run (or the ledger row, months later) can see which questions were asked and what came
+# back, and can spot the channel that was blind.
+#
+# Every clearance below reads memoized facts (the per-slug board record, the per-branch PR
+# answer, local stat calls), so narrating costs no extra round-trips.
+def reclaim_clearances(record)
+  [
+    git_clearance(record),
+    pr_clearance(record),
+    claim_clearance(record),
+    review_clearance(record),
+    desk_clearance(record)
+  ].compact
+end
+
+def git_clearance(record)
+  label = record[:merged] ? "merged into" : "diff-empty against"
+  "#{label} #{record[:base_ref]}, tree clean"
+end
+
+def pr_clearance(record)
+  status, = open_pr_for_branch(record)
+  branch = record[:branch].to_s
+  branch = "(detached — no branch)" if branch.empty? || branch == "?"
+  case status
+  when :none then "no open PR for #{branch} (GitHub asked)"
+  else "no open PR recorded for #{branch} (GitHub unreachable; the bound task shows nothing unlanded)"
+  end
+end
+
+def claim_clearance(record)
+  return "no live release conductor claim (#{RELEASE_CLAIM_ROLES.join("/")})" if ship_workspace_record?(record)
+
+  slug = task_record_slug(record[:env] || {})
+  return "no bound task, so no build claim to hold it" unless slug
+
+  "no live build claim on #{slug}"
+end
+
+def review_clearance(record)
+  task_record = task_record_for_pr(record)
+  return nil unless task_record.is_a?(Hash) && task_record.key?("review_in_progress")
+
+  "no review in progress"
+end
+
+def desk_clearance(record)
+  age = desk_age_seconds(record)
+  born = age ? "born #{ClaimLease.humanize_age(age)} ago" : "age unknown"
+  "desk idle (#{born}, no writes in the last #{ClaimLease.humanize_age(ClaimLease::DESK_IDLE_SECONDS)})"
+end
+
+# Every hold channel, in cost order, first reason wins. The ORDER is about spend, not
+# priority — a desk held by any one of them is held, and each reason is true on its own.
+# claim_hold runs first because it is the one that spends the board read the next three
+# reuse; pr_hold runs last because it is the only one that may reach the network.
+def reclaim_hold(record, fresh: false, announce: false)
+  claim_hold(record, fresh: fresh, announce: announce) ||
+    review_hold(record) ||
+    desk_hold(record, announce: announce) ||
+    pr_hold(record, announce: announce)
+end
+
+# The whole verdict in one shape: `{ free:, hold:, rationale: }`. reclaim_verdict renders
+# its historical [ok, reason] pair from this, and the dry run/ledger read `rationale` from
+# the SAME call — so an explanation can never describe a decision other than the one made.
+def reclaim_evidence(record, fresh: false, announce: false)
+  return { free: false, hold: nil, rationale: nil } unless cleanup_ready?(record)
+
+  hold = reclaim_hold(record, fresh: fresh, announce: announce)
+  { free: hold.nil?, hold: hold, rationale: hold ? nil : reclaim_clearances(record).join("; ") }
+end
+
 # THE one reclaim decision, in one place: may this worktree be destroyed, and if it is
 # being withheld, why. Returns [reclaimable?, hold_reason]:
 #
@@ -2974,19 +3264,23 @@ end
 # WITHHOLDING is that answer; nominating is the lie. So an unverifiable desk is withheld
 # everywhere, and only `remove … --yes` (the explicit operator override) still proceeds — with
 # a warning.
-# TWO CHANNELS, and the order is load-bearing. claim_hold asks the BOARD who holds the
-# task; desk_hold asks the FILESYSTEM whether anyone is at the desk. Neither subsumes
-# the other: a claim can be live while the desk sits untouched mid-cert, and a desk can
-# be in active use while its task carries no readable claim at all (unbound, unclaimed,
-# or a lease that has not been renewed yet) — which is the desk the 08-13 sweep ate.
-# claim_hold runs FIRST because it is the one that spends the board read, and desk_hold
-# then reuses that same memoized record for its board channels.
+# FOUR CHANNELS, and no one of them subsumes another — each was added because the ones
+# before it read a load-bearing desk as free:
+#   claim_hold   asks the BOARD who is BUILDING here (and, for `_ship`/`_gate`, whether a
+#                release conductor is live);
+#   review_hold  asks the board whether a REVIEWER is on the task — a lane with its own
+#                claim, whose sessions read far more than they write;
+#   desk_hold    asks the FILESYSTEM whether anyone is at the desk — the only channel that
+#                sees an unbound or not-yet-claimed desk;
+#   pr_hold      asks GITHUB whether the branch's work actually landed — the only channel
+#                that separates "content is on the base" from "the PR is finished".
+# A claim can be live while the desk sits untouched mid-cert; a desk can be in active use
+# while its task carries no readable claim at all (the desk the 08-13 sweep ate); and a
+# desk can be quiet, unclaimed and diff-empty while its PR is still open (the 08-14 sweep).
+# See reclaim_hold for why they run in this order.
 def reclaim_verdict(record, fresh: false, announce: false)
-  return [false, nil] unless cleanup_ready?(record)
-
-  reason = claim_hold(record, fresh: fresh, announce: announce) ||
-           desk_hold(record, announce: announce)
-  [reason.nil?, reason]
+  evidence = reclaim_evidence(record, fresh: fresh, announce: announce)
+  [evidence[:free], evidence[:hold]]
 end
 
 def worktree_label(record)
