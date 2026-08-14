@@ -318,8 +318,14 @@ class ReviewerSelectCliTest < Minitest::Test
   # to a soul already mid-build. The pick still proceeds; it now SAYS it is
   # degraded.
 
+  # `built_by` is named on purpose in both: PR #846 (feat/builder-stamp-misses-
+  # reviewer-guard) makes an UNKNOWN builder a hard refusal (exit 2), so a run
+  # that leaves it blank stops selecting the moment that lands. These tests are
+  # about the BUSY read, not the builder rule — naming the builder keeps them
+  # asserting the thing they are named for whichever PR merges first.
   def test_an_unreadable_busy_read_still_picks_but_announces_the_degradation
-    _requests, out, status, err = run_board({ "shape" => "backend" }, "--busy-auto", "--json",
+    _requests, out, status, err = run_board({ "shape" => "backend", "built_by" => "shannon" },
+                                            "--busy-auto", "--json",
                                             busy_payload: "<html>502 Bad Gateway</html>")
 
     assert_equal 0, status.exitstatus, "the fail-open is intact — --busy-auto never aborts the pick"
@@ -330,7 +336,8 @@ class ReviewerSelectCliTest < Minitest::Test
 
   def test_a_healthy_busy_read_is_silent
     # The control: the warning must fire on an unreadable answer, not on every run.
-    _requests, out, status, err = run_board({ "shape" => "backend" }, "--busy-auto", "--json",
+    _requests, out, status, err = run_board({ "shape" => "backend", "built_by" => "shannon" },
+                                            "--busy-auto", "--json",
                                             busy_payload: JSON.generate("data" => []))
 
     assert_equal 0, status.exitstatus, out
