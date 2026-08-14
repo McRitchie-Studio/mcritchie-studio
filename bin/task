@@ -508,11 +508,14 @@ LIST_FLAGS = { "--repo" => "repositories", "--risk" => "risk_tags", "--accept" =
 # REFUSED: nothing. Task#repos_missing_pr_url is the query that will answer "which
 # repo has no PR", and it still has no caller until
 # /tasks/merge-promotes-every-repo ships the refusal — so a repo you neither
-# declare nor record is simply absent from the plan, and a repo you declare
-# without a PR is caught one stage later by the per-repo evidence guard
-# (Release::MemberEvidence holds the member rather than stamping it) instead of
-# refused at sweep time. A comment promising a guard that does not run is the
-# exact defect this family exists to stop — see app/models/task.rb#repos_missing_pr_url.
+# declare nor record is simply absent from the plan, and a repo you DECLARE
+# without recording its PR is planned, promoted and QA-deployed like any other:
+# the release then has evidence for it, so Release::MemberEvidence does NOT hold
+# the member. That guard keys on what the RUN LANDED per repo, never on PR
+# coverage — it catches a repo missing from the PLAN, not a repo missing a PR.
+# KEEP HAND-CHECKING PR COVERAGE until the refusal lands. A comment promising a
+# guard that does not run is the exact defect this family exists to stop — see
+# app/models/task.rb#repos_missing_pr_url.
 #
 # MERGES per repo (read-merge-write, like every other `update` flag): recording
 # turf's PR leaves the hub's entry alone. SEQUENTIALLY — say the caveat rather

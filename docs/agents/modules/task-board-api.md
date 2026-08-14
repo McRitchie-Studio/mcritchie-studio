@@ -577,10 +577,12 @@ promotes, QA's and ships *every* repo it names, and
 missing is the refusal: `Task#repos_missing_pr_url` is the query that will answer
 *which repo has no PR*, and it has no caller until
 `/tasks/merge-promotes-every-repo` ships it. So a repo you neither declare nor
-record is simply absent from the plan, and a repo you declare without a PR is
-caught one stage later by the per-repo evidence guard (`Release::MemberEvidence`
-holds the member at `reviewed` rather than stamping it `assembled`) instead of
-refused at sweep time.
+record is simply absent from the plan — while a repo you **declare** without
+recording its PR is planned, promoted and QA-deployed like any other, which
+leaves the release holding evidence for it, so `Release::MemberEvidence` does
+**not** hold the member. That guard keys on what the RUN LANDED per repo, never
+on PR coverage: it catches a repo missing from the *plan*, not a repo missing a
+*PR*. **Keep hand-checking PR coverage** until the refusal lands.
 
 `pr_url` stays the primary and is folded into the map automatically
 (`Task#release_pr_urls`) — do not repeat it. **It wins for the repo it names**,
