@@ -518,11 +518,17 @@ Status labels mean:
 - `ready-to-open-pr`: local branch has no matching open PR and is clean,
   current with `origin/main`, and ready for `bin/agent-worktree finish`.
 - `occupied`: the worktree registry withheld this desk from reclaim
-  (`withheld_reason` — a live builder claim, or a bound task whose board record
-  could not be read). These desks print in their own "Occupied Desks" section,
-  out of the generic attention bucket, and the action is to leave the desk
-  alone. Registries written before the reclaim guard carry no `withheld_reason`,
-  so the label and section simply never appear there.
+  (`withheld_reason` — a live builder claim, a reviewer on the task, an open
+  unmerged PR on the branch, a live release conductor holding `_ship`/`_gate`, or a
+  bound task whose board record could not be read). These desks print in their own
+  "Occupied Desks" section, out of the generic attention bucket, and the action is to
+  leave the desk alone. Registries written before the reclaim guard carry no
+  `withheld_reason`, so the label and section simply never appear there.
+- A **Cleanup Candidate** carries `cleanup_rationale` — the same `Cleared: …`
+  evidence `bin/agent-worktree cleanup` prints, naming what each guard channel asked
+  and answered. The front door recommends a `remove … --yes`, so it owes that account;
+  read it before approving, especially for a channel that reports it could not be
+  asked. Older registries omit the field and the line.
 
 Action lines mean:
 
