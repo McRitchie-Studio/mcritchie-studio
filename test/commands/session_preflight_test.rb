@@ -578,6 +578,40 @@ class SessionPreflightTest < Minitest::Test
     assert_equal "Live board feedback should be visible.", report.dig("latest_feedback", "description")
   end
 
+  # THE HARNESS SELF-TEST — the board fallback, proven pinned.
+  #
+  # A fixture with NO latest_activity is the shape that FIRES the fallback, and the
+  # fallback is a direct Net::HTTP call to TASK_API_BASE, not a call through
+  # SESSION_PREFLIGHT_TASK_BIN. Before the floor, exactly two tests in this file
+  # pinned that base; every other one avoided the call only because its fixture
+  # happened to carry an activity with a description. Containment by fixture shape
+  # is one edit from gone, and the edit looks harmless.
+  #
+  # The receipt is POSITIVE: the run must report the fallback FAILING against the
+  # pinned loopback host. "No warning" would be the wrong assertion — that is also
+  # what a successful call to PRODUCTION looks like.
+  #
+  # AGENT_API_SECRET is supplied because the fallback returns early without one, and
+  # CI has none (no .env, no 1Password). Without it this would pass for a reason
+  # that has nothing to do with the pin. It can only ever be offered to loopback.
+  def test_the_board_fallback_is_pinned_at_the_floor_not_production
+    write_fake_task_cli
+
+    out, err, status = run_preflight("add-session-preflight", "--no-gh", "--no-fetch", "--json",
+                                     env: { "AGENT_API_SECRET" => "pin-proof-not-a-real-secret" })
+    assert status.success?, "#{out}\n#{err}"
+
+    warning = JSON.parse(out).fetch("warnings").grep(/latest task activity fallback failed/).first
+    refute_nil warning,
+               "the activities fallback did not run, so this proves nothing about the pin. It " \
+               "fires only when the record carries no latest_activity with a description — check " \
+               "the fixture still has that shape."
+    assert_includes warning, "127.0.0.1",
+                    "the fallback reached #{warning.inspect} instead of the pinned loopback base. " \
+                    "bin/session-preflight defaults TASK_API_BASE to https://mcritchie.studio, so " \
+                    "anything but 127.0.0.1 here is a live read of the production board."
+  end
+
   def test_live_task_show_falls_back_to_activities_api_for_latest_feedback
     write_fake_task_cli
     activity = {
