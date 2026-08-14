@@ -97,7 +97,25 @@ class Release
     # shape. What still covers a gem member: validate_member_repos_known! judges
     # every repo it names, and Release::MemberEvidence refuses to STAMP a consumer
     # the run landed nothing for.
-    def repo_coverage_gap(repos:, pr_repos:, kind: nil)
+    # `expected:` — WHEN THE CALLER HAS ALREADY DECIDED WHICH REPOS OWE A PR.
+    #
+    # The two guards above (the gem exemption and `size < 2`) answer the SWEEP's
+    # question: "may this member ride the promote?" They are deliberately lenient,
+    # because a wrong refusal there wedges the release lane for everyone.
+    #
+    # `Task#repos_missing_pr_url` asks a different question — "which repos have no
+    # PR on record?" — and it is a REPORT, not a gate, so leniency there hides the
+    # very gap the caller is asking about. Passing `expected` supplies the answer to
+    # "who owes one" (Task#pr_bearing_repositories: the gem alone for a gem release,
+    # every named repo for an app), so both guards are bypassed rather than
+    # re-derived here from a `kind` that cannot see it. Concretely, this is why a
+    # gem task carrying NO gem PR still reports `["studio-engine"]` uncovered while
+    # a gem task that recorded its gem PR reports nothing, and why a single-repo
+    # library task still reports its own missing PR instead of being silently
+    # cleared by `size < 2`.
+    def repo_coverage_gap(repos:, pr_repos:, kind: nil, expected: nil)
+      return strings(expected) - strings(pr_repos) unless expected.nil?
+
       return [] if kind.to_s == "gem"
 
       named = strings(repos)

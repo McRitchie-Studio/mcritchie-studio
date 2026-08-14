@@ -1375,7 +1375,7 @@ class Task < ApplicationRecord
   # itself (bump_consumer_locks_for_qa). See Release::SweepPlan#repo_coverage_gap.
   def repos_missing_pr_url
     Release::SweepPlan.repo_coverage_gap(repos: release_repos, pr_repos: release_pr_urls.keys,
-                                         kind: release_kind)
+                                         expected: pr_bearing_repositories)
   end
 
   # True when this task ships as a published gem rather than a deployed app — a

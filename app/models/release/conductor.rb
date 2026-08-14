@@ -427,9 +427,18 @@ class Release
     # merge` both reach the same verdict from the pure plan BEFORE they promote
     # anything, which is the seam where nothing has moved yet. This copy is what
     # catches a member that arrives at the record without passing that screen.
+    # NOT `task.repos_missing_pr_url` — that is the REPORT, and it deliberately
+    # bypasses the gem and `size < 2` exemptions to answer "which repos have no PR
+    # on record?" Asking it here would refuse a single-repo member with no PR and
+    # every gem release, wedging the lane over gaps that are the review lane's
+    # problem or impossible by construction. This is a GATE, so it asks the gate's
+    # question through SweepPlan's rule — the same verdict prepare/merge reach from
+    # the pure plan. See Release::SweepPlan.repo_coverage_gap.
     def validate_member_pr_coverage!(release)
       offenders = release.ordered_members.filter_map do |task|
-        missing = task.repos_missing_pr_url
+        missing = Release::SweepPlan.repo_coverage_gap(repos: task.release_repos,
+                                                       pr_repos: task.release_pr_urls.keys,
+                                                       kind: task.release_kind)
         "#{task.slug} (no PR url for #{missing.join(', ')})" if missing.any?
       end
       return if offenders.none?
