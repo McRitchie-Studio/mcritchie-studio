@@ -136,7 +136,18 @@ when "list"
   res, body = api(:get, path)
   die("list failed -> HTTP #{res.code}") unless res.is_a?(Net::HTTPSuccess)
 
-  actions = body["data"] || []
+  # STRICT count. "nothing armed" is the most reassuring sentence this CLI can
+  # print — it is the operator's answer to "is anything queued to merge itself?"
+  # — so it must never come from a body we could not read. `body["data"] || []`
+  # made an HTML error page and an empty registry indistinguishable, and the
+  # unreadable one resolved toward the all-clear. `[]` from rows! means the
+  # registry really is empty.
+  actions = begin
+    TaskBoard.rows!(body)
+  rescue TaskBoard::UnreadableResponse => e
+    die("UNREADABLE — could not read the armed-action registry: #{e.message}\n" \
+        "  This is NOT \"nothing armed\". An auto-merge may be armed and unseen; fix the read.")
+  end
   puts(actions.empty? ? "nothing armed" : format("%-38s %-9s %-12s %s", "TASK", "STATE", "HEAD", "NOTE"))
   actions.each { |action| render(action) }
 

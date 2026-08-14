@@ -55,6 +55,16 @@ Studio.configure do |config|
   # it takes the shared page instead of keeping a fork. Retires /admin/email_images.
   config.draw_admin_emails_routes = true
 
+  # Draw the engine's first-name onboarding endpoints (Studio::OnboardingController
+  # at /onboarding/first_name + /onboarding/skip_first_name). Opt-in for the same
+  # reason as the page above: turf-monster owns those two helper names in its own
+  # routes.rb until its adoption lands. This app claims neither.
+  #
+  # No onboarding_steps_resolver is set, so the engine's default applies: nothing
+  # further after the name. That is correct here — the name is the only thing this
+  # app asks a new account, unlike turf's welcome → name → age → wallet chain.
+  config.draw_onboarding_routes = true
+
   # S3 (Studio::S3 — upload/url/delete against "<prefix>-<dev|production>").
   # Engine default is nil, so set it explicitly. Region defaults to us-east-2.
   config.s3_bucket_prefix = "mcritchie-studio"

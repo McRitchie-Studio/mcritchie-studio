@@ -231,13 +231,34 @@ Post payloads should include `task_slug`, `activity_type`, `description`,
 optional `agent_slug`, and optional `metadata`. API calls require the app's API
 bearer token. The HTML task page remains the operator-friendly source of truth.
 
-⚠️ **PARSE THE BODY.** A hand-rolled read of this endpoint is a documented trap:
-`TaskBoard.request` returns a `Net::HTTPResponse`, and `Net::HTTPResponse#[]` is
-the HTTP **header** reader — so `response["data"]` is `nil`, `Array(nil)` is
-`[]`, and a row count comes out **0 with no error raised**. It cost the two-bounce
-circuit breaker its entire working life (`/tasks/circuit-breaker-check-always-zero`).
-Use `JSON.parse(response.body)`, check the status (a 401 has no rows either), and
-prefer an existing command over a fresh hand-roll: **`bin/task bounces <slug>`**
+⚠️ **PARSE THE BODY — AND NEVER COUNT THROUGH A LENIENT PARSE.** A hand-rolled
+read of this endpoint is a documented trap with two layers.
+
+The first: `TaskBoard.request` returns a `Net::HTTPResponse`, and
+`Net::HTTPResponse#[]` is the HTTP **header** reader — so `response["data"]` is
+`nil`, `Array(nil)` is `[]`, and a row count comes out **0 with no error
+raised**. It cost the two-bounce circuit breaker its entire working life
+(`/tasks/circuit-breaker-check-always-zero`).
+
+The second survives the obvious fix: `TaskBoard.parse_body` is **lenient by
+design** — `{}` on an empty or non-JSON body — so parsing correctly and *then*
+reading `["data"]` still scores an unreadable answer as **zero rows**. A proxy's
+HTML error page, a truncated response, and an expired 24h token all land there,
+and for a safety count empty is the reassuring answer
+(`/tasks/board-parse-silently-returns-empty`).
+
+So pick the reader by what you are about to do with the answer:
+
+| Doing what | Use | On an unreadable body |
+|---|---|---|
+| Rendering, logging, plucking an optional field, reading an error page | `TaskBoard.parse_body(res)` | `{}` — renders something |
+| **Counting, testing `.empty?`, concluding "none, therefore proceed"** | **`TaskBoard.rows!(res)`** | raises `TaskBoard::UnreadableResponse` |
+
+`rows!` takes either a response or an already-parsed payload, so a CLI whose
+`api` wrapper parses leniently for its error line can still count strictly:
+`TaskBoard.rows!(payload)`. An `[]` from `rows!` means genuinely none.
+
+Prefer an existing command over a fresh hand-roll: **`bin/task bounces <slug>`**
 counts prior send-backs and refuses to answer a read it could not make.
 
 ## Stage Flow
