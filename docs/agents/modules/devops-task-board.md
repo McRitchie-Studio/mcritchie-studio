@@ -43,8 +43,15 @@ After the task is created and the isolated worktree is bound, run
 `bin/session-preflight <task-slug>` before editing. It is the start-of-session
 counterpart to `bin/dor-check`: it reads latest task feedback, branch drift
 against `origin/release`, PR merge/check state, same-file overlap with open or
-recent PRs, installed docs/skills drift, stale terminology, and the required
-test tiers from `config/feature_shapes.yml`. Non-code kinds (`chore`,
+recent PRs, **duplicate migration installs**, installed docs/skills drift, stale
+terminology, and the required test tiers from `config/feature_shapes.yml`.
+Everything there is a warning except the last two and the migration check: two
+branches installing ONE engine migration under two host timestamps merge cleanly
+(the files have different names — only `db/schema.rb` conflicts) and then raise
+`ActiveRecord::DuplicateMigrationNameError` on every `db:migrate`, including the
+Heroku release phase, so it **blocks**. The mechanism, both detection keys, and
+the resolution live in `bin/lib/migration_collision.rb` — kept beside the code so
+they cannot drift from it. Non-code kinds (`chore`,
 `cleanup`, `docs`) skip the shape/required-metadata gate exactly as
 `bin/dor-check` does — but the `kind` label alone never earns that skip. The
 exemption is earned by the **observed diff**: a file is non-behavioral only if it
@@ -499,6 +506,17 @@ board fails the verify. It repairs an existing PR in place — `gh pr ready` for
 a draft, `gh pr edit --base accepted` for a mis-based one — and never
 duplicates it. The long-form commands remain the canonical path for anything
 the wrappers don't cover (multi-repo tasks, bespoke PR bodies).
+
+With the PR open, ship asks two questions of the sibling PRs in **one**
+`gh pr list` — same-file overlap, which **advises**, and duplicate migration
+installs, which **block**. The second is not a stricter flavour of the first: the
+same-file check intersects FILENAMES, and two installs of one engine migration
+have different filenames by construction, so it is blind to them by design. A
+duplicate migration class raises on every `db:migrate` including the Heroku
+release phase, and the cure is always the same — the task that OWNS the migration
+keeps its copy, the other drops it. Ship refuses to move the task to `submitted`
+until it is resolved. Both checks also run at `bin/session-preflight`, where the
+migration one adds a local leg (the base ref) that needs no GitHub at all.
 
 **Limits, stated plainly.** `bin/ship` stops at the `submitted` seam — it never
 merges, never deploys, never touches `release`/`main`. It has **no `--steal` of

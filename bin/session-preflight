@@ -25,6 +25,7 @@ require "uri"
 require "yaml"
 require_relative "lib/ci_status"
 require_relative "lib/code_diff"
+require_relative "lib/migration_collision"
 require_relative "lib/task_board"
 
 DEFAULT_ROOT = File.expand_path("..", __dir__)
@@ -329,7 +330,7 @@ rescue JSON::ParserError => e
 end
 
 def overlap_report(root, current_files, current_pr_number)
-  return [{ "items" => [], "warnings" => ["no branch files to compare"] }, []] if current_files.empty?
+  return [{ "items" => [], "warnings" => ["no branch files to compare"] }, [], []] if current_files.empty?
 
   warnings = []
   candidates = []
@@ -340,11 +341,13 @@ def overlap_report(root, current_files, current_pr_number)
   end
 
   items = []
+  fetched = []
   candidates.each do |pr|
     next if current_pr_number && pr["number"].to_i == current_pr_number.to_i
 
     files, warning = gh_pr_files(root, pr["number"])
     warnings << "PR ##{pr["number"]} files: #{warning}" if warning
+    fetched << pr.merge("files" => files)
     overlap = current_files & files
     next if overlap.empty?
 
@@ -356,7 +359,80 @@ def overlap_report(root, current_files, current_pr_number)
       "files" => overlap.sort
     }
   end
-  [{ "items" => items, "warnings" => warnings }, warnings]
+  # The third return is the RAW candidate set with every file, not just the shared
+  # ones — the duplicate-migration check needs each PR's whole migration list, and
+  # re-fetching it would double this report's network cost for data already in hand.
+  [{ "items" => items, "warnings" => warnings }, warnings, fetched]
+end
+
+# Ladder branches whose PRs carry every merged file by construction (the release
+# train's `accepted → release` batch promote). Excluded from the migration check so a
+# release window does not make it collide with everything. Mirrors bin/ship.
+RELEASE_BATCH_HEADS = %w[accepted release].freeze
+
+def first_line(path)
+  File.open(path, &:gets)
+rescue SystemCallError
+  nil
+end
+
+# DUPLICATE MIGRATION INSTALL — the gap that cost three incidents on 2026-08-13/14.
+# The same-file overlap above keys on `current_files & files`, a FILENAME
+# intersection, and two installs of one engine migration have different filenames by
+# construction. See bin/lib/migration_collision.rb for the mechanism and the keys.
+#
+# Two legs: the migrations already on the base ref (local, works with no gh), and
+# every OTHER OPEN PR's migration paths (from the overlap fetch above, so it costs no
+# extra call). Merged PRs are deliberately NOT a third leg — their files are already
+# on the base ref, so the local leg reports them once instead of twice; they are used
+# only to ATTRIBUTE a base-ref copy to the PR that put it there.
+def migration_collision_report(root, base, changed, candidates)
+  ours = MigrationCollision.local_installs(changed) { |path| first_line(File.join(root, path)) }
+  return { "items" => [], "installs" => 0 } if ours.empty?
+
+  sources = []
+  if base
+    sources << { "label" => "already on #{base}", "kind" => "branch",
+                 "installs" => ref_installs(root, base) }
+  end
+  Array(candidates).each do |pr|
+    next unless pr["state"].to_s == "open"
+    next if RELEASE_BATCH_HEADS.include?(pr["headRefName"].to_s)
+
+    sources << { "label" => pr["title"].to_s, "kind" => "pr", "number" => pr["number"],
+                 "url" => pr["url"].to_s,
+                 "installs" => MigrationCollision.installs(Array(pr["files"])) }
+  end
+  # A branch can collide with ITSELF — two installs in one diff, which is what a
+  # mis-resolved rebase leaves behind.
+  sources << { "label" => "this branch", "kind" => "self", "installs" => ours }
+
+  items = MigrationCollision.report(ours, sources)
+  { "items" => attribute_merged(items, candidates), "installs" => ours.size }
+end
+
+def ref_installs(root, base)
+  MigrationCollision.ref_installs(base) do |args|
+    _ok, out, = capture("git", "-C", root, *args)
+    out
+  end
+end
+
+# Name the merged PR that put the other copy on the base ref, when one of the merged
+# candidates carries that exact path. "It is already on accepted" is true but leaves
+# the reader digging; "PR #313 put it there" is the sentence they can act on.
+def attribute_merged(items, candidates)
+  merged = Array(candidates).select { |pr| pr["state"].to_s == "merged" }
+  return items if merged.empty?
+
+  items.map do |item|
+    next item unless item["kind"] == "branch"
+
+    owner = merged.find { |pr| Array(pr["files"]).include?(item["theirs"]["path"]) }
+    next item unless owner
+
+    item.merge("label" => "#{item["label"]} via PR ##{owner["number"]} #{owner["url"]}")
+  end
 end
 
 def install_docs_check(root)
@@ -502,6 +578,13 @@ def print_human(report)
       puts "  PR ##{item["number"]} #{item["state"]}: #{item["title"]}"
       item["files"].each { |file| puts "    - #{file}" }
     end
+  end
+
+  migrations = report["migration_collisions"] || { "items" => [], "installs" => 0 }
+  if migrations["items"].empty?
+    puts "Migration collisions: none (#{migrations["installs"].to_i} migration(s) added by this branch)"
+  else
+    MigrationCollision.lines(migrations["items"]).each { |line| puts line }
   end
 
   docs = report["installed_docs"]
@@ -672,11 +755,26 @@ if options[:gh]
 end
 
 overlap = { "items" => [], "warnings" => [] }
+overlap_candidates = []
 if options[:gh] && command_available?("gh")
   current_pr_number = pr["number"]
-  overlap, overlap_warnings = overlap_report(options[:root], changed, current_pr_number)
+  overlap, overlap_warnings, overlap_candidates = overlap_report(options[:root], changed, current_pr_number)
   overlap_warnings.each { |warning| warnings << warning }
   warnings << "same-file PR overlap found" unless overlap["items"].empty?
+end
+
+# DUPLICATE MIGRATION INSTALL — a BLOCKER, not a warning. Same-file overlap is normal
+# in a parallel shop; two migrations sharing one class name are never intended and
+# raise on EVERY db:migrate, including the Heroku release phase. The local leg (vs the
+# base ref) runs even with --no-gh, so this never degrades to silence.
+migrations = migration_collision_report(options[:root], base, changed, overlap_candidates)
+unless migrations["items"].empty?
+  errors << "duplicate migration install: #{migrations["items"].size} collision(s) — " \
+            "see the DUPLICATE MIGRATION INSTALL block above"
+end
+if migrations["installs"].to_i.positive? && !(options[:gh] && command_available?("gh"))
+  warnings << "migration collision checked against #{base || "no base ref"} only " \
+              "(gh unavailable) — a sibling OPEN PR installing the same migration would not be seen"
 end
 
 installed_docs = if options[:install_docs]
@@ -734,6 +832,7 @@ report = {
   "changed_files" => changed,
   "pr" => pr,
   "overlap" => overlap,
+  "migration_collisions" => migrations,
   "installed_docs" => installed_docs,
   "stale_terms" => stale_hits,
   "shape" => shape,

@@ -250,6 +250,91 @@ class SessionPreflightTest < Minitest::Test
     assert_equal ["docs/agents/index.md"], overlap.fetch("files")
   end
 
+  # --- duplicate migration installs -------------------------------------------
+  #
+  # [integration] THE DEFECT, through the real script. Two branches install ONE engine
+  # migration under two host timestamps; the FILES do not conflict (different names),
+  # so git merges both cleanly and Rails then raises DuplicateMigrationNameError on
+  # every db:migrate, including the Heroku release phase. The same-file overlap check
+  # above cannot see it — it intersects FILENAMES, and these differ by construction.
+  # Three live incidents on 2026-08-13/14 (turf #312/#313, hub #853/#848, turf #312
+  # against turf's already-merged copy).
+
+  ENGINE_MIGRATION_ORIGINAL = "20260813220000"
+  BASE_INSTALL = "db/migrate/20260813221100_add_standard_user_profile_columns.studio_engine.rb"
+  SECOND_INSTALL = "db/migrate/20260813223520_add_standard_user_profile_columns.studio_engine.rb"
+
+  # The copy already on the base ref is the turf #312-vs-merged-copy shape, and it needs
+  # no GitHub at all — which is why this leg still speaks under --no-gh.
+  def test_a_second_install_of_a_base_ref_migration_blocks_preflight
+    task = write_task
+    advance_base_with(BASE_INSTALL, engine_migration, "engine install lands on the base")
+    commit_file(SECOND_INSTALL, engine_migration, "the same migration, a new timestamp")
+
+    out, err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
+    refute status.success?, "a duplicate install must BLOCK:\n#{out}\n#{err}"
+
+    report = JSON.parse(out)
+    item = report.fetch("migration_collisions").fetch("items").fetch(0)
+    assert_equal "class", item.fetch("key"), "Rails groups by class name, so that is the key"
+    assert_equal SECOND_INSTALL, item.fetch("mine").fetch("path")
+    assert_equal BASE_INSTALL, item.fetch("theirs").fetch("path")
+    assert_equal "AddStandardUserProfileColumns", item.fetch("mine").fetch("class_name")
+    assert report.fetch("errors").any? { |e| e.include?("duplicate migration install") },
+           report.fetch("errors").inspect
+    # The same-file check is blind to this by construction — proving WHY the new one exists.
+    assert_empty report.fetch("overlap").fetch("items"),
+                 "filename intersection cannot see two differently-named copies"
+  end
+
+  # turf #312 vs #313: the other copy is on a sibling OPEN PR, so only its PATHS are
+  # available. The class key is derivable from a filename alone, which is what makes
+  # this leg affordable.
+  def test_a_sibling_open_pr_installing_the_same_migration_blocks_preflight
+    task = write_task(devops: default_devops.merge("branch" => "feat/session-preflight"))
+    commit_file(SECOND_INSTALL, engine_migration, "our install")
+    fake_bin = write_fake_gh(sibling_files: [BASE_INSTALL])
+
+    out, err, status = run_preflight(
+      "--file", task, "--no-install-docs", "--no-fetch", "--json",
+      env: { "PATH" => "#{fake_bin}:#{ENV.fetch("PATH", "")}" }
+    )
+    refute status.success?, "#{out}\n#{err}"
+
+    report = JSON.parse(out)
+    item = report.fetch("migration_collisions").fetch("items").fetch(0)
+    assert_equal "pr", item.fetch("kind")
+    assert_equal 6, item.fetch("number"), "the COLLIDING PR must be named"
+    assert_equal BASE_INSTALL, item.fetch("theirs").fetch("path")
+  end
+
+  # THE NEGATIVE CONTROL, and it matters more than the detection above: a check that
+  # flagged an ordinary install would wedge every migration-bearing task in the shop.
+  # The branch installs a genuinely NEW engine migration while the base and a sibling PR
+  # each carry a different one — nothing may fire, and `installs` proves the check
+  # LOOKED rather than skipped.
+  def test_a_legitimate_single_install_does_not_block_preflight
+    task = write_task(devops: default_devops.merge("branch" => "feat/session-preflight"))
+    advance_base_with(BASE_INSTALL, engine_migration, "an unrelated engine install on the base")
+    commit_file("db/migrate/20260814094500_add_widget_prefs_to_studio_users.studio_engine.rb",
+                engine_migration(original: "20260814090000", klass: "AddWidgetPrefsToStudioUsers"),
+                "a brand new engine migration")
+    fake_bin = write_fake_gh(
+      sibling_files: ["db/migrate/20260810120000_create_studio_email_settings.studio_engine.rb"]
+    )
+
+    out, err, status = run_preflight(
+      "--file", task, "--no-install-docs", "--no-fetch", "--json",
+      env: { "PATH" => "#{fake_bin}:#{ENV.fetch("PATH", "")}" }
+    )
+    assert status.success?, "a normal install must NOT block:\n#{out}\n#{err}"
+
+    report = JSON.parse(out)
+    assert_empty report.fetch("migration_collisions").fetch("items")
+    assert_equal 1, report.fetch("migration_collisions").fetch("installs"),
+                 "the check must have SEEN the install — silence from a blind check proves nothing"
+  end
+
   # [integration] The THIRD CI state at the preflight tier (task
   # detect-ci-less-stale-prs). A base-drifted PR gets ZERO check-runs and GitHub never
   # queues the workflow — but nothing said so, and the session armed a CI watcher that
@@ -678,7 +763,8 @@ class SessionPreflightTest < Minitest::Test
     write_fake_gh(merge_state: "UNKNOWN", mergeable: "CONFLICTING", rollup: "[]")
   end
 
-  def write_fake_gh(merge_state: "CLEAN", mergeable: "MERGEABLE", rollup: nil)
+  def write_fake_gh(merge_state: "CLEAN", mergeable: "MERGEABLE", rollup: nil,
+                    sibling_files: ["docs/agents/index.md"])
     rollup ||= '[{ name: "test", conclusion: "SUCCESS", status: "COMPLETED", detailsUrl: "https://example.test" }]'
     dir = File.join(@sandbox, "fake-bin")
     FileUtils.mkdir_p(dir)
@@ -689,7 +775,8 @@ class SessionPreflightTest < Minitest::Test
       case ARGV
       in ["pr", "view", ref, "--json", fields]
         if fields == "files"
-          files = ref == "6" ? [{ path: "docs/agents/index.md" }] : [{ path: "README.md" }]
+          sibling = #{JSON.generate(sibling_files)}.map { |p| { path: p } }
+          files = ref == "6" ? sibling : [{ path: "README.md" }]
           puts JSON.generate(files: files)
         else
           puts JSON.generate(
@@ -732,6 +819,28 @@ class SessionPreflightTest < Minitest::Test
     git("add", "-A")
     git("commit", "-q", "-m", message)
     head
+  end
+
+  # Land a file on the BASE ref without leaving the branch behind it — the commit and
+  # origin/release move together, so drift stays 0 and the only blocker a test can
+  # observe is the one it is about.
+  def advance_base_with(relative, body, message)
+    commit_file(relative, body, message)
+    git("update-ref", "refs/remotes/origin/release", head)
+  end
+
+  # What `rails studio_engine:install:migrations` writes: the gem's migration verbatim,
+  # with ONE added first line recording the engine original it was copied from. Verified
+  # against all three 2026-08-13 consumer copies, which were byte-identical apart from it.
+  def engine_migration(original: ENGINE_MIGRATION_ORIGINAL, klass: "AddStandardUserProfileColumns")
+    <<~RUBY
+      # This migration comes from studio_engine (originally #{original})
+      class #{klass} < ActiveRecord::Migration[8.1]
+        def change
+          add_column :users, :display_name, :string
+        end
+      end
+    RUBY
   end
 
   def git(*args)
