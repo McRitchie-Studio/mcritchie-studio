@@ -22,10 +22,22 @@ const { watchPageErrors } = require("./helpers");
 // no "ignore 404s" rule can pass both, because at the level of message text the
 // two cases are indistinguishable.
 //
-// NO REAL NETWORK. The third-party request is intercepted by `page.route` and
-// fulfilled locally, so a spec about CDN flakiness never touches a CDN. It
-// passes offline and its verdict does not depend on fonts.gstatic.com being up
-// — which was the entire complaint.
+// THE ASSERTED FAILURE IS SYNTHETIC. Direction 1's third-party 404 is served by
+// `page.route`, registered before the navigation, so the fact under test is
+// manufactured locally and its verdict never depends on fonts.gstatic.com being
+// up — which was the entire complaint.
+//
+// BUT THE PAGE IS REAL, AND THAT IS THE TRAP THIS FILE ALREADY FELL INTO ONCE.
+// Both directions `goto("/")`, and `/` is the landing page: it embeds the
+// Sprintful widget (app/views/landing/index.html.erb), which pulls a Montserrat
+// woff2 from fonts.gstatic.com. Direction 1 happens to intercept gstatic; nothing
+// intercepts app.sprintful.com, and direction 2 intercepts neither. So REAL
+// third-party failures can and do land in `ignored` mid-run — that is the live
+// incident vector, reproduced on 2026-08-14 during this task's own verification.
+//
+// The consequence is a standing rule for this file: assert on `pageErrors` and on
+// ORIGIN membership, never on `ignored` being empty. `ignored` is a count of
+// other people's outages.
 
 // Chromium's console error for a failed subresource, verbatim and url-free.
 // Asserted as a SHARED prefix in both directions to prove the two cases are
@@ -112,7 +124,26 @@ test("the page-error collector still catches an application error", async ({ pag
 
   expect(resourceMessage.text()).toContain(RESOURCE_ERROR);
   expect(pageErrors.join("\n"), report()).toContain(RESOURCE_ERROR);
-  expect(ignored, report()).toHaveLength(0);
+
+  // THE APP ORIGIN IS NEVER IN `ignored` — asserted by ORIGIN, not by
+  // `expect(ignored).toHaveLength(0)`.
+  //
+  // That emptiness assertion is what the first version of this test used, and it
+  // FAILED on 2026-08-14 for the exact reason this whole task exists. `/` is the
+  // landing page, and it really does embed the Sprintful widget whose CSS really
+  // does pull Montserrat from fonts.gstatic.com. When that CDN misbehaved during
+  // a run, `ignored` held one entry — the collector doing its new job correctly —
+  // and the CONTROL went red over it. A control for a CDN-weather flake must not
+  // itself depend on CDN weather.
+  //
+  // `ignored` is third-party traffic on a real page: changeable state, owned by
+  // whoever the marketing page embeds this quarter. The INVARIANT is narrower and
+  // is the only thing this test means — an APP-origin failure is never diverted
+  // out of `pageErrors`. Asserting the invariant costs nothing in mutation
+  // strength: make the scoping rule ignore everything and the app 404 lands in
+  // `ignored` prefixed with this exact origin, so this line reddens too.
+  const appOrigin = new URL(page.url()).origin;
+  expect(ignored.join("\n"), report()).not.toContain(appOrigin);
 
   // (b) THE UNCAUGHT EXCEPTION PATH, which the scoping rule deliberately does
   //     not touch. Asserted here so a future "scope pageerror too" edit cannot
