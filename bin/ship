@@ -69,6 +69,7 @@ require_relative "lib/cert_root_guard"
 require_relative "lib/fast_lane"
 require_relative "lib/gh_auth_retry"
 require_relative "lib/pr_overlap"
+require_relative "lib/migration_collision"
 require_relative "lib/full_suite_gate"
 require_relative "lib/session_identity"
 require_relative "../lib/claim_lease"
@@ -403,18 +404,23 @@ end
 # answer "none". See bin/lib/pr_overlap.rb for what that blind spot cost.
 #
 # Never fatal: every failure path (no gh, unreadable PR, bad JSON) simply skips.
-def overlap_advisory(root, branch, self_pr_url)
+def changed_since_base(root)
   base_ref = "origin/#{BASE_BRANCH}"
-  mine = IO.popen(["git", "-C", root, "diff", "--name-only", "#{base_ref}...HEAD"], &:read).to_s.split("\n")
-  return if mine.empty?
+  IO.popen(["git", "-C", root, "diff", "--name-only", "#{base_ref}...HEAD"], &:read).to_s.split("\n")
+end
 
-  # ONE call, files included. The first version fetched `pr view --json files` per
-  # open PR, which cost ~11s on EVERY ship for advice — a price no advisory should
-  # charge. `pr list` carries `files` directly.
+# The OTHER open PRs, with their file paths, in ONE call. The first version fetched
+# `pr view --json files` per open PR, which cost ~11s on EVERY ship for advice — a
+# price no advisory should charge. `pr list` carries `files` directly.
+#
+# Fetched once and shared by BOTH checks below (same-file advisory + duplicate
+# migration block), so adding the second check costs no extra round trip.
+# Returns nil — meaning "could not ask" — on any failure path.
+def sibling_prs(root, branch, self_pr_url)
   limit = OVERLAP_PR_LIMIT
   list_json, ok = gh_capture(root, "pr", "list", "--state", "open", "--limit", limit.to_s,
                              "--json", "number,title,url,headRefName,files")
-  return unless ok
+  return nil unless ok
 
   prs = JSON.parse(list_json)
   say "overlap — more than #{limit} open PRs; checked the #{limit} most recent." if prs.size >= limit
@@ -427,6 +433,13 @@ def overlap_advisory(root, branch, self_pr_url)
       RELEASE_BATCH_HEADS.include?(head)
   }
   prs.each { |pr| pr["files"] = Array(pr["files"]).map { |f| f["path"] } }
+  prs
+rescue StandardError
+  nil
+end
+
+def overlap_advisory(mine, prs)
+  return if mine.empty? || prs.nil?
 
   items = PrOverlap.report(mine, prs)
   PrOverlap.lines(items).each { |line| say line }
@@ -434,7 +447,67 @@ rescue StandardError
   nil # advice is never worth failing a ship over
 end
 
-overlap_advisory(root, branch, pr_url)
+# --- duplicate migration install (BLOCKS) ------------------------------------
+# Two branches installing ONE engine migration under two host timestamps merge
+# CLEANLY — different filenames — and then raise DuplicateMigrationNameError on every
+# db:migrate, INCLUDING the Heroku release phase. Three times on 2026-08-13/14. See
+# bin/lib/migration_collision.rb for the mechanism and both detection keys.
+#
+# Two legs, deliberately independent:
+#   LOCAL  — my added migrations vs the ones already on origin/accepted. Needs no gh,
+#            so it still fires when GitHub is unreachable. This is the leg that
+#            catches a copy some already-MERGED PR put on the base.
+#   REMOTE — my added migrations vs every other OPEN PR's paths. Needs the shared
+#            `pr list` payload; degrades to a spoken skip when it is missing, because
+#            an unasked question must never read as a clean answer.
+def migration_collisions(root, mine, prs)
+  ours = MigrationCollision.local_installs(mine) { |path| first_line(File.join(root, path)) }
+  return [] if ours.empty?
+
+  sources = [{ "label" => "already on origin/#{BASE_BRANCH}", "kind" => "branch",
+               "installs" => base_installs(root) }]
+  if prs.nil?
+    say "migrations — could NOT read the open-PR set; checked origin/#{BASE_BRANCH} only. " \
+        "A sibling PR installing this same migration would not be seen."
+  else
+    prs.each do |pr|
+      sources << { "label" => pr["title"].to_s, "kind" => "pr", "number" => pr["number"],
+                   "url" => pr["url"].to_s,
+                   "installs" => MigrationCollision.installs(Array(pr["files"])) }
+    end
+  end
+  # A branch can also collide with ITSELF — two installs in one diff.
+  sources << { "label" => "this branch", "kind" => "self", "installs" => ours }
+
+  MigrationCollision.report(ours, sources)
+end
+
+def first_line(path)
+  File.open(path, &:gets)
+rescue SystemCallError
+  nil
+end
+
+# Every migration on the base ref, with provenance, in two local git calls.
+# `git grep` exits non-zero on "no matches", which is a normal empty result here, so
+# stderr is discarded and the empty string speaks for itself.
+def base_installs(root)
+  MigrationCollision.ref_installs("origin/#{BASE_BRANCH}") do |args|
+    IO.popen(["git", "-C", root, *args], err: File::NULL, &:read).to_s
+  end
+rescue StandardError
+  []
+end
+
+mine = changed_since_base(root)
+prs = sibling_prs(root, branch, pr_url)
+overlap_advisory(mine, prs)
+
+collisions = migration_collisions(root, mine, prs)
+if MigrationCollision.blocking?(collisions)
+  MigrationCollision.lines(collisions).each { |line| warn "ship: #{line}" }
+  die!("duplicate migration install — resolve it before this PR moves to submitted.")
+end
 
 # --- 5/7 record pr_url -------------------------------------------------------
 

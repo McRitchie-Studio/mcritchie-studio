@@ -20,20 +20,32 @@ require "tmpdir"
 require "fileutils"
 require "rbconfig"
 require_relative "../support/session_env"
+require_relative "../support/outbound_seams"
 require_relative "../../bin/lib/full_suite_gate"
 
 class ShipTest < Minitest::Test
   BIN = File.expand_path("../../bin/ship", __dir__)
   SLUG = "fast-lane-demo"
   BRANCH = "feat/#{SLUG}"
-  TASK_URL = "https://mcritchie.studio/tasks/#{SLUG}"
+
+  # The board bin/ship renders task links against — DERIVED from the pin, not
+  # spelled out. It used to be the literal "https://mcritchie.studio/tasks/…",
+  # which passed only because run_ship left TASK_API_BASE unpinned and bin/ship
+  # fell through to its production default. Two problems with that: the assertion
+  # "the PR body must LEAD with the task URL" was really asserting the production
+  # HOST, and no containment floor could pin the board without a false red here.
+  # Deriving it keeps the assertion about the URL's SHAPE, which is what these
+  # tests are actually for.
+  TASK_URL = "#{OutboundSeams::UNROUTABLE}/tasks/#{SLUG}"
   PR_URL = "https://github.com/McRitchie-Studio/mcritchie-studio/pull/999"
 
   # A throwaway repo on the task branch with a bare `origin` carrying an
   # `accepted` base — so push runs against a real remote, no network. Yields
   # the workdir with one committed baseline and one uncommitted edit (the
   # change ship's commit step must land).
-  def with_repo
+  # `base_files` land in the INIT commit, so they are on `accepted` before the branch
+  # diverges — the only way to model "this migration is already on the base ref".
+  def with_repo(base_files: {})
     Dir.mktmpdir do |root|
       dir = File.join(root, "work")
       origin = File.join(root, "origin.git")
@@ -46,6 +58,7 @@ class ShipTest < Minitest::Test
       end
       write.call("app.rb", "puts :v1\n")
       write.call(".gitignore", "stub.log\n*-stub\n")
+      base_files.each { |rel, body| write.call(rel, body) }
       git.call("init -q -b #{BRANCH}")
       git.call("config user.email tester@example.com")
       git.call("config user.name tester")
@@ -63,7 +76,10 @@ class ShipTest < Minitest::Test
   # to STUB_LOG; exits 1 when FAIL_<MARKER>=1 (after logging + printing). The
   # TASK stub serves `show` from TASK_SHOW_JSON — and from TASK_SHOW_JSON_MOVED
   # once a `move` call has been logged, modeling board persistence for the
-  # read-back verify. The GH stub serves `pr list` from GH_PR_LIST_JSON and
+  # read-back verify. The GH stub serves the `--head` `pr list` (is MY PR already
+  # open?) from GH_PR_LIST_JSON and the un-headed one (which OTHER PRs are open?)
+  # from GH_PR_LIST_SIBLINGS_JSON — two different questions that must be able to
+  # carry two different answers. The GH stub serves `pr list` from GH_PR_LIST_JSON and
   # prints a PR URL on `pr create`.
   def write_stub(dir, name, marker)
     stub = File.join(dir, name)
@@ -77,7 +93,7 @@ class ShipTest < Minitest::Test
         puts(moved && ENV["TASK_SHOW_JSON_MOVED"] ? ENV["TASK_SHOW_JSON_MOVED"] : ENV["TASK_SHOW_JSON"])
       end
       if "#{marker}" == "GH" && ARGV[0, 2] == %w[pr list]
-        puts ENV.fetch("GH_PR_LIST_JSON", "[]")
+        puts ENV.fetch(ARGV.include?("--head") ? "GH_PR_LIST_JSON" : "GH_PR_LIST_SIBLINGS_JSON", "[]")
       end
       if "#{marker}" == "GH" && ARGV[0, 2] == %w[pr create]
         puts "#{PR_URL}"
@@ -109,7 +125,7 @@ class ShipTest < Minitest::Test
   # where log_lines is the parsed stub log ([[marker, argv...], ...] in call order).
   def run_ship(dir, args: [SLUG], extra_env: {}, show_json: nil, moved_json: nil)
     log = File.join(dir, "stub.log")
-    env = SessionEnv.neutralized({
+    env = OutboundSeams.env({
       "SHIP_ROOT" => dir,
       "SHIP_TASK_BIN" => write_stub(dir, "task-stub", "TASK"),
       "SHIP_FAST_CHECK_BIN" => write_stub(dir, "fast-stub", "FAST"),
@@ -202,6 +218,89 @@ class ShipTest < Minitest::Test
       assert_includes out, "Task: #{TASK_URL}"
       assert_includes out, "PR: #{PR_URL}"
       assert_includes out, "stage: submitted (read back verified)"
+    end
+  end
+
+  # --- duplicate migration installs (BLOCKS) -----------------------------------
+  #
+  # [integration] Two branches install ONE engine migration under two host timestamps.
+  # The FILES do not conflict — different names — so git merges both cleanly and only
+  # db/schema.rb objects; resolve that carelessly and Rails raises
+  # DuplicateMigrationNameError on EVERY db:migrate, including the Heroku release
+  # phase. Three live incidents on 2026-08-13/14. Unlike the same-file advisory beside
+  # it, this one is fatal: there is no state of the world where two copies are correct.
+
+  ENGINE_HEADER = "# This migration comes from studio_engine (originally 20260813220000)"
+  BASE_INSTALL = "db/migrate/20260813221100_add_standard_user_profile_columns.studio_engine.rb"
+  SECOND_INSTALL = "db/migrate/20260813223520_add_standard_user_profile_columns.studio_engine.rb"
+
+  def engine_migration(header: ENGINE_HEADER, klass: "AddStandardUserProfileColumns")
+    "#{header}\nclass #{klass} < ActiveRecord::Migration[8.1]\n  def change; end\nend\n"
+  end
+
+  def write_migration(dir, rel, body)
+    full = File.join(dir, rel)
+    FileUtils.mkdir_p(File.dirname(full))
+    File.write(full, body)
+  end
+
+  # The turf #312-vs-already-merged-copy shape: the other copy is on `accepted`. Local
+  # git only — this leg still fires when GitHub is unreachable.
+  def test_a_second_install_of_a_base_ref_migration_blocks_the_ship
+    with_repo(base_files: { BASE_INSTALL => engine_migration }) do |dir|
+      write_migration(dir, SECOND_INSTALL, engine_migration)
+      out, err, status, lines = run_ship(dir)
+
+      refute status.success?, "a duplicate migration install must fail the ship:\n#{err}\n#{out}"
+      combined = "#{err}\n#{out}"
+      assert_match(/DUPLICATE MIGRATION INSTALL/, combined)
+      assert_includes combined, SECOND_INSTALL, "the operator must see WHICH two files collide"
+      assert_includes combined, BASE_INSTALL
+      assert_match(/DuplicateMigrationNameError/, combined, "and the actual consequence")
+      assert_match(/Heroku release phase/, combined, "which is a DEPLOY break")
+      assert_match(/the other DROPS it/, combined, "and the resolution all three incidents used")
+      refute_includes markers(lines), "TASK move",
+                      "the task must NOT reach submitted with a duplicate migration on the branch"
+    end
+  end
+
+  # turf #312 vs #313: the other copy is on a sibling OPEN PR, where only PATHS are on
+  # offer. The class key is derivable from a filename alone, so the existing `pr list`
+  # payload is enough and the check costs no extra round trip.
+  def test_a_sibling_open_pr_installing_the_same_migration_blocks_the_ship
+    siblings = JSON.generate([{ number: 313, title: "Turf adopts profile migration",
+                                url: "https://github.com/o/r/pull/313", headRefName: "feat/turf-adopts",
+                                files: [{ path: BASE_INSTALL }] }])
+    with_repo do |dir|
+      write_migration(dir, SECOND_INSTALL, engine_migration)
+      out, err, status, lines = run_ship(dir, extra_env: { "GH_PR_LIST_SIBLINGS_JSON" => siblings })
+
+      refute status.success?, "#{err}\n#{out}"
+      combined = "#{err}\n#{out}"
+      assert_match(/DUPLICATE MIGRATION INSTALL/, combined)
+      assert_match(%r{PR #313 https://github.com/o/r/pull/313}, combined,
+                   "the COLLIDING PR must be named, with its URL")
+      refute_includes markers(lines), "TASK move"
+    end
+  end
+
+  # THE NEGATIVE CONTROL, and it matters more than the two above: a check that flagged
+  # an ordinary install would wedge every migration-bearing task in the shop. A brand
+  # new engine migration, with `accepted` and a sibling PR each carrying a DIFFERENT
+  # one, must ship green and say nothing.
+  def test_a_legitimate_single_install_ships_green
+    siblings = JSON.generate([{ number: 313, title: "Something else", url: "https://o/313",
+                                headRefName: "feat/other",
+                                files: [{ path: "db/migrate/20260810120000_create_widgets.studio_engine.rb" }] }])
+    with_repo(base_files: { BASE_INSTALL => engine_migration }) do |dir|
+      write_migration(dir, "db/migrate/20260814094500_add_widget_prefs.studio_engine.rb",
+                      engine_migration(header: "# This migration comes from studio_engine (originally 20260814090000)",
+                                       klass: "AddWidgetPrefs"))
+      out, err, status, lines = run_ship(dir, extra_env: { "GH_PR_LIST_SIBLINGS_JSON" => siblings })
+
+      assert status.success?, "a normal engine install must ship:\n#{err}\n#{out}"
+      refute_match(/DUPLICATE MIGRATION/, "#{err}\n#{out}")
+      assert_includes markers(lines), "TASK move", "and must reach the submitted seam"
     end
   end
 

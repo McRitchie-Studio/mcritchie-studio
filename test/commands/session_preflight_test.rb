@@ -250,6 +250,91 @@ class SessionPreflightTest < Minitest::Test
     assert_equal ["docs/agents/index.md"], overlap.fetch("files")
   end
 
+  # --- duplicate migration installs -------------------------------------------
+  #
+  # [integration] THE DEFECT, through the real script. Two branches install ONE engine
+  # migration under two host timestamps; the FILES do not conflict (different names),
+  # so git merges both cleanly and Rails then raises DuplicateMigrationNameError on
+  # every db:migrate, including the Heroku release phase. The same-file overlap check
+  # above cannot see it — it intersects FILENAMES, and these differ by construction.
+  # Three live incidents on 2026-08-13/14 (turf #312/#313, hub #853/#848, turf #312
+  # against turf's already-merged copy).
+
+  ENGINE_MIGRATION_ORIGINAL = "20260813220000"
+  BASE_INSTALL = "db/migrate/20260813221100_add_standard_user_profile_columns.studio_engine.rb"
+  SECOND_INSTALL = "db/migrate/20260813223520_add_standard_user_profile_columns.studio_engine.rb"
+
+  # The copy already on the base ref is the turf #312-vs-merged-copy shape, and it needs
+  # no GitHub at all — which is why this leg still speaks under --no-gh.
+  def test_a_second_install_of_a_base_ref_migration_blocks_preflight
+    task = write_task
+    advance_base_with(BASE_INSTALL, engine_migration, "engine install lands on the base")
+    commit_file(SECOND_INSTALL, engine_migration, "the same migration, a new timestamp")
+
+    out, err, status = run_preflight("--file", task, "--no-gh", "--no-install-docs", "--no-fetch", "--json")
+    refute status.success?, "a duplicate install must BLOCK:\n#{out}\n#{err}"
+
+    report = JSON.parse(out)
+    item = report.fetch("migration_collisions").fetch("items").fetch(0)
+    assert_equal "class", item.fetch("key"), "Rails groups by class name, so that is the key"
+    assert_equal SECOND_INSTALL, item.fetch("mine").fetch("path")
+    assert_equal BASE_INSTALL, item.fetch("theirs").fetch("path")
+    assert_equal "AddStandardUserProfileColumns", item.fetch("mine").fetch("class_name")
+    assert report.fetch("errors").any? { |e| e.include?("duplicate migration install") },
+           report.fetch("errors").inspect
+    # The same-file check is blind to this by construction — proving WHY the new one exists.
+    assert_empty report.fetch("overlap").fetch("items"),
+                 "filename intersection cannot see two differently-named copies"
+  end
+
+  # turf #312 vs #313: the other copy is on a sibling OPEN PR, so only its PATHS are
+  # available. The class key is derivable from a filename alone, which is what makes
+  # this leg affordable.
+  def test_a_sibling_open_pr_installing_the_same_migration_blocks_preflight
+    task = write_task(devops: default_devops.merge("branch" => "feat/session-preflight"))
+    commit_file(SECOND_INSTALL, engine_migration, "our install")
+    fake_bin = write_fake_gh(sibling_files: [BASE_INSTALL])
+
+    out, err, status = run_preflight(
+      "--file", task, "--no-install-docs", "--no-fetch", "--json",
+      env: { "PATH" => "#{fake_bin}:#{ENV.fetch("PATH", "")}" }
+    )
+    refute status.success?, "#{out}\n#{err}"
+
+    report = JSON.parse(out)
+    item = report.fetch("migration_collisions").fetch("items").fetch(0)
+    assert_equal "pr", item.fetch("kind")
+    assert_equal 6, item.fetch("number"), "the COLLIDING PR must be named"
+    assert_equal BASE_INSTALL, item.fetch("theirs").fetch("path")
+  end
+
+  # THE NEGATIVE CONTROL, and it matters more than the detection above: a check that
+  # flagged an ordinary install would wedge every migration-bearing task in the shop.
+  # The branch installs a genuinely NEW engine migration while the base and a sibling PR
+  # each carry a different one — nothing may fire, and `installs` proves the check
+  # LOOKED rather than skipped.
+  def test_a_legitimate_single_install_does_not_block_preflight
+    task = write_task(devops: default_devops.merge("branch" => "feat/session-preflight"))
+    advance_base_with(BASE_INSTALL, engine_migration, "an unrelated engine install on the base")
+    commit_file("db/migrate/20260814094500_add_widget_prefs_to_studio_users.studio_engine.rb",
+                engine_migration(original: "20260814090000", klass: "AddWidgetPrefsToStudioUsers"),
+                "a brand new engine migration")
+    fake_bin = write_fake_gh(
+      sibling_files: ["db/migrate/20260810120000_create_studio_email_settings.studio_engine.rb"]
+    )
+
+    out, err, status = run_preflight(
+      "--file", task, "--no-install-docs", "--no-fetch", "--json",
+      env: { "PATH" => "#{fake_bin}:#{ENV.fetch("PATH", "")}" }
+    )
+    assert status.success?, "a normal install must NOT block:\n#{out}\n#{err}"
+
+    report = JSON.parse(out)
+    assert_empty report.fetch("migration_collisions").fetch("items")
+    assert_equal 1, report.fetch("migration_collisions").fetch("installs"),
+                 "the check must have SEEN the install — silence from a blind check proves nothing"
+  end
+
   # [integration] The THIRD CI state at the preflight tier (task
   # detect-ci-less-stale-prs). A base-drifted PR gets ZERO check-runs and GitHub never
   # queues the workflow — but nothing said so, and the session armed a CI watcher that
@@ -493,6 +578,40 @@ class SessionPreflightTest < Minitest::Test
     assert_equal "Live board feedback should be visible.", report.dig("latest_feedback", "description")
   end
 
+  # THE HARNESS SELF-TEST — the board fallback, proven pinned.
+  #
+  # A fixture with NO latest_activity is the shape that FIRES the fallback, and the
+  # fallback is a direct Net::HTTP call to TASK_API_BASE, not a call through
+  # SESSION_PREFLIGHT_TASK_BIN. Before the floor, exactly two tests in this file
+  # pinned that base; every other one avoided the call only because its fixture
+  # happened to carry an activity with a description. Containment by fixture shape
+  # is one edit from gone, and the edit looks harmless.
+  #
+  # The receipt is POSITIVE: the run must report the fallback FAILING against the
+  # pinned loopback host. "No warning" would be the wrong assertion — that is also
+  # what a successful call to PRODUCTION looks like.
+  #
+  # AGENT_API_SECRET is supplied because the fallback returns early without one, and
+  # CI has none (no .env, no 1Password). Without it this would pass for a reason
+  # that has nothing to do with the pin. It can only ever be offered to loopback.
+  def test_the_board_fallback_is_pinned_at_the_floor_not_production
+    write_fake_task_cli
+
+    out, err, status = run_preflight("add-session-preflight", "--no-gh", "--no-fetch", "--json",
+                                     env: { "AGENT_API_SECRET" => "pin-proof-not-a-real-secret" })
+    assert status.success?, "#{out}\n#{err}"
+
+    warning = JSON.parse(out).fetch("warnings").grep(/latest task activity fallback failed/).first
+    refute_nil warning,
+               "the activities fallback did not run, so this proves nothing about the pin. It " \
+               "fires only when the record carries no latest_activity with a description — check " \
+               "the fixture still has that shape."
+    assert_includes warning, "127.0.0.1",
+                    "the fallback reached #{warning.inspect} instead of the pinned loopback base. " \
+                    "bin/session-preflight defaults TASK_API_BASE to https://mcritchie.studio, so " \
+                    "anything but 127.0.0.1 here is a live read of the production board."
+  end
+
   def test_live_task_show_falls_back_to_activities_api_for_latest_feedback
     write_fake_task_cli
     activity = {
@@ -553,12 +672,34 @@ class SessionPreflightTest < Minitest::Test
     # repo (the hub), which for a test would be the REAL board CLI and the REAL
     # shapes policy. The zero-seam anchoring itself is proven separately in
     # test_hub_helpers_resolve_from_script_root_not_inspected_root.
+    #
+    # THE TWO SEAMS ABOVE ARE NOT THE WHOLE REACH, and believing they were is what
+    # left this file seamed BY CONVENTION rather than by helper. Two things escaped
+    # them:
+    #
+    #   * THE BOARD FALLBACK. When a task record carries no latest_activity with a
+    #     description, bin/session-preflight calls the tasks API directly over
+    #     Net::HTTP (fetch_latest_task_activity), NOT through
+    #     SESSION_PREFLIGHT_TASK_BIN — and TASK_API_BASE defaults to
+    #     https://mcritchie.studio. Exactly two tests here pinned TASK_API_BASE;
+    #     every other test dodges the call only by FIXTURE SHAPE, because the
+    #     default fixture happens to supply an activity with a description. One
+    #     fixture edit re-opens it. That is not containment, that is luck with good
+    #     manners.
+    #   * gh AND git. Each gh-touching test plants its own fake on PATH or passes
+    #     --no-gh, and most (not all) pass --no-fetch. Same shape: correct in every
+    #     test that remembered.
+    #
+    # So the floor (test/support/outbound_seams.rb) is applied here, once, for
+    # every spawn: an unroutable board, a sealed gh/op/heroku on PATH, and a
+    # recording refusal for git's ssh and credential paths. `env` still merges LAST,
+    # so the tests that plant their own fake gh keep winning.
     seams = {
       "SESSION_PREFLIGHT_TASK_BIN" => File.join(@repo, "bin", "task"),
       "SESSION_PREFLIGHT_SHAPES_PATH" => File.join(@repo, "config", "feature_shapes.yml")
     }
     Open3.capture3(
-      SessionEnv.neutralized(seams.merge(env)),
+      OutboundSeams.env(seams.merge(env)),
       RbConfig.ruby, SCRIPT, "--root", @repo, *args,
       chdir: @repo
     )
@@ -678,7 +819,8 @@ class SessionPreflightTest < Minitest::Test
     write_fake_gh(merge_state: "UNKNOWN", mergeable: "CONFLICTING", rollup: "[]")
   end
 
-  def write_fake_gh(merge_state: "CLEAN", mergeable: "MERGEABLE", rollup: nil)
+  def write_fake_gh(merge_state: "CLEAN", mergeable: "MERGEABLE", rollup: nil,
+                    sibling_files: ["docs/agents/index.md"])
     rollup ||= '[{ name: "test", conclusion: "SUCCESS", status: "COMPLETED", detailsUrl: "https://example.test" }]'
     dir = File.join(@sandbox, "fake-bin")
     FileUtils.mkdir_p(dir)
@@ -689,7 +831,8 @@ class SessionPreflightTest < Minitest::Test
       case ARGV
       in ["pr", "view", ref, "--json", fields]
         if fields == "files"
-          files = ref == "6" ? [{ path: "docs/agents/index.md" }] : [{ path: "README.md" }]
+          sibling = #{JSON.generate(sibling_files)}.map { |p| { path: p } }
+          files = ref == "6" ? sibling : [{ path: "README.md" }]
           puts JSON.generate(files: files)
         else
           puts JSON.generate(
@@ -732,6 +875,28 @@ class SessionPreflightTest < Minitest::Test
     git("add", "-A")
     git("commit", "-q", "-m", message)
     head
+  end
+
+  # Land a file on the BASE ref without leaving the branch behind it — the commit and
+  # origin/release move together, so drift stays 0 and the only blocker a test can
+  # observe is the one it is about.
+  def advance_base_with(relative, body, message)
+    commit_file(relative, body, message)
+    git("update-ref", "refs/remotes/origin/release", head)
+  end
+
+  # What `rails studio_engine:install:migrations` writes: the gem's migration verbatim,
+  # with ONE added first line recording the engine original it was copied from. Verified
+  # against all three 2026-08-13 consumer copies, which were byte-identical apart from it.
+  def engine_migration(original: ENGINE_MIGRATION_ORIGINAL, klass: "AddStandardUserProfileColumns")
+    <<~RUBY
+      # This migration comes from studio_engine (originally #{original})
+      class #{klass} < ActiveRecord::Migration[8.1]
+        def change
+          add_column :users, :display_name, :string
+        end
+      end
+    RUBY
   end
 
   def git(*args)

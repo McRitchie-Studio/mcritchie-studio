@@ -74,9 +74,21 @@ bin/task begin <slug> --steal      # re-creates/rebinds the desk, moves to build
 ```
 
 **Read the preflight output and fix what it flags before writing code** — branch
-drift vs `accepted`, latest blocker feedback, same-file PR overlap, generated-doc
-drift, stale terminology, required test tiers. (`test_plan` + `local_url` show as
-"missing metadata" until you record them; that is expected, not a blocker.)
+drift vs `accepted`, latest blocker feedback, same-file PR overlap, duplicate
+migration installs, generated-doc drift, stale terminology, required test tiers.
+(`test_plan` + `local_url` show as "missing metadata" until you record them; that
+is expected, not a blocker.)
+
+**If your change installs an engine migration, re-run the preflight after you
+install it.** At claim time the branch has no commits, so the migration check has
+nothing to look at; it is the re-run that answers. A duplicate install BLOCKS —
+two branches installing ONE engine migration under two host timestamps merge
+cleanly, because only `db/schema.rb` conflicts, and then raise
+`ActiveRecord::DuplicateMigrationNameError` on every `db:migrate` including the
+Heroku release phase. `bin/ship` asks the same question again at handoff. Both
+name the colliding files and the other PR; the fix is always that the task which
+OWNS the migration keeps its copy and the other drops it. Mechanism and keys:
+`bin/lib/migration_collision.rb`.
 
 The long form, when the fast lane does not fit (multi-repo, a task someone else
 shaped, a single step to rerun): `bin/task create …` → `bin/agent-worktree new
@@ -280,6 +292,11 @@ bin/ship <slug> -m "<commit message>"
   `bin/release ship` (that is the G4 production deploy).
 - `bin/dor-check` refuses an under-tested PR — fix whatever it flags; its verdict
   closes the G1 gate.
+- Ship also refuses a **duplicate migration install** — an engine migration this
+  branch installs that `accepted`, a sibling open PR, or this branch itself
+  already carries under a different filename. It names both files and the other
+  PR. Resolve it (the owning task keeps the copy, the other drops it) and re-run;
+  ship resumes.
 - Move to `submitted` **without waiting for CI**: pending CI is a loud suggestion
   (the fast cert is credited provisionally), red CI blocks, and the authoritative
   CI verdict is review's gate-zero — `pr-review` bounces a red-CI task back with

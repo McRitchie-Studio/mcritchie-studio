@@ -1246,11 +1246,32 @@ class Task < ApplicationRecord
     ActiveModel::Type::Boolean.new.cast(devops.fetch("included_in_release", true))
   end
 
-  # The ecosystem repo this task's PR/branch lives in — the unit the Deploy
+  # EVERY ecosystem repo this task ships through — its full release identity, and
+  # the set the Deploy workflow must promote, QA and ship. Ordered: the PRIMARY
+  # repo first (#release_repo, unchanged), then any repo with a recorded PR url,
+  # then the rest of the declared `repositories`.
+  #
+  # THIS IS THE FIX for the 2026-08-13 half-ship. Every release stage read the
+  # SINGULAR #release_repo — the promote list (`bin/release` prepare step 4), the
+  # member plan, the repo plan, the pre-QA gate, the QA deploy and the ship — so a
+  # task's whole release identity collapsed to whichever repo its ONE `pr_url`
+  # named. `land-rails-security-patch` named [mcritchie-studio, turf-monster] with
+  # a hub PR url: turf was never promoted, never QA'd and never shipped, while the
+  # task was stamped shipped+main. Callers that plan work MUST use this; #release_repo
+  # remains only for the single "which repo is this task's home" answers (gem-vs-app
+  # kind, the board's app badge).
+  def release_repos
+    ([ release_repo ] + release_pr_urls.keys + devops_repositories).compact_blank.uniq
+  end
+
+  # The PRIMARY ecosystem repo this task's PR/branch lives in — the unit the Deploy
   # workflow classifies as a gem (producer) or an app (consumer). Prefer the
   # repo parsed from the PR url (github.com/<owner>/<repo>/pull/N), since that's
   # where the branch actually is; fall back to the declared repositories — for a
   # `library` shape the gem repo named there, otherwise the first entry.
+  #
+  # NOT the task's release identity when it names more than one repo — see
+  # #release_repos, and never re-derive a promote/deploy set from this.
   def release_repo
     repo_from_pr_url.presence ||
       if devops_shape == "library"

@@ -569,12 +569,20 @@ naming `[mcritchie-studio, turf-monster]` with the hub's PR url promoted, QA'd
 and shipped the hub alone, and was still stamped `shipped` + `merged: "main"`
 while turf production ran the unpatched code.
 
-**Recording only — nothing refuses an incomplete record yet.** No sweep, gate or
-CLI command reads this map today. `Task#repos_missing_pr_url` is the query that
-will answer *which repo has no PR*, and it has no caller until
-`/tasks/merge-promotes-every-repo` ships the refusal. Until then, a multi-repo
-task with one PR recorded still promotes exactly one repo — keep hand-checking
-coverage.
+**The sweep reads it; nothing refuses an incomplete record yet.** The release lane
+plans against `Task#release_repos` — the primary repo, every repo with a PR
+recorded here, and every declared `repositories` entry — so a multi-repo task now
+promotes, QA's and ships *every* repo it names, and
+`Release::Conductor#member_plan` carries each repo's PR url with it. What is still
+missing is the refusal: `Task#repos_missing_pr_url` is the query that will answer
+*which repo has no PR*, and it has no caller until
+`/tasks/merge-promotes-every-repo` ships it. So a repo you neither declare nor
+record is simply absent from the plan — while a repo you **declare** without
+recording its PR is planned, promoted and QA-deployed like any other, which
+leaves the release holding evidence for it, so `Release::MemberEvidence` does
+**not** hold the member. That guard keys on what the RUN LANDED per repo, never
+on PR coverage: it catches a repo missing from the *plan*, not a repo missing a
+*PR*. **Keep hand-checking PR coverage** until the refusal lands.
 
 `pr_url` stays the primary and is folded into the map automatically
 (`Task#release_pr_urls`) — do not repeat it. **It wins for the repo it names**,
