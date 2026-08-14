@@ -36,13 +36,22 @@
 # and that soul is dropped from the light pool for this task.
 #
 # The BUILDER is excluded from the LIGHT seat too — a soul shouldn't review their
-# own work. Who built the task is read from devops.built_by (stamped from the
-# build-claim actor when it resolves to a soul slug — see Task#stamp_builder) and,
-# for a persisted task, falls back to the actor on the latest `→ building`
-# TaskEvent; pass `builder:` to override. A builder who isn't a specialist (Carl,
-# a non-pool soul, or the QA owner) excludes nobody from the light pool. If
-# excluding a specialist builder would leave too few light candidates the builder
-# is KEPT (the decision/log flags it) so a pair is always returned.
+# own work. Who built the task is read from devops.built_by (stamped on any build
+# CLAIM whose actor/persona/assignee resolves to a soul slug — see
+# Task#enforce_builder_stamp) and, for a persisted task, falls back to a SOUL actor
+# on the latest `→ building` TaskEvent; pass `builder:` to override. A builder who
+# isn't a specialist (Carl, a non-pool soul, or the QA owner) excludes nobody from
+# the light pool. If excluding a specialist builder would leave too few light
+# candidates the builder is KEPT (the decision/log flags it) so a pair is always
+# returned.
+#
+# WHEN NO SOURCE NAMES A SOUL the builder is UNKNOWN, not absent, and the decision
+# says so via `builder_known` — the distinction this class did not draw until
+# 2026-08-13, when an empty exclusion list read as "nobody to exclude" and
+# `bin/reviewer-select` picked Carl to review Carl's own PR. Selection still
+# DEGRADES here (the reviewed-transition recorder must never break on a missing
+# stamp); it is the CLI that fails closed on the fact, and `builder: "none"`
+# (NO_BUILDER) is the caller's explicit "no soul built this" assertion.
 #
 # BUSY souls are excluded from the LIGHT seat too — specialists currently
 # mid-build or mid-review on OTHER in-flight tasks shouldn't be handed a second
@@ -76,6 +85,13 @@ class ReviewerSelector
   # owns qa-release); Steffon moved to production-deploy (the ship) and rejoined the
   # light specialist pool as the DevOps/Platform second read.
   DEFAULT_QA_OWNER = "avi"
+
+  # The `builder:` value that ASSERTS no soul built this task (vs. the record
+  # merely not saying). It is the caller's stated fact, and the only thing other
+  # than a real soul that satisfies #builder_known? — so the fail-closed guard in
+  # `bin/reviewer-select` has an explicit, auditable escape instead of being
+  # routed around when a Pokémon session (no soul) genuinely did the build.
+  NO_BUILDER = "none"
 
   # The two reviewer-role NAMES, sourced from the single vocabulary
   # (config/devops_vocabulary.yml → reviewer_roles) so the role this selector
@@ -231,6 +247,12 @@ class ReviewerSelector
       "standing_primary" => carl_primary? ? STANDING_PRIMARY : nil,
       "excluded_qa_owner" => qa_owner,
       "builder" => builder,
+      # THE FACT A CALLER CAN FAIL CLOSED ON. `excluded_builder` was always
+      # computed correctly — the 2026-08-13 defect was that it was computed over
+      # an EMPTY builder and nothing said so, so an absent fact read exactly like
+      # "there is nobody to exclude". These are different answers and the decision
+      # now distinguishes them. See #builder_known?.
+      "builder_known" => builder_known?,
       "excluded_builder" => builder_excluded? ? builder : nil,
       "builder_candidate" => builder_candidate?,
       "busy" => busy,
@@ -363,10 +385,46 @@ class ReviewerSelector
   # JSON), else the actor on the latest `→ building` TaskEvent (persisted tasks
   # only). nil when the builder can't be determined. Memoized (the event lookup
   # can hit the DB).
+  #
+  # Every source is filtered through Task::SOUL_SLUG, because only a SOUL can be
+  # excluded from a soul-keyed pool. Without that filter the TaskEvent fallback
+  # returned whatever the actor column held — and a bare `bin/task move <slug>
+  # building` writes the SESSION UUID there, which is not a builder anyone can
+  # exclude. A bare presence check would then have called the builder "known"
+  # while excluding nobody: the same fail-open, one layer down.
   def builder
     return @builder if defined?(@builder)
 
-    @builder = (@builder_override || devops_built_by || building_event_actor).to_s.strip.presence
+    @builder =
+      if builder_asserted_none?
+        nil
+      elsif @builder_override
+        # An explicit override is AUTHORITATIVE: a caller who names a builder has
+        # spoken for the task, so a non-soul override resolves to nobody rather
+        # than silently falling through to the record it was meant to correct.
+        soul?(@builder_override) ? @builder_override : nil
+      else
+        [devops_built_by, building_event_actor].map { |s| s.to_s.strip }.find { |s| soul?(s) }
+      end
+  end
+
+  # The caller's explicit "no soul built this task" assertion (`builder: "none"` /
+  # `bin/reviewer-select --builder none`). It names nobody, yet it makes the
+  # builder KNOWN — an asserted absence is a fact, an unstamped task is not. This
+  # is what keeps the fail-closed guard usable instead of routed around.
+  def builder_asserted_none?
+    @builder_override.to_s.strip.casecmp(NO_BUILDER).zero?
+  end
+
+  # Whether WHO BUILT THIS is a settled question. False means the record simply
+  # does not say — the state in which a caller must refuse to auto-select rather
+  # than roll a reviewer who may be the author.
+  def builder_known?
+    builder_asserted_none? || builder.present?
+  end
+
+  def soul?(slug)
+    slug.to_s.match?(Task::SOUL_SLUG)
   end
 
   # True when the builder is a real selectable LIGHT candidate — present, in the
@@ -519,13 +577,18 @@ class ReviewerSelector
     )
   end
 
-  # The builder, annotated for the audit log: "-" when unknown, "<slug>(excluded)"
-  # when removed from the light pool, "<slug>(kept:too-few)" when a specialist
-  # builder is kept because excluding it would leave too few candidates, or
-  # "<slug>(not-a-candidate)" when a known builder isn't a light candidate (Carl,
-  # a non-pool soul, or the QA owner) — so there was nothing to exclude.
+  # The builder, annotated for the audit log: "UNKNOWN(no-exclusion)" when the
+  # record doesn't say, "none(asserted)" when a caller stated no soul built it,
+  # "<slug>(excluded)" when removed from the light pool, "<slug>(kept:too-few)"
+  # when a specialist builder is kept because excluding it would leave too few
+  # candidates, or "<slug>(not-a-candidate)" when a known builder isn't a light
+  # candidate (Carl, a non-pool soul, or the QA owner) — nothing to exclude.
+  #
+  # The unknown token used to be a bare "-", which is why nobody caught it live:
+  # a DISABLED safety check has to read as disabled, not as a tidy empty field.
   def builder_log_token
-    return "-" if builder.blank?
+    return "none(asserted)" if builder_asserted_none?
+    return "UNKNOWN(no-exclusion)" if builder.blank?
     return "#{builder}(not-a-candidate)" unless builder_candidate?
 
     "#{builder}(#{builder_excluded? ? 'excluded' : 'kept:too-few'})"

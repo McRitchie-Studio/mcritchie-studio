@@ -292,6 +292,14 @@ def select_reviewers(slug)
   cmd = managed_command(REVIEWER_SELECT_BIN, slug, "--json")
   cmd << "--no-record" unless OPTIONS.fetch(:run)
   out, err, status = run_capture(cmd)
+  # Exit 2 is reviewer-select REFUSING — the builder is unknown, so it cannot
+  # guarantee the pair excludes the author. Surface it as a refusal (its stderr
+  # carries the two ways to state the fact) rather than as a generic failure: this
+  # review must not proceed on a blind pick.
+  if status&.exitstatus == 2
+    raise "reviewer-select REFUSED to pick reviewers for #{slug} (unknown builder — self-review not ruled out):\n" \
+          "#{[err, out].join("\n").strip}"
+  end
   unless status&.success?
     raise "reviewer-select failed for #{slug}: #{[err, out].join(" ").strip}"
   end

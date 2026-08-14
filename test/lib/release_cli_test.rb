@@ -1206,7 +1206,197 @@ class ReleaseCliTest < Minitest::Test
       return ["200", true] if a.join(" ").include?("curl")
       ["", true]
     end
+    # REPO-AWARE, for prepare's accepted-COVERAGE guard (step 4a-bis): a repo THIS
+    # RELEASE'S MEMBERS NAME whose `accepted` is ahead of `release` must be in the
+    # promote list, or the sweep leaves that repo's work behind while stamping its
+    # tasks shipped (the 2026-08-13 half-ship). The `sh` stub above answers "2
+    # ahead" to ANY rev-list, so through the REAL reader every registered repo
+    # would read as carrying unpromoted work — which, as Carl noted reviewing this,
+    # is the ecosystem's NORMAL state, not a fixture artifact. The guard survives
+    # that because it judges only member-named repos; this override just keeps the
+    # fixture's world small and $promoted-aware, exactly as the sh stub is.
+    def ladder_ahead_states(repos: nil, require_checkout: false)
+      { "release" => [{ "repo" => "mcritchie-studio", "ahead" => 0 }],
+        "accepted" => [{ "repo" => "mcritchie-studio", "ahead" => ($promoted ? 0 : 2) }],
+        "unreadable" => [] }
+    end
   RUBY
+
+  # --- prepare: the MULTI-REPO member (the 2026-08-13 half-ship) ---------------
+  #
+  # `land-rails-security-patch` named [mcritchie-studio, turf-monster] and carried
+  # the hub's PR url. `promote_repos` read the SINGULAR `repo` off each candidate,
+  # so it promoted the hub alone; turf was never promoted, QA'd or shipped, and the
+  # task was still stamped shipped + merged:"main" while turf production ran the
+  # unpatched code. Two guards and one fix meet here at the pre-promote seam.
+  def multi_repo_stub(pr_urls: nil, tasks: nil,
+                      ahead: [{ "repo" => "mcritchie-studio", "ahead" => 2 },
+                              { "repo" => "turf-monster", "ahead" => 2 }])
+    tasks ||= [ { "slug" => "land-rails-security-patch", "stage" => "reviewed", "merged" => "accepted",
+                  "pr_url" => "https://gh/pr/836", "repo" => "mcritchie-studio",
+                  "repos" => [ "mcritchie-studio", "turf-monster" ], "pr_urls" => pr_urls } ]
+    SWEEP_FLOW_STUB + <<~RUBY
+      alias single_repo_conductor conductor
+      def conductor(ruby, read_only: false)
+        return single_repo_conductor(ruby, read_only: read_only) unless ruby.include?("sweep_candidates")
+
+        { "tasks" => #{tasks.inspect},
+          "release" => nil,
+          "screen" => { "rows" => [], "blocked" => [], "overridden" => [], "missing" => [], "proceed" => true } }
+      end
+      def ladder_ahead_states(repos: nil, require_checkout: false)
+        { "release" => [], "accepted" => ($promoted ? [] : #{ahead.inspect}), "unreadable" => [] }
+      end
+    RUBY
+  end
+
+  # A hub-only candidate — the "included app" of a --task hold-back sweep.
+  HUB_ONLY_CANDIDATE = { "slug" => "land-hub-fix", "stage" => "reviewed", "merged" => "accepted",
+                         "pr_url" => "https://gh/pr/900", "repo" => "mcritchie-studio",
+                         "repos" => [ "mcritchie-studio" ],
+                         "pr_urls" => { "mcritchie-studio" => "https://gh/pr/900" } }.freeze
+
+  def test_prepare_refuses_a_multi_repo_candidate_whose_pr_record_is_incomplete
+    out = run_cli(["--dry-run"], setup: multi_repo_stub(pr_urls: { "mcritchie-studio" => "https://gh/pr/836" }),
+                  call: %{begin; prepare; puts("NO-ABORT"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+    assert_includes out, "ABORTED", "a multi-repo task with one PR must not sweep"
+    assert_includes out, "turf-monster", "the refusal names the repo with no PR url"
+    assert_includes out, "NOTHING was promoted", "fail-closed BEFORE the promote"
+    refute_includes out, "NO-ABORT"
+    refute_includes out, "promote accepted → release", "nothing may be promoted"
+    refute_includes out, "SWEEP-CALL", "nothing may be recorded"
+  end
+
+  # THE GEM RELEASE MUST NOT BE REFUSED. A `library` candidate names its gem plus
+  # the consumers that adopt it and carries ONE PR — the gem's — because a
+  # consumer's change in a gem release is committed by the pipeline itself
+  # (bump_consumer_locks_for_qa), not by a person opening a PR. Live shape:
+  # guard-engine-migration-rollback, four repos behind one studio-engine PR.
+  # Without the `kind: "gem"` exemption this abort would fire on every engine
+  # release, demanding a URL that does not exist.
+  def test_prepare_does_not_refuse_a_GEM_candidate_carrying_only_the_gem_pr
+    out = run_cli(["--dry-run"],
+                  setup: multi_repo_stub(
+                    tasks: [ { "slug" => "guard-engine-migration-rollback", "stage" => "reviewed",
+                               "merged" => "accepted", "kind" => "gem",
+                               "pr_url" => "https://gh/pr/124", "repo" => "studio-engine",
+                               "repos" => [ "studio-engine", "mcritchie-studio", "turf-monster" ],
+                               "pr_urls" => { "studio-engine" => "https://gh/pr/124" } } ]
+                  ),
+                  call: %{begin; prepare; puts("NO-ABORT"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+    assert_includes out, "NO-ABORT", "a gem release with one gem PR must sweep"
+    refute_includes out, "incomplete PR record"
+    assert_includes out, "promote accepted → release in studio-engine"
+    assert_includes out, "promote accepted → release in mcritchie-studio",
+                     "the consumers still ride the promote — only the PR demand is exempt"
+  end
+
+  # The CONTROL: the identical candidate as an APP is the 2026-08-13 incident, and
+  # is still refused. Only the gem kind earns the pass.
+  def test_prepare_refuses_the_same_candidate_when_it_is_an_APP
+    out = run_cli(["--dry-run"],
+                  setup: multi_repo_stub(
+                    tasks: [ { "slug" => "guard-engine-migration-rollback", "stage" => "reviewed",
+                               "merged" => "accepted", "kind" => "app",
+                               "pr_url" => "https://gh/pr/124", "repo" => "studio-engine",
+                               "repos" => [ "studio-engine", "mcritchie-studio", "turf-monster" ],
+                               "pr_urls" => { "studio-engine" => "https://gh/pr/124" } } ]
+                  ),
+                  call: %{begin; prepare; puts("NO-ABORT"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+    assert_includes out, "ABORTED"
+    assert_includes out, "incomplete PR record"
+    refute_includes out, "NO-ABORT"
+  end
+
+  def test_prepare_promotes_EVERY_repo_a_multi_repo_candidate_names
+    out = run_cli(["--dry-run"], call: "prepare",
+                  setup: multi_repo_stub(pr_urls: { "mcritchie-studio" => "https://gh/pr/836",
+                                                    "turf-monster" => "https://gh/pr/305" }))
+
+    assert_includes out, "promote accepted → release in mcritchie-studio"
+    assert_includes out, "promote accepted → release in turf-monster",
+                     "THE fix: the promote list is every repo the task NAMES, not the one its pr_url parses to"
+  end
+
+  # The check `bin/release status` already printed and no gate consulted: git says a
+  # repo's `accepted` carries commits, and this sweep would not carry it.
+  #
+  # SCOPED TO MEMBER-NAMED REPOS. The candidate here is the shape a PARTIAL earlier
+  # promote leaves behind: `half-promoted-patch` names [hub, turf] and is stamped
+  # merged:"release", so it is RECORDED as a member but contributes nothing to the
+  # promote list — while turf's `accepted` is still ahead. That is exactly the
+  # 2026-08-13 half-ship arriving one sweep later, and the guard must still bite.
+  def test_prepare_refuses_when_a_MEMBER_NAMED_repo_ahead_on_accepted_is_not_promoted
+    out = run_cli(["--yes"],
+                  setup: multi_repo_stub(
+                    tasks: [ HUB_ONLY_CANDIDATE,
+                             { "slug" => "half-promoted-patch", "stage" => "reviewed", "merged" => "release",
+                               "pr_url" => "https://gh/pr/836", "repo" => "mcritchie-studio",
+                               "repos" => [ "mcritchie-studio", "turf-monster" ],
+                               "pr_urls" => { "mcritchie-studio" => "https://gh/pr/836",
+                                              "turf-monster" => "https://gh/pr/305" } } ],
+                    ahead: [ { "repo" => "mcritchie-studio", "ahead" => 2 },
+                             { "repo" => "turf-monster", "ahead" => 2 } ]
+                  ),
+                  call: %{begin; prepare; puts("NO-ABORT"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+    assert_includes out, "ABORTED"
+    assert_includes out, "turf-monster", "the refusal names the repo that would be left behind"
+    assert_includes out, "NOTHING was promoted, recorded or deployed"
+    refute_includes out, "NO-ABORT"
+    refute_includes out, "GH-MERGE", "fail-closed BEFORE the irreversible promote"
+    refute_includes out, "SWEEP-CALL"
+  end
+
+  # THE FALSE ABORT this guard shipped with, and the reason it is scoped: the git
+  # read spans EVERY registered repo, but `--task` deliberately narrows the sweep.
+  # Avi's documented per-app hold-back (qa-release.md, "sweep only the included
+  # apps") IS a --task run, and a held-back app's reviewed work sits on `accepted`
+  # BY CONSTRUCTION — so the unscoped comparison refused the hold-back every time,
+  # with no --override and a message whose prescribed fixes would have undone it.
+  # Here turf and industries are ahead and no member names either: prepare must
+  # promote the hub and carry on.
+  def test_prepare_allows_a_task_narrowed_holdback_over_repos_no_member_names
+    out = run_cli(["--yes"],
+                  setup: multi_repo_stub(
+                    tasks: [ HUB_ONLY_CANDIDATE ],
+                    ahead: [ { "repo" => "mcritchie-studio", "ahead" => 2 },
+                             { "repo" => "turf-monster", "ahead" => 7 },
+                             { "repo" => "mcritchie-industries", "ahead" => 3 } ]
+                  ),
+                  call: %{begin; prepare; puts("NO-ABORT"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
+
+    assert_includes out, "NO-ABORT", "a hold-back sweep must not be refused for the repo it is holding back"
+    refute_includes out, "prepare refused"
+    refute_includes out, "turf-monster", "a repo no member names is out of this guard's scope"
+    assert_includes out, "GH-MERGE", "the included app still promotes"
+    assert_includes out, "SWEEP-CALL", "…and still records"
+  end
+
+  def test_prepare_proceeds_when_every_accepted_ahead_repo_rides_the_promote
+    out = run_cli(["--yes"], call: "prepare",
+                  setup: multi_repo_stub(pr_urls: { "mcritchie-studio" => "https://gh/pr/836",
+                                                    "turf-monster" => "https://gh/pr/305" }))
+
+    assert_includes out, "GH-MERGE", "a fully-covered promote is not refused"
+    assert_includes out, "SWEEP-CALL", "…and still records"
+  end
+
+  # The transcript line is the last place a human can catch a half-ship before it is
+  # recorded, and printing only the primary repo is what made 2026-08-13 look
+  # complete. A multi-repo candidate names every repo it carries; a single-repo one
+  # renders exactly as it always did.
+  def test_prepare_sweep_line_names_every_repo_a_multi_repo_candidate_carries
+    out = run_cli(["--dry-run"], call: "prepare",
+                  setup: multi_repo_stub(pr_urls: { "mcritchie-studio" => "https://gh/pr/836",
+                                                    "turf-monster" => "https://gh/pr/305" }))
+
+    assert_includes out, "sweep land-rails-security-patch (reviewed · merged: accepted) · " \
+                         "mcritchie-studio, turf-monster · https://gh/pr/836"
+  end
 
   # --- prepare step 3b: the STALE-TREE GATE ------------------------------------
   #
@@ -5109,6 +5299,90 @@ class ReleaseCliTest < Minitest::Test
     assert_includes out, "promote accepted → release in turf-monster"
   end
 
+  # --- merge: the MULTI-REPO task (the 2026-08-13 half-ship, through the OTHER door)
+  #
+  # `bin/release merge` is not a lesser path: prepare's own abort message ROUTES
+  # operators here ("prepare has NO --override — use bin/release merge --override"),
+  # so for a long stretch the documented escape hatch was the one that half-shipped.
+  # It read the SINGULAR `repo` off each resolved task, and its resolve emitted no
+  # `repos`/`pr_urls` at all — which meant SweepPlan's coverage rule saw a one-repo
+  # row for every task and `plan["blocked"]` was structurally always empty. Three
+  # guards, silent.
+  def multi_repo_merge_stub(pr_urls:, repos: [ "mcritchie-studio", "turf-monster" ])
+    PROMOTE_SH + <<~RUBY
+      def conductor(ruby, read_only: false)
+        if read_only
+          { "tasks" => [
+            { "slug" => "land-rails-security-patch", "merged" => "accepted", "stage" => "reviewed",
+              "pr_url" => "https://gh/pr/836", "repo" => "mcritchie-studio",
+              "repos" => #{repos.inspect}, "pr_urls" => #{pr_urls.inspect} }
+          ] }
+        else
+          $stdout.puts("ADOPT-CALL " + ruby.gsub("\\n", " "))
+          { "adopted" => [], "slug" => "rel-batch", "state" => "assembling" }
+        end
+      end
+    RUBY
+  end
+
+  def test_merge_promotes_EVERY_repo_a_multi_repo_task_names
+    out = run_cli(%w[land-rails-security-patch], call: "merge",
+                  setup: multi_repo_merge_stub(pr_urls: { "mcritchie-studio" => "https://gh/pr/836",
+                                                          "turf-monster" => "https://gh/pr/305" }))
+
+    assert_equal 2, out.scan("PROMOTE-MERGE").size,
+                 "THE fix: one accepted→release batch PR per repo the TASK NAMES, not per pr_url"
+    assert_includes out, "promote accepted → release in mcritchie-studio"
+    assert_includes out, "promote accepted → release in turf-monster"
+    assert_includes out, "ADOPT-CALL", "…and the membership still records"
+  end
+
+  def test_merge_refuses_a_multi_repo_task_whose_pr_record_is_incomplete
+    out = run_cli(%w[land-rails-security-patch],
+                  call: "begin; merge; puts('NO-ABORT'); rescue SystemExit => e; puts('ABORTED: ' + e.message); end",
+                  setup: multi_repo_merge_stub(pr_urls: { "mcritchie-studio" => "https://gh/pr/836" }))
+
+    assert_includes out, "ABORTED", "a multi-repo task with one PR must not sweep through merge either"
+    assert_includes out, "land-rails-security-patch", "the refusal names the task it refused…"
+    assert_includes out, "turf-monster", "…and the repo with no PR url"
+    assert_includes out, "NOTHING was promoted or recorded"
+    refute_includes out, "NO-ABORT"
+    refute_includes out, "PROMOTE-MERGE", "fail-closed BEFORE the irreversible promote"
+    refute_includes out, "ADOPT-CALL", "and nothing may be recorded"
+  end
+
+  # The abort above must be an ABORT, never a silent drop: SweepPlan.compute removes
+  # blocked rows before it splits record/held, so without the refusal the named task
+  # would vanish from BOTH lists and merge would print a tick over a task it dropped.
+  def test_merge_never_silently_drops_the_task_it_refuses
+    out = run_cli(%w[land-rails-security-patch],
+                  call: "begin; merge; rescue SystemExit => e; puts('ABORTED'); end",
+                  setup: multi_repo_merge_stub(pr_urls: { "mcritchie-studio" => "https://gh/pr/836" }))
+
+    refute_includes out, "✓ Swept", "a dropped task must never read as swept"
+  end
+
+  # The record write is the LAST line of defense, and merge's had none: it swept
+  # straight into the release with no validate_members! behind it. Now it runs the
+  # same validated, transactional write prepare's does.
+  def test_merge_record_write_validates_members_inside_a_transaction
+    out = run_cli(%w[task-a], call: "merge", setup: SINGLE_MERGE_STUB)
+
+    adopt = out.lines.find { |l| l.start_with?("ADOPT-CALL") }
+    assert_includes adopt, "Release.transaction", "a validate_members! raise must roll the sweep back"
+    assert_includes adopt, "Release::Conductor.validate_members!",
+                    "merge's record write runs the member backstop"
+  end
+
+  def test_merge_task_line_names_every_repo_a_multi_repo_task_carries
+    out = run_cli(%w[land-rails-security-patch], call: "merge",
+                  setup: multi_repo_merge_stub(pr_urls: { "mcritchie-studio" => "https://gh/pr/836",
+                                                          "turf-monster" => "https://gh/pr/305" }))
+
+    assert_includes out, "task land-rails-security-patch (reviewed · merged: accepted) · " \
+                         "mcritchie-studio, turf-monster · https://gh/pr/836"
+  end
+
   # A resolve that returns exactly ONE reviewed member on accepted — single-slug path.
   SINGLE_MERGE_STUB = PROMOTE_SH + <<~'RUBY'
     def conductor(ruby, read_only: false)
@@ -5394,6 +5668,32 @@ class ReleaseCliTest < Minitest::Test
     assert_includes out, "task-b"
     assert_includes out, "devops_url", "the resolve snippet reads each task's PR url"
     assert_equal 1, out.scan("puts(").size, "the resolve snippet emits ONE JSON line for the batch"
+  end
+
+  # THE FIELDS WITHOUT WHICH MERGE'S GUARDS CANNOT FIRE. This snippet crosses a
+  # process boundary (it runs on the board), so the string IS the interface — and
+  # the whole blocker was an interface omission, not a logic error: with no
+  # `repos`/`pr_urls` on the row, Release::SweepPlan.normalize falls back to
+  # `[row["repo"]]`, repo_coverage_gap's `size < 2` guard passes every row, and
+  # `plan["blocked"]` is structurally always empty however correct the guard is.
+  def test_batch_resolve_ruby_emits_the_full_release_identity_per_task
+    out = eval_helper(%(batch_resolve_ruby(["task-a"])))
+
+    assert_includes out, "release_repos", "the resolve reads EVERY repo the task names"
+    assert_includes out, "release_pr_urls", "…and the PR url recorded per repo"
+    assert_includes out, "repos:", "both ride the emitted row"
+    assert_includes out, "pr_urls:"
+    assert_equal 1, out.scan("puts(").size, "still ONE JSON line for the batch"
+  end
+
+  def test_batch_sweep_ruby_validates_members_inside_a_transaction
+    # merge's record write was the ONE sweep path with no member validation behind
+    # it; prepare's twin (batch_sweep_with_plan_ruby) has always had both.
+    out = eval_helper(%(batch_sweep_ruby(["task-a"])))
+
+    assert_includes out, "Release::Conductor.validate_members!", "the backstop runs on merge's write too"
+    assert_includes out, "Release.transaction", "a raise must roll the whole sweep back"
+    assert_equal 1, out.scan("puts(").size, "still ONE JSON line for the batch"
   end
 
   def test_batch_resolve_ruby_runs_the_review_gate_screen

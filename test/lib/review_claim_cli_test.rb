@@ -163,6 +163,22 @@ class ReviewClaimCliTest < Minitest::Test
     end
   end
 
+  def test_acquire_refused_as_self_review_says_so_instead_of_naming_a_holder
+    # A self_review refusal is NOT the held-by-another skip: nobody holds the
+    # task, so the generic "already under review" line (with an empty holder)
+    # would send the reviewer off to wait for a lease that will never lapse.
+    Dir.mktmpdir do |proj|
+      code = cli(projects_dir: proj,
+                 data: { "acquired" => false, "disposition" => "self_review", "holder" => {} })
+             .run(["acquire", SLUG])
+
+      assert_equal ReviewClaimCli::SKIPPED, code
+      assert_match(/YOU BUILT THIS/, @out.string, "the refusal names the actual reason")
+      refute_match(/already under review/, @out.string, "it is not a race for a held lease")
+      refute File.exist?(marker(proj)), "a refused claim writes no held-review marker"
+    end
+  end
+
   def test_acquire_without_a_session_id_fails_open_not_wedged
     Dir.mktmpdir do |proj|
       code = cli(env: { "TASK_REVIEW_CLAIM_SESSION" => "" }, projects_dir: proj).run(["acquire", SLUG])

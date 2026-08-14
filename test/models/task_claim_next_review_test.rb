@@ -39,6 +39,22 @@ class TaskClaimNextReviewTest < ActiveSupport::TestCase
     assert_equal "sess-1", TaskReviewClaim.find_by(task_slug: task.slug).claimed_session
   end
 
+  test "[unit] SKIPS a task the popping reviewer BUILT, claiming the next one" do
+    # The server-side pop reaches a review without ever calling bin/reviewer-select,
+    # so the no-self-review rule has to hold here too — and it must SKIP rather than
+    # give up, or one soul's own PR at the top of the column would stall the queue.
+    mine = submitted("i built this task", position: 300)
+    mine.update!(metadata: mine.metadata.deep_merge("devops" => { "built_by" => "carl" }))
+    other = submitted("someone else built this", position: 200)
+
+    result = Task.claim_next_review(session: "A", nonce: "a", reviewer: "carl",
+                                    ci_status: all_green(mine, other))
+
+    assert_equal other.slug, result.task.slug, "carl never pops the PR carl built"
+    assert_nil TaskReviewClaim.find_by(task_slug: mine.slug)&.claimed_session,
+      "and takes no lease on it"
+  end
+
   test "[unit] SKIPS a task already under live review, claiming the next one" do
     held = submitted("held top task", position: 300)
     free = submitted("free next task", position: 200)

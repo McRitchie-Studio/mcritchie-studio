@@ -117,7 +117,7 @@ class ReviewClaimCli
       @out.puts("review-claim: ✅ #{slug} review claimed — this task is yours to review.")
       OK
     else
-      report_skip(slug, data["holder"] || {})
+      report_skip(slug, data["holder"] || {}, data["disposition"].to_s)
       SKIPPED
     end
   end
@@ -308,12 +308,26 @@ class ReviewClaimCli
   end
 
   # The skip message: name the live reviewer so this session knows WHO has the task
-  # and can move on to the next reviewable one.
-  def report_skip(slug, holder)
+  # and can move on to the next reviewable one. A `self_review` refusal is a
+  # DIFFERENT skip — nobody holds the task, the claimer simply built it — so it
+  # must not be reported as "already under review" with an empty holder line.
+  def report_skip(slug, holder, disposition = "")
+    return report_self_review_skip(slug) if disposition == "self_review"
+
     @out.puts("review-claim: ⏭️  #{slug} already under review — SKIP.")
     @out.puts("  #{holder_line(holder)}")
     @out.puts("  Another session is reviewing this task; pick the next reviewable one " \
               "(its lease lapses ~#{lease_ttl_seconds}s after it stops).")
+  end
+
+  # The no-self-review refusal: this soul is recorded as the task's builder
+  # (devops.built_by), so it reviews nothing here. Not a race and not a wait —
+  # re-running will never win it.
+  def report_self_review_skip(slug)
+    @out.puts("review-claim: ⛔ #{slug} — YOU BUILT THIS. A soul never reviews their own work — SKIP.")
+    @out.puts("  The task records you as devops.built_by, so this claim is refused (not a race).")
+    @out.puts("  Pick the next reviewable task. If the stamp is WRONG, correct it with")
+    @out.puts("  bin/task move #{slug} building --actor <the-real-builder> and re-run.")
   end
 
   def holder_line(holder)

@@ -188,10 +188,25 @@ honest, and **none of them needs a manual flag in the common case**:
 - **QA owner** (the soul who QAs the assembled RC) — never a light on a PR he then
   QAs. Override with `--qa-owner SLUG` when someone else QAs this task.
 - **Builder** — a soul never reviews their own work. The builder is read from
-  `devops.built_by`, which is **auto-stamped on the move to building**: a bare
-  `bin/task move <slug> building` records the task's assigned `agent_slug` (an
-  explicit `--actor <soul>` move wins over it). So the builder drops out with **no
-  `--builder` flag** — pass `--builder SLUG` only to override the recorded value.
+  `devops.built_by`, which is **auto-stamped on any build CLAIM**: a bare
+  `bin/task move <slug> building` records the task's soul persona, else its
+  assigned `agent_slug` (an explicit `--actor <soul>` move wins over both). The
+  stamp is an invariant of the CLAIM, not of the transition, so **a re-claim of a
+  task already at `building` stamps too** — which is what `bin/task move <slug>
+  building --actor <soul>` after `bin/task begin` relies on. So the builder drops
+  out with **no `--builder` flag** — pass `--builder SLUG` only to override the
+  recorded value.
+
+  **⛔ An UNKNOWN builder REFUSES.** If no source names a soul, `bin/reviewer-select`
+  exits 2, prints nothing to act on, and **records no intent** — it does not roll a
+  reviewer who might be the author. This is deliberate: an empty exclusion list is
+  not the same answer as "nobody to exclude", and treating them alike put Carl on
+  Carl's own PR on 2026-08-13. Resolve it by stating the fact —
+  `--builder <soul>` names the builder, `--builder none` asserts that no soul built
+  it — and fix it durably with `bin/task move <slug> building --actor <soul>`.
+  A **second line** backs it up: `TaskReviewClaim.acquire` refuses a review claim
+  whose named reviewer equals `devops.built_by` (disposition `self_review`), so a
+  review reached WITHOUT `reviewer-select` still can't be a self-review.
 - **Busy souls** — agents mid-build or mid-review on OTHER in-flight tasks
   shouldn't be handed a review. Name them with **`--busy a,b,c`** (repeatable),
   and/or add **`--busy-auto`** to also exclude every agent on a `stage=building`

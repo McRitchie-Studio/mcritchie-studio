@@ -357,6 +357,12 @@ class Task < ApplicationRecord
   # once the task leaves `building` and DEFENDS it from the wholesale devops
   # replace while it is there. See #enforce_build_claim_invariant.
   before_save :enforce_build_claim_invariant
+  # WHO BUILT THIS is a property of the build CLAIM, not of the transition into
+  # `building`. Registered AFTER enforce_build_claim_invariant so it reads the
+  # restored claim (that guard decides what counts as a claim write) — and, like
+  # its five siblings above, it re-asserts a server-owned devops key on every save
+  # so the API's wholesale devops replace can't drop it. See #enforce_builder_stamp.
+  before_save :enforce_builder_stamp
   # One TaskEvent per save that lands a stage: the genesis on create (the default
   # "designed" stage isn't a dirty change, so this is guard-free) and one per real
   # transition on update.
@@ -700,14 +706,16 @@ class Task < ApplicationRecord
     devops.fetch("agent_context", "").presence
   end
 
-  # The soul who BUILT this task — stamped on the move to `building` (see
-  # #stamp_builder) so the reviewer pool can exclude the builder (a soul shouldn't
-  # review their own work). Source precedence: an explicit soul-slug build-claim
-  # actor (`--actor <soul>`), else the task's assigned agent_slug — so a bare
-  # `bin/task move <slug> building` records the assigned builder WITHOUT a manual
-  # flag. nil only when neither resolves to a soul (no soul actor AND a blank /
-  # non-soul agent_slug). ReviewerSelector also falls back to the `→ building`
-  # TaskEvent actor when this scalar is blank.
+  # The soul who BUILT this task — stamped on any build CLAIM, a re-claim of an
+  # already-`building` task included (see #enforce_builder_stamp), so the reviewer
+  # pool can exclude the builder (a soul shouldn't review their own work). Source
+  # precedence: an explicit soul-slug build-claim actor (`--actor <soul>`), else
+  # the task's soul persona, else its assigned agent_slug — so a bare `bin/task
+  # move <slug> building` records the builder WITHOUT a manual flag whenever the
+  # record names one. nil only when NONE resolves to a soul, and that nil means
+  # "the record does not say" — never "nobody built it". ReviewerSelector also
+  # falls back to a soul actor on the `→ building` TaskEvent, and REFUSES to
+  # auto-select while the answer stays unknown.
   def devops_built_by
     devops.fetch("built_by", "").presence
   end
@@ -1342,16 +1350,32 @@ class Task < ApplicationRecord
   # work exists in a repo the pipeline has no evidence for, so nothing can prove
   # its code reached `accepted`.
   #
-  # NOTHING ENFORCES THIS YET — say so rather than imply otherwise. This is a
-  # query, and today it has no caller: `Release::Conductor.validate_members!`
-  # checks only for an unknown `release_kind`, not for missing per-repo evidence.
-  # The refusal arrives with /tasks/merge-promotes-every-repo, which is also what
-  # makes this method reachable. Until then it is deliberately inert, and a
-  # comment claiming a guard that does not run is the exact defect this whole
-  # family exists to stop.
+  # IT IS ENFORCED NOW: `Release::Conductor.validate_member_pr_coverage!` (reached
+  # from validate_members!, which every sweep write runs inside its transaction)
+  # raises on a non-empty answer, so a member with a repo the record cannot vouch
+  # for is refused rather than swept. This method IS the rule, delegated to
+  # `Release::SweepPlan.repo_coverage_gap` so the CLI's pre-promote screen and the
+  # record-time backstop answer identically — two spellings of one rule is how the
+  # screen and the guard drift apart.
+  #
+  # Reading `release_repos` rather than `devops_repositories` widens the input to
+  # the task's full release identity (the PR-derived repo included), and the rule's
+  # own `size < 2` guard is why a SINGLE-repo task is never an offender: it cannot
+  # lose a repo it never had a second of, and its missing PR is the review lane's
+  # problem, not the sweep's.
+  #
+  # `release_kind` is passed because A GEM RELEASE IS EXEMPT, and this method is
+  # where that would otherwise bite hardest: `release_pr_urls` keys the singular
+  # `pr_url` by the repo its URL parses to, so a `library` task whose PR lives in
+  # the GEM repo while `repositories` names the CONSUMERS would report EVERY
+  # consumer missing. Live example, 2026-08-14: guard-engine-migration-rollback
+  # names [studio-engine, mcritchie-studio, turf-monster, mcritchie-industries]
+  # behind one studio-engine PR. Refusing that would block every engine release,
+  # for a URL that does not exist — the pipeline authors the consumer's change
+  # itself (bump_consumer_locks_for_qa). See Release::SweepPlan#repo_coverage_gap.
   def repos_missing_pr_url
-    recorded = release_pr_urls.keys
-    pr_bearing_repositories.reject { |repo| recorded.include?(repo) }
+    Release::SweepPlan.repo_coverage_gap(repos: release_repos, pr_repos: release_pr_urls.keys,
+                                         expected: pr_bearing_repositories)
   end
 
   # True when this task ships as a published gem rather than a deployed app — a
@@ -2020,13 +2044,11 @@ class Task < ApplicationRecord
     case stage
     when "building"
       # A block! lands the task on `building` too, but it's NOT a fresh build
-      # claim — the blocker isn't the builder, so skip the started_at re-stamp and
-      # stamp_builder (which would mis-record the blocker as built_by). A block is
-      # detected by blocked_at being set in this same save.
-      unless will_save_change_to_blocked_at? && blocked_at.present?
-        self.started_at = Time.current
-        stamp_builder
-      end
+      # claim — the blocker isn't the builder, so skip the started_at re-stamp
+      # (#enforce_builder_stamp applies the same exemption to the builder stamp,
+      # which used to live here). A block is detected by blocked_at being set in
+      # this same save.
+      self.started_at = Time.current unless will_save_change_to_blocked_at? && blocked_at.present?
     when "submitted" then self.submitted_at = Time.current
     when "reviewed"  then self.reviewed_at  = Time.current
     when "assembled" then self.assembled_at = Time.current
@@ -2060,15 +2082,63 @@ class Task < ApplicationRecord
   # later excludes (ReviewerSelector) so a soul never reviews their own work. The
   # value MUST be a soul SLUG to match the soul-keyed pool. Resolved by
   # #builder_to_stamp (precedence below); nil leaves any existing built_by
-  # untouched — never clobbered. Runs inside set_stage_timestamp (a before-save),
-  # so the new metadata persists in the same UPDATE as the stage change.
-  def stamp_builder
-    soul = builder_to_stamp
-    return if soul.nil?
+  # untouched — never clobbered.
+  #
+  # AN INVARIANT OF THE BUILD CLAIM, not of the transition into `building`. It ran
+  # inside `set_stage_timestamp` (`before_save … if: :stage_changed?`) until
+  # 2026-08-13, and that shape had a silent hole the whole fast lane fell through:
+  # `bin/task begin` leaves the task AT `building`, so the documented recovery —
+  # `bin/task move <slug> building --actor <soul>` — carried no stage change, the
+  # callback never fired, and the stamp no-op'd at exit 0. Two tasks in one day
+  # reached review with `built_by` blank; on one of them `bin/reviewer-select`
+  # picked Carl to review Carl's own PR, and only a human routing reviewers by
+  # hand stopped it. A re-claim IS a claim, so it stamps.
+  #
+  # TWO HALVES, like its siblings above:
+  #   STAMP — on a build CLAIM (#build_claim_save?) resolve and record the builder.
+  #     Keyed on the claim so it stays a claim stamp: a note, a checks update, or
+  #     any other save that happens to carry a soul actor while the task sits in
+  #     `building` must not make that soul the builder.
+  #   DEFEND — on ANY save, carry a stored builder forward. The API route replaces
+  #     the devops subhash WHOLESALE (TasksController#merged_metadata_with_devops:
+  #     `base["devops"] = normalized`), so a partial PATCH that never mentions
+  #     built_by would otherwise DELETE the record of who built the task — and
+  #     `normalize_devops_metadata` drops blanks, so no client can deliberately
+  #     clear it either way. A regression test drives exactly that PATCH.
+  def enforce_builder_stamp
+    # An explicit devops teardown (the whole hash removed) is left alone — this
+    # guard defends the builder key, not the existence of devops. Same posture as
+    # #enforce_build_claim_invariant.
+    return unless metadata.is_a?(Hash) && metadata["devops"].is_a?(Hash)
+
+    soul = (builder_to_stamp if build_claim_save?) || prior_devops["built_by"].to_s.strip.presence
+    return if soul.nil? || metadata["devops"]["built_by"].to_s == soul
 
     merged = metadata.deep_dup
-    (merged["devops"] ||= {})["built_by"] = soul
+    merged["devops"]["built_by"] = soul
     self.metadata = merged
+  end
+
+  # True when THIS save is a build claim: the task lands (or sits) on `building`
+  # and the save either moves it there or (re)writes the claim lease — the two
+  # shapes `bin/task move <slug> building` takes, whether or not the stage changes.
+  # A block! lands on `building` too but is NOT a build claim: the blocker is not
+  # the builder (detected by blocked_at being set in this same save).
+  def build_claim_save?
+    return false unless stage == "building"
+    return false if will_save_change_to_blocked_at? && blocked_at.present?
+    return true if will_save_change_to_stage?
+
+    claim_lease_rewritten?
+  end
+
+  # True when this save writes a claim lease that differs from the stored one — a
+  # re-claim or a renewal. Compared AFTER enforce_build_claim_invariant, so a
+  # wholesale devops replace that simply omitted the claim (its keys restored from
+  # the prior record) reads as unchanged and is correctly not a claim.
+  def claim_lease_rewritten?
+    current = metadata.is_a?(Hash) ? (metadata["devops"] || {}) : {}
+    ClaimLease::CLAIM_KEYS.any? { |key| current[key].to_s != prior_devops[key].to_s }
   end
 
   # The soul to record as the builder, or nil to leave built_by as-is. Precedence:
@@ -2077,21 +2147,30 @@ class Task < ApplicationRecord
   #      wins, so a rework re-claim by a different soul RE-POINTS built_by.
   #   2. else KEEP an existing built_by — a no-actor / non-soul re-claim never
   #      clobbers a recorded builder (only an explicit --actor re-points it).
-  #   3. else the task's assigned agent_slug when it's a soul SLUG — the automatic,
+  #   3. else the task's PERSONA (devops.persona) when it's a soul SLUG — a session
+  #      "acting as" a soul, whose face the card already paints as the one working
+  #      this task (see #sync_persona_identity). If the board shows Jasper building
+  #      it, Jasper is the builder.
+  #   4. else the task's assigned agent_slug when it's a soul SLUG — the automatic,
   #      no-flag default. A bare `bin/task move <slug> building` defaults the actor
   #      to the session id (a UUID, not a soul), so rule 1 can't fire; backing the
   #      stamp with the assigned agent records the builder WITHOUT the operator
   #      passing a flag every time (the FIX behind reviewer-select-exclude). The
-  #      assignee fills only a BLANK built_by (rule 2 guards re-claims).
+  #      persona/assignee fills only a BLANK built_by (rule 2 guards re-claims).
   # nil when none apply (non-soul actor, no existing builder, non-soul/blank
-  # agent_slug) — exclusion then degrades to domain-only (truthful).
+  # persona and agent_slug) — the builder is then genuinely UNKNOWN, and
+  # ReviewerSelector reports it as such so callers can fail closed rather than
+  # read an empty exclusion list as "nobody to exclude".
   def builder_to_stamp
     actor = Current.task_event_actor.presence
     return actor if actor&.match?(SOUL_SLUG)
-    return nil if devops["built_by"].present?
+    # Rule 2 consults the STORED builder as well as the incoming one: on a
+    # wholesale devops replace the incoming built_by is blank, and reading only
+    # that would let the persona/assignee default re-point a builder already on
+    # record. Only an explicit soul actor (rule 1) ever re-points.
+    return nil if devops["built_by"].presence || prior_devops["built_by"].presence
 
-    assigned = agent_slug.to_s
-    assigned.match?(SOUL_SLUG) ? assigned : nil
+    [devops["persona"].to_s, agent_slug.to_s].find { |slug| slug.match?(SOUL_SLUG) }
   end
 
   # `set_initial_position` (the `before_create` genesis seed above) now comes from

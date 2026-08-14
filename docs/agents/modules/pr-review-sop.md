@@ -91,9 +91,16 @@ Avi supervisor. Carl:
    with **`bin/reviewer-select <task>`**. It scores the pool by domain fit with a
    logged, seeded-per-task tiebreak and **excludes** the QA owner (who QAs the
    assembled RC — no self-gating), **the builder** (a soul never reviews its own
-   work — read from `devops.built_by`, auto-stamped on the build move), and any
+   work — read from `devops.built_by`, auto-stamped on any build claim), and any
    **busy souls** (`--busy a,b,c` and/or `--busy-auto`). The pool is never starved
    below a pair.
+
+   **It REFUSES (exit 2) when the builder is unknown** — no `built_by`, no soul on
+   the `→ building` event — because it then cannot tell you apart from the author.
+   Say which it is: `--builder <soul>` names the builder, `--builder none` asserts
+   that no soul built it. Stamp it durably with
+   `bin/task move <task> building --actor <soul>` (which now works on a task
+   already at `building`, so a fast-lane build can be corrected in place).
 
 **Record the intent.** `bin/reviewer-select <task>` **records the picked pair by
 default** — it writes Carl + the light onto the task as the live **review intent**
