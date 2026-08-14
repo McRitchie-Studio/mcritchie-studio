@@ -28,6 +28,89 @@ class TaskBoardTest < Minitest::Test
     assert_equal({ "data" => [1] }, TaskBoard.parse_body(FakeResponse.new('{"data":[1]}')))
   end
 
+  # ── [unit] rows!: the STRICT reader every COUNTING caller must use ──────────
+  #
+  # THE DEFECT THESE PIN. `parse_body` answers `{}` for a body it could not read,
+  # so `parse_body(res)["data"]` is nil, `Array(nil)` is `[]`, and the count is 0
+  # — no exception, no warning, and an answer shaped exactly like the good news
+  # the caller was hoping for. For a SAFETY count, empty IS the reassuring
+  # answer, so a broken read always resolves toward "proceed".
+  #
+  # So these assert the EFFECT, not the return type: a test that `rows!` gives
+  # back a collection would pass blind on the buggy version too. What is asserted
+  # is that the two readers DIVERGE on an unreadable body, and that `[]` from
+  # `rows!` means genuinely none.
+
+  def test_unit_rows_refuses_a_non_json_body_where_the_lenient_parse_scores_zero
+    html = FakeResponse.new("<html><title>502 Bad Gateway</title></html>", "502")
+
+    # The old path — silently zero. This is the bug, held still.
+    assert_equal 0, Array(TaskBoard.parse_body(html)["data"]).size,
+                 "the lenient parse scores an unreadable body as ZERO rows"
+
+    error = assert_raises(TaskBoard::UnreadableResponse) { TaskBoard.rows!(html) }
+    assert_match(/not JSON/, error.message)
+    assert_match(/HTTP 502/, error.message, "the status is the first thing a reader wants")
+  end
+
+  def test_unit_rows_refuses_an_empty_body
+    error = assert_raises(TaskBoard::UnreadableResponse) { TaskBoard.rows!(FakeResponse.new("")) }
+    assert_match(/EMPTY body/, error.message)
+
+    assert_raises(TaskBoard::UnreadableResponse, "a nil body is unreadable too") do
+      TaskBoard.rows!(FakeResponse.new(nil))
+    end
+  end
+
+  def test_unit_rows_refuses_an_error_payload_instead_of_counting_it_as_none
+    # An expired 24h agent token is the live vector: a 401 has no rows either, and
+    # scoring it zero silently DISARMS whatever safety count asked the question.
+    unauthorized = FakeResponse.new('{"error":"Unauthorized","error_code":"UNAUTHORIZED"}', "401")
+
+    assert_equal 0, Array(TaskBoard.parse_body(unauthorized)["data"]).size,
+                 "the lenient parse reads an auth failure as zero rows"
+
+    error = assert_raises(TaskBoard::UnreadableResponse) { TaskBoard.rows!(unauthorized) }
+    assert_match(/returned an error/, error.message)
+    assert_match(/UNAUTHORIZED/, error.message)
+  end
+
+  def test_unit_rows_refuses_a_payload_carrying_no_data_array
+    error = assert_raises(TaskBoard::UnreadableResponse) do
+      TaskBoard.rows!(FakeResponse.new('{"meta":{"total":3}}', "200"))
+    end
+    assert_match(/no `data` array/, error.message)
+    assert_match(/NOT an empty one/, error.message)
+  end
+
+  def test_unit_rows_returns_the_rows_and_distinguishes_a_genuinely_empty_answer
+    assert_equal [ 1, 2 ], TaskBoard.rows!(FakeResponse.new('{"data":[1,2]}', "200"))
+    assert_equal [], TaskBoard.rows!(FakeResponse.new('{"data":[]}', "200")),
+                 "a list endpoint that SUCCEEDED always carries its array — [] here means none"
+  end
+
+  def test_unit_rows_reads_an_alternate_key
+    assert_equal [ "a" ], TaskBoard.rows!(FakeResponse.new('{"items":["a"]}', "200"), key: "items")
+  end
+
+  # ── [unit] parse_body!: the strict parse under rows! ────────────────────────
+
+  def test_unit_parse_body_bang_returns_the_payload_including_an_error_payload
+    assert_equal({ "data" => [ 1 ] }, TaskBoard.parse_body!(FakeResponse.new('{"data":[1]}', "200")))
+    assert_equal({ "error" => "nope" }, TaskBoard.parse_body!(FakeResponse.new('{"error":"nope"}', "422")),
+                 "a caller that wants to RENDER the board's error still gets it; rows! is what refuses one")
+  end
+
+  def test_unit_parse_body_bang_refuses_a_non_object_payload
+    error = assert_raises(TaskBoard::UnreadableResponse) { TaskBoard.parse_body!(FakeResponse.new("[1,2]", "200")) }
+    assert_match(/expected a JSON object/, error.message)
+  end
+
+  def test_unit_parse_body_bang_names_the_mistake_when_handed_something_that_is_not_a_response
+    error = assert_raises(TaskBoard::UnreadableResponse) { TaskBoard.parse_body!({ "data" => [] }) }
+    assert_match(/expected an HTTP response/, error.message)
+  end
+
   # ── [unit] agent_secret: ENV precedence ──────────────────────────────────────
 
   def test_unit_agent_secret_prefers_the_env_verbatim
@@ -95,9 +178,38 @@ class TaskBoardTest < Minitest::Test
     end
   end
 
+  # ── [integration] the two readers against a REAL board answer ───────────────
+
+  def test_integration_a_counting_read_of_an_html_error_page_refuses_instead_of_zero
+    # A reverse proxy in front of the board serves HTML, not JSON, and does it
+    # with a 200 often enough that a status check alone would not catch it.
+    page = "<!DOCTYPE html><html><body>Application error</body></html>"
+
+    with_stub_server(payload: page) do |port, _requests|
+      res = TaskBoard.request(:get, "/api/v1/activities?activity_type=qa_feedback",
+                              base_url: "http://127.0.0.1:#{port}", token: "t")
+
+      assert_equal "200", res.code, "the transport is happy — only the BODY is unreadable"
+      assert_equal 0, Array(TaskBoard.parse_body(res)["data"]).size,
+                   "counting through the lenient parse answers zero and lets the caller proceed"
+      assert_raises(TaskBoard::UnreadableResponse) { TaskBoard.rows!(res) }
+    end
+  end
+
+  def test_integration_a_counting_read_of_a_healthy_empty_list_answers_none
+    with_stub_server(payload: '{"data":[],"meta":{"total":0}}') do |port, _requests|
+      res = TaskBoard.request(:get, "/api/v1/activities", base_url: "http://127.0.0.1:#{port}", token: "t")
+
+      assert_equal [], TaskBoard.rows!(res),
+                   "empty-because-true still answers — refusing THAT would be the worse bug"
+    end
+  end
+
   private
 
-  FakeResponse = Struct.new(:body)
+  # `code` is optional — the strict readers only decorate their message with it,
+  # they never branch on it (status posture stays the caller's, per the module).
+  FakeResponse = Struct.new(:body, :code)
 
   def with_env(pairs)
     saved = pairs.keys.map { |k| [k, ENV[k]] }.to_h

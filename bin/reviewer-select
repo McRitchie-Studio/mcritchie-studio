@@ -159,12 +159,22 @@ end
 # selecting for. Best-effort: a board read failure (incl. api's die! → SystemExit)
 # degrades to an empty set so --busy-auto can NEVER abort the pick — explicit
 # --busy still applies.
+#
+# The fail-open is kept; its SILENCE is not. `Array(res["data"])` scored an
+# unreadable body as "nobody is mid-build", which is the answer that hands a
+# review to a soul already building elsewhere — and it did so with no signal at
+# all, so the degradation was indistinguishable from a genuinely idle bench.
+# `rows!` separates the two, and the rescue now SAYS which one happened before
+# it degrades. Read it on stderr, so `--json` on stdout stays machine-clean.
 def in_flight_busy(exclude_slug)
   res = api(:get, "/api/v1/tasks?stage=building")
-  Array(res["data"]).reject { |t| t["slug"].to_s == exclude_slug.to_s }.flat_map do |t|
+  TaskBoard.rows!(res).reject { |t| t["slug"].to_s == exclude_slug.to_s }.flat_map do |t|
     [t.dig("metadata", "devops", "built_by"), t["agent_slug"]]
   end.map(&:to_s).reject(&:empty?).uniq
-rescue SystemExit, StandardError
+rescue SystemExit, StandardError => e
+  warn!("busy-auto: could not read who is mid-build (#{e.class}: #{e.message.to_s.lines.first.to_s.strip}) — " \
+        "proceeding with an EMPTY busy set. This is a DEGRADED pick, not an idle bench; " \
+        "pass --busy <slugs> if you know who is occupied.")
   []
 end
 
