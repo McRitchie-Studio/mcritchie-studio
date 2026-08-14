@@ -1250,8 +1250,18 @@ end
 # `slug.inspect` literals; `override` is a bare bool literal). The screen is a
 # PURE read (Release::Conductor.screen_merge writes nothing), so it's safe inside
 # this read-only resolve and previews under --dry-run. Emits ONE JSON line:
-#   { "tasks": [ { slug, pr_url, repo, stage, merged } | { slug, missing: true } ],
+#   { "tasks": [ { slug, pr_url, repo, stage, merged, repos, pr_urls } |
+#                { slug, missing: true } ],
 #     "screen": { rows:[…], blocked:[…], overridden:[…], missing:[…], proceed: } }
+#
+# `repos`/`pr_urls` are the task's FULL release identity (Task#release_repos /
+# #release_pr_urls), emitted here for exactly the reason sweep_detect_ruby emits
+# them — and their absence is what made `merge` carry three multi-repo guards
+# that could never fire. WITHOUT them Release::SweepPlan.normalize falls back to
+# `[row["repo"]]`, repo_coverage_gap's `size < 2` guard passes every row, and
+# `plan["blocked"]` is permanently empty. `repo`/`pr_url` remain the primary, for
+# the sweep line and crash recovery.
+#
 # The active release (`Release.current`) rides this same read so `merge` can take its
 # assembler claim on the SAME slug `prepare` would, BEFORE its promote — the real
 # rel_slug isn't known until sweep! records. (A comment must NOT interrupt the
@@ -1259,7 +1269,8 @@ end
 def batch_resolve_ruby(slugs, override: false)
   "slugs = #{slugs.inspect}; " \
   "rows = slugs.map { |s| t = Task.find_by(slug: s); " \
-  "t ? { slug: t.slug, pr_url: t.devops_url('pr').to_s, repo: t.release_repo.to_s, stage: t.stage, merged: t.merged.to_s } " \
+  "t ? { slug: t.slug, pr_url: t.devops_url('pr').to_s, repo: t.release_repo.to_s, stage: t.stage, " \
+  "merged: t.merged.to_s, kind: t.release_kind.to_s, repos: t.release_repos, pr_urls: t.release_pr_urls } " \
   ": { slug: s, missing: true } }; " \
   "screen = Release::Conductor.screen_merge(slugs, override: #{override ? 'true' : 'false'}); " \
   "cur = Release.current; " \
@@ -1275,13 +1286,24 @@ end
 # the `review_bypassed` audit event stamped on that transition. No usage map:
 # the sweep writes NO stage transition (the reviewed→assembled flip — and its
 # usage capture — happens at prepare's QA-green step).
+#
+# TRANSACTIONAL, and it runs validate_members! — the same shape
+# batch_sweep_with_plan_ruby has always had, for the same reason. `merge` records
+# straight into the release without prepare's repo plan, so before this it was the
+# ONE write path with no member validation behind it: an unknown repo, or a
+# multi-repo member with an incomplete PR record, was recorded unchallenged. A
+# validate_members! raise rolls the whole sweep back, so a refusal leaves the
+# members exactly as it found them (the gh promote above already landed; the next
+# run self-heals through pr_merged?).
 # Emits ONE JSON line: { "swept": [...], "slug": <last release>, "state" }.
 def batch_sweep_ruby(slugs, override: false)
-  "slugs = #{slugs.inspect}; " \
+  "out = Release.transaction { slugs = #{slugs.inspect}; " \
   "results = slugs.map { |s| r = Release::Conductor.sweep!(Task.find_by!(slug: s), override: #{override ? 'true' : 'false'}); " \
   "{ task: s, release: r.slug, state: r.state } }; " \
   "last = results.last; " \
-  "puts({ swept: results, slug: (last && last[:release]), state: (last && last[:state]) }.to_json)"
+  "Release::Conductor.validate_members!(Release.find_by!(slug: last[:release])) if last; " \
+  "{ swept: results, slug: (last && last[:release]), state: (last && last[:state]) } }; " \
+  "puts(out.to_json)"
 end
 
 # Is this PR already merged on GitHub? The gh-side crash-recovery read: when a
@@ -1321,6 +1343,20 @@ def enforce_review_gate!(screen)
 
   named = overridden.map { |slug| "#{slug} (#{stage.call(slug)})" }.join(", ")
   say("  ⚠ OVERRIDE: sweeping #{named} past the review gate — recording a `review_bypassed` audit event per task.")
+end
+
+# The repo column of a sweep/task transcript line. A single-repo row renders
+# EXACTLY as it always did (its one repo); a MULTI-repo row names every repo it
+# carries, comma-separated. The operator reading a transcript is the last human
+# who can catch a half-ship before it is recorded, and printing only the primary
+# is what made the 2026-08-13 run look complete: the line said "mcritchie-studio"
+# for a task that also carried turf-monster. Falls back to the singular when the
+# plural is absent (an older/stubbed read).
+def sweep_line_repos(row)
+  repos = row["repos"]
+  repos = [] unless repos.is_a?(Array)
+  repos = repos.map(&:to_s).reject(&:empty?).uniq
+  repos.size > 1 ? repos.join(", ") : row["repo"].to_s
 end
 
 # The merged-stamp value review writes when a feat PR lands on `accepted` — the
@@ -1465,7 +1501,7 @@ def merge
   abort!("task(s) not found on the board: #{missing.join(', ')}") if missing.any?
   infos.each do |i|
     at = i["merged"].to_s.empty? ? "" : " · merged: #{i['merged']}"
-    say("  task #{i['slug']} (#{i['stage']}#{at}) · #{i['repo']} · #{i['pr_url']}")
+    say("  task #{i['slug']} (#{i['stage']}#{at}) · #{sweep_line_repos(i)} · #{i['pr_url']}")
   end
 
   # 1b. REVIEW-GATE GUARD (the decision lives in Release::Conductor.screen_merge;
@@ -1481,6 +1517,23 @@ def merge
   #    this EXPLICIT command a held task is a HARD abort: the operator named it and
   #    there is no code on `accepted` to promote — silently dropping it would lie.
   plan = Release::SweepPlan.compute(infos)
+
+  # 2a. MULTI-REPO COVERAGE REFUSAL — prepare's step 3a, on the path prepare itself
+  #     routes operators to (`prepare has NO --override — use bin/release merge
+  #     --override`). It must come FIRST, before the held check: SweepPlan.compute
+  #     removes blocked rows before it splits record/held, so a blocked task is in
+  #     NEITHER list — without this abort `merge` would silently drop the exact task
+  #     the operator named, promote the repos it could see, and print a tick.
+  if plan["blocked"].any?
+    named = plan["blocked"].map { |row| "#{row['slug']} (names #{row['repos'].join(', ')}; no PR url for #{row['missing'].join(', ')})" }
+    abort!("merge refused #{plan['blocked'].size} multi-repo task(s) with an incomplete PR record: " \
+           "#{named.join('; ')}. Promoting now would carry only the repo(s) with a PR and still stamp " \
+           "the task assembled/shipped for the rest — the 2026-08-13 half-ship. NOTHING was promoted " \
+           "or recorded. Record the missing PR " \
+           "(`bin/task update <slug> --pr-url-for <repo>=<url>`), or drop the repo from the task's " \
+           "devops.repositories if it carries no work, then re-run `bin/release merge`.")
+  end
+
   if plan["held"].any?
     abort!("task(s) have no code on `#{ACCEPTED_BRANCH}` (merged:\"\") — review must land the feat PR on " \
            "`#{ACCEPTED_BRANCH}` first: #{plan['held'].join(', ')}")
@@ -1514,8 +1567,16 @@ def merge
     #    the named one — use it to force a specific reviewed task onto the RC ahead of
     #    the sweep. Idempotent + fail-closed (accepted level with release → skip the
     #    PR, still record). Git-FIRST (the irreversible step), then the record write.
+    #    Promote EVERY repo each landed task NAMES (`repos`), not just its primary —
+    #    the same fan-out prepare does, and the same reason: reading the singular
+    #    `repo` here is what promoted the hub alone for a task carrying
+    #    [mcritchie-studio, turf-monster] on 2026-08-13. This path is worse than
+    #    prepare's, not better: prepare's own abort message ROUTES operators here for
+    #    the override, so the singular form meant the documented escape hatch was
+    #    also the one that half-shipped. (Rails-FREE file — no `.presence`.)
     promote_repos = infos.select { |i| i["merged"].to_s == ACCEPTED_MERGED }
-                         .map { |i| i["repo"].to_s }.reject(&:empty?).uniq
+                         .flat_map { |i| (i["repos"].is_a?(Array) && !i["repos"].empty?) ? i["repos"] : [ i["repo"] ] }
+                         .map(&:to_s).reject(&:empty?).uniq
     promote_accepted_to_release!(promote_repos) if promote_repos.any?
 
     # 4. BATCHED record: ALL named members in ONE `heroku run` (single dyno spin-up,
@@ -1554,8 +1615,14 @@ end
 # `only_slugs` (from --task) narrows the sweep to the named tasks. A PURE read
 # (sweep_candidates + screen_merge write nothing), so it previews under
 # --dry-run. Emits ONE JSON line:
-#   { "tasks": [{slug, stage, merged, pr_url, repo}], "release": {slug,state}|null,
+#   { "tasks": [{slug, stage, merged, pr_url, repo, repos, pr_urls}], "release": …,
 #     "screen": { rows:[…], blocked:[…], … } }
+#
+# `repos`/`pr_urls` are the task's FULL release identity (Task#release_repos /
+# #release_pr_urls); `repo`/`pr_url` remain the primary, for the sweep line and
+# crash recovery. The plural pair is what the promote list and
+# Release::SweepPlan's coverage refusal read — deriving either from the singular
+# is what promoted one repo of a two-repo task and shipped the other blind.
 def sweep_detect_ruby(only_slugs)
   only = only_slugs.empty? ? "nil" : only_slugs.inspect
   "only = #{only}; " \
@@ -1563,7 +1630,8 @@ def sweep_detect_ruby(only_slugs)
   "tasks = c['reviewed'] + c['stragglers']; " \
   "tasks = tasks.select { |t| only.include?(t.slug) } if only; " \
   "rows = tasks.map { |t| { slug: t.slug, stage: t.stage, merged: t.merged.to_s, " \
-  "pr_url: t.devops_url('pr').to_s, repo: t.release_repo.to_s } }; " \
+  "pr_url: t.devops_url('pr').to_s, repo: t.release_repo.to_s, kind: t.release_kind.to_s, " \
+  "repos: t.release_repos, pr_urls: t.release_pr_urls } }; " \
   "screen = Release::Conductor.screen_merge(rows.map { |x| x[:slug] }); " \
   "r = Release.current; " \
   "puts({ tasks: rows, release: (r ? { slug: r.slug, state: r.state } : nil), screen: screen }.to_json)"
@@ -2659,7 +2727,7 @@ def prepare
   end
   cands.each do |c|
     at = c["merged"].to_s.empty? ? "" : " · merged: #{c['merged']}"
-    say("  sweep #{c['slug']} (#{c['stage']}#{at}) · #{c['repo']} · #{c['pr_url']}")
+    say("  sweep #{c['slug']} (#{c['stage']}#{at}) · #{sweep_line_repos(c)} · #{c['pr_url']}")
   end
 
   # 2b. Review gate over the sweep list — defense-in-depth. Auto-detected
@@ -2697,6 +2765,25 @@ def prepare
   #    is WARNED + left `reviewed` (it self-heals on re-review) — the self-healing
   #    sweep never aborts on it.
   plan = Release::SweepPlan.compute(cands)
+
+  # 3a. MULTI-REPO COVERAGE REFUSAL — fail-closed, and the earliest seam that can
+  #     see it: nothing has been claimed, promoted, recorded or deployed yet. A
+  #     candidate naming several repos with a PR url for only some of them is the
+  #     2026-08-13 shape: the promote below derives its repos from the candidates,
+  #     so the repo with no PR simply never appears, and every stage after it —
+  #     pre-QA gate, QA deploy, ship — inherits the omission and stamps the task
+  #     shipped anyway. Refusing here is what turns that silent half-ship into a
+  #     stop, at the first prepare, with the repo named.
+  if plan["blocked"].any?
+    named = plan["blocked"].map { |row| "#{row['slug']} (names #{row['repos'].join(', ')}; no PR url for #{row['missing'].join(', ')})" }
+    abort!("sweep refused #{plan['blocked'].size} multi-repo task(s) with an incomplete PR record: " \
+           "#{named.join('; ')}. Promoting now would carry only the repo(s) with a PR and still stamp " \
+           "the task assembled/shipped for the rest — the 2026-08-13 half-ship. NOTHING was promoted, " \
+           "recorded or deployed. Record the missing PR " \
+           "(`bin/task update <slug> --pr-url-for <repo>=<url>`), or drop the repo from the task's " \
+           "devops.repositories if it carries no work, then re-run `bin/release prepare`.")
+  end
+
   held = plan["held"]
   held.each do |s|
     say("  ⚠ #{s}: `reviewed` but merged:\"\" — review never landed its feat PR on `#{ACCEPTED_BRANCH}`; " \
@@ -2735,8 +2822,85 @@ def prepare
     end
   end
 
+  # Promote EVERY repo each landed candidate names (`repos`), not just its primary.
+  # This one line is where turf-monster was lost on 2026-08-13: it read `c["repo"]`,
+  # the singular Task#release_repo, so a task carrying [mcritchie-studio,
+  # turf-monster] promoted the hub alone — and nothing downstream could tell the
+  # difference between "turf wasn't in this release" and "turf was silently dropped".
+  # NOTE: this file is Rails-FREE (it runs standalone, and only require_relative's
+  # the pure Release::* modules) — no ActiveSupport, so no `.presence`.
   promote_repos = cands.select { |c| c["merged"].to_s == ACCEPTED_MERGED }
-                       .map { |c| c["repo"].to_s }.reject(&:empty?).uniq
+                       .flat_map { |c| (c["repos"].is_a?(Array) && !c["repos"].empty?) ? c["repos"] : [ c["repo"] ] }
+                       .map(&:to_s).reject(&:empty?).uniq
+
+  # 4a-bis. ACCEPTED-COVERAGE HARD STOP — the git read gets a vote on the promote
+  #     list, immediately before the irreversible op.
+  #
+  #     `bin/release status` ALREADY knew about 2026-08-13. It printed, in plain
+  #     words: "the two `accepted` signals DISAGREE: git says `accepted` carries
+  #     commits (turf-monster (+2)) … Trust the git read and reconcile the board."
+  #     NO GATE CONSULTED IT — so three prepares ran straight past a repo whose work
+  #     sat on `accepted`, and the fourth still did not QA it.
+  #
+  #     The same measurement (Release::CleanCheck.ahead_repos, via
+  #     ladder_clean_verdict — one call, both rungs, no new mechanism) is consulted
+  #     HERE and compared against what this run is about to promote. A repo whose
+  #     `accepted` is ahead of `release` and is NOT in the promote list is a repo
+  #     this sweep leaves behind while stamping its tasks assembled and shipped.
+  #
+  #     PER-REPO rather than the coarse existential sentence `status` prints,
+  #     deliberately: the coarse form compares "any repo ahead" against "any task
+  #     stamped merged:accepted", so it goes quiet the moment ANY other task on the
+  #     board carries that stamp — which is most of the time, and was true during
+  #     the incident's later runs. This form names the repo, and fires every time.
+  #
+  #     Scoped to runs that actually promote: a self-healing re-run with nothing to
+  #     sweep carries nothing onto `release`, so it has no promote list to be wrong
+  #     about (and `bin/release status` remains the read for that state).
+  #
+  #     AND SCOPED TO THIS RUN'S OWN MEMBERS — the git read is ecosystem-wide and
+  #     the promote list is not, so comparing them raw asks a global question of a
+  #     local answer. `ladder_ahead_states` spans every registered repo, while
+  #     `--task` deliberately NARROWS the sweep: Avi's documented per-app hold-back
+  #     (qa-release.md, "sweep only the included apps") is exactly a --task run, and
+  #     `included_in_release` is only a board marker the release path never reads,
+  #     so --task is the ONLY mechanism that shapes a hold-back. A held-back repo is
+  #     ahead BY CONSTRUCTION — that is what holding it back means — so the raw
+  #     comparison refused every hold-back sweep, with no --override and an abort
+  #     message whose two suggested causes did not apply and whose prescribed fixes
+  #     would have undone the hold-back.
+  #
+  #     So the guard judges only the repos THIS RUN'S MEMBERS NAME (`member_repos`,
+  #     over plan["sweep"] — the rows about to be recorded). That keeps the whole
+  #     bite: 2026-08-13's candidate NAMED turf-monster, so turf is in scope and a
+  #     promote list without it still aborts. What it drops is the part that was
+  #     never this guard's business — a repo no member of this release mentions.
+  #     A HELD row (merged:"") names nothing here on purpose: it is not being
+  #     recorded, so it has no claim on the promote list. `bin/release status`
+  #     remains the ecosystem-wide read.
+  member_repos = cands.select { |c| plan["sweep"].include?(c["slug"]) }
+                      .flat_map { |c| (c["repos"].is_a?(Array) && !c["repos"].empty?) ? c["repos"] : [ c["repo"] ] }
+                      .map(&:to_s).reject(&:empty?).uniq
+  if promote_repos.any? && !DRY
+    step("guard: every repo this release's members name whose `accepted` is ahead must ride this promote")
+    coverage = ladder_clean_verdict
+    ahead = (coverage["accepted_ahead_repos"] || []).map { |r| r["repo"].to_s }.reject(&:empty?)
+    uncovered = (ahead & member_repos) - promote_repos
+    if uncovered.any?
+      abort!("prepare refused — git says `accepted` carries commits for #{uncovered.join(', ')}, a repo this " \
+             "release's members NAME, but this sweep would promote only #{promote_repos.join(', ')}. That " \
+             "work would stay on `accepted` while the tasks carrying it are stamped assembled and shipped " \
+             "— the 2026-08-13 half-ship, where turf-monster sat +2 and production ran the unpatched code. " \
+             "NOTHING was promoted, recorded or deployed. A member names #{uncovered.join(', ')} but is not " \
+             "landing it: either its `merged` stamp says its code is already past `accepted` when that " \
+             "repo's is not (a PARTIAL earlier promote — land it with `bin/release merge <slug>`, which " \
+             "now fans out over every repo a task names), or the task should not name " \
+             "#{uncovered.join(', ')} at all (drop it from devops.repositories). `bin/release status` " \
+             "prints both signals side by side. NOTE: a repo NO member names is out of scope here by " \
+             "design — that is what keeps a `--task` hold-back sweep legal.")
+    end
+  end
+
   promote_accepted_to_release!(promote_repos, label: slug) if promote_repos.any?
 
   # 5. Record membership for every member whose code is on accepted/release/main
@@ -3654,9 +3818,24 @@ def push_frozen_main(repo, sha)
            "Reconcile main, re-run `bin/release prepare` to re-freeze, then re-run `bin/release ship`.")
   end
 
+  # THE PER-REPO SHIP EVIDENCE, recorded at the only chokepoint that can't lie
+  # about it: this repo's `main` now points at this SHA, because git just accepted
+  # the ref update. Collected here and written onto the release beside
+  # Conductor.ship! (step 6), where Release#ship! reads it to decide which members
+  # may be stamped `shipped`. Before it existed a run that ff'd three repos and
+  # skipped a fourth left the same record as one that shipped everything.
+  ship_evidence[repo] = sha
+
   # main is advanced — now re-baseline this repo's origin/accepted onto it
   # (guarded, idempotent, NON-FATAL). See advance_accepted.
   advance_accepted(repo, path, sha)
+end
+
+# { repo => sha } for every repo whose `main` this process has advanced (or, in
+# finalize, proven already live). Written to release.metadata["shipped_shas"] in
+# the same conductor call that ships the members.
+def ship_evidence
+  @ship_evidence ||= {}
 end
 
 # After push_frozen_main advances a repo's `main`, re-baseline that repo's
@@ -5871,8 +6050,13 @@ def ship
   # the conductor's LOCAL transcript (the flips run on prod, transcript-less).
   ship_usage = move_usage_map(repos.flat_map { |g| Array(g["members"]).map { |m| m["slug"] } }.compact.uniq)
   step("record: Release::Conductor.ship! + post_release_notes")
+  # record_shipped_shas FIRST, in the same call: it is what each repo's `main`
+  # actually landed, and Release#ship! refuses to stamp a member spanning a repo
+  # with no entry there (2026-08-13: turf's main never moved, the task said
+  # otherwise).
   shipped = conductor(
     "r = Release.find_by!(slug: #{rel_slug.inspect}); " \
+    "Release::Conductor.record_shipped_shas(release: r, shas: #{ship_evidence.inspect}); " \
     "Release::Conductor.ship!(release: r, deployed_sha: #{deployed_sha.inspect}, by: #{by.inspect}, production_url: #{PROD_URL.inspect}, usage_by_slug: #{ship_usage.inspect}, member_pause: 1); " \
     "Release::DurationCache.refresh_recent!(limit: 3); " \
     "notes = Release::Conductor.post_release_notes(release: r); " \
@@ -6049,6 +6233,14 @@ def finalize(slug = nil)
     else
       say("  ✓ #{app_groups.size} app(s) confirmed live on prod at the frozen SHA")
     end
+    # This guard is per-repo ship evidence, MEASURED against prod rather than
+    # remembered from a push — so record it, exactly as a live ship records what it
+    # pushed. Without it a resumed ship (whose push_frozen_main already ran, in a
+    # process that is gone) would find no shipped_shas and Release#ship! would
+    # correctly refuse to stamp its members — a jam where finalize already holds
+    # the stronger proof. Gem groups ride the same record; ship evidence exempts
+    # them, so a missing entry costs nothing.
+    (app_groups - not_live).each { |g| ship_evidence[g["repo"]] = ship_sha[g["repo"]].to_s }
 
     # 5. What did the killed ship skip? (pure, from the release's own state.)
     pending = Release::ShipSequence.finalize_pending?(state: state, sealed: sealed,
@@ -6080,8 +6272,11 @@ def finalize(slug = nil)
       deployed_sha = ship_sha[APP].to_s
       deployed_sha = git_capture("-C", repo_path(APP), "rev-parse", "origin/main").first.strip if deployed_sha.empty?
       step("record: Release::Conductor.ship! + DurationCache.refresh_recent!")
+      # The live-on-prod verdict above IS this run's per-repo ship evidence — record
+      # it before the member stamps read it (see the guard block).
       conductor(
         "r = Release.find_by!(slug: #{rel_slug.inspect}); " \
+        "Release::Conductor.record_shipped_shas(release: r, shas: #{ship_evidence.inspect}); " \
         "Release::Conductor.ship!(release: r, deployed_sha: #{deployed_sha.inspect}, by: #{by.inspect}, production_url: #{PROD_URL.inspect}, usage_by_slug: {}, member_pause: 1); " \
         "Release::DurationCache.refresh_recent!(limit: 3); " \
         "puts({slug: r.slug, state: r.reload.state, sha: r.deployed_sha.to_s[0,7]}.to_json)"

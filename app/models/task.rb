@@ -1350,16 +1350,32 @@ class Task < ApplicationRecord
   # work exists in a repo the pipeline has no evidence for, so nothing can prove
   # its code reached `accepted`.
   #
-  # NOTHING ENFORCES THIS YET — say so rather than imply otherwise. This is a
-  # query, and today it has no caller: `Release::Conductor.validate_members!`
-  # checks only for an unknown `release_kind`, not for missing per-repo evidence.
-  # The refusal arrives with /tasks/merge-promotes-every-repo, which is also what
-  # makes this method reachable. Until then it is deliberately inert, and a
-  # comment claiming a guard that does not run is the exact defect this whole
-  # family exists to stop.
+  # IT IS ENFORCED NOW: `Release::Conductor.validate_member_pr_coverage!` (reached
+  # from validate_members!, which every sweep write runs inside its transaction)
+  # raises on a non-empty answer, so a member with a repo the record cannot vouch
+  # for is refused rather than swept. This method IS the rule, delegated to
+  # `Release::SweepPlan.repo_coverage_gap` so the CLI's pre-promote screen and the
+  # record-time backstop answer identically — two spellings of one rule is how the
+  # screen and the guard drift apart.
+  #
+  # Reading `release_repos` rather than `devops_repositories` widens the input to
+  # the task's full release identity (the PR-derived repo included), and the rule's
+  # own `size < 2` guard is why a SINGLE-repo task is never an offender: it cannot
+  # lose a repo it never had a second of, and its missing PR is the review lane's
+  # problem, not the sweep's.
+  #
+  # `release_kind` is passed because A GEM RELEASE IS EXEMPT, and this method is
+  # where that would otherwise bite hardest: `release_pr_urls` keys the singular
+  # `pr_url` by the repo its URL parses to, so a `library` task whose PR lives in
+  # the GEM repo while `repositories` names the CONSUMERS would report EVERY
+  # consumer missing. Live example, 2026-08-14: guard-engine-migration-rollback
+  # names [studio-engine, mcritchie-studio, turf-monster, mcritchie-industries]
+  # behind one studio-engine PR. Refusing that would block every engine release,
+  # for a URL that does not exist — the pipeline authors the consumer's change
+  # itself (bump_consumer_locks_for_qa). See Release::SweepPlan#repo_coverage_gap.
   def repos_missing_pr_url
-    recorded = release_pr_urls.keys
-    pr_bearing_repositories.reject { |repo| recorded.include?(repo) }
+    Release::SweepPlan.repo_coverage_gap(repos: release_repos, pr_repos: release_pr_urls.keys,
+                                         expected: pr_bearing_repositories)
   end
 
   # True when this task ships as a published gem rather than a deployed app — a
