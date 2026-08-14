@@ -67,12 +67,22 @@ end
 # open inbox is already at 84 — a single-page read would go blind past the cap
 # with no error, which is exactly how a duplicate guard stops guarding without
 # anyone noticing. Ordering is created_at DESC (TriageFinding.recent).
+#
+# STRICT count (TaskBoard.rows!), for the same reason the paging exists. `api`
+# die!s on a non-2xx, but a 2xx whose BODY is unreadable — a proxy's HTML error
+# page, a truncated response — used to parse leniently to `{}`, making `batch`
+# `[]`, which ends the loop as though the last page had been read. The duplicate
+# guard then compares against a SHORT list and files a finding it already has,
+# and the inbox reports "(0 finding(s))" — the reassuring answer. `rows!` refuses
+# an unreadable page instead of scoring it empty; `[]` from it means genuinely
+# none. `api` still owns the non-2xx rendering, so its HTML-error-page verdict
+# is untouched.
 def all_findings(status)
   rows = []
   page = 1
   loop do
     payload = api(:get, "/api/v1/triage_findings?status=#{status}&per_page=100&page=#{page}")
-    batch = payload["data"] || []
+    batch = TaskBoard.rows!(payload)
     rows.concat(batch)
     total_pages = payload.dig("meta", "total_pages").to_i
     break if batch.empty? || page >= total_pages
@@ -80,6 +90,10 @@ def all_findings(status)
     page += 1
   end
   rows
+rescue TaskBoard::UnreadableResponse => e
+  die!("UNREADABLE INBOX — page #{page} of the triage findings could not be read: #{e.message}\n" \
+       "  An unreadable page is NOT an empty inbox. Listing a short set makes the duplicate\n" \
+       "  guard file a finding that already exists. Fix the read, then re-run.")
 end
 
 # Underscores included on purpose: `--prior_art` is a near-miss worth naming, and

@@ -27,11 +27,13 @@ class TriageCliTest < Minitest::Test
   # Serve `pages` (an array of row-arrays) as successive pages of
   # GET /api/v1/triage_findings, recording every request path. Returns
   # [requests, stdout, stderr, status].
-  def run_triage(*args, pages: [[]])
+  # `findings_payload` overrides the JSON page body with a raw string, so a test
+  # can serve what a proxy or a half-written response actually looks like.
+  def run_triage(*args, pages: [[]], findings_payload: nil)
     server = TCPServer.new("127.0.0.1", 0)
     port = server.addr[1]
     requests = []
-    thread = Thread.new { serve(server, requests, pages) }
+    thread = Thread.new { serve(server, requests, pages, findings_payload) }
 
     env = SessionEnv.neutralized(
       "TASK_API_BASE" => "http://127.0.0.1:#{port}",
@@ -44,7 +46,7 @@ class TriageCliTest < Minitest::Test
     thread&.join(1)
   end
 
-  def serve(server, requests, pages)
+  def serve(server, requests, pages, findings_payload = nil)
     loop do
       client = server.accept
       line = client.gets
@@ -60,7 +62,7 @@ class TriageCliTest < Minitest::Test
       body = len ? client.read(len.to_i) : ""
       requests << { method: method, path: path, body: body }
 
-      status, payload = response_for(path, pages)
+      status, payload = response_for(path, pages, findings_payload)
       client.write("HTTP/1.1 #{status}\r\nContent-Type: application/json\r\n" \
                    "Content-Length: #{payload.bytesize}\r\nConnection: close\r\n\r\n#{payload}")
       client.close
@@ -69,8 +71,9 @@ class TriageCliTest < Minitest::Test
     # server closed — stop serving
   end
 
-  def response_for(path, pages)
+  def response_for(path, pages, findings_payload = nil)
     return ["200 OK", JSON.generate("token" => "stub-token")] if path == "/api/v1/auth"
+    return ["200 OK", findings_payload] if findings_payload
 
     page = (path[/[?&]page=(\d+)/, 1] || "1").to_i
     rows = pages[page - 1] || []
@@ -343,5 +346,46 @@ class TriageCliTest < Minitest::Test
     refute status.success?
     assert_nil posted
     assert_includes err, "--body needs a value"
+  end
+
+  # ── [integration] an UNREADABLE inbox is not an EMPTY one ───────────────────
+  #
+  # The third way this read silently under-reports, and the one the two above did
+  # not cover: the status is 200, the paging is right, and the BODY is not JSON.
+  # `TaskBoard.parse_body` scored that `{}`, so `payload["data"] || []` was `[]`,
+  # the loop broke on page one, and the CLI printed "(0 finding(s))" — the same
+  # sentence a genuinely empty inbox prints. `bin/release retro`'s duplicate guard
+  # reads this list, so a false empty makes it file a follow-up it already has.
+  #
+  # Asserted as the EFFECT, not the exit code: a test that only checked `refute
+  # status.success?` would pass on a bare JSON::ParserError backtrace too, and
+  # would have passed on the buggy version had it merely crashed elsewhere. What
+  # must be true is that the reassuring COUNT never prints.
+
+  def test_a_non_json_findings_page_refuses_instead_of_reporting_an_empty_inbox
+    _reqs, out, err, status = run_triage("list", findings_payload: "<html><body>502 Bad Gateway</body></html>")
+
+    refute status.success?, "an unreadable inbox must not exit 0"
+    refute_includes out, "finding(s)", "the reassuring count must never print off an unreadable body"
+    assert_includes err, "UNREADABLE INBOX"
+    assert_includes err, "is NOT an empty inbox"
+  end
+
+  def test_a_findings_page_with_no_data_array_is_refused_too
+    # What an expired agent token looks like on the wire: valid JSON, 200-shaped
+    # by a proxy, and carrying no rows at all. A lenient read scores it zero.
+    _reqs, out, err, status = run_triage("list", findings_payload: JSON.generate("error" => "Unauthorized"))
+
+    refute status.success?
+    refute_includes out, "finding(s)"
+    assert_includes err, "UNREADABLE INBOX"
+  end
+
+  def test_a_genuinely_empty_inbox_still_reports_zero
+    # The control: refusing THIS would be a worse bug than the one being fixed.
+    _reqs, out, _err, status = run_triage("list", pages: [[]])
+
+    assert status.success?, "empty-because-true is a healthy answer"
+    assert_includes out, "(0 finding(s))"
   end
 end

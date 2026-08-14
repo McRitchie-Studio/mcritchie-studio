@@ -187,11 +187,16 @@ class ReviewerSelectCliTest < Minitest::Test
   # Runs bin/reviewer-select <slug> <args> against a one-shot stub board; returns
   # [recorded_requests, stdout, status]. stderr is dropped (it carries bundler /
   # rubygems warnings under the test sweep, never the asserted output).
-  def run_board(devops, *args)
+  # `busy_payload` overrides the body served for the --busy-auto board query
+  # (GET /api/v1/tasks?stage=building) with a raw string, so a test can serve
+  # what an unreadable answer actually looks like. Returns stderr as a FOURTH
+  # element — the busy-set degradation is announced there, and the callers above
+  # destructure three, which stays valid.
+  def run_board(devops, *args, busy_payload: nil)
     server = TCPServer.new("127.0.0.1", 0)
     port = server.addr[1]
     requests = []
-    thread = Thread.new { serve(server, requests, devops) }
+    thread = Thread.new { serve(server, requests, devops, busy_payload) }
 
     # The board path SEEDS a per-session usage baseline (bin/reviewer-select's
     # seed_review_usage_baseline). Un-neutralized, a run from a live agent session
@@ -213,8 +218,8 @@ class ReviewerSelectCliTest < Minitest::Test
         "RAILS_ENV" => "test"
       }.merge(TaskUsageSandboxEnv.child_env(sandbox_root))
     )
-    out, _err, status = Open3.capture3(env, RbConfig.ruby, BIN, BOARD_SLUG, *args)
-    [requests, out, status]
+    out, err, status = Open3.capture3(env, RbConfig.ruby, BIN, BOARD_SLUG, *args)
+    [requests, out, status, err]
   ensure
     server&.close
     thread&.join(1)
@@ -222,7 +227,7 @@ class ReviewerSelectCliTest < Minitest::Test
 
   # Minimal HTTP/1.1 stub: records each request, returns canned JSON. The CLI opens
   # one connection per call (auth, the task GET, then the intent POST).
-  def serve(server, requests, devops)
+  def serve(server, requests, devops, busy_payload = nil)
     loop do
       client = server.accept
       line = client.gets
@@ -238,7 +243,7 @@ class ReviewerSelectCliTest < Minitest::Test
       body = len ? client.read(len.to_i) : ""
       requests << { method: method, path: path, body: body }
 
-      payload = response_for(method, path, devops)
+      payload = response_for(method, path, devops, busy_payload)
       client.write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n" \
                    "Content-Length: #{payload.bytesize}\r\nConnection: close\r\n\r\n#{payload}")
       client.close
@@ -247,8 +252,9 @@ class ReviewerSelectCliTest < Minitest::Test
     # server closed — stop serving
   end
 
-  def response_for(method, path, devops)
+  def response_for(method, path, devops, busy_payload = nil)
     return JSON.generate("token" => "stub-token") if path == "/api/v1/auth"
+    return busy_payload if busy_payload && path.include?("stage=building")
     if method == "POST" && path == "/api/v1/tasks/#{BOARD_SLUG}/intent"
       return JSON.generate("data" => { "slug" => BOARD_SLUG })
     end
@@ -301,5 +307,40 @@ class ReviewerSelectCliTest < Minitest::Test
     requests, out, status = run_board({ "shape" => "backend" }, "--record", "--json")
     assert_equal 0, status.exitstatus, out
     assert_equal 1, intent_posts(requests).size, "the legacy --record flag still records (now the default)"
+  end
+
+  # --- --busy-auto: the fail-open is kept, its SILENCE is not -------------------
+  #
+  # `in_flight_busy` degrades to an empty busy set on any read failure, on
+  # purpose — a board hiccup must never abort the pick. But `Array(res["data"])`
+  # gave an UNREADABLE answer and an IDLE BENCH the same value with no signal, so
+  # a degraded pick was indistinguishable from a real one and could hand a review
+  # to a soul already mid-build. The pick still proceeds; it now SAYS it is
+  # degraded.
+
+  # `built_by` is named on purpose in both: PR #846 (feat/builder-stamp-misses-
+  # reviewer-guard) makes an UNKNOWN builder a hard refusal (exit 2), so a run
+  # that leaves it blank stops selecting the moment that lands. These tests are
+  # about the BUSY read, not the builder rule — naming the builder keeps them
+  # asserting the thing they are named for whichever PR merges first.
+  def test_an_unreadable_busy_read_still_picks_but_announces_the_degradation
+    _requests, out, status, err = run_board({ "shape" => "backend", "built_by" => "shannon" },
+                                            "--busy-auto", "--json",
+                                            busy_payload: "<html>502 Bad Gateway</html>")
+
+    assert_equal 0, status.exitstatus, "the fail-open is intact — --busy-auto never aborts the pick"
+    assert_equal 2, json_decision(out)["reviewers"].size, "a pair still forms"
+    assert_includes err, "busy-auto: could not read who is mid-build"
+    assert_includes err, "DEGRADED pick, not an idle bench"
+  end
+
+  def test_a_healthy_busy_read_is_silent
+    # The control: the warning must fire on an unreadable answer, not on every run.
+    _requests, out, status, err = run_board({ "shape" => "backend", "built_by" => "shannon" },
+                                            "--busy-auto", "--json",
+                                            busy_payload: JSON.generate("data" => []))
+
+    assert_equal 0, status.exitstatus, out
+    refute_includes err, "busy-auto: could not read", "a genuinely idle bench raises no alarm"
   end
 end
