@@ -415,9 +415,17 @@ member spanning a repo this candidate never promoted stays `reviewed` — swept,
 repo rides — and the reason is logged as `[release-evidence] <release>: <slug>
 names N repo(s) … but this release landed nothing for <repo>`. The ship has the
 same guard against `metadata["shipped_shas"]`, so such a member stays `assembled`
-rather than being stamped `shipped` + `merged: "main"` for a repo whose `main`
-never moved. Fix it the same way as the aborts above: get the missing repo onto
-this candidate, or drop it from the task if it carries no work.
+rather than being stamped `shipped` for a repo whose `main` never moved.
+
+**The `merged: "main"` stamp is NOT withheld with it** — say the half that still
+bites rather than imply a clean stop. `record_merged_main` fires per repo-group
+inside the deploy/publish path (`bin/release ship`), entirely outside
+`Release#ship!` and outside this guard, so a held member parks at `assembled` +
+`merged: "main"` — the registry's "prod-deploy in flight" badge — and keeps it.
+That stamp is pre-existing and per-repo; the evidence guard withholds the STAGE,
+not the git-location stamp. Fix a held member the same way as the aborts above:
+get the missing repo onto this candidate, or drop it from the task if it carries
+no work.
 
 ### Detecting an UNFINISHED release candidate
 
