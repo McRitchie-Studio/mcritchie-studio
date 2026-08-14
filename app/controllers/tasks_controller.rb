@@ -399,7 +399,24 @@ class TasksController < ApplicationController
         :risk_tags,
         :acceptance,
         :test_plan,
-        :checks_run
+        :checks_run,
+        # The per-repo PR register. Note the NESTING: `pr_urls` is a repo-keyed
+        # hash of arbitrary keys, and a bare `:pr_urls` in this list permits a
+        # SCALAR — strong params hands back `{}` for a hash and the write reaches
+        # nothing. `{ pr_urls: {} }` is what permits the open-ended hash.
+        #
+        # What this fixes: a caller that DOES post `task[devops][pr_urls]` here
+        # now has its write honored, and validated — the key used to be stripped
+        # before Task.normalize_devops_map ran, so a hand-posted nonsense url got
+        # a 200 for a write that landed nowhere. It 422s now, like the JSON API.
+        #
+        # What it does NOT fix, so nobody reads more into it: `_form.html.erb`
+        # renders no `pr_urls` field, and merged_metadata_with_devops replaces
+        # `base["devops"]` WHOLESALE — so a board-UI edit still drops the map,
+        # exactly as it already drops agent_context, built_by, gem_bump and the
+        # mascot/session keys this list also omits. That is one pre-existing bug
+        # about omitted keys, not five, and it wants its own change.
+        { pr_urls: {} }
       ]
     )
     attrs = permitted.except(:devops).to_h

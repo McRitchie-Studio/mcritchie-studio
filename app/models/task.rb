@@ -1262,20 +1262,64 @@ class Task < ApplicationRecord
 
   # { "<repo>" => "<pr url>" } for every PR this task landed, the singular
   # `pr_url` included (keyed by the repo it names). The per-repo register that
-  # gives a second repo's PR somewhere to live — see DEVOPS_MAP_KEYS. The
-  # singular is folded in LAST so an explicit `pr_urls` entry wins for its repo.
+  # gives a second repo's PR somewhere to live — see DEVOPS_MAP_KEYS.
+  #
+  # THE SINGULAR WINS FOR ITS OWN REPO — it is merged in LAST, over any `pr_urls`
+  # entry naming the same repo. That precedence is deliberate. `pr_url` is the
+  # field the rest of the pipeline already acts on: #release_repo parses it,
+  # bin/dor-check and bin/pr-review read it, and ReviewPendingActionsController
+  # links to it. If a map entry could override it, the pipeline would hold two
+  # different PRs for one repo and say nothing about the divergence — and the
+  # obvious operator correction (`bin/task update <slug> --pr-url <right-url>`)
+  # would be silently undone by whatever stale entry was recorded first. One
+  # repo, one authoritative PR, and it is the one every other reader already
+  # sees. This map's job is the repos `pr_url` cannot reach, not a second
+  # opinion about the repo it already names.
   def release_pr_urls
     map = devops.fetch("pr_urls", {})
-    map = map.is_a?(Hash) ? map.transform_keys(&:to_s).transform_values(&:to_s) : {}
+    map = map.is_a?(Hash) ? map.to_h { |repo, url| [repo.to_s.strip, url.to_s.strip] } : {}
     primary = devops_url("pr").to_s
     primary_repo = self.class.repo_from_pr_url(primary)
-    map = { primary_repo => primary }.merge(map) if primary_repo.present? && primary.present?
+    map = map.merge(primary_repo => primary) if primary_repo.present? && primary.present?
     map.reject { |repo, url| repo.blank? || url.blank? }
   end
 
-  # Repos this task NAMES but recorded no PR url for. A non-empty answer on a
-  # multi-repo task is the 2026-08-13 shape exactly: the work exists in a repo the
-  # pipeline has no evidence for, so nothing can prove its code reached `accepted`.
+  # The repos this task is EXPECTED to carry its own PR in — the set
+  # #repos_missing_pr_url measures coverage against.
+  #
+  # For an app task that is simply every repo it names: each one needs its own PR
+  # merged onto its own `accepted`, and a repo without one is invisible to the
+  # release lane.
+  #
+  # A GEM task is different IN KIND, and reading `repositories` literally there
+  # produces the exact inversion of the failure this measures. A studio-engine
+  # task names the gem AND the consumers that must pick the new version up —
+  # [studio-engine, mcritchie-studio, turf-monster] — but the work is ONE PR, in
+  # the gem repo. The consumers reach production through a published version and
+  # the conductor's bump, not through a PR the builder opens; those PRs must
+  # never exist. Measured literally, every legitimate engine release would report
+  # both consumers "missing a PR" — refusing the release for the absence of work
+  # nobody is supposed to do, which is the opposite of the hole being closed.
+  #
+  # So a gem task is measured against the GEM repos in play: the gem repos it
+  # names, or (when it names none — the PR lives in a repo `repositories` never
+  # listed) the gem repos it actually recorded a PR for. If neither exists there
+  # is no gem evidence at all, and it falls back to the literal list rather than
+  # reporting full coverage off an empty set.
+  def pr_bearing_repositories
+    return devops_repositories unless gem_release?
+
+    named_gems = devops_repositories.select { |repo| Release::Repos.gem?(repo) }
+    return named_gems if named_gems.any?
+
+    recorded_gems = release_pr_urls.keys.select { |repo| Release::Repos.gem?(repo) }
+    recorded_gems.presence || devops_repositories
+  end
+
+  # Repos this task is expected to carry a PR in but recorded none for. A
+  # non-empty answer on a multi-repo task is the 2026-08-13 shape exactly: the
+  # work exists in a repo the pipeline has no evidence for, so nothing can prove
+  # its code reached `accepted`.
   #
   # NOTHING ENFORCES THIS YET — say so rather than imply otherwise. This is a
   # query, and today it has no caller: `Release::Conductor.validate_members!`
@@ -1286,7 +1330,7 @@ class Task < ApplicationRecord
   # family exists to stop.
   def repos_missing_pr_url
     recorded = release_pr_urls.keys
-    devops_repositories.reject { |repo| recorded.include?(repo) }
+    pr_bearing_repositories.reject { |repo| recorded.include?(repo) }
   end
 
   # True when this task ships as a published gem rather than a deployed app — a
@@ -1386,38 +1430,71 @@ class Task < ApplicationRecord
 
   # Normalize a repo-keyed map (DEVOPS_MAP_KEYS) into { "<repo>" => "<value>" }.
   # Two input shapes, because the two writers differ:
-  #   * a HASH ({ "turf-monster" => "https://github.com/.../pull/305" }) — the API
-  #     / bin/task --pr-url-for shape. Keys and values are stripped; blank pairs
-  #     drop (a blank asserts nothing).
-  #   * a LIST or newline/comma STRING of PR urls — the ergonomic shape. Each url
-  #     is KEYED BY THE REPO IT NAMES, so the caller can't file turf's PR under
-  #     the hub by typo.
-  # An unparseable url RAISES rather than dropping: a silently-skipped PR url is
-  # exactly the failure this key exists to close (see DEVOPS_MAP_KEYS), so a write
-  # that reaches nothing must be loud. Both API paths rescue it into a 422.
+  #   * a HASH ({ "turf-monster" => "https://github.com/.../pull/305" }) — the
+  #     shape the JSON API takes and the only one `bin/task --pr-url-for` writes.
+  #   * a LIST or newline/comma STRING of PR urls — the ergonomic shape, for a
+  #     caller holding bare urls with no repo to hand.
+  #
+  # BOTH SHAPES ARE VALIDATED THE SAME WAY, and the symmetry is the point. The
+  # hash branch used to take its value verbatim, so `{ "turf-monster" => "lol" }`
+  # stored "lol" and #repos_missing_pr_url then reported turf fully covered: the
+  # evidence this key exists to hold, satisfiable by a nonsense string, on the
+  # only path anything actually writes. Every value must parse as
+  # github.com/<owner>/<repo>/pull/<n>, and the entry is KEYED BY THE REPO THE
+  # URL NAMES — so a hash key that disagrees with its url is refused rather than
+  # filing turf's PR under the hub.
+  #
+  # A bad pair RAISES rather than dropping: a silently-skipped PR url is exactly
+  # the failure this key exists to close (see DEVOPS_MAP_KEYS), so a write that
+  # reaches nothing must be loud. Both controllers turn that into a 422 —
+  # Api::V1::TasksController#create/#update rescue StandardError into
+  # render_error (default :unprocessable_entity), and TasksController#create/
+  # #update rescue into an :unprocessable_entity render. The web path only
+  # reaches the normalizer because `pr_urls` is in its permit list; strong params
+  # stripping the key first is what used to make that path 200 for a write that
+  # reached nothing.
   def self.normalize_devops_map(value)
     pairs =
       if value.is_a?(Hash)
-        value.to_h.map { |repo, url| [repo.to_s.strip, url.to_s.strip] }
+        value.to_h.map { |repo, url| normalize_devops_map_pair(repo, url) }
       else
-        normalize_devops_list(value).map do |url|
-          repo = repo_from_pr_url(url)
-          if repo.blank?
-            raise ArgumentError,
-                  "devops.pr_urls entry #{url.inspect} names no repo — expected a " \
-                  "github.com/<owner>/<repo>/pull/<n> url, or pass a { repo => url } map"
-          end
-
-          [repo, url]
-        end
+        normalize_devops_list(value).map { |url| normalize_devops_map_pair(nil, url) }
       end
 
-    pairs.reject { |repo, url| repo.blank? || url.blank? }.to_h
+    pairs.compact.to_h
+  end
+
+  # One validated `<repo> => <pr url>` pair, or nil when the value is blank.
+  #
+  # A BLANK VALUE DROPS rather than raising, and that is the API-level UNSET: the
+  # writers all send the whole map (read-merge-write), so blanking one value in
+  # it is how a wrong entry gets removed. `bin/task --pr-url-for <repo>=none`
+  # deletes the key client-side for the same reason. A blank asserts nothing, so
+  # there is no url to lose — unlike an unparseable one, which is a real claim
+  # the caller made and got wrong.
+  def self.normalize_devops_map_pair(repo, url)
+    repo = repo.to_s.strip
+    url = url.to_s.strip
+    return nil if url.blank?
+
+    named = repo_from_pr_url(url)
+    if named.blank?
+      raise ArgumentError,
+            "devops.pr_urls entry #{url.inspect} names no repo — expected a " \
+            "github.com/<owner>/<repo>/pull/<n> url"
+    end
+    if repo.present? && repo != named
+      raise ArgumentError,
+            "devops.pr_urls entry #{repo.inspect} => #{url.inspect} is filed under the " \
+            "wrong repo — that url names #{named.inspect}"
+    end
+
+    [named, url]
   end
 
   # The repo segment of a GitHub PR url, or nil. Class-level so the map
   # normalizer (and any caller holding a bare url) shares ONE parser with
-  # Task#repo_from_pr_url.
+  # Task#repo_from_pr_url, which delegates here.
   def self.repo_from_pr_url(url)
     url.to_s[PR_URL_REPO_PATTERN, 1]
   end
@@ -1726,9 +1803,12 @@ class Task < ApplicationRecord
     end
   end
 
-  # Extract the repo from a GitHub PR url: github.com/<owner>/<repo>/pull/<n>.
+  # The repo this task's singular `pr_url` names: github.com/<owner>/<repo>/pull/<n>.
+  # Delegates to the class method so there is genuinely ONE parser — this used to
+  # carry its own literal copy of the regex, which is the duplication extracting
+  # PR_URL_REPO_PATTERN was meant to end.
   def repo_from_pr_url
-    devops_url("pr").to_s[%r{github\.com/[^/]+/([^/]+)/pull/}, 1]
+    self.class.repo_from_pr_url(devops_url("pr"))
   end
 
   def devops_list(key)

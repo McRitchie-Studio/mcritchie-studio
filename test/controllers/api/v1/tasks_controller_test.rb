@@ -194,6 +194,64 @@ module Api
         assert_not @task.devops.key?("release_slug")
       end
 
+      # --- devops.pr_urls: the per-repo PR register ---------------------------
+      # The JSON API is the door bin/task writes through, so the map's round trip
+      # and its refusals are pinned HERE as well as at the model. A refusal that
+      # returns 200 is the defect this register exists to close: the coverage it
+      # will be gated on must not be satisfiable by a string nobody validated.
+
+      test "[integration] a devops pr_urls map round-trips through the API" do
+        turf = "https://github.com/McRitchie-Studio/turf-monster/pull/305"
+
+        patch api_v1_task_path(@task.slug),
+              params: { devops: { kind: "bug", pr_urls: { "turf-monster" => turf } } },
+              headers: @headers, as: :json
+
+        assert_response :success
+        assert_equal({ "turf-monster" => turf }, @task.reload.devops["pr_urls"])
+        assert_equal({ "turf-monster" => turf }, @task.release_pr_urls)
+      end
+
+      test "[integration] a pr_urls value that is not a PR url is refused, not stored" do
+        patch api_v1_task_path(@task.slug),
+              params: { devops: { kind: "bug", pr_urls: { "turf-monster" => "lol" } } },
+              headers: @headers, as: :json
+
+        assert_response :unprocessable_entity, "a nonsense url must fail loudly, not read as coverage"
+        assert_match(/names no repo/, response.parsed_body["error"].to_s)
+        assert_nil @task.reload.devops["pr_urls"]
+      end
+
+      test "[integration] a pr_urls url filed under the wrong repo is refused" do
+        patch api_v1_task_path(@task.slug),
+              params: { devops: {
+                kind: "bug",
+                pr_urls: { "mcritchie-studio" => "https://github.com/McRitchie-Studio/turf-monster/pull/305" }
+              } },
+              headers: @headers, as: :json
+
+        assert_response :unprocessable_entity
+        assert_match(/wrong repo/, response.parsed_body["error"].to_s)
+        assert_match(/turf-monster/, response.parsed_body["error"].to_s)
+      end
+
+      # Blanking a value is the API-level UNSET — every writer sends the whole
+      # map, so this is how a wrong entry comes off the record.
+      test "[integration] a blank pr_urls value unsets that entry" do
+        hub = "https://github.com/McRitchie-Studio/mcritchie-studio/pull/836"
+        @task.update!(metadata: { "devops" => { "pr_urls" => {
+          "mcritchie-studio" => hub,
+          "turf-monster" => "https://github.com/McRitchie-Studio/turf-monster/pull/305"
+        } } })
+
+        patch api_v1_task_path(@task.slug),
+              params: { devops: { pr_urls: { "mcritchie-studio" => hub, "turf-monster" => "" } } },
+              headers: @headers, as: :json
+
+        assert_response :success
+        assert_equal({ "mcritchie-studio" => hub }, @task.reload.devops["pr_urls"])
+      end
+
       test "[integration] a devops block_kind write is refused and names the block endpoint" do
         patch api_v1_task_path(@task.slug),
               params: { devops: { block_kind: "environment" } },
