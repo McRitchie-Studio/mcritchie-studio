@@ -139,18 +139,34 @@ later cleanup task.
 
 - **Install the engine migrations.** `bin/rails studio_engine:install:migrations`
   (note `studio_engine:`, not `studio:`), and **re-run it after every engine
-  upgrade**. It copies the engine's *reference* migrations — the email outbox,
-  `Studio::Link`, `Studio::Enumeral`, an `image_caches` relaxation — in as
-  `*.studio_engine.rb` with a provenance comment.
+  upgrade**. It copies the migrations of the **resolved** gem in as
+  `*.studio_engine.rb` with a provenance comment — the email outbox,
+  `Studio::Link`, `Studio::Enumeral`, an `image_caches` relaxation, and since
+  0.46 the standard `users` profile columns.
+
+  **Resolve before you copy.** The task copies from the gem bundler RESOLVED,
+  never from the version you meant. On a branch whose `Gemfile.lock` still pins
+  the older version, `bundle install` HONOURS that lock, `install:migrations`
+  copies nothing, and the suite goes green having adopted nothing. Move the one
+  gem with `bundle update --conservative studio-engine`, then read the lockfile
+  diff and confirm no other gem moved.
 
   **Install all of them, then `bin/rails db:migrate`.** Every engine migration is
-  safe on every app: the ones that create tables add a table you may not use yet,
-  and `allow_null_image_cache_owner` — which ALTERS the app-owned `image_caches`
-  — no-ops when that table is absent (studio-engine >= 0.30.1). Do **not** delete
-  copies you think you don't need: `install:migrations` builds its skip-list from
-  the files present, so a deleted copy returns with a fresh timestamp on the next
-  upgrade. Verify rather than assume:
-  `bin/rails runner 'puts Studio::EmailDelivery.available?'` must print `true`.
+  safe on every app. The ones that create tables add a table you may not use yet.
+  The two that ALTER app-owned tables guard themselves:
+  `allow_null_image_cache_owner` no-ops when `image_caches` is absent
+  (studio-engine >= 0.30.1), and `add_standard_user_profile_columns` returns
+  early without a `users` table and adds every column `if_not_exists`, so an app
+  that already spells one of them keeps its own. Do **not** delete copies you
+  think you don't need: `install:migrations` builds its skip-list from the files
+  present, so a deleted copy returns with a fresh timestamp on the next upgrade.
+
+  Verify rather than assume:
+  `bin/rails runner 'puts Studio::EmailDelivery.available?'` must print `true`,
+  and carry a test that diffs the RESOLVED gem's migrations against `db/migrate`
+  by bare name. A version floor cannot see a migration you never copied: this app
+  ran 0.46 against a 0.45 `users` table with a green suite, because its contract
+  test asserted a hand-written column list instead (2026-08-13).
 
   Skipping it is **silent**. `Studio::Email.deliver` records a row only when
   `studio_email_deliveries` exists and otherwise falls through to a plain async
