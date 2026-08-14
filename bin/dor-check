@@ -2149,6 +2149,32 @@ if gate != "build"
     ci_error, ci_error_cert_clears = unread_ci_refusal(ci, devops["pr_url"], task["slug"] || slug)
   end
 
+  # ==== TIER 1 HAS A PRECONDITION: THE GREEN MUST STILL BE ABOUT THIS MERGE ====
+  #
+  # `gh pr checks` answers for the HEAD COMMIT, and ci.yml triggers on pull_request
+  # and on pushes to main/release ONLY — so a merge into `accepted` moves this PR's
+  # base and re-runs NOTHING. The green stays green while the tree it described stops
+  # being the tree the merge would produce. That is not a hypothetical: on 2026-08-13
+  # this gate advanced a review on a green dated three days earlier against a base
+  # 30+ commits ahead, and twice more the same day a green predated the change on
+  # `accepted` that it was implicitly claiming to cover.
+  #
+  # So :green advances only while the base has NOT drifted. :unknown does not refuse —
+  # GitHub computes mergeability asynchronously and lags, and refusing every review
+  # that races that computation would wedge the lane for a fact nobody asserted. The
+  # release gate reaches the same conclusion by comparing TREES; this is the review
+  # side of that notion, using the one signal a PR read already carries.
+  #
+  # DOR_CHECK_CI_BASE_DRIFT is the test seam, mirroring DOR_CHECK_CI_STATUS.
+  ci_drift = (ENV["DOR_CHECK_CI_BASE_DRIFT"] || ci[:base_drift]).to_s
+  if review_role && ci_error.nil? && ci[:state] == :green && ci_drift == "behind"
+    ci_error = "GitHub CI is GREEN but the verdict is STALE — GitHub reports this PR BEHIND its base, and " \
+      "ci.yml runs on pull_request and on pushes to main/release only, so a merge into `accepted` moved the " \
+      "base WITHOUT re-running anything. The green describes a tree that is no longer the tree this merge " \
+      "would produce, and the review gate-zero is the authoritative CI verdict. Update the branch from its " \
+      "base (`git rebase origin/accepted` or the PR's Update-branch button) and let CI re-run, then re-check."
+  end
+
   # A refusal a cert can clear is DEFERRED past the suite gate below, which is
   # where suite_eval becomes known (this block runs first on purpose — the suite
   # gate's fast route reads `ci`). Everything else lands now, so error ORDER is

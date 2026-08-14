@@ -215,11 +215,39 @@ module CiStatus
   #
   # There is NO second-look parameter, deliberately — see "running out of patience is
   # not evidence" above. One read, one verdict.
+  # PURE. Has this PR's BASE moved out from under the run that produced its checks?
+  #
+  # :behind — GitHub says the head branch is behind its base. `gh pr checks` answers
+  #           for the HEAD COMMIT, and .github/workflows/ci.yml triggers on
+  #           pull_request and on pushes to main/release ONLY — a merge into
+  #           `accepted` moves the base WITHOUT re-running anything. So a green here
+  #           is a true statement about a tree that is no longer the tree the merge
+  #           would produce. That is not branch-protection colour; it is an expired
+  #           verdict, and it is the shape that passed a review gate on 2026-08-13
+  #           reading a green dated three days earlier against a base 30+ commits on.
+  # :current — the base has not moved; the checks answer for the merge as it stands.
+  # :unknown — GitHub has not computed mergeability yet, or sent nothing. NEVER
+  #           reported as :current: "we could not tell" and "we checked, it's fine"
+  #           are different facts, and collapsing them is how a stale verdict gets
+  #           credited by default.
+  def self.base_drift(view_raw)
+    data = parse_view(view_raw)
+    return :unknown unless data
+
+    case data["mergeStateStatus"].to_s.upcase
+    when "BEHIND" then :behind
+    when "", "UNKNOWN" then :unknown
+    else :current
+    end
+  end
+
   def self.combine(view_raw, checks_raw)
     early = view_verdict(view_raw)
     return early if early
 
-    verdict = parse(checks_raw)
+    # Carried on EVERY checks-derived verdict, green included — especially green,
+    # since that is the only state a gate credits.
+    verdict = parse(checks_raw).merge(base_drift: base_drift(view_raw))
     return verdict unless verdict[:state] == :none
 
     case mergeability(view_raw)
