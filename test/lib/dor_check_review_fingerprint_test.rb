@@ -166,6 +166,13 @@ class DorCheckReviewFingerprintTest < Minitest::Test
         "DOR_CHECK_SUITE_EVIDENCE" => nil,
         "DOR_CHECK_CHANGED_FILES" => nil,
         "DOR_CHECK_DIFF_BASE" => nil,
+        # The PR file-list read, NEUTRALIZED — same reason SessionEnv neutralizes the
+        # session vars: the fixtures carry a pr_url (github.com/x/y/pull/1), and
+        # dor-check answers one by asking GitHub for that PR's files, so these
+        # verdicts would otherwise depend on whether the operator's `gh` credential is
+        # live. "" is the seam's "the PR listed no files" — not a failure, so the
+        # subject of this file (the branch-tree FINGERPRINT) is what gets measured.
+        "DOR_CHECK_PR_FILES" => "",
         "DOR_CHECK_CI_STATUS" => ci
       }
       out = nil

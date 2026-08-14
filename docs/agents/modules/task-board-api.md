@@ -560,6 +560,53 @@ not silently ignored either — `Task::DEVOPS_COLUMN_KEYS` refuses them with a 4
 naming the column each one actually lives in (footgun 5).
 - **Lists:** `repositories`, `risk_tags`, `acceptance`, `test_plan`,
   `checks_run`
+- **Maps** (`{ "<repo>": "<value>" }`): `pr_urls`
+
+`pr_urls` is the **per-repo PR register** — where a task naming more than one
+repo records the second repo's PR. `pr_url` holds a single url and the release
+lane parses *that url* for the repo it plans against, so on 2026-08-13 a task
+naming `[mcritchie-studio, turf-monster]` with the hub's PR url promoted, QA'd
+and shipped the hub alone, and was still stamped `shipped` + `merged: "main"`
+while turf production ran the unpatched code.
+
+**Recording only — nothing refuses an incomplete record yet.** No sweep, gate or
+CLI command reads this map today. `Task#repos_missing_pr_url` is the query that
+will answer *which repo has no PR*, and it has no caller until
+`/tasks/merge-promotes-every-repo` ships the refusal. Until then, a multi-repo
+task with one PR recorded still promotes exactly one repo — keep hand-checking
+coverage.
+
+`pr_url` stays the primary and is folded into the map automatically
+(`Task#release_pr_urls`) — do not repeat it. **It wins for the repo it names**,
+over any `pr_urls` entry for the same repo: `pr_url` is what `release_repo`,
+`bin/dor-check` and `bin/pr-review` already act on, so one repo has one
+authoritative PR and correcting it with `--pr-url` actually takes effect.
+
+**Writing it.** The CLI writes one entry at a time, merging into whatever is
+already recorded:
+
+```bash
+bin/task update <slug> --pr-url-for turf-monster=https://github.com/McRitchie-Studio/turf-monster/pull/305
+bin/task update <slug> --pr-url-for turf-monster=none    # remove one entry
+```
+
+Over the JSON API, send `devops.pr_urls` as a `{ repo => url }` object — the
+shape the CLI writes. A list of bare PR urls is also accepted and each url is
+keyed by the repo it names, but nothing ships that form.
+
+**Every value is validated, both shapes alike.** A url must parse as
+`github.com/<owner>/<repo>/pull/<n>`, and in the object form the **key must be
+the repo the url names** — filing turf's PR under `mcritchie-studio` is a 422,
+not a stored lie. A url naming no repo is a 422 too, never a silent drop. A
+**blank** value is the exception: it drops, and that is how the API unsets one
+entry (the writers all send the whole map). This validation is why the register
+is evidence — before it, `{"turf-monster": "lol"}` stored `"lol"` verbatim and
+turf then read as fully covered.
+
+**Reading it back.** `bin/task show <slug> --verbose` always prints a `pr_urls:`
+block (`-` when empty), and `bin/task field <slug> pr_urls` prints one
+`<repo>=<url>` per line — the same syntax `--pr-url-for` takes, so a read-back
+round-trips into the write.
 
 `merged` is **not** in this list and never will be — it is a top-level column.
 See footgun 4 for the full set of fields that live outside `devops`.

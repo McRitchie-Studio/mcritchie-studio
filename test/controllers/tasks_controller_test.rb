@@ -1375,6 +1375,48 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_equal ["review-workflow", "review-followup"], task.devops_risk_tags
   end
 
+  # === devops.pr_urls through the WEB path ===
+  #
+  # `pr_urls` is a repo-keyed hash of arbitrary keys, and strong params treats a
+  # bare `:pr_urls` in the permit list as a SCALAR — it hands back `{}` and the
+  # write reaches nothing. `{ pr_urls: {} }` is what permits the open-ended hash.
+  # Before it was permitted at all, the key was stripped BEFORE
+  # Task.normalize_devops_map ran, so this action answered 200 for a hand-posted
+  # write that landed nowhere, and for a nonsense url that was never validated.
+
+  test "[integration] a web devops edit stores the per-repo pr_urls map" do
+    log_in_as(@admin)
+    turf = "https://github.com/McRitchie-Studio/turf-monster/pull/305"
+
+    patch task_path(@new_task.slug, format: :json),
+          params: { task: { devops: { kind: "bug", pr_urls: { "turf-monster" => turf } } } }
+
+    assert_response :success
+    assert_equal({ "turf-monster" => turf }, @new_task.reload.devops["pr_urls"])
+  end
+
+  test "[integration] a web devops edit 422s on a pr_urls url that names no repo" do
+    log_in_as(@admin)
+
+    patch task_path(@new_task.slug, format: :json),
+          params: { task: { devops: { kind: "bug", pr_urls: { "turf-monster" => "lol" } } } }
+
+    assert_response :unprocessable_entity
+    assert_match(/names no repo/, JSON.parse(response.body)["error"])
+    assert_nil @new_task.reload.devops["pr_urls"]
+  end
+
+  test "[integration] a web devops edit 422s on a pr_urls url filed under the wrong repo" do
+    log_in_as(@admin)
+    turf = "https://github.com/McRitchie-Studio/turf-monster/pull/305"
+
+    patch task_path(@new_task.slug, format: :json),
+          params: { task: { devops: { kind: "bug", pr_urls: { "mcritchie-studio" => turf } } } }
+
+    assert_response :unprocessable_entity
+    assert_match(/wrong repo/, JSON.parse(response.body)["error"])
+  end
+
   # === Per-stage deploy-crew avatars (task-ui-stage-agents) ===
 
   # Seed the four Deploy-half souls + a shipped task with explicit TaskEvents so

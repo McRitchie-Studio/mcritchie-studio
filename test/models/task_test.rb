@@ -1248,6 +1248,185 @@ class TaskTest < ActiveSupport::TestCase
     assert_equal :unknown, task.release_kind
   end
 
+  # --- pr_urls: the per-repo PR register -------------------------------------
+  #
+  # `pr_url` holds ONE url and #release_repo parses it for the repo a release
+  # plans against, so a task naming two repos had exactly one place to record a
+  # PR. On 2026-08-13 `land-rails-security-patch` named [mcritchie-studio,
+  # turf-monster] with the hub's PR url; turf's PR had nowhere to live, turf was
+  # never promoted, and the task was stamped shipped + merged:"main" while turf
+  # production ran the unpatched code. These cases pin the register that closes
+  # that, at the model — the CLI cases in test/lib/task_cli_test.rb never load
+  # Rails and can only assert the outgoing PATCH body.
+
+  HUB_PR = "https://github.com/McRitchie-Studio/mcritchie-studio/pull/836".freeze
+  TURF_PR = "https://github.com/McRitchie-Studio/turf-monster/pull/305".freeze
+  ENGINE_PR = "https://github.com/McRitchie-Studio/studio-engine/pull/12".freeze
+
+  # NOTE the explicit-hash signature (no keyword args): a brace-less `"k" => v`
+  # at a call site whose method accepts keywords is parsed as KEYWORDS in Ruby 3,
+  # which swallowed the devops hash and left the positional empty.
+  def pr_urls_task(devops)
+    Task.create!(title: "per repo pr register task", stage: "reviewed",
+                 metadata: { "devops" => devops })
+  end
+
+  test "[unit] release_pr_urls folds the singular pr_url in under the repo it names" do
+    task = pr_urls_task("pr_url" => HUB_PR, "pr_urls" => { "turf-monster" => TURF_PR })
+    assert_equal({ "turf-monster" => TURF_PR, "mcritchie-studio" => HUB_PR }, task.release_pr_urls)
+  end
+
+  test "[unit] release_pr_urls on a singular-only task is the one repo it names" do
+    task = pr_urls_task("pr_url" => HUB_PR)
+    assert_equal({ "mcritchie-studio" => HUB_PR }, task.release_pr_urls)
+  end
+
+  # THE PRECEDENCE COLLISION — the singular wins for its own repo. `pr_url` is
+  # what #release_repo, bin/dor-check, bin/pr-review and the review flow's
+  # pending actions all act on; if a map entry could override it the pipeline
+  # would hold two different PRs for one repo and say nothing, and correcting the
+  # url with `--pr-url` would be silently undone by the stale explicit entry.
+  test "[unit] the singular pr_url WINS over a pr_urls entry for the same repo" do
+    stale = "https://github.com/McRitchie-Studio/mcritchie-studio/pull/999"
+    task = pr_urls_task("pr_url" => HUB_PR, "pr_urls" => { "mcritchie-studio" => stale })
+    assert_equal HUB_PR, task.release_pr_urls["mcritchie-studio"],
+                 "the field every other reader acts on stays authoritative for its repo"
+  end
+
+  test "[unit] a pr_url naming no repo contributes nothing to release_pr_urls" do
+    task = pr_urls_task("pr_url" => "https://example.com/not-a-pr",
+                        "pr_urls" => { "turf-monster" => TURF_PR })
+    assert_equal({ "turf-monster" => TURF_PR }, task.release_pr_urls)
+  end
+
+  # A non-Hash `pr_urls` on the record (a hand-written string, a legacy array)
+  # degrades to "no map recorded" rather than raising mid-release.
+  test "[unit] release_pr_urls ignores a pr_urls that is not a hash" do
+    task = pr_urls_task("pr_url" => HUB_PR, "pr_urls" => "turf-monster")
+    assert_equal({ "mcritchie-studio" => HUB_PR }, task.release_pr_urls)
+  end
+
+  test "[unit] release_pr_urls drops blank repos and blank urls" do
+    task = pr_urls_task("pr_urls" => { "turf-monster" => TURF_PR, "" => HUB_PR, "rolio" => "  " })
+    assert_equal({ "turf-monster" => TURF_PR }, task.release_pr_urls)
+  end
+
+  test "[unit] repos_missing_pr_url names the repo with no recorded url" do
+    task = pr_urls_task("repositories" => ["mcritchie-studio", "turf-monster"], "pr_url" => HUB_PR)
+    assert_equal ["turf-monster"], task.repos_missing_pr_url
+  end
+
+  test "[unit] repos_missing_pr_url is empty once every named repo has a PR" do
+    task = pr_urls_task("repositories" => ["mcritchie-studio", "turf-monster"],
+                        "pr_url" => HUB_PR, "pr_urls" => { "turf-monster" => TURF_PR })
+    assert_empty task.repos_missing_pr_url
+  end
+
+  # THE GEM FALSE POSITIVE. A gem task names the gem AND the consumers that must
+  # pick the new version up, but the work is ONE PR in the gem repo — the
+  # consumers reach production through a published version and the conductor's
+  # bump, never through a PR the builder opens. Measured literally, every
+  # legitimate engine release reports both consumers "missing a PR": the exact
+  # inversion of the failure this query exists to catch.
+  test "[unit] a gem task's CONSUMER repos are not missing PRs they must never have" do
+    task = pr_urls_task("shape" => "library",
+                        "repositories" => ["studio-engine", "mcritchie-studio", "turf-monster"],
+                        "pr_url" => ENGINE_PR)
+    assert_equal ["studio-engine"], task.pr_bearing_repositories
+    assert_empty task.repos_missing_pr_url,
+                 "the gem PR covers the release; the consumers ride the published version"
+  end
+
+  test "[unit] a gem task with NO gem PR is still reported uncovered" do
+    task = pr_urls_task("shape" => "library",
+                        "repositories" => ["studio-engine", "mcritchie-studio"])
+    assert_equal ["studio-engine"], task.repos_missing_pr_url
+  end
+
+  # A gem task whose `repositories` names only consumers (the PR lives in a repo
+  # the list never mentions) is covered by the gem PR it recorded.
+  test "[unit] a gem task naming no gem repo is covered by the gem PR it recorded" do
+    task = pr_urls_task("repositories" => ["mcritchie-studio", "turf-monster"], "pr_url" => ENGINE_PR)
+    assert task.gem_release?, "release_repo parses to studio-engine, a registered gem"
+    assert_equal ["studio-engine"], task.pr_bearing_repositories
+    assert_empty task.repos_missing_pr_url
+  end
+
+  # …but a library-shape task with no gem evidence ANYWHERE falls back to the
+  # literal list rather than reporting full coverage off an empty set.
+  test "[unit] a library task with no gem in play falls back to its literal repositories" do
+    task = pr_urls_task("shape" => "library", "repositories" => ["mcritchie-studio"])
+    assert_equal ["mcritchie-studio"], task.repos_missing_pr_url
+  end
+
+  test "[unit] an app task measures coverage against every repo it names" do
+    task = pr_urls_task("shape" => "backend",
+                        "repositories" => ["mcritchie-studio", "turf-monster"],
+                        "pr_url" => HUB_PR)
+    assert_equal ["mcritchie-studio", "turf-monster"], task.pr_bearing_repositories
+  end
+
+  # --- normalize_devops_map: what may be STORED ------------------------------
+
+  test "[unit] normalize_devops_map keeps a well-formed repo => url object" do
+    assert_equal({ "turf-monster" => TURF_PR },
+                 Task.normalize_devops_map("turf-monster" => TURF_PR))
+  end
+
+  test "[unit] normalize_devops_map keys a bare list of urls by the repo each names" do
+    assert_equal({ "mcritchie-studio" => HUB_PR, "turf-monster" => TURF_PR },
+                 Task.normalize_devops_map([HUB_PR, TURF_PR]))
+  end
+
+  # THE HASH BRANCH VALIDATES TOO, and that symmetry is the point: it used to take
+  # its value verbatim, so a nonsense string satisfied the coverage this register
+  # exists to hold — on the only path anything actually writes.
+  test "[unit] normalize_devops_map REFUSES a hash value that is not a PR url" do
+    error = assert_raises(ArgumentError) { Task.normalize_devops_map("turf-monster" => "lol") }
+    assert_match(/names no repo/, error.message)
+  end
+
+  test "[unit] normalize_devops_map REFUSES a url filed under the wrong repo" do
+    error = assert_raises(ArgumentError) { Task.normalize_devops_map("mcritchie-studio" => TURF_PR) }
+    assert_match(/wrong repo/, error.message)
+    assert_match(/turf-monster/, error.message, "the error names the repo the url actually points at")
+  end
+
+  test "[unit] normalize_devops_map REFUSES a list entry that names no repo" do
+    error = assert_raises(ArgumentError) { Task.normalize_devops_map(["https://example.com/nope"]) }
+    assert_match(/names no repo/, error.message)
+  end
+
+  # A blank value drops rather than raising — it asserts nothing, and it is how
+  # the API unsets one entry (every writer sends the whole map).
+  test "[unit] normalize_devops_map drops a blank value, which is the API unset" do
+    assert_equal({ "turf-monster" => TURF_PR },
+                 Task.normalize_devops_map("turf-monster" => TURF_PR, "mcritchie-studio" => ""))
+    assert_empty Task.normalize_devops_map("turf-monster" => "")
+  end
+
+  test "[unit] normalize_devops_map strips surrounding whitespace" do
+    assert_equal({ "turf-monster" => TURF_PR },
+                 Task.normalize_devops_map(" turf-monster " => " #{TURF_PR} "))
+  end
+
+  # The whole-metadata path: pr_urls is a DEVOPS_MAP_KEY, so it survives
+  # normalize_devops_metadata as a map (not stringified), and an empty one drops.
+  test "[unit] normalize_devops_metadata stores pr_urls as a map and drops an empty one" do
+    normalized = Task.normalize_devops_metadata("pr_urls" => { "turf-monster" => TURF_PR })
+    assert_equal({ "turf-monster" => TURF_PR }, normalized["pr_urls"])
+    assert_not Task.normalize_devops_metadata("pr_urls" => {}).key?("pr_urls"),
+               "an empty map is dropped, so empty and unset are one state"
+  end
+
+  test "[unit] Task.repo_from_pr_url is the one parser the instance method delegates to" do
+    assert_equal "turf-monster", Task.repo_from_pr_url(TURF_PR)
+    assert_nil Task.repo_from_pr_url("https://example.com/not-a-pr")
+    assert_nil Task.repo_from_pr_url(nil)
+    task = pr_urls_task("pr_url" => TURF_PR)
+    assert_equal "turf-monster", task.send(:repo_from_pr_url)
+  end
+
   # --- Per-application release inclusion (Avi's qa-release disposition) ---
 
   test "[unit] included_in_release? defaults true so a plain reviewed task ships" do

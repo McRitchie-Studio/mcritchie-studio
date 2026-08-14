@@ -28,8 +28,10 @@ class DorCheckTest < Minitest::Test
       # initialized constant" warnings to STDERR — merging them (2>&1) would
       # corrupt the JSON parse. Discarding stderr keeps the verdict clean.
       with_default_suite_evidence do
-        out = IO.popen(SessionEnv.neutralized, "#{BIN} --file #{path} #{args.join(' ')} 2>/dev/null", &:read)
-        [out, $?.exitstatus]
+        with_neutralized_pr_read do
+          out = IO.popen(SessionEnv.neutralized, "#{BIN} --file #{path} #{args.join(' ')} 2>/dev/null", &:read)
+          [out, $?.exitstatus]
+        end
       end
     end
   end
@@ -47,6 +49,28 @@ class DorCheckTest < Minitest::Test
     yield
   ensure
     ENV.delete("DOR_CHECK_SUITE_EVIDENCE") unless had
+  end
+
+  # NEUTRALIZE THE PR FILE-LIST READ, for the same reason SessionEnv neutralizes the
+  # session vars: without it these subprocesses reach a REAL external service. Most
+  # fixtures here carry a `pr_url`, and dor-check answers one by asking GitHub for
+  # that PR's files — so the verdict depended on whether the operator's `gh`
+  # credential happened to be live, and on a fixture URL (github.com/o/r/pull/1) that
+  # is nobody's PR. It passed anyway only because the failure used to be SILENT: the
+  # read returned nil and the gate quietly graded the local tree instead. That is the
+  # defect this suite's sibling (dor_check_pr_files_auth_test.rb) exists to close, so
+  # leaving the leak here would mean every unrelated test in this file re-runs it.
+  #
+  # "" is the seam's "the PR listed no files" — not a failure, so it raises no alert
+  # and every test below keeps the local-diff behavior it was written against. A test
+  # that wants the real read (or a specific failure) sets the key itself and this
+  # default steps aside.
+  def with_neutralized_pr_read
+    had = ENV.key?("DOR_CHECK_PR_FILES")
+    ENV["DOR_CHECK_PR_FILES"] = "" unless had
+    yield
+  ensure
+    ENV.delete("DOR_CHECK_PR_FILES") unless had
   end
 
   # Inject a deterministic branch diff for the duration of a check. The subprocess
