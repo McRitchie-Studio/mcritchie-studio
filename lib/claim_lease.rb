@@ -327,6 +327,47 @@ module ClaimLease
     true
   end
 
+  # A desk cannot have been idle longer than it has existed.
+  #
+  # THE FRESH-DESK BUG, restated as arithmetic. `cleanup --reclaim`'s git test is
+  # clean + landed-on-base, and a BRAND-NEW worktree satisfies both VACUOUSLY: clean
+  # because nobody has written into it yet, landed because it carries nothing. A
+  # fresh desk and a merged one are byte-identical to git, so the desk that looks
+  # safest to destroy is the one most likely to be someone's next hour of work — on
+  # 2026-08-13 a sweep removed a live one out from under its builder mid-task.
+  #
+  # The floor is DERIVED, not chosen, and that is why it reuses DESK_IDLE_SECONDS
+  # rather than introducing an age of its own. `abandoned?` above means precisely
+  # "every channel silent for DESK_IDLE_SECONDS"; a desk younger than that window
+  # has not existed long enough to have produced the silence the verdict requires,
+  # so calling it abandoned asserts more than the evidence can carry. Re-measure the
+  # desk-gap corpus and this moves with it — a second, independent age threshold
+  # would just be a knob to argue about.
+  #
+  # nil (age unknown) answers TRUE — an undatable desk keeps itself, in line with
+  # this file's every-unknown-protects rule. Callers that want to explain the hold
+  # honestly ("we could not date it" is not "it is new") check nil before asking.
+  def self.too_young_to_abandon?(age_seconds, idle_after: DESK_IDLE_SECONDS)
+    return true if age_seconds.nil?
+
+    age_seconds < idle_after
+  end
+
+  # A holder-scoped liveness fact from a board task payload, falling back to its
+  # task-wide twin when the board does not publish one. A MISSING key means an older
+  # board, which is an unknown — and the fallback is the conservative direction,
+  # because the task-wide signals are strictly more protective (they count everyone's
+  # work, so they can only keep a desk, never free one). A key that is present and
+  # nil is a real answer and is passed through as one.
+  #
+  # Shared because two consumers ask the same question of the same payload: bin/task's
+  # heartbeat (may this claim lapse?) and bin/agent-worktree's reclaim guard (may this
+  # directory be destroyed?). One notion of "is the holder working", not two.
+  def self.holder_scoped(task, holder_key, task_wide_key)
+    task ||= {}
+    task.key?(holder_key) ? task[holder_key] : task[task_wide_key]
+  end
+
   # The claim hash a fresh renewal writes — the holder's identity plus a lease
   # that expires `ttl` from now. Merge this into the devops payload.
   #

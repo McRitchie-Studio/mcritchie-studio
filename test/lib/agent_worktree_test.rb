@@ -279,9 +279,21 @@ class AgentWorktreeTest < Minitest::Test
     assert_equal "[false, nil]", verdict_for(held: false, dirty: true)
   end
 
+  # The CLAIM-focused checks drive records with no desk ON DISK, so the desk channel
+  # (below) would withhold every one of them for "could not be dated" and they would
+  # stop testing the thing they are named for. Stub the desk to a long-abandoned,
+  # quiet one so the claim decision is what decides here. The desk decision has its
+  # own checks below, and the REAL filesystem path is driven end to end against a
+  # staged git worktree in test/commands/agent_worktree_test.rb.
+  ABANDONED_DESK = <<~RUBY
+    def desk_age_seconds(_r); ClaimLease::DESK_IDLE_SECONDS * 10; end
+    def desk_touched_recently?(_r); false; end
+  RUBY
+
   def verdict_for(held:, dirty:)
     devops = held ? %({ "claimed_session" => "s", "claim_expires_at" => #{(Time.now + 110).utc.iso8601.inspect} }) : "{}"
     run_in_script(<<~RUBY)
+      #{ABANDONED_DESK}
       def task_record_for_pr(_r, fresh: false); { "metadata" => { "devops" => #{devops} } }; end
       record = { dirty: #{dirty}, merged: true, equivalent_to_main: true,
                  env: { "TASK_RECORD_SLUG" => "t" }, task: "t" }
@@ -298,6 +310,154 @@ class AgentWorktreeTest < Minitest::Test
     assert_equal "[true, nil]", verdict_for(held: false, dirty: false),
                  "the guard must withhold only what it CANNOT verify — a desk it read and found " \
                  "unclaimed is still reclaimable, or the sweep is silently wedged"
+  end
+
+  # --- reclaim guard: the DESK channel (fresh-desk fix) ------------------------------------
+  #
+  # THE HOLE THE CLAIM CHANNEL COULD NOT COVER. On 2026-08-13 a `cleanup --reclaim` sweep
+  # destroyed a desk a builder had just created and was working in. Nothing malfunctioned:
+  # a brand-new worktree is CLEAN (nobody has committed yet) and carries NOTHING ahead of
+  # its base, so cleanup_ready? passes on it VACUOUSLY — a fresh desk and a fast-forward-
+  # merged one are byte-identical to git. And the claim above cannot rescue it, because the
+  # desks most at risk are exactly the ones with no live claim to read: inside the `new` →
+  # `bind-task` → `move building` window, or half-allocated by a failed bind, or simply
+  # between lease renewals.
+  #
+  # So every check below runs with NO claim on the record (`{}` devops). The claim channel
+  # says "free" for all of them; what is under test is whether the DESK channel still holds
+  # them back — and, in the control, still lets a genuinely abandoned one go.
+  #
+  # The two filesystem seams are stubbed here so every combination is reachable in a unit;
+  # the real mtimes and the real `.git` marker are driven end to end against a staged git
+  # worktree in test/commands/agent_worktree_test.rb.
+
+  def desk_verdict(age:, touched:, task_json: %({ "metadata" => { "devops" => {} } }), env: %({ "TASK_RECORD_SLUG" => "t" }))
+    run_in_script(<<~RUBY)
+      def desk_age_seconds(_r); #{age}; end
+      def desk_touched_recently?(_r); #{touched.inspect}; end
+      def task_record_for_pr(_r, fresh: false); #{task_json}; end
+      record = { dirty: false, merged: true, equivalent_to_main: true,
+                 env: #{env}, task: "t", dir: "/repo/.worktrees/t" }
+      print reclaim_verdict(record).inspect
+    RUBY
+  end
+
+  # THE INCIDENT ITSELF. Clean, landed on base, no claim — and four minutes old.
+  def test_a_freshly_created_desk_is_withheld_however_git_identical_to_a_merged_one
+    out = desk_verdict(age: 240, touched: true)
+
+    assert_match(/\A\[false, "the desk is only/, out,
+                 "a desk minutes old must never be a reclaim candidate: it is git-identical to a " \
+                 "merged one, and its builder's uncommitted work is what a teardown destroys")
+    assert_match(/younger than the/, out, "the hold names the window it is measured against")
+  end
+
+  # AGE IS AN INDEPENDENT CHANNEL, not a restatement of the mtimes. A fresh checkout
+  # normally answers `touched => true` on its own creation, so the two agree — but they
+  # agree by coincidence, and this pins the floor for the case where they do not: a desk
+  # whose contents the mtime walk cannot see (a walk that hit its budget, a checkout whose
+  # files all sit under pruned paths, a half-allocated desk with almost nothing in it, a
+  # tree restored with backdated timestamps). Age needs no walk and no prune list.
+  def test_the_age_floor_holds_a_new_desk_even_when_the_mtime_walk_reports_untouched
+    out = desk_verdict(age: 240, touched: false)
+
+    assert_match(/\A\[false, "the desk is only/, out,
+                 "the floor must hold on its own — if it only ever fires alongside the mtimes, " \
+                 "it is decoration and the desk rides on one channel, not two")
+  end
+
+  # AGE IS A FLOOR, NOT THE WHOLE ANSWER. An hour-and-a-half-old desk being edited right
+  # now is live, and an age threshold alone would have released it.
+  def test_an_aged_desk_being_edited_right_now_is_withheld
+    out = desk_verdict(age: 6 * 3_600, touched: true)
+
+    assert_match(/\A\[false, "the desk was written to within the last/, out,
+                 "past the age floor the mtimes decide, and a desk being written to is in use")
+    assert_match(/uncommitted work/, out, "the hold says what a teardown would actually cost")
+  end
+
+  # A CERT WRITES NOTHING INTO ITS DESK for up to the measured 94-minute p99, so an aged,
+  # quiet desk mid-gate looks exactly like a walked-away one to age and mtimes alike. This
+  # is why "just add an age threshold" was not the fix.
+  def test_an_aged_quiet_desk_with_a_gate_in_flight_is_withheld
+    out = desk_verdict(age: 6 * 3_600, touched: false,
+                       task_json: %({ "holder_gate_in_flight" => true, "metadata" => { "devops" => {} } }))
+
+    assert_match(/\A\[false, "a gate the holder may have opened is still running/, out,
+                 "a holder mid-cert writes nothing into the desk — reclaiming it destroys live work")
+  end
+
+  # The gate channel is HOLDER-SCOPED, and falls back to the task-wide fact on an older
+  # board that publishes no holder key. The fallback is the protective direction: it counts
+  # everyone's gate, so it can only keep a desk, never free one.
+  def test_an_older_board_without_holder_keys_falls_back_to_the_task_wide_gate
+    out = desk_verdict(age: 6 * 3_600, touched: false,
+                       task_json: %({ "gate_in_flight" => true, "metadata" => { "devops" => {} } }))
+
+    assert_match(/\A\[false, "a gate the holder may have opened is still running/, out,
+                 "a board too old to publish holder-scoped facts must degrade to the protective twin")
+  end
+
+  # A task parked on the operator (`--approval waiting`) is not abandoned; its agent is
+  # deliberately doing nothing, which is exactly what an idle desk looks like.
+  def test_a_desk_whose_task_waits_on_the_operator_is_withheld
+    out = desk_verdict(age: 6 * 3_600, touched: false,
+                       task_json: %({ "metadata" => { "devops" => { "approval_status" => "waiting" } } }))
+
+    assert_match(/\A\[false, "the bound task is waiting on the operator/, out)
+  end
+
+  def test_a_desk_whose_task_landed_a_recent_artifact_is_withheld
+    out = desk_verdict(age: 6 * 3_600, touched: false,
+                       task_json: %({ "holder_liveness_seconds_ago" => 90, "metadata" => { "devops" => {} } }))
+
+    assert_match(/\A\[false, "the bound task landed a durable artifact/, out,
+                 "a holder working through the board rather than the filesystem is still working")
+  end
+
+  # UNKNOWNS PROTECT, both of them, and they say so honestly — "we could not check" is
+  # never dressed up as "somebody is here".
+  def test_an_undatable_desk_is_withheld_rather_than_guessed_at
+    out = desk_verdict(age: "nil", touched: false)
+
+    assert_match(/\A\[false, "the desk could not be dated/, out)
+    refute_match(/somebody is working in it/, out,
+                 "an undatable desk is an unknown, not a confirmed worker — do not misattribute one")
+  end
+
+  def test_a_desk_whose_files_could_not_be_read_is_withheld_rather_than_guessed_at
+    out = desk_verdict(age: 6 * 3_600, touched: nil)
+
+    assert_match(/\A\[false, "the desk's files could not be read/, out)
+    refute_match(/somebody is working in it/, out)
+  end
+
+  # THE HALF-ALLOCATED DESK — worktree created, stack and bind-task failed, so there is no
+  # task and no claim to read at all. The Redis band ceiling produced several of these on
+  # the incident day. The claim channel is FORCED to fail open on them (you cannot look up
+  # what you cannot identify), which is precisely why the desk channel must not.
+  def test_an_unbound_half_allocated_desk_is_still_protected_while_it_is_fresh
+    out = desk_verdict(age: 300, touched: true, env: "{}")
+
+    assert_match(/\A\[false, "the desk is only/, out,
+                 "the desk we actually lost had no task to look up — age and mtimes are all it has")
+  end
+
+  # ...AND IS RELEASED ONCE IT IS COLD. A failed allocation that nobody came back for is
+  # exactly the litter reclaim exists to sweep; protecting it forever would trade one leak
+  # for another.
+  def test_an_unbound_half_allocated_desk_is_released_once_it_goes_cold
+    assert_equal "[true, nil]", desk_verdict(age: 6 * 3_600, touched: false, env: "{}"),
+                 "a cold, unclaimed, unbound desk is litter — the sweep must still collect it"
+  end
+
+  # THE POSITIVE CONTROL for this channel. Its failure mode is bimodal: fail-open destroys
+  # a live desk, fail-CLOSED silently wedges the sweep and every check above would stay
+  # green while nothing was ever reclaimed again. An old, quiet, unclaimed desk must go.
+  def test_the_desk_channel_still_releases_an_old_quiet_abandoned_desk
+    assert_equal "[true, nil]", desk_verdict(age: 6 * 3_600, touched: false),
+                 "a guard that withholds every desk is a wedge, not a fix — the abandoned ones " \
+                 "must still be torn down"
   end
 
   # --- reclaim guard: the _ship/_gate SHIP-WORKSPACE exclusion (release-conductor-claims) ---
@@ -363,12 +523,29 @@ class AgentWorktreeTest < Minitest::Test
 
   def test_reclaim_verdict_reclaims_ship_workspace_when_no_ship_is_live
     out = run_in_script(<<~RUBY)
+      #{ABANDONED_DESK}
       def deployer_claim_liveness(fresh: false); :none; end
       record = { task: "_gate", dir: "/repo/.worktrees/_gate", dirty: false, merged: true,
                  equivalent_to_main: true, env: {} }
       print reclaim_verdict(record).inspect
     RUBY
     assert_equal "[true, nil]", out, "with no live ship, _gate is a normal reclaim candidate (bin/release recreates it)"
+  end
+
+  # A `_gate` workspace mid-cert is a WORKING desk even with no deployer claim: the
+  # cert checks out into it and then writes nothing for up to 94 minutes. The desk
+  # channel covers that on the same evidence it covers a task desk with.
+  def test_a_ship_workspace_being_written_to_is_withheld_even_with_no_ship_claim
+    out = run_in_script(<<~RUBY)
+      def desk_age_seconds(_r); ClaimLease::DESK_IDLE_SECONDS * 10; end
+      def desk_touched_recently?(_r); true; end
+      def deployer_claim_liveness(fresh: false); :none; end
+      record = { task: "_gate", dir: "/repo/.worktrees/_gate", dirty: false, merged: true,
+                 equivalent_to_main: true, env: {} }
+      print reclaim_verdict(record).inspect
+    RUBY
+    assert_match(/\A\[false, "the desk was written to/, out,
+                 "a cert workspace being written into is in use, ship claim or no ship claim")
   end
 
   # --- reclaim TOCTOU: fresh: true RE-READS the deployer claim under-lock ---------------

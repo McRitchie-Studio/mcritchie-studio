@@ -256,27 +256,55 @@ bin/agent-worktree scale status
   database state, and the exact `bin/agent-worktree remove … --yes` command. Use
   that dry run as the approval packet before deleting anything.
 - `cleanup --write` appends candidates to [`../maintenance/delete-later.md`](../maintenance/delete-later.md). It does not remove files, worktrees, branches, databases, Redis keys, or processes.
-- **The live-claim guard (why git state alone is not enough).** A worktree is a
-  candidate only when it is git-eligible **AND not held by a live builder**. A
+- **The occupancy guard (why git state alone is not enough).** A worktree is a
+  candidate only when it is git-eligible **AND nobody is working at it**. A
   brand-new worktree off `release` and one whose work was **fast-forward merged**
   are **git-identical** — both clean, both `HEAD == base`, both 0-ahead — so
   `cleanup_ready?` provably cannot tell a desk someone just sat down at from
-  finished work. The signal that can is the task's **live build-claim lease**
-  (`ClaimLease`, renewed by the builder's status line under a 120s TTL). Every
+  finished work. Two independent channels answer that question, and every
   destructive path, `doctor`, and the registry route through ONE decision
   (`reclaim_verdict` → `[reclaimable?, hold_reason]`), so the conductor's front door
-  can never nominate a desk the sweep would refuse. The board read is genuinely
-  bounded (10s, `AGENT_WORKTREE_TASK_TIMEOUT`) because it kills the child — so a
-  hung or black-holed board cannot stall a sweep. A withheld desk is named with its
-  reason — and, for a confirmed live claim, the builder's heartbeat age — and **every
-  branch that gives up on checking says so**, because a guard that silently disables
-  itself is worse than no guard.
+  can never nominate a desk the sweep would refuse. A withheld desk is named with its
+  reason, and **every branch that gives up on checking says so**, because a guard that
+  silently disables itself is worse than no guard.
+  - **The CLAIM channel** asks the board who holds the task: the **live build-claim
+    lease** (`ClaimLease`, renewed by the builder's status line under a 120s TTL). A
+    confirmed hold names the builder's heartbeat age, so the hold is checkable. The
+    board read is genuinely bounded (10s, `AGENT_WORKTREE_TASK_TIMEOUT`) because it
+    kills the child — a hung or black-holed board cannot stall a sweep.
+  - **The DESK channel** (`desk_hold`) asks the filesystem whether anyone is at the
+    directory, and it exists because the claim channel has a hole it structurally
+    cannot cover. **2026-08-13: a `cleanup --reclaim` sweep destroyed a desk a builder
+    had just created and was working in.** The desks most at risk carry no live claim
+    to read — inside the `new → bind-task → move building` window, half-allocated by a
+    failed `bind-task`, or simply between renewals — so all of them read as free, and
+    the blast radius is another session's **uncommitted** work, which no gate, review,
+    or CI can catch because it never becomes a commit. Three signals, all reusing the
+    lease work's own arithmetic (`ClaimLease.abandoned?`) rather than inventing a
+    second notion of "is the holder working":
+    - **desk age** (`DeskActivity.age_seconds`, read off the worktree `.git` marker) —
+      a desk cannot have been idle longer than it has existed, so anything younger
+      than `ClaimLease::DESK_IDLE_SECONDS` (1h29m) is held. Not a new threshold: it is
+      the floor the existing one implies.
+    - **desk mtimes** (`DeskActivity.touched_since?`) — an agent that is working writes
+      files; one that has walked away does not. Committing does not touch a working
+      file, so a desk whose work has merged still carries the mtimes of the edits that
+      made it — clean, landed, and occupied.
+    - **the holder's gate** (`holder_gate_in_flight`) — a cert writes **nothing** into
+      its desk for up to the measured 94-minute p99, so an hour-old desk mid-cert is
+      invisible to both signals above. This is why an age threshold alone was not the
+      fix.
+
+    Every unknown holds the desk, the same rule the claim lease uses: an undatable
+    desk or an unreadable walk is withheld, and the hold says "we could not check"
+    rather than claiming a builder nobody confirmed.
   - **A QUIET desk is still a HELD desk — quiet never makes it reclaimable.** The
     board also reports a task's last *durable* progress beside its liveness (see
     [`devops-task-board.md`](devops-task-board.md#the-build-claim-liveness-and-progress-are-two-facts)),
     and a live claim that has landed nothing in hours reads `quiet`. That is
-    **informational**: `reclaim_verdict` rides on `ClaimLease.live?` and nothing
-    else, so a quiet desk is withheld exactly like a busy one. This is on purpose.
+    **informational**: `quiet` is not an input to `reclaim_verdict` at all, and every
+    channel it does read can only ADD a hold — none can free a desk another channel
+    kept. So a quiet desk is withheld exactly like a busy one. This is on purpose.
     A healthy build legitimately goes silent for a long time (certs reach 94
     minutes at p99), so reclaiming on staleness would trade a rare lying-green for
     a **frequent lying-red** — and a false reclaim destroys work in flight. A human
@@ -286,8 +314,9 @@ bin/agent-worktree scale status
     alike, and the destroy path treats them differently:
     - **lapsed** — we checked; the builder is gone. Reclaimable everywhere. ✔
     - **unbound** — we cannot *identify* the desk, so there is no claim to look up.
-      A forced fail-open everywhere (withholding every unidentifiable desk would
-      wedge cleanup). It warns.
+      The CLAIM channel is forced to fail open (withholding every unidentifiable desk
+      would wedge cleanup), and it warns. The **desk channel still judges it**, so an
+      unbound desk is protected while it is fresh or in use and released once cold.
     - **corrupt** — a claim is present but its lease timestamp is *unparseable*, so
       liveness cannot be checked. **Withheld everywhere**, exactly like an unreadable
       board: a desk we cannot verify must never read as free on a destroy path. But
@@ -318,20 +347,29 @@ bin/agent-worktree scale status
     an outage the truthful answer is *"I cannot tell"*, and **withholding is that
     answer**; nominating is the lie. The one exception is `remove … --yes` — the
     explicit operator override, which warns and proceeds.
-  - **The unbound desk is the gap to know about.** `TASK_RECORD_SLUG` is written by
-    `bind-task`, never by `new`, so a builder inside the `new → bind-task → move
-    building` window has no task and therefore no claim to check. That is the exact
-    desk the original incident destroyed. It cannot be protected (we cannot check a
-    claim we cannot identify), so it fails open — but it now says so. Bind the task
-    immediately after `new` to close the window.
+  - **The unbound desk was the gap, and the desk channel closed it.**
+    `TASK_RECORD_SLUG` is written by `bind-task`, never by `new`, so a builder inside
+    the `new → bind-task → move building` window has no task and therefore no claim to
+    check. That is the exact desk both incidents destroyed. The claim channel still
+    fails open on it and still says so; the **desk channel** now judges it on age and
+    mtimes, so a fresh or busy unbound desk survives and a cold one is still collected.
+    Bind the task immediately after `new` anyway — a bound desk gets the gate channel
+    too, which is the only thing that sees a holder mid-cert.
+  - **What this costs, stated plainly.** Desks now linger up to
+    `ClaimLease::DESK_IDLE_SECONDS` (1h29m) after their work is done, holding a Redis
+    band slot while they wait. That is a real trade against band pressure, taken
+    deliberately: disk and a slot are recoverable, a destroyed desk is not.
+    `remove <app> <task> --yes` still tears one down on demand, so nothing is stuck —
+    only nothing is automatic.
 - `cleanup --reclaim` is the **scale-down-on-close normal flow**: a merged
   worktree self-releases its Redis slot the same way a stack scales down when it
   closes. The dry run (no `--yes`) lists only the worktrees that are SAFE to
   auto-remove — clean, either contained in the base ref or base-equivalent, **and
-  not held by a live build-claim** (`reclaimable?`) — and prints the same safety
-  evidence and removal command as `cleanup`. It never lists a dirty, unmerged, or
-  live-claimed worktree, and the candidate set is sourced from `.worktrees/*` only,
-  so the primary checkout is never a candidate.
+  unoccupied** (`reclaimable?`: no live build-claim, and a desk old enough, quiet
+  enough, and with no gate in flight to be called abandoned) — and prints the same
+  safety evidence and removal command as `cleanup`. It never lists a dirty, unmerged,
+  claimed, fresh, or actively-edited worktree, and the candidate set is sourced from
+  `.worktrees/*` only, so the primary checkout is never a candidate.
 - `cleanup --reclaim --yes` runs the **same full teardown as `remove`** for each
   safe candidate (stop the stack, flush the stack's Redis DB, update the cleanup
   ledger, remove the Git worktree, delete the stale local branch), re-verifying

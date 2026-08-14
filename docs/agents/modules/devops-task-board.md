@@ -629,12 +629,15 @@ conductor records or completes a cleanup task with:
 For routine batch cleanup after a wave of PRs land, the conductor can use
 `bin/agent-worktree cleanup --reclaim` as the **scale-down-on-close normal
 flow**: the dry run lists every worktree that is SAFE to auto-release (clean +
-merged-to-`origin/main` or main-equivalent, primary checkout excluded) with its
-Redis DB, and `cleanup --reclaim --yes` runs the same full teardown as `remove`
-for each one, then shrinks the Redis band toward the floor. It never touches a
-dirty or unmerged worktree. Use targeted `remove <app> <task-slug> --yes` when
-recording a single named cleanup task; use `cleanup --reclaim` to reclaim all
-merged slots at once.
+merged-to-`origin/main` or main-equivalent + **unoccupied**, primary checkout
+excluded) with its Redis DB, and `cleanup --reclaim --yes` runs the same full
+teardown as `remove` for each one, then shrinks the Redis band toward the floor.
+It never touches a dirty or unmerged worktree, and never one somebody is working
+at — a fresh desk is git-identical to a merged one, so git eligibility alone once
+destroyed a live builder's desk. See
+[`worktrees.md`](worktrees.md) for the occupancy guard. Use targeted
+`remove <app> <task-slug> --yes` when recording a single named cleanup task; use
+`cleanup --reclaim` to reclaim all merged slots at once.
 
 Feature agents keep worktrees and branches until Avi or the release conductor
 confirms the PR was merged or intentionally abandoned.

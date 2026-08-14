@@ -44,6 +44,10 @@ require_relative "../lib/task_usage_sandbox"
 require_relative "../app/models/release/ship_sequence"
 require_relative "../app/models/release/restore_primary"
 require_relative "../lib/claim_lease"
+# The desk channel of the reclaim guard: mtimes and the desk's own birthday. Shared
+# with bin/statusline's heartbeat, which asks the same filesystem question about the
+# same directories — see desk_hold.
+require_relative "../lib/desk_activity"
 require_relative "lib/projects_root"
 
 PROJECTS_DIR = File.expand_path(ENV.fetch("PROJECTS_DIR") { ProjectsRoot.default_projects_dir })
@@ -2496,13 +2500,20 @@ def run_remove(app, task, yes: false, force: false)
 
   puts "✓ #{record[:branch]} PR ##{merged_pr} merged — overriding content-not-on-#{record[:base_branch]} guard (--force)" if force_clears
 
-  # `remove` is the explicit operator path — a named worktree plus `--yes` — so a live
-  # builder claim warns rather than blocks: you may be deliberately evicting a desk whose
-  # session died mid-lease. The automatic paths (cleanup, reclaim, and the registry the
-  # conductor reads) refuse it outright, so nothing ever recommends this removal.
-  if (reason = claim_hold(record, fresh: true, announce: true))
+  # `remove` is the explicit operator path — a named worktree plus `--yes` — so an occupied
+  # desk warns rather than blocks: you may be deliberately evicting a desk whose session
+  # died mid-lease, or clearing a fresh one you know is yours. The automatic paths (cleanup,
+  # reclaim, and the registry the conductor reads) refuse it outright, so nothing ever
+  # recommends this removal. Both channels warn, because both hold the automatic paths back.
+  #
+  # The second line is deliberately REASON-AGNOSTIC. It used to assert "a builder appears to
+  # be on this desk", which is true of a live claim and false of every other hold this now
+  # prints — a desk minutes old, a desk we could not date, a cert running. Asserting a
+  # builder nobody confirmed is exactly the misattribution ClaimLease.corrupt_expiry? was
+  # split out to prevent; the reason above already says what we actually found.
+  if (reason = claim_hold(record, fresh: true, announce: true) || desk_hold(record, announce: true))
     warn "warning: #{worktree_label(record)}: #{reason}"
-    warn "         a builder appears to be on this desk. `remove` is explicit, so this is not a block."
+    warn "         the automatic guards do not treat this desk as free. `remove` is explicit, so this is not a block."
   end
 
   unless yes
@@ -2817,6 +2828,130 @@ rescue StandardError => e
     "we cannot verify"
 end
 
+# --- the DESK channel: is anybody working in this DIRECTORY? -------------------------
+#
+# claim_hold above asks the BOARD who holds the task. This asks the FILESYSTEM whether
+# anyone is at the desk, and it exists because the board answer has a hole the git test
+# cannot cover for it.
+#
+# THE HOLE, from the 2026-08-13 incident. A builder created and bound an industries
+# desk and a `cleanup --reclaim` sweep removed it while he was working in it. Nothing
+# malfunctioned: the desk was CLEAN (nobody had committed yet) and carried NOTHING
+# ahead of its base, so `cleanup_ready?` passed — and a fresh desk is byte-identical to
+# a fast-forward-merged one, so no amount of git can separate them. The claim channel
+# did not save it either: a claim is only as live as its lease, and the desk that most
+# needs protecting is precisely the one in the `new` → `bind-task` → `move building`
+# window, or whose renewal has not landed yet, or (the half-allocated desks the Redis
+# band ceiling produced the same day) whose bind FAILED outright and which therefore
+# has no task to look up at all. Every one of those reads as a free, safest-looking
+# candidate. The blast radius is another session's UNCOMMITTED work, which no gate,
+# review, or CI will ever catch, because it never becomes a commit.
+#
+# WHY IT REUSES ClaimLease.abandoned? RATHER THAN INVENTING A SECOND RULE. The lease
+# work already answered "is this holder working?" for a claim, with measured thresholds
+# and a deliberately lopsided posture (every unknown protects). This is the SAME
+# question asked about a directory, so it hands the same four channels to the same
+# predicate. A second notion of liveness would drift from the first, and the two would
+# disagree about a live worker on the day it mattered.
+#
+# WHY AN AGE THRESHOLD ALONE WOULD NOT DO. An hour-old desk mid-cert is live, and a
+# cert writes NOTHING into its desk for up to the measured 94-minute p99 — which is
+# exactly why the gate channel exists here as well as in the heartbeat.
+#
+# WHAT THIS COSTS, stated plainly because it is a real trade. Desks now linger up to
+# DESK_IDLE_SECONDS (1h29m) after their work is done, holding a Redis band slot while
+# they wait. Disk and a slot are recoverable; a destroyed desk is not. The operator's
+# explicit `bin/agent-worktree remove <app> <task> --yes` still tears one down on
+# demand (it warns and proceeds), so nothing is stuck — only nothing is AUTOMATIC.
+
+# Seconds since the desk was created, or nil when we cannot tell. An I/O seam, so the
+# unit tier can drive the decision without staging a real git worktree.
+def desk_age_seconds(record)
+  DeskActivity.age_seconds(record[:dir])
+end
+
+# Has any authored file under the desk been written inside the idle window?
+# true / false / nil, where nil is "could not tell" and never frees a desk.
+def desk_touched_recently?(record)
+  dir = record[:dir].to_s
+  return nil if dir.empty?
+
+  DeskActivity.touched_since?(dir, Time.now - ClaimLease::DESK_IDLE_SECONDS)
+end
+
+# The reason this desk is withheld because somebody may be WORKING in it, or nil when
+# every channel agrees it has been abandoned.
+#
+# `fresh:` is deliberately absent. The two desk facts (age, mtimes) are read live on
+# every call, so they can never be stale; the two board facts come from
+# task_record_for_pr's per-slug memo, which claim_hold — always called first, and with
+# the caller's own `fresh:` — has just populated. So the under-lock re-verify gets a
+# re-read board here too, without spending a second subprocess per candidate.
+def desk_hold(record, announce: false)
+  age = desk_age_seconds(record)
+  if age.nil?
+    warn "warning: #{worktree_label(record)}: the desk could not be dated (no worktree `.git` marker), so a desk created moments ago cannot be ruled out — withholding it" if announce
+    return "the desk could not be dated (no worktree `.git` marker at #{record[:dir]}), so a desk " \
+           "created moments ago cannot be ruled out; withholding rather than destroying a desk we " \
+           "cannot date"
+  end
+
+  if ClaimLease.too_young_to_abandon?(age)
+    return "the desk is only #{ClaimLease.humanize_age(age)} old, younger than the " \
+           "#{ClaimLease.humanize_age(ClaimLease::DESK_IDLE_SECONDS)} idle window, so it cannot have " \
+           "been idle long enough to call abandoned; a fresh desk is git-identical to a merged one, " \
+           "which is how a live desk was destroyed on 2026-08-13"
+  end
+
+  touched = desk_touched_recently?(record)
+  task_record = task_record_for_pr(record)
+  channels = {
+    desk_touched: touched,
+    progress_age: ClaimLease.holder_scoped(task_record, "holder_liveness_seconds_ago", "progress_seconds_ago"),
+    gate_in_flight: ClaimLease.holder_scoped(task_record, "holder_gate_in_flight", "gate_in_flight") ? true : false,
+    awaiting_approval: task_devops_for_pr(task_record)["approval_status"].to_s.strip == "waiting"
+  }
+  return nil if ClaimLease.abandoned?(**channels)
+
+  reason = desk_hold_reason(channels)
+  warn "warning: #{worktree_label(record)}: #{reason}" if announce && touched.nil?
+  reason
+end
+
+# Name the channel that spoke. The DECISION is ClaimLease.abandoned?'s and only its —
+# this renders it — so the two can never disagree about WHETHER to hold, at most about
+# how to explain it. The trailing fallback exists for exactly that residue: if some
+# channel combination ever fits none of the branches below, the desk is still HELD,
+# with an honest "could not be shown abandoned" rather than a confident lie.
+def desk_hold_reason(channels)
+  window = ClaimLease.humanize_age(ClaimLease::DESK_IDLE_SECONDS)
+  touched = channels[:desk_touched]
+  if touched.nil?
+    return "the desk's files could not be read, so we could not tell whether anyone is working in " \
+           "it; withholding rather than destroying a desk we could not check"
+  end
+  if touched
+    return "the desk was written to within the last #{window} — somebody is working in it, and " \
+           "their uncommitted work is exactly what a teardown destroys"
+  end
+  if channels[:gate_in_flight]
+    cert_p99 = ClaimLease.humanize_age(ClaimLease::MEASURED_SILENCE_SECONDS[:cert_p99])
+    return "a gate the holder may have opened is still running — a cert writes nothing into its " \
+           "desk for up to #{cert_p99}, so a quiet desk mid-cert is a working one"
+  end
+  if channels[:awaiting_approval]
+    return "the bound task is waiting on the operator's approval, so its agent is right to be " \
+           "doing nothing and its desk is right to still be here"
+  end
+  progress = channels[:progress_age]
+  if !progress.nil? && progress <= ClaimLease::DESK_IDLE_SECONDS
+    return "the bound task landed a durable artifact #{ClaimLease.humanize_age(progress)} ago, " \
+           "inside the #{window} idle window"
+  end
+
+  "the desk could not be shown abandoned, and a desk we cannot prove abandoned is never destroyed"
+end
+
 # THE one reclaim decision, in one place: may this worktree be destroyed, and if it is
 # being withheld, why. Returns [reclaimable?, hold_reason]:
 #
@@ -2839,10 +2974,18 @@ end
 # WITHHOLDING is that answer; nominating is the lie. So an unverifiable desk is withheld
 # everywhere, and only `remove … --yes` (the explicit operator override) still proceeds — with
 # a warning.
+# TWO CHANNELS, and the order is load-bearing. claim_hold asks the BOARD who holds the
+# task; desk_hold asks the FILESYSTEM whether anyone is at the desk. Neither subsumes
+# the other: a claim can be live while the desk sits untouched mid-cert, and a desk can
+# be in active use while its task carries no readable claim at all (unbound, unclaimed,
+# or a lease that has not been renewed yet) — which is the desk the 08-13 sweep ate.
+# claim_hold runs FIRST because it is the one that spends the board read, and desk_hold
+# then reuses that same memoized record for its board channels.
 def reclaim_verdict(record, fresh: false, announce: false)
   return [false, nil] unless cleanup_ready?(record)
 
-  reason = claim_hold(record, fresh: fresh, announce: announce)
+  reason = claim_hold(record, fresh: fresh, announce: announce) ||
+           desk_hold(record, announce: announce)
   [reason.nil?, reason]
 end
 

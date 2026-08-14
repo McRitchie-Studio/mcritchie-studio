@@ -426,6 +426,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
 
   test "[integration] cleanup dry-run prints actionable candidate details" do
     mark_worktree_merged_to_origin_main
+    abandon_desk!
 
     out, err, status = agent_worktree("cleanup", "mcritchie-studio", env: command_env)
 
@@ -442,6 +443,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
 
   test "[integration] reclaim dry-run prints the same safety evidence" do
     mark_worktree_merged_to_origin_main
+    abandon_desk!
 
     out, err, status = agent_worktree("cleanup", "mcritchie-studio", "--reclaim", env: removal_env)
 
@@ -456,6 +458,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
 
   test "[integration] cleanup write records operational context in the ledger" do
     mark_worktree_merged_to_origin_main
+    abandon_desk!
 
     out, err, status = agent_worktree("cleanup", "mcritchie-studio", "--write", env: command_env)
 
@@ -624,6 +627,9 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
   test "[integration] reclaim --yes re-verifies the claim UNDER THE LOCK (builder claims mid-sweep)" do
     mark_worktree_merged_to_origin_main
     plant_task_bin_claiming_on_second_read("mid-sweep-task")
+    # The desk must SURVIVE SELECTION for the under-lock re-verify to be the thing under
+    # test, so stage it cold: a fresh desk is now withheld before the loop is ever reached.
+    abandon_desk!
 
     out, err, status = agent_worktree("cleanup", "mcritchie-studio", "--reclaim", "--yes",
                                       env: removal_env)
@@ -638,6 +644,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
   test "[integration] a LAPSED claim does not protect — the merged worktree stays a candidate" do
     mark_worktree_merged_to_origin_main
     bind_task_slug("desk-task")
+    abandon_desk! # a lapsed claim frees the CLAIM channel; the desk must be cold too
 
     out, err, status = agent_worktree("cleanup", "mcritchie-studio",
                                       env: { "AGENT_WORKTREE_TASK_JSON" => lapsed_claim_json })
@@ -695,11 +702,14 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
 
   # THE UNBOUND DESK is the original incident's own desk: TASK_RECORD_SLUG is written by
   # bind-task, never by `new`, so a builder inside the new -> bind-task -> move building
-  # window has no task and therefore no claim we can read. We cannot protect what we cannot
-  # identify, so it fails open — but it must say so, because this is the likeliest desk to
-  # lose. (The fixture worktree is unbound, which is why the guard's board read never fires
-  # for it.)
-  test "[integration] an UNBOUND desk announces that no build claim could be checked" do
+  # window has no task and therefore no claim we can read. The CLAIM channel is forced to
+  # fail open on it — you cannot look up what you cannot identify — and it says so, because
+  # this is the likeliest desk to lose. (The fixture worktree is unbound, which is why the
+  # guard's board read never fires for it.)
+  #
+  # Which is precisely why the DESK channel must not fail open too. This pair pins both
+  # halves: the claim announcement still happens, AND a fresh unbound desk survives anyway.
+  test "[integration] an UNBOUND desk announces no claim could be checked, and survives while fresh" do
     mark_worktree_merged_to_origin_main
 
     out, err, status = agent_worktree("cleanup", "mcritchie-studio", env: {})
@@ -707,7 +717,25 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     assert status.success?, err
     assert_match(/has no bound task, so no build claim can be checked/, err,
                  "the desk we actually lost must not fail open in silence")
-    assert_includes out, "cleanup candidates:", "…but it still fails open"
+    refute_includes out, "cleanup candidates:",
+                    "a desk with no claim to check is the one the sweep ate — the desk channel " \
+                    "has to catch what the claim channel structurally cannot"
+    assert_match(/withheld .*the desk is only/, out, "and the hold names the reason: it is new")
+  end
+
+  # THE OTHER HALF, and the reason the pair exists. A half-allocated desk (worktree created,
+  # stack and bind-task failed — the Redis band ceiling produced several on the incident day)
+  # is unbound litter, and once it has gone cold it is exactly what reclaim is for. Protecting
+  # every unidentifiable desk forever would trade a data-loss bug for a leak.
+  test "[integration] a COLD unbound desk is still nominated — the fail-open is bounded, not removed" do
+    mark_worktree_merged_to_origin_main
+    abandon_desk!
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio", env: {})
+
+    assert status.success?, err
+    assert_includes out, "cleanup candidates:",
+                    "an unbound desk nobody has touched in days is litter — the sweep must collect it"
   end
 
   # THE POSITIVE CONTROL — the one cell the asymmetry matrix never covered.
@@ -721,6 +749,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
   test "[integration] reclaim --yes STILL tears down a readable, unclaimed desk (positive control)" do
     mark_worktree_merged_to_origin_main
     bind_task_slug("desk-task")
+    abandon_desk!
     assert Dir.exist?(@worktree_dir), "precondition: the desk is on disk"
 
     out, err, status = agent_worktree("cleanup", "mcritchie-studio", "--reclaim", "--yes",
@@ -750,6 +779,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
   test "[integration] reclaim --yes tears down a lapsed-claim desk through the REAL fetch path (positive control)" do
     mark_worktree_merged_to_origin_main
     counter = plant_task_bin_with_lapsed_claim("fetch-path-task")
+    abandon_desk!
     assert Dir.exist?(@worktree_dir), "precondition: the desk is on disk"
 
     out, err, status = agent_worktree("cleanup", "mcritchie-studio", "--reclaim", "--yes",
@@ -765,6 +795,172 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     refute Dir.exist?(@worktree_dir), "the desk is torn down for real, through the real fetch path"
     refute_includes out, "withheld"
     refute_includes out, "skipping"
+  end
+
+  # ── THE FRESH DESK, end to end through the real filesystem ────────────────────────────
+  #
+  # 2026-08-13: a builder created and bound an industries desk, and a `cleanup --reclaim`
+  # sweep removed it while he was working in it. Nothing malfunctioned. The desk was CLEAN
+  # (nobody had committed yet) and carried NOTHING ahead of its base, so cleanup_ready?
+  # passed — a fresh worktree and a fast-forward-merged one are byte-identical to git, so
+  # the desk that looked safest to destroy was the one that was somebody's next hour of work.
+  # The blast radius is another session's UNCOMMITTED work, which no gate, review or CI can
+  # ever catch, because it never becomes a commit.
+  #
+  # Every check below hands the guard a LAPSED claim on purpose. The claim channel therefore
+  # says "free" for all of them — that channel already had its coverage above, and pinning it
+  # live here would prove nothing about the hole. What is under test is the DESK.
+  #
+  # These run against the real staged git worktree with real mtimes and a real `.git`
+  # marker, because the whole failure was a decision made about a DIRECTORY.
+
+  test "[integration] reclaim dry-run does NOT nominate a freshly created, bound, clean desk" do
+    mark_worktree_merged_to_origin_main # git-identical to the merged desk it was mistaken for
+    bind_task_slug("fresh-desk-task")
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio", "--reclaim",
+                                      env: removal_env("AGENT_WORKTREE_TASK_JSON" => lapsed_claim_json))
+
+    assert status.success?, "#{out}\n#{err}"
+    refute_includes out, "reclaim candidates:",
+                    "a desk created minutes ago must never reach the candidate list — the dry run " \
+                    "is what the operator reads before typing --yes"
+    assert_includes out, "withheld mcritchie-studio/terminal-context"
+    assert_match(/the desk is only .* old/, out, "the hold states the fact it turned on")
+  end
+
+  # THE DESTRUCTIVE TIER of the same case — the one that actually cost work.
+  test "[integration] reclaim --yes SPARES a freshly created, bound, clean desk" do
+    mark_worktree_merged_to_origin_main
+    bind_task_slug("fresh-desk-task")
+    assert Dir.exist?(@worktree_dir), "precondition: the desk is on disk"
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio", "--reclaim", "--yes",
+                                      env: removal_env("AGENT_WORKTREE_TASK_JSON" => lapsed_claim_json))
+
+    assert status.success?, "#{out}\n#{err}"
+    assert Dir.exist?(@worktree_dir),
+           "the desk MUST still be on disk: this is the exact teardown that destroyed a live " \
+           "builder's uncommitted work, and it is irreversible"
+    assert_includes out, "withheld mcritchie-studio/terminal-context"
+    refute_includes out, "reclaimed mcritchie-studio/terminal-context"
+  end
+
+  # AGE IS A FLOOR, NOT THE ANSWER. A desk hours old that somebody is editing right now is
+  # live, and an age threshold alone would hand it straight back to the sweep. Here the desk
+  # is aged past the floor, then ONE file is written — the agent-editing-code case that the
+  # board can never see, because an edit is not a commit and not a board write.
+  test "[integration] reclaim --yes SPARES an aged desk that is being edited right now" do
+    bind_task_slug("aged-but-busy-task")
+    abandon_desk! # the desk is old…
+
+    # …but the builder is still at it. The work is COMMITTED and LANDED, so the desk reads
+    # clean and 0-ahead and reclaim's whole git test passes — while `feature.txt` still
+    # carries the mtime of the edit that produced it (committing does not touch the working
+    # file). This is an ordinary steady state, not a contrivance: the PR merged onto
+    # `accepted` and its builder is still sitting at the desk, between changes.
+    File.write(File.join(@worktree_dir, "feature.txt"), "still working here\n")
+    git!(@worktree_dir, "commit", "-am", "Ongoing work")
+    mark_worktree_merged_to_origin_main
+    refute git_dirty?(@worktree_dir), "premise: the desk is CLEAN — dirtiness would protect it for free"
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio", "--reclaim", "--yes",
+                                      env: removal_env("AGENT_WORKTREE_TASK_JSON" => lapsed_claim_json))
+
+    assert status.success?, "#{out}\n#{err}"
+    assert Dir.exist?(@worktree_dir),
+           "a desk being written to is in use, however old it is and whatever the board says"
+    assert_match(/the desk was written to within the last/, out)
+    refute_includes out, "reclaimed mcritchie-studio/terminal-context"
+  end
+
+  # THE MID-CERT DESK, which is why "just add an age threshold" was not the fix. A cert
+  # writes NOTHING into its desk for up to the measured 94-minute p99, so an hour-old desk
+  # running one is indistinguishable from a walked-away desk by age AND by mtimes. The gate
+  # channel is the only thing that separates them — the same channel the claim lease keeps,
+  # read holder-scoped off the board record.
+  test "[integration] reclaim --yes SPARES an aged, quiet desk whose holder has a gate in flight" do
+    mark_worktree_merged_to_origin_main
+    bind_task_slug("mid-cert-task")
+    abandon_desk!
+    mid_cert = JSON.generate("holder_gate_in_flight" => true,
+                             "metadata" => { "devops" => JSON.parse(lapsed_claim_json)
+                                                             .dig("metadata", "devops") })
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio", "--reclaim", "--yes",
+                                      env: removal_env("AGENT_WORKTREE_TASK_JSON" => mid_cert))
+
+    assert status.success?, "#{out}\n#{err}"
+    assert Dir.exist?(@worktree_dir),
+           "a holder mid-cert writes nothing into the desk for up to 94 minutes — silence there " \
+           "is the cert running, not a builder who left"
+    assert_match(/a gate the holder may have opened is still running/, out)
+    refute_includes out, "reclaimed mcritchie-studio/terminal-context"
+  end
+
+  # ── THE CONTROL ───────────────────────────────────────────────────────────────────────
+  #
+  # The proof the fix is a fix and not a disabling. Every check above asserts a REFUSAL, so
+  # a guard that simply withheld everything would leave them all green while reclaim was
+  # silently dead — and a dead sweep is how the Redis band reaches its ceiling and starts
+  # producing half-allocated desks. A desk that is merged, unclaimed, days old and untouched
+  # is genuinely abandoned, and it must still be torn down for real.
+  test "[integration] reclaim --yes STILL tears down a genuinely merged and abandoned desk (control)" do
+    mark_worktree_merged_to_origin_main
+    bind_task_slug("abandoned-task")
+    abandon_desk!
+    assert Dir.exist?(@worktree_dir), "precondition: the desk is on disk"
+
+    out, err, status = agent_worktree("cleanup", "mcritchie-studio", "--reclaim", "--yes",
+                                      env: removal_env("AGENT_WORKTREE_TASK_JSON" => lapsed_claim_json))
+
+    assert status.success?, "#{out}\n#{err}"
+    assert_includes out, "reclaimed mcritchie-studio/terminal-context",
+                    "a guard that withholds every desk is a wedge, not a fix"
+    refute Dir.exist?(@worktree_dir), "the abandoned desk is actually torn down"
+    refute_includes out, "withheld"
+  end
+
+  # THE ESCAPE HATCH, and the proof it is still open. The desk channel withholds a fresh desk
+  # from every AUTOMATIC path — that is the fix — but `remove <app> <task> --yes` is the
+  # explicit operator override, and it must still work. Otherwise a fix for a data-loss bug
+  # becomes a Redis-band leak with no way out, and the band was already at its ceiling on the
+  # day of the incident. It warns and proceeds.
+  test "[integration] remove --yes still tears down a FRESH desk, warning without blocking" do
+    mark_worktree_merged_to_origin_main
+    bind_task_slug("fresh-desk-task")
+
+    out, err, status = agent_worktree("remove", "mcritchie-studio", @task, "--yes",
+                                      env: removal_env("AGENT_WORKTREE_TASK_JSON" => lapsed_claim_json))
+
+    assert status.success?, "#{out}\n#{err}"
+    refute Dir.exist?(@worktree_dir),
+           "the explicit operator path must still remove a desk on demand — a guard with no " \
+           "override wedges the band it was supposed to protect"
+    assert_match(/the desk is only .* old/, err, "…while saying plainly what it found")
+    refute_match(/a builder appears to be on this desk/, err,
+                 "and never asserting a builder nobody confirmed — the hold here is the desk's " \
+                 "age, not a person")
+  end
+
+  # THE REGISTRY AGREES, on both sides. bin/qa-intake builds its Cleanup Candidates section
+  # straight off `cleanup_candidate` and prints a `remove … --yes` per entry, so a front door
+  # that still nominated a fresh desk would re-open the incident one indirection out — the
+  # operator would be handed the removal command for a desk the sweep itself refuses.
+  test "[integration] the registry does not nominate a freshly created desk either" do
+    mark_worktree_merged_to_origin_main
+    bind_task_slug("fresh-desk-task")
+    registry = File.join(@projects_dir, "registry.json")
+
+    _out, err, status = agent_worktree("snapshot", "mcritchie-studio", "--write",
+                                       env: { "AGENT_WORKTREE_REGISTRY" => registry,
+                                              "AGENT_WORKTREE_TASK_JSON" => lapsed_claim_json })
+
+    assert status.success?, err
+    worktree = JSON.parse(File.read(registry)).fetch("worktrees").find { |entry| entry["task"] == @task }
+    refute worktree.fetch("cleanup_candidate"),
+           "the conductor's front door must not hand the operator a removal command for a new desk"
+    assert_match(/the desk is only/, worktree.fetch("withheld_reason"), "…and it must say why")
   end
 
   # THE DESTROY-PATH ASYMMETRY — the blocker from round 3.
@@ -1265,6 +1461,35 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     git!(@hub_dir, "update-ref", "refs/remotes/origin/main", rev(@worktree_dir, "HEAD"))
   end
 
+  # Age the fixture desk into a genuinely ABANDONED one — born long ago, untouched since.
+  #
+  # WHY EVERY TEARDOWN CONTROL NOW NEEDS THIS. `mark_worktree_merged_to_origin_main` used
+  # to be the whole story: clean + landed on base was the reclaim test. That is exactly the
+  # defect — a brand-new worktree satisfies BOTH vacuously (clean because nobody has written
+  # yet, landed because it carries nothing), so a merged desk and a live one an agent sat
+  # down at ten minutes ago are byte-identical to git. A control that asserts a TEARDOWN
+  # must therefore stage the second half of the story too: nobody has been here in a long
+  # time. Staging it in a named helper keeps the premise visible in each test rather than
+  # buried in setup, because it IS the premise.
+  #
+  # Backdates the worktree `.git` marker (the desk's birthday, read by
+  # DeskActivity.age_seconds) and every file under it (the mtimes read by
+  # DeskActivity.touched_since?). Call it LAST — anything written afterwards, a
+  # `bind_task_slug` rewrite included, makes the desk read as live again.
+  def abandon_desk!(age_seconds: 3 * 24 * 60 * 60)
+    at = Time.now - age_seconds
+    paths = Dir.glob(File.join(@worktree_dir, "**", "*"), File::FNM_DOTMATCH)
+                .reject { |path| %w[. ..].include?(File.basename(path)) }
+    (paths + [@worktree_dir]).each do |path|
+      File.utime(at, at, path)
+    rescue SystemCallError
+      nil # a path that raced away is not the point of the fixture
+    end
+    assert_operator Time.now - File.mtime(File.join(@worktree_dir, ".git")), :>,
+                    ClaimLease::DESK_IDLE_SECONDS,
+                    "premise: the desk must read as older than the idle window"
+  end
+
   # --- restore-primary: return a drifted primary checkout to a clean main ----
   # The real bin run against a temp git repo (PROJECTS_DIR/@hub_dir is the
   # primary). GIT_SSH_COMMAND=/usr/bin/false makes the allow_fail `git fetch
@@ -1350,6 +1575,14 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
   def rev(dir, ref)
     out, = Open3.capture3(SessionEnv.neutralized, "git", "rev-parse", ref, chdir: dir)
     out.strip
+  end
+
+  # Mirrors the script's own dirtiness test. Used to PIN a premise rather than to assert a
+  # result: a check about a desk that is clean-yet-occupied proves nothing if the fixture
+  # quietly went dirty, because dirtiness disqualifies a desk from reclaim on its own.
+  def git_dirty?(dir)
+    out, = Open3.capture3(SessionEnv.neutralized, "git", "status", "--porcelain", chdir: dir)
+    !out.strip.empty?
   end
 
   # Advance refs/remotes/origin/main ONE commit past the local main (origin moved

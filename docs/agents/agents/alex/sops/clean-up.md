@@ -403,12 +403,20 @@ after the ship.
 ### Worktrees
 ```bash
 bin/agent-worktree cleanup                   # dry run — read it
-bin/agent-worktree cleanup --reclaim         # dry run: what is SAFE (clean + merged)
+bin/agent-worktree cleanup --reclaim         # dry run: what is SAFE (clean + merged + unoccupied)
 bin/agent-worktree cleanup --reclaim --yes   # full teardown + Redis band shrink
 ```
 - Reclaim only takes **clean + merged (or base-equivalent, e.g. squash-merged)**
-  desks; live PR worktrees are never candidates. Check the list against your
-  carve-out anyway.
+  desks that are also **unoccupied**; live PR worktrees are never candidates. Check
+  the list against your carve-out anyway.
+- **Clean + merged is NOT sufficient, and never was.** A brand-new worktree is
+  git-identical to a merged one — clean, nothing ahead of base — so it passes the git
+  test vacuously. On 2026-08-13 that destroyed a live builder's desk mid-task. Reclaim
+  now also withholds a desk that is younger than 1h29m, has been written to inside
+  that window, or whose holder has a gate in flight (a cert writes nothing into its
+  desk for up to 94 minutes). Expect **finished desks to linger up to 1h29m** before
+  the sweep will take them; that is the trade, and it is deliberate. Use
+  `remove <app> <task-slug> --yes` when you need a specific one gone now.
 - **Trust the safety gate over the description.** If Mr. McRitchie says "three
   worktrees" and the dry run finds seventeen, surface the discrepancy — and believe
   the gate.
@@ -426,7 +434,7 @@ bin/agent-worktree cleanup --reclaim --yes   # full teardown + Redis band shrink
 ### Stale unmerged desks — the reclaim can NEVER take these; triage them yourself
 
 The reclaim's safety gate only takes **clean + merged (or base-equivalent, e.g.
-squash-merged)** desks. A clean desk on a genuinely **unmerged** branch is
+squash-merged) + unoccupied** desks. A clean desk on a genuinely **unmerged** branch is
 invisible to it — and these accumulate until they pin the Redis band wide
 (2026-08-08: **14 of 27** surviving slots were exactly this). `remove --force`
 does not help either: it clears the content guard **only for the merged-PR
