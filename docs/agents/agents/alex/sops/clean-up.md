@@ -570,10 +570,17 @@ For every PR with no board task, **read the diff before you close it.**
 > `release` lacks, and **the next production ship aborts.**
 >
 > Dependabot defaults to the repo's default branch, so it opens PRs against `main`
-> by default. **Retarget, never merge:**
+> unless the config says otherwise. Every repo's `.github/dependabot.yml` **must**
+> set `target-branch: accepted` on **every** `updates:` entry — it is per-entry,
+> not global. Two gaps survive that config, so this check still earns its place:
+> **security** updates always target the default branch and cannot be retargeted,
+> and a repo onboarded without the setting falls back to `main`.
+> **Retarget to the ladder's first rung, never merge:**
 > ```bash
-> gh pr edit <n> --base release
+> gh pr edit <n> --base accepted
 > ```
+> Retargeting to `release` is also wrong — it leaves `accepted` behind `release`
+> and reproduces the divergence this SOP exists to prevent.
 
 > ### ⛔ The orphaned-fix trap — the most expensive thing this SOP catches
 > A conflicting PR with no task is **where fixes go to die.** In the founding run,
