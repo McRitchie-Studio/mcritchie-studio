@@ -20,13 +20,23 @@ require "tmpdir"
 require "fileutils"
 require "rbconfig"
 require_relative "../support/session_env"
+require_relative "../support/outbound_seams"
 require_relative "../../bin/lib/full_suite_gate"
 
 class ShipTest < Minitest::Test
   BIN = File.expand_path("../../bin/ship", __dir__)
   SLUG = "fast-lane-demo"
   BRANCH = "feat/#{SLUG}"
-  TASK_URL = "https://mcritchie.studio/tasks/#{SLUG}"
+
+  # The board bin/ship renders task links against — DERIVED from the pin, not
+  # spelled out. It used to be the literal "https://mcritchie.studio/tasks/…",
+  # which passed only because run_ship left TASK_API_BASE unpinned and bin/ship
+  # fell through to its production default. Two problems with that: the assertion
+  # "the PR body must LEAD with the task URL" was really asserting the production
+  # HOST, and no containment floor could pin the board without a false red here.
+  # Deriving it keeps the assertion about the URL's SHAPE, which is what these
+  # tests are actually for.
+  TASK_URL = "#{OutboundSeams::UNROUTABLE}/tasks/#{SLUG}"
   PR_URL = "https://github.com/McRitchie-Studio/mcritchie-studio/pull/999"
 
   # A throwaway repo on the task branch with a bare `origin` carrying an
@@ -115,7 +125,7 @@ class ShipTest < Minitest::Test
   # where log_lines is the parsed stub log ([[marker, argv...], ...] in call order).
   def run_ship(dir, args: [SLUG], extra_env: {}, show_json: nil, moved_json: nil)
     log = File.join(dir, "stub.log")
-    env = SessionEnv.neutralized({
+    env = OutboundSeams.env({
       "SHIP_ROOT" => dir,
       "SHIP_TASK_BIN" => write_stub(dir, "task-stub", "TASK"),
       "SHIP_FAST_CHECK_BIN" => write_stub(dir, "fast-stub", "FAST"),
