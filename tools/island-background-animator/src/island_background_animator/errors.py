@@ -15,3 +15,7 @@ class InputImageError(AnimatorError):
 
 class JobInitializationError(AnimatorError):
     """Raised when a job directory cannot be initialized safely."""
+
+
+class StaticMasterError(AnimatorError):
+    """Raised when candidate review or approval would violate the static-master gate."""

@@ -58,11 +58,14 @@ def test_initializes_job_using_detected_content_format(
     assert approval == {
         "approved_at": None,
         "approved_by": None,
+        "candidate_id": None,
         "candidate_path": None,
-        "schema_version": 1,
+        "schema_version": 2,
         "sha256": None,
         "state": "pending",
     }
+    candidates = json.loads((created / "state/static-candidates.json").read_text(encoding="utf-8"))
+    assert candidates == {"candidates": [], "schema_version": 1}
 
 
 def test_rejects_extension_spoofed_non_image(tmp_path: Path) -> None:

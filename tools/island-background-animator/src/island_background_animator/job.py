@@ -13,7 +13,8 @@ from typing import Any
 from island_background_animator.config import (
     JOB_SCHEMA_NAME,
     SCHEMA_VERSION,
-    STATIC_APPROVAL_SCHEMA_NAME,
+    STATIC_APPROVAL_V2_SCHEMA_NAME,
+    STATIC_CANDIDATES_SCHEMA_NAME,
     validate_document,
 )
 from island_background_animator.errors import JobInitializationError
@@ -55,13 +56,16 @@ def initialize_job(job_directory: Path, job_id: str, inputs: list[Path]) -> Path
             (staging / relative_directory).mkdir(parents=True, exist_ok=False)
 
         manifest = _copy_inputs(staging, validated_inputs)
+        candidates = _static_candidates_placeholder()
         approval = _static_approval_placeholder()
         config = _job_config(job_id, len(validated_inputs))
 
         validate_document(config, JOB_SCHEMA_NAME)
-        validate_document(approval, STATIC_APPROVAL_SCHEMA_NAME)
+        validate_document(candidates, STATIC_CANDIDATES_SCHEMA_NAME)
+        validate_document(approval, STATIC_APPROVAL_V2_SCHEMA_NAME)
 
         _write_json(staging / "inputs/manifest.json", manifest)
+        _write_json(staging / "state/static-candidates.json", candidates)
         _write_json(staging / "state/approvals/static-master.json", approval)
         _write_json(staging / "state/job-state.json", _job_state())
         _write_json(staging / "job.json", config)
@@ -114,12 +118,20 @@ def _job_config(job_id: str, input_count: int) -> dict[str, Any]:
 
 def _static_approval_placeholder() -> dict[str, Any]:
     return {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": 2,
         "state": "pending",
+        "candidate_id": None,
         "candidate_path": None,
         "sha256": None,
         "approved_by": None,
         "approved_at": None,
+    }
+
+
+def _static_candidates_placeholder() -> dict[str, Any]:
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "candidates": [],
     }
 
 

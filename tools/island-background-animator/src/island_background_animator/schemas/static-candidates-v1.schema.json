@@ -1,0 +1,43 @@
+{
+  "$id": "https://mcritchie.studio/schemas/island-background/static-candidates-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "candidates": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "format": { "const": "PNG" },
+          "height": { "minimum": 1, "type": "integer" },
+          "id": { "pattern": "^candidate-[0-9]{3}$", "type": "string" },
+          "label": { "maxLength": 60, "minLength": 1, "type": "string" },
+          "mode": { "minLength": 1, "type": "string" },
+          "original_name": { "minLength": 1, "type": "string" },
+          "sha256": { "pattern": "^[0-9a-f]{64}$", "type": "string" },
+          "stored_path": {
+            "pattern": "^static/candidates/candidate-[0-9]{3}-[a-z0-9-]+-[0-9a-f]{12}\\.png$",
+            "type": "string"
+          },
+          "width": { "minimum": 1, "type": "integer" }
+        },
+        "required": [
+          "id",
+          "label",
+          "original_name",
+          "stored_path",
+          "sha256",
+          "format",
+          "width",
+          "height",
+          "mode"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "schema_version": { "const": 1 }
+  },
+  "required": ["schema_version", "candidates"],
+  "title": "Island Background Static Candidates v1",
+  "type": "object"
+}

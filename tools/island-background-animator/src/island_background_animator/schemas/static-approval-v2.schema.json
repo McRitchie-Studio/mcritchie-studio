@@ -1,0 +1,54 @@
+{
+  "$id": "https://mcritchie.studio/schemas/island-background/static-approval-v2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": { "properties": { "state": { "const": "pending" } } },
+      "then": {
+        "properties": {
+          "approved_at": { "type": "null" },
+          "approved_by": { "type": "null" },
+          "candidate_id": { "type": "null" },
+          "candidate_path": { "type": "null" },
+          "sha256": { "type": "null" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "state": { "const": "approved" } } },
+      "then": {
+        "properties": {
+          "approved_at": { "minLength": 1, "type": "string" },
+          "approved_by": { "minLength": 1, "type": "string" },
+          "candidate_id": { "pattern": "^candidate-[0-9]{3}$", "type": "string" },
+          "candidate_path": {
+            "pattern": "^static/candidates/candidate-[0-9]{3}-[a-z0-9-]+-[0-9a-f]{12}\\.png$",
+            "type": "string"
+          },
+          "sha256": { "pattern": "^[0-9a-f]{64}$", "type": "string" }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "approved_at": { "type": ["string", "null"] },
+    "approved_by": { "type": ["string", "null"] },
+    "candidate_id": { "type": ["string", "null"] },
+    "candidate_path": { "type": ["string", "null"] },
+    "schema_version": { "const": 2 },
+    "sha256": { "type": ["string", "null"] },
+    "state": { "enum": ["pending", "approved"] }
+  },
+  "required": [
+    "schema_version",
+    "state",
+    "candidate_id",
+    "candidate_path",
+    "sha256",
+    "approved_by",
+    "approved_at"
+  ],
+  "title": "Island Background Static Approval v2",
+  "type": "object"
+}

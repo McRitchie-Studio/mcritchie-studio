@@ -12,6 +12,11 @@ from island_background_animator.config import load_job_config
 from island_background_animator.doctor import run_checks
 from island_background_animator.errors import AnimatorError
 from island_background_animator.job import initialize_job
+from island_background_animator.static_master import (
+    approve_static_master,
+    create_contact_sheet,
+    register_candidate,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -45,6 +50,27 @@ def build_parser() -> argparse.ArgumentParser:
     )
     validate_parser.add_argument("configuration", type=Path)
 
+    candidate_parser = subparsers.add_parser(
+        "add-candidate", help="validate and register a static-master PNG candidate"
+    )
+    candidate_parser.add_argument("job_directory", type=Path)
+    candidate_parser.add_argument("--candidate", required=True, type=Path)
+    candidate_parser.add_argument("--label", required=True)
+
+    contact_sheet_parser = subparsers.add_parser(
+        "contact-sheet", help="render the registered static-master candidates for review"
+    )
+    contact_sheet_parser.add_argument("job_directory", type=Path)
+
+    approve_parser = subparsers.add_parser(
+        "approve-static", help="freeze one explicitly approved candidate as the static master"
+    )
+    approve_parser.add_argument("job_directory", type=Path)
+    approve_parser.add_argument("--candidate-id", required=True)
+    approve_parser.add_argument("--approved-by", required=True)
+    approve_parser.add_argument("--confirm-sha256", required=True)
+    approve_parser.add_argument("--approved-at")
+
     return parser
 
 
@@ -67,6 +93,29 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "validate-config":
             load_job_config(args.configuration)
             print(f"valid {args.configuration}")
+            return 0
+        if args.command == "add-candidate":
+            candidate = register_candidate(
+                args.job_directory,
+                args.candidate,
+                args.label,
+            )
+            print(f"registered {candidate['id']} {candidate['stored_path']}")
+            print(f"sha256 {candidate['sha256']}")
+            return 0
+        if args.command == "contact-sheet":
+            contact_sheet = create_contact_sheet(args.job_directory)
+            print(f"contact sheet {contact_sheet}")
+            return 0
+        if args.command == "approve-static":
+            master = approve_static_master(
+                args.job_directory,
+                args.candidate_id,
+                args.approved_by,
+                args.confirm_sha256,
+                approved_at=args.approved_at,
+            )
+            print(f"approved static master {master}")
             return 0
     except AnimatorError as error:
         print(f"error: {error}", file=sys.stderr)

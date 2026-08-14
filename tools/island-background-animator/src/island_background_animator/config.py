@@ -14,6 +14,8 @@ from island_background_animator.errors import ConfigurationError
 SCHEMA_VERSION = 1
 JOB_SCHEMA_NAME = "job-v1.schema.json"
 STATIC_APPROVAL_SCHEMA_NAME = "static-approval-v1.schema.json"
+STATIC_APPROVAL_V2_SCHEMA_NAME = "static-approval-v2.schema.json"
+STATIC_CANDIDATES_SCHEMA_NAME = "static-candidates-v1.schema.json"
 
 
 def load_schema(name: str) -> dict[str, Any]:
