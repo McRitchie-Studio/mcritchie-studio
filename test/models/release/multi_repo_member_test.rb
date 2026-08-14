@@ -227,10 +227,10 @@ class Release::MultiRepoMemberTest < ActiveSupport::TestCase
   # --- the curation guard, checked over EVERY repo a member names ---
   #
   # The other half of the sweep-time refusal — a multi-repo member whose PR record
-  # covers only SOME of its repos — lands with Release::SweepPlan's coverage rule
-  # and `bin/release prepare`'s pre-promote screen. Until then such a member sweeps
-  # and is caught one stage later, by the per-repo evidence guard above: it can ride
-  # the candidate, but it cannot be STAMPED for the repo with no landed record.
+  # covers only SOME of its repos — is now here too: validate_member_pr_coverage!,
+  # sharing Release::SweepPlan's coverage rule through Task#repos_missing_pr_url so
+  # the CLI's pre-promote screen and this record-time backstop cannot disagree. The
+  # per-repo evidence guard above remains the stage AFTER it.
 
   test "[unit] validate_members! passes a multi-repo member with a PR url per repo" do
     release = Release::Conductor.sweep!(two_repo_task)
@@ -332,5 +332,100 @@ class Release::MultiRepoMemberTest < ActiveSupport::TestCase
 
     assert_equal "assembled", task.reload.stage,
                  "a gem repo carries no QA sha by design — demanding one would hold every gem forever"
+  end
+
+  # THE INCIDENT'S TASK, exactly: two repos, and only the hub's PR url — because the
+  # hub's was the only PR slot a task had. Every sweep write runs validate_members!
+  # inside its transaction, so this raise leaves the members `reviewed` and the RC
+  # unopened rather than recording a member the pipeline cannot vouch for.
+  test "[unit] validate_members! refuses a multi-repo member with an incomplete PR record" do
+    task = Task.create!(title: "land rails security patch", stage: "reviewed",
+                        metadata: { "devops" => {
+                          "shape" => "backend",
+                          "repositories" => [ HUB, TURF ],
+                          "pr_url" => HUB_PR
+                        } })
+    release = Release::Conductor.sweep!(task)
+
+    error = assert_raises(ArgumentError) { Release::Conductor.validate_members!(release.reload) }
+
+    assert_match(/incomplete PR record/, error.message)
+    assert_match(/#{TURF}/, error.message, "the refusal names the repo with no PR url")
+    assert_match(/--pr-url-for/, error.message, "…and the command that fixes it")
+  end
+
+  test "[unit] validate_members! leaves a SINGLE-repo member with no PR url alone" do
+    # A single-repo task cannot lose a repo it never had a second of; its missing PR
+    # is the review lane's problem, not the sweep's. Without the rule's size<2 guard
+    # this refusal would fire on ordinary single-repo work and jam every sweep.
+    release = Release::Conductor.sweep!(single_repo_task)
+
+    assert_nothing_raised { Release::Conductor.validate_members!(release.reload) }
+  end
+
+  # THE GEM RELEASE, pinned before the refusal ships — because this is the shape the
+  # refusal would have falsely blocked, and it is a LIVE one:
+  # `guard-engine-migration-rollback` (shipped 2026-08-14) names studio-engine plus
+  # three consumers behind ONE studio-engine PR. `release_pr_urls` keys the singular
+  # pr_url by the repo its URL parses to, so every consumer reads as "missing" — but
+  # a consumer's change in a gem release is committed by the pipeline itself
+  # (bump_consumer_locks_for_qa), so there is no PR url that could ever be recorded.
+  # Refusing it would have blocked every engine release: the OPPOSITE of the failure
+  # this guard closes.
+  def gem_task_naming_consumers
+    Task.create!(title: "guard engine migration rollback", stage: "reviewed",
+                 metadata: { "devops" => {
+                   "shape" => "library",
+                   "repositories" => [ "studio-engine", HUB, TURF ],
+                   "pr_url" => "https://github.com/McRitchie-Studio/studio-engine/pull/124"
+                 } })
+  end
+
+  test "[unit] a gem release naming its consumers reports NO missing PR urls" do
+    task = gem_task_naming_consumers
+
+    assert_equal :gem, task.release_kind, "shape library ⇒ gem release"
+    assert_equal [ HUB, TURF ], task.release_repos - [ "studio-engine" ],
+                 "the consumers ARE named — the exemption is about the PR, not the repos"
+    assert_empty task.repos_missing_pr_url,
+                 "a consumer's lock bump is authored by the pipeline; there is no PR to record"
+  end
+
+  test "[unit] validate_members! passes a gem release carrying only the gem PR" do
+    release = Release::Conductor.sweep!(gem_task_naming_consumers)
+
+    assert_nothing_raised { Release::Conductor.validate_members!(release.reload) }
+  end
+
+  # The CONTROL for the exemption: the same repo list on an APP member is the
+  # 2026-08-13 incident and must still be refused. Nothing about naming consumers
+  # earns the pass — only the gem kind does.
+  test "[unit] the same repo list on an APP member is still refused" do
+    task = Task.create!(title: "land rails security patch", stage: "reviewed",
+                        metadata: { "devops" => {
+                          "shape" => "backend",
+                          "repositories" => [ HUB, TURF ],
+                          "pr_url" => HUB_PR
+                        } })
+
+    assert_equal :app, task.release_kind
+    assert_equal [ TURF ], task.repos_missing_pr_url
+  end
+
+  # ONE RULE, TWO CALLERS. The CLI screens with Release::SweepPlan.repo_coverage_gap
+  # before it promotes; the conductor backstops with Task#repos_missing_pr_url at the
+  # record. They must be the same verdict — two spellings is how a screen and its
+  # guard drift apart, which is what let `bin/release merge` carry three guards that
+  # could never fire.
+  test "[unit] repos_missing_pr_url IS SweepPlan's coverage rule, not a second copy" do
+    task = Task.create!(title: "land rails security patch", stage: "reviewed",
+                        metadata: { "devops" => {
+                          "repositories" => [ HUB, TURF ], "pr_url" => HUB_PR
+                        } })
+
+    assert_equal Release::SweepPlan.repo_coverage_gap(repos: task.release_repos,
+                                                      pr_repos: task.release_pr_urls.keys),
+                 task.repos_missing_pr_url
+    assert_equal [ TURF ], task.repos_missing_pr_url
   end
 end

@@ -363,15 +363,16 @@ class Release
     # inside their transaction), so a refusal leaves the members `reviewed` and the
     # RC unopened.
     #
-    # This is the split seam: the SWEEP-TIME refusal — a multi-repo member whose PR
-    # record covers only some of its repos — lands with `Release::SweepPlan`'s
-    # coverage rule and `bin/release prepare`'s pre-promote screen, as a second
-    # `validate_member_*!` call here. Until then a member missing a repo's PR is
-    # still caught, one stage later, by the per-repo evidence guard below
-    # (Release::MemberEvidence): it can be swept, but it cannot be STAMPED
-    # `assembled` or `shipped` for a repo the run landed nothing for.
+    # The SWEEP-TIME refusal that seam anticipated is now here:
+    # validate_member_pr_coverage! below, sharing its rule with
+    # `Release::SweepPlan.repo_coverage_gap` so the CLI's pre-promote screen and this
+    # record-time backstop cannot drift apart. A member that still slips both is
+    # caught one stage later by the per-repo evidence guard (Release::MemberEvidence):
+    # it can be swept, but it cannot be STAMPED `assembled`/`shipped` for a repo the
+    # run landed nothing for.
     def validate_members!(release)
       validate_member_repos_known!(release)
+      validate_member_pr_coverage!(release)
     end
 
     # An :unknown repo is in neither registry section of config/release_repos.yml,
@@ -403,6 +404,42 @@ class Release
 
         Release::Repos.kind(repo) == :unknown
       end
+    end
+
+    # THE RECORD-TIME REFUSAL: a member naming more than one repo must carry a
+    # recorded PR url for every repo it names (Task#repos_missing_pr_url, which is
+    # `Release::SweepPlan.repo_coverage_gap` — ONE rule, so the CLI's pre-promote
+    # screen and this backstop cannot answer differently). Without a PR per repo
+    # there is no evidence the second repo's code ever reached `accepted`, and the
+    # pipeline has already proven it will not notice: 2026-08-13, where turf's PR had
+    # nowhere to live and the task shipped anyway.
+    #
+    # WHERE THIS ACTUALLY BITES, stated exactly — an earlier draft of this comment
+    # claimed a coverage it did not have, which is the same class of defect as the
+    # bug it guards. validate_members! has three live callers, and all three now run
+    # this: `bin/release prepare`'s batch sweep (batch_sweep_with_plan_ruby),
+    # `bin/release merge`'s batch sweep (batch_sweep_ruby — which had NO member
+    # validation at all before this slice), and Conductor.curate! (reached from
+    # prepare!, the model-driven path the tests drive). Each runs inside a
+    # transaction, so a raise rolls the sweep back and leaves the members `reviewed`.
+    #
+    # It is a BACKSTOP, not the front line: `bin/release prepare` and `bin/release
+    # merge` both reach the same verdict from the pure plan BEFORE they promote
+    # anything, which is the seam where nothing has moved yet. This copy is what
+    # catches a member that arrives at the record without passing that screen.
+    def validate_member_pr_coverage!(release)
+      offenders = release.ordered_members.filter_map do |task|
+        missing = task.repos_missing_pr_url
+        "#{task.slug} (no PR url for #{missing.join(', ')})" if missing.any?
+      end
+      return if offenders.none?
+
+      raise ArgumentError,
+            "release #{release.slug} refuses multi-repo member(s) with an incomplete PR record: " \
+            "#{offenders.join(', ')} — the sweep would promote only the repo(s) it can see and " \
+            "stamp the task shipped for the rest. Record the missing PR " \
+            "(`bin/task update <slug> --pr-url-for <repo>=<url>`), or drop the repo from the " \
+            "task's devops.repositories if it carries no work."
     end
 
     # The per-member release plan the CLI consumes, in producer-first order:
@@ -611,9 +648,12 @@ class Release
     # skipped a fourth looked identical to one that shipped everything — which is
     # how a task was stamped shipped+main while turf's `main` never moved.
     #
-    # The `bin/release ship` call site lands with the CLI slice; until then the key
-    # is written only by the model path, and a MULTI-repo member is held at
-    # `assembled` rather than stamped `shipped` — the fail-closed direction.
+    # THE CLI CALL SITES ARE LIVE: `bin/release ship` writes this from
+    # `ship_evidence` — the { repo => sha } map push_frozen_main fills as each
+    # repo's `main` ref update is accepted by origin — in the SAME conductor call
+    # that ships the members, and `finalize` writes the same map from its
+    # measured-against-prod verdict so a resumed ship carries the stronger proof
+    # rather than jamming its members at `assembled`.
     def record_shipped_shas(release:, shas:)
       meta = release.metadata.deep_dup
       existing = meta["shipped_shas"].is_a?(Hash) ? meta["shipped_shas"] : {}
