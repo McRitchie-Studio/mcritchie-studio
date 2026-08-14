@@ -10,8 +10,14 @@ require "test_helper"
 # INSTALLED — by NAME. It cannot see a migration whose CONTENT changed in the gem,
 # which is exactly what happened here: studio-engine rewrote this migration's
 # `down` and the installed copy is a FORK, so a stale copy would have stayed GREEN
-# forever. Asserting the behaviour closes that hole for this migration. A general
-# content digest across every installed engine migration is tracked separately.
+# forever. Asserting the behaviour closes that hole for this migration.
+#
+# The general case now has its own guard: `test/lib/engine_migration_content_test.rb`
+# digests the CODE of every installed `*.studio_engine.rb` against the gem's copy
+# at the resolved version, so a rewrite of any of the other eight engine
+# migrations reddens here too. This file stays because the two fail differently —
+# the digest says "your copy is not the gem's", and only this file says "and a
+# rollback would take the hub's first_name with it".
 #
 # Why a consumer-side test at all, when the engine has its own: engine migrations
 # are install-COPIED (`bin/rails studio_engine:install:migrations`), not

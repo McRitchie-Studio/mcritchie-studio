@@ -97,6 +97,13 @@ class EnginePinContractTest < ActiveSupport::TestCase
   # The failure this guards is silent by construction. Studio.record_ip_location!
   # opens with `return false unless user.respond_to?(:ip_locations)`, so on a
   # drifted app it returns false forever: no raise, no ErrorLog, no Sentry.
+  #
+  # THIS IS THE NAME HALF OF THE CONTRACT, AND ONLY THE NAME HALF. Reducing both
+  # sides to the bare name is what makes the comparison possible at all — the
+  # installer renumbers every copy — and it is also this test's ceiling: a
+  # migration whose BODY changed in the gem keeps its name, so this test stays
+  # green while the installed copy is a stale fork. That happened on 2026-08-13.
+  # `test/lib/engine_migration_content_test.rb` is the content half.
   test "every migration the resolved engine ships has been installed here" do
     assert_empty missing_engine_migrations,
                  "the resolved studio-engine (#{Studio::VERSION}) ships migrations this app never " \
