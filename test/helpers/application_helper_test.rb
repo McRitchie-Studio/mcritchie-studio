@@ -669,23 +669,56 @@ class ApplicationHelperTest < ActionView::TestCase
     render partial: "tasks/release_duration_card", locals: { dashboard: {} }
 
     assert_select "#release-duration-card [data-test='heartbeat-launcher']", count: 0
-    # Five tiles render even with no data (canonical stage list, values as "—").
+    # Five duration tiles render even with no data (canonical stage list, values
+    # as "—"), plus the WIP tile: six in all.
     assert_select "#release-duration-card [data-test='release-duration-stage']", count: 5
+    assert_select "#release-duration-card [data-test='release-duration-wip']", count: 1
   end
 
-  test "[component] the DevOps card lays the five deployment-stage tiles in a single row (grid-cols-5 on sm+)" do
+  test "[component] the DevOps card lays its six tiles out 3x2 (grid-cols-3 on sm+)" do
     render partial: "tasks/release_duration_card", locals: { dashboard: {} }
 
-    # Tested / Assembled / Confirmed / Deployed / Total line up in one row on sm+
-    # (grid-cols-5), wrapping on mobile (grid-cols-2 base).
-    assert_select "[data-test='release-duration-stage-grid'].grid.grid-cols-2.sm\\:grid-cols-5"
-    assert_select "[data-test='release-duration-stage-grid'] [data-test='release-duration-stage']", count: 5
-    # The five tiles ARE the five duration columns.
+    # WIP / Assembled / G3 Candidate on the first row, G4 Ship / Deployed / Total
+    # on the second (grid-cols-3 on sm+), wrapping to 2 columns on mobile.
+    assert_select "[data-test='release-duration-tile-grid'].grid.grid-cols-2.sm\\:grid-cols-3"
+    # Six tiles total: the WIP count plus the five duration averages. Counted as
+    # the grid's own children, so a tile added outside either data-test hook
+    # still breaks the 3x2 claim instead of hiding behind it.
+    assert_select "[data-test='release-duration-tile-grid'] > div", count: 6
+    assert_select "[data-test='release-duration-tile-grid'] [data-test='release-duration-wip']", count: 1
+    assert_select "[data-test='release-duration-tile-grid'] [data-test='release-duration-stage']", count: 5
+    # Those five tiles ARE the five duration columns.
     (Release::DEPLOYMENT_STAGES.map { |stage| stage[:key] } + ["total"]).each do |key|
       assert_select "[data-test='release-duration-stage'][data-stage='#{key}']", count: 1
     end
     # No separate wide Deployment tile — Total is one of the five.
     assert_select "#release-duration-card [data-test='release-duration-deployment']", count: 0
+  end
+
+  test "[component] the WIP tile renders the count it is handed" do
+    render partial: "tasks/release_duration_card", locals: { dashboard: {}, wip_count: 7 }
+
+    assert_select "[data-test='release-duration-wip']", text: /WIP/
+    assert_select "[data-test='release-duration-wip']", text: /7/
+    assert_select "[data-test='release-duration-wip']", text: /tasks in flight/
+  end
+
+  test "[component] a zero WIP count prints 0, not the no-value dash" do
+    # An empty pipeline is a real, meaningful state — "0" is the answer. Only a
+    # MISSING count may fall through to "—", so these two must not collapse.
+    render partial: "tasks/release_duration_card", locals: { dashboard: {}, wip_count: 0 }
+
+    assert_select "[data-test='release-duration-wip']", text: /0/
+    assert_select "[data-test='release-duration-wip']", { text: /—/, count: 0 },
+                  "a WIP of 0 must read as 0, never as the unknown-value dash"
+  end
+
+  test "[component] the WIP tile reads as a dash when the caller passes no count" do
+    render partial: "tasks/release_duration_card", locals: { dashboard: {} }
+
+    assert_select "[data-test='release-duration-wip']", text: /—/
+    assert_select "[data-test='release-duration-wip']", { text: /0/, count: 0 },
+                  "an unknown WIP must not claim an empty pipeline"
   end
 
   test "[component] deployment_stage_cell renders a completed span as a timestamp range + duration" do
