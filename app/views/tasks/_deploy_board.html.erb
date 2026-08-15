@@ -474,6 +474,12 @@ document.addEventListener('turbo:before-cache', function() {
       <% board_apps.each do |app| %>
         <button type="button"
                 @click="toggleApp('<%= app %>')"
+                <%# Pressed state in the accessibility tree, and the only handle a test
+                    has on whether the click landed. Same rationale as the /tasks board
+                    chip in tasks/_board.html.erb — kept identical on purpose: these two
+                    chips are the same control on two boards, and the filter specs for
+                    both assert against this attribute. %>
+                :aria-pressed="appHidden('<%= app %>') ? 'true' : 'false'"
                 :class="appHidden('<%= app %>') ? 'opacity-40 line-through' : 'hover:border-primary/40 hover:text-heading'"
                 class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-surface text-secondary border border-subtle transition">
           <% if (emoji = app_emoji(app)) %><span class="leading-none"><%= emoji %></span><% end %>

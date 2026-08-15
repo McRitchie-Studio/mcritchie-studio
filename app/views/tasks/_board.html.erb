@@ -253,6 +253,18 @@ document.addEventListener('turbo:before-cache', function() {
       <% board_apps.each do |app| %>
         <button type="button"
                 @click="toggleApp('<%= app %>')"
+                <%# The chip IS a toggle button, so its pressed state belongs in the
+                    accessibility tree — a screen reader otherwise announces "rolio,
+                    button" identically whether the app is showing or hidden, because
+                    the only signal is a strikethrough class.
+
+                    It is also the one thing a test can hold onto. The board filter
+                    tests click this chip and then assert a card is gone; with state
+                    living only in :class, a card still present cannot distinguish "the
+                    click never landed" from "the filter toggled and the card did not
+                    react". aria-pressed makes the first observable, which is what
+                    close-board-filter-flake asks to establish before theorising. %>
+                :aria-pressed="appHidden('<%= app %>') ? 'true' : 'false'"
                 :class="appHidden('<%= app %>') ? 'opacity-40 line-through' : 'hover:border-primary/40 hover:text-heading'"
                 class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-surface text-secondary border border-subtle transition">
           <% if (emoji = app_emoji(app)) %><span class="leading-none"><%= emoji %></span><% end %>
