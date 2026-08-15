@@ -15,8 +15,36 @@ on:
   #
   # Every job runs on a release push — no lane is skipped for cost. A partial verdict on
   # the release candidate is exactly the gap this closes.
+  #
+  # `accepted` IS THE SAME ARGUMENT ONE RUNG EARLIER, and it was the hole. Review
+  # merges several approved PRs onto `accepted`, producing exactly the kind of
+  # combination the paragraph above describes — individually green, never executed
+  # together — and nothing certified it. The gap surfaced only at the release push,
+  # AFTER the sweep had promoted, where unwinding it means unwinding a release. Here
+  # the offender is still cheap to find, and the sweep can refuse to promote a red
+  # `accepted` before it moves anything (Ci::BranchGate).
   push:
-    branches: [ main, release ]
+    branches: [ main, release, accepted ]
+
+# NO `concurrency:` BLOCK — deliberately, and it is tested (ci_workflow_triggers_test:
+# no_concurrency_block_can_cancel_a_release_run).
+#
+# The obvious optimisation here is a concurrency group on `accepted` so a burst of
+# merges collapses into one run of the final tree, since every landing otherwise costs
+# a full ~10-minute suite. That was written, and it was WRONG for a reason worth
+# recording rather than rediscovering:
+#
+# a cancelled run carries the conclusion `cancelled`, and CiStatus folds `cancelled`
+# as RED. Every reader of this branch's health is SHA-ADDRESSED — Ci::BranchGate
+# resolves the newest ingested run for the branch and folds the runs for THAT sha — so
+# a superseded run that lost a race is indistinguishable from a genuine failure. The
+# sweep's own `accepted` guard would then refuse to promote a perfectly healthy
+# branch. Cheaper CI is not worth a gate that cries wolf; a false refusal wedges the
+# release lane far more often than the runs it saves.
+#
+# Every SHA keeps its own run to completion. If the CI cost becomes the binding
+# constraint, the answer is a faster suite (test-steward-grooms-suite) or a merge
+# queue that batches BEFORE the merge — not cancellation after it.
 
 jobs:
   scan_ruby:
