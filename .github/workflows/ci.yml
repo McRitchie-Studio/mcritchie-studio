@@ -26,21 +26,25 @@ on:
   push:
     branches: [ main, release, accepted ]
 
-# Collapse a BURST of merges into one run of the FINAL tree.
+# NO `concurrency:` BLOCK — deliberately, and it is tested (ci_workflow_triggers_test:
+# no_concurrency_block_can_cancel_a_release_run).
 #
-# `accepted` receives a merge per review, so without this every landing costs a full
-# ~10-minute suite and a busy afternoon queues runs for trees that were superseded
-# before they finished. Cancelling means intermediate combinations go uncertified —
-# which is CORRECT, because only the final tree is ever promoted, and that one always
-# gets a run.
+# The obvious optimisation here is a concurrency group on `accepted` so a burst of
+# merges collapses into one run of the final tree, since every landing otherwise costs
+# a full ~10-minute suite. That was written, and it was WRONG for a reason worth
+# recording rather than rediscovering:
 #
-# Scoped by expression rather than applied workflow-wide on purpose: `main` and
-# `release` are SHIPPABLE TIPS whose verdicts are credited by the pre-QA and ship
-# gates, so a cancelled run there would erase evidence those gates read. Pull requests
-# keep today's behaviour too — this changes one branch, deliberately.
-concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref == 'refs/heads/accepted' }}
+# a cancelled run carries the conclusion `cancelled`, and CiStatus folds `cancelled`
+# as RED. Every reader of this branch's health is SHA-ADDRESSED — Ci::BranchGate
+# resolves the newest ingested run for the branch and folds the runs for THAT sha — so
+# a superseded run that lost a race is indistinguishable from a genuine failure. The
+# sweep's own `accepted` guard would then refuse to promote a perfectly healthy
+# branch. Cheaper CI is not worth a gate that cries wolf; a false refusal wedges the
+# release lane far more often than the runs it saves.
+#
+# Every SHA keeps its own run to completion. If the CI cost becomes the binding
+# constraint, the answer is a faster suite (test-steward-grooms-suite) or a merge
+# queue that batches BEFORE the merge — not cancellation after it.
 
 jobs:
   scan_ruby:
