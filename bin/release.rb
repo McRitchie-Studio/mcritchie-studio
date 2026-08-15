@@ -1383,7 +1383,20 @@ ACCEPTED_MERGED = "accepted"
 # preview is hermetic and prints exactly ONE promote line per repo). `label` names
 # the RC in the PR title when known (the --slug option; nil → a generic title).
 def promote_accepted_to_release!(repos, label: nil)
-  Array(repos).map(&:to_s).reject(&:empty?).uniq.each do |repo|
+  targets = Array(repos).map(&:to_s).reject(&:empty?).uniq
+  # THE GUARD LIVES HERE, NOT AT A CALL SITE — and that placement is the whole fix.
+  #
+  # It was originally wired in front of ONE of this function's two callers. The other
+  # one (the plan path, which is what `bin/release prepare` actually takes) promoted
+  # without it, and the very first sweep after it shipped proved the point: the
+  # guard's step line never appeared. A gate on a path nobody takes is not a gate.
+  #
+  # This file has already learned this lesson once — validate_members! carries a
+  # comment naming all three of its live callers for exactly this reason. Guarding the
+  # FUNCTION means both existing callers and every future one inherit it, and there is
+  # no call site left to forget.
+  refuse_red_accepted!(targets) unless DRY
+  targets.each do |repo|
     if DRY
       step("promote #{ACCEPTED_BRANCH} → #{RELEASE_BRANCH} in #{repo}: open/reuse ONE " \
            "`gh pr create --base #{RELEASE_BRANCH} --head #{ACCEPTED_BRANCH}` batch PR and merge it")
@@ -2901,43 +2914,6 @@ def prepare
     end
   end
 
-  # `accepted` MUST NOT BE RED BEFORE IT BECOMES THE CANDIDATE.
-  #
-  # Until ci.yml gained its `accepted` trigger, nothing certified this rung: review
-  # merged several approved PRs and the resulting combination — individually green,
-  # never executed together — was first tested only after the promote, on the release
-  # push. By then the bad tree IS the candidate, and unwinding it means unwinding a
-  # release. Asking here costs one board read and moves that discovery before anything
-  # has moved.
-  #
-  # ONLY AN ASSERTED FAILURE BLOCKS. :pending and :none do not — a sweep routinely
-  # races a run it can simply wait for or credit downstream at the pre-QA gate, and
-  # refusing on "no verdict yet" would wedge the lane for a fact nobody stated. That
-  # is Ci::BranchGate.red?'s whole distinction, and it is the same rule the review
-  # gate-zero uses for base drift.
-  if promote_repos.any? && !DRY
-    step("guard: `accepted` must not be RED in any repo this promote carries")
-    probe = conductor(
-      "out = {}; " \
-      "#{promote_repos.inspect}.each { |r| v = Ci::BranchGate.verdict(r, 'accepted'); " \
-      "out[r] = { state: v[:state].to_s, sha: v[:sha].to_s } }; " \
-      "puts({ accepted: out }.to_json)",
-      read_only: true
-    )
-    red = red_accepted_repos(probe)
-    if red.any?
-      named = red.map { |repo, v| "#{repo} (#{v["state"]} @ #{short(v["sha"])})" }.join(", ")
-      abort!("prepare refused — `accepted` CI is RED in #{named}. That branch is the candidate this sweep " \
-             "would promote onto `release`, so promoting now ships a tree GitHub has already told us is " \
-             "broken, and the failure would resurface at the pre-QA gate after the promote — where fixing " \
-             "it means unwinding a release instead of a branch. NOTHING was promoted, recorded or deployed. " \
-             "Fix forward on `accepted` (or revert the offending merge), let CI go green, then re-run " \
-             "`bin/release prepare` — it resumes. A repo whose verdict is PENDING or absent does not block " \
-             "here: only an asserted failure does.")
-    end
-    say("  ✓ `accepted` carries no RED verdict in #{promote_repos.join(', ')}")
-  end
-
   promote_accepted_to_release!(promote_repos, label: slug) if promote_repos.any?
 
   # 5. Record membership for every member whose code is on accepted/release/main
@@ -3505,8 +3481,44 @@ end
 # a KNOWN-broken tree; inventing a refusal from a state it cannot classify would make
 # every future CiStatus state a release outage until somebody taught this line about
 # it. The pre-QA gate downstream still fails closed on anything it cannot credit.
-def red_accepted_repos(probe)
-  ((probe || {})["accepted"] || {}).select { |_repo, v| %w[red conflicted].include?(v.to_h["state"].to_s) }
+def red_accepted_repos(verdicts)
+  (verdicts || {}).select { |_repo, v| %w[red conflicted].include?(v.to_h[:state].to_s) }
+end
+
+# The refusal itself: one board read over the repos about to be promoted, then abort
+# if any carries an asserted failure. The I/O lives here and the DECISION lives in
+# red_accepted_repos above, so the rule stays pure and unit-testable while this half
+# stays a thin shell around a conductor call.
+#
+# Called from inside promote_accepted_to_release!, never from a call site — see the
+# comment there for why that placement is the point.
+def refuse_red_accepted!(repos)
+  return if repos.empty?
+
+  step("guard: `accepted` must not be RED in any repo this promote carries")
+  # ci_verdict, NOT a board read. Every other CI gate in this file asks GitHub about a
+  # SHA directly (the pre-QA gate, the credit probe), and it matters here for a reason
+  # the tests caught: a conductor call is a PROD BOARD CONNECTION, and the merge flow
+  # asserts it resolves in exactly ONE read. Adding a second round-trip to every
+  # promote spends the board's connection budget — the same budget a heavy fan-out
+  # once exhausted — to learn something GitHub will answer for free. It also inherits
+  # the RELEASE_CI_STATUS injection seam, so the meta-tests never touch the network.
+  verdicts = repos.to_h do |repo|
+    sha, ok = sh("git", "-C", repo_path(repo), "rev-parse", "origin/#{ACCEPTED_BRANCH}", capture: true)
+    [repo, ok ? ci_verdict(repo, sha.to_s.strip) : { state: :unverified }]
+  end
+  red = red_accepted_repos(verdicts)
+  if red.any?
+    named = red.map { |repo, v| "#{repo} (#{v[:state]})" }.join(", ")
+    abort!("promote refused — `accepted` CI is RED in #{named}. That branch is the candidate this sweep " \
+           "would promote onto `release`, so promoting now ships a tree GitHub has already told us is " \
+           "broken, and the failure would resurface at the pre-QA gate after the promote — where fixing " \
+           "it means unwinding a release instead of a branch. NOTHING was promoted, recorded or deployed. " \
+           "Fix forward on `accepted` (or revert the offending merge), let CI go green, then re-run " \
+           "`bin/release prepare` — it resumes. A repo whose verdict is PENDING or absent does not block " \
+           "here: only an asserted failure does.")
+  end
+  say("  ✓ `accepted` carries no RED verdict in #{repos.join(', ')}")
 end
 
 def ladder_clean_verdict(expedited: nil, report_release: false)
