@@ -23,7 +23,12 @@ require "yaml"
 require_relative "../../bin/lib/test_health"
 
 class TestHealthRatchetTest < Minitest::Test
-  ROOT     = File.expand_path("../..", __dir__)
+  # TEST_HEALTH_ROOT is the test seam. It exists so the INTEGRATION test can drive this
+  # whole guard as a subprocess against a throwaway tree carrying a planted regression,
+  # and watch it exit non-zero — which is the only way to prove the guard fails a BUILD
+  # rather than merely that an assertion is false. Pointed at a temp dir it touches
+  # nothing shared, so it stays safe under CI's parallel workers.
+  ROOT     = ENV.fetch("TEST_HEALTH_ROOT", File.expand_path("../..", __dir__))
   TEST_DIR = File.join(ROOT, "test")
   RATCHET  = YAML.safe_load_file(File.join(ROOT, "config", "test_health.yml")).freeze
 
