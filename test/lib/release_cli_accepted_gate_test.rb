@@ -28,7 +28,7 @@ class ReleaseCliAcceptedGateTest < Minitest::Test
   end
 
   def probe(states)
-    { "accepted" => states.transform_values { |s| { "state" => s, "sha" => "deadbee" } } }
+    states.transform_values { |s| { state: s.to_sym } }
   end
 
   def test_an_asserted_failure_refuses_the_promote
@@ -68,5 +68,54 @@ class ReleaseCliAcceptedGateTest < Minitest::Test
     assert_equal %w[mcritchie-industries turf-monster],
                  decide(probe("mcritchie-studio" => "green", "turf-monster" => "red",
                               "mcritchie-industries" => "red")).sort
+  end
+
+  # ── the guard is on the FUNCTION, so every caller inherits it ───────────────
+  #
+  # THE DEFECT THIS REPLACES. The refusal was originally wired in front of ONE of
+  # promote_accepted_to_release!'s two call sites. bin/release prepare takes the
+  # OTHER one, so the first real sweep after it shipped promoted with the guard
+  # never running — its step line simply never appeared in the log.
+  #
+  # These tests therefore drive the FUNCTION, not a call site. That is the property
+  # worth pinning: a third caller added tomorrow is guarded by construction, and
+  # there is no call site left for anyone to forget. Asserting "the guard sits at
+  # line N" would pin today's structure and pass again the day someone re-introduces
+  # an unguarded path.
+
+  def promote(probe_states)
+    stub = <<~RUBY
+      def repo_path(repo) = "/nonexistent/\#{repo}"
+      def sh(*_a, **_k) = ["abc1234", true]
+      def ci_verdict(_repo, _sha) = #{probe_states.values.first.to_sym.inspect}.then { |st| { state: st } }
+    RUBY
+    script = %(ARGV.replace(["--help"]); begin; load #{BIN.inspect}; rescue SystemExit; end; ) +
+             stub +
+             %(begin; promote_accepted_to_release!(["mcritchie-studio"], label: "rel-t"); ) +
+             %(puts "PROMOTED"; rescue SystemExit => e; puts "REFUSED"; end)
+    out, = Open3.capture2e(RbConfig.ruby, "-e", script)
+    out
+  end
+
+  def test_a_red_accepted_refuses_inside_the_promote_function
+    out = promote("mcritchie-studio" => "red")
+
+    assert_includes out, "REFUSED", "the function itself must refuse, so every caller inherits it"
+    assert_match(/accepted. CI is RED/, out)
+    refute_includes out, "PROMOTED"
+  end
+
+  def test_a_pending_accepted_does_not_refuse_the_promote_function
+    out = promote("mcritchie-studio" => "pending")
+
+    refute_match(/CI is RED/, out, "a race is not an asserted failure")
+  end
+
+  def test_a_green_accepted_passes_the_guard
+    out = promote("mcritchie-studio" => "green")
+
+    refute_match(/CI is RED/, out)
+    assert_match(/carries no RED verdict/, out,
+                 "the guard must announce that it ran and passed")
   end
 end
