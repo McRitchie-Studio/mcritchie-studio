@@ -21,12 +21,18 @@ class BoardAppFilterSystemTest < ApplicationSystemTestCase
     assert_selector "#card-#{turf.slug}", visible: true
 
     # Hide Rolio → its card disappears, the turf card stays.
+    #
+    # The chip's own state first, for the same reason as the /tasks board spec: a card
+    # that is still visible cannot tell you whether the click landed. See
+    # tasks_board_filter_test.rb for the incident this came from.
     find("button", text: "rolio", match: :first).click
+    assert_selector "button[aria-pressed='true']", text: "rolio", wait: 5
     assert_no_selector "#card-#{rolio.slug}", visible: true
     assert_selector "#card-#{turf.slug}", visible: true
 
     # Toggle Rolio back on → its card returns.
     find("button", text: "rolio", match: :first).click
+    assert_selector "button[aria-pressed='false']", text: "rolio", wait: 5
     assert_selector "#card-#{rolio.slug}", visible: true
   end
 
