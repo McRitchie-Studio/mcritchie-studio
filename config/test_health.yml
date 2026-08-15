@@ -1,0 +1,28 @@
+---
+# THE RUBY SUITE'S RATCHET — the contract test/lib/test_health_ratchet_test.rb enforces.
+#
+# config/e2e_lane.yml has done this for the browser lane since it was written; nothing
+# did it for the 6,582 Ruby test cases. These two numbers are the ones that can rot a
+# suite silently, because neither shows up as a failure:
+#
+#   skips           a test switched off without being deleted. The suite keeps its
+#                   name and loses its coverage. 18 of 100 e2e specs are already in
+#                   that state, and until now the Ruby side was not counted at all.
+#
+#   assertion_free  a test that exercises code and asserts nothing about it. It goes
+#                   green whatever the code does, which is worse than no test — it
+#                   reports coverage it does not have.
+#
+# THESE ARE EXACT, NOT CEILINGS, deliberately and for the same reason e2e_lane.yml is
+# exact. A ceiling silently re-permits every regression up to it, and drifts stale the
+# moment someone improves things. Exact means ANY movement — up OR down — is an
+# explicit, reviewable edit to this file, sitting in the diff next to the change that
+# caused it. Lowering these is the good kind of edit; make it freely.
+#
+# OPERATOR DECISION 2026-08-14 (Mr. McRitchie): FREEZE FIRST. This holds the line; it
+# does not set out to drive the numbers down. Reducing them is a separate, later call
+# once the floor has proven cheap. See test-steward-grooms-suite for the grooming act
+# that proposes reductions — and note the rule it works under: a test may only be
+# deleted or merged by demonstrating that the mutation it caught is still caught.
+skips: 26
+assertion_free: 0
