@@ -116,8 +116,36 @@ class TestHealthRatchetTest < Minitest::Test
                  "diff; going DOWN is the good kind of edit — lower the number and ship it."
   end
 
+  # ── frozen hotspots: a file may shrink freely, never grow ──────────────────
+
+  def test_no_frozen_hotspot_has_grown
+    over = TestHealth.oversized(ROOT, RATCHET["frozen_size"])
+    named = over.map { |o| "#{o[:file]} is #{o[:lines]} lines, ceiling #{o[:ceiling]}" }
+
+    assert_empty over,
+                 "#{named.join("; ")}. These files are the suite's APPEND hotspots — " \
+                 "test/lib/release_cli_test.rb alone was touched by 26 of the last 200 PRs, all " \
+                 "colliding at the bottom of one file. Put the new test in a NEW file named for its " \
+                 "concern (that is what every test added in this session did), or, if you genuinely " \
+                 "grew an existing test, raise the ceiling in config/test_health.yml so the reason " \
+                 "sits in the diff."
+  end
+
+  def test_shrinking_a_frozen_file_is_always_allowed
+    frozen = { "test/lib/test_health_ratchet_test.rb" => 10_000 }
+
+    assert_empty TestHealth.oversized(ROOT, frozen),
+                 "a file well under its ceiling must never be an offender — shrinking needs no edit here"
+  end
+
+  # A ceiling naming a file that no longer exists must not fail the build. Deleting or
+  # renaming a frozen file is progress; the stale entry is a reviewer's tidy-up.
+  def test_a_ceiling_for_a_missing_file_is_not_a_failure
+    assert_empty TestHealth.oversized(ROOT, { "test/lib/nope_does_not_exist_test.rb" => 1 })
+  end
+
   def test_the_ratchet_declares_every_key_the_guard_reads
-    assert_equal %w[assertion_free skips].sort, RATCHET.keys.sort,
+    assert_equal %w[assertion_free frozen_size skips].sort, RATCHET.keys.sort,
                  "the contract and the guard must not drift: a key here with no assertion is a number " \
                  "nobody enforces, and an assertion with no key fails on arrival"
   end

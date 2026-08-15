@@ -26,3 +26,30 @@
 # deleted or merged by demonstrating that the mutation it caught is still caught.
 skips: 25
 assertion_free: 0
+
+# FROZEN HOTSPOTS — files that may not GROW.
+#
+# These five are the test suite's conflict hotspots, and the mechanism is APPEND:
+# test/lib/release_cli_test.rb alone was touched by 26 of the last 200 merged PRs, and
+# they collide because everyone adds at the bottom of the same file. Splitting the
+# existing content was measured and rejected as the first move — 297 tests with 46
+# helpers and 56 constants interleaved, 9 of which have call sites spanning the whole
+# file, so a split needs planned harness extraction and risks silent test LOSS. See
+# the archived task split-release-cli-tests for the numbers.
+#
+# Freezing costs nothing and attacks the same mechanism: a new test has to go
+# somewhere else, which gives the suite several bottoms instead of one. That is the
+# convention every test written in this session already followed by hand.
+#
+# THESE ARE CEILINGS, NOT EXACT — the opposite of the two counts above, deliberately.
+# A count changes only when someone adds or removes a skip, so exactness costs nothing
+# and catches everything. A line count changes on EVERY legitimate edit to an existing
+# test, so demanding exactness would fail the build for fixing a typo. Shrinking is
+# always allowed and never needs an edit here; lowering a ceiling after real work is
+# welcome but never required.
+frozen_size:
+  test/lib/release_cli_test.rb: 7356
+  test/lib/dor_check_test.rb: 2745
+  test/lib/task_cli_test.rb: 2728
+  test/models/task_test.rb: 2266
+  test/commands/agent_worktree_test.rb: 2260
