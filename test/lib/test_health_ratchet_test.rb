@@ -67,6 +67,32 @@ class TestHealthRatchetTest < Minitest::Test
     assert_empty TestHealth.assertion_free_in(heredoc), "a heredoc containing 'end' must not truncate it"
   end
 
+  # A skip written INSIDE a heredoc is documentation, not a switched-off test. This
+  # guard's own integration test builds fixture suites out of heredocs containing
+  # `skip "later"` — counting those made the ratchet fail on the very commit that
+  # introduced it, and discovering it also corrected the real count from 26 to 25,
+  # because one existing skip lives inside a heredoc too.
+  def test_a_skip_inside_a_heredoc_is_not_a_skip
+    real   = %(  def test_x\n    skip "real"\n    assert true\n  end\n)
+    inside = %(  FIX = <<~RB\n    skip "not real"\n  RB\n)
+
+    assert_equal 1, TestHealth.skips_in(real),          "a real skip must be counted"
+    assert_equal 0, TestHealth.skips_in(inside),        "a skip inside a heredoc is not a call site"
+    assert_equal 1, TestHealth.skips_in(inside + real), "the heredoc must close, not swallow what follows"
+  end
+
+  # The SAME exclusion, for the other detector. Both were bitten by this guard's own
+  # integration fixtures: a heredoc there declares a deliberately assertion-free test,
+  # and scanning heredoc bodies counted it as a real finding.
+  def test_a_test_declared_inside_a_heredoc_is_a_fixture_not_a_test
+    real   = %(  def test_x\n    Thing.call\n  end\n)
+    inside = %(  FIX = <<~RB\n    def test_hollow\n      Thing.call\n    end\n  RB\n)
+
+    assert_equal 1, TestHealth.assertion_free_in(real).size,          "a real one must be flagged"
+    assert_equal 0, TestHealth.assertion_free_in(inside).size,        "one inside a heredoc is a fixture"
+    assert_equal 1, TestHealth.assertion_free_in(inside + real).size, "the heredoc must close"
+  end
+
   # ── the ratchet itself ─────────────────────────────────────────────────────
 
   def test_no_test_asserts_nothing

@@ -46,10 +46,46 @@ module TestHealth
 
   # Explicit `skip` calls. Counted per CALL SITE, not per executed test: a conditional
   # skip may or may not fire at runtime, and this is the static half.
+  #
+  # HEREDOC BODIES ARE EXCLUDED, and that is not a nicety. This guard's own integration
+  # test builds fixture suites out of heredocs, several of which necessarily contain
+  # `skip "later"` — the very thing being tested. Counting those made the ratchet fail
+  # on the commit that introduced it. Any test that DOCUMENTS a skip in a string or
+  # heredoc hits the same false positive, so the fix belongs here rather than in the
+  # callers that would otherwise have to write around their own instrument.
   def skips(root)
-    test_files(root).sum { |file| File.read(file).lines.count { |l| l.match?(SKIP_CALL) } }
+    test_files(root).sum { |file| skips_in(File.read(file)) }
   rescue SystemCallError
     0
+  end
+
+  # PURE. Which lines of `source` are CODE — i.e. not inside a heredoc body.
+  #
+  # Shared by both detectors, because both were bitten by the same thing: this guard's
+  # own tests build fixture suites out of heredocs, and those fixtures necessarily
+  # contain `skip "later"` and a deliberately assertion-free test. Scanning heredoc
+  # bodies counted the fixtures as real findings and made the ratchet fail on the very
+  # commit that introduced it. Any test that DOCUMENTS a skip or a bad test in a string
+  # hits the same false positive, so the exclusion belongs in the instrument.
+  def code_lines(source)
+    tag = nil
+    source.lines.map do |line|
+      if tag
+        tag = nil if line.strip == tag
+        next nil
+      end
+      # Opens a heredoc: <<~TAG, <<-TAG, <<TAG, optionally quoted.
+      if (open = line[/<<[~-]?["']?([A-Z_]+)["']?/, 1])
+        tag = open
+        next nil
+      end
+      line
+    end
+  end
+
+  # PURE. Skip call sites in `source`, ignoring anything inside a heredoc body.
+  def skips_in(source)
+    code_lines(source).count { |line| line&.match?(SKIP_CALL) }
   end
 
   # PURE, so the vectors below are testable without a repo on disk.
@@ -62,9 +98,15 @@ module TestHealth
   def assertion_free_in(source, file = "(source)")
     found = []
     lines = source.lines
-    lines.each_with_index do |line, index|
-      match = TEST_OPENER.match(line)
+    # Openers are looked for in CODE only — a test declared inside a heredoc is a
+    # fixture, not a test this suite runs. The body is still read from the raw lines,
+    # since indent matching already handles nesting correctly.
+    code = code_lines(source)
+    code.each_with_index do |code_line, index|
+      match = code_line && TEST_OPENER.match(code_line)
       next unless match
+
+      line = lines[index]
 
       indent = match[1]
       closer = "#{indent}end"

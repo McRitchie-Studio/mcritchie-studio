@@ -24,5 +24,5 @@
 # once the floor has proven cheap. See test-steward-grooms-suite for the grooming act
 # that proposes reductions — and note the rule it works under: a test may only be
 # deleted or merged by demonstrating that the mutation it caught is still caught.
-skips: 26
+skips: 25
 assertion_free: 0
