@@ -15,8 +15,32 @@ on:
   #
   # Every job runs on a release push — no lane is skipped for cost. A partial verdict on
   # the release candidate is exactly the gap this closes.
+  #
+  # `accepted` IS THE SAME ARGUMENT ONE RUNG EARLIER, and it was the hole. Review
+  # merges several approved PRs onto `accepted`, producing exactly the kind of
+  # combination the paragraph above describes — individually green, never executed
+  # together — and nothing certified it. The gap surfaced only at the release push,
+  # AFTER the sweep had promoted, where unwinding it means unwinding a release. Here
+  # the offender is still cheap to find, and the sweep can refuse to promote a red
+  # `accepted` before it moves anything (Ci::BranchGate).
   push:
-    branches: [ main, release ]
+    branches: [ main, release, accepted ]
+
+# Collapse a BURST of merges into one run of the FINAL tree.
+#
+# `accepted` receives a merge per review, so without this every landing costs a full
+# ~10-minute suite and a busy afternoon queues runs for trees that were superseded
+# before they finished. Cancelling means intermediate combinations go uncertified —
+# which is CORRECT, because only the final tree is ever promoted, and that one always
+# gets a run.
+#
+# Scoped by expression rather than applied workflow-wide on purpose: `main` and
+# `release` are SHIPPABLE TIPS whose verdicts are credited by the pre-QA and ship
+# gates, so a cancelled run there would erase evidence those gates read. Pull requests
+# keep today's behaviour too — this changes one branch, deliberately.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref == 'refs/heads/accepted' }}
 
 jobs:
   scan_ruby:

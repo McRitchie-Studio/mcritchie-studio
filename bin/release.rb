@@ -2901,6 +2901,43 @@ def prepare
     end
   end
 
+  # `accepted` MUST NOT BE RED BEFORE IT BECOMES THE CANDIDATE.
+  #
+  # Until ci.yml gained its `accepted` trigger, nothing certified this rung: review
+  # merged several approved PRs and the resulting combination — individually green,
+  # never executed together — was first tested only after the promote, on the release
+  # push. By then the bad tree IS the candidate, and unwinding it means unwinding a
+  # release. Asking here costs one board read and moves that discovery before anything
+  # has moved.
+  #
+  # ONLY AN ASSERTED FAILURE BLOCKS. :pending and :none do not — a sweep routinely
+  # races a run it can simply wait for or credit downstream at the pre-QA gate, and
+  # refusing on "no verdict yet" would wedge the lane for a fact nobody stated. That
+  # is Ci::BranchGate.red?'s whole distinction, and it is the same rule the review
+  # gate-zero uses for base drift.
+  if promote_repos.any? && !DRY
+    step("guard: `accepted` must not be RED in any repo this promote carries")
+    probe = conductor(
+      "out = {}; " \
+      "#{promote_repos.inspect}.each { |r| v = Ci::BranchGate.verdict(r, 'accepted'); " \
+      "out[r] = { state: v[:state].to_s, sha: v[:sha].to_s } }; " \
+      "puts({ accepted: out }.to_json)",
+      read_only: true
+    )
+    red = red_accepted_repos(probe)
+    if red.any?
+      named = red.map { |repo, v| "#{repo} (#{v["state"]} @ #{short(v["sha"])})" }.join(", ")
+      abort!("prepare refused — `accepted` CI is RED in #{named}. That branch is the candidate this sweep " \
+             "would promote onto `release`, so promoting now ships a tree GitHub has already told us is " \
+             "broken, and the failure would resurface at the pre-QA gate after the promote — where fixing " \
+             "it means unwinding a release instead of a branch. NOTHING was promoted, recorded or deployed. " \
+             "Fix forward on `accepted` (or revert the offending merge), let CI go green, then re-run " \
+             "`bin/release prepare` — it resumes. A repo whose verdict is PENDING or absent does not block " \
+             "here: only an asserted failure does.")
+    end
+    say("  ✓ `accepted` carries no RED verdict in #{promote_repos.join(', ')}")
+  end
+
   promote_accepted_to_release!(promote_repos, label: slug) if promote_repos.any?
 
   # 5. Record membership for every member whose code is on accepted/release/main
@@ -3455,6 +3492,23 @@ end
 # `expedited` is the slug the act is expediting (from `--task`), excluded from
 # the accepted rung's board signal — see Release::CleanCheck for what that
 # exclusion does and does not prove.
+# PURE. The repos whose `accepted` verdict is an ASSERTED failure, out of the probe
+# Ci::BranchGate returns.
+#
+# ONLY :red and :conflicted count. :pending and :none are deliberately NOT failures
+# here — a sweep routinely races a run it can wait for, or credit downstream at the
+# pre-QA gate, and refusing on "no verdict yet" would wedge the release lane for a
+# fact nobody asserted. That is the same rule the review gate-zero uses for base
+# drift: refuse on an asserted problem, never on an absent reassurance.
+#
+# An unrecognised state is treated as NOT-red on purpose. This guard's job is to stop
+# a KNOWN-broken tree; inventing a refusal from a state it cannot classify would make
+# every future CiStatus state a release outage until somebody taught this line about
+# it. The pre-QA gate downstream still fails closed on anything it cannot credit.
+def red_accepted_repos(probe)
+  ((probe || {})["accepted"] || {}).select { |_repo, v| %w[red conflicted].include?(v.to_h["state"].to_s) }
+end
+
 def ladder_clean_verdict(expedited: nil, report_release: false)
   # 1. Board signal, BOTH rungs, in ONE conductor call (read-only, runs even in
   #    --dry-run; a read mutates nothing, and one call keeps the prod board's
