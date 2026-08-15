@@ -59,6 +59,21 @@ module TestHealth
     0
   end
 
+  # Files that have OUTGROWN their ceiling: [{file:, lines:, ceiling:}, ...].
+  #
+  # `frozen` is the contract's map of path => max lines. A missing file is NOT an
+  # offender — a frozen file that someone deletes or renames should not fail the build
+  # on its way out; the stale entry is noise for a reviewer to sweep, not a refusal.
+  def oversized(root, frozen)
+    (frozen || {}).filter_map do |path, ceiling|
+      full = File.join(root.to_s, path)
+      next unless File.exist?(full)
+
+      lines = File.foreach(full).count
+      { file: path, lines: lines, ceiling: ceiling } if lines > ceiling
+    end
+  end
+
   # PURE. Which lines of `source` are CODE — i.e. not inside a heredoc body.
   #
   # Shared by both detectors, because both were bitten by the same thing: this guard's

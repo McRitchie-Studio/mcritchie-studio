@@ -105,8 +105,11 @@ class TestHealthRatchetIntegrationTest < Minitest::Test
     Dir.mktmpdir do |root|
       FileUtils.mkdir_p(File.join(root, "config"))
       FileUtils.mkdir_p(File.join(root, "test", "lib"))
+      # frozen_size is declared (empty) because the guard asserts the contract and the
+      # guard itself never drift — a key the guard reads but the contract omits fails
+      # on arrival, which is exactly what that assertion is for.
       File.write(File.join(root, "config", "test_health.yml"),
-                 "---\nskips: #{skips}\nassertion_free: #{assertion_free}\n")
+                 "---\nskips: #{skips}\nassertion_free: #{assertion_free}\nfrozen_size: {}\n")
       tests.each { |name, body| File.write(File.join(root, "test", "lib", name), body) }
 
       Open3.capture2e({ "TEST_HEALTH_ROOT" => root }, RbConfig.ruby, "-I#{File.join(ROOT, "test")}", GUARD)
