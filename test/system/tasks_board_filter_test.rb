@@ -27,12 +27,25 @@ class TasksBoardFilterSystemTest < ApplicationSystemTestCase
     assert_selector "#card-#{turf.slug}", visible: true
 
     # Hide Rolio → its card (inside studioBoard) reacts to the OUTER hiddenApps.
-    find("[data-test='board-filter-row'] button", text: "rolio", match: :first).click
+    #
+    # ASSERT THE TOGGLE BEFORE ITS CONSEQUENCE. This test failed intermittently on
+    # three PRs across two sessions in one day, always on the card assertion below,
+    # and the message ("expected not to find ... found 1 match") could not say WHY:
+    # a card still present means either the click never toggled the filter, or the
+    # filter toggled and the card did not react. Those need different fixes.
+    # aria-pressed is the chip's own state, so this line fails first — and
+    # differently — when the click is what went wrong.
+    chip = find("[data-test='board-filter-row'] button", text: "rolio", match: :first)
+    chip.click
+    assert_selector "[data-test='board-filter-row'] button[aria-pressed='true']", text: "rolio",
+                    wait: 5
     assert_no_selector "#card-#{rolio.slug}", visible: true
     assert_selector "#card-#{turf.slug}", visible: true
 
     # Toggle Rolio back on → its card returns.
     find("[data-test='board-filter-row'] button", text: "rolio", match: :first).click
+    assert_selector "[data-test='board-filter-row'] button[aria-pressed='false']", text: "rolio",
+                    wait: 5
     assert_selector "#card-#{rolio.slug}", visible: true
   end
 

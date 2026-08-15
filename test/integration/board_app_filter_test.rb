@@ -63,6 +63,28 @@ class BoardAppFilterTest < ActionDispatch::IntegrationTest
     assert_includes rolio_chip.text.strip, "rolio"
     assert_includes rolio_chip.text, "📇"
 
+    # EVERY chip binds aria-pressed to the SAME predicate that greys it out.
+    #
+    # Two reasons, and the accessibility one is the reason it belongs in the markup
+    # rather than in a test helper: this is a toggle button whose only other state
+    # signal is a strikethrough class, so without this a screen reader announces
+    # "rolio, button" identically whether the app is showing or hidden.
+    #
+    # The second is diagnostic. The filter SYSTEM tests click a chip and assert a
+    # card disappeared; that assertion failed intermittently on three PRs across two
+    # sessions in one day and could not say whether the click had landed at all.
+    # aria-pressed gives those tests the chip's own state to assert first. Binding it
+    # to appHidden(...) — not to a duplicate of that logic — is what keeps the two
+    # signals from drifting apart and making the diagnostic lie.
+    chips.each do |chip|
+      app = chip[":class"][/appHidden\('([^']+)'\)/, 1]
+
+      assert_equal "appHidden('#{app}') ? 'true' : 'false'", chip[":aria-pressed"],
+                   "the #{app} chip must bind aria-pressed to the same appHidden(...) " \
+                   "predicate that greys it out, or the accessible state and the visible " \
+                   "state can disagree"
+    end
+
     # Known app slugs map to their ecosystem emoji.
     turf_chip = chips.find { |b| b[":class"].include?("appHidden('turf-monster')") }
     assert_includes turf_chip.text, "🐊"
@@ -72,6 +94,31 @@ class BoardAppFilterTest < ActionDispatch::IntegrationTest
     assert_equal "rolio", card["data-apps"]
     assert_includes card["x-show"].to_s, "appVisible('rolio')"
     assert_includes card["x-show"].to_s, "matchesFilter("
+  end
+
+  # The SAME control on the OTHER board. /tasks renders tasks/_board and /deployments
+  # renders tasks/_deploy_board — two files, one chip, and they have drifted before.
+  # Both filter system tests assert aria-pressed now, so a chip that lost the binding
+  # on one board would turn that board's spec into the unattributable failure this
+  # whole change exists to remove.
+  test "the tasks board chip binds aria-pressed to the same predicate" do
+    Task.create!(
+      title: "rolio tasks chip task", stage: "building",
+      metadata: { "devops" => { "repositories" => ["rolio"] } }
+    )
+
+    get tasks_path
+    assert_response :success
+
+    chips = Nokogiri::HTML(@response.body).css("button").select { |b| b[":class"].to_s.include?("appHidden(") }
+    refute_empty chips, "the tasks board should render app-filter chips"
+
+    chips.each do |chip|
+      app = chip[":class"][/appHidden\('([^']+)'\)/, 1]
+
+      assert_equal "appHidden('#{app}') ? 'true' : 'false'", chip[":aria-pressed"],
+                   "the tasks board's #{app} chip must bind aria-pressed like the deploy board's"
+    end
   end
 
   test "a task with no mapped repo carries an empty data-apps (always visible)" do
