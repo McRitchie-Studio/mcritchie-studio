@@ -25,7 +25,16 @@ require "pathname"
 # whatever file held the list would simply become the new contention point.
 module Dor
   module Checks
-    CHECKS_DIR = Pathname.new(__dir__).join("checks").freeze
+    # DOR_CHECKS_DIR is the test seam, mirroring dor-check's DOR_CHECK_* seams.
+    #
+    # It exists because the obvious way to prove this seam works — drop a file into the
+    # real directory, run the gate, delete it — mutates state SHARED BY THE WHOLE
+    # SUITE. It passed locally and failed in CI, where the suite runs in parallel
+    # processes: one worker's probe file was on disk while another worker ran a test
+    # asserting no such check existed. A test that writes into the repo it is testing
+    # is not isolated, however carefully it cleans up after itself.
+    DEFAULT_CHECKS_DIR = Pathname.new(__dir__).join("checks").freeze
+    CHECKS_DIR = Pathname.new(ENV.fetch("DOR_CHECKS_DIR", DEFAULT_CHECKS_DIR.to_s)).freeze
 
     class << self
       def registry

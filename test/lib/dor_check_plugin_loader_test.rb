@@ -6,8 +6,8 @@
 # WHAT IS ACTUALLY BEING ASSERTED, and why the integration test is the important one.
 # The goal of this seam is not "checks live in smaller files" — that alone would just
 # move the contention to whichever file held the list. The goal is that ADDING A CHECK
-# EDITS NO SHARED FILE. So the test that matters drops a brand-new check file into the
-# real directory, runs the real bin/dor-check as a subprocess, and asserts the verdict
+# EDITS NO SHARED FILE. So the test that matters writes ONE brand-new check file into a
+# checks directory, runs the real bin/dor-check as a subprocess, and asserts the verdict
 # changed — with no require line, no registry entry and no hook added anywhere. If that
 # test ever needs a second file edited to pass, the seam has regressed to a registry.
 #
@@ -121,45 +121,76 @@ class DorCheckPluginLoaderTest < Minitest::Test
   end
 
   # ── [integration] a NEW check file changes the verdict, editing nothing else ──
+  #
+  # HERMETIC BY CONSTRUCTION. An earlier cut of these two dropped the probe into the
+  # REAL bin/lib/dor/checks/ and deleted it in an ensure block. It passed locally and
+  # failed in CI, because the suite runs in parallel PROCESSES: one worker's probe file
+  # was on disk while another worker ran the control below and saw a marker it was
+  # asserting could not exist. Cleanup does not make a test isolated when the state is
+  # shared.
+  #
+  # So both now point the gate at their OWN empty directory through DOR_CHECKS_DIR, and
+  # the first also asserts the repo's real checks directory came out unchanged. NOT a
+  # copy of the real checks: a check requires its dependencies by relative path, so it
+  # is correct that it cannot be relocated — and an empty directory plus one probe is
+  # the sharper instrument for proving the SEAM anyway. The real checks are covered by
+  # their own suites.
 
   def test_a_new_check_file_changes_the_verdict_with_no_registry_edit
     marker = "PLUGIN_SEAM_PROOF_#{Process.pid}"
-    added  = File.join(CHECKS_DIR, "zzz_seam_probe_check.rb")
-    before = repo_file_list
+    repo_before = repo_checks_digest
 
-    File.write(added, <<~RB)
-      class ZzzSeamProbeCheck < Dor::Checks::Base
-        def call(ctx); ctx.error("#{marker}"); end
-      end
-    RB
+    with_checks_dir do |dir|
+      File.write(File.join(dir, "zzz_seam_probe_check.rb"), <<~RB)
+        class ZzzSeamProbeCheck < Dor::Checks::Base
+          def call(ctx); ctx.error("#{marker}"); end
+        end
+      RB
 
-    verdict, code = run_gate
-    assert_match(/#{marker}/, Array(verdict["errors"]).join(" | "),
-                 "a check that is only a NEW FILE must reach the verdict")
-    assert_equal 1, code, "and its error must refuse, exactly like an inline check"
+      verdict, code = run_gate(checks_dir: dir)
+      assert_match(/#{marker}/, Array(verdict["errors"]).join(" | "),
+                   "a check that is only a NEW FILE must reach the verdict")
+      assert_equal 1, code, "and its error must refuse, exactly like an inline check"
 
-    # THE ACTUAL CLAIM: nothing else on disk changed to make that happen.
-    assert_equal [added], (repo_file_list - before),
-                 "adding a check must add ONE file and edit NOTHING else"
-  ensure
-    FileUtils.rm_f(added.to_s)
+      # THE ACTUAL CLAIM: ONE file was added and nothing else was edited to make the
+      # verdict change — no require line, no registry entry, no hook.
+      assert_equal ["zzz_seam_probe_check.rb"], Dir.children(dir).sort,
+                   "adding a check must add ONE file and edit NOTHING else"
+    end
+
+    assert_equal repo_before, repo_checks_digest,
+                 "the test must not have touched the repo's own checks directory"
   end
 
-  # The control for the test above: with the probe file gone, the marker is gone too.
-  # Without this, the assertion above would pass against a gate that always errors.
-  def test_removing_the_check_file_removes_its_verdict
-    verdict, code = run_gate
-    refute_match(/PLUGIN_SEAM_PROOF/, Array(verdict["errors"]).join(" | "))
-    assert_equal 0, code, "a clean task with no plugged failures is ready: #{verdict["errors"].inspect}"
+  # The control: with no probe file present, the marker is absent. Without this, the
+  # assertion above would pass against a gate that always errors.
+  def test_a_directory_without_the_probe_produces_no_such_verdict
+    with_checks_dir do |dir|
+      verdict, code = run_gate(checks_dir: dir)
+      refute_match(/PLUGIN_SEAM_PROOF/, Array(verdict["errors"]).join(" | "))
+      assert_equal 0, code, "a clean task with no plugged failures is ready: #{verdict["errors"].inspect}"
+    end
   end
 
   private
 
-  def repo_file_list
-    Dir.glob(File.join(CHECKS_DIR, "*.rb")).sort
+  # Content-addressed, so an edit is caught as well as an add or a delete.
+  def repo_checks_digest
+    Dir.glob(File.join(CHECKS_DIR, "*.rb")).sort.map { |f| [File.basename(f), File.size(f)] }
   end
 
-  def run_gate
+  # A directory the gate will glob, containing ONLY what the test puts there.
+  #
+  # Deliberately NOT a copy of the real checks: a check file requires its own
+  # dependencies by relative path (require_relative "../checks"), so it is correct
+  # that it cannot be relocated — checks live in their directory. The real checks are
+  # covered by their own suites; what this file proves is the SEAM, and for that an
+  # empty directory plus one probe is the sharper instrument.
+  def with_checks_dir
+    Dir.mktmpdir { |dir| yield dir }
+  end
+
+  def run_gate(checks_dir: nil)
     Dir.mktmpdir do |d|
       path = File.join(d, "task.json")
       File.write(path, JSON.generate(
@@ -173,13 +204,13 @@ class DorCheckPluginLoaderTest < Minitest::Test
           "checks_run" => ["[unit] x", "[integration] y"]
         } }
       ))
-      env = SessionEnv.neutralized(
+      env = SessionEnv.neutralized({
         "DOR_CHECK_DIFF_ROOT" => d, "DOR_CHECK_DIFF_BASE" => "HEAD",
         "DOR_CHECK_CHANGED_FILES" => "app/models/thing.rb",
         "DOR_CHECK_PR_FILES" => "app/models/thing.rb",
         "DOR_CHECK_PR_MIGRATIONS" => "", "DOR_CHECK_SIBLING_PRS" => "[]",
         "DOR_CHECK_CI_STATUS" => "green", "DOR_CHECK_SUITE_EVIDENCE" => "ok"
-      )
+      }.merge(checks_dir ? { "DOR_CHECKS_DIR" => checks_dir } : {}))
       out = IO.popen(env, "#{BIN} --file #{path} --json 2>/dev/null", &:read)
       [JSON.parse(out), $?.exitstatus]
     end
