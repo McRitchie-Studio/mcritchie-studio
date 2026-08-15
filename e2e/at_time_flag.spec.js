@@ -71,12 +71,23 @@ async function readBadge(browser, timezoneId) {
       const flag = el.querySelector("[data-at-flag]");
       const tRect = text.getBoundingClientRect();
       const fRect = flag.getBoundingClientRect();
+      // WHICH SPELLING THIS ZONE SHOULD GET, decided from the STAMP, not from the
+      // rendered text. data-at-epoch is the same input the script reads, and
+      // toDateString() resolves in the browser's timezone — which is the viewer's
+      // zone here, because the context was created with it. So this mirrors the
+      // implementation's own branch (dateLabel: null when the stamp's local date
+      // equals now's) without re-deriving the label, and the assertion below can
+      // demand exactly one spelling instead of accepting either.
+      const stamp = new Date(parseInt(el.dataset.atEpoch || "0", 10) * 1000);
+      const sameLocalDay = stamp.toDateString() === new Date().toDateString();
+
       return {
         zone: el.dataset.atZone,
         clock: text.textContent,
         flag: flag.textContent,
         hidden: flag.hidden,
         title: el.title,
+        sameLocalDay,
         gapPx: Math.round(fRect.left - tRect.right),
         rightOfClock: fRect.left >= tRect.right,
       };
@@ -112,7 +123,33 @@ test("the flag marks the reader's country only outside the US, in every reported
     }
 
     // The clock is localized and prefixed, never the server fallback left in place.
-    expect(seen.clock, `${timezoneId} clock`).toMatch(/^at \d{1,2}:\d{2}[ap]$/);
+    //
+    // TWO LEGAL SPELLINGS, AND WHICH ONE IS NOT OPTIONAL. The seeded release is two
+    // minutes old, so for most of the day every zone renders time-only. But a zone
+    // far enough ahead crosses local midnight while UTC has not: at 15:01 UTC it is
+    // already 00:01 in Asia/Tokyo, so a two-minute-old stamp is YESTERDAY to a Tokyo
+    // reader and the badge correctly says "at Aug 15, 11:58p". A bare time-only
+    // assertion therefore reds for about an hour a day, per far-ahead zone — it
+    // blocked two unrelated PRs on 2026-08-15 before anyone read the message.
+    //
+    // The fix is NOT to accept either spelling, which would stop testing anything,
+    // and NOT to pin the suite's timezone, which would hide the engine-vs-viewer
+    // disagreement this file exists to catch. sameLocalDay is computed above from
+    // the stamp itself, so this demands the ONE spelling that zone should get.
+    //
+    // The optional year covers the New Year's crossing (Dec 31 23:59 -> Jan 1
+    // 00:01), where dateLabel appends it — a once-a-year bomb, and it would be
+    // ironic to leave that one armed here of all places.
+    // NOT named `expected` — that is the loop's flag expectation, destructured from
+    // ZONES above, and a same-named const here shadows it into the temporal dead
+    // zone so the flag comparison at the top of the body throws before it runs.
+    const clockPattern = seen.sameLocalDay
+      ? /^at \d{1,2}:\d{2}[ap]$/
+      : /^at [A-Z][a-z]{2} \d{1,2}(?: \d{4})?, \d{1,2}:\d{2}[ap]$/;
+    expect(
+      seen.clock,
+      `${timezoneId} clock (${seen.sameLocalDay ? "same local day" : "stamp is a previous local day"})`
+    ).toMatch(clockPattern);
     // The relative read this format replaced still lives in the hover title.
     expect(seen.title, `${timezoneId} title`).toMatch(/ago ·/);
   }
