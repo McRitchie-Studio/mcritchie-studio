@@ -247,5 +247,23 @@ module OutboundSeams
     ENV["ATOMIC_CAPTURE_URL"] = UNROUTABLE
     ENV["TASK_BOARD_URL"] = UNROUTABLE
     ENV["GH_AUTH_TOKEN_BIN"] = stub("gh-token")
+
+    # RubyGems' COMPACT INDEX — a fourth outbound surface, added 2026-08-15.
+    #
+    # bin/release.rb waits for a just-published gem to appear on
+    # index.rubygems.org before committing the consumer lock bump (the publish→CI
+    # race: bundler exits 7 installing a version the index does not carry yet).
+    # That wait reaches the network and POLLS, so an un-seamed test does not merely
+    # touch the internet — it BLOCKS. Measured before this line existed: the
+    # release CLI suite went from ~4.5 minutes to over an hour, because every test
+    # driving the non-dry bump with a stub gem name got a 404 and then waited out
+    # the full RELEASE_GEM_POLL_TIMEOUT.
+    #
+    # "yes" rather than an unroutable host on purpose: the seam answers the
+    # QUESTION ("is it indexed?"), so the default must be the non-blocking answer.
+    # Pointing it at an unroutable host would reproduce the hang it exists to
+    # prevent. A test that wants the waiting or refusing path sets it to "no"
+    # explicitly, which is exactly what test/lib/release_cli_gem_await_test.rb does.
+    ENV["RELEASE_GEM_INDEXED"] = "yes"
   end
 end
