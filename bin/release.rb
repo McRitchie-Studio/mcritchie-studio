@@ -3831,6 +3831,72 @@ rescue JSON::ParserError
   []
 end
 
+# --- THE PUBLISH → INSTALL WINDOW ---------------------------------------------
+#
+# `gem push` returns before RubyGems can SERVE the version. prepare publishes the
+# gem, immediately commits the consumer lock bump, and that commit triggers CI —
+# whose `Set up Ruby` step runs `bundle install` against a lock pinning a version
+# the index does not carry yet. Bundler exits 7, a lane reds, and the pre-QA gate
+# aborts the release.
+#
+# THAT COSTS MORE THAN A RE-RUN. The publish is already irreversible by then, so an
+# abort here strands a permanently published version. Measured on 2026-08-15: the
+# race reddened scan_ruby on one attempt and lint on the next — the same bundler
+# exit 7 both times, never a code regression — and 0.48.0 was left stranded.
+#
+# ASKED OF THE COMPACT INDEX, not the versions API, because that is the surface
+# BUNDLER actually reads. The two do not agree during the window: the same minute
+# the JSON API still listed 0.48.0 as newest, the .gem file for 0.49.0 already
+# answered 200. Waiting on the wrong surface would be a wait that proves nothing.
+GEM_INDEX_URL = "https://index.rubygems.org/info/%s"
+GEM_POLL_INTERVAL = Integer(ENV.fetch("RELEASE_GEM_POLL_INTERVAL", "5"))
+GEM_POLL_TIMEOUT  = Integer(ENV.fetch("RELEASE_GEM_POLL_TIMEOUT", "300"))
+
+# Is `version` of `gem_name` visible on the compact index bundler resolves from?
+#
+# RELEASE_GEM_INDEXED is the test seam, mirroring RELEASE_CI_STATUS: "yes"/"no" so
+# the meta-tests never touch the network.
+def gem_version_indexed?(gem_name, version)
+  injected = ENV["RELEASE_GEM_INDEXED"].to_s
+  return injected == "yes" unless injected.empty?
+
+  out, status = Open3.capture2e("/usr/bin/curl", "-sf", format(GEM_INDEX_URL, gem_name))
+  return false unless status.success?
+
+  # Compact-index lines are "<version> <deps>|<checksums>"; the version is field one.
+  out.lines.any? { |line| line.split(" ", 2).first.to_s.strip == version.to_s }
+end
+
+# PURE. Whether to keep waiting, given elapsed time and a timeout.
+def gem_wait_expired?(elapsed, timeout = GEM_POLL_TIMEOUT)
+  elapsed >= timeout
+end
+
+# Block until every just-published gem is installable, or ABORT before anything
+# commits. Refusing here is strictly better than letting CI discover it: nothing
+# has been bumped yet, so a re-run resumes cleanly instead of stranding a version.
+def await_published_gems!(published_gems)
+  return if published_gems.nil? || published_gems.empty?
+
+  step("await: each published gem must be FETCHABLE on the index before the lock bump triggers CI")
+  published_gems.each do |gem_name, version|
+    elapsed = 0
+    until gem_version_indexed?(gem_name, version)
+      if gem_wait_expired?(elapsed)
+        abort!("published #{gem_name} #{version} but it is still not on the RubyGems compact index after " \
+               "#{GEM_POLL_TIMEOUT}s. NOTHING was bumped, recorded or deployed — the consumer locks are " \
+               "untouched, so `bin/release prepare` resumes cleanly once the index catches up. Bumping now " \
+               "would commit a lock CI cannot install (bundler exits 7 in `Set up Ruby`), redding a lane and " \
+               "aborting the release AFTER the publish became irreversible.")
+      end
+
+      sleep(GEM_POLL_INTERVAL)
+      elapsed += GEM_POLL_INTERVAL
+    end
+    say("  ✓ #{gem_name} #{version} is on the index — safe to bump consumer locks")
+  end
+end
+
 # Detached checkout of a repo at a SHA so the gem artifact builds from the
 # QA-frozen commit. Aborts on a failed checkout (never build from the wrong tree).
 def checkout_detached(repo, sha)
@@ -4926,6 +4992,18 @@ end
 # commits nothing; a consumer whose Gemfile never declares the gems is skipped.
 def bump_consumer_locks_for_qa(app_groups, published_gems)
   return if published_gems.empty?
+
+  # HERE, not at the call site. This commit is the thing that triggers CI, so the
+  # wait belongs to the function that makes it — every caller inherits it and there
+  # is no call site left to forget. (bin/release.rb learned that exact lesson one
+  # task earlier: a guard wired in front of ONE of two callers never ran.)
+  #
+  # `unless DRY` IS LOAD-BEARING, not politeness. A dry run PREVIEWS the plan without
+  # any git/gh call so the preview stays hermetic — and this wait reaches the network.
+  # Without the guard a `--dry-run` polls the live RubyGems index for up to
+  # RELEASE_GEM_POLL_TIMEOUT seconds per gem: the meta-tests that drive `--dry-run`
+  # hung for an HOUR on exactly that before this line was added.
+  await_published_gems!(published_gems) unless DRY
 
   gem_names = published_gems.keys
   step("bump consumer locks for #{gem_names.join(', ')} on origin/#{RELEASE_BRANCH} — " \
