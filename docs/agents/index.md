@@ -246,6 +246,12 @@ nothing — `bin/dor-check` runs next and owns the verdict — and it is bounded
 both ends, falling through to the old provisional path when a run never appears or
 never finishes. `SHIP_CI_WAIT=off` disarms it.
 
+**Budget for it: a cold `bin/ship` now runs ~12 minutes**, not ~3. That exceeds
+what some agent harnesses allow one foreground command, so **run it in the
+background**; if it is cut short, re-run it (ship resumes and finishes in seconds
+once CI has settled). A killed ship leaves the task in `building` with its PR
+already open, which the review sweep does not pop.
+
 **What the wrappers do NOT do — read before trusting them:**
 
 - They change **no gate semantics**. Every gate still runs and still owns its

@@ -49,6 +49,12 @@ runs next and owns the verdict exactly as before. It is bounded at both ends —
 run that never appears, or never finishes, falls through to the verdict and the
 old provisional path. Disarm with `SHIP_CI_WAIT=off`.
 
+**Budget for it: a cold `bin/ship` now runs ~12 minutes**, not ~3. That exceeds
+what some agent harnesses allow one foreground command, so **run it in the
+background**; if it is cut short, re-run it (ship resumes and finishes in seconds
+once CI has settled). A killed ship leaves the task in `building` with its PR
+already open, which the review sweep does not pop.
+
 Their limits, stated plainly: they change **no gate semantics**; `bin/ship`
 stops at `submitted` and never merges or deploys; `bin/ship` has no `--steal`
 (take a held task over with `bin/task begin <task-slug> --steal`, then ship);

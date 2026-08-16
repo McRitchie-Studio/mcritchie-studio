@@ -319,6 +319,15 @@ bin/ship <slug> -m "<commit message>"
   it**, exactly as before. It is bounded at both ends — a run that never appears,
   or never finishes, falls through to the verdict and the old provisional path,
   and says which of the two happened. `SHIP_CI_WAIT=off` disarms it.
+- **Budget the wall-clock, or background the call.** With the wait armed, a cold
+  `bin/ship` is a **~12-minute** command (cert ~2 min, then the CI wait — this
+  repo's `ci.yml` runs ~9.5 min at p50), where it used to return in ~3. That is
+  longer than some agent harnesses allow a single foreground command to run, and a
+  harness that kills the call mid-wait leaves the task in `building` with the PR
+  already open — invisible to the review sweep, which only pops `submitted`. So
+  **run it in the background** (or with the longest foreground timeout you have),
+  and if it is cut short, **re-run it** — ship resumes, skips the cert on the
+  unchanged tree, and finishes in seconds once CI has settled.
 - Review's gate-zero still holds the **authoritative** CI verdict — `pr-review`
   bounces a red-CI task back with the failing checks named before any reviewer
   spawns. Waiting at ship makes that bounce rarer; it does not replace it.
