@@ -605,15 +605,12 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     get deployments_path
     assert_response :success
 
+    # Queued for review, nobody on it: dark. The ring belongs to a LIVE review, and
+    # it only reads as one while its neighbours are unlit.
     submitted_card = css_select("#card-#{submitted.slug}").first
-    assert_equal "submitted", submitted_card["data-stage-glow"]
-    assert_includes submitted_card["class"], "studio-border-glow"
-    assert_includes submitted_card["class"], "task-card-stage-glow-submitted"
-    assert_includes submitted_card["style"], "--task-card-glow-color: #6390F0"
-    assert_includes submitted_card["style"], "--task-card-glow-color-a: #6390F0"
-    assert_includes submitted_card["style"], "--task-card-glow-color-b: #6390F0"
-    assert_includes submitted_card["style"], "--task-card-glow-border-color: color-mix(in srgb, var(--task-card-glow-color) 42%, transparent)"
-    assert_includes submitted_card["style"], "0 0 36px color-mix(in srgb, var(--task-card-glow-color) 10%, transparent)"
+    assert_nil submitted_card["data-stage-glow"]
+    assert_not_includes submitted_card["class"], "studio-border-glow"
+    assert_not_includes submitted_card["class"], "studio-team-glow"
 
     reviewed_card = css_select("#dropzone-reviewed #card-#{reviewed.slug}").first
     assert_equal "reviewed", reviewed_card["data-stage-glow"]
@@ -638,6 +635,40 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_includes blocked_card["class"], "task-card-stage-glow-blocked"
     assert_not_includes blocked_card["class"], "studio-border-glow"
     assert_includes blocked_card["style"], "--task-card-glow-color: #ef4444"
+  end
+
+  # THE RING TRACKS THE REVIEWER, THROUGH THE REAL PREDICATE. The component test
+  # passes review_in_progress in as a local; this drives the board end to end —
+  # an open →reviewed intent plus a live claim — so the wiring between
+  # Task#review_in_progress?, the board's preloaded map, and the card is covered.
+  # Two cards in the same column, one claimed and one not, is the assertion that
+  # matters: the ring has to DISTINGUISH them.
+  test "[integration] only the submitted card under a live review wears the ring" do
+    claimed = Task.create!(title: "Claimed review board task", stage: "submitted",
+                           metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } })
+    queued  = Task.create!(title: "Queued review board task", stage: "submitted",
+                           metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } })
+    claimed.task_events.delete_all
+    claimed.record_intent_event(to_stage: "reviewed",
+                                reviewers: [{ "slug" => "carl", "weight" => "primary" }])
+    TaskReviewClaim.acquire(task_slug: claimed.slug, session: "sess-review", nonce: "inst-review",
+                            reviewer: "carl")
+    assert claimed.reload.review_in_progress?, "fixture must have a LIVE review"
+    assert_not queued.reload.review_in_progress?
+
+    get deployments_path
+    assert_response :success
+
+    claimed_card = css_select("#card-#{claimed.slug}").first
+    assert_equal "review", claimed_card["data-stage-glow"]
+    assert_includes claimed_card["class"], "studio-team-glow"
+    assert_includes claimed_card["class"], "task-card-review-glow"
+    assert_includes claimed_card["style"], "--studio-team-glow-color:"
+    assert_includes claimed_card["style"], "--studio-team-glow-color-b:"
+
+    queued_card = css_select("#card-#{queued.slug}").first
+    assert_nil queued_card["data-stage-glow"]
+    assert_not_includes queued_card["class"], "studio-team-glow"
   end
 
   test "deployments shows a Last Release section + Current empty state when nothing is active" do

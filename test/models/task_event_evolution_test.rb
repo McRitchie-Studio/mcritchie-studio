@@ -34,15 +34,15 @@ class TaskEventEvolutionTest < ActiveSupport::TestCase
     task.review!
     task.assemble!
 
-    # Build lane: still the base form.
+    # Build lane AND the submit hand-off: still the base form. Submitting spends
+    # no gate — both gates sit on the accepting side of that seam.
     assert_equal "charmander", snapshot_for(task, "building")["slug"]
-    # The submit gate evolved the mascot BEFORE its event baked.
-    assert_equal "charmeleon", snapshot_for(task, "submitted")["slug"]
+    assert_equal "charmander", snapshot_for(task, "submitted")["slug"]
+    # The review gate evolved the mascot BEFORE its event baked.
+    assert_equal "charmeleon", snapshot_for(task, "reviewed")["slug"]
     assert_equal "https://example.test/pokemon/5-charmeleon-cropped.png",
-                 snapshot_for(task, "submitted")["avatar"]
-    # The review gate evolved the mascot BEFORE its event baked; later deploy
-    # lane snapshots keep that final form.
-    assert_equal "charizard", snapshot_for(task, "reviewed")["slug"]
+                 snapshot_for(task, "reviewed")["avatar"]
+    # …and the assemble gate again, which is where the final form appears.
     assert_equal "charizard", snapshot_for(task, "assembled")["slug"]
     # The live task mascot finished fully evolved.
     assert_equal "charizard", task.reload.devops["mascot"]
@@ -62,9 +62,10 @@ class TaskEventEvolutionTest < ActiveSupport::TestCase
 
     task.build!
     task.submit!
+    task.review!
 
-    submitted = snapshot_for(task, "submitted")
-    assert submitted["shiny"]
-    assert_equal "https://example.test/pokemon/5-charmeleon-shiny-cropped.png", submitted["avatar"]
+    reviewed = snapshot_for(task, "reviewed")
+    assert reviewed["shiny"]
+    assert_equal "https://example.test/pokemon/5-charmeleon-shiny-cropped.png", reviewed["avatar"]
   end
 end

@@ -163,10 +163,10 @@ class ConsolidatedTimelineTest < ActionView::TestCase
     assert_select "[data-test='timeline-sizing']", false
   end
 
-  # A final evolution (Charmeleon → Charizard at the review gate) renders its own
-  # "Evolve" reel right after Submitted → Reviewed, and later deploy cards are left
-  # to their stage owners alone.
-  test "renders an Evolve reel card after Submitted to Reviewed and leaves Steffon alone" do
+  # A final evolution (Charmeleon → Charizard at the ASSEMBLE gate) renders its own
+  # "Evolve" reel right after Reviewed → Assembled, and the deploy cards around it
+  # are left to their stage owners alone.
+  test "renders an Evolve reel card after Reviewed to Assembled and leaves Steffon alone" do
     Agent.create!(name: "Steffon", slug: "steffon")
     [[4, "charmander", ["charmeleon"]], [5, "charmeleon", ["charizard"]], [6, "charizard", []]].each do |dex, slug, evo|
       Pokemon.where(slug: slug).first_or_initialize
@@ -176,11 +176,11 @@ class ConsolidatedTimelineTest < ActionView::TestCase
     task.task_events.delete_all
     snap = ->(slug) { { "mascot" => { "slug" => slug, "name" => slug.capitalize, "avatar" => "https://example.test/#{slug}.png" } } }
     TaskEvent.create!(task_slug: task.slug, from_stage: "building", to_stage: "submitted",
-                      occurred_at: 4.hours.ago, seconds_in_from: 3600, actor: "carl", metadata: snap["charmeleon"])
+                      occurred_at: 4.hours.ago, seconds_in_from: 3600, actor: "carl", metadata: snap["charmander"])
     TaskEvent.create!(task_slug: task.slug, from_stage: "submitted", to_stage: "reviewed",
                       occurred_at: 3.hours.ago, seconds_in_from: 3600,
-                      metadata: snap["charizard"].merge("reviewers" => [{ "slug" => "carl", "weight" => "primary" },
-                                                                         { "slug" => "shannon", "weight" => "light" }]))
+                      metadata: snap["charmeleon"].merge("reviewers" => [{ "slug" => "carl", "weight" => "primary" },
+                                                                        { "slug" => "shannon", "weight" => "light" }]))
     TaskEvent.create!(task_slug: task.slug, from_stage: "reviewed", to_stage: "assembled",
                       occurred_at: 2.hours.ago, seconds_in_from: 1800, actor: "steffon", metadata: snap["charizard"])
     task.update_columns(stage: "assembled")
@@ -193,7 +193,8 @@ class ConsolidatedTimelineTest < ActionView::TestCase
     assert_includes rendered, "Evolve"
     assert_select "[data-test='timeline-evolution-from']", text: /Charmeleon/
     assert_select "[data-test='timeline-evolution-to']", text: /Charizard/
-    assert_select "[data-test='timeline-evolution-trigger']", text: /Carl/
+    # The trigger is whoever completed the gate that evolved it — the assemble.
+    assert_select "[data-test='timeline-evolution-trigger']", text: /Steffon/
 
     # it shares the standard card anatomy: badge on top, then a metric block and a
     # Started → Completed footer (model/tokens/cost blank — duration + stamps only)

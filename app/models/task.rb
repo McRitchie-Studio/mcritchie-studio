@@ -73,11 +73,17 @@ class Task < ApplicationRecord
   # Build is the feature agent's, Deploy is DevOps's.
   BUILD_STAGES  = %w[designed building submitted].freeze
   # The two pipeline gates where a task's Pokémon evolves (one step each): the
-  # feature submit and the successful senior review — Charmander tasks submit as
-  # Charmeleon and review as Charizard. The value is the evolution stage the
+  # successful senior review and the QA-green assemble — Charmander tasks review
+  # as Charmeleon and assemble as Charizard. The value is the evolution stage the
   # gate leaves the mascot at (devops.mascot_stage), which is what makes a
   # blocked→resubmitted loop idempotent. See #evolve_stage_mascot.
-  MASCOT_EVOLUTION_GATES = { "submitted" => 1, "reviewed" => 2 }.freeze
+  #
+  # They used to sit at submitted/reviewed, and moved out one stage each on
+  # 2026-08-15: submitting is the builder handing work over, not the work being
+  # accepted, so the celebration belongs at the gates that ACCEPT it. It also puts
+  # every mascot's final form on the deploy side of the seam, where a one-evolution
+  # line (Pikachu → Raichu) now lands at `assembled` instead of `reviewed`.
+  MASCOT_EVOLUTION_GATES = { "reviewed" => 1, "assembled" => 2 }.freeze
   DEPLOY_STAGES = %w[submitted reviewed assembled shipped].freeze
   NEXT_INTENT_STAGE = { "designed" => "building", "building" => "submitted",
                         "submitted" => "reviewed", "reviewed" => "assembled",
@@ -2067,8 +2073,8 @@ class Task < ApplicationRecord
   # Extra, non-spine event metadata. EVERY staged transition snapshots the mascot
   # that owned THAT event, so a later rework handoff — or a gate evolution
   # (#evolve_stage_mascot) — can repaint the current task mascot without
-  # rewriting history: the submitted card keeps Charmeleon after the task
-  # reviews as Charizard. On the submitted→reviewed transition this
+  # rewriting history: the reviewed card keeps Charmeleon after the task
+  # assembles as Charizard. On the submitted→reviewed transition this
   # also carries the TWO reviewers (+ primary/light) so the avatars UI can render
   # WHO reviewed — the single `actor` stays the primary mover. An explicit
   # Current.task_event_reviewers (set when Avi curated the pair) wins; otherwise
@@ -2659,11 +2665,12 @@ class Task < ApplicationRecord
     prior.present? && prior == devops["mascot"]
   end
 
-  # Evolve the TASK's copy of its mascot at a pipeline gate (submitted/reviewed).
-  # The submit gate is reserved for three-stage families, so Charmander submits as
-  # Charmeleon while Pikachu stays Pikachu. The review gate then evolves whatever
-  # can still evolve, celebrating the successful Submitted → Reviewed turn with
-  # the mascot's final form. The SESSION's mascot is untouched: a session working
+  # Evolve the TASK's copy of its mascot at a pipeline gate (reviewed/assembled).
+  # The review gate is reserved for three-stage families, so Charmander reviews as
+  # Charmeleon while Pikachu stays Pikachu. The assemble gate then evolves whatever
+  # can still evolve, celebrating QA-green with the mascot's final form — which is
+  # what puts a one-evolution line's single step at `assembled` rather than
+  # spending it early. The SESSION's mascot is untouched: a session working
   # two tasks keeps its own stable Pokémon while each task's copy evolves with
   # progress. devops.mascot_stage records the gate consumed, so a blocked→resubmitted
   # loop never double-evolves; it is not a client (DEVOPS_KEYS) field, so board
