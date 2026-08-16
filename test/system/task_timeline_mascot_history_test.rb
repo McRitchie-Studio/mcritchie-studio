@@ -63,13 +63,16 @@ class TaskTimelineMascotHistoryTest < ApplicationSystemTestCase
     visit task_path(task.slug)
 
     assert_selector "[data-test='stage-timeline']"
-    # The build lane belongs to the base form; each gate's card wears the form
-    # that owned it — the submit stays Charmeleon even after Charizard assembles.
-    assert_selector "[data-test='timeline-crew-member'][title^='Charmander']", minimum: 2
-    assert_selector "[data-test='timeline-crew-member'][title^='Charmeleon']", minimum: 1
-    # The final form (Charizard) is lifted out of the deploy crew into its own
-    # "Evolve" reel, so it is no longer a plain timeline crew member.
+    # Both gates are on the accepting side of the submit seam now, so the WHOLE
+    # build lane — designed, building AND the submit hand-off — belongs to the base
+    # form. History stays rewritten-proof: those cards keep Charmander even after
+    # Charizard assembles.
+    assert_selector "[data-test='timeline-crew-member'][title^='Charmander']", minimum: 3
+    # The deploy cards carry their human owners, so the two evolved forms live in
+    # the Evolve reel: Charmeleon (what the review gate made) → Charizard.
+    assert_selector "[data-test='timeline-block'][data-stage='evolve'] [data-test='timeline-evolution-from']", text: /Charmeleon/
     assert_selector "[data-test='timeline-block'][data-stage='evolve'] [data-test='timeline-evolution-to']", text: /Charizard/
     assert_no_selector "[data-test='timeline-crew-member'][title^='Charizard']"
+    assert_no_selector "[data-test='timeline-crew-member'][title^='Charmeleon']"
   end
 end
