@@ -9,6 +9,14 @@ class Release < ApplicationRecord
   ACTIVE_STATES = %w[assembling assembled].freeze
   TERMINAL_STATES = %w[shipped abandoned].freeze
 
+  # The pause between per-member board flips in a BATCH ship — purely an
+  # operator-facing cadence, and the ONE place the number lives on the record side
+  # (the dev-tools Ship toy passes it; `bin/release ship` mirrors it as its own
+  # BOARD_FLIP_CADENCE, because that payload is evaluated by whatever code is
+  # DEPLOYED and must not depend on a constant a live prod may predate).
+  # ship! defaults to 0 so tests and programmatic callers run at full speed.
+  BOARD_FLIP_CADENCE = 0.8
+
   # The per-repo integration branch. It is now PERSISTENT: every repo keeps a
   # single `release` branch that feature PRs merge INTO (membership flips at
   # merge), QA deploys from, and `ship` fast-forwards into `main`. main is always
@@ -648,16 +656,32 @@ class Release < ApplicationRecord
     # this loop stamped a security patch shipped+main while turf's `main` sat
     # untouched at 0d63c7ebbb.
     unshipped = unproven_members(tasks.to_a, stamp: "shipped").map(&:slug)
-    # Each Task#ship! stamps position = target-column max + 100. Ship members in
-    # stable oldest-first order so the newest task in a deployment batch receives
-    # the freshest board rank, regardless of how the association was preloaded.
-    tasks.order(:created_at, :id).to_a.each do |task|
+    # Ship members in the BOARD's own order (Task.ordered — the exact ordering the
+    # Assembled column renders), so a watching operator sees the batch peel off the
+    # TOP of the column downward, one card every `member_pause` seconds. This used
+    # to be `order(:created_at, :id)` — oldest-first, which is the BOTTOM card
+    # first, so the column emptied upward.
+    #
+    # The resting rank follows the departure order rather than fighting it: each
+    # Task#ship! stamps position = target-column max + 100, so the LAST member to
+    # flip takes the freshest rank and lands on top of Shipped. That is also where
+    # the live board puts it (every arrival is a prepend), so the column reads the
+    # same before and after a reload. The batch therefore comes to rest in Shipped
+    # in the reverse of its Assembled order — the trade for a top-down departure,
+    # made deliberately.
+    # The metronome: member 0 flips at 0s, member 1 one beat later, and so on from
+    # the START of the batch (Release::BeatClock) — sleeping a full beat after each
+    # flip would add each write's own time to the gap and drift the batch late.
+    clock = nil
+    tasks.ordered.to_a.each do |task|
       next if task.stage == "shipped"
       next if unshipped.include?(task.slug)
 
-      pause_between_member_shipments(member_pause) if member_pause.positive? && shipped_count.positive?
+      clock&.wait_for_beat(shipped_count) { |seconds| pause_between_member_shipments(seconds) }
       Current.with_task_event_usage(usage_by_slug[task.slug]) { task.ship! }
       shipped_count += 1
+      # The beat starts when the FIRST member flips (see Release::BeatClock).
+      clock ||= Release::BeatClock.new(member_pause)
     end
   end
 

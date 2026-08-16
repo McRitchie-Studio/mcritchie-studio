@@ -73,10 +73,22 @@ test("a deploy animates Last Release in, resets Next Release, and the timer tick
   const windowMs = Number(await lastRelease.getAttribute("data-fresh-window-ms"));
   expect(windowMs).toBeGreaterThanOrEqual(15_000);
 
+  // THE BATCH LANDS IN THE ORDER IT LEFT, WHICH REVERSES IT. Members flip from the
+  // TOP of Assembled down (Release#ship! iterates Task.ordered, so an operator
+  // watches the column peel from the top), and every arrival is a prepend — so the
+  // FIRST card to leave ends up at the BOTTOM of Shipped. Seeded a, b, c ⇒ pre-ship
+  // column c, b, a top-down ⇒ shipped column a, b, c.
+  //
+  // This spec used to assert the opposite (c above b above a): the batch keeping its
+  // shape across the move. That invariant and a top-down departure cannot both hold
+  // while arrivals prepend, and the operator chose the top-down departure
+  // (/tasks/stagger-board-exit-animations). What IS still guaranteed — and asserted
+  // by test/integration/board_task_rank_test.rb — is that the live order and a
+  // reload agree, which is why the same assertion runs again after the reload below.
   await expect(page.locator("#dropzone-shipped #card-release-stack-current-c")).toBeVisible({ timeout: 10_000 });
   let shippedCardIds = await page.locator("#dropzone-shipped .kanban-card").evaluateAll((cards) => cards.map((card) => card.id));
-  expect(shippedCardIds.indexOf("card-release-stack-current-c")).toBeLessThan(shippedCardIds.indexOf("card-release-stack-current-b"));
-  expect(shippedCardIds.indexOf("card-release-stack-current-b")).toBeLessThan(shippedCardIds.indexOf("card-release-stack-current-a"));
+  expect(shippedCardIds.indexOf("card-release-stack-current-a")).toBeLessThan(shippedCardIds.indexOf("card-release-stack-current-b"));
+  expect(shippedCardIds.indexOf("card-release-stack-current-b")).toBeLessThan(shippedCardIds.indexOf("card-release-stack-current-c"));
 
   // Reload while still inside the window: the SERVER now renders the fresh
   // state (glow classes + phase style), and turbo:load re-arms the client
@@ -98,9 +110,11 @@ test("a deploy animates Last Release in, resets Next Release, and the timer tick
   await expect(lastRelease).toHaveClass(/opacity-75/);
   expect(await lastRelease.getAttribute("style")).toBeNull();
 
+  // Same order after a full server render as the live board showed: the rank each
+  // flip stamps and the prepend the board performs must never disagree.
   shippedCardIds = await page.locator("#dropzone-shipped .kanban-card").evaluateAll((cards) => cards.map((card) => card.id));
-  expect(shippedCardIds.indexOf("card-release-stack-current-c")).toBeLessThan(shippedCardIds.indexOf("card-release-stack-current-b"));
-  expect(shippedCardIds.indexOf("card-release-stack-current-b")).toBeLessThan(shippedCardIds.indexOf("card-release-stack-current-a"));
+  expect(shippedCardIds.indexOf("card-release-stack-current-a")).toBeLessThan(shippedCardIds.indexOf("card-release-stack-current-b"));
+  expect(shippedCardIds.indexOf("card-release-stack-current-b")).toBeLessThan(shippedCardIds.indexOf("card-release-stack-current-c"));
 
   // No uncaught error from the broadcast/animation handlers.
   expect(pageErrors, report()).toHaveLength(0);

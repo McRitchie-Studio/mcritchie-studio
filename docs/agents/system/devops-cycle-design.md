@@ -1086,7 +1086,14 @@ owns the board write plus the worktree teardown around it. After archiving it
 reclaims the merged/shipped feature worktrees (`bin/agent-worktree cleanup
 --reclaim --yes`). `--dry-run` previews the plan (archivable + kept) and the
 reclaim list without mutating anything; `--yes` runs it hands-off (skips the
-single confirm). Idempotent — a re-run finds nothing new to archive. Archiving
+single confirm). The sweep runs **card by card, from the top of the Shipped
+column down**, one every `BOARD_FLIP_CADENCE` (0.8s) — each flip is its own
+commit and its own live broadcast, so an open /deployments plays the sweep
+instead of blinking the column away. The same cadence and top-down order carry
+the ship's `assembled → shipped` member flips. Idempotent — a re-run finds
+nothing new to archive (and a mid-batch failure simply leaves the remainder for
+the next run; there is deliberately no transaction around the batch, which would
+hold every broadcast to a single commit). Archiving
 only flips a task's stage, never its `release_slug`, so the board's Last Release
 section keeps linking to its members even after they're later archived,
 preserving the release history. `shipped` is therefore **no longer terminal** —
