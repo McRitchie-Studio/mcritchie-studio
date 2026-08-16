@@ -377,8 +377,14 @@ kept = existing.reject { |prior| prior.match?(FullSuiteGate.evidence_re([FullSui
 recorded = [line]
 summary = "fast-check: all lanes green at #{fingerprint[0, 12]} in #{format('%.1fs', total)} — evidence " \
           "recorded on #{slug}"
-followup = "dor-check accepts it provisionally once the PR is open (no CI wait at submit); review's " \
-           "gate-zero enforces the settled CI green."
+# The GATE still accepts a pending CI provisionally — that is unchanged. But
+# bin/ship now WAITS for CI before calling it (gate-submit-on-green-ci), so the
+# ordinary handoff is credited against a settled green and the provisional path is
+# the fallback, not the norm. Saying "no CI wait at submit" here sent the reader to
+# the opposite expectation of what ship actually does.
+followup = "dor-check accepts it provisionally on a pending CI, but bin/ship waits for CI to settle first " \
+           "(SHIP_CI_WAIT=off disarms), so the usual handoff is credited green; review's " \
+           "gate-zero enforces the settled CI green either way."
 
 missing = CertEmission.missing_after_write(TASK_BIN, slug, recorded + kept)
 if missing.nil?

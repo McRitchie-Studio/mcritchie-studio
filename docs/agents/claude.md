@@ -36,9 +36,24 @@ bin/ship <task-slug> -m "Commit message"
 `bin/task begin` runs steps 1-2 (create → worktree → bind → `move building` →
 preflight) and prints the worktree path, port, and task URL. `bin/ship`, run
 from that worktree, runs steps 4-5 (commit → `bin/fast-check` → push →
-**non-draft** PR into `accepted` led by the task URL → record `pr_url` →
-`bin/dor-check` → `move submitted` → read-back verify). Re-run either after a
-failure and it **resumes**.
+**non-draft** PR into `accepted` led by the task URL → record `pr_url` → **wait
+for CI to settle** → `bin/dor-check` → `move submitted` → read-back verify).
+Re-run either after a failure and it **resumes**.
+
+**`bin/ship` waits for the PR's CI before the DoR verdict**
+(`gate-submit-on-green-ci`), so a task reaches `submitted` carrying a GREEN CI
+rather than a fast cert credited provisionally against a pending one — and a red
+CI lands in the session that still has the worktree warm instead of bouncing into
+a cold one. The wait decides nothing: whatever it settles on, `bin/dor-check`
+runs next and owns the verdict exactly as before. It is bounded at both ends — a
+run that never appears, or never finishes, falls through to the verdict and the
+old provisional path. Disarm with `SHIP_CI_WAIT=off`.
+
+**Budget for it: a cold `bin/ship` now runs ~12 minutes**, not ~3. That exceeds
+what some agent harnesses allow one foreground command, so **run it in the
+background**; if it is cut short, re-run it (ship resumes and finishes in seconds
+once CI has settled). A killed ship leaves the task in `building` with its PR
+already open, which the review sweep does not pop.
 
 Their limits, stated plainly: they change **no gate semantics**; `bin/ship`
 stops at `submitted` and never merges or deploys; `bin/ship` has no `--steal`

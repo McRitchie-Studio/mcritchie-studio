@@ -133,6 +133,13 @@ class ShipTest < Minitest::Test
       "SHIP_GH_BIN" => write_stub(dir, "gh-stub", "GH"),
       "SHIP_ACTIVITY_BIN" => write_stub(dir, "activity-stub", "ACTIVITY"),
       "STUB_LOG" => log,
+      # The CI settle wait (step 6/8) is left ARMED here and handed an injected
+      # GREEN, rather than switched off: every test in this file then drives the
+      # real step, so a wait that stopped being called — or that broke the handoff
+      # — reddens the whole harness instead of only the cases written for it. A
+      # default of `off` would have made the step provably present in three tests
+      # and unexercised in twenty. Individual tests override SHIP_CI_STATE.
+      "SHIP_CI_STATE" => "state:green",
       "TASK_SHOW_JSON" => show_json || task_record,
       "TASK_SHOW_JSON_MOVED" => moved_json || task_record(stage: "submitted", pr_url: PR_URL)
     }.merge(extra_env))
@@ -178,6 +185,76 @@ class ShipTest < Minitest::Test
       assert_match(/not accessible by personal access token/, combined,
                    "and must surface gh's ORIGINAL error, which is the whole promise of that branch")
       assert_match(/minting a GitHub App token/, combined, "the retry was attempted")
+    end
+  end
+
+  # --- the CI settle wait (step 6/8, gate-submit-on-green-ci) -------------------
+  # The RULE is unit-tested in test/lib/ci_wait_test.rb with no clock and no gh.
+  # These prove the rule is ON THE PATH — that bin/ship really calls it, that the
+  # DoR gate still owns the verdict afterwards, and that neither give-up path can
+  # advance a task on its own. A pin nobody exercised is advice.
+
+  def test_the_wait_holds_the_task_in_building_when_ci_is_red
+    with_repo do |dir|
+      # Red CI, and a dor-check that refuses it — which is what the real gate does.
+      # The point of the assertion pair below is the DIVISION OF LABOUR: the wait
+      # settles and reports, and the REFUSAL still comes from dor-check.
+      out, err, status, lines = run_ship(dir, extra_env: {
+        "SHIP_CI_STATE" => "state:red", "FAIL_DOR" => "1"
+      })
+      combined = "#{err}\n#{out}"
+
+      refute status.success?, "a red CI must not reach submitted"
+      assert_match(/6\/8 ci — CI settled on red/, combined, "the wait must report the red it saw")
+      assert_includes markers(lines), "DOR #{SLUG}", "dor-check still runs — the wait decides nothing"
+      assert_match(/bin\/dor-check refused/, combined, "and the REFUSAL is dor-check's, not the wait's")
+      # The task is left where it was. Ship never reached its move step.
+      refute_includes markers(lines), "TASK move", "a red CI must leave the task in building"
+    end
+  end
+
+  def test_a_green_ci_advances_through_the_gate_to_submitted
+    with_repo do |dir|
+      out, err, status, lines = run_ship(dir, extra_env: { "SHIP_CI_STATE" => "state:green" })
+      combined = "#{err}\n#{out}"
+
+      assert status.success?, "expected green ship, got:\n#{err}\n#{out}"
+      assert_match(/6\/8 ci — CI settled on green/, combined)
+      # Order is the contract: the wait must finish BEFORE the verdict, or
+      # dor-check grades a pending CI and credits the cert provisionally — which
+      # is the exact behaviour this task exists to replace.
+      ci_line = combined.index("6/8 ci — CI settled")
+      dor_line = combined.index("7/8 dor —")
+      assert ci_line && dor_line && ci_line < dor_line, "the wait must complete before the DoR verdict"
+      assert_includes markers(lines), "TASK move"
+    end
+  end
+
+  def test_a_ci_that_never_finishes_falls_through_to_the_gate_rather_than_wedging
+    with_repo do |dir|
+      # A permanently-pending CI with a 1s budget. The handoff must not hang, and
+      # must not advance on its own — it hands the pending state to dor-check,
+      # which is precisely the pre-existing behaviour this degrades to.
+      out, err, status, lines = run_ship(dir, extra_env: {
+        "SHIP_CI_STATE" => "state:pending", "SHIP_CI_WAIT_TIMEOUT" => "1", "FAIL_DOR" => "1"
+      })
+      combined = "#{err}\n#{out}"
+
+      refute status.success?
+      assert_match(/still pending/, combined, "the give-up path must name what it gave up on")
+      assert_includes markers(lines), "DOR #{SLUG}", "and must still consult the gate"
+    end
+  end
+
+  def test_the_wait_can_be_disarmed_and_says_so
+    with_repo do |dir|
+      out, err, status, lines = run_ship(dir, extra_env: { "SHIP_CI_WAIT" => "off" })
+      combined = "#{err}\n#{out}"
+
+      assert status.success?
+      assert_match(/6\/8 ci — wait disabled/, combined)
+      refute_match(/CI settled on/, combined, "a disarmed wait must not report a verdict it never read")
+      assert_includes markers(lines), "DOR #{SLUG}", "the gate runs either way"
     end
   end
 

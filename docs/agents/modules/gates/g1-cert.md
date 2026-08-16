@@ -252,14 +252,20 @@ their `dor-check` / `tiers` / `full-suite-evidence` / `ci` SOPs, the
 submit-before-CI-settles credit, and the `--gate-role` split — now live in
 their own gate doc: [`dor.md`](dor.md).
 
-## The CI seam — submit before CI settles
+## The CI seam — the cert is CI-independent either way
 
-The CI **wait** belongs to the review handoff, not the builder's wall-clock — but
-that is the **DoR gate's** concern (the cert itself is CI-independent). The
-builder certs (this gate), opens the PR, runs the dor-check verdict (the DoR
-gate), and moves the task `submitted` **immediately** without waiting for CI.
-Full CI-seam mechanics — provisional fast-cert credit, the review-side gate-zero,
-and the bounce round-trip — are in [`dor.md`](dor.md).
+**This gate is unaffected by the CI wait**, and that is worth saying plainly: the
+cert runs before the PR exists, so it has never had a CI state to wait on. Whether
+CI is green, red, or unborn changes nothing about `bin/fast-check` or
+`bin/full-suite-check`.
+
+What sits downstream of it did change (`gate-submit-on-green-ci`, 2026-08-16):
+`bin/ship` now holds between opening the PR and running the DoR verdict, until the
+PR's CI settles — so the builder certs (this gate), opens the PR, **waits**, runs
+the dor-check verdict (the DoR gate), and moves the task `submitted` on a green CI
+rather than a provisional one. Full CI-seam mechanics — the provisional fast-cert
+credit that remains the fallback, the review-side gate-zero, and the bounce
+round-trip — are in [`dor.md`](dor.md).
 
 ## UI surfaces
 
