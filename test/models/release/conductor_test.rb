@@ -1274,6 +1274,51 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_equal "shipped", members.first.reload.stage
   end
 
+  test "[unit] archive_completed! archives from the TOP of the Shipped column down" do
+    bottom = loose_shipped_task("bottom")
+    top    = loose_shipped_task("top")
+    # A board column renders position DESC — `top` is the card the operator sees
+    # first, so it must be the first one to go.
+    bottom.update_column(:position, 100)
+    top.update_column(:position, 300)
+
+    result = Release::Conductor.archive_completed!
+
+    assert_operator result[:archived].index(top.slug), :<, result[:archived].index(bottom.slug),
+                    "the sweep must run top-to-bottom, not oldest-first (which is bottom-to-top)"
+    flips = TaskEvent.where(to_stage: "archived", task_slug: [top.slug, bottom.slug]).order(:id).pluck(:task_slug)
+    assert_equal [top.slug, bottom.slug], flips, "and the board sees them leave in that order"
+  end
+
+  test "[unit] archive_completed! pauses between tasks only when given a cadence" do
+    loose_shipped_task("a")
+    loose_shipped_task("b")
+
+    paced = []
+    result = Release::Conductor.stub(:pause_between_archives, ->(seconds) { paced << seconds }) do
+      Release::Conductor.archive_completed!(pause: 0.5)
+    end
+    assert_operator result[:count], :>=, 2
+    assert_equal result[:count] - 1, paced.size,
+                 "one wait BETWEEN each pair — never before the first card"
+    # Each wait is the remainder until the nth BEAT measured from the batch's start
+    # (Release::BeatClock) — the archive's own write time is spent inside the beat
+    # rather than added to it, so the batch cannot drift later with every card. The
+    # stub never actually sleeps, so what it records is the deadline itself: 1 beat,
+    # 2 beats, 3 beats… and the useful assertion is that they step by exactly one.
+    assert_in_delta 0.5, paced.first, 0.1, "the second card is due one beat in"
+    paced.each_cons(2) do |earlier, later|
+      assert_in_delta 0.5, later - earlier, 0.1, "consecutive cards are one beat apart"
+    end
+
+    loose_shipped_task("c")
+    unpaced = []
+    Release::Conductor.stub(:pause_between_archives, ->(seconds) { unpaced << seconds }) do
+      Release::Conductor.archive_completed!
+    end
+    assert_empty unpaced, "the default is full speed — the cadence is the CLI's to ask for"
+  end
+
   test "archive_completed! is idempotent — a second run archives nothing new" do
     shipped_release_with("member")
     loose_shipped_task

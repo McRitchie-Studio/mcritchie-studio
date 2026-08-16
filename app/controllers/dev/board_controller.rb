@@ -72,7 +72,10 @@ module Dev
     def ship_release
       release = Release.current || open_fixture_release
       release.update!(deployed_sha: SecureRandom.hex(20))
-      release.ship!(by: "dev")
+      # Same cadence the real deploy plays (Release::BOARD_FLIP_CADENCE), so the toy
+      # demonstrates what an operator actually sees: members leaving the top of
+      # Assembled one at a time, not a column emptying in one frame.
+      release.ship!(by: "dev", member_pause: Release::BOARD_FLIP_CADENCE)
       head :no_content
     end
 
@@ -114,7 +117,7 @@ module Dev
         # ship! stamps confirmed_at (kept if already stamped) + shipped_at itself;
         # we set the deploy sha it records.
         release.update!(deployed_sha: SecureRandom.hex(20))
-        release.ship!(by: "dev")
+        release.ship!(by: "dev", member_pause: Release::BOARD_FLIP_CADENCE)
       else
         release.stamp_stage!(stage)
       end

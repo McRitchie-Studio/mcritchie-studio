@@ -243,6 +243,17 @@ ACCEPTED_BRANCH = "accepted"
 # back on a live ladder; the bound keeps the read cheap on a deep repo.
 ACCEPTED_TREE_SCAN = 200
 
+# The pause between per-task board flips in a BATCH (ship's member flips, archive's
+# task-by-task sweep). Purely an operator-facing cadence: each flip is its own commit
+# and its own /deployments broadcast, so this is the interval at which a watching
+# operator sees the cards move, one after another, down the column. Half a second
+# reads as a flow; the batch used to land as a single frame's worth of vanishing cards.
+#
+# It MIRRORS Release::BOARD_FLIP_CADENCE rather than reading it: the value is
+# interpolated into a payload that runs on the DEPLOYED code (heroku run), and a live
+# prod that predates the constant would NameError on the ship it is running.
+BOARD_FLIP_CADENCE = 0.8
+
 # The producer/consumer repo registry (config/release_repos.yml) — tells the CLI
 # which members are gems (published producer-first, no app branch) vs apps. Same
 # single source of truth Release::Repos reads on the record side.
@@ -6206,7 +6217,7 @@ def ship
   shipped = conductor(
     "r = Release.find_by!(slug: #{rel_slug.inspect}); " \
     "Release::Conductor.record_shipped_shas(release: r, shas: #{ship_evidence.inspect}); " \
-    "Release::Conductor.ship!(release: r, deployed_sha: #{deployed_sha.inspect}, by: #{by.inspect}, production_url: #{PROD_URL.inspect}, usage_by_slug: #{ship_usage.inspect}, member_pause: 1); " \
+    "Release::Conductor.ship!(release: r, deployed_sha: #{deployed_sha.inspect}, by: #{by.inspect}, production_url: #{PROD_URL.inspect}, usage_by_slug: #{ship_usage.inspect}, member_pause: #{BOARD_FLIP_CADENCE}); " \
     "Release::DurationCache.refresh_recent!(limit: 3); " \
     "notes = Release::Conductor.post_release_notes(release: r); " \
     "puts({slug: r.slug, state: r.reload.state, sha: r.deployed_sha.to_s[0,7], notes_delivered: notes[:delivered]}.to_json)"
@@ -6426,7 +6437,7 @@ def finalize(slug = nil)
       conductor(
         "r = Release.find_by!(slug: #{rel_slug.inspect}); " \
         "Release::Conductor.record_shipped_shas(release: r, shas: #{ship_evidence.inspect}); " \
-        "Release::Conductor.ship!(release: r, deployed_sha: #{deployed_sha.inspect}, by: #{by.inspect}, production_url: #{PROD_URL.inspect}, usage_by_slug: {}, member_pause: 1); " \
+        "Release::Conductor.ship!(release: r, deployed_sha: #{deployed_sha.inspect}, by: #{by.inspect}, production_url: #{PROD_URL.inspect}, usage_by_slug: {}, member_pause: #{BOARD_FLIP_CADENCE}); " \
         "Release::DurationCache.refresh_recent!(limit: 3); " \
         "puts({slug: r.slug, state: r.reload.state, sha: r.deployed_sha.to_s[0,7]}.to_json)"
       )
@@ -6649,8 +6660,10 @@ def archive
 
   # 7. Archive on the board (shipped → archived). A board WRITE.
   step("record: Release::Conductor.archive_completed!")
+  # BOARD_FLIP_CADENCE: archive one task every beat, from the top of the
+  # Shipped column down, so /deployments plays the sweep instead of blinking it.
   result = conductor(
-    "r = Release::Conductor.archive_completed!; " \
+    "r = Release::Conductor.archive_completed!(pause: #{BOARD_FLIP_CADENCE}); " \
     "puts({ archived: r[:archived], kept: r[:kept], count: r[:count] }.to_json)"
   )
   archived_count = result["count"] || (result["archived"] || []).size
