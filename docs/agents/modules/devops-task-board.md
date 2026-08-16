@@ -507,6 +507,37 @@ a draft, `gh pr edit --base accepted` for a mis-based one — and never
 duplicates it. The long-form commands remain the canonical path for anything
 the wrappers don't cover (multi-repo tasks, bespoke PR bodies).
 
+**The CI settle wait (step 6/8, `gate-submit-on-green-ci`).** With the PR open and
+`pr_url` recorded, ship HOLDS until the PR's CI reaches a real state, then runs
+the DoR verdict — so `submitted` normally carries a **green** CI instead of a fast
+cert credited provisionally against a pending one, and a red CI arrives while the
+builder's worktree is still warm rather than bouncing into a cold session.
+
+Three properties keep it from becoming a gate of its own, and all three are the
+point:
+
+- **It decides nothing.** The wait classifies into exactly two buckets — keep
+  waiting, or stop waiting — and hands the state to `bin/dor-check`, which owns
+  the verdict exactly as before. A red CI stops the handoff because *dor-check
+  refuses it*, recording its usual failed `dor` attempt with the failing checks
+  named. Duplicating that allow-list in the wrapper is how the two copies drift.
+- **It is bounded at BOTH ends, and names which end it hit.** `:pending` gets the
+  full budget (`SHIP_CI_WAIT_TIMEOUT`, default 900s). But `gh pr checks` reports
+  `none` in the window between the push and GitHub creating the run, and
+  `unverified` while mergeability is still computing — treat either as settled and
+  the wait exits within a second of every push, silently doing nothing while the
+  handoff still succeeds. So those get a **shorter** appearance budget
+  (`SHIP_CI_WAIT_APPEARANCE`, default 120s), after which a run is treated as never
+  coming. "CI said no" and "we stopped asking" print as different sentences.
+- **An unknown state settles.** `CiStatus`'s state list may grow; a state the wait
+  has never heard of degrades to the behaviour that predates it, never to an
+  unbounded wait on an unrecognised symbol.
+
+`SHIP_CI_WAIT=off` disarms it. Note the wait lives in the **wrapper**: a hand-run
+`bin/task move <slug> submitted` still does not wait, and `bin/dor-check`'s own
+semantics are untouched. Owned by `bin/lib/ci_wait.rb`; the rule is proven in
+`test/lib/ci_wait_test.rb` and its presence on the path in `test/lib/ship_test.rb`.
+
 With the PR open, ship asks two questions of the sibling PRs in **one**
 `gh pr list` — same-file overlap, which **advises**, and duplicate migration
 installs, which **block**. The second is not a stricter flavour of the first: the

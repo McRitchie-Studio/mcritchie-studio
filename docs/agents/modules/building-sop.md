@@ -295,8 +295,8 @@ so an uncommitted change makes it stale. Fix any red before moving on.
 ## Step 6 — Ship to the seam (stops at `submitted`)
 
 One command commits, certifies, pushes, opens the **non-draft** PR into
-**`accepted`** led by the task URL, records `pr_url`, runs `bin/dor-check`, and
-moves the task to `submitted` — **without waiting for CI**:
+**`accepted`** led by the task URL, records `pr_url`, **waits for the PR's CI to
+settle**, runs `bin/dor-check`, and moves the task to `submitted`:
 
 ```bash
 bin/ship <slug> -m "<commit message>"
@@ -311,10 +311,19 @@ bin/ship <slug> -m "<commit message>"
   already carries under a different filename. It names both files and the other
   PR. Resolve it (the owning task keeps the copy, the other drops it) and re-run;
   ship resumes.
-- Move to `submitted` **without waiting for CI**: pending CI is a loud suggestion
-  (the fast cert is credited provisionally), red CI blocks, and the authoritative
-  CI verdict is review's gate-zero — `pr-review` bounces a red-CI task back with
-  the failing checks named before any reviewer spawns.
+- **Ship waits for CI before the verdict** (`gate-submit-on-green-ci`), so
+  `submitted` normally carries a GREEN CI rather than a fast cert credited
+  provisionally against a pending one — and a red CI reaches you while the
+  worktree is still warm, instead of bouncing back into a cold session. The wait
+  decides nothing: a red CI stops the handoff because **`bin/dor-check` refuses
+  it**, exactly as before. It is bounded at both ends — a run that never appears,
+  or never finishes, falls through to the verdict and the old provisional path,
+  and says which of the two happened. `SHIP_CI_WAIT=off` disarms it.
+- Review's gate-zero still holds the **authoritative** CI verdict — `pr-review`
+  bounces a red-CI task back with the failing checks named before any reviewer
+  spawns. Waiting at ship makes that bounce rarer; it does not replace it.
+- Running the long form by hand (`bin/task move <slug> submitted`) still does
+  **not** wait — the wait lives in `bin/ship`, not in the gate.
 - Re-run `bin/ship` after a failure and it **resumes** (each step already durably
   recorded is skipped). It has no `--steal`; take a held task with `bin/task begin
   <slug> --steal`, then ship.

@@ -291,10 +291,27 @@ This opens+closes the `dor_review` gate and keeps the **strict** CI semantics
 (below). It never touches `g1_cert` or the G2 review lanes — that is exactly
 what `--gate-role review` exists for.
 
-## The CI seam — submit before CI settles
+## The CI seam — the gate never waits; the WRAPPER now does
 
-The CI **wait** belongs to the review handoff, not the builder's wall-clock
-(`ci-gate-review-handoff`, 2026-07-09):
+**Read this section as the gate's contract, which has not changed.** `bin/dor-check`
+still never waits for CI: it grades whatever state it finds, and the provisional
+credit below is still exactly how it treats a pending one. What changed
+(`gate-submit-on-green-ci`, 2026-08-16) is **when `bin/ship` calls it** — the
+wrapper now holds at step 6/8 until the PR's CI settles, so in the ordinary case
+this gate is handed a GREEN CI and the provisional path is no longer the happy
+path. It remains live, and is still what a hand-run `bin/task move` and every
+CI-less or timed-out ship falls through to.
+
+That reversed a dated decision, which is worth stating rather than leaving to be
+rediscovered. The original reasoning (`ci-gate-review-handoff`, 2026-07-09) was
+that the CI **wait** belongs to the review handoff, not the builder's wall-clock —
+sound while the builder was ALSO paying for a local FULL suite (~31 min against
+CI's ~9 for the identical command). Dropping that local suite inverts the
+arithmetic: the builder nets ~20 min back, `submitted` gains a green-CI invariant,
+and a red CI is caught by the session that still holds the worktree instead of
+bouncing into a cold one.
+
+The gate's own semantics, unchanged:
 
 - **Builder side (`dor`, the default role):** a still-running CI is a **loud
   suggestion**, never a block. A fresh fast cert is credited **provisionally**

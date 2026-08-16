@@ -231,9 +231,20 @@ bin/ship <task-slug> -m "Commit message"
 `move building` → `session-preflight`) and prints the worktree path, port, and
 task URL. `bin/ship`, run from that worktree, runs steps 5-6 (commit →
 `bin/fast-check` → push → **non-draft** PR into `accepted` led by the task URL →
-record `pr_url` → `bin/dor-check` → `move submitted` → read-back verify).
+record `pr_url` → **wait for CI to settle** → `bin/dor-check` → `move submitted`
+→ read-back verify).
 Re-running either after a failure **resumes** — each skips the steps already
 durably recorded. Mechanics: `docs/agents/modules/devops-task-board.md`.
+
+**`bin/ship` waits for CI before the verdict** (`gate-submit-on-green-ci`). The
+builder no longer pays for a local FULL suite — measured at ~31 min against CI's
+~9 for the identical command — so the wall-clock that justified submitting before
+CI settled is gone. The trade: ~20 min back to the builder, `submitted` carrying a
+GREEN CI instead of a provisional one, and a red CI caught by the session that
+still has the worktree warm rather than bounced into a cold one. The wait decides
+nothing — `bin/dor-check` runs next and owns the verdict — and it is bounded at
+both ends, falling through to the old provisional path when a run never appears or
+never finishes. `SHIP_CI_WAIT=off` disarms it.
 
 **What the wrappers do NOT do — read before trusting them:**
 
@@ -444,8 +455,9 @@ with `bin/task update <task> --local-url http://localhost:<port>/<path>
 chat, and wait for approval or requested changes. Update docs if behavior
 changes. Then hand off with bin/ship <task> -m "<commit message>" from the
 worktree — it commits, certifies, pushes, opens the non-draft PR into accepted
-led by the task URL, runs bin/dor-check, and moves the task to submitted
-without waiting for CI (review's gate-zero owns the CI verdict). Fall back to
+led by the task URL, waits for the PR's CI to settle, runs bin/dor-check, and
+moves the task to submitted (review's gate-zero still holds the authoritative
+CI verdict). Fall back to
 the long-form commands if the task spans repos or needs a bespoke PR body.
 Do not merge or deploy unless I explicitly assigned that lane.
 ```
