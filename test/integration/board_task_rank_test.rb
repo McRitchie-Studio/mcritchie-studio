@@ -113,24 +113,43 @@ class BoardTaskRankTest < ActionDispatch::IntegrationTest
                     "a card that just entered shipped should render above older shipped work"
   end
 
-  test "[integration] release ship ranks newly shipped members newest first on reload" do
+  # A SHIPPED BATCH LANDS IN THE ORDER IT LEFT, WHICH REVERSES IT — and that is the
+  # deliberate consequence of the two rules either side of the move:
+  #
+  #   · Release#ship! flips members from the TOP of the Assembled column down
+  #     (Task.ordered), because that is what an operator watches — the column peels
+  #     from the top, one card per beat, rather than emptying upward.
+  #   · Every stage move stamps position = column max + 100 and the live board
+  #     prepends the arrival, so the LAST card to flip takes the top of Shipped.
+  #
+  # First to leave, therefore last in the column. This test used to assert the
+  # opposite (the batch keeping its shape), which cannot hold at the same time as a
+  # top-down departure while arrivals prepend; the operator chose the departure
+  # (/tasks/stagger-board-exit-animations). The invariant that DOES survive is the
+  # one asserted below and re-asserted live in e2e/release_ship.spec.js: the rank the
+  # flips stamp and the order the live board shows are the same order, so a reload
+  # never reshuffles the column under the operator.
+  test "[integration] a shipped batch rests in the reverse of its assembled order" do
     release = Release.open!
     older_member = Task.create!(title: "older release member card", stage: "reviewed", created_at: 20.minutes.ago)
     newer_member = Task.create!(title: "newer release member card", stage: "reviewed", created_at: 5.minutes.ago)
     release.add(older_member)
     release.add(newer_member)
     release.assemble!
+    # Ranked as the board renders them: newer on top, so it is the first to flip.
+    older_member.update_column(:position, 100)
+    newer_member.update_column(:position, 300)
 
-    release.association(:tasks).target = [newer_member.reload, older_member.reload]
-    release.association(:tasks).loaded!
     release.ship!(by: "avi")
 
     get deployments_path
     assert_response :success
 
     order = card_order_in("dropzone-shipped")
-    assert_operator order.index("card-#{newer_member.slug}"), :<, order.index("card-#{older_member.slug}"),
-                    "a deployment batch should not render newer shipped members below older members"
+    assert_operator order.index("card-#{older_member.slug}"), :<, order.index("card-#{newer_member.slug}"),
+                    "the member that flipped LAST holds the top of Shipped — first out, last in the column"
+    assert_operator older_member.reload.position, :>, newer_member.reload.position,
+                    "and the persisted rank says the same thing, so a reload can't reorder the column"
   end
 
   private
