@@ -895,17 +895,48 @@ class Release
     # (archivable_completed_slugs), leaving ONLY that release's members as the
     # board's "Last Release". NEVER touches active (designed…assembled) or blocked
     # tasks — they're outside the `shipped` scope by construction. Idempotent: a
-    # re-run finds nothing new to archive. Wrapped in a transaction so a mid-batch
-    # failure rolls the whole archive back. Returns
+    # re-run finds nothing new to archive. Returns
     # { archived: [slugs], kept: [slugs], count: N } (kept = the last-release
-    # member slugs left as shipped).
-    def archive_completed!
-      slugs = archivable_completed_slugs
-      kept  = Release.last_shipped&.tasks&.pluck(:slug) || []
-      Task.transaction do
-        Task.where(slug: slugs).find_each(&:archive!)
+    # member slugs left as shipped; archived is in the order they were archived).
+    #
+    # TWO THINGS HERE ARE ABOUT THE LIVE BOARD, not the records, and both used to
+    # be the other way round:
+    #
+    #   ORDER — `Task.ordered` is the board column's own ordering, so the batch
+    #   archives from the TOP of the Shipped column down. `find_each` ordered by
+    #   primary key, i.e. oldest-first, which is the BOTTOM card first: the column
+    #   visibly unzipped upward.
+    #
+    #   NO WRAPPING TRANSACTION — each archive! commits on its own so its
+    #   after_commit broadcast reaches /deployments immediately, `pause` seconds
+    #   after the one before it. A transaction around the batch held every
+    #   broadcast until the single commit, so the whole column vanished in one
+    #   frame no matter what cadence a caller asked for. The cost is that a
+    #   mid-batch failure no longer rolls back the tasks already archived — which
+    #   is why this is idempotent: re-run it and it finishes the remainder.
+    #
+    # `pause` defaults to 0 (tests and any programmatic caller run at full speed);
+    # `bin/release archive` passes the operator-facing cadence.
+    def archive_completed!(pause: 0)
+      kept     = Release.last_shipped&.tasks&.pluck(:slug) || []
+      pause    = pause.to_f
+      archived = []
+      clock    = nil
+      Task.where(slug: archivable_completed_slugs).ordered.each do |task|
+        clock&.wait_for_beat(archived.size) { |seconds| pause_between_archives(seconds) }
+        task.archive!
+        archived << task.slug
+        # The beat starts when the FIRST card leaves — the query and this first write
+        # come before it and must not eat into the gap the operator sees.
+        clock ||= Release::BeatClock.new(pause)
       end
-      { archived: slugs, kept: kept, count: slugs.size }
+      { archived: archived, kept: kept, count: archived.size }
+    end
+
+    # Seam: the archive cadence, isolated so a unit test can record the pauses
+    # without sleeping (mirrors Release#pause_between_member_shipments).
+    def pause_between_archives(seconds)
+      sleep(seconds)
     end
 
     # --- conductor mascot ------------------------------------------------------

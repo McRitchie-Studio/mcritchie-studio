@@ -404,7 +404,12 @@ document.addEventListener('turbo:before-cache', function() {
 });
 </script>
 
-<section x-data="kanbanBoard(<%= live_updates.to_json %>)" data-test="kanban-board" class="min-h-screen">
+<%# data-beat-ms publishes the cadence a batch flip plays (Release::BOARD_FLIP_CADENCE),
+    so the live animations, the e2e specs and anyone reading the DOM take the beat from
+    ONE place instead of restating it. A spec that restated it went stale the day the
+    beat changed, and its failure looked like a broken animation rather than a stale test. %>
+<section x-data="kanbanBoard(<%= live_updates.to_json %>)" data-test="kanban-board"
+         data-beat-ms="<%= (Release::BOARD_FLIP_CADENCE * 1000).round %>" class="min-h-screen">
   <!-- Header — Dashboard/Stages as small links above the title; the title says
        where you are, and the Tasks/Deployments toggle (right) switches boards. -->
   <div class="mb-6">

@@ -530,6 +530,53 @@ deploy_crew_task.task_events.delete_all # curated, time-spaced build → review 
   )
 end
 
+# Overlapping-exit fixtures: two SHIPPED cards the exit-fx e2e archives back to back.
+# Two, because the bug only exists between them — the first card's exit used to
+# un-position the shared column while the second was still animating inside it.
+%w[live-exit-hold-a live-exit-hold-b].each_with_index do |slug, index|
+  Task.create!(
+    title: "Live exit hold demo #{index + 1}",
+    slug: slug,
+    description: "Fixture for overlapping archive exits (the column stays positioned until the last card leaves).",
+    stage: "shipped",
+    priority: 1,
+    agent_slug: "shannon",
+    metadata: { "devops" => { "kind" => "feature", "repositories" => ["mcritchie-studio"] } }
+  )
+end
+
+# Beat fixtures: three SHIPPED cards the exit-fx e2e archives one beat apart, to prove
+# each card is GONE before the next starts leaving (an exit longer than the beat
+# overlaps its neighbour).
+%w[live-exit-beat-a live-exit-beat-b live-exit-beat-c].each_with_index do |slug, index|
+  Task.create!(
+    title: "Live exit beat demo #{index + 1}",
+    slug: slug,
+    description: "Fixture for the one-card-per-beat sweep (each exit finishes inside its own beat).",
+    stage: "shipped",
+    priority: 1,
+    agent_slug: "shannon",
+    metadata: { "devops" => { "kind" => "feature", "repositories" => ["mcritchie-studio"] } }
+  )
+end
+
+# Move-exit FX fixtures: two ASSEMBLED cards the deployments_move_slide e2e ships to
+# `shipped` — one to watch the outgoing card slide off to the right and fade (the
+# ghost clone LiveBoardFx animates in the real node's place), one to prove that same
+# move under prefers-reduced-motion just moves the card with no ghost at all. One task
+# each, because a spec that moved a card another spec is watching would race it.
+%w[live-ship-slide-demo live-ship-slide-calm-demo].each_with_index do |slug, index|
+  Task.create!(
+    title: "Live ship slide demo #{index + 1}",
+    slug: slug,
+    description: "Fixture for the assembled→shipped move exit (card slides off right and fades).",
+    stage: "assembled",
+    priority: 1,
+    agent_slug: "shannon",
+    metadata: { "devops" => { "kind" => "feature", "repositories" => ["mcritchie-studio"] } }
+  )
+end
+
 # /deployments release cards: each release wears the conductor SESSION's Pokémon
 # mascot + a timing line. Drives the release_mascot e2e — an ACTIVE Next Release
 # (in progress) and a SHIPPED Last Release (took ~18m), each with a stamped mascot.

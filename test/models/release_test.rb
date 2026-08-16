@@ -211,24 +211,44 @@ class ReleaseTest < ActiveSupport::TestCase
       rel.ship!(member_pause: 1)
     end
 
-    assert_equal [1.0], pauses
+    # One wait, and it is the remainder until the second member's BEAT — a whisker
+    # under the full second, because the first flip's own write time is spent inside
+    # the beat instead of being added to it (Release::BeatClock).
+    assert_equal 1, pauses.size
+    assert_in_delta 1.0, pauses.first, 0.15
+    assert_operator pauses.first, :<=, 1.0, "a wait may never EXCEED the beat"
     assert_equal %w[shipped shipped], [older.reload.stage, newer.reload.stage]
   end
 
-  test "[unit] ship! ranks newer members above older members" do
-    rel = Release.open!
-    older = Task.create!(title: "older rank release member", stage: "reviewed", created_at: 20.minutes.ago)
-    newer = Task.create!(title: "newer rank release member", stage: "reviewed", created_at: 5.minutes.ago)
-    rel.add(older)
-    rel.add(newer)
-    rel.assemble!
+  test "[unit] the board cadence is the ONE number both lanes flip on" do
+    # The operator-facing beat. bin/release mirrors this value as its own constant
+    # (its payload runs on whatever code is deployed), so a change here is a change
+    # THERE too — the pair is asserted by test/lib/board_cadence_mirror_test.rb.
+    assert_equal 0.8, Release::BOARD_FLIP_CADENCE
+  end
 
-    rel.association(:tasks).target = [newer.reload, older.reload]
-    rel.association(:tasks).loaded!
+  test "[unit] ship! flips members in board order — the top of the column first" do
+    rel = Release.open!
+    bottom = Task.create!(title: "bottom rank release member", stage: "reviewed")
+    top    = Task.create!(title: "top rank release member", stage: "reviewed")
+    rel.add(bottom)
+    rel.add(top)
+    rel.assemble!
+    # A board column renders position DESC, so `top` is the card the operator sees
+    # first. Stamped directly (update_column) so the ranks can't drift with the
+    # order the fixtures happened to save them in.
+    bottom.update_column(:position, 100)
+    top.update_column(:position, 300)
+
     rel.ship!
 
-    assert_operator newer.reload.position, :>, older.reload.position,
-                    "newer release members should receive the fresher board rank"
+    flips = TaskEvent.where(to_stage: "shipped", task_slug: [top.slug, bottom.slug]).order(:id).pluck(:task_slug)
+    assert_equal [top.slug, bottom.slug], flips,
+                 "the batch must depart from the TOP of the Assembled column down"
+    # Each flip stamps position = column max + 100, so the LAST one to move lands on
+    # top of Shipped — the same place the live board's prepend puts it.
+    assert_operator bottom.reload.position, :>, top.reload.position,
+                    "the last member to flip takes the freshest rank in the new column"
   end
 
   test "abandon! returns members to reviewed and clears the release link" do
