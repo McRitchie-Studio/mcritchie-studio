@@ -11,6 +11,40 @@ class TaskCardTest < ActionView::TestCase
     @agents = Agent.all.to_a
   end
 
+  # The app stylesheet with comments stripped — prose that names a selector is not
+  # a definition of it, and the brace walk below would trip over a commented brace.
+  def app_css
+    @app_css ||= Rails.root.join("app/assets/tailwind/application.css").read
+                          .gsub(%r{/\*.*?\*/}m, "")
+  end
+
+  # Every cascade LAYER open at any occurrence of `needle`. A @media or @supports
+  # wrapper is fine and expected — layers are the only thing that decides this
+  # contest, so those are what get reported.
+  def enclosing_layers(css, needle)
+    offsets = css.enum_for(:scan, needle).map { Regexp.last_match.begin(0) }
+    flunk("expected #{needle} in application.css") if offsets.empty?
+
+    offsets.flat_map { |index| open_block_headers(css, index) }
+           .select { |header| header.start_with?("@layer") }
+           .uniq
+  end
+
+  # The headers of every block still open at `index`, outermost first.
+  def open_block_headers(css, index)
+    stack = []
+    header_from = 0
+    css[0...index].each_char.with_index do |char, position|
+      case char
+      when "{" then stack.push(css[header_from...position].strip.lines.last.to_s.strip)
+      when "}" then stack.pop
+      else next
+      end
+      header_from = position + 1
+    end
+    stack
+  end
+
   test "renders the card with the slug/stage data hooks and the title" do
     task = Task.create!(title: "Card render task", stage: "submitted")
 
@@ -42,7 +76,11 @@ class TaskCardTest < ActionView::TestCase
     assert_includes rendered, "dark:hover:text-red-300"
   end
 
-  test "submitted card uses the mascot color as a subtle single-color glow" do
+  # SITTING IN THE QUEUE IS NOT A SIGNAL. A submitted card nobody has picked up
+  # wears no glow at all — no rainbow, no ring, no tinted border. The ring below
+  # means a reviewer is ON it, and that only reads as a signal if the cards around
+  # it are dark.
+  test "a submitted card with nobody on it wears no glow at all" do
     task = Task.create!(title: "Submitted glow task", stage: "submitted")
     mascot = Pokemon.create!(dex: 158, name: "Totodile", slug: "totodile", types: %w[water],
                              primary_type: "water", generation: 2)
@@ -53,18 +91,45 @@ class TaskCardTest < ActionView::TestCase
                      mascot: mascot, type_enumerals: type_enumerals }
 
     card = css_select("#card-#{task.slug}").first
-    assert_equal "submitted", card["data-stage-glow"]
-    assert_equal "#6390F0", card["data-glow"]
-    assert_includes card["class"], "studio-border-glow"
-    assert_includes card["class"], "task-card-stage-glow-submitted"
-    assert_includes card["style"], "--task-card-glow-color: #6390F0"
-    assert_includes card["style"], "--task-card-glow-color-a: #6390F0"
-    assert_includes card["style"], "--task-card-glow-color-b: #6390F0"
-    assert_includes card["style"], "--task-card-glow-border-color: color-mix(in srgb, var(--task-card-glow-color) 42%, transparent)"
-    assert_includes card["style"], "0 0 36px color-mix(in srgb, var(--task-card-glow-color) 10%, transparent)"
+    assert_nil card["data-stage-glow"]
+    assert_equal "#6390F0", card["data-glow"], "the mascot tint still feeds the live-board flash"
+    assert_not_includes card["class"], "studio-border-glow"
+    assert_not_includes card["class"], "studio-team-glow"
+    assert_not_includes card["class"], "task-card-stage-glow"
+    assert_not_includes card["style"].to_s, "--task-card-glow-color"
   end
 
-  test "submitted sparse mascot recovers its seed type color" do
+  # THE RING IS THE REVIEWER'S. Two opposed wedges travel the card's edge, so a
+  # dual-type mascot puts one type on each wedge — the card is tinted by WHO is on
+  # it, not by which column it sits in.
+  test "a card under live review rings in its mascot's two type colors" do
+    task = Task.create!(title: "Under review card", stage: "submitted")
+    mascot = Pokemon.create!(dex: 6, name: "Charizard", slug: "charizard", types: %w[fire flying],
+                             primary_type: "flying", generation: 1)
+    type_enumerals = {
+      "fire" => TypeColor.new(key: "fire", color: "#F08030", rank: 300, emoji: "🔥"),
+      "flying" => TypeColor.new(key: "flying", color: "#6890F0", rank: 200, emoji: "💨")
+    }
+
+    render partial: "tasks/task_card",
+           locals: { task: task.reload, agents: @agents, crew_board: :deploy,
+                     mascot: mascot, type_enumerals: type_enumerals, review_in_progress: true }
+
+    card = css_select("#card-#{task.slug}").first
+    assert_equal "review", card["data-stage-glow"]
+    assert_includes card["class"], "studio-team-glow", "the ring is the engine primitive"
+    assert_includes card["class"], "task-card-review-glow", "sized down to board scale"
+    assert_not_includes card["class"], "studio-border-glow", "the rainbow border is NOT the review signal"
+    assert_includes card["style"], "--studio-team-glow-color: #F08030"
+    assert_includes card["style"], "--studio-team-glow-color-b: #6890F0"
+    # The ring says it on its own — no second halo behind it.
+    assert_not_includes card["style"].to_s, "box-shadow"
+    assert_not_includes card["style"].to_s, "border-color"
+  end
+
+  # A sparse row — no persisted types, as legacy and demo rows have — still rings
+  # in the right colors: type_keys recovers them from the committed seed data.
+  test "a sparse reviewer recovers its ring colors from the seed data" do
     task = Task.create!(title: "Submitted Lugia task", stage: "submitted")
     mascot = Pokemon.create!(dex: 249, name: "Lugia", slug: "lugia", types: [], generation: 2)
     type_enumerals = {
@@ -74,13 +139,12 @@ class TaskCardTest < ActionView::TestCase
 
     render partial: "tasks/task_card",
            locals: { task: task.reload, agents: @agents, crew_board: :deploy,
-                     mascot: mascot, type_enumerals: type_enumerals }
+                     mascot: mascot, type_enumerals: type_enumerals, review_in_progress: true }
 
     card = css_select("#card-#{task.slug}").first
-    assert_equal "submitted", card["data-stage-glow"]
-    assert_includes card["style"], "--task-card-glow-color: #F95587"
-    assert_includes card["style"], "--task-card-glow-color-a: #F95587"
-    assert_includes card["style"], "--task-card-glow-color-b: #F95587"
+    assert_equal "review", card["data-stage-glow"]
+    assert_includes card["style"], "--studio-team-glow-color: #F95587"
+    assert_includes card["style"], "--studio-team-glow-color-b: #A98FF3"
   end
 
   test "[component] waiting approval card pulses and links the whole bar to the mint-on-click magic-link endpoint" do
@@ -132,8 +196,8 @@ class TaskCardTest < ActionView::TestCase
     render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :build }
 
     card = css_select("#card-#{task.slug}").first
-    assert_equal "submitted", card["data-stage-glow"]
-    assert_includes card["class"], "task-card-stage-glow-submitted"
+    assert_nil card["data-stage-glow"],
+      "approval left with the submit, and a queued submitted card glows for nothing"
     assert_not_includes card["class"], "task-card-stage-glow-approval"
     assert_select "[data-test='operator-approval-waiting']", count: 0
   end
@@ -279,44 +343,54 @@ class TaskCardTest < ActionView::TestCase
     assert_includes card["style"], "0 0 82px color-mix(in srgb, var(--task-card-glow-color-a) 22%, transparent)"
     assert_includes card["style"], "0 0 118px color-mix(in srgb, var(--task-card-glow-color-b) 12%, transparent)"
 
-    css = Rails.root.join("app/assets/tailwind/application.css").read
-    assert_includes css, ".studio-border-glow {"
-    assert_includes css, ".studio-border-glow::before"
-    assert_includes css, ".studio-border-glow::after"
-    assert_includes css, ".task-card-stage-glow-submitted"
-    assert_includes css, "--studio-border-glow-offset: 0%"
-    assert_includes css, "--studio-border-glow-duration: 20s"
-    assert_includes css, "--studio-border-glow-opacity: 0.62"
-    assert_includes css, "--studio-border-glow-gradient: linear-gradient(var(--studio-border-glow-angle, 45deg), var(--task-card-glow-color, #22c55e), var(--task-card-glow-color, #22c55e))"
-    assert_includes css, "--studio-border-glow-animation: none"
+    css = app_css
     assert_includes css, ".task-card-stage-glow-reviewed"
-    assert_includes css, "--studio-border-glow-opacity: 0.78"
     assert_includes css, "color-mix(in srgb, var(--task-card-glow-color, #22d3ee) 64%, #ffffff)"
     assert_includes css, ".task-card-stage-glow-assembled"
-    assert_includes css, "--studio-border-glow-opacity: 0.9"
     assert_includes css, "var(--task-card-glow-color-a, #fb0094)"
     assert_includes css, "var(--task-card-glow-color-b, #00c4ff)"
-    assert_includes css, "--studio-border-glow-animation: studioBorderGlowSteam var(--studio-border-glow-duration) linear infinite"
-    assert_includes css, "background-position: var(--studio-border-glow-offset, 0%) 0"
-    assert_includes css, "background-position: calc(var(--studio-border-glow-offset, 0%) + 400%) 0"
-    assert_includes css, "animation: var(--studio-border-glow-animation)"
-    assert_includes css, "background-size: 400%"
-    assert_includes css, "filter: blur(var(--studio-border-glow-halo-blur))"
-    assert_includes css, "-webkit-mask-composite: xor"
-    assert_includes css, "mask-composite: exclude"
-    assert_includes css, "padding: 2px"
-    assert_includes css, "inset: -10px"
-    assert_includes css, "padding: 10px"
-    assert_includes css, "#fb0094"
-    assert_includes css, "#00c4ff"
-    assert_includes css, "#34d399"
-    assert_includes css, "@keyframes studioBorderGlowSteam"
-    assert_includes css, "animation: none"
-    assert_not_includes css, ".task-card-stage-glow-submitted::before"
+    # The presets only ever set knobs — the primitive itself is the engine's.
     assert_not_includes css, ".task-card-stage-glow-reviewed::before"
     assert_not_includes css, ".task-card-stage-glow-assembled::before"
     assert_not_includes css, ".release-confirming-glow::before"
     assert_not_includes css, ".task-card-stage-glow-blocked::before"
+  end
+
+  # THE PRESETS MUST OUTRANK THE PRIMITIVE THEY RETUNE, AND A LAYER CANNOT.
+  #
+  # studio-engine ships .studio-border-glow through a plain @import, so its rules
+  # are UNLAYERED — and unlayered CSS beats every cascade layer no matter the
+  # specificity or the source order. While these presets sat in `@layer
+  # components` every one of them LOST: measured on the live board, a submitted
+  # card computed the engine's default RAINBOW gradient and its 20s sweep, not the
+  # single green it declares. Four stage colors had never painted.
+  #
+  # A substring check cannot see that — the declarations are present either way,
+  # they just never win — so this walks the brace nesting and asserts the rule
+  # opens at top level.
+  test "[component] the stage glow presets sit outside every cascade layer" do
+    css = app_css
+
+    %w[.task-card-stage-glow .task-card-stage-glow-reviewed .task-card-stage-glow-assembled
+       .task-card-stage-glow-approval .task-card-review-glow .release-fresh-glow].each do |selector|
+      assert_empty enclosing_layers(css, "#{selector} {"),
+        "#{selector} must be UNLAYERED — inside a layer it loses to the engine's own " \
+        "unlayered defaults and the card wears the rainbow instead"
+    end
+  end
+
+  # The engine has owned .studio-border-glow since 0.13. MS kept a verbatim copy
+  # anyway, in a layer, where it lost to the engine's — two definitions of one
+  # primitive, one of them dead, both free to drift.
+  test "[component] the app does not redefine the engine's border-glow primitive" do
+    css = app_css
+
+    assert_not_includes css, ".studio-border-glow {",
+      "the primitive belongs to studio-engine; keep only knob presets here"
+    assert_not_includes css, "@keyframes studioBorderGlowSteam",
+      "the keyframes ship with the primitive"
+    assert_includes css, ".task-card-stage-glow {",
+      "the presets that retune it stay"
   end
 
   test "stage glow cards receive different deterministic motion offsets" do
@@ -546,13 +620,9 @@ class TaskCardTest < ActionView::TestCase
 
     card = css_select("#card-#{task.slug}").first
     assert_includes card["class"], "bg-surface"
-    assert_equal "submitted", card["data-stage-glow"]
-    assert_includes card["class"], "studio-border-glow"
-    assert_includes card["class"], "task-card-stage-glow-submitted"
-    assert_includes card["style"], "--task-card-glow-color: #22c55e"
-    assert_includes card["style"], "--task-card-glow-color-a: #22c55e"
-    assert_includes card["style"], "--task-card-glow-color-b: #22c55e"
-    assert_includes card["style"], "--task-card-glow-border-color: color-mix(in srgb, var(--task-card-glow-color) 42%, transparent)"
+    assert_nil card["data-stage-glow"]
+    assert_not_includes card["class"], "studio-border-glow"
+    assert_not_includes card["class"], "studio-team-glow"
     assert_select "[data-test='cleared-feedback']", count: 0
   end
 

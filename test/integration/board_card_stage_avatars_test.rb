@@ -357,9 +357,10 @@ class BoardCardStageAvatarsTest < ActionDispatch::IntegrationTest
     end
   end
 
-  # A final evolution (Charmeleon → Charizard at the review gate) shows the evolved
-  # form stacked onto the FIRST (build) crew — the mascot's lineage lives together
-  # on the card it was born on — and NOT beside Steffon on the assembled cluster.
+  # A final evolution (Charmeleon → Charizard at the ASSEMBLE gate) shows the
+  # evolved form stacked onto the FIRST (build) crew — the mascot's lineage lives
+  # together on the card it was born on — and NOT beside Steffon on the assembled
+  # cluster.
   test "a final-evolution card stacks the evolved form on the first build crew" do
     [[4, "charmander", ["charmeleon"]], [5, "charmeleon", ["charizard"]], [6, "charizard", []]].each do |dex, slug, evo|
       Pokemon.where(slug: slug).first_or_initialize
@@ -372,11 +373,11 @@ class BoardCardStageAvatarsTest < ActionDispatch::IntegrationTest
     TaskEvent.create!(task_slug: task.slug, from_stage: "designed", to_stage: "building",
                       occurred_at: 6.hours.ago, seconds_in_from: 3600, actor: "carl", metadata: snap["charmander", "Charmander"])
     TaskEvent.create!(task_slug: task.slug, from_stage: "building", to_stage: "submitted",
-                      occurred_at: 5.hours.ago, seconds_in_from: 3600, actor: "carl", metadata: snap["charmeleon", "Charmeleon"])
+                      occurred_at: 5.hours.ago, seconds_in_from: 3600, actor: "carl", metadata: snap["charmander", "Charmander"])
     TaskEvent.create!(task_slug: task.slug, from_stage: "submitted", to_stage: "reviewed",
                       occurred_at: 4.hours.ago, seconds_in_from: 3600,
-                      metadata: snap["charizard", "Charizard"].merge("reviewers" => [{ "slug" => "shannon", "weight" => "primary" },
-                                                                                     { "slug" => "carl", "weight" => "light" }]))
+                      metadata: snap["charmeleon", "Charmeleon"].merge("reviewers" => [{ "slug" => "shannon", "weight" => "primary" },
+                                                                                       { "slug" => "carl", "weight" => "light" }]))
     TaskEvent.create!(task_slug: task.slug, from_stage: "reviewed", to_stage: "assembled",
                       occurred_at: 2.hours.ago, seconds_in_from: 1800, actor: "steffon", metadata: snap["charizard", "Charizard"])
 

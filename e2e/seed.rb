@@ -912,7 +912,7 @@ SessionMascot.create!(session_id: "sess-evolution-demo", mascot_slug: "totodile"
 evolution_task = Task.create!(
   title: "Mascot evolution demo",
   slug: "mascot-evolution-demo",
-  description: "Fixture for the mascot-evolution timeline e2e — Totodile submits as Croconaw and reviews as Feraligatr.",
+  description: "Fixture for the mascot-evolution timeline e2e — Totodile submits as itself, reviews as Croconaw, assembles as Feraligatr.",
   stage: "designed",
   priority: 1,
   metadata: { "devops" => { "kind" => "feature", "repositories" => ["mcritchie-studio"],

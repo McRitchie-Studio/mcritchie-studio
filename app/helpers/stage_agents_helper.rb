@@ -294,7 +294,7 @@ module StageAgentsHelper
     lanes.map { |lane| by_lane[lane] || CrewCluster.new(lane: lane, stacked: [], seconds: nil, live_since: nil) }
   end
 
-  # Board mirror of the timeline's Evolve card: when the reviewed gate produces a
+  # Board mirror of the timeline's Evolve card: when the assemble gate produces a
   # final form, stack that evolved form onto the FIRST (build) crew — the mascot's
   # whole lineage lives together on the card it was born on. The deploy clusters
   # already carry no mascot (it never rides them), so there is nothing to strip. A
@@ -305,7 +305,7 @@ module StageAgentsHelper
     build = by_lane[:build]
     return unless build
 
-    build.stacked += [StageAgent.new(stage: "reviewed", agent: evo.to_face)]
+    build.stacked += [StageAgent.new(stage: "assembled", agent: evo.to_face)]
   end
 
   # /tasks build board: the three build steps split out, each wearing the task's
@@ -456,13 +456,19 @@ module StageAgentsHelper
   end
 
   # A task's final evolution — the NEW final form its Pokémon reaches at the
-  # submitted→reviewed gate. Present only when a form actually appeared there and
+  # reviewed→assembled gate. Present only when a form actually appeared there and
   # that form cannot evolve further. History-stable and presentation-only: it reads
-  # the mascot SNAPSHOTS baked on TaskEvents — the reviewed transition's form vs the
-  # form that entered the gate — never the live task or a schema field. This is the
-  # single source both surfaces consume: the timeline lifts the reveal into its own
-  # "Evolve" card, and the board card stacks the final form onto the FIRST build
+  # the mascot SNAPSHOTS baked on TaskEvents — the assembled transition's form vs
+  # the form that entered the gate — never the live task or a schema field. This is
+  # the single source both surfaces consume: the timeline lifts the reveal into its
+  # own "Evolve" card, and the board card stacks the final form onto the FIRST build
   # crew.
+  #
+  # It reads the ASSEMBLE gate because that is where Task::MASCOT_EVOLUTION_GATES
+  # puts the final form (both gates moved out one stage on 2026-08-15). Pointing it
+  # at the review gate after that move made the reveal vanish from every surface:
+  # a three-stage line reaches only its MIDDLE form there, which is not final, so
+  # this returned nil and no reel was ever built.
   EvolutionReel = Struct.new(:from, :to, :trigger, keyword_init: true)
   FinalEvolution = Struct.new(:event, :from, :to, keyword_init: true) do
     def from_face = snapshot_face(from)
@@ -483,12 +489,12 @@ module StageAgentsHelper
     transitions = Array(events || task.task_events)
                   .select { |e| e.transition? && e.to_stage }
                   .sort_by { |e| [e.occurred_at, e.id.to_i] }
-    idx = transitions.rindex { |e| e.to_stage == "reviewed" }
+    idx = transitions.rindex { |e| e.to_stage == "assembled" }
     return nil unless idx&.positive?
 
     evt = transitions[idx]
-    # The form that ENTERED the reviewed gate: the snapshot on the event that landed
-    # the task in the stage the review came from (normally →submitted), falling back
+    # The form that ENTERED the assemble gate: the snapshot on the event that landed
+    # the task in the stage the assemble came from (normally →reviewed), falling back
     # to the immediately-preceding transition when that landing event is missing.
     entered = transitions[0...idx].reverse.find { |e| e.to_stage == evt.from_stage } ||
               transitions[idx - 1]
@@ -582,9 +588,9 @@ module StageAgentsHelper
     blocks
   end
 
-  # Lift the reviewed gate's final evolution into its own "Evolve" reel right after
-  # the Submitted → Reviewed card — the single timeline home of the evolved form.
-  # Later deploy cards are already Steffon/Avi alone (the mascot never rides them),
+  # Lift the assemble gate's final evolution into its own "Evolve" reel right after
+  # the Reviewed → Assembled card — the single timeline home of the evolved form.
+  # The deploy cards around it are Steffon/Avi alone (the mascot never rides them),
   # so there is nothing to strip. A no-op unless a final evolution fired. Mutates
   # `blocks` in place.
   def insert_evolution_card!(blocks, evo)
@@ -593,16 +599,16 @@ module StageAgentsHelper
     idx = blocks.index { |b| b.event&.id == evo.event.id }
     return unless idx
 
-    reviewed = blocks[idx]
-    trigger = reviewed.agents.find { |a| !a.agent.is_a?(MascotAgent) }
+    gate_block = blocks[idx]
+    trigger = gate_block.agents.find { |a| !a.agent.is_a?(MascotAgent) }
 
     blocks.insert(idx + 1, TimelineBlock.new(
                              event: evo.event, from_label: "Evolve", to_label: "Evolve",
                              from_stage: nil, to_stage: nil, occurred_at: evo.event.occurred_at,
-                             # Carry the review event's timing so the shared metric +
+                             # Carry the assemble event's timing so the shared metric +
                              # footer sections read a Duration and a Started → Completed
                              # stamp, like every other card. Model / tokens / cost stay
-                             # blank — those belong to the Submitted → Reviewed card.
+                             # blank — those belong to the Reviewed → Assembled card.
                              seconds: evo.event.seconds_in_from, agents: [], model: nil, tokens: nil, cost: nil,
                              source: nil, live_since: nil, in_progress: false, backfilled: false,
                              evolution: EvolutionReel.new(from: evo.from_face, to: evo.to_face, trigger: trigger)

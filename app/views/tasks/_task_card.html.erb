@@ -35,25 +35,43 @@
    when :never then waiting_for_approval ? "bg-amber-50 border-amber-300 hover:border-amber-400 hover:bg-amber-100/70 dark:bg-amber-950/35 dark:border-amber-500/70 dark:hover:border-amber-400 dark:hover:bg-amber-900/35" : "bg-surface border-subtle hover:border-primary/40 hover:bg-surface-alt"
    else "bg-surface border-subtle hover:border-primary/40 hover:bg-surface-alt"
    end %>
+<%# WHICH GLOW THIS CARD WEARS, if any. `submitted` is deliberately absent: a task
+    merely waiting in the review queue wears nothing, and the ring appears when a
+    reviewer actually picks it up (review_in_progress? — an open →reviewed intent
+    with a LIVE claim). So the ring reads "someone is on this right now", not "this
+    is in the lane", and it leaves with the reviewer, TTL and all. %>
 <% card_glow_kind = if block_state == :blocked
      "blocked"
    elsif waiting_for_approval
      "approval"
-   elsif %w[submitted reviewed assembled].include?(task.stage)
+   elsif review_in_progress
+     "review"
+   elsif %w[reviewed assembled].include?(task.stage)
      task.stage
    end %>
-<% card_glow_classes = if card_glow_kind
+<%# The review ring is the ENGINE's .studio-team-glow — two opposed wedges
+    travelling the card's edge — not the rainbow border the stage glows use. It
+    rides the card element itself (0.55+ punches the host's box out of the wedge
+    layers), which is the only shape available here: Turbo targets #card-<slug> for
+    both replace and remove, so a wrapper host would be orphaned every time a card
+    leaves the board. %>
+<% card_glow_classes = if card_glow_kind == "review"
+     "studio-team-glow task-card-review-glow"
+   elsif card_glow_kind
      ["task-card-stage-glow", "task-card-stage-glow-#{card_glow_kind}", ("studio-border-glow" unless card_glow_kind == "blocked")].compact.join(" ")
    end %>
 <% card_glow_color = case card_glow_kind
    when "blocked" then "#ef4444"
    when "approval" then mascot_signature_color || "#f59e0b"
-   when "submitted" then mascot_signature_color || "#22c55e"
+   when "review" then mascot_signature_color || "#22c55e"
    when "reviewed" then mascot_signature_color || "#22d3ee"
    when "assembled" then mascot_signature_color || "#a78bfa"
    else mascot_signature_color || "#f59e0b"
    end %>
-<% card_glow_type_colors = if card_glow_kind == "assembled" && mascot && type_enumerals
+<%# A Pokémon has one or two types, and the ring has two wedges — so a dual-type
+    reviewer's card carries BOTH type colors, one per wedge, and a single-type one
+    repeats its colour. `assembled` reads the same pair for its two-tone rainbow. %>
+<% card_glow_type_colors = if %w[assembled review].include?(card_glow_kind) && mascot && type_enumerals
      mascot.type_keys.filter_map { |type| type_enumerals[type]&.color.presence }
             .select { |color| color.to_s.match?(/\A#[0-9a-f]{6}\z/i) }
             .uniq
@@ -62,7 +80,10 @@
    end %>
 <% card_glow_color_a = card_glow_type_colors.first || card_glow_color %>
 <% card_glow_color_b = card_glow_type_colors.second || card_glow_color_a %>
-<% card_glow_seed = if card_glow_kind && card_glow_kind != "blocked"
+<%# Seeded desync for the rainbow border only — the review ring is a different
+    primitive with no offset knob, and each card's animation starts when its
+    element does, so those never march in lockstep anyway. %>
+<% card_glow_seed = if card_glow_kind && !%w[blocked review].include?(card_glow_kind)
      task.slug.to_s.each_byte.reduce(0) { |memo, byte| ((memo * 33) + byte) % 10_000 }
    end %>
 <% card_glow_motion_style = if card_glow_seed
@@ -72,7 +93,6 @@
    end %>
 <% card_glow_border_mix = case card_glow_kind
    when "approval" then 58
-   when "submitted" then 42
    when "reviewed" then 52
    when "assembled" then 58
    else 46
@@ -90,16 +110,18 @@
      "0 0 0 1px color-mix(in srgb, var(--task-card-glow-color) 38%, transparent), " \
        "0 0 28px color-mix(in srgb, var(--task-card-glow-color) 30%, transparent), " \
        "0 0 64px color-mix(in srgb, var(--task-card-glow-color) 16%, transparent)"
-   elsif card_glow_kind == "submitted"
-     "0 0 0 1px color-mix(in srgb, var(--task-card-glow-color) 28%, transparent), " \
-       "0 0 16px color-mix(in srgb, var(--task-card-glow-color) 20%, transparent), " \
-       "0 0 36px color-mix(in srgb, var(--task-card-glow-color) 10%, transparent)"
    else
      "0 0 0 1px color-mix(in srgb, var(--task-card-glow-color) 34%, transparent), " \
        "0 0 22px color-mix(in srgb, var(--task-card-glow-color) 30%, transparent), " \
        "0 0 48px color-mix(in srgb, var(--task-card-glow-color) 14%, transparent)"
    end %>
-<% card_glow_style = if card_glow_kind
+<%# The review ring says everything on its own: it feeds the two wedge colors and
+    stops there, with no border tint and no box-shadow halo behind it. A card being
+    reviewed should read as ringed, not as ringed AND lit. %>
+<% card_glow_style = if card_glow_kind == "review"
+     "--studio-team-glow-color: #{card_glow_color_a}; " \
+       "--studio-team-glow-color-b: #{card_glow_color_b};"
+   elsif card_glow_kind
      "#{card_glow_motion_style}" \
        "--task-card-glow-color: #{card_glow_color}; " \
        "--task-card-glow-color-a: #{card_glow_color_a}; " \

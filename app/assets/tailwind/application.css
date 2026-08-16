@@ -38,213 +38,152 @@
    import above (studio-engine 0.13+ ships them as @utility, lifted verbatim
    from these MS definitions). Only MS-unique utilities remain in this file. */
 
-@layer components {
-  .studio-border-glow {
-    --studio-border-glow-opacity: 0.82;
-    --studio-border-glow-halo-opacity: 0.28;
-    --studio-border-glow-halo-blur: 18px;
-    --studio-border-glow-angle: 45deg;
-    --studio-border-glow-offset: 0%;
-    --studio-border-glow-duration: 20s;
-    --studio-border-glow-animation: studioBorderGlowSteam var(--studio-border-glow-duration) linear infinite;
-    --studio-border-glow-gradient:
-      linear-gradient(
-        var(--studio-border-glow-angle, 45deg),
-        #fb0094,
-        #00c4ff,
-        #34d399,
-        #fbbf24,
-        #ff2d55,
-        #fb0094,
-        #00c4ff,
-        #34d399,
-        #fbbf24,
-        #ff2d55
-      );
-    isolation: isolate;
-    position: relative;
+/* ── Board card glow presets ────────────────────────────────────────────────
+   UNLAYERED ON PURPOSE. These retune the ENGINE's .studio-border-glow through
+   its knobs, and the engine ships that primitive from a plain @import — so its
+   rules are UNLAYERED, and unlayered CSS beats every cascade layer, whatever the
+   specificity or source order. Inside `@layer components` (where these lived
+   until 2026-08-15) every preset below LOST to the engine's own defaults: each
+   glowing card on /deployments wore the default RAINBOW at its seeded duration,
+   and the stage colors these classes describe had never once painted.
+
+   Keep new presets here, outside any layer, and keep them to knob values — the
+   primitive itself belongs to the engine.
+
+   MS's verbatim copy of .studio-border-glow and of @keyframes
+   studioBorderGlowSteam went with the same change: the engine has owned both
+   since 0.13, the engine's copies are the ones that were winning anyway, and a
+   second definition of a primitive is only somewhere for the two to drift. */
+
+@keyframes taskApprovalPulse {
+  0%,
+  100% {
+    transform: translateZ(0) scale(1);
   }
 
-  .studio-border-glow::before,
-  .studio-border-glow::after {
-    content: "";
-    position: absolute;
-    pointer-events: none;
-    border-radius: inherit;
-    background: var(--studio-border-glow-gradient);
-    background-size: 400%;
-    animation: var(--studio-border-glow-animation);
+  50% {
+    transform: translateZ(0) scale(1.015);
   }
+}
 
-  .studio-border-glow::before {
-    -webkit-mask:
-      linear-gradient(#000 0 0) content-box,
-      linear-gradient(#000 0 0);
-    -webkit-mask-composite: xor;
-    mask:
-      linear-gradient(#000 0 0) content-box,
-      linear-gradient(#000 0 0);
-    mask-composite: exclude;
-    inset: -2px;
-    z-index: -1;
-    padding: 2px;
-    opacity: var(--studio-border-glow-opacity);
-  }
-
-  .studio-border-glow::after {
-    -webkit-mask:
-      linear-gradient(#000 0 0) content-box,
-      linear-gradient(#000 0 0);
-    -webkit-mask-composite: xor;
-    mask:
-      linear-gradient(#000 0 0) content-box,
-      linear-gradient(#000 0 0);
-    mask-composite: exclude;
-    inset: -10px;
-    z-index: -2;
-    padding: 10px;
-    filter: blur(var(--studio-border-glow-halo-blur));
-    opacity: var(--studio-border-glow-halo-opacity);
-    transform: translateZ(0);
-  }
-
-  @keyframes studioBorderGlowSteam {
-    0% {
-      background-position: var(--studio-border-glow-offset, 0%) 0;
-    }
-
-    100% {
-      background-position: calc(var(--studio-border-glow-offset, 0%) + 400%) 0;
-    }
-  }
-
-  @keyframes taskApprovalPulse {
-    0%,
-    100% {
-      transform: translateZ(0) scale(1);
-    }
-
-    50% {
-      transform: translateZ(0) scale(1.015);
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .studio-border-glow::before,
-    .studio-border-glow::after {
-      animation: none;
-    }
-
-    .task-card-stage-glow-approval {
-      animation: none;
-    }
-  }
-
-  .task-card-stage-glow {
-    --studio-border-glow-opacity: 0.82;
-    --studio-border-glow-halo-opacity: 0.28;
-    --studio-border-glow-halo-blur: 18px;
-    --studio-border-glow-animation: studioBorderGlowSteam var(--studio-border-glow-duration, 20s) linear infinite;
-    --studio-border-glow-gradient:
-      linear-gradient(
-        var(--studio-border-glow-angle, 45deg),
-        #fb0094,
-        #00c4ff,
-        #34d399,
-        #fbbf24,
-        #ff2d55,
-        #fb0094,
-        #00c4ff,
-        #34d399,
-        #fbbf24,
-        #ff2d55
-      );
-  }
-
-  .task-card-stage-glow-submitted {
-    --studio-border-glow-opacity: 0.62;
-    --studio-border-glow-halo-opacity: 0.16;
-    --studio-border-glow-halo-blur: 12px;
-    --studio-border-glow-animation: none;
-    --studio-border-glow-gradient: linear-gradient(var(--studio-border-glow-angle, 45deg), var(--task-card-glow-color, #22c55e), var(--task-card-glow-color, #22c55e));
-  }
-
+@media (prefers-reduced-motion: reduce) {
+  /* .studio-border-glow's own reduced-motion no-op ships with the primitive; only
+     the pulse below is ours to silence. */
   .task-card-stage-glow-approval {
-    --studio-border-glow-opacity: 0.88;
-    --studio-border-glow-halo-opacity: 0.3;
-    --studio-border-glow-halo-blur: 18px;
-    --studio-border-glow-duration: 12s;
-    --studio-border-glow-gradient:
-      linear-gradient(
-        var(--studio-border-glow-angle, 45deg),
-        var(--task-card-glow-color, #f59e0b),
-        color-mix(in srgb, var(--task-card-glow-color, #f59e0b) 62%, #ffffff),
-        var(--task-card-glow-color, #f59e0b),
-        color-mix(in srgb, var(--task-card-glow-color, #f59e0b) 62%, #ffffff),
-        var(--task-card-glow-color, #f59e0b)
-      );
-    /* Per-card seeded pulse: --task-pulse-delay/duration are set inline in
-       _task_card from a slug hash, so approval cards breathe OUT of phase across
-       the board. animation-delay follows the shorthand so it isn't reset to 0. */
-    animation: taskApprovalPulse var(--task-pulse-duration, 1.8s) ease-in-out infinite;
-    animation-delay: var(--task-pulse-delay, 0s);
+    animation: none;
   }
+}
 
-  .task-card-stage-glow-reviewed {
-    --studio-border-glow-opacity: 0.78;
-    --studio-border-glow-halo-opacity: 0.24;
-    --studio-border-glow-halo-blur: 16px;
-    --studio-border-glow-gradient:
-      linear-gradient(
-        var(--studio-border-glow-angle, 45deg),
-        var(--task-card-glow-color, #22d3ee),
-        color-mix(in srgb, var(--task-card-glow-color, #22d3ee) 64%, #ffffff),
-        var(--task-card-glow-color, #22d3ee),
-        color-mix(in srgb, var(--task-card-glow-color, #22d3ee) 64%, #ffffff),
-        var(--task-card-glow-color, #22d3ee)
-      );
-  }
+.task-card-stage-glow {
+  --studio-border-glow-opacity: 0.82;
+  --studio-border-glow-halo-opacity: 0.28;
+  --studio-border-glow-halo-blur: 18px;
+  --studio-border-glow-animation: studioBorderGlowSteam var(--studio-border-glow-duration, 20s) linear infinite;
+  --studio-border-glow-gradient:
+    linear-gradient(
+      var(--studio-border-glow-angle, 45deg),
+      #fb0094,
+      #00c4ff,
+      #34d399,
+      #fbbf24,
+      #ff2d55,
+      #fb0094,
+      #00c4ff,
+      #34d399,
+      #fbbf24,
+      #ff2d55
+    );
+}
 
-  .task-card-stage-glow-assembled {
-    --studio-border-glow-opacity: 0.9;
-    --studio-border-glow-halo-opacity: 0.34;
-    --studio-border-glow-halo-blur: 22px;
-    --studio-border-glow-gradient:
-      linear-gradient(
-        var(--studio-border-glow-angle, 45deg),
-        var(--task-card-glow-color-a, #fb0094),
-        var(--task-card-glow-color-b, #00c4ff),
-        var(--task-card-glow-color-a, #34d399),
-        var(--task-card-glow-color-b, #fbbf24),
-        var(--task-card-glow-color-a, #ff2d55),
-        var(--task-card-glow-color-b, #fb0094),
-        var(--task-card-glow-color-a, #00c4ff),
-        var(--task-card-glow-color-b, #34d399)
-      );
-  }
+/* A card someone is REVIEWING right now wears the engine's .studio-team-glow —
+   two wedges travelling its edge in the reviewer's Pokémon's type colors (both
+   set inline by _task_card) — not the rainbow border the stage glows use. A card
+   merely sitting in `submitted` wears nothing at all: the ring means a reviewer
+   is on it, and it leaves when they do.
 
-  .release-confirming-glow,
-  .release-fresh-glow {
-    --studio-border-glow-opacity: 0.9;
-    --studio-border-glow-halo-opacity: 0.34;
-    --studio-border-glow-halo-blur: 24px;
-    --studio-border-glow-animation: studioBorderGlowSteam var(--studio-border-glow-duration, 20s) linear infinite;
-    --studio-border-glow-gradient:
-      linear-gradient(
-        var(--studio-border-glow-angle, 45deg),
-        #fb0094,
-        #00c4ff,
-        #34d399,
-        #fbbf24,
-        #ff2d55,
-        #fb0094,
-        #00c4ff,
-        #34d399,
-        #fbbf24,
-        #ff2d55
-      );
-  }
+   Sized down from the primitive's card-scale defaults, which are drawn for a
+   specimen: board cards sit 8px apart, so 4px of ring plus a 10px bloom reads as
+   a lit blob that bleeds into its neighbours. Measured on the board at 2px/6px. */
+.task-card-review-glow {
+  --studio-team-glow-thickness: 2px;   /* engine default 4px */
+  --studio-team-glow-bloom: 6px;       /* engine default 10px */
+  --studio-team-glow-speed: 5s;        /* engine default 4s — calmer than a spinner */
+}
 
+.task-card-stage-glow-approval {
+  --studio-border-glow-opacity: 0.88;
+  --studio-border-glow-halo-opacity: 0.3;
+  --studio-border-glow-halo-blur: 18px;
+  --studio-border-glow-duration: 12s;
+  --studio-border-glow-gradient:
+    linear-gradient(
+      var(--studio-border-glow-angle, 45deg),
+      var(--task-card-glow-color, #f59e0b),
+      color-mix(in srgb, var(--task-card-glow-color, #f59e0b) 62%, #ffffff),
+      var(--task-card-glow-color, #f59e0b),
+      color-mix(in srgb, var(--task-card-glow-color, #f59e0b) 62%, #ffffff),
+      var(--task-card-glow-color, #f59e0b)
+    );
+  /* Per-card seeded pulse: --task-pulse-delay/duration are set inline in
+     _task_card from a slug hash, so approval cards breathe OUT of phase across
+     the board. animation-delay follows the shorthand so it isn't reset to 0. */
+  animation: taskApprovalPulse var(--task-pulse-duration, 1.8s) ease-in-out infinite;
+  animation-delay: var(--task-pulse-delay, 0s);
+}
+
+.task-card-stage-glow-reviewed {
+  --studio-border-glow-opacity: 0.78;
+  --studio-border-glow-halo-opacity: 0.24;
+  --studio-border-glow-halo-blur: 16px;
+  --studio-border-glow-gradient:
+    linear-gradient(
+      var(--studio-border-glow-angle, 45deg),
+      var(--task-card-glow-color, #22d3ee),
+      color-mix(in srgb, var(--task-card-glow-color, #22d3ee) 64%, #ffffff),
+      var(--task-card-glow-color, #22d3ee),
+      color-mix(in srgb, var(--task-card-glow-color, #22d3ee) 64%, #ffffff),
+      var(--task-card-glow-color, #22d3ee)
+    );
+}
+
+.task-card-stage-glow-assembled {
+  --studio-border-glow-opacity: 0.9;
+  --studio-border-glow-halo-opacity: 0.34;
+  --studio-border-glow-halo-blur: 22px;
+  --studio-border-glow-gradient:
+    linear-gradient(
+      var(--studio-border-glow-angle, 45deg),
+      var(--task-card-glow-color-a, #fb0094),
+      var(--task-card-glow-color-b, #00c4ff),
+      var(--task-card-glow-color-a, #34d399),
+      var(--task-card-glow-color-b, #fbbf24),
+      var(--task-card-glow-color-a, #ff2d55),
+      var(--task-card-glow-color-b, #fb0094),
+      var(--task-card-glow-color-a, #00c4ff),
+      var(--task-card-glow-color-b, #34d399)
+    );
+}
+
+.release-confirming-glow,
+.release-fresh-glow {
+  --studio-border-glow-opacity: 0.9;
+  --studio-border-glow-halo-opacity: 0.34;
+  --studio-border-glow-halo-blur: 24px;
+  --studio-border-glow-animation: studioBorderGlowSteam var(--studio-border-glow-duration, 20s) linear infinite;
+  --studio-border-glow-gradient:
+    linear-gradient(
+      var(--studio-border-glow-angle, 45deg),
+      #fb0094,
+      #00c4ff,
+      #34d399,
+      #fbbf24,
+      #ff2d55,
+      #fb0094,
+      #00c4ff,
+      #34d399,
+      #fbbf24,
+      #ff2d55
+    );
 }
 
 @utility prose-themed {

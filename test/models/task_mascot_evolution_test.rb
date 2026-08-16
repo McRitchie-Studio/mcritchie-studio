@@ -1,9 +1,11 @@
 require "test_helper"
 
-# The two mascot evolution gates: a three-stage task Pokémon evolves one step
-# when the story is SUBMITTED and all evolvable mascots advance after successful
-# review (Charmander → Charmeleon → Charizard; Pikachu waits until review for
-# Raichu). The SESSION's mascot never changes — only the task's copy.
+# [unit] The two mascot evolution gates: a three-stage task Pokémon evolves one
+# step when the work is REVIEWED, and every evolvable mascot advances when it
+# ASSEMBLES (Charmander → Charmeleon → Charizard; Pikachu spends its one step at
+# assemble, for Raichu). Both gates sit on the ACCEPTING side of the submit seam —
+# handing work over is not the same as the work being taken. The SESSION's mascot
+# never changes — only the task's copy.
 class TaskMascotEvolutionTest < ActiveSupport::TestCase
   # Collision-proof against e2e seed leftovers in the shared test DB
   # (first_or_initialize + update! forces the attributes either way).
@@ -38,43 +40,59 @@ class TaskMascotEvolutionTest < ActiveSupport::TestCase
     task.reload
   end
 
-  test "three-stage mascot evolves one step at submitted" do
+  # Submitting is the builder handing the work over, not the work being accepted,
+  # so it spends no gate at all — the mascot the board shows in `submitted` is the
+  # one that built it.
+  test "submitting spends no gate and leaves the mascot alone" do
     seed_charmander_line!
     task = make_task(mascot: "charmander")
 
     task.submit!
 
-    assert_equal "charmeleon", task.devops["mascot"]
-    assert_equal 1, task.devops["mascot_stage"]
+    assert_equal "charmander", task.reload.devops["mascot"]
+    assert_nil task.devops["mascot_stage"]
   end
 
-  test "three-stage mascot evolves a second step at reviewed" do
+  test "three-stage mascot evolves one step at reviewed" do
     seed_charmander_line!
     task = make_task(mascot: "charmander")
 
     task.submit!
     task.review!
+
+    assert_equal "charmeleon", task.reload.devops["mascot"]
+    assert_equal 1, task.devops["mascot_stage"]
+  end
+
+  test "three-stage mascot evolves a second step at assembled" do
+    seed_charmander_line!
+    task = make_task(mascot: "charmander")
+
+    task.submit!
+    task.review!
+    task.assemble!
 
     assert_equal "charizard", task.reload.devops["mascot"]
     assert_equal 2, task.devops["mascot_stage"]
   end
 
-  test "a one-evolution mascot skips submitted and evolves at reviewed" do
+  test "a one-evolution mascot skips reviewed and evolves at assembled" do
     seed_pikachu_line!
     task = make_task(mascot: "pikachu")
 
     task.submit!
+    task.review!
 
     assert_equal "pikachu", task.reload.devops["mascot"]
     assert_equal 1, task.devops["mascot_stage"]
 
-    task.review!
+    task.assemble!
 
     assert_equal "raichu", task.reload.devops["mascot"]
     assert_equal 2, task.devops["mascot_stage"]
   end
 
-  test "a branching one-evolution line evolves into one random branch at reviewed" do
+  test "a branching one-evolution line evolves into one random branch at assembled" do
     seed_family!([[133, "eevee", "eevee", %w[vaporeon jolteon flareon espeon umbreon]],
                   [134, "vaporeon", "eevee", []],
                   [135, "jolteon", "eevee", []],
@@ -84,9 +102,10 @@ class TaskMascotEvolutionTest < ActiveSupport::TestCase
     task = make_task(mascot: "eevee")
 
     task.submit!
+    task.review!
     assert_equal "eevee", task.devops["mascot"]
 
-    task.review!
+    task.assemble!
 
     assert_includes %w[vaporeon jolteon flareon espeon umbreon], task.devops["mascot"]
     assert_equal 2, task.devops["mascot_stage"]
@@ -97,36 +116,41 @@ class TaskMascotEvolutionTest < ActiveSupport::TestCase
     task = make_task(mascot: "snorlax")
 
     task.submit!
+    task.review!
 
     assert_equal "snorlax", task.devops["mascot"]
     assert_equal 1, task.devops["mascot_stage"]
 
-    task.review!
+    task.assemble!
 
     assert_equal "snorlax", task.devops["mascot"]
     assert_equal 2, task.devops["mascot_stage"]
   end
 
-  test "a blocked rework resubmit never double-evolves" do
+  # A reviewed task can be bounced back for rework and come round again. The gate
+  # is spent on the FIRST review, so the second one must not evolve it twice.
+  test "a rework loop back through reviewed never double-evolves" do
     seed_charmander_line!
     task = make_task(mascot: "charmander")
 
     task.submit!
+    task.review!
     assert_equal "charmeleon", task.devops["mascot"]
 
     task.block!(kind: "rework")
     task.build!
     task.submit!
+    task.review!
 
     assert_equal "charmeleon", task.reload.devops["mascot"]
     assert_equal 1, task.devops["mascot_stage"]
   end
 
-  test "reviewing with a skipped submit gate evolves one step only" do
+  test "assembling with a skipped review gate evolves one step only" do
     seed_charmander_line!
     task = make_task(mascot: "charmander")
 
-    task.update!(stage: "reviewed")
+    task.update!(stage: "assembled")
 
     assert_equal "charmeleon", task.devops["mascot"]
     assert_equal 2, task.devops["mascot_stage"]
@@ -157,6 +181,7 @@ class TaskMascotEvolutionTest < ActiveSupport::TestCase
     task = make_task(mascot: "charmander", session: "sess-one")
 
     task.submit!
+    task.review!
     assert_equal "charmeleon", task.devops["mascot"]
 
     task.block!(by: "avi", kind: "rework")
@@ -171,6 +196,7 @@ class TaskMascotEvolutionTest < ActiveSupport::TestCase
     assert_nil task.devops["mascot_stage"]
 
     task.submit!
+    task.review!
     assert_equal "croconaw", task.devops["mascot"]
     assert_equal 1, task.devops["mascot_stage"]
   end
@@ -181,6 +207,7 @@ class TaskMascotEvolutionTest < ActiveSupport::TestCase
 
     task.submit!
     task.review!
+    task.assemble!
 
     assert_equal "charizard", task.devops["mascot"]
     assert task.mascot_shiny?
@@ -192,9 +219,9 @@ class TaskMascotEvolutionTest < ActiveSupport::TestCase
     Agent.where(slug: "carl").first_or_initialize.update!(name: "Carl", slug: "carl")
     task = Task.create!(title: "Persona evolution probe",
                         metadata: { "devops" => { "persona" => "carl" } })
-    task.update_columns(stage: "building")
+    task.update_columns(stage: "submitted")
 
-    task.reload.submit!
+    task.reload.review!
 
     assert_equal "Carl", task.devops["mascot"]
     assert_nil task.devops["mascot_stage"]
@@ -204,6 +231,7 @@ class TaskMascotEvolutionTest < ActiveSupport::TestCase
     task = make_task(mascot: "missingno")
 
     task.submit!
+    task.review!
 
     assert_equal "missingno", task.devops["mascot"]
     assert_nil task.devops["mascot_stage"]
@@ -211,21 +239,23 @@ class TaskMascotEvolutionTest < ActiveSupport::TestCase
 
   # mascot_stage is server-owned, so the API's wholesale devops replace deletes it
   # on any client PATCH. A spent gate that reads back as unspent re-opens, and the
-  # blocked→resubmit loop above evolves a SECOND time. sync_mascot_display carries
-  # it forward for the same Pokémon, which is why this survives the wipe.
+  # rework loop above evolves a SECOND time. sync_mascot_display carries it forward
+  # for the same Pokémon, which is why this survives the wipe.
   test "a spent gate survives a client devops write" do
     seed_charmander_line!
     task = make_task(mascot: "charmander")
     task.submit!
+    task.review!
     assert_equal "charmeleon", task.devops["mascot"]
 
     # bin/task's read-modify-write: whitelisted client keys only, gate dropped.
     task.update!(metadata: { "devops" => Task.normalize_devops_metadata(task.devops) })
-    assert_equal 1, task.reload.devops["mascot_stage"], "the spent submit gate is restored"
+    assert_equal 1, task.reload.devops["mascot_stage"], "the spent review gate is restored"
 
     task.block!(kind: "rework")
     task.build!
     task.submit!
+    task.review!
 
     assert_equal "charmeleon", task.reload.devops["mascot"], "a wiped gate must not re-evolve"
   end
