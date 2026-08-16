@@ -6,9 +6,16 @@
 #
 # Collapses the standing pre-handoff sequence — commit → G1 cert
 # (bin/fast-check) → push → NON-DRAFT PR into `accepted` (body led by the task
-# URL) → record pr_url → DoR verdict (bin/dor-check) → move `submitted` →
-# read-back verify — into one idempotent, resumable command. Its inverse is
-# `bin/task begin`, which collapses the session-start sequence.
+# URL) → record pr_url → WAIT for CI to settle → DoR verdict (bin/dor-check) →
+# move `submitted` → read-back verify — into one idempotent, resumable command.
+# Its inverse is `bin/task begin`, which collapses the session-start sequence.
+#
+# THE CI WAIT (step 6, gate-submit-on-green-ci) holds the handoff while the PR's
+# CI is still running, so `submitted` carries a GREEN CI instead of a fast cert
+# credited provisionally against a pending one. It decides nothing itself — see
+# bin/lib/ci_wait.rb for why that boundary is the whole design — and it is bounded
+# at both ends, falling through to the DoR verdict if CI never appears or never
+# finishes. Disarm with SHIP_CI_WAIT=off.
 #
 # ORCHESTRATION plus the two guards the handoff seam itself owns. Every spawned
 # gate still runs and still owns its verdict: bin/fast-check certifies (with its
@@ -57,6 +64,11 @@
 #   SHIP_ROOT             explicit code root — bypasses the root guard (CI/tests)
 #   SHIP_BASE_BRANCH      PR base (default accepted — the ladder's first rung)
 #   SHIP_PROJECTS_DIR     root-guard worktree glob root (tests)
+#   SHIP_CI_WAIT          `off` disarms the CI settle wait (default: armed)
+#   SHIP_CI_WAIT_TIMEOUT  seconds to wait on a RUNNING CI (default 900)
+#   SHIP_CI_WAIT_APPEARANCE  seconds to wait for a run to EXIST (default 120)
+#   SHIP_CI_WAIT_INTERVAL poll interval, floored at 2s (default 20)
+#   SHIP_CI_STATE         injected CiStatus state (tests — `state:green`)
 #
 # Exit code: 0 = task verified `submitted` with an open non-draft PR; 1 = a step
 # failed (fix what it printed, then re-run — ship resumes).
@@ -72,6 +84,8 @@ require_relative "lib/pr_overlap"
 require_relative "lib/migration_collision"
 require_relative "lib/full_suite_gate"
 require_relative "lib/session_identity"
+require_relative "lib/ci_status"
+require_relative "lib/ci_wait"
 require_relative "../lib/claim_lease"
 
 ROOT = File.expand_path("..", __dir__)
@@ -250,39 +264,39 @@ unless actual_branch == branch
        "check the branch out (or finish the rebase) before shipping.")
 end
 
-# --- 1/7 commit --------------------------------------------------------------
+# --- 1/8 commit --------------------------------------------------------------
 
 git(root, "update-index", "-q", "--refresh") # never commit on stat-stale dirt (a false-dirty index)
 porcelain, = git(root, "status", "--porcelain")
 if porcelain.empty?
-  say "1/7 commit — working tree clean, nothing to commit."
+  say "1/8 commit — working tree clean, nothing to commit."
 else
   message = options[:message].to_s.strip
   message = title if message.empty?
   die!("nothing to use as a commit message (no -m and the task has no title)") if message.empty?
 
-  say "1/7 commit — committing #{porcelain.lines.size} changed path(s): #{message.inspect}"
+  say "1/8 commit — committing #{porcelain.lines.size} changed path(s): #{message.inspect}"
   _, added = git(root, "add", "-A")
   die!("git add failed in #{root}") unless added
   _, committed = git(root, "commit", "-m", message)
   die!("git commit failed in #{root}") unless committed
 end
 
-# --- 2/7 G1 cert (bin/fast-check) --------------------------------------------
+# --- 2/8 G1 cert (bin/fast-check) --------------------------------------------
 # Skipped only when the recorded evidence is FRESH for this exact tree — the
 # fingerprint is a git tree hash, so any edit since the cert re-arms this step.
 
 fingerprint = FullSuiteGate.fingerprint(root)
 if FastLane.cert_fresh?(devops["checks_run"], fingerprint)
-  say "2/7 cert — fresh cert evidence already recorded for #{fingerprint.to_s[0, 12]}; skipping bin/fast-check."
+  say "2/8 cert — fresh cert evidence already recorded for #{fingerprint.to_s[0, 12]}; skipping bin/fast-check."
 else
-  say "2/7 cert — running bin/fast-check #{slug}"
+  say "2/8 cert — running bin/fast-check #{slug}"
   unless system(FAST_CHECK_BIN, slug, chdir: root)
     die!("bin/fast-check failed — fix the red lane above, then re-run bin/ship #{slug} (it resumes here).")
   end
 end
 
-# --- 3/7 push ----------------------------------------------------------------
+# --- 3/8 push ----------------------------------------------------------------
 
 # A plain push fast-forwards the common case (first push, or the branch only
 # grew). It fails NON-FAST-FORWARD when the branch was REBASED — routine here,
@@ -294,11 +308,11 @@ end
 # records — i.e. when someone else pushed. So: try plain; on a non-fast-forward,
 # retry with the lease; if the lease refuses, real foreign work is on the remote —
 # stop and send the operator to reconcile.
-say "3/7 push — git push -u origin #{branch}"
+say "3/8 push — git push -u origin #{branch}"
 out, pushed = git_push(root, branch)
 unless pushed
   if FastLane.push_rejected_non_fast_forward?(out)
-    say "3/7 push — non-fast-forward (the branch was rebased); retrying with --force-with-lease."
+    say "3/8 push — non-fast-forward (the branch was rebased); retrying with --force-with-lease."
     out, leased = git_push(root, branch, lease: true)
     unless leased
       die!("push refused by --force-with-lease: origin/#{branch} moved under you — someone else pushed a commit " \
@@ -310,7 +324,7 @@ unless pushed
   end
 end
 
-# --- 4/7 PR (non-draft, base #{BASE_BRANCH}) ---------------------------------
+# --- 4/8 PR (non-draft, base #{BASE_BRANCH}) ---------------------------------
 
 # One `gh` call, with a single mint-and-retry when it fails on CREDENTIALS.
 #
@@ -373,21 +387,21 @@ existing = FastLane.open_pr(list_json)
 if existing
   number = existing["number"].to_s
   pr_url = existing["url"].to_s
-  say "4/7 pr — open PR ##{number} already exists (#{pr_url})"
+  say "4/8 pr — open PR ##{number} already exists (#{pr_url})"
   if existing["isDraft"]
     # The known trap this wrapper exists to close: a DRAFT PR defers reviewers
     # and the qa-release sweep skips it — the task strands. Mark it ready.
-    say "4/7 pr — PR ##{number} is a DRAFT; marking it ready for review."
+    say "4/8 pr — PR ##{number} is a DRAFT; marking it ready for review."
     ready_out, ready = gh_capture(root, "pr", "ready", number)
     die!("gh pr ready #{number} failed:\n#{ready_out.strip}") unless ready
   end
   if existing["baseRefName"] != BASE_BRANCH
-    say "4/7 pr — PR ##{number} is based on #{existing["baseRefName"].inspect}; retargeting to #{BASE_BRANCH}."
+    say "4/8 pr — PR ##{number} is based on #{existing["baseRefName"].inspect}; retargeting to #{BASE_BRANCH}."
     retarget_out, retargeted = gh_capture(root, "pr", "edit", number, "--base", BASE_BRANCH)
     die!("gh pr edit #{number} --base #{BASE_BRANCH} failed:\n#{retarget_out.strip}") unless retargeted
   end
 else
-  say "4/7 pr — opening a non-draft PR into #{BASE_BRANCH}"
+  say "4/8 pr — opening a non-draft PR into #{BASE_BRANCH}"
   body = FastLane.pr_body(task_url, devops["acceptance"])
   out, created = gh_capture(root, "pr", "create", "--base", BASE_BRANCH, "--head", branch,
                             "--title", title.empty? ? slug : title, "--body", body)
@@ -509,32 +523,66 @@ if MigrationCollision.blocking?(collisions)
   die!("duplicate migration install — resolve it before this PR moves to submitted.")
 end
 
-# --- 5/7 record pr_url -------------------------------------------------------
+# --- 5/8 record pr_url -------------------------------------------------------
 
 if devops["pr_url"].to_s == pr_url
-  say "5/7 record — pr_url already recorded."
+  say "5/8 record — pr_url already recorded."
 else
-  say "5/7 record — bin/task update #{slug} --pr-url #{pr_url}"
+  say "5/8 record — bin/task update #{slug} --pr-url #{pr_url}"
   die!("recording the PR URL failed (#{TASK_BIN} update)") unless system(TASK_BIN, "update", slug, "--pr-url", pr_url)
 end
 
-# --- 6/7 DoR verdict (bin/dor-check) -----------------------------------------
+# --- 6/8 CI settle wait (bin/lib/ci_wait.rb) ---------------------------------
+# Hold the handoff while the PR's CI is still RUNNING, so the DoR verdict below
+# grades a REAL CI state instead of crediting a fast cert provisionally against a
+# pending one. This step decides NOTHING: whatever state the wait settles on,
+# dor-check runs next and owns the verdict exactly as it always has. A red CI
+# stops the handoff because dor-check refuses it — not because this step did.
+#
+# Why the wait moved here at all (gate-submit-on-green-ci): the builder no longer
+# pays for a local FULL suite (~31 min against CI's ~9 for the identical command),
+# so the wall-clock that used to justify submitting before CI settled is gone. The
+# trade is ~20 min back to the builder, `submitted` carrying a green CI rather than
+# a provisional one, and a red CI landing in the session that still has the
+# worktree warm instead of bouncing into a cold one.
+#
+# It is bounded on BOTH ends and degrades to the old behaviour: a run that never
+# appears (`:absent`) or never finishes (`:timeout`) falls through to dor-check,
+# which then applies precisely the rules it applied before this step existed.
+
+if CiWait.enabled?(ENV)
+  cfg = CiWait.config(ENV)
+  say "6/8 ci — waiting for CI to settle on the PR (timeout #{cfg[:timeout_s]}s, poll #{cfg[:interval_s]}s)"
+  wait = CiWait.settle(
+    probe: -> { CiStatus.evaluate(pr_url, ENV["SHIP_CI_STATE"])[:state] },
+    timeout_s: cfg[:timeout_s], appearance_s: cfg[:appearance_s], interval_s: cfg[:interval_s],
+    reporter: ->(state, polls, left) { say "6/8 ci — #{state}; #{left.round}s left (poll #{polls})" }
+  )
+  say "6/8 ci — #{CiWait.summary(wait)}"
+  # Named, not silent: both give-up paths hand a NON-green state to dor-check, and
+  # the operator must be able to tell "CI said no" from "we stopped asking".
+  say "6/8 ci — the DoR verdict below decides; re-run bin/ship #{slug} once CI reports." if wait.timed_out?
+else
+  say "6/8 ci — wait disabled (SHIP_CI_WAIT=off); the DoR verdict grades whatever CI it finds."
+end
+
+# --- 7/8 DoR verdict (bin/dor-check) -----------------------------------------
 # Always runs — the verdict closes the gate; there is no cached skip for it.
 
-say "6/7 dor — running bin/dor-check #{slug}"
+say "7/8 dor — running bin/dor-check #{slug}"
 unless system(DOR_CHECK_BIN, slug, chdir: root)
   die!("bin/dor-check refused — fix everything it flagged, then re-run bin/ship #{slug} (it resumes here).")
 end
 
-# --- 7/7 submit + read-back verify -------------------------------------------
+# --- 8/8 submit + read-back verify -------------------------------------------
 # bin/task move already refuses a silently-non-persisting write; the fresh show
 # below is ship's own end-to-end read-back so the summary NEVER reports a stage
 # the board doesn't hold.
 
 if stage == "submitted"
-  say "7/7 submit — task already [submitted]; verifying."
+  say "8/8 submit — task already [submitted]; verifying."
 else
-  say "7/7 submit — bin/task move #{slug} submitted"
+  say "8/8 submit — bin/task move #{slug} submitted"
   die!("the move to submitted failed — see above; re-run bin/ship #{slug}.") unless system(TASK_BIN, "move", slug, "submitted")
 end
 
