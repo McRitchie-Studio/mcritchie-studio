@@ -85,12 +85,16 @@ test("a card moving to Shipped slides off to the right, fades, and cleans up its
 // The sweep is a metronome: one card per beat, and each card is GONE before the next
 // one starts. An exit longer than the beat overlaps its neighbour — two cards fading
 // at once over a column re-flowing under both, which is what "not organized" looks
-// like. Driven here at the server's own 500ms cadence.
+// like. Driven here at the server's own cadence, read off the board.
 test("each card is gone before the next one starts leaving", async ({ page }) => {
   const { pageErrors, report } = watchPageErrors(page);
-  const BEAT_MS = 500;
 
   await openBoard(page, "no-preference");
+  // Read the beat off the board rather than restating it. A hardcoded copy went
+  // stale the day the cadence changed and failed as though the animation were
+  // broken; the board renders this straight from Release::BOARD_FLIP_CADENCE.
+  const BEAT_MS = Number(await page.getAttribute("[data-test='kanban-board']", "data-beat-ms"));
+  expect(BEAT_MS).toBeGreaterThan(0);
   const shipped = page.locator("#dropzone-shipped");
   await expect(shipped.locator("#card-live-exit-beat-a")).toBeVisible();
 
@@ -130,7 +134,8 @@ test("each card is gone before the next one starts leaving", async ({ page }) =>
   ids.forEach((id) => {
     expect(beats.started[id], `${id} never started leaving`).toBeGreaterThan(0);
     expect(beats.gone[id], `${id} never finished leaving`).toBeGreaterThan(0);
-    expect(beats.gone[id] - beats.started[id], `${id} took longer than one beat to leave`).toBeLessThan(BEAT_MS);
+    expect(beats.gone[id] - beats.started[id], `${id} took longer than one beat to leave`)
+      .toBeLessThan(BEAT_MS);
   });
   ids.slice(1).forEach((id, i) => {
     expect(beats.gone[ids[i]], `${ids[i]} was still leaving when ${id} started`)

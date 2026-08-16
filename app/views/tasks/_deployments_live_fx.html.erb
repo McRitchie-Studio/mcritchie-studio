@@ -200,9 +200,10 @@
     // 760ms against a 500ms beat, so two cards were always fading at once while the
     // column re-flowed under both. The operator's word for it was "not organized".
     //
-    // Keep every duration below under BEAT_MS. If the server cadence changes, this
-    // constant moves with it — they are one design, split across two languages.
-    const BEAT_MS = 800;
+    // Keep every duration below under BEAT_MS. The beat itself is NOT restated here:
+    // it renders from Release::BOARD_FLIP_CADENCE, so the server's cadence and the
+    // board's animations can never drift apart.
+    const BEAT_MS = <%= (Release::BOARD_FLIP_CADENCE * 1000).round %>;
     const EXIT_MS = 400;         // card gone at half the beat, then the column rests
     const GAP_CLOSE_MS = 300;    // the column finishes reclaiming the space even sooner
     // The arrival at the far end of a MOVE, and the moment it is released.

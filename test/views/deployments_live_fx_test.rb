@@ -182,7 +182,8 @@ class DeploymentsLiveFxTest < ActionView::TestCase
     # exit longer than the beat leaves two cards animating at once while the column
     # re-flows under both — measured on the live board at 760ms against a 500ms beat,
     # and the operator's word for the result was "not organized".
-    assert_includes rendered, "const BEAT_MS = 800"
+    assert_includes rendered, "const BEAT_MS = #{(Release::BOARD_FLIP_CADENCE * 1000).round}",
+                    "the board's beat renders FROM the cadence constant — never a second copy of it"
     assert_includes rendered, "const EXIT_MS = 400"
     assert_includes rendered, "const GAP_CLOSE_MS = 300"
     assert_includes rendered, "const GROW_IN_MS = 300"
