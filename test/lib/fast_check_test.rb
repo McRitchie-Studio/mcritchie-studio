@@ -243,6 +243,148 @@ class FastCheckTest < Minitest::Test
     end
   end
 
+  # --- the mapped cap -----------------------------------------------------------
+  #
+  # A FAST LANE THAT CAN SILENTLY BECOME A FULL SUITE is worse than a slow one:
+  # the builder cannot tell which they are in. Observed live 2026-08-15 — a diff
+  # touching config/initializers/studio.rb mapped to 45 test files and this script
+  # was still running at 39m34s against a lane g1-cert.md budgets at ~1 minute,
+  # which bin/ship runs by DEFAULT.
+  #
+  # Driven through the script rather than the module because the decision is only
+  # half the fix: the other half is that the mapped lane does not RUN, the spine
+  # still does, and the builder is told why.
+
+  # A file with no convention target falls back to a word-boundary grep of its
+  # camelized name; this fixture makes that grep match many test files, which is
+  # the real shape of the defect.
+  def with_wide_mapping_repo
+    with_repo do |dir, write|
+      write.call("app/models/widget.rb", "class Widget; end\n")
+      (1..20).each { |i| write.call("test/lib/wide_#{i}_test.rb", "Widget.reset\n") }
+      assert system("git", "-C", dir, "add", "-A", out: File::NULL, err: File::NULL)
+      assert system("git", "-C", dir, "commit", "-qm", "wide", out: File::NULL, err: File::NULL)
+      # The branch diff: an initializer, which has NO convention candidate.
+      write.call("config/initializers/widget.rb", "Widget.configure\n")
+      yield dir, write
+    end
+  end
+
+  def test_a_wide_mapping_skips_the_mapped_lane_and_still_runs_the_spine
+    with_wide_mapping_repo do |dir, _|
+      out, code, lines = run_check(dir, merge_stderr: true)
+
+      assert_equal 0, code, "the cap is not a failure — it is a narrower cert"
+      tests = lane_calls(lines, "TEST")
+      assert_equal 1, tests.size, "the mapped lane must not run: #{lines.inspect}"
+      assert_equal ["test/models/spine_core_test.rb"], tests[0],
+                   "the spine still runs — capped means narrower, not uncertified"
+      assert_match(/MAPPED LANE CAPPED/, out)
+    end
+  end
+
+  # THE BUILDER IS TOLD WHAT TRIPPED IT AND WHAT TO DO. A silently skipped lane is
+  # how a cert stops meaning anything, and "too many files" without a culprit
+  # sends them through their whole diff.
+  def test_the_capped_run_names_the_cap_the_culprit_and_the_way_out
+    with_wide_mapping_repo do |dir, _|
+      out, = run_check(dir, merge_stderr: true)
+
+      assert_match(/exceeds the cap of 15/, out, "the cap it applied is printed")
+      assert_match(%r{widest mapping: config/initializers/widget\.rb}, out, "the culprit is named")
+      assert_match(/bin\/full-suite-check/, out, "the command that DOES cover this diff is offered")
+      assert_match(/FAST_CHECK_MAPPED_CAP/, out, "the deliberate override is discoverable")
+    end
+  end
+
+  # AND THE SKIP REASON IS DURABLE, not just console noise — it lands on the lane
+  # record, so the task shows WHY the mapped lane did not run rather than an
+  # unexplained gap.
+  def test_the_cap_reason_is_recorded_on_the_skipped_lane
+    with_wide_mapping_repo do |dir, _|
+      out, = run_check(dir, merge_stderr: true)
+
+      assert_match(/mapped file\(s\) over the cap of 15/, out)
+      assert_match(/spine only; use bin\/full-suite-check/, out)
+    end
+  end
+
+  # THE RECORDED EVIDENCE MUST SAY CAPPED. checks_run gets exactly ONE line, and
+  # mapped_only.size counts what MAPPED, not what RAN — so a capped run recorded
+  # "20 mapped" for zero mapped tests, reading identically to a real pass.
+  def test_the_capped_run_records_the_cap_in_the_evidence_line
+    with_wide_mapping_repo do |dir, _|
+      out, = run_check(dir, merge_stderr: true)
+
+      assert_match(/fast cert green: 0 mapped \(CAPPED: \d+ mapped path\(s\) over the cap of 15/, out)
+      refute_match(/fast cert green: [1-9]\d* mapped \+/, out,
+                   "the recorded evidence claims mapped tests ran when the lane was skipped")
+    end
+  end
+
+  # A RAISED CAP MUST LET IT THROUGH, or the override is decoration.
+  def test_raising_the_cap_runs_the_mapped_lane
+    with_wide_mapping_repo do |dir, _|
+      _, code, lines = run_check(dir, extra_env: { "FAST_CHECK_MAPPED_CAP" => "500" })
+
+      assert_equal 0, code
+      assert_equal 2, lane_calls(lines, "TEST").size,
+                   "with the cap raised the mapped lane runs again"
+    end
+  end
+
+  # THE CAP READS THE POST-SPINE SET, asserted AT THE CALL SITE. The unit test
+  # proves cap_decision counts what it is handed; this proves bin/fast-check hands
+  # it the right thing, which is a separate claim and the one a mutation walked
+  # straight through — swapping `mapped_only` for `mapped` reddened nothing.
+  #
+  # WHY IT MATTERS: the cap is about how much EXTRA work this lane does. A mapped
+  # test the spine already runs costs it nothing, so a diff whose mapping is
+  # entirely spine-covered must not be refused — capping the raw union would
+  # punish exactly the diffs the spine already covers best.
+  def test_a_wide_mapping_that_the_spine_already_covers_is_not_capped
+    with_repo do |dir, write|
+      write.call("app/models/widget.rb", "class Widget; end\n")
+      wide = (1..20).map { |i| "test/lib/wide_#{i}_test.rb" }
+      wide.each { |rel| write.call(rel, "Widget.reset\n") }
+      # The spine covers all but TWO, so the raw union is 20 (over the cap of 15)
+      # while the post-spine set is 2 (well under it).
+      #
+      # NOT all 20: leaving the post-spine set EMPTY makes this test unable to
+      # fail. `mapped_only.empty?` is checked BEFORE the cap, so an empty set takes
+      # the "covered by the spine" skip either way and the mutation walks through.
+      # The set has to be non-empty and small for the two behaviours to differ.
+      spined = wide.first(18)
+      write.call("spine.yml", "spine:\n#{spined.map { |r| "  - #{r}" }.join("\n")}\n")
+      assert system("git", "-C", dir, "add", "-A", out: File::NULL, err: File::NULL)
+      assert system("git", "-C", dir, "commit", "-qm", "wide-spine", out: File::NULL, err: File::NULL)
+      write.call("config/initializers/widget.rb", "Widget.configure\n")
+
+      out, code, lines = run_check(dir, merge_stderr: true)
+
+      assert_equal 0, code
+      refute_match(/MAPPED LANE CAPPED/, out,
+                   "the cap tripped on the RAW mapping (20) instead of the post-spine set (2) — " \
+                   "this lane had 2 files of extra work, nowhere near the cap")
+      tests = lane_calls(lines, "TEST")
+      assert_equal 2, tests.size, "the mapped lane runs its two uncovered files, plus the spine"
+      assert_equal wide.last(2).sort, tests[0].sort,
+                   "only the mapped files the spine does NOT already run"
+    end
+  end
+
+  # AND THE NORMAL CASE IS UNTOUCHED. The cap is worthless if it changes the lane
+  # every builder actually gets.
+  def test_a_narrow_diff_is_unaffected_by_the_cap
+    with_repo do |dir, _|
+      out, code, lines = run_check(dir, merge_stderr: true)
+
+      assert_equal 0, code
+      assert_equal 2, lane_calls(lines, "TEST").size
+      refute_match(/MAPPED LANE CAPPED/, out)
+    end
+  end
+
   def test_rubocop_lane_is_scoped_to_changed_lintable_files_only
     with_repo do |dir, _|
       _, code, lines = run_check(dir)

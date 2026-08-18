@@ -132,7 +132,16 @@ impossible by construction rather than by every repo remembering to ignore `tmp/
      view-rendering test with `The asset "tailwind.css" is not present in the
      asset pipeline`. See `docs/agents/modules/testing.md`.
    - `mapped-tests` — `bin/rails test <files the branch diff maps to>` (path
-     convention with a class-name grep fallback; skipped when nothing maps)
+     convention with a class-name grep fallback; skipped when nothing maps).
+     **CAPPED at 15 files** after the spine dedupe: past that the lane is SKIPPED
+     with a loud line naming the cap and the widest-mapping file, and the spine
+     still runs. A file with no convention target falls back to a word-boundary
+     grep of its camelized name, and when that matches much of the suite it is
+     telling you the token is generic rather than which tests are relevant —
+     `config/initializers/studio.rb` mapped to 45 files and ran for 39m34s against
+     this ~1-minute budget before the cap existed. For a diff that wide the right
+     cert is `bin/full-suite-check`; raise the cap deliberately with
+     `FAST_CHECK_MAPPED_CAP=<n>`.
    - `spine` — `bin/rails test <config/fast_cert_spine.yml entries>` (the
      always-run critical core, ~10-20s)
    - `rubocop-changed` — `bin/rubocop <changed lintable files>` (never the
