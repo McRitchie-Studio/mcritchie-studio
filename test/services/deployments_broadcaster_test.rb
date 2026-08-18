@@ -236,6 +236,87 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
     assert_includes current.to_html, %(data-repo="mcritchie-studio"), "the member's own lane rides along"
   end
 
+  # --- the fx router seam: WHY a broadcast fired, declared instead of inferred ----
+  #
+  # The operator-visible bug these guard: every finished assembling CI test flashed
+  # the Last Release card (pop + lift + glow + confetti). .ci_progress re-broadcast
+  # BOTH release cards on every CI upsert, Release.last_shipped cannot change on a CI
+  # tick, so the client got byte-identical HTML and — having no declared reason and no
+  # signature to diff — celebrated it.
+
+  test "[unit] release_modules declares the fx kind on the last-release stream" do
+    Release.open!.ship!
+
+    streams = capture_turbo_stream_broadcasts("deployments") do
+      DeploymentsBroadcaster.release_modules(fx: "deploy.landed")
+    end
+
+    last = streams.find { |s| s["target"] == "last-release" }
+    assert_equal "replace", last["action"], "the declared kind rides a plain replace, not a morph"
+    assert_equal "deploy.landed", last["data-fx"], "the router reads the reason off the stream element"
+  end
+
+  test "[unit] release_modules with no fx declares nothing rather than an empty attribute" do
+    Release.open!.ship!
+
+    streams = capture_turbo_stream_broadcasts("deployments") { DeploymentsBroadcaster.release_modules }
+
+    last = streams.find { |s| s["target"] == "last-release" }
+    assert_nil last["data-fx"], "an undeclared broadcast carries no kind — the router then falls to the signature"
+  end
+
+  test "[unit] release_modules honours slots — :current alone pushes no last-release" do
+    Release.open!.ship!
+    Release.open!
+
+    streams = capture_turbo_stream_broadcasts("deployments") do
+      DeploymentsBroadcaster.release_modules(slots: [:current])
+    end
+
+    assert_equal %w[current-release], streams.map { |s| s["target"] },
+                 "a caller that cannot change the Last card does not push it"
+  end
+
+  test "[unit] a CI tick refreshes ONLY the Next Release card, declared silent" do
+    rel = Release.open!
+    rel.add(Task.create!(title: "Assembling CI member", stage: "reviewed",
+                         metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } }))
+    job = seed_ci(repo: "McRitchie-Studio/mcritchie-studio", branch: Release::BRANCH,
+                  sha: "ci-tick-sha", passed: 3, pending: 5)
+
+    streams = capture_turbo_stream_broadcasts("deployments") { DeploymentsBroadcaster.ci_progress(job) }
+
+    refute streams.any? { |s| s["target"] == "last-release" },
+           "a finished assembling test must not redraw the Last Release card at all"
+    assert streams.any? { |s| s["target"] == "current-release" }, "the Next Release card still ticks"
+  end
+
+  test "[unit] a silent kind still rides the last-release stream when a caller sends that slot" do
+    Release.open!.ship!
+
+    # .ci_progress no longer sends :last, so this is the declaration's OTHER job:
+    # keeping the slot silent if some future caller wires it back up. The kind must
+    # survive to the client for the router's SILENT_KINDS check to have anything to
+    # read — a declaration only the sender knows about protects nothing.
+    streams = capture_turbo_stream_broadcasts("deployments") do
+      DeploymentsBroadcaster.release_modules(fx: "ci.progress")
+    end
+
+    assert_equal "ci.progress", streams.find { |s| s["target"] == "last-release" }["data-fx"]
+  end
+
+  test "[integration] a ship declares deploy.landed; an ordinary save does not" do
+    release = Release.open!
+
+    shipped = capture_turbo_stream_broadcasts("deployments") { release.ship!(by: "avi") }
+    assert_equal "deploy.landed", shipped.select { |s| s["target"] == "last-release" }.last["data-fx"],
+                 "the one transition that puts a NEW release in the Last slot says so"
+
+    saved = capture_turbo_stream_broadcasts("deployments") { release.update!(qa_url: "https://qa.example.test") }
+    assert_equal "release.saved", saved.select { |s| s["target"] == "last-release" }.last["data-fx"],
+                 "every other save declares a kind no handler claims — the signature decides"
+  end
+
   test "[integration] Release wires the module broadcast on after_commit" do
     assert Release._commit_callbacks.any? { |c| c.filter == :broadcast_release_modules },
       "Release must broadcast the live release modules after a commit"

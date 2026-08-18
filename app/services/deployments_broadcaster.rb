@@ -62,16 +62,42 @@ class DeploymentsBroadcaster
   # on a ship, Release.current is nil so Next re-renders its "none active" empty
   # card. Called from Release#after_save_commit and guarded by safe_broadcast so a
   # cable failure can NEVER break the release write that triggered it (SEV-1 guard).
-  def self.release_modules
+  # `fx` is the REASON this fired, declared to the client rather than left for it to
+  # infer. It rides the #last-release stream as data-fx and the ReleaseFx router reads
+  # it (see tasks/_release_fx_router): a kind the router lists as silent short-circuits
+  # to no animation; anything else is a hint its handlers may consult. Declaring the
+  # reason is the fix for a client that had to GUESS one — see `slots` below.
+  #
+  # `slots` is the second half of that fix. Not every caller can move both cards, and a
+  # caller that pushes a card it cannot have changed is asking the client to tell a
+  # redraw from an event with no evidence. .ci_progress fires on every CI upsert
+  # (queued AND in_progress AND completed, ~24 per run per repo) and CANNOT change
+  # Release.last_shipped, so it pushes :current alone. The router's default-silence
+  # already makes the extra push harmless; not sending it makes it absent, and the two
+  # together are why a finished assembling test no longer flashes the Last Release card.
+  RELEASE_SLOTS = %i[current last].freeze
+
+  def self.release_modules(fx: nil, slots: RELEASE_SLOTS)
     Studio::Cable.safe_broadcast do
-      Turbo::StreamsChannel.broadcast_replace_to(
-        STREAM, target: "current-release",
-        partial: "tasks/current_release", locals: { release: Release.current }
-      )
-      Turbo::StreamsChannel.broadcast_replace_to(
-        STREAM, target: "last-release",
-        partial: "tasks/last_release", locals: { release: Release.last_shipped }
-      )
+      if slots.include?(:current)
+        Turbo::StreamsChannel.broadcast_replace_to(
+          STREAM, target: "current-release",
+          partial: "tasks/current_release", locals: { release: Release.current }
+        )
+      end
+
+      if slots.include?(:last)
+        rendered = ApplicationController.render(
+          partial: "tasks/last_release", formats: [:html],
+          locals: { release: Release.last_shipped }
+        )
+        Turbo::StreamsChannel.broadcast_stream_to(
+          STREAM,
+          content: ApplicationController.helpers.turbo_stream_action_tag(
+            :replace, target: "last-release", template: rendered, data: { fx: fx }.compact
+          )
+        )
+      end
     end
   end
 
@@ -108,7 +134,12 @@ class DeploymentsBroadcaster
       # per-repo "<repo> G3 tests" slots it used to morph are now those Assembling meters.
       if (release = Release.current) &&
          reader.release_ci_slot_for(release, job.repo, job.head_branch)
-        release_modules
+        # :current ONLY. A CI tick cannot change Release.last_shipped, so pushing the
+        # Last Release card here was a byte-identical redraw the client then had to
+        # explain — and it explained it with confetti, once per upsert. Declared
+        # `ci.progress` as well, so the silence holds if a future caller wires the
+        # slot back up.
+        release_modules(fx: "ci.progress", slots: [:current])
       end
     end
   end
@@ -137,7 +168,7 @@ class DeploymentsBroadcaster
   # the open row, unlike the append-only spines). Guarded like every other entry.
   def self.gate_run(run)
     if run.subject_type == "release"
-      release_modules
+      release_modules(fx: "gate_run.#{run.key}")
     else
       Studio::Cable.safe_broadcast do
         task = Task.find_by(slug: run.subject_slug)

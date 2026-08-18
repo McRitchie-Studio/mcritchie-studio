@@ -57,7 +57,23 @@
 # caught a 4px silent clip at the first mark cap AND a 2.39:1 light-mode mark contrast that
 # had been shipping unmeasured (/tasks/show-ci-while-building). Coverage ADDED;
 # `quarantined` is untouched.
-total_specs: 110
+#
+# 108 -> 110 on 2026-08-18: e2e/last_release_fx_router.spec.js pins the Last Release card's
+# animation contract — a spurious redraw (the shape a CI upsert used to send, ~24 per run per
+# repo) animates NOTHING, and the router's registry glows a moved signature while staying
+# silent on an identical one (/tasks/route-last-release-animations). Coverage ADDED;
+# `quarantined` is untouched.
+#
+# 110 -> 112 on 2026-08-18: e2e/page_error_collector.spec.js gains the two DIRECTION-3
+# specs — the report must LEAD with the network when a page error coincides with request
+# failures, and must stay quiet when nothing failed (/tasks/third-party-outage-reds-lane).
+# Coverage ADDED; `quarantined` is untouched.
+#
+# (THREE PRs bumped this counter the same day. Each later one re-derived the number from
+# the MERGED tree with the lister rather than keeping either side of the conflict —
+# 107+1+2+2 = 112. Picking a side here silently un-counts another PR's specs, which is
+# exactly what this file exists to make impossible.)
+total_specs: 112
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -79,8 +95,8 @@ quarantined: 18
 
 # total_specs - quarantined. What the lane MUST execute — asserted against the runner's own
 # report, so no source-level spelling on any axis can move it without moving this line.
-#   npx playwright test --list --grep-invert @quarantine  ->  90 tests in 43 files
-executed: 92
+#   npx playwright test --list --grep-invert @quarantine  ->  94 tests in 44 files
+executed: 94
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to

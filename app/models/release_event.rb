@@ -89,8 +89,13 @@ class ReleaseEvent < ApplicationRecord
     errors.add(:cost, "is required for #{source} #{status} events") if cost.nil?
   end
 
+  # The declared kind for the client's ReleaseFx router — the step/status pair this
+  # spine already carries, spelled as an fx event (`release_event.deploy_prod.completed`).
+  # No handler claims one today (the Last Release card's only animation is the deploy
+  # glow); they are declared now so the follow-up animation vocabulary has real events
+  # to bind to instead of re-deriving them from the DOM.
   def broadcast_release_modules
-    DeploymentsBroadcaster.release_modules
+    DeploymentsBroadcaster.release_modules(fx: "release_event.#{step}.#{status}")
   end
 
   def refresh_release_duration_metrics
