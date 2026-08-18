@@ -64,4 +64,26 @@ Rails.application.configure do
 
   # Raise error when a before_action's only/except options reference missing actions.
   config.action_controller.raise_on_missing_callback_actions = true
+
+  # BCRYPT AT ITS MINIMUM COST, FOR THE WHOLE TEST PROCESS.
+  #
+  # bcrypt is deliberately slow, and the default cost (12) costs ~272ms PER HASH on
+  # this hardware. test/fixtures/users.yml mints two through ERB, so every fixture
+  # LOAD spends ~544ms hashing passwords no test asserts anything about. Fixtures
+  # reload once per process, once per parallel CI worker, and again for every
+  # non-transactional test (`invalidate_already_loaded_fixtures`) — 16 such cases
+  # here. Measured: ~9s a local run, ~11s on CI's four workers.
+  #
+  # SET ON THE ENGINE, because the Rails knob cannot reach the call that costs us.
+  # `ActiveModel::Railtie` already runs `SecurePassword.min_cost = Rails.env.test?`,
+  # so `has_secure_password` has ALWAYS hashed cheaply here — that path needed
+  # nothing. But `min_cost` is read only by `has_secure_password`; the fixture's bare
+  # `BCrypt::Password.create(...)` reads `BCrypt::Engine.cost` and is unaffected.
+  # Measured: with `min_cost = true`, a bare create still returns a cost-12 hash.
+  # Setting the engine covers that path, and any future direct call site for free —
+  # which a fixture-local `cost:` argument would not.
+  #
+  # (Note `config.active_record.bcrypt_cost` does not exist in Rails 8.1. It reads
+  # like the obvious knob and would have been an inert config line.)
+  BCrypt::Engine.cost = BCrypt::Engine::MIN_COST
 end
