@@ -1206,6 +1206,44 @@ class Task < ApplicationRecord
     open_intents_for(to_stage).last
   end
 
+  # Avi's crew-seat duration, measured from WHEN HE PICKED THE TASK UP rather
+  # than from when review handed the task over.
+  #
+  # The transition's own `seconds_in_from` cannot answer this: it measures back
+  # to the previous TRANSITION by design, so `reviewed -> assembled` is
+  # inherently `assembled_at - reviewed_at` — which is mostly the time the task
+  # sat in the queue waiting for a sweep, not time anyone worked on it. Measured
+  # on rel-20260818-63bdb8, whose four members all assembled at the same second:
+  # 148m, 134m, 120m and 49m. Those four numbers differ ONLY by when each task
+  # entered the lane. Avi ran ONE batch sweep across all four.
+  #
+  # `bin/release prepare` already records an INTENT row the moment it picks a
+  # member up (Release::Conductor#record_qa_intent), so the pickup time exists;
+  # it is simply excluded from `seconds_in_from`, deliberately and correctly —
+  # an intent is the live "who's on it" signal, not a stage boundary, and
+  # widening the transitions scope to include intents would also shorten the
+  # REVIEW seat and rewrite every historical reading. So this reads the intent
+  # directly at render time and leaves that rule untouched.
+  #
+  # EXPECT EVERY MEMBER OF ONE SWEEP TO REPORT THE SAME NUMBER. That is the
+  # honest reading of a batch operation, not a bug.
+  #
+  # nil when there is no pickup row to measure from — a task assembled before
+  # the intent existed, or by a path that records none. The caller falls back to
+  # the transition figure rather than rendering blank.
+  def assembled_seconds_from_pickup
+    return nil unless assembled_at
+
+    pickup = task_events.intents
+                        .where(to_stage: "assembled")
+                        .where(occurred_at: ..assembled_at)
+                        .chronological
+                        .last
+    return nil unless pickup
+
+    (assembled_at - pickup.occurred_at).round
+  end
+
   def open_intents_for(to_stage)
     to_stage = to_stage.to_s
     return [] unless NEXT_INTENT_STAGE[stage] == to_stage

@@ -177,8 +177,13 @@ module StageAgentsHelper
       end
 
       if (assembled = by_lane[:assembled])
+        # Avi's seat times from HIS PICKUP, not from the reviewed handover — the
+        # transition figure is mostly queue-wait (see Task#assembled_seconds_from_pickup).
+        # Falls back to the transition sum for rows recorded before the intent existed.
         clusters << CrewCluster.new(lane: :assembled, stacked: assembled,
-                                    seconds: assembled.sum { |e| e.seconds.to_i }, live_since: nil)
+                                    seconds: task.assembled_seconds_from_pickup ||
+                                             assembled.sum { |e| e.seconds.to_i },
+                                    live_since: nil)
       end
 
       if (shipped = by_lane[:shipped])
