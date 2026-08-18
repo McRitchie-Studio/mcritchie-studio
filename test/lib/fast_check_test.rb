@@ -309,6 +309,19 @@ class FastCheckTest < Minitest::Test
     end
   end
 
+  # THE RECORDED EVIDENCE MUST SAY CAPPED. checks_run gets exactly ONE line, and
+  # mapped_only.size counts what MAPPED, not what RAN — so a capped run recorded
+  # "20 mapped" for zero mapped tests, reading identically to a real pass.
+  def test_the_capped_run_records_the_cap_in_the_evidence_line
+    with_wide_mapping_repo do |dir, _|
+      out, = run_check(dir, merge_stderr: true)
+
+      assert_match(/fast cert green: 0 mapped \(CAPPED: \d+ mapped path\(s\) over the cap of 15/, out)
+      refute_match(/fast cert green: [1-9]\d* mapped \+/, out,
+                   "the recorded evidence claims mapped tests ran when the lane was skipped")
+    end
+  end
+
   # A RAISED CAP MUST LET IT THROUGH, or the override is decoration.
   def test_raising_the_cap_runs_the_mapped_lane
     with_wide_mapping_repo do |dir, _|

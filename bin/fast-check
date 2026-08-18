@@ -354,7 +354,17 @@ if fingerprint.nil?
   exit 1
 end
 
-detail = "fast cert green: #{mapped_only.size} mapped + #{spine.size} spine test path(s), " \
+# The mapped count is what RAN, not what mapped: a capped lane is SKIPPED, so
+# mapped_only.size would record "41 mapped" for ZERO mapped tests actually run.
+mapped_detail =
+  if cap[:capped]
+    "0 mapped (CAPPED: #{cap[:count]} mapped path(s) over the cap of #{cap[:cap]}; " \
+      "spine only — bin/full-suite-check covers this diff)"
+  else
+    "#{mapped_only.size} mapped"
+  end
+
+detail = "fast cert green: #{mapped_detail} + #{spine.size} spine test path(s), " \
          "rubocop on #{lintable.size} changed file(s) (#{format('%.1fs', total)}; full suite runs on CI)"
 line = FullSuiteGate.evidence_line(FullSuiteGate::FAST_LANE, fingerprint, detail)
 
