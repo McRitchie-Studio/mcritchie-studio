@@ -68,12 +68,18 @@ total_specs: 107
 # Repair a spec: drop its tag, lower `quarantined`, raise `executed`, same commit — the guard
 # will tell you both numbers. Tagging one MORE spec to green a PR is the exact self-declaration
 # disease this whole lane exists to cure, and it is now a red build rather than a red face.
-quarantined: 18
+# 18 -> 15 on 2026-08-18 (/tasks/repair-quarantined-e2e-clusters): three deployments_live
+# specs REPAIRED, not re-tagged. Root cause was never the specs - the Deployments board
+# collapses its three upstream lanes below 1400px, and Playwright configures no viewport,
+# so Chromium's 1280px default hid every card they wait on. One test.use({viewport}) line
+# revived them. The other four in that file fail for DIFFERENT reasons (three are
+# Building-column/blocked-card behaviour, one is the review ticker) and stay tagged.
+quarantined: 15
 
 # total_specs - quarantined. What the lane MUST execute — asserted against the runner's own
 # report, so no source-level spelling on any axis can move it without moving this line.
 #   npx playwright test --list --grep-invert @quarantine  ->  89 tests in 42 files
-executed: 89
+executed: 92
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to

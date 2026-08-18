@@ -1,6 +1,19 @@
 const { test, expect } = require("@playwright/test");
 const { watchPageErrors } = require("./helpers");
 
+// WIDE VIEWPORT, AND IT IS LOAD-BEARING — this is why these specs rotted.
+// The Deployments board is six lanes, and _deploy_board.html.erb collapses the three
+// UPSTREAM lanes (designed / building / submitted) below 1400px unless "All Stages" is
+// on: `:class="showAllCols ? '' : 'max-[1399px]:hidden'"`. Playwright configures NO
+// viewport, so Chromium's 1280x720 default put every card these specs wait on inside a
+// collapsed lane. The card was in the DOM the whole time and `toBeVisible` reported
+// "hidden" — which reads like a broken spec, not a layout rule, and is why the cluster
+// was quarantined instead of fixed.
+// These specs are about LIVE UPDATES, not responsive collapse, so give them a desktop
+// viewport where all six lanes render. The collapse itself is a separate concern and
+// wants its own spec at a narrow viewport.
+test.use({ viewport: { width: 1600, height: 900 } });
+
 async function releaseMemberMetrics(locator) {
   return locator.evaluateAll((els) => els.map((el) => {
     const rect = el.getBoundingClientRect();
@@ -44,7 +57,7 @@ async function assertLastReleaseStack(page) {
 // live ticker. Recording a review intent against it (as if another session began
 // the review) fires a real ActionCable broadcast; the already-open board swaps the
 // card IN PLACE and the in-progress ticker appears — with NO page reload.
-test("the deployments board updates a card live when an intent is recorded @quarantine", async ({ page }) => {
+test("the deployments board updates a card live when an intent is recorded", async ({ page }) => {
   // The original miss was an UNCAUGHT TypeError in the broadcast handler (a wrong
   // method name) that fired after the DOM mutation — guard against any such throw.
   const { pageErrors, report } = watchPageErrors(page);
@@ -108,7 +121,7 @@ test("a resubmitted card replaces the old review duration with a live review tic
   expect(pageErrors, report()).toHaveLength(0);
 });
 
-test("a direct-blocked card ignores stale review intent until a fresh one starts @quarantine", async ({ page }) => {
+test("a direct-blocked card ignores stale review intent until a fresh one starts", async ({ page }) => {
   const { pageErrors, report } = watchPageErrors(page);
 
   await page.goto("/deployments");
@@ -198,7 +211,7 @@ test("an assembled card fills its reserved deploy slot live when a ship intent i
 // A live STAGE CHANGE moves the card to its new column AND updates the per-column
 // count badges — the regression guard for the updateCounts() call in
 // applyLiveUpdate (a wrong method name left the badges stale on every broadcast).
-test("a live stage change FLIPs the card to its new column and updates the count badges @quarantine", async ({ page }) => {
+test("a live stage change FLIPs the card to its new column and updates the count badges", async ({ page }) => {
   await page.goto("/deployments");
 
   await expect(page.locator("#dropzone-submitted #card-live-cable-move-demo")).toBeVisible();
