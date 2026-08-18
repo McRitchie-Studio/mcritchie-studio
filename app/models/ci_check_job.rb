@@ -18,9 +18,15 @@ class CiCheckJob < ApplicationRecord
   # The columns the fold reads: `name` is the check IDENTITY a re-run re-uses;
   # `status` + `conclusion` are the fold input (the GitHub check-runs row shape
   # CheckProgress.from_check_runs consumes); `run_id` + `job_id` are the
-  # newest-attempt key (both GitHub ids climb monotonically). Ordered as pluck
+  # newest-attempt key (both GitHub ids climb monotonically); `started_at` +
+  # `completed_at` are the CLOCK the card meter shows — the run's elapsed time while
+  # checks are pending, and its measured duration once they settle. Ordered as pluck
   # returns them.
-  PROGRESS_COLUMNS = %i[name status conclusion run_id job_id].freeze
+  PROGRESS_COLUMNS = %i[name status conclusion run_id job_id started_at completed_at].freeze
+
+  # The subset of a folded row CheckProgress consumes — the newest-attempt key
+  # (run_id/job_id) is scaffolding for the fold itself, not part of its output.
+  PROGRESS_ROW_KEYS = %w[name status conclusion started_at completed_at].freeze
 
   validates :repo, :job_id, :head_sha, :status, presence: true
   validates :job_id, uniqueness: true
@@ -72,9 +78,10 @@ class CiCheckJob < ApplicationRecord
   # collapsed with others, so it keys on its own job_id and stays its own check.
   def self.latest_attempt_per_check(rows)
     rows
-      .group_by { |name, _status, _conclusion, _run_id, job_id| name.presence || "job:#{job_id}" }
-      .map { |_key, attempts| attempts.max_by { |_name, _status, _conclusion, run_id, job_id| [run_id.to_i, job_id.to_i] } }
-      .map { |name, status, conclusion, _run_id, _job_id| { "status" => status, "conclusion" => conclusion, "name" => name } }
+      .map { |values| PROGRESS_COLUMNS.map(&:to_s).zip(values).to_h }
+      .group_by { |row| row["name"].presence || "job:#{row["job_id"]}" }
+      .map { |_key, attempts| attempts.max_by { |row| [row["run_id"].to_i, row["job_id"].to_i] } }
+      .map { |row| row.slice(*PROGRESS_ROW_KEYS) }
   end
 
   def terminal?

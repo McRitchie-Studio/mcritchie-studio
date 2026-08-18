@@ -43,18 +43,29 @@ class CiCheckJobTest < ActiveSupport::TestCase
     assert_equal(-1, CiCheckJob.status_rank("garbage"), "an unknown status must never outrank a real one")
   end
 
-  test "[unit] progress_rows returns the { status, conclusion, name } fold rows for a repo+SHA" do
-    build_job(job_id: 1, head_sha: "s1", name: "lint", status: "completed", conclusion: "success").save!
-    build_job(job_id: 2, head_sha: "s1", name: "test", status: "in_progress", conclusion: nil).save!
+  test "[unit] progress_rows returns the { status, conclusion, name, clock } fold rows for a repo+SHA" do
+    started = 3.minutes.ago.change(usec: 0)
+    finished = 1.minute.ago.change(usec: 0)
+    build_job(job_id: 1, head_sha: "s1", name: "lint", status: "completed", conclusion: "success",
+              started_at: started, completed_at: finished).save!
+    build_job(job_id: 2, head_sha: "s1", name: "test", status: "in_progress", conclusion: nil,
+              started_at: started).save!
     build_job(job_id: 3, head_sha: "OTHER", name: "lint", status: "completed", conclusion: "failure").save!
 
     rows = CiCheckJob.progress_rows("McRitchie-Studio/mcritchie-studio", "s1")
     assert_equal 2, rows.size, "only the two jobs for this repo+SHA"
-    assert_includes rows, { "status" => "completed", "conclusion" => "success", "name" => "lint" }
-    assert_includes rows, { "status" => "in_progress", "conclusion" => nil, "name" => "test" }
+    lint = rows.find { |row| row["name"] == "lint" }
+    assert_equal({ "name" => "lint", "status" => "completed", "conclusion" => "success" },
+                 lint.slice("name", "status", "conclusion"))
+    # The clock rides along — the meter's timer reads it, so the fold must carry it.
+    assert_equal started, lint["started_at"]
+    assert_equal finished, lint["completed_at"]
+    assert_nil rows.find { |row| row["name"] == "test" }["completed_at"], "an unfinished check has no end"
     # The rows fold straight into a Ci::CheckProgress — 1 passed of 2.
     progress = Ci::CheckProgress.from_check_runs(rows, sha: "s1")
     assert_equal "1 / 2", progress.fraction_label
+    assert_equal started, progress.started_at
+    assert_nil progress.finished_at, "one check still running — the run is not over"
   end
 
   test "[unit] progress_rows is empty when no job has landed (reader then falls back)" do

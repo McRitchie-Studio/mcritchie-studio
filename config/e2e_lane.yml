@@ -50,7 +50,14 @@
 # fade, and nothing at all under prefers-reduced-motion), overlapping archive exits staying
 # inside their column, and the sweep's beat: each card GONE before the next starts leaving
 # (/tasks/stagger-board-exit-animations). Coverage ADDED; `quarantined` is untouched.
-total_specs: 107
+#
+# 107 -> 108 on 2026-08-18: e2e/ci_meter_fit.spec.js measures the TASK CARD's CI meter the
+# way release_meter_fit measures the release lanes' — marks inside the rail must not
+# overflow it, and must stay legible ON the tint fill. It earned its place immediately: it
+# caught a 4px silent clip at the first mark cap AND a 2.39:1 light-mode mark contrast that
+# had been shipping unmeasured (/tasks/show-ci-while-building). Coverage ADDED;
+# `quarantined` is untouched.
+total_specs: 108
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -72,8 +79,8 @@ quarantined: 18
 
 # total_specs - quarantined. What the lane MUST execute — asserted against the runner's own
 # report, so no source-level spelling on any axis can move it without moving this line.
-#   npx playwright test --list --grep-invert @quarantine  ->  89 tests in 42 files
-executed: 89
+#   npx playwright test --list --grep-invert @quarantine  ->  90 tests in 43 files
+executed: 90
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to

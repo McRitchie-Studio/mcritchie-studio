@@ -4,41 +4,48 @@ require "test_helper"
 # morph-replace target that lets a live workflow_job push swap JUST the meter. The
 # invariants it pins: the #dom_id wrapper ALWAYS renders (so the target exists
 # before a run's first check settles); the meter appears inside only when present;
-# FEW checks render the symbolic row while MANY keep the numeric bar; and a `href`
-# turns the whole meter into a new-tab PR link.
+# every suite draws its marks INSIDE the one rail (fading at the right edge past the
+# cap, never falling back to a bare fraction); and a `href` turns the whole meter
+# into a new-tab PR link.
 class CiProgressSlotTest < ActionView::TestCase
-  test "[component] a large suite keeps the numeric bar inside the stable target" do
+  test "[component] a wide suite draws its cap of marks and FADES the overflow" do
     render partial: "components/ci_progress_slot",
            locals: { dom_id: "ci-progress-my-task",
-                     progress: many_checks(passed: 6, pending: 8), # 14 -> numeric
+                     progress: many_checks(passed: 6, pending: 14), # 20 -> past the 14 cap
                      compact: true, test_id: "task-ci-progress",
                      wrapper_class: "mb-1.5", inner_test_id: "task-card-ci-progress" }
 
     assert_select "#ci-progress-my-task", 1, "the stable morph target must be present"
     assert_select "#ci-progress-my-task .ci-progress-card.border[data-test='task-card-ci-progress']", 1, "the outlined card"
     assert_select "#ci-progress-my-task [data-test='task-ci-progress'][data-ci-state='pending']", 1
-    assert_select "#ci-progress-my-task [data-test='task-ci-progress-fraction']", text: /6 \/ 14/
+    assert_select "#ci-progress-my-task [data-test='ci-check-symbol']", ApplicationHelper::CI_METER_MARK_CAP,
+                  "the row draws its cap, not all 20"
+    assert_select "#ci-progress-my-task [data-test='task-ci-progress-marks'][data-overflowed='true']", 1
+    assert_includes rendered, "mask-image", "the overflow FADES out rather than clipping at nothing"
     assert_select "#ci-progress-my-task [data-test='task-ci-progress-fill']", 1
     assert_select "#ci-progress-my-task .mb-1\\.5", 1, "the wrapper_class rides the card element"
   end
 
-  test "[component] a small suite shows symbols AND the bar in an outlined card" do
+  test "[component] a suite inside the cap draws every mark, in severity order, unfaded" do
     render partial: "components/ci_progress_slot",
            locals: { dom_id: "ci-progress-few",
-                     progress: Ci::CheckProgress.new(passed: 5, failed: 1, pending: 2), # 8 -> symbolic
+                     progress: Ci::CheckProgress.new(passed: 5, failed: 1, pending: 2),
                      compact: true, test_id: "task-ci-progress",
                      wrapper_class: "mb-1.5", inner_test_id: "task-card-ci-progress" }
 
     # The whole meter sits in a distinct bordered panel within the task card.
     assert_select "#ci-progress-few .ci-progress-card.border[data-test='task-card-ci-progress']", 1
-    # Symbols…
-    assert_select "#ci-progress-few [data-test='task-ci-progress-symbols'][data-ci-state='red']", 1
-    assert_select "#ci-progress-few [data-test='ci-check-symbol']", 8, "one icon per check, 1:1 with the jobs"
+    assert_select "#ci-progress-few [data-test='task-ci-progress'][data-ci-state='red']", 1
+    assert_select "#ci-progress-few [data-test='ci-check-symbol']", 8, "one mark per check, 1:1 with the jobs"
     assert_select "#ci-progress-few [data-test='ci-check-symbol'][data-ci-check-state='failed']", 1
-    # …AND the bar, together (the symbolic view no longer replaces the track).
-    assert_select "#ci-progress-few [role='progressbar'][aria-valuenow='5'][aria-valuemax='8']", 1
+    assert_select "#ci-progress-few [data-test='task-ci-progress-marks'][data-overflowed='false']", 1
+    assert_not_includes rendered, "mask-image", "nothing overflowed, so nothing fades"
+    # The marks ride INSIDE the rail — the progressbar is their parent, not a sibling.
+    assert_select "#ci-progress-few [role='progressbar'][aria-valuenow='5'][aria-valuemax='8'] [data-test='ci-check-symbol']", 8
     assert_select "#ci-progress-few [data-test='task-ci-progress-fill']", 1
-    assert_select "#ci-progress-few [data-test='task-ci-progress-fraction']", 0, "the fraction text gives way to icons"
+    states = css_select("#ci-progress-few [data-test='ci-check-symbol']").map { |node| node["data-ci-check-state"] }
+    assert_equal %w[failed pending pending passed passed passed passed passed], states,
+                 "failures left, running in the middle, passes right"
   end
 
   test "[component] a href turns the meter into a new-tab PR link that stops card nav" do
@@ -123,8 +130,7 @@ class CiProgressSlotTest < ActionView::TestCase
                      progress: Ci::CheckProgress.new(passed: 8, failed: 0, pending: 0), # 8 -> symbolic
                      label: "G3 CI", test_id: "release-ci-progress", wrapper_class: "mt-2" }
 
-    assert_select "#release-ci-progress [data-test='release-ci-progress-symbols']", 1
-    assert_select "#release-ci-progress span", text: "G3 CI"
+    assert_select "#release-ci-progress [data-test='release-ci-progress-label']", text: "G3 CI"
   end
 
   private
