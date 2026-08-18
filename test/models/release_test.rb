@@ -188,7 +188,9 @@ class ReleaseTest < ActiveSupport::TestCase
     rel.assemble!
 
     events = []
-    DeploymentsBroadcaster.stub(:release_modules, -> { events << "release" }) do
+    # (**_kw: the broadcast now DECLARES why it fired — release_modules(fx:) — so the
+    # client's ReleaseFx router is told rather than left to infer it from the DOM.)
+    DeploymentsBroadcaster.stub(:release_modules, ->(**_kw) { events << "release" }) do
       DeploymentsBroadcaster.stub(:task_event, ->(event) { events << "task:#{event.to_stage}" }) do
         rel.ship!(by: "avi")
       end
@@ -474,7 +476,7 @@ class ReleaseTest < ActiveSupport::TestCase
   test "[unit] recording the seal re-renders the live board (after_commit broadcast)" do
     rel = Release.open!
     calls = 0
-    DeploymentsBroadcaster.stub(:release_modules, -> { calls += 1 }) do
+    DeploymentsBroadcaster.stub(:release_modules, ->(**_kw) { calls += 1 }) do
       rel.record_smoke_seal!(Release::SmokeSeal.from_result(passed: true))
     end
     assert_operator calls, :>=, 1, "the seal write broadcasts the deployments modules"
