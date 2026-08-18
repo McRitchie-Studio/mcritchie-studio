@@ -16,13 +16,20 @@
        ("opacity-75" unless fresh_deploy),
        ("studio-border-glow release-fresh-glow lbfx-fresh-deploy" if fresh_deploy)
      ].compact.join(" ") %>
-  <%# LiveBoardFx reads data-fresh-deploy + data-shipped-at-ms for the freshness
-      glow (fresh_deploy_window_ms long — 8s in production, injectable for e2e).
-      data-fresh-window-ms publishes that window so the release-ship e2e spec can
-      budget its waits from the page itself. data-glow remains the fallback burst
-      tint for non-fresh replacements. %>
+  <%# The ReleaseFx router (tasks/_release_fx_router) reads all of these:
+      data-fresh-deploy + data-shipped-at-ms drive the deploy glow, a WINDOW
+      (fresh_deploy_window_ms — 8s in production, injectable for e2e) that resumes
+      at the right phase on a reload rather than restarting. data-fresh-window-ms
+      publishes that window so the release-ship e2e spec can budget its waits from
+      the page itself. data-glow tints the swap glow.
+      data-card-signature is what EARNS an animation on a plain replace: the router
+      plays the swap glow only when this string moved. Without it the card had no way
+      to tell a real change from a redraw, so it animated at every one — and
+      .ci_progress redraws this slot byte-identically on every CI upsert. Same
+      primitive #current-release uses; see ApplicationHelper#release_card_signature. %>
   <div id="last-release"
        data-glow="<%= rel.mascot&.signature_color %>"
+       data-card-signature="<%= release_card_signature(rel) %>"
        data-fresh-deploy="<%= fresh_deploy ? "true" : "false" %>"
        data-fresh-window-ms="<%= fresh_window_ms %>"
        data-shipped-at-ms="<%= (rel.shipped_at.to_f * 1000).round if rel.shipped_at.present? %>"
@@ -37,5 +44,6 @@
   <%# No shipped release yet: muted empty state (shared with the Next Release card). %>
   <%= render "tasks/release_card_empty_state", dom_id: "last-release", card_class: base_card_class,
              label: "Last Release", status: "none yet",
+             card_signature: release_card_signature(nil),
              hint: "The most recently shipped release will appear here." %>
 <% end %>

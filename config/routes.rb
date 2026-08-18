@@ -69,6 +69,11 @@ Rails.application.routes.draw do
       post "board/open_release",    to: "board#open_release",    as: :board_open_release
       post "board/advance_release", to: "board#advance_release", as: :board_advance_release
       post "board/reset_release",   to: "board#reset_release",   as: :board_reset_release
+      # The SPURIOUS redraw, on demand: re-broadcast the release modules with nothing
+      # changed. The exact shape .ci_progress used to send on every CI upsert, and the
+      # negative case the ReleaseFx router must answer with silence.
+      post "board/rebroadcast_release_modules", to: "board#rebroadcast_release_modules",
+                                                as: :board_rebroadcast_release_modules
     end
   end
   # Public link hub — general (non-admin) destinations. The admin counterpart

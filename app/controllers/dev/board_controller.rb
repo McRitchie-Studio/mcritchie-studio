@@ -79,6 +79,18 @@ module Dev
       head :no_content
     end
 
+    # Re-broadcast the release modules with NOTHING changed — the spurious redraw.
+    # Both cards are replaced with byte-identical HTML, which is what the live board
+    # received on every CI upsert before the ReleaseFx router (DeploymentsBroadcaster
+    # .ci_progress → .release_modules, ~24 per run per repo) and what it answered with
+    # a pop + lift + glow + confetti on the Last Release card. Drives the e2e proof
+    # that the router now answers it with silence. Sends BOTH slots on purpose: the
+    # real caller no longer pushes :last, so this toy is where that path stays tested.
+    def rebroadcast_release_modules
+      DeploymentsBroadcaster.release_modules
+      head :no_content
+    end
+
     # Open a fresh throwaway release with an untouched stage timeline (every
     # tracker node dark) — clears any prior fixture release first so the tracker
     # starts clean.
