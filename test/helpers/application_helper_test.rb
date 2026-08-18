@@ -279,10 +279,20 @@ class ApplicationHelperTest < ActionView::TestCase
   # stabilize-release-ship-spec); every consumer now renders from this helper,
   # and FRESH_DEPLOY_WINDOW_MS widens it for the e2e server only
   # (playwright.config.js webServer env).
-  test "[unit] fresh deploy window defaults to eight seconds" do
+  test "[unit] fresh deploy window defaults to sixty seconds" do
     with_env("FRESH_DEPLOY_WINDOW_MS", nil) do
-      assert_equal 8_000, fresh_deploy_window_ms
+      assert_equal 60_000, fresh_deploy_window_ms
     end
+  end
+
+  # The knee between the hold and the fade. Asserted as a FRACTION of the window, not a
+  # duration, because that is what keeps the split meaningful when the window moves —
+  # it is rendered into the card, ring and halo keyframes alike.
+  test "[unit] the glow holds for most of the window, then fades" do
+    assert_operator ApplicationHelper::FRESH_DEPLOY_HOLD_FRACTION, :>, 0.5,
+                    "the glow should be HELD for most of the window, not spend half of it leaving"
+    assert_operator ApplicationHelper::FRESH_DEPLOY_HOLD_FRACTION, :<, 1.0,
+                    "a knee at 1.0 is no fade at all — the jump this split exists to remove"
   end
 
   test "[unit] fresh deploy window honors the e2e injection env var" do
@@ -295,7 +305,7 @@ class ApplicationHelperTest < ActionView::TestCase
     # A bad knob must never 500 every /deployments render — fall back, don't raise.
     ["bananas", "", "0", "-5"].each do |bad|
       with_env("FRESH_DEPLOY_WINDOW_MS", bad) do
-        assert_equal 8_000, fresh_deploy_window_ms, "expected fallback for #{bad.inspect}"
+        assert_equal 60_000, fresh_deploy_window_ms, "expected fallback for #{bad.inspect}"
       end
     end
   end
@@ -873,7 +883,7 @@ class ApplicationHelperTest < ActionView::TestCase
 
       render partial: "tasks/last_release", locals: { release: rel }
 
-      assert_select "#last-release[data-fresh-deploy='true'][data-shipped-at-ms][data-fresh-window-ms='8000']"
+      assert_select "#last-release[data-fresh-deploy='true'][data-shipped-at-ms][data-fresh-window-ms='60000']"
       card = css_select("#last-release").first
       assert_includes card["class"], "studio-border-glow"
       assert_includes card["class"], "release-fresh-glow"
@@ -894,7 +904,9 @@ class ApplicationHelperTest < ActionView::TestCase
       rel.ship!
     end
 
-    travel_to Time.zone.local(2026, 7, 6, 12, 0, 9) do
+    # +70s — past the 60s window. (It was +9s when the window was 8s; the offset has to
+    # move with the window or this test silently starts asserting the FRESH branch.)
+    travel_to Time.zone.local(2026, 7, 6, 12, 1, 10) do
       render partial: "tasks/last_release", locals: { release: rel.reload }
 
       assert_select "#last-release[data-fresh-deploy='false']"

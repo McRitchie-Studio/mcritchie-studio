@@ -345,12 +345,29 @@ module ApplicationHelper
   # cleanup timer (tasks/_deployments_live_fx), and the card's
   # data-fresh-window-ms attribute, which the release-ship e2e spec reads to
   # budget its waits. FRESH_DEPLOY_WINDOW_MS injects a wider window for the
-  # e2e server (playwright.config.js webServer env): the production 8s window
+  # e2e server (playwright.config.js webServer env): the ORIGINAL 8s window
   # raced that spec's own arrival waits under machine load — an expired glow is
-  # a state you cannot wait back into (task stabilize-release-ship-spec).
+  # a state you cannot wait back into (task stabilize-release-ship-spec). The
+  # e2e override stays 20s, deliberately SHORTER than production, so the spec
+  # still watches a whole window open and close inside its own timeout.
   # Unparseable or non-positive values fall back to the default; a bad knob
   # must never 500 every /deployments render.
-  FRESH_DEPLOY_WINDOW_DEFAULT_MS = 8_000
+  #
+  # 8s -> 60s on 2026-08-18 (operator): a deploy is the board's biggest moment and
+  # 8 seconds was gone before anyone looked up. The window is a HOLD then a FADE,
+  # split by FRESH_DEPLOY_HOLD_FRACTION below — at 60s that is 48s glowing at full
+  # strength, then a 12s ease-out.
+  FRESH_DEPLOY_WINDOW_DEFAULT_MS = 60_000
+
+  # Where the glow stops holding and starts fading, as a fraction of the window.
+  # ONE value, rendered into BOTH the card keyframes and the ring/halo keyframes,
+  # so the card body and its glow can never part company mid-fade.
+  #
+  # It moved 0.5 -> 0.8 with the window. At 8s a half-and-half split was 4s of each;
+  # at 60s it would have been THIRTY SECONDS of imperceptible decay, which reads as a
+  # card that is neither glowing nor finished. Holding to 80% keeps "a deploy just
+  # landed" legible for 48s and spends the last 12s actually leaving.
+  FRESH_DEPLOY_HOLD_FRACTION = 0.8
   def fresh_deploy_window_ms
     override = Integer(ENV["FRESH_DEPLOY_WINDOW_MS"].to_s, exception: false)
     override&.positive? ? override : FRESH_DEPLOY_WINDOW_DEFAULT_MS

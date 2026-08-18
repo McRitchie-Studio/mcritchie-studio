@@ -18,7 +18,7 @@
      ].compact.join(" ") %>
   <%# The ReleaseFx router (tasks/_release_fx_router) reads all of these:
       data-fresh-deploy + data-shipped-at-ms drive the deploy glow, a WINDOW
-      (fresh_deploy_window_ms — 8s in production, injectable for e2e) that resumes
+      (fresh_deploy_window_ms — 60s in production, injectable for e2e) that resumes
       at the right phase on a reload rather than restarting. data-fresh-window-ms
       publishes that window so the release-ship e2e spec can budget its waits from
       the page itself. data-glow tints the swap glow.

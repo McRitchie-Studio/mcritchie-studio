@@ -41,17 +41,27 @@
     task cards keep the dropzone observer. Rendered by _deployments_live_fx,
     which owns the shared `.lbfx-glow` CSS this file's swap handler uses.
 
-    The fresh-deploy window (8s in production; FRESH_DEPLOY_WINDOW_MS widens it
+    The fresh-deploy window (60s in production; FRESH_DEPLOY_WINDOW_MS overrides it
     for the e2e server — ApplicationHelper#fresh_deploy_window_ms). The CSS
     durations and the JS timer MUST move together: a split window would fade the
-    glow at one time and flip the state at another. %>
+    glow at one time and flip the state at another.
+
+    THE WINDOW IS A HOLD, THEN A FADE, and `hold_stop` is the knee between them
+    (ApplicationHelper::FRESH_DEPLOY_HOLD_FRACTION). Rendering it into every
+    keyframe below — the card body, the ring, the halo — is what keeps them
+    leaving together; three hand-written percentages is how they drift apart. %>
 <% fresh_window_ms = fresh_deploy_window_ms %>
 <% fresh_window_css = "#{(fresh_window_ms / 1000.0).round(3)}s" %>
+<% hold_stop = "#{(ApplicationHelper::FRESH_DEPLOY_HOLD_FRACTION * 100).round(2)}%" %>
+<%# The fade's curve. Linear made the knee a CORNER — the glow sat perfectly still
+    and then, on one frame, began moving at full speed. Easing in from zero velocity
+    means the fade starts where the hold ended, at the same speed the hold had. %>
+<% fade_ease = "cubic-bezier(.4, 0, .7, 1)" %>
 <style>
-  /* Last Release deploy freshness: steady rainbow glow for the window's first
-     half, then a fade through the second (the keyframes' 50% knee). JS sets a
-     negative animation delay from data-shipped-at-ms so replacement streams
-     keep the same phase instead of restarting the glow. */
+  /* Last Release deploy freshness: a steady rainbow glow held to the knee
+     (FRESH_DEPLOY_HOLD_FRACTION — 80% of the window), then eased out through the
+     remainder. JS sets a negative animation delay from data-shipped-at-ms so
+     replacement streams keep the same PHASE instead of restarting the glow. */
   .lbfx-fresh-deploy {
     animation: lbfxFreshDeployGlow <%= fresh_window_css %> linear both;
     animation-delay: var(--lbfx-fresh-delay, 0ms);
@@ -59,7 +69,7 @@
   .release-fresh-glow.lbfx-fresh-deploy::before {
     animation-name: studioBorderGlowSteam, lbfxFreshDeployRingFade;
     animation-duration: var(--studio-border-glow-duration, 20s), <%= fresh_window_css %>;
-    animation-timing-function: linear, linear;
+    animation-timing-function: linear, ease;
     animation-iteration-count: infinite, 1;
     animation-fill-mode: none, both;
     animation-delay: 0s, var(--lbfx-fresh-delay, 0ms);
@@ -67,40 +77,60 @@
   .release-fresh-glow.lbfx-fresh-deploy::after {
     animation-name: studioBorderGlowSteam, lbfxFreshDeployHaloFade;
     animation-duration: var(--studio-border-glow-duration, 20s), <%= fresh_window_css %>;
-    animation-timing-function: linear, linear;
+    animation-timing-function: linear, ease;
     animation-iteration-count: infinite, 1;
     animation-fill-mode: none, both;
     animation-delay: 0s, var(--lbfx-fresh-delay, 0ms);
   }
+  /* THE FADE MUST LAND ON THE CARD'S RESTING LOOK, NOT ON "TRANSPARENT".
+     MEASURED, at the frame clearFreshDeployGlow ran: opacity 1.000 -> 0.750 and
+     border-alpha 1.000 -> 0.200, both in ONE frame. The ring and halo had already
+     eased to zero — the glow was fine. What jumped was the CARD, snapping 25%
+     darker and re-inking its border the instant the animation stopped applying.
+     Because the end state and the resting state were different states.
+
+     So each property below now ENDS where the card lives: opacity at .75 (the
+     opacity-75 the class re-adds), the border at --color-border (the theme token the
+     resting card already paints with — rgba(95,91,114,.2) today, and whatever the
+     theme says tomorrow), and the shadow at a transparent list of the SAME FOUR
+     LAYERS the glow uses — a 4-to-5 layer mismatch cannot interpolate cleanly.
+     `both` fill then HOLDS that resting look, so the cleanup that removes these
+     classes changes nothing on screen. Nothing to jump to: it is already there. */
   @keyframes lbfxFreshDeployGlow {
-    0%, 50% {
+    0%, <%= hold_stop %> {
       box-shadow: var(
         --task-card-glow-shadow,
-        0 0 0 1px rgba(255,255,255,.72) inset,
-        0 0 18px 4px rgba(248,113,113,.9),
-        0 0 32px 10px rgba(250,204,21,.68),
-        0 0 48px 16px rgba(52,211,153,.58),
-        0 0 64px 22px rgba(96,165,250,.52),
-        0 0 82px 28px rgba(192,132,252,.48)
+        0 0 0 1px rgba(255,255,255,.72),
+        0 0 32px rgba(250,204,21,.68),
+        0 0 48px rgba(52,211,153,.58),
+        0 0 82px rgba(192,132,252,.48)
       );
       border-color: var(--task-card-glow-border-color, rgba(255,255,255,.82));
+      opacity: 1;
+      animation-timing-function: <%= fade_ease %>;
     }
     100% {
       box-shadow:
-        0 0 0 0 rgba(248,113,113,0),
-        0 0 0 0 rgba(250,204,21,0),
-        0 0 0 0 rgba(52,211,153,0),
-        0 0 0 0 rgba(96,165,250,0),
-        0 0 0 0 rgba(192,132,252,0);
-      border-color: rgb(var(--lbfx-glow, 249 115 22) / 0);
+        0 0 0 1px transparent,
+        0 0 32px transparent,
+        0 0 48px transparent,
+        0 0 82px transparent;
+      border-color: var(--color-border, transparent);
+      opacity: .75;
     }
   }
   @keyframes lbfxFreshDeployRingFade {
-    0%, 50% { opacity: var(--studio-border-glow-opacity, .9); }
+    0%, <%= hold_stop %> {
+      opacity: var(--studio-border-glow-opacity, .9);
+      animation-timing-function: <%= fade_ease %>;
+    }
     100% { opacity: 0; }
   }
   @keyframes lbfxFreshDeployHaloFade {
-    0%, 50% { opacity: var(--studio-border-glow-halo-opacity, .34); }
+    0%, <%= hold_stop %> {
+      opacity: var(--studio-border-glow-halo-opacity, .34);
+      animation-timing-function: <%= fade_ease %>;
+    }
     100% { opacity: 0; }
   }
   @media (prefers-reduced-motion: reduce) {
