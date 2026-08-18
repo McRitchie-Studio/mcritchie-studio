@@ -89,6 +89,8 @@
 #   FAST_CHECK_ROOT                repo dir to run + fingerprint in (default: the
 #                                  cwd's git toplevel, else this repo)
 #   FAST_CHECK_SPINE               spine config path (default: config/fast_cert_spine.yml)
+#   FAST_CHECK_MAPPED_CAP          max mapped test files before the lane is skipped
+#                                  (default: 15, counted AFTER the spine dedupe)
 #   FAST_CHECK_TEST_PREPARE_CMD    override the test-prepare lane — test DB + bundled
 #                                  assets (default: bin/rails db:test:prepare test:prepare)
 #   FAST_CHECK_SKIP_TEST_PREPARE   set to 1 only for non-Rails harness tests
@@ -143,15 +145,23 @@ changed =
     FastCert.changed_files(root, base)
   end
 
-mapped = FastCert.select_tests(root, changed)
+breakdown = FastCert.mapping(root, changed)
+mapped = breakdown.values.flatten.uniq.sort
 spine = FastCert.spine(root, SPINE_CONFIG)
 mapped_only = mapped.reject { |t| FastCert.covered_by_spine?(t, spine) }
 lintable = FastCert.lintable_files(root, changed)
 
+# THE CAP, decided before anything runs so --list reports the same lane the run
+# would execute. See FastCert.cap_decision for why it sits after the spine dedupe
+# and why the default is as low as it is.
+cap = FastCert.cap_decision(mapped_only, breakdown)
+
 if options[:list]
   warn "fast-check: #{changed.size} changed file(s) → #{mapped.size} mapped test path(s), " \
        "#{spine.size} spine entr#{spine.size == 1 ? 'y' : 'ies'}, #{lintable.size} lintable file(s)"
-  mapped_only.each { |t| puts "mapped  #{t}" }
+  warn "fast-check: mapped cap #{cap[:cap]} — #{cap[:capped] ? 'EXCEEDED' : 'not reached'} " \
+       "(#{cap[:count]} after the spine dedupe)"
+  mapped_only.each { |t| puts(cap[:capped] ? "capped  #{t}" : "mapped  #{t}") }
   spine.each { |t| puts "spine   #{t}" }
   lintable.each { |f| puts "lint    #{f}" }
   exit 0
@@ -278,6 +288,28 @@ end
 mapped_ok =
   if mapped_only.empty?
     skip_lane("mapped-tests", mapped.empty? ? "no tests map from the diff" : "all mapped tests covered by the spine",
+              gate_slug: gate_slug)
+  elsif cap[:capped]
+    # LOUD, because a silently-skipped lane is how a cert stops meaning anything.
+    # The builder is told the cap, what tripped it, and the one command that DOES
+    # cover a diff this broad — the spine still runs below, so this is a narrower
+    # cert rather than no cert.
+    warn ""
+    warn "fast-check: MAPPED LANE CAPPED — #{cap[:count]} mapped test file(s) exceeds the cap of #{cap[:cap]}."
+    if cap[:worst_path]
+      warn "  widest mapping: #{cap[:worst_path]} → #{cap[:worst_count]} test file(s)"
+      warn "  a file with no convention target falls back to a word-boundary grep of its"
+      warn "  camelized name; when that matches this much of the suite it is telling you the"
+      warn "  token is generic, not which tests are relevant."
+    end
+    warn "  running the SPINE ONLY. For a diff this broad the right cert is:"
+    warn "    bin/full-suite-check #{gate_slug || '<task>'}"
+    warn "  (override deliberately with FAST_CHECK_MAPPED_CAP=<n>.)"
+    warn ""
+    skip_lane("mapped-tests",
+              "#{cap[:count]} mapped file(s) over the cap of #{cap[:cap]}" \
+              "#{cap[:worst_path] ? " (widest: #{cap[:worst_path]} → #{cap[:worst_count]})" : ''}" \
+              " — spine only; use bin/full-suite-check for this diff",
               gate_slug: gate_slug)
   else
     run_lane("mapped-tests", "#{test_cmd} #{mapped_only.map(&:shellescape).join(' ')}", root, gate_slug: gate_slug)

@@ -247,4 +247,107 @@ class FastCertTest < Minitest::Test
       assert_equal "origin/accepted", FastCert.default_diff_base(dir)
     end
   end
+
+  # --- the mapped cap -----------------------------------------------------------
+  #
+  # WHY THERE IS A CAP AT ALL. There was none, and a fast lane that can silently
+  # become a full suite is worse than a slow one: the builder cannot tell which
+  # they are in. Observed live 2026-08-15 — a diff touching
+  # config/initializers/studio.rb mapped to 45 test files and bin/fast-check was
+  # still running at 39m34s against a lane g1-cert.md budgets at ~1 minute, which
+  # bin/ship runs by default.
+
+  def test_mapping_reports_what_each_changed_file_maps_to
+    with_tree(
+      "test/models/widget_test.rb" => "class WidgetTest; end\n",
+      "test/lib/other_test.rb" => "class OtherTest; end\n"
+    ) do |dir|
+      result = FastCert.mapping(dir, ["app/models/widget.rb", "app/models/ghost.rb"])
+
+      assert_equal ["test/models/widget_test.rb"], result["app/models/widget.rb"]
+      assert_empty result["app/models/ghost.rb"], "a path that maps nowhere still gets an entry"
+    end
+  end
+
+  # select_tests IS the union of mapping, and must stay so — the cap reads the
+  # per-file breakdown to name a culprit, and it can only be trusted if the two
+  # come from the same pass.
+  def test_select_tests_is_the_union_of_the_mapping
+    with_tree(
+      "test/models/widget_test.rb" => "class WidgetTest; end\n",
+      "test/models/gadget_test.rb" => "class GadgetTest; end\n"
+    ) do |dir|
+      changed = ["app/models/widget.rb", "app/models/gadget.rb"]
+
+      assert_equal FastCert.mapping(dir, changed).values.flatten.uniq.sort,
+                   FastCert.select_tests(dir, changed)
+    end
+  end
+
+  def test_the_cap_defaults_low_and_reads_the_env
+    assert_equal 15, FastCert::DEFAULT_MAPPED_CAP
+
+    with_env("FAST_CHECK_MAPPED_CAP" => "3") { assert_equal 3, FastCert.mapped_cap }
+  end
+
+  # A MALFORMED OVERRIDE MUST NOT DISABLE THE CAP. "0", "" and "banana" all mean
+  # "I did not say anything usable" — and `to_i` turns every one of them into 0,
+  # which as a cap would skip the mapped lane on EVERY diff. That is a silent
+  # cert-shaped hole, which is the exact disease this task exists to close.
+  def test_a_useless_cap_override_falls_back_to_the_default
+    ["0", "", "   ", "banana", "-4"].each do |raw|
+      with_env("FAST_CHECK_MAPPED_CAP" => raw) do
+        assert_equal FastCert::DEFAULT_MAPPED_CAP, FastCert.mapped_cap,
+                     "#{raw.inspect} disabled the cap instead of falling back"
+      end
+    end
+  end
+
+  def test_a_narrow_diff_is_not_capped
+    decision = FastCert.cap_decision(["test/models/widget_test.rb"],
+                                     { "app/models/widget.rb" => ["test/models/widget_test.rb"] })
+
+    refute decision[:capped]
+    assert_equal 1, decision[:count]
+  end
+
+  # THE CULPRIT IS NAMED, not just the total. "48 files, too many" sends the
+  # builder through their whole diff; "this one file mapped 44" names the cause,
+  # and the cause is almost always one file whose grep token is too generic.
+  def test_a_capped_decision_names_the_widest_mapping
+    breakdown = {
+      "app/models/widget.rb" => ["test/models/widget_test.rb"],
+      "config/initializers/studio.rb" => (1..40).map { |i| "test/lib/t#{i}_test.rb" }
+    }
+    decision = FastCert.cap_decision(breakdown.values.flatten.uniq.sort, breakdown)
+
+    assert decision[:capped]
+    assert_equal 15, decision[:cap]
+    assert_equal 41, decision[:count]
+    assert_equal "config/initializers/studio.rb", decision[:worst_path]
+    assert_equal 40, decision[:worst_count]
+  end
+
+  # THE CAP IS ABOUT EXTRA WORK, so it reads the set AFTER the spine dedupe. A
+  # mapped test the spine already runs costs this lane nothing, and capping the
+  # raw union would refuse diffs whose mapping is entirely redundant — punishing
+  # exactly the diffs the spine already covers well.
+  def test_the_cap_counts_what_it_is_given_not_the_raw_union
+    breakdown = { "config/initializers/studio.rb" => (1..40).map { |i| "test/lib/t#{i}_test.rb" } }
+    after_spine_dedupe = ["test/lib/t1_test.rb", "test/lib/t2_test.rb"]
+
+    decision = FastCert.cap_decision(after_spine_dedupe, breakdown)
+
+    refute decision[:capped],
+           "the cap tripped on the raw mapping — 38 of those 40 are already in the spine"
+    assert_equal 2, decision[:count]
+  end
+
+  def with_env(pairs)
+    previous = pairs.keys.to_h { |k| [k, ENV[k]] }
+    pairs.each { |k, v| ENV[k] = v }
+    yield
+  ensure
+    previous.each { |k, v| v.nil? ? ENV.delete(k) : ENV[k] = v }
+  end
 end
