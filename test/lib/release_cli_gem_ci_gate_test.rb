@@ -19,6 +19,7 @@
 # config/test_health.yml so new work lands somewhere else.
 require "minitest/autorun"
 require "open3"
+require "tmpdir"
 require "rbconfig"
 
 class ReleaseCliGemCiGateTest < Minitest::Test
@@ -32,14 +33,30 @@ class ReleaseCliGemCiGateTest < Minitest::Test
 
   # Drive the REAL script with the injection seams set, then evaluate `call`.
   # RELEASE_CI_STATUS is the same seam the pre-QA gate's tests use.
+  # PROJECTS_DIR IS PINNED TO AN EMPTY DIRECTORY, and that is the fix for a test
+  # that was green here and RED ON CI.
+  #
+  # release.rb resolves sibling repos under the projects root. On a developer
+  # machine studio-engine sits there, so the run gets as far as checkout_detached
+  # ("could not checkout <sha>"); on a runner it does not exist at all and the run
+  # stops earlier at publish_gem's own check ("gem repo not found"). A test that
+  # asserted the first message passed locally and failed on CI — it had pinned a
+  # message that depended on the filesystem around it.
+  #
+  # Tolerating BOTH messages would have made it pass everywhere while still
+  # exercising a different code path per machine, so the environment is CONTROLLED
+  # instead: every run sees the same empty root and the same one path.
   def run_release(call, env = {}, argv: ["--help"])
     script = %(ARGV.replace(#{argv.inspect}); begin; load #{BIN.inspect}; rescue SystemExit; end; ) +
              %(begin; #{call}; rescue SystemExit; puts "REFUSED"; end)
-    out, = Open3.capture2e(
-      { "RELEASE_CI_POLL_INTERVAL" => "0", "RELEASE_CI_POLL_TIMEOUT" => "0" }.merge(env),
-      RbConfig.ruby, "-e", script
-    )
-    out
+    Dir.mktmpdir do |empty_root|
+      out, = Open3.capture2e(
+        { "RELEASE_CI_POLL_INTERVAL" => "0", "RELEASE_CI_POLL_TIMEOUT" => "0",
+          "PROJECTS_DIR" => empty_root }.merge(env),
+        RbConfig.ruby, "-e", script
+      )
+      return out
+    end
   end
 
   # --- the gate's verdict -------------------------------------------------------
@@ -139,11 +156,23 @@ class ReleaseCliGemCiGateTest < Minitest::Test
     refute_match(/gem build:|gem push:/, out)
   end
 
+  # THE "GOT PAST IT" HALF, and its first version was GREEN LOCALLY AND RED ON CI.
+  #
+  # It asserted the run reached `could not checkout` — which is what
+  # checkout_detached says when the sibling clone EXISTS but lacks the SHA. That
+  # is true on a developer machine, where studio-engine sits beside the hub at the
+  # projects root, and false on a runner, where it does not exist at all and the
+  # run aborts earlier with `gem repo not found`. The test pinned a message that
+  # depended on the filesystem around it.
+  #
+  # With the root pinned empty (see run_release), the step after the gate is
+  # always publish_gem's own repo check — one path, one message, every machine.
+  PAST_THE_GATE = /gem repo not found/
   def test_a_green_verdict_carries_the_publish_past_the_gate
     out = run_release(%(publish_gems_for_qa(#{plan_line})), { "RELEASE_CI_STATUS" => "green" })
 
     refute_includes out, "NOTHING WAS PUBLISHED", "green must not be refused by the gate"
-    assert_match(/could not checkout/, out,
+    assert_match(PAST_THE_GATE, out,
                  "the run never reached the step AFTER the gate — the gate is not being passed, " \
                  "so the red case above proves nothing about ordering")
   end
