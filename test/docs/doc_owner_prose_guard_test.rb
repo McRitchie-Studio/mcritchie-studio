@@ -6,7 +6,7 @@ require "test_helper"
 # qa-release** (the accepted→release sweep + QA, the G3 assembler) and **Steffon
 # owns production-deploy** (the ship, the G4 deployer). Carl owns review.
 #
-# The ex(?:(?:will|can|cannot|never|should|must|then|is|was|are|has|have|does|do)\s+)*ting tripwires (sop_registry_docs_test, review_lane_docs_test, …) guard
+# The existing tripwires (sop_registry_docs_test, review_lane_docs_test, …) guard
 # the SOP FILE LOCATIONS and a handful of pinned PHRASES — NOT the owner-PROSE. A
 # doc can link `avi/sops/qa-release.md` while its sentence still says "Steffon's
 # qa-release", and every path/phrase guard stays green. That is the exact gap this

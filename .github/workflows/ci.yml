@@ -218,10 +218,11 @@ jobs:
       # --grep-invert @quarantine EXCLUDES the 18 specs that were already red when this
       # lane was first switched on. Stating the hole plainly, as turf-monster's ci.yml
       # does for its @devnet exclusion: those specs are NOT covered by this job today.
-      # The exclusion buys the OTHER 52 specs a real lane now instead of holding all of
+      # The exclusion buys the OTHER (executed) specs a real lane now instead of holding all of
       # them hostage to a repair, and it fails safe — a rotted suite wired in red would
       # paint CI red for every PR in flight. It is a debt with a name and a ticket:
-      # /tasks/repair-rotted-e2e-specs. When that lands, DELETE this flag.
+      # /tasks/repair-quarantined-e2e-clusters (the older repair-rotted-e2e-specs was
+      # archived while every spec was still tagged). When that lands, DELETE this flag.
       #
       # The hole is BOUNDED, not merely deplored: test/lib/e2e_quarantine_ratchet_test.rb
       # ratchets the @quarantine count (ceiling 18, may only fall) — against the value on
@@ -239,10 +240,12 @@ jobs:
       #      pinned to keep emitting it; everything else, incl.
       #      flags Playwright ships next year, is refused BY NAME). The one sanctioned
       #      exclusion is value-pinned: exactly one --grep-invert, and its value must be
-      #      exactly `@quarantine`. Widening it to `@quarantine|board` — 51 specs down to
+      #      exactly `@quarantine`. Widening it to `@quarantine|board` — dropping 8 specs to
       #      43, every guard formerly green — is now a test failure.
       #   2. THE DECLARED SET. test/lib/e2e_quarantine_ratchet_test.rb reads the committed
-      #      specs: 70 − 18 == 52, and every selection modifier is refused on ANY receiver.
+      #      specs: total_specs − quarantined == executed, and every selection modifier is
+      #      refused on ANY receiver. The NUMBERS live in config/e2e_lane.yml and are not
+      #      repeated here — every copy of them in prose has rotted within days.
       #   3. THE EXECUTED SET — the receipt, below. Guards 1 and 2 read the SOURCE, and a
       #      source-level guard can only refuse the spellings someone thought to refuse.
       #      Three rounds of review proved that by finding a fourth, every time: `.only`
@@ -250,7 +253,7 @@ jobs:
       #      `.skip`/`.fixme`, then `testInfo.skip()` on a receiver the regex never watched,
       #      then a widened `--grep-invert` on a flag nothing pinned. So the lane now emits
       #      a JSON receipt per shard and `e2e_executed_set` asserts what it ACTUALLY RAN —
-      #      52 executed, 0 skipped, every shard's report present. A spec that leaves the
+      #      `executed` specs, 0 skipped, every shard's report present. A spec that leaves the
       #      lane by ANY route, on ANY axis, lands on the same line of arithmetic.
       - name: Run Playwright e2e suite
         env:
@@ -286,7 +289,8 @@ jobs:
   #
   # `if: always()` is LOAD-BEARING and is the ONLY condition this job may ever carry. Without
   # it, a red `playwright` job SKIPS this one — and a skipped required check does not report
-  # failure, so the one gate that would have said "the lane ran 43 of 51 specs" would go quiet
+  # failure, so the one gate that would have said "the lane ran fewer specs than it claims"
+  # would go quiet
   # in precisely the runs where it matters. `always()` cannot exclude the lane; every other
   # condition can, and test/lib/ci_workflow_triggers_test.rb refuses every other condition.
   e2e_executed_set:
