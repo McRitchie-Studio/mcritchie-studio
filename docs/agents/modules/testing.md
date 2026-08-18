@@ -40,7 +40,10 @@ every `ui+db` change — the tier was "collected" by a builder typing `[e2e] …
 `--grep-invert @quarantine`, and their count is ratcheted (ceiling 18, may only fall)
 by `test/lib/e2e_quarantine_ratchet_test.rb`. Do not read the green `playwright`
 check as "the whole e2e suite passes" until that ceiling reaches 0
-(`/tasks/repair-rotted-e2e-specs`).
+(`/tasks/repair-quarantined-e2e-clusters` — the live ticket; the older
+`repair-rotted-e2e-specs` was archived while all 18 specs were still tagged, which is
+the "archived task the code cites as live" trap catalogued in
+`docs/agents/agents/alex/sops/clean-up.md`).
 
 **"May only fall" is enforced, and note WHERE the baseline comes from** — the ratchet
 compares the ceiling against its value on **`origin/release`**, not against the copy in
@@ -54,12 +57,20 @@ therefore checks out with `fetch-depth: 0`, and the ratchet fails **closed** —
 why — if it cannot resolve the baseline.)
 
 **What stops a spec from quietly leaving the lane.** Two guards, and only one of them
-generalizes. Both read the same contract, `config/e2e_lane.yml` — **95 committed − 18
-quarantined == 77 executed** — so they can never certify two different suites.
+generalizes. Both read the same contract, `config/e2e_lane.yml` — **`total_specs` −
+`quarantined` == `executed`** — so they can never certify two different suites.
+
+**The numbers live in that file and are deliberately NOT repeated here.** They move
+whenever a spec is added: this paragraph has already been wrong twice, quoting 95 − 18
+== 77 while the contract said 103, then 107. A count copied into prose is a second
+source of truth that nothing enforces, and it rots within days while every guard stays
+green — the same disease as the ratchet-that-was-really-a-pin described just above, one
+level out. Read the numbers from `config/e2e_lane.yml`; it is the only copy any guard
+consults.
 
 1. **The receipt (`bin/e2e-executed-set-check`, the `e2e_executed_set` CI job).** Each
    shard emits a JSON report; this job reads them and asserts what the lane **actually
-   ran**: 77 executed, 0 skipped, every shard's report present. This is the durable
+   ran**: `executed` specs, 0 skipped, every shard's report present. This is the durable
    guard. A spec that leaves the lane by *any* route lands on one line of arithmetic,
    whatever syntax arranged it — a runtime skip, a widened `--grep-invert`, an
    `--only-changed`, a narrowed `testDir`, a deleted file, a dropped shard, or next
