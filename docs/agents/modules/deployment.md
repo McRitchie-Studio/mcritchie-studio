@@ -410,6 +410,24 @@ Each `CiCheckJob` upsert then morph-broadcasts the refreshed bar to the task car
 the Next Release G3 slot over Turbo Streams, so the board's CI progress bars **tick
 up live with no reload** as each check passes.
 
+**Where the card's meter shows, and what it says.** The meter rides a task card from
+`building` through `submitted` — `building` included because `bin/ship` opens the PR
+and then WAITS on its CI (`gate-submit-on-green-ci`) with the task still on the
+builder's desk, which is the window an operator most wants to watch. Past `submitted`
+the run is history and the slot drops. One row: the PR number on the left (parsed
+from `devops.pr_url`), the run clock on the right, and one mark per check INSIDE the
+rail — ✗ failed pushed left, spinner running in the middle, ✓ passed pushed right, so
+a check visibly migrates as it settles and a width cap can only ever drop surplus
+passes. Past the cap the row fades at its right edge rather than clipping silently.
+The clock ticks live off `github_workflow_runs.run_started_at` while any check is
+pending, then freezes to the run's measured duration (last `ci_check_jobs.completed_at`
+minus the start) — "how long it took", not "how long ago".
+
+**Demoing it locally:** the /deployments dev tools' **Advance →** button walks a
+fixture task `designed → building → waiting approval → a scripted 10-check CI run
+(one check settling every 5s, the last one red) → submitted`, so the meter can be
+watched end to end with no real PR (`Dev::BoardController`, local-only).
+
 **The review autopilot rides this same ingest.** After every `workflow_run` upsert
 that carries a CONCLUSION, the job calls `ReviewPendingAction.trigger_for_head`
 (repo + head_sha), which enqueues `ReviewPendingActionExecutionJob` for any ARMED

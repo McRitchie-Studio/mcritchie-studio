@@ -345,12 +345,29 @@ module ApplicationHelper
   # cleanup timer (tasks/_deployments_live_fx), and the card's
   # data-fresh-window-ms attribute, which the release-ship e2e spec reads to
   # budget its waits. FRESH_DEPLOY_WINDOW_MS injects a wider window for the
-  # e2e server (playwright.config.js webServer env): the production 8s window
+  # e2e server (playwright.config.js webServer env): the ORIGINAL 8s window
   # raced that spec's own arrival waits under machine load — an expired glow is
-  # a state you cannot wait back into (task stabilize-release-ship-spec).
+  # a state you cannot wait back into (task stabilize-release-ship-spec). The
+  # e2e override stays 20s, deliberately SHORTER than production, so the spec
+  # still watches a whole window open and close inside its own timeout.
   # Unparseable or non-positive values fall back to the default; a bad knob
   # must never 500 every /deployments render.
-  FRESH_DEPLOY_WINDOW_DEFAULT_MS = 8_000
+  #
+  # 8s -> 60s on 2026-08-18 (operator): a deploy is the board's biggest moment and
+  # 8 seconds was gone before anyone looked up. The window is a HOLD then a FADE,
+  # split by FRESH_DEPLOY_HOLD_FRACTION below — at 60s that is 48s glowing at full
+  # strength, then a 12s ease-out.
+  FRESH_DEPLOY_WINDOW_DEFAULT_MS = 60_000
+
+  # Where the glow stops holding and starts fading, as a fraction of the window.
+  # ONE value, rendered into BOTH the card keyframes and the ring/halo keyframes,
+  # so the card body and its glow can never part company mid-fade.
+  #
+  # It moved 0.5 -> 0.8 with the window. At 8s a half-and-half split was 4s of each;
+  # at 60s it would have been THIRTY SECONDS of imperceptible decay, which reads as a
+  # card that is neither glowing nor finished. Holding to 80% keeps "a deploy just
+  # landed" legible for 48s and spends the last 12s actually leaving.
+  FRESH_DEPLOY_HOLD_FRACTION = 0.8
   def fresh_deploy_window_ms
     override = Integer(ENV["FRESH_DEPLOY_WINDOW_MS"].to_s, exception: false)
     override&.positive? ? override : FRESH_DEPLOY_WINDOW_DEFAULT_MS
@@ -451,8 +468,8 @@ module ApplicationHelper
   end
 
   # A task's PR-head CI progress (a Ci::CheckProgress) for the board card's
-  # progress bar — blank until the task is submitted with a PR and a CI run
-  # exists. The board preloads these in one batch (@ci_progress_by_slug); this is
+  # progress bar — blank until the task has a PR with a CI run, which now happens
+  # while it is still BUILDING (bin/ship opens the PR, then waits on CI). The board preloads these in one batch (@ci_progress_by_slug); this is
   # the single-card fallback for the Turbo re-render path. Reads through
   # Ci::ProgressReader, which is cached and degrades to blank on any error.
   def task_ci_progress(task)
@@ -487,14 +504,92 @@ module ApplicationHelper
   # animates the running loader, `label` is the accessible verb the icon stands for.
   # The pending entry is the safe fallback — an unknown state is never a phantom
   # pass/fail.
+  # LIGHT-MODE TONES ARE 800, AND EVERY STEP THERE WAS MEASURED, NOT PICKED. The marks ride
+  # ON the meter's tint fill now, so their contrast is against a composited background, and
+  # e2e/ci_meter_fit.spec.js is the instrument (it walks the whole ancestor chain plus the
+  # fill, per state). Measured in light mode against that background:
+  #   600 -> passed 2.39:1, failed 3.0:1   — under even the 3:1 graphical floor
+  #   700 -> passed 3.51:1, failed 4.21:1  — still under the 4.5:1 text floor
+  #   800 -> both clear 4.5:1              — what ships
+  # The old two-row meter used the 600s against the bare card and was already that low;
+  # putting the marks on the fill is simply what finally put an instrument on it. Dark
+  # mode's 400s were never the problem (they measure ~8:1) and are unchanged — which is
+  # also why this is invisible on the dark board and would have stayed unnoticed.
   CI_CHECK_SYMBOLS = {
-    passed:  { label: "passed",  color: "text-emerald-600 dark:text-emerald-400", spin: false },
-    failed:  { label: "failed",  color: "text-red-600 dark:text-red-400",         spin: false },
-    pending: { label: "running", color: "text-amber-600 dark:text-amber-400",     spin: true }
+    passed:  { label: "passed",  color: "text-emerald-800 dark:text-emerald-400", spin: false },
+    failed:  { label: "failed",  color: "text-red-800 dark:text-red-400",         spin: false },
+    pending: { label: "running", color: "text-amber-800 dark:text-amber-400",     spin: true }
   }.freeze
 
   def ci_check_symbol(check)
     CI_CHECK_SYMBOLS.fetch(check.state, CI_CHECK_SYMBOLS[:pending])
+  end
+
+  # How many marks the CARD's meter draws before the row overflows and fades.
+  #
+  # MEASURED, not reasoned — and the first draft was wrong, exactly the way
+  # tasks/_release_phase_meter warns a cap goes wrong. A board card's meter rail
+  # measures 168px in the browser (not the ~190px the card's own width suggests), so
+  # its content box is 158px: 168 - 2px border - 8px of px-1 padding. A mark is a
+  # fixed 10px box on a 2px gap, so n marks span 12n - 2 and 13 marks fit at 154px.
+  # A cap of 14 spans 166px and CLIPPED the last mark by 4px while reporting
+  # data-overflowed="false" — a silent clip, which is the whole defect class here.
+  # e2e/ci_meter_fit.spec.js re-measures this in a real browser; change the geometry
+  # and re-measure, do not re-reason.
+  #
+  # The fade past the cap — a mask on the right edge — is what keeps a bigger suite
+  # honest: it SHOWS that marks were cut. Severity ordering
+  # (Ci::CheckProgress::MARK_RANK) means the marks that fall off the end are surplus
+  # PASSES, never a failure or a still-running check.
+  CI_METER_MARK_CAP = 13
+
+  # The marks the card meter draws: one per check, severity-ordered, capped. Returns
+  # [marks, overflowed] — the caller fades the row's right edge when overflowed.
+  def ci_meter_marks(progress, cap: CI_METER_MARK_CAP)
+    return [[], false] if progress.blank? || !progress.present?
+
+    checks = progress.ordered_checks
+    [checks.first(cap), checks.size > cap]
+  end
+
+  # "PR: 610" — the meter's label, so the operator reads the pull request number off
+  # the card instead of hovering the link. Parses the trailing number of a GitHub PR
+  # url; falls back to the bare "CI" when the url is missing or shaped otherwise (a
+  # release track, a task whose pr_url was hand-entered).
+  def ci_meter_label(pr_url, fallback: "CI")
+    number = pr_url.to_s[%r{/pull/(\d+)}, 1]
+    number ? "PR: #{number}" : fallback
+  end
+
+  # secs -> the SINGLE-UNIT elapsed token the CI meter shows: "1s".."59s", then
+  # "1m".."59m", then "1h 04m". One unit keeps the clock calm on a dense card — a
+  # ticking "7m 23s" (format_elapsed_clock, the release ticker's shape) redraws every
+  # second where "7m" redraws once a minute — and the seconds tier stays exact
+  # because that is the tier a CI run actually lives in. MUST stay in step with
+  # ciFmt() in tasks/_release_ticker (data-mode="short"), or the server-rendered
+  # first paint and the first tick disagree.
+  def compact_elapsed_short(secs)
+    return nil if secs.nil?
+
+    secs = [secs.to_i, 0].max
+    return "#{secs}s" if secs < 60
+
+    minutes = secs / 60
+    return "#{minutes}m" if minutes < 60
+
+    format("%dh %02dm", minutes / 60, minutes % 60)
+  end
+
+  # Which stages wear the CI meter ON THE BOARD CARD. Deliberately NARROWER than
+  # Ci::ProgressReader::TASK_STAGES_WITH_CI (which runs through `assembled`, since the
+  # reader also feeds the release surfaces): a card shows the meter only while its CI
+  # is LIVE NEWS — building (bin/ship opened the PR and is waiting on CI) and
+  # submitted (awaiting review). Past that the run is history and the meter is stale
+  # noise, so the whole slot drops.
+  CI_METER_STAGES = %w[building submitted].freeze
+
+  def ci_meter_stage?(stage)
+    CI_METER_STAGES.include?(stage.to_s)
   end
 
   # The shared geometry for the card-width bars stacked on the board task card —
@@ -724,7 +819,7 @@ module ApplicationHelper
   # The marks a measured meter draws (Assembling): one per CI check, capped as above, plus
   # a trailing :overflow sentinel when the suite runs past the cap. :passed/:failed draw as
   # ✓/✗ glyphs; :pending draws as a SPINNER (the same house loader
-  # components/_ci_progress_symbols uses), so a running suite reads as live rather than as
+  # components/_ci_progress_meter uses), so a running suite reads as live rather than as
   # a row of inert circles. Rendered by tasks/_release_phase_meter.
   #
   # Sorted, because the source is not: CiCheckJob.progress_rows plucks without an ORDER BY,

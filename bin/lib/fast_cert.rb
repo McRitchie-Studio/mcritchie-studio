@@ -122,13 +122,76 @@ module FastCert
     end
   end
 
-  # The diff-mapped test set: per changed file, its EXISTING convention targets;
-  # when none exist, the grep fallback. Sorted + deduped, paths relative to root.
-  def select_tests(root, changed)
-    Array(changed).flat_map do |path|
+  # PER CHANGED FILE, what it maps to: its EXISTING convention targets, or the
+  # grep fallback when it has none. Returns { changed_path => [test paths] }.
+  #
+  # Exposed separately from select_tests because WHICH FILE mapped widely is the
+  # only actionable detail when the mapping explodes. A cap that says "48 files,
+  # too many" sends the builder looking through their whole diff; one that says
+  # "config/initializers/studio.rb alone mapped 44" names the cause, and the cause
+  # is almost always a single file whose grep token is too generic to mean
+  # anything. Same passes as select_tests did — the union is computed from this,
+  # so nothing is read twice.
+  def mapping(root, changed)
+    Array(changed).to_h do |path|
       existing = convention_candidates(path).select { |t| File.file?(File.join(root, t)) }
-      existing.empty? ? grep_tests(root, grep_token(path)) : existing
-    end.uniq.sort
+      [path, existing.empty? ? grep_tests(root, grep_token(path)) : existing]
+    end
+  end
+
+  # The diff-mapped test set: the union of the above. Sorted + deduped, paths
+  # relative to root.
+  def select_tests(root, changed)
+    mapping(root, changed).values.flatten.uniq.sort
+  end
+
+  # HOW MANY MAPPED TESTS THIS LANE WILL RUN BEFORE IT IS WORTH RUNNING AT ALL.
+  #
+  # There was no cap, and a fast lane that can silently become a full suite is
+  # worse than a slow one: the builder cannot tell which they are in. Observed
+  # live on 2026-08-15 — a diff touching config/initializers/studio.rb mapped to
+  # 48 test files and bin/fast-check was still running at 39m34s against a lane
+  # that g1-cert.md budgets at about one minute. bin/ship runs this by default, so
+  # every builder pays it.
+  #
+  # An initializer has no convention candidate, so it falls through to a
+  # word-boundary grep of its camelized name — and "Studio" appears across the
+  # whole tree. A grep that matches half the suite has told you nothing about
+  # which tests are RELEVANT; it has only told you the token is too generic. Past
+  # the cap the honest move is to stop pretending the mapping is a signal, run the
+  # spine, and say so loudly.
+  #
+  # 15 is deliberately low. The lane's value is being predictable, not thorough —
+  # bin/full-suite-check is one command away and is the right answer for a diff
+  # this broad.
+  DEFAULT_MAPPED_CAP = 15
+
+  def mapped_cap
+    raw = ENV["FAST_CHECK_MAPPED_CAP"].to_s.strip
+    return DEFAULT_MAPPED_CAP if raw.empty?
+
+    n = raw.to_i
+    n.positive? ? n : DEFAULT_MAPPED_CAP
+  end
+
+  # The cap decision for an already-spine-deduped mapped set.
+  #
+  # APPLIED AFTER THE SPINE DEDUPE, deliberately: the cap is about how much EXTRA
+  # work this lane does, and a mapped test the spine already runs costs nothing.
+  # Capping the raw union would trip on diffs whose mapping is entirely redundant.
+  #
+  # Returns a Hash rather than a bare Boolean because the caller has to explain
+  # itself: the cap it applied, how far over, and the file to look at.
+  def cap_decision(mapped_only, breakdown, cap: mapped_cap)
+    worst = Array(breakdown).max_by { |_path, tests| Array(tests).size }
+
+    {
+      capped: mapped_only.size > cap,
+      cap: cap,
+      count: mapped_only.size,
+      worst_path: worst && worst[0],
+      worst_count: worst ? Array(worst[1]).size : 0
+    }
   end
 
   # --- spine --------------------------------------------------------------------
