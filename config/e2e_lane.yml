@@ -91,12 +91,24 @@ total_specs: 112
 # Repair a spec: drop its tag, lower `quarantined`, raise `executed`, same commit — the guard
 # will tell you both numbers. Tagging one MORE spec to green a PR is the exact self-declaration
 # disease this whole lane exists to cure, and it is now a red build rather than a red face.
-quarantined: 18
+# 18 -> 15 on 2026-08-18 (/tasks/repair-quarantined-e2e-clusters): three deployments_live
+# specs REPAIRED, not re-tagged. Root cause was never the specs - the Deployments board
+# collapses its three upstream lanes below 1400px, and Playwright configures no viewport,
+# so Chromium's 1280px default hid every card they wait on. One test.use({viewport}) line
+# revived them. The other four in that file fail for DIFFERENT reasons (three are
+# Building-column/blocked-card behaviour, one is the review ticker) and stay tagged.
+quarantined: 15
 
 # total_specs - quarantined. What the lane MUST execute — asserted against the runner's own
 # report, so no source-level spelling on any axis can move it without moving this line.
-#   npx playwright test --list --grep-invert @quarantine  ->  94 tests in 44 files
-executed: 94
+#   npx playwright test --list --grep-invert @quarantine  ->  97 tests in 44 files
+#
+# 2026-08-18, THIRD conflict on this line in one day: /tasks/repair-quarantined-e2e-clusters
+# repaired three specs (quarantined 18 -> 15, executed 92 -> 95) while this branch added two
+# (total 110 -> 112, executed 92 -> 94). Neither side's number is right on the merged tree.
+# Resolved from the INVARIANT — total_specs - quarantined - and re-derived with the lister
+# above: 112 - 15 = 97. Taking either side would have un-counted the other PR's work.
+executed: 97
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to
