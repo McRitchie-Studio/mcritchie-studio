@@ -21,6 +21,11 @@ class TaskAssembledSeatTest < ActiveSupport::TestCase
     # update_columns, not create: the model stamps its own stage timestamps on
     # save, so passing them to create! is silently overwritten with Time.current.
     task.update_columns(reviewed_at: reviewed_at, assembled_at: assembled_at)
+    # The TRANSITION event carries the same moment. Production writes both, and
+    # the reader prefers the event so the card and the model cannot disagree —
+    # a fixture that sets only the column models a state that never occurs.
+    task.task_events.transitions.where(to_stage: "assembled")
+        .update_all(occurred_at: assembled_at)
     if record_pickup
       task.task_events.create!(kind: TaskEvent::INTENT, from_stage: "reviewed",
                                to_stage: "assembled", occurred_at: pickup_at, actor: "avi")

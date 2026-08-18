@@ -1232,16 +1232,23 @@ class Task < ApplicationRecord
   # the intent existed, or by a path that records none. The caller falls back to
   # the transition figure rather than rendering blank.
   def assembled_seconds_from_pickup
-    return nil unless assembled_at
+    # The assemble MOMENT comes from the transition event, not the assembled_at
+    # column, because the card's cluster is built from task_events and the two
+    # must not be able to disagree. Production stamps both; a caller that
+    # replays events without the column would otherwise silently get nil here
+    # while the card still drew a duration from the same events.
+    landed = task_events.transitions.where(to_stage: "assembled").chronological.last
+    landed_at = landed&.occurred_at || assembled_at
+    return nil unless landed_at
 
     pickup = task_events.intents
                         .where(to_stage: "assembled")
-                        .where(occurred_at: ..assembled_at)
+                        .where(occurred_at: ..landed_at)
                         .chronological
                         .last
     return nil unless pickup
 
-    (assembled_at - pickup.occurred_at).round
+    (landed_at - pickup.occurred_at).round
   end
 
   def open_intents_for(to_stage)
