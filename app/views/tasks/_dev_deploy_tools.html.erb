@@ -12,8 +12,16 @@
             class="px-2 py-1 rounded-md text-xs font-medium bg-surface text-secondary border border-subtle hover:text-amber-300 disabled:opacity-40 transition whitespace-nowrap">Advance →</button>
     <%# Ship lives HERE, not in the TASK group: it ships the active RELEASE. %>
     <button type="button" @click="post('ship_release')" :disabled="busy"
-            title="Ship the active release → Last Release bursts in, Next Release resets"
+            title="Ship the active release → Last Release glows for its deploy window, Next Release resets"
             class="px-2 py-1 rounded-md text-xs font-medium bg-surface text-secondary border border-subtle hover:text-mint-300 disabled:opacity-40 transition">Ship</button>
+    <%# The SPURIOUS redraw, by hand. Re-broadcasts both release cards with nothing
+        changed — the exact shape a CI upsert used to send on every queued /
+        in_progress / completed event, which the Last Release card answered with a
+        pop + lift + glow + confetti. The visible proof of the fix is that clicking
+        this does NOTHING to the card. %>
+    <button type="button" @click="post('rebroadcast_release_modules')" :disabled="busy"
+            title="Re-broadcast both release cards with NOTHING changed — the Last Release card must not move"
+            class="px-2 py-1 rounded-md text-xs font-medium bg-surface text-secondary border border-subtle hover:text-heading disabled:opacity-40 transition">Redraw</button>
     <button type="button" @click="post('reset_release')" :disabled="busy"
             title="Clear the fixture release"
             class="px-2 py-1 rounded-md text-xs font-medium bg-surface text-secondary border border-subtle hover:text-red-300 disabled:opacity-40 transition">Reset</button>

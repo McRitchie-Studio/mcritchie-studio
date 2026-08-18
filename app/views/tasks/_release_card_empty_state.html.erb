@@ -4,8 +4,12 @@
       card_class  the card wrapper classes (incl. any grid placement)
       label       the uppercase eyebrow ("Next Release" / "Last Release")
       status      the italic status phrase ("none active" / "none yet")
-      hint        the muted helper sentence below %>
-<div id="<%= dom_id %>" class="<%= card_class %>">
+      hint        the muted helper sentence below
+      card_signature  optional — the card's identity string, so a slot that swaps
+                      BETWEEN a release and this empty state still reads as a change
+                      to the fx layer (ApplicationHelper#release_card_signature(nil)
+                      is "none", which differs from any real release's signature). %>
+<div id="<%= dom_id %>" class="<%= card_class %>"<% if local_assigns[:card_signature].present? %> data-card-signature="<%= local_assigns[:card_signature] %>"<% end %>>
   <div class="flex items-center gap-3 flex-wrap">
     <span class="text-[11px] uppercase tracking-wide text-muted font-semibold"><%= label %></span>
     <span class="text-sm text-muted italic"><%= status %></span>

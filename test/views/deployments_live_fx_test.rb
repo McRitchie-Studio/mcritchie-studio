@@ -33,7 +33,10 @@ class DeploymentsLiveFxTest < ActionView::TestCase
     assert_includes rendered, "card.classList.remove(\"lbfx-glow\", \"lbfx-glow-stage\")"
   end
 
-  test "fresh deployments use an eight second rainbow glow that preserves phase" do
+  # Rendered through _deployments_live_fx on purpose even though the fresh glow now
+  # lives in _release_fx_router: the router is rendered BY that partial, so this also
+  # proves the two halves of the fx layer still ship together.
+  test "fresh deployments use a sixty second rainbow glow that preserves phase" do
     render partial: "tasks/deployments_live_fx"
 
     assert_includes rendered, ".lbfx-fresh-deploy"
@@ -42,10 +45,19 @@ class DeploymentsLiveFxTest < ActionView::TestCase
     assert_includes rendered, "@keyframes lbfxFreshDeployGlow"
     assert_includes rendered, "@keyframes lbfxFreshDeployRingFade"
     assert_includes rendered, "@keyframes lbfxFreshDeployHaloFade"
-    assert_includes rendered, "0%, 50%"
+    # The knee: held to 80% of the window, then eased out. Rendered from
+    # FRESH_DEPLOY_HOLD_FRACTION, so the card body, ring and halo cannot drift apart.
+    assert_includes rendered, "0%, 80.0%"
     assert_includes rendered, "--task-card-glow-shadow"
     assert_includes rendered, "--task-card-glow-border-color"
-    assert_includes rendered, "const FRESH_DEPLOY_MS = 8000"
+    # The fade LANDS on the resting card instead of stopping short of it: the measured
+    # jump was opacity 1 -> .75 and border-alpha 1 -> .2 in a single frame, at the moment
+    # the animation stopped applying. Both end states are now the resting ones.
+    assert_includes rendered, "opacity: .75;"
+    # The theme's OWN border token, so the fade ends on the colour the resting card
+    # paints with — no captured value to go stale when the theme moves.
+    assert_includes rendered, "border-color: var(--color-border, transparent);"
+    assert_includes rendered, "const FRESH_DEPLOY_MS = 60000"
     assert_includes rendered, "card.dataset.freshDeploy !== \"true\""
     assert_includes rendered, "card.dataset.shippedAtMs"
     assert_includes rendered, "\"--lbfx-fresh-delay\""
@@ -53,7 +65,9 @@ class DeploymentsLiveFxTest < ActionView::TestCase
     assert_includes rendered, "card.classList.remove(\"opacity-75\")"
     assert_includes rendered, "card.classList.add(\"studio-border-glow\", \"release-fresh-glow\")"
     assert_includes rendered, "card.dataset.freshDeployCleanup = \"true\""
-    assert_includes rendered, "freshDeployGlow(fresh)"
+    # The glow is no longer called from the stream handler by name — it is a REGISTRY
+    # row the router consults, which is what makes "no handler claimed it" mean silence.
+    assert_includes rendered, %({ kind: "deploy.landed",   resumable: true,  claims: (ctx) => ctx.card.dataset.freshDeploy === "true", play: freshDeployGlow })
     assert_includes rendered, "clearFreshDeployGlow(card)"
     assert_includes rendered, "card.classList.remove(\"lbfx-fresh-deploy\", \"studio-border-glow\", \"release-fresh-glow\")"
     assert_includes rendered, "card.classList.add(\"opacity-75\")"
@@ -65,10 +79,12 @@ class DeploymentsLiveFxTest < ActionView::TestCase
     assert_includes rendered, "\"box-shadow\""
     assert_includes rendered, "FRESH_DEPLOY_STYLE_PROPS.forEach((prop) => card.style.removeProperty(prop))"
     assert_includes rendered, "card.removeAttribute(\"style\")"
-    assert_includes rendered, "function initializeFreshDeployGlows(root)"
-    assert_includes rendered, "#last-release[data-fresh-deploy='true']"
-    assert_includes rendered, "document.addEventListener(\"turbo:load\", scheduleFreshDeployGlowInitialization)"
-    assert_includes rendered, "document.addEventListener(\"DOMContentLoaded\", scheduleFreshDeployGlowInitialization, { once: true })"
+    # Resumption is the router's `resume`, run on load and on Turbo navigation: the glow
+    # belongs to the release's wall clock, not to the render that happened to show it.
+    assert_includes rendered, "function resume(root)"
+    assert_includes rendered, "#\" + CARD_ID"
+    assert_includes rendered, "document.addEventListener(\"turbo:load\", scheduleResume)"
+    assert_includes rendered, "document.addEventListener(\"DOMContentLoaded\", scheduleResume, { once: true })"
   end
 
   test "every fresh-glow duration renders from the injectable window" do
@@ -84,10 +100,10 @@ class DeploymentsLiveFxTest < ActionView::TestCase
       assert_includes rendered, "animation: lbfxFreshDeployRingFade 20.0s linear both"
       assert_includes rendered, "animation: lbfxFreshDeployHaloFade 20.0s linear both"
       # The property, not the spellings: NO default-window duration survives an
-      # override — a leftover hardcoded 8s would re-open the race the override
-      # exists to close. (The regex spares unrelated sub-second values like .8s.)
-      assert_no_match(/[\s,(]8s[;\s,]/, rendered)
-      assert_not_includes rendered, "= 8000"
+      # override — a leftover hardcoded default would re-open the race the override
+      # exists to close.
+      assert_no_match(/[\s,(]60(\.0)?s[;\s,]/, rendered)
+      assert_not_includes rendered, "= 60000"
     end
   end
 
@@ -109,7 +125,7 @@ class DeploymentsLiveFxTest < ActionView::TestCase
     # ORDER is the load-bearing part: the old signatures are read BEFORE renderNow()
     # replaces the slot. Read them after and the previous values are already gone —
     # every meter would look unchanged and the card would flash on every CI tick.
-    assert_match(/const before = RELEASE_FX\[target\][\s\S]{0,200}const renderNow = event\.detail\.render;/, rendered,
+    assert_match(/const before = routed \? ReleaseFx\.snapshot\(node\) : releaseSnapshot\(node\);[\s\S]{0,200}const renderNow = event\.detail\.render;/, rendered,
                  "the signature snapshot must be taken before the render is invoked")
     assert_includes rendered, "const moved = changedMeters(fresh, before && before.meters);"
     assert_includes rendered, "if (moved && moved.length) moved.forEach(meterGlow);"

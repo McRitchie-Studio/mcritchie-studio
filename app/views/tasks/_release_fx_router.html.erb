@@ -1,0 +1,292 @@
+<%# ── Last Release fx router ────────────────────────────────────────────────
+    The animation layer for the #last-release card on /deployments.
+
+    WHY A ROUTER. The rest of LiveBoardFx is a DOM-DIFF system: the server
+    broadcasts a blind "replace this slot" carrying no reason, and the client
+    reverse-engineers what happened by comparing the DOM before and after. That
+    inference has one default, and the default decides everything. #last-release
+    defaulted to CELEBRATING — `if (!freshDeployGlow(fresh)) burst(fresh, true)` —
+    so every re-render it could not explain threw confetti. DeploymentsBroadcaster
+    .ci_progress re-broadcasts the release modules on every CI upsert (queued AND
+    in_progress AND completed, ~24 per run per repo), and Release.last_shipped
+    cannot change on a CI tick, so the card was replaced with byte-identical HTML
+    and celebrated it. Every finished assembling test, a burst.
+
+    THE INVERSION. Here nothing plays unless a handler CLAIMS the card. No claim
+    is not a fallback — it is the default, and it makes a byte-identical
+    re-render silent by construction rather than by guard. The bug class dies
+    with the default, not with any one patch.
+
+    THE SHAPE. Chain of responsibility, not a kind→handler map, because the
+    events are not one kind of thing: `deploy.landed` is a time WINDOW that must
+    resume mid-flight across a reload, while `release.swapped` is a content
+    CHANGE only visible by diffing. Each handler reads the same context and
+    decides for itself; the first to claim plays, alone. That "alone" is the
+    anti-stampede rule — a ship and a seal landing in one beat animate once.
+
+    THE INPUTS. Three, in falling authority:
+      1. `data-fx` on the <turbo-stream> element — the server DECLARING why it
+         broadcast (DeploymentsBroadcaster.release_modules(fx:)). A kind in
+         SILENT_KINDS short-circuits to silence; anything else is a hint handlers
+         may consult. Precedent: `data-exit-action` on the remove streams.
+      2. `data-*` on the card — self-describing state. `data-fresh-deploy` +
+         `data-shipped-at-ms` make the deploy glow resumable: it is a window
+         measured from shipped_at by wall clock, so a reload mid-window rejoins
+         at the right PHASE instead of restarting or missing it.
+      3. The pre-swap snapshot — `data-card-signature`, read BEFORE Turbo
+         destroys the old node, because after the swap the old values are gone.
+
+    SCOPE. #last-release only. #current-release keeps its own three-branch
+    signature guard in _deployments_live_fx (commits b0792115, 3342ee11), and the
+    task cards keep the dropzone observer. Rendered by _deployments_live_fx,
+    which owns the shared `.lbfx-glow` CSS this file's swap handler uses.
+
+    The fresh-deploy window (60s in production; FRESH_DEPLOY_WINDOW_MS overrides it
+    for the e2e server — ApplicationHelper#fresh_deploy_window_ms). The CSS
+    durations and the JS timer MUST move together: a split window would fade the
+    glow at one time and flip the state at another.
+
+    THE WINDOW IS A HOLD, THEN A FADE, and `hold_stop` is the knee between them
+    (ApplicationHelper::FRESH_DEPLOY_HOLD_FRACTION). Rendering it into every
+    keyframe below — the card body, the ring, the halo — is what keeps them
+    leaving together; three hand-written percentages is how they drift apart. %>
+<% fresh_window_ms = fresh_deploy_window_ms %>
+<% fresh_window_css = "#{(fresh_window_ms / 1000.0).round(3)}s" %>
+<% hold_stop = "#{(ApplicationHelper::FRESH_DEPLOY_HOLD_FRACTION * 100).round(2)}%" %>
+<%# The fade's curve. Linear made the knee a CORNER — the glow sat perfectly still
+    and then, on one frame, began moving at full speed. Easing in from zero velocity
+    means the fade starts where the hold ended, at the same speed the hold had. %>
+<% fade_ease = "cubic-bezier(.4, 0, .7, 1)" %>
+<style>
+  /* Last Release deploy freshness: a steady rainbow glow held to the knee
+     (FRESH_DEPLOY_HOLD_FRACTION — 80% of the window), then eased out through the
+     remainder. JS sets a negative animation delay from data-shipped-at-ms so
+     replacement streams keep the same PHASE instead of restarting the glow. */
+  .lbfx-fresh-deploy {
+    animation: lbfxFreshDeployGlow <%= fresh_window_css %> linear both;
+    animation-delay: var(--lbfx-fresh-delay, 0ms);
+  }
+  .release-fresh-glow.lbfx-fresh-deploy::before {
+    animation-name: studioBorderGlowSteam, lbfxFreshDeployRingFade;
+    animation-duration: var(--studio-border-glow-duration, 20s), <%= fresh_window_css %>;
+    animation-timing-function: linear, ease;
+    animation-iteration-count: infinite, 1;
+    animation-fill-mode: none, both;
+    animation-delay: 0s, var(--lbfx-fresh-delay, 0ms);
+  }
+  .release-fresh-glow.lbfx-fresh-deploy::after {
+    animation-name: studioBorderGlowSteam, lbfxFreshDeployHaloFade;
+    animation-duration: var(--studio-border-glow-duration, 20s), <%= fresh_window_css %>;
+    animation-timing-function: linear, ease;
+    animation-iteration-count: infinite, 1;
+    animation-fill-mode: none, both;
+    animation-delay: 0s, var(--lbfx-fresh-delay, 0ms);
+  }
+  /* THE FADE MUST LAND ON THE CARD'S RESTING LOOK, NOT ON "TRANSPARENT".
+     MEASURED, at the frame clearFreshDeployGlow ran: opacity 1.000 -> 0.750 and
+     border-alpha 1.000 -> 0.200, both in ONE frame. The ring and halo had already
+     eased to zero — the glow was fine. What jumped was the CARD, snapping 25%
+     darker and re-inking its border the instant the animation stopped applying.
+     Because the end state and the resting state were different states.
+
+     So each property below now ENDS where the card lives: opacity at .75 (the
+     opacity-75 the class re-adds), the border at --color-border (the theme token the
+     resting card already paints with — rgba(95,91,114,.2) today, and whatever the
+     theme says tomorrow), and the shadow at a transparent list of the SAME FOUR
+     LAYERS the glow uses — a 4-to-5 layer mismatch cannot interpolate cleanly.
+     `both` fill then HOLDS that resting look, so the cleanup that removes these
+     classes changes nothing on screen. Nothing to jump to: it is already there. */
+  @keyframes lbfxFreshDeployGlow {
+    0%, <%= hold_stop %> {
+      box-shadow: var(
+        --task-card-glow-shadow,
+        0 0 0 1px rgba(255,255,255,.72),
+        0 0 32px rgba(250,204,21,.68),
+        0 0 48px rgba(52,211,153,.58),
+        0 0 82px rgba(192,132,252,.48)
+      );
+      border-color: var(--task-card-glow-border-color, rgba(255,255,255,.82));
+      opacity: 1;
+      animation-timing-function: <%= fade_ease %>;
+    }
+    100% {
+      box-shadow:
+        0 0 0 1px transparent,
+        0 0 32px transparent,
+        0 0 48px transparent,
+        0 0 82px transparent;
+      border-color: var(--color-border, transparent);
+      opacity: .75;
+    }
+  }
+  @keyframes lbfxFreshDeployRingFade {
+    0%, <%= hold_stop %> {
+      opacity: var(--studio-border-glow-opacity, .9);
+      animation-timing-function: <%= fade_ease %>;
+    }
+    100% { opacity: 0; }
+  }
+  @keyframes lbfxFreshDeployHaloFade {
+    0%, <%= hold_stop %> {
+      opacity: var(--studio-border-glow-halo-opacity, .34);
+      animation-timing-function: <%= fade_ease %>;
+    }
+    100% { opacity: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .release-fresh-glow.lbfx-fresh-deploy::before {
+      animation: lbfxFreshDeployRingFade <%= fresh_window_css %> linear both;
+      animation-delay: var(--lbfx-fresh-delay, 0ms);
+    }
+    .release-fresh-glow.lbfx-fresh-deploy::after {
+      animation: lbfxFreshDeployHaloFade <%= fresh_window_css %> linear both;
+      animation-delay: var(--lbfx-fresh-delay, 0ms);
+    }
+  }
+</style>
+<script>
+  // Installed once; survives Turbo navigations.
+  window.ReleaseFx = window.ReleaseFx || (function () {
+    const CARD_ID = "last-release";
+    const FRESH_DEPLOY_MS = <%= fresh_window_ms %>; // fresh_deploy_window_ms — same value as the CSS above
+    // Everything the fresh glow writes inline, so clearing it leaves no residue.
+    const FRESH_DEPLOY_STYLE_PROPS = [
+      "--lbfx-fresh-delay",
+      "--studio-border-glow-offset",
+      "--studio-border-glow-duration",
+      "--studio-border-glow-angle",
+      "--task-card-glow-color",
+      "--task-card-glow-color-a",
+      "--task-card-glow-color-b",
+      "--task-card-glow-border-color",
+      "--task-card-glow-shadow",
+      "border-color",
+      "box-shadow"
+    ];
+    const SWAP_GLOW_MS = 850; // matches the .lbfx-glow animation in _deployments_live_fx
+
+    // Declared kinds that mean "I re-broadcast, but nothing about THIS card moved."
+    // A short-circuit, not a handler: it stops even the synthesis path from
+    // inferring an event out of a redraw the server has already told us is inert.
+    // `ci.progress` is the one that caused the original bug — kept declared (and
+    // kept honoured) even though .ci_progress no longer pushes this slot at all,
+    // so the silence survives a future caller wiring it back up.
+    const SILENT_KINDS = new Set(["ci.progress"]);
+
+    // ── handlers ────────────────────────────────────────────────────────────
+    // Each: claims(ctx) → may I play? · play(card) → true if I did.
+    // Order is priority. The FIRST to claim plays, and nothing else does.
+
+    // A deploy just landed in this slot. A WINDOW, not an instant: it is claimed
+    // for FRESH_DEPLOY_MS after shipped_at, and re-entered (not restarted) on every
+    // render inside that window — a negative animation-delay rejoins the CSS at the
+    // phase the wall clock says it should be at.
+    function freshDeployGlow(card) {
+      if (!card || card.dataset.freshDeploy !== "true") return false;
+      const shippedAt = Number(card.dataset.shippedAtMs || 0);
+      const elapsed = shippedAt > 0 ? Math.max(0, Date.now() - shippedAt) : 0;
+      if (elapsed >= FRESH_DEPLOY_MS) {
+        clearFreshDeployGlow(card);
+        return false;
+      }
+      if (card.dataset.freshDeployCleanup === "true") return true;
+
+      card.style.setProperty("--lbfx-fresh-delay", "-" + elapsed + "ms");
+      card.classList.remove("opacity-75");
+      card.classList.add("studio-border-glow", "release-fresh-glow");
+      card.classList.remove("lbfx-fresh-deploy");
+      void card.offsetWidth;
+      card.classList.add("lbfx-fresh-deploy");
+      card.dataset.freshDeployCleanup = "true";
+      setTimeout(() => clearFreshDeployGlow(card), FRESH_DEPLOY_MS - elapsed + 150);
+      return true;
+    }
+
+    function clearFreshDeployGlow(card) {
+      if (!card) return;
+      card.classList.remove("lbfx-fresh-deploy", "studio-border-glow", "release-fresh-glow");
+      card.classList.add("opacity-75");
+      card.dataset.freshDeploy = "false";
+      delete card.dataset.freshDeployCleanup;
+      FRESH_DEPLOY_STYLE_PROPS.forEach((prop) => card.style.removeProperty(prop));
+      if (!card.getAttribute("style")) card.removeAttribute("style");
+    }
+
+    // A DIFFERENT release now occupies the slot (a ship outside the fresh window,
+    // an archive sweep repointing last_shipped, a member list that moved). One
+    // subtle glow — the honest version of what the old burst was aiming at and
+    // never once correctly hit, since a real deploy always claims the handler
+    // above and only a NON-event could reach the fallback.
+    function swapGlow(card) {
+      const rgb = hexToRgb(card.dataset.glow || "");
+      if (rgb) card.style.setProperty("--lbfx-glow", rgb);
+      card.classList.add("lbfx-glow");
+      setTimeout(() => {
+        card.classList.remove("lbfx-glow");
+        card.style.removeProperty("--lbfx-glow");
+      }, SWAP_GLOW_MS);
+      return true;
+    }
+
+    // "#78C850" → "120 200 80" (for `rgb(var() / a)`); null if unparseable.
+    function hexToRgb(hex) {
+      const m = /^#?([0-9a-f]{6})$/i.exec(hex || "");
+      if (!m) return null;
+      const n = parseInt(m[1], 16);
+      return ((n >> 16) & 255) + " " + ((n >> 8) & 255) + " " + (n & 255);
+    }
+
+    // ── the registry ────────────────────────────────────────────────────────
+    // Adding an animation means adding a row here. A row that claims nothing
+    // plays nothing, and a card no row claims stays still.
+    const HANDLERS = [
+      { kind: "deploy.landed",   resumable: true,  claims: (ctx) => ctx.card.dataset.freshDeploy === "true", play: freshDeployGlow },
+      { kind: "release.swapped", resumable: false, claims: (ctx) => !!ctx.before && ctx.signature !== ctx.before.signature, play: swapGlow }
+    ];
+
+    // ── routing ─────────────────────────────────────────────────────────────
+
+    // Everything worth remembering about the slot BEFORE Turbo replaces it. Taken
+    // in ONE call so every reading comes from the same render.
+    function snapshot(card) {
+      if (!card) return null;
+      return { signature: card.dataset.cardSignature || "" };
+    }
+
+    // Route one render of the card. `before` is null on a plain page load (nothing
+    // was replaced), which is exactly right: the resumable handler still claims a
+    // live window, and the diff-based one cannot claim without a diff.
+    // Returns the kind that played, or null for silence.
+    function route(card, before, declared) {
+      if (!card) return null;
+      if (SILENT_KINDS.has(declared)) return null;
+      const ctx = { card: card, before: before, declared: declared, signature: card.dataset.cardSignature || "" };
+      for (const handler of HANDLERS) {
+        if (!handler.claims(ctx)) continue;
+        return handler.play(card) ? handler.kind : null;
+      }
+      return null;
+    }
+
+    // Re-enter any resumable fx that is still inside its window. Runs on page load
+    // and Turbo navigation, where there is no swap to route — the glow belongs to
+    // the release's wall clock, not to the render that happened to show it.
+    function resume(root) {
+      const scope = root && root.querySelectorAll ? root : document;
+      scope.querySelectorAll("#" + CARD_ID).forEach((card) => route(card, null, null));
+    }
+
+    function scheduleResume() {
+      requestAnimationFrame(() => resume(document));
+    }
+
+    document.addEventListener("turbo:load", scheduleResume);
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", scheduleResume, { once: true });
+    } else {
+      scheduleResume();
+    }
+
+    return { CARD_ID, snapshot, route, resume, HANDLERS, SILENT_KINDS };
+  })();
+</script>
