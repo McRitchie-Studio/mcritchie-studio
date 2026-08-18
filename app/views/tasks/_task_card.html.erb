@@ -287,17 +287,22 @@
   <% end %>
 
   <%# CI progress meter — a symbolic row (few checks) or the numeric "X / Y" bar for
-      this PR's GitHub CI run, and a LINK that opens the PR in a new tab. SUBMITTED
-      stage ONLY: once a task is reviewed/assembled/shipped its CI is in the past, so
-      the meter is stale noise (a building task has no PR, so the slot is empty there
-      anyway). Wrapped in the stable-id components/_ci_progress_slot so a live
-      workflow_job webhook can morph JUST this meter in place (it ticks up with no
-      reload); the slot renders nothing visible until the task has a submitted PR with
-      a CI run. %>
-  <% if task.stage == "submitted" %>
+      this PR's GitHub CI run, and a LINK that opens the PR in a new tab. BUILDING and
+      SUBMITTED stages: `bin/ship` opens the PR and then waits for its CI while the
+      task is STILL BUILDING (gate-submit-on-green-ci), so that wait is exactly the
+      window an operator wants to watch — the meter appears on the building card the
+      moment the PR exists and follows it across the submit move. Once a task is
+      reviewed/assembled/shipped its CI is in the past, so the meter would be stale
+      noise and the slot is gone. A building task with no PR renders an empty slot
+      (Ci::ProgressReader still requires a pr_url + branch), so a desk that has not
+      shipped yet looks exactly as it did. Wrapped in the stable-id
+      components/_ci_progress_slot so a live workflow_job webhook can morph JUST this
+      meter in place (it ticks up with no reload). %>
+  <% if ci_meter_stage?(task.stage) %>
     <%= render "components/ci_progress_slot",
           dom_id: "ci-progress-#{task.slug}",
           progress: ci_progress, compact: true,
+          label: ci_meter_label(pr_url),
           test_id: "task-ci-progress", href: pr_url,
           wrapper_class: "mb-1.5", inner_test_id: "task-card-ci-progress" %>
   <% end %>

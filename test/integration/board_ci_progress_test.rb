@@ -29,7 +29,7 @@ class BoardCiProgressTest < ActionDispatch::IntegrationTest
 
   teardown { ENV["CI_PROGRESS_FIXTURES"] = @prior_fixtures }
 
-  test "[integration] a small suite shows icons AND the bar, in a linked outlined card" do
+  test "[integration] the meter draws a mark per check INSIDE the rail, in a linked card" do
     task = submitted_task(branch: "feat/ci-progress-demo", pr: 42)
     seed_run(branch: "feat/ci-progress-demo", sha: TASK_SHA)
 
@@ -39,16 +39,16 @@ class BoardCiProgressTest < ActionDispatch::IntegrationTest
     # A distinct bordered panel within the task card, AND the PR link.
     card = "#card-#{task.slug} a.ci-progress-card.border[data-test='task-card-ci-progress']"
     assert_select "#{card}[href='https://github.com/McRitchie-Studio/mcritchie-studio/pull/42'][target='_blank'][rel='noopener']", 1
-    # Icons, one per check…
-    assert_select "#card-#{task.slug} [data-test='task-ci-progress-symbols']", 1
-    assert_select "#card-#{task.slug} [data-test='ci-check-symbol']", 8, "one icon per check"
-    assert_select "#card-#{task.slug} [data-test='ci-check-symbol'][data-ci-check-state='pending']", 2
-    # …AND the bar alongside them; the fraction text gives way to icons.
-    assert_select "#card-#{task.slug} [role='progressbar'][aria-valuemax='8']", 1
-    assert_select "#card-#{task.slug} [data-test='task-ci-progress-fraction']", 0
+    # The label reads the PR NUMBER off that same url — the operator's handle for it.
+    assert_select "#card-#{task.slug} [data-test='task-ci-progress-label']", text: "PR: 42"
+    # One mark per check, and they live INSIDE the progressbar rail, not above it.
+    rail = "#card-#{task.slug} [role='progressbar'][aria-valuemax='8']"
+    assert_select rail, 1
+    assert_select "#{rail} [data-test='ci-check-symbol']", 8, "one mark per check, inside the bar"
+    assert_select "#{rail} [data-test='ci-check-symbol'][data-ci-check-state='pending']", 2
   end
 
-  test "[integration] a large suite keeps the numeric X / Y bar" do
+  test "[integration] a large suite draws marks too — it no longer falls back to X / Y" do
     task = submitted_task(branch: "feat/ci-many-demo", pr: 43)
     seed_run(branch: "feat/ci-many-demo", sha: MANY_SHA)
 
@@ -56,9 +56,12 @@ class BoardCiProgressTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     within = "#card-#{task.slug} [data-test='task-card-ci-progress']"
-    assert_select "#{within} [data-test='task-ci-progress-fraction']", text: /9 \/ 14/
     assert_select "#{within} [role='progressbar'][aria-valuenow='9'][aria-valuemax='14']", 1
-    assert_select "#card-#{task.slug} [data-test='task-ci-progress-symbols']", 0, "12+ checks stay numeric"
+    # 14 checks against a MEASURED cap of 13: the row draws what fits and says so, and
+    # the fade is what makes the cut visible instead of a silent clip at the rail edge.
+    assert_select "#{within} [data-test='ci-check-symbol']", ApplicationHelper::CI_METER_MARK_CAP
+    assert_select "#{within} [data-test='task-ci-progress-marks'][data-overflowed='true']", 1
+    assert_select "#card-#{task.slug} [data-test='task-ci-progress-fraction']", 0, "the numeric fallback is retired"
   end
 
   test "[integration] the Next Release card shows each member repo's G3 CI in its Assembling meter" do
@@ -115,6 +118,35 @@ class BoardCiProgressTest < ActionDispatch::IntegrationTest
       "the re-run reset the meter to the fresh (latest) attempt"
   end
 
+  test "[integration] a BUILDING card shows its PR CI while bin/ship waits on it" do
+    # The gate-submit-on-green-ci window: the PR is open and CI is running, but the
+    # task is still on the builder's desk. This is the state the operator watches.
+    task = building_task(branch: "feat/ci-building-demo", pr: 55)
+    seed_run(branch: "feat/ci-building-demo", sha: LIVE_SHA)
+    seed_jobs(sha: LIVE_SHA, branch: "feat/ci-building-demo", passed: 5, pending: 3)
+
+    get deployments_path
+    assert_response :success
+
+    card = "#card-#{task.slug} a.ci-progress-card[data-test='task-card-ci-progress']"
+    assert_select "#{card}[href='https://github.com/McRitchie-Studio/mcritchie-studio/pull/55']", 1
+    assert_select "#card-#{task.slug} [data-test='ci-check-symbol']", 8
+    assert_select "#card-#{task.slug} [data-test='ci-check-symbol'][data-ci-check-state='passed']", 5
+    assert_select "#ci-progress-#{task.slug}", 1, "the morph target exists so the meter ticks up live"
+  end
+
+  test "[integration] a live workflow_job fans out to the BUILDING card's meter" do
+    task = building_task(branch: "feat/ci-building-live", pr: 56)
+    seed_run(branch: "feat/ci-building-live", sha: LIVE_SHA)
+    seed_jobs(sha: LIVE_SHA, branch: "feat/ci-building-live", passed: 2, pending: 6)
+
+    affected = Ci::ProgressReader.new
+                                 .eligible_tasks_for("McRitchie-Studio/mcritchie-studio", "feat/ci-building-live")
+
+    assert_includes affected.map(&:slug), task.slug,
+                    "a building task with an open PR is a live-broadcast target, not just submitted ones"
+  end
+
   test "[integration] a task with no PR shows no CI meter" do
     task = Task.create!(title: "no pr yet", stage: "building",
                         metadata: { "devops" => { "branch" => "feat/no-pr", "repositories" => ["mcritchie-studio"] } })
@@ -149,6 +181,11 @@ class BoardCiProgressTest < ActionDispatch::IntegrationTest
         "pr_url" => "https://github.com/McRitchie-Studio/mcritchie-studio/pull/#{pr}"
       } }
     )
+  end
+
+  # Same shape as submitted_task, one stage earlier — the ship-wait desk.
+  def building_task(branch:, pr:)
+    submitted_task(branch: branch, pr: pr).tap { |task| task.update!(stage: "building") }
   end
 
   def seed_run(branch:, sha:)

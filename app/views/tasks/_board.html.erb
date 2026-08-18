@@ -10,6 +10,12 @@
     parent scope (Alpine nests scopes), so the card partial is unchanged.
 
     Locals: stages, title, archived:, current_page:, live_updates: (default true). %>
+<%# The shared, install-once elapsed ticker (tasks/_release_ticker). /deployments
+    mounts it for the Next Release clock; this board needs it for the CI meter's
+    running clock on a building/submitted card, which ticks off the same script.
+    Rendering it twice across two pages is free — it self-guards on
+    window.__releaseTicker. %>
+<%= render "release_ticker" %>
 <% title        = local_assigns.fetch(:title, "Tasks") %>
 <% archived     = local_assigns.fetch(:archived, false) %>
 <% current_page = local_assigns.fetch(:current_page, "tasks") %>

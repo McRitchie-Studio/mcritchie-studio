@@ -48,8 +48,13 @@ module Ci
     GEM_CI_WORKFLOWS = GithubWorkflowRun::GEM_CI_WORKFLOWS
     GEM_CI_BRANCH = "main"
 
-    # Only a submitted-onward task shows a CI bar — before the PR there is no run.
-    TASK_STAGES_WITH_CI = %w[submitted reviewed assembled].freeze
+    # Which stages can show a CI bar. BUILDING is in the list because `bin/ship`
+    # opens the PR and then WAITS for its CI (gate-submit-on-green-ci) while the task
+    # is still building — the ~12 minutes an operator most wants to watch tick. It is
+    # a stage gate, not the whole test: eligible_task? still demands a pr_url AND a
+    # branch, so an ordinary building task (no PR yet) resolves blank exactly as
+    # before. Past `submitted` the run is history, so the bar stops at `assembled`.
+    TASK_STAGES_WITH_CI = %w[building submitted reviewed assembled].freeze
 
     # Newest-run ordering — the canonical run-recency sort (Ci::ReviewGate mirrors it).
     LATEST_RUN_ORDER = "run_started_at DESC NULLS LAST, created_at DESC, run_id DESC"
@@ -244,11 +249,12 @@ module Ci
       progress
     end
 
-    # The submitted-onward tasks on a repo+branch whose CI bar this webhook event
-    # affects — the broadcast fan-out target (usually 0 or 1). Reuses the exact
-    # eligibility + repo/branch resolution the render path uses, so a live push and
-    # a page load agree on which cards carry a bar. The candidate set is the deploy
-    # queue (submitted/reviewed/assembled), a handful of rows — not the whole board.
+    # The tasks on a repo+branch whose CI bar this webhook event affects — the
+    # broadcast fan-out target (usually 0 or 1). Reuses the exact eligibility +
+    # repo/branch resolution the render path uses, so a live push and a page load
+    # agree on which cards carry a bar. The candidate set is TASK_STAGES_WITH_CI
+    # (building through assembled) — the live desks plus the deploy queue, a handful
+    # of rows, not the whole board.
     def eligible_tasks_for(nwo, branch)
       nwo = nwo.to_s
       branch = branch.to_s
@@ -270,7 +276,22 @@ module Ci
       rows = CiCheckJob.progress_rows(nwo, sha, workflow_name)
       return nil if rows.empty?
 
-      CheckProgress.from_check_runs(rows, sha: sha)
+      CheckProgress.from_check_runs(rows, sha: sha, run_started_at: run_started_at_for(nwo, sha, workflow_name))
+    rescue StandardError => e
+      ErrorLog.capture!(e)
+      nil
+    end
+
+    # When the CI run for this SHA BEGAN — `github_workflow_runs.run_started_at`, the
+    # stamp the `workflow_run` webhook already ingests, newest run first. It is the
+    # meter clock's ORIGIN: the run start beats the earliest job start, because a job
+    # that queued behind a runner still belongs to a run that began earlier. nil when
+    # no run row exists (the checks' own stamps then answer, and failing that the
+    # meter simply shows no clock). Rescued, like every read on this path.
+    def run_started_at_for(nwo, sha, workflow_name = nil)
+      scope = GithubWorkflowRun.for_repo(nwo).where(head_sha: sha)
+      scope = scope.where(workflow_name: workflow_name) if workflow_name.present?
+      scope.order(Arel.sql(LATEST_RUN_ORDER)).limit(1).pick(:run_started_at)
     rescue StandardError => e
       ErrorLog.capture!(e)
       nil
@@ -282,7 +303,7 @@ module Ci
         client.get("repos/#{nwo}/commits/#{sha}/check-runs", params: { per_page: 100 })
       end
       runs = body.is_a?(Hash) ? body["check_runs"] : body
-      CheckProgress.from_check_runs(runs, sha: sha)
+      CheckProgress.from_check_runs(runs, sha: sha, run_started_at: run_started_at_for(nwo, sha))
     rescue StandardError => e
       ErrorLog.capture!(e)
       CheckProgress.blank(sha: sha)

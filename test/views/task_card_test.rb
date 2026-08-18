@@ -301,11 +301,19 @@ class TaskCardTest < ActionView::TestCase
     end
   end
 
-  test "[component] the CI meter slot renders only while submitted, not once reviewed" do
+  test "[component] the CI meter slot renders while BUILDING and submitted, not once reviewed" do
+    # building is the ship-wait window: bin/ship opens the PR, then waits on its CI
+    # with the task still on this desk — the meter has to be here to be watchable.
+    building = Task.create!(title: "ci meter building card", stage: "building",
+                            metadata: { "devops" => { "pr_url" => "https://github.com/acme/app/pull/9" } })
     submitted = Task.create!(title: "ci meter submitted card", stage: "submitted",
                              metadata: { "devops" => { "pr_url" => "https://github.com/acme/app/pull/9" } })
     reviewed = Task.create!(title: "ci meter reviewed card", stage: "reviewed",
                             metadata: { "devops" => { "pr_url" => "https://github.com/acme/app/pull/9" } })
+
+    render partial: "tasks/task_card",
+           locals: { task: building.reload, agents: @agents, crew_board: :deploy, ci_progress: nil }
+    assert_select "#ci-progress-#{building.slug}", 1, "a building card carries the stable CI slot while it ships"
 
     render partial: "tasks/task_card",
            locals: { task: submitted.reload, agents: @agents, crew_board: :deploy, ci_progress: nil }
@@ -314,6 +322,20 @@ class TaskCardTest < ActionView::TestCase
     render partial: "tasks/task_card",
            locals: { task: reviewed.reload, agents: @agents, crew_board: :deploy, ci_progress: nil }
     assert_select "#ci-progress-#{reviewed.slug}", 0, "past submitted the CI meter is stale noise — the whole slot is gone"
+  end
+
+  test "[component] a building card with a LIVE progress renders the meter itself, PR-linked" do
+    building = Task.create!(title: "ci meter live building card", stage: "building",
+                            metadata: { "devops" => { "pr_url" => "https://github.com/acme/app/pull/11" } })
+    progress = Ci::CheckProgress.new(passed: 3, failed: 0, pending: 2, sha: "building-head-sha")
+
+    render partial: "tasks/task_card",
+           locals: { task: building.reload, agents: @agents, crew_board: :deploy, ci_progress: progress }
+
+    assert_select "#card-#{building.slug} [data-test='task-card-ci-progress']", 1
+    assert_select "#card-#{building.slug} [data-test='ci-check-symbol']", 5, "one icon per check, mid-run"
+    assert_select "a.ci-progress-card[href='https://github.com/acme/app/pull/11']", 1,
+                  "the building meter links straight to the PR whose CI it charts"
   end
 
   test "deploy attention cards step up from subtle to medium to pokemon-color border glows" do
