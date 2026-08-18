@@ -91,9 +91,13 @@ class DeploymentsBroadcaster
       reader = Ci::ProgressReader.new
 
       reader.eligible_tasks_for(job.repo, job.head_branch).each do |task|
+        pr_url = task.devops_url("pr").presence
+        # The SAME locals the card render passes — a morph that dropped `label` would
+        # silently rewrite the meter's "PR: 610" back to a bare "CI" on the first tick.
         broadcast_ci_slot("ci-progress-#{task.slug}", reader.for_task(task),
                           compact: true, test_id: "task-ci-progress",
-                          href: task.devops_url("pr").presence,
+                          label: ApplicationController.helpers.ci_meter_label(pr_url),
+                          href: pr_url,
                           wrapper_class: "mb-1.5", inner_test_id: "task-card-ci-progress")
       end
 

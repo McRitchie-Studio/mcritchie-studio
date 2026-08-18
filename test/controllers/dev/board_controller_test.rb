@@ -86,7 +86,9 @@ class Dev::BoardControllerTest < ActionDispatch::IntegrationTest
 
   test "[integration] the next beat submits and settles the request" do
     post dev_board_generate_path
-    3.times { post dev_board_move_path } # designed -> building -> waiting -> submitted
+    # designed -> building -> waiting -> CI run -> submitted. beat: 0 plays the whole
+    # scripted run instantly; at its real DEV_CI_BEAT_SECONDS it takes ~50 seconds.
+    4.times { post dev_board_move_path, params: { beat: 0 } }
     task = fixtures.first.reload
 
     assert_equal "submitted", task.stage
@@ -95,16 +97,73 @@ class Dev::BoardControllerTest < ActionDispatch::IntegrationTest
     assert_not task.waiting_for_operator_approval?
   end
 
-  test "[integration] the approval beat happens once per building visit, not every click" do
+  test "[integration] the building side-beats happen once per visit, not every click" do
     post dev_board_generate_path
-    6.times { post dev_board_move_path }
+    7.times { post dev_board_move_path, params: { beat: 0 } }
     task = fixtures.first.reload
 
-    # building → waiting → submitted → reviewed → assembled → shipped: exactly ONE
-    # extra beat in the lap. If the approval beat re-fired on every click the
+    # building → waiting → CI → submitted → reviewed → assembled → shipped: exactly
+    # TWO extra beats in the lap. If either side-beat re-fired on every click the
     # fixture would still be parked on building.
     assert_equal "shipped", task.stage
     assert_not task.waiting_for_operator_approval?
+  end
+
+  # ── the CI beat: the window `bin/ship` spends waiting on CI, made clickable ────
+
+  test "[integration] the beat after approval RUNS a scripted CI without moving the card" do
+    post dev_board_generate_path
+    2.times { post dev_board_move_path } # designed -> building -> waiting
+    task = fixtures.first.reload
+
+    post dev_board_move_path, params: { beat: 0 }
+
+    task.reload
+    assert_equal "building", task.stage, "the CI beat must not move the card"
+    assert task.waiting_for_operator_approval?, "and must not settle the approval request"
+    # The meter reads these three fields — without them the card draws no bar at all.
+    assert_equal "feat/#{task.slug}", task.devops["branch"]
+    assert_match %r{/pull/\d+\z}, task.devops["pr_url"].to_s
+    assert_equal ["mcritchie-studio"], task.devops["repositories"]
+
+    jobs = CiCheckJob.where(head_branch: "feat/#{task.slug}")
+    assert_equal Dev::BoardController::DEV_CI_CHECK_COUNT, jobs.count
+    assert_equal 1, jobs.where(conclusion: "failure").count, "the LAST check fails, on purpose"
+    assert_equal 9, jobs.where(conclusion: "success").count
+    assert_empty jobs.where.not(status: "completed"), "the script settles every check it queues"
+
+    # And it folds into a meter the card can actually draw: red, fully resolved, with
+    # a measured duration rather than a live clock.
+    progress = Ci::ProgressReader.new.for_task(task)
+    assert_equal 10, progress.total
+    assert_equal :red, progress.state
+    assert_not progress.running?
+    assert_not_nil progress.duration_seconds
+  end
+
+  test "[integration] a second click during a run advances instead of re-running CI" do
+    post dev_board_generate_path
+    3.times { post dev_board_move_path, params: { beat: 0 } } # ... -> waiting -> CI
+    task = fixtures.first.reload
+    runs = GithubWorkflowRun.where(head_branch: "feat/#{task.slug}").count
+
+    post dev_board_move_path, params: { beat: 0 }
+
+    assert_equal "submitted", task.reload.stage
+    assert_equal runs, GithubWorkflowRun.where(head_branch: "feat/#{task.slug}").count,
+      "the run is opened once per building visit, never re-opened by another click"
+  end
+
+  test "[integration] delete drops the fixture's CI rows with it" do
+    post dev_board_generate_path
+    3.times { post dev_board_move_path, params: { beat: 0 } }
+    branch = fixtures.first.reload.devops["branch"]
+    assert CiCheckJob.where(head_branch: branch).exists?
+
+    post dev_board_delete_path
+
+    assert_empty CiCheckJob.where(head_branch: branch), "a deleted fixture leaves no CI rows behind"
+    assert_empty GithubWorkflowRun.where(head_branch: branch)
   end
 
   test "[integration] delete removes the latest fixture" do

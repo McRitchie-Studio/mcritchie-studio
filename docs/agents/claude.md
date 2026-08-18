@@ -55,6 +55,12 @@ background**; if it is cut short, re-run it (ship resumes and finishes in second
 once CI has settled). A killed ship leaves the task in `building` with its PR
 already open, which the review sweep does not pop.
 
+**Those minutes are now visible.** The task sits in `building` with its PR open
+while ship waits, and the board card shows that PR's CI meter there — `PR: <n>`,
+one mark per check inside the bar, and a clock that ticks while checks run and
+freezes to the run's duration when they settle. So "is it still going?" is a
+glance at the board, not a question for the session.
+
 Their limits, stated plainly: they change **no gate semantics**; `bin/ship`
 stops at `submitted` and never merges or deploys; `bin/ship` has no `--steal`
 (take a held task over with `bin/task begin <task-slug> --steal`, then ship);
