@@ -16,6 +16,18 @@ module Dev
     before_action :ensure_local!
 
     FIXTURE_MARK = "dev_fixture"
+    # The scripted CI run the `building` CI beat plays: ten checks, one settling every
+    # five seconds, and the LAST one fails — so a single click demonstrates every state
+    # the meter can draw (running, passed, failed) and ends on the red the operator
+    # most needs to recognise. `beat` is overridable per request so a test can run the
+    # whole script without sleeping through it.
+    DEV_CI_CHECK_COUNT = 10
+    DEV_CI_BEAT_SECONDS = 5
+    DEV_CI_REPO = "McRitchie-Studio/mcritchie-studio"
+    DEV_CI_CHECK_NAMES = [
+      "lint", "rubocop", "unit", "models", "controllers", "helpers",
+      "integration", "system", "assets", "playwright"
+    ].freeze
     # Whimsical titles so a spawned card reads like a real one on the board.
     SAMPLE_TITLES = [
       "Refactor the flux capacitor", "Polish the warp nacelles", "Untangle the spaghetti",
@@ -44,15 +56,24 @@ module Dev
     # Advance the newest fixture ONE BEAT (wrapping shipped → designed) →
     # after_update TaskEvent → the broadcaster moves the card live.
     #
-    # A beat is usually a stage, but `building` gets TWO: the second flags the
-    # operator-approval request WITHOUT moving the card, so the tester can walk
-    # into the WAITING APPROVAL state — the one board state that was previously
-    # unreachable from these buttons. The beat after it is the payoff: submitting
-    # settles the request (Task#settle_operator_approval_past_submit), so one more
-    # click demonstrates the badge dropping the way it does in the real cycle.
+    # A beat is usually a stage, but `building` gets THREE, because that is where the
+    # real cycle now spends its most interesting minutes:
+    #
+    #   1. flag the operator-approval request WITHOUT moving the card, so the tester
+    #      can walk into the WAITING APPROVAL state;
+    #   2. RUN CI — open a PR-shaped run of DEV_CI_CHECK_COUNT checks and settle one
+    #      every DEV_CI_BEAT_SECONDS, mirroring `bin/ship`, which opens the PR and
+    #      then waits on CI with the task still on the builder's desk. This is the
+    #      beat the card's CI meter exists for, and it was previously unreachable
+    #      from these buttons: the marks flip and the clock ticks live;
+    #   3. submit — which settles the approval request
+    #      (Task#settle_operator_approval_past_submit) and freezes the meter's clock
+    #      to the run's measured duration.
+    #
+    # Beats 1 and 2 return before the stage move, so one click = one beat.
     def move
       task = latest_fixture or return head(:no_content)
-      request_fixture_approval(task) || task.update!(stage: next_stage(task.stage))
+      request_fixture_approval(task) || run_fixture_ci(task) || task.update!(stage: next_stage(task.stage))
       head :no_content
     end
 
@@ -60,6 +81,7 @@ module Dev
     # to the live board (LiveBoardFx shrinks it out + reclaims the gap).
     def delete
       task = latest_fixture or return head(:no_content)
+      clear_fixture_ci(task)
       task.destroy!
       head :no_content
     end
@@ -237,6 +259,104 @@ module Dev
     # the request. Asserted, not claimed: the "LocalReviewLink will actually
     # accept" test below pins both directions — and caught exactly this when the
     # first version of this line used base_url.
+    # BEAT 2 of `building`: play a whole CI run against this fixture, live.
+    #
+    # Returns nil (so `move` falls through to the next beat) unless the fixture is
+    # sitting on `building` with the approval request already open and NO run of its
+    # own yet — which makes the three building beats deterministic in either order of
+    # clicking, and makes a second click during a run a no-op rather than a re-run.
+    #
+    # What it does, in the shape the real pipeline does it: stamps the task with the
+    # PR url + branch the meter reads (so the card's label shows a real "PR: <n>"),
+    # opens a GithubWorkflowRun, queues DEV_CI_CHECK_COUNT CiCheckJob rows — every one
+    # of those writes broadcasts on its own after_commit, so the meter appears full of
+    # spinners — then settles them one per beat. The LAST check fails, so the run ends
+    # red with its ✗ pushed to the left of the rail.
+    #
+    # The pacing uses Release::BeatClock, the same monotonic cadence primitive
+    # `Release#ship!` uses for its board flips, and sleeps INLINE in the request the
+    # way ship_release does: this is a local-only toy, the whole point is to watch the
+    # board move while it runs, and the Advance button stays disabled meanwhile (its
+    # Alpine `busy` flag), which is exactly the right affordance mid-run.
+    def run_fixture_ci(task)
+      return nil unless task.stage == "building"
+      return nil unless task.waiting_for_operator_approval?
+
+      branch = "feat/#{task.slug}"
+      return nil if GithubWorkflowRun.for_repo(DEV_CI_REPO).where(head_branch: branch).exists?
+
+      sha = "devfixture-#{SecureRandom.hex(8)}"
+      stamp_fixture_pr(task, branch)
+      open_fixture_ci_run(branch, sha)
+      jobs = queue_fixture_ci_jobs(branch, sha)
+      settle_fixture_ci_jobs(jobs)
+      true
+    end
+
+    # The devops fields the meter reads: the PR url it labels itself with and links
+    # to, and the branch the reader resolves the run from.
+    def stamp_fixture_pr(task, branch)
+      merged = task.metadata.deep_dup
+      devops = (merged["devops"] ||= {})
+      devops["branch"] = branch
+      devops["repositories"] = ["mcritchie-studio"]
+      devops["pr_url"] ||= "https://github.com/McRitchie-Studio/mcritchie-studio/pull/#{rand(100..999)}"
+      task.update!(metadata: merged)
+    end
+
+    def open_fixture_ci_run(branch, sha)
+      GithubWorkflowRun.create!(
+        repo: DEV_CI_REPO, workflow_name: GithubWorkflowRun::CI_WORKFLOW,
+        run_id: SecureRandom.random_number(10**12), status: "in_progress",
+        head_branch: branch, head_sha: sha, run_started_at: Time.current,
+        html_url: "https://github.com/McRitchie-Studio/mcritchie-studio/actions"
+      )
+    end
+
+    # Every check QUEUED at once — the meter's first frame is a full row of spinners
+    # and a clock already ticking, which is what a real run looks like the moment its
+    # jobs are scheduled.
+    def queue_fixture_ci_jobs(branch, sha)
+      started = Time.current
+      DEV_CI_CHECK_NAMES.first(DEV_CI_CHECK_COUNT).map do |name|
+        CiCheckJob.create!(
+          repo: DEV_CI_REPO, job_id: SecureRandom.random_number(10**12),
+          head_sha: sha, head_branch: branch, workflow_name: GithubWorkflowRun::CI_WORKFLOW,
+          name: name, status: "queued", started_at: started
+        )
+      end
+    end
+
+    # One check settles per beat, the last one RED. Each save broadcasts a morph of
+    # just that card's meter slot, so the marks migrate (green right, the final red
+    # left) with no reload.
+    def settle_fixture_ci_jobs(jobs)
+      clock = Release::BeatClock.new(fixture_ci_beat_seconds)
+      jobs.each_with_index do |job, index|
+        clock.wait_for_beat(index + 1) { |remaining| sleep(remaining) }
+        last = index == jobs.size - 1
+        job.update!(status: "completed", conclusion: last ? "failure" : "success",
+                    completed_at: Time.current)
+      end
+    end
+
+    # Seconds between check settlements — DEV_CI_BEAT_SECONDS, or the `beat` param so
+    # a test can play the whole script instantly. Local-only endpoint, so a request
+    # parameter is a safe seam here.
+    def fixture_ci_beat_seconds
+      params.key?(:beat) ? params[:beat].to_f : DEV_CI_BEAT_SECONDS
+    end
+
+    # Drop a fixture's CI rows with the fixture itself, so the next lap around the
+    # board opens a fresh run instead of inheriting a settled one.
+    def clear_fixture_ci(task)
+      branch = task.devops_field("branch").to_s
+      return if branch.blank?
+
+      GithubWorkflowRun.for_repo(DEV_CI_REPO).where(head_branch: branch).delete_all
+      CiCheckJob.for_repo(DEV_CI_REPO).where(head_branch: branch).delete_all
+    end
+
     def request_fixture_approval(task)
       return nil unless task.stage == "building"
       return nil if task.waiting_for_operator_approval?

@@ -394,13 +394,16 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
     assert_equal "replace", streams.first["action"]
     assert_equal "morph", streams.first["method"], "morph animates the fill width instead of snapping"
     assert_equal "ci-progress-#{task.slug}", streams.first["target"]
-    # 8 checks -> the symbolic row (5 passed + 3 running = 8 glyphs), and the live
-    # morph keeps the meter a new-tab link to the task's PR.
+    # 8 checks -> 8 marks inside the rail, and the live morph keeps the meter a
+    # new-tab link to the task's PR.
     html = streams.first.to_html
-    assert_includes html, "task-ci-progress-symbols", "the slot re-renders the live symbolic row"
+    assert_includes html, "ci-progress-meter", "the slot re-renders the live meter"
     assert_equal 8, html.scan("data-test=\"ci-check-symbol\"").size
     assert_includes html, "href=\"https://github.com/McRitchie-Studio/mcritchie-studio/pull/5\""
     assert_includes html, "target=\"_blank\""
+    # The morph carries the SAME locals the card render passes — a dropped `label`
+    # would silently rewrite "PR: 5" back to a bare "CI" on the first live tick.
+    assert_includes html, ">PR: 5<", "the live morph keeps the PR-number label"
   end
 
   test "[integration] ci_progress refreshes the Next Release card for a member repo's release-branch job" do

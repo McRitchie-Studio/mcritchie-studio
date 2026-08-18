@@ -405,6 +405,49 @@ class ApplicationHelperTest < ActionView::TestCase
     end
   end
 
+  test "compact_elapsed_short is the CI meter's single-unit ladder, exact in seconds" do
+    assert_nil compact_elapsed_short(nil)
+    assert_equal "0s", compact_elapsed_short(0)
+    assert_equal "1s", compact_elapsed_short(1)
+    assert_equal "59s", compact_elapsed_short(59)
+    assert_equal "1m", compact_elapsed_short(60)
+    assert_equal "9m", compact_elapsed_short((9 * 60) + 41), "one unit — a CI run reads calmer at minute grain"
+    assert_equal "59m", compact_elapsed_short(59 * 60)
+    assert_equal "1h 04m", compact_elapsed_short((64 * 60) + 12), "past an hour it compounds rather than saying 64m"
+    assert_equal "0s", compact_elapsed_short(-5), "clock skew never renders a negative"
+  end
+
+  test "ci_meter_label reads the PR NUMBER off the url, falling back to CI" do
+    assert_equal "PR: 610", ci_meter_label("https://github.com/McRitchie-Studio/mcritchie-studio/pull/610")
+    assert_equal "PR: 7", ci_meter_label("https://github.com/acme/app/pull/7/files")
+    assert_equal "CI", ci_meter_label(nil), "no PR -> the meter keeps its generic label"
+    assert_equal "CI", ci_meter_label("https://example.com/not-a-pr")
+    assert_equal "G3 CI", ci_meter_label(nil, fallback: "G3 CI")
+  end
+
+  test "ci_meter_marks caps the row and reports the overflow the fade draws" do
+    small = Ci::CheckProgress.new(passed: 3, failed: 1, pending: 2)
+    marks, overflowed = ci_meter_marks(small)
+    assert_equal 6, marks.size
+    assert_not overflowed
+    assert_equal %i[failed pending pending passed passed passed], marks.map(&:state)
+
+    wide = Ci::CheckProgress.new(passed: 30, failed: 0, pending: 0)
+    capped, overflowed_wide = ci_meter_marks(wide)
+    assert_equal ApplicationHelper::CI_METER_MARK_CAP, capped.size
+    assert overflowed_wide, "past the cap the row fades instead of clipping silently"
+
+    assert_equal [[], false], ci_meter_marks(Ci::CheckProgress.blank)
+    assert_equal [[], false], ci_meter_marks(nil)
+  end
+
+  test "ci_meter_stage? is the CARD's narrower stage set, not the reader's" do
+    assert ci_meter_stage?("building"), "the ship-wait window is the point"
+    assert ci_meter_stage?("submitted")
+    assert_not ci_meter_stage?("reviewed"), "past submitted the run is history"
+    assert_not ci_meter_stage?("designed")
+  end
+
   test "compact_stage_duration renders a tight one-token form, nil-safe" do
     assert_nil compact_stage_duration(nil)
     assert_equal "<1m", compact_stage_duration(30)
