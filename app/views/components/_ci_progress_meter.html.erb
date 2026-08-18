@@ -1,0 +1,96 @@
+<%# locals: (progress:, label: "CI", test_id: "ci-progress-bar", compact: false, clock: true) %>
+<%#
+  The board card's CI meter, ONE ROW instead of two: a header (the PULL REQUEST
+  number on the left, the run's clock on the right) over a single rail that carries
+  the per-check marks INSIDE it — ✗ failed, a spinning loader running, ✓ passed.
+
+  Three things here are deliberate, and each replaced something that read worse:
+
+  · MARKS INSIDE THE RAIL. The old meter stacked a glyph row above a separate track:
+    two rows of vertical space saying the same thing twice. Same vocabulary as
+    tasks/_release_phase_meter, which learned it first on the release lanes.
+  · SEVERITY ORDER (Ci::CheckProgress#ordered_checks — failures left, running in the
+    middle, passes right). A check MOVES as it settles: green pushes right, red pushes
+    left. So the eye reads the two ends, and the cap can only ever drop surplus passes.
+  · FADE, NOT TRUNCATION. Past ApplicationHelper::CI_METER_MARK_CAP the row is masked
+    out at its right edge, so a wide suite visibly runs off the card instead of being
+    silently clipped at a boundary nothing draws.
+
+  The fill is a TINT (15% light / 30% dark), never a block of colour: the marks ride
+  on top of it, and a same-hue mark on a solid fill measures ~1.7:1 (the contrast
+  finding tasks/_release_phase_meter records). It measures RESOLVED progress
+  (passed+failed), not passes alone, so a suite with a failure still completes its
+  bar — the colour, not the width, is what says the run went bad.
+
+  role=progressbar + one summary aria-label carry the whole meter to assistive tech;
+  the marks are decorative (aria-hidden) because the summary already names the count.
+%>
+<% if progress.respond_to?(:present?) && progress.present? %>
+  <% marks, overflowed = ci_meter_marks(progress) %>
+  <% tone = case progress.state
+     when :green then { fill: "bg-emerald-500", text: "text-emerald-700 dark:text-emerald-300" }
+     when :red then { fill: "bg-red-500", text: "text-red-700 dark:text-red-300" }
+     else { fill: "bg-amber-500", text: "text-amber-700 dark:text-amber-300" }
+     end %>
+  <% summary = "#{progress.passed} of #{progress.total} CI checks passed" \
+       + (progress.failed.positive? ? ", #{progress.failed} failed" : "") \
+       + (progress.pending.positive? ? ", #{progress.pending} running" : "") %>
+  <div class="ci-progress-meter w-full space-y-1"
+       data-test="<%= test_id %>"
+       data-ci-state="<%= progress.state %>">
+    <div class="flex items-center justify-between gap-2 text-[10px] leading-none">
+      <span class="font-semibold uppercase tracking-wide text-muted truncate" data-test="<%= test_id %>-label"><%= label %></span>
+      <% if clock %>
+        <%# The RUN CLOCK. While checks are pending it ticks live from the run's start
+            (data-release-ticker + data-mode="short" — the installed-once ticker in
+            tasks/_release_ticker re-queries the DOM each second, so it keeps ticking
+            through a Turbo morph of this slot with no re-wiring). Once every check has
+            settled it FREEZES to the measured duration: not "how long ago" but "how
+            long it took", which is the number worth keeping on a submitted card. No
+            timestamps ingested at all -> no clock, never a zero. %>
+        <% if progress.running? && (started = progress.started_at) %>
+          <span class="shrink-0 tabular-nums font-medium <%= tone[:text] %>"
+                data-test="<%= test_id %>-clock" data-ci-clock="running"
+                data-release-ticker data-mode="short" data-since="<%= started.to_i %>"
+                title="CI started <%= started.strftime("%-l:%M%P") %>"><%= compact_elapsed_short(elapsed_seconds(started, Time.current)) %></span>
+        <% elsif (took = progress.duration_seconds) %>
+          <span class="shrink-0 tabular-nums font-medium <%= tone[:text] %>"
+                data-test="<%= test_id %>-clock" data-ci-clock="settled"
+                title="CI took <%= compact_elapsed_short(took) %>"><%= compact_elapsed_short(took) %></span>
+        <% end %>
+      <% end %>
+    </div>
+    <div class="relative h-[18px] w-full overflow-hidden rounded border border-subtle bg-inset"
+         role="progressbar"
+         aria-valuenow="<%= progress.passed %>"
+         aria-valuemin="0"
+         aria-valuemax="<%= progress.total %>"
+         aria-label="<%= summary %>"
+         title="<%= summary %>">
+      <div class="absolute inset-y-0 left-0 <%= tone[:fill] %> opacity-15 dark:opacity-30 transition-[width] duration-500 ease-out"
+           style="width: <%= progress.resolved_percent %>%;"
+           data-test="<%= test_id %>-fill"></div>
+      <%# The mask is inline because it is computed: a Tailwind arbitrary value would
+          have to hard-code the same gradient twice (mask + -webkit-mask) anyway, and
+          this way the un-overflowed row carries no mask at all. %>
+      <div class="relative flex h-full min-w-0 items-center gap-[2px] px-1"
+           data-test="<%= test_id %>-marks"
+           data-overflowed="<%= overflowed %>"
+           aria-hidden="true"
+           <%= tag.attributes(style: "mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent); -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent);") if overflowed %>>
+        <% marks.each do |check| %>
+          <% symbol = ci_check_symbol(check) %>
+          <span class="ci-check-symbol inline-flex h-2.5 w-2.5 shrink-0 items-center justify-center <%= symbol[:color] %> <%= "animate-spin motion-reduce:animate-none" if symbol[:spin] %>"
+                data-test="ci-check-symbol"
+                data-ci-check-state="<%= check.state %>"
+                title="<%= check.name.presence || symbol[:label].capitalize %> — <%= symbol[:label] %>"><%
+            case check.state
+            when :passed %><svg class="h-2.5 w-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M4.5 12.75l6 6 9-13.5"/></svg><%
+            when :failed %><svg class="h-2.5 w-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M6 18 18 6M6 6l12 12"/></svg><%
+            else %><svg class="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" aria-hidden="true"><circle class="opacity-25" cx="12" cy="12" r="9" stroke="currentColor" stroke-width="3"/><path class="opacity-90" d="M12 3a9 9 0 0 1 9 9" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg><%
+            end %></span>
+        <% end %>
+      </div>
+    </div>
+  </div>
+<% end %>

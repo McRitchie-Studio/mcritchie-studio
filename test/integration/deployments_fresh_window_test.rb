@@ -13,25 +13,39 @@ class DeploymentsFreshWindowTest < ActionDispatch::IntegrationTest
     get deployments_path
     assert_response :success
 
-    assert_select "#last-release[data-fresh-deploy='true'][data-fresh-window-ms='8000']"
-    assert_includes response.body, "const FRESH_DEPLOY_MS = 8000"
+    assert_select "#last-release[data-fresh-deploy='true'][data-fresh-window-ms='60000']"
+    assert_includes response.body, "const FRESH_DEPLOY_MS = 60000"
   end
 
+  # THE OVERRIDE IS NOW THE SHORTER WINDOW, so this test discriminates in the opposite
+  # direction from the one it was written in. The production window went 8s -> 60s and
+  # the e2e override stayed 20s, which INVERTED the old premise ("+9s: stale under the
+  # default, fresh under the injection") — 9s is fresh under both now, and the assertion
+  # would have passed while proving nothing. A ship 30s old is the discriminating case
+  # today: FRESH under the 60s default, STALE under the 20s injection. The property is
+  # unchanged and is the only reason this test exists — the card's rendered state and the
+  # client's timer both come from ONE value, so they can never disagree about when the
+  # glow ends.
   test "[integration] the injected window drives the card and the FX timer together" do
-    rel = nil
-    travel_to 9.seconds.ago do
-      rel = Release.open!
-      rel.ship!(by: "test")
+    travel_to 30.seconds.ago do
+      Release.open!.ship!(by: "test")
     end
 
     with_env("FRESH_DEPLOY_WINDOW_MS", "20000") do
       get deployments_path
       assert_response :success
 
-      # +9s: stale under the production default, FRESH under the injected
-      # window — card state and client timer widen from one value.
-      assert_select "#last-release[data-fresh-deploy='true'][data-fresh-window-ms='20000']"
+      assert_select "#last-release[data-fresh-deploy='false'][data-fresh-window-ms='20000']"
       assert_includes response.body, "const FRESH_DEPLOY_MS = 20000"
+    end
+
+    # And the same 30s-old ship IS still fresh under the production default — the half
+    # that proves the assertion above is reading the injection and not just the clock.
+    with_env("FRESH_DEPLOY_WINDOW_MS", nil) do
+      get deployments_path
+      assert_response :success
+
+      assert_select "#last-release[data-fresh-deploy='true'][data-fresh-window-ms='60000']"
     end
   end
 end

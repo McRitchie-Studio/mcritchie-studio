@@ -37,13 +37,17 @@ that date NO lane ran it while `config/feature_shapes.yml` demanded the `e2e` ti
 every `ui+db` change — the tier was "collected" by a builder typing `[e2e] …` into
 `checks_run` and `bin/dor-check` crediting the tag. It went unrun long enough for
 **18 of its specs to rot** (18 of the 69 committed at the time); those carry `@quarantine`, CI excludes them with
-`--grep-invert @quarantine`, and their count is ratcheted (ceiling 18, may only fall)
-by `test/lib/e2e_quarantine_ratchet_test.rb`. Do not read the green `playwright`
-check as "the whole e2e suite passes" until that ceiling reaches 0
-(`/tasks/repair-quarantined-e2e-clusters` — the live ticket; the older
-`repair-rotted-e2e-specs` was archived while all 18 specs were still tagged, which is
-the "archived task the code cites as live" trap catalogued in
-`docs/agents/agents/alex/sops/clean-up.md`).
+`--grep-invert @quarantine`, and their count is ratcheted — the ceiling is
+`quarantined` in `config/e2e_lane.yml`, it may only fall, and
+`test/lib/e2e_quarantine_ratchet_test.rb` enforces that. Do not read the green
+`playwright` check as "the whole e2e suite passes" until that ceiling reaches 0.
+
+**Repair lands cluster by cluster, so look the current ticket up on the board rather
+than trusting a slug pinned here.** `/tasks/repair-quarantined-e2e-clusters` took the
+first three (2026-08-18); the rest are still tagged. This paragraph cited
+`/tasks/repair-rotted-e2e-specs` as the live ticket long after that task was archived
+with all 18 specs still tagged — the "archived task the docs cite as live" trap
+catalogued in `docs/agents/agents/alex/sops/clean-up.md`.
 
 **"May only fall" is enforced, and note WHERE the baseline comes from** — the ratchet
 compares the ceiling against its value on **`origin/release`**, not against the copy in
@@ -61,10 +65,10 @@ generalizes. Both read the same contract, `config/e2e_lane.yml` — **`total_spe
 `quarantined` == `executed`** — so they can never certify two different suites.
 
 **The numbers live in that file and are deliberately NOT repeated here.** They move
-whenever a spec is added: this paragraph has already been wrong twice, quoting 95 − 18
-== 77 while the contract said 103, then 107. A count copied into prose is a second
-source of truth that nothing enforces, and it rots within days while every guard stays
-green — the same disease as the ratchet-that-was-really-a-pin described just above, one
+whenever a spec is added: this paragraph sat quoting 95 − 18 == 77 while the contract
+climbed past 103, 107, 108, 110 and 112 — three of those bumps landed on one day
+(2026-08-18). A count copied into prose is a second source of truth that nothing
+enforces, and it rots within days while every guard stays green — the same disease as the ratchet-that-was-really-a-pin described just above, one
 level out. Read the numbers from `config/e2e_lane.yml`; it is the only copy any guard
 consults.
 
@@ -83,8 +87,8 @@ consults.
    **default-deny** — only `--shard`, `--grep-invert` and `--reporter` are allowed, because
    only those three cannot *shrink the selected set*. (`--reporter` is **not** "inert",
    which is what this line used to call it: it **emits the receipt** guard 1 is judged on.
-   Drop `json` from it and the lane still runs all 52 specs while the only evidence that it
-   did evaporates — so it is separately pinned.) `--grep-invert` is value-pinned to exactly
+   Drop `json` from it and the lane still runs every executed spec while the only evidence
+   that it did evaporates — so it is separately pinned.) `--grep-invert` is value-pinned to exactly
    `@quarantine`.
 
 **Why the receipt exists at all** — three rounds of review beat the static scan, each

@@ -159,3 +159,80 @@ test("the page-error collector still catches an application error", async ({ pag
 
   expect(pageErrors.join("\n"), report()).toContain(marker);
 });
+
+// DIRECTION 3 — WHERE THE READER LOOKS. The failures were always in the report;
+// they were simply LAST, after the page errors. On 2026-08-18 a third-party CDN
+// 502'd, the symbol its script defines went undefined, and the message led with
+// "ReferenceError: ... is not defined" while the 502 sat further down — so the
+// red read as an app bug and cost a reviewer a trip to the shard artifact for a
+// line the message already contained.
+//
+// The note changes the ORDER OF ATTENTION, never the verdict. These pin both:
+// it appears when a page error coincides with request failures, it stays away
+// when there is nothing to misattribute, and it never converts a failure into a
+// pass.
+test("the report leads with the network when a page error coincides with failures", async ({ page }) => {
+  const { pageErrors, report } = watchPageErrors(page);
+
+  await page.route(`${THIRD_PARTY_ORIGIN}/**`, (route) =>
+    route.fulfill({ status: 502, contentType: "text/plain", body: "bad gateway" })
+  );
+
+  await page.goto("/");
+
+  const seen = consoleErrorFor(page, THIRD_PARTY_RESOURCE);
+  await loadSubresource(page, THIRD_PARTY_RESOURCE);
+  await seen;
+
+  // The downstream symptom: app-origin code throwing because the script that
+  // would have defined the symbol never arrived. This is the shape that misled.
+  // A REAL uncaught exception. A dispatched ErrorEvent does not reach
+  // Playwright's `pageerror` — only a genuinely uncaught throw does, so the
+  // synthetic shortcut silently tests nothing.
+  await page.evaluate(() => {
+    setTimeout(() => {
+      throw new ReferenceError("ThirdPartyLib is not defined");
+    }, 0);
+  });
+  await expect.poll(() => pageErrors.length).toBeGreaterThan(0);
+
+  const text = report();
+
+  // THE VERDICT IS UNCHANGED — the page error still counts. If this ever
+  // reverses, the note has become a silencer.
+  expect(pageErrors.length, text).toBeGreaterThan(0);
+
+  // The note leads, and the failing resource is reachable from it.
+  expect(text.split("\n")[0]).toContain("READ THOSE FIRST");
+  expect(text).toContain(THIRD_PARTY_RESOURCE);
+
+  // It must precede the page error, which is the entire point.
+  expect(text.indexOf("READ THOSE FIRST")).toBeLessThan(text.indexOf("ThirdPartyLib is not defined"));
+});
+
+test("the report does not lead with the network when nothing failed", async ({ page }) => {
+  const { pageErrors, failures, ignored, report } = watchPageErrors(page);
+
+  await page.goto("/");
+
+  await page.evaluate(() => {
+    setTimeout(() => {
+      throw new TypeError("a genuine application bug");
+    }, 0);
+  });
+  await expect.poll(() => pageErrors.length).toBeGreaterThan(0);
+
+  const text = report();
+
+  // No request failed, so there is nothing to misattribute and no note. A plain
+  // app bug must read exactly as it did before this change.
+  //
+  // Guarded on `failures` rather than asserted blind: any incidental 4xx/5xx
+  // from the app under test would legitimately produce the note, and a control
+  // that fails for that reason is testing the fixture, not the collector.
+  expect(pageErrors.join("\n")).toContain("a genuine application bug");
+  if (failures.length === 0 && ignored.length === 0) {
+    expect(text).not.toContain("READ THOSE FIRST");
+    expect(text.split("\n")[0]).toContain("a genuine application bug");
+  }
+});

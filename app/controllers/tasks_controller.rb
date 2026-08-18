@@ -304,7 +304,8 @@ class TasksController < ApplicationController
     tasks = tasks.where(stage: stage_filter) if Task::STAGES.include?(stage_filter)
     load_board_task_conversation(tasks)
     @tasks_by_stage = tasks.group_by(&:stage)
-    # CI progress bars: one batched read for every submitted-onward PR's GitHub CI,
+    # CI progress bars: one batched read for every open PR's GitHub CI (building
+    # through assembled — a shipping builder's PR is live news while it waits on CI),
     # so a card never issues its own check-runs call. Degrades to an empty map (no
     # bars) on any error — the reader rescues its own reads to blank, and this outer
     # rescue guards the batch itself so a reader failure never 500s the whole board.

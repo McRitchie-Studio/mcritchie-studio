@@ -4,19 +4,17 @@
   after_commit, via DeploymentsBroadcaster) can morph-replace THIS slot alone — the
   meter re-renders, the surrounding card never flashes.
 
-  Composes the meter inside a distinct OUTLINED CARD (a bordered panel within the
-  task card): the "CI" label, the per-check icons (few checks) OR the "X / Y"
-  fraction (many), and the state-coloured bar. A small suite (progress.symbolic?)
-  shows the symbols row AND the shared track together; a large one shows the numeric
-  bar. Both render the track, so the bar is always visible.
+  Composes components/_ci_progress_meter inside a distinct OUTLINED CARD (a bordered
+  panel within the task card): the header (PR number + run clock) over the rail that
+  carries a mark per CI check.
 
   When `href` is present the whole card becomes a link that opens in a NEW TAB
   (target=_blank rel=noopener); @click.stop keeps the card's own click-to-open-task
-  handler from firing. Two callers pass one: the task card links its devops.pr_url,
-  the Next Release G3 track links that repo's Actions run (release_ci_run_url).
-  `link_title` names the destination for the anchor's title + aria-label (the link's
-  accessible name) — it defaults to the PR wording. Absent href (no run/PR resolved)
-  -> a plain panel, no link, never a broken href="#".
+  handler from firing. The task card passes its devops.pr_url — the same PR whose
+  number the meter's label reads, so the label and the destination can never
+  disagree. `link_title` names the destination for the anchor's title + aria-label
+  (the link's accessible name) and defaults to the PR wording. Absent href (no
+  run/PR resolved) -> a plain panel, no link, never a broken href="#".
 
   The outer div ALWAYS renders (even when blank) so the Turbo replace target exists
   before the run's first check settles; empty, it is a zero-height block.
@@ -24,15 +22,8 @@
 <div id="<%= dom_id %>" data-test="<%= dom_id %>-slot">
   <% if progress.respond_to?(:present?) && progress.present? %>
     <% meter = capture do %>
-      <% if progress.symbolic? %>
-        <%= render "components/ci_progress_symbols",
-              progress: progress, label: (label || "CI"), test_id: test_id, compact: compact %>
-        <%= render "components/ci_progress_track",
-              progress: progress, test_id: test_id, compact: compact %>
-      <% else %>
-        <%= render "components/ci_progress_bar",
-              progress: progress, label: (label || "CI"), test_id: test_id, compact: compact %>
-      <% end %>
+      <%= render "components/ci_progress_meter",
+            progress: progress, label: (label || "CI"), test_id: test_id, compact: compact %>
     <% end %>
     <%# The CI-METER VARIANT of the shared components/_card_bar shell — the SAME
         card_bar_base_classes geometry (w-full rounded border px-2 py-1) the status /

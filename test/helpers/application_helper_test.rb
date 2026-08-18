@@ -279,10 +279,20 @@ class ApplicationHelperTest < ActionView::TestCase
   # stabilize-release-ship-spec); every consumer now renders from this helper,
   # and FRESH_DEPLOY_WINDOW_MS widens it for the e2e server only
   # (playwright.config.js webServer env).
-  test "[unit] fresh deploy window defaults to eight seconds" do
+  test "[unit] fresh deploy window defaults to sixty seconds" do
     with_env("FRESH_DEPLOY_WINDOW_MS", nil) do
-      assert_equal 8_000, fresh_deploy_window_ms
+      assert_equal 60_000, fresh_deploy_window_ms
     end
+  end
+
+  # The knee between the hold and the fade. Asserted as a FRACTION of the window, not a
+  # duration, because that is what keeps the split meaningful when the window moves —
+  # it is rendered into the card, ring and halo keyframes alike.
+  test "[unit] the glow holds for most of the window, then fades" do
+    assert_operator ApplicationHelper::FRESH_DEPLOY_HOLD_FRACTION, :>, 0.5,
+                    "the glow should be HELD for most of the window, not spend half of it leaving"
+    assert_operator ApplicationHelper::FRESH_DEPLOY_HOLD_FRACTION, :<, 1.0,
+                    "a knee at 1.0 is no fade at all — the jump this split exists to remove"
   end
 
   test "[unit] fresh deploy window honors the e2e injection env var" do
@@ -295,7 +305,7 @@ class ApplicationHelperTest < ActionView::TestCase
     # A bad knob must never 500 every /deployments render — fall back, don't raise.
     ["bananas", "", "0", "-5"].each do |bad|
       with_env("FRESH_DEPLOY_WINDOW_MS", bad) do
-        assert_equal 8_000, fresh_deploy_window_ms, "expected fallback for #{bad.inspect}"
+        assert_equal 60_000, fresh_deploy_window_ms, "expected fallback for #{bad.inspect}"
       end
     end
   end
@@ -393,6 +403,49 @@ class ApplicationHelperTest < ActionView::TestCase
       assert_not_includes pill["class"], "border-l"
       assert_not_includes pill["style"], "box-shadow"
     end
+  end
+
+  test "compact_elapsed_short is the CI meter's single-unit ladder, exact in seconds" do
+    assert_nil compact_elapsed_short(nil)
+    assert_equal "0s", compact_elapsed_short(0)
+    assert_equal "1s", compact_elapsed_short(1)
+    assert_equal "59s", compact_elapsed_short(59)
+    assert_equal "1m", compact_elapsed_short(60)
+    assert_equal "9m", compact_elapsed_short((9 * 60) + 41), "one unit — a CI run reads calmer at minute grain"
+    assert_equal "59m", compact_elapsed_short(59 * 60)
+    assert_equal "1h 04m", compact_elapsed_short((64 * 60) + 12), "past an hour it compounds rather than saying 64m"
+    assert_equal "0s", compact_elapsed_short(-5), "clock skew never renders a negative"
+  end
+
+  test "ci_meter_label reads the PR NUMBER off the url, falling back to CI" do
+    assert_equal "PR: 610", ci_meter_label("https://github.com/McRitchie-Studio/mcritchie-studio/pull/610")
+    assert_equal "PR: 7", ci_meter_label("https://github.com/acme/app/pull/7/files")
+    assert_equal "CI", ci_meter_label(nil), "no PR -> the meter keeps its generic label"
+    assert_equal "CI", ci_meter_label("https://example.com/not-a-pr")
+    assert_equal "G3 CI", ci_meter_label(nil, fallback: "G3 CI")
+  end
+
+  test "ci_meter_marks caps the row and reports the overflow the fade draws" do
+    small = Ci::CheckProgress.new(passed: 3, failed: 1, pending: 2)
+    marks, overflowed = ci_meter_marks(small)
+    assert_equal 6, marks.size
+    assert_not overflowed
+    assert_equal %i[failed pending pending passed passed passed], marks.map(&:state)
+
+    wide = Ci::CheckProgress.new(passed: 30, failed: 0, pending: 0)
+    capped, overflowed_wide = ci_meter_marks(wide)
+    assert_equal ApplicationHelper::CI_METER_MARK_CAP, capped.size
+    assert overflowed_wide, "past the cap the row fades instead of clipping silently"
+
+    assert_equal [[], false], ci_meter_marks(Ci::CheckProgress.blank)
+    assert_equal [[], false], ci_meter_marks(nil)
+  end
+
+  test "ci_meter_stage? is the CARD's narrower stage set, not the reader's" do
+    assert ci_meter_stage?("building"), "the ship-wait window is the point"
+    assert ci_meter_stage?("submitted")
+    assert_not ci_meter_stage?("reviewed"), "past submitted the run is history"
+    assert_not ci_meter_stage?("designed")
   end
 
   test "compact_stage_duration renders a tight one-token form, nil-safe" do
@@ -873,7 +926,7 @@ class ApplicationHelperTest < ActionView::TestCase
 
       render partial: "tasks/last_release", locals: { release: rel }
 
-      assert_select "#last-release[data-fresh-deploy='true'][data-shipped-at-ms][data-fresh-window-ms='8000']"
+      assert_select "#last-release[data-fresh-deploy='true'][data-shipped-at-ms][data-fresh-window-ms='60000']"
       card = css_select("#last-release").first
       assert_includes card["class"], "studio-border-glow"
       assert_includes card["class"], "release-fresh-glow"
@@ -894,7 +947,9 @@ class ApplicationHelperTest < ActionView::TestCase
       rel.ship!
     end
 
-    travel_to Time.zone.local(2026, 7, 6, 12, 0, 9) do
+    # +70s — past the 60s window. (It was +9s when the window was 8s; the offset has to
+    # move with the window or this test silently starts asserting the FRESH branch.)
+    travel_to Time.zone.local(2026, 7, 6, 12, 1, 10) do
       render partial: "tasks/last_release", locals: { release: rel.reload }
 
       assert_select "#last-release[data-fresh-deploy='false']"

@@ -770,7 +770,15 @@ class Release < ApplicationRecord
   # Push the refreshed release modules to the live /deployments board. Delegates to
   # the broadcaster, which is itself wrapped in Studio::Cable.safe_broadcast, so
   # this after_commit can never raise into the release write.
+  #
+  # The declared `fx` names WHY, for the client's ReleaseFx router. A ship is the one
+  # transition that puts a new release in the Last Release slot, so it is called out
+  # by name; every other save is `release.saved`, which no handler claims — the card
+  # then animates only if its own signature moved. The router treats an unclaimed
+  # kind as a hint, not a silencer, so a save that DOES change the last-shipped
+  # release still reads as a change.
   def broadcast_release_modules
-    DeploymentsBroadcaster.release_modules
+    kind = saved_change_to_shipped_at? && shipped_at.present? ? "deploy.landed" : "release.saved"
+    DeploymentsBroadcaster.release_modules(fx: kind)
   end
 end
