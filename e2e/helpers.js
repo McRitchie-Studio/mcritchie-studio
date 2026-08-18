@@ -186,10 +186,19 @@ function watchPageErrors(page, { allowOrigins = [] } = {}) {
     // verdict is untouched: no origin inference, no stack parsing, nothing
     // silenced or downgraded. A page error is still a page error. A run with
     // page errors and no request failures reads exactly as it did before.
+    //
+    // COUNTED ON TWO SEPARATE AXES, NEVER SUMMED. One dead third-party
+    // subresource populates BOTH collectors — `response` records the 4xx/5xx
+    // into `failures`, and Chromium's console error for that same resource is
+    // attributed to its origin and lands in `ignored`. Direction 1 of the
+    // collector spec asserts exactly that pair off a single 404. So a summed
+    // `failures.length + ignored.length` reads ~2x the number of resources
+    // that actually failed — a miscalibrated number in a note whose only job
+    // is to calibrate where a reader looks.
     if (pageErrors.length && (failures.length || ignored.length)) {
-      const n = failures.length + ignored.length;
       lines.push(
-        `NOTE — ${n} request failure(s) in this session. READ THOSE FIRST.`,
+        `NOTE — ${failures.length} failing request(s), ${ignored.length} ignored ` +
+          "third-party console error(s). READ THOSE FIRST.",
         "A page error is often the DOWNSTREAM effect of a resource that never loaded",
         '(a bare "X is not defined" after the script defining X 5xx\'d). This note',
         "does not change the verdict — it changes where to look first.",
