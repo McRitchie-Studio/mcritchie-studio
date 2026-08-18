@@ -4932,6 +4932,51 @@ end
 # gem. No new decisions here: the plan carries the tip, version, and live-state
 # phase 1 resolved. Idempotent for the self-healing re-run: already-live
 # versions skip.
+# THE CLEAN-ENV GATE IN FRONT OF THE ONE IRREVERSIBLE STEP.
+#
+# WHAT IT CLOSES. publish_gem authorises itself from a LOCAL `bin/release-check
+# --build` — whatever bundle, whatever Ruby, whatever half-installed state the
+# conductor's laptop happens to carry — and then pushes to RubyGems, which can
+# NEVER be un-pushed. Every other shippable tip in this ecosystem earns a
+# clean-env CI verdict before it moves; the gem's did not, and the gem is the one
+# artifact with no rollback.
+#
+# The verdict already EXISTED and was simply never read: engine-ci.yml builds
+# `release`, so the tip being published carries a GitHub run. A clean-env verdict
+# that nothing consults protects nothing.
+#
+# THE LOCAL RUN STAYS. This is an ADDITIONAL requirement, not a replacement —
+# publish_gem's release-check still runs, and still aborts first when it is red.
+# The local run catches a broken tree in seconds without waiting on GitHub; this
+# catches the class the local run structurally cannot see, which is "green here,
+# because of something only here."
+#
+# FAILS CLOSED, and polls rather than sampling: the sweep reaches publish within
+# a minute or two of pushing the promote commit, so CI is usually still running.
+# Not-yet-started and in-progress both WAIT (poll_ci_verdict); only a terminal
+# non-green aborts, and a poll that times out aborts too rather than shrugging.
+def gem_ci_gate(repo, sha, version)
+  return if DRY
+
+  say("  gem CI gate: GitHub's verdict for #{repo}@#{short(sha)} — the tip about to be published")
+  ci = poll_ci_verdict(repo, sha)
+  return if ci_pass?(ci)
+
+  abort!(gem_ci_abort(repo, sha, version, ci))
+end
+
+# The abort text, factored out so it is unit-testable and so the operator is told
+# what to DO rather than only what failed. A publish that stops here has pushed
+# NOTHING — the whole point of gating before the irreversible step.
+def gem_ci_abort(repo, sha, version, ci)
+  "#{repo} #{version}: GitHub CI is #{ci_detail(ci)} for #{short(sha)}, the exact tip this " \
+    "publish would push. NOTHING WAS PUBLISHED — the version is still free and this run can be " \
+    "re-run once CI is green. A gem push cannot be undone, so this gate will not credit a local " \
+    "release-check alone: that run proves the tree is good ON THIS MACHINE, and the class of " \
+    "failure it cannot see is exactly the one that reaches every consumer. Watch the run, fix or " \
+    "re-run it, then re-run this sweep."
+end
+
 def publish_gems_for_qa(gem_plan)
   return {} if gem_plan.empty?
 
@@ -4948,6 +4993,7 @@ def publish_gems_for_qa(gem_plan)
     else
       step("  gem #{repo} #{gem['version']}: publish from origin/#{RELEASE_BRANCH} (#{short(gem['tip'])}) — " \
            "QA must test consumers against the REAL published artifact")
+      gem_ci_gate(repo, gem["tip"], gem["version"])
       checkout_detached(repo, gem["tip"]) # build from the exact release tree
       publish_gem(repo, gem["version"])   # reused: release-check → build → push → tag
       restore_gem_primary(repo)
