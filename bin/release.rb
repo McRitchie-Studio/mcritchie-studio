@@ -5059,40 +5059,28 @@ end
 # Install any migrations the just-published engines ship into this consumer's
 # workspace, and leave db/schema.rb consistent with them.
 #
-# WHY THE SWEEP DOES THIS AT ALL. `<engine>:install:migrations` is a MANUAL step
-# Rails hands the consuming app, and every consumer here asserts it was taken:
-# EnginePinContractTest fails when the resolved engine ships a migration the app
-# never copied. The sweep publishes the gem — irreversibly — and commits the new
-# lock onto each consumer's release branch BEFORE the pre-QA gate runs those
-# suites, so an engine release that adds a migration reddens every consumer after
-# the point of no return. Measured on studio-engine PR 169: the assertion fired in
-# all three consumer lanes, five commits running, and the fix one layer down (that
-# repo's own Consumer CI installs the migrations before it runs a consumer suite)
-# is the same move this makes one layer up.
-#
-# WHY db:migrate AND NOT JUST THE COPY. A copied-but-unrun migration is PENDING
-# against a schema-loaded test database, and Rails refuses to run a suite with a
-# pending migration — so committing the file alone trades one red lane for
-# another. The migration is run against a THROWAWAY database (created and dropped
-# here, never the developer's) purely so the dumper rewrites db/schema.rb; the
-# real databases are migrated by the QA and production deploys, as always.
-#
-# FAILS CLOSED, twice over: a schema diff that removes anything but the version
-# stamp means the consumer's committed schema was already out of step with its own
-# migrations, and the sweep will not smuggle that into a commit labelled "bump gem
-# for QA"; and a gem with no install task is a silent no-op, since most gems are
-# not engines.
+# The DECISIONS — which task, what a probe's answer means, which database, whether
+# a schema dump is committable — live in Release::EngineMigrationInstall, where a
+# test can hold them. This is the half that runs commands. See that file for why
+# the split exists (a fail-open probe skipped this step silently on every live
+# sweep, which is the review finding that produced this shape).
 def install_engine_migrations!(workspace, repo, gem_names)
   return if DRY
 
-  installable = gem_names.select { |gem_name| workspace_rake_task?(workspace, Release::ShipSequence.migration_install_task(gem_name)) }
+  # THE BUNDLE FIRST, and this is the line the first cut was missing. `bundle
+  # lock` resolves without INSTALLING, and nothing else in the sweep installs the
+  # version publish_gem pushed seconds ago — so `bin/rails` in this workspace
+  # raises Bundler::GemNotFound and every probe below reads as "not an engine".
+  ensure_suite_bundle!(repo, workspace, role: "ship")
+
+  installable = gem_names.select { |gem_name| workspace_engine_task(workspace, repo, gem_name) }
   return if installable.empty?
 
   before, = git_capture("-C", workspace, "status", "--porcelain", "--", "db/migrate")
 
   installable.each do |gem_name|
-    task = Release::ShipSequence.migration_install_task(gem_name)
-    _, ok = sh("bin/rails", task, chdir: workspace, capture: true)
+    task = Release::EngineMigrationInstall.install_task(gem_name)
+    _, ok = sh("bin/rails", task, chdir: workspace, capture: true, env: gate_env(repo, role: "ship"))
     abort!("#{repo}: `bin/rails #{task}` failed in the ship workspace — the consumer cannot receive " \
            "#{gem_name}'s migrations, and shipping without them reddens its suite after the gem is published") unless ok
   end
@@ -5109,12 +5097,49 @@ def install_engine_migrations!(workspace, repo, gem_names)
   dump_consumer_schema!(workspace, repo)
 end
 
+# Does this workspace's app define the engine installer for `gem_name`?
+#
+# ASKED, and the answer DISCRIMINATED. A non-zero `bin/rails -T` means the app did
+# not boot — a broken bundle, a missing master.key — and in a fail-closed function
+# "I could not tell" must never read as "nothing to do". An absent task exits 0
+# with no match, which is the only silent skip there is.
+def workspace_engine_task(workspace, repo, gem_name)
+  task = Release::EngineMigrationInstall.install_task(gem_name)
+  return false if task.nil?
+
+  out, ok = sh("bin/rails", "-T", task, chdir: workspace, capture: true, env: gate_env(repo, role: "ship"))
+  case Release::EngineMigrationInstall.probe_verdict(ok: ok, output: out, task: task)
+  when :present then true
+  when :absent  then false
+  else
+    abort!("#{repo}: could not boot the app in the ship workspace to ask whether #{gem_name} ships " \
+           "migrations (`bin/rails -T` exited non-zero). Refusing to skip the install on an answer " \
+           "nobody got — a consumer missing an engine migration reddens after the gem is published.\n#{out}")
+  end
+end
+
 # Run the workspace's migrations against a throwaway database so the dumper
-# rewrites db/schema.rb, then drop it. The database name carries the repo and this
-# process, so two sweeps (or a sweep and a developer) can never collide on it.
+# rewrites db/schema.rb, then drop it. The URL comes from the same helper the gate
+# uses, so a SQLite app (rolio) is handed nil and stays on its own workspace file
+# rather than a postgres:// URL it cannot use.
 def dump_consumer_schema!(workspace, repo)
-  database = "#{repo.tr('-', '_')}_release_schema_#{Process.pid}"
-  env = { "DATABASE_URL" => "postgres:///#{database}", "RAILS_ENV" => "development" }
+  base = gate_database_url(repo, role: "ship")
+  url = Release::EngineMigrationInstall.throwaway_database_url(base_url: base, repo: repo, pid: Process.pid)
+
+  # FAIL CLOSED on the one combination that would be dangerous: a Postgres app
+  # whose throwaway URL could not be derived. gate_env already carries the GATE's
+  # own TEST database in DATABASE_URL/TEST_DATABASE_URL, so proceeding here would
+  # run db:create + db:schema:load against a database a concurrent conductor may
+  # be mid-suite on. A SQLite app has no base URL at all and is meant to fall
+  # through to its own workspace file.
+  abort!("#{repo}: could not derive a throwaway database from #{base.inspect} — refusing to refresh " \
+         "db/schema.rb against the gate's own database") if base.to_s.strip.present? && url.nil?
+
+  # RAILS_ENV=development, and DATABASE_URL replaced rather than inherited: the
+  # dumper writes db/schema.rb from the dev environment, and the database it
+  # touches must be the throwaway one this function named.
+  env = gate_env(repo, role: "ship").merge("RAILS_ENV" => "development")
+  env = url ? env.merge("DATABASE_URL" => url, "TEST_DATABASE_URL" => url) : env.merge("DATABASE_URL" => nil, "TEST_DATABASE_URL" => nil)
 
   begin
     _, created = sh("bin/rails", "db:create", "db:schema:load", "db:migrate", chdir: workspace, env: env, capture: true)
@@ -5122,24 +5147,16 @@ def dump_consumer_schema!(workspace, repo)
            "otherwise land unrun and every suite would fail on a pending migration") unless created
 
     diff, = git_capture("-C", workspace, "diff", "--", "db/schema.rb")
-    unless Release::ShipSequence.schema_dump_safe?(diff)
+    unless Release::EngineMigrationInstall.schema_dump_safe?(diff)
       abort!("#{repo}: refreshing db/schema.rb removed or rewrote existing schema, not just the new table. " \
              "That means this repo's committed schema was already behind its own migrations; fix that in the " \
              "repo, then re-run `bin/release prepare`.\n#{diff}")
     end
   ensure
-    sh("bin/rails", "db:drop", chdir: workspace, env: env, capture: true)
+    # Only a database WE named gets dropped. With no URL the app is on its own
+    # workspace file, which dies with the workspace.
+    sh("bin/rails", "db:drop", chdir: workspace, env: env, capture: true) if url
   end
-end
-
-# Does this workspace's Rails app define that rake task? Asked rather than
-# assumed: most published gems are not engines and have no installer, and an
-# abort on their absence would block every gem release that is not an engine.
-def workspace_rake_task?(workspace, task)
-  return false if task.nil?
-
-  out, ok = sh("bin/rails", "-T", task, chdir: workspace, capture: true)
-  ok && out.to_s.include?(task)
 end
 
 # Bump each consumer's Gemfile.lock (and, only when the new version ESCAPES the
