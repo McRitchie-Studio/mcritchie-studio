@@ -250,6 +250,7 @@ test("a live stage change FLIPs the card to its new column and updates the count
 // stale visible card first to match the bug: a page reload would show it, but a
 // replace-only websocket update leaves the open board empty.
 test("a live block transition inserts a missing card into the Building column @quarantine", async ({ page }) => {
+  await showUpstreamLanes(page);
   const { pageErrors, report } = watchPageErrors(page);
 
   await page.goto("/deployments");
@@ -260,21 +261,34 @@ test("a live block transition inserts a missing card into the Building column @q
   await expect(page.locator("#card-live-blocked-demo")).toHaveCount(0);
 
   const token = await page.getAttribute("meta[name='e2e-api-token']", "content");
-  const res = await page.request.patch("/api/v1/tasks/live-blocked-demo", {
+  // BLOCKING IS AN ATTRIBUTE, NOT A STAGE MOVE — and that is why these specs rotted.
+  // They were written when `blocked` was a stage you could PATCH to. It no longer is:
+  // app/models/task.rb states outright "There is NO →blocked transition", and the block
+  // columns (blocked_at / blocked_from / blocked_by / block_kind) are stamped
+  // server-side by Task#block! so blocked_from is DERIVED, never caller-supplied. The
+  // old payload `{ stage: "blocked" }` is now simply invalid, so res.ok() was false and
+  // the live-update assertions below never got their chance to run.
+  const res = await page.request.patch("/api/v1/tasks/live-blocked-demo/block", {
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    data: { stage: "blocked", event: { source: "cli", actor: "avi" } },
+    data: { by: "avi", kind: "rework" },
   });
   expect(res.ok()).toBeTruthy();
 
   const blockedCard = page.locator("#dropzone-building #card-live-blocked-demo");
   await expect(blockedCard).toBeVisible({ timeout: 10_000 });
-  await expect(blockedCard).toHaveAttribute("data-stage", "blocked");
+  // A blocked task STAYS ON `building` — Task#block! stamps the block columns and
+  // leaves the stage alone, so data-stage never becomes "blocked". The card marks
+  // the block with data-glow instead (_task_card.html.erb: card_glow_kind), which is
+  // the attribute that actually tracks Task#block_state.
+  await expect(blockedCard).toHaveAttribute("data-stage", "building");
+  await expect(blockedCard).toHaveAttribute("data-glow", "blocked");
   await expect(blockedCard).toHaveAttribute("class", /bg-red/);
 
   expect(pageErrors, report()).toHaveLength(0);
 });
 
 test("a live block transition keeps an already-visible Building card visible @quarantine", async ({ page }) => {
+  await showUpstreamLanes(page);
   const { pageErrors, report } = watchPageErrors(page);
 
   await page.goto("/deployments");
@@ -283,14 +297,17 @@ test("a live block transition keeps an already-visible Building card visible @qu
   await expect(card).toBeVisible();
 
   const token = await page.getAttribute("meta[name='e2e-api-token']", "content");
-  const res = await page.request.patch("/api/v1/tasks/live-blocked-visible-demo", {
+  // Blocking is an ATTRIBUTE toggle, not a stage move — see the note above.
+  const res = await page.request.patch("/api/v1/tasks/live-blocked-visible-demo/block", {
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    data: { stage: "blocked", event: { source: "cli", actor: "avi" } },
+    data: { by: "avi", kind: "rework" },
   });
   expect(res.ok()).toBeTruthy();
 
   await expect(card).toBeVisible({ timeout: 10_000 });
-  await expect(card).toHaveAttribute("data-stage", "blocked");
+  // Blocked stays on `building`; the block shows through data-glow. See above.
+  await expect(card).toHaveAttribute("data-stage", "building");
+  await expect(card).toHaveAttribute("data-glow", "blocked");
   await expect(card).toHaveAttribute("class", /bg-red/);
   await page.waitForTimeout(1_500);
   await expect(card).toBeVisible();
@@ -299,6 +316,7 @@ test("a live block transition keeps an already-visible Building card visible @qu
 });
 
 test("the tasks board updates a blocked card live in the Building column @quarantine", async ({ page }) => {
+  await showUpstreamLanes(page);
   const { pageErrors, report } = watchPageErrors(page);
 
   await page.goto("/tasks");
@@ -309,15 +327,21 @@ test("the tasks board updates a blocked card live in the Building column @quaran
   await expect(page.locator("#card-tasks-live-blocked-demo")).toHaveCount(0);
 
   const token = await page.getAttribute("meta[name='e2e-api-token']", "content");
-  const res = await page.request.patch("/api/v1/tasks/tasks-live-blocked-demo", {
+  // Blocking is an ATTRIBUTE toggle, not a stage move — see the note above.
+  const res = await page.request.patch("/api/v1/tasks/tasks-live-blocked-demo/block", {
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    data: { stage: "blocked", event: { source: "cli", actor: "avi" } },
+    data: { by: "avi", kind: "rework" },
   });
   expect(res.ok()).toBeTruthy();
 
   const blockedCard = page.locator("#dropzone-building #card-tasks-live-blocked-demo");
   await expect(blockedCard).toBeVisible({ timeout: 10_000 });
-  await expect(blockedCard).toHaveAttribute("data-stage", "blocked");
+  // A blocked task STAYS ON `building` — Task#block! stamps the block columns and
+  // leaves the stage alone, so data-stage never becomes "blocked". The card marks
+  // the block with data-glow instead (_task_card.html.erb: card_glow_kind), which is
+  // the attribute that actually tracks Task#block_state.
+  await expect(blockedCard).toHaveAttribute("data-stage", "building");
+  await expect(blockedCard).toHaveAttribute("data-glow", "blocked");
   await expect(blockedCard).toHaveAttribute("class", /bg-red/);
 
   expect(pageErrors, report()).toHaveLength(0);
