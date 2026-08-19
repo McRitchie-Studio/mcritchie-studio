@@ -406,6 +406,75 @@ Two rules follow:
   `bin/rails db:test:prepare test:prepare`, one boot. `test/lib/tasks/test_prepare_asset_hook_test.rb`
   pins the hook that makes this work.
 
+## A Synthesized Click Lands At COORDINATES — So Wait For The Target To Stop Moving
+
+**`find(...).click` does not click an element. It clicks a POINT.** The driver
+hit-tests the element, then dispatches `pointerdown` and `pointerup` at that
+point. If the page reflows in between, the two land on different elements, and
+the browser fires `click` on their nearest **common ancestor** — never on the
+button. Nothing raises. `ElementClickIntercepted` does not fire, because at
+hit-test time the element really was there. The handler simply never runs, and
+the test fails later, on whatever it asserted about the click's effect.
+
+**This cost three PRs in one day** (`close-board-filter-flake`).
+`TasksBoardFilterSystemTest` reddened on #886, #895 and #897 — two sessions,
+unrelated diffs — always on the same negative assertion, `expected not to find
+visible css "#card-rolio-tasks-board-card"`. The card was innocent. The captured
+event sequence:
+
+```text
+pointerdown -> SPAN "rolio"     (the filter chip)
+pointerup   -> SPAN "Apps"      (the row label; the chip has moved)
+click       -> DIV              (their common ancestor)
+```
+
+**What moves it: a third-party webfont.** Page text is set in Montserrat, fetched
+from `fonts.googleapis.com`. The stylesheet blocks the load event; the font
+FILES do not. So they arrive after `visit` returns, every glyph is re-measured,
+and each chip changes width — inside the ~60 ms a test spends asserting
+readiness, finding a control and clicking it. Measured locally: the chip is found
+at 45 ms and clicked at 68 ms.
+
+**Why five local reproductions all came back green.** On a dev machine that font
+is already cached, so the reflow happens before the test looks. On a CI runner it
+is a live network fetch. A flake that only reproduces where the network is real
+is not "CI being flaky" — it is a real timing dependency that CI is honest about
+and your laptop hides.
+
+**The rule: use `click_when_settled` for any control clicked soon after a page
+load.** It blocks until the target's box is identical across two consecutive
+samples AND nothing is left in flight that could still resize it, then clicks.
+Both halves are load-bearing — stability alone clears a box that has simply not
+been re-measured yet; readiness alone clears a box mid-animation. Plain
+`find(...).click` stays correct once the page has been interacted with.
+
+**Ask `document.fonts.check` about the ELEMENT's own font, not the document's.**
+`document.fonts.status` reads `"loaded"` while two dozen declared faces are still
+`"unloaded"`, because a face only loads when something needs it — measured on this
+board: status `loaded`, 25 of 30 faces `unloaded`. The global signal will wave you
+through a page that is still about to reflow.
+
+**Assert the control's own state before its consequence.** The chips carry
+`aria-pressed`, so a swallowed click now fails on the chip, naming itself, instead
+of downstream on a card assertion that cannot distinguish "the click never landed"
+from "the filter toggled and the view did not react". A negative assertion is the
+worst possible place to learn a click went missing.
+
+`test/system/board_filter_click_stability_test.rb` pins the guard by making the
+race deterministic: it puts the page into a settling window that moves the chip
+every frame and reflows it under any pointerdown, then closes. Swap
+`click_when_settled` for `find(...).click` and it goes red on the `aria-pressed`
+assertion, which is the production signature exactly. **Verified by mutation, 3
+red / 3 green** — the only proof that counts for a timing fix, because the broken
+state also passed most of the time.
+
+**Still open, and NOT fixed by the guard: real users hit the same reflow.**
+`layouts/studio/_head.html.erb` in studio-engine loads Montserrat from a third
+party while deliberately vendoring Alpine, SortableJS and confetti in the same
+file, for reasons its own comments spell out. Self-hosting the font removes the
+layout shift for everyone, not just for tests — tracked as
+`/tasks/vendor-the-montserrat-webfont`.
+
 ## The Minitest DB Starts EMPTY — And The E2E Lane Must Not Share It
 
 **The minitest database is hermetic by construction.** `test/test_helper.rb` runs
