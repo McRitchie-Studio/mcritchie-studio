@@ -25,6 +25,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     environment: qa            # auto — no reviewer; optimistic
     steps:
       # fetch-depth: 0 — Heroku's git receiver needs the deployed commit's ancestry.
