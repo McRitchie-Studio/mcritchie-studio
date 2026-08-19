@@ -73,7 +73,10 @@
 # the MERGED tree with the lister rather than keeping either side of the conflict —
 # 107+1+2+2 = 112. Picking a side here silently un-counts another PR's specs, which is
 # exactly what this file exists to make impossible.)
-total_specs: 112
+#
+# 2026-08-19: +3 for e2e/app_ladder_row.spec.js (the /deployments app-ladder row).
+# MEASURED with the lister, not added by hand: `npx playwright test --list` => 115.
+total_specs: 115
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -107,8 +110,11 @@ quarantined: 15
 # repaired three specs (quarantined 18 -> 15, executed 92 -> 95) while this branch added two
 # (total 110 -> 112, executed 92 -> 94). Neither side's number is right on the merged tree.
 # Resolved from the INVARIANT — total_specs - quarantined - and re-derived with the lister
-# above: 112 - 15 = 97. Taking either side would have un-counted the other PR's work.
-executed: 97
+# above: 115 - 15 = 100. Taking either side would have un-counted the other PR's work.
+# Both halves re-measured 2026-08-19 with the runner:
+#   npx playwright test --list                           => 115
+#   npx playwright test --list --grep-invert @quarantine => 100
+executed: 100
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to
