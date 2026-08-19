@@ -61,18 +61,28 @@ module Ci
     # repo stopped it instead of "the CI" — the difference between a merge that
     # explains itself and one that silently did not happen.
     #
-    # `repo:` (the argument) asks about ONE repo instead of folding. That is the
-    # head-sha PIN's read: an armed merge is pinned to one PR in one repo, so the sha
-    # it compares must come from THAT repo's runs, while the green/not-green question
-    # it asks first spans them all. Two different questions, and answering both with
-    # one repo's verdict is the whole of this defect.
-    def verdict(task, repo: nil, injected: nil)
+    # `repo:` (the argument) asks about ONE repo instead of folding — a diagnostic
+    # read for a caller that already knows which repo it means. It is NOT how a
+    # merge gate should ask: a lone repo verdict is a fact about one repo, and
+    # using one as if it spoke for the task is this defect in miniature.
+    #
+    # `also:` UNIONS repos the CALLER knows are in play into the fold. It exists for
+    # exactly one caller and one rule: an armed merge names a PR in a repo the task's
+    # own register may not list, and A REPO THAT CAN DECIDE A MERGE MUST BE ABLE TO
+    # BLOCK ONE. Unioned, that repo gets a real VOTE — it can turn the whole verdict
+    # red — and rides out in `repos:` so the caller reads its sha from a verdict the
+    # fold has already proved green. The first cut of this gate instead let the merge
+    # executor re-read the pinned repo on its own and take only its `:sha`, so a repo
+    # outside the fold contributed a sha and no vote, and a RED PR merged into
+    # `accepted` unattended. Union, not a guard: a guard leaves that branch alive for
+    # the next caller to find.
+    def verdict(task, repo: nil, also: nil, injected: nil)
       require_ci_status
       token = injected.to_s.strip
       return { state: token.to_sym } if CiStatus::TOKENS.include?(token)
       return repo_verdict(task, repo) if repo.present?
 
-      repos = repos_for(task)
+      repos = repos_for(task, also: also)
       return { state: :no_pr } if repos.empty?
 
       fold_repos(repos.index_with { |name| repo_verdict(task, name) })
@@ -197,6 +207,11 @@ module Ci
     # (the sum of one). Summed only when every repo reported one, so a partial count
     # never reads as a total.
     def fold_repos(per_repo)
+      # NO REPOS IS NOT GREEN. #verdict never calls this empty, but this is a public
+      # module_function and "all? over nothing is true" would hand the next caller a
+      # green verdict nobody voted for — the failure mode this whole gate is about.
+      return { state: :no_pr } if per_repo.blank?
+
       primary = per_repo.keys.first
       unless per_repo.each_value.all? { |verdict| verdict[:state] == :green }
         decided = per_repo.find { |_, verdict| verdict[:state] == :red } ||
@@ -206,7 +221,10 @@ module Ci
 
       counts = per_repo.each_value.map { |verdict| verdict[:count] }.compact
       folded = per_repo[primary].merge(repos: per_repo)
-      counts.size == per_repo.size ? folded.merge(count: counts.sum) : folded
+      # SUMMED, or DROPPED — never the primary's own count wearing the task's name.
+      # An understated total reads as a real one ("2 checks voted" on a six-lane
+      # task); nil says plainly that nobody can total it.
+      counts.size == per_repo.size ? folded.merge(count: counts.sum) : folded.except(:count)
     end
 
     # EVERY repo this task owes a CI verdict in: the repos it has actually RECORDED A
@@ -243,12 +261,23 @@ module Ci
     # the whole pipeline builds on — bin/dor-check roots the same way). A PR pushed to
     # a differently-named branch in a second repo resolves no run there and reads
     # :none, which blocks rather than passes.
-    def repos_for(task)
+    #
+    # `also:` adds repos the CALLER knows are in play — see #verdict. It is a UNION,
+    # never a replacement, so a caller can widen this set and can never narrow it.
+    #
+    # THE REGISTER IS ONLY AS COMPLETE AS WHAT WAS RECORDED, stated plainly because it
+    # bounds everything above: `devops.pr_urls` is written by `bin/task update
+    # --pr-url-for <repo>=<url>` alone — `bin/ship` records only the primary — so a
+    # two-repo task whose builder never ran that command is gated on its primary PR
+    # and looks single-repo here. `also:` is what keeps that gap from reaching the
+    # merge, since the armed action names its own repo whatever the register says.
+    def repos_for(task, also: nil)
       primary = primary_repo_for(task)
       return [] if primary.empty?
 
       register = task.respond_to?(:release_pr_urls) ? task.release_pr_urls : {}
-      others = register.keys.map { |repo| bare_slug(repo) }.reject { |repo| repo.empty? || repo == primary }
+      named = register.keys + Array(also)
+      others = named.map { |repo| bare_slug(repo) }.reject { |repo| repo.empty? || repo == primary }
       [primary] + others.uniq.sort
     end
 

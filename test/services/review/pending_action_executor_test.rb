@@ -818,6 +818,48 @@ class Review::PendingActionExecutorTest < ActiveSupport::TestCase
     assert_equal "reviewed", @task.reload.stage
   end
 
+  # ── THE FOLD MISS: a pinned repo the task's register never recorded ─────────
+  #
+  # THE REGRESSION (review bounce, 2026-08-19). Every other pin test above calls
+  # add_second_repo! first, which REGISTERS turf in devops.pr_urls — so the fold
+  # always covered the pinned repo and this branch was never exercised. With the
+  # registration removed the fold is [mcritchie-studio] and GREEN, the action is
+  # pinned to turf, and turf is RED on the very tree the action names.
+  #
+  # The first cut of this change read the pinned repo's :sha and threw its :state
+  # away, so a repo outside the fold contributed a sha and NO VOTE: sha matched,
+  # every other guard passed, and a red PR merged into `accepted` unattended. It
+  # was NET-NEW — before the fold existed the sha came from repositories.first and
+  # never matched a second repo's head, so the merge waited out its TTL.
+  #
+  # The rule this asserts: A REPO THAT CAN DECIDE A MERGE MUST BE ABLE TO BLOCK ONE.
+  test "REFUSES a pinned repo the fold does not cover — red CI, matching sha, no registration" do
+    ingest_ci # the HUB is green at PINNED — and it is the fold's ONLY repo
+    # deliberately NO add_second_repo!: devops.pr_urls stays empty
+    ingest_second_ci(sha: SECOND_PINNED, conclusion: "failure") # turf RED on the pinned tree
+    action = ReviewPendingAction.arm!(
+      task: @task.reload, repo: SECOND_REPO, pr_number: 77, head_sha: SECOND_PINNED,
+      pr_url: "https://github.com/#{SECOND_REPO}/pull/77", authorized_by: "carl"
+    )
+
+    assert_equal ["mcritchie-studio"], Ci::ReviewGate.repos_for(@task.reload),
+                 "precondition: the task's own register does NOT name turf — this is the fold MISS"
+    assert_equal :green, Ci::ReviewGate.verdict(@task, repo: "mcritchie-studio")[:state],
+                 "precondition: the fold's own repo is GREEN, so nothing else stops this merge"
+    assert_equal :red, Ci::ReviewGate.verdict(@task, repo: "turf-monster")[:state],
+                 "precondition: the PINNED repo is RED"
+
+    result, github = run_executor(action, github: FakeGithub.new(pr: open_pr(sha: SECOND_PINNED)))
+
+    assert_equal 0, github.merge_calls,
+                 "a red pinned repo reached the merge endpoint on another repo's green — the fail-OPEN"
+    refute_equal :executed, result.status
+    assert_match(/turf-monster/, result.reason, "the refusal must name the repo that has no green")
+    @task.reload
+    assert_nil @task.merged
+    assert_equal "submitted", @task.stage
+  end
+
   # THE PIN IS PER REPO, and this is the other half of the same confusion. An armed
   # merge names ONE PR in one repo, so the head_sha it compares must come from THAT
   # repo's runs. Reading the fold's primary sha here would compare turf's pinned

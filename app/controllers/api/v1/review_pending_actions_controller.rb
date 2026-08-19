@@ -34,10 +34,13 @@ module Api
         head_sha = arm_params[:head_sha].to_s.strip
         return render_error("head_sha is required — the verdict pins a tree", status: :unprocessable_entity) if head_sha.blank?
 
-        pr_number = resolve_pr_number(task)
+        # ONE PR, THREE FIELDS — resolved from the SAME url, in this order, so the
+        # action's repo / number / url can never describe different PRs.
+        pr_url = arm_params[:pr_url].presence || task.devops_url("pr")
+        pr_number = resolve_pr_number(pr_url)
         return render_error("could not resolve a PR number for #{task.slug}", status: :unprocessable_entity) if pr_number.blank?
 
-        repo = arm_params[:repo].presence || Array(task.devops_repositories).first
+        repo = resolve_repo(task, pr_url)
         if repo.blank?
           return render_error("could not resolve a repo for #{task.slug} — pass repo explicitly",
                               status: :unprocessable_entity)
@@ -58,7 +61,7 @@ module Api
             repo:          repo,
             pr_number:     pr_number,
             head_sha:      head_sha,
-            pr_url:        arm_params[:pr_url].presence || task.devops_url("pr"),
+            pr_url:        pr_url,
             base_branch:   arm_params[:base_branch].presence || "accepted",
             merge_method:  arm_params[:merge_method].presence || "merge",
             authorized_by: arm_params[:agent].presence,
@@ -127,11 +130,38 @@ module Api
       # The PR number, from an explicit param or parsed off the task's recorded PR
       # URL. Never guessed from anything else — an action aimed at the wrong PR is
       # the one mistake the SHA pin cannot catch.
-      def resolve_pr_number(task)
+      # THE REPO IS THE PR's, and the three fields must describe ONE PR. This
+      # defaulted to `Array(task.devops_repositories).first` while `pr_number` and
+      # `pr_url` both came from `devops.pr_url` — so any task whose first declared
+      # repo is not its PR's repo (a gem task naming its consumers is the standing
+      # case) armed an INCOHERENT triple: repo A, with repo B's PR number and URL.
+      #
+      # It fed a worse failure downstream. Ci::ReviewGate keys the CI fold off the
+      # PR's repo, so an action pinned to a repo outside that fold used to take a sha
+      # from a verdict nobody folded and merge on another repo's green. The gate now
+      # unions the pinned repo in and refuses on its own state — but a caller that
+      # names the wrong repo in the first place is a bug wherever the gate lands, so
+      # it is fixed at the source too.
+      #
+      # An explicit `repo` still wins (a caller arming a satellite's PR knows better
+      # than we do); the fallback to the declared repo survives only for a `pr_url`
+      # that names none, which is exactly Ci::ReviewGate.primary_repo_for's rule —
+      # one derivation of "which repo is this task's PR in", shared with the gate
+      # that will judge the action.
+      def resolve_repo(task, pr_url)
+        arm_params[:repo].presence ||
+          Task.repo_from_pr_url(pr_url).presence ||
+          Ci::ReviewGate.primary_repo_for(task).presence
+      end
+
+      # From the RESOLVED url, not the task's — a caller that passes `pr_url` and no
+      # number was naming a specific PR, and reading the number off a different one
+      # is how an action ends up pinned to a PR nobody meant.
+      def resolve_pr_number(pr_url)
         explicit = arm_params[:pr_number].to_s.strip
         return explicit.to_i if explicit.match?(/\A\d+\z/)
 
-        task.devops_url("pr").to_s[%r{/pull/(\d+)}, 1]&.to_i
+        pr_url.to_s[%r{/pull/(\d+)}, 1]&.to_i
       end
 
       def resolved_ttl
