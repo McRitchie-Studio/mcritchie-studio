@@ -199,6 +199,9 @@ jobs:
         options: --health-cmd="pg_isready" --health-interval=10s --health-timeout=5s --health-retries=3
 
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
       - name: Install packages
         # The fetch is BOUNDED and RETRIED — see .github/scripts/apt-retry for the
         # incident, the measured budgets, and why the loop lives in a script rather
@@ -212,9 +215,6 @@ jobs:
         # long before it can take the whole job down with it.
         timeout-minutes: 25
         run: .github/scripts/apt-retry curl libjemalloc2 libvips postgresql-client
-
-      - name: Checkout code
-        uses: actions/checkout@v7
 
       - name: Await RubyGems propagation for locked gems
         run: .github/scripts/await-gem-propagation.sh
@@ -369,6 +369,11 @@ jobs:
       #   options: --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 5
 
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
       - name: Install packages
         # The fetch is BOUNDED and RETRIED — see .github/scripts/apt-retry for the
         # incident, the measured budgets, and why the loop lives in a script rather
@@ -426,11 +431,6 @@ jobs:
       # goes RED and says why. It cannot quietly demote itself back to the pin it used to be —
       # which is exactly what it was, and how the hole grew once with every guard green.
       # Pinned by test/lib/ci_workflow_triggers_test.rb.
-      - name: Checkout code
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
       - name: Await RubyGems propagation for locked gems
         run: .github/scripts/await-gem-propagation.sh
 

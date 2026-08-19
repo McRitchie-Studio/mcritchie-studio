@@ -132,6 +132,42 @@ class CiAptStepTimeoutTest < Minitest::Test
                  "unretried no matter what `timeout-minutes` says:\n  " + not_calling.join("\n  ")
   end
 
+  def test_the_checkout_precedes_every_fetch
+    # THE REGRESSION THIS CATCHES, which also shipped and also went red. Moving the
+    # loop into a script made the workflow legible again — and instantly broke the
+    # `test` and `playwright` jobs, because in BOTH of them `Install packages` was
+    # the FIRST step in the job, running BEFORE `actions/checkout`. An inline `run:`
+    # block needs nothing from the repo; a script invocation needs the repo to exist.
+    # So all four jobs died in ~30 seconds on "No such file or directory".
+    #
+    # island_animator is why the cause was findable in one look: it checks out FIRST,
+    # so it passed on the very same commit that failed everywhere else — the one job
+    # whose order was already right.
+    #
+    # This is not a stylistic preference about step order. It is the precondition the
+    # script form introduced, and nothing else in the file states it.
+    offenders = []
+
+    Dir[WORKFLOW_GLOB].sort.each do |path|
+      jobs = (YAML.load_file(path, aliases: true) || {})["jobs"] || {}
+      jobs.each do |job_name, job|
+        next unless job.is_a?(Hash)
+
+        names = Array(job["steps"]).map { |s| s.is_a?(Hash) ? "#{s['name']} #{s['uses']} #{s['run']}" : "" }
+        fetch = names.index { |n| n.include?("apt-retry") }
+        next if fetch.nil?
+
+        checkout = names.index { |n| n.include?("actions/checkout") }
+        offenders << "#{File.basename(path)} :: #{job_name} (checkout=#{checkout.inspect}, fetch=#{fetch})" if checkout.nil? || checkout > fetch
+      end
+    end
+
+    assert_empty offenders,
+                 "these jobs run .github/scripts/apt-retry BEFORE checking the repo out, so the script " \
+                 "does not exist yet and the step dies instantly on 'No such file or directory':\n  " +
+                 offenders.join("\n  ")
+  end
+
   def test_the_script_is_committed_executable
     assert File.exist?(SCRIPT), "#{SCRIPT} is missing — every apt step invokes it"
     assert File.executable?(SCRIPT),
