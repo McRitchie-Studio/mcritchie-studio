@@ -70,9 +70,16 @@ class BoardFilterClickStabilityTest < ApplicationSystemTestCase
       };
       requestAnimationFrame(jitter);
 
+      // The window closes on the CLOCK, not on a frame having run. Reading the flag
+      // the jitter loop maintains would leave a gap one frame wide: the box stops
+      // changing at the LAST jitter frame, so a guard polling geometry can see it
+      // settle and click before a later frame flips the flag. On a loaded runner
+      // with slow frames that gap is real, and this test would go red for a reason
+      // that has nothing to do with the guard it exists to pin.
       document.addEventListener('pointerdown', () => {
-        window.__settling.clickedAt = Math.round(performance.now() - window.__settling.t0);
-        if (!window.__settling.open) return;
+        const elapsed = performance.now() - window.__settling.t0;
+        window.__settling.clickedAt = Math.round(elapsed);
+        if (elapsed >= windowMs) return;
         label.style.letterSpacing = '24px';
         row.getBoundingClientRect();
       }, true);
