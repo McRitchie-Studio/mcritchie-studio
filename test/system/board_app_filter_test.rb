@@ -25,13 +25,18 @@ class BoardAppFilterSystemTest < ApplicationSystemTestCase
     # The chip's own state first, for the same reason as the /tasks board spec: a card
     # that is still visible cannot tell you whether the click landed. See
     # tasks_board_filter_test.rb for the incident this came from.
-    find("button", text: "rolio", match: :first).click
+    #
+    # Scoped to the filter row and clicked through click_when_settled, because this
+    # board carries the identical exposure: the chips are sized by a webfont that
+    # arrives after the load event, and a click dispatched while they are still being
+    # re-measured lands on their common ancestor instead of the button.
+    click_when_settled("[data-test='board-filter-row'] button", text: "rolio", match: :first)
     assert_selector "button[aria-pressed='true']", text: "rolio", wait: 5
     assert_no_selector "#card-#{rolio.slug}", visible: true
     assert_selector "#card-#{turf.slug}", visible: true
 
     # Toggle Rolio back on → its card returns.
-    find("button", text: "rolio", match: :first).click
+    click_when_settled("[data-test='board-filter-row'] button", text: "rolio", match: :first)
     assert_selector "button[aria-pressed='false']", text: "rolio", wait: 5
     assert_selector "#card-#{rolio.slug}", visible: true
   end
