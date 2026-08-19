@@ -89,12 +89,23 @@ class ReleaseAcceptedCertificationTest < Minitest::Test
            "`push:` with no branch filter builds EVERY branch — that repo is not blind"
   end
 
-  # A path filter suppresses the RUN, not a job: a docs-only merge onto `accepted` gets
-  # no verdict at all while the branch list still reads correct to a human auditor.
   def filtered_yaml(filter)
     "name: CI\non:\n  push:\n    branches: [main, release, accepted]\n    #{filter}\njobs: {}\n"
   end
 
+  # `on: [push, pull_request]` and `on: push` are legal spellings for "push,
+  # unfiltered". Reading only the mapping form would call such a repo BLIND and refuse
+  # its promote — a false alarm that wedges the release lane, which is the failure mode
+  # the sibling guard tolerates :none to avoid.
+  def test_the_array_and_string_trigger_forms_build_every_branch
+    assert C.certifies?("name: CI\non: [push, pull_request]\njobs: {}\n")
+    assert C.certifies?("name: CI\non: push\njobs: {}\n")
+    refute C.certifies?("name: CI\non: [pull_request]\njobs: {}\n"),
+           "pull_request alone still certifies no branch"
+  end
+
+  # A path filter suppresses the RUN, not a job: a docs-only merge onto `accepted` gets
+  # no verdict at all while the branch list still reads correct to a human auditor.
   def test_a_path_filter_on_the_push_trigger_is_blind
     # The branch list still reads correct to a human auditor in BOTH of these.
     assert_includes filtered_yaml("paths: ['app/**']"), "accepted"

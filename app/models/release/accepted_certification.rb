@@ -122,6 +122,15 @@ class Release
       return false unless doc.is_a?(Hash)
 
       on = doc[true] || doc["on"]
+      # THE ARRAY/STRING FORMS BUILD EVERY BRANCH. `on: [push, pull_request]` and
+      # `on: push` are both legal GitHub spellings for "push, unfiltered" — so they
+      # certify this rung and every other. Reading only the mapping form would report
+      # such a repo BLIND and refuse its promote, which is a false alarm that wedges
+      # the release lane: precisely the failure mode refuse_red_accepted! tolerates
+      # :none to avoid. No repo here uses these spellings today; a newly onboarded one
+      # might, and it must not be greeted by a bogus refusal.
+      return Array(on).map(&:to_s).include?("push") if on.is_a?(Array) || on.is_a?(String)
+
       return false unless on.is_a?(Hash) && on.key?("push")
 
       push = on["push"]
