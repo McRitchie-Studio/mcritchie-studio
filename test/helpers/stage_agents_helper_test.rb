@@ -385,6 +385,24 @@ class StageAgentsHelperTest < ActionView::TestCase
   end
 
 
+  # [component] THE RENDERED CLUSTER — the number the card actually draws, not the
+  # model method in isolation. The seat above (1800) is the FALLBACK path: that
+  # fixture records no QA intent, so the cluster keeps the transition figure. This
+  # is the other half — with a pickup row present, the drawn number must be
+  # pickup->assembled, because reviewed->assembled is mostly queue-wait.
+  test "crew_clusters draws Avi's seat from his pickup when one was recorded" do
+    task = deploy_task(stage: "shipped", reviewers: REVIEWERS) # assembled 1800 by transition
+    task.task_events.create!(kind: TaskEvent::INTENT, from_stage: "reviewed",
+                             to_stage: "assembled", actor: "avi",
+                             occurred_at: 2.hours.ago - 300)
+
+    assembled = crew_clusters(task.reload, stage_agent_groups(task, @agents))
+                .find { |c| c.lane == :assembled }
+
+    assert_equal 300, assembled.seconds,
+                 "the card must draw pickup->assembled (300), not reviewed->assembled (1800)"
+  end
+
   # --- the review seat rides the CLAIM (crew-face-on-claim) --------------------
   # These assert the RENDERED COLUMNS — the data the card partial draws — not the
   # `review_in_progress?` predicate. The first version of this change hardened the
