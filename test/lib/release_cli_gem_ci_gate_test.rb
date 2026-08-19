@@ -1,51 +1,37 @@
 # frozen_string_literal: true
 
-# bin/release.rb's CLEAN-ENV GATE in front of the gem publish. Standalone:
+# bin/release.rb's CLEAN-ENV VERDICT in front of the gem publish. Standalone:
 #   ruby -Itest test/lib/release_cli_gem_ci_gate_test.rb
 #
 # WHAT IT DEFENDS. publish_gem authorised itself from a LOCAL `bin/release-check
 # --build` — whatever bundle, whatever Ruby, whatever half-installed state the
 # conductor's laptop happens to carry — and then pushed to RubyGems, which can
 # NEVER be un-pushed. Every other shippable tip in this ecosystem earns a
-# clean-env CI verdict before it moves; the gem's did not, and the gem is the one
-# artifact with no rollback.
+# clean-env verdict before it moves; the gem's did not. The verdict already
+# EXISTED (engine-ci.yml builds `release`) and was simply never read.
 #
-# THE VERDICT ALREADY EXISTED AND WAS NEVER READ. engine-ci.yml builds `release`,
-# so the tip being published already carries a GitHub run — a clean-env verdict
-# that nothing consults protects nothing. Verified before building: publish_gem's
-# only authorisation was run_test_scope("gem_release_check", ...), a local shell.
-#
-# A NEW FILE ON PURPOSE: test/lib/release_cli_test.rb is frozen at its size by
-# config/test_health.yml so new work lands somewhere else.
+# IT LIVES IN PHASE 1, and that placement is a fix rather than a detail. Review
+# found the first version sitting in the publish LOOP: a studio-engine +
+# solana-studio sweep pushed studio-engine to RubyGems and THEN aborted on the
+# second gem — a partial publish of the one artifact that cannot be un-pushed,
+# which is exactly what this task exists to prevent. validate_gems_for_qa holds
+# one invariant and says so in its own abort text: every swept gem validates
+# before the first irreversible push.
 require "minitest/autorun"
 require "open3"
-require "tmpdir"
 require "rbconfig"
+require "tmpdir"
 
 class ReleaseCliGemCiGateTest < Minitest::Test
   BIN = File.expand_path("../../bin/release.rb", __dir__)
 
-  # One gem, not already live, not dry — the shape publish_gems_for_qa gates.
-  def plan_line
-    %([{ "repo" => "studio-engine", "version" => "0.60.0", "tip" => "abc1234", ) +
-      %("already_live" => false, "dry" => false }])
-  end
-
-  # Drive the REAL script with the injection seams set, then evaluate `call`.
-  # RELEASE_CI_STATUS is the same seam the pre-QA gate's tests use.
   # PROJECTS_DIR IS PINNED TO AN EMPTY DIRECTORY, and that is the fix for a test
-  # that was green here and RED ON CI.
-  #
-  # release.rb resolves sibling repos under the projects root. On a developer
-  # machine studio-engine sits there, so the run gets as far as checkout_detached
-  # ("could not checkout <sha>"); on a runner it does not exist at all and the run
-  # stops earlier at publish_gem's own check ("gem repo not found"). A test that
-  # asserted the first message passed locally and failed on CI — it had pinned a
-  # message that depended on the filesystem around it.
-  #
-  # Tolerating BOTH messages would have made it pass everywhere while still
-  # exercising a different code path per machine, so the environment is CONTROLLED
-  # instead: every run sees the same empty root and the same one path.
+  # that was green here and RED ON CI. release.rb resolves sibling repos under the
+  # projects root: on a developer machine studio-engine sits there, so a run gets
+  # as far as checkout_detached; on a runner it does not exist at all and stops
+  # earlier. A test that asserted the first message passed locally and failed on
+  # CI. Tolerating BOTH would still exercise a different path per machine, so the
+  # environment is CONTROLLED — every run sees the same empty root.
   def run_release(call, env = {}, argv: ["--help"])
     script = %(ARGV.replace(#{argv.inspect}); begin; load #{BIN.inspect}; rescue SystemExit; end; ) +
              %(begin; #{call}; rescue SystemExit; puts "REFUSED"; end)
@@ -59,57 +45,82 @@ class ReleaseCliGemCiGateTest < Minitest::Test
     end
   end
 
-  # --- the gate's verdict -------------------------------------------------------
+  def verdict(repo, state, version: "0.60.0", argv: ["--help"])
+    run_release(%(puts gem_ci_failure("#{repo}", "abc1234", "#{version}").inspect),
+                { "RELEASE_CI_STATUS" => state }, argv: argv)
+  end
 
-  def test_a_green_clean_env_verdict_lets_the_publish_through
-    out = run_release(%(gem_ci_gate("studio-engine", "abc1234", "0.60.0")),
-                      { "RELEASE_CI_STATUS" => "green" })
+  # --- the verdict --------------------------------------------------------------
 
-    refute_includes out, "REFUSED", "a green CI verdict must authorise the publish"
+  def test_a_green_clean_env_verdict_contributes_no_failure
+    assert_includes verdict("studio-engine", "green"), "nil"
   end
 
   # THE WHOLE POINT. A local release-check can be green on the conductor's machine
   # while the clean-env build is red; before this gate that combination published.
-  def test_a_red_clean_env_verdict_refuses
-    out = run_release(%(gem_ci_gate("studio-engine", "abc1234", "0.60.0")),
-                      { "RELEASE_CI_STATUS" => "red" })
-
-    assert_includes out, "REFUSED"
+  def test_a_red_clean_env_verdict_fails_the_gem
+    assert_includes verdict("studio-engine", "red"), "NOTHING WAS PUBLISHED"
   end
 
-  # NOT-YET-BUILT IS NOT PERMISSION. The sweep reaches publish within a minute or
-  # two of pushing the promote commit, so "no verdict yet" is the NORMAL state —
-  # and the tempting reading of it ("nothing is failing") is exactly the hole this
-  # gate exists to close. With the poll window exhausted it must fail CLOSED.
-  def test_an_unverified_verdict_refuses_rather_than_shrugging
-    out = run_release(%(gem_ci_gate("studio-engine", "abc1234", "0.60.0")),
-                      { "RELEASE_CI_STATUS" => "unverified" })
-
-    assert_includes out, "REFUSED", "no verdict must never read as permission to publish"
+  # NOT-YET-BUILT IS NOT PERMISSION. The sweep reaches this within a minute or two
+  # of pushing the promote commit, so "no verdict yet" is the NORMAL state — and
+  # reading it as "nothing is failing" is the hole this closes.
+  def test_an_unverified_verdict_fails_rather_than_shrugging
+    assert_includes verdict("studio-engine", "unverified"), "NOTHING WAS PUBLISHED"
   end
 
-  def test_a_pending_verdict_that_never_concludes_refuses
-    out = run_release(%(gem_ci_gate("studio-engine", "abc1234", "0.60.0")),
-                      { "RELEASE_CI_STATUS" => "pending" })
-
-    assert_includes out, "REFUSED", "a poll that times out must fail closed, not open"
+  def test_a_pending_verdict_that_never_concludes_fails
+    assert_includes verdict("studio-engine", "pending"), "NOTHING WAS PUBLISHED"
   end
 
-  # A DRY RUN MUST NOT GATE, for the same reason it must not publish: it is a
-  # rehearsal against SHAs that may carry no run at all, and a dry run that aborts
-  # on a missing verdict can never rehearse a release.
-  def test_a_dry_run_skips_the_gate_entirely
-    out = run_release(%(gem_ci_gate("studio-engine", "abc1234", "0.60.0")),
-                      { "RELEASE_CI_STATUS" => "red" }, argv: ["--help", "--dry-run"])
-
-    refute_includes out, "REFUSED", "a dry run must rehearse, not gate"
+  def test_a_dry_run_never_gates
+    assert_includes verdict("studio-engine", "red", argv: ["--help", "--dry-run"]), "nil"
   end
 
-  # --- what the operator is told ------------------------------------------------
+  # --- the CI-less gem, which the first version BRICKED --------------------------
+  #
+  # solana-studio ships no suite workflow. GemCiWorkflows declares that with an
+  # explicit nil, and the lane is LIVE: turf-monster pins the gem and it has
+  # shipped through v0.4.7. The first version of this gate folded its absent
+  # verdict to :none, polled the FULL window, and then told the operator to go and
+  # watch a run that does not and never will exist. Any sweep carrying a
+  # solana-studio member could never complete — a publish that worked before this
+  # change became impossible after it.
 
-  # A GATE THAT STOPS AN IRREVERSIBLE STEP OWES AN EXPLANATION. The operator needs
-  # to know the version is still free — otherwise the natural assumption after an
-  # abort mid-release is that something was already pushed.
+  def test_a_declared_ci_less_gem_is_skipped_not_waited_on
+    out = verdict("solana-studio", "unverified")
+
+    assert_includes out, "nil", "a gem with no suite workflow must not fail the sweep"
+    assert_match(/declares no suite workflow/, out, "and must SAY it skipped, not skip silently")
+  end
+
+  # AND MUST NOT MISDIRECT. The refusal text sends the operator to watch a run;
+  # for this repo there is none to watch, so the refusal must not appear at all.
+  def test_a_ci_less_gem_is_never_told_to_watch_a_run_that_cannot_exist
+    out = verdict("solana-studio", "red")
+
+    refute_includes out, "NOTHING WAS PUBLISHED"
+    refute_match(/Watch the run/, out)
+  end
+
+  # AN UNMAPPED GEM IS NOT EXEMPT. Absence of a declaration is not a declaration
+  # of absence — a gem nobody added to the map is BLIND, and blind fails closed,
+  # or the next gem to arrive inherits a silent bypass.
+  def test_an_unmapped_gem_is_blind_and_still_gated
+    out = verdict("some-unregistered-gem", "unverified")
+
+    assert_includes out, "NOTHING WAS PUBLISHED",
+                     "an unmapped gem must fail closed — it is blind, not exempt"
+  end
+
+  # The two never collapse into each other.
+  def test_declared_ci_less_and_unmapped_are_different_answers
+    assert_includes verdict("solana-studio", "unverified"), "nil"
+    assert_includes verdict("some-unregistered-gem", "unverified"), "NOTHING WAS PUBLISHED"
+  end
+
+  # --- what the operator is told -------------------------------------------------
+
   def test_the_refusal_says_nothing_was_published_and_names_the_tip
     out = run_release(
       %(puts gem_ci_abort("studio-engine", "abc1234def", "0.60.0", { state: :red, failing: ["ci"] }))
@@ -122,68 +133,65 @@ class ReleaseCliGemCiGateTest < Minitest::Test
     assert_match(/still free/, out, "the operator must know the version can be re-used")
   end
 
-  # AND MUST NOT OFFER THE LOCAL RUN AS A WAY AROUND ITSELF. The acceptance is
-  # that a local run alone cannot authorise a publish; a message hinting otherwise
-  # would be the first thing a hurried conductor reached for.
-  def test_the_refusal_does_not_offer_the_local_run_as_an_override
+  # AND MUST NOT OFFER THE LOCAL RUN AS A WAY AROUND ITSELF.
+  def test_the_refusal_does_not_offer_a_bypass
     out = run_release(
       %(puts gem_ci_abort("studio-engine", "abc1234def", "0.60.0", { state: :red, failing: ["ci"] }))
     )
 
-    refute_match(/--force|skip the gate|RELEASE_SKIP/i, out,
-                 "the refusal must not advertise a bypass for an irreversible step")
+    refute_match(/--force|skip the gate|RELEASE_SKIP/i, out)
+  end
+end
+
+# --- phase 1: NO gem publishes if ANY gem's verdict is bad ----------------------
+#
+# THE DEFECT REVIEW FOUND. With the verdict in the publish LOOP, a studio-engine
+# + solana-studio sweep pushed studio-engine to RubyGems and THEN aborted on the
+# second gem — a partial publish of the one artifact that cannot be un-pushed,
+# which is precisely what this task exists to prevent. In validate_gems_for_qa the
+# failure is COLLECTED alongside every other gem precondition and the sweep aborts
+# with zero pushes.
+#
+# ASSERTED ON THE SOURCE, and that is a deliberate retreat rather than laziness.
+# The behavioural version was written first and PASSED FOR THE WRONG REASON: with
+# PROJECTS_DIR pinned to an empty root (which every other test here needs, so
+# local and CI exercise one path), validate_gems_for_qa aborts at "gem repo not
+# found" long before it reaches the verdict. The test saw ABORTED, no "gem push:",
+# and reported success about a code path it never ran — the same false-pass shape
+# as the ordering test in the first round of this task.
+#
+# Making it behavioural needs a real sibling git repo per gem (see
+# release_gem_allocation_test's build_projects_root). That fixture is worth having
+# and is NOT worth growing this lap by; the verdict's own behaviour is covered
+# above, and what is left to pin is WHERE it is called from.
+class ReleaseCliGemCiPhaseOneTest < Minitest::Test
+  SOURCE = File.read(File.expand_path("../../bin/release.rb", __dir__))
+
+  def body_of(method)
+    SOURCE[/^def #{Regexp.escape(method)}\b.*?^end$/m] or flunk("#{method} not found in bin/release.rb")
   end
 
-  # --- ordering: the gate is IN FRONT of the push -------------------------------
-
-  # THE LOAD-BEARING CLAIM, and the first version of it PASSED WITH THE GATE
-  # DELETED. It asserted "refused, and never printed `gem build:`" — but with the
-  # gate gone the run aborts a step later at checkout_detached ("could not
-  # checkout"), which is also a refusal and also never reaches `gem build`. The
-  # assertion could not tell the gate's refusal from any other, so removing the
-  # gate entirely, and moving it AFTER the push, both stayed green.
-  #
-  # Ordering is only observable as a PAIR: red must stop AT the gate and get no
-  # further, and green must get PAST it to the next step. Either alone is
-  # satisfiable by an unrelated abort.
-  def test_a_red_verdict_stops_the_publish_at_the_gate
-    out = run_release(%(publish_gems_for_qa(#{plan_line})), { "RELEASE_CI_STATUS" => "red" })
-
-    assert_includes out, "NOTHING WAS PUBLISHED",
-                     "the refusal must be THE GATE's, not some later step's"
-    refute_match(/could not checkout/, out,
-                 "the run reached checkout_detached — the gate is not in front of it")
-    refute_match(/gem build:|gem push:/, out)
+  def test_the_verdict_is_consulted_from_the_phase_one_validator
+    assert_includes body_of("validate_gems_for_qa"), "gem_ci_failure(",
+                    "the clean-env verdict is not consulted in phase 1 — a bad gem would only be " \
+                    "caught after an earlier gem had already been pushed"
   end
 
-  # THE "GOT PAST IT" HALF, and its first version was GREEN LOCALLY AND RED ON CI.
-  #
-  # It asserted the run reached `could not checkout` — which is what
-  # checkout_detached says when the sibling clone EXISTS but lacks the SHA. That
-  # is true on a developer machine, where studio-engine sits beside the hub at the
-  # projects root, and false on a runner, where it does not exist at all and the
-  # run aborts earlier with `gem repo not found`. The test pinned a message that
-  # depended on the filesystem around it.
-  #
-  # With the root pinned empty (see run_release), the step after the gate is
-  # always publish_gem's own repo check — one path, one message, every machine.
-  PAST_THE_GATE = /gem repo not found/
-  def test_a_green_verdict_carries_the_publish_past_the_gate
-    out = run_release(%(publish_gems_for_qa(#{plan_line})), { "RELEASE_CI_STATUS" => "green" })
-
-    refute_includes out, "NOTHING WAS PUBLISHED", "green must not be refused by the gate"
-    assert_match(PAST_THE_GATE, out,
-                 "the run never reached the step AFTER the gate — the gate is not being passed, " \
-                 "so the red case above proves nothing about ordering")
+  # AND NOT FROM THE PUBLISH LOOP, which is where it was and what made a partial
+  # publish reachable.
+  def test_the_verdict_is_not_consulted_beside_the_push
+    refute_includes body_of("publish_gems_for_qa"), "gem_ci_failure(",
+                        "the verdict is back in the publish loop — the first gem pushes before the " \
+                        "second is judged"
   end
 
-  # AN ALREADY-PUBLISHED VERSION SKIPS BOTH, so an idempotent re-run after an abort
-  # is not blocked by a verdict for a tip whose artifact is already live.
-  def test_an_already_live_gem_is_not_gated_again
-    plan = plan_line.sub('"already_live" => false', '"already_live" => true')
-    out = run_release(%(publish_gems_for_qa(#{plan})), { "RELEASE_CI_STATUS" => "red" })
+  # IT IS COLLECTED, NOT RAISED. validate_gems_for_qa gathers every precondition
+  # into `failures` and aborts once with all of them; a verdict that called abort!
+  # itself would stop at the first bad gem and hide the rest.
+  def test_the_verdict_is_collected_into_failures_like_every_other_precondition
+    body = body_of("validate_gems_for_qa")
 
-    refute_includes out, "REFUSED", "a re-run must not re-gate a version that is already live"
-    assert_match(/already live/, out)
+    assert_match(/failures << ci_failure/, body,
+                 "the verdict must join `failures`, so one abort names every problem gem")
   end
 end
