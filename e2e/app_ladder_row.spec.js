@@ -69,3 +69,45 @@ test("the board beneath the ladder row still renders", async ({ page }) => {
   await expect(page.locator("[data-test='kanban-board']")).toBeVisible();
   await expect(page.locator("[data-test='release-dashboard-grid']")).toBeVisible();
 });
+
+// The colour vocabulary, asserted in a real browser: the verified fill (emerald) may
+// appear ONLY on a rung whose state is green. This is the honesty contract at the
+// pixel layer — a stale or never-built rung wearing the verified tint would read as a
+// pass the suite never performed, and no server-side tier can see the class landed.
+test("only a green rung wears the verified fill", async ({ page }) => {
+  await page.goto("/deployments");
+
+  const rungs = page.locator("[data-test='app-ladder-row'] [data-test='app-ladder-rung']");
+  const count = await rungs.count();
+  expect(count).toBeGreaterThan(0);
+
+  for (let i = 0; i < count; i += 1) {
+    const rung = rungs.nth(i);
+    const state = await rung.getAttribute("data-state");
+    const fillClass =
+      (await rung.locator("[data-test='app-ladder-rung-fill']").getAttribute("class")) || "";
+
+    if (fillClass.includes("bg-emerald-500")) {
+      expect(state, "the verified fill may only appear on a green rung").toBe("green");
+    }
+  }
+});
+
+// A rung being verified right now is the one moving part on the card.
+test("a running rung carries a spinner and a settled one does not", async ({ page }) => {
+  await page.goto("/deployments");
+
+  const pending = page.locator(
+    "[data-test='app-ladder-row'] [data-test='app-ladder-rung'][data-state='pending']"
+  );
+  const settled = page.locator(
+    "[data-test='app-ladder-row'] [data-test='app-ladder-rung'][data-state='green']"
+  );
+
+  for (let i = 0; i < (await pending.count()); i += 1) {
+    await expect(pending.nth(i).locator("svg.animate-spin")).toHaveCount(1);
+  }
+  for (let i = 0; i < (await settled.count()); i += 1) {
+    await expect(settled.nth(i).locator("svg.animate-spin")).toHaveCount(0);
+  }
+});

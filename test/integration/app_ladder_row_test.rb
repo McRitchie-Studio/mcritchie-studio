@@ -17,6 +17,7 @@ class AppLadderRowTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "[data-test='app-ladder-row']", 1
     assert_select "[data-test='app-ladder-card']", minimum: 1
+    assert_select "[data-test='app-ladder-suite']", minimum: 1
   end
 
   test "every reportable repo gets exactly one card" do
@@ -71,9 +72,7 @@ class AppLadderRowTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "[data-test='app-ladder-card'][data-repo='turf-monster']" do
-      assert_select "[data-test='app-ladder-rung'][data-branch='accepted']" do
-        assert_select "[data-test='app-ladder-parked']", text: /2 parked/
-      end
+      assert_select "[data-test='app-ladder-parked'][data-branch='accepted']", text: /2 on accepted/
     end
   end
 
@@ -84,19 +83,17 @@ class AppLadderRowTest < ActionDispatch::IntegrationTest
 
     get deployments_path
     assert_select "[data-test='app-ladder-card'][data-repo='turf-monster']" do
-      assert_select "[data-test='app-ladder-rung'][data-branch='accepted']" do
-        assert_select "[data-test='app-ladder-parked']", 1
-      end
+      assert_select "[data-test='app-ladder-parked'][data-branch='accepted']", 1
     end
 
     task.update!(merged: Task::MERGED_MAIN)
 
     get deployments_path
     assert_select "[data-test='app-ladder-card'][data-repo='turf-monster']" do
-      assert_select "[data-test='app-ladder-rung'][data-branch='accepted']" do
-        assert_select "[data-test='app-ladder-parked']", 0,
-                      "the accepted rung must drain when the stamp advances"
-      end
+      assert_select "[data-test='app-ladder-parked'][data-branch='accepted']", 0,
+                    "the accepted rung must drain when the stamp advances"
+      assert_select "[data-test='app-ladder-parked'][data-branch='main']", 1,
+                    "and the work must reappear on the rung it advanced to"
     end
   end
 
