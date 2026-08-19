@@ -170,6 +170,7 @@ require_relative "../app/models/release/gh_failure"
 # refusal + the filled-in recovery when one does not. It reuses CleanCheck's rung
 # comparison (so the two guards can never disagree about "which repos are ahead"),
 # so it loads AFTER it. Rails-free → unit-tested.
+require_relative "../app/models/release/merge_subject"
 require_relative "../app/models/release/stale_tree_check"
 # SmokeSeal builds the post-ship 🟢/🔴 verdict + the EXACT rollback guidance the
 # red-seal alert prints (step 5c). Rails-free, so the alert comes from the SAME
@@ -3710,6 +3711,37 @@ end
 # and the operator-facing recovery. Fail-closed at a seam where a refusal costs
 # nothing: nothing has been published, gated, or deployed, member stages have not
 # moved, and a re-run after the hand-landed batch PR resumes cleanly.
+# The stage + merged stamp for every task a stranded commit NAMES. Slug recovery
+# is pure (Release::MergeSubject reads the branch out of the merge subject), so
+# this spends a board read only when at least one commit actually resolves — and
+# it is called only from the stale-tree gate, which is already refusing.
+#
+# A failed read returns {} rather than raising: attribution is a DIAGNOSTIC
+# nicety and must never turn a clear refusal into a crash. With {} the abort
+# prints exactly what it printed before.
+def stranded_task_index(stranded)
+  slugs = Release::MergeSubject.slugs_from_commits(stranded)
+  return {} if slugs.empty?
+
+  rows = conductor(
+    "slugs = #{slugs.inspect}; " \
+    "rows = Task.where(slug: slugs).map { |t| [t.slug, { 'stage' => t.stage, " \
+    "'merged' => t.merged.to_s }] }.to_h; " \
+    "puts({ tasks: rows }.to_json)",
+    read_only: true
+  )
+  rows["tasks"] || {}
+# `conductor` fails by calling abort!, which raises SystemExit — NOT a
+# StandardError. Rescuing only StandardError here would let a transient prod-board
+# blip (the essential-PG too-many-connections shape, 2026-07) replace this gate's
+# precise refusal and its recovery commands with "record op failed" and exit 1 —
+# the diagnostic eating the diagnosis it exists to produce. record_deploy_intent
+# and record_gate_open/close rescue the same pair for the same reason.
+rescue SystemExit, StandardError => e
+  say("  (attribution unavailable: #{e.message}; the refusal below is unchanged)")
+  {}
+end
+
 def verify_release_carries_accepted!(repo_groups, rel_slug, rel_state)
   plan_repos = Array(repo_groups).map { |g| g["repo"].to_s }.reject(&:empty?).uniq
   # Only a THREE-RUNG repo has an `accepted` rung it can fall behind. A registry-
@@ -3739,13 +3771,20 @@ def verify_release_carries_accepted!(repo_groups, rel_slug, rel_state)
   end
   nwo = stale.to_h { |s| [s["repo"], repo_name_with_owner(s["repo"])] }
 
+  # ATTRIBUTION, fetched LAZILY. The slugs come out of the merge subjects with no
+  # I/O at all; only if some resolve do we spend one board read, and only on a
+  # path that is already aborting. The happy path pays nothing, exactly like the
+  # commit-list enrichment above.
+  task_index = stranded_task_index(stranded)
+
   verdict = Release::StaleTreeCheck.evaluate(
     accepted_states: git["accepted"],
     unreadable_repos: git["unreadable"],
     stranded_commits: stranded,
     repo_nwo: nwo,
     release_slug: rel_slug,
-    release_state: rel_state
+    release_state: rel_state,
+    task_index: task_index
   )
   if verdict["fresh"]
     say(verdict["message"])
