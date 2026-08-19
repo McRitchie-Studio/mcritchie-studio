@@ -225,6 +225,17 @@ bin/release prepare --yes
 4d. **Allocate gem versions, publish gem members, bump consumer locks — BEFORE
    the gate and QA** (producer-first — a RubyGems push can never be re-pushed).
 
+   **Each publish is gated on GitHub's CLEAN-ENV verdict for the exact tip it
+   would push**, and fails closed. The gem's own `bin/release-check --build`
+   still runs first and still aborts first when it is red — but it runs on the
+   conductor's machine, and a local green is not evidence about anyone else's.
+   Every other shippable tip here earns a clean-env verdict before it moves; the
+   gem is the one artifact that cannot be rolled back, so it earns one too.
+   Pending and not-yet-started both WAIT (the sweep normally arrives before CI
+   finishes); a terminal non-green, or a poll that times out, aborts with
+   **nothing published** and the version still free. If it stops here, watch the
+   run named in the abort, fix or re-run it, then re-run `prepare` — it resumes.
+
    **Phase 0 ALLOCATES the version, so you never type one.** For each swept gem
    prepare derives the bump from the candidate's membership (`breaking` risk tag
    → major, else a `feature` member → minor, else patch; a member's `gem_bump`

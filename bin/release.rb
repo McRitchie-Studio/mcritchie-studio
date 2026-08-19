@@ -257,6 +257,10 @@ BOARD_FLIP_CADENCE = 0.8
 # The producer/consumer repo registry (config/release_repos.yml) — tells the CLI
 # which members are gems (published producer-first, no app branch) vs apps. Same
 # single source of truth Release::Repos reads on the record side.
+# The gem CI map, shared with GithubWorkflowRun::GEM_CI_WORKFLOWS — see
+# lib/gem_ci_workflows.rb for why the list lives there rather than on the model.
+require_relative "../lib/gem_ci_workflows"
+
 RELEASE_REPOS =
   begin
     YAML.load_file(File.expand_path("../config/release_repos.yml", __dir__)) || {}
@@ -4876,6 +4880,12 @@ def validate_gems_for_qa(gem_groups, app_groups)
       next
     end
 
+    # The clean-env verdict, collected like every other gem precondition so a bad
+    # one aborts with ZERO gems published rather than after the first push.
+    if (ci_failure = gem_ci_failure(repo, tip, version))
+      failures << ci_failure
+    end
+
     if (stranded = stranded_gem_failure(repo, path, tip, version))
       failures << stranded
       next
@@ -4932,6 +4942,62 @@ end
 # gem. No new decisions here: the plan carries the tip, version, and live-state
 # phase 1 resolved. Idempotent for the self-healing re-run: already-live
 # versions skip.
+# THE CLEAN-ENV VERDICT FOR A GEM'S TIP — the check in front of the one
+# irreversible step in this whole pipeline.
+#
+# WHAT IT CLOSES. publish_gem authorised itself from a LOCAL `bin/release-check
+# --build` — whatever bundle, whatever Ruby, whatever half-installed state the
+# conductor's laptop happens to carry — and then pushed to RubyGems, which can
+# NEVER be un-pushed. Every other shippable tip here earns a clean-env verdict
+# before it moves; the gem's did not, and the gem is the one artifact with no
+# rollback. The verdict already EXISTED and was simply never read.
+#
+# IT RUNS IN PHASE 1 (validate_gems_for_qa), NOT beside the push. That placement
+# is the fix for a defect review found in the first version: with the check in the
+# publish loop, a studio-engine + solana-studio sweep pushed studio-engine to
+# RubyGems and THEN aborted on the second gem — a partial publish of the
+# unrecoverable artifact, which is precisely what this task exists to prevent.
+# validate_gems_for_qa holds exactly one invariant and says so in its own abort
+# text: EVERY swept gem validates before the FIRST irreversible push.
+#
+# A DECLARED CI-LESS GEM IS SKIPPED, not waited on. solana-studio ships no suite
+# workflow — GemCiWorkflows declares that with an explicit nil, and it is live:
+# turf-monster pins it and it has shipped through v0.4.7. Before this exemption the
+# gate folded its absent verdict to :none, polled the FULL 1200s window, then told
+# the operator to go and watch a run that does not and never will exist. A gate
+# that can never pass is not a gate, it is an outage.
+#
+# AN UNMAPPED GEM IS NOT EXEMPT. Absence of a declaration is not a declaration of
+# absence: a gem nobody added to the map is BLIND, and blind must fail closed, or
+# the next gem to arrive inherits a silent bypass.
+def gem_ci_failure(repo, sha, version)
+  return nil if DRY
+
+  if GemCiWorkflows.declared_ci_less?(repo)
+    say("  gem CI gate: #{repo} declares no suite workflow (GemCiWorkflows) — skipping the clean-env " \
+        "verdict for #{short(sha)}; its own release-check is the only gate it has")
+    return nil
+  end
+
+  say("  gem CI gate: GitHub's verdict for #{repo}@#{short(sha)} — the tip this publish would push")
+  ci = poll_ci_verdict(repo, sha)
+  return nil if ci_pass?(ci)
+
+  gem_ci_abort(repo, sha, version, ci)
+end
+
+# The refusal text, factored out so it is unit-testable and so the operator is
+# told what to DO rather than only what failed. A publish that stops here has
+# pushed NOTHING — the whole point of gating in phase 1.
+def gem_ci_abort(repo, sha, version, ci)
+  "#{repo} #{version}: GitHub CI is #{ci_detail(ci)} for #{short(sha)}, the exact tip this " \
+    "publish would push. NOTHING WAS PUBLISHED — the version is still free and this run can be " \
+    "re-run once CI is green. A gem push cannot be undone, so this gate will not credit a local " \
+    "release-check alone: that run proves the tree is good ON THIS MACHINE, and the class of " \
+    "failure it cannot see is exactly the one that reaches every consumer. Watch the run, fix or " \
+    "re-run it, then re-run this sweep."
+end
+
 def publish_gems_for_qa(gem_plan)
   return {} if gem_plan.empty?
 

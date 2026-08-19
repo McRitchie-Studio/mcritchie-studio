@@ -53,10 +53,12 @@ class GithubWorkflowRun < ApplicationRecord
   # (solana-studio runs none), not an accident. The distinction matters because a
   # reader cannot tell "unmapped by oversight" from "genuinely has no suite", and
   # Ci::ReviewGate treats an unresolved workflow as NOT-GREEN rather than guessing.
-  GEM_CI_WORKFLOWS = {
-    "studio-engine" => "Engine CI",
-    "solana-studio" => nil # ships no suite workflow — declared, not overlooked
-  }.freeze
+  # THE LIST ITSELF NOW LIVES IN lib/gem_ci_workflows.rb, and this points at it.
+  # bin/release.rb is a standalone CLI — it reads config/release_repos.yml and
+  # never boots Rails, so it cannot see a constant on an AR model. The gem publish
+  # gate needs this answer before an irreversible push, so the data moved somewhere
+  # both sides can read. This constant keeps its name and every existing reader.
+  GEM_CI_WORKFLOWS = GemCiWorkflows::MAP
 
   CI_PROGRESS_WORKFLOWS = ([CI_WORKFLOW] + GEM_CI_WORKFLOWS.values.compact).freeze
 
