@@ -28,22 +28,25 @@ class TasksBoardFilterSystemTest < ApplicationSystemTestCase
 
     # Hide Rolio → its card (inside studioBoard) reacts to the OUTER hiddenApps.
     #
-    # ASSERT THE TOGGLE BEFORE ITS CONSEQUENCE. This test failed intermittently on
-    # three PRs across two sessions in one day, always on the card assertion below,
-    # and the message ("expected not to find ... found 1 match") could not say WHY:
-    # a card still present means either the click never toggled the filter, or the
-    # filter toggled and the card did not react. Those need different fixes.
-    # aria-pressed is the chip's own state, so this line fails first — and
-    # differently — when the click is what went wrong.
-    chip = find("[data-test='board-filter-row'] button", text: "rolio", match: :first)
-    chip.click
+    # click_when_settled, NOT find(...).click. This test failed intermittently on three
+    # PRs across two sessions in one day, always on the card assertion below, and the
+    # cause was never the board: the chip was still being re-measured when the driver
+    # clicked it. Montserrat arrives from fonts.googleapis.com after the load event, so
+    # every chip resizes during the window this test spends getting ready; a reflow
+    # between pointerdown and pointerup fires `click` on the row instead of the button,
+    # and the filter is never toggled at all. See ApplicationSystemTestCase.
+    #
+    # ASSERT THE TOGGLE BEFORE ITS CONSEQUENCE. aria-pressed is the chip's own state, so
+    # a swallowed click fails HERE, naming itself, instead of downstream on a card
+    # assertion that cannot say whether the click or the reactivity was at fault.
+    click_when_settled("[data-test='board-filter-row'] button", text: "rolio", match: :first)
     assert_selector "[data-test='board-filter-row'] button[aria-pressed='true']", text: "rolio",
                     wait: 5
     assert_no_selector "#card-#{rolio.slug}", visible: true
     assert_selector "#card-#{turf.slug}", visible: true
 
     # Toggle Rolio back on → its card returns.
-    find("[data-test='board-filter-row'] button", text: "rolio", match: :first).click
+    click_when_settled("[data-test='board-filter-row'] button", text: "rolio", match: :first)
     assert_selector "[data-test='board-filter-row'] button[aria-pressed='false']", text: "rolio",
                     wait: 5
     assert_selector "#card-#{rolio.slug}", visible: true
