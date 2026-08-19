@@ -179,11 +179,34 @@ prints `AMBIGUOUS TASK TREE`, lists them, and refuses to guess. Nothing assumes 
 rung — the diff base stays the per-root release-aware default, so a repo with no
 `accepted` (moms-app) still resolves its own base.
 
-**Known gap, stated so nobody assumes otherwise:** `devops.pr_url` is a *single*
-value, so on a multi-repo task this gate validates **one** PR and is blind to the
-other. The rooting above keeps it from grading the *wrong* repo silently; it does
-not make it grade *both*. Reviewing a multi-repo task still means checking the
-second PR yourself.
+**Every repo the task names gets its own CERT verdict.** A task that owes a cert in
+more than one repo — the ones it both names in `devops.repositories` **and** has a PR
+open in (`devops.pr_url` + the per-repo `devops.pr_urls` register) — is graded repo by
+repo: each repo's own tree is resolved (its `.worktrees/<slug>` desk, validated on
+both axes, else its primary checkout's branch tree), fingerprinted, and graded against
+the evidence scoped to it (`[lane@<fp>:<repo>]`, see `lib/cert_evidence.rb`). The
+verdict **names every repo it graded** — `full_suite.repos[]` in `--json`, a
+`cert graded per repo:` block in the human output — and a repo whose tree cannot be
+found on this machine **refuses**, because a repo that cannot be seen is exactly the
+repo that used to sail through ungated. A single-repo task takes the one-verdict path
+unchanged.
+
+Two limits, stated so nobody assumes otherwise:
+
+- **A secondary repo's bar is the FULL cert.** A fast cert only counts anywhere
+  alongside a GREEN CI on that repo's own PR, and this gate reads **one** PR's CI.
+  Pairing a fast cert with a *different* repo's CI would be the same cross-repo
+  confusion the per-repo certs exist to end, so a secondary repo needs
+  `bin/full-suite-check` in its own tree.
+- **The DIFF half is still one PR.** `devops.pr_url` is a single value, so the
+  shape/tier gate (changed files → required tiers) is measured against **one** PR.
+  The cert half now covers every repo; the tier half does not. Reviewing a multi-repo
+  task still means reading the second PR's diff yourself.
+
+A repo the task NAMES but has no PR in is deliberately **not** cert-gated — that is
+the gem-release shape, where a gem task names its CONSUMER repos so the gates can
+reason the gem owes the PR while the consumers do not. The gate says so in a
+suggestion rather than implying coverage it does not have.
 
 **The local working tree is never a fallback from a foreign root.** This is the
 rule that closes the 08-08 hole by construction rather than by every reader

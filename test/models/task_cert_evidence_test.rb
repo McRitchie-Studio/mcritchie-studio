@@ -24,6 +24,47 @@ class TaskCertEvidenceTest < ActiveSupport::TestCase
     )
   end
 
+  # ── THE REPO DIMENSION, at the BOARD end ──────────────────────────────────────
+  #
+  # The CLI carries evidence forward into its PATCH body, but the model is the funnel
+  # EVERY writer passes through — a raw API PATCH, the board UI form, a console edit.
+  # A repo-aware namespace that landed only in lib/ + bin/ would still lose a repo's
+  # cert to any of those, so the property is asserted where it is enforced.
+  HUB_FULL = "[full-suite@#{FP}:mcritchie-studio] bin/rails test (6034 runs, 0 failures)"
+  TURF_FULL = "[full-suite@#{OLD_FP}:turf-monster] bin/rails test (2041 runs, 0 failures)"
+
+  test "[unit] a two-repo task keeps a cert for BOTH repos" do
+    task = Task.create!(
+      title: "Two Repo Cert Guard",
+      stage: "building",
+      metadata: { "devops" => { "kind" => "bug", "shape" => "backend",
+                                "repositories" => %w[mcritchie-studio turf-monster],
+                                "checks_run" => ["[unit] plan"] } }
+    )
+
+    # The NATURAL order that used to lose evidence: the dor-check root repo first,
+    # the satellite second. Two separate writes, exactly as two cert runs send them.
+    task.update!(metadata: { "devops" => task.devops.merge("checks_run" => ["[unit] plan", HUB_FULL]) })
+    task.update!(metadata: { "devops" => task.reload.devops.merge("checks_run" => [TURF_FULL]) })
+
+    checks = task.reload.devops_checks_run
+    assert_includes checks, HUB_FULL, "certifying turf destroyed the hub's cert — the multi-repo bug"
+    assert_includes checks, TURF_FULL
+    assert_includes checks, "[unit] plan", "a pure-evidence write still preserves the author namespace"
+  end
+
+  test "[unit] re-certifying one repo replaces only its own line" do
+    task = certified_task(checks: ["[unit] plan", HUB_FULL, TURF_FULL])
+    fresh_hub = "[full-suite@#{OLD_FP}:mcritchie-studio] bin/rails test (6035 runs, 0 failures)"
+
+    task.update!(metadata: { "devops" => task.devops.merge("checks_run" => [fresh_hub]) })
+
+    checks = task.reload.devops_checks_run
+    assert_includes checks, fresh_hub
+    refute_includes checks, HUB_FULL, "a re-cert must still supersede its OWN repo's stale line"
+    assert_includes checks, TURF_FULL, "a re-cert of one repo must not touch the other repo's cert"
+  end
+
   test "[unit] a checks_run update preserves machine-written cert evidence" do
     task = certified_task
 

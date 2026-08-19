@@ -117,7 +117,7 @@ class ControlCheckTest < Minitest::Test
       # The load-bearing assertion: NECESSARY is only reachable if the replay ran
       # the OLD content. A no-op swap would have produced NO-SIGNAL here.
       assert_equal 1, recorded.size, "expected exactly one stamped control line"
-      assert_match(/\A\[control@[0-9a-f]{7,64}\]/, recorded.first,
+      assert_match(/\A\[control@[0-9a-f]{7,64}(?::[^\]\s]+)?\]/, recorded.first,
                    "the stamp must be fingerprint-bound machine-owned evidence, not a bare tag")
       assert_includes recorded.first, "NECESSARY"
       assert_includes recorded.first, "test/models/a_test.rb"
