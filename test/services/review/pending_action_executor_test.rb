@@ -730,4 +730,130 @@ class Review::PendingActionExecutorTest < ActiveSupport::TestCase
     assert_equal ReviewPendingAction::PENDING, second.reload.state
     assert_equal 1, ReviewPendingAction.pending.where(task_slug: SLUG).count
   end
+
+  # ── MUTATION: THE TASK'S SECOND REPO ────────────────────────────────────────
+  #
+  # THE SHARP END of task review-gate-reads-one-repo. Ci::ReviewGate gated on
+  # `repositories.first`, so on a task landing PRs in TWO repos this component —
+  # the one that merges with NOBODY WATCHING — read repo #1's CI and merged on it
+  # while repo #2 was red. There is no human between that verdict and `accepted`.
+  #
+  # Each case here is the CONTROL with exactly one thing changed: the task now has
+  # a second PR, and that repo's CI is not green. Repo #1 stays green throughout —
+  # asserted, because the same test with repo #1 red would pass on the broken code
+  # and prove nothing.
+  SECOND_REPO = "McRitchie-Studio/turf-monster"
+  SECOND_PINNED = "cccccccccccccccccccccccccccccccccccccccc"
+
+  # The shape `bin/task update <slug> --pr-url-for turf-monster=<url>` writes: a
+  # second PR in the per-repo register, landing under the same reviewed task.
+  def add_second_repo!(pr: 77)
+    devops = @task.metadata.fetch("devops").merge(
+      "repositories" => %w[mcritchie-studio turf-monster],
+      "pr_urls" => { "turf-monster" => "https://github.com/#{SECOND_REPO}/pull/#{pr}" }
+    )
+    @task.update!(metadata: @task.metadata.merge("devops" => devops))
+    @task.reload
+  end
+
+  def ingest_second_ci(sha: SECOND_PINNED, status: "completed", conclusion: "success", run_id: 900_777)
+    GithubWorkflowRun.create!(
+      run_id: run_id, repo: SECOND_REPO, workflow_name: "CI", head_branch: BRANCH,
+      head_sha: sha, status: status, conclusion: conclusion,
+      run_started_at: Time.current, run_attempt: 1
+    )
+  end
+
+  {
+    "red"     => { conclusion: "failure" },
+    "pending" => { status: "in_progress", conclusion: nil }
+  }.each do |label, attrs|
+    test "REFUSES to merge while the task's SECOND repo is #{label} — never merges" do
+      ingest_ci # repo #1 green on the pinned head
+      add_second_repo!
+      ingest_second_ci(**attrs)
+      action = arm
+
+      assert_equal :green, Ci::ReviewGate.verdict(@task.reload, repo: "mcritchie-studio")[:state],
+                   "precondition: repo #1 IS green — this is the arrangement that used to auto-merge"
+
+      result, github = run_executor(action)
+
+      assert_equal :waiting, result.status
+      assert_equal 0, github.merge_calls,
+                   "a task is ONE reviewed change: half of it failing must never reach the merge endpoint"
+      assert_match(/turf-monster/, result.reason, "the account of a merge that did not happen must NAME the repo")
+      assert_equal ReviewPendingAction::PENDING, action.reload.state, "a wait keeps the order standing"
+      assert_equal "submitted", @task.reload.stage
+      assert_nil @task.merged
+    end
+  end
+
+  # A repo the board holds NO run for is the wiring gap — and absence is not a
+  # pass here either, for the same reason it is not within one repo.
+  test "REFUSES to merge when the SECOND repo has no CI at all" do
+    ingest_ci
+    add_second_repo! # no runs ingested for turf
+    action = arm
+
+    result, github = run_executor(action)
+
+    assert_equal :waiting, result.status
+    assert_equal 0, github.merge_calls
+    assert_match(/turf-monster/, result.reason)
+  end
+
+  # THE POSITIVE CONTROL for the multi-repo path. A guard that blocks every
+  # two-repo merge would strand the shape it exists to protect.
+  test "CONTROL: a two-repo task merges once BOTH repos are green" do
+    ingest_ci
+    add_second_repo!
+    ingest_second_ci # green
+    action = arm
+
+    result, github = run_executor(action)
+
+    assert_equal :executed, result.status, result.reason
+    assert_equal 1, github.merge_calls
+    assert_equal "reviewed", @task.reload.stage
+  end
+
+  # THE PIN IS PER REPO, and this is the other half of the same confusion. An armed
+  # merge names ONE PR in one repo, so the head_sha it compares must come from THAT
+  # repo's runs. Reading the fold's primary sha here would compare turf's pinned
+  # head against the HUB's green — never equal, so an authorised merge would wait
+  # out its TTL and expire for a reason that does not exist.
+  test "the head-sha pin reads the ACTION's OWN repo, not the task's first" do
+    ingest_ci # hub green at PINNED
+    add_second_repo!
+    ingest_second_ci # turf green at SECOND_PINNED
+    action = ReviewPendingAction.arm!(
+      task: @task.reload, repo: SECOND_REPO, pr_number: 77, head_sha: SECOND_PINNED,
+      pr_url: "https://github.com/#{SECOND_REPO}/pull/77", authorized_by: "carl"
+    )
+
+    result, github = run_executor(action, github: FakeGithub.new(pr: open_pr(sha: SECOND_PINNED)))
+
+    assert_equal :executed, result.status, result.reason
+    assert_equal 1, github.merge_calls
+    assert_equal SECOND_PINNED, github.last_body[:sha], "GitHub's own pin is the action's head, not the hub's"
+  end
+
+  # …and the pin still bites on the action's own repo: turf's head moved, the hub's
+  # green is irrelevant, and no merge may fire.
+  test "a moved head in the ACTION's own repo still blocks, with the other repo green" do
+    ingest_ci
+    add_second_repo!
+    ingest_second_ci(sha: MOVED) # turf's green describes a DIFFERENT tree
+    action = ReviewPendingAction.arm!(
+      task: @task.reload, repo: SECOND_REPO, pr_number: 77, head_sha: SECOND_PINNED,
+      pr_url: "https://github.com/#{SECOND_REPO}/pull/77", authorized_by: "carl"
+    )
+
+    result, github = run_executor(action, github: FakeGithub.new(pr: open_pr(sha: SECOND_PINNED)))
+
+    assert_equal :waiting, result.status
+    assert_equal 0, github.merge_calls
+    assert_match(/not the pinned #{SECOND_PINNED}/, result.reason)
+  end
 end

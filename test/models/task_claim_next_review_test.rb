@@ -196,4 +196,101 @@ class TaskClaimNextReviewTest < ActiveSupport::TestCase
       )
     end
   end
+
+  # ── A TASK IS ONE CHANGE, EVEN ACROSS TWO REPOS ──────────────────────────────
+  #
+  # The pop gated on `repositories.first` (Ci::ReviewGate.repo_for), so a task
+  # landing PRs in two repos was popped for review on repo #1's green while repo
+  # #2 was red or still running — the reviewer then read half a task whose other
+  # half was already broken, and armed a merge on that reading.
+  #
+  # These drive the REAL fold (no `ci_status:` injection, which short-circuits the
+  # gate before it resolves a repo at all) and every one of them turns on the
+  # SECOND repo, with repo #1 asserted green: a case where only one repo is green
+  # passes identically on the broken code.
+  class MultiRepoPopTest < ActiveSupport::TestCase
+    HUB = "McRitchie-Studio/mcritchie-studio"
+    TURF = "McRitchie-Studio/turf-monster"
+
+    setup { GithubWorkflowRun.delete_all }
+
+    test "[integration] does NOT pop a two-repo task whose SECOND repo's CI is red" do
+      task = two_repo_submitted("hub and turf red task")
+      seed_ci(repo: HUB, branch: task.devops_field("branch"), sha: "sha-hub", conclusion: "success")
+      seed_ci(repo: TURF, branch: task.devops_field("branch"), sha: "sha-turf", conclusion: "failure")
+
+      assert_equal :green, Ci::ReviewGate.verdict(task, repo: "mcritchie-studio")[:state],
+                   "precondition: repo #1 is green — this is the arrangement that used to pop"
+
+      result = Task.claim_next_review(session: "S", nonce: "n") # NO injection — real fold
+
+      refute result.claimed?, "half a task cannot be reviewed: a red second repo must hold the pop"
+      assert_equal "no_green_ci", result.reason
+    end
+
+    test "[integration] does NOT pop while the SECOND repo is still running" do
+      task = two_repo_submitted("hub and turf pending task")
+      seed_ci(repo: HUB, branch: task.devops_field("branch"), sha: "sha-hub", conclusion: "success")
+      seed_ci(repo: TURF, branch: task.devops_field("branch"), sha: "sha-turf",
+              status: "in_progress", conclusion: nil)
+
+      refute Task.claim_next_review(session: "S", nonce: "n").claimed?,
+             "a reviewer claiming now would review against a suite that has not reported"
+    end
+
+    # THE POSITIVE CONTROL — a gate that never pops a multi-repo task would strand
+    # the release conductor's canonical shape instead of protecting it.
+    test "[integration] pops a two-repo task once BOTH repos are green" do
+      task = two_repo_submitted("hub and turf green task")
+      seed_ci(repo: HUB, branch: task.devops_field("branch"), sha: "sha-hub", conclusion: "success")
+      seed_ci(repo: TURF, branch: task.devops_field("branch"), sha: "sha-turf", conclusion: "success")
+
+      result = Task.claim_next_review(session: "S", nonce: "n")
+
+      assert result.claimed?, "both repos concluded success — this task is reviewable"
+      assert_equal task.slug, result.task.slug
+    end
+
+    # The wiring-gap report reads the same repos the gate does, so the repo that is
+    # actually holding the task can be named. It used to report repo #1 — the one
+    # repo that WAS delivering — which is a report that answers with the wrong repo.
+    test "[integration] blind_repos names the unwired SECOND repo" do
+      task = two_repo_submitted("hub green turf unwired task")
+      seed_ci(repo: HUB, branch: task.devops_field("branch"), sha: "sha-hub", conclusion: "success")
+
+      result = Task.claim_next_review(session: "S", nonce: "n")
+
+      refute result.claimed?
+      assert_includes result.blind_repo_list, "turf-monster",
+                      "the repo delivering NO CI is the one to name — the hub is wired and green"
+      refute_includes result.blind_repo_list, "mcritchie-studio"
+    end
+
+    private
+
+    # PRs in two repos: the hub (the primary `pr_url`) and turf (the per-repo
+    # `pr_urls` register `bin/task update --pr-url-for` writes).
+    def two_repo_submitted(title, position: 100)
+      Task.create!(
+        title: title, stage: "submitted", position: position,
+        metadata: { "devops" => {
+          "branch" => "feat/#{title.parameterize}",
+          "repositories" => %w[mcritchie-studio turf-monster],
+          "pr_url" => "https://github.com/McRitchie-Studio/mcritchie-studio/pull/#{position}",
+          "pr_urls" => {
+            "turf-monster" => "https://github.com/McRitchie-Studio/turf-monster/pull/#{position + 1}"
+          }
+        } }
+      )
+    end
+
+    def seed_ci(repo:, branch:, sha:, conclusion:, status: "completed")
+      GithubWorkflowRun.create!(
+        repo: repo, workflow_name: GithubWorkflowRun::CI_WORKFLOW,
+        run_id: SecureRandom.random_number(10**12),
+        status: status, conclusion: conclusion,
+        head_branch: branch, head_sha: sha, run_started_at: Time.current
+      )
+    end
+  end
 end

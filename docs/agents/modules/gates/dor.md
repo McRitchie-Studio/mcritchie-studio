@@ -208,6 +208,13 @@ the gem-release shape, where a gem task names its CONSUMER repos so the gates ca
 reason the gem owes the PR while the consumers do not. The gate says so in a
 suggestion rather than implying coverage it does not have.
 
+The gap is **this gate's**, not the board's. Two neighbours already read every repo
+the task records a PR in: the **cert** verdict grades one tree per PR-bearing repo
+(`cert_owing_repos`, above), and the board's **review gate** (`Ci::ReviewGate`) folds
+one CI verdict per PR-bearing repo — so the review pop and the unattended merge both
+refuse while any of them is red or still running. What is still single-valued here is
+the **live `gh` read** this script makes against `devops.pr_url`.
+
 **The local working tree is never a fallback from a foreign root.** This is the
 rule that closes the 08-08 hole by construction rather than by every reader
 remembering to ask. The old reasoning — recorded in this file, and wrong — was

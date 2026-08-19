@@ -21,6 +21,14 @@ module Ci
   #
   # Only :green is eligible. :red / :pending / :none / :ci_less / :unverified are all
   # "not green", and the caller SKIPS them — a non-green PR is never claimed for review.
+  #
+  # EVERY REPO THE TASK HAS A PR IN GETS A VOTE, and :green means ALL of them are.
+  # This gate used to read `repositories.first` (#repo_for) — one repo, silently — so
+  # a task landing PRs in two repos was popped for review, and AUTO-MERGED by
+  # Review::PendingActionExecutor, on repo #1's CI alone while repo #2 was red. The
+  # merge is the sharp end: it is the one path with no human between a bad verdict and
+  # `accepted`. #repos_for is now the whole question, #verdict folds it, and the
+  # singular reader is gone rather than left for the next caller to pick up.
   module ReviewGate
     # Resolved PER REPO — an app repo's runs are named "CI", a gem's are its own
     # suite ("Engine CI"). Hard-coding the app literal here is what made every
@@ -34,27 +42,49 @@ module Ci
 
     module_function
 
-    # Is this task's PR CI concluded-green? `injected` is the test seam — a bare
-    # CiStatus token ("green"/"red"/"pending"/"none"/…) applied AS the verdict — so a
-    # rank/skip unit test drives green vs. not-green per task without ingesting any
-    # GithubWorkflowRun rows.
+    # Is this task's PR CI concluded-green — in EVERY repo it has a PR in? `injected`
+    # is the test seam — a bare CiStatus token ("green"/"red"/"pending"/"none"/…)
+    # applied AS the verdict — so a rank/skip unit test drives green vs. not-green per
+    # task without ingesting any GithubWorkflowRun rows.
     def green?(task, injected: nil)
       verdict(task, injected: injected)[:state] == :green
     end
 
-    # The task's PR CI verdict, a Hash `{ state:, sha: }`:
+    # The task's PR CI verdict, a Hash `{ state:, sha:, repo:, repos: }`:
     #   :no_pr — the task carries no PR/branch yet (nothing to gate on)
     #   :none  — a PR exists but no CI run has been ingested for its head
     #   otherwise — CiStatus's SHA-addressed fold (:green / :red / :pending / …)
-    def verdict(task, injected: nil)
+    #
+    # ACROSS EVERY REPO in #repos_for, folded by #fold_repos: :green only when they
+    # ALL are. `repo:` names the repo whose state this verdict is reporting and
+    # `repos:` carries the whole `{ repo => verdict }` map, so a caller can say WHICH
+    # repo stopped it instead of "the CI" — the difference between a merge that
+    # explains itself and one that silently did not happen.
+    #
+    # `repo:` (the argument) asks about ONE repo instead of folding. That is the
+    # head-sha PIN's read: an armed merge is pinned to one PR in one repo, so the sha
+    # it compares must come from THAT repo's runs, while the green/not-green question
+    # it asks first spans them all. Two different questions, and answering both with
+    # one repo's verdict is the whole of this defect.
+    def verdict(task, repo: nil, injected: nil)
       require_ci_status
       token = injected.to_s.strip
       return { state: token.to_sym } if CiStatus::TOKENS.include?(token)
+      return repo_verdict(task, repo) if repo.present?
 
-      repo = repo_for(task)
+      repos = repos_for(task)
+      return { state: :no_pr } if repos.empty?
+
+      fold_repos(repos.index_with { |name| repo_verdict(task, name) })
+    end
+
+    # ONE repo's CI verdict — the read this gate has always done, now named and
+    # called once per PR-bearing repo.
+    def repo_verdict(task, repo)
+      repo = bare_slug(repo)
       nwo = nwo_for(repo)
       branch = branch_for(task)
-      return { state: :no_pr } if nwo.empty? || branch.empty? || task.devops_url("pr").blank?
+      return { state: :no_pr, repo: repo } if nwo.empty? || branch.empty? || task.devops_url("pr").blank?
 
       # Resolved from the REPO, not assumed: a gem's runs are named "Engine CI", an
       # app's "CI".
@@ -75,12 +105,12 @@ module Ci
       # a FAILED `CI` run plus a later successful `Lint` run on the SAME head_sha
       # folded to :green, because the newest unrelated pass masked the real failure.
       # This gate authorises merges; a display reader may guess, this may not.
-      return { state: :none, sha: nil } if workflow.blank?
+      return { state: :none, sha: nil, repo: repo } if workflow.blank?
 
       sha = latest_ci_sha(nwo, branch, workflow)
-      return { state: :none, sha: nil } if sha.blank?
+      return { state: :none, sha: nil, repo: repo } if sha.blank?
 
-      CiStatus.for_sha(nwo, sha, check_runs_payload(nwo, sha)).merge(sha: sha)
+      CiStatus.for_sha(nwo, sha, check_runs_payload(nwo, sha)).merge(sha: sha, repo: repo)
     end
 
     # The newest ingested `CI` run's head_sha on this repo+branch — the PR tip we hold
@@ -153,8 +183,97 @@ module Ci
       { "total_count" => runs.size, "check_runs" => runs }.to_json
     end
 
-    def repo_for(task)
-      Array(task.devops_repositories).first.to_s
+    # N PER-REPO VERDICTS → ONE, positively framed exactly like CiStatus.fold:
+    # :green only when EVERY repo affirmatively read green. Anything else is decided
+    # by ONE repo and says which — a :red first (it outranks a :pending here for the
+    # same reason it does inside a single repo's fold: red is the actionable one),
+    # otherwise the first repo in order that is not green. That repo's own state,
+    # `failing`/`pending` lane names and `sha` ride out unchanged, so every existing
+    # reader of this hash keeps working on a single-repo task, where this returns
+    # that one repo's verdict plus `repos:`.
+    #
+    # `count` is SUMMED on green — the lanes that voted, across the whole task. It is
+    # the direct reading of "everything voted", and a one-repo task is unaffected
+    # (the sum of one). Summed only when every repo reported one, so a partial count
+    # never reads as a total.
+    def fold_repos(per_repo)
+      primary = per_repo.keys.first
+      unless per_repo.each_value.all? { |verdict| verdict[:state] == :green }
+        decided = per_repo.find { |_, verdict| verdict[:state] == :red } ||
+                  per_repo.find { |_, verdict| verdict[:state] != :green }
+        return decided.last.merge(repos: per_repo)
+      end
+
+      counts = per_repo.each_value.map { |verdict| verdict[:count] }.compact
+      folded = per_repo[primary].merge(repos: per_repo)
+      counts.size == per_repo.size ? folded.merge(count: counts.sum) : folded
+    end
+
+    # EVERY repo this task owes a CI verdict in: the repos it has actually RECORDED A
+    # PR IN — the primary `devops.pr_url`'s repo first, then the rest of the per-repo
+    # register (`devops.pr_urls`, via Task#release_pr_urls) in name order.
+    #
+    # THE PR REGISTER, NOT `devops.repositories`, and that choice is load-bearing in
+    # both directions:
+    #
+    #   * A repo the task NAMES but has no PR in owes NOTHING. A gem task names its
+    #     CONSUMER repos so the pipeline can reason that the gem alone owes the PR
+    #     (Task#pr_bearing_repositories) — the gem-release path, and the case that
+    #     refuted forbidding multi-repo tasks outright. Those repos have no branch and
+    #     no runs, so demanding a verdict for one would read :none forever and strand
+    #     every engine release. This is the same predicate `bin/dor-check` grades
+    #     CERTS with (`cert_owing_repos`, task cert-gate-loses-multi-repo): a recorded
+    #     PR owes evidence, a named-but-PR-less repo does not.
+    #
+    #   * A repo the task has a PR in but never NAMED still owes one. That is where
+    #     this deliberately reads WIDER than the cert gate's `declared & pr_bearing`
+    #     intersection, and the reason the two differ is the cost of a miss on each
+    #     side: the cert gate intersects because it must FIND that repo's tree on this
+    #     machine and cannot always, while a CI verdict is a DB read that always
+    #     works. `bin/task update --pr-url-for <repo>=<url>` writes the register
+    #     WITHOUT touching `repositories`, so an undeclared PR-bearing repo is one
+    #     command away — and letting it through ungated is the exact silent pass this
+    #     gate exists to close.
+    #
+    # EMPTY without a primary `pr_url`, which keeps :no_pr meaning what it always did:
+    # the review lane acts on that one PR, and a task with no PR is not a review
+    # target however many entries its register holds.
+    #
+    # ONE BRANCH NAME SERVES EVERY REPO (`devops.branch`, the `feat/<slug>` convention
+    # the whole pipeline builds on — bin/dor-check roots the same way). A PR pushed to
+    # a differently-named branch in a second repo resolves no run there and reads
+    # :none, which blocks rather than passes.
+    def repos_for(task)
+      primary = primary_repo_for(task)
+      return [] if primary.empty?
+
+      register = task.respond_to?(:release_pr_urls) ? task.release_pr_urls : {}
+      others = register.keys.map { |repo| bare_slug(repo) }.reject { |repo| repo.empty? || repo == primary }
+      [primary] + others.uniq.sort
+    end
+
+    # The repo under review: the one the task's PR url names, since that is the PR
+    # the review lane acts on. Falls back to the first declared repo ONLY when the
+    # url names none (a malformed or non-GitHub `pr_url`) — that fallback is the
+    # gate's old behaviour, kept so a task with an unparseable url still reads the
+    # repo it always did instead of silently becoming :no_pr.
+    #
+    # Preferring the URL is itself a fix: a gem task naming its consumers
+    # (`repositories` => [mcritchie-studio, turf-monster], `pr_url` => a studio-engine
+    # PR) resolved `mcritchie-studio` here and read the HUB's runs for a branch that
+    # only exists in the gem — :none, forever unclaimable.
+    def primary_repo_for(task)
+      url = task.devops_url("pr").to_s.strip
+      return "" if url.empty? # no PR — the :no_pr verdict, and nothing to gate
+
+      bare_slug(Task.repo_from_pr_url(url)).presence || bare_slug(Array(task.devops_repositories).first)
+    end
+
+    # A bare repo slug from a slug, an owner-qualified name, or either with padding —
+    # so `turf-monster` and `McRitchie-Studio/turf-monster` are one repo and never
+    # gated twice. (#nwo_for puts the owner back on for the query.)
+    def bare_slug(value)
+      value.to_s.strip.split("/").last.to_s.strip
     end
 
     def branch_for(task)
