@@ -37,6 +37,7 @@ require_relative "lib/task_board"
 require_relative "lib/task_column_fields"
 
 BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
+ACCEPTED_BRANCH = "accepted"
 
 options = { seam: nil, heal: false, json: false, verbose: false }
 parser = OptionParser.new do |opts|
@@ -72,13 +73,34 @@ rescue StandardError
   nil
 end
 
+# PAGINATE. The index defaults to a 20-row page, so a stage with more than that
+# silently truncated and the scan printed "nothing stranded" — the exact false
+# all-clear this tool exists to remove.
+#
+# It also RESCUES: TaskBoard.request raises on a transport failure before any
+# status is inspected, so the documented exit-1 path was unreachable and an
+# unreadable board printed a raw backtrace. Once part 2 puts this at the head of
+# an SOP, that backtrace IS the wedge NEVER BLOCK exists to prevent.
 def fetch_tasks(stages, token)
-  stages.flat_map do |stage|
-    res = TaskBoard.request(:get, "/api/v1/tasks?stage=#{stage}", base_url: BASE_URL, token: token)
-    body = TaskBoard.parse_body(res)
-    die!("GET /api/v1/tasks?stage=#{stage} -> #{res.code}") unless res.code.to_i.between?(200, 299)
-    body["data"] || []
+  stages.flat_map { |stage| fetch_stage(stage, token) }
+end
+
+def fetch_stage(stage, token, per_page: 100, max_pages: 20)
+  rows = []
+  (1..max_pages).each do |page|
+    path = "/api/v1/tasks?stage=#{stage}&per_page=#{per_page}&page=#{page}"
+    begin
+      res = TaskBoard.request(:get, path, base_url: BASE_URL, token: token)
+    rescue StandardError => e
+      die!("board unreachable reading #{stage}: #{e.class}: #{e.message}")
+    end
+    die!("GET #{path} -> #{res.code}") unless res.code.to_i.between?(200, 299)
+
+    batch = TaskBoard.parse_body(res)["data"] || []
+    rows.concat(batch)
+    break if batch.size < per_page
   end
+  rows
 end
 
 # The stages each seam needs to read. Scoping the FETCH as well as the decision
@@ -98,25 +120,51 @@ rescue StandardError
   nil
 end
 
-def pr_number_and_repo(task)
-  url = (task.dig("metadata", "devops") || {})["pr_url"].to_s
-  m = url.match(%r{github\.com/([^/]+/[^/]+)/pull/(\d+)})
-  m ? [m[1], m[2]] : nil
+# EVERY PR the task names, not just the primary. A multi-repo task records one
+# PR per repo in devops.pr_urls; reading only devops.pr_url dropped the siblings
+# silently, so an unread fact became a heal.
+def pr_refs(task)
+  devops = task.dig("metadata", "devops") || {}
+  urls = [devops["pr_url"]] + Array(devops["pr_urls"].is_a?(Hash) ? devops["pr_urls"].values : nil)
+  urls.filter_map do |url|
+    m = url.to_s.match(%r{github\.com/([^/]+/[^/]+)/pull/(\d+)})
+    m && [m[1], m[2]]
+  end.uniq
 end
 
 # PR state + CI verdict in ONE gh call. Anything unreadable stays :unknown, which
 # the classifier can never turn into a heal.
 def pr_evidence(task)
-  repo, number = pr_number_and_repo(task)
-  return { pr_state: :none, ci: :none } unless repo
+  refs = pr_refs(task)
+  return { pr_state: :none, ci: :none } if refs.empty?
 
-  raw = sh("gh", "pr", "view", number, "--repo", repo, "--json", "state,statusCheckRollup")
-  return { pr_state: :unknown, ci: :unknown } unless raw
+  per_repo = refs.map { |repo, number| one_pr(repo, number) }
+  { pr_state: SeamReconcile.aggregate_pr_state(per_repo.map { |p| p[:state] }),
+    ci: aggregate_ci(per_repo.map { |p| p[:ci] }) }
+end
+
+# A single PR, with its BASE verified. A merged PR only counts as merged for our
+# purposes when it merged onto `accepted` — the rung `reviewed` asserts. A merge
+# into any other base is not the thing we are about to stamp.
+def one_pr(repo, number)
+  raw = sh("gh", "pr", "view", number, "--repo", repo, "--json", "state,baseRefName,statusCheckRollup")
+  return { state: :unknown, ci: :unknown } unless raw
 
   data = JSON.parse(raw)
-  { pr_state: pr_state_of(data["state"]), ci: ci_of(data["statusCheckRollup"]) }
+  state = pr_state_of(data["state"])
+  state = :open if state == :merged && data["baseRefName"].to_s != ACCEPTED_BRANCH
+  { state: state, ci: ci_of(data["statusCheckRollup"]) }
 rescue StandardError
-  { pr_state: :unknown, ci: :unknown }
+  { state: :unknown, ci: :unknown }
+end
+
+def aggregate_ci(list)
+  return :none if list.empty?
+  return :unknown if list.any? { |c| c == :unknown }
+  return :red if list.any? { |c| c == :red }
+  return :pending if list.any? { |c| c == :pending }
+
+  list.all? { |c| c == :none } ? :none : :green
 end
 
 def pr_state_of(state)
@@ -128,15 +176,21 @@ def pr_state_of(state)
   end
 end
 
+# ALLOW-LIST, deliberately — the same policy bin/dor-check uses. A deny-list
+# reads any conclusion it has not heard of (STARTUP_FAILURE, STALE, a future
+# GitHub value) as GREEN, which is the wrong direction for a gate.
+GREEN_CONCLUSIONS = %w[SUCCESS NEUTRAL SKIPPED].freeze
+PENDING_CONCLUSIONS = ["", "PENDING", "QUEUED", "IN_PROGRESS", "WAITING", "REQUESTED", "EXPECTED"].freeze
+
 def ci_of(rollup)
   checks = Array(rollup)
   return :none if checks.empty?
 
-  concs = checks.map { |c| (c["conclusion"] || c["state"]).to_s.upcase }
-  return :pending if concs.any? { |c| c.empty? || c == "PENDING" }
-  return :red if concs.any? { |c| %w[FAILURE TIMED_OUT CANCELLED ACTION_REQUIRED ERROR].include?(c) }
+  concs = checks.map { |c| (c["conclusion"].to_s.empty? ? c["state"] : c["conclusion"]).to_s.upcase }
+  return :pending if concs.any? { |c| PENDING_CONCLUSIONS.include?(c) }
+  return :green if concs.all? { |c| GREEN_CONCLUSIONS.include?(c) }
 
-  :green
+  :red
 end
 
 # The autopilot ledger already records refused/expired/disarmed arms. NOTHING
@@ -156,16 +210,10 @@ rescue StandardError
   {}
 end
 
+# Delegates to the pure decision so the SHAPE is pinned by a unit test against a
+# real payload rather than re-derived here.
 def build_claim_live(task)
-  claim = task["claim"] || task.dig("metadata", "claim")
-  return :unknown unless claim.is_a?(Hash)
-
-  expires = claim["expires_at"] || claim["expires"]
-  return false if expires.to_s.strip.empty?
-
-  Time.parse(expires.to_s) > Time.now
-rescue StandardError
-  :unknown
+  SeamReconcile.claim_live?(task)
 end
 
 # --- run ---------------------------------------------------------------------

@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "time"
+
 # SeamReconcile — the anomaly decision for work that is FURTHER ALONG THAN ITS
 # STAGE SAYS, and which no SOP currently looks backward to find.
 #
@@ -77,6 +79,45 @@ module SeamReconcile
   # so a verdict behind it is stranded. `:pending` is excluded deliberately — it
   # is still live and may yet land.
   DEAD_ARMED_STATES = %i[refused expired disarmed].freeze
+
+  # THE MULTI-REPO RULE. A task can name several repos, and `stamp_lost` asserts
+  # `reviewed`, which means CODE-ON-ACCEPTED. For a multi-repo task that is only
+  # true when EVERY repo's PR has merged onto `accepted` — so the aggregate is
+  # fail-closed: any unreadable repo makes the whole task unreadable, and any
+  # repo not yet merged makes it not-merged.
+  #
+  # Without this, a task whose PRIMARY merged while its siblings were still open
+  # healed to `reviewed` and rode the sweep into a release with two of three
+  # repos unlanded. Nothing downstream catches it: Release::SweepPlan's coverage
+  # gap compares repos against pr_urls KEYS (PR presence), never PR merge state.
+  # Proven against the live record `bound-hung-ci-steps` (3 repos, one primary).
+  def self.aggregate_pr_state(states)
+    list = Array(states)
+    return :none if list.empty?
+    return :unknown if list.any? { |s| s == :unknown || s.nil? }
+    return :merged if list.all? { |s| s == :merged }
+    return :closed if list.all? { |s| s == :closed }
+
+    :open
+  end
+
+  # Is a build lease still held? The board serialises the lease as FLAT keys on
+  # metadata.devops (`claimed_session` + `claim_expires_at`) — NOT as a nested
+  # `claim` hash, and the list endpoint serialises no top-level claim at all.
+  # Reading the wrong shape returned :unknown for every task and made
+  # `ship_interrupted` dead on arrival, which is the exact incident this module
+  # was built for. Returns true / false / :unknown.
+  def self.claim_live?(task, now: Time.now)
+    devops = (task["metadata"] || {})["devops"] || {}
+    session = devops["claimed_session"].to_s.strip
+    expires = devops["claim_expires_at"].to_s.strip
+    return false if session.empty? && expires.empty?
+    return :unknown if expires.empty?
+
+    Time.parse(expires) > now
+  rescue ArgumentError, TypeError
+    :unknown
+  end
 
   Finding = Struct.new(:slug, :anomaly, :seam, :disposition, :summary, :repair, :evidence,
                        keyword_init: true)
