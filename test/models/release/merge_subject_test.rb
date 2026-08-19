@@ -100,6 +100,63 @@ class Release::MergeSubjectTest < ActiveSupport::TestCase
     assert_equal :lost_stamp, M.attribute(FEAT, index)[:kind]
   end
 
+  # --- THE GATHER (FIX 2: this glue was untested and therefore broken) --------
+
+  # The shape the stale-tree gate actually builds: { repo => [ {sha, subject} ] }.
+  # The first cut called Array(stranded).values — Kernel#Array on a Hash yields
+  # [key, value] PAIRS, which have no `values` method — so the gather raised,
+  # its caller swallowed the error, and attribution was dead in the shipped
+  # command while every model test stayed green.
+  STRANDED = {
+    "mcritchie-studio" => [
+      { "sha" => "ad85ec3", "subject" => FEAT },
+      { "sha" => "b1b1b1b", "subject" => "zap: a hand-landed fix" }
+    ],
+    "turf-monster" => [
+      { "sha" => "c2c2c2c", "subject" => "Merge pull request #351 from McRitchie-Studio/feat/other-task" }
+    ]
+  }.freeze
+
+  test "gathers every slug across every repo" do
+    assert_equal %w[repair-quarantined-e2e-clusters other-task], M.slugs_from_commits(STRANDED)
+  end
+
+  test "the gather does not raise on the real hash shape" do
+    assert_nothing_raised { M.slugs_from_commits(STRANDED) }
+  end
+
+  test "the gather skips commits that name no task" do
+    only_zaps = { "hub" => [{ "sha" => "a", "subject" => "zap: nope" }] }
+    assert_empty M.slugs_from_commits(only_zaps)
+  end
+
+  test "the gather dedupes a slug seen in two repos" do
+    twice = { "a" => [{ "sha" => "1", "subject" => FEAT }], "b" => [{ "sha" => "2", "subject" => FEAT }] }
+    assert_equal %w[repair-quarantined-e2e-clusters], M.slugs_from_commits(twice)
+  end
+
+  # Hash(nil) is {}, so nil-safety survives the Array()->Hash() fix.
+  test "the gather tolerates nil and empty input" do
+    assert_empty M.slugs_from_commits(nil)
+    assert_empty M.slugs_from_commits({})
+  end
+
+  test "the gather ignores a malformed commit entry" do
+    junk = { "hub" => [nil, "not-a-hash", { "sha" => "a", "subject" => FEAT }] }
+    assert_equal %w[repair-quarantined-e2e-clusters], M.slugs_from_commits(junk)
+  end
+
+  test "the gather reads symbol subject keys too" do
+    sym = { "hub" => [{ sha: "a", subject: FEAT }] }
+    assert_equal %w[repair-quarantined-e2e-clusters], M.slugs_from_commits(sym)
+  end
+
+  # --- stage-aware repair ------------------------------------------------------
+
+  test "a task already reviewed is not told to move again" do
+    assert_equal "bin/task merged x accepted", M.lost_stamp_repair("x", "reviewed")
+  end
+
   test "the repair names both commands" do
     repair = M.lost_stamp_repair("demo-task")
     assert_includes repair, "bin/task merged demo-task accepted"

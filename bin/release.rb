@@ -3716,9 +3716,7 @@ end
 # nicety and must never turn a clear refusal into a crash. With {} the abort
 # prints exactly what it printed before.
 def stranded_task_index(stranded)
-  slugs = Array(stranded).values.flatten.filter_map do |c|
-    Release::MergeSubject.slug_from_subject(c["subject"].to_s)
-  end.uniq
+  slugs = Release::MergeSubject.slugs_from_commits(stranded)
   return {} if slugs.empty?
 
   rows = conductor(
@@ -3729,8 +3727,14 @@ def stranded_task_index(stranded)
     read_only: true
   )
   rows["tasks"] || {}
-rescue StandardError => e
-  say("  (attribution skipped: #{e.message})")
+# `conductor` fails by calling abort!, which raises SystemExit — NOT a
+# StandardError. Rescuing only StandardError here would let a transient prod-board
+# blip (the essential-PG too-many-connections shape, 2026-07) replace this gate's
+# precise refusal and its recovery commands with "record op failed" and exit 1 —
+# the diagnostic eating the diagnosis it exists to produce. record_deploy_intent
+# and record_gate_open/close rescue the same pair for the same reason.
+rescue SystemExit, StandardError => e
+  say("  (attribution unavailable: #{e.message}; the refusal below is unchanged)")
   {}
 end
 

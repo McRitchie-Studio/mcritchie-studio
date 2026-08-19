@@ -99,9 +99,35 @@ class Release
       { kind: :stamped, slug: slug, stage: stage, merged: merged }
     end
 
-    # The one-line repair for a lost stamp, ready to print.
-    def lost_stamp_repair(slug)
-      "bin/task merged #{slug} accepted && bin/task move #{slug} reviewed"
+    # Every task slug named by a stranded-commit map, deduped and in order.
+    #
+    # `stranded` is the { "<repo>" => [{ "sha" =>, "subject" => }, …] } shape the
+    # stale-tree gate builds. THIS FUNCTION EXISTS BECAUSE ITS CALLER WAS
+    # UNTESTED GLUE: the first cut inlined `Array(stranded).values`, and
+    # `Kernel#Array` on a Hash yields [key, value] PAIRS, which have no `values`
+    # method. The NoMethodError was swallowed by the caller's rescue, so the
+    # gather returned {} for every input and the whole attribution feature was
+    # dead in the shipped command while its model tests stayed green. Pulling the
+    # gather into a pure function is what makes that reachable by a unit test.
+    #
+    # Hash() rather than Array(): Hash(nil) is {}, so nil-safety is preserved
+    # without the pair-vs-value confusion.
+    def slugs_from_commits(stranded)
+      Hash(stranded).values.flatten.filter_map do |commit|
+        next unless commit.is_a?(Hash)
+
+        slug_from_subject(commit["subject"] || commit[:subject])
+      end.uniq
+    end
+
+    # The one-line repair for a lost stamp, ready to print. STAGE-AWARE: a task
+    # already at `reviewed` needs only the stamp, and printing a redundant stage
+    # move invites the reader to re-run a transition that is already done.
+    def lost_stamp_repair(slug, stage = nil)
+      stamp = "bin/task merged #{slug} accepted"
+      return stamp if stage.to_s == "reviewed"
+
+      "#{stamp} && bin/task move #{slug} reviewed"
     end
   end
 end

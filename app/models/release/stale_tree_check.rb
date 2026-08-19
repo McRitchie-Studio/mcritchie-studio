@@ -143,10 +143,19 @@ class Release
       lines << "  The candidate is NOT untouched, though: membership was already recorded (sweep! runs before " \
                "this gate), and in a multi-repo release a partial batch promote may already have landed. " \
                "Re-running after the recovery below re-uses that record rather than double-recording."
-      lines.concat(why_lines)
+      all_lost = all_lost_stamps?(stale, stranded_commits, task_index)
+      # A LOST-STAMP verdict must not also print the generic three-cause guess —
+      # naming the task and then saying "no such task behind it" four lines later
+      # is the contradiction this task exists to remove.
+      lines.concat(all_lost ? lost_stamp_why_lines : why_lines)
       lines.concat(assembled_lines) if release_state.to_s == "assembled"
-      lines.concat(lost_stamp_lines(stale, stranded_commits, task_index))
-      lines.concat(recovery_lines(stale, stranded_commits, repo_nwo, release_slug))
+      if all_lost
+        lines.concat(lost_stamp_recovery_lines(stale, stranded_commits, task_index))
+      else
+        # Mixed set: the per-commit attribution above already names any lost
+        # stamp, and the batch-PR recovery is still right for the orphan.
+        lines.concat(recovery_lines(stale, stranded_commits, repo_nwo, release_slug))
+      end
       lines.join("\n")
     end
 
@@ -195,22 +204,43 @@ class Release
       end
     end
 
-    # When EVERY stranded commit resolves to a lost stamp, say so once rather
-    # than leaving the reader to infer it from the per-commit lines. The refusal
-    # itself is unchanged — this only narrows WHICH recovery applies.
-    def lost_stamp_lines(stale, stranded_commits, task_index)
+    # Are ALL the stranded commits lost stamps? Only then may the message drop the
+    # generic guess and prescribe the two-command repair as THE recovery.
+    def all_lost_stamps?(stale, stranded_commits, task_index)
       all = stale.flat_map { |repo| commits_for(stranded_commits, repo["repo"].to_s) }
-      return [] if all.empty?
+      return false if all.empty?
 
-      kinds = all.map do |c|
-        Release::MergeSubject.attribute(Release::CleanCheck.value(c, "subject").to_s, task_index)[:kind]
+      all.all? do |c|
+        attribute_commit(c, task_index)[:kind] == :lost_stamp
       end
-      return [] unless kinds.any? && kinds.all?(:lost_stamp)
+    end
 
-      ["", "  EVERY stranded commit above is a LOST STAMP: review landed the PR on `#{ACCEPTED_RUNG}` but " \
-           "its task was never stamped, so the promote could not see it. Stamping the task(s) and re-running " \
-           "`bin/release prepare` is the whole repair — you do NOT need the hand-landed batch PR below, " \
-           "which is for a commit no task owns."]
+    def attribute_commit(commit, task_index)
+      Release::MergeSubject.attribute(Release::CleanCheck.value(commit, "subject").to_s, task_index)
+    end
+
+    # The WHY, narrowed. Replaces the three-cause guess when every commit is
+    # attributed, because the cause is no longer a guess.
+    def lost_stamp_why_lines
+      ["  WHY the promote did not carry it: prepare derives the repos to promote from BOARD STAMPS — the " \
+       "sweep candidates stamped merged:\"#{ACCEPTED_MERGED_STAMP}\". Review landed each PR above on " \
+       "`#{ACCEPTED_RUNG}` but its task was never stamped, so the promote could not see it. The cause is " \
+       "known: this is bookkeeping, not an orphan commit."]
+    end
+
+    # THE recovery for an all-lost-stamp verdict: the two commands, as the
+    # runnable block. The hand-landed batch PR is deliberately NOT offered — it
+    # is the recovery for a commit no task owns, and would be the wrong act here.
+    def lost_stamp_recovery_lines(stale, stranded_commits, task_index)
+      repairs = stale.flat_map { |repo| commits_for(stranded_commits, repo["repo"].to_s) }
+                     .map { |c| attribute_commit(c, task_index) }
+                     .select { |a| a[:kind] == :lost_stamp }
+                     .map { |a| "    #{Release::MergeSubject.lost_stamp_repair(a[:slug], a[:stage])}" }
+                     .uniq
+
+      ["", "  RECOVER — stamp the task(s), then re-run. No batch PR is needed:"] + repairs +
+        ["    bin/release prepare --yes",
+         "  (`bin/release prepare` then promotes normally, because the promote can finally see them.)"]
     end
 
     # String OR symbol repo keys tolerated, matching CleanCheck#value's policy —

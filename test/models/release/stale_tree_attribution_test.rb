@@ -47,8 +47,14 @@ class Release::StaleTreeAttributionTest < ActiveSupport::TestCase
     verdict = evaluate(subject: FEAT_SUBJECT,
                        task_index: { "repair-quarantined-e2e-clusters" =>
                                        { "stage" => "submitted", "merged" => "" } })
-    assert_includes verdict["message"], "EVERY stranded commit above is a LOST STAMP"
-    assert_includes verdict["message"], "do NOT need the hand-landed batch"
+    msg = verdict["message"]
+    # The generic three-cause guess must be GONE, replaced by the known cause.
+    refute_includes msg, "no such task behind it"
+    assert_includes msg, "The cause is known: this is bookkeeping, not an orphan commit."
+    # And the two-command repair must BE the recovery block, not a sub-line.
+    assert_includes msg, "RECOVER — stamp the task(s), then re-run. No batch PR is needed:"
+    assert_includes msg, "bin/task merged repair-quarantined-e2e-clusters accepted"
+    refute_includes msg, "gh pr create", "the batch PR is the wrong act for a lost stamp"
   end
 
   # --- acceptance 3: an unattributable commit aborts exactly as before -------
@@ -105,7 +111,10 @@ class Release::StaleTreeAttributionTest < ActiveSupport::TestCase
     refute verdict["fresh"]
     msg = verdict["message"]
     assert_includes msg, "LOST STAMP"
-    refute_includes msg, "EVERY stranded commit above is a LOST STAMP"
+    # A MIXED set keeps the generic why and the batch-PR recovery, because one
+    # commit genuinely has no task behind it.
+    assert_includes msg, "no such task behind it"
+    assert_includes msg, "gh pr create"
   end
 
   # --- the fresh path is untouched -------------------------------------------
