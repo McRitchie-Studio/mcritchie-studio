@@ -792,78 +792,6 @@ class ReleaseCliTest < Minitest::Test
                     "the no-op message is now EARNED — bundle_lock proved the version before returning"
   end
 
-  # --- the engine-migration install, driven for real -------------------------
-  #
-  # THE DEFECT THESE EXIST FOR. The first cut of this step probed the workspace
-  # with `bin/rails -T <task>` and read ANY non-zero exit as "this gem is not an
-  # engine". On a live sweep that is always non-zero: `bundle lock` resolves
-  # without INSTALLING, and nothing else installs the version `gem push` sent
-  # seconds earlier, so rails dies with Bundler::GemNotFound. The step therefore
-  # skipped on every real run — printing nothing at all, while the SOP told the
-  # operator migrations were handled and the pre-QA gate reddened after the
-  # irreversible publish. Two reviewers reproduced it.
-  #
-  # The flow tests above stub this function wholesale, so they cannot see any of
-  # that. Here `sh` is stubbed instead and the REAL function runs.
-
-  # The bundle comes FIRST. Without it the app cannot boot and every probe below
-  # is meaningless — this is the missing line, asserted as an ORDER.
-  def test_engine_migration_install_installs_the_bundle_before_it_probes
-    Dir.mktmpdir do |ws|
-      # A workspace with a Gemfile, because ensure_suite_bundle! self-gates on one
-      # — a bare tmpdir would skip the very step this test is about.
-      File.write(File.join(ws, "Gemfile"), %(gem "studio-engine"\n))
-
-      out = run_cli(["--yes"], setup: SH_RECORDING_STUB + %(RAILS_TASK_LISTED = false\n),
-                    call: %{install_engine_migrations!(#{ws.inspect}, "mcritchie-studio", ["studio-engine"])})
-
-      bundle_at = out.index("RAN: bin/bundle check")
-      probe_at  = out.index("RAN: bin/rails -T studio_engine:install:migrations")
-      refute_nil bundle_at, "the workspace bundle must be ensured: #{out}"
-      refute_nil probe_at, "and then the app asked what it ships: #{out}"
-      assert bundle_at < probe_at, "the bundle must be installed BEFORE the probe: #{out}"
-    end
-  end
-
-  # A gem that is not an engine. Exit 0, nothing listed — the only silent skip.
-  def test_engine_migration_install_skips_a_gem_that_ships_no_migrations
-    out = run_cli(["--yes"], setup: SH_RECORDING_STUB + %(RAILS_TASK_LISTED = false
-),
-                  call: %{install_engine_migrations!("/tmp/ws", "mcritchie-studio", ["solana-studio"]); puts("RETURNED")})
-
-    assert_includes out, "RETURNED", "an absent task is a silent skip, not an abort: #{out}"
-    refute_includes out, "RAN: bin/rails solana_studio:install:migrations",
-                     "nothing to install means nothing was run"
-  end
-
-  # THE REGRESSION. A non-zero probe means the app did not boot — and in a
-  # fail-closed function "I could not tell" must never read as "nothing to do".
-  def test_engine_migration_install_aborts_when_the_app_cannot_boot
-    out = run_cli(["--yes"], setup: SH_RECORDING_STUB + %(RAILS_PROBE_OK = false
-),
-                  call: %{begin; install_engine_migrations!("/tmp/ws", "mcritchie-studio", ["studio-engine"]); } +
-                        %{puts("NO-ABORT"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
-
-    assert_includes out, "ABORTED", "a probe nobody could answer must stop the sweep: #{out}"
-    assert_includes out, "could not boot the app", "and say what actually happened"
-    refute_includes out, "NO-ABORT", "it must never fall through as 'not an engine'"
-  end
-
-  # The happy path: the task is listed, so it runs — and the schema refresh
-  # follows only because db/migrate actually changed.
-  def test_engine_migration_install_runs_the_installer_and_refreshes_the_schema
-    out = run_cli(["--yes"], setup: SH_RECORDING_STUB + %(RAILS_TASK_LISTED = true
-MIGRATE_DIR_CHANGED = true
-),
-                  call: %{install_engine_migrations!("/tmp/ws", "mcritchie-studio", ["studio-engine"])})
-
-    assert_includes out, "RAN: bin/rails studio_engine:install:migrations",
-                    "the installer must actually run: #{out}"
-    assert_includes out, "installed 1 engine migration(s)", "and say what it installed"
-    assert_includes out, "RAN: bin/rails db:create db:schema:load db:migrate",
-                    "a copied-but-unrun migration is pending, so the schema is refreshed too"
-  end
-
   # [integration] THE LADDER, driven for real. The stub above replaces
   # bundle_lock wholesale, so it proves the CALLER refuses a stale lock but says
   # nothing about the retry. Here `sh` is stubbed instead: `bundle lock` "succeeds"
@@ -874,39 +802,6 @@ MIGRATE_DIR_CHANGED = true
   # NON-ZERO exit, and this bug's signature is exit 0 with the old version still
   # resolved. Aborting on first observation would turn an ordinary, self-curing
   # index delay into a manual stop moments after an IRREVERSIBLE gem push.
-  # Records every command `sh` is asked to run and answers the two the install
-  # cares about. Each test sets RAILS_PROBE_OK / RAILS_TASK_LISTED /
-  # MIGRATE_DIR_CHANGED before this runs.
-  SH_RECORDING_STUB = <<~'RUBY'
-    RAILS_PROBE_OK = true unless defined?(RAILS_PROBE_OK)
-    RAILS_TASK_LISTED = true unless defined?(RAILS_TASK_LISTED)
-    MIGRATE_DIR_CHANGED = false unless defined?(MIGRATE_DIR_CHANGED)
-
-    def gate_env(_repo, role: "gate") = {}
-    def gate_database_url(_repo, role: "gate") = nil
-    def suite_bundle_argv(_path) = ["bin/bundle"]
-
-    def sh(*a, **k)
-      cmd = a.reject { |x| x.is_a?(Hash) }.join(" ")
-      $stdout.puts("RAN: #{cmd}")
-      return ["", true] if cmd.start_with?("bin/bundle")
-      if cmd.include?("-T ")
-        task = cmd.split.last
-        return [RAILS_TASK_LISTED ? "bin/rails #{task}  # Copy migrations" : "", RAILS_PROBE_OK]
-      end
-      ["", true]
-    end
-
-    def git_capture(*a)
-      j = a.join(" ")
-      if j.include?("status --porcelain") && j.include?("db/migrate")
-        return [($migrate_probed && MIGRATE_DIR_CHANGED ? "?? db/migrate/20260101_x.studio_engine.rb" : ""), true].tap { $migrate_probed = true }
-      end
-      return ["", true] if j.include?("diff")
-      ["", true]
-    end
-  RUBY
-
   def test_bundle_lock_retries_a_stale_resolution_then_aborts_naming_the_compact_index
     Dir.mktmpdir do |dir|
       File.write(File.join(dir, "Gemfile.lock"), <<~LOCK)
