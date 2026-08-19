@@ -149,6 +149,7 @@ require "fileutils" # primary_checkout_lock_path mkdir_p's the fixed lock dir
 require_relative "../app/models/release/ladder"
 require_relative "../app/models/release/gemfile_repin"
 require_relative "../app/models/release/ship_sequence"
+require_relative "../app/models/release/engine_migration_install"
 require_relative "../app/models/release/post_deploy"
 require_relative "../app/models/release/merge_plan"
 # SweepPlan is the pure per-task sweep partition (record onto the RC / held anomaly)
@@ -5132,8 +5133,11 @@ def dump_consumer_schema!(workspace, repo)
   # run db:create + db:schema:load against a database a concurrent conductor may
   # be mid-suite on. A SQLite app has no base URL at all and is meant to fall
   # through to its own workspace file.
+  # Plain Ruby, not `present?`: bin/release is a SCRIPT that requires a handful of
+  # models directly, with no ActiveSupport core_ext loaded — an ActiveSupport-ism
+  # here dies at runtime, on the sweep, right after an irreversible publish.
   abort!("#{repo}: could not derive a throwaway database from #{base.inspect} — refusing to refresh " \
-         "db/schema.rb against the gate's own database") if base.to_s.strip.present? && url.nil?
+         "db/schema.rb against the gate's own database") if !base.to_s.strip.empty? && url.nil?
 
   # RAILS_ENV=development, and DATABASE_URL replaced rather than inherited: the
   # dumper writes db/schema.rb from the dev environment, and the database it
