@@ -90,7 +90,7 @@ class Release
     #                         or the REFUSAL naming the stranded commits and the
     #                         exact recovery when stale.
     def evaluate(accepted_states: [], unreadable_repos: [], stranded_commits: {},
-                 repo_nwo: {}, release_slug: nil, release_state: nil)
+                 repo_nwo: {}, release_slug: nil, release_state: nil, task_index: {})
       # Reuse Release::CleanCheck's rung comparison rather than re-deriving it.
       # Two implementations of "which repos are ahead" is exactly how the ladder
       # guard and this gate would drift apart, and they must agree: they are
@@ -107,7 +107,7 @@ class Release
                        fresh_message(accepted_states)
                      else
                        stale_message(stale, unreadable, stranded_commits, repo_nwo,
-                                     release_slug, release_state)
+                                     release_slug, release_state, task_index)
                      end
       }
     end
@@ -126,12 +126,13 @@ class Release
     # the tree is stale, NAME the commits that are missing from it, and hand back
     # the exact recovery with the repo and SHAs filled in. A refusal that does not
     # name its remedy just moves the confusion.
-    def stale_message(stale, unreadable, stranded_commits, repo_nwo, release_slug, release_state)
+    def stale_message(stale, unreadable, stranded_commits, repo_nwo, release_slug, release_state,
+                      task_index = {})
       rel = release_slug.to_s.empty? ? "the candidate" : release_slug.to_s
       rel += " (#{release_state})" unless release_state.to_s.empty?
 
       lines = ["✗ prepare refused: #{rel} would deploy a tree that does NOT contain `#{ACCEPTED_RUNG}`."]
-      stale.each { |repo| lines.concat(stale_repo_lines(repo, stranded_commits)) }
+      stale.each { |repo| lines.concat(stale_repo_lines(repo, stranded_commits, task_index)) }
       unreadable.each do |u|
         lines << "  #{u['repo']}: the `#{u['rung']}` rung could NOT be read — a failed read is not a clean read, " \
                  "so it counts as stale. Fetch the repo (or fix the missing branch), then re-run."
@@ -144,6 +145,7 @@ class Release
                "Re-running after the recovery below re-uses that record rather than double-recording."
       lines.concat(why_lines)
       lines.concat(assembled_lines) if release_state.to_s == "assembled"
+      lines.concat(lost_stamp_lines(stale, stranded_commits, task_index))
       lines.concat(recovery_lines(stale, stranded_commits, repo_nwo, release_slug))
       lines.join("\n")
     end
@@ -152,7 +154,7 @@ class Release
     # the actual commits. The count alone is not enough: "1 commit behind" sends
     # the operator to go look it up, and the whole point of the refusal is that
     # it hands over what it already knows.
-    def stale_repo_lines(repo, stranded_commits)
+    def stale_repo_lines(repo, stranded_commits, task_index = {})
       slug    = repo["repo"].to_s
       ahead   = repo["ahead"].to_i
       commits = commits_for(stranded_commits, slug)
@@ -165,10 +167,50 @@ class Release
                 "`git log --oneline origin/#{RELEASE_RUNG}..origin/#{ACCEPTED_RUNG}` in #{slug})"]
       end
 
-      [header] + commits.map do |c|
+      [header] + commits.flat_map do |c|
         subject = Release::CleanCheck.value(c, "subject").to_s
-        "    - #{Release::CleanCheck.value(c, 'sha')}#{subject.empty? ? '' : " #{subject}"}"
+        line = "    - #{Release::CleanCheck.value(c, 'sha')}#{subject.empty? ? '' : " #{subject}"}"
+        [line] + attribution_lines(subject, task_index)
       end
+    end
+
+    # ATTRIBUTION. The merge subject carries the branch, and a task's branch is
+    # seeded from its slug, so a commit that came from a feat branch names its
+    # own task. When that task exists but carries no `merged` stamp, this is a
+    # LOST STAMP — a bookkeeping failure with a two-command repair — not the
+    # unattributable orphan the generic text describes. Anything that does not
+    # resolve prints nothing extra, so the refusal reads exactly as it did.
+    def attribution_lines(subject, task_index)
+      result = Release::MergeSubject.attribute(subject, task_index)
+      case result[:kind]
+      when :lost_stamp
+        ["        \u21B3 task `#{result[:slug]}` EXISTS (stage: #{result[:stage]}) with NO `merged` " \
+         "stamp — this is a LOST STAMP, not an unattributable orphan.",
+         "          repair: #{Release::MergeSubject.lost_stamp_repair(result[:slug])}"]
+      when :stamped
+        ["        \u21B3 task `#{result[:slug]}` exists and is stamped " \
+         "merged:\"#{result[:merged]}\" — already attributed."]
+      else
+        []
+      end
+    end
+
+    # When EVERY stranded commit resolves to a lost stamp, say so once rather
+    # than leaving the reader to infer it from the per-commit lines. The refusal
+    # itself is unchanged — this only narrows WHICH recovery applies.
+    def lost_stamp_lines(stale, stranded_commits, task_index)
+      all = stale.flat_map { |repo| commits_for(stranded_commits, repo["repo"].to_s) }
+      return [] if all.empty?
+
+      kinds = all.map do |c|
+        Release::MergeSubject.attribute(Release::CleanCheck.value(c, "subject").to_s, task_index)[:kind]
+      end
+      return [] unless kinds.any? && kinds.all?(:lost_stamp)
+
+      ["", "  EVERY stranded commit above is a LOST STAMP: review landed the PR on `#{ACCEPTED_RUNG}` but " \
+           "its task was never stamped, so the promote could not see it. Stamping the task(s) and re-running " \
+           "`bin/release prepare` is the whole repair — you do NOT need the hand-landed batch PR below, " \
+           "which is for a commit no task owns."]
     end
 
     # String OR symbol repo keys tolerated, matching CleanCheck#value's policy —
