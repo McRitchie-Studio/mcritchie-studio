@@ -148,7 +148,7 @@ class Release
       # naming the task and then saying "no such task behind it" four lines later
       # is the contradiction this task exists to remove.
       lines.concat(all_lost ? lost_stamp_why_lines : why_lines)
-      lines.concat(assembled_lines) if release_state.to_s == "assembled"
+      lines.concat(assembled_lines(all_lost)) if release_state.to_s == "assembled"
       if all_lost
         lines.concat(lost_stamp_recovery_lines(stale, stranded_commits, task_index))
       else
@@ -261,10 +261,12 @@ class Release
     # The assembled case gets one extra paragraph, because "why won't you just
     # promote it for me" is the reasonable question and it deserves the answer
     # in the tool rather than in a design doc.
-    def assembled_lines
+    # VERDICT-AWARE: its closing act must be the one the RECOVER block prescribes.
+    def assembled_lines(all_lost = false)
+      act = all_lost ? "Stamping the task(s) below" : "Landing the batch PR"
       ["  This candidate is already `assembled` (QA-green). prepare will NOT silently promote onto it: the " \
        "recorded QA verdict describes the tree QA actually ran, and moving `#{RELEASE_RUNG}` underneath it " \
-       "would leave that verdict describing a tree nobody tested. Landing the batch PR and re-running prepare " \
+       "would leave that verdict describing a tree nobody tested. #{act} and re-running prepare " \
        "re-gates and re-deploys QA over the NEW tree — the honest version of the same outcome."]
     end
 

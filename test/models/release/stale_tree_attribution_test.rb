@@ -17,13 +17,13 @@ class Release::StaleTreeAttributionTest < ActiveSupport::TestCase
     [{ "repo" => "mcritchie-studio", "ahead" => 1 }]
   end
 
-  def evaluate(subject:, task_index:)
+  def evaluate(subject:, task_index:, release_state: "assembling")
     S.evaluate(
       accepted_states: stale_state,
       stranded_commits: { "mcritchie-studio" => [{ "sha" => "ad85ec3", "subject" => subject }] },
       repo_nwo: { "mcritchie-studio" => "McRitchie-Studio/mcritchie-studio" },
       release_slug: "rel-20260819-39f42f",
-      release_state: "assembling",
+      release_state: release_state,
       task_index: task_index
     )
   end
@@ -114,6 +114,23 @@ class Release::StaleTreeAttributionTest < ActiveSupport::TestCase
     # A MIXED set keeps the generic why and the batch-PR recovery, because one
     # commit genuinely has no task behind it.
     assert_includes msg, "no such task behind it"
+    assert_includes msg, "gh pr create"
+  end
+
+  # The assembled paragraph used to close with "Landing the batch PR"
+  # unconditionally — four lines above a RECOVER block saying none is needed.
+  test "an assembled all-lost-stamp refusal never prescribes the batch PR" do
+    msg = evaluate(subject: FEAT_SUBJECT, release_state: "assembled",
+                   task_index: { "repair-quarantined-e2e-clusters" =>
+                                   { "stage" => "reviewed", "merged" => "" } })["message"]
+    assert_includes msg, "already `assembled` (QA-green)"
+    assert_includes msg, "Stamping the task(s) below and re-running prepare"
+    refute_includes msg, "Landing the batch PR", "contradicts the RECOVER block below it"
+  end
+
+  test "an assembled orphan refusal still prescribes the batch PR" do
+    msg = evaluate(subject: BATCH_SUBJECT, task_index: {}, release_state: "assembled")["message"]
+    assert_includes msg, "Landing the batch PR"
     assert_includes msg, "gh pr create"
   end
 
