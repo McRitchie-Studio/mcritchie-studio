@@ -870,6 +870,87 @@ def pr_repo_name(pr_url)
   CiStatus.repo_from_pr_url(pr_url).to_s
 end
 
+# ── THE REPOS A TASK NAMES, and which of them owe a CERT ──────────────────────
+#
+# `devops.repositories` is a LIST, and until this block existed nothing in this gate
+# read it: the whole repo identity came from three SINGULAR fields (pr_url, branch,
+# worktree_slug), so for a task naming N repos the gate inspected ONE and N-1 went
+# ungated while the verdict read as covering the task (found 2026-08-13 landing
+# land-rails-security-patch across two repos). These turn the list into the set of
+# repos this run must actually grade.
+
+# The bare repo slug of a slug, an owner-qualified name, or a URL fragment — the form
+# devops.repositories carries and the form cert lines are scoped to. NOT for paths:
+# a desk is …/<repo>/.worktrees/<slug>, whose last segment is the SLUG. Use
+# CertRootGuard.app_of for a path.
+def bare_repo_slug(value)
+  value.to_s.strip.split("/").last.to_s.strip
+end
+
+# The repos the task DECLARES.
+def declared_repos(devops)
+  Array(devops["repositories"]).map { |repo| bare_repo_slug(repo) }.reject(&:empty?).uniq
+end
+
+# The repos the task has actually OPENED a PR in — devops.pr_urls (the per-repo PR
+# register) plus the primary devops.pr_url. Read off the raw hash because this script
+# holds no AR models; it is the same evidence Task#pr_bearing_repositories and
+# Release::SweepPlan reason about.
+def pr_bearing_repos(devops)
+  map = devops["pr_urls"]
+  recorded = map.is_a?(Hash) ? map.reject { |_, url| url.to_s.strip.empty? }.keys : []
+  ([pr_repo_name(@pr_url)] + recorded).map { |repo| bare_repo_slug(repo) }.reject(&:empty?).uniq
+end
+
+# The repos this run must grade a cert for: the ones the task both NAMES and has a PR
+# open in.
+#
+# The INTERSECTION, not the declared list, and that is the load-bearing choice. A GEM
+# task legitimately names its CONSUMER repos so the gates can reason that the gem owes
+# the PR while the consumers do not — the gem-release path, and the case that refuted
+# forbidding multi-repo tasks outright — so demanding a cert for a repo this task
+# never diffs would refuse honest work. A repo with a recorded PR has a diff by
+# definition, so it owes evidence. Before any PR exists (the builder's pre-PR run)
+# this is empty and the single-root path is untouched; the gate moment that matters is
+# submit/review, with the PRs open.
+def cert_owing_repos(devops)
+  declared_repos(devops) & pr_bearing_repos(devops)
+end
+
+# Where the repo PRIMARIES live (…/<projects>/<repo>) — PROJECTS_DIR when the test
+# seam declares one, else ProjectsRoot's default.
+def projects_dir_for_repos
+  dir = PROJECTS_DIR.to_s.strip
+  dir.empty? ? ProjectsRoot.default_projects_dir : dir
+end
+
+# The TREE a secondary repo's cert must be graded against → { root:, override: }
+# (override is the { fingerprint:, ref:, root: } branch-tree form; nil means hash the
+# working tree at root), or nil when this machine cannot see that repo's code at all.
+#
+# Two places to look, in the order that keeps each role honest:
+#   * the repo's OWN DESK for this task (…/<repo>/.worktrees/<slug>) — a multi-repo
+#     task has one desk per repo, and this is the builder's tree. VALIDATED on both
+#     axes by CertRootGuard (right repo AND on the task's branch), never trusted for
+#     its directory name. In the review role its committed BRANCH tree is preferred,
+#     for the same reason the primary verdict prefers one: a reviewer grades what was
+#     pushed, not what is lying dirty in a desk.
+#   * the repo's PRIMARY checkout (…/<repo>), branch tree only — the REVIEWER's world,
+#     where a satellite has a clone but no desk for someone else's task.
+# nil is NOT benign, and the caller refuses on it: a repo whose code cannot be seen is
+# exactly the repo that used to sail through ungated.
+def repo_cert_tree(repo, worktree_slug, branch, review_role)
+  desk = CertRootGuard.eligible_worktrees(worktree_slug, branch, projects_dir: PROJECTS_DIR,
+                                          prefer_repo: repo).first
+  return { root: desk, override: (review_role ? review_fingerprint(desk, branch) : nil) } if desk
+
+  primary = File.join(projects_dir_for_repos, repo)
+  return nil unless File.directory?(primary)
+
+  override = review_fingerprint(primary, branch)
+  override ? { root: primary, override: override } : nil
+end
+
 # The files a RELEASE owns and a PR must never edit, drawn from the gem registry so
 # a newly-onboarded gem is covered the day it is registered rather than whenever
 # someone remembers to update a hardcoded list. Matched on the registry's own
@@ -1186,7 +1267,11 @@ def suite_evidence_error(eval, slug, ci, review_role)
              "after your latest edits, or re-run from the task's tree if those hashes differ only because you " \
              "are standing elsewhere)"
   end
-  "the FULL suite + FULL rubocop are not certified green for this code — #{parts.join("; ")}. " \
+  # NAMED, so a multi-repo verdict is legible repo by repo: this message is the
+  # PRIMARY repo's refusal, and its secondary siblings are raised beside it. Silent
+  # about which repo is exactly how one graded tree read as "the task".
+  "the FULL suite + FULL rubocop are not certified green for this code" \
+    "#{eval[:repo].to_s.strip.empty? ? "" : " in #{eval[:repo]}"} — #{parts.join("; ")}. " \
     "Run `bin/full-suite-check #{slug}` (runs `bin/rails test` + `bin/rubocop` IN FULL and records " \
     "fingerprint-bound evidence) — it REFUSES a touched-files subset or a lint-red tree. Or take the FAST " \
     "route: `bin/fast-check #{slug}` (diff-mapped tests + core spine + rubocop on changed files, ~1 min), " \
@@ -2123,7 +2208,15 @@ if gate != "build" && shape_def && shape_def.fetch("full_suite_gate", true)
       root: diff_root,
       injected: ENV["DOR_CHECK_SUITE_EVIDENCE"],
       fingerprint_override: override && override[:fingerprint],
-      fingerprint_origin: override
+      fingerprint_origin: override,
+      # WHICH repo this verdict is about — read off the tree that is actually going to
+      # be hashed, never off the task record, so the evidence read is narrowed to THAT
+      # repo's certs and the verdict can say which repo it graded. The SAME derivation
+      # the cert writers stamp with (CertRootGuard#repo_of_checkout), or reader and
+      # writer would disagree about a tree's identity and a real cert would read
+      # MISSING. A cert recorded before evidence carried a repo is unscoped and still
+      # answers here (CertEvidence#scoped_to?).
+      repo: CertRootGuard.repo_of_checkout(override ? override[:root] : diff_root)
     )
     if review_role && review_branch_ref && review_fp.nil? && ENV["DOR_CHECK_SUITE_EVIDENCE"].to_s.empty?
       suggestions << "review gate-zero: couldn't resolve branch #{review_branch_ref.inspect} locally to root the " \
@@ -2143,6 +2236,98 @@ if gate != "build" && shape_def && shape_def.fetch("full_suite_gate", true)
     else
       errors << suite_evidence_error(suite_eval, task["slug"] || slug, ci, review_role)
     end
+  end
+end
+
+# ==== EVERY REPO THE TASK NAMES GETS ITS OWN CERT VERDICT ======================
+#
+# THE DEFECT (2026-08-13, landing land-rails-security-patch across two repos): this
+# gate re-roots to ONE worktree and grades ONE fingerprint, so on a task naming N
+# repos it inspected one and N-1 went ungated — while the verdict read as covering
+# the task. Its twin lived in the cert WRITER: the evidence slot was keyed by LANE
+# alone, so certifying the second repo silently erased the first's line and this gate
+# then called it STALE. The writer half is fixed in lib/cert_evidence.rb (evidence is
+# now scoped `[lane@<fp>:<repo>]`); this is the reader half — the list is read, and
+# each repo that owes a cert is graded against ITS OWN tree.
+#
+# `suite_eval` above stays the PRIMARY verdict (the tree we stand in / the PR's repo),
+# untouched: a single-repo task takes exactly the path it always did, because `owed`
+# then holds at most the primary and this loop runs zero times.
+#
+# THE BAR FOR A SECONDARY REPO IS THE FULL CERT. A fast cert is diff-mapped, and the
+# only thing that makes it sufficient anywhere is a GREEN CI on that repo's own PR —
+# which this gate does not read for a secondary repo (it reads one PR, the known gap
+# in gates/dor.md). Pairing a fast cert with a DIFFERENT repo's CI would be the same
+# cross-repo confusion this whole task is about, so the secondary bar is the one piece
+# of evidence that is self-sufficient: the full local suite + rubocop.
+cert_repo_verdicts = []
+if suite_eval && gate != "build" && !suite_eval[:bypass] && suite_eval[:verifiable] &&
+   ENV["DOR_CHECK_SUITE_EVIDENCE"].to_s.strip.empty?
+  # WHICH repo the primary verdict describes — carried ON the verdict, derived from
+  # the tree it actually hashed, so this cannot claim a repo it did not grade.
+  primary_cert_repo = suite_eval[:repo].to_s.strip
+  primary_cert_repo = CertRootGuard.repo_of_checkout(diff_root) if primary_cert_repo.empty?
+  cert_repo_verdicts << { repo: primary_cert_repo, role: "primary", ok: suite_eval[:ok],
+                          fingerprint: suite_eval[:fingerprint], lanes: suite_eval[:lanes],
+                          fingerprint_root: suite_eval[:fingerprint_root],
+                          fingerprint_source: suite_eval[:fingerprint_source] }
+
+  # ONLY a task that owes a cert in MORE THAN ONE repo hunts for a second tree. With
+  # one owed repo the primary verdict IS the task's cert by construction (the root
+  # guard above already established that we are standing in the task's tree), and
+  # asking "does the standing tree's NAME match the declared repo?" would refuse
+  # honest work whenever a checkout's directory is named something else — the very
+  # trap CertRootGuard#repo_mismatch documents ("never on absent information").
+  owed = cert_owing_repos(devops)
+  secondary = owed.size > 1 ? owed.reject { |repo| repo.casecmp?(primary_cert_repo.to_s) } : []
+  wt_slug = devops["worktree_slug"].to_s.strip.empty? ? (task["slug"] || slug).to_s : devops["worktree_slug"].to_s
+  cert_branch = review_branch(devops, task["slug"] || slug)
+
+  secondary.each do |repo|
+    tree = repo_cert_tree(repo, wt_slug, cert_branch, review_role)
+    if tree.nil?
+      cert_repo_verdicts << { repo: repo, role: "secondary", ok: false, status: "tree-not-found" }
+      errors << "cert gate: #{repo} is named by this task AND has a PR open, but no tree for it was found " \
+                "on this machine (no .worktrees/#{wt_slug} under #{repo} on branch #{cert_branch}, and no " \
+                "#{File.join(projects_dir_for_repos, repo)} checkout carrying that branch) — so its code is " \
+                "UNGATED. This verdict covers #{primary_cert_repo} only. Fix it: run the gate where that " \
+                "repo's tree is, or fetch the branch into #{repo}'s checkout."
+      next
+    end
+
+    repo_eval = FullSuiteGate.evaluate(
+      checks: checks, root: tree[:root], repo: repo,
+      fingerprint_override: tree[:override] && tree[:override][:fingerprint],
+      fingerprint_origin: tree[:override]
+    )
+    cert_repo_verdicts << { repo: repo, role: "secondary", ok: repo_eval[:ok],
+                            fingerprint: repo_eval[:fingerprint], lanes: repo_eval[:lanes],
+                            fingerprint_root: repo_eval[:fingerprint_root],
+                            fingerprint_source: repo_eval[:fingerprint_source] }
+    next if repo_eval[:ok]
+
+    state = FullSuiteGate::LANES.map { |lane| "#{lane}: #{repo_eval.dig(:lanes, lane) || :missing}" }.join(", ")
+    was = FullSuiteGate::LANES.flat_map { |lane| Array(repo_eval.dig(:recorded, lane)) }.uniq
+    errors << "cert gate: #{repo} is not certified for the code under review (#{state}). Its tree is " \
+              "#{tree[:root]}#{tree[:override] ? " at #{tree[:override][:ref]}" : ""} = " \
+              "@#{repo_eval[:fingerprint].to_s[0, 12]}#{was.empty? ? " and NOTHING is recorded for it" : "; " \
+              "recorded for @#{was.map { |fp| fp[0, 12] }.join(', @')}"}. A task that names two repos owes a " \
+              "cert in EACH — certify it there: cd #{tree[:root]} && bin/full-suite-check #{task['slug'] || slug}."
+  end
+
+  # DECLARED but PR-less repos are NOT gated (see cert_owing_repos — the gem-release
+  # case). Said out loud rather than left silent, because "the verdict reads as
+  # covering the task" is half of the defect this block closes.
+  ungated = declared_repos(devops) - owed - [primary_cert_repo]
+  # Only worth saying on a task that names SEVERAL repos. On a single-repo task the
+  # primary verdict already covers the one repo, and announcing it as "not gated"
+  # whenever the checkout's directory happens to be named something else would be
+  # noise contradicting the verdict directly above it.
+  if declared_repos(devops).size > 1 && !ungated.empty?
+    suggestions << "cert scope: this task also names #{ungated.join(', ')}, which recorded no PR, so " \
+                   "#{ungated.size == 1 ? 'it was' : 'they were'} NOT cert-gated. That is correct for a gem " \
+                   "task naming its consumers; if code changed there, record the PR " \
+                   "(bin/task update #{task['slug'] || slug} --pr-url-for <repo>=<url>) so the gate can see it."
   end
 end
 
@@ -2544,7 +2729,12 @@ if options[:json]
       lanes: suite_eval[:lanes],
       # What each lane's evidence was certified FOR — the machine-readable half of
       # the STALE delta (fingerprint is what the code IS now).
-      recorded: suite_eval[:recorded]
+      recorded: suite_eval[:recorded],
+      # ONE ENTRY PER REPO THIS RUN GRADED — the primary (the fields above, repeated
+      # under its repo name) plus every secondary repo the task names and has a PR in.
+      # A multi-repo verdict is only trustworthy if it can be read repo by repo: the
+      # defect this closes was a single verdict that LOOKED like it covered the task.
+      repos: cert_repo_verdicts
     }
   )
   exit(ready ? 0 : 1)
@@ -2566,6 +2756,16 @@ if ready
          "the review gate-zero enforces the green"
   elsif suite_eval && suite_eval[:fingerprint]
     puts "  full suite + rubocop certified green at #{suite_eval[:fingerprint][0, 12]}"
+  end
+  # NAME EVERY REPO GRADED. On a single-repo task the primary lines above already say
+  # it; from two repos up, a verdict that does not name them is the defect (one repo
+  # inspected, the verdict reading as covering the task).
+  if cert_repo_verdicts.size > 1
+    puts "  cert graded per repo:"
+    cert_repo_verdicts.each do |v|
+      puts "    - #{v[:repo]}: #{v[:ok] ? 'certified' : 'NOT certified'}" \
+           "#{v[:fingerprint] ? " @#{v[:fingerprint][0, 12]}" : ''} (#{v[:role]})"
+    end
   end
   if ci && ci[:state] == :green
     puts "  GitHub CI green#{ci[:count] ? " (#{ci[:count]} checks)" : ""}"
