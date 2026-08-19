@@ -261,6 +261,48 @@ class Release
     end
 
     # The Gemfile text after the bump `consumer_bump_action` decided — the one
+    # ---- Engine migrations, on the way into a consumer -----------------------
+    #
+    # A gem that is a Rails ENGINE ships migrations, and installing them into the
+    # consuming app is a MANUAL step Rails gives you a task for. The sweep has to
+    # take that step, and this is why:
+    #
+    # Every consumer asserts that every migration its resolved engine ships is
+    # installed in that app (EnginePinContractTest). The sweep publishes the gem
+    # to RubyGems — irreversible — and commits the new lock onto each consumer's
+    # release branch BEFORE the pre-QA gate runs those suites. So an engine
+    # release that adds a migration reddens every consumer AFTER the publish, and
+    # the release dead-ends with a version that can never be recalled. Measured on
+    # studio-engine PR 169: that assertion fired in all three consumer lanes.
+    #
+    # The task name is Rails' own convention for an engine's railtie namespace —
+    # `studio-engine` installs with `studio_engine:install:migrations`. A gem that
+    # is not an engine simply has no such task, which the caller checks for rather
+    # than assumes: a gem with no migrations must be a silent no-op, not an abort.
+    def migration_install_task(gem_name)
+      return nil if gem_name.to_s.strip.empty?
+
+      "#{gem_name.to_s.tr('-', '_')}:install:migrations"
+    end
+
+    # Is this `db/schema.rb` diff one the sweep may commit unreviewed?
+    #
+    # Installing a migration should ADD a table (and move the version stamp).
+    # Anything else — a dropped table, a changed column, a rewritten index — means
+    # the consumer's committed schema was already out of step with its own
+    # migrations, and the sweep would be smuggling that drift into a release
+    # commit labelled "bump gem for QA". Fail closed and let a person look.
+    #
+    # The version line is the one deletion that is always expected, since the
+    # dumper rewrites `define(version: ...)` in place.
+    def schema_dump_safe?(diff_text)
+      removals = diff_text.to_s.lines.select do |line|
+        line.start_with?("-") && !line.start_with?("---")
+      end
+
+      removals.all? { |line| line.include?("ActiveRecord::Schema") && line.include?("define(version:") }
+    end
+
     # transform the shell applies per published gem before `bundle lock`.
     # :lock_only/:absent return the text unchanged (idempotent by construction).
     def bumped_gemfile(gemfile_text, gem_name, version)

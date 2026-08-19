@@ -5056,6 +5056,92 @@ def stranded_gem_failure(repo, path, tip, version)
   )
 end
 
+# Install any migrations the just-published engines ship into this consumer's
+# workspace, and leave db/schema.rb consistent with them.
+#
+# WHY THE SWEEP DOES THIS AT ALL. `<engine>:install:migrations` is a MANUAL step
+# Rails hands the consuming app, and every consumer here asserts it was taken:
+# EnginePinContractTest fails when the resolved engine ships a migration the app
+# never copied. The sweep publishes the gem — irreversibly — and commits the new
+# lock onto each consumer's release branch BEFORE the pre-QA gate runs those
+# suites, so an engine release that adds a migration reddens every consumer after
+# the point of no return. Measured on studio-engine PR 169: the assertion fired in
+# all three consumer lanes, five commits running, and the fix one layer down (that
+# repo's own Consumer CI installs the migrations before it runs a consumer suite)
+# is the same move this makes one layer up.
+#
+# WHY db:migrate AND NOT JUST THE COPY. A copied-but-unrun migration is PENDING
+# against a schema-loaded test database, and Rails refuses to run a suite with a
+# pending migration — so committing the file alone trades one red lane for
+# another. The migration is run against a THROWAWAY database (created and dropped
+# here, never the developer's) purely so the dumper rewrites db/schema.rb; the
+# real databases are migrated by the QA and production deploys, as always.
+#
+# FAILS CLOSED, twice over: a schema diff that removes anything but the version
+# stamp means the consumer's committed schema was already out of step with its own
+# migrations, and the sweep will not smuggle that into a commit labelled "bump gem
+# for QA"; and a gem with no install task is a silent no-op, since most gems are
+# not engines.
+def install_engine_migrations!(workspace, repo, gem_names)
+  return if DRY
+
+  installable = gem_names.select { |gem_name| workspace_rake_task?(workspace, Release::ShipSequence.migration_install_task(gem_name)) }
+  return if installable.empty?
+
+  before, = git_capture("-C", workspace, "status", "--porcelain", "--", "db/migrate")
+
+  installable.each do |gem_name|
+    task = Release::ShipSequence.migration_install_task(gem_name)
+    _, ok = sh("bin/rails", task, chdir: workspace, capture: true)
+    abort!("#{repo}: `bin/rails #{task}` failed in the ship workspace — the consumer cannot receive " \
+           "#{gem_name}'s migrations, and shipping without them reddens its suite after the gem is published") unless ok
+  end
+
+  after, = git_capture("-C", workspace, "status", "--porcelain", "--", "db/migrate")
+  if after.to_s == before.to_s
+    say("  #{repo}: no new #{installable.join(', ')} migrations to install")
+    return
+  end
+
+  copied = after.to_s.lines.map(&:strip).reject { |line| before.to_s.include?(line) }
+  step("  #{repo}: installed #{copied.length} engine migration(s) — #{copied.join(', ')}")
+
+  dump_consumer_schema!(workspace, repo)
+end
+
+# Run the workspace's migrations against a throwaway database so the dumper
+# rewrites db/schema.rb, then drop it. The database name carries the repo and this
+# process, so two sweeps (or a sweep and a developer) can never collide on it.
+def dump_consumer_schema!(workspace, repo)
+  database = "#{repo.tr('-', '_')}_release_schema_#{Process.pid}"
+  env = { "DATABASE_URL" => "postgres:///#{database}", "RAILS_ENV" => "development" }
+
+  begin
+    _, created = sh("bin/rails", "db:create", "db:schema:load", "db:migrate", chdir: workspace, env: env, capture: true)
+    abort!("#{repo}: could not migrate a throwaway database to refresh db/schema.rb — the migration would " \
+           "otherwise land unrun and every suite would fail on a pending migration") unless created
+
+    diff, = git_capture("-C", workspace, "diff", "--", "db/schema.rb")
+    unless Release::ShipSequence.schema_dump_safe?(diff)
+      abort!("#{repo}: refreshing db/schema.rb removed or rewrote existing schema, not just the new table. " \
+             "That means this repo's committed schema was already behind its own migrations; fix that in the " \
+             "repo, then re-run `bin/release prepare`.\n#{diff}")
+    end
+  ensure
+    sh("bin/rails", "db:drop", chdir: workspace, env: env, capture: true)
+  end
+end
+
+# Does this workspace's Rails app define that rake task? Asked rather than
+# assumed: most published gems are not engines and have no installer, and an
+# abort on their absence would block every gem release that is not an engine.
+def workspace_rake_task?(workspace, task)
+  return false if task.nil?
+
+  out, ok = sh("bin/rails", "-T", task, chdir: workspace, capture: true)
+  ok && out.to_s.include?(task)
+end
+
 # Bump each consumer's Gemfile.lock (and, only when the new version ESCAPES the
 # existing constraint, its Gemfile pin) to the just-published gem versions —
 # COMMITTED onto the consumer's origin/release, BEFORE the pre-QA gate and the
@@ -5090,8 +5176,9 @@ def bump_consumer_locks_for_qa(app_groups, published_gems)
 
     if DRY
       step("  #{repo}: bundle lock --update <gem> --conservative in the ship workspace @ origin/#{RELEASE_BRANCH} " \
-           "(rewrite the Gemfile pin only if the new version escapes it) → commit + push origin #{RELEASE_BRANCH} " \
-           "(idempotent; no-op when already current)")
+           "(rewrite the Gemfile pin only if the new version escapes it) → install any new engine migrations " \
+           "(<gem>:install:migrations + db:migrate on a throwaway database, so db/schema.rb lands with them) → " \
+           "commit + push origin #{RELEASE_BRANCH} (idempotent; no-op when already current)")
       next
     end
 
@@ -5142,7 +5229,14 @@ def bump_consumer_locks_for_qa(app_groups, published_gems)
         bundle_lock(workspace, gem_name, conservative: true, expect: published_gems[gem_name])
       end
 
-      status, = git_capture("-C", workspace, "status", "--porcelain", "--", "Gemfile", "Gemfile.lock")
+      # THE MIGRATIONS RIDE WITH THE LOCK. A consumer whose engine gained a
+      # migration must receive it in the SAME commit that bumps its lock —
+      # otherwise the pre-QA gate, which runs after the publish, reddens on a
+      # migration nobody can now un-publish. See install_engine_migrations!.
+      install_engine_migrations!(workspace, repo, touched)
+
+      status, = git_capture("-C", workspace, "status", "--porcelain", "--",
+                            "Gemfile", "Gemfile.lock", "db/migrate", "db/schema.rb")
       if status.to_s.strip.empty?
         # Now this claim is EARNED: the lock was read back above and genuinely
         # resolves the published version, so an unchanged tree really is a no-op.
@@ -5152,6 +5246,11 @@ def bump_consumer_locks_for_qa(app_groups, published_gems)
 
       bumps = touched.map { |g| "#{g} #{published_gems[g]}" }
       sh("git", "-C", workspace, "add", "Gemfile", "Gemfile.lock")
+      # `--` and the existence check: a consumer with no db/ at all (a gem-only
+      # repo in the app group) must not abort the sweep on a pathspec.
+      %w[db/migrate db/schema.rb].each do |path_spec|
+        sh("git", "-C", workspace, "add", "--", path_spec) if File.exist?(File.join(workspace, path_spec))
+      end
       _, committed = sh("git", "-C", workspace, "commit", "-m", "bump #{bumps.join(', ')} for QA", capture: true)
       abort!("could not commit the consumer lock bump in #{repo}'s ship workspace") unless committed
 

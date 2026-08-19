@@ -286,6 +286,20 @@ bin/release prepare --yes
    unchanged working tree was read as "already at the new version" and
    turf-monster rode QA on the OLD engine while the release record asserted the
    new one — rel-20260809-3b8f3d.)
+   **The bump carries any new ENGINE MIGRATIONS with it.** `<engine>:install:
+   migrations` is a manual step Rails hands the consuming app, and every consumer
+   asserts it was taken (`EnginePinContractTest`). Since the publish happens
+   BEFORE the pre-QA gate runs those suites, an engine release that adds a
+   migration would otherwise redden every consumer after the point of no return —
+   measured on studio-engine PR 169, where that assertion fired in all three
+   consumer lanes. So the same commit that bumps the lock also runs the installer,
+   runs `db:migrate` against a THROWAWAY database purely so `db/schema.rb` lands
+   with the migration (a copied-but-unrun migration is pending, and Rails refuses
+   to run a suite with one), and commits both. It fails closed: a schema dump that
+   removes or rewrites anything beyond the version stamp means that repo's
+   committed schema was already behind its own migrations, and the sweep refuses
+   rather than smuggle that into a "bump gem for QA" commit.
+
    The pre-QA gate and the QA deploy then read
    the post-bump SHA, so QA tests the real published gem and prod ships the
    exact tree QA tested. Note: a publish is irreversible — a QA bounce can
