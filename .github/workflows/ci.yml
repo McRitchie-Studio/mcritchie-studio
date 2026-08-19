@@ -125,7 +125,54 @@ jobs:
           cache-dependency-glob: tools/island-background-animator/uv.lock
 
       - name: Install FFmpeg
-        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y ffmpeg
+        # BOUNDED AND RETRIED, because an unbounded apt fetch is the single largest
+        # source of false reds in this repo. On 2026-08-19 alone this exact step
+        # stalled four times across five PRs, every time on the same line:
+        #
+        #   Get:5 https://archive.ubuntu.com/ubuntu noble-security InRelease [126 kB]
+        #   ...42 minutes of total silence...
+        #   ##[error]The operation was canceled.
+        #
+        # WHY THE JOB-LEVEL BOUND DID NOT COVER THIS. Every job here carries
+        # `timeout-minutes: 45` (guarded by test/lib/ci_job_timeout_test.rb), and
+        # that bound is why these die at 45 minutes rather than GitHub's six-hour
+        # default. But it bounds the wrong grain: it turns "hangs forever" into
+        # "fails", and stops there. A step-level bound turns it into "retries" —
+        # the failure becomes FAST and RECOVERABLE, so a transient mirror stall
+        # stops costing a red PR and a human diagnosis.
+        #
+        # WHY THE BUDGETS ESCALATE — 90s, 300s, 900s — rather than one flat number.
+        # Measured over the last 8 successful runs (40 samples of this step), the
+        # healthy case is 10-16 SECONDS. But the tail of the SUCCESSES runs 318s,
+        # 560s, 812s, 857s: the mirror degrades on a continuum, it does not simply
+        # fail. A flat 120s bound would therefore have killed 11 of 40 steps that
+        # PASSED — manufacturing exactly the false red this exists to remove. So
+        # the first attempt is short enough to catch a stall while it is still
+        # cheap, and the last is 900s, above the worst SUCCESS ever measured here.
+        # Worst case is ~22 minutes against the 45-minute job bound; the ordinary
+        # case is untouched at 15 seconds.
+        #
+        # NO sleep BETWEEN ATTEMPTS: the backoff is the budget. The failure mode is
+        # a stalled connection, not a rate limit, and there is nothing to wait out.
+        #
+        # `-k 10` MATTERS. timeout sends SIGTERM; a wedged apt need not honour it,
+        # and an attempt that ignores its own bound defeats the entire step.
+        timeout-minutes: 25
+        run: |
+          attempt=0
+          for budget in 90 300 900; do
+            attempt=$((attempt + 1))
+            if sudo timeout -k 10 "$budget" bash -c 'apt-get update && apt-get install --no-install-recommends -y ffmpeg'; then
+              [ "$attempt" -eq 1 ] || echo "::notice::apt succeeded on attempt $attempt"
+              exit 0
+            fi
+            echo "::warning::apt stalled or failed inside ${budget}s (attempt $attempt of 3)"
+            # An attempt killed mid-unpack leaves dpkg half-configured, which would
+            # fail the NEXT attempt for a reason that has nothing to do with the network.
+            sudo dpkg --configure -a || true
+          done
+          echo "::error::apt-get failed three times (90s, 300s, 900s). The Ubuntu mirror is stalling — re-run this job."
+          exit 1
 
       - name: Check Island Background Animator
         run: tools/island-background-animator/bin/check
@@ -189,7 +236,54 @@ jobs:
 
     steps:
       - name: Install packages
-        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y curl libjemalloc2 libvips postgresql-client
+        # BOUNDED AND RETRIED, because an unbounded apt fetch is the single largest
+        # source of false reds in this repo. On 2026-08-19 alone this exact step
+        # stalled four times across five PRs, every time on the same line:
+        #
+        #   Get:5 https://archive.ubuntu.com/ubuntu noble-security InRelease [126 kB]
+        #   ...42 minutes of total silence...
+        #   ##[error]The operation was canceled.
+        #
+        # WHY THE JOB-LEVEL BOUND DID NOT COVER THIS. Every job here carries
+        # `timeout-minutes: 45` (guarded by test/lib/ci_job_timeout_test.rb), and
+        # that bound is why these die at 45 minutes rather than GitHub's six-hour
+        # default. But it bounds the wrong grain: it turns "hangs forever" into
+        # "fails", and stops there. A step-level bound turns it into "retries" —
+        # the failure becomes FAST and RECOVERABLE, so a transient mirror stall
+        # stops costing a red PR and a human diagnosis.
+        #
+        # WHY THE BUDGETS ESCALATE — 90s, 300s, 900s — rather than one flat number.
+        # Measured over the last 8 successful runs (40 samples of this step), the
+        # healthy case is 10-16 SECONDS. But the tail of the SUCCESSES runs 318s,
+        # 560s, 812s, 857s: the mirror degrades on a continuum, it does not simply
+        # fail. A flat 120s bound would therefore have killed 11 of 40 steps that
+        # PASSED — manufacturing exactly the false red this exists to remove. So
+        # the first attempt is short enough to catch a stall while it is still
+        # cheap, and the last is 900s, above the worst SUCCESS ever measured here.
+        # Worst case is ~22 minutes against the 45-minute job bound; the ordinary
+        # case is untouched at 15 seconds.
+        #
+        # NO sleep BETWEEN ATTEMPTS: the backoff is the budget. The failure mode is
+        # a stalled connection, not a rate limit, and there is nothing to wait out.
+        #
+        # `-k 10` MATTERS. timeout sends SIGTERM; a wedged apt need not honour it,
+        # and an attempt that ignores its own bound defeats the entire step.
+        timeout-minutes: 25
+        run: |
+          attempt=0
+          for budget in 90 300 900; do
+            attempt=$((attempt + 1))
+            if sudo timeout -k 10 "$budget" bash -c 'apt-get update && apt-get install --no-install-recommends -y curl libjemalloc2 libvips postgresql-client'; then
+              [ "$attempt" -eq 1 ] || echo "::notice::apt succeeded on attempt $attempt"
+              exit 0
+            fi
+            echo "::warning::apt stalled or failed inside ${budget}s (attempt $attempt of 3)"
+            # An attempt killed mid-unpack leaves dpkg half-configured, which would
+            # fail the NEXT attempt for a reason that has nothing to do with the network.
+            sudo dpkg --configure -a || true
+          done
+          echo "::error::apt-get failed three times (90s, 300s, 900s). The Ubuntu mirror is stalling — re-run this job."
+          exit 1
 
       - name: Checkout code
         uses: actions/checkout@v7
@@ -348,7 +442,54 @@ jobs:
 
     steps:
       - name: Install packages
-        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y curl libjemalloc2 libvips postgresql-client
+        # BOUNDED AND RETRIED, because an unbounded apt fetch is the single largest
+        # source of false reds in this repo. On 2026-08-19 alone this exact step
+        # stalled four times across five PRs, every time on the same line:
+        #
+        #   Get:5 https://archive.ubuntu.com/ubuntu noble-security InRelease [126 kB]
+        #   ...42 minutes of total silence...
+        #   ##[error]The operation was canceled.
+        #
+        # WHY THE JOB-LEVEL BOUND DID NOT COVER THIS. Every job here carries
+        # `timeout-minutes: 45` (guarded by test/lib/ci_job_timeout_test.rb), and
+        # that bound is why these die at 45 minutes rather than GitHub's six-hour
+        # default. But it bounds the wrong grain: it turns "hangs forever" into
+        # "fails", and stops there. A step-level bound turns it into "retries" —
+        # the failure becomes FAST and RECOVERABLE, so a transient mirror stall
+        # stops costing a red PR and a human diagnosis.
+        #
+        # WHY THE BUDGETS ESCALATE — 90s, 300s, 900s — rather than one flat number.
+        # Measured over the last 8 successful runs (40 samples of this step), the
+        # healthy case is 10-16 SECONDS. But the tail of the SUCCESSES runs 318s,
+        # 560s, 812s, 857s: the mirror degrades on a continuum, it does not simply
+        # fail. A flat 120s bound would therefore have killed 11 of 40 steps that
+        # PASSED — manufacturing exactly the false red this exists to remove. So
+        # the first attempt is short enough to catch a stall while it is still
+        # cheap, and the last is 900s, above the worst SUCCESS ever measured here.
+        # Worst case is ~22 minutes against the 45-minute job bound; the ordinary
+        # case is untouched at 15 seconds.
+        #
+        # NO sleep BETWEEN ATTEMPTS: the backoff is the budget. The failure mode is
+        # a stalled connection, not a rate limit, and there is nothing to wait out.
+        #
+        # `-k 10` MATTERS. timeout sends SIGTERM; a wedged apt need not honour it,
+        # and an attempt that ignores its own bound defeats the entire step.
+        timeout-minutes: 25
+        run: |
+          attempt=0
+          for budget in 90 300 900; do
+            attempt=$((attempt + 1))
+            if sudo timeout -k 10 "$budget" bash -c 'apt-get update && apt-get install --no-install-recommends -y curl libjemalloc2 libvips postgresql-client'; then
+              [ "$attempt" -eq 1 ] || echo "::notice::apt succeeded on attempt $attempt"
+              exit 0
+            fi
+            echo "::warning::apt stalled or failed inside ${budget}s (attempt $attempt of 3)"
+            # An attempt killed mid-unpack leaves dpkg half-configured, which would
+            # fail the NEXT attempt for a reason that has nothing to do with the network.
+            sudo dpkg --configure -a || true
+          done
+          echo "::error::apt-get failed three times (90s, 300s, 900s). The Ubuntu mirror is stalling — re-run this job."
+          exit 1
 
       # System-test lane browser. Install Chrome via Chrome for Testing, then let
       # Selenium Manager (bundled in selenium-webdriver 4.32) fetch the EXACTLY
