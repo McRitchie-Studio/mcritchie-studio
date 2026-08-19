@@ -1,0 +1,27 @@
+<%# The app-ladder row for /deployments: one card per three-rung repo, showing
+    where each application sits on `accepted → release → main`.
+
+    WHY IT EXISTS. An application's progress along the ladder is decoupled from the
+    Next Release card. Work sits merged on `accepted` for hours before a sweep
+    promotes it, and between releases Next Release reads "none active" while
+    several repos quietly hold unshipped work. That in-between state had no
+    surface at all — this is it.
+
+    The row renders four cards today (the registry's three-rung repos) and grows on
+    its own as satellites are registered; nothing here is hardcoded.
+
+    Locals: cards - Array<Ci::AppLadder::Card>, already sorted worst-first. %>
+<% cards = local_assigns.fetch(:cards, []) %>
+<% if cards.any? %>
+  <div class="mb-6" data-test="app-ladder-row">
+    <div class="flex items-baseline gap-2 mb-2">
+      <h2 class="text-xs font-semibold uppercase tracking-wider text-muted">Applications</h2>
+      <span class="text-[10px] text-muted"><%= pluralize(cards.count, "repo") %> on the ladder</span>
+    </div>
+    <div class="grid min-w-0 grid-cols-1 gap-4 items-stretch sm:grid-cols-2 xl:grid-cols-4">
+      <% cards.each do |card| %>
+        <%= render "app_ladder_card", card: card, card_class: "h-full min-w-0" %>
+      <% end %>
+    </div>
+  </div>
+<% end %>

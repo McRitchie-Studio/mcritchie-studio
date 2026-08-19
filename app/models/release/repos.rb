@@ -44,6 +44,30 @@ class Release
       config.fetch("apps", {}).keys
     end
 
+    # The registry entry for a repo, whichever half it lives in. `gem_meta` and
+    # `app_meta` each answer for one half and nil for the other, so a caller that
+    # only wants a shared key (`ladder`) had to try both and pick.
+    def meta(repo)
+      gem_meta(repo) || app_meta(repo)
+    end
+
+    # "three-rung" (accepted → release → main), "dormant", or nil when the repo is
+    # not registered. Declared per repo in config/release_repos.yml.
+    def ladder(repo)
+      meta(repo)&.dig("ladder")
+    end
+
+    # Every registered repo — gem or app — that actually walks the three-rung
+    # ladder, in registry order (gems first, then apps).
+    #
+    # This is the set a ladder-status surface asks about: a `dormant` repo (rolio)
+    # has no live rungs to report, and a repo absent from the registry has no
+    # ladder at all. Deriving it here rather than hardcoding a list means a new
+    # satellite joins the moment it is registered, and leaves when it is retired.
+    def three_rung_repos
+      (gem_repos + app_repos).select { |repo| ladder(repo) == "three-rung" }
+    end
+
     # The gem's registry metadata (version_file, gemspec, release_check, …) or
     # nil when the repo isn't a registered gem.
     def gem_meta(repo)

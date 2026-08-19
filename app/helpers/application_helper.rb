@@ -1199,4 +1199,32 @@ module ApplicationHelper
     else "neutral"
     end
   end
+
+  # --- App ladder row (/deployments) ---------------------------------------
+  #
+  # `:stale` and `:not_built` are deliberately NOT styled as a pass. A stale rung
+  # holds a green verdict that predates work now sitting on the branch; a not-built
+  # rung has no ingested verdict at all. Painting either green is exactly the lie
+  # Ci::LadderRung exists to prevent, so the colours diverge from :green here too.
+  def app_ladder_state_class(state)
+    case state.to_sym
+    when :green      then "text-emerald-400"
+    when :red        then "text-rose-400"
+    when :conflicted then "text-rose-400"
+    when :stale      then "text-amber-400"
+    when :pending    then "text-sky-400"
+    else                  "text-muted"
+    end
+  end
+
+  def app_ladder_state_glyph(state)
+    case state.to_sym
+    when :green      then "\u25CF"
+    when :red        then "\u25CF"
+    when :conflicted then "\u25C6"
+    when :stale      then "\u25D0"
+    when :pending    then "\u25CB"
+    else                  "\u25CC"
+    end
+  end
 end

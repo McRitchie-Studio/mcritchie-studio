@@ -1,0 +1,58 @@
+<%# One application's branch ladder for the /deployments app-ladder row.
+
+    Three rungs, worst-first within the row (the sort lives in Ci::AppLadder, not
+    here — this partial renders what it is given and decides nothing).
+
+    Locals:
+      card       - Ci::AppLadder::Card
+      card_class - extra classes for the grid cell
+
+    The two states that exist to stop a lie — :stale and :not_built — are styled
+    DISTINCTLY from :green on purpose. A stale rung means "we hold a green verdict,
+    but work landed on this branch after that verdict ran"; a not-built rung means
+    "nothing ingested for this branch at all". Neither is a pass, and neither may
+    read as one. See Ci::LadderRung for how staleness is proven without git. %>
+<% card = local_assigns.fetch(:card) %>
+<% base_card_class = ["rounded-xl border border-subtle bg-surface p-4", local_assigns[:card_class]].compact.join(" ") %>
+<% attention = card.needs_attention? %>
+
+<div class="<%= [base_card_class, ("border-amber-500/40" if attention)].compact.join(" ") %>"
+     data-test="app-ladder-card"
+     data-repo="<%= card.repo %>"
+     data-attention="<%= attention %>">
+  <div class="flex items-baseline justify-between gap-2 mb-3 min-w-0">
+    <h3 class="text-sm font-semibold truncate" title="<%= card.repo %>"><%= card.repo %></h3>
+    <span class="text-[10px] uppercase tracking-wider text-muted shrink-0">
+      <%= card.gem? ? "gem" : "app" %>
+    </span>
+  </div>
+
+  <dl class="space-y-1.5">
+    <% Ci::AppLadder::RUNGS.each do |branch| %>
+      <% rung = card.rung(branch) %>
+      <% next if rung.blank? %>
+      <div class="flex items-center gap-2 text-xs min-w-0"
+           data-test="app-ladder-rung"
+           data-branch="<%= branch %>"
+           data-state="<%= rung.state %>">
+        <dt class="w-16 shrink-0 text-muted"><%= branch %></dt>
+        <dd class="flex items-center gap-2 min-w-0 flex-1">
+          <span class="inline-flex items-center gap-1 shrink-0 <%= app_ladder_state_class(rung.state) %>">
+            <span aria-hidden="true"><%= app_ladder_state_glyph(rung.state) %></span>
+            <span><%= rung.label %></span>
+          </span>
+          <% if rung.short_sha %>
+            <code class="text-[10px] text-muted truncate"><%= rung.short_sha %></code>
+          <% end %>
+          <% if rung.parked_count.positive? %>
+            <span class="ml-auto shrink-0 text-[10px] text-muted"
+                  data-test="app-ladder-parked"
+                  title="<%= pluralize(rung.parked_count, "task") %> stamped merged:&quot;<%= branch %>&quot;">
+              <%= rung.parked_count %> parked
+            </span>
+          <% end %>
+        </dd>
+      </div>
+    <% end %>
+  </dl>
+</div>
