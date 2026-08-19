@@ -62,6 +62,7 @@ require_relative "lib/fast_cert"
 require_relative "lib/full_suite_gate"
 require_relative "lib/control_replay"
 require_relative "lib/cert_emission"
+require_relative "lib/cert_root_guard"
 
 ROOT = File.expand_path("..", __dir__)
 TASK_BIN = ENV.fetch("CONTROL_CHECK_TASK_BIN", File.expand_path("task", __dir__))
@@ -242,7 +243,8 @@ verdict = ControlReplay.verdict(old_failed: !old_ok, head_failed: !head_ok)
 detail = ControlReplay.detail(verdict: verdict, replay: replay, deferred: deferred, added: added,
                               old_failed: !old_ok, head_failed: !head_ok)
 detail = "#{detail} [old: #{old_summary}] [head: #{head_summary}]"
-line = FullSuiteGate.evidence_line(ControlReplay::LANE, fingerprint_before, detail)
+line = FullSuiteGate.evidence_line(ControlReplay::LANE, fingerprint_before, detail,
+                                   repo: CertRootGuard.repo_of_checkout(root))
 
 puts
 note "VERDICT: #{verdict}"

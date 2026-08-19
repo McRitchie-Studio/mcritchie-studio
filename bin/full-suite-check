@@ -377,8 +377,13 @@ details = {
   FullSuiteGate::RUBOCOP_LANE => "#{rubocop_cmd} clean"
 }
 
+# The evidence is SCOPED to the repo whose tree was just hashed and run — derived
+# from `root`, the tree itself, never from the task's repositories list. A task
+# naming two repos then holds a cert per repo instead of one slot the second cert
+# silently overwrote (lib/cert_evidence.rb, THE REPO DIMENSION).
+cert_repo = CertRootGuard.repo_of_checkout(root)
 passed_lines = lanes.select { |_, ok| ok }.map do |lane, _|
-  FullSuiteGate.evidence_line(lane, fingerprint, details[lane])
+  FullSuiteGate.evidence_line(lane, fingerprint, details[lane], repo: cert_repo)
 end
 
 # Print the green evidence lines on stdout (parseable; the rest is on stderr).

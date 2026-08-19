@@ -2794,6 +2794,11 @@ class Task < ApplicationRecord
     return unless App.table_exists?
     self.metadata ||= {}
     devops = (metadata["devops"] ||= {})
+    # FIRST repo, deliberately: this paints the status line's app TINT, and a tint is
+    # singular by nature. It is the one `.first` in the multi-repo family that is
+    # cosmetic — the gates read the whole list (bin/dor-check grades a cert per repo),
+    # coverage reads `release_pr_urls` per repo, and `release_repo` is separately
+    # fenced by `release_repos`. Worst case here is repo #1's color.
     app_slug = self.class.normalize_devops_list(devops["repositories"]).first
     return if app_slug.blank?
 
