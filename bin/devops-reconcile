@@ -1,0 +1,289 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/devops-reconcile — find work that is FURTHER ALONG THAN ITS STAGE SAYS, and
+# heal the seam an SOP is about to consume.
+#
+#   bin/devops-reconcile --seam pr-review              # report only (default)
+#   bin/devops-reconcile --seam pr-review --heal       # + repair the deterministic ones
+#   bin/devops-reconcile --seam qa-release --json
+#
+# WHY IT IS SEAM-SCOPED. Each SOP heals ONLY its inbound seam, so no SOP owns the
+# whole state graph and the scan stays cheap. `--seam` is REQUIRED for that
+# reason: a bare "reconcile everything" invocation is exactly the shape that
+# grows into a precondition nobody can satisfy.
+#
+# POLICY, fixed and deliberate: REPAIR the deterministic anomalies, REPORT the
+# judgement ones, NEVER BLOCK. It exits 0 whether or not it found anything, so an
+# SOP can open with it without a stale anomaly wedging the lane. Only a genuine
+# operational failure (bad usage, unreadable board) is non-zero.
+#
+# The decision itself is in lib/seam_reconcile.rb and is PURE. This file does the
+# I/O: it resolves each task's PR state, CI verdict, armed-merge state and build
+# claim, then INJECTS them. Anything it cannot read stays :unknown, and by the
+# classifier's safety rule an unknown can never produce a heal.
+#
+# Exit codes:
+#   0 — ran (findings or not)
+#   2 — bad usage
+#   1 — the board could not be read
+
+require "json"
+require "optparse"
+require "open3"
+
+require_relative "../lib/seam_reconcile"
+require_relative "lib/task_board"
+require_relative "lib/task_column_fields"
+
+BASE_URL = ENV.fetch("TASK_API_BASE", "https://mcritchie.studio")
+ACCEPTED_BRANCH = "accepted"
+
+options = { seam: nil, heal: false, json: false, verbose: false }
+parser = OptionParser.new do |opts|
+  opts.banner = "usage: bin/devops-reconcile --seam <#{SeamReconcile::SEAMS.keys.join("|")}> [--heal] [--json]"
+  opts.on("--seam SOP", "the CONSUMING SOP whose inbound seam to reconcile") { |v| options[:seam] = v }
+  opts.on("--heal", "repair the deterministic anomalies (stamp-lost only)") { options[:heal] = true }
+  opts.on("--json", "machine-readable findings") { options[:json] = true }
+  opts.on("--verbose", "show the evidence behind each finding") { options[:verbose] = true }
+end
+parser.parse!(ARGV)
+
+def die!(message, code: 1)
+  warn("devops-reconcile: #{message}")
+  exit(code)
+end
+
+seam = options[:seam].to_s
+if seam.empty? || !SeamReconcile::SEAMS.key?(seam)
+  warn(parser.banner)
+  die!("--seam is required and must be one of: #{SeamReconcile::SEAMS.keys.join(", ")}", code: 2)
+end
+
+# --- board -------------------------------------------------------------------
+
+def board_token
+  secret = ENV["AGENT_API_SECRET"].to_s
+  secret = TaskBoard.agent_secret(nil).to_s if secret.empty? && TaskBoard.respond_to?(:agent_secret)
+  return nil if secret.empty?
+
+  res = TaskBoard.request(:post, "/api/v1/auth", base_url: BASE_URL, body: { secret: secret })
+  TaskBoard.parse_body(res)["token"]
+rescue StandardError
+  nil
+end
+
+# PAGINATE. The index defaults to a 20-row page, so a stage with more than that
+# silently truncated and the scan printed "nothing stranded" — the exact false
+# all-clear this tool exists to remove.
+#
+# It also RESCUES: TaskBoard.request raises on a transport failure before any
+# status is inspected, so the documented exit-1 path was unreachable and an
+# unreadable board printed a raw backtrace. Once part 2 puts this at the head of
+# an SOP, that backtrace IS the wedge NEVER BLOCK exists to prevent.
+def fetch_tasks(stages, token)
+  stages.flat_map { |stage| fetch_stage(stage, token) }
+end
+
+def fetch_stage(stage, token, per_page: 100, max_pages: 20)
+  rows = []
+  (1..max_pages).each do |page|
+    path = "/api/v1/tasks?stage=#{stage}&per_page=#{per_page}&page=#{page}"
+    begin
+      res = TaskBoard.request(:get, path, base_url: BASE_URL, token: token)
+    rescue StandardError => e
+      die!("board unreachable reading #{stage}: #{e.class}: #{e.message}")
+    end
+    die!("GET #{path} -> #{res.code}") unless res.code.to_i.between?(200, 299)
+
+    batch = TaskBoard.parse_body(res)["data"] || []
+    rows.concat(batch)
+    break if batch.size < per_page
+  end
+  rows
+end
+
+# The stages each seam needs to read. Scoping the FETCH as well as the decision
+# is what keeps this cheap enough to run at the head of every SOP.
+SEAM_STAGES = {
+  "pr-review" => %w[building submitted],
+  "qa-release" => %w[reviewed],
+  "production-deploy" => %w[reviewed]
+}.freeze
+
+# --- evidence ----------------------------------------------------------------
+
+def sh(*cmd)
+  out, _err, status = Open3.capture3(*cmd)
+  status.success? ? out.strip : nil
+rescue StandardError
+  nil
+end
+
+# EVERY PR the task names, not just the primary. A multi-repo task records one
+# PR per repo in devops.pr_urls; reading only devops.pr_url dropped the siblings
+# silently, so an unread fact became a heal.
+def pr_refs(task)
+  devops = task.dig("metadata", "devops") || {}
+  urls = [devops["pr_url"]] + Array(devops["pr_urls"].is_a?(Hash) ? devops["pr_urls"].values : nil)
+  urls.filter_map do |url|
+    m = url.to_s.match(%r{github\.com/([^/]+/[^/]+)/pull/(\d+)})
+    m && [m[1], m[2]]
+  end.uniq
+end
+
+# PR state + CI verdict in ONE gh call. Anything unreadable stays :unknown, which
+# the classifier can never turn into a heal.
+def pr_evidence(task)
+  refs = pr_refs(task)
+  return { pr_state: :none, ci: :none } if refs.empty?
+
+  per_repo = refs.map { |repo, number| one_pr(repo, number) }
+  { pr_state: SeamReconcile.aggregate_pr_state(per_repo.map { |p| p[:state] }),
+    ci: aggregate_ci(per_repo.map { |p| p[:ci] }) }
+end
+
+# A single PR, with its BASE verified. A merged PR only counts as merged for our
+# purposes when it merged onto `accepted` — the rung `reviewed` asserts. A merge
+# into any other base is not the thing we are about to stamp.
+def one_pr(repo, number)
+  raw = sh("gh", "pr", "view", number, "--repo", repo, "--json", "state,baseRefName,statusCheckRollup")
+  return { state: :unknown, ci: :unknown } unless raw
+
+  data = JSON.parse(raw)
+  state = pr_state_of(data["state"])
+  state = :open if state == :merged && data["baseRefName"].to_s != ACCEPTED_BRANCH
+  { state: state, ci: ci_of(data["statusCheckRollup"]) }
+rescue StandardError
+  { state: :unknown, ci: :unknown }
+end
+
+def aggregate_ci(list)
+  return :none if list.empty?
+  return :unknown if list.any? { |c| c == :unknown }
+  return :red if list.any? { |c| c == :red }
+  return :pending if list.any? { |c| c == :pending }
+
+  list.all? { |c| c == :none } ? :none : :green
+end
+
+def pr_state_of(state)
+  case state.to_s.upcase
+  when "MERGED" then :merged
+  when "OPEN" then :open
+  when "CLOSED" then :closed
+  else :unknown
+  end
+end
+
+# ALLOW-LIST, deliberately — the same policy bin/dor-check uses. A deny-list
+# reads any conclusion it has not heard of (STARTUP_FAILURE, STALE, a future
+# GitHub value) as GREEN, which is the wrong direction for a gate.
+GREEN_CONCLUSIONS = %w[SUCCESS NEUTRAL SKIPPED].freeze
+PENDING_CONCLUSIONS = ["", "PENDING", "QUEUED", "IN_PROGRESS", "WAITING", "REQUESTED", "EXPECTED"].freeze
+
+def ci_of(rollup)
+  checks = Array(rollup)
+  return :none if checks.empty?
+
+  concs = checks.map { |c| (c["conclusion"].to_s.empty? ? c["state"] : c["conclusion"]).to_s.upcase }
+  return :pending if concs.any? { |c| PENDING_CONCLUSIONS.include?(c) }
+  return :green if concs.all? { |c| GREEN_CONCLUSIONS.include?(c) }
+
+  :red
+end
+
+# The autopilot ledger already records refused/expired/disarmed arms. NOTHING
+# reads it today — which is exactly how a merge-ready verdict strands.
+def armed_states
+  raw = sh("bin/review-autopilot", "list", "--all")
+  return {} unless raw
+
+  raw.lines.each_with_object({}) do |line, acc|
+    slug, state = line.split(/\s+/, 3)
+    next unless slug && state
+    next unless %w[pending refused executed disarmed expired].include?(state)
+
+    acc[slug] = state.to_sym
+  end
+rescue StandardError
+  {}
+end
+
+# Delegates to the pure decision so the SHAPE is pinned by a unit test against a
+# real payload rather than re-derived here.
+def build_claim_live(task)
+  SeamReconcile.claim_live?(task)
+end
+
+# --- run ---------------------------------------------------------------------
+
+require "time"
+
+token = board_token
+tasks = fetch_tasks(SEAM_STAGES.fetch(seam), token)
+arms = armed_states
+
+evidence = tasks.each_with_object({}) do |task, acc|
+  slug = task["slug"].to_s
+  acc[slug] = pr_evidence(task).merge(
+    armed: arms.fetch(slug, :none),
+    build_claim_live: build_claim_live(task),
+    merged_state: TaskColumnFields.state(task, "merged"),
+    merged_value: task["merged"]
+  )
+end
+
+findings = SeamReconcile.scan(tasks, seam: seam, evidence: evidence)
+
+# --- heal --------------------------------------------------------------------
+
+healed = []
+if options[:heal]
+  findings.select { |f| f.disposition == :heal }.each do |f|
+    ok = sh("bin/task", "merged", f.slug, "accepted") &&
+         sh("bin/task", "move", f.slug, "reviewed")
+    # Read back rather than trusting the write — the whole point of the module.
+    state = sh("bin/task", "field", f.slug, "merged")
+    healed << { slug: f.slug, ok: ok && state.to_s.strip == "accepted", read_back: state }
+  end
+end
+
+# --- report ------------------------------------------------------------------
+
+if options[:json]
+  puts JSON.pretty_generate(
+    seam: seam,
+    findings: findings.map(&:to_h),
+    healed: healed
+  )
+  exit 0
+end
+
+puts "seam #{seam} — #{findings.size} anomal#{findings.size == 1 ? "y" : "ies"} " \
+     "across #{tasks.size} task(s)"
+
+if findings.empty?
+  puts "  ✓ nothing stranded at this seam"
+  exit 0
+end
+
+findings.each do |f|
+  mark = f.disposition == :heal ? "HEAL" : "REPORT"
+  puts "  #{mark}  #{f.slug} — #{f.anomaly}"
+  puts "        #{f.summary}"
+  puts "        evidence: #{f.evidence.map { |k, v| "#{k}=#{v}" }.join(" ")}" if options[:verbose]
+  puts "        → #{f.repair}"
+end
+
+healed.each do |h|
+  puts(h[:ok] ? "  ✓ healed #{h[:slug]} (merged read back: #{h[:read_back]})"
+              : "  ✗ heal FAILED for #{h[:slug]} — repair by hand (read back: #{h[:read_back].inspect})")
+end
+
+unless options[:heal] || findings.none? { |f| f.disposition == :heal }
+  puts "  (re-run with --heal to repair the HEAL findings)"
+end
+
+# NEVER BLOCK: findings are information, not a precondition.
+exit 0

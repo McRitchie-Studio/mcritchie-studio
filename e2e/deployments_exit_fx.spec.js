@@ -32,9 +32,47 @@ async function recordGhosts(page) {
       for (const mutation of mutations) {
         mutation.addedNodes.forEach((node) => {
           if (node.nodeType !== 1 || !node.dataset || node.dataset.test !== "card-fly-out") return;
-          const record = { start: sample(node), mid: null };
+          const record = { start: sample(node), peak: null };
           window.__ghosts.push(record);
-          setTimeout(() => { record.mid = sample(node); }, 320);
+          // WATCH THE WHOLE FLIGHT, FRAME BY FRAME — never sample at a fixed wall-clock
+          // offset. This used to be `setTimeout(() => record.mid = sample(node), 320)`,
+          // and the numbers say why that could only ever work by luck:
+          //
+          //   _deployments_live_fx.html.erb: SLIDE_OFF_MS = 300
+          //   slide.finished.then(() => ghost.remove())   <- the ghost is DELETED the
+          //                                                 instant the animation ends
+          //
+          // So the old sample fired 20ms AFTER the node it measures is scheduled to be
+          // removed. It passed only while removal happened to lag the timer. Starve the
+          // timer — which is what a loaded CI runner does — and it fires later still,
+          // long after removal; getBoundingClientRect() on a detached node returns all
+          // zeros, x reads 0, and `x > start.x + 10` fails on a perfectly healthy
+          // animation. Measured 2026-08-18: the identical spec failed the same shard on
+          // two branches with no code in common.
+          //
+          // The lesson generalises past this spec: an assertion whose truth depends on
+          // WHEN it samples is not testing the behaviour, it is testing the scheduler.
+          //
+          // Tracking per animation frame answers the question the test actually asks —
+          // DID the ghost travel right and fade — instead of a proxy for it. It records
+          // the furthest x and the faintest opacity seen while the node is connected, so
+          // it cannot miss the flight by sampling at the wrong instant, and it stops
+          // when the ghost leaves rather than at an arbitrary time.
+          let peakX = record.start.x;
+          let minOpacity = record.start.opacity;
+          let frames = 0;
+          const track = () => {
+            // A detached node reports zeros; freeze what we saw while it was alive.
+            if (!node.isConnected) { record.peak = { x: peakX, opacity: minOpacity }; return; }
+            const now = sample(node);
+            if (now.x > peakX) peakX = now.x;
+            if (now.opacity < minOpacity) minOpacity = now.opacity;
+            // Safety stop (~4s at 60fps) so a ghost that never leaves still resolves
+            // rather than polling forever and timing the test out with no diagnosis.
+            if (++frames > 240) { record.peak = { x: peakX, opacity: minOpacity }; return; }
+            requestAnimationFrame(track);
+          };
+          requestAnimationFrame(track);
         });
       }
     }).observe(document.body, { childList: true });
@@ -68,14 +106,17 @@ test("a card moving to Shipped slides off to the right, fades, and cleans up its
 
   // The card lands in Shipped (no reload)…
   await expect(page.locator("#dropzone-shipped #card-live-ship-slide-demo")).toBeVisible({ timeout: 10_000 });
-  // …and exactly one ghost carried it out of Assembled, sampled mid-flight.
+  // …and exactly one ghost carried it out of Assembled, watched across its whole flight.
   await expect
-    .poll(async () => page.evaluate(() => window.__ghosts.filter((g) => g.mid).length), { timeout: 10_000 })
+    .poll(async () => page.evaluate(() => window.__ghosts.filter((g) => g.peak).length), { timeout: 10_000 })
     .toBe(1);
 
   const ghost = await page.evaluate(() => window.__ghosts[0]);
-  expect(ghost.mid.x).toBeGreaterThan(ghost.start.x + 10); // slid RIGHT, not up or down
-  expect(ghost.mid.opacity).toBeLessThan(ghost.start.opacity); // and faded on the way
+  // The FURTHEST right and the FAINTEST seen across the whole flight, not a snapshot at
+  // one instant — so this asserts the property (it slid right and faded) rather than a
+  // position at a time nobody controls.
+  expect(ghost.peak.x).toBeGreaterThan(ghost.start.x + 10); // slid RIGHT, not up or down
+  expect(ghost.peak.opacity).toBeLessThan(ghost.start.opacity); // and faded on the way
 
   // The ghost is a picture, not a component: it leaves nothing behind.
   await expect(page.locator("[data-test='card-fly-out']")).toHaveCount(0, { timeout: 10_000 });
