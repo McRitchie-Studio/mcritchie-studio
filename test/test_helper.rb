@@ -91,24 +91,82 @@ end
 OmniAuth.config.test_mode = true
 
 # How many test workers to fork. Parallel workers fork-clone the test DB
-# (CREATE DATABASE … TEMPLATE), which races the base connection and intermittently
-# DEADLOCKS or segfaults LOCALLY (pg fork-safety) — and a killed parallel run leaks
-# orphan workers that hold the test DB and hang the next run. So default to
-# SINGLE-PROCESS locally; CI keeps the parallel speedup, and PARALLEL_WORKERS
-# overrides either way (e.g. bin/agent-worktree pins it to 1). See the matching
-# rationale in bin/agent-worktree#run_worktree_tests.
+# (CREATE DATABASE … TEMPLATE), which races the base connection and segfaults
+# LOCALLY (pg fork-safety) — and the killed run leaks orphan workers that hold the
+# test DB and hang the next one. So default to SINGLE-PROCESS locally; CI keeps the
+# parallel speedup. See the matching rationale in bin/agent-worktree#run_worktree_tests.
+#
+# MEASURED, 2026-08-18 (/tasks/measure-local-parallel-workers) — this is no longer a
+# remembered warning, and the numbers matter because they explain a false negative
+# that nearly got the default changed:
+#
+#   FULL suite, PARALLEL_WORKERS=4, quiet machine, 2 of 2 trials:
+#     "Running 6666 tests in parallel using 4 processes"
+#     pg/connection.rb:944: [BUG] Segmentation fault  ×4 workers, BEFORE ANY TEST RAN
+#   test/models ALONE, PARALLEL_WORKERS=4, 2 of 2 trials: 1908 runs, 0 failures, clean.
+#
+# So a partial run is NOT evidence that parallel is safe here — it is the shape that
+# hides the bug. Anyone re-testing this must run the WHOLE suite; measuring one
+# directory reproduces nothing and reads as a green light.
+#
+# THE GUARD BELOW EXISTS BECAUSE THE FAILURE IS ILLEGIBLE. Setting PARALLEL_WORKERS>1
+# locally does not fail as a test — it dumps four Ruby crash reports, leaves orphan
+# workers reparented to launchd still holding the test DB, and wedges the NEXT run in
+# test-prepare on PG::ObjectInUse. The agent who set it sees a crash dump, not a cause.
+# So a local request for >1 is CLAMPED to 1 and says why, turning an inscrutable
+# segfault into one line of explanation. It clamps rather than aborts because the
+# suite the agent asked for still runs — just serially — which is the outcome they
+# actually wanted.
+#
+# PARALLEL_WORKERS_ALLOW_UNSAFE=1 restores the requested count, for exactly one
+# purpose: re-running the measurement above when Ruby, the pg gem, or macOS moves.
+# It is not a performance switch. If it stops crashing, change the DEFAULT on the
+# evidence and delete this guard — do not leave the hatch as the way in.
 module TestParallelism
-  def self.worker_count(env = ENV)
-    return Integer(env["PARALLEL_WORKERS"]) if env["PARALLEL_WORKERS"].to_s.match?(/\A\d+\z/)
+  UNSAFE_OVERRIDE = "PARALLEL_WORKERS_ALLOW_UNSAFE"
 
+  def self.worker_count(env = ENV)
+    requested = env["PARALLEL_WORKERS"].to_s
+    return default_for(env) unless requested.match?(/\A\d+\z/)
+
+    count = Integer(requested)
+    return count if count <= 1 || env["CI"].present? || env[UNSAFE_OVERRIDE].to_s == "1"
+
+    warn <<~REASON
+      [test_helper] PARALLEL_WORKERS=#{count} ignored locally — running SINGLE-PROCESS instead.
+        Forking the full suite here SEGFAULTS in pg (pg/connection.rb, at the fork,
+        before any test runs) and strands orphan workers holding the test DB, which
+        then wedges the next run on PG::ObjectInUse. Measured 2 of 2 trials, 2026-08-18.
+        This is an ENV limitation, NOT a problem with your diff.
+        Re-measuring after a Ruby/pg/macOS bump? #{UNSAFE_OVERRIDE}=1 restores #{count}.
+    REASON
+    1
+  end
+
+  def self.default_for(env)
     env["CI"].present? ? :number_of_processors : 1
   end
 end
 
+# NORMALIZE THE ENV, NOT JUST THE ARGUMENT — the clamp above is decorative without
+# this, and it was: measured, a run with PARALLEL_WORKERS=4 printed the warning AND
+# THEN "Running 193 tests in parallel using 4 processes". Rails' own `parallelize`
+# re-reads the variable and that read WINS — ENV is the FIRST branch of its case,
+# ahead of the `workers:` argument entirely (active_support/test_case.rb):
+#
+#     case
+#     when ENV["PARALLEL_WORKERS"] then workers = ENV["PARALLEL_WORKERS"].to_i
+#     when workers == :number_of_processors then ...
+#
+# So the resolved count is written BACK to the env before parallelize reads it. Left
+# alone on the CI path, where the value is `:number_of_processors` and forking is fine.
+TEST_WORKERS = TestParallelism.worker_count
+ENV["PARALLEL_WORKERS"] = TEST_WORKERS.to_s if TEST_WORKERS.is_a?(Integer)
+
 module ActiveSupport
   class TestCase
     # Single-process locally (reliable), parallel in CI (fast) — see TestParallelism.
-    parallelize(workers: TestParallelism.worker_count)
+    parallelize(workers: TEST_WORKERS)
 
     # CI forks a worker per processor, each onto its OWN cloned database — which the
     # load-time purge above (base DB, parent process) never touches. Purge inside each
