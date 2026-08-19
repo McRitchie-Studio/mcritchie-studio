@@ -28,6 +28,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     environment: production    # scopes HEROKU_API_KEY + deploy history (no required reviewer — see header)
     steps:
       - name: Checkout the frozen SHA (full history)

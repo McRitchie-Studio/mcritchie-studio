@@ -49,6 +49,7 @@ on:
 jobs:
   scan_ruby:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     steps:
       - name: Checkout code
@@ -68,6 +69,7 @@ jobs:
 
   scan_js:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     steps:
       - name: Checkout code
@@ -87,6 +89,7 @@ jobs:
 
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -105,6 +108,7 @@ jobs:
 
   island_animator:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -166,6 +170,7 @@ jobs:
   # serial in-shard model is preserved.
   playwright:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     strategy:
       fail-fast: false
@@ -295,6 +300,7 @@ jobs:
   # condition can, and test/lib/ci_workflow_triggers_test.rb refuses every other condition.
   e2e_executed_set:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     needs: playwright
     if: always()
 
@@ -322,6 +328,7 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     services:
       postgres:
