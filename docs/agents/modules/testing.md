@@ -728,9 +728,29 @@ npm test
 > fork-clone the test DB, which **deadlocks or segfaults the `pg` gem on macOS**
 > (a Ruby crash report, not a test failure) — pg fork-safety. So as of PR #169 the
 > suite runs **single-process locally by default** (`test_helper.rb` →
-> `TestParallelism.worker_count`: parallel only when `CI` is set; `PARALLEL_WORKERS`
-> overrides), so a plain `bin/rails test` is reliable locally while CI keeps the
-> parallel speedup. `bin/agent-worktree test <app> <slug>` also runs single-process
+> `TestParallelism.worker_count`: parallel only when `CI` is set), so a plain
+> `bin/rails test` is reliable locally while CI keeps the parallel speedup.
+>
+> **`PARALLEL_WORKERS` no longer overrides that locally — it is CLAMPED to 1, loudly**
+> (`gate-submit-on-green-ci`'s sibling, `/tasks/measure-local-parallel-workers`,
+> 2026-08-18). It used to be honoured, which meant asking for 4 workers got you four
+> Ruby crash reports and orphan workers holding the test DB, wedging the NEXT run in
+> test-prepare on `PG::ObjectInUse`. Now it prints why and runs serially. MEASURED, so
+> nobody has to re-litigate it: the FULL suite at 4 workers segfaulted at
+> `pg/connection.rb:944` before any test ran, 2 of 2 trials — while `test/models` ALONE
+> at 4 workers was clean, 2 of 2. **A partial run is the shape that HIDES this**; re-test
+> with the whole suite or you will green-light a default that crashes.
+>
+> `PARALLEL_WORKERS_ALLOW_UNSAFE=1` restores the requested count. It exists for ONE
+> purpose — re-running that measurement after a Ruby, `pg`, or macOS bump. It is not a
+> performance switch. If it stops crashing, change the DEFAULT on the evidence and delete
+> the clamp; do not leave the hatch as the way in.
+>
+> If you ever guard something like this: clamping the returned worker count is NOT enough.
+> Rails' `parallelize` re-reads `ENV["PARALLEL_WORKERS"]` and that read WINS — it is the
+> first branch of its `case`, ahead of the `workers:` argument. The first cut printed its
+> warning and forked anyway, with every unit test green, because the tests exercised the
+> function in isolation and could not see Rails' precedence. `bin/agent-worktree test <app> <slug>` also runs single-process
 > **and clears orphaned `rails test` procs first** — a killed/hung run leaves
 > workers holding the test DB and deadlocks the next run. Don't pipe a run through
 > `| tail` (it buffers to EOF, so a hang looks identical to "working") — write to a
