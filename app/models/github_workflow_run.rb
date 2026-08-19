@@ -21,7 +21,14 @@ class GithubWorkflowRun < ApplicationRecord
   # The one workflow whose per-job progress feeds the board's CI bars — the single
   # source both the ingest (which CiCheckJob rows to record) and Ci::ProgressReader
   # (which run's SHA to fold) key on.
-  CI_WORKFLOW = "CI"
+  #
+  # DECLARED IN Release::AcceptedCertification, not here, and read back from there.
+  # bin/release needs the same mapping for its `accepted` certification guard, and it
+  # is a standalone script with NO ActiveRecord — it cannot reference a model constant.
+  # Spelling the map a second time CLI-side is precisely how this gate went blind to
+  # studio-engine before: the gate hard-coded "CI", every "Engine CI" run failed to
+  # match, and every studio-engine PR resolved to :none. One literal, two readers.
+  CI_WORKFLOW = Release::AcceptedCertification::DEFAULT_SUITE_WORKFLOW
 
   # The CI-SUITE workflows whose per-job progress feeds the board's release CI
   # meters: the app repos' `CI` PLUS each gem repo's own suite workflow
@@ -53,10 +60,7 @@ class GithubWorkflowRun < ApplicationRecord
   # (solana-studio runs none), not an accident. The distinction matters because a
   # reader cannot tell "unmapped by oversight" from "genuinely has no suite", and
   # Ci::ReviewGate treats an unresolved workflow as NOT-GREEN rather than guessing.
-  GEM_CI_WORKFLOWS = {
-    "studio-engine" => "Engine CI",
-    "solana-studio" => nil # ships no suite workflow — declared, not overlooked
-  }.freeze
+  GEM_CI_WORKFLOWS = Release::AcceptedCertification::GEM_SUITE_WORKFLOWS
 
   CI_PROGRESS_WORKFLOWS = ([CI_WORKFLOW] + GEM_CI_WORKFLOWS.values.compact).freeze
 

@@ -147,6 +147,7 @@ require "fileutils" # primary_checkout_lock_path mkdir_p's the fixed lock dir
 # Release::Cli holds the pure ARGV-parsing helpers (also Rails-free) the flag
 # handling below routes through.
 require_relative "../app/models/release/ladder"
+require_relative "../app/models/release/accepted_certification"
 require_relative "../app/models/release/gemfile_repin"
 require_relative "../app/models/release/ship_sequence"
 require_relative "../app/models/release/post_deploy"
@@ -1407,6 +1408,10 @@ def promote_accepted_to_release!(repos, label: nil)
   # FUNCTION means both existing callers and every future one inherit it, and there is
   # no call site left to forget.
   refuse_red_accepted!(targets) unless DRY
+  # The companion guard, and it runs SECOND on purpose: an asserted RED is a fact about
+  # this candidate and outranks a fact about the repo's plumbing, so the operator sees
+  # the broken tree first when both are true.
+  refuse_blind_accepted!(targets) unless DRY
   targets.each do |repo|
     if DRY
       step("promote #{ACCEPTED_BRANCH} → #{RELEASE_BRANCH} in #{repo}: open/reuse ONE " \
@@ -3530,6 +3535,91 @@ def refuse_red_accepted!(repos)
            "here: only an asserted failure does.")
   end
   say("  ✓ `accepted` carries no RED verdict in #{repos.join(', ')}")
+end
+
+# Every workflow file a repo ships ON THE BRANCH BEING PROMOTED, as
+# { path => yaml_text }. nil (not {}) when the tree could not be read at all, so the
+# caller can tell "no workflows" from "no answer" — collapsing those is the same shape
+# of bug as the silence this guard exists to remove.
+#
+# Read from `origin/accepted`, never the working tree. GitHub evaluates the workflow
+# file AS IT EXISTS ON THE PUSHED REF, so that ref IS the question; the sibling's
+# working tree is whatever branch that checkout happens to sit on, and an agent editing
+# ci.yml on a feature branch three repos away must not decide a promote.
+def accepted_workflow_sources(repo)
+  path = repo_path(repo)
+  return nil unless Dir.exist?(path)
+  # No `.git` means this is not a checkout we can resolve a ref in — an UNREAD repo,
+  # not a finding. File.exist? rather than Dir.exist? on purpose: a git worktree's
+  # `.git` is a FILE, and treating a worktree as unreadable would be its own blindness.
+  #
+  # This does NOT soften the guard where it matters. A real checkout that has DELETED
+  # its suite workflow still answers the ls-tree with an empty listing, and an empty
+  # listing IS blind — the repo is named. Only "we cannot read the tree at all" is
+  # tolerated here.
+  return nil unless File.exist?(File.join(path, ".git"))
+
+  listing, ok = sh("git", "-C", path, "ls-tree", "--name-only",
+                   "origin/#{ACCEPTED_BRANCH}", ".github/workflows/", capture: true)
+  return nil unless ok
+
+  listing.to_s.lines.map(&:strip).reject(&:empty?)
+         .select { |file| file.end_with?(".yml", ".yaml") }
+         .to_h do |file|
+           content, cok = sh("git", "-C", path, "show", "origin/#{ACCEPTED_BRANCH}:#{file}", capture: true)
+           [file, cok ? content.to_s : ""]
+         end
+end
+
+# THE SECOND HALF OF THE GUARD ABOVE — "was that verdict even POSSIBLE?"
+#
+# refuse_red_accepted! refuses on an ASSERTED failure and, correctly, on nothing else.
+# But a repo whose suite workflow never builds `accepted` produces no runs at all, so
+# its verdict is absent, absent does not refuse, and the guard's success line named it
+# as though it had been checked. Measured 2026-08-18: three of the four swept repos
+# were in exactly that state, and the guard had passed over all three in the release
+# that shipped the day before. A guard that covers a quarter of the fleet while
+# reporting on all of it is worse than no guard — it manufactures the confidence.
+#
+# THIS ONE REFUSES, and the asymmetry with the wedge-guards above is deliberate. Those
+# tolerate `pending`/`none` because a MISSING verdict is usually a race — wait a minute
+# and it resolves. This is not a race: a trigger list either names the branch or it does
+# not, the answer is identical on every re-run, and the fix is one line in one file. So
+# refusing here can never wedge the lane on timing, and passing here would ship a
+# release whose candidate rung nothing ever built.
+#
+# UNREADABLE ≠ BLIND. A repo whose tree could not be read is REPORTED and does not
+# refuse, mirroring `:unverified` above: a failed read is not a finding, and turning an
+# I/O hiccup into a release outage is its own false alarm.
+def refuse_blind_accepted!(repos)
+  return if repos.empty?
+
+  step("guard: every repo this promote carries must be ABLE to certify `accepted`")
+  sources    = {}
+  unreadable = []
+  repos.each do |repo|
+    files = accepted_workflow_sources(repo)
+    files.nil? ? unreadable << repo : sources[repo] = files
+  end
+
+  say("  … could not read .github/workflows on origin/#{ACCEPTED_BRANCH} in " \
+      "#{unreadable.join(', ')} — reported, not refused (an unread repo is not a finding)") if unreadable.any?
+
+  blind = Release::AcceptedCertification.blind(sources, RELEASE_REPOS)
+  if blind.any?
+    named = blind.map do |repo|
+      "#{repo} (suite workflow #{Release::AcceptedCertification.workflow_for(repo, RELEASE_REPOS).inspect})"
+    end.join(", ")
+    abort!("promote refused — #{named} cannot certify `accepted`. That repo's declared suite workflow has " \
+           "no push trigger for `accepted` on origin/#{ACCEPTED_BRANCH}, so GitHub never builds the rung " \
+           "this sweep is about to promote: the RED guard above passed over it without ever having been " \
+           "capable of failing, and every task in it would ride to `release` uncertified. NOTHING was " \
+           "promoted, recorded or deployed. Fix it by adding `accepted` to that workflow's " \
+           "`on.push.branches` (mcritchie-studio's .github/workflows/ci.yml is the reference, and its " \
+           "comment explains why there is deliberately NO concurrency block), merge that onto `accepted`, " \
+           "then re-run `bin/release prepare` — it resumes.")
+  end
+  say("  ✓ `accepted` is built by the declared suite workflow in #{sources.keys.join(', ')}")
 end
 
 def ladder_clean_verdict(expedited: nil, report_release: false)
