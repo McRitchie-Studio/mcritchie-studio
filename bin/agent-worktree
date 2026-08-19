@@ -1726,7 +1726,9 @@ def database_exists?(db_name)
 end
 
 def stack_dirs(app)
-  root = File.join(app.fetch("repo"), ".worktrees")
+  # Discovered repos carry their resolved tree (the sibling-tree convention puts it
+  # beside the repo, not inside it); registered apps use the managed layout.
+  root = app["worktrees_dir"] || File.join(app.fetch("repo"), ".worktrees")
   Dir.glob(File.join(root, "*")).select { |dir| File.directory?(dir) }.sort
 end
 
@@ -1776,8 +1778,53 @@ def stack_record(app, dir)
   }
 end
 
+# Repos that carry worktrees but are NOT registered apps — discovered from disk.
+#
+# `apps` is built from config/satellites.yml, whose job is to register satellite
+# APPS: it drives the navbar, SSO roles and bin/ecosystem-build. A gem or library
+# repo (studio-engine, solana-studio, turf-vault) has no port and no stack, so it
+# has no business in that file — but it still collects desks, and before this the
+# sweep could not see them at all. `cleanup --reclaim studio-engine` answered
+# "unknown app" while 64 desks sat there unswept, more than any registered app had.
+#
+# So sweep COVERAGE is derived from the ground truth — what has worktrees on disk —
+# rather than from a hand-maintained list that exists for another purpose. A repo
+# cannot silently escape the sweep by not being a satellite, and adding one needs no
+# registry edit (which would be a product decision, not a cleanup).
+#
+# Two on-disk conventions, both real:
+#   <root>/<repo>/.worktrees/<slug>      the managed app layout
+#   <root>/<repo>.worktrees/<slug>       the sibling tree gem repos use
+STACKLESS_STACK = "none"
+
+def discovered_worktree_configs
+  registered = apps.values.map { |config| config.fetch("repo") }
+
+  roots = Dir.glob(File.join(PROJECTS_DIR, "*", ".worktrees")).map { |dir| [File.dirname(dir), dir] } +
+          Dir.glob(File.join(PROJECTS_DIR, "*.worktrees")).map { |dir| [dir.sub(/\.worktrees\z/, ""), dir] }
+
+  roots.filter_map do |repo, worktrees_dir|
+    next unless File.directory?(worktrees_dir)
+    next if registered.include?(repo)
+
+    slug = File.basename(repo)
+    # No port, no Redis DB, no server: these desks are a git worktree and nothing
+    # else, so the teardown must skip stack stop / DB drop / Redis flush rather
+    # than fail trying. `stack` is the field the rest of the file already keys on.
+    {
+      "slug" => slug,
+      "display_name" => slug,
+      "repo" => repo,
+      "worktrees_dir" => worktrees_dir,
+      "stack" => STACKLESS_STACK,
+      "status" => "discovered",
+      "reserved_ports" => []
+    }
+  end
+end
+
 def stack_records(app = nil)
-  selected = app ? [app] : apps.values
+  selected = app ? [app] : apps.values + discovered_worktree_configs
   selected.flat_map { |config| stack_dirs(config).map { |dir| stack_record(config, dir) } }
 end
 
@@ -2191,7 +2238,10 @@ end
 def cleanup_partition(app = nil)
   free = []
   withheld = []
-  stack_records(app).each do |record|
+  records = stack_records(app)
+  # One board read for the whole sweep, before the per-desk verdicts start asking.
+  prefetch_task_records!(records)
+  records.each do |record|
     ok, reason = reclaim_verdict(record, announce: true)
     if ok
       free << record
@@ -2606,6 +2656,63 @@ def task_record_for_pr(record, fresh: false)
   return @task_record_cache[slug] if !fresh && @task_record_cache.key?(slug)
 
   @task_record_cache[slug] = fetch_task_record(record, slug)
+end
+
+# Warm @task_record_cache for a WHOLE sweep in one board read.
+#
+# The per-desk read above is correct and stays; what it is not is scalable. A sweep
+# resolves the build claim for every bound desk, so N desks meant N `bin/task show`
+# spawns and N HTTPS round-trips, serialised. At 141 desks the full-suite sweep ran
+# past ten minutes at 0% CPU and never emitted a candidate.
+#
+# Parallelising those reads is the wrong fix, and reclaim_evidence already says why:
+# the board 500s under Postgres connection pressure during heavy parallel devops, and
+# a mass reclaim is CORRELATED with that pressure. More concurrent reads make the
+# outage this guard exists to survive more likely, not less.
+#
+# THE SAFETY RULE, and the reason this cannot weaken the guard: only a POSITIVELY READ
+# record is ever cached. A slug the batch does not mention is left absent, so it falls
+# through to fetch_task_record and gets today's exact classification — 404 means free,
+# an unreadable board means withheld. Absence here is never evidence of anything, which
+# matters because a list read can legitimately omit a task (archived, filtered, paged),
+# and turning that omission into "no claim" would destroy a live builder's desk.
+def prefetch_task_records!(records)
+  return unless ENV["AGENT_WORKTREE_TASK_JSON"].to_s.strip.empty?
+
+  @task_record_cache ||= {}
+  bound = records.select { |record| task_record_slug(record[:env] || {}) }
+  wanted = bound.map { |record| task_record_slug(record[:env] || {}) }.uniq - @task_record_cache.keys
+  # One desk costs one read either way, and the batch would be the slower of the two.
+  return if wanted.size <= 1
+
+  batch = fetch_task_records_batch(bound.first)
+  return unless batch # unreadable: say nothing, and let the per-desk reads classify
+
+  batch.each { |slug, task_record| @task_record_cache[slug] = task_record if wanted.include?(slug) }
+end
+
+# One `bin/task list --json` — the same board read `list` already performs, printing the
+# full fetched records instead of three columns. Returns slug => record, or nil when the
+# read failed at all (transport, auth, 5xx, malformed) so the caller stays silent.
+def fetch_task_records_batch(record)
+  task_bin = File.join(record[:dir], "bin", "task")
+  task_bin = File.join(HUB_DIR, "bin", "task") unless File.exist?(task_bin)
+  return nil unless File.exist?(task_bin)
+
+  ok, out, = capture_status(task_bin, "list", "--json", chdir: record[:dir],
+                                                        env: command_env(record[:app], record[:env]),
+                                                        timeout: TASK_READ_TIMEOUT)
+  return nil unless ok
+
+  parsed = JSON.parse(out.to_s)
+  return nil unless parsed.is_a?(Array)
+
+  parsed.each_with_object({}) do |task_record, acc|
+    slug = task_record.is_a?(Hash) ? task_record["slug"].to_s : ""
+    acc[slug] = task_record unless slug.empty?
+  end
+rescue JSON::ParserError
+  nil
 end
 
 # bin/task's EXIT_TASK_NOT_FOUND — its exit-code CONTRACT for "the board positively

@@ -17,7 +17,9 @@
 # (default https://mcritchie.studio).
 #
 # Usage:
-#   bin/task list [--stage S] [--agent A]
+#   bin/task list [--stage S] [--agent A] [--reviewable] [--json]
+#     ( --json prints the full fetched records as an array — the same payload
+#       `show --json` prints, for the whole page in ONE board read. )
 #   bin/task show <slug> [--json | --verbose|-v]
 #     ( default is terse; --json prints the full fetched record as pretty JSON
 #       (no token dance); --verbose/-v expands the acceptance BULLETS, agent_context,
@@ -1439,6 +1441,13 @@ when "list"
   # in PARSE_FLAG_NAMES) and pass it through as a query param: the same read as
   # GET /api/v1/tasks?reviewable=1, powered by the Task.reviewable scope.
   reviewable = !ARGV.delete("--reviewable").nil?
+  # --json prints the FETCHED RECORDS, not the three-column rendering — the same
+  # payload `show --json` prints, one array for the whole page. The read already
+  # returns full records; only the rendering was lossy. It exists so a caller that
+  # needs N tasks makes ONE board read instead of N `show` calls: bin/agent-worktree's
+  # reclaim sweep resolved a build claim per desk, and at 141 desks that serialised
+  # into a sweep that never finished.
+  as_json = !ARGV.delete("--json").nil?
   _pos, _sc, _ls, top = parse_flags(ARGV, context: "list")
   q = []
   q << "stage=#{top["stage"]}" if top["stage"]
@@ -1446,8 +1455,12 @@ when "list"
   q << "reviewable=1" if reviewable
   path = "/api/v1/tasks#{q.empty? ? "" : "?#{q.join("&")}"}"
   tasks = api(:get, path)["data"] || []
-  tasks.each { |t| puts "#{t["slug"]}  [#{t["stage"]}]  #{t["title"]}" }
-  puts "(#{tasks.size} task(s))"
+  if as_json
+    puts JSON.pretty_generate(tasks)
+  else
+    tasks.each { |t| puts "#{t["slug"]}  [#{t["stage"]}]  #{t["title"]}" }
+    puts "(#{tasks.size} task(s))"
+  end
 when "show"
   usage = "usage: bin/task show <slug> [--json | --verbose|-v]"
   slug = positional!(ARGV.shift || die!(usage), usage)
