@@ -153,10 +153,12 @@ source, or say the cause is still unknown. The corollary this fix adds: for a
 timing bug, a test that merely passes proves nothing, because the broken state
 passed too. Reintroduce the defect and watch the test go red.
 
-**Still parked from this thread:** real users hit the same reflow. Self-hosting
-Montserrat in `layouts/studio/_head.html.erb` — the last third-party asset in a
-file that deliberately vendors Alpine, SortableJS and confetti — removes the layout
-shift for everyone. Tracked as `/tasks/vendor-the-montserrat-webfont`.
+**Nothing is still parked from this thread.** Real users hit the same reflow, so
+Montserrat was vendored into `layouts/studio/_head.html.erb` — served from the
+asset pipeline at `font-display: optional`, joining the Alpine, SortableJS and
+confetti that file already vendored. `/tasks/vendor-the-montserrat-webfont`
+(studio-engine #172) is `reviewed` and rides the next release sweep. The test-side
+guard and the user-side cause are both closed.
 
 ---
 

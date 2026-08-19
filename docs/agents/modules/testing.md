@@ -468,12 +468,17 @@ assertion, which is the production signature exactly. **Verified by mutation, 3
 red / 3 green** — the only proof that counts for a timing fix, because the broken
 state also passed most of the time.
 
-**Still open, and NOT fixed by the guard: real users hit the same reflow.**
-`layouts/studio/_head.html.erb` in studio-engine loads Montserrat from a third
-party while deliberately vendoring Alpine, SortableJS and confetti in the same
-file, for reasons its own comments spell out. Self-hosting the font removes the
-layout shift for everyone, not just for tests — tracked as
-`/tasks/vendor-the-montserrat-webfont`.
+**The user-facing half is FIXED — in the engine, not by the guard.**
+`layouts/studio/_head.html.erb` in studio-engine now vendors Montserrat through
+the asset pipeline, joining the Alpine, SortableJS and confetti that file already
+served itself. Same bytes, pinned at Google Fonts v31, and declared
+`font-display: optional` rather than `swap` — which is the substance of it, because
+`swap` has an unbounded swap period, so a late font reflows the page no matter who
+serves it. Landed as `/tasks/vendor-the-montserrat-webfont` (studio-engine #172);
+it is on `accepted` and rides the next release sweep into the app.
+**The guard still earns its keep.** It defends any control clicked soon after a
+load against every other source of reflow, and one font is not the only thing that
+can move a box.
 
 ## The Minitest DB Starts EMPTY — And The E2E Lane Must Not Share It
 
