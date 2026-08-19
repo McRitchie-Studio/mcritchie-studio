@@ -24,7 +24,7 @@ checks to `checks_run` as each stage completes.
 |---|---|---:|---:|---|---|
 | PR review gate | Local repo or CI | Usually no | Yes | G1 Cert (builder cert + dor verdict) · G2 Review (the review wave) | Every PR with code changes; includes lint, security scans, Rails tests, and focused browser checks for touched UI |
 | E2E (Playwright) | CI, sharded 3× (own server + PG per shard) | Test DB only | **Yes** | G2 Review (the authoritative CI verdict) | Every PR and every push to `main`/`release` — the `playwright` job in `ci.yml`. Collects the **`e2e` tier** (shapes `ui+db`, `onchain-vertical`) |
-| E2E executed-set | CI, reads each shard's JSON receipt | No | **Yes** | G2 Review | The `e2e_executed_set` job, after the shards. Asserts the lane **ran the specs it claims to** — the one thing the `playwright` job cannot verify about itself |
+| E2E executed-set | CI, reads each shard's JSON receipt | No | **Yes** | G2 Review | The `e2e_executed_set` job, after the shards. Asserts the lane **ran the `executed` set `config/e2e_lane.yml` declares** — the one thing the `playwright` job cannot verify about itself |
 | Local proof | Worktree URL | Local DB only | Usually yes | G1 Cert (builder evidence) | UI, auth, task, contest, navigation, email capture, Redis, or worker changes |
 | QA acceptance | Stable QA URL | QA/devnet only when named | No; blocks production promotion | G3 Candidate | After every QA deploy; runs task acceptance criteria against the merged result |
 | Production smoke | Production URL | No by default | N/A | G4 Ship (the seal — non-blocking) | After approved production deploy; verifies health and key read-only routes |
@@ -37,10 +37,17 @@ that date NO lane ran it while `config/feature_shapes.yml` demanded the `e2e` ti
 every `ui+db` change — the tier was "collected" by a builder typing `[e2e] …` into
 `checks_run` and `bin/dor-check` crediting the tag. It went unrun long enough for
 **18 of its specs to rot** (18 of the 69 committed at the time); those carry `@quarantine`, CI excludes them with
-`--grep-invert @quarantine`, and their count is ratcheted (ceiling 18, may only fall)
-by `test/lib/e2e_quarantine_ratchet_test.rb`. Do not read the green `playwright`
-check as "the whole e2e suite passes" until that ceiling reaches 0
-(`/tasks/repair-rotted-e2e-specs`).
+`--grep-invert @quarantine`, and their count is ratcheted — the ceiling is
+`quarantined` in `config/e2e_lane.yml`, it may only fall, and
+`test/lib/e2e_quarantine_ratchet_test.rb` enforces that. Do not read the green
+`playwright` check as "the whole e2e suite passes" until that ceiling reaches 0.
+
+**Repair lands cluster by cluster, so look the current ticket up on the board rather
+than trusting a slug pinned here.** `/tasks/repair-quarantined-e2e-clusters` took the
+first three (2026-08-18); the rest are still tagged. This paragraph cited
+`/tasks/repair-rotted-e2e-specs` as the live ticket long after that task was archived
+with all 18 specs still tagged — the "archived task the docs cite as live" trap
+catalogued in `docs/agents/agents/alex/sops/clean-up.md`.
 
 **"May only fall" is enforced, and note WHERE the baseline comes from** — the ratchet
 compares the ceiling against its value on **`origin/release`**, not against the copy in
@@ -54,9 +61,16 @@ therefore checks out with `fetch-depth: 0`, and the ratchet fails **closed** —
 why — if it cannot resolve the baseline.)
 
 **What stops a spec from quietly leaving the lane.** Two guards, and only one of them
-generalizes. Both read the same contract, `config/e2e_lane.yml` — at the time of writing
-**112 committed − 15 quarantined == 97 executed**, and the file itself is the live
-number — so they can never certify two different suites.
+generalizes. Both read the same contract, `config/e2e_lane.yml` — **`total_specs` −
+`quarantined` == `executed`** — so they can never certify two different suites.
+
+**The numbers live in that file and are deliberately NOT repeated here.** They move
+whenever a spec is added: this paragraph sat quoting 95 − 18 == 77 while the contract
+climbed past 103, 107, 108, 110 and 112 — three of those bumps landed on one day
+(2026-08-18). A count copied into prose is a second source of truth that nothing
+enforces, and it rots within days while every guard stays green — the same disease as the ratchet-that-was-really-a-pin described just above, one
+level out. Read the numbers from `config/e2e_lane.yml`; it is the only copy any guard
+consults.
 
 1. **The receipt (`bin/e2e-executed-set-check`, the `e2e_executed_set` CI job).** Each
    shard emits a JSON report; this job reads them and asserts what the lane **actually
@@ -73,8 +87,8 @@ number — so they can never certify two different suites.
    **default-deny** — only `--shard`, `--grep-invert` and `--reporter` are allowed, because
    only those three cannot *shrink the selected set*. (`--reporter` is **not** "inert",
    which is what this line used to call it: it **emits the receipt** guard 1 is judged on.
-   Drop `json` from it and the lane still runs all 52 specs while the only evidence that it
-   did evaporates — so it is separately pinned.) `--grep-invert` is value-pinned to exactly
+   Drop `json` from it and the lane still runs every executed spec while the only evidence
+   that it did evaporates — so it is separately pinned.) `--grep-invert` is value-pinned to exactly
    `@quarantine`.
 
 **Why the receipt exists at all** — three rounds of review beat the static scan, each
