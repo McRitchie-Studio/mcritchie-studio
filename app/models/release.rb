@@ -252,52 +252,86 @@ class Release < ApplicationRecord
     deployment_span("total", "Total", created_at, shipped_at)
   end
 
-  # How long a cached averages figure may outlive the event that would change it.
-  # This is the BACKSTOP, not the mechanism — see deployment_stage_averages.
-  DEPLOYMENT_AVERAGES_TTL = 1.hour
+  # Every averaging window the UI actually renders. ONE source of truth: the
+  # controller reads this to decide which rows to draw, and the end-of-deployment
+  # warm reads it to decide which to refresh. They used to be independent — the
+  # page drew [3, 10] while the warm only ever refreshed 10 — so within a TTL of a
+  # ship the 3-release row excluded the release the 10-release row above it
+  # included. Two rows in one table disagreeing about which releases exist.
+  RENDERED_AVERAGE_WINDOWS = [3, DEPLOYMENT_DASHBOARD_SAMPLE].freeze
+
+  # Bump when the SHAPE of a stored snapshot changes, so a new reader can never
+  # serve a payload the old writer produced.
+  DEPLOYMENT_AVERAGES_VERSION = 1
 
   # Averages each deployment stage (+ Total) over the last N shipped releases —
-  # the DevOps card's summary tiles. Read through a cache, recomputed at the end
-  # of every deployment.
+  # the DevOps card's summary tiles.
   #
   # SIZE THIS HONESTLY. Computing it costs 5-9ms inside a request that takes
   # 1,200-2,000ms (measured on production 2026-08-19): two queries over ten
-  # shipped releases. Caching it is a SHAPE change — the number only moves when a
-  # deployment finishes, so it is computed then rather than by every viewer — and
-  # it is worth about 0.4% of the page. Anyone reading this expecting the board to
-  # get faster is reading the wrong method; the board's cost was its task scope
-  # and its payload.
+  # shipped releases. Precomputing it is a SHAPE change — the number only moves
+  # when a deployment finishes, so it is computed then rather than by every
+  # viewer — and it is worth about 0.4% of the page. Anyone reading this expecting
+  # the board to get faster is reading the wrong method; the board's cost was its
+  # task scope and its payload.
   #
-  # READ-THROUGH, and that part IS load-bearing. Rails.cache in production is an
-  # ActiveSupport::Cache::FileStore on the dyno's own disk (config.cache_store is
-  # left unset), so it is wiped by every deploy and every restart. A
-  # write-on-ship-only design would leave the DevOps card BLANK from a restart
-  # until the next deployment finished — which can be days. Computing on a miss
-  # makes a cold cache cost one 8ms recompute that nobody notices.
+  # THE SNAPSHOT LIVES IN POSTGRES, NOT Rails.cache, and that is the whole
+  # mechanism. In production `ship!` runs on a ONE-OFF dyno (bin/release's
+  # conductor shells `heroku run ... rails runner`), and Rails.cache there is a
+  # per-dyno FileStore — config.cache_store is left unset. A warm written to that
+  # dyno's tmp/cache is destroyed when the process exits and no web dyno ever sees
+  # it. Writing to a column reaches every reader, because every reader shares the
+  # database. This mirrors Release::DurationCache, which solved the same problem
+  # the same way and is invoked from the very same conductor block.
   #
-  # The TTL only bounds how long a change nothing announced can sit — a late
-  # GateRun stamped on an already-shipped release. `refresh_deployment_stage_averages!`
-  # at the end of ship! is what actually keeps this current.
+  # The snapshot rides the release it was taken FOR — the one just shipped — and
+  # the reader takes the newest shipped release's copy, so "the freshest snapshot"
+  # needs no separate bookkeeping.
+  #
+  # READ-THROUGH, deliberately: a missing, version-stale, or unreadable snapshot
+  # recomputes rather than rendering blank. That covers a cold database, a shape
+  # bump, and the honest limit of this design — a late GateRun stamped on an
+  # ALREADY-shipped release is not reflected until the next ship, exactly the
+  # tradeoff DurationCache accepts.
   def self.deployment_stage_averages(limit: DEPLOYMENT_DASHBOARD_SAMPLE)
-    Rails.cache.fetch(deployment_stage_averages_cache_key(limit),
-                      expires_in: DEPLOYMENT_AVERAGES_TTL) do
-      compute_deployment_stage_averages(limit: limit)
-    end
+    stored_deployment_stage_averages(limit) || compute_deployment_stage_averages(limit: limit)
   end
 
-  # Recompute and store, returning the fresh value — the end-of-deployment warm.
-  # Called from ship! and safe to call at any time.
-  def self.refresh_deployment_stage_averages!(limit: DEPLOYMENT_DASHBOARD_SAMPLE)
-    compute_deployment_stage_averages(limit: limit).tap do |value|
-      Rails.cache.write(deployment_stage_averages_cache_key(limit), value,
-                        expires_in: DEPLOYMENT_AVERAGES_TTL)
-    end
+  # The snapshot for one window, or nil when there isn't a usable one. Fully
+  # rescued: this runs on the PUBLIC, unauthenticated /deployments render, so a
+  # malformed payload must degrade to a recompute, never to a 500.
+  def self.stored_deployment_stage_averages(limit)
+    snapshot = last_shipped&.metadata&.dig("deployment_stage_averages")
+    return nil unless snapshot.is_a?(Hash)
+    return nil unless snapshot["version"] == DEPLOYMENT_AVERAGES_VERSION
+
+    window = snapshot.dig("windows", limit.to_s)
+    window.is_a?(Hash) && window["stages"].present? ? window : nil
+  rescue StandardError => e
+    ErrorLog.capture!(e)
+    nil
   end
 
-  # Versioned, so a change to the span math can never be served from a cache
-  # written by the old one — bump `v1` when the SHAPE of the value changes.
-  def self.deployment_stage_averages_cache_key(limit)
-    "release/deployment_stage_averages/v1/#{limit}"
+  # Recompute EVERY rendered window and store them on the newest shipped release —
+  # the end-of-deployment warm. Windows come from RENDERED_AVERAGE_WINDOWS so the
+  # page cannot render a row this never refreshes. Returns the snapshot, or nil
+  # when there is no shipped release to hang it on.
+  def self.refresh_deployment_stage_averages!(windows: RENDERED_AVERAGE_WINDOWS)
+    target = last_shipped
+    return nil unless target
+
+    snapshot = {
+      "version" => DEPLOYMENT_AVERAGES_VERSION,
+      "cached_at" => Time.current.utc.iso8601,
+      "windows" => windows.to_h { |window| [window.to_s, compute_deployment_stage_averages(limit: window)] }
+    }
+    # update_columns, like DurationCache: this is a derived cache, not a state
+    # change, and it must not fire callbacks or touch the stage timeline.
+    target.update_columns( # rubocop:disable Rails/SkipsModelValidations
+      metadata: target.metadata.merge("deployment_stage_averages" => snapshot),
+      updated_at: Time.current
+    )
+    snapshot
   end
 
   # The real work. Same span math as the per-row cells, so cards and columns can
@@ -732,13 +766,15 @@ class Release < ApplicationRecord
     end
 
     # The deployment just finished, so the DevOps card's averages just changed —
-    # recompute them HERE, once, instead of on every later render.
+    # recompute EVERY rendered window here, once, and store it where every web
+    # dyno can read it. This runs on a one-off dyno in production, which is
+    # precisely why the snapshot goes to a column and not to Rails.cache.
     #
     # RESCUED, deliberately. A ship is the most consequential write this system
     # makes, and by this line the release and every member are already stamped and
-    # committed. A cache store that is full, read-only, or simply missing must not
-    # turn a completed production deploy into a raised exception; the worst a
-    # failure here can cost is that the next viewer recomputes an 8ms figure.
+    # committed. A failed snapshot write must not turn a completed production
+    # deploy into a raised exception; the worst it can cost is that the next
+    # viewer recomputes an 8ms figure.
     begin
       self.class.refresh_deployment_stage_averages!
     rescue StandardError => e
