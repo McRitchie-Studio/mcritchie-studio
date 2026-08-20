@@ -159,6 +159,67 @@ module CiTestCommand
   # it REFUSES (`suite_steps`).
   TEST_JOB = "test"
 
+  # ==== THE SHARDED LANE — the ONE split this cert may stand in for ==================
+  #
+  # Everything above is built on an assumption that held for a year and stopped holding
+  # on 2026-08-20: that CI runs its Ruby suite in ONE job, in ONE step, so a one-command
+  # cert can stand in for it. `split_refusal` exists to enforce exactly that, and it was
+  # RIGHT to — spelling 4 in the history above is a suite split across jobs, resolving in
+  # silence, with a whole tier never run.
+  #
+  # The hub's ci.yml now splits its Ruby suite ON PURPOSE. The `rails` job runs a 4-way
+  # matrix of `bin/ci-shard --shard=i/4`, and the `system` job runs `bin/rails
+  # db:test:prepare test:system`. That is a split by every structural test this file
+  # applies, and `split_refusal` fired on it — correctly, on the letter, and wrongly on
+  # the substance.
+  #
+  # WHY IT IS DIFFERENT, STATED AS THE PROPERTY AND NOT AS A SPECIAL CASE. The refusal's
+  # actual argument is: "this lane runs ONE command, so it would certify on one of them
+  # and leave the rest NEVER RUN." That argument depends on the parts being DISJOINT
+  # scopes, each carrying tests the DEFAULT command would not run. A shard is not a
+  # scope — it is a SLICE of one, and every slice of the sharded lane plus the `system`
+  # job is, by construction, a subset of what `bin/rails db:test:prepare test test:system`
+  # already runs. Running the DEFAULT is therefore a SUPERSET of CI's Ruby suite, which
+  # is the honest fallback this module already documents for a repo with no ci.yml.
+  #
+  # SO THE SPLIT IS TOLERATED ONLY WHERE THAT SUPERSET CLAIM IS CHECKABLE, and it is
+  # checked three ways rather than asserted:
+  #
+  #   1. HERE, structurally — `sharded_lane?` demands that exactly one suite step is the
+  #      repo's own shard runner, that every OTHER suite step is a rails invocation whose
+  #      ENTIRE task list is drawn from SHARD_COMPANION_TASKS (the tasks DEFAULT already
+  #      runs), and that the repo carries the shard contract. A fifth job appearing with
+  #      `bin/rails test:some_other_tier` fails that third clause and refuses again,
+  #      because DEFAULT would not run it.
+  #   2. IN THE TREE — test/lib/rails_lane_contract_test.rb asserts that the sharded
+  #      lane's manifest UNIONED with the excluded system tests is exactly
+  #      `test/**/*_test.rb`, which is the set DEFAULT runs. That is the superset claim
+  #      itself, as an assertion, on the real tree.
+  #   3. AT RUNTIME — bin/rails-executed-set-check re-derives the expected file set from
+  #      the committed tree and refuses a CI run whose shard receipts do not account for
+  #      all of it. So CI's side of the equality is measured, not trusted.
+  #
+  # WHAT THIS DELIBERATELY DOES NOT DO: it does not resolve the sharded lane to a
+  # command. `for_root` still returns nil — there IS no single CI command here — and the
+  # caller falls through to DEFAULT via `resolve`. Inventing a command and returning it
+  # from `for_root` would make the cert claim it is running "CI's own line" when it is
+  # running a superset of it, and this module's whole disease is claims that outrun
+  # what was checked.
+  #
+  # The basename of the repo-local script that runs one slice of the Ruby suite.
+  # Compared by BASENAME so `./bin/ci-shard` and `bin/ci-shard` are the same thing.
+  SHARD_RUNNER = "ci-shard"
+
+  # The shard runner is only believed where its contract lives — the file that declares
+  # the shard count and the globs, and that bin/rails-executed-set-check audits against.
+  # A repo with a script called `ci-shard` and no contract gets no tolerance here.
+  SHARD_CONTRACT = File.join("config", "rails_lane.yml")
+
+  # The rails/rake tasks a suite step may carry BESIDE the sharded lane and still be
+  # covered by DEFAULT (`bin/rails db:test:prepare test test:system`). Anything outside
+  # this set is a tier DEFAULT would not run, so the split refuses as it always did.
+  SHARD_COMPANION_TASKS = %w[db:test:prepare test:prepare test test:system].freeze
+
   # The triggers that make a workflow part of the PR verdict this lane stands in for.
   # turf-monster's devnet-nightly.yml (schedule + workflow_dispatch) is deliberately
   # not one of them.
@@ -913,6 +974,46 @@ module CiTestCommand
     steps.map(&:strip).select { |run| foreign_test_runner?(run) && !runs_ruby_suite?(run, root) }
   end
 
+  # Is this repo's Ruby suite split ONLY in the one way DEFAULT still covers — a sharded
+  # lane plus companion steps whose tasks DEFAULT already runs? See the constants above
+  # for the argument; this is only its arithmetic.
+  def self.sharded_lane?(root, suite = nil)
+    return false if root.nil?
+    return false unless File.exist?(File.join(root.to_s, SHARD_CONTRACT))
+
+    suite ||= suite_steps(root)
+    return false unless suite.length > 1
+    return false unless suite.all? { |workflow, _job, _run| workflow == File.basename(WORKFLOW) }
+
+    shards, companions = suite.partition { |_workflow, _job, run| shard_runner?(run) }
+    return false unless shards.length == 1
+    return false if companions.empty?
+
+    companions.all? { |_workflow, _job, run| covered_by_default?(run) }
+  end
+
+  def self.shard_runner?(command)
+    invocations(command).any? do |tokens|
+      exe, = entrypoint(tokens)
+      exe == SHARD_RUNNER
+    end
+  end
+
+  # Every rails/rake task this command runs, and are they ALL ones DEFAULT runs too?
+  # A command with no rails invocation at all answers false: it is a suite step by the
+  # net probe's reckoning (something in it runs tests) that this reader cannot account
+  # for, and an unaccountable step is not one DEFAULT has been shown to cover.
+  def self.covered_by_default?(command)
+    tasks = invocations(command).flat_map do |tokens|
+      exe, args = entrypoint(tokens)
+      next [] unless exe && RAILS_ENTRYPOINTS.include?(exe)
+
+      rails_task_args(args)
+    end
+
+    tasks.any? && tasks.all? { |task| SHARD_COMPANION_TASKS.include?(task.to_s) }
+  end
+
   # The ONE command the cert lane may run as CI's Ruby suite, or nil when there is
   # none it can honestly stand in for.
   #
@@ -957,6 +1058,12 @@ module CiTestCommand
     steps = run_steps(root)
 
     return opaque_refusal(root, opaque) if opaque.any?
+
+    # THE SHARDED LANE. A split whose parts are all slices of what DEFAULT runs is not a
+    # suite this lane would only run PART of — `resolve` falls through to DEFAULT, a
+    # superset. See SHARD_RUNNER above for why that is checkable rather than assumed.
+    return nil if suite.length > 1 && sharded_lane?(root, suite)
+
     return split_refusal(root, suite) if suite.length > 1
     return unrunnable_refusal(root, suite.first) if suite.length == 1 && unrunnable_reason(suite.first)
     return foreign_refusal(root) if foreign_test_steps(root).any?

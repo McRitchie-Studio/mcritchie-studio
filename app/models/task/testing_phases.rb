@@ -36,7 +36,23 @@ class Task
     CERT_CHECKPOINT = "cert"
     CERT_FINISHED = %w[completed finished failed].freeze
     # CI test-scope AgentAction slugs (config/devops_test_suites.yml ci_scopes).
-    CI_SCOPES = %w[ci_test ci_lint ci_scan_ruby ci_scan_js].freeze
+    #
+    # `ci_rails` covers all four shards of the sharded suite — bin/ci-scope-capture strips
+    # the matrix suffix, so `rails (1)`..`rails (4)` all report under it.
+    #
+    # `ci_test` IS THE RETIRED NAME AND IT STAYS. It was the slug for the monolithic
+    # `test` job that the sharded lane replaced on 2026-08-20, and this list is not a
+    # description of today's workflow — it is the reader for AgentAction rows that were
+    # WRITTEN AT THE TIME. Every task shipped before that date carries `ci_test` rows and
+    # nothing else; drop the slug and their timeline's CI phase renders blank, silently,
+    # for the whole history of the board.
+    #
+    # This is exactly the kind of thing a workflow rename takes with it and a test caught
+    # by accident: testing_phases_test.rb builds its fixtures with `ci_test`, and the four
+    # failures it produced were the only sign that a data-compatibility break was in the
+    # diff. Retiring a slug from the WRITER (bin/ci-scope-capture) and from the READER are
+    # two different decisions, and only the first one is safe to make on a rename.
+    CI_SCOPES = %w[ci_rails ci_rails_executed_set ci_system ci_lint ci_scan_ruby ci_scan_js ci_test].freeze
     # The task-grain review gates whose first attempt marks actual review start.
     REVIEW_GATE_KEYS = %w[g2a_primary g2b_light].freeze
 
