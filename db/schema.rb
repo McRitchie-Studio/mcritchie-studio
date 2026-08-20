@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_15_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_20_130931) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -922,6 +922,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_15_120000) do
     t.datetime "shipped_at"
     t.string "slug", null: false
     t.jsonb "smoke_seal", default: {}, null: false
+    t.jsonb "stage_averages", default: {}, null: false
+    t.datetime "stage_averages_cached_at"
+    t.integer "stage_averages_version", default: 0, null: false
     t.string "state", default: "assembling", null: false
     t.datetime "tested_at"
     t.datetime "testing_started_at"

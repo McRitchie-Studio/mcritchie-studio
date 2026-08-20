@@ -275,14 +275,24 @@ class Release < ApplicationRecord
   # the board to get faster is reading the wrong method; the board's cost was its
   # task scope and its payload.
   #
-  # THE SNAPSHOT LIVES IN POSTGRES, NOT Rails.cache, and that is the whole
-  # mechanism. In production `ship!` runs on a ONE-OFF dyno (bin/release's
-  # conductor shells `heroku run ... rails runner`), and Rails.cache there is a
-  # per-dyno FileStore — config.cache_store is left unset. A warm written to that
-  # dyno's tmp/cache is destroyed when the process exits and no web dyno ever sees
-  # it. Writing to a column reaches every reader, because every reader shares the
-  # database. This mirrors Release::DurationCache, which solved the same problem
-  # the same way and is invoked from the very same conductor block.
+  # THE SNAPSHOT LIVES IN DEDICATED COLUMNS, and it took two send-backs to get
+  # both halves of that right.
+  #
+  # NOT Rails.cache: in production `ship!` runs on a ONE-OFF dyno (bin/release's
+  # conductor shells `heroku run ... rails runner`) and Rails.cache there is a
+  # per-dyno FileStore, so a warm written to that dyno's tmp/cache dies with the
+  # process and no web dyno ever sees it.
+  #
+  # NOT the shared `metadata` jsonb either, which was the second attempt: the
+  # snapshot was erased FOUR LINES after it was written. Release::Conductor.ship!
+  # calls release.ship! (which writes through a freshly-loaded instance) and then
+  # stamp_session_mascot on its own now-stale object, whose
+  # `update!(metadata: meta)` rewrites the whole blob without the new key. Four
+  # writers rewrite that column wholesale; reordering one is whack-a-mole.
+  #
+  # So: dedicated columns, exactly as Release::DurationCache does it
+  # (duration_metrics / duration_metrics_cached_at / duration_cache_version) and
+  # immune for exactly the same reason.
   #
   # The snapshot rides the release it was taken FOR — the one just shipped — and
   # the reader takes the newest shipped release's copy, so "the freshest snapshot"
@@ -301,11 +311,11 @@ class Release < ApplicationRecord
   # rescued: this runs on the PUBLIC, unauthenticated /deployments render, so a
   # malformed payload must degrade to a recompute, never to a 500.
   def self.stored_deployment_stage_averages(limit)
-    snapshot = last_shipped&.metadata&.dig("deployment_stage_averages")
-    return nil unless snapshot.is_a?(Hash)
-    return nil unless snapshot["version"] == DEPLOYMENT_AVERAGES_VERSION
+    source = last_shipped
+    return nil unless source
+    return nil unless source.stage_averages_version == DEPLOYMENT_AVERAGES_VERSION
 
-    window = snapshot.dig("windows", limit.to_s)
+    window = source.stage_averages[limit.to_s]
     window.is_a?(Hash) && window["stages"].present? ? window : nil
   rescue StandardError => e
     ErrorLog.capture!(e)
@@ -314,24 +324,24 @@ class Release < ApplicationRecord
 
   # Recompute EVERY rendered window and store them on the newest shipped release —
   # the end-of-deployment warm. Windows come from RENDERED_AVERAGE_WINDOWS so the
-  # page cannot render a row this never refreshes. Returns the snapshot, or nil
-  # when there is no shipped release to hang it on.
+  # page cannot render a row this never refreshes. Returns the stored windows, or
+  # nil when there is no shipped release to hang them on.
   def self.refresh_deployment_stage_averages!(windows: RENDERED_AVERAGE_WINDOWS)
     target = last_shipped
     return nil unless target
 
-    snapshot = {
-      "version" => DEPLOYMENT_AVERAGES_VERSION,
-      "cached_at" => Time.current.utc.iso8601,
-      "windows" => windows.to_h { |window| [window.to_s, compute_deployment_stage_averages(limit: window)] }
-    }
+    stored = windows.to_h { |window| [window.to_s, compute_deployment_stage_averages(limit: window)] }
     # update_columns, like DurationCache: this is a derived cache, not a state
-    # change, and it must not fire callbacks or touch the stage timeline.
+    # change, and it must not fire callbacks or touch the stage timeline. It also
+    # writes ONLY these three columns, so it cannot clobber a concurrent metadata
+    # write — and, being its own columns, cannot be clobbered BY one.
     target.update_columns( # rubocop:disable Rails/SkipsModelValidations
-      metadata: target.metadata.merge("deployment_stage_averages" => snapshot),
+      stage_averages: stored,
+      stage_averages_cached_at: Time.current,
+      stage_averages_version: DEPLOYMENT_AVERAGES_VERSION,
       updated_at: Time.current
     )
-    snapshot
+    stored
   end
 
   # The real work. Same span math as the per-row cells, so cards and columns can
