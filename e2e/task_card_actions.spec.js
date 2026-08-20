@@ -49,11 +49,11 @@ async function createTask(page, token, attrs) {
 // on 4957746) before it was fixed here.
 //
 // Nothing DURABLE carries the exit kind, so there is no post-hoc state to assert
-// instead — archive leaves the card re-parented into #dropzone-archived with
-// `data-exit-action` DELETED, and delete leaves no card at all. The durable
-// difference that does survive (moved vs gone, PATCH vs DELETE) is asserted
-// below, but on its own it would pass under a single shared exit and lose the
-// point of the test.
+// instead — both exits now leave the board with no card, since there is no
+// Archived column to re-parent into. The durable difference that does survive
+// (PATCH vs DELETE, and whether the RECORD is still findable at ?stage=archived)
+// is asserted below, but on its own it would pass under a single shared exit
+// animation and lose the point of the test.
 //
 // So the fix observes the attribute AT THE MOMENT IT IS SET rather than polling
 // for it afterwards. A MutationObserver armed BEFORE the click records every
@@ -139,7 +139,7 @@ test("task card archive and delete buttons persist and use distinct exits", asyn
 
   await page.reload();
 
-  // --- archive: the card SURVIVES, re-parented into the archived column -------
+  // --- archive: the card LEAVES the board, but the RECORD survives ------------
   const archiveCard = page.locator(`#card-${archiveSlug}`);
   await expect(archiveCard).toBeVisible();
   await expect(archiveCard.locator("[data-test='task-card-archive']")).toBeVisible();
@@ -150,8 +150,12 @@ test("task card archive and delete buttons persist and use distinct exits", asyn
   await archiveCard.locator("[data-test='task-card-archive']").click();
   const archiveResp = await archiveRespPromise;
   expect(archiveResp.ok(), await archiveResp.text()).toBeTruthy();
-  await expect(page.locator(`#dropzone-archived #card-${archiveSlug}`)).toHaveAttribute("data-stage", "archived");
-  await expect(archiveCard).toBeHidden();
+  await expect(archiveCard).toHaveCount(0);
+  // There is no Archived column to land in any more, so "moved vs gone" can no
+  // longer separate the two exits on the board. The durable difference now is
+  // whether the RECORD survives: archive parks it at ?stage=archived, delete
+  // leaves nothing to find. Asserted after the delete below, so one query proves
+  // both halves.
 
   // --- delete: the card is REMOVED outright ----------------------------------
   const deleteCard = page.locator(`#card-${deleteSlug}`);
@@ -168,12 +172,22 @@ test("task card archive and delete buttons persist and use distinct exits", asyn
   await expect(deleteCard).toHaveCount(0);
 
   // --- the exits were DISTINCT ------------------------------------------------
-  // Read after both exits have fully settled. Each card must have been stamped
-  // with its OWN exit kind and never the other's: collapse archive and delete
-  // onto one shared exit action and these three assertions go red.
+  // Read after both exits have fully settled and BEFORE any navigation: the
+  // recorder is in-page state, so a goto would wipe it and these three would read
+  // empty rather than fail honestly. Each card must have been stamped with its OWN
+  // exit kind and never the other's: collapse archive and delete onto one shared
+  // exit action and these three assertions go red.
   const archiveExits = await exitActionsFor(page, archiveSlug);
   const deleteExits = await exitActionsFor(page, deleteSlug);
   expect(archiveExits, `archive card exit actions: ${JSON.stringify(archiveExits)}`).toEqual(["archive"]);
   expect(deleteExits, `delete card exit actions: ${JSON.stringify(deleteExits)}`).toEqual(["delete"]);
   expect(archiveExits).not.toEqual(deleteExits);
+
+  // --- the RECORDS ended up in different places -------------------------------
+  // The archived task is still there under the stage filter; the deleted one is
+  // gone for good. This is the durable half of "the exits were distinct", and it
+  // is what replaces the old "re-parented into #dropzone-archived" assertion.
+  await page.goto("/tasks?stage=archived");
+  await expect(page.locator(`#card-${archiveSlug}`)).toBeVisible();
+  await expect(page.locator(`#card-${deleteSlug}`)).toHaveCount(0);
 });

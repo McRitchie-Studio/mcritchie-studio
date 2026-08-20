@@ -546,6 +546,40 @@ class Task < ApplicationRecord
     Array((tasks_by_stage || {})[stage.to_s])
   end
 
+  # How many `shipped` cards a board draws by default. Shipped is HISTORY, and it
+  # was the biggest column on either board — 31 of the 57 cards /deployments drew —
+  # carrying the heaviest crew markup (the 4-slot crew cluster). The cap trims the
+  # RENDER, never the record: `?stage=shipped` still returns every one.
+  BOARD_SHIPPED_LIMIT = 12
+
+  # The board's default task set: live work in full, plus the freshest slice of
+  # `shipped`, and NEVER `archived`.
+  #
+  # This scope is the page's whole performance story. The boards used to load every
+  # task and let each view pick columns out of the result, so a board drawing 57
+  # cards instantiated 1,212 tasks, 14,170 TaskEvents and 3,742 GateRuns — about 56%
+  # of everything the request allocated, on a dyno already reporting R14. Measured
+  # on production 2026-08-19: 648ms / 511,905 objects unscoped, 25ms / 24,784 scoped.
+  #
+  # `shipped` is capped in SQL rather than trimmed in Ruby afterwards so its
+  # TaskEvents are never instantiated either — the object count is the expensive
+  # half, not the row count. Callers pass an already-ordered, already-preloaded
+  # scope; `ordered` sorts waiting-approval first then position desc, so the kept
+  # slice is the freshest. Returns an Array, not a relation: it is two loads.
+  def self.board_default_tasks(scope = all)
+    scope.where.not(stage: %w[archived shipped]).to_a +
+      scope.where(stage: "shipped").limit(BOARD_SHIPPED_LIMIT).to_a
+  end
+
+  # { stage => true total } for every column board_default_tasks actually trimmed —
+  # empty when nothing was, so a board badge stays a plain number in the common
+  # case. Pass the SAME filtered scope the cards came from, or an agent-filtered
+  # board would advertise the unfiltered total.
+  def self.board_capped_stage_totals(scope = all)
+    shipped = scope.where(stage: "shipped").count
+    shipped > BOARD_SHIPPED_LIMIT ? { "shipped" => shipped } : {}
+  end
+
   # WIP — how much work is open right now, the DevOps card's sixth tile:
   # designed + building + submitted + reviewed + assembled. That set IS `live`
   # (everything but the two terminal stages), so this counts THROUGH the scope
