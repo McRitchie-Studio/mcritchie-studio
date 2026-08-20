@@ -21,7 +21,10 @@ class ReleasesController < ApplicationController
     # 3-avg between rows 3 and 4, 10-avg between rows 10 and 11. Clamped to the page
     # size and shown only on page 1, where the newest N releases actually live.
     rows_on_page = @releases.size
-    @deployment_average_rows = [3, 10].map do |window|
+    # Windows come from the MODEL so the page cannot render a row the
+    # end-of-deployment warm never refreshes — which is exactly what happened
+    # when this list and the warm's default were independent.
+    @deployment_average_rows = Release::RENDERED_AVERAGE_WINDOWS.map do |window|
       { label: "#{window}-release avg",
         averages: Release.deployment_stage_averages(limit: window),
         after_index: [window, rows_on_page].min - 1 }
