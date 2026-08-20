@@ -96,12 +96,20 @@ module Ci
 
     # `archived` is terminal and keeps its merged:"main" stamp forever. Counting it
     # would leave every main rung growing and never resetting.
-    test "archived tasks are excluded like every other terminal stamp" do
+    # The fixture is stamped ACCEPTED on purpose. Stamping it MERGED_MAIN would leave
+    # PARKED_STAMP excluding it anyway, so the `archived` filter would never be
+    # exercised and the guard would pass with the filter deleted — which is exactly
+    # what happened in review: swapping `where.not(stage: "archived")` for `Task.all`
+    # left all 21 tests green. An archived task at a COUNTED rung is the only shape
+    # that can bite.
+    test "an archived task at a counted rung is still excluded" do
       Task.delete_all
-      make_task(slug: "shipped-old", merged: Task::MERGED_MAIN, repos: %w[turf-monster], stage: "archived")
+      make_task(slug: "archived-on-accepted", merged: Task::MERGED_ACCEPTED,
+                repos: %w[turf-monster], stage: "archived")
       make_task(slug: "waiting-now", merged: Task::MERGED_ACCEPTED, repos: %w[turf-monster])
 
-      assert_equal 1, Ci::AppLadder.parked_index.dig("turf-monster", "accepted")
+      assert_equal 1, Ci::AppLadder.parked_index.dig("turf-monster", "accepted"),
+                   "archived work must not count, even at a rung that does"
     end
 
     test "an unstamped task parks nowhere" do
