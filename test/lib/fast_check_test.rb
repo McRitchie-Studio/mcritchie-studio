@@ -227,7 +227,7 @@ class FastCheckTest < Minitest::Test
     with_repo do |dir, _|
       out, code, = run_check(dir)
       assert_equal 0, code, out
-      assert_match(/\A\[fast-cert@[0-9a-f]{7,64}\]/, out)
+      assert_match(/\A\[fast-cert@[0-9a-f]{7,64}(?::[^\]\s]+)?\]/, out)
       assert_match(/full suite runs on CI/, out)
     end
   end
@@ -535,7 +535,7 @@ class FastCheckTest < Minitest::Test
     # The writer and the reader must agree, or fast-cert evidence never validates.
     with_repo do |dir, _|
       out, = run_check(dir)
-      runner_fp = out[/@([0-9a-f]{7,64})\]/, 1]
+      runner_fp = out[/@([0-9a-f]{7,64})[:\]]/, 1]
       dor_fp = IO.popen(child_env("DOR_CHECK_DIFF_ROOT" => dir),
                         "#{DOR} --suite-fingerprint 2>/dev/null", &:read).strip
       assert_equal dor_fp, runner_fp
@@ -569,7 +569,7 @@ class FastCheckTest < Minitest::Test
       update = lines.find { |l| l[0] == "TASK" && l[1] == "update" }
       refute_nil update, "green run records evidence via task update: #{lines.inspect}"
       checks = update.each_cons(2).select { |a, _| a == "--checks" }.map(&:last)
-      assert(checks.any? { |c| c =~ /\A\[fast-cert@[0-9a-f]{7,64}\]/ }, "fresh fast-cert line recorded")
+      assert(checks.any? { |c| c =~ /\A\[fast-cert@[0-9a-f]{7,64}(?::[^\]\s]+)?\]/ }, "fresh fast-cert line recorded")
       refute_includes checks.join("\n"), "[fast-cert@oldfp]",
                       "the stale fast-cert line is never resent — the funnel supersedes this lane"
     end
@@ -612,7 +612,7 @@ class FastCheckTest < Minitest::Test
       assert_equal 1, checks.size,
                    "the cert must send ONE line — its own evidence. Resending its snapshot of the author's " \
                    "lines lets a stale read replace newer tier lines: #{checks.inspect}"
-      assert_match(/\A\[fast-cert@[0-9a-f]{7,64}\]/, checks.first)
+      assert_match(/\A\[fast-cert@[0-9a-f]{7,64}(?::[^\]\s]+)?\]/, checks.first)
     end
   end
 

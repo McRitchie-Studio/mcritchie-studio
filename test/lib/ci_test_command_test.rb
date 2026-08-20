@@ -460,19 +460,37 @@ class CiTestCommandTest < Minitest::Test
   # --- the drift guard ---------------------------------------------------------
 
   def test_the_fallback_default_matches_the_hubs_own_ci_command
-    # THE DRIFT GUARD for the fallback. For a repo WITH a ci.yml the resolver reads
-    # it, so drift is impossible by construction; the only string that can rot is
-    # DEFAULT. Assert it against the hub's REAL ci.yml so changing either side alone
-    # fails HERE, at the seam, with the tiers named.
-    ci = CiTestCommand.for_root(HUB_ROOT)
-
-    refute_nil ci, "the hub's ci.yml `test` job no longer has a single bin/rails step — the guard is blind"
-    assert_equal ci, CiTestCommand::DEFAULT,
+    # THE DRIFT GUARD for the fallback. The only string in this module that can rot is
+    # DEFAULT, so it is asserted against the hub's REAL ci.yml — changing either side
+    # alone fails HERE, at the seam, with the tiers named.
+    #
+    # WHAT CHANGED ON 2026-08-20. The hub's Ruby suite is now SHARDED (`rails`, a 4-way
+    # bin/ci-shard matrix, plus `system`), so there IS no single CI command for
+    # `for_root` to return and the old equality could not be stated. The guard therefore
+    # asserts the property that LICENSES the fallback instead: the workflow reads as the
+    # sharded lane, `for_root` declines to invent a command for it, and `resolve` falls
+    # through to the DEFAULT superset — which must still carry the system tier.
+    #
+    # NOT VACUOUS: `resolve` returns DEFAULT for a repo with no CI suite at all, so the
+    # sharded_lane? assertion comes FIRST. Without it this passes over a ci.yml that
+    # lost its Ruby lane entirely, which is the exact failure it exists to catch.
+    assert CiTestCommand.sharded_lane?(HUB_ROOT),
+           "the hub's ci.yml no longer reads as the sharded lane — this guard is blind"
+    assert_nil CiTestCommand.for_root(HUB_ROOT),
+               "a sharded lane has no single CI command; for_root must not invent one"
+    assert_equal CiTestCommand::DEFAULT, CiTestCommand.resolve(HUB_ROOT),
                  "the cert's fallback command must run CI's full suite (base + system tiers), verbatim"
+    assert_includes CiTestCommand::DEFAULT, "test:system"
   end
 
-  def test_the_hub_resolves_to_its_own_ci_command
-    assert_equal CiTestCommand.for_root(HUB_ROOT), CiTestCommand.resolve(HUB_ROOT)
+  def test_the_hubs_sharded_lane_resolves_to_the_DEFAULT_superset
+    # The union of the hub's shards and its `system` job is every file under test/, and
+    # that is precisely what DEFAULT runs — the superset claim, asserted on the real
+    # tree by test/lib/rails_lane_contract_test.rb and at runtime by
+    # bin/rails-executed-set-check. Here we only pin that the resolver acts on it.
+    assert_nil CiTestCommand.refusal(HUB_ROOT),
+               "the sharded hub lane must not refuse its own cert"
+    assert_equal CiTestCommand::DEFAULT, CiTestCommand.resolve(HUB_ROOT)
     assert_includes CiTestCommand.resolve(HUB_ROOT), "test:system"
   end
 
@@ -749,7 +767,9 @@ class CiTestCommandTest < Minitest::Test
     # is refusing — which is how we learn the scan over-fires, HERE, not at a gate.
     assert_nil CiTestCommand.refusal(HUB_ROOT),
                "the cross-job scan must not refuse the hub's own ci.yml"
-    assert_equal CiTestCommand::DEFAULT, CiTestCommand.for_root(HUB_ROOT)
+    # `for_root` is nil here BY DESIGN since the suite was sharded — the hub has no
+    # single CI command — so the live pin is on what the cert actually runs.
+    assert_equal CiTestCommand::DEFAULT, CiTestCommand.resolve(HUB_ROOT)
   end
 
   # --- a FOREIGN test runner beside the rails step -------------------------------

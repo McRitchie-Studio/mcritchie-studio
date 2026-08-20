@@ -1,6 +1,12 @@
 # frozen_string_literal: true
 
 require "yaml"
+# The gem→suite-workflow map lives in lib/ so that BOTH this file and bin/release.rb
+# (which require_relative's this model, see below) read one list. require_relative
+# rather than relying on autoload, because this file is loaded three ways: by
+# Zeitwerk under Rails, by bin/release.rb standalone, and by its own standalone test.
+# Only the first of those has an autoloader.
+require_relative "../../../lib/gem_ci_workflows"
 
 class Release
   # CAN THIS REPO'S CI EVER RENDER A VERDICT ON `accepted`?
@@ -55,10 +61,20 @@ class Release
     # standalone script with no ActiveRecord — it cannot reference a model constant,
     # and a CLI-side copy would be that second literal all over again.
     DEFAULT_SUITE_WORKFLOW = "CI"
-    GEM_SUITE_WORKFLOWS = {
-      "studio-engine" => "Engine CI",
-      "solana-studio" => nil # ships no suite workflow — declared, not overlooked
-    }.freeze
+    # DERIVED, not redeclared. This began as its own literal copy of the map, which
+    # would have made TWO sources of truth for the same list the moment
+    # certify-engine-before-publish landed lib/gem_ci_workflows.rb. That lib's header
+    # names the cost exactly: "adding a second literal anywhere would leave the next
+    # gem blind, which is the bug that made every studio-engine PR unclaimable by
+    # pr-review." A gem added to one copy and not the other fails silently, because
+    # an unmapped gem reads as :unmapped in one path and as a real answer in the other.
+    #
+    # The data lives in lib/ rather than here because bin/release.rb — the standalone
+    # CLI that runs the gem publish gate — cannot load an AR model. This class still
+    # owns the INTERPRETATION of that data (DEFAULT_SUITE_WORKFLOW, UNMAPPED, and
+    # suite_workflow_for below); it simply no longer owns a second copy of it.
+    # ::-PREFIXED so it cannot resolve against the enclosing Release nesting.
+    GEM_SUITE_WORKFLOWS = ::GemCiWorkflows::MAP
 
     # A push trigger carrying a path filter is a SECOND, quieter way to go blind: the
     # filter suppresses the workflow RUN, so there are no jobs to skip and no checks

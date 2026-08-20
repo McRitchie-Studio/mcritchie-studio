@@ -192,7 +192,7 @@ class CiWorkflowTriggersTest < Minitest::Test
   #      lane sails through (Avi's catch on the satellite port).
   #   3. `^\s*…\s*$` — anchored BOTH ends, so the pinned command must be the ENTIRE line.
   #      This also closes two vectors the trailing anchor alone did NOT: a COMMENTED-OUT
-  #      suite line (`# bin/rails db:test:prepare test test:system` — matched, ran
+  #      suite line (`# #{SUITE_SCRIPT}` — matched, ran
   #      nothing), and a SHORT-CIRCUIT prefix (`true || bin/rails …` — matched, never
   #      executed). Both were live under rung 2.
   # Each rung is pinned by a refutation fixture below (`…prepare_only…`,
@@ -250,12 +250,44 @@ class CiWorkflowTriggersTest < Minitest::Test
   # The right instinct on reading this list is NOT "the class is closed." It is "here is
   # where I would look next."
   # THE EXACT SCRIPT the suite lane must run. Not a pattern to match — the whole body.
-  SUITE_SCRIPT = "bin/rails db:test:prepare test test:system"
+  #
+  # CHANGED 2026-08-20, DELIBERATELY, and this comment is the reviewable record of it.
+  # The Ruby suite used to be one command on one runner — `bin/rails db:test:prepare test
+  # test:system` — and it was 411s of a 534s job while every other lane sat idle. It is
+  # now a 4-way shard matrix (`rails`) plus its own system-test job (`system`), so there
+  # are TWO exact scripts to pin rather than one, and both are enrolled in
+  # VERDICT_COMMANDS below.
+  #
+  # SHARDING WEAKENS THIS FILE'S KIND OF GUARD, and that is worth stating plainly rather
+  # than glossing. Pinning a command body proves what the lane was ASKED to run; with one
+  # runner and one glob that was nearly the whole question. With four buckets it is not:
+  # each shard could be handed an empty list and exit 0, and every assertion here would
+  # still pass. So the load-bearing guard for the sharded lane is no longer in this file
+  # at all — it is `rails_executed_set`, which reads the shards' own receipts and asserts
+  # the executed set against the committed tree (bin/rails-executed-set-check). That gate
+  # is itself enrolled in VERDICT_COMMANDS, so THIS file still proves the gate runs
+  # unconditionally; it just no longer pretends to prove the coverage by itself.
+  SUITE_SCRIPT = "bin/ci-shard --shard=${{ matrix.shard }}/${{ strategy.job-total }}"
+
+  # The system tier's exact body. It left the suite command when the lane was sharded —
+  # 13 Capybara tests are not worth four runners each paying for a Chrome install — and
+  # a tier that moves into its own job is exactly the shape (spelling 4 in
+  # bin/lib/ci_test_command.rb's history) that once went un-enrolled and un-run. Enrolled
+  # here on the day it moved.
+  SYSTEM_SCRIPT = "bin/rails db:test:prepare test:system"
 
   # Used only to FIND the lane. Whether that lane is CORRECT is decided by the positive
   # invariant below (suite_lanes_with_a_foreign_script), which compares the run body to
   # SUITE_SCRIPT exactly. A regex finds; it does not certify.
   TEST_COMMAND = /^\s*#{Regexp.escape(SUITE_SCRIPT)}\s*$/
+
+  # Used only to FIND the system lane; the positive invariant judges it, as above.
+  SYSTEM_COMMAND = /^\s*#{Regexp.escape(SYSTEM_SCRIPT)}\s*$/
+
+  # THE RAILS LANE'S EXECUTED-SET GATE — the counterpart to EXECUTED_SET_COMMAND, and
+  # for the sharded suite it is THE verdict lane: the only thing in the repo that can
+  # tell you four green `rails` checks were not green over four empty buckets.
+  RAILS_EXECUTED_SET_COMMAND = %r{bin/rails-executed-set-check\b}
 
   # Env keys that NARROW the suite to a subset (or to nothing) while the COMMAND on the
   # line stays BYTE-IDENTICAL to the real invocation. The anchored pattern above cannot
@@ -324,7 +356,9 @@ class CiWorkflowTriggersTest < Minitest::Test
   # Each one earns the SAME unconditional-execution assertion. Add a lane to CI that
   # gates a merge, add it HERE.
   VERDICT_COMMANDS = {
-    "the rails suite" => TEST_COMMAND,
+    "the sharded rails suite" => TEST_COMMAND,
+    "the rails system-test suite" => SYSTEM_COMMAND,
+    "the rails executed-set gate" => RAILS_EXECUTED_SET_COMMAND,
     "the playwright e2e suite" => E2E_COMMAND,
     "the e2e executed-set gate" => EXECUTED_SET_COMMAND
   }.freeze
@@ -556,7 +590,7 @@ class CiWorkflowTriggersTest < Minitest::Test
   #     - name: Cache warm
   #       run: echo "DEFAULT_TEST_EXCLUDE=test/**/*_test.rb" >> "$GITHUB_ENV"
   #     - name: Run tests
-  #       run: bin/rails db:test:prepare test test:system   # byte-identical, unconditional
+  #       run: #{SUITE_SCRIPT}   # byte-identical, unconditional
   #
   # The suite step is untouched — same command, no `if:`, no env: block — and it runs ZERO
   # tests and exits 0. Only the steps ORDERED BEFORE it in the same job can reach it, so
@@ -795,7 +829,7 @@ class CiWorkflowTriggersTest < Minitest::Test
           steps:
             - name: Run tests
               continue-on-error: true
-              run: bin/rails db:test:prepare test test:system
+              run: #{SUITE_SCRIPT}
         lint:
           continue-on-error: true
           runs-on: ubuntu-latest
@@ -884,7 +918,7 @@ class CiWorkflowTriggersTest < Minitest::Test
           runs-on: ubuntu-latest
           steps:
             - name: Run tests
-              run: bin/rails db:test:prepare test test:system -n /nothing_matches_this/
+              run: #{SUITE_SCRIPT} -n /nothing_matches_this/
     YML
     assert_empty suite_command_lanes(yaml),
                  "a narrowed suite command runs ~zero tests — it must never count as the suite lane"
@@ -903,7 +937,7 @@ class CiWorkflowTriggersTest < Minitest::Test
           steps:
             - name: Run tests
               run: |
-                # bin/rails db:test:prepare test test:system
+                # #{SUITE_SCRIPT}
                 echo "suite temporarily disabled"
     YML
     assert_empty suite_command_lanes(yaml),
@@ -923,7 +957,7 @@ class CiWorkflowTriggersTest < Minitest::Test
           steps:
             - name: Run tests
               run: |
-                true || bin/rails db:test:prepare test test:system
+                true || #{SUITE_SCRIPT}
     YML
     assert_empty suite_command_lanes(yaml),
                  "a short-circuited suite command never executes — it must never count as the suite lane"
@@ -944,7 +978,7 @@ class CiWorkflowTriggersTest < Minitest::Test
             - name: Run tests
               env:
                 TESTOPTS: "-n /nothing_matches_this/"
-              run: bin/rails db:test:prepare test test:system
+              run: #{SUITE_SCRIPT}
     YML
     refute_empty suite_command_lanes(yaml), "the command itself still reads as the suite lane"
     assert_equal ["job `test` → step `Run tests` (TESTOPTS)"], narrowing_env_lanes(yaml)
@@ -965,7 +999,7 @@ class CiWorkflowTriggersTest < Minitest::Test
               env:
                 RAILS_ENV: test
                 DATABASE_URL: postgres://postgres:postgres@localhost:5432
-              run: bin/rails db:test:prepare test test:system
+              run: #{SUITE_SCRIPT}
     YML
     assert_empty narrowing_env_lanes(yaml), "ordinary RAILS_ENV/DATABASE_URL must not be flagged as narrowing"
   end
@@ -986,7 +1020,7 @@ class CiWorkflowTriggersTest < Minitest::Test
           runs-on: ubuntu-latest
           steps:
             - name: Run tests
-              run: bin/rails db:test:prepare test test:system
+              run: #{SUITE_SCRIPT}
     YML
     assert_equal [ "workflow `env:` (TESTOPTS)" ], narrowing_env_lanes(yaml)
   end
@@ -1008,7 +1042,7 @@ class CiWorkflowTriggersTest < Minitest::Test
             - name: Run tests
               env:
                 TEST: test/models/one_trivial_test.rb
-              run: bin/rails db:test:prepare test test:system
+              run: #{SUITE_SCRIPT}
     YML
     assert_equal [ "job `test` → step `Run tests` (TEST)" ], narrowing_env_lanes(yaml)
   end
@@ -1028,7 +1062,7 @@ class CiWorkflowTriggersTest < Minitest::Test
             - name: Run tests
               env:
                 DEFAULT_TEST_EXCLUDE: "test/**/*_test.rb"
-              run: bin/rails db:test:prepare test test:system
+              run: #{SUITE_SCRIPT}
     YML
     assert_equal [ "job `test` → step `Run tests` (DEFAULT_TEST_EXCLUDE)" ], narrowing_env_lanes(yaml)
   end
@@ -1055,7 +1089,7 @@ class CiWorkflowTriggersTest < Minitest::Test
             - name: Run tests
               run: |
                 export DEFAULT_TEST_EXCLUDE='test/**/*_test.rb'
-                bin/rails db:test:prepare test test:system
+                #{SUITE_SCRIPT}
     YML
     refute_empty suite_command_lanes(yaml), "the lane is still FOUND — the command line is intact"
     assert_empty narrowing_env_lanes(yaml), "and the env walk sees nothing: it is not an env: key"
@@ -1076,7 +1110,7 @@ class CiWorkflowTriggersTest < Minitest::Test
           runs-on: ubuntu-latest
           steps:
             - name: Run tests
-              run: DEFAULT_TEST_EXCLUDE='test/**/*_test.rb' bin/rails db:test:prepare test test:system
+              run: DEFAULT_TEST_EXCLUDE='test/**/*_test.rb' #{SUITE_SCRIPT}
     YML
     assert_empty suite_command_lanes(yaml),
                  "an inline VAR=x prefix leaves NO lane running the pinned script — the primary " \
@@ -1104,7 +1138,7 @@ class CiWorkflowTriggersTest < Minitest::Test
                 test/**/*_test.rb
                 HEREDOC
                 EOF
-                bin/rails db:test:prepare test test:system
+                #{SUITE_SCRIPT}
     YML
     refute_empty suite_lanes_with_a_foreign_script(yaml),
                  "the heredoc form must not walk past the guard the way it walks past a `KEY=` regex"
@@ -1123,7 +1157,7 @@ class CiWorkflowTriggersTest < Minitest::Test
           steps:
             - name: Run tests
               run: |
-                true || bin/rails db:test:prepare test test:system
+                true || #{SUITE_SCRIPT}
     YML
     assert_empty suite_command_lanes(short_circuit), "not even found as a lane — refute_empty fails first"
   end
@@ -1145,7 +1179,7 @@ class CiWorkflowTriggersTest < Minitest::Test
               run: |
                 # The whole suite, unconditionally. See test/lib/ci_workflow_triggers_test.rb.
 
-                bin/rails db:test:prepare test test:system
+                #{SUITE_SCRIPT}
     YML
     assert_empty suite_lanes_with_a_foreign_script(yaml)
     refute_empty suite_command_lanes(yaml)
@@ -1168,7 +1202,7 @@ class CiWorkflowTriggersTest < Minitest::Test
             - name: Cache warm
               run: echo "DEFAULT_TEST_EXCLUDE=test/**/*_test.rb" >> "$GITHUB_ENV"
             - name: Run tests
-              run: bin/rails db:test:prepare test test:system
+              run: #{SUITE_SCRIPT}
     YML
     assert_equal [ "job `test` → an earlier step's $GITHUB_ENV write (DEFAULT_TEST_EXCLUDE)" ],
                  narrowing_env_lanes(yaml)
@@ -1187,7 +1221,7 @@ class CiWorkflowTriggersTest < Minitest::Test
           runs-on: ubuntu-latest
           steps:
             - name: Run tests
-              run: bin/rails db:test:prepare test test:system
+              run: #{SUITE_SCRIPT}
             - name: Hand off to the next job
               run: echo "DEFAULT_TEST_EXCLUDE=test/**/*_test.rb" >> "$GITHUB_ENV"
     YML
@@ -1210,7 +1244,7 @@ class CiWorkflowTriggersTest < Minitest::Test
             - name: Run tests
               env:
                 DEFAULT_TEST_EXCLUDE: ""
-              run: bin/rails db:test:prepare test test:system
+              run: #{SUITE_SCRIPT}
     YML
     assert_empty narrowing_env_lanes(yaml)
   end
@@ -1228,7 +1262,7 @@ class CiWorkflowTriggersTest < Minitest::Test
             - name: Record the SHA
               run: echo "BUILD_SHA=$GITHUB_SHA" >> "$GITHUB_ENV"
             - name: Run tests
-              run: bin/rails db:test:prepare test test:system
+              run: #{SUITE_SCRIPT}
     YML
     assert_empty narrowing_env_lanes(yaml)
   end
@@ -1250,30 +1284,44 @@ class CiWorkflowTriggersTest < Minitest::Test
             - name: Run tests
               env:
                 TESTOPTS: ""
-              run: bin/rails db:test:prepare test test:system
+              run: #{SUITE_SCRIPT}
     YML
     assert_empty narrowing_env_lanes(yaml)
   end
 
-  def test_unit_recognizes_the_real_suite_command_as_a_test_lane
-    # The other half of vector 7: TEST_COMMAND must actually MATCH the live command, or
-    # the positive guard asserts a lane that never existed and passes vacuously — the
-    # same failure mode as the `on:`-boolean trap at the top of this file.
-    yaml = <<~YML
-      on:
-        push:
-          branches: [ main, release ]
-      jobs:
-        test:
-          runs-on: ubuntu-latest
-          steps:
-            - name: Run tests
-              run: bin/rails db:test:prepare test test:system
-    YML
-    lanes = suite_command_lanes(yaml)
+  def test_integration_the_pinned_suite_scripts_MATCH_THE_LIVE_WORKFLOW
+    # THE VACUITY CHECK, and it has to read the REAL ci.yml — not a fixture.
+    #
+    # This test used to build a synthetic workflow containing a hand-copied duplicate of
+    # the suite command and assert TEST_COMMAND matched it. That proved the regex matched
+    # the copy. When the suite was sharded on 2026-08-20 the fixtures in this file were
+    # re-pointed at the SUITE_SCRIPT constant so they could never drift from it again —
+    # which is right for the PARSER tests around it, and turned THIS one tautological:
+    # a fixture interpolating the constant matches the pattern built from that same
+    # constant, always, whatever either says about ci.yml.
+    #
+    # So it asks the live file instead. If SUITE_SCRIPT or SYSTEM_SCRIPT stops being a
+    # verbatim `run:` body in ci.yml, every positive guard in this file starts asserting
+    # things about an empty set — a guard that guards nothing, which is the exact failure
+    # mode the `on:`-boolean trap at the top of this file describes.
+    yaml_text = File.read(CI_YML)
 
-    assert_equal 1, lanes.size
-    assert_equal "test", lanes.first[0]
+    suite = suite_command_lanes(yaml_text)
+    refute_empty suite,
+                 "no step in the LIVE ci.yml has #{SUITE_SCRIPT.inspect} as its whole `run:` body. " \
+                 "TEST_COMMAND now matches nothing, so every positive guard here passes vacuously."
+
+    system_lanes = command_lanes(yaml_text, SYSTEM_COMMAND)
+    refute_empty system_lanes,
+                 "no step in the LIVE ci.yml has #{SYSTEM_SCRIPT.inspect} as its whole `run:` body. " \
+                 "The system tier moved into its own job when the suite was sharded; if it moved " \
+                 "again, re-point SYSTEM_SCRIPT — do not delete the pin."
+
+    gate = command_lanes(yaml_text, RAILS_EXECUTED_SET_COMMAND)
+    refute_empty gate,
+                 "no step in the LIVE ci.yml runs bin/rails-executed-set-check. For a SHARDED " \
+                 "suite that gate is the only thing that can tell four green checks over the " \
+                 "whole suite from four green checks over four empty buckets."
   end
 
   # --- [unit] the e2e lane: unconditional execution + scope ---------------------------
@@ -1502,25 +1550,41 @@ class CiWorkflowTriggersTest < Minitest::Test
   # This is the same lesson as the receipt, in miniature: an invariant that depends on a
   # condition must ASSERT that condition, or it is just hoping.
   def test_integration_the_test_job_can_see_the_ratchets_baseline
-    jobs = jobs_of(File.read(CI_YML))
-    job = jobs["test"]
+    # EVERY lane that could run the ratchet needs the baseline, not "the lane that does".
+    #
+    # test/lib/e2e_quarantine_ratchet_test.rb reads the @quarantine ceiling from
+    # `origin/release` — the one value a branch's own diff cannot move — and
+    # actions/checkout's default depth-1 fetch leaves that ref unresolvable. Before the
+    # suite was sharded there was one `test` job to point at. Now WHICH shard carries
+    # that file is decided by bin/lib/test_shard.rb's bin-packing and moves whenever a
+    # timing changes, so "the shard that runs it" is not a stable thing to assert about.
+    #
+    # So the assertion is over ALL of them: every lane that runs the sharded suite must
+    # check out the full history. Asserting it of only one would pass on a workflow where
+    # three shards out of four cannot see the baseline — which is a red build nobody can
+    # reproduce, arriving whenever a file moves bucket.
+    lanes = suite_command_lanes(File.read(CI_YML))
 
-    refute_nil job, "no `test` job in ci.yml — that is the job that runs the ratchet"
+    refute_empty lanes, "no ci.yml step runs the sharded rails suite — see the primary guard"
 
-    checkouts = Array(job["steps"]).select { |s| s.is_a?(Hash) && s["uses"].to_s.start_with?("actions/checkout") }
-    refute_empty checkouts, "the `test` job does not check out the repo"
+    shallow = lanes.filter_map do |job_name, job, _step|
+      checkouts = Array(job["steps"]).select { |s| s.is_a?(Hash) && s["uses"].to_s.start_with?("actions/checkout") }
+      next [job_name, "does not check out the repo"] if checkouts.empty?
 
-    depths = checkouts.map { |s| (s["with"] || {})["fetch-depth"] }
+      depths = checkouts.map { |s| (s["with"] || {})["fetch-depth"] }
+      next nil if depths.include?(0)
 
-    assert_includes depths, 0,
-                    "the `test` job checks out with fetch-depth #{depths.inspect}, so " \
-                    "`origin/release` DOES NOT RESOLVE in that checkout — and " \
-                    "test/lib/e2e_quarantine_ratchet_test.rb reads the @quarantine ceiling's " \
-                    "baseline from exactly that ref.\n" \
-                    "Without it the ratchet cannot see the one value this branch's diff cannot " \
-                    "move, and a ratchet without a baseline is a PIN — which is what it was, " \
-                    "and how the quarantine hole once grew by a spec with every guard in the " \
-                    "repo green. Restore `fetch-depth: 0` on the `test` job's checkout."
+      [job_name, "fetch-depth #{depths.inspect}"]
+    end
+
+    assert_empty shallow,
+                 "#{shallow.inspect} — `origin/release` DOES NOT RESOLVE in that checkout, and " \
+                 "test/lib/e2e_quarantine_ratchet_test.rb reads the @quarantine ceiling's " \
+                 "baseline from exactly that ref.\n" \
+                 "Without it the ratchet cannot see the one value this branch's diff cannot " \
+                 "move, and a ratchet without a baseline is a PIN — which is what it was, " \
+                 "and how the quarantine hole once grew by a spec with every guard in the " \
+                 "repo green. Restore `fetch-depth: 0` on every sharded suite lane's checkout."
   end
   # ====================================================================================
 

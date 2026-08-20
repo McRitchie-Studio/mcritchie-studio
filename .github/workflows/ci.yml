@@ -49,6 +49,7 @@ on:
 jobs:
   scan_ruby:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     steps:
       - name: Checkout code
@@ -68,6 +69,7 @@ jobs:
 
   scan_js:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     steps:
       - name: Checkout code
@@ -87,6 +89,7 @@ jobs:
 
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -105,6 +108,7 @@ jobs:
 
   island_animator:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -121,7 +125,18 @@ jobs:
           cache-dependency-glob: tools/island-background-animator/uv.lock
 
       - name: Install FFmpeg
-        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y ffmpeg
+        # The fetch is BOUNDED and RETRIED — see .github/scripts/apt-retry for the
+        # incident, the measured budgets, and why the loop lives in a script rather
+        # than inline here (short version: an inline `"$budget"` in a command
+        # position makes this step opaque to bin/lib/ci_test_command.rb, the cert
+        # that must be able to SEE every unit CI runs).
+        #
+        # This bound is the backstop, not the mechanism: the script's own escalating
+        # budgets total ~22 minutes, and 25 sits above that and well below the
+        # 45-minute job bound, so a step that blows through its retries still fails
+        # long before it can take the whole job down with it.
+        timeout-minutes: 25
+        run: .github/scripts/apt-retry ffmpeg
 
       - name: Check Island Background Animator
         run: tools/island-background-animator/bin/check
@@ -166,6 +181,7 @@ jobs:
   # serial in-shard model is preserved.
   playwright:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     strategy:
       fail-fast: false
@@ -183,11 +199,22 @@ jobs:
         options: --health-cmd="pg_isready" --health-interval=10s --health-timeout=5s --health-retries=3
 
     steps:
-      - name: Install packages
-        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y curl libjemalloc2 libvips postgresql-client
-
       - name: Checkout code
         uses: actions/checkout@v7
+
+      - name: Install packages
+        # The fetch is BOUNDED and RETRIED — see .github/scripts/apt-retry for the
+        # incident, the measured budgets, and why the loop lives in a script rather
+        # than inline here (short version: an inline `"$budget"` in a command
+        # position makes this step opaque to bin/lib/ci_test_command.rb, the cert
+        # that must be able to SEE every unit CI runs).
+        #
+        # This bound is the backstop, not the mechanism: the script's own escalating
+        # budgets total ~22 minutes, and 25 sits above that and well below the
+        # 45-minute job bound, so a step that blows through its retries still fails
+        # long before it can take the whole job down with it.
+        timeout-minutes: 25
+        run: .github/scripts/apt-retry curl libjemalloc2 libvips postgresql-client
 
       - name: Await RubyGems propagation for locked gems
         run: .github/scripts/await-gem-propagation.sh
@@ -295,6 +322,7 @@ jobs:
   # condition can, and test/lib/ci_workflow_triggers_test.rb refuses every other condition.
   e2e_executed_set:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     needs: playwright
     if: always()
 
@@ -320,8 +348,40 @@ jobs:
       - name: Assert the lane executed exactly the specs it claims to
         run: bin/e2e-executed-set-check e2e-reports
 
-  test:
+  # ================= THE RAILS LANE =================
+  #
+  # THE SHARDED RAILS SUITE. Until 2026-08-20 this was ONE job — `bin/rails
+  # db:test:prepare test test:system` — and it was the whole reason a hub PR waited ten
+  # minutes. Measured on run 32329490149, a GREEN run: the job took 534s, of which 411s
+  # was `bin/rails test` (6,828 tests, 4 workers on a 4-core runner), 13s was
+  # `test:system`, and 91s was setup. Every other job in this workflow was finished
+  # inside 3.2 minutes and then sat idle for another 5.7.
+  #
+  # WHAT LICENSES SPENDING FOUR RUNNERS ON IT. This repository is PUBLIC, so GitHub bills
+  # nothing for its Actions minutes. The old shape was optimising a resource that is
+  # free (runner-minutes) at the cost of the one that is not (the wall-clock a builder,
+  # a review sweep, and the G3 gate each wait on, three times per task). Sharding trades
+  # the free one for the scarce one.
+  #
+  # WHY FOUR AND NOT MORE lives in config/rails_lane.yml next to the number, so there is
+  # one place to read it and one place to change it. `strategy.job-total` supplies the
+  # denominator, and bin/ci-shard ABORTS if the matrix and the contract disagree.
+  #
+  # NO CHROME HERE. The browser belongs to the `system` job below — 13 tests that used
+  # to make this lane pay for a Chrome install and a chromedriver-eviction dance on
+  # every run, and would now make FOUR runners pay for it.
+  #
+  # THE UNION IS NOT ASSUMED. Four green shards over four empty buckets look exactly
+  # like four green shards over the whole suite, which is why `rails_executed_set` below
+  # is a separate, unconditional job rather than a claim in this comment.
+  rails:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
 
     services:
       postgres:
@@ -333,15 +393,192 @@ jobs:
           - 5432:5432
         options: --health-cmd="pg_isready" --health-interval=10s --health-timeout=5s --health-retries=3
 
-      # redis:
-      #   image: redis
-      #   ports:
-      #     - 6379:6379
-      #   options: --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 5
+    steps:
+      # fetch-depth: 0 IS LOAD-BEARING ON EVERY SHARD — do not "optimize" it back to the
+      # default, and do not try to put it on only the shard that needs it.
+      #
+      # test/lib/e2e_quarantine_ratchet_test.rb ratchets the @quarantine ceiling against
+      # its value on `origin/release` — the one number a PR's own diff cannot move.
+      # actions/checkout defaults to a depth-1 fetch of the head SHA ALONE, which leaves
+      # `origin/release` unresolvable, and a ratchet that cannot see its baseline cannot
+      # certify monotonicity. It FAILS CLOSED on a missing baseline, so deleting this
+      # line turns a shard red and says why.
+      #
+      # WHICH shard carries that file is decided by bin/lib/test_shard.rb's bin-packing
+      # and moves whenever a timing changes — so "the shard that needs it" is not a
+      # stable thing to point at. Every shard gets the full history. It costs a few
+      # seconds; guessing costs a red build nobody can reproduce.
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install packages
+        # The fetch is BOUNDED and RETRIED — see .github/scripts/apt-retry for the
+        # incident, the measured budgets, and why the loop lives in a script rather
+        # than inline here (short version: an inline `"$budget"` in a command
+        # position makes this step opaque to bin/lib/ci_test_command.rb, the cert
+        # that must be able to SEE every unit CI runs).
+        #
+        # This bound is the backstop, not the mechanism: the script's own escalating
+        # budgets total ~22 minutes, and 25 sits above that and well below the
+        # 45-minute job bound, so a step that blows through its retries still fails
+        # long before it can take the whole job down with it.
+        #
+        # `libjemalloc2` is deliberately absent from THIS list where the other jobs
+        # carry it: it is a PRODUCTION allocator this repo LD_PRELOADs in the
+        # Dockerfile, and nothing on the test path references it. `curl`,
+        # `postgresql-client` and `libvips` all stay — measured, not assumed:
+        # test/commands/agent_worktree_test.rb mints a real per-run Postgres database
+        # and bin/lib/cert_orphan_guard.rb shells `psql`, and libvips is required
+        # outright by image_processing + Active Storage's boot-time
+        # Vips.block_untrusted call.
+        timeout-minutes: 25
+        run: .github/scripts/apt-retry curl libvips postgresql-client
+
+      - name: Await RubyGems propagation for locked gems
+        run: .github/scripts/await-gem-propagation.sh
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: .ruby-version
+          bundler-cache: true
+
+      # ONE COMMAND, and it is the whole lane for this shard: bin/ci-shard prepares the
+      # database and the Tailwind build, runs the files this shard owns, and writes the
+      # receipt `rails_executed_set` will judge it on. It refuses to run if the matrix
+      # and config/rails_lane.yml disagree about the shard count, if its bucket is empty,
+      # or if the suite finished without producing a receipt.
+      #
+      # `--shard=` RATHER THAN A BARE `1/4` IS DELIBERATE, and it is the same reason the
+      # `playwright` job writes `--shard=${{ … }}`. bin/lib/ci_test_command.rb refuses a
+      # step that hands a BARE interpolated token to a command it has not proven inert,
+      # because such a token might BE the command. Attached to a flag, the interpolation
+      # is unambiguously a value. See the header of bin/ci-shard.
+      - name: Run this shard of the Rails suite
+        env:
+          RAILS_ENV: test
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432
+          CI_RECEIPT_OUT: ${{ github.workspace }}/rails-report-shard-${{ matrix.shard }}.json
+        run: bin/ci-shard --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+
+      # ALWAYS, not `if: failure()`. A FAILING test still RAN — the executed-set gate must
+      # see its receipt to count it. Uploading only on failure would mean the gate could
+      # audit only the runs that were already red.
+      - name: Upload this shard's executed-set receipt
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rails-report-shard-${{ matrix.shard }}
+          path: ${{ github.workspace }}/rails-report-shard-${{ matrix.shard }}.json
+          if-no-files-found: error
+
+  # THE EXECUTED-SET GATE. The `rails` shards above can prove their tests PASSED; they
+  # cannot prove they RAN THEM ALL — no test lane can answer that about itself, and
+  # sharding makes the question sharper rather than softer. This job reads the shards'
+  # own receipts and asserts the executed set against the COMMITTED TREE (it re-globs the
+  # repo; it does not ask the planner what it meant to run).
+  #
+  # `if: always()` is LOAD-BEARING and is the ONLY condition this job may ever carry.
+  # Without it, a red `rails` shard SKIPS this job — and a skipped required check does
+  # not report failure, so the one gate that would say "the lane ran fewer files than it
+  # claims" would go quiet in precisely the runs where it matters. `always()` cannot
+  # exclude the lane; every other condition can, and test/lib/ci_workflow_triggers_test.rb
+  # refuses every other condition.
+  #
+  # `bundler-cache: false` because the gate is stdlib-only (json + yaml). It audits the
+  # suite, so it must not be breakable by a dependency problem in the thing it audits.
+  rails_executed_set:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: rails
+    if: always()
 
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: .ruby-version
+          bundler-cache: false
+
+      - name: Download every shard's receipt
+        uses: actions/download-artifact@v4
+        with:
+          pattern: rails-report-shard-*
+          path: rails-reports
+          merge-multiple: true
+
+      - name: Assert the lane executed exactly the files it claims to
+        run: bin/rails-executed-set-check rails-reports
+
+  # THE SYSTEM-TEST LANE. 13 Capybara tests, ~13s of running, and the only thing in this
+  # workflow that needs a real Chrome. It used to ride inside the monolithic `test` job,
+  # where it charged the critical path for the Chrome install and the chromedriver
+  # eviction below; sharding would have charged FOUR runners for it. Its own job costs
+  # about 84s and runs concurrently with everything else, so it costs the PR nothing.
+  #
+  # config/rails_lane.yml EXCLUDES test/system from the sharded lane, and
+  # bin/rails-executed-set-check therefore does not expect those files in the receipts —
+  # the two halves of that split are pinned together by test/lib/rails_lane_contract_test.rb.
+  system:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    services:
+      postgres:
+        image: postgres
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: --health-cmd="pg_isready" --health-interval=10s --health-timeout=5s --health-retries=3
+
+    steps:
+      # CHECKOUT FIRST — .github/scripts/apt-retry is a file in THIS repo, so the apt
+      # step below cannot run before the tree exists. Ordering, not preference.
+      #
+      # `fetch-depth: 0` here is INHERITED, not required, and saying so beats leaving the
+      # next reader to guess. The `rails` shards need full history because
+      # test/lib/e2e_quarantine_ratchet_test.rb reads its baseline from `origin/release`
+      # and fails closed without it — the comment that used to sit here said exactly that,
+      # and it stopped being true of THIS lane the moment the suite was split: `system`
+      # runs test/system only, which reads no git history at all. It is kept because it is
+      # what the monolithic `test` job this lane was split out of already did: a few
+      # seconds on a job that is not the critical path, against the risk of finding out
+      # the hard way that something in boot wanted it. Measure that nothing does, and
+      # delete it.
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
       - name: Install packages
-        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y curl libjemalloc2 libvips postgresql-client
+        # The fetch is BOUNDED and RETRIED — see .github/scripts/apt-retry for the
+        # incident, the measured budgets, and why the loop lives in a script rather
+        # than inline here (short version: an inline `"$budget"` in a command
+        # position makes this step opaque to bin/lib/ci_test_command.rb, the cert
+        # that must be able to SEE every unit CI runs).
+        #
+        # This bound is the backstop, not the mechanism: the script's own escalating
+        # budgets total ~22 minutes, and 25 sits above that and well below the
+        # 45-minute job bound, so a step that blows through its retries still fails
+        # long before it can take the whole job down with it.
+        #
+        # `libjemalloc2` is deliberately absent from THIS list where the other jobs
+        # carry it: it is a PRODUCTION allocator this repo LD_PRELOADs in the
+        # Dockerfile, and nothing on the test path references it. `curl`,
+        # `postgresql-client` and `libvips` all stay — measured, not assumed:
+        # test/commands/agent_worktree_test.rb mints a real per-run Postgres database
+        # and bin/lib/cert_orphan_guard.rb shells `psql`, and libvips is required
+        # outright by image_processing + Active Storage's boot-time
+        # Vips.block_untrusted call.
+        timeout-minutes: 25
+        run: .github/scripts/apt-retry curl libvips postgresql-client
 
       # System-test lane browser. Install Chrome via Chrome for Testing, then let
       # Selenium Manager (bundled in selenium-webdriver 4.32) fetch the EXACTLY
@@ -375,22 +612,6 @@ jobs:
           sudo rm -f /usr/local/bin/chromedriver /usr/bin/chromedriver || true
           echo "chromedriver remaining on PATH: $(which chromedriver 2>/dev/null || echo none)"
 
-      # fetch-depth: 0 IS LOAD-BEARING — do not "optimize" it back to the default.
-      #
-      # test/lib/e2e_quarantine_ratchet_test.rb ratchets the @quarantine ceiling against its
-      # value on `origin/release` — the one number a PR's own diff cannot move. actions/checkout
-      # defaults to a depth-1 fetch of the head SHA ALONE, which leaves `origin/release`
-      # unresolvable, and a ratchet that cannot see its baseline cannot certify monotonicity.
-      #
-      # So the ratchet FAILS CLOSED on a missing baseline: delete this line and the `test` job
-      # goes RED and says why. It cannot quietly demote itself back to the pin it used to be —
-      # which is exactly what it was, and how the hole grew once with every guard green.
-      # Pinned by test/lib/ci_workflow_triggers_test.rb.
-      - name: Checkout code
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
       - name: Await RubyGems propagation for locked gems
         run: .github/scripts/await-gem-propagation.sh
 
@@ -400,12 +621,11 @@ jobs:
           ruby-version: .ruby-version
           bundler-cache: true
 
-      - name: Run tests
+      - name: Run system tests
         env:
           RAILS_ENV: test
           DATABASE_URL: postgres://postgres:postgres@localhost:5432
-          # REDIS_URL: redis://localhost:6379/0
-        run: bin/rails db:test:prepare test test:system
+        run: bin/rails db:test:prepare test:system
 
       - name: Keep screenshots from failed system tests
         uses: actions/upload-artifact@v4

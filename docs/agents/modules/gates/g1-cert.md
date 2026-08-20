@@ -165,7 +165,7 @@ impossible by construction rather than by every repo remembering to ignore `tmp/
 
    Lanes: `test-db-reset` (`bin/rails db:test:purge db:test:prepare`),
    `full-suite` (**what CI's `test` job runs, verbatim** — read from the repo's own
-   `.github/workflows/ci.yml`; today `bin/rails db:test:prepare test test:system`,
+   `.github/workflows/ci.yml`; today `bin/rails db:test:prepare test test:system` — which since the hub's suite was SHARDED is the single command covering CI's `rails` shards plus its `system` job, not a copy of any one CI step,
    the ENTIRE Ruby suite **including the system tier**), `rubocop` (`bin/rubocop`,
    the whole repo — CI's `lint` job). Green lanes stamp `[full-suite@<fp>]` +
    `[rubocop@<fp>]`.
@@ -210,16 +210,22 @@ impossible by construction rather than by every repo remembering to ignore `tmp/
    - **You own the tier tags** (`[unit] …`, `[integration] …`, a
      `[full-suite-bypass] <why>` record). `--checks` REPLACES those — pass every
      tag you want kept. The cert tools never touch them.
-   - **The cert tools own the evidence** (`[full-suite@<fp>]`, `[rubocop@<fp>]`,
-     `[fast-cert@<fp>]`). `--checks` **cannot** drop those: any lane your update
-     does not itself supply is carried forward, by the CLI and by the board
-     (`lib/cert_evidence.rb`). Recording your test plan after certifying used to
-     wipe the cert and make `bin/dor-check` report `full-suite: MISSING` on
-     freshly certified code — it no longer can.
+   - **The cert tools own the evidence** (`[full-suite@<fp>:<repo>]`,
+     `[rubocop@<fp>:<repo>]`, `[fast-cert@<fp>:<repo>]`). `--checks` **cannot**
+     drop those: any lane your update does not itself supply is carried forward,
+     by the CLI and by the board (`lib/cert_evidence.rb`). Recording your test
+     plan after certifying used to wipe the cert and make `bin/dor-check` report
+     `full-suite: MISSING` on freshly certified code — it no longer can.
 
-   A lane is superseded only by a line FOR that lane, which is what a re-cert
-   writes. Never hand-write a `[<lane>@<fingerprint>]` line: that forges a
-   certification, and the fingerprint exists to make the cert mean something.
+   A lane is superseded only by a line FOR that lane **in that repo**, which is what
+   a re-cert writes. The `:<repo>` scope is why a task naming two repos keeps a cert
+   for EACH: certifying the second repo used to erase the first's line silently, and
+   the false STALE surfaced much later on a repo you had already certified green.
+   Certify each repo in its own tree (`cd <that repo's desk> && bin/full-suite-check
+   <task>`); `bin/dor-check` grades every repo the task names and has a PR in, and
+   names each one in its verdict. Never hand-write a `[<lane>@<fingerprint>]` line:
+   that forges a certification, and the fingerprint exists to make the cert mean
+   something.
 
 4. **Verdict — the DoR gate** (its own gate; closes `dor`, not `g1_cert`):
 

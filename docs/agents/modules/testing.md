@@ -355,8 +355,8 @@ checkout starts with no built CSS. Put those two facts together:
 
 | Runner | Invocation | `test:prepare` runs? | Virgin tree |
 |---|---|---|---|
-| GitHub CI | `bin/rails db:test:prepare test test:system` (rake `test` shells an **argless** `rails test`) | yes | green |
-| `bin/full-suite-check` | the repo's **own ci.yml command**, verbatim — today `bin/rails db:test:prepare test test:system` (rake-routed; `bin/lib/ci_test_command.rb`) | yes | green |
+| GitHub CI | **sharded**: `bin/ci-shard --shard=i/4` × 4 (`rails`) + `bin/rails db:test:prepare test:system` (`system`), audited by `bin/rails-executed-set-check` (`rails_executed_set`) | yes | green |
+| `bin/full-suite-check` | the single command whose scope is CI's Ruby suite — today `bin/rails db:test:prepare test test:system` (rake-routed; resolved by `bin/lib/ci_test_command.rb`, which tolerates the sharded split because the shards ∪ `system` are a subset of it) | yes | green |
 | Release gate workspace — **hub** | `bin/rails db:test:prepare test test:system` (the hub's registry `test_cmd`/`qa_test_cmd` — rake-routed, and rake's `test` shells an **argless** `rails test`) | yes | green |
 | Release gate workspace — **satellites** | `bin/rails test test/integration` (`qa_test_cmd`, `config/release_repos.yml`) | **no** | green — the gate preps the env itself (PR #522) |
 | **`bin/fast-check`** | `bin/rails test <mapped/spine paths>` | **no** | **was red** |
@@ -405,6 +405,80 @@ Two rules follow:
   gate workspace, a CI job that shards by file), prepare the test env first —
   `bin/rails db:test:prepare test:prepare`, one boot. `test/lib/tasks/test_prepare_asset_hook_test.rb`
   pins the hook that makes this work.
+
+## A Synthesized Click Lands At COORDINATES — So Wait For The Target To Stop Moving
+
+**`find(...).click` does not click an element. It clicks a POINT.** The driver
+hit-tests the element, then dispatches `pointerdown` and `pointerup` at that
+point. If the page reflows in between, the two land on different elements, and
+the browser fires `click` on their nearest **common ancestor** — never on the
+button. Nothing raises. `ElementClickIntercepted` does not fire, because at
+hit-test time the element really was there. The handler simply never runs, and
+the test fails later, on whatever it asserted about the click's effect.
+
+**This cost three PRs in one day** (`close-board-filter-flake`).
+`TasksBoardFilterSystemTest` reddened on #886, #895 and #897 — two sessions,
+unrelated diffs — always on the same negative assertion, `expected not to find
+visible css "#card-rolio-tasks-board-card"`. The card was innocent. The captured
+event sequence:
+
+```text
+pointerdown -> SPAN "rolio"     (the filter chip)
+pointerup   -> SPAN "Apps"      (the row label; the chip has moved)
+click       -> DIV              (their common ancestor)
+```
+
+**What moves it: a third-party webfont.** Page text is set in Montserrat, fetched
+from `fonts.googleapis.com`. The stylesheet blocks the load event; the font
+FILES do not. So they arrive after `visit` returns, every glyph is re-measured,
+and each chip changes width — inside the ~60 ms a test spends asserting
+readiness, finding a control and clicking it. Measured locally: the chip is found
+at 45 ms and clicked at 68 ms.
+
+**Why five local reproductions all came back green.** On a dev machine that font
+is already cached, so the reflow happens before the test looks. On a CI runner it
+is a live network fetch. A flake that only reproduces where the network is real
+is not "CI being flaky" — it is a real timing dependency that CI is honest about
+and your laptop hides.
+
+**The rule: use `click_when_settled` for any control clicked soon after a page
+load.** It blocks until the target's box is identical across two consecutive
+samples AND nothing is left in flight that could still resize it, then clicks.
+Both halves are load-bearing — stability alone clears a box that has simply not
+been re-measured yet; readiness alone clears a box mid-animation. Plain
+`find(...).click` stays correct once the page has been interacted with.
+
+**Ask `document.fonts.check` about the ELEMENT's own font, not the document's.**
+`document.fonts.status` reads `"loaded"` while two dozen declared faces are still
+`"unloaded"`, because a face only loads when something needs it — measured on this
+board: status `loaded`, 25 of 30 faces `unloaded`. The global signal will wave you
+through a page that is still about to reflow.
+
+**Assert the control's own state before its consequence.** The chips carry
+`aria-pressed`, so a swallowed click now fails on the chip, naming itself, instead
+of downstream on a card assertion that cannot distinguish "the click never landed"
+from "the filter toggled and the view did not react". A negative assertion is the
+worst possible place to learn a click went missing.
+
+`test/system/board_filter_click_stability_test.rb` pins the guard by making the
+race deterministic: it puts the page into a settling window that moves the chip
+every frame and reflows it under any pointerdown, then closes. Swap
+`click_when_settled` for `find(...).click` and it goes red on the `aria-pressed`
+assertion, which is the production signature exactly. **Verified by mutation, 3
+red / 3 green** — the only proof that counts for a timing fix, because the broken
+state also passed most of the time.
+
+**The user-facing half is FIXED — in the engine, not by the guard.**
+`layouts/studio/_head.html.erb` in studio-engine now vendors Montserrat through
+the asset pipeline, joining the Alpine, SortableJS and confetti that file already
+served itself. Same bytes, pinned at Google Fonts v31, and declared
+`font-display: optional` rather than `swap` — which is the substance of it, because
+`swap` has an unbounded swap period, so a late font reflows the page no matter who
+serves it. Landed as `/tasks/vendor-the-montserrat-webfont` (studio-engine #172);
+it is on `accepted` and rides the next release sweep into the app.
+**The guard still earns its keep.** It defends any control clicked soon after a
+load against every other source of reflow, and one font is not the only thing that
+can move a box.
 
 ## The Minitest DB Starts EMPTY — And The E2E Lane Must Not Share It
 
@@ -728,9 +802,29 @@ npm test
 > fork-clone the test DB, which **deadlocks or segfaults the `pg` gem on macOS**
 > (a Ruby crash report, not a test failure) — pg fork-safety. So as of PR #169 the
 > suite runs **single-process locally by default** (`test_helper.rb` →
-> `TestParallelism.worker_count`: parallel only when `CI` is set; `PARALLEL_WORKERS`
-> overrides), so a plain `bin/rails test` is reliable locally while CI keeps the
-> parallel speedup. `bin/agent-worktree test <app> <slug>` also runs single-process
+> `TestParallelism.worker_count`: parallel only when `CI` is set), so a plain
+> `bin/rails test` is reliable locally while CI keeps the parallel speedup.
+>
+> **`PARALLEL_WORKERS` no longer overrides that locally — it is CLAMPED to 1, loudly**
+> (`gate-submit-on-green-ci`'s sibling, `/tasks/measure-local-parallel-workers`,
+> 2026-08-18). It used to be honoured, which meant asking for 4 workers got you four
+> Ruby crash reports and orphan workers holding the test DB, wedging the NEXT run in
+> test-prepare on `PG::ObjectInUse`. Now it prints why and runs serially. MEASURED, so
+> nobody has to re-litigate it: the FULL suite at 4 workers segfaulted at
+> `pg/connection.rb:944` before any test ran, 2 of 2 trials — while `test/models` ALONE
+> at 4 workers was clean, 2 of 2. **A partial run is the shape that HIDES this**; re-test
+> with the whole suite or you will green-light a default that crashes.
+>
+> `PARALLEL_WORKERS_ALLOW_UNSAFE=1` restores the requested count. It exists for ONE
+> purpose — re-running that measurement after a Ruby, `pg`, or macOS bump. It is not a
+> performance switch. If it stops crashing, change the DEFAULT on the evidence and delete
+> the clamp; do not leave the hatch as the way in.
+>
+> If you ever guard something like this: clamping the returned worker count is NOT enough.
+> Rails' `parallelize` re-reads `ENV["PARALLEL_WORKERS"]` and that read WINS — it is the
+> first branch of its `case`, ahead of the `workers:` argument. The first cut printed its
+> warning and forked anyway, with every unit test green, because the tests exercised the
+> function in isolation and could not see Rails' precedence. `bin/agent-worktree test <app> <slug>` also runs single-process
 > **and clears orphaned `rails test` procs first** — a killed/hung run leaves
 > workers holding the test DB and deadlocks the next run. Don't pipe a run through
 > `| tail` (it buffers to EOF, so a hang looks identical to "working") — write to a

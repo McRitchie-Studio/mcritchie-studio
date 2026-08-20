@@ -60,6 +60,21 @@ class GithubWorkflowRun < ApplicationRecord
   # (solana-studio runs none), not an accident. The distinction matters because a
   # reader cannot tell "unmapped by oversight" from "genuinely has no suite", and
   # Ci::ReviewGate treats an unresolved workflow as NOT-GREEN rather than guessing.
+  # THE LIST ITSELF LIVES IN lib/gem_ci_workflows.rb; this points at it through
+  # Release::AcceptedCertification, which is the model that reasons about which
+  # workflow certifies a branch.
+  #
+  # BOTH HOPS ARE LOAD-BEARING, and this is a merge of two changes that each moved
+  # this constant somewhere better. Release::AcceptedCertification owns the QUESTION
+  # ("which workflow carries this repo's suite verdict, and is an unmapped gem an
+  # oversight or a declaration?"), so callers ask it rather than reading a raw hash.
+  # lib/ owns the DATA, because bin/release.rb is a standalone CLI — it reads
+  # config/release_repos.yml and never boots Rails, so it cannot see a constant on an
+  # AR model, and the gem publish gate needs this answer before an irreversible push.
+  #
+  # Keeping only one of the two hops was the tempting resolution and is the wrong one:
+  # collapsing to the model re-blinds the CLI, and collapsing to the lib throws away
+  # the UNMAPPED distinction. There is still exactly ONE literal, in lib/.
   GEM_CI_WORKFLOWS = Release::AcceptedCertification::GEM_SUITE_WORKFLOWS
 
   CI_PROGRESS_WORKFLOWS = ([CI_WORKFLOW] + GEM_CI_WORKFLOWS.values.compact).freeze

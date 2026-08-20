@@ -21,6 +21,99 @@ class CertEvidenceTest < Minitest::Test
   def rubocop_line(fp = FP) = "[rubocop@#{fp}] bin/rubocop (clean)"
   def fast_line(fp = FP)    = "[fast-cert@#{fp}] fast cert green: 4 mapped + 3 spine test path(s)"
 
+  # --- THE REPO DIMENSION: a two-repo task keeps a cert PER REPO ----------------
+  #
+  # The defect (2026-08-13): the namespace was the LANE alone, so on a task naming
+  # two repos the SECOND repo's cert silently erased the FIRST's, and dor-check then
+  # called a genuinely green cert STALE. These assert the PROPERTY — both certs
+  # survive — rather than "a cert was recorded", which passes blind: recording one
+  # cert was never the broken part.
+
+  def hub_full(fp = FP)  = CertEvidence.evidence_line("full-suite", fp, "bin/rails test (6034 runs, 0 failures)", repo: "mcritchie-studio")
+  def turf_full(fp = FP) = CertEvidence.evidence_line("full-suite", fp, "bin/rails test (2041 runs, 0 failures)", repo: "turf-monster")
+
+  def test_certifying_the_second_repo_keeps_the_first_repos_cert
+    # The NATURAL order — root repo first, satellite second — which is exactly the
+    # order that used to lose evidence. (The undocumented workaround was to certify
+    # satellites first and the dor-check root repo last.)
+    after_hub = CertEvidence.preserve(prior: ["[unit] plan"], incoming: [hub_full])
+    after_turf = CertEvidence.preserve(prior: after_hub, incoming: [turf_full(OLD_FP)])
+
+    assert_includes after_turf, hub_full,
+                    "certifying the second repo destroyed the FIRST repo's cert — the whole bug"
+    assert_includes after_turf, turf_full(OLD_FP)
+    assert_includes after_turf, "[unit] plan", "the author namespace still survives an evidence write"
+  end
+
+  def test_recertifying_one_repo_supersedes_only_that_repo
+    prior = ["[unit] plan", hub_full(OLD_FP), turf_full]
+
+    merged = CertEvidence.preserve(prior: prior, incoming: [hub_full])
+
+    assert_includes merged, hub_full, "the fresh cert must be stored"
+    refute_includes merged, hub_full(OLD_FP), "a re-cert must still replace its OWN repo's stale line"
+    assert_includes merged, turf_full, "a re-cert of one repo must not touch the other repo's cert"
+  end
+
+  def test_an_author_checks_update_preserves_every_repos_cert
+    prior = ["[unit] old", hub_full, turf_full(OLD_FP)]
+
+    merged = CertEvidence.preserve(prior: prior, incoming: ["[unit] new", "[integration] new"])
+
+    assert_includes merged, hub_full
+    assert_includes merged, turf_full(OLD_FP)
+  end
+
+  def test_a_scoped_write_never_destroys_an_unscoped_legacy_cert
+    # An unscoped line's repo is UNKNOWABLE, so retiring it on a scoped write could
+    # destroy the other repo's evidence — the bug, one rollout later. It is its own
+    # namespace: only an unscoped write supersedes it.
+    legacy = full_line(OLD_FP)
+
+    merged = CertEvidence.preserve(prior: [legacy], incoming: [turf_full])
+    assert_includes merged, legacy, "a scoped cert write destroyed an unscoped cert"
+
+    replaced = CertEvidence.preserve(prior: [legacy], incoming: [full_line])
+    refute_includes replaced, legacy, "an UNSCOPED write still supersedes the unscoped slot"
+  end
+
+  def test_the_repo_scope_is_parsed_off_the_line
+    assert_equal "turf-monster", CertEvidence.repo_of(turf_full)
+    assert_nil CertEvidence.repo_of(full_line), "an unscoped line carries no repo"
+    assert_nil CertEvidence.repo_of("[unit] bin/rails test"), "a tier tag carries no repo"
+    assert_equal ["full-suite", "turf-monster"], CertEvidence.namespace_of(turf_full)
+    assert_equal ["full-suite", nil], CertEvidence.namespace_of(full_line)
+    assert_nil CertEvidence.namespace_of("[unit] bin/rails test")
+  end
+
+  def test_a_scoped_line_still_parses_for_every_pre_repo_reader
+    # The repo rides AFTER the fingerprint precisely so this holds: a checkout that
+    # predates the repo dimension reads a scoped line as a correct lane+fingerprint,
+    # so neither direction of the rollout can manufacture a false STALE.
+    assert_equal FP, CertEvidence.extract_fingerprint(turf_full, "full-suite")
+    assert_equal "full-suite", CertEvidence.lane_of(turf_full)
+    assert_match CertEvidence::EVIDENCE_RE, turf_full
+  end
+
+  def test_a_scoped_control_stamp_never_satisfies_the_author_control_tier
+    # Why the repo is NOT written as "[control:<repo>@fp]": dor-check's
+    # tier_satisfied? terminates a tier tag on `[\]:]`, so that spelling would have
+    # let the MACHINE's control stamp satisfy the AUTHOR's required [control] tier.
+    stamp = CertEvidence.evidence_line("control", FP, "replayed", repo: "moms-app")
+    tier_re = /\A\s*\[\s*control\s*[\]:]/i
+
+    refute_match tier_re, stamp, "a machine control stamp must never read as the author's [control] tier tag"
+    assert_match tier_re, "[control] hub_test.rb bites at the diff base"
+  end
+
+  def test_scoped_to_answers_per_repo
+    assert CertEvidence.scoped_to?(turf_full, "turf-monster")
+    refute CertEvidence.scoped_to?(turf_full, "mcritchie-studio")
+    assert CertEvidence.scoped_to?(turf_full, "McRitchie-Studio/turf-monster"), "owner-qualified still matches"
+    assert CertEvidence.scoped_to?(full_line, "turf-monster"), "an unscoped cert answers for any repo"
+    assert CertEvidence.scoped_to?(turf_full, nil), "a reader naming no repo reads every line"
+  end
+
   # --- the regression: an author --checks update must not wipe the cert ---
 
   def test_author_checks_update_preserves_every_evidence_lane
@@ -137,10 +230,19 @@ class CertEvidenceTest < Minitest::Test
   def test_every_evidence_line_this_module_builds_is_recognized_as_evidence
     CertEvidence::EVIDENCE_LANES.each do |lane|
       ["abc1234", "0" * 40, "", "not-hex"].each do |fingerprint|
-        line = CertEvidence.evidence_line(lane, fingerprint, "whatever ran")
-        assert_equal lane, CertEvidence.lane_of(line),
-                     "#{line.inspect} must classify as #{lane} evidence — a writer's line that fails to " \
-                     "parse would be treated as an AUTHOR line and could wipe the tier tags"
+        [nil, "turf-monster", "McRitchie-Studio/turf-monster"].each do |repo|
+          line = CertEvidence.evidence_line(lane, fingerprint, "whatever ran", repo: repo)
+          assert_equal lane, CertEvidence.lane_of(line),
+                       "#{line.inspect} must classify as #{lane} evidence — a writer's line that fails to " \
+                       "parse would be treated as an AUTHOR line and could wipe the tier tags"
+          # The repo half of the same coupling: a SCOPED line whose scope does not
+          # parse would fall into the unscoped namespace, and two repos' certs would
+          # start superseding each other again — silently, exactly as before.
+          next if repo.nil?
+
+          assert_equal repo, CertEvidence.repo_of(line),
+                       "#{line.inspect} must carry its repo scope, or #preserve keys it as unscoped"
+        end
       end
     end
   end

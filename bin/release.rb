@@ -150,6 +150,7 @@ require_relative "../app/models/release/ladder"
 require_relative "../app/models/release/accepted_certification"
 require_relative "../app/models/release/gemfile_repin"
 require_relative "../app/models/release/ship_sequence"
+require_relative "../app/models/release/engine_migration_install"
 require_relative "../app/models/release/post_deploy"
 require_relative "../app/models/release/merge_plan"
 # SweepPlan is the pure per-task sweep partition (record onto the RC / held anomaly)
@@ -171,6 +172,7 @@ require_relative "../app/models/release/gh_failure"
 # refusal + the filled-in recovery when one does not. It reuses CleanCheck's rung
 # comparison (so the two guards can never disagree about "which repos are ahead"),
 # so it loads AFTER it. Rails-free → unit-tested.
+require_relative "../app/models/release/merge_subject"
 require_relative "../app/models/release/stale_tree_check"
 # SmokeSeal builds the post-ship 🟢/🔴 verdict + the EXACT rollback guidance the
 # red-seal alert prints (step 5c). Rails-free, so the alert comes from the SAME
@@ -258,6 +260,10 @@ BOARD_FLIP_CADENCE = 0.8
 # The producer/consumer repo registry (config/release_repos.yml) — tells the CLI
 # which members are gems (published producer-first, no app branch) vs apps. Same
 # single source of truth Release::Repos reads on the record side.
+# The gem CI map, shared with GithubWorkflowRun::GEM_CI_WORKFLOWS — see
+# lib/gem_ci_workflows.rb for why the list lives there rather than on the model.
+require_relative "../lib/gem_ci_workflows"
+
 RELEASE_REPOS =
   begin
     YAML.load_file(File.expand_path("../config/release_repos.yml", __dir__)) || {}
@@ -3796,6 +3802,37 @@ end
 # and the operator-facing recovery. Fail-closed at a seam where a refusal costs
 # nothing: nothing has been published, gated, or deployed, member stages have not
 # moved, and a re-run after the hand-landed batch PR resumes cleanly.
+# The stage + merged stamp for every task a stranded commit NAMES. Slug recovery
+# is pure (Release::MergeSubject reads the branch out of the merge subject), so
+# this spends a board read only when at least one commit actually resolves — and
+# it is called only from the stale-tree gate, which is already refusing.
+#
+# A failed read returns {} rather than raising: attribution is a DIAGNOSTIC
+# nicety and must never turn a clear refusal into a crash. With {} the abort
+# prints exactly what it printed before.
+def stranded_task_index(stranded)
+  slugs = Release::MergeSubject.slugs_from_commits(stranded)
+  return {} if slugs.empty?
+
+  rows = conductor(
+    "slugs = #{slugs.inspect}; " \
+    "rows = Task.where(slug: slugs).map { |t| [t.slug, { 'stage' => t.stage, " \
+    "'merged' => t.merged.to_s }] }.to_h; " \
+    "puts({ tasks: rows }.to_json)",
+    read_only: true
+  )
+  rows["tasks"] || {}
+# `conductor` fails by calling abort!, which raises SystemExit — NOT a
+# StandardError. Rescuing only StandardError here would let a transient prod-board
+# blip (the essential-PG too-many-connections shape, 2026-07) replace this gate's
+# precise refusal and its recovery commands with "record op failed" and exit 1 —
+# the diagnostic eating the diagnosis it exists to produce. record_deploy_intent
+# and record_gate_open/close rescue the same pair for the same reason.
+rescue SystemExit, StandardError => e
+  say("  (attribution unavailable: #{e.message}; the refusal below is unchanged)")
+  {}
+end
+
 def verify_release_carries_accepted!(repo_groups, rel_slug, rel_state)
   plan_repos = Array(repo_groups).map { |g| g["repo"].to_s }.reject(&:empty?).uniq
   # Only a THREE-RUNG repo has an `accepted` rung it can fall behind. A registry-
@@ -3825,13 +3862,20 @@ def verify_release_carries_accepted!(repo_groups, rel_slug, rel_state)
   end
   nwo = stale.to_h { |s| [s["repo"], repo_name_with_owner(s["repo"])] }
 
+  # ATTRIBUTION, fetched LAZILY. The slugs come out of the merge subjects with no
+  # I/O at all; only if some resolve do we spend one board read, and only on a
+  # path that is already aborting. The happy path pays nothing, exactly like the
+  # commit-list enrichment above.
+  task_index = stranded_task_index(stranded)
+
   verdict = Release::StaleTreeCheck.evaluate(
     accepted_states: git["accepted"],
     unreadable_repos: git["unreadable"],
     stranded_commits: stranded,
     repo_nwo: nwo,
     release_slug: rel_slug,
-    release_state: rel_state
+    release_state: rel_state,
+    task_index: task_index
   )
   if verdict["fresh"]
     say(verdict["message"])
@@ -4966,6 +5010,12 @@ def validate_gems_for_qa(gem_groups, app_groups)
       next
     end
 
+    # The clean-env verdict, collected like every other gem precondition so a bad
+    # one aborts with ZERO gems published rather than after the first push.
+    if (ci_failure = gem_ci_failure(repo, tip, version))
+      failures << ci_failure
+    end
+
     if (stranded = stranded_gem_failure(repo, path, tip, version))
       failures << stranded
       next
@@ -5022,6 +5072,62 @@ end
 # gem. No new decisions here: the plan carries the tip, version, and live-state
 # phase 1 resolved. Idempotent for the self-healing re-run: already-live
 # versions skip.
+# THE CLEAN-ENV VERDICT FOR A GEM'S TIP — the check in front of the one
+# irreversible step in this whole pipeline.
+#
+# WHAT IT CLOSES. publish_gem authorised itself from a LOCAL `bin/release-check
+# --build` — whatever bundle, whatever Ruby, whatever half-installed state the
+# conductor's laptop happens to carry — and then pushed to RubyGems, which can
+# NEVER be un-pushed. Every other shippable tip here earns a clean-env verdict
+# before it moves; the gem's did not, and the gem is the one artifact with no
+# rollback. The verdict already EXISTED and was simply never read.
+#
+# IT RUNS IN PHASE 1 (validate_gems_for_qa), NOT beside the push. That placement
+# is the fix for a defect review found in the first version: with the check in the
+# publish loop, a studio-engine + solana-studio sweep pushed studio-engine to
+# RubyGems and THEN aborted on the second gem — a partial publish of the
+# unrecoverable artifact, which is precisely what this task exists to prevent.
+# validate_gems_for_qa holds exactly one invariant and says so in its own abort
+# text: EVERY swept gem validates before the FIRST irreversible push.
+#
+# A DECLARED CI-LESS GEM IS SKIPPED, not waited on. solana-studio ships no suite
+# workflow — GemCiWorkflows declares that with an explicit nil, and it is live:
+# turf-monster pins it and it has shipped through v0.4.7. Before this exemption the
+# gate folded its absent verdict to :none, polled the FULL 1200s window, then told
+# the operator to go and watch a run that does not and never will exist. A gate
+# that can never pass is not a gate, it is an outage.
+#
+# AN UNMAPPED GEM IS NOT EXEMPT. Absence of a declaration is not a declaration of
+# absence: a gem nobody added to the map is BLIND, and blind must fail closed, or
+# the next gem to arrive inherits a silent bypass.
+def gem_ci_failure(repo, sha, version)
+  return nil if DRY
+
+  if GemCiWorkflows.declared_ci_less?(repo)
+    say("  gem CI gate: #{repo} declares no suite workflow (GemCiWorkflows) — skipping the clean-env " \
+        "verdict for #{short(sha)}; its own release-check is the only gate it has")
+    return nil
+  end
+
+  say("  gem CI gate: GitHub's verdict for #{repo}@#{short(sha)} — the tip this publish would push")
+  ci = poll_ci_verdict(repo, sha)
+  return nil if ci_pass?(ci)
+
+  gem_ci_abort(repo, sha, version, ci)
+end
+
+# The refusal text, factored out so it is unit-testable and so the operator is
+# told what to DO rather than only what failed. A publish that stops here has
+# pushed NOTHING — the whole point of gating in phase 1.
+def gem_ci_abort(repo, sha, version, ci)
+  "#{repo} #{version}: GitHub CI is #{ci_detail(ci)} for #{short(sha)}, the exact tip this " \
+    "publish would push. NOTHING WAS PUBLISHED — the version is still free and this run can be " \
+    "re-run once CI is green. A gem push cannot be undone, so this gate will not credit a local " \
+    "release-check alone: that run proves the tree is good ON THIS MACHINE, and the class of " \
+    "failure it cannot see is exactly the one that reaches every consumer. Watch the run, fix or " \
+    "re-run it, then re-run this sweep."
+end
+
 def publish_gems_for_qa(gem_plan)
   return {} if gem_plan.empty?
 
@@ -5080,6 +5186,112 @@ def stranded_gem_failure(repo, path, tip, version)
   )
 end
 
+# Install any migrations the just-published engines ship into this consumer's
+# workspace, and leave db/schema.rb consistent with them.
+#
+# The DECISIONS — which task, what a probe's answer means, which database, whether
+# a schema dump is committable — live in Release::EngineMigrationInstall, where a
+# test can hold them. This is the half that runs commands. See that file for why
+# the split exists (a fail-open probe skipped this step silently on every live
+# sweep, which is the review finding that produced this shape).
+def install_engine_migrations!(workspace, repo, gem_names)
+  return if DRY
+
+  # THE BUNDLE FIRST, and this is the line the first cut was missing. `bundle
+  # lock` resolves without INSTALLING, and nothing else in the sweep installs the
+  # version publish_gem pushed seconds ago — so `bin/rails` in this workspace
+  # raises Bundler::GemNotFound and every probe below reads as "not an engine".
+  ensure_suite_bundle!(repo, workspace, role: "ship")
+
+  installable = gem_names.select { |gem_name| workspace_engine_task(workspace, repo, gem_name) }
+  return if installable.empty?
+
+  before, = git_capture("-C", workspace, "status", "--porcelain", "--", "db/migrate")
+
+  installable.each do |gem_name|
+    task = Release::EngineMigrationInstall.install_task(gem_name)
+    _, ok = sh("bin/rails", task, chdir: workspace, capture: true, env: gate_env(repo, role: "ship"))
+    abort!("#{repo}: `bin/rails #{task}` failed in the ship workspace — the consumer cannot receive " \
+           "#{gem_name}'s migrations, and shipping without them reddens its suite after the gem is published") unless ok
+  end
+
+  after, = git_capture("-C", workspace, "status", "--porcelain", "--", "db/migrate")
+  if after.to_s == before.to_s
+    say("  #{repo}: no new #{installable.join(', ')} migrations to install")
+    return
+  end
+
+  copied = after.to_s.lines.map(&:strip).reject { |line| before.to_s.include?(line) }
+  step("  #{repo}: installed #{copied.length} engine migration(s) — #{copied.join(', ')}")
+
+  dump_consumer_schema!(workspace, repo)
+end
+
+# Does this workspace's app define the engine installer for `gem_name`?
+#
+# ASKED, and the answer DISCRIMINATED. A non-zero `bin/rails -T` means the app did
+# not boot — a broken bundle, a missing master.key — and in a fail-closed function
+# "I could not tell" must never read as "nothing to do". An absent task exits 0
+# with no match, which is the only silent skip there is.
+def workspace_engine_task(workspace, repo, gem_name)
+  task = Release::EngineMigrationInstall.install_task(gem_name)
+  return false if task.nil?
+
+  out, ok = sh("bin/rails", "-T", task, chdir: workspace, capture: true, env: gate_env(repo, role: "ship"))
+  case Release::EngineMigrationInstall.probe_verdict(ok: ok, output: out, task: task)
+  when :present then true
+  when :absent  then false
+  else
+    abort!("#{repo}: could not boot the app in the ship workspace to ask whether #{gem_name} ships " \
+           "migrations (`bin/rails -T` exited non-zero). Refusing to skip the install on an answer " \
+           "nobody got — a consumer missing an engine migration reddens after the gem is published.\n#{out}")
+  end
+end
+
+# Run the workspace's migrations against a throwaway database so the dumper
+# rewrites db/schema.rb, then drop it. The URL comes from the same helper the gate
+# uses, so a SQLite app (rolio) is handed nil and stays on its own workspace file
+# rather than a postgres:// URL it cannot use.
+def dump_consumer_schema!(workspace, repo)
+  base = gate_database_url(repo, role: "ship")
+  url = Release::EngineMigrationInstall.throwaway_database_url(base_url: base, repo: repo, pid: Process.pid)
+
+  # FAIL CLOSED on the one combination that would be dangerous: a Postgres app
+  # whose throwaway URL could not be derived. gate_env already carries the GATE's
+  # own TEST database in DATABASE_URL/TEST_DATABASE_URL, so proceeding here would
+  # run db:create + db:schema:load against a database a concurrent conductor may
+  # be mid-suite on. A SQLite app has no base URL at all and is meant to fall
+  # through to its own workspace file.
+  # Plain Ruby, not `present?`: bin/release is a SCRIPT that requires a handful of
+  # models directly, with no ActiveSupport core_ext loaded — an ActiveSupport-ism
+  # here dies at runtime, on the sweep, right after an irreversible publish.
+  abort!("#{repo}: could not derive a throwaway database from #{base.inspect} — refusing to refresh " \
+         "db/schema.rb against the gate's own database") if !base.to_s.strip.empty? && url.nil?
+
+  # RAILS_ENV=development, and DATABASE_URL replaced rather than inherited: the
+  # dumper writes db/schema.rb from the dev environment, and the database it
+  # touches must be the throwaway one this function named.
+  env = gate_env(repo, role: "ship").merge("RAILS_ENV" => "development")
+  env = url ? env.merge("DATABASE_URL" => url, "TEST_DATABASE_URL" => url) : env.merge("DATABASE_URL" => nil, "TEST_DATABASE_URL" => nil)
+
+  begin
+    _, created = sh("bin/rails", "db:create", "db:schema:load", "db:migrate", chdir: workspace, env: env, capture: true)
+    abort!("#{repo}: could not migrate a throwaway database to refresh db/schema.rb — the migration would " \
+           "otherwise land unrun and every suite would fail on a pending migration") unless created
+
+    diff, = git_capture("-C", workspace, "diff", "--", "db/schema.rb")
+    unless Release::EngineMigrationInstall.schema_dump_safe?(diff)
+      abort!("#{repo}: refreshing db/schema.rb removed or rewrote existing schema, not just the new table. " \
+             "That means this repo's committed schema was already behind its own migrations; fix that in the " \
+             "repo, then re-run `bin/release prepare`.\n#{diff}")
+    end
+  ensure
+    # Only a database WE named gets dropped. With no URL the app is on its own
+    # workspace file, which dies with the workspace.
+    sh("bin/rails", "db:drop", chdir: workspace, env: env, capture: true) if url
+  end
+end
+
 # Bump each consumer's Gemfile.lock (and, only when the new version ESCAPES the
 # existing constraint, its Gemfile pin) to the just-published gem versions —
 # COMMITTED onto the consumer's origin/release, BEFORE the pre-QA gate and the
@@ -5114,8 +5326,9 @@ def bump_consumer_locks_for_qa(app_groups, published_gems)
 
     if DRY
       step("  #{repo}: bundle lock --update <gem> --conservative in the ship workspace @ origin/#{RELEASE_BRANCH} " \
-           "(rewrite the Gemfile pin only if the new version escapes it) → commit + push origin #{RELEASE_BRANCH} " \
-           "(idempotent; no-op when already current)")
+           "(rewrite the Gemfile pin only if the new version escapes it) → install any new engine migrations " \
+           "(<gem>:install:migrations + db:migrate on a throwaway database, so db/schema.rb lands with them) → " \
+           "commit + push origin #{RELEASE_BRANCH} (idempotent; no-op when already current)")
       next
     end
 
@@ -5166,7 +5379,14 @@ def bump_consumer_locks_for_qa(app_groups, published_gems)
         bundle_lock(workspace, gem_name, conservative: true, expect: published_gems[gem_name])
       end
 
-      status, = git_capture("-C", workspace, "status", "--porcelain", "--", "Gemfile", "Gemfile.lock")
+      # THE MIGRATIONS RIDE WITH THE LOCK. A consumer whose engine gained a
+      # migration must receive it in the SAME commit that bumps its lock —
+      # otherwise the pre-QA gate, which runs after the publish, reddens on a
+      # migration nobody can now un-publish. See install_engine_migrations!.
+      install_engine_migrations!(workspace, repo, touched)
+
+      status, = git_capture("-C", workspace, "status", "--porcelain", "--",
+                            "Gemfile", "Gemfile.lock", "db/migrate", "db/schema.rb")
       if status.to_s.strip.empty?
         # Now this claim is EARNED: the lock was read back above and genuinely
         # resolves the published version, so an unchanged tree really is a no-op.
@@ -5176,6 +5396,11 @@ def bump_consumer_locks_for_qa(app_groups, published_gems)
 
       bumps = touched.map { |g| "#{g} #{published_gems[g]}" }
       sh("git", "-C", workspace, "add", "Gemfile", "Gemfile.lock")
+      # `--` and the existence check: a consumer with no db/ at all (a gem-only
+      # repo in the app group) must not abort the sweep on a pathspec.
+      %w[db/migrate db/schema.rb].each do |path_spec|
+        sh("git", "-C", workspace, "add", "--", path_spec) if File.exist?(File.join(workspace, path_spec))
+      end
       _, committed = sh("git", "-C", workspace, "commit", "-m", "bump #{bumps.join(', ')} for QA", capture: true)
       abort!("could not commit the consumer lock bump in #{repo}'s ship workspace") unless committed
 

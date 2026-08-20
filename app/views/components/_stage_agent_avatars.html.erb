@@ -33,7 +33,15 @@
 <%# Build-lane crew wears the task's mascot. Callers (the board) pass it from a
     preloaded map to avoid an N+1; the detail page resolves it here. %>
 <% mascot = local_assigns.fetch(:mascot) { Pokemon.find_by(slug: task.devops["mascot"].to_s.presence) } %>
-<% entries = stage_agent_groups(task, agents, events: events, mascot: mascot) %>
+<%# Resolve the task's events ONCE and hand the same array to every reader below.
+    stage_agent_groups already did this internally; passing it on is what lets
+    crew_columns reach Task#assembled_seconds_from_pickup's preload path instead
+    of leaving it on two SQL queries per assembled/shipped card. On a board card
+    this is the controller's per-request preload; on the detail page it is one
+    fresh load. Either way it is the SAME array the entries were built from, so
+    the crew row and its durations cannot disagree. %>
+<% crew_events = Array(events || task.task_events) %>
+<% entries = stage_agent_groups(task, agents, events: crew_events, mascot: mascot) %>
 <% if stage_crew_renderable?(task, entries, mascot: mascot, variant: variant, board: board) %>
   <% if variant.to_sym == :detailed %>
     <div class="bg-surface-alt rounded-lg p-3" data-test="stage-agent-avatars">
@@ -79,7 +87,7 @@
       a `designed`/unclaimed card shows its mascot with no ticker. The detail page
       (:detailed) still shows every stage per-usual.
     %>
-    <% columns = crew_columns(task, entries, board: board, mascot: mascot, agents: agents, events: events, review_live: review_in_progress) %>
+    <% columns = crew_columns(task, entries, board: board, mascot: mascot, agents: agents, events: crew_events, review_live: review_in_progress) %>
     <%# Crew avatars are one large size on both boards (md = w-14 face, -space-x-10 =
         40px overlap → 16px peek) so they fill the 3-slot grid instead of floating in
         empty space. Uniform size means a 3-slot and a 4-slot card keep the same avatar

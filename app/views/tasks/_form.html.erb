@@ -136,8 +136,9 @@
           <%= text_area_tag "task[devops][checks_run]", task.devops_checks_run.join("\n"), rows: 5,
                 class: "input-field", placeholder: "Actual checks run during handoff" %>
           <p class="text-xs text-muted mt-1">Tier tags are yours to edit. Cert evidence lines
-            (<code>[full-suite@…]</code>, <code>[rubocop@…]</code>, <code>[fast-cert@…]</code>) are written by
-            the cert tools and are preserved on save — only a re-cert replaces them.</p>
+            (<code>[full-suite@…:repo]</code>, <code>[rubocop@…:repo]</code>, <code>[fast-cert@…:repo]</code>)
+            are written by the cert tools and are preserved on save — only a re-cert of that lane
+            <em>in that repo</em> replaces them, so a task naming two repos keeps a cert for each.</p>
         </div>
       </div>
     </div>

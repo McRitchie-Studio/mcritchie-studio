@@ -48,7 +48,12 @@ assertion_free: 0
 # always allowed and never needs an edit here; lowering a ceiling after real work is
 # welcome but never required.
 frozen_size:
-  test/lib/release_cli_test.rb: 7356
+  # +8 (2026-08-19, install-engine-migrations-in-sweep): the gem-publish flow stub
+  # gained a seam for install_engine_migrations!, which does real bundler and rails
+  # work in what is a bare tmpdir here. The step's OWN behaviour went to a new file,
+  # test/lib/release_engine_migration_install_test.rb, which is what this ceiling
+  # asks for; only the stub grew this one.
+  test/lib/release_cli_test.rb: 7364
   test/lib/dor_check_test.rb: 2745
   test/lib/task_cli_test.rb: 2728
   test/models/task_test.rb: 2266
