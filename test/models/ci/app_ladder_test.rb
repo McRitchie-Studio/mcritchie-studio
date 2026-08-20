@@ -161,6 +161,49 @@ module Ci
       refute build_card(%i[green green green], repo: "turf-monster").gem?
     end
 
+
+    # --- the broadcast trigger ---------------------------------------------
+
+    # The row is pushed from the Task write itself rather than from
+    # DeploymentsBroadcaster.release_modules, so it fires for a hand-run
+    # `bin/task merged` that no release touched — and cannot double-push on a CI tick.
+    test "a merged-stamp change broadcasts the ladder row" do
+      Task.delete_all
+      task = make_task(slug: "broadcast-on-stamp-change", merged: nil, repos: %w[turf-monster], stage: "building")
+
+      calls = 0
+      DeploymentsBroadcaster.stub(:app_ladder, -> { calls += 1 }) do
+        task.update!(merged: Task::MERGED_ACCEPTED)
+      end
+
+      assert_equal 1, calls, "changing `merged` must push the row"
+    end
+
+    test "a stage change broadcasts the ladder row so archiving can drain a rung" do
+      Task.delete_all
+      task = make_task(slug: "broadcast-on-archive", merged: Task::MERGED_MAIN, repos: %w[turf-monster])
+
+      calls = 0
+      DeploymentsBroadcaster.stub(:app_ladder, -> { calls += 1 }) do
+        task.update!(stage: "archived")
+      end
+
+      assert_equal 1, calls, "archiving drops the task off the main rung, so the row must move"
+    end
+
+    # The guard's whole job: a write that cannot move a rung must not push.
+    test "an unrelated write does not broadcast the ladder row" do
+      Task.delete_all
+      task = make_task(slug: "broadcast-on-nothing", merged: Task::MERGED_ACCEPTED, repos: %w[turf-monster])
+
+      calls = 0
+      DeploymentsBroadcaster.stub(:app_ladder, -> { calls += 1 }) do
+        task.update!(title: "Retitled Ladder Fixture Task")
+      end
+
+      assert_equal 0, calls, "a title edit changes no rung and must not push"
+    end
+
     private
 
     def build_card(states, repo: "turf-monster")

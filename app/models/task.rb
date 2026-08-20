@@ -388,6 +388,20 @@ class Task < ApplicationRecord
   # size still blank. Enqueued async (AviSizingJob) so the sizing runs in PARALLEL
   # with the build, never blocking the create/move. See #enqueue_avi_sizing_if_designed_unsized.
   after_commit :enqueue_avi_sizing_if_designed_unsized, on: %i[create update]
+  # The /deployments app-ladder row counts tasks PARKED at each branch rung, read
+  # straight from the `merged` column (accepted / release / main), with `archived`
+  # excluded so the main rung can drain. So the ladder moves when — and only when —
+  # one of those two columns moves, which is what this guard says.
+  #
+  # Deliberately NOT folded into DeploymentsBroadcaster.release_modules, even though a
+  # sweep and a ship are what usually change these stamps. That method is documented
+  # as "the Next + Last release modules" and its tests assert the exact slots it
+  # pushes, on the discipline that a caller must not push a card it cannot have
+  # changed. Pushing from here instead keeps that rule intact, fires for a hand-run
+  # `bin/task merged` that no release touched, and cannot double-push on a CI tick
+  # (ci_progress pushes the ladder on its own, for the verdicts rather than the counts).
+  after_commit :broadcast_app_ladder_if_rung_changed, on: %i[create update destroy]
+
   # The operator-approval status lives INSIDE the metadata JSON, so flipping it to
   # "waiting" (an agent requesting a demo review) or clearing it changes no stage
   # column and writes no TaskEvent — the two spines the live /deployments board
@@ -1943,6 +1957,16 @@ class Task < ApplicationRecord
   # Metadata churn (approval stamps, statusline claim_*, agent_context) moves no v2
   # window — approval was only a mover for the v1 Operator Acceptance phase, dropped
   # in VERSION 2 — so it must NOT trigger a rebuild.
+  # Push the app-ladder row when this task's rung membership changed. Destroy always
+  # counts: the row is a COUNT, so a removed task changes it even though no column
+  # "changed" in the saved_change sense. Wrapped by the broadcaster's own
+  # safe_broadcast, so a cable failure can never break the task write.
+  def broadcast_app_ladder_if_rung_changed
+    return unless destroyed? || saved_change_to_merged? || saved_change_to_stage?
+
+    DeploymentsBroadcaster.app_ladder
+  end
+
   def refresh_testing_phases_after_change
     return unless saved_change_to_stage?
 

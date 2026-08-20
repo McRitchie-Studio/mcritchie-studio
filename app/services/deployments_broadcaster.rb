@@ -120,10 +120,6 @@ class DeploymentsBroadcaster
           )
         )
       end
-
-      # The ladder row moves for the same events: a release opening / advancing /
-      # shipping re-stamps `merged` across its members, which is what the rungs count.
-      app_ladder
     end
   end
 
