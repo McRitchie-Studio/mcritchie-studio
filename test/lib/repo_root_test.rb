@@ -20,6 +20,19 @@ class RepoRootTest < Minitest::Test
       system("git", "-C", real, "init", "-q", out: File::NULL, err: File::NULL)
       system("git", "-C", real, "config", "user.email", "t@t.co")
       system("git", "-C", real, "config", "user.name", "T")
+      # Disarm git's BACKGROUND maintenance in the throwaway repo. `git commit`
+      # triggers `gc --auto`, which can create and delete
+      # `.git/objects/maintenance.lock` asynchronously — and Dir.mktmpdir's block
+      # form deletes this tree the moment the block ends. FileUtils then walks a
+      # file that git removes underneath it and raises
+      #   Errno::ENOENT @ apply2files - <tmp>/.git/objects/maintenance.lock
+      # out of `with_git_repo` itself, so the failure is attributed to whichever
+      # test happened to be running. It reddened three separate CI runs on
+      # 2026-08-19/20 — once inside a Rails shard, once in a consumer lane where
+      # it blocked a gem publish — always as "1 errors" among thousands of green
+      # runs. Nothing about the code under test is involved.
+      system("git", "-C", real, "config", "gc.auto", "0")
+      system("git", "-C", real, "config", "maintenance.auto", "false")
       File.write(File.join(real, "a.txt"), "x")
       system("git", "-C", real, "add", "-A", out: File::NULL, err: File::NULL)
       system("git", "-C", real, "commit", "-qm", "init", out: File::NULL, err: File::NULL)
