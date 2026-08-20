@@ -278,10 +278,14 @@ test("a live block transition inserts a missing card into the Building column @q
   await expect(blockedCard).toBeVisible({ timeout: 10_000 });
   // A blocked task STAYS ON `building` — Task#block! stamps the block columns and
   // leaves the stage alone, so data-stage never becomes "blocked". The card marks
-  // the block with data-glow instead (_task_card.html.erb: card_glow_kind), which is
+  // the block with data-stage-glow instead (_task_card.html.erb line 140, from
+  // card_glow_kind). NOT data-glow — that is the MASCOT'S signature colour (line 142),
+  // and asserting it was a bug in the first cut of this repair: the specs stay
+  // @quarantine so CI never ran them and nothing caught it. Verified against the real
+  // rendered card while proving /tasks/broadcast-block-to-board.
   // the attribute that actually tracks Task#block_state.
   await expect(blockedCard).toHaveAttribute("data-stage", "building");
-  await expect(blockedCard).toHaveAttribute("data-glow", "blocked");
+  await expect(blockedCard).toHaveAttribute("data-stage-glow", "blocked");
   await expect(blockedCard).toHaveAttribute("class", /bg-red/);
 
   expect(pageErrors, report()).toHaveLength(0);
@@ -305,9 +309,9 @@ test("a live block transition keeps an already-visible Building card visible @qu
   expect(res.ok()).toBeTruthy();
 
   await expect(card).toBeVisible({ timeout: 10_000 });
-  // Blocked stays on `building`; the block shows through data-glow. See above.
+  // Blocked stays on `building`; the block shows through data-stage-glow. See above.
   await expect(card).toHaveAttribute("data-stage", "building");
-  await expect(card).toHaveAttribute("data-glow", "blocked");
+  await expect(card).toHaveAttribute("data-stage-glow", "blocked");
   await expect(card).toHaveAttribute("class", /bg-red/);
   await page.waitForTimeout(1_500);
   await expect(card).toBeVisible();
@@ -338,10 +342,14 @@ test("the tasks board updates a blocked card live in the Building column @quaran
   await expect(blockedCard).toBeVisible({ timeout: 10_000 });
   // A blocked task STAYS ON `building` — Task#block! stamps the block columns and
   // leaves the stage alone, so data-stage never becomes "blocked". The card marks
-  // the block with data-glow instead (_task_card.html.erb: card_glow_kind), which is
+  // the block with data-stage-glow instead (_task_card.html.erb line 140, from
+  // card_glow_kind). NOT data-glow — that is the MASCOT'S signature colour (line 142),
+  // and asserting it was a bug in the first cut of this repair: the specs stay
+  // @quarantine so CI never ran them and nothing caught it. Verified against the real
+  // rendered card while proving /tasks/broadcast-block-to-board.
   // the attribute that actually tracks Task#block_state.
   await expect(blockedCard).toHaveAttribute("data-stage", "building");
-  await expect(blockedCard).toHaveAttribute("data-glow", "blocked");
+  await expect(blockedCard).toHaveAttribute("data-stage-glow", "blocked");
   await expect(blockedCard).toHaveAttribute("class", /bg-red/);
 
   expect(pageErrors, report()).toHaveLength(0);
