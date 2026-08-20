@@ -5090,9 +5090,11 @@ end
 # validate_gems_for_qa holds exactly one invariant and says so in its own abort
 # text: EVERY swept gem validates before the FIRST irreversible push.
 #
-# A DECLARED CI-LESS GEM IS SKIPPED, not waited on. solana-studio ships no suite
-# workflow — GemCiWorkflows declares that with an explicit nil, and it is live:
-# turf-monster pins it and it has shipped through v0.4.7. Before this exemption the
+# A DECLARED CI-LESS GEM IS SKIPPED, not waited on — a gem GemCiWorkflows maps to
+# an explicit nil. No registered gem is in that state today: solana-studio was the
+# live example until 2026-08-20, when it shipped a "Gem CI" lane with its Rails
+# engine and the map was repointed. The branch stays for the next such gem, and it
+# earns its keep — before this exemption the
 # gate folded its absent verdict to :none, polled the FULL 1200s window, then told
 # the operator to go and watch a run that does not and never will exist. A gate
 # that can never pass is not a gate, it is an outage.

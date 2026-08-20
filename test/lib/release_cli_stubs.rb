@@ -21,11 +21,16 @@ module ReleaseCliStubs
   #
   # Injected after `load bin/release.rb`, so the production script grows no
   # test-only seam.
+  # PREPEND + super, not a copy. An earlier version restated bin/release.rb's own
+  # `!gem_meta_for(repo)["release_check"].to_s.strip.empty?` inline, which is a
+  # second home for a predicate that has one — change the real one and this stub
+  # keeps asserting the old rule, green. Overriding only the ONE repo and calling
+  # super for every other keeps production as the single source.
   NOT_SELF_GATED = <<~'RUBY'
-    def self_gated_gem?(repo)
-      return false if repo.to_s == "solana-studio"
-
-      !gem_meta_for(repo)["release_check"].to_s.strip.empty?
-    end
+    self.singleton_class.prepend(Module.new do
+      def self_gated_gem?(repo)
+        repo.to_s == "solana-studio" ? false : super
+      end
+    end)
   RUBY
 end

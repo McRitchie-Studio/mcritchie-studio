@@ -12,7 +12,6 @@ require "minitest/autorun"
 require "tmpdir"
 require "fileutils"
 require "shellwords"
-require "pathname"
 require_relative "../../bin/lib/ci_test_command"
 
 class CiTestCommandTest < Minitest::Test
@@ -31,12 +30,27 @@ class CiTestCommandTest < Minitest::Test
   # PRIMARY's .git for a worktree and for the primary alike, so its grandparent is
   # the projects root from either. Nil when git cannot answer, which the pins below
   # assert against rather than silently skipping.
-  # Ascend until a directory holding the sibling repos appears — the same shape
-  # test/models/release/repos_test.rb already uses, so both live-ecosystem pins in
-  # this codebase locate their siblings the one way. Works from a primary checkout,
-  # an agent worktree, and the gate workspace alike, all of which sit at different
-  # depths. nil when absent (hub CI checks out only this repo).
-  PROJECTS_ROOT = Pathname.new(HUB_ROOT).ascend.find { |dir| dir.join("rolio", ".git").exist? }
+  #
+  # ⚠ DO NOT "SIMPLIFY" THIS TO AN ASCEND-UNTIL-A-SIBLING-APPEARS SEARCH. That is
+  # what test/models/release/repos_test.rb does, and matching it here looked like
+  # welcome consistency for exactly one commit. It is wrong for THIS file: that
+  # helper returns nil on a CI runner and its callers `skip`, while the pins below
+  # `refute_nil` — deliberately, because skipping is the very blindness they exist
+  # to end. An ascend keyed on `rolio/.git` finds nothing in a checkout that holds
+  # only this repo, so it reddened the CI lane it was meant to leave untouched
+  # (caught in review, not by the local cert — which is honest and runs where the
+  # siblings DO exist, and so cannot see this).
+  #
+  # git answers in both places: on a runner the grandparent of
+  # /home/runner/work/mcritchie-studio/mcritchie-studio/.git is the directory
+  # holding this repo, so the hub itself resolves and the pins check one repo
+  # rather than none.
+  PROJECTS_ROOT = begin
+    common = `git -C #{Shellwords.escape(HUB_ROOT)} rev-parse --git-common-dir 2>/dev/null`.strip
+    common.empty? ? nil : File.expand_path("../..", File.expand_path(common, HUB_ROOT))
+  rescue StandardError
+    nil
+  end
 
   # Does this repo actually HAVE system tests? A `.keep` is not a system test.
   def self.system_tests?(root)
