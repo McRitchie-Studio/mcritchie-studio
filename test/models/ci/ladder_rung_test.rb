@@ -84,6 +84,7 @@ module Ci
       assert_equal "green", rung(state: :green).label
     end
 
+
     private
 
     def rung(state: :green, sha: "abc1234def", parked_count: 0)

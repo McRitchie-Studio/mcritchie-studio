@@ -51,38 +51,65 @@ module Ci
       Task.delete_all
       make_task(slug: "on-accepted", merged: Task::MERGED_ACCEPTED, repos: %w[turf-monster])
       make_task(slug: "on-release",  merged: Task::MERGED_RELEASE,  repos: %w[turf-monster])
-      make_task(slug: "on-main",     merged: Task::MERGED_MAIN,     repos: %w[turf-monster])
 
       index = Ci::AppLadder.parked_index
 
       assert_equal 1, index.dig("turf-monster", "accepted")
       assert_equal 1, index.dig("turf-monster", "release")
-      assert_equal 1, index.dig("turf-monster", "main")
     end
 
-    # This is the "clock starts over" behaviour, stated as a test: a task that has
-    # advanced to main no longer counts against accepted.
-    test "advancing a stamp moves the task off the lower rung" do
+    # THE CLEAN SLATE. Shipped work has ARRIVED — nothing waits on main — so it must
+    # not keep counting, or the card never goes quiet after a deployment. The hub sat
+    # at "37 on main" indefinitely before this.
+    test "shipped work does not park on main" do
+      Task.delete_all
+      make_task(slug: "already-shipped-one", merged: Task::MERGED_MAIN, repos: %w[turf-monster])
+      make_task(slug: "already-shipped-two", merged: Task::MERGED_MAIN, repos: %w[turf-monster])
+
+      assert_equal 0, Ci::AppLadder.parked_index.dig("turf-monster", "main")
+      assert_empty Ci::AppLadder.parked_index, "a fully shipped repo parks nothing at all"
+    end
+
+    # …but work merged for the NEXT release is not residue and must keep showing.
+    test "work waiting on accepted still counts right after a ship" do
+      Task.delete_all
+      make_task(slug: "shipped-last-cycle", merged: Task::MERGED_MAIN, repos: %w[turf-monster])
+      make_task(slug: "queued-for-next", merged: Task::MERGED_ACCEPTED, repos: %w[turf-monster])
+
+      assert_equal 1, Ci::AppLadder.parked_index.dig("turf-monster", "accepted")
+      assert_equal 0, Ci::AppLadder.parked_index.dig("turf-monster", "main")
+    end
+
+    # This is the "clock starts over" behaviour, stated as a test: advancing to main
+    # drains the lower rung AND adds nothing above it — the card falls silent.
+    test "advancing a stamp to main empties the card" do
       Task.delete_all
       t = make_task(slug: "advancing", merged: Task::MERGED_ACCEPTED, repos: %w[turf-monster])
 
       assert_equal 1, Ci::AppLadder.parked_index.dig("turf-monster", "accepted")
 
       t.update!(merged: Task::MERGED_MAIN)
-      index = Ci::AppLadder.parked_index
 
-      assert_equal 0, index.dig("turf-monster", "accepted"), "the lower rung drains to zero"
-      assert_equal 1, index.dig("turf-monster", "main")
+      assert_equal 0, Ci::AppLadder.parked_index.dig("turf-monster", "accepted"), "the lower rung drains"
+      assert_equal 0, Ci::AppLadder.parked_index.dig("turf-monster", "main"), "and main never fills"
     end
 
     # `archived` is terminal and keeps its merged:"main" stamp forever. Counting it
     # would leave every main rung growing and never resetting.
-    test "archived tasks are excluded so the main rung can drain" do
+    # The fixture is stamped ACCEPTED on purpose. Stamping it MERGED_MAIN would leave
+    # PARKED_STAMP excluding it anyway, so the `archived` filter would never be
+    # exercised and the guard would pass with the filter deleted — which is exactly
+    # what happened in review: swapping `where.not(stage: "archived")` for `Task.all`
+    # left all 21 tests green. An archived task at a COUNTED rung is the only shape
+    # that can bite.
+    test "an archived task at a counted rung is still excluded" do
       Task.delete_all
-      make_task(slug: "shipped-live", merged: Task::MERGED_MAIN, repos: %w[turf-monster])
-      make_task(slug: "shipped-old", merged: Task::MERGED_MAIN, repos: %w[turf-monster], stage: "archived")
+      make_task(slug: "archived-on-accepted", merged: Task::MERGED_ACCEPTED,
+                repos: %w[turf-monster], stage: "archived")
+      make_task(slug: "waiting-now", merged: Task::MERGED_ACCEPTED, repos: %w[turf-monster])
 
-      assert_equal 1, Ci::AppLadder.parked_index.dig("turf-monster", "main")
+      assert_equal 1, Ci::AppLadder.parked_index.dig("turf-monster", "accepted"),
+                   "archived work must not count, even at a rung that does"
     end
 
     test "an unstamped task parks nowhere" do

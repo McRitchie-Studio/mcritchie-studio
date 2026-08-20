@@ -15,24 +15,35 @@ module Ci
   #
   #   accepted rung  ← tasks stamped merged:"accepted"  (reviewed, awaiting sweep)
   #   release  rung  ← tasks stamped merged:"release"   (on the candidate, in QA)
-  #   main     rung  ← tasks stamped merged:"main"      (shipped, not yet archived)
+  #   main     rung  ← nothing. Shipped work has ARRIVED; see PARKED_STAMP below.
   #
-  # A sweep re-stamps accepted → release, and a ship re-stamps release → main, so
-  # the lower rungs empty on their own as work advances. After a production ship
-  # every card falls quiet — which is the "clock starts over" the row exists to
-  # show — with no counter to reset and nothing to get out of sync.
+  # A sweep re-stamps accepted → release, and a ship re-stamps release → main — which
+  # counts nothing — so the rungs empty on their own as work advances. After a
+  # production ship every card falls quiet, the "clock starts over" the row exists to
+  # show, with no counter to reset and nothing to get out of sync.
   #
-  # ARCHIVED TASKS ARE EXCLUDED. `archived` is terminal and its `merged: "main"`
-  # stamp is permanent, so counting it would leave every main rung growing
-  # forever and never resetting.
+  # ARCHIVED TASKS ARE EXCLUDED TOO, and that filter is doing real work even though
+  # `main` no longer counts: a task can be archived while still stamped `accepted` or
+  # `release`, and counting it would hold a rung open for work nobody is advancing.
+  # test/models/ci/app_ladder_test.rb exercises exactly that shape — an archived task
+  # at a COUNTED rung — because a fixture stamped `main` cannot bite this filter.
   class AppLadder
     RUNGS = %w[accepted release main].freeze
 
     # Which `merged` stamp parks a task at which rung.
+    #
+    # `main` is deliberately ABSENT. Work stamped `merged: "main"` has ARRIVED — it
+    # shipped, nothing waits there, and the stamp is permanent until the task is
+    # archived. Counting it meant a card never went quiet: the hub sat at "37 on main"
+    # indefinitely, so the clock never reset even though the production ship is the
+    # reset point the operator chose. Parked means WAITING, and only the two rungs
+    # below main have anything waiting on them.
+    #
+    # A card showing "1 on accepted" moments after a ship is therefore correct and
+    # must keep showing: that is real work queued for the next sweep, not residue.
     PARKED_STAMP = {
       "accepted" => Task::MERGED_ACCEPTED,
-      "release" => Task::MERGED_RELEASE,
-      "main" => Task::MERGED_MAIN
+      "release" => Task::MERGED_RELEASE
     }.freeze
 
     Card = Struct.new(:repo, :rungs, keyword_init: true) do
