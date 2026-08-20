@@ -1237,18 +1237,46 @@ class Task < ApplicationRecord
     # must not be able to disagree. Production stamps both; a caller that
     # replays events without the column would otherwise silently get nil here
     # while the card still drew a duration from the same events.
-    landed = task_events.transitions.where(to_stage: "assembled").chronological.last
+    #
+    # Filtered in RUBY over the loaded events (see #board_read_events), not with
+    # `.where`: this runs once per assembled/shipped CARD on a board that already
+    # preloaded :task_events, and the two `.where` calls it used to make were 62 of
+    # the 149 uncached queries a production /deployments render issued.
+    events = board_read_events
+    landed = latest_event(events) { |e| e.transition? && e.to_stage == "assembled" }
     landed_at = landed&.occurred_at || assembled_at
     return nil unless landed_at
 
-    pickup = task_events.intents
-                        .where(to_stage: "assembled")
-                        .where(occurred_at: ..landed_at)
-                        .chronological
-                        .last
+    pickup = latest_event(events) do |e|
+      e.intent? && e.to_stage == "assembled" && e.occurred_at <= landed_at
+    end
     return nil unless pickup
 
     (landed_at - pickup.occurred_at).round
+  end
+
+  # This task's events, through the caller's PRELOAD when there is one.
+  #
+  # `task_events.transitions.where(…)` issues fresh SQL even on a loaded
+  # association — `.where` builds a new relation rather than filtering the rows
+  # already in memory — so every board card re-queried events the controller had
+  # just preloaded for it. `to_a` loads once and caches on the association, so a
+  # preloaded card costs nothing and a cold single task costs exactly one query.
+  #
+  # READ PATHS ONLY, and that limit is deliberate. `open_intents_for` and
+  # `target_landed_in_current_stage?` below still go to SQL because they guard a
+  # WRITE — they are `record_intent_event`'s idempotency check, and a stale preload
+  # there would wave a duplicate intent through. They cost 11 queries a render,
+  # which is not a trade worth making against that.
+  def board_read_events
+    task_events.to_a
+  end
+
+  # `chronological.last` in Ruby: newest by (occurred_at, id), matching the scope's
+  # `order(occurred_at: :asc, id: :asc)`. Both columns are NOT NULL in the schema,
+  # so the tuple compare is total.
+  def latest_event(events)
+    events.select { |event| yield(event) }.max_by { |event| [event.occurred_at, event.id] }
   end
 
   def open_intents_for(to_stage)

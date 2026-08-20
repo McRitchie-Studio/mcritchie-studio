@@ -480,8 +480,23 @@ module ApplicationHelper
   # MEMBER REPO: an ordered { repo_slug => progress } map (producer-first), so the
   # Next Release card renders one CI track per app whose code is in the release.
   # Empty ({}) unless the release is active. Same reader, same graceful degrade.
+  #
+  # Memoised PER RELEASE for the render. /deployments draws two release cards (the
+  # current release and the last shipped one) and each walks its member repos, so
+  # the un-memoised version re-resolved every repo's SHA and re-folded its check
+  # jobs once per card: 18 ci_check_jobs reads plus 18 github_workflow_runs reads
+  # per request, all of them duplicates. Keyed by release id, because the two cards
+  # are DIFFERENT releases — a single memo slot would have served the current
+  # release's CI to the shipped card. nil-safe: a blank release memoises to {}.
+  #
+  # Render-lifetime only. This is a helper ivar, so it dies with the view context;
+  # nothing here caches across requests, and the live broadcaster still reads fresh.
   def release_ci_progress(release)
-    ci_progress_reader.for_release(release)
+    key = release.respond_to?(:id) ? release&.id : release
+    @release_ci_progress ||= {}
+    @release_ci_progress.fetch(key) do
+      @release_ci_progress[key] = ci_progress_reader.for_release(release)
+    end
   end
 
   # The GitHub Actions run URL for one repo's release-CI track, or nil — the html_url

@@ -488,6 +488,13 @@ module StageAgentsHelper
     end
   end
 
+  # Every Pokémon, indexed by slug, once per request. The 151 are tiny, so one
+  # load beats a find_by per card — which is what final_evolution was doing.
+  # Memoised on the view context, so its lifetime is exactly this render.
+  def pokemon_index
+    @pokemon_index ||= Pokemon.all.index_by(&:slug)
+  end
+
   def final_evolution(task, events: nil)
     return nil unless Pokemon.table_exists?
 
@@ -508,7 +515,9 @@ module StageAgentsHelper
     return nil if from_snap["slug"].blank? || to_snap["slug"].blank?
     return nil if from_snap["slug"] == to_snap["slug"]
 
-    final = Pokemon.find_by(slug: to_snap["slug"])
+    # Through the per-request index, not a per-card find_by: this runs once per
+    # board CARD, and the 151 Pokémon are one small query for the whole page.
+    final = pokemon_index[to_snap["slug"]]
     return nil if final.nil? || Array(final.evolution).present?
 
     FinalEvolution.new(event: evt, from: from_snap, to: to_snap)
