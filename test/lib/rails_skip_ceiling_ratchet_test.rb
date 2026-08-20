@@ -79,18 +79,22 @@ class RailsSkipCeilingRatchetTest < Minitest::Test
     return [nil, "`#{BASELINE_REF}:#{CONTRACT_REL}` has no readable `max_skips:`"] if released && ceiling_in(released).nil?
     return [ceiling_in(released), "#{BASELINE_REF}:#{CONTRACT_REL}"] if released
 
-    # The contract is NEW to release — nothing to ratchet against yet, and that is not a
-    # failure. Introducing a ceiling is the reviewable event; raising it later is what this
-    # guard exists to catch.
-    [nil, :new_contract]
+    # The contract is not on the baseline branch at all. That is NOT a special case to be
+    # waved through: a ratchet that cannot see its baseline cannot certify monotonicity,
+    # whether the reason is a missing ref or a missing file. It fails closed like any other
+    # unreadable baseline.
+    #
+    # (An earlier draft skipped here instead, to let the very first PR introducing a
+    # contract through. That `skip` was a SKIP CALL SITE, and config/test_health.yml
+    # ratchets those — so the existing guard caught it and refused the build. Correctly:
+    # adding a skip to a file whose whole purpose is restraining skips is exactly the shape
+    # that ratchet exists to stop.)
+    [nil, "`#{BASELINE_REF}:#{CONTRACT_REL}` does not exist — the contract is not on the " \
+          "baseline branch, so there is nothing to certify monotonicity against"]
   end
 
   def test_unit_the_skip_ceiling_may_fall_but_never_rise
     baseline, where = baseline_ceiling
-
-    if where == :new_contract
-      skip "#{CONTRACT_REL} is not on #{BASELINE_REF} yet — nothing to ratchet against"
-    end
 
     refute_nil baseline,
                "the ratchet cannot see its baseline (#{where}), so it CANNOT certify that the " \
