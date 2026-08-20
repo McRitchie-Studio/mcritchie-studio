@@ -118,4 +118,104 @@ class ReleaseCliAcceptedGateTest < Minitest::Test
     assert_match(/carries no RED verdict/, out,
                  "the guard must announce that it ran and passed")
   end
+
+  # ── the BLIND guard: was that RED verdict even POSSIBLE? ────────────────────
+  #
+  # refuse_red_accepted! above reads a verdict and refuses on an asserted failure. It
+  # can only ever fire in a repo whose suite workflow BUILDS `accepted` — and on
+  # 2026-08-18 three of the four swept repos had no such trigger, so the guard passed
+  # over them without ever having been capable of failing, while its success line named
+  # them as checked. These pin the companion guard that asks the missing question.
+  #
+  # Same discipline as above: they drive the FUNCTION, so a third caller added tomorrow
+  # inherits both guards by construction.
+
+  CERTIFYING = "name: CI\non:\n  pull_request:\n  push:\n    branches: [main, release, accepted]\njobs: {}\n"
+  BLIND_YAML = "name: CI\non:\n  pull_request:\n  push:\n    branches: [main, release]\njobs: {}\n"
+
+  # Drives promote_accepted_to_release! with the workflow tree each repo ships on
+  # origin/accepted stubbed in. ci_verdict is pinned GREEN throughout, so anything
+  # these tests refuse was refused by the BLIND guard and not the RED one.
+  def promote_with_workflows(sources, repos: sources.keys)
+    stub = <<~RUBY
+      def repo_path(repo) = "/nonexistent/\#{repo}"
+      def sh(*_a, **_k) = ["abc1234", true]
+      def ci_verdict(_repo, _sha) = { state: :green }
+      def accepted_workflow_sources(repo) = #{sources.inspect}[repo]
+    RUBY
+    script = %(ARGV.replace(["--help"]); begin; load #{BIN.inspect}; rescue SystemExit; end; ) +
+             stub +
+             %(begin; promote_accepted_to_release!(#{repos.inspect}, label: "rel-t"); ) +
+             %(puts "PROMOTED"; rescue SystemExit; puts "EXITED"; end)
+    out, = Open3.capture2e(RbConfig.ruby, "-e", script)
+    out
+  end
+
+  def test_a_repo_whose_suite_never_builds_accepted_refuses_the_promote
+    out = promote_with_workflows({ "turf-monster" => { ".github/workflows/ci.yml" => BLIND_YAML } })
+
+    assert_match(/cannot certify `accepted`/, out)
+    assert_match(/turf-monster \(suite workflow "CI"\)/, out, "the guard must NAME the repo, not just refuse")
+    refute_includes out, "PROMOTED"
+  end
+
+  def test_a_certifying_repo_passes_the_blind_guard
+    out = promote_with_workflows({ "turf-monster" => { ".github/workflows/ci.yml" => CERTIFYING } })
+
+    refute_match(/cannot certify/, out)
+    assert_match(/`accepted` is built by the declared suite workflow in turf-monster/, out,
+                 "the guard must announce that it ran and passed, naming what it actually checked")
+  end
+
+  # THE MUTATION, end to end: the same fleet, one repo's trigger line edited.
+  def test_MUTATION_dropping_accepted_from_one_repos_trigger_flips_the_promote
+    fleet = { "mcritchie-studio" => { "ci.yml" => CERTIFYING }, "turf-monster" => { "ci.yml" => CERTIFYING } }
+
+    assert_match(/is built by the declared suite workflow/, promote_with_workflows(fleet))
+
+    mutated = fleet.merge("turf-monster" => { "ci.yml" => BLIND_YAML })
+    out = promote_with_workflows(mutated)
+
+    assert_match(/turf-monster \(suite workflow "CI"\)/, out)
+    refute_match(/mcritchie-studio \(suite/, out, "only the offending repo is named")
+  end
+
+  # The engine's suite is `Engine CI`, so a `CI`-named workflow in that repo is NOT its
+  # verdict — this is why consumer-ci.yml is out of scope, asserted rather than assumed.
+  def test_the_engines_declared_suite_is_the_one_that_must_carry_accepted
+    engine = "name: Engine CI\non:\n  push:\n    branches: [main, release]\njobs: {}\n"
+    consumer = "name: Consumer CI\non:\n  push:\n    branches: [main, release, accepted]\njobs: {}\n"
+    out = promote_with_workflows({ "studio-engine" => { "engine-ci.yml" => engine, "consumer-ci.yml" => consumer } })
+
+    assert_match(/studio-engine \(suite workflow "Engine CI"\)/, out,
+                 "Consumer CI building accepted is irrelevant — the verdict readers fold Engine CI")
+  end
+
+  # UNREADABLE IS NOT A FINDING. accepted_workflow_sources returns nil when the tree
+  # could not be read; turning an I/O hiccup into a release outage is its own false alarm.
+  def test_an_unreadable_repo_is_reported_but_does_not_refuse
+    out = promote_with_workflows({ "turf-monster" => nil }, repos: ["turf-monster"])
+
+    refute_match(/cannot certify/, out)
+    assert_match(/could not read \.github\/workflows/, out, "silence about an unread repo is the bug, not the refusal")
+  end
+
+  # DELETING the suite workflow is the loudest form of this regression, and it must NOT
+  # be confused with the unreadable case above. An empty workflow tree read from a REAL
+  # checkout is a finding; only a path we could not read at all is excused.
+  def test_a_repo_that_deleted_its_suite_workflow_is_blind
+    out = promote_with_workflows({ "turf-monster" => {} })
+
+    assert_match(/turf-monster \(suite workflow "CI"\)/, out,
+                 "an app repo shipping no suite workflow cannot certify anything")
+    refute_includes out, "PROMOTED"
+  end
+
+  # solana-studio ships no .github/workflows at all and DECLARES that (nil in the
+  # registry map). A declared exemption must not read as a gap.
+  def test_a_repo_declaring_no_suite_workflow_is_exempt_not_blind
+    out = promote_with_workflows({ "solana-studio" => {} })
+
+    refute_match(/cannot certify/, out)
+  end
 end
