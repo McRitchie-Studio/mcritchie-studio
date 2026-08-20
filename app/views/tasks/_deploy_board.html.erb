@@ -8,10 +8,8 @@
     Locals:
       stages          — array of stage keys to render as columns
       title           — header heading
-      archived:       — show the Archived toggle + a toggle-hidden archived column
       current_release — render the current-release module above the board when present
       last_release    — most-recent shipped release, rendered read-only beneath current %>
-<% archived = local_assigns.fetch(:archived, false) %>
 <% current_release = local_assigns.fetch(:current_release, nil) %>
 <% last_release = local_assigns.fetch(:last_release, nil) %>
 <% release_duration_dashboard = local_assigns.fetch(:release_duration_dashboard, nil) %>
@@ -19,8 +17,17 @@
 <% current_page = local_assigns[:current_page] %>
 <% show_release_modules = current_page == "deployments" || current_release || last_release || release_duration_dashboard %>
 <%# Blocked tasks are `building` tasks now (a block is a building attribute, not a
-    stage), so there is never a standalone Blocked column on either page. %>
-<% columns = archived ? (stages + ["archived"]) : stages %>
+    stage), so there is never a standalone Blocked column on either page. Nor is
+    there an Archived one: archiving removes the card, which is what the broadcaster
+    has always said, and archived work lives at /deployments?stage=archived. %>
+<%# An explicit ?stage= is a single-column view of that stage, uncapped — the one
+    path that still reaches archived work, and where the capped Shipped column's
+    "older" link lands. %>
+<% columns = @stage_filter.present? ? [@stage_filter] : stages %>
+<%# Columns the loader capped ({ stage => true total }); today only `shipped`. A
+    capped column shows the TRUE count and links to the uncapped stage view, so the
+    trim never reads as work that vanished. %>
+<% capped_stage_totals = @capped_stage_totals || {} %>
 <%# Mascot lookup — the 151 are tiny, so one query beats an N+1 across cards. %>
 <% pokemon_by_slug = Pokemon.all.index_by(&:slug) %>
 <%# Type-colour map built once, so each card's data-glow (mascot type colour, used by
@@ -58,7 +65,6 @@ function kanbanBoard(live) {
     _pendingMoves: {},
     agentFilter: '',
     hiddenApps: [],
-    showArchived: false,
     showAllCols: false,
     toasts: [],
 
@@ -157,18 +163,9 @@ function kanbanBoard(live) {
           const card = document.getElementById(target);
           if (!card) { renderNow(el); return; }
 
+          // An `archive` exit animates and then removes, like every other exit —
+          // there is no Archived column to re-parent into on either board any more.
           await this.animateCardExit(card, exitAction);
-          if (exitAction === 'archive') {
-            const archivedZone = document.getElementById('dropzone-archived');
-            if (archivedZone) {
-              archivedZone.insertBefore(card, archivedZone.querySelector('.kanban-empty'));
-              card.dataset.stage = 'archived';
-              this.resetCardExit(card);
-              this.updateCounts();
-              return;
-            }
-          }
-
           renderNow(el);
           this.updateCounts();
         };
@@ -330,14 +327,7 @@ function kanbanBoard(live) {
         const updated = await resp.json().catch(() => null);
         if (!updated || updated.stage !== 'archived') throw new Error('Archive failed');
         if (card && !useLiveExit) {
-          const archivedZone = document.getElementById('dropzone-archived');
-          if (archivedZone) {
-            archivedZone.insertBefore(card, archivedZone.querySelector('.kanban-empty'));
-            card.dataset.stage = 'archived';
-            this.resetCardExit(card);
-          } else {
-            card.remove();
-          }
+          card.remove();
           this.updateCounts();
         }
         this.showToast('Task archived', 'success');
@@ -430,13 +420,6 @@ document.addEventListener('turbo:before-cache', function() {
         </button>
       <% end %>
       <div class="flex w-full items-center gap-2 flex-wrap sm:ml-auto sm:w-auto sm:justify-end" data-test="board-header-actions">
-        <% if archived %>
-          <button @click="showArchived = !showArchived"
-                  :class="showArchived ? 'bg-primary text-white' : 'bg-surface text-secondary border border-subtle hover:text-heading'"
-                  class="px-3 py-1.5 rounded-lg text-sm font-medium transition">
-            Archived
-          </button>
-        <% end %>
         <% if logged_in? %>
           <%= link_to "New Task", new_task_path, class: "btn btn-primary" %>
         <% end %>
@@ -506,7 +489,6 @@ document.addEventListener('turbo:before-cache', function() {
           the Building lane, so a stalled task stays reachable via "All Stages" at narrow. %>
       <% collapsible = columns.size > 4 && idx < columns.size - 3 %>
       <div class="w-full flex-none sm:flex-1 <%= columns.size > 4 ? "sm:min-w-[13.5rem]" : "sm:min-w-[190px]" %>"
-           <% if stage == 'archived' %>x-show="showArchived" x-cloak<% end %>
            <% if collapsible %>:class="showAllCols ? '' : 'max-[1399px]:hidden'"<% end %>>
         <!-- Column Header -->
         <div class="mb-3 px-1">
@@ -520,10 +502,15 @@ document.addEventListener('turbo:before-cache', function() {
                     class: "rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary hover:bg-primary/15 transition",
                     "data-test": "submitted-review-docs-link" %>
             <% end %>
+            <%# A capped column counts what EXISTS, not what it drew — a badge reading
+                12 over a stage holding 31 would be a quieter lie than the slow page
+                this cap replaced. %>
+            <% stage_total = capped_stage_totals[stage] %>
             <span class="stage-count inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-xs font-bold
               <%= task_stage_count_classes(stage) %>"
-              data-stage-count="<%= stage %>">
-              <%= column_tasks.size %>
+              data-stage-count="<%= stage %>"
+              <% if stage_total %>title="showing the newest <%= column_tasks.size %> of <%= stage_total %>"<% end %>>
+              <%= stage_total || column_tasks.size %>
             </span>
           </div>
           <%# Kickoff-chip row, reserved at a fixed height on EVERY column (empty for
@@ -551,6 +538,15 @@ document.addEventListener('turbo:before-cache', function() {
                   ever_blocked: @ever_blocked_slugs&.include?(task.slug),
                   ci_progress: @ci_progress_by_slug&.fetch(task.slug, nil),
                   review_in_progress: task.review_in_progress? %>
+          <% end %>
+
+          <%# The rest of a capped column, one click away — the same ?stage= opt-in
+              that keeps the archive reachable. %>
+          <% if stage_total %>
+            <%= link_to "#{stage_total - column_tasks.size} older →",
+                  url_for(stage: stage),
+                  class: "block rounded-lg border border-subtle px-2 py-1.5 text-center text-xs font-medium text-muted hover:text-heading hover:bg-surface-alt transition",
+                  "data-test": "stage-older-link" %>
           <% end %>
 
           <!-- Empty State -->

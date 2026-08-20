@@ -290,18 +290,42 @@ class TasksController < ApplicationController
     lines.join("\n")
   end
 
-  # Shared data loader for /tasks and /deployments — same task set, different
-  # columns. Each view passes its own column list to the _board partial; archived
-  # is a board-side toggle, so grouping the full task set here is intentional.
+  # Shared data loader for /tasks and /deployments.
+  #
+  # WHAT THIS LOADS IS NOW THE WHOLE POINT — see Task.board_default_tasks for the
+  # measurement. The short version: it used to load EVERY task, so a board drawing
+  # 57 cards instantiated 1,212 of them plus 14,170 TaskEvents. It now loads live
+  # work only. `load_board_task_conversation` derives its slug list from this same
+  # set, so the scope carries through it too (4,220 activity rows down to 296).
+  #
+  # `?stage=<stage>` remains the explicit opt-in, and is the one path that still
+  # reaches the archive — so archived tasks keep a browsable index instead of being
+  # reachable only by direct URL.
   def load_board
+    base = Task.all
+    agent_filter = params[:agent_slug].presence || params[:agent].presence
+    base = base.where(agent_slug: agent_filter) if agent_filter
     # :gate_runs rides along with :task_events because the claim chip reads BOTH for
     # its progress fact (last durable artifact + is a gate in flight) — preloading
     # only the events would leave the chip issuing a fresh gate query per live card.
-    tasks = Task.ordered.includes(:task_events, :gate_runs)
-    agent_filter = params[:agent_slug].presence || params[:agent].presence
-    tasks = tasks.where(agent_slug: agent_filter) if agent_filter
+    scope = base.ordered.includes(:task_events, :gate_runs)
+
     stage_filter = params[:stage].presence
-    tasks = tasks.where(stage: stage_filter) if Task::STAGES.include?(stage_filter)
+    if Task::STAGES.include?(stage_filter)
+      # An explicit stage is a deliberate ask — hand back the whole column,
+      # uncapped, archive included. @stage_filter also REPLACES the board's column
+      # list (see the board partials): without that the page would load the rows
+      # and then have nowhere to draw them, which is exactly what happened to
+      # ?stage=archived the moment the Archived column came out.
+      @stage_filter = stage_filter
+      tasks = scope.where(stage: stage_filter).to_a
+      @capped_stage_totals = {}
+    else
+      @stage_filter = nil
+      tasks = Task.board_default_tasks(scope)
+      @capped_stage_totals = Task.board_capped_stage_totals(base)
+    end
+
     load_board_task_conversation(tasks)
     @tasks_by_stage = tasks.group_by(&:stage)
     # CI progress bars: one batched read for every open PR's GitHub CI (building

@@ -828,12 +828,13 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "h2", "Tasks"
-    # Feature-agent lane (+ archived toggle column); submitted is the seam. Blocked is
-    # NOT its own column anymore — blocked tasks ride the Building column.
+    # Feature-agent lane; submitted is the seam. Neither of the two terminal-ish
+    # side columns is a lane: blocked tasks ride Building, and archived tasks are
+    # off the board entirely (reachable at ?stage=archived).
     assert_select "#dropzone-designed"
     assert_select "#dropzone-building"
     assert_select "#dropzone-submitted"
-    assert_select "#dropzone-archived"
+    assert_select "#dropzone-archived", count: 0
     assert_select "#dropzone-blocked", count: 0
     # DevOps-only columns absent
     assert_select "#dropzone-reviewed", count: 0
@@ -866,6 +867,86 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes response.body, "Prepare release"
     assert_not_includes response.body, "Run Deployment"
     assert_not_includes response.body, "Archive completed tasks"
+  end
+
+  # --- board scope: live work only ------------------------------------------
+  #
+  # The boards used to load EVERY task — 1,212 of them in production, plus 14,170
+  # TaskEvents — to draw 57 cards. These pin the scope that fixed it, on the two
+  # things a future refactor could quietly undo: that archived rows never come
+  # back by default, and that ?stage= still reaches them.
+
+  test "[integration] boards do not load archived tasks by default" do
+    archived = Task.create!(title: "archived stays off board", stage: "archived")
+
+    [tasks_path, deployments_path].each do |path|
+      get path
+      assert_response :success
+      # The slug, not just the card id: a task that was loaded but not drawn would
+      # still leak into a data attribute or a count somewhere on the page.
+      assert_not_includes response.body, archived.slug,
+                          "#{path} carries an archived task it should never have loaded"
+    end
+  end
+
+  test "[integration] stage filter is the opt-in that still reaches the archive" do
+    archived = Task.create!(title: "archived reachable by filter", stage: "archived")
+
+    get tasks_path(stage: "archived")
+
+    assert_response :success
+    assert_select "#card-#{archived.slug}"
+    # A filtered board is a SINGLE column of that stage. Loading the rows is only
+    # half the contract — before this, ?stage=archived fetched them and then drew a
+    # board with no column able to hold one.
+    assert_select "#dropzone-archived"
+    assert_select "#dropzone-designed", count: 0
+  end
+
+  test "[integration] the older link on a capped column lands on that stage uncapped" do
+    limit = Task::BOARD_SHIPPED_LIMIT
+    shipped = (limit + 3).times.map { |i| Task.create!(title: "older link shipped #{i}", stage: "shipped") }
+
+    get deployments_path
+    assert_response :success
+    older = css_select("a[data-test='stage-older-link']").first
+    assert older, "a capped column must offer a way to the rest"
+
+    get older["href"]
+
+    assert_response :success
+    # Every shipped task, including the one the cap dropped off the board.
+    shipped.each { |task| assert_select "#card-#{task.slug}" }
+    assert_select "a[data-test='stage-older-link']", count: 0
+  end
+
+  test "[integration] shipped column is capped and counts what exists" do
+    limit = Task::BOARD_SHIPPED_LIMIT
+    shipped = (limit + 3).times.map { |i| Task.create!(title: "board cap shipped #{i}", stage: "shipped") }
+    total = Task.where(stage: "shipped").count
+
+    get deployments_path
+
+    assert_response :success
+    assert_select "#dropzone-shipped [data-stage='shipped']", count: limit,
+                  message: "the shipped column must draw at most BOARD_SHIPPED_LIMIT cards"
+    # The badge reports the TRUE total, not the drawn slice — a capped column that
+    # under-counted would be a quieter lie than the slow page the cap replaced.
+    assert_select "[data-stage-count='shipped']", text: /#{total}/
+    assert_select "a[data-test='stage-older-link']", text: /#{total - limit} older/
+    # …and the newest survive the cap, not an arbitrary slice.
+    assert_select "#dropzone-shipped #card-#{shipped.last.slug}"
+    assert_select "#dropzone-shipped #card-#{shipped.first.slug}", count: 0
+  end
+
+  test "[component] neither board renders an Archived toggle" do
+    [tasks_path, deployments_path].each do |path|
+      get path
+      assert_response :success
+      assert_select "[data-test='board-header-actions'] button", text: "Archived", count: 0
+      assert_not_includes response.body, "showArchived",
+                          "#{path} still carries the archived-toggle Alpine state"
+    end
   end
 
   test "blocked tasks ride the Building column (red hue) on both boards" do
