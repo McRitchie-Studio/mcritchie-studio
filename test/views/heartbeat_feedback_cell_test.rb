@@ -1,9 +1,10 @@
 require "test_helper"
 
-# [component] the inline feedback cells in the trajectory table — the good/not radios
-# (which persist the disposition without opening the drawer), the grade slug, and the
-# bank/discard markers. Rendered through the full table partial so the <td> cells sit
-# in a real <table> (a bare <td> is dropped by the HTML parser assert_select uses).
+# [component] the inline feedback cells on the heartbeat action rows — the good/not
+# radios (which persist the disposition without opening the drawer), the grade slug,
+# and the bank/discard markers. Rendered inside a minimal <table> wrapper because a
+# bare <td> is dropped by the HTML parser assert_select uses; production renders this
+# partial standalone the same way, from heartbeat/grade.turbo_stream.erb.
 class HeartbeatFeedbackCellTest < ActionView::TestCase
   def action(**attrs)
     AgentAction.create!({ session_id: "fbcell", kind: "edit", outcome: "ok", actor: "agent",
@@ -12,8 +13,12 @@ class HeartbeatFeedbackCellTest < ActionView::TestCase
   end
 
   def render_table(action, grades)
-    render partial: "heartbeat/trajectory_table",
-           locals: { groups: [["building", [action]]], pokemon_by_slug: {}, grades: grades }
+    render inline: <<~ERB, locals: { action: action, row_grades: grades[action.id] || {} }
+      <table><tbody><tr>
+        <%= render "heartbeat/feedback_cell", action: action, grader: ActionGrade::ALEX, grade: row_grades[ActionGrade::ALEX] %>
+        <%= render "heartbeat/feedback_cell", action: action, grader: ActionGrade::MCR, grade: row_grades[ActionGrade::MCR] %>
+      </tr></tbody></table>
+    ERB
   end
 
   test "[component] every row carries inline good/not radios for Alex and the McRitchie audit" do

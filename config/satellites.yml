@@ -2,7 +2,7 @@
 # McRitchie ecosystem.
 #
 # Read by:
-#   * app/views/components/_admin_dropdown.html.erb (navbar SSO links)
+#   * app/helpers/link_tree_helper.rb (navbar SSO links, via Satellite.active)
 #   * Satellite.all (Ruby reader in app/models/satellite.rb)
 #   * bin/ecosystem-build (clone + bundle + bring-up loop)
 #
