@@ -35,6 +35,11 @@ class TasksController < ApplicationController
     # @tasks_by_stage: load_board narrows to the agent/stage filter params, and a
     # filtered board must not silently shrink the pipeline-wide WIP number.
     @wip_task_count = Task.wip_count
+    # The app-ladder row: where each application sits on accepted → release → main,
+    # which the Next Release card cannot show (it is decoupled — work parks on
+    # `accepted` between releases). Pipeline-wide for the same reason as WIP above:
+    # it must not shrink under a board filter.
+    @app_ladder_cards = Ci::AppLadder.build
   end
 
   # Row budget for /tasks/recent — enough to cover the active pipeline plus the

@@ -1,0 +1,49 @@
+<%# The app-ladder row for /deployments: one CI testing card per reportable repo,
+    showing where each application's suite sits on `accepted → release → main`.
+
+    WHY IT EXISTS. An application's progress along the ladder is decoupled from the
+    Next Release card. Work sits merged on `accepted` for hours before a sweep
+    promotes it, and between releases Next Release reads "none active" while several
+    repos quietly hold unshipped work. That in-between state had no surface at all.
+
+    #app-ladder-row IS A STABLE SLOT, and that is load-bearing rather than cosmetic.
+    The board takes live updates over Turbo Streams (`turbo_stream_from "deployments"`),
+    and a stream can only replace a target it can name. Without this id the row was
+    invisible to DeploymentsBroadcaster: the dev deploy tools (Open / Advance / Ship /
+    Redraw / Reset) POST to /dev/board/<action>, which fires .release_modules, which
+    replaces #current-release and #last-release — and nothing re-rendered this row, so
+    it sat stale until a manual reload while every other card moved. The id plus
+    DeploymentsBroadcaster.app_ladder is the fix; keep them in step.
+
+    Locals: cards - Array<Ci::AppLadder::Card>, already sorted worst-first. %>
+<% cards = local_assigns.fetch(:cards, []) %>
+<%# data-rendered-at is the row's own render stamp, and it is diagnostic rather than
+    decorative: it answers "when was this row last refreshed" for anyone looking at a
+    board they suspect is stale — the precise question the missing broadcast made
+    unanswerable. It is also what makes the wiring guard DETERMINISTIC. Asserting that
+    the row's CONTENT changed is flaky by construction: opening a fixture release does
+    not necessarily move any rung verdict or parked count, so an identical re-render is
+    a legitimate outcome and the test would fail on a wiring that works. The stamp
+    changes on every render, so it proves the MECHANISM — a broadcast arrived and
+    replaced this slot — independent of whether the content happened to differ. %>
+<div id="app-ladder-row" class="mb-6" data-test="app-ladder-row"
+     data-rendered-at="<%= (Time.current.to_f * 1000).to_i %>">
+  <% if cards.any? %>
+    <div class="flex items-baseline gap-2 mb-2">
+      <h2 class="text-xs font-semibold uppercase tracking-wider text-muted">Applications</h2>
+      <span class="text-[10px] text-muted"><%= pluralize(cards.count, "repo") %> on the ladder</span>
+    </div>
+    <div class="grid min-w-0 grid-cols-1 gap-4 items-stretch sm:grid-cols-2 xl:grid-cols-4">
+      <% cards.each do |card| %>
+        <%# FULLY QUALIFIED on purpose. This partial is rendered two ways: inline from
+            TasksController (where a bare "app_ladder_card" resolves against tasks/)
+            AND standalone by DeploymentsBroadcaster via ApplicationController.render,
+            where the same bare name resolves against application/ and raises Missing
+            partial. Studio::Cable.safe_broadcast SWALLOWS that — so the broadcast
+            failed silently and the row simply never moved, with nothing in the log to
+            say why. tasks/_current_release carries the same fully-qualified habit. %>
+        <%= render "tasks/app_ladder_card", card: card, card_class: "h-full min-w-0" %>
+      <% end %>
+    </div>
+  <% end %>
+</div>
