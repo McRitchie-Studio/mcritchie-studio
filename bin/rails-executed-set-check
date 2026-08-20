@@ -1,0 +1,65 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/rails-executed-set-check — THE RAILS LANE'S VERDICT GATE.
+#
+# The sharded `rails` job can tell you its tests PASSED. It cannot tell you it RAN THEM
+# ALL. This runs AFTER the shards, over the JSON receipts THEY emitted, and asserts the
+# executed set against the tree itself.
+#
+#   Usage:  bin/rails-executed-set-check <reports-dir> [--contract config/rails_lane.yml]
+#
+# Exit 0 = every committed test file the lane owns ran at least one test, in exactly one
+# shard, with every shard accounted for. Exit 1 = it did not, and the green shards were
+# covering less than they claimed. The argument lives in bin/lib/rails_executed_set.rb.
+
+require_relative "lib/rails_executed_set"
+
+reports_dir = nil
+contract_path = nil
+
+args = ARGV.dup
+until args.empty?
+  arg = args.shift
+  case arg
+  when "--contract" then contract_path = args.shift
+  when "-h", "--help"
+    puts "usage: bin/rails-executed-set-check <reports-dir> [--contract config/rails_lane.yml]"
+    exit 0
+  else reports_dir = arg
+  end
+end
+
+root = File.expand_path("..", __dir__)
+contract_path ||= File.join(root, "config", "rails_lane.yml")
+
+abort "usage: bin/rails-executed-set-check <reports-dir>" unless reports_dir
+abort "no contract at #{contract_path}" unless File.exist?(contract_path)
+abort "no reports directory at #{reports_dir}" unless Dir.exist?(reports_dir)
+
+contract = TestShard.load_contract(contract_path)
+reports = RailsExecutedSet.load_reports(reports_dir)
+expected = RailsExecutedSet.expected_files(root: root, contract: contract)
+
+if expected.empty?
+  warn "RAILS EXECUTED SET: RED"
+  warn "  #{contract_path} matched NO test files. A lane that owns nothing cannot be audited,"
+  warn "  and a green check over it would mean nothing."
+  exit 1
+end
+
+problems = RailsExecutedSet.problems(reports: reports, expected: expected, contract: contract)
+
+if problems.empty?
+  puts "RAILS EXECUTED SET: GREEN"
+  puts "  #{RailsExecutedSet.summary(reports: reports, expected: expected)}"
+  exit 0
+end
+
+warn "RAILS EXECUTED SET: RED"
+warn "  #{RailsExecutedSet.summary(reports: reports, expected: expected)}" unless reports.empty?
+problems.each { |problem| warn "  · #{problem}" }
+warn ""
+warn "  The `rails` shards may have reported success over less than the whole suite."
+warn "  Contract: #{contract_path}. Receipts: #{reports_dir}."
+exit 1

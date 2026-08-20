@@ -60,6 +60,33 @@ class Task::TestingPhasesTest < ActiveSupport::TestCase
     refute phases.key?("acceptance"), "operator acceptance is no longer a task phase"
   end
 
+  test "[unit] the SHARDED lane's own scopes close the CI phase" do
+    # The suite was sharded on 2026-08-20: the monolithic `test` job became `rails` (a
+    # 4-way matrix, all four reported under ci_rails once bin/ci-scope-capture strips the
+    # matrix suffix) plus `system` and `rails_executed_set`. If the new slugs are not in
+    # CI_SCOPES, every task from now on renders a blank CI window.
+    task = probe_task
+    add_ci_action(task, event_slug: "ci_rails", at: @anchor + 25.minutes)
+    add_ci_action(task, event_slug: "ci_rails_executed_set", at: @anchor + 27.minutes)
+
+    assert_equal 420, Task::TestingPhases.build(task).dig("phases", "ci", "seconds"),
+                 "the sharded lane's own scopes must close the CI phase"
+  end
+
+  test "[unit] a task whose CI rows predate the shard rename still renders its CI phase" do
+    # DATA COMPATIBILITY, and nothing in the sharding diff would have caught it if the
+    # sibling test above had not happened to build its fixture with `ci_test`. EVERY task
+    # shipped before 2026-08-20 carries ci_test rows and nothing else; dropping the retired
+    # slug from the READER blanks their timelines silently, for the whole history of the
+    # board. Renaming what the WRITER emits and narrowing what the READER accepts are two
+    # different decisions, and only the first is safe to make on a rename.
+    task = probe_task
+    add_ci_action(task, event_slug: "ci_test", at: @anchor + 27.minutes)
+
+    assert_equal 420, Task::TestingPhases.build(task).dig("phases", "ci", "seconds"),
+                 "a task whose CI rows predate the shard rename must still render its CI phase"
+  end
+
   test "[unit] review starts at the earliest G2 lane when both review gates ran" do
     task = probe_task
     open_review_gate(task, key: "g2a_primary", at: @anchor + 26.minutes)

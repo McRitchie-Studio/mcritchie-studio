@@ -165,7 +165,7 @@ impossible by construction rather than by every repo remembering to ignore `tmp/
 
    Lanes: `test-db-reset` (`bin/rails db:test:purge db:test:prepare`),
    `full-suite` (**what CI's `test` job runs, verbatim** — read from the repo's own
-   `.github/workflows/ci.yml`; today `bin/rails db:test:prepare test test:system`,
+   `.github/workflows/ci.yml`; today `bin/rails db:test:prepare test test:system` — which since the hub's suite was SHARDED is the single command covering CI's `rails` shards plus its `system` job, not a copy of any one CI step,
    the ENTIRE Ruby suite **including the system tier**), `rubocop` (`bin/rubocop`,
    the whole repo — CI's `lint` job). Green lanes stamp `[full-suite@<fp>]` +
    `[rubocop@<fp>]`.

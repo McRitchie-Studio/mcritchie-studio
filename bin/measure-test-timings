@@ -1,0 +1,143 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/measure-test-timings — REGENERATE test/timings.yml.
+#
+#   bin/measure-test-timings                 measure the whole lane, rewrite test/timings.yml
+#   bin/measure-test-timings --out PATH      write somewhere else
+#   bin/measure-test-timings --from RECEIPT  convert an existing receipt, run nothing
+#   bin/measure-test-timings --from DIR       merge every receipt in a directory
+#
+# THE DIRECTORY FORM IS THE INTERESTING ONE. The sharded lane uploads one receipt per
+# shard as a CI artifact, so downloading a green run's artifacts and pointing this at
+# them regenerates the weights from REAL RUNNER HARDWARE — four shards' worth of
+# measurement for the cost of a `gh run download`, and no 25-minute local run at all:
+#
+#   gh run download <run-id> --pattern 'rails-report-shard-*' --dir /tmp/receipts
+#   bin/measure-test-timings --from /tmp/receipts
+#
+# WHAT THE NUMBERS ARE FOR, AND WHAT THEY ARE NOT. bin/lib/test_shard.rb bin-packs the
+# lane by these weights so the four shards finish at roughly the same time. That is
+# their ONLY job. They do not decide whether a file runs, they are not a budget, and
+# nothing goes red when one is stale — a wrong number makes the lane slightly less
+# balanced and nothing else. See the header of bin/lib/test_shard.rb.
+#
+# So this does not need to be re-run often, and it deliberately is not wired into CI:
+# a lane that regenerates its own balance data on every run would rewrite a tracked
+# file from a runner, and the resulting diff noise would be worse than the imbalance
+# it fixes. Re-run it by hand when the suite has changed enough that `bin/ci-shard
+# --explain` shows a spread worth caring about.
+#
+# MEASURED ON THE LANE'S OWN MANIFEST, not on `bin/rails test` argless: the manifest is
+# what the shards actually run (test/system belongs to another job), so measuring
+# anything else would weight files the packer never sees.
+#
+# SINGLE-PROCESS BY DEFAULT. Per-test wall time under parallel workers is noisier —
+# workers contend for the same CPU — and this repo runs single-process locally anyway
+# (test/test_helper.rb's TestParallelism, which segfaults in pg when forced to fork the
+# full suite on macOS). Roughly 25 minutes on a quiet machine.
+
+require "json"
+require "yaml"
+
+ROOT = File.expand_path("..", __dir__)
+
+out_path = File.join(ROOT, "test", "timings.yml")
+from_receipt = nil
+
+args = ARGV.dup
+until args.empty?
+  arg = args.shift
+  case arg
+  when "--out" then out_path = args.shift
+  when "--from" then from_receipt = args.shift
+  when "-h", "--help"
+    puts "usage: bin/measure-test-timings [--out PATH] [--from RECEIPT.json]"
+    exit 0
+  else abort "bin/measure-test-timings: unrecognized argument #{arg.inspect}"
+  end
+end
+
+Dir.chdir(ROOT)
+
+receipt_path = from_receipt || File.join(ROOT, "tmp", "test-timings-receipt.json")
+
+if from_receipt.nil?
+  manifest = `bin/ci-shard --manifest`.split("\n").map(&:strip).reject(&:empty?)
+  abort "bin/measure-test-timings: bin/ci-shard --manifest returned nothing" if manifest.empty?
+
+  Dir.mkdir(File.join(ROOT, "tmp")) unless Dir.exist?(File.join(ROOT, "tmp"))
+  File.delete(receipt_path) if File.exist?(receipt_path)
+
+  env = {
+    "CI_RECEIPT_OUT" => File.expand_path(receipt_path),
+    "CI_RECEIPT_ROOT" => ROOT,
+    "PARALLEL_WORKERS" => ENV.fetch("PARALLEL_WORKERS", "1")
+  }
+
+  warn "[measure] preparing…"
+  abort "bin/measure-test-timings: test-prepare failed" unless system(env, "bin/rails", "db:test:prepare", "test:prepare")
+
+  warn "[measure] running #{manifest.length} files single-process — expect ~25 minutes"
+  # A RED suite still yields honest per-test times, so the measurement is kept either
+  # way; the exit status is reported rather than obeyed.
+  ok = system(env, "bin/rails", "test", *manifest)
+  warn "[measure] suite exited #{ok ? 'green' : 'RED — timings kept, but re-measure once it is green'}"
+end
+
+# One receipt, or every receipt in a directory. A file that appears in more than one
+# receipt has its seconds SUMMED — which is the right fold for both shapes this sees:
+# shards are disjoint (so nothing is summed), and a re-run of one shard replaces its own
+# artifact rather than adding a second.
+receipt_paths =
+  if File.directory?(receipt_path)
+    Dir.glob(File.join(receipt_path, "**", "*.json")).sort
+  else
+    [ receipt_path ]
+  end
+
+abort "bin/measure-test-timings: no receipt at #{receipt_path}" if receipt_paths.empty?
+missing = receipt_paths.reject { |path| File.exist?(path) }
+abort "bin/measure-test-timings: no receipt at #{missing.join(', ')}" if missing.any?
+
+files = receipt_paths.each_with_object({}) do |path, acc|
+  parsed = JSON.parse(File.read(path))
+  parsed.fetch("files", {}).each do |file, counters|
+    seconds = counters.is_a?(Hash) ? counters["seconds"].to_f : 0.0
+    acc[file] = { "seconds" => (acc.dig(file, "seconds").to_f + seconds) }
+  end
+rescue JSON::ParserError => e
+  abort "bin/measure-test-timings: #{path} is not readable JSON (#{e.message})"
+end
+
+abort "bin/measure-test-timings: the receipt(s) name no files" if files.empty?
+warn "[measure] merged #{receipt_paths.length} receipt(s)" if receipt_paths.length > 1
+
+timings = files.each_with_object({}) do |(file, counters), acc|
+  seconds = counters.is_a?(Hash) ? counters["seconds"].to_f : 0.0
+  # Floor at 0.01s: a file measured at exactly 0.0 would be treated as unmeasured by
+  # TestShard.positive and silently take the median instead of its real, tiny cost.
+  acc[file] = [ seconds.round(2), 0.01 ].max
+end
+
+total = timings.values.sum
+header = <<~HEADER
+  # test/timings.yml — MEASURED per-file cost of the Rails lane, in seconds.
+  #
+  # GENERATED by bin/measure-test-timings; do not hand-edit. Regenerate when
+  # `bin/ci-shard --explain` shows a spread worth caring about.
+  #
+  # BALANCE DATA, NOT A CONTRACT. bin/lib/test_shard.rb uses these weights to decide
+  # WHICH shard runs a file, never WHETHER it runs. A file missing from this list still
+  # runs — it is packed at the median of the files that are here. A stale or deleted
+  # timings file makes the lane slower and cannot make it narrower; that property is
+  # asserted by test/lib/test_shard_test.rb and enforced at runtime by
+  # bin/rails-executed-set-check, which re-derives the expected set from the tree.
+  #
+  # Measured #{Time.now.utc.strftime('%Y-%m-%d')} · #{timings.length} files · #{total.round(1)}s total,
+  # from #{receipt_paths.length} receipt(s). Only the RATIOS matter to the packer, so numbers
+  # measured on one machine transfer to a runner of a different speed without re-measurement.
+HEADER
+
+File.write(out_path, header + timings.sort.to_h.to_yaml)
+warn "[measure] wrote #{timings.length} files (#{total.round(1)}s total) -> #{out_path}"

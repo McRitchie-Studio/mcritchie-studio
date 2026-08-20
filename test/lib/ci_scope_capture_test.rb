@@ -113,6 +113,32 @@ class CiScopeCaptureTest < Minitest::Test
     end
   end
 
+  def test_a_matrix_shard_suffix_collapses_to_the_LANES_scope
+    # GitHub names a matrix job `rails (1)`, `rails (2)`, … The four shards of the Rails
+    # lane are FOUR RUNS OF ONE SCOPE — same command, disjoint slices — so they must all
+    # report under `ci_rails`. A scope per shard would mean editing
+    # config/devops_test_suites.yml every time the shard count moves, and the registry
+    # would describe an implementation detail instead of a lane.
+    #
+    # The four rows stay DISTINCT because the idempotency key is built from the RAW job
+    # name, not from this slug — asserted below so the collapse cannot quietly become a
+    # deduplication that drops three of the four.
+    Dir.mktmpdir do |dir|
+      json = checks(
+        ["rails (1)", "pass", "2026-07-06T10:00:00Z", "2026-07-06T10:02:00Z"],
+        ["rails (2)", "pass", "2026-07-06T10:00:00Z", "2026-07-06T10:02:30Z"],
+        ["CI / playwright (3)", "pass", "2026-07-06T10:00:00Z", "2026-07-06T10:03:00Z"]
+      )
+      _out, _code, emits = run_capture(dir, checks_json: json, session: "fake-sess")
+
+      assert_equal %w[ci_rails ci_rails ci_playwright], emits.map { |e| e["event-slug"] },
+                   "a `(n)` matrix suffix names a shard, not a scope"
+      assert_equal 3, emits.map { |e| e["idempotency-key"] }.uniq.length,
+                   "two shards of one lane must still record two events — the collapse is of the " \
+                   "SCOPE KEY, not of the rows"
+    end
+  end
+
   def test_normalizes_job_names_to_stable_ci_keys
     Dir.mktmpdir do |dir|
       json = checks(
