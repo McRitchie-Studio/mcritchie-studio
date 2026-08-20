@@ -1221,11 +1221,10 @@ module ApplicationHelper
   # components/_ci_progress_meter: a TINT fill (the label rides on top of it), amber
   # in flight, emerald settled green, rose settled bad.
   #
-  # `:stale` and `:not_built` share the FADED treatment on purpose. A stale verdict
-  # describes a tree that is no longer the tree — painting it green would assert a
-  # verification nobody performed — and to an operator deciding whether to trust the
-  # rung, "never built" and "built, but not for what is there now" mean the same
-  # thing. They differ in their title text, not their colour.
+  # `:not_built` is faded on purpose: nothing was ingested for that branch, and an
+  # absent verdict must never read as a pass. Every other tone is CI's own verdict.
+  # (There was a `:stale` tone here too until 2026-08-20 — see Ci::LadderRung for why
+  # it was removed rather than recoloured.)
   APP_LADDER_TONES = {
     green: { fill: "bg-emerald-500", text: "text-emerald-700 dark:text-emerald-300", border: "border-emerald-500/40" },
     pending: { fill: "bg-amber-500", text: "text-amber-700 dark:text-amber-300", border: "border-amber-500/40" },
@@ -1246,7 +1245,6 @@ module ApplicationHelper
            when :pending then "tests running"
            when :red then "tests failed"
            when :conflicted then "conflicted"
-           when :stale then "NOT verified for what is on this branch now — the last green ran before work landed here"
            else "no CI verdict ingested for this branch"
            end
     sha = rung.short_sha ? " (#{rung.short_sha})" : ""

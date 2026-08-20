@@ -55,9 +55,9 @@ module Ci
 
       index = Ci::AppLadder.parked_index
 
-      assert_equal 1, index.dig("turf-monster", "accepted", :count)
-      assert_equal 1, index.dig("turf-monster", "release", :count)
-      assert_equal 1, index.dig("turf-monster", "main", :count)
+      assert_equal 1, index.dig("turf-monster", "accepted")
+      assert_equal 1, index.dig("turf-monster", "release")
+      assert_equal 1, index.dig("turf-monster", "main")
     end
 
     # This is the "clock starts over" behaviour, stated as a test: a task that has
@@ -66,13 +66,13 @@ module Ci
       Task.delete_all
       t = make_task(slug: "advancing", merged: Task::MERGED_ACCEPTED, repos: %w[turf-monster])
 
-      assert_equal 1, Ci::AppLadder.parked_index.dig("turf-monster", "accepted", :count)
+      assert_equal 1, Ci::AppLadder.parked_index.dig("turf-monster", "accepted")
 
       t.update!(merged: Task::MERGED_MAIN)
       index = Ci::AppLadder.parked_index
 
-      assert_nil index.dig("turf-monster", "accepted", :count)
-      assert_equal 1, index.dig("turf-monster", "main", :count)
+      assert_equal 0, index.dig("turf-monster", "accepted"), "the lower rung drains to zero"
+      assert_equal 1, index.dig("turf-monster", "main")
     end
 
     # `archived` is terminal and keeps its merged:"main" stamp forever. Counting it
@@ -82,7 +82,7 @@ module Ci
       make_task(slug: "shipped-live", merged: Task::MERGED_MAIN, repos: %w[turf-monster])
       make_task(slug: "shipped-old", merged: Task::MERGED_MAIN, repos: %w[turf-monster], stage: "archived")
 
-      assert_equal 1, Ci::AppLadder.parked_index.dig("turf-monster", "main", :count)
+      assert_equal 1, Ci::AppLadder.parked_index.dig("turf-monster", "main")
     end
 
     test "an unstamped task parks nowhere" do
@@ -102,7 +102,7 @@ module Ci
       index = Ci::AppLadder.parked_index
 
       %w[mcritchie-studio turf-monster studio-engine].each do |repo|
-        assert_equal 1, index.dig(repo, "accepted", :count), "#{repo} must count the shared task"
+        assert_equal 1, index.dig(repo, "accepted"), "#{repo} must count the shared task"
       end
     end
 
@@ -122,14 +122,15 @@ module Ci
       assert_empty Ci::AppLadder.repos_for(nil)
     end
 
-    test "newest_at tracks the most recent merge at that rung" do
+    # parked_index carries a COUNT and nothing else. It used to also track the newest
+    # `updated_at` per rung, to support a staleness rule removed on 2026-08-20 — the
+    # stamp is always written after the run starts, so the rule fired by construction.
+    test "parked_index is counts only, with no timestamp to infer staleness from" do
       Task.delete_all
-      make_task(slug: "older", merged: Task::MERGED_ACCEPTED, repos: %w[turf-monster]).update!(updated_at: 5.hours.ago)
-      make_task(slug: "newer", merged: Task::MERGED_ACCEPTED, repos: %w[turf-monster]).update!(updated_at: 1.hour.ago)
+      make_task(slug: "one-on-accepted", merged: Task::MERGED_ACCEPTED, repos: %w[turf-monster])
+      make_task(slug: "two-on-accepted", merged: Task::MERGED_ACCEPTED, repos: %w[turf-monster])
 
-      newest = Ci::AppLadder.parked_index.dig("turf-monster", "accepted", :newest_at)
-
-      assert_operator newest, :>, 2.hours.ago, "must take the LATEST merge, not the first seen"
+      assert_equal 2, Ci::AppLadder.parked_index.dig("turf-monster", "accepted")
     end
 
     # --- card shape and sorting ---------------------------------------------
@@ -143,17 +144,19 @@ module Ci
     test "a card needs attention when ANY rung does" do
       refute build_card(%i[green green green]).needs_attention?
       assert build_card(%i[green red green]).needs_attention?
-      assert build_card(%i[stale green green]).needs_attention?
+      assert build_card(%i[conflicted green green]).needs_attention?
+      refute build_card(%i[not_built green green]).needs_attention?,
+             "an absent verdict is not an alarm"
     end
 
     test "cards sort worst-rung first" do
       clean = build_card(%i[green green green], repo: "clean-repo")
-      stale = build_card(%i[stale green green], repo: "stale-repo")
+      running = build_card(%i[pending green green], repo: "running-repo")
       broken = build_card(%i[red green green], repo: "broken-repo")
 
-      ordered = [clean, stale, broken].sort_by(&:sort_key).map(&:repo)
+      ordered = [clean, running, broken].sort_by(&:sort_key).map(&:repo)
 
-      assert_equal %w[broken-repo stale-repo clean-repo], ordered
+      assert_equal %w[broken-repo running-repo clean-repo], ordered
     end
 
     test "gem? distinguishes the gem card from the app cards" do

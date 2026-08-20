@@ -111,38 +111,28 @@ module Ci
 
       def card_for(repo, parked = parked_index)
         rungs = RUNGS.map do |branch|
-          bucket = parked.dig(repo, branch) || { count: 0, newest_at: nil }
-          Ci::LadderRung.for(
-            repo: repo,
-            branch: branch,
-            parked_count: bucket[:count],
-            newest_parked_at: bucket[:newest_at]
-          )
+          Ci::LadderRung.for(repo: repo, branch: branch, parked_count: parked.dig(repo, branch).to_i)
         end
         Card.new(repo: repo, rungs: rungs)
       end
 
-      # => { "turf-monster" => { "accepted" => { count: 2, newest_at: Time } } }
+      # => { "turf-monster" => { "accepted" => 2 } }
       #
-      # `updated_at` is the proxy for "when this task landed on this rung" — the
-      # stamp and the stage move are the last writes a task takes at each seam.
-      # It is deliberately a board fact rather than a git fact: see
-      # Ci::LadderRung's note on why staleness is proven from timestamps we hold.
+      # A COUNT and nothing more. It used to carry the newest `updated_at` per rung
+      # so a green verdict older than that could be called stale — a rule removed on
+      # 2026-08-20 because the stamp is always written after the run starts, so it
+      # fired by construction. See Ci::LadderRung's note for the measurement.
       def parked_index
-        index = Hash.new { |h, k| h[k] = {} }
+        index = Hash.new { |h, k| h[k] = Hash.new(0) }
 
         Task.where.not(stage: "archived")
             .where(merged: PARKED_STAMP.values)
-            .pluck(:merged, :updated_at, :metadata)
-            .each do |merged, updated_at, metadata|
+            .pluck(:merged, :metadata)
+            .each do |merged, metadata|
               branch = PARKED_STAMP.key(merged)
               next if branch.blank?
 
-              repos_for(metadata).each do |repo|
-                bucket = index[repo][branch] ||= { count: 0, newest_at: nil }
-                bucket[:count] += 1
-                bucket[:newest_at] = [bucket[:newest_at], updated_at].compact.max
-              end
+              repos_for(metadata).each { |repo| index[repo][branch] += 1 }
             end
 
         index

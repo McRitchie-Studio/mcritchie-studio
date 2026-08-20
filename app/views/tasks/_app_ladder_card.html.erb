@@ -13,12 +13,15 @@
     thing shape the CI meter already collapsed once.
 
     THE BADGES say where each rung stands, and read left to right as the ladder:
-      faded   — NOT VERIFIED. Nothing built for this rung, or the only verdict we hold
-                predates the work now sitting on it. Both mean the same to an operator
-                deciding whether to trust the rung; they differ in their title text.
+      faded   — NOT BUILT. Nothing ingested for this branch, so there is no verdict
+                to report. An absence must never read as a pass.
       amber   — running.
-      emerald — verified green on what is actually there.
+      emerald — green.
       rose    — failed or conflicted.
+
+    A badge reports CI's verdict and adds nothing to it. It used to also carry a
+    `stale` state, inferred from stamp timestamps; that inference was wrong by
+    construction and is gone — see Ci::LadderRung.
 
     THE WHOLE CARD IS A LINK to the Actions run behind the active rung, so a click
     lands on the run in progress. When there is no run to open it degrades to a plain
