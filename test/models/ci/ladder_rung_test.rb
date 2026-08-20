@@ -6,76 +6,52 @@ module Ci
   # The rung state machine, and above all the two states that exist to stop a
   # stale or absent verdict rendering as green.
   class LadderRungTest < ActiveSupport::TestCase
-    # --- resolve_state: the safety core -------------------------------------
+    # --- resolve_state: the one interpretation this class adds ---------------
 
     test "no ingested verdict reads not_built, never green" do
-      assert_equal :not_built,
-                   Ci::LadderRung.resolve_state(raw: :none, run_at: nil, newest_parked_at: nil)
+      assert_equal :not_built, Ci::LadderRung.resolve_state(:none)
     end
 
-    test "a green verdict older than parked work reads stale" do
-      ran = 3.hours.ago
-      merged_after = 1.hour.ago
-
-      assert_equal :stale,
-                   Ci::LadderRung.resolve_state(raw: :green, run_at: ran, newest_parked_at: merged_after)
-    end
-
-    test "a green verdict newer than parked work stays green" do
-      ran = 1.hour.ago
-      merged_before = 3.hours.ago
-
-      assert_equal :green,
-                   Ci::LadderRung.resolve_state(raw: :green, run_at: ran, newest_parked_at: merged_before)
-    end
-
-    test "green with no parked work is never stale" do
-      assert_equal :green,
-                   Ci::LadderRung.resolve_state(raw: :green, run_at: 5.days.ago, newest_parked_at: nil)
-    end
-
-    # A red rung that is ALSO out of date is still red. Demoting it to :stale
-    # would file a failure under a bookkeeping label and hide it.
-    test "a red verdict stays red even when it predates parked work" do
-      assert_equal :red,
-                   Ci::LadderRung.resolve_state(raw: :red, run_at: 3.hours.ago, newest_parked_at: 1.hour.ago)
-    end
-
-    test "pending and conflicted pass through untouched" do
-      %i[pending conflicted].each do |raw|
-        assert_equal raw,
-                     Ci::LadderRung.resolve_state(raw: raw, run_at: 3.hours.ago, newest_parked_at: 1.hour.ago),
-                     "#{raw} must not be reinterpreted"
+    test "every real verdict passes through untouched" do
+      %i[green red pending conflicted].each do |raw|
+        assert_equal raw, Ci::LadderRung.resolve_state(raw),
+                     "#{raw} is CI's verdict and must not be reinterpreted"
       end
     end
 
-    # An unreadable timestamp must not manufacture a verdict either way.
-    test "a green verdict with no run time cannot be judged stale" do
-      assert_equal :green,
-                   Ci::LadderRung.resolve_state(raw: :green, run_at: nil, newest_parked_at: 1.hour.ago)
+    # --- the regression this class was changed for --------------------------
+
+    # PROVEN IN PRODUCTION 2026-08-20: turf-monster `release` read green@e1217b6 from
+    # BranchGate while the badge rendered stale, because a task was stamped 47 SECONDS
+    # after the run started. The old rule compared two clocks that measure different
+    # events — code lands, CI starts, THEN the sweep writes the stamp — so the stamp
+    # is always later and a green rung went faded by construction.
+    test "a green verdict stays green however late the parked stamp lands" do
+      rung = Ci::LadderRung.new(repo: "turf-monster", branch: "release", state: :green,
+                                sha: "e1217b6", verdict_at: Time.utc(2026, 8, 20, 18, 38, 0),
+                                parked_count: 1)
+
+      assert_equal :green, rung.state
+      refute rung.needs_attention?, "a green rung asks for no attention"
     end
 
-    # --- the measured regression --------------------------------------------
+    # The same false positive on `main`, where every ship stamps its members minutes
+    # after main's own run — it made all four cards read stale after every release.
+    test "a green main rung stays green after a ship stamps its members" do
+      assert_equal :green, Ci::LadderRung.resolve_state(:green)
+    end
 
-    # 2026-08-19: turf-monster `accepted` tip was c1959ef while BranchGate
-    # reported green@abe8c51 — a batch-promote-PR verdict from three merges
-    # earlier. Four tasks were parked on accepted at the time.
-    test "the measured turf-monster case resolves stale, not green" do
-      batch_pr_run = Time.utc(2026, 8, 19, 0, 37, 11)
-      last_merge_onto_accepted = Time.utc(2026, 8, 19, 4, 39, 31)
-
-      assert_equal :stale,
-                   Ci::LadderRung.resolve_state(raw: :green,
-                                                run_at: batch_pr_run,
-                                                newest_parked_at: last_merge_onto_accepted)
+    test "the stale state no longer exists anywhere in the rank table" do
+      refute_includes Ci::LadderRung::STATE_RANK.keys, :stale
+      refute_includes Ci::LadderRung::ATTENTION_STATES, :stale
     end
 
     # --- ranking / display ---------------------------------------------------
 
-    test "attention states are exactly red conflicted and stale" do
-      assert_equal %i[red conflicted stale].sort, Ci::LadderRung::ATTENTION_STATES.sort
+    test "attention states are exactly red and conflicted" do
+      assert_equal %i[red conflicted].sort, Ci::LadderRung::ATTENTION_STATES.sort
 
-      %i[red conflicted stale].each do |s|
+      %i[red conflicted].each do |s|
         assert rung(state: s).needs_attention?, "#{s} must ask for attention"
       end
       %i[green pending not_built].each do |s|
@@ -84,10 +60,10 @@ module Ci
     end
 
     test "worse states sort ahead of better ones" do
-      states = %i[green not_built pending stale conflicted red]
+      states = %i[green not_built pending conflicted red]
       ordered = states.map { |s| rung(state: s) }.sort_by(&:sort_key).map(&:state)
 
-      assert_equal %i[red conflicted stale pending not_built green], ordered
+      assert_equal %i[red conflicted pending not_built green], ordered
     end
 
     test "at the same state a rung with parked work sorts ahead of an idle one" do

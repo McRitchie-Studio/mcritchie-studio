@@ -52,18 +52,27 @@ class AppLadderCardTest < ActionView::TestCase
     assert_select "[data-test='app-ladder-rung'][data-state='red'] [data-test='app-ladder-rung-fill'].bg-rose-500", 1
   end
 
-  # THE HONESTY CONTRACT. A stale verdict describes a tree that is no longer the tree,
-  # so it must not be painted as a pass — it renders faded, exactly like never-built,
-  # and says why on hover.
-  test "a stale rung renders faded rather than green" do
-    render partial: "tasks/app_ladder_card", locals: { card: card(%i[stale green green]) }
+  # THE REGRESSION. A green rung renders GREEN — it used to render faded whenever a
+  # task had been stamped after the run started, which is always. Measured in
+  # production 2026-08-20: turf-monster release, green@e1217b6, badge faded, 47s apart.
+  test "a green rung renders green and never faded" do
+    render partial: "tasks/app_ladder_card", locals: { card: card(%i[green green green]) }
 
-    stale = css_select("[data-test='app-ladder-rung'][data-branch='accepted']").first
-    assert_equal "stale", stale["data-state"]
+    assert_select "[data-test='app-ladder-rung'][data-state='green']", 3
+    assert_select "[data-test='app-ladder-rung'] [data-test='app-ladder-rung-fill'].bg-emerald-500", 3
+    assert_select "[data-test='app-ladder-rung'][data-state='stale']", 0
+  end
 
-    assert_select "[data-test='app-ladder-rung'][data-branch='accepted'] [data-test='app-ladder-rung-fill'].bg-emerald-500", 0,
-                  "a stale rung must never wear the verified fill"
-    assert_match(/NOT verified/, stale["title"])
+  # The card must not contradict itself: a green CI meter beside a faded badge on the
+  # same rung is what sent this back. Whatever CI says, the badge says.
+  test "the badge agrees with the verdict it was given" do
+    { green: "bg-emerald-500", pending: "bg-amber-500", red: "bg-rose-500" }.each do |state, fill|
+      render partial: "tasks/app_ladder_card", locals: { card: card([state, state, state]) }
+
+      assert_select "[data-test='app-ladder-rung'][data-state='#{state}']", 3
+      assert_select "[data-test='app-ladder-rung'] [data-test='app-ladder-rung-fill'].#{fill}", 3,
+                    "#{state} must wear its own fill"
+    end
   end
 
   test "a not_built rung renders faded and says no verdict was ingested" do
