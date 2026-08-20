@@ -32,10 +32,11 @@
 #     so the evidence (carried on the task's devops.checks_run) validates there
 #     too. tmp/ files don't travel between checkouts; a tree hash does.
 #
-# Evidence is recorded as fingerprint-tagged checks_run lines the runners stamp:
-#   [full-suite@<fp>] bin/rails test (NNN runs, 0 failures)   (bin/full-suite-check)
-#   [rubocop@<fp>]    bin/rubocop (clean)                     (bin/full-suite-check)
-#   [fast-cert@<fp>]  mapped+spine tests + scoped rubocop     (bin/fast-check)
+# Evidence is recorded as fingerprint-tagged checks_run lines the runners stamp,
+# scoped to the repo whose tree was hashed (`:<repo>`):
+#   [full-suite@<fp>:<repo>] bin/rails test (NNN runs, 0 failures) (bin/full-suite-check)
+#   [rubocop@<fp>:<repo>]    bin/rubocop (clean)                   (bin/full-suite-check)
+#   [fast-cert@<fp>:<repo>]  mapped+spine tests + scoped rubocop   (bin/fast-check)
 # dor-check credits a lane only when a line is tagged for it AND the embedded
 # fingerprint equals the local recomputed one. Hand-writing a green tag is not
 # defended against (honor system — "Trust over guardrails"); the point is to make
@@ -151,9 +152,10 @@ module FullSuiteGate
   # Delegated, not re-implemented: the board enforces the same rule on every
   # write, so the format has exactly one definition.
 
-  # The checks_run line a passing lane records, embedding the fingerprint.
-  def evidence_line(lane, fingerprint, detail)
-    CertEvidence.evidence_line(lane, fingerprint, detail)
+  # The checks_run line a passing lane records, embedding the fingerprint and the
+  # repo whose tree was hashed (nil → the unscoped legacy line).
+  def evidence_line(lane, fingerprint, detail, repo: nil)
+    CertEvidence.evidence_line(lane, fingerprint, detail, repo: repo)
   end
 
   # Pattern for a recorded evidence line of the given lanes (e.g.
@@ -166,8 +168,16 @@ module FullSuiteGate
   # Freshness of one lane against `fingerprint`: :fresh (a tag matches the current
   # fingerprint), :stale (tagged, but every tag is for a different fingerprint),
   # or :missing (no tag for this lane at all).
-  def lane_status(checks, lane, fingerprint)
+  # `repo` narrows the read to the evidence that answers for ONE repo: lines scoped
+  # to it, plus the unscoped legacy lines (which answer for any repo — see
+  # CertEvidence#scoped_to?). Without it, a two-repo task graded lane-wide would
+  # report the OTHER repo's fingerprint as this one's :stale, which is the same
+  # cross-repo confusion in the reader that the single-value slot caused in the
+  # writer. nil (the single-repo default) reads every line, unchanged.
+  def lane_status(checks, lane, fingerprint, repo: nil)
     seen = Array(checks).each_with_object([]) do |line, values|
+      next unless CertEvidence.scoped_to?(line, repo)
+
       fp = extract_fingerprint(line, lane)
       values << fp if fp
     end
@@ -190,8 +200,9 @@ module FullSuiteGate
   # want opposite fixes (re-certify vs. re-root). Surfacing what the evidence was
   # certified FOR lets dor-check print the DELTA — certified @abc, HEAD is now @def
   # — so the cause is legible instead of guessed at.
-  def recorded_fingerprints(checks, lane)
-    Array(checks).filter_map { |line| extract_fingerprint(line, lane) }.uniq
+  def recorded_fingerprints(checks, lane, repo: nil)
+    Array(checks).select { |line| CertEvidence.scoped_to?(line, repo) }
+                 .filter_map { |line| extract_fingerprint(line, lane) }.uniq
   end
 
   # A recorded, sanctioned bypass: "[full-suite-bypass] <reason>" with a non-empty
@@ -233,20 +244,24 @@ module FullSuiteGate
   # bug this seam has ever had was a fingerprint from the branch tree reported beside
   # the caller's `root`, which was never hashed to produce it. An unattributed
   # override is not a thing this module will grade.
-  def evaluate(checks:, root:, injected: nil, fingerprint_override: nil, fingerprint_origin: nil)
+  # `repo` (the bare repo slug the graded TREE belongs to) narrows the evidence read
+  # to that repo's certs — see #lane_status. It rides on the verdict as :repo so a
+  # caller grading several repos can say WHICH repo each verdict is about; nil keeps
+  # the single-repo behavior in every respect.
+  def evaluate(checks:, root:, injected: nil, fingerprint_override: nil, fingerprint_origin: nil, repo: nil)
     reason = bypass_reason(checks)
-    return verdict(ok: true, bypass: reason) if reason
+    return verdict(ok: true, bypass: reason, repo: repo) if reason
 
-    return injected_verdict(injected) if injected && !injected.empty?
+    return injected_verdict(injected).merge(repo: repo) if injected && !injected.empty?
 
     fp_root, fp_repo, fp_source = provenance(root, fingerprint_override, fingerprint_origin)
     fp = fingerprint_override || fingerprint(root)
-    return verdict(ok: false, verifiable: false) if fp.nil?
+    return verdict(ok: false, verifiable: false, repo: repo) if fp.nil?
 
-    lanes = EVIDENCE_LANES.to_h { |lane| [lane, lane_status(checks, lane, fp)] }
-    recorded = EVIDENCE_LANES.to_h { |lane| [lane, recorded_fingerprints(checks, lane)] }
+    lanes = EVIDENCE_LANES.to_h { |lane| [lane, lane_status(checks, lane, fp, repo: repo)] }
+    recorded = EVIDENCE_LANES.to_h { |lane| [lane, recorded_fingerprints(checks, lane, repo: repo)] }
     verdict(ok: LANES.all? { |lane| lanes[lane] == :fresh }, fingerprint: fp, lanes: lanes, recorded: recorded,
-            fingerprint_root: fp_root, fingerprint_repo: fp_repo, fingerprint_source: fp_source)
+            fingerprint_root: fp_root, fingerprint_repo: fp_repo, fingerprint_source: fp_source, repo: repo)
   end
 
   # Where the graded fingerprint CAME FROM → [fingerprint_root, fingerprint_repo,
@@ -271,7 +286,7 @@ module FullSuiteGate
   # --- internals -----------------------------------------------------------
 
   def verdict(ok:, bypass: nil, verifiable: true, fingerprint: nil, lanes: nil, recorded: nil,
-              fingerprint_root: nil, fingerprint_repo: nil, fingerprint_source: nil)
+              fingerprint_root: nil, fingerprint_repo: nil, fingerprint_source: nil, repo: nil)
     lanes ||= EVIDENCE_LANES.to_h { |lane| [lane, ok ? :fresh : :missing] }
     # The bypass/injected/unverifiable paths never read the checks, so they carry no
     # recorded fingerprints — an EMPTY list per lane, not a missing key, so callers
@@ -282,7 +297,7 @@ module FullSuiteGate
     recorded ||= EVIDENCE_LANES.to_h { |lane| [lane, []] }
     { ok: ok, bypass: bypass, verifiable: verifiable, fingerprint: fingerprint, lanes: lanes,
       recorded: recorded, fingerprint_root: fingerprint_root, fingerprint_repo: fingerprint_repo,
-      fingerprint_source: fingerprint_source }
+      fingerprint_source: fingerprint_source, repo: repo }
   end
 
   # Map a DOR_CHECK_SUITE_EVIDENCE token to a verdict (test seam only). Tokens:

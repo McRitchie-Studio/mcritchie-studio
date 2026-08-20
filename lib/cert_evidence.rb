@@ -8,13 +8,15 @@
 #   [integration] bin/rails test test/controllers          bypass records, prose)
 #   [full-suite-bypass] CI outage, ran locally
 #
-#   [full-suite@<fp>] bin/rails test (782 runs, 0 failures)   ← MACHINE-owned
-#   [rubocop@<fp>]    bin/rubocop (clean)                        CERT EVIDENCE
-#   [fast-cert@<fp>]  mapped+spine tests + scoped rubocop        (bin/fast-check,
+#   [full-suite@<fp>:<repo>] bin/rails test (782 runs, 0 failures) ← MACHINE-owned
+#   [rubocop@<fp>:<repo>]    bin/rubocop (clean)                      CERT EVIDENCE
+#   [fast-cert@<fp>:<repo>]  mapped+spine tests + scoped rubocop      (bin/fast-check,
 #                                                                bin/full-suite-check)
 #
 # The `@<fingerprint>` is what separates the two namespaces: a tier tag is a bare
-# `[lane]`, evidence is `[lane@<git tree hash>]`. bin/dor-check reads ONLY the
+# `[lane]`, evidence is `[lane@<git tree hash>]`. The optional `:<repo>` suffix
+# scopes evidence to the repo whose tree was hashed, so a task naming two repos
+# holds a cert for EACH (see THE REPO DIMENSION below). bin/dor-check reads ONLY the
 # evidence lines to decide whether the code is certified (see
 # bin/lib/full_suite_gate.rb for the fingerprint + grading half).
 #
@@ -30,18 +32,58 @@
 # machine's. This module makes that asymmetry symmetric.
 #
 # THE WRITE RULE (#preserve) — one sentence: a writer may only supersede a
-# NAMESPACE it supplies lines for — each evidence LANE is a namespace, and the
-# author's lines (tier tags, bypasses, prose) are one namespace too. So:
+# NAMESPACE it supplies lines for — each (evidence LANE, REPO) pair is a
+# namespace, and the author's lines (tier tags, bypasses, prose) are one
+# namespace too. So:
 #   * an author `--checks` update (tier tags only, no `[lane@fp]` lines) can
 #     never drop a cert — every lane is carried over;
-#   * a cert writer that just ran a lane green stamps that lane and replaces its
-#     own prior line (no stale accumulation), leaving the other lanes intact;
+#   * a cert writer that just ran a lane green stamps that lane FOR THE REPO IT
+#     CERTIFIED and replaces its own prior line (no stale accumulation), leaving
+#     the other lanes — and every OTHER REPO's cert — intact;
 #   * a PURE-EVIDENCE write (only `[lane@fp]` lines — what the cert writers send
 #     when their own read of checks_run was stale or empty) can never drop the
 #     author's tier tags — the author namespace is carried over (reverse
 #     regression 2026-07-20: fast-check's read missed freshly recorded tier
 #     lines and its evidence write superseded the author namespace with nothing,
 #     while claiming "tier tags preserved").
+#
+# THE REPO DIMENSION (bug, 2026-08-13 — found landing land-rails-security-patch
+# across two repos). The namespace used to be the LANE alone, so on a task naming
+# TWO repos the second repo's `[full-suite@fpB]` superseded the first's
+# `[full-suite@fpA]`: the hub's cert was silently GONE, and dor-check later called
+# it STALE — a false-stale on a repo that HAD been certified green, surfacing long
+# after the write that destroyed it, with no error at the time. The workaround was
+# an invisible ordering rule (certify satellites first, the dor-check root repo
+# last). The system was already multi-repo-aware at the PR/coverage layer
+# (devops.pr_urls is keyed per repo; Task#pr_bearing_repositories,
+# Task#repos_missing_pr_url, Release::SweepPlan) and single-repo-only at the CERT
+# layer; that INCONSISTENCY was the bug, so the cert layer was brought up to the
+# coverage layer rather than the coverage layer dragged down (an earlier session
+# implemented a Task validation FORBIDDING multi-repo tasks and the suite caught
+# it immediately: a GEM task legitimately names its CONSUMER repos so the gates
+# can reason the gem owes the PR while the consumers do not — the gem-release
+# path). The line format carries the scope:
+#
+#   [full-suite@<fp>]                  ← UNSCOPED: "the one cert slot" (legacy)
+#   [full-suite@<fp>:turf-monster]     ← SCOPED to a repo (what writers stamp now)
+#
+# The repo rides AFTER the fingerprint on purpose. `#extract_fingerprint` already
+# terminated the hash on `[\]:]`, so every parser that predates this change reads
+# a scoped line as a correct, unscoped `lane`+`fingerprint` — a stale checkout's
+# dor-check grades a new cert fine, and neither direction of the rollout produces a
+# false STALE. Putting the repo BEFORE the `@` (`[control:moms-app@fp]`) would have
+# collided with `tier_satisfied?`, which terminates a tier tag on `[\]:]` too: the
+# machine's control STAMP would have silently satisfied the AUTHOR's required
+# `[control]` tier tag — a gate satisfying itself.
+#
+# AN UNSCOPED LINE IS ITS OWN NAMESPACE, never superseded by a scoped write. Its
+# repo is unknowable, so retiring it on a scoped write could destroy the OTHER
+# repo's cert — precisely the bug above. Preserving it cannot hurt: freshness still
+# demands an exact git TREE HASH match, which two different repos' trees cannot
+# collide on, so a leftover unscoped line can only fail to match (never falsely
+# match). At most one per lane survives — an unscoped write still supersedes the
+# unscoped slot — so it is bounded, and READING treats it as answering for any repo
+# (a task certified before this landed still grades FRESH).
 # Destroying a cert therefore REQUIRES writing a fingerprint-bound line for that
 # lane by hand — i.e. deliberately forging a certification, not fat-fingering an
 # ordinary `--checks` update. Ordering ("record --checks BEFORE you certify") is
@@ -81,9 +123,18 @@ module CertEvidence
 
   module_function
 
-  # The checks_run line a passing lane records, embedding the fingerprint.
-  def evidence_line(lane, fingerprint, detail)
-    "[#{lane}@#{fingerprint}] #{detail}"
+  # The checks_run line a passing lane records, embedding the fingerprint and — when
+  # the writer knows which repo it stood in — the REPO SCOPE.
+  #
+  # `repo` is the repo the certified TREE belongs to, derived from the root that was
+  # actually hashed (CertRootGuard#repo_of_checkout), never from the task record: the rule
+  # Task.normalize_devops_map_pair applies to pr_urls, where the key comes from the
+  # artifact rather than from what the writer claimed. A blank repo writes the legacy
+  # unscoped line, so a caller that cannot name its repo degrades instead of lying.
+  def evidence_line(lane, fingerprint, detail, repo: nil)
+    scope = repo.to_s.strip
+    tag = scope.empty? ? "#{lane}@#{fingerprint}" : "#{lane}@#{fingerprint}:#{scope}"
+    "[#{tag}] #{detail}"
   end
 
   # Pattern for a recorded evidence line of the given lanes, at the start of a
@@ -115,15 +166,56 @@ module CertEvidence
     EVIDENCE_LANES.find { |lane| line.to_s.match?(evidence_re([lane])) }
   end
 
-  # The lanes a list of lines carries evidence for.
-  def lanes_addressed(lines)
-    Array(lines).filter_map { |line| lane_of(line) }.uniq
+  # The REPO an evidence line is scoped to ("[lane@<fp>:<repo>]"), or nil for the
+  # unscoped legacy form.
+  #
+  # Lenient in the SAME direction as #lane_of, and for the same reason: membership of
+  # a namespace is about the SHAPE of the line, so a scope is read off any
+  # "[…@…:<repo>]" even when the fingerprint between them is malformed. Splitting the
+  # two leniencies would let a bad line be neither superseded nor recognized.
+  def repo_of(line)
+    m = line.to_s.match(/\A\s*\[\s*[^\[\]@\s]+\s*@[^\]:]*:\s*([^\]\s]+)\s*\]/)
+    m && m[1]
+  end
+
+  # The NAMESPACE a line belongs to — [lane, repo] for machine-owned evidence (repo
+  # nil on the unscoped legacy form), or nil when the line is author-owned. This is
+  # the key #preserve supersedes on.
+  def namespace_of(line)
+    lane = lane_of(line)
+    lane && [lane, repo_of(line)]
+  end
+
+  # The namespaces a list of lines carries evidence for.
+  def namespaces_addressed(lines)
+    Array(lines).filter_map { |line| namespace_of(line) }.uniq
+  end
+
+  # Does this line's evidence answer for `repo`? An UNSCOPED line answers for ANY
+  # repo — that is what keeps a cert recorded before the repo dimension existed
+  # grading FRESH — and so does any line when the reader names no repo. A SCOPED line
+  # answers only for its own. Compared on the bare slug, case-insensitively, so an
+  # owner-qualified reference ("McRitchie-Studio/turf-monster") still matches the
+  # bare slug the repositories list carries.
+  def scoped_to?(line, repo)
+    scope = repo_of(line)
+    return true if scope.nil? || repo.to_s.strip.empty?
+
+    same_repo?(scope, repo)
+  end
+
+  # Two repo references naming the same repo, compared on the bare slug.
+  def same_repo?(left, right)
+    left.to_s.split("/").last.to_s.casecmp?(right.to_s.split("/").last.to_s)
   end
 
   # THE WRITE RULE. `incoming` is the list the caller wants stored; `prior` is
-  # what's stored now. Every evidence line whose lane the caller did NOT address
-  # is carried over (appended, after the caller's lines — evidence reads last,
-  # the order the cert writers already stamp).
+  # what's stored now. Every evidence line whose NAMESPACE — its (lane, repo) pair —
+  # the caller did NOT address is carried over (appended, after the caller's lines —
+  # evidence reads last, the order the cert writers already stamp). Certifying
+  # turf-monster therefore addresses ("full-suite", "turf-monster") and leaves
+  # ("full-suite", "mcritchie-studio") standing; before the repo half of the key
+  # existed it addressed "full-suite" and erased it.
   #
   # The AUTHOR namespace obeys the same rule (reverse regression, 2026-07-20 —
   # fast-check-preserves-checks): a PURE-EVIDENCE write — every incoming line a
@@ -151,10 +243,10 @@ module CertEvidence
   def preserve(prior:, incoming:)
     incoming = Array(incoming).map(&:to_s)
     prior = Array(prior).map(&:to_s)
-    addressed = lanes_addressed(incoming)
+    addressed = namespaces_addressed(incoming)
     carried = prior.select do |line|
-      lane = lane_of(line)
-      lane && !addressed.include?(lane)
+      ns = namespace_of(line)
+      ns && !addressed.include?(ns)
     end
     if incoming.any? && incoming.all? { |line| lane_of(line) }
       return prior.reject { |line| lane_of(line) } + incoming + carried
