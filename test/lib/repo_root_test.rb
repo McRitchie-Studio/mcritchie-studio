@@ -40,6 +40,37 @@ class RepoRootTest < Minitest::Test
     end
   end
 
+  # ── [unit] the fixture's OWN contract ──────────────────────────────────────
+  #
+  # The two `git config` lines above are a FIX, and until this test they were only a
+  # comment. Delete them and nothing goes red — the flake simply comes back: `git commit`
+  # resumes triggering `gc --auto`, which creates and removes
+  # `.git/objects/maintenance.lock` while Dir.mktmpdir's cleanup walks the tree, and
+  # Errno::ENOENT surfaces out of whichever test happened to be running. It reddened three
+  # CI runs on 2026-08-19/20, one of them a `rails` shard on ACCEPTED — which is the branch
+  # Ci::BranchGate reads, so a flake in a test fixture stalled a release.
+  #
+  # A race that fires once in thousands of runs cannot be caught by re-running the suite,
+  # so the guard is on the PRECONDITION instead: does a repo this fixture builds actually
+  # have git's background maintenance disarmed? That asserts the EFFECT rather than the
+  # spelling — rewrite the config calls however you like and this still passes; remove
+  # them and it fails immediately, on every run, locally.
+  def test_unit_the_throwaway_repo_disarms_gits_background_maintenance
+    with_git_repo do |repo|
+      %w[gc.auto maintenance.auto].each do |key|
+        value = IO.popen(["git", "-C", repo, "config", "--get", key], err: File::NULL, &:read).strip
+
+        refute_empty value,
+                     "with_git_repo leaves #{key} unset, so `git commit` can start background " \
+                     "maintenance that races Dir.mktmpdir's cleanup. That is the ENOENT " \
+                     "@ apply2files flake — restore the `git config` calls in the fixture."
+        refute_includes %w[true 1], value,
+                        "with_git_repo sets #{key}=#{value}, which leaves background maintenance " \
+                        "ARMED. It must be disabled (0 / false)."
+      end
+    end
+  end
+
   # ── [unit] git_toplevel ────────────────────────────────────────────────────
 
   def test_unit_git_toplevel_returns_the_worktree_root_for_a_subdir
