@@ -726,100 +726,262 @@ merged-PR case, so these were removed manually AFTER preservation. All 14 tasks 
 <!-- agent-worktree remove 2026-08-15 -->
 
 <!-- agent-worktree remove 2026-08-18 -->
-| `/Users/alex/projects/mcritchie-studio/.worktrees/_ship` | worktree | Hidden worktree; branch `` is clean and HEAD c46790dc is contained in origin/accepted; health missing-env, Redis DB , database unknown Cleared: merged into origin/accepted, tree clean; no open PR for (detached — no branch) (GitHub asked); no live release conductor claim (assembler/deployer); desk idle (born 128.2h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio _ship --yes` during approved lifecycle cleanup. | removed 2026-08-18 |
 
 <!-- agent-worktree remove 2026-08-18 -->
-| `/Users/alex/projects/mcritchie-studio/.worktrees/ask-new-users-name` | worktree | Hidden worktree; branch `feat/ask-new-users-name` is clean and HEAD ff695462 is contained in origin/accepted; health down, Redis DB 12, database mcritchie_studio_development_ask_new_users_name:ok Cleared: merged into origin/accepted, tree clean; no open PR for feat/ask-new-users-name (GitHub asked); no live build claim on ask-new-users-name; no review in progress; desk idle (born 114.4h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio ask-new-users-name --yes` during approved lifecycle cleanup. | removed 2026-08-18 |
 
 <!-- agent-worktree remove 2026-08-18 -->
-| `/Users/alex/projects/mcritchie-studio/.worktrees/await-gem-before-lock-bump` | worktree | Hidden worktree; branch `feat/await-gem-before-lock-bump` is clean and HEAD e2141a71 is contained in origin/accepted; health down, Redis DB 41, database mcritchie_studio_development_await_gem_before_lock_bump:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/await-gem-before-lock-bump (GitHub asked); no live build claim on await-gem-before-lock-bump; no review in progress; desk idle (born 75.1h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio await-gem-before-lock-bump --yes` during approved lifecycle cleanup. | removed 2026-08-18 |
 
 <!-- agent-worktree remove 2026-08-18 -->
-| `/Users/alex/projects/mcritchie-studio/.worktrees/await-versions-not-info` | worktree | Hidden worktree; branch `feat/await-versions-not-info` is clean and HEAD 4a95e79a is contained in origin/accepted; health down, Redis DB 60, database mcritchie_studio_development_await_versions_not_info:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/await-versions-not-info (GitHub asked); no live build claim on await-versions-not-info; no review in progress; desk idle (born 49.5h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio await-versions-not-info --yes` during approved lifecycle cleanup. | removed 2026-08-18 |
 
 <!-- agent-worktree remove 2026-08-18 -->
-| `/Users/alex/projects/mcritchie-studio/.worktrees/builder-stamp-misses-reviewer-guard` | worktree | Hidden worktree; branch `feat/builder-stamp-misses-reviewer-guard` is clean and HEAD fc90d8ca is contained in origin/accepted; health down, Redis DB 59, database mcritchie_studio_development_builder_stamp_misses_revi_263c99b4:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/builder-stamp-misses-reviewer-guard (GitHub asked); no live build claim on builder-stamp-misses-reviewer-guard; no review in progress; desk idle (born 114.9h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio builder-stamp-misses-reviewer-guard --yes` during approved lifecycle cleanup. | removed 2026-08-18 |
 
 <!-- agent-worktree remove 2026-08-18 -->
-| `/Users/alex/projects/mcritchie-studio/.worktrees/catch-migration-collision-at-merge` | worktree | Hidden worktree; branch `feat/catch-migration-collision-at-merge` is clean and HEAD 9754dc07 is contained in origin/accepted; health down, Redis DB 10, database mcritchie_studio_development_catch_migration_collision_at_merge:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/catch-migration-collision-at-merge (GitHub asked); no live build claim on catch-migration-collision-at-merge; no review in progress; desk idle (born 97.6h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio catch-migration-collision-at-merge --yes` during approved lifecycle cleanup. | removed 2026-08-18 |
 
 <!-- agent-worktree remove 2026-08-18 -->
-| `/Users/alex/projects/mcritchie-studio/.worktrees/certify-accepted-on-push` | worktree | Hidden worktree; branch `feat/certify-accepted-on-push` is clean and HEAD 7ac7155d is contained in origin/accepted; health down, Redis DB 32, database mcritchie_studio_development_certify_accepted_on_push:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/certify-accepted-on-push (GitHub asked); no live build claim on certify-accepted-on-push; no review in progress; desk idle (born 84.5h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio certify-accepted-on-push --yes` during approved lifecycle cleanup. | removed 2026-08-18 |
 
 <!-- agent-worktree remove 2026-08-18 -->
-| `/Users/alex/projects/mcritchie-studio/.worktrees/cleanup-sweep-orphans-live-work` | worktree | Hidden worktree; branch `feat/cleanup-sweep-orphans-live-work` is clean and HEAD 1d9accdd is contained in origin/accepted; health down, Redis DB 21, database mcritchie_studio_development_cleanup_sweep_orphans_live_work:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/cleanup-sweep-orphans-live-work (GitHub asked); no live build claim on cleanup-sweep-orphans-live-work; no review in progress; desk idle (born 97.6h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio cleanup-sweep-orphans-live-work --yes` during approved lifecycle cleanup. | removed 2026-08-18 |
 
 <!-- agent-worktree remove 2026-08-18 -->
-| `/Users/alex/projects/mcritchie-studio/.worktrees/dependabot-targets-accepted-branch` | worktree | Hidden worktree; branch `feat/dependabot-targets-accepted-branch` is clean and HEAD ae0aa3a6 is contained in origin/accepted; health down, Redis DB 13, database mcritchie_studio_development_dependabot_targets_accepted_branch:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/dependabot-targets-accepted-branch (GitHub asked); no live build claim on dependabot-targets-accepted-branch; no review in progress; desk idle (born 97.6h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio dependabot-targets-accepted-branch --yes` during approved lifecycle cleanup. | removed 2026-08-18 |
 
 <!-- agent-worktree remove 2026-08-18 -->
-| `/Users/alex/projects/mcritchie-studio/.worktrees/detect-engine-migration-content-drift` | worktree | Hidden worktree; branch `feat/detect-engine-migration-content-drift` is clean and HEAD 4525884f is contained in origin/accepted; health up, Redis DB 22, database mcritchie_studio_development_detect_engine_migration_c_27c3b1b6:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/detect-engine-migration-content-drift (GitHub asked); no live build claim on detect-engine-migration-content-drift; no review in progress; desk idle (born 97.6h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio detect-engine-migration-content-drift --yes` during approved lifecycle cleanup. | removed 2026-08-18 |
 
 <!-- agent-worktree remove 2026-08-18 -->
-| `/Users/alex/projects/mcritchie-studio/.worktrees/document-shared-aws-credential-scope` | worktree | Hidden worktree; branch `feat/document-shared-aws-credential-scope` is clean and HEAD fc29cf9f is contained in origin/accepted; health down, Redis DB 16, database mcritchie_studio_development_document_shared_aws_crede_7bcde5f3:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/document-shared-aws-credential-scope (GitHub asked); no live build claim on document-shared-aws-credential-scope; no review in progress; desk idle (born 114.3h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio document-shared-aws-credential-scope --yes` during approved lifecycle cleanup. | removed 2026-08-18 |
 
 <!-- agent-worktree remove 2026-08-18 -->
-| `/Users/alex/projects/mcritchie-studio/.worktrees/dor-check-loads-plugins` | worktree | Hidden worktree; branch `feat/dor-check-loads-plugins` is clean and HEAD ee069e88 is contained in origin/accepted; health down, Redis DB 29, database mcritchie_studio_development_dor_check_loads_plugins:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/dor-check-loads-plugins (GitHub asked); no live build claim on dor-check-loads-plugins; no review in progress; desk idle (born 84.8h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio dor-check-loads-plugins --yes` during approved lifecycle cleanup. | removed 2026-08-18 |
 
 <!-- agent-worktree remove 2026-08-18 -->
-| `/Users/alex/projects/mcritchie-studio/.worktrees/e2e-collector-catches-third-party` | worktree | Hidden worktree; branch `feat/e2e-collector-catches-third-party` is clean and HEAD 97f2f4f0 is contained in origin/accepted; health down, Redis DB 53, database mcritchie_studio_development_e2e_collector_catches_third_party:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/e2e-collector-catches-third-party (GitHub asked); no live build claim on e2e-collector-catches-third-party; no review in progress; desk idle (born 114.9h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio e2e-collector-catches-third-party --yes` during approved lifecycle cleanup. | removed 2026-08-18 |
 
 <!-- agent-worktree remove 2026-08-18 -->
-| `/Users/alex/projects/mcritchie-studio/.worktrees/fix-at-time-midnight-bomb` | worktree | Hidden worktree; branch `feat/fix-at-time-midnight-bomb` is clean and HEAD 49f7d4b9 is contained in origin/accepted; health down, Redis DB 43, database mcritchie_studio_development_fix_at_time_midnight_bomb:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/fix-at-time-midnight-bomb (GitHub asked); no live build claim on fix-at-time-midnight-bomb; no review in progress; desk idle (born 72.1h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio fix-at-time-midnight-bomb --yes` during approved lifecycle cleanup. | removed 2026-08-18 |
 
 <!-- agent-worktree remove 2026-08-18 -->
-| `/Users/alex/projects/mcritchie-studio/.worktrees/freeze-test-hotspot-growth` | worktree | Hidden worktree; branch `feat/freeze-test-hotspot-growth` is clean and HEAD c5a72fe5 is contained in origin/accepted; health down, Redis DB 37, database mcritchie_studio_development_freeze_test_hotspot_growth:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/freeze-test-hotspot-growth (GitHub asked); no live build claim on freeze-test-hotspot-growth; no review in progress; desk idle (born 82.0h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio freeze-test-hotspot-growth --yes` during approved lifecycle cleanup. | removed 2026-08-18 |
 
 <!-- agent-worktree remove 2026-08-18 -->
-| `/Users/alex/projects/mcritchie-studio/.worktrees/gate-accepts-stale-ci-verdict` | worktree | Hidden worktree; branch `feat/gate-accepts-stale-ci-verdict` is clean and HEAD ede291c4 is contained in origin/accepted; health down, Redis DB 25, database mcritchie_studio_development_gate_accepts_stale_ci_verdict:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/gate-accepts-stale-ci-verdict (GitHub asked); no live build claim on gate-accepts-stale-ci-verdict; no review in progress; desk idle (born 97.4h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio gate-accepts-stale-ci-verdict --yes` during approved lifecycle cleanup. | removed 2026-08-18 |
 
 <!-- agent-worktree remove 2026-08-18 -->
-| `/Users/alex/projects/mcritchie-studio/.worktrees/guard-every-promote-caller` | worktree | Hidden worktree; branch `feat/guard-every-promote-caller` is clean and HEAD 1ae243e3 is contained in origin/accepted; health down, Redis DB 33, database mcritchie_studio_development_guard_every_promote_caller:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/guard-every-promote-caller (GitHub asked); no live build claim on guard-every-promote-caller; no review in progress; desk idle (born 83.5h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio guard-every-promote-caller --yes` during approved lifecycle cleanup. | removed 2026-08-18 |
 
 <!-- agent-worktree remove 2026-08-18 -->
-| `/Users/alex/projects/mcritchie-studio/.worktrees/install-standard-profile-columns` | worktree | Hidden worktree; branch `feat/install-standard-profile-columns` is clean and HEAD 137c96da is contained in origin/accepted; health down, Redis DB 42, database mcritchie_studio_development_install_standard_profile_columns:ok Cleared: merged into origin/accepted, tree clean; no open PR for feat/install-standard-profile-columns (GitHub asked); no live build claim on install-standard-profile-columns; no review in progress; desk idle (born 72.2h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio install-standard-profile-columns --yes` during approved lifecycle cleanup. | removed 2026-08-18 |
 
 <!-- agent-worktree remove 2026-08-18 -->
-| `/Users/alex/projects/mcritchie-studio/.worktrees/merge-promotes-every-repo` | worktree | Hidden worktree; branch `feat/merge-promotes-every-repo` is clean and HEAD 8e7c5e21 is contained in origin/accepted; health down, Redis DB 34, database mcritchie_studio_development_merge_promotes_every_repo:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/merge-promotes-every-repo (GitHub asked); no live build claim on merge-promotes-every-repo; no review in progress; desk idle (born 106.7h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio merge-promotes-every-repo --yes` during approved lifecycle cleanup. | removed 2026-08-18 |
 
 <!-- agent-worktree remove 2026-08-18 -->
-| `/Users/alex/projects/mcritchie-studio/.worktrees/retime-evolution-and-card-rings` | worktree | Hidden worktree; branch `feat/retime-evolution-and-card-rings` is clean and HEAD fcd1a8e3 is contained in origin/accepted; health up, Redis DB 55, database mcritchie_studio_development_retime_evolution_and_card_rings:ok Cleared: merged into origin/accepted, tree clean; no open PR for feat/retime-evolution-and-card-rings (GitHub asked); no live build claim on retime-evolution-and-card-rings; no review in progress; desk idle (born 59.7h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio retime-evolution-and-card-rings --yes` during approved lifecycle cleanup. | removed 2026-08-18 |
 
 <!-- agent-worktree remove 2026-08-18 -->
-| `/Users/alex/projects/mcritchie-studio/.worktrees/test-health-ratchet-gate` | worktree | Hidden worktree; branch `feat/test-health-ratchet-gate` is clean and HEAD 8179997e is contained in origin/accepted; health down, Redis DB 35, database mcritchie_studio_development_test_health_ratchet_gate:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/test-health-ratchet-gate (GitHub asked); no live build claim on test-health-ratchet-gate; no review in progress; desk idle (born 82.8h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio test-health-ratchet-gate --yes` during approved lifecycle cleanup. | removed 2026-08-18 |
 
 <!-- agent-worktree remove 2026-08-18 -->
-| `/Users/alex/projects/mcritchie-studio/.worktrees/ui-edit-preserves-devops-keys` | worktree | Hidden worktree; branch `feat/ui-edit-preserves-devops-keys` is clean and HEAD c8f5f13a is contained in origin/accepted; health down, Redis DB 9, database mcritchie_studio_development_ui_edit_preserves_devops_keys:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/ui-edit-preserves-devops-keys (GitHub asked); no live build claim on ui-edit-preserves-devops-keys; no review in progress; desk idle (born 97.7h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio ui-edit-preserves-devops-keys --yes` during approved lifecycle cleanup. | removed 2026-08-18 |
 
 <!-- agent-worktree remove 2026-08-18 -->
-| `/Users/alex/projects/mcritchie-studio/.worktrees/wire-industries-ci-webhook` | worktree | Hidden worktree; branch `feat/wire-industries-ci-webhook` is clean and HEAD b0eac7e5 is contained in origin/accepted; health down, Redis DB 19, database mcritchie_studio_development_wire_industries_ci_webhook:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/wire-industries-ci-webhook (GitHub asked); no live build claim on wire-industries-ci-webhook; no review in progress; desk idle (born 97.6h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio wire-industries-ci-webhook --yes` during approved lifecycle cleanup. | removed 2026-08-18 |
 
 <!-- agent-worktree remove 2026-08-18 -->
-| `/Users/alex/projects/turf-monster/.worktrees/_ship` | worktree | Hidden worktree; branch `` is clean and HEAD 4ecc241 is contained in origin/accepted; health missing-env, Redis DB , database unknown Cleared: merged into origin/accepted, tree clean; no open PR for (detached — no branch) (GitHub asked); no live release conductor claim (assembler/deployer); desk idle (born 64.0h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove turf-monster _ship --yes` during approved lifecycle cleanup. | removed 2026-08-18 |
 
 <!-- agent-worktree remove 2026-08-18 -->
-| `/Users/alex/projects/turf-monster/.worktrees/adopt-shared-birthday-field` | worktree | Hidden worktree; branch `feat/adopt-shared-birthday-field` is clean and HEAD 533f5d7 is contained in origin/accepted; health up, Redis DB 46, database turf_monster_development_adopt_shared_birthday_field:ok Cleared: merged into origin/accepted, tree clean; no open PR for feat/adopt-shared-birthday-field (GitHub asked); no live build claim on adopt-shared-birthday-field; no review in progress; desk idle (born 61.7h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove turf-monster adopt-shared-birthday-field --yes` during approved lifecycle cleanup. | removed 2026-08-18 |
 
 <!-- agent-worktree remove 2026-08-18 -->
-| `/Users/alex/projects/turf-monster/.worktrees/await-versions-not-info` | worktree | Hidden worktree; branch `feat/await-versions-not-info` is clean and HEAD 3444b3a is contained in origin/accepted; health down, Redis DB 61, database turf_monster_development_await_versions_not_info:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/await-versions-not-info (GitHub asked); no live build claim on await-versions-not-info; no review in progress; desk idle (born 49.5h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove turf-monster await-versions-not-info --yes` during approved lifecycle cleanup. | removed 2026-08-18 |
 
 <!-- agent-worktree remove 2026-08-18 -->
-| `/Users/alex/projects/turf-monster/.worktrees/dependabot-targets-accepted-branch` | worktree | Hidden worktree; branch `feat/dependabot-targets-accepted-branch` is clean and HEAD d9c88d3 is contained in origin/accepted; health down, Redis DB 17, database turf_monster_development_dependabot_targets_accepted_branch:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/dependabot-targets-accepted-branch (GitHub asked); no live build claim on dependabot-targets-accepted-branch; no review in progress; desk idle (born 97.6h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove turf-monster dependabot-targets-accepted-branch --yes` during approved lifecycle cleanup. | removed 2026-08-18 |
 
 <!-- agent-worktree remove 2026-08-18 -->
-| `/Users/alex/projects/turf-monster/.worktrees/detect-engine-migration-content-drift` | worktree | Hidden worktree; branch `feat/detect-engine-migration-content-drift` is clean and HEAD 1ce8e36 is contained in origin/accepted; health down, Redis DB 23, database turf_monster_development_detect_engine_migration_content_drift:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/detect-engine-migration-content-drift (GitHub asked); no live build claim on detect-engine-migration-content-drift; no review in progress; desk idle (born 97.6h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove turf-monster detect-engine-migration-content-drift --yes` during approved lifecycle cleanup. | removed 2026-08-18 |
 
 <!-- agent-worktree remove 2026-08-18 -->
-| `/Users/alex/projects/turf-monster/.worktrees/fizzy-hold-button-effect` | worktree | Hidden worktree; branch `feat/fizzy-hold-button-effect` is clean and HEAD dca98ab is contained in origin/accepted; health up, Redis DB 54, database turf_monster_development_fizzy_hold_button_effect:ok Cleared: merged into origin/accepted, tree clean; no open PR for feat/fizzy-hold-button-effect (GitHub asked); no live build claim on fizzy-hold-button-effect; no review in progress; desk idle (born 59.9h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove turf-monster fizzy-hold-button-effect --yes` during approved lifecycle cleanup. | removed 2026-08-18 |
 
 <!-- agent-worktree remove 2026-08-18 -->
-| `/Users/alex/projects/turf-monster/.worktrees/set-turf-wallet-method` | worktree | Hidden worktree; branch `feat/set-turf-wallet-method` is clean and HEAD ddde407 is contained in origin/accepted; health down, Redis DB 38, database turf_monster_development_set_turf_wallet_method:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/set-turf-wallet-method (GitHub asked); no live build claim on set-turf-wallet-method; no review in progress; desk idle (born 80.2h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove turf-monster set-turf-wallet-method --yes` during approved lifecycle cleanup. | removed 2026-08-18 |
 
 <!-- agent-worktree remove 2026-08-18 -->
-| `/Users/alex/projects/mcritchie-industries/.worktrees/dependabot-targets-accepted-branch` | worktree | Hidden worktree; branch `feat/dependabot-targets-accepted-branch` is clean and HEAD 019e5d4 is contained in origin/accepted; health down, Redis DB 18, database mcritchie_industries_development_dependabot_targets_ac_302370e9:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/dependabot-targets-accepted-branch (GitHub asked); no live build claim on dependabot-targets-accepted-branch; no review in progress; desk idle (born 97.6h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-industries dependabot-targets-accepted-branch --yes` during approved lifecycle cleanup. | removed 2026-08-18 |
 
 <!-- agent-worktree remove 2026-08-18 -->
-| `/Users/alex/projects/mcritchie-industries/.worktrees/detect-engine-migration-content-drift` | worktree | Hidden worktree; branch `feat/detect-engine-migration-content-drift` is clean and HEAD cd8ef0a is contained in origin/accepted; health down, Redis DB 24, database mcritchie_industries_development_detect_engine_migrati_27c3b1b6:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/detect-engine-migration-content-drift (GitHub asked); no live build claim on detect-engine-migration-content-drift; no review in progress; desk idle (born 97.6h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-industries detect-engine-migration-content-drift --yes` during approved lifecycle cleanup. | removed 2026-08-18 |
 
 <!-- agent-worktree remove 2026-08-18 -->
-| `/Users/alex/projects/mcritchie-industries/.worktrees/industries-apex-drops-path` | worktree | Hidden worktree; branch `feat/industries-apex-drops-path` is clean and HEAD 61a438a is contained in origin/accepted; health down, Redis DB 15, database mcritchie_industries_development_industries_apex_drops_path:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/industries-apex-drops-path (GitHub asked); no live build claim on industries-apex-drops-path; no review in progress; desk idle (born 114.4h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-industries industries-apex-drops-path --yes` during approved lifecycle cleanup. | removed 2026-08-18 |
+
+<!-- agent-worktree remove 2026-08-18 -->
+
+<!-- agent-worktree remove 2026-08-19 -->
+
+<!-- agent-worktree remove 2026-08-19 -->
+
+<!-- agent-worktree remove 2026-08-19 -->
+
+<!-- agent-worktree remove 2026-08-19 -->
+
+<!-- agent-worktree remove 2026-08-19 -->
+
+<!-- agent-worktree remove 2026-08-19 -->
+
+<!-- agent-worktree remove 2026-08-19 -->
+
+<!-- agent-worktree remove 2026-08-19 -->
+
+<!-- agent-worktree remove 2026-08-19 -->
+
+<!-- agent-worktree remove 2026-08-19 -->
+
+<!-- agent-worktree remove 2026-08-19 -->
+
+<!-- agent-worktree remove 2026-08-19 -->
+
+<!-- agent-worktree remove 2026-08-19 -->
+
+<!-- agent-worktree remove 2026-08-19 -->
+
+<!-- agent-worktree remove 2026-08-19 -->
+
+<!-- agent-worktree remove 2026-08-19 -->
+
+<!-- agent-worktree remove 2026-08-19 -->
+
+<!-- agent-worktree remove 2026-08-19 -->
+
+<!-- agent-worktree remove 2026-08-19 -->
+
+<!-- agent-worktree remove 2026-08-19 -->
+
+<!-- agent-worktree remove 2026-08-19 -->
+
+<!-- agent-worktree remove 2026-08-19 -->
+
+<!-- agent-worktree remove 2026-08-19 -->
+
+<!-- agent-worktree remove 2026-08-19 -->
+
+<!-- agent-worktree remove 2026-08-19 -->
+
+<!-- agent-worktree remove 2026-08-19 -->
+
+<!-- agent-worktree remove 2026-08-19 -->
+
+<!-- agent-worktree remove 2026-08-19 -->
+
+<!-- agent-worktree remove 2026-08-19 -->
+
+<!-- agent-worktree remove 2026-08-19 -->
+
+<!-- agent-worktree remove 2026-08-19 -->
+
+<!-- agent-worktree remove 2026-08-19 -->
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/mcritchie-industries/.worktrees/bound-industries-ci-hangs` | worktree | Hidden worktree; branch `feat/bound-industries-ci-hangs` is clean and HEAD 03b5476 is contained in origin/accepted; health down, Redis DB 41, database mcritchie_industries_development_bound_industries_ci_hangs:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/bound-industries-ci-hangs (GitHub asked); no live build claim on bound-industries-ci-hangs; no review in progress; desk idle (born 14.0h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-industries bound-industries-ci-hangs --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/groom-slowest-test-files` | worktree | Hidden worktree; branch `feat/groom-slowest-test-files` is clean and HEAD e278721a is contained in origin/accepted; health down, Redis DB 45, database mcritchie_studio_development_groom_slowest_test_files:missing Cleared: merged into origin/accepted, tree clean; no open PR recorded for feat/groom-slowest-test-files (GitHub unreachable; the bound task shows nothing unlanded); no live build claim on groom-slowest-test-files; no review in progress; desk idle (born 14.2h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio groom-slowest-test-files --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/turf-monster/.worktrees/typing-first-name-placeholder` | worktree | Hidden worktree; branch `feat/typing-first-name-placeholder` is clean and HEAD 1fd9fa8 is contained in origin/accepted; health up, Redis DB 49, database turf_monster_development_typing_first_name_placeholder:ok Cleared: merged into origin/accepted, tree clean; no open PR recorded for feat/typing-first-name-placeholder (GitHub unreachable; the bound task shows nothing unlanded); no live build claim on typing-first-name-placeholder; no review in progress; desk idle (born 40.1h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove turf-monster typing-first-name-placeholder --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/_ship` | worktree | Hidden worktree; branch `` is clean and HEAD d7ccca8d is contained in origin/accepted; health missing-env, Redis DB , database unknown Cleared: merged into origin/accepted, tree clean; no open PR for (detached — no branch) (GitHub asked); no live release conductor claim (assembler/deployer); desk idle (born 19.2h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio _ship --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/app-ladder-status-row` | worktree | Hidden worktree; branch `feat/app-ladder-status-row` is clean and HEAD b094baac is contained in origin/accepted; health up, Redis DB 12, database mcritchie_studio_development_app_ladder_status_row:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/app-ladder-status-row (GitHub asked); no live build claim on app-ladder-status-row; no review in progress; desk idle (born 32.9h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio app-ladder-status-row --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/attribute-orphan-commits-by-slug` | worktree | Hidden worktree; branch `feat/attribute-orphan-commits-by-slug` is clean and HEAD d2753c1b is contained in origin/accepted; health down, Redis DB 55, database mcritchie_studio_development_attribute_orphan_commits_by_slug:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/attribute-orphan-commits-by-slug (GitHub asked); no live build claim on attribute-orphan-commits-by-slug; no review in progress; desk idle (born 42.1h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio attribute-orphan-commits-by-slug --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/bound-and-retry-apt-fetches` | worktree | Hidden worktree; branch `feat/bound-and-retry-apt-fetches` is clean and HEAD 31e80b93 is contained in origin/accepted; health down, Redis DB 21, database mcritchie_studio_development_bound_and_retry_apt_fetches:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/bound-and-retry-apt-fetches (GitHub asked); no live build claim on bound-and-retry-apt-fetches; no review in progress; desk idle (born 24.7h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio bound-and-retry-apt-fetches --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/broadcast-block-to-board` | worktree | Hidden worktree; branch `feat/broadcast-block-to-board` is clean and HEAD 5b4b15eb is contained in origin/accepted; health down, Redis DB 24, database mcritchie_studio_development_broadcast_block_to_board:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/broadcast-block-to-board (GitHub asked); no live build claim on broadcast-block-to-board; no review in progress; desk idle (born 19.3h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio broadcast-block-to-board --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/cache-deployment-stage-averages` | worktree | Hidden worktree; branch `feat/cache-deployment-stage-averages` is clean and HEAD d59ef567 is contained in origin/accepted; health down, Redis DB 35, database mcritchie_studio_development_cache_deployment_stage_averages:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/cache-deployment-stage-averages (GitHub asked); no live build claim on cache-deployment-stage-averages; no review in progress; desk idle (born 18.2h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio cache-deployment-stage-averages --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/cert-gate-loses-multi-repo` | worktree | Hidden worktree; branch `feat/cert-gate-loses-multi-repo` is clean and HEAD 8842cd92 is contained in origin/accepted; health down, Redis DB 54, database mcritchie_studio_development_cert_gate_loses_multi_repo:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/cert-gate-loses-multi-repo (GitHub asked); no live build claim on cert-gate-loses-multi-repo; no review in progress; desk idle (born 42.1h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio cert-gate-loses-multi-repo --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/certify-accepted-everywhere` | worktree | Hidden worktree; branch `feat/certify-accepted-everywhere` is clean and HEAD 7142cfd6 is contained in origin/accepted; health down, Redis DB 59, database mcritchie_studio_development_certify_accepted_everywhere:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/certify-accepted-everywhere (GitHub asked); no live build claim on certify-accepted-everywhere; no review in progress; desk idle (born 42.1h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio certify-accepted-everywhere --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/certify-engine-before-publish` | worktree | Hidden worktree; branch `feat/certify-engine-before-publish` is clean and HEAD 368ad211 is contained in origin/accepted; health down, Redis DB 25, database mcritchie_studio_development_certify_engine_before_publish:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/certify-engine-before-publish (GitHub asked); no live build claim on certify-engine-before-publish; no review in progress; desk idle (born 48.1h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio certify-engine-before-publish --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/close-board-filter-flake` | worktree | Hidden worktree; branch `feat/close-board-filter-flake` is clean and HEAD 34e34d7d is contained in origin/accepted; health down, Redis DB 46, database mcritchie_studio_development_close_board_filter_flake:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/close-board-filter-flake (GitHub asked); no live build claim on close-board-filter-flake; no review in progress; desk idle (born 42.2h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio close-board-filter-flake --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/compress-and-shrink-payload` | worktree | Hidden worktree; branch `feat/compress-and-shrink-payload` is clean and HEAD 336f4a71 is contained in origin/accepted; health down, Redis DB 33, database mcritchie_studio_development_compress_and_shrink_payload:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/compress-and-shrink-payload (GitHub asked); no live build claim on compress-and-shrink-payload; no review in progress; desk idle (born 18.6h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio compress-and-shrink-payload --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/document-parallel-workers-clamp` | worktree | Hidden worktree; branch `feat/document-parallel-workers-clamp` is clean and HEAD 2b89fe3f is contained in origin/accepted; health down, Redis DB 16, database mcritchie_studio_development_document_parallel_workers_clamp:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/document-parallel-workers-clamp (GitHub asked); no live build claim on document-parallel-workers-clamp; no review in progress; desk idle (born 29.7h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio document-parallel-workers-clamp --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/document-the-settled-click-guard` | worktree | Hidden worktree; branch `feat/document-the-settled-click-guard` is clean and HEAD e09d2458 is contained in origin/accepted; health down, Redis DB 63, database mcritchie_studio_development_document_the_settled_click_guard:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/document-the-settled-click-guard (GitHub asked); no live build claim on document-the-settled-click-guard; no review in progress; desk idle (born 41.4h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio document-the-settled-click-guard --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/drop-ladder-stale-state` | worktree | Hidden worktree; branch `feat/drop-ladder-stale-state` is clean and HEAD 648a3df7 is contained in origin/accepted; health missing-env, Redis DB , database unknown Cleared: merged into origin/accepted, tree clean; no open PR for feat/drop-ladder-stale-state (GitHub asked); no bound task, so no build claim to hold it; desk idle (born 3.3h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio drop-ladder-stale-state --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/fix-board-chip-flake` | worktree | Hidden worktree; branch `feat/fix-board-chip-flake` is clean and HEAD 7e1cd1e6 is contained in origin/accepted; health down, Redis DB 22, database mcritchie_studio_development_fix_board_chip_flake:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/fix-board-chip-flake (GitHub asked); no live build claim on fix-board-chip-flake; no review in progress; desk idle (born 23.1h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio fix-board-chip-flake --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/fix-board-filter-settling-flake` | worktree | Hidden worktree; branch `feat/fix-board-filter-settling-flake` is clean and HEAD 6ccf7cc0 is contained in origin/accepted; health down, Redis DB 23, database mcritchie_studio_development_fix_board_filter_settling_flake:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/fix-board-filter-settling-flake (GitHub asked); no live build claim on fix-board-filter-settling-flake; no review in progress; desk idle (born 21.6h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio fix-board-filter-settling-flake --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/fix-crew-avatar-queries` | worktree | Hidden worktree; branch `feat/fix-crew-avatar-queries` is clean and HEAD 5296ea90 is contained in origin/accepted; health down, Redis DB 34, database mcritchie_studio_development_fix_crew_avatar_queries:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/fix-crew-avatar-queries (GitHub asked); no live build claim on fix-crew-avatar-queries; no review in progress; desk idle (born 18.5h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio fix-crew-avatar-queries --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/fix-repo-root-tmpdir-race` | worktree | Hidden worktree; branch `feat/fix-repo-root-tmpdir-race` is clean and HEAD 21df171e is contained in origin/accepted; health down, Redis DB 51, database mcritchie_studio_development_fix_repo_root_tmpdir_race:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/fix-repo-root-tmpdir-race (GitHub asked); no live build claim on fix-repo-root-tmpdir-race; no review in progress; desk idle (born 7.1h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio fix-repo-root-tmpdir-race --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/install-engine-migrations-in-sweep` | worktree | Hidden worktree; branch `feat/install-engine-migrations-in-sweep` is clean and HEAD 2336a9ae is contained in origin/accepted; health down, Redis DB 18, database mcritchie_studio_development_install_engine_migrations_in_sweep:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/install-engine-migrations-in-sweep (GitHub asked); no live build claim on install-engine-migrations-in-sweep; no review in progress; desk idle (born 24.8h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio install-engine-migrations-in-sweep --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/ratchet-the-rails-skip-ceiling` | worktree | Hidden worktree; branch `feat/ratchet-the-rails-skip-ceiling` is clean and HEAD 4eed233a is contained in origin/accepted; health down, Redis DB 56, database mcritchie_studio_development_ratchet_the_rails_skip_ceiling:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/ratchet-the-rails-skip-ceiling (GitHub asked); no live build claim on ratchet-the-rails-skip-ceiling; no review in progress; desk idle (born 6.8h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio ratchet-the-rails-skip-ceiling --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/repair-remaining-quarantined-specs` | worktree | Hidden worktree; branch `feat/repair-remaining-quarantined-specs` is clean and HEAD eb70db89 is contained in origin/accepted; health down, Redis DB 19, database mcritchie_studio_development_repair_remaining_quarantined_specs:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/repair-remaining-quarantined-specs (GitHub asked); no live build claim on repair-remaining-quarantined-specs; no review in progress; desk idle (born 24.8h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio repair-remaining-quarantined-specs --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/review-gate-reads-one-repo` | worktree | Hidden worktree; branch `feat/review-gate-reads-one-repo` is clean and HEAD ac421633 is contained in origin/accepted; health down, Redis DB 13, database mcritchie_studio_development_review_gate_reads_one_repo:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/review-gate-reads-one-repo (GitHub asked); no live build claim on review-gate-reads-one-repo; no review in progress; desk idle (born 32.8h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio review-gate-reads-one-repo --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/scope-board-to-live-tasks` | worktree | Hidden worktree; branch `feat/scope-board-to-live-tasks` is clean and HEAD 4271b6b9 is contained in origin/accepted; health down, Redis DB 32, database mcritchie_studio_development_scope_board_to_live_tasks:ok Cleared: merged into origin/accepted, tree clean; no open PR for feat/scope-board-to-live-tasks (GitHub asked); no live build claim on scope-board-to-live-tasks; no review in progress; desk idle (born 19.0h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio scope-board-to-live-tasks --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/shard-the-rails-suite` | worktree | Hidden worktree; branch `feat/shard-the-rails-suite` is clean and HEAD f8773213 is contained in origin/accepted; health down, Redis DB 36, database mcritchie_studio_development_shard_the_rails_suite:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/shard-the-rails-suite (GitHub asked); no live build claim on shard-the-rails-suite; no review in progress; desk idle (born 17.9h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio shard-the-rails-suite --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/shrink-agent-portrait-assets` | worktree | Hidden worktree; branch `feat/shrink-agent-portrait-assets` is clean and HEAD d4077fb0 is contained in origin/accepted; health missing-env, Redis DB , database unknown Cleared: merged into origin/accepted, tree clean; no open PR for feat/shrink-agent-portrait-assets (GitHub asked); no bound task, so no build claim to hold it; desk idle (born 2.1h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio shrink-agent-portrait-assets --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/trim-ci-setup-floor` | worktree | Hidden worktree; branch `feat/trim-ci-setup-floor` is clean and HEAD b1bac60b is contained in origin/accepted; health down, Redis DB 48, database mcritchie_studio_development_trim_ci_setup_floor:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/trim-ci-setup-floor (GitHub asked); no live build claim on trim-ci-setup-floor; no review in progress; desk idle (born 15.7h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio trim-ci-setup-floor --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/mcritchie-studio/.worktrees/vendor-font-in-lineup-graphic` | worktree | Hidden worktree; branch `feat/vendor-font-in-lineup-graphic` is clean and HEAD 8d8371c1 is contained in origin/accepted; health up, Redis DB 43, database mcritchie_studio_development_vendor_font_in_lineup_graphic:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/vendor-font-in-lineup-graphic (GitHub asked); no live build claim on vendor-font-in-lineup-graphic; no review in progress; desk idle (born 16.3h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-studio vendor-font-in-lineup-graphic --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/turf-monster/.worktrees/_ship` | worktree | Hidden worktree; branch `` is clean and HEAD 1ada513 is contained in origin/accepted; health missing-env, Redis DB , database unknown Cleared: merged into origin/accepted, tree clean; no open PR for (detached — no branch) (GitHub asked); no live release conductor claim (assembler/deployer); desk idle (born 19.3h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove turf-monster _ship --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/turf-monster/.worktrees/adopt-engine-geo-primitives` | worktree | Hidden worktree; branch `feat/adopt-engine-geo-primitives` is clean and HEAD 86bd452 is contained in origin/accepted; health port-busy, Redis DB 10, database turf_monster_development_adopt_engine_geo_primitives:ok Cleared: merged into origin/accepted, tree clean; no open PR for feat/adopt-engine-geo-primitives (GitHub asked); no live build claim on adopt-engine-geo-primitives; no review in progress; desk idle (born 40.6h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove turf-monster adopt-engine-geo-primitives --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/turf-monster/.worktrees/bound-turf-apt-fetches` | worktree | Hidden worktree; branch `feat/bound-turf-apt-fetches` is clean and HEAD c80eaf2 is contained in origin/accepted; health down, Redis DB 38, database turf_monster_development_bound_turf_apt_fetches:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/bound-turf-apt-fetches (GitHub asked); no live build claim on bound-turf-apt-fetches; no review in progress; desk idle (born 17.0h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove turf-monster bound-turf-apt-fetches --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/turf-monster/.worktrees/certify-accepted-everywhere` | worktree | Hidden worktree; branch `feat/certify-accepted-everywhere` is clean and HEAD 4440cfd is contained in origin/accepted; health down, Redis DB 60, database turf_monster_development_certify_accepted_everywhere:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/certify-accepted-everywhere (GitHub asked); no live build claim on certify-accepted-everywhere; no review in progress; desk idle (born 42.1h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove turf-monster certify-accepted-everywhere --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/turf-monster/.worktrees/consolidate-turf-static-lane` | worktree | Hidden worktree; branch `feat/consolidate-turf-static-lane` is clean and HEAD 03712ae is contained in origin/accepted; health down, Redis DB 57, database turf_monster_development_consolidate_turf_static_lane:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/consolidate-turf-static-lane (GitHub asked); no live build claim on consolidate-turf-static-lane; no review in progress; desk idle (born 6.2h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove turf-monster consolidate-turf-static-lane --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/turf-monster/.worktrees/correct-turbo-cache-doc` | worktree | Hidden worktree; branch `feat/correct-turbo-cache-doc` is clean and HEAD 64544ca is contained in origin/accepted; health down, Redis DB 17, database turf_monster_development_correct_turbo_cache_doc:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/correct-turbo-cache-doc (GitHub asked); no live build claim on correct-turbo-cache-doc; no review in progress; desk idle (born 27.0h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove turf-monster correct-turbo-cache-doc --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/turf-monster/.worktrees/drop-turf-empty-system-lane` | worktree | Hidden worktree; branch `feat/drop-turf-empty-system-lane` is clean and HEAD 1f77860 is contained in origin/accepted; health down, Redis DB 37, database turf_monster_development_drop_turf_empty_system_lane:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/drop-turf-empty-system-lane (GitHub asked); no live build claim on drop-turf-empty-system-lane; no review in progress; desk idle (born 17.1h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove turf-monster drop-turf-empty-system-lane --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/turf-monster/.worktrees/fix-turf-navbar-overflow` | worktree | Hidden worktree; branch `feat/fix-turf-navbar-overflow` is clean and HEAD fc9e718 is contained in origin/accepted; health up, Redis DB 29, database turf_monster_development_fix_turf_navbar_overflow:ok Cleared: merged into origin/accepted, tree clean; no open PR for feat/fix-turf-navbar-overflow (GitHub asked); no live build claim on fix-turf-navbar-overflow; no review in progress; desk idle (born 19.1h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove turf-monster fix-turf-navbar-overflow --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/turf-monster/.worktrees/give-turf-an-executed-set` | worktree | Hidden worktree; branch `feat/give-turf-an-executed-set` is clean and HEAD 8fe7992 is contained in origin/accepted; health down, Redis DB 50, database turf_monster_development_give_turf_an_executed_set:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/give-turf-an-executed-set (GitHub asked); no live build claim on give-turf-an-executed-set; no review in progress; desk idle (born 14.8h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove turf-monster give-turf-an-executed-set --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/turf-monster/.worktrees/wallet-setup-modal-upgrade` | worktree | Hidden worktree; branch `feat/wallet-setup-modal-upgrade` is clean and HEAD d769e02 is contained in origin/accepted; health up, Redis DB 53, database turf_monster_development_wallet_setup_modal_upgrade:ok Cleared: merged into origin/accepted, tree clean; no open PR for feat/wallet-setup-modal-upgrade (GitHub asked); no live build claim on wallet-setup-modal-upgrade; no review in progress; desk idle (born 42.2h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove turf-monster wallet-setup-modal-upgrade --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/mcritchie-industries/.worktrees/_ship` | worktree | Hidden worktree; branch `` is clean and HEAD 49c23f5 is contained in origin/accepted; health missing-env, Redis DB , database unknown Cleared: merged into origin/accepted, tree clean; no open PR for (detached — no branch) (GitHub asked); no live release conductor claim (assembler/deployer); desk idle (born 9.4h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-industries _ship --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/mcritchie-industries/.worktrees/certify-accepted-everywhere` | worktree | Hidden worktree; branch `feat/certify-accepted-everywhere` is clean and HEAD 461af09 is contained in origin/accepted; health down, Redis DB 61, database mcritchie_industries_development_certify_accepted_everywhere:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/certify-accepted-everywhere (GitHub asked); no live build claim on certify-accepted-everywhere; no review in progress; desk idle (born 42.1h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-industries certify-accepted-everywhere --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
+
+<!-- agent-worktree remove 2026-08-20 -->
+| `/Users/alex/projects/mcritchie-industries/.worktrees/consolidate-industries-static-lane` | worktree | Hidden worktree; branch `feat/consolidate-industries-static-lane` is clean and HEAD cbc1e40 is contained in origin/accepted; health down, Redis DB 58, database mcritchie_industries_development_consolidate_industrie_111b6f9a:missing Cleared: merged into origin/accepted, tree clean; no open PR for feat/consolidate-industries-static-lane (GitHub asked); no live build claim on consolidate-industries-static-lane; no review in progress; desk idle (born 6.1h ago, no writes in the last 1.5h). | Removed with `bin/agent-worktree remove mcritchie-industries consolidate-industries-static-lane --yes` during approved lifecycle cleanup. | removed 2026-08-20 |
