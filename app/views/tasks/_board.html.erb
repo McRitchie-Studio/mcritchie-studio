@@ -1,5 +1,5 @@
-<%# /tasks — Workflow 1 (Build lane): designed → building → submitted (+ an Archived
-    toggle). Rebased onto the studio/board ENGINE PRIMITIVE (studio/board/_board):
+<%# /tasks — Workflow 1 (Build lane): designed → building → submitted.
+    Rebased onto the studio/board ENGINE PRIMITIVE (studio/board/_board):
     the primitive's `studioBoard` factory (studio/_board_assets, homed in the layout)
     owns drag / cross-column move (PATCH) / reorder (POST) / live Turbo-stream updates /
     counts / toasts, driving the VENDORED SortableJS (no CDN). This partial owns only
@@ -9,20 +9,37 @@
     but resolve `matchesFilter` / `appVisible` / `archiveTask` / `deleteTask` from THIS
     parent scope (Alpine nests scopes), so the card partial is unchanged.
 
-    Locals: stages, title, archived:, current_page:, live_updates: (default true). %>
+    THERE IS NO ARCHIVED COLUMN. Archiving a card removes it from the board, which
+    is what DeploymentsBroadcaster has always broadcast (a stage move to `archived`
+    emits a `remove`) and what the engine primitive does with that stream by
+    default. This partial used to carry a handler whose whole job was to INTERCEPT
+    that remove and re-parent the card into a toggle-hidden Archived column; the
+    column is gone, so the interception is too, and the two halves now agree.
+    Archived tasks stay reachable at /tasks?stage=archived and by direct URL.
+
+    Locals: stages, title, current_page:, live_updates: (default true). %>
 <%# The shared, install-once elapsed ticker (tasks/_release_ticker). /deployments
     mounts it for the Next Release clock; this board needs it for the CI meter's
     running clock on a building/submitted card, which ticks off the same script.
     Rendering it twice across two pages is free — it self-guards on
     window.__releaseTicker. %>
 <%= render "release_ticker" %>
+<%# The elapsed-label formatter the CARD partial calls (components/_stage_agent_avatars
+    does x-text="window.elapsedLabel(now - start)"). /deployments mounts it in
+    _deploy_board; this board renders the SAME card partial and did not, so any card
+    showing a live agent avatar threw "window.elapsedLabel is not a function" here.
+    Surfaced by a Turbo-broadcast card arriving on /tasks (a block re-seats the card),
+    but the gap is the page's, not the broadcast's — a card rendered at page load hits
+    it just the same. Self-guards on window.elapsedLabel, so mounting it on both boards
+    is free. %>
+<%= render "components/elapsed_label_script" %>
 <% title        = local_assigns.fetch(:title, "Tasks") %>
-<% archived     = local_assigns.fetch(:archived, false) %>
 <% current_page = local_assigns.fetch(:current_page, "tasks") %>
 <% stages       = local_assigns.fetch(:stages, Task::TASKS_BOARD_STAGES) %>
 <% live_updates = local_assigns.fetch(:live_updates, true) %>
-<%# Archived is a toggle-hidden column (drag-to-archive target), shown via showArchived. %>
-<% column_keys = archived ? (stages + ["archived"]) : stages %>
+<%# An explicit ?stage= is a single-column view of that stage, uncapped — the one
+    path that still reaches archived work now that no board carries the column. %>
+<% column_keys  = @stage_filter.present? ? [@stage_filter] : stages %>
 <%# Mascot + type-colour maps built once — the 151 are tiny, so one query beats an
     N+1 across cards (each card's data-glow is then a hash lookup). %>
 <% pokemon_by_slug = Pokemon.all.index_by(&:slug) %>
@@ -43,54 +60,23 @@ function taskBoardChrome() {
   return {
     agentFilter: '',
     hiddenApps: [],
-    showArchived: false,
     _pending: {},
     stageLabels: <%= raw Task::STAGE_LABELS.to_json %>,
 
     init() {
       // $nextTick, not synchronous: x-init runs mid directive-walk, so the filter
       // chips' @click aren't bound yet here. The flag then means "interactive".
-      // This parent inits before the inner studioBoard, so installing the archive
-      // exit-stream handler here claims the primitive's fallback flag first.
       this.$nextTick(() => {
         this.$el.dataset.alpineReady = 'true';
-        this.installArchiveExitStream();
       });
     },
 
-    // Own the archive exit STREAM. A stage→archived change broadcasts a Turbo
-    // `remove` for the card; the neutral primitive's fallback would DELETE it, but
-    // this board has an archived COLUMN, so an archived card must RE-PARENT there
-    // (visible under the Archived toggle). Claim the primitive's guard flag (parent
-    // inits first) so only this handler runs. A plain delete `remove` carries no
-    // exit-action and falls through to Turbo's default (gone for good).
-    installArchiveExitStream() {
-      if (window.__studioBoardExitFallback) return;
-      window.__studioBoardExitFallback = true;
-      const self = this;
-      document.addEventListener('turbo:before-stream-render', (event) => {
-        const stream = event.target;
-        if (stream.getAttribute('action') !== 'remove') return;
-        const target = stream.getAttribute('target') || '';
-        if (target.indexOf('card-') !== 0 || stream.dataset.exitAction !== 'archive') return;
-        const renderNow = event.detail.render;
-        event.detail.render = async (el) => {
-          const card = document.getElementById(target);
-          if (!card) { renderNow(el); return; }
-          await self.boardExit(card, 'archive');
-          const archivedZone = document.getElementById('dropzone-archived');
-          if (archivedZone) {
-            archivedZone.insertBefore(card, archivedZone.querySelector('.kanban-empty'));
-            card.dataset.stage = 'archived';
-            self.resetCardExit(card);
-            self.boardRefreshCounts();
-            return; // keep the card in the archived column — do NOT remove it
-          }
-          renderNow(el);
-          self.boardRefreshCounts();
-        };
-      });
-    },
+    // NO archive exit-stream handler here on purpose. The engine primitive's
+    // installExitStreamFallback (studio/_board_assets) already animates a
+    // data-exit-action="archive" remove and then lets Turbo remove the card,
+    // because this board passes no archive_zone. That is now the wanted behavior,
+    // so the primitive owns it alone — claiming its __studioBoardExitFallback flag
+    // to re-parent into a column that no longer exists is what we deleted.
 
     // --- filters (card x-show resolves these from this parent scope) ----------
     matchesFilter(agent) { return !this.agentFilter || agent === this.agentFilter; },
@@ -149,14 +135,7 @@ function taskBoardChrome() {
         const updated = await resp.json().catch(() => null);
         if (!updated || updated.stage !== 'archived') throw new Error('Archive failed');
         if (card) {
-          const archivedZone = document.getElementById('dropzone-archived');
-          if (archivedZone) {
-            archivedZone.insertBefore(card, archivedZone.querySelector('.kanban-empty'));
-            card.dataset.stage = 'archived';
-            this.resetCardExit(card);
-          } else {
-            card.remove();
-          }
+          card.remove();
           this.boardRefreshCounts();
         }
         this.boardToast('Task archived', 'success');
@@ -209,14 +188,7 @@ document.addEventListener('turbo:before-cache', function() {
 });
 </script>
 
-<section x-data="taskBoardChrome()" data-test="kanban-board"
-         class="min-h-screen tasks-board-hide-archived"
-         :class="{ 'tasks-board-hide-archived': !showArchived }">
-  <%# FOUC-safe archived hide: the static class hides the archived column before
-      Alpine boots; :class then hands control to showArchived (no flash). The
-      primitive column carries data-board-column="archived". %>
-  <style>.tasks-board-hide-archived [data-board-column="archived"]{display:none}</style>
-
+<section x-data="taskBoardChrome()" data-test="kanban-board" class="min-h-screen">
   <%# TEST-ONLY board hook: hands the Playwright e2e suite a signed API token so a
       spec can POST /api/v1/tasks and drive real board behavior. Gated to the test
       env — never rendered in development or production. %>
@@ -232,13 +204,6 @@ document.addEventListener('turbo:before-cache', function() {
       <h2 class="text-2xl font-bold text-heading"><%= title %></h2>
       <%= render "page_nav", current: current_page %>
       <div class="flex w-full items-center gap-2 flex-wrap sm:ml-auto sm:w-auto sm:justify-end" data-test="board-header-actions">
-        <% if archived %>
-          <button @click="showArchived = !showArchived"
-                  :class="showArchived ? 'bg-primary text-white' : 'bg-surface text-secondary border border-subtle hover:text-heading'"
-                  class="px-3 py-1.5 rounded-lg text-sm font-medium transition">
-            Archived
-          </button>
-        <% end %>
         <% if logged_in? %>
           <%= link_to "New Task", new_task_path, class: "btn btn-primary" %>
         <% end %>
@@ -281,7 +246,7 @@ document.addEventListener('turbo:before-cache', function() {
   <% end %>
 
   <%# The board — rendered by the engine primitive. Columns are the stage keys
-      (+ archived); each card is tasks/_task_card, bound to :task with the same
+      each card is tasks/_task_card, bound to :task with the same
       preloaded per-card locals the board loop always passed. A cross-column drop
       PATCHes { task: { stage } } (the update action); a reorder POSTs the DOM-
       ordered slugs to the shared reorder action. %>

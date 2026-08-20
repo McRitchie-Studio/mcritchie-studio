@@ -43,18 +43,30 @@ class BoardFilterClickStabilityTest < ApplicationSystemTestCase
     # would still pass with the guard removed, and prove nothing.
     assert_operator clicked_after_settling_ms, :>=, SETTLING_MS,
                     "the click was dispatched before the settling window closed"
+
+    # And the window really MOVED the box while it was open. Without this, a fixture
+    # whose motion silently stopped — the flake that made this file 3-of-4 red in CI —
+    # would leave the test green and the guard unexercised.
+    assert_operator distinct_settling_widths, :>, 1,
+                    "the settling fixture never moved the row: the guard was never asked to wait"
   end
 
-  # THE REGRESSION GUARD for the fix above, asserted as the PROPERTY rather than the
-  # implementation: while the window is open, the chip's box must keep changing even
-  # when no frame ever runs.
+  # THE REGRESSION GUARD for the fixture above, asserted as the PROPERTY rather than
+  # the implementation: while the window is open, the chip's box must keep changing
+  # even when no frame ever runs.
   #
-  # It exists because the obvious "cleanup" is to put the rAF jitter back — it reads
-  # more like a test and less like a stylesheet. Measured, that revert costs 6 of every
-  # 9 `test`-job failures in this repo. With rAF disabled outright, the CSS-driven
-  # window still advanced the chip 122 -> 165px across ten 50ms samples with ZERO
-  # consecutive duplicates; the rAF version, merely throttled to 120ms, produced a
-  # duplicate on the FIRST pair and failed the test above with CI's exact message.
+  # It exists because the obvious "cleanup" is to put the rAF jitter back — a frame
+  # loop reads more like animation code than a bare setInterval does, so the revert is
+  # the tidy-looking change. Measured, that revert costs 6 of every 9 `test`-job
+  # failures in this repo, on feature branches and on `accepted` itself, always with
+  # the same message: expected to find css button[aria-pressed='true'] but there were
+  # no matches. The test above cannot catch the revert on its own — it asserts the
+  # fixture MOVED, and a frame-driven fixture does move, right up until the runner
+  # starves. This one removes the frames and asserts the motion survives, which is the
+  # property the guard downstream actually depends on.
+  #
+  # It bites by construction: stub rAF to a no-op, put the jitter back on rAF, and the
+  # label never widens, so all six samples are identical and this test goes red.
   test "[e2e] the settling window moves the chip without any frames" do
     Task.create!(
       title: "rolio settling board card", stage: "building",
@@ -90,13 +102,25 @@ class BoardFilterClickStabilityTest < ApplicationSystemTestCase
 
   private
 
-  # Stand in for the webfont swap. Two halves, both required: the chip MOVES every
-  # frame -- monotonically, the way a one-way font swap widens text, so no two samples of
-  # a settling box are ever equal -- so a geometry guard can see the page is not settled;
-  # and a pointerdown while
-  # the window is open reflows the row synchronously, which is what actually splits
-  # pointerdown from pointerup. After SETTLING_MS the layout is final, exactly as it is
-  # once the font has arrived.
+  # Stand in for the webfont swap. Two halves, both required: the chip MOVES for the
+  # whole window -- monotonically, the way a one-way font swap widens text, so no two
+  # samples of a settling box are ever equal -- so a geometry guard can see the page is
+  # not settled; and a pointerdown while the window is open reflows the row
+  # synchronously, which is what actually splits pointerdown from pointerup. After
+  # SETTLING_MS the layout is final, exactly as it is once the font has arrived.
+  #
+  # THE MOTION RUNS ON A TIMER, NOT ON FRAMES, and that is the fix for this file's own
+  # flake. It was requestAnimationFrame, and this test then went red 3 of 4 runs in CI
+  # while passing every local run: a loaded runner (or a throttled headless renderer)
+  # stalls frames past the guard's 50ms sample interval, so the box stops changing
+  # while the window is still open. The guard reads two identical samples, clicks, the
+  # pointerdown handler below reflows the row, and the click is swallowed -- the chip
+  # left un-pressed, which is exactly the failure this test exists to CATCH. A fixture
+  # that cannot move the box is indistinguishable, to the guard, from a page that has
+  # settled; the whole point of this window is that those two must never look alike.
+  #
+  # The window's CLOSE was already moved off frames onto the clock for the same reason
+  # (see below); this is the other half of that lesson.
   def start_settling_window
     execute_script(<<~JS, SETTLING_MS)
       const windowMs = arguments[0];
@@ -104,45 +128,33 @@ class BoardFilterClickStabilityTest < ApplicationSystemTestCase
       const label = row.querySelector('span');
       window.__settling = { open: true, t0: performance.now(), clickedAt: null };
 
-      // THE MOVEMENT IS DRIVEN BY A CSS ANIMATION, NOT BY requestAnimationFrame, and
-      // that is the whole fix for this test's flakiness.
-      //
-      // WHAT WAS WRONG, MEASURED. await_settled_geometry clears when `settled` is
-      // true AND the box is unchanged since the previous sample, polling every 50ms.
-      // A jitter driven by rAF only moves the label when a FRAME RUNS. On a loaded CI
-      // runner frames starve, so two consecutive polls can see an identical box while
-      // the page is still very much moving — the guard clears, the click lands inside
-      // the window, the pointerdown handler below swallows it exactly as designed, and
-      // the aria-pressed assertion fails. Reproduced locally by advancing the old
-      // jitter every 120ms instead of every frame: the first two samples (13ms and
-      // 70ms) came back identical and the test failed with CI's exact message. That
-      // is 6 of the last 9 `test`-job failures across all branches, and it reddens
-      // `accepted` itself.
-      //
-      // WHY A CSS ANIMATION FIXES IT. getBoundingClientRect() forces a style and
-      // layout flush, and the browser resolves an animated property at the CURRENT
-      // TIME when it does — so every poll observes a different box whether or not a
-      // frame has painted in between. The signal stops being frame-sampled, which is
-      // the property the guard needs and the rAF version could not offer at any
-      // cadence.
-      //
-      // Do NOT return this to rAF to "make it deterministic". rAF is precisely the
-      // thing that is not deterministic on a loaded runner.
-      const style = document.createElement('style');
-      style.textContent =
-        '@keyframes studio-settling { from { letter-spacing: 0px } to { letter-spacing: 12px } }' +
-        '.studio-settling { animation: studio-settling ' + windowMs + 'ms linear forwards }';
-      document.head.appendChild(style);
-      label.classList.add('studio-settling');
+      // Every sample the guard takes must differ from the last, so the tick has to
+      // beat its 50ms interval with room to spare — and it must keep ticking when
+      // the renderer is starved, which is why this is a timer and not a frame.
+      // Measure what the GUARD measures — the button it is about to click — not the
+      // row, which is full-width and never changes. (Measured: sampling the row
+      // recorded ONE width all window long, which is the vacuous-green this
+      // assertion exists to prevent.)
+      window.__settling.boxes = new Set();
+      const chip = row.querySelector('button');
+      const measure = () => {
+        const r = chip.getBoundingClientRect();
+        window.__settling.boxes.add(Math.round(r.x) + "," + Math.round(r.width));
+      };
 
-      // The window closes on the CLOCK, not on a frame having run — see the note on
-      // the pointerdown handler below, which is the other half of the same lesson.
-      setTimeout(() => {
-        window.__settling.open = false;
-        label.classList.remove('studio-settling');
-        label.style.letterSpacing = '0px';
-        style.remove();
-      }, windowMs);
+      const jitter = () => {
+        const elapsed = performance.now() - window.__settling.t0;
+        if (!window.__settling.open || elapsed >= windowMs) {
+          window.__settling.open = false;
+          label.style.letterSpacing = '0px';
+          clearInterval(window.__settling.timer);
+          return;
+        }
+        label.style.letterSpacing = (elapsed / windowMs * 12).toFixed(2) + 'px';
+        measure();
+      };
+      window.__settling.timer = setInterval(jitter, 20);
+      jitter();
 
       // The window closes on the CLOCK, not on a frame having run. Reading the flag
       // the jitter loop maintains would leave a gap one frame wide: the box stops
@@ -162,5 +174,14 @@ class BoardFilterClickStabilityTest < ApplicationSystemTestCase
 
   def clicked_after_settling_ms
     evaluate_script("window.__settling.clickedAt").to_i
+  end
+
+  # How many DISTINCT row widths the fixture actually produced while the window was
+  # open. Asserted because a fixture that fails to move the box turns this test into
+  # a green that proves nothing: the guard would clear a page it never had to wait
+  # for, and the click would land in a settled layout by luck. One width means the
+  # motion never happened — a FIXTURE failure, and it should read as one.
+  def distinct_settling_widths
+    evaluate_script("window.__settling.boxes.size").to_i
   end
 end

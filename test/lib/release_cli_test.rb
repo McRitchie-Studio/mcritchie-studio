@@ -656,6 +656,14 @@ class ReleaseCliTest < Minitest::Test
         # stale resolution, then abort — is driven for real in
         # test_prepare_retries_then_aborts_when_the_lock_never_lands, which stubs
         # `sh` instead of this.
+        # Stubbed for the same reason bundle_lock is: these tests are about the
+        # BUMP flow, and the install does real bundler/rails work in a workspace
+        # that is a bare tmpdir here. Its own behaviour — the bundle-first order,
+        # the discriminating probe, the abort on an unbootable app — is driven
+        # against the live implementation in the three tests that stub `sh`.
+        def install_engine_migrations!(_workspace, repo, gem_names)
+          $stdout.puts("MIGRATION-INSTALL #{repo} #{gem_names.join(',')}")
+        end
         def bundle_lock(path, gem, attempts: 3, conservative: false, expect: nil)
           $stdout.puts("BUNDLE-LOCK #{gem} conservative=#{conservative} expect=#{expect}")
           lock = File.join(path, "Gemfile.lock")
