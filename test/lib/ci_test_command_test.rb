@@ -17,6 +17,26 @@ require_relative "../../bin/lib/ci_test_command"
 class CiTestCommandTest < Minitest::Test
   HUB_ROOT = File.expand_path("../..", __dir__)
 
+  # The projects root — the directory the sibling repos live in.
+  #
+  # This used to be spelled `File.expand_path("../../../#{repo}", HUB_ROOT)`, which
+  # is correct from a WORKTREE (…/mcritchie-studio/.worktrees/<slug> is three levels
+  # below the projects root) and wrong from the PRIMARY checkout, where it climbs
+  # past the projects root to /Users/<repo>. Nothing there exists, so every sibling
+  # was skipped and the two live-ecosystem pins below passed having checked NOTHING
+  # — green, and blind, depending only on which checkout you happened to run from.
+  #
+  # Resolved through git instead of by counting "..": `--git-common-dir` answers the
+  # PRIMARY's .git for a worktree and for the primary alike, so its grandparent is
+  # the projects root from either. Nil when git cannot answer, which the pins below
+  # assert against rather than silently skipping.
+  PROJECTS_ROOT = begin
+    common = `git -C #{Shellwords.escape(HUB_ROOT)} rev-parse --git-common-dir 2>/dev/null`.strip
+    common.empty? ? nil : File.expand_path("../..", File.expand_path(common, HUB_ROOT))
+  rescue StandardError
+    nil
+  end
+
   def with_ci(yaml)
     Dir.mktmpdir do |dir|
       FileUtils.mkdir_p(File.join(dir, ".github", "workflows"))
@@ -1377,22 +1397,44 @@ class CiTestCommandTest < Minitest::Test
     # REAL parser against its REAL workflows on every suite run. Siblings are skipped
     # when absent (CI checks out only this repo), so this is a LOCAL pin — which is
     # exactly where an over-fire would otherwise be discovered: at a builder's gate.
+    refute_nil PROJECTS_ROOT, "cannot locate the projects root — this pin would check nothing"
+
+    checked = []
     %w[mcritchie-studio turf-monster rolio chain-ops studio-engine solana-studio turf-vault].each do |repo|
-      root = File.expand_path("../../../#{repo}", HUB_ROOT)
+      root = File.join(PROJECTS_ROOT, repo)
       next unless File.directory?(root)
 
+      checked << repo
       assert_nil CiTestCommand.refusal(root),
                  "the cert net REFUSES #{repo} — the guard over-fires on a live repo"
       assert_includes CiTestCommand.resolve(root), "test:system",
                       "#{repo}'s cert lane must still carry the system tier"
     end
+
+    # THE GUARD ON THE GUARD. Every assertion above sits behind `next unless
+    # File.directory?`, so a resolution bug turns this whole test green without
+    # checking one repo — which is exactly what the ../../../ spelling did. On CI
+    # only this repo is checked out and `checked` is legitimately just the hub, so
+    # the floor is one rather than seven.
+    refute_empty checked, "no sibling repo resolved — the pin went vacuous"
   end
 
-  def test_the_four_RAILS_repos_resolve_their_OWN_ci_command
+  def test_the_single_lane_RAILS_repos_resolve_their_OWN_ci_command
     # …and they resolve it from their own ci.yml — not by falling back to DEFAULT with
     # a refusal quietly suppressed.
-    %w[mcritchie-studio turf-monster rolio chain-ops].each do |repo|
-      root = File.expand_path("../../../#{repo}", HUB_ROOT)
+    #
+    # mcritchie-studio is DELIBERATELY not in this list. Its ci.yml is the SHARDED
+    # lane, and the sharded-lane test above asserts the opposite of what this one
+    # would demand of it — "a sharded lane has no single CI command; for_root must
+    # not invent one". The hub can never satisfy both, and while the sibling paths
+    # resolved to nowhere nobody found out: this test passed by skipping every repo
+    # in it. Fixing the resolution surfaced the contradiction immediately.
+    refute_nil PROJECTS_ROOT, "cannot locate the projects root — this pin would check nothing"
+    assert CiTestCommand.sharded_lane?(HUB_ROOT),
+           "if the hub stops being a sharded lane, it BELONGS in the list below — revisit this"
+
+    %w[turf-monster rolio chain-ops].each do |repo|
+      root = File.join(PROJECTS_ROOT, repo)
       next unless File.directory?(root)
 
       assert_equal "bin/rails db:test:prepare test test:system", CiTestCommand.for_root(root),
