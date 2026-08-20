@@ -187,6 +187,26 @@ class DeploymentsBroadcaster
     Studio::Cable.safe_broadcast { new(nil, task: task).deliver_replace }
   end
 
+  # A block or unblock. Event-less like .approval_change — Task#block! is a bare
+  # update! that records no TaskEvent — but it deliberately uses the MOVE payload
+  # (remove + prepend) rather than #deliver_replace, and the difference is the whole
+  # reason this method exists.
+  #
+  # A Turbo `replace` targets an existing DOM id, so it can only UPDATE a card the
+  # viewer already has; it CANNOT insert one that is missing. Both cases are real
+  # here. A board opened before the block has the card and needs its tone refreshed;
+  # a board that filtered it out, or that dropped it for any reason, has no card to
+  # replace and must have one inserted — a blocked task is the single state an
+  # operator most needs to see ARRIVE without a refresh, since it is the
+  # needs-attention signal. remove+prepend is idempotent across both: the remove
+  # no-ops when the card is absent, and the prepend lands exactly one card.
+  #
+  # The column is unchanged by construction — a blocked task IS a `building` task
+  # (the block is an attribute, not a stage), so #zone maps it to Building either way.
+  def self.block_change(task)
+    Studio::Cable.safe_broadcast { new(nil, task: task).deliver_move }
+  end
+
   # `task:` covers event-less broadcasts (gate runs, approval flips): the card render
   # only needs the task, so those callers pass it directly and use #deliver_replace.
   def initialize(event, task: nil)
@@ -205,6 +225,14 @@ class DeploymentsBroadcaster
     return nil if @task.nil?
 
     replace_card
+  end
+
+  # Re-seat the card in its column with no event to dispatch on (see .block_change).
+  # Unlike #deliver_replace this also INSERTS a card the viewer is missing.
+  def deliver_move
+    return nil if @task.nil?
+
+    move_card
   end
 
   private

@@ -59,6 +59,45 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
     assert_includes streams.first.to_html, "WAITING APPROVAL", "the re-rendered card carries the approval bar"
   end
 
+  # THE GAP THESE PIN (/tasks/broadcast-block-to-board): blocking broadcast NOTHING.
+  # Task#block! is a bare update! that records no TaskEvent, and DeploymentsBroadcaster
+  # is driven by .task_event — so a blocked card sat unchanged on every open board until
+  # something unrelated forced a re-render. Three e2e specs asserted the live behaviour
+  # and had been quarantined as "rotted tests"; the tests were right and the feature was
+  # missing.
+  test "[integration] blocking a task broadcasts its card, tone and all" do
+    task = built_submitted_task
+    task.update!(stage: "building")
+
+    streams = capture_turbo_stream_broadcasts("deployments") { task.block!(by: "avi", kind: "rework") }
+
+    # remove+prepend, NOT replace — see .block_change. A replace can only update a card
+    # the viewer already has; the prepend is what puts a MISSING one back on the board.
+    assert(streams.any? { |st| st["action"] == "remove" && st["target"] == "card-#{task.slug}" },
+           "removes the stale card")
+    prepended = streams.find { |st| st["action"] == "prepend" }
+    assert prepended, "prepends a fresh card"
+    assert_equal "dropzone-building", prepended["target"],
+                 "a block is an ATTRIBUTE — the card stays in Building, it does not move columns"
+    # Assert the card carries the BLOCK, not merely that some card was sent: the whole
+    # point is the operator seeing the needs-attention tone arrive.
+    assert_includes prepended.to_html, "blocked",
+                    "the re-rendered card carries its blocked tone (data-glow)"
+  end
+
+  test "[integration] unblocking broadcasts too, so the tone clears without a refresh" do
+    task = built_submitted_task
+    task.update!(stage: "building")
+    task.block!(by: "avi", kind: "rework")
+
+    streams = capture_turbo_stream_broadcasts("deployments") { task.unblock! }
+
+    # One guard covers both directions because blocked_at is the column that moves each
+    # way. A clear that never reached the board would strand a red card forever.
+    assert(streams.any? { |st| st["action"] == "prepend" && st["target"] == "dropzone-building" },
+           "the cleared card is re-seated in Building")
+  end
+
   test "a cross-column stage move REMOVES the old card and PREPENDS a fresh one" do
     task = built_submitted_task
     Current.task_event_reviewers = REVIEWERS

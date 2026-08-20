@@ -16,6 +16,15 @@
     Rendering it twice across two pages is free — it self-guards on
     window.__releaseTicker. %>
 <%= render "release_ticker" %>
+<%# The elapsed-label formatter the CARD partial calls (components/_stage_agent_avatars
+    does x-text="window.elapsedLabel(now - start)"). /deployments mounts it in
+    _deploy_board; this board renders the SAME card partial and did not, so any card
+    showing a live agent avatar threw "window.elapsedLabel is not a function" here.
+    Surfaced by a Turbo-broadcast card arriving on /tasks (a block re-seats the card),
+    but the gap is the page's, not the broadcast's — a card rendered at page load hits
+    it just the same. Self-guards on window.elapsedLabel, so mounting it on both boards
+    is free. %>
+<%= render "components/elapsed_label_script" %>
 <% title        = local_assigns.fetch(:title, "Tasks") %>
 <% archived     = local_assigns.fetch(:archived, false) %>
 <% current_page = local_assigns.fetch(:current_page, "tasks") %>

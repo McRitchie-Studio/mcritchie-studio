@@ -396,6 +396,13 @@ class Task < ApplicationRecord
   # approval_status actually changes (a wholesale devops rewrite that echoes the
   # same value is not a change, so `bin/task update --checks` never spams the board).
   after_update_commit :broadcast_operator_approval_change, if: :saved_change_to_approval_status?
+  # A block/unblock changes no stage and records NO TaskEvent — Task#block! is a bare
+  # update! — so the live board never heard about it and a blocked card sat unchanged
+  # until something else forced a re-render. That is the one state an operator most
+  # needs to see arrive on its own. Keyed on blocked_at because it is the column that
+  # moves in BOTH directions (nil → time on block, time → nil on unblock), so one
+  # guard covers both without a second callback.
+  after_update_commit :broadcast_block_change, if: :saved_change_to_blocked_at?
   # A destroy fires no TaskEvent, so the live /deployments board never hears about
   # it — broadcast the card removal explicitly so every viewer's board drops it.
   after_destroy_commit :broadcast_removal_to_deployments_board
@@ -2397,6 +2404,10 @@ class Task < ApplicationRecord
 
   def broadcast_operator_approval_change
     DeploymentsBroadcaster.approval_change(self)
+  end
+
+  def broadcast_block_change
+    DeploymentsBroadcaster.block_change(self)
   end
 
   # devops.checks_run carries TWO namespaces. The AUTHOR owns the tier tags
