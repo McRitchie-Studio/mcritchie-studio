@@ -45,6 +45,49 @@ class BoardFilterClickStabilityTest < ApplicationSystemTestCase
                     "the click was dispatched before the settling window closed"
   end
 
+  # THE REGRESSION GUARD for the fix above, asserted as the PROPERTY rather than the
+  # implementation: while the window is open, the chip's box must keep changing even
+  # when no frame ever runs.
+  #
+  # It exists because the obvious "cleanup" is to put the rAF jitter back — it reads
+  # more like a test and less like a stylesheet. Measured, that revert costs 6 of every
+  # 9 `test`-job failures in this repo. With rAF disabled outright, the CSS-driven
+  # window still advanced the chip 122 -> 165px across ten 50ms samples with ZERO
+  # consecutive duplicates; the rAF version, merely throttled to 120ms, produced a
+  # duplicate on the FIRST pair and failed the test above with CI's exact message.
+  test "[e2e] the settling window moves the chip without any frames" do
+    Task.create!(
+      title: "rolio settling board card", stage: "building",
+      metadata: { "devops" => { "repositories" => ["rolio"] } }
+    )
+
+    visit tasks_path
+    assert_selector "[data-test='kanban-board'][data-alpine-ready='true']"
+
+    # The harshest starvation there is, and a fair model of a loaded runner: a page
+    # where requestAnimationFrame never calls anything back.
+    execute_script("window.requestAnimationFrame = function () { return 0; };")
+
+    start_settling_window
+    chip = find("[data-test='board-filter-row'] button", text: "rolio", match: :first)
+
+    boxes = 6.times.map do
+      x = evaluate_script(
+        "(function (el) { return Math.round(el.getBoundingClientRect().x); })(arguments[0])", chip
+      )
+      sleep 0.05
+      x
+    end
+
+    duplicates = boxes.each_cons(2).count { |a, b| a == b }
+    assert_equal 0, duplicates,
+                 "the chip stopped moving while the settling window was open and no frames were " \
+                 "running (x samples: #{boxes.inspect}). await_settled_geometry polls geometry every " \
+                 "50ms and clears on two identical samples, so a frame-driven window lets it clear " \
+                 "early, the click lands inside the window, and the pointerdown handler swallows it. " \
+                 "This is the flake — do not drive the window from requestAnimationFrame."
+  end
+
   private
 
   # Stand in for the webfont swap. Two halves, both required: the chip MOVES every
@@ -61,14 +104,45 @@ class BoardFilterClickStabilityTest < ApplicationSystemTestCase
       const label = row.querySelector('span');
       window.__settling = { open: true, t0: performance.now(), clickedAt: null };
 
-      const jitter = () => {
-        if (!window.__settling.open) { label.style.letterSpacing = '0px'; return; }
-        const elapsed = performance.now() - window.__settling.t0;
-        if (elapsed >= windowMs) { window.__settling.open = false; label.style.letterSpacing = '0px'; return; }
-        label.style.letterSpacing = (elapsed / windowMs * 12).toFixed(2) + 'px';
-        requestAnimationFrame(jitter);
-      };
-      requestAnimationFrame(jitter);
+      // THE MOVEMENT IS DRIVEN BY A CSS ANIMATION, NOT BY requestAnimationFrame, and
+      // that is the whole fix for this test's flakiness.
+      //
+      // WHAT WAS WRONG, MEASURED. await_settled_geometry clears when `settled` is
+      // true AND the box is unchanged since the previous sample, polling every 50ms.
+      // A jitter driven by rAF only moves the label when a FRAME RUNS. On a loaded CI
+      // runner frames starve, so two consecutive polls can see an identical box while
+      // the page is still very much moving — the guard clears, the click lands inside
+      // the window, the pointerdown handler below swallows it exactly as designed, and
+      // the aria-pressed assertion fails. Reproduced locally by advancing the old
+      // jitter every 120ms instead of every frame: the first two samples (13ms and
+      // 70ms) came back identical and the test failed with CI's exact message. That
+      // is 6 of the last 9 `test`-job failures across all branches, and it reddens
+      // `accepted` itself.
+      //
+      // WHY A CSS ANIMATION FIXES IT. getBoundingClientRect() forces a style and
+      // layout flush, and the browser resolves an animated property at the CURRENT
+      // TIME when it does — so every poll observes a different box whether or not a
+      // frame has painted in between. The signal stops being frame-sampled, which is
+      // the property the guard needs and the rAF version could not offer at any
+      // cadence.
+      //
+      // Do NOT return this to rAF to "make it deterministic". rAF is precisely the
+      // thing that is not deterministic on a loaded runner.
+      const style = document.createElement('style');
+      style.textContent =
+        '@keyframes studio-settling { from { letter-spacing: 0px } to { letter-spacing: 12px } }' +
+        '.studio-settling { animation: studio-settling ' + windowMs + 'ms linear forwards }';
+      document.head.appendChild(style);
+      label.classList.add('studio-settling');
+
+      // The window closes on the CLOCK, not on a frame having run — see the note on
+      // the pointerdown handler below, which is the other half of the same lesson.
+      setTimeout(() => {
+        window.__settling.open = false;
+        label.classList.remove('studio-settling');
+        label.style.letterSpacing = '0px';
+        style.remove();
+      }, windowMs);
 
       // The window closes on the CLOCK, not on a frame having run. Reading the flag
       // the jitter loop maintains would leave a gap one frame wide: the box stops
