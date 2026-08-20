@@ -99,7 +99,14 @@ module Ci
       nwo = Ci::ReviewGate.nwo_for(repo)
       return nil if nwo.empty?
 
-      rows = CiCheckJob.progress_rows(nwo, sha, GithubWorkflowRun.ci_workflow_for(repo))
+      # NO workflow filter. The badge beside this meter is Ci::BranchGate.verdict,
+      # which folds EVERY workflow check-run on the sha — so a repo with more than one
+      # lane (studio-engine runs Engine CI AND Consumer CI) had a meter that could not
+      # see the lane the badge was judging on. Measured 2026-08-20: accepted@135e4e6
+      # rendered a RED badge over a GREEN 3/3 meter, because Engine CI was all-success
+      # and Consumer CI was not. Reading the same checks is what keeps the two halves
+      # of a card from contradicting each other.
+      rows = CiCheckJob.progress_rows(nwo, sha)
       return nil if rows.blank?
 
       Ci::CheckProgress.from_check_runs(rows, sha: sha, run_started_at: verdict_at)

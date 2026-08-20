@@ -76,9 +76,10 @@ class AppLadderRowTest < ActionDispatch::IntegrationTest
     end
   end
 
-  # The reset the operator asked for: once work advances to main, the accepted rung
-  # stops reporting it. Derived from the stamp, so there is nothing to clear.
-  test "advancing a task to main drains the accepted rung" do
+  # THE CLEAN SLATE. Once work ships, the card goes quiet: the accepted rung drains
+  # and main never fills, because shipped work has ARRIVED rather than parked. All
+  # derived from the stamp, so there is nothing to clear by hand.
+  test "advancing a task to main empties the card" do
     task = make_task(slug: "advances-to-production", merged: Task::MERGED_ACCEPTED, repos: %w[turf-monster])
 
     get deployments_path
@@ -92,8 +93,10 @@ class AppLadderRowTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='app-ladder-card'][data-repo='turf-monster']" do
       assert_select "[data-test='app-ladder-parked'][data-branch='accepted']", 0,
                     "the accepted rung must drain when the stamp advances"
-      assert_select "[data-test='app-ladder-parked'][data-branch='main']", 1,
-                    "and the work must reappear on the rung it advanced to"
+      assert_select "[data-test='app-ladder-parked'][data-branch='main']", 0,
+                    "and shipped work must not re-park on main"
+      assert_select "[data-test='app-ladder-parked-row']", 0,
+                    "with nothing waiting anywhere, the card is quiet"
     end
   end
 

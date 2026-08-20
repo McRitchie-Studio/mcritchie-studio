@@ -96,12 +96,22 @@ class AppLadderCardTest < ActionView::TestCase
 
   test "parked work shows per rung and only where there is some" do
     render partial: "tasks/app_ladder_card",
-           locals: { card: card(%i[green green green], parked: [3, 0, 1]) }
+           locals: { card: card(%i[green green green], parked: [3, 1, 0]) }
 
     assert_select "[data-test='app-ladder-parked']", 2
     assert_select "[data-test='app-ladder-parked'][data-branch='accepted']", text: /3 on accepted/
-    assert_select "[data-test='app-ladder-parked'][data-branch='main']", text: /1 on main/
-    assert_select "[data-test='app-ladder-parked'][data-branch='release']", 0
+    assert_select "[data-test='app-ladder-parked'][data-branch='release']", text: /1 on release/
+  end
+
+  # THE CLEAN SLATE the operator asked for: once a deployment is done and nothing is
+  # waiting below main, the card says nothing at all rather than carrying a permanent
+  # "37 on main" that never drains.
+  test "a fully shipped repo renders a quiet card" do
+    render partial: "tasks/app_ladder_card",
+           locals: { card: card(%i[green green green], parked: [0, 0, 0]) }
+
+    assert_select "[data-test='app-ladder-parked-row']", 0
+    assert_select "[data-test='app-ladder-parked']", 0
   end
 
   test "a card with no parked work omits the row entirely" do

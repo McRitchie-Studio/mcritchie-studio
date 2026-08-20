@@ -84,6 +84,35 @@ module Ci
       assert_equal "green", rung(state: :green).label
     end
 
+
+    # --- the meter reads what the badge reads -------------------------------
+
+    # MEASURED 2026-08-20: studio-engine accepted@135e4e6 rendered a RED badge over a
+    # GREEN 3/3 meter. The badge folds every workflow check-run on the sha; the meter
+    # was filtered to the ONE declared suite workflow (Engine CI, 9 jobs all success)
+    # and so never saw Consumer CI. A card cannot be allowed to contradict itself.
+    test "progress counts checks from EVERY workflow on the sha, not just the declared one" do
+      CiCheckJob.delete_all
+      sha = "135e4e6aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      nwo = "McRitchie-Studio/studio-engine"
+
+      job = lambda do |name, workflow, conclusion, id|
+        CiCheckJob.create!(repo: nwo, head_sha: sha, head_branch: "accepted", job_id: id,
+                           name: name, workflow_name: workflow, status: "completed",
+                           conclusion: conclusion, started_at: 5.minutes.ago, completed_at: 1.minute.ago)
+      end
+      job.call("engine a", "Engine CI", "success", 9_000_001)
+      job.call("engine b", "Engine CI", "success", 9_000_002)
+      job.call("consumer", "Consumer CI", "failure", 9_000_003)
+
+      rung = Ci::LadderRung.new(repo: "studio-engine", branch: "accepted", state: :red, sha: sha)
+      progress = rung.progress
+
+      assert_equal 3, progress.total, "the consumer lane must be counted"
+      assert_equal 1, progress.failed, "the red the badge saw must reach the meter"
+      refute_equal :green, progress.state, "a green meter over a red badge is the defect"
+    end
+
     private
 
     def rung(state: :green, sha: "abc1234def", parked_count: 0)

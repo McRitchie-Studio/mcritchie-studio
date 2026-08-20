@@ -29,10 +29,19 @@ module Ci
     RUNGS = %w[accepted release main].freeze
 
     # Which `merged` stamp parks a task at which rung.
+    #
+    # `main` is deliberately ABSENT. Work stamped `merged: "main"` has ARRIVED — it
+    # shipped, nothing waits there, and the stamp is permanent until the task is
+    # archived. Counting it meant a card never went quiet: the hub sat at "37 on main"
+    # indefinitely, so the clock never reset even though the production ship is the
+    # reset point the operator chose. Parked means WAITING, and only the two rungs
+    # below main have anything waiting on them.
+    #
+    # A card showing "1 on accepted" moments after a ship is therefore correct and
+    # must keep showing: that is real work queued for the next sweep, not residue.
     PARKED_STAMP = {
       "accepted" => Task::MERGED_ACCEPTED,
-      "release" => Task::MERGED_RELEASE,
-      "main" => Task::MERGED_MAIN
+      "release" => Task::MERGED_RELEASE
     }.freeze
 
     Card = Struct.new(:repo, :rungs, keyword_init: true) do
