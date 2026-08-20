@@ -379,30 +379,6 @@ def app_for(name)
   config
 end
 
-# app_for, widened to the repos the SWEEP can see.
-#
-# app_for stays registry-only on purpose: it is what the allocating commands
-# (`new`, `up`, `plan`) resolve through, and those need a port range, a session
-# key and a stack — things a discovered repo has no answer for. Scoping a desk to
-# one of them there would half-build a worktree.
-#
-# The sweep asks a narrower question — "which desks do I inspect?" — and the whole
-# point of discovery is that the answer is not limited to registered apps. Without
-# this, `cleanup --reclaim studio-engine` aborted with "unknown app" even though the
-# unscoped sweep had just listed studio-engine desks as candidates: the headline
-# case the coverage work exists for, unusable in the form an operator reaches for.
-def sweep_app_for(name)
-  slug = ALIASES.fetch(name, name)
-  config = apps[slug] || discovered_worktree_configs.find { |c| c["slug"] == slug }
-  unless config
-    known = (apps.keys + discovered_worktree_configs.map { |c| c["slug"] }).sort
-    abort "unknown app: #{name}\nSweepable: #{known.join(", ")}"
-  end
-  abort "repo missing: #{config.fetch("repo")}" unless Dir.exist?(config.fetch("repo"))
-
-  config
-end
-
 def clean_slug(raw)
   slug = raw.to_s.downcase.gsub(/[^a-z0-9]+/, "-").gsub(/\A-|-+\z/, "")
   abort "invalid task slug: #{raw.inspect}" if slug.empty?
@@ -1750,9 +1726,7 @@ def database_exists?(db_name)
 end
 
 def stack_dirs(app)
-  # Discovered repos carry their resolved tree (the sibling-tree convention puts it
-  # beside the repo, not inside it); registered apps use the managed layout.
-  root = app["worktrees_dir"] || File.join(app.fetch("repo"), ".worktrees")
+  root = File.join(app.fetch("repo"), ".worktrees")
   Dir.glob(File.join(root, "*")).select { |dir| File.directory?(dir) }.sort
 end
 
@@ -1802,73 +1776,8 @@ def stack_record(app, dir)
   }
 end
 
-# Repos that carry worktrees but are NOT registered apps — discovered from disk.
-#
-# `apps` is built from config/satellites.yml, whose job is to register satellite
-# APPS: it drives the navbar, SSO roles and bin/ecosystem-build. A gem or library
-# repo (studio-engine, solana-studio, turf-vault) has no port and no stack, so it
-# has no business in that file — but it still collects desks, and before this the
-# sweep could not see them at all. `cleanup --reclaim studio-engine` answered
-# "unknown app" while 64 desks sat there unswept, more than any registered app had.
-#
-# So sweep COVERAGE is derived from the ground truth — what has worktrees on disk —
-# rather than from a hand-maintained list that exists for another purpose. A repo
-# cannot silently escape the sweep by not being a satellite, and adding one needs no
-# registry edit (which would be a product decision, not a cleanup).
-#
-# Two on-disk conventions, both real:
-#   <root>/<repo>/.worktrees/<slug>      the managed app layout
-#   <root>/<repo>.worktrees/<slug>       the sibling tree gem repos use
-STACKLESS_STACK = "none"
-
-def discovered_worktree_configs
-  registered = apps.values.map { |config| config.fetch("repo") }
-
-  roots = Dir.glob(File.join(PROJECTS_DIR, "*", ".worktrees")).map { |dir| [File.dirname(dir), dir] } +
-          Dir.glob(File.join(PROJECTS_DIR, "*.worktrees")).map { |dir| [dir.sub(/\.worktrees\z/, ""), dir] }
-
-  roots.filter_map do |repo, worktrees_dir|
-    next unless File.directory?(worktrees_dir)
-    next if registered.include?(repo)
-
-    # The sibling tree (<repo>.worktrees) and the managed one (<repo>/.worktrees)
-    # are two homes for the SAME repo, so basename alone gives both configs one
-    # slug. The dirs are distinct, so nothing is torn down twice — but every label
-    # built from the slug (worktree_label, the delete-later ledger row, the
-    # registry) then names two different desks identically, which is exactly the
-    # ambiguity an archive record must not have.
-    slug = File.basename(repo)
-    slug = "#{slug}(sibling)" if worktrees_dir == "#{repo}.worktrees"
-    # No port, no Redis DB, no server: these desks are a git worktree and nothing
-    # else, so the teardown must skip stack stop / DB drop / Redis flush rather
-    # than fail trying. `stack` is the field the rest of the file already keys on.
-    # Carry the SAME key set a registry config carries, even where the values are
-    # inert. Callers reach for these with app.fetch(...) — a deliberate "this must
-    # exist" — so a config that merely omits them turns every such caller into a
-    # KeyError at teardown time, i.e. mid-sweep, inside the lock. Matching the
-    # shape is what lets a discovered repo travel every code path a registered one
-    # does; `stack` is the field that then says "do nothing" where it matters.
-    {
-      "slug" => slug,
-      "display_name" => slug,
-      "repo" => repo,
-      "worktrees_dir" => worktrees_dir,
-      "stack" => STACKLESS_STACK,
-      "status" => "discovered",
-      "sidekiq" => false,
-      "ruby_path" => nil,
-      "primary_port" => nil,
-      "range_start" => nil,
-      "range_end" => nil,
-      "session_env" => "#{slug.tr("-", "_").upcase}_SESSION_KEY",
-      "session_key" => "_#{slug.tr("-", "_")}_session",
-      "reserved_ports" => []
-    }
-  end
-end
-
 def stack_records(app = nil)
-  selected = app ? [app] : apps.values + discovered_worktree_configs
+  selected = app ? [app] : apps.values
   selected.flat_map { |config| stack_dirs(config).map { |dir| stack_record(config, dir) } }
 end
 
@@ -2459,25 +2368,6 @@ def stop_pidfile(path, label)
 end
 
 def stop_stack_for_removal(app, dir, record)
-  # Skip only a desk that genuinely has nothing running: a discovered repo AND no
-  # stack env on this desk. Both halves are load-bearing.
-  #
-  # The repo half: a stackless repo (a gem — no server, no port, no Redis DB) has
-  # nothing to stop, and trying was not harmless. Every branch below reaches for a
-  # key with app.fetch, so the generic path raised KeyError on "sidekiq" and took
-  # the sweep down with it — inside with_worktree_lock, after earlier candidates
-  # were already destroyed, leaving a half-finished run and a stale registry. This
-  # is the branch that makes "stackless repos skip stack teardown" TRUE; before it,
-  # STACKLESS_STACK was set at its construction site and never read, so the claim
-  # lived only in a comment while the code did the opposite.
-  #
-  # The desk half: discovery is per-REPO but a stack is per-DESK. moms-app and
-  # acquisition-studio are discovered too, and they are ordinary Rails apps — a
-  # desk of theirs with a stack env has a real server to stop, and skipping it
-  # would orphan the process and its Redis DB. So the repo classification alone
-  # must never authorise a skip; the desk has to be quiet as well.
-  return if app["stack"].to_s == STACKLESS_STACK && !record[:env_exists]
-
   if record[:env_exists]
     values = local_email_values.merge(parse_env(record[:env_path]))
     if app.fetch("stack") == "tm"
@@ -2524,14 +2414,7 @@ end
 # worktrees or the primary checkout (cleanup_ready? + .worktrees-only source),
 # and re-verifies each candidate under the lock before removing it.
 def run_reclaim(app = nil, yes: false)
-  # Refresh the SAME set the sweep will judge, discovered repos included. Skipping
-  # them meant a discovered desk's git-eligibility was decided against whatever
-  # origin happened to be on disk: conservative (a stale origin makes a merged
-  # branch look unmerged, so a desk is withheld, not destroyed), but it made the
-  # coverage claim read stronger than it was — the repo was enumerated and then
-  # judged on stale evidence. A .git directory is required either way, which is
-  # also what keeps a bare directory out of the loop.
-  (app ? [app] : apps.values + discovered_worktree_configs).each do |config|
+  (app ? [app] : apps.values).each do |config|
     next unless Dir.exist?(File.join(config.fetch("repo"), ".git"))
     sh("git", "-C", config.fetch("repo"), "fetch", "origin", "--quiet", allow_fail: true)
   end
@@ -4081,9 +3964,7 @@ if $PROGRAM_NAME == __FILE__
     reclaim = ARGV.delete("--reclaim")
     yes = ARGV.delete("--yes")
     write = ARGV.delete("--write")
-    # sweep_app_for, not app_for: a discovered repo is sweepable even though it is
-    # not allocatable.
-    app = ARGV[0] ? sweep_app_for(ARGV[0]) : nil
+    app = ARGV[0] ? app_for(ARGV[0]) : nil
     if reclaim
       run_reclaim(app, yes: !!yes)
     else

@@ -1169,40 +1169,6 @@ class AgentWorktreeTest < Minitest::Test
                  "no test DB skips db:test:prepare ONLY — the bundled-asset build still runs"
   end
 
-  # --- sweep coverage: every worktree tree on disk, not just the registry ------
-  #
-  # The sweep enumerated desks from config/satellites.yml, which registers satellite
-  # APPS (navbar, SSO role, ecosystem-build). Repos that carry worktrees but are not
-  # satellites — the gem/library repos above all — were therefore invisible to it, and
-  # `cleanup --reclaim studio-engine` answered "unknown app". Not a slow sweep: NO
-  # sweep, silently. studio-engine had accumulated 64 unswept desks, more than any
-  # registered app, while the registered ones looked tidy.
-  #
-  # The fix is NOT to add those slugs to satellites.yml — that file drives the navbar,
-  # SSO roles and ecosystem-build, so registering a repo there is a product decision.
-  # Coverage is derived from what has .worktrees/ ON DISK.
-  def test_stack_records_covers_a_worktree_tree_missing_from_the_registry
-    Dir.mktmpdir do |root|
-      # studio-engine is deliberately NOT a satellite: it is a gem, with no port and
-      # no stack. It still collects desks.
-      FileUtils.mkdir_p(File.join(root, "studio-engine", ".worktrees", "some-desk"))
-      FileUtils.mkdir_p(File.join(root, "mcritchie-studio", ".worktrees", "hub-desk"))
-
-      out = run_in_script(<<~RUBY, env: { "PROJECTS_DIR" => root })
-        # Only the enumeration is under test; stack_record reads .env files we have
-        # not written, so collapse it to the one field the assertion needs.
-        def stack_record(_app, dir); { dir: dir }; end
-        print stack_records(nil).map { |r| r[:dir] }.sort.inspect
-      RUBY
-
-      assert_includes out, "studio-engine/.worktrees/some-desk",
-                      "a repo with desks on disk must be swept even when it is not a registered app — " \
-                      "this is the gap that let 64 studio-engine desks accumulate unswept"
-      assert_includes out, "mcritchie-studio/.worktrees/hub-desk",
-                      "control: the registered app is still enumerated"
-    end
-  end
-
   # --- sweep scale: board reads must not scale with desk count ----------------
   #
   # reclaim_evidence resolves the build claim per desk, and task_record_for_pr spawns
@@ -1318,56 +1284,4 @@ class AgentWorktreeTest < Minitest::Test
                  "what makes the batch self-activating once the board serves full=1"
   end
 
-  # --- stackless teardown is a BRANCH, not a comment ---------------------------
-  #
-  # discovered_worktree_configs used to omit the keys teardown fetches, and
-  # STACKLESS_STACK was set at its construction site and never read. So the generic
-  # Rails teardown ran against a gem repo and died on `app.fetch("sidekiq")` —
-  # inside with_worktree_lock, after earlier candidates were already destroyed,
-  # leaving a half-finished sweep and a stale registry.
-  # Builds the tree it inspects. An earlier cut read discovered_worktree_configs.first
-  # from the real projects root — which passed on a laptop with desks on disk and
-  # returned nil in a fresh CI checkout, so the check was green exactly where it was
-  # not needed and NoMethodError where it was. A test for discovery must own the
-  # thing being discovered.
-  def test_a_discovered_config_carries_every_key_teardown_fetches
-    Dir.mktmpdir do |root|
-      FileUtils.mkdir_p(File.join(root, "studio-engine", ".worktrees", "a-desk"))
-
-      out = run_in_script(<<~RUBY, env: { "PROJECTS_DIR" => root })
-        config = discovered_worktree_configs.first
-        keys = %w[sidekiq stack ruby_path session_env session_key reserved_ports]
-        print config.nil? ? "NO CONFIG DISCOVERED" : keys.reject { |k| config.key?(k) }.inspect
-      RUBY
-
-      assert_equal "[]", out,
-                   "teardown reaches for these with fetch — a config that omits one raises KeyError " \
-                   "mid-sweep, inside the lock, after earlier desks are already gone"
-    end
-  end
-
-  # The skip needs BOTH halves. Discovery is per-repo but a stack is per-desk, and
-  # moms-app / acquisition-studio are discovered too — they are ordinary Rails apps
-  # whose desks DO have servers to stop. Classifying the repo stackless must never
-  # be enough on its own to skip a live stack.
-  def test_stackless_skip_requires_a_quiet_desk_not_just_a_stackless_repo
-    out = run_in_script(<<~RUBY)
-      STOPPED = []
-      def stop_generic_rails(dir, _port = nil); STOPPED << dir; end
-      def stop_pidfile(*_a); end
-      def local_email_values; {}; end
-      def parse_env(_p); { "APP_PORT" => "3999" }; end
-
-      app = { "stack" => STACKLESS_STACK, "sidekiq" => false }
-      # A gem desk: stackless repo, no stack env -> nothing to stop.
-      stop_stack_for_removal(app, "/tmp/gem-desk", { env_exists: false, port: nil })
-      # A discovered RAILS desk: stackless classification, but a live stack env.
-      stop_stack_for_removal(app, "/tmp/rails-desk", { env_exists: true, env_path: "/tmp/x", port: "3999" })
-      print STOPPED.inspect
-    RUBY
-
-    assert_equal '["/tmp/rails-desk"]', out,
-                 "the gem desk is skipped and the Rails desk is still stopped — skipping the latter " \
-                 "would orphan its server and its Redis DB"
-  end
 end
