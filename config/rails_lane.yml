@@ -33,19 +33,31 @@
 # The shard matrix in .github/workflows/ci.yml. `strategy.job-total` supplies the
 # denominator there, so this is the ONE place the number lives.
 #
-# WHY FOUR. Measured 2026-08-20 on run 32329490149: `bin/rails test` took 411s at 4
-# workers, and job setup is ~55s. Four shards put ~103s of tests behind that setup, so
-# the job lands near 166s — just under the `playwright` lane it runs beside, which is
-# where sharding stops buying wall-clock. Six shards would reach ~2.2min but push the
-# workflow to 15 concurrent jobs against a 20-job account ceiling, where a second PR in
-# flight starts queueing and the gain evaporates. Raise this only together with the
-# concurrency headroom to spend it.
+# WHY FOUR, AND WHY SIX WAS TRIED AND MEASURED AND UNDONE. This number was raised to 6
+# in this very task and put back, and the reason is worth more than the number.
 #
-# DECIDED 2026-08-20, and recorded here so the next person does not re-derive it: FOUR, and
-# raising it is gated on concurrency, not on appetite. Six shards would reach ~2.2min and
-# take this workflow to 15 concurrent jobs against the account's ~20 cap — at which point a
-# second PR in flight starts QUEUEING and the extra shards buy nothing at all. A shard that
-# waits for a runner is slower than no shard. Get the headroom first, then raise this.
+# The reasoning for raising it was sound on paper: sharding took the lane to 3.5min
+# (run 32338350375: 150s of work behind 56s of setup), the remaining lever looked like
+# more shards, and merging `scan_ruby`/`scan_js`/`lint` into `static` freed exactly the
+# two concurrency slots that shards 5 and 6 would cost. Job count unchanged, projected
+# ~2.7min. The bin-packer agreed: 473 files, 253.6s per bucket, 0.0s spread.
+#
+# MEASURED AT SIX (run 32340039307): 3.6min. Against 3.7min at four. Nothing.
+#
+# WHY, and this is the part that generalises: the shard wall-times were 145s, 162s, 163s,
+# 166s, 189s and 200s — a 55s spread the packer had predicted as ZERO. Look at what LPT
+# does with a suite this skewed and it is obvious in hindsight. It puts each of the six
+# heaviest files in its own bucket, so each shard's floor becomes ITS HEAVIEST FILE.
+# Shard 1 owns test/lib/release_cli_test.rb (204s local, the heaviest in the repo) and
+# came last at 200s. YOU CANNOT SHARD BELOW YOUR HEAVIEST FILE, and past the point where
+# the biggest file sets the floor, another shard buys nothing while costing a slot.
+#
+# So four it is, and the next lever is NOT more matrix entries. It is either the 56s of
+# setup that does not shard (container init 20s, apt 11s, gem propagation 11s, ruby 7s),
+# or the handful of end-to-end CLI files that set the floor — and /tasks/groom-slowest-
+# test-files carries the measurement showing their cost IS the end-to-end round-trips,
+# which is what makes them worth having. Raise this again only with a measurement that
+# the heaviest FILE no longer sets the floor.
 shards: 4
 
 # Every test file this lane owns.

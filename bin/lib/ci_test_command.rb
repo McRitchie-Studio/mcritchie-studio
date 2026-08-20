@@ -99,10 +99,11 @@ require "yaml"
 # OVERCLAIMS is the same bug one level up, and the docs must match this list exactly
 # (docs/topics/testing.md, docs/agents/modules/gates/g1-cert.md).
 #
-#   * It stands in for CI's RUBY suite, not CI's every job. `scan_ruby` (brakeman),
-#     `scan_js` (importmap audit) and turf-monster's `playwright` job are tiers CI
+#   * It stands in for CI's RUBY suite, not CI's every job. Brakeman and the importmap
+#     audit (the hub's `static` job since 2026-08-20; `scan_ruby`/`scan_js`/`lint` before
+#     that) and the `playwright` jobs are tiers CI
 #     owns and this lane has never run; the cert pairs its command with a full
-#     `bin/rubocop` (CI's `lint` job) and says so. That scope is ALSO what keeps a
+#     `bin/rubocop` (the rubocop check in CI's `static` job) and says so. That scope is ALSO what keeps a
 #     foreign runner in ANOTHER job (turf's playwright, TODAY) from refusing a cert
 #     lane that works.
 #   * It reads the repo's PR-GATING workflows (`on: pull_request`). A workflow that

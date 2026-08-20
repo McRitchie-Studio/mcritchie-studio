@@ -326,22 +326,34 @@ ci_scopes:
     host: ci
     blocks: blocking
     mutates: false
+  ci_static:
+    description: ci.yml `static` job — brakeman + importmap audit + rubocop in one lane (merged from scan_ruby/scan_js/lint 2026-08-20 to free concurrency for shards 5 and 6)
+    phase: ci
+    tier: build
+    host: ci
+    blocks: blocking
+    mutates: false
+  # RETIRED SLUGS, KEPT ON PURPOSE. ci_lint/ci_scan_ruby/ci_scan_js name jobs that no
+  # longer exist — they merged into `static` above. They stay because this registry is
+  # read to describe AgentAction rows that were WRITTEN AT THE TIME, and every task on the
+  # board from before 2026-08-20 carries them. Deleting an entry does not tidy the
+  # registry; it blanks the heartbeat chips for the whole history that used it.
   ci_lint:
-    description: ci.yml `lint` job — bin/rubocop -f github on a GitHub runner
+    description: "RETIRED 2026-08-20 (merged into `static`) — ci.yml `lint` job, bin/rubocop -f github"
     phase: ci
     tier: build
     host: ci
     blocks: blocking
     mutates: false
   ci_scan_ruby:
-    description: ci.yml `scan_ruby` job — bin/brakeman static analysis on a GitHub runner
+    description: "RETIRED 2026-08-20 (merged into `static`) — ci.yml `scan_ruby` job, bin/brakeman"
     phase: ci
     tier: build
     host: ci
     blocks: blocking
     mutates: false
   ci_scan_js:
-    description: ci.yml `scan_js` job — bin/importmap audit on a GitHub runner
+    description: "RETIRED 2026-08-20 (merged into `static`) — ci.yml `scan_js` job, bin/importmap audit"
     phase: ci
     tier: build
     host: ci

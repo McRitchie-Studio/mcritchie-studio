@@ -36,6 +36,26 @@
 # workers contend for the same CPU — and this repo runs single-process locally anyway
 # (test/test_helper.rb's TestParallelism, which segfaults in pg when forced to fork the
 # full suite on macOS). Roughly 25 minutes on a quiet machine.
+#
+# ⚠️ PREFER THE CI RECEIPTS OVER A LOCAL RUN. An earlier version of this header claimed
+# "only the RATIOS matter to the packer, so the numbers transfer to a CI runner of a
+# different speed without re-measurement." THAT IS FALSE, and it was measured false:
+#
+#   local  CI    file
+#   101s   193s  test/lib/dor_check_test.rb        (+92s)
+#   204s   285s  test/lib/release_cli_test.rb      (+81s)
+#   114s   173s  test/commands/pr_review_command_test.rb (+59s)
+#    30s    88s  test/lib/reviewer_select_test.rb  (+58s)
+#
+# The gap is not a uniform scale factor — it lands almost entirely on the SUBPROCESS-HEAVY
+# CLI suites, because a CI runner's process spawning and disk I/O are far slower relative
+# to its CPU than a developer Mac's. Weighted on local numbers the packer predicted a 0.0s
+# spread and CI delivered 610s / 441s across four shards, a 39% imbalance, on run
+# 32340362664. Re-weighted from that run's own receipts the prediction is 516s per shard.
+#
+# So the directory form below is the PREFERRED source, not a convenience: it measures the
+# hardware the lane actually runs on. Use the local run only when no green sharded CI run
+# exists to download.
 
 require "json"
 require "yaml"
