@@ -145,10 +145,10 @@ class FullSuiteCheckTest < Minitest::Test
     with_repo do |dir|
       out, code = run_check(dir, test_cmd: "true", rubocop_cmd: "true")
       assert_equal 0, code, out
-      assert_match(/\[full-suite@[0-9a-f]{7,64}\]/, out)
-      assert_match(/\[rubocop@[0-9a-f]{7,64}\]/, out)
+      assert_match(/\[full-suite@[0-9a-f]{7,64}(?::[^\]\s]+)?\]/, out)
+      assert_match(/\[rubocop@[0-9a-f]{7,64}(?::[^\]\s]+)?\]/, out)
       # Both lanes stamp the SAME fingerprint (the current code state).
-      fps = out.scan(/@([0-9a-f]{7,64})\]/).flatten.uniq
+      fps = out.scan(/@([0-9a-f]{7,64})[:\]]/).flatten.uniq
       assert_equal 1, fps.size, "both lanes should share one fingerprint: #{out}"
     end
   end
@@ -176,7 +176,7 @@ class FullSuiteCheckTest < Minitest::Test
     # The two halves must agree on the fingerprint, or evidence would never validate.
     with_repo do |dir|
       out, = run_check(dir, test_cmd: "true", rubocop_cmd: "true")
-      runner_fp = out[/@([0-9a-f]{7,64})\]/, 1]
+      runner_fp = out[/@([0-9a-f]{7,64})[:\]]/, 1]
       dor_fp = IO.popen(child_env("DOR_CHECK_DIFF_ROOT" => dir), "#{DOR} --suite-fingerprint 2>/dev/null", &:read).strip
       assert_equal dor_fp, runner_fp
     end
@@ -188,11 +188,11 @@ class FullSuiteCheckTest < Minitest::Test
     with_repo do |dir|
       File.write(File.join(dir, "app.rb"), "base\nchange\n")
       dirty, = run_check(dir, test_cmd: "true", rubocop_cmd: "true")
-      dirty_fp = dirty[/@([0-9a-f]{7,64})\]/, 1]
+      dirty_fp = dirty[/@([0-9a-f]{7,64})[:\]]/, 1]
       assert system("git -C #{dir} add -A >/dev/null 2>&1")
       assert system("git -C #{dir} commit -q -m change >/dev/null 2>&1")
       committed, = run_check(dir, test_cmd: "true", rubocop_cmd: "true")
-      committed_fp = committed[/@([0-9a-f]{7,64})\]/, 1]
+      committed_fp = committed[/@([0-9a-f]{7,64})[:\]]/, 1]
       assert_equal dirty_fp, committed_fp
     end
   end
@@ -206,11 +206,11 @@ class FullSuiteCheckTest < Minitest::Test
     with_repo do |dir|
       File.write(File.join(dir, "added.rb"), "brand new\n") # untracked, never add'd
       dirty, = run_check(dir, test_cmd: "true", rubocop_cmd: "true")
-      dirty_fp = dirty[/@([0-9a-f]{7,64})\]/, 1]
+      dirty_fp = dirty[/@([0-9a-f]{7,64})[:\]]/, 1]
       assert system("git -C #{dir} add -A >/dev/null 2>&1")
       assert system("git -C #{dir} commit -q -m add-file >/dev/null 2>&1")
       committed, = run_check(dir, test_cmd: "true", rubocop_cmd: "true")
-      committed_fp = committed[/@([0-9a-f]{7,64})\]/, 1]
+      committed_fp = committed[/@([0-9a-f]{7,64})[:\]]/, 1]
       assert_equal dirty_fp, committed_fp,
                    "adding a file must not change the fingerprint across the commit boundary"
     end
@@ -224,10 +224,10 @@ class FullSuiteCheckTest < Minitest::Test
     with_repo do |dir|
       File.write(File.join(dir, "scratch.rb"), "one\n") # untracked
       first, = run_check(dir, test_cmd: "true", rubocop_cmd: "true")
-      first_fp = first[/@([0-9a-f]{7,64})\]/, 1]
+      first_fp = first[/@([0-9a-f]{7,64})[:\]]/, 1]
       File.write(File.join(dir, "scratch.rb"), "two\n") # edit, still untracked
       second, = run_check(dir, test_cmd: "true", rubocop_cmd: "true")
-      second_fp = second[/@([0-9a-f]{7,64})\]/, 1]
+      second_fp = second[/@([0-9a-f]{7,64})[:\]]/, 1]
       refute_equal first_fp, second_fp,
                    "editing an untracked file must change the fingerprint (staleness fires)"
     end

@@ -267,6 +267,21 @@ module CertRootGuard
     File.basename(dir)
   end
 
+  # The repo a checkout ANSWERS TO, as a bare slug — `origin`'s repo name when there
+  # is a remote (it IS the GitHub repo this tree pushes to, so it survives a clone
+  # sitting in a differently-named folder), else the app directory name. Same
+  # precedence #repo_mismatch uses, minus the owner: this is an IDENTITY, not a
+  # contradiction check.
+  #
+  # ONE definition on purpose. It is what the cert WRITERS stamp their evidence with
+  # (`[lane@<fp>:<repo>]`) and what bin/dor-check filters that evidence BY, so writer
+  # and reader cannot drift into disagreeing about which repo a tree is — a drift
+  # whose only symptom would be a cert reading MISSING for code that was certified.
+  def repo_of_checkout(path)
+    bare = remote_slug(path).to_s.split("/").last.to_s.strip
+    bare.empty? ? app_of(path) : bare
+  end
+
   # WHY `path` is not the task's tree — or nil when it IS. The DESTINATION check,
   # and the reason it exists: #assess interrogates the root you are STANDING in on
   # two axes, and the first cut of the re-root asked the root it JUMPED TO nothing

@@ -366,7 +366,8 @@ mapped_detail =
 
 detail = "fast cert green: #{mapped_detail} + #{spine.size} spine test path(s), " \
          "rubocop on #{lintable.size} changed file(s) (#{format('%.1fs', total)}; full suite runs on CI)"
-line = FullSuiteGate.evidence_line(FullSuiteGate::FAST_LANE, fingerprint, detail)
+line = FullSuiteGate.evidence_line(FullSuiteGate::FAST_LANE, fingerprint, detail,
+                                   repo: CertRootGuard.repo_of_checkout(root))
 
 # Print the evidence line on stdout (parseable; the narration is on stderr).
 puts line
