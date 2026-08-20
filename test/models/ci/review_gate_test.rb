@@ -125,21 +125,26 @@ module Ci
 
     # ── Fail closed when the workflow cannot be resolved ──────────────────────
     #
-    # solana-studio is a REGISTERED gem that ships no suite workflow, so
-    # ci_workflow_for returns nil. An earlier version dropped the workflow filter in
-    # that case, which meant "any run on the branch greens this PR". Two ways that
-    # authorised a merge it should not have — both are now :none.
+    # When ci_workflow_for returns nil the workflow cannot be resolved. An earlier
+    # version dropped the workflow FILTER in that case, which meant "any run on
+    # the branch greens this PR". Two ways that authorised a merge it should not
+    # have — both are now :none.
+    #
+    # STUBBED to nil rather than leaning on a real repo. solana-studio was the
+    # standing CI-less fixture until it declared "Gem CI" (2026-08-20); the
+    # fail-closed branch it exercised still has to work, so the test now creates
+    # the condition instead of borrowing it from live config.
 
     test "[unit] an unresolved workflow reads :none, never green off an unrelated run" do
       task = submitted(branch: "feat/no-suite", pr: 12, repo: "solana-studio")
       seed_run(branch: "feat/no-suite", sha: "sha-unrelated", status: "completed", conclusion: "success",
                repo: "McRitchie-Studio/solana-studio", workflow: "Publish Gem")
 
-      assert_nil GithubWorkflowRun.ci_workflow_for("solana-studio"),
-                 "precondition: solana-studio declares no suite workflow"
-      refute Ci::ReviewGate.green?(task),
-             "a repo with no declared suite must never green off an unrelated workflow"
-      assert_equal :none, Ci::ReviewGate.verdict(task)[:state]
+      GithubWorkflowRun.stub(:ci_workflow_for, ->(_repo) { nil }) do
+        refute Ci::ReviewGate.green?(task),
+               "a repo with no declared suite must never green off an unrelated workflow"
+        assert_equal :none, Ci::ReviewGate.verdict(task)[:state]
+      end
     end
 
     test "[unit] a later unrelated PASS cannot mask an earlier real FAILURE" do
