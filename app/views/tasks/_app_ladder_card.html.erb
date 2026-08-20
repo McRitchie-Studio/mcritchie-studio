@@ -1,51 +1,82 @@
-<%# One application's TEST SUITE across the branch ladder, drawn as a single
-    horizontal strip: accepted → release → main, left to right.
+<%# One application's CI, drawn as a testing card: the check meter on top, then the
+    branch ladder as badges beneath it.
 
-    WHAT THE STRIP SAYS. Each badge is one rung's CI verdict, and the three read as a
-    progression — the eye follows a suite up the ladder as it is verified at each rung.
-    The vocabulary is deliberately the same one tasks/_release_phase_meter and
-    components/_ci_progress_meter already teach on this page, so the operator learns it
-    once: a TINT fill (15% light / 30% dark) rather than a block of colour, amber while
-    work is in flight, emerald when it settles green, rose when it settles bad.
+    THE METER is components/_ci_progress_meter, the same one the board card and the
+    Next Release card already use — one mark per check inside a rail (✓ passed,
+    ✗ failed, a spinner while running) with a clock that ticks live and freezes to the
+    run's duration when it settles. Reusing it rather than drawing a second kind of
+    meter is the point: the operator learns this vocabulary once, and a check here
+    means what a check means everywhere else on the page.
 
-      faded   — NOT VERIFIED. Either nothing was ever built for this rung, or the only
-                verdict we hold predates the work now sitting on it. Both mean the same
-                thing to an operator deciding whether to trust the rung, so they share
-                the faded treatment and differ in their title text.
-      amber   — running. CI is processing this rung right now.
-      emerald — verified. The suite settled green on what is actually there.
-      rose    — failed (or conflicted).
+    IT REPORTS ON ONE RUNG — Card#active_rung: a running suite if there is one, else
+    the newest verdict. Three check-lists on one card is the two-rows-saying-the-same-
+    thing shape the CI meter already collapsed once.
 
-    WHY STALE IS FADED RATHER THAN GREEN. Ci::LadderRung proves staleness from board
-    timestamps: a rung is stale when work is parked on it whose merge landed AFTER the
-    verdict's run started. A stale green describes a tree that is no longer the tree, so
-    painting it green would assert a verification nobody performed. Faded is the honest
-    rendering — and it is the same thing the operator needs to know as "never built":
-    this rung is not currently verified. Measured 2026-08-19: turf-monster `accepted`
-    read green@abe8c51 while its tip was c1959ef, three merges later.
+    THE BADGES say where each rung stands, and read left to right as the ladder:
+      faded   — NOT VERIFIED. Nothing built for this rung, or the only verdict we hold
+                predates the work now sitting on it. Both mean the same to an operator
+                deciding whether to trust the rung; they differ in their title text.
+      amber   — running.
+      emerald — verified green on what is actually there.
+      rose    — failed or conflicted.
+
+    THE WHOLE CARD IS A LINK to the Actions run behind the active rung, so a click
+    lands on the run in progress. When there is no run to open it degrades to a plain
+    <div> — never a dead link, the same rule tasks/_release_phase_meter follows.
 
     Locals:
       card       - Ci::AppLadder::Card
       card_class - extra classes for the grid cell %>
 <% card = local_assigns.fetch(:card) %>
-<% base_card_class = ["rounded-xl border border-subtle bg-surface p-4", local_assigns[:card_class]].compact.join(" ") %>
 <% attention = card.needs_attention? %>
+<% progress = card.progress %>
+<% run_url = card.run_url %>
+<% linked = run_url.present? %>
 
-<div class="<%= [base_card_class, ("border-amber-500/40" if attention)].compact.join(" ") %>"
-     data-test="app-ladder-card"
-     data-repo="<%= card.repo %>"
-     data-attention="<%= attention %>">
-  <div class="flex items-baseline justify-between gap-2 mb-2.5 min-w-0">
-    <h3 class="text-sm font-semibold truncate" title="<%= card.repo %>"><%= card.repo %></h3>
-    <span class="text-[10px] uppercase tracking-wider text-muted shrink-0">
+<% card_classes = ["rounded-xl border bg-surface p-4 block min-w-0 transition-colors",
+                   attention ? "border-amber-500/40" : "border-subtle",
+                   local_assigns[:card_class]].compact.join(" ") %>
+<% card_classes += " group hover:border-primary/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" if linked %>
+<% card_options = {
+     class: card_classes,
+     data: { test: "app-ladder-card", repo: card.repo, attention: attention, linked: linked },
+     title: linked ? "#{card.repo} — open the GitHub Actions run for #{card.active_rung&.branch}" : card.repo
+   } %>
+<% if linked %>
+  <% card_options.merge!(href: run_url, target: "_blank", rel: "noopener") %>
+<% end %>
+
+<%= content_tag(linked ? :a : :div, **card_options) do %>
+  <div class="flex items-baseline justify-between gap-2 mb-2 min-w-0">
+    <h3 class="text-sm font-semibold truncate"><%= card.repo %></h3>
+    <span class="flex items-center gap-1 shrink-0 text-[10px] uppercase tracking-wider text-muted">
       <%= card.gem? ? "gem" : "app" %>
+      <%# The affordance: an arrow that surfaces on hover, so the card reads as
+          clickable without a permanent chrome element competing with the meter. %>
+      <% if linked %>
+        <span class="opacity-0 transition-opacity group-hover:opacity-100" aria-hidden="true">↗</span>
+      <% end %>
     </span>
   </div>
 
-  <%# The suite strip. role=group with one spelled-out summary carries the whole thing
-      to assistive tech; the badges themselves are decorative to it, because reading
-      three branch names and three state words in sequence is noise once the summary
-      has said it. %>
+  <%# The CI meter. Rendered only when checks were actually ingested — an absent
+      suite must not draw an empty rail that reads as "0 of 0 passed". %>
+  <% if progress.present? %>
+    <div class="mb-2.5" data-test="app-ladder-ci">
+      <%= render "components/ci_progress_meter",
+            progress: progress,
+            label: "#{card.active_rung&.branch} CI",
+            test_id: "app-ladder-ci-bar",
+            clock: true %>
+    </div>
+  <% else %>
+    <div class="mb-2.5 rounded border border-dashed border-subtle px-2 py-2 text-[10px] text-muted"
+         data-test="app-ladder-ci-empty">
+      no CI checks ingested for this app yet
+    </div>
+  <% end %>
+
+  <%# The ladder badges, under the meter. %>
   <div class="flex items-stretch gap-1"
        data-test="app-ladder-suite"
        role="group"
@@ -59,15 +90,12 @@
            data-branch="<%= branch %>"
            data-state="<%= rung.state %>"
            title="<%= app_ladder_rung_title(rung) %>">
-        <%# The TINT, never a solid block — the label rides on top of it. Same 15/30
+        <%# A TINT, never a solid block — the label rides on top of it. Same 15/30
             split the release meter measured at 5.3:1 or better in both themes. %>
         <div class="absolute inset-0 <%= tone[:fill] %> opacity-15 dark:opacity-30"
              data-test="app-ladder-rung-fill"></div>
         <div class="relative flex items-center justify-center gap-1 px-1.5 py-1 <%= tone[:text] %>">
           <% if rung.state == :pending %>
-            <%# The one moving part: a spinner while the rung is being verified, matching
-                the CI meter's running mark. motion-reduce keeps it still for anyone who
-                asked for that. %>
             <svg class="h-2 w-2 shrink-0 animate-spin motion-reduce:animate-none" fill="none" viewBox="0 0 24 24" aria-hidden="true">
               <circle class="opacity-25" cx="12" cy="12" r="9" stroke="currentColor" stroke-width="3"/>
               <path class="opacity-90" d="M12 3a9 9 0 0 1 9 9" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
@@ -87,9 +115,9 @@
     <% end %>
   </div>
 
-  <%# Parked work, one quiet line under the strip — how many tasks sit at each rung
-      right now. Derived from the board's `merged` column, so it drains on its own as
-      a sweep and then a ship advance the stamps. %>
+  <%# Parked work — how many tasks sit at each rung right now. Derived from the
+      board's `merged` column, so it drains on its own as a sweep and then a ship
+      advance the stamps. %>
   <% parked = Ci::AppLadder::RUNGS.filter_map { |b| [b, card.rung(b)&.parked_count.to_i] if card.rung(b)&.parked_count.to_i&.positive? } %>
   <% if parked.any? %>
     <div class="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-muted" data-test="app-ladder-parked-row">
@@ -100,4 +128,4 @@
       <% end %>
     </div>
   <% end %>
-</div>
+<% end %>

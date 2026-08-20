@@ -121,12 +121,44 @@ class AppLadderCardTest < ActionView::TestCase
     assert_select "[data-test='app-ladder-card']", text: /app/
   end
 
+
+  # --- the card as a link to the Actions run -------------------------------
+
+  # The operator asked to click a card and land on the run. A card with a run renders
+  # as an <a>; one without degrades to a <div> rather than a dead link — the same rule
+  # tasks/_release_phase_meter follows.
+  test "a card with a run is a link to it and opens in a new tab" do
+    render partial: "tasks/app_ladder_card",
+           locals: { card: card(%i[pending green green], run_url: "https://github.com/o/r/actions/runs/42") }
+
+    assert_select "a[data-test='app-ladder-card'][data-linked='true']", 1
+    assert_select "a[href='https://github.com/o/r/actions/runs/42'][target='_blank'][rel='noopener']", 1
+  end
+
+  test "a card with no run is a plain div rather than a dead link" do
+    render partial: "tasks/app_ladder_card", locals: { card: card(%i[not_built not_built not_built]) }
+
+    assert_select "a[data-test='app-ladder-card']", 0
+    assert_select "div[data-test='app-ladder-card'][data-linked='false']", 1
+  end
+
+  # --- the CI meter ---------------------------------------------------------
+
+  # An app with nothing ingested must not draw an empty rail that reads as
+  # "0 of 0 passed" — absence gets said in words instead.
+  test "a card with no ingested checks says so instead of drawing an empty meter" do
+    render partial: "tasks/app_ladder_card", locals: { card: card(%i[not_built not_built not_built]) }
+
+    assert_select "[data-test='app-ladder-ci-empty']", 1
+    assert_select "[data-test='app-ladder-ci']", 0
+  end
+
   private
 
-  def card(states, repo: "turf-monster", parked: [0, 0, 0], sha: "abc1234def")
+  def card(states, repo: "turf-monster", parked: [0, 0, 0], sha: "abc1234def", run_url: nil)
     rungs = Ci::AppLadder::RUNGS.each_with_index.map do |branch, i|
       Ci::LadderRung.new(repo: repo, branch: branch, state: states[i],
-                         sha: sha, parked_count: parked[i])
+                         sha: sha, parked_count: parked[i], run_url: run_url)
     end
     Ci::AppLadder::Card.new(repo: repo, rungs: rungs)
   end

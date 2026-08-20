@@ -42,6 +42,41 @@ module Ci
 
       def parked_total = rungs.sum(&:parked_count)
 
+      # THE RUNG THE METER REPORTS ON — "what is this app's suite doing right now".
+      #
+      # A running rung always wins: a suite in flight is the live news, and it is the
+      # only state the operator can act on while it is happening. Failing that, the
+      # rung with the NEWEST verdict, because that is the most recent thing CI
+      # actually said about this app. `accepted` is the last resort so a card with no
+      # verdicts anywhere still names the rung its work would reach first.
+      #
+      # Deliberately ONE rung, not a meter per rung: three check-lists on one card is
+      # the two-rows-saying-the-same-thing shape the CI meter already learned to
+      # collapse, and the badges below carry the per-rung verdict anyway.
+      def active_rung
+        rungs.find { |r| r.state == :pending } ||
+          rungs.select(&:verdict_at).max_by(&:verdict_at) ||
+          rung("accepted")
+      end
+
+      # The checks the meter draws, or nil when this app has nothing ingested — a
+      # meter must not render a hopeful zero out of an absence.
+      #
+      # The cache lives HERE rather than on the rung: a rung is a frozen value object,
+      # so it cannot hold one, and this read costs a query. `defined?` rather than
+      # `||=` so a genuine nil is cached too — an app with no ingested checks is the
+      # common case on a quiet board, and re-querying it per call is the N+1 this
+      # memo exists to prevent.
+      def progress
+        return @progress if defined?(@progress)
+
+        @progress = active_rung&.progress
+      end
+
+      # Where the card points. The Actions run behind the active rung, so clicking the
+      # card lands on the run in progress rather than a repo home page.
+      def run_url = active_rung&.run_url
+
       # Worst rung first, then "has work waiting" ahead of idle. Mirrors the board's
       # own instinct of floating what needs a human to the top.
       def sort_key = rungs.map(&:sort_key).min || [Ci::LadderRung::STATE_RANK[:green], 1]

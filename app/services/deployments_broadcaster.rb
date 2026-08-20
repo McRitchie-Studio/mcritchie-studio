@@ -77,6 +77,28 @@ class DeploymentsBroadcaster
   # together are why a finished assembling test no longer flashes the Last Release card.
   RELEASE_SLOTS = %i[current last].freeze
 
+  # Push the refreshed APP LADDER ROW to every /deployments viewer.
+  #
+  # The row reports per-repo CI verdicts and per-rung parked counts, so it moves for
+  # the same reasons the release modules do — a release opening, advancing, shipping
+  # or resetting re-stamps `merged` across its members, and a CI upsert changes a
+  # rung's verdict. Without this it was the one live surface on the board with no
+  # broadcast: the dev deploy tools moved every other card and left this row stale
+  # until a manual reload, which is exactly how the gap was found.
+  #
+  # Wrapped in the engine's safe_broadcast SEV-1 guard like every sibling here, so a
+  # cable failure can never break the write that triggered it. Computed fresh from
+  # Ci::AppLadder rather than passed in — the caller knows something changed, not what
+  # the row should now say.
+  def self.app_ladder
+    Studio::Cable.safe_broadcast do
+      Turbo::StreamsChannel.broadcast_replace_to(
+        STREAM, target: "app-ladder-row",
+        partial: "tasks/app_ladder_row", locals: { cards: Ci::AppLadder.build }
+      )
+    end
+  end
+
   def self.release_modules(fx: nil, slots: RELEASE_SLOTS)
     Studio::Cable.safe_broadcast do
       if slots.include?(:current)
@@ -98,6 +120,10 @@ class DeploymentsBroadcaster
           )
         )
       end
+
+      # The ladder row moves for the same events: a release opening / advancing /
+      # shipping re-stamps `merged` across its members, which is what the rungs count.
+      app_ladder
     end
   end
 
@@ -141,6 +167,11 @@ class DeploymentsBroadcaster
         # slot back up.
         release_modules(fx: "ci.progress", slots: [:current])
       end
+
+      # The ladder row carries this repo's own CI meter, so a check upsert for ANY
+      # ladder branch moves it — including the branches no task and no release member
+      # is watching, which is precisely the case the two pushes above cannot cover.
+      app_ladder if Ci::AppLadder::RUNGS.include?(job.head_branch.to_s)
     end
   end
 

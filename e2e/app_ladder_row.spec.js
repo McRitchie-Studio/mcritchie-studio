@@ -111,3 +111,45 @@ test("a running rung carries a spinner and a settled one does not", async ({ pag
     await expect(settled.nth(i).locator("svg.animate-spin")).toHaveCount(0);
   }
 });
+
+// THE REGRESSION GUARD for the wiring bug this row shipped with. The board takes live
+// updates over Turbo Streams, and a stream can only replace a target it can NAME. The
+// row originally had no stable slot and no broadcast, so the dev deploy tools moved
+// every other card and left it stale until a manual reload. Worse, the first fix
+// looked correct and still did nothing: rendered standalone by DeploymentsBroadcaster
+// the partial resolved `app_ladder_card` against application/ instead of tasks/ and
+// raised Missing partial — which Studio::Cable.safe_broadcast SWALLOWS, so the
+// broadcast failed silently with nothing in the log.
+//
+// Neither failure is visible to any server-side tier: the page renders correctly on a
+// full load in both. Only driving the real button and watching the DOM catches them.
+test("the ladder row re-renders from a broadcast when the dev tools fire", async ({ page }) => {
+  await page.goto("/deployments");
+
+  // The tools are gated on Rails.env.local?, which covers test as well as development,
+  // so they render in this lane. Asserted rather than skipped-around: a conditional
+  // skip here would let the guard silently stop running (and the lane ratchet refuses
+  // a selection modifier for exactly that reason).
+  const tools = page.locator("[data-test='dev-deploy-tools']");
+  await expect(tools).toBeVisible();
+
+  const row = page.locator("#app-ladder-row");
+  await expect(row).toBeVisible();
+
+  // Assert on the RENDER STAMP, not on the row's content. Opening a fixture release
+  // need not move any rung verdict or parked count, so an identical re-render is a
+  // legitimate outcome — a content diff would fail on a wiring that works. The stamp
+  // changes on every render, so it proves the mechanism: a broadcast arrived and
+  // replaced this slot with no reload.
+  const before = await row.getAttribute("data-rendered-at");
+  expect(before, "the row must carry a render stamp").toBeTruthy();
+
+  await tools.getByRole("button", { name: "Open" }).click();
+
+  await expect
+    .poll(async () => page.locator("#app-ladder-row").getAttribute("data-rendered-at"), {
+      timeout: 20000,
+      message: "the ladder row never re-rendered after the dev tool fired",
+    })
+    .not.toBe(before);
+});

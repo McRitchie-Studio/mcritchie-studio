@@ -55,15 +55,16 @@ module Ci
 
     ATTENTION_STATES = %i[red conflicted stale].freeze
 
-    attr_reader :repo, :branch, :state, :sha, :verdict_at, :parked_count
+    attr_reader :repo, :branch, :state, :sha, :verdict_at, :parked_count, :run_url
 
-    def initialize(repo:, branch:, state:, sha: nil, verdict_at: nil, parked_count: 0)
+    def initialize(repo:, branch:, state:, sha: nil, verdict_at: nil, parked_count: 0, run_url: nil)
       @repo = repo.to_s
       @branch = branch.to_s
       @state = state.to_sym
       @sha = sha.presence
       @verdict_at = verdict_at
       @parked_count = parked_count.to_i
+      @run_url = run_url.presence
       freeze
     end
 
@@ -72,12 +73,32 @@ module Ci
       verdict = Ci::BranchGate.verdict(repo, branch)
       raw = verdict[:state]&.to_sym || :none
       sha = verdict[:sha]
-      run_at = latest_run_at(repo, branch, sha)
+      run = latest_run(repo, branch, sha)
+      run_at = run&.run_started_at
 
       state = resolve_state(raw: raw, run_at: run_at, newest_parked_at: newest_parked_at)
 
       new(repo: repo, branch: branch, state: state, sha: sha,
-          verdict_at: run_at, parked_count: parked_count)
+          verdict_at: run_at, parked_count: parked_count, run_url: run&.html_url)
+    end
+
+    # The CI checks behind this rung's verdict, as the meter draws them. Nil when we
+    # hold no sha, or when nothing was ingested for it — a meter with nothing to
+    # measure must not render a hopeful zero.
+    #
+    # NOT memoized here on purpose: this object is frozen (it is a value), so the
+    # cache belongs to the caller. Ci::AppLadder::Card#progress holds it, and the view
+    # reads that once per card.
+    def progress
+      return nil if sha.blank?
+
+      nwo = Ci::ReviewGate.nwo_for(repo)
+      return nil if nwo.empty?
+
+      rows = CiCheckJob.progress_rows(nwo, sha, GithubWorkflowRun.ci_workflow_for(repo))
+      return nil if rows.blank?
+
+      Ci::CheckProgress.from_check_runs(rows, sha: sha, run_started_at: verdict_at)
     end
 
     # `:none` is BranchGate's honest "nothing ingested"; we render it as
@@ -94,10 +115,11 @@ module Ci
       newest_parked_at > run_at ? :stale : :green
     end
 
-    # When the run behind this verdict STARTED. `run_started_at` is the honest
-    # field: `created_at` is our ingestion time, which says when the webhook
-    # reached us, not when GitHub ran the job.
-    def self.latest_run_at(repo, branch, sha)
+    # The run row behind this verdict — its start time AND its html_url, in one read
+    # (the card links to that url, so fetching only the timestamp would cost a second
+    # query per rung). `run_started_at` is the honest time field: `created_at` is our
+    # INGESTION time, which says when the webhook reached us, not when GitHub ran it.
+    def self.latest_run(repo, branch, sha)
       return nil if sha.blank?
 
       nwo = Ci::ReviewGate.nwo_for(repo)
@@ -105,7 +127,8 @@ module Ci
 
       GithubWorkflowRun.for_repo(nwo)
                        .where(head_branch: branch.to_s, head_sha: sha)
-                       .maximum(:run_started_at)
+                       .order(Arel.sql("run_started_at DESC NULLS LAST"))
+                       .first
     end
 
     def short_sha = sha.to_s[0, 7].presence
