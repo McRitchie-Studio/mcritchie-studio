@@ -125,7 +125,18 @@ jobs:
           cache-dependency-glob: tools/island-background-animator/uv.lock
 
       - name: Install FFmpeg
-        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y ffmpeg
+        # The fetch is BOUNDED and RETRIED — see .github/scripts/apt-retry for the
+        # incident, the measured budgets, and why the loop lives in a script rather
+        # than inline here (short version: an inline `"$budget"` in a command
+        # position makes this step opaque to bin/lib/ci_test_command.rb, the cert
+        # that must be able to SEE every unit CI runs).
+        #
+        # This bound is the backstop, not the mechanism: the script's own escalating
+        # budgets total ~22 minutes, and 25 sits above that and well below the
+        # 45-minute job bound, so a step that blows through its retries still fails
+        # long before it can take the whole job down with it.
+        timeout-minutes: 25
+        run: .github/scripts/apt-retry ffmpeg
 
       - name: Check Island Background Animator
         run: tools/island-background-animator/bin/check
@@ -188,11 +199,22 @@ jobs:
         options: --health-cmd="pg_isready" --health-interval=10s --health-timeout=5s --health-retries=3
 
     steps:
-      - name: Install packages
-        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y curl libjemalloc2 libvips postgresql-client
-
       - name: Checkout code
         uses: actions/checkout@v7
+
+      - name: Install packages
+        # The fetch is BOUNDED and RETRIED — see .github/scripts/apt-retry for the
+        # incident, the measured budgets, and why the loop lives in a script rather
+        # than inline here (short version: an inline `"$budget"` in a command
+        # position makes this step opaque to bin/lib/ci_test_command.rb, the cert
+        # that must be able to SEE every unit CI runs).
+        #
+        # This bound is the backstop, not the mechanism: the script's own escalating
+        # budgets total ~22 minutes, and 25 sits above that and well below the
+        # 45-minute job bound, so a step that blows through its retries still fails
+        # long before it can take the whole job down with it.
+        timeout-minutes: 25
+        run: .github/scripts/apt-retry curl libjemalloc2 libvips postgresql-client
 
       - name: Await RubyGems propagation for locked gems
         run: .github/scripts/await-gem-propagation.sh
@@ -347,8 +369,35 @@ jobs:
       #   options: --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 5
 
     steps:
+      # fetch-depth: 0 IS LOAD-BEARING — do not "optimize" it back to the default.
+      #
+      # test/lib/e2e_quarantine_ratchet_test.rb ratchets the @quarantine ceiling against its
+      # value on `origin/release` — the one number a PR's own diff cannot move. actions/checkout
+      # defaults to a depth-1 fetch of the head SHA ALONE, which leaves `origin/release`
+      # unresolvable, and a ratchet that cannot see its baseline cannot certify monotonicity.
+      #
+      # So the ratchet FAILS CLOSED on a missing baseline: delete this line and the `test` job
+      # goes RED and says why. It cannot quietly demote itself back to the pin it used to be —
+      # which is exactly what it was, and how the hole grew once with every guard green.
+      # Pinned by test/lib/ci_workflow_triggers_test.rb.
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
       - name: Install packages
-        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y curl libjemalloc2 libvips postgresql-client
+        # The fetch is BOUNDED and RETRIED — see .github/scripts/apt-retry for the
+        # incident, the measured budgets, and why the loop lives in a script rather
+        # than inline here (short version: an inline `"$budget"` in a command
+        # position makes this step opaque to bin/lib/ci_test_command.rb, the cert
+        # that must be able to SEE every unit CI runs).
+        #
+        # This bound is the backstop, not the mechanism: the script's own escalating
+        # budgets total ~22 minutes, and 25 sits above that and well below the
+        # 45-minute job bound, so a step that blows through its retries still fails
+        # long before it can take the whole job down with it.
+        timeout-minutes: 25
+        run: .github/scripts/apt-retry curl libjemalloc2 libvips postgresql-client
 
       # System-test lane browser. Install Chrome via Chrome for Testing, then let
       # Selenium Manager (bundled in selenium-webdriver 4.32) fetch the EXACTLY
@@ -381,22 +430,6 @@ jobs:
           for bin in $(which -a chromedriver 2>/dev/null); do sudo rm -f "$bin"; done
           sudo rm -f /usr/local/bin/chromedriver /usr/bin/chromedriver || true
           echo "chromedriver remaining on PATH: $(which chromedriver 2>/dev/null || echo none)"
-
-      # fetch-depth: 0 IS LOAD-BEARING — do not "optimize" it back to the default.
-      #
-      # test/lib/e2e_quarantine_ratchet_test.rb ratchets the @quarantine ceiling against its
-      # value on `origin/release` — the one number a PR's own diff cannot move. actions/checkout
-      # defaults to a depth-1 fetch of the head SHA ALONE, which leaves `origin/release`
-      # unresolvable, and a ratchet that cannot see its baseline cannot certify monotonicity.
-      #
-      # So the ratchet FAILS CLOSED on a missing baseline: delete this line and the `test` job
-      # goes RED and says why. It cannot quietly demote itself back to the pin it used to be —
-      # which is exactly what it was, and how the hole grew once with every guard green.
-      # Pinned by test/lib/ci_workflow_triggers_test.rb.
-      - name: Checkout code
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
 
       - name: Await RubyGems propagation for locked gems
         run: .github/scripts/await-gem-propagation.sh
