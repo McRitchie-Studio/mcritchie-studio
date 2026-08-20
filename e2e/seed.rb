@@ -9,8 +9,8 @@ puts "Seeding test database for Playwright..."
 Content.delete_all # references News (source_news_slug) + Team — clear before both
 News.delete_all
 ActionGrade.delete_all # FK child of atomic_actions — clear before the parent
-AtomicAction.delete_all
-AtomicEvent.delete_all # narrated spans; actions nullify their FK on delete
+AgentAction.delete_all
+AgentActivity.delete_all # narrated spans; actions nullify their FK on delete
 Activity.delete_all
 SkillAssignment.delete_all
 Task.delete_all
@@ -814,7 +814,7 @@ end
 # CI evidence for the v2 CI phase (submitted handoff → checks settle): two
 # test-scope AgentActions like bin/ci-scope-capture ingests, so the demo's CI
 # window closes at +24m (a 4-minute handoff after the +20m submission). The
-# global AtomicAction.delete_all wipe above keeps this reseed idempotent.
+# global AgentAction.delete_all wipe above keeps this reseed idempotent.
 AgentAction.create!(session_id: "sess-tp-ci", kind: "test_scope", event_slug: "ci_lint",
                     result_slug: "pass", task_slug: tp.slug, occurred_at: tp_anchor + 23.minutes,
                     duration_ms: 90_000,
@@ -870,7 +870,7 @@ hb_base = 30.minutes.ago
 hb_i = -1
 hb_capture = lambda do |row|
   hb_i += 1
-  AtomicAction.capture(
+  AgentAction.capture(
     session_id: hb_session, task_slug: row[:task], mascot: (row.key?(:mascot) ? row[:mascot] : "snorlax"),
     kind: row[:kind], event_slug: row[:ev], result_slug: row[:rs], input: row[:in], outcome: row[:outcome] || "ok",
     summary: row[:sm], key_method: row[:km], key_method_lang: row[:kl],
@@ -886,7 +886,7 @@ hb_capture.call(kind: "boot", actor: "harness", stage: nil, mascot: nil, in: "sp
 
 hb_spans = [
   { category: "Explore", reason: "find the capture seam", outcome: "located the model and schema seam", stage: "building",
-    km: "AtomicAction.capture(session_id:, kind:, input:)", kl: "ruby",
+    km: "AgentAction.capture(session_id:, kind:, input:)", kl: "ruby",
     rows: [
       { kind: "explore", actor: "agent", task: hb_task, model: "claude-opus-4-8", ti: 9400, to: 360, in: "grep -rn AtomicEvent app/models", ev: "Explore the model and schema seam", rs: "Found the capture seam quickly", sm: "find the capture model seam", km: "grep -rn AtomicEvent app/models", kl: "bash" },
       { kind: "edit",    actor: "agent", task: hb_task, model: "claude-opus-4-8", ti: 6800, to: 2400, in: "app/views/heartbeat/_event_table.html.erb", ev: "Implement the event trajectory view", rs: "Controller view and helper written" }
@@ -903,21 +903,21 @@ hb_spans = [
 ]
 
 hb_spans.each do |span|
-  AtomicEvent.open_event!(session_id: hb_session, category: span[:category], reason_slug: span[:reason],
-                          task_slug: span[:rows].first[:task], mascot: "snorlax", stage: span[:stage],
-                          opened_at: hb_base + ((hb_i + 1) * 30).seconds)
+  AgentActivity.open_event!(session_id: hb_session, category: span[:category], reason_slug: span[:reason],
+                            task_slug: span[:rows].first[:task], mascot: "snorlax", stage: span[:stage],
+                            opened_at: hb_base + ((hb_i + 1) * 30).seconds)
   span[:rows].each { |row| hb_capture.call(row) }
   next if span[:outcome].nil? # leave the final span open -> "…in progress"
 
-  AtomicEvent.close_event!(session_id: hb_session, outcome_slug: span[:outcome],
-                           key_method: span[:km], key_method_lang: span[:kl],
-                           closed_at: hb_base + (hb_i * 30).seconds + 5.seconds)
+  AgentActivity.close_event!(session_id: hb_session, outcome_slug: span[:outcome],
+                             key_method: span[:km], key_method_lang: span[:kl],
+                             closed_at: hb_base + (hb_i * 30).seconds + 5.seconds)
 end
 
 # Over-cap drilldown fixture: ONE AgentActivity holding 55 actions, 5 past the
 # FEED_ACTIONS_PER_ACTIVITY cap — the drilldown e2e asserts the feed shows the
 # 50 newest plus a "5 more actions omitted" tail row with the true count.
-# (/agents/activities reads AgentActivity/AgentAction, NOT the AtomicEvent spans.)
+# (/agents/activities reads AgentActivity/AgentAction, NOT the legacy span aliases.)
 cap_activity = AgentActivity.create!(
   session_id: "e2e-drilldown-cap-0001", category: "Verify",
   reason_slug: "sweep the full suite", opened_at: 20.minutes.ago, seq: 0
@@ -996,7 +996,7 @@ ActionGrade.create!(agent_action: test_run_pass, grader: "alex", disposition: "g
 # model, and the rate sliders move real, non-zero totals. Rows captured from prod
 # agent_activities (model + tokens + cache + cost); opened_at re-anchored to now
 # so each is the most recent session for its model. AgentActivity is cleared by
-# AtomicEvent.delete_all above (the alias), so this reseeds cleanly.
+# AgentActivity.delete_all above, so this reseeds cleanly.
 require "csv"
 model_pricing_bases = {
   "4c4fb1ab-70e1-4c6b-8e58-e691e1e9cd5c" => 90.minutes.ago, # opus-4-8 · pokedex feature
@@ -1161,4 +1161,4 @@ TriageFinding.delete_all
 TriageFinding.create!(title: "E2E Promotable Finding", body: "A follow-up worth a task.",
                       source: "e2e-seed", repo: "mcritchie-studio")
 
-puts "Seeded: #{User.count} users, #{Agent.count} agents, #{Task.count} tasks, #{Activity.count} activities, #{Coach.count} coaches, #{Release.count} releases, #{AtomicAction.count} atomic actions, #{AtomicEvent.count} atomic events, #{GithubWorkflowRun.count} github runs, #{News.count} news, #{Content.count} content"
+puts "Seeded: #{User.count} users, #{Agent.count} agents, #{Task.count} tasks, #{Activity.count} activities, #{Coach.count} coaches, #{Release.count} releases, #{AgentAction.count} agent actions, #{AgentActivity.count} agent activities, #{GithubWorkflowRun.count} github runs, #{News.count} news, #{Content.count} content"
