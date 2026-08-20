@@ -143,10 +143,39 @@ class ReleaseAcceptedCertificationTest < Minitest::Test
     assert_equal "Engine CI", C.workflow_for("studio-engine", CONFIG)
   end
 
+  # STUBBED. solana-studio was the standing declared-CI-less gem until 2026-08-20,
+  # when it shipped a Rails engine and a "Gem CI" lane; NO registered gem declares
+  # nil today. The branch still has to work for the next gem onboarded without a
+  # suite, and a test that could only run while some real gem happened to lack one
+  # was testing the registry rather than the rule.
   def test_a_gem_declaring_no_suite_workflow_is_exempt_not_blind
-    assert_nil C.workflow_for("solana-studio", CONFIG)
-    assert C.certified?({}, C.workflow_for("solana-studio", CONFIG)),
-           "solana-studio ships no .github/workflows at all — a declared exemption, not a gap"
+    with_gem_suite_workflows("quiet-gem" => nil) do
+      config = { "gems" => { "quiet-gem" => {} }, "apps" => {} }
+
+      assert_nil C.workflow_for("quiet-gem", config)
+      assert C.certified?({}, C.workflow_for("quiet-gem", config)),
+             "a gem that ships no .github/workflows AND declares it is exempt, not a gap"
+    end
+  end
+
+  # The live registry's own claim, so the stub above can never drift from reality:
+  # every gem in the map either declares a workflow or declares nil on purpose.
+  def test_solana_studio_now_declares_a_suite_of_its_own
+    assert_equal "Gem CI", C.workflow_for("solana-studio", CONFIG),
+                 "the gem ships a Rails engine now — its own lane is the only thing that sees a packaging or JS regression before publish"
+  end
+
+  # Swap the declared-workflow map for one block. The constant is frozen and read
+  # by a pure function, so a const swap with an ensure-restore is the honest way
+  # to reach the branch — there is no seam to inject through.
+  def with_gem_suite_workflows(map)
+    previous = C::GEM_SUITE_WORKFLOWS
+    C.send(:remove_const, :GEM_SUITE_WORKFLOWS)
+    C.const_set(:GEM_SUITE_WORKFLOWS, map.freeze)
+    yield
+  ensure
+    C.send(:remove_const, :GEM_SUITE_WORKFLOWS)
+    C.const_set(:GEM_SUITE_WORKFLOWS, previous)
   end
 
   # nil (declared) and unmapped (forgotten) must never collapse into one silent pass.
@@ -196,7 +225,9 @@ class ReleaseAcceptedCertificationTest < Minitest::Test
       "turf-monster"         => { "ci.yml" => hub_yaml(branches: "[ main, release ]") },
       "mcritchie-industries" => { "ci.yml" => hub_yaml(branches: "[ main, release ]") },
       "studio-engine"        => { "engine-ci.yml" => engine_yaml(branches: "[main, release]") },
-      "solana-studio"        => {}
+      # Ships "Gem CI" as of 2026-08-20, and it lists `accepted` — so it certifies
+      # like any other repo instead of riding the declared-nil exemption.
+      "solana-studio"        => { "gem-ci.yml" => engine_yaml(name: "Gem CI") }
     }
     config = {
       "gems" => { "studio-engine" => {}, "solana-studio" => {} },

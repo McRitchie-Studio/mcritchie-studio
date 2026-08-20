@@ -985,6 +985,20 @@ class ReleaseCliTest < Minitest::Test
 
   # A NON-self-gated gem-only candidate: solana-studio has no `release_check`, so
   # it cannot be its own release — it still needs a consuming app.
+  # solana-studio registered a `release_check` on 2026-08-20 (it grew
+  # bin/release-check alongside its Rails engine), so NO registered gem is
+  # non-self-gated any more. The two guards below still have to bite for the next
+  # gem onboarded without a runner, so the condition is CREATED here rather than
+  # borrowed from the registry — a test that needed some real gem to stay
+  # runner-less was testing the registry, not the guard.
+  NOT_SELF_GATED = <<~'RUBY'
+    def self_gated_gem?(repo)
+      return false if repo.to_s == "solana-studio"
+
+      !gem_meta_for(repo)["release_check"].to_s.strip.empty?
+    end
+  RUBY
+
   SOLANA_GEM_ONLY_CONDUCTOR = <<~'RUBY'
     def conductor(ruby, read_only: false)
       return { "tasks" => [], "release" => { "slug" => "rel-gemonly", "state" => "assembling" }, "screen" => {} } if ruby.include?("sweep_candidates")
@@ -1019,7 +1033,7 @@ class ReleaseCliTest < Minitest::Test
   # BEFORE the irreversible publish, naming BOTH the missing app and the
   # not-self-gated reason, plus the enroll-a-consumer fix.
   def test_prepare_non_self_gated_gem_only_candidate_aborts_before_any_publish
-    out = run_cli(["--yes"], setup: gem_publish_stub + SOLANA_GEM_ONLY_CONDUCTOR,
+    out = run_cli(["--yes"], setup: gem_publish_stub + SOLANA_GEM_ONLY_CONDUCTOR + NOT_SELF_GATED,
                   call: %{begin; prepare; puts("NO-ABORT"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
 
     assert_includes out, "ABORTED", "a NON-self-gated gem-only candidate must not publish + assemble unQA'd"
@@ -1093,7 +1107,7 @@ class ReleaseCliTest < Minitest::Test
   # assemble QA-green untested. Preflight must catch the missing coverage before the
   # publish. (solana-studio is not self-gated, so the per-gem consumer check applies.)
   def test_prepare_non_self_gated_gem_with_no_swept_consumer_aborts_before_any_publish
-    out = run_cli(["--yes"], setup: gem_publish_stub + SOLANA_MIXED_CONDUCTOR,
+    out = run_cli(["--yes"], setup: gem_publish_stub + SOLANA_MIXED_CONDUCTOR + NOT_SELF_GATED,
                   call: %{begin; prepare; puts("NO-ABORT"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
 
     assert_includes out, "ABORTED", "a non-self-gated gem with no swept consumer must not publish"

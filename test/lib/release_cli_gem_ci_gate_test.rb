@@ -79,28 +79,51 @@ class ReleaseCliGemCiGateTest < Minitest::Test
 
   # --- the CI-less gem, which the first version BRICKED --------------------------
   #
-  # solana-studio ships no suite workflow. GemCiWorkflows declares that with an
-  # explicit nil, and the lane is LIVE: turf-monster pins the gem and it has
-  # shipped through v0.4.7. The first version of this gate folded its absent
-  # verdict to :none, polled the FULL window, and then told the operator to go and
-  # watch a run that does not and never will exist. Any sweep carrying a
-  # solana-studio member could never complete — a publish that worked before this
-  # change became impossible after it.
+  # The first version of this gate folded a CI-less gem's absent verdict to :none,
+  # polled the FULL window, and then told the operator to go and watch a run that
+  # does not and never will exist. Any sweep carrying such a member could never
+  # complete — a publish that worked before that change became impossible after it.
+  #
+  # solana-studio was the live example until 2026-08-20, when it shipped a Rails
+  # engine and declared a "Gem CI" lane. NO registered gem declares nil today, so
+  # these three STUB the declaration in the subprocess rather than borrow it from
+  # the registry — the branch still runs for the next gem onboarded without a
+  # suite, and a test that needed some real gem to stay CI-less was testing the
+  # map, not the gate.
+
+  # Same as `verdict`, with GemCiWorkflows stubbed so `repo` reads as DECLARED
+  # CI-less. Injected after the load, so nothing in bin/release.rb grows a
+  # test-only seam for it.
+  def ci_less_verdict(repo, state, version: "0.60.0")
+    stub = %(module GemCiWorkflows; def self.declared_ci_less?(r) = r.to_s == "#{repo}"; end; )
+    run_release(stub + %(puts gem_ci_failure("#{repo}", "abc1234", "#{version}").inspect),
+                { "RELEASE_CI_STATUS" => state })
+  end
 
   def test_a_declared_ci_less_gem_is_skipped_not_waited_on
-    out = verdict("solana-studio", "unverified")
+    out = ci_less_verdict("quiet-gem", "unverified")
 
     assert_includes out, "nil", "a gem with no suite workflow must not fail the sweep"
     assert_match(/declares no suite workflow/, out, "and must SAY it skipped, not skip silently")
   end
 
   # AND MUST NOT MISDIRECT. The refusal text sends the operator to watch a run;
-  # for this repo there is none to watch, so the refusal must not appear at all.
+  # for such a repo there is none to watch, so the refusal must not appear at all.
   def test_a_ci_less_gem_is_never_told_to_watch_a_run_that_cannot_exist
-    out = verdict("solana-studio", "red")
+    out = ci_less_verdict("quiet-gem", "red")
 
     refute_includes out, "NOTHING WAS PUBLISHED"
     refute_match(/Watch the run/, out)
+  end
+
+  # The live registry's own claim — so the stub above cannot drift from reality.
+  # A gem that ships a lane must be GATED by it, never skipped.
+  def test_solana_studio_is_now_gated_by_its_own_declared_lane
+    out = verdict("solana-studio", "red")
+
+    assert_includes out, "NOTHING WAS PUBLISHED",
+                     "solana-studio declares Gem CI now — a red verdict must stop the publish"
+    refute_match(/declares no suite workflow/, out)
   end
 
   # AN UNMAPPED GEM IS NOT EXEMPT. Absence of a declaration is not a declaration
@@ -115,7 +138,7 @@ class ReleaseCliGemCiGateTest < Minitest::Test
 
   # The two never collapse into each other.
   def test_declared_ci_less_and_unmapped_are_different_answers
-    assert_includes verdict("solana-studio", "unverified"), "nil"
+    assert_includes ci_less_verdict("quiet-gem", "unverified"), "nil"
     assert_includes verdict("some-unregistered-gem", "unverified"), "NOTHING WAS PUBLISHED"
   end
 
