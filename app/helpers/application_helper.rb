@@ -480,6 +480,21 @@ module ApplicationHelper
   # MEMBER REPO: an ordered { repo_slug => progress } map (producer-first), so the
   # Next Release card renders one CI track per app whose code is in the release.
   # Empty ({}) unless the release is active. Same reader, same graceful degrade.
+  #
+  # DELIBERATELY NOT MEMOISED. Caching this on the view context was tried and
+  # reverted: it broke release_lanes_test's "a finished test moves ONLY its own
+  # meter's signature", which renders the partial twice with a CiCheckJob settling
+  # in between and expects the second render to see it. A view-context memo served
+  # the first render's answer to the second, so no meter moved.
+  #
+  # The test is right and the memo was wrong. This reader's whole job is to report
+  # CI as it stands NOW — it feeds the live meters the board morphs as checks
+  # land — so a cache whose lifetime is "however long this view context happens to
+  # live" is the wrong shape for it. Its cost is ~17ms of duplicate reads on a
+  # two-release board; if that is ever worth removing, do it inside
+  # Ci::ProgressReader (where latest_ci_sha and run_started_at_for hit
+  # github_workflow_runs twice for the same repo) rather than by freezing the
+  # answer out here.
   def release_ci_progress(release)
     ci_progress_reader.for_release(release)
   end
