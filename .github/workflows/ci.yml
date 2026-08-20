@@ -60,9 +60,12 @@ jobs:
   # concurrency ceiling is ~20 jobs; this workflow ran 14. config/rails_lane.yml said
   # plainly that raising the shard count was gated on headroom rather than appetite —
   # "a shard that waits for a runner is slower than no shard". Three jobs becoming one
-  # frees exactly the two slots that pay for shards 5 and 6, so the job count is UNCHANGED
-  # at 14 and the critical path drops from ~3.5min to ~2.7min. That is the trade, made in
-  # the order the contract asked for: get the headroom, then spend it.
+  # frees two slots and takes the workflow from 14 jobs to 12 at an unchanged critical
+  # path. Those slots were originally freed to pay for shards 5 and 6; that raise was then
+  # MEASURED at 3.6min against 4 shards' 3.7min — nothing — because LPT gives each of the
+  # heaviest files its own bucket and a shard cannot finish before its heaviest FILE. The
+  # shard count went back to 4 (config/rails_lane.yml carries the numbers); the slots stay
+  # freed, which is worth having on its own with two PRs in flight against a ~20-job cap.
   #
   # `if: always()` ON THE SECOND AND THIRD CHECKS is load-bearing. Merging three jobs into
   # one would otherwise mean the first failure hides the other two — a brakeman finding
@@ -396,7 +399,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6]
+        shard: [1, 2, 3, 4]
 
     services:
       postgres:
