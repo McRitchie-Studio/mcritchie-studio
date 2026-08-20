@@ -56,7 +56,11 @@ site connection, primary-domain setting, disabled `www` prefix, and
 
 ## Public Assets
 
-- `public/agents/` — Agent avatar images (alex.png, alex-photo.png, mack.png, mason.png, turf-monster.png)
+- `public/agents/` — Agent portraits: one `<slug>.png` per seeded agent (alex, avi, carl,
+  jasper, mack, mason, shannon, steffon, turf-monster) plus `alex-photo.png`. They are both
+  the circular avatar and the full-bleed 5:3 card hero on the public `/agents` index, so
+  they are kept at 768px on the long edge; `test/lib/response_payload_budget_test.rb`
+  holds the size and pixel ceilings.
 - `public/denver-hero.avif` — Landing page hero background (Denver skyline)
 - `public/studio-logo.svg` — SSO logo (shared with satellite apps)
 - `public/favicon.png`, `public/icon.png`, `public/logo-icon.svg` — App icons

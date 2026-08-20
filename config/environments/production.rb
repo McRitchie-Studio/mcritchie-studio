@@ -23,6 +23,19 @@ Rails.application.configure do
   # Disable serving static files from `public/`, relying on NGINX/Apache to do so instead.
   # config.public_file_server.enabled = false
 
+  # CACHE WHAT WE SERVE OURSELVES. Files under public/ went out with no
+  # Cache-Control at all — only Last-Modified — so every visit re-fetched or
+  # re-validated the agent portraits, and a cold load pulled 7.4MB of them.
+  #
+  # A WEEK, not a year, because this header covers BOTH kinds of file here:
+  # fingerprinted /assets/* (whose name changes on every edit, so they could safely
+  # be immutable) and unfingerprinted /agents/*.png (whose name does NOT change, so
+  # a year-long TTL would pin a replaced portrait in browsers for a year). A week is
+  # the longest window worth the staleness on the second kind; fingerprinted assets
+  # give up nothing that matters at this traffic. Fingerprint the portraits and this
+  # can go immutable.
+  config.public_file_server.headers = { "cache-control" => "public, max-age=604800" }
+
   # Compress CSS using a preprocessor.
   # config.assets.css_compressor = :sass
 
