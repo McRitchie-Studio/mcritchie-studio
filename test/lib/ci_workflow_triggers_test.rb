@@ -1707,7 +1707,7 @@ class CiWorkflowTriggersTest < Minitest::Test
   end
   # ====================================================================================
 
-  def test_integration_ci_runs_on_pushes_to_both_shippable_tips
+  def test_integration_ci_runs_on_pushes_to_every_rung_of_the_ladder
     branches = push_branches(File.read(CI_YML))
 
     assert_includes branches, "main",
@@ -1716,6 +1716,16 @@ class CiWorkflowTriggersTest < Minitest::Test
                     "ci.yml must run on pushes to release. The sweep's merge commit is the " \
                     "artifact QA deploys and ship fast-forwards; without this trigger it is " \
                     "the one commit CI never runs, leaving the local G3 gate as its only verdict."
+    # `accepted` WAS IN ci.yml AND UNGUARDED — the trigger shipped 2026-08-15 and this
+    # file, the very guard for this workflow's triggers, never mentioned the branch. So
+    # the rung the sweep's Ci::BranchGate refusal depends on could have been deleted by
+    # anyone, at any time, with the whole suite still green.
+    assert_includes branches, "accepted",
+                    "ci.yml must run on pushes to accepted. Review merges several approved PRs " \
+                    "onto it, producing a combination no CI run has executed — the same argument " \
+                    "that puts `release` here, one rung earlier and one rung cheaper to unwind. " \
+                    "bin/release prepare's refuse_red_accepted! reads THIS branch's verdict: drop " \
+                    "the trigger and that guard silently loses the ability to fail at all."
   end
 
   def test_integration_ci_still_runs_on_pull_requests
