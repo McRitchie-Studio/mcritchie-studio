@@ -10,6 +10,7 @@
 # Also picked up by the normal `bin/rails test` sweep.
 require "minitest/autorun"
 require "fileutils"
+require "json"
 require "open3"
 require "time" # Time#iso8601 — the claim-lease expiry format the reclaim guard reads
 require "tmpdir"
@@ -1216,14 +1217,31 @@ class AgentWorktreeTest < Minitest::Test
   #
   # The property asserted is the one that matters and survives a change of mechanism:
   # resolving N bound desks does not cost N board reads.
+  # A payload shaped like the one the API SHOW serves — carrying the derived fields
+  # every hold channel reads. Anything less must not reach the cache.
+  def self.show_shaped(slug)
+    { "slug" => slug, "stage" => "building", "metadata" => {}, "merged" => nil,
+      "review_in_progress" => false, "gate_in_flight" => nil, "holder_gate_in_flight" => nil,
+      "progress_seconds_ago" => 30, "holder_liveness_seconds_ago" => 30 }
+  end
+
   def test_board_reads_do_not_scale_with_desk_count
     out = run_in_script(<<~RUBY)
       # Count at the SUBPROCESS boundary, not at any helper's name: every board round
       # trip is one capture_status spawn, so this stays true if the mechanism changes.
+      #
+      # The payload is SHOW-shaped on purpose. An earlier cut of this check stubbed
+      # {slug, stage} and asserted only the spawn count — which passes just as
+      # happily when the cached record cannot answer a single hold question. Proving
+      # "one read" while the record is useless is how the blind-guard defect shipped.
       SPAWNS = []
       def capture_status(*cmd, **_kw)
         SPAWNS << cmd.last(2).join(" ")
-        payload = (1..5).map { |i| { "slug" => "task-\#{i}", "stage" => "building" } }
+        payload = (1..5).map do |i|
+          { "slug" => "task-\#{i}", "stage" => "building", "metadata" => {}, "merged" => nil,
+            "review_in_progress" => false, "gate_in_flight" => nil, "holder_gate_in_flight" => nil,
+            "progress_seconds_ago" => 30, "holder_liveness_seconds_ago" => 30 }
+        end
         [true, JSON.generate(payload), "", 0]
       end
       def command_env(_app, _env); {}; end
@@ -1240,5 +1258,107 @@ class AgentWorktreeTest < Minitest::Test
     assert_equal "1", out,
                  "five bound desks must cost ONE board read, not five — the per-desk read is what " \
                  "made the full-suite sweep unusable at 141 desks"
+  end
+
+  # --- the batch must never blind a hold channel -------------------------------
+  #
+  # THE DEFECT THIS EXISTS FOR. The batch reads the API index; every consumer of
+  # @task_record_cache was written against the API show. Those are different
+  # serializers — show merges derived fields, the index keeps the raw column — so an
+  # index row is a complete, well-formed Task with review_in_progress,
+  # gate_in_flight, holder_gate_in_flight, progress_seconds_ago and
+  # holder_liveness_seconds_ago simply ABSENT. Absent reads as nil, and each of
+  # those guards treats nil as a negative, so three of the four hold channels went
+  # quiet at once and a desk whose builder was mid-cert read as abandoned.
+  #
+  # Asserting "the batch caches something" would have passed on the broken code.
+  # What has to be asserted is the WITHHOLDING: an incomplete record never enters
+  # the cache, so the desk falls through to the per-slug show read and unknown
+  # holds. Absence of a field must never be evidence of absence of a claim.
+  def test_batch_refuses_to_cache_a_record_missing_a_guard_field
+    out = run_in_script(<<~RUBY)
+      # EXACTLY what the raw index returns: a real row, derived fields absent.
+      RAW = (1..3).map { |i| { "slug" => "task-\#{i}", "stage" => "building", "metadata" => {}, "merged" => nil } }
+      def capture_status(*_cmd, **_kw); [true, JSON.generate(RAW), "", 0]; end
+      def command_env(_app, _env); {}; end
+      def File.exist?(path); path.to_s.end_with?("bin/task") || super; end
+
+      records = (1..3).map do |i|
+        { env: { "TASK_RECORD_SLUG" => "task-\#{i}" }, dir: "/tmp/desk-\#{i}", app: { "slug" => "mcritchie-studio" } }
+      end
+      prefetch_task_records!(records)
+      print (@task_record_cache || {}).keys.inspect
+    RUBY
+
+    assert_equal "[]", out,
+                 "an index-shaped record must NEVER be cached: it cannot answer review_in_progress " \
+                 "or gate_in_flight, and a guard reading those as nil frees a desk whose builder is live"
+  end
+
+  # The positive half — otherwise the check above is satisfied by a batch that
+  # caches nothing at all, and the speed-up could quietly disappear.
+  def test_batch_caches_a_record_that_carries_every_guard_field
+    payload = JSON.generate((1..3).map { |i| self.class.show_shaped("task-#{i}") })
+
+    out = run_in_script(<<~RUBY)
+      FULL = #{payload.inspect}
+      def capture_status(*_cmd, **_kw); [true, FULL, "", 0]; end
+      def command_env(_app, _env); {}; end
+      def File.exist?(path); path.to_s.end_with?("bin/task") || super; end
+
+      records = (1..3).map do |i|
+        { env: { "TASK_RECORD_SLUG" => "task-\#{i}" }, dir: "/tmp/desk-\#{i}", app: { "slug" => "mcritchie-studio" } }
+      end
+      prefetch_task_records!(records)
+      print (@task_record_cache || {}).keys.sort.inspect
+    RUBY
+
+    assert_equal '["task-1", "task-2", "task-3"]', out,
+                 "a show-shaped record carries every guard field, so it is safe to cache — this is " \
+                 "what makes the batch self-activating once the board serves full=1"
+  end
+
+  # --- stackless teardown is a BRANCH, not a comment ---------------------------
+  #
+  # discovered_worktree_configs used to omit the keys teardown fetches, and
+  # STACKLESS_STACK was set at its construction site and never read. So the generic
+  # Rails teardown ran against a gem repo and died on `app.fetch("sidekiq")` —
+  # inside with_worktree_lock, after earlier candidates were already destroyed,
+  # leaving a half-finished sweep and a stale registry.
+  def test_a_discovered_config_carries_every_key_teardown_fetches
+    out = run_in_script(<<~RUBY)
+      config = discovered_worktree_configs.first
+      missing = %w[sidekiq stack ruby_path session_env session_key reserved_ports].reject { |k| config.key?(k) }
+      print missing.inspect
+    RUBY
+
+    assert_equal "[]", out,
+                 "teardown reaches for these with fetch — a config that omits one raises KeyError " \
+                 "mid-sweep, inside the lock, after earlier desks are already gone"
+  end
+
+  # The skip needs BOTH halves. Discovery is per-repo but a stack is per-desk, and
+  # moms-app / acquisition-studio are discovered too — they are ordinary Rails apps
+  # whose desks DO have servers to stop. Classifying the repo stackless must never
+  # be enough on its own to skip a live stack.
+  def test_stackless_skip_requires_a_quiet_desk_not_just_a_stackless_repo
+    out = run_in_script(<<~RUBY)
+      STOPPED = []
+      def stop_generic_rails(dir, _port = nil); STOPPED << dir; end
+      def stop_pidfile(*_a); end
+      def local_email_values; {}; end
+      def parse_env(_p); { "APP_PORT" => "3999" }; end
+
+      app = { "stack" => STACKLESS_STACK, "sidekiq" => false }
+      # A gem desk: stackless repo, no stack env -> nothing to stop.
+      stop_stack_for_removal(app, "/tmp/gem-desk", { env_exists: false, port: nil })
+      # A discovered RAILS desk: stackless classification, but a live stack env.
+      stop_stack_for_removal(app, "/tmp/rails-desk", { env_exists: true, env_path: "/tmp/x", port: "3999" })
+      print STOPPED.inspect
+    RUBY
+
+    assert_equal '["/tmp/rails-desk"]', out,
+                 "the gem desk is skipped and the Rails desk is still stopped — skipping the latter " \
+                 "would orphan its server and its Redis DB"
   end
 end

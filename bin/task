@@ -610,6 +610,11 @@ EXIT_TASK_NOT_FOUND = 4
 # breaker says escalate" from "the read failed".
 EXIT_BREAKER_TRIPPED = 10
 
+# Page size `list --json` asks for. 100 is the index's own ceiling
+# (Api::Paginatable clamps per_page), so this is "as few round trips as the API
+# will allow" — the loop above walks any remainder.
+LIST_JSON_PER_PAGE = 100
+
 def die!(msg, code: 1)
   warn!("error: #{msg}")
   exit code
@@ -1448,13 +1453,47 @@ when "list"
   # reclaim sweep resolved a build claim per desk, and at 141 desks that serialised
   # into a sweep that never finished.
   as_json = !ARGV.delete("--json").nil?
+  # --json is for callers that DECIDE on the record, so it asks the index for the
+  # show-shaped row (full=1) and for every page, not the default 20. A batch that
+  # silently carried the raw row would answer review_in_progress/gate_in_flight
+  # with nil, and a guard reading nil as "no" frees a desk it should hold.
   _pos, _sc, _ls, top = parse_flags(ARGV, context: "list")
   q = []
   q << "stage=#{top["stage"]}" if top["stage"]
   q << "agent_slug=#{top["agent"]}" if top["agent"]
   q << "reviewable=1" if reviewable
+  q += ["full=1", "per_page=#{LIST_JSON_PER_PAGE}"] if as_json
   path = "/api/v1/tasks#{q.empty? ? "" : "?#{q.join("&")}"}"
-  tasks = api(:get, path)["data"] || []
+  # A board that predates `full` rejects it with a 400 naming the param. Degrade to
+  # the raw listing rather than dying: this CLI ships in worktrees and CI while the
+  # board deploys on its own cadence, so the two are ALWAYS briefly out of step.
+  # The raw rows are still a truthful listing — they are simply missing the derived
+  # fields, and every consumer that DECIDES on them is required to notice that for
+  # itself (see bin/agent-worktree's BATCH_REQUIRED_FIELDS).
+  tasks = begin
+    api(:get, path)["data"] || []
+  rescue SystemExit
+    raise unless as_json
+
+    q -= ["full=1"]
+    path = "/api/v1/tasks?#{q.join("&")}"
+    warn "note: this board does not serve full=1 yet; listing raw rows (derived fields absent)"
+    api(:get, path)["data"] || []
+  end
+  # Walk the remaining pages so --json is the WHOLE set, not the newest page. The
+  # index caps per_page at 100, and Task.recent is newest-first: a single page
+  # would hand a batch caller the newest 20 — i.e. exactly the live work — and
+  # silently omit the rest.
+  if as_json
+    page = 1
+    while tasks.size == (page * LIST_JSON_PER_PAGE)
+      page += 1
+      more = api(:get, "#{path}&page=#{page}")["data"] || []
+      break if more.empty?
+
+      tasks += more
+    end
+  end
   if as_json
     puts JSON.pretty_generate(tasks)
   else

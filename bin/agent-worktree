@@ -379,6 +379,30 @@ def app_for(name)
   config
 end
 
+# app_for, widened to the repos the SWEEP can see.
+#
+# app_for stays registry-only on purpose: it is what the allocating commands
+# (`new`, `up`, `plan`) resolve through, and those need a port range, a session
+# key and a stack — things a discovered repo has no answer for. Scoping a desk to
+# one of them there would half-build a worktree.
+#
+# The sweep asks a narrower question — "which desks do I inspect?" — and the whole
+# point of discovery is that the answer is not limited to registered apps. Without
+# this, `cleanup --reclaim studio-engine` aborted with "unknown app" even though the
+# unscoped sweep had just listed studio-engine desks as candidates: the headline
+# case the coverage work exists for, unusable in the form an operator reaches for.
+def sweep_app_for(name)
+  slug = ALIASES.fetch(name, name)
+  config = apps[slug] || discovered_worktree_configs.find { |c| c["slug"] == slug }
+  unless config
+    known = (apps.keys + discovered_worktree_configs.map { |c| c["slug"] }).sort
+    abort "unknown app: #{name}\nSweepable: #{known.join(", ")}"
+  end
+  abort "repo missing: #{config.fetch("repo")}" unless Dir.exist?(config.fetch("repo"))
+
+  config
+end
+
 def clean_slug(raw)
   slug = raw.to_s.downcase.gsub(/[^a-z0-9]+/, "-").gsub(/\A-|-+\z/, "")
   abort "invalid task slug: #{raw.inspect}" if slug.empty?
@@ -1807,10 +1831,23 @@ def discovered_worktree_configs
     next unless File.directory?(worktrees_dir)
     next if registered.include?(repo)
 
+    # The sibling tree (<repo>.worktrees) and the managed one (<repo>/.worktrees)
+    # are two homes for the SAME repo, so basename alone gives both configs one
+    # slug. The dirs are distinct, so nothing is torn down twice — but every label
+    # built from the slug (worktree_label, the delete-later ledger row, the
+    # registry) then names two different desks identically, which is exactly the
+    # ambiguity an archive record must not have.
     slug = File.basename(repo)
+    slug = "#{slug}(sibling)" if worktrees_dir == "#{repo}.worktrees"
     # No port, no Redis DB, no server: these desks are a git worktree and nothing
     # else, so the teardown must skip stack stop / DB drop / Redis flush rather
     # than fail trying. `stack` is the field the rest of the file already keys on.
+    # Carry the SAME key set a registry config carries, even where the values are
+    # inert. Callers reach for these with app.fetch(...) — a deliberate "this must
+    # exist" — so a config that merely omits them turns every such caller into a
+    # KeyError at teardown time, i.e. mid-sweep, inside the lock. Matching the
+    # shape is what lets a discovered repo travel every code path a registered one
+    # does; `stack` is the field that then says "do nothing" where it matters.
     {
       "slug" => slug,
       "display_name" => slug,
@@ -1818,6 +1855,13 @@ def discovered_worktree_configs
       "worktrees_dir" => worktrees_dir,
       "stack" => STACKLESS_STACK,
       "status" => "discovered",
+      "sidekiq" => false,
+      "ruby_path" => nil,
+      "primary_port" => nil,
+      "range_start" => nil,
+      "range_end" => nil,
+      "session_env" => "#{slug.tr("-", "_").upcase}_SESSION_KEY",
+      "session_key" => "_#{slug.tr("-", "_")}_session",
       "reserved_ports" => []
     }
   end
@@ -2415,6 +2459,25 @@ def stop_pidfile(path, label)
 end
 
 def stop_stack_for_removal(app, dir, record)
+  # Skip only a desk that genuinely has nothing running: a discovered repo AND no
+  # stack env on this desk. Both halves are load-bearing.
+  #
+  # The repo half: a stackless repo (a gem — no server, no port, no Redis DB) has
+  # nothing to stop, and trying was not harmless. Every branch below reaches for a
+  # key with app.fetch, so the generic path raised KeyError on "sidekiq" and took
+  # the sweep down with it — inside with_worktree_lock, after earlier candidates
+  # were already destroyed, leaving a half-finished run and a stale registry. This
+  # is the branch that makes "stackless repos skip stack teardown" TRUE; before it,
+  # STACKLESS_STACK was set at its construction site and never read, so the claim
+  # lived only in a comment while the code did the opposite.
+  #
+  # The desk half: discovery is per-REPO but a stack is per-DESK. moms-app and
+  # acquisition-studio are discovered too, and they are ordinary Rails apps — a
+  # desk of theirs with a stack env has a real server to stop, and skipping it
+  # would orphan the process and its Redis DB. So the repo classification alone
+  # must never authorise a skip; the desk has to be quiet as well.
+  return if app["stack"].to_s == STACKLESS_STACK && !record[:env_exists]
+
   if record[:env_exists]
     values = local_email_values.merge(parse_env(record[:env_path]))
     if app.fetch("stack") == "tm"
@@ -2461,7 +2524,14 @@ end
 # worktrees or the primary checkout (cleanup_ready? + .worktrees-only source),
 # and re-verifies each candidate under the lock before removing it.
 def run_reclaim(app = nil, yes: false)
-  (app ? [app] : apps.values).each do |config|
+  # Refresh the SAME set the sweep will judge, discovered repos included. Skipping
+  # them meant a discovered desk's git-eligibility was decided against whatever
+  # origin happened to be on disk: conservative (a stale origin makes a merged
+  # branch look unmerged, so a desk is withheld, not destroyed), but it made the
+  # coverage claim read stronger than it was — the repo was enumerated and then
+  # judged on stale evidence. A .git directory is required either way, which is
+  # also what keeps a bare directory out of the loop.
+  (app ? [app] : apps.values + discovered_worktree_configs).each do |config|
     next unless Dir.exist?(File.join(config.fetch("repo"), ".git"))
     sh("git", "-C", config.fetch("repo"), "fetch", "origin", "--quiet", allow_fail: true)
   end
@@ -2691,9 +2761,56 @@ def prefetch_task_records!(records)
   batch.each { |slug, task_record| @task_record_cache[slug] = task_record if wanted.include?(slug) }
 end
 
+# THE FIELDS A CACHED RECORD MUST CARRY BEFORE IT MAY ANSWER A HOLD QUESTION.
+#
+# This list is the whole safety property, so it is worth being explicit about why
+# it exists. The batch reads the API INDEX; every consumer of @task_record_cache
+# was written against the API SHOW. Those are different serializers: show runs
+# task_json, which MERGES derived fields, while the index deliberately keeps the
+# raw column ("no per-row rebuild cost", tasks_controller.rb). A raw row is not
+# malformed and it is not missing — it is a complete Task with these keys simply
+# ABSENT, and absent reads as nil, and every one of these guards treats nil as a
+# negative:
+#
+#   review_hold          reads review_in_progress   -> nil -> no reviewer -> free
+#   desk_hold            reads *gate_in_flight      -> nil -> no gate     -> free
+#   desk_hold            reads progress_seconds_ago -> nil -> no progress -> free
+#
+# So a desk whose builder is mid-cert (cert p99 is 94 minutes, LONGER than the
+# 1h29m idle window — which is the entire reason the gate channel exists) reads as
+# abandoned and is torn down. That is not a degraded sweep; it is the incident the
+# guards were written to prevent, re-introduced by a cache that looked complete.
+#
+# Hence: a record missing ANY of these is NEVER cached. It falls through to the
+# per-slug show read, which is slower and correct. Unknown holds; it never frees.
+#
+# This also makes the batch SELF-ACTIVATING across the deploy boundary. bin/task
+# ships in worktrees and CI while the board deploys separately, so a board without
+# `full=1` hands back raw rows — nothing qualifies, nothing caches, and the sweep
+# behaves exactly as it did before the batch existed. When the board can serve the
+# derived fields, records start qualifying and the speed-up turns itself on. No
+# version check, no flag to forget, and no window where it is fast but blind.
+BATCH_REQUIRED_FIELDS = %w[
+  review_in_progress
+  gate_in_flight
+  holder_gate_in_flight
+  progress_seconds_ago
+  holder_liveness_seconds_ago
+].freeze
+
+def batch_record_complete?(task_record)
+  return false unless task_record.is_a?(Hash)
+
+  BATCH_REQUIRED_FIELDS.all? { |field| task_record.key?(field) }
+end
+
 # One `bin/task list --json` — the same board read `list` already performs, printing the
 # full fetched records instead of three columns. Returns slug => record, or nil when the
 # read failed at all (transport, auth, 5xx, malformed) so the caller stays silent.
+#
+# Only records that pass batch_record_complete? are returned. An incomplete row is
+# dropped rather than downgraded, because there is no safe way to answer a hold
+# question from a record that cannot carry the answer.
 def fetch_task_records_batch(record)
   task_bin = File.join(record[:dir], "bin", "task")
   task_bin = File.join(HUB_DIR, "bin", "task") unless File.exist?(task_bin)
@@ -2708,7 +2825,9 @@ def fetch_task_records_batch(record)
   return nil unless parsed.is_a?(Array)
 
   parsed.each_with_object({}) do |task_record, acc|
-    slug = task_record.is_a?(Hash) ? task_record["slug"].to_s : ""
+    next unless batch_record_complete?(task_record)
+
+    slug = task_record["slug"].to_s
     acc[slug] = task_record unless slug.empty?
   end
 rescue JSON::ParserError
@@ -3962,7 +4081,9 @@ if $PROGRAM_NAME == __FILE__
     reclaim = ARGV.delete("--reclaim")
     yes = ARGV.delete("--yes")
     write = ARGV.delete("--write")
-    app = ARGV[0] ? app_for(ARGV[0]) : nil
+    # sweep_app_for, not app_for: a discovered repo is sweepable even though it is
+    # not allocatable.
+    app = ARGV[0] ? sweep_app_for(ARGV[0]) : nil
     if reclaim
       run_reclaim(app, yes: !!yes)
     else
