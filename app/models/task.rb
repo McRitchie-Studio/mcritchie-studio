@@ -388,6 +388,20 @@ class Task < ApplicationRecord
   # size still blank. Enqueued async (AviSizingJob) so the sizing runs in PARALLEL
   # with the build, never blocking the create/move. See #enqueue_avi_sizing_if_designed_unsized.
   after_commit :enqueue_avi_sizing_if_designed_unsized, on: %i[create update]
+  # The /deployments app-ladder row counts tasks PARKED at each branch rung, read
+  # straight from the `merged` column (accepted / release / main), with `archived`
+  # excluded so the main rung can drain. So the ladder moves when — and only when —
+  # one of those two columns moves, which is what this guard says.
+  #
+  # Deliberately NOT folded into DeploymentsBroadcaster.release_modules, even though a
+  # sweep and a ship are what usually change these stamps. That method is documented
+  # as "the Next + Last release modules" and its tests assert the exact slots it
+  # pushes, on the discipline that a caller must not push a card it cannot have
+  # changed. Pushing from here instead keeps that rule intact, fires for a hand-run
+  # `bin/task merged` that no release touched, and cannot double-push on a CI tick
+  # (ci_progress pushes the ladder on its own, for the verdicts rather than the counts).
+  after_commit :broadcast_app_ladder_if_rung_changed, on: %i[create update destroy]
+
   # The operator-approval status lives INSIDE the metadata JSON, so flipping it to
   # "waiting" (an agent requesting a demo review) or clearing it changes no stage
   # column and writes no TaskEvent — the two spines the live /deployments board
@@ -396,6 +410,13 @@ class Task < ApplicationRecord
   # approval_status actually changes (a wholesale devops rewrite that echoes the
   # same value is not a change, so `bin/task update --checks` never spams the board).
   after_update_commit :broadcast_operator_approval_change, if: :saved_change_to_approval_status?
+  # A block/unblock changes no stage and records NO TaskEvent — Task#block! is a bare
+  # update! — so the live board never heard about it and a blocked card sat unchanged
+  # until something else forced a re-render. That is the one state an operator most
+  # needs to see arrive on its own. Keyed on blocked_at because it is the column that
+  # moves in BOTH directions (nil → time on block, time → nil on unblock), so one
+  # guard covers both without a second callback.
+  after_update_commit :broadcast_block_change, if: :saved_change_to_blocked_at?
   # A destroy fires no TaskEvent, so the live /deployments board never hears about
   # it — broadcast the card removal explicitly so every viewer's board drops it.
   after_destroy_commit :broadcast_removal_to_deployments_board
@@ -544,6 +565,40 @@ class Task < ApplicationRecord
   # separate "blocked" bucket — the stage grouping already carries them.
   def self.board_column_tasks(tasks_by_stage, stage)
     Array((tasks_by_stage || {})[stage.to_s])
+  end
+
+  # How many `shipped` cards a board draws by default. Shipped is HISTORY, and it
+  # was the biggest column on either board — 31 of the 57 cards /deployments drew —
+  # carrying the heaviest crew markup (the 4-slot crew cluster). The cap trims the
+  # RENDER, never the record: `?stage=shipped` still returns every one.
+  BOARD_SHIPPED_LIMIT = 12
+
+  # The board's default task set: live work in full, plus the freshest slice of
+  # `shipped`, and NEVER `archived`.
+  #
+  # This scope is the page's whole performance story. The boards used to load every
+  # task and let each view pick columns out of the result, so a board drawing 57
+  # cards instantiated 1,212 tasks, 14,170 TaskEvents and 3,742 GateRuns — about 56%
+  # of everything the request allocated, on a dyno already reporting R14. Measured
+  # on production 2026-08-19: 648ms / 511,905 objects unscoped, 25ms / 24,784 scoped.
+  #
+  # `shipped` is capped in SQL rather than trimmed in Ruby afterwards so its
+  # TaskEvents are never instantiated either — the object count is the expensive
+  # half, not the row count. Callers pass an already-ordered, already-preloaded
+  # scope; `ordered` sorts waiting-approval first then position desc, so the kept
+  # slice is the freshest. Returns an Array, not a relation: it is two loads.
+  def self.board_default_tasks(scope = all)
+    scope.where.not(stage: %w[archived shipped]).to_a +
+      scope.where(stage: "shipped").limit(BOARD_SHIPPED_LIMIT).to_a
+  end
+
+  # { stage => true total } for every column board_default_tasks actually trimmed —
+  # empty when nothing was, so a board badge stays a plain number in the common
+  # case. Pass the SAME filtered scope the cards came from, or an agent-filtered
+  # board would advertise the unfiltered total.
+  def self.board_capped_stage_totals(scope = all)
+    shipped = scope.where(stage: "shipped").count
+    shipped > BOARD_SHIPPED_LIMIT ? { "shipped" => shipped } : {}
   end
 
   # WIP — how much work is open right now, the DevOps card's sixth tile:
@@ -1943,6 +1998,16 @@ class Task < ApplicationRecord
   # Metadata churn (approval stamps, statusline claim_*, agent_context) moves no v2
   # window — approval was only a mover for the v1 Operator Acceptance phase, dropped
   # in VERSION 2 — so it must NOT trigger a rebuild.
+  # Push the app-ladder row when this task's rung membership changed. Destroy always
+  # counts: the row is a COUNT, so a removed task changes it even though no column
+  # "changed" in the saved_change sense. Wrapped by the broadcaster's own
+  # safe_broadcast, so a cable failure can never break the task write.
+  def broadcast_app_ladder_if_rung_changed
+    return unless destroyed? || saved_change_to_merged? || saved_change_to_stage?
+
+    DeploymentsBroadcaster.app_ladder
+  end
+
   def refresh_testing_phases_after_change
     return unless saved_change_to_stage?
 
@@ -2397,6 +2462,10 @@ class Task < ApplicationRecord
 
   def broadcast_operator_approval_change
     DeploymentsBroadcaster.approval_change(self)
+  end
+
+  def broadcast_block_change
+    DeploymentsBroadcaster.block_change(self)
   end
 
   # devops.checks_run carries TWO namespaces. The AUTHOR owns the tier tags

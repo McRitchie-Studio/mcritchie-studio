@@ -96,6 +96,7 @@ class ReleaseEvent < ApplicationRecord
   # to bind to instead of re-deriving them from the DOM.
   def broadcast_release_modules
     DeploymentsBroadcaster.release_modules(fx: "release_event.#{step}.#{status}")
+    DeploymentsBroadcaster.app_ladder
   end
 
   def refresh_release_duration_metrics

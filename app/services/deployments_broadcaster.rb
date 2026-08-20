@@ -77,6 +77,28 @@ class DeploymentsBroadcaster
   # together are why a finished assembling test no longer flashes the Last Release card.
   RELEASE_SLOTS = %i[current last].freeze
 
+  # Push the refreshed APP LADDER ROW to every /deployments viewer.
+  #
+  # The row reports per-repo CI verdicts and per-rung parked counts, so it moves for
+  # the same reasons the release modules do — a release opening, advancing, shipping
+  # or resetting re-stamps `merged` across its members, and a CI upsert changes a
+  # rung's verdict. Without this it was the one live surface on the board with no
+  # broadcast: the dev deploy tools moved every other card and left this row stale
+  # until a manual reload, which is exactly how the gap was found.
+  #
+  # Wrapped in the engine's safe_broadcast SEV-1 guard like every sibling here, so a
+  # cable failure can never break the write that triggered it. Computed fresh from
+  # Ci::AppLadder rather than passed in — the caller knows something changed, not what
+  # the row should now say.
+  def self.app_ladder
+    Studio::Cable.safe_broadcast do
+      Turbo::StreamsChannel.broadcast_replace_to(
+        STREAM, target: "app-ladder-row",
+        partial: "tasks/app_ladder_row", locals: { cards: Ci::AppLadder.build }
+      )
+    end
+  end
+
   def self.release_modules(fx: nil, slots: RELEASE_SLOTS)
     Studio::Cable.safe_broadcast do
       if slots.include?(:current)
@@ -141,6 +163,11 @@ class DeploymentsBroadcaster
         # slot back up.
         release_modules(fx: "ci.progress", slots: [:current])
       end
+
+      # The ladder row carries this repo's own CI meter, so a check upsert for ANY
+      # ladder branch moves it — including the branches no task and no release member
+      # is watching, which is precisely the case the two pushes above cannot cover.
+      app_ladder if Ci::AppLadder::RUNGS.include?(job.head_branch.to_s)
     end
   end
 
@@ -187,6 +214,26 @@ class DeploymentsBroadcaster
     Studio::Cable.safe_broadcast { new(nil, task: task).deliver_replace }
   end
 
+  # A block or unblock. Event-less like .approval_change — Task#block! is a bare
+  # update! that records no TaskEvent — but it deliberately uses the MOVE payload
+  # (remove + prepend) rather than #deliver_replace, and the difference is the whole
+  # reason this method exists.
+  #
+  # A Turbo `replace` targets an existing DOM id, so it can only UPDATE a card the
+  # viewer already has; it CANNOT insert one that is missing. Both cases are real
+  # here. A board opened before the block has the card and needs its tone refreshed;
+  # a board that filtered it out, or that dropped it for any reason, has no card to
+  # replace and must have one inserted — a blocked task is the single state an
+  # operator most needs to see ARRIVE without a refresh, since it is the
+  # needs-attention signal. remove+prepend is idempotent across both: the remove
+  # no-ops when the card is absent, and the prepend lands exactly one card.
+  #
+  # The column is unchanged by construction — a blocked task IS a `building` task
+  # (the block is an attribute, not a stage), so #zone maps it to Building either way.
+  def self.block_change(task)
+    Studio::Cable.safe_broadcast { new(nil, task: task).deliver_move }
+  end
+
   # `task:` covers event-less broadcasts (gate runs, approval flips): the card render
   # only needs the task, so those callers pass it directly and use #deliver_replace.
   def initialize(event, task: nil)
@@ -205,6 +252,14 @@ class DeploymentsBroadcaster
     return nil if @task.nil?
 
     replace_card
+  end
+
+  # Re-seat the card in its column with no event to dispatch on (see .block_change).
+  # Unlike #deliver_replace this also INSERTS a card the viewer is missing.
+  def deliver_move
+    return nil if @task.nil?
+
+    move_card
   end
 
   private

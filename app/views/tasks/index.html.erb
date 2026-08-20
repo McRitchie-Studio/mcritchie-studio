@@ -1,7 +1,8 @@
-<%# Workflow 1 · Build (feature agent) — designed → building → submitted (+ archived toggle).
-    A block is a `building` attribute (red-glowing card in the Building column), not a lane. %>
+<%# Workflow 1 · Build (feature agent) — designed → building → submitted.
+    A block is a `building` attribute (red-glowing card in the Building column), not a lane.
+    Archiving a card removes it from this board; archived work lives at
+    /tasks?stage=archived. %>
 <%= render "board",
       stages: Task::TASKS_BOARD_STAGES,
       title: "Tasks",
-      archived: true,
       current_page: "tasks" %>

@@ -125,7 +125,18 @@ jobs:
           cache-dependency-glob: tools/island-background-animator/uv.lock
 
       - name: Install FFmpeg
-        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y ffmpeg
+        # The fetch is BOUNDED and RETRIED — see .github/scripts/apt-retry for the
+        # incident, the measured budgets, and why the loop lives in a script rather
+        # than inline here (short version: an inline `"$budget"` in a command
+        # position makes this step opaque to bin/lib/ci_test_command.rb, the cert
+        # that must be able to SEE every unit CI runs).
+        #
+        # This bound is the backstop, not the mechanism: the script's own escalating
+        # budgets total ~22 minutes, and 25 sits above that and well below the
+        # 45-minute job bound, so a step that blows through its retries still fails
+        # long before it can take the whole job down with it.
+        timeout-minutes: 25
+        run: .github/scripts/apt-retry ffmpeg
 
       - name: Check Island Background Animator
         run: tools/island-background-animator/bin/check
@@ -188,11 +199,22 @@ jobs:
         options: --health-cmd="pg_isready" --health-interval=10s --health-timeout=5s --health-retries=3
 
     steps:
-      - name: Install packages
-        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y curl libjemalloc2 libvips postgresql-client
-
       - name: Checkout code
         uses: actions/checkout@v7
+
+      - name: Install packages
+        # The fetch is BOUNDED and RETRIED — see .github/scripts/apt-retry for the
+        # incident, the measured budgets, and why the loop lives in a script rather
+        # than inline here (short version: an inline `"$budget"` in a command
+        # position makes this step opaque to bin/lib/ci_test_command.rb, the cert
+        # that must be able to SEE every unit CI runs).
+        #
+        # This bound is the backstop, not the mechanism: the script's own escalating
+        # budgets total ~22 minutes, and 25 sits above that and well below the
+        # 45-minute job bound, so a step that blows through its retries still fails
+        # long before it can take the whole job down with it.
+        timeout-minutes: 25
+        run: .github/scripts/apt-retry curl libjemalloc2 libvips postgresql-client
 
       - name: Await RubyGems propagation for locked gems
         run: .github/scripts/await-gem-propagation.sh
@@ -372,23 +394,6 @@ jobs:
         options: --health-cmd="pg_isready" --health-interval=10s --health-timeout=5s --health-retries=3
 
     steps:
-      # THE LIST IS DELIBERATELY UNCHANGED FROM THE MONOLITH, MINUS ONE ENTRY.
-      #
-      # Trimming it looked like free money — four shards now pay for it instead of one —
-      # and most of it turned out NOT to be free. `postgresql-client` is load-bearing:
-      # test/commands/agent_worktree_test.rb mints a real per-run Postgres database and
-      # bin/lib/cert_orphan_guard.rb shells `psql` (best-effort, so its loss would show
-      # up as a quietly weaker guard rather than a red build — the worse failure). `curl`
-      # is kept for the same reason, unproven-inert. `libvips` is required outright:
-      # image_processing plus Active Storage, which calls Vips.block_untrusted at boot.
-      #
-      # `libjemalloc2` is dropped, and only that one: it is a PRODUCTION memory allocator
-      # this repo LD_PRELOADs in the Dockerfile, and nothing on the test path references
-      # it. Every other saving here needs measuring on a real runner before it is worth a
-      # red CI — that is /tasks/trim-ci-setup-floor, not this change.
-      - name: Install packages
-        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y curl libvips postgresql-client
-
       # fetch-depth: 0 IS LOAD-BEARING ON EVERY SHARD — do not "optimize" it back to the
       # default, and do not try to put it on only the shard that needs it.
       #
@@ -407,6 +412,29 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
+      - name: Install packages
+        # The fetch is BOUNDED and RETRIED — see .github/scripts/apt-retry for the
+        # incident, the measured budgets, and why the loop lives in a script rather
+        # than inline here (short version: an inline `"$budget"` in a command
+        # position makes this step opaque to bin/lib/ci_test_command.rb, the cert
+        # that must be able to SEE every unit CI runs).
+        #
+        # This bound is the backstop, not the mechanism: the script's own escalating
+        # budgets total ~22 minutes, and 25 sits above that and well below the
+        # 45-minute job bound, so a step that blows through its retries still fails
+        # long before it can take the whole job down with it.
+        #
+        # `libjemalloc2` is deliberately absent from THIS list where the other jobs
+        # carry it: it is a PRODUCTION allocator this repo LD_PRELOADs in the
+        # Dockerfile, and nothing on the test path references it. `curl`,
+        # `postgresql-client` and `libvips` all stay — measured, not assumed:
+        # test/commands/agent_worktree_test.rb mints a real per-run Postgres database
+        # and bin/lib/cert_orphan_guard.rb shells `psql`, and libvips is required
+        # outright by image_processing + Active Storage's boot-time
+        # Vips.block_untrusted call.
+        timeout-minutes: 25
+        run: .github/scripts/apt-retry curl libvips postgresql-client
 
       - name: Await RubyGems propagation for locked gems
         run: .github/scripts/await-gem-propagation.sh
@@ -511,8 +539,46 @@ jobs:
         options: --health-cmd="pg_isready" --health-interval=10s --health-timeout=5s --health-retries=3
 
     steps:
+      # CHECKOUT FIRST — .github/scripts/apt-retry is a file in THIS repo, so the apt
+      # step below cannot run before the tree exists. Ordering, not preference.
+      #
+      # `fetch-depth: 0` here is INHERITED, not required, and saying so beats leaving the
+      # next reader to guess. The `rails` shards need full history because
+      # test/lib/e2e_quarantine_ratchet_test.rb reads its baseline from `origin/release`
+      # and fails closed without it — the comment that used to sit here said exactly that,
+      # and it stopped being true of THIS lane the moment the suite was split: `system`
+      # runs test/system only, which reads no git history at all. It is kept because it is
+      # what the monolithic `test` job this lane was split out of already did: a few
+      # seconds on a job that is not the critical path, against the risk of finding out
+      # the hard way that something in boot wanted it. Measure that nothing does, and
+      # delete it.
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
       - name: Install packages
-        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y curl libvips postgresql-client
+        # The fetch is BOUNDED and RETRIED — see .github/scripts/apt-retry for the
+        # incident, the measured budgets, and why the loop lives in a script rather
+        # than inline here (short version: an inline `"$budget"` in a command
+        # position makes this step opaque to bin/lib/ci_test_command.rb, the cert
+        # that must be able to SEE every unit CI runs).
+        #
+        # This bound is the backstop, not the mechanism: the script's own escalating
+        # budgets total ~22 minutes, and 25 sits above that and well below the
+        # 45-minute job bound, so a step that blows through its retries still fails
+        # long before it can take the whole job down with it.
+        #
+        # `libjemalloc2` is deliberately absent from THIS list where the other jobs
+        # carry it: it is a PRODUCTION allocator this repo LD_PRELOADs in the
+        # Dockerfile, and nothing on the test path references it. `curl`,
+        # `postgresql-client` and `libvips` all stay — measured, not assumed:
+        # test/commands/agent_worktree_test.rb mints a real per-run Postgres database
+        # and bin/lib/cert_orphan_guard.rb shells `psql`, and libvips is required
+        # outright by image_processing + Active Storage's boot-time
+        # Vips.block_untrusted call.
+        timeout-minutes: 25
+        run: .github/scripts/apt-retry curl libvips postgresql-client
 
       # System-test lane browser. Install Chrome via Chrome for Testing, then let
       # Selenium Manager (bundled in selenium-webdriver 4.32) fetch the EXACTLY
@@ -545,9 +611,6 @@ jobs:
           for bin in $(which -a chromedriver 2>/dev/null); do sudo rm -f "$bin"; done
           sudo rm -f /usr/local/bin/chromedriver /usr/bin/chromedriver || true
           echo "chromedriver remaining on PATH: $(which chromedriver 2>/dev/null || echo none)"
-
-      - name: Checkout code
-        uses: actions/checkout@v7
 
       - name: Await RubyGems propagation for locked gems
         run: .github/scripts/await-gem-propagation.sh
