@@ -30,19 +30,10 @@ class AgentPortraitAssetsTest < ActiveSupport::TestCase
                  "drops the <img> — the page still renders, just with no face."
   end
 
-  test "[component] every rendered portrait is under 200KB" do
-    oversized = AVATAR_PATHS.filter_map do |p|
-      file = Rails.public_path.join(p.delete_prefix("/"))
-      next unless file.exist?
-
-      kb = file.size / 1024
-      "#{p} (#{kb}KB)" if kb > 200
-    end
-
-    assert_empty oversized,
-                 "portrait(s) over the 200KB budget: #{oversized.join(', ')}. These are card-size " \
-                 "images; re-encode rather than shipping the source render."
-  end
+  # The byte budget and the pixel floor/ceiling live in
+  # test/lib/response_payload_budget_test.rb, which already owns them and reasons about the
+  # card-hero draw size. Duplicating the number here would just give it two homes to drift
+  # between.
 
   test "[component] no unreferenced portrait folders came back" do
     folders = Dir.children(Rails.public_path.join("agents")).select do |entry|
