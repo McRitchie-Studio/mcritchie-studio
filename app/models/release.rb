@@ -252,10 +252,57 @@ class Release < ApplicationRecord
     deployment_span("total", "Total", created_at, shipped_at)
   end
 
+  # How long a cached averages figure may outlive the event that would change it.
+  # This is the BACKSTOP, not the mechanism — see deployment_stage_averages.
+  DEPLOYMENT_AVERAGES_TTL = 1.hour
+
   # Averages each deployment stage (+ Total) over the last N shipped releases —
-  # the summary cards. Same span math as the per-row cells, so cards and columns
-  # can never disagree.
+  # the DevOps card's summary tiles. Read through a cache, recomputed at the end
+  # of every deployment.
+  #
+  # SIZE THIS HONESTLY. Computing it costs 5-9ms inside a request that takes
+  # 1,200-2,000ms (measured on production 2026-08-19): two queries over ten
+  # shipped releases. Caching it is a SHAPE change — the number only moves when a
+  # deployment finishes, so it is computed then rather than by every viewer — and
+  # it is worth about 0.4% of the page. Anyone reading this expecting the board to
+  # get faster is reading the wrong method; the board's cost was its task scope
+  # and its payload.
+  #
+  # READ-THROUGH, and that part IS load-bearing. Rails.cache in production is an
+  # ActiveSupport::Cache::FileStore on the dyno's own disk (config.cache_store is
+  # left unset), so it is wiped by every deploy and every restart. A
+  # write-on-ship-only design would leave the DevOps card BLANK from a restart
+  # until the next deployment finished — which can be days. Computing on a miss
+  # makes a cold cache cost one 8ms recompute that nobody notices.
+  #
+  # The TTL only bounds how long a change nothing announced can sit — a late
+  # GateRun stamped on an already-shipped release. `refresh_deployment_stage_averages!`
+  # at the end of ship! is what actually keeps this current.
   def self.deployment_stage_averages(limit: DEPLOYMENT_DASHBOARD_SAMPLE)
+    Rails.cache.fetch(deployment_stage_averages_cache_key(limit),
+                      expires_in: DEPLOYMENT_AVERAGES_TTL) do
+      compute_deployment_stage_averages(limit: limit)
+    end
+  end
+
+  # Recompute and store, returning the fresh value — the end-of-deployment warm.
+  # Called from ship! and safe to call at any time.
+  def self.refresh_deployment_stage_averages!(limit: DEPLOYMENT_DASHBOARD_SAMPLE)
+    compute_deployment_stage_averages(limit: limit).tap do |value|
+      Rails.cache.write(deployment_stage_averages_cache_key(limit), value,
+                        expires_in: DEPLOYMENT_AVERAGES_TTL)
+    end
+  end
+
+  # Versioned, so a change to the span math can never be served from a cache
+  # written by the old one — bump `v1` when the SHAPE of the value changes.
+  def self.deployment_stage_averages_cache_key(limit)
+    "release/deployment_stage_averages/v1/#{limit}"
+  end
+
+  # The real work. Same span math as the per-row cells, so cards and columns can
+  # never disagree.
+  def self.compute_deployment_stage_averages(limit: DEPLOYMENT_DASHBOARD_SAMPLE)
     releases = where(state: "shipped")
                .order(Arel.sql("COALESCE(shipped_at, created_at) DESC"))
                .includes(:gate_runs) # the gate-backed spans read the association
@@ -682,6 +729,20 @@ class Release < ApplicationRecord
       shipped_count += 1
       # The beat starts when the FIRST member flips (see Release::BeatClock).
       clock ||= Release::BeatClock.new(member_pause)
+    end
+
+    # The deployment just finished, so the DevOps card's averages just changed —
+    # recompute them HERE, once, instead of on every later render.
+    #
+    # RESCUED, deliberately. A ship is the most consequential write this system
+    # makes, and by this line the release and every member are already stamped and
+    # committed. A cache store that is full, read-only, or simply missing must not
+    # turn a completed production deploy into a raised exception; the worst a
+    # failure here can cost is that the next viewer recomputes an 8ms figure.
+    begin
+      self.class.refresh_deployment_stage_averages!
+    rescue StandardError => e
+      ErrorLog.capture!(e)
     end
   end
 
