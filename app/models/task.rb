@@ -1231,7 +1231,27 @@ class Task < ApplicationRecord
   # nil when there is no pickup row to measure from — a task assembled before
   # the intent existed, or by a path that records none. The caller falls back to
   # the transition figure rather than rendering blank.
-  def assembled_seconds_from_pickup
+  #
+  # `events:` — the caller's already-loaded TaskEvents, when it has them. This is
+  # the board's fast path and the reason the parameter exists: it used to call
+  # `task_events.transitions.where(to_stage: …)`, and a `.where` on a LOADED
+  # association still issues SQL, so the boards' `includes(:task_events)` bought
+  # nothing here. Two queries per assembled/shipped card, 62 of the 149 uncached
+  # queries a production /deployments render made (2026-08-19).
+  #
+  # A PARAMETER, not a peek at `task_events.loaded?`, and that distinction is the
+  # whole safety of this. A loaded association can be STALE: the model stamps its
+  # own transition event on save, so an instance whose rows are later rewritten by
+  # `update_all`, by another instance, or by a replayed fixture still holds the OLD
+  # occurred_at in memory — and reading that silently returns a wrong DURATION
+  # rather than failing. Sniffing `loaded?` would have opted every such caller in
+  # without asking. (Caught by CI: TaskAssembledSeatTest's fixture rewrites the
+  # transition with update_all, and the sniffing version read 30m for a 20m seat.)
+  #
+  # So the default stays SQL — every existing caller reads the truth — and only a
+  # caller holding a genuinely fresh array opts in. The board's is a per-request
+  # preload, which is exactly that.
+  def assembled_seconds_from_pickup(events: nil)
     # The assemble MOMENT comes from the transition event, not the assembled_at
     # column, because the card's cluster is built from task_events and the two
     # must not be able to disagree. Production stamps both; a caller that
@@ -1242,34 +1262,35 @@ class Task < ApplicationRecord
     # `.where`: this runs once per assembled/shipped CARD on a board that already
     # preloaded :task_events, and the two `.where` calls it used to make were 62 of
     # the 149 uncached queries a production /deployments render issued.
-    events = board_read_events
-    landed = latest_event(events) { |e| e.transition? && e.to_stage == "assembled" }
-    landed_at = landed&.occurred_at || assembled_at
+    landed_at = assembled_landing_at(events)
     return nil unless landed_at
 
-    pickup = latest_event(events) do |e|
-      e.intent? && e.to_stage == "assembled" && e.occurred_at <= landed_at
-    end
+    pickup = latest_assembled_pickup(events, landed_at)
     return nil unless pickup
 
     (landed_at - pickup.occurred_at).round
   end
 
-  # This task's events, through the caller's PRELOAD when there is one.
-  #
-  # `task_events.transitions.where(…)` issues fresh SQL even on a loaded
-  # association — `.where` builds a new relation rather than filtering the rows
-  # already in memory — so every board card re-queried events the controller had
-  # just preloaded for it. `to_a` loads once and caches on the association, so a
-  # preloaded card costs nothing and a cold single task costs exactly one query.
-  #
-  # READ PATHS ONLY, and that limit is deliberate. `open_intents_for` and
-  # `target_landed_in_current_stage?` below still go to SQL because they guard a
-  # WRITE — they are `record_intent_event`'s idempotency check, and a stale preload
-  # there would wave a duplicate intent through. They cost 11 queries a render,
-  # which is not a trade worth making against that.
-  def board_read_events
-    task_events.to_a
+  # When the assemble LANDED. Prefers the transition event over the assembled_at
+  # column so the card and the model cannot disagree.
+  def assembled_landing_at(events)
+    landed =
+      if events
+        latest_event(events) { |e| e.transition? && e.to_stage == "assembled" }
+      else
+        task_events.transitions.where(to_stage: "assembled").chronological.last
+      end
+    landed&.occurred_at || assembled_at
+  end
+
+  # Avi's pickup intent for that landing — the latest one at or before it.
+  def latest_assembled_pickup(events, landed_at)
+    if events
+      latest_event(events) { |e| e.intent? && e.to_stage == "assembled" && e.occurred_at <= landed_at }
+    else
+      task_events.intents.where(to_stage: "assembled")
+                 .where(occurred_at: ..landed_at).chronological.last
+    end
   end
 
   # `chronological.last` in Ruby: newest by (occurred_at, id), matching the scope's

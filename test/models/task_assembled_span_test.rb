@@ -20,25 +20,56 @@ class TaskAssembledSpanTest < ActiveSupport::TestCase
     assert_in_delta 3600, assembled_task.assembled_seconds_from_pickup, 2
   end
 
-  test "[unit] costs no query when the caller already preloaded the events" do
+  def count_queries
+    count = 0
+    sub = ActiveSupport::Notifications.subscribe("sql.active_record") do |_n, _s, _f, _id, payload|
+      count += 1 unless payload[:cached] || payload[:name].to_s == "SCHEMA"
+    end
+    result = yield
+    [result, count]
+  ensure
+    ActiveSupport::Notifications.unsubscribe(sub) if sub
+  end
+
+  test "[unit] costs no query when the caller passes its preloaded events" do
     slug = assembled_task.slug
     # Exactly how the board loads it.
     preloaded = Task.where(slug: slug).includes(:task_events, :gate_runs).first
     assert preloaded.task_events.loaded?, "premise: the association must arrive loaded"
 
-    queries = 0
-    sub = ActiveSupport::Notifications.subscribe("sql.active_record") do |_n, _s, _f, _id, payload|
-      queries += 1 unless payload[:cached] || payload[:name].to_s == "SCHEMA"
+    span, queries = count_queries do
+      preloaded.assembled_seconds_from_pickup(events: preloaded.task_events.to_a)
     end
-    span = preloaded.assembled_seconds_from_pickup
-    ActiveSupport::Notifications.unsubscribe(sub)
 
     assert_in_delta 3600, span, 2
-    # This is the whole point of the change. `task_events.transitions.where(...)`
-    # issued SQL even here, because `.where` on a loaded association builds a new
-    # relation rather than filtering the rows in memory — 2 queries per card,
-    # 62 per production /deployments render.
-    assert_equal 0, queries, "the reader must filter the preload, not re-query it"
+    # The whole point of the parameter. `task_events.transitions.where(...)` issued
+    # SQL even on a loaded association, because `.where` builds a new relation
+    # rather than filtering the rows in memory — 2 queries per assembled/shipped
+    # card, 62 per production /deployments render.
+    assert_equal 0, queries, "the passed-in events must be filtered, not re-queried"
+  end
+
+  # THE SAFETY PROPERTY, and the reason `events:` is a parameter instead of a
+  # `task_events.loaded?` sniff. A loaded association can be STALE — the model
+  # stamps its own transition event on save, so rows rewritten afterwards by
+  # update_all or another instance leave the OLD occurred_at in memory, and reading
+  # it returns a wrong DURATION rather than failing. Sniffing would have opted every
+  # such caller in silently; CI caught exactly that against TaskAssembledSeatTest.
+  test "[unit] a caller that passes nothing reads the database, even when loaded" do
+    task = assembled_task
+    task.task_events.load
+    assert task.task_events.loaded?, "premise: the association is loaded and now stale-able"
+
+    # Rewrite the landing behind the in-memory rows, the way a fixture or a sibling
+    # instance would.
+    task.task_events.transitions.where(to_stage: "assembled")
+        .update_all(occurred_at: 10.minutes.ago)
+
+    _span, queries = count_queries { task.assembled_seconds_from_pickup }
+    assert_operator queries, :>, 0, "the default path must go to the database, not the stale preload"
+
+    # 90 minutes ago pickup → 10 minutes ago landing.
+    assert_in_delta 80 * 60, task.assembled_seconds_from_pickup, 2
   end
 
   test "[unit] still answers on a cold task, without a preload" do

@@ -150,7 +150,12 @@ module StageAgentsHelper
   #   shipped   → Steffon's ship time, on its own
   CrewCluster = Struct.new(:lane, :stacked, :seconds, :live_since, keyword_init: true)
 
-  def crew_clusters(task, entries)
+  # `events:` rides through to Task#assembled_seconds_from_pickup — the board's
+  # per-request preload, so the assembled seat is read from memory instead of
+  # costing two queries per assembled/shipped card. nil (the detail page, tests)
+  # leaves that reader on its SQL default. See the note on that method for why
+  # this is passed rather than sniffed.
+  def crew_clusters(task, entries, events: nil)
     by_lane = entries.group_by { |e| stage_lane(e.stage) }
 
     [].tap do |clusters|
@@ -181,7 +186,7 @@ module StageAgentsHelper
         # transition figure is mostly queue-wait (see Task#assembled_seconds_from_pickup).
         # Falls back to the transition sum for rows recorded before the intent existed.
         clusters << CrewCluster.new(lane: :assembled, stacked: assembled,
-                                    seconds: task.assembled_seconds_from_pickup ||
+                                    seconds: task.assembled_seconds_from_pickup(events: events) ||
                                              assembled.sum { |e| e.seconds.to_i },
                                     live_since: nil)
       end
@@ -234,7 +239,7 @@ module StageAgentsHelper
     return blocked_stage_columns(task, entries, mascot, agents) if task.blocked?
     return build_step_columns(task, entries, mascot) if build_step_board?(task, board)
 
-    by_lane = crew_clusters(task, entries).index_by(&:lane)
+    by_lane = crew_clusters(task, entries, events: events).index_by(&:lane)
 
     # The review lane's face on a card means ONE thing: review is happening RIGHT
     # NOW. A task that was reviewed, QA-blocked, and resubmitted still carries a

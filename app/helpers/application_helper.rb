@@ -481,22 +481,22 @@ module ApplicationHelper
   # Next Release card renders one CI track per app whose code is in the release.
   # Empty ({}) unless the release is active. Same reader, same graceful degrade.
   #
-  # Memoised PER RELEASE for the render. /deployments draws two release cards (the
-  # current release and the last shipped one) and each walks its member repos, so
-  # the un-memoised version re-resolved every repo's SHA and re-folded its check
-  # jobs once per card: 18 ci_check_jobs reads plus 18 github_workflow_runs reads
-  # per request, all of them duplicates. Keyed by release id, because the two cards
-  # are DIFFERENT releases — a single memo slot would have served the current
-  # release's CI to the shipped card. nil-safe: a blank release memoises to {}.
+  # DELIBERATELY NOT MEMOISED. Caching this on the view context was tried and
+  # reverted: it broke release_lanes_test's "a finished test moves ONLY its own
+  # meter's signature", which renders the partial twice with a CiCheckJob settling
+  # in between and expects the second render to see it. A view-context memo served
+  # the first render's answer to the second, so no meter moved.
   #
-  # Render-lifetime only. This is a helper ivar, so it dies with the view context;
-  # nothing here caches across requests, and the live broadcaster still reads fresh.
+  # The test is right and the memo was wrong. This reader's whole job is to report
+  # CI as it stands NOW — it feeds the live meters the board morphs as checks
+  # land — so a cache whose lifetime is "however long this view context happens to
+  # live" is the wrong shape for it. Its cost is ~17ms of duplicate reads on a
+  # two-release board; if that is ever worth removing, do it inside
+  # Ci::ProgressReader (where latest_ci_sha and run_started_at_for hit
+  # github_workflow_runs twice for the same repo) rather than by freezing the
+  # answer out here.
   def release_ci_progress(release)
-    key = release.respond_to?(:id) ? release&.id : release
-    @release_ci_progress ||= {}
-    @release_ci_progress.fetch(key) do
-      @release_ci_progress[key] = ci_progress_reader.for_release(release)
-    end
+    ci_progress_reader.for_release(release)
   end
 
   # The GitHub Actions run URL for one repo's release-CI track, or nil — the html_url
