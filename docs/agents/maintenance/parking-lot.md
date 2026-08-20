@@ -112,54 +112,53 @@ that direction.
 
 ---
 
-## Parked — the /tasks board-filter flake (two theories already refuted)
+## Solved — the /tasks board-filter flake (`close-board-filter-flake`)
 
-Task `gate-board-ready-on-inner` was dropped by Mr. McRitchie on 2026-08-09; PR
-#737 closed unmerged, task archived, desk reclaimed by hand (the branch tip is
-preserved on `origin/feat/gate-board-ready-on-inner`). Nothing in the repo
-references the slug.
+**Unparked and fixed 2026-08-18.** Kept here, shortened, because this entry is what
+made the fix possible: it is the record that stopped the third investigation from
+re-deriving the first two.
 
-**The gap.** `TasksBoardFilterSystemTest#[e2e] an app chip toggle hides then
-restores a card` fails **only in CI** — 3 times across PRs #727 and #729, never in
-5 local reproductions (single file, full system lane, CI seeds 21908/21460, clean
-`db:test:prepare`, and CI's exact `pull/N/merge` ref). The main suite is always
-green; only the system lane fails, which is why `bin/fast-check` never catches it.
-`playwright (3)` / `task_card_actions.spec.js` shows the same shape and has gone
-red on `accepted` itself.
+**The cause, named.** `find(...).click` dispatches at fixed viewport COORDINATES —
+the driver hit-tests the element, then sends `pointerdown` and `pointerup` at that
+point. The filter chips are sized by Montserrat, fetched from
+`fonts.googleapis.com`; that stylesheet blocks the load event but the font FILES do
+not, so they land after `visit` returns and every chip is re-measured. A reflow
+between down and up leaves them on different elements, and the browser fires
+`click` on the nearest COMMON ANCESTOR — the row, not the button. Nothing raises,
+`toggleApp` never runs, and the failure surfaces downstream on a negative assertion
+about a card that was never at fault.
 
-**What is already DISPROVED — do not re-derive these.**
+**How the two refuted theories were skipped.** Both were about the board reacting
+wrongly. The CI failure screenshot — recovered from the run's `screenshots`
+artifact — showed the rolio chip **un-pressed and un-struck-through** at the moment
+of failure, so `hiddenApps` had never contained `rolio`. That single frame moved
+the question from "why did the card not react" to "why did the filter never
+toggle", which is a different half of the page.
 
-1. *"The e2e waits on the chrome's `data-alpine-ready`, but the cards live in the
-   inner primitive which inits later, so the click lands before the card bindings
-   exist."* The chrome and the primitive render inline in ONE document, so Alpine
-   performs a single `initTree` walk whose `deferHandlingDirectives` flush binds
-   the cards' `x-show` **before either flag is stamped** — there is no window
-   between the two flags. The inner primitive also already publishes its own flag
-   (`studio-engine app/views/studio/_board_assets.html.erb`).
-2. *"`toggleApp` mutated `hiddenApps` with nothing listening, so the card never
-   hid."* Independently false: a cold effect's FIRST evaluation reads the
-   already-mutated array and renders hidden. Alpine proxy tracking does not
-   produce a ran-but-missed-its-dependency effect.
+**This entry's own open suspect was right.** "The chip's width depends on
+`app_emoji(app)` and headless CI renders emoji at different widths, so a layout
+shift between locating the chip and dispatching the click fits *3× in CI, never
+locally* far better than any init race." Correct in mechanism; the mover is the
+webfont rather than the emoji.
 
-**Still-open suspects, untested.** The chip's width depends on `app_emoji(app)`
-and headless CI renders emoji at different widths, so a layout shift between
-locating the chip and dispatching the click fits "3× in CI, never locally" far
-better than any init race. Separately, `layouts/studio/_head.html.erb` loads
-Alpine from jsDelivr on a **floating `3.x.x`** range in the system-test path,
-while SortableJS and confetti in that same file are deliberately vendored.
+**Where it landed.** `ApplicationSystemTestCase#click_when_settled`, used by both
+board filter specs, pinned by `test/system/board_filter_click_stability_test.rb`
+(mutation-verified 3 red / 3 green), written up in
+[`testing.md`](../modules/testing.md).
 
-**Why parked, not built.** Both PRs it was meant to unblock
-(`preserve-shiny-mascot-stamps`, `ingest-rerun-conclusion-updates`) shipped
-without it, so it blocks nothing. The change that was written is inert against
-the flake by its own author's admission.
-
-**The lesson worth more than the fix:** one green CI run **cannot** retire an
+**The lesson that outlived it, unchanged:** one green CI run **cannot** retire an
 intermittent failure. A single green run is equally consistent with "fixed" and
 "got lucky", so it is not evidence — demand a mechanism you can point at in the
-source, or say the cause is still unknown.
+source, or say the cause is still unknown. The corollary this fix adds: for a
+timing bug, a test that merely passes proves nothing, because the broken state
+passed too. Reintroduce the defect and watch the test go red.
 
-**Resurrect when:** the flake blocks something real again, or someone tests either
-open suspect. Start from the emoji-width hypothesis, not the init race.
+**Nothing is still parked from this thread.** Real users hit the same reflow, so
+Montserrat was vendored into `layouts/studio/_head.html.erb` — served from the
+asset pipeline at `font-display: optional`, joining the Alpine, SortableJS and
+confetti that file already vendored. `/tasks/vendor-the-montserrat-webfont`
+(studio-engine #172) is `reviewed` and rides the next release sweep. The test-side
+guard and the user-side cause are both closed.
 
 ---
 
