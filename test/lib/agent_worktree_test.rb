@@ -1325,16 +1325,25 @@ class AgentWorktreeTest < Minitest::Test
   # Rails teardown ran against a gem repo and died on `app.fetch("sidekiq")` —
   # inside with_worktree_lock, after earlier candidates were already destroyed,
   # leaving a half-finished sweep and a stale registry.
+  # Builds the tree it inspects. An earlier cut read discovered_worktree_configs.first
+  # from the real projects root — which passed on a laptop with desks on disk and
+  # returned nil in a fresh CI checkout, so the check was green exactly where it was
+  # not needed and NoMethodError where it was. A test for discovery must own the
+  # thing being discovered.
   def test_a_discovered_config_carries_every_key_teardown_fetches
-    out = run_in_script(<<~RUBY)
-      config = discovered_worktree_configs.first
-      missing = %w[sidekiq stack ruby_path session_env session_key reserved_ports].reject { |k| config.key?(k) }
-      print missing.inspect
-    RUBY
+    Dir.mktmpdir do |root|
+      FileUtils.mkdir_p(File.join(root, "studio-engine", ".worktrees", "a-desk"))
 
-    assert_equal "[]", out,
-                 "teardown reaches for these with fetch — a config that omits one raises KeyError " \
-                 "mid-sweep, inside the lock, after earlier desks are already gone"
+      out = run_in_script(<<~RUBY, env: { "PROJECTS_DIR" => root })
+        config = discovered_worktree_configs.first
+        keys = %w[sidekiq stack ruby_path session_env session_key reserved_ports]
+        print config.nil? ? "NO CONFIG DISCOVERED" : keys.reject { |k| config.key?(k) }.inspect
+      RUBY
+
+      assert_equal "[]", out,
+                   "teardown reaches for these with fetch — a config that omits one raises KeyError " \
+                   "mid-sweep, inside the lock, after earlier desks are already gone"
+    end
   end
 
   # The skip needs BOTH halves. Discovery is per-repo but a stack is per-desk, and
