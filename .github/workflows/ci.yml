@@ -369,6 +369,17 @@ jobs:
       #   options: --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 5
 
     steps:
+      # fetch-depth: 0 IS LOAD-BEARING — do not "optimize" it back to the default.
+      #
+      # test/lib/e2e_quarantine_ratchet_test.rb ratchets the @quarantine ceiling against its
+      # value on `origin/release` — the one number a PR's own diff cannot move. actions/checkout
+      # defaults to a depth-1 fetch of the head SHA ALONE, which leaves `origin/release`
+      # unresolvable, and a ratchet that cannot see its baseline cannot certify monotonicity.
+      #
+      # So the ratchet FAILS CLOSED on a missing baseline: delete this line and the `test` job
+      # goes RED and says why. It cannot quietly demote itself back to the pin it used to be —
+      # which is exactly what it was, and how the hole grew once with every guard green.
+      # Pinned by test/lib/ci_workflow_triggers_test.rb.
       - name: Checkout code
         uses: actions/checkout@v7
         with:
@@ -420,17 +431,6 @@ jobs:
           sudo rm -f /usr/local/bin/chromedriver /usr/bin/chromedriver || true
           echo "chromedriver remaining on PATH: $(which chromedriver 2>/dev/null || echo none)"
 
-      # fetch-depth: 0 IS LOAD-BEARING — do not "optimize" it back to the default.
-      #
-      # test/lib/e2e_quarantine_ratchet_test.rb ratchets the @quarantine ceiling against its
-      # value on `origin/release` — the one number a PR's own diff cannot move. actions/checkout
-      # defaults to a depth-1 fetch of the head SHA ALONE, which leaves `origin/release`
-      # unresolvable, and a ratchet that cannot see its baseline cannot certify monotonicity.
-      #
-      # So the ratchet FAILS CLOSED on a missing baseline: delete this line and the `test` job
-      # goes RED and says why. It cannot quietly demote itself back to the pin it used to be —
-      # which is exactly what it was, and how the hole grew once with every guard green.
-      # Pinned by test/lib/ci_workflow_triggers_test.rb.
       - name: Await RubyGems propagation for locked gems
         run: .github/scripts/await-gem-propagation.sh
 

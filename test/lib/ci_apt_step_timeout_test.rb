@@ -12,7 +12,7 @@
 # `gh run rerun`, so before it, a stall blocked the retry as well as the run.
 #
 # WHAT IT COULD NOT DO. It turns "hangs forever" into "fails", and stops there. On
-# 2026-08-19 that was not enough — the same fetch stalled FIVE times across five PRs,
+# 2026-08-19 that was not enough — the same fetch stalled four times across five PRs,
 # every one on the same line:
 #
 #   Get:5 https://archive.ubuntu.com/ubuntu noble-security InRelease [126 kB]
@@ -176,7 +176,15 @@ class CiAptStepTimeoutTest < Minitest::Test
   end
 
   def test_the_script_delegates_its_bound_to_timeout
-    body = File.read(SCRIPT)
+    # COMMENTS STRIPPED FIRST, and that is not fussiness. This script DOCUMENTS its
+    # own shape — one comment line explains the defect by quoting `if sudo timeout
+    # -k 10 "$budget" ...` as prose. Matching the raw file therefore matched the
+    # COMMENT, so this assertion stayed GREEN with the real `timeout` wrapper deleted
+    # from the code. Measured here on 2026-08-19, and caught first in turf-monster.
+    # Assert against what the shell will execute, never against what the file says
+    # about itself. (The behavioural guards below catch the same deletion; this one
+    # is the cheap drift guard, and a drift guard that cannot fail is not a guard.)
+    body = File.read(SCRIPT).lines.reject { |l| l.strip.start_with?("#") }.join
 
     assert_match(/timeout\s+-k\s+\d+\s+"\$budget"/, body,
                  "`timeout-minutes` alone only kills the STEP — it cannot retry. Without `timeout -k " \
