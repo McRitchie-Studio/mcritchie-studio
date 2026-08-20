@@ -1,0 +1,165 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/ci-shard — RUN ONE SHARD OF THE RAILS SUITE, and emit the receipt it is judged on.
+#
+#   bin/ci-shard --shard=2/4      run shard 2 of 4 (prepare, then the tests it owns)
+#   bin/ci-shard 2/4              the same thing, for typing by hand
+#   bin/ci-shard --print 2/4      print that shard's file list; run nothing
+#   bin/ci-shard --manifest       print every file the lane owns, one per line
+#   bin/ci-shard --explain        print all buckets with their projected seconds
+#
+# WHY CI USES THE `--shard=` SPELLING AND NOT THE BARE ONE. bin/lib/ci_test_command.rb
+# — the cert lane's parser — refuses any step that hands a BARE interpolated token to a
+# command it has not proven inert, because such a token might BE the command rather than
+# an argument to it. `bin/ci-shard ${{ matrix.shard }}/…` tokenizes with `${{` standing
+# alone in argument position and trips exactly that rule; `--shard=${{ matrix.shard }}/…`
+# attaches the interpolation to a flag, where it is unambiguously a VALUE. The
+# `playwright` job has always been written this way for the same reason. This is not
+# dodging the guard — it is writing the invocation in the form whose meaning the guard
+# can actually read.
+#
+# THE SHAPE OF THE THING. The suite used to be one command on one runner —
+# `bin/rails db:test:prepare test test:system`, 411s of tests behind 91s of setup while
+# eight other jobs sat finished. This cuts it across `shards` runners (config/rails_lane.yml)
+# and hands the verdict question to a separate gate. It changes WHERE tests run and
+# nothing about WHICH: the union of the buckets is the whole glob, by construction in
+# bin/lib/test_shard.rb and by arithmetic in bin/rails-executed-set-check.
+#
+# WHY THE PREPARE LIVES HERE rather than as its own workflow step. Two tasks, one boot:
+# `db:test:prepare` builds this runner's test database, and Rails' `test:prepare` hook is
+# what compiles the gitignored app/assets/builds/tailwind.css. The second one is easy to
+# lose: Rails SKIPS its own test:prepare hook whenever an argument looks like a path, and
+# every invocation below passes paths. An argless `bin/rails test` — which is what CI ran
+# before this lane existed — fires the hook for free, so nothing here used to need saying.
+# Pass paths without it and every view-rendering test errors with `The asset "tailwind.css"
+# is not present in the asset pipeline` (the same trap bin/fast-check documents). Keeping
+# both inside this one command means a shard cannot be run un-prepared.
+#
+# THE DENOMINATOR IS CHECKED, NOT TRUSTED. CI passes `strategy.job-total`; the contract
+# declares `shards`. If someone widens the matrix and forgets the contract — or the
+# reverse — the buckets the gate expects and the buckets that ran are different cuts of
+# the same tree, and the arithmetic would fail confusingly one job later. So a mismatch
+# aborts HERE, where the message can name both numbers.
+
+require_relative "lib/test_shard"
+
+ROOT = File.expand_path("..", __dir__)
+CONTRACT_PATH = File.join(ROOT, "config", "rails_lane.yml")
+TIMINGS_PATH = File.join(ROOT, "test", "timings.yml")
+
+def usage!(status = 1)
+  warn <<~USAGE
+    usage: bin/ci-shard --shard=<index>/<total>   run that shard
+           bin/ci-shard <index>/<total>          the same, unflagged
+           bin/ci-shard --print <index>/<total>
+           bin/ci-shard --manifest
+           bin/ci-shard --explain
+  USAGE
+  exit status
+end
+
+mode = :run
+spec = nil
+
+args = ARGV.dup
+until args.empty?
+  arg = args.shift
+  case arg
+  when "--print" then mode = :print
+  when "--manifest" then mode = :manifest
+  when "--explain" then mode = :explain
+  when "-h", "--help" then usage!(0)
+  when %r{\A(?:--shard=)?(\d+)/(\d+)\z} then spec = [ Regexp.last_match(1).to_i, Regexp.last_match(2).to_i ]
+  else
+    warn "bin/ci-shard: unrecognized argument #{arg.inspect}"
+    usage!
+  end
+end
+
+contract = TestShard.load_contract(CONTRACT_PATH)
+timings = TestShard.load_timings(TIMINGS_PATH)
+files = TestShard.candidate_files(
+  root: ROOT,
+  include_globs: contract[:include_globs],
+  exclude_globs: contract[:exclude_globs]
+)
+
+abort "bin/ci-shard: #{CONTRACT_PATH} matched NO test files — refusing to run an empty lane" if files.empty?
+
+case mode
+when :manifest
+  puts files
+  exit 0
+when :explain
+  buckets = TestShard.plan(files: files, timings: timings, shards: contract[:shards])
+  loads = TestShard.loads(buckets, timings)
+  measured = files.count { |file| timings.key?(file) }
+  puts "#{files.length} files (#{measured} measured, #{files.length - measured} at the median " \
+       "of #{TestShard.median_weight(timings).round(2)}s) across #{contract[:shards]} shards"
+  buckets.each_with_index do |bucket, index|
+    puts format("  shard %d/%d  %4d files  ~%6.1fs", index + 1, contract[:shards], bucket.length, loads[index])
+  end
+  spread = loads.max - loads.min
+  puts format("  spread    %.1fs (%.1f%% of the heaviest shard)", spread, loads.max.zero? ? 0.0 : spread / loads.max * 100)
+  exit 0
+end
+
+usage! if spec.nil?
+index, total = spec
+
+if total != contract[:shards]
+  abort "bin/ci-shard: asked for shard #{index}/#{total} but #{CONTRACT_PATH} declares " \
+        "shards: #{contract[:shards]}. The workflow matrix and the contract must agree — " \
+        "the gate re-derives the cut from the contract."
+end
+
+shard_files = TestShard.files_for(index: index, shards: total, files: files, timings: timings)
+
+if mode == :print
+  puts shard_files
+  exit 0
+end
+
+# A shard that owns nothing would `bin/rails test` with no paths, which runs the WHOLE
+# suite — four times over, silently, and the receipts would still union correctly. Refuse.
+abort "bin/ci-shard: shard #{index}/#{total} owns no files" if shard_files.empty?
+
+Dir.chdir(ROOT)
+
+env = {
+  "CI_RECEIPT_OUT" => ENV.fetch("CI_RECEIPT_OUT", File.join(ROOT, "rails-report-shard-#{index}.json")),
+  "CI_RECEIPT_SHARD" => index.to_s,
+  "CI_RECEIPT_SHARD_TOTAL" => total.to_s,
+  "CI_RECEIPT_ROOT" => ROOT
+}
+
+warn "[ci-shard] shard #{index}/#{total} — #{shard_files.length} files"
+
+receipt_path = env.fetch("CI_RECEIPT_OUT")
+File.delete(receipt_path) if File.exist?(receipt_path)
+
+unless system(env, "bin/rails", "db:test:prepare", "test:prepare")
+  abort "bin/ci-shard: test-prepare failed — refusing to run tests against an unprepared tree"
+end
+
+tests_passed = system(env, "bin/rails", "test", *shard_files)
+
+# ASSERT THE MECHANISM, NOT JUST THE TESTS. The receipt is written by a MINITEST PLUGIN
+# (test/minitest/ci_receipt_plugin.rb), discovered through Minitest.load_plugins — which
+# minitest 5 calls from `Minitest.run` and minitest 6 does NOT (it made plugin loading
+# opt-in; see its own docs, "optional, called by user"). This repo pins `minitest ~> 5.25`
+# in the Gemfile for an unrelated reason (6.0 dropped minitest/mock), so the pin is now
+# load-bearing TWICE.
+#
+# If that discovery ever stops working, the tests still pass and no receipt appears. The
+# executed-set gate would then go red two jobs later with "no reports" — the right verdict
+# reached by an unreadable route. Say it HERE instead, where the log has the shard, the
+# command, and the file count in front of it.
+unless File.exist?(receipt_path)
+  abort "bin/ci-shard: shard #{index}/#{total} ran but wrote NO receipt at #{receipt_path}. " \
+        "The receipt is emitted by test/minitest/ci_receipt_plugin.rb via Minitest.load_plugins; " \
+        "check that the bundled minitest is 5.x and that test/ is on the load path."
+end
+
+exit 1 unless tests_passed

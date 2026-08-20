@@ -1,0 +1,76 @@
+# THE RAILS LANE'S CONTRACT — what the green `rails` checks actually cover.
+#
+# ONE file, read by BOTH halves of the guard, exactly as config/e2e_lane.yml is:
+#
+#   · bin/ci-shard                        THE PLANNER. Cuts the lane into `shards`
+#                                         buckets and runs one of them.
+#   · bin/rails-executed-set-check        THE RUNTIME GATE. Re-derives the expected set
+#                                         from the COMMITTED TREE (never from the
+#                                         planner) and asserts the shards' own receipts
+#                                         union to exactly that.
+#
+# WHY A RECEIPT AND NOT ANOTHER GUARD CLAUSE.
+# test/lib/ci_workflow_triggers_test.rb protects the suite command by ENUMERATING the
+# ways it can be narrowed — TEST, TESTOPTS, DEFAULT_TEST, DEFAULT_TEST_EXCLUDE, a job
+# `if:`, a heredoc GITHUB_ENV write, an inline variable prefix. That file's own header
+# says the right instinct on reading its list is not "the class is closed" but "here is
+# where I would look next", and it NAMES a live hole (a heredoc write from an earlier
+# step). It is a blacklist, and a blacklist only ever refuses the spellings its author
+# imagined.
+#
+# Sharding makes that worse before it makes it better: the monolith at least ran one
+# obvious command, whereas four buckets can each go quietly empty. So the lane stopped
+# arguing about the COMMAND and started reading the EXECUTED SET. Every way a file can
+# leave the lane — a flag invented next year, a bin-packing bug that assigns it to no
+# bucket, a shard whose runner died after reporting success, a file nobody added to git
+# — arrives at the same line of arithmetic:
+#
+#     union(shard receipts) == every committed file the globs below match
+#
+# and every one of those files must have contributed AT LEAST ONE RUN. A file present
+# in the plan and absent from the receipt is the failure this gate exists to catch.
+---
+# The shard matrix in .github/workflows/ci.yml. `strategy.job-total` supplies the
+# denominator there, so this is the ONE place the number lives.
+#
+# WHY FOUR. Measured 2026-08-20 on run 32329490149: `bin/rails test` took 411s at 4
+# workers, and job setup is ~55s. Four shards put ~103s of tests behind that setup, so
+# the job lands near 166s — just under the `playwright` lane it runs beside, which is
+# where sharding stops buying wall-clock. Six shards would reach ~2.2min but push the
+# workflow to 15 concurrent jobs against a 20-job account ceiling, where a second PR in
+# flight starts queueing and the gain evaporates. Raise this only together with the
+# concurrency headroom to spend it.
+#
+# DECIDED 2026-08-20, and recorded here so the next person does not re-derive it: FOUR, and
+# raising it is gated on concurrency, not on appetite. Six shards would reach ~2.2min and
+# take this workflow to 15 concurrent jobs against the account's ~20 cap — at which point a
+# second PR in flight starts QUEUEING and the extra shards buy nothing at all. A shard that
+# waits for a runner is slower than no shard. Get the headroom first, then raise this.
+shards: 4
+
+# Every test file this lane owns.
+include:
+  - "test/**/*_test.rb"
+
+# Somebody else's job. `test/system` is Capybara + a real Chrome, which the sharded
+# lane deliberately does not install — it is 13 tests and ~13s, and making four runners
+# each pay the Chrome install and the chromedriver-eviction dance to carry it is the
+# opposite of the trade this lane exists to make. It runs in the `system` job, and
+# bin/rails-executed-set-check does NOT expect it here.
+exclude:
+  - "test/system/**/*_test.rb"
+
+# The number of skipped tests the lane may report before the gate calls it red.
+#
+# MEASURED, not chosen: 11, on runs 32329490149 and 32326010830 — the same 11 both
+# times. They were invisible before this line; a suite quietly growing skips is a suite
+# quietly shrinking, and the whole point of a receipt is that the shrinkage has to
+# happen in a reviewable diff line instead.
+#
+# HONEST ABOUT ITS STRENGTH: this is a PIN, not a ratchet. config/e2e_lane.yml's
+# `quarantined` is compared against its value on `origin/release` precisely because a
+# number a branch can edit restrains nothing. This one can be raised in the same commit
+# that adds the skip. It is still worth having — it turns an invisible drift into a
+# visible edit — but do not read it as the equal of the e2e ratchet. Hardening it the
+# same way is /tasks/ratchet-the-rails-skip-ceiling.
+max_skips: 11
