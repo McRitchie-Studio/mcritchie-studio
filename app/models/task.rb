@@ -1041,8 +1041,11 @@ class Task < ApplicationRecord
     :never
   end
 
-  def review_in_progress?
-    stage == "submitted" && open_intent_for("reviewed").present? && review_claim_alive?
+  # `events:` rides through to open_intents_for — same parameter-not-sniff contract
+  # as everything else on this path. The boards call this once PER CARD, so on a
+  # column of submitted work it was the last per-card pair of queries left.
+  def review_in_progress?(events: nil)
+    stage == "submitted" && open_intent_for("reviewed", events: events).present? && review_claim_alive?
   end
 
   # Is the review lane's face still TRUE? An open intent says a review STARTED; it
@@ -1202,8 +1205,8 @@ class Task < ApplicationRecord
   # now". Scope is cycle-aware: if QA blocks a task and it re-enters `submitted`,
   # old review intents from the prior submitted cycle are closed even if no
   # `→reviewed` transition ever landed, and a fresh review intent can open.
-  def open_intent_for(to_stage)
-    open_intents_for(to_stage).last
+  def open_intent_for(to_stage, events: nil)
+    open_intents_for(to_stage, events: events).last
   end
 
   # Avi's crew-seat duration, measured from WHEN HE PICKED THE TASK UP rather
@@ -1297,16 +1300,44 @@ class Task < ApplicationRecord
   # `order(occurred_at: :asc, id: :asc)`. Both columns are NOT NULL in the schema,
   # so the tuple compare is total.
   def latest_event(events)
-    events.select { |event| yield(event) }.max_by { |event| [event.occurred_at, event.id] }
+    events.select { |event| yield(event) }.max_by { |event| [event.occurred_at, event.id.to_i] }
   end
 
-  def open_intents_for(to_stage)
+  # `events:` — the caller's already-resolved TaskEvents, same contract and same
+  # reasoning as #assembled_seconds_from_pickup above: a PARAMETER with the SQL
+  # default, never a `task_events.loaded?` sniff, because a loaded association can
+  # be stale and a stale read here silently changes WHICH intents count as open.
+  #
+  # That default is what keeps `record_intent_event` safe. This method is its
+  # idempotency guard — a write path — and it calls with no events, so it still
+  # asks the database. Only the board's crew partial, holding a fresh per-request
+  # preload, opts in. That was 2 queries per SUBMITTED and REVIEWED card
+  # (open_intents_for itself, plus current_stage_entry_event re-read per intent).
+  def open_intents_for(to_stage, events: nil)
     to_stage = to_stage.to_s
     return [] unless NEXT_INTENT_STAGE[stage] == to_stage
 
-    task_events.intents.where(to_stage: to_stage).chronological.to_a.reject do |intent|
-      !intent_started_in_current_stage?(intent) || intent_superseded?(intent)
+    # Resolved ONCE for the whole rejection pass, not per intent. It used to be
+    # re-read inside intent_started_in_current_stage? for every candidate, which
+    # is a query per intent on the SQL path and pointless work on the array path.
+    # Passed down rather than memoised on the instance, so its lifetime is exactly
+    # this call — the same tight-lifetime rule that made a view-context memo the
+    # wrong answer for release_ci_progress.
+    entry = current_stage_entry_event(events: events)
+
+    open_intent_candidates(to_stage, events).reject do |intent|
+      !intent_started_in_current_stage?(intent, entry: entry) ||
+        intent_superseded?(intent, events: events)
     end
+  end
+
+  # The →to_stage intents, oldest first — `chronological` in Ruby when the caller
+  # brought its own events.
+  def open_intent_candidates(to_stage, events)
+    return task_events.intents.where(to_stage: to_stage).chronological.to_a unless events
+
+    events.select { |event| event.intent? && event.to_stage == to_stage }
+          .sort_by { |event| [event.occurred_at, event.id.to_i] }
   end
 
   # The reviewer pair (normalized) recorded on the latest review intent, or nil —
@@ -1330,24 +1361,32 @@ class Task < ApplicationRecord
     ).exists?
   end
 
-  def current_stage_entry_event
+  def current_stage_entry_event(events: nil)
+    return latest_event(events) { |e| e.transition? && e.to_stage == stage } if events
+
     task_events.transitions.where(to_stage: stage).chronological.last
   end
 
-  def intent_started_in_current_stage?(intent)
+  # `entry:` is REQUIRED — the caller resolves the stage-entry event once and hands
+  # it in, so this cannot re-query per intent. There is exactly one caller.
+  def intent_started_in_current_stage?(intent, entry:)
     return false unless intent.from_stage == stage
-
-    entry = current_stage_entry_event
     return true if entry.nil?
 
     intent.occurred_at > entry.occurred_at ||
       (intent.occurred_at == entry.occurred_at && intent.id.to_i >= entry.id.to_i)
   end
 
-  def intent_superseded?(intent)
-    # An intent is live only while the task remains in its source-stage cycle.
-    # It closes when the target lands OR when any later transition leaves the
-    # source stage (direct QA block, archive, etc.).
+  # An intent is live only while the task remains in its source-stage cycle. It
+  # closes when the target lands OR when any later transition leaves the source
+  # stage (direct QA block, archive, etc.).
+  #
+  # The Ruby branch mirrors the SQL predicate term for term — same OR on the two
+  # stage columns, same strict (occurred_at, id) tiebreak — so the two paths can
+  # only ever agree. `any?` rather than a full select: this is an existence check.
+  def intent_superseded?(intent, events: nil)
+    return superseded_by?(events, intent) if events
+
     task_events.transitions.where(
       "(to_stage = :target OR from_stage = :source) AND " \
         "(occurred_at > :occurred_at OR (occurred_at = :occurred_at AND id > :id))",
@@ -1356,6 +1395,16 @@ class Task < ApplicationRecord
       occurred_at: intent.occurred_at,
       id: intent.id
     ).exists?
+  end
+
+  def superseded_by?(events, intent)
+    events.any? do |event|
+      next false unless event.transition?
+      next false unless event.to_stage == intent.to_stage || event.from_stage == intent.from_stage
+
+      event.occurred_at > intent.occurred_at ||
+        (event.occurred_at == intent.occurred_at && event.id.to_i > intent.id.to_i)
+    end
   end
 
   def devops_url(name)

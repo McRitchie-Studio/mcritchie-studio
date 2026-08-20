@@ -47,6 +47,37 @@ class BoardQueryBudgetTest < ActionDispatch::IntegrationTest
     ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
   end
 
+  # THE FIXTURE IS THE TEST. A differential design proves nothing if the cards it
+  # creates cannot reach the code under test, and the first version of this file
+  # made exactly that mistake: it used only SHIPPED cards on /deployments and
+  # event-less BUILDING cards on /tasks. NEXT_INTENT_STAGE["shipped"] is nil, so
+  # Task#open_intents_for returns [] before it queries, and a card with no events
+  # reaches nothing at all. Both boards therefore read as proof of a board-wide
+  # property neither had tested, while submitted cards still cost 2 queries each.
+  #
+  # So every stage that reaches a per-card reader gets a card here.
+
+  # A SUBMITTED card: an open →reviewed intent, which is what open_intents_for and
+  # current_stage_entry_event read.
+  def create_submitted_task(index)
+    task = Task.create!(title: "query budget submitted #{index}", stage: "submitted")
+    task.task_events.create!(kind: "transition", from_stage: "building", to_stage: "submitted",
+                             actor: "pikachu", occurred_at: 2.hours.ago)
+    task.task_events.create!(kind: "intent", from_stage: "submitted", to_stage: "reviewed",
+                             actor: "carl", occurred_at: 1.hour.ago)
+    task
+  end
+
+  # A REVIEWED card: an open →assembled intent, the same readers one stage on.
+  def create_reviewed_task(index)
+    task = Task.create!(title: "query budget reviewed #{index}", stage: "reviewed")
+    task.task_events.create!(kind: "transition", from_stage: "submitted", to_stage: "reviewed",
+                             actor: "carl", occurred_at: 2.hours.ago)
+    task.task_events.create!(kind: "intent", from_stage: "reviewed", to_stage: "assembled",
+                             actor: "avi", occurred_at: 1.hour.ago)
+    task
+  end
+
   # A card in a stage whose crew cluster asks for the assembled span — the reader
   # that carried the N+1.
   def create_shipped_task(index)
@@ -63,10 +94,16 @@ class BoardQueryBudgetTest < ActionDispatch::IntegrationTest
   test "[integration] the deployments board's query count does not grow with cards" do
     Task.delete_all
     3.times { |i| create_shipped_task(i) }
+    3.times { |i| create_submitted_task(i) }
+    3.times { |i| create_reviewed_task(i) }
 
     few = render_query_count(deployments_path)
 
-    5.times { |i| create_shipped_task(100 + i) }
+    5.times do |i|
+      create_shipped_task(100 + i)
+      create_submitted_task(100 + i)
+      create_reviewed_task(100 + i)
+    end
     many = render_query_count(deployments_path)
 
     assert_equal few, many,
@@ -77,10 +114,14 @@ class BoardQueryBudgetTest < ActionDispatch::IntegrationTest
   test "[integration] the tasks board's query count does not grow with cards" do
     Task.delete_all
     3.times { |i| Task.create!(title: "query budget building #{i}", stage: "building") }
+    3.times { |i| create_submitted_task(i) }
 
     few = render_query_count(tasks_path)
 
-    5.times { |i| Task.create!(title: "query budget building #{100 + i}", stage: "building") }
+    5.times do |i|
+      Task.create!(title: "query budget building #{100 + i}", stage: "building")
+      create_submitted_task(100 + i)
+    end
     many = render_query_count(tasks_path)
 
     assert_equal few, many,
