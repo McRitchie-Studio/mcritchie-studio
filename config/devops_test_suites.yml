@@ -305,10 +305,24 @@ full_suite_scopes:
 # name is normalized to ci_<name> at capture; a job with no key here still emits
 # (its event_slug just lands without phase/tier/host chips).
 ci_scopes:
-  ci_test:
-    description: ci.yml `test` job — bin/rails db:test:prepare test test:system on a GitHub runner (the full CI suite)
+  ci_rails:
+    description: ci.yml `rails` job — one shard of the Rails suite (bin/ci-shard) on a GitHub runner; the 4-way matrix reports FOUR runs under this one scope
     phase: ci
     tier: full
+    host: ci
+    blocks: blocking
+    mutates: false
+  ci_rails_executed_set:
+    description: ci.yml `rails_executed_set` job — bin/rails-executed-set-check, asserting the shards' receipts account for every committed test file
+    phase: ci
+    tier: full
+    host: ci
+    blocks: blocking
+    mutates: false
+  ci_system:
+    description: ci.yml `system` job — bin/rails db:test:prepare test:system (Capybara + Chrome) on a GitHub runner
+    phase: ci
+    tier: e2e
     host: ci
     blocks: blocking
     mutates: false

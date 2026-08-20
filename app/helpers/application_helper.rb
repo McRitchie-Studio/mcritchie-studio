@@ -480,6 +480,21 @@ module ApplicationHelper
   # MEMBER REPO: an ordered { repo_slug => progress } map (producer-first), so the
   # Next Release card renders one CI track per app whose code is in the release.
   # Empty ({}) unless the release is active. Same reader, same graceful degrade.
+  #
+  # DELIBERATELY NOT MEMOISED. Caching this on the view context was tried and
+  # reverted: it broke release_lanes_test's "a finished test moves ONLY its own
+  # meter's signature", which renders the partial twice with a CiCheckJob settling
+  # in between and expects the second render to see it. A view-context memo served
+  # the first render's answer to the second, so no meter moved.
+  #
+  # The test is right and the memo was wrong. This reader's whole job is to report
+  # CI as it stands NOW — it feeds the live meters the board morphs as checks
+  # land — so a cache whose lifetime is "however long this view context happens to
+  # live" is the wrong shape for it. Its cost is ~17ms of duplicate reads on a
+  # two-release board; if that is ever worth removing, do it inside
+  # Ci::ProgressReader (where latest_ci_sha and run_started_at_for hit
+  # github_workflow_runs twice for the same repo) rather than by freezing the
+  # answer out here.
   def release_ci_progress(release)
     ci_progress_reader.for_release(release)
   end
@@ -1198,5 +1213,54 @@ module ApplicationHelper
     when "archived"   then "stage-closed"
     else "neutral"
     end
+  end
+
+  # --- App ladder row (/deployments) ---------------------------------------
+  #
+  # The suite strip's tones. Same vocabulary as tasks/_release_phase_meter and
+  # components/_ci_progress_meter: a TINT fill (the label rides on top of it), amber
+  # in flight, emerald settled green, rose settled bad.
+  #
+  # `:stale` and `:not_built` share the FADED treatment on purpose. A stale verdict
+  # describes a tree that is no longer the tree — painting it green would assert a
+  # verification nobody performed — and to an operator deciding whether to trust the
+  # rung, "never built" and "built, but not for what is there now" mean the same
+  # thing. They differ in their title text, not their colour.
+  APP_LADDER_TONES = {
+    green: { fill: "bg-emerald-500", text: "text-emerald-700 dark:text-emerald-300", border: "border-emerald-500/40" },
+    pending: { fill: "bg-amber-500", text: "text-amber-700 dark:text-amber-300", border: "border-amber-500/40" },
+    red: { fill: "bg-rose-500", text: "text-rose-700 dark:text-rose-300", border: "border-rose-500/40" },
+    conflicted: { fill: "bg-rose-500", text: "text-rose-700 dark:text-rose-300", border: "border-rose-500/40" }
+  }.freeze
+
+  APP_LADDER_FADED = { fill: "bg-transparent", text: "text-muted opacity-60", border: "border-subtle" }.freeze
+
+  def app_ladder_rung_tone(state)
+    APP_LADDER_TONES.fetch(state.to_sym, APP_LADDER_FADED)
+  end
+
+  # The hover text — where the precision the colour deliberately drops lives.
+  def app_ladder_rung_title(rung)
+    base = case rung.state
+           when :green then "verified green"
+           when :pending then "tests running"
+           when :red then "tests failed"
+           when :conflicted then "conflicted"
+           when :stale then "NOT verified for what is on this branch now — the last green ran before work landed here"
+           else "no CI verdict ingested for this branch"
+           end
+    sha = rung.short_sha ? " (#{rung.short_sha})" : ""
+    parked = rung.parked_count.positive? ? " · #{pluralize(rung.parked_count, "task")} parked here" : ""
+    "#{rung.branch}: #{base}#{sha}#{parked}"
+  end
+
+  # One sentence naming the whole strip, so assistive tech gets the summary rather
+  # than three branch names and three state words in sequence.
+  def app_ladder_suite_summary(card)
+    parts = Ci::AppLadder::RUNGS.filter_map do |branch|
+      rung = card.rung(branch)
+      "#{branch} #{rung.label}" if rung
+    end
+    "#{card.repo} test suite — #{parts.join(", ")}"
   end
 end

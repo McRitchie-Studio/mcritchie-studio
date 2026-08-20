@@ -9,7 +9,7 @@ require "application_system_test_case"
 # on the two targets' common ancestor instead of the button. A racy failure cannot be
 # asserted by waiting for it to happen; it reproduced three times in one CI day and
 # never once in five local runs. So the trigger is made DETERMINISTIC here: the page is
-# put into a settling state that moves the chip every frame and reflows it under any
+# put into a settling state that moves the chip on a timer and reflows it under any
 # pointerdown, for a fixed window, then stops. That is the same event the font causes,
 # on a clock instead of a network.
 #
@@ -49,6 +49,79 @@ class BoardFilterClickStabilityTest < ApplicationSystemTestCase
     # would leave the test green and the guard unexercised.
     assert_operator distinct_settling_widths, :>, 1,
                     "the settling fixture never moved the row: the guard was never asked to wait"
+  end
+
+  # THE REGRESSION GUARD for the fixture above, asserted as the PROPERTY rather than
+  # the implementation: while the window is open, the chip's box must keep changing
+  # even when no frame ever runs.
+  #
+  # It exists because the obvious "cleanup" is to put the rAF jitter back — a frame
+  # loop reads more like animation code than a bare setInterval does, so the revert is
+  # the tidy-looking change. Measured, that revert costs 6 of every 9 `test`-job
+  # failures in this repo, on feature branches and on `accepted` itself, always with
+  # the same message: expected to find css button[aria-pressed='true'] but there were
+  # no matches. The test above cannot catch the revert on its own — it asserts the
+  # fixture MOVED, and a frame-driven fixture does move, right up until the runner
+  # starves. This one removes the frames and asserts the motion survives, which is the
+  # property the guard downstream actually depends on.
+  #
+  # It bites by construction: stub rAF to a no-op, put the jitter back on rAF, and the
+  # label never widens, so all six samples are identical and this test goes red.
+  test "[e2e] the settling window moves the chip without any frames" do
+    Task.create!(
+      title: "rolio settling board card", stage: "building",
+      metadata: { "devops" => { "repositories" => ["rolio"] } }
+    )
+
+    visit tasks_path
+    assert_selector "[data-test='kanban-board'][data-alpine-ready='true']"
+    # Without the row there is nothing to widen, and start_settling_window's
+    # querySelector throws a raw JS error instead of failing on something actionable.
+    assert_selector "[data-test='board-filter-row']"
+
+    # No rAF CALLBACK can ever run again on this page. That is not the same claim as
+    # "no frames" — the browser keeps painting and the document timeline keeps ticking —
+    # but it is exactly the dependency under test: a fixture that moves the chip only
+    # from a rAF callback cannot move it at all here, which is the limit a starved
+    # runner degrades toward.
+    execute_script("window.requestAnimationFrame = function () { return 0; };")
+
+    start_settling_window
+    chip = find("[data-test='board-filter-row'] button", text: "rolio", match: :first)
+
+    # ONE round trip per sample, deliberately. The fixture's inline write lands between
+    # tasks, so batching these six reads into a single evaluate_script would return six
+    # identical values and redden this test for a reason that has nothing to do with the
+    # fixture. Do not "optimize" the round trips away.
+    samples = 6.times.map do
+      sample = evaluate_script(
+        "(function (el) { return [Math.round(el.getBoundingClientRect().x), " \
+        "window.__settling.open]; })(arguments[0])", chip
+      )
+      sleep 0.05
+      sample
+    end
+
+    # Only pairs sampled while the window was OPEN carry a signal. Once it closes the
+    # fixture resets letter-spacing and the chip parks at its final x forever, so two
+    # post-close samples are a duplicate that says nothing about frames. Measured on this
+    # branch, sampling ends at 373ms of the 600ms window — but a loaded runner is exactly
+    # what this file exists for, and an overrun there would otherwise redden the test for
+    # the OPPOSITE of the reason it was written.
+    in_window = samples.take_while { |(_x, open)| open }.map(&:first)
+    assert_operator in_window.length, :>=, 4,
+                    "the settling window closed before this test finished sampling it " \
+                    "(samples: #{samples.inspect}) — raise SETTLING_MS; do not read the " \
+                    "shortfall as a result about frames"
+
+    duplicates = in_window.each_cons(2).count { |a, b| a == b }
+    assert_equal 0, duplicates,
+                 "the chip stopped moving while the settling window was open and no rAF " \
+                 "callback could run (in-window x samples: #{in_window.inspect}). " \
+                 "await_settled_geometry polls geometry every 50ms and clears on two identical " \
+                 "samples, so a frame-driven window lets it clear early, the click lands inside " \
+                 "the window, and the pointerdown handler swallows it. This is the flake — do " \
+                 "not drive the window from requestAnimationFrame."
   end
 
   private

@@ -150,7 +150,12 @@ module StageAgentsHelper
   #   shipped   → Steffon's ship time, on its own
   CrewCluster = Struct.new(:lane, :stacked, :seconds, :live_since, keyword_init: true)
 
-  def crew_clusters(task, entries)
+  # `events:` rides through to Task#assembled_seconds_from_pickup — the board's
+  # per-request preload, so the assembled seat is read from memory instead of
+  # costing two queries per assembled/shipped card. nil (the detail page, tests)
+  # leaves that reader on its SQL default. See the note on that method for why
+  # this is passed rather than sniffed.
+  def crew_clusters(task, entries, events: nil)
     by_lane = entries.group_by { |e| stage_lane(e.stage) }
 
     [].tap do |clusters|
@@ -181,7 +186,7 @@ module StageAgentsHelper
         # transition figure is mostly queue-wait (see Task#assembled_seconds_from_pickup).
         # Falls back to the transition sum for rows recorded before the intent existed.
         clusters << CrewCluster.new(lane: :assembled, stacked: assembled,
-                                    seconds: task.assembled_seconds_from_pickup ||
+                                    seconds: task.assembled_seconds_from_pickup(events: events) ||
                                              assembled.sum { |e| e.seconds.to_i },
                                     live_since: nil)
       end
@@ -234,7 +239,7 @@ module StageAgentsHelper
     return blocked_stage_columns(task, entries, mascot, agents) if task.blocked?
     return build_step_columns(task, entries, mascot) if build_step_board?(task, board)
 
-    by_lane = crew_clusters(task, entries).index_by(&:lane)
+    by_lane = crew_clusters(task, entries, events: events).index_by(&:lane)
 
     # The review lane's face on a card means ONE thing: review is happening RIGHT
     # NOW. A task that was reviewed, QA-blocked, and resubmitted still carries a
@@ -258,8 +263,16 @@ module StageAgentsHelper
     if agents
       by_slug = agents.index_by(&:slug)
       mascot_agent = task_mascot_face(task, mascot)
-      intents = Array(events || task.task_events).select(&:intent?)
-      work = in_progress_work(task, by_slug, mascot_agent, intents)
+      # BOTH arrays, deliberately. `intents` is the filtered list the fallback
+      # branch of open_task_intents_for selects from; `all_events` is the FULL set
+      # Task#open_intents_for needs, because its liveness filter reads TRANSITIONS
+      # (the stage-entry event, and any later transition that supersedes an intent).
+      # Handing it the intents-only array would leave it unable to find either, so
+      # every intent would read as started-in-stage and never superseded — a wrong
+      # answer, not a slow one.
+      all_events = Array(events || task.task_events)
+      intents = all_events.select(&:intent?)
+      work = in_progress_work(task, by_slug, mascot_agent, intents, events: all_events)
       if work && %i[review assembled shipped].include?(work[:lane])
         existing = by_lane[work[:lane]]
         by_lane[work[:lane]] =
@@ -488,6 +501,13 @@ module StageAgentsHelper
     end
   end
 
+  # Every Pokémon, indexed by slug, once per request. The 151 are tiny, so one
+  # load beats a find_by per card — which is what final_evolution was doing.
+  # Memoised on the view context, so its lifetime is exactly this render.
+  def pokemon_index
+    @pokemon_index ||= Pokemon.all.index_by(&:slug)
+  end
+
   def final_evolution(task, events: nil)
     return nil unless Pokemon.table_exists?
 
@@ -508,7 +528,9 @@ module StageAgentsHelper
     return nil if from_snap["slug"].blank? || to_snap["slug"].blank?
     return nil if from_snap["slug"] == to_snap["slug"]
 
-    final = Pokemon.find_by(slug: to_snap["slug"])
+    # Through the per-request index, not a per-card find_by: this runs once per
+    # board CARD, and the 151 Pokémon are one small query for the whole page.
+    final = pokemon_index[to_snap["slug"]]
     return nil if final.nil? || Array(final.evolution).present?
 
     FinalEvolution.new(event: evt, from: from_snap, to: to_snap)
@@ -644,7 +666,7 @@ module StageAgentsHelper
   #     crew. They coincide for every lane EXCEPT the re-homed QA intent, where the
   #     board says "assembled · Avi" but the timeline says "shipped · Steffon".
   # Shape: { to_stage:, lane:, agents: [StageAgent], timeline_agents: [StageAgent], live_since: Time }.
-  def in_progress_work(task, by_slug, mascot_agent, intents)
+  def in_progress_work(task, by_slug, mascot_agent, intents, events: nil)
     stage = task.stage
     return nil unless NEXT_PIPELINE_STAGE.key?(stage)
     target = NEXT_PIPELINE_STAGE[stage] # the real next pipeline stage — the timeline badge target
@@ -661,7 +683,7 @@ module StageAgentsHelper
       crew = [StageAgent.new(stage: stage, agent: mascot_agent)] # the mascot heads both views
       { to_stage: target, lane: :build, live_since: since, agents: crew, timeline_agents: crew }
     else
-      intent, render_stage = open_deploy_intent(task, stage, intents)
+      intent, render_stage = open_deploy_intent(task, stage, intents, events: events)
       return nil if intent.nil?
 
       # THE FACE ITSELF asks whether the review is still alive — not just the
@@ -717,9 +739,11 @@ module StageAgentsHelper
   #               already landed the assembled transition, so the QA intent can't ride
   #               toward `assembled` (it would no-op + read off the wrong stage) — it
   #               rides toward `shipped` and is re-homed to the assembled lane here.
-  def open_deploy_intent(task, stage, intents)
+  # `events:` is the FULL event array (not the intents-only one) — see the note
+  # at open_task_intents_for for why the distinction matters.
+  def open_deploy_intent(task, stage, intents, events: nil)
     if stage == "assembled"
-      toward_shipped = open_task_intents_for(task, "shipped", intents)
+      toward_shipped = open_task_intents_for(task, "shipped", intents, events: events)
       ship = toward_shipped.reject { |e| qa_intent?(e) }.max_by { |e| [e.occurred_at, e.id.to_i] }
       return [ship, "shipped"] if ship
 
@@ -727,12 +751,18 @@ module StageAgentsHelper
       [qa, "assembled"]
     else
       target = NEXT_PIPELINE_STAGE[stage]
-      [open_task_intents_for(task, target, intents).max_by { |e| [e.occurred_at, e.id.to_i] }, target]
+      [open_task_intents_for(task, target, intents, events: events).max_by { |e| [e.occurred_at, e.id.to_i] }, target]
     end
   end
 
-  def open_task_intents_for(task, to_stage, intents)
-    return task.open_intents_for(to_stage) if task.respond_to?(:open_intents_for)
+  # `intents` is the caller's already-resolved event array. It is handed STRAIGHT
+  # THROUGH to Task#open_intents_for as its `events:` — the board's per-request
+  # preload — so the liveness filter reads memory instead of costing two queries
+  # per submitted/reviewed card. A caller with no array (nil) leaves that reader on
+  # its SQL default, which is what keeps the write-path guard honest. Same contract
+  # as crew_clusters' events: above.
+  def open_task_intents_for(task, to_stage, intents, events: nil)
+    return task.open_intents_for(to_stage, events: events) if task.respond_to?(:open_intents_for)
 
     Array(intents).select { |e| e.to_stage == to_stage }
   end

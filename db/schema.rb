@@ -1251,6 +1251,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_20_130931) do
     t.index ["category", "rank"], name: "index_studio_enumerals_on_category_and_rank"
   end
 
+  create_table "studio_geo_settings", force: :cascade do |t|
+    t.string "app_name", null: false
+    t.jsonb "banned_countries", default: []
+    t.jsonb "banned_subdivisions", default: []
+    t.datetime "created_at", null: false
+    t.boolean "enabled", default: false, null: false
+    t.string "slug"
+    t.datetime "updated_at", null: false
+    t.index ["app_name"], name: "index_studio_geo_settings_on_app_name", unique: true
+    t.index ["slug"], name: "index_studio_geo_settings_on_slug", unique: true
+  end
+
   create_table "studio_links", force: :cascade do |t|
     t.datetime "consumed_at"
     t.datetime "created_at", null: false

@@ -50,3 +50,7 @@ node_modules/
 test-results/
 playwright-report/
 playwright/.cache/
+
+# Sharded Rails lane receipts (bin/ci-shard). CI uploads them as artifacts; locally
+# they are scratch, and an untracked file in the repo root trips the cert tree guard.
+/rails-report-shard-*.json

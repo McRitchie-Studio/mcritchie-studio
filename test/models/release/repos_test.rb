@@ -1,6 +1,9 @@
 require "test_helper"
 require "shellwords"
 require "open3"
+# The seam that answers "what does CI's Ruby suite amount to, as one command?" — a
+# bin/lib module, not an autoloaded app constant, so it is required explicitly.
+require Rails.root.join("bin", "lib", "ci_test_command").to_s
 
 class Release::ReposTest < ActiveSupport::TestCase
   test "classifies registered gems as :gem" do
@@ -449,14 +452,30 @@ class Release::ReposTest < ActiveSupport::TestCase
   end
 
   private
-    # The single command ci.yml's `test` job runs — the suite CI certifies on every
-    # PR. Located by content (`bin/rails`), not by step name, so renaming the step
-    # doesn't silently blind the drift guard above.
+    # WHAT CI'S RUBY SUITE AMOUNTS TO, AS ONE COMMAND — asked through the seam that
+    # already answers exactly that question.
+    #
+    # This used to dig `jobs.test.steps` out of ci.yml itself. That stopped being
+    # answerable on 2026-08-20, when the hub's Ruby suite was SHARDED: there is no
+    # `test` job any more, and no single step whose `run:` is the suite — the `rails`
+    # job runs a 4-way `bin/ci-shard` matrix and the `system` job runs the system tier.
+    #
+    # Re-pointing the dig at `jobs.rails` would have been the small edit and the wrong
+    # one: a shard's command is a SLICE, so the gate would have been asserted equal to a
+    # QUARTER of the suite and the release gated on it. CiTestCommand is where the
+    # "sharded lane, therefore the DEFAULT superset" argument is written down, checked
+    # structurally, and mutation-tested — so ask it, rather than re-deriving a weaker
+    # answer here.
     def ci_test_command
-      ci    = YAML.safe_load_file(Rails.root.join(".github/workflows/ci.yml"), aliases: true)
-      steps = ci.dig("jobs", "test", "steps") || []
-      run   = steps.filter_map { |s| s["run"] }.find { |c| c.include?("bin/rails") }
-      assert run.present?, "ci.yml's `test` job no longer has a bin/rails step — the drift guard is blind"
-      run.strip
+      root = Rails.root.to_s
+
+      # NOT VACUOUS. CiTestCommand.resolve falls back to DEFAULT for a repo with no CI
+      # suite at all, so a ci.yml that lost its Ruby lane entirely would still return
+      # the string this guard compares against and the guard would pass over nothing.
+      # Assert first that CI really does carry a Ruby suite this seam can account for.
+      assert CiTestCommand.sharded_lane?(root) || CiTestCommand.for_root(root).present?,
+             "ci.yml no longer carries a Ruby suite CiTestCommand can account for — the drift guard is blind"
+
+      CiTestCommand.resolve(root)
     end
 end

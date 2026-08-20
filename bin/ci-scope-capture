@@ -82,11 +82,24 @@ rescue StandardError
 end
 
 # Normalize a check-run name to its stable ci_<name> scope key. For GitHub Actions
-# the check name is the job name (test, lint, scan_ruby, scan_js); a required-check
+# the check name is the job name (rails, lint, scan_ruby, scan_js); a required-check
 # name can be prefixed "Workflow / job", so keep only the last "/"-segment. Returns
 # nil for a name that normalizes to empty.
+#
+# A MATRIX SUFFIX IS STRIPPED. GitHub names a matrix job `rails (1)`, `rails (2)`, …,
+# and the four shards of the rails lane are FOUR RUNS OF ONE SCOPE, not four scopes:
+# they run the same command over disjoint slices, and a registry entry per shard would
+# have to be edited every time the shard count moves. Registering `ci_rails` once keeps
+# config/devops_test_suites.yml describing the LANE, which is the thing that has a
+# meaning.
+#
+# The rows stay distinct because the idempotency key is built from the RAW job name
+# (`ci:<pr>:<sha>:rails (2)`), not from this slug — so four shards record four events
+# under one scope, which is exactly the shape the heartbeat wants to show.
+MATRIX_SUFFIX = /\s*\([^()]*\)\s*\z/
+
 def normalize_job_name(name)
-  base = name.to_s.split(%r{\s*/\s*}).last.to_s
+  base = name.to_s.split(%r{\s*/\s*}).last.to_s.sub(MATRIX_SUFFIX, "")
   slug = base.downcase.gsub(/[^a-z0-9]+/, "_").gsub(/\A_+|_+\z/, "")
   slug.empty? ? nil : "ci_#{slug}"
 end
