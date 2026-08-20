@@ -100,7 +100,15 @@ total_specs: 118
 # so Chromium's 1280px default hid every card they wait on. One test.use({viewport}) line
 # revived them. The other four in that file fail for DIFFERENT reasons (three are
 # Building-column/blocked-card behaviour, one is the review ticker) and stay tagged.
-quarantined: 15
+# 15 -> 12 on 2026-08-20 (/tasks/untag-repaired-block-specs): the three live-block specs in
+# deployments_live.spec.js are REPAIRED and now RUN. They needed both halves, which is why they
+# stayed tagged through two earlier passes: the spec-side rot (a collapsed lane below 1400px, a
+# retired stage:blocked payload, and an assertion on data-glow when the block marker is
+# data-stage-glow) fixed in /tasks/repair-remaining-quarantined-specs, AND a PRODUCT gap —
+# blocking broadcast nothing at all — fixed in /tasks/broadcast-block-to-board. Both are on main,
+# so this un-tags rather than re-tags. Verified before lowering: --grep-invert @quarantine over
+# the file is 12/12 green, and the ONE remaining failure is the still-tagged review-ticker spec.
+quarantined: 12
 
 # total_specs - quarantined. What the lane MUST execute — asserted against the runner's own
 # report, so no source-level spelling on any axis can move it without moving this line.
@@ -114,7 +122,7 @@ quarantined: 15
 # Both halves re-measured 2026-08-19 with the runner:
 #   npx playwright test --list                           => 118
 #   npx playwright test --list --grep-invert @quarantine => 103
-executed: 103
+executed: 106
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to
