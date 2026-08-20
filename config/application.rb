@@ -32,10 +32,17 @@ module McritchieStudio
     # for one. It no-ops on a client that sends no Accept-Encoding, and skips
     # already-encoded bodies, so images and fonts pass through untouched.
     #
-    # ActionDispatch::Static is the insertion point rather than the very top: it
-    # puts static files from public/ inside the compression too, and keeps
-    # EdgeGuard/HostAuthorization — which reject requests outright — in front of the
-    # work of compressing a response they were never going to send.
+    # WHAT insert_after ACTUALLY DOES HERE, because the obvious reading is backwards:
+    # it places Deflater INSIDE ActionDispatch::Static, and Static short-circuits —
+    # a request for a file under public/ is served and returned without Deflater
+    # ever being called. So public/ assets are NOT gzipped per request by this line.
+    #
+    # That is the behaviour we want, not a gap: Rails 8's FileHandler serves its own
+    # precompressed .br/.gz sidecars for compressible types, and re-gzipping a PNG
+    # on every request would burn CPU to make the file bigger. The placement still
+    # earns its position by keeping EdgeGuard and HostAuthorization — which reject
+    # requests outright — in front of the work of compressing a response they were
+    # never going to send.
     require "rack/deflater"
     config.middleware.insert_after ActionDispatch::Static, Rack::Deflater
 
