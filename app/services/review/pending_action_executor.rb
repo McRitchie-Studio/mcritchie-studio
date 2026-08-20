@@ -179,33 +179,104 @@ module Review
       merge!(task, pr)
     end
 
-    # 9 + 10. CI must be concluded GREEN, and that green must describe THE PIN.
-    # Ci::ReviewGate is DB-native (ingested GithubWorkflowRun rows), so an unwired
-    # repo reads :none forever and its actions expire unexecuted — the correct
-    # fail-closed outcome, not a silent pass.
+    # 9 + 10. CI must be concluded GREEN — in EVERY repo this task has a PR in — and
+    # that green must describe THE PIN. Ci::ReviewGate is DB-native (ingested
+    # GithubWorkflowRun rows), so an unwired repo reads :none forever and its actions
+    # expire unexecuted — the correct fail-closed outcome, not a silent pass.
+    #
+    # THE TASK IS THE UNIT FOR GREEN; THE ACTION IS THE UNIT FOR THE PIN. A task that
+    # lands PRs in two repos is ONE reviewed change, so a red or still-running second
+    # repo must stop this merge even though the merge itself only touches the first —
+    # the reviewer's merge-ready verdict covered the whole task, and this component
+    # merges with nobody watching. The gate used to read `repositories.first`, so a
+    # two-repo task could auto-merge on repo #1's green while repo #2 was red. The
+    # head-sha pin below is the opposite question and stays PER REPO: an armed merge
+    # names one PR in one repo, and comparing its head against a DIFFERENT repo's
+    # green would be the same cross-repo confusion in reverse (a permanent, unearned
+    # wait). #verdict carries every repo's own verdict under `repos:`, so the fold and
+    # the pin come from ONE read.
+    #
+    # AND THE PINNED REPO IS ALWAYS IN THAT FOLD (`also:`), which is what keeps the
+    # two questions from coming apart. The action's repo need not appear in the task's
+    # PR register at all — the arm endpoint takes an explicit `repo`, and a builder
+    # who never ran `--pr-url-for` leaves the register short — so without the union
+    # the pin read a repo the fold had never voted on. A REPO THAT CAN DECIDE A MERGE
+    # MUST BE ABLE TO BLOCK ONE: unioned, a red pinned repo turns the whole verdict
+    # red instead of quietly handing over a matching sha.
+    #
+    # A SECOND REPO'S CI SETTLING RAISES NO WEBHOOK FOR THIS ACTION — the fast path
+    # (ReviewPendingAction.trigger_for_head) keys on the pinned repo+sha, which the
+    # other repo's run does not match. The arm's self-rescheduling recheck chain
+    # (ReviewPendingActionExecutionJob, 2-minute cadence to the TTL) is what carries a
+    # multi-repo action to its conclusion, so the wait resolves on its own — and if it
+    # never goes green the action expires unexecuted, which is the intended end.
     def ci_verdict(task)
-      verdict = Ci::ReviewGate.verdict(task)
+      # `also:` UNIONS the pinned repo into the fold, and that is the whole guard:
+      # the repo this action merges INTO gets a vote, so a red or still-running
+      # pinned repo turns the task's verdict red instead of quietly supplying a sha.
+      verdict = Ci::ReviewGate.verdict(task, also: [pinned_repo])
       state = verdict[:state]
       unless state == :green
-        # NAME THE LANE THAT STOPPED US. "CI is pending" sends whoever reads this
-        # back to GitHub to work out WHICH of six lanes; the fold already knows, and
-        # this string is the whole account of a merge that did not happen (it is
-        # logged now, and recorded on the action if the window later closes). A red
-        # outranks a pending, so it is reported first — same precedence as the fold.
+        # NAME THE LANE THAT STOPPED US — and, on a multi-repo task, the REPO. "CI is
+        # pending" sends whoever reads this back to GitHub to work out WHICH of six
+        # lanes; the fold already knows, and this string is the whole account of a
+        # merge that did not happen (it is logged now, and recorded on the action if
+        # the window later closes). A red outranks a pending, so it is reported first
+        # — same precedence as the fold, across repos as well as within one.
         lanes = Array(verdict[:failing]).presence || Array(verdict[:pending]).presence
-        return result(:waiting, "CI is #{state}, not green" \
+        return result(:waiting, "CI is #{state}, not green#{blocking_repo_note(verdict)}" \
                                 "#{" (absent check-runs are not a pass)" if state == :none}" \
                                 "#{" — #{lanes.join(", ")}" if lanes}")
       end
 
-      ci_sha = verdict[:sha].to_s
+      pinned = pinned_repo_verdict(verdict)
+      unless pinned
+        return result(:waiting, "the CI verdict does not cover #{pinned_repo.presence || "this action's repo"} — " \
+                                "refusing to merge it on another repo's green")
+      end
+
+      ci_sha = pinned[:sha].to_s
       if ci_sha.blank? || ci_sha != action.head_sha
         return result(:waiting,
-                      "the green CI we hold is for #{ci_sha.presence || "an unknown sha"}, " \
-                      "not the pinned #{action.head_sha}")
+                      "the green CI we hold#{pinned_repo_note} is for " \
+                      "#{ci_sha.presence || "an unknown sha"}, not the pinned #{action.head_sha}")
       end
 
       nil
+    end
+
+    # " in turf-monster" when the task spans more than one repo, else "". Silent on a
+    # single-repo task, where naming the repo would be noise; load-bearing on a
+    # multi-repo one, where "CI is red" alone hides which half of the task is broken.
+    def blocking_repo_note(verdict)
+      return "" unless verdict[:repos].respond_to?(:size) && verdict[:repos].size > 1
+      return "" if verdict[:repo].to_s.strip.empty?
+
+      " in #{verdict[:repo]}"
+    end
+
+    # THE PINNED REPO's own verdict, READ OUT OF THE FOLD — never re-read beside it.
+    # The action names one PR, so its head_sha can only be compared against THAT
+    # repo's runs; because #ci_verdict unions the pinned repo into the fold, the entry
+    # is always there and has already been proved green by the time this is called.
+    #
+    # nil means the fold does not cover the repo this action merges into, which after
+    # the union can only be a repo whose name resolves to nothing. It is an assertion,
+    # not a fallback: the caller WAITS. The predecessor of this method re-read the
+    # pinned repo on a fold miss and used only its `:sha`, so a repo outside the fold
+    # contributed a sha and no vote — and a red PR merged into `accepted` unattended.
+    # Never answer "is this tree green?" with a verdict nobody folded.
+    def pinned_repo_verdict(verdict)
+      per_repo = verdict[:repos]
+      per_repo.is_a?(Hash) ? per_repo[pinned_repo] : nil
+    end
+
+    def pinned_repo
+      action.repo_nwo.to_s.split("/").last.to_s
+    end
+
+    def pinned_repo_note
+      pinned_repo.empty? ? "" : " for #{pinned_repo}"
     end
 
     def pull_request

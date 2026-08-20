@@ -337,7 +337,187 @@ module Ci
       assert_equal :pending, Ci::ReviewGate.verdict(task)[:state]
     end
 
+    # ── EVERY REPO THE TASK HAS A PR IN GETS A VOTE ───────────────────────────
+    #
+    # THE DEFECT (found 2026-08-19, landing the CERT half of this family):
+    # `repo_for` was `Array(task.devops_repositories).first` — repo #1, silently. So
+    # a task landing PRs in TWO repos was popped for review, and AUTO-MERGED by
+    # Review::PendingActionExecutor, on repo #1's CI alone. A red or still-running
+    # repo #2 was not outvoted or reported; it was never asked.
+    #
+    # THE GUARD AGAINST A VACUOUS TEST: every case below turns on the SECOND repo,
+    # and asserts the FIRST repo is green. A test that checks "a single-repo task
+    # still claims" passes identically on the broken code — the defect only exists
+    # from the second repo up, which is exactly where a passing test proves nothing
+    # unless repo #1 is green while repo #2 is not.
+
+    TURF = "McRitchie-Studio/turf-monster"
+    ENGINE_PR = "https://github.com/McRitchie-Studio/studio-engine/pull/55"
+
+    test "[unit] a two-repo task whose SECOND repo is red is not green" do
+      task = two_repo(branch: "feat/two-red")
+      seed_run(branch: "feat/two-red", sha: "sha-hub", status: "completed", conclusion: "success")
+      seed_run(branch: "feat/two-red", sha: "sha-turf", status: "completed", conclusion: "failure", repo: TURF)
+
+      verdict = Ci::ReviewGate.verdict(task)
+      assert_equal :green, verdict[:repos]["mcritchie-studio"][:state],
+                   "precondition: repo #1 IS green — the single-repo read stopped here and called the task green"
+      refute Ci::ReviewGate.green?(task),
+             "a task is ONE reviewed change: a red second repo must make the whole task un-green"
+      assert_equal :red, verdict[:state]
+      assert_equal "turf-monster", verdict[:repo], "the verdict must NAME the repo that stopped it"
+      assert_equal %w[mcritchie-studio turf-monster], verdict[:repos].keys, "both repos must have voted"
+    end
+
+    test "[unit] a two-repo task whose SECOND repo is still running is pending, never green" do
+      task = two_repo(branch: "feat/two-pending")
+      seed_run(branch: "feat/two-pending", sha: "sha-hub", status: "completed", conclusion: "success")
+      seed_run(branch: "feat/two-pending", sha: "sha-turf", status: "in_progress", conclusion: nil, repo: TURF)
+
+      verdict = Ci::ReviewGate.verdict(task)
+      refute Ci::ReviewGate.green?(task), "a second repo still building is not a green task"
+      assert_equal :pending, verdict[:state]
+      assert_equal "turf-monster", verdict[:repo]
+    end
+
+    # A repo with NO ingested run is the wiring gap, and it must read the same as any
+    # other not-green: absence is never a pass.
+    test "[unit] a two-repo task whose SECOND repo has no CI at all reads :none" do
+      task = two_repo(branch: "feat/two-blind")
+      seed_run(branch: "feat/two-blind", sha: "sha-hub", status: "completed", conclusion: "success")
+
+      verdict = Ci::ReviewGate.verdict(task)
+      refute Ci::ReviewGate.green?(task), "a repo the board holds no CI for must never pass on repo #1's green"
+      assert_equal :none, verdict[:state]
+      assert_equal "turf-monster", verdict[:repo]
+    end
+
+    # A red outranks a pending ACROSS repos, exactly as it does within one — the
+    # actionable state is the one worth reporting.
+    test "[unit] a red repo outranks a pending one in the fold" do
+      task = two_repo(branch: "feat/two-mixed")
+      seed_run(branch: "feat/two-mixed", sha: "sha-hub", status: "in_progress", conclusion: nil)
+      seed_run(branch: "feat/two-mixed", sha: "sha-turf", status: "completed", conclusion: "failure", repo: TURF)
+
+      verdict = Ci::ReviewGate.verdict(task)
+      assert_equal :red, verdict[:state], "a red anywhere is the verdict, not the first non-green in list order"
+      assert_equal "turf-monster", verdict[:repo]
+    end
+
+    # THE POSITIVE CONTROL. A gate that blocks every multi-repo task is not a gate —
+    # it would strand the release conductor's canonical shape.
+    test "[unit] a two-repo task is green once BOTH repos are green" do
+      task = two_repo(branch: "feat/two-green")
+      seed_run(branch: "feat/two-green", sha: "sha-hub", status: "completed", conclusion: "success")
+      seed_run(branch: "feat/two-green", sha: "sha-turf", status: "completed", conclusion: "success", repo: TURF)
+
+      verdict = Ci::ReviewGate.verdict(task)
+      assert Ci::ReviewGate.green?(task), "both repos concluded success — this task must still be claimable"
+      assert_equal :green, verdict[:state]
+      assert_equal "sha-hub", verdict[:sha], "the folded sha stays the PRIMARY PR's — the pin the merge compares"
+      assert_equal 2, verdict[:count], "the lanes that voted, summed across repos"
+      assert_equal "sha-turf", verdict[:repos]["turf-monster"][:sha], "each repo keeps its own resolved head"
+    end
+
+    # ONE REPO, ONE READ — asked directly. This is the merge executor's head-sha pin:
+    # an armed merge names one PR in one repo, so the sha it compares must come from
+    # THAT repo's runs and not the fold's primary.
+    test "[unit] verdict(repo:) answers about that repo alone" do
+      task = two_repo(branch: "feat/two-pin")
+      seed_run(branch: "feat/two-pin", sha: "sha-hub", status: "completed", conclusion: "success")
+      seed_run(branch: "feat/two-pin", sha: "sha-turf", status: "completed", conclusion: "failure", repo: TURF)
+
+      assert_equal :red, Ci::ReviewGate.verdict(task, repo: "turf-monster")[:state]
+      assert_equal "sha-turf", Ci::ReviewGate.verdict(task, repo: "turf-monster")[:sha]
+      assert_equal :green, Ci::ReviewGate.verdict(task, repo: "mcritchie-studio")[:state]
+      assert_equal "sha-hub", Ci::ReviewGate.verdict(task, repo: "mcritchie-studio")[:sha]
+    end
+
+    # ── WHICH REPOS OWE A VERDICT: the PR register, not the declared list ──────
+
+    # THE GEM-RELEASE PATH, and the case that refuted forbidding multi-repo tasks:
+    # a gem task NAMES its consumer repos so the pipeline can reason that the gem
+    # alone owes the PR. Those consumers have no branch and no runs, so demanding a
+    # CI verdict for them would read :none forever and strand every engine release.
+    test "[unit] a repo the task NAMES but has no PR in owes no verdict" do
+      task = Task.create!(
+        title: "gem release #{SecureRandom.hex(2)}", stage: "submitted",
+        metadata: { "devops" => {
+          "branch" => "feat/gem-consumers",
+          "repositories" => %w[mcritchie-studio turf-monster],
+          "pr_url" => ENGINE_PR
+        } }
+      )
+      seed_run(branch: "feat/gem-consumers", sha: "sha-engine", status: "completed", conclusion: "success",
+               repo: "McRitchie-Studio/studio-engine", workflow: "Engine CI")
+
+      assert_equal ["studio-engine"], Ci::ReviewGate.repos_for(task),
+                   "the PR register decides, not the declared list — the consumers owe no PR and no CI"
+      assert Ci::ReviewGate.green?(task),
+             "a gem release whose own suite is green must stay claimable; gating its PR-less consumers " \
+             "would refuse work nobody is supposed to do"
+    end
+
+    # The primary repo comes from the PR URL, which is ALSO a fix: this shape read
+    # `repositories.first` and looked for the HUB's runs on a branch that only exists
+    # in the gem — :none, and permanently unclaimable.
+    test "[unit] the repo under review is the PR url's, not repositories.first" do
+      task = Task.create!(
+        title: "gem mismatch #{SecureRandom.hex(2)}", stage: "submitted",
+        metadata: { "devops" => {
+          "branch" => "feat/gem-mismatch",
+          "repositories" => ["mcritchie-studio"],
+          "pr_url" => ENGINE_PR
+        } }
+      )
+      seed_run(branch: "feat/gem-mismatch", sha: "sha-engine-2", status: "completed", conclusion: "success",
+               repo: "McRitchie-Studio/studio-engine", workflow: "Engine CI")
+
+      assert_equal ["studio-engine"], Ci::ReviewGate.repos_for(task)
+      assert Ci::ReviewGate.green?(task), "the gate must read the repo the PR is actually in"
+    end
+
+    # The other direction, and why this reads wider than the cert gate's
+    # `declared & pr_bearing` intersection: `bin/task update --pr-url-for` writes the
+    # register WITHOUT touching `repositories`, so a PR-bearing repo the task never
+    # named is one command away. Ungated, it is the silent pass this gate closes.
+    test "[unit] a repo with a recorded PR is gated even when the task never named it" do
+      task = two_repo(branch: "feat/undeclared", declare_second: false)
+      seed_run(branch: "feat/undeclared", sha: "sha-hub", status: "completed", conclusion: "success")
+      seed_run(branch: "feat/undeclared", sha: "sha-turf", status: "completed", conclusion: "failure", repo: TURF)
+
+      assert_equal ["mcritchie-studio"], task.devops_repositories, "precondition: turf is NOT declared"
+      assert_equal %w[mcritchie-studio turf-monster], Ci::ReviewGate.repos_for(task)
+      refute Ci::ReviewGate.green?(task), "a recorded PR is code landing under this task — it owes a verdict"
+    end
+
+    test "[unit] a task with no PR owes no verdict at all" do
+      task = Task.create!(title: "no pr repos #{SecureRandom.hex(2)}", stage: "submitted",
+                          metadata: { "devops" => { "branch" => "feat/none",
+                                                    "repositories" => %w[mcritchie-studio turf-monster] } })
+
+      assert_empty Ci::ReviewGate.repos_for(task)
+      assert_equal :no_pr, Ci::ReviewGate.verdict(task)[:state]
+    end
+
     private
+
+    # A task landing PRs in TWO repos: the hub (the primary `pr_url`) and turf (the
+    # per-repo `pr_urls` register). `declare_second: false` models the register entry
+    # written by `--pr-url-for` without a matching `repositories` edit.
+    def two_repo(branch:, declare_second: true, pr: 20)
+      repositories = declare_second ? %w[mcritchie-studio turf-monster] : ["mcritchie-studio"]
+      Task.create!(
+        title: "multi gate #{SecureRandom.hex(2)}",
+        stage: "submitted",
+        metadata: { "devops" => {
+          "branch" => branch,
+          "repositories" => repositories,
+          "pr_url" => "https://github.com/McRitchie-Studio/mcritchie-studio/pull/#{pr}",
+          "pr_urls" => { "turf-monster" => "https://github.com/McRitchie-Studio/turf-monster/pull/#{pr + 1}" }
+        } }
+      )
+    end
 
     def submitted(branch:, pr:, repo: "mcritchie-studio")
       Task.create!(

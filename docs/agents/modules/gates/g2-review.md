@@ -91,6 +91,16 @@ What the review session records, per reviewed task:
    a broken build is not one, and the acknowledgment is recorded on the row.
    - **green** → proceed. (An unverified gh read, or a missing/closed PR,
      also proceeds — the primary's strict gate-zero is the backstop.)
+
+   **Every repo the task has a PR in must be green.** The claim-time gate
+   (`Ci::ReviewGate`) folds one verdict per recorded PR — `devops.pr_url` plus the
+   per-repo `devops.pr_urls` register — and pops only when they **all** concluded
+   green; a red or still-running second repo holds the task in `submitted`, and the
+   pop's report names it. It reads the repos the task **has a PR in**, not the repos
+   it **names**: a gem task naming its consumer repos owes a verdict for the gem's
+   own PR only, exactly as it owes a cert for it only. Gate-zero's live `gh` read is
+   still the **primary** PR's alone (the dor gate's known gap), so on a multi-repo
+   task read the second PR's CI yourself.
 1. **Open** — as the primary+light pair launches, it opens both lanes
    (attempt-aware; a still-open lane from a deferred wave is reused):
    `bin/gate open task <slug> g2a_primary --actor <primary-soul>` and

@@ -371,6 +371,57 @@ class Ci::ProgressReaderTest < ActiveSupport::TestCase
     ENV.delete("CI_PROGRESS_FIXTURES")
   end
 
+  # ── THE METER READS THE PR's REPO, NOT `repositories.first` ─────────────────
+  #
+  # #task_repo took `Array(task.devops_repositories).first`, the same collapse the
+  # review gate had (task review-gate-reads-one-repo). It is only ever right by
+  # coincidence: a task whose PR lives in a repo its list does not name first had
+  # its bar pointed at ANOTHER repo's runs for the same branch name — blank when no
+  # such branch exists there, and a different repo's CI when one does.
+  #
+  # Both cases below name a repo the task declares FIRST that is not the PR's, so a
+  # reader that still trusted the list would resolve the wrong runs.
+
+  test "[unit] for_task reads the repo the PR is in, not the first declared repo" do
+    task = Task.create!(
+      title: "cross repo bar #{SecureRandom.hex(3)}", stage: "submitted",
+      metadata: { "devops" => {
+        "branch" => "feat/cross-repo-bar",
+        "repositories" => %w[mcritchie-studio turf-monster],
+        "pr_url" => "https://github.com/McRitchie-Studio/turf-monster/pull/12"
+      } }
+    )
+    # The SAME branch name exists in both repos — the shape that makes the old read
+    # silently WRONG rather than merely blank.
+    seed_run(branch: "feat/cross-repo-bar", sha: "sha-hub")
+    seed_run(branch: "feat/cross-repo-bar", sha: "sha-turf", repo: "McRitchie-Studio/turf-monster")
+    seed_check_job(repo: "McRitchie-Studio/turf-monster", sha: "sha-turf", workflow: "CI",
+                   conclusion: "success", branch: "feat/cross-repo-bar")
+
+    progress = build_reader.for_task(task)
+
+    assert_equal "sha-turf", progress.sha, "the bar must describe the PR's own repo"
+    assert_equal 1, progress.passed
+  end
+
+  test "[unit] the live broadcast fan-out targets the PR's repo too" do
+    task = Task.create!(
+      title: "cross repo fanout #{SecureRandom.hex(3)}", stage: "submitted",
+      metadata: { "devops" => {
+        "branch" => "feat/cross-repo-fanout",
+        "repositories" => %w[mcritchie-studio turf-monster],
+        "pr_url" => "https://github.com/McRitchie-Studio/turf-monster/pull/13"
+      } }
+    )
+
+    reader = build_reader
+    assert_equal [task.slug],
+                 reader.eligible_tasks_for("McRitchie-Studio/turf-monster", "feat/cross-repo-fanout").map(&:slug),
+                 "a run settling in the PR's repo must morph this card"
+    assert_empty reader.eligible_tasks_for("McRitchie-Studio/mcritchie-studio", "feat/cross-repo-fanout"),
+                 "the render path and the live path must agree on the task's repo"
+  end
+
   private
 
   def seed_jobs(repo, sha, passed: 0, failed: 0, pending: 0)
