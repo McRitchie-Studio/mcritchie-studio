@@ -780,5 +780,10 @@ class Release < ApplicationRecord
   def broadcast_release_modules
     kind = saved_change_to_shipped_at? && shipped_at.present? ? "deploy.landed" : "release.saved"
     DeploymentsBroadcaster.release_modules(fx: kind)
+    # The app-ladder row too, as its OWN push rather than folded into release_modules
+    # (that method is the Next + Last cards, and its tests assert the exact slots it
+    # sends). A release opening / assembling / shipping re-stamps `merged` across its
+    # members, which is what the row's rung counts read.
+    DeploymentsBroadcaster.app_ladder
   end
 end

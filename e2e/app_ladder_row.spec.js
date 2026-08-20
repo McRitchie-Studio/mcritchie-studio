@@ -126,21 +126,23 @@ test("a running rung carries a spinner and a settled one does not", async ({ pag
 test("the ladder row re-renders from a broadcast when the dev tools fire", async ({ page }) => {
   await page.goto("/deployments");
 
-  // The tools are gated on Rails.env.local?, which covers test as well as development,
-  // so they render in this lane. Asserted rather than skipped-around: a conditional
-  // skip here would let the guard silently stop running (and the lane ratchet refuses
-  // a selection modifier for exactly that reason).
+  // The RELEASE toys. This is the operator's own way to exercise the live board, and
+  // the row must move with everything else — that gap is the bug this spec guards.
+  // The push is a call of its own from each release event source, NOT folded into
+  // DeploymentsBroadcaster.release_modules: that method is the Next + Last cards and
+  // its tests assert the exact slots it sends, so nesting a third surface there broke
+  // them (and double-pushed on a CI tick).
   const tools = page.locator("[data-test='dev-deploy-tools']");
   await expect(tools).toBeVisible();
 
   const row = page.locator("#app-ladder-row");
   await expect(row).toBeVisible();
 
-  // Assert on the RENDER STAMP, not on the row's content. Opening a fixture release
-  // need not move any rung verdict or parked count, so an identical re-render is a
-  // legitimate outcome — a content diff would fail on a wiring that works. The stamp
-  // changes on every render, so it proves the mechanism: a broadcast arrived and
-  // replaced this slot with no reload.
+  // Assert on the RENDER STAMP, not on content. Opening a fixture release need not
+  // move any rung verdict or parked count, so an identical re-render is a legitimate
+  // outcome and a content diff would fail on a wiring that works. The stamp changes
+  // every render, so it proves the mechanism: a broadcast arrived and replaced this
+  // slot, with no reload.
   const before = await row.getAttribute("data-rendered-at");
   expect(before, "the row must carry a render stamp").toBeTruthy();
 

@@ -110,6 +110,9 @@ module Dev
     # real caller no longer pushes :last, so this toy is where that path stays tested.
     def rebroadcast_release_modules
       DeploymentsBroadcaster.release_modules
+      # The ladder row is a live board surface too, and these toys exist precisely so
+      # the operator can watch the board move without real data.
+      DeploymentsBroadcaster.app_ladder
       head :no_content
     end
 
