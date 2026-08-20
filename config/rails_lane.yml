@@ -33,20 +33,27 @@
 # The shard matrix in .github/workflows/ci.yml. `strategy.job-total` supplies the
 # denominator there, so this is the ONE place the number lives.
 #
-# WHY FOUR. Measured 2026-08-20 on run 32329490149: `bin/rails test` took 411s at 4
-# workers, and job setup is ~55s. Four shards put ~103s of tests behind that setup, so
-# the job lands near 166s — just under the `playwright` lane it runs beside, which is
-# where sharding stops buying wall-clock. Six shards would reach ~2.2min but push the
-# workflow to 15 concurrent jobs against a 20-job account ceiling, where a second PR in
-# flight starts queueing and the gain evaporates. Raise this only together with the
-# concurrency headroom to spend it.
+# WHY SIX, AND WHY IT WAS FOUR FIRST. Measured 2026-08-20 on run 32329490149:
+# `bin/rails test` took 411s at 4 workers on one runner. Sharded four ways it landed at
+# 3.5min wall (run 32338350375: 150s of work behind 56s of setup), down from 10.4min.
 #
-# DECIDED 2026-08-20, and recorded here so the next person does not re-derive it: FOUR, and
-# raising it is gated on concurrency, not on appetite. Six shards would reach ~2.2min and
-# take this workflow to 15 concurrent jobs against the account's ~20 cap — at which point a
-# second PR in flight starts QUEUEING and the extra shards buy nothing at all. A shard that
-# waits for a runner is slower than no shard. Get the headroom first, then raise this.
-shards: 4
+# Four was not the natural stopping point — the CONCURRENCY CEILING was. This account
+# allows ~20 concurrent jobs; the workflow ran 14, and the note that stood here said
+# plainly that raising this number was gated on headroom rather than appetite, because a
+# shard that waits for a runner is slower than no shard.
+#
+# The headroom now exists, and it was bought rather than assumed: `scan_ruby`, `scan_js`
+# and `lint` were three jobs paying ~20s of identical setup each to run one command, and
+# they are now the single `static` lane. That frees exactly two slots, which is what
+# shards 5 and 6 cost, so the JOB COUNT IS UNCHANGED AT 14 while the critical path drops
+# to ~2.7min (91s of tests + ~13s prepare + 56s setup).
+#
+# WHERE THIS STOPS. Setup is 56s and does not shard — at six shards it is already 35% of
+# the lane, and every further shard buys less while costing a slot. The next real lever is
+# the setup floor (container init 20s, apt 11s, gem-propagation 11s), not more matrix
+# entries. Raise this again only with fresh headroom AND a measurement showing the tests
+# still dominate.
+shards: 6
 
 # Every test file this lane owns.
 include:

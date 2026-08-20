@@ -1644,6 +1644,59 @@ class CiWorkflowTriggersTest < Minitest::Test
                  "nothing). Same lie as an appended `-n` filter, spelled in the environment."
   end
 
+  # ==== THE STATIC LANE — three checks that must not hide each other ==================
+  #
+  # `scan_ruby`, `scan_js` and `lint` were three jobs paying identical setup to run one
+  # command each. Merging them into `static` freed the two concurrency slots that shards 5
+  # and 6 cost — but merging is exactly how a check goes quietly missing, and how one
+  # failure starts masking two others. Both properties are asserted, not trusted.
+  STATIC_CHECKS = {
+    "brakeman" => %r{\bbin/brakeman\b},
+    "importmap audit" => %r{\bbin/importmap\s+audit\b},
+    "rubocop" => %r{\bbin/rubocop\b}
+  }.freeze
+
+  def test_integration_the_static_lane_still_runs_all_three_checks
+    job = jobs_of(File.read(CI_YML))["static"]
+    refute_nil job, "no `static` job in ci.yml — it holds brakeman, importmap audit and rubocop"
+
+    bodies = Array(job["steps"]).grep(Hash).filter_map { |step| step["run"] }.join("\n")
+    missing = STATIC_CHECKS.reject { |_name, pattern| bodies.match?(pattern) }.keys
+
+    assert_empty missing,
+                 "the `static` lane no longer runs #{missing.inspect}. Three jobs became one so " \
+                 "the workflow could afford more test shards; a check that fell out during that " \
+                 "merge costs the same slots and covers nothing. If a check legitimately moved, " \
+                 "point STATIC_CHECKS at its new home — do not delete the entry."
+  end
+
+  def test_integration_no_static_check_can_hide_the_ones_after_it
+    # THE COST OF MERGING, PAID. As separate jobs all three ran regardless of each other's
+    # verdict. In one job, a step that fails stops the rest by default — so a brakeman
+    # finding would hide every rubocop offence in the same run, and you would fix, push,
+    # and wait for another full lane to meet the next one.
+    #
+    # `always()` restores the old behaviour: every check runs, and the job still reports RED
+    # if any failed. It cannot EXCLUDE a step, only force one, which is why it is the single
+    # condition this file permits anywhere.
+    job = jobs_of(File.read(CI_YML))["static"]
+    refute_nil job, "no `static` job in ci.yml"
+
+    checks = Array(job["steps"]).grep(Hash).select do |step|
+      STATIC_CHECKS.values.any? { |pattern| step["run"].to_s.match?(pattern) }
+    end
+    assert_operator checks.length, :>=, 2, "expected several checks in the static lane"
+
+    unguarded = checks.drop(1).reject { |step| UNCONDITIONAL_IF.include?(step["if"].to_s.strip) }
+
+    assert_empty unguarded.map { |step| step["name"] },
+                 "these `static` checks run only if every earlier check passed, so the FIRST " \
+                 "failure hides them: #{unguarded.map { |s| s['name'] }.inspect}. Give each check " \
+                 "after the first `if: always()` — the job still goes red, but one run tells you " \
+                 "everything that is wrong instead of one thing at a time."
+  end
+  # ====================================================================================
+
   def test_integration_no_lane_reports_green_over_failing_tests
     lanes = continue_on_error_lanes(File.read(CI_YML))
 
