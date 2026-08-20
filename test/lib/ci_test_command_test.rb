@@ -12,6 +12,7 @@ require "minitest/autorun"
 require "tmpdir"
 require "fileutils"
 require "shellwords"
+require "pathname"
 require_relative "../../bin/lib/ci_test_command"
 
 class CiTestCommandTest < Minitest::Test
@@ -30,11 +31,16 @@ class CiTestCommandTest < Minitest::Test
   # PRIMARY's .git for a worktree and for the primary alike, so its grandparent is
   # the projects root from either. Nil when git cannot answer, which the pins below
   # assert against rather than silently skipping.
-  PROJECTS_ROOT = begin
-    common = `git -C #{Shellwords.escape(HUB_ROOT)} rev-parse --git-common-dir 2>/dev/null`.strip
-    common.empty? ? nil : File.expand_path("../..", File.expand_path(common, HUB_ROOT))
-  rescue StandardError
-    nil
+  # Ascend until a directory holding the sibling repos appears — the same shape
+  # test/models/release/repos_test.rb already uses, so both live-ecosystem pins in
+  # this codebase locate their siblings the one way. Works from a primary checkout,
+  # an agent worktree, and the gate workspace alike, all of which sit at different
+  # depths. nil when absent (hub CI checks out only this repo).
+  PROJECTS_ROOT = Pathname.new(HUB_ROOT).ascend.find { |dir| dir.join("rolio", ".git").exist? }
+
+  # Does this repo actually HAVE system tests? A `.keep` is not a system test.
+  def self.system_tests?(root)
+    !Dir[File.join(root, "test", "system", "**", "*_test.rb")].empty?
   end
 
   def with_ci(yaml)
@@ -1407,8 +1413,27 @@ class CiTestCommandTest < Minitest::Test
       checked << repo
       assert_nil CiTestCommand.refusal(root),
                  "the cert net REFUSES #{repo} — the guard over-fires on a live repo"
+
+      # THE SYSTEM TIER IS DEMANDED WHERE THERE ARE SYSTEM TESTS, and this pin used
+      # to demand it everywhere. That was wrong for turf-monster, whose test/system
+      # holds exactly one file — `.keep` — and which dropped the browser and the
+      # tier on purpose (/tasks/drop-turf-empty-system-lane, shipped in its PR 365):
+      # the lane installed Chrome and certified nothing on every PR.
+      #
+      # The contradiction was already in this codebase and invisible, because this
+      # pin resolved its siblings to nowhere and skipped them all. The hub's OWN
+      # test/models/release/repos_test.rb asserts the opposite of what this line
+      # demanded — "turf-monster has no system tests, so its integration subset is
+      # the right gate" — verified against that same .keep.
+      #
+      # Keyed on the FACT rather than on a repo name, so it needs no edit when a
+      # repo gains or loses system tests: add one to turf-monster and this pin
+      # starts demanding the tier again, which is exactly what its own ci.yml
+      # comment promises ("WHEN A SYSTEM TEST LANDS, PUT THE LANE BACK").
+      next unless self.class.system_tests?(root)
+
       assert_includes CiTestCommand.resolve(root), "test:system",
-                      "#{repo}'s cert lane must still carry the system tier"
+                      "#{repo} HAS system tests — its cert lane must carry the system tier"
     end
 
     # THE GUARD ON THE GUARD. Every assertion above sits behind `next unless
@@ -1437,8 +1462,16 @@ class CiTestCommandTest < Minitest::Test
       root = File.join(PROJECTS_ROOT, repo)
       next unless File.directory?(root)
 
-      assert_equal "bin/rails db:test:prepare test test:system", CiTestCommand.for_root(root),
-                   "#{repo} must RESOLVE its own ci.yml test command, not fall back"
+      resolved = CiTestCommand.for_root(root)
+      refute_nil resolved, "#{repo} must RESOLVE its own ci.yml test command, not fall back"
+      assert_includes resolved, "bin/rails db:test:prepare test",
+                      "#{repo}'s resolved command must be its real rails test invocation"
+
+      # Same fact as the fleet pin above, not a repo allow-list: the tier belongs in
+      # the command exactly when the repo has tests that need it.
+      if self.class.system_tests?(root)
+        assert_includes resolved, "test:system", "#{repo} HAS system tests — its command must run them"
+      end
     end
   end
 end
