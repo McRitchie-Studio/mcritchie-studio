@@ -79,10 +79,16 @@ exclude:
 # quietly shrinking, and the whole point of a receipt is that the shrinkage has to
 # happen in a reviewable diff line instead.
 #
-# HONEST ABOUT ITS STRENGTH: this is a PIN, not a ratchet. config/e2e_lane.yml's
-# `quarantined` is compared against its value on `origin/release` precisely because a
-# number a branch can edit restrains nothing. This one can be raised in the same commit
-# that adds the skip. It is still worth having — it turns an invisible drift into a
-# visible edit — but do not read it as the equal of the e2e ratchet. Hardening it the
-# same way is /tasks/ratchet-the-rails-skip-ceiling.
+# IT IS NOW A RATCHET, NOT A PIN. This comment used to say the opposite, and say it
+# honestly: "it can be raised in the same commit that adds the skip". That is exactly the
+# hole config/e2e_lane.yml's `quarantined` was beaten by — a guard that reads only what the
+# author wrote can only confirm that the author wrote it, and the hole grows with every
+# guard in the repo green.
+#
+# test/lib/rails_skip_ceiling_ratchet_test.rb now compares this number against its value on
+# `origin/release`, the branch a PR must merge into and the one value an edit in the working
+# tree cannot reach. Skips may FALL freely; raising this is a RED build until a reviewer
+# agrees to the new number. The guard FAILS CLOSED when the baseline cannot be resolved, so
+# losing `fetch-depth: 0` on the rails shards turns the lane red and loud rather than
+# quietly demoting this back to what it used to be.
 max_skips: 11
