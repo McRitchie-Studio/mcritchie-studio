@@ -410,7 +410,15 @@ def clean_slug(raw)
 end
 
 def worktree_dir(app, task)
-  File.join(app.fetch("repo"), ".worktrees", task)
+  # Same resolution stack_dirs uses, and for the same reason: a discovered repo may keep its
+  # desks in the SIBLING tree (<repo>.worktrees) rather than the managed one. Hard-coding
+  # ".worktrees" here meant `remove studio-engine.sibling <desk>` resolved into the MANAGED
+  # tree — aborting "missing worktree" when the name is unique, and destroying the WRONG DESK
+  # the moment the same desk name exists in both trees. That path only became reachable when
+  # `remove` moved from app_for to sweep_app_for, which is what turned a loud "unknown app"
+  # abort into a silent wrong-tree resolution. Registered configs carry no "worktrees_dir"
+  # key, so they fall through to exactly today's path.
+  File.join(app["worktrees_dir"] || File.join(app.fetch("repo"), ".worktrees"), task)
 end
 
 def stack_env_path(app, task)
@@ -1822,8 +1830,13 @@ end
 STACKLESS_STACK = "none"
 
 # A desk belongs to a DISCOVERED repo when its config came from disk (a repo with a
-# .worktrees tree that is not in the registry) rather than from the app registry. The
-# reclaim hold and the teardown both key on this, so they cannot drift apart.
+# .worktrees tree that is not in the registry) rather than from the app registry.
+#
+# The reclaim HOLD keys on this. The teardown keys on app["stack"] == STACKLESS_STACK, which
+# is a different question — "has this desk a stack to stop?" — and the two coincide only
+# because discovered_worktree_configs sets both. Do not read one as implying the other: a
+# discovered Rails desk (moms-app, acquisition-studio) is stackless by config yet still has a
+# live server, which is why stop_stack_for_removal demands BOTH halves.
 def discovered_app?(app_config)
   return false unless app_config
 
@@ -1831,6 +1844,13 @@ def discovered_app?(app_config)
 end
 
 def discovered_worktree_configs
+  # Memoized: this globs the projects root, and the orphan reconciliation below now asks for
+  # it once per inspected app. PROJECTS_DIR is fixed for the life of the process, so the scan
+  # cannot go stale within one run.
+  @discovered_worktree_configs ||= build_discovered_worktree_configs
+end
+
+def build_discovered_worktree_configs
   registered = apps.values.map { |config| config.fetch("repo") }
 
   roots = Dir.glob(File.join(PROJECTS_DIR, "*", ".worktrees")).map { |dir| [File.dirname(dir), dir] } +
@@ -1847,7 +1867,13 @@ def discovered_worktree_configs
     # registry) then names two different desks identically, which is exactly the
     # ambiguity an archive record must not have.
     slug = File.basename(repo)
-    slug = "#{slug}(sibling)" if worktrees_dir == "#{repo}.worktrees"
+    # ".sibling", not "(sibling)": this slug is printed INTO a command the operator is
+    # meant to paste (cleanup_command) and written into the delete-later ledger as the
+    # archive record. Parentheses are shell metacharacters — unquoted, bash answers
+    # "syntax error near unexpected token `('" and zsh "unknown file attribute" — so the
+    # remediation line could not run at all. sweep_app_for matches the slug verbatim, so
+    # any token works; this one needs no quoting.
+    slug = "#{slug}.sibling" if worktrees_dir == "#{repo}.worktrees"
     # No port, no Redis DB, no server: these desks are a git worktree and nothing
     # else, so the teardown must skip stack stop / DB drop / Redis flush rather
     # than fail trying. `stack` is the field the rest of the file already keys on.
@@ -1992,10 +2018,28 @@ end
 # Reconcile `git worktree list` against the managed registry for an app and emit
 # a doctor issue for each orphan, carrying its path, branch, merge state, and
 # clean/dirty state so doctor stops reporting "no issues" while orphans pile up.
+# Every desk directory belonging to this REPO, across every tree convention it uses. A repo
+# with both a managed tree and a sibling tree yields TWO configs, and each one's stack_dirs
+# covers only its own tree.
+def stack_dirs_for_repo(repo)
+  (apps.values + discovered_worktree_configs)
+    .select { |config| config["repo"] == repo }
+    .flat_map { |config| stack_dirs(config) }
+    .uniq
+end
+
 def orphan_worktree_issues(app)
   repo = app.fetch("repo")
   primary = canonical_path(repo)
-  managed = stack_dirs(app).map { |dir| canonical_path(dir) }
+  # The UNION of the repo's trees, not just the scoped config's. `git worktree list` returns
+  # every worktree for the repo regardless of which tree it sits in, so reconciling it against
+  # one tree made each of a two-tree repo's configs report the OTHER tree as orphaned:
+  # `doctor studio-engine` advised removing all 4 sibling desks and
+  # `doctor studio-engine.sibling` all 8 managed ones — twelve "review then remove" lines
+  # against desks including a DIRTY one with uncommitted work, three UNMERGED, and `_ship`.
+  # Advising teardown of demonstrably unlanded work is the exact class of advisory this
+  # file's doctrine forbids, and only the newly-runnable scoped form could reach it.
+  managed = stack_dirs_for_repo(repo).map { |dir| canonical_path(dir) }
 
   orphan_worktree_dirs(primary, managed, git_worktree_dirs(repo)).map do |dir|
     label = orphan_label(app, dir)
@@ -2263,7 +2307,10 @@ def snapshot_payload(app = nil)
       "max" => redis_db_max
     },
     "capacity" => capacity_snapshot,
-    "apps" => selected_apps.sort_by { |config| config.fetch("primary_port") }.map { |config| app_snapshot(config) },
+    # nil-safe sort: a discovered config has no primary_port. Today it only ever reaches this
+    # as a one-element array (so nothing is compared), but that is an accident of the caller,
+    # not a property of the sort.
+    "apps" => selected_apps.sort_by { |config| config["primary_port"] || Float::INFINITY }.map { |config| app_snapshot(config) },
     "summary" => {
       "worktrees" => records.size,
       "issues" => issues_by_label.values.sum(&:size),
@@ -3089,6 +3136,42 @@ def claim_hold(record, fresh: false, announce: false)
     return hold if hold
   end
 
+  # DISCOVERED REPOS, asked BEFORE the slug lookup. For such a desk "unbound" is PERMANENT,
+  # not incidental, so the fail-open below would be a standing licence to destroy rather than
+  # a best-effort. TASK_RECORD_SLUG is written by bind-task, which routes through app_for —
+  # registry-only, because new/up/plan need a port range a discovered repo has no answer for.
+  #
+  # That matters because the other three channels are structurally dead for it too:
+  # review_hold reads a task record there is none of, pr_hold_reason returns nil the moment
+  # board_pr_url is nil (always), and desk_hold's progress / gate_in_flight /
+  # awaiting_approval channels all read that same absent record. What survives is desk age
+  # plus mtimes — and desk_activity prunes tmp, log, coverage, vendor and .bundle, which is
+  # exactly and only what a gem builder writes while running a suite. Cert p99 is 94 minutes,
+  # LONGER than the 1h29m idle window, which is the very reason the gate channel exists.
+  # Measured on the pre-split branch: `cleanup --reclaim studio-engine` nominated 4 desks on
+  # mtime-only evidence, contradicting this file's doctrine that a desk we cannot prove
+  # abandoned is never destroyed.
+  #
+  # Asked here rather than inside the unbound branch on purpose: nesting it there made the
+  # doctrine rest on the slug being ABSENT, so a discovered desk that ever acquired a
+  # TASK_RECORD_SLUG would bypass it entirely. Unreachable today, but the guard should not
+  # depend on that.
+  #
+  # So: unbound + unverifiable = HOLD. Coverage buys VISIBILITY (doctor, list, snapshot, and
+  # the dry run's withheld lines), not automated teardown.
+  if discovered_app?(record[:app])
+    if announce
+      warn "note: #{worktree_label(record)} is a discovered repo's desk, which can never " \
+           "carry a bound task; withholding rather than judging it on mtimes alone"
+    end
+    return "a discovered repo's desk can never carry a bound task (bind-task routes through " \
+           "the registry), so the build, review and PR channels can never answer for it — and " \
+           "desk mtimes alone cannot prove a gem desk abandoned, because a cert writes " \
+           "nothing into its desk for longer than the idle window. Withholding rather than " \
+           "nominating a desk we cannot verify; tear it down deliberately with " \
+           "#{cleanup_command(record)}"
+  end
+
   # nil-safe: a record without :env must not raise into the rescue below — that would
   # silently disable the guard on a destructive path, the exact failure the warnings exist
   # to prevent.
@@ -3099,42 +3182,6 @@ def claim_hold(record, fresh: false, announce: false)
   # original incident's own desk (TASK_RECORD_SLUG is written by bind-task, never by `new`),
   # so it never goes quietly.
   if slug.nil?
-    # DISCOVERED REPOS: here "unbound" is PERMANENT, not incidental, so the fail-open below
-    # would be a standing licence to destroy rather than a best-effort. TASK_RECORD_SLUG is
-    # written by bind-task, which routes through app_for — registry-only, because new/up/plan
-    # need a port range a discovered repo has no answer for. So such a desk can NEVER carry a
-    # bound task.
-    #
-    # That matters because the other three channels are structurally dead for it too:
-    # review_hold reads a task record there is none of, pr_hold_reason returns nil the moment
-    # board_pr_url is nil (always), and desk_hold's progress / gate_in_flight /
-    # awaiting_approval channels all read that same absent record. What survives is desk age
-    # plus mtimes — and desk_activity prunes tmp, log, coverage, vendor and .bundle, which is
-    # exactly and only what a gem builder writes while running a suite. Cert p99 is 94
-    # minutes, LONGER than the 1h29m idle window, which is the very reason the gate channel
-    # exists. Measured on the pre-split branch: `cleanup --reclaim studio-engine` nominated 4
-    # desks on the rationale "no bound task, so no build claim to hold it; desk idle" —
-    # mtime-only evidence on a destroy path, contradicting this file's own doctrine that a
-    # desk we cannot prove abandoned is never destroyed.
-    #
-    # So: unbound + unverifiable = HOLD. Coverage buys VISIBILITY (doctor, list, snapshot, and
-    # the dry run's withheld lines), not automated teardown. Recovering that later means
-    # giving gem desks a REAL liveness signal — most promisingly by not pruning tmp/ for
-    # stackless repos, where a write genuinely means a suite is running, unlike a Rails desk
-    # whose server churns tmp/ constantly. That is a separate task.
-    if discovered_app?(record[:app])
-      if announce
-        warn "note: #{worktree_label(record)} is a discovered repo's desk, which can never " \
-             "carry a bound task; withholding rather than judging it on mtimes alone"
-      end
-      return "a discovered repo's desk can never carry a bound task (bind-task routes through " \
-             "the registry), so the build, review and PR channels can never answer for it — and " \
-             "desk mtimes alone cannot prove a gem desk abandoned, because a cert writes " \
-             "nothing into its desk for longer than the idle window. Withholding rather than " \
-             "nominating a desk we cannot verify; tear it down deliberately with " \
-             "#{cleanup_command(record)}"
-    end
-
     if announce
       warn "note: #{worktree_label(record)} has no bound task, so no build claim can be checked; " \
            "treating it as free"

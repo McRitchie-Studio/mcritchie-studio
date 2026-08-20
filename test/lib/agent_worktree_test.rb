@@ -1413,12 +1413,15 @@ class AgentWorktreeTest < Minitest::Test
       def ship_workspace_record?(_r) = false
 
       app = { "status" => "discovered", "slug" => "studio-engine", "stack" => STACKLESS_STACK }
-      print reclaim_hold({ app: app, env: {}, task: "a-desk" }).nil? ? "FREE" : "HELD"
+      print reclaim_hold({ app: app, env: {}, task: "a-desk" }).to_s
     RUBY
 
-    assert_equal "HELD", out,
-                 "reclaim_hold is what the destroy path actually calls; a hold that only holds in " \
-                 "claim_hold would be bypassed the moment the chain is reordered"
+    assert_match(/discovered repo/, out,
+                 "reclaim_hold is what the destroy path actually calls, and this must hold for the " \
+                 "DISCOVERY reason. Asserting mere truthiness passed even with claim_hold deleted " \
+                 "from the chain outright: the stub record has no :dir, so desk_hold held it for an " \
+                 "unrelated reason and the tautology hid the removal of the only channel that " \
+                 "knows about discovery.")
   end
 
   # doctor and snapshot --write both run doctor_issues, and snapshot --write runs at the END
@@ -1448,21 +1451,76 @@ class AgentWorktreeTest < Minitest::Test
                  "run_reclaim. The registered cases must keep reporting, or the guard is just off."
   end
 
-  # Every remediation line the sweep prints for a discovered desk went into the delete-later
-  # ledger as the archive record. Resolving through the registry made all of them dead
-  # ("unknown app: studio-engine"), so the ledger recorded a command that cannot run.
-  def test_the_remediation_command_the_sweep_prints_resolves_for_a_discovered_repo
+  # Every remediation line the sweep prints for a discovered desk goes into the delete-later
+  # ledger as the archive record, so BOTH halves have to hold: the command must resolve, and
+  # it must resolve into the tree the desk actually lives in.
+  #
+  # This drives the real `remove` DISPATCH. An earlier cut called sweep_app_for directly and
+  # was worthless: reverting `remove` to app_for — the exact defect its own comment named —
+  # left it green.
+  #
+  # The sibling tree is the sharp case. worktree_dir hard-coded ".worktrees", so
+  # `remove <repo>.sibling <desk>` resolved into the MANAGED tree: an abort when the name is
+  # unique, and a teardown of the WRONG DESK the moment the same name exists in both trees.
+  def test_remove_resolves_a_sibling_tree_desk_into_the_sibling_tree
     Dir.mktmpdir do |root|
-      FileUtils.mkdir_p(File.join(root, "studio-engine", ".worktrees", "a-desk"))
+      managed = File.join(root, "studio-engine", ".worktrees", "shared-name")
+      sibling = File.join(root, "studio-engine.worktrees", "shared-name")
+      FileUtils.mkdir_p(managed)
+      FileUtils.mkdir_p(sibling)
+      env = SessionEnv.neutralized.merge("PROJECTS_DIR" => root)
+
+      # A desk that exists in NEITHER tree: the abort names the path it resolved, which is the
+      # resolution itself, observed — and it cannot destroy anything on the way to saying so.
+      out, err, = Open3.capture3(env, "ruby", BIN, "remove", "studio-engine.sibling", "no-such-desk")
+      resolved = "#{out}#{err}"
+
+      assert_includes resolved, File.join(root, "studio-engine.worktrees", "no-such-desk"),
+                      "remove must resolve a .sibling config into the SIBLING tree"
+      refute_includes resolved, File.join(root, "studio-engine", ".worktrees", "no-such-desk"),
+                      "resolving into the managed tree is what destroys the wrong desk on a " \
+                      "name collision — and both trees hold a `shared-name` desk here"
+      refute_includes resolved, "unknown app",
+                      "the sweep prints this command and ledgers it; it must resolve at all"
+    end
+  end
+
+  # The slug is printed INTO a shell command and written to the ledger, so it has to survive a
+  # shell. "(sibling)" did not: unquoted, bash answers "syntax error near unexpected token `('".
+  def test_the_sibling_disambiguator_is_shell_safe
+    Dir.mktmpdir do |root|
+      FileUtils.mkdir_p(File.join(root, "studio-engine.worktrees", "a-desk"))
 
       out = run_in_script(<<~RUBY, env: { "PROJECTS_DIR" => root })
-        print sweep_app_for("studio-engine").fetch("slug")
+        slug = discovered_worktree_configs.map { |c| c["slug"] }.find { |c| c.include?("sibling") }
+        print slug.to_s
       RUBY
 
-      assert_equal "studio-engine", out,
-                   "the sweep prints `bin/agent-worktree remove studio-engine <desk> --yes` and " \
-                   "ledgers it; remove must resolve the same repo the sweep named, or the archive " \
-                   "record names a command that aborts"
+      assert_equal "studio-engine.sibling", out
+      refute_match(/[()\[\]{}*?$`!&;|<> ]/, out,
+                   "the sweep pastes this slug into `bin/agent-worktree remove <slug> ...`; a shell " \
+                   "metacharacter makes every remediation line it prints unrunnable")
+    end
+  end
+
+  # A repo with BOTH tree conventions yields two configs, each seeing only its own tree. The
+  # orphan reconciliation compares `git worktree list` — which returns every worktree for the
+  # repo — against that per-config view, so each config reported the OTHER tree as untracked:
+  # twelve "review then remove" advisories against desks including a DIRTY one and three
+  # UNMERGED. Advising teardown of unlanded work is what this file's doctrine forbids.
+  def test_a_two_tree_repo_reconciles_against_the_union_of_its_trees
+    Dir.mktmpdir do |root|
+      FileUtils.mkdir_p(File.join(root, "studio-engine", ".worktrees", "managed-desk"))
+      FileUtils.mkdir_p(File.join(root, "studio-engine.worktrees", "sibling-desk"))
+
+      out = run_in_script(<<~RUBY, env: { "PROJECTS_DIR" => root })
+        repo = File.join(PROJECTS_DIR, "studio-engine")
+        print stack_dirs_for_repo(repo).map { |d| File.basename(d) }.sort.inspect
+      RUBY
+
+      assert_equal '["managed-desk", "sibling-desk"]', out,
+                   "both trees belong to one repo, so the orphan reconciliation must see both — " \
+                   "otherwise each config advises removing the other tree's live desks"
     end
   end
 
