@@ -40,7 +40,9 @@ class Task
     # `ci_rails` covers all four shards of the sharded suite — bin/ci-scope-capture strips
     # the matrix suffix, so `rails (1)`..`rails (4)` all report under it.
     #
-    # `ci_test` IS THE RETIRED NAME AND IT STAYS. It was the slug for the monolithic
+    # `ci_static` is the merged brakeman/importmap/rubocop lane (2026-08-20).
+    #
+    # `ci_test`, `ci_lint`, `ci_scan_ruby` and `ci_scan_js` ARE RETIRED NAMES AND THEY STAY. It was the slug for the monolithic
     # `test` job that the sharded lane replaced on 2026-08-20, and this list is not a
     # description of today's workflow — it is the reader for AgentAction rows that were
     # WRITTEN AT THE TIME. Every task shipped before that date carries `ci_test` rows and
@@ -52,7 +54,7 @@ class Task
     # failures it produced were the only sign that a data-compatibility break was in the
     # diff. Retiring a slug from the WRITER (bin/ci-scope-capture) and from the READER are
     # two different decisions, and only the first one is safe to make on a rename.
-    CI_SCOPES = %w[ci_rails ci_rails_executed_set ci_system ci_lint ci_scan_ruby ci_scan_js ci_test].freeze
+    CI_SCOPES = %w[ci_rails ci_rails_executed_set ci_system ci_static ci_lint ci_scan_ruby ci_scan_js ci_test].freeze
     # The task-grain review gates whose first attempt marks actual review start.
     REVIEW_GATE_KEYS = %w[g2a_primary g2b_light].freeze
 

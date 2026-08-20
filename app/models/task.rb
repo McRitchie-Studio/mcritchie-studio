@@ -497,7 +497,9 @@ class Task < ApplicationRecord
   #   1. re-selects the row `FOR UPDATE SKIP LOCKED`, so two concurrent callers never
   #      grind the same top task — the loser SKIPS the locked row to the next;
   #   2. gates on Ci::ReviewGate.green? — :red / :pending / :ci_less / :none are
-  #      SKIPPED, never claimed (a non-green PR is not a review target);
+  #      SKIPPED, never claimed (a non-green PR is not a review target), and the
+  #      gate reads EVERY repo the task has a PR in, so one green repo can no longer
+  #      pop a task whose second repo is red or still running;
   #   3. claims it via TaskReviewClaim.acquire, whose per-claim-row lock is the FINAL
   #      winner-picker — a claim already held by a racer skips to the next candidate.
   # The first candidate that clears all three is returned; a non-claim commits the
@@ -520,7 +522,11 @@ class Task < ApplicationRecord
 
         unless Ci::ReviewGate.green?(task, injected: ci_status_token(ci_status, slug))
           skipped_ungreen = true
-          skipped_repos << Ci::ReviewGate.repo_for(task) # for the blind-repo report below
+          # EVERY repo the skipped task has a PR in, for the blind-repo report below.
+          # The singular read here named repo #1 only, so an unwired SECOND repo —
+          # the repo actually holding the task in `submitted` — was the one thing the
+          # report could not say.
+          skipped_repos.concat(Ci::ReviewGate.repos_for(task))
           next nil # red / pending / ci-less / none — never claim a non-green PR
         end
 

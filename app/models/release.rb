@@ -252,10 +252,101 @@ class Release < ApplicationRecord
     deployment_span("total", "Total", created_at, shipped_at)
   end
 
+  # Every averaging window the UI actually renders. ONE source of truth: the
+  # controller reads this to decide which rows to draw, and the end-of-deployment
+  # warm reads it to decide which to refresh. They used to be independent — the
+  # page drew [3, 10] while the warm only ever refreshed 10 — so within a TTL of a
+  # ship the 3-release row excluded the release the 10-release row above it
+  # included. Two rows in one table disagreeing about which releases exist.
+  RENDERED_AVERAGE_WINDOWS = [3, DEPLOYMENT_DASHBOARD_SAMPLE].freeze
+
+  # Bump when the SHAPE of a stored snapshot changes, so a new reader can never
+  # serve a payload the old writer produced.
+  DEPLOYMENT_AVERAGES_VERSION = 1
+
   # Averages each deployment stage (+ Total) over the last N shipped releases —
-  # the summary cards. Same span math as the per-row cells, so cards and columns
-  # can never disagree.
+  # the DevOps card's summary tiles.
+  #
+  # SIZE THIS HONESTLY. Computing it costs 5-9ms inside a request that takes
+  # 1,200-2,000ms (measured on production 2026-08-19): two queries over ten
+  # shipped releases. Precomputing it is a SHAPE change — the number only moves
+  # when a deployment finishes, so it is computed then rather than by every
+  # viewer — and it is worth about 0.4% of the page. Anyone reading this expecting
+  # the board to get faster is reading the wrong method; the board's cost was its
+  # task scope and its payload.
+  #
+  # THE SNAPSHOT LIVES IN DEDICATED COLUMNS, and it took two send-backs to get
+  # both halves of that right.
+  #
+  # NOT Rails.cache: in production `ship!` runs on a ONE-OFF dyno (bin/release's
+  # conductor shells `heroku run ... rails runner`) and Rails.cache there is a
+  # per-dyno FileStore, so a warm written to that dyno's tmp/cache dies with the
+  # process and no web dyno ever sees it.
+  #
+  # NOT the shared `metadata` jsonb either, which was the second attempt: the
+  # snapshot was erased FOUR LINES after it was written. Release::Conductor.ship!
+  # calls release.ship! (which writes through a freshly-loaded instance) and then
+  # stamp_session_mascot on its own now-stale object, whose
+  # `update!(metadata: meta)` rewrites the whole blob without the new key. Four
+  # writers rewrite that column wholesale; reordering one is whack-a-mole.
+  #
+  # So: dedicated columns, exactly as Release::DurationCache does it
+  # (duration_metrics / duration_metrics_cached_at / duration_cache_version) and
+  # immune for exactly the same reason.
+  #
+  # The snapshot rides the release it was taken FOR — the one just shipped — and
+  # the reader takes the newest shipped release's copy, so "the freshest snapshot"
+  # needs no separate bookkeeping.
+  #
+  # READ-THROUGH, deliberately: a missing, version-stale, or unreadable snapshot
+  # recomputes rather than rendering blank. That covers a cold database, a shape
+  # bump, and the honest limit of this design — a late GateRun stamped on an
+  # ALREADY-shipped release is not reflected until the next ship, exactly the
+  # tradeoff DurationCache accepts.
   def self.deployment_stage_averages(limit: DEPLOYMENT_DASHBOARD_SAMPLE)
+    stored_deployment_stage_averages(limit) || compute_deployment_stage_averages(limit: limit)
+  end
+
+  # The snapshot for one window, or nil when there isn't a usable one. Fully
+  # rescued: this runs on the PUBLIC, unauthenticated /deployments render, so a
+  # malformed payload must degrade to a recompute, never to a 500.
+  def self.stored_deployment_stage_averages(limit)
+    source = last_shipped
+    return nil unless source
+    return nil unless source.stage_averages_version == DEPLOYMENT_AVERAGES_VERSION
+
+    window = source.stage_averages[limit.to_s]
+    window.is_a?(Hash) && window["stages"].present? ? window : nil
+  rescue StandardError => e
+    ErrorLog.capture!(e)
+    nil
+  end
+
+  # Recompute EVERY rendered window and store them on the newest shipped release —
+  # the end-of-deployment warm. Windows come from RENDERED_AVERAGE_WINDOWS so the
+  # page cannot render a row this never refreshes. Returns the stored windows, or
+  # nil when there is no shipped release to hang them on.
+  def self.refresh_deployment_stage_averages!(windows: RENDERED_AVERAGE_WINDOWS)
+    target = last_shipped
+    return nil unless target
+
+    stored = windows.to_h { |window| [window.to_s, compute_deployment_stage_averages(limit: window)] }
+    # update_columns, like DurationCache: this is a derived cache, not a state
+    # change, and it must not fire callbacks or touch the stage timeline. It also
+    # writes ONLY these three columns, so it cannot clobber a concurrent metadata
+    # write — and, being its own columns, cannot be clobbered BY one.
+    target.update_columns( # rubocop:disable Rails/SkipsModelValidations
+      stage_averages: stored,
+      stage_averages_cached_at: Time.current,
+      stage_averages_version: DEPLOYMENT_AVERAGES_VERSION,
+      updated_at: Time.current
+    )
+    stored
+  end
+
+  # The real work. Same span math as the per-row cells, so cards and columns can
+  # never disagree.
+  def self.compute_deployment_stage_averages(limit: DEPLOYMENT_DASHBOARD_SAMPLE)
     releases = where(state: "shipped")
                .order(Arel.sql("COALESCE(shipped_at, created_at) DESC"))
                .includes(:gate_runs) # the gate-backed spans read the association
@@ -682,6 +773,22 @@ class Release < ApplicationRecord
       shipped_count += 1
       # The beat starts when the FIRST member flips (see Release::BeatClock).
       clock ||= Release::BeatClock.new(member_pause)
+    end
+
+    # The deployment just finished, so the DevOps card's averages just changed —
+    # recompute EVERY rendered window here, once, and store it where every web
+    # dyno can read it. This runs on a one-off dyno in production, which is
+    # precisely why the snapshot goes to a column and not to Rails.cache.
+    #
+    # RESCUED, deliberately. A ship is the most consequential write this system
+    # makes, and by this line the release and every member are already stamped and
+    # committed. A failed snapshot write must not turn a completed production
+    # deploy into a raised exception; the worst it can cost is that the next
+    # viewer recomputes an 8ms figure.
+    begin
+      self.class.refresh_deployment_stage_averages!
+    rescue StandardError => e
+      ErrorLog.capture!(e)
     end
   end
 

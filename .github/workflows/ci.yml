@@ -47,7 +47,35 @@ on:
 # queue that batches BEFORE the merge — not cancellation after it.
 
 jobs:
-  scan_ruby:
+  # THE STATIC LANE — brakeman, importmap audit and rubocop in ONE job.
+  #
+  # These were three jobs (`scan_ruby`, `scan_js`, `lint`) doing identical setup and then
+  # one command each. Measured on run 32338350375: 37s, 22s and 52s of work behind ~20s of
+  # setup APIECE. Merged, the setup is paid once and the lane costs ~131s — which is LONGER
+  # than the 1.1min the slowest of the three took alone, and that is fine: the critical
+  # path is the `rails` shard at ~3.5min, and a 2.2min lane running beside it costs the PR
+  # nothing.
+  #
+  # WHAT IT BUYS IS NOT SECONDS, IT IS SLOTS, and the slots are the point. The account's
+  # concurrency ceiling is ~20 jobs; this workflow ran 14. config/rails_lane.yml said
+  # plainly that raising the shard count was gated on headroom rather than appetite —
+  # "a shard that waits for a runner is slower than no shard". Three jobs becoming one
+  # frees two slots and takes the workflow from 14 jobs to 12 at an unchanged critical
+  # path. Those slots were originally freed to pay for shards 5 and 6; that raise was then
+  # MEASURED at 3.6min against 4 shards' 3.7min — nothing — because LPT gives each of the
+  # heaviest files its own bucket and a shard cannot finish before its heaviest FILE. The
+  # shard count went back to 4 (config/rails_lane.yml carries the numbers); the slots stay
+  # freed, which is worth having on its own with two PRs in flight against a ~20-job cap.
+  #
+  # `if: always()` ON THE SECOND AND THIRD CHECKS is load-bearing. Merging three jobs into
+  # one would otherwise mean the first failure hides the other two — a brakeman finding
+  # would stop you ever seeing the rubocop offences in the same run, and you would fix,
+  # push, and wait ~3 minutes to discover the next one. With always(), all three run and
+  # the job still reports RED if any failed, so a single run tells you everything that is
+  # wrong. It is not an opt-out: always() cannot EXCLUDE a step, only force one, which is
+  # why test/lib/ci_workflow_triggers_test.rb permits it and refuses every event-context
+  # condition.
+  static:
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -67,43 +95,12 @@ jobs:
       - name: Scan for common Rails security vulnerabilities using static analysis
         run: bin/brakeman --no-pager
 
-  scan_js:
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-
-      - name: Await RubyGems propagation for locked gems
-        run: .github/scripts/await-gem-propagation.sh
-
-      - name: Set up Ruby
-        uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: .ruby-version
-          bundler-cache: true
-
       - name: Scan for security vulnerabilities in JavaScript dependencies
+        if: always()
         run: bin/importmap audit
 
-  lint:
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-
-      - name: Await RubyGems propagation for locked gems
-        run: .github/scripts/await-gem-propagation.sh
-
-      - name: Set up Ruby
-        uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: .ruby-version
-          bundler-cache: true
-
       - name: Lint code for consistent style
+        if: always()
         run: bin/rubocop -f github
 
   island_animator:
@@ -233,6 +230,27 @@ jobs:
 
       - name: Install JS dependencies
         run: npm ci
+
+      # CACHE THE BROWSER, keyed on the resolved Playwright version. Measured on run
+      # 32338350375 this step cost 14s per shard — three shards, every run, re-downloading
+      # a Chromium that had not changed. The key comes from package-lock.json, so a
+      # Playwright bump invalidates it automatically and there is nothing to remember.
+      #
+      # WHAT IT DOES NOT DO, said plainly so the next measurement is not a surprise: the
+      # FIRST run on any branch is a MISS — it populates the cache rather than using one —
+      # and GitHub only shares a cache with runs on the same branch or the DEFAULT branch.
+      # So the saving appears once this reaches `main`, not on the PR that adds it.
+      #
+      # `--with-deps` still runs on a hit, deliberately: the cache holds the browser, not
+      # the apt libraries headless Chromium needs to launch, and a restored browser that
+      # cannot start reads as a mysterious lane failure rather than a missing package.
+      - name: Cache the Playwright browser
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
 
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium

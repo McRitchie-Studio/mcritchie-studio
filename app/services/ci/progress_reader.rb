@@ -325,8 +325,36 @@ module Ci
       task.devops_field("branch").to_s.presence
     end
 
+    # WHICH repo's CI this task's meter draws: the repo its PR is actually in —
+    # Ci::ReviewGate.repos_for, the SAME derivation the review gate grades, so the
+    # display and the gate can never disagree about a task's repo. Falls back to the
+    # first declared repo (no PR yet, or an unparseable url), then the hub.
+    #
+    # IT USED TO BE `repositories.first`, which is not the PR's repo whenever a task
+    # names something else first — a gem task names its CONSUMERS ([mcritchie-studio,
+    # turf-monster]) behind ONE studio-engine PR — so the meter looked for the hub's
+    # runs on a branch that only exists in the gem: blank, or another repo's CI if a
+    # branch of that name happened to exist there.
+    #
+    # A GEM TASK'S CARD IS STILL BLANK, for a DIFFERENT collapse this does not touch:
+    # the task path resolves its sha with the default `CI` workflow name (see
+    # #latest_ci_sha's default), while a gem's runs are its own suite ("Engine CI").
+    # Naming the right repo does not make that read resolve. #ci_target_for already
+    # holds the per-repo answer the release tracks use; wiring it into the task path
+    # is its own change, and nothing is GATED on this bar — Ci::ReviewGate resolves
+    # the workflow per repo already.
+    #
+    # ONE TRACK, AND IT IS THE PRIMARY PR's — a stated display LIMIT, not an
+    # oversight. A task with PRs in two repos has two CI runs; this bar shows the one
+    # its `pr_url` links to. Nothing is gated on it: Ci::ReviewGate folds EVERY repo,
+    # so a red second repo still blocks the claim and the armed merge even though this
+    # bar cannot draw it. Drawing both needs a second meter slot per card, because a
+    # CheckProgress is ONE sha's fold and merging two repos into it would invent a sha
+    # its run link then points nowhere with. #for_release already does per-repo tracks
+    # if that is ever wanted here.
     def task_repo(task)
-      Array(task.devops_repositories).first.to_s.presence || HUB_REPO
+      gate_repo = (Ci::ReviewGate.repos_for(task).first if task.respond_to?(:release_pr_urls))
+      gate_repo.presence || Array(task.devops_repositories).first.to_s.presence || HUB_REPO
     end
 
     def nwo_for(repo)
