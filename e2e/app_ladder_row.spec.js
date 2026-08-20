@@ -146,7 +146,13 @@ test("the ladder row re-renders from a broadcast when the dev tools fire", async
   const before = await row.getAttribute("data-rendered-at");
   expect(before, "the row must carry a render stamp").toBeTruthy();
 
-  await tools.getByRole("button", { name: "Open" }).click();
+  // REDRAW, not Open. Redraw (dev/board#rebroadcast_release_modules) re-broadcasts
+  // unconditionally with nothing changed, so it fires the same push on every run and
+  // in every environment. Open is state-dependent — against an already-open fixture
+  // release it can return early having written nothing, which is a legitimate no-op
+  // that reads as a wiring failure. That is exactly how this spec passed locally and
+  // failed in CI, where the seeded board already had a release open.
+  await tools.getByRole("button", { name: "Redraw" }).click();
 
   await expect
     .poll(async () => page.locator("#app-ladder-row").getAttribute("data-rendered-at"), {
