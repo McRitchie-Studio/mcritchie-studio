@@ -5,7 +5,17 @@ module Api
       # rejected with a 400 rather than silently ignored — a `?status=submitted`
       # used to fall through to "no filter" and return EVERY task (the param is
       # `stage`, not `status`). `page`/`per_page` are read by Api::Paginatable.
-      INDEX_PARAMS = %w[stage agent_slug reviewable page per_page].freeze
+      # `full=1` renders each row through task_json — the SAME serializer `show`
+      # uses — instead of the raw column read. It is opt-in precisely because the
+      # default must keep its no-per-row-rebuild property for the callers that
+      # only want a listing.
+      #
+      # It exists because a caller that reads a task to make a DECISION needs the
+      # derived fields (review_in_progress, gate_in_flight, progress_seconds_ago
+      # and friends), and the raw index does not carry them. A batch built on the
+      # raw index looks complete, answers those questions with nil, and a guard
+      # reading nil as "no" fails OPEN. See bin/agent-worktree's reclaim batch.
+      INDEX_PARAMS = %w[stage agent_slug reviewable page per_page full].freeze
 
       before_action :capture_task_event_context, only: [:create, :update, :intent, :block]
       before_action :set_task, only: [:show, :update, :destroy, :intent, :block]
@@ -22,7 +32,12 @@ module Api
         # with or without an explicit `stage=submitted`.
         tasks = tasks.merge(Task.reviewable) if ActiveModel::Type::Boolean.new.cast(params[:reviewable])
         result = paginate(tasks)
-        render_data(result[:records], meta: result[:meta])
+        records = if ActiveModel::Type::Boolean.new.cast(params[:full])
+                    result[:records].map { |task| task_json(task) }
+                  else
+                    result[:records]
+                  end
+        render_data(records, meta: result[:meta])
       end
 
       def show
