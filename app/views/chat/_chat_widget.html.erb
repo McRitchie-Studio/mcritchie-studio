@@ -7,7 +7,7 @@
       <template x-if="messages.length === 0 && !loading">
         <div class="text-center <%= compact ? 'py-6' : 'py-12' %>">
           <% unless compact %>
-            <img src="/agents/alex.png" class="w-16 h-16 rounded-full mx-auto mb-4 opacity-75" alt="Alex">
+            <img src="/agents/alex.webp" class="w-16 h-16 rounded-full mx-auto mb-4 opacity-75" alt="Alex">
           <% end %>
           <p class="text-secondary <%= compact ? 'text-sm' : 'text-lg mb-2' %>">Ask me anything about McRitchie Studio, business acquisitions, or tech strategy.</p>
         </div>
@@ -16,7 +16,7 @@
       <template x-for="msg in messages" :key="msg.id">
         <div :class="msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'">
           <template x-if="msg.role === 'assistant'">
-            <img src="/agents/alex.png" class="w-6 h-6 rounded-full mr-2 flex-shrink-0 mt-1" alt="Alex">
+            <img src="/agents/alex.webp" class="w-6 h-6 rounded-full mr-2 flex-shrink-0 mt-1" alt="Alex">
           </template>
           <div :class="msg.role === 'user'
             ? 'bg-primary text-white rounded-2xl rounded-br-sm px-3 py-2 <%= compact ? 'max-w-xs text-sm' : 'max-w-lg' %>'
@@ -30,7 +30,7 @@
       <!-- Loading indicator -->
       <template x-if="loading">
         <div class="flex justify-start">
-          <img src="/agents/alex.png" class="w-6 h-6 rounded-full mr-2 flex-shrink-0 mt-1" alt="Alex">
+          <img src="/agents/alex.webp" class="w-6 h-6 rounded-full mr-2 flex-shrink-0 mt-1" alt="Alex">
           <div class="card rounded-2xl rounded-bl-sm px-3 py-2">
             <div class="flex gap-1">
               <span class="w-2 h-2 rounded-full bg-primary animate-bounce" style="animation-delay: 0ms"></span>
