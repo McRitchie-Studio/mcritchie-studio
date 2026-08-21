@@ -17,6 +17,46 @@ require_relative "../../bin/lib/ci_test_command"
 class CiTestCommandTest < Minitest::Test
   HUB_ROOT = File.expand_path("../..", __dir__)
 
+  # The projects root — the directory the sibling repos live in.
+  #
+  # This used to be spelled `File.expand_path("../../../#{repo}", HUB_ROOT)`, which
+  # is correct from a WORKTREE (…/mcritchie-studio/.worktrees/<slug> is three levels
+  # below the projects root) and wrong from the PRIMARY checkout, where it climbs
+  # past the projects root to /Users/<repo>. Nothing there exists, so every sibling
+  # was skipped and the two live-ecosystem pins below passed having checked NOTHING
+  # — green, and blind, depending only on which checkout you happened to run from.
+  #
+  # Resolved through git instead of by counting "..": `--git-common-dir` answers the
+  # PRIMARY's .git for a worktree and for the primary alike, so its grandparent is
+  # the projects root from either. Nil when git cannot answer, which the pins below
+  # assert against rather than silently skipping.
+  #
+  # ⚠ DO NOT "SIMPLIFY" THIS TO AN ASCEND-UNTIL-A-SIBLING-APPEARS SEARCH. That is
+  # what test/models/release/repos_test.rb does, and matching it here looked like
+  # welcome consistency for exactly one commit. It is wrong for THIS file: that
+  # helper returns nil on a CI runner and its callers `skip`, while the pins below
+  # `refute_nil` — deliberately, because skipping is the very blindness they exist
+  # to end. An ascend keyed on `rolio/.git` finds nothing in a checkout that holds
+  # only this repo, so it reddened the CI lane it was meant to leave untouched
+  # (caught in review, not by the local cert — which is honest and runs where the
+  # siblings DO exist, and so cannot see this).
+  #
+  # git answers in both places: on a runner the grandparent of
+  # /home/runner/work/mcritchie-studio/mcritchie-studio/.git is the directory
+  # holding this repo, so the hub itself resolves and the pins check one repo
+  # rather than none.
+  PROJECTS_ROOT = begin
+    common = `git -C #{Shellwords.escape(HUB_ROOT)} rev-parse --git-common-dir 2>/dev/null`.strip
+    common.empty? ? nil : File.expand_path("../..", File.expand_path(common, HUB_ROOT))
+  rescue StandardError
+    nil
+  end
+
+  # Does this repo actually HAVE system tests? A `.keep` is not a system test.
+  def self.system_tests?(root)
+    !Dir[File.join(root, "test", "system", "**", "*_test.rb")].empty?
+  end
+
   def with_ci(yaml)
     Dir.mktmpdir do |dir|
       FileUtils.mkdir_p(File.join(dir, ".github", "workflows"))
@@ -1377,26 +1417,75 @@ class CiTestCommandTest < Minitest::Test
     # REAL parser against its REAL workflows on every suite run. Siblings are skipped
     # when absent (CI checks out only this repo), so this is a LOCAL pin — which is
     # exactly where an over-fire would otherwise be discovered: at a builder's gate.
+    refute_nil PROJECTS_ROOT, "cannot locate the projects root — this pin would check nothing"
+
+    checked = []
     %w[mcritchie-studio turf-monster rolio chain-ops studio-engine solana-studio turf-vault].each do |repo|
-      root = File.expand_path("../../../#{repo}", HUB_ROOT)
+      root = File.join(PROJECTS_ROOT, repo)
       next unless File.directory?(root)
 
+      checked << repo
       assert_nil CiTestCommand.refusal(root),
                  "the cert net REFUSES #{repo} — the guard over-fires on a live repo"
+
+      # THE SYSTEM TIER IS DEMANDED WHERE THERE ARE SYSTEM TESTS, and this pin used
+      # to demand it everywhere. That was wrong for turf-monster, whose test/system
+      # holds exactly one file — `.keep` — and which dropped the browser and the
+      # tier on purpose (/tasks/drop-turf-empty-system-lane, shipped in its PR 365):
+      # the lane installed Chrome and certified nothing on every PR.
+      #
+      # The contradiction was already in this codebase and invisible, because this
+      # pin resolved its siblings to nowhere and skipped them all. The hub's OWN
+      # test/models/release/repos_test.rb asserts the opposite of what this line
+      # demanded — "turf-monster has no system tests, so its integration subset is
+      # the right gate" — verified against that same .keep.
+      #
+      # Keyed on the FACT rather than on a repo name, so it needs no edit when a
+      # repo gains or loses system tests: add one to turf-monster and this pin
+      # starts demanding the tier again, which is exactly what its own ci.yml
+      # comment promises ("WHEN A SYSTEM TEST LANDS, PUT THE LANE BACK").
+      next unless self.class.system_tests?(root)
+
       assert_includes CiTestCommand.resolve(root), "test:system",
-                      "#{repo}'s cert lane must still carry the system tier"
+                      "#{repo} HAS system tests — its cert lane must carry the system tier"
     end
+
+    # THE GUARD ON THE GUARD. Every assertion above sits behind `next unless
+    # File.directory?`, so a resolution bug turns this whole test green without
+    # checking one repo — which is exactly what the ../../../ spelling did. On CI
+    # only this repo is checked out and `checked` is legitimately just the hub, so
+    # the floor is one rather than seven.
+    refute_empty checked, "no sibling repo resolved — the pin went vacuous"
   end
 
-  def test_the_four_RAILS_repos_resolve_their_OWN_ci_command
+  def test_the_single_lane_RAILS_repos_resolve_their_OWN_ci_command
     # …and they resolve it from their own ci.yml — not by falling back to DEFAULT with
     # a refusal quietly suppressed.
-    %w[mcritchie-studio turf-monster rolio chain-ops].each do |repo|
-      root = File.expand_path("../../../#{repo}", HUB_ROOT)
+    #
+    # mcritchie-studio is DELIBERATELY not in this list. Its ci.yml is the SHARDED
+    # lane, and the sharded-lane test above asserts the opposite of what this one
+    # would demand of it — "a sharded lane has no single CI command; for_root must
+    # not invent one". The hub can never satisfy both, and while the sibling paths
+    # resolved to nowhere nobody found out: this test passed by skipping every repo
+    # in it. Fixing the resolution surfaced the contradiction immediately.
+    refute_nil PROJECTS_ROOT, "cannot locate the projects root — this pin would check nothing"
+    assert CiTestCommand.sharded_lane?(HUB_ROOT),
+           "if the hub stops being a sharded lane, it BELONGS in the list below — revisit this"
+
+    %w[turf-monster rolio chain-ops].each do |repo|
+      root = File.join(PROJECTS_ROOT, repo)
       next unless File.directory?(root)
 
-      assert_equal "bin/rails db:test:prepare test test:system", CiTestCommand.for_root(root),
-                   "#{repo} must RESOLVE its own ci.yml test command, not fall back"
+      resolved = CiTestCommand.for_root(root)
+      refute_nil resolved, "#{repo} must RESOLVE its own ci.yml test command, not fall back"
+      assert_includes resolved, "bin/rails db:test:prepare test",
+                      "#{repo}'s resolved command must be its real rails test invocation"
+
+      # Same fact as the fleet pin above, not a repo allow-list: the tier belongs in
+      # the command exactly when the repo has tests that need it.
+      if self.class.system_tests?(root)
+        assert_includes resolved, "test:system", "#{repo} HAS system tests — its command must run them"
+      end
     end
   end
 end

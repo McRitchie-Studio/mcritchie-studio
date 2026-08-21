@@ -99,13 +99,18 @@ module Ci
       # The repos this row can honestly report on: three-rung AND carrying a
       # declared CI suite.
       #
-      # WHY THE SECOND HALF. `solana-studio` is a real three-rung gem, but
+      # WHY THE SECOND HALF. A repo can sit on the three-rung ladder while
       # `GithubWorkflowRun::GEM_CI_WORKFLOWS` maps it to nil — "ships no suite
       # workflow — declared, not overlooked". Ci::BranchGate fails closed on an
       # unresolved workflow, so every one of its rungs reads :none forever. A card
       # that can only ever say "not built" on all three rungs is noise, not signal,
       # and it would train the eye to ignore exactly the state that matters on the
       # repos that DO report.
+      #
+      # `solana-studio` was the standing example until 2026-08-20, when it grew a
+      # Rails engine and a "Gem CI" lane and joined the row on its own — which is
+      # the rule working, not an exception to it. No gem declares nil today; the
+      # branch stays because the next one to arrive will.
       #
       # This is a derived rule, not a hardcoded list: a repo joins the row the day
       # it declares a suite, and leaves if it stops.

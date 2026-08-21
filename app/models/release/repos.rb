@@ -77,9 +77,12 @@ class Release
     # A gem is SELF-GATED when the registry gives it its own pre-publish gate
     # (a non-empty `release_check`): its own suite IS the release-candidate
     # verdict, so it can be its OWN release candidate — published to RubyGems
-    # with no consuming app to QA it through. studio-engine (release_check:
-    # bin/release-check) is self-gated; solana-studio (no release_check) is not,
-    # so a solana-studio-only sweep still requires a consuming app.
+    # with no consuming app to QA it through. Both registered gems declare
+    # `release_check: bin/release-check` and are self-gated as of 2026-08-20, when
+    # solana-studio grew a suite runner alongside its Rails engine — it was the
+    # standing counter-example before that. A gem with NO release_check still
+    # requires a consuming app in the sweep; read the registry rather than this
+    # comment for who is which.
     #
     # bin/release mirrors this predicate standalone (it reads the registry
     # through RELEASE_REPOS, never through Rails) — keep the two in step.

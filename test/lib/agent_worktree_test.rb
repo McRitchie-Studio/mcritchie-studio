@@ -1169,6 +1169,40 @@ class AgentWorktreeTest < Minitest::Test
                  "no test DB skips db:test:prepare ONLY — the bundled-asset build still runs"
   end
 
+  # --- sweep coverage: every worktree tree on disk, not just the registry ------
+  #
+  # The sweep enumerated desks from config/satellites.yml, which registers satellite
+  # APPS (navbar, SSO role, ecosystem-build). Repos that carry worktrees but are not
+  # satellites — the gem/library repos above all — were therefore invisible to it, and
+  # `cleanup --reclaim studio-engine` answered "unknown app". Not a slow sweep: NO
+  # sweep, silently. studio-engine had accumulated 64 unswept desks, more than any
+  # registered app, while the registered ones looked tidy.
+  #
+  # The fix is NOT to add those slugs to satellites.yml — that file drives the navbar,
+  # SSO roles and ecosystem-build, so registering a repo there is a product decision.
+  # Coverage is derived from what has .worktrees/ ON DISK.
+  def test_stack_records_covers_a_worktree_tree_missing_from_the_registry
+    Dir.mktmpdir do |root|
+      # studio-engine is deliberately NOT a satellite: it is a gem, with no port and
+      # no stack. It still collects desks.
+      FileUtils.mkdir_p(File.join(root, "studio-engine", ".worktrees", "some-desk"))
+      FileUtils.mkdir_p(File.join(root, "mcritchie-studio", ".worktrees", "hub-desk"))
+
+      out = run_in_script(<<~RUBY, env: { "PROJECTS_DIR" => root })
+        # Only the enumeration is under test; stack_record reads .env files we have
+        # not written, so collapse it to the one field the assertion needs.
+        def stack_record(_app, dir); { dir: dir }; end
+        print stack_records(nil).map { |r| r[:dir] }.sort.inspect
+      RUBY
+
+      assert_includes out, "studio-engine/.worktrees/some-desk",
+                      "a repo with desks on disk must be swept even when it is not a registered app — " \
+                      "this is the gap that let 64 studio-engine desks accumulate unswept"
+      assert_includes out, "mcritchie-studio/.worktrees/hub-desk",
+                      "control: the registered app is still enumerated"
+    end
+  end
+
   # --- sweep scale: board reads must not scale with desk count ----------------
   #
   # reclaim_evidence resolves the build claim per desk, and task_record_for_pr spawns
@@ -1284,4 +1318,243 @@ class AgentWorktreeTest < Minitest::Test
                  "what makes the batch self-activating once the board serves full=1"
   end
 
+  # --- stackless teardown is a BRANCH, not a comment ---------------------------
+  #
+  # discovered_worktree_configs used to omit the keys teardown fetches, and
+  # STACKLESS_STACK was set at its construction site and never read. So the generic
+  # Rails teardown ran against a gem repo and died on `app.fetch("sidekiq")` —
+  # inside with_worktree_lock, after earlier candidates were already destroyed,
+  # leaving a half-finished sweep and a stale registry.
+  # Builds the tree it inspects. An earlier cut read discovered_worktree_configs.first
+  # from the real projects root — which passed on a laptop with desks on disk and
+  # returned nil in a fresh CI checkout, so the check was green exactly where it was
+  # not needed and NoMethodError where it was. A test for discovery must own the
+  # thing being discovered.
+  def test_a_discovered_config_carries_every_key_teardown_fetches
+    Dir.mktmpdir do |root|
+      FileUtils.mkdir_p(File.join(root, "studio-engine", ".worktrees", "a-desk"))
+
+      out = run_in_script(<<~RUBY, env: { "PROJECTS_DIR" => root })
+        config = discovered_worktree_configs.first
+        keys = %w[sidekiq stack ruby_path session_env session_key reserved_ports]
+        print config.nil? ? "NO CONFIG DISCOVERED" : keys.reject { |k| config.key?(k) }.inspect
+      RUBY
+
+      assert_equal "[]", out,
+                   "teardown reaches for these with fetch — a config that omits one raises KeyError " \
+                   "mid-sweep, inside the lock, after earlier desks are already gone"
+    end
+  end
+
+  # The skip needs BOTH halves. Discovery is per-repo but a stack is per-desk, and
+  # moms-app / acquisition-studio are discovered too — they are ordinary Rails apps
+  # whose desks DO have servers to stop. Classifying the repo stackless must never
+  # be enough on its own to skip a live stack.
+  def test_stackless_skip_requires_a_quiet_desk_not_just_a_stackless_repo
+    out = run_in_script(<<~RUBY)
+      STOPPED = []
+      def stop_generic_rails(dir, _port = nil); STOPPED << dir; end
+      def stop_pidfile(*_a); end
+      def local_email_values; {}; end
+      def parse_env(_p); { "APP_PORT" => "3999" }; end
+
+      app = { "stack" => STACKLESS_STACK, "sidekiq" => false }
+      # A gem desk: stackless repo, no stack env -> nothing to stop.
+      stop_stack_for_removal(app, "/tmp/gem-desk", { env_exists: false, port: nil })
+      # A discovered RAILS desk: stackless classification, but a live stack env.
+      stop_stack_for_removal(app, "/tmp/rails-desk", { env_exists: true, env_path: "/tmp/x", port: "3999" })
+      print STOPPED.inspect
+    RUBY
+
+    assert_equal '["/tmp/rails-desk"]', out,
+                 "the gem desk is skipped and the Rails desk is still stopped — skipping the latter " \
+                 "would orphan its server and its Redis DB"
+  end
+
+  # THE WITHHOLD. Coverage alone moved ~12 real desks onto the destroy path where three of
+  # the four hold channels are structurally dead — permanently, by construction. A discovered
+  # repo's desk can never carry a bound task (bind-task routes through the registry), so
+  # claim_hold took its documented unbound FAIL-OPEN, review_hold and pr_hold_reason answer
+  # nil for want of the same record, and what was left was desk age plus mtimes over a tree
+  # whose tmp/log/coverage/vendor/.bundle are pruned — exactly and only what a gem builder
+  # writes while running a suite. Measured on the pre-split branch: `cleanup --reclaim
+  # studio-engine` nominated 4 desks that way.
+  #
+  # Both halves matter. Widening the fail-open to every unbound desk would wedge cleanup
+  # entirely (the fail-open exists for a reason), so this asserts the REGISTERED unbound desk
+  # still reads free in the same breath.
+  def test_a_discovered_desk_is_withheld_while_a_registered_unbound_desk_still_frees
+    out = run_in_script(<<~RUBY)
+      def worktree_label(_r) = "a-repo/a-desk"
+      def cleanup_command(_r) = "bin/agent-worktree remove a-repo a-desk --yes"
+      def ship_workspace_record?(_r) = false
+
+      discovered = { "status" => "discovered", "slug" => "studio-engine", "stack" => STACKLESS_STACK }
+      registered = { "status" => "active", "slug" => "mcritchie-studio", "stack" => "rails" }
+
+      held = claim_hold({ app: discovered, env: {}, task: "a-desk" })
+      free = claim_hold({ app: registered, env: {}, task: "a-desk" })
+
+      print [held.nil? ? "FREE" : "HELD", free.nil? ? "FREE" : "HELD"].inspect
+    RUBY
+
+    assert_equal '["HELD", "FREE"]', out,
+                 "a discovered repo's desk must WITHHOLD (its unbound state is permanent, so the " \
+                 "fail-open would be a standing licence to destroy on mtime evidence alone), while a " \
+                 "registered unbound desk must still fail open or cleanup wedges entirely"
+  end
+
+  # The hold has to survive the whole aggregator, not just its own channel — reclaim_hold
+  # chains claim -> review -> desk -> pr, and only the first is taught about discovery.
+  def test_the_discovered_hold_survives_the_full_reclaim_hold_chain
+    out = run_in_script(<<~RUBY)
+      def worktree_label(_r) = "studio-engine/a-desk"
+      def cleanup_command(_r) = "bin/agent-worktree remove studio-engine a-desk --yes"
+      def ship_workspace_record?(_r) = false
+
+      app = { "status" => "discovered", "slug" => "studio-engine", "stack" => STACKLESS_STACK }
+      print reclaim_hold({ app: app, env: {}, task: "a-desk" }).to_s
+    RUBY
+
+    assert_match(/discovered repo/, out,
+                 "reclaim_hold is what the destroy path actually calls, and this must hold for the " \
+                 "DISCOVERY reason. Asserting mere truthiness passed even with claim_hold deleted " \
+                 "from the chain outright: the stub record has no :dir, so desk_hold held it for an " \
+                 "unrelated reason and the tautology hid the removal of the only channel that " \
+                 "knows about discovery.")
+  end
+
+  # doctor and snapshot --write both run doctor_issues, and snapshot --write runs at the END
+  # of run_reclaim. `port < range_start` with a nil range_start raised `comparison of Integer
+  # with nil failed`, so the sweep tore desks down and THEN died before refreshing the
+  # registry. Discovered desks with a real port are not hypothetical: moms-app and
+  # acquisition-studio are discovered Rails apps with live servers.
+  def test_doctor_survives_a_discovered_desk_that_carries_a_port
+    out = run_in_script(<<~RUBY)
+      discovered = { "range_start" => nil, "range_end" => nil }   # a discovered Rails desk with a live port
+      registered = { "range_start" => 3000, "range_end" => 3099 }
+
+      begin
+        print [
+          port_range_issue(discovered, 3999).nil? ? "NO ISSUE" : "ISSUE",
+          port_range_issue(registered, 3999).nil? ? "NO ISSUE" : "ISSUE",
+          port_range_issue(registered, 3050).nil? ? "NO ISSUE" : "ISSUE"
+        ].inspect
+      rescue ArgumentError => e
+        print "RAISED: " + e.message
+      end
+    RUBY
+
+    assert_equal '["NO ISSUE", "ISSUE", "NO ISSUE"]', out,
+                 "a discovered repo is allocated no port band, so there is no range to be outside " \
+                 "of — comparing anyway killed doctor AND snapshot --write at the end of " \
+                 "run_reclaim. The registered cases must keep reporting, or the guard is just off."
+  end
+
+  # Every remediation line the sweep prints for a discovered desk goes into the delete-later
+  # ledger as the archive record, so BOTH halves have to hold: the command must resolve, and
+  # it must resolve into the tree the desk actually lives in.
+  #
+  # This drives the real `remove` DISPATCH. An earlier cut called sweep_app_for directly and
+  # was worthless: reverting `remove` to app_for — the exact defect its own comment named —
+  # left it green.
+  #
+  # The sibling tree is the sharp case. worktree_dir hard-coded ".worktrees", so
+  # `remove <repo>.sibling <desk>` resolved into the MANAGED tree: an abort when the name is
+  # unique, and a teardown of the WRONG DESK the moment the same name exists in both trees.
+  def test_remove_resolves_a_sibling_tree_desk_into_the_sibling_tree
+    Dir.mktmpdir do |root|
+      managed = File.join(root, "studio-engine", ".worktrees", "shared-name")
+      sibling = File.join(root, "studio-engine.worktrees", "shared-name")
+      FileUtils.mkdir_p(managed)
+      FileUtils.mkdir_p(sibling)
+      env = SessionEnv.neutralized.merge("PROJECTS_DIR" => root)
+
+      # A desk that exists in NEITHER tree: the abort names the path it resolved, which is the
+      # resolution itself, observed — and it cannot destroy anything on the way to saying so.
+      out, err, = Open3.capture3(env, "ruby", BIN, "remove", "studio-engine.sibling", "no-such-desk")
+      resolved = "#{out}#{err}"
+
+      assert_includes resolved, File.join(root, "studio-engine.worktrees", "no-such-desk"),
+                      "remove must resolve a .sibling config into the SIBLING tree"
+      refute_includes resolved, File.join(root, "studio-engine", ".worktrees", "no-such-desk"),
+                      "resolving into the managed tree is what destroys the wrong desk on a " \
+                      "name collision — and both trees hold a `shared-name` desk here"
+      refute_includes resolved, "unknown app",
+                      "the sweep prints this command and ledgers it; it must resolve at all"
+    end
+  end
+
+  # The slug is printed INTO a shell command and written to the ledger, so it has to survive a
+  # shell. "(sibling)" did not: unquoted, bash answers "syntax error near unexpected token `('".
+  def test_the_sibling_disambiguator_is_shell_safe
+    Dir.mktmpdir do |root|
+      FileUtils.mkdir_p(File.join(root, "studio-engine.worktrees", "a-desk"))
+
+      out = run_in_script(<<~RUBY, env: { "PROJECTS_DIR" => root })
+        slug = discovered_worktree_configs.map { |c| c["slug"] }.find { |c| c.include?("sibling") }
+        print slug.to_s
+      RUBY
+
+      assert_equal "studio-engine.sibling", out
+      refute_match(/[()\[\]{}*?$`!&;|<> ]/, out,
+                   "the sweep pastes this slug into `bin/agent-worktree remove <slug> ...`; a shell " \
+                   "metacharacter makes every remediation line it prints unrunnable")
+    end
+  end
+
+  # A repo with BOTH tree conventions yields two configs, each seeing only its own tree. The
+  # orphan reconciliation compares `git worktree list` — which returns every worktree for the
+  # repo — against that per-config view, so each config reported the OTHER tree as untracked:
+  # twelve "review then remove" advisories against desks including a DIRTY one and three
+  # UNMERGED. Advising teardown of unlanded work is what this file's doctrine forbids.
+  def test_a_two_tree_repo_reconciles_against_the_union_of_its_trees
+    Dir.mktmpdir do |root|
+      FileUtils.mkdir_p(File.join(root, "studio-engine", ".worktrees", "managed-desk"))
+      FileUtils.mkdir_p(File.join(root, "studio-engine.worktrees", "sibling-desk"))
+
+      # Drives orphan_worktree_issues — the DEFECT SITE — not stack_dirs_for_repo. Asserting the
+      # helper in isolation is worthless here: the blocker's own revert (managed = stack_dirs(app))
+      # left the whole suite green, the exact trap the remove test above was rewritten to escape.
+      out = run_in_script(<<~RUBY, env: { "PROJECTS_DIR" => root })
+        DESKS = [File.join(PROJECTS_DIR, "studio-engine", ".worktrees", "managed-desk"),
+                 File.join(PROJECTS_DIR, "studio-engine.worktrees", "sibling-desk")]
+               .map { |dir| canonical_path(dir) }
+        def git_worktree_dirs(_repo) = DESKS
+        config = discovered_worktree_configs.find { |c| c["slug"] == "studio-engine.sibling" }
+        print orphan_worktree_issues(config).size
+      RUBY
+
+      assert_equal "0", out,
+                   "both trees belong to one repo, so the SCOPED config must reconcile against " \
+                   "both — otherwise doctor advises removing the other tree's live desks"
+    end
+  end
+
+  # "Discovered repos appear in doctor and snapshot" is not satisfied by the UNSCOPED sweep
+  # alone. Naming one — `doctor studio-engine` — went through app_for and answered "unknown
+  # app" about desks the very same command had just listed unscoped. The lifecycle commands
+  # keep app_for deliberately (they need a port range and a stack), so this asserts the split
+  # rather than a blanket swap.
+  def test_the_inspection_commands_resolve_a_discovered_repo_and_lifecycle_ones_still_refuse
+    Dir.mktmpdir do |root|
+      FileUtils.mkdir_p(File.join(root, "studio-engine", ".worktrees", "a-desk"))
+      env = SessionEnv.neutralized.merge("PROJECTS_DIR" => root)
+
+      inspection = %w[doctor snapshot list].to_h do |command|
+        out, err, _status = Open3.capture3(env, "ruby", BIN, command, "studio-engine")
+        [command, "#{out}#{err}".include?("unknown app")]
+      end
+      out, err, _status = Open3.capture3(env, "ruby", BIN, "up", "studio-engine", "a-desk")
+      lifecycle_refused = "#{out}#{err}".include?("unknown app")
+
+      assert_equal({ "doctor" => false, "snapshot" => false, "list" => false }, inspection,
+                   "an inspection command must resolve a repo the sweep already covers, or it " \
+                   "answers \"unknown app\" about desks it just listed")
+      assert lifecycle_refused,
+             "`up` must still refuse a discovered repo — it needs a port range and a stack the " \
+             "registry is what hands out. That refusal is the same constraint that makes such a " \
+             "desk permanently unbound, which is why the reclaim hold exists."
+    end
+  end
 end

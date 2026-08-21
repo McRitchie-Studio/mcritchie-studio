@@ -451,7 +451,8 @@ Gems and apps are handled differently at both ends of the Deploy workflow:
   one candidate publish exactly **one** version, so no individual PR can know the
   right answer when it is written. `bin/dor-check` therefore **refuses** any diff
   touching a registered `version_file` (`lib/studio/version.rb` for
-  studio-engine, the `.gemspec` for solana-studio) at the merge gate; the `build`
+  studio-engine, `lib/solana_studio/version.rb` for solana-studio) at the merge
+  gate; the `build`
   gate is exempt, and `CHANGELOG.md` is deliberately **not** refused. The bump is
   derived from the candidate's membership — `breaking` risk tag → major, else a
   `feature` member → minor, else patch — by `Release::GemVersion`
