@@ -1513,14 +1513,21 @@ class AgentWorktreeTest < Minitest::Test
       FileUtils.mkdir_p(File.join(root, "studio-engine", ".worktrees", "managed-desk"))
       FileUtils.mkdir_p(File.join(root, "studio-engine.worktrees", "sibling-desk"))
 
+      # Drives orphan_worktree_issues — the DEFECT SITE — not stack_dirs_for_repo. Asserting the
+      # helper in isolation is worthless here: the blocker's own revert (managed = stack_dirs(app))
+      # left the whole suite green, the exact trap the remove test above was rewritten to escape.
       out = run_in_script(<<~RUBY, env: { "PROJECTS_DIR" => root })
-        repo = File.join(PROJECTS_DIR, "studio-engine")
-        print stack_dirs_for_repo(repo).map { |d| File.basename(d) }.sort.inspect
+        DESKS = [File.join(PROJECTS_DIR, "studio-engine", ".worktrees", "managed-desk"),
+                 File.join(PROJECTS_DIR, "studio-engine.worktrees", "sibling-desk")]
+               .map { |dir| canonical_path(dir) }
+        def git_worktree_dirs(_repo) = DESKS
+        config = discovered_worktree_configs.find { |c| c["slug"] == "studio-engine.sibling" }
+        print orphan_worktree_issues(config).size
       RUBY
 
-      assert_equal '["managed-desk", "sibling-desk"]', out,
-                   "both trees belong to one repo, so the orphan reconciliation must see both — " \
-                   "otherwise each config advises removing the other tree's live desks"
+      assert_equal "0", out,
+                   "both trees belong to one repo, so the SCOPED config must reconcile against " \
+                   "both — otherwise doctor advises removing the other tree's live desks"
     end
   end
 
