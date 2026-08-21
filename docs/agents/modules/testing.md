@@ -955,3 +955,41 @@ ruby -Itest -e 'Dir["test/*_test.rb"].sort.each { |f| require File.expand_path(f
 ```
 
 `studio-engine` is usually verified through the consuming Rails apps.
+
+### The consumer lane checks the hub out under a DIFFERENT DIRECTORY NAME
+
+Hub code can be green in the hub's own CI and red only in `consumer-ci.yml`,
+because the two lanes lay the checkout out differently. `consumer-ci.yml` checks
+each consumer out at `path: ${{ matrix.consumer }}`, and that matrix value is the
+**underscored** label, while the registry name is **hyphenated**:
+
+| Registry repo (`config/release_repos.yml`) | consumer-lane directory |
+|--------------------------------------------|-------------------------|
+| `mcritchie-studio` | `mcritchie_studio` |
+| `turf-monster` | `turf_monster` |
+| `mcritchie-industries` | `mcritchie_industries` |
+
+In the projects-root layout those are the same directory, so **no local run and no
+hub CI run distinguishes them**. Any hub tool that derives a directory from a repo
+NAME therefore has a path bug that only the consumer lane can see. That is how
+`bin/release`'s `repo_path` shipped pointing at a `mcritchie-studio` that does not
+exist there — `bin/archive-docs --repo=` got the miss and `git -C` raised
+`DocsArchive::CommandFailed`, reddening three `test/lib/release_cli_test.rb`
+archive tests and stopping a release.
+
+Two rules follow:
+
+- **Resolve the checkout; never name it.** `bin/release`'s `repo_path` goes through
+  `RepoCheckout.resolve` (`bin/lib/repo_checkout.rb`), which tries the canonical
+  spelling first, falls back to the underscored one, and returns the canonical name
+  when neither is on disk — so an absent sibling keeps its current path and its
+  current error.
+- **Test in the layout CI uses, not the one you have.** A regression test written in
+  the projects-root layout proves nothing about this class of bug.
+  `test/lib/release_consumer_checkout_test.rb` builds a real git checkout under the
+  underscored name and drives the real `bin/release archive` at it.
+
+Note also that in the consumer lane the checkout is dirty by construction — the
+lane rewrites `Gemfile` and `config/master.key` — so `Release::ArtifactCommit`
+refuses the artifact commit there and `bin/release archive` never flips a git ref
+under the running suite.

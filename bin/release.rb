@@ -209,6 +209,11 @@ require_relative "lib/artifact_sweep"
 # The frozen-doc retirement's summary contract — `archive` drives
 # bin/archive-docs as a step and parses its tagged JSON line for the Exit Seam.
 require_relative "lib/docs_archive"
+# Repo NAME → checkout DIRECTORY. The registry's hyphenated name is not always the
+# directory on disk: studio-engine's consumer-ci checks each consumer out at its
+# UNDERSCORED matrix label, so `repo_path` looks for the checkout instead of
+# assuming its name. See bin/lib/repo_checkout.rb.
+require_relative "lib/repo_checkout"
 # The per-RELEASE conductor claim (release-conductor-claims) — the assembler
 # (prepare) and deployer (ship) locks, on the release record now, spoken over the
 # fast HTTP AgentApi. Loaded for its exit-code constants (STOOD_DOWN/OK); the CLI's
@@ -272,9 +277,11 @@ RELEASE_REPOS =
   end
 
 # Every ecosystem repo — gems, apps, AND this hub — is checked out as a SIBLING
-# at the projects root. `repo_path` resolves that sibling path .worktrees-aware,
-# so paths resolve whether bin/release runs from a primary checkout
-# (…/projects/mcritchie-studio/bin) or (defensively) a worktree
+# at the projects root. Its DIRECTORY NAME, however, is not guaranteed to be its
+# registry name (see repo_path below): studio-engine's consumer lane checks each
+# consumer out under the underscored matrix label. `repo_path` resolves that sibling
+# path .worktrees-aware, so paths resolve whether bin/release runs from a primary
+# checkout (…/projects/mcritchie-studio/bin) or (defensively) a worktree
 # (…/projects/mcritchie-studio/.worktrees/<wt>/bin). Mirrors bin/qa-server's
 # default_projects_dir, which climbs out of .worktrees to the real projects root.
 #
@@ -293,9 +300,19 @@ def projects_root(app_root = File.expand_path("..", __dir__))
   parent
 end
 
-# The sibling checkout path for any ecosystem repo (a gem, an app, or the hub).
+# The sibling CHECKOUT PATH for any ecosystem repo (a gem, an app, or the hub).
+#
+# It RESOLVES the directory rather than naming it. `File.join(projects_root, repo)`
+# was right for every layout the operator's machine has, and wrong for the one CI
+# uses: studio-engine's consumer-ci checks each consumer out at
+# `path: ${{ matrix.consumer }}` — the UNDERSCORED label (`mcritchie_studio`) — so
+# the hyphenated registry name pointed at nothing, `bin/archive-docs --repo=` was
+# handed the miss, and `git -C` raised DocsArchive::CommandFailed. RepoCheckout
+# tries the canonical spelling FIRST and falls back to the canonical name when no
+# spelling is on disk, so both the projects-root layout and a genuinely absent
+# sibling behave exactly as before.
 def repo_path(repo)
-  File.join(projects_root, repo.to_s)
+  RepoCheckout.resolve(projects_root, repo)
 end
 
 # Every registered ecosystem repo — gems AND apps — from the release registry.
