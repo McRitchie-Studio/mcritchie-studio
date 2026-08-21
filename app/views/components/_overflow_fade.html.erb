@@ -15,20 +15,64 @@
 <%# scroll_speed: constant marquee pace in px/sec, so longer text simply takes
     longer (steady to read) instead of racing the same fixed duration. %>
 <% scroll_speed = local_assigns.fetch(:scroll_speed, 60).to_i %>
+<%# WHY A ResizeObserver AND NOT A RESIZE EVENT. This used to measure once at
+    init and then re-measure on a debounced window resize, and nothing else. A
+    window resize is one CAUSE of the box changing; the observer watches the
+    EFFECT. That distinction is the whole bug: on this app the box mostly moves
+    without the window moving at all — an async value painting into a
+    neighbouring slot (the category chip beside a heartbeat goal, the claim chip
+    on a task card), a font swap, a sibling expanding, a Turbo stream replacing
+    the row. None of those announce themselves, and every one of them landed
+    after the only measurement anyone had taken. Worse, init() is the moment the
+    neighbouring slot is still on its narrow un-hydrated render, so the text has
+    the most room it will ever have and looks like it fits.
+
+    The same bug in turf-monster's nav (PR 391) never applied the mask on the
+    live path at any width, for exactly this reason.
+
+    BOTH BOXES ARE WATCHED. The container shrinks when a neighbour widens; the
+    inner span widens when the font swaps under unchanged container. Watching
+    one misses the other.
+
+    Reading layout in the callback cannot loop: the only things a measurement
+    changes are mask-image on the container and transform plus
+    transition-duration on the span, all of which paint and none of which
+    reflow.
+
+    The observer belongs to the instance and is released in destroy(), so a
+    Turbo navigation that re-inits Alpine over restored DOM cannot leave one
+    behind. The first measurement waits a tick because x-ref children are not
+    wired when a parent init() runs, and _dead cancels that deferred setup if
+    the element is torn down inside the tick. %>
 <div class="relative overflow-hidden min-w-0"
+     data-overflow-fade
      x-data="{
        overflowPx: 0,
        overflows: false,
        speed: <%= scroll_speed %>,
+       _ro: null,
+       _dead: false,
        fadeRight: 'mask-image: linear-gradient(to right, #000 80%, transparent); -webkit-mask-image: linear-gradient(to right, #000 80%, transparent)',
        fadeLeft: 'mask-image: linear-gradient(to left, #000 80%, transparent); -webkit-mask-image: linear-gradient(to left, #000 80%, transparent)',
+       init() {
+         this.$nextTick(() => {
+           if (this._dead) return
+           this.measure()
+           if (!window.ResizeObserver) return
+           this._ro = new ResizeObserver(() => this.measure())
+           this._ro.observe(this.$el)
+           this._ro.observe(this.$refs.fadeInner)
+         })
+       },
+       destroy() {
+         this._dead = true
+         if (this._ro) { this._ro.disconnect(); this._ro = null }
+       },
        measure() {
          this.overflowPx = Math.max(0, this.$refs.fadeInner.scrollWidth - this.$el.clientWidth)
          this.overflows = this.overflowPx > 1
        }
      }"
-     x-init="$nextTick(() => measure())"
-     @resize.window.debounce.150ms="measure()"
      :style="!overflows ? '' : ((<%= scroll_when %>) ? fadeLeft : fadeRight)">
   <%# Duration tracks the distance (overflowPx / speed) so the glyphs always travel
       at the same px/sec — a steady read, not a same-time dash to the end. %>
