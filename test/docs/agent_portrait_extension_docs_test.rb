@@ -32,7 +32,7 @@ class AgentPortraitExtensionDocsTest < ActiveSupport::TestCase
   # The two spellings that denote a file served out of public/agents. The lookbehind
   # keeps `docs/agents/…` and `app/views/agents/…` out — those are source trees that
   # happen to end in the same word, not URLs.
-  REFERENCE = %r{(?:public/agents/|(?<![\w-])/agents/)([A-Za-z0-9_<>-]+)\.([A-Za-z0-9]+)}
+  REFERENCE = %r{(?:public/agents/|(?<![\w-])/agents/)([A-Za-z0-9_<>*-]+)\.([A-Za-z0-9]+)}
 
   SCANNED = %w[
     docs/topics/*.md
@@ -70,6 +70,9 @@ class AgentPortraitExtensionDocsTest < ActiveSupport::TestCase
                     "IN scope. Write its portrait paths in full (public/agents/<slug>.webp) — a " \
                     "bare `<slug>.webp` beside a `public/agents/` heading reads fine and matches " \
                     "nothing"
+    assert_includes references.map(&:first), "config/environments/production.rb",
+                    "the one-week cache TTL is reasoned about a portrait glob, so that comment " \
+                    "has to be IN scope — a name class that rejects `*` scans it to nothing"
   end
 
   private
@@ -84,8 +87,11 @@ class AgentPortraitExtensionDocsTest < ActiveSupport::TestCase
     portrait_dir.children.select(&:file?).map { |p| p.extname.delete_prefix(".") }.uniq.sort
   end
 
+  # `<slug>` in prose and `*` in a glob both stand in for a real name. production.rb
+  # states the cache TTL about `/agents/*.webp`, and a `*` the name class rejected made
+  # that file scan to ZERO references — in scope, matched by nothing.
   def placeholder?(name)
-    name.include?("<")
+    name.include?("<") || name.include?("*")
   end
 
   # [[relative file, name, ext], ...] for every portrait path written down in SCANNED.
