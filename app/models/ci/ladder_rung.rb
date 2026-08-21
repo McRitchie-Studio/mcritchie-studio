@@ -99,6 +99,21 @@ module Ci
       nwo = Ci::ReviewGate.nwo_for(repo)
       return nil if nwo.empty?
 
+      # SCOPED to the repo's declared suite workflow, and that is a KNOWN LIMIT rather
+      # than an oversight — see /tasks/align-ladder-meter-with-badge.
+      #
+      # The badge beside this meter is Ci::BranchGate.verdict, which folds
+      # GithubWorkflowRun — one row per WORKFLOW, so a repo with several lanes has all
+      # of them counted. This meter reads CiCheckJob, which ingests only
+      # GithubWorkflowRun::CI_PROGRESS_WORKFLOWS ("CI" + the declared gem suites), so
+      # a lane like studio-engine's Consumer CI is never in this table at all.
+      # Measured 2026-08-20: accepted@135e4e6 rendered a RED badge over a GREEN 3/3
+      # meter because Consumer CI was red and could not reach here.
+      #
+      # Removing this filter does NOT fix that — there are no rows to find, so it is a
+      # no-op (proven in review). Closing the gap means changing what is INGESTED, or
+      # moving the meter onto the badge's own source at workflow grain, which costs
+      # per-check detail. That is a design decision, not a filter tweak.
       rows = CiCheckJob.progress_rows(nwo, sha, GithubWorkflowRun.ci_workflow_for(repo))
       return nil if rows.blank?
 
