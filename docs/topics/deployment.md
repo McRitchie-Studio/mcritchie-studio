@@ -60,10 +60,12 @@ site connection, primary-domain setting, disabled `www` prefix, and
   jasper, mack, mason, shannon, steffon, turf-monster), plus the landing-page headshot
   `public/agents/alex-photo.webp`. They serve as both the circular avatar and the
   full-bleed 5:3 card hero on the public `/agents` index, so the long edge is capped at
-  768px: the seven 5:3 heroes are 768x461 and `turf-monster.webp` is 768x768, while
-  `alex.webp` (340x340) and `alex-photo.webp` (192x192) stay smaller because their sources
-  are. `test/lib/response_payload_budget_test.rb` holds the byte budget, that 768px
-  ceiling, and the 640px floor the card hero needs; `test/docs/agent_portrait_extension_docs_test.rb`
+  768px: the seven 5:3 heroes are 768x461 and `turf-monster.webp` is 768x768. The two
+  square files stay smaller for their own reasons — `alex.webp` (340x340) has no committed
+  source above 512px, and `alex-photo.webp` (192x192) was cut down from 420x420 because the
+  landing page draws it at `w-16` (64px). `test/lib/response_payload_budget_test.rb` holds
+  the byte budget, that 768px ceiling, and a 640px floor scoped to the 5:3 heroes, so
+  neither square file trips it; `test/docs/agent_portrait_extension_docs_test.rb`
   keeps this bullet honest about the container.
 - `public/denver-hero.avif` — Landing page hero background (Denver skyline)
 - `public/studio-logo.svg` — SSO logo (shared with satellite apps)
