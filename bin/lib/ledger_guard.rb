@@ -123,8 +123,35 @@ module LedgerGuard
 
   # A file's content at a commit, or "" when the path does not exist there — a ledger that
   # had not been created yet is empty history, not an error.
+  #
+  # "DOES NOT EXIST" AND "COULD NOT BE READ" ARE DIFFERENT ANSWERS, and this used to give
+  # both of them as "". `git` returns nil on failure, so the old `.to_s` turned EVERY failed
+  # `git show` into empty content — and empty base content means "history had no rows",
+  # which is a PASS. A resolvable base whose blob could not be read therefore certified the
+  # tree GREEN. The CLI's unreadable-base defence covers the REF; nothing covered the BLOB.
+  #
+  # The split is decided by asking the TREE, which is a different object from the blob:
+  # `git ls-tree` succeeds and prints nothing when the tree is readable and simply has no
+  # such path (genuinely absent → ""), and fails when the tree itself cannot be read. If the
+  # tree lists the path but `show` could not produce it, the blob is unreadable — and that
+  # is UnreadableBase, never a pass, for the same reason an unresolvable ref is.
   def show(repo, ref, rel_path)
-    git(repo, "show", "#{ref}:#{rel_path}").to_s
+    content = git(repo, "show", "#{ref}:#{rel_path}")
+    return content if content
+    return "" if absent_at?(repo, ref, rel_path)
+
+    raise UnreadableBase,
+          "`#{ref}:#{rel_path}` is recorded at that commit but its content could not be read " \
+          "in #{repo}. This is RED on purpose — an unreadable baseline certifies nothing. " \
+          "Try `git fetch origin` (or `git fsck` if the object store is damaged)."
+  end
+
+  # True when `ref`'s tree is READABLE and holds no such path — empty history, not a failure.
+  # False both when the path IS there (so a failed `show` means an unreadable blob) and when
+  # the tree could not be read at all.
+  def absent_at?(repo, ref, rel_path)
+    listing = git(repo, "ls-tree", "--name-only", ref, "--", rel_path)
+    !listing.nil? && listing.strip.empty?
   end
 
   def read(repo, rel_path)

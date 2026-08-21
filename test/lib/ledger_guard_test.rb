@@ -205,7 +205,13 @@ class LedgerGuardTest < Minitest::Test
   end
 
   def guard(repo, *args)
-    out, err, status = Open3.capture3(SessionEnv.neutralized, "ruby", CLI, "--repo=#{repo}", *args)
+    run_guard("--repo=#{repo}", *args)
+  end
+
+  # The CLI with NOTHING added — the argument-accounting tests below need to control the
+  # whole line, including whether --repo arrives as `--repo=x` or `--repo x`.
+  def run_guard(*args)
+    out, err, status = Open3.capture3(SessionEnv.neutralized, "ruby", CLI, *args)
     { out: "#{out}#{err}", ok: status.success? }
   end
 
@@ -337,6 +343,170 @@ class LedgerGuardTest < Minitest::Test
       assert_includes after, "removed 2026-08-20",
                       "…and it must leave the predecessor row exactly where it found it"
       assert_includes after, "d7ccca8d"
+    end
+  end
+
+  # ================================================================================
+  # [integration] ARGUMENT ACCOUNTING — the guard must answer the question it was ASKED
+  # ================================================================================
+  #
+  # bin/ledger-guard parsed ONLY `--flag=value`. A bare `--base HEAD` therefore matched
+  # nothing, EXPLICIT came back empty, and the guard silently fell through to its three
+  # default bases — answering a question nobody asked. Unknown flags were swallowed the
+  # same way. This is the shape the house closed twice in one night (PRs #974, #980), and
+  # on a GUARD it is worse than on a claim CLI: the caller reads the exit code as a verdict
+  # on the base they named, and it is a verdict on three other refs instead.
+
+  # THE DEFECT, in its cleanest form. A tmpdir repo has no `origin/*` refs at all, so the
+  # two readings are trivially distinguishable: honouring `--base HEAD` is GREEN, while
+  # silently substituting the defaults is RED for "cannot read baseline".
+  def test_integration_a_bare_base_flag_is_honoured_not_silently_replaced
+    with_repo do |repo|
+      File.write(ledger_file(repo), HEADER + row(SHIP, "removed 2026-08-20"))
+      File.write(archive_file(repo), HEADER)
+      commit(repo)
+
+      result = run_guard("--repo", repo, "--base", "HEAD")
+
+      # THE DISCRIMINATOR is which base the verdict NAMES, not merely that it is green.
+      # Asserting green alone passes for the wrong reason: with the flags dropped the guard
+      # inspects THIS repository against its default bases, which is also clean — so the
+      # test would go green having never touched the fixture at all.
+      assert result[:ok], "an intact ledger checked against HEAD is green:\n#{result[:out]}"
+      assert_includes result[:out], "at HEAD",
+                      "the verdict must name the base the caller ASKED for"
+      BASE_REFS.each do |ref|
+        refute_includes result[:out], ref,
+                        "`--base HEAD` was DROPPED and the guard answered about #{ref} instead"
+      end
+    end
+  end
+
+  # …and the same flag must still BITE. Green above could be reached by a guard that
+  # checks nothing at all, so pair it with a real loss the named base can see.
+  def test_integration_a_bare_base_flag_still_catches_a_destroyed_row
+    with_repo do |repo|
+      File.write(ledger_file(repo), HEADER + row(SHIP, "removed 2026-08-20", reason: "HEAD d7ccca8d"))
+      File.write(archive_file(repo), HEADER)
+      commit(repo)
+
+      stale_writer_write(ledger_file(repo), row(SHIP, "removed 2026-08-21"))
+
+      result = run_guard("--repo", repo, "--base", "HEAD")
+
+      refute result[:ok], "a destroyed row must be RED through the space-form flag too"
+      assert_includes result[:out], "removed 2026-08-20", "…and the report must name the episode"
+    end
+  end
+
+  # The `--flag=value` form is how every existing caller invokes this guard (the pre-commit
+  # hook, bin/archive-docs' docs, the SOP). Accepting the space form must not cost it.
+  def test_integration_the_equals_form_still_parses
+    with_repo do |repo|
+      File.write(ledger_file(repo), HEADER)
+      File.write(archive_file(repo), HEADER)
+      commit(repo)
+
+      assert run_guard("--repo=#{repo}", "--base=HEAD")[:ok], "the equals form is the shipped contract"
+    end
+  end
+
+  # An argument the guard cannot account for must REFUSE, not run a different check and
+  # report on that. A typo'd flag silently answering about the wrong bases is precisely the
+  # failure this whole file exists to prevent, one seam out.
+  def test_integration_an_unrecognized_flag_refuses_instead_of_being_swallowed
+    with_repo do |repo|
+      File.write(ledger_file(repo), HEADER)
+      File.write(archive_file(repo), HEADER)
+      commit(repo)
+
+      result = run_guard("--repo=#{repo}", "--base=HEAD", "--bogus-flag")
+
+      refute result[:ok], "an unknown flag must refuse:\n#{result[:out]}"
+      assert_includes result[:out], "--bogus-flag", "the refusal must NAME the argument"
+      refute_includes result[:out], "OK — every resolved row",
+                      "a refused line must never print a clean verdict"
+    end
+  end
+
+  # A value-flag that consumed no value is a usage error, not a boolean. `--base` at the end
+  # of a line must not quietly become the default-base run.
+  def test_integration_a_value_flag_with_no_value_refuses
+    with_repo do |repo|
+      File.write(ledger_file(repo), HEADER)
+      File.write(archive_file(repo), HEADER)
+      commit(repo)
+
+      result = run_guard("--repo=#{repo}", "--base")
+
+      refute result[:ok], "a flag that consumed nothing must refuse:\n#{result[:out]}"
+      assert_includes result[:out], "--base"
+    end
+  end
+
+  # --help prints usage and checks NOTHING — and therefore must not exit 0. Exit 0 from this
+  # CLI is not "the command worked", it is the ASSERTION "every resolved row is still
+  # present", which a pre-commit hook and the `rails` lane both branch on. Answering a help
+  # probe with 0 would state a fact about the ledger that was never measured. Same call the
+  # house made for bin/lib/release_claim_cli.rb in PR #980.
+  def test_integration_help_prints_usage_and_asserts_nothing
+    result = run_guard("--help")
+
+    refute result[:ok], "help must not return the guard's GREEN verdict"
+    assert_includes result[:out], "usage:", "help must print usage"
+    refute_includes result[:out], "OK — every resolved row",
+                    "help checked nothing, so it must not claim the ledger is intact"
+  end
+
+  # ================================================================================
+  # [integration] AN UNREADABLE BLOB IS RED — the ref resolved, the content did not
+  # ================================================================================
+  #
+  # LedgerGuard.show ended in `.to_s`, and its `git` helper returns nil on failure — so ANY
+  # failed `git show` became "". An empty base reads as "history had no rows", which is a
+  # PASS. The unreadable-base defence in the CLI covers the REF; nothing covered the BLOB.
+  # Same silent-pass class the guard exists to close, one layer down.
+
+  # Destroy the ledger's blob while leaving the tree that names it readable: `git ls-tree`
+  # still lists the path, `git show` cannot produce it. That is the exact split the fix
+  # keys on, produced for real rather than stubbed.
+  def destroy_blob!(repo, rel_path)
+    sha = `git -C #{repo} rev-parse HEAD:#{rel_path}`.strip
+    refute_empty sha, "fixture must have a committed blob to destroy"
+    FileUtils.rm_f(File.join(repo, ".git", "objects", sha[0, 2], sha[2..]))
+    sha
+  end
+
+  def test_integration_a_resolvable_base_with_an_unreadable_blob_is_red_not_green
+    with_repo do |repo|
+      File.write(ledger_file(repo), HEADER + row(SHIP, "removed 2026-08-20"))
+      File.write(archive_file(repo), HEADER)
+      commit(repo)
+      destroy_blob!(repo, LedgerGuard::LEDGER)
+
+      # The row is now deleted from the working tree too — a REAL loss the guard must catch.
+      File.write(ledger_file(repo), HEADER)
+
+      result = run_guard("--repo=#{repo}", "--base=HEAD")
+
+      refute result[:ok],
+             "the base's ledger blob could not be READ, so the comparison certified " \
+             "nothing — that must be RED, never a green light:\n#{result[:out]}"
+      refute_includes result[:out], "OK — every resolved row",
+                      "an unreadable blob must never produce the clean verdict"
+    end
+  end
+
+  # The CONTROL that keeps the fix from becoming "raise on every miss": a path that is
+  # genuinely absent at the ref — a ledger that had not been created yet — is empty
+  # history, not an error, and must still read as "".
+  def test_unit_show_returns_empty_when_the_path_is_genuinely_absent
+    with_repo do |repo|
+      File.write(File.join(repo, "README.md"), "seed\n")
+      commit(repo, "no ledger yet")
+
+      assert_equal "", LedgerGuard.show(repo, "HEAD", LedgerGuard::LEDGER),
+                   "a ledger that does not exist at the ref is empty history, not a failure"
     end
   end
 

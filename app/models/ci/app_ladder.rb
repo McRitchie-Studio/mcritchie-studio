@@ -96,30 +96,19 @@ module Ci
     end
 
     class << self
-      # The repos this row can honestly report on: three-rung AND carrying a
-      # declared CI suite.
+      # EVERY three-rung repo gets a card — including one that declares no CI suite.
       #
-      # WHY THE SECOND HALF. A repo can sit on the three-rung ladder while
-      # `GithubWorkflowRun::GEM_CI_WORKFLOWS` maps it to nil — "ships no suite
-      # workflow — declared, not overlooked". Ci::BranchGate fails closed on an
-      # unresolved workflow, so every one of its rungs reads :none forever. A card
-      # that can only ever say "not built" on all three rungs is noise, not signal,
-      # and it would train the eye to ignore exactly the state that matters on the
-      # repos that DO report.
-      #
-      # `solana-studio` was the standing example until 2026-08-20, when it grew a
-      # Rails engine and a "Gem CI" lane and joined the row on its own — which is
-      # the rule working, not an exception to it. No gem declares nil today; the
-      # branch stays because the next one to arrive will.
-      #
-      # This is a derived rule, not a hardcoded list: a repo joins the row the day
-      # it declares a suite, and leaves if it stops.
-      def reportable_repos
-        Release::Repos.three_rung_repos.select { |repo| GithubWorkflowRun.ci_workflow_for(repo).present? }
-      end
+      # This filter used to drop a suiteless repo as noise, on the argument that three
+      # `not_built` rungs teach the eye nothing. That was wrong twice. A repo is on the
+      # ladder whether or not it runs tests, and its rungs still move; hiding the card
+      # hid the movement. Concretely: solana-studio sat `accepted` +1 ahead of
+      # `release` with no task behind it, and the row could not show it because the
+      # card did not exist. A card reading "not built" is a true and useful statement —
+      # this repo ships without a suite — where an absent card says nothing at all.
+      def reportable_repos = Release::Repos.three_rung_repos
 
       # Build every card. One board query for the parked counts (not one per
-      # rung per repo), then BranchGate per rung.
+      # rung per repo), then each rung folds its own branch's suite runs.
       def build(repos: reportable_repos)
         parked = parked_index
         repos.map { |repo| card_for(repo, parked) }.sort_by(&:sort_key)

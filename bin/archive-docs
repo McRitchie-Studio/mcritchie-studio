@@ -46,6 +46,14 @@ end
 # commits the loss. Refusing here means the sweep never stages on top of a ledger that
 # has already lost history — and the row is still one `git show HEAD:` away.
 #
+# THE EXIT CODE ONLY PROTECTS ANYTHING BECAUSE THE CALLER READS IT. This refusal shipped
+# INERT: bin/release.rb's sweep_docs returns [out, ok] and BOTH call sites took `.first`,
+# so `bin/release archive` printed the warning and went on to commit the ledger and its
+# archive to `release` — committing the very loss refused here. Exiting non-zero is half a
+# guard; the other half is bin/release.rb's abort, pinned by
+# test/lib/release_archive_docs_refusal_test.rb. Do not describe this as a guarantee
+# without checking that both halves are still in place.
+#
 # AFTER, because the roll itself writes both files, and a post-condition on a
 # move is cheap: the union it produced must still hold every row it was handed.
 #
@@ -57,6 +65,13 @@ def refuse_if_ledger_lost!(repo, when_label, dry:)
 
   warn "==> DELETE-LATER LEDGER: rows destroyed (#{when_label})"
   warn LedgerGuard.report(losses, base_label: "HEAD")
+  exit 1 unless dry
+rescue LedgerGuard::UnreadableBase => e
+  # "I could not read HEAD's ledger" is not "HEAD's ledger was empty". The comparison
+  # certified nothing, so an APPLY refuses exactly as it does for a real loss rather than
+  # rolling on top of a baseline it never saw. A dry run still reports and exits 0.
+  warn "==> DELETE-LATER LEDGER: baseline unreadable (#{when_label})"
+  warn "    #{e.message}"
   exit 1 unless dry
 end
 
