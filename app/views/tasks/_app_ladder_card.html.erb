@@ -66,9 +66,13 @@
       suite must not draw an empty rail that reads as "0 of 0 passed". %>
   <% if progress.present? %>
     <div class="mb-2.5" data-test="app-ladder-ci">
+      <%# The label NAMES the lane, not a generic "CI". On a multi-lane repo the meter
+          counts one workflow by design, so saying which one is what stops a reader
+          assuming it covers everything — the assumption that let a green meter sit
+          beside a red badge. %>
       <%= render "components/ci_progress_meter",
             progress: progress,
-            label: "#{card.active_rung&.branch} CI",
+            label: [card.active_rung&.branch, card.active_rung&.counted_lane].compact.join(" · "),
             test_id: "app-ladder-ci-bar",
             clock: true %>
     </div>
@@ -76,6 +80,30 @@
     <div class="mb-2.5 rounded border border-dashed border-subtle px-2 py-2 text-[10px] text-muted"
          data-test="app-ladder-ci-empty">
       no CI checks ingested for this app yet
+    </div>
+  <% end %>
+
+  <%# THE OTHER LANES. The badge folds every workflow on the sha; the meter folds one.
+      Rather than force those to agree — they answer different questions, and the
+      meter's scope protects a gem's track from a failing consumer — the card NAMES
+      what the meter leaves out. A red sibling lane is then visible here instead of
+      hiding behind a green meter, which is the contradiction this row shipped with.
+      Empty for every single-lane repo, so an app card gains nothing to read. %>
+  <% others = card.active_rung&.uncounted_lanes || [] %>
+  <% if others.any? %>
+    <div class="mb-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px]"
+         data-test="app-ladder-other-lanes">
+      <span class="text-muted">also on this commit:</span>
+      <% others.each do |lane| %>
+        <span class="inline-flex items-center gap-1 <%= app_ladder_rung_tone(lane[:state])[:text] %>"
+              data-test="app-ladder-other-lane"
+              data-lane="<%= lane[:name] %>"
+              data-state="<%= lane[:state] %>"
+              title="<%= lane[:name] %> — <%= lane[:state] == :green ? "passed" : lane[:state] == :red ? "failed" : "running" %>; not counted by the meter above">
+          <span aria-hidden="true"><%= lane[:state] == :green ? "✓" : lane[:state] == :red ? "✗" : "○" %></span>
+          <span><%= lane[:name] %></span>
+        </span>
+      <% end %>
     </div>
   <% end %>
 

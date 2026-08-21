@@ -172,6 +172,51 @@ class AppLadderCardTest < ActionView::TestCase
     assert_select "[data-test='app-ladder-ci']", 0
   end
 
+
+  # --- naming what each half counts ----------------------------------------
+
+  # The fix for the meter/badge contradiction: rather than force two deliberately
+  # different scopes to agree, the card SAYS what each one counts. A red sibling lane
+  # is named here instead of hiding behind a green meter.
+  #
+  # Ci::LadderRung is a FROZEN value object, so these use a double rather than a stub.
+  FakeRung = Struct.new(:branch, :state, :short_sha, :parked_count, :counted_lane,
+                        :uncounted_lanes, :progress, :run_url, :verdict_at, keyword_init: true) do
+    def label = state.to_s
+    def needs_attention? = false
+  end
+
+  def fake_card(repo:, counted:, uncounted:)
+    rungs = Ci::AppLadder::RUNGS.map do |b|
+      FakeRung.new(branch: b, state: :green, short_sha: "abc1234", parked_count: 0,
+                   counted_lane: counted, uncounted_lanes: uncounted, progress: nil,
+                   run_url: nil, verdict_at: Time.current)
+    end
+    card = Ci::AppLadder::Card.new(repo: repo, rungs: rungs)
+    card.define_singleton_method(:progress) { nil }
+    card
+  end
+
+  test "a lane the meter does not count is named on the card with its state" do
+    card = fake_card(repo: "studio-engine", counted: "Engine CI",
+                     uncounted: [{ name: "Consumer CI", state: :red, url: nil }])
+
+    render partial: "tasks/app_ladder_card", locals: { card: card }
+
+    assert_select "[data-test='app-ladder-other-lanes']", 1
+    assert_select "[data-test='app-ladder-other-lane'][data-lane='Consumer CI'][data-state='red']", 1
+    assert_select "[data-test='app-ladder-other-lane']", text: /Consumer CI/
+  end
+
+  # An app runs one lane, so its card gains no extra line to read.
+  test "a single lane repo shows no other-lanes row" do
+    card = fake_card(repo: "turf-monster", counted: "CI", uncounted: [])
+
+    render partial: "tasks/app_ladder_card", locals: { card: card }
+
+    assert_select "[data-test='app-ladder-other-lanes']", 0
+  end
+
   private
 
   def card(states, repo: "turf-monster", parked: [0, 0, 0], sha: "abc1234def", run_url: nil)

@@ -136,6 +136,48 @@ module Ci
                        .first
     end
 
+    # THE LANE THE METER COUNTS. `progress` folds CiCheckJob scoped to this workflow,
+    # and that scope is deliberate (ci_check_job.rb:53-58: folding a gem's sibling
+    # Consumer CI would drag the gem's own track red on a failing consumer).
+    def counted_lane = GithubWorkflowRun.ci_workflow_for(repo).presence
+
+    # EVERY workflow lane GitHub ran on this sha, read from the SAME source the badge
+    # folds — GithubWorkflowRun, newest run per workflow. This is what closes the gap
+    # the meter cannot: a lane the meter is scoped away from is still named here, so a
+    # red sibling is visible on the card instead of hiding behind a green meter.
+    #
+    # => [{ name:, state: :green/:red/:pending, url: }]
+    def lanes
+      return [] if sha.blank?
+
+      nwo = Ci::ReviewGate.nwo_for(repo)
+      return [] if nwo.empty?
+
+      GithubWorkflowRun.for_repo(nwo).for_sha(sha)
+                       .order(Arel.sql("run_started_at DESC NULLS LAST"))
+                       .to_a
+                       .group_by { |run| run.workflow_name.to_s }
+                       .map { |name, group| lane_for(name, group.first) }
+                       .reject { |lane| lane[:name].empty? }
+                       .sort_by { |lane| [LANE_RANK.fetch(lane[:state], 9), lane[:name]] }
+    end
+
+    # The lanes the meter is NOT counting. Empty for a single-lane repo, which is
+    # every app — this only ever has content for a gem running its own suite plus a
+    # downstream consumer suite.
+    def uncounted_lanes = lanes.reject { |lane| lane[:name] == counted_lane }
+
+    LANE_RANK = { red: 0, pending: 1, green: 2 }.freeze
+
+    def lane_for(name, run)
+      state = if run.status.to_s != "completed" then :pending
+              elsif run.conclusion.to_s == "success" then :green
+              else :red
+              end
+      { name: name, state: state, url: run.html_url.presence }
+    end
+    private :lane_for
+
     def short_sha = sha.to_s[0, 7].presence
 
     def needs_attention? = ATTENTION_STATES.include?(state)

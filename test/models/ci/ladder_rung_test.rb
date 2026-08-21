@@ -85,6 +85,70 @@ module Ci
     end
 
 
+
+    # --- lanes: what the meter counts, and what it leaves out ----------------
+
+    # THE REGRESSION THIS TASK EXISTS FOR. studio-engine accepted@135e4e6 rendered a
+    # RED badge over a GREEN 3/3 meter, because the badge folds every workflow on the
+    # sha while the meter folds only the declared suite — and CiCheckJob never ingests
+    # Consumer CI at all. Forcing them to agree is wrong (ci_check_job.rb:53-58: the
+    # scope stops a failing consumer dragging the gem's own track red), so the card
+    # NAMES the lanes the meter leaves out instead.
+    test "lanes reports every workflow on the sha, from the badge's own source" do
+      GithubWorkflowRun.delete_all
+      sha = "135e4e6bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      run = lambda do |workflow, status, conclusion, id|
+        GithubWorkflowRun.create!(repo: "McRitchie-Studio/studio-engine", head_sha: sha,
+                                  head_branch: "accepted", run_id: id, workflow_name: workflow,
+                                  status: status, conclusion: conclusion,
+                                  run_started_at: 10.minutes.ago, html_url: "https://x/#{id}")
+      end
+      run.call("Engine CI", "completed", "success", 7_100_001)
+      run.call("Consumer CI", "completed", "failure", 7_100_002)
+
+      rung = Ci::LadderRung.new(repo: "studio-engine", branch: "accepted", state: :red, sha: sha)
+
+      assert_equal 2, rung.lanes.size, "both lanes on the sha are reported"
+      assert_equal %w[Consumer\ CI Engine\ CI].sort, rung.lanes.map { |l| l[:name] }.sort
+      assert_equal :red, rung.lanes.first[:state], "a failing lane sorts to the front"
+      assert_equal "Consumer CI", rung.lanes.first[:name]
+    end
+
+    test "uncounted_lanes names exactly what the meter cannot show" do
+      GithubWorkflowRun.delete_all
+      sha = "135e4e6ccccccccccccccccccccccccccccccccc"
+      [["Engine CI", "success", 7_200_001], ["Consumer CI", "failure", 7_200_002]].each do |wf, concl, id|
+        GithubWorkflowRun.create!(repo: "McRitchie-Studio/studio-engine", head_sha: sha,
+                                  head_branch: "accepted", run_id: id, workflow_name: wf,
+                                  status: "completed", conclusion: concl,
+                                  run_started_at: 5.minutes.ago, html_url: "https://x/#{id}")
+      end
+      rung = Ci::LadderRung.new(repo: "studio-engine", branch: "accepted", state: :red, sha: sha)
+
+      assert_equal "Engine CI", rung.counted_lane, "the meter counts the declared suite"
+      assert_equal ["Consumer CI"], rung.uncounted_lanes.map { |l| l[:name] },
+                   "the red sibling must be named on the card, not hidden"
+      assert_equal :red, rung.uncounted_lanes.first[:state]
+    end
+
+    # An app runs one lane, so its card gains no extra line to read.
+    test "a single lane repo reports nothing uncounted" do
+      GithubWorkflowRun.delete_all
+      sha = "abc1234ddddddddddddddddddddddddddddddddd"
+      GithubWorkflowRun.create!(repo: "McRitchie-Studio/turf-monster", head_sha: sha,
+                                head_branch: "release", run_id: 7_300_001, workflow_name: "CI",
+                                status: "completed", conclusion: "success",
+                                run_started_at: 5.minutes.ago, html_url: "https://x/1")
+      rung = Ci::LadderRung.new(repo: "turf-monster", branch: "release", state: :green, sha: sha)
+
+      assert_equal "CI", rung.counted_lane
+      assert_empty rung.uncounted_lanes
+    end
+
+    test "a rung with no sha reports no lanes at all" do
+      assert_empty Ci::LadderRung.new(repo: "turf-monster", branch: "main", state: :not_built).lanes
+    end
+
     private
 
     def rung(state: :green, sha: "abc1234def", parked_count: 0)
