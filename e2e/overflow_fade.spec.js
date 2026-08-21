@@ -44,9 +44,27 @@ const { loginWithMagicLink } = require("./helpers");
 // which is the distinction `liveEqualsUnmasked` below is here to state.
 // The thresholds sit in that gap with room on both sides.
 const FADE_TAIL_COLS = 2; // the cut edge itself
-const FADE_MAX_INK = 80; // measured 24 faded, 210 hard-clipped
 const CLIP_VISIBLE_INK = 100; // the strip must SEE the hard clip, or it is blind
 const FADE_BODY_INK = 60; // the text must still be painted, not masked away
+
+// THE FADE IS ASSERTED AS A RATIO, NOT AN ABSOLUTE INK LEVEL, and that is a
+// correction paid for on CI.
+//
+// The first version capped the tail at an absolute 80, calibrated on macOS
+// where a faded edge measured 24 against a hard clip of 210. On CI the same
+// correct build measured 64 at the same place. Nothing was wrong with it: a
+// Linux runner has different font metrics, so the box came out 73px wide
+// instead of 66px, the ramp is 20 percent of the box, and a different ramp
+// samples at a different depth. An absolute threshold encodes one machine's
+// font stack; the ratio encodes the claim.
+//
+//   faded on macOS   24 / 210 = 0.11
+//   faded on CI      64 / 210 = 0.30
+//   NO MASK AT ALL   live IS the clip = 1.00
+//
+// 0.6 sits between 0.30 and 1.00 with room on both sides, and does not move
+// when a font does.
+const FADE_TAIL_RATIO = 0.6;
 
 const MASK_OFF = "-webkit-mask-image:none;mask-image:none;";
 const MASK_BLANK =
@@ -224,11 +242,26 @@ async function fadeMeasurement(page, idx) {
 
   const liveInk = await inkProfile(page, live, ref);
   const clipInk = await inkProfile(page, unmasked, ref);
-  const tail = (cols) => Math.max(...cols.slice(-FADE_TAIL_COLS));
+
+  // WHERE THE PAINT ACTUALLY ENDS, learned from the hard-clip sample rather
+  // than assumed to be the last column of the capture. On CI the element's
+  // captured box ran 3px WIDER than its painted content — an ancestor clip
+  // under table-layout:fixed — so the final columns were empty in EVERY
+  // sample. Measured there: clip [210,210,210,210,203,0,0,0] against live
+  // [108,93,78,64,48,0,0,0]. Reading the last two columns of that is reading
+  // two columns of nothing, which made the probe's own self-check report "the
+  // strip cannot see the clip" and fail a build that was painting correctly.
+  const edge = (() => {
+    for (let x = clipInk.length - 1; x >= 0; x -= 1) if (clipInk[x] > 0) return x;
+    return clipInk.length - 1;
+  })();
+  const tail = (cols) =>
+    Math.max(...cols.slice(Math.max(0, edge - FADE_TAIL_COLS + 1), edge + 1));
   const body = (cols) => Math.max(...cols.slice(0, Math.floor(cols.length / 2)));
 
   return {
     text: before.text, sw: before.sw, cw: before.cw, style: before.style,
+    cutEdgeCol: edge, capturedCols: clipInk.length,
     liveTailInk: tail(liveInk),
     clipTailInk: tail(clipInk),
     liveBodyInk: body(liveInk),
@@ -252,9 +285,11 @@ function expectFaded(m, where) {
   // the mask did not exist.
   expect(m.liveEqualsUnmasked, `${msg}\n  the app's paint is byte-identical to having NO mask`)
     .toBe(false);
-  // THE FADE, in paint.
-  expect(m.liveTailInk, `${msg}\n  the clipped edge must be FADED, not cut`)
-    .toBeLessThanOrEqual(FADE_MAX_INK);
+  // THE FADE, in paint — as a fraction of the ink the hard clip leaves at the
+  // very same columns, so the verdict does not move with the runner's fonts.
+  expect(m.liveTailInk / m.clipTailInk,
+    `${msg}\n  the clipped edge must be FADED, not cut`)
+    .toBeLessThanOrEqual(FADE_TAIL_RATIO);
   // ...and a fade, not an erasure: masking the whole text away would also
   // empty the tail.
   expect(m.liveBodyInk, `${msg}\n  the text itself must still be PAINTED`)
