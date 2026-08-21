@@ -2463,14 +2463,56 @@ def cleanup_row(record, status: "pending approval")
   "| `#{path}` | worktree | #{cleanup_reason(record)} | #{condition} | #{status} |"
 end
 
+# A ledger table row that names exactly this desk path.
+#
+# Anchored at the start of the line and closed by the cell's trailing "` |", so it can
+# match neither a longer sibling path (`…/_ship-2`) nor a path mentioned inside the
+# reason or condition cells.
+def ledger_row_for_path?(line, dir)
+  line.start_with?("| `#{dir}` |")
+end
+
+# Is this ledger row RESOLVED — history rather than an open item?
+#
+# The rule is the archive rollover's own (DocsArchive#row_date, bin/lib/docs_archive.rb):
+# read the Status cell (the last one, after dropping the closing pipe) and look for a date.
+# A dated status ("removed 2026-08-18") records something that already happened; an undated
+# one ("pending approval", "reference only") is an unresolved item still awaiting its
+# outcome. Keeping the two ledgers on ONE definition is the point — the archive is
+# append-only and path-repeating by design, and the primary drifted from it silently.
+def ledger_row_resolved?(line)
+  status = line.strip.sub(/\|\z/, "").split("|").last.to_s
+  status.match?(/\d{4}-\d{2}-\d{2}/)
+end
+
+# The index of the row this teardown should CLOSE, or nil when it must open a new one.
+#
+# Desk paths RECYCLE. `_ship` is torn down once per release cycle at the same path every
+# time, so keying the in-place update on the PATH ALONE overwrote the previous teardown's
+# row — and did it to every matching line at once, since the old map rewrote them all.
+# The 2026-08-18 `_ship` rows for the hub and turf-monster are still readable at
+# `git show origin/accepted:docs/agents/maintenance/delete-later.md` and exist nowhere at
+# the head of PR 966, because the 08-19 teardown replaced them in place. The arithmetic is
+# the signature: the primary gained 32 markers dated 08-19 while the append-only archive
+# gained 34 rows, and 08-18 shows the mirror deficit. That is steady loss, not a rare race.
+#
+# So the row a teardown may overwrite is not "the row with this path" — it is the row for
+# this path that is still OPEN, i.e. a candidate `cleanup --write` filed and nothing has
+# resolved yet. Closing that is a state transition within ONE teardown episode. Writing
+# over a dated row is forgetting that a DIFFERENT episode ever happened, which is the bug.
+# `rindex` so the newest open row wins if an older ledger ever carried more than one.
+def open_ledger_row_index(lines, dir)
+  lines.rindex { |line| ledger_row_for_path?(line, dir) && !ledger_row_resolved?(line) }
+end
+
 def write_cleanup_ledger_record(record, status:)
   row = cleanup_row(record, status: status)
-  path_cell = "| `#{record[:dir]}` |"
-  existing = File.exist?(ledger_path) ? File.read(ledger_path) : ""
+  lines = File.exist?(ledger_path) ? File.readlines(ledger_path) : []
+  index = open_ledger_row_index(lines, record[:dir])
 
-  if existing.include?(path_cell)
-    updated = existing.lines.map { |line| line.include?(path_cell) ? "#{row}\n" : line }.join
-    File.write(ledger_path, updated)
+  if index
+    lines[index] = "#{row}\n"
+    File.write(ledger_path, lines.join)
     puts "updated cleanup ledger: #{ledger_path}"
     return
   end
@@ -2500,8 +2542,14 @@ def run_cleanup(app = nil, write: false)
     return
   end
 
-  existing = File.exist?(ledger_path) ? File.read(ledger_path) : ""
-  rows = candidates.map { |record| cleanup_row(record) }.reject { |row| existing.include?(row.split("`")[1].to_s) }
+  # Idempotent on the OPEN item, not on the path. Re-running the dry run must not file a
+  # second pending row for a candidate already awaiting approval — but a RECYCLED path
+  # whose earlier row is resolved is a new candidate, and the old substring test (does this
+  # path appear anywhere in the file?) silently refused to nominate it for the rest of
+  # time. Same rule as the teardown write above, so both halves of the ledger agree.
+  existing = File.exist?(ledger_path) ? File.readlines(ledger_path) : []
+  rows = candidates.reject { |record| open_ledger_row_index(existing, record[:dir]) }
+                   .map { |record| cleanup_row(record) }
   if rows.empty?
     puts "cleanup: candidates already present in #{ledger_path}"
     return

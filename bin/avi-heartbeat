@@ -1,5 +1,0 @@
-#!/bin/sh
-# Legacy shim: the PR-review supervisor moved to bin/pr-review when the launcher
-# vocabulary split heartbeats (recipes) from acts (SOPs). Keep old invocations
-# working; remove once nothing calls the old name.
-exec "$(dirname "$0")/pr-review" "$@"

@@ -33,7 +33,7 @@ agents_data = [
     agent_type: "orchestrator",
     title: "Lead Orchestrator",
     description: "Coordinates all agents, manages task assignment, and oversees system operations — the central brain of McRitchie Studio. Also holds the senior review pool's Documentation seat: reviews docs, runbooks, the agent operating model, and READMEs on PRs that touch them.",
-    avatar: "/agents/alex.png",
+    avatar: "/agents/alex.webp",
     position: 0,
     metadata: {
       "review_role" => "reviewer",
@@ -49,7 +49,7 @@ agents_data = [
     agent_type: "product",
     title: "Product Owner",
     description: "Product Owner and Deploy-flow assembler. Refines tickets, sets po_size, and owns the qa-release sweep: promote the accepted → release batch PR, run the pre-QA gate, deploy QA, and flip members assembled on QA-green. Review is Carl's; the ship is Steffon's.",
-    avatar: "/agents/avi.png",
+    avatar: "/agents/avi.webp",
     position: 3,
     metadata: {
       "review_role" => nil,
@@ -66,7 +66,7 @@ agents_data = [
     agent_type: "specialist",
     title: "Lead Architect",
     description: "Lead Architect and owner of PR review. Crack Rails dev — controllers, models, migrations, background jobs, ActiveRecord performance, and the studio-engine internals. The STANDING PRIMARY on every PR: the deep reviewer who owns the gates, summons a domain light specialist at his discretion, drives the verdict, and merges approved work into the accepted branch.",
-    avatar: "/agents/carl.png",
+    avatar: "/agents/carl.webp",
     position: 4,
     metadata: {
       "review_role" => "owner",
@@ -83,7 +83,7 @@ agents_data = [
     agent_type: "specialist",
     title: "Dev UI Expert",
     description: "UI specialist. Owns frontend development across the ecosystem — ERB views, Tailwind, Alpine.js, theme system, and studio-engine UI primitives. Senior reviewer for UI PRs in the Deploy-flow review pool.",
-    avatar: "/agents/shannon.png",
+    avatar: "/agents/shannon.webp",
     position: 5,
     metadata: {
       "review_role" => "reviewer",
@@ -99,7 +99,7 @@ agents_data = [
     agent_type: "specialist",
     title: "Dev Blockchain Expert",
     description: "Blockchain specialist. Owns the Solana surface: turf-vault Anchor program, solana-studio Ruby client, and all on-chain integration. Senior reviewer for Web3 / on-chain PRs in the Deploy-flow review pool.",
-    avatar: "/agents/jasper.png",
+    avatar: "/agents/jasper.webp",
     position: 6,
     metadata: {
       "review_role" => "reviewer",
@@ -115,7 +115,7 @@ agents_data = [
     agent_type: "specialist",
     title: "Platform Engineer",
     description: "Platform Engineer (Ship + Infrastructure). Owns production-deploy — the frozen-SHA ship gate, then bin/release ship (ff release → main, deploy prod, smoke, release notes) — plus archive-shipped, Heroku deploys, env vars, CI, observability, and the recovery protocol. Domain light reviewer for DevOps/Platform PRs. After the reslot the reviewer-select QA-owner exclusion keys on Avi (who runs qa-release), not on Steffon, so Steffon is back in the light pool.",
-    avatar: "/agents/steffon.png",
+    avatar: "/agents/steffon.webp",
     position: 7,
     metadata: {
       "review_role" => "reviewer",
@@ -132,7 +132,7 @@ agents_data = [
     agent_type: "specialist",
     title: "Sports Domain Specialist",
     description: "Specializes in sports data, pick'em games, and the Turf Monster app. Expert in World Cup props and player stats.",
-    avatar: "/agents/turf-monster.png",
+    avatar: "/agents/turf-monster.webp",
     position: 1,
     metadata: {
       "review_role" => nil,
@@ -146,7 +146,7 @@ agents_data = [
     agent_type: "worker",
     title: "General Worker",
     description: "Versatile worker agent handling data scraping, processing, and general-purpose tasks. Reliable and efficient.",
-    avatar: "/agents/mack.png",
+    avatar: "/agents/mack.webp",
     position: 8,
     metadata: {
       "review_role" => nil,
@@ -160,7 +160,7 @@ agents_data = [
     agent_type: "specialist",
     title: "Marketing",
     description: "Runs marketing — brand voice, launch comms, social, funnels, copy. (Previously held Infrastructure; that surface now belongs to Steffon.)",
-    avatar: "/agents/mason.png",
+    avatar: "/agents/mason.webp",
     position: 2,
     metadata: {
       "review_role" => nil,

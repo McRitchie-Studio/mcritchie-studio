@@ -1,7 +1,7 @@
 const { test, expect } = require("@playwright/test");
 
 // The Alex avenue (/alex/heartbeat) renders the agent-narrated EVENT trajectory from
-// the seeded spans — each row an AtomicEvent (category · reason -> outcome) that
+// the seeded spans — each row an AgentActivity (category · reason -> outcome) that
 // drills down (Alpine) into the raw tool-calls attributed to it. The seed narrates a
 // couple of closed spans, a final OPEN span ("…in progress"), plus one pre-narration
 // action in the read-only "Unlabeled" group.

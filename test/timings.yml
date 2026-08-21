@@ -480,7 +480,6 @@ test/views/heartbeat_feedback_cell_test.rb: 0.16
 test/views/heartbeat_insight_escaping_test.rb: 0.14
 test/views/heartbeat_nav_test.rb: 0.02
 test/views/heartbeat_styles_deinlined_test.rb: 0.03
-test/views/heartbeat_trajectory_table_test.rb: 0.15
 test/views/intelligence_dashboard_test.rb: 0.16
 test/views/onboarding_first_name_component_test.rb: 0.04
 test/views/pipeline_test_runs_band_test.rb: 0.06

@@ -205,10 +205,10 @@ module Api
         captured = nil
         stub = lambda do |attrs|
           captured = attrs
-          AtomicAction.new(session_id: attrs[:session_id], kind: attrs[:kind])
+          AgentAction.new(session_id: attrs[:session_id], kind: attrs[:kind])
         end
 
-        AtomicAction.stub(:capture, stub) do
+        AgentAction.stub(:capture, stub) do
           post api_v1_atomic_actions_path,
                params: @body.merge(atomic_event_id: 4242), headers: @headers, as: :json
         end
@@ -219,13 +219,13 @@ module Api
       end
 
       test "[integration] pins the action to the hook-supplied atomic_event_id" do
-        event = AtomicEvent.open_event!(session_id: "sess-abc", category: "Explore", reason_slug: "orient")
+        event = AgentActivity.open_event!(session_id: "sess-abc", category: "Explore", reason_slug: "orient")
 
         post api_v1_atomic_actions_path,
              params: @body.merge(atomic_event_id: event.id), headers: @headers, as: :json
 
         assert_response :created
-        assert_equal event.id, AtomicAction.order(:created_at).last.atomic_event_id,
+        assert_equal event.id, AgentAction.order(:created_at).last.atomic_event_id,
                      "the supplied open-span id wins over the server-derived one"
       end
 

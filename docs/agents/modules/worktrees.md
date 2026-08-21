@@ -256,6 +256,19 @@ bin/agent-worktree scale status
   database state, and the exact `bin/agent-worktree remove … --yes` command. Use
   that dry run as the approval packet before deleting anything.
 - `cleanup --write` appends candidates to [`../maintenance/delete-later.md`](../maintenance/delete-later.md). It does not remove files, worktrees, branches, databases, Redis keys, or processes.
+- **The ledger is keyed by TEARDOWN, not by path.** Desk paths recycle — `_ship`
+  is torn down once per release cycle at the same path — so every teardown
+  appends its own row, carrying its own HEAD SHA and its own date. The only row
+  a write may edit in place is an **open** one for that path: a `pending
+  approval` candidate being resolved into `removed <date>`, which is one episode
+  changing state. A row whose Status carries a **date** is history and is never
+  rewritten. That is the same rule
+  [`archive-shipped`](../agents/steffon/sops/archive-shipped.md) reads when it
+  rolls resolved rows into
+  `docs/agents/archive/maintenance/delete-later-archive.md` — which is
+  append-only and path-repeating by design. Until 2026-08-19 the primary ledger
+  keyed its update on the path alone and quietly overwrote the earlier row, so
+  the two ledgers disagreed and only the archive was honest.
 - **The occupancy guard (why git state alone is not enough).** A worktree is a
   candidate only when it is git-eligible **AND nobody is working at it**. A
   brand-new worktree off `release` and one whose work was **fast-forward merged**
