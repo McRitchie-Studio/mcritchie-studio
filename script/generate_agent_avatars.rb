@@ -2,10 +2,20 @@
 # frozen_string_literal: true
 #
 # Generate 340x340 placeholder portraits for agents that do not have a real one
-# yet. Drops files at:
-#   - public/agents/<slug>.png             (a PLACEHOLDER container; the real
-#                                           portraits ship as .webp — see below)
-#   - docs/agents/agents/<slug>/avatar.png (referenced by each persona's role.md)
+# yet. Drops exactly ONE file:
+#   - public/agents/<slug>.png  (a PLACEHOLDER container; the real portraits ship
+#                                as .webp — see below)
+#
+# It used to drop a SECOND copy at docs/agents/agents/<slug>/avatar.png, which each
+# persona's role.md embedded as `![... Avatar](avatar.png)`. Every one of those nine
+# renders was broken: DocsController#show only ever reads `<path>.md`, and its path
+# regex /\A[a-z0-9_\-\/]+\z/i rejects the dot before that branch is reached — the
+# docs route cannot serve an image at all. docs/ is copied into EVERY worktree, so
+# the ten copies cost 5.75MB per desk to render nine broken images. Retired in
+# serve-or-retire-doc-avatars; the souls' real faces already ship as
+# public/agents/<slug>.webp, which is what db/seeds/02_agents.rb points the app at.
+# test/integration/doc_reference_servability_test.rb now fails ANY doc reference the
+# docs route cannot serve, so this cannot come back quietly.
 #
 # Style: solid brand-color background + white initial(s) centered. Sized to match
 # alex.webp (340x340) so the agent grid renders evenly.
@@ -69,9 +79,8 @@ module AgentAvatarPlaceholders
   # committed under public/agents — never clobber them. Only generate where the
   # portrait is missing. FORCE=1 regenerates every placeholder.
   def run(root:, force: false, out: $stdout, draw: nil)
-    draw    ||= method(:magick)
-    pub_dir   = File.join(root, "public", "agents")
-    docs_dir  = File.join(root, "docs", "agents", "agents")
+    draw  ||= method(:magick)
+    pub_dir = File.join(root, "public", "agents")
 
     FileUtils.mkdir_p(pub_dir)
 
@@ -93,18 +102,12 @@ module AgentAvatarPlaceholders
                  "db/seeds/02_agents.rb reads that file, so this .png placeholder renders nowhere"
       end
 
-      agent_doc_dir = File.join(docs_dir, slug)
-      out_pub       = File.join(pub_dir, "#{slug}.png")
-      out_docs      = File.join(agent_doc_dir, "avatar.png")
+      out_pub = File.join(pub_dir, "#{slug}.png")
 
-      FileUtils.mkdir_p(agent_doc_dir)
       draw.call(agent, out_pub)
-      FileUtils.cp(out_pub, out_docs)
 
-      pub_size  = File.size(out_pub)
-      docs_size = File.size(out_docs)
       out.puts "#{slug.ljust(10)} #{agent[:initials].ljust(2)}  #{agent[:bg]}  " \
-               "→ #{out_pub} (#{pub_size}b) + #{out_docs} (#{docs_size}b)"
+               "→ #{out_pub} (#{File.size(out_pub)}b)"
     end
 
     out.puts "\nDone. Overwrite these files with real portraits when ready."

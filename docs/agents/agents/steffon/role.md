@@ -1,7 +1,5 @@
 # Steffon — Platform Engineer (QA & Infrastructure)
 
-![Steffon Avatar](avatar.png)
-
 > **Title decided 2026-06-22** (`docs/agents/system/devops-cycle-design.md` §1.2):
 > Steffon is now the **Platform Engineer**. The DB-registry rename + reviewer
 > seeding land via `seed-souls-prod-qa`.

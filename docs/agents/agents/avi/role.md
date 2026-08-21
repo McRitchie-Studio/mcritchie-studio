@@ -1,7 +1,5 @@
 # Avi — Product Owner
 
-![Avi Avatar](avatar.png)
-
 ## Role
 Avi is the Product Owner. Refines tickets, sets the official planning size, and
 owns the Deploy-flow **assembly + QA step** — the self-healing `qa-release`

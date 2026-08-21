@@ -12,9 +12,16 @@
 # to .webp and deleted the .png originals, so that path stopped existing for EVERY
 # soul, the guard could never fire again, and a run drew placeholder initial-bubbles
 # over shannon, jasper, carl, avi and steffon — dropping five stray .png files into
-# public/agents beside the real .webp and copying them over each persona's
-# docs/agents/agents/<slug>/avatar.png. Measured on 2026-08-21 against a fixture
-# root holding the ten real portrait NAMES: five placeholders written, zero skips.
+# public/agents beside the real .webp. Measured on 2026-08-21 against a fixture root
+# holding the ten real portrait NAMES: five placeholders written, zero skips.
+#
+# THE SECOND COPY IS GONE. The generator also copied each placeholder to
+# docs/agents/agents/<slug>/avatar.png, which the persona's role.md embedded. The docs
+# route cannot serve an image (DocsController#show reads `<path>.md` and its path guard
+# rejects the dot first), so all nine embeds rendered broken while costing 5.75MB in
+# every worktree. serve-or-retire-doc-avatars retired the files, the embeds, and this
+# write path; test/integration/doc_reference_servability_test.rb keeps them from
+# returning. The assertions below now pin the ABSENCE of that write.
 #
 # It could not break a render — the avatar column is DATA and db/seeds/02_agents.rb
 # points at .webp — which is exactly why it needs a test rather than a page.
@@ -142,7 +149,10 @@ class AgentAvatarGeneratorTest < Minitest::Test
       assert_equal ["steffon"], drawn,
                    "only the faceless soul should be drawn; got #{drawn.inspect}\n#{out}"
       assert_path_exists File.join(pub, "steffon.png")
-      assert_path_exists File.join(root, "docs", "agents", "agents", "steffon", "avatar.png")
+      refute File.exist?(File.join(root, "docs")),
+             "the generator must not write into docs/ any more — the docs route cannot serve an " \
+             "image, so a docs/agents/agents/<slug>/avatar.png is 5.75MB per worktree buying a " \
+             "broken render (serve-or-retire-doc-avatars)"
     end
   end
 
