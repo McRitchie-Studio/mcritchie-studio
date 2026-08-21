@@ -388,4 +388,175 @@ class ReviewClaimCliTest < Minitest::Test
       assert_equal ReviewClaimCli::CANT_RUN, code, "no session id → fail open (exit 1), never a false claim"
     end
   end
+
+  # --- [unit] every argument is accounted for BEFORE anything is claimed ---------
+  # THE SCAR: `bin/task claim-next-review --help` CLAIMED A REAL TASK. The flag fell
+  # through parse_flags into an ignored key and the atomic pop ran anyway, taking a
+  # live review lease on work nobody was reviewing. So the assertion here is never
+  # "usage was printed" — printed text is compatible with the bug. It is that NO POP
+  # REACHED THE BOARD: no request recorded, no marker, no renewer.
+  #
+  # `posts` is the whole seam: FakeApi records every http_json, so a claim that
+  # happened is a claim that shows up here. The pop the tests above assert
+  # (POST /api/v1/tasks/claim_next_review) must be ABSENT.
+  def assert_claimed_nothing(cli, proj, message)
+    assert_empty cli.instance_variable_get(:@api).posts, "#{message}: it reached the BOARD"
+    assert_empty @spawned, "#{message}: it anchored a renewer"
+    assert_empty @out.string, "#{message}: it printed a slug on stdout"
+    refute_path_exists File.join(proj, ".agents", "sessions"), "#{message}: it wrote a claim marker"
+  end
+
+  def test_unit_claim_next_help_prints_usage_and_claims_nothing
+    Dir.mktmpdir do |proj|
+      c = cli(projects_dir: proj, data: { "claimed" => { "slug" => "popped-task" } })
+      code = c.run(["claim-next", "--help"])
+
+      # The claim assertion FIRST, deliberately: pre-fix, `--help` also exited 0 —
+      # it exited 0 having CLAIMED. The exit code and the printed text are the two
+      # things a regression would keep; the absent pop is the thing it breaks.
+      assert_claimed_nothing(c, proj, "claim-next --help")
+      assert_equal ReviewClaimCli::OK, code, "--help is a clean exit 0, like bin/task's own help"
+      assert_match(/usage: bin\/task review-claim/, @err.string, "usage goes to STDERR, never stdout")
+    end
+  end
+
+  # -h is the same probe with one dash — and the MORE dangerous spelling before this
+  # guard: parse_flags only ever looked at "--", so a single-dash token was not even
+  # recorded as an ignored key. It vanished, and the pop ran.
+  def test_unit_claim_next_short_help_claims_nothing_either
+    Dir.mktmpdir do |proj|
+      c = cli(projects_dir: proj, data: { "claimed" => { "slug" => "popped-task" } })
+      code = c.run(["claim-next", "-h"])
+
+      assert_claimed_nothing(c, proj, "claim-next -h")
+      assert_equal ReviewClaimCli::OK, code
+      assert_match(/usage: bin\/task review-claim/, @err.string)
+    end
+  end
+
+  def test_unit_claim_next_refuses_an_unknown_flag_instead_of_claiming
+    Dir.mktmpdir do |proj|
+      c = cli(projects_dir: proj, data: { "claimed" => { "slug" => "popped-task" } })
+      code = c.run(["claim-next", "--fast"])
+
+      assert_claimed_nothing(c, proj, "claim-next --fast")
+      assert_equal ReviewClaimCli::CANT_RUN, code, "an unrecognized flag REFUSES (exit 1)"
+      assert_match(/unrecognized argument "--fast"/, @err.string, "the refusal NAMES the offending flag")
+      assert_match(/NOTHING was claimed/, @err.string, "and says plainly no lease was taken")
+    end
+  end
+
+  # A slug on the claim-next line means the caller wanted `acquire`. Popping whatever
+  # the board ranks first would claim a DIFFERENT task than the one they typed — the
+  # same silently-discarded-argument defect, one seam over.
+  def test_unit_claim_next_refuses_a_slug_it_would_have_ignored
+    Dir.mktmpdir do |proj|
+      c = cli(projects_dir: proj, data: { "claimed" => { "slug" => "popped-task" } })
+      code = c.run(["claim-next", "some-other-task"])
+
+      assert_claimed_nothing(c, proj, "claim-next <slug>")
+      assert_equal ReviewClaimCli::CANT_RUN, code
+      assert_match(/unrecognized argument "some-other-task"/, @err.string)
+      assert_match(/review-claim acquire some-other-task/, @err.string,
+                   "the refusal names the door they meant, not just the one that closed")
+    end
+  end
+
+  # THE POSITIVE CONTROL. Without it a guard that refused EVERYTHING would read as a
+  # working fix — and the failure mode is silent: a review wave that claims nothing
+  # looks exactly like an empty queue. A valid line must still take the lease, and
+  # its value-flags must still ARRIVE (--label Gastly must not be read as a stray
+  # positional, which is precisely how a too-eager guard breaks this).
+  def test_unit_claim_next_with_valid_flags_still_claims
+    Dir.mktmpdir do |proj|
+      c = cli(projects_dir: proj,
+              data: { "claimed" => { "slug" => "popped-task" }, "holder" => { "label" => "Gastly" } })
+      code = c.run(["claim-next", "--label", "Gastly", "--agent", "carl"])
+
+      assert_equal ReviewClaimCli::OK, code, "a valid invocation still claims — the guard is not a wall"
+      assert_equal "popped-task\n", @out.string, "stdout is still JUST the slug"
+      pop = c.instance_variable_get(:@api).posts.find { |p| p[:path] == "/api/v1/tasks/claim_next_review" }
+      refute_nil pop, "the atomic pop still reaches the board"
+      assert_equal "Gastly", pop[:body]["label"], "--label's VALUE arrived, not refused as a positional"
+      assert_equal "carl", pop[:body]["reviewer"], "--agent's VALUE arrived too"
+      assert_equal 1, @spawned.length, "and the renewer is still anchored"
+    end
+  end
+
+  # The same contract on the sibling that names its own task: `acquire <slug> --help`
+  # must not acquire, and a typo'd flag must not either.
+  def test_unit_acquire_help_after_the_slug_claims_nothing
+    Dir.mktmpdir do |proj|
+      c = cli(projects_dir: proj, data: { "acquired" => true, "holder" => {} })
+      code = c.run(["acquire", SLUG, "--help"])
+
+      assert_claimed_nothing(c, proj, "acquire <slug> --help")
+      assert_equal ReviewClaimCli::OK, code
+    end
+  end
+
+  def test_unit_acquire_refuses_an_unknown_flag_instead_of_acquiring
+    Dir.mktmpdir do |proj|
+      c = cli(projects_dir: proj, data: { "acquired" => true, "holder" => {} })
+      code = c.run(["acquire", SLUG, "--soul", "carl"])
+
+      assert_claimed_nothing(c, proj, "acquire --soul")
+      assert_equal ReviewClaimCli::CANT_RUN, code
+      assert_match(/unrecognized argument "--soul"/, @err.string)
+      assert_match(/valid flags: --label, --agent/, @err.string, "the refusal names what IS valid")
+    end
+  end
+
+  # A value-flag BEFORE the slug used to make the flag's VALUE the slug (`acquire
+  # --label Gastly my-task` POSTed to /api/v1/tasks/Gastly/review_claim). The slug is
+  # now the first true POSITIONAL, so the same line claims the task the caller named.
+  def test_unit_acquire_reads_the_slug_past_a_value_flag
+    Dir.mktmpdir do |proj|
+      c = cli(projects_dir: proj, data: { "acquired" => true, "holder" => {} })
+      code = c.run(["acquire", "--label", "Gastly", SLUG])
+
+      assert_equal ReviewClaimCli::OK, code
+      post = c.instance_variable_get(:@api).posts.first
+      assert_equal "/api/v1/tasks/#{SLUG}/review_claim", post[:path], "the SLUG is the target, not the label"
+    end
+  end
+
+  # The renewer is spawned by the CLI and re-enters the CLI. A guard that refused its
+  # argv would kill every lease renewal silently — the claim would lapse mid-review
+  # and a second session could claim the same task. Pin the real spawned line against
+  # the real validator instead of a hand-copied argv that could drift.
+  def test_unit_the_renewers_own_argv_survives_the_argument_guard
+    Dir.mktmpdir do |proj|
+      c = cli(projects_dir: proj, data: { "acquired" => true, "holder" => {} })
+      c.run(["acquire", SLUG])
+
+      _env, argv = @spawned.first
+      spawned_args = argv.drop(2) # [ruby, review_claim_cli.rb, "renew-loop", slug, …flags]
+      assert_equal "renew-loop", spawned_args.first
+      assert_empty c.bad_arguments(spawned_args.first, spawned_args.drop(1)),
+                   "the renewer's own line must not be refused by the guard it re-enters"
+    end
+  end
+
+  # COMMAND_FLAGS is the dictionary the guard rejects against AND the set of
+  # subcommands run() accepts, so a command added to one and not the other silently
+  # becomes "unknown subcommand". Pin them together.
+  def test_unit_every_validated_command_has_a_dispatch_arm
+    source = File.read(File.expand_path("../../bin/lib/review_claim_cli.rb", __dir__))
+    ReviewClaimCli::COMMAND_FLAGS.each_key do |command|
+      assert_includes source, "when \"#{command}\"",
+                      "#{command} is validated but never dispatched — it would print usage instead of running"
+    end
+  end
+
+  def test_unit_an_unknown_subcommand_still_prints_usage_and_claims_nothing
+    Dir.mktmpdir do |proj|
+      c = cli(projects_dir: proj, data: { "claimed" => { "slug" => "popped-task" } })
+      code = c.run(["claim-everything"])
+
+      assert_claimed_nothing(c, proj, "an unknown subcommand")
+      assert_equal ReviewClaimCli::CANT_RUN, code
+      assert_match(/usage: bin\/task review-claim/, @err.string)
+    end
+  end
 end
