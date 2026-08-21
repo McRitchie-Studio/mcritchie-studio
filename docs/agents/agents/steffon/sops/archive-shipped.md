@@ -165,9 +165,20 @@ current release cycle move to `docs/agents/archive/maintenance/`. Rows with **no
 date** — `pending approval`, `reference only` — are unresolved work and always
 stay live.
 
+**The beat refuses to sweep a ledger that has lost rows.** A dated row is a
+teardown that happened, and it may only ever MOVE between the ledger and its
+archive. `bin/archive-docs` checks that against `HEAD` before the roll and again
+after it, and an apply exits non-zero naming every destroyed row (a `--dry-run`
+reports and still exits 0). This exists because on 2026-08-21 three rows left
+both files: a teardown driven from a desk carrying a **stale**
+`bin/agent-worktree` overwrote their dated rows in place, and this sweep
+committed the loss. If it fires, do not edit the guard — recover the row with
+`git show HEAD:docs/agents/maintenance/delete-later.md` and put it back.
+
 ```bash
 bin/archive-docs --dry-run                  # report only
 bin/archive-docs --ledger-cutoff=2026-08-09 # override the derived cycle boundary
+bin/ledger-guard                            # the same invariant, on demand
 ```
 
 ## Exit Seam

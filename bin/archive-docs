@@ -22,6 +22,7 @@
 require "fileutils"
 require "json"
 require_relative "lib/docs_archive"
+require_relative "lib/ledger_guard"
 require_relative "lib/repo_root"
 
 DRY       = ARGV.include?("--dry-run")
@@ -37,11 +38,35 @@ def say(message = "")
   puts(message) unless JSON_ONLY
 end
 
+# THE MOVE-NEVER-DELETE INVARIANT, checked against HEAD at both ends of the roll.
+#
+# BEFORE, because this beat is where the damage was FIRST observable and where it
+# became permanent: a teardown driven from a desk carrying a stale bin/agent-worktree
+# overwrites a dated row in the hub's working tree, and the next `bin/release archive`
+# commits the loss. Refusing here means the sweep never stages on top of a ledger that
+# has already lost history — and the row is still one `git show HEAD:` away.
+#
+# AFTER, because the roll itself writes both files, and a post-condition on a
+# move is cheap: the union it produced must still hold every row it was handed.
+#
+# A dry run REPORTS and exits 0 — it changes nothing, and a preview that returns
+# failure wedges the callers that preview before confirming. An APPLY refuses.
+def refuse_if_ledger_lost!(repo, when_label, dry:)
+  losses = LedgerGuard.lost_against_ref(repo, "HEAD")
+  return if losses.empty?
+
+  warn "==> DELETE-LATER LEDGER: rows destroyed (#{when_label})"
+  warn LedgerGuard.report(losses, base_label: "HEAD")
+  exit 1 unless dry
+end
+
 # --- the doc sweep -----------------------------------------------------------
 # Ledger FIRST, on purpose. Rows in delete-later.md cite dated docs, so a row
 # that rolls over stops pinning the doc it named — and that doc becomes
 # archivable in the SAME run instead of waiting for the next one.
+refuse_if_ledger_lost!(REPO, "already lost before this sweep ran", dry: DRY)
 ledger = DocsArchive.roll_ledger!(REPO, cutoff: CUTOFF, apply: !DRY)
+refuse_if_ledger_lost!(REPO, "lost by the rollover itself", dry: DRY) unless DRY
 
 plan = DocsArchive.plan(REPO)
 
