@@ -1557,4 +1557,138 @@ class AgentWorktreeTest < Minitest::Test
              "desk permanently unbound, which is why the reclaim hold exists."
     end
   end
+
+  # --- the delete-later ledger: one row per TEARDOWN, not one row per PATH ----------------
+  #
+  # Desk paths RECYCLE — `_ship` is torn down once per release cycle at the same path — and
+  # the ledger write keyed its in-place update on the PATH alone. So the second teardown
+  # overwrote the first one's row instead of appending beside it, and teardown history
+  # drained steadily. Proven on the live ledger: the 08-18 `_ship` rows for the hub and
+  # turf-monster are readable at `git show origin/accepted:docs/agents/maintenance/
+  # delete-later.md` and are absent at the head of PR 966; the primary gained 32 markers
+  # dated 08-19 where the append-only archive gained 34 rows, with the mirror deficit on
+  # 08-18. The archive (docs/agents/archive/maintenance/delete-later-archive.md) is
+  # append-only and path-repeating BY DESIGN and already carries repeated `_ship` rows —
+  # the asymmetry between the two ledgers WAS the bug.
+  LEDGER_HEADER = <<~MD
+    # Delete Later Ledger
+
+    | Path | Type | Why it is a candidate | Safe-delete condition | Status |
+    |------|------|-----------------------|-----------------------|--------|
+  MD
+
+  # Builds the ledger inside the child (so a retried spawn re-seeds it rather than appending
+  # to the previous attempt's file), runs `body`, and prints the resulting ledger.
+  def ledger_run(body)
+    Dir.mktmpdir do |root|
+      ledger = File.join(root, "delete-later.md")
+      run_in_script(<<~RUBY)
+        File.write(#{ledger.inspect}, #{LEDGER_HEADER.inspect})
+        def ledger_path; #{ledger.inspect}; end
+        def reclaim_evidence(_record, **_kw)
+          { free: true, hold: nil, rationale: "merged into origin/accepted, tree clean" }
+        end
+        def desk(head)
+          { app: { "slug" => "mcritchie-studio" }, task: "_ship",
+            dir: "/Users/alex/projects/mcritchie-studio/.worktrees/_ship",
+            branch: "release", head: head, merged: true, base_ref: "origin/accepted",
+            redis_db: "24", db_name: "hub_ship", db_exists: true,
+            env_exists: true, code: "000", port_pid: "" }
+        end
+        #{body}
+        print File.read(#{ledger.inspect})
+      RUBY
+    end
+  end
+
+  def ledger_rows_for_ship(ledger)
+    ledger.lines.select { |line| line.include?("/.worktrees/_ship` |") }
+  end
+
+  # THE PROPERTY. Tear the SAME path down twice; both rows must survive, each carrying its
+  # own HEAD and its own date. A test that removes one path once passes blind against this
+  # defect, which is why this one removes twice and counts.
+  def test_two_teardowns_of_one_recycled_path_keep_both_rows
+    ledger = ledger_run(<<~RUBY)
+      write_cleanup_ledger_record(desk("c46790dc"), status: "removed 2026-08-18")
+      write_cleanup_ledger_record(desk("9f13ab27"), status: "removed 2026-08-19")
+    RUBY
+    rows = ledger_rows_for_ship(ledger)
+
+    assert_equal 2, rows.size,
+                 "a recycled desk path gets a row PER TEARDOWN; keying the update on the path " \
+                 "overwrote the earlier one and lost the 08-18 `_ship` rows for good"
+    assert(rows.any? { |row| row.include?("c46790dc") && row.include?("removed 2026-08-18") },
+           "the FIRST teardown keeps its own HEAD and its own date")
+    assert(rows.any? { |row| row.include?("9f13ab27") && row.include?("removed 2026-08-19") },
+           "the SECOND teardown is a new row, not a rewrite of the first")
+  end
+
+  # The other direction, and the reason "always append" is NOT the fix. `cleanup --write`
+  # files an OPEN row ("pending approval"); the teardown that follows RESOLVES that same
+  # episode and must close it in place. Appending there would leave a pending row for a desk
+  # that no longer exists — a ledger that reads as unfinished work forever.
+  def test_a_teardown_closes_its_own_pending_row_in_place
+    ledger = ledger_run(<<~RUBY)
+      write_cleanup_ledger_record(desk("c46790dc"), status: "pending approval")
+      write_cleanup_ledger_record(desk("c46790dc"), status: "removed 2026-08-18")
+    RUBY
+    rows = ledger_rows_for_ship(ledger)
+
+    assert_equal 1, rows.size, "the pending row is the SAME episode — it is closed, not duplicated"
+    assert_includes rows.first, "removed 2026-08-18"
+    refute_includes ledger, "pending approval",
+                    "a resolved desk must not also stand as an open candidate"
+  end
+
+  # The rule itself, in isolation: a DATED status is history and is never overwritten; an
+  # undated one ("pending approval", "reference only") is the open item this teardown closes.
+  # Same definition the archive rollover reads (DocsArchive#row_date), which is the point —
+  # the two ledgers drifted apart because only one of them had it.
+  def test_only_an_undated_row_is_open_for_overwrite
+    out = run_in_script(<<~RUBY)
+      dir = "/repo/.worktrees/_ship"
+      pending  = "| `\#{dir}` | worktree | why | condition | pending approval |\n"
+      removed  = "| `\#{dir}` | worktree | why | condition | removed 2026-08-18 |\n"
+      sibling  = "| `\#{dir}-2` | worktree | why | condition | pending approval |\n"
+      print [
+        open_ledger_row_index([removed], dir).nil?,
+        open_ledger_row_index([pending], dir),
+        open_ledger_row_index([sibling], dir).nil?,
+        open_ledger_row_index([removed, pending], dir),
+        open_ledger_row_index([pending, removed], dir)
+      ].inspect
+    RUBY
+
+    assert_equal "[true, 0, true, 1, 0]", out,
+                 "dated row => nil (append a new one); undated row => its index (close it); a " \
+                 "LONGER sibling path must not match, or one desk's teardown rewrites another's"
+  end
+
+  # The same rule on the OTHER writer. `cleanup --write` deduped with a substring test — does
+  # this path appear ANYWHERE in the ledger? — so once a desk's teardown row was filed, that
+  # path could never be nominated again: the recycled desk was missing from the approval
+  # packet the operator reads before authorising a teardown. It must still refuse to file a
+  # SECOND pending row for an item already open, which is what the repeated call asserts.
+  #
+  # Drives the real `run_cleanup`, not an extracted predicate — the defect lives in its
+  # selection line, and a helper asserted in isolation would stay green through a revert.
+  def test_cleanup_write_renominates_a_recycled_path_but_never_duplicates_an_open_one
+    ledger = ledger_run(<<~RUBY)
+      def maybe_scale_in; end
+      CANDIDATES = [desk("9f13ab27")].freeze
+      def cleanup_partition(_app = nil); [CANDIDATES, []]; end
+      write_cleanup_ledger_record(desk("c46790dc"), status: "removed 2026-08-18")
+      run_cleanup(nil, write: true)
+      run_cleanup(nil, write: true)
+    RUBY
+    rows = ledger_rows_for_ship(ledger)
+
+    assert_equal 2, rows.size,
+                 "the resolved 08-18 row plus ONE new pending row: a recycled path is a fresh " \
+                 "candidate, and a second --write run must not file it twice"
+    assert(rows.any? { |row| row.include?("removed 2026-08-18") }, "history stays")
+    assert(rows.one? { |row| row.include?("pending approval") },
+           "exactly one OPEN candidate for the desk that exists now")
+  end
 end
