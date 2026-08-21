@@ -159,7 +159,8 @@
 #       `status` is a plain read and needs no agent session; acquire/release do.
 #       Exit: 0 acquired/reported · 10 REFUSED (a live holder — queue, don't retry-storm)
 #       · 1 error. )
-#   bin/task review-claim <acquire|release|status|renew> <slug> [--label L] [--agent A]
+#   bin/task review-claim acquire <slug> [--label L] [--agent A]
+#   bin/task review-claim <release|status|renew> <slug>
 #   bin/task claim-next-review [--label L] [--agent A]
 #     ( The per-TASK REVIEW lease — how many pr-review sessions run in parallel
 #       without two of them reviewing one task (bin/lib/review_claim_cli.rb).
