@@ -159,10 +159,23 @@
 #       `status` is a plain read and needs no agent session; acquire/release do.
 #       Exit: 0 acquired/reported · 10 REFUSED (a live holder — queue, don't retry-storm)
 #       · 1 error. )
+#   bin/task review-claim <acquire|release|status|renew> <slug> [--label L] [--agent A]
+#   bin/task claim-next-review [--label L] [--agent A]
+#     ( The per-TASK REVIEW lease — how many pr-review sessions run in parallel
+#       without two of them reviewing one task (bin/lib/review_claim_cli.rb).
+#       `acquire` takes the task you picked; `claim-next-review` asks the BOARD for
+#       the next reviewable green-CI task, CLAIMS it, and prints its slug on stdout
+#       (`slug=$(bin/task claim-next-review --agent carl)`). Both are WRITES that
+#       take a real lease — release what you claim.
+#       Exit: 0 claimed · 10 skipped (already under live review) · 4 nothing
+#       eligible (claim-next-review) · 1 could not run. )
 #   bin/task <cmd> --help | -h                        # print this usage from any position
 #
 # Unknown flags are rejected (exit 1) with a nearest-flag suggestion; a dashed
-# token is never parsed as a slug.
+# token is never parsed as a slug. That holds for the claim CLIs too: --help/-h
+# there prints usage and CLAIMS NOTHING, and an argument they cannot account for
+# refuses instead of running the pop (a `claim-next-review --help` probe once took
+# a live review lease on a real task).
 #
 # Exit codes are a CONTRACT (bin/agent-worktree's reclaim guard classifies on
 # them — a destroy path):
@@ -2221,6 +2234,11 @@ when "claim-next-review"
   # (exit 4) when nothing is eligible. Delegated to ReviewClaimCli, reusing its
   # live-instance identity + detached-renewer machinery. ARGV is [<flags>] (the
   # subcommand is already shifted off).
+  #
+  # ReviewClaimCli validates the whole line BEFORE it pops: --help/-h prints usage
+  # and claims nothing, an argument it cannot account for refuses. Nothing here may
+  # reach `claim-next` on an unparsed line — this branch hands the CLI raw ARGV, and
+  # a `--help` that fell through it once claimed a real task.
   require_relative "lib/review_claim_cli"
   exit(ReviewClaimCli.new.run(["claim-next", *ARGV]))
 when "migration-lane"

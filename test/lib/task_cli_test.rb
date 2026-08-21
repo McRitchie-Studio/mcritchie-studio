@@ -48,7 +48,7 @@ class TaskCliTest < Minitest::Test
   # the test never depends on a real ambient session).
   def run_task(args, env: {}, stub_devops: { "kind" => "feature" }, stub_stage: "building", chdir: nil, fail_get: nil,
                fail_get_body: nil, stub_persist: true, fail_patch: nil, stub_progress: nil,
-               stub_columns: {}, stub_omit_columns: [], stub_bounces: [],
+               stub_columns: {}, stub_omit_columns: [], stub_bounces: [], agent_api_stub: false,
                stub_session_mascot: { "mascot" => "snorlax", "mascot_color" => "#A8A77A", "mascot_emoji" => "🔶",
                                       "app" => "mcritchie-studio", "app_color" => "#B57EDC" },
                stub_agent: { "name" => "Jasper", "status_color" => "#22D3EE", "emoji" => "🧪" })
@@ -64,6 +64,16 @@ class TaskCliTest < Minitest::Test
     # two-bounce circuit breaker counts before a rework block. Empty = a task with a
     # clean record, which is what every pre-existing case in this file assumes.
     @stub_bounces = Array(stub_bounces)
+    # THE THIRD SPELLING OF "THE BOARD". The claim CLIs (bin/lib/review_claim_cli.rb,
+    # release_claim_cli.rb) do not speak TASK_API_BASE at all — they go through
+    # AgentApi, which reads ATOMIC_CAPTURE_URL, and requiring test/support/session_env
+    # pins THAT one at an unroutable port for every child (OutboundSeams). Correct as a
+    # floor, and a trap for a claim test: with only TASK_API_BASE pointed here, the
+    # child talks to a closed port and "the stub recorded no claim" is true for the
+    # wrong reason — it would be true with the bug still in place. agent_api_stub
+    # points the AgentApi spelling at this same stub, so a pop that happens is a pop
+    # this test SEES. Opt-in, so no existing case gains requests it never had.
+    #
     # The GET response the stub serves — lets a test seed an existing claim so the
     # move-to-building gate (and the heartbeat) read a real claim state.
     @stub_devops = stub_devops
@@ -115,7 +125,8 @@ class TaskCliTest < Minitest::Test
       # A fixed instance nonce so the CLI never shells out to `ps` in a test; the
       # gate cases override it to play a second / different live instance.
       "TASK_CLAIM_NONCE" => "inst-default"
-    }.merge(TaskUsageSandboxEnv.child_env(sandbox_root)).merge(env))
+    }.merge(agent_api_stub ? { "ATOMIC_CAPTURE_URL" => "http://127.0.0.1:#{port}" } : {})
+     .merge(TaskUsageSandboxEnv.child_env(sandbox_root)).merge(env))
 
     spawn_opts = chdir ? { chdir: chdir } : {}
     out, err, status = Open3.capture3(base_env, RbConfig.ruby, BIN, *args, **spawn_opts)
@@ -2605,6 +2616,61 @@ class TaskCliTest < Minitest::Test
     refute status.success?
     assert_match(/unknown flag "--jsn"/, err)
     assert_match(/--json/, err)
+  end
+
+  # --- [integration] a help probe must never CLAIM ------------------------------
+  # `bin/task claim-next-review --help` took a REAL review lease on a REAL task: the
+  # branch hands raw ARGV to ReviewClaimCli, which dropped the unrecognized flag and
+  # popped anyway. The unit tier pins the CLI class; this tier pins the wiring the
+  # operator actually types, and asserts the only thing that matters — NO POP LEFT
+  # THE PROCESS. The stub server records every request, so a claim that happened is
+  # a claim that shows up in `requests`.
+  CLAIM_POP_PATH = "/api/v1/tasks/claim_next_review"
+
+  # A live session id, or the CLI fails open before it would ever pop — which would
+  # make the two refusal cases below pass for the wrong reason. Paired with
+  # agent_api_stub (see run_task) so the pop endpoint is genuinely REACHABLE from
+  # this child; the positive control underneath proves both halves are live.
+  def claim_env = { "TASK_REVIEW_CLAIM_SESSION" => SESSION }
+
+  def pop_requests(requests)
+    requests.select { |r| r[:method] == "POST" && r[:path] == CLAIM_POP_PATH }
+  end
+
+  def run_claim(args)
+    run_task(args, env: claim_env, agent_api_stub: true)
+  end
+
+  def test_claim_next_review_help_prints_usage_and_pops_nothing
+    requests, out, err, status = run_claim(["claim-next-review", "--help"])
+
+    # The pop assertion FIRST: pre-fix, `--help` ALSO exited 0 — it exited 0 having
+    # claimed. The absent pop is the only thing a regression breaks.
+    assert_empty pop_requests(requests), "a help probe must not POST the atomic pop"
+    assert status.success?, "--help exits 0"
+    assert_empty out, "and prints no slug — stdout is what a caller captures as one"
+    assert_match(%r{usage: bin/task review-claim}, err)
+  end
+
+  def test_claim_next_review_unknown_flag_refuses_instead_of_claiming
+    requests, out, err, status = run_claim(["claim-next-review", "--fast"])
+
+    assert_empty pop_requests(requests), "an unrecognized flag must not POST the atomic pop"
+    refute status.success?, "and must exit nonzero, not claim"
+    assert_empty out
+    assert_match(/unrecognized argument "--fast"/, err)
+    assert_match(/NOTHING was claimed/, err)
+  end
+
+  # THE POSITIVE CONTROL for this tier. It is what makes the two `assert_empty`s
+  # above evidence: with the same env and the same stub, a VALID line does reach the
+  # pop endpoint. (The stub answers with no `claimed` key — an empty pop, exit 4 —
+  # so this case takes no lease and anchors no renewer of its own.)
+  def test_claim_next_review_without_flags_still_reaches_the_pop
+    requests, _out, _err, status = run_claim(["claim-next-review"])
+
+    refute_empty pop_requests(requests), "a valid invocation still asks the board to pop"
+    assert_equal 4, status.exitstatus, "the stub's empty pop is `none` (exit 4), not a claim"
   end
 
   # --- exit codes are a CONTRACT: 4 = the board ANSWERED "no such task" --------
