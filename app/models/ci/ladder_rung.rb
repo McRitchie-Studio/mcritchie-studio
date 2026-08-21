@@ -6,13 +6,13 @@ module Ci
   # parked at this rung.
   #
   # STATES:
-  #   :green :red :pending :conflicted — a live verdict, straight from BranchGate
-  #   :not_built                       — nothing ingested for this branch at all
+  #   :green :red :pending — folded from this branch's own SUITE runs (see .fold)
+  #   :not_built           — no suite run ingested for this branch, or none that passed
   #
-  # `:not_built` is deliberately NOT green, and it is the one interpretation this
-  # class adds. BranchGate answers `:none` for "nothing ingested"; a caller that
-  # treated that as passing would assert a verification nobody performed, which is
-  # the same rule BranchGate states for itself.
+  # `:not_built` is deliberately NOT green: it means no suite run describes this
+  # branch, and a caller treating that as passing would assert a verification nobody
+  # performed. Ci::BranchGate states the same rule for its own `:none`; this class no
+  # longer routes through it (see .for) but keeps the rule.
   #
   # WHY THERE IS NO `:stale` STATE — removed 2026-08-20, and worth keeping written
   # down so it is not reinvented.
@@ -68,22 +68,35 @@ module Ci
       freeze
     end
 
-    # Runs that do NOT describe whether the code is good. Excluded from every rung
-    # reading, because a deploy landing on a sha would otherwise flip its CI badge
-    # with no test having run — measured 2026-08-20: 102 "Production Deploy" and 117
-    # "QA Deploy" runs are ingested, and Ci::ReviewGate.check_runs_payload folds every
-    # workflow on the sha. Dependabot's per-PR runs carry a generated name and are
-    # dropped the same way.
-    DEPLOY_WORKFLOWS = ["Production Deploy", "QA Deploy"].freeze
+    # WHAT COUNTS AS A SUITE RUN — an ALLOW-LIST, and the polarity is the point.
+    #
+    # This was a deny-list of deploy names plus a generated-name regex, and it leaked:
+    # turf-monster's "Devnet Nightly" (a daily schedule) is neither, so it VOTED in the
+    # fold and ANCHORED the rung's sha — 23 rows on `main`, every one completed/skipped,
+    # drawing a false RED for measured windows of 1.5h, 7.5h and 36h. `main` only moves
+    # on a ship, so the nightly is usually the newest run there. And because
+    # STATE_RANK[:red] is 0, that false red sorted the card to the TOP of the row.
+    #
+    # A deny-list is only ever as current as its last editor, and nothing pinned it:
+    # renaming "Production Deploy" would silently have turned deploys into suite runs.
+    # An allow-list keyed on the DECLARED suite fails closed on the next scheduled /
+    # CodeQL / Pages workflow instead of admitting it. Fixing the fold alone would not
+    # have cured this: a genuinely failing nightly — devnet RPC down, the normal failure
+    # mode of a devnet integration test — still reddens a rung it has no business
+    # describing, which is criterion 4's own intent missed for a non-deploy.
+    #
+    # The generated-name regex stays as belt-and-braces. It is redundant against the
+    # allow-list today (no dependabot name is a declared suite), but 184 generated-name
+    # runs carry head_branch accepted/main in production, and a future loosening of the
+    # allow-list should not silently readmit them.
     GENERATED_RUN_NAME = /\A(bundler|github_actions|npm|docker) in /
     private_constant :GENERATED_RUN_NAME
 
-    def self.suite_run?(run)
+    def self.suite_run?(repo, run)
       name = run.workflow_name.to_s
-      return false if name.empty?
-      return false if DEPLOY_WORKFLOWS.include?(name)
+      return false if name.empty? || name.match?(GENERATED_RUN_NAME)
 
-      !name.match?(GENERATED_RUN_NAME)
+      GithubWorkflowRun.suite_workflows_for(repo).include?(name)
     end
 
     # Build one rung from the board's own data. No git, no live gh call.
@@ -121,7 +134,7 @@ module Ci
                                     .where(head_branch: branch.to_s)
                                     .order(Arel.sql("run_started_at DESC NULLS LAST"))
                                     .to_a
-                                    .find { |run| suite_run?(run) }
+                                    .find { |run| suite_run?(repo, run) }
                                     &.head_sha
       return [] if newest_sha.blank?
 
@@ -129,17 +142,40 @@ module Ci
                        .where(head_branch: branch.to_s, head_sha: newest_sha)
                        .order(Arel.sql("run_started_at DESC NULLS LAST"))
                        .to_a
-                       .select { |run| suite_run?(run) }
+                       .select { |run| suite_run?(repo, run) }
                        .group_by { |run| run.workflow_name.to_s }
                        .map { |_name, group| group.first }
     end
 
-    # Fail-closed, and in this order: nothing ingested is NOT a pass, a failure beats a
-    # pending, and a pending beats a green. Only an all-green set reads green.
+    # Buckets, borrowed VERBATIM from CiStatus::CHECK_RUN_BUCKETS (bin/lib/ci_status.rb)
+    # so a rung and a gate can never disagree about what a conclusion means. The
+    # previous fold read `conclusion != "success"` as red, which quietly narrowed the
+    # pass set: `skipped` and `neutral` both certify as "skipping" there and were being
+    # drawn RED here. `cancelled` is red in both, so the delta was exactly those two.
+    PASS = "success"
+    SKIPPING = %w[neutral skipped].freeze
+    FAILING = %w[cancelled failure timed_out action_required startup_failure stale].freeze
+
+    # Fail-closed, in CiStatus's own order, PLUS its companion rule.
+    #
+    #   nothing ingested            → :not_built   (an absence is never a pass)
+    #   any fail/cancel             → :red
+    #   anything unsettled/unknown  → :pending     (an unrecognised conclusion is NOT a pass)
+    #   nothing actually PASSED     → :not_built   (an all-skipped set certifies nothing —
+    #                                               ci_status.rb:875. Widening the pass set
+    #                                               without this reads all-skipped as GREEN,
+    #                                               a regression the old path never had.)
+    #   otherwise                   → :green
     def self.fold(runs)
       return :not_built if runs.empty?
-      return :red if runs.any? { |r| r.status.to_s == "completed" && r.conclusion.to_s != "success" }
-      return :pending if runs.any? { |r| r.status.to_s != "completed" }
+
+      completed = runs.select { |r| r.status.to_s == "completed" }
+      conclusions = completed.map { |r| r.conclusion.to_s }
+
+      return :red if conclusions.any? { |c| FAILING.include?(c) }
+      return :pending if completed.size < runs.size
+      return :pending if conclusions.any? { |c| c != PASS && !SKIPPING.include?(c) }
+      return :not_built if conclusions.none?(PASS)
 
       :green
     end
@@ -164,20 +200,13 @@ module Ci
       return nil if nwo.empty?
 
       # SCOPED to the repo's declared suite workflow, and that is a KNOWN LIMIT rather
-      # than an oversight — see /tasks/align-ladder-meter-with-badge.
+      # than an oversight — the card names what this leaves out (see #uncounted_lanes).
       #
-      # The badge beside this meter is Ci::BranchGate.verdict, which folds
-      # GithubWorkflowRun — one row per WORKFLOW, so a repo with several lanes has all
-      # of them counted. This meter reads CiCheckJob, which ingests only
-      # GithubWorkflowRun::CI_PROGRESS_WORKFLOWS ("CI" + the declared gem suites), so
-      # a lane like studio-engine's Consumer CI is never in this table at all.
-      # Measured 2026-08-20: accepted@135e4e6 rendered a RED badge over a GREEN 3/3
-      # meter because Consumer CI was red and could not reach here.
-      #
-      # Removing this filter does NOT fix that — there are no rows to find, so it is a
-      # no-op (proven in review). Closing the gap means changing what is INGESTED, or
-      # moving the meter onto the badge's own source at workflow grain, which costs
-      # per-check detail. That is a design decision, not a filter tweak.
+      # CiCheckJob ingests only GithubWorkflowRun::CI_PROGRESS_WORKFLOWS, so a sibling
+      # lane like studio-engine's Consumer CI has no rows here at all — widening the
+      # filter finds nothing, which is why an earlier attempt to "align" the two halves
+      # was inert. And the scope is load-bearing anyway: ci_check_job.rb:53-58 records
+      # that folding a gem's sibling would drag its own track red on a failing consumer.
       rows = CiCheckJob.progress_rows(nwo, sha, GithubWorkflowRun.ci_workflow_for(repo))
       return nil if rows.blank?
 

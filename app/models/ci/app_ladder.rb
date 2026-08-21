@@ -108,7 +108,7 @@ module Ci
       def reportable_repos = Release::Repos.three_rung_repos
 
       # Build every card. One board query for the parked counts (not one per
-      # rung per repo), then BranchGate per rung.
+      # rung per repo), then each rung folds its own branch's suite runs.
       def build(repos: reportable_repos)
         parked = parked_index
         repos.map { |repo| card_for(repo, parked) }.sort_by(&:sort_key)

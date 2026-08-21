@@ -190,6 +190,78 @@ module Ci
                       "Production Deploy", "and it must not be named as a lane either"
     end
 
+    # --- the three the review named as missing -------------------------------
+
+    # BLOCKER 1. `skipped` and `neutral` certify as "skipping" in CiStatus, not as a
+    # failure. The previous fold read `conclusion != "success"` as red and drew them RED.
+    test "a skipped run alongside a green suite run leaves the rung GREEN" do
+      GithubWorkflowRun.delete_all
+      sha = "skipped0aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      wf_run(repo: "studio-engine", branch: "main", sha: sha, workflow: "Engine CI",
+             conclusion: "success", id: 20)
+      wf_run(repo: "studio-engine", branch: "main", sha: sha, workflow: "Consumer CI",
+             conclusion: "skipped", id: 21)
+
+      assert_equal :green, Ci::LadderRung.for(repo: "studio-engine", branch: "main").state
+    end
+
+    test "a neutral run is skipping, not a failure" do
+      GithubWorkflowRun.delete_all
+      sha = "neutral0aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      wf_run(repo: "studio-engine", branch: "main", sha: sha, workflow: "Engine CI",
+             conclusion: "success", id: 22)
+      wf_run(repo: "studio-engine", branch: "main", sha: sha, workflow: "Consumer CI",
+             conclusion: "neutral", id: 23)
+
+      assert_equal :green, Ci::LadderRung.for(repo: "studio-engine", branch: "main").state
+    end
+
+    # …AND the companion rule. Widening the pass set without this reads an all-skipped
+    # set as GREEN — a regression the old path never had (ci_status.rb:875).
+    test "an all-skipped set certifies nothing and is NOT green" do
+      GithubWorkflowRun.delete_all
+      sha = "allskipaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      wf_run(repo: "studio-engine", branch: "main", sha: sha, workflow: "Engine CI",
+             conclusion: "skipped", id: 24)
+      wf_run(repo: "studio-engine", branch: "main", sha: sha, workflow: "Consumer CI",
+             conclusion: "skipped", id: 25)
+
+      refute_equal :green, Ci::LadderRung.for(repo: "studio-engine", branch: "main").state
+      assert_equal :not_built, Ci::LadderRung.for(repo: "studio-engine", branch: "main").state
+    end
+
+    # BLOCKER 2, the live one. "Devnet Nightly" is a daily SCHEDULE on turf-monster —
+    # not a deploy, not a generated name — so the old deny-list admitted it. It both
+    # voted in the fold and ANCHORED the rung's sha/run_url. 23 completed/skipped rows
+    # on `main` drew a false RED for windows of 1.5h, 7.5h and 36h, and STATE_RANK[:red]
+    # sorted that card to the TOP of the row.
+    test "a scheduled non-suite workflow neither votes nor anchors" do
+      GithubWorkflowRun.delete_all
+      real = "realsuiteaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      nightly = "nightly0aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      wf_run(repo: "turf-monster", branch: "main", sha: real, workflow: "CI",
+             conclusion: "success", id: 26, started: 3.hours.ago)
+      # NEWER than the real suite run, so it would anchor if it counted.
+      wf_run(repo: "turf-monster", branch: "main", sha: nightly, workflow: "Devnet Nightly",
+             conclusion: "failure", id: 27, started: 1.minute.ago)
+
+      rung = Ci::LadderRung.for(repo: "turf-monster", branch: "main")
+
+      assert_equal :green, rung.state, "a nightly must not vote in a CI rung"
+      assert_equal real[0, 7], rung.short_sha, "and must not anchor the rung's sha"
+      refute_includes rung.lanes.map { |l| l[:name] }, "Devnet Nightly"
+    end
+
+    test "an undeclared workflow fails closed rather than counting as a verdict" do
+      GithubWorkflowRun.delete_all
+      sha = "codeql00aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      wf_run(repo: "turf-monster", branch: "accepted", sha: sha, workflow: "CodeQL",
+             conclusion: "failure", id: 28)
+
+      assert_equal :not_built, Ci::LadderRung.for(repo: "turf-monster", branch: "accepted").state,
+                   "a workflow nobody declared as a suite is not a verdict"
+    end
+
     test "a dependabot run is not a suite lane" do
       GithubWorkflowRun.delete_all
       sha = "dependbtaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -202,18 +274,23 @@ module Ci
 
     # Fail-closed ordering: absence is not a pass, a failure beats a pending, a pending
     # beats a green.
+    # Uses studio-engine because BOTH its lanes are declared suites — on turf-monster
+    # only "CI" is, so a second workflow there is correctly excluded and could not
+    # exercise the ordering.
     test "the fold is fail-closed in the right order" do
       assert_equal :not_built, Ci::LadderRung.fold([])
       GithubWorkflowRun.delete_all
       sha = "foldordraaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-      wf_run(repo: "turf-monster", branch: "accepted", sha: sha, workflow: "CI", conclusion: "success", id: 7)
-      wf_run(repo: "turf-monster", branch: "accepted", sha: sha, workflow: "Engine CI",
+      wf_run(repo: "studio-engine", branch: "accepted", sha: sha, workflow: "Engine CI",
+             conclusion: "success", id: 7)
+      wf_run(repo: "studio-engine", branch: "accepted", sha: sha, workflow: "Consumer CI",
              conclusion: nil, status: "in_progress", id: 8)
-      assert_equal :pending, Ci::LadderRung.for(repo: "turf-monster", branch: "accepted").state
+      assert_equal :pending, Ci::LadderRung.for(repo: "studio-engine", branch: "accepted").state,
+                   "an unsettled lane is no verdict yet"
 
-      wf_run(repo: "turf-monster", branch: "accepted", sha: sha, workflow: "Consumer CI",
-             conclusion: "failure", id: 9)
-      assert_equal :red, Ci::LadderRung.for(repo: "turf-monster", branch: "accepted").state
+      GithubWorkflowRun.find_by(run_id: 8).update!(status: "completed", conclusion: "failure")
+      assert_equal :red, Ci::LadderRung.for(repo: "studio-engine", branch: "accepted").state,
+                   "a failure beats the green beside it"
     end
 
     test "a branch with nothing ingested reads not_built" do

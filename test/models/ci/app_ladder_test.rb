@@ -20,10 +20,10 @@ module Ci
       refute_includes repos, "rolio", "a dormant repo has no ladder to report"
     end
 
-    # A three-rung repo that maps to nil ("ships no suite workflow — declared,
-    # not overlooked") makes BranchGate fail closed, so every rung reads :none
-    # forever. A card that can only say "not built" is noise, and excluding it is
-    # derived from the registry rather than hardcoded.
+    # THE RULE THIS ONCE ASSERTED, in the past tense: a three-rung repo mapping to nil
+    # ("ships no suite workflow — declared, not overlooked") read `:none` on every rung,
+    # and a card that could only say "not built" was judged noise, so it was excluded.
+    # That is no longer the rule — see the reversal below.
     #
     # STUBBED rather than pointed at a live repo — a technique kept from #960, whose
     # reasoning still holds: a test that only runs while some real repo happens to be
