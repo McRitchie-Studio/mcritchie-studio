@@ -37,7 +37,7 @@ gem "rack-attack"
 # Pure-Ruby Solana primitives (Borsh encode / PDA derivation / keypair / tx
 # build + partial-sign). Powers the admin signing console + durable-nonce
 # primitives. Same gem turf-monster uses.
-gem "solana-studio", "~> 0.4.7"
+gem "solana-studio", "~> 0.5"
 
 # Windows does not include zoneinfo files, so bundle the tzinfo-data gem
 gem "tzinfo-data", platforms: %i[ mswin mswin64 mingw x64_mingw jruby ]
