@@ -3,8 +3,8 @@
 
 # pr-review — the script-assisted review loop behind Carl's pr-review /
 # pr-review-slow acts (Carl owns PR review — the standing primary + owner; the role
-# SOPs live in carl/sops/). (Formerly bin/avi-heartbeat; that name remains as a
-# thin shim.)
+# SOPs live in carl/sops/). (Formerly bin/avi-heartbeat; that shim is
+# gone — this is the only name.)
 #
 # The script composes the existing DevOps tools:
 #   * bin/devops-cycle --json --decisions --scout-reports
