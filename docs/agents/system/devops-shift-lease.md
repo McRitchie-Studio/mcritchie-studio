@@ -178,11 +178,26 @@ before the accepted→release promote) and `bin/release ship` (deployer, before 
 frozen-SHA gate + deploy), released on completion; the board endpoints `GET/POST
 /api/v1/releases/:slug/conductor_claim` + `…/conductor_claim/{renew,release}` + the
 cross-release `GET /api/v1/release_conductor_claims/live`; the
-`<sid>.release-conductor-claim-<role>` marker (with its `-renewer-<role>` sibling for the
-renewer pid); and `bin/agent-worktree`'s `_ship`/`_gate` reclaim guard (which reads
+`<sid>.release-conductor-claim-<role>-<slug>` marker (with its
+`-renewer-<role>-<slug>` sibling for the renewer pid — keyed per SLUG as well as role,
+because a fresh-create `prepare` briefly holds the `__forming__` sentinel and the real
+claim at once); and `bin/agent-worktree`'s `_ship`/`_gate` reclaim guard (which reads
 `any-live`). Because the acquire is INSIDE `bin/release`, `qa-release.md` and
 `production-deploy.md` no longer preamble a `bin/devops-shift acquire` — the lock is
 automatic.
+
+**Every argument is accounted for before anything is claimed.** `--help`/`-h` anywhere
+on the line prints usage and mutates nothing; an unrecognized flag, a single-dash
+token, a positional the subcommand does not take, and a value-flag that consumed no
+value all REFUSE (exit 1) instead of running the side effect. Before that guard,
+unknown flags fell through the parser into an ignored key and the command ran on a
+line nobody had accounted for. Two consequences worth knowing: help exits **1, not
+0**, because in this CLI exit 0 is a claim-state assertion (`acquire` 0 = "you hold
+the lease", `any-live` 0 = "a release is live") and answering a probe with 0 would
+state something untrue; and the refusal copy is **per subcommand**, because "nothing
+was claimed" on a refused `release` would be wrong in the dangerous direction — that
+claim is still held and still being renewed. Same guard, same reasoning as
+`bin/lib/review_claim_cli.rb` one lane over.
 
 ## D — the reclaim guard (conductor ↔ builder)
 
