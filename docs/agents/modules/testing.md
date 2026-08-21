@@ -25,11 +25,43 @@ checks to `checks_run` as each stage completes.
 | PR review gate | Local repo or CI | Usually no | Yes | G1 Cert (builder cert + dor verdict) · G2 Review (the review wave) | Every PR with code changes; includes lint, security scans, Rails tests, and focused browser checks for touched UI |
 | E2E (Playwright) | CI, sharded 3× (own server + PG per shard) | Test DB only | **Yes** | G2 Review (the authoritative CI verdict) | Every PR and every push to `main`/`release` — the `playwright` job in `ci.yml`. Collects the **`e2e` tier** (shapes `ui+db`, `onchain-vertical`) |
 | E2E executed-set | CI, reads each shard's JSON receipt | No | **Yes** | G2 Review | The `e2e_executed_set` job, after the shards. Asserts the lane **ran the `executed` set `config/e2e_lane.yml` declares** — the one thing the `playwright` job cannot verify about itself |
+| Rails executed-set | CI, reads each shard's JSON receipt | No | **Yes** | G2 Review | The `rails_executed_set` job, after the four `rails` shards (`bin/rails-executed-set-check`). Asserts every committed file `config/rails_lane.yml` owns **ran at least one test, in exactly one shard**. Each receipt also names **the commit its shard ran**, and the gate refuses to audit across commits — see below |
 | Local proof | Worktree URL | Local DB only | Usually yes | G1 Cert (builder evidence) | UI, auth, task, contest, navigation, email capture, Redis, or worker changes |
 | QA acceptance | Stable QA URL | QA/devnet only when named | No; blocks production promotion | G3 Candidate | After every QA deploy; runs task acceptance criteria against the merged result |
 | Production smoke | Production URL | No by default | N/A | G4 Ship (the seal — non-blocking) | After approved production deploy; verifies health and key read-only routes |
 | Nightly/deep | Dedicated local/QA/devnet target | Often yes | No | — | devnet/on-chain and longer seeded workflows. **No browser matrix exists** — Playwright is Chromium-only in every repo — and the ecosystem's only scheduled workflow (turf-monster's `devnet-nightly.yml`) is disabled and has never run. Treat this row as a *target shape*, not as coverage you have |
 | Quarantine | Any | Varies | No until fixed | — | Known flaky or unrelated checks that still matter but should produce follow-up tasks instead of blocking unrelated PRs |
+
+**A receipt names the COMMIT its shard ran, and the Rails executed-set gate will not
+audit across two of them.** The gate re-derives the expected file set from a tree it
+checks out ITSELF, while the receipts were written by shards that checked out theirs. In
+the hub's own CI both are the same `github.sha` and the question never arises. In a
+CONSUMER lane — studio-engine running the hub's suite against an engine commit — each job
+resolves a BRANCH NAME independently, minutes apart, and a branch is a moving target.
+
+Measured on 2026-08-21 (engine run `32495361932`): the shards checked out hub `accepted`
+at 15:02:17 and the gate at 15:06:17; hub PR #979 merged `f9a440e5` at 15:04:07, adding
+two test files. The gate audited 482 files against receipts written over 480 and reported
+the two newcomers as committed files that **"executed NOTHING"** — arithmetically correct,
+completely misleading, and indistinguishable from the real coverage hole the gate exists
+to catch. They had run green in the hub's own lane minutes earlier; they simply had not
+existed when the shards started.
+
+So `"commit"` is part of the receipt, and:
+
+- receipts that **disagree with each other** are RED — shards straddling a merge produce a
+  union no single tree ever contained, and no verdict over it means anything, green included;
+- receipts that disagree with **the gate's tree** are RED as a **checkout race**, naming both
+  SHAs, with the file-level findings **withheld** rather than printed under the wrong
+  headline;
+- a receipt that names **no** commit is SILENT, not dissenting, and is audited exactly as
+  strictly as before — silence never buys an exemption.
+
+The gate stays RED in every one of those cases on purpose. Commit identity is a
+precondition for the arithmetic, never an excuse from it: when the commits agree, a file
+that did not run is still the central RED this gate is for. The race itself is fixed where
+it happens — by pinning every job in a run to one consumer commit — not by relaxing the
+gate.
 
 **The Playwright suite BLOCKS MERGE as of 2026-07-13 (PR #543).** It is a PR-gate
 lane, not a nightly one: a red spec makes CI red and the PR does not merge. Before

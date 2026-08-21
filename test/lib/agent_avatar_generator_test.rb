@@ -30,6 +30,13 @@ require "tmpdir"
 
 require File.expand_path("../../script/generate_agent_avatars", __dir__)
 
+# THIS FILE SPAWNS A RUBY CHILD (test_integration_a_run_against_the_real_portrait_names_
+# writes_nothing), so it owes the neutralizer every subprocess-spawning test owes: the
+# child must not inherit the operator's ambient CLAUDE_CODE_SESSION_ID / CODEX_THREAD_ID,
+# the task-usage sandbox, or the outbound floor. Bare `minitest/autorun` files do not load
+# test_helper, so the require is explicit here. See test/support/session_env.rb.
+require_relative "../support/session_env"
+
 class AgentAvatarGeneratorTest < Minitest::Test
   SCRIPT   = File.expand_path("../../script/generate_agent_avatars.rb", __dir__)
   REAL_PUB = File.expand_path("../../public/agents", __dir__)
@@ -115,7 +122,7 @@ class AgentAvatarGeneratorTest < Minitest::Test
       real_portrait_names.each { |name| FileUtils.touch(File.join(pub, name)) }
       before = tree(root)
 
-      out, status = Open3.capture2e(RbConfig.ruby, SCRIPT, root)
+      out, status = Open3.capture2e(SessionEnv.neutralized, RbConfig.ruby, SCRIPT, root)
 
       assert status.success?, "generator exited #{status.exitstatus}:\n#{out}"
       SLUGS.each do |slug|

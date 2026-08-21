@@ -43,11 +43,11 @@ class CiReceiptPluginTest < Minitest::Test
   RUBY_FIXTURE
 
   def setup
-    @saved_env = ENV.to_h.slice("CI_RECEIPT_OUT", "CI_RECEIPT_SHARD", "CI_RECEIPT_SHARD_TOTAL", "CI_RECEIPT_ROOT", "CI_RECEIPT_OWNER_PID")
+    @saved_env = ENV.to_h.slice("CI_RECEIPT_OUT", "CI_RECEIPT_SHARD", "CI_RECEIPT_SHARD_TOTAL", "CI_RECEIPT_ROOT", "CI_RECEIPT_OWNER_PID", "CI_RECEIPT_COMMIT")
   end
 
   def teardown
-    %w[CI_RECEIPT_OUT CI_RECEIPT_SHARD CI_RECEIPT_SHARD_TOTAL CI_RECEIPT_ROOT CI_RECEIPT_OWNER_PID].each { |k| ENV.delete(k) }
+    %w[CI_RECEIPT_OUT CI_RECEIPT_SHARD CI_RECEIPT_SHARD_TOTAL CI_RECEIPT_ROOT CI_RECEIPT_OWNER_PID CI_RECEIPT_COMMIT].each { |k| ENV.delete(k) }
     @saved_env.each { |k, v| ENV[k] = v }
   end
 
@@ -180,6 +180,48 @@ class CiReceiptPluginTest < Minitest::Test
     assert_equal 2, totals["files"]
     assert_equal 2, totals["runs"]
     assert_equal 7, totals["assertions"]
+  end
+
+  # ---- the commit the shard ran, and why the receipt has to carry it -------------
+  #
+  # The executed-set gate re-derives the expected file set from a tree it checks out
+  # ITSELF, which in the consumer lane is a BRANCH NAME resolved minutes after the
+  # shards resolved theirs. Engine run 32495361932 is the measured case: hub PR #979
+  # merged f9a440e5 in the four minutes between the two checkouts, and the gate reported
+  # the two files it added as committed files that "executed NOTHING". They had run green
+  # in the hub's own lane; they simply had not existed when the shards checked out. The
+  # receipt is the only place that fact can be recorded, because it is the only artifact
+  # that crosses from the shard to the gate.
+
+  def test_unit_the_payload_names_the_commit_the_shard_ran
+    rec = recorder
+    rec.record(result(file: File.join(ROOT, "test/models/a_test.rb")))
+
+    payload = rec.payload({ "CI_RECEIPT_SHARD" => "2", "CI_RECEIPT_SHARD_TOTAL" => "4",
+                            "CI_RECEIPT_COMMIT" => "f9a440e5" })
+
+    assert_equal "f9a440e5", payload["commit"]
+  end
+
+  # THE LOAD-BEARING PATH. The consumer lane runs `bundle exec rails test $(bin/ci-shard
+  # --print …)` rather than bin/ci-shard itself, so nothing upstream sets
+  # CI_RECEIPT_COMMIT there — and the consumer lane is exactly the one whose checkout can
+  # drift from the gate's. If the fallback ever stopped resolving, the field would go
+  # quietly blank and the race would become invisible again.
+  def test_unit_the_commit_falls_back_to_the_git_head_of_the_root
+    payload = CiReceipt::Recorder.new(root: ROOT).payload({})
+
+    assert_match(/\A[0-9a-f]{40}\z/, payload["commit"],
+                 "with no CI_RECEIPT_COMMIT the recorder must read HEAD out of its own root")
+  end
+
+  # "Could not tell" must be an empty string, never a guess: the gate reads a blank
+  # commit as SILENCE and audits strictly, whereas a wrong SHA would manufacture a
+  # mismatch and turn every run of a non-git tree red.
+  def test_unit_a_root_outside_a_repository_names_no_commit
+    Dir.mktmpdir do |dir|
+      assert_equal "", CiReceipt::Recorder.new(root: dir).payload({})["commit"]
+    end
   end
 
   # ---- [integration] the real process boundary ----------------------------------

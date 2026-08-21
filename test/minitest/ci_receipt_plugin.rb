@@ -114,10 +114,29 @@ module CiReceipt
       {
         "shard" => env["CI_RECEIPT_SHARD"].to_s,
         "shards" => env["CI_RECEIPT_SHARD_TOTAL"].to_s,
+        "commit" => commit(env),
         "files" => @files.sort.to_h,
         "totals" => totals,
         "unattributed" => @unattributed.sort
       }
+    end
+
+    # THE COMMIT THIS SHARD ACTUALLY RAN. Resolved ONCE and cached, because payload is
+    # built more than once on the dump path.
+    #
+    # WHY A RECEIPT NEEDS TO NAME ITS COMMIT. The gate re-derives the expected file set
+    # from a tree it checks out SEPARATELY, and in the consumer lane that checkout is a
+    # BRANCH NAME resolved minutes later. A branch is a moving target: on 2026-08-21 the
+    # hub's `accepted` gained two test files (PR #979, f9a440e5) in the four minutes
+    # between the shards' checkout and the gate's, and the gate — auditing 482 files
+    # against receipts written over 480 — reported the two newcomers as committed files
+    # that "executed NOTHING". They had not failed to run; they had not EXISTED. Without
+    # this field the gate cannot tell that apart from the coverage hole it exists to
+    # catch, and the false accusation reads exactly like the true one.
+    def commit(env = ENV)
+      return @commit if defined?(@commit)
+
+      @commit = CiReceipt.commit(env, root: @root)
     end
 
     def dump!(env = ENV)
@@ -150,6 +169,31 @@ module CiReceipt
     def out_path(env = ENV)
       path = env["CI_RECEIPT_OUT"].to_s.strip
       path.empty? ? nil : path
+    end
+
+    # The commit the tree at `root` is sitting on, as the receipt should name it.
+    #
+    # CI_RECEIPT_COMMIT wins when set, so a caller that already knows the SHA need not
+    # pay for a subprocess. The git fallback is NOT a nicety: the consumer lane runs
+    # `bundle exec rails test $(bin/ci-shard --print …)` rather than bin/ci-shard itself,
+    # so nothing upstream sets the variable there — and the consumer lane is precisely
+    # the one whose checkout can drift from the gate's. Empty string means "could not
+    # tell", and the gate treats an unknown commit as no claim rather than a mismatch:
+    # a receipt written outside a git checkout must not invent a disagreement.
+    def commit(env = ENV, root: Dir.pwd)
+      explicit = env["CI_RECEIPT_COMMIT"].to_s.strip
+      return explicit unless explicit.empty?
+
+      head(root)
+    end
+
+    def head(root)
+      out = IO.popen([ "git", "-C", root.to_s, "rev-parse", "HEAD" ], err: File::NULL, &:read)
+      return "" unless $?&.success?
+
+      out.to_s.strip
+    rescue StandardError
+      ""
     end
 
     def enabled?(env = ENV)
