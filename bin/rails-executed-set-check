@@ -48,7 +48,15 @@ if expected.empty?
   exit 1
 end
 
-problems = RailsExecutedSet.problems(reports: reports, expected: expected, contract: contract)
+problems = RailsExecutedSet.problems(
+  reports: reports,
+  expected: expected,
+  contract: contract,
+  # The commit `expected` was just derived from. The receipts name the commit THEY ran,
+  # and the gate refuses to compare two trees as though they were one — a branch read at
+  # two moments is two trees. nil (not a git checkout) means the gate makes no claim.
+  tree_commit: RailsExecutedSet.tree_commit(root)
+)
 
 if problems.empty?
   puts "RAILS EXECUTED SET: GREEN"
