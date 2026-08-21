@@ -88,6 +88,32 @@ class Release
     # two must not collapse into the same silent exemption.
     UNMAPPED = :unmapped
 
+    # SUITE workflows a repo runs BESIDES the one carrying its own verdict.
+    #
+    # studio-engine runs "Consumer CI" — the downstream apps' suites executed against
+    # the engine. It is not the gem's OWN verdict (that is "Engine CI", which is why
+    # workflow_for returns only that), but it IS a test suite, and a reader deciding
+    # whether a commit is good must be able to see it. /deployments names it beside
+    # the meter for exactly that reason.
+    #
+    # Declared here rather than inferred, because the alternative is a deny-list of
+    # everything that is NOT a suite — and a deny-list is only ever as current as its
+    # last editor. A scheduled job, a CodeQL scan or a Pages build then counts as a
+    # test verdict by default. Measured 2026-08-20: "Devnet Nightly" (turf-monster, a
+    # daily schedule) slipped exactly such a deny-list and reddened a CI rung for 36
+    # hours. An allow-list fails closed on the next one instead of admitting it.
+    SIBLING_SUITE_WORKFLOWS = { "studio-engine" => ["Consumer CI"].freeze }.freeze
+
+    # EVERY suite workflow for `repo`: the verdict-carrying one plus any declared
+    # siblings. The set a reader may treat as "this ran tests". Empty when the repo
+    # declares no suite at all (solana-studio before it grew "Gem CI"), which is a
+    # statement, not an oversight — see UNMAPPED.
+    def suite_workflows_for(repo, config)
+      primary = workflow_for(repo, config)
+      slug = repo.to_s.split("/").last.to_s
+      ([primary].reject { |w| w.nil? || w == UNMAPPED } + SIBLING_SUITE_WORKFLOWS.fetch(slug, [])).uniq
+    end
+
     # The workflow name whose runs carry `repo`'s suite verdict, given the parsed
     # registry. Mirrors GithubWorkflowRun.ci_workflow_for, minus the Rails.
     def workflow_for(repo, config)

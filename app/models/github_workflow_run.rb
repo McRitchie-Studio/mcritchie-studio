@@ -84,6 +84,20 @@ class GithubWorkflowRun < ApplicationRecord
   # Returns nil for a gem that is registered but maps to no workflow — the caller
   # then means "newest run of any workflow", matching Ci::ProgressReader's contract
   # for an unmapped gem (solana-studio ships no suite → a blank, invisible track).
+  # EVERY suite workflow for `repo` — the verdict-carrying one plus declared siblings
+  # (studio-engine's "Consumer CI"). The Rails-side reader for
+  # Release::AcceptedCertification::SIBLING_SUITE_WORKFLOWS, mirroring how
+  # .ci_workflow_for reads the primary. Callers that must decide "did this run test
+  # anything" ask here, so the answer is an ALLOW-LIST and a workflow nobody declared
+  # — a nightly schedule, a CodeQL scan, a Pages build — fails closed instead of
+  # counting as a verdict by default.
+  def self.suite_workflows_for(repo)
+    Release::AcceptedCertification.suite_workflows_for(repo, Release::Repos.config)
+  rescue StandardError => e
+    Rails.logger&.warn("[github_workflow_run] suite_workflows_for(#{repo}) failed: #{e.class}")
+    [ci_workflow_for(repo)].compact
+  end
+
   def self.ci_workflow_for(repo)
     slug = repo.to_s.split("/").last.to_s
     return GEM_CI_WORKFLOWS[slug] if Release::Repos.gem?(slug)
