@@ -165,15 +165,27 @@ current release cycle move to `docs/agents/archive/maintenance/`. Rows with **no
 date** — `pending approval`, `reference only` — are unresolved work and always
 stay live.
 
-**The beat refuses to sweep a ledger that has lost rows.** A dated row is a
-teardown that happened, and it may only ever MOVE between the ledger and its
-archive. `bin/archive-docs` checks that against `HEAD` before the roll and again
-after it, and an apply exits non-zero naming every destroyed row (a `--dry-run`
-reports and still exits 0). This exists because on 2026-08-21 three rows left
-both files: a teardown driven from a desk carrying a **stale**
-`bin/agent-worktree` overwrote their dated rows in place, and this sweep
-committed the loss. If it fires, do not edit the guard — recover the row with
-`git show HEAD:docs/agents/maintenance/delete-later.md` and put it back.
+**The beat refuses to sweep a ledger that has lost rows, and the refusal stops
+the beat.** A dated row is a teardown that happened, and it may only ever MOVE
+between the ledger and its archive. `bin/archive-docs` checks that against `HEAD`
+before the roll and again after it, and an apply exits non-zero naming every
+destroyed row (a `--dry-run` reports and still exits 0, so a preview never wedges
+the callers that preview before confirming). `bin/release archive` **honours that
+exit code**: it aborts before `commit_artifact_to_release`, so the destroyed
+ledger is never committed to `release`.
+
+Both halves are load-bearing, and the second one is easy to lose. When the
+refusal first shipped it was **inert** through the only caller that matters —
+`sweep_docs` returned `[out, ok]` and both call sites took `.first`, so the
+warning printed and the beat committed the loss anyway. If you change how
+`sweep_docs` is called, `test/lib/release_archive_docs_refusal_test.rb` is what
+holds the seam.
+
+The board archive, the worktree reclaim, and the artifact sweep all run **before**
+this point and are idempotent, so an abort here is safe to resume: recover the
+row, then re-run `bin/release archive`. If it fires, do not edit the guard —
+recover the row with `git show HEAD:docs/agents/maintenance/delete-later.md` and
+put it back.
 
 ```bash
 bin/archive-docs --dry-run                  # report only

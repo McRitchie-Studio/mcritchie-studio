@@ -282,9 +282,20 @@ bin/agent-worktree scale status
   `test/lib/ledger_guard_test.rb` runs it in CI on every PR and every push to
   `accepted`/`release`/`main`. A stale desk can still write a bad row into the
   hub's working tree — nothing in this repo can reach a checkout that has not
-  been updated — but that row can no longer reach `accepted`: the lane goes red
-  and names it while it is still one `git show` away. **Tear desks down from an
-  up-to-date checkout**, and prefer the hub primary for a sweep.
+  been updated — but a bad row is now **caught and named** while it is still one
+  `git show` away, instead of being noticed weeks later by a reviewer running
+  `comm` by hand. Be precise about what stops it, though: `accepted` carries **no
+  branch protection** (`gh api …/branches/accepted/protection` → 404), so a red
+  `rails` lane does not mechanically block the merge — the **reviewer's gate-zero
+  does**, refusing to merge a red-CI PR. The lane is the detector; the reviewer is
+  the gate. **Tear desks down from an up-to-date checkout**, and prefer the hub
+  primary for a sweep.
+- **A refusal is only a guard if its caller reads it.** `bin/archive-docs` runs
+  the same check at both ends of the archive roll and exits non-zero — and that
+  exit code sat **ignored** by `bin/release archive`, which printed the warning
+  and committed the loss anyway, until `sweep_docs`' two call sites were taught to
+  abort on it. The invariant lives in `bin/lib/ledger_guard.rb`; the caller-side
+  half is pinned by `test/lib/release_archive_docs_refusal_test.rb`.
 - **The occupancy guard (why git state alone is not enough).** A worktree is a
   candidate only when it is git-eligible **AND nobody is working at it**. A
   brand-new worktree off `release` and one whose work was **fast-forward merged**

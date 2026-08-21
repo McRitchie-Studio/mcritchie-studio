@@ -6902,6 +6902,17 @@ end
 # Unlike the log sweep this touches TRACKED files, so its output is staged and
 # then committed to `release` with the ledger, in one artifact commit — leaving
 # the primary checkout clean rather than carrying a dozen staged renames as dirt.
+#
+# ITS EXIT STATUS IS LOAD-BEARING, and that is what separates this sweep from the
+# two above it. The reclaim and the artifact sweep are MACHINE-LOCAL and
+# best-effort: they run after the board write, and a hiccup there just means fewer
+# worktrees freed this run, so both call sites take `.first` on purpose. This one
+# refuses — bin/archive-docs exits 1 when the delete-later ledger has already lost
+# a resolved row — and the caller must HONOUR that refusal, because the very next
+# thing the beat does is commit the ledger and its archive to `release`. Taking
+# `.first` here (which both call sites did until this was fixed) printed the
+# refusal and committed the loss anyway. See the two `abort!`s below and
+# test/lib/release_archive_docs_refusal_test.rb.
 def sweep_docs(apply:)
   cmd = ["bin/archive-docs", "--repo=#{repo_path('mcritchie-studio')}"]
   cmd << "--dry-run" unless apply
@@ -6958,7 +6969,16 @@ def archive
   #    move out of the live doc tree and names anything a live citation pins.
   say("")
   step("docs archive preview: bin/archive-docs --dry-run")
-  docs_preview = docs_summary(sweep_docs(apply: false).first)
+  # A failing PREVIEW is the sweep tool itself being broken, not a lost ledger row:
+  # bin/archive-docs' dry run REPORTS a loss and exits 0 by design, so this branch
+  # cannot be reached by the invariant it checks. It fires when the preview could
+  # not be produced at all — and confirming a sweep you were unable to preview is
+  # the worst moment to carry on. Nothing has been mutated yet, so aborting here
+  # costs nothing and stops short of the confirm.
+  docs_preview_out, docs_preview_ok = sweep_docs(apply: false)
+  abort!("docs archive PREVIEW failed (bin/archive-docs --dry-run exited non-zero) — " \
+         "nothing has been archived, reclaimed, or swept. Fix the sweep, then re-run.") unless docs_preview_ok
+  docs_preview = docs_summary(docs_preview_out)
 
   # 5. --dry-run stops here: the plan + all three previews are shown, nothing mutated.
   if DRY
@@ -7006,7 +7026,21 @@ def archive
   #     `release` as ONE artifact commit.
   say("")
   step("docs archive: bin/archive-docs")
-  docs = docs_summary(sweep_docs(apply: true).first)
+  docs_out, docs_ok = sweep_docs(apply: true)
+  # THE REFUSAL, HONOURED. bin/archive-docs exits 1 when the delete-later ledger has
+  # lost a resolved row — before the roll, or because the roll itself lost one. The
+  # commit below git-adds the ledger AND its archive and pushes them to `release`, so
+  # continuing past a refusal is what turns a recoverable working-tree loss into
+  # committed history. Stop here instead: the board archive, the reclaim, and the
+  # artifact sweep have already succeeded and are all idempotent, so a re-run after
+  # the row is recovered picks up exactly where this left off.
+  unless docs_ok
+    abort!("docs archive REFUSED (bin/archive-docs exited non-zero) — the delete-later " \
+           "ledger has lost resolved row(s), and committing now would make that loss " \
+           "permanent on `release`. Nothing was committed. Recover the row(s) with " \
+           "`git show HEAD:#{DocsArchive::LEDGER}`, then re-run `bin/release archive`.")
+  end
+  docs = docs_summary(docs_out)
 
   # The reclaim appended to the delete-later ledger, and the doc retirement moved
   # frozen snapshots + rolled the ledger's resolved rows — commit ALL of it to
