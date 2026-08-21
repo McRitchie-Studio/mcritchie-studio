@@ -96,6 +96,38 @@ see section B.) Enforcement is cooperative (the SOP stands the loser down) per t
 studio's honor-system posture; the exit code (0 acquired / 10 stand down / 1
 fail-open) makes it scriptable.
 
+**Every argument is accounted for before any shift is taken** (fixed 2026-08-21).
+`--help`/`-h` anywhere on the line prints usage and mutates nothing; an unrecognized
+flag, a single-dash token, a positional the subcommand does not take, and a value-flag
+that consumed no value all REFUSE (exit 1) instead of running the side effect. Before
+that guard, unknown flags fell through the parser into an ignored key and the command
+ran on a line nobody had accounted for — `bin/devops-shift acquire avi --help` printed
+no usage and **took the avi shift**, marker, detached renewer and all. Three
+consequences worth knowing:
+
+- **Help exits 1, not 0.** In this CLI exit 0 is the assertion *"you are on shift"*,
+  and it is the only channel that assertion travels on — unlike
+  `bin/lib/review_claim_cli.rb`, whose claim rides on stdout as a slug. A help probe
+  answered with 0 would tell `clean-up`'s review wave it holds the lane when it holds
+  nothing, which is the two-concurrent-supervisors failure above. Every caller treats
+  1 safely: `bin/statusline` discards the exit code, the detached renewer is never
+  reaped for status, and a conductor SOP reading 1 fails OPEN — proceeding while
+  *knowing* it is not on shift.
+- **The refusal copy is per subcommand.** "Nothing was claimed" on a refused `release`
+  would be wrong in the dangerous direction — that shift is still held *and* still
+  being renewed, so it will not even lapse — while the same sentence on `renew` would
+  overstate the cost of losing the status line's redundant second beat.
+- **`status` takes no lane.** It is the cross-lane read, so `status avi` refuses
+  instead of silently answering about every lane.
+
+Same guard, same reasoning as `bin/lib/review_claim_cli.rb` (PR #974) and
+`bin/lib/release_claim_cli.rb` (PR #980) — this is the third and last member of that
+family. The wall risk is the expensive half and is pinned accordingly: every real
+invocation is replayed through the guard in
+`test/lib/devops_shift_argument_guard_test.rb`, and
+`test/lib/devops_shift_flags_test.rb` runs a real `acquire` whose real detached
+renewer must survive the guard it re-enters.
+
 The lane is a role, not an act, so a single Avi session that runs two `avi`-lane
 acts back to back holds `avi` across both (a re-`acquire` by the same instance is a
 no-op renew).
