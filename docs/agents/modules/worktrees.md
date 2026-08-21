@@ -261,7 +261,9 @@ bin/agent-worktree scale status
   brand-new worktree off `release` and one whose work was **fast-forward merged**
   are **git-identical** — both clean, both `HEAD == base`, both 0-ahead — so
   `cleanup_ready?` provably cannot tell a desk someone just sat down at from
-  finished work. **Four** independent channels answer that question, and every
+  finished work. **Four** independent channels answer that question (and for a
+  **discovered repo** three of them are structurally dead, which is why such a desk is
+  withheld outright — see **unbound on a DISCOVERED repo** below), and every
   destructive path, `doctor`, and the registry route through ONE decision
   (`reclaim_verdict` → `[reclaimable?, hold_reason]`), so the conductor's front door
   can never nominate a desk the sweep would refuse. A withheld desk is named with its
@@ -351,6 +353,28 @@ bin/agent-worktree scale status
       The CLAIM channel is forced to fail open (withholding every unidentifiable desk
       would wedge cleanup), and it warns. The **desk channel still judges it**, so an
       unbound desk is protected while it is fresh or in use and released once cold.
+    - **unbound on a DISCOVERED repo** — the same absence, but **permanent**, so it is
+      **withheld forever** rather than released once cold. A discovered repo (one with a
+      worktree tree but no registry entry — `studio-engine`, and its `.sibling` tree) can
+      never carry a bound task at all: `TASK_RECORD_SLUG` is written by `bind-task`, which
+      routes through `app_for`, and `app_for` stays registry-only because `new`/`up`/`plan`
+      need a port range a discovered repo has no answer for. So the fail-open above would be
+      a *standing licence to destroy* rather than a best-effort, and **three of the four
+      channels are structurally dead** for such a desk: review and PR both read the task
+      record there is none of, and the desk channel's progress / gate-in-flight /
+      awaiting-approval reads come from that same absent record. What is left is desk age
+      plus mtimes — and `desk_activity` prunes `tmp`, `log`, `coverage`, `vendor` and
+      `.bundle`, which is exactly and only what a gem builder writes while running a suite,
+      with a cert p99 of 94 minutes against a 1h29m idle window. Measured before the guard:
+      `cleanup --reclaim studio-engine` nominated 4 desks on mtime evidence alone. So
+      **unbound + unverifiable = HOLD**, and the consequence is stated plainly: **no
+      discovered desk is ever auto-reclaimed**, because none can ever be bound. Coverage
+      buys *visibility* — `doctor`, `list`, `snapshot`, and the dry run's withheld lines —
+      not teardown. Tear one down deliberately with the `remove` command the sweep prints.
+      Restoring automated reclaim means giving gem desks a **real liveness signal**; the
+      most promising route is not pruning `tmp/` for stackless repos, where a write
+      genuinely means a suite is running, unlike a Rails desk whose server churns `tmp/`
+      constantly.
     - **corrupt** — a claim is present but its lease timestamp is *unparseable*, so
       liveness cannot be checked. **Withheld everywhere**, exactly like an unreadable
       board: a desk we cannot verify must never read as free on a destroy path. But
