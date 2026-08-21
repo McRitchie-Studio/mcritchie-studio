@@ -45,4 +45,40 @@ class AgentPortraitAssetsTest < ActiveSupport::TestCase
                  "copied into EVERY worktree, so each folder costs its size on every desk. If a page " \
                  "needs these, reference them — and delete this assertion in the same diff."
   end
+
+  # BELT AND BRACES for the placeholder generator (repair-avatar-generator-and-docs).
+  # script/generate_agent_avatars.rb writes public/agents/<slug>.png, and its
+  # never-clobber guard went blind when the portraits moved to .webp — a run dropped
+  # five placeholder bubbles in here beside the real faces. Nothing rendered them, so
+  # no page test could see it.
+  #
+  # The guard above only inspects DIRECTORIES, so a stray FLAT file walks straight
+  # past it. test/lib/response_payload_budget_test.rb does catch these by bytes and
+  # pixels, but only because a 340x340 bubble happens to fit no rule it likes; a
+  # placeholder that came in under budget would be invisible to every other guard.
+  #
+  # The invariant is not "no PNGs" — it is that public/ is copied into EVERY worktree,
+  # so a file nobody names is pure cost on every desk. Referenced = named by the seed
+  # (the avatar column is DATA) or hardcoded in a view.
+  test "[component] nothing sits in public/agents that no seed or view names" do
+    referenced = (AVATAR_PATHS + view_portrait_paths).map { |p| File.basename(p) }.uniq
+
+    strays = Dir.children(Rails.public_path.join("agents")) - referenced
+
+    assert_empty strays,
+                 "public/agents holds #{strays.join(', ')}, which no seed avatar and no view " \
+                 "references. Placeholder output from script/generate_agent_avatars.rb looks " \
+                 "exactly like this. If a page needs these, reference them in the same diff."
+  end
+
+  private
+
+  # Portraits hardcoded in markup rather than seeded — alex-photo.webp on the landing
+  # page, alex.webp in the chat widget. Scanned, not listed, so adding one to a view
+  # is enough to make it legitimate here.
+  def view_portrait_paths
+    Dir[Rails.root.join("app/views/**/*.erb")].flat_map do |file|
+      File.read(file).scan(%r{/agents/([A-Za-z0-9_.-]+\.[a-z0-9]+)}).flatten
+    end
+  end
 end

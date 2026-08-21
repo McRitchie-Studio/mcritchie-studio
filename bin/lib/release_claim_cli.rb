@@ -16,6 +16,26 @@
 #   release-claim release <release-slug> --role <role>                    # clean drop on completion
 #   release-claim status  <release-slug> --role <role>                    # who (if anyone) holds it
 #   release-claim renew-loop <release-slug> --role <role> --anchor-pid <p> --anchor-start <s>  # internal
+#   release-claim <cmd> --help | -h                                       # usage; claims NOTHING
+#
+# EVERY ARGUMENT IS ACCOUNTED FOR BEFORE ANYTHING IS CLAIMED. --help/-h anywhere on the
+# line prints usage and mutates nothing; an unrecognized flag, a single-dash token, a
+# positional the subcommand does not take, and a value-flag that consumed no value all
+# REFUSE (exit CANT_RUN) instead of running the side effect. Before this, unknown flags
+# fell through parse_flags into an ignored key and the command ran anyway: `acquire
+# <slug> --role deployer --help` PRINTED USAGE NOWHERE AND TOOK THE CLAIM, and a
+# single-dash token was not even recorded as an ignored key — it vanished, side effect
+# and all. This is the sibling of the same defect on bin/lib/review_claim_cli.rb, where
+# a `claim-next-review --help` probe took a live review lease on a real task.
+#
+# HELP EXITS CANT_RUN (1) HERE, not OK — deliberately diverging from review_claim_cli.
+# In THIS CLI exit 0 is not "the command worked", it is a claim-state ASSERTION:
+# `acquire` 0 means "you hold the lease" (bin/release then RECORDS a held claim) and
+# `any-live` 0 means "a release is live, withhold the workspaces". Answering a help
+# probe with 0 would state a fact about the world that is not true — the very class of
+# bug this guard closes. CANT_RUN is where every other usage error already lands, and
+# both readers already treat it safely: bin/release fails OPEN, the reclaim guard
+# fails CLOSED.
 #
 # `role` is `assembler` or `deployer`. Identity is the SAME live-instance identity the
 # build claim, the shift lease, and the review claim use (session id + per-process
@@ -29,12 +49,18 @@
 # minutes), renewed cheaply over the fast HTTP AgentApi rather than a per-heartbeat
 # `heroku run` dyno, and a crashed one frees the release within a TTL.
 #
-# EXIT CODES make the acquire gate scriptable (bin/release branches on it):
-#   0  — acquired (you hold the claim; proceed to assemble/deploy this release)
+# EXIT CODES make the acquire gate scriptable (bin/release branches on it). This is the
+# same table usage() prints, and the two must stay in step:
+#   0  — acquired (you hold the claim; proceed to assemble/deploy this release).
+#        For `any-live`: a live claim EXISTS — withhold the workspaces.
 #   10 — stood down (a DIFFERENT live instance holds it; do NOT proceed)
-#   1  — could not run (no session id / no board / usage error) — fail OPEN so a
-#        telemetry hiccup never wedges a real release.
-# Best-effort and never raises; renew/release/status always exit 0.
+#   3  — `any-live` only: no live claim; the workspaces are free to reclaim.
+#   1  — could not run (no session id / no board / usage error, INCLUDING an argument
+#        this CLI cannot account for) — fail OPEN so a telemetry hiccup never wedges a
+#        real release.
+# Best-effort and never raises. `renew`/`release`/`status` exit 0 on the happy path, but
+# they are NOT unconditionally 0: a missing slug or role, a board `status` cannot read,
+# and any refused argument all exit 1 from those subcommands too.
 
 require "json"
 require "fileutils"
@@ -70,6 +96,58 @@ class ReleaseClaimCli
   # A drift-guard test pins both to the same literal.
   FORMING_SLUG = "__forming__"
 
+  # --help/-h from ANY position prints usage and mutates nothing. The same two
+  # spellings bin/task and review_claim_cli honor, because an agent probing this CLI
+  # has no way to know it is a different parser.
+  HELP_FLAGS = %w[--help -h].freeze
+
+  # The flags each subcommand understands — the dictionary an unrecognized argument is
+  # rejected against. A command with no optional flags still lists its required ones,
+  # so this hash doubles as the set of subcommands run() dispatches; a key without a
+  # `when` arm below is drift, and a test pins the two together.
+  #
+  # CHANGING THIS IS A WALL RISK, not a formality: every real invocation in the repo
+  # must still parse. They are enumerated and replayed through this guard in
+  # test/lib/release_claim_argument_guard_test.rb (REAL_ARGV), including the detached
+  # renewer's own spawned line, which is captured from a live acquire rather than
+  # hand-copied. A guard that refused THAT would lapse every conductor lease mid-act,
+  # silently, because the renewer is spawned with out:/err: File::NULL.
+  COMMAND_FLAGS = {
+    "acquire"    => %w[--role --label],
+    "renew"      => %w[--role],
+    "renew-loop" => %w[--role --anchor-pid --anchor-start],
+    "release"    => %w[--role],
+    "status"     => %w[--role],
+    "any-live"   => %w[--role]
+  }.freeze
+
+  # Every flag above takes a VALUE — this CLI has no boolean flags. parse_flags stores
+  # `true` for a flag that consumed no token, and `true.to_s` is the string "true", so
+  # a trailing `--label` silently labelled the claim "true". A flag that consumed
+  # nothing is a usage error, not a boolean. A future BOOLEAN flag must be left out of
+  # this list ON PURPOSE; a drift test fails until someone does so deliberately.
+  VALUE_FLAGS = %w[--role --label --anchor-pid --anchor-start].freeze
+
+  # The subcommands that name their own release. `any-live` deliberately does NOT: it
+  # is the CROSS-release liveness read, so a slug on that line is a caller who meant
+  # `status` — and answering about every release when they named one is the same silent
+  # substitution as the dropped flag, one seam over.
+  SLUG_COMMANDS = %w[acquire renew renew-loop release status].freeze
+
+  # What a refusal COST the caller, per subcommand. One sentence for all of them would
+  # be wrong in the DANGEROUS direction: "NOTHING was claimed" on a refused `release`
+  # reads as "the lane is free" when in fact the claim is still held AND still being
+  # renewed by its detached renewer, so it will not even lapse. Name the state the
+  # caller is actually left in.
+  REFUSAL_CONSEQUENCE = {
+    "acquire"    => "NOTHING was claimed.",
+    "renew"      => "NOTHING was renewed — the claim keeps ageing toward its lapse.",
+    "renew-loop" => "NOTHING was renewed — the claim keeps ageing toward its lapse.",
+    "release"    => "the claim was NOT released — it is STILL HELD, and its renewer keeps renewing it.",
+    "status"     => "nothing was read; this says nothing about who holds the claim.",
+    "any-live"   => "nothing was read; this says nothing about whether a release is live."
+  }.freeze
+
   def initialize(env: ENV, out: $stdout, err: $stderr)
     @env = env
     @out = out
@@ -81,8 +159,22 @@ class ReleaseClaimCli
   end
 
   # Entry point. Returns the process exit code.
+  #
+  # ARGUMENT VALIDATION RUNS BEFORE DISPATCH, and that ordering is the whole point.
+  # Unknown flags used to fall through parse_flags into an ignored key and the command
+  # ran anyway on a line nobody had accounted for: `acquire <slug> --role deployer
+  # --help` took a real conductor lease, and a single-dash token vanished without even
+  # becoming an ignored key. An argument this CLI cannot account for now REFUSES rather
+  # than assuming the rest of the line was what you meant.
   def run(argv)
+    return usage(CANT_RUN) if argv.any? { |arg| HELP_FLAGS.include?(arg) }
+
     command = argv.shift
+    return usage(CANT_RUN) unless COMMAND_FLAGS.key?(command)
+
+    unknown, valueless = bad_arguments(command, argv)
+    return refuse(command, unknown, valueless) if unknown.any? || valueless.any?
+
     # The slug is the first POSITIONAL — a value-flag's value (e.g. `--role deployer`)
     # must NOT be mistaken for it. A bare `argv.find { !start_with?("--") }` (the
     # review-claim shape, which has no value-flag before its slug) would pick up
@@ -99,11 +191,7 @@ class ReleaseClaimCli
     when "release"    then release(slug, flags)
     when "status"     then status(slug, flags)
     when "any-live"   then any_live(flags)
-    else
-      @err.puts("usage: release-claim acquire <release-slug> --role <role> [--label <text>] | " \
-                "renew <release-slug> --role <role> | release <release-slug> --role <role> | " \
-                "status <release-slug> --role <role> | any-live --role <role> (roles: #{ROLES.join(', ')})")
-      CANT_RUN
+    else usage(CANT_RUN) # drift guard: a COMMAND_FLAGS key with no arm here
     end
   rescue StandardError => e
     @err.puts("release-claim failed (ignored): #{e.class}: #{e.message}")
@@ -405,23 +493,137 @@ class ReleaseClaimCli
     flags
   end
 
-  # The positional args — argv with every `--flag`/`--flag value` pair removed, using
-  # the SAME consumption rule as parse_flags, so a value-flag's value is never counted
-  # as a positional. The slug is positionals.first.
+  # The positional args — argv with every `--flag`/`--flag value` pair removed, and
+  # every dashed token excluded. Derived from the SAME each_argument walk the guard
+  # uses (which in turn mirrors parse_flags), so the three can never disagree about
+  # where a flag's value ends. The slug is positionals.first.
+  #
+  # A DASHED TOKEN IS NEVER A POSITIONAL, so it can never become the slug either —
+  # unknown_flags reports it instead. Before the guard, `acquire -r deployer` resolved
+  # its slug to the literal string "-r" and asked the board for a release by that name.
   def positionals(argv)
-    result = []
+    found = []
+    each_argument(argv) { |arg, _value| found << arg unless arg.start_with?("-") }
+    found
+  end
+
+  # ── Argument validation (runs BEFORE any command dispatch) ───────────────────
+
+  # Everything this command cannot account for, as [unknown, valueless]:
+  #
+  #   unknown   — an unrecognized flag, a single-dash token (which parse_flags drops
+  #               on the floor entirely), and a positional the command does not take.
+  #   valueless — a KNOWN value-flag that consumed no token, so parse_flags stored
+  #               `true` for it and the command would have read the string "true".
+  #
+  # Two lists, not one, because they need different copy: `--label` is a real flag
+  # typed wrong, not an argument nobody recognizes. Both walks consume flag values the
+  # SAME way parse_flags does, so `--role deployer` is never mistaken for a stray
+  # positional — that fidelity is what keeps a VALID invocation claiming instead of
+  # turning this guard into "refuse everything".
+  def bad_arguments(command, argv)
+    valid = COMMAND_FLAGS.fetch(command, [])
+    extra = positionals(argv)
+    extra = extra.drop(1) if SLUG_COMMANDS.include?(command)
+    [unknown_flags(argv, valid) + extra, valueless_flags(argv, valid)]
+  end
+
+  def unknown_flags(argv, valid)
+    bad = []
+    each_argument(argv) do |arg, _value|
+      if arg.start_with?("--")
+        bad << arg unless valid.include?(arg)
+      elsif arg.start_with?("-")
+        # A single-dash token is never a slug and never a flag parse_flags reads —
+        # before this guard `-r` (and `-h`) vanished silently, side effect and all.
+        # It consumes nothing, so whatever followed it lands in `extra` on its own.
+        bad << arg
+      end
+    end
+    bad
+  end
+
+  # A known value-flag that consumed NO token. Scoped to `valid` on purpose: an
+  # unrecognized flag is already reported by unknown_flags, and naming it twice would
+  # make a single typo look like two separate mistakes.
+  def valueless_flags(argv, valid)
+    bad = []
+    each_argument(argv) do |arg, value|
+      bad << arg if valid.include?(arg) && VALUE_FLAGS.include?(arg) && value.nil?
+    end
+    bad
+  end
+
+  # The ONE walk of the line, shared by every reader above so they can never disagree
+  # about where a flag's value ends. Yields [token, consumed_value] — value is nil when
+  # the token consumed nothing (a bare positional, a single-dash token, or a flag at
+  # the end of the line or followed by another flag). The consumption rule is
+  # parse_flags's, deliberately: a guard that split the line differently from the
+  # parser would refuse lines the parser handles, or pass lines it mangles.
+  def each_argument(argv)
     i = 0
     while i < argv.length
       arg = argv[i]
       if arg.start_with?("--")
         nxt = argv[i + 1]
-        i += (nxt.nil? || nxt.start_with?("--")) ? 1 : 2
+        consumed = (nxt.nil? || nxt.start_with?("--")) ? nil : nxt
+        yield(arg, consumed)
+        i += consumed.nil? ? 1 : 2
+      elsif arg.start_with?("-")
+        # A single-dash token is not a flag to the parser, so it consumes NOTHING —
+        # matching parse_flags exactly. Whatever followed it is classified on its own,
+        # which is honest: the parser would have read it as a positional too.
+        yield(arg, nil)
+        i += 1
       else
-        result << arg
+        yield(arg, nil)
         i += 1
       end
     end
-    result
+  end
+
+  # Refuse LOUDLY: name every argument, list what IS valid, and say plainly what the
+  # caller is left holding — an operator who typo'd a flag on `release` must never be
+  # left believing the lane is free. Exit CANT_RUN (1), the same code every other usage
+  # error gives, so bin/release still fails OPEN and the reclaim guard still fails
+  # CLOSED, exactly as they already do.
+  def refuse(command, unknown, valueless)
+    valid = COMMAND_FLAGS.fetch(command, [])
+    cost = REFUSAL_CONSEQUENCE.fetch(command, "NOTHING was done.")
+
+    if unknown.any?
+      noun = unknown.length == 1 ? "argument" : "arguments"
+      hint = valid.empty? ? " (this subcommand takes no flags)" : " (valid flags: #{valid.join(', ')})"
+      @err.puts("release-claim #{command}: unrecognized #{noun} #{unknown.map(&:inspect).join(', ')}#{hint} — #{cost}")
+    end
+    if valueless.any?
+      verb = valueless.length == 1 ? "needs a value" : "need values"
+      @err.puts("release-claim #{command}: #{valueless.join(', ')} #{verb} — #{cost}")
+    end
+
+    usage(CANT_RUN)
+  end
+
+  # The usage block --help prints and every refusal ends with. STDERR deliberately:
+  # acquire/status/any-live print their human verdict on STDOUT and bin/release echoes
+  # both streams into the release log, so usage on stdout would read as a verdict.
+  # Returns the exit code it was handed, so a caller reads `return usage(CANT_RUN)`.
+  def usage(code)
+    @err.puts(<<~TEXT)
+      usage: release-claim acquire <release-slug> --role <role> [--label <text>]
+             release-claim release <release-slug> --role <role>
+             release-claim status  <release-slug> --role <role>
+             release-claim renew   <release-slug> --role <role>
+             release-claim any-live --role <role>                       # cross-release liveness read
+             release-claim renew-loop <release-slug> --role <role> --anchor-pid <p> --anchor-start <s>  # internal
+      roles: #{ROLES.join(' | ')}
+      `acquire` is a WRITE, not a read: it takes a real ~#{lease_ttl_seconds}s conductor lease on the
+      release and starts a detached renewer that holds it for the whole act.
+      Release what you claim: release-claim release <release-slug> --role <role>
+      exit: 0 acquired (any-live: a live claim exists) · 10 stood down (another live conductor)
+            · 3 any-live: no live claim · 1 could not run / usage
+    TEXT
+    code
   end
 
   # The role, normalized + validated against the closed ROLES set, or nil (a usage

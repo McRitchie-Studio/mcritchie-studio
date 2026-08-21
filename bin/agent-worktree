@@ -48,6 +48,11 @@ require_relative "../lib/claim_lease"
 # with bin/statusline's heartbeat, which asks the same filesystem question about the
 # same directories — see desk_hold.
 require_relative "../lib/desk_activity"
+# The delete-later ledger's move-never-delete invariant. Used here as a BELT on this
+# script's own writes — the durable gate is bin/ledger-guard + test/lib/ledger_guard_test.rb,
+# which judge the committed tree and therefore hold even when the desk that wrote the row
+# was carrying a stale copy of THIS file. See bin/lib/ledger_guard.rb.
+require_relative "lib/ledger_guard"
 require_relative "lib/projects_root"
 
 PROJECTS_DIR = File.expand_path(ENV.fetch("PROJECTS_DIR") { ProjectsRoot.default_projects_dir })
@@ -2505,23 +2510,53 @@ def open_ledger_row_index(lines, dir)
   lines.rindex { |line| ledger_row_for_path?(line, dir) && !ledger_row_resolved?(line) }
 end
 
+# EVERY ledger write goes through here, and none of them may destroy history.
+#
+# THE BELT, NOT THE GUARD. The writer that destroyed the 2026-08-20 rows was a STALE COPY
+# of this script — `ledger_path` is anchored to HUB_DIR, so a teardown driven from any of
+# the 12-of-18 desks still carrying the pre-269e2db4 logic rewrote the hub's ledger with
+# that logic. A rule added here cannot reach those copies, which is why the real gate
+# (bin/ledger-guard, test/lib/ledger_guard_test.rb) judges the COMMITTED TREE instead.
+# This check is what the copies that ARE current owe the file: a destructive write is
+# refused BEFORE it reaches the disk, so there is no damage to recover from.
+def write_ledger!(content, before:)
+  losses = LedgerGuard.lost(base: [before], head: [content])
+  unless losses.empty?
+    abort <<~MSG
+      agent-worktree: REFUSING to write #{ledger_path}.
+
+      The write destroys #{losses.sum(&:missing)} resolved row(s):
+
+      #{losses.map { |episode| "  #{episode.line}" }.join("\n")}
+
+      Rows here are MOVED to the archive, never deleted. A DATED row is a teardown that
+      already happened; a new teardown of a recycled desk path (`_ship` is torn down every
+      release cycle) appends beside it rather than replacing it.
+
+      If you are seeing this, the ledger logic in THIS checkout is behind the hub. Re-run
+      the teardown from the hub primary:
+        cd #{HUB_DIR} && git pull --ff-only && bin/agent-worktree remove <app> <task> --yes
+    MSG
+  end
+
+  File.write(ledger_path, content)
+end
+
 def write_cleanup_ledger_record(record, status:)
   row = cleanup_row(record, status: status)
   lines = File.exist?(ledger_path) ? File.readlines(ledger_path) : []
+  before = lines.join
   index = open_ledger_row_index(lines, record[:dir])
 
   if index
     lines[index] = "#{row}\n"
-    File.write(ledger_path, lines.join)
+    write_ledger!(lines.join, before: before)
     puts "updated cleanup ledger: #{ledger_path}"
     return
   end
 
-  File.open(ledger_path, "a") do |file|
-    file.puts
-    file.puts "<!-- agent-worktree remove #{Time.now.strftime("%Y-%m-%d")} -->"
-    file.puts row
-  end
+  write_ledger!("#{before}\n<!-- agent-worktree remove #{Time.now.strftime("%Y-%m-%d")} -->\n#{row}\n",
+                before: before)
   puts "wrote cleanup ledger: #{ledger_path}"
 end
 
@@ -2555,11 +2590,10 @@ def run_cleanup(app = nil, write: false)
     return
   end
 
-  File.open(ledger_path, "a") do |file|
-    file.puts
-    file.puts "<!-- agent-worktree cleanup #{Time.now.strftime("%Y-%m-%d")} -->"
-    rows.each { |row| file.puts row }
-  end
+  before = existing.join
+  write_ledger!("#{before}\n<!-- agent-worktree cleanup #{Time.now.strftime("%Y-%m-%d")} -->\n" \
+                "#{rows.map { |row| "#{row}\n" }.join}",
+                before: before)
   puts "wrote #{rows.size} candidate(s) to #{ledger_path}"
   maybe_scale_in
 end

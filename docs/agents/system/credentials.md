@@ -126,7 +126,7 @@ Credential names and provider status now live in the modular docs:
 
 - Shared credential inventory: [`../modules/credential-inventory.md`](../modules/credential-inventory.md)
 - Shared email operations: [`../modules/email-operations.md`](../modules/email-operations.md)
-- McRitchie-specific delivery notes: [`../../email-delivery.md`](../../email-delivery.md)
+- McRitchie-specific delivery notes: `docs/email-delivery.md` (outside the docs viewer's root, so not a link)
 
 Do not duplicate SES production status here; it changes as AWS support,
 DNS verification, and runtime SMTP credentials move.

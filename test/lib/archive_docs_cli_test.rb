@@ -223,4 +223,65 @@ class ArchiveDocsCliTest < Minitest::Test
       assert_equal 1, out.lines.reject { |l| l.strip.empty? }.size
     end
   end
+
+  # --- the move-never-delete invariant, at the beat that makes the loss permanent ------
+  #
+  # This sweep is where three destroyed rows became history in 2026-08-21: a teardown
+  # driven from a desk carrying a stale bin/agent-worktree overwrote their dated rows in
+  # the hub's WORKING TREE, and `bin/release archive` committed the result. The roller was
+  # never at fault — it archived what it was handed, 40 of 43 rows — so the refusal belongs
+  # in front of it, where the destroyed row is still one `git show HEAD:` away.
+  #
+  # THE DAMAGE IS PRODUCED THE WAY THE STALE WRITER PRODUCES IT: a dated row replaced in
+  # place. Nothing here calls the fixed writer, because the writer is exactly the component
+  # that cannot be relied on.
+  def clobber_dated_row(repo)
+    path = File.join(repo, DocsArchive::LEDGER)
+    File.write(path, File.read(path).sub("| `/new/two` | worktree | recent | done | removed 2026-07-14 |",
+                                         "| `/new/two` | worktree | recycled | done | removed 2026-08-21 |"))
+  end
+
+  def test_the_sweep_refuses_a_ledger_that_has_already_lost_a_resolved_row
+    with_repo do |repo|
+      clobber_dated_row(repo)
+
+      out, err, status = Open3.capture3(RbConfig.ruby, CLI, "--repo=#{repo}")
+      combined = "#{out}#{err}"
+
+      refute status.success?, "the archive beat must refuse to sweep over a destroyed row"
+      assert_includes combined, "/new/two", "the refusal names the path that lost its row"
+      assert_includes combined, "removed 2026-07-14", "…and the teardown episode that is gone"
+      assert_includes combined, "git show HEAD:", "…and how to get it back"
+      refute_includes combined, "archive-docs-summary:",
+                      "it must refuse BEFORE reporting a successful sweep"
+      assert_empty git(repo, "diff", "--cached", "--name-only").strip,
+                   "and it must stage NOTHING on top of a ledger that has lost history"
+    end
+  end
+
+  # THE CONTROL, and it is the reason the check above is trustworthy: the same sweep, the
+  # same repo, an UNdamaged ledger — and the beat runs to completion. A guard that refused
+  # every sweep would be indistinguishable from a broken one.
+  def test_an_intact_ledger_sweeps_to_completion
+    with_repo do |repo|
+      out, summary = run_cli(repo)
+
+      assert_includes out, "Ledger rollover"
+      assert_operator summary[:ledger_rolled], :>, 0
+    end
+  end
+
+  # A dry run changes nothing, so it REPORTS the damage and still exits 0 — `bin/release
+  # archive` previews before it confirms, and a preview that returns failure wedges the
+  # beat rather than protecting it.
+  def test_a_dry_run_over_a_damaged_ledger_reports_but_does_not_refuse
+    with_repo do |repo|
+      clobber_dated_row(repo)
+
+      out, err, status = Open3.capture3(RbConfig.ruby, CLI, "--repo=#{repo}", "--dry-run")
+
+      assert status.success?, "a preview must not fail its caller:\n#{out}#{err}"
+      assert_includes "#{out}#{err}", "removed 2026-07-14", "…but it must still say what is gone"
+    end
+  end
 end

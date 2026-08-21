@@ -1,0 +1,80 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# ledger-guard — refuse a tree that has DESTROYED a resolved delete-later row.
+#
+#   bin/ledger-guard                     # against origin/accepted (then release, main)
+#   bin/ledger-guard --base=HEAD         # against the last commit — the pre-commit check
+#   bin/ledger-guard --repo=/path/to/repo
+#   bin/ledger-guard --json
+#
+# The ledger (docs/agents/maintenance/delete-later.md) and its archive are one record in
+# two files: a row may move between them, never leave both. This compares the working
+# tree's union against the MERGE BASE with each base ref and exits non-zero, naming every
+# destroyed row, if the union shrank. See bin/lib/ledger_guard.rb for why the check lives
+# here — outside the writer — rather than in bin/agent-worktree, and
+# test/lib/ledger_guard_test.rb for the invariant's own tests.
+#
+# An unreadable baseline is RED, not a pass: this instrument is nothing but a comparison
+# against history outside the working tree.
+
+require "json"
+require_relative "lib/ledger_guard"
+require_relative "lib/repo_root"
+
+DEFAULT_BASES = %w[origin/accepted origin/release origin/main].freeze
+
+def flag(name)
+  ARGV.grep(/\A--#{name}=/).map { |arg| arg.split("=", 2).last }
+end
+
+JSON_ONLY = ARGV.include?("--json")
+REPO      = flag("repo").first || RepoRoot.git_toplevel(__dir__) || File.expand_path("..", __dir__)
+HEAD_REF  = flag("head").first
+EXPLICIT  = flag("base")
+BASES     = EXPLICIT.empty? ? DEFAULT_BASES : EXPLICIT
+
+def say(message = "")
+  puts(message) unless JSON_ONLY
+end
+
+# Which bases can actually be read. An EXPLICIT --base must resolve — the caller named it,
+# and silently ignoring it would certify against something else. The default list is a
+# preference order: at least one must resolve, and every one that does is checked.
+resolved = BASES.select { |ref| LedgerGuard.merge_base(REPO, ref) }
+unreadable = BASES - resolved
+
+if resolved.empty? || (!EXPLICIT.empty? && !unreadable.empty?)
+  message = "ledger-guard: cannot read baseline #{unreadable.join(', ')} in #{REPO}. " \
+            "This is RED on purpose — the invariant is a comparison against history OUTSIDE " \
+            "this working tree, so an unreadable base certifies nothing. Try `git fetch origin`."
+  if JSON_ONLY
+    puts JSON.generate(ok: false, reason: "unreadable-base", unreadable: unreadable, repo: REPO)
+  else
+    warn message
+  end
+  exit 1
+end
+
+losses = resolved.to_h { |ref| [ref, LedgerGuard.lost_against_ref(REPO, ref, head: HEAD_REF)] }
+                 .reject { |_ref, found| found.empty? }
+
+if JSON_ONLY
+  puts JSON.generate(
+    ok: losses.empty?,
+    repo: REPO,
+    checked: resolved,
+    lost: losses.transform_values { |found| found.map { |e| { path: e.path, status: e.status, missing: e.missing } } }
+  )
+  exit(losses.empty? ? 0 : 1)
+end
+
+if losses.empty?
+  say "ledger-guard: OK — every resolved row at #{resolved.join(', ')} is still in the ledger or its archive."
+  exit 0
+end
+
+losses.each do |ref, found|
+  warn LedgerGuard.report(found, base_label: ref)
+end
+exit 1
