@@ -49,12 +49,18 @@
 # minutes), renewed cheaply over the fast HTTP AgentApi rather than a per-heartbeat
 # `heroku run` dyno, and a crashed one frees the release within a TTL.
 #
-# EXIT CODES make the acquire gate scriptable (bin/release branches on it):
-#   0  — acquired (you hold the claim; proceed to assemble/deploy this release)
+# EXIT CODES make the acquire gate scriptable (bin/release branches on it). This is the
+# same table usage() prints, and the two must stay in step:
+#   0  — acquired (you hold the claim; proceed to assemble/deploy this release).
+#        For `any-live`: a live claim EXISTS — withhold the workspaces.
 #   10 — stood down (a DIFFERENT live instance holds it; do NOT proceed)
-#   1  — could not run (no session id / no board / usage error) — fail OPEN so a
-#        telemetry hiccup never wedges a real release.
-# Best-effort and never raises; renew/release/status always exit 0.
+#   3  — `any-live` only: no live claim; the workspaces are free to reclaim.
+#   1  — could not run (no session id / no board / usage error, INCLUDING an argument
+#        this CLI cannot account for) — fail OPEN so a telemetry hiccup never wedges a
+#        real release.
+# Best-effort and never raises. `renew`/`release`/`status` exit 0 on the happy path, but
+# they are NOT unconditionally 0: a missing slug or role, a board `status` cannot read,
+# and any refused argument all exit 1 from those subcommands too.
 
 require "json"
 require "fileutils"
