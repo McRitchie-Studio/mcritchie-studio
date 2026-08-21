@@ -56,11 +56,15 @@ site connection, primary-domain setting, disabled `www` prefix, and
 
 ## Public Assets
 
-- `public/agents/` — Agent portraits: one `<slug>.png` per seeded agent (alex, avi, carl,
-  jasper, mack, mason, shannon, steffon, turf-monster) plus `alex-photo.png`. They are both
-  the circular avatar and the full-bleed 5:3 card hero on the public `/agents` index, so
-  they are kept at 768px on the long edge; `test/lib/response_payload_budget_test.rb`
-  holds the size and pixel ceilings.
+- `public/agents/<slug>.webp` — Agent portraits, one per seeded agent (alex, avi, carl,
+  jasper, mack, mason, shannon, steffon, turf-monster), plus the landing-page headshot
+  `public/agents/alex-photo.webp`. They serve as both the circular avatar and the
+  full-bleed 5:3 card hero on the public `/agents` index, so the long edge is capped at
+  768px: the seven 5:3 heroes are 768x461 and `turf-monster.webp` is 768x768, while
+  `alex.webp` (340x340) and `alex-photo.webp` (192x192) stay smaller because their sources
+  are. `test/lib/response_payload_budget_test.rb` holds the byte budget, that 768px
+  ceiling, and the 640px floor the card hero needs; `test/docs/agent_portrait_extension_docs_test.rb`
+  keeps this bullet honest about the container.
 - `public/denver-hero.avif` — Landing page hero background (Denver skyline)
 - `public/studio-logo.svg` — SSO logo (shared with satellite apps)
 - `public/favicon.png`, `public/icon.png`, `public/logo-icon.svg` — App icons

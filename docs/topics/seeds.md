@@ -9,7 +9,7 @@ Each file only depends on files above it. Teams → Seasons → People → Grade
 | Phase | File | Contents |
 |-------|------|----------|
 | 1. Infrastructure | `01_users.rb` | Parked operator identities, including admin users |
-| | `02_agents.rb` | 9 agents with avatars (Alex, Avi, Carl, Shannon, Jasper, Steffon, Turf Monster, Mack, Mason). Avatar PNGs at `/public/agents/<slug>.png` — all 9 are present. |
+| | `02_agents.rb` | 9 agents with avatars (Alex, Avi, Carl, Shannon, Jasper, Steffon, Turf Monster, Mack, Mason). Avatar WebPs at `/public/agents/<slug>.webp` — all 9 are present. |
 | | `03_skills.rb` | 35 skills + 40 assignments. Skill assignments are sync-style (destroys non-desired rows) so re-seeding cleans up role changes — e.g. Mason's 2026-05-23 move from Infrastructure → Marketing dropped the old infra skills. |
 | 2. Leagues | `10_teams_nfl.rb` | 32 NFL teams (sport/league/conference/division) |
 | | `11_teams_ncaa.rb` | 75 NCAA teams (schools from 2025 draft picks) |

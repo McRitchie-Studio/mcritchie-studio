@@ -29,7 +29,7 @@ Rails.application.configure do
   #
   # A WEEK, not a year, because this header covers BOTH kinds of file here:
   # fingerprinted /assets/* (whose name changes on every edit, so they could safely
-  # be immutable) and unfingerprinted /agents/*.png (whose name does NOT change, so
+  # be immutable) and unfingerprinted /agents/*.webp (whose name does NOT change, so
   # a year-long TTL would pin a replaced portrait in browsers for a year). A week is
   # the longest window worth the staleness on the second kind; fingerprinted assets
   # give up nothing that matters at this traffic. Fingerprint the portraits and this
