@@ -52,6 +52,20 @@ class CiTestCommandTest < Minitest::Test
     nil
   end
 
+  # THE ECOSYSTEM ROOTS THE PINS CHECK, resolved so the repo we are RUNNING IN is
+  # always among them. Extracted rather than inlined so the sibling-less layout —
+  # which a local suite run cannot reproduce, because the siblings are right there —
+  # is drivable by test/lib/ci_pin_resolves_own_repo_test.rb against THIS code and
+  # not a copy of it.
+  ECOSYSTEM_REPOS = %w[mcritchie-studio turf-monster rolio chain-ops studio-engine
+                       solana-studio turf-vault].freeze
+
+  def self.ecosystem_roots(hub_root = HUB_ROOT, projects_root = PROJECTS_ROOT)
+    roots = { File.basename(hub_root) => hub_root }
+    ECOSYSTEM_REPOS.each { |repo| roots[repo] ||= File.join(projects_root, repo) } if projects_root
+    roots.select { |_name, root| File.directory?(root) }
+  end
+
   # Does this repo actually HAVE system tests? A `.keep` is not a system test.
   def self.system_tests?(root)
     !Dir[File.join(root, "test", "system", "**", "*_test.rb")].empty?
@@ -1419,11 +1433,18 @@ class CiTestCommandTest < Minitest::Test
     # exactly where an over-fire would otherwise be discovered: at a builder's gate.
     refute_nil PROJECTS_ROOT, "cannot locate the projects root — this pin would check nothing"
 
+    # THE FLOOR IS STRUCTURAL, NOT INCIDENTAL. This used to rely on
+    # File.join(PROJECTS_ROOT, "mcritchie-studio") happening to exist — true on the
+    # hub's own runner, where PROJECTS_ROOT lands on /home/runner/work and the outer
+    # checkout directory carries the repo's name. It is FALSE in studio-engine's
+    # consumer lane, which checks the hub out under a different layout: every repo
+    # was then skipped by the `File.directory?` guard below, `checked` came back
+    # EMPTY, and the anti-vacuity assert fired on a lane where nothing was wrong.
+    # That is the guard failing to tell "this lane has no siblings" from "resolution
+    # broke" — so the fix is to make the repo we are RUNNING IN always resolve, not
+    # to soften the assert. HUB_ROOT points at it regardless of layout.
     checked = []
-    %w[mcritchie-studio turf-monster rolio chain-ops studio-engine solana-studio turf-vault].each do |repo|
-      root = File.join(PROJECTS_ROOT, repo)
-      next unless File.directory?(root)
-
+    self.class.ecosystem_roots.each do |repo, root|
       checked << repo
       assert_nil CiTestCommand.refusal(root),
                  "the cert net REFUSES #{repo} — the guard over-fires on a live repo"
