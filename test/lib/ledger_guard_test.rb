@@ -41,6 +41,12 @@ require "fileutils"
 require "open3"
 require "tmpdir"
 require_relative "../../bin/lib/ledger_guard"
+# EVERY spawn below goes through SessionEnv.neutralized. Requiring it also arms the
+# task-usage sandbox and the outbound floor for this process, which every child
+# inherits — see test/support/session_env.rb. A test that loads bin/agent-worktree
+# without it resolves the OPERATOR'S live session and can write their real .agents
+# state, and it does so as a silent success rather than a failure.
+require_relative "../support/session_env"
 
 class LedgerGuardTest < Minitest::Test
   ROOT = File.expand_path("../..", __dir__)
@@ -199,7 +205,7 @@ class LedgerGuardTest < Minitest::Test
   end
 
   def guard(repo, *args)
-    out, err, status = Open3.capture3("ruby", CLI, "--repo=#{repo}", *args)
+    out, err, status = Open3.capture3(SessionEnv.neutralized, "ruby", CLI, "--repo=#{repo}", *args)
     { out: "#{out}#{err}", ok: status.success? }
   end
 
@@ -323,8 +329,7 @@ class LedgerGuardTest < Minitest::Test
         end
       RUBY
 
-      out, err, = Open3.capture3({ "MCRITCHIE_SESSION_ID" => "", "CLAUDE_SESSION_ID" => "" },
-                                 "ruby", "-e", body)
+      out, err, = Open3.capture3(SessionEnv.neutralized, "ruby", "-e", body)
       after = File.read(ledger)
 
       assert_includes "#{out}#{err}", "REFUSED",
