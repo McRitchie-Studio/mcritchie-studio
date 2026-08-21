@@ -269,6 +269,22 @@ bin/agent-worktree scale status
   append-only and path-repeating by design. Until 2026-08-19 the primary ledger
   keyed its update on the path alone and quietly overwrote the earlier row, so
   the two ledgers disagreed and only the archive was honest.
+- **The rule is enforced OUTSIDE the writer, because the writer is what goes
+  stale.** `ledger_path` is anchored to `HUB_DIR`, so a teardown driven from ANY
+  desk rewrites the **hub's** ledger using whatever copy of `bin/agent-worktree`
+  **that desk** carries. On 2026-08-21, 12 of 18 hub desks were still carrying
+  the pre-fix writer, and one of them destroyed three dated rows — the fix above
+  had already landed on `main` and protected nothing. So the invariant is
+  checked where the change becomes durable, on the writer's **output**:
+  `bin/ledger-guard` compares the ledger plus its archive against the merge base
+  with `origin/accepted` (then `release`, `main`) and refuses a tree that lost a
+  dated row; `bin/archive-docs` runs it at both ends of the roll; and
+  `test/lib/ledger_guard_test.rb` runs it in CI on every PR and every push to
+  `accepted`/`release`/`main`. A stale desk can still write a bad row into the
+  hub's working tree — nothing in this repo can reach a checkout that has not
+  been updated — but that row can no longer reach `accepted`: the lane goes red
+  and names it while it is still one `git show` away. **Tear desks down from an
+  up-to-date checkout**, and prefer the hub primary for a sweep.
 - **The occupancy guard (why git state alone is not enough).** A worktree is a
   candidate only when it is git-eligible **AND nobody is working at it**. A
   brand-new worktree off `release` and one whose work was **fast-forward merged**
