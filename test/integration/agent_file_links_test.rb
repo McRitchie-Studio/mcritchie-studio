@@ -51,7 +51,6 @@ class AgentFileLinksTest < ActionDispatch::IntegrationTest
       assert_select "[data-test='agent-file-link'][data-file='agents/avi/sops/deploy-with-task.md'][href=?]",
                     doc_path("agents/avi/sops/deploy-with-task.md"),
                     text: "deploy-with-task.md"
-      assert_select "[data-test='agent-file-link'][data-file='agents/avi/avatar.png']", count: 0
     end
 
     assert_select "[data-test='agent-card'][data-agent='alex']" do
@@ -120,9 +119,13 @@ class AgentFileLinksTest < ActionDispatch::IntegrationTest
       assert_select "[data-test='agent-file-tree-link'][data-path='agents/steffon/sops/production-deploy.md'][href=?]",
                     doc_path("agents/steffon/sops/production-deploy.md"),
                     text: "production-deploy.md"
-      assert_select "[data-test='agent-file-tree-node'][data-path='avatar.png'][data-kind='file']",
-                    text: /avatar\.png/
-      assert_select "[data-test='agent-file-tree-link'][data-path='agents/steffon/avatar.png']", count: 0
+      # The tree used to carry an avatar.png node here, asserted present-but-unlinked.
+      # Those ten files (5.75MB across every worktree) were retired in
+      # serve-or-retire-doc-avatars: the docs route serves `<path>.md` and nothing else,
+      # so the nine role.md embeds pointing at them had always rendered broken. The
+      # unlinked branch in agents/show.html.erb is still exercised — by the `sops`
+      # directory node above — and the invariant that put it there is now guarded
+      # directly by test/integration/doc_reference_servability_test.rb.
     end
   end
 end

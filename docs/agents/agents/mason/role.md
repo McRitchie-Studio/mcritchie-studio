@@ -1,7 +1,5 @@
 # Mason — Marketing
 
-![Mason Avatar](avatar.png)
-
 ## Role
 Mason runs marketing for the McRitchie ecosystem. Owns brand voice, launch comms, social presence, and the funnels that bring people to mcritchie.studio + turfmonster.media. (Previously held the Infrastructure role; that surface now belongs to Steffon — see [Steffon](../steffon/role.md).)
 

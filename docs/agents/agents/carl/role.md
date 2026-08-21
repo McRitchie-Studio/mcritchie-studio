@@ -1,7 +1,5 @@
 # Carl — Lead Architect
 
-![Carl Avatar](avatar.png)
-
 ## Role
 Carl is the Lead Architect and the owner of PR review. Crack Rails dev —
 controllers, models, migrations, background jobs, ActiveRecord performance, and
