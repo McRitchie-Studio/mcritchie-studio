@@ -25,21 +25,31 @@ module Ci
     # forever. A card that can only say "not built" is noise, and excluding it is
     # derived from the registry rather than hardcoded.
     #
-    # STUBBED rather than pointed at a live repo. solana-studio was the standing
-    # fixture until it declared "Gem CI" (2026-08-20) and no gem maps to nil
-    # today — but the BRANCH still exists and still has to work for the next one.
-    # A test that could only run while some real repo happened to be CI-less was
-    # never testing the rule; it was testing the registry.
-    test "reportable_repos drops a three-rung repo that declares no CI suite" do
+    # STUBBED rather than pointed at a live repo — a technique kept from #960, whose
+    # reasoning still holds: a test that only runs while some real repo happens to be
+    # CI-less is testing the registry, not the rule.
+    #
+    # THE RULE ITSELF IS REVERSED HERE, deliberately, per this task's acceptance
+    # ("Row draws every three-rung repo including suiteless"). #960 asserted a
+    # suiteless repo gets NO card, on the argument that three `not_built` rungs teach
+    # the eye nothing. The counter-argument won: solana-studio sat `accepted` +1 ahead
+    # of `release` with no task behind it, and the row could not show it because the
+    # card did not exist. A card reading "not built" is a true statement about a repo
+    # that ships without a suite; an absent card says nothing at all.
+    #
+    # No behaviour changes today either way — solana-studio declared "Gem CI" on
+    # 2026-08-20, so every three-rung repo has a verdict and both rules draw the same
+    # five cards. This is about which rule the next suiteless repo meets.
+    test "reportable_repos draws a three-rung repo even when it declares no CI suite" do
       victim = Release::Repos.three_rung_repos.first
       assert victim.present?, "precondition: something is on the ladder"
 
       GithubWorkflowRun.stub(:ci_workflow_for, ->(repo) { repo == victim ? nil : "CI" }) do
-        refute_includes Ci::AppLadder.reportable_repos, victim,
-                        "a repo declaring no suite must not get a card"
-        assert_equal Release::Repos.three_rung_repos.size - 1,
+        assert_includes Ci::AppLadder.reportable_repos, victim,
+                        "a suiteless repo is still on the ladder, so it still gets a card"
+        assert_equal Release::Repos.three_rung_repos.size,
                      Ci::AppLadder.reportable_repos.size,
-                     "and every other three-rung repo must still get one"
+                     "and no repo is dropped for lacking a suite"
       end
     end
 

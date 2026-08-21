@@ -68,22 +68,86 @@ module Ci
       freeze
     end
 
-    # Build one rung from the board's own data. No git, no live gh call.
-    def self.for(repo:, branch:, parked_count: 0)
-      verdict = Ci::BranchGate.verdict(repo, branch)
-      run = latest_run(repo, branch, verdict[:sha])
+    # Runs that do NOT describe whether the code is good. Excluded from every rung
+    # reading, because a deploy landing on a sha would otherwise flip its CI badge
+    # with no test having run — measured 2026-08-20: 102 "Production Deploy" and 117
+    # "QA Deploy" runs are ingested, and Ci::ReviewGate.check_runs_payload folds every
+    # workflow on the sha. Dependabot's per-PR runs carry a generated name and are
+    # dropped the same way.
+    DEPLOY_WORKFLOWS = ["Production Deploy", "QA Deploy"].freeze
+    GENERATED_RUN_NAME = /\A(bundler|github_actions|npm|docker) in /
+    private_constant :GENERATED_RUN_NAME
 
-      new(repo: repo, branch: branch,
-          state: resolve_state(verdict[:state]&.to_sym || :none),
-          sha: verdict[:sha], verdict_at: run&.run_started_at,
-          parked_count: parked_count, run_url: run&.html_url)
+    def self.suite_run?(run)
+      name = run.workflow_name.to_s
+      return false if name.empty?
+      return false if DEPLOY_WORKFLOWS.include?(name)
+
+      !name.match?(GENERATED_RUN_NAME)
     end
 
-    # `:none` is BranchGate's honest "nothing ingested"; render it as :not_built so
-    # the card names something the operator can act on. Every other state is CI's
-    # own verdict and passes through untouched — this class does not second-guess it.
+    # Build one rung from the board's own data. No git, no live gh call.
+    #
+    # WHY THIS DOES NOT USE Ci::BranchGate. BranchGate is a GATE primitive: it folds
+    # every check-run on a SHA, which is right for refusing a promote — a red lane of
+    # any kind must block. A rung on a card answers a narrower question: what did the
+    # SUITE say about THIS BRANCH. Reusing the gate's fold gave two wrong readings,
+    # both measured on 2026-08-20:
+    #
+    #   · SHA-scoped, not branch-scoped. When the ladder is level, one sha carries runs
+    #     for accepted AND release AND main (verified: ddfad29 on all three), so all
+    #     three rungs folded the SAME runs and the three badges could never disagree —
+    #     they carried no independent information at all.
+    #   · Deploy runs counted. A Production Deploy on the sha moved the CI badge.
+    #
+    # So the rung reads its own: suite runs, on its own branch, for its own sha.
+    def self.for(repo:, branch:, parked_count: 0)
+      runs = branch_runs(repo, branch)
+      newest = runs.first
+
+      new(repo: repo, branch: branch,
+          state: fold(runs),
+          sha: newest&.head_sha, verdict_at: newest&.run_started_at,
+          parked_count: parked_count, run_url: newest&.html_url)
+    end
+
+    # The suite runs for this branch's newest built sha — newest run per workflow, so a
+    # re-run supersedes rather than double-counts.
+    def self.branch_runs(repo, branch)
+      nwo = Ci::ReviewGate.nwo_for(repo)
+      return [] if nwo.empty?
+
+      newest_sha = GithubWorkflowRun.for_repo(nwo)
+                                    .where(head_branch: branch.to_s)
+                                    .order(Arel.sql("run_started_at DESC NULLS LAST"))
+                                    .to_a
+                                    .find { |run| suite_run?(run) }
+                                    &.head_sha
+      return [] if newest_sha.blank?
+
+      GithubWorkflowRun.for_repo(nwo)
+                       .where(head_branch: branch.to_s, head_sha: newest_sha)
+                       .order(Arel.sql("run_started_at DESC NULLS LAST"))
+                       .to_a
+                       .select { |run| suite_run?(run) }
+                       .group_by { |run| run.workflow_name.to_s }
+                       .map { |_name, group| group.first }
+    end
+
+    # Fail-closed, and in this order: nothing ingested is NOT a pass, a failure beats a
+    # pending, and a pending beats a green. Only an all-green set reads green.
+    def self.fold(runs)
+      return :not_built if runs.empty?
+      return :red if runs.any? { |r| r.status.to_s == "completed" && r.conclusion.to_s != "success" }
+      return :pending if runs.any? { |r| r.status.to_s != "completed" }
+
+      :green
+    end
+
+    # Kept as the single place a raw verdict becomes a rung state, so a caller that
+    # already holds one (a test, a replay) resolves it the same way `fold` does.
     def self.resolve_state(raw)
-      raw == :none ? :not_built : raw
+      raw.to_sym == :none ? :not_built : raw.to_sym
     end
 
     # The CI checks behind this rung's verdict, as the meter draws them. Nil when we
@@ -141,42 +205,34 @@ module Ci
     # Consumer CI would drag the gem's own track red on a failing consumer).
     def counted_lane = GithubWorkflowRun.ci_workflow_for(repo).presence
 
-    # EVERY workflow lane GitHub ran on this sha, read from the SAME source the badge
-    # folds — GithubWorkflowRun, newest run per workflow. This is what closes the gap
-    # the meter cannot: a lane the meter is scoped away from is still named here, so a
-    # red sibling is visible on the card instead of hiding behind a green meter.
+    # EVERY suite lane on this rung's own branch and sha — the same set the badge
+    # folds, so the two halves of the card can never disagree about what exists. The
+    # meter counts one of these (`counted_lane`); the rest are named on the card.
     #
     # => [{ name:, state: :green/:red/:pending, url: }]
     def lanes
       return [] if sha.blank?
 
-      nwo = Ci::ReviewGate.nwo_for(repo)
-      return [] if nwo.empty?
-
-      GithubWorkflowRun.for_repo(nwo).for_sha(sha)
-                       .order(Arel.sql("run_started_at DESC NULLS LAST"))
-                       .to_a
-                       .group_by { |run| run.workflow_name.to_s }
-                       .map { |name, group| lane_for(name, group.first) }
-                       .reject { |lane| lane[:name].empty? }
-                       .sort_by { |lane| [LANE_RANK.fetch(lane[:state], 9), lane[:name]] }
+      self.class.branch_runs(repo, branch)
+          .map { |run| self.class.lane_for(run.workflow_name.to_s, run) }
+          .sort_by { |lane| [LANE_RANK.fetch(lane[:state], 9), lane[:name]] }
     end
 
-    # The lanes the meter is NOT counting. Empty for a single-lane repo, which is
-    # every app — this only ever has content for a gem running its own suite plus a
-    # downstream consumer suite.
+    # The lanes the meter is NOT counting. Empty for a single-lane repo, which is every
+    # app — this only has content for a gem running its own suite plus a downstream
+    # consumer suite, which is exactly where the green-meter-over-red-badge card came
+    # from. Naming them is what stops the meter's scope reading as the whole story.
     def uncounted_lanes = lanes.reject { |lane| lane[:name] == counted_lane }
 
     LANE_RANK = { red: 0, pending: 1, green: 2 }.freeze
 
-    def lane_for(name, run)
+    def self.lane_for(name, run)
       state = if run.status.to_s != "completed" then :pending
               elsif run.conclusion.to_s == "success" then :green
               else :red
               end
       { name: name, state: state, url: run.html_url.presence }
     end
-    private :lane_for
 
     def short_sha = sha.to_s[0, 7].presence
 

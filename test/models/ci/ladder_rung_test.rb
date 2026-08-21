@@ -149,6 +149,78 @@ module Ci
       assert_empty Ci::LadderRung.new(repo: "turf-monster", branch: "main", state: :not_built).lanes
     end
 
+
+    # --- criteria 3 and 4: what a rung is allowed to count -------------------
+
+    def wf_run(repo:, branch:, sha:, workflow:, conclusion: "success", status: "completed", id: nil, started: nil)
+      GithubWorkflowRun.create!(repo: "McRitchie-Studio/#{repo}", head_branch: branch, head_sha: sha,
+                                run_id: id || rand(10**9), workflow_name: workflow,
+                                status: status, conclusion: conclusion,
+                                run_started_at: started || 5.minutes.ago,
+                                html_url: "https://x/#{id || 1}")
+    end
+
+    # MEASURED 2026-08-20: sha ddfad29 carried runs on release AND main AND accepted.
+    # BranchGate is sha-scoped, so every rung folded the same runs and the three badges
+    # could never disagree — they carried no independent information at all.
+    test "a rung folds only runs from its OWN branch" do
+      GithubWorkflowRun.delete_all
+      sha = "ddfad29aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      wf_run(repo: "turf-monster", branch: "accepted", sha: sha, workflow: "CI", conclusion: "success", id: 1)
+      wf_run(repo: "turf-monster", branch: "release",  sha: sha, workflow: "CI", conclusion: "failure", id: 2)
+
+      assert_equal :green, Ci::LadderRung.for(repo: "turf-monster", branch: "accepted").state
+      assert_equal :red,   Ci::LadderRung.for(repo: "turf-monster", branch: "release").state
+    end
+
+    # MEASURED 2026-08-20: 102 "Production Deploy" and 117 "QA Deploy" runs are
+    # ingested. Folding them meant DEPLOYING moved a CI badge with no test having run.
+    test "a deploy run never changes a rung state" do
+      GithubWorkflowRun.delete_all
+      sha = "deploy00aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      wf_run(repo: "turf-monster", branch: "main", sha: sha, workflow: "CI", conclusion: "success", id: 3)
+      assert_equal :green, Ci::LadderRung.for(repo: "turf-monster", branch: "main").state
+
+      wf_run(repo: "turf-monster", branch: "main", sha: sha, workflow: "Production Deploy",
+             conclusion: "failure", id: 4)
+
+      assert_equal :green, Ci::LadderRung.for(repo: "turf-monster", branch: "main").state,
+                   "a failed DEPLOY must not redden a CI rung"
+      refute_includes Ci::LadderRung.for(repo: "turf-monster", branch: "main").lanes.map { |l| l[:name] },
+                      "Production Deploy", "and it must not be named as a lane either"
+    end
+
+    test "a dependabot run is not a suite lane" do
+      GithubWorkflowRun.delete_all
+      sha = "dependbtaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      wf_run(repo: "turf-monster", branch: "accepted", sha: sha, workflow: "CI", conclusion: "success", id: 5)
+      wf_run(repo: "turf-monster", branch: "accepted", sha: sha,
+             workflow: "bundler in / for stripe - Update #1534177382", conclusion: "failure", id: 6)
+
+      assert_equal :green, Ci::LadderRung.for(repo: "turf-monster", branch: "accepted").state
+    end
+
+    # Fail-closed ordering: absence is not a pass, a failure beats a pending, a pending
+    # beats a green.
+    test "the fold is fail-closed in the right order" do
+      assert_equal :not_built, Ci::LadderRung.fold([])
+      GithubWorkflowRun.delete_all
+      sha = "foldordraaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      wf_run(repo: "turf-monster", branch: "accepted", sha: sha, workflow: "CI", conclusion: "success", id: 7)
+      wf_run(repo: "turf-monster", branch: "accepted", sha: sha, workflow: "Engine CI",
+             conclusion: nil, status: "in_progress", id: 8)
+      assert_equal :pending, Ci::LadderRung.for(repo: "turf-monster", branch: "accepted").state
+
+      wf_run(repo: "turf-monster", branch: "accepted", sha: sha, workflow: "Consumer CI",
+             conclusion: "failure", id: 9)
+      assert_equal :red, Ci::LadderRung.for(repo: "turf-monster", branch: "accepted").state
+    end
+
+    test "a branch with nothing ingested reads not_built" do
+      GithubWorkflowRun.delete_all
+      assert_equal :not_built, Ci::LadderRung.for(repo: "turf-monster", branch: "main").state
+    end
+
     private
 
     def rung(state: :green, sha: "abc1234def", parked_count: 0)
