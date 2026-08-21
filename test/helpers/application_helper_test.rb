@@ -122,11 +122,11 @@ class ApplicationHelperTest < ActionView::TestCase
   test "[unit] phase_face_avatar_tag renders a sized circle with an image, sparse-safe" do
     assert_equal "", phase_face_avatar_tag(nil), "no face renders nothing"
 
-    faced = Agent.new(name: "Avi", slug: "avi", avatar: "/agents/avi.png")
+    faced = Agent.new(name: "Avi", slug: "avi", avatar: "/agents/avi.webp")
     html = phase_face_avatar_tag(faced, px: 24)
     assert_includes html, "width:24px;height:24px", "sizes the circle to the requested px"
     assert_includes html, "rounded-full"
-    assert_includes html, 'src="/agents/avi.png"', "layers the face image over the initial bubble"
+    assert_includes html, 'src="/agents/avi.webp"', "layers the face image over the initial bubble"
     assert_includes html, "onerror", "a 404 falls back to the bubble, no broken-image icon"
     assert_includes html, 'data-test="phase-tile-avatar"'
 

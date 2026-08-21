@@ -10,9 +10,9 @@ class TestingPhasesCardTest < ActionView::TestCase
 
   setup do
     Pokemon.create!(dex: 9002, name: "Pikachu", slug: "pikachu", sprite_url: "/pokemon/pikachu.png")
-    Agent.create!(name: "Avi", slug: "avi", avatar: "/agents/avi.png")
-    Agent.create!(name: "Shannon", slug: "shannon", avatar: "/agents/shannon.png")
-    Agent.create!(name: "Carl", slug: "carl", avatar: "/agents/carl.png")
+    Agent.create!(name: "Avi", slug: "avi", avatar: "/agents/avi.webp")
+    Agent.create!(name: "Shannon", slug: "shannon", avatar: "/agents/shannon.webp")
+    Agent.create!(name: "Carl", slug: "carl", avatar: "/agents/carl.webp")
     @task = Task.create!(title: "phases card task", stage: "submitted")
     @task.update_columns(metadata: { "devops" => { "mascot" => "pikachu" } }) # rubocop:disable Rails/SkipsModelValidations
 
@@ -38,13 +38,13 @@ class TestingPhasesCardTest < ActionView::TestCase
 
     # Owner avatars: mascot fronts Build (a machine phase), Avi fronts Review.
     assert_select "img[src=?]", "/pokemon/pikachu.png", minimum: 1
-    assert_select "img[src=?]", "/agents/avi.png", count: 1
+    assert_select "img[src=?]", "/agents/avi.webp", count: 1
 
     # Review lanes break the Review duration into its two seats.
     assert_select "[data-test=?]", "testing-review-lanes", count: 1
     assert_select "[data-test=?]", "testing-review-lane", count: 2
-    assert_select "[data-test='testing-review-lane'] img[src=?]", "/agents/shannon.png", count: 1
-    assert_select "[data-test='testing-review-lane'] img[src=?]", "/agents/carl.png", count: 1
+    assert_select "[data-test='testing-review-lane'] img[src=?]", "/agents/shannon.webp", count: 1
+    assert_select "[data-test='testing-review-lane'] img[src=?]", "/agents/carl.webp", count: 1
     assert_select "[data-test='testing-review-lane']", text: /Primary/
     assert_select "[data-test='testing-review-lane']", text: /Light/
     assert_match(/12m/, rendered, "the primary lane shows its measured duration")

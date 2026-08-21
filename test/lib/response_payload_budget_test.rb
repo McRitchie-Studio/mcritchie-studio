@@ -24,9 +24,12 @@ class ResponsePayloadBudgetTest < ActiveSupport::TestCase
   # from the 2.4MB source, while 320px was visibly mush.
   AGENT_IMAGE_MAX_EDGE = 768
 
-  # Headroom over the largest current file (~232KB) and still far below a re-upload
-  # of the original artwork (2.2-2.7MB), which is the mistake being guarded.
-  AGENT_IMAGE_BUDGET_BYTES = 256 * 1024
+  # Headroom over the largest current file (~156KB) and still far below a re-upload of the
+  # original artwork (2.2-2.7MB), which is the mistake being guarded. Tightened from 256KB
+  # when the portraits moved from 8-bit-colormap PNG (196-228KB) to WebP q90 (104-156KB);
+  # 200KB is the task's stated budget and still leaves ~28 percent of headroom over the
+  # largest file, so an ordinary re-encode does not trip it but a source re-upload does.
+  AGENT_IMAGE_BUDGET_BYTES = 200 * 1024
 
   test "[unit] Rack::Deflater is in the middleware stack" do
     middlewares = Rails.application.middleware.map { |m| m.klass.to_s }
@@ -50,7 +53,7 @@ class ResponsePayloadBudgetTest < ActiveSupport::TestCase
   end
 
   test "[unit] every agent portrait stays inside the page-weight budget" do
-    images = Dir[Rails.root.join("public/agents/*.png")]
+    images = portrait_paths
     assert images.any?, "no agent portraits found — this guard would pass vacuously"
 
     oversized = images.filter_map do |path|
@@ -70,12 +73,12 @@ class ResponsePayloadBudgetTest < ActiveSupport::TestCase
   # Scoped to the 5:3 portraits because that ratio IS the card hero
   # (agents/index.html.erb:16 renders object-cover inside aspect-[5/3], and the
   # 1619x971 sources are exactly 5:3 — they were authored for it). Square files are
-  # exempt: alex.png's source is only 340x340, so demanding 640 of it would demand
+  # exempt: alex's source is only 340x340, so demanding 640 of it would demand
   # resolution that has never existed.
   HERO_MIN_LONG_EDGE = 640
 
   test "[unit] every 5:3 portrait is still big enough for the card hero" do
-    too_small = png_dimensions.filter_map do |name, (width, height)|
+    too_small = portrait_dimensions.filter_map do |name, (width, height)|
       next if height.zero?
       next unless (width.to_f / height).between?(1.6, 1.75) # ~5:3, the hero ratio
 
@@ -88,7 +91,7 @@ class ResponsePayloadBudgetTest < ActiveSupport::TestCase
   end
 
   test "[unit] every agent portrait stays inside the pixel budget" do
-    too_big = png_dimensions.filter_map do |name, (width, height)|
+    too_big = portrait_dimensions.filter_map do |name, (width, height)|
       "#{name} is #{width}x#{height}" if [width, height].max > AGENT_IMAGE_MAX_EDGE
     end
 
@@ -97,16 +100,45 @@ class ResponsePayloadBudgetTest < ActiveSupport::TestCase
   end
   private
 
-  # { basename => [width, height] } for every agent portrait. Reads the PNG IHDR
-  # directly rather than shelling out to an image tool CI may not carry: bytes
-  # 16..23 of a PNG are width then height, big-endian.
-  def png_dimensions
-    images = Dir[Rails.root.join("public/agents/*.png")]
+  # Every agent portrait on disk, whatever container it is in. Globbing one extension is how
+  # this guard went vacuous once already: the files moved to WebP and `*.png` matched nothing,
+  # so `images.any?` was the only thing standing between a silent pass and no coverage at all.
+  def portrait_paths
+    Dir[Rails.root.join("public/agents/*.{png,webp}")]
+  end
+
+  # { basename => [width, height] } for every agent portrait. Reads the header bytes directly
+  # rather than shelling out to an image tool CI may not carry.
+  def portrait_dimensions
+    images = portrait_paths
     assert images.any?, "no agent portraits found — these guards would pass vacuously"
 
-    images.to_h do |path|
-      width, height = File.binread(path, 24)[16, 8].unpack("N2")
-      [File.basename(path), [width.to_i, height.to_i]]
+    images.to_h { |path| [File.basename(path), image_dimensions(path)] }
+  end
+
+  # PNG: bytes 16..23 are width then height, big-endian, straight out of the IHDR.
+  #
+  # WebP is a RIFF container and the dimensions sit in a different place in each of its three
+  # chunk layouts, so the fourcc at bytes 12..15 has to be read first. Handling only the one
+  # cwebp happens to emit today (VP8, simple lossy) would leave this silently wrong the day
+  # someone passes -lossless (VP8L) or ships an alpha/animated file (VP8X).
+  def image_dimensions(path)
+    head = File.binread(path, 32)
+    return head[16, 8].unpack("N2").map(&:to_i) if head[0, 8].unpack1("H16") == "89504e470d0a1a0a"
+
+    case head[12, 4]
+    when "VP8 "  # simple lossy: 14-bit width then height, little-endian
+      [head[26, 2].unpack1("v") & 0x3fff, head[28, 2].unpack1("v") & 0x3fff]
+    when "VP8L"  # lossless: 14 bits each, minus one, packed from bit 0
+      bits = head[21, 4].unpack1("V")
+      [(bits & 0x3fff) + 1, ((bits >> 14) & 0x3fff) + 1]
+    else         # VP8X extended: 24-bit canvas width then height, each minus one
+      [uint24_le(head, 24) + 1, uint24_le(head, 27) + 1]
     end
+  end
+
+  # Ruby has no 24-bit unpack directive, so pad to 32 bits and read little-endian.
+  def uint24_le(bytes, offset)
+    bytes[offset, 3].ljust(4, "\0").unpack1("V")
   end
 end

@@ -84,9 +84,9 @@ class RecentTasksViewTest < ActionDispatch::IntegrationTest
 
   test "[component] phase tiles wear owner avatars and the review lanes break out primary + light" do
     pikachu = Pokemon.create!(dex: 9001, name: "Pikachu", slug: "pikachu", sprite_url: "/pokemon/pikachu.png")
-    Agent.create!(name: "Avi", slug: "avi", avatar: "/agents/avi.png")
-    Agent.create!(name: "Shannon", slug: "shannon", avatar: "/agents/shannon.png")
-    Agent.create!(name: "Carl", slug: "carl", avatar: "/agents/carl.png")
+    Agent.create!(name: "Avi", slug: "avi", avatar: "/agents/avi.webp")
+    Agent.create!(name: "Shannon", slug: "shannon", avatar: "/agents/shannon.webp")
+    Agent.create!(name: "Carl", slug: "carl", avatar: "/agents/carl.webp")
 
     @in_progress_task.update_columns( # rubocop:disable Rails/SkipsModelValidations
       updated_at: 1.minute.ago,
@@ -112,15 +112,15 @@ class RecentTasksViewTest < ActionDispatch::IntegrationTest
       assert_select "[data-test='recent-task-phases'] [data-test='phase-tile-avatar']", count: 4
       assert_select "[data-test='recent-task-phases'] img[src=?]", "/pokemon/pikachu.png",
                     { minimum: 3 }, "the mascot sprite fronts the three machine phases"
-      assert_select "[data-test='recent-task-phases'] img[src=?]", "/agents/avi.png",
+      assert_select "[data-test='recent-task-phases'] img[src=?]", "/agents/avi.webp",
                     { count: 1 }, "Avi fronts the Review tile"
 
       # The review lanes break the overall Review duration into its two seats,
       # each with its reviewer soul + duration.
       assert_select "[data-test=?]", "recent-review-lanes", count: 1
       assert_select "[data-test=?]", "recent-review-lane", count: 2
-      assert_select "[data-test='recent-review-lane'] img[src=?]", "/agents/shannon.png", count: 1
-      assert_select "[data-test='recent-review-lane'] img[src=?]", "/agents/carl.png", count: 1
+      assert_select "[data-test='recent-review-lane'] img[src=?]", "/agents/shannon.webp", count: 1
+      assert_select "[data-test='recent-review-lane'] img[src=?]", "/agents/carl.webp", count: 1
       assert_select "[data-test='recent-review-lane']", text: /Primary/
       assert_select "[data-test='recent-review-lane']", text: /Light/
       assert_select "[data-test='recent-review-lane']", text: /12m/
