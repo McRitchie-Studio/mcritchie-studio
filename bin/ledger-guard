@@ -3,10 +3,12 @@
 
 # ledger-guard — refuse a tree that has DESTROYED a resolved delete-later row.
 #
-#   bin/ledger-guard                     # against origin/accepted (then release, main)
-#   bin/ledger-guard --base=HEAD         # against the last commit — the pre-commit check
+#   bin/ledger-guard                          # against origin/accepted (then release, main)
+#   bin/ledger-guard --base=HEAD              # against the last commit — the pre-commit check
+#   bin/ledger-guard --base HEAD              # the same thing; both spellings parse
 #   bin/ledger-guard --repo=/path/to/repo
 #   bin/ledger-guard --json
+#   bin/ledger-guard --help                   # usage; CHECKS NOTHING (see the exit codes)
 #
 # The ledger (docs/agents/maintenance/delete-later.md) and its archive are one record in
 # two files: a row may move between them, never leave both. This compares the working
@@ -17,6 +19,25 @@
 #
 # An unreadable baseline is RED, not a pass: this instrument is nothing but a comparison
 # against history outside the working tree.
+#
+# EVERY ARGUMENT IS ACCOUNTED FOR BEFORE ANY VERDICT IS PRINTED. This parser once read
+# ONLY `--flag=value`, so a bare `--base HEAD` matched nothing, EXPLICIT came back empty,
+# and the guard silently fell through to its three DEFAULT bases — printing a confident
+# verdict about refs the caller never named. Unknown flags vanished the same way. That is
+# the shape the house closed twice on 2026-08-21 (PRs #974, #980), and on a GUARD it is
+# worse than on a claim CLI: the caller reads this exit code AS the answer to the question
+# they typed. So both spellings parse, and an argument this script cannot account for
+# REFUSES rather than quietly measuring something else.
+#
+# EXIT CODES — the guard's verdict, which callers (the pre-commit check, the `rails` lane)
+# branch on:
+#   0 — every resolved row at the checked base(s) is still in the ledger or its archive.
+#   1 — a row was DESTROYED, the baseline could not be read, or an argument was refused.
+#
+# HELP EXITS 1, NOT 0, and deliberately so: exit 0 here is not "the command worked", it is
+# the ASSERTION "the ledger is intact". A help probe measures nothing, so answering it with
+# 0 would state a fact about the ledger that was never checked — the very silent-pass class
+# this guard exists to close. Same call PR #980 made for bin/lib/release_claim_cli.rb.
 
 require "json"
 require_relative "lib/ledger_guard"
@@ -24,19 +45,110 @@ require_relative "lib/repo_root"
 
 DEFAULT_BASES = %w[origin/accepted origin/release origin/main].freeze
 
-def flag(name)
-  ARGV.grep(/\A--#{name}=/).map { |arg| arg.split("=", 2).last }
+# --help/-h from ANY position prints usage and checks nothing. The same two spellings
+# bin/task and the claim CLIs honor, because someone probing this script has no way to
+# know it is a different parser.
+HELP_FLAGS = %w[--help -h].freeze
+
+# The flags this guard understands. VALUE_FLAGS consume the next token (or an `=value`);
+# BOOL_FLAGS stand alone. A future flag must be added to exactly one of these lists — the
+# dictionary is what makes "unrecognized" mean something.
+VALUE_FLAGS = %w[--repo --base --head].freeze
+BOOL_FLAGS  = %w[--json].freeze
+
+USAGE = <<~TXT
+  usage: bin/ledger-guard [--repo <path>] [--base <ref>]... [--head <ref>] [--json]
+
+    --repo <path>   repository to inspect (default: this script's own checkout)
+    --base <ref>    baseline to compare against; repeatable.
+                    Default: #{DEFAULT_BASES.join(', ')}
+    --head <ref>    inspect a COMMIT instead of the working tree
+    --json          machine-readable verdict
+    --help, -h      this text — CHECKS NOTHING, and exits 1 so it is never
+                    mistaken for the guard's green verdict
+
+  Both `--flag=value` and `--flag value` parse.
+TXT
+
+# Walk the line the way the flags are actually written, so a value-flag's VALUE is never
+# mistaken for an argument of its own. Returns [values, bools, bad].
+def parse_argv(argv)
+  values = Hash.new { |hash, key| hash[key] = [] }
+  bools  = []
+  bad    = []
+  index  = 0
+
+  while index < argv.length
+    arg = argv[index]
+    # Reset EVERY iteration. A modifier-`if` does not scope its assignment: written as
+    # `name, inline = arg.split("=", 2) if …`, both locals survive into the next loop pass
+    # when the condition is false, so a bare `--bogus` inherited the PREVIOUS flag's name
+    # and was silently recorded as another `--base`. Caught by the two argument tests.
+    name = nil
+    inline = nil
+    name, inline = arg.split("=", 2) if arg.start_with?("--") && arg.include?("=")
+
+    if name && VALUE_FLAGS.include?(name)
+      values[name] << inline
+      index += 1
+    elsif name # `--json=1`, or an `=` form of a flag that takes no value
+      bad << arg
+      index += 1
+    elsif VALUE_FLAGS.include?(arg)
+      nxt = argv[index + 1]
+      if nxt.nil? || nxt.start_with?("-")
+        # A value-flag that consumed nothing is a usage error, not a boolean. Letting
+        # `--base` fall through is how the default-base substitution happened.
+        bad << arg
+        index += 1
+      else
+        values[arg] << nxt
+        index += 2
+      end
+    elsif BOOL_FLAGS.include?(arg)
+      bools << arg
+      index += 1
+    else
+      # Unrecognized flags, single-dash tokens, and stray positionals alike: this guard
+      # takes no positionals, so anything left over is an argument it cannot account for.
+      bad << arg
+      index += 1
+    end
+  end
+
+  [values, bools, bad]
 end
 
-JSON_ONLY = ARGV.include?("--json")
-REPO      = flag("repo").first || RepoRoot.git_toplevel(__dir__) || File.expand_path("..", __dir__)
-HEAD_REF  = flag("head").first
-EXPLICIT  = flag("base")
-BASES     = EXPLICIT.empty? ? DEFAULT_BASES : EXPLICIT
+VALUES, BOOLS, BAD = parse_argv(ARGV)
+
+JSON_ONLY = BOOLS.include?("--json")
 
 def say(message = "")
   puts(message) unless JSON_ONLY
 end
+
+if ARGV.any? { |arg| HELP_FLAGS.include?(arg) }
+  JSON_ONLY ? puts(JSON.generate(ok: false, reason: "usage", usage: USAGE)) : warn(USAGE)
+  exit 1
+end
+
+if BAD.any?
+  noun = BAD.length == 1 ? "argument" : "arguments"
+  message = "ledger-guard: unrecognized #{noun} #{BAD.map(&:inspect).join(', ')} — " \
+            "NOTHING was checked. This is a refusal, not a verdict: the ledger has not " \
+            "been compared against anything.\n\n#{USAGE}"
+  if JSON_ONLY
+    puts JSON.generate(ok: false, reason: "bad-arguments", bad: BAD, usage: USAGE)
+  else
+    warn message
+  end
+  exit 1
+end
+
+REPO     = VALUES["--repo"].first || RepoRoot.git_toplevel(__dir__) || File.expand_path("..", __dir__)
+HEAD_REF = VALUES["--head"].first
+EXPLICIT = VALUES["--base"]
+BASES    = EXPLICIT.empty? ? DEFAULT_BASES : EXPLICIT
 
 # Which bases can actually be read. An EXPLICIT --base must resolve — the caller named it,
 # and silently ignoring it would certify against something else. The default list is a
@@ -56,8 +168,20 @@ if resolved.empty? || (!EXPLICIT.empty? && !unreadable.empty?)
   exit 1
 end
 
-losses = resolved.to_h { |ref| [ref, LedgerGuard.lost_against_ref(REPO, ref, head: HEAD_REF)] }
-                 .reject { |_ref, found| found.empty? }
+# An UnreadableBase raised from HERE is the BLOB case: the ref resolved above, but its
+# ledger content could not be produced. Same verdict as an unresolvable ref — RED, reported,
+# never a stack trace and never a pass.
+begin
+  losses = resolved.to_h { |ref| [ref, LedgerGuard.lost_against_ref(REPO, ref, head: HEAD_REF)] }
+                   .reject { |_ref, found| found.empty? }
+rescue LedgerGuard::UnreadableBase => e
+  if JSON_ONLY
+    puts JSON.generate(ok: false, reason: "unreadable-base", detail: e.message, repo: REPO)
+  else
+    warn "ledger-guard: #{e.message}"
+  end
+  exit 1
+end
 
 if JSON_ONLY
   puts JSON.generate(
