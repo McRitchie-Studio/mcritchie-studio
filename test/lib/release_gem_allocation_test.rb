@@ -373,12 +373,20 @@ class ReleaseGemAllocationTest < Minitest::Test
       assert_includes out, "mnior"
       assert_equal before_engine, git(engine_origin, "rev-parse", "release").strip,
                    "studio-engine must not have been written — its sibling had not been judged yet"
-      assert_includes pushed(solana_origin, "solana-studio.gemspec"), %(spec.version       = "0.1.0")
+      assert_includes pushed(solana_origin, "lib/solana_studio/version.rb"), %(VERSION = "0.1.0")
     end
   end
 
-  # A second registered gem, with the OTHER registered version_file shape (a
-  # gemspec) and no tracked Gemfile.lock.
+  # A second registered gem, with no tracked Gemfile.lock.
+  #
+  # Its version_file was `solana-studio.gemspec` until 2026-08-20 — this fixture
+  # existed partly to cover that gemspec-shaped `spec.version =` declaration.
+  # The gem moved to a dedicated lib/solana_studio/version.rb (bin/dor-check
+  # refuses a PR editing the registered version_file, which while it WAS the
+  # gemspec locked spec.files and the dependencies too), so this fixture follows
+  # the registry. Both declaration shapes keep direct coverage in
+  # test/models/release/gem_version_test.rb, where rewrite_version is exercised
+  # as the pure function it is — a better home for it than a git-fixture sweep.
   def build_solana_repo(root)
     origin = File.join(root, "solana-studio-origin.git")
     repo   = File.join(root, "solana-studio")
@@ -387,8 +395,11 @@ class ReleaseGemAllocationTest < Minitest::Test
     git(repo, "config", "user.email", "test@example.com")
     git(repo, "config", "user.name", "Test")
     git(repo, "config", "commit.gpgsign", "false")
+    FileUtils.mkdir_p(File.join(repo, "lib", "solana_studio"))
+    File.write(File.join(repo, "lib/solana_studio/version.rb"),
+               %(module SolanaStudio\n  VERSION = "0.1.0"\nend\n))
     File.write(File.join(repo, "solana-studio.gemspec"),
-               %(Gem::Specification.new do |spec|\n  spec.version       = "0.1.0"\nend\n))
+               %(require_relative "lib/solana_studio/version"\nGem::Specification.new do |spec|\n  spec.version = SolanaStudio::VERSION\nend\n))
     git(repo, "add", "-A")
     git(repo, "commit", "--quiet", "-m", "seed 0.1.0")
     git(repo, "tag", "v0.1.0")

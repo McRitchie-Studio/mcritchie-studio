@@ -20,21 +20,33 @@ module Ci
       refute_includes repos, "rolio", "a dormant repo has no ladder to report"
     end
 
-    # solana-studio IS three-rung, but GEM_CI_WORKFLOWS maps it to nil ("ships no
-    # suite workflow — declared, not overlooked"), so BranchGate fails closed and
-    # every rung reads :none forever. A card that can only say "not built" is
-    # noise; excluding it is derived from the registry, not hardcoded.
+    # A three-rung repo that maps to nil ("ships no suite workflow — declared,
+    # not overlooked") makes BranchGate fail closed, so every rung reads :none
+    # forever. A card that can only say "not built" is noise, and excluding it is
+    # derived from the registry rather than hardcoded.
+    #
+    # STUBBED rather than pointed at a live repo. solana-studio was the standing
+    # fixture until it declared "Gem CI" (2026-08-20) and no gem maps to nil
+    # today — but the BRANCH still exists and still has to work for the next one.
+    # A test that could only run while some real repo happened to be CI-less was
+    # never testing the rule; it was testing the registry.
     test "reportable_repos drops a three-rung repo that declares no CI suite" do
-      assert_includes Release::Repos.three_rung_repos, "solana-studio",
-                      "precondition: solana-studio is on the ladder"
-      assert_nil GithubWorkflowRun.ci_workflow_for("solana-studio"),
-                 "precondition: solana-studio declares no suite"
+      victim = Release::Repos.three_rung_repos.first
+      assert victim.present?, "precondition: something is on the ladder"
 
-      refute_includes Ci::AppLadder.reportable_repos, "solana-studio"
+      GithubWorkflowRun.stub(:ci_workflow_for, ->(repo) { repo == victim ? nil : "CI" }) do
+        refute_includes Ci::AppLadder.reportable_repos, victim,
+                        "a repo declaring no suite must not get a card"
+        assert_equal Release::Repos.three_rung_repos.size - 1,
+                     Ci::AppLadder.reportable_repos.size,
+                     "and every other three-rung repo must still get one"
+      end
     end
 
-    test "reportable_repos is exactly the four repos that can report a verdict" do
-      assert_equal %w[mcritchie-industries mcritchie-studio studio-engine turf-monster],
+    test "reportable_repos is exactly the repos that can report a verdict" do
+      # solana-studio joined on 2026-08-20 — it grew a Rails engine, and with it
+      # a "Gem CI" lane, so it now has a verdict to report.
+      assert_equal %w[mcritchie-industries mcritchie-studio solana-studio studio-engine turf-monster],
                    Ci::AppLadder.reportable_repos.sort
     end
 

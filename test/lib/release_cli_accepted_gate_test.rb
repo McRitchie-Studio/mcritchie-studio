@@ -136,13 +136,30 @@ class ReleaseCliAcceptedGateTest < Minitest::Test
   # Drives promote_accepted_to_release! with the workflow tree each repo ships on
   # origin/accepted stubbed in. ci_verdict is pinned GREEN throughout, so anything
   # these tests refuse was refused by the BLIND guard and not the RED one.
-  def promote_with_workflows(sources, repos: sources.keys)
+  # `declared_ci_less:` stubs GemCiWorkflows so one repo reads as having DECLARED
+  # that it ships no suite. Injected here rather than added to bin/release.rb —
+  # the production code grows no test-only seam.
+  def promote_with_workflows(sources, repos: sources.keys, declared_ci_less: nil)
     stub = <<~RUBY
       def repo_path(repo) = "/nonexistent/\#{repo}"
       def sh(*_a, **_k) = ["abc1234", true]
       def ci_verdict(_repo, _sha) = { state: :green }
       def accepted_workflow_sources(repo) = #{sources.inspect}[repo]
     RUBY
+    if declared_ci_less
+      # The guard resolves the name through Release::AcceptedCertification.blind →
+      # .workflow_for, NOT GemCiWorkflows directly, so THAT is the seam to stub.
+      # (Stubbing declared_ci_less? leaves workflow_for defaulting to "CI" for an
+      # unregistered repo, and the guard then reports it blind — which is how this
+      # harness told me I had picked the wrong lever.)
+      stub += <<~RUBY
+        Release::AcceptedCertification.singleton_class.prepend(Module.new do
+          def workflow_for(repo, config)
+            repo.to_s == #{declared_ci_less.inspect} ? nil : super
+          end
+        end)
+      RUBY
+    end
     script = %(ARGV.replace(["--help"]); begin; load #{BIN.inspect}; rescue SystemExit; end; ) +
              stub +
              %(begin; promote_accepted_to_release!(#{repos.inspect}, label: "rel-t"); ) +
@@ -211,11 +228,37 @@ class ReleaseCliAcceptedGateTest < Minitest::Test
     refute_includes out, "PROMOTED"
   end
 
-  # solana-studio ships no .github/workflows at all and DECLARES that (nil in the
-  # registry map). A declared exemption must not read as a gap.
+  # A repo that ships no .github/workflows at all and DECLARES that (nil in the
+  # registry map) must not read as a gap. solana-studio was the live example until
+  # 2026-08-20; no registered gem declares nil now, so the declaration is STUBBED
+  # in the subprocess — the exemption still has to work for the next such gem.
   def test_a_repo_declaring_no_suite_workflow_is_exempt_not_blind
-    out = promote_with_workflows({ "solana-studio" => {} })
+    out = promote_with_workflows({ "quiet-gem" => {} },
+                                 declared_ci_less: "quiet-gem")
 
     refute_match(/cannot certify/, out)
+  end
+
+  # The other half, and the one that bites today: a gem that DOES declare a lane
+  # certifies through it like any app. solana-studio's Gem CI lists `accepted` on
+  # purpose — without that, this guard would refuse every promote carrying it.
+  def test_a_gem_declaring_a_suite_certifies_through_it
+    gem_ci = "name: Gem CI\non:\n  pull_request:\n  push:\n    branches: [accepted, release, main]\njobs: {}\n"
+    out = promote_with_workflows({ "solana-studio" => { ".github/workflows/gem-ci.yml" => gem_ci } })
+
+    refute_match(/cannot certify/, out)
+    assert_match(/`accepted` is built by the declared suite workflow in solana-studio/, out,
+                 "the guard must POSITIVELY certify it, not merely fail to refuse")
+  end
+
+  # …and the trap that shape invites: a declared lane that never builds `accepted`
+  # is WORSE than none, because the RED guard passes over it without ever having
+  # been capable of failing.
+  def test_a_gem_whose_lane_skips_accepted_is_blind_not_exempt
+    gem_ci = "name: Gem CI\non:\n  pull_request:\n  push:\n    branches: [main, release]\njobs: {}\n"
+    out = promote_with_workflows({ "solana-studio" => { ".github/workflows/gem-ci.yml" => gem_ci } })
+
+    assert_match(/solana-studio \(suite workflow "Gem CI"\) cannot certify `accepted`/, out)
+    refute_includes out, "PROMOTED"
   end
 end

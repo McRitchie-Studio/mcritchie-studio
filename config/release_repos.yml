@@ -185,7 +185,7 @@
 #   version_file — path (inside the gem repo) declaring the version to publish.
 #                  Read for the producer-first publish + the board indicator.
 #                    studio-engine → lib/studio/version.rb  (VERSION = "x.y.z")
-#                    solana-studio → solana-studio.gemspec   (spec.version = "x.y.z")
+#                    solana-studio → lib/solana_studio/version.rb (VERSION = "x.y.z")
 #   gemspec      — the .gemspec `gem build` packages (defaults to <repo>.gemspec).
 #   release_check — optional repo-relative pre-publish gate run with `--build`
 #                   (syntax + unit + build) before the artifact is pushed.
@@ -205,9 +205,21 @@ gems:
     build_cmd: bin/release-check --build
   solana-studio:
     ladder: three-rung
-    version_file: solana-studio.gemspec
+    # Was `solana-studio.gemspec` until 2026-08-20. bin/dor-check refuses a PR
+    # that edits the registered version_file, matching on PATH — so pointing it
+    # at the gemspec made the WHOLE gemspec release-owned: spec.files, the
+    # runtime dependencies and the metadata, none of which the conductor writes
+    # and none of which had another writer. The manifest was un-editable through
+    # the normal cycle, which surfaced the first time the gem needed to ship a
+    # new directory (its Rails engine's app/). Split to a dedicated version file,
+    # the shape studio-engine already uses, so each file has its real owner:
+    # this one the release, the gemspec the PR.
+    version_file: lib/solana_studio/version.rb
     gemspec: solana-studio.gemspec
-    build_cmd: gem build solana-studio.gemspec
+    # The gem grew a suite runner with its engine. Registering it here gives the
+    # publish a pre-artifact gate instead of pushing on membership alone.
+    release_check: bin/release-check
+    build_cmd: bin/release-check --build
 
 apps:
   mcritchie-studio:

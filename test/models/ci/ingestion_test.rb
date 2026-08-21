@@ -71,6 +71,34 @@ module Ci
         assert_nil GithubWorkflowRun.ci_workflow_for(repo),
                    "#{repo} is exempt from the ingestion guard but declares a CI workflow — it must deliver runs"
       end
+
+      # The loop above went EMPTY on 2026-08-20, when solana-studio — the last
+      # exempt repo — declared "Gem CI". An empty loop asserts nothing, and
+      # minitest reported this test as "missing assertions" while still counting
+      # it green. This line keeps the test honest whatever the set holds: with no
+      # exempt repos it records the vacuous truth explicitly instead of quietly
+      # covering nothing.
+      assert exempt.all? { |repo| GithubWorkflowRun.ci_workflow_for(repo).nil? },
+             "the exemption set must only ever contain repos that declare no workflow"
+    end
+
+    test "[unit] the exemption guard would CATCH a repo that is exempt but ships a suite" do
+      # The branch the live invariant above can no longer reach now that nothing
+      # is exempt. Proving the rule still bites means creating the violation:
+      # a sweepable repo held out of expected_repos WHILE declaring a workflow.
+      sweepable = Release::Ladder.sweepable(Release::Repos.config)
+      violator  = sweepable.first
+      assert violator.present?, "precondition: something is sweepable"
+
+      Ci::Ingestion.stub(:expected_repos, sweepable - [violator]) do
+        exempt = Release::Ladder.sweepable(Release::Repos.config) - Ci::Ingestion.expected_repos
+        assert_equal [violator], exempt, "precondition: the violator is the exempt one"
+
+        GithubWorkflowRun.stub(:ci_workflow_for, ->(_repo) { "Some CI" }) do
+          refute exempt.all? { |repo| GithubWorkflowRun.ci_workflow_for(repo).nil? },
+                 "a repo that is exempt AND declares a workflow must fail the invariant"
+        end
+      end
     end
 
     test "[unit] the expected set is the three-rung set, not every registry entry" do

@@ -50,16 +50,35 @@ class Release::ReposTest < ActiveSupport::TestCase
   end
 
   test "self_gated_gem? is true only for a gem carrying a non-empty release_check" do
-    # studio-engine declares release_check: bin/release-check → self-gated.
+    # Both registered gems declare release_check: bin/release-check → self-gated.
+    # solana-studio joined on 2026-08-20, when it grew a suite runner alongside
+    # its Rails engine; it was the standing "not self-gated" example before that.
     assert Release::Repos.self_gated_gem?("studio-engine")
-    # solana-studio has no release_check → not self-gated (still needs a consumer).
-    assert_not Release::Repos.self_gated_gem?("solana-studio")
+    assert Release::Repos.self_gated_gem?("solana-studio")
     # apps and unknowns are never self-gated gems.
     assert_not Release::Repos.self_gated_gem?("mcritchie-studio")
     assert_not Release::Repos.self_gated_gem?("turf-monster")
     assert_not Release::Repos.self_gated_gem?("not-a-real-repo")
     assert_not Release::Repos.self_gated_gem?(nil)
     assert_not Release::Repos.self_gated_gem?("")
+  end
+
+  # The gem-without-a-release_check branch, which no registered gem exercises
+  # any more. STUBBED rather than pointed at a live repo: the branch still runs
+  # for the next gem onboarded without a runner, and a test that could only work
+  # while some real gem happened to lack one was testing the registry, not the
+  # rule. Covers blank and whitespace-only alongside absent — `.strip.present?`
+  # is what makes an empty declaration read as "no gate" rather than as one.
+  test "self_gated_gem? is false for a gem whose release_check is absent or blank" do
+    [nil, "", "   "].each do |declared|
+      meta = { "ladder" => "three-rung", "gemspec" => "x.gemspec" }
+      meta["release_check"] = declared unless declared.nil?
+
+      Release::Repos.stub(:gem_meta, ->(_repo) { meta }) do
+        assert_not Release::Repos.self_gated_gem?("some-gem"),
+                   "release_check #{declared.inspect} must not count as a gate"
+      end
+    end
   end
 
   test "extract_version parses a VERSION constant assignment" do

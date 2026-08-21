@@ -35,12 +35,30 @@ class AppLadderRowTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='app-ladder-card'][data-repo='rolio']", 0
   end
 
-  # On the ladder, but declares no CI suite — every rung would read not_built
-  # forever, so it earns no card. See Ci::AppLadder.reportable_repos.
-  test "a three-rung repo with no declared CI suite gets no card" do
+  # On the ladder and declaring a suite — so it earns a card like any other repo.
+  # solana-studio was the standing no-card example until 2026-08-20, when it
+  # shipped a Rails engine and a "Gem CI" lane; it now has a verdict to report.
+  test "a three-rung repo that declares a CI suite gets a card" do
     get deployments_path
 
-    assert_select "[data-test='app-ladder-card'][data-repo='solana-studio']", 0
+    assert_select "[data-test='app-ladder-card'][data-repo='solana-studio']", 1
+  end
+
+  # The no-card branch itself, which no live repo exercises any more. A repo
+  # declaring no suite makes every rung read not_built forever, and a card that
+  # can only say "not built" is noise — see Ci::AppLadder.reportable_repos.
+  # STUBBED: the rule has to keep working for the next gem onboarded without a
+  # suite, and borrowing the condition from live config stopped being possible.
+  test "a three-rung repo with no declared CI suite gets no card" do
+    kept = Ci::AppLadder.reportable_repos - ["solana-studio"]
+
+    Ci::AppLadder.stub(:reportable_repos, kept) do
+      get deployments_path
+
+      assert_select "[data-test='app-ladder-card'][data-repo='solana-studio']", 0
+      assert_select "[data-test='app-ladder-card'][data-repo='turf-monster']", 1,
+                    "and the repos that DO declare a suite still get theirs"
+    end
   end
 
   test "each card carries all three rungs" do

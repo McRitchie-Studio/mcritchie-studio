@@ -25,7 +25,13 @@
 module GemCiWorkflows
   MAP = {
     "studio-engine" => "Engine CI",
-    "solana-studio" => nil # ships no suite workflow — declared, not overlooked
+    # Was nil ("ships no suite workflow — declared, not overlooked") until
+    # 2026-08-20, which was the right call while the gem was pure-Ruby Borsh
+    # encoders every consumer suite exercised. It stopped being right when the
+    # gem started shipping a Rails engine — an ERB partial and a browser guard
+    # that a consumer RENDERS — because neither a packaging error nor a
+    # JavaScript regression is visible to any consumer suite before publish.
+    "solana-studio" => "Gem CI"
   }.freeze
 
   module_function
