@@ -15,6 +15,15 @@
 #   bin/task review-claim release <slug>                     # clean drop when the review lands
 #   bin/task review-claim status  <slug>                     # who (if anyone) is reviewing it
 #   bin/task review-claim renew-loop <slug> --anchor-pid <p> --anchor-start <s>  # internal
+#   bin/task claim-next-review --help | -h                   # usage; claims NOTHING
+#
+# EVERY ARGUMENT IS ACCOUNTED FOR BEFORE ANYTHING IS CLAIMED. --help/-h anywhere on
+# the line prints usage and mutates nothing; an unrecognized flag, a single-dash
+# token, or a positional the subcommand does not take REFUSES (exit 1) instead of
+# running the side effect. This is a scar: `claim-next-review --help` once dropped
+# the flag and popped a REAL task, taking a live review lease on work nobody was
+# reviewing. The command whose whole purpose is a side effect is the one an agent
+# probes with --help first, so refusal, not silence, is the only safe default.
 #
 # `claim-next-review` is the server-authoritative sibling of `acquire`: instead of the
 # caller naming a task it picked, the BOARD selects the highest-ranked reviewable task
@@ -58,6 +67,31 @@ class ReviewClaimCli
   # caller can branch (`slug=$(bin/task claim-next-review) || idle`).
   NONE = 4
 
+  # --help/-h from ANY position prints usage and mutates nothing. Same two spellings
+  # bin/task's HELP_FLAGS honors, because an agent probing this CLI has no way to
+  # know it is a different parser.
+  HELP_FLAGS = %w[--help -h].freeze
+
+  # The flags each subcommand understands — the dictionary an unrecognized argument
+  # is rejected against, the mirror of bin/task's PARSE_FLAG_NAMES + unknown_flag!.
+  # A command with NO flags is still keyed here, so this hash doubles as the set of
+  # subcommands run() dispatches; a key without a `when` arm below is drift, and a
+  # test pins the two together.
+  COMMAND_FLAGS = {
+    "acquire"    => %w[--label --agent],
+    "claim-next" => %w[--label --agent],
+    "renew"      => [],
+    "renew-loop" => %w[--anchor-pid --anchor-start],
+    "release"    => [],
+    "status"     => []
+  }.freeze
+
+  # The subcommands that name their own task. `claim-next` deliberately does NOT:
+  # the BOARD picks the task, so a slug on that line is a caller who meant
+  # `acquire` — and popping a DIFFERENT task than the one they typed is the same
+  # defect as the dropped flag, one seam over.
+  SLUG_COMMANDS = %w[acquire renew renew-loop release status].freeze
+
   def initialize(env: ENV, out: $stdout, err: $stderr)
     @env = env
     @out = out
@@ -69,9 +103,27 @@ class ReviewClaimCli
   end
 
   # Entry point. Returns the process exit code.
+  #
+  # ARGUMENT VALIDATION RUNS BEFORE DISPATCH, and that ordering is the whole point:
+  # `bin/task claim-next-review --help` used to CLAIM A REAL TASK. The unrecognized
+  # flag fell through parse_flags into an ignored key, the atomic pop ran anyway, and
+  # a help probe took a live review lease on a task nobody was reviewing — filling
+  # that task's crew seat with a reviewer that did not exist, undone by hand with
+  # `review-claim release <slug>` (hit 2026-08-20). claim-next is the one review
+  # command whose ENTIRE purpose is a side effect, and it is the first command an
+  # agent reaches for in an unfamiliar lane — exactly when it probes --help. So help
+  # prints usage and mutates NOTHING, and an argument this CLI cannot account for
+  # REFUSES rather than assuming the rest of the line was what you meant.
   def run(argv)
+    return usage(OK) if argv.any? { |arg| HELP_FLAGS.include?(arg) }
+
     command = argv.shift
-    slug = argv.find { |a| !a.start_with?("--") }
+    return usage(CANT_RUN) unless COMMAND_FLAGS.key?(command)
+
+    bad = bad_arguments(command, argv)
+    return refuse(command, bad) if bad.any?
+
+    slug = positionals(argv).first
     flags = parse_flags(argv)
 
     case command
@@ -81,10 +133,7 @@ class ReviewClaimCli
     when "renew-loop" then renew_loop(slug, flags)
     when "release"    then release(slug)
     when "status"     then status(slug)
-    else
-      @err.puts("usage: bin/task review-claim acquire <slug> [--label <text>] [--agent <soul>] | " \
-                "renew <slug> | release <slug> | status <slug>")
-      CANT_RUN
+    else usage(CANT_RUN) # drift guard: a COMMAND_FLAGS key with no arm here
     end
   rescue StandardError => e
     @err.puts("review-claim failed (ignored): #{e.class}: #{e.message}")
@@ -414,6 +463,99 @@ class ReviewClaimCli
       end
     end
     flags
+  end
+
+  # ── Argument validation (run BEFORE any command dispatch) ────────────────────
+
+  # Every argument this command cannot account for: an unrecognized flag, a
+  # single-dash token (which parse_flags drops on the floor entirely), and a
+  # positional the command does not take. All three walked the same way parse_flags
+  # walks the line, so a value-flag's VALUE (`--label Gastly`) is never mistaken
+  # for an argument of its own — that fidelity is what keeps a VALID invocation
+  # claiming instead of turning this guard into "refuse everything".
+  def bad_arguments(command, argv)
+    extra = positionals(argv)
+    extra = extra.drop(1) if SLUG_COMMANDS.include?(command)
+    unknown_flags(argv, COMMAND_FLAGS.fetch(command, [])) + extra
+  end
+
+  def unknown_flags(argv, valid)
+    bad = []
+    i = 0
+    while i < argv.length
+      arg = argv[i]
+      if arg.start_with?("--")
+        bad << arg unless valid.include?(arg)
+        nxt = argv[i + 1]
+        i += (nxt.nil? || nxt.start_with?("--")) ? 1 : 2
+      else
+        # A single-dash token is never a slug and never a flag parse_flags reads —
+        # before this guard `-x` (and `-h`) vanished silently, side effect and all.
+        bad << arg if arg.start_with?("-")
+        i += 1
+      end
+    end
+    bad
+  end
+
+  # The positionals on the line — flag VALUES consumed, dashed tokens excluded (a
+  # dashed token is never a positional; unknown_flags reports it). The slug is the
+  # first of these rather than `argv.find { !start_with?("--") }`, which read the
+  # VALUE of a preceding value-flag as the slug: `acquire --label Gastly my-task`
+  # claimed a task named "Gastly".
+  def positionals(argv)
+    found = []
+    i = 0
+    while i < argv.length
+      arg = argv[i]
+      if arg.start_with?("--")
+        nxt = argv[i + 1]
+        i += (nxt.nil? || nxt.start_with?("--")) ? 1 : 2
+      else
+        found << arg unless arg.start_with?("-")
+        i += 1
+      end
+    end
+    found
+  end
+
+  # Refuse LOUDLY: name every argument, list what IS valid, and say plainly that
+  # nothing was claimed — an agent that typo'd a flag must never be left wondering
+  # whether it took a lease. Exit CANT_RUN (1), the same code a missing session
+  # gives, so an existing `|| true` caller branches exactly as it already does.
+  def refuse(command, bad)
+    valid = COMMAND_FLAGS.fetch(command, [])
+    hint = valid.empty? ? " (this subcommand takes no flags)" : " (valid flags: #{valid.join(', ')})"
+    noun = bad.length == 1 ? "argument" : "arguments"
+    @err.puts("review-claim #{command}: unrecognized #{noun} #{bad.map(&:inspect).join(', ')}#{hint} — " \
+              "NOTHING was claimed.")
+    # A slug typed at `claim-next` is a caller who wanted `acquire`. Name the door
+    # they meant: a refusal that only says no leaves them re-typing the same line.
+    stray = bad.find { |arg| !arg.start_with?("-") }
+    if command == "claim-next" && stray
+      @err.puts("claim-next-review takes NO task slug — the BOARD picks the task. To review the one " \
+                "you named: bin/task review-claim acquire #{stray}")
+    end
+    usage(CANT_RUN)
+  end
+
+  # The usage block --help prints and every refusal ends with. It goes to STDERR
+  # deliberately: claim-next-review's STDOUT is the claimed slug (a caller runs
+  # `slug=$(bin/task claim-next-review)`), so usage text on stdout would be
+  # captured AS a slug. Returns the exit code it was handed, so a caller reads
+  # `return usage(OK)`.
+  def usage(code)
+    @err.puts(<<~TEXT)
+      usage: bin/task review-claim acquire <slug> [--label <text>] [--agent <soul>]
+             bin/task review-claim release <slug> | status <slug> | renew <slug>
+             bin/task claim-next-review [--label <text>] [--agent <soul>]
+      `acquire` and `claim-next-review` are WRITES, not reads: each takes a real
+      ~#{lease_ttl_seconds}s review lease on a real task. claim-next-review asks the BOARD for the
+      next reviewable green-CI task, claims it, and prints its slug on stdout.
+      Release what you claim: bin/task review-claim release <slug>
+      exit: 0 claimed · 10 skipped (already under live review) · 4 nothing eligible · 1 could not run
+    TEXT
+    code
   end
 
   def session_id
