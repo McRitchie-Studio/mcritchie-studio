@@ -52,18 +52,22 @@ const FADE_BODY_INK = 60; // the text must still be painted, not masked away
 //
 // The first version capped the tail at an absolute 80, calibrated on macOS
 // where a faded edge measured 24 against a hard clip of 210. On CI the same
-// correct build measured 64 at the same place. Nothing was wrong with it: a
-// Linux runner has different font metrics, so the box came out 73px wide
-// instead of 66px, the ramp is 20 percent of the box, and a different ramp
-// samples at a different depth. An absolute threshold encodes one machine's
-// font stack; the ratio encodes the claim.
+// correct build measured 64 at the same place. The cause is the one
+// `fadeMeasurement` names below: on CI the captured box ran ~3px WIDER than
+// the painted content, so the last PAINTED column sits short of the ramp's
+// end, where alpha is `gap / (0.2 * box)` instead of nearly zero. Box width
+// alone runs the OTHER way — measured on macOS at gap 0: box 86px => tail 14,
+// 66px => 24, 36px => 42, so 66px -> 73px would move the tail DOWN. An
+// absolute threshold encodes one machine's geometry; the ratio encodes the
+// claim, and does not move with ink level, theme or antialiasing.
 //
-//   faded on macOS   24 / 210 = 0.11
-//   faded on CI      64 / 210 = 0.30
-//   NO MASK AT ALL   live IS the clip = 1.00
+//   faded on macOS, gap 0px    24 / 210 = 0.11
+//   faded on CI,    gap ~3px   64 / 210 = 0.30
+//   NO MASK AT ALL             live IS the clip = 1.00
 //
-// 0.6 sits between 0.30 and 1.00 with room on both sides, and does not move
-// when a font does.
+// 0.6 sits between 0.30 and 1.00 with room on both sides. That room is finite
+// and measured: on a 66px box the ratio crosses 0.6 once the trailing gap
+// reaches 7px (6px => 0.49, 7px => 0.64).
 const FADE_TAIL_RATIO = 0.6;
 
 const MASK_OFF = "-webkit-mask-image:none;mask-image:none;";
