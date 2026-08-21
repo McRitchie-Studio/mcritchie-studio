@@ -249,7 +249,7 @@ test("a live stage change FLIPs the card to its new column and updates the count
 // into Building, not only replace an existing DOM target. This test removes the
 // stale visible card first to match the bug: a page reload would show it, but a
 // replace-only websocket update leaves the open board empty.
-test("a live block transition inserts a missing card into the Building column @quarantine", async ({ page }) => {
+test("a live block transition inserts a missing card into the Building column", async ({ page }) => {
   await showUpstreamLanes(page);
   const { pageErrors, report } = watchPageErrors(page);
 
@@ -291,7 +291,7 @@ test("a live block transition inserts a missing card into the Building column @q
   expect(pageErrors, report()).toHaveLength(0);
 });
 
-test("a live block transition keeps an already-visible Building card visible @quarantine", async ({ page }) => {
+test("a live block transition keeps an already-visible Building card visible", async ({ page }) => {
   await showUpstreamLanes(page);
   const { pageErrors, report } = watchPageErrors(page);
 
@@ -319,7 +319,7 @@ test("a live block transition keeps an already-visible Building card visible @qu
   expect(pageErrors, report()).toHaveLength(0);
 });
 
-test("the tasks board updates a blocked card live in the Building column @quarantine", async ({ page }) => {
+test("the tasks board updates a blocked card live in the Building column", async ({ page }) => {
   await showUpstreamLanes(page);
   const { pageErrors, report } = watchPageErrors(page);
 
