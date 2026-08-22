@@ -217,6 +217,33 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
     assert_raises(ArgumentError) { S.strategy_handler("") }
   end
 
+  # --- deploy_target?: "no production app" is a CASE, not a misconfiguration ---
+  #
+  # The 2026-08-22 wedge: chain-ops declared an adapter for a deploy target it
+  # did not have. With the adapter gone, ship must SKIP its dispatch cleanly —
+  # it still advances main — instead of aborting the whole release mid-ship.
+
+  test "deploy_target? is false when no prod_deploy is declared" do
+    assert_not S.deploy_target?(nil)
+    assert_not S.deploy_target?({})
+    assert_not S.deploy_target?({ "strategy" => "" })
+    assert_not S.deploy_target?({ "strategy" => "   " })
+  end
+
+  test "deploy_target? is true for every known strategy" do
+    S::STRATEGY_HANDLERS.each_key do |strategy|
+      assert S.deploy_target?({ "strategy" => strategy }), "#{strategy} is a real deploy target"
+    end
+  end
+
+  # The line between the two failure modes: a MISSING adapter means "nothing to
+  # deploy"; a TYPO must still blow up. Reading a typo as "nothing to deploy"
+  # would turn a misconfigured app into a silently-never-deployed one.
+  test "deploy_target? is true for an unknown strategy so a typo still reaches strategy_handler" do
+    assert S.deploy_target?({ "strategy" => "rsync_box" })
+    assert_raises(ArgumentError) { S.strategy_handler("rsync_box") }
+  end
+
   # --- ordered_app_groups: hub first, rest stable --------------------------
 
   test "ordered_app_groups pulls the hub to the front" do

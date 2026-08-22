@@ -43,6 +43,22 @@ class Release
       "github_actions" => :github_actions
     }.freeze
 
+    # Is there a production deployment target at all? An app may legitimately
+    # have NO `prod_deploy` (chain-ops: no production app exists). That is a
+    # first-class case, NOT a misconfiguration — ship advances its main and
+    # dispatches nothing, rather than aborting mid-ship the way a bogus adapter
+    # naming a non-existent `bin/deploy` did on 2026-08-22 (after
+    # push_frozen_main had already moved origin/main).
+    #
+    # A blank/absent strategy is "no target"; anything else goes to
+    # strategy_handler, which still raises on an UNKNOWN strategy — a typo must
+    # never be read as "nothing to deploy".
+    def deploy_target?(adapter)
+      # Plain Ruby, NOT .present? — bin/release.rb loads this model STANDALONE,
+      # outside Rails, so ActiveSupport core extensions are not there.
+      !(adapter || {})["strategy"].to_s.strip.empty?
+    end
+
     def strategy_handler(adapter)
       STRATEGY_HANDLERS.fetch(adapter.to_s) do
         known = STRATEGY_HANDLERS.keys.join(", ")
