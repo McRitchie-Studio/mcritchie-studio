@@ -1,0 +1,22 @@
+<%# locals: (dom_id:, check:, test_id: "local-check", wrapper_class: nil, inner_test_id: nil) %>
+<%#
+  Stable-id wrapper around the local-check indicator, mirroring
+  components/_ci_progress_slot: the outer div ALWAYS renders (zero-height when
+  there is no check) so a Turbo morph has a target that exists before the first
+  cert lane reports.
+
+  Not a link. The CI slot opens the pull request; a local cert is happening in
+  someone's terminal and has no URL to send an operator to — a card that looked
+  clickable and did nothing would be worse than a card that plainly does not.
+%>
+<div id="<%= dom_id %>" data-test="<%= dom_id %>-slot">
+  <% if check.present? %>
+    <% body = capture do %>
+      <%= render "components/local_check_indicator", check: check, test_id: test_id %>
+    <% end %>
+    <%= render "components/card_bar",
+          body: body,
+          class_extra: "local-check-card block border-subtle bg-inset/50 #{wrapper_class}",
+          test_id: inner_test_id %>
+  <% end %>
+</div>

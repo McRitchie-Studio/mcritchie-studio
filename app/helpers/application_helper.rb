@@ -607,6 +607,36 @@ module ApplicationHelper
     CI_METER_STAGES.include?(stage.to_s)
   end
 
+  # --- Local check (the cert running on someone's machine right now) -----------
+  #
+  # The CI meter's counterpart for the window BEFORE a PR exists. `bin/ship` runs
+  # the cert first and opens the PR after, so the slowest, least visible stretch of
+  # a task's life had no board signal at all — a fast-check has been observed past
+  # seven minutes with its card showing nothing.
+  #
+  # ONLY `building`, and ONLY until the PR exists. The moment bin/ship opens the
+  # PR the CI meter takes this slot over, and two live progress widgets stacked on
+  # one card would compete for the same glance. So the handover is exclusive by
+  # construction, not by tuning: this asks for `pr_url` to be blank, and
+  # ci_meter_stage? covers everything after.
+  def local_check_stage?(stage)
+    stage.to_s == "building"
+  end
+
+  def show_local_check?(task, pr_url)
+    local_check_stage?(task.stage) && pr_url.blank?
+  end
+
+  # Single-card fallback for the Turbo re-render path; the board preloads the
+  # whole set in one query (@local_check_by_slug) exactly as it does for CI.
+  def task_local_check(task)
+    local_check_reader.for_task(task)
+  end
+
+  def local_check_reader
+    @local_check_reader ||= Cert::LocalCheckReader.new
+  end
+
   # The shared geometry for the card-width bars stacked on the board task card —
   # the status-flag CTAs (components/_card_status_bar) and the CI progress meter
   # (components/_ci_progress_slot) both build on it, so they read as one coherent

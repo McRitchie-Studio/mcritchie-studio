@@ -33,6 +33,39 @@ module CertEmission
     nil
   end
 
+  # Mark a lane RUNNING on the open g1_cert attempt — emitted BEFORE the lane
+  # starts, and re-emitted as a heartbeat while it runs (GateRun.append_sop!
+  # supersedes the prior running row, so beats do not stack).
+  #
+  # This is what lets the board name the lane a building task is inside, and —
+  # because the beat carries a fresh timestamp — tell a live cert from one whose
+  # process was killed. Fire-and-forget like every other emit here: a board blip
+  # must never break a cert.
+  def emit_gate_sop_running(gate_bin, slug, label, cmd)
+    emit_gate(gate_bin, slug, "sop", "task", slug, "g1_cert",
+              "--sop", label, "--cmd", cmd.to_s, "--result", "running")
+  end
+
+  # Beat `running` for `label` every `interval` seconds until the returned thread
+  # is killed. The caller MUST kill it in an ensure block — see run_lane.
+  #
+  # A lane can legitimately run for many minutes (a fast-check has been observed
+  # at 7+), which is far longer than the staleness window the board uses to spot a
+  # dead runner. Without a beat mid-lane, every long-but-healthy lane would render
+  # as stalled; with one, "stalled" means what it says.
+  def heartbeat_thread(gate_bin, slug, label, cmd, interval: 40)
+    return nil if slug.to_s.strip.empty?
+
+    Thread.new do
+      loop do
+        sleep interval
+        emit_gate_sop_running(gate_bin, slug, label, cmd)
+      end
+    end
+  rescue StandardError
+    nil
+  end
+
   # One executed-SOP entry on the task's open g1_cert attempt.
   def emit_gate_sop(gate_bin, slug, label, cmd, ok, duration_ms)
     emit_gate(gate_bin, slug, "sop", "task", slug, "g1_cert",

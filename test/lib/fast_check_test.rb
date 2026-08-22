@@ -780,11 +780,27 @@ class FastCheckTest < Minitest::Test
       _, code, lines = run_check(dir, args: ["task-x"], extra_env: { "TASK_SHOW_JSON" => SHOW_JSON })
       assert_equal 0, code
       gate = lines.select { |l| l[0] == "GATE" }
-      assert_equal %w[open sop sop sop sop close], gate.map { |l| l[1] },
-                   "open + one sop per lane + a self-close on green (cert owns g1_cert now, " \
-                   "not dor-check): #{gate.inspect}"
-      sop_names = gate.select { |l| l[1] == "sop" }.map { |l| l[l.index("--sop") + 1] }
-      assert_equal %w[test-prepare mapped-tests spine rubocop-changed], sop_names
+      assert_equal %w[open] + (%w[sop] * 8) + %w[close], gate.map { |l| l[1] },
+                   "open + TWO sops per lane (running, then the verdict) + a self-close on " \
+                   "green (cert owns g1_cert now, not dor-check): #{gate.inspect}"
+      sops = gate.select { |l| l[1] == "sop" }
+      sop_names = sops.map { |l| l[l.index("--sop") + 1] }
+      assert_equal %w[test-prepare test-prepare mapped-tests mapped-tests spine spine
+                      rubocop-changed rubocop-changed], sop_names
+
+      # Each lane ANNOUNCES ITSELF BEFORE IT RUNS, then reports its verdict. The
+      # board reads that leading `running` row to name the lane a building task is
+      # inside — the whole point of the local-check indicator. A lane that only
+      # emitted on completion would leave the slowest lane (the one an operator is
+      # actually staring at) permanently unnamed.
+      results = sops.map { |l| l[l.index("--result") + 1] }
+      assert_equal %w[running pass running pass running pass running pass], results,
+                   "every lane must emit running BEFORE its verdict: #{results.inspect}"
+
+      # The running row carries the command, so the card's tooltip can show exactly
+      # what is executing without opening the session.
+      first_running = sops.find { |l| l[l.index("--result") + 1] == "running" }
+      assert_includes first_running, "--cmd"
       close = gate.find { |l| l[1] == "close" }
       assert_includes close, "--success", "the green cert closes g1_cert success itself"
       assert(gate.all? { |l| l[2] == "task" && l[3] == "task-x" && l[4] == "g1_cert" })
