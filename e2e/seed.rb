@@ -1079,31 +1079,6 @@ GithubWorkflowRun.create!(
   html_url: "https://github.com/McRitchie-Studio/mcritchie-studio/actions/runs/5000102", run_started_at: 30.minutes.ago
 )
 
-# Local-check indicator (feature: show-local-test-progress): TWO building tasks with
-# NO pr_url, so the local-check slot is theirs (the CI meter takes over the moment a
-# PR exists). One cert is beating — a live lane the card names and clocks; the other's
-# last beat is long past, which is the STALLED state a killed runner produces. Both
-# are needed on screen: the stalled branch is the reason the feature exists, and a
-# spec that only ever renders the spinner would let it rot unseen.
-[
-  ["e2e-local-check-running", "E2E local check running", "mapped-tests",
-   "bin/rails test test/models/widget_test.rb", 20.seconds.ago, 3.minutes.ago],
-  ["e2e-local-check-stalled", "E2E local check stalled", "full-suite",
-   "bin/rails db:test:prepare test test:system", 25.minutes.ago, 40.minutes.ago]
-].each do |slug, title, lane, cmd, beat_at, started_at|
-  Task.create!(
-    # priority is validated to 0..2 — NOT a free integer. An out-of-range value here
-    # raises inside the seed and silently truncates EVERY fixture defined below it.
-    slug: slug, title: title, stage: "building", priority: 2, agent_slug: "shannon",
-    metadata: { "devops" => { "branch" => "feat/#{slug}", "repositories" => ["mcritchie-studio"] } }
-  )
-  GateRun.create!(
-    subject_type: "task", subject_slug: slug, key: "g1_cert", attempt: 1,
-    started_at: started_at,
-    sops: [{ "sop" => lane, "cmd" => cmd, "result" => "running", "at" => beat_at.iso8601 }]
-  )
-end
-
 # The other two release lanes' G3 CI, as LIVE CiCheckJob rows (no fixture entry needed):
 # turf-monster still RUNNING (amber) and rolio FAILED (red). Those two states colour the
 # marks the Assembling meter draws, and e2e/release_meter_fit.spec.js measures the contrast
