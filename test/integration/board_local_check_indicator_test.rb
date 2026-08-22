@@ -153,6 +153,21 @@ class BoardLocalCheckIndicatorTest < ActionDispatch::IntegrationTest
     assert_select SLOT, 0, "a PR exists — the CI meter takes over from here"
   end
 
+  test "[integration] the gates card never paints a RUNNING lane with the pass glyph" do
+    # The `running` marker rides the SAME sops list the task's gate card renders, which
+    # painted everything not "fail" green — a killed runner's lane read as PASSED.
+    task = building_task(slug: "local-check-gates")
+    open_cert(task.slug, sops: [running_sop,
+                                { "sop" => "spine", "result" => "pass", "at" => Time.current.iso8601 }])
+
+    log_in_as(@admin)
+    get task_path(task)
+    assert_response :success
+
+    assert_select "[data-result='running'] [data-test='gate-sop-glyph']", text: "◌"
+    assert_select "[data-result='pass'] [data-test='gate-sop-glyph']", text: "✓"
+  end
+
   test "[integration] a submitted task shows no local-check indicator" do
     task = Task.create!(title: "submitted local check probe", stage: "submitted", slug: "local-check-submitted")
     open_cert(task.slug, sops: [running_sop])
