@@ -117,7 +117,17 @@ total_specs: 121
 # blocking broadcast nothing at all — fixed in /tasks/broadcast-block-to-board. Both are on main,
 # so this un-tags rather than re-tags. Verified before lowering: --grep-invert @quarantine over
 # the file is 12/12 green, and the ONE remaining failure is the still-tagged review-ticker spec.
-quarantined: 12
+# 12 -> 10 on 2026-08-21 (/tasks/clear-the-quarantine-backlog): two heartbeat_feedback specs
+# REPAIRED. Cause was not the specs' logic — they loaded the bare /alex/heartbeat and relied on
+# HeartbeatController#latest_session_id, i.e. whichever session owns the newest AgentAction. The
+# seed grew newer fixtures ('sess-test-runs'), which now win that default and render ZERO spans,
+# so every locator timed out on a page that never had the rows. Pinning
+# ?session_id=e2e-heartbeat-0001 (as e2e/alex_heartbeat.spec.js already did) restores them.
+# Measured: bare path = 0 heartbeat-event nodes; pinned = 3 (Explore/Verify/Workflow).
+# The OTHER two in that file stay tagged on purpose — they assert a design that was REVERSED
+# (span grading moved out of the drawer and back inline), so they want deleting or rewriting,
+# which is a coverage decision rather than a repair. Annotated in the file.
+quarantined: 10
 
 # total_specs - quarantined. What the lane MUST execute — asserted against the runner's own
 # report, so no source-level spelling on any axis can move it without moving this line.
@@ -137,7 +147,7 @@ quarantined: 12
 # set. Re-derived from the invariant AND with the lister rather than by adding three:
 #   npx playwright test --list                           => 121
 #   npx playwright test --list --grep-invert @quarantine => 109
-executed: 109
+executed: 111
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to
