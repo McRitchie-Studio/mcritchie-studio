@@ -236,6 +236,46 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
     end
   end
 
+  # --- missing_deploy_commands: ask while the answer is still free -------------
+  #
+  # The preflight that turns the 2026-08-22 wedge into a refusal with nothing
+  # moved. Pure — the existence probe is injected — so these run with no
+  # filesystem and no sibling checkouts.
+
+  GROUPS = [
+    { "repo" => "turf-monster", "prod_deploy" => { "strategy" => "repo_script", "command" => "bin/deploy" } },
+    { "repo" => "rolio", "prod_deploy" => { "strategy" => "git_push_heroku", "remote" => "heroku" } },
+    { "repo" => "chain-ops" } # no adapter at all
+  ].freeze
+
+  test "missing_deploy_commands is empty when every declared command exists" do
+    assert_empty(S.missing_deploy_commands(GROUPS) { |_repo, _command| true })
+  end
+
+  test "missing_deploy_commands names the repo and the command that is not there" do
+    reasons = S.missing_deploy_commands(GROUPS) { |_repo, _command| false }
+
+    assert_equal 1, reasons.length, "only the repo_script entry declares a command to probe"
+    assert_match(/turf-monster/, reasons.first)
+    assert_match(%r{bin/deploy}, reasons.first)
+  end
+
+  test "missing_deploy_commands ignores repos with no prod_deploy and non-script strategies" do
+    probed = []
+    S.missing_deploy_commands(GROUPS) { |repo, _command| probed << repo; true }
+
+    assert_equal ["turf-monster"], probed,
+                 "chain-ops (no adapter) and rolio (git_push_heroku) name no on-disk command"
+  end
+
+  test "missing_deploy_commands flags a repo_script adapter that names no command" do
+    groups  = [{ "repo" => "tax-studio", "prod_deploy" => { "strategy" => "repo_script" } }]
+    reasons = S.missing_deploy_commands(groups) { |_repo, _command| true }
+
+    assert_equal 1, reasons.length
+    assert_match(/names no `command`/, reasons.first)
+  end
+
   # The line between the two failure modes: a MISSING adapter means "nothing to
   # deploy"; a TYPO must still blow up. Reading a typo as "nothing to deploy"
   # would turn a misconfigured app into a silently-never-deployed one.

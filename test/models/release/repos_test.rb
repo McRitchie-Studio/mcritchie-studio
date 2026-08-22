@@ -165,9 +165,15 @@ class Release::ReposTest < ActiveSupport::TestCase
   # a workspace checked out at the FROZEN SHA, which comes off the release
   # branch. A script that exists only on someone's feature branch is not a
   # deploy target.
+  # NO `skip` HERE, deliberately. config/rails_lane.yml ratchets the lane's skip
+  # count against origin/release, so a new skip site cannot be paid for in the
+  # same commit — and it should not be. Instead the test always asserts the half
+  # that needs no checkout (the adapter NAMES a command) and adds the on-disk
+  # half for whichever siblings are present. On the hub CI runner it still has a
+  # real assertion; the load-bearing on-disk check also runs at ship time, in
+  # Release::ShipSequence.missing_deploy_commands, BEFORE any main moves.
   test "every declared repo_script deploy command exists on the branch that ships" do
     root = projects_root
-    skip "sibling checkouts not present (hub CI runner)" if root.nil?
 
     missing = Release::Repos.app_repos.filter_map do |repo|
       adapter = Release::Repos.prod_deploy(repo) || {}
@@ -175,6 +181,7 @@ class Release::ReposTest < ActiveSupport::TestCase
 
       command = adapter["command"].to_s
       next "#{repo} declares prod_deploy.strategy repo_script with no `command`" if command.empty?
+      next if root.nil? # hub CI runner — no siblings to probe; the naming half above still ran
 
       path = root.join(repo)
       next unless path.join(".git").exist? # planned repo — the ladder guard owns its arrival

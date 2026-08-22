@@ -6477,6 +6477,23 @@ def ship
   run_ship_gate(app_groups, ship_sha, qa_gates)
   record_release_event(rel_slug, "ship_gate", "completed", actor: by)
 
+  # 2a-bis. DEPLOY-TARGET PREFLIGHT — refuse BEFORE anything moves.
+  #
+  # Every registered `repo_script` deploy command must exist on disk. chain-ops
+  # declared one that never did (2026-08-22): ship ran it, it failed, and the
+  # abort landed AFTER push_frozen_main had advanced chain-ops' origin/main —
+  # wedging G4 and blocking turf-monster from shipping in the same release. This
+  # asks the question while the answer is still free. Placed BEFORE the ship
+  # authority prompt so a bogus registry never even gets confirmed.
+  bad_targets = Release::ShipSequence.missing_deploy_commands(app_groups) do |repo, command|
+    File.exist?(File.join(repo_path(repo), command))
+  end
+  if bad_targets.any?
+    abort!("deploy target(s) missing: #{bad_targets.join('; ')}. Nothing has moved. Add the real " \
+           "script, or drop `prod_deploy` if the app has no production target (ship then advances " \
+           "main and dispatches nothing). Do NOT add a no-op deploy script.")
+  end
+
   # 2b. The ship-authority gate — explicit, AFTER Steffon's test confirmation and
   #     BEFORE any deploy. confirm() honors --yes (hands-off) + --dry-run (previews).
   step("ship authority: Steffon's ship gate passed on the frozen SHA — confirming production deploy")
