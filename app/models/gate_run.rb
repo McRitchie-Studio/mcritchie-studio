@@ -50,6 +50,17 @@ class GateRun < ApplicationRecord
   # server-side so entries are orderable even when the producer sends none.
   SOP_KEYS = %w[sop cmd tier result duration_ms state cause reason repo at].freeze
 
+  # A lane that has STARTED but not finished. The certs emit one of these before
+  # running a lane (and re-emit it as a heartbeat while the lane runs), then
+  # append the terminal pass/fail entry when it settles.
+  #
+  # It is NOT a verdict, and nothing downstream may read it as one — it exists so
+  # the board can say WHICH lane a building task is inside, and so a cert that was
+  # killed can be told apart from one still working. `append_sop!` collapses a
+  # superseded running entry rather than stacking beats, so a seven-minute lane
+  # leaves ONE row here, not nine.
+  RUNNING_RESULT = "running"
+
   validates :subject_type, inclusion: { in: SUBJECT_TYPES }
   validates :subject_slug, presence: true
   validates :key, inclusion: { in: KEYS }
@@ -113,10 +124,25 @@ class GateRun < ApplicationRecord
   def self.append_sop!(subject_type:, subject_slug:, key:, sop:, actor: nil, source: nil, now: Time.current)
     run = open!(subject_type: subject_type, subject_slug: subject_slug, key: key,
                 actor: actor, source: source, now: now)
+    entry = normalize_sop(sop, now: now)
     run.with_lock do
-      run.update!(sops: run.sops + [normalize_sop(sop, now: now)])
+      run.update!(sops: supersede_running(run.sops, entry))
     end
     run
+  end
+
+  # Drop a prior RUNNING entry for the same lane when a newer entry for that lane
+  # arrives — whether the newer entry is the terminal verdict or just the next
+  # heartbeat. Only `running` rows are ever dropped: a real pass/fail verdict is
+  # history and stays, so a lane that ran twice still shows both outcomes.
+  def self.supersede_running(sops, entry)
+    lane = entry["sop"].to_s
+    return sops + [entry] if lane.empty?
+
+    kept = sops.reject do |prior|
+      prior["sop"].to_s == lane && prior["result"].to_s == RUNNING_RESULT
+    end
+    kept + [entry]
   end
 
   # Close the in-flight attempt with its verdict. When NO attempt is open, a
