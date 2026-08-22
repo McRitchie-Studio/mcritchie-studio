@@ -6485,13 +6485,28 @@ def ship
   # wedging G4 and blocking turf-monster from shipping in the same release. This
   # asks the question while the answer is still free. Placed BEFORE the ship
   # authority prompt so a bogus registry never even gets confirmed.
+  # Probed at the FROZEN SHA, not in the primary working tree. The deploy runs in
+  # a ship workspace checked out at that commit, so the frozen tree is the FACT
+  # and the primary — whatever branch a session left it on — is only a proxy.
   bad_targets = Release::ShipSequence.missing_deploy_commands(app_groups) do |repo, command|
-    File.exist?(File.join(repo_path(repo), command))
+    _out, status = Open3.capture2e("git", "-C", repo_path(repo), "cat-file", "-e",
+                                   "#{ship_sha[repo]}:#{command}")
+    status.success?
   end
   if bad_targets.any?
-    abort!("deploy target(s) missing: #{bad_targets.join('; ')}. Nothing has moved. Add the real " \
-           "script, or drop `prod_deploy` if the app has no production target (ship then advances " \
-           "main and dispatches nothing). Do NOT add a no-op deploy script.")
+    reasons = bad_targets.join("; ")
+    # A DRY RUN previews the plan against a world it does not own (its SHAs are
+    # placeholders, and its sibling repos may be fixtures), so it SAYS this
+    # rather than aborting — the same `&& !DRY` convention the repo_script
+    # adapter's own empty-command check already follows.
+    if DRY
+      say("  (dry-run) deploy target(s) unreadable at the frozen SHA: #{reasons}")
+      say("  (dry-run) a real ship REFUSES here, before anything moves")
+    else
+      abort!("deploy target(s) missing: #{reasons}. Nothing has moved. Add the real " \
+             "script, or drop `prod_deploy` if the app has no production target (ship then advances " \
+             "main and dispatches nothing). Do NOT add a no-op deploy script.")
+    end
   end
 
   # 2b. The ship-authority gate — explicit, AFTER Steffon's test confirmation and
