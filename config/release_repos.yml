@@ -356,14 +356,22 @@ apps:
       command: bin/deploy
       args: ["--yes"]
   chain-ops:
-    # BLOCKED — the repo exists (it was declared `planned` while it already did;
-    # the ladder guard's first catch), but its remote still points at the
-    # PERSONAL amcritchie/ account. It never moved in the 2026-07-29 org
-    # migration, so the mcritchie-agent App is not installed on it and
-    # `bin/release init` gets a 403 pushing the rung. It carries `release` but
-    # NOT `accepted` — created by the two-rung init this task retires, which is
-    # the bug in evidence. Resolve by migrating it to McRitchie-Studio (or
-    # installing the App), then `bin/release init` and flip this to three-rung.
+    # BLOCKED — and the ORIGINAL blocker is now GONE, so read the current one.
+    # RESOLVED 2026-08-21: the repo was migrated to McRitchie-Studio, both Apps
+    # have access, the 403 is gone, and it now carries accepted + release + main.
+    #
+    # ⛔ DO NOT FLIP THIS TO THREE-RUNG YET. The remaining blocker is NOT the
+    # migration and NOT the unset qa_test_cmd (that one is a non-issue —
+    # pre_qa_gate self-gates and skips, and a missing QA env warns and skips).
+    # It is `prod_deploy` below: it declares `command: bin/deploy`, and
+    # chain-ops/bin/deploy DOES NOT EXIST. `bin/release ship` aborts on it at
+    # bin/release.rb:6137 — AFTER push_frozen_main has already advanced
+    # origin/main at :6053. Flipping the ladder therefore wedges G4 mid-ship,
+    # leaving main advanced and the deploy un-run. chain-ops also has no
+    # test_cmd, so there is no G4 suite either.
+    #
+    # To enroll, IN THIS ORDER: give chain-ops a real bin/deploy (or correct
+    # prod_deploy to match reality) → register a test_cmd → THEN flip.
     ladder: blocked
     # Planned app; test/integration is still empty — qa_test_cmd stays UNSET
     # until it has a real integration tier to run.
