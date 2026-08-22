@@ -344,6 +344,16 @@ class TasksController < ApplicationController
       ErrorLog.capture!(e)
       {}
     end
+    # Local-check indicators: ONE batched read of the in-flight g1_cert attempts
+    # across every card about to render, so a board full of building tasks issues
+    # one GateRun query instead of one per card. Same blast-radius rule as the CI
+    # batch above — a reader failure degrades to no indicators, never a 500.
+    @local_check_by_slug = begin
+      Cert::LocalCheckReader.new.for_tasks(tasks)
+    rescue StandardError => e
+      ErrorLog.capture!(e)
+      {}
+    end
     @agents = Agent.order(:position)
   end
 

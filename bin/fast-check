@@ -234,7 +234,17 @@ end
 def run_lane(label, cmd, root, env: {}, gate_slug: nil)
   warn "== #{label}: #{cmd} =="
   started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-  ok = CertProcess.run(env, cmd, chdir: root, root: root, lane: label)
+  # Announce the lane BEFORE it runs, then beat while it runs, so the board can
+  # name what a building task is inside and tell a live cert from a killed one.
+  # The beat thread is killed in the ensure below: a leaked beat would keep a
+  # dead cert looking alive, which is the exact failure this is here to prevent.
+  CertEmission.emit_gate_sop_running(GATE_BIN, gate_slug, label, cmd) if gate_slug
+  beat = (CertEmission.heartbeat_thread(GATE_BIN, gate_slug, label, cmd) if gate_slug)
+  begin
+    ok = CertProcess.run(env, cmd, chdir: root, root: root, lane: label)
+  ensure
+    beat&.kill
+  end
   duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
   warn(ok ? "   #{label}: PASS (#{format('%.1fs', duration_ms / 1000.0)})" : "   #{label}: FAIL")
   CertEmission.emit_gate_sop(GATE_BIN, gate_slug, label, cmd, ok, duration_ms) if gate_slug
