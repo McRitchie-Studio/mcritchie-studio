@@ -6266,6 +6266,67 @@ class ReleaseCliTest < Minitest::Test
     end
   end
 
+  # [integration] NO prod_deploy — the 2026-08-22 wedge, from the other side.
+  # chain-ops declared `command: bin/deploy` for a script that did not exist, so
+  # ship ran it, it failed, and the WHOLE release aborted — after push_frozen_main
+  # had already advanced origin/main. With the adapter dropped, deploy_app must
+  # SKIP cleanly rather than crash on the nil: main still advances, members are
+  # still stamped merged:"main", ship returns and carries on to the next app.
+  #
+  # It must also NOT say "deployed to production" — that lie is exactly what a
+  # no-op bin/deploy would have bought, and it is the reason this path exists.
+  def test_deploy_app_with_no_prod_deploy_advances_main_and_dispatches_nothing
+    Dir.mktmpdir do |dir|
+      clone  = build_sibling_fixture(dir)
+      frozen = git_out(clone, "rev-parse", "release")
+
+      run_git(clone, "checkout", "-q", "-b", "feat/live-session")
+      File.write(File.join(clone, "app.rb"), "half a feature")
+
+      # No "prod_deploy" key at all — a registered app with no production target.
+      group = %({ "repo" => "sibling", "members" => [] })
+      setup = %(def repo_path(_repo) = #{clone.inspect}\ndef record_merged_main(s); puts("STAMPED-MAIN \#{s.inspect}"); end\n)
+      out = run_cli(["--yes"], setup: setup,
+                    call: %{deploy_app(#{group}, #{frozen.inspect}); puts("PASSED")})
+
+      assert_includes out, "PASSED",
+                      "an app with no deploy target must not abort the ship — that is the wedge: #{out}"
+      assert_equal frozen, git_out(File.join(dir, "origin.git"), "rev-parse", "main"),
+                   "origin/main still advances — the ladder promotion is real even with nothing to deploy"
+      assert_includes out, "STAMPED-MAIN",
+                      "…and its members are still stamped merged:\"main\", so a re-run reads the ff as done"
+      assert_includes out, "no production deploy target",
+                      "the record must SAY there was nothing to dispatch"
+      refute_match(/deployed to production/, out,
+                   "it must never report a deploy that did not happen (the no-op bin/deploy lie)")
+      refute_match(/unknown prod_deploy strategy/, out,
+                   "a MISSING adapter is a case, not a misconfiguration — no strategy lookup should happen")
+    end
+  end
+
+  # The other half of the line: a TYPO'd strategy must still abort. Reading it as
+  # "nothing to deploy" would turn a misconfigured app into a silently-never-
+  # deployed one — the same class of lie in the opposite direction.
+  def test_deploy_app_still_aborts_on_an_unknown_strategy
+    Dir.mktmpdir do |dir|
+      clone  = build_sibling_fixture(dir)
+      frozen = git_out(clone, "rev-parse", "release")
+
+      group = %({ "repo" => "sibling", "members" => [],
+                  "prod_deploy" => { "strategy" => "rsync_box" } })
+      # abort! exits, so the subprocess catches SystemExit and reports it on
+      # stdout — run_cli flunks on a nonzero exit, and the ABORT is the assertion.
+      setup = %(def repo_path(_repo) = #{clone.inspect}\ndef record_merged_main(s); puts("STAMPED-MAIN \#{s.inspect}"); end\n)
+      call  = %(begin; deploy_app(#{group}, #{frozen.inspect}); puts("PASSED"); rescue SystemExit; puts("ABORTED"); end)
+      out = run_cli(["--yes"], setup: setup, call: call)
+
+      refute_includes out, "PASSED", "a typo'd strategy must still stop the ship: #{out}"
+      assert_includes out, "ABORTED", "…by aborting, not by treating the typo as \"nothing to deploy\""
+      refute_includes out, "STAMPED-MAIN",
+                      "…and it aborts BEFORE push_frozen_main — the wedge was aborting AFTER main moved"
+    end
+  end
+
   # [integration] github_actions (the hub, DevOps v2 Phase 2) deploys by dispatching
   # a workflow, not by pushing itself. push_frozen_main still ref-advances origin/main
   # (the workflow deploys the FROZEN SHA it is handed, not origin/main — which is why

@@ -53,7 +53,17 @@ frozen_size:
   # work in what is a bare tmpdir here. The step's OWN behaviour went to a new file,
   # test/lib/release_engine_migration_install_test.rb, which is what this ceiling
   # asks for; only the stub grew this one.
-  test/lib/release_cli_test.rb: 7364
+  #
+  # +61 (2026-08-22, drop-chain-ops-system-lane): two deploy_app cases — an app
+  # with NO prod_deploy (ship advances main and dispatches nothing) and a typo'd
+  # strategy (still aborts, before main moves). They belong beside the three
+  # existing deploy_app adapter tests and lean on this file's PRIVATE harness
+  # (run_cli, build_sibling_fixture, run_git, git_out), which is precisely the
+  # interleaving the archived split-release-cli-tests task measured and deferred.
+  # The new PURE decisions went to other files, as this ceiling asks:
+  # deploy_target? and missing_deploy_commands are tested in
+  # test/models/release/ship_sequence_test.rb.
+  test/lib/release_cli_test.rb: 7425
   test/lib/dor_check_test.rb: 2745
   test/lib/task_cli_test.rb: 2728
   test/models/task_test.rb: 2266

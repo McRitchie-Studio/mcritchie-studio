@@ -43,6 +43,50 @@ class Release
       "github_actions" => :github_actions
     }.freeze
 
+    # Is there a production deployment target at all? An app may legitimately
+    # have NO `prod_deploy` (chain-ops: no production app exists). That is a
+    # first-class case, NOT a misconfiguration — ship advances its main and
+    # dispatches nothing, rather than aborting mid-ship the way a bogus adapter
+    # naming a non-existent `bin/deploy` did on 2026-08-22 (after
+    # push_frozen_main had already moved origin/main).
+    #
+    # A blank/absent strategy is "no target"; anything else goes to
+    # strategy_handler, which still raises on an UNKNOWN strategy — a typo must
+    # never be read as "nothing to deploy".
+    def deploy_target?(adapter)
+      # Plain Ruby, NOT .present? — bin/release.rb loads this model STANDALONE,
+      # outside Rails, so ActiveSupport core extensions are not there.
+      !(adapter || {})["strategy"].to_s.strip.empty?
+    end
+
+    # THE DEPLOY-TARGET PREFLIGHT — every registered deploy COMMAND must exist
+    # before the ship moves ANY repo's main.
+    #
+    # The 2026-08-22 wedge: chain-ops declared `command: bin/deploy` for a script
+    # that never existed. Nothing checked until ship RAN it, and by then
+    # push_frozen_main had already advanced chain-ops' origin/main — so the abort
+    # left main moved, the deploy un-run, and turf-monster unable to ship in the
+    # same release. Checking up front turns that mid-ship wedge into a refusal
+    # with nothing moved.
+    #
+    # PURE — the existence probe is INJECTED as a block (repo, command) -> bool,
+    # so this is testable with no filesystem and no sibling checkouts, and the
+    # shell owns the I/O. Returns the human-readable reasons, empty when clean.
+    # Only `repo_script` declares a command; the other strategies name a remote or
+    # a workflow, which cannot be probed on disk.
+    def missing_deploy_commands(groups)
+      Array(groups).filter_map do |group|
+        adapter = group["prod_deploy"] || {}
+        next unless adapter["strategy"].to_s == "repo_script"
+
+        command = adapter["command"].to_s.strip
+        next "#{group['repo']}: prod_deploy is repo_script but names no `command`" if command.empty?
+        next if yield(group["repo"], command)
+
+        "#{group['repo']}: prod_deploy.command #{command} does not exist"
+      end
+    end
+
     def strategy_handler(adapter)
       STRATEGY_HANDLERS.fetch(adapter.to_s) do
         known = STRATEGY_HANDLERS.keys.join(", ")

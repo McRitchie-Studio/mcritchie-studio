@@ -6040,20 +6040,40 @@ def deploy_app(group, frozen)
   repo    = group["repo"]
   path    = repo_path(repo)
   adapter = group["prod_deploy"] || {}
+  target  = Release::ShipSequence.deploy_target?(adapter)
   handler =
-    begin
-      Release::ShipSequence.strategy_handler(adapter["strategy"])
-    rescue ArgumentError => e
-      abort!(e.message)
+    if target
+      begin
+        Release::ShipSequence.strategy_handler(adapter["strategy"])
+      rescue ArgumentError => e
+        abort!(e.message)
+      end
     end
 
   say("")
-  step("app #{repo} → prod via #{adapter['strategy']} @ frozen #{short(frozen)}")
+  step(if target
+         "app #{repo} → prod via #{adapter['strategy']} @ frozen #{short(frozen)}"
+       else
+         "app #{repo} → main @ frozen #{short(frozen)} (no production deploy target — nothing to dispatch)"
+       end)
 
   push_frozen_main(repo, frozen)
   # The ff landed on origin — stamp this repo's members merged:"main" (matrix:
   # assembled+main = prod-in-flight; an interrupted re-run reads it as "ff done").
   record_merged_main(Array(group["members"]).map { |m| m["slug"] })
+
+  # NO DEPLOY TARGET — a registered app with no `prod_deploy` (chain-ops). Its
+  # main is advanced and its members stamped merged:"main" above; there is simply
+  # nothing to dispatch. Ship continues to the NEXT app instead of aborting, and
+  # the record says what actually happened — never "deployed to production".
+  # This is the honest half of the 2026-08-22 wedge fix; the other half is the
+  # registry telling the truth (config/release_repos.yml).
+  unless target
+    step("deploy: #{repo} has NO production deploy target — nothing dispatched (main advanced only)")
+    gate_sop("deploy:#{repo}", "no prod_deploy declared — nothing dispatched", true, 0)
+    @ship_live << "app #{repo} main advanced to #{short(frozen)} (no production deploy target — nothing dispatched)"
+    return
+  end
 
   # RESUMABLE SHIP (fix option b): on a RE-RUN after a watcher-process kill left the
   # deploy landed but the ship stranded, skip re-dispatching a deploy that ALREADY
@@ -6456,6 +6476,38 @@ def ship
   g4_gate = :open
   run_ship_gate(app_groups, ship_sha, qa_gates)
   record_release_event(rel_slug, "ship_gate", "completed", actor: by)
+
+  # 2a-bis. DEPLOY-TARGET PREFLIGHT — refuse BEFORE anything moves.
+  #
+  # Every registered `repo_script` deploy command must exist on disk. chain-ops
+  # declared one that never did (2026-08-22): ship ran it, it failed, and the
+  # abort landed AFTER push_frozen_main had advanced chain-ops' origin/main —
+  # wedging G4 and blocking turf-monster from shipping in the same release. This
+  # asks the question while the answer is still free. Placed BEFORE the ship
+  # authority prompt so a bogus registry never even gets confirmed.
+  # Probed at the FROZEN SHA, not in the primary working tree. The deploy runs in
+  # a ship workspace checked out at that commit, so the frozen tree is the FACT
+  # and the primary — whatever branch a session left it on — is only a proxy.
+  bad_targets = Release::ShipSequence.missing_deploy_commands(app_groups) do |repo, command|
+    _out, status = Open3.capture2e("git", "-C", repo_path(repo), "cat-file", "-e",
+                                   "#{ship_sha[repo]}:#{command}")
+    status.success?
+  end
+  if bad_targets.any?
+    reasons = bad_targets.join("; ")
+    # A DRY RUN previews the plan against a world it does not own (its SHAs are
+    # placeholders, and its sibling repos may be fixtures), so it SAYS this
+    # rather than aborting — the same `&& !DRY` convention the repo_script
+    # adapter's own empty-command check already follows.
+    if DRY
+      say("  (dry-run) deploy target(s) unreadable at the frozen SHA: #{reasons}")
+      say("  (dry-run) a real ship REFUSES here, before anything moves")
+    else
+      abort!("deploy target(s) missing: #{reasons}. Nothing has moved. Add the real " \
+             "script, or drop `prod_deploy` if the app has no production target (ship then advances " \
+             "main and dispatches nothing). Do NOT add a no-op deploy script.")
+    end
+  end
 
   # 2b. The ship-authority gate — explicit, AFTER Steffon's test confirmation and
   #     BEFORE any deploy. confirm() honors --yes (hands-off) + --dry-run (previews).
