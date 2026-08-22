@@ -150,6 +150,73 @@ class Release::ReposTest < ActiveSupport::TestCase
     assert_equal "https://rolio-prod-82e96784b462.herokuapp.com", adapter["smoke_url"]
   end
 
+  # --- a declared deploy command must actually EXIST (the 2026-08-22 wedge) ----
+  #
+  # THE REGRESSION GUARD. chain-ops' entry declared `command: bin/deploy` and
+  # chain-ops/bin/deploy never existed. Nothing checked, so the lie survived
+  # until `bin/release ship` ran it inside rel-20260822-ae1cc1: the deploy
+  # failed, the ship aborted, and it aborted AFTER push_frozen_main had already
+  # advanced chain-ops' origin/main — wedging G4 and blocking turf-monster from
+  # shipping in the same release. A registry entry is a PROMISE about the world;
+  # this asserts the promise, for EVERY repo_script app, not just chain-ops.
+  #
+  # Read from `origin/release`, NOT the working tree — the same rule the ci.yml
+  # drift guard follows, and the honest one here too: ship runs the command from
+  # a workspace checked out at the FROZEN SHA, which comes off the release
+  # branch. A script that exists only on someone's feature branch is not a
+  # deploy target.
+  # NO `skip` HERE, deliberately. config/rails_lane.yml ratchets the lane's skip
+  # count against origin/release, so a new skip site cannot be paid for in the
+  # same commit — and it should not be. Instead the test always asserts the half
+  # that needs no checkout (the adapter NAMES a command) and adds the on-disk
+  # half for whichever siblings are present. On the hub CI runner it still has a
+  # real assertion; the load-bearing on-disk check also runs at ship time, in
+  # Release::ShipSequence.missing_deploy_commands, BEFORE any main moves.
+  test "every declared repo_script deploy command exists on the branch that ships" do
+    root = projects_root
+
+    missing = Release::Repos.app_repos.filter_map do |repo|
+      adapter = Release::Repos.prod_deploy(repo) || {}
+      next unless adapter["strategy"].to_s == "repo_script"
+
+      command = adapter["command"].to_s
+      next "#{repo} declares prod_deploy.strategy repo_script with no `command`" if command.empty?
+      next if root.nil? # hub CI runner — no siblings to probe; the naming half above still ran
+
+      path = root.join(repo)
+      next unless path.join(".git").exist? # planned repo — the ladder guard owns its arrival
+
+      _out, status = Open3.capture2e("git", "-C", path.to_s, "cat-file", "-e", "origin/release:#{command}")
+      next if status.success?
+
+      "#{repo} declares prod_deploy.command #{command}, which does not exist at origin/release"
+    end
+
+    assert_empty missing,
+                 "a registry entry names a deploy command that is not there: #{missing.join('; ')}. " \
+                 "Ship would abort on it at G4 — AFTER main has already advanced. Either add the real " \
+                 "script or drop prod_deploy (an app with no production target is a first-class case). " \
+                 "Do NOT add a no-op deploy script: that makes ship report a deploy that never happened."
+  end
+
+  # Guards the guard: if app_repos or the strategy filter ever went empty, the
+  # assertion above would pass over nothing — green while checking nothing.
+  test "the deploy-command guard actually has a command to check" do
+    declared = Release::Repos.app_repos.count do |repo|
+      (Release::Repos.prod_deploy(repo) || {})["strategy"].to_s == "repo_script"
+    end
+
+    assert_operator declared, :>=, 1, "expected at least one repo_script app for the guard to check"
+  end
+
+  # The fix in evidence. chain-ops has no production app, so it declares no
+  # adapter — and ship treats that as "advance main, dispatch nothing".
+  test "chain-ops declares no prod_deploy because it has no production target" do
+    assert_nil Release::Repos.prod_deploy("chain-ops"),
+               "chain-ops has no production deployment target; declaring one is what wedged G4"
+    assert Release::Repos.app?("chain-ops"), "it is still a registered app — just an undeployed one"
+  end
+
   test "prod_deploy is nil for a gem or an unknown repo" do
     assert_nil Release::Repos.prod_deploy("studio-engine")
     assert_nil Release::Repos.prod_deploy("not-a-real-repo")

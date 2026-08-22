@@ -217,6 +217,73 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
     assert_raises(ArgumentError) { S.strategy_handler("") }
   end
 
+  # --- deploy_target?: "no production app" is a CASE, not a misconfiguration ---
+  #
+  # The 2026-08-22 wedge: chain-ops declared an adapter for a deploy target it
+  # did not have. With the adapter gone, ship must SKIP its dispatch cleanly —
+  # it still advances main — instead of aborting the whole release mid-ship.
+
+  test "deploy_target? is false when no prod_deploy is declared" do
+    assert_not S.deploy_target?(nil)
+    assert_not S.deploy_target?({})
+    assert_not S.deploy_target?({ "strategy" => "" })
+    assert_not S.deploy_target?({ "strategy" => "   " })
+  end
+
+  test "deploy_target? is true for every known strategy" do
+    S::STRATEGY_HANDLERS.each_key do |strategy|
+      assert S.deploy_target?({ "strategy" => strategy }), "#{strategy} is a real deploy target"
+    end
+  end
+
+  # --- missing_deploy_commands: ask while the answer is still free -------------
+  #
+  # The preflight that turns the 2026-08-22 wedge into a refusal with nothing
+  # moved. Pure — the existence probe is injected — so these run with no
+  # filesystem and no sibling checkouts.
+
+  GROUPS = [
+    { "repo" => "turf-monster", "prod_deploy" => { "strategy" => "repo_script", "command" => "bin/deploy" } },
+    { "repo" => "rolio", "prod_deploy" => { "strategy" => "git_push_heroku", "remote" => "heroku" } },
+    { "repo" => "chain-ops" } # no adapter at all
+  ].freeze
+
+  test "missing_deploy_commands is empty when every declared command exists" do
+    assert_empty(S.missing_deploy_commands(GROUPS) { |_repo, _command| true })
+  end
+
+  test "missing_deploy_commands names the repo and the command that is not there" do
+    reasons = S.missing_deploy_commands(GROUPS) { |_repo, _command| false }
+
+    assert_equal 1, reasons.length, "only the repo_script entry declares a command to probe"
+    assert_match(/turf-monster/, reasons.first)
+    assert_match(%r{bin/deploy}, reasons.first)
+  end
+
+  test "missing_deploy_commands ignores repos with no prod_deploy and non-script strategies" do
+    probed = []
+    S.missing_deploy_commands(GROUPS) { |repo, _command| probed << repo; true }
+
+    assert_equal ["turf-monster"], probed,
+                 "chain-ops (no adapter) and rolio (git_push_heroku) name no on-disk command"
+  end
+
+  test "missing_deploy_commands flags a repo_script adapter that names no command" do
+    groups  = [{ "repo" => "tax-studio", "prod_deploy" => { "strategy" => "repo_script" } }]
+    reasons = S.missing_deploy_commands(groups) { |_repo, _command| true }
+
+    assert_equal 1, reasons.length
+    assert_match(/names no `command`/, reasons.first)
+  end
+
+  # The line between the two failure modes: a MISSING adapter means "nothing to
+  # deploy"; a TYPO must still blow up. Reading a typo as "nothing to deploy"
+  # would turn a misconfigured app into a silently-never-deployed one.
+  test "deploy_target? is true for an unknown strategy so a typo still reaches strategy_handler" do
+    assert S.deploy_target?({ "strategy" => "rsync_box" })
+    assert_raises(ArgumentError) { S.strategy_handler("rsync_box") }
+  end
+
   # --- ordered_app_groups: hub first, rest stable --------------------------
 
   test "ordered_app_groups pulls the hub to the front" do

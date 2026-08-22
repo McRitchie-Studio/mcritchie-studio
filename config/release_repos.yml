@@ -27,6 +27,14 @@
 #          reads this so one release can drive heterogeneous deploys). They have a
 #          branch merged onto the release branch.
 #
+# prod_deploy is OPTIONAL. An app that has no production deployment target
+# omits it entirely, and ship advances its main and records `no production
+# deploy target — nothing dispatched`. NEVER paper over a missing target with a
+# no-op deploy script: that makes ship report a deploy that did not happen.
+# A declared adapter is a PROMISE that its `command` exists on disk — repos_test
+# asserts exactly that, so a command that never existed fails at test time
+# instead of at G4 with main already advanced.
+#
 # prod_deploy adapters (the `strategy` selects the deploy mechanic):
 #   git_push_heroku — push the release/main branch to a Heroku git remote.
 #       remote    — the git remote name or Heroku git URL to push to (e.g. heroku).
@@ -356,18 +364,41 @@ apps:
       command: bin/deploy
       args: ["--yes"]
   chain-ops:
-    # BLOCKED — the repo exists (it was declared `planned` while it already did;
-    # the ladder guard's first catch), but its remote still points at the
-    # PERSONAL amcritchie/ account. It never moved in the 2026-07-29 org
-    # migration, so the mcritchie-agent App is not installed on it and
-    # `bin/release init` gets a 403 pushing the rung. It carries `release` but
-    # NOT `accepted` — created by the two-rung init this task retires, which is
-    # the bug in evidence. Resolve by migrating it to McRitchie-Studio (or
-    # installing the App), then `bin/release init` and flip this to three-rung.
+    # BLOCKED — and the ORIGINAL blocker is now GONE, so read the current one.
+    # RESOLVED 2026-08-21: the repo was migrated to McRitchie-Studio, both Apps
+    # have access, the 403 is gone, and it now carries accepted + release + main.
+    #
+    # ⛔ DO NOT FLIP THIS TO THREE-RUNG YET. The remaining blocker is NOT the
+    # migration and NOT the unset qa_test_cmd (that one is a non-issue —
+    # pre_qa_gate self-gates and skips, and a missing QA env warns and skips).
+    # It is `prod_deploy` below: it declares `command: bin/deploy`, and
+    # chain-ops/bin/deploy DOES NOT EXIST. `bin/release ship` aborts on it at
+    # bin/release.rb:6137 — AFTER push_frozen_main has already advanced
+    # origin/main at :6053. Flipping the ladder therefore wedges G4 mid-ship,
+    # leaving main advanced and the deploy un-run. chain-ops also has no
+    # test_cmd, so there is no G4 suite either.
+    #
+    # To enroll, IN THIS ORDER: give chain-ops a real production deployment
+    # target (a Heroku app + a prod_deploy adapter that names it) → register a
+    # test_cmd → THEN flip.
     ladder: blocked
+    #
+    # NO prod_deploy — DELIBERATE, not an omission. chain-ops has no production
+    # app to deploy to, so declaring an adapter was the bug: the entry named
+    # `command: bin/deploy` and chain-ops/bin/deploy does not exist. On
+    # 2026-08-22 `bin/release ship` ran it inside rel-20260822-ae1cc1, it
+    # failed, and the ship aborted — AFTER push_frozen_main had advanced
+    # chain-ops' origin/main to 749b38c — which wedged G4 and blocked
+    # turf-monster from shipping in the same release.
+    #
+    # ⛔ Do NOT "fix" this by adding a no-op bin/deploy. That makes ship REPORT
+    # a deploy that never happened. An app with no prod_deploy is a first-class
+    # case: ship advances its main and records `no production deploy target —
+    # nothing dispatched`, which is the truth.
+    #
+    # ladder: blocked does NOT keep a repo out of a release. It only stops
+    # `bin/release init` creating rungs; release MEMBERSHIP is by TASK. The
+    # moment a chain-ops task reaches `reviewed`, chain-ops rides.
+    #
     # Planned app; test/integration is still empty — qa_test_cmd stays UNSET
     # until it has a real integration tier to run.
-    prod_deploy:
-      strategy: repo_script
-      command: bin/deploy
-      args: ["--yes"]
