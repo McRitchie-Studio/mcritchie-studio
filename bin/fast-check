@@ -96,6 +96,8 @@
 #   FAST_CHECK_SKIP_TEST_PREPARE   set to 1 only for non-Rails harness tests
 #   FAST_CHECK_TEST_CMD            test runner prefix (default: bin/rails test)
 #   FAST_CHECK_RUBOCOP_CMD         rubocop prefix (default: bin/rubocop)
+#   FAST_CHECK_LANE_TIMEOUT        per-lane ceiling in seconds (default: 900). Past it the
+#                                  lane is reported as a HUNG RUNNER, never as a red suite.
 #   FAST_CHECK_TASK_BIN            board CLI (default: bin/task; tests stub it)
 #   FAST_CHECK_GATE_BIN            gate CLI (default: bin/gate; tests stub it)
 #
@@ -216,6 +218,25 @@ rubocop_cmd = ENV.fetch("FAST_CHECK_RUBOCOP_CMD", "bin/rubocop")
 test_prepare_cmd = ENV.fetch("FAST_CHECK_TEST_PREPARE_CMD", "bin/rails db:test:prepare test:prepare")
 skip_test_prepare = ENV.fetch("FAST_CHECK_SKIP_TEST_PREPARE", "") == "1"
 
+# --- the lane ceiling -----------------------------------------------------------
+# NO LANE MAY RUN FOREVER. Measured 2026-08-21: a turf-monster mapped-tests lane sat
+# 41 minutes at 0.0% CPU (its forked test workers had SIGSEGVed at the fork and the
+# runner was parked on the DRb channel waiting for them), and this cert then printed
+# "lane(s) RED: mapped-tests". That verdict is a LIE about the cause — no test ever
+# ran — and every agent who read it retried into the same wall, burning a whole
+# harness budget per attempt. The ceiling is the fix; naming the RUNNER instead of
+# the tests is the point of it.
+#
+# CALIBRATED ON THE SLOW SIDE, deliberately, because this box is not the CI box.
+# MEASURED normal case for a fast-check lane: the cert's own header budgets ~1 MINUTE
+# for ALL lanes together; the widest single lane observed is the spine at ~10-20s, and
+# a full turf-monster suite — far more than any fast lane runs — takes 93s serially
+# (2423 runs, measured 2026-08-22 on this hardware). 900s is therefore ~10x the
+# slowest legitimate lane and ~15x the whole cert: a lane that reaches it is not slow,
+# it is stuck. Retune with the measurement in hand, and update this paragraph when you
+# do — a ceiling with no recorded normal case is a number nobody can safely change.
+LANE_TIMEOUT = Integer(ENV.fetch("FAST_CHECK_LANE_TIMEOUT", "900"), exception: false) || 900
+
 # Best-effort G1 gate-run markers + cert checkpoint + checks_run read: shared
 # with bin/full-suite-check (CertEmission), parameterized on this script's
 # TASK_BIN/GATE_BIN seams. Skipped when there's no task slug (--print).
@@ -231,14 +252,22 @@ end
 # cert reaps the SUITE too. A bare `system` left `bin/rails test` running with PPID
 # 1 when the harness's 120s timeout killed the cert — holding the worktree test DB
 # and failing every retry with PG::ObjectInUse. See bin/lib/cert_process.rb.
-def run_lane(label, cmd, root, env: {}, gate_slug: nil)
+# Returns a CertProcess::Result, not a bare boolean, so a TIMEOUT can be told apart
+# from a red suite downstream. `.ok` is false either way — a hung lane can never
+# certify, whatever the caller forgets to check.
+def run_lane(label, cmd, root, env: {}, gate_slug: nil, timeout: LANE_TIMEOUT)
   warn "== #{label}: #{cmd} =="
   started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-  ok = CertProcess.run(env, cmd, chdir: root, root: root, lane: label)
+  result = CertProcess.run_bounded(env, cmd, chdir: root, root: root, lane: label, timeout: timeout)
   duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
-  warn(ok ? "   #{label}: PASS (#{format('%.1fs', duration_ms / 1000.0)})" : "   #{label}: FAIL")
-  CertEmission.emit_gate_sop(GATE_BIN, gate_slug, label, cmd, ok, duration_ms) if gate_slug
-  ok
+  elapsed = format("%.1fs", duration_ms / 1000.0)
+  if result.timeout?
+    warn "   #{label}: TIMED OUT after #{elapsed} — the RUNNER never produced a verdict"
+  else
+    warn(result.ok ? "   #{label}: PASS (#{elapsed})" : "   #{label}: FAIL")
+  end
+  CertEmission.emit_gate_sop(GATE_BIN, gate_slug, label, cmd, result.ok, duration_ms) if gate_slug
+  result
 end
 
 # A lane with nothing to run passes vacuously — recorded on G1 as a pass with a
@@ -246,8 +275,9 @@ end
 def skip_lane(label, why, gate_slug: nil)
   warn "== #{label}: skipped (#{why}) =="
   CertEmission.emit_gate_sop(GATE_BIN, gate_slug, label, "skipped: #{why}", true, 0) if gate_slug
-  true
+  CertProcess::Result.new(ok: true, outcome: :skipped)
 end
+
 
 # --- orphan guard ----------------------------------------------------------------
 # A cert that outran its harness timeout leaves a `bin/rails test` orphan holding the
@@ -273,9 +303,17 @@ emit_cert_checkpoint(slug, "started") unless options[:print]
 emit_gate(gate_slug, "open", "task", gate_slug.to_s, "g1_cert") if gate_slug
 
 unless skip_test_prepare
-  prepare_ok = run_lane("test-prepare", test_prepare_cmd, root, env: { "RAILS_ENV" => "test" },
-                        gate_slug: gate_slug)
-  unless prepare_ok
+  prepare_res = run_lane("test-prepare", test_prepare_cmd, root, env: { "RAILS_ENV" => "test" },
+                         gate_slug: gate_slug)
+  if prepare_res.timeout?
+    # A wedged db:test:prepare is the same disease one lane earlier, and the stock
+    # message below would misfile it as "an ENV gap you can fix" — it is a hung runner.
+    CertProcess.timeout_report({ "test-prepare" => prepare_res }, ceiling: LANE_TIMEOUT,
+                               tool: "fast-check", env_var: "FAST_CHECK_LANE_TIMEOUT").each { |l| warn l }
+    emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
+    exit 1
+  end
+  unless prepare_res.ok
     warn "fast-check: test-env prepare failed — see the output above. USUALLY an ENV gap (the test " \
          "DB, or the bundled-asset build), NOT a regression in your diff; but a broken stylesheet " \
          "IN your diff (a bad @apply, an unknown utility, a malformed @theme) fails this lane too. " \
@@ -285,7 +323,7 @@ unless skip_test_prepare
   end
 end
 
-mapped_ok =
+mapped_res =
   if mapped_only.empty?
     skip_lane("mapped-tests", mapped.empty? ? "no tests map from the diff" : "all mapped tests covered by the spine",
               gate_slug: gate_slug)
@@ -315,14 +353,14 @@ mapped_ok =
     run_lane("mapped-tests", "#{test_cmd} #{mapped_only.map(&:shellescape).join(' ')}", root, gate_slug: gate_slug)
   end
 
-spine_ok =
+spine_res =
   if spine.empty?
     skip_lane("spine", "no spine entries exist in this checkout", gate_slug: gate_slug)
   else
     run_lane("spine", "#{test_cmd} #{spine.map(&:shellescape).join(' ')}", root, gate_slug: gate_slug)
   end
 
-rubocop_ok =
+rubocop_res =
   if lintable.empty?
     skip_lane("rubocop-changed", "no lintable files in the diff", gate_slug: gate_slug)
   else
@@ -333,10 +371,24 @@ emit_cert_checkpoint(slug, "completed") unless options[:print]
 
 total = Process.clock_gettime(Process::CLOCK_MONOTONIC) - overall_started
 
-unless mapped_ok && spine_ok && rubocop_ok
-  failed = { "mapped-tests" => mapped_ok, "spine" => spine_ok, "rubocop-changed" => rubocop_ok }
-           .reject { |_, ok| ok }.keys.join(", ")
-  warn "fast-check: lane(s) RED: #{failed}. Fix, then re-run — nothing certified. (#{format('%.1fs', total)})"
+lanes = { "mapped-tests" => mapped_res, "spine" => spine_res, "rubocop-changed" => rubocop_res }
+unless lanes.each_value.all?(&:ok)
+  # A HUNG lane and a RED lane are DIFFERENT VERDICTS and must never share a sentence.
+  # "lane(s) RED" tells the reader their tests failed; when the runner deadlocked, no
+  # test ran and that sentence sends them straight back into the wall. Split them here,
+  # report the hang FIRST (it is the one that needs a different action), and only call
+  # the genuinely-red lanes red.
+  hung = lanes.select { |_, result| result.timeout? }
+  red = lanes.reject { |_, result| result.ok || result.timeout? }.keys
+
+  if hung.any?
+    CertProcess.timeout_report(hung, ceiling: LANE_TIMEOUT, tool: "fast-check",
+                               env_var: "FAST_CHECK_LANE_TIMEOUT").each { |l| warn l }
+  end
+  if red.any?
+    warn "fast-check: lane(s) RED: #{red.join(', ')}. Fix, then re-run — nothing certified. " \
+         "(#{format('%.1fs', total)})"
+  end
   emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
   exit 1
 end
