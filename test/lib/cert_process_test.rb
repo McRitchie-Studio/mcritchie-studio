@@ -29,6 +29,8 @@
 require "minitest/autorun"
 require "tmpdir"
 require "fileutils"
+require "rbconfig"
+require "shellwords"
 require_relative "../../bin/lib/cert_orphan_guard"
 require_relative "../../bin/lib/cert_process"
 
@@ -199,4 +201,134 @@ class CertProcessTest < Minitest::Test
     refute CertOrphanGuard.reap_cleared?(:refused), "we did NOT signal it → the lock is the only record"
     refute CertOrphanGuard.reap_cleared?(:survived), "it outlived our KILL → the lock is the only record"
   end
+
+  # --- [unit] THE LANE CEILING: a runner that never returns must not be called RED --------
+  #
+  # MEASURED 2026-08-21: a turf-monster mapped-tests lane sat 41 MINUTES at 0.0% CPU (its
+  # forked test workers had SIGSEGVed at the fork; the runner was parked on the DRb channel
+  # waiting for the dead) and bin/fast-check then printed "lane(s) RED: mapped-tests". No
+  # test had run. Every agent who read that verdict re-ran the cert — into the same wall,
+  # for another 41 minutes. The deadlock was environmental; A LANE WITH NO CEILING IS A
+  # DEFECT ON ITS OWN, and it is the half of this that is ours to fix.
+
+  def test_a_lane_that_outruns_its_ceiling_reports_a_TIMEOUT_not_a_verdict
+    result = CertProcess.run_bounded({}, "sleep 30", chdir: @root, root: @root, lane: LANE, timeout: 1)
+
+    assert result.timeout?, "past its ceiling the wait must give up and SAY it gave up"
+    assert_equal :timeout, result.outcome
+    refute result.ok, "no verdict was produced, so there is nothing to certify"
+    refute_nil result.detail, "a bare timeout is the uninformative half of the bug — say what was running"
+  end
+
+  def test_the_boolean_face_of_a_timeout_is_FALSE
+    # THE LOAD-BEARING PROPERTY. `run` returns a plain boolean and always will; every
+    # existing caller reads it as PASS/FAIL. Had a timeout surfaced as a truthy `:timeout`
+    # symbol, a hung runner would have CERTIFIED. Fail closed, always.
+    refute CertProcess.run({}, "sleep 30", chdir: @root, root: @root, lane: LANE, timeout: 1),
+           "a hung runner must never green a cert, whatever the caller forgets to check"
+  end
+
+  def test_a_timed_out_lane_is_REAPED_not_left_running
+    # The ceiling would be a downgrade if giving up meant walking away: the abandoned
+    # runner still holds the worktree test DB, and the next cert dies on PG::ObjectInUse.
+    marker = File.join(@root, "lane.pid")
+    cmd = "#{RbConfig.ruby.shellescape} -e #{"File.write(#{marker.inspect}, Process.pid.to_s); sleep 60".shellescape}"
+    result = CertProcess.run_bounded({}, cmd, chdir: @root, root: @root, lane: LANE, timeout: 2)
+
+    assert result.timeout?
+    assert_path_exists marker, "the lane must actually have started, or this proves nothing"
+    lane_pid = File.read(marker).to_i
+    @spawned << lane_pid
+    assert wait_until_dead(lane_pid),
+           "ORPHAN: the timed-out lane outlived the cert. It keeps the test DB open and every retry " \
+           "then dies on PG::ObjectInUse blaming an ENV gap."
+  end
+
+  def test_a_lane_that_finishes_inside_its_ceiling_is_untouched
+    green = CertProcess.run_bounded({}, "true", chdir: @root, root: @root, lane: LANE, timeout: 60)
+
+    assert green.ok
+    assert_equal :completed, green.outcome
+    refute green.timeout?
+
+    red = CertProcess.run_bounded({}, "false", chdir: @root, root: @root, lane: LANE, timeout: 60)
+
+    refute red.ok
+    assert_equal :completed, red.outcome
+    refute red.timeout?, "A RED SUITE IS NOT A HANG. Conflating them re-creates the bug in the mirror: " \
+                         "the reader would be told to diagnose the runner when their tests genuinely failed."
+  end
+
+  def test_no_ceiling_means_the_original_blocking_wait
+    # nil/0/negative must not silently become an instant timeout — every caller that has
+    # never heard of ceilings still runs through this method.
+    [nil, 0, -1].each do |ceiling|
+      result = CertProcess.run_bounded({}, "true", chdir: @root, root: @root, lane: LANE, timeout: ceiling)
+
+      assert result.ok, "timeout: #{ceiling.inspect} must block for the verdict, not invent one"
+      assert_equal :completed, result.outcome
+    end
+  end
+
+  # --- [unit] the SIGNATURE: name the deadlock, or admit you cannot ----------------------
+
+  def test_the_signature_names_dead_forked_workers
+    diagnosis = CertProcess.diagnosis(zombies: 14, live: 1, cpu: 1.2, timeout: 900)
+
+    assert_match(/workers are DEAD/i, diagnosis, "the measured shape: corpses and a parked parent")
+    assert_match(/PARALLEL_WORKERS=1/, diagnosis, "and the one command that gets the reader unstuck")
+  end
+
+  def test_the_signature_names_a_parked_runner_with_no_zombies_to_point_at
+    diagnosis = CertProcess.diagnosis(zombies: 0, live: 1, cpu: 0.4, timeout: 900)
+
+    assert_match(/PARKED/i, diagnosis)
+    refute_match(/workers are DEAD/i, diagnosis, "do not claim corpses we did not see")
+  end
+
+  def test_an_unrecognised_hang_admits_it_rather_than_guessing
+    # A diagnosis this file INVENTS is the same disease as the "lane(s) RED" it replaces.
+    diagnosis = CertProcess.diagnosis(zombies: 0, live: 6, cpu: 812.0, timeout: 900)
+
+    assert_match(/No known deadlock signature/i, diagnosis)
+    assert_match(/slower than this ceiling/i, diagnosis, "and point at the ceiling, which IS the other explanation")
+  end
+
+  def test_cpu_time_is_parsed_strictly_or_not_at_all
+    assert_in_delta 5.0, CertProcess.parse_cpu_time("0:05.00"), 0.001
+    assert_in_delta 65.5, CertProcess.parse_cpu_time("01:05.50"), 0.001
+    assert_in_delta 3725.0, CertProcess.parse_cpu_time("1:02:05"), 0.001
+    assert_in_delta 90_000.0, CertProcess.parse_cpu_time("1-01:00:00"), 0.001
+
+    # The fabrication guard. The `ps` seam (CERT_GUARD_PS) is a FIXTURE in these suites, and
+    # a fixture answers a shape it was not written for with arbitrary text. A loose parse of
+    # "Jul  8 09:00:00" yields a perfectly confident 0.0 CPU — which this file would then
+    # report as "the runner is PARKED". Evidence we made up is worse than no evidence.
+    ["Jul  8 09:00:00", "", "not a time", "abc:def"].each do |junk|
+      assert_nil CertProcess.parse_cpu_time(junk), "#{junk.inspect} must yield NO reading, not a made-up one"
+    end
+  end
+
+  # --- [unit] the report an agent actually reads -----------------------------------------
+
+  def test_the_timeout_report_cannot_be_mistaken_for_a_test_failure
+    # This is the whole deliverable in one assertion. The 41-minute hang was survivable;
+    # what made it cost the FLEET its budget was the sentence "lane(s) RED", which every
+    # agent reads as "your tests failed" and answers with a re-run.
+    hung = { "mapped-tests" => CertProcess::Result.new(ok: false, outcome: :timeout,
+                                                       detail: "process group 87242: 1 live, 14 zombie.") }
+    report = CertProcess.timeout_report(hung, ceiling: 900, tool: "fast-check",
+                                        env_var: "FAST_CHECK_LANE_TIMEOUT").join("\n")
+
+    assert_match(/RUNNER HUNG/, report, "name the RUNNER — it is the thing that failed")
+    assert_match(/NOT a test failure/, report)
+    assert_match(/never produced a\s+result/, report, "say plainly that no verdict exists")
+    assert_match(/mapped-tests/, report, "name the lane")
+    assert_match(/14 zombie/, report, "carry the process table's signature through to the reader")
+    assert_match(/900s/, report, "print the ceiling it hit")
+    assert_match(/FAST_CHECK_LANE_TIMEOUT/, report, "and how to raise it deliberately")
+    refute_match(/\bRED\b/, report,
+                 "THE REGRESSION: 'RED' is the word that sent agents back into the wall for 41 minutes.")
+  end
+
 end
