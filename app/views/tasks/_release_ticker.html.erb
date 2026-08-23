@@ -44,9 +44,50 @@
       return h + "h " + String(mm).padStart(2, "0") + "m ago";
     }
 
+    // A killed local cert emits no final write, so no Turbo morph can turn its
+    // spinner into STALLED. The ticker owns that time boundary on an already-open
+    // board. Freeze at the LAST HEARTBEAT, not at this browser's observation time.
+    function stallQuietLocalCheck(el, now) {
+      var root = el.closest("[data-local-check-stale-at]");
+      if (!root || root.dataset.localCheckState !== "running") return false;
+      var staleAt = parseInt(root.dataset.localCheckStaleAt || "0", 10);
+      if (!staleAt || now <= staleAt) return false;
+
+      root.dataset.localCheckState = "stalled";
+      root.setAttribute("aria-label", "Local check stalled — heartbeat stopped");
+      root.title = "Local check stalled — heartbeat stopped";
+
+      var spinner = root.querySelector("[data-test$='-spinner']");
+      var warning = root.querySelector("[data-test$='-stalled-icon']");
+      if (spinner) {
+        spinner.hidden = true;
+        spinner.classList.add("hidden");
+      }
+      if (warning) {
+        warning.hidden = false;
+        warning.classList.remove("hidden");
+      }
+
+      var label = root.querySelector("[data-test$='-label']");
+      if (label) label.textContent = label.dataset.stalledLabel || "Local check — stalled";
+      root.querySelectorAll("[data-local-check-tone]").forEach(function (node) {
+        node.classList.remove("text-primary");
+        node.classList.add("text-amber-700", "dark:text-amber-300");
+      });
+
+      el.removeAttribute("data-release-ticker");
+      el.dataset.localCheckClock = "stalled";
+      el.textContent = el.dataset.localCheckFreezeLabel || shortFmt(
+        parseInt(el.dataset.localCheckFreezeSeconds || "0", 10)
+      );
+      el.title = "Local check clock frozen at the last heartbeat";
+      return true;
+    }
+
     function tick() {
       var now = Math.floor(Date.now() / 1000);
       document.querySelectorAll("[data-release-ticker]").forEach(function (el) {
+        if (stallQuietLocalCheck(el, now)) return;
         var since = parseInt(el.dataset.since || "0", 10);
         if (!since) return;
         var secs = Math.max(0, now - since);

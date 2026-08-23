@@ -23,6 +23,25 @@ module Cert
   # nothing, because it converts an unknown into a confident wrong answer. So the
   # certs heartbeat their running lane, and a beat older than STALE_AFTER renders
   # as STALLED instead.
+  #
+  # THREE STATES, and the split between the first two is the correctness of the
+  # whole widget:
+  #
+  #   · NO-SIGNAL — an attempt is open and has NEVER reported a running lane. We
+  #     know a cert started; we know nothing about whether it still lives.
+  #   · RUNNING   — a lane reported liveness recently.
+  #   · STALLED   — a lane reported liveness and then went quiet.
+  #
+  # ABSENCE OF A SIGNAL IS NOT EVIDENCE OF A STALL. This distinction is not
+  # hypothetical tidiness: the `bin/fast-check` shipped on `accepted` opens a
+  # g1_cert attempt and emits ONLY terminal pass/fail sops — no running row at
+  # all. Collapsing no-signal into stalled therefore painted STALLED over every
+  # healthy multi-minute cert on every desk that had not yet rebased onto this
+  # branch — the whole population of live worktrees, on merge day, which is
+  # exactly the audience and the moment the feature exists for. Only a run that
+  # actually reported liveness and then stopped may be called dead; a run that
+  # never reported at all is simply not something this widget can speak about,
+  # and Cert::LocalCheckReader drops it rather than guess (see #reportable?).
   class LocalCheck
     # How long without a beat before a check is presumed dead. Comfortably longer
     # than the certs' ~40s heartbeat (two missed beats plus slack), so a busy
@@ -40,6 +59,8 @@ module Cert
       "rubocop"         => "Linting"
     }.freeze
 
+    # Used when a lane reports liveness without naming itself — a real emit with a
+    # blank `sop`. NOT used for the no-signal case, which renders nothing at all.
     FALLBACK_LABEL = "Running local checks"
 
     def self.from_gate_run(run, now: Time.current)
@@ -60,8 +81,17 @@ module Cert
     # `append_sop!` supersedes a running entry when that lane settles, so any
     # running row that survives is genuinely the one in progress.
     def running_sop
-      @running_sop ||= @run.sops.reverse.find { |sop| sop["result"].to_s == GateRun::RUNNING_RESULT }
+      return @running_sop if defined?(@running_sop)
+
+      @running_sop = @run.sops.reverse.find { |sop| sop["result"].to_s == GateRun::RUNNING_RESULT }
     end
+
+    # Did this runner ever prove it was alive? Everything below turns on it.
+    def signal? = running_sop.present?
+
+    # Whether the card may say ANYTHING about this attempt. No signal means no
+    # claim — not "running", and emphatically not "stalled".
+    def reportable? = signal?
 
     def lane = running_sop&.dig("sop").presence
 
@@ -74,24 +104,58 @@ module Cert
     def command = running_sop&.dig("cmd").presence
 
     # Last proof of life: the running lane's own timestamp, which the heartbeat
-    # refreshes in place. Falls back to the attempt's start for the window
-    # between `open` and the first lane's first beat.
+    # refreshes in place. NIL when the runner never reported a lane — there is no
+    # proof of life to date, and dating it from the attempt's start would invent
+    # one. A lane that reported but carried an unparseable stamp still counts as a
+    # signal, so that one falls back to the attempt start rather than vanishing.
     def heartbeat_at
-      @heartbeat_at ||= parse_time(running_sop&.dig("at")) || started_at
+      return nil unless signal?
+
+      @heartbeat_at ||= parse_time(running_sop["at"]) || started_at
     end
 
-    def seconds_since_heartbeat = (@now - heartbeat_at).to_i
+    def seconds_since_heartbeat
+      beat = heartbeat_at
+      return nil if beat.nil?
+
+      (@now - beat).to_i
+    end
+
+    # The moment this check will start reading as stalled — handed to the card so
+    # an ALREADY-OPEN board can flip itself at the right second instead of waiting
+    # for a write that a killed runner will never make.
+    def stale_at
+      beat = heartbeat_at
+      beat && beat + STALE_AFTER
+    end
 
     def elapsed_seconds = [(@now - started_at).to_i, 0].max
+
+    # Where the clock FREEZES when the runner dies: time from the attempt's start
+    # to its last proof of life. A stalled clock that kept climbing would keep
+    # claiming progress that is not happening.
+    def elapsed_at_last_beat
+      beat = heartbeat_at
+      return 0 if beat.nil?
+
+      [(beat - started_at).to_i, 0].max
+    end
 
     # STALLED is a claim about the RUNNER, not the tests: the process stopped
     # reporting. The card must not say "failed" — nobody knows the verdict, which
     # is exactly the operator's problem.
-    def stalled? = seconds_since_heartbeat > STALE_AFTER
+    def stalled?
+      since = seconds_since_heartbeat
+      !since.nil? && since > STALE_AFTER
+    end
 
-    def running? = !stalled?
+    def running? = signal? && !stalled?
 
-    def state = stalled? ? :stalled : :running
+    def state
+      return :no_signal unless signal?
+
+      stalled? ? :stalled : :running
+    end
 
     def attempt = @run.attempt
 

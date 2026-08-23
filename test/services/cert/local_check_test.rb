@@ -44,19 +44,17 @@ class Cert::LocalCheckTest < ActiveSupport::TestCase
     assert_predicate check, :running?, "two beats' grace is the point of STALE_AFTER"
   end
 
-  test "falls back to the attempt start before the first lane reports" do
-    # bin/gate `open` fires before the first lane, so there is a real window with
-    # an in-flight run and no sops at all.
+  test "an old runner with no liveness signal makes no running or stalled claim" do
+    # Rollout compatibility: old bin/fast-check opens this attempt but never
+    # emits `running`. Its age cannot tell us whether the runner is alive.
     check = Cert::LocalCheck.from_gate_run(gate_run(sops: [], started_at: 5.seconds.ago))
 
-    assert_predicate check, :running?
-    assert_equal Cert::LocalCheck::FALLBACK_LABEL, check.label
-  end
-
-  test "an attempt open with no lane for too long reads as stalled" do
-    check = Cert::LocalCheck.from_gate_run(gate_run(sops: [], started_at: 10.minutes.ago))
-
-    assert_predicate check, :stalled?, "a cert that never reported a lane is not alive"
+    refute_predicate check, :reportable?
+    refute_predicate check, :running?
+    refute_predicate check, :stalled?
+    assert_equal :no_signal, check.state
+    assert_nil check.heartbeat_at
+    assert_nil check.seconds_since_heartbeat
   end
 
   # --- which lane ---
@@ -122,6 +120,17 @@ class Cert::LocalCheckTest < ActiveSupport::TestCase
     check = Cert::LocalCheck.from_gate_run(gate_run(started_at: 5.seconds.from_now, sops: [running_sop]))
 
     assert_operator check.elapsed_seconds, :>=, 0
+  end
+
+  test "stale_at and the frozen elapsed clock derive from the last heartbeat" do
+    started = 10.minutes.ago
+    beat = 3.minutes.ago
+    check = Cert::LocalCheck.from_gate_run(
+      gate_run(started_at: started, sops: [running_sop(at: beat)])
+    )
+
+    assert_in_delta beat + Cert::LocalCheck::STALE_AFTER, check.stale_at, 1.second
+    assert_in_delta 7.minutes, check.elapsed_at_last_beat, 2.seconds
   end
 
   test "survives an unparseable heartbeat timestamp" do

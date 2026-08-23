@@ -103,7 +103,9 @@ test("a building card names the lane its local cert is running, with a live cloc
     await expect(clock).toHaveAttribute("data-release-ticker", "");
     const first = await clock.textContent();
     await page.clock.install();
-    await page.clock.fastForward("02:00");
+    // Stay inside the heartbeat's 100-second staleness window: this case proves
+    // the live clock moves while the separate transition case proves it freezes.
+    await page.clock.fastForward("00:30");
     await expect.poll(async () => await clock.textContent(), { timeout: 5000 }).not.toBe(first);
   } finally {
     await api(page, "DELETE", `/api/v1/tasks/${slug}`);
@@ -145,6 +147,45 @@ test("a killed runner shows STALLED with a frozen clock, never an endless spinne
     await page.clock.fastForward("02:00");
     await page.waitForTimeout(500);
     await expect(clock).toHaveText(first);
+  } finally {
+    await api(page, "DELETE", `/api/v1/tasks/${slug}`);
+  }
+});
+
+test("an already-open board flips a quiet runner from RUNNING to STALLED", async ({ page }) => {
+  const slug = "e2e-local-check-live-stall";
+  await page.goto("/tasks");
+  await mintCheck(page, {
+    slug,
+    title: "E2E local check live stall",
+    lane: "full-suite",
+    cmd: "bin/rails test",
+    beatAt: iso(70_000),
+  });
+
+  try {
+    await page.goto("/tasks");
+    const slot = page.locator(`#card-${slug} [data-test='task-local-check']`);
+    const spinner = slot.locator("[data-test='task-local-check-spinner']");
+    const stalled = slot.locator("[data-test='task-local-check-stalled-icon']");
+    const clock = slot.locator("[data-test='task-local-check-clock']");
+
+    await expect(slot).toHaveAttribute("data-local-check-state", "running");
+    await expect(spinner).toBeVisible();
+    const frozen = await clock.getAttribute("data-local-check-freeze-label");
+
+    await page.clock.install();
+    await page.clock.fastForward("00:40");
+
+    await expect(slot).toHaveAttribute("data-local-check-state", "stalled");
+    await expect(spinner).toBeHidden();
+    await expect(stalled).toBeVisible();
+    await expect(clock).toHaveAttribute("data-local-check-clock", "stalled");
+    await expect(clock).not.toHaveAttribute("data-release-ticker", /.*/);
+    await expect(clock).toHaveText(frozen);
+
+    await page.clock.fastForward("02:00");
+    await expect(clock).toHaveText(frozen);
   } finally {
     await api(page, "DELETE", `/api/v1/tasks/${slug}`);
   }

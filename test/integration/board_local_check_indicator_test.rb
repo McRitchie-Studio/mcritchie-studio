@@ -44,6 +44,9 @@ class BoardLocalCheckIndicatorTest < ActionDispatch::IntegrationTest
     assert clock, "a running check must show a clock"
     assert_equal "running", clock["data-local-check-clock"]
     assert clock["data-release-ticker"], "the clock must tick, not sit at its render-time value"
+    assert clock["data-local-check-freeze-seconds"], "the browser needs the last-beat duration to freeze honestly"
+    assert css_select(SLOT).first["data-local-check-stale-at"],
+      "an open board needs the exact second when a killed runner becomes stalled"
   end
 
   test "[component] a dead runner renders STALLED, not a spinner that never ends" do
@@ -66,6 +69,9 @@ class BoardLocalCheckIndicatorTest < ActionDispatch::IntegrationTest
     assert_equal "stalled", clock["data-local-check-clock"]
     assert_nil clock["data-release-ticker"],
                "a frozen clock must not tick — a rising number would claim progress"
+    expected_frozen = ApplicationController.helpers.compact_elapsed_short(20.minutes - stale)
+    assert_equal expected_frozen, clock.text,
+      "the stalled clock freezes at the last beat, not at render time"
   end
 
   test "[component] a building task with no cert running renders an empty slot" do
@@ -96,16 +102,16 @@ class BoardLocalCheckIndicatorTest < ActionDispatch::IntegrationTest
     args = { subject_type: "task", subject_slug: task.slug, key: "g1_cert" }
     log_in_as(@admin)
 
-    # 1. bin/gate open — the attempt exists before any lane reports.
+    # 1. bin/gate open — an old/new runner has not proved liveness yet.
     GateRun.open!(**args)
     get tasks_path
-    assert_select "#{SLOT}[data-local-check-state='running']", 1
-    assert_select "#{SLOT} [data-test='task-local-check-label']",
-                  text: /#{Cert::LocalCheck::FALLBACK_LABEL}/
+    assert_select SLOT, 0,
+      "an open attempt without a running row is unknown and must render nothing"
 
-    # 2. A lane announces itself — the card names it.
+    # 2. A lane announces itself — only now may the card claim it is running.
     GateRun.append_sop!(**args, sop: { "sop" => "spine", "cmd" => "bin/rails test", "result" => "running" })
     get tasks_path
+    assert_select "#{SLOT}[data-local-check-state='running']", 1
     assert_select "#{SLOT} [data-test='task-local-check-label']", text: /Running core spine/
 
     # 3. The lane settles and the cert closes — the indicator leaves entirely.

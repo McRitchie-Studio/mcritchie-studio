@@ -257,6 +257,9 @@ while ship waits, and the board card shows that PR's CI meter there — `PR: <n>
 one mark per check inside the bar, and a clock that ticks while checks run and
 freezes to the run's duration when they settle. So "is it still going?" is a
 glance at the board, not a question for the session.
+Before a PR exists, the same card shows the current local-cert lane and clock;
+if its heartbeat stops, the open board flips that lane to `STALLED` and freezes
+the clock at the last proof of life.
 
 **What the wrappers do NOT do — read before trusting them:**
 

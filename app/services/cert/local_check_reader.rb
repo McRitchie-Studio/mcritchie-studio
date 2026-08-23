@@ -6,8 +6,8 @@ module Cert
   class LocalCheckReader
     # Only `building` tasks can be inside a local cert, and only until the PR
     # exists — once `bin/ship` opens it, the PR CI meter takes the slot over. The
-    # controller applies the stage/PR filter; this reader answers the narrower
-    # question of which of those slugs has an attempt open.
+    # task card applies that stage/PR filter; this reader answers the narrower
+    # question of which supplied slugs has a reportable attempt open.
     def for_tasks(tasks, now: Time.current)
       slugs = Array(tasks).map { |task| task.slug.to_s }.reject(&:empty?)
       return {} if slugs.empty?
@@ -25,7 +25,7 @@ module Cert
         next if map.key?(run.subject_slug)
 
         check = LocalCheck.from_gate_run(run, now: now)
-        map[run.subject_slug] = check if check
+        map[run.subject_slug] = check if check&.reportable?
       end
     end
 

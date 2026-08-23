@@ -10,7 +10,7 @@
 # Usage:
 #   bin/gate open  <task|release> <slug> <key> [--actor A] [--source S]
 #   bin/gate sop   <task|release> <slug> <key> --sop NAME [--cmd C] [--tier T]
-#                  [--result pass|fail] [--duration-ms N] [--actor A] [--source S]
+#                  [--result pass|fail|running] [--duration-ms N] [--actor A] [--source S]
 #   bin/gate close <task|release> <slug> <key> (--success | --failed)
 #                  [--sop-json JSON]... [--meta k=v]... [--actor A] [--source S]
 #   bin/gate show  <task|release> <slug> [--json]

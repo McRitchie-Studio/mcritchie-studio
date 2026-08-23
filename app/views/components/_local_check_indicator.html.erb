@@ -9,11 +9,11 @@
   right, same live ticker) so the two read as one language rather than two
   competing widgets in the same card stack.
 
-  TWO STATES, and the second is the reason this exists:
+  TWO VISIBLE STATES, and the second is the reason this exists:
 
   · RUNNING — a spinner (the same SVG arc the CI meter's pending marks use) and a
     clock ticking up from the attempt's start.
-  · STALLED — the runner stopped beating. Amber, a paused glyph, and the clock
+  · STALLED — the runner stopped beating. Amber, a warning glyph, and the clock
     FROZEN at the last beat. It deliberately does NOT say failed: nobody knows the
     verdict, and that unknown IS the operator's problem. A killed cert is routine
     here (a cold bin/ship outruns some agent harness timeouts), so without this
@@ -26,15 +26,16 @@
 %>
 <% tone = check.stalled? ?
      { text: "text-amber-700 dark:text-amber-300", icon: "text-amber-600 dark:text-amber-400" } :
-     { text: "text-muted", icon: "text-primary" } %>
+     { text: "text-primary", icon: "text-primary" } %>
 <% summary = check.stalled? ?
      "Local check stalled — no heartbeat for #{compact_elapsed_short(check.seconds_since_heartbeat)}" :
      "Local check running: #{check.label}" %>
 <div class="local-check-indicator flex w-full items-center justify-between gap-2 text-[10px] leading-none"
      data-test="<%= test_id %>"
      data-local-check-state="<%= check.state %>"
+     <% unless check.stalled? %>data-local-check-stale-at="<%= check.stale_at.to_i %>"<% end %>
      title="<%= check.command.presence || summary %>"
-     aria-label="<%= summary %>">
+     role="status" aria-label="<%= summary %>">
   <span class="flex min-w-0 items-center gap-1.5">
     <% if check.stalled? %>
       <svg class="h-2.5 w-2.5 shrink-0 <%= tone[:icon] %>" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"
@@ -47,8 +48,17 @@
         <circle class="opacity-25" cx="12" cy="12" r="9" stroke="currentColor" stroke-width="3"/>
         <path class="opacity-90" d="M12 3a9 9 0 0 1 9 9" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
       </svg>
+      <%# Present but hidden so the installed ticker can flip an already-open
+          card when the last heartbeat ages out; a killed runner emits no write
+          that could otherwise morph the card. %>
+      <svg class="hidden h-2.5 w-2.5 shrink-0 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"
+           data-test="<%= test_id %>-stalled-icon">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/>
+      </svg>
     <% end %>
-    <span class="truncate font-semibold uppercase tracking-wide <%= tone[:text] %>" data-test="<%= test_id %>-label"><%=
+    <span class="truncate font-semibold uppercase tracking-wide <%= tone[:text] %>"
+          data-test="<%= test_id %>-label" data-local-check-tone
+          data-running-label="<%= check.label %>" data-stalled-label="<%= check.label %> — stalled"><%=
       check.stalled? ? "#{check.label} — stalled" : check.label %></span>
   </span>
   <%# RUNNING ticks live from the attempt start; STALLED freezes at the elapsed
@@ -57,11 +67,14 @@
   <% if check.stalled? %>
     <span class="shrink-0 tabular-nums font-medium <%= tone[:text] %>"
           data-test="<%= test_id %>-clock" data-local-check-clock="stalled"
-          title="No heartbeat for <%= compact_elapsed_short(check.seconds_since_heartbeat) %>"><%= compact_elapsed_short(check.elapsed_seconds) %></span>
+          title="No heartbeat for <%= compact_elapsed_short(check.seconds_since_heartbeat) %>"><%= compact_elapsed_short(check.elapsed_at_last_beat) %></span>
   <% else %>
     <span class="shrink-0 tabular-nums font-medium <%= tone[:text] %>"
           data-test="<%= test_id %>-clock" data-local-check-clock="running"
           data-release-ticker data-mode="short" data-since="<%= check.started_at.to_i %>"
+          data-local-check-tone
+          data-local-check-freeze-seconds="<%= check.elapsed_at_last_beat %>"
+          data-local-check-freeze-label="<%= compact_elapsed_short(check.elapsed_at_last_beat) %>"
           title="Local check started <%= check.started_at.strftime("%-l:%M%P") %>"><%= compact_elapsed_short(check.elapsed_seconds) %></span>
   <% end %>
 </div>

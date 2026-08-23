@@ -3,7 +3,11 @@ require "test_helper"
 # Unit — the batch reader. The board renders dozens of cards, so the ONE thing
 # that must not regress is that this stays a single query no matter how many.
 class Cert::LocalCheckReaderTest < ActiveSupport::TestCase
-  def open_run(slug, started_at: 20.seconds.ago, attempt: 1, sops: [])
+  def running_sop(at: Time.current)
+    { "sop" => "mapped-tests", "result" => "running", "at" => at.iso8601 }
+  end
+
+  def open_run(slug, started_at: 20.seconds.ago, attempt: 1, sops: [running_sop])
     GateRun.create!(subject_type: "task", subject_slug: slug, key: "g1_cert",
                     attempt: attempt, started_at: started_at, sops: sops)
   end
@@ -29,6 +33,13 @@ class Cert::LocalCheckReaderTest < ActiveSupport::TestCase
 
   test "omits tasks with no cert at all" do
     assert_empty Cert::LocalCheckReader.new.for_tasks([task_double("never-certified")])
+  end
+
+  test "omits an open attempt that never emitted a liveness signal" do
+    open_run("old-runner", started_at: 10.minutes.ago, sops: [])
+
+    assert_empty Cert::LocalCheckReader.new.for_tasks([task_double("old-runner")]),
+      "an old runner with no heartbeat is unknown, not running and not stalled"
   end
 
   test "reads every card in ONE query" do
