@@ -138,7 +138,15 @@ when "sop"
   entry = flags.slice("sop", "cmd", "tier", "result", "duration_ms").compact
   body = { "gate" => { "sop" => entry, "actor" => flags["actor"], "source" => flags["source"] }.compact }
   run = request(:post, "#{base}/#{key}/sops", body)["data"]
-  puts "#{key} attempt #{run['attempt']} +sop #{flags['sop']} (#{Array(run['sops']).size} total)"
+  # A dropped straggler answers 202 with a null payload — a `running` beat whose
+  # cert has already closed (GateRun.append_sop!). Say what happened; do NOT
+  # die!, because the producer that sent it is fire-and-forget and this is the
+  # designed outcome, not a failure.
+  if run.nil?
+    puts "#{key} +sop #{flags['sop']} IGNORED — no attempt in flight (late #{flags['result']} beat)"
+  else
+    puts "#{key} attempt #{run['attempt']} +sop #{flags['sop']} (#{Array(run['sops']).size} total)"
+  end
 when "close"
   die!("close needs --success or --failed") unless flags.key?("success")
   gate = { "actor" => flags["actor"], "source" => flags["source"] }.compact

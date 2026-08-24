@@ -425,6 +425,29 @@ class FastCheckTest < Minitest::Test
     end
   end
 
+  def test_a_timed_out_runner_is_named_as_hung_never_as_a_red_suite
+    with_repo do |dir, _|
+      slow_runner = "#{RbConfig.ruby.shellescape} -e #{"sleep 30".shellescape} --"
+      out, code, = run_check(
+        dir,
+        extra_env: {
+          # fast-check appends selected test paths; `--` makes this stub ignore them.
+          "FAST_CHECK_TEST_CMD" => slow_runner,
+          "FAST_CHECK_LANE_TIMEOUT" => "1"
+        },
+        merge_stderr: true
+      )
+
+      assert_equal 1, code, out
+      assert_match(/RUNNER HUNG/, out)
+      assert_match(/NOT a test failure/, out)
+      assert_match(/FAST_CHECK_LANE_TIMEOUT/, out)
+      refute_match(/lane\(s\) RED/, out,
+                   "a runner that produced no verdict must never be reported as red tests")
+      refute_match(/\[fast-cert@/, out, "a timed-out runner must never certify")
+    end
+  end
+
   def test_doc_only_diff_skips_test_and_rubocop_lanes_but_still_runs_the_spine
     with_repo do |dir, write|
       write.call("docs/notes.md", "notes\n")

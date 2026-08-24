@@ -92,16 +92,17 @@ class FullSuiteCheckTest < Minitest::Test
   # child_env: bin/full-suite-check resolves SessionIdentity, so an un-neutralized child
   # would read the LIVE agent session (test/support/session_env.rb) — and it would probe
   # our test DB (see NO_AMBIENT_DB). Both scrubs live in child_env.
-  def run_check(dir, test_cmd:, rubocop_cmd:, reset_cmd: "true")
+  def run_check(dir, test_cmd:, rubocop_cmd:, reset_cmd: "true", extra_env: {}, merge_stderr: false)
     env = child_env(
       {
         "FULL_SUITE_ROOT" => dir,
         "FULL_SUITE_TEST_DB_RESET_CMD" => reset_cmd,
         "FULL_SUITE_TEST_CMD" => test_cmd,
         "FULL_SUITE_RUBOCOP_CMD" => rubocop_cmd
-      }
+      }.merge(extra_env)
     )
-    out = IO.popen(env, "#{BIN} --print 2>/dev/null", &:read)
+    redirect = merge_stderr ? "2>&1" : "2>/dev/null"
+    out = IO.popen(env, "#{BIN} --print #{redirect}", &:read)
     [out, $?.exitstatus]
   end
 
@@ -169,6 +170,26 @@ class FullSuiteCheckTest < Minitest::Test
       assert_equal 1, code, out
       assert_match(/\[rubocop@/, out)
       refute_match(/\[full-suite@/, out)
+    end
+  end
+
+  def test_a_timed_out_runner_is_named_as_hung_never_as_a_red_suite
+    with_repo do |dir|
+      out, code = run_check(
+        dir,
+        test_cmd: "sleep 30",
+        rubocop_cmd: "true",
+        extra_env: { "FULL_SUITE_LANE_TIMEOUT" => "1" },
+        merge_stderr: true
+      )
+
+      assert_equal 1, code, out
+      assert_match(/RUNNER HUNG/, out)
+      assert_match(/NOT a test failure/, out)
+      assert_match(/FULL_SUITE_LANE_TIMEOUT/, out)
+      refute_match(/lane\(s\) RED/, out,
+                   "a runner that produced no verdict must never be reported as red tests")
+      refute_match(/\[full-suite@/, out, "a timed-out runner must never certify its test lane")
     end
   end
 

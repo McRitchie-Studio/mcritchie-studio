@@ -51,6 +51,8 @@
 #   FULL_SUITE_TEST_DB_RESET_CMD  override the test DB reset command
 #                                (default: bin/rails db:test:purge db:test:prepare)
 #   FULL_SUITE_SKIP_TEST_DB_RESET set to 1 only for non-Rails harness tests
+#   FULL_SUITE_LANE_TIMEOUT per-lane ceiling in seconds (default: 2700). Past it the lane
+#                           is reported as a HUNG RUNNER, never as a red suite.
 #   FULL_SUITE_TEST_CMD     override the test lane command   (default: the repo's own
 #                           ci.yml test command; bin/lib/ci_test_command.rb). Also
 #                           overrides the REFUSAL — an explicit command is the
@@ -317,24 +319,55 @@ end
 # multi-minute full suite (it will outrun any agent-harness timeout), and its
 # test-db-reset lane leads with `db:test:purge` — a DROP DATABASE that PG refuses
 # outright while an orphan holds a connection. See bin/lib/cert_process.rb.
-def run_lane(label, cmd, root, env: {}, gate_slug: nil)
+#
+# THE CEILING, and why this cert gets a much larger one than bin/fast-check.
+# MEASURED normal case: this cert's own header budgets ~6 MINUTES for the hub's full
+# suite; turf-monster's full suite runs 93s serially (2423 runs, 2026-08-22, this
+# hardware); CI runs the same command in ~9 minutes on a smaller box. 2700s (45 min) is
+# therefore ~5x the slowest legitimate observation, chosen ON THE SLOW SIDE on purpose —
+# this box is not the CI box, and a ceiling that fires on a merely-loaded machine would
+# teach agents to raise it reflexively, which is how a guard stops guarding. Retune with a
+# measurement in hand and update this paragraph when you do.
+LANE_TIMEOUT = Integer(ENV.fetch("FULL_SUITE_LANE_TIMEOUT", "2700"), exception: false) || 2700
+
+# Returns a CertProcess::Result so a TIMEOUT can be told apart from a red suite. `.ok` is
+# false for both — a hung runner can never certify, whatever the caller forgets to check.
+def run_lane(label, cmd, root, env: {}, gate_slug: nil, timeout: LANE_TIMEOUT)
   warn "== #{label}: #{cmd} =="
   started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
   # Same lane announce + heartbeat as bin/fast-check — this cert's lanes are the
   # LONGEST in the system, so it is the one an operator is most likely to be
-  # staring at wondering whether anything is still happening.
+  # staring at wondering whether anything is still happening. The beat is stopped
+  # ORDERED against the terminal row (see bin/fast-check).
   CertEmission.emit_gate_sop_running(GATE_BIN, gate_slug, label, cmd) if gate_slug
   beat = (CertEmission.heartbeat_thread(GATE_BIN, gate_slug, label, cmd) if gate_slug)
+  # What a CATCHABLE death owes the board. CertProcess reaps the suite and then
+  # `exit!`s — which skips every ensure below, this cert's gate close included —
+  # so the closure IS the close on that path. It runs inside a trap handler:
+  # stop_now, never stop, because Mutex#synchronize raises in trap context.
+  on_signal = (lambda do |sig|
+    beat&.stop_now
+    CertEmission.emit_interrupt_close(
+      GATE_BIN, gate_slug, label, cmd, sig,
+      ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
+    )
+  end if gate_slug)
   begin
-    ok = CertProcess.run(env, cmd, chdir: root, root: root, lane: label)
+    result = CertProcess.run_bounded(env, cmd, chdir: root, root: root, lane: label,
+                                     timeout: timeout, on_signal: on_signal)
   ensure
-    beat&.kill
+    CertEmission.stop_heartbeat(beat)
   end
   duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
-  warn(ok ? "   #{label}: PASS" : "   #{label}: FAIL")
-  emit_test_scope(LANE_SCOPES[label], ok, duration_ms, cmd)
-  CertEmission.emit_gate_sop(GATE_BIN, gate_slug, label, cmd, ok, duration_ms) if gate_slug
-  ok
+  if result.timeout?
+    warn "   #{label}: TIMED OUT after #{format('%.1fs', duration_ms / 1000.0)} — the RUNNER never " \
+         "produced a verdict"
+  else
+    warn(result.ok ? "   #{label}: PASS" : "   #{label}: FAIL")
+  end
+  emit_test_scope(LANE_SCOPES[label], result.ok, duration_ms, cmd)
+  CertEmission.emit_gate_sop(GATE_BIN, gate_slug, label, cmd, result.ok, duration_ms) if gate_slug
+  result
 end
 
 # --- orphan guard ----------------------------------------------------------------
@@ -358,16 +391,26 @@ emit_cert_checkpoint(slug, "started") unless options[:print]
 emit_gate(gate_slug, "open", "task", gate_slug.to_s, "g1_cert") if gate_slug
 
 unless skip_test_db_reset
-  reset_ok = run_lane("test-db-reset", test_db_reset_cmd, root, env: { "RAILS_ENV" => "test" }, gate_slug: gate_slug)
-  unless reset_ok
+  reset_res = run_lane("test-db-reset", test_db_reset_cmd, root, env: { "RAILS_ENV" => "test" },
+                       gate_slug: gate_slug)
+  if reset_res.timeout?
+    # A wedged db:test:purge is usually an orphan holding the DB, not a broken reset —
+    # and the message below would send the reader looking for the wrong thing.
+    CertProcess.timeout_report({ "test-db-reset" => reset_res }, ceiling: LANE_TIMEOUT,
+                               tool: "full-suite-check",
+                               env_var: "FULL_SUITE_LANE_TIMEOUT").each { |l| warn l }
+    emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
+    exit 1
+  end
+  unless reset_res.ok
     warn "full-suite-check: test database reset failed; not certifying a possibly polluted Rails suite."
     emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
     exit 1
   end
 end
 
-test_ok = run_lane("full-suite", test_cmd, root, gate_slug: gate_slug)
-rubocop_ok = run_lane("rubocop", rubocop_cmd, root, gate_slug: gate_slug)
+test_res = run_lane("full-suite", test_cmd, root, gate_slug: gate_slug)
+rubocop_res = run_lane("rubocop", rubocop_cmd, root, gate_slug: gate_slug)
 
 # Close the Local Certification testing phase (fires whether the cert passed or
 # failed — the pass/fail lives in checks_run; this only bounds the phase window).
@@ -380,7 +423,7 @@ if fingerprint.nil?
   exit 1
 end
 
-lanes = { FullSuiteGate::TEST_LANE => test_ok, FullSuiteGate::RUBOCOP_LANE => rubocop_ok }
+lanes = { FullSuiteGate::TEST_LANE => test_res, FullSuiteGate::RUBOCOP_LANE => rubocop_res }
 details = {
   FullSuiteGate::TEST_LANE => "#{test_cmd} green",
   FullSuiteGate::RUBOCOP_LANE => "#{rubocop_cmd} clean"
@@ -391,15 +434,28 @@ details = {
 # naming two repos then holds a cert per repo instead of one slot the second cert
 # silently overwrote (lib/cert_evidence.rb, THE REPO DIMENSION).
 cert_repo = CertRootGuard.repo_of_checkout(root)
-passed_lines = lanes.select { |_, ok| ok }.map do |lane, _|
+passed_lines = lanes.select { |_, result| result.ok }.map do |lane, _|
   FullSuiteGate.evidence_line(lane, fingerprint, details[lane], repo: cert_repo)
 end
 
 # Print the green evidence lines on stdout (parseable; the rest is on stderr).
 passed_lines.each { |line| puts line }
 
-unless lanes.values.all?
-  failed = lanes.reject { |_, ok| ok }.keys.join(", ")
+unless lanes.each_value.all?(&:ok)
+  # HUNG and RED are different verdicts — see the same split in bin/fast-check. Calling a
+  # deadlocked runner "RED" tells the reader their tests failed, and they re-run into the
+  # same wall; this cert's lane is the multi-minute full suite, so that mistake is the
+  # expensive one.
+  hung = lanes.select { |_, result| result.timeout? }
+  if hung.any?
+    CertProcess.timeout_report(hung, ceiling: LANE_TIMEOUT, tool: "full-suite-check",
+                               env_var: "FULL_SUITE_LANE_TIMEOUT").each { |l| warn l }
+  end
+  failed = lanes.reject { |_, result| result.ok || result.timeout? }.keys.join(", ")
+  if failed.empty?
+    emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug
+    exit 1
+  end
   warn "full-suite-check: lane(s) RED: #{failed}. Fix, then re-run — no evidence recorded for the red lane(s)."
   # A red lane is a G1 verdict: close the attempt failed (the re-run opens n+1).
   emit_gate(gate_slug, "close", "task", gate_slug.to_s, "g1_cert", "--failed") if gate_slug

@@ -24,6 +24,14 @@ module Cert
   # certs heartbeat their running lane, and a beat older than STALE_AFTER renders
   # as STALLED instead.
   #
+  # AND STALLED NOW MEANS THE NARROW THING. A cert killed by a CATCHABLE signal
+  # closes its own attempt on the way out (CertProcess.with_traps' `on_signal`,
+  # CertEmission#emit_interrupt_close), so a Ctrl-C leaves a CLOSED attempt and
+  # this widget goes quiet rather than calling it stalled for the rest of the
+  # task's life. What still reaches STALLED is the death no handler could witness
+  # — SIGKILL, a lost machine — which is the only reading of "it stopped
+  # reporting" that was ever honest.
+  #
   # THREE STATES, and the split between the first two is the correctness of the
   # whole widget:
   #
@@ -52,6 +60,7 @@ module Cert
     # has one short line, so name them the way an operator would.
     LANE_LABELS = {
       "test-prepare"    => "Preparing test DB",
+      "test-db-reset"   => "Resetting the test DB",
       "mapped-tests"    => "Running mapped tests",
       "spine"           => "Running core spine",
       "rubocop-changed" => "Linting changed files",
