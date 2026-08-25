@@ -217,13 +217,96 @@ class AppLadderCardTest < ActionView::TestCase
     assert_select "[data-test='app-ladder-other-lanes']", 0
   end
 
+  # --- the review roll ------------------------------------------------------
+  #
+  # The card carries TWO minute-figures now — the CI meter's run clock and this
+  # rolling review average — and the operator must never read one as the other.
+  # These tests pin what keeps them apart, and pin the states a quiet repo lands in,
+  # because four of the five live cards had fewer than ten usable reviews the day
+  # this shipped.
+
+  test "a full rolling ten shows the average and what it excluded" do
+    render partial: "tasks/app_ladder_card",
+           locals: { card: card(%i[green green green],
+                                review_roll: roll(average_seconds: 12 * 60, sample: 10, scanned: 13)) }
+
+    assert_select "[data-test='app-ladder-review']", 1
+    assert_select "[data-test='app-ladder-review-value']", text: "12m avg"
+    assert_select "[data-test='app-ladder-review-note']", text: "3 of 13 excluded"
+  end
+
+  # THE EXCLUDED COUNT IS NOT OPTIONAL — the 60-minute cut does real work, so a bare
+  # average would be a claim with its evidence hidden. Zero shows too: "0 of 10
+  # excluded" is the statement that this average is clean.
+  test "a clean window still reports its excluded count" do
+    render partial: "tasks/app_ladder_card",
+           locals: { card: card(%i[green green green],
+                                review_roll: roll(average_seconds: 300, sample: 10, scanned: 10)) }
+
+    assert_select "[data-test='app-ladder-review-note']", text: "0 of 10 excluded"
+  end
+
+  # An average over four reviews and one over ten are different claims.
+  test "a partial sample names how many reviews it covers" do
+    render partial: "tasks/app_ladder_card",
+           locals: { card: card(%i[green green green],
+                                review_roll: roll(average_seconds: 8 * 60, sample: 4, scanned: 7)) }
+
+    assert_select "[data-test='app-ladder-review-value']", text: "8m avg"
+    assert_select "[data-test='app-ladder-review-note']", text: "over 4 reviews · 3 of 7 excluded"
+  end
+
+  # A card that renders blank or NaN for a quiet repo is worse than one that admits
+  # it has nothing. solana-studio had ZERO measured reviews on 2026-08-25.
+  test "a repo with no measured review says so instead of drawing a blank" do
+    render partial: "tasks/app_ladder_card",
+           locals: { card: card(%i[green green green], repo: "solana-studio", review_roll: roll(repo: "solana-studio")) }
+
+    assert_select "[data-test='app-ladder-review-value']", text: "not enough data"
+    assert_select "[data-test='app-ladder-review-note']", text: "no reviews measured yet"
+  end
+
+  # Read-and-dropped is a different state from never-reviewed, and the card says which.
+  test "a repo whose reviews were all excluded reports the count" do
+    render partial: "tasks/app_ladder_card",
+           locals: { card: card(%i[green green green],
+                                review_roll: roll(repo: "mcritchie-industries", sample: 0, scanned: 2)) }
+
+    assert_select "[data-test='app-ladder-review-value']", text: "not enough data"
+    assert_select "[data-test='app-ladder-review-note']", text: "2 of 2 excluded"
+  end
+
+  # THE TWO MINUTE-FIGURES. The CI meter labels its clock by lane and this one says
+  # "avg" out loud; if that word is ever dropped the card carries two bare durations.
+  test "the review average is labelled apart from the CI run clock" do
+    render partial: "tasks/app_ladder_card",
+           locals: { card: card(%i[green green green],
+                                review_roll: roll(average_seconds: 4 * 60, sample: 10, scanned: 10)) }
+
+    assert_select "[data-test='app-ladder-review']", text: /review/i
+    assert_select "[data-test='app-ladder-review-value']", text: "4m avg"
+  end
+
+  # A hand-built Card (a fixture, a future single-card render) carries no roll. It
+  # must still render the empty state rather than raise on nil.
+  test "a card built without a roll renders the empty state" do
+    render partial: "tasks/app_ladder_card", locals: { card: card(%i[green green green]) }
+
+    assert_select "[data-test='app-ladder-review-value']", text: "not enough data"
+  end
+
   private
 
-  def card(states, repo: "turf-monster", parked: [0, 0, 0], sha: "abc1234def", run_url: nil)
+  def card(states, repo: "turf-monster", parked: [0, 0, 0], sha: "abc1234def", run_url: nil, review_roll: nil)
     rungs = Ci::AppLadder::RUNGS.each_with_index.map do |branch, i|
       Ci::LadderRung.new(repo: repo, branch: branch, state: states[i],
                          sha: sha, parked_count: parked[i], run_url: run_url)
     end
-    Ci::AppLadder::Card.new(repo: repo, rungs: rungs)
+    Ci::AppLadder::Card.new(repo: repo, rungs: rungs, review_roll: review_roll)
+  end
+
+  def roll(repo: "turf-monster", average_seconds: nil, sample: 0, scanned: 0)
+    Review::DurationRoll::Roll.new(repo: repo, average_seconds: average_seconds,
+                                   sample: sample, scanned: scanned)
   end
 end

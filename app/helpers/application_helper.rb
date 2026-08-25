@@ -1291,4 +1291,43 @@ module ApplicationHelper
     end
     "#{card.repo} test suite — #{parts.join(", ")}"
   end
+
+  # The review roll's VALUE — "12m avg", or the words that must stand where an
+  # average cannot. The word "avg" is load-bearing: this card already carries a
+  # minutes figure (the CI meter's run clock), and the two must never be read as the
+  # same number. A blank or a NaN is never an option — see Review::DurationRoll.
+  def app_ladder_review_value(roll)
+    return "not enough data" unless roll.any?
+
+    "#{compact_elapsed_short(roll.average_seconds)} avg"
+  end
+
+  # The line UNDER the average: what the exclusion rules dropped to produce it.
+  #
+  # This is not decoration. The 60-minute cut does real work — it is what absorbs a
+  # review interrupted by a session limit or a lapsed claim — and a bare average
+  # would hide how much it is throwing away. So the count shows, always, including
+  # when it is zero ("0 of 10 excluded" is the statement that the average is clean).
+  #
+  # A SAMPLE UNDER TEN SAYS SO. An average over four reviews and one over ten are
+  # different claims, and on 2026-08-25 four of the five cards had fewer than ten
+  # usable reviews in their whole history — so the thin sample is the common case
+  # here, not an edge.
+  def app_ladder_review_note(roll)
+    return "no reviews measured yet" if roll.scanned.zero?
+
+    excluded = "#{roll.excluded} of #{roll.scanned} excluded"
+    return excluded if roll.full? || !roll.any?
+
+    "over #{pluralize(roll.sample, "review")} · #{excluded}"
+  end
+
+  # The hover text — the whole rule in one sentence, so the number on the card never
+  # has to carry its own definition.
+  def app_ladder_review_title(roll)
+    "#{roll.repo} — average time from the review crew's first claim to the PR merging " \
+      "into accepted, over the last #{Review::DurationRoll::SAMPLE_SIZE} usable reviews. " \
+      "Excludes any task that was ever blocked and any review over " \
+      "#{Review::DurationRoll::MAX_SECONDS / 60} minutes."
+  end
 end

@@ -8,6 +8,7 @@ require "test_helper"
 class AppLadderRowTest < ActionDispatch::IntegrationTest
   setup do
     Task.delete_all
+    Activity.delete_all
     GithubWorkflowRun.delete_all
   end
 
@@ -126,7 +127,176 @@ class AppLadderRowTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='app-ladder-card'][data-attention='true']", 0
   end
 
+  # --- the review roll ------------------------------------------------------
+
+  # EVERY card carries the review block, including the quiet repos — a card that
+  # renders nothing here reads as "no reviews take any time", which is not a claim
+  # this board should be able to make by omission.
+  test "every card carries a review average or says it has none" do
+    get deployments_path
+
+    assert_response :success
+    Ci::AppLadder.reportable_repos.each do |repo|
+      assert_select "[data-test='app-ladder-review'][data-repo='#{repo}']", 1
+      assert_select "[data-test='app-ladder-card'][data-repo='#{repo}'] [data-test='app-ladder-review-note']", 1
+    end
+  end
+
+  test "an app with no measured review renders the empty state, not a blank" do
+    get deployments_path
+
+    assert_select "[data-test='app-ladder-card'][data-repo='solana-studio']" do
+      assert_select "[data-test='app-ladder-review-value']", text: "not enough data"
+      assert_select "[data-test='app-ladder-review-note']", text: "no reviews measured yet"
+    end
+  end
+
+  # The whole feature end to end: two clean reviews and two the rules drop, rendered
+  # as an average with the count of what it dropped beside it.
+  test "the card renders the average and the excluded count" do
+    reviewed_task(slug: "roll-clean-one", repo: "turf-monster", minutes: 10, at: 1.hour.ago)
+    reviewed_task(slug: "roll-clean-two", repo: "turf-monster", minutes: 20, at: 2.hours.ago)
+    reviewed_task(slug: "roll-was-blocked", repo: "turf-monster", minutes: 5, at: 3.hours.ago, blocked: true)
+    reviewed_task(slug: "roll-too-long", repo: "turf-monster", minutes: 90, at: 4.hours.ago)
+
+    get deployments_path
+
+    assert_response :success
+    assert_select "[data-test='app-ladder-card'][data-repo='turf-monster']" do
+      assert_select "[data-test='app-ladder-review-value']", text: "15m avg"
+      assert_select "[data-test='app-ladder-review-note']", text: "over 2 reviews · 2 of 4 excluded"
+    end
+  end
+
+  # LIVE, NOT CACHED AT DEPLOY. The average must move as reviews land — no
+  # production-deploy caching pass in the loop.
+  test "a review that lands moves the average on the next render" do
+    reviewed_task(slug: "roll-first-one", repo: "turf-monster", minutes: 10, at: 2.hours.ago)
+
+    get deployments_path
+    assert_select "[data-test='app-ladder-card'][data-repo='turf-monster'] [data-test='app-ladder-review-value']",
+                  text: "10m avg"
+
+    reviewed_task(slug: "roll-second-one", repo: "turf-monster", minutes: 20, at: 1.hour.ago)
+
+    get deployments_path
+    assert_select "[data-test='app-ladder-card'][data-repo='turf-monster'] [data-test='app-ladder-review-value']",
+                  { text: "15m avg" }, "the new review must be in the average with no cache pass"
+  end
+
+  # THE WHOLE CHAIN, with nothing hand-written. A real g2a_primary gate run opens and
+  # closes, the task then transitions to `reviewed`, and the average appears — proving
+  # the two ends of the measurement are the ones the operator chose:
+  #
+  #   start  = the review crew's FIRST claim (the gate attempt's started_at)
+  #   finish = the PR merging onto `accepted` (the `reviewed` transition, per the
+  #            pipeline invariant that `reviewed` ⟺ code-on-accepted)
+  #
+  # Nothing here writes testing_phases by hand — Task#refresh_testing_phases_after_change
+  # builds it off the transition, which is also what makes the number LIVE.
+  test "a real review span reaches the card without anything hand-written" do
+    travel_to Time.zone.parse("2026-08-25 12:00:00") do
+      task = make_task(slug: "measured-end-to-end", merged: nil, repos: %w[turf-monster], stage: "submitted")
+
+      GateRun.open!(subject_type: "task", subject_slug: task.slug, key: "g2a_primary",
+                    now: Time.current - 14.minutes)
+      GateRun.close!(subject_type: "task", subject_slug: task.slug, key: "g2a_primary",
+                     success: true, now: Time.current - 1.minute)
+
+      # The merge lands: review moves the task to `reviewed` and stamps it.
+      task.update!(stage: "reviewed", merged: Task::MERGED_ACCEPTED)
+
+      get deployments_path
+
+      assert_response :success
+      assert_select "[data-test='app-ladder-card'][data-repo='turf-monster'] [data-test='app-ladder-review-value']",
+                    { text: "14m avg" },
+                    "first claim to merge is 14 minutes, and that is what the card must say"
+    end
+  end
+
+  # --- the board's batched reads --------------------------------------------
+
+  # THE N+1 GUARD, stated as a contract rather than a query count: if any card were
+  # fetching its own roll, this stub would be reached and the page would blow up.
+  # (Mutation-checked: swap Ci::AppLadder.build back to a per-card
+  # Review::DurationRoll.for and this test goes red.)
+  test "the row reads every roll in one batch, never per card" do
+    Review::DurationRoll.stub(:for, ->(*) { raise "a card fetched its own review roll" }) do
+      get deployments_path
+
+      assert_response :success
+      assert_select "[data-test='app-ladder-review']", minimum: 1
+    end
+  end
+
+  # THE SAME BUG ONE ROW DOWN, and it was live: /deployments calls load_board (so
+  # @local_check_by_slug is populated) but its card render did not pass it, and
+  # tasks/_task_card falls back to Cert::LocalCheckReader#for_task per card — a
+  # GateRun query for every building card with no PR yet. tasks/_board always passed
+  # the batch; this row now matches.
+  test "the deploy board reads local checks in one batch, not one per card" do
+    building_task("mid-cert-alpha")
+    one_card = gate_run_queries { get deployments_path }
+    assert_response :success
+
+    3.times { |i| building_task("mid-cert-extra-#{i}") }
+    four_cards = gate_run_queries { get deployments_path }
+    assert_response :success
+
+    assert_equal one_card, four_cards,
+                 "four building cards must cost what one costs — the batch is already " \
+                 "computed by load_board, so the card must never fall back to for_task"
+  end
+
   private
+
+  # A `building` task with no PR — the shape whose card reads a local check.
+  def building_task(slug)
+    Task.create!(slug: slug, title: "Local Check Fixture #{slug.split('-').last.capitalize}",
+                 stage: "building",
+                 metadata: { "devops" => { "repositories" => %w[turf-monster] } })
+  end
+
+  # How many gate_runs SELECTs the render issued. The board reads them a FIXED number
+  # of times whatever the card count — the load_board preload plus the one batched
+  # Cert::LocalCheckReader#for_tasks — while the per-card fallback adds one read per
+  # card. So the count is flat when the batch is wired and grows when it is not.
+  #
+  # MATCH ON `FROM "gate_runs"`, not on the gate key: these run as PREPARED
+  # STATEMENTS, so "g1_cert" is a bind value and never appears in the SQL text. A
+  # filter looking for it counts zero every time and the guard passes on a board that
+  # is querying per card — which is exactly how the first draft of this test went
+  # green against a deliberately broken view.
+  def gate_run_queries
+    count = 0
+    counter = ->(_name, _start, _finish, _id, payload) do
+      next if payload[:cached] || payload[:name].to_s == "SCHEMA"
+
+      count += 1 if payload[:sql].to_s.include?(%(FROM "gate_runs"))
+    end
+    ActiveSupport::Notifications.subscribed(counter, "sql.active_record") { yield }
+    count
+  end
+
+  # A task carrying a COMPLETED review span — what Review::DurationRoll reads.
+  # testing_phases is written with update_columns AFTER create because creating the
+  # task fires Task#refresh_testing_phases_after_change, which would recompute it.
+  def reviewed_task(slug:, repo:, minutes:, at:, blocked: false)
+    task = make_task(slug: slug, merged: Task::MERGED_ACCEPTED, repos: [repo])
+    seconds = minutes * 60
+    task.update_columns(
+      testing_phases: {
+        "cache_version" => Task::TestingPhases::VERSION,
+        "phases" => { "review" => { "status" => "completed", "seconds" => seconds,
+                                    "started_at" => (at - seconds).iso8601,
+                                    "completed_at" => at.iso8601, "source" => "gate_run" } }
+      },
+      testing_phases_version: Task::TestingPhases::VERSION
+    )
+    Activity.create!(task_slug: slug, activity_type: "qa_feedback", description: "sent back") if blocked
+    task
+  end
 
   def make_task(slug:, merged:, repos:, stage: "reviewed")
     words = slug.tr("-", " ").titleize.split
