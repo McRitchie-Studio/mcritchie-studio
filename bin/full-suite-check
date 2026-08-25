@@ -70,7 +70,8 @@
 #   FULL_SUITE_AGENT_ACTIVITY  override the narration CLI path (default: bin/agent-activity);
 #                              tests point it at a stub that logs the emit argv
 #
-# Exit code: 0 = both lanes green (evidence recorded), 1 = a lane failed or no
+# Exit code: 0 = every lane this repo OWES is green (evidence recorded), 1 = a lane
+# failed or no
 # fingerprint (nothing certified).
 
 require "optparse"
@@ -409,8 +410,39 @@ unless skip_test_db_reset
   end
 end
 
+# The evidence is SCOPED to the repo whose tree is being hashed and run — derived
+# from `root`, the tree itself, never from the task's repositories list. Resolved
+# HERE, before the lanes, because whether this repo owes a lint lane at all is a
+# property of the repo (see the waiver below), and the answer has to be known
+# before we decide what to run.
+cert_repo = CertRootGuard.repo_of_checkout(root)
+
+# A REPO MAY DECLARE THAT IT HAS NO LINT LANE (`lint_lane: none` in
+# config/release_repos.yml). studio-engine is the case: no rubocop in the
+# Gemfile, none in the gemspec, no .rubocop.yml, and `bundle exec rubocop` fails
+# outright — its static gate is `ruby -c` inside bin/release-check.
+#
+# Before this, running the lane anyway meant the cert could never go green for
+# such a repo, so a task naming it could not be certified at all. bin/dor-check
+# already stopped DEMANDING that lane (FullSuiteGate#required_lanes); this is the
+# other half — the writer must also stop trying to PRODUCE it.
+#
+# THE LANE IS OMITTED, NOT FAKED. It never enters `lanes`, so no
+# "[rubocop@<fp>]" evidence line is written. Recording a stamp for a lint that
+# never ran is precisely the dishonest fix this whole change exists to avoid, and
+# the reader accepts a suite-only cert for a declared repo on purpose.
+#
+# DECLARED, NEVER INFERRED: this asks the registry, it does not probe for a
+# rubocop binary. A waiver inferred from a missing install would turn every
+# broken rubocop into a silently skipped lane.
+lint_waived = FullSuiteGate.lint_waived?(cert_repo)
+if lint_waived
+  warn "== rubocop: SKIPPED — #{cert_repo} declares lint_lane: none in config/release_repos.yml =="
+  warn "   (no rubocop evidence will be recorded; its static gate is its own release-check)"
+end
+
 test_res = run_lane("full-suite", test_cmd, root, gate_slug: gate_slug)
-rubocop_res = run_lane("rubocop", rubocop_cmd, root, gate_slug: gate_slug)
+rubocop_res = lint_waived ? nil : run_lane("rubocop", rubocop_cmd, root, gate_slug: gate_slug)
 
 # Close the Local Certification testing phase (fires whether the cert passed or
 # failed — the pass/fail lives in checks_run; this only bounds the phase window).
@@ -423,17 +455,16 @@ if fingerprint.nil?
   exit 1
 end
 
-lanes = { FullSuiteGate::TEST_LANE => test_res, FullSuiteGate::RUBOCOP_LANE => rubocop_res }
-details = {
-  FullSuiteGate::TEST_LANE => "#{test_cmd} green",
-  FullSuiteGate::RUBOCOP_LANE => "#{rubocop_cmd} clean"
-}
+lanes = { FullSuiteGate::TEST_LANE => test_res }
+details = { FullSuiteGate::TEST_LANE => "#{test_cmd} green" }
+unless lint_waived
+  lanes[FullSuiteGate::RUBOCOP_LANE] = rubocop_res
+  details[FullSuiteGate::RUBOCOP_LANE] = "#{rubocop_cmd} clean"
+end
 
-# The evidence is SCOPED to the repo whose tree was just hashed and run — derived
-# from `root`, the tree itself, never from the task's repositories list. A task
-# naming two repos then holds a cert per repo instead of one slot the second cert
-# silently overwrote (lib/cert_evidence.rb, THE REPO DIMENSION).
-cert_repo = CertRootGuard.repo_of_checkout(root)
+# cert_repo was resolved before the lanes ran (see the waiver above). A task naming
+# two repos holds a cert per repo instead of one slot the second cert silently
+# overwrote (lib/cert_evidence.rb, THE REPO DIMENSION).
 passed_lines = lanes.select { |_, result| result.ok }.map do |lane, _|
   FullSuiteGate.evidence_line(lane, fingerprint, details[lane], repo: cert_repo)
 end
@@ -469,7 +500,7 @@ end
 # at the very end, after the read-back confirms; every failure path below closes
 # --failed on its way out.
 if options[:print] || slug.nil?
-  warn "full-suite-check: both lanes green at #{fingerprint[0, 12]}." \
+  warn "full-suite-check: #{lanes.keys.length} lane(s) green at #{fingerprint[0, 12]}." \
        "#{slug.nil? ? " (no task slug — evidence printed, not recorded)" : " (--print: not recorded)"}"
   exit 0
 end
@@ -513,7 +544,7 @@ end
 # whose fresh evidence supersedes the old by design.
 kept = existing.reject { |prior| prior.match?(FullSuiteGate.evidence_re(FullSuiteGate::LANES)) }
 recorded = passed_lines
-summary = "full-suite-check: both lanes green at #{fingerprint[0, 12]} — evidence recorded on #{slug}"
+summary = "full-suite-check: #{lanes.keys.length} lane(s) green at #{fingerprint[0, 12]} — evidence recorded on #{slug}"
 
 missing = CertEmission.missing_after_write(TASK_BIN, slug, recorded + kept)
 if missing.nil?
