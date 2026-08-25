@@ -135,6 +135,93 @@ class CertProcessTest < Minitest::Test
     refute_path_exists lock, "a red cert is not an orphaned cert — the lock still goes"
   end
 
+  # --- [integration] THE INTERRUPT CONTRACT: a catchable death must CLOSE the gate --------
+  #
+  # `exit!` in the trap skips every ensure block in the cert. That is deliberate and right
+  # for the REAP — it must be last and deterministic — and it was silently wrong for
+  # everything else: the cert's own G1 close never ran, so a Ctrl-C left its g1_cert attempt
+  # OPEN with a `running` row standing, and Cert::LocalCheck reads exactly that as a cert
+  # still working. The killed run then showed STALLED on its board card for the rest of the
+  # task's life, and every re-run opened another attempt beside it.
+  #
+  # A catchable signal is not an unknowable death: we are still executing, so we can say what
+  # happened. The caller hands in a closure, and these pin the three things that makes true —
+  # it RUNS, it runs AFTER the reap, and a closure that blows up cannot cost the cert its
+  # exit.
+
+  def signal_evidence = File.join(@root, "on-signal.log")
+
+  def evidence = File.exist?(signal_evidence) ? File.read(signal_evidence) : ""
+
+  # Same shape as spawn_cert, with a closure whose body is the artefact under test. It
+  # records the SIGNAL it was handed and whether the runlock was still on disk when it ran —
+  # the lock is cleared by the reap, so its absence is proof of ORDER, not just of arrival.
+  def spawn_cert_with_closure(body:, cmd: "sleep 300")
+    script = <<~RB
+      $LOAD_PATH.unshift #{File.expand_path("bin/lib", Dir.pwd).inspect}
+      require "cert_orphan_guard"
+      require "cert_process"
+      closure = lambda do |sig|
+        #{body}
+      end
+      CertProcess.run({}, #{cmd.inspect}, chdir: #{@root.inspect}, root: #{@root.inspect},
+                      lane: #{LANE.inspect}, db: "studio_test_x", on_signal: closure)
+    RB
+    child = Process.spawn("ruby", "-e", script, err: stderr_log)
+    @spawned << child
+
+    deadline = Time.now + 10
+    sleep 0.05 while !File.exist?(lock) && Time.now < deadline
+    assert_path_exists lock, "the cert writes its runlock while the lane runs"
+
+    suite = CertOrphanGuard.read_lock(@root)["pgid"]
+    @spawned << suite
+    [child, suite]
+  end
+
+  RECORD = 'File.write(%s, "sig=#{sig} lock_present=#{File.exist?(%s)}")'
+
+  def test_a_catchable_signal_runs_the_gate_closure
+    child, suite = spawn_cert_with_closure(body: format(RECORD, signal_evidence.inspect, lock.inspect))
+
+    Process.kill("TERM", child)
+    Process.waitpid(child)
+
+    assert wait_until_dead(suite), "the reap still happens — the closure must not displace it"
+    assert_match(/sig=TERM/, evidence,
+                 "a cert killed by a catchable signal must CLOSE its gate, or the card calls it " \
+                 "STALLED forever")
+    assert_equal 128 + Signal.list.fetch("TERM"), $?.exitstatus,
+                 "the closure runs on the way out, it does not change the way out"
+  end
+
+  def test_the_closure_runs_AFTER_the_reap
+    child, suite = spawn_cert_with_closure(body: format(RECORD, signal_evidence.inspect, lock.inspect))
+
+    Process.kill("INT", child)
+    Process.waitpid(child)
+    wait_until_dead(suite)
+
+    # `settle` clears the runlock the moment it proves the group is reaped. Seeing the lock
+    # already GONE from inside the closure is what proves the ORDER: the suite died first.
+    assert_match(/lock_present=false/, evidence,
+                 "the suite must die BEFORE the bookkeeping — an orphan on the test DB outranks a " \
+                 "gate row every time")
+  end
+
+  def test_a_RAISING_closure_still_reaps_and_still_exits
+    child, suite = spawn_cert_with_closure(body: 'raise "gate write blew up"')
+
+    Process.kill("TERM", child)
+    Process.waitpid(child)
+
+    assert wait_until_dead(suite),
+           "a cert dying under an operator has ONE remaining duty; bookkeeping may not cost it that"
+    assert_equal 128 + Signal.list.fetch("TERM"), $?.exitstatus, "it must still exit for the signal"
+    assert_match(/could not close the gate/i, warning,
+                 "and it must SAY the board is now stale, rather than failing silently")
+  end
+
   # --- [integration] SIGTERM with a REAPABLE suite: reap it, clear the lock, say so -------
 
   def test_sigterm_reaps_the_suite_and_clears_the_lock

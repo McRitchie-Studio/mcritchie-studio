@@ -50,6 +50,17 @@ class GateRun < ApplicationRecord
   # server-side so entries are orderable even when the producer sends none.
   SOP_KEYS = %w[sop cmd tier result duration_ms state cause reason repo at].freeze
 
+  # A lane that has STARTED but not finished. The certs emit one of these before
+  # running a lane (and re-emit it as a heartbeat while the lane runs), then
+  # append the terminal pass/fail entry when it settles.
+  #
+  # It is NOT a verdict, and nothing downstream may read it as one — it exists so
+  # the board can say WHICH lane a building task is inside, and so a cert that was
+  # killed can be told apart from one still working. `append_sop!` collapses a
+  # superseded running entry rather than stacking beats, so a seven-minute lane
+  # leaves ONE row here, not nine.
+  RUNNING_RESULT = "running"
+
   validates :subject_type, inclusion: { in: SUBJECT_TYPES }
   validates :subject_slug, presence: true
   validates :key, inclusion: { in: KEYS }
@@ -110,13 +121,60 @@ class GateRun < ApplicationRecord
 
   # Append one executed-SOP entry to the gate's in-flight attempt (implicitly
   # opening one — appending IS evidence the gate is running).
+  #
+  # WITH ONE EXCEPTION: a `running` beat may NEVER open an attempt, and may never
+  # land on one that has already closed. A heartbeat is not evidence that a gate
+  # is running; it is a claim about a lane the cert ALREADY announced, and the
+  # certs open their gate explicitly before the first lane. So a beat that finds
+  # no attempt in flight is a STRAGGLER — a `bin/gate` child the cert spawned
+  # moments before it closed or was killed, arriving after the verdict.
+  #
+  # Left to `open!` those stragglers did real damage, both halves of it invisible
+  # to the cert that caused them: one landing after `close!` created attempt n+1
+  # carrying a lone `running` row (a PHANTOM ATTEMPT — Cert::LocalCheckReader
+  # reads in-flight attempts, so the board showed a cert that had already
+  # finished as live forever), and one landing between the terminal row and the
+  # close repainted `running` OVER the verdict. Ordered shutdown in the certs
+  # (CertEmission::Heartbeat#stop) keeps that from happening on the normal path;
+  # this keeps it from MATTERING on any path, including the SIGKILL the certs
+  # cannot catch. Nothing lands, and the caller is told so with nil.
   def self.append_sop!(subject_type:, subject_slug:, key:, sop:, actor: nil, source: nil, now: Time.current)
-    run = open!(subject_type: subject_type, subject_slug: subject_slug, key: key,
-                actor: actor, source: source, now: now)
+    entry = normalize_sop(sop, now: now)
+    beat = entry["result"].to_s == RUNNING_RESULT
+    run =
+      if beat
+        for_subject(subject_type, subject_slug).where(key: key).in_flight.first
+      else
+        open!(subject_type: subject_type, subject_slug: subject_slug, key: key,
+              actor: actor, source: source, now: now)
+      end
+    return nil if run.nil?
+
+    landed = false
     run.with_lock do
-      run.update!(sops: run.sops + [normalize_sop(sop, now: now)])
+      # Re-read UNDER THE LOCK: `close!` may have landed between the lookup above
+      # and this line, and a beat that wins that race is the same straggler by a
+      # narrower margin.
+      next if beat && run.finished_at.present?
+
+      run.update!(sops: supersede_running(run.sops, entry))
+      landed = true
     end
-    run
+    landed ? run : nil
+  end
+
+  # Drop a prior RUNNING entry for the same lane when a newer entry for that lane
+  # arrives — whether the newer entry is the terminal verdict or just the next
+  # heartbeat. Only `running` rows are ever dropped: a real pass/fail verdict is
+  # history and stays, so a lane that ran twice still shows both outcomes.
+  def self.supersede_running(sops, entry)
+    lane = entry["sop"].to_s
+    return sops + [entry] if lane.empty?
+
+    kept = sops.reject do |prior|
+      prior["sop"].to_s == lane && prior["result"].to_s == RUNNING_RESULT
+    end
+    kept + [entry]
   end
 
   # Close the in-flight attempt with its verdict. When NO attempt is open, a

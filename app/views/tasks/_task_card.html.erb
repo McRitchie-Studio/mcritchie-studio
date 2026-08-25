@@ -1,4 +1,4 @@
-<%# locals: (task:, agents:, crew_board: :deploy, mascot: nil, type_enumerals: nil, latest_activity: nil, activity_count: 0, unresolved_feedback: nil, ever_blocked: nil, review_in_progress: nil, ci_progress: nil) %>
+<%# locals: (task:, agents:, crew_board: :deploy, mascot: nil, type_enumerals: nil, latest_activity: nil, activity_count: 0, unresolved_feedback: nil, ever_blocked: nil, review_in_progress: nil, ci_progress: nil, local_check: nil) %>
 <%#
   ONE board card. Extracted from _board so a single card can be re-rendered
   server-side and pushed over Turbo Streams (the "deployments" stream) for live
@@ -22,6 +22,15 @@
     with a single-card helper fallback for the Turbo re-render path. Blank (renders
     nothing) until the task is submitted with a PR and a CI run exists. %>
 <% ci_progress = local_assigns.key?(:ci_progress) ? local_assigns[:ci_progress] : task_ci_progress(task) %>
+<%# The LOCAL cert indicator — the CI meter's counterpart for the stretch before a
+    PR exists. Preloaded by the board in one batch; a single-card Turbo re-render
+    falls back to the per-task read. Resolved only when the card could actually show
+    one, so a board of shipped tasks pays nothing for the fallback path. %>
+<% local_check = if local_assigns.key?(:local_check)
+     local_assigns[:local_check]
+   elsif show_local_check?(task, pr_url)
+     task_local_check(task)
+   end %>
 <%# Per-card pulse seed (slug hash): feeds --task-pulse-delay/--task-pulse-duration
     so every flashing status bar AND the approval glow pulse OUT of phase across
     the board — irregular breathing, not one synchronized strobe. %>
@@ -298,6 +307,17 @@
       shipped yet looks exactly as it did. Wrapped in the stable-id
       components/_ci_progress_slot so a live workflow_job webhook can morph JUST this
       meter in place (it ticks up with no reload). %>
+  <%# Sits directly above the CI meter because they are the SAME slot across time:
+      the local cert runs, finishes, bin/ship opens the PR, and the CI meter takes
+      over. show_local_check? requires a blank pr_url, so the two never stack. %>
+  <% if show_local_check?(task, pr_url) %>
+    <%= render "components/local_check_slot",
+          dom_id: "local-check-#{task.slug}",
+          check: local_check,
+          test_id: "task-local-check",
+          wrapper_class: "mb-1.5", inner_test_id: "task-card-local-check" %>
+  <% end %>
+
   <% if ci_meter_stage?(task.stage) %>
     <%= render "components/ci_progress_slot",
           dom_id: "ci-progress-#{task.slug}",

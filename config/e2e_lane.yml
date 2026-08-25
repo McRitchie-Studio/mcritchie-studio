@@ -85,7 +85,19 @@
 # at any width, which reading computed style would have reported as present.
 # MEASURED with the lister, not added by hand: `npx playwright test --list` => 121.
 # Coverage ADDED; `quarantined` is untouched.
-total_specs: 121
+#
+# 121 -> 124 on 2026-08-22: e2e/board_local_check.spec.js pins the BUILDING card's
+# local-check indicator (/tasks/show-local-test-progress) — the running state names its
+# cert lane and its clock TICKS, and a killed runner renders stalled with the clock
+# FROZEN. It also proves an already-open board flips a quiet runner from RUNNING to
+# STALLED without waiting for a server write. All three cases use Playwright's clock
+# rather than real time, because
+# the shared ticker renders data-mode="short" as a single unit: past a minute the text
+# only changes once per minute, so a real-time poll fast enough to keep the suite quick
+# could never observe a tick, and a slow one would only be flaky.
+# MEASURED with the lister, not added by hand: `npx playwright test --list` => 124.
+# Coverage ADDED; `quarantined` is untouched.
+total_specs: 124
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -147,7 +159,11 @@ quarantined: 10
 # set. Re-derived from the invariant AND with the lister rather than by adding three:
 #   npx playwright test --list                           => 121
 #   npx playwright test --list --grep-invert @quarantine => 109
-executed: 111
+#
+# Re-derived after the local-check coverage landed:
+#   npx playwright test --list                           => 124
+#   npx playwright test --list --grep-invert @quarantine => 114
+executed: 114
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to

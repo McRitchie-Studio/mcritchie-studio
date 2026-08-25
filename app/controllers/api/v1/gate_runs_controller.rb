@@ -21,6 +21,13 @@ module Api
 
       def append_sop
         run = GateRun.append_sop!(**common_args.except(:metadata), sop: sop_params)
+        # nil means the entry was DROPPED, not that anything went wrong: a
+        # `running` beat that arrives with no attempt in flight belongs to a cert
+        # that has already closed (see GateRun.append_sop!). Producers post
+        # fire-and-forget, so answer honestly — accepted, nothing recorded —
+        # rather than 500ing on the nil or inventing an attempt to return.
+        return render_data(nil, status: :accepted) if run.nil?
+
         render_data(run, status: :created)
       end
 
