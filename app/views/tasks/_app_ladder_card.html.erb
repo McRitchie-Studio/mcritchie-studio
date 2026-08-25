@@ -147,6 +147,41 @@
     <% end %>
   </div>
 
+  <%# HOW LONG REVIEW TAKES on this app lately — the rolling ten (Review::DurationRoll).
+
+      IT SITS DOWN HERE, below the ladder, ON PURPOSE. The CI meter at the top of this
+      card already carries a minutes figure (the run clock — "accepted · ci  4m"), and
+      two minute-values stacked together are two numbers one glance will merge. So this
+      one is separated by the badges, wears no rail, and says the word "avg" out loud.
+      It belongs with the parked counts anyway: both are derived from the task board
+      rather than from CI, and both answer "how is this app's pipeline flowing", not
+      "what is the suite doing right now".
+
+      IT DEGRADES TO WORDS, NEVER TO A BLANK. A quiet repo — solana-studio had ZERO
+      measured reviews on 2026-08-25, and mcritchie-industries' only one was excluded —
+      renders "not enough data" plus the count that explains why. A card that renders
+      blank or NaN for a quiet repo is worse than one that admits it has nothing.
+
+      THE EXCLUDED COUNT IS NOT OPTIONAL. The 60-minute cut is what keeps interrupted
+      reviews out of the average, so the card must say how many it dropped or the
+      average is a claim with its evidence hidden. %>
+  <% roll = card.review %>
+  <div class="mt-2.5 border-t border-subtle pt-2"
+       data-test="app-ladder-review"
+       data-repo="<%= card.repo %>"
+       data-sample="<%= roll.sample %>"
+       data-scanned="<%= roll.scanned %>"
+       data-excluded="<%= roll.excluded %>"
+       title="<%= app_ladder_review_title(roll) %>">
+    <div class="flex items-baseline justify-between gap-2 text-[10px] leading-none">
+      <span class="font-semibold uppercase tracking-wide text-muted">review</span>
+      <span class="shrink-0 tabular-nums font-medium <%= roll.any? ? "text-heading" : "text-muted" %>"
+            data-test="app-ladder-review-value"><%= app_ladder_review_value(roll) %></span>
+    </div>
+    <div class="mt-1 text-right text-[10px] text-muted"
+         data-test="app-ladder-review-note"><%= app_ladder_review_note(roll) %></div>
+  </div>
+
   <%# Parked work — how many tasks sit at each rung right now. Derived from the
       board's `merged` column, so it drains on its own as a sweep and then a ship
       advance the stamps. %>

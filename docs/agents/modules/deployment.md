@@ -444,6 +444,23 @@ expires unexecuted, which is the correct fail-closed outcome, not a silent pass.
 
 ### Wiring a repo's Actions webhook (the per-repo step that is NOT code)
 
+**FIRST: ask the guard, not the card.** A task card with NO CI meter is not
+evidence of an unwired repo. A blank meter and a red one are the same pixels, and
+the board has three separate ways to show nothing:
+
+| What you see | Ask | Means |
+|---|---|---|
+| No meter on the card | `Ci::Ingestion.unwired` | Empty ⇒ **nothing is unwired** — keep reading |
+| No meter, repo delivering | `Ci::ReviewGate.verdict(task)` | `:red` ⇒ CI arrived and FAILED; the pop is right to skip it |
+| No meter, verdict `:none` | `GithubWorkflowRun.ci_workflow_for(repo)` | The repo's suite name — a gem's is `Engine CI`, not `CI` |
+
+Measured 2026-08-25: `polish-style-guide-modals` (studio-engine PR #195) showed no
+meter and was read as an unwired repo. `Ci::Ingestion.unwired` was `[]`,
+studio-engine had **892** ingested runs, and the real verdict was `:red` — a failing
+`Consumer CI`. The blank bar was a THIRD bug (the task path resolved its sha with
+the app literal `CI`, fixed in task `fix-gem-ci-visibility`). Three different causes,
+one symptom; the guard separates them in one query.
+
 Ingestion is **per repo**, and nothing in this app can create the delivery: the
 board only receives what GitHub sends it. A registered repo whose webhook was
 never added is permanently CI-invisible here — its PRs read `:none`, so

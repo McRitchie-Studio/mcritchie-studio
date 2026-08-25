@@ -535,10 +535,18 @@ document.addEventListener('turbo:before-cache', function() {
              data-stage="<%= stage %>"
              class="kanban-dropzone rounded-xl border-2 border-dashed min-h-40 p-2 space-y-2 transition-colors duration-150 border-subtle sm:min-h-[calc(100vh-220px)]">
 
-          <%# review_in_progress? gets the board's own preload handed in explicitly:
-              it runs per card, and without it that call costs two task_events
-              queries each. Explicit because the model defaults to SQL on purpose —
-              see Task#open_intents_for. %>
+          <%# Every per-card local here is a BATCH load_board already computed, handed
+              in explicitly so a column of cards costs one query instead of one each.
+              `local_check` was the one this board was missing: /deployments calls
+              load_board (so @local_check_by_slug is populated) but did not pass it,
+              and tasks/_task_card falls back to Cert::LocalCheckReader#for_task per
+              card — a GateRun query per building card with no PR yet. tasks/_board
+              has always passed it; this row now matches.
+
+              review_in_progress? gets the same treatment: it runs per card, and
+              without the preload that call costs two task_events queries each.
+              Explicit because the model defaults to SQL on purpose — see
+              Task#open_intents_for. %>
           <% column_tasks.each do |task| %>
             <%= render "tasks/task_card", task: task, agents: @agents, crew_board: crew_board,
                   mascot: pokemon_by_slug[task.devops_field("mascot")], type_enumerals: type_enumerals,
@@ -547,6 +555,7 @@ document.addEventListener('turbo:before-cache', function() {
                   unresolved_feedback: @unresolved_feedback_activities[task.slug],
                   ever_blocked: @ever_blocked_slugs&.include?(task.slug),
                   ci_progress: @ci_progress_by_slug&.fetch(task.slug, nil),
+                  local_check: @local_check_by_slug&.fetch(task.slug, nil),
                   review_in_progress: task.review_in_progress?(events: task.task_events.to_a) %>
           <% end %>
 

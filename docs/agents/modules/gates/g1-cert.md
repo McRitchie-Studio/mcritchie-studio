@@ -29,6 +29,10 @@ The gate flow order: **G1 Cert** (this doc) → [DoR](dor.md) →
     still pending / not yet reported — see "The CI seam" below.
   - **full** — fresh `[full-suite@<fp>]` + `[rubocop@<fp>]` lines from
     `bin/full-suite-check`. Accepted on its own, CI-independent.
+    A repo that DECLARES `lint_lane: none` in `config/release_repos.yml`
+    (today: `studio-engine`, which ships no rubocop at all) owes only the
+    `[full-suite@<fp>]` line — the waiver is declared, never inferred from
+    a missing binary. See `FullSuiteGate.required_lanes`.
   - **bypass** — a `[full-suite-bypass] <reason>` checks_run line. Honored but
     flagged loudly; a conscious, justified skip only.
 
@@ -169,6 +173,13 @@ impossible by construction rather than by every repo remembering to ignore `tmp/
    the ENTIRE Ruby suite **including the system tier**), `rubocop` (`bin/rubocop`,
    the whole repo — the rubocop check in CI's `static` job). Green lanes stamp `[full-suite@<fp>]` +
    `[rubocop@<fp>]`.
+
+   The `rubocop` lane is SKIPPED-BY-DECLARATION for a repo carrying
+   `lint_lane: none` — the READER (`FullSuiteGate.required_lanes`) stops
+   asking for it. NOTE the WRITER does not yet honour the declaration: it
+   still shells out to `bin/rubocop` unconditionally and raises
+   `Errno::ENOENT` where that command is absent, so such a repo cannot yet
+   be certified by this route.
 
    The lane runs CI's command because this route's whole claim is
    CI-INDEPENDENCE — **it may never run less of CI's Ruby suite than CI does**.

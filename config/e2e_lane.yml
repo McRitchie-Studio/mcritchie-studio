@@ -97,7 +97,16 @@
 # could never observe a tick, and a slow one would only be flaky.
 # MEASURED with the lister, not added by hand: `npx playwright test --list` => 124.
 # Coverage ADDED; `quarantined` is untouched.
-total_specs: 124
+#
+# 124 -> 126 on 2026-08-25: two specs ADDED to e2e/app_ladder_row.spec.js for the review
+# roll (/tasks/track-review-duration) — every application card carries a review average or
+# admits it has none, and that average is never confusable with the CI run clock. Both
+# assert the SHAPE, never a value: review history differs in every environment, and four of
+# the five live cards had fewer than ten usable reviews the day this shipped, so a spec
+# pinning "12m avg" would be red everywhere but one machine.
+# MEASURED with the lister, not added by hand: `npx playwright test --list` => 126.
+# Coverage ADDED; `quarantined` is untouched.
+total_specs: 126
 
 # Of those, the ones already RED on an untouched `release` checkout the day this lane was
 # switched on — tagged ` @quarantine` in their title and excluded by the CI command. A hole
@@ -163,7 +172,11 @@ quarantined: 10
 # Re-derived after the local-check coverage landed:
 #   npx playwright test --list                           => 124
 #   npx playwright test --list --grep-invert @quarantine => 114
-executed: 114
+#
+# Re-derived after the review-roll coverage landed:
+#   npx playwright test --list                           => 126
+#   npx playwright test --list --grep-invert @quarantine => 116
+executed: 116
 
 # The ONE sanctioned exclusion. bin/e2e-executed-set-check refuses any executed spec whose
 # title carries this tag, and test/lib/ci_workflow_triggers_test.rb pins the CI command to

@@ -161,3 +161,65 @@ test("the ladder row re-renders from a broadcast when the dev tools fire", async
     })
     .not.toBe(before);
 });
+
+// --- the review roll --------------------------------------------------------
+
+// HOW LONG REVIEW TAKES on this app lately, drawn on every card.
+//
+// ENV-AGNOSTIC BY CONSTRUCTION. This spec asserts the SHAPE, never a value: the seeded
+// board, a dev database and production all carry different review histories, and four
+// of the five live cards had fewer than ten usable reviews the day this shipped. A
+// spec that pinned "12m avg" would be red everywhere but the one machine it was
+// written on. What must hold in every environment is that the block exists, that its
+// value is one of the two legal forms, and that the count of what was excluded is
+// always beside it.
+test("every application card carries a review average or admits it has none", async ({ page }) => {
+  await page.goto("/deployments");
+
+  const cards = page.locator("[data-test='app-ladder-row'] [data-test='app-ladder-card']");
+  const count = await cards.count();
+  expect(count).toBeGreaterThan(0);
+
+  for (let i = 0; i < count; i += 1) {
+    const card = cards.nth(i);
+    const repo = await card.getAttribute("data-repo");
+    const block = card.locator("[data-test='app-ladder-review']");
+
+    await expect(block, `${repo} must carry a review block`).toHaveCount(1);
+
+    const value = ((await block.locator("[data-test='app-ladder-review-value']").textContent()) || "").trim();
+    const note = ((await block.locator("[data-test='app-ladder-review-note']").textContent()) || "").trim();
+
+    // Either a measured average, or the words that stand in for one. Never a blank,
+    // never "NaN" — a quiet repo saying nothing reads as "reviews here take no time".
+    expect(value, `${repo} rendered "${value}"`).toMatch(/^(\d+[smh]( \d+m)? avg|not enough data)$/);
+    expect(note, `${repo} must always say what the rules dropped`).toMatch(
+      /^(no reviews measured yet|(over \d+ reviews? · )?\d+ of \d+ excluded)$/
+    );
+  }
+});
+
+// THE TWO MINUTE-FIGURES. This card already carries a duration — the CI meter's run
+// clock — and the operator must never read one as the other. The guard is structural:
+// the review value lives in its own labelled block below the ladder badges, and it
+// says "avg" out loud whenever it is a number.
+test("the review average is never confusable with the CI run clock", async ({ page }) => {
+  await page.goto("/deployments");
+
+  const card = page.locator("[data-test='app-ladder-row'] [data-test='app-ladder-card']").first();
+  const review = card.locator("[data-test='app-ladder-review']");
+  await expect(review).toBeVisible();
+
+  // The CI clock, when the card has one, is inside the meter — a different element.
+  const clock = card.locator("[data-test='app-ladder-ci-bar-clock']");
+  await expect(review.locator("[data-test='app-ladder-ci-bar-clock']")).toHaveCount(0);
+  if ((await clock.count()) > 0) {
+    const clockText = ((await clock.textContent()) || "").trim();
+    expect(clockText, "the CI clock must not wear the average's label").not.toContain("avg");
+  }
+
+  const value = ((await review.locator("[data-test='app-ladder-review-value']").textContent()) || "").trim();
+  if (value !== "not enough data") {
+    expect(value, "a measured average must name itself an average").toContain("avg");
+  }
+});
