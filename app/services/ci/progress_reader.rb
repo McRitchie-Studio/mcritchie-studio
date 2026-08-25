@@ -79,11 +79,11 @@ module Ci
     def for_task(task)
       return CheckProgress.blank unless eligible_task?(task)
 
-      nwo = nwo_for(task_repo(task))
-      sha = latest_ci_sha(nwo, task_branch(task))
+      nwo, branch, workflow, repo = task_ci_target(task)
+      sha = latest_ci_sha(nwo, branch, workflow)
       return CheckProgress.blank unless sha
 
-      for_sha(nwo, sha)
+      task_progress(nwo, repo, sha, workflow)
     end
 
     # Batched: { slug => Ci::CheckProgress } for every eligible task, resolving all
@@ -92,12 +92,14 @@ module Ci
       eligible = Array(tasks).select { |task| eligible_task?(task) }
       return {} if eligible.empty?
 
-      shas = latest_ci_shas(eligible.map { |task| [nwo_for(task_repo(task)), task_branch(task)] })
+      targets = eligible.to_h { |task| [task.slug, task_ci_target(task)] }
+      shas = latest_ci_shas(targets.values)
       eligible.each_with_object({}) do |task, memo|
-        sha = shas[[nwo_for(task_repo(task)), task_branch(task)]]
+        nwo, branch, workflow, repo = targets[task.slug]
+        sha = shas[[nwo, branch, workflow]]
         next unless sha
 
-        memo[task.slug] = for_sha(nwo_for(task_repo(task)), sha)
+        memo[task.slug] = task_progress(nwo, repo, sha, workflow)
       end
     end
 
@@ -336,13 +338,15 @@ module Ci
     # runs on a branch that only exists in the gem: blank, or another repo's CI if a
     # branch of that name happened to exist there.
     #
-    # A GEM TASK'S CARD IS STILL BLANK, for a DIFFERENT collapse this does not touch:
-    # the task path resolves its sha with the default `CI` workflow name (see
-    # #latest_ci_sha's default), while a gem's runs are its own suite ("Engine CI").
-    # Naming the right repo does not make that read resolve. #ci_target_for already
-    # holds the per-repo answer the release tracks use; wiring it into the task path
-    # is its own change, and nothing is GATED on this bar — Ci::ReviewGate resolves
-    # the workflow per repo already.
+    # A GEM TASK'S CARD WAS BLANK until 2026-08-25, for a DIFFERENT collapse that
+    # naming the right repo did not fix: the task path resolved its sha with the
+    # default `CI` workflow name while a gem's runs are its own suite ("Engine CI"),
+    # so the read matched nothing. #task_ci_target now resolves that name per repo.
+    # Measured on studio-engine PR #195 (feat/polish-style-guide-modals): the sha
+    # read via "CI" was nil and via "Engine CI" was 4b9fc19, carrying a full 3/3
+    # fold. The harm was not the missing bar — it was that a BLANK meter and a RED
+    # one are the same pixels, so a genuinely failing Consumer CI was diagnosed as
+    # an unwired webhook. Ci::Ingestion.unwired was [] the whole time.
     #
     # ONE TRACK, AND IT IS THE PRIMARY PR's — a stated display LIMIT, not an
     # oversight. A task with PRs in two repos has two CI runs; this bar shows the one
@@ -355,6 +359,81 @@ module Ci
     def task_repo(task)
       gate_repo = (Ci::ReviewGate.repos_for(task).first if task.respond_to?(:release_pr_urls))
       gate_repo.presence || Array(task.devops_repositories).first.to_s.presence || HUB_REPO
+    end
+
+    # WHERE a task's PR CI lives: [nwo, branch, workflow, repo]. The WORKFLOW is the
+    # part that was missing — resolved per repo through GithubWorkflowRun's single
+    # decider, exactly as Ci::ReviewGate resolves it, so the meter and the gate can
+    # no longer disagree about which runs are this task's. nil workflow keeps
+    # #latest_ci_sha's documented "newest run of any workflow" contract for a gem
+    # that declares no suite.
+    def task_ci_target(task)
+      repo = task_repo(task)
+      [nwo_for(repo), task_branch(task), GithubWorkflowRun.ci_workflow_for(repo), repo]
+    end
+
+    # The task card's fold: the repo's own suite at JOB grain, plus one mark per
+    # declared SIBLING suite lane at RUN grain.
+    #
+    # THE SIBLING LANES ARE THE POINT, and this is where the task card deliberately
+    # DIVERGES from Ci::LadderRung#progress, which scopes its fold to the primary
+    # workflow alone. The two answer different questions. The ladder rung asks "is
+    # this gem's OWN suite green on its branch tip", so folding a failing downstream
+    # Consumer CI into it would drag the gem's track red for something that is not
+    # the gem's fault. A TASK card asks Ci::ReviewGate's question — "is this PR
+    # merge-ready" — and the gate folds EVERY run on the head sha, so a red Consumer
+    # CI genuinely blocks this task. Scoping the card to the primary here would draw
+    # a green 3/3 meter on a task the gate holds red, which is worse than the blank
+    # bar this change removes: blank reads as "no data", green reads as a lie.
+    #
+    # TWO GRAINS because the ingest records CiCheckJob rows only for
+    # GithubWorkflowRun::CI_PROGRESS_WORKFLOWS (each repo's own suite), so a sibling
+    # lane has no per-job rows to fold — only its workflow_run row. One mark for the
+    # whole lane is the honest resolution available, and it is enough: the mark's
+    # state is what turns the meter red.
+    # AN UNFOLDED PRIMARY KEEPS ITS BLANK BAR — siblings decorate a suite fold, they
+    # never stand in for one. GitHub delivers `workflow_run` at QUEUE time, so an
+    # "Engine CI" RUN row (and therefore a resolved sha) exists before any of its
+    # jobs do; #for_sha then refuses the workflow-blind API fallback for a gem and
+    # hands back a BLANK base. Concatenating onto that would leave a green sibling as
+    # the ONLY mark — :green drawn on a tree Ci::ReviewGate folds :pending, because
+    # the gate votes the queued primary run this bar could not see. That is the same
+    # green-reads-as-a-lie this fold exists to prevent, pointed the other way, so an
+    # empty base short-circuits exactly like an empty sibling set.
+    def task_progress(nwo, repo, sha, workflow)
+      base = for_sha(nwo, sha, workflow)
+      siblings = sibling_lane_checks(nwo, repo, sha, workflow)
+      return base if siblings.empty? || base.checks.empty?
+
+      CheckProgress.new(checks: base.checks + siblings, sha: sha, run_started_at: base.run_started_at)
+    end
+
+    # One Ci::CheckProgress::Check per DECLARED sibling suite lane on this head, or
+    # [] when the repo declares none (every app repo). An ALLOW-LIST via
+    # .suite_workflows_for, so an undeclared workflow — a nightly, a CodeQL scan, a
+    # Pages build — never lands a mark on a task card. Newest run wins per lane,
+    # mirroring Ci::ReviewGate#check_runs_payload. Rescued: a sibling read may never
+    # break the card that would otherwise render.
+    def sibling_lane_checks(nwo, repo, sha, workflow)
+      names = GithubWorkflowRun.suite_workflows_for(repo).map(&:to_s).uniq - [workflow.to_s]
+      return [] if names.empty?
+
+      rows = GithubWorkflowRun.for_repo(nwo).for_sha(sha).where(workflow_name: names)
+                              .order(Arel.sql(LATEST_RUN_ORDER)).to_a
+                              .group_by { |run| run.workflow_name.to_s }
+                              .map { |name, runs| sibling_lane_row(name, runs.first) }
+      CheckProgress.from_check_runs(rows).checks
+    rescue StandardError => e
+      ErrorLog.capture!(e)
+      []
+    end
+
+    # A workflow_run row shaped as the check row CheckProgress.from_check_runs folds.
+    # `completed_at` only once the run is terminal, so an in-flight lane contributes
+    # no false end-stamp to the meter's clock.
+    def sibling_lane_row(name, run)
+      { "name" => name, "status" => run.status.to_s, "conclusion" => run.conclusion.to_s,
+        "started_at" => run.run_started_at, "completed_at" => (run.updated_at if run.terminal?) }
     end
 
     def nwo_for(repo)
@@ -415,18 +494,27 @@ module Ci
       scope.order(Arel.sql(LATEST_RUN_ORDER)).limit(1).pick(:html_url).presence
     end
 
-    # Batched sibling of latest_ci_sha: one query for every [nwo, branch] pair.
-    def latest_ci_shas(pairs)
-      pairs = pairs.reject { |nwo, branch| nwo.to_s.empty? || branch.to_s.empty? }.uniq
-      return {} if pairs.empty?
+    # Batched sibling of latest_ci_sha: one query for every [nwo, branch, workflow]
+    # target. Keyed on the WORKFLOW too, because that is now per repo — the old
+    # version pinned `workflow_name: CI_WORKFLOW` in the query itself, so a gem task
+    # resolved no sha here for exactly the reason #task_ci_target documents.
+    def latest_ci_shas(targets)
+      targets = targets.map { |target| target.first(3) }
+                       .reject { |nwo, branch, _workflow| nwo.to_s.empty? || branch.to_s.empty? }.uniq
+      return {} if targets.empty?
 
-      rows = GithubWorkflowRun
-             .where(repo: pairs.map(&:first).uniq, head_branch: pairs.map(&:last).uniq, workflow_name: GithubWorkflowRun::CI_WORKFLOW)
-             .order(Arel.sql(LATEST_RUN_ORDER))
-             .pluck(:repo, :head_branch, :head_sha)
+      workflows = targets.map(&:last)
+      scope = GithubWorkflowRun.where(repo: targets.map(&:first).uniq,
+                                      head_branch: targets.map { |target| target[1] }.uniq)
+      # Narrow in SQL only when EVERY target named a workflow. One unmapped gem
+      # (workflow nil, meaning "newest run of any workflow") must not have the other
+      # targets' names filter its rows away.
+      scope = scope.where(workflow_name: workflows.uniq) if workflows.all?(&:present?)
+      rows = scope.order(Arel.sql(LATEST_RUN_ORDER)).pluck(:repo, :head_branch, :workflow_name, :head_sha)
 
-      rows.each_with_object({}) do |(repo, branch, sha), memo|
-        memo[[repo, branch]] ||= sha # first seen == newest (ordered above)
+      rows.each_with_object({}) do |(repo, branch, workflow, sha), memo|
+        memo[[repo, branch, workflow]] ||= sha # first seen == newest (ordered above)
+        memo[[repo, branch, nil]] ||= sha      # the unmapped-gem key: any workflow
       end
     end
 

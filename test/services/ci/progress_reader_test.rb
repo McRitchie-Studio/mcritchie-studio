@@ -422,6 +422,137 @@ class Ci::ProgressReaderTest < ActiveSupport::TestCase
                  "the render path and the live path must agree on the task's repo"
   end
 
+  # THE GEM TASK CARD. A gem repo's suite is its OWN workflow ("Engine CI"), never
+  # the app literal "CI", and the task path used to resolve its sha with that
+  # literal — so every studio-engine task card drew NOTHING. Measured live on
+  # studio-engine PR #195 (2026-08-25): sha via "CI" was nil, via "Engine CI" was a
+  # full 3/3 fold. Ci::Ingestion.unwired was [] throughout — the repo was delivering
+  # the whole time, and a blank meter was misread as an unwired webhook.
+
+  test "[unit] a gem task card resolves its OWN suite workflow, not the app CI literal" do
+    task = gem_task(branch: "feat/gem-meter")
+    seed_run(branch: "feat/gem-meter", sha: "sha-gem", repo: ENGINE_NWO, workflow: "Engine CI")
+    seed_check_job(repo: ENGINE_NWO, sha: "sha-gem", workflow: "Engine CI",
+                   conclusion: "success", branch: "feat/gem-meter")
+
+    progress = build_reader.for_task(task)
+
+    assert progress.present?, "a gem task with ingested runs must draw a meter"
+    assert_equal "sha-gem", progress.sha
+    assert_equal 1, progress.passed
+  end
+
+  test "[unit] the gem task card is blank when only the app CI literal would match" do
+    # The inverse of the fix: no "Engine CI" run exists, so there is genuinely
+    # nothing to draw — the reader must not fall back to some other workflow's runs.
+    task = gem_task(branch: "feat/gem-none")
+    seed_run(branch: "feat/gem-none", sha: "sha-x", repo: ENGINE_NWO, workflow: "Consumer CI")
+
+    assert_not build_reader.for_task(task).present?,
+               "a sibling-only tree resolves no suite sha, exactly as Ci::ReviewGate reads it :none"
+  end
+
+  test "[unit] a FAILING sibling lane turns the gem task meter red" do
+    # The whole reason the fold is not scoped to the primary workflow. studio-engine
+    # PR #195 was Engine CI green + Consumer CI RED, and Ci::ReviewGate holds it
+    # :red. A meter scoped to Engine CI alone would draw a green 3/3 on a task the
+    # gate refuses to pop — a blank bar reads as "no data", a green one reads as a
+    # lie.
+    task = gem_task(branch: "feat/gem-red")
+    seed_run(branch: "feat/gem-red", sha: "sha-red", repo: ENGINE_NWO, workflow: "Engine CI")
+    seed_check_job(repo: ENGINE_NWO, sha: "sha-red", workflow: "Engine CI",
+                   conclusion: "success", branch: "feat/gem-red")
+    seed_run(branch: "feat/gem-red", sha: "sha-red", repo: ENGINE_NWO, workflow: "Consumer CI",
+             status: "completed", conclusion: "failure")
+
+    progress = build_reader.for_task(task)
+
+    assert_equal :red, progress.state, "a red sibling lane must colour the card's meter"
+    assert_equal 1, progress.failed
+    assert_equal 2, progress.total, "the sibling lane earns one mark at run grain"
+    assert_includes progress.checks.map(&:name), "Consumer CI", "the failing lane must be nameable"
+  end
+
+  test "[unit] an UNDECLARED workflow on the head sha never lands a mark" do
+    # The sibling set is an ALLOW-LIST (GithubWorkflowRun.suite_workflows_for), so a
+    # nightly / CodeQL / Pages run on the same commit cannot vote on a task card.
+    task = gem_task(branch: "feat/gem-noise")
+    seed_run(branch: "feat/gem-noise", sha: "sha-noise", repo: ENGINE_NWO, workflow: "Engine CI")
+    seed_check_job(repo: ENGINE_NWO, sha: "sha-noise", workflow: "Engine CI",
+                   conclusion: "success", branch: "feat/gem-noise")
+    seed_run(branch: "feat/gem-noise", sha: "sha-noise", repo: ENGINE_NWO, workflow: "CodeQL",
+             status: "completed", conclusion: "failure")
+
+    progress = build_reader.for_task(task)
+
+    assert_equal :green, progress.state, "an undeclared lane is not a suite verdict"
+    assert_equal 1, progress.total
+  end
+
+  test "[unit] a sibling lane alone never draws a green meter for an unfolded primary" do
+    # THE QUEUE WINDOW. GitHub delivers `workflow_run` at QUEUE time, so an
+    # "Engine CI" RUN row exists before any of its jobs do. #for_sha then refuses the
+    # workflow-blind API fallback for a gem and returns a BLANK base — and a green
+    # sibling would be the only mark left, drawing :green on a tree Ci::ReviewGate
+    # folds as :pending (it votes the queued Engine CI run). Green on a not-green
+    # task is the exact lie the sibling fold exists to prevent, so an unfolded
+    # primary keeps the honest blank bar.
+    task = gem_task(branch: "feat/gem-queued")
+    seed_run(branch: "feat/gem-queued", sha: "sha-queued", repo: ENGINE_NWO, workflow: "Engine CI",
+             status: "in_progress")
+    seed_run(branch: "feat/gem-queued", sha: "sha-queued", repo: ENGINE_NWO, workflow: "Consumer CI",
+             status: "completed", conclusion: "success")
+
+    progress = build_reader.for_task(task)
+
+    assert_not_equal :green, progress.state,
+                     "a green sibling must not certify a primary suite that folded no checks"
+  end
+
+  test "[unit] an APP task is unchanged — one lane, no siblings" do
+    task = make_task(stage: "submitted", pr_url: pr_url, branch: "feat/app-meter")
+    seed_run(branch: "feat/app-meter", sha: "sha-app")
+    seed_check_job(repo: "McRitchie-Studio/mcritchie-studio", sha: "sha-app", workflow: "CI",
+                   conclusion: "success", branch: "feat/app-meter")
+
+    progress = build_reader.for_task(task)
+
+    assert_equal 1, progress.total, "an app repo declares no sibling suite"
+    assert_equal :green, progress.state
+  end
+
+  test "[unit] progress_by_slug resolves a gem task exactly as for_task does" do
+    # The batched board path pinned workflow_name: CI in its QUERY, so it went blind
+    # for a gem independently of for_task. The two must not drift.
+    task = gem_task(branch: "feat/gem-batch")
+    seed_run(branch: "feat/gem-batch", sha: "sha-batch", repo: ENGINE_NWO, workflow: "Engine CI")
+    seed_check_job(repo: ENGINE_NWO, sha: "sha-batch", workflow: "Engine CI",
+                   conclusion: "success", branch: "feat/gem-batch")
+
+    reader = build_reader
+    batched = reader.progress_by_slug([task])[task.slug]
+
+    assert batched&.present?, "the board's batched read must see the gem task too"
+    assert_equal reader.for_task(task).sha, batched.sha
+    assert_equal reader.for_task(task).total, batched.total
+  end
+
+  test "[unit] a gem and an app task batch together without filtering each other out" do
+    gem = gem_task(branch: "feat/mixed-gem")
+    app = make_task(stage: "submitted", pr_url: pr_url, branch: "feat/mixed-app")
+    seed_run(branch: "feat/mixed-gem", sha: "sha-mg", repo: ENGINE_NWO, workflow: "Engine CI")
+    seed_check_job(repo: ENGINE_NWO, sha: "sha-mg", workflow: "Engine CI",
+                   conclusion: "success", branch: "feat/mixed-gem")
+    seed_run(branch: "feat/mixed-app", sha: "sha-ma")
+    seed_check_job(repo: "McRitchie-Studio/mcritchie-studio", sha: "sha-ma", workflow: "CI",
+                   conclusion: "success", branch: "feat/mixed-app")
+
+    by_slug = build_reader.progress_by_slug([gem, app])
+
+    assert_equal "sha-mg", by_slug[gem.slug]&.sha
+    assert_equal "sha-ma", by_slug[app.slug]&.sha
+  end
+
   private
 
   def seed_jobs(repo, sha, passed: 0, failed: 0, pending: 0)
@@ -462,11 +593,26 @@ class Ci::ProgressReaderTest < ActiveSupport::TestCase
                        name: "#{workflow} #{SecureRandom.hex(3)}")
   end
 
-  def seed_run(branch:, sha:, repo: "McRitchie-Studio/mcritchie-studio", workflow: "CI", started_at: Time.current, html_url: nil)
+  def seed_run(branch:, sha:, repo: "McRitchie-Studio/mcritchie-studio", workflow: "CI", started_at: Time.current,
+               html_url: nil, status: "in_progress", conclusion: nil)
     GithubWorkflowRun.create!(
       repo: repo, workflow_name: workflow,
-      run_id: SecureRandom.random_number(10**12), status: "in_progress",
+      run_id: SecureRandom.random_number(10**12), status: status, conclusion: conclusion,
       head_branch: branch, head_sha: sha, run_started_at: started_at, html_url: html_url
+    )
+  end
+
+  ENGINE_NWO = "McRitchie-Studio/studio-engine"
+
+  # A task whose PR is in the GEM repo — the shape whose card drew nothing.
+  def gem_task(branch:)
+    Task.create!(
+      title: "gem meter #{SecureRandom.hex(3)}", stage: "submitted",
+      metadata: { "devops" => {
+        "branch" => branch,
+        "repositories" => ["studio-engine"],
+        "pr_url" => "https://github.com/McRitchie-Studio/studio-engine/pull/195"
+      } }
     )
   end
 
