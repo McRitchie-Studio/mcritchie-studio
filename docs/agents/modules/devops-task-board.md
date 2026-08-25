@@ -506,7 +506,7 @@ costs you the refresh and nothing else. Never fall back to `gh auth login`: `gh`
 refuses to store a credential while `GH_TOKEN` is set, and `GH_TOKEN` outranks the
 keyring it would write to, so the one step that looks like the fix is refused
 outright and would repair the wrong store anyway. Architecture, the two lane
-identities, and a symptom→fix table: `docs/agents/modules/source-control.md`.
+identities, and a symptom→fix table: [`source-control.md`](source-control.md).
 
 Run `bin/ship` from the task worktree (elsewhere it re-roots at the worktree,
 loudly). Before its first side effect it enforces the two handoff-seam guards
