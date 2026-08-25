@@ -1,5 +1,14 @@
 # Deploy With Task
 
+> **Stale GitHub credential? Fix it yourself and keep going — do not escalate.**
+> App installation tokens expire **~hourly BY DESIGN**. On `Bad credentials`, a
+> 401/403, an unreadable CI, or a `gh auth login` prompt, run
+> `eval "$(bin/gh-auth-refresh --export)"` — read its **stderr**, because `eval`
+> hides the exit code — then retry the exact command that failed. Asking Mr.
+> McRitchie to run `gh auth login` is both the terminal chore the operating model
+> forbids and a step that cannot work: `gh` refuses to store a credential while
+> `GH_TOKEN` is set. Architecture and symptom→fix: [`source-control.md`](../../../modules/source-control.md).
+
 ## Status: Active
 
 This is Avi's `deploy-with-task` SOP. It expedites ONE task through review, QA,

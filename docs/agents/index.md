@@ -85,7 +85,17 @@ promotes `accepted → release` plus QA, and Steffon's `production-deploy` ships
   correcting that file.
 - Do not print secrets. Use named 1Password references and purpose-built scripts.
 - Do not hand Mr. McRitchie terminal chores. Run safe commands yourself; ask Mr.
-  McRitchie for approvals, credentials, product judgment, or external access.
+  McRitchie for approvals, product judgment, external access, or a credential
+  only he can supply.
+- **Source-control auth is NOT one of those — it is SELF-SERVICE.** A stale
+  `gh`/`git` credential is yours to fix, in one command, and then keep going:
+  `eval "$(bin/gh-auth-refresh --export)"`. Installation tokens expire about
+  hourly BY DESIGN and every lane re-mints its own, so "I need you to run `gh
+  auth login`" is both the terminal chore this rule forbids and a step that
+  would not work (`gh` refuses to store a credential while `GH_TOKEN` is set).
+  Escalate only after running it and reading its stderr — then report what it
+  said. Full map:
+  `mcritchie-studio/docs/agents/modules/source-control.md`.
 - Prefer a concrete local result Mr. McRitchie can inspect: a URL, a diff, a
   passing command, or a short audit.
 - For feature work, identify the feature being requested and accumulate
@@ -487,6 +497,7 @@ Do not merge or deploy unless I explicitly assigned that lane.
 | Agent culture | `mcritchie-studio/docs/agents/modules/culture.md` |
 | Credentials and 1Password | `mcritchie-studio/docs/agents/modules/credentials.md` |
 | Credential item names | `mcritchie-studio/docs/agents/modules/credential-inventory.md` |
+| **Source control (GitHub): architecture, auth, usage** | `mcritchie-studio/docs/agents/modules/source-control.md` |
 | Shared email operations | `mcritchie-studio/docs/agents/modules/email-operations.md` |
 | Managed app registry | `mcritchie-studio/docs/agents/modules/app-registry.md` |
 | New app onboarding (tiers + SOP) | `mcritchie-studio/docs/agents/system/new-app-onboarding-sop.md` |

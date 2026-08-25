@@ -149,6 +149,25 @@ now, move the work into a worktree/branch, and proceed from step 3.
 
 Full SOP: `mcritchie-studio/docs/agents/system/devops-cycle-design.md`.
 
+## 🔑 GitHub auth is SELF-SERVICE — never stop to ask for it
+
+`bin/ship`, `pr-review`, and every CI read reach GitHub with a **GitHub App
+installation token that expires about hourly BY DESIGN**. When one goes stale you
+will see `Bad credentials`, a 401/403, or a `gh auth login` prompt. That is
+**yours to fix**, in one command, and then you continue:
+
+```bash
+eval "$(bin/gh-auth-refresh --export)"
+```
+
+Do **not** ask Mr. McRitchie to run `gh auth login`. It is the terminal chore the
+operating model forbids, and it would not work anyway — `gh` refuses to store a
+credential while `GH_TOKEN` is set, and `GH_TOKEN` outranks the keyring it would
+write to. Escalate only AFTER running the command above and reading its stderr,
+and report what it said. Architecture, the two lane identities (`agent` builds
+and merges, `deployer` cannot touch PRs), and a symptom→fix table:
+`mcritchie-studio/docs/agents/modules/source-control.md`.
+
 ---
 
 ## Full operating model
