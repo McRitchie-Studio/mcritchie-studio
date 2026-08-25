@@ -49,6 +49,7 @@
 # autoload lib/ but not bin/lib/. This module owns the parts that need git and a
 # working tree: the fingerprint, the freshness grading, the bypass record.
 require "tmpdir"
+require "yaml"
 require_relative "../../lib/cert_evidence"
 
 module FullSuiteGate
@@ -260,8 +261,66 @@ module FullSuiteGate
 
     lanes = EVIDENCE_LANES.to_h { |lane| [lane, lane_status(checks, lane, fp, repo: repo)] }
     recorded = EVIDENCE_LANES.to_h { |lane| [lane, recorded_fingerprints(checks, lane, repo: repo)] }
-    verdict(ok: LANES.all? { |lane| lanes[lane] == :fresh }, fingerprint: fp, lanes: lanes, recorded: recorded,
+    verdict(ok: required_lanes(repo).all? { |lane| lanes[lane] == :fresh },
+            fingerprint: fp, lanes: lanes, recorded: recorded,
             fingerprint_root: fp_root, fingerprint_repo: fp_repo, fingerprint_source: fp_source, repo: repo)
+  end
+
+  # The FULL-cert lanes a given repo actually owes.
+  #
+  # LANES for everything, MINUS the rubocop lane for a repo that DECLARES it has
+  # no lint lane (`lint_lane: none` in config/release_repos.yml).
+  #
+  # WHY THIS EXISTS. studio-engine ships no rubocop at all — not in the Gemfile,
+  # not in the gemspec, no .rubocop.yml, and `bundle exec rubocop` fails outright;
+  # its static gate is `ruby -c` inside bin/release-check. Before this, a task
+  # naming that repo could NEVER be certified: the gate demanded a rubocop cert
+  # that no honest command could produce, and the only way through was pointing
+  # FULL_SUITE_RUBOCOP_CMD at a no-op, which records a rubocop pass for a lint
+  # that never ran. That is manufacturing the exact evidence these gates exist to
+  # check, and it was refused (2026-08-24, /tasks/brand-the-current-wallet).
+  #
+  # DECLARED, NEVER INFERRED — the whole design is in that distinction. This does
+  # NOT probe for a rubocop binary, because a waiver inferred from a missing
+  # binary turns every broken rubocop install into a silently skipped lane. The
+  # waiver must be a reviewable line in a registry a human edits on purpose.
+  #
+  # Unknown repo, or nil, owes EVERYTHING. Failing closed is the only safe default
+  # for a gate: a typo'd repo slug must not waive a lane.
+  #
+  # SCOPE — this closes the READER half of the bug, and only that half. The cert
+  # WRITER (bin/full-suite-check) still runs BOTH lanes unconditionally, and in
+  # studio-engine both resolve to commands that repo does not ship: the test lane
+  # to `bin/rails` (CiTestCommand::DEFAULT — the engine has engine-ci.yml, not the
+  # ci.yml the resolver reads) and the lint lane to `bin/rubocop`. It then dies on
+  # an unrescued Errno::ENOENT in bin/lib/cert_process.rb:88 before recording
+  # anything, so a task naming the engine still cannot PRODUCE the full-suite line
+  # this gate now asks it for. Verified 2026-08-25 reviewing PR #1004; fixing the
+  # writer is a separate task. Do not read this waiver as "the engine is now
+  # certifiable" — it means "the engine is no longer asked for a lint it cannot run".
+  def required_lanes(repo)
+    lint_waived?(repo) ? LANES - [RUBOCOP_LANE] : LANES
+  end
+
+  def lint_waived?(repo)
+    slug = repo.to_s.strip
+    return false if slug.empty?
+
+    repo_registry.dig(slug, "lint_lane").to_s == "none"
+  end
+
+  # repo slug => its registry row, flattened across the apps/gems sections. Read
+  # once. A registry that cannot be read waives NOTHING — same fail-closed rule.
+  def repo_registry
+    @repo_registry ||= begin
+      path = File.expand_path("../../config/release_repos.yml", __dir__)
+      cfg = YAML.safe_load_file(path) || {}
+      %w[apps gems].each_with_object({}) do |section, out|
+        (cfg[section] || {}).each { |slug, row| out[slug] = row if row.is_a?(Hash) }
+      end
+    rescue StandardError
+      {}
+    end
   end
 
   # Where the graded fingerprint CAME FROM → [fingerprint_root, fingerprint_repo,

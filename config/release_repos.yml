@@ -199,6 +199,14 @@
 #                   (syntax + unit + build) before the artifact is pushed.
 #   build_cmd    — human-readable build command (documentation; bin/release
 #                  drives release_check/gem build directly).
+#   lint_lane    — optional. `none` DECLARES that this repo ships no rubocop, so
+#                  the cert reader (FullSuiteGate.required_lanes) stops asking it
+#                  for a `[rubocop@<fp>]` line and it owes only `[full-suite@<fp>]`.
+#                  DECLARED, NEVER INFERRED: the gate does not probe for a rubocop
+#                  binary, because a waiver inferred from a missing install turns
+#                  every broken rubocop into a silently skipped lane. Omitted (the
+#                  default) = the repo owes BOTH lanes, and every unrecognised slug
+#                  or unreadable registry owes both too — this fails CLOSED.
 #
 # The gem repos are checked out as SIBLINGS of this app (the projects root):
 #   /Users/alex/projects/<repo>. `bin/release` resolves them relative to the
@@ -211,6 +219,25 @@ gems:
     gemspec: studio-engine.gemspec
     release_check: bin/release-check
     build_cmd: bin/release-check --build
+    # lint_lane: none — THIS REPO SHIPS NO RUBOCOP, and the cert gate must be told
+    # rather than left to guess. There is no rubocop in the Gemfile, none in the
+    # gemspec, no .rubocop.yml, and `bundle exec rubocop` fails outright. Its
+    # static gate is `ruby -c` over the tree, run inside bin/release-check, which
+    # the `release_check` key above already names.
+    #
+    # DECLARED, NEVER INFERRED. bin/lib/full_suite_gate.rb reads this key; it does
+    # NOT probe for a rubocop binary. Inferring the waiver from a missing binary
+    # would turn every broken rubocop install into a silently skipped lane — the
+    # self-declaration disease config/e2e_lane.yml exists to prevent. A repo opting
+    # out of a lint lane must be a visible, reviewable diff line, which is what
+    # this is.
+    #
+    # WHY IT WAS NEEDED (2026-08-24): dor-check demands a full-suite AND a rubocop
+    # cert per NAMED repo. A task naming studio-engine could therefore never be
+    # certified, and the only way through was pointing FULL_SUITE_RUBOCOP_CMD at a
+    # no-op — recording a rubocop pass for a lint that never ran. That was refused;
+    # this is the honest fix. If the engine ever GAINS rubocop, delete this line.
+    lint_lane: none
   solana-studio:
     ladder: three-rung
     # Was `solana-studio.gemspec` until 2026-08-20. bin/dor-check refuses a PR
