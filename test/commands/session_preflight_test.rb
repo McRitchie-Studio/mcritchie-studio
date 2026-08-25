@@ -250,6 +250,99 @@ class SessionPreflightTest < Minitest::Test
     assert_equal ["docs/agents/index.md"], overlap.fetch("files")
   end
 
+# --- gh auth freshness -------------------------------------------------------
+#
+# WHY THIS EXISTS. App installation tokens live ~1h and nothing refreshes gh's
+# ambient credential on its own, so the credential a desk was cut with is routinely
+# dead by the time that desk ships. Before this check the failure surfaced mid-wave
+# — and surfaced WRONG: an expired token makes `gh pr view` fail, which preflight
+# reported as "PR: not found". Agents read that as "no PR yet" and escalated the
+# credential to Mr. McRitchie, which is both the terminal chore the operating model
+# forbids and a step that cannot work (`gh` refuses to store a credential while
+# GH_TOKEN is set). These two tiers pin the probe and the remedy text.
+
+# [unit] The remedy is SELF-SERVICE and names the one command that actually works.
+# Asserted on the message itself because the message IS the fix: an agent that reads
+# it must not come away thinking `gh auth login` or an escalation is the answer.
+def test_stale_gh_auth_blocks_preflight_and_prescribes_self_service_recovery
+  task = write_task(devops: default_devops.merge("branch" => "feat/session-preflight"))
+  fake_bin = write_fake_gh(auth_ok: false)
+
+  out, err, status = run_preflight(
+    "--file", task, "--no-install-docs", "--no-fetch", "--json",
+    env: { "PATH" => "#{fake_bin}:#{ENV.fetch("PATH", "")}" }
+  )
+  refute status.success?, "a dead credential must block the desk: #{out}\n#{err}"
+
+  report = JSON.parse(out)
+  assert_equal "stale", report.fetch("gh_auth").fetch("status")
+  assert_equal "agent", report.fetch("gh_auth").fetch("lane")
+
+  blocker = report.fetch("errors").find { |e| e.include?("gh auth is STALE") }
+  refute_nil blocker, "expected a gh auth blocker in #{report.fetch("errors").inspect}"
+  assert_includes blocker, %(eval "$(bin/gh-auth-refresh --export)")
+  assert_includes blocker, "NOT an escalation"
+  assert_includes blocker, "Do NOT use `gh auth login`"
+  assert_includes blocker, "docs/agents/modules/source-control.md"
+end
+
+# [unit] The lane comes from GH_APP_ITEM, so a ship session is told it is the ship
+# session. Naming the wrong lane here would send a deployer to re-mint the AGENT
+# App — the one holding the `pull_requests` grant the deployer is denied on purpose.
+def test_gh_auth_lane_is_read_from_gh_app_item
+  task = write_task(devops: default_devops.merge("branch" => "feat/session-preflight"))
+  fake_bin = write_fake_gh
+
+  out, err, status = run_preflight(
+    "--file", task, "--no-install-docs", "--no-fetch", "--json",
+    env: { "PATH" => "#{fake_bin}:#{ENV.fetch("PATH", "")}",
+           "GH_APP_ITEM" => "github.mcritchie-deployer" }
+  )
+  assert status.success?, "#{out}\n#{err}"
+
+  gh_auth = JSON.parse(out).fetch("gh_auth")
+  assert_equal "ok", gh_auth.fetch("status")
+  assert_equal "deployer", gh_auth.fetch("lane")
+end
+
+# [integration] The whole path through the real script: a live credential reports ok
+# and leaves the PR read intact, and a dead one is diagnosed as AUTH rather than as
+# the absent PR it superficially resembles. This is the misdiagnosis the check exists
+# to stop, so it is asserted end-to-end rather than on the helper.
+def test_gh_auth_verdict_separates_a_dead_credential_from_a_missing_pr
+  task = write_task(devops: default_devops.merge("branch" => "feat/session-preflight"))
+
+  live_out, live_err, live_status = run_preflight(
+    "--file", task, "--no-install-docs", "--no-fetch", "--json",
+    env: { "PATH" => "#{write_fake_gh}:#{ENV.fetch("PATH", "")}" }
+  )
+  assert live_status.success?, "#{live_out}\n#{live_err}"
+  live = JSON.parse(live_out)
+  assert_equal "ok", live.fetch("gh_auth").fetch("status")
+  assert_equal "found", live.fetch("pr").fetch("status"), "a live credential still reads the PR"
+
+  dead_out, = run_preflight(
+    "--file", task, "--no-install-docs", "--no-fetch", "--json",
+    env: { "PATH" => "#{write_fake_gh(auth_ok: false)}:#{ENV.fetch("PATH", "")}" }
+  )
+  dead = JSON.parse(dead_out)
+  assert_equal "stale", dead.fetch("gh_auth").fetch("status")
+  refute_empty dead.fetch("errors").grep(/gh auth is STALE/),
+               "the credential fault must be named as a credential fault"
+end
+
+# [unit] --no-gh stays fully offline: no probe, no blocker, no network.
+def test_no_gh_skips_the_auth_probe_entirely
+  task = write_task
+
+  out, err, status = run_preflight("--file", task, "--no-gh", "--no-fetch", "--json")
+  assert status.success?, "#{out}\n#{err}"
+
+  gh_auth = JSON.parse(out).fetch("gh_auth")
+  assert_equal "skipped", gh_auth.fetch("status")
+  assert_empty JSON.parse(out).fetch("errors").grep(/gh auth/)
+end
+
   # --- duplicate migration installs -------------------------------------------
   #
   # [integration] THE DEFECT, through the real script. Two branches install ONE engine
@@ -820,7 +913,7 @@ class SessionPreflightTest < Minitest::Test
   end
 
   def write_fake_gh(merge_state: "CLEAN", mergeable: "MERGEABLE", rollup: nil,
-                    sibling_files: ["docs/agents/index.md"])
+                    sibling_files: ["docs/agents/index.md"], auth_ok: true)
     rollup ||= '[{ name: "test", conclusion: "SUCCESS", status: "COMPLETED", detailsUrl: "https://example.test" }]'
     dir = File.join(@sandbox, "fake-bin")
     FileUtils.mkdir_p(dir)
@@ -829,6 +922,10 @@ class SessionPreflightTest < Minitest::Test
       #!/usr/bin/env ruby
       require "json"
       case ARGV
+      in ["api", "rate_limit"]
+        # The liveness probe bin/session-preflight uses. NOT `gh api user`, which an
+        # App installation token cannot call at all.
+        #{auth_ok ? "puts JSON.generate(rate: { limit: 5000, remaining: 4999 })" : "warn \"gh: Bad credentials (HTTP 401)\"; exit 1"}
       in ["pr", "view", ref, "--json", fields]
         if fields == "files"
           sibling = #{JSON.generate(sibling_files)}.map { |p| { path: p } }

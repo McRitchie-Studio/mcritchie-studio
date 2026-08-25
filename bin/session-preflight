@@ -299,6 +299,42 @@ def ci_less?(gh_pr, checks)
   CiStatus.mergeability(JSON.generate(gh_pr)) == :refuted
 end
 
+# GH AUTH FRESHNESS — probe the credential `gh` will ACTUALLY use, at desk time.
+#
+# WHY AT PREFLIGHT. App installation tokens live ~1h and NOTHING refreshes gh's
+# ambient credential on its own (docs/agents/modules/source-control.md § Three
+# stores, and they rank). So a desk cut an hour ago ships fine and a desk cut now
+# dies at `bin/ship`, `gh pr view`, or the first CI read — mid-wave, in the session
+# least able to absorb it. One probe here moves that discovery to the cheapest
+# moment and hands over the exact fix, which is SELF-SERVICE and never an
+# escalation to Mr. McRitchie.
+#
+# IT ALSO STOPS A MISDIAGNOSIS. This runs BEFORE the PR block deliberately: an
+# expired token makes `gh pr view` fail, which preflight otherwise reports as
+# "PR: not found" — sending a builder to re-open a PR that already exists.
+#
+# THE PROBE IS `gh api rate_limit`, NOT `gh api user`. An App installation token
+# CANNOT call /user at all — Apps are forbidden from it by design — so a perfectly
+# healthy token answers 403 there. Reading that as a fault sends the session
+# chasing a grant that cannot exist.
+def gh_auth_report(root)
+  return { "status" => "skipped", "message" => "gh CLI is unavailable" } unless command_available?("gh")
+
+  item = ENV["GH_APP_ITEM"].to_s.strip
+  lane = item.empty? ? "agent" : item.sub(/\Agithub\.mcritchie-/, "")
+  ok, _out, err = capture("gh", "api", "rate_limit", chdir: root)
+  return { "status" => "ok", "lane" => lane } if ok
+
+  { "status" => "stale", "lane" => lane, "message" => compact_lines(err).first.to_s }
+end
+
+GH_AUTH_REMEDY = "this is YOURS to fix, NOT an escalation: run " \
+                 "eval \"$(bin/gh-auth-refresh --export)\" and READ ITS STDERR " \
+                 "(eval hides the exit code), then re-run this preflight. " \
+                 "Do NOT use `gh auth login`: gh refuses to store a credential while GH_TOKEN is " \
+                 "set, and GH_TOKEN outranks the keyring it would write to. " \
+                 "See docs/agents/modules/source-control.md."
+
 def gh_pr_view(ref, root)
   fields = "number,title,url,headRefName,baseRefName,mergeable,mergeStateStatus,statusCheckRollup"
   ok, out, err = capture("gh", "pr", "view", ref.to_s, "--json", fields, chdir: root)
@@ -559,6 +595,13 @@ def print_human(report)
   end
   puts "  WARN working tree has uncommitted changes" if drift["dirty"]
 
+gh_auth = report["gh_auth"] || { "status" => "skipped", "message" => "not probed" }
+case gh_auth["status"]
+when "ok"    then puts "gh auth: ok (#{gh_auth["lane"]} lane)"
+when "stale" then puts "gh auth: STALE (#{gh_auth["lane"]} lane) -> eval \"$(bin/gh-auth-refresh --export)\""
+else              puts "gh auth: skipped (#{gh_auth["message"]})"
+end
+
   pr = report["pr"]
   if pr["status"] == "skipped"
     puts "PR: skipped (#{pr["message"]})"
@@ -715,6 +758,15 @@ if !options[:file] && activity_with_description(task["latest_activity"]).nil?
   warnings << "latest task activity fallback failed: #{warning}" if warning
 end
 
+gh_auth = if options[:gh]
+  gh_auth_report(options[:root])
+else
+  { "status" => "skipped", "message" => "GitHub checks disabled" }
+end
+if gh_auth["status"] == "stale"
+  errors << "gh auth is STALE on the #{gh_auth["lane"]} lane — #{GH_AUTH_REMEDY}"
+end
+
 pr = { "status" => "skipped", "message" => "GitHub checks disabled" }
 if options[:gh]
   if command_available?("gh")
@@ -830,6 +882,7 @@ report = {
   "latest_feedback" => latest_feedback(task, fallback_activity: fallback_activity),
   "branch" => branch,
   "changed_files" => changed,
+  "gh_auth" => gh_auth,
   "pr" => pr,
   "overlap" => overlap,
   "migration_collisions" => migrations,
