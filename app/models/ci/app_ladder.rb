@@ -46,7 +46,7 @@ module Ci
       "release" => Task::MERGED_RELEASE
     }.freeze
 
-    Card = Struct.new(:repo, :rungs, keyword_init: true) do
+    Card = Struct.new(:repo, :rungs, :review_roll, keyword_init: true) do
       def rung(branch) = rungs.find { |r| r.branch == branch }
 
       def needs_attention? = rungs.any?(&:needs_attention?)
@@ -93,6 +93,16 @@ module Ci
       def sort_key = rungs.map(&:sort_key).min || [Ci::LadderRung::STATE_RANK[:green], 1]
 
       def gem? = Release::Repos.gem?(repo)
+
+      # HOW LONG REVIEW TAKES on this app lately (Review::DurationRoll::Roll). Handed
+      # in by .build from ONE ecosystem-wide read, never fetched per card — the N+1
+      # this row already learned to avoid for parked counts and CI progress.
+      #
+      # NEVER NIL to a view: a repo with no measured review still gets an empty Roll,
+      # so the card renders "not enough data" rather than a blank or a NaN. Only a
+      # Card built by hand (a test fixture) can carry nil, and #review reads through
+      # to an empty Roll for exactly that case.
+      def review = review_roll || Review::DurationRoll.empty(repo)
     end
 
     class << self
@@ -111,14 +121,17 @@ module Ci
       # rung per repo), then each rung folds its own branch's suite runs.
       def build(repos: reportable_repos)
         parked = parked_index
-        repos.map { |repo| card_for(repo, parked) }.sort_by(&:sort_key)
+        # The review rolls for EVERY card in one read, exactly like parked_index above
+        # — see Review::DurationRoll for why this must not become a per-card lookup.
+        rolls = Review::DurationRoll.by_repo(repos: repos)
+        repos.map { |repo| card_for(repo, parked, rolls[repo]) }.sort_by(&:sort_key)
       end
 
-      def card_for(repo, parked = parked_index)
+      def card_for(repo, parked = parked_index, review_roll = nil)
         rungs = RUNGS.map do |branch|
           Ci::LadderRung.for(repo: repo, branch: branch, parked_count: parked.dig(repo, branch).to_i)
         end
-        Card.new(repo: repo, rungs: rungs)
+        Card.new(repo: repo, rungs: rungs, review_roll: review_roll)
       end
 
       # => { "turf-monster" => { "accepted" => 2 } }
