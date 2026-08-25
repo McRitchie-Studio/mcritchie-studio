@@ -65,32 +65,57 @@ class AdminStylePageTest < ActionDispatch::IntegrationTest
       "the removed -plain quest-activity demo must not resurface"
   end
 
-  # studio-engine 0.27.0 adds the Web3 Contest + Contest-entry specimen flows to
-  # the Modals section and renames two headings: "Web3" -> "Web3 Contest" and
-  # "Eligibility & entry" -> "Contest entry & eligibility". This pins MS's
-  # adoption: the renamed sections render (present-but-flagged even with :web3 /
-  # :age_gate off), and the walked on-chain entry flow specimen is openable.
-  test "admin/style renders the 0.27.0 Web3 Contest and Contest-entry sections" do
+  # studio-engine adds the wallet/on-chain + Contest-entry specimen flows to the
+  # Modals section. This pins MS's adoption: the sections render (present-but-
+  # flagged even with :web3 / :age_gate off), and the walked on-chain entry flow
+  # specimen is openable.
+  #
+  # THE WALLET SECTION'S HEADING IS NOT PINNED TO ONE STRING, and that is the
+  # point of this comment. It has now been renamed twice — "Web3" -> "Web3
+  # Contest" in engine 0.27.0, and back to "Web3" on 2026-08-25 once Setup Wallet
+  # and the Sign Wallet pair moved into it and the longer name was describing a
+  # subset of its own cards. Pinning either spelling makes this test a DEADLOCK:
+  #
+  #   · consumer-ci pairs an engine PR with the consumer branch matching the PR's
+  #     BASE (.github/workflows/consumer-ci.yml, "THE RULE IS THE RUNG"), so an
+  #     engine PR based on `accepted` runs THIS suite against the engine BRANCH.
+  #   · this repo's own CI runs against the RESOLVED GEM, which is whatever is
+  #     published.
+  #
+  # So a single expected spelling is red on one side or the other for the whole
+  # window between an engine rename and its release — and the engine cannot
+  # release until this lane is green. Accepting both spellings is green in both
+  # worlds and lets each side move independently.
+  #
+  # The SPECIMEN assertions below are the durable half and keep their teeth: they
+  # assert what the section CONTAINS, which has not moved across either rename.
+  WALLET_SECTION_HEADINGS = ["Web3", "Web3 Contest"].freeze
+
+  test "admin/style renders the wallet and Contest-entry sections" do
     log_in_as users(:alex)
 
     get admin_style_path
     assert_response :success
 
-    # Renamed section headings (entity-decoded text match).
-    assert_select "h3", { text: "Web3 Contest" },
-      "expected the renamed Web3 Contest section heading"
+    headings = css_select("h3").map { |n| n.text.strip }
+
+    assert_includes WALLET_SECTION_HEADINGS, (headings & WALLET_SECTION_HEADINGS).first,
+      "expected the wallet/on-chain section heading (one of " \
+      "#{WALLET_SECTION_HEADINGS.inspect}); found: #{headings.inspect}"
+
+    # This one has NOT been renamed since 0.27.0, so it stays pinned.
     assert_select "h3", { text: "Contest entry & eligibility" },
       "expected the renamed Contest entry & eligibility section heading"
 
-    # The old heading names must not resurface.
-    assert_select "h3", { text: "Web3", count: 0 },
-      "the pre-0.27.0 bare Web3 heading must not resurface"
+    # The pre-0.27.0 name is still gone for good. (The bare "Web3" negative that
+    # used to sit here was dropped on 2026-08-25: it now forbids the CURRENT
+    # engine's own output.)
     assert_select "h3", { text: "Eligibility & entry", count: 0 },
       "the pre-0.27.0 Eligibility & entry heading must not resurface"
 
-    # The new walked on-chain entry flow specimen is present and openable.
+    # The walked on-chain entry flow specimen is present and openable.
     assert_includes @response.body, "$store.dsModals.open('onchain-tx'",
-      "expected the Web3 Contest on-chain transaction flow specimen"
+      "expected the wallet section's on-chain transaction flow specimen"
     assert_includes @response.body, "$store.dsModals.open('entry-confirmed'",
       "expected the Contest-entry confirmation flow specimen"
   end
