@@ -495,6 +495,19 @@ bin/ship <task-slug>                     # commit message defaults to the task t
 bin/ship <task-slug> -m "Commit message"
 ```
 
+**Both wrappers talk to GitHub, and that credential expires ~hourly BY DESIGN.**
+`bin/ship` pushes, opens the PR, and polls `gh pr checks`; `begin`'s preflight
+reads PR state. When one of those refuses — `Bad credentials`, a 401/403, an
+unreadable CI, a `gh auth login` prompt — it is **yours to fix, and NOT an
+escalation to Mr. McRitchie**: run `eval "$(bin/gh-auth-refresh --export)"`, read
+its **stderr** (`eval` reports the `export` builtin's status, so it hides the
+command's exit code), then re-run the wrapper — **it resumes**, so a stale token
+costs you the refresh and nothing else. Never fall back to `gh auth login`: `gh`
+refuses to store a credential while `GH_TOKEN` is set, and `GH_TOKEN` outranks the
+keyring it would write to, so the one step that looks like the fix is refused
+outright and would repair the wrong store anyway. Architecture, the two lane
+identities, and a symptom→fix table: `docs/agents/modules/source-control.md`.
+
 Run `bin/ship` from the task worktree (elsewhere it re-roots at the worktree,
 loudly). Before its first side effect it enforces the two handoff-seam guards
 the child gates don't own: the task must be `building` (or `submitted` — a
