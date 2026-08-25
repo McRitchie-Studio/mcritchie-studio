@@ -58,6 +58,13 @@ re-mint. A **403 `not accessible by personal access token`** means `GH_TOKEN`
 is unset or empty and `gh` fell back to the stored PAT — re-mint. Never print
 it.)
 
+The shorthand for that re-mint is `eval "$(bin/gh-auth-refresh --export)"`: it
+resolves **this lane** (agent here, because `GH_APP_ITEM` stays unset), refreshes
+both stores, and verifies by read-back. It is **self-service** — never stall the
+sweep to ask Mr. McRitchie for a token, and never fall back to `gh auth login`,
+which `gh` refuses outright while `GH_TOKEN` is set. Architecture and
+symptom→fix: [`source-control.md`](../../../modules/source-control.md).
+
 Use the production board by default. Do not add `--local`.
 
 ## Assembler claim — automatic, on the RELEASE record
