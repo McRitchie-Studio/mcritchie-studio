@@ -583,14 +583,58 @@ class TaskCardTest < ActionView::TestCase
                      unresolved_feedback: feedback, ever_blocked: true }
 
     card = css_select("#card-#{task.slug}").first
-    assert_equal "blocked", card["data-stage-glow"]
     assert_includes card["class"], "bg-red-50"
-    assert_includes card["class"], "task-card-stage-glow-blocked"
-    assert_not_includes card["class"], "studio-border-glow"
+    assert_not_includes card["class"], "bg-amber-50"
+    # Past the seam the block TINTS but does not ring — see the deploy-stage tests below.
+    assert_nil card["data-stage-glow"]
+    assert_not_includes card["class"], "task-card-stage-glow-blocked"
     assert_select "[data-test='unresolved-feedback']", { count: 0 }, "the generic UNRESOLVED QA label is dropped"
     assert_select "[data-test='cleared-feedback']", count: 0
     # …replaced by the blocker's OWN summary on a red bar linking to the detail page.
     assert_select "a[data-test='blocker-summary'][href='#{task_path(task.slug)}']", text: "please fix it"
+  end
+
+  # BLOCKED PAST THE SEAM TINTS; IT DOES NOT RING.
+  #
+  # A blocker on a task already in the deploy flow used to repaint the WHOLE card
+  # red — border, inline border-color and halo — and that outranked the stage glow,
+  # so a `reviewed` card with open feedback lost the Pokémon-type border that says
+  # where it IS. The block is a note to act on, not a reason to hide the lane. Past
+  # `submitted` it keeps the red inner tint and the blocker bar, and hands the
+  # BORDER back to the stage. A live block (`building`) still wears the full red —
+  # that control is "blocked card tone is readable in light and dark themes" above.
+  test "[component] a blocked card past the seam drops the red border and keeps the tint" do
+    Task::DEPLOY_STAGES.each do |stage|
+      task = Task.create!(title: "Blocked #{stage} card", stage: stage)
+      Activity.create!(task_slug: task.slug, activity_type: "qa_feedback", description: "please fix it")
+
+      render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :deploy }
+
+      card = css_select("#card-#{task.slug}").first
+      assert_includes card["class"], "bg-red-50", "#{stage}: the inner tint still says blocked"
+      assert_includes card["class"], "dark:bg-red-950/40", "#{stage}: tinted in dark theme too"
+      assert_not_includes card["class"], "border-red-200", "#{stage}: the border belongs to the stage now"
+      assert_not_includes card["class"], "task-card-stage-glow-blocked", "#{stage}: no red ring past the seam"
+      assert_not_includes card["style"].to_s, "#ef4444", "#{stage}: no red glow color, no red halo"
+      assert_select "a[data-test='blocker-summary'][href='#{task_path(task.slug)}']", text: "please fix it"
+    end
+  end
+
+  # …and the border the block stops hiding is the stage's own. `reviewed` is the
+  # case in the operator's screenshot: a blocked card sitting in the reviewed lane
+  # must still wear the reviewed rainbow.
+  test "[component] a blocked reviewed card still wears the reviewed stage glow" do
+    task = Task.create!(title: "Blocked reviewed glow", stage: "reviewed")
+    Activity.create!(task_slug: task.slug, activity_type: "qa_feedback", description: "please fix it")
+
+    render partial: "tasks/task_card", locals: { task: task.reload, agents: @agents, crew_board: :deploy }
+
+    card = css_select("#card-#{task.slug}").first
+    assert_equal "reviewed", card["data-stage-glow"]
+    assert_includes card["class"], "studio-border-glow"
+    assert_includes card["class"], "task-card-stage-glow-reviewed"
+    assert_includes card["style"], "--task-card-glow-color: #22d3ee"
+    assert_includes card["style"], "border-color: var(--task-card-glow-border-color)"
   end
 
   test "[component] a blocked card shows the blocker's summary on a red bar linking to the detail" do
