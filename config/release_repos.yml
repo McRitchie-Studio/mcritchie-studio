@@ -199,6 +199,14 @@
 #                   (syntax + unit + build) before the artifact is pushed.
 #   build_cmd    — human-readable build command (documentation; bin/release
 #                  drives release_check/gem build directly).
+#   lint_lane    — optional. `none` DECLARES that this repo ships no rubocop, so
+#                  the cert reader (FullSuiteGate.required_lanes) stops asking it
+#                  for a `[rubocop@<fp>]` line and it owes only `[full-suite@<fp>]`.
+#                  DECLARED, NEVER INFERRED: the gate does not probe for a rubocop
+#                  binary, because a waiver inferred from a missing install turns
+#                  every broken rubocop into a silently skipped lane. Omitted (the
+#                  default) = the repo owes BOTH lanes, and every unrecognised slug
+#                  or unreadable registry owes both too — this fails CLOSED.
 #
 # The gem repos are checked out as SIBLINGS of this app (the projects root):
 #   /Users/alex/projects/<repo>. `bin/release` resolves them relative to the

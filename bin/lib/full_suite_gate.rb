@@ -1,4 +1,3 @@
-require "yaml"
 # frozen_string_literal: true
 
 # bin/lib/full_suite_gate.rb — the fingerprint-bound certification evidence contract.
@@ -50,6 +49,7 @@ require "yaml"
 # autoload lib/ but not bin/lib/. This module owns the parts that need git and a
 # working tree: the fingerprint, the freshness grading, the bypass record.
 require "tmpdir"
+require "yaml"
 require_relative "../../lib/cert_evidence"
 
 module FullSuiteGate
@@ -287,6 +287,17 @@ module FullSuiteGate
   #
   # Unknown repo, or nil, owes EVERYTHING. Failing closed is the only safe default
   # for a gate: a typo'd repo slug must not waive a lane.
+  #
+  # SCOPE — this closes the READER half of the bug, and only that half. The cert
+  # WRITER (bin/full-suite-check) still runs BOTH lanes unconditionally, and in
+  # studio-engine both resolve to commands that repo does not ship: the test lane
+  # to `bin/rails` (CiTestCommand::DEFAULT — the engine has engine-ci.yml, not the
+  # ci.yml the resolver reads) and the lint lane to `bin/rubocop`. It then dies on
+  # an unrescued Errno::ENOENT in bin/lib/cert_process.rb:88 before recording
+  # anything, so a task naming the engine still cannot PRODUCE the full-suite line
+  # this gate now asks it for. Verified 2026-08-25 reviewing PR #1004; fixing the
+  # writer is a separate task. Do not read this waiver as "the engine is now
+  # certifiable" — it means "the engine is no longer asked for a lint it cannot run".
   def required_lanes(repo)
     lint_waived?(repo) ? LANES - [RUBOCOP_LANE] : LANES
   end
