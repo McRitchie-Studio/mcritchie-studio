@@ -489,6 +489,26 @@ class Ci::ProgressReaderTest < ActiveSupport::TestCase
     assert_equal 1, progress.total
   end
 
+  test "[unit] a sibling lane alone never draws a green meter for an unfolded primary" do
+    # THE QUEUE WINDOW. GitHub delivers `workflow_run` at QUEUE time, so an
+    # "Engine CI" RUN row exists before any of its jobs do. #for_sha then refuses the
+    # workflow-blind API fallback for a gem and returns a BLANK base — and a green
+    # sibling would be the only mark left, drawing :green on a tree Ci::ReviewGate
+    # folds as :pending (it votes the queued Engine CI run). Green on a not-green
+    # task is the exact lie the sibling fold exists to prevent, so an unfolded
+    # primary keeps the honest blank bar.
+    task = gem_task(branch: "feat/gem-queued")
+    seed_run(branch: "feat/gem-queued", sha: "sha-queued", repo: ENGINE_NWO, workflow: "Engine CI",
+             status: "in_progress")
+    seed_run(branch: "feat/gem-queued", sha: "sha-queued", repo: ENGINE_NWO, workflow: "Consumer CI",
+             status: "completed", conclusion: "success")
+
+    progress = build_reader.for_task(task)
+
+    assert_not_equal :green, progress.state,
+                     "a green sibling must not certify a primary suite that folded no checks"
+  end
+
   test "[unit] an APP task is unchanged — one lane, no siblings" do
     task = make_task(stage: "submitted", pr_url: pr_url, branch: "feat/app-meter")
     seed_run(branch: "feat/app-meter", sha: "sha-app")

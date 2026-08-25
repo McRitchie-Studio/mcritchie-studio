@@ -391,10 +391,19 @@ module Ci
     # lane has no per-job rows to fold — only its workflow_run row. One mark for the
     # whole lane is the honest resolution available, and it is enough: the mark's
     # state is what turns the meter red.
+    # AN UNFOLDED PRIMARY KEEPS ITS BLANK BAR — siblings decorate a suite fold, they
+    # never stand in for one. GitHub delivers `workflow_run` at QUEUE time, so an
+    # "Engine CI" RUN row (and therefore a resolved sha) exists before any of its
+    # jobs do; #for_sha then refuses the workflow-blind API fallback for a gem and
+    # hands back a BLANK base. Concatenating onto that would leave a green sibling as
+    # the ONLY mark — :green drawn on a tree Ci::ReviewGate folds :pending, because
+    # the gate votes the queued primary run this bar could not see. That is the same
+    # green-reads-as-a-lie this fold exists to prevent, pointed the other way, so an
+    # empty base short-circuits exactly like an empty sibling set.
     def task_progress(nwo, repo, sha, workflow)
       base = for_sha(nwo, sha, workflow)
       siblings = sibling_lane_checks(nwo, repo, sha, workflow)
-      return base if siblings.empty?
+      return base if siblings.empty? || base.checks.empty?
 
       CheckProgress.new(checks: base.checks + siblings, sha: sha, run_started_at: base.run_started_at)
     end

@@ -461,7 +461,6 @@ studio-engine had **892** ingested runs, and the real verdict was `:red` — a f
 the app literal `CI`, fixed in task `fix-gem-ci-visibility`). Three different causes,
 one symptom; the guard separates them in one query.
 
-
 Ingestion is **per repo**, and nothing in this app can create the delivery: the
 board only receives what GitHub sends it. A registered repo whose webhook was
 never added is permanently CI-invisible here — its PRs read `:none`, so
